@@ -1,9 +1,4 @@
-"""Screen-space Picking für den isolierten Viewport-V1-Praxistest.
-
-Die Picking-Funktionen arbeiten bewusst ohne pyglet/OpenGL. Sie benutzen die
-öffentliche Mesh-Query-API und die testbare Kamera-Projektion. Die Toleranzen
-sind V1-Testwerte, keine Produktionsentscheidung.
-"""
+"""Screen-space Picking für den isolierten Viewport-V1-Praxistest."""
 
 from __future__ import annotations
 
@@ -14,16 +9,8 @@ from mirai_bastel_core import EdgeId, FaceId, Mesh, VertexId
 from .camera import OrbitCamera
 
 
-def pick_nearest_vertex(
-    camera: OrbitCamera,
-    mesh: Mesh,
-    sx: float,
-    sy: float,
-    width: int,
-    height: int,
-    max_pixel_distance: float = 14.0,
-) -> VertexId | None:
-    best_id: VertexId | None = None
+def pick_nearest_vertex(camera, mesh, sx, sy, width, height, max_pixel_distance=14.0):
+    best_id = None
     best_dist = max_pixel_distance
     for vid in mesh.all_vertex_ids():
         projected = camera.project_to_screen(mesh.vertex_position(vid), width, height)
@@ -37,7 +24,7 @@ def pick_nearest_vertex(
     return best_id
 
 
-def _point_segment_distance(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+def _point_segment_distance(px, py, ax, ay, bx, by):
     abx, aby = bx - ax, by - ay
     denom = abx * abx + aby * aby
     if denom <= 1e-12:
@@ -47,16 +34,8 @@ def _point_segment_distance(px: float, py: float, ax: float, ay: float, bx: floa
     return math.hypot(px - qx, py - qy)
 
 
-def pick_nearest_edge(
-    camera: OrbitCamera,
-    mesh: Mesh,
-    sx: float,
-    sy: float,
-    width: int,
-    height: int,
-    max_pixel_distance: float = 9.0,
-) -> EdgeId | None:
-    best_id: EdgeId | None = None
+def pick_nearest_edge(camera, mesh, sx, sy, width, height, max_pixel_distance=9.0):
+    best_id = None
     best_dist = max_pixel_distance
     for eid in mesh.all_edge_ids():
         va, vb = mesh.edge_vertices(eid)
@@ -71,8 +50,7 @@ def pick_nearest_edge(
     return best_id
 
 
-def _ray_triangle_intersection(origin, direction, a, b, c):
-    # Moller-Trumbore intersection. Returns ray distance t or None.
+def _ray_triangle_intersection(origin, direction, a, b, c, debug=False):
     eps = 1e-9
     edge1 = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
     edge2 = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
@@ -101,22 +79,14 @@ def _ray_triangle_intersection(origin, direction, a, b, c):
     return t if t > eps else None
 
 
-def pick_face(
-    camera: OrbitCamera,
-    mesh: Mesh,
-    sx: float,
-    sy: float,
-    width: int,
-    height: int,
-) -> FaceId | None:
-    """Pick the nearest face hit by the camera ray through the cursor.
-
-    Polygon faces are triangulated as a fan, matching the experimental
-    renderer. The nearest positive triangle intersection wins, so overlapping
-    projected faces resolve to the visible/front-most face.
-    """
+def pick_face(camera, mesh, sx, sy, width, height, debug=False):
     origin, direction = camera.screen_to_ray(sx, sy, width, height)
-    best_id: FaceId | None = None
+    if debug:
+        print(f"[FACE DEBUG] cursor=({sx:.1f}, {sy:.1f})")
+        print(f"[FACE DEBUG] ray origin={origin}")
+        print(f"[FACE DEBUG] ray direction={direction}")
+
+    best_id = None
     best_t = float("inf")
     for fid in mesh.all_face_ids():
         boundary = mesh.face_vertices(fid)
@@ -127,7 +97,12 @@ def pick_face(
             p1 = mesh.vertex_position(boundary[i])
             p2 = mesh.vertex_position(boundary[i + 1])
             t = _ray_triangle_intersection(origin, direction, p0, p1, p2)
+            if debug:
+                print(f"[FACE DEBUG] face={fid} tri={i-1} p0={p0} p1={p1} p2={p2} t={t}")
             if t is not None and t < best_t:
                 best_t = t
                 best_id = fid
+
+    if debug:
+        print(f"[FACE DEBUG] result face={best_id} t={best_t}")
     return best_id
