@@ -103,10 +103,6 @@ class ModelerWindow(pyglet.window.Window):
             n_points, GL_POINTS, batch=self._batch, position=("f", positions)
         )
 
-        # Edges als eigene Vertex-Liste über die (bereits dedupliziert von
-        # Mesh gelieferten) Edge-Endpunkt-Indizes - kein Index-Buffer nötig,
-        # weil die Mesh-Query-API (all_edge_ids/edge_vertices) uns die
-        # Kanten schon eindeutig liefert (AD-002 Query-API, siehe mesh.py).
         edge_positions: list[float] = []
         for idx in edge_indices:
             edge_positions.extend(positions[idx * 3 : idx * 3 + 3])
@@ -115,11 +111,6 @@ class ModelerWindow(pyglet.window.Window):
             n_edge_verts, GL_LINES, batch=self._batch, position=("f", edge_positions)
         )
 
-        # Highlight-Vertex-Liste für die aktuell selektierten Vertices -
-        # bewusst hier (statt pro Frame in on_draw neu angelegt), damit
-        # keine vertex_list-Instanzen ohne .delete() anfallen. Muss darum
-        # nach jeder Selection-Änderung erneut aufgerufen werden (siehe
-        # on_mouse_press).
         selected_positions: list[float] = []
         for vid in self.scene.selection.vertices:
             selected_positions.extend(mesh.vertex_position(vid))
@@ -145,19 +136,23 @@ class ModelerWindow(pyglet.window.Window):
         proj = Mat4.perspective_projection(
             aspect, z_near=self.camera.near, z_far=self.camera.far, fov=self.camera.fov_degrees
         )
-        self.program["mvp"] = proj @ view
 
-        self.program["color"] = (0.75, 0.75, 0.8)
-        self._edge_list.draw(GL_LINES)
+        # The ShaderProgram owns the GL program state. Bind it explicitly
+        # before setting uniforms and drawing the VertexLists created from it.
+        with self.program:
+            self.program["mvp"] = proj @ view
 
-        glPointSize(6.0)
-        self.program["color"] = (0.9, 0.9, 0.95)
-        self._point_list.draw(GL_POINTS)
+            self.program["color"] = (0.75, 0.75, 0.8)
+            self._edge_list.draw(GL_LINES)
 
-        if self._highlight_list is not None:
-            glPointSize(12.0)
-            self.program["color"] = (1.0, 0.55, 0.15)
-            self._highlight_list.draw(GL_POINTS)
+            glPointSize(6.0)
+            self.program["color"] = (0.9, 0.9, 0.95)
+            self._point_list.draw(GL_POINTS)
+
+            if self._highlight_list is not None:
+                glPointSize(12.0)
+                self.program["color"] = (1.0, 0.55, 0.15)
+                self._highlight_list.draw(GL_POINTS)
 
     # ------------------------------------------------------------------
     # Eingabe -> Core-Aufrufe
