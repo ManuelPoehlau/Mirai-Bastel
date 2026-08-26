@@ -9,12 +9,9 @@ Ausführen mit: python -m tests.test_core  (aus dem Projekt-Root)
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import tests._bootstrap  # noqa: F401 — Produktionspfad src/core/
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from mirai_bastel_core import (
+from core import (
     Scene,
     SelectionMode,
     MoveOperation,
@@ -22,7 +19,8 @@ from mirai_bastel_core import (
     scene_to_dict,
     scene_from_dict,
 )
-from mirai_bastel_core.mesh import Mesh
+from core.mesh import Mesh
+from tests.mesh_invariants import assert_mesh_invariants
 
 
 def build_quad_scene() -> Scene:
@@ -86,6 +84,7 @@ def test_ad001_id_continuity_split_edge() -> None:
     check("Face-ID bleibt unverändert (nur Boundary aktualisiert)", mesh.is_valid_face(face))
     check("Face-Boundary enthält jetzt den Mittelpunkt", mid in mesh.face_vertices(face))
     check("Face-Boundary hat jetzt 5 statt 4 Vertices", len(mesh.face_vertices(face)) == 5)
+    assert_mesh_invariants(mesh, context="split_edge")
 
 
 def test_ad002_query_api_no_internal_access() -> None:
@@ -123,6 +122,7 @@ def test_ad002_connect_vertices() -> None:
     check("beteiligte Vertex-IDs bleiben unverändert",
           all(mesh.is_valid_vertex(v) for v in (v0, v1, v2, v3)))
     check("beide neuen Faces sind Dreiecke", len(mesh.face_vertices(face_a)) == 3 and len(mesh.face_vertices(face_b)) == 3)
+    assert_mesh_invariants(mesh, context="connect_vertices")
 
 
 def test_ad002_collapse_edge() -> None:
@@ -141,6 +141,7 @@ def test_ad002_collapse_edge() -> None:
     check("Face hat jetzt 3 statt 4 Vertices", len(mesh.face_vertices(face)) == 3)
     check("überlebender Vertex liegt in der Mitte der ursprünglichen Kante",
           abs(mesh.vertex_position(survivor)[0] - 0.5) < 1e-9)
+    assert_mesh_invariants(mesh, context="collapse_edge")
 
 
 def test_ad002_collapse_edge_no_stale_edges() -> None:
@@ -176,6 +177,7 @@ def test_ad002_collapse_edge_no_stale_edges() -> None:
     edges_b = mesh.face_edges(face_b)
     check("face_edges() der überlebenden Face liefert 3 gültige Kanten",
           len(edges_b) == 3 and all(mesh.is_valid_edge(e) for e in edges_b))
+    assert_mesh_invariants(mesh, context="collapse_edge_no_stale")
 
 
 def test_ad003_update_is_incremental() -> None:
