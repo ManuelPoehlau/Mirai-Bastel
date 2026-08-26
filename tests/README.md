@@ -14,6 +14,7 @@ python -m tests.run_core_suite
 python -m unittest tests.test_mesh_invariants -v
 python -m unittest tests.test_topology_mutations -v
 python -m unittest tests.test_identity_continuity -v
+python -m unittest tests.test_topology_history -v
 python -m tests.test_core
 ```
 
@@ -25,13 +26,14 @@ python -m tests.test_core
 | `test_mesh_invariants.py` | A | Struktur-Invarianten, Boundary, gültige IDs |
 | `test_topology_mutations.py` | B | split / collapse / connect (ID-Kontinuität, Adjazenz) |
 | `test_identity_continuity.py` | C | split / collapse / connect: vollständige Vorher/Nachher-ID-Mengen-Diffs (was bleibt/stirbt/entsteht) |
+| `test_topology_history.py` | D | split / collapse / connect: commit → undo → redo, exakter Zustand (ID-Mengen + Beziehungen) |
 | `test_core.py` | — | Architekturverträge AD-001/002/003, Serialisierung |
 
-## Hardening-Ergebnis (2026-08-26, Phase A/B/C)
+## Hardening-Ergebnis (2026-08-26, Phase A/B/C/D)
 
-**Plan:** `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` §17 Phase A/B/C
+**Plan:** `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` §17 Phase A/B/C/D
 
-**Gesamt: PASS** — 22 unittest-Tests + 11 Architekturvertrags-Blöcke, 0 Failures.
+**Gesamt: PASS** — 29 unittest-Tests + 11 Architekturvertrags-Blöcke, 0 Failures.
 
 ### Phase A – Invarianten
 
@@ -110,6 +112,70 @@ Metadaten — weiterhin außerhalb des Scopes, siehe Plan §16).
 **Produktionscode-Änderungen:** keine — alle Diffs entsprechen exakt den
 bereits in `mesh.py` dokumentierten ID-Kontinuitäts-Verträgen.
 
+### Phase D – Undo/Redo für Topologieoperationen (2026-08-26)
+
+**Plan:** `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` §17 Phase D
+
+**Vorab-Befund (vor jeder Testimplementierung geklärt, nicht eigenmächtig
+entschieden):** `split_edge`/`collapse_edge`/`connect_vertices` hatten vor
+dieser Phase **keine** History-Anbindung — nur `MoveOperation` erzeugte
+einen Command. Phase D setzt „commit → undo → redo" aber voraus, das
+musste also zuerst geschaffen werden.
+
+**Zweiter, wichtigerer Befund:** Ein semantischer Inverse-Ansatz (Undo
+durch eine Gegenoperation, analog `MoveVerticesCommand`) kann die
+Anforderung „exakter ursprünglicher Zustand inkl. ID-Mengen" grundsätzlich
+nicht erfüllen — AD-001 verbietet ID-Wiederverwendung innerhalb einer
+Session für immer, auch nach dem Löschen des Elements. Jede Mutation, die
+im Zuge einer Gegenoperation neue Elemente erzeugt, bekäme zwangsläufig
+neue IDs statt der ursprünglichen. Ein vollständiger Zustands-Snapshot
+(`Mesh.export_state()`/`load_state()`) ist damit nicht nur pragmatischer,
+sondern die einzige Möglichkeit, exakte ID-Kontinuität über Undo/Redo
+hinweg zu garantieren.
+
+**Umgesetzt (minimal, wie mit Nutzer abgestimmt):**
+
+- `Mesh.load_state(state)` — neue Instanzmethode, ersetzt den Mesh-Inhalt
+  in-place (im Unterschied zum bestehenden `from_state()`-Classmethod, das
+  ein neues Objekt erzeugt). `from_state()` ruft jetzt intern
+  `load_state()` auf (Entduplizierung, keine Verhaltensänderung).
+  Allocator-Zähler werden wie zuvor nur vorwärts gesetzt
+  (`restore_counter()`) — beim Undo bleibt der Zähler deshalb auf dem
+  höheren, aktuellen Stand, statt zurückzuspringen (AD-001-konform,
+  explizit mit einer Kontrollprobe getestet).
+- `operations/topology.py::MeshStateCommand` — generisches Command
+  (`undo()`/`redo()`), das Vorher-/Nachher-Snapshots hält. Keine
+  automatische Kopplung an Mesh-Mutationen; Aufrufer (hier: die Tests)
+  bauen das Command explizit um ihren Mutationsaufruf herum.
+- `history.py`-Docstring korrigiert: `push()` wird nicht mehr
+  ausschließlich von `Operation.commit()` aufgerufen, sondern auch direkt
+  für atomare Mutationen ohne Operation-Lebenszyklus (dokumentierte
+  Ausnahme, keine Verhaltensänderung an `HistoryStack` selbst).
+
+| Operation | Szenario | Ergebnis |
+|---|---|---|
+| `split_edge` | Boundary-Edge, commit→undo→redo | PASS — exakter Zustand (ID-Mengen + alle Beziehungen) in beide Richtungen |
+| `split_edge` | interne Edge (2 Faces), commit→undo→redo | PASS — beide Faces korrekt zurück-/wiederhergestellt |
+| `collapse_edge` | einfacher Fall, commit→undo→redo | PASS |
+| `collapse_edge` | Fan (umbenannte dritte Edge), commit→undo→redo | PASS — Edge zeigt nach undo() wieder exakt auf v1, nach redo() exakt auf v0 |
+| `collapse_edge` | Merge-Zweig (Edge+Face sterben), commit→undo→redo | PASS — beide mit identischer ID wiederhergestellt |
+| `connect_vertices` | Diagonalen-Split, commit→undo→redo | PASS |
+| Mehrfach-Sequenz | split → collapse → undo×2 → redo×2 | PASS — HistoryStack steppt korrekt durch mehrere MeshStateCommands |
+
+**AD-001-Kontrollprobe:** nach `undo()` eines Splits erzeugt eine
+anschließende neue Mutation nachweislich eine höhere, nie zuvor
+vergebene ID — die ID des rückgängig gemachten Elements wird nicht
+wiederverwendet (explizit assertet in `test_topology_history.py`).
+
+**Bewusst nicht verändert:** keine neue allgemeine Undo-Architektur, keine
+automatische History-Kopplung in den Mesh-Mutationsmethoden selbst
+(bleiben weiterhin History-unabhängig, §15 Punkt 5) — wie mit dem Nutzer
+vor der Implementierung abgestimmt.
+
+**Produktionscode-Änderungen:** `mesh.py` (`load_state()` neu,
+`from_state()` refaktoriert, verhaltensgleich), `operations/topology.py`
+(neu), `operations/__init__.py` (Export), `history.py` (Docstring-Korrektur).
+
 ### Architekturverträge (`test_core.py`)
 
 Alle 11 Blöcke (AD-001 IDs, split, Query-API, connect, collapse ×2, AD-003 Lifecycle ×3, Selection, Serialisierung): **PASS**.
@@ -126,5 +192,4 @@ Bei einem fehlgeschlagenen Test gilt:
 
 ## Nächste Schritte (Plan §17, noch offen)
 
-- Phase D: Undo/Redo für Topologieoperationen (split/collapse/connect)
 - Phase E: Serialisierung nach Mutationen (Roundtrip mit Allocator-Zustand)
