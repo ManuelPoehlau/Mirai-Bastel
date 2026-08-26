@@ -20,6 +20,7 @@ def main() -> int:
         "tests.test_topology_mutations",
         "tests.test_identity_continuity",
         "tests.test_topology_history",
+        "tests.test_scene_serialization",
     ):
         suite.addTests(loader.loadTestsFromName(module_name))
 
