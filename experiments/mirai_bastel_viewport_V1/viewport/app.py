@@ -28,6 +28,18 @@ void main() { fragColor = vec4(color, 1.0); }
 """
 
 
+class _MoveSelectionView:
+    """Minimaler Selection-View für MoveOperation.
+
+    Die sichtbare Selection bleibt im aktuellen Sub-Object-Mode. Die
+    bestehende Core-MoveOperation benötigt für V1 lediglich die Menge der
+    tatsächlich zu bewegenden VertexIds.
+    """
+
+    def __init__(self, vertices):
+        self.vertices = set(vertices)
+
+
 class ModelerWindow(pyglet.window.Window):
     def __init__(self) -> None:
         super().__init__(width=1024, height=768, caption="Mirai-Bastel V1 - Vertex Mode", resizable=True)
@@ -40,6 +52,7 @@ class ModelerWindow(pyglet.window.Window):
         self.program = ShaderProgram(vert, frag)
         self._drag_mode = None
         self._active_move = None
+        self._move_anchor_vertex = None
         glEnable(GL_DEPTH_TEST)
         pyglet.clock.schedule_interval(lambda dt: None, 1 / 60.0)
         self._rebuild_geometry()
@@ -48,6 +61,7 @@ class ModelerWindow(pyglet.window.Window):
         if self._active_move is not None:
             self._active_move.cancel(); self._active_move = None
         self._drag_mode = None
+        self._move_anchor_vertex = None
         self.selection_mode = mode
         self.scene.selection.mode = mode
         self.scene.selection.clear()
@@ -116,6 +130,23 @@ class ModelerWindow(pyglet.window.Window):
         if self.selection_mode == SelectionMode.FACE: return self.scene.selection.faces
         return set()
 
+    def _move_vertex_ids(self):
+        """Löst die aktuelle Sub-Object-Selection auf betroffene Vertices auf."""
+        mesh = self.scene.mesh
+        if self.selection_mode == SelectionMode.VERTEX:
+            return set(self.scene.selection.vertices)
+        if self.selection_mode == SelectionMode.EDGE:
+            result = set()
+            for eid in self.scene.selection.edges:
+                result.update(mesh.edge_vertices(eid))
+            return result
+        if self.selection_mode == SelectionMode.FACE:
+            result = set()
+            for fid in self.scene.selection.faces:
+                result.update(mesh.face_vertices(fid))
+            return result
+        return set()
+
     def _draw_face_highlight(self, vertex_list, color):
         if vertex_list is None: return
         glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0, -1.0)
@@ -153,7 +184,7 @@ class ModelerWindow(pyglet.window.Window):
         if button == mouse.LEFT:
             picked = self._pick(x,y)
             if picked is None:
-                self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None
+                self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None; self._move_anchor_vertex = None
             else:
                 selected = set(self._selected_ids())
                 if picked in selected:
@@ -161,22 +192,31 @@ class ModelerWindow(pyglet.window.Window):
                 else:
                     selected.add(picked)
                 self.scene.selection.set(selected); self._hovered_id = picked; self.scene.selection.hovered = picked
-                if self.selection_mode == SelectionMode.VERTEX and picked in self.scene.selection.vertices:
-                    self._begin_move(); self._drag_mode = "move"
-                else: self._drag_mode = None
+                if picked in self._selected_ids():
+                    move_vertex_ids = self._move_vertex_ids()
+                    if move_vertex_ids:
+                        self._begin_move(move_vertex_ids)
+                        self._move_anchor_vertex = next(iter(move_vertex_ids))
+                        self._drag_mode = "move"
+                    else:
+                        self._drag_mode = None; self._move_anchor_vertex = None
+                else:
+                    self._drag_mode = None; self._move_anchor_vertex = None
             self._rebuild_geometry()
         elif button == mouse.RIGHT: self._drag_mode = "orbit"
 
     def on_mouse_drag(self, x,y,dx,dy,buttons,modifiers):
         if self._drag_mode == "orbit":
             self.camera.orbit(-dx*0.005,-dy*0.005); self._hovered_id = self._pick(x,y); self.scene.selection.hovered = self._hovered_id; self._rebuild_geometry()
-        elif self._drag_mode == "move" and self._active_move is not None:
-            vid = next(iter(self.scene.selection.vertices)); point = self.scene.mesh.vertex_position(vid)
+        elif self._drag_mode == "move" and self._active_move is not None and self._move_anchor_vertex is not None:
+            point = self.scene.mesh.vertex_position(self._move_anchor_vertex)
             self._active_move.update(delta=self.camera.screen_delta_to_world(point,dx,dy,self.width,self.height)); self._rebuild_geometry()
 
     def on_mouse_release(self,x,y,button,modifiers):
         if self._drag_mode == "move" and self._active_move is not None:
-            self._active_move.commit(); self._active_move=None; self._rebuild_geometry()
+            self._active_move.commit(); self._active_move=None
+            self._move_anchor_vertex = None
+            self._rebuild_geometry()
         self._drag_mode=None
 
     def on_mouse_scroll(self,x,y,scroll_x,scroll_y):
@@ -188,10 +228,11 @@ class ModelerWindow(pyglet.window.Window):
         elif symbol in (key.F,key._3): self._set_selection_mode(SelectionMode.FACE)
         elif symbol == key.Z and modifiers & key.MOD_CTRL: self.scene.history.undo(); self._rebuild_geometry()
         elif symbol == key.Y and modifiers & key.MOD_CTRL: self.scene.history.redo(); self._rebuild_geometry()
-        elif symbol == key.ESCAPE and self._active_move is not None: self._active_move.cancel(); self._active_move=None; self._rebuild_geometry()
+        elif symbol == key.ESCAPE and self._active_move is not None: self._active_move.cancel(); self._active_move=None; self._move_anchor_vertex=None; self._drag_mode=None; self._rebuild_geometry()
 
-    def _begin_move(self):
-        context = OperationContext(target=self.scene.mesh, selection=self.scene.selection, history=self.scene.history)
+    def _begin_move(self, vertex_ids):
+        move_selection = _MoveSelectionView(vertex_ids)
+        context = OperationContext(target=self.scene.mesh, selection=move_selection, history=self.scene.history)
         self._active_move = MoveOperation(context); self._active_move.begin()
 
 
