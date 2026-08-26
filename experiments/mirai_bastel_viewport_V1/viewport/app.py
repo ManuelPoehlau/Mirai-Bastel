@@ -72,8 +72,6 @@ class ModelerWindow(pyglet.window.Window):
         self._active_move: MoveOperation | None = None
 
         glEnable(GL_DEPTH_TEST)
-        # Kontinuierliches Neuzeichnen erzwingen (Kamera-Orbit/Drag laufen
-        # unabhängig vom nächsten Eingabe-Event) - Standard-pyglet-Idiom.
         pyglet.clock.schedule_interval(lambda dt: None, 1 / 60.0)
 
         self._rebuild_geometry()
@@ -137,8 +135,6 @@ class ModelerWindow(pyglet.window.Window):
             aspect, z_near=self.camera.near, z_far=self.camera.far, fov=self.camera.fov_degrees
         )
 
-        # The ShaderProgram owns the GL program state. Bind it explicitly
-        # before setting uniforms and drawing the VertexLists created from it.
         with self.program:
             self.program["mvp"] = proj @ view
 
@@ -176,7 +172,7 @@ class ModelerWindow(pyglet.window.Window):
         self, x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int
     ) -> None:
         if self._drag_mode == "orbit":
-            self.camera.orbit(-dx * 0.005, dy * 0.005)
+            self.camera.orbit(-dx * 0.005, -dy * 0.005)
         elif self._drag_mode == "move" and self._active_move is not None:
             vid = next(iter(self.scene.selection.vertices))
             point = self.scene.mesh.vertex_position(vid)
