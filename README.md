@@ -48,11 +48,21 @@ V1 → V2 → V3 → ...
 
 There is no planned "finished version". The system is expected to remain alive and extensible.
 
-## Current focus — V1
+## Current status
 
-V1 starts with the modeling foundation, roughly in the spirit of Silo/Wings3D, combined with the interaction ideas that make Mirai especially interesting to us.
+The first Core V1 milestone is complete and has been validated through its automated test suite and review process.
 
-The initial focus is:
+A separate `experiments/mirai_bastel_viewport_V1/` Praxistest has also been completed. It connects the V1 Core to a minimal real-time OpenGL viewport and was tested on real hardware. The experiment validated the basic Scene → Mesh → Selection → Move → Commit → History → Undo/Redo path together with camera interaction.
+
+The viewport experiment remains deliberately under `experiments/`. It is a reference/prototype, not yet the architecture of the production application.
+
+The next development step is therefore **architectural consolidation**: determine the production `src/` boundaries from the lessons of the Core and Viewport experiments before building the actual application structure.
+
+## Current V1 direction
+
+The first useful application is intended to become a small, direct polygon/subdivision modeler, roughly in the spirit of Silo/Wings3D, combined with interaction ideas that make Mirai especially interesting to us.
+
+The eventual modeler focus includes:
 
 - Vertices / Edges / Faces
 - intuitive component selection
@@ -66,7 +76,7 @@ The initial focus is:
 - Front / Back / Left / Right / Top / Bottom snapping
 - clean and topology-safe mesh data structures
 
-V1 is intentionally a **modeler**. It is not intended to implement the entire future system.
+Not all of these are implemented in the current V1 milestone. They describe the intended direction, while individual milestones remain deliberately small.
 
 ## Future system areas
 
@@ -85,6 +95,8 @@ The eventual system may grow to include:
 - additional tools and workflows
 
 These are future areas, not automatic V1 requirements. Their existence must nevertheless be considered when defining Core boundaries so that known future goals are not accidentally made unnecessarily expensive.
+
+For smaller ideas and observations that should not be forgotten, see `docs/future_ideas/`.
 
 ## Historical research
 
@@ -126,8 +138,15 @@ The `docs/` directory contains the evolving project vision, architecture decisio
 
 Important architectural decisions are deliberately recorded as they are made. This is part of the project's workflow: fresh reviews and independent AI perspectives should be preserved rather than relying on a long conversation to retain the reasoning.
 
-## Status
+## Repository structure
 
-Early architectural / prototype phase.
+```text
+src/          Production application code (currently Core baseline only)
+experiments/  Isolated milestones, prototypes and practical tests
+tests/        Repository-level tests
+docs/         Architecture, research, workflow and future ideas
+examples/     Small usage examples
+references/   External/reference material kept with the project
+```
 
 Nothing here should be considered final. The system is expected to evolve as we learn more from historical systems, modern software and our own experiments.
