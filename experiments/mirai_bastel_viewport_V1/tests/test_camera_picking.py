@@ -1,13 +1,11 @@
-"""Reine Mathe-/Logik-Tests für Kamera und Picking.
+"""Reine Mathe-/Logik-Tests für Kamera und Viewport-Picking.
 
 Laufen bewusst OHNE Fenster/GPU, weil camera.py und picking.py
-unabhängig von pyglet/moderngl gehalten sind (siehe viewport/camera.py
-Modul-Docstring). Das ist der Teil dieses Milestones, der in dieser
-Sandbox tatsächlich automatisiert geprüft werden konnte - die
-Fenster-/Render-/Input-Schicht (app.py) braucht einen echten Lauf auf
-einer Maschine mit Display/GPU.
+unabhängig von pyglet/moderngl gehalten sind. Die Fenster-/Render-/Input-
+Schicht (app.py) braucht für den vollständigen Praxistest eine Maschine mit
+Display/GPU.
 
-Ausführen mit: python -m tests.test_camera_picking  (aus diesem Ordner)
+Ausführen mit: python -m tests.test_camera_picking (aus diesem Ordner)
 """
 
 from __future__ import annotations
@@ -24,7 +22,12 @@ from mirai_bastel_core import Mesh  # noqa: E402
 
 from viewport import vecmath as v  # noqa: E402
 from viewport.camera import OrbitCamera  # noqa: E402
-from viewport.picking import pick_nearest_vertex  # noqa: E402
+from viewport.demo_scene import build_cube_scene  # noqa: E402
+from viewport.picking import (  # noqa: E402
+    pick_face,
+    pick_nearest_edge,
+    pick_nearest_vertex,
+)
 
 _failures = 0
 
@@ -114,8 +117,38 @@ def test_pick_nearest_vertex_hits_correct_vertex() -> None:
     check("Klick nahe (0,0,0) trifft genau diesen Vertex", hit == v_center)
 
     hit_far = pick_nearest_vertex(cam, mesh, sx + 300, sy + 300, w, h, max_pixel_distance=14.0)
-    check("Klick weit weg von allen Vertices trifft keinen (oder nicht den falschen)",
-          hit_far is None or hit_far != v_far)
+    check(
+        "Klick weit weg von allen Vertices trifft keinen (oder nicht den falschen)",
+        hit_far is None or hit_far != v_far,
+    )
+
+
+def test_pick_edge_hits_projected_edge() -> None:
+    print("\n--- Edge-Picking: Klick auf eine projizierte Edge wird erkannt ---")
+    mesh = Mesh()
+    a = mesh.add_vertex((-1.0, 0.0, 0.0))
+    b = mesh.add_vertex((1.0, 0.0, 0.0))
+    eid = mesh.add_face([a, b, mesh.add_vertex((1.0, 1.0, 0.0))])
+    # The first edge created by add_face is the edge a<->b.
+    edge_id = mesh.face_edges(eid)[0]
+    cam = OrbitCamera(target=(0.0, 0.0, 0.0), distance=6.0)
+    w, h = 800, 600
+    pa = cam.project_to_screen(mesh.vertex_position(a), w, h)
+    pb = cam.project_to_screen(mesh.vertex_position(b), w, h)
+    assert pa is not None and pb is not None
+    sx, sy = ((pa[0] + pb[0]) / 2.0, (pa[1] + pb[1]) / 2.0)
+    check("Klick auf die Mitte einer Edge trifft diese Edge", pick_nearest_edge(cam, mesh, sx, sy, w, h) == edge_id)
+
+
+def test_pick_face_hits_visible_cube_face() -> None:
+    print("\n--- Face-Picking: Ray trifft die sichtbare Cube-Face ---")
+    scene = build_cube_scene(size=2.0)
+    mesh = scene.mesh
+    cam = OrbitCamera()
+    w, h = 800, 600
+    sx, sy = w / 2.0, h / 2.0
+    hit = pick_face(cam, mesh, sx, sy, w, h)
+    check("Bildschirmmitte trifft eine Cube-Face", hit is not None)
 
 
 def test_screen_delta_to_world_moves_along_view_plane() -> None:
@@ -136,6 +169,8 @@ def run_all() -> None:
         test_screen_to_ray_center_points_toward_target,
         test_project_and_unproject_roundtrip,
         test_pick_nearest_vertex_hits_correct_vertex,
+        test_pick_edge_hits_projected_edge,
+        test_pick_face_hits_visible_cube_face,
         test_screen_delta_to_world_moves_along_view_plane,
     ]
     for t in tests:
