@@ -55,6 +55,7 @@ class ModelerWindow(pyglet.window.Window):
         self.scene.selection.mode = mode
         self.scene.selection.clear()
         self._hovered_id = None
+        self.scene.selection.hovered = None
         self._update_caption()
         self._rebuild_geometry()
 
@@ -70,6 +71,10 @@ class ModelerWindow(pyglet.window.Window):
         if self.selection_mode == SelectionMode.FACE:
             return pick_face(self.camera, self.scene.mesh, x, y, self.width, self.height, debug=self._debug_face_pick)
         return None
+
+    def _log_pick_result(self, stage, picked):
+        if self._debug_face_pick and self.selection_mode == SelectionMode.FACE:
+            print(f"[FACE DEBUG] {stage} result={picked!r}")
 
     def _rebuild_geometry(self):
         mesh = self.scene.mesh
@@ -114,6 +119,8 @@ class ModelerWindow(pyglet.window.Window):
                 va, vb = mesh.edge_vertices(self._hovered_id); hover_edge_positions.extend(mesh.vertex_position(va)); hover_edge_positions.extend(mesh.vertex_position(vb))
             elif self.selection_mode == SelectionMode.FACE:
                 hover_face_positions = face_positions_for([self._hovered_id])
+        if self._debug_face_pick and self.selection_mode == SelectionMode.FACE and self._hovered_id is not None:
+            print(f"[FACE DEBUG] hovered_id={self._hovered_id!r} hover_face_vertices={len(hover_face_positions)//3}")
         self._hover_vertex_list = self.program.vertex_list(len(hover_vertex_positions)//3, GL_POINTS, batch=self._batch, position=("f", hover_vertex_positions)) if hover_vertex_positions else None
         self._hover_edge_list = self.program.vertex_list(len(hover_edge_positions)//3, GL_LINES, batch=self._batch, position=("f", hover_edge_positions)) if hover_edge_positions else None
         self._hover_face_list = self.program.vertex_list(len(hover_face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", hover_face_positions)) if hover_face_positions else None
@@ -144,12 +151,14 @@ class ModelerWindow(pyglet.window.Window):
 
     def on_mouse_motion(self, x, y, dx, dy):
         hovered = self._pick(x,y)
+        self._log_pick_result("hover", hovered)
         if hovered != self._hovered_id:
             self._hovered_id = hovered; self.scene.selection.hovered = hovered; self._rebuild_geometry()
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == mouse.LEFT:
             picked = self._pick(x,y)
+            self._log_pick_result("click", picked)
             if picked is None:
                 self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None
             else:
