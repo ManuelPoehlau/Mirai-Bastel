@@ -155,7 +155,7 @@ class ModelerWindow(pyglet.window.Window):
             if picked is None:
                 self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None
             else:
-                selected = self._selected_ids()
+                selected = set(self._selected_ids())
                 if picked in selected:
                     selected.remove(picked)
                 else:
