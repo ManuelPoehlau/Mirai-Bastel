@@ -1,34 +1,15 @@
-"""Minimaler interaktiver V1-Viewport: Praxistest der Core-Pipeline
+"""Minimaler interaktiver V1-Viewport: Praxistest der Core-Pipeline.
 
-    Scene -> Mesh -> Selection -> Operation -> Commit -> History -> Undo/Redo
+Scene -> Mesh -> Selection -> Operation -> Commit -> History -> Undo/Redo
 
-Bewusst NICHT enthalten (Scope-Absprache im Chat vor diesem Milestone):
-- Rotate/Scale (der Core hat V1 nur MoveOperation - siehe operations/move.py)
-- Edge-/Face-Selection-Interaktion (nur Vertex-Picking)
-- Soft Selection, Snapping, Ortho-Ansicht, Achsen-Constraints/Gizmo
-- interaktive Topologie-Edits (split/collapse/connect bleiben testgetrieben,
-  siehe tests/test_core.py im Core-Projekt)
-
-Steuerung:
-- Linksklick auf einen Vertex: auswählen
-- Links ziehen (auf einem gerade selektierten Vertex begonnen): verschieben
-  (begin() beim Drag-Start, update() pro Mausbewegung, commit() beim Loslassen)
-- Rechts ziehen: Kamera orbiten
-- Mausrad: zoomen
-- Strg+Z / Strg+Y: Undo / Redo
-- Esc: laufende Move-Operation abbrechen (cancel())
-
-Kein Dirty-Flag/Event-System zwischen Core und Rendering: es wird jeden
-Frame neu aus dem Live-Mesh-Zustand gezeichnet (siehe operation.py-
-Kommentar: das ist genau die Stelle, an der ein späteres System ein
-Dirty-Flag setzen würde - für einen ersten Praxistest reicht "jeden Frame
-neu lesen").
+Der Viewport ist ein isoliertes Experiment. Rendering-Erweiterungen hier
+legen noch keine Produktionsarchitektur unter src/ fest.
 """
 
 from __future__ import annotations
 
 import pyglet
-from pyglet.gl import GL_DEPTH_TEST, GL_LINES, GL_POINTS, glEnable, glPointSize
+from pyglet.gl import GL_DEPTH_TEST, GL_LINES, GL_POINTS, GL_TRIANGLES, glEnable, glPointSize
 from pyglet.graphics.shader import Shader, ShaderProgram
 from pyglet.math import Mat4, Vec3
 from pyglet.window import key, mouse
@@ -60,7 +41,9 @@ void main() {
 
 class ModelerWindow(pyglet.window.Window):
     def __init__(self) -> None:
-        super().__init__(width=1024, height=768, caption="Mirai-Bastel V1 - Viewport-Praxistest", resizable=True)
+        super().__init__(width=1024, height=768,
+                         caption="Mirai-Bastel V1 - Viewport-Praxistest",
+                         resizable=True)
         self.scene = build_cube_scene(size=2.0)
         self.camera = OrbitCamera()
 
@@ -68,19 +51,15 @@ class ModelerWindow(pyglet.window.Window):
         frag = Shader(_FRAGMENT_SHADER, "fragment")
         self.program = ShaderProgram(vert, frag)
 
-        self._drag_mode: str | None = None  # "orbit" | "move" | None
+        self._drag_mode: str | None = None
         self._active_move: MoveOperation | None = None
 
         glEnable(GL_DEPTH_TEST)
         pyglet.clock.schedule_interval(lambda dt: None, 1 / 60.0)
-
         self._rebuild_geometry()
 
-    # ------------------------------------------------------------------
-    # Geometrie aus dem Live-Mesh-Zustand
-    # ------------------------------------------------------------------
-
     def _rebuild_geometry(self) -> None:
+        """Rebuild the small experimental render geometry from the live mesh."""
         mesh = self.scene.mesh
         self._vertex_ids_ordered = list(mesh.all_vertex_ids())
         index_of = {vid: i for i, vid in enumerate(self._vertex_ids_ordered)}
@@ -94,19 +73,42 @@ class ModelerWindow(pyglet.window.Window):
             va, vb = mesh.edge_vertices(eid)
             edge_indices.extend([index_of[va], index_of[vb]])
 
+        # Minimal solid representation: triangulate each polygon as a fan.
+        # The current demo mesh consists of quads, but this keeps the renderer
+        # useful for arbitrary polygonal faces supported by the V1 Core.
+        face_positions: list[float] = []
+        for fid in mesh.all_face_ids():
+            boundary = mesh.face_vertices(fid)
+            if len(boundary) < 3:
+                continue
+            p0 = mesh.vertex_position(boundary[0])
+            for i in range(1, len(boundary) - 1):
+                p1 = mesh.vertex_position(boundary[i])
+                p2 = mesh.vertex_position(boundary[i + 1])
+                face_positions.extend((*p0, *p1, *p2))
+
         self._batch = pyglet.graphics.Batch()
 
-        n_points = len(self._vertex_ids_ordered)
+        self._face_list = None
+        if face_positions:
+            self._face_list = self.program.vertex_list(
+                len(face_positions) // 3,
+                GL_TRIANGLES,
+                batch=self._batch,
+                position=("f", face_positions),
+            )
+
         self._point_list = self.program.vertex_list(
-            n_points, GL_POINTS, batch=self._batch, position=("f", positions)
+            len(self._vertex_ids_ordered), GL_POINTS,
+            batch=self._batch, position=("f", positions)
         )
 
         edge_positions: list[float] = []
         for idx in edge_indices:
-            edge_positions.extend(positions[idx * 3 : idx * 3 + 3])
-        n_edge_verts = len(edge_indices)
+            edge_positions.extend(positions[idx * 3: idx * 3 + 3])
         self._edge_list = self.program.vertex_list(
-            n_edge_verts, GL_LINES, batch=self._batch, position=("f", edge_positions)
+            len(edge_indices), GL_LINES,
+            batch=self._batch, position=("f", edge_positions)
         )
 
         selected_positions: list[float] = []
@@ -115,15 +117,9 @@ class ModelerWindow(pyglet.window.Window):
         self._highlight_list = None
         if selected_positions:
             self._highlight_list = self.program.vertex_list(
-                len(selected_positions) // 3,
-                GL_POINTS,
-                batch=self._batch,
-                position=("f", selected_positions),
+                len(selected_positions) // 3, GL_POINTS,
+                batch=self._batch, position=("f", selected_positions)
             )
-
-    # ------------------------------------------------------------------
-    # Rendering
-    # ------------------------------------------------------------------
 
     def on_draw(self) -> None:
         self.clear()
@@ -132,12 +128,20 @@ class ModelerWindow(pyglet.window.Window):
         target = Vec3(*self.camera.target)
         view = Mat4.look_at(eye, target, Vec3(0, 1, 0))
         proj = Mat4.perspective_projection(
-            aspect, z_near=self.camera.near, z_far=self.camera.far, fov=self.camera.fov_degrees
+            aspect, z_near=self.camera.near, z_far=self.camera.far,
+            fov=self.camera.fov_degrees
         )
 
         with self.program:
             self.program["mvp"] = proj @ view
 
+            # Solid pass first so depth testing gives the model a real surface.
+            if self._face_list is not None:
+                self.program["color"] = (0.62, 0.64, 0.70)
+                self._face_list.draw(GL_TRIANGLES)
+
+            # Keep topology visible over the solid surface. This is intentional
+            # for the upcoming Vertex/Edge/Face selection experiments.
             self.program["color"] = (0.75, 0.75, 0.8)
             self._edge_list.draw(GL_LINES)
 
@@ -150,13 +154,11 @@ class ModelerWindow(pyglet.window.Window):
                 self.program["color"] = (1.0, 0.55, 0.15)
                 self._highlight_list.draw(GL_POINTS)
 
-    # ------------------------------------------------------------------
-    # Eingabe -> Core-Aufrufe
-    # ------------------------------------------------------------------
-
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         if button == mouse.LEFT:
-            vid = pick_nearest_vertex(self.camera, self.scene.mesh, x, y, self.width, self.height)
+            vid = pick_nearest_vertex(
+                self.camera, self.scene.mesh, x, y, self.width, self.height
+            )
             if vid is not None:
                 self.scene.selection.set({vid})
                 self._begin_move()
@@ -176,7 +178,9 @@ class ModelerWindow(pyglet.window.Window):
         elif self._drag_mode == "move" and self._active_move is not None:
             vid = next(iter(self.scene.selection.vertices))
             point = self.scene.mesh.vertex_position(vid)
-            world_delta = self.camera.screen_delta_to_world(point, dx, dy, self.width, self.height)
+            world_delta = self.camera.screen_delta_to_world(
+                point, dx, dy, self.width, self.height
+            )
             self._active_move.update(delta=world_delta)
             self._rebuild_geometry()
 
