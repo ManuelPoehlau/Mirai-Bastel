@@ -15,7 +15,7 @@ def main() -> int:
     # Phase A/B: unittest-Module
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
-    for module_name in ("tests.test_mesh_invariants", "tests.test_topology_mutations"):
+    for module_name in ("tests.test_mesh_invariants", "tests.test_topology_mutations", "tests.test_identity_continuity"):
         suite.addTests(loader.loadTestsFromName(module_name))
 
     runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)

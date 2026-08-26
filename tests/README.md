@@ -13,6 +13,7 @@ python -m tests.run_core_suite
 # Einzelne Module
 python -m unittest tests.test_mesh_invariants -v
 python -m unittest tests.test_topology_mutations -v
+python -m unittest tests.test_identity_continuity -v
 python -m tests.test_core
 ```
 
@@ -23,13 +24,14 @@ python -m tests.test_core
 | `mesh_invariants.py` | A (Hilfe) | Katalog + `assert_mesh_invariants()` |
 | `test_mesh_invariants.py` | A | Struktur-Invarianten, Boundary, gültige IDs |
 | `test_topology_mutations.py` | B | split / collapse / connect (ID-Kontinuität, Adjazenz) |
+| `test_identity_continuity.py` | C | split / collapse / connect: vollständige Vorher/Nachher-ID-Mengen-Diffs (was bleibt/stirbt/entsteht) |
 | `test_core.py` | — | Architekturverträge AD-001/002/003, Serialisierung |
 
-## Hardening-Ergebnis (2026-08-26, Phase A/B)
+## Hardening-Ergebnis (2026-08-26, Phase A/B/C)
 
-**Plan:** `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` §17 Phase A/B
+**Plan:** `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` §17 Phase A/B/C
 
-**Gesamt: PASS** — 16 unittest-Tests + 11 Architekturvertrags-Blöcke, 0 Failures.
+**Gesamt: PASS** — 22 unittest-Tests + 11 Architekturvertrags-Blöcke, 0 Failures.
 
 ### Phase A – Invarianten
 
@@ -68,6 +70,46 @@ Geprüfte Invarianten (über Query-API):
 
 **Produktionscode-Änderungen:** keine.
 
+### Phase C – Identitätskontinuität (2026-08-26)
+
+**Plan:** `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` §17 Phase C
+
+Unterschied zu Phase B: Phase B prüfte die Gültigkeit *einzelner* IDs
+("ist X noch gültig?"). Phase C vergleicht für jede Operation die
+*vollständigen* Vertex-/Edge-/Face-ID-Mengen vor und nach der Mutation
+(Mengendifferenz `entfernt = vorher − nachher`, `neu = nachher − vorher`),
+damit auch nicht explizit erwartete Nebenwirkungen sichtbar würden.
+
+| Operation | Szenario | Ergebnis |
+|---|---|---|
+| `split_edge` | Boundary-Edge (1 Face) | PASS — 1 neuer Vertex, 2 neue Edges, 1 entfernte Edge, Face-ID unverändert |
+| `split_edge` | interne Edge (2 Faces) | PASS — beide Face-IDs bleiben unverändert erhalten, referenzieren danach beide den neuen Mittelpunkt |
+| `collapse_edge` | einfacher Fall (Quad→Dreieck) | PASS — Survivor eindeutig v0, genau 1 Vertex + 1 Edge entfernt, keine neue ID, Face-ID bleibt |
+| `collapse_edge` | Fan (dritte Kante wird umbenannt) | PASS — nur die kollabierte Edge verschwindet als ID; die dritte Kante behält ihre EdgeId, wechselt aber den Endpunkt (v1→v0) |
+| `collapse_edge` | Merge-Zweig (bestehende survivor↔other-Edge) | PASS — zusätzlich zur kollabierten Edge verschwindet die jetzt-redundante zweite Edge; die degenerierte Face wird korrekt entfernt, die überlebende Diagonale referenziert danach nur noch die verbleibende Face |
+| `connect_vertices` | Diagonalen-Split | PASS — alte Face-ID stirbt, 2 neue Face-IDs + 1 neue Edge-ID entstehen, alle Vertex-IDs und bestehenden Edges bleiben unverändert |
+
+**Zusatzuntersuchung (laut Plan gefordert): Liefert der Core genug
+Information, um „was bleibt/stirbt/entsteht" zuverlässig festzustellen?**
+
+Ja, aber nur **extern rekonstruierbar**, nicht **proaktiv zurückgegeben**:
+Ein Aufrufer kann über Vorher-/Nachher-Snapshots der Query-API
+(`all_vertex_ids()`/`all_edge_ids()`/`all_face_ids()` + Mengendifferenz,
+genau wie in `test_identity_continuity.py`) das vollständige Bild ableiten.
+Die Mutationsfunktionen selbst geben aber nur ihre "Headline-IDs" zurück
+(z. B. `collapse_edge()` nur den Survivor) — nicht die vollständige Liste
+aller intern umbenannten/verschmolzenen/entfernten Nebenelemente (z. B.
+die dritte Kante im Fan-Fall). Das deckt sich mit Plan §6–§8/§15: ein
+dediziertes Change-Set/Herkunftssystem ist bewusst nicht Teil dieser
+Phase. Für Phase C reicht das externe Rekonstruieren aus.
+
+**Bewusst nicht getestet:** dieselben Einschränkungen wie Phase B
+(konkrete Face-Zuordnung bei `connect_vertices`, Herkunfts-/Remapping-
+Metadaten — weiterhin außerhalb des Scopes, siehe Plan §16).
+
+**Produktionscode-Änderungen:** keine — alle Diffs entsprechen exakt den
+bereits in `mesh.py` dokumentierten ID-Kontinuitäts-Verträgen.
+
 ### Architekturverträge (`test_core.py`)
 
 Alle 11 Blöcke (AD-001 IDs, split, Query-API, connect, collapse ×2, AD-003 Lifecycle ×3, Selection, Serialisierung): **PASS**.
@@ -84,6 +126,5 @@ Bei einem fehlgeschlagenen Test gilt:
 
 ## Nächste Schritte (Plan §17, noch offen)
 
-- Phase C: Identitätskontinuität explizit (was bleibt/stirbt/entsteht)
-- Phase D: Undo/Redo für Topologieoperationen
+- Phase D: Undo/Redo für Topologieoperationen (split/collapse/connect)
 - Phase E: Serialisierung nach Mutationen (Roundtrip mit Allocator-Zustand)
