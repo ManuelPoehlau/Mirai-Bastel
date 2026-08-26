@@ -35,7 +35,7 @@ class ModelerWindow(pyglet.window.Window):
         self.camera = OrbitCamera()
         self.selection_mode = SelectionMode.VERTEX
         self._hovered_id = None
-        self._debug_face_pick = False
+
         vert = Shader(_VERTEX_SHADER, "vertex")
         frag = Shader(_FRAGMENT_SHADER, "fragment")
         self.program = ShaderProgram(vert, frag)
@@ -66,12 +66,8 @@ class ModelerWindow(pyglet.window.Window):
         if self.selection_mode == SelectionMode.EDGE:
             return pick_nearest_edge(self.camera, self.scene.mesh, x, y, self.width, self.height)
         if self.selection_mode == SelectionMode.FACE:
-            return pick_face(self.camera, self.scene.mesh, x, y, self.width, self.height, debug=self._debug_face_pick)
+            return pick_face(self.camera, self.scene.mesh, x, y, self.width, self.height)
         return None
-
-    def _log_pick_result(self, stage, picked):
-        if self._debug_face_pick and self.selection_mode == SelectionMode.FACE:
-            print(f"[FACE DEBUG] {stage} result={picked!r}")
 
     def _rebuild_geometry(self):
         mesh = self.scene.mesh
@@ -79,7 +75,8 @@ class ModelerWindow(pyglet.window.Window):
         positions = [c for vid in self._vertex_ids_ordered for c in mesh.vertex_position(vid)]
         edge_positions = []
         for eid in mesh.all_edge_ids():
-            va, vb = mesh.edge_vertices(eid); edge_positions.extend(mesh.vertex_position(va)); edge_positions.extend(mesh.vertex_position(vb))
+            va, vb = mesh.edge_vertices(eid)
+            edge_positions.extend(mesh.vertex_position(va)); edge_positions.extend(mesh.vertex_position(vb))
 
         def face_positions_for(face_ids):
             result = []
@@ -97,6 +94,7 @@ class ModelerWindow(pyglet.window.Window):
         self._face_list = self.program.vertex_list(len(face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", face_positions)) if face_positions else None
         self._point_list = self.program.vertex_list(len(self._vertex_ids_ordered), GL_POINTS, batch=self._batch, position=("f", positions))
         self._edge_list = self.program.vertex_list(len(edge_positions)//3, GL_LINES, batch=self._batch, position=("f", edge_positions))
+
         selected_vertex_positions = [c for vid in self.scene.selection.vertices for c in mesh.vertex_position(vid)]
         self._selected_vertex_list = self.program.vertex_list(len(selected_vertex_positions)//3, GL_POINTS, batch=self._batch, position=("f", selected_vertex_positions)) if selected_vertex_positions else None
         selected_edge_positions = []
@@ -105,14 +103,21 @@ class ModelerWindow(pyglet.window.Window):
         self._selected_edge_list = self.program.vertex_list(len(selected_edge_positions)//3, GL_LINES, batch=self._batch, position=("f", selected_edge_positions)) if selected_edge_positions else None
         selected_face_positions = face_positions_for(self.scene.selection.faces)
         self._selected_face_list = self.program.vertex_list(len(selected_face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", selected_face_positions)) if selected_face_positions else None
+
         hover_vertex_positions = []; hover_edge_positions = []; hover_face_positions = []
-        if self._hovered_id is not None:
-            if self.selection_mode == SelectionMode.VERTEX: hover_vertex_positions.extend(mesh.vertex_position(self._hovered_id))
+        # A selected element wins visually over hover while the cursor remains on it.
+        hovered_is_selected = self._hovered_id is not None and (
+            (self.selection_mode == SelectionMode.VERTEX and self._hovered_id in self.scene.selection.vertices) or
+            (self.selection_mode == SelectionMode.EDGE and self._hovered_id in self.scene.selection.edges) or
+            (self.selection_mode == SelectionMode.FACE and self._hovered_id in self.scene.selection.faces)
+        )
+        if self._hovered_id is not None and not hovered_is_selected:
+            if self.selection_mode == SelectionMode.VERTEX:
+                hover_vertex_positions.extend(mesh.vertex_position(self._hovered_id))
             elif self.selection_mode == SelectionMode.EDGE:
                 va, vb = mesh.edge_vertices(self._hovered_id); hover_edge_positions.extend(mesh.vertex_position(va)); hover_edge_positions.extend(mesh.vertex_position(vb))
-            elif self.selection_mode == SelectionMode.FACE: hover_face_positions = face_positions_for([self._hovered_id])
-        if self._debug_face_pick and self.selection_mode == SelectionMode.FACE and self._hovered_id is not None:
-            print(f"[FACE DEBUG] hovered_id={self._hovered_id!r} hover_face_vertices={len(hover_face_positions)//3}")
+            elif self.selection_mode == SelectionMode.FACE:
+                hover_face_positions = face_positions_for([self._hovered_id])
         self._hover_vertex_list = self.program.vertex_list(len(hover_vertex_positions)//3, GL_POINTS, batch=self._batch, position=("f", hover_vertex_positions)) if hover_vertex_positions else None
         self._hover_edge_list = self.program.vertex_list(len(hover_edge_positions)//3, GL_LINES, batch=self._batch, position=("f", hover_edge_positions)) if hover_edge_positions else None
         self._hover_face_list = self.program.vertex_list(len(hover_face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", hover_face_positions)) if hover_face_positions else None
@@ -148,17 +153,19 @@ class ModelerWindow(pyglet.window.Window):
                 glPointSize(12.0); self.program["color"] = (1.0,0.55,0.15); self._selected_vertex_list.draw(GL_POINTS)
 
     def on_mouse_motion(self, x, y, dx, dy):
-        hovered = self._pick(x,y); self._log_pick_result("hover", hovered)
+        hovered = self._pick(x,y)
         if hovered != self._hovered_id:
             self._hovered_id = hovered; self.scene.selection.hovered = hovered; self._rebuild_geometry()
 
     def on_mouse_press(self, x, y, button, modifiers):
         if button == mouse.LEFT:
-            picked = self._pick(x,y); self._log_pick_result("click", picked)
+            picked = self._pick(x,y)
             if picked is None:
                 self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None
             else:
-                self.scene.selection.set({picked}); self._hovered_id = picked; self.scene.selection.hovered = picked
+                self.scene.selection.set({picked})
+                self._hovered_id = picked
+                self.scene.selection.hovered = picked
                 if self.selection_mode == SelectionMode.VERTEX: self._begin_move(); self._drag_mode = "move"
                 else: self._drag_mode = None
             self._rebuild_geometry()
@@ -186,8 +193,6 @@ class ModelerWindow(pyglet.window.Window):
         elif symbol == key.Z and modifiers & key.MOD_CTRL: self.scene.history.undo(); self._rebuild_geometry()
         elif symbol == key.Y and modifiers & key.MOD_CTRL: self.scene.history.redo(); self._rebuild_geometry()
         elif symbol == key.ESCAPE and self._active_move is not None: self._active_move.cancel(); self._active_move=None; self._rebuild_geometry()
-        elif symbol == key.D and modifiers & key.MOD_CTRL:
-            self._debug_face_pick = not self._debug_face_pick; print(f"[FACE DEBUG] {'ON' if self._debug_face_pick else 'OFF'}")
 
     def _begin_move(self):
         context = OperationContext(target=self.scene.mesh, selection=self.scene.selection, history=self.scene.history)
