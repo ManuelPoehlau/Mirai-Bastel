@@ -68,6 +68,9 @@ class TopologyWindow(ModelerWindow):
                 survivor = collapse_selected_edge(
                     self.scene, old_edge, on_restore=self._after_topology_restore
                 )
+                # Selection.set() only replaces the ACTIVE mode. Collapse changes
+                # Edge -> Vertex, so clear all old-mode IDs before switching.
+                self.scene.selection.clear()
                 self.selection_mode = SelectionMode.VERTEX
                 self.scene.selection.mode = self.selection_mode
                 self.scene.selection.set({survivor})
@@ -101,6 +104,9 @@ class TopologyWindow(ModelerWindow):
                 edge_id, _, _ = connect_selected_vertices(
                     self.scene, set(self.scene.selection.vertices), on_restore=self._after_topology_restore
                 )
+                # Selection.set() only replaces the ACTIVE mode. Connect changes
+                # Vertex -> Edge, so clear the old vertex selection first.
+                self.scene.selection.clear()
                 self.selection_mode = SelectionMode.EDGE
                 self.scene.selection.mode = self.selection_mode
                 self.scene.selection.set({edge_id})
