@@ -1,8 +1,10 @@
 # Mirai-Bastel — Human + AI Team Workflow
 
-> **Status:** Project working agreement v0.1
+> **Status:** Project working agreement v0.2
 >
 > This document defines how the human developer and multiple AI systems collaborate on Mirai-Bastel.
+>
+> **Operational rules are summarized in the repository-root [`AGENTS.md`](../AGENTS.md).** This document explains the reasoning and collaboration model in more detail.
 
 ## 1. Why this exists
 
@@ -16,6 +18,7 @@ The main risks of this workflow are:
 - valuable first-pass ideas disappearing into chat history
 - large agents consuming limited monthly usage on poorly specified tasks
 - later discussions accidentally rewriting the historical record
+- documentation slowly becoming duplicated or scattered across the repository
 
 Git is therefore not only the source-code repository. It is also the **project memory and decision record**.
 
@@ -142,7 +145,7 @@ Avoid spending scarce agent usage on vague prompts such as:
 
 Prefer:
 
-> "Implement the topology API described in `docs/architecture/DATA_MODEL.md`, including tests. Do not change the public Selection API."
+> "Implement the topology API described in the relevant architecture document, including tests. Do not change the public Selection API."
 
 ## 8. No silent architecture drift
 
@@ -187,7 +190,44 @@ All AI-generated code is treated like code from another developer:
 
 "The AI wrote it" is never an architectural justification.
 
-## 11. Canonical documents vs. working discussion
+## 11. Documentation governance
+
+The repository documentation has an explicit hierarchy. This is a **permanent project convention**, not a one-time cleanup rule.
+
+### Before creating or moving documentation
+
+1. Read the nearest local `README.md`.
+2. Search for an existing document covering the same subject.
+3. Identify the authoritative destination for the information.
+4. Prefer updating or linking to an existing document over creating a parallel file.
+5. If the role of a document changes, move/merge/rename it rather than leaving competing copies.
+
+### Documentation categories
+
+| Category | Purpose |
+|---|---|
+| Canonical | Current architecture, accepted decisions and requirements |
+| Design | Current interaction and UX principles |
+| Future Ideas | Deliberately deferred ideas and open directions |
+| Research | Evidence and investigation |
+| Experiments | Practical prototypes and observations |
+| Archive | Historical reviews, completed plans and superseded material |
+
+### Single Source of Truth
+
+Important information should have one authoritative home.
+
+Experiment documentation should not silently become a second architecture document. A Topology experiment may record topology-specific observations, while general architecture belongs under `docs/architecture/` and general Selection/Workflow ideas belong in the appropriate design/future-idea documents.
+
+A local README should provide navigation to relevant higher-level documents so an AI does not need to discover the repository structure by accident.
+
+### Keeping documentation current
+
+When code or an experiment changes a documented fact, update the authoritative document in the same logical change whenever practical.
+
+When an experiment is superseded, record the final state and point to the next relevant experiment or decision.
+
+## 12. Canonical documents vs. working discussion
 
 The repository should distinguish between:
 
@@ -213,7 +253,7 @@ The implementation of the current decisions.
 
 Chat is a workspace. **Git is the durable memory.**
 
-## 12. Preserve disagreement
+## 13. Preserve disagreement
 
 A rejected idea can be valuable later.
 
@@ -221,7 +261,7 @@ Do not erase a well-reasoned alternative simply because the team currently rejec
 
 This is particularly important for a project expected to evolve over years.
 
-## 13. Human remains the final integrator
+## 14. Human remains the final integrator
 
 The human project owner has final authority over:
 
@@ -234,7 +274,7 @@ The human project owner has final authority over:
 
 AI systems are collaborators, reviewers and implementation tools — not autonomous project owners.
 
-## 14. The core principle
+## 15. The core principle
 
 > **Capture first. Discuss second. Decide third. Implement fourth.**
 
@@ -242,4 +282,4 @@ And for important AI reviews:
 
 > **Archive the fresh first answer before the conversation can change it.**
 
-This is a project rule intended to keep Mirai-Bastel coherent even as humans, AI systems, tools and development environments change over time.
+The repository-root [`AGENTS.md`](../AGENTS.md) is the short operational guide agents should follow on every task. This document is the detailed working agreement and rationale behind those rules.
