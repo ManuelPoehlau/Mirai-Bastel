@@ -34,8 +34,8 @@ Startet die ursprüngliche Würfel-Testszene.
 python run_topology.py
 ```
 
-Startet eine kontrollierte 3x3-Quad-Grid-Testszene und die erste Gruppe
-interaktiver Topologie-Werkzeuge.
+Startet eine kontrollierte 3x3-Quad-Grid-Testszene und die experimentellen
+Topologie-Werkzeuge.
 
 ## Allgemeine Steuerung
 
@@ -74,49 +74,91 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
 - genau eine Edge auswählen
 - **S** drücken
 - die Edge wird über die vorhandene Core-Primitive `split_edge()` geteilt
+- die beiden neuen Edges werden ausgewählt
 
-**Collapse Edge**
+**Collapse**
 
-- Edge Mode
-- genau eine Edge auswählen
-- **K** drücken
-- die Edge wird über `collapse_edge()` kollabiert
+- **Edge Mode + 1 Edge:** **K** kollabiert die Edge; der verbleibende Vertex
+  wird ausgewählt und der Mode wechselt zu Vertex
+- **Edge Mode + 2+ Edges:** die ausgewählten gültigen Edges werden experimentell
+  nacheinander kollabiert
+- **Vertex Mode + 2+ Vertices:** eine zusammenhängende Auswahl wird
+  experimentell über vorhandene Verbindungs-Edges schrittweise kollabiert
+- Multi-Collapse ist bewusst noch keine endgültige Modeling-Semantik
 
 **Connect Vertices**
 
 - Vertex Mode
-- genau zwei Vertices einer gemeinsamen Face auswählen
+- mindestens zwei Vertices auswählen
 - **C** drücken
-- die vorhandene `connect_vertices()`-Primitive wird verwendet
+- bei mehreren Vertices wird experimentell eine deterministische Kette in
+  ID-Reihenfolge aufgebaut; bereits vorhandene Verbindungen werden übersprungen
+- jede Verbindung nutzt die vorhandene Core-Primitive `connect_vertices()`
+- die erzeugten Edges werden ausgewählt
 
 **Connect Edges**
 
 - Edge Mode
-- genau zwei Edges einer gemeinsamen Face auswählen
+- mindestens zwei Edges auswählen
 - **Shift+C** drücken
-- experimentell werden beide Edges zunächst gesplittet und die beiden neuen
-  Mittelpunkte anschließend über `connect_vertices()` verbunden
+- jede ausgewählte Edge wird zunächst am Mittelpunkt gesplittet
+- die neuen Mittelpunkte werden anschließend experimentell als Kette verbunden
+- die erzeugten Verbindungs-Edges werden ausgewählt
+
+Die Multi-Selection-Verhalten sind **bewusst experimentell**. Insbesondere
+sind Reihenfolge, Gruppierung, zusammenhängende/nicht zusammenhängende
+Auswahl und das Verhalten bei teilweise ungültig werdenden Elementen noch
+Gegenstand des Praxistests.
 
 Die Tool-Schicht liegt bewusst unter `experiments/` und verändert `src/core`
 nicht. Sie ist eine interaktive Übersetzung der bereits vorhandenen Core-
 Primitives, keine neue Produktions-API.
 
-Die Topologie-Mutationen werden im Experiment über die öffentliche
+Die Topologie-Mutationen werden im Experiment derzeit über die öffentliche
 `export_state()`/`load_state()`-API als Snapshot-History-Einträge rückgängig
-machbar gehalten. Das ist bewusst lokal zum Experiment; der gefrorene Core
-wird dadurch nicht erweitert.
+machbar gehalten. Diese History-Anbindung ist momentan **bekannt nicht mit
+dem aktuellen eingefrorenen Core synchronisiert**, da `load_state()` im
+aktuellen Core V1 noch nicht vorhanden ist. Undo/Redo für Topologie ist daher
+vorerst aus dem praktischen Test auszunehmen und wird separat geklärt.
+
+## Multi-Selection Testmatrix
+
+Die nächste praktische Teststufe umfasst bewusst mehrere Auswahlgrößen und
+Topologie-Situationen:
+
+```text
+Collapse
+  ├─ 2 Vertices
+  ├─ 3+ Vertices
+  ├─ 2 Edges
+  ├─ 3+ Edges
+  └─ zusammenhängend / nicht zusammenhängend
+
+Connect Vertices
+  ├─ 2 Vertices
+  ├─ 3 Vertices
+  ├─ 4+ Vertices
+  └─ gültige / ungültige Kombinationen
+
+Connect Edges
+  ├─ 2 Edges
+  ├─ 3 Edges
+  ├─ 4+ Edges
+  └─ zusammenhängend / nicht zusammenhängend
+```
+
+Nicht nur technische Fehler, sondern auch die **Qualität des Ergebnisses**
+und die daraus entstehenden Modeling-/Workflow-Fragen sollen dokumentiert
+werden.
 
 ## Was als Nächstes folgt
 
-Phase 1 soll zunächst praktisch getestet werden:
-
 ```text
-Split Edge
-Collapse Edge
-Connect Vertices
-Connect Edges
+Phase 1 Einzeloperationen       → praktisch grün
         ↓
-Kombinationen + Undo/Redo
+Phase 1 Multi-Selection         → aktueller Test
+        ↓
+Grenzfälle / ungültige Fälle
         ↓
 Loop Insert
 Loop Remove / Dissolve
@@ -159,9 +201,9 @@ viewport/
   picking.py          - Vertex-, Edge- und Face-Picking
   demo_scene.py       - ursprüngliche Würfel-Testszene
   topology_scene.py   - kontrollierte Topology-Testszene
-  topology_tools.py   - experimentelle Phase-1-Topologie-Werkzeuge
+  topology_tools.py  - experimentelle Phase-1-Topologie-Werkzeuge
   app.py              - ursprünglicher V1-Viewport
-  topology_app.py     - Topology-Lab auf Basis von app.py
+  topology_app.py    - Topology-Lab auf Basis von app.py
 run.py                - ursprünglicher V1-Einstiegspunkt
 run_topology.py       - Topology-Lab-Einstiegspunkt
 ```
