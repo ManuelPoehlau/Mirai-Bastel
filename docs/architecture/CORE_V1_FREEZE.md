@@ -57,7 +57,9 @@ Geprüft wurden unter anderem:
 - Versionsprüfung
 - leere Scene
 
-**Gesamtergebnis:** 37/37 unittest-Tests + 11 Architekturvertrags-Blöcke, PASS.
+Die reproduzierbare Standard-Core-Suite umfasst **29 `unittest`-Tests**. Die Architekturverträge aus `tests/test_core.py` werden anschließend separat ausgeführt und enthalten zusätzlich die Basis-Serialisierungsprüfungen. Die dedizierten 8 Phase-E-Tests in `tests/test_scene_serialization.py` existieren als ergänzende, separat ausführbare Regressionstests, sind aber aktuell **nicht Bestandteil von `tests.run_core_suite`**.
+
+**Gesamtergebnis der Standard-Suite:** 29/29 `unittest`-Tests + Architekturvertrags-Checks, PASS.
 
 ## 3. Architekturabgleich mit der langfristigen Vision
 
