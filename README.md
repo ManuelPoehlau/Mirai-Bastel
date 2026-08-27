@@ -50,13 +50,13 @@ There is no planned "finished version". The system is expected to remain alive a
 
 ## Current status
 
-The first Core V1 milestone is complete and has been validated through its automated test suite and review process.
+The first Core V1 milestone is complete, hardened, reviewed and frozen. Its production baseline is under `src/core/`, while the complete experimental milestone remains under `experiments/mirai_bastel_core_V1/` for reference.
 
-A separate `experiments/mirai_bastel_viewport_V1/` Praxistest has also been completed. It connects the V1 Core to a minimal real-time OpenGL viewport and was tested on real hardware. The experiment validated the basic Scene → Mesh → Selection → Move → Commit → History → Undo/Redo path together with camera interaction.
+The interactive Viewport V1 experiment remains under `experiments/mirai_bastel_viewport_V1/`. It has validated the basic Core → Viewport path on real hardware and is now being used as an active research environment for Selection, Workflow and Topology behavior.
 
-The viewport experiment remains deliberately under `experiments/`. It is a reference/prototype, not yet the architecture of the production application.
+The current Topology research is documented centrally in [`experiments/topology/`](experiments/topology/). Phase 1 — interactive use of the existing Core topology primitives — has been practically verified. The next focus is conservative Edge Loop / Edge Ring detection and selection, followed by Loop Insert/Remove and later Extrude experiments.
 
-The next development step is therefore **architectural consolidation**: determine the production `src/` boundaries from the lessons of the Core and Viewport experiments before building the actual application structure.
+**No production Viewport or Modeling structure is frozen yet.** Production `src/` boundaries continue to be derived from validated experiments and explicit architecture decisions.
 
 ## Current V1 direction
 
@@ -76,7 +76,7 @@ The eventual modeler focus includes:
 - Front / Back / Left / Right / Top / Bottom snapping
 - clean and topology-safe mesh data structures
 
-Not all of these are implemented in the current V1 milestone. They describe the intended direction, while individual milestones remain deliberately small.
+Not all of these are implemented in the current milestone. They describe the intended direction, while individual experiments remain deliberately small.
 
 ## Future system areas
 
@@ -96,7 +96,7 @@ The eventual system may grow to include:
 
 These are future areas, not automatic V1 requirements. Their existence must nevertheless be considered when defining Core boundaries so that known future goals are not accidentally made unnecessarily expensive.
 
-For smaller ideas and observations that should not be forgotten, see `docs/future_ideas/`.
+For smaller ideas and observations that should not be forgotten, see [`docs/future_ideas/`](docs/future_ideas/README.md).
 
 ## Historical research
 
@@ -134,9 +134,9 @@ And because this is supposed to remain a place for experimentation, research and
 
 ## Documentation
 
-The `docs/` directory contains the evolving project vision, architecture decisions, historical research and other material that should remain available to both humans and AI collaborators.
+Start with [`docs/README.md`](docs/README.md) for the documentation map and with [`AGENTS.md`](AGENTS.md) for the rules that keep the documentation and collaboration model coherent across humans, Claude, Cursor and future AI agents.
 
-Important architectural decisions are deliberately recorded as they are made. This is part of the project's workflow: fresh reviews and independent AI perspectives should be preserved rather than relying on a long conversation to retain the reasoning.
+The repository deliberately distinguishes between current canonical documents, design principles, deferred future ideas, research and archived historical material. Important decisions should be recorded in Git rather than left only in chat history.
 
 ## Repository structure
 
@@ -144,7 +144,7 @@ Important architectural decisions are deliberately recorded as they are made. Th
 src/          Production application code (currently Core baseline only)
 experiments/  Isolated milestones, prototypes and practical tests
 tests/        Repository-level tests
-docs/         Architecture, research, workflow and future ideas
+docs/         Architecture, design, research, workflow and future ideas
 examples/     Small usage examples
 references/   External/reference material kept with the project
 ```
