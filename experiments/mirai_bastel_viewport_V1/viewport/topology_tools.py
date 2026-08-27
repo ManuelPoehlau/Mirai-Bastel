@@ -60,52 +60,118 @@ def _common_face_for_vertices(mesh, vertex_ids):
 
 
 def connect_selected_vertices(scene, vertex_ids, *, on_restore=None):
-    if len(vertex_ids) != 2:
-        raise TopologyToolError("Connect Vertices benötigt genau 2 ausgewählte Vertices.")
+    if len(vertex_ids) < 2:
+        raise TopologyToolError("Connect Vertices benötigt mindestens 2 Vertices.")
 
-    v_a, v_b = tuple(vertex_ids)
     mesh = scene.mesh
-    if v_a == v_b:
-        raise TopologyToolError("Connect Vertices benötigt zwei verschiedene Vertices.")
-
-    face_id = _common_face_for_vertices(mesh, (v_a, v_b))
-    if face_id is None:
-        raise TopologyToolError("Die beiden Vertices müssen auf einer gemeinsamen Face liegen.")
-
-    if any(set(mesh.edge_vertices(eid)) == {v_a, v_b} for eid in mesh.all_edge_ids()):
-        raise TopologyToolError("Zwischen den beiden Vertices existiert bereits eine Edge.")
-
+    selected = sorted(vertex_ids, key=int)
     before = mesh.export_state()
-    result = mesh.connect_vertices(face_id, v_a, v_b)
+    created = []
+
+    # Experimentelle Multi-Semantik: deterministische Kette in ID-Reihenfolge.
+    for v_a, v_b in zip(selected, selected[1:]):
+        if not mesh.is_valid_vertex(v_a) or not mesh.is_valid_vertex(v_b):
+            continue
+        if any(set(mesh.edge_vertices(eid)) == {v_a, v_b} for eid in mesh.all_edge_ids()):
+            continue
+        face_id = _common_face_for_vertices(mesh, (v_a, v_b))
+        if face_id is None:
+            if not created:
+                raise TopologyToolError("Mindestens zwei aufeinanderfolgende Vertices benötigen eine gemeinsame Face.")
+            break
+        edge_id, _, _ = mesh.connect_vertices(face_id, v_a, v_b)
+        created.append(edge_id)
+
+    if not created:
+        raise TopologyToolError("Keine neue Verbindung möglich.")
+
     _push_snapshot(scene, before, "Connect Vertices", on_restore)
-    return result
+    return created
 
 
 def connect_selected_edges(scene, edge_ids, *, on_restore=None):
-    """Connect Edges für zwei Edges auf einer gemeinsamen Face.
+    """Experimentelles Connect Edges für 2+ Edges."""
+    if len(edge_ids) < 2:
+        raise TopologyToolError("Connect Edges benötigt mindestens 2 Edges.")
 
-    Die vorhandenen Core-Primitives werden bewusst kombiniert: beide Edges
-    werden am Mittelpunkt geteilt, anschließend werden die beiden neuen
-    Vertices innerhalb der gemeinsamen Face verbunden.
-    """
-    if len(edge_ids) != 2:
-        raise TopologyToolError("Connect Edges benötigt genau 2 ausgewählte Edges.")
-
-    first, second = tuple(edge_ids)
     mesh = scene.mesh
-    if first == second:
-        raise TopologyToolError("Connect Edges benötigt zwei verschiedene Edges.")
-
-    common_faces = set(mesh.edge_faces(first)) & set(mesh.edge_faces(second))
-    if not common_faces:
-        raise TopologyToolError("Die beiden Edges müssen eine gemeinsame Face haben.")
-
-    face_id = next(iter(common_faces))
+    selected = sorted(edge_ids, key=int)
     before = mesh.export_state()
+    midpoints = []
 
-    midpoint_a, _, _ = mesh.split_edge(first)
-    midpoint_b, _, _ = mesh.split_edge(second)
-    mesh.connect_vertices(face_id, midpoint_a, midpoint_b)
+    for eid in selected:
+        if not mesh.is_valid_edge(eid):
+            continue
+        mid, _, _ = mesh.split_edge(eid)
+        midpoints.append(mid)
+
+    if len(midpoints) < 2:
+        raise TopologyToolError("Weniger als 2 gültige Edges konnten verarbeitet werden.")
+
+    created = []
+    for v_a, v_b in zip(midpoints, midpoints[1:]):
+        face_id = _common_face_for_vertices(mesh, (v_a, v_b))
+        if face_id is None:
+            if not created:
+                raise TopologyToolError("Die erzeugten Edge-Mittelpunkte benötigen eine gemeinsame Face.")
+            break
+        edge_id, _, _ = mesh.connect_vertices(face_id, v_a, v_b)
+        created.append(edge_id)
+
+    if not created:
+        raise TopologyToolError("Keine neue Verbindung zwischen den Edge-Mittelpunkten möglich.")
 
     _push_snapshot(scene, before, "Connect Edges", on_restore)
-    return midpoint_a, midpoint_b
+    return created
+
+
+def collapse_selected_edges(scene, edge_ids, *, on_restore=None):
+    """Experimentelles Multi-Collapse für 2+ ausgewählte Edges."""
+    if len(edge_ids) < 2:
+        raise TopologyToolError("Collapse Edges benötigt mindestens 2 Edges.")
+
+    mesh = scene.mesh
+    before = mesh.export_state()
+    survivors = []
+
+    for eid in sorted(edge_ids, key=int):
+        if not mesh.is_valid_edge(eid):
+            continue
+        survivors.append(mesh.collapse_edge(eid))
+
+    if not survivors:
+        raise TopologyToolError("Keine gültige Edge konnte kollabiert werden.")
+
+    _push_snapshot(scene, before, "Collapse Edges", on_restore)
+    return survivors
+
+
+def collapse_selected_vertices(scene, vertex_ids, *, on_restore=None):
+    """Experimentelles Multi-Collapse für 2+ ausgewählte Vertices."""
+    if len(vertex_ids) < 2:
+        raise TopologyToolError("Collapse Vertices benötigt mindestens 2 Vertices.")
+
+    mesh = scene.mesh
+    active = set(vertex_ids)
+    before = mesh.export_state()
+    survivors = []
+
+    while len(active) > 1:
+        candidate = None
+        for eid in mesh.all_edge_ids():
+            va, vb = mesh.edge_vertices(eid)
+            if va in active and vb in active:
+                candidate = eid
+                break
+        if candidate is None:
+            break
+        survivor = mesh.collapse_edge(candidate)
+        active = {v for v in active if mesh.is_valid_vertex(v)}
+        active.add(survivor)
+        survivors.append(survivor)
+
+    if not survivors:
+        raise TopologyToolError("Keine Edge zwischen den ausgewählten Vertices gefunden.")
+
+    _push_snapshot(scene, before, "Collapse Vertices", on_restore)
+    return survivors
