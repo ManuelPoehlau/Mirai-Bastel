@@ -4,6 +4,18 @@ Dieser Bereich ist die **Spielwiese für Topologie-Manipulation**.
 
 Hier dürfen interaktive und algorithmische Experimente entstehen, ohne dass daraus automatisch Produktionsarchitektur oder Core-Änderungen werden. Ziel ist, möglichst früh herauszufinden, welche Topologie-Operationen, Datenbeziehungen und Bedienkonzepte Mirai-Bastel für seine langfristige Vision benötigt.
 
+## Dokumentationsgrenze
+
+Dieses Dokument ist der **Single Source of Truth für den aktiven Topology-Experimentplan**: Phasen, Reihenfolge als Orientierung, gemeinsame Prüfmatrix und aktuell bekannte Topology-spezifische Forschungsfragen.
+
+Allgemeine Selection-/Workflow-Prinzipien werden nicht hier dupliziert:
+
+- [`Selection Experiment`](../mirai_bastel_viewport_V1/SELECTION_MODES.md)
+- [`Selection Future Ideas`](../../docs/future_ideas/SELECTION.md)
+- [`Workflow Design`](../../docs/design/WORKFLOW.md)
+
+Architekturverträge bleiben unter `docs/architecture/`.
+
 ## Forschungsrichtung
 
 Mirai-Bastel soll nicht nur ein weiterer Modeler werden. Ein zentraler Forschungsbereich ist die robuste Verbindung von
@@ -20,73 +32,92 @@ Insbesondere wollen wir früh untersuchen, was mit Deformationsdaten passiert, w
 
 Das ist bewusst ein **Forschungsziel**, keine bereits festgelegte technische Lösung.
 
-## Erste Experimentgruppe: Insert ↔ Remove
+## Phase 1 — vorhandene Core-Primitives als Werkzeuge
 
-Die ersten Experimente konzentrieren sich auf zwei grundlegende und gegensätzliche Fälle.
+**Status: abgeschlossen und praktisch verifiziert.**
 
-### 1. Loop Insert
+Die erste Stufe hat bewusst keine neue Core-Funktion eingeführt. Vorhandene, durch Core-Hardening-Tests abgesicherte Primitive wurden interaktiv im V1-Viewport benutzt:
 
-Neue Geometrie wird **innerhalb einer bestehenden Struktur** erzeugt.
+1. **Split Edge** → `split_edge()`
+2. **Collapse Edge** → `collapse_edge()`
+3. **Connect Vertices** → `connect_vertices()`
+4. **Connect Edges** → experimentelle Kombination aus `split_edge()` + `connect_vertices()`
+
+Zusätzlich wurden Mehrfachauswahl-Fälle für Collapse/Connect untersucht.
+
+Praktische Beobachtungen:
+
+- einzelne Vertex-/Edge-Connect-Fälle funktionieren wie erwartet;
+- Split und Collapse funktionieren in den untersuchten Fällen;
+- nicht zulässige Verbindungen ohne gemeinsames Face werden abgelehnt;
+- Collapse kann bei sehr kleiner Restgeometrie zu freischwebenden Edges führen; das ist für die Primitive logisch, für ein späteres Modeler-Tool aber eine Workflow-/Validierungsfrage;
+- Selection/Mode nach einer Operation ist ein wichtiger eigener Workflow-Aspekt;
+- Undo/Redo der Topology-Tools ist derzeit **noch nicht abgeschlossen**, weil der experimentelle Command auf `Mesh.load_state()` angewiesen ist, das im aktuellen Core V1 nicht vorhanden ist. Das wird als eigener späterer Punkt behandelt und nicht als erledigte Funktion angenommen.
+
+## Phase 2 — Loop / Ring Detection und Selection
+
+**Nächster Forschungsbereich.**
+
+Zuerst wird konservativ untersucht, ob Edge Loops und Edge Rings zuverlässig erkannt und ausgewählt werden können.
 
 ```text
-A ───────────────── B
-          ↓
-A ─────── X ─────── B
+Edge selection
+      ↓
+Loop / Ring traversal
+      ↓
+selected edge set
 ```
+
+Erst wenn die Erkennung ausreichend zuverlässig ist, werden darauf aufbauende Operationen untersucht:
+
+- Loop Insert
+- Loop Cut
+- Loop Slide
+- weitere Loop-/Ring-Operationen
+
+Die Erkennung selbst ist der wichtige erste Baustein; die spätere Operation darf nicht voraussetzen, dass eine unzuverlässige Traversierung bereits „irgendwie“ funktioniert.
+
+## Phase 3 — Loop Insert / Loop Remove
+
+Die beiden zusammengehörigen Fälle werden als nächste große Forschungsgruppe betrachtet.
+
+### Loop Insert
+
+Neue Geometrie wird innerhalb einer bestehenden Struktur erzeugt.
 
 Zu untersuchen:
 
-- Welche Vertices / Edges / Faces entstehen?
-- Welche Beziehungen entstehen zwischen alten und neuen Elementen?
-- Welche IDs bleiben erhalten?
-- Welche IDs sind neu?
-- Lässt sich die Herkunft neuer Elemente sinnvoll beschreiben?
-- Wie könnte ein späteres Skinning-System Weights für `X` bestimmen?
-- Wie könnte ein Morph-System entsprechende Daten behandeln?
+- entstehende Vertices / Edges / Faces
+- Beziehungen zwischen alten und neuen Elementen
+- ID-Kontinuität
+- Herkunft/Provenance
+- spätere Skin-Weight-Übertragung
+- spätere Morph-Delta-Übertragung
 
-Beispielhafte Forschungsfrage:
-
-```text
-Weight(X) = ?
-MorphDelta(X) = ?
-```
-
-Mögliche Strategien wie Interpolation sind **Hypothesen**, keine Architekturvorgaben.
-
-### 2. Loop Remove / Dissolve
+### Loop Remove / Dissolve
 
 Bestehende Geometrie wird reduziert bzw. zusammengeführt.
 
-```text
-A ─── X ─── B
-      ↓
-A ──────── B
-```
-
 Zu untersuchen:
 
-- Welche Elemente verschwinden?
-- Welche Elemente bleiben erhalten?
-- Welche IDs bleiben erhalten?
-- Müssen Daten mehrerer Elemente zusammengeführt werden?
-- Welche Informationen wären für Skin Weights und Morph-Daten erforderlich?
-- Brauchen wir später Herkunfts-/Provenance-Informationen?
+- welche Elemente verschwinden
+- welche IDs erhalten bleiben
+- welche Daten mehrerer Elemente später zusammengeführt werden müssten
+- ob Herkunfts-/Provenance-Informationen benötigt werden
 
-**Insert und Remove sollen als zusammengehörige Forschungsgruppe betrachtet werden.** Die genaue Implementierungsreihenfolge ist nicht entscheidend; wichtig ist, dass beide Richtungen untersucht werden.
+Insert und Remove werden gemeinsam bewertet; die genaue Reihenfolge ist weniger wichtig als die vollständige Untersuchung beider Richtungen.
 
-## Danach: Extrude
+## Phase 4 — Extrude
 
 Als nächster größerer Topologie-Fall soll **Extrude** untersucht werden.
 
 ```text
-Face
-  ↓
-Extrude
-  ↓
+Face / Face Group
+       ↓
+    Extrude
+       ↓
 neue Vertices + Edges + Faces
 ```
-
-Extrude ist besonders interessant, weil nicht nur einzelne Elemente entstehen, sondern eine zusammenhängende neue Topologie mit räumlicher Bedeutung.
 
 Zu untersuchen sind insbesondere:
 
@@ -94,54 +125,54 @@ Zu untersuchen sind insbesondere:
 - Auswahl der extrudierten Region
 - Normal-/Richtungsfragen
 - ID- und Herkunftsbeziehungen
-- Undo/Redo
-- mögliche Übertragung zukünftiger Deformationsdaten
+- History
+- spätere Übertragung von Deformationsdaten
+- interaktives Verhalten
 
-## Weitere mögliche Topologie-Experimente
+## Phase 5+ — weitere Topologie-Experimente
 
-Nach den ersten drei Bereichen können je nach Erkenntnisgewinn weitere Experimente folgen, beispielsweise:
+Je nach Erkenntnisgewinn können danach folgen:
 
 - Inset
 - Bevel
 - Bridge
-- Connect
-- weitere Dissolve-Varianten
-- Edge-/Ring-/Loop-Operationen
-- Subdivision bzw. gezieltes Hinzufügen von Geometrie
+- weitere Connect-/Dissolve-Varianten
+- Loop Slide
+- Subdivision-nahe Geometrieoperationen
 - größere kombinierte Topologieänderungen
 - Retopology-nahe Verfahren
 
-Die Liste ist **offen und nicht als starre Feature-Roadmap gedacht**.
+Die Liste ist **offen und keine starre Feature-Roadmap**.
 
 ## Nicht nur Einzeloperationen testen
 
-Die langfristige Robustheit lässt sich nicht durch eine einzelne erfolgreiche Operation beweisen. Wir müssen unterschiedliche Situationen kombinieren.
+Die langfristige Robustheit lässt sich nicht durch eine einzelne erfolgreiche Operation beweisen.
 
 Beispielsweise:
 
 ```text
-Insert
+Split
   ↓
-Deform
+Connect
   ↓
-Remove
+Collapse
   ↓
-Deform
+weitere Änderung
 ```
 
-oder:
+und später:
 
 ```text
-Deform
+Topologie ändern
   ↓
-Insert
+Deform
   ↓
 weitere Topologieänderung
   ↓
-Deform
+Deform erneut auswerten
 ```
 
-Später auch:
+Noch später:
 
 ```text
 Extrude
@@ -159,11 +190,11 @@ Morph
 weitere Topologieänderung
 ```
 
-Genau solche Kombinationen sind langfristig interessanter als isolierte Demo-Funktionen.
+Solche Kombinationen sind langfristig interessanter als isolierte Demo-Funktionen.
 
 ## Gemeinsame Prüfmatrix
 
-Bei jeder relevanten Topologieänderung sollten wir nach Möglichkeit dieselben Fragen stellen:
+Bei jeder relevanten Topologieänderung sollten nach Möglichkeit dieselben Fragen gestellt werden:
 
 1. **Topologie:** Was entsteht, verschwindet oder ändert sich?
 2. **Identität:** Welche IDs bleiben erhalten, welche entstehen neu?
@@ -174,14 +205,13 @@ Bei jeder relevanten Topologieänderung sollten wir nach Möglichkeit dieselben 
 7. **Morphing:** Wie könnten Morph-Deltas erhalten, interpoliert oder zusammengeführt werden?
 8. **Kombinationen:** Funktioniert das Verhalten auch nach mehreren aufeinanderfolgenden Mutationen?
 9. **Benutzbarkeit:** Ist die Operation später sinnvoll interaktiv bedienbar?
+10. **Workflow:** Was passiert mit Selection und aktivem Selection Mode nach der Operation?
 
 Damit testen wir nicht nur, **ob eine Operation funktioniert**, sondern ob sie eine brauchbare Grundlage für das spätere System bildet.
 
 ## Beziehung zum Core V1
 
-`src/core` V1 ist eingefroren.
-
-Bereits vorhandene Core-Fähigkeiten wie `split_edge`, `collapse_edge` und `connect_vertices` bilden eine technische Grundlage. Neue Experimente dürfen aber zeigen, dass zukünftige Produktionsfunktionen weitere Core-Fähigkeiten benötigen.
+Der Core V1 ist eingefroren. Topology-Experimente dürfen zeigen, dass eine zukünftige Produktionsfunktion weitere Core-Fähigkeiten benötigt. Das bedeutet nicht automatisch, dass diese Fähigkeit sofort in `src/core` eingebaut wird.
 
 Der bevorzugte Weg bleibt:
 
@@ -200,29 +230,9 @@ Core-/Production-Erweiterung
 
 Nicht jede experimentelle Operation muss jemals Produktionscode werden.
 
-## Geplante grobe Reihenfolge
-
-```text
-┌────────────────────────────────────┐
-│  1. Loop Insert                    │
-│  2. Loop Remove / Dissolve         │
-│                                    │
-│  → gemeinsam als Insert/Remove-    │
-│    Forschungsgruppe betrachten     │
-├────────────────────────────────────┤
-│  3. Extrude                        │
-├────────────────────────────────────┤
-│  4. weitere Topologie-Operationen  │
-├────────────────────────────────────┤
-│  5. Kombinationen / Edge Cases     │
-└────────────────────────────────────┘
-```
-
-Diese Reihenfolge ist eine **Orientierung**, keine starre Priorisierung. Alle relevanten Mutationssituationen müssen langfristig untersucht werden.
-
 ## Brücke zu Deformation
 
-Sobald die grundlegenden Topologieoperationen funktionieren, sollen sie bewusst mit frühen Deformations-Experimenten verbunden werden:
+Sobald die grundlegenden Topologieoperationen ausreichend verstanden sind, sollen sie bewusst mit frühen Deformations-Experimenten verbunden werden:
 
 ```text
 Mesh
