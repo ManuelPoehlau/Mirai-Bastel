@@ -12,6 +12,8 @@ from .topology_scene import build_topology_scene
 from .topology_tools import (
     TopologyToolError,
     collapse_selected_edge,
+    collapse_selected_edges,
+    collapse_selected_vertices,
     connect_selected_edges,
     connect_selected_vertices,
     split_selected_edge,
@@ -62,57 +64,81 @@ class TopologyWindow(ModelerWindow):
                 return True
 
             if symbol == key.K and not (modifiers & key.MOD_SHIFT):
-                if self.selection_mode != SelectionMode.EDGE or len(self.scene.selection.edges) != 1:
-                    raise TopologyToolError("Collapse Edge: genau 1 Edge auswählen.")
-                old_edge = next(iter(self.scene.selection.edges))
-                survivor = collapse_selected_edge(
-                    self.scene, old_edge, on_restore=self._after_topology_restore
+                if self.selection_mode == SelectionMode.VERTEX:
+                    selected = set(self.scene.selection.vertices)
+                    if len(selected) < 2:
+                        raise TopologyToolError("Collapse Vertices: mindestens 2 Vertices auswählen.")
+                    survivors = collapse_selected_vertices(
+                        self.scene, selected, on_restore=self._after_topology_restore
+                    )
+                    self.scene.selection.clear()
+                    self.scene.selection.mode = SelectionMode.VERTEX
+                    survivor = survivors[-1]
+                    self.scene.selection.set({survivor})
+                    self._hovered_id = survivor
+                    self._rebuild_geometry()
+                    self._set_topology_caption(f"Collapse {len(selected)} Vertices → Vertex {survivor}")
+                    return True
+
+                if self.selection_mode != SelectionMode.EDGE:
+                    raise TopologyToolError("Collapse: Vertex oder Edge Mode verwenden.")
+
+                selected = set(self.scene.selection.edges)
+                if len(selected) == 0:
+                    raise TopologyToolError("Collapse Edge: mindestens 1 Edge auswählen.")
+                if len(selected) == 1:
+                    old_edge = next(iter(selected))
+                    survivor = collapse_selected_edge(
+                        self.scene, old_edge, on_restore=self._after_topology_restore
+                    )
+                    self.scene.selection.clear()
+                    self.selection_mode = SelectionMode.VERTEX
+                    self.scene.selection.mode = self.selection_mode
+                    self.scene.selection.set({survivor})
+                    self._hovered_id = survivor
+                    self._rebuild_geometry()
+                    self._set_topology_caption(f"Collapse → Vertex {survivor}")
+                    return True
+
+                survivors = collapse_selected_edges(
+                    self.scene, selected, on_restore=self._after_topology_restore
                 )
-                # Selection.set() only replaces the ACTIVE mode. Collapse changes
-                # Edge -> Vertex, so clear all old-mode IDs before switching.
+                valid_survivors = [v for v in survivors if self.scene.mesh.is_valid_vertex(v)]
                 self.scene.selection.clear()
                 self.selection_mode = SelectionMode.VERTEX
                 self.scene.selection.mode = self.selection_mode
-                self.scene.selection.set({survivor})
-                self._hovered_id = survivor
+                if valid_survivors:
+                    survivor = valid_survivors[-1]
+                    self.scene.selection.set({survivor})
+                    self._hovered_id = survivor
                 self._rebuild_geometry()
-                self._set_topology_caption(f"Collapse → Vertex {survivor}")
+                self._set_topology_caption(f"Collapse {len(selected)} Edges")
                 return True
 
             if symbol == key.C and modifiers & key.MOD_SHIFT:
-                if self.selection_mode != SelectionMode.EDGE or len(self.scene.selection.edges) != 2:
-                    raise TopologyToolError("Connect Edges: genau 2 Edges auswählen.")
-                midpoint_a, midpoint_b = connect_selected_edges(
-                    self.scene, set(self.scene.selection.edges), on_restore=self._after_topology_restore
+                if self.selection_mode != SelectionMode.EDGE or len(self.scene.selection.edges) < 2:
+                    raise TopologyToolError("Connect Edges: mindestens 2 Edges auswählen.")
+                selected = set(self.scene.selection.edges)
+                created = connect_selected_edges(
+                    self.scene, selected, on_restore=self._after_topology_restore
                 )
-                connecting_edge = None
-                for eid in self.scene.mesh.all_edge_ids():
-                    if set(self.scene.mesh.edge_vertices(eid)) == {midpoint_a, midpoint_b}:
-                        connecting_edge = eid
-                        break
-                if connecting_edge is None:
-                    raise TopologyToolError("Connect Edges: Ergebnis-Edge nicht gefunden.")
-                self.scene.selection.set({connecting_edge})
+                self.scene.selection.set(set(created))
                 self._hovered_id = None
                 self._rebuild_geometry()
-                self._set_topology_caption(f"Connect Edges → Edge {connecting_edge}")
+                self._set_topology_caption(f"Connect {len(selected)} Edges → {len(created)} Edges")
                 return True
 
             if symbol == key.C and not (modifiers & key.MOD_SHIFT):
-                if self.selection_mode != SelectionMode.VERTEX or len(self.scene.selection.vertices) != 2:
-                    raise TopologyToolError("Connect Vertices: genau 2 Vertices auswählen.")
-                edge_id, _, _ = connect_selected_vertices(
-                    self.scene, set(self.scene.selection.vertices), on_restore=self._after_topology_restore
+                if self.selection_mode != SelectionMode.VERTEX or len(self.scene.selection.vertices) < 2:
+                    raise TopologyToolError("Connect Vertices: mindestens 2 Vertices auswählen.")
+                selected = set(self.scene.selection.vertices)
+                created = connect_selected_vertices(
+                    self.scene, selected, on_restore=self._after_topology_restore
                 )
-                # Selection.set() only replaces the ACTIVE mode. Connect changes
-                # Vertex -> Edge, so clear the old vertex selection first.
-                self.scene.selection.clear()
-                self.selection_mode = SelectionMode.EDGE
-                self.scene.selection.mode = self.selection_mode
-                self.scene.selection.set({edge_id})
+                self.scene.selection.set(set(created))
                 self._hovered_id = None
                 self._rebuild_geometry()
-                self._set_topology_caption(f"Connect Vertices → Edge {edge_id}")
+                self._set_topology_caption(f"Connect {len(selected)} Vertices → {len(created)} Edges")
                 return True
         except TopologyToolError as exc:
             self._set_topology_caption(f"FEHLER: {exc}")
