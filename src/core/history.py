@@ -8,9 +8,14 @@ Architekturvertrag:
   harte Abhängigkeit auf MeshOperation oder Mesh (§15 Punkt 5). Damit
   kann später z. B. eine Rig-Pose-Änderung dieselbe HistoryStack-Klasse
   verwenden, ohne dass diese Klasse geändert werden muss.
-- Ein History-Eintrag entsteht ausschließlich über push(), und push()
-  wird ausschließlich von Operation.commit() aufgerufen (siehe
-  operation.py) - nie aus update().
+- Ein History-Eintrag entsteht ausschließlich über push(). Für
+  interaktive Operationen (z. B. MoveOperation) ruft ausschließlich
+  Operation.commit() push() auf - nie aus update() (siehe operation.py).
+  Für atomare, nicht-interaktive Mutationen ohne Operation-Lebenszyklus
+  (split_edge/collapse_edge/connect_vertices, siehe
+  operations/topology.py MeshStateCommand) bauen Aufrufer das Command
+  selbst und rufen push() direkt auf - Mesh selbst bleibt dabei bewusst
+  ohne jede History-Abhängigkeit (§15 Punkt 5).
 - Kein Undo-Baum, kein Merge, keine Cross-Subsystem-Transaktionen (§10) -
   ein einfacher linearer Stack genügt für V1.
 """

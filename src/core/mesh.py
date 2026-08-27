@@ -432,23 +432,52 @@ class Mesh:
             },
         }
 
-    @classmethod
-    def from_state(cls, state: dict) -> "Mesh":
-        mesh = cls()
+    def load_state(self, state: dict) -> None:
+        """Ersetzt den kompletten Inhalt DIESES Mesh-Objekts durch `state`
+        (wie von export_state() erzeugt) - IN-PLACE, im Unterschied zu
+        from_state() (Classmethod), das ein NEUES Mesh-Objekt erzeugt.
+
+        Grund für die In-Place-Variante: Scene/Selection/Viewport halten
+        eine Referenz auf genau diese Mesh-Instanz. Ein Austausch des
+        ganzen Objekts (wie from_state es tut) würde diese Referenzen
+        ungültig machen. Wird für Undo/Redo von Topologie-Mutationen
+        gebraucht (siehe MeshStateCommand in operations/topology.py,
+        Hardening-Plan §17 Phase D).
+
+        ID-Kontinuität (AD-001): Die Allocator-Zählerstände werden - wie
+        bei from_state() - nur VORWÄRTS gesetzt (restore_counter()), NIE
+        zurückgedreht. Das ist beim Undo bewusst so: eine einmal vergebene
+        ID darf laut AD-001 innerhalb der Session nie wieder ausgegeben
+        werden, auch nicht, nachdem ihr Element durch ein Undo wieder
+        verschwunden ist. restore_counter() setzt den Zähler ohnehin nur
+        vorwärts (siehe ids.py) - beim Undo (Zielzustand hat einen
+        niedrigeren gespeicherten Zählerstand als aktuell) bleibt der
+        Zähler deshalb unverändert auf dem höheren, aktuellen Wert.
+        """
+        self._vertices.clear()
+        self._edges.clear()
+        self._faces.clear()
+        self._edge_lookup.clear()
+
         for vid_raw, pos in state["vertices"].items():
-            mesh._vertices[VertexId(int(vid_raw))] = _VertexData(position=tuple(pos))
+            self._vertices[VertexId(int(vid_raw))] = _VertexData(position=tuple(pos))
         for eid_raw, edata in state["edges"].items():
             eid = EdgeId(int(eid_raw))
             v0, v1 = VertexId(edata["v0"]), VertexId(edata["v1"])
-            mesh._edges[eid] = _EdgeData(
+            self._edges[eid] = _EdgeData(
                 v0=v0, v1=v1, faces=[FaceId(f) for f in edata["faces"]]
             )
-            mesh._edge_lookup[frozenset((v0, v1))] = eid
+            self._edge_lookup[frozenset((v0, v1))] = eid
         for fid_raw, boundary in state["faces"].items():
             fid = FaceId(int(fid_raw))
-            mesh._faces[fid] = _FaceData(boundary=[VertexId(v) for v in boundary])
+            self._faces[fid] = _FaceData(boundary=[VertexId(v) for v in boundary])
 
-        mesh._vertex_alloc.restore_counter(state["vertex_id_counter"])
-        mesh._edge_alloc.restore_counter(state["edge_id_counter"])
-        mesh._face_alloc.restore_counter(state["face_id_counter"])
+        self._vertex_alloc.restore_counter(state["vertex_id_counter"])
+        self._edge_alloc.restore_counter(state["edge_id_counter"])
+        self._face_alloc.restore_counter(state["face_id_counter"])
+
+    @classmethod
+    def from_state(cls, state: dict) -> "Mesh":
+        mesh = cls()
+        mesh.load_state(state)
         return mesh
