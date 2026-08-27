@@ -10,8 +10,8 @@ Der ursprüngliche Viewport-Test prüft weiterhin die Pipeline
 Scene -> Mesh -> Selection -> Operation -> Commit -> History -> Undo/Redo
 ```
 
-Zusätzlich enthält der Experimentbereich jetzt einen **Topology Lab** auf
-Basis derselben Viewport-/Picking-/Selection-Infrastruktur.
+Zusätzlich enthält der Experimentbereich einen **Topology Lab** auf Basis
+derselben Viewport-/Picking-/Selection-Infrastruktur.
 
 ## Setup
 
@@ -84,7 +84,11 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
   nacheinander kollabiert
 - **Vertex Mode + 2+ Vertices:** eine zusammenhängende Auswahl wird
   experimentell über vorhandene Verbindungs-Edges schrittweise kollabiert
-- Multi-Collapse ist bewusst noch keine endgültige Modeling-Semantik
+- Multi-Collapse wurde praktisch in beiden Modi bis zu den topologischen
+  Grenzfällen getestet und verhält sich erwartungsgemäß.
+- Ein weiterer Collapse kann bei zu wenig verbleibender Geometrie zu
+  degenerierten/freischwebenden Edges führen; dies ist als spätere
+  Gültigkeitsregel dokumentiert und noch nicht Teil von Phase 1.
 
 **Connect Vertices**
 
@@ -94,7 +98,8 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
 - bei mehreren Vertices wird experimentell eine deterministische Kette in
   ID-Reihenfolge aufgebaut; bereits vorhandene Verbindungen werden übersprungen
 - jede Verbindung nutzt die vorhandene Core-Primitive `connect_vertices()`
-- die erzeugten Edges werden ausgewählt
+- die erzeugten Edges werden ausgewählt und der Selection Mode wechselt zu Edge
+- Connect zwischen Vertices ohne gemeinsame Face wird korrekt abgelehnt
 
 **Connect Edges**
 
@@ -104,11 +109,47 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
 - jede ausgewählte Edge wird zunächst am Mittelpunkt gesplittet
 - die neuen Mittelpunkte werden anschließend experimentell als Kette verbunden
 - die erzeugten Verbindungs-Edges werden ausgewählt
+- zwei nicht zusammenhängende Edges werden aktuell nicht sinnvoll „verbunden“,
+  sondern führen zu einer experimentellen Split-Semantik; dies bleibt als
+  offene Modeling-Semantik bestehen und ist nicht als endgültiges Verhalten
+  festgelegt.
 
-Die Multi-Selection-Verhalten sind **bewusst experimentell**. Insbesondere
-sind Reihenfolge, Gruppierung, zusammenhängende/nicht zusammenhängende
-Auswahl und das Verhalten bei teilweise ungültig werdenden Elementen noch
-Gegenstand des Praxistests.
+### Phase-1-Ergebnis
+
+Die vier Phase-1-Primitives wurden praktisch geprüft:
+
+```text
+Split Edge          → 1 Edge              ✅
+Collapse Edge       → 1 Edge              ✅
+Connect Vertices    → 2 Vertices          ✅
+Connect Edges       → 2 Edges              ✅
+
+Multi-Selection
+Collapse Vertices   → 2+ Vertices         ✅
+Collapse Edges      → 2+ Edges             ✅
+Connect Vertices    → 3+                  ⚠️ experimentell, Auswahl-State gefixt
+Connect Edges       → 3+                  ⚠️ experimentelle Semantik
+```
+
+Ein konkreter Viewport-Bug bei **Connect Vertices mit 3+ Vertices** wurde
+behoben: Die erzeugten `EdgeId`s dürfen nicht in der Vertex-Selection landen;
+das Ergebnis wird jetzt explizit als Edge-Selection behandelt.
+
+Die folgenden Punkte bleiben bewusst offen und werden später erneut bewertet:
+
+- Multi-Connect-Semantik für mehr als zwei Elemente
+- Connect Edges bei nicht zusammenhängenden Edges
+- Mindesttopologie für Collapse und Vermeidung degenerierter Ergebnisse
+- Post-Operation Selection / Mode-Verhalten
+- Undo/Redo für Topologie über `load_state()` (separates Core-Thema)
+
+Damit ist **Topology Phase 1 als Experiment abgeschlossen**. Die nächsten
+Topologie-Experimente beginnen mit Loop Insert sowie Loop Remove / Dissolve,
+gefolgt von Extrude.
+
+Die Multi-Selection-Verhalten waren bewusst experimentell. Nicht nur
+technische Fehler, sondern auch die Qualität des Ergebnisses und die daraus
+entstehenden Modeling-/Workflow-Fragen wurden beobachtet und dokumentiert.
 
 Die Tool-Schicht liegt bewusst unter `experiments/` und verändert `src/core`
 nicht. Sie ist eine interaktive Übersetzung der bereits vorhandenen Core-
@@ -121,49 +162,17 @@ dem aktuellen eingefrorenen Core synchronisiert**, da `load_state()` im
 aktuellen Core V1 noch nicht vorhanden ist. Undo/Redo für Topologie ist daher
 vorerst aus dem praktischen Test auszunehmen und wird separat geklärt.
 
-## Multi-Selection Testmatrix
-
-Die nächste praktische Teststufe umfasst bewusst mehrere Auswahlgrößen und
-Topologie-Situationen:
-
-```text
-Collapse
-  ├─ 2 Vertices
-  ├─ 3+ Vertices
-  ├─ 2 Edges
-  ├─ 3+ Edges
-  └─ zusammenhängend / nicht zusammenhängend
-
-Connect Vertices
-  ├─ 2 Vertices
-  ├─ 3 Vertices
-  ├─ 4+ Vertices
-  └─ gültige / ungültige Kombinationen
-
-Connect Edges
-  ├─ 2 Edges
-  ├─ 3 Edges
-  ├─ 4+ Edges
-  └─ zusammenhängend / nicht zusammenhängend
-```
-
-Nicht nur technische Fehler, sondern auch die **Qualität des Ergebnisses**
-und die daraus entstehenden Modeling-/Workflow-Fragen sollen dokumentiert
-werden.
-
 ## Was als Nächstes folgt
 
 ```text
-Phase 1 Einzeloperationen       → praktisch grün
-        ↓
-Phase 1 Multi-Selection         → aktueller Test
-        ↓
-Grenzfälle / ungültige Fälle
+Topology Phase 1 → abgeschlossen
         ↓
 Loop Insert
 Loop Remove / Dissolve
         ↓
 Extrude
+        ↓
+weitere Topologieoperationen
 ```
 
 Die langfristige Forschungsrichtung ist in
@@ -201,9 +210,9 @@ viewport/
   picking.py          - Vertex-, Edge- und Face-Picking
   demo_scene.py       - ursprüngliche Würfel-Testszene
   topology_scene.py   - kontrollierte Topology-Testszene
-  topology_tools.py  - experimentelle Phase-1-Topologie-Werkzeuge
+  topology_tools.py   - experimentelle Phase-1-Topologie-Werkzeuge
   app.py              - ursprünglicher V1-Viewport
-  topology_app.py    - Topology-Lab auf Basis von app.py
+  topology_app.py     - Topology-Lab auf Basis von app.py
 run.py                - ursprünglicher V1-Einstiegspunkt
 run_topology.py       - Topology-Lab-Einstiegspunkt
 ```
