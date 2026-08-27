@@ -432,23 +432,37 @@ class Mesh:
             },
         }
 
-    @classmethod
-    def from_state(cls, state: dict) -> "Mesh":
-        mesh = cls()
+    def load_state(self, state: dict) -> None:
+        """Ersetzt den kompletten Inhalt dieses Mesh-Objekts in-place.
+
+        Die Mesh-Instanz selbst bleibt erhalten, damit Scene/Selection/
+        Viewport weiterhin auf dasselbe Objekt zeigen. Die Allocator-
+        Zähler werden wie bei from_state() nur vorwärts bewegt.
+        """
+        self._vertices.clear()
+        self._edges.clear()
+        self._faces.clear()
+        self._edge_lookup.clear()
+
         for vid_raw, pos in state["vertices"].items():
-            mesh._vertices[VertexId(int(vid_raw))] = _VertexData(position=tuple(pos))
+            self._vertices[VertexId(int(vid_raw))] = _VertexData(position=tuple(pos))
         for eid_raw, edata in state["edges"].items():
             eid = EdgeId(int(eid_raw))
             v0, v1 = VertexId(edata["v0"]), VertexId(edata["v1"])
-            mesh._edges[eid] = _EdgeData(
+            self._edges[eid] = _EdgeData(
                 v0=v0, v1=v1, faces=[FaceId(f) for f in edata["faces"]]
             )
-            mesh._edge_lookup[frozenset((v0, v1))] = eid
+            self._edge_lookup[frozenset((v0, v1))] = eid
         for fid_raw, boundary in state["faces"].items():
             fid = FaceId(int(fid_raw))
-            mesh._faces[fid] = _FaceData(boundary=[VertexId(v) for v in boundary])
+            self._faces[fid] = _FaceData(boundary=[VertexId(v) for v in boundary])
 
-        mesh._vertex_alloc.restore_counter(state["vertex_id_counter"])
-        mesh._edge_alloc.restore_counter(state["edge_id_counter"])
-        mesh._face_alloc.restore_counter(state["face_id_counter"])
+        self._vertex_alloc.restore_counter(state["vertex_id_counter"])
+        self._edge_alloc.restore_counter(state["edge_id_counter"])
+        self._face_alloc.restore_counter(state["face_id_counter"])
+
+    @classmethod
+    def from_state(cls, state: dict) -> "Mesh":
+        mesh = cls()
+        mesh.load_state(state)
         return mesh
