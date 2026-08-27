@@ -33,7 +33,9 @@ python -m tests.test_core
 
 ## Hardening-Ergebnis (2026-08-27)
 
-**Phasen A–E: PASS** — 37 unittest-Tests + 11 Architekturvertrags-Blöcke, 0 Failures.
+**Phasen A–E: PASS.** Die reproduzierbare Standard-Suite `tests.run_core_suite` umfasst aktuell **29 `unittest`-Tests** und führt anschließend die Architekturvertrags-Checks aus `tests.test_core` aus. Der Lauf endet mit `Gesamt: PASS` und 0 Failures/Errors.
+
+Die dedizierten **8 Phase-E-Tests** in `test_scene_serialization.py` sind zusätzliche Regressionstests und können separat ausgeführt werden; sie sind aktuell bewusst noch nicht in `run_core_suite.py` eingebunden. Die Architekturvertrags-Checks enthalten bereits eigene Basis-Serialisierungsprüfungen.
 
 ### Phase A – Invarianten
 
@@ -67,7 +69,7 @@ Getestet wurden split (Boundary/Interior), collapse (einfach/Fan/Merge), connect
 
 Vor der Testimplementierung wurde geprüft, ob der vorhandene Core die Anforderungen bereits erfüllt. `export_state()` / `load_state()` / `scene_to_dict()` / `scene_from_dict()` deckten den geplanten Umfang ab; Phase E benötigte deshalb **keine Produktionscode-Änderung**.
 
-Die 8 neuen Tests prüfen:
+Die 8 dedizierten Tests prüfen:
 
 - Dict-Roundtrip nach einer echten Sequenz aus `split_edge` + `collapse_edge` + weiterer Topologieänderung
 - vollständige Topologiebeziehungen nach dem Roundtrip
@@ -92,10 +94,12 @@ C  Identitätskontinuität   PASS
 D  Undo / Redo             PASS
 E  Serialisierung          PASS
 
-37/37 unittest-Tests
-+ 11 Architekturvertrags-Blöcke
-= 0 Failures
+Standard-Suite: 29/29 unittest-Tests
++ Architekturvertrags-Checks
+= 0 Failures / Errors
 ```
+
+Die zusätzlichen 8 Phase-E-Regressionstests bleiben separat ausführbar und sind derzeit nicht Teil des Standard-Runners.
 
 Der anschließende Architektur-Review ist in `docs/architecture/CORE_V1_FREEZE.md` dokumentiert. Ergebnis: **Core V1 wird eingefroren.**
 
