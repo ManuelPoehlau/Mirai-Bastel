@@ -48,6 +48,18 @@ class TopologyWindow(ModelerWindow):
         self._rebuild_geometry()
         self._set_topology_caption()
 
+    def _select_created_edges(self, edge_ids) -> None:
+        """Select newly created edges and switch to Edge Mode.
+
+        Connect Vertices creates edges, so keeping Vertex Mode while storing
+        EdgeIds in the vertex selection would corrupt the Selection state.
+        The result therefore becomes an explicit Edge selection.
+        """
+        self.scene.selection.clear()
+        self.selection_mode = SelectionMode.EDGE
+        self.scene.selection.mode = self.selection_mode
+        self.scene.selection.set(set(edge_ids))
+
     def _run_topology_tool(self, symbol: int, modifiers: int) -> bool:
         try:
             if symbol == key.S and not (modifiers & key.MOD_SHIFT):
@@ -122,7 +134,7 @@ class TopologyWindow(ModelerWindow):
                 created = connect_selected_edges(
                     self.scene, selected, on_restore=self._after_topology_restore
                 )
-                self.scene.selection.set(set(created))
+                self._select_created_edges(created)
                 self._hovered_id = None
                 self._rebuild_geometry()
                 self._set_topology_caption(f"Connect {len(selected)} Edges → {len(created)} Edges")
@@ -135,7 +147,7 @@ class TopologyWindow(ModelerWindow):
                 created = connect_selected_vertices(
                     self.scene, selected, on_restore=self._after_topology_restore
                 )
-                self.scene.selection.set(set(created))
+                self._select_created_edges(created)
                 self._hovered_id = None
                 self._rebuild_geometry()
                 self._set_topology_caption(f"Connect {len(selected)} Vertices → {len(created)} Edges")
