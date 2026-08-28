@@ -34,7 +34,7 @@ Das ist bewusst ein **Forschungsziel**, keine bereits festgelegte technische Lö
 
 ## Phase 1 — vorhandene Core-Primitives als Werkzeuge
 
-**Status: abgeschlossen und praktisch verifiziert.**
+**Status: interaktiv untersucht; Connect Edges bleibt als offene Basisoperation bestehen.**
 
 Die erste Stufe hat bewusst keine neue Core-Funktion eingeführt. Vorhandene, durch Core-Hardening-Tests abgesicherte Primitive wurden interaktiv im V1-Viewport benutzt:
 
@@ -43,16 +43,33 @@ Die erste Stufe hat bewusst keine neue Core-Funktion eingeführt. Vorhandene, du
 3. **Connect Vertices** → `connect_vertices()`
 4. **Connect Edges** → experimentelle Kombination aus `split_edge()` + `connect_vertices()`
 
-Zusätzlich wurden Mehrfachauswahl-Fälle für Collapse/Connect untersucht.
+Dabei wurde sichtbar, dass insbesondere die Multi-Edge-Semantik von Connect Edges noch nicht ausreichend definiert bzw. umgesetzt ist. Das ist für die weitere Topology-Forschung relevant und wird deshalb jetzt vor höherwertigen Operationen wie Loop Insert untersucht.
 
-Praktische Beobachtungen:
+Praktische Beobachtungen aus Phase 1:
 
 - einzelne Vertex-/Edge-Connect-Fälle funktionieren wie erwartet;
 - Split und Collapse funktionieren in den untersuchten Fällen;
 - nicht zulässige Verbindungen ohne gemeinsames Face werden abgelehnt;
 - Collapse kann bei sehr kleiner Restgeometrie zu freischwebenden Edges führen; das ist für die Primitive logisch, für ein späteres Modeler-Tool aber eine Workflow-/Validierungsfrage;
 - Selection/Mode nach einer Operation ist ein wichtiger eigener Workflow-Aspekt;
-- Undo/Redo der Topology-Tools ist derzeit **noch nicht abgeschlossen**, weil der experimentelle Command auf `Mesh.load_state()` angewiesen ist, das im aktuellen Core V1 nicht vorhanden ist. Das wird als eigener späterer Punkt behandelt und nicht als erledigte Funktion angenommen.
+- Undo/Redo der Topology-Tools ist derzeit **noch nicht abgeschlossen**, weil der experimentelle Command auf `Mesh.load_state()` angewiesen ist, das im aktuellen Core V1 nicht vorhanden ist.
+
+### Warum Connect Edges jetzt priorisiert wird
+
+Connect Edges gehört zu den grundlegenden Mesh-Editing-Operationen. Bevor höherwertige Modeling-Operationen darauf aufbauen oder ähnliche Topologie-Manipulationen neu implementieren, soll zuerst geklärt werden, welche Semantik eine Edge-Multi-Selection haben soll.
+
+Insbesondere soll untersucht werden:
+
+- Was bedeutet Connect bei genau 2 Edges?
+- Was soll bei 3+ ausgewählten Edges passieren?
+- Wie verhalten sich zusammenhängende Edge-Sets?
+- Wie verhalten sich vollständige Loops und Rings?
+- Was passiert bei disjunkten Edges?
+- Welche Boundary-/Face-Konstellationen sind gültig?
+- Wann soll eine Auswahl abgelehnt werden, statt eine teilweise Mutation auszuführen?
+- Welche Selection und welcher Selection Mode sollen nach erfolgreicher Operation entstehen?
+
+Der aktuelle experimentelle Zustand zeigt bereits, dass eine größere Auswahl momentan nicht wie eine einheitliche Connect-Operation behandelt wird: Teile können verbunden werden, während andere ausgewählte Edges lediglich gesplittet werden. Dieses Verhalten ist **nicht als endgültige Modeling-Semantik** festgelegt.
 
 ## Phase 2 — Loop / Ring Detection und Selection
 
@@ -123,7 +140,58 @@ Der Abschluss von Phase 2 bedeutet nicht, dass jede denkbare Loop-/Ring-Semantik
 
 Die Detection bleibt damit bewusst ein konservatives Experiment und kein endgültiger Produktionsvertrag.
 
-## Phase 3 — Loop Insert / Loop Remove
+## Phase 3 — Connect Edges: Semantik und robuste Multi-Selection
+
+**Status: als nächster Forschungsblock priorisiert; noch nicht implementiert.**
+
+Connect Edges wird bewusst **vor Loop Insert / Loop Remove** untersucht. Es handelt sich um eine grundlegende Modeling-Primitive, und die aktuelle experimentelle Multi-Selection zeigt bereits, dass die Semantik noch geklärt werden muss.
+
+### Forschungsziel
+
+Eine ausgewählte Menge von Edges soll nicht nur technisch mutiert werden, sondern eine klar definierte und reproduzierbare Connect-Operation darstellen.
+
+Zuerst wird das Verhalten ohne neue höherwertige Modeling-Funktion untersucht:
+
+```text
+Edge Selection
+      ↓
+Connect Edges
+      ↓
+Topologie + Selection
+```
+
+### Untersuchungsmatrix
+
+| Fall | Frage |
+|---|---|
+| 2 Edges | Was ist die definierte Verbindung? |
+| 3+ zusammenhängende Edges | Welche Verbindungen entstehen? |
+| kompletter Edge Loop | Ist Loop-Connect sinnvoll bzw. identisch mit einer anderen Operation? |
+| kompletter Edge Ring | Welche Verbindungen entstehen über die betroffenen Faces? |
+| disjunkte Edges | Ablehnen, getrennt verbinden oder andere Semantik? |
+| Boundary Edges | Welche Fälle sind zulässig? |
+| gemischte Face-Typen | Wann wird abgebrochen? |
+| ungültige Auswahl | Keine Teilmutation; verständlicher Fehler? |
+
+Zusätzlich werden Topologie, neue IDs, Selection/Mode und die Folgen für spätere History untersucht.
+
+### Wichtige Abgrenzung
+
+Connect Edges und Loop Insert werden nicht als dieselbe Operation angenommen.
+
+```text
+Connect Edges
+    = vorhandene Auswahl gemäß definierter Connect-Semantik verbinden
+
+Loop Insert
+    = zusammenhängenden neuen Schnitt durch geeignete Faces/Topologie erzeugen
+```
+
+Der aktuelle Test `Edge Ring → Connect Edges` hat diese Abgrenzung praktisch sichtbar gemacht: Eine Ring-Auswahl wird momentan lediglich wie eine normale Multi-Edge-Selection an die bestehende Connect-Logik weitergereicht. Das erzeugt noch kein echtes Loop-Insert-Verhalten.
+
+## Phase 4 — Loop Insert / Loop Remove
+
+**Status: geplant; wird nach der Connect-Edges-Untersuchung begonnen.**
 
 Die beiden zusammengehörigen Fälle werden als nächste große Forschungsgruppe betrachtet.
 
@@ -133,12 +201,17 @@ Neue Geometrie wird innerhalb einer bestehenden Struktur erzeugt.
 
 Zu untersuchen:
 
-- entstehende Vertices / Edges / Faces
-- Beziehungen zwischen alten und neuen Elementen
-- ID-Kontinuität
-- Herkunft/Provenance
-- spätere Skin-Weight-Übertragung
-- spätere Morph-Delta-Übertragung
+- ob und wie vorhandene Loop-/Ring-Traversierung wiederverwendet werden kann;
+- welche Faces von einem Insert betroffen sind;
+- entstehende Vertices / Edges / Faces;
+- Beziehungen zwischen alten und neuen Elementen;
+- ID-Kontinuität;
+- Herkunft/Provenance;
+- spätere Skin-Weight-Übertragung;
+- spätere Morph-Delta-Übertragung;
+- interaktive Positionierung bzw. späteres Loop Slide.
+
+Ein Loop Insert darf nicht einfach als "Ring Selection + Connect Edges" vorausgesetzt werden. Ob vorhandene Primitive sinnvoll zusammengesetzt werden können, soll erst aus den Ergebnissen von Phase 3 abgeleitet werden.
 
 ### Loop Remove / Dissolve
 
@@ -146,14 +219,15 @@ Bestehende Geometrie wird reduziert bzw. zusammengeführt.
 
 Zu untersuchen:
 
-- welche Elemente verschwinden
-- welche IDs erhalten bleiben
-- welche Daten mehrerer Elemente später zusammengeführt werden müssten
-- ob Herkunfts-/Provenance-Informationen benötigt werden
+- welche Elemente verschwinden;
+- welche IDs erhalten bleiben;
+- welche Daten mehrerer Elemente später zusammengeführt werden müssten;
+- ob Herkunfts-/Provenance-Informationen benötigt werden;
+- Abgrenzung zu Collapse.
 
-Insert und Remove werden gemeinsam bewertet; die genaue Reihenfolge ist weniger wichtig als die vollständige Untersuchung beider Richtungen.
+Für das Modeling-Experiment wird **Remove zunächst als Dissolve** verstanden, nicht als geometrisches Collapse. Die genaue Semantik wird beim Experiment festgelegt.
 
-## Phase 4 — Extrude
+## Phase 5 — Extrude
 
 Als nächster größerer Topologie-Fall soll **Extrude** untersucht werden.
 
@@ -175,7 +249,7 @@ Zu untersuchen sind insbesondere:
 - spätere Übertragung von Deformationsdaten
 - interaktives Verhalten
 
-## Phase 5+ — weitere Topologie-Experimente
+## Phase 6+ — weitere Topologie-Experimente
 
 Je nach Erkenntnisgewinn können danach folgen:
 
