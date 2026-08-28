@@ -106,17 +106,18 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
 - Edge Mode
 - mindestens zwei Edges auswählen
 - **Shift+C** drücken
-- jede ausgewählte Edge wird zunächst am Mittelpunkt gesplittet
-- die neuen Mittelpunkte werden anschließend experimentell als Kette verbunden
+- aktuell werden ausgewählte Edges zunächst am Mittelpunkt gesplittet und die
+  neuen Mittelpunkte anschließend experimentell als Kette verbunden
 - die erzeugten Verbindungs-Edges werden ausgewählt
-- zwei nicht zusammenhängende Edges werden aktuell nicht sinnvoll „verbunden“,
-  sondern führen zu einer experimentellen Split-Semantik; dies bleibt als
-  offene Modeling-Semantik bestehen und ist nicht als endgültiges Verhalten
-  festgelegt.
+- bei größeren Multi-Selections ist die Semantik noch nicht als einheitliche
+  Connect-Operation geklärt; Teile der Auswahl können verbunden werden,
+  während andere Edges lediglich gesplittet werden
+- insbesondere ein ausgewählter Edge Ring verhält sich derzeit nur wie eine
+  normale Multi-Edge-Selection und erzeugt damit noch keinen Loop Insert
 
 ### Phase-1-Ergebnis
 
-Die vier Phase-1-Primitives wurden praktisch geprüft:
+Die grundlegenden Werkzeuge wurden praktisch untersucht:
 
 ```text
 Split Edge          → 1 Edge              ✅
@@ -127,40 +128,24 @@ Connect Edges       → 2 Edges             ✅
 Multi-Selection
 Collapse Vertices   → 2+ Vertices         ✅
 Collapse Edges      → 2+ Edges             ✅
-Connect Vertices    → 3+                  ⚠️ experimentell, Auswahl-State gefixt
-Connect Edges       → 3+                  ⚠️ experimentelle Semantik
+Connect Vertices    → 3+                  ⚠️ experimentell
+Connect Edges       → 3+                  ⚠️ Semantik offen
 ```
 
 Ein konkreter Viewport-Bug bei **Connect Vertices mit 3+ Vertices** wurde
 behoben: Die erzeugten `EdgeId`s dürfen nicht in der Vertex-Selection landen;
 das Ergebnis wird jetzt explizit als Edge-Selection behandelt.
 
-Die folgenden Punkte bleiben bewusst offen und werden später erneut bewertet:
+Die folgenden Punkte bleiben bewusst offen und werden in einem eigenen
+nächsten Forschungsblock behandelt:
 
-- Multi-Connect-Semantik für mehr als zwei Elemente
-- Connect Edges bei nicht zusammenhängenden Edges
-- Mindesttopologie für Collapse und Vermeidung degenerierter Ergebnisse
+- **Connect-Edges-Semantik für mehrere Edges**
+- Verhalten bei zusammenhängenden und disjunkten Edge-Sets
+- Verhalten bei Loops und Rings
+- Boundary-/Face-Konstellationen
+- Ablehnung ungültiger Auswahlen ohne Teilmutation
 - Post-Operation Selection / Mode-Verhalten
 - Undo/Redo für Topologie über `load_state()` (separates Core-Thema)
-
-Damit ist **Topology Phase 1 als Experiment abgeschlossen**. Die nächsten
-Topologie-Experimente beginnen mit Loop Insert sowie Loop Remove / Dissolve,
-gefolgt von Extrude.
-
-Die Multi-Selection-Verhalten waren bewusst experimentell. Nicht nur
-technische Fehler, sondern auch die Qualität des Ergebnisses und die daraus
-entstehenden Modeling-/Workflow-Fragen wurden beobachtet und dokumentiert.
-
-Die Tool-Schicht liegt bewusst unter `experiments/` und verändert `src/core`
-nicht. Sie ist eine interaktive Übersetzung der bereits vorhandenen Core-
-Primitives, keine neue Produktions-API.
-
-Die Topologie-Mutationen werden im Experiment derzeit über die öffentliche
-`export_state()`/`load_state()`-API als Snapshot-History-Einträge rückgängig
-machbar gehalten. Diese History-Anbindung ist momentan **bekannt nicht mit
-dem aktuellen eingefrorenen Core synchronisiert**, da `load_state()` im
-aktuellen Core V1 noch nicht vorhanden ist. Undo/Redo für Topologie ist daher
-vorerst aus dem praktischen Test auszunehmen und wird separat geklärt.
 
 ## Topology Lab - Phase 2
 
@@ -215,15 +200,18 @@ visuelles Ergebnis
 ## Was als Nächstes folgt
 
 ```text
-Topology Phase 1 → abgeschlossen
+Topology Phase 1 → untersucht
         ↓
 Topology Phase 2 → Loop/Ring Detection + interaktive Selection
                     praktisch verifiziert
         ↓
-Loop Insert / Loop Cut
-Loop Remove / Dissolve
+Topology Phase 3 → Connect Edges
+                    Semantik + Multi-Selection gründlich untersuchen
         ↓
-Extrude
+Topology Phase 4 → Loop Insert / Loop Cut
+                    Loop Remove / Dissolve
+        ↓
+Topology Phase 5 → Extrude
         ↓
 weitere Topologieoperationen
 ```
@@ -262,7 +250,7 @@ viewport/
   picking.py          - Vertex-, Edge- und Face-Picking
   demo_scene.py       - ursprüngliche Würfel-Testszene
   topology_scene.py   - kontrollierte Topology-Testszene
-  topology_tools.py   - experimentelle Phase-1- und Selection-Werkzeuge
+  topology_tools.py  - experimentelle Phase-1- und Selection-Werkzeuge
   loop_ring.py         - Phase-2 Edge-Loop-/Edge-Ring-Erkennung (reine Query)
   app.py              - ursprünglicher V1-Viewport
   topology_app.py     - Topology-Lab auf Basis von app.py
