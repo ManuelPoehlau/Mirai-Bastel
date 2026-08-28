@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pyglet
+
 _THIS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_THIS_DIR))
 sys.path.insert(0, str(_THIS_DIR.parent / "mirai_bastel_core_V1"))
@@ -15,8 +17,8 @@ from viewport.topology_scene_cylinder import build_cylinder_scene  # noqa: E402
 
 def main() -> None:
     """Startet den Topology-Viewport mit der offenen Zylinder-Testszene."""
-    window = TopologyWindow(build_cylinder_scene())
-    window.run()
+    TopologyWindow(build_cylinder_scene())
+    pyglet.app.run()
 
 
 if __name__ == "__main__":
