@@ -89,37 +89,24 @@ def test_two_compatible_edges_on_quad() -> None:
 
 def test_three_compatible_edges_connected_not_sorted() -> None:
     print("\n--- Connect Edges: 3 kompatible Edges — Topologie statt ID-Sortierung ---")
-    # Lineare Kette von 3 Quads nebeneinander:
-    # [Quad0] [Quad1] [Quad2]
-    # Wähle die 3 mittleren vertikalkanten: diese sollten NICHT nur nach ID sortiert
-    # verbunden werden, sondern topologisch als in-Reihe erkannt werden.
-    mesh = Mesh()
-    verts = {
-        "q0": {"b": [mesh.add_vertex((i, 0.0, 0.0)) for i in range(2)],
-               "t": [mesh.add_vertex((i, 1.0, 0.0)) for i in range(2)]},
-        "q1": {"b": [mesh.add_vertex((i + 1, 0.0, 0.0)) for i in range(2)],
-               "t": [mesh.add_vertex((i + 1, 1.0, 0.0)) for i in range(2)]},
-        "q2": {"b": [mesh.add_vertex((i + 2, 0.0, 0.0)) for i in range(2)],
-               "t": [mesh.add_vertex((i + 2, 1.0, 0.0)) for i in range(2)]},
-    }
+    # Echtes zusammenhängendes 3x3-Quad-Grid.
+    # Die drei ausgewählten vertikalen Edges liegen in einer gemeinsamen
+    # topologischen Reihe. Die Auswahl wird absichtlich nicht sortiert übergeben.
+    scene = build_topology_scene(cells=3)
+    mesh = scene.mesh
+    lookup = _grid_vertices(scene, cells=3)
 
-    mesh.add_face([verts["q0"]["b"][0], verts["q0"]["b"][1], verts["q0"]["t"][1], verts["q0"]["t"][0]])
-    mesh.add_face([verts["q1"]["b"][0], verts["q1"]["b"][1], verts["q1"]["t"][1], verts["q1"]["t"][0]])
-    mesh.add_face([verts["q2"]["b"][0], verts["q2"]["b"][1], verts["q2"]["t"][1], verts["q2"]["t"][0]])
+    e1 = _find_edge(mesh, lookup[(0, 1)], lookup[(1, 1)])
+    e2 = _find_edge(mesh, lookup[(1, 1)], lookup[(2, 1)])
+    e3 = _find_edge(mesh, lookup[(2, 1)], lookup[(3, 1)])
 
-    # Die 3 mittleren vertikalen Kanten
-    e1 = _find_edge(mesh, verts["q0"]["b"][1], verts["q0"]["t"][1])  # Zwischen Q0 und Q1
-    e2 = _find_edge(mesh, verts["q1"]["b"][1], verts["q1"]["t"][1])  # Zwischen Q1 und Q2
-    e3 = _find_edge(mesh, verts["q2"]["b"][1], verts["q2"]["t"][1])  # Rechts von Q2
-
-    scene = Scene()
-    scene.mesh = mesh
     scene.history = HistoryStack()
 
-    created = connect_selected_edges(scene, [e1, e2, e3])
+    created = connect_selected_edges(scene, [e3, e1, e2])
 
     # Spec: "all valid connections implied by the topology are created"
-    # Hier sollten 2 Verbindungen entstehen (e1-Mitte mit e2-Mitte, e2-Mitte mit e3-Mitte)
+    # In dieser linearen Reihe sind das zwei Verbindungen:
+    # e1-Mitte -> e2-Mitte und e2-Mitte -> e3-Mitte.
     check("Connect 3 Edges: 2 neue Verbindungskanten erwartet", len(created) == 2)
 
 
@@ -142,7 +129,7 @@ def test_complete_edge_ring_connect() -> None:
         j = (i + 1) % 4
         mesh.add_face([layers[0][i], layers[0][j], layers[1][j], layers[1][i]])
 
-    # Wähle alle 8 Umfangskanten (zwischen den Ringen)
+    # Wähle alle 4 Kanten zwischen den Ringen
     ring_edges = []
     for i in range(4):
         e = _find_edge(mesh, layers[0][i], layers[1][i])
@@ -159,7 +146,7 @@ def test_complete_edge_ring_connect() -> None:
 
 def test_multiple_disconnected_groups_independent() -> None:
     print("\n--- Connect Edges: mehrere disjunkte Gruppen unabhängig verbunden ---")
-    # 2 separate Quads, jeweils eine Kante pro Quad
+    # 2 separate Quads, jeweils eine kompatible Kantenpaar-Gruppe
     mesh = Mesh()
 
     # Quad 1
@@ -176,7 +163,6 @@ def test_multiple_disconnected_groups_independent() -> None:
     v3_2 = mesh.add_vertex((5.0, 1.0, 0.0))
     mesh.add_face([v0_2, v1_2, v2_2, v3_2])
 
-    # Wähle oben und unten aus Quad 1, sowie oben und unten aus Quad 2
     e1_bottom = _find_edge(mesh, v0_1, v1_1)
     e1_top = _find_edge(mesh, v2_1, v3_1)
     e2_bottom = _find_edge(mesh, v0_2, v1_2)
@@ -189,13 +175,11 @@ def test_multiple_disconnected_groups_independent() -> None:
     # Spec: "Disconnected compatible groups should be handled independently"
     created = connect_selected_edges(scene, [e1_bottom, e1_top, e2_bottom, e2_top])
 
-    # Sollte 2 Verbindungen erzeugen: eine pro Quad-Paar
     check("Connect disjunkte Gruppen: 2 Verbindungen erwartet", len(created) == 2)
 
 
 def test_invalid_selection_leaves_mesh_unchanged() -> None:
     print("\n--- Connect Edges: ungültige Selection — Mesh unverändert (ATOMICITY) ---")
-    # Zwei völlig getrennte Edges in unterschiedlichen Faces, keine Verbindung möglich
     mesh = Mesh()
 
     # Triangle 1
@@ -251,7 +235,7 @@ def test_deterministic_result_different_order() -> None:
         for c in range(3)
     ]
     e_middle_2_order2 = [
-        _find_edge(mesh2, lookup2[(1, 2)], lookup2[(1, 3)]),  # reverse order
+        _find_edge(mesh2, lookup2[(1, 2)], lookup2[(1, 3)]),
         _find_edge(mesh2, lookup2[(1, 1)], lookup2[(1, 2)]),
         _find_edge(mesh2, lookup2[(1, 0)], lookup2[(1, 1)]),
     ]
@@ -260,13 +244,7 @@ def test_deterministic_result_different_order() -> None:
         created1 = connect_selected_edges(scene1, e_middle_1_order1)
         created2 = connect_selected_edges(scene2, e_middle_2_order2)
 
-        # Spec: "deterministic for the same mesh topology and selection, regardless of...
-        # selection insertion order"
-        check(
-            "Beide Operationen erzeugen die gleiche Anzahl Kanten",
-            len(created1) == len(created2),
-        )
-
+        check("Beide Operationen erzeugen die gleiche Anzahl Kanten", len(created1) == len(created2))
         state1 = mesh1.export_state()
         state2 = mesh2.export_state()
         check("Mesh-Zustand nach Connect ist identisch", _mesh_state_equals(state1, state2))
@@ -276,33 +254,26 @@ def test_deterministic_result_different_order() -> None:
 
 def test_edge_loop_selection_valid_input() -> None:
     print("\n--- Connect Edges: Edge Loop als valide Eingabe (wo kompatibel) ---")
-    # Ein Loop entlang einer Reihe von Quads sollte verbindbar sein
     scene = build_topology_scene(cells=4)
     lookup = _grid_vertices(scene, cells=4)
     mesh = scene.mesh
     scene.history = HistoryStack()
 
-    # Loop entlang einer Zeile (alle Kanten der Zeile 2, von links nach rechts)
+    # Eine zusammenhängende Loop-/Flow-Auswahl entlang einer Zeile.
     loop_edges = [
         _find_edge(mesh, lookup[(2, c)], lookup[(2, c + 1)])
         for c in range(4)
     ]
 
-    # Diese sollten connectbar sein (koplanar, in einer Face-Reihe)
     try:
         created = connect_selected_edges(scene, loop_edges)
         check("Edge Loop kann als Connect-Input dienen", len(created) > 0)
     except TopologyToolError:
-        # Falls die aktuelle Implementierung das nicht unterstützt, ist das ein
-        # bekanntes Defizit — aber der Test dokumentiert, dass es laut Spec
-        # funktionieren sollte.
         check("Edge Loop Connect: noch nicht implementiert (Spec erfordert es)", False)
 
 
 def test_partial_failure_no_mesh_change() -> None:
     print("\n--- Connect Edges: Teilerfolg ist nicht akzeptabel (Atomicity) ---")
-    # Szenario: erste 2 Edges sind kompatibel, 3. Edge ist nicht kompatibel
-    # (z. B. in einem Triangle statt Quad, etc.)
     mesh = Mesh()
 
     # 2 Quads nebeneinander
@@ -321,10 +292,9 @@ def test_partial_failure_no_mesh_change() -> None:
     v8 = mesh.add_vertex((5.5, 1.0, 0.0))
     mesh.add_face([v6, v7, v8])
 
-    # Wähle: 2 verbindbare Edges + 1 isolierte Edge
-    e1 = _find_edge(mesh, v0, v1)  # oben Quad 1
-    e2 = _find_edge(mesh, v2, v3)  # unten Quad 1
-    e3 = _find_edge(mesh, v6, v7)  # oben Triangle
+    e1 = _find_edge(mesh, v0, v1)
+    e2 = _find_edge(mesh, v2, v3)
+    e3 = _find_edge(mesh, v6, v7)
 
     scene = Scene()
     scene.mesh = mesh
@@ -339,7 +309,6 @@ def test_partial_failure_no_mesh_change() -> None:
     except TopologyToolError:
         check("Operation schlägt bei Inkompatibilität fehl", True)
 
-    # Atomicity: keinerlei Mesh-Änderung
     check("Keine Splits, wenn Operation fehlschlägt", len(mesh.all_vertex_ids()) == vertex_count_before)
     check("export_state nach Fehler unverändert", _mesh_state_equals(mesh_state_before, mesh.export_state()))
 
