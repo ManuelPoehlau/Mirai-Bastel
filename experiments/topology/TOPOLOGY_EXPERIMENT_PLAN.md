@@ -56,40 +56,72 @@ Praktische Beobachtungen:
 
 ## Phase 2 — Loop / Ring Detection und Selection
 
-**Aktueller Forschungsbereich. Teilstand: reine Erkennung implementiert und getestet, interaktive Anbindung noch offen.**
+**Status: abgeschlossen und praktisch verifiziert.**
 
-Zuerst wird konservativ untersucht, ob Edge Loops und Edge Rings zuverlässig erkannt und ausgewählt werden können.
+Die Phase wurde bewusst in zwei Schritte aufgeteilt: Zuerst wurde die reine Traversierungslogik implementiert und getestet, anschließend wurde sie interaktiv im Topology Lab verdrahtet und im Viewport geprüft.
 
-```text
-Edge selection
-      ↓
-Loop / Ring traversal
-      ↓
-selected edge set
-```
+### Erkennung (Query-Ebene)
 
-**Erkennung (Query-Ebene):** `experiments/mirai_bastel_viewport_V1/viewport/loop_ring.py` implementiert `edge_loop()` und `edge_ring()` rein über die bestehende Topologie-Query-API (`face_vertices`, `face_edges`, `edge_faces`, `edge_vertices`, `vertex_edges`), ohne Core- oder Mesh-Änderung. Bewusst konservativ:
+`experiments/mirai_bastel_viewport_V1/viewport/loop_ring.py` implementiert `edge_loop()` und `edge_ring()` rein über die bestehende Topologie-Query-API (`face_vertices`, `face_edges`, `edge_faces`, `edge_vertices`, `vertex_edges`), ohne Core- oder Mesh-Änderung.
+
+Die Erkennung ist bewusst konservativ:
 
 - **Edge Ring** läuft nur durch Quad-Faces (Boundary-Länge 4); trifft er auf eine Non-Quad-Face, bricht er auf dieser Seite ab.
-- **Edge Loop** läuft nur durch Vertices mit Valenz genau 4 und eindeutigem "gegenüberliegendem" Kandidaten (keine gemeinsame Face mit der eingehenden Kante). Boundary-Loop-Fortsetzung (Weiterlaufen entlang eines offenen Randes) ist bewusst **nicht** implementiert, sondern als offene Folgefrage dokumentiert statt still zu raten.
-- Beide erkennen geschlossene Loops/Ringe (z. B. auf einem geschlossenen Quad-Rohr) explizit über ein `closed`-Flag, statt die Startkante doppelt aufzunehmen.
+- **Edge Loop** läuft nur durch Vertices mit Valenz genau 4 und eindeutigem "gegenüberliegendem" Kandidaten (keine gemeinsame Face mit der eingehenden Kante).
+- Boundary-Loop-Fortsetzung ist bewusst **nicht** implementiert, sondern bleibt als offene Folgefrage bestehen.
+- Beide erkennen geschlossene Loops/Ringe explizit über ein `closed`-Flag, statt die Startkante doppelt aufzunehmen.
 
-Verifiziert über `experiments/mirai_bastel_viewport_V1/tests/test_loop_ring.py` (reine Logik-Tests ohne Fenster/GPU, wie `test_camera_picking.py`): volle Zeile/Spalte im Quad-Grid, konservativer Abbruch an Rand-Valenz, konservativer Abbruch an einer Non-Quad-Face, sowie geschlossene Loop-/Ring-Erkennung auf einem künstlichen Quad-Rohr.
+Die Erkennung wurde in `experiments/mirai_bastel_viewport_V1/tests/test_loop_ring.py` ohne Fenster/GPU verifiziert: volle Zeile/Spalte im Quad-Grid, konservativer Abbruch an Rand-Valenz und Non-Quad-Face sowie geschlossene Loop-/Ring-Erkennung auf einem künstlichen Quad-Rohr.
 
-**Noch offen:**
+### Interaktive Selection
 
-- interaktive Anbindung im Topology Lab (z. B. Klick/Modifier → `edge_loop()`/`edge_ring()` → `scene.selection.set(...)`), bisher nur als reine Funktion getestet, nicht im Viewport verdrahtet;
-- Loop-/Ring-Verhalten bei gemischter Quad-/Non-Quad-Topologie über die getestete Grenzfall-Abdeckung hinaus;
-- Boundary-Loop-Fortsetzung (aktuell bewusst ausgeschlossen).
+Die Erkennung ist jetzt im Topology Lab interaktiv angebunden:
 
-Erst wenn die Erkennung ausreichend zuverlässig ist, werden darauf aufbauende Operationen untersucht:
+```text
+Edge Mode + genau 1 Edge
+        ↓
+L → Edge Loop
+R → Edge Ring
+        ↓
+erkanntes Edge Set
+        ↓
+Viewport Selection
+```
 
-- Loop Insert
-- Loop Cut
-- Loop Slide
-- weitere Loop-/Ring-Operationen
+Aktuelles experimentelles Verhalten:
 
-Die Erkennung selbst ist der wichtige erste Baustein; die spätere Operation darf nicht voraussetzen, dass eine unzuverlässige Traversierung bereits „irgendwie“ funktioniert.
+- **`L`** wählt den Edge Loop der aktuell ausgewählten Startkante.
+- **`R`** wählt den Edge Ring der aktuell ausgewählten Startkante.
+- Voraussetzung ist Edge Mode und genau eine ausgewählte Edge.
+- Die bisherige Selection wird durch das erkannte Edge-Set ersetzt.
+- Das Ergebnis wird unmittelbar im Viewport visualisiert.
+- Geschlossene Traversierungen werden über den `closed`-Status in der Caption angezeigt.
+- Die Auswahl selbst verändert keine Mesh-Topologie und benötigt keine Änderung am eingefrorenen Core V1.
+
+Die komplette Kette wurde praktisch getestet und funktioniert:
+
+```text
+Edge Picking
+    ↓
+Loop / Ring Detection
+    ↓
+Edge Set
+    ↓
+Viewport Selection
+    ↓
+visuelles Ergebnis
+```
+
+### Bewusst offene Forschungsfragen
+
+Der Abschluss von Phase 2 bedeutet nicht, dass jede denkbare Loop-/Ring-Semantik gelöst ist. Offen bleiben insbesondere:
+
+- Loop-/Ring-Verhalten bei komplexeren gemischten Quad-/Non-Quad-Topologien über die aktuelle Grenzfallabdeckung hinaus;
+- Boundary-Loop-Fortsetzung;
+- endgültige Modifier-/Interaktionssemantik;
+- spätere Loop-/Ring-Operationen wie Insert, Cut und Slide.
+
+Die Detection bleibt damit bewusst ein konservatives Experiment und kein endgültiger Produktionsvertrag.
 
 ## Phase 3 — Loop Insert / Loop Remove
 
