@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .loop_ring import edge_loop, edge_ring, LoopRingError
+
 
 class TopologyToolError(ValueError):
     pass
@@ -175,3 +177,35 @@ def collapse_selected_vertices(scene, vertex_ids, *, on_restore=None):
 
     _push_snapshot(scene, before, "Collapse Vertices", on_restore)
     return survivors
+
+
+def select_edge_loop(scene, start_edge):
+    """Wählt alle Edges eines Edge Loop aus (reine Selection, keine Mutation).
+
+    Ausgehend von `start_edge` wird `edge_loop()` aufgerufen. Die resultierende
+    Kantenmenge wird in `scene.selection` übernommen (Mode wird auf EDGE gesetzt).
+    """
+    mesh = scene.mesh
+    if not mesh.is_valid_edge(start_edge):
+        raise TopologyToolError(f"Unbekannte Edge: {start_edge!r}")
+    try:
+        traversal = edge_loop(mesh, start_edge)
+    except LoopRingError as e:
+        raise TopologyToolError(f"Edge Loop konnte nicht durchlaufen werden: {e}")
+    return traversal.as_set(), traversal.closed
+
+
+def select_edge_ring(scene, start_edge):
+    """Wählt alle Edges eines Edge Ring aus (reine Selection, keine Mutation).
+
+    Ausgehend von `start_edge` wird `edge_ring()` aufgerufen. Die resultierende
+    Kantenmenge wird in `scene.selection` übernommen (Mode wird auf EDGE gesetzt).
+    """
+    mesh = scene.mesh
+    if not mesh.is_valid_edge(start_edge):
+        raise TopologyToolError(f"Unbekannte Edge: {start_edge!r}")
+    try:
+        traversal = edge_ring(mesh, start_edge)
+    except LoopRingError as e:
+        raise TopologyToolError(f"Edge Ring konnte nicht durchlaufen werden: {e}")
+    return traversal.as_set(), traversal.closed

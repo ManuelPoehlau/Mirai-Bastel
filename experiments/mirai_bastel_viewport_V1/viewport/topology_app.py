@@ -17,6 +17,8 @@ from .topology_tools import (
     connect_selected_edges,
     connect_selected_vertices,
     split_selected_edge,
+    select_edge_loop,
+    select_edge_ring,
 )
 
 
@@ -33,7 +35,7 @@ class TopologyWindow(ModelerWindow):
         self._set_topology_caption()
 
     def _set_topology_caption(self, message: str | None = None) -> None:
-        text = "Topology Lab | V/E/F | S Split | K Collapse | C Connect V | Shift+C Connect E | Ctrl+Z/Y"
+        text = "Topology Lab | V/E/F | S Split | K Collapse | C Connect V | Shift+C Connect E | L Loop | R Ring | Ctrl+Z/Y"
         if message:
             text += f" | {message}"
         self.set_caption(text)
@@ -151,6 +153,32 @@ class TopologyWindow(ModelerWindow):
                 self._hovered_id = None
                 self._rebuild_geometry()
                 self._set_topology_caption(f"Connect {len(selected)} Vertices → {len(created)} Edges")
+                return True
+
+            if symbol == key.L and not (modifiers & key.MOD_SHIFT):
+                if self.selection_mode != SelectionMode.EDGE or len(self.scene.selection.edges) != 1:
+                    raise TopologyToolError("Edge Loop: genau 1 Edge auswählen.")
+                start_edge = next(iter(self.scene.selection.edges))
+                loop_edges, is_closed = select_edge_loop(self.scene, start_edge)
+                self.scene.selection.clear()
+                self.scene.selection.set(loop_edges)
+                self._hovered_id = None
+                self._rebuild_geometry()
+                closed_text = " (geschlossen)" if is_closed else ""
+                self._set_topology_caption(f"Edge Loop: {len(loop_edges)} Edges{closed_text}")
+                return True
+
+            if symbol == key.R and not (modifiers & key.MOD_SHIFT):
+                if self.selection_mode != SelectionMode.EDGE or len(self.scene.selection.edges) != 1:
+                    raise TopologyToolError("Edge Ring: genau 1 Edge auswählen.")
+                start_edge = next(iter(self.scene.selection.edges))
+                ring_edges, is_closed = select_edge_ring(self.scene, start_edge)
+                self.scene.selection.clear()
+                self.scene.selection.set(ring_edges)
+                self._hovered_id = None
+                self._rebuild_geometry()
+                closed_text = " (geschlossen)" if is_closed else ""
+                self._set_topology_caption(f"Edge Ring: {len(ring_edges)} Edges{closed_text}")
                 return True
         except TopologyToolError as exc:
             self._set_topology_caption(f"FEHLER: {exc}")
