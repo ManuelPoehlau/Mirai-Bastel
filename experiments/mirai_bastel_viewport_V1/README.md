@@ -162,10 +162,34 @@ dem aktuellen eingefrorenen Core synchronisiert**, da `load_state()` im
 aktuellen Core V1 noch nicht vorhanden ist. Undo/Redo für Topologie ist daher
 vorerst aus dem praktischen Test auszunehmen und wird separat geklärt.
 
+## Topology Lab - Phase 2 (Teilstand)
+
+Reine Erkennung von Edge Loops und Edge Rings, ohne Core-/Mesh-Änderung und
+ohne interaktive Anbindung im Viewport:
+
+- `viewport/loop_ring.py` — `edge_loop()` / `edge_ring()`, ausschließlich
+  über die bestehende Topologie-Query-API (`face_vertices`, `face_edges`,
+  `edge_faces`, `edge_vertices`, `vertex_edges`).
+- Bewusst konservativ: Edge Ring läuft nur durch Quad-Faces, Edge Loop nur
+  durch Vertices mit Valenz 4 und eindeutigem gegenüberliegendem Kandidaten.
+  Boundary-Loop-Fortsetzung ist bewusst nicht implementiert. Beide erkennen
+  geschlossene Loops/Ringe explizit (`closed`-Flag) statt die Startkante
+  doppelt aufzunehmen.
+- Getestet in `tests/test_loop_ring.py` (reine Logik-Tests ohne Fenster/GPU):
+  volle Zeile/Spalte im Quad-Grid, konservativer Abbruch an Rand-Valenz und
+  an einer Non-Quad-Face, geschlossene Loop-/Ring-Erkennung auf einem
+  künstlichen Quad-Rohr.
+- **Noch nicht Teil dieses Standes:** interaktive Auswahl im Viewport
+  (Klick/Modifier → Loop/Ring-Selection). Details und offene Fragen stehen
+  in `experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md`, Phase 2.
+
 ## Was als Nächstes folgt
 
 ```text
 Topology Phase 1 → abgeschlossen
+        ↓
+Topology Phase 2 → Erkennung implementiert & getestet,
+                    interaktive Selection im Viewport offen
         ↓
 Loop Insert
 Loop Remove / Dissolve
@@ -192,7 +216,8 @@ weiterhin vorläufig und keine endgültige UI-Entscheidung.
 
 - Object Mode
 - endgültiges Modeling-UI
-- Loop-/Ring-Selection
+- interaktive Loop-/Ring-Selection im Viewport (Erkennung selbst ist
+  implementiert, siehe "Topology Lab - Phase 2 (Teilstand)")
 - Universal / All-in-One Mode
 - endgültige Selection-Farben / Visual Design
 - Soft Selection, Snapping, Ortho-Ansicht
@@ -211,8 +236,13 @@ viewport/
   demo_scene.py       - ursprüngliche Würfel-Testszene
   topology_scene.py   - kontrollierte Topology-Testszene
   topology_tools.py   - experimentelle Phase-1-Topologie-Werkzeuge
+  loop_ring.py         - Phase-2 Edge-Loop-/Edge-Ring-Erkennung (reine Query)
   app.py              - ursprünglicher V1-Viewport
   topology_app.py     - Topology-Lab auf Basis von app.py
 run.py                - ursprünglicher V1-Einstiegspunkt
 run_topology.py       - Topology-Lab-Einstiegspunkt
+tests/
+  test_constraints.py   - Achsen-/Ebenen-Constraints
+  test_camera_picking.py - Kamera-/Picking-Logik
+  test_loop_ring.py      - Edge-Loop-/Edge-Ring-Erkennung (Phase 2)
 ```

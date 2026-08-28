@@ -56,7 +56,7 @@ Praktische Beobachtungen:
 
 ## Phase 2 — Loop / Ring Detection und Selection
 
-**Nächster Forschungsbereich.**
+**Aktueller Forschungsbereich. Teilstand: reine Erkennung implementiert und getestet, interaktive Anbindung noch offen.**
 
 Zuerst wird konservativ untersucht, ob Edge Loops und Edge Rings zuverlässig erkannt und ausgewählt werden können.
 
@@ -67,6 +67,20 @@ Loop / Ring traversal
       ↓
 selected edge set
 ```
+
+**Erkennung (Query-Ebene):** `experiments/mirai_bastel_viewport_V1/viewport/loop_ring.py` implementiert `edge_loop()` und `edge_ring()` rein über die bestehende Topologie-Query-API (`face_vertices`, `face_edges`, `edge_faces`, `edge_vertices`, `vertex_edges`), ohne Core- oder Mesh-Änderung. Bewusst konservativ:
+
+- **Edge Ring** läuft nur durch Quad-Faces (Boundary-Länge 4); trifft er auf eine Non-Quad-Face, bricht er auf dieser Seite ab.
+- **Edge Loop** läuft nur durch Vertices mit Valenz genau 4 und eindeutigem "gegenüberliegendem" Kandidaten (keine gemeinsame Face mit der eingehenden Kante). Boundary-Loop-Fortsetzung (Weiterlaufen entlang eines offenen Randes) ist bewusst **nicht** implementiert, sondern als offene Folgefrage dokumentiert statt still zu raten.
+- Beide erkennen geschlossene Loops/Ringe (z. B. auf einem geschlossenen Quad-Rohr) explizit über ein `closed`-Flag, statt die Startkante doppelt aufzunehmen.
+
+Verifiziert über `experiments/mirai_bastel_viewport_V1/tests/test_loop_ring.py` (reine Logik-Tests ohne Fenster/GPU, wie `test_camera_picking.py`): volle Zeile/Spalte im Quad-Grid, konservativer Abbruch an Rand-Valenz, konservativer Abbruch an einer Non-Quad-Face, sowie geschlossene Loop-/Ring-Erkennung auf einem künstlichen Quad-Rohr.
+
+**Noch offen:**
+
+- interaktive Anbindung im Topology Lab (z. B. Klick/Modifier → `edge_loop()`/`edge_ring()` → `scene.selection.set(...)`), bisher nur als reine Funktion getestet, nicht im Viewport verdrahtet;
+- Loop-/Ring-Verhalten bei gemischter Quad-/Non-Quad-Topologie über die getestete Grenzfall-Abdeckung hinaus;
+- Boundary-Loop-Fortsetzung (aktuell bewusst ausgeschlossen).
 
 Erst wenn die Erkennung ausreichend zuverlässig ist, werden darauf aufbauende Operationen untersucht:
 
