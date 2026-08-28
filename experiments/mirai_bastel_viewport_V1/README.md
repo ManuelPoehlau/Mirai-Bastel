@@ -122,7 +122,7 @@ Die vier Phase-1-Primitives wurden praktisch geprüft:
 Split Edge          → 1 Edge              ✅
 Collapse Edge       → 1 Edge              ✅
 Connect Vertices    → 2 Vertices          ✅
-Connect Edges       → 2 Edges              ✅
+Connect Edges       → 2 Edges             ✅
 
 Multi-Selection
 Collapse Vertices   → 2+ Vertices         ✅
@@ -162,36 +162,65 @@ dem aktuellen eingefrorenen Core synchronisiert**, da `load_state()` im
 aktuellen Core V1 noch nicht vorhanden ist. Undo/Redo für Topologie ist daher
 vorerst aus dem praktischen Test auszunehmen und wird separat geklärt.
 
-## Topology Lab - Phase 2 (Teilstand)
+## Topology Lab - Phase 2
 
-Reine Erkennung von Edge Loops und Edge Rings, ohne Core-/Mesh-Änderung und
-ohne interaktive Anbindung im Viewport:
+Edge-Loop- und Edge-Ring-Erkennung sowie die interaktive Auswahl im Viewport
+wurden als Experiment umgesetzt und praktisch verifiziert.
+
+### Erkennung
 
 - `viewport/loop_ring.py` — `edge_loop()` / `edge_ring()`, ausschließlich
   über die bestehende Topologie-Query-API (`face_vertices`, `face_edges`,
   `edge_faces`, `edge_vertices`, `vertex_edges`).
 - Bewusst konservativ: Edge Ring läuft nur durch Quad-Faces, Edge Loop nur
   durch Vertices mit Valenz 4 und eindeutigem gegenüberliegendem Kandidaten.
-  Boundary-Loop-Fortsetzung ist bewusst nicht implementiert. Beide erkennen
-  geschlossene Loops/Ringe explizit (`closed`-Flag) statt die Startkante
-  doppelt aufzunehmen.
-- Getestet in `tests/test_loop_ring.py` (reine Logik-Tests ohne Fenster/GPU):
-  volle Zeile/Spalte im Quad-Grid, konservativer Abbruch an Rand-Valenz und
-  an einer Non-Quad-Face, geschlossene Loop-/Ring-Erkennung auf einem
-  künstlichen Quad-Rohr.
-- **Noch nicht Teil dieses Standes:** interaktive Auswahl im Viewport
-  (Klick/Modifier → Loop/Ring-Selection). Details und offene Fragen stehen
-  in `experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md`, Phase 2.
+- Boundary-Loop-Fortsetzung ist bewusst nicht implementiert.
+- Beide erkennen geschlossene Loops/Ringe explizit (`closed`-Flag), ohne die
+  Startkante doppelt aufzunehmen.
+- Reine Logik-Tests in `tests/test_loop_ring.py` decken Quad-Grid,
+  konservative Abbrüche und geschlossene Loop-/Ring-Fälle ab.
+
+### Interaktive Selection
+
+- **Edge Mode + genau 1 Edge + `L`** → Edge Loop auswählen
+- **Edge Mode + genau 1 Edge + `R`** → Edge Ring auswählen
+- die bisherige Selection wird durch das erkannte Edge-Set ersetzt
+- das Ergebnis wird unmittelbar im Viewport visualisiert
+- geschlossene Traversierungen werden in der Caption angezeigt
+- die Auswahl selbst verändert keine Mesh-Topologie und benötigt keine
+  Änderung am eingefrorenen Core V1
+
+Die praktische Prüfung hat bestätigt, dass die komplette Kette funktioniert:
+
+```text
+Edge Picking
+    ↓
+Loop / Ring Detection
+    ↓
+Edge Set
+    ↓
+Viewport Selection
+    ↓
+visuelles Ergebnis
+```
+
+### Bewusst noch offen
+
+- gemischte Quad-/Non-Quad-Topologien über die vorhandene Grenzfallabdeckung
+  hinaus
+- Boundary-Loop-Fortsetzung
+- endgültige Modifier-/Interaktionssemantik
+- weiterführende Loop-/Ring-Operationen wie Insert, Cut oder Slide
 
 ## Was als Nächstes folgt
 
 ```text
 Topology Phase 1 → abgeschlossen
         ↓
-Topology Phase 2 → Erkennung implementiert & getestet,
-                    interaktive Selection im Viewport offen
+Topology Phase 2 → Loop/Ring Detection + interaktive Selection
+                    praktisch verifiziert
         ↓
-Loop Insert
+Loop Insert / Loop Cut
 Loop Remove / Dissolve
         ↓
 Extrude
@@ -216,8 +245,6 @@ weiterhin vorläufig und keine endgültige UI-Entscheidung.
 
 - Object Mode
 - endgültiges Modeling-UI
-- interaktive Loop-/Ring-Selection im Viewport (Erkennung selbst ist
-  implementiert, siehe "Topology Lab - Phase 2 (Teilstand)")
 - Universal / All-in-One Mode
 - endgültige Selection-Farben / Visual Design
 - Soft Selection, Snapping, Ortho-Ansicht
@@ -235,7 +262,7 @@ viewport/
   picking.py          - Vertex-, Edge- und Face-Picking
   demo_scene.py       - ursprüngliche Würfel-Testszene
   topology_scene.py   - kontrollierte Topology-Testszene
-  topology_tools.py   - experimentelle Phase-1-Topologie-Werkzeuge
+  topology_tools.py   - experimentelle Phase-1- und Selection-Werkzeuge
   loop_ring.py         - Phase-2 Edge-Loop-/Edge-Ring-Erkennung (reine Query)
   app.py              - ursprünglicher V1-Viewport
   topology_app.py     - Topology-Lab auf Basis von app.py
