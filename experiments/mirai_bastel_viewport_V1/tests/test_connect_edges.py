@@ -18,7 +18,7 @@ _THIS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_THIS_DIR.parent))
 sys.path.insert(0, str(_THIS_DIR.parent.parent / "mirai_bastel_core_V1"))
 
-from mirai_bastel_core import Mesh, Scene  # noqa: E402
+from mirai_bastel_core import Mesh, Scene, HistoryStack  # noqa: E402
 
 from viewport.topology_scene import build_topology_scene  # noqa: E402
 from viewport.topology_tools import connect_selected_edges, TopologyToolError  # noqa: E402
@@ -75,8 +75,7 @@ def test_two_compatible_edges_on_quad() -> None:
 
     scene = Scene()
     scene.mesh = mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     edge_count_before = len(mesh.all_edge_ids())
     vertex_count_before = len(mesh.all_vertex_ids())
@@ -92,7 +91,7 @@ def test_three_compatible_edges_connected_not_sorted() -> None:
     print("\n--- Connect Edges: 3 kompatible Edges — Topologie statt ID-Sortierung ---")
     # Lineare Kette von 3 Quads nebeneinander:
     # [Quad0] [Quad1] [Quad2]
-    # Wähle die 3 mittleren Vertikalkanten: diese sollten NICHT nur nach ID sortiert
+    # Wähle die 3 mittleren vertikalkanten: diese sollten NICHT nur nach ID sortiert
     # verbunden werden, sondern topologisch als in-Reihe erkannt werden.
     mesh = Mesh()
     verts = {
@@ -115,8 +114,7 @@ def test_three_compatible_edges_connected_not_sorted() -> None:
 
     scene = Scene()
     scene.mesh = mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     created = connect_selected_edges(scene, [e1, e2, e3])
 
@@ -152,8 +150,7 @@ def test_complete_edge_ring_connect() -> None:
 
     scene = Scene()
     scene.mesh = mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     # Spec: "A ring selected through the Ring tool should be usable as input"
     created = connect_selected_edges(scene, ring_edges)
@@ -187,8 +184,7 @@ def test_multiple_disconnected_groups_independent() -> None:
 
     scene = Scene()
     scene.mesh = mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     # Spec: "Disconnected compatible groups should be handled independently"
     created = connect_selected_edges(scene, [e1_bottom, e1_top, e2_bottom, e2_top])
@@ -219,8 +215,7 @@ def test_invalid_selection_leaves_mesh_unchanged() -> None:
 
     scene = Scene()
     scene.mesh = mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     mesh_state_before = mesh.export_state()
     vertex_count_before = len(mesh.all_vertex_ids())
@@ -247,9 +242,8 @@ def test_deterministic_result_different_order() -> None:
 
     mesh1 = scene1.mesh
     mesh2 = scene2.mesh
-    from mirai_bastel_core import History
-    scene1.history = History()
-    scene2.history = History()
+    scene1.history = HistoryStack()
+    scene2.history = HistoryStack()
 
     # Wähle die 3 mittleren horizontalen Kanten, aber in verschiedenen Reihenfolgen
     e_middle_1_order1 = [
@@ -286,8 +280,7 @@ def test_edge_loop_selection_valid_input() -> None:
     scene = build_topology_scene(cells=4)
     lookup = _grid_vertices(scene, cells=4)
     mesh = scene.mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     # Loop entlang einer Zeile (alle Kanten der Zeile 2, von links nach rechts)
     loop_edges = [
@@ -335,8 +328,7 @@ def test_partial_failure_no_mesh_change() -> None:
 
     scene = Scene()
     scene.mesh = mesh
-    from mirai_bastel_core import History
-    scene.history = History()
+    scene.history = HistoryStack()
 
     mesh_state_before = mesh.export_state()
     vertex_count_before = len(mesh.all_vertex_ids())
@@ -353,6 +345,7 @@ def test_partial_failure_no_mesh_change() -> None:
 
 
 def run_all() -> None:
+    global _failures
     tests = [
         test_two_compatible_edges_on_quad,
         test_three_compatible_edges_connected_not_sorted,
