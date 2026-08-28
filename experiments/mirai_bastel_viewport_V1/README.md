@@ -106,14 +106,27 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
 - Edge Mode
 - mindestens zwei Edges auswählen
 - **Shift+C** drücken
-- aktuell werden ausgewählte Edges zunächst am Mittelpunkt gesplittet und die
-  neuen Mittelpunkte anschließend experimentell als Kette verbunden
-- die erzeugten Verbindungs-Edges werden ausgewählt
-- bei größeren Multi-Selections ist die Semantik noch nicht als einheitliche
-  Connect-Operation geklärt; Teile der Auswahl können verbunden werden,
-  während andere Edges lediglich gesplittet werden
-- insbesondere ein ausgewählter Edge Ring verhält sich derzeit nur wie eine
-  normale Multi-Edge-Selection und erzeugt damit noch keinen Loop Insert
+- die Operation ist topology-aware und läuft in drei getrennten Phasen
+  (Analyze/Validate → Plan → Apply/Commit), siehe
+  `docs/research/topology/CONNECT_EDGES_SPEC.md`
+- Gruppen und Verbindungen entstehen ausschließlich aus Topologie/Geometrie:
+  - gegenüberliegende Kanten einer gemeinsamen Quad-Face werden über ihre
+    Mittelpunkte verbunden (`connect_vertices`)
+  - kantenbenachbarte Ketten (kollineare Edges um einen regulären
+    Innen-Vertex) werden über freie Kanten zwischen den Mittelpunkten
+    aufeinanderfolgender Edges verbunden (`add_edge`); die durchlaufenen
+    Vertices bleiben erhalten
+- vollständig atomic: ungültige/inkompatible Auswahlen ändern das Mesh nicht
+  (Analyse ist read-only; der Plan wird vor der Mutation auf einem Clone
+  validiert; bei Fehlern wird der exakte Vorher-Zustand wiederhergestellt)
+- deterministisch: Selection-Reihenfolge und numerische Edge-IDs haben keinen
+  Einfluss auf Gruppierung oder Ergebnis
+- genau ein History-Snapshot pro Operation (Undo/Redo über Snapshot-Restore)
+- Edge-Ring-Auswahlen erzeugen auf geeigneter Quad-Topologie die zugehörige
+  Querverbindungs-Struktur als Ring-Interpretation (noch kein Loop Insert -
+  das bleibt eine eigene Höher-Level-Operation)
+- Scope aktuell: reguläre kompatible Quad-Topologie. Boundary-/Non-Quad-/
+  Mixed-Valence-/Non-Manifold-Fälle werden explizit abgelehnt.
 
 ### Phase-1-Ergebnis
 
@@ -129,7 +142,7 @@ Multi-Selection
 Collapse Vertices   → 2+ Vertices         ✅
 Collapse Edges      → 2+ Edges             ✅
 Connect Vertices    → 3+                  ⚠️ experimentell
-Connect Edges       → 3+                  ⚠️ Semantik offen
+Connect Edges       → 3+                  ✅ Ketten & Ringe (Quad-Scope, atomar)
 ```
 
 Ein konkreter Viewport-Bug bei **Connect Vertices mit 3+ Vertices** wurde

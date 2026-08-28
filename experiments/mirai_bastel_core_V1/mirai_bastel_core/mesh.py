@@ -168,6 +168,27 @@ class Mesh:
         self._edge_lookup[key] = eid
         return eid
 
+    def add_edge(self, v_a: VertexId, v_b: VertexId) -> EdgeId:
+        """Erzeugt eine freie Edge zwischen zwei bestehenden Vertices.
+
+        Vom Connect-Edges-Experiment entdeckte Kern-Fähigkeit (siehe
+        docs/research/topology/CONNECT_EDGES_SPEC.md): Higher-Level-
+        Operationen wie Connect Edges müssen Kanten zwischen zwei
+        Vertices anlegen koennen, die KEINE gemeinsame Face besitzen
+        (z. B. Verbindungskanten zwischen den Mittelpunkten kanten-
+        benachbarter Kettenglieder). Ueber die bestehenden Primitiven
+        (connect_vertices) ist das nicht abbildbar.
+
+        ID-Kontinuitaet:
+        - falls zwischen v_a und v_b bereits eine Edge existiert, wird
+          genau diese zurueckgegeben (keine neue EdgeId).
+        - sonst entsteht genau eine neue EdgeId; die Edge ist freistehend
+          (Face-Liste leer) und referenziert ausschliesslich bestehende
+          Vertices.
+        - es entstehen keine Vertices und keine Faces.
+        """
+        return self._get_or_create_edge(v_a, v_b)
+
     def add_face(self, vertex_ids: list[VertexId]) -> FaceId:
         """Erzeugt eine Face aus einer geordneten Liste bestehender Vertices.
 

@@ -16,7 +16,7 @@ Der eigentliche experimentelle Code liegt derzeit bewusst unter `experiments/mir
 
 ## Aktueller Status
 
-**Phase 1 — vorhandene Core-Primitives als interaktive Werkzeuge: untersucht; Connect Edges bleibt offen.**
+**Phase 1 — vorhandene Core-Primitives als interaktive Werkzeuge: untersucht; Connect Edges wurde in Phase 3 ausstehend abgeschlossen.**
 
 Getestet wurden unter anderem:
 
@@ -27,7 +27,7 @@ Getestet wurden unter anderem:
 - Mehrfachauswahl für Collapse/Connect-Fälle
 - relevante Grenzfälle, soweit die vorhandene Geometrie weitere sinnvolle Operationen zulässt
 
-Dabei wurden praktische Workflow-Fragen entdeckt, insbesondere das Verhalten von Selection und Selection Mode nach einer Topologieoperation. Wichtig ist außerdem: Die aktuelle experimentelle Implementierung von Connect Edges behandelt größere Multi-Selections noch nicht als sauber definierte einheitliche Connect-Operation. Diese Semantik ist daher **nicht abgeschlossen**.
+Dabei wurden praktische Workflow-Fragen entdeckt, insbesondere das Verhalten von Selection und Selection Mode nach einer Topologieoperation. Die frühere experimentelle Implementierung von Connect Edges behandelte größere Multi-Selections nicht als sauber definierte einheitliche Connect-Operation; diese Semantik ist mit Phase 3 (siehe unten) für den regulären Quad-Scope abgeschlossen.
 
 **Phase 2 — Loop/Ring-Erkennung und Selection: abgeschlossen als Experiment.**
 
@@ -58,23 +58,23 @@ visuelles Praxisergebnis
 
 Die Detection bleibt bewusst konservativ: Edge Rings laufen nur durch Quad-Faces; Edge Loops benötigen Valenz 4 und einen eindeutigen gegenüberliegenden Kandidaten. Boundary-Loop-Fortsetzung sowie weitergehende gemischte Topologien bleiben offene Forschungsfragen und sind nicht Teil dieses Abschlusses.
 
-**Phase 3 — Connect Edges: Semantik und robuste Multi-Selection.**
+**Phase 3 — Connect Edges: Semantik und robuste Multi-Selection: untersucht.**
 
-Connect Edges wurde bewusst vor Loop Insert priorisiert. Die Operation ist eine grundlegende Modeling-Primitive und soll zuerst hinsichtlich ihrer Bedeutung bei mehreren ausgewählten Edges geklärt werden. Der aktuelle Zustand wird nicht als endgültiges Verhalten angenommen.
+Connect Edges wurde bewusst vor Loop Insert priorisiert. Die Operation ist eine grundlegende Modeling-Primitive. Die bisherige experimentelle Implementierung (ID-Sortierung → Splits → Verketten) wurde gemäß `docs/research/topology/CONNECT_EDGES_SPEC.md` durch eine topology-aware, atomare Implementierung ersetzt:
 
-Untersucht werden insbesondere:
+- drei klar getrennte Phasen: **Analyze/Validate → Plan → Apply/Commit**
+- Gruppierung und Verbindungen basieren ausschließlich auf Topologie/Geometrie:
+  - gegenüberliegende Kanten einer Quad-Face → `connect_vertices`
+  - kantenbenachbarte Ketten um reguläre Innen-Vertices → freie Kante via neuem Minimalprimitive `Mesh.add_edge` (vom Experiment entdeckte, im Experiment-Core ergänzte Fähigkeit; `split_edge`/`connect_vertices` blieben unverändert)
+- vollständig atomic: jeder Validierungs-/Konstruktionsfehler lässt das Mesh exakt unverändert (read-only-Analyse, Plan-Dry-Run auf Clone, Rollback über `load_state`)
+- deterministisch: Selection-Reihenfolge und numerische Edge-IDs beeinflussen weder Gruppierung noch Ergebnis
+- genau ein History-Snapshot pro Operation
 
-- Verhalten bei 2 Edges
-- Verhalten bei 3+ zusammenhängenden Edges
-- vollständige Loops und Rings
-- disjunkte Edges
-- Boundary-Edges
-- gemischte Face-Typen
-- ungültige Auswahlen und Teilmutationen
-- resultierende Selection und Selection Mode
-- neue IDs, Topologiebeziehungen und spätere History-Anforderungen
+Praktisch verifiziert über `tests/test_connect_edges.py`: 2 kompatible Edges, 3+ Ketten, 4+ zusammenhängende Edges, kompletter Edge Ring, Edge Loop als Input, mehrere disjunkte Gruppen, ungültige Auswahl, mehrere Selection-Reihenfolgen, genau ein History-Snapshot mit Undo/Redo, atomare Fehlerfälle.
 
-Ein praktischer Test `Edge Ring → Connect Edges` hat bereits gezeigt, dass die Ring-Auswahl momentan lediglich als normale Multi-Edge-Selection an die bestehende Connect-Logik weitergereicht wird. Daraus entsteht noch kein echtes Loop-Insert-Verhalten.
+Scope: reguläre kompatible Quad-Topologie (Ketten, Ringe). Boundary-, Non-Quad-, Mixed-Valence- und Non-Manifold-Fälle werden explizit abgelehnt und sind damit weiterhin offene Forschungsfragen.
+
+**Noch offen:** Loop Insert als eigene Höher-Level-Operation (Phase 4) - Connect Edges bleibt bewusst davon getrennt.
 
 **Phase 4 — Loop Insert / Loop Remove: geplant.**
 

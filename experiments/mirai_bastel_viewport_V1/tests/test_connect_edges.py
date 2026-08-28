@@ -1,10 +1,10 @@
-"""Connect Edges Tests — Spec-Semantik vor Implementierung.
+"""Connect Edges Tests — Spec-Semantik.
 
 Basis: docs/research/topology/CONNECT_EDGES_SPEC.md
 
-Diese Tests prüfen die GEWÜNSCHTE Semantik, nicht das aktuelle fehlerhafte
-Verhalten. Ein rot-markierter Test zeigt, wo die aktuelle Implementierung
-die Spec verletzt.
+Diese Tests prüfen die gewünschte Semantik der topology-aware, atomaren
+Connect-Edges-Operation (Analyze/Validate -> Plan -> Apply/Commit).
+Die Implementierung liegt in viewport/topology_tools.connect_selected_edges.
 
 Ausführen mit: python -m tests.test_connect_edges (aus Viewport-Verzeichnis)
 """
@@ -59,6 +59,28 @@ def _grid_vertices(scene, cells: int):
 def _mesh_state_equals(mesh1_state: dict, mesh2_state: dict) -> bool:
     """Vergleicht zwei export_state() Diktionäre auf Gleichheit."""
     return mesh1_state == mesh2_state
+
+
+def _topology_snapshot(mesh: Mesh) -> dict:
+    """Vergleichszustand ohne Allocator-Zähler.
+
+    AD-001: Der ID-Allocator bleibt monoton - Undo stellt die exakte Topologie
+    (alle IDs und Beziehungen) wieder her, macht dabei aber keine bereits
+    vergebene ID erneut verfügbar. Die Zählerstände in export_state() dürfen
+    deshalb nach undo() höher liegen als vor der Operation.
+    """
+    vertices = mesh.all_vertex_ids()
+    edges = mesh.all_edge_ids()
+    faces = mesh.all_face_ids()
+    return {
+        "vertex_ids": tuple(sorted(map(int, vertices))),
+        "edge_ids": tuple(sorted(map(int, edges))),
+        "face_ids": tuple(sorted(map(int, faces))),
+        "positions": {int(v): mesh.vertex_position(v) for v in vertices},
+        "edge_vertices": {int(e): tuple(map(int, mesh.edge_vertices(e))) for e in edges},
+        "edge_faces": {int(e): sorted(map(int, mesh.edge_faces(e))) for e in edges},
+        "face_vertices": {int(f): tuple(map(int, mesh.face_vertices(f))) for f in faces},
+    }
 
 
 def test_two_compatible_edges_on_quad() -> None:
@@ -313,17 +335,156 @@ def test_partial_failure_no_mesh_change() -> None:
     check("export_state nach Fehler unverändert", _mesh_state_equals(mesh_state_before, mesh.export_state()))
 
 
+def _midpoint_vertex(mesh: Mesh, v_a, v_b):
+    """Findet den Mittelpunkt-Vertex einer (ggf. bereits gesplitteten) Kante."""
+    target = tuple(
+        (mesh.vertex_position(v_a)[i] + mesh.vertex_position(v_b)[i]) / 2.0
+        for i in range(3)
+    )
+    for vid in mesh.all_vertex_ids():
+        if mesh.vertex_position(vid) == target:
+            return vid
+    raise AssertionError(f"Kein Mittelpunkt-Vertex bei Position {target} gefunden")
+
+
+def test_four_connected_edges_topology_verified() -> None:
+    print("\n--- Connect Edges: 4+ zusammenhängende Edges — Topologie statt IDs ---")
+    scene = build_topology_scene(cells=5)
+    mesh = scene.mesh
+    scene.history = HistoryStack()
+    lookup = _grid_vertices(scene, cells=5)
+
+    # 5 vertikale Edges in Spalte 2 = eine topologische Kette (4+ Edges).
+    chain = [
+        _find_edge(mesh, lookup[(r, 2)], lookup[(r + 1, 2)])
+        for r in range(5)
+    ]
+    created = connect_selected_edges(scene, list(reversed(chain)))
+
+    check("5er-Kette: 4 Verbindungskanten erwartet", len(created) == 4)
+
+    # Die erzeugten Kanten verbinden exakt aufeinanderfolgende Mittelpunkte.
+    mids = [
+        _midpoint_vertex(mesh, lookup[(r, 2)], lookup[(r + 1, 2)])
+        for r in range(5)
+    ]
+    topo_ok = True
+    for i in range(4):
+        expected_edge = _find_edge(mesh, mids[i], mids[i + 1])
+        if created[i] != expected_edge:
+            topo_ok = False
+    check("Verbindungskanten verbinden exakt aufeinanderfolgende Mittelpunkte", topo_ok)
+
+    # Die durchlaufenen (gemeinsamen) Vertices der Kette bleiben erhalten.
+    shared_ok = all(mesh.is_valid_vertex(lookup[(r, 2)]) for r in range(1, 5))
+    check("Gemeinsame Ketten-Vertices bleiben unverändert erhalten", shared_ok)
+
+
+def test_multiple_selection_orders_identical() -> None:
+    print("\n--- Connect Edges: mehrere Selection-Reihenfolgen -> identisches Ergebnis ---")
+    orders = [
+        [0, 1, 2, 3, 4],
+        [4, 3, 2, 1, 0],
+        [1, 4, 0, 3, 2],
+        [2, 0, 4, 1, 3],
+    ]
+    states = []
+    created_counts = []
+    for perm in orders:
+        scene = build_topology_scene(cells=5)
+        mesh = scene.mesh
+        scene.history = HistoryStack()
+        lookup = _grid_vertices(scene, cells=5)
+        chain = [
+            _find_edge(mesh, lookup[(r, 2)], lookup[(r + 1, 2)])
+            for r in range(5)
+        ]
+        try:
+            created = connect_selected_edges(scene, [chain[i] for i in perm])
+        except TopologyToolError as e:
+            check(f"Reihenfolge {perm}: Operation fehlgeschlagen ({e})", False)
+            continue
+        states.append(mesh.export_state())
+        created_counts.append(len(created))
+
+    check("Alle Selection-Reihenfolgen erzeugen gleiche Kantenzahl",
+          len(set(created_counts)) == 1)
+    check("Alle Selection-Reihenfolgen erzeugen identischen Mesh-Zustand",
+          len(states) > 1 and all(_mesh_state_equals(states[0], s) for s in states[1:]))
+
+
+def test_single_history_snapshot_undo_redo() -> None:
+    print("\n--- Connect Edges: genau ein History-Snapshot + Undo/Redo ---")
+    scene = build_topology_scene(cells=4)
+    mesh = scene.mesh
+    scene.history = HistoryStack()
+    lookup = _grid_vertices(scene, cells=4)
+    chain = [
+        _find_edge(mesh, lookup[(r, 2)], lookup[(r + 1, 2)])
+        for r in range(4)
+    ]
+    before = mesh.export_state()
+    before_topology = _topology_snapshot(mesh)
+
+    created = connect_selected_edges(scene, chain)
+    after = mesh.export_state()
+
+    check("Genau 1 History-Eintrag committet", len(scene.history) == 1)
+    check("Operation erzeugt tatsächlich Verbindungen", len(created) == 3)
+
+    scene.history.undo()
+    check("Undo stellt exakte Topologie wieder her (IDs + Beziehungen)",
+          _topology_snapshot(mesh) == before_topology)
+    check("Undo macht keine alten IDs wiederverwendbar (AD-001)",
+          all(mesh.export_state()[f"{kind}_id_counter"] >= before[f"{kind}_id_counter"]
+              for kind in ("vertex", "edge", "face")))
+
+    scene.history.redo()
+    check("Redo stellt exakten Nachher-Zustand wieder her",
+          _mesh_state_equals(after, mesh.export_state()))
+
+
+def test_incompatible_addition_fails_atomically() -> None:
+    print("\n--- Connect Edges: inkompatibler Zusatz -> komplette Operation abgelehnt ---")
+    scene = build_topology_scene(cells=4)
+    mesh = scene.mesh
+    scene.history = HistoryStack()
+    lookup = _grid_vertices(scene, cells=4)
+    chain = [
+        _find_edge(mesh, lookup[(r, 2)], lookup[(r + 1, 2)])
+        for r in range(4)
+    ]
+    # Gültige Kante, aber ohne topologische Beziehung zur Kette (Random-Kante).
+    far_edge = _find_edge(mesh, lookup[(0, 0)], lookup[(0, 1)])
+
+    before = mesh.export_state()
+
+    try:
+        connect_selected_edges(scene, chain + [far_edge])
+        check("Operation mit inkompatiblem Zusatz hätte fehlschlagen müssen", False)
+    except TopologyToolError:
+        check("Operation mit inkompatiblem Zusatz schlägt fehl", True)
+
+    check("Mesh nach Fehler exakt unverändert",
+          _mesh_state_equals(before, mesh.export_state()))
+    check("Kein History-Eintrag bei Fehler", len(scene.history) == 0)
+
+
 def run_all() -> None:
     global _failures
     tests = [
         test_two_compatible_edges_on_quad,
         test_three_compatible_edges_connected_not_sorted,
+        test_four_connected_edges_topology_verified,
         test_complete_edge_ring_connect,
         test_multiple_disconnected_groups_independent,
         test_invalid_selection_leaves_mesh_unchanged,
         test_deterministic_result_different_order,
+        test_multiple_selection_orders_identical,
         test_edge_loop_selection_valid_input,
         test_partial_failure_no_mesh_change,
+        test_incompatible_addition_fails_atomically,
+        test_single_history_snapshot_undo_redo,
     ]
     for t in tests:
         try:

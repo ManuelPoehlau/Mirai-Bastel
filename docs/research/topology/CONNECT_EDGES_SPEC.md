@@ -1,7 +1,7 @@
 # Connect Edges — Behavior Specification
 
-Status: **Experiment / design contract**  
-Purpose: define the intended semantics before replacing the current experimental implementation.
+Status: **Experiment / design contract — implementiert (Scope: reguläre Quad-Topologie)**  
+Purpose: define the intended semantics; the experimental implementation in `experiments/mirai_bastel_viewport_V1/viewport/topology_tools.py` now follows this contract (Analyze → Plan → Apply/Commit, atomic and deterministic). Section 7 documents the superseded pre-implementation state.
 
 ## 1. Purpose
 
@@ -113,9 +113,18 @@ Loop Remove / Dissolve
 
 This separation is intentional. `Connect Edges` should remain a reusable topology primitive rather than becoming a universal modeling command.
 
-## 7. Current implementation gap
+## 7. Current implementation gap (superseded)
 
-The current experimental `connect_selected_edges()` implementation effectively does:
+> Status note: this section described the state **before** the topology-aware
+> implementation. `connect_selected_edges()` now follows sections 2–5: it
+> separates Analyze/Validate, Plan (validated by a dry-run on a clone before
+> any mutation) and Apply/Commit (exactly one history snapshot), groups by
+> topology only, and is fully atomic. Scope is currently regular compatible
+> quad topology; boundary/non-quad/mixed-valence/non-manifold constellations
+> are rejected explicitly and remain open (see section 10). The text below is
+> kept as project memory of the superseded prototype.
+
+The previous experimental `connect_selected_edges()` implementation effectively did:
 
 ```text
 selected edges
