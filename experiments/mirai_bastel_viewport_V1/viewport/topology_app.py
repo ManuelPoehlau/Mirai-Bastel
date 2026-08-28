@@ -23,9 +23,9 @@ from .topology_tools import (
 
 
 class TopologyWindow(ModelerWindow):
-    def __init__(self) -> None:
+    def __init__(self, scene=None) -> None:
         super().__init__()
-        self.scene = build_topology_scene()
+        self.scene = scene if scene is not None else build_topology_scene()
         self.selection_mode = SelectionMode.EDGE
         self.scene.selection.mode = self.selection_mode
         self.scene.selection.clear()
