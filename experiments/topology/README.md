@@ -29,9 +29,36 @@ Getestet wurden unter anderem:
 
 Dabei wurden auch praktische Workflow-Fragen entdeckt, insbesondere das Verhalten von Selection und Selection Mode nach einer Topologieoperation. Diese Fragen sind bewusst noch nicht als Produktionsvertrag festgelegt.
 
-**Phase 2 — Loop/Ring-Erkennung und Selection: nächster Forschungsbereich.**
+**Phase 2 — Loop/Ring-Erkennung und Selection: abgeschlossen als Experiment.**
 
-Zunächst konservative Erkennung bzw. Auswahl von Edge Loops und Edge Rings. Erst wenn diese Erkennung zuverlässig funktioniert, werden darauf aufbauende Operationen wie Loop Insert/Loop Cut untersucht.
+Die konservative Erkennung von Edge Loops und Edge Rings wurde als reine Query implementiert und durch Logiktests verifiziert. Anschließend wurde sie interaktiv in das Topology Lab eingebunden und praktisch im Viewport getestet.
+
+Aktuelles experimentelles Verhalten:
+
+- **Edge Mode + genau 1 Edge + `L`** → Auswahl des erkannten Edge Loops
+- **Edge Mode + genau 1 Edge + `R`** → Auswahl des erkannten Edge Rings
+- die bestehende Auswahl wird durch die erkannte Loop-/Ring-Auswahl ersetzt
+- das Ergebnis wird direkt im Viewport visualisiert
+- geschlossene Traversierungen werden über den vorhandenen `closed`-Status angezeigt
+- die Loop-/Ring-Auswahl verändert keine Mesh-Topologie und benötigt keine Core-Änderung
+
+Damit ist die gesamte Phase-2-Kette praktisch verifiziert:
+
+```text
+Edge Picking
+    ↓
+Loop / Ring Detection
+    ↓
+Edge Set
+    ↓
+Viewport Selection
+    ↓
+visuelles Praxisergebnis
+```
+
+Die Detection bleibt bewusst konservativ: Edge Rings laufen nur durch Quad-Faces; Edge Loops benötigen Valenz 4 und einen eindeutigen gegenüberliegenden Kandidaten. Boundary-Loop-Fortsetzung sowie weitergehende gemischte Topologien bleiben offene Forschungsfragen und sind nicht Teil dieses Abschlusses.
+
+Die nächste Forschungsgruppe ist **Loop Insert / Loop Cut sowie Loop Remove / Dissolve**.
 
 ## Langfristiger Forschungszweck
 
