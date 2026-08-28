@@ -93,6 +93,18 @@ Only faces can be selected.
 
 Face selection uses the filled-face representation and ray-based picking so that overlapping projected faces resolve to the visible/front-most face.
 
+### Loop / Ring Selection
+
+The Topology Lab now supports the first interactive Loop/Ring selection experiment:
+
+- **Edge Mode + exactly one selected Edge + `L`** → selects the detected Edge Loop.
+- **Edge Mode + exactly one selected Edge + `R`** → selects the detected Edge Ring.
+- the existing selection is replaced by the resulting Edge set;
+- the selection is immediately visualized in the viewport;
+- closed traversals are reported in the Topology Lab caption.
+
+The current Loop/Ring traversal is intentionally conservative and remains an experiment rather than a final selection specification. Boundary-loop continuation and more complex mixed-topology behavior remain open.
+
 ## Sub-Object Move
 
 The experiment uses the existing Core `MoveOperation` and resolves the selected Sub-Objects into affected vertices:
@@ -167,7 +179,6 @@ The detailed long-term selection/workflow discussion belongs in [`docs/future_id
 - Object Mode
 - Visible Only vs. Through/X-Ray
 - Box/Lasso/Brush selection
-- Loop/Ring selection
 - Grow/Shrink and other selection expansion/reduction
 - Universal / All-in-One selection mode
 - final modifier behavior
@@ -175,6 +186,8 @@ The detailed long-term selection/workflow discussion belongs in [`docs/future_id
 - Soft Selection / Influence
 - advanced picking behavior
 - final post-operation selection/mode policy
+- Boundary-loop continuation
+- more complex mixed-topology Loop/Ring behavior
 
 ## Experiment philosophy
 
@@ -195,4 +208,10 @@ Toggle multi-selection has been tested in all three Sub-Object modes.
 
 Sub-Object Move has been implemented using the existing Core `MoveOperation` and the topology query API.
 
-Further selection behavior remains an active experiment, especially loop/ring selection, visibility rules and post-operation workflow.
+Loop/Ring selection has now also been practically verified in the Topology Lab:
+
+```text
+Edge Pick → Loop/Ring Detection → Edge Set → Selection Highlight
+```
+
+Further selection behavior remains an active experiment, especially visibility rules, boundary/mixed-topology traversal and post-operation workflow.
