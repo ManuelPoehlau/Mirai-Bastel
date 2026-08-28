@@ -16,7 +16,7 @@ Der eigentliche experimentelle Code liegt derzeit bewusst unter `experiments/mir
 
 ## Aktueller Status
 
-**Phase 1 — vorhandene Core-Primitives als interaktive Werkzeuge: abgeschlossen und praktisch verifiziert.**
+**Phase 1 — vorhandene Core-Primitives als interaktive Werkzeuge: untersucht; Connect Edges bleibt offen.**
 
 Getestet wurden unter anderem:
 
@@ -27,7 +27,7 @@ Getestet wurden unter anderem:
 - Mehrfachauswahl für Collapse/Connect-Fälle
 - relevante Grenzfälle, soweit die vorhandene Geometrie weitere sinnvolle Operationen zulässt
 
-Dabei wurden auch praktische Workflow-Fragen entdeckt, insbesondere das Verhalten von Selection und Selection Mode nach einer Topologieoperation. Diese Fragen sind bewusst noch nicht als Produktionsvertrag festgelegt.
+Dabei wurden praktische Workflow-Fragen entdeckt, insbesondere das Verhalten von Selection und Selection Mode nach einer Topologieoperation. Wichtig ist außerdem: Die aktuelle experimentelle Implementierung von Connect Edges behandelt größere Multi-Selections noch nicht als sauber definierte einheitliche Connect-Operation. Diese Semantik ist daher **nicht abgeschlossen**.
 
 **Phase 2 — Loop/Ring-Erkennung und Selection: abgeschlossen als Experiment.**
 
@@ -58,7 +58,33 @@ visuelles Praxisergebnis
 
 Die Detection bleibt bewusst konservativ: Edge Rings laufen nur durch Quad-Faces; Edge Loops benötigen Valenz 4 und einen eindeutigen gegenüberliegenden Kandidaten. Boundary-Loop-Fortsetzung sowie weitergehende gemischte Topologien bleiben offene Forschungsfragen und sind nicht Teil dieses Abschlusses.
 
-Die nächste Forschungsgruppe ist **Loop Insert / Loop Cut sowie Loop Remove / Dissolve**.
+**Phase 3 — Connect Edges: Semantik und robuste Multi-Selection.**
+
+Connect Edges wurde bewusst vor Loop Insert priorisiert. Die Operation ist eine grundlegende Modeling-Primitive und soll zuerst hinsichtlich ihrer Bedeutung bei mehreren ausgewählten Edges geklärt werden. Der aktuelle Zustand wird nicht als endgültiges Verhalten angenommen.
+
+Untersucht werden insbesondere:
+
+- Verhalten bei 2 Edges
+- Verhalten bei 3+ zusammenhängenden Edges
+- vollständige Loops und Rings
+- disjunkte Edges
+- Boundary-Edges
+- gemischte Face-Typen
+- ungültige Auswahlen und Teilmutationen
+- resultierende Selection und Selection Mode
+- neue IDs, Topologiebeziehungen und spätere History-Anforderungen
+
+Ein praktischer Test `Edge Ring → Connect Edges` hat bereits gezeigt, dass die Ring-Auswahl momentan lediglich als normale Multi-Edge-Selection an die bestehende Connect-Logik weitergereicht wird. Daraus entsteht noch kein echtes Loop-Insert-Verhalten.
+
+**Phase 4 — Loop Insert / Loop Remove: geplant.**
+
+Erst nach der Connect-Edges-Untersuchung werden Loop Insert und Loop Remove/Dissolve als höhere Modeling-Operationen erforscht.
+
+Dabei soll insbesondere geprüft werden, welche Teile der vorhandenen Loop-/Ring-Traversierung wiederverwendet werden können und welche eigene Topologie-Mutation notwendig ist. Loop Insert wird nicht einfach mit `Ring Selection + Connect Edges` gleichgesetzt.
+
+**Phase 5 — Extrude: geplant.**
+
+Danach folgt die Untersuchung von Extrude einschließlich neuer Vertices/Edges/Faces, Auswahl der Region, Richtungsfragen und Datenkontinuität.
 
 ## Langfristiger Forschungszweck
 
