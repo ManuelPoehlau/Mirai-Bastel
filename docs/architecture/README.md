@@ -7,6 +7,7 @@ This directory contains the current architectural contracts and accepted directi
 | Document | Role |
 |---|---|
 | [Project Vision & V1 Principle](PROJECT_VISION_AND_V1_PRINCIPLE.md) | Long-term system vision and the rule: implement little, assume much |
+| [Architecture & Development Roadmap](ROADMAP.md) | Current system dependency graph, work packages, architecture gates and development workflow |
 | [Source Architecture](SOURCE_ARCHITECTURE.md) | Production `src/` boundaries and dependency direction |
 | [V1 Core](V1_CORE.md) | Core V1 architecture and contracts |
 | [Core V1 Freeze](CORE_V1_FREEZE.md) | Final accepted Core V1 state and freeze boundary |
@@ -44,6 +45,8 @@ These are **responsibility boundaries, not a final `src/` directory tree**. The 
 ## How to use these documents
 
 `PROJECT_VISION_AND_V1_PRINCIPLE.md` answers **where the system is intended to go**.
+
+`ROADMAP.md` answers **how the current architecture and dependencies translate into development work packages and gates**.
 
 `V1_CORE.md` and `CORE_V1_FREEZE.md` answer **what was deliberately established for Core V1**.
 
