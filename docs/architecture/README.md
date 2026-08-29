@@ -8,6 +8,7 @@ This directory contains the current architectural contracts and accepted directi
 |---|---|
 | [Project Vision & V1 Principle](PROJECT_VISION_AND_V1_PRINCIPLE.md) | Long-term system vision and the rule: implement little, assume much |
 | [Architecture & Development Roadmap](ROADMAP.md) | Current system dependency graph, work packages, architecture gates and development workflow |
+| [Input / Command / Tool / Operation Contract](INPUT_COMMAND_TOOL_CONTRACT.md) | Accepted input/tool separation and configurable binding contract for WP-01A |
 | [Source Architecture](SOURCE_ARCHITECTURE.md) | Production `src/` boundaries and dependency direction |
 | [V1 Core](V1_CORE.md) | Core V1 architecture and contracts |
 | [Core V1 Freeze](CORE_V1_FREEZE.md) | Final accepted Core V1 state and freeze boundary |
@@ -31,9 +32,9 @@ Viewport / Camera
     ↓
 Projection / picking / hover / display
 
-Interaction / Modeling Tools
+Input / Interaction / Modeling Tools
     ↓
-User gestures → tools → operations → core
+Input → Command → Tool → Operation → Core
 
 Application / UI
     ↓
@@ -47,6 +48,8 @@ These are **responsibility boundaries, not a final `src/` directory tree**. The 
 `PROJECT_VISION_AND_V1_PRINCIPLE.md` answers **where the system is intended to go**.
 
 `ROADMAP.md` answers **how the current architecture and dependencies translate into development work packages and gates**.
+
+`INPUT_COMMAND_TOOL_CONTRACT.md` answers **how physical input becomes user intent and, where applicable, an interactive tool and model operation**.
 
 `V1_CORE.md` and `CORE_V1_FREEZE.md` answer **what was deliberately established for Core V1**.
 
