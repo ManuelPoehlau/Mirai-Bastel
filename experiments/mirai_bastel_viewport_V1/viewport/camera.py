@@ -120,6 +120,28 @@ class OrbitCamera:
         ndc_y = cam_y / (cam_z * half_h)
         return (ndc_x + 1.0) * 0.5 * width, (ndc_y + 1.0) * 0.5 * height
 
+    def pan(self, dx_px: float, dy_px: float, width: int, height: int) -> None:
+        """Verschiebt das Orbit-Ziel entlang der Kamera-Bildebene (Pan/Track).
+
+        `dx_px`/`dy_px` sind Pixel-Mausbewegungen in der GL-Konvention
+        (Ursprung unten links). Positives `dx_px` bewegt das Ziel nach links,
+        positives `dy_px` nach oben — dadurch folgt der sichtbare Inhalt der
+        Mausbewegung (Modeler-Konvention). Das Pan-Tempo ist von der aktuellen
+        Distanz und dem FOV abhängig, damit Nah-/Fern-Zoom ähnlich anfühlt.
+        """
+        if height <= 0:
+            return
+        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        world_per_px = 2.0 * self.distance * half_h / height
+        _forward, right, up = self.basis()
+        self.target = v.add(
+            self.target,
+            v.add(
+                v.scale(right, -dx_px * world_per_px),
+                v.scale(up, dy_px * world_per_px),
+            ),
+        )
+
     def screen_delta_to_world(
         self, point: Vec3, dx: float, dy: float, width: int, height: int
     ) -> Vec3:

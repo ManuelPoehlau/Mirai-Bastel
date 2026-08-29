@@ -1,6 +1,15 @@
-"""Minimaler interaktiver V1-Viewport: Praxistest der Core-Pipeline."""
+"""Minimaler interaktiver V1-Viewport: Praxistest der Core-Pipeline.
+
+WP-01A: Seit diesem Stand läuft Eingabe ausschließlich über die
+Input-Mapping-Schicht (input_binding/default_bindings) statt über direkt
+hart kodierte Tasten. Die Darstellung wird vom Display-State
+(display_state: Shaded / Flat Shaded / Wireframe + Wireframe Overlay)
+gesteuert; es entsteht bewusst kein Renderer-/Material-Stack.
+"""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pyglet
 from pyglet.gl import GL_DEPTH_TEST, GL_LINES, GL_POINTS, GL_TRIANGLES, GL_POLYGON_OFFSET_FILL, glEnable, glDisable, glLineWidth, glPointSize, glPolygonOffset
@@ -10,22 +19,99 @@ from pyglet.window import key, mouse
 
 from mirai_bastel_core import MoveOperation, OperationContext, SelectionMode
 
+from . import commands as cmd
+from . import vecmath as v
 from .camera import OrbitCamera
+from .default_bindings import build_default_bindings, load_keymap_overrides
 from .demo_scene import build_cube_scene
+from .display_state import DisplayMode, DisplayState
+from .input_binding import GLOBAL_CONTEXT, Input
 from .picking import pick_face, pick_nearest_edge, pick_nearest_vertex
+
+_KEYMAP_PATH = Path(__file__).resolve().parent.parent / "keymap.json"
+
+# Weltraum-Lichtrichtung für die minimale Lambert-Beleuchtung (normalisiert).
+_LIGHT_DIR = (0.45, 0.40, 0.85)
 
 _VERTEX_SHADER = """
 #version 330 core
 in vec3 position;
+in vec3 normal;
 uniform mat4 mvp;
-void main() { gl_Position = mvp * vec4(position, 1.0); }
+out vec3 v_normal;
+void main() {
+    gl_Position = mvp * vec4(position, 1.0);
+    v_normal = normal;
+}
 """
 _FRAGMENT_SHADER = """
 #version 330 core
 uniform vec3 color;
+uniform vec3 light_dir;
+in vec3 v_normal;
 out vec4 fragColor;
-void main() { fragColor = vec4(color, 1.0); }
+void main() {
+    vec3 n = normalize(v_normal);
+    if (!gl_FrontFacing) {
+        n = -n;
+    }
+    float light = 0.35 + 0.65 * max(dot(n, normalize(light_dir)), 0.0);
+    fragColor = vec4(color * light, 1.0);
+}
 """
+
+# ---------------------------------------------------------------------------
+# pyglet → Input-Adapter (einzige Stelle mit einer Fenster-/Event-Abhängigkeit;
+# das Mapping selbst bleibt in input_binding.py vollständig pyglet-frei)
+# ---------------------------------------------------------------------------
+
+_MODIFIER_MASKS = (
+    (key.MOD_CTRL, "ctrl"),
+    (key.MOD_SHIFT, "shift"),
+    (key.MOD_ALT, "alt"),
+)
+
+_SPECIAL_KEYS = {
+    key.ESCAPE: "ESCAPE",
+    key.SPACE: "SPACE",
+    key.TAB: "TAB",
+    key.ENTER: "ENTER",
+    key.BACKSPACE: "BACKSPACE",
+    key.DELETE: "DELETE",
+    key.UP: "UP",
+    key.DOWN: "DOWN",
+    key.LEFT: "LEFT",
+    key.RIGHT: "RIGHT",
+    key.HOME: "HOME",
+    key.END: "END",
+    key.PAGEUP: "PAGEUP",
+    key.PAGEDOWN: "PAGEDOWN",
+}
+
+_MOUSE_NAMES = {mouse.LEFT: "LEFT", mouse.MIDDLE: "MIDDLE", mouse.RIGHT: "RIGHT"}
+
+
+def _modifier_set(modifiers):
+    return frozenset(name for mask, name in _MODIFIER_MASKS if modifiers & mask)
+
+
+def _key_input(symbol, modifiers) -> Input:
+    if symbol in _SPECIAL_KEYS:
+        value = _SPECIAL_KEYS[symbol]
+    elif 32 <= symbol <= 126:
+        ch = chr(symbol)
+        value = ch.lower() if ch.isalpha() else ch
+    else:
+        value = f"KEY{symbol}"
+    return Input("key", value, _modifier_set(modifiers))
+
+
+def _mouse_input(button, modifiers) -> Input:
+    return Input("mouse", _MOUSE_NAMES.get(button, str(button)), _modifier_set(modifiers))
+
+
+def _wheel_input(scroll_y) -> Input:
+    return Input("wheel", "UP" if scroll_y > 0 else "DOWN")
 
 
 class _MoveSelectionView:
@@ -45,6 +131,8 @@ class ModelerWindow(pyglet.window.Window):
         super().__init__(width=1024, height=768, caption="Mirai-Bastel V1 - Vertex Mode", resizable=True)
         self.scene = build_cube_scene(size=2.0)
         self.camera = OrbitCamera()
+        self.display_state = DisplayState()
+        self.bindings = load_keymap_overrides(build_default_bindings(), _KEYMAP_PATH)
         self.selection_mode = SelectionMode.VERTEX
         self._hovered_id = None
         vert = Shader(_VERTEX_SHADER, "vertex")
@@ -71,7 +159,13 @@ class ModelerWindow(pyglet.window.Window):
 
     def _update_caption(self):
         names = {SelectionMode.VERTEX: "Vertex", SelectionMode.EDGE: "Edge", SelectionMode.FACE: "Face"}
-        self.set_caption(f"Mirai-Bastel V1 - {names[self.selection_mode]} Mode")
+        self.set_caption(
+            f"Mirai-Bastel V1 - {names[self.selection_mode]} Mode | {self.display_state.label}"
+        )
+
+    def _binding_context(self) -> str:
+        """Aktiver Binding-Kontext (siehe input_binding); Basis: global."""
+        return GLOBAL_CONTEXT
 
     def _pick(self, x, y):
         if self.selection_mode == SelectionMode.VERTEX:
@@ -82,6 +176,70 @@ class ModelerWindow(pyglet.window.Window):
             return pick_face(self.camera, self.scene.mesh, x, y, self.width, self.height)
         return None
 
+    def _compute_normals(self):
+        """Face-Normalen (Flat Shading) und gemittelte Vertex-Normalen (Shaded).
+
+        Minimal und rein aus der aktuellen Mesh-Geometrie abgeleitet — es
+        entsteht bewusst kein Cache-/Material-Stack (WP-01A).
+        """
+        mesh = self.scene.mesh
+        face_normals = {}
+        for fid in mesh.all_face_ids():
+            boundary = mesh.face_vertices(fid)
+            if len(boundary) < 3:
+                face_normals[fid] = (0.0, 0.0, 1.0)
+                continue
+            p0 = mesh.vertex_position(boundary[0])
+            p1 = mesh.vertex_position(boundary[1])
+            p2 = mesh.vertex_position(boundary[2])
+            n = v.normalize(v.cross(v.sub(p1, p0), v.sub(p2, p0)))
+            face_normals[fid] = n if v.length(n) > 1e-9 else (0.0, 0.0, 1.0)
+
+        vertex_normals = {}
+        for vid in mesh.all_vertex_ids():
+            acc = (0.0, 0.0, 0.0)
+            for fid, n in face_normals.items():
+                if vid in mesh.face_vertices(fid):
+                    acc = v.add(acc, n)
+            vertex_normals[vid] = (
+                v.normalize(acc) if v.length(acc) > 1e-9 else (0.0, 0.0, 1.0)
+            )
+        return face_normals, vertex_normals
+
+    def _face_triangle_arrays(self, face_ids):
+        """Positions- und Normalen-Arrays für die Faces (Fan-Triangulation).
+
+        FLAT_SHADED nutzt pro Dreiecksecke die Face-Normale, SHADED die
+        gemittelte Vertex-Normale. Im Wireframe-Modus (show_faces == False)
+        wird diese Methode nicht aufgerufen.
+        """
+        mesh = self.scene.mesh
+        flat = self.display_state.mode is DisplayMode.FLAT_SHADED
+        positions, normals = [], []
+        for fid in face_ids:
+            boundary = mesh.face_vertices(fid)
+            if len(boundary) < 3:
+                continue
+            p0 = mesh.vertex_position(boundary[0])
+            for i in range(1, len(boundary) - 1):
+                vids = (boundary[0], boundary[i], boundary[i + 1])
+                points = (
+                    p0,
+                    mesh.vertex_position(boundary[i]),
+                    mesh.vertex_position(boundary[i + 1]),
+                )
+                for vid, pos in zip(vids, points):
+                    positions.extend(pos)
+                    normals.extend(
+                        self._face_normals[fid] if flat else self._vertex_normals[vid]
+                    )
+        return positions, normals
+
+    @staticmethod
+    def _default_normals(point_count: int):
+        """Dummy-Normalen für Punkt-/Edge-Primitive (konstante Beleuchtung)."""
+        return [0.0, 0.0, 1.0] * point_count
+
     def _rebuild_geometry(self):
         mesh = self.scene.mesh
         self._vertex_ids_ordered = list(mesh.all_vertex_ids())
@@ -90,39 +248,52 @@ class ModelerWindow(pyglet.window.Window):
         for eid in mesh.all_edge_ids():
             va, vb = mesh.edge_vertices(eid); edge_positions.extend(mesh.vertex_position(va)); edge_positions.extend(mesh.vertex_position(vb))
 
-        def face_positions_for(face_ids):
-            result = []
-            for fid in face_ids:
-                boundary = mesh.face_vertices(fid)
-                if len(boundary) < 3: continue
-                p0 = mesh.vertex_position(boundary[0])
-                for i in range(1, len(boundary) - 1):
-                    p1 = mesh.vertex_position(boundary[i]); p2 = mesh.vertex_position(boundary[i + 1])
-                    result.extend((*p0, *p1, *p2))
-            return result
+        self._face_normals, self._vertex_normals = self._compute_normals()
 
         self._batch = pyglet.graphics.Batch()
-        face_positions = face_positions_for(mesh.all_face_ids())
-        self._face_list = self.program.vertex_list(len(face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", face_positions)) if face_positions else None
-        self._point_list = self.program.vertex_list(len(self._vertex_ids_ordered), GL_POINTS, batch=self._batch, position=("f", positions))
-        self._edge_list = self.program.vertex_list(len(edge_positions)//3, GL_LINES, batch=self._batch, position=("f", edge_positions))
+        if self.display_state.show_faces:
+            face_positions, face_normals = self._face_triangle_arrays(mesh.all_face_ids())
+            self._face_list = self.program.vertex_list(len(face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", face_positions), normal=("f", face_normals)) if face_positions else None
+        else:
+            self._face_list = None
+        point_count = len(self._vertex_ids_ordered)
+        self._point_list = self.program.vertex_list(point_count, GL_POINTS, batch=self._batch, position=("f", positions), normal=("f", self._default_normals(point_count))) if point_count else None
+        edge_count = len(edge_positions)//3
+        self._edge_list = self.program.vertex_list(edge_count, GL_LINES, batch=self._batch, position=("f", edge_positions), normal=("f", self._default_normals(edge_count))) if edge_count else None
         selected_vertex_positions = [c for vid in self.scene.selection.vertices for c in mesh.vertex_position(vid)]
-        self._selected_vertex_list = self.program.vertex_list(len(selected_vertex_positions)//3, GL_POINTS, batch=self._batch, position=("f", selected_vertex_positions)) if selected_vertex_positions else None
+        sv_count = len(selected_vertex_positions)//3
+        self._selected_vertex_list = self.program.vertex_list(sv_count, GL_POINTS, batch=self._batch, position=("f", selected_vertex_positions), normal=("f", self._default_normals(sv_count))) if sv_count else None
         selected_edge_positions = []
         for eid in self.scene.selection.edges:
             va, vb = mesh.edge_vertices(eid); selected_edge_positions.extend(mesh.vertex_position(va)); selected_edge_positions.extend(mesh.vertex_position(vb))
-        self._selected_edge_list = self.program.vertex_list(len(selected_edge_positions)//3, GL_LINES, batch=self._batch, position=("f", selected_edge_positions)) if selected_edge_positions else None
-        selected_face_positions = face_positions_for(self.scene.selection.faces)
-        self._selected_face_list = self.program.vertex_list(len(selected_face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", selected_face_positions)) if selected_face_positions else None
-        hover_vertex_positions = []; hover_edge_positions = []; hover_face_positions = []
+        se_count = len(selected_edge_positions)//3
+        self._selected_edge_list = self.program.vertex_list(se_count, GL_LINES, batch=self._batch, position=("f", selected_edge_positions), normal=("f", self._default_normals(se_count))) if se_count else None
+        if self.display_state.show_faces:
+            sf_positions, sf_normals = self._face_triangle_arrays(self.scene.selection.faces)
+            sf_count = len(sf_positions)//3
+            self._selected_face_list = self.program.vertex_list(sf_count, GL_TRIANGLES, batch=self._batch, position=("f", sf_positions), normal=("f", sf_normals)) if sf_count else None
+        else:
+            self._selected_face_list = None
+        hover_vertex_positions = []
+        hover_edge_positions = []
+        hover_face_ids = []
         if self._hovered_id is not None and self._hovered_id not in self._selected_ids():
-            if self.selection_mode == SelectionMode.VERTEX: hover_vertex_positions.extend(mesh.vertex_position(self._hovered_id))
+            if self.selection_mode == SelectionMode.VERTEX:
+                hover_vertex_positions.extend(mesh.vertex_position(self._hovered_id))
             elif self.selection_mode == SelectionMode.EDGE:
                 va, vb = mesh.edge_vertices(self._hovered_id); hover_edge_positions.extend(mesh.vertex_position(va)); hover_edge_positions.extend(mesh.vertex_position(vb))
-            elif self.selection_mode == SelectionMode.FACE: hover_face_positions = face_positions_for([self._hovered_id])
-        self._hover_vertex_list = self.program.vertex_list(len(hover_vertex_positions)//3, GL_POINTS, batch=self._batch, position=("f", hover_vertex_positions)) if hover_vertex_positions else None
-        self._hover_edge_list = self.program.vertex_list(len(hover_edge_positions)//3, GL_LINES, batch=self._batch, position=("f", hover_edge_positions)) if hover_edge_positions else None
-        self._hover_face_list = self.program.vertex_list(len(hover_face_positions)//3, GL_TRIANGLES, batch=self._batch, position=("f", hover_face_positions)) if hover_face_positions else None
+            elif self.selection_mode == SelectionMode.FACE:
+                hover_face_ids.append(self._hovered_id)
+        hv_count = len(hover_vertex_positions)//3
+        self._hover_vertex_list = self.program.vertex_list(hv_count, GL_POINTS, batch=self._batch, position=("f", hover_vertex_positions), normal=("f", self._default_normals(hv_count))) if hv_count else None
+        he_count = len(hover_edge_positions)//3
+        self._hover_edge_list = self.program.vertex_list(he_count, GL_LINES, batch=self._batch, position=("f", hover_edge_positions), normal=("f", self._default_normals(he_count))) if he_count else None
+        if self.display_state.show_faces and hover_face_ids:
+            hf_positions, hf_normals = self._face_triangle_arrays(hover_face_ids)
+            hf_count = len(hf_positions)//3
+            self._hover_face_list = self.program.vertex_list(hf_count, GL_TRIANGLES, batch=self._batch, position=("f", hf_positions), normal=("f", hf_normals)) if hf_count else None
+        else:
+            self._hover_face_list = None
 
     def _selected_ids(self):
         if self.selection_mode == SelectionMode.VERTEX: return self.scene.selection.vertices
@@ -160,16 +331,21 @@ class ModelerWindow(pyglet.window.Window):
         proj = Mat4.perspective_projection(aspect, z_near=self.camera.near, z_far=self.camera.far, fov=self.camera.fov_degrees)
         with self.program:
             self.program["mvp"] = proj @ view
-            if self._face_list is not None:
+            self.program["light_dir"] = _LIGHT_DIR
+            if self.display_state.show_faces and self._face_list is not None:
                 self.program["color"] = (0.62,0.64,0.70); self._face_list.draw(GL_TRIANGLES)
-            self.program["color"] = (0.75,0.75,0.8); self._edge_list.draw(GL_LINES)
-            glPointSize(6.0); self.program["color"] = (0.9,0.9,0.95); self._point_list.draw(GL_POINTS)
-            self._draw_face_highlight(self._hover_face_list, (0.78,0.80,0.88))
+            if self.display_state.show_edges and self._edge_list is not None:
+                self.program["color"] = (0.75,0.75,0.8); self._edge_list.draw(GL_LINES)
+            if self._point_list is not None:
+                glPointSize(6.0); self.program["color"] = (0.9,0.9,0.95); self._point_list.draw(GL_POINTS)
+            if self.display_state.show_faces:
+                self._draw_face_highlight(self._hover_face_list, (0.78,0.80,0.88))
             if self._hover_edge_list is not None:
                 glLineWidth(4.0); self.program["color"] = (1.0,0.70,0.25); self._hover_edge_list.draw(GL_LINES); glLineWidth(1.0)
             if self._hover_vertex_list is not None:
                 glPointSize(12.0); self.program["color"] = (1.0,0.70,0.25); self._hover_vertex_list.draw(GL_POINTS)
-            self._draw_face_highlight(self._selected_face_list, (1.0,0.55,0.15))
+            if self.display_state.show_faces:
+                self._draw_face_highlight(self._selected_face_list, (1.0,0.55,0.15))
             if self._selected_edge_list is not None:
                 glLineWidth(4.0); self.program["color"] = (1.0,0.55,0.15); self._selected_edge_list.draw(GL_LINES); glLineWidth(1.0)
             if self._selected_vertex_list is not None:
@@ -181,8 +357,9 @@ class ModelerWindow(pyglet.window.Window):
             self._hovered_id = hovered; self.scene.selection.hovered = hovered; self._rebuild_geometry()
 
     def on_mouse_press(self, x, y, button, modifiers):
-        if button == mouse.LEFT:
-            picked = self._pick(x,y)
+        command = self.bindings.command_for(_mouse_input(button, modifiers), self._binding_context())
+        if command == cmd.SELECT:
+            picked = self._pick(x, y)
             if picked is None:
                 self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None; self._move_anchor_vertex = None
             else:
@@ -203,32 +380,94 @@ class ModelerWindow(pyglet.window.Window):
                 else:
                     self._drag_mode = None; self._move_anchor_vertex = None
             self._rebuild_geometry()
-        elif button == mouse.RIGHT: self._drag_mode = "orbit"
+        elif command == cmd.ORBIT:
+            self._drag_mode = "orbit"
+        elif command == cmd.PAN:
+            self._drag_mode = "pan"
 
-    def on_mouse_drag(self, x,y,dx,dy,buttons,modifiers):
+    def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if self._drag_mode == "orbit":
-            self.camera.orbit(-dx*0.005,-dy*0.005); self._hovered_id = self._pick(x,y); self.scene.selection.hovered = self._hovered_id; self._rebuild_geometry()
+            self.camera.orbit(-dx*0.005, -dy*0.005)
+            self._refresh_hover(x, y)
+        elif self._drag_mode == "pan":
+            self.camera.pan(dx, dy, self.width, self.height)
+            self._refresh_hover(x, y)
         elif self._drag_mode == "move" and self._active_move is not None and self._move_anchor_vertex is not None:
             point = self.scene.mesh.vertex_position(self._move_anchor_vertex)
-            self._active_move.update(delta=self.camera.screen_delta_to_world(point,dx,dy,self.width,self.height)); self._rebuild_geometry()
+            self._active_move.update(delta=self.camera.screen_delta_to_world(point, dx, dy, self.width, self.height)); self._rebuild_geometry()
 
-    def on_mouse_release(self,x,y,button,modifiers):
+    def on_mouse_release(self, x, y, button, modifiers):
         if self._drag_mode == "move" and self._active_move is not None:
-            self._active_move.commit(); self._active_move=None
+            self._active_move.commit(); self._active_move = None
             self._move_anchor_vertex = None
             self._rebuild_geometry()
-        self._drag_mode=None
+        self._drag_mode = None
 
-    def on_mouse_scroll(self,x,y,scroll_x,scroll_y):
-        self.camera.dolly(1.0-scroll_y*0.1); self._hovered_id=self._pick(x,y); self.scene.selection.hovered=self._hovered_id; self._rebuild_geometry()
+    def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
+        command = self.bindings.command_for(_wheel_input(scroll_y), self._binding_context())
+        if command == cmd.ZOOM:
+            self.camera.dolly(1.0 - scroll_y*0.1)
+            self._refresh_hover(x, y)
 
-    def on_key_press(self,symbol,modifiers):
-        if symbol in (key.V,key._1): self._set_selection_mode(SelectionMode.VERTEX)
-        elif symbol in (key.E,key._2): self._set_selection_mode(SelectionMode.EDGE)
-        elif symbol in (key.F,key._3): self._set_selection_mode(SelectionMode.FACE)
-        elif symbol == key.Z and modifiers & key.MOD_CTRL: self.scene.history.undo(); self._rebuild_geometry()
-        elif symbol == key.Y and modifiers & key.MOD_CTRL: self.scene.history.redo(); self._rebuild_geometry()
-        elif symbol == key.ESCAPE and self._active_move is not None: self._active_move.cancel(); self._active_move=None; self._move_anchor_vertex=None; self._drag_mode=None; self._rebuild_geometry()
+    def on_key_press(self, symbol, modifiers):
+        command = self.bindings.command_for(_key_input(symbol, modifiers), self._binding_context())
+        if command is not None:
+            self._dispatch_command(command)
+
+    # ------------------------------------------------------------------
+    # Command-Dispatch (Commands sind von konkreten Tasten entkoppelt)
+    # ------------------------------------------------------------------
+
+    def _dispatch_command(self, command) -> bool:
+        """Führt ein aufgelöstes Command aus; True, wenn es behandelt wurde.
+
+        Subklassen (TopologyWindow) erweitern diese Methode für eigene
+        Commands und reichen Unbekanntes an die Basisklasse weiter.
+        """
+        set_mode = {
+            cmd.SET_VERTEX_MODE: SelectionMode.VERTEX,
+            cmd.SET_EDGE_MODE: SelectionMode.EDGE,
+            cmd.SET_FACE_MODE: SelectionMode.FACE,
+        }
+        set_display = {
+            cmd.SET_SHADED: DisplayMode.SHADED,
+            cmd.SET_FLAT_SHADED: DisplayMode.FLAT_SHADED,
+            cmd.SET_WIREFRAME: DisplayMode.WIREFRAME,
+        }
+        if command in set_mode:
+            self._set_selection_mode(set_mode[command])
+        elif command == cmd.UNDO:
+            self.scene.history.undo(); self._rebuild_geometry()
+        elif command == cmd.REDO:
+            self.scene.history.redo(); self._rebuild_geometry()
+        elif command == cmd.CANCEL:
+            self._cancel_active_move()
+        elif command == cmd.CYCLE_DISPLAY_MODE:
+            self.display_state.cycle(); self._rebuild_geometry(); self._update_caption()
+        elif command == cmd.TOGGLE_WIREFRAME_OVERLAY:
+            self.display_state.toggle_wireframe_overlay(); self._rebuild_geometry(); self._update_caption()
+        elif command in set_display:
+            self._set_display_mode(set_display[command])
+        else:
+            return False
+        return True
+
+    def _set_display_mode(self, mode) -> None:
+        self.display_state.set_mode(mode)
+        self._rebuild_geometry()
+        self._update_caption()
+
+    def _cancel_active_move(self) -> None:
+        if self._active_move is not None:
+            self._active_move.cancel(); self._active_move = None
+            self._move_anchor_vertex = None
+            self._drag_mode = None
+            self._rebuild_geometry()
+
+    def _refresh_hover(self, x, y) -> None:
+        self._hovered_id = self._pick(x, y)
+        self.scene.selection.hovered = self._hovered_id
+        self._rebuild_geometry()
 
     def _begin_move(self, vertex_ids):
         move_selection = _MoveSelectionView(vertex_ids)

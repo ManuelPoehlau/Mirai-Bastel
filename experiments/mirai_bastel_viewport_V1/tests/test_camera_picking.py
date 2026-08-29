@@ -12,6 +12,11 @@ from __future__ import annotations
 
 import math
 import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    # Robuste Ausgabe unter Windows-cp1252-Konsolen (Unicode-Pfeile usw.).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from pathlib import Path
 
 _THIS_DIR = Path(__file__).resolve().parent
@@ -162,6 +167,42 @@ def test_screen_delta_to_world_moves_along_view_plane() -> None:
     check("kein Maus-Delta erzeugt (nahezu) kein Weltraum-Delta", v.length(zero_delta) < 1e-6)
 
 
+def test_pan_moves_target_on_view_plane() -> None:
+    print("\n--- Pan: Ziel bewegt sich auf der Bildebene, Distanz bleibt ---")
+    cam = OrbitCamera(
+        target=(0.0, 0.0, 0.0), distance=6.0, yaw=math.radians(30), pitch=math.radians(15)
+    )
+    _fwd, right, up = cam.basis()
+    before = cam.target
+    cam.pan(dx_px=50, dy_px=-30, width=800, height=600)
+    delta = v.sub(cam.target, before)
+    check("Pan verändert das Ziel", v.length(delta) > 1e-6)
+    check("Distanz Kamera<->Ziel bleibt erhalten", approx(v.distance(cam.eye(), cam.target), 6.0, eps=1e-6))
+    fwd_after, _r, _u = cam.basis()
+    check("Delta liegt auf der Bildebene (kein Anteil in Blickrichtung)", abs(v.dot(delta, fwd_after)) < 1e-6)
+    check("dx>0 bewegt das Ziel entgegen Kamera-right (Inhalt folgt Maus)", v.dot(delta, right) < 0)
+    check("dy<0 bewegt das Ziel entgegen Kamera-up", v.dot(delta, up) < 0)
+
+
+def test_pan_zero_is_noop() -> None:
+    print("\n--- Pan: Null-Delta lässt das Ziel unverändert ---")
+    cam = OrbitCamera(target=(1.0, -2.0, 3.0), distance=6.0)
+    before = cam.target
+    cam.pan(dx_px=0, dy_px=0, width=800, height=600)
+    check("target unverändert", v.distance(cam.target, before) < 1e-12)
+
+
+def test_pan_scales_with_distance() -> None:
+    print("\n--- Pan: größere Distanz → größerer Welt-Versatz pro Pixel ---")
+    cam_near = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0)
+    cam_far = OrbitCamera(target=(0.0, 0.0, 0.0), distance=12.0)
+    cam_near.pan(dx_px=10, dy_px=0, width=800, height=600)
+    cam_far.pan(dx_px=10, dy_px=0, width=800, height=600)
+    d_near = v.distance(cam_near.target, (0.0, 0.0, 0.0))
+    d_far = v.distance(cam_far.target, (0.0, 0.0, 0.0))
+    check("Fern-Kamera versetzt mehr pro Pixel", d_far > d_near)
+
+
 def run_all() -> None:
     tests = [
         test_eye_distance_matches_configured_distance,
@@ -172,6 +213,9 @@ def run_all() -> None:
         test_pick_edge_hits_projected_edge,
         test_pick_face_hits_visible_cube_face,
         test_screen_delta_to_world_moves_along_view_plane,
+        test_pan_moves_target_on_view_plane,
+        test_pan_zero_is_noop,
+        test_pan_scales_with_distance,
     ]
     for t in tests:
         t()

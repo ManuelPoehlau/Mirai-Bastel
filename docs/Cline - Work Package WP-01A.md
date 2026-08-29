@@ -7,6 +7,7 @@ Branch main, Worktree sauber, einzige untracked Datei: das WP-01A-Dokument selbs
 Letzte Commits: Architekturvertrag Input→Command→Tool→Operation + ROADMAP V1.0 + Topology-aware Connect Edges. Die Infrastruktur-Vorgaben für WP-01A sind also frisch dokumentiert und „accepted" für dieses WP.
 1.2 Produktion (src/)
 NUR src/core/ — eingefroren (CORE_V1_FREEZE.md). Repo-Tests importieren core.* (nicht mirai_bastel_core.*).
+Core-API, die WP-01A nutzen kann, ohne sie zu ändern: Scene (mesh/selection/history), SelectionMode (VERTEX/EDGE/FACE/OBJECT), Selection (toggle/set/add/remove/clear/hovered), MoveOperation/OperationContext (interaktiver Lifecycle begin→update→commit/cancel), Mesh-Queries, Topology-Primitives.
 Test-Baseline verifiziert: python -m tests.run_core_suite → 29/29 unittest + Architekturverträge = Gesamt: PASS.
 Python 3.12.10, pyglet 2.1.16 installiert.
 1.3 Experiment (maßgebliche Viewport-Referenz)
