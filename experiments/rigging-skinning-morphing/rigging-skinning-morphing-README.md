@@ -10,8 +10,18 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
 - Neck, skull, jaw rigged with 3 bones
 - Vertices weighted to bones (skinning)
 - Facial deformations via morph-targets (mouth open, jaw drop, etc.)
-- Then perform a topology operation (e.g., edge-loop insert in the face)
-- Verify: Do weights auto-update? Do morphs stay intact? Does the rig still function?
+- Then perform topology operations (split/collapse/connect, especially loop insertion)
+- Verify: Do weights remain meaningful? Do morphs remain intact? Does the rig still function?
+
+## Important Architectural Boundary
+
+**`src/core/` is frozen for this experiment.**
+
+Phase 2 and all subsequent prototype work must use the existing public Core APIs without modifying `src/core/`. The experiment is intentionally a playground for discovering requirements, not a reason to extend the production Core in advance.
+
+If the experiment demonstrates that a Core capability is genuinely missing, record that as an **experiment finding**. A possible Core change is then evaluated later as a separate architecture decision.
+
+Do **not** introduce observers, topology listeners, Core-owned bones, or other production-Core extensions as part of this experiment unless a later explicit architecture decision approves them.
 
 ## Context & Links
 
@@ -21,74 +31,82 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
   - This experiment validates a core integration hypothesis
 
 - **Core Hardening Plan:** [docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md](../../docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md)
-  - Phase A–E completed; Phase F (Production Freeze)
-  - Key finding: ID-management constraints affect skinning design (see Phase C findings)
+  - Phase A–E completed; production Core remains deliberately constrained
+  - ID-management constraints are relevant to skinning design
 
-- **Topology Experiment (Phase 2):** [experiments/mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md](../mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md)
-  - Edge-loop selection, insertion, removal already working
-  - This experiment builds on that foundation
+- **Topology Experiment:** [experiments/mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md](../mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md)
+  - Working topology editing and selection experiments
 
 ### System Architecture
 - **SOURCE_ARCHITECTURE.md:** How Core.Mesh is structured
-- **AD-001 (ID Continuity):** Why Undo/Redo uses state snapshots, not semantic ops
-- **Viewport:** Python + OpenGL (not web-based)
+- **AD-001 (ID Continuity):** No ID reuse within a session
+- **Viewport:** Python + OpenGL
 
 ## Independence & Parallel Work
 
-This experiment **runs independently** from WP 02 (Cline's work).
+This experiment runs independently from the current Modeler/Interaction work.
 
-- No blocking dependencies
-- Evidence feeds forward into WP 02 design
-- Both can progress without coordination
-- Experiment code is disposable; only validated learnings move to src/
+- No production-Core dependency is introduced by the experiment
+- Experiment code is disposable
+- Existing Core and topology tests remain the baseline
+- Findings may inform future architecture and work-package decisions
+- No experiment result automatically becomes a production implementation
 
-## Current Phase: Research & Architecture Decision
+## Current Phase: Phase 2 — RigController Prototype
 
-### What We're Doing Now
-1. **RESEARCH.md:** Analyze Core's ID management, topology ops, and serialization
-2. **DESIGN.md:** Sketch three architectural options (A: Skinning in Core, B: External Mapping, C: Hybrid)
-3. **Architecture Decision (AD-XXX):** Choose one, document rationale
+Phase 1 (research and architecture analysis) is complete. Phase 2 is intentionally **experiment-only**:
 
-### Files in This Experiment
+1. Implement an external `RigController`
+2. Store bones, skinning weights, and morph-targets outside `Core.Mesh`
+3. Use existing public Mesh APIs only
+4. Implement deformation and topology-resynchronization logic in the experiment
+5. Add focused unit tests
+6. Record what information is available after topology mutations
+7. Record concrete missing Core capabilities instead of patching the Core
+
+The key research question is not merely whether skinning can be implemented, but **what information a dependent deformation system needs in order to remain correct after topology mutation**.
+
+## Files in This Experiment
+
 ```
 experiments/rigging-skinning-morphing/
-├── README.md                           ← You are here
-├── RESEARCH.md                         ← Ongoing findings from Core analysis
-├── DESIGN.md                           ← Architecture option sketches
-├── AD-XXX-RIGGING-CORE-INTEGRATION.md  ← TBD: Chosen decision
-└── src/                                ← Working prototypes (Phase 2+)
-    ├── bone.py
-    ├── skinning.py
-    ├── morph_targets.py
-    └── deformation_viewport.py
+├── rigging-skinning-morphing-README.md  ← Local context
+├── rigging-skinning-morphing-RESEARCH.md ← Findings and open questions
+├── rigging-skinning-morphing-DESIGN.md  ← Architecture options and revised strategy
+├── AD-005-RIGGING-INTEGRATION.md        ← Current architecture decision
+└── src/                                  ← Working prototypes (Phase 2+)
 ```
 
-## Next Steps
+## Topology Research Targets
 
-### Immediate
-- [ ] Read CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md and extract relevant findings
-- [ ] Create RESEARCH.md with summary of ID management, topology ops, serialization
-- [ ] Write DESIGN.md with three architectural options
+For each relevant topology mutation, document:
 
-### Then
-- [ ] Architecture Decision (choose option A/B/C)
-- [ ] Begin Phase 2 prototype (minimal bone/skin/morph code)
-- [ ] Implement topology-aware integration test
+- Which mesh elements are created, deleted, or retained?
+- Which IDs remain stable?
+- Can the external RigController identify the affected elements using existing APIs?
+- How can skinning weights be transferred or merged?
+- How can morph data be transferred or interpolated?
+- What information is unavailable that would be needed for robust synchronization?
 
-## Principles (from AGENTS.md)
+Priority operations:
+
+1. Split / edge-loop insertion
+2. Collapse
+3. Connect Edges
+4. Other topology mutations as useful
+
+## Principles
 
 - **Capture first, discuss second, decide third, implement fourth**
 - **Implement little, assume much**
-- Never silently change Core architecture; document decisions first
-- Documentation is part of the engineering system—not disposable chat notes
-- Experiment code is pragmatic and disposable; only extract validated architecture to src/
-
-## Related Experiments
-- **Topology Experiment Phase 2:** Edge-loop selection, insertion, removal
-- **Viewport (Python + OpenGL):** Real-time mesh visualization
+- Never silently change Core architecture
+- Experiments discover requirements; they do not grant production architecture changes
+- Document missing capabilities before proposing Core modifications
+- Keep experiment code pragmatic and disposable
+- Only validated architecture is later considered for production extraction
 
 ---
 
 **Started:** August 2026  
-**Status:** Phase 1 – Research & Architecture Design  
-**Owner:** Manu (with Cline's WP 02 separate and independent)
+**Status:** Phase 1 complete → Phase 2 ready  
+**Owner:** Manu (with independent parallel experimentation)
