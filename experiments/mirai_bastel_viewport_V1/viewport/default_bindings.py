@@ -56,6 +56,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)
     bs.set_default(_key("y", "ctrl"), cmd.REDO)
     bs.set_default(_key("ESCAPE"), cmd.CANCEL)
+    # M aktiviert das modale Move-Tool (WP-02). Das Mapping ist austauschbar
+    # (z. B. "g" per keymap.json) — MoveTool bleibt davon unberührt.
+    bs.set_default(_key("m"), cmd.MOVE)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 

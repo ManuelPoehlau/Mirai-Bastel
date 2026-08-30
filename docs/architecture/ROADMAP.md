@@ -726,6 +726,7 @@ This policy is intentionally based on the Connect Edges experience: the experime
 
 ## Completed
 
+- WP-02 — Interaction & Tool Framework
 - Core V1
 - Viewport V1 experiment
 - Selection foundation and selection experiments
@@ -736,7 +737,6 @@ This policy is intentionally based on the Connect Edges experience: the experime
 ## Next production-oriented work
 
 1. **WP-01 — Production Viewport Foundation** (WP-01A im Experiment validiert: Input-Mapping, Display-Modi, Pan; nächster Schritt ist die Produktionsableitung)
-2. **WP-02 — Interaction & Tool Framework**
 3. **WP-03 — Transform Foundation**
 
 Modeling / Topology Expansion remains a parallel track.

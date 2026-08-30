@@ -24,6 +24,10 @@ REDO = "Redo"
 # SELECT deckt den bestehenden LMB-Fall ab: Klick toggelt die Selection,
 # ein Drag auf der Selection startet die Move-Interaktion (V1-Verhalten).
 SELECT = "Select"
+# MOVE ist das explizite modale Move-Command (WP-02): Es wird über die
+# Mapping-Schicht auf das MoveTool geroutet — Bindings (z. B. M oder G)
+# verändern das Tool nicht.
+MOVE = "Move"
 CLEAR_SELECTION = "ClearSelection"
 CANCEL = "Cancel"
 

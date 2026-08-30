@@ -17,7 +17,7 @@ from pyglet.graphics.shader import Shader, ShaderProgram
 from pyglet.math import Mat4, Vec3
 from pyglet.window import key, mouse
 
-from mirai_bastel_core import MoveOperation, OperationContext, SelectionMode
+from mirai_bastel_core import SelectionMode
 
 from . import commands as cmd
 from . import vecmath as v
@@ -26,7 +26,9 @@ from .default_bindings import build_default_bindings, load_keymap_overrides
 from .demo_scene import build_cube_scene
 from .display_state import DisplayMode, DisplayState
 from .input_binding import GLOBAL_CONTEXT, Input
+from .move_tool import MoveTool, resolve_selection_vertices, tool_for_command
 from .picking import pick_face, pick_nearest_edge, pick_nearest_vertex
+from .tool import ToolManager
 
 _KEYMAP_PATH = Path(__file__).resolve().parent.parent / "keymap.json"
 
@@ -114,18 +116,6 @@ def _wheel_input(scroll_y) -> Input:
     return Input("wheel", "UP" if scroll_y > 0 else "DOWN")
 
 
-class _MoveSelectionView:
-    """Minimaler Selection-View für MoveOperation.
-
-    Die sichtbare Selection bleibt im aktuellen Sub-Object-Mode. Die
-    bestehende Core-MoveOperation benötigt für V1 lediglich die Menge der
-    tatsächlich zu bewegenden VertexIds.
-    """
-
-    def __init__(self, vertices):
-        self.vertices = set(vertices)
-
-
 class ModelerWindow(pyglet.window.Window):
     def __init__(self) -> None:
         super().__init__(width=1024, height=768, caption="Mirai-Bastel V1 - Vertex Mode", resizable=True)
@@ -138,18 +128,17 @@ class ModelerWindow(pyglet.window.Window):
         vert = Shader(_VERTEX_SHADER, "vertex")
         frag = Shader(_FRAGMENT_SHADER, "fragment")
         self.program = ShaderProgram(vert, frag)
+        # WP-02: Momentane Drag-Art der Maus (orbit/pan/"tool") und das
+        # Active-Tool-System für interaktive Modeling-Tools (max. eines).
         self._drag_mode = None
-        self._active_move = None
-        self._move_anchor_vertex = None
+        self._tool_manager = ToolManager()
+        self._tweak_tool = False
         glEnable(GL_DEPTH_TEST)
         pyglet.clock.schedule_interval(lambda dt: None, 1 / 60.0)
         self._rebuild_geometry()
 
     def _set_selection_mode(self, mode):
-        if self._active_move is not None:
-            self._active_move.cancel(); self._active_move = None
-        self._drag_mode = None
-        self._move_anchor_vertex = None
+        self._end_modeling_tool()
         self.selection_mode = mode
         self.scene.selection.mode = mode
         self.scene.selection.clear()
@@ -301,22 +290,78 @@ class ModelerWindow(pyglet.window.Window):
         if self.selection_mode == SelectionMode.FACE: return self.scene.selection.faces
         return set()
 
-    def _move_vertex_ids(self):
-        """Löst die aktuelle Sub-Object-Selection auf betroffene Vertices auf."""
-        mesh = self.scene.mesh
-        if self.selection_mode == SelectionMode.VERTEX:
-            return set(self.scene.selection.vertices)
-        if self.selection_mode == SelectionMode.EDGE:
-            result = set()
-            for eid in self.scene.selection.edges:
-                result.update(mesh.edge_vertices(eid))
-            return result
-        if self.selection_mode == SelectionMode.FACE:
-            result = set()
-            for fid in self.scene.selection.faces:
-                result.update(mesh.face_vertices(fid))
-            return result
-        return set()
+    # ------------------------------------------------------------------
+    # WP-02: Tool-Boundary (Active Tool / MoveTool / ToolManager)
+    # ------------------------------------------------------------------
+
+    def _end_modeling_tool(self) -> None:
+        """Beendet ein aktives interaktives Modeling-Tool vollständig.
+
+        Eine laufende Interaktion wird gecancelt (exakter Vorzustand, keine
+        History), danach wird das Tool deaktiviert. Verhindert stale
+        Drag-/Tool-Zustände (WP-02 §8, DoD).
+        """
+        if self._tool_manager.is_interacting:
+            self._tool_manager.cancel()
+        if self._tool_manager.active_tool is not None:
+            self._tool_manager.deactivate()
+        self._drag_mode = None
+        self._tweak_tool = False
+
+    def _activate_tool(self, tool_cls) -> None:
+        """Aktiviert ein interaktives Tool über den ToolManager.
+
+        Ist genau dieses Tool bereits aktiv, bleibt der (Modal-)Zustand
+        bestehen; ein anderes aktives Tool wird sauber ersetzt.
+        """
+        if isinstance(self._tool_manager.active_tool, tool_cls):
+            return
+        self._tool_manager.activate(tool_cls(self.scene, self.camera))
+
+    def _cancel_ongoing_tool(self) -> None:
+        """Bricht eine laufende Tool-Interaktion ab (z. B. vor Orbit/Pan)."""
+        if self._tool_manager.is_interacting:
+            self._tool_manager.cancel()
+            if self._tweak_tool:
+                self._tool_manager.deactivate()
+            self._tweak_tool = False
+            self._drag_mode = None
+            self._rebuild_geometry()
+
+    def _start_move_interaction(self, vertex_ids) -> None:
+        """Startet die Tweak-Move-Interaktion über den MoveTool (WP-02).
+
+        Ohne bereits aktives Tool wird MoveTool implizit aktiviert und nach
+        Commit/Cancel wieder deaktiviert (Tweak-UX). Ein zuvor explizit
+        aktiviertes Move-Tool (Command.Move) bleibt modal bestehen.
+        """
+        if self._tool_manager.active_tool is None:
+            self._tool_manager.activate(MoveTool(self.scene, self.camera))
+            self._tweak_tool = True
+        else:
+            self._tweak_tool = False
+        self._tool_manager.begin(vertex_ids=vertex_ids)
+        self._drag_mode = "tool"
+
+    def _finish_drag(self) -> None:
+        """Räumt nach Commit/Cancel einer Drag-Interaktion auf."""
+        if self._tweak_tool:
+            self._tool_manager.deactivate()
+            self._tweak_tool = False
+        self._drag_mode = None
+        self._rebuild_geometry()
+
+    def _handle_cancel_command(self) -> None:
+        """Esc: laufende Interaktion abbrechen bzw. aktives Tool deaktivieren."""
+        if self._tool_manager.is_interacting:
+            self._tool_manager.cancel()
+            self._tweak_tool = False
+            self._finish_drag()
+        elif self._tool_manager.active_tool is not None:
+            self._tool_manager.deactivate()
+            self._tweak_tool = False
+            self._drag_mode = None
+            self._rebuild_geometry()
 
     def _draw_edge_highlight(self, vertex_list, color, width):
         """Zeichnet GL_LINES mit Polygon-Offset, damit überlagertes Wireframe/
@@ -384,19 +429,21 @@ class ModelerWindow(pyglet.window.Window):
                     selected.add(picked)
                 self.scene.selection.set(selected); self._hovered_id = picked; self.scene.selection.hovered = picked
                 if picked in self._selected_ids():
-                    move_vertex_ids = self._move_vertex_ids()
+                    move_vertex_ids = resolve_selection_vertices(
+                        self.scene.mesh, self.scene.selection, self.selection_mode
+                    )
                     if move_vertex_ids:
-                        self._begin_move(move_vertex_ids)
-                        self._move_anchor_vertex = next(iter(move_vertex_ids))
-                        self._drag_mode = "move"
+                        self._start_move_interaction(move_vertex_ids)
                     else:
-                        self._drag_mode = None; self._move_anchor_vertex = None
+                        self._drag_mode = None; self._tweak_tool = False
                 else:
-                    self._drag_mode = None; self._move_anchor_vertex = None
+                    self._drag_mode = None; self._tweak_tool = False
             self._rebuild_geometry()
         elif command == cmd.ORBIT:
+            self._cancel_ongoing_tool()
             self._drag_mode = "orbit"
         elif command == cmd.PAN:
+            self._cancel_ongoing_tool()
             self._drag_mode = "pan"
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
@@ -406,16 +453,16 @@ class ModelerWindow(pyglet.window.Window):
         elif self._drag_mode == "pan":
             self.camera.pan(dx, dy, self.width, self.height)
             self._refresh_hover(x, y)
-        elif self._drag_mode == "move" and self._active_move is not None and self._move_anchor_vertex is not None:
-            point = self.scene.mesh.vertex_position(self._move_anchor_vertex)
-            self._active_move.update(delta=self.camera.screen_delta_to_world(point, dx, dy, self.width, self.height)); self._rebuild_geometry()
+        elif self._drag_mode == "tool" and self._tool_manager.is_interacting:
+            self._tool_manager.update(dx=dx, dy=dy, width=self.width, height=self.height)
+            self._rebuild_geometry()
 
     def on_mouse_release(self, x, y, button, modifiers):
-        if self._drag_mode == "move" and self._active_move is not None:
-            self._active_move.commit(); self._active_move = None
-            self._move_anchor_vertex = None
-            self._rebuild_geometry()
-        self._drag_mode = None
+        if self._drag_mode == "tool" and self._tool_manager.is_interacting:
+            self._tool_manager.commit()
+            self._finish_drag()
+        else:
+            self._drag_mode = None
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         command = self.bindings.command_for(_wheel_input(scroll_y), self._binding_context())
@@ -451,11 +498,11 @@ class ModelerWindow(pyglet.window.Window):
         if command in set_mode:
             self._set_selection_mode(set_mode[command])
         elif command == cmd.UNDO:
-            self.scene.history.undo(); self._rebuild_geometry()
+            self._end_modeling_tool(); self.scene.history.undo(); self._rebuild_geometry()
         elif command == cmd.REDO:
-            self.scene.history.redo(); self._rebuild_geometry()
+            self._end_modeling_tool(); self.scene.history.redo(); self._rebuild_geometry()
         elif command == cmd.CANCEL:
-            self._cancel_active_move()
+            self._handle_cancel_command()
         elif command == cmd.CLEAR_SELECTION:
             self._clear_selection()
         elif command == cmd.CYCLE_DISPLAY_MODE:
@@ -465,7 +512,13 @@ class ModelerWindow(pyglet.window.Window):
         elif command in set_display:
             self._set_display_mode(set_display[command])
         else:
-            return False
+            # Command → Tool-Routing (WP-02 §4.3): Modale Commands werden an
+            # ihr Tool weitergegeben, nicht im Window-Event-Handler verbaut.
+            tool_cls = tool_for_command(command)
+            if tool_cls is not None:
+                self._activate_tool(tool_cls)
+            else:
+                return False
         return True
 
     def _set_display_mode(self, mode) -> None:
@@ -476,32 +529,19 @@ class ModelerWindow(pyglet.window.Window):
     def _clear_selection(self) -> None:
         """Leert die komplette Selection (Command-ClearSelection).
 
-        Entspricht dem bisherigen „Klick ins Leere"-Verhalten und wird
-        zusätzlich über ein Key-Binding erreichbar gemacht.
+        Entspricht dem bisherigen Klick-ins-Leere-Verhalten und wird
+        zusaetzlich ueber ein Key-Binding erreichbar gemacht.
         """
+        self._end_modeling_tool()
         self.scene.selection.clear()
         self._hovered_id = None
         self.scene.selection.hovered = None
-        self._drag_mode = None
-        self._move_anchor_vertex = None
         self._rebuild_geometry()
-
-    def _cancel_active_move(self) -> None:
-        if self._active_move is not None:
-            self._active_move.cancel(); self._active_move = None
-            self._move_anchor_vertex = None
-            self._drag_mode = None
-            self._rebuild_geometry()
 
     def _refresh_hover(self, x, y) -> None:
         self._hovered_id = self._pick(x, y)
         self.scene.selection.hovered = self._hovered_id
         self._rebuild_geometry()
-
-    def _begin_move(self, vertex_ids):
-        move_selection = _MoveSelectionView(vertex_ids)
-        context = OperationContext(target=self.scene.mesh, selection=move_selection, history=self.scene.history)
-        self._active_move = MoveOperation(context); self._active_move.begin()
 
 
 def main():
