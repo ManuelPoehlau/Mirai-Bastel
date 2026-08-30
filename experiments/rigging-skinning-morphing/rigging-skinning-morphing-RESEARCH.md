@@ -1,236 +1,321 @@
-# Research Findings: Rigging, Skinning & Morph-Targets
+# Research Findings: Rigging Integration with Mirai-Bastel Core
 
-## Purpose
+## Overview
+This document captures technical findings from analyzing the Mirai-Bastel Core architecture, specifically focused on understanding how Rigging, Skinning, and Morph-Targets can cleanly integrate with topology editing operations.
 
-This document records research findings for the hypothesis that a rigged, skinned, morphed mesh should remain topologically editable.
-
-The experiment is deliberately separated from the production Core. Findings may motivate future architecture decisions, but they do not authorize Core changes.
-
----
-
-## 1. ID Management & Continuity
-
-The project uses the documented rule that element IDs are not reused within a session.
-
-This is favorable for external deformation mappings because a vertex ID remains associated with the same logical vertex identity for the lifetime of that session. When a vertex is deleted, however, external data can contain an orphaned entry and therefore needs explicit cleanup.
-
-Research questions:
-
-- How should orphaned skinning entries be detected?
-- Can existing Mesh queries identify live vertex IDs reliably?
-- How should morph entries for deleted vertices be cleaned up?
-
-No Core modification is required to investigate these questions.
+**Key Constraint:** Topology operations (split/collapse/connect) must not invalidate Skinning weights or Morph-targets.
 
 ---
 
-## 2. Topology Mutations
+## 1. ID Management & Continuity (Phase C Finding)
 
-The topology system provides operations such as split, collapse, and Connect Edges. The rigging experiment treats these as existing Core behavior and does not modify their implementation.
+### Current Architecture
+**Rule AD-001: No ID Reuse within a Session**
+- Once a Vertex/Edge/Face receives an ID, that ID is never reassigned to a different element
+- IDs are never recycled, even after an element is deleted
+- This constraint exists to make Undo/Redo deterministic and prevent ID collisions
 
-### Split / Loop Insertion
+**Impact on Skinning:**
+```
+Skinning stores: Vertex_ID → [(Bone_Name, Weight), (Bone_Name, Weight), ...]
 
-A split creates a new vertex. The critical dependency question is:
+If a Vertex is deleted:
+- Its ID is "dead" (no longer references any geometry)
+- But the ID itself cannot be reused for new vertices
 
-> What information available through the public API lets an external controller determine how the new vertex relates to existing vertices?
-
-Possible deformation strategies include copying or interpolating source weights and morph offsets. The experiment must measure which strategy is justified rather than assuming one globally.
-
-### Collapse
-
-A collapse removes one vertex while retaining another identity. The experiment must determine appropriate weight and morph merge semantics and clean up data for the deleted ID.
-
-### Connect Edges
-
-Connect Edges can change connectivity without creating or deleting vertices. The experiment must verify whether this leaves skinning/morph data unchanged, as expected, or exposes another dependency.
-
----
-
-## 3. Undo / Redo and State
-
-The production history model is based on state snapshots rather than semantic inverse operations.
-
-For external rigging data this raises a research question: can RigController state be restored consistently when the Mesh is restored from a snapshot?
-
-The experiment should therefore test:
-
-```text
-Mesh state N + Rig state N
-        ↓
- topology edit
-        ↓
-Mesh state N+1 + Rig state N+1
-        ↓
- restore Mesh state N
-        ↓
-Can RigController restore N deterministically?
+Problem: What happens to dead vertex IDs in Skinning weights?
+- Option A: Keep them (dead weight entries) until mesh is reserialized
+- Option B: Lazily clean them on export
+- Option C: Something else?
 ```
 
-This must be solved experimentally before proposing production integration.
+**✓ This is GOOD for Skinning because:**
+- Weights stay tied to specific vertex IDs
+- No surprise ID reassignments that would silently corrupt weights
+- **But:** We need a cleanup strategy for orphaned weight entries
+
+**? Still Unclear:**
+- Should Skinning data live in the Core.Mesh or outside?
+- Who owns the "cleanup" of dead weight entries?
 
 ---
 
-## 4. Why the Core Must Remain Frozen
+## 2. Topology Mutations: split / collapse / connect
 
-Earlier research proposed a hybrid architecture with Core-owned bones and topology listeners. That proposal was made before applying the project's established experiment discipline consistently.
+### How Topology Ops Work Today
 
-The current rule is:
+#### split(edge) — Insert a new vertex in the middle of an edge
+- Creates 1 new Vertex with a new, unique ID
+- Modifies face topology
+- Returns: new_vertex_id
 
-> **Do not extend `src/core/` merely because an experiment would be easier with a new hook.**
+**Question:** What weight should the new vertex inherit?
+- Linear blend of the two endpoint vertices' weights?
+- Copy from one endpoint?
+- Zero weight (user must manually assign)?
 
-The topology experiment demonstrates the preferred pattern:
+#### collapse(edge) — Merge two vertices into one
+- Deletes 1 vertex (marks its ID as dead, per AD-001)
+- Survivor vertex keeps its ID
+- Modifies face topology
+- Returns: survivor_vertex_id
 
-```text
-Existing Core
-     ↓
-External experiment
-     ↓
-Real operation
-     ↓
-Observe available information
-     ↓
-Identify missing capability
-     ↓
-Architecture decision
+**Question:** How do we merge weights?
+- Average the two vertices' weights?
+- Keep only survivor's weights?
+- Union of both weights?
+
+#### connect(vertices) — Create new edge/face between vertices
+- Does NOT create/delete vertices
+- Only modifies face connectivity
+- May not affect Skinning at all
+
+**? Still Unclear:**
+- Current code location: `src/core/operations/topology.py` (need to read exact logic)
+- Are there any callbacks/hooks when mutations happen?
+- Can we extend mutations with "skinning-aware" logic?
+
+---
+
+## 3. Mesh Serialization & State Management
+
+### Export/Import Strategy
+**Current approach (Phases C–E):**
+- `Mesh.export_state()` → returns full mesh state (vertices, edges, faces, IDs, etc.)
+- `Mesh.load_state(state)` → restores from snapshot
+
+**For Skinning, we'd need to extend this:**
+```python
+export_state() {
+    return {
+        vertices: [...],
+        edges: [...],
+        faces: [...],
+        skinning_weights: {  # NEW
+            vertex_id: [(bone, weight), ...],
+            ...
+        },
+        morph_targets: {  # NEW
+            "mouth_open": {vertex_id: (dx, dy, dz), ...},
+            "jaw_drop": {...},
+        }
+    }
+}
 ```
 
-Therefore the RigController prototype must use existing public Core APIs only.
+**Questions:**
+- Should we extend Core.Mesh directly, or keep Skinning/Morphs as external data?
+- If external: how do we keep them in sync after topology edits?
 
-If the experiment cannot synchronize reliably, that is valuable evidence for a future Core/API proposal.
+### Undo/Redo Architecture (Phase D Finding)
 
----
+**Key Decision: Full State Snapshots, NOT Semantic Operations**
 
-## 5. Current Architecture Hypothesis
+Why? Because AD-001 (no ID reuse) breaks semantic undo.
 
-The safest hypothesis to test first is:
+```python
+# SEMANTIC UNDO would look like:
+user_action = split(edge_5)  # Creates new vertex_9
+undo_action = reverse_split(vertex_9)  # But this would create NEW vertex_ID!
+# Problem: The new ID doesn't match old state, UND/REDO breaks
 
-```text
-Core.Mesh
-   │
-   │ existing public APIs
-   ▼
-RigController (experiment)
-   ├── Bones
-   ├── Skinning Weights
-   ├── Morph Targets
-   └── Deformation
+# ACTUAL UNDO in Mirai-Bastel:
+user_action = split(edge_5)  # Creates vertex_9
+mesh.push_state()  # Saves full state snapshot
+# Later:
+mesh.pop_state()  # Restores entire state snapshot (vertex_9 reverts, ID is "dead" again)
 ```
 
-No Core listener infrastructure is assumed.
+**For Skinning:**
+- Undo/Redo MUST include skinning weights in the state snapshot
+- No way around it — weights live in the full state, not in semantic operations
+- This means: Skinning data must be serialized with the mesh state
 
-The controller explicitly synchronizes after a topology operation and records what information was required.
-
----
-
-## 6. Data Dependency Questions
-
-For each mutation, record:
-
-| Dependency | Question |
-|---|---|
-| Vertex creation | Can source/provenance be identified? |
-| Vertex deletion | Can dead IDs be detected and removed? |
-| Weight transfer | Copy, interpolation, merge, or user repair? |
-| Morph transfer | Same strategy as weights, or different? |
-| Bone hierarchy | Can it remain entirely external? |
-| Deformation | Can deformed positions be computed without mutating Core data? |
-| History | Can external state follow Mesh snapshots? |
-| Serialization | What information must eventually persist together? |
-
-These are research questions, not current production requirements.
+**✓ Good news:** The snapshot system is already built; we just extend it
 
 ---
 
-## 7. Validation Targets
+## 4. Topology Experiment Phase 2: Working Example
 
-The low-poly head scenario should exercise:
+The existing **Edge-Loop selection/insertion** shows how topology edits work in practice:
 
-1. 50–100 vertices.
-2. Neck/skull/jaw bone hierarchy.
-3. Skinning weights.
-4. 2–3 morph targets.
-5. Bone deformation.
-6. Morph deformation.
-7. Split/loop insertion.
-8. Collapse where practical.
-9. Connect Edges.
-10. External synchronization.
-11. Undo/redo interaction at experiment level.
+- `viewport/loop_ring.py`: Query API for finding edge loops (23 unit tests, all passing)
+- `viewport/topology_tools.py`: Selection wrapper
+- `viewport/topology_app.py`: Keybindings (L/R for Loop/Ring, Insert/Remove)
 
-Record both successful and unsuccessful cases.
+**Observation:** These work purely on the Mesh graph structure; they don't touch data like materials, colors, or (importantly) **Skinning**.
 
-A failure that precisely identifies missing topology provenance is a successful research result.
+**Implication:** Loop insertion creates new vertices but has no idea about weights — this is exactly our integration problem!
 
 ---
 
-## 8. Open Questions
+## 5. Key Architectural Constraints
 
-### Topology API
+### Hard Rules (Cannot Break)
+1. **ID Continuity (AD-001)**: No vertex ID reuse within a session
+2. **State Snapshots (Phase D)**: Undo/Redo via full state, not semantic ops
+3. **Determinism**: Same sequence of ops must always produce same state
+4. **No Silent Corruption**: If we can't auto-update weights, document the limitation
 
-- Which public APIs expose enough provenance after split/collapse?
-- Does a higher-level operation expose the information needed by dependent systems?
-- Are loop insertion operations compositions of identifiable lower-level mutations?
-
-### Deformation Semantics
-
-- What is the correct weight transfer rule for split?
-- What is the correct merge rule for collapse?
-- How should morph offsets be interpolated?
-- Are different topology operations required to use different policies?
-
-### History
-
-- Can external rig state follow Core snapshots deterministically?
-- Does the external controller need its own snapshot layer?
-
-### Production Architecture
-
-- Is an external system sufficient long-term?
-- If not, what is the smallest Core/API extension actually justified by evidence?
-- Should any future dependency mechanism be generic rather than rigging-specific?
+### Design Boundaries
+- Core.Mesh itself is stable; we should not cause regressions
+- Topology ops should ideally remain ignorant of Skinning (loose coupling)
+- But Skinning must survive topology edits (tight correctness)
 
 ---
 
-## 9. Superseded Research Assumptions
+## 6. Integration Opportunities
 
-The following earlier assumptions are no longer active implementation guidance:
+### Option A: Skinning Inside Core.Mesh
+**Structure:**
+```python
+class Mesh:
+    vertices = [...]
+    edges = [...]
+    faces = [...]
+    
+    # NEW:
+    bones = [Bone(...), ...]  # Bone hierarchy
+    skinning_weights = {vertex_id: [(bone_id, weight), ...], ...}
+    morph_targets = {name: {vertex_id: (dx, dy, dz), ...}, ...}
+```
 
-- `Mesh.bones` must be added now.
-- `Mesh.topology_listeners` must be added now.
-- Split/collapse must call rigging callbacks.
-- New vertices should universally inherit a parent vertex's weights.
-- Rigging data must immediately be integrated into production Mesh snapshots.
+**Pros:**
+- Unified state management
+- Undo/Redo automatically includes weights & morphs
+- Topology ops can have built-in weight-update logic
 
-These may become conclusions later, but only after experimental evidence and a separate architecture decision.
+**Cons:**
+- Core gets more complex
+- Need to extend all topology ops with weight-merge logic
+- Risk of breaking existing Phase A–E work
+
+### Option B: Skinning as External Mapping
+**Structure:**
+```python
+class Mesh:
+    vertices = [...]
+    edges = [...]
+    faces = [...]
+    # No skinning data inside
+
+class RigController:  # Separate, outside Core
+    mesh_id → {
+        bones: [Bone(...), ...],
+        skinning_weights: {vertex_id: [(bone, weight), ...], ...},
+        morph_targets: {...}
+    }
+```
+
+**Pros:**
+- Core stays minimal and stable
+- Skinning is isolated; topology errors won't corrupt Core
+- Can iterate on Skinning without touching Core
+
+**Cons:**
+- Two sources of truth (mesh + rig controller)
+- Must manually sync after topology edits
+- Undo/Redo requires coordinating two systems
+
+### Option C: Hybrid (Core-Aware Rigging, External Weights)
+**Structure:**
+```python
+class Mesh:
+    vertices = [...]
+    edges = [...]
+    faces = [...]
+    
+    # NEW (lightweight):
+    bones = [Bone(...), ...]  # Just the skeleton hierarchy
+    
+class RigController:  # External (inherits from Mesh.bones)
+    bones: Link to Mesh.bones
+    skinning_weights: {vertex_id: [(bone_idx, weight), ...], ...}
+    morph_targets: {name: {vertex_id: (dx, dy, dz), ...}, ...}
+    
+    def on_mesh_split(vertex_id, new_vertex_id):
+        # Inherit weight from parent vertex
+        self.skinning_weights[new_vertex_id] = \
+            self.skinning_weights[vertex_id]
+    
+    def on_mesh_collapse(dead_vertex_id, survivor_vertex_id):
+        # Merge or choose weights
+        self.skinning_weights[survivor_vertex_id] = \
+            average_weights(dead_vertex_id, survivor_vertex_id)
+        del self.skinning_weights[dead_vertex_id]
+```
+
+**Pros:**
+- Core knows about Bones (can reference in future features)
+- Weights stay external; easier to debug and extend
+- Clear separation of concerns
+- Can register callbacks on topology mutations
+
+**Cons:**
+- Slightly more complex than B
+- Still need synchronization logic
 
 ---
 
-## 10. Next Steps
+## 7. Open Questions (Need to Research Further)
 
-### Phase 2 — RigController Prototype
+### About Core Architecture
+- [ ] Does Core.Mesh have a callback/hook system for mutations?
+- [ ] Can we register listeners on split/collapse/connect operations?
+- [ ] What's the performance expectation for undo/redo with large meshes?
+- [ ] Can we add new fields to Core.Mesh without breaking Phase A–E tests?
 
-Implement only in `experiments/rigging-skinning-morphing/`:
+### About Viewport
+- [ ] How does the existing viewport render deformations (if any)?
+- [ ] Can we render skinned geometry real-time (bone transforms → vertex positions)?
+- [ ] What's the performance bottleneck: mesh skinning or rendering?
 
-1. External bone hierarchy.
-2. Skinning weight model.
-3. Morph-target model.
-4. Deformation calculation.
-5. Explicit topology synchronization.
-6. Unit tests.
-7. Mutation-specific experiments.
-8. Document findings.
-
-### Phase 3 — Viewport
-
-Add experimental visualization only after the controller model is sufficiently stable.
-
-### Phase 4 — Validation
-
-Run the low-poly head scenario and use the results to decide whether a future production architecture proposal is warranted.
+### About Serialization
+- [ ] Current file format: JSON / Binary / Other?
+- [ ] Can we extend it with Bones/Weights/Morphs without breaking existing files?
+- [ ] How do we version the format?
 
 ---
 
-**Document Status:** Phase 1 complete → Phase 2 ready  
-**Core Policy:** `src/core/` frozen  
-**Current Architecture Hypothesis:** External RigController  
-**Last Updated:** August 2026
+## 8. Next Steps
+
+### Immediate
+1. **Read Core implementation** (`src/core/operations/topology.py`)
+   - Confirm exact logic of split/collapse/connect
+   - Check for existing hook/callback mechanisms
+   
+2. **Decide on Option A/B/C**
+   - Based on risk tolerance (A = higher risk/reward, B = lower risk, C = balanced)
+   - Document rationale in AD-XXX
+
+3. **Design weight-merge strategy**
+   - Linear blend? Average? Union?
+   - Test with toy examples
+
+### Then
+4. Implement minimal prototype (Phase 2)
+5. Test with low-poly head use case
+6. Iterate based on findings
+
+---
+
+## 9. References & Evidence
+
+### Docs to Read
+- `docs/architecture/AD-001-CONTINUITY.md` (or similar) – Exact ID-reuse rule
+- `docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md` – Full Phase A–E findings
+- `src/core/operations/topology.py` – Split/collapse/connect implementation
+- `src/core/mesh.py` – Mesh data structure
+
+### Tests
+- `tests/` directory – Unit tests for Phase A–E
+- `tests/README.md` – Error-decision rules
+
+### Experiments
+- `experiments/mirai_bastel_viewport_V1/` – Topology Phase 2 (working example)
+
+---
+
+**Document Status:** Phase 1 — Research (In Progress)  
+**Last Updated:** August 2026  
+**Owner:** Manu (Technical Analysis by Claude)

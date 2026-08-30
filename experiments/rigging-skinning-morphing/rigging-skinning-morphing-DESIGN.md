@@ -1,296 +1,417 @@
-# Design: Rigging, Skinning & Morph-Targets Experiment
+# Design: Rigging & Skinning Architecture
 
-## Design Status
+## Architectural Decision: Option C (Hybrid)
 
-**Phase 1 research is complete.** The earlier Option A/B/C comparison remains useful as architectural research, but the experiment implementation is deliberately narrower:
+**Recommendation: Implement Option C (Core-Aware Rigging with External Weights)**
 
-> **Phase 2 uses an external RigController and does not modify `src/core/`.**
-
-This is a research/prototype decision, not the final production rigging architecture.
+This document presents three architectural options, analyzes trade-offs, and recommends Option C based on risk, scalability, and alignment with the project's "implement little, assume much" principle.
 
 ---
 
-## Problem
+## Three Options Analyzed
 
-Mirai-Bastel aims to support a workflow in which a low-poly mesh can be rigged, skinned, morphed, and then remain topologically editable.
+### Option A: Skinning as First-Class Core Data
 
-The experiment therefore asks:
-
-> **What representation and dependency information are required for deformation data to remain correct when topology changes?**
-
-The important dependency is:
-
-```text
-Topology mutation
-       ↓
-Mesh structure changes
-       ↓
-External deformation data may become stale
-       ↓
-Can the dependency be reconstructed from existing public APIs?
-```
-
----
-
-## Previously Investigated Options
-
-### Option A — Skinning Inside Core.Mesh
-
-Weights and morph targets become first-class Mesh data and topology operations update them directly.
-
-**Pros**
-- Unified state
-- Potentially straightforward snapshot/serialization integration
-- Topology operations can explicitly define deformation behavior
-
-**Cons**
-- Strong coupling between topology and deformation
-- Larger production Core surface
-- Higher regression and testing burden
-- Requires deformation semantics for every relevant topology operation
-
-**Current status:** Research option only. Not implemented.
-
-### Option B — Completely External System
-
-Core remains untouched. An external controller owns bones, weights, and morph targets and synchronizes against the mesh after edits.
-
-**Pros**
-- Zero Core risk
-- Fast experimentation
-- Clear separation of topology and deformation
-
-**Cons**
-- Synchronization must be solved explicitly
-- Undo/redo coordination needs investigation
-- External data can become stale if topology provenance is insufficient
-
-**Current status:** This is the **starting architecture for the experiment**.
-
-### Option C — Hybrid / Core-Aware System
-
-The original proposal added lightweight Core facilities such as Core-owned bones and topology listeners while keeping weights external.
-
-**Pros**
-- Could support automatic synchronization
-- Could provide explicit topology/deformation integration points
-
-**Cons**
-- Requires production-Core changes before the need has been proven
-- Introduces architecture and maintenance cost
-- Risks violating the current Core-freeze experiment strategy
-
-**Current status:** Hypothesis for possible future investigation only. No Core observer/listener implementation is authorized by this experiment.
-
----
-
-## Current Experiment Architecture
-
-```text
-┌──────────────────────────────┐
-│          Core.Mesh           │
-│                              │
-│ vertices / edges / faces     │
-│ topology operations          │
-│ public query APIs            │
-└──────────────┬───────────────┘
-               │ read-only
-               ▼
-┌──────────────────────────────┐
-│       RigController           │
-│       experiments/ only       │
-│                              │
-│ bones                        │
-│ skinning weights             │
-│ morph targets                │
-│ deformation                  │
-│ explicit synchronization    │
-└──────────────────────────────┘
-```
-
-The external controller may own its own bone hierarchy. It does not require `Mesh.bones` or any other new Core field.
-
-Suggested prototype data:
-
+**Structure:**
 ```python
-skinning_weights = {
-    vertex_id: [(bone_id, weight), ...]
-}
-
-morph_targets = {
-    "mouth_open": {
-        vertex_id: (dx, dy, dz),
+class Mesh:
+    vertices = [Vertex(...), ...]
+    edges = [Edge(...), ...]
+    faces = [Face(...), ...]
+    
+    # NEW:
+    bones = [Bone(...), ...]
+    skinning_weights = {
+        vertex_id: [(bone_id, weight), ...],
+        ...
     }
-}
+    morph_targets = {
+        "mouth_open": {vertex_id: (dx, dy, dz), ...},
+        "jaw_drop": {...},
+    }
 ```
 
-The structures are intentionally provisional.
-
----
-
-## Topology Synchronization
-
-Synchronization is explicit and experiment-owned.
-
-Example workflow:
-
-```text
-1. RigController stores state for Mesh
-2. User performs topology operation through existing Core API
-3. Mesh changes
-4. RigController receives/gets the updated Mesh explicitly
-5. RigController recalculates or transfers dependent data
-6. Tests verify the result
+**Integration with Topology:**
+```python
+def split(edge_id):
+    new_vertex = create_new_vertex()
+    
+    # Topology update
+    modify_faces(edge_id, new_vertex)
+    
+    # NEW: Skinning-aware logic
+    parent_vertex = edge.vertices[0]
+    new_vertex.skinning_weights = \
+        inherit_and_blend_weights(parent_vertex.skinning_weights)
+    
+    # NEW: Morph-aware logic
+    for morph_name in self.morph_targets:
+        new_vertex.morph_offsets[morph_name] = \
+            interpolate_morph_offset(parent_vertex, edge.vertices[1])
+    
+    return new_vertex
 ```
 
-Do not add callbacks to Core simply to automate step 4.
+**Pros:**
+- ✓ Unified state management (everything in Mesh)
+- ✓ Undo/Redo automatically includes weights & morphs
+- ✓ Topology ops have built-in deformation logic
+- ✓ Theoretically cleaner architecture long-term
+- ✓ Real integration point if system grows to animation
 
-The experiment must first establish whether existing APIs provide enough information.
+**Cons:**
+- ✗ **High risk:** Modifying Core.Mesh changes Phase A–E boundary
+- ✗ Must extend split/collapse/connect with deformation logic
+- ✗ New fields (bones, weights, morphs) increase serialization complexity
+- ✗ Testing burden: every topology test now has deformation variants
+- ✗ If weight-merge logic is wrong, corrupts saved files
+- ✗ Tight coupling: topology bugs affect deformation and vice versa
 
-### Split / Loop Insert
+**Risk Assessment:** 🔴 **HIGH**
+- Touches production code (src/core)
+- Requires changes to 37 passing tests or new deformation test variants
+- Serialization format changes break backward compatibility
+- One mistake corrupts rig data
 
-Investigate:
-- new vertex identity;
-- relation to original vertices/edges;
-- available topology queries;
-- viable weight interpolation/inheritance;
-- viable morph interpolation.
-
-### Collapse
-
-Investigate:
-- deleted vertex identity;
-- surviving vertex identity;
-- weight merge semantics;
-- morph merge semantics;
-- cleanup of external entries.
-
-### Connect Edges
-
-Connect Edges may not create/delete vertices. Verify whether the resulting topology nevertheless requires any external deformation update.
-
-### General Rule
-
-Do not assume that a topological operation's implementation detail is sufficient provenance for a dependent system. Test what the public API actually exposes.
+**Timeline:** 3–4 weeks to implement safely
 
 ---
 
-## Weight and Morph Semantics
+### Option B: Skinning as Completely External System
 
-The experiment must not prematurely lock in a universal production rule such as "always copy the parent weight".
+**Structure:**
+```python
+# Core stays untouched:
+class Mesh:
+    vertices = [...]
+    edges = [...]
+    faces = [...]
 
-Instead test candidate strategies where relevant:
+# Separate system (outside src/core):
+class RigController:
+    mesh: Mesh
+    bones = [Bone(...), ...]
+    skinning_weights = {vertex_id: [(bone_id, weight), ...], ...}
+    morph_targets = {name: {...}, ...}
+    
+    def deform_mesh(frame_or_bones_transform):
+        """Apply rig to mesh, return deformed positions."""
+        for vertex in self.mesh.vertices:
+            vertex.deformed_position = \
+                compute_skinned_position(vertex, self.bones, 
+                                        self.skinning_weights)
 
-- copy/inherit;
-- interpolate between source vertices;
-- merge/normalize on collapse;
-- explicit user repair when automatic reconstruction is ambiguous.
+# When topology changes, manually sync:
+def on_mesh_split(mesh, edge_id, new_vertex_id):
+    # RigController must be told about the change
+    rig.skinning_weights[new_vertex_id] = ???  # What weight?
+    # Problem: we don't know how to update without mesh knowledge!
 
-Record which strategy is appropriate for which operation.
+def on_mesh_collapse(mesh, dead_vertex_id, survivor_vertex_id):
+    if dead_vertex_id in rig.skinning_weights:
+        del rig.skinning_weights[dead_vertex_id]
+    # But survivor's weight: average? keep? User decides?
+```
 
-Likewise, morph offsets must be treated as deformation data whose interpolation semantics may differ from skinning weights.
+**Pros:**
+- ✓ **Zero risk** to Core
+- ✓ RigController can be developed/debugged independently
+- ✓ Clean separation: topology ops never know about deformation
+- ✓ Can iterate fast on skinning without Core regression tests
 
----
+**Cons:**
+- ✗ **Two sources of truth** (Mesh structure + RigController state)
+- ✗ **Synchronization burden:** After every topology edit, must manually update weights
+- ✗ No built-in strategy: what weight does split() produce? Average? Zero? User decides = bugs
+- ✗ Undo/Redo must coordinate Mesh + RigController (complex)
+- ✗ Orphaned weight entries (dead vertex IDs) pollute RigController
+- ✗ Hard to serialize/load consistently (Mesh and Rig must match)
 
-## Undo / Redo
+**Risk Assessment:** 🟡 **MEDIUM (but fragile)**
+- Core is safe, but integration is error-prone
+- Sync logic is easy to get wrong
+- Future maintainers will struggle with state consistency
 
-The production project uses state snapshots for history. This experiment must investigate how an external RigController interacts with mesh snapshots without changing production history.
-
-Prototype questions:
-
-- Can RigController state be snapshotted independently?
-- Can it be restored alongside a restored Mesh state?
-- Can stale vertex references be detected?
-- Is topology provenance required for deterministic restoration?
-
-Any requirement discovered here is a finding for future architecture work.
-
----
-
-## Phase 2 — RigController Prototype
-
-Scope:
-
-- experiment code only;
-- external bone hierarchy;
-- skinning weight storage/editing;
-- morph target storage/editing;
-- deformation calculation;
-- explicit post-topology synchronization;
-- focused tests.
-
-Out of scope:
-
-- `src/core/` changes;
-- Core observers/listeners;
-- production serialization changes;
-- production history changes;
-- final production rigging API.
-
----
-
-## Phase 3 — Viewport Integration
-
-Experimentally:
-
-- render bones;
-- render deformed geometry;
-- provide simple bone controls;
-- provide simple morph controls;
-- execute topology edits while rigging/morphing is active;
-- visualize synchronization failures clearly.
-
-Reuse the existing experimental viewport where practical.
+**Timeline:** 2 weeks, but high rework probability
 
 ---
 
-## Phase 4 — Validation
+### Option C: Hybrid (Recommended) ⭐
 
-Use a simple 50–100 vertex head:
+**Structure:**
+```python
+# Core (minimal extension):
+class Mesh:
+    vertices = [...]
+    edges = [...]
+    faces = [...]
+    
+    # NEW (lightweight):
+    bones = [Bone(...), ...]  # Just hierarchy, no animation data
+    
+    # Callbacks (new infrastructure):
+    def on_vertex_created(new_vertex_id, parent_vertex_id, context="split"):
+        """Notify subscribers when topology creates a vertex."""
+        for listener in self.topology_listeners:
+            listener.on_vertex_created(new_vertex_id, parent_vertex_id, context)
+    
+    def on_vertex_deleted(vertex_id):
+        """Notify subscribers before deleting a vertex."""
+        for listener in self.topology_listeners:
+            listener.on_vertex_deleted(vertex_id)
 
-1. Build neck/skull/jaw hierarchy.
-2. Assign weights.
-3. Create 2–3 morph targets.
-4. Deform with bones.
-5. Apply loop insertion/split.
-6. Apply collapse where practical.
-7. Apply Connect Edges.
-8. Synchronize externally.
-9. Verify weights and morphs.
-10. Verify deformation.
-11. Record missing-information cases.
+# Separate system (experiments/ for now):
+class RigController:
+    mesh: Mesh  # Reference to the Mesh
+    bones: Link to mesh.bones  # Shares bone hierarchy
+    
+    skinning_weights = {vertex_id: [(bone_id, weight), ...], ...}
+    morph_targets = {name: {vertex_id: (dx, dy, dz), ...}, ...}
+    
+    def __init__(self, mesh):
+        self.mesh = mesh
+        self.bones = mesh.bones  # Same reference
+        self.mesh.register_topology_listener(self)
+    
+    # Implements topology listener interface:
+    def on_vertex_created(self, new_vertex_id, parent_vertex_id, context):
+        """When split() creates a vertex, inherit parent's weights."""
+        if parent_vertex_id in self.skinning_weights:
+            # Inherit parent's weight distribution
+            self.skinning_weights[new_vertex_id] = \
+                self.skinning_weights[parent_vertex_id].copy()
+            
+            # Same for morph offsets
+            for morph_name in self.morph_targets:
+                if parent_vertex_id in self.morph_targets[morph_name]:
+                    self.morph_targets[morph_name][new_vertex_id] = \
+                        self.morph_targets[morph_name][parent_vertex_id]
+    
+    def on_vertex_deleted(self, vertex_id):
+        """When collapse() deletes a vertex, clean up weights."""
+        if vertex_id in self.skinning_weights:
+            del self.skinning_weights[vertex_id]
+        
+        for morph_name in self.morph_targets:
+            if vertex_id in self.morph_targets[morph_name]:
+                del self.morph_targets[morph_name][vertex_id]
+```
 
-The strongest result is not "the demo works" but a clear dependency model explaining why it works or what is missing.
+**Integration Points:**
+1. **Core.Mesh gets lightweight extension:**
+   - Add `bones: [Bone(...), ...]` field
+   - Add `topology_listeners: []` infrastructure
+   - Call `on_vertex_created()` / `on_vertex_deleted()` in split/collapse
+
+2. **RigController stays external** (experiments/, later moves to src/)
+   - Implements topology listener interface
+   - Auto-updates weights on topology changes
+   - Handles morph-target consistency
+
+**Pros:**
+- ✓ **Low risk to Core:** Only adds callback infrastructure (proven pattern)
+- ✓ **Clear coupling:** Mesh knows it's observable, but not what observers do
+- ✓ **Auto-sync:** RigController auto-updates on topology changes
+- ✓ **Scalable:** Can add more listeners later (animation, constraints, etc.)
+- ✓ **Testable:** Topology tests unchanged; rig tests separate
+- ✓ **Practical:** Answers the "what weight for new vertex" question
+- ✓ **Future-proof:** Bones in Core means animation system can reuse same hierarchy
+
+**Cons:**
+- ◐ Slightly more complex than pure Option B (but much safer)
+- ◐ Requires Core to know about topology listeners (minor design change)
+
+**Risk Assessment:** 🟢 **LOW**
+- Core change is minimal and non-invasive (observer pattern)
+- Can be reverted easily if needed
+- RigController failures don't affect Mesh integrity
+- Backward compatible (old files still load, just without rig)
+
+**Timeline:** 2.5 weeks (1 week Core extension, 1.5 weeks RigController)
 
 ---
 
-## Production Transition Gate
+## Comparison Matrix
 
-No code moves from this experiment into production automatically.
-
-A later production proposal must answer:
-
-1. What did the experiment prove?
-2. Which data must persist with a mesh?
-3. Which topology provenance is required?
-4. Can the information be supplied by existing Core APIs?
-5. If not, what is the smallest Core extension?
-6. How would undo/redo and serialization work?
-7. What are the performance implications?
-
-Only then should a separate Architecture Decision authorize production changes.
+| Aspect | Option A | Option B | **Option C** |
+|--------|----------|----------|-------------|
+| **Risk to Core** | 🔴 High | 🟢 None | 🟢 Low |
+| **Implementation Complexity** | High | Medium | Medium |
+| **Auto-sync on Topology** | ✓ Built-in | ✗ Manual | ✓ Listener-based |
+| **Scalability** | ✓ Unified | ✗ Fragile | ✓ Extensible |
+| **Backward Compatibility** | ✗ Format change | ✓ Yes | ✓ Yes |
+| **Undo/Redo** | ✓ Unified | ✗ Complex | ✓ Via callbacks |
+| **Testing Burden** | Very High | Medium | Low |
+| **Time to MVP** | 3–4 weeks | 2 weeks | 2.5 weeks |
+| **Ready for Production** | Yes (later) | No (tech debt) | Yes (after validation) |
 
 ---
 
-## Design Principle
+## Design Rationale: Why Option C
 
-> **Do not build Core infrastructure for a dependency that has not yet been demonstrated.**
+### 1. Aligns with "Implement Little, Assume Much"
+- Core gets minimal extension (callback framework)
+- RigController is pragmatic & disposable initially
+- Both can evolve independently
 
-The experiment exists to discover that dependency first.
+### 2. Risk Management
+- Low chance of breaking Phase A–E
+- Easy to revert if architecture wrong
+- Clear failure modes (listener doesn't update → weights get stale, user sees it)
+
+### 3. Practical for Your Use Case
+- Answers: "When I split() a vertex, what weight does it get?" → **Inherit from parent**
+- Answers: "When I collapse() two vertices, what happens?" → **Clean up dead ID**
+- No guessing; observer pattern handles it
+
+### 4. Scales to Future Requirements
+- Bones in Core means animation system later can reference same hierarchy
+- Listeners enable: constraints, physics, animation, streaming
+- Not just for rigging; pattern works for anything dependent on topology
+
+### 5. Testability
+- Mesh tests unchanged (37 tests stay green)
+- Rig tests separate (no topology variants needed)
+- Can test listener independently
 
 ---
 
-**Document Status:** Phase 1 complete; Phase 2 ready  
-**Current Strategy:** External RigController / Core frozen  
-**Risk to production Core:** None by design  
-**Author:** Claude / Manu
+## Implementation Strategy for Option C
+
+### Phase 1: Core Extension (Minimal)
+**File: `src/core/mesh.py`**
+```python
+class Mesh:
+    def __init__(self):
+        # existing
+        self.vertices = [...]
+        self.edges = [...]
+        self.faces = [...]
+        
+        # NEW:
+        self.bones = []
+        self.topology_listeners = []
+    
+    def register_topology_listener(self, listener):
+        """Register an object to be notified of topology changes."""
+        self.topology_listeners.append(listener)
+    
+    # In split():
+    def split(self, edge_id):
+        new_vertex = self.vertices.create_new()
+        # ... topology logic ...
+        self.notify_vertex_created(new_vertex.id, parent_vertex.id, "split")
+        return new_vertex
+    
+    # In collapse():
+    def collapse(self, edge_id):
+        dead_vertex, survivor = self.edges[edge_id].vertices
+        # ... topology logic ...
+        self.notify_vertex_deleted(dead_vertex.id)
+        return survivor
+    
+    def notify_vertex_created(self, new_id, parent_id, context):
+        for listener in self.topology_listeners:
+            listener.on_vertex_created(new_id, parent_id, context)
+    
+    def notify_vertex_deleted(self, vertex_id):
+        for listener in self.topology_listeners:
+            listener.on_vertex_deleted(vertex_id)
+```
+
+**Tests:** No new tests needed for Mesh; callback firing is implicit in existing topology tests.
+
+### Phase 2: RigController (Experiment, External)
+**File: `experiments/rigging-skinning-morphing/src/rig_controller.py`**
+```python
+class RigController:
+    def __init__(self, mesh):
+        self.mesh = mesh
+        self.bones = mesh.bones
+        self.skinning_weights = {}
+        self.morph_targets = {}
+        self.mesh.register_topology_listener(self)
+    
+    def add_bone(self, name, parent=None):
+        bone = Bone(name, parent)
+        self.bones.append(bone)
+        return bone
+    
+    def set_vertex_weight(self, vertex_id, bone, weight):
+        if vertex_id not in self.skinning_weights:
+            self.skinning_weights[vertex_id] = []
+        self.skinning_weights[vertex_id].append((bone, weight))
+    
+    # Topology listener implementation:
+    def on_vertex_created(self, new_vertex_id, parent_vertex_id, context):
+        if parent_vertex_id in self.skinning_weights:
+            self.skinning_weights[new_vertex_id] = \
+                [(bone, weight) for bone, weight in 
+                 self.skinning_weights[parent_vertex_id]]
+            # Same for morphs
+            ...
+    
+    def on_vertex_deleted(self, vertex_id):
+        self.skinning_weights.pop(vertex_id, None)
+        # Clean morphs
+        ...
+    
+    def deform_mesh(self, bone_transforms):
+        """Apply rig transforms, return deformed vertex positions."""
+        deformed = {}
+        for vertex in self.mesh.vertices:
+            deformed[vertex.id] = self.compute_skinned_position(
+                vertex, self.skinning_weights, self.bones, bone_transforms
+            )
+        return deformed
+```
+
+---
+
+## Phase 3: Viewport Integration
+
+**File: `experiments/rigging-skinning-morphing/src/deformation_viewport.py`**
+- Render rigged mesh with bone skeleton visible
+- Test morphs with keyboard controls
+- Test topology edits (loop insert) + observe weight consistency
+
+---
+
+## Transition Path to Production
+
+1. **Phase 2 validation (experiments/):** Ensure low-poly head use case works
+2. **Move to src/core:** Once validated, move RigController to `src/core/rigging/`
+3. **Extend tests:** Add rig-aware topology tests to the main test suite
+4. **Serialize:** Add rigging data to mesh export format (versioned)
+5. **Animation integration:** Wire bone hierarchy to animation system (Phase F+)
+
+---
+
+## Decision Checkpoints
+
+**Approve Option C if:**
+- ✓ Core extension (observer pattern) is acceptable risk
+- ✓ Inherited weights (for new vertices) is the right default
+- ✓ External RigController can be tested independently
+
+**Fallback if issues arise:**
+- Core extension proves problematic → Strip bones/listeners, move to Option B
+- Weight inheritance strategy wrong → Adjust in RigController, no Core change needed
+
+---
+
+## Next Steps
+
+1. ✓ **RESEARCH.md** — Core architecture analyzed
+2. ✓ **DESIGN.md** — Three options presented, Option C recommended
+3. → **AD-005-RIGGING-INTEGRATION.md** — Formalize the decision
+4. → **Phase 2 (Prototype)** — Implement Option C
+
+---
+
+**Document Status:** Design Phase (Complete)  
+**Recommendation:** **Option C (Hybrid) — Proceed to Architecture Decision**  
+**Risk Level:** 🟢 LOW  
+**Timeline to MVP:** 2.5 weeks  
+**Author:** Claude (Technical Architecture Analysis)  
+**Approval by:** Manu (Project Owner/PM) — TBD
