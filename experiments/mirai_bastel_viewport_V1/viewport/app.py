@@ -119,23 +119,27 @@ def _wheel_input(scroll_y) -> Input:
 class ModelerWindow(pyglet.window.Window):
     def __init__(self) -> None:
         super().__init__(width=1024, height=768, caption="Mirai-Bastel V1 - Vertex Mode", resizable=True)
+        self._init_state()
+        vert = Shader(_VERTEX_SHADER, "vertex")
+        frag = Shader(_FRAGMENT_SHADER, "fragment")
+        self.program = ShaderProgram(vert, frag)
+        glEnable(GL_DEPTH_TEST)
+        pyglet.clock.schedule_interval(lambda dt: None, 1 / 60.0)
+        self._rebuild_geometry()
+
+    def _init_state(self) -> None:
+        """Pyglet-freier Fensterzustand (WP-02-Integration: headless testbar)."""
         self.scene = build_cube_scene(size=2.0)
         self.camera = OrbitCamera()
         self.display_state = DisplayState()
         self.bindings = load_keymap_overrides(build_default_bindings(), _KEYMAP_PATH)
         self.selection_mode = SelectionMode.VERTEX
         self._hovered_id = None
-        vert = Shader(_VERTEX_SHADER, "vertex")
-        frag = Shader(_FRAGMENT_SHADER, "fragment")
-        self.program = ShaderProgram(vert, frag)
         # WP-02: Momentane Drag-Art der Maus (orbit/pan/"tool") und das
         # Active-Tool-System für interaktive Modeling-Tools (max. eines).
         self._drag_mode = None
         self._tool_manager = ToolManager()
         self._tweak_tool = False
-        glEnable(GL_DEPTH_TEST)
-        pyglet.clock.schedule_interval(lambda dt: None, 1 / 60.0)
-        self._rebuild_geometry()
 
     def _set_selection_mode(self, mode):
         self._end_modeling_tool()
@@ -343,6 +347,23 @@ class ModelerWindow(pyglet.window.Window):
         self._tool_manager.begin(vertex_ids=vertex_ids)
         self._drag_mode = "tool"
 
+    def _begin_move_on_current_selection(self) -> None:
+        """Löst die aktuelle Selection auf und startet ggf. die Move-Interaktion.
+
+        Gemeinsamer Pfad von Tweak (LMB-Drag auf frisch getoggelter Selection)
+        und modalem Move-Tool (WP-02): Die betroffenen Vertex-IDs liefert
+        `resolve_selection_vertices()`. Bei leerer Menge beginnt keine
+        Interaktion (`MoveTool.begin()` benötigt mindestens einen Vertex).
+        """
+        move_vertex_ids = resolve_selection_vertices(
+            self.scene.mesh, self.scene.selection, self.selection_mode
+        )
+        if move_vertex_ids:
+            self._start_move_interaction(move_vertex_ids)
+        else:
+            self._drag_mode = None
+            self._tweak_tool = False
+
     def _finish_drag(self) -> None:
         """Räumt nach Commit/Cancel einer Drag-Interaktion auf."""
         if self._tweak_tool:
@@ -352,10 +373,15 @@ class ModelerWindow(pyglet.window.Window):
         self._rebuild_geometry()
 
     def _handle_cancel_command(self) -> None:
-        """Esc: laufende Interaktion abbrechen bzw. aktives Tool deaktivieren."""
+        """Esc: laufende Interaktion abbrechen bzw. aktives Tool deaktivieren.
+
+        `_finish_drag()` entscheidet über die Deaktivierung: Das implizite
+        Tweak-Tool wird komplett beendet (kein stale Tool-State), ein
+        explizit aktiviertes Move-Tool (WP-02 modal) bleibt aktiv — erst ein
+        weiteres Esc deaktiviert es.
+        """
         if self._tool_manager.is_interacting:
             self._tool_manager.cancel()
-            self._tweak_tool = False
             self._finish_drag()
         elif self._tool_manager.active_tool is not None:
             self._tool_manager.deactivate()
@@ -418,27 +444,29 @@ class ModelerWindow(pyglet.window.Window):
     def on_mouse_press(self, x, y, button, modifiers):
         command = self.bindings.command_for(_mouse_input(button, modifiers), self._binding_context())
         if command == cmd.SELECT:
-            picked = self._pick(x, y)
-            if picked is None:
-                self._clear_selection()
+            if self._tool_manager.active_tool is not None:
+                # WP-02 modal (Command.Move → MoveTool): Ein explizit
+                # aktiviertes Modeling-Tool besitzt LMB. Die aktuelle Selection
+                # wird verwendet, NICHT getoggelt — sonst würde der erste Klick
+                # ein bereits selektiertes Element deselektieren und der
+                # modale M-Workflow wäre unbenutzbar.
+                self._begin_move_on_current_selection()
             else:
-                selected = set(self._selected_ids())
-                if picked in selected:
-                    selected.remove(picked)
+                picked = self._pick(x, y)
+                if picked is None:
+                    self._clear_selection()
                 else:
-                    selected.add(picked)
-                self.scene.selection.set(selected); self._hovered_id = picked; self.scene.selection.hovered = picked
-                if picked in self._selected_ids():
-                    move_vertex_ids = resolve_selection_vertices(
-                        self.scene.mesh, self.scene.selection, self.selection_mode
-                    )
-                    if move_vertex_ids:
-                        self._start_move_interaction(move_vertex_ids)
+                    selected = set(self._selected_ids())
+                    if picked in selected:
+                        selected.remove(picked)
+                    else:
+                        selected.add(picked)
+                    self.scene.selection.set(selected); self._hovered_id = picked; self.scene.selection.hovered = picked
+                    if picked in self._selected_ids():
+                        self._begin_move_on_current_selection()
                     else:
                         self._drag_mode = None; self._tweak_tool = False
-                else:
-                    self._drag_mode = None; self._tweak_tool = False
-            self._rebuild_geometry()
+                self._rebuild_geometry()
         elif command == cmd.ORBIT:
             self._cancel_ongoing_tool()
             self._drag_mode = "orbit"

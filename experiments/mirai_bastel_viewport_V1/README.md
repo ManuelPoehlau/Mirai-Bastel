@@ -56,10 +56,51 @@ Auswahl. Hover zeigt das Element, das ein Klick auswählen würde.
 - **Mittelte Taste** (Drag): Pan/Track (neu seit WP-01A)
 - **Mausrad**: zoomen
 - **Strg+Z / Strg+Y**: Undo / Redo
-- **Esc**: laufende Vertex-Verschiebung abbrechen
+- **Esc**: laufende Vertex-Verschiebung abbrechen; ein aktiviertes
+  Move-Tool deaktivieren (siehe unten)
 - **Alt+A**: komplette Auswahl aufheben (zusätzlich zum „Klick ins Leere")
 - **O**: Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
 - **W**: Wireframe Overlay AN/AUS
+
+### Modal Move-Tool (WP-02)
+
+**M** aktiviert das modale Move-Tool (Binding austauschbar, z. B. `G` per
+`keymap.json`; Command und Tool bleiben davon unberührt):
+
+```text
+M
+ ↓
+Command.Move
+ ↓
+MoveTool wird aktiviert (Active-Tool über ToolManager)
+ ↓
+LMB + Drag auf der aktuellen Selection
+ ↓
+MoveTool.begin / update* (Live-Vorschau)
+ ↓
+Mouse Release  → MoveTool.commit (genau ein History-Eintrag)
+```
+
+- Solange ein Modeling-Tool aktiv ist, **toggelt LMB die Selection nicht**:
+  LMB + Drag benutzt die aktuelle Selection (Vertex-, Edge- oder
+  Face-Selection wird über `resolve_selection_vertices()` auf betroffene
+  Vertices aufgelöst). Klick auf ein bereits selektiertes Element deselektiert
+  es deshalb nicht mehr, sondern beginnt die Move-Interaktion.
+- **Esc** bricht eine laufende Interaktion ab: Geometrie exakt im Vorzustand,
+  kein History-Eintrag, kein stale Tool-State. Ein weiteres Esc deaktiviert
+  das Tool zurück in den Tweak-Modus.
+- **Commit** passiert beim Loslassen der Maustaste: genau eine Operation bzw.
+  genau ein History-Eintrag pro Interaktion (auch mehrere Drags hintereinander,
+  solange das Tool aktiv ist); Undo/Redo greifen an dieser Grenze.
+- **Navigation bleibt intakt**: RMB-Orbit, MMB-Pan und Mausrad-Zoom
+  funktionieren weiter; RMB/MMB canceln eine laufende Interaktion sauber vor
+  der Navigation (Geometrie zurück, keine History), das Tool bleibt dabei
+  modal aktiv.
+- **Ohne `M`** bleibt das gewohnte Tweak-Verhalten unverändert: LMB-Klick
+  toggelt die Auswahl, Drag auf der Selection verschiebt, Release commitet,
+  danach ist das Tool automatisch beendet.
+- Undo/Redo, Selection-Mode-Wechsel (V/E/F) und Alt+A beenden ein aktives
+  Tool sauber, bevor sie wirken.
 
 Die V1-Kamera orbitiert und zoomt weiterhin um das Scene-Zentrum. Die
 vertikale Orbit-Richtung folgt der im Praxistest bevorzugten
@@ -341,4 +382,9 @@ tests/
   test_loop_ring.py      - Edge-Loop-/Edge-Ring-Erkennung (Phase 2)
   test_display_state.py  - Display-State und gültige Übergänge (WP-01A)
   test_input_binding.py  - Input-Mapping, Context, keymap.json (WP-01A)
+  test_move_tool.py      - MoveTool × MoveOperation (WP-02)
+  test_tool_lifecycle.py - Tool-Lifecycle IDLE/ACTIVE/INTERACTING (WP-02)
+  test_tool_routing.py   - Command → Tool-Routing (WP-02)
+  test_tool_integration.py - Window-Integration M→MoveTool→LMB/Commit/Cancel
+                           (WP-02-Follow-up, headless)
 ```
