@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pyglet
-from pyglet.gl import GL_DEPTH_TEST, GL_LINES, GL_POINTS, GL_TRIANGLES, GL_POLYGON_OFFSET_FILL, glEnable, glDisable, glLineWidth, glPointSize, glPolygonOffset
+from pyglet.gl import GL_DEPTH_TEST, GL_LINES, GL_POINTS, GL_TRIANGLES, GL_POLYGON_OFFSET_FILL, GL_POLYGON_OFFSET_LINE, glEnable, glDisable, glLineWidth, glPointSize, glPolygonOffset
 from pyglet.graphics.shader import Shader, ShaderProgram
 from pyglet.math import Mat4, Vec3
 from pyglet.window import key, mouse
@@ -318,6 +318,20 @@ class ModelerWindow(pyglet.window.Window):
             return result
         return set()
 
+    def _draw_edge_highlight(self, vertex_list, color, width):
+        """Zeichnet GL_LINES mit Polygon-Offset, damit überlagertes Wireframe/
+        Hover/Selection nicht mit den Faces z-fightet (WP-01-BUGS_AND_TODOS).
+        """
+        if vertex_list is None:
+            return
+        glEnable(GL_POLYGON_OFFSET_LINE)
+        glPolygonOffset(-1.0, -1.0)
+        glLineWidth(width)
+        self.program["color"] = color
+        vertex_list.draw(GL_LINES)
+        glLineWidth(1.0)
+        glDisable(GL_POLYGON_OFFSET_LINE)
+
     def _draw_face_highlight(self, vertex_list, color):
         if vertex_list is None: return
         glEnable(GL_POLYGON_OFFSET_FILL); glPolygonOffset(-1.0, -1.0)
@@ -335,19 +349,19 @@ class ModelerWindow(pyglet.window.Window):
             if self.display_state.show_faces and self._face_list is not None:
                 self.program["color"] = (0.62,0.64,0.70); self._face_list.draw(GL_TRIANGLES)
             if self.display_state.show_edges and self._edge_list is not None:
-                self.program["color"] = (0.75,0.75,0.8); self._edge_list.draw(GL_LINES)
+                self._draw_edge_highlight(self._edge_list, (0.75, 0.75, 0.8), 1.0)
             if self._point_list is not None:
                 glPointSize(6.0); self.program["color"] = (0.9,0.9,0.95); self._point_list.draw(GL_POINTS)
             if self.display_state.show_faces:
                 self._draw_face_highlight(self._hover_face_list, (0.78,0.80,0.88))
             if self._hover_edge_list is not None:
-                glLineWidth(4.0); self.program["color"] = (1.0,0.70,0.25); self._hover_edge_list.draw(GL_LINES); glLineWidth(1.0)
+                self._draw_edge_highlight(self._hover_edge_list, (1.0, 0.70, 0.25), 4.0)
             if self._hover_vertex_list is not None:
                 glPointSize(12.0); self.program["color"] = (1.0,0.70,0.25); self._hover_vertex_list.draw(GL_POINTS)
             if self.display_state.show_faces:
                 self._draw_face_highlight(self._selected_face_list, (1.0,0.55,0.15))
             if self._selected_edge_list is not None:
-                glLineWidth(4.0); self.program["color"] = (1.0,0.55,0.15); self._selected_edge_list.draw(GL_LINES); glLineWidth(1.0)
+                self._draw_edge_highlight(self._selected_edge_list, (1.0, 0.55, 0.15), 4.0)
             if self._selected_vertex_list is not None:
                 glPointSize(12.0); self.program["color"] = (1.0,0.55,0.15); self._selected_vertex_list.draw(GL_POINTS)
 
@@ -361,7 +375,7 @@ class ModelerWindow(pyglet.window.Window):
         if command == cmd.SELECT:
             picked = self._pick(x, y)
             if picked is None:
-                self.scene.selection.clear(); self._hovered_id = None; self.scene.selection.hovered = None; self._drag_mode = None; self._move_anchor_vertex = None
+                self._clear_selection()
             else:
                 selected = set(self._selected_ids())
                 if picked in selected:
@@ -442,6 +456,8 @@ class ModelerWindow(pyglet.window.Window):
             self.scene.history.redo(); self._rebuild_geometry()
         elif command == cmd.CANCEL:
             self._cancel_active_move()
+        elif command == cmd.CLEAR_SELECTION:
+            self._clear_selection()
         elif command == cmd.CYCLE_DISPLAY_MODE:
             self.display_state.cycle(); self._rebuild_geometry(); self._update_caption()
         elif command == cmd.TOGGLE_WIREFRAME_OVERLAY:
@@ -456,6 +472,19 @@ class ModelerWindow(pyglet.window.Window):
         self.display_state.set_mode(mode)
         self._rebuild_geometry()
         self._update_caption()
+
+    def _clear_selection(self) -> None:
+        """Leert die komplette Selection (Command-ClearSelection).
+
+        Entspricht dem bisherigen „Klick ins Leere"-Verhalten und wird
+        zusätzlich über ein Key-Binding erreichbar gemacht.
+        """
+        self.scene.selection.clear()
+        self._hovered_id = None
+        self.scene.selection.hovered = None
+        self._drag_mode = None
+        self._move_anchor_vertex = None
+        self._rebuild_geometry()
 
     def _cancel_active_move(self) -> None:
         if self._active_move is not None:

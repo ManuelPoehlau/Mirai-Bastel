@@ -52,14 +52,74 @@ Auswahl. Hover zeigt das Element, das ein Klick auswählen würde.
 
 - **Linksklick** auf Element: auswählen
 - **Links ziehen**: vorhandene Move-Interaktion
-- **Rechts ziehen**: Kamera orbiten
+- **Rechts ziehen** (Drag): Kamera orbiten
+- **Mittelte Taste** (Drag): Pan/Track (neu seit WP-01A)
 - **Mausrad**: zoomen
 - **Strg+Z / Strg+Y**: Undo / Redo
 - **Esc**: laufende Vertex-Verschiebung abbrechen
+- **Alt+A**: komplette Auswahl aufheben (zusätzlich zum „Klick ins Leere")
+- **O**: Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
+- **W**: Wireframe Overlay AN/AUS
 
 Die V1-Kamera orbitiert und zoomt weiterhin um das Scene-Zentrum. Die
 vertikale Orbit-Richtung folgt der im Praxistest bevorzugten
-Modeler-Konvention: Ziehen nach unten dreht das Modell nach unten.
+Modeler-Konvention: Ziehen nach unten dreht das Modell nach unten. Pan
+nutzt dieselbe „Grab"-Konvention: Der sichtbare Inhalt folgt der
+Mausbewegung (Maus nach oben → Objekt wandert nach oben).
+
+### Display Modes (seit WP-01A)
+
+Der Viewport kennt drei Darstellungs-Modi (`display_state.py`) plus
+Wireframe Overlay:
+
+```text
+Shaded              Surface mit geglätteter (gemittelter) Normalen-Beleuchtung
+Flat Shaded         Surface mit Face-Normalen (harte Kanten)  ← Topology-Check bevorzugt
+Wireframe           nur Kanten
+Wireframe Overlay   Kanten zusätzlich über der Surface (Shaded/Flat Shaded)
+```
+
+Nutzbare Kombinationen: Shaded, Shaded + Wire, Flat Shaded, Flat Shaded +
+Wire, Wireframe. **Flat Shaded + Wire** ist der wichtigste praktische
+Topology-Prüfmodus (ziehen nach Flat Shaded über `O`, dann `W`).
+
+### Input-Bindings (seit WP-01A)
+
+Tasten- und Maus-Bindings liegen nicht mehr direkt im Window-Code, sondern
+in einer Mapping-Schicht (`input_binding.py` + `default_bindings.py`,
+`commands.py` enthält die benannten Commands). Aufgelöst wird:
+
+```text
+Input (Key/Maus/Wheel + Modifier)
+  ↓
+Context (global | topology)
+  ↓
+Binding (Default oder User-Overlay)
+  ↓
+Command
+  ↓
+Window-/Tool-Dispatch
+```
+
+Bindings sind über eine optionale `keymap.json` im Experiment-Ordner
+überschreibbar (User-Overlay; Defaults gelten, solange nicht überschrieben):
+
+```json
+{
+  "bindings": [
+    {
+      "context": "global",
+      "input": {"kind": "key", "value": "g", "modifiers": []},
+      "command": "CycleDisplayMode"
+    }
+  ]
+}
+```
+
+Command- und Tool-Code bleiben dadurch frei von konkreten Tasten/Maustasten.
+Die Topology-Lab-Commands (S/K/C/L/R) gelten nur im Context `topology`;
+globale Bindings (V/E/F, Undo/Redo, Alt+A, O/W, Maus) greifen dort als
+Fallback weiter.
 
 ## Topology Lab - Phase 1
 
@@ -105,7 +165,8 @@ Rand-Edges. Der Cube aus dem ursprünglichen Praxistest bleibt unverändert.
 
 - Edge Mode
 - mindestens zwei Edges auswählen
-- **Shift+C** drücken
+- **C** drücken (kontextabhängig: `C` verbindet Vertices im Vertex-Mode und
+  Edges im Edge-Mode — seit WP-01A; das frühere `Shift+C` ist entfallen)
 - die Operation ist topology-aware und läuft in drei getrennten Phasen
   (Analyze/Validate → Plan → Apply/Commit), siehe
   `docs/research/topology/CONNECT_EDGES_SPEC.md`
@@ -259,18 +320,25 @@ weiterhin vorläufig und keine endgültige UI-Entscheidung.
 ```text
 viewport/
   vecmath.py          - reine Vec3-Tupel-Hilfsfunktionen
-  camera.py           - OrbitCamera inkl. Picking-Ray/Projektion
+  camera.py           - OrbitCamera inkl. Picking-Ray/Projektion, Orbit/Zoom/Pan
   picking.py          - Vertex-, Edge- und Face-Picking
   demo_scene.py       - ursprüngliche Würfel-Testszene
   topology_scene.py   - kontrollierte Topology-Testszene
   topology_tools.py  - experimentelle Phase-1- und Selection-Werkzeuge
   loop_ring.py         - Phase-2 Edge-Loop-/Edge-Ring-Erkennung (reine Query)
-  app.py              - ursprünglicher V1-Viewport
+  commands.py          - benannte User-Commands (Input-unabhängig)
+  input_binding.py     - Input→Command-Mapping (pyglet-frei, konfigurierbar)
+  default_bindings.py  - Default-Key/Maus-Belegung + keymap.json-Overlay
+  display_state.py     - Display-State: Shaded / Flat Shaded / Wireframe + Overlay
+  app.py              - ursprünglicher V1-Viewport (Display-Modi, Mapping-Dispatch)
   topology_app.py     - Topology-Lab auf Basis von app.py
 run.py                - ursprünglicher V1-Einstiegspunkt
 run_topology.py       - Topology-Lab-Einstiegspunkt
+keymap.json            - optionales User-Overlay für Bindings (wird bei Existenz geladen)
 tests/
   test_constraints.py   - Achsen-/Ebenen-Constraints
-  test_camera_picking.py - Kamera-/Picking-Logik
+  test_camera_picking.py - Kamera-/Picking-Logik inkl. Pan
   test_loop_ring.py      - Edge-Loop-/Edge-Ring-Erkennung (Phase 2)
+  test_display_state.py  - Display-State und gültige Übergänge (WP-01A)
+  test_input_binding.py  - Input-Mapping, Context, keymap.json (WP-01A)
 ```

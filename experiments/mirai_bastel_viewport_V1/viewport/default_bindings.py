@@ -56,6 +56,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)
     bs.set_default(_key("y", "ctrl"), cmd.REDO)
     bs.set_default(_key("ESCAPE"), cmd.CANCEL)
+    # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
+    bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 
     # --- Display ------------------------------------------------------------
     bs.set_default(_key("o"), cmd.CYCLE_DISPLAY_MODE)
@@ -71,8 +73,9 @@ def build_default_bindings() -> BindingSet:
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     bs.set_default(_key("s"), cmd.SPLIT_EDGE, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("k"), cmd.COLLAPSE, context=TOPOLOGY_CONTEXT)
-    bs.set_default(_key("c"), cmd.CONNECT_VERTICES, context=TOPOLOGY_CONTEXT)
-    bs.set_default(_key("c", "shift"), cmd.CONNECT_EDGES, context=TOPOLOGY_CONTEXT)
+    # C ist kontextabhängig: Connect Vertices (Vertex-Mode) / Connect Edges
+    # (Edge-Mode) — Shift+C ist dadurch nicht mehr nötig.
+    bs.set_default(_key("c"), cmd.CONNECT, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("l"), cmd.EDGE_LOOP, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("r"), cmd.EDGE_RING, context=TOPOLOGY_CONTEXT)
 

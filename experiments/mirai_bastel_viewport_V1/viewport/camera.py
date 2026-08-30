@@ -123,21 +123,24 @@ class OrbitCamera:
     def pan(self, dx_px: float, dy_px: float, width: int, height: int) -> None:
         """Verschiebt das Orbit-Ziel entlang der Kamera-Bildebene (Pan/Track).
 
+        Konvention (siehe WP-01-BUGS_AND_TODOS): Das sichtbare Objekt folgt
+        der Mausbewegung wie beim Greifen — konsistent zur Orbit-Richtung
+        („Ziehen nach unten dreht das Modell nach unten"). Positives `dy_px`
+        bewegt das Ziel deshalb nach UNTEN, nicht nach oben.
+
         `dx_px`/`dy_px` sind Pixel-Mausbewegungen in der GL-Konvention
-        (Ursprung unten links). Positives `dx_px` bewegt das Ziel nach links,
-        positives `dy_px` nach oben — dadurch folgt der sichtbare Inhalt der
-        Mausbewegung (Modeler-Konvention). Das Pan-Tempo ist von der aktuellen
-        Distanz und dem FOV abhängig, damit Nah-/Fern-Zoom ähnlich anfühlt.
+        (Ursprung unten links). Das Pan-Tempo ist von der aktuellen Distanz
+        und dem FOV abhängig, damit Nah-/Fern-Zoom ähnlich anfühlt.
         """
         if height <= 0:
             return
         half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
         world_per_px = 2.0 * self.distance * half_h / height
         _forward, right, up = self.basis()
-        self.target = v.add(
+        self.target = v.sub(
             self.target,
             v.add(
-                v.scale(right, -dx_px * world_per_px),
+                v.scale(right, dx_px * world_per_px),
                 v.scale(up, dy_px * world_per_px),
             ),
         )

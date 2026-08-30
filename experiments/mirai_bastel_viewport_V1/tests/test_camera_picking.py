@@ -181,7 +181,7 @@ def test_pan_moves_target_on_view_plane() -> None:
     fwd_after, _r, _u = cam.basis()
     check("Delta liegt auf der Bildebene (kein Anteil in Blickrichtung)", abs(v.dot(delta, fwd_after)) < 1e-6)
     check("dx>0 bewegt das Ziel entgegen Kamera-right (Inhalt folgt Maus)", v.dot(delta, right) < 0)
-    check("dy<0 bewegt das Ziel entgegen Kamera-up", v.dot(delta, up) < 0)
+    check("dy<0 bewegt das Ziel entlang Kamera-up (Grab-Konvention)", v.dot(delta, up) > 0)
 
 
 def test_pan_zero_is_noop() -> None:

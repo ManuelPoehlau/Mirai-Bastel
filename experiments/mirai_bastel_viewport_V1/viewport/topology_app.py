@@ -48,8 +48,8 @@ class TopologyWindow(ModelerWindow):
     def _set_topology_caption(self, message: str | None = None) -> None:
         text = (
             f"Topology Lab | {self.display_state.label} | "
-            "V/E/F | S Split | K Collapse | C Connect V | Shift+C Connect E | "
-            "L Loop | R Ring | Ctrl+Z/Y | O Display | W Wire"
+            "V/E/F | S Split | K Collapse | C Connect | L Loop | R Ring | "
+            "Alt+A Select None | Ctrl+Z/Y | O Display | W Wire"
         )
         if message:
             text += f" | {message}"
@@ -156,30 +156,29 @@ class TopologyWindow(ModelerWindow):
                 self._set_topology_caption(f"Collapse {len(selected)} Edges")
                 return True
 
-            if command == cmd.CONNECT_EDGES:
-                if self.selection_mode != SelectionMode.EDGE or len(self.scene.selection.edges) < 2:
-                    raise TopologyToolError("Connect Edges: mindestens 2 Edges auswählen.")
-                selected = set(self.scene.selection.edges)
-                created = connect_selected_edges(
-                    self.scene, selected, on_restore=self._after_topology_restore
-                )
+            if command == cmd.CONNECT:
+                if self.selection_mode == SelectionMode.VERTEX:
+                    selected = set(self.scene.selection.vertices)
+                    if len(selected) < 2:
+                        raise TopologyToolError("Connect Vertices: mindestens 2 Vertices auswählen.")
+                    element_label = "Vertices"
+                    created = connect_selected_vertices(
+                        self.scene, selected, on_restore=self._after_topology_restore
+                    )
+                elif self.selection_mode == SelectionMode.EDGE:
+                    selected = set(self.scene.selection.edges)
+                    if len(selected) < 2:
+                        raise TopologyToolError("Connect Edges: mindestens 2 Edges auswählen.")
+                    element_label = "Edges"
+                    created = connect_selected_edges(
+                        self.scene, selected, on_restore=self._after_topology_restore
+                    )
+                else:
+                    raise TopologyToolError("Connect: Vertex oder Edge Mode verwenden.")
                 self._select_created_edges(created)
                 self._hovered_id = None
                 self._rebuild_geometry()
-                self._set_topology_caption(f"Connect {len(selected)} Edges → {len(created)} Edges")
-                return True
-
-            if command == cmd.CONNECT_VERTICES:
-                if self.selection_mode != SelectionMode.VERTEX or len(self.scene.selection.vertices) < 2:
-                    raise TopologyToolError("Connect Vertices: mindestens 2 Vertices auswählen.")
-                selected = set(self.scene.selection.vertices)
-                created = connect_selected_vertices(
-                    self.scene, selected, on_restore=self._after_topology_restore
-                )
-                self._select_created_edges(created)
-                self._hovered_id = None
-                self._rebuild_geometry()
-                self._set_topology_caption(f"Connect {len(selected)} Vertices → {len(created)} Edges")
+                self._set_topology_caption(f"Connect {len(selected)} {element_label} → {len(created)} Edges")
                 return True
 
             if command == cmd.EDGE_LOOP:

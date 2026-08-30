@@ -72,6 +72,7 @@ def test_default_key_bindings() -> None:
     check("Strg+Z → Undo", bs.command_for(key("z", "ctrl"), GLOBAL_CONTEXT) == cmd.UNDO)
     check("Strg+Y → Redo", bs.command_for(key("y", "ctrl"), GLOBAL_CONTEXT) == cmd.REDO)
     check("Esc → Cancel", bs.command_for(key("ESCAPE"), GLOBAL_CONTEXT) == cmd.CANCEL)
+    check("Alt+A → ClearSelection", bs.command_for(key("a", "alt"), GLOBAL_CONTEXT) == cmd.CLEAR_SELECTION)
     check("O → CycleDisplayMode", bs.command_for(key("o"), GLOBAL_CONTEXT) == cmd.CYCLE_DISPLAY_MODE)
     check("W → ToggleWireframeOverlay", bs.command_for(key("w"), GLOBAL_CONTEXT) == cmd.TOGGLE_WIREFRAME_OVERLAY)
 
@@ -112,10 +113,10 @@ def test_modifier_discrimination() -> None:
     bs = build_default_bindings()
     check("Z ohne Strg ist NICHT Undo", bs.command_for(key("z"), GLOBAL_CONTEXT) is None)
     check("Z mit Strg ist Undo", bs.command_for(key("z", "ctrl"), GLOBAL_CONTEXT) == cmd.UNDO)
-    check("C ohne Shift → ConnectVertices (topology)",
-          bs.command_for(key("c"), TOPOLOGY_CONTEXT) == cmd.CONNECT_VERTICES)
-    check("Shift+C → ConnectEdges (topology)",
-          bs.command_for(key("c", "shift"), TOPOLOGY_CONTEXT) == cmd.CONNECT_EDGES)
+    check("C (topology) → Connect (kontextabhängig)",
+          bs.command_for(key("c"), TOPOLOGY_CONTEXT) == cmd.CONNECT)
+    check("Shift+C (topology) ist ungebunden (kein zweites Connect-Binding nötig)",
+          bs.command_for(key("c", "shift"), TOPOLOGY_CONTEXT) is None)
 
 
 def test_context_resolution() -> None:

@@ -53,6 +53,8 @@ This roadmap is a current architectural plan, not a promise that every future su
 
 The project is moving from isolated experiments toward larger, bounded technical work packages. The next production-oriented foundation is the editor boundary: Production Viewport, Interaction and Tools, followed by a general Transform foundation.
 
+**WP-01A (Basic Viewport & Input Foundation)** ist im Viewport-V1-Experiment umgesetzt und praktisch validiert: konfigurierbare Keyboard-/Mouse-Bindings über eine Mapping-Schicht (Input → Context → Binding → Command), Display-Modi (Shaded / Flat Shaded / Wireframe + Wireframe Overlay), Pan sowie Nachführung der bestehenden Selection- und Topology-Interaction. `src/core/` blieb dabei unverändert (Core-Freeze). Die konkrete Produktionsstruktur unter `src/` wird als explizite Architekturentscheidung aus diesem Stand abgeleitet (siehe §5 WP-01 und SOURCE_ARCHITECTURE.md).
+
 Modeling / Topology remains a parallel development track.
 
 ---
@@ -733,7 +735,7 @@ This policy is intentionally based on the Connect Edges experience: the experime
 
 ## Next production-oriented work
 
-1. **WP-01 — Production Viewport Foundation**
+1. **WP-01 — Production Viewport Foundation** (WP-01A im Experiment validiert: Input-Mapping, Display-Modi, Pan; nächster Schritt ist die Produktionsableitung)
 2. **WP-02 — Interaction & Tool Framework**
 3. **WP-03 — Transform Foundation**
 

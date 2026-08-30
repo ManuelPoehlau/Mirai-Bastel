@@ -1,6 +1,6 @@
 # Mirai-Bastel — Input / Command / Tool / Operation Contract
 
-**Status:** Accepted architectural contract for WP-01A
+**Status:** Accepted architectural contract for WP-01A; implementiert und praktisch validiert im Viewport-V1-Experiment (`experiments/mirai_bastel_viewport_V1/`, 2026-08-29)
 **Date:** 2026-08-29
 **Branch:** `main`
 

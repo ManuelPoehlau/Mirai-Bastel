@@ -24,6 +24,7 @@ REDO = "Redo"
 # SELECT deckt den bestehenden LMB-Fall ab: Klick toggelt die Selection,
 # ein Drag auf der Selection startet die Move-Interaktion (V1-Verhalten).
 SELECT = "Select"
+CLEAR_SELECTION = "ClearSelection"
 CANCEL = "Cancel"
 
 # --- Navigation (Viewport-only, keine Model-Operation) --------------------
@@ -41,7 +42,9 @@ SET_WIREFRAME = "SetWireframe"
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"
 COLLAPSE = "Collapse"
-CONNECT_VERTICES = "ConnectVertices"
-CONNECT_EDGES = "ConnectEdges"
+# CONNECT ist kontextabhängig: verbindet Vertices im Vertex-Mode und Edges
+# im Edge-Mode (gewünschtes Verhalten laut WP-01-BUGS_AND_TODOS; ein C-Button
+# für beide Fälle).
+CONNECT = "Connect"
 EDGE_LOOP = "EdgeLoop"
 EDGE_RING = "EdgeRing"
