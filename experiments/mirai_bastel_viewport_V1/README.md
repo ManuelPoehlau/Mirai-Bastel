@@ -102,6 +102,43 @@ Mouse Release  → MoveTool.commit (genau ein History-Eintrag)
 - Undo/Redo, Selection-Mode-Wechsel (V/E/F) und Alt+A beenden ein aktives
   Tool sauber, bevor sie wirken.
 
+### Modal Transform-Tools (WP-03)
+
+**R** aktiviert das modale Rotate-Tool, **S** das modale Scale-Tool (Bindings
+austauschbar, Commands und Tools bleiben davon unberührt). Beide folgen
+exakt dem WP-02-Werkzeugvertrag und nutzen die WP-03-Transform-Foundation
+(`RotateOperation`/`ScaleOperation` im Experiment-Core-Fork):
+
+```text
+R / S
+  ↓
+Command.Rotate / Command.Scale
+  ↓
+RotateTool / ScaleTool (Active-Tool über ToolManager)
+  ↓
+LMB + Drag auf der aktuellen Selection (Live-Vorschau)
+  ↓
+Mouse Release → Commit (genau ein History-Eintrag)
+Esc → Cancel (exakter Vorzustand, kein History-Eintrag)
+```
+
+- **Pivot**: Selection Center (Zentroid der betroffenen Vertices), fix
+  während der Interaktion.
+- **Rotate**: horizontales Ziehen rotiert um die Blickachse der Kamera im
+  Begin-Moment (Screen-Plane-Rotation). Der Zielwinkel wird aus der
+  kumulierten Pixel-Distanz abgeleitet — das Ergebnis ist unabhängig vom
+  Event-Chunking des Fensters.
+- **Scale**: Ziehen (rechts/oben vergrößert, links/unten verkleinert)
+  skaliert uniform um den Pivot; der Zielfaktor wird auf > 0 begrenzt
+  (keine Spiegelung durch die Geste).
+- Mehrere Drags hintereinander erzeugen pro Release genau einen
+  History-Eintrag; Undo/Redo greifen an dieser Grenze.
+- Die Topology-Lab-Bindings S (SplitEdge) und R (EdgeRing) behalten im
+  Kontext `topology` Vorrang vor diesen globalen Bindungen.
+- Achsen-Auswahl (Weltachse für Rotation, Achsenbeschränkung für Scale) ist
+  auf Tool-Ebene über `begin(axis=.../axes=...)` unterstützt; eine
+  interaktive Umschaltung per Hotkey/Gizmo ist bewusst noch nicht gebaut.
+
 Die V1-Kamera orbitiert und zoomt weiterhin um das Scene-Zentrum. Die
 vertikale Orbit-Richtung folgt der im Praxistest bevorzugten
 Modeler-Konvention: Ziehen nach unten dreht das Modell nach unten. Pan
@@ -351,7 +388,9 @@ weiterhin vorläufig und keine endgültige UI-Entscheidung.
 - Universal / All-in-One Mode
 - endgültige Selection-Farben / Visual Design
 - Soft Selection, Snapping, Ortho-Ansicht
-- Achsen-Constraints / Transform-Gizmo
+- Transform-Gizmo, interaktive Constraint-Hotkeys (X/Y/Z) während einer
+  laufenden Transform-Interaktion (Achsen-Auswahl existiert nur als
+  Tool-/Foundation-Parameter, siehe WP-03)
 - Loop Insert / Loop Remove / Dissolve
 - Extrude
 - Produktionscode unter `src/` für Viewport/Modeling
@@ -371,6 +410,9 @@ viewport/
   input_binding.py     - Input→Command-Mapping (pyglet-frei, konfigurierbar)
   default_bindings.py  - Default-Key/Maus-Belegung + keymap.json-Overlay
   display_state.py     - Display-State: Shaded / Flat Shaded / Wireframe + Overlay
+  move_tool.py         - MoveTool + resolve_selection_vertices + Tool-Routing (WP-02)
+  transform_tool.py    - TransformTool-Basis + RotateTool/ScaleTool + selection_pivot (WP-03)
+  tool.py              - Tool-Lifecycle IDLE/ACTIVE/INTERACTING + ToolManager (WP-02)
   app.py              - ursprünglicher V1-Viewport (Display-Modi, Mapping-Dispatch)
   topology_app.py     - Topology-Lab auf Basis von app.py
 run.py                - ursprünglicher V1-Einstiegspunkt
@@ -384,7 +426,14 @@ tests/
   test_input_binding.py  - Input-Mapping, Context, keymap.json (WP-01A)
   test_move_tool.py      - MoveTool × MoveOperation (WP-02)
   test_tool_lifecycle.py - Tool-Lifecycle IDLE/ACTIVE/INTERACTING (WP-02)
-  test_tool_routing.py   - Command → Tool-Routing (WP-02)
+  test_tool_routing.py   - Command → Tool-Routing (WP-02/WP-03)
   test_tool_integration.py - Window-Integration M→MoveTool→LMB/Commit/Cancel
                            (WP-02-Follow-up, headless)
+  test_transform_operations.py - RotateOperation/ScaleOperation: Mathematik,
+                            Pivot, Commit/Cancel/Undo (WP-03)
+  test_transform_tools.py - RotateTool/ScaleTool: Lifecycle, Gesten, Achsen,
+                            Chunking-Unabhängigkeit (WP-03)
+  test_transform_integration.py - Window-Integration R/S→Tools→Commit/Cancel
+                            (WP-03, headless)
+
 ```

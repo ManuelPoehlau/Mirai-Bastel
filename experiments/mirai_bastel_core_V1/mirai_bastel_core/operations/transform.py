@@ -61,6 +61,15 @@ def _dot(a: Position, b: Position) -> float:
 
 
 def _cross(a: Position, b: Position) -> Position:
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _length(a: Position) -> float:
+    return math.sqrt(_dot(a, a))
 
 
 def _as_triple(factor: "float | Iterable[float]") -> Position:
@@ -249,14 +258,3 @@ class ScaleOperation(VertexTransformOperation):
         f = _as_triple(factor)
         q = _sub(pos, self._pivot)
         return _add(self._pivot, (f[0] * q[0], f[1] * q[1], f[2] * q[2]))
-
-
-    return (
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    )
-
-
-def _length(a: Position) -> float:
-    return math.sqrt(_dot(a, a))
