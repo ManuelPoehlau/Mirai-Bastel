@@ -348,12 +348,15 @@ class ModelerWindow(pyglet.window.Window):
         self._drag_mode = "tool"
 
     def _begin_move_on_current_selection(self) -> None:
-        """Löst die aktuelle Selection auf und startet ggf. die Move-Interaktion.
+        """Löst die aktuelle Selection auf und startet ggf. die Interaktion.
 
-        Gemeinsamer Pfad von Tweak (LMB-Drag auf frisch getoggelter Selection)
-        und modalem Move-Tool (WP-02): Die betroffenen Vertex-IDs liefert
-        `resolve_selection_vertices()`. Bei leerer Menge beginnt keine
-        Interaktion (`MoveTool.begin()` benötigt mindestens einen Vertex).
+        Gemeinsamer Pfad von Tweak (LMB-Drag auf frisch getoggelter Selection),
+        dem modalen Move-Tool (WP-02) und den modalen Transform-Tools
+        Rotate/Scale (WP-03): Die betroffenen Vertex-IDs liefert
+        `resolve_selection_vertices()`, die Zustellung erfolgt generisch über
+        `ToolManager.begin(vertex_ids=...)` an das jeweils aktive Tool. Bei
+        leerer Menge beginnt keine Interaktion (TransformTools.begin()
+        benötigt mindestens einen Vertex).
         """
         move_vertex_ids = resolve_selection_vertices(
             self.scene.mesh, self.scene.selection, self.selection_mode

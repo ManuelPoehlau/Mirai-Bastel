@@ -28,6 +28,10 @@ SELECT = "Select"
 # Mapping-Schicht auf das MoveTool geroutet — Bindings (z. B. M oder G)
 # verändern das Tool nicht.
 MOVE = "Move"
+# ROTATE/SCALE sind die modalen Transform-Commands (WP-03): Routing über
+# tool_for_command() auf RotateTool/ScaleTool, gleiche Lifecycle-Verträge.
+ROTATE = "Rotate"
+SCALE = "Scale"
 CLEAR_SELECTION = "ClearSelection"
 CANCEL = "Cancel"
 

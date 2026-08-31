@@ -42,6 +42,7 @@ from mirai_bastel_core import (
 from . import commands as cmd
 from .camera import OrbitCamera
 from .tool import Tool
+from .transform_tool import RotateTool, ScaleTool
 
 
 class _MoveSelectionView:
@@ -160,9 +161,17 @@ def tool_for_command(command: str) -> type[Tool] | None:
     Nur modale/interaktive Commands brauchen ein Tool. Nicht-interaktive
     Commands (Undo, Display, ...) bleiben weiterhin direkte Aktionen.
 
+    WP-03: Die Transform-Commands Rotate/Scale werden auf die gemeinsame
+    TransformTool-Basis geroutet (transform_tool.py) und nutzen dieselben
+    Lifecycle-/History-Verträge wie das MoveTool.
+
     Eine geänderte Input-Bindung (z. B. G statt M → Move) ändert ausschließlich
-    die Mapping-Schicht — diese Funktion und MoveTool bleiben unverändert.
+    die Mapping-Schicht — diese Funktion und die Tools bleiben unverändert.
     """
     if command == cmd.MOVE:
         return MoveTool
+    if command == cmd.ROTATE:
+        return RotateTool
+    if command == cmd.SCALE:
+        return ScaleTool
     return None

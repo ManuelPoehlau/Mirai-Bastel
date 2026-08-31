@@ -13,6 +13,13 @@ Neu hinzugekommen (bewusst minimal, keine unnötigen Hotkeys):
 - O              → Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
 - W              → Wireframe Overlay AN/AUS
 
+WP-03 (Transform-Tools, modale Tools wie M → Move):
+- R              → Rotate (RotateTool)
+- S              → Scale (ScaleTool)
+Im Topology-Lab behalten die kontextspezifischen S/R-Bindings
+(SplitEdge/EdgeRing) Vorrang vor diesen globalen Bindungen
+(Kontext-Priorität in input_binding.BindingSet.command_for).
+
 Die Topology-Lab-Keys (S/K/C/Shift+C/L/R) liegen im Kontext "topology" und
 gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
 
@@ -59,6 +66,10 @@ def build_default_bindings() -> BindingSet:
     # M aktiviert das modale Move-Tool (WP-02). Das Mapping ist austauschbar
     # (z. B. "g" per keymap.json) — MoveTool bleibt davon unberührt.
     bs.set_default(_key("m"), cmd.MOVE)
+    # R/S aktivieren die modalen Transform-Tools (WP-03): Rotate/Scale nutzen
+    # dieselben Lifecycle-/History-Verträge wie das Move-Tool.
+    bs.set_default(_key("r"), cmd.ROTATE)
+    bs.set_default(_key("s"), cmd.SCALE)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 
