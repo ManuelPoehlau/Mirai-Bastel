@@ -24,6 +24,15 @@ Not every document is a current specification.
 
 When documents overlap, the canonical document wins. Other documents should link to it rather than silently maintaining a second version.
 
+## WP-04 working set (production foundation
+
+| Document | Purpose |
+|---|---|---|
+| [WP-04_GATE_PLANNING.md](WP-04_GATE_PLANNING.md) | Gate-Plan + Akzeptanzkriterien |
+| [WP-04_OPEN_QUESTIONS.md](WP-04_OPEN_QUESTIONS.md) | Offene Entscheidungen Q1–Q4 |
+| [WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md](WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md) | Repository-Analyse, Produktions-Boundaries, Extraktionspfade |
+| [WP-04_AGENT_VERIFICATION_REPORT.md](WP-04_AGENT_VERIFICATION_REPORT.md) | Agent-Verifikation, Test-Inventar, Teststrategie, Aufgabenteilung Agent/Claude/Manuel |
+
 ## For AI collaborators
 
 Start with this index when a task crosses repository areas, then follow the nearest local README. The repository root `AGENTS.md` defines the documentation and collaboration rules that apply to all agents.

@@ -30,12 +30,23 @@ python -m tests.test_core
 | `test_topology_history.py` | D | commit → undo → redo, exakter Zustand inkl. IDs und Beziehungen |
 | `test_scene_serialization.py` | E | Dict-/JSON-Roundtrip nach Mutationen, Allocator, Kollisionen, Versionsprüfung |
 | `test_core.py` | — | Architekturverträge AD-001/002/003, Basis-Serialisierung |
+| `test_history_contract.py` | WP-04 | HistoryStack-Vertrag (No-op-undo/redo, Redo-Zweig-Verwerfen, LIFO) — separat ausführbar |
+| `test_operation_lifecycle.py` | WP-04 | Operation-Lifecycle-Guards (AD-003: begin/update/commit/cancel-State-Machine, History-Grenzen, No-op/Boundary) — separat ausführbar |
 
 ## Hardening-Ergebnis (2026-08-27)
 
 **Phasen A–E: PASS.** Die reproduzierbare Standard-Suite `tests.run_core_suite` umfasst aktuell **29 `unittest`-Tests** und führt anschließend die Architekturvertrags-Checks aus `tests.test_core` aus. Der Lauf endet mit `Gesamt: PASS` und 0 Failures/Errors.
 
 Die dedizierten **8 Phase-E-Tests** in `test_scene_serialization.py` sind zusätzliche Regressionstests und können separat ausgeführt werden; sie sind aktuell bewusst noch nicht in `run_core_suite.py` eingebunden. Die Architekturvertrags-Checks enthalten bereits eigene Basis-Serialisierungsprüfungen.
+Seit der WP-04-Verification (2026-09-01) existieren zusätzlich die
+**25 WP-04-Regressionstests** in `test_history_contract.py` (10) und
+`test_operation_lifecycle.py` (15): sie prüfen die HistoryStack-Verträge
+(Redo-Zweig-Verwerfen, No-op-undo/redo) und die Operation-Lifecycle-Zustandsguards
+(AD-003) explizit. Sie sind — wie die Phase-E-Tests — bewusst **nicht Teil des
+Standard-Runners** `run_core_suite` (sondern separat ausführbar
+(`python -m unittest tests.test_history_contract -v` usw.), damit die dokumentierte
+„29/29“-Standard-Baseline stabil bleibt. Alle 62 `unittest`-Tests des
+`tests/`-Verzeichnisses sind grün (`python -m unittest discover -s tests -p test_*.py`).
 
 ### Phase A – Invarianten
 
