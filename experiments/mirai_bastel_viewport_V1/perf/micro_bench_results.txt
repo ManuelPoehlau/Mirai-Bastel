@@ -1,0 +1,40 @@
+--- HEAD head_basemesh.obj  (V=326, E=648, F=324, reps<= 30, Budget 8 s/Messung) ---
+project_to_screen (1 Vertex, inkl. basis()):  med=0.0246 ms
+pick_nearest_vertex (O(V)):                   med=    6.91 ms  max=   11.09
+pick_nearest_edge (O(E)):                     med=   23.06 ms  max=   47.70
+pick_face (O(F) Ray-Tri):                     med=    2.08 ms  max=    3.31
+normals-Rebuild O(V*F):                       med=   45.35 ms  max=   54.65
+face-triangle-Arrays (alle Faces):            med=    1.41 ms  max=    2.75
+CPU-Rebuild gesamt (ohne GL):                 med=   46.96 ms  max=   49.74
+Python-Allokationen pro CPU-Rebuild:          peak=   203.1 KiB
+
+--- TORUS ~1.3k (tatsaechlich 1296 Quads)  (V=1296, E=2592, F=1296, reps<= 30, Budget 8 s/Messung) ---
+project_to_screen (1 Vertex, inkl. basis()):  med=0.0556 ms
+pick_nearest_vertex (O(V)):                   med=   33.63 ms  max=  119.31
+pick_nearest_edge (O(E)):                     med=   92.29 ms  max=  123.34
+pick_face (O(F) Ray-Tri):                     med=    9.42 ms  max=   10.97
+normals-Rebuild O(V*F):                       med=  736.75 ms  max= 3766.47
+face-triangle-Arrays (alle Faces):            med=    7.74 ms  max=   14.31
+CPU-Rebuild gesamt (ohne GL):                 med=  770.22 ms  max=  922.79
+Python-Allokationen pro CPU-Rebuild:          peak=   867.6 KiB
+
+--- TORUS ~5k (tatsaechlich 4970 Quads)  (V=4970, E=9940, F=4970, reps<= 3, Budget 8 s/Messung) ---
+project_to_screen (1 Vertex, inkl. basis()):  med=0.1678 ms
+pick_nearest_vertex (O(V)):                   med=  103.70 ms  max=  106.85
+pick_nearest_edge (O(E)):                     med=  395.78 ms  max=  397.69
+pick_face (O(F) Ray-Tri):                     med=   76.04 ms  max=  122.18
+normals-Rebuild O(V*F):                       med=21217.49 ms  max=21217.49
+face-triangle-Arrays (alle Faces):            med=   32.30 ms  max=   33.31
+CPU-Rebuild gesamt (ohne GL):                 med=22370.88 ms  max=22370.88
+Python-Allokationen pro CPU-Rebuild:          peak=  3599.2 KiB
+
+--- TORUS ~20k (20022 Quads) --- nur Einzellauf (Normals-Stufe identisch in der app-korrigierten Version; übrige Zeilen = alte Messversion) ---
+project_to_screen (1 Vertex, inkl. basis()):  med=0.6645 ms
+pick_nearest_vertex (O(V)):                   med=  426.19 ms
+pick_nearest_edge (O(E)):                     med= 1370.63 ms
+pick_face (O(F) Ray-Tri):                     med=  139.05 ms
+normals-Rebuild O(V*F):                       med=314480.89 ms  (identisch in korrigierter Version)
+face-triangle-Arrays (alle Faces, alte Version inkl. normalen-Recompute): 281788.67 ms
+CPU-Rebuild gesamt (ohne GL, alte Version inkl. doppeltem Normals): 664745.79 ms
+=> korrigiert (Normals einmal + O(F)-Tri + Flatten): ≈314600 ms
+

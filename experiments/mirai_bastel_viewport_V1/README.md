@@ -454,6 +454,8 @@ viewport/
 run.py                - ursprünglicher V1-Einstiegspunkt
 run_topology.py       - Topology-Lab-Einstiegspunkt
 keymap.json            - optionales User-Overlay für Bindings (wird bei Existenz geladen)
+perf/                  - Performance-Research (nur Messung, keine Optimierung;
+                         siehe perf/README.md und perf/PERF_BASELINE_REPORT.md)
 tests/
   test_constraints.py   - Achsen-/Ebenen-Constraints
   test_camera_picking.py - Kamera-/Picking-Logik inkl. Pan
@@ -473,5 +475,12 @@ tests/
                             (WP-03, headless)
   test_all_tools.py     - All-Tools-Playground: Bindings-Priorität, Achsen-
                             Constraints, Topology-Regression (headless)
+
+## Performance Research
+
+Der Unterbereich [`perf/`](perf/README.md) enthält die reproduzierbare
+Perf-Instrumentation (Monkey-Patching, keine Änderung an Viewport-/Core-Dateien)
+und den aktuellen Messbericht:
+[`perf/PERF_BASELINE_REPORT.md`](perf/PERF_BASELINE_REPORT.md).
 
 ```

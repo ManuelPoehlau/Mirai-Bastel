@@ -1,0 +1,77 @@
+cProfile: orbit=80, hover=80, vertex-drag=40 Events (Head-Asset)
+
+===== Top 30 nach eigener Zeit (tottime) =====
+         19674718 function calls (19674038 primitive calls) in 25.646 seconds
+
+   Ordered by: internal time
+   List reduced from 212 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      140    9.974    0.071   19.457    0.139 app.py:172(_compute_normals)
+ 14878080    8.660    0.000    8.660    0.000 mesh.py:113(face_vertices)
+    11292    0.605    0.000    0.640    0.000 lib.py:55(errcheck)
+      280    0.542    0.002    0.911    0.003 app.py:202(_face_triangle_arrays)
+      952    0.495    0.001    0.496    0.001 vertexdomain.py:207(set_attribute_data)
+    52812    0.470    0.000    0.470    0.000 {built-in method math.hypot}
+   341977    0.378    0.000    0.727    0.000 vecmath.py:41(length)
+      420    0.350    0.001    0.390    0.001 vertexarray.py:21(__init__)
+   250977    0.333    0.000    0.964    0.000 vecmath.py:45(normalize)
+   725774    0.320    0.000    0.320    0.000 {method 'extend' of 'list' objects}
+   106758    0.313    0.000    0.532    0.000 camera.py:59(eye)
+      140    0.307    0.002   22.787    0.163 app.py:236(_rebuild_geometry)
+    53179    0.306    0.000    1.935    0.000 camera.py:103(project_to_screen)
+   501674    0.246    0.000    0.246    0.000 vecmath.py:29(dot)
+    53299    0.232    0.000    1.217    0.000 camera.py:67(basis)
+      877    0.225    0.000    0.247    0.000 vertexarray.py:31(bind)
+   643237    0.225    0.000    0.225    0.000 mesh.py:96(vertex_position)
+   342577    0.172    0.000    0.172    0.000 {built-in method math.sqrt}
+      161    0.130    0.001    2.539    0.016 picking.py:12(pick_nearest_vertex)
+   181680    0.121    0.000    0.121    0.000 vecmath.py:17(add)
+   151958    0.120    0.000    0.120    0.000 vecmath.py:33(cross)
+   251217    0.120    0.000    0.120    0.000 vecmath.py:25(scale)
+   213676    0.117    0.000    0.117    0.000 {built-in method math.sin}
+   213676    0.102    0.000    0.102    0.000 {built-in method math.cos}
+   197318    0.098    0.000    0.098    0.000 vecmath.py:21(sub)
+      840    0.049    0.000    0.375    0.000 vertexbuffer.py:140(__init__)
+      200    0.048    0.000    0.052    0.000 shader.py:567(setter_func)
+ 1084/404    0.044    0.000   25.611    0.063 perf_probe.py:159(wrapper)
+   137200    0.040    0.000    0.040    0.000 {built-in method builtins.len}
+    90720    0.035    0.000    0.035    0.000 mesh.py:131(edge_vertices)
+
+===== Top 30 nach inklusiver Zeit (cumtime) =====
+         19674718 function calls (19674038 primitive calls) in 25.646 seconds
+
+   Ordered by: cumulative time
+   List reduced from 212 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+ 1084/404    0.044    0.000   25.611    0.063 perf_probe.py:159(wrapper)
+        3    0.002    0.001   25.210    8.403 scenario_runner.py:162(run_frames)
+      140    0.307    0.002   22.787    0.163 app.py:236(_rebuild_geometry)
+      120    0.001    0.000   20.867    0.174 app.py:480(on_mouse_drag)
+      140    9.974    0.071   19.457    0.139 app.py:172(_compute_normals)
+        1    0.000    0.000   14.861   14.861 scenario_runner.py:181(scenario_orbit)
+       80    0.000    0.000   14.736    0.184 scenario_runner.py:188(<lambda>)
+       80    0.001    0.000   14.733    0.184 app.py:572(_refresh_hover)
+ 14878080    8.660    0.000    8.660    0.000 mesh.py:113(face_vertices)
+        1    0.000    0.000    6.592    6.592 scenario_runner.py:243(scenario_vertex_drag)
+        1    0.000    0.000    6.576    6.576 scenario_runner.py:226(_drag_scenario)
+       40    0.000    0.000    6.133    0.153 scenario_runner.py:237(<lambda>)
+        1    0.000    0.000    4.194    4.194 scenario_runner.py:214(scenario_hover)
+       80    0.000    0.000    4.096    0.051 scenario_runner.py:216(<lambda>)
+       80    0.000    0.000    4.095    0.051 app.py:442(on_mouse_motion)
+      161    0.009    0.000    2.553    0.016 perf_probe.py:225(pick_wrapper)
+      161    0.001    0.000    2.541    0.016 app.py:163(_pick)
+      161    0.130    0.001    2.539    0.016 picking.py:12(pick_nearest_vertex)
+    53179    0.306    0.000    1.935    0.000 camera.py:103(project_to_screen)
+      476    0.005    0.000    1.748    0.004 perf_probe.py:183(wrapper)
+      476    0.005    0.000    1.739    0.004 shader.py:1490(vertex_list)
+      476    0.011    0.000    1.735    0.004 shader.py:1438(_vertex_list_create)
+    53299    0.232    0.000    1.217    0.000 camera.py:67(basis)
+      476    0.014    0.000    1.188    0.002 __init__.py:427(get_domain)
+      420    0.034    0.000    1.147    0.003 vertexdomain.py:382(__init__)
+   250977    0.333    0.000    0.964    0.000 vecmath.py:45(normalize)
+      280    0.542    0.002    0.911    0.003 app.py:202(_face_triangle_arrays)
+   341977    0.378    0.000    0.727    0.000 vecmath.py:41(length)
+    11292    0.605    0.000    0.640    0.000 lib.py:55(errcheck)
+   106758    0.313    0.000    0.532    0.000 camera.py:59(eye)
