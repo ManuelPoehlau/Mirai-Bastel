@@ -34,3 +34,13 @@ Lokaler Einstieg: [`mirai_bastel_viewport_V1/README.md`](mirai_bastel_viewport_V
 Zentrale Dokumentations- und Planstelle für die Topology-Forschung. Der experimentelle Topology-Code selbst liegt derzeit im Viewport-Experiment unter `mirai_bastel_viewport_V1/viewport/`.
 
 Lokaler Einstieg: [`topology/README.md`](topology/README.md)
+
+### `rigging-skinning-morphing/`
+
+Research-Experiment zu Rigging, Skinning und Morph-Targets in Kombination mit
+Topologie-Editing. Seit dem Viewport-Integrationsschritt stellt es seinen
+Head-Basemesh (`meshes/head_basemesh.obj`) über einen minimalen Adapter als
+normale `Scene`/`Mesh` im **vorhandenen Viewport V1** dar (All-Tools-Playground,
+`python run_viewport.py`) — ohne Viewport-Fork und ohne Core-Änderung.
+
+Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.md`](rigging-skinning-morphing/rigging-skinning-morphing-README.md)
