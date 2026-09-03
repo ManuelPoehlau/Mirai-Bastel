@@ -14,24 +14,57 @@ class TopologyToolError(ValueError):
 
 
 class _SnapshotCommand:
-    """Experimenteller History-Adapter über Mesh export/load_state."""
+    """Experimenteller History-Adapter über Mesh export/load_state.
 
-    def __init__(self, mesh, before: dict, after: dict, description: str, on_restore=None):
+    Erweitert um optionale Selection-Restoration: before_selection und
+    after_selection sind Diktionäre mit {'mode': SelectionMode, 'vertices': set,
+    'edges': set, 'faces': set}. Bei undo/redo wird die zugehörige Selection
+    nach der Mesh-Restoration wiederhergestellt.
+    """
+
+    def __init__(self, mesh, before: dict, after: dict, description: str, on_restore=None,
+                 selection=None, before_selection=None, after_selection=None):
         self._mesh = mesh
         self._before = before
         self._after = after
         self.description = description
         self._on_restore = on_restore
+        self._selection = selection
+        self._before_selection = before_selection
+        self._after_selection = after_selection
 
     def undo(self) -> None:
         self._mesh.load_state(self._before)
+        self._restore_selection(self._before_selection)
         if self._on_restore:
             self._on_restore()
 
     def redo(self) -> None:
         self._mesh.load_state(self._after)
+        self._restore_selection(self._after_selection)
         if self._on_restore:
             self._on_restore()
+
+    def _restore_selection(self, sel_state) -> None:
+        """Restauriert Selection aus einem gespeicherten Zustand.
+
+        Ungültige IDs (z.B. nach Undo nicht mehr existierende Faces) werden
+        gefiltert, damit _rebuild_geometry() nicht mit KeyError abstürzt.
+        """
+        if sel_state is None or self._selection is None:
+            return
+        from mirai_bastel_core import SelectionMode
+        self._selection.clear()
+        self._selection.mode = sel_state['mode']
+        if sel_state['mode'] == SelectionMode.VERTEX:
+            valid = {vid for vid in sel_state['vertices'] if self._mesh.is_valid_vertex(vid)}
+            self._selection.set(valid)
+        elif sel_state['mode'] == SelectionMode.EDGE:
+            valid = {eid for eid in sel_state['edges'] if self._mesh.is_valid_edge(eid)}
+            self._selection.set(valid)
+        elif sel_state['mode'] == SelectionMode.FACE:
+            valid = {fid for fid in sel_state['faces'] if self._mesh.is_valid_face(fid)}
+            self._selection.set(valid)
 
 
 def _push_snapshot(scene, before: dict, description: str, on_restore=None) -> None:

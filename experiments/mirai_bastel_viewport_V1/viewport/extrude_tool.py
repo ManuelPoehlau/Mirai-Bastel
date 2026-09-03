@@ -13,6 +13,12 @@ Lifecycle (governed by Tool base class):
     commit()    → History-Eintrag, neue Face ausgewählt (ACTIVE)
     cancel()    → Mesh-Restore, keine History (ACTIVE)
 
+Topologie: Die ursprüngliche Face wird bei begin() entfernt.
+Es bleiben nur die Mantelflächen + Result-Face (5 Faces bei Quad).
+
+Winding-Regel für Mantelflächen: [v_curr, v_next, v_next_new, v_curr_new].
+Geometrisch korrekt: Normale zeigt bei CCW-Boundary und +Z-Extrusion nach außen.
+
 Scope: exakt eine Face, polygonale Faces, Newell-Normale, kein Refactoring
 des Production-Cores.
 """
@@ -81,6 +87,9 @@ class ExtrudeTool(Tool):
         self._new_face_id: FaceId | None = None
         self._before_state: dict | None = None
         self._total_distance: float = 0.0
+        # Selection-Sync für Undo/Redo/Cancel
+        self._before_selection: dict | None = None
+        self._after_selection: dict | None = None
 
     # -- Beobachtbarkeit für Tests/Integration ------------------------------
 
@@ -125,6 +134,9 @@ class ExtrudeTool(Tool):
         self._original_positions = {vid: mesh.vertex_position(vid) for vid in boundary}
         self._total_distance = 0.0
 
+        # Selection-Zustand vor Mutation speichern (für Undo/Redo/Cancel)
+        self._before_selection = self._export_selection()
+
         # Neue Vertices erzeugen (anfangs an Original-Position, distance=0)
         self._new_vertex_ids = []
         for vid in boundary:
@@ -133,6 +145,8 @@ class ExtrudeTool(Tool):
             self._new_vertex_ids.append(new_vid)
 
         # Side-Faces erzeugen: [v_curr, v_next, v_next_new, v_curr_new]
+        # Winding ist geometrisch korrekt: Normale zeigt nach außen
+        # (Bestätigt durch Newell-Berechnung bei CCW-Boundary + +Z-Extrusion)
         n = len(boundary)
         for i in range(n):
             v_curr = boundary[i]
@@ -143,6 +157,17 @@ class ExtrudeTool(Tool):
 
         # Result-Face erzeugen (gleiche Winding-Richtung wie Original)
         self._new_face_id = mesh.add_face(list(self._new_vertex_ids))
+
+        # Ursprüngliche Face entfernen (keine rückwärtige Verschlussfläche)
+        mesh.remove_face(face_id)
+
+        # Selection-Zustand nach Mutation speichern
+        self._after_selection = {
+            'mode': 'FACE',
+            'vertices': set(),
+            'edges': set(),
+            'faces': {self._new_face_id} if self._new_face_id else set(),
+        }
 
     def _on_update(self, dx: float, dy: float, width: int, height: int) -> None:
         if self._normal is None or not self._new_vertex_ids:
@@ -179,6 +204,9 @@ class ExtrudeTool(Tool):
 
         command = _SnapshotCommand(
             mesh, self._before_state, after, "Extrude",
+            selection=self._scene.selection,
+            before_selection=self._before_selection,
+            after_selection=self._after_selection,
         )
         self._scene.history.push(command)
         return self._new_face_id
@@ -186,6 +214,8 @@ class ExtrudeTool(Tool):
     def _on_cancel(self) -> None:
         if self._before_state is not None:
             self._scene.mesh.load_state(self._before_state)
+        # Selection wiederherstellen (verhindert stale FaceIds)
+        self._restore_selection(self._before_selection)
 
     def _on_deactivate(self) -> None:
         self._face_id = None
@@ -196,6 +226,8 @@ class ExtrudeTool(Tool):
         self._new_face_id = None
         self._before_state = None
         self._total_distance = 0.0
+        self._before_selection = None
+        self._after_selection = None
 
     # -- Interne Hilfsfunktionen ----------------------------------------------
 
@@ -208,3 +240,36 @@ class ExtrudeTool(Tool):
             sum(p[1] for p in positions) / n,
             sum(p[2] for p in positions) / n,
         )
+
+    def _export_selection(self) -> dict:
+        """Exportiert den aktuellen Selection-Zustand als Dictionary."""
+        sel = self._scene.selection
+        return {
+            'mode': sel.mode,
+            'vertices': set(sel.vertices),
+            'edges': set(sel.edges),
+            'faces': set(sel.faces),
+        }
+
+    def _restore_selection(self, sel_state: dict | None) -> None:
+        """Restauriert Selection aus einem gespeicherten Zustand.
+
+        Ungültige IDs werden gefiltert, damit _rebuild_geometry() nicht
+        mit KeyError abstürzt.
+        """
+        if sel_state is None:
+            return
+        from mirai_bastel_core import SelectionMode
+        sel = self._scene.selection
+        sel.clear()
+        sel.mode = sel_state['mode']
+        mesh = self._scene.mesh
+        if sel.mode == SelectionMode.VERTEX:
+            valid = {vid for vid in sel_state['vertices'] if mesh.is_valid_vertex(vid)}
+            sel.set(valid)
+        elif sel.mode == SelectionMode.EDGE:
+            valid = {eid for eid in sel_state['edges'] if mesh.is_valid_edge(eid)}
+            sel.set(valid)
+        elif sel.mode == SelectionMode.FACE:
+            valid = {fid for fid in sel_state['faces'] if mesh.is_valid_face(fid)}
+            sel.set(valid)

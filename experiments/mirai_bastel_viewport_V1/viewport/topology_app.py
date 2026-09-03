@@ -217,10 +217,11 @@ class TopologyWindow(ModelerWindow):
         return False
 
     def _begin_extrude(self, command) -> bool:
-        """Startet das interaktive Single-Face-Extrude.
+        """Startet das interaktive Single-Face-Extrude SOFORT.
 
-        Alt+E aktiviert das ExtrudeTool. Der nächste LMB-Klick auf eine
-        Face beginnt die Interaktion (Pick → begin → Drag → Commit).
+        Alt+E aktiviert das ExtrudeTool und beginnt unmittelbar die
+        Interaktion mit der aktuell ausgewählten Face. Der nächste
+        Mausbewegung verändert die Extrusion, LMB commitet, ESC cancelt.
         """
         if self.selection_mode != SelectionMode.FACE:
             raise TopologyToolError("Extrude: Face-Modus verwenden (F).")
@@ -228,19 +229,33 @@ class TopologyWindow(ModelerWindow):
         if len(self.scene.selection.faces) != 1:
             raise TopologyToolError("Extrude: genau 1 Face auswählen.")
 
-        # ExtrudeTool aktivieren (wie MoveTool über M)
+        face_id = next(iter(self.scene.selection.faces))
+
+        # ExtrudeTool aktivieren und SOFORT beginnen
         if not isinstance(self._tool_manager.active_tool, ExtrudeTool):
             self._end_modeling_tool()
             self._tool_manager.activate(ExtrudeTool(self.scene, self.camera))
             self._tweak_tool = True
-        self._set_topology_caption("Extrude: LMB auf Face zum Starten")
+
+        # Interaktion sofort starten (begin entfernt die Original-Face)
+        self._tool_manager.begin(face_id=face_id)
+        self._drag_mode = "tool"
+        # Selection der nun entfernten Original-Face vermeiden (KeyError)
+        self.scene.selection.clear()
+        self._hovered_id = None
+        self._rebuild_geometry()
+        self._set_topology_caption("Extrude: Maus bewegen → LMB commiten → ESC canceln")
         return True
 
     # -- Extrude: Maus-Interaktion -------------------------------------------
 
     def on_mouse_press(self, x, y, button, modifiers):
-        # ExtrudeTool aktiv und nicht interaktiv: LMB auf Face startet Extrude
+        # ExtrudeTool aktiv und interaktiv: nicht in Selection-Picking fallen
         tool = self._tool_manager.active_tool
+        if isinstance(tool, ExtrudeTool) and self._tool_manager.is_interacting:
+            # Drag modus bleibt "tool", on_mouse_drag/commit handhaben den Rest
+            return
+        # ExtrudeTool aktiv und nicht interaktiv: LMB auf Face startet Extrude
         if isinstance(tool, ExtrudeTool) and not self._tool_manager.is_interacting:
             from pyglet.window import mouse as _mouse
             if button == _mouse.LEFT:
