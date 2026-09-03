@@ -1,0 +1,107 @@
+=== HEAD (324 Quads) — orbit ===
+frame: n=8  avg=   62.64 ms  min=   59.30  p50=   62.44  p95=   67.92  p99=   67.92  max=   67.92
+-> ~  16.0 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_drag                      61.69   98.5%      8
+event.mouse_press                      0.04    0.1%      1
+event.mouse_release                    0.00    0.0%      1
+event.on_draw                          0.94    1.5%      8
+gl.vertexlist_create+upload            1.23    2.0%     24
+hover.refresh_hover                   61.68   98.5%      8
+pick.vertex                            6.55   10.5%      8
+rebuild.geometry                      55.10   88.0%      8
+rebuild.normals                       48.05   76.7%      8
+rebuild.triangle_arrays                0.90    1.4%     16
+
+=== HEAD (324 Quads) — hover ===
+frame: n=8  avg=   21.10 ms  min=    6.49  p50=    7.28  p95=   65.20  p99=   65.20  max=   65.20
+-> ~  47.4 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_motion                    20.60   97.6%      8
+event.on_draw                          0.49    2.3%      8
+gl.vertexlist_create+upload            0.78    3.7%      7
+pick.vertex                            6.49   30.8%      8
+rebuild.geometry                      56.36  267.1%      2
+rebuild.normals                       49.75  235.8%      2
+rebuild.triangle_arrays                1.31    6.2%      4
+
+=== TORUS ~324 (324 Quads) — orbit ===
+frame: n=8  avg=   61.53 ms  min=   59.88  p50=   62.39  p95=   63.29  p99=   63.29  max=   63.29
+-> ~  16.3 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_drag                      60.67   98.6%      8
+event.mouse_press                      0.05    0.1%      1
+event.mouse_release                    0.00    0.0%      1
+event.on_draw                          0.85    1.4%      8
+gl.vertexlist_create+upload            1.16    1.9%     24
+hover.refresh_hover                   60.56   98.4%      8
+pick.vertex                            6.38   10.4%      8
+rebuild.geometry                      54.17   88.0%      8
+rebuild.normals                       47.73   77.6%      8
+rebuild.triangle_arrays                0.83    1.3%     16
+
+=== TORUS ~324 (324 Quads) — hover ===
+frame: n=8  avg=   20.66 ms  min=    6.41  p50=    7.61  p95=   61.20  p99=   61.20  max=   61.20
+-> ~  48.4 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_motion                    19.96   96.6%      8
+event.on_draw                          0.69    3.3%      8
+gl.vertexlist_create+upload            0.94    4.6%      7
+pick.vertex                            6.56   31.7%      8
+rebuild.geometry                      53.54  259.1%      2
+rebuild.normals                       47.43  229.5%      2
+rebuild.triangle_arrays                0.76    3.7%      4
+
+=== TORUS ~1.3k (1296 Quads) — orbit ===
+frame: n=8  avg= 1211.53 ms  min=  839.09  p50= 1200.87  p95= 1651.28  p99= 1651.28  max= 1651.28
+-> ~   0.8 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_drag                    1170.70   96.6%      8
+event.mouse_press                      0.05    0.0%      1
+event.mouse_release                    0.00    0.0%      1
+event.on_draw                         40.81    3.4%      8
+gl.vertexlist_create+upload           32.89    2.7%     24
+hover.refresh_hover                 1170.69   96.6%      8
+pick.vertex                           36.76    3.0%      8
+rebuild.geometry                    1133.90   93.6%      8
+rebuild.normals                     1008.74   83.3%      8
+rebuild.triangle_arrays                5.31    0.4%     16
+
+=== TORUS ~1.3k (1296 Quads) — hover ===
+frame: n=8  avg= 1005.60 ms  min=   33.84  p50= 1278.16  p95= 2043.26  p99= 2043.26  max= 2043.26
+-> ~   1.0 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_motion                   991.22   98.6%      8
+event.on_draw                         14.36    1.4%      8
+gl.vertexlist_create+upload           32.49    3.2%     23
+pick.vertex                           71.66    7.1%      8
+rebuild.geometry                    1226.04  121.9%      6
+rebuild.normals                     1067.65  106.2%      6
+rebuild.triangle_arrays                3.34    0.3%     12
+
+=== TORUS ~5k (4970 Quads) — orbit ===
+frame: n=2  avg=12818.74 ms  min=12355.92  p50=12355.92  p95=13281.55  p99=13281.55  max=13281.55
+-> ~   0.1 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_drag                   12812.59  100.0%      2
+event.mouse_press                      0.06    0.0%      1
+event.mouse_release                    0.01    0.0%      1
+event.on_draw                          6.12    0.0%      2
+gl.vertexlist_create+upload           18.36    0.1%      6
+hover.refresh_hover                12812.58  100.0%      2
+pick.vertex                          102.27    0.8%      2
+rebuild.geometry                   12710.25   99.2%      2
+rebuild.normals                    12599.05   98.3%      2
+rebuild.triangle_arrays               16.19    0.1%      4
+
+=== TORUS ~5k (4970 Quads) — hover ===
+frame: n=1  avg=17731.97 ms  min=17731.97  p50=17731.97  p95=17731.97  p99=17731.97  max=17731.97
+-> ~   0.1 FPS wenn dieser Frame-Typ das Dauerbild bestimmt
+component                            avg_ms   share      n
+event.mouse_motion                 17729.68  100.0%      1
+event.on_draw                          2.26    0.0%      1
+gl.vertexlist_create+upload            7.97    0.0%      4
+pick.vertex                          135.14    0.8%      1
+rebuild.geometry                   17594.48   99.2%      1
+rebuild.normals                    17499.51   98.7%      1
+rebuild.triangle_arrays               15.64    0.1%      2

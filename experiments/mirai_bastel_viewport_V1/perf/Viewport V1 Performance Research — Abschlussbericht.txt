@@ -1,0 +1,77 @@
+Die Analyse ist abgeschlossen. Hier der vollständige Abschlussbericht:
+
+---
+
+# Viewport V1 Performance Research — Abschlussbericht
+
+## Was wurde getan
+
+**Nur Messung.** Es wurde **keine** Optimierung implementiert und **keine** Zeile an `viewport/*.py`, `src/core`, `experiments/topology` oder den WP-02/WP-03-Dokumenten verändert. Neu ist ausschließlich der isolierte Messbereich `experiments/mirai_bastel_viewport_V1/perf/`:
+
+| Datei | Zweck |
+|---|---|
+| `perf_probe.py` | Timing-/Zähler-Instrumentation (Monkey-Patching, GC-Snapshots, GL-VertexList-Upload) |
+| `scenario_runner.py` | Szenarien A–H automatisiert am **echten Fenster** mit dem echten Head |
+| `micro_bench.py` | headless CPU-Mikrobenchmarks (Picking, Normals, Triangle-Arrays, Allokationen) |
+| `synthetic_meshes.py` | Quad-Tori ~324/1.3k/5k/20k (100 % Quads, manifold) |
+| `bench_scaling.py` | Fenster-Skalierung Orbit/Hover über die Größen |
+| `profile_hotspots.py` | cProfile-Nachweis |
+| `bench_live.py` | Live-Instrumentation für manuelle Tests |
+| `PERF_BASELINE_REPORT.md` | **Der Befund** (verlinkt aus dem Experiment-README) |
+
+Reproduzierbar: `python -m perf.scenario_runner --events 200` etc. (Details im `perf/README.md`). Rohdaten: `scenario_results.txt`, `scaling_results.txt`, `micro_bench_results.txt`, `profile_results.txt`.
+
+**Wichtiger methodischer Punkt:** Die erste Micro-Bench-Version hatte Triangle-Arrays mit doppeltem Normalen-Recompute gemessen (95 ms). App-korrekt (Normalen einmal, Triangle-Arrays nutzen den Cache) sind es **47 ms** — der Befund wird dadurch nur schärfer.
+
+---
+
+## Performance Baseline (Head, 324 Quads, echtes Fenster)
+
+| Test | Avg (ms) | p50 | p95 | p99 | Max (ms) | FPS |
+|---|---|---|---|---|---|---|
+| Idle | 0,32 | 0,23 | 0,55 | 2,0 | 4,3 | ~3 100 |
+| **Orbit** | **85,7** | 63,2 | 229 | 367 | 877 | **~11,7** |
+| **Pan** | **85,0** | 63,4 | 132 | 457 | 1 491 | **~11,8** |
+| **Zoom** | **117,2** | 65,3 | 408 | 658 | 1 225 | **~8,5** |
+| Hover (über Mesh) | 12,8 | 7,1 | 61 | 76 | 83 | ~78 |
+| Hover-still | 7,5 | 6,9 | 8,4 | 17 | 51 | ~134 |
+| **Vertex-Drag** | **100,7** | 54,8 | 265 | 617 | 1 052 | **~9,9** |
+| Edge-Drag | 72,1 | 58,3 | 146 | 281 | 662 | ~13,9 |
+| Face-Drag | 67,1 | 56,4 | 119 | 260 | 388 | ~14,9 |
+
+Komponenten (z. B. Orbit): `rebuild.geometry` 74,7 ms (87 %), darin Normals 52,6 ms (61 %); Picking 8 ms (9 %); GL-VertexList 4,8 ms; Draw 3 ms. GC: **kein** Hotspot (~1 gen0-Collection je 20–25 Frames).
+
+## Hotspots (cProfile, 25,6 s gemischte Last)
+
+| Rang | Datei:Methode | Anteil (cumtime) |
+|---|---|---|
+| 1 | `app.py:_compute_normals` (aus `_rebuild_geometry`) | **~76 %** (19,5 s) |
+| 1b | `mesh.py:face_vertices` (14,9 **Mio.** Aufrufe im O(V×F)-Loop) | ~34 % (8,7 s) |
+| 2 | `app.py:_rebuild_geometry` gesamt | **~89 %** (22,8 s) |
+| 3 | `picking.py:pick_nearest_vertex` | ~10 % |
+| 4 | `camera.py:project_to_screen`/`basis`/`eye` | ~14 % (Picking) |
+| 5 | pyglet `vertex_list`-Neu-Erzeugung (VBOs) pro Rebuild | ~9 % |
+
+## Skalierung
+
+| Quads | Normals O(V×F) | CPU-Rebuild | Orbit (Fenster) |
+|---|---|---|---|
+| 324 | 45 ms | 47 ms | 62–86 ms |
+| 1 296 | 737 ms | 770 ms | ≈1,2 s |
+| 4 970 | 21,2 s | 22,4 s | ≈12,8 s |
+| 20 022 | ≈314 s | ≈315 s | (nicht mehr ausführbar) |
+
+## Root Cause
+
+Der Viewport stößt bei **jedem** Kamera-Drag-, Zoom-, Hover-Wechsel-, Selection- und Tool-Drag-Event einen **vollständigen Geometry-Rebuild** an (`_refresh_hover` → `_rebuild_geometry`), obwohl sich die Mesh-Geometrie bei Kamera-Bewegungen gar nicht ändert. Der dominante Posten ist der **O(V×F)-Normalen-Loop `_compute_normals`** (45 ms bei 324 Quads, >95 % ab 1 k Quads) plus Picking-Vollscan (6–22 ms) und neue VBOs je Rebuild. **CPU/Python-, kein GPU-Problem.**
+
+## Antworten auf die Kernfragen
+
+1. **Warum laggt es bei 324 Quads?** Jeder Event = Voll-Picking + Voll-Rebuild inkl. O(V×F)-Normalen → 65–100 ms/Frame (8–15 FPS), obwohl weder Geometrie noch Topologie sich ändern.
+2. **Hauptursache?** F (Kombination), klar dominiert von **B – Geometry Rebuild**; A (Picking) sekundär; C/D klein; E: Allokationen tragen bei, GC nicht.
+3. **324 → 1,3k → 5k → 20k?** Rebuild quadratisch: 47 ms → 770 ms → 22,4 s → ≈5 min pro Event. Ab ~1 k Quads unbrauchbar.
+4. **Größter Hotspot?** `ModelerWindow._compute_normals()` (O(V×F), via `face_vertices()`-Kopien) aus `_rebuild_geometry()`, ~60–80 % der Frame-Zeit.
+5. **Kleinste sinnvolle Optimierung (Quick Win)?** Kamera-Drag/Zoom darf nie `_rebuild_geometry()` auslösen (80–100 ms/Event entfallen) **und** Normalen linear über einmalige Vertex→Faces-Adjazenz (Rebuild 47 ms → wenige ms).
+6. **Langfristig architektonisch sinnvoll?** View-/Render-Layer mit versionierter Geometrie + Dirty-Flags + persistenten GPU-Buffern, entkoppelt vom Input-Event-Fluss.
+
+Alle Details, Hotspot-Tabelle und Empfehlungen (Quick Win / mittelfristig / langfristige Viewport-Architektur) stehen im **`perf/PERF_BASELINE_REPORT.md`**. Die Optimierungen wurden wie gewünscht **noch nicht implementiert** — wir entscheiden gemeinsam, was davon in Mirai-Bastel übernommen wird.

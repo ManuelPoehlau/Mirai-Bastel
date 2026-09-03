@@ -37,6 +37,42 @@ python run_topology.py
 Startet eine kontrollierte 3x3-Quad-Grid-Testszene und die experimentellen
 Topologie-Werkzeuge.
 
+### All-Tools Playground (experimentell)
+
+```bash
+python run_all_tools.py
+```
+
+Startet eine Würfel-Testszene, in der Selection, Topology-Werkzeuge und die
+modalen Transform-Tools zusammen in **einem** Fenster praktisch ausprobiert
+werden können (`viewport/all_tools_app.py`). Reines Test-Tool: keine
+Production-UX, kein Gizmo, keine Toolbar.
+
+Die Belegung basiert vollständig auf `build_default_bindings()`; ergänzt
+werden im Kontext `topology` ausschließlich **freie** Tasten — bestehende
+Hotkeys (S → Split, R → Ring, M → Move, V/E/F, …) bleiben unverändert wirksam:
+
+| Taste | Funktion |
+| --- | --- |
+| `M` | Move-Tool (modal, WP-02) |
+| `Shift+R` | Rotate-Tool (modal, WP-03) |
+| `Shift+S` | Scale-Tool (modal, WP-03) |
+| `X` / `Y` / `Z` | Achse für die nächste Transform-Interaktion (Toggle: aktive Taste nochmals drücken hebt auf) |
+| `S` / `R` | Split Edge / Edge Ring (unverändert) |
+| `K` / `C` / `L` | Collapse / Connect / Edge Loop (unverändert) |
+| `V/E/F`, `1/2/3` | Selection Modes (unverändert) |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / Redo (unverändert) |
+| `Alt+A` / `O` / `W` / `Esc` | Deselect / Display / Wireframe / Cancel (unverändert) |
+
+Achsen-Semantik: Die Transform-Tools besitzen die Achsen-Auswahl bereits als
+`begin(axis=…/axes=…)`-Parameter (WP-03); der Playground macht diesen
+vorhandenen Parameter über X/Y/Z wählbar, **bevor** eine Interaktion beginnt
+(die Achse wird im begin()-Moment fixiert — keine Umschaltung während eines
+laufenden Drags, wie bisher). Scale ohne Achse ist uniform (V1_SPEC).
+Move ohne Achse bleibt frei entlang der Kamera-Bildebene; mit Achse projiziert
+der experimentelle Adapter `AxisConstrainedMoveTool` (all_tools_app.py) das
+vorhandene Kamera-Delta auf die Weltachse — die MoveOperation ist unverändert.
+
 ## Allgemeine Steuerung
 
 ### Selection Modes
@@ -418,6 +454,8 @@ viewport/
 run.py                - ursprünglicher V1-Einstiegspunkt
 run_topology.py       - Topology-Lab-Einstiegspunkt
 keymap.json            - optionales User-Overlay für Bindings (wird bei Existenz geladen)
+perf/                  - Performance-Research (nur Messung, keine Optimierung;
+                         siehe perf/README.md und perf/PERF_BASELINE_REPORT.md)
 tests/
   test_constraints.py   - Achsen-/Ebenen-Constraints
   test_camera_picking.py - Kamera-/Picking-Logik inkl. Pan
@@ -435,5 +473,14 @@ tests/
                             Chunking-Unabhängigkeit (WP-03)
   test_transform_integration.py - Window-Integration R/S→Tools→Commit/Cancel
                             (WP-03, headless)
+  test_all_tools.py     - All-Tools-Playground: Bindings-Priorität, Achsen-
+                            Constraints, Topology-Regression (headless)
+
+## Performance Research
+
+Der Unterbereich [`perf/`](perf/README.md) enthält die reproduzierbare
+Perf-Instrumentation (Monkey-Patching, keine Änderung an Viewport-/Core-Dateien)
+und den aktuellen Messbericht:
+[`perf/PERF_BASELINE_REPORT.md`](perf/PERF_BASELINE_REPORT.md).
 
 ```

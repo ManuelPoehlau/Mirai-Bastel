@@ -33,6 +33,92 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
 - **AD-001 (ID Continuity):** Why Undo/Redo uses state snapshots, not semantic ops
 - **Viewport:** Python + OpenGL (not web-based)
 
+## Viewport V1 Integration — Living Mesh Research (current)
+
+Das Experiment hat **keinen eigenen Viewport** und soll auch keinen bekommen.
+Stattdessen nutzt es den vorhandenen Viewport V1 (All-Tools-Playground) aus
+[`experiments/mirai_bastel_viewport_V1/`](../mirai_bastel_viewport_V1/README.md)
+als gemeinsame Darstellungsschicht:
+
+```text
+Viewport V1 (All-Tools-Playground)
+        ↓
+Rigging Experiment Scene  (OBJ Head Basemesh → Mesh)
+        ↓
+Living Mesh / RigController  (später)
+```
+
+Der Viewport sieht dabei **nur eine normale `Scene`/`Mesh`** — er weiß nicht,
+dass es ein Rigging-Experiment ist. Kein Viewport-Fork, keine Änderung an
+Viewport- oder Core-Dateien.
+
+### Start
+
+```bash
+cd experiments/rigging-skinning-morphing
+python run_viewport.py
+```
+
+Öffnet den All-Tools-Playground mit dem echten Head-Basemesh
+(`meshes/head_basemesh.obj`) statt der Würfel-Testszene, inklusive
+Start-Report (Vertices/Edges/Faces/Face-Typen/Bounds) auf der Konsole und
+Window-Titel „Mirai-Bastel — Living Mesh Research". Alle vorhandenen
+Werkzeuge laufen unverändert weiter: Selection (V/E/F), Topology (S/K/C/L/R),
+Transform (M, Shift+R, Shift+S, X/Y/Z), Undo/Redo, Display-Modi (O/W).
+
+### Dateien dieser Integration
+
+```text
+loaders/obj_loader.py        - OBJ-Parser (v/f, 1-basiert→0-basiert, v/vt/vn-
+                               tolerant, KEINE Triangulation, core-/pyglet-frei)
+loaders/__init__.py          - Paket-Exporte
+viewport_adapter.py          - OBJ → Scene (mirai_bastel_core), Bounds/Face-
+                               Stats, Kamera-Framing, Debug-Report (pyglet-frei,
+                               headless testbar)
+run_viewport.py              - Launcher + minimale Fenster-Unterklasse
+                               (Scene-Tausch über den bestehenden
+                               TopologyWindow-scene-Parameter, Caption-Titel,
+                               Kamera-Framing)
+Tests/test_obj_loader.py     - Loader-Unit-Tests
+Tests/test_viewport_integration.py - Strukturtest OBJ → Mesh → Scene (headless)
+Tests/conftest.py            - pytest-Kontext (Pfad-Bootstrap + Workaround für
+                               pytest 9.x mit dem hyphen-behafteten
+                               Experiment-Ordnernamen, siehe Datei-Docstring)
+```
+
+### Architekturentscheidungen
+
+- **Szene baut auf `mirai_bastel_core`** (dem Core des Viewport-Experiments),
+  nicht auf `src.core`: Der Viewport V1 ist an `mirai_bastel_core` gebunden;
+  nur so nutzen Szene, Selection, History und Tools garantiert dieselben
+  Klassen. Die übrigen Rigging-Module (bone/deformation/rig_controller auf
+  `src.core`) bleiben unberührt; ein Angleich ist eine spätere, bewusste
+  Entscheidung.
+- **Fenster-Adapter über bestehenden Hook:** `TopologyWindow` besitzt bereits
+  einen `scene`-Parameter; die Unterklasse in `run_viewport.py` ruft
+  `TopologyWindow.__init__(scene=...)` explizit und anschließend
+  `_init_all_tools()` auf — exakt der Initialisierungsweg von
+  `AllToolsWindow`, nur mit eigener Szene. Falls sich der Playground-Init
+  ändert, muss nur dieser Adapter nachgezogen werden.
+- **Kamera-Framing statt Mesh-Zentrierung:** Der Head ist nicht um den
+  Ursprung zentriert (Bounds X −2.605…2.605, Y 0…4.778, Z −1.648…1.648).
+  Der Adapter richtet nur die Kamera auf die Mesh-Bounds aus; die Asset-
+  Koordinaten bleiben unangetastet (wichtig für spätere Skin-Weights/Morphs).
+
+### Bekannte Grenzen (bewusst dokumentiert, nicht gefixt)
+
+- Der Viewport baut Geometrie bei jedem Hover-/Drag-Event neu auf
+  (`_rebuild_geometry`, O(V×F) Normalen). Bei 326 Vertices merkbar träger als
+  die Testwürfel-Szene, aber interaktiv nutzbar. Bei größeren Meshes ist das
+  ein Viewport-Thema, kein Rigging-Thema.
+- Picking (Vertex/Edge/Face) funktioniert mit der Head-Topologie; eine
+  systematische Prüfung aller Tools an der Quad-Topologie (z. B. Edge Loop/
+  Ring über nicht-reguläre Bereiche) ist bewusst noch offen.
+- `Tests/test_topology_operations.py` (bestehende Datei) nutzt
+  `@pytest.fixture(skipif=...)` — eine nie gültige pytest-API, die unter
+  pytest 9.1 die Sammlung dieser einen Datei verhindert. Unabhängig von dieser
+  Integration; kein Bestandteil dieses Workstands.
+
 ## Independence & Parallel Work
 
 This experiment **runs independently** from WP 02 (Cline's work).
