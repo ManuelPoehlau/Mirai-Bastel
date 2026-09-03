@@ -92,6 +92,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("c"), cmd.CONNECT, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("l"), cmd.EDGE_LOOP, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("r"), cmd.EDGE_RING, context=TOPOLOGY_CONTEXT)
+    # Alt+E: Single-Face-Extrude (Experiment, Topology-Lab)
+    bs.set_default(_key("e", "alt"), cmd.EXTRUDE, context=TOPOLOGY_CONTEXT)
 
     return bs
 

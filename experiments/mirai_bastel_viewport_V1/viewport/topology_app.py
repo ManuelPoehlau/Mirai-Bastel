@@ -27,6 +27,7 @@ from .topology_tools import (
     select_edge_loop,
     select_edge_ring,
 )
+from .extrude_tool import ExtrudeTool
 
 
 class TopologyWindow(ModelerWindow):
@@ -207,10 +208,67 @@ class TopologyWindow(ModelerWindow):
                 self._set_topology_caption(f"Edge Ring: {len(ring_edges)} Edges{closed_text}")
                 return True
 
+            if command == cmd.EXTRUDE:
+                return self._begin_extrude(command)
+
         except TopologyToolError as exc:
             self._set_topology_caption(f"FEHLER: {exc}")
             return True
         return False
+
+    def _begin_extrude(self, command) -> bool:
+        """Startet das interaktive Single-Face-Extrude.
+
+        Alt+E aktiviert das ExtrudeTool. Der nächste LMB-Klick auf eine
+        Face beginnt die Interaktion (Pick → begin → Drag → Commit).
+        """
+        if self.selection_mode != SelectionMode.FACE:
+            raise TopologyToolError("Extrude: Face-Modus verwenden (F).")
+
+        if len(self.scene.selection.faces) != 1:
+            raise TopologyToolError("Extrude: genau 1 Face auswählen.")
+
+        # ExtrudeTool aktivieren (wie MoveTool über M)
+        if not isinstance(self._tool_manager.active_tool, ExtrudeTool):
+            self._end_modeling_tool()
+            self._tool_manager.activate(ExtrudeTool(self.scene, self.camera))
+            self._tweak_tool = True
+        self._set_topology_caption("Extrude: LMB auf Face zum Starten")
+        return True
+
+    # -- Extrude: Maus-Interaktion -------------------------------------------
+
+    def on_mouse_press(self, x, y, button, modifiers):
+        # ExtrudeTool aktiv und nicht interaktiv: LMB auf Face startet Extrude
+        tool = self._tool_manager.active_tool
+        if isinstance(tool, ExtrudeTool) and not self._tool_manager.is_interacting:
+            from pyglet.window import mouse as _mouse
+            if button == _mouse.LEFT:
+                picked = self._pick(x, y)
+                if picked is not None and self.selection_mode == SelectionMode.FACE:
+                    self._tool_manager.begin(face_id=picked)
+                    self._drag_mode = "tool"
+                    self._rebuild_geometry()
+                    return
+            # LMB auf leeres Face oder falscher Modus: ignorieren
+            return
+        super().on_mouse_press(x, y, button, modifiers)
+
+    def on_mouse_release(self, x, y, button, modifiers):
+        if self._drag_mode == "tool" and self._tool_manager.is_interacting:
+            tool = self._tool_manager.active_tool
+            new_face_id = self._tool_manager.commit()
+            # Nach Commit: neue Result-Face auswählen
+            if isinstance(tool, ExtrudeTool) and new_face_id is not None:
+                self.scene.selection.clear()
+                self.selection_mode = SelectionMode.FACE
+                self.scene.selection.mode = SelectionMode.FACE
+                self.scene.selection.set({new_face_id})
+                self._hovered_id = new_face_id
+                self._set_topology_caption(f"Extrude → Face {new_face_id}")
+            self._finish_drag()
+        else:
+            super().on_mouse_release(x, y, button, modifiers)
 
 
 def main() -> None:
