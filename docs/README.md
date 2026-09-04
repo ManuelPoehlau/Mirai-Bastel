@@ -32,6 +32,7 @@ When documents overlap, the canonical document wins. Other documents should link
 | [WP-04_OPEN_QUESTIONS.md](WP-04_OPEN_QUESTIONS.md) | Offene Entscheidungen Q1–Q4 |
 | [WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md](WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md) | Repository-Analyse, Produktions-Boundaries, Extraktionspfade |
 | [WP-04_AGENT_VERIFICATION_REPORT.md](WP-04_AGENT_VERIFICATION_REPORT.md) | Agent-Verifikation, Test-Inventar, Teststrategie, Aufgabenteilung Agent/Claude/Manuel |
+| [WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md](WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md) | Gate-für-Gate-Konsistenz-Audit (12→2) gegen Repo-Stand, Amendment/ADRs und Viewport-V0.2-Architektur |
 
 ## For AI collaborators
 
