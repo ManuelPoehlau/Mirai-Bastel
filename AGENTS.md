@@ -134,7 +134,21 @@ Before assigning or starting a large implementation task, establish:
 
 Prefer small, bounded implementation tasks over vague requests.
 
-## 9. Project principle
+## 9. Development reality check
+
+Before implementing any non-trivial task, verify the plan against the actual repository state.
+
+- Planning ≠ implementation ≠ verification ≠ integration.
+- Never treat “Gate complete”, “completion report”, “approved”, or “ready” as proof that code exists.
+- Repository reality has priority: actual code/tests > current decisions/ADRs > plans > historical docs.
+- Later architecture decisions, experiments, or UX changes may supersede earlier plans.
+- If the intended architecture is unclear or a newer result contradicts the plan, stop and report the discrepancy before coding.
+
+Before coding, briefly verify: current branch/commit, current architecture/ADRs, relevant experiments, possible superseding decisions, and acceptance criteria.
+
+After coding, report only what actually exists, was tested, and passed.
+
+## 10. Project principle
 
 > **Capture first. Discuss second. Decide third. Implement fourth.**
 
