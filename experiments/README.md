@@ -29,6 +29,14 @@ Der Viewport-V1-Code ist **kein Produktions-Viewport**. Neue Selection- und Topo
 
 Lokaler Einstieg: [`mirai_bastel_viewport_V1/README.md`](mirai_bastel_viewport_V1/README.md)
 
+### `mirai_bastel_viewport_V02/`
+
+Abgeschlossenes technisches Architektur-Experiment (Proof, kein Production Viewport): prüft, ob Camera-, Selection-, Material- und Geometry-Änderungen gezielt ohne unnötige Mesh-/GPU-Rebuilds verarbeitet werden können, während Topology-Änderungen strukturelle Rebuilds erlauben. Ergebnis: Hypothese bestätigt (PROVEN); Ergebnisse fließen als Eingabe in die ausstehende Viewport-V0.2-Architekturspezifikation und danach in Gate 5 — Viewport Production.
+
+Lokaler Einstieg: [`mirai_bastel_viewport_V02/README.md`](mirai_bastel_viewport_V02/README.md)
+
+Research-Baseline: [`../docs/viewport/VIEWPORT_V02_RESEARCH.md`](../docs/viewport/VIEWPORT_V02_RESEARCH.md)
+
 ### `topology/`
 
 Zentrale Dokumentations- und Planstelle für die Topology-Forschung. Der experimentelle Topology-Code selbst liegt derzeit im Viewport-Experiment unter `mirai_bastel_viewport_V1/viewport/`.
