@@ -17,6 +17,7 @@ from .operation import Operation, OperationContext
 from .scene import Scene
 from .serialization import scene_to_dict, scene_from_dict, scene_to_json, scene_from_json
 from .operations.move import MoveOperation, MoveVerticesCommand
+from .operations.transform import RotateOperation, ScaleOperation
 
 __all__ = [
     "VertexId",
@@ -36,4 +37,6 @@ __all__ = [
     "scene_from_json",
     "MoveOperation",
     "MoveVerticesCommand",
+    "RotateOperation",
+    "ScaleOperation",
 ]
