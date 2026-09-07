@@ -14,6 +14,19 @@ Integration-Lücke (im README dokumentiert):
   Die V0.2-Demonstrator-Kamera ruft `camera.project_to_screen(...)` auf,
   das die V0.2-Kamera selbst gar nicht anbietet. Das Lab behebt das additiv
   hier (Subklasse), ohne die V0.2-Kamera zu verändern.
+
+Rendering-Fix (im README dokumentiert):
+  Die V0.2-View-Matrix schreibt +forward in die dritte Matrix-Zeile
+  (Links-Hand-Konvention: Front-Punkte auf positivem Camera-Z), die
+  V0.2-Projektion ist aber Standard-GL (clip.w = -view.z). Front-Geometrie
+  landet damit bei clip.w < 0 und wird vollständig geclippt -> schwarzer
+  Viewport (Ursprung bei yaw=45°/pitch=25°/dist=8: view.z=+8, clip.w=-8).
+  Diese Klasse überschreibt `build_view_matrix` mit der gluLookAt-Konvention
+  (-forward in Zeile 3). Das Picking (`project_to_screen`/`screen_to_ray`)
+  definiert cam_z = dot(rel, forward) > 0 als "vor der Kamera" und bleibt
+  unverändert — mit der korrigierten View-Matrix gilt exakt
+  NDC.xy = cam.xy / (cam_z * half_w bzw. half_h), d. h. Render-Pipeline und
+  Picking verwenden dieselbe Kamera-Konvention. V0.2 bleibt unberührt.
 """
 
 from __future__ import annotations
@@ -40,6 +53,27 @@ class LabOrbitCamera(OrbitCamera):
         right = _normalize(_cross(forward, world_up))
         up = _normalize(_cross(right, forward))
         return forward, right, up
+
+    # -- View-Matrix (GL-korrigiert, siehe Modul-Doc) ------------------------
+    def build_view_matrix(self) -> list[float]:
+        """View-Matrix in Standard-GL/gluLookAt-Konvention (Zeile 3 = -forward).
+
+        Override der V0.2-Matrix (+forward), deren Front-Geometrie bei der
+        GL-Projektion (clip.w = -view.z) negatives clip.w erhält und daher
+        komplett geclippt wird (schwarzer Viewport). Spalten-Hauptreihenfolge,
+        identisches Uniform-Layout wie die V0.2-Matrix.
+        """
+        eye = self.eye()
+        forward, right, up = self.basis()
+        tx = -_dot(eye, right)
+        ty = -_dot(eye, up)
+        tz = _dot(eye, forward)
+        return [
+            right[0], up[0], -forward[0], 0.0,
+            right[1], up[1], -forward[1], 0.0,
+            right[2], up[2], -forward[2], 0.0,
+            tx, ty, tz, 1.0,
+        ]
 
     # -- Projektion ----------------------------------------------------------
     def project_to_screen(

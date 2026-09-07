@@ -84,7 +84,7 @@ experiments/mirai_bastel_integration_lab/
 ├── report.py               # headless Performance-/Status-Probe (TraceStore)
 ├── _smoke_window.py        # Kurzzeit-Smoke des Fensters (schließt nach 1,5 s)
 ├── _paths.py               # sys.path-Bootstrap (Lab/Root/Rigging-Ordner)
-├── lab_camera.py           # V0.2 OrbitCamera + Projektion/Ray/Deltas
+├── lab_camera.py           # V0.2 OrbitCamera + Projektion/Ray/Deltas + GL-View-Matrix-Fix
 ├── scene/
 │   ├── scene.py            # LabScene + LabObject (unabhängige Core-Scenes)
 │   └── scene_objects.py    # Cube + reales Head-Basemesh, build_lab_scene()
@@ -114,6 +114,12 @@ experiments/mirai_bastel_integration_lab/
       Live-FPS- und Zähler-Anzeige im Fenster
 - [x] 33 headless Boundary-Tests (OBJ→Core, Core→Render, Geometry-Update,
       Scene, Triangulierung, Kamera/Picking, Imports)
+- [x] **View-Matrix-Fix (echter Integrationsbefund):** Die V0.2-View-Matrix
+      (+forward in Zeile 3) clippte bei der GL-Projektion sämtliche
+      Front-Geometrie (schwarzer Viewport). Das Lab überschreibt
+      `build_view_matrix` in `lab_camera.py` mit der gluLookAt-Konvention;
+      V0.2 bleibt unverändert. Regressions-Tests in
+      `tests/test_camera_picking.py`.
 
 **experimentell / vorbereitet, aber noch nicht interaktiv verdrahtet:**
 
@@ -235,6 +241,20 @@ Testabdeckung der Integrationsgrenzen:
 
 ## 9. Bekannte Grenzen & Entscheidungen
 
+- **V0.2-View-Matrix-Bug (fund, behoben im Lab):** Die V0.2 `build_view_matrix`
+  schreibt +forward in die dritte Zeile (Front-Punkte auf positivem Camera-Z),
+  während die V0.2-Projektion Standard-GL ist (clip.w = -view.z). Folge:
+  clip.w < 0 für alles vor der Kamera → komplettes Clipping → schwarzer
+  Viewport (Ursprung bei yaw=45°/pitch=25°/dist=8: view.z=+8 → clip.w=-8).
+  Der V0.2-Demonstrator offenbarte das nie, weil sein Render-Pfad nie live
+  ausgeübt wurde. Fix: Override in `lab_camera.LabOrbitCamera` (gluLookAt-
+  Konvention), Picking unverändert konsistent (NDC.xy = cam.xy/(cam_z·half)).
+  V0.2 selbst bleibt unberührt — Korrektur dort ist eine eigene Entscheidung.
+- **pyglet 2.1 Windows-Fenster-Details (Lab-lokal behandelt):** ohne explizite
+  `gl.Config` entsteht kein Depth-Puffer (unsichtbare Flächen); Modifier-
+  Konstanten liegen in `pyglet.window.key`, nicht `mouse` (V0.2-Demonstrator
+  nutzt veraltet `_m.MOD_SHIFT`); transiente `on_resize(height=0)` beim
+  Start erfordert einen Aspect-Guard. Alles additiv im Lab gehandhabt.
 - **V0.2-Demonstrator-Picking-Lücke:** Die V0.2 `OrbitCamera` bietet KEIN
   `project_to_screen`/`screen_to_ray`, obwohl der V0.2-Demonstrator sie
   aufruft (im V0.2-Experiment nie live ausgeübt). Das Lab ergänzt sie

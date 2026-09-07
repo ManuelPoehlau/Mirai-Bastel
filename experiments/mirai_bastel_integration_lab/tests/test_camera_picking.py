@@ -78,3 +78,62 @@ def test_orbit_and_zoom_still_v02_compatible():
     view = camera.build_view_matrix()
     proj = camera.build_projection_matrix(1.6)
     assert len(view) == 16 and len(proj) == 16
+
+
+# -- View-Matrix-Konvention (Regression zum "schwarzen Viewport") -----------
+
+def _apply_view(matrix: list[float], point: tuple[float, float, float]):
+    """Wendet eine column-major 4x4 (flat 16, GL-Upload-Layout) an."""
+    x, y, z = point
+    return (
+        matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+        matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+        matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14],
+    )
+
+
+def test_view_matrix_front_point_on_negative_z():
+    """Front-Punkte müssen auf NEGATIVEM Camera-Z landen (GL-Konvention).
+
+    Diagnose: Die V0.2-Matrix schrieb +forward in Zeile 3; mit der
+    GL-Projektion (clip.w = -view.z) erhielt Front-Geometrie clip.w < 0
+    und wurde komplett geclippt (schwarzer Viewport).
+    """
+    _, _, camera = _setup()
+    vx, vy, vz = _apply_view(camera.build_view_matrix(), camera.target)
+    assert vz < 0.0                      # vor der Kamera => negatives view.z
+    assert -vz > 0.0                     # clip.w = -view.z > 0 => nicht geclippt
+
+
+def test_origin_within_opengl_frustum_default_camera():
+    """Ursprung bei Default-Kamera (yaw=45°, pitch=25°, dist=8) im Frustum."""
+    camera = LabOrbitCamera()            # V0.2-Defaults
+    proj = camera.build_projection_matrix(1.6)
+    vx, vy, vz = _apply_view(camera.build_view_matrix(), (0.0, 0.0, 0.0))
+    clip_w = -vz
+    assert clip_w > 0.0
+    # clip.z = Zeile 2 der Projektion (Ursprung: vx = vy = 0)
+    ndc_z = (proj[10] * vz + proj[14]) / clip_w
+    assert -1.0 <= ndc_z <= 1.0
+
+
+def test_render_matrix_chain_matches_picking_projection():
+    """Render-Kette (view→proj→NDC→Pixel) == project_to_screen (Picking).
+
+    Stellt sicher, dass Rendering und Picking dieselbe Kamera-Konvention
+    verwenden — Kernanforderung nach dem View-Matrix-Fix.
+    """
+    _, _, camera = _setup()
+    w, h = 800, 600
+    point = (0.3, -0.2, 0.1)
+    view = camera.build_view_matrix()
+    proj = camera.build_projection_matrix(w / h)
+    vx, vy, vz = _apply_view(view, point)
+    clip_w = -vz
+    clip_x = proj[0] * vx                # Projektions-Zeile 0
+    clip_y = proj[5] * vy                # Projektions-Zeile 1
+    sx = (clip_x / clip_w + 1.0) * 0.5 * w
+    sy = (clip_y / clip_w + 1.0) * 0.5 * h
+    px, py = camera.project_to_screen(point, w, h)
+    assert math.isclose(sx, px, abs_tol=1e-6)
+    assert math.isclose(sy, py, abs_tol=1e-6)
