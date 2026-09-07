@@ -137,6 +137,16 @@ class IntegrationLabWindow(pyglet.window.Window):
         self._fps_ema = 0.0
         self._fps = 0.0
 
+        # pyglet 2.x registriert Methoden-Overrides NICHT automatisch im
+        # Event-Stack. Ohne push_handlers() bleibt der Stack leer und die
+        # on_mouse_*/on_key_press-Handler werden nie dispatched.
+        self.push_handlers(self)
+
+        # _allow_dispatch_event=False bedeutet: Events landen nur in
+        # _event_queue, werden aber niemals dispatched. Ohne diese
+        # Einstellung reagiert das Fenster nicht auf Maus/Tastatur.
+        self._allow_dispatch_event = True
+
         self._build_labels()
 
     # -- Aufbau --------------------------------------------------------------
@@ -368,6 +378,10 @@ class IntegrationLabWindow(pyglet.window.Window):
         # Mesh verdeckt.) Der Depth-Test wird im naechsten Frame vom
         # 3D-Pass wieder aktiviert.
         gl.glDisable(gl.GL_DEPTH_TEST)
+        # Custom Shader deaktivieren, bevor pyglet's eigene
+        # Shapes/Text-Rendering läuft. Sonst bleibt der Lab-Shader aktiv
+        # und pyglet.text.Label produziert unsichtbare Fragmente.
+        self.program.stop()
         self._update_hud_panel()
         self._hud_panel.draw()
         self._draw_status()
