@@ -23,7 +23,7 @@ for _p in (str(_THIS_DIR), str(_THIS_DIR.parent.parent)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from integration.lab_viewport import main  # noqa: E402
+from integration.lab_viewport_probe import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main(selftest="--selftest" in sys.argv))
