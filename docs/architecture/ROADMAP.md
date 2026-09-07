@@ -408,9 +408,29 @@ A reviewed architectural model and documented constraints. Do not build a large 
 
 ---
 
-# 7. Later Foundations
+# 7. Production Foundation & Later Work
 
-## WP-04 — Deformation Foundation
+## WP-04 — Production Foundation (REVISED)
+
+**Scope:** Application orchestrator, Interaction framework, Viewport v0.2 rendering architecture.
+
+**Status:** Actively under development (2026-09-04). Architecture design complete; implementation gates 3–12 queued.
+
+**Key deliverables:**
+- Application lifecycle + command dispatch
+- Tool framework + interaction patterns
+- Viewport v0.2 (incremental updates, persistent GPU resources, overlay selection)
+- Input bindings + configurable hotkeys
+
+**Scope change from original plan:** WP-04 rescoped from "Deformation Foundation" to "Production Foundation" (application-level infrastructure) after Gate 2 discovery. Deformation/rigging moved to later WP (WP-05+).
+
+**Reference:** `docs/WP-04_GATE_PLANNING.md` (v2.0, post-audit), `docs/viewport/VIEWPORT_V02_ARCHITECTURE.md`
+
+---
+
+## Later: WP-05+ — Deformation & Rigging
+
+Deformation Stack foundation will follow WP-04 production infrastructure.
 
 Conceptual target:
 
@@ -424,13 +444,14 @@ Deformation Stack
 Evaluated Geometry
       |
       v
-Viewport
+Viewport (WP-04)
 ```
 
 ### Dependencies
 
+- Production Application (WP-04) — **Hard**
+- Transform operations in Core — **Hard**
 - Object/Geometry ownership — **Hard**
-- Transform — **Hard**
 - Provenance/remapping decisions — **Strategic**
 
 Production implementation should follow the relevant Architecture Gates rather than precede them.
@@ -736,8 +757,14 @@ This policy is intentionally based on the Connect Edges experience: the experime
 
 ## Next production-oriented work
 
-1. **WP-01 — Production Viewport Foundation** (WP-01A im Experiment validiert: Input-Mapping, Display-Modi, Pan; nächster Schritt ist die Produktionsableitung)
-3. **WP-03 — Transform Foundation**
+1. **WP-04 — Production Foundation** (2026-09-04: GATES 3–12 ACTIVE)
+   - Application orchestrator, Interaction framework, Viewport v0.2
+   - 12 gates planned; currently 3–4 queued for implementation
+   - Reference: `docs/WP-04_GATE_PLANNING.md` v2.0
+   
+2. **WP-01 — Production Viewport Foundation** (WP-01A validated in experiment; production structure TBD after WP-04)
+
+3. **WP-03 — Transform Foundation** (dependent on WP-04 Application)
 
 Modeling / Topology Expansion remains a parallel track.
 
@@ -746,11 +773,11 @@ Modeling / Topology Expansion remains a parallel track.
 - **ARCH-01 — Object / Component Model**
 - **ARCH-02 — Topology Identity / Provenance / Remapping**
 
-## Later
+## Later (after WP-04 complete)
 
-- **WP-04 — Deformation Foundation**
+- **WP-05+ — Deformation & Rigging Foundation** (rescheduled from WP-04)
 - Morph Targets
-- Rigging Foundation
+- Advanced rigging / skinning
 - Animation Foundation
 - Materials / Renderer production integration
 

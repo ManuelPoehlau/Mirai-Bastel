@@ -1,38 +1,71 @@
-# WP-04 — Gate Planning & Acceptance Criteria
+# WP-04 — Gate Planning & Acceptance Criteria (REVISED)
 
-**Document Version:** 1.0  
-**Status:** Ready for implementation  
-**Date:** 2026-09-01
+**Document Version:** 2.0 (Updated Post-Consistency-Audit)  
+**Status:** Ready for implementation (with amendments)  
+**Date:** 2026-09-01 (Revised 2026-09-04)  
+**Audit Status:** WP-04 Pre-Implementation Consistency Audit complete (see `docs/WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md`)
 
----
-
-## Quick Reference: Gate Overview
-
-| Gate | Phase | Duration | Key Deliverable | Status |
-|------|-------|----------|-----------------|--------|
-| 2 | Discovery ✓ | Completed | This report + approval | ✓ DONE |
-| 3 | App Foundation | 3–4 sessions | src/mirai/ structure + Application class | → NEXT |
-| 4 | Interaction | 2 sessions | Tools, routing, integration | → AFTER 3 |
-| 5 | Selection | 2 sessions | Selection modes, visualization | → AFTER 4 |
-| 6 | Input Config | 1 session | Bindings, keymap.json | → AFTER 5 |
-| 7 | Camera | 1 session | Orbit/pan/zoom stable | → AFTER 6 |
-| 8 | Validation | 1 session | 150+ tests, coverage ≥85% | → AFTER 7 |
-| 9 | AI Review | 1 session | Independent architecture check | → AFTER 8 |
-| 10 | E2E Test | 1 session | Manual human workflow validation | → AFTER 9 |
-| 11 | Architecture Review | 1 session | Doc update, final green light | → AFTER 10 |
-| 12 | Merge | 1 session | Commit to main, plan WP-05 | → FINAL |
-
-**Total estimated effort:** 13–15 work sessions (2–3 weeks of daily focused work)
+**⚠️ IMPORTANT:** This plan document describes the original gate sequence. Later decisions (Gate-4-Amendment, ADR-G4-001…007, V0.2-Architecture Specification, ADR-001) have superseded or amended several gates. See **"Revisions & Amendments"** section below before implementation.
 
 ---
 
-## Gate 3: Application & Viewport Foundation
+## Quick Reference: Gate Overview (REVISED)
+
+| Gate | Phase | Duration | Key Deliverable | Status | Notes |
+|------|-------|----------|-----------------|--------|-------|
+| 2 | Discovery ✓ | Completed | Q1–Q4 decisions (Option C) | ✓ DONE | Analysis basis; V0.2 supersedes rendering recommendation |
+| 3 | App Foundation | 2 sessions* | src/mirai/ (no Window/Rendering) | **READY** | Amended: Task 3.8–3.10 cancelled; Task 3.13 added |
+| 4 | Interaction | 2 sessions | Tools, routing, ToolManager | **READY** | Superseded by Amendment + ADR-G4-001…007 |
+| 5 | Viewport Production | **2 sessions** | **src/viewport/** (V0.2 RenderMesh) | ✓ **DONE** | Completed 2026-09-07, see `docs/WP-04_GATE_5_COMPLETION.md`. Originally separated Selection+Display (orig. G5) from Rendering |
+| 5b | ~~Selection & Display~~ | — | — | **DROPPED** | Not scheduled as its own production gate — depends on the still-open Interaction Lab / UX decision (Gate 4 wiring is intentionally incomplete, see Gate 4 audit + `WP-04_GATE_5_COMPLETION.md` §0). `Viewport.on_selection_changed()` etc. already exist and wait for that decision. |
+| 6 | Input Config | 1 session | keymap.json, JSON validation | CURRENT | No changes |
+| 7 | Camera | 1 session | Orbit/Pan/Zoom (V0.2 constraints) | **UPDATED** | Must use V0.2 Dirty-State (camera ≠ geometry invalidation) |
+| 8 | Validation | 1 session | Tests + V0.2 Benchmarks | **UPDATED** | Counter-based verification (from V0.2 Spec §13) |
+| 9 | AI Review | 1 session | Architecture validation | **UPDATED** | Extended scope: Amendment, ADRs, V0.2, ADR-001 |
+| 10 | E2E Test | 1 session | Workflow validation | **BLOCKED** | `src/viewport/` module now exists (Gate 5 done), but window/entry-point + Application-integration still pending (see Gate 5 Completion §9) |
+| 11 | Architecture Review | 1 session | Final approval | **UPDATED** | Verification vs. repo + amendment review |
+| 12 | Merge | 1 session | Commit main, plan WP-05 | **UPDATED** | Scope: repo-verified artifacts only |
+
+**Total estimated effort:** 14–16 work sessions (2–3 weeks of daily focused work)
+
+---
+
+## Revisions & Amendments (CRITICAL)
+
+### Structural Decision (Audit Point 10)
+- **Gate 3** creates `src/mirai/` (Application, Interaction, Tools)
+- **NEW: Gate 5** creates `src/viewport/` (V0.2 Rendering Architecture)
+  - Replaces original Gate 3 Tasks 3.8–3.10 (Window/Rendering)
+  - Standalone implementation of `VIEWPORT_V02_ARCHITECTURE.md`
+- **Gate 5b** (Selection & Display) runs **after Gate 5**, consuming `src/viewport/` RenderMesh
+
+### Decision Documents (supersede earlier planning)
+1. **ADR-G4-001…007** — Interaction Architecture (Pattern A/B, Context, Selection scope, History)
+2. **Gate-4-Amendment** — Flexible UX patterns (no lock-in to one interaction model)
+3. **ADR-001** — Core Freeze revised; Transform Ops promotion authorized
+4. **VIEWPORT_V02_ARCHITECTURE.md** — Rendering foundation (RenderMesh, Dirty-State, CPU Picker, Overlay)
+
+### Task Cancellations
+- **Task 3.8** (Extract V1 render.py) — **CANCELLED** (V0.2 RenderMesh replaces it)
+- **Task 3.9** (Pyglet Window Adapter) — **CANCELLED** (belongs to Gate 5, not Gate 3)
+- **Task 3.10** (Entry Point) — **CANCELLED** (deferred to Gate 5)
+
+### Task Additions
+- **Task 3.13** (Transform Ops Promotion) — **APPROVED** (per ADR-001, Option C)
+
+---
+
+## Gate 3: Application Foundation (Interaction & Core)
 
 ### Objective
-Extract production-ready components from experiments, establish modular structure under `src/mirai/`, create Application lifecycle class, build minimal production entry point.
+Extract production-ready interaction components from experiments, establish modular structure under `src/mirai/`, create Application lifecycle class. **Window and Rendering deferred to Gate 5.**
 
 ### Duration
-3–4 work sessions (focus: clear separation of concerns, window-free tests)
+**2 work sessions** (reduced: Window/Rendering out → Task 3.8–3.10 cancelled)
+
+### Key Change from Original Plan
+- **OUT:** Window adapter (3.9), Entry point (3.10), V1 rendering extraction (3.8)
+- **IN:** Transform Ops promotion to Core (3.13, approved via ADR-001)
 
 ### Pre-Gate Checklist
 - [ ] Approval of this discovery report (Gate 2 review complete)
