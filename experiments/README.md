@@ -52,3 +52,15 @@ normale `Scene`/`Mesh` im **vorhandenen Viewport V1** dar (All-Tools-Playground,
 `python run_viewport.py`) — ohne Viewport-Fork und ohne Core-Änderung.
 
 Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.md`](rigging-skinning-morphing/rigging-skinning-morphing-README.md)
+
+### `mirai_bastel_integration_lab/`
+
+Integration Harness / Test Studio (kein Production-Viewport, kein Modeler):
+verbindet erstmals `src/core` (Domain-Wahrheit), den OBJ Loader
+(rigging-skinning-morphing) und den Viewport V0.2 (Render-/Performance-
+Schicht) in einer gemeinsamen praktischen Testszene (Cube + reales
+Head-Basemesh). Kern: dünne Adapter an den Integrationsgrenzen
+(OBJ → Core → Render), kategoriebewusste Updates (camera/selection/geometry)
+und ein headless Performance-/Status-Report.
+
+Lokaler Einstieg: [`mirai_bastel_integration_lab/README.md`](mirai_bastel_integration_lab/README.md)
