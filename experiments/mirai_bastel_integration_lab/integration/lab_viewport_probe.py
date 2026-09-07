@@ -1,7 +1,13 @@
 """Runtime event probe for the Integration Lab.
 
-This is a temporary diagnostic wrapper around the existing lab viewport.
-It does not modify renderer, camera math, picking, or Core logic.
+TEMPORARY DIAGNOSTIC ARTIFACT — 2026-07-09.
+
+This wrapper was used to prove the runtime event chain:
+  run.py -> main() -> IntegrationLabWindow -> pyglet.app.run() -> on_draw/events.
+
+Diagnosis result: the event chain works correctly. The probe is no longer needed
+and is kept here only as a record of the diagnostic approach. Do NOT import this
+module from run.py — use integration.lab_viewport directly.
 """
 from __future__ import annotations
 
@@ -35,6 +41,7 @@ class ProbeIntegrationLabWindow(_lab.IntegrationLabWindow):
         self._hud_panel.opacity = 0
         self._status.color = (0, 0, 0, 0)
         self._hint.color = (0, 0, 0, 0)
+        self._draw_counter = 0
 
         self._probe_panel = pyglet.shapes.Rectangle(
             x=4, y=4, width=700, height=286,
