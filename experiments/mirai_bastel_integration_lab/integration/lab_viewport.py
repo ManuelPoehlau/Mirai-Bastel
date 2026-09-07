@@ -68,6 +68,18 @@ void main() {
 }
 """
 
+# Versionstag: erscheint im Fenstertitel, im HUD und im Konsolen-Banner.
+# Damit ist jederzeit nachpruefbar, WELCHER Code-Stand ausgefuehrt wird
+# (Befund 2026-07-09: Aenderungen schienen am Endgeraet nicht anzukommen).
+LAB_VERSION = "v3.1 (2026-07-09)"
+
+# HUD-Konstanten auf Modulebene (headless testbar, siehe tests/test_hud.py).
+_STATUS_TITLE = "INTEGRATION LAB — LIVE-INSTRUMENTIERUNG"
+_HINT_TEXT = (
+    "LMB ziehen=Orbit  Shift+LMB/MMB=Pan  Rad=Zoom  Klick=Vertex\n"
+    "M=Move(+Y)  1/2=Objekt+Frame  R=Frame  S=Report  Esc=Ende"
+)
+
 
 def _flatten(values, width: int) -> list[float]:
     out: list[float] = []
@@ -99,7 +111,7 @@ class IntegrationLabWindow(pyglet.window.Window):
         config = gl.Config(depth_size=24, stencil_size=8)
         super().__init__(
             1280, 800,
-            caption="Mirai-Bastel — Integration Lab / Test Studio",
+            caption=f"Mirai-Bastel — Integration Lab / Test Studio [{LAB_VERSION}]",
             resizable=True, vsync=True,
             config=config,
         )
@@ -170,17 +182,31 @@ class IntegrationLabWindow(pyglet.window.Window):
         )
 
     def _build_labels(self) -> None:
+        # Dunkles Panel hinter dem Status: ohne Kontrastfläche war der Text
+        # über hellem Mesh kaum lesbar ("kaum lesbare Schrift"-Befund).
+        self._hud_panel = pyglet.shapes.Rectangle(
+            x=4, y=self.height - 20, width=652, height=12,
+            color=(10, 14, 22), batch=None,
+        )
+        self._hud_panel.opacity = 190
         self._status = pyglet.text.Label(
             "", x=10, y=self.height - 16, anchor_y="top",
-            font_name="Consolas", font_size=12, color=(220, 230, 240, 255),
-            multiline=True, width=620,
+            font_name="Consolas", font_size=13, color=(235, 242, 250, 255),
+            multiline=True, width=640,
         )
         self._hint = pyglet.text.Label(
-            "LMB ziehen=Orbit  Shift+LMB/MMB=Pan  Rad=Zoom  Klick=Vertex\n"
-            "M=Move(+Y)  1/2=Objekt+Frame  R=Frame  S=Report  Esc=Ende",
-            x=10, y=6, font_name="Consolas", font_size=11,
-            color=(160, 180, 200, 255),
+            _HINT_TEXT,
+            x=10, y=6, font_name="Consolas", font_size=12,
+            color=(200, 214, 230, 255),
         )
+
+    def _update_hud_panel(self) -> None:
+        """Panel-Groesse an den aktuellen Status-Text anpassen."""
+        content_h = getattr(self._status, "content_height", 300) or 300
+        self._hud_panel.x = 4
+        self._hud_panel.y = max(0, self.height - 16 - content_h - 8)
+        self._hud_panel.width = 652
+        self._hud_panel.height = min(content_h + 16, self.height - 24)
 
     def active_view(self) -> _ObjectView:
         return self.objects[self.lab.active_index]
@@ -202,8 +228,6 @@ class IntegrationLabWindow(pyglet.window.Window):
         gl.glViewport(0, 0, max(1, width), max(1, height))
         if height == 0:
             return pyglet.event.EVENT_HANDLED  # pyglet 2.1: transientes Resize während Init
-        self._push_camera()
-        return pyglet.event.EVENT_HANDLED
         self._push_camera()
         return pyglet.event.EVENT_HANDLED
 
@@ -335,7 +359,17 @@ class IntegrationLabWindow(pyglet.window.Window):
                 view.hl_vlist.draw(gl.GL_POINTS)
                 gl.glPointSize(1.0)
                 gl.glDepthMask(gl.GL_TRUE)
-                gl.glDisable(gl.GL_DEPTH_TEST)
+        # HUD immer OHNE Depth-Test zeichnen: Nach dem 3D-Pass ist der
+        # Depth-Test noch aktiv (wird erst im Highlight-Zweig deaktiviert).
+        # Zoomt man nah heran, liegt die Mesh-Depth vor der HUD-Text-Depth
+        # (~0.5) und verdeckt den kompletten Text -> "HUD unsichtbar".
+        # (Laufzeit-Probe 2026-07-09: _draw_status laeuft fehlerfrei und
+        # Text-Pixel landen im Framebuffer, werden aber bei nahem Zoom vom
+        # Mesh verdeckt.) Der Depth-Test wird im naechsten Frame vom
+        # 3D-Pass wieder aktiviert.
+        gl.glDisable(gl.GL_DEPTH_TEST)
+        self._update_hud_panel()
+        self._hud_panel.draw()
         self._draw_status()
         self._hint.draw()
         return pyglet.event.EVENT_HANDLED
@@ -356,7 +390,7 @@ class IntegrationLabWindow(pyglet.window.Window):
             for i, o in enumerate(self.lab.names())
         ]
         lines = [
-            f"INTEGRATION LAB — LIVE-INSTRUMENTIERUNG (aktiv: {view.name})",
+            f"{_STATUS_TITLE} {LAB_VERSION} (aktiv: {view.name})",
             f"FPS ~ {self._fps:5.1f} | Vertices "
             f"{len(view.binding.render_mesh.positions)} | Triangles "
             f"{len(view.binding.render_mesh.triangles)}",
@@ -385,8 +419,65 @@ class IntegrationLabWindow(pyglet.window.Window):
         print("Resources:", view.rm.store.resource_ids())
 
 
-def main() -> None:
+def main(selftest: bool = False) -> int:
+    """Starte das Lab.
+
+    Ohne Argumente: interaktives Fenster bis Esc/Q.
+
+    Mit ``selftest=True`` (run.py ``--selftest``): rendert ~1,2 s, misst
+    Pixel der echten Pipeline (Mesh + HUD-Bereiche), druckt PASS/FAIL und
+    schliesst automatisch — eindeutiger Sichtbarkeits-Nachweis ueber den
+    normalen run.py-Einstieg.
+    """
+    import platform
+
+    # Konsolen-Banner: Wenn diese Zeilen NICHT erscheinen, wird nicht
+    # diese Datei ausgefuehrt (veraltete Run-Config / falscher Einstieg).
+    print(f"[integration-lab {LAB_VERSION}] start")
+    print(f"[integration-lab] modul:  {__file__}")
+    print(
+        f"[integration-lab] python: {platform.python_version()}"
+        f" | pyglet: {pyglet.version}"
+    )
+
     from scene.scene_objects import build_lab_scene
     lab = build_lab_scene()
-    IntegrationLabWindow(lab)
+    window = IntegrationLabWindow(lab)
+
+    if not selftest:
+        pyglet.app.run()
+        return 0
+
+    # -- Selbsttest: Pixel-Messung der echten Pipeline -----------------------
+    w, h = window.width, window.height
+    buf = (gl.GLubyte * (w * h * 3))()
+    result = [1]
+
+    def _region_nonblack(x0: int, x1: int, y0: int, y1: int) -> int:
+        n = 0
+        for y in range(y0, y1):
+            base = y * w
+            for x in range(x0, x1):
+                i = (base + x) * 3
+                if buf[i] or buf[i + 1] or buf[i + 2]:
+                    n += 1
+        return n
+
+    def _measure_and_close(_dt) -> None:
+        gl.glFinish()
+        gl.glReadPixels(0, 0, w, h, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, buf)
+        total = _region_nonblack(0, w, 0, h)
+        hud_px = _region_nonblack(0, min(680, w), h - 240, h)   # Panel oben links
+        hint_px = _region_nonblack(0, min(680, w), 0, 44)       # Hinweistext unten
+        print(f"[selftest] nonblack gesamt  : {total}/{w * h}")
+        print(f"[selftest] HUD oben links   : {hud_px} Panel-/Text-Pixel")
+        print(f"[selftest] Hinweistext unten: {hint_px} Text-Pixel")
+        ok = total > w * h * 0.02 and hud_px > 2000 and hint_px > 200
+        print(f"[selftest] => {'PASS' if ok else 'FAIL'}")
+        result[0] = 0 if ok else 1
+        window.close()
+        pyglet.app.exit()
+
+    pyglet.clock.schedule_once(_measure_and_close, 1.2)
     pyglet.app.run()
+    return result[0]

@@ -137,3 +137,42 @@ def test_render_matrix_chain_matches_picking_projection():
     px, py = camera.project_to_screen(point, w, h)
     assert math.isclose(sx, px, abs_tol=1e-6)
     assert math.isclose(sy, py, abs_tol=1e-6)
+
+
+# -- Kamera-State-Änderungen (Regressionsnähte zur Laufzeit-Probe) -----------
+# Die Laufzeit-Probe (2026-07-09, außerhalb des Repos, wieder entfernt) hat
+# über pyglets Dispatch-Pfad nachgewiesen, dass die Viewport-Handler gerufen
+# werden und genau diese State-Änderungen bewirken. Diese Tests sichern die
+# Mathematik dahinter headless ab.
+
+def test_orbit_changes_yaw_and_pitch():
+    _, _, camera = _setup()
+    yaw0, pitch0 = camera.yaw, camera.pitch
+    camera.orbit(0.3, 0.2)
+    assert math.isclose(camera.yaw - yaw0, 0.3, abs_tol=1e-9)
+    assert math.isclose(camera.pitch - pitch0, 0.2, abs_tol=1e-9)
+
+
+def test_dolly_changes_distance():
+    _, _, camera = _setup()
+    d0 = camera.distance
+    camera.dolly(0.9)
+    assert math.isclose(camera.distance, d0 * 0.9, abs_tol=1e-9)
+
+
+def test_pan_px_moves_target():
+    _, _, camera = _setup()
+    t0 = camera.target
+    camera.pan_px(40, -20, 800, 600)
+    assert camera.target != t0
+
+
+def test_pyglet2_modifier_constants_live_in_key_module():
+    """Naht zur Laufzeit: pyglet 2.x kennt key.MOD_SHIFT, aber KEIN
+    mouse.MOD_SHIFT mehr (alte API — Ursache des ursprünglichen
+    on_mouse_drag-Crashes). Die Handler müssen bei key.MOD_SHIFT bleiben.
+    """
+    from pyglet.window import key as _k
+    from pyglet.window import mouse as _m
+    assert hasattr(_k, "MOD_SHIFT")
+    assert not hasattr(_m, "MOD_SHIFT")

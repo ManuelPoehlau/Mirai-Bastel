@@ -4,6 +4,13 @@
 
 Startet die erste Zielszene (Cube + Head Basemesh) im Integrations-Viewport.
 Dokumentation siehe README.md im Lab-Ordner.
+
+Sichtbarkeits-Selbsttest (rendert kurz, misst Pixel, schliesst automatisch):
+
+    python experiments/mirai_bastel_integration_lab/run.py --selftest
+
+Der Konsolen-Banner zeigt beim Start Modulpfad + Versionen — damit ist
+jederzeit nachpruefbar, welcher Code-Stand ausgefuehrt wird.
 """
 
 from __future__ import annotations
@@ -19,4 +26,4 @@ for _p in (str(_THIS_DIR), str(_THIS_DIR.parent.parent)):
 from integration.lab_viewport import main  # noqa: E402
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main(selftest="--selftest" in sys.argv))

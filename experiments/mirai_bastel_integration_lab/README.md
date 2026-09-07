@@ -255,6 +255,19 @@ Testabdeckung der Integrationsgrenzen:
   Konstanten liegen in `pyglet.window.key`, nicht `mouse` (V0.2-Demonstrator
   nutzt veraltet `_m.MOD_SHIFT`); transiente `on_resize(height=0)` beim
   Start erfordert einen Aspect-Guard. Alles additiv im Lab gehandhabt.
+- **Laufzeit-Nachweis Event-Kette & HUD (Probe 2026-07-09, temporär, außerhalb
+  des Repos):** Alle Handler (`on_mouse_press/drag/release/scroll/key_press`)
+  werden über pyglets Dispatch-Pfad aufgerufen und verändern den Kamera-State
+  nachweislich (Δyaw +0.18, Δpitch +0.12, Distanz 5.20 → 4.68, Pan-Ziel).
+  Click-Selection erreicht `_handle_click_selection` und mutiert die Core-
+  Selection; `M` erreicht `_move_picked_vertex` und ändert die Position in
+  `src.core.Mesh` um +0.35 Y, davon abgeleitet die Render-Daten. HUD:
+  `_status.draw()` zeichnet korrekt (~6k Text-Pixel); unsichtbar war der Text
+  zuvor nur, weil bei nah herangezoomtem Mesh der aktive Depth-Test die
+  Text-Fragmente verwirft (2496 verdrängte Text-Pixel gemessen) — der HUD-Pass
+  in `on_draw` deaktiviert den Depth-Test daher bewusst. Headless-Regression:
+  Kamera-State-Tests + pyglet-2.x-Modifier-Naht in
+  `tests/test_camera_picking.py`.
 - **V0.2-Demonstrator-Picking-Lücke:** Die V0.2 `OrbitCamera` bietet KEIN
   `project_to_screen`/`screen_to_ray`, obwohl der V0.2-Demonstrator sie
   aufruft (im V0.2-Experiment nie live ausgeübt). Das Lab ergänzt sie
