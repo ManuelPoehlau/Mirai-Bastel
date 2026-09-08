@@ -19,7 +19,7 @@
 | 5 | Viewport Production | **2 sessions** | **src/viewport/** (V0.2 RenderMesh) | ✓ **DONE** | Completed 2026-09-07, see `docs/WP-04_GATE_5_COMPLETION.md`. Originally separated Selection+Display (orig. G5) from Rendering |
 | 5b | ~~Selection & Display~~ | — | — | **DROPPED** | Not scheduled as its own production gate — depends on the still-open Interaction Lab / UX decision (Gate 4 wiring is intentionally incomplete, see Gate 4 audit + `WP-04_GATE_5_COMPLETION.md` §0). `Viewport.on_selection_changed()` etc. already exist and wait for that decision. |
 | 6 | Input Config | 1 session | keymap.json, JSON validation | ✓ **DONE** | Completed 2026-09-08, see `docs/WP-04_GATE_6_COMPLETION_REPORT.md`. No src/core changes. |
-| 7 | Camera | 1 session | Orbit/Pan/Zoom (V0.2 constraints) | **UPDATED** | Must use V0.2 Dirty-State (camera ≠ geometry invalidation) |
+| 7 | Camera | 1 session | Orbit/Pan/Zoom (V0.2 constraints) | ✓ **DONE** | Completed 2026-09-09, see `docs/WP-04_GATE_7_COMPLETION_REPORT.md`. Production integration: `Application.init_scene()` bindet `Application.camera` via `Viewport.bind_camera()`; V0.2 Dirty-State (camera ≠ geometry invalidation) verified through the full Application→Viewport→RenderMesh→camera_uniforms path |
 | 8 | Validation | 1 session | Tests + V0.2 Benchmarks | **UPDATED** | Counter-based verification (from V0.2 Spec §13) |
 | 9 | AI Review | 1 session | Architecture validation | **UPDATED** | Extended scope: Amendment, ADRs, V0.2, ADR-001 |
 | 10 | E2E Test | 1 session | Workflow validation | **BLOCKED** | `src/viewport/` module now exists (Gate 5 done), but window/entry-point + Application-integration still pending (see Gate 5 Completion §9) |
