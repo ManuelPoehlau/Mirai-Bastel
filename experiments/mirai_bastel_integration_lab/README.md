@@ -11,6 +11,10 @@
 - OBJ-Loader + Asset: [`../rigging-skinning-morphing/rigging-skinning-morphing-README.md`](../rigging-skinning-morphing/rigging-skinning-morphing-README.md)
 - Core (Domain-Wahrheit): [`../../src/README.md`](../../src/README.md)
 
+Audits / Reviews:
+
+- Architecture Reconciliation Audit — Lab vs. Production (Gate 5/6/7), 2026-09-08, inkl. WP-IL-01 (Re-Base auf Production Camera/Viewport): [`docs/ARCHITECTURE_RECONCILIATION_AUDIT.md`](docs/ARCHITECTURE_RECONCILIATION_AUDIT.md)
+
 ---
 
 ## 1. Zweck
