@@ -12,14 +12,17 @@ Prüft `mirai.application.Application`:
 
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import tests._bootstrap  # noqa: F401
 
 from core import Scene, SelectionMode
 from mirai.application import Application
 from mirai.interaction import commands as cmd
-from mirai.interaction.input import Input
+from mirai.interaction.input import Input, KeymapConfigError
 from mirai.interaction.tools.move import MoveTool, resolve_selection_vertices
 from mirai.interaction.tools.rotate import RotateTool
 from mirai.interaction.tools.scale import ScaleTool
@@ -207,6 +210,64 @@ class SceneFactoryTests(unittest.TestCase):
         self.assertEqual(len(mesh.all_vertex_ids()), 8)
         self.assertEqual(len(mesh.all_edge_ids()), 12)
         self.assertEqual(len(mesh.all_face_ids()), 6)
+
+
+class ApplicationKeymapTests(unittest.TestCase):
+    """Gate 6: optionale keymap.json wird beim Application-Start geladen."""
+
+    def test_keymap_path_overrides_default_binding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "keymap.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "bindings": [
+                            {
+                                "context": "global",
+                                "input": {"kind": "key", "value": "m", "modifiers": []},
+                                "command": cmd.SCALE,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            app = Application(keymap_path=path)
+            self.assertEqual(app.bindings.command_for(_key("m")), cmd.SCALE)
+            self.assertEqual(app.bindings.command_for(_key("z", "ctrl")), cmd.UNDO)
+
+    def test_keymap_path_with_null_unbinds_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "keymap.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "bindings": [
+                            {
+                                "context": "global",
+                                "input": {"kind": "key", "value": "m", "modifiers": []},
+                                "command": None,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            app = Application(keymap_path=path)
+            self.assertIsNone(app.bindings.command_for(_key("m")))
+
+    def test_missing_keymap_path_is_noop(self):
+        app = Application(keymap_path=Path("does-not-exist.json"))
+        self.assertEqual(app.bindings.command_for(_key("m")), cmd.MOVE)
+
+    def test_invalid_keymap_file_raises_controlled_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "keymap.json"
+            path.write_text("{ \"kaputt\"", encoding="utf-8")
+            with self.assertRaises(KeymapConfigError):
+                Application(keymap_path=path)
 
 
 if __name__ == "__main__":

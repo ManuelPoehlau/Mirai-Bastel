@@ -2,7 +2,14 @@
 
 from .tool import Tool, ToolState, ToolStateError
 from .tool_manager import ToolManager
-from .input import BindingSet, GLOBAL_CONTEXT, Input, TOPOLOGY_CONTEXT
+from .input import (
+    BindingSet,
+    GLOBAL_CONTEXT,
+    Input,
+    KEYMAP_SCHEMA_VERSION,
+    KeymapConfigError,
+    TOPOLOGY_CONTEXT,
+)
 from . import commands
 from .bindings import build_default_bindings, load_keymap_overrides
 
@@ -10,6 +17,8 @@ __all__ = [
     "BindingSet",
     "GLOBAL_CONTEXT",
     "Input",
+    "KEYMAP_SCHEMA_VERSION",
+    "KeymapConfigError",
     "TOPOLOGY_CONTEXT",
     "Tool",
     "ToolState",

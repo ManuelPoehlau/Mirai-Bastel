@@ -29,12 +29,13 @@ Wichtig:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from core import HistoryStack, Scene, Selection
 
 from .interaction import BindingSet, ToolManager, commands
-from .interaction.bindings import build_default_bindings
+from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.routing import tool_for_command
 from .viewport import DisplayState, OrbitCamera
 
@@ -42,7 +43,7 @@ from .viewport import DisplayState, OrbitCamera
 class Application:
     """Window-unabhängiger Produktions-Orchestrator."""
 
-    def __init__(self) -> None:
+    def __init__(self, keymap_path: Optional[str | Path] = None) -> None:
         # Core-Strukturen
         self.scene: Scene = Scene()
         self.selection: Selection = self.scene.selection
@@ -57,7 +58,13 @@ class Application:
         self._setup_tools()
 
         # Input
+        # Gate 6 (Input Config): Default → optionales keymap.json → BindingSet.
+        # Das Overlay wird genau einmal beim Application-Start geladen; eine
+        # vorhandene, ungültige Datei wird kontrolliert abgelehnt
+        # (`KeymapConfigError`). Kein Runtime-Hot-Reload.
         self.bindings: BindingSet = build_default_bindings()
+        if keymap_path is not None:
+            load_keymap_overrides(self.bindings, keymap_path)
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
