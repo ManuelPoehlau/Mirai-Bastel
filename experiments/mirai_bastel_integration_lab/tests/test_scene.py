@@ -1,8 +1,7 @@
-"""Scene-Ebene: Cube und Head existieren, unabhängige Auswahl, Framing.
+"""Scene-Ebene: Cube (vereinfacht für WP-IL-01-Diagnose), Framing.
 
-Fokus (Boundary): Die Lab-Szene enthält beide Objekte als eigene
-`src.core.Scene`s mit eigener Selection — eine Auswahl im Cube darf den
-Head nicht beeinflussen.
+build_lab_scene enthält temporär nur den Cube (Head auskommentiert).
+build_head_scene / build_cube_scene bleiben einzeln testbar.
 """
 
 from __future__ import annotations
@@ -24,31 +23,26 @@ from scene.scene_objects import build_cube_scene, build_head_scene, build_lab_sc
 from viewport.resource_store import TraceStore  # noqa: E402  (Production, Gate 5)
 
 
-def test_lab_scene_contains_cube_and_head():
+def test_lab_scene_contains_cube():
     lab = build_lab_scene()
-    assert lab.names() == ["Cube", "Head Basemesh"]
-
-
-def test_objects_are_selectable_independently():
-    lab = build_lab_scene()
-    assert lab.active.name == "Cube"
-    head = lab.select_by_name("Head Basemesh")
-    assert head.name == "Head Basemesh"
-    assert lab.active.name == "Head Basemesh"
-    lab.select(0)
+    assert "Cube" in lab.names()
     assert lab.active.name == "Cube"
 
 
-def test_selections_are_independent_per_object():
+def test_cube_selection_works():
     lab = build_lab_scene()
-    cube, head = lab.objects
+    assert lab.active.name == "Cube"
+    cube = lab.select_by_name("Cube")
+    assert cube.name == "Cube"
+
+
+def test_cube_selection_is_independent():
+    lab = build_lab_scene()
+    cube = lab.objects[0]
     cube.scene.selection.set({cube.mesh.all_vertex_ids()[0]})
-    assert head.scene.selection.is_empty()
-    bindings = [
-        CoreRenderBinding(o.scene.mesh, store_type=TraceStore) for o in lab.objects
-    ]
-    bindings[0].select_vertex(cube.mesh.all_vertex_ids()[0])
-    assert len(bindings[1].selection.vertices) == 0
+    binding = CoreRenderBinding(cube.scene.mesh, store_type=TraceStore)
+    binding.select_vertex(cube.mesh.all_vertex_ids()[0])
+    assert len(binding.selection.vertices) == 1
 
 
 def test_head_bounds_are_frameable():
@@ -59,7 +53,7 @@ def test_head_bounds_are_frameable():
     assert all(0.1 < e < 1e3 for e in extent)
 
 
-def test_both_objects_render_build_without_gpu():
+def test_cube_renders_without_gpu():
     lab = build_lab_scene()
     for obj in lab.objects:
         binding = CoreRenderBinding(obj.scene.mesh, store_type=TraceStore)

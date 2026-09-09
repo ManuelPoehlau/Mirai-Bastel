@@ -81,12 +81,12 @@ void main() {
 # Versionstag: erscheint im Fenstertitel, im HUD und im Konsolen-Banner.
 # Damit ist jederzeit nachpruefbar, WELCHER Code-Stand ausgefuehrt wird
 # (Befund 2026-07-09: Aenderungen schienen am Endgeraet nicht anzukommen).
-LAB_VERSION = "v4.0-wpil01 (2026-09-08)"
+LAB_VERSION = "v4.1-wpil01 (2026-09-09)"
 
 # HUD-Konstanten auf Modulebene (headless testbar, siehe tests/test_hud.py).
 _STATUS_TITLE = "INTEGRATION LAB — LIVE-INSTRUMENTIERUNG"
 _HINT_TEXT = (
-    "LMB ziehen=Orbit  Shift+LMB/MMB=Pan  Rad=Zoom  Klick=Vertex\n"
+    "LMB/RMB ziehen=Orbit  Shift+LMB/RMB/MMB=Pan  Rad=Zoom  LMB-Klick=Vertex\n"
     "M=Move(+Y)  1/2=Objekt+Frame  R=Frame  S=Report  Esc=Ende"
 )
 
@@ -122,7 +122,7 @@ class IntegrationLabWindow(pyglet.window.Window):
         super().__init__(
             1280, 800,
             caption=f"Mirai-Bastel — Integration Lab / Test Studio [{LAB_VERSION}]",
-            resizable=True, vsync=True,
+            resizable=True, vsync=False,
             config=config,
         )
         self.lab = lab_scene
@@ -147,17 +147,28 @@ class IntegrationLabWindow(pyglet.window.Window):
         self._fps_ema = 0.0
         self._fps = 0.0
 
-        # pyglet 2.x registriert Methoden-Overrides NICHT automatisch im
-        # Event-Stack. Ohne push_handlers() bleibt der Stack leer und die
-        # on_mouse_*/on_key_press-Handler werden nie dispatched.
-        self.push_handlers(self)
-
-        # _allow_dispatch_event=False bedeutet: Events landen nur in
-        # _event_queue, werden aber niemals dispatched. Ohne diese
-        # Einstellung reagiert das Fenster nicht auf Maus/Tastatur.
-        self._allow_dispatch_event = True
+        # pyglet 2.x dispatch_event durchsucht zuerst _event_stack, dann
+        # greift der getattr-Fallback (event.py) auf Methoden der Subklasse.
+        # push_handlers(self) ist daher NICHT nötig — er würde sogar
+        # Doppel-Dispatch erzeugen (Stack + getattr) für alle Handler ohne
+        # EVENT_HANDLED-Rückgabe (z.B. on_mouse_press), was activate() doppelt
+        # aufruft und einen Focus-Oszillations-Bug verursacht.
+        #
+        # _allow_dispatch_event muss True sein, damit Events sofort dispatched
+        # und nicht nur in _event_queue gepuffert werden.
 
         self._build_labels()
+        # WM_MOUSEWHEEL wird vom OS an das fokussierte Fenster gesendet.
+        # Ohne explizites activate() behält das startende Terminal den Fokus,
+        # und Scroll-Events landen nie im Lab-Fenster (Root-Cause WP-IL-01).
+        self.activate()
+        # pyglet setzt wglSwapIntervalEXT(0) auf Windows 10/DWM, weil DWM
+        # eigentlich vsync übernimmt.  In der Praxis erzeugt SwapBuffers ohne
+        # WGL-vsync aber keine verlässliche DWM-Recomposition (Frames werden
+        # nicht sichtbar → "Display-Freeze").  Wir erzwingen Interval=1, damit
+        # SwapBuffers bis zum nächsten VBlank blockiert und DWM den Frame
+        # tatsächlich composite.
+        self._force_wgl_vsync()
 
     # -- Aufbau --------------------------------------------------------------
     def _add_object(self, obj: LabObject) -> None:
@@ -216,14 +227,17 @@ class IntegrationLabWindow(pyglet.window.Window):
         )
         self._hud_panel.opacity = 190
         self._status = pyglet.text.Label(
-            "", x=10, y=self.height - 16, anchor_y="top",
+            " ", x=10, y=self.height - 16, anchor_y="top",
             font_name="Consolas", font_size=13, color=(235, 242, 250, 255),
             multiline=True, width=640,
         )
+        # multiline=True + width nötig, weil _HINT_TEXT ein '\n' enthält;
+        # ohne multiline rendert pyglet den Text nicht.
         self._hint = pyglet.text.Label(
             _HINT_TEXT,
             x=10, y=6, font_name="Consolas", font_size=12,
             color=(200, 214, 230, 255),
+            multiline=True, width=1260,
         )
 
     def _update_hud_panel(self) -> None:
@@ -249,31 +263,56 @@ class IntegrationLabWindow(pyglet.window.Window):
         for view in self.objects:
             view.binding.apply_camera(aspect)
 
+    # -- Render-Loop ---------------------------------------------------------
+    @staticmethod
+    def _force_wgl_vsync() -> None:
+        """Erzwingt WGL-Swap-Interval=1, auch wenn pyglet es wegen DWM deaktiviert.
+
+        pyglet ruft wglSwapIntervalEXT(0) auf Windows 8+, weil DWM
+        angeblich die vsync-Kontrolle übernimmt.  In der Praxis führt das
+        auf manchen Win10-Systemen dazu, dass SwapBuffers zurückkehrt, bevor
+        DWM den Frame composite → Display-Freeze trotz laufendem on_draw.
+        Mit Interval=1 blockiert SwapBuffers bis zum nächsten VBlank, womit
+        jeder flip() garantiert sichtbar wird.
+        """
+        try:
+            from pyglet.gl import wgl_info, wglext_arb
+            if wgl_info.have_extension("WGL_EXT_swap_control"):
+                wglext_arb.wglSwapIntervalEXT(1)
+                print("[lab] wglSwapIntervalEXT(1) gesetzt — vsync erzwungen", flush=True)
+        except Exception as e:
+            print(f"[lab] wglSwapIntervalEXT nicht verfügbar: {e}", flush=True)
+
     # -- Events --------------------------------------------------------------
     def on_resize(self, width: int, height: int) -> None:
-        gl.glViewport(0, 0, max(1, width), max(1, height))
         if height == 0:
             return pyglet.event.EVENT_HANDLED  # pyglet 2.1: transientes Resize während Init
         self._push_camera()
-        return pyglet.event.EVENT_HANDLED
+        # Redraw ausserhalb WndProc-Kontext anstossen: DwmFlush() darf nicht
+        # aus DispatchMessageW heraus blockieren (vgl. flip()-Implementierung).
+        pyglet.clock.schedule_once(lambda dt: self.draw(dt), 0)
 
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         self._drag_button = button
         self._drag_moved = 0.0
+        # Fokus aktiv zurückholen: WM_MOUSEWHEEL geht ans fokussierte Fenster.
+        # Nach on_deactivate landet Scroll sonst im Terminal.
+        self.activate()
 
     def on_mouse_drag(self, x: int, y: int, dx: int, dy: int, buttons: int,
                       modifiers: int) -> None:  # noqa: PLR0913
         self._drag_moved += abs(dx) + abs(dy)
         from pyglet.window import mouse as _m
-        if self._drag_button == _m.LEFT and not (modifiers & _key.MOD_SHIFT):
+        _orbit_btn = self._drag_button in (_m.LEFT, _m.RIGHT)
+        _pan_btn = self._drag_button == _m.MIDDLE or (
+            self._drag_button in (_m.LEFT, _m.RIGHT) and modifiers & _key.MOD_SHIFT
+        )
+        if _orbit_btn and not (modifiers & _key.MOD_SHIFT):
             self.camera.orbit(dx * 0.005, dy * 0.005)
             self._push_camera()
-            self.draw(0.0)
-        elif self._drag_button == _m.MIDDLE or (
-                self._drag_button == _m.LEFT and modifiers & _key.MOD_SHIFT):
+        elif _pan_btn:
             self.camera.pan(dx, dy, self.width, self.height)
             self._push_camera()
-            self.draw(0.0)
         return pyglet.event.EVENT_HANDLED
 
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
@@ -286,14 +325,13 @@ class IntegrationLabWindow(pyglet.window.Window):
     def on_mouse_scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> None:
         self.camera.dolly(0.9 if scroll_y > 0 else 1.1)
         self._push_camera()
-        self.draw(0.0)
         return pyglet.event.EVENT_HANDLED
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         from pyglet.window import key as _k
-        if symbol == _k._1:
+        if symbol == _k._1 and len(self.lab.objects) > 0:
             self._focus_camera(self.lab.objects[0].name)
-        elif symbol == _k._2:
+        elif symbol == _k._2 and len(self.lab.objects) > 1:
             self._focus_camera(self.lab.objects[1].name)
         elif symbol in (_k.F, _k.R):
             self._focus_camera(self.lab.active.name)
@@ -356,6 +394,8 @@ class IntegrationLabWindow(pyglet.window.Window):
         self._refresh_highlight(view)
 # -- Zeichnung ------------------------------------------------------------
     def on_draw(self) -> None:
+        if self.height == 0:
+            return pyglet.event.EVENT_HANDLED  # transientes Resize, kein gültiger Viewport
         now = time.perf_counter()
         dt = now - self._frame_t0
         self._frame_t0 = now
@@ -364,6 +404,7 @@ class IntegrationLabWindow(pyglet.window.Window):
             self._fps_ema = self._fps_ema * 0.9 + inst * 0.1
             self._fps = self._fps_ema
 
+        gl.glClearColor(0.08, 0.08, 0.12, 1.0)
         self.clear()
         self.program.use()
         self.program["u_view"] = self.camera.build_view_matrix()
@@ -396,6 +437,11 @@ class IntegrationLabWindow(pyglet.window.Window):
         # Mesh verdeckt.) Der Depth-Test wird im naechsten Frame vom
         # 3D-Pass wieder aktiviert.
         gl.glDisable(gl.GL_DEPTH_TEST)
+        # Blending für pyglet's Text/Shape-Rendering aktivieren.
+        # pyglet.text.Label rendert Glyph-Atlas-Texturen mit Alpha-Kanal;
+        # ohne GL_BLEND sind alle Glyphen-Pixel unsichtbar (Alpha ignoriert).
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
         # Custom Shader deaktivieren, bevor pyglet's eigene
         # Shapes/Text-Rendering läuft. Sonst bleibt der Lab-Shader aktiv
         # und pyglet.text.Label produziert unsichtbare Fragmente.
@@ -475,6 +521,7 @@ def main(selftest: bool = False) -> int:
     from scene.scene_objects import build_lab_scene
     lab = build_lab_scene()
     window = IntegrationLabWindow(lab)
+    window.set_visible(True)
 
     if not selftest:
         pyglet.app.run()

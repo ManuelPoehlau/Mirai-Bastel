@@ -64,20 +64,13 @@ def build_head_scene(obj_path: str | Path = DEFAULT_HEAD_ASSET) -> Scene:
 
 
 def build_lab_scene(head_obj_path: str | Path = DEFAULT_HEAD_ASSET) -> LabScene:
-    """Die erste Zielszene: Cube + Head Basemesh, unabhängige Selection."""
+    """Testzene: nur Cube (vereinfacht für WP-IL-01-Diagnose)."""
     lab = LabScene()
     cube = LabObject(
         name="Cube",
         scene=build_cube_scene(),
         base_color=(0.35, 0.55, 0.85, 1.0),
     )
-    head = LabObject(
-        name="Head Basemesh",
-        scene=build_head_scene(head_obj_path),
-        asset_path=Path(head_obj_path),
-        base_color=(0.72, 0.70, 0.66, 1.0),
-    )
     lab.add_object(cube)
-    lab.add_object(head)
     lab.select(0)
     return lab
