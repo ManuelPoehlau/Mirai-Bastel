@@ -268,10 +268,12 @@ class IntegrationLabWindow(pyglet.window.Window):
         if self._drag_button == _m.LEFT and not (modifiers & _key.MOD_SHIFT):
             self.camera.orbit(dx * 0.005, dy * 0.005)
             self._push_camera()
+            self.draw(0.0)
         elif self._drag_button == _m.MIDDLE or (
                 self._drag_button == _m.LEFT and modifiers & _key.MOD_SHIFT):
             self.camera.pan(dx, dy, self.width, self.height)
             self._push_camera()
+            self.draw(0.0)
         return pyglet.event.EVENT_HANDLED
 
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
@@ -284,6 +286,7 @@ class IntegrationLabWindow(pyglet.window.Window):
     def on_mouse_scroll(self, x: int, y: int, scroll_x: int, scroll_y: int) -> None:
         self.camera.dolly(0.9 if scroll_y > 0 else 1.1)
         self._push_camera()
+        self.draw(0.0)
         return pyglet.event.EVENT_HANDLED
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
