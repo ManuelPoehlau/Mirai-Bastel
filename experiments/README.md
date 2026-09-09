@@ -55,12 +55,15 @@ Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.m
 
 ### `mirai_bastel_integration_lab/`
 
-Integration Harness / Test Studio (kein Production-Viewport, kein Modeler):
-verbindet erstmals `src/core` (Domain-Wahrheit), den OBJ Loader
-(rigging-skinning-morphing) und den Viewport V0.2 (Render-/Performance-
-Schicht) in einer gemeinsamen praktischen Testszene (Cube + reales
-Head-Basemesh). Kern: dünne Adapter an den Integrationsgrenzen
-(OBJ → Core → Render), kategoriebewusste Updates (camera/selection/geometry)
-und ein headless Performance-/Status-Report.
+Integration Harness / Test Studio (kein Production-Viewport, kein Modeler).
+**Seit WP-IL-01 (2026-09-08) production-basiert:** nutzt die Production-Kamera
+(`src/mirai/viewport/camera.py`) und den Production-Viewport
+(`src/viewport`, Gate 5/7) über eine dünne Adapter-Fassade; das
+V0.2-Experiment wird nicht mehr importiert. Kern: Objekt-Ketten aus
+`core.Scene` + je einem Production-`Viewport`, kategoriebewusste Updates
+über die Production-Notifikations-API (`on_*_changed` → `sync()`), ein
+pyglet/OpenGL-Harness für echten Draw + Instrumentierung und headless
+Performance-/Status-Reports. Re-Base-Begründung und -Befunde:
+[`mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md`](mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md)
 
 Lokaler Einstieg: [`mirai_bastel_integration_lab/README.md`](mirai_bastel_integration_lab/README.md)

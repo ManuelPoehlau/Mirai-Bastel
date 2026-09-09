@@ -26,7 +26,7 @@ from adapters.obj_to_core import (  # noqa: E402
 from scene.scene_objects import build_cube_scene  # noqa: E402
 
 from loaders.obj_loader import load_obj  # noqa: E402
-from src.core.ids import VertexId  # noqa: E402
+from core.ids import VertexId  # noqa: E402  (Production-Importpfad)
 
 
 def test_obj_loader_reused_and_head_parse():

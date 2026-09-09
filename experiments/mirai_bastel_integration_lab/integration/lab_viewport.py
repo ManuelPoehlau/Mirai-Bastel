@@ -1,9 +1,17 @@
 """Integrations-Viewport: pyglet-Fenster, das alle Lab-Objekte darstellt.
 
-Reiner Harness-Code des Integration Labs — KEIN Production-Viewport. Er
-nutzt die V0.2-Render-Klassik (RenderMesh + PygletStore + ShaderProgram mit
-gleichen Shader-Quellen wie der V0.2-Demonstrator) und verbindet sie über
-`CoreRenderBinding` mit den `src.core`-Objekten der Lab-Szene.
+Reiner Harness-Code des Integration Labs — KEIN Production-Viewport. Seit
+WP-IL-01 (2026-09-08) nutzt er die Production-Render-Architektur
+(`src.viewport.Viewport` → RenderMesh + ResourceStore + SelectionOverlay,
+Gate 5/7) über `CoreRenderBinding` und die Production-Kamera
+(`src.mirai.viewport.camera.OrbitCamera` als `LabOrbitCamera`-Subklasse).
+
+Bewusst weiterhin Harness (Audit §E): echtes pyglet-Fenster, GL-Kontext,
+eigener Shader + eigene Draw-Vlists (Production hat noch keinen Entry-Point
+und `Viewport.render()` ist ein No-Op), HUD/Instrumentierung. Der Draw-Feed
+liest die Matrizen direkt von derselben Kamera-Instanz, die über
+`bind_camera` am Production-Viewport hängt — ein kanonischer Kamera-Pfad,
+keine Zustands-Spaltung (siehe adapters/core_to_render.py).
 
 Interaktion (Ziel: End-to-End-Test aus der Task):
     LMB ziehen        Orbit          (Camera-Kanal: nur Uniforms)
@@ -32,13 +40,15 @@ from _paths import ensure_paths  # noqa: E402
 
 ensure_paths()
 
-from adapters.core_to_render import CoreRenderBinding, flatten_render_mesh  # noqa: E402
+from adapters.core_to_render import (  # noqa: E402
+    CoreRenderBinding,
+    LabPygletStore,
+    flatten_render_mesh,
+)
 from adapters.obj_to_core import frame_camera_on_bounds  # noqa: E402
 from adapters.picking import pick_vertex  # noqa: E402
 from lab_camera import LabOrbitCamera  # noqa: E402
 from scene.scene import LabObject, LabScene  # noqa: E402
-
-from experiments.mirai_bastel_viewport_V02.renderer import PygletStore  # noqa: E402
 
 # Shader-Quellen identisch zum V0.2-Demonstrator (Wiederverwendung).
 _VERT_SRC = """
@@ -71,7 +81,7 @@ void main() {
 # Versionstag: erscheint im Fenstertitel, im HUD und im Konsolen-Banner.
 # Damit ist jederzeit nachpruefbar, WELCHER Code-Stand ausgefuehrt wird
 # (Befund 2026-07-09: Aenderungen schienen am Endgeraet nicht anzukommen).
-LAB_VERSION = "v3.1 (2026-07-09)"
+LAB_VERSION = "v4.0-wpil01 (2026-09-08)"
 
 # HUD-Konstanten auf Modulebene (headless testbar, siehe tests/test_hud.py).
 _STATUS_TITLE = "INTEGRATION LAB — LIVE-INSTRUMENTIERUNG"
@@ -98,7 +108,7 @@ class _ObjectView:
         self.hl_vlist = None
 
     @property
-    def rm(self):
+    def render(self):
         return self.binding.render
 
 
@@ -152,10 +162,14 @@ class IntegrationLabWindow(pyglet.window.Window):
     # -- Aufbau --------------------------------------------------------------
     def _add_object(self, obj: LabObject) -> None:
         binding = CoreRenderBinding(
-            obj.scene.mesh, store_type=PygletStore, camera=self.camera
+            obj.scene.mesh,
+            store_type=LabPygletStore,
+            camera=self.camera,
+            selection=obj.scene.selection,
         )
         binding.render.aspect = self.width / self.height
         binding.material.set_base_color(obj.base_color)
+        binding.apply_material()
         view = _ObjectView(obj.name, binding)
         self._build_mesh_vbo(view)
         self.objects.append(view)
@@ -181,10 +195,12 @@ class IntegrationLabWindow(pyglet.window.Window):
         if view.hl_vlist is not None:
             view.hl_vlist.delete()
             view.hl_vlist = None
-        sel = sorted(view.binding.selection.selected_vertices)
+        sel = sorted(view.binding.selection.vertices)  # Core-Selection: VertexIds
         if not sel:
             return
-        positions = _flatten([view.binding.render_mesh.positions[v] for v in sel], 3)
+        positions = _flatten(
+            [view.binding.core_mesh.vertex_position(v) for v in sel], 3
+        )
         rgb = self._highlight_color(view.name)
         view.hl_vlist = self.program.vertex_list(
             len(sel), gl.GL_POINTS,
@@ -254,7 +270,7 @@ class IntegrationLabWindow(pyglet.window.Window):
             self._push_camera()
         elif self._drag_button == _m.MIDDLE or (
                 self._drag_button == _m.LEFT and modifiers & _key.MOD_SHIFT):
-            self.camera.pan_px(dx, dy, self.width, self.height)
+            self.camera.pan(dx, dy, self.width, self.height)
             self._push_camera()
         return pyglet.event.EVENT_HANDLED
 
@@ -288,53 +304,52 @@ class IntegrationLabWindow(pyglet.window.Window):
 
     # -- Selection / Move (Kern des End-to-End-Tests) -------------------------
     def _handle_click_selection(self, x: int, y: int, modifiers: int) -> None:
-        from pyglet.window import mouse as _m
+        """Eine Buchhaltung: Core-Selection (VertexIds). Die Render-Seite wird
+        nur über den Production-Pfad benachrichtigt (apply_selection →
+        on_selection_changed → sync → highlight_flags-Ressource)."""
         active = self.lab.active
         view = self.active_view()
         picked = pick_vertex(
-            self.camera, active.mesh, view.binding.index_map,
-            x, y, self.width, self.height,
+            self.camera, active.mesh, x, y, self.width, self.height
         )
         if picked is not None:
-            index = view.binding.index_map.index(picked)
             if modifiers & _key.MOD_SHIFT:
-                if view.binding.selection.is_selected(index):
-                    active.scene.selection.vertices.discard(picked)
-                    view.binding.selection.selected_vertices.discard(index)
-                else:
-                    active.scene.selection.vertices.add(picked)
-                    view.binding.selection.add(index)
+                active.scene.selection.toggle(picked)
             else:
                 active.scene.selection.set({picked})
-                view.binding.selection.set({index})
             self._picked_vertex = picked
         else:
             active.scene.selection.clear()
-            view.binding.selection.clear()
             self._picked_vertex = None
-        view.binding.render.apply_selection()
-        view.binding.render.sync()
+        view.binding.apply_selection()
         self._refresh_highlight(view)
 
     def _move_picked_vertex(self) -> None:
-        """Move: ZUERST src.core.Mesh verändern, dann Render-Partial-Update."""
+        """Move: ZUERST src.core.Mesh verändern, dann Production-Notifikation
+        (`on_vertices_moved` → sync → Positions-/Normalen-Partial-Updates im
+        Store), zuletzt der Harness-eigene Vlist-Patch für den sofortigen
+        Draw (siehe Modul-Doc: eigener Draw-Pfad bleibt bewusst Harness)."""
         view = self.active_view()
         if self._picked_vertex is None:
             return
         vid = self._picked_vertex
-        if not view.binding.core_mesh.is_valid_vertex(vid):
+        mesh = view.binding.core_mesh
+        if not mesh.is_valid_vertex(vid):
             self._picked_vertex = None
             return
         index = view.binding.index_map.index(vid)
-        _, vert_ids = view.rm.derived.affected_neighborhood(
-            view.rm.mesh, {index}
-        )
+        # 1-Ring über die Production-Derived-Data (Adjazenz, positionsunabhängig)
+        _, neighborhood = view.render.derived.affected_neighborhood(mesh, {vid})
         view.binding.move_vertex_by(vid, (0.0, 0.35, 0.0))
         pos_buf = view.vlist.domain.attrib_name_buffers["position"]
         nrm_buf = view.vlist.domain.attrib_name_buffers["normal"]
-        pos_buf.set_region(index, 1, list(view.binding.render_mesh.positions[index]))
-        for v in vert_ids:
-            nrm_buf.set_region(v, 1, list(view.rm.derived.vertex_normals[v]))
+        pos_buf.set_region(index, 1, list(mesh.vertex_position(vid)))
+        for nvid in sorted(neighborhood):
+            nrm_buf.set_region(
+                view.binding.index_map.index(nvid),
+                1,
+                list(view.render.derived.vertex_normals[nvid]),
+            )
         self._refresh_highlight(view)
 # -- Zeichnung ------------------------------------------------------------
     def on_draw(self) -> None:
@@ -390,8 +405,8 @@ class IntegrationLabWindow(pyglet.window.Window):
 
     def _draw_status(self) -> None:
         view = self.active_view()
-        counters = dict(view.rm.stats.counters)
-        ids = view.rm.store.resource_ids()
+        counters = dict(view.render.stats.counters)
+        ids = view.render.store.resource_ids()
         names = (
             "mesh_rebuilds", "structural_rebuilds", "partial_updates",
             "vertex_updates", "geometry_uploads", "bounds_recalculations",
@@ -406,8 +421,8 @@ class IntegrationLabWindow(pyglet.window.Window):
         lines = [
             f"{_STATUS_TITLE} {LAB_VERSION} (aktiv: {view.name})",
             f"FPS ~ {self._fps:5.1f} | Vertices "
-            f"{len(view.binding.render_mesh.positions)} | Triangles "
-            f"{len(view.binding.render_mesh.triangles)}",
+            f"{view.binding.vertex_count} | Triangles "
+            f"{view.binding.triangle_count}",
             "",
         ]
         for n in names:
@@ -427,10 +442,10 @@ class IntegrationLabWindow(pyglet.window.Window):
         print(f"INTEGRATION LAB REPORT — {view.name}")
         print("=" * 70)
         print(f"FPS ~ {self._fps:.1f}")
-        print(f"Vertex: {len(view.binding.render_mesh.positions)}  "
-              f"Triangles: {len(view.binding.render_mesh.triangles)}")
-        print("Counter:", dict(view.rm.stats.counters))
-        print("Resources:", view.rm.store.resource_ids())
+        print(f"Vertex: {view.binding.vertex_count}  "
+              f"Triangles: {view.binding.triangle_count}")
+        print("Counter:", dict(view.render.stats.counters))
+        print("Resources:", view.render.store.resource_ids())
 
 
 def main(selftest: bool = False) -> int:

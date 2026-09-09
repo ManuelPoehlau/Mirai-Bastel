@@ -1,9 +1,10 @@
-"""Lab-Kamera + Picking: legacy-gap-sicher und headless.
+"""Lab-Kamera + Picking: Production-Kamera-Basis, headless.
 
-Die V0.2-Kamera besitzt KEIN `project_to_screen` (der V0.2-Demonstrator
-ruft es dennoch auf — Integrationslücke). Die Lab-Kamera ergänzt die
-Projektion/Ray/Deltas additiv; diese Tests sichern die Mathematik
-(Konsistenz Projektion ↔ Picking ↔ Core-IDs).
+Seit WP-IL-01 basiert `LabOrbitCamera` auf der Production-Kamera
+(`src/mirai/viewport/camera.py::OrbitCamera`); das GL-View-Matrix-Override
+ist der einzige Lab-Zusatz (dokumentierte Production-Grenze). Diese Tests
+sichern die Mathematik (Konsistenz Projektion ↔ Picking ↔ Core-IDs) und die
+View-Matrix-Konvention gegen das historische „schwarzer Viewport“-Symptom.
 """
 
 from __future__ import annotations
@@ -13,7 +14,8 @@ import sys
 from pathlib import Path
 
 _LAB = Path(__file__).resolve().parents[1]
-for _p in (str(_LAB), str(_LAB.parent.parent)):
+_REPO = _LAB.parent.parent
+for _p in (str(_LAB), str(_REPO), str(_REPO / "src")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -22,7 +24,7 @@ from adapters.picking import pick_vertex  # noqa: E402
 from lab_camera import LabOrbitCamera  # noqa: E402
 from scene.scene_objects import build_cube_scene  # noqa: E402
 
-from experiments.mirai_bastel_viewport_V02.renderer import TraceStore  # noqa: E402
+from viewport.resource_store import TraceStore  # noqa: E402  (Production, Gate 5)
 
 
 def _setup():
@@ -49,9 +51,8 @@ def test_pick_vertex_returns_core_vertex_at_projected_point():
     vid = core_mesh.all_vertex_ids()[0]          # (-1,-1,-1)
     sx, sy = camera.project_to_screen(core_mesh.vertex_position(vid), 800, 600)
     assert sx is not None
-    picked = pick_vertex(
-        camera, core_mesh, binding.index_map, sx, sy, 800, 600
-    )
+    # Production-Delegation: ohne Index-Map (pick_nearest_vertex).
+    picked = pick_vertex(camera, core_mesh, sx, sy, 800, 600)
     assert picked == vid
 
 
@@ -70,14 +71,26 @@ def test_screen_ray_and_projection_are_consistent():
     assert math.isclose(math.sqrt(sum(d * d for d in direction)), 1.0, abs_tol=1e-6)
 
 
-def test_orbit_and_zoom_still_v02_compatible():
+def test_orbit_and_zoom_production_compatible():
     _, _, camera = _setup()
     camera.orbit(0.2, 0.1)
     camera.dolly(0.8)
-    # Matrizen der V0.2-Kamera existieren weiterhin (Renderer-Vertrag).
+    # Matrizen der Production-Kamera existieren weiterhin (Renderer-Vertrag).
     view = camera.build_view_matrix()
     proj = camera.build_projection_matrix(1.6)
     assert len(view) == 16 and len(proj) == 16
+
+
+def test_lab_camera_is_production_orbit_camera_subclass():
+    """WP-IL-01: Die Lab-Kamera IST eine Production-OrbitCamera."""
+    from mirai.viewport.camera import OrbitCamera as ProductionOrbitCamera
+
+    _, _, camera = _setup()
+    assert isinstance(camera, ProductionOrbitCamera)
+    # Production-Verhalten: camera_revision wird bei Kamera-Operationen erhöht.
+    rev0 = camera.camera_revision
+    camera.orbit(0.1, 0.1)
+    assert camera.camera_revision == rev0 + 1
 
 
 # -- View-Matrix-Konvention (Regression zum "schwarzen Viewport") -----------
@@ -95,9 +108,10 @@ def _apply_view(matrix: list[float], point: tuple[float, float, float]):
 def test_view_matrix_front_point_on_negative_z():
     """Front-Punkte müssen auf NEGATIVEM Camera-Z landen (GL-Konvention).
 
-    Diagnose: Die V0.2-Matrix schrieb +forward in Zeile 3; mit der
-    GL-Projektion (clip.w = -view.z) erhielt Front-Geometrie clip.w < 0
-    und wurde komplett geclippt (schwarzer Viewport).
+    Diagnose: Die Production/V0.2-Matrix schreibt +forward in Zeile 3; mit
+    der GL-Projektion (clip.w = -view.z) erhielte Front-Geometrie clip.w < 0
+    und würde komplett geclippt (schwarzer Viewport). Das Lab-Override
+    korrigiert das (dokumentierte Production-Grenze, Audit §A.1).
     """
     _, _, camera = _setup()
     vx, vy, vz = _apply_view(camera.build_view_matrix(), camera.target)
@@ -160,10 +174,11 @@ def test_dolly_changes_distance():
     assert math.isclose(camera.distance, d0 * 0.9, abs_tol=1e-9)
 
 
-def test_pan_px_moves_target():
+def test_pan_moves_target():
     _, _, camera = _setup()
     t0 = camera.target
-    camera.pan_px(40, -20, 800, 600)
+    # Production-API: pan(dx_px, dy_px, width, height) (früher Lab: pan_px).
+    camera.pan(40, -20, 800, 600)
     assert camera.target != t0
 
 

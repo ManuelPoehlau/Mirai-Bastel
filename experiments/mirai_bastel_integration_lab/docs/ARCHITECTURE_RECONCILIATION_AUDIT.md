@@ -212,3 +212,89 @@ Prinzipien:
 ## Ergebnis in einem Satz
 
 Das Lab ist nicht „kaputt“, sondern **eine Generation alt**: Production wird nur für `src/core` benutzt; alles darüber (Camera/Viewport/Render/Store/Selection/Picking/Input) ist V0.2-Experiment-Code bzw. Duplikat, das Gate 5/6/7 inzwischen kanonisch in `src/` liefern. Der Dual-Path-Befund ist verifiziert und dokumentiert (nicht als Root Cause behandelt). Zusätzlicher Audit-Befund: Der in V0.2 gefundene GL-View-Matrix-Mismatch existiert unverändert auch in der Production-Kamera und ist dort latent — das Lab-Override ist funktional notwendig, und der Lab-Harness ist die ideale Live-Verifikationsstelle, sobald WP-IL-01 umgesetzt ist.
+
+---
+
+## I. Implementierungsrecord WP-IL-01 (2026-09-08, nachgetragen)
+
+WP-IL-01 (§G) wurde direkt nach diesem Audit umgesetzt. Alle Änderungen
+liegen ausschließlich unter `experiments/mirai_bastel_integration_lab/`;
+`src/` und andere Experimente sind unberührt (Git-Diff prüfbar).
+
+### Umgesetzt
+
+- **`lab_camera.py`:** `LabOrbitCamera` erbt von
+  `src.mirai.viewport.camera.OrbitCamera`; die früheren V1-Adaptionen
+  (`project_to_screen`, `screen_to_ray`, `screen_delta_to_world`, `pan_px`,
+  `basis`) sind entfernt — alles Production-Standard (`pan` ≡ `pan_px`).
+  Einziges Override: `build_view_matrix` (gluLookAt-Konvention, §A.1).
+- **`adapters/core_to_render.py`:** `CoreRenderBinding` ist eine dünne
+  Fassade über `src.viewport.Viewport` — Camera/Selection/Geometry/
+  Material/Topology laufen ausschließlich über die Production-Notifikations-
+  API (`on_*_changed` + `sync()`). Kein eigenes Render-Mesh, keine doppelte
+  Selection-Buchhaltung, keine V0.2-Importe. Neu: `LabMaterialState`
+  (Harness-Material, duck-typed `uniform_packet()`), `LabPygletStore`
+  (siehe Befund 2), Lese-API für den Draw-Harness (`positions`,
+  `triangle_indices`, `vertex_count`, `triangle_count`).
+- **`adapters/picking.py`:** Delegation an
+  `mirai.viewport.picking.pick_nearest_vertex` (Duplikat entfernt).
+- **`integration/lab_viewport.py`:** Fenster-Harness bleibt strukturell
+  (eigener Shader, eigene Draw-Vlists, HUD, Selftest); Kamera-Pan über
+  Production-`pan`; Selection einspurig über Core-`Selection` +
+  `apply_selection()`; Vertex-Move über `on_vertices_moved`-Pfad mit
+  Normalen-Patch über Production-`DerivedGeometry.affected_neighborhood`;
+  Draw-Feed liest Matrizen von derselben Kamera-Instanz (kanonischer Pfad,
+  keine Zustands-Spaltung — §G Punkt 6 ist damit entschieden).
+- **Import-Konvention:** Das Lab importiert den Core konsistent über den
+  Production-Importpfad (`core`, `viewport`, `mirai` — wie `src/mirai`
+  selbst), nicht mehr über das Namespace-Paket `src.core`. `_paths.py`
+  legt dafür `repo-root/src` auf `sys.path`.
+- **Neu:** `tests/test_production_rebase.py` (9 Regressionen) und
+  `_camera_motion_probe.py` (Kamera-Bewegung am echten GL, auto-close).
+
+### Neue Befunde während der Umsetzung (für Gate 11)
+
+1. **Modul-Identität `src.core` vs. `core`:** `SelectionOverlay` vergleicht
+   `selection.mode is SelectionMode.VERTEX` — bei Mischimport (Lab über
+   `src.core.*`, Production über `core.*`) sind das zwei verschiedene
+   Enum-Klassen, und Selection-Flags bleiben stumm (im Live-Test beobachtet:
+   `highlight_flags` durchweg 0.0). Konsequenz: konsequenter
+   Production-Importpfad im Lab (siehe oben). Generische Lektion: Grenz-
+   übergreifend geteilte Objekte müssen aus EINEM Modulpfad stammen.
+2. **`PygletStore` + Default-Shader = vec3-Raster:** `allocate()` rechnet
+   `count = nbytes // 12` (position vec3); nicht-3-teilbare Ressourcen
+   (camera_uniforms 32 floats, material_uniforms 8, highlight_flags n_verts)
+   werden abgeschnitten bzw. laufen beim `update()` über die Kapazität.
+   `register_attribute_spec(name, "position", 1)` ist mit dem Default-Shader
+   nicht verwendbar — pyglet erwartet für `position` stets `count * 3`
+   floats (ValueError „Invalid data size for 'position'. Expected 108, got
+   36." im Live-Lauf). `LabPygletStore` richtet die Allokationsgröße auf
+   Vielfache von 12 Bytes aus (ceil); ein echter 1-Komponenten-/Multi-
+   Attribut-Shader bleibt Production-Entry-Point-Scope.
+3. **`RenderMesh._sync_material` ohne Allocate-Fallback:** `_sync_camera`
+   prüft `store.has(...)` und allokiert bei Bedarf, `_sync_material` tut
+   das nicht — spätes Material-Binding (wie `Viewport.bind_material` es
+   vorsieht) wirft mit `PygletStore` einen KeyError. Production betrifft
+   es aktuell nicht (kein call-site); der Lab-Store allokiert defensiv
+   vor. Gate-11-Kandidat.
+4. **Historisches Kamera-Symptom (Status, keine Root-Cause-Erklärung):**
+   Nach der Re-Basis sind Kamera-Orbit/Zoom am echten GL **sichtbar**
+   (`_camera_motion_probe.py`: Framebuffer-Signatur ändert sich nachweislich,
+   Continuous-Redraw bestätigt). Die früheren Dual-Pfade existieren nicht
+   mehr; die Frage „war das alte Symptom nach dem Re-Base noch relevant?"
+   ist damit praktisch gegenstandslos — die Production-Kamerakette ist im
+   Lab live erprobt.
+
+### Akzeptanznachweise (alle erfüllt)
+
+| Kriterium (§G) | Nachweis |
+|---|---|
+| Kein V0.2-Import im Lab | `test_no_lab_module_imports_v02_experiment` + grep |
+| Lab-Suite grün | `pytest experiments/mirai_bastel_integration_lab/tests` → **52 passed** |
+| Production unberührt | `pytest tests --ignore=tests/test_extrude_tool.py` → **383 passed** |
+| `report.py` headless | 60 Orbits → `camera_updates=62`, `mesh_rebuilds=0`, IDs stabil (Cube + Head) |
+| `run.py --selftest` an echter GL | **PASS** (572 762/1 024 000 Pixel non-black; HUD 159 005 Text-Pixel) |
+| Beobachtung erweitert | `_smoke_window.py` PASS (Cube 55,9 % / Head 38,4 % non-black); `_camera_motion_probe.py` PASS (Continuous-Redraw + Forced-Redraw wirksam) |
+
+Dokumentation: Lab-README (§2/§3/§4/§5/§7/§8/§9/§10) und
+`experiments/README.md` auf den Production-Stand aktualisiert.

@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 
 _LAB = Path(__file__).resolve().parents[1]
-for _p in (str(_LAB), str(_LAB.parent.parent)):
+_REPO = _LAB.parent.parent
+for _p in (str(_LAB), str(_REPO), str(_REPO / "src")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -20,7 +21,7 @@ from adapters.obj_to_core import mesh_bounds  # noqa: E402
 from scene.scene import LabScene  # noqa: E402
 from scene.scene_objects import build_cube_scene, build_head_scene, build_lab_scene  # noqa: E402
 
-from experiments.mirai_bastel_viewport_V02.renderer import TraceStore  # noqa: E402
+from viewport.resource_store import TraceStore  # noqa: E402  (Production, Gate 5)
 
 
 def test_lab_scene_contains_cube_and_head():
@@ -47,7 +48,7 @@ def test_selections_are_independent_per_object():
         CoreRenderBinding(o.scene.mesh, store_type=TraceStore) for o in lab.objects
     ]
     bindings[0].select_vertex(cube.mesh.all_vertex_ids()[0])
-    assert len(bindings[1].selection.selected_vertices) == 0
+    assert len(bindings[1].selection.vertices) == 0
 
 
 def test_head_bounds_are_frameable():
@@ -62,5 +63,5 @@ def test_both_objects_render_build_without_gpu():
     lab = build_lab_scene()
     for obj in lab.objects:
         binding = CoreRenderBinding(obj.scene.mesh, store_type=TraceStore)
-        assert len(binding.render_mesh.positions) > 0
-        assert len(binding.render_mesh.triangles) > 0
+        assert binding.vertex_count > 0
+        assert binding.triangle_count > 0

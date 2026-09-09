@@ -3,8 +3,9 @@
     python experiments/mirai_bastel_integration_lab/report.py
 
 Diese Probe nutzt exakt dieselbe Integrationskette wie das interaktive Lab
-(OBJ-Loader -> src.core -> Core->Render-Adapter -> V0.2 RenderMesh), aber mit
-dem deterministischen `TraceStore` statt des pyglet-GPU-Pfads. Sie misst die
+(OBJ-Loader -> src.core -> Core->Render-Adapter -> Production-Viewport
+`src.viewport`), aber mit dem deterministischen `TraceStore` statt des
+pyglet-GPU-Pfads. Sie misst die
 vier für die Lag-Frage relevanten Szenarien am REALEN Head-Basemesh:
 
 1. initialer Aufbau (Mesh-Ableitung + RenderMesh.build)
@@ -23,7 +24,8 @@ import time
 from pathlib import Path
 
 _THIS_DIR = Path(__file__).resolve().parent
-for _p in (str(_THIS_DIR), str(_THIS_DIR.parent.parent)):
+_REPO_ROOT = _THIS_DIR.parent.parent
+for _p in (str(_THIS_DIR), str(_REPO_ROOT), str(_REPO_ROOT / "src")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -36,7 +38,7 @@ from adapters.obj_to_core import (  # noqa: E402
 from lab_camera import LabOrbitCamera  # noqa: E402
 from scene.scene_objects import build_cube_scene, build_head_scene, build_lab_scene  # noqa: E402
 
-from experiments.mirai_bastel_viewport_V02.renderer import TraceStore  # noqa: E402
+from viewport.resource_store import TraceStore  # noqa: E402  (Production, Gate 5)
 
 
 def _timeit(fn, *args, **kwargs) -> tuple[float, object]:
@@ -57,14 +59,14 @@ def probe_object(name: str, core_mesh) -> None:
 
     # -- 1) Initialer Aufbau -------------------------------------------------
     t_build, binding = _timeit(CoreRenderBinding, core_mesh, TraceStore)
-    print(f"Triangulierte Render-Triangles : {len(binding.render_mesh.triangles)} "
+    print(f"Triangulierte Render-Triangles : {binding.triangle_count} "
           f"(Formel: {render_triangle_count(core_mesh)})")
     print(f"Initialer Aufbau               : {t_build:8.2f} ms "
           f"({binding.render.stats.counters.get('gpu_resource_creations', 0)} "
           f"Resource-Creations)")
 
     camera = LabOrbitCamera(distance=8.0)
-    binding.render.bind_camera(camera)
+    binding.bind_camera(camera)
     binding.render.aspect = 1.6
     base_rebuilds = _counter_delta(binding, "mesh_rebuilds")
 
@@ -72,8 +74,7 @@ def probe_object(name: str, core_mesh) -> None:
     # interaktiven Lab passiert das beim Build; hier wird die Kamera erst
     # NACH dem Build gebunden). Danach ist die IDs-Basis stabil.
     camera.orbit(0.0, 0.0)
-    binding.render.apply_camera(aspect=1.6)
-    binding.render.sync()
+    binding.apply_camera(aspect=1.6)
     ids_before = dict(binding.render.store.resource_ids())
 
     # -- 2) Kamera-Orbit (nur Uniforms) ---------------------------------------
@@ -81,8 +82,7 @@ def probe_object(name: str, core_mesh) -> None:
     t0 = time.perf_counter()
     for _ in range(n):
         camera.orbit(0.01, 0.005)
-        binding.render.apply_camera(aspect=1.6)
-        binding.render.sync()
+        binding.apply_camera(aspect=1.6)
     t_cam = (time.perf_counter() - t0) * 1000.0
     ids_after_cam = dict(binding.render.store.resource_ids())
     print(f"\n[Camera] {n} Orbits                : {t_cam:7.2f} ms "

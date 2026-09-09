@@ -15,7 +15,7 @@ from _paths import ensure_paths  # noqa: E402
 
 ensure_paths()
 
-from src.core.scene import Scene  # noqa: E402
+from core.scene import Scene  # noqa: E402  (Production-Importpfad, wie src/mirai)
 
 
 @dataclass

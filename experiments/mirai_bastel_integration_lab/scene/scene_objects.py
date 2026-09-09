@@ -16,7 +16,7 @@ from _paths import ensure_paths  # noqa: E402
 
 ensure_paths()
 
-from src.core.scene import Scene  # noqa: E402
+from core.scene import Scene  # noqa: E402  (Production-Importpfad)
 
 from adapters.obj_to_core import DEFAULT_HEAD_ASSET, build_core_scene_from_obj  # noqa: E402
 from scene.scene import LabObject, LabScene  # noqa: E402

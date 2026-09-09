@@ -25,8 +25,8 @@ from _paths import DEFAULT_HEAD_ASSET, ensure_paths  # noqa: E402
 
 ensure_paths()
 
-from src.core.mesh import Mesh  # noqa: E402
-from src.core.scene import Scene  # noqa: E402
+from core.mesh import Mesh  # noqa: E402  (Production-Importpfad)
+from core.scene import Scene  # noqa: E402
 
 from loaders.obj_loader import ObjLoadError, ObjMeshData, load_obj  # noqa: E402
 

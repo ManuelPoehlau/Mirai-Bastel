@@ -2,10 +2,11 @@
 
     src.core.Mesh.set_vertex_position(...)
         -> CoreRenderBinding.move_vertex(...)
-        -> RenderMesh.sync() (V0.2 Geometry-Kanal, TraceStore)
+        -> Viewport.on_vertices_moved() + sync()
+           (Production-Geometry-Kanal, TraceStore)
 
 Geprüft wird die Lösungskette: Core zuerst, Render-Darstellung abgeleitet,
-und dass NUR die relevanten Ressorcen angefasst werden (kein Mesh-Rebuild).
+und dass NUR die relevanten Ressourcen angefasst werden (kein Mesh-Rebuild).
 """
 
 from __future__ import annotations
@@ -14,14 +15,15 @@ import sys
 from pathlib import Path
 
 _LAB = Path(__file__).resolve().parents[1]
-for _p in (str(_LAB), str(_LAB.parent.parent)):
+_REPO = _LAB.parent.parent
+for _p in (str(_LAB), str(_REPO), str(_REPO / "src")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
 from adapters.core_to_render import CoreRenderBinding  # noqa: E402
 from scene.scene_objects import build_cube_scene  # noqa: E402
 
-from experiments.mirai_bastel_viewport_V02.renderer import TraceStore  # noqa: E402
+from viewport.resource_store import TraceStore  # noqa: E402  (Production, Gate 5)
 
 
 def _fresh_binding():
@@ -46,8 +48,8 @@ def test_render_representation_contains_new_position():
     idx = binding.index_map.index(vid)
     # flach: idx*3 .. idx*3+3
     assert store_data[idx * 3: idx * 3 + 3] == [5.0, 6.0, 7.0]
-    # und die V0.2-Render-Mesh-Position ebenfalls abgeleitet
-    assert binding.render_mesh.positions[idx] == (5.0, 6.0, 7.0)
+    # und die Flat-Index-Position der Binding-Lese-API (live aus der Core-Mesh)
+    assert binding.positions[idx] == (5.0, 6.0, 7.0)
 
 
 def test_move_uses_geometry_channel_not_rebuild():
