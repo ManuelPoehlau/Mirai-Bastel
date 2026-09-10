@@ -6,6 +6,11 @@ This directory contains interaction and workflow principles that guide how Mirai
 
 - [Workflow Principles](WORKFLOW.md) — direct, low-overhead interaction inspired by Mirai/Nendo/Silo/Wings3D
 
+## Artist Playground
+
+- [Artist Playground — Architecture Map](artist_playground/ARCHITECTURE_MAP.md) — building block status analysis: what exists, what is missing, what must not be changed
+- [Artist Playground — Roadmap](artist_playground/ROADMAP.md) — WP-AP work package sequence and development model (research-first, Playground → Candidate → Production)
+
 ## Relationship to other documentation
 
 - Architecture defines system boundaries.

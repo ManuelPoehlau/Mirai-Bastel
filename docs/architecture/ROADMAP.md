@@ -755,6 +755,18 @@ This policy is intentionally based on the Connect Edges experience: the experime
 - Loop / Ring experiments
 - Connect Edges
 
+## Artist Playground (active research initiative)
+
+**WP-AP — Artist Playground** (2026-09-10: planning complete, foundation next)
+
+The Artist Playground is a research-first initiative that precedes production tool decisions. Instead of implementing features and hoping they feel right, the Playground allows experimenting with variants and letting the artist decide before anything enters production.
+
+Reference: `docs/design/artist_playground/ROADMAP.md` and `docs/design/artist_playground/ARCHITECTURE_MAP.md`
+
+Work packages: WP-AP-01 (Foundation) → WP-AP-02 (Experiment Host) → WP-AP-03 (Selection Lab) → WP-AP-04 (Tool Variants, open) → WP-AP-05 (Topology Lab)
+
+Candidates proven in the Playground feed back into the production roadmap (WP-02, WP-03, Modeling Track).
+
 ## Next production-oriented work
 
 1. **WP-04 — Production Foundation** (2026-09-04: GATES 3–12 ACTIVE)
