@@ -10,6 +10,7 @@ sichergestellt). core/viewport/mirai werden aus src/ importiert.
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -61,11 +62,34 @@ class PlaygroundApp:
     def active_experiment(self) -> Experiment:
         return self._active_experiment
 
+    # -- Kamera-Framing -------------------------------------------------------
+
+    def _frame_camera(self) -> None:
+        """Kamera auf die Mesh-Bounds ausrichten (analog Integration Lab, margin=1.4)."""
+        mesh = self._app.scene.mesh
+        positions = [mesh.vertex_position(vid) for vid in mesh.all_vertex_ids()]
+        if not positions:
+            return
+        xs = [p[0] for p in positions]
+        ys = [p[1] for p in positions]
+        zs = [p[2] for p in positions]
+        cx, cy, cz = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, (min(zs) + max(zs)) / 2
+        radius = max(
+            math.sqrt((p[0] - cx) ** 2 + (p[1] - cy) ** 2 + (p[2] - cz) ** 2)
+            for p in positions
+        )
+        fov = float(getattr(self._app.camera, "fov_degrees", 50.0))
+        half_h = math.tan(math.radians(fov / 2.0))
+        distance = max((radius / half_h) * 1.4, 0.5) if half_h > 0.0 else radius * 2.0
+        self._app.camera.target = (cx, cy, cz)
+        self._app.camera.distance = distance
+
     # -- Szene-Loading --------------------------------------------------------
 
     def load_cube(self) -> None:
         """Würfel-Szene laden (über Application.init_scene)."""
         self._app.init_scene("cube")
+        self._frame_camera()
 
     def load_head(self) -> None:
         """Head-Basemesh via OBJ-Adapter laden.
@@ -90,6 +114,7 @@ class PlaygroundApp:
             store_type=TraceStore,
         )
         self._app.viewport.bind_camera(self._app.camera)
+        self._frame_camera()
 
     # -- Experiment -----------------------------------------------------------
 

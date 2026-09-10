@@ -94,6 +94,7 @@ class PlaygroundHUD:
                 self._full_text(),
                 x=self._x,
                 y=self._y_bottom,
+                anchor_y="bottom",
                 font_name="Consolas",
                 font_size=12,
                 color=(220, 235, 255, 255),
