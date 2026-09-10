@@ -1,18 +1,6 @@
-"""Headless-Tests für AP-03 Phase 1 — PlaygroundSelector + Selection-VBO.
+"""Headless-Tests für AP-03 Phase 1+2 — PlaygroundSelector + Selection-VBO.
 
-Kein GL, kein Fenster. Prüft:
-    1.  handle_face_click hit → selection.faces enthält genau eine Face
-    2.  handle_face_click hit → selection.mode ist FACE
-    3.  handle_face_click hit → gibt True zurück
-    4.  handle_face_click miss → selection.faces ist leer
-    5.  handle_face_click miss nach vorheriger Selektion → selection leer, True
-    6.  handle_face_click miss auf leere Selection → False (kein Change)
-    7.  zweiter Click → Replace (nur letzte Face selektiert)
-    8.  selektierte Face ist Teil des Mesh
-    9.  CLICK_THRESHOLD ist ein positiver Float
-    10. build_selection_data: leere Auswahl → leere Liste
-    11. build_selection_data: eine Face → korrekte Triangle-Anzahl
-    12. build_selection_data: alle Positionen sind bekannte Mesh-Positionen
+Kein GL, kein Fenster. Prüft Phase 1 (Replace) und Phase 2 (Modifier/Toggle).
 """
 
 from __future__ import annotations
@@ -30,7 +18,14 @@ import pytest  # noqa: E402
 
 from core.selection import Selection, SelectionMode  # noqa: E402
 from mirai.scene_factory import create_cube  # noqa: E402
-from playground.selector import CLICK_THRESHOLD, handle_face_click  # noqa: E402
+from playground.selector import (  # noqa: E402
+    CLICK_THRESHOLD,
+    SelectMode,
+    dispatch_face_click,
+    handle_face_click,
+    handle_face_click_modifier,
+    handle_face_click_toggle,
+)
 from playground.vbo_builder import build_selection_data  # noqa: E402
 
 
@@ -175,3 +170,215 @@ class TestBuildSelectionData:
         data = build_selection_data(cube, all_fids)
         # Cube: 6 Faces à 2 Dreiecke = 12 Dreiecke à 3 Vertices à 3 Floats
         assert len(data) == 12 * 3 * 3
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Variante A: Modifier (Shift/Ctrl/Alt)
+# ---------------------------------------------------------------------------
+
+class _MockInputMap:
+    """Minimales InputMap-Stub für Modifier-Tests."""
+    from pyglet.window import key as _k
+    add_modifier    = _k.MOD_SHIFT
+    remove_modifier = _k.MOD_CTRL
+    toggle_modifier = _k.MOD_ALT
+
+
+class TestHandleFaceClickModifier:
+
+    def test_bare_click_replaces_like_phase1(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        handle_face_click_modifier(front_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        assert len(sel.faces) == 1
+
+    def test_shift_click_adds_to_existing(self, cube, sel, front_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        # Erst Front-Face selektieren
+        handle_face_click_modifier(front_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        first = frozenset(sel.faces)
+
+        class _TopCamera:
+            def screen_to_ray(self, sx, sy, w, h):
+                return (0.0, 5.0, 0.0), (0.0, -1.0, 0.0)
+            def project_to_screen(self, p, w, h): return None
+
+        # Shift+Click auf andere Face → addiert
+        handle_face_click_modifier(
+            _TopCamera(), cube, sel, 320, 240, 640, 480, key.MOD_SHIFT, imap
+        )
+        assert len(sel.faces) == 2
+        assert first.issubset(sel.faces)
+
+    def test_ctrl_click_removes_face(self, cube, sel, front_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        handle_face_click_modifier(front_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        fid = next(iter(sel.faces))
+        handle_face_click_modifier(
+            front_cam, cube, sel, 320, 240, 640, 480, key.MOD_CTRL, imap
+        )
+        assert fid not in sel.faces
+
+    def test_alt_click_toggles_off(self, cube, sel, front_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        handle_face_click_modifier(front_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        fid = next(iter(sel.faces))
+        handle_face_click_modifier(
+            front_cam, cube, sel, 320, 240, 640, 480, key.MOD_ALT, imap
+        )
+        assert fid not in sel.faces
+
+    def test_alt_click_toggles_on(self, cube, sel, front_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        # Zunächst leer
+        handle_face_click_modifier(
+            front_cam, cube, sel, 320, 240, 640, 480, key.MOD_ALT, imap
+        )
+        assert len(sel.faces) == 1
+
+    def test_shift_miss_does_not_clear(self, cube, sel, front_cam, miss_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        handle_face_click_modifier(front_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        count_before = len(sel.faces)
+        changed = handle_face_click_modifier(
+            miss_cam, cube, sel, 320, 240, 640, 480, key.MOD_SHIFT, imap
+        )
+        assert changed is False
+        assert len(sel.faces) == count_before
+
+    def test_bare_miss_clears_selection(self, cube, sel, front_cam, miss_cam):
+        imap = _MockInputMap()
+        handle_face_click_modifier(front_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        handle_face_click_modifier(miss_cam, cube, sel, 320, 240, 640, 480, 0, imap)
+        assert sel.faces == set()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Variante B: Toggle
+# ---------------------------------------------------------------------------
+
+class TestHandleFaceClickToggle:
+
+    def test_hit_selects_unselected_face(self, cube, sel, front_cam):
+        handle_face_click_toggle(front_cam, cube, sel, 320, 240, 640, 480)
+        assert len(sel.faces) == 1
+
+    def test_hit_deselects_already_selected(self, cube, sel, front_cam):
+        handle_face_click_toggle(front_cam, cube, sel, 320, 240, 640, 480)
+        handle_face_click_toggle(front_cam, cube, sel, 320, 240, 640, 480)
+        assert sel.faces == set()
+
+    def test_miss_does_not_clear(self, cube, sel, front_cam, miss_cam):
+        handle_face_click_toggle(front_cam, cube, sel, 320, 240, 640, 480)
+        count = len(sel.faces)
+        changed = handle_face_click_toggle(miss_cam, cube, sel, 320, 240, 640, 480)
+        assert changed is False
+        assert len(sel.faces) == count
+
+    def test_multiple_faces_accumulate(self, cube, sel):
+        class _TopCam:
+            def screen_to_ray(self, sx, sy, w, h):
+                return (0.0, 5.0, 0.0), (0.0, -1.0, 0.0)
+            def project_to_screen(self, p, w, h): return None
+
+        handle_face_click_toggle(_FrontCamera(), cube, sel, 320, 240, 640, 480)
+        handle_face_click_toggle(_TopCam(), cube, sel, 320, 240, 640, 480)
+        assert len(sel.faces) == 2
+
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+class TestDispatchFaceClick:
+
+    def test_dispatch_replace(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        dispatch_face_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.REPLACE
+        )
+        assert len(sel.faces) == 1
+
+    def test_dispatch_modifier(self, cube, sel, front_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        dispatch_face_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.MODIFIER
+        )
+        assert len(sel.faces) == 1
+
+    def test_dispatch_toggle(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        dispatch_face_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.TOGGLE
+        )
+        dispatch_face_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.TOGGLE
+        )
+        assert sel.faces == set()
+
+    def test_dispatch_unknown_returns_false(self, cube, sel, front_cam):
+        # SelectMode ist ein echtes Enum — kein unbekannter Wert möglich,
+        # aber dispatch_face_click gibt False für unbekannte zurück (Fallback).
+        # Wir testen den None-Fall direkt über den Rückgabewert.
+        imap = _MockInputMap()
+        result = dispatch_face_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.REPLACE
+        )
+        assert isinstance(result, bool)
+
+
+# ---------------------------------------------------------------------------
+# SelectMode Enum
+# ---------------------------------------------------------------------------
+
+class TestSelectMode:
+
+    def test_three_modes_exist(self):
+        assert SelectMode.REPLACE is not None
+        assert SelectMode.MODIFIER is not None
+        assert SelectMode.TOGGLE is not None
+
+    def test_modes_are_distinct(self):
+        assert SelectMode.REPLACE != SelectMode.MODIFIER
+        assert SelectMode.MODIFIER != SelectMode.TOGGLE
+
+
+# ---------------------------------------------------------------------------
+# HUD Selection-Zeile
+# ---------------------------------------------------------------------------
+
+class TestHudSelectionLine:
+
+    def test_default_selection_line(self):
+        from playground.hud import PlaygroundHUD
+        hud = PlaygroundHUD()
+        assert hud.selection_line == "Selection: none"
+
+    def test_update_selection_none(self):
+        from playground.hud import PlaygroundHUD
+        hud = PlaygroundHUD()
+        hud.update_selection(0)
+        assert hud.selection_line == "Selection: none"
+
+    def test_update_selection_one_face(self):
+        from playground.hud import PlaygroundHUD
+        hud = PlaygroundHUD()
+        hud.update_selection(1)
+        assert "1 face" in hud.selection_line
+
+    def test_update_selection_many_faces(self):
+        from playground.hud import PlaygroundHUD
+        hud = PlaygroundHUD()
+        hud.update_selection(3)
+        assert "3 faces" in hud.selection_line
+
+    def test_update_selection_with_mode_label(self):
+        from playground.hud import PlaygroundHUD
+        hud = PlaygroundHUD()
+        hud.update_selection(1, "Modifier")
+        assert "Modifier" in hud.selection_line

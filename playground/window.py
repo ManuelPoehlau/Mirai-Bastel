@@ -42,7 +42,7 @@ from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
-from playground.selector import CLICK_THRESHOLD, handle_face_click  # noqa: E402
+from playground.selector import CLICK_THRESHOLD, dispatch_face_click  # noqa: E402
 from playground.vbo_builder import (  # noqa: E402
     build_edge_data,
     build_face_data,
@@ -255,6 +255,10 @@ class PlaygroundWindow(pyglet.window.Window):
         if self.app.show_vertices:
             display_label += " + V"
         self._hud.update_display(display_label)
+        sel = self.app.scene.selection if self.app.viewport is not None else None
+        n_faces = len(sel.faces) if sel is not None else 0
+        mode_label = self.app.select_mode.name.capitalize()
+        self._hud.update_selection(n_faces, mode_label)
 
     # -- Kamera-Push ----------------------------------------------------------
 
@@ -305,9 +309,10 @@ class PlaygroundWindow(pyglet.window.Window):
             and self.app.viewport is not None
         ):
             mesh = self.app.viewport.render_mesh.mesh
-            changed = handle_face_click(
+            changed = dispatch_face_click(
                 self.app.camera, mesh, self.app.scene.selection,
                 x, y, self.width, self.height,
+                modifiers, self.input_map, self.app.select_mode,
             )
             if changed:
                 self._rebuild_selection_vbo()

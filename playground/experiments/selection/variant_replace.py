@@ -1,17 +1,13 @@
-"""AP-03 Phase 1 — Face Select (Replace-Modus, Baseline).
-
-LMB-Click wählt die getroffene Face aus (Replace). Miss leert die Selektion.
-Kein Add/Remove/Toggle — explizit `SelectMode.REPLACE`.
-"""
+"""AP-03 Phase 1 / Phase 2 Baseline — Face Select (Replace, explizit)."""
 
 from playground.experiment import Experiment
 from playground.selector import SelectMode
 
 
-class FaceSelectExperiment(Experiment):
+class FaceSelectReplaceExperiment(Experiment):
     id = "selection"
     name = "Selection"
-    variant = "Face Select (Replace)"
+    variant = "Replace"
 
     def __init__(self, app) -> None:
         self._app = app

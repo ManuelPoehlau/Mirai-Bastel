@@ -40,6 +40,7 @@ class PlaygroundHUD:
         self._mesh_line = "Mesh: —"
         self._experiment_line = "Experiment: [none] No Experiment"
         self._display_line = "Display: Shaded"
+        self._selection_line = "Selection: none"
 
         # Lazy-init Label-Objekte
         self._label = None
@@ -63,6 +64,18 @@ class PlaygroundHUD:
     def update_display(self, label: str) -> None:
         """Display-Mode-Zeile aktualisieren (AP-02.5)."""
         self._display_line = f"Display: {label}"
+        self._invalidate()
+
+    def update_selection(self, n_faces: int, mode_label: str = "") -> None:
+        """Selection-Zeile aktualisieren (AP-03)."""
+        if n_faces == 0:
+            self._selection_line = "Selection: none"
+        elif n_faces == 1:
+            self._selection_line = f"Selection: 1 face"
+        else:
+            self._selection_line = f"Selection: {n_faces} faces"
+        if mode_label:
+            self._selection_line += f"  [{mode_label}]"
         self._invalidate()
 
     def update_experiment(self, experiment: "Experiment", decision: str = "") -> None:
@@ -93,7 +106,10 @@ class PlaygroundHUD:
             self._label.text = self._full_text()
 
     def _full_text(self) -> str:
-        return f"{self._camera_line}\n{self._mesh_line}\n{self._experiment_line}\n{self._display_line}"
+        return (
+            f"{self._camera_line}\n{self._mesh_line}\n"
+            f"{self._experiment_line}\n{self._display_line}\n{self._selection_line}"
+        )
 
     def _ensure_label(self) -> None:
         """Label lazy anlegen (erster draw()-Aufruf)."""
@@ -138,3 +154,7 @@ class PlaygroundHUD:
     @property
     def display_line(self) -> str:
         return self._display_line
+
+    @property
+    def selection_line(self) -> str:
+        return self._selection_line

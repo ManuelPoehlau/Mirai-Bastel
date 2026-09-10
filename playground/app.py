@@ -32,6 +32,7 @@ from mirai.viewport.display import DisplayState  # noqa: E402
 
 from playground.camera import PlaygroundCamera  # noqa: E402
 from playground.experiment import Experiment  # noqa: E402
+from playground.selector import SelectMode  # noqa: E402
 from playground.slot import ExperimentSlot  # noqa: E402
 
 
@@ -60,6 +61,7 @@ class PlaygroundApp:
         self._active_slot: ExperimentSlot | None = None
         self.display_state: DisplayState = DisplayState()
         self.show_vertices: bool = False
+        self.select_mode: SelectMode = SelectMode.REPLACE
 
     # -- Properties -----------------------------------------------------------
 
