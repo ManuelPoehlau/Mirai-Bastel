@@ -10,7 +10,36 @@ ist; Production ist der Ort, wo sauber implementiert wird, was sich bewährt hat
 unverändert. Experiment-Erkenntnisse werden dokumentiert und erst nach einer bewussten
 Entscheidung zu Production-Kandidaten.
 
-## Status AP-02 — Experiment Host
+## Status AP-02.5 — Viewport Presentation Lab ✓
+
+**Branch:** `experiment/artist-playground-v1` | **Baseline-Commit:** `b9b7ea6`
+
+WP-AP-02.5 ist abgeschlossen und eingefroren:
+
+- `vbo_builder.py` — Pure VBO-Daten-Builder (headless testbar): `build_face_data`, `build_edge_data`, `build_vertex_data` (🔴 NEW)
+- `PlaygroundWindow` — Multi-Pass-Rendering: Phong-Face-Pass (Smooth/Flat via `u_use_flat`), Flat-Color-Overlay-Pass für Edges (`GL_LINES`) und Vertices (`GL_POINTS`) (🟡 ADAPT)
+- `PlaygroundApp` — `display_state: DisplayState` + `show_vertices: bool` (🟡 ADAPT)
+- `PlaygroundHUD` — 4. Zeile für Display-Mode (🟡 ADAPT)
+- `experiments/presentation/` — 6 `PresentationExperiment`-Varianten: Shaded, Flat, Wireframe, Shaded+Wire, Shaded+V, Full (🔴 NEW)
+- 27 neue Headless-Tests, alle 71 Playground-Tests + 383 Production-Tests grün
+
+**Darstellungsmodi:**
+
+| Modus | Taste(n) |
+|---|---|
+| Smooth Shaded | Default |
+| Flat Shaded | `D` |
+| Wireframe | `D D` |
+| +Wireframe-Overlay | `Z` |
+| +Vertices | `V` |
+
+**Wiederverwendet (unverändert):** `DisplayState`, `DerivedGeometry.face_normals/vertex_normals`, `triangulate_face()`
+
+**Nächster Schritt:** AP-03 Phase 0 — Playground Controls (Input-Config), dann AP-03 Selection Lab
+
+---
+
+## Status AP-02 — Experiment Host ✓
 
 **Branch:** `experiment/artist-playground-v1`
 
@@ -53,7 +82,7 @@ python -m playground.run head     # alternativ als Modul
 ```
 
 **Steuerung:** LMB ziehen = Orbit · MMB/Shift+LMB = Pan · Mausrad = Zoom · `C`/`H` = Szene
-wechseln · `Q`/`Esc` = Beenden.
+wechseln · `D` = Display-Mode · `Z` = Wireframe-Overlay · `V` = Vertices · `Q`/`Esc` = Beenden.
 
 ## Hinweis: Kamera/GL-Befund
 
