@@ -51,9 +51,17 @@ Das Fenster öffnet mit dem Playground. Die HUD zeigt oben:
 
 ### Selection (Auswahl)
 
+| Taste | Aktion |
+|---|---|
+| M | Selection-Modus cyclen (Replace → Modifier → Toggle) |
+| LMB-Click | Face selecten (Verhalten hängt vom Modus ab) |
+| Shift+LMB | Zur Selektion hinzufügen (nur im Modifier-Modus) |
+| Ctrl+LMB | Aus Selektion entfernen (nur im Modifier-Modus) |
+| Alt+LMB | Toggle (nur im Modifier-Modus) |
+
 **LMB-Click** auf eine Face:
 - Wählt die Face aus (orange Hervorhebung)
-- Verhalten abhängig vom aktiven Selection-Modus
+- Verhalten abhängig vom aktiven Selection-Modus (siehe HUD Zeile 5)
 
 **Modi:**
 
@@ -101,10 +109,9 @@ Checkliste zum Ausprobieren:
    - [ ] Flat + Wireframe-Overlay (D + Z)
 
 3. **Selection-Modus testen**
-   - [ ] Replace: Ein Click = ein Face selektiert
-   - [ ] Shift: Mehrere Faces nacheinander selecten
-   - [ ] Ctrl: Selektierte Face abwählen
-   - [ ] Alt: Toggle (an/aus/an/...)
+   - [ ] **Replace** (M um zu cyclen): Ein Click = ein Face, Andere verlieren Auswahl
+   - [ ] **Modifier** (M nochmal): Shift = Hinzufügen, Ctrl = Entfernen, Alt = Toggle
+   - [ ] **Toggle** (M nochmal): Jeder Click wechselt den Zustand
 
 4. **Modifier ausprobieren**
    - [ ] Mit Shift mehrere Faces auswählen

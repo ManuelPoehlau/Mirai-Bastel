@@ -38,6 +38,7 @@ from playground._paths import ensure_paths
 ensure_paths()
 
 from mirai.viewport.display import DisplayMode  # noqa: E402
+from playground.selector import SelectMode  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
@@ -343,6 +344,12 @@ class PlaygroundWindow(pyglet.window.Window):
             self._update_hud()
         elif symbol == self.input_map.show_vertices:
             self.app.show_vertices = not self.app.show_vertices
+            self._update_hud()
+        elif symbol == _key.M:
+            # Cycle SelectMode: REPLACE → MODIFIER → TOGGLE → REPLACE
+            modes = [SelectMode.REPLACE, SelectMode.MODIFIER, SelectMode.TOGGLE]
+            current_idx = modes.index(self.app.select_mode)
+            self.app.select_mode = modes[(current_idx + 1) % len(modes)]
             self._update_hud()
         elif symbol in (_key.Q, _key.ESCAPE):
             self.close()
