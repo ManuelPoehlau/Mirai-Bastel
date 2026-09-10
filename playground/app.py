@@ -5,14 +5,11 @@ Head-Basemesh via OBJ-Adapter), hält das aktive Experiment und stellt
 scene/camera/viewport/active_experiment bereit.
 
 Import-Pfade: Repo-Root muss im sys.path sein (über playground/_paths.py
-sichergestellt). core/viewport/mirai werden aus src/ importiert.
+sichergestellt). core/viewport/mirai werden aus src/ importiert; Framing- und
+Mesh-Helper aus dem Integration Lab (adapters/obj_to_core.py, _paths.py).
 """
 
 from __future__ import annotations
-
-import math
-import sys
-from pathlib import Path
 
 # Bootstrap: sys.path setzen, bevor Production-Imports kommen.
 from playground._paths import DEFAULT_HEAD_ASSET, ensure_paths
@@ -24,6 +21,14 @@ from mirai.application import Application  # noqa: E402
 from viewport import Viewport  # noqa: E402
 from viewport.resource_store import TraceStore  # noqa: E402
 
+# Framing-/Mesh-Helper direkt aus dem Integration Lab (Wiederverwendung statt
+# Duplikat — identischer Startpfad zu lab_viewport.py, siehe _paths.py).
+from adapters.obj_to_core import (  # noqa: E402 (Integration Lab)
+    build_core_scene_from_obj,
+    frame_camera_on_bounds,
+)
+
+from playground.camera import PlaygroundCamera  # noqa: E402
 from playground.experiment import Experiment  # noqa: E402
 
 
@@ -42,6 +47,12 @@ class PlaygroundApp:
 
     def __init__(self) -> None:
         self._app = Application()
+        # GL-Grenze: Production-Kamera liefert eine +forward-View-Matrix, die
+        # mit der GL-Projektion (clip.w = -view.z) alles vor der Kamera clippt
+        # (dokumentierter Befund, Audit §A.1). PlaygroundCamera überschreibt
+        # NUR build_view_matrix() (gluLookAt-Konvention) — Picking-/Kamera-Math
+        # bleibt Production-unverändert. Keine Änderung an src/mirai.
+        self._app.camera = PlaygroundCamera()
         self._active_experiment: Experiment = Experiment()
 
     # -- Properties -----------------------------------------------------------
@@ -65,24 +76,17 @@ class PlaygroundApp:
     # -- Kamera-Framing -------------------------------------------------------
 
     def _frame_camera(self) -> None:
-        """Kamera auf die Mesh-Bounds ausrichten (analog Integration Lab, margin=1.4)."""
+        """Kamera auf die Mesh-Bounds ausrichten (margin=1.4).
+
+        Wiederverwendung des Integration-Lab-Helfers `frame_camera_on_bounds`
+        (adapters/obj_to_core.py) statt einer duplizierten Formel — damit ist
+        der Startpfad 1:1 identisch zu lab_viewport.py::_focus_camera
+        (target = Bounds-Zentrum, distance = radius/tan(fov/2) * margin).
+        """
         mesh = self._app.scene.mesh
-        positions = [mesh.vertex_position(vid) for vid in mesh.all_vertex_ids()]
-        if not positions:
+        if not mesh.all_vertex_ids():
             return
-        xs = [p[0] for p in positions]
-        ys = [p[1] for p in positions]
-        zs = [p[2] for p in positions]
-        cx, cy, cz = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2, (min(zs) + max(zs)) / 2
-        radius = max(
-            math.sqrt((p[0] - cx) ** 2 + (p[1] - cy) ** 2 + (p[2] - cz) ** 2)
-            for p in positions
-        )
-        fov = float(getattr(self._app.camera, "fov_degrees", 50.0))
-        half_h = math.tan(math.radians(fov / 2.0))
-        distance = max((radius / half_h) * 1.4, 0.5) if half_h > 0.0 else radius * 2.0
-        self._app.camera.target = (cx, cy, cz)
-        self._app.camera.distance = distance
+        frame_camera_on_bounds(self._app.camera, mesh, margin=1.4)
 
     # -- Szene-Loading --------------------------------------------------------
 
@@ -92,24 +96,19 @@ class PlaygroundApp:
         self._frame_camera()
 
     def load_head(self) -> None:
-        """Head-Basemesh via OBJ-Adapter laden.
+        """Head-Basemesh via OBJ-Adapter laden (identisch zum Integration Lab).
 
-        Lädt `head_basemesh.obj` aus dem Rigging-Experiment-Ordner,
-        konvertiert via OBJ→Core-Adapter und bindet den Viewport.
+        Nutzt den Lab-Adapter `build_core_scene_from_obj` (OBJ → ObjMeshData →
+        src.core.Scene) — exakt dieselbe Mesh-Erzeugung wie
+        scene/scene_objects.py::build_head_scene im Integration Lab. Danach
+        Viewport neu binden (analog Application.init_scene) und Kamera rahmen.
         """
-        from loaders.obj_loader import load_obj  # noqa: PLC0415
-        from core.mesh import Mesh  # noqa: PLC0415
+        scene = build_core_scene_from_obj(DEFAULT_HEAD_ASSET)
+        self._app.scene.mesh = scene.mesh
 
-        data = load_obj(DEFAULT_HEAD_ASSET)
-        mesh = Mesh()
-        vertex_ids = [mesh.add_vertex(pos) for pos in data.vertices]
-        for face in data.faces:
-            mesh.add_face([vertex_ids[i] for i in face])
-
-        self._app.scene.mesh = mesh
         # Viewport neu binden (analog Application.init_scene)
         self._app.viewport = Viewport(
-            mesh,
+            self._app.scene.mesh,
             selection=self._app.scene.selection,
             store_type=TraceStore,
         )
