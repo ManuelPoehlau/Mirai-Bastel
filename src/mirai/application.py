@@ -25,16 +25,22 @@ Wichtig:
   und frozen (ADR-001 erlaubt nur die dokumentierte Transform-Promotion).
 - Gate 5 implementiert den v0.2-Viewport (`src/viewport`) inkl. der
   Render-/GPU-Ressourcen; hier halten wir nur den window-freien State.
+- Gate 7 verbindet Application.camera mit dem V0.2-Viewport: `init_scene()`
+  erstellt den Viewport und bindet die OrbitCamera (Duck-Typing). Application
+  bleibt window-frei; `src/viewport` bleibt unabhängig von `src/mirai`.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from core import HistoryStack, Scene, Selection
 
+from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
+
 from .interaction import BindingSet, ToolManager, commands
-from .interaction.bindings import build_default_bindings
+from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.routing import tool_for_command
 from .viewport import DisplayState, OrbitCamera
 
@@ -42,7 +48,7 @@ from .viewport import DisplayState, OrbitCamera
 class Application:
     """Window-unabhängiger Produktions-Orchestrator."""
 
-    def __init__(self) -> None:
+    def __init__(self, keymap_path: Optional[str | Path] = None) -> None:
         # Core-Strukturen
         self.scene: Scene = Scene()
         self.selection: Selection = self.scene.selection
@@ -52,12 +58,22 @@ class Application:
         self.camera: OrbitCamera = OrbitCamera()
         self.display: DisplayState = DisplayState()
 
+        # Gate 7: V0.2 Viewport wird in init_scene() mit dem Mesh gebunden.
+        # Bliebt None, bis init_scene() aufgerufen wurde (kein Mesh verfügbar).
+        self.viewport: Viewport | None = None
+
         # Tools
         self.tool_manager: ToolManager = ToolManager()
         self._setup_tools()
 
         # Input
+        # Gate 6 (Input Config): Default → optionales keymap.json → BindingSet.
+        # Das Overlay wird genau einmal beim Application-Start geladen; eine
+        # vorhandene, ungültige Datei wird kontrolliert abgelehnt
+        # (`KeymapConfigError`). Kein Runtime-Hot-Reload.
         self.bindings: BindingSet = build_default_bindings()
+        if keymap_path is not None:
+            load_keymap_overrides(self.bindings, keymap_path)
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -75,6 +91,14 @@ class Application:
             from .scene_factory import create_cube
 
             self.scene.mesh = create_cube()
+
+        # Gate 7: Produktionsintegration — verbindet Application.camera mit
+        # dem V0.2-Viewport. Die dieselbe OrbitCamera-Instanz wird über
+        # Duck-Typing an RenderMesh.bind_camera() übergeben (siehe
+        # VIEWPORT_V02_ARCHITECTURE.md §9). Es entsteht KEINE zweite
+        # Kamera-Repräsentation.
+        self.viewport = Viewport(self.scene.mesh, selection=self.scene.selection)
+        self.viewport.bind_camera(self.camera)
 
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params
@@ -103,9 +127,15 @@ class Application:
     def update_viewport(self, delta_t: float) -> None:
         """Viewport-Tick (delta_t in Sekunden).
 
-        Gate 3: bewusst ein No-op. Animations-/Preview-Updates kommen mit
-        dem v0.2-Viewport (Gate 5). Existiert als stabiler Integrationspunkt.
+        Gate 3: bewusst ein No-op (kein Viewport vorhanden). Existiert als
+        stabiler Integrationspunkt.
+        Gate 7: Ruft `Viewport.sync()` auf, wenn ein Viewport gebunden ist
+        (nach `init_scene()`). Dadurch fließen Kamera-/Geometry-/Selection-
+        Dirty-States in die GPU-Ressourcen. Ohne gebundenen Viewport
+        (z. B. vor `init_scene()`) bleibt es ein No-Op.
         """
+        if self.viewport is not None:
+            self.viewport.sync()
 
     def shutdown(self) -> None:
         """Sauberes Herunterfahren: aktives Tool deaktivieren (kein stale State)."""

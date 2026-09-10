@@ -1,7 +1,8 @@
 # Mirai-Bastel Core V1 — Produktions-Freeze
 
-**Status:** FROZEN  
+**Status:** FROZEN (with authorized exceptions; see §7.1)  
 **Datum:** 2026-08-27  
+**Revidiert:** 2026-09-04 (ADR-001 precedent added)  
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -13,6 +14,16 @@ Freeze bedeutet nicht, dass der Core niemals wieder geändert werden darf. Es be
 > Eine Änderung an `src/core/` benötigt ab jetzt eine konkrete neue Anforderung, die zeigt, dass der bestehende V1-Vertrag nicht ausreicht.
 
 Zukünftige Systeme werden nicht vorsorglich in den Core eingebaut.
+
+### §7.1 Authorized Exceptions (Precedent)
+
+**Decision:** ADR-001 (2026-09-04, ACCEPTED)
+
+Transform operations (`RotateOperation`, `ScaleOperation`) are promoted from experiments to `src/core/operations/transform.py` as authorized production extensions.
+
+**Rationale:** These operations are fundamental modeling operations, not speculative future systems. They are production-grade (per Gate 2 classification) and belong in Core as first-class citizenship.
+
+**Process for future exceptions:** Follow same analysis as ADR-001 (classify operation, justify promotion, document precedent).
 
 ## 2. Was vor dem Freeze validiert wurde
 

@@ -224,3 +224,62 @@ WP-01A uses this contract to establish:
 - practical viewport verification.
 
 A full keymap editor, plugin system, command palette, sophisticated preferences system and generic framework are explicitly outside this package.
+
+---
+
+## 8. External Input Configuration (keymap.json) — Gate 6
+
+**Status:** Production-Validierung Gate 6 (2026-09-08), `src/mirai/interaction/input.py`. Kein neues Input-Architektur-Konzept — ergänzt §3/§4 um die extern validierte Konfiguration.
+
+Die Default-Belegung (`build_default_bindings()`) kann beim Application-Start durch eine optionale `keymap.json` als User-Overlay ergänzt werden:
+
+```text
+Default Bindings
+      ↓
+optional keymap.json
+      ↓
+BindingSet
+```
+
+### 8.1 Format
+
+```json
+{
+  "schemaVersion": 1,
+  "bindings": [
+    {
+      "context": "global",
+      "input": { "kind": "key", "value": "m", "modifiers": [] },
+      "command": "MOVE"
+    }
+  ]
+}
+```
+
+- `schemaVersion` ist verpflichtend und muss exakt `1` sein (`KEYMAP_SCHEMA_VERSION`). Es gibt kein Migrationsframework.
+- `context`: `"global"` oder `"topology"` (bestehende Kontexte; ein unbekannter Context wird abgelehnt).
+- `input.kind`: `"key"` | `"mouse"` | `"wheel"`; `input.value` ein String; `input.modifiers` eine Liste aus `"ctrl"`, `"shift"`, `"alt"`.
+- `command`: String (Command-Name) oder `null`.
+
+Die Case-Semantik der bestehenden Auflösung bleibt erhalten (exakter Vergleich, keine pauschale Lowercase-Transformation). `command` wird unverändert als String behandelt.
+
+### 8.2 Validierung an der I/O-Grenze
+
+Ungültige Konfigurationen werden kontrolliert mit `KeymapConfigError` abgelehnt: ungültiges JSON, fehlende/falsche `schemaVersion`, `bindings` keine Liste, fehlende Pflichtfelder eines Bindings, ungültiges `kind`/`value`/`modifiers`, unbekannter `context` oder `command` weder String noch `null`. Commands werden bewusst NICHT gegen ein festes Enum oder eine Registry validiert — der Input-Layer behandelt sie als Strings.
+
+### 8.3 Explicit Unbind
+
+`command: null` ist ein explizites Unbind für den jeweiligen Context und unterdrückt die Default-Auflösung:
+
+```text
+Default: M → MOVE
+keymap:  M → null
+Result:  M → unbound
+```
+
+Doppelte Einträge im selben Context: **der spätere gewinnt** (deterministisch). Gleiche Inputs in verschiedenen Contexts sind kein Fehler.
+
+### 8.4 Lifecycle
+
+- Geladen wird beim Application-Start bzw. beim Aufbau der Bindings (`Application(keymap_path=...)`); fehlt die Datei, bleiben die Defaults unverändert.
+- Kein Runtime-Hot-Reload, keine Preferences-UI.

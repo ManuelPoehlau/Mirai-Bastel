@@ -17,12 +17,22 @@ Die tatsächlichen Render-Matrizen für die GPU werden separat in
 app.py aufgebaut (dort, wo ohnehin schon eine Render-Library-
 Abhängigkeit besteht) und müssen mit denselben fov/aspect/basis-Werten
 konsistent bleiben, damit Picking und Darstellung zueinander passen.
+
+Gate 5 Ergänzung (VIEWPORT_V02_ARCHITECTURE.md §4.1, §7): `build_view_matrix()`
+/ `build_projection_matrix(aspect)` sowie `camera_revision` wurden additiv
+ergänzt, damit diese eine Kamera-Instanz sowohl für Tool-Picking (Gate 3/4)
+als auch für die GL-Uniform-Erzeugung in `src.viewport.RenderMesh`
+(duck-typed, siehe dortiger Paket-Docstring) verwendet werden kann - statt
+eine zweite, parallele Kamera-Repräsentation einzuführen. `src.viewport`
+importiert diese Klasse NICHT (keine Abhängigkeit auf `src.mirai`); die
+Bindung passiert an der Integrationsstelle (`Application`/Entry-Point) über
+Duck-Typing.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import vecmath as v
 from .vecmath import Vec3
@@ -48,13 +58,22 @@ class OrbitCamera:
     near: float = 0.05
     far: float = 200.0
 
+    # Gate 5: monoton wachsende Revision, NUR fürs Reporting/Benchmarking.
+    # Wird bei orbit()/dolly()/pan() erhöht. Bewusst KEINE Kopplung an
+    # Mesh-/Geometry-Zustand - Camera-Changes duerfen laut V0.2-Architektur
+    # NIE eine Geometry-Invalidierung ausloesen (siehe RenderMesh._sync_camera,
+    # das ausschliesslich die camera_uniforms-Ressource anfasst).
+    camera_revision: int = field(default=0, compare=False)
+
     def orbit(self, d_yaw: float, d_pitch: float) -> None:
         self.yaw += d_yaw
         max_pitch = math.radians(85)
         self.pitch = max(-max_pitch, min(max_pitch, self.pitch + d_pitch))
+        self.camera_revision += 1
 
     def dolly(self, factor: float) -> None:
         self.distance = max(0.5, min(200.0, self.distance * factor))
+        self.camera_revision += 1
 
     def eye(self) -> Vec3:
         cp = math.cos(self.pitch)
@@ -71,6 +90,42 @@ class OrbitCamera:
         right = v.normalize(v.cross(forward, world_up))
         up = v.normalize(v.cross(right, forward))
         return forward, right, up
+
+    # ------------------------------------------------------------------
+    # GL-Matrizen (Gate 5: fuer RenderMesh.camera_uniforms, siehe Docstring
+    # oben). Spalten-Hauptreihenfolge (GL-Konvention), identisch zur im
+    # V0.2-Proof verifizierten Mathematik
+    # (experiments/mirai_bastel_viewport_V02/camera.py).
+    # ------------------------------------------------------------------
+
+    def build_view_matrix(self) -> list[float]:
+        eye = self.eye()
+        forward, right, up = self.basis()
+
+        tx = -v.dot(eye, right)
+        ty = -v.dot(eye, up)
+        tz = -v.dot(eye, forward)
+        return [
+            right[0], up[0], forward[0], 0.0,
+            right[1], up[1], forward[1], 0.0,
+            right[2], up[2], forward[2], 0.0,
+            tx, ty, tz, 1.0,
+        ]
+
+    def build_projection_matrix(self, aspect: float) -> list[float]:
+        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_w = half_h * aspect
+        m00 = 1.0 / half_w
+        m11 = 1.0 / half_h
+        m22 = -(self.far + self.near) / (self.far - self.near)
+        m23 = -1.0
+        m32 = -(2.0 * self.far * self.near) / (self.far - self.near)
+        return [
+            m00, 0.0, 0.0, 0.0,
+            0.0, m11, 0.0, 0.0,
+            0.0, 0.0, m22, m23,
+            0.0, 0.0, m32, 0.0,
+        ]
 
     # ------------------------------------------------------------------
     # Picking (siehe Modul-Docstring: bewusst ohne Matrix-Invertierung)
@@ -144,6 +199,7 @@ class OrbitCamera:
                 v.scale(up, dy_px * world_per_px),
             ),
         )
+        self.camera_revision += 1
 
     def screen_delta_to_world(
         self, point: Vec3, dx: float, dy: float, width: int, height: int

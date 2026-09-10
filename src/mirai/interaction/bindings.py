@@ -104,6 +104,8 @@ def load_keymap_overrides(
     """Wendet eine optionale `keymap.json` als User-Overlay an.
 
     Existiert die Datei nicht, bleibt die Default-Belegung unverändert.
+    Eine vorhandene, ungültige Datei wird kontrolliert abgelehnt
+    (`KeymapConfigError`, siehe `BindingSet.from_json_file`).
     """
     overlay = BindingSet.from_json_file(path)
     bindings.add_overrides(overlay)

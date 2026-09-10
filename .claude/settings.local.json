@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Bash(/c/Users/Manuel/AppData/Local/Programs/Python/Python312/python.exe *)",
+      "Bash(xargs grep *)"
+    ]
+  }
+}
