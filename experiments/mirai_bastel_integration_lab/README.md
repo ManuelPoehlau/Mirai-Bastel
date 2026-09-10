@@ -113,10 +113,20 @@ experiments/mirai_bastel_integration_lab/
 │   └── ARCHITECTURE_RECONCILIATION_AUDIT.md  # Audit + WP-IL-01
 └── tests/                  # headless Integration-Boundary-Tests (52 Stück)
 ```
-## 5. Aktueller Stand (nach WP-IL-01, 2026-09-08)
+## 5. Aktueller Stand (nach WP-IL-01 Bugfix-Session, 2026-09-10)
 
 **funktioniert (durch Tests + Report + echte-GL-Proben verifiziert):**
 
+- [x] **Display Freeze behoben (Bugfix 2026-09-10):** `gl.Config(depth_size=24,
+      stencil_size=8)` entfernt — dieser Parameter erzeugte auf Win10/DWM ein
+      inkompatibles Win32-Pixel-Format (SwapBuffers präsentierte Frames nicht).
+      Kamera-Orbit/Zoom/Pan sind jetzt flüssig sichtbar.
+- [x] **HUD-Text behoben (Bugfix 2026-09-10):** Selbe Root Cause wie Display
+      Freeze + `program.stop()` + `glDisable(GL_DEPTH_TEST)` +
+      `glEnable(GL_BLEND)` vor HUD-Draw gesichert. Text ist sichtbar.
+- [x] **Fenster-Resize behoben (Bugfix 2026-09-10):** `resizable=True` +
+      `on_resize` → `_push_camera()` + `schedule_once(draw)`. Rahmen
+      greifbar, Inhalt updated korrekt.
 - [x] Production-Kamera als einzige Kamera: `LabOrbitCamera` IST eine
       `src.mirai.viewport.camera.OrbitCamera`, gebunden über
       `Viewport.bind_camera()` (Gate-7-Vertrag, Objekt-Identität getestet)
@@ -300,11 +310,14 @@ Testabdeckung der Integrationsgrenzen:
   richtet die Allokationsgröße auf Vielfache von 12 Bytes aus (ceil);
   `update()`/Buchhaltung bleiben unverändert Production. Ein echter
   Multi-Attribut-/1-Komponenten-Shader bleibt Production-Entry-Point-Scope.
-- **pyglet 2.1 Windows-Fenster-Details (Lab-lokal behandelt):** ohne explizite
-  `gl.Config` entsteht kein Depth-Puffer (unsichtbare Flächen); Modifier-
-  Konstanten liegen in `pyglet.window.key`, nicht `mouse`; transiente
-  `on_resize(height=0)` beim Start erfordert einen Aspect-Guard. Alles
-  additiv im Lab gehandhabt.
+- **pyglet 2.1 Windows-Fenster-Details (Lab-lokal behandelt):** `gl.Config(
+  depth_size=N)` auf Win10/DWM erzeugt ein inkompatibles Win32-Pixel-Format —
+  SwapBuffers präsentiert keine Frames, und pyglets `get_default_shader()`
+  (Text/Shape-Rendering) schlägt lautlos fehl. Lösung: kein `gl.Config`,
+  pyglet setzt auf Win10 automatisch einen funktionierenden Depth-Buffer.
+  Modifier-Konstanten liegen in `pyglet.window.key`, nicht `mouse`; transiente
+  `on_resize(height=0)` beim Start erfordert einen Aspect-Guard; `on_mouse_drag`
+  dx/dy sind floats (nicht ints). Alles additiv im Lab gehandhabt.
 - **Laufzeit-Nachweis Event-Kette & HUD (Probe 2026-07-09):** Alle Handler
   (`on_mouse_press/drag/release/scroll/key_press`) werden über pyglets
   Dispatch-Pfad aufgerufen und verändern den Kamera-State nachweislich.
@@ -347,3 +360,24 @@ seine Logik ist in `obj_to_core.py` adaptiert.
 Viewport (dieses Dokument, §2–§5 und §9). Details, Befunde und
 Akzeptanznachweise: [`docs/ARCHITECTURE_RECONCILIATION_AUDIT.md`](docs/ARCHITECTURE_RECONCILIATION_AUDIT.md)
 (§A.1 View-Matrix-Konvention, §G WP-IL-01, §I Implementierungsrecord).
+
+**WP-IL-01 Bugfix-Session (2026-09-10):** Drei GL-Rendering-Bugs behoben,
+`lab_viewport.py` → v4.2-wpil01. Branch `Integration-Lab-Expriment` in
+`main` gemergt (PR #1).
+
+- **Bug 1 + 2 (Display Freeze + HUD Text):** Root Cause: `gl.Config(depth_size=24,
+  stencil_size=8)` im Window-Konstruktor. Erzeugt auf Win10/DWM ein
+  inkompatibles Pixel-Format — SwapBuffers präsentiert Frames nicht (Cube
+  bewegt sich visuell nicht trotz korrekter GPU-Daten), pyglets
+  `get_default_shader()` für Text/Shape-Rendering schlägt lautlos fehl.
+  Fix: `gl.Config` komplett entfernt, `vsync=True`. Pyglets Standard-Pixelformat
+  inkludiert auf Win10 automatisch Depth-Buffer und kompatibles Text-Rendering.
+  Falsche Fährten vor der Diagnose: wglSwapIntervalEXT, vsync-Parameter,
+  resizable-Parameter (alle nicht load-bearing).
+
+- **Bug 3 (Resize):** `resizable=True` + `on_resize` → `_push_camera()` +
+  `schedule_once(draw)`. Rahmen greifbar, Inhalt updated korrekt.
+
+Weitere pyglet-Win32-Erkenntnisse (für zukünftige Sessions): `push_handlers(self)`
+NICHT verwenden (Doppel-Dispatch); `\n` in `text.Label` erfordert `multiline=True`
++ `width`; `program.stop()` vor Label.draw(); `on_mouse_drag` dx/dy sind floats.
