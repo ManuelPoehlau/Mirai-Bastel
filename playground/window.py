@@ -46,6 +46,7 @@ ensure_paths()
 from mirai.viewport.display import DisplayMode  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
+from playground.input_map import PlaygroundInputMap  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.vbo_builder import build_edge_data, build_face_data, build_vertex_data  # noqa: E402
 
@@ -120,7 +121,11 @@ class PlaygroundWindow(pyglet.window.Window):
     AP-02.5 Presentation Lab.
     """
 
-    def __init__(self, app: PlaygroundApp) -> None:
+    def __init__(
+        self,
+        app: PlaygroundApp,
+        input_map: PlaygroundInputMap | None = None,
+    ) -> None:
         super().__init__(
             1280, 800,
             caption="Mirai-Bastel — Artist Playground [WP-AP-02.5]",
@@ -128,6 +133,7 @@ class PlaygroundWindow(pyglet.window.Window):
             vsync=True,
         )
         self.app = app
+        self.input_map = input_map if input_map is not None else PlaygroundInputMap()
 
         self._face_program = shader.ShaderProgram(
             shader.Shader(_FACE_VERT, "vertex"),
@@ -284,13 +290,13 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.load_head()
             self._rebuild_vbo()
             self._push_camera()
-        elif symbol == _key.D:
+        elif symbol == self.input_map.display_cycle:
             self.app.display_state.cycle()
             self._update_hud()
-        elif symbol == _key.Z:
+        elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()
             self._update_hud()
-        elif symbol == _key.V:
+        elif symbol == self.input_map.show_vertices:
             self.app.show_vertices = not self.app.show_vertices
             self._update_hud()
         elif symbol in (_key.Q, _key.ESCAPE):
