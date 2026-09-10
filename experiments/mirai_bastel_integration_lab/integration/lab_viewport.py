@@ -81,7 +81,7 @@ void main() {
 # Versionstag: erscheint im Fenstertitel, im HUD und im Konsolen-Banner.
 # Damit ist jederzeit nachpruefbar, WELCHER Code-Stand ausgefuehrt wird
 # (Befund 2026-07-09: Aenderungen schienen am Endgeraet nicht anzukommen).
-LAB_VERSION = "v4.1-wpil01 (2026-09-09)"
+LAB_VERSION = "v4.2-wpil01 (2026-09-10)"
 
 # HUD-Konstanten auf Modulebene (headless testbar, siehe tests/test_hud.py).
 _STATUS_TITLE = "INTEGRATION LAB — LIVE-INSTRUMENTIERUNG"
@@ -114,16 +114,10 @@ class _ObjectView:
 
 class IntegrationLabWindow(pyglet.window.Window):
     def __init__(self, lab_scene: LabScene) -> None:
-        # pyglet 2.1 auf Windows erstellt ohne explizite Config keinen Depth-Puffer.
-        # Das fuehrt zu unsichtbaren Flächen trotz glEnable(GL_DEPTH_TEST).
-        # Dieser Fix ist additiv im Integration-Lab - V0.2 bleibt unberührt.
-        from pyglet import gl
-        config = gl.Config(depth_size=24, stencil_size=8)
         super().__init__(
             1280, 800,
             caption=f"Mirai-Bastel — Integration Lab / Test Studio [{LAB_VERSION}]",
-            resizable=True, vsync=False,
-            config=config,
+            resizable=True, vsync=True,
         )
         self.lab = lab_scene
         self.camera = LabOrbitCamera(
@@ -162,13 +156,6 @@ class IntegrationLabWindow(pyglet.window.Window):
         # Ohne explizites activate() behält das startende Terminal den Fokus,
         # und Scroll-Events landen nie im Lab-Fenster (Root-Cause WP-IL-01).
         self.activate()
-        # pyglet setzt wglSwapIntervalEXT(0) auf Windows 10/DWM, weil DWM
-        # eigentlich vsync übernimmt.  In der Praxis erzeugt SwapBuffers ohne
-        # WGL-vsync aber keine verlässliche DWM-Recomposition (Frames werden
-        # nicht sichtbar → "Display-Freeze").  Wir erzwingen Interval=1, damit
-        # SwapBuffers bis zum nächsten VBlank blockiert und DWM den Frame
-        # tatsächlich composite.
-        self._force_wgl_vsync()
 
     # -- Aufbau --------------------------------------------------------------
     def _add_object(self, obj: LabObject) -> None:
@@ -262,26 +249,6 @@ class IntegrationLabWindow(pyglet.window.Window):
         aspect = self.width / self.height
         for view in self.objects:
             view.binding.apply_camera(aspect)
-
-    # -- Render-Loop ---------------------------------------------------------
-    @staticmethod
-    def _force_wgl_vsync() -> None:
-        """Erzwingt WGL-Swap-Interval=1, auch wenn pyglet es wegen DWM deaktiviert.
-
-        pyglet ruft wglSwapIntervalEXT(0) auf Windows 8+, weil DWM
-        angeblich die vsync-Kontrolle übernimmt.  In der Praxis führt das
-        auf manchen Win10-Systemen dazu, dass SwapBuffers zurückkehrt, bevor
-        DWM den Frame composite → Display-Freeze trotz laufendem on_draw.
-        Mit Interval=1 blockiert SwapBuffers bis zum nächsten VBlank, womit
-        jeder flip() garantiert sichtbar wird.
-        """
-        try:
-            from pyglet.gl import wgl_info, wglext_arb
-            if wgl_info.have_extension("WGL_EXT_swap_control"):
-                wglext_arb.wglSwapIntervalEXT(1)
-                print("[lab] wglSwapIntervalEXT(1) gesetzt — vsync erzwungen", flush=True)
-        except Exception as e:
-            print(f"[lab] wglSwapIntervalEXT nicht verfügbar: {e}", flush=True)
 
     # -- Events --------------------------------------------------------------
     def on_resize(self, width: int, height: int) -> None:
@@ -437,14 +404,8 @@ class IntegrationLabWindow(pyglet.window.Window):
         # Mesh verdeckt.) Der Depth-Test wird im naechsten Frame vom
         # 3D-Pass wieder aktiviert.
         gl.glDisable(gl.GL_DEPTH_TEST)
-        # Blending für pyglet's Text/Shape-Rendering aktivieren.
-        # pyglet.text.Label rendert Glyph-Atlas-Texturen mit Alpha-Kanal;
-        # ohne GL_BLEND sind alle Glyphen-Pixel unsichtbar (Alpha ignoriert).
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-        # Custom Shader deaktivieren, bevor pyglet's eigene
-        # Shapes/Text-Rendering läuft. Sonst bleibt der Lab-Shader aktiv
-        # und pyglet.text.Label produziert unsichtbare Fragmente.
         self.program.stop()
         self._update_hud_panel()
         self._hud_panel.draw()
