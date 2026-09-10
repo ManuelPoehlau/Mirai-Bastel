@@ -10,11 +10,32 @@ ist; Production ist der Ort, wo sauber implementiert wird, was sich bewährt hat
 unverändert. Experiment-Erkenntnisse werden dokumentiert und erst nach einer bewussten
 Entscheidung zu Production-Kandidaten.
 
-## Status AP-01 — Foundation
+## Status AP-02 — Experiment Host
 
 **Branch:** `experiment/artist-playground-v1`
 
-WP-AP-01 ist implementiert:
+WP-AP-02 ist implementiert:
+
+- `ExperimentSlot` (`slot.py`) — Container für Experiment-Varianten mit Aktivierung und Decision-Status (🔴 NEW)
+- `VariantEntry` + `Decision` — KEEP / ITERATE / REJECT pro Variante (🔴 NEW)
+- `generate_decision_md()` / `write_decision_md()` — Git-freundliches Decision-Template (🔴 NEW)
+- `PlaygroundApp.set_slot()` + `activate_variant()` — Slot-Integration in den Orchestrator (🔴 NEW)
+- `PlaygroundHUD` zeigt Decision-Status an (UNDECIDED wird unterdrückt) (🟡 ADAPT)
+- `playground/experiments/` — Dateistruktur für Varianten und `decision.md` (🔴 NEW)
+- 18 neue Headless-Tests, alle 383 Production-Tests grün
+
+**Dateistruktur für neue Experimente:**
+
+```
+playground/experiments/<experiment_id>/
+    variant_a.py    ← erbt von Experiment, überschreibt Hooks
+    variant_b.py
+    decision.md     ← per slot.write_decision_md() erzeugt
+```
+
+## Status AP-01 — Foundation ✓
+
+WP-AP-01 ist abgeschlossen:
 
 - `PlaygroundWindow` — leichtgewichtiges pyglet-Fenster (🔴 NEW)
 - `PlaygroundApp` — Orchestrator, wrapped `Application` (🔵 WRAP)
