@@ -41,13 +41,19 @@ WP-AP-01 (Foundation)                   ✓ done
 WP-AP-02 (Experiment Host)              ✓ done
     │
     ▼
-WP-AP-02.5 (Viewport Presentation Lab)  ✓ done  baseline: b9b7ea6
+WP-AP-02.5 (Viewport Presentation Lab)  ✓ done  (b9b7ea6)
     │
     ▼
-WP-AP-03 Phase 0 (Playground Controls)  ← next
+WP-AP-03 Phase 0 (Playground Controls)  ✓ done  (aeab079)
     │
     ▼
-WP-AP-03 (Selection Lab)
+WP-AP-03 Phase 1 (Single Select)        ✓ done  (8971502)
+    │
+    ▼
+WP-AP-03 Phase 2 (Modifier/Toggle)      ✓ done  (8b38736)  ← current
+    │
+    ├──▶ WP-AP-03 Phase 3 (Marquee)
+    ├──▶ WP-AP-03 Phase 6 (Feedback)
     │
     ├──▶ WP-AP-04 (Tool Variant Lab)
     │
@@ -164,6 +170,14 @@ playground/
 ---
 
 ## WP-AP-03 — Selection Lab
+
+**Status:** Phase 0–2 done | **Phase-2-Commit:** `8b38736` (2026-09-11)
+
+**Phase 0 — Playground Controls:** `PlaygroundInputMap` (frei konfigurierbar), 15 Tests
+**Phase 1 — Single Select (Replace):** Face-Click → selection, 14 Tests  
+**Phase 2 — Modifier/Toggle:** Shift=Add/Ctrl=Remove/Alt=Toggle oder Toggle-only, 22 Tests
+
+**Total:** 51 Tests, 122 Playground-Tests grün, Selection-Baseline funktioniert.
 
 **Detailed plan:** [AP-03_PLAN.md](AP-03_PLAN.md)
 

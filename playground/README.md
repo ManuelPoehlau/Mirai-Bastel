@@ -35,7 +35,43 @@ WP-AP-02.5 ist abgeschlossen und eingefroren:
 
 **Wiederverwendet (unverändert):** `DisplayState`, `DerivedGeometry.face_normals/vertex_normals`, `triangulate_face()`
 
-**Nächster Schritt:** AP-03 Phase 0 — Playground Controls (Input-Config), dann AP-03 Selection Lab
+---
+
+## Status AP-03 — Selection Lab (Phase 0–2) ✓
+
+**Branch:** `experiment/artist-playground-v1` | **Phase-2-Commit:** `8b38736`
+
+### Phase 0 — Playground Controls ✓
+
+`PlaygroundInputMap` (dataclass) — konfigurierbare Bindings. Display-Controls (D/Z/V) + Selection-Controls (LMB, Shift/Ctrl/Alt). Alle Felder plain int, frei überschreibbar. `PlaygroundWindow` konsultiert die Map statt hardcodierter Konstanten.
+
+- 15 neue Tests
+
+### Phase 1 — Single Select (Replace) ✓
+
+`handle_face_click(camera, mesh, selection, sx, sy, w, h) → bool` — headless Click-to-Selection-Bridge. `pick_face()` → `selection.set({fid})` im Replace-Modus.
+
+- Selection-Draw-Pass (`GL_LEQUAL`, orange) zwischen Face- und Edge-Pass
+- Selection-VBO nur bei Change neu gebaut
+- 14 neue Tests
+
+### Phase 2 — Add/Remove/Toggle ✓
+
+`SelectMode` Enum (REPLACE/MODIFIER/TOGGLE) — steuert global welche Klick-Philosophie aktiv ist.
+
+- **Variante A (MODIFIER):** Shift=Add, Ctrl=Remove, Alt=Toggle, bare=Replace
+- **Variante B (TOGGLE):** Jeder Hit togglet, kein Modifier nötig
+
+`dispatch_face_click(...)` — zentraler Einstiegspunkt, routed anhand `SelectMode`.
+
+`PlaygroundApp.select_mode` — steuert das Verhalten. HUD zeigt aktiven Mode + Face-Count (5. Zeile).
+
+- 3 Experiment-Varianten
+- 22 neue Tests
+
+**Gesamt AP-03 (Phase 0–2):** 51 neue Tests, 122 Playground-Tests grün
+
+**Nächster Schritt:** Phase 3 (Marquee) oder Phase 6 (Selection Feedback)
 
 ---
 
