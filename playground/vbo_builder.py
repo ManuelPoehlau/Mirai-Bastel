@@ -62,3 +62,18 @@ def build_vertex_data(mesh: Mesh) -> list[float]:
     for vid in mesh.all_vertex_ids():
         vert_positions.extend(mesh.vertex_position(vid))
     return vert_positions
+
+
+def build_selection_data(mesh: Mesh, selected_face_ids) -> list[float]:
+    """Positionen für das Selection-Overlay-VBO (GL_TRIANGLES, expanded).
+
+    Erzeugt Triangle-Daten nur für die übergebenen Face-IDs — kein Rebuild
+    des gesamten Mesh-VBO nötig.
+    """
+    positions: list[float] = []
+    for fid in selected_face_ids:
+        boundary = mesh.face_vertices(fid)
+        for a, b, c in triangulate_face(boundary):
+            for vid in (a, b, c):
+                positions.extend(mesh.vertex_position(vid))
+    return positions

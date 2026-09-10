@@ -1,12 +1,10 @@
 """PlaygroundWindow — pyglet-Fenster für das Artist Playground.
 
-Analoges Muster zum Integration Lab (`lab_viewport.py`), aber ohne
-feste Szene, ohne Picking-Logik (WP-AP-03) und ohne Selection-Handling.
-
 Steuerung:
     LMB ziehen      Orbit
     MMB ziehen      Pan
     Mausrad         Zoom
+    LMB click       Face Select (AP-03 Phase 1)
     C               load_cube (Szene wechseln)
     H               load_head (Szene wechseln)
     D               Display-Mode cyclen (Shaded → Flat → Wireframe)
@@ -14,19 +12,15 @@ Steuerung:
     V               Vertex-Darstellung togglen
     Q / ESC         Fenster schließen
 
-Shader (AP-02.5):
-    _FACE_VERT / _FACE_FRAG  — Phong-Beleuchtung; wählt Smooth- oder Flat-Normale
-                               via u_use_flat-Uniform.
-    _OVERLAY_VERT / _OVERLAY_FRAG — Unbeleuchtetes Flat-Color-Rendering für
-                               Edges (GL_LINES) und Vertices (GL_POINTS).
+Shader:
+    _FACE_VERT/_FACE_FRAG    — Phong mit u_use_flat-Uniform (Smooth/Flat).
+    _OVERLAY_VERT/_OVERLAY_FRAG — Flat-Color für Edges, Vertices, Selection.
 
-VBO-Struktur (AP-02.5, expanded — kein shared-vertex-Indexing):
-    _vlist_faces  — GL_TRIANGLES, enthält smooth_normal + flat_normal je Vertex
-    _vlist_edges  — GL_LINES, je zwei Positionen pro Mesh-Edge
-    _vlist_verts  — GL_POINTS, eine Position pro Mesh-Vertex
-
-Expanded VBO erlaubt unterschiedliche Normalen pro Face-Vertex (Flat Shading)
-ohne Shared-Vertex-Konflikte, auf Kosten etwas höheren Speicherverbrauchs.
+VBO-Struktur:
+    _vlist_faces      — GL_TRIANGLES, smooth_normal + flat_normal
+    _vlist_edges      — GL_LINES
+    _vlist_verts      — GL_POINTS
+    _vlist_selection  — GL_TRIANGLES, selektierte Faces (rebuilt on selection change)
 """
 
 from __future__ import annotations
@@ -48,7 +42,13 @@ from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
-from playground.vbo_builder import build_edge_data, build_face_data, build_vertex_data  # noqa: E402
+from playground.selector import CLICK_THRESHOLD, handle_face_click  # noqa: E402
+from playground.vbo_builder import (  # noqa: E402
+    build_edge_data,
+    build_face_data,
+    build_selection_data,
+    build_vertex_data,
+)
 
 # -- Shader-Quellen ----------------------------------------------------------
 
@@ -109,17 +109,13 @@ void main() {
 _DEFAULT_BASE_COLOR = (0.6, 0.7, 0.9, 1.0)
 _EDGE_COLOR = (0.15, 0.15, 0.15, 1.0)
 _VERTEX_COLOR = (1.0, 0.75, 0.1, 1.0)
+_SELECTION_COLOR = (0.95, 0.45, 0.1, 1.0)
 _VERTEX_POINT_SIZE = 4.0
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
 
 class PlaygroundWindow(pyglet.window.Window):
-    """Leichtgewichtiges pyglet-Fenster für das Artist Playground.
-
-    Orchestriert PlaygroundApp, PlaygroundRenderer und PlaygroundHUD.
-    Zwei Shader-Programme + drei VBOs (Faces, Edges, Vertices) für
-    AP-02.5 Presentation Lab.
-    """
+    """Leichtgewichtiges pyglet-Fenster für das Artist Playground."""
 
     def __init__(
         self,
@@ -128,7 +124,7 @@ class PlaygroundWindow(pyglet.window.Window):
     ) -> None:
         super().__init__(
             1280, 800,
-            caption="Mirai-Bastel — Artist Playground [WP-AP-02.5]",
+            caption="Mirai-Bastel — Artist Playground [WP-AP-03]",
             resizable=True,
             vsync=True,
         )
@@ -152,6 +148,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_faces = None
         self._vlist_edges = None
         self._vlist_verts = None
+        self._vlist_selection = None
         self._rebuild_vbo()
 
         self._hud = PlaygroundHUD(x=10, y_bottom=10, width=self.width - 20)
@@ -166,13 +163,15 @@ class PlaygroundWindow(pyglet.window.Window):
     # -- VBO-Aufbau -----------------------------------------------------------
 
     def _rebuild_vbo(self) -> None:
-        """Alle VBOs (Faces, Edges, Vertices) aus dem aktuellen Mesh neu bauen."""
-        for vlist in (self._vlist_faces, self._vlist_edges, self._vlist_verts):
+        """Alle Mesh-VBOs (Faces, Edges, Vertices) neu bauen. Selection-VBO separat."""
+        for vlist in (self._vlist_faces, self._vlist_edges, self._vlist_verts,
+                      self._vlist_selection):
             if vlist is not None:
                 vlist.delete()
         self._vlist_faces = None
         self._vlist_edges = None
         self._vlist_verts = None
+        self._vlist_selection = None
 
         if self.app.viewport is None:
             return
@@ -211,6 +210,33 @@ class PlaygroundWindow(pyglet.window.Window):
                 n_verts,
                 gl.GL_POINTS,
                 position=("f", vert_positions),
+            )
+
+    def _rebuild_selection_vbo(self) -> None:
+        """Selection-VBO aus den aktuell selektierten Faces neu bauen.
+
+        Wird nach jedem Click aufgerufen (nur selektierte Faces, kleines VBO).
+        Triggert keinen Mesh-Rebuild.
+        """
+        if self._vlist_selection is not None:
+            self._vlist_selection.delete()
+            self._vlist_selection = None
+
+        if self.app.viewport is None:
+            return
+
+        mesh = self.app.viewport.render_mesh.mesh
+        selection = self.app.scene.selection
+        if not selection.faces:
+            return
+
+        positions = build_selection_data(mesh, selection.faces)
+        n = len(positions) // 3
+        if n > 0:
+            self._vlist_selection = self._overlay_program.vertex_list(
+                n,
+                gl.GL_TRIANGLES,
+                position=("f", positions),
             )
 
     # -- HUD-Update -----------------------------------------------------------
@@ -271,7 +297,21 @@ class PlaygroundWindow(pyglet.window.Window):
         return pyglet.event.EVENT_HANDLED
 
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
+        was_click = self._drag_moved < CLICK_THRESHOLD
         self._drag_button = None
+        if (
+            was_click
+            and button == self.input_map.select_button
+            and self.app.viewport is not None
+        ):
+            mesh = self.app.viewport.render_mesh.mesh
+            changed = handle_face_click(
+                self.app.camera, mesh, self.app.scene.selection,
+                x, y, self.width, self.height,
+            )
+            if changed:
+                self._rebuild_selection_vbo()
+                self._update_hud()
         return pyglet.event.EVENT_HANDLED
 
     def on_mouse_scroll(
@@ -338,6 +378,18 @@ class PlaygroundWindow(pyglet.window.Window):
             if display_state.show_edges:
                 gl.glDisable(gl.GL_POLYGON_OFFSET_FILL)
             self._face_program.stop()
+
+        # -- Selection-Pass (selektierte Faces, GL_LEQUAL — over face geometry) -
+        if self._vlist_selection is not None:
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_SELECTION_COLOR)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LEQUAL)
+            self._vlist_selection.draw(gl.GL_TRIANGLES)
+            gl.glDepthFunc(gl.GL_LESS)
+            self._overlay_program.stop()
 
         # -- Edge-Pass (Wireframe / Wireframe-Overlay) ------------------------
         if display_state.show_edges and self._vlist_edges is not None:
