@@ -9,10 +9,24 @@ Steuerung:
     Mausrad         Zoom
     C               load_cube (Szene wechseln)
     H               load_head (Szene wechseln)
+    D               Display-Mode cyclen (Shaded → Flat → Wireframe)
+    Z               Wireframe-Overlay togglen
+    V               Vertex-Darstellung togglen
     Q / ESC         Fenster schließen
 
-Shader: Gleiche GLSL-Quellen wie das Integration Lab (Phong-Shading,
-ohne Back-Face-Culling, weil OBJ-Windings nicht garantiert CCW sind).
+Shader (AP-02.5):
+    _FACE_VERT / _FACE_FRAG  — Phong-Beleuchtung; wählt Smooth- oder Flat-Normale
+                               via u_use_flat-Uniform.
+    _OVERLAY_VERT / _OVERLAY_FRAG — Unbeleuchtetes Flat-Color-Rendering für
+                               Edges (GL_LINES) und Vertices (GL_POINTS).
+
+VBO-Struktur (AP-02.5, expanded — kein shared-vertex-Indexing):
+    _vlist_faces  — GL_TRIANGLES, enthält smooth_normal + flat_normal je Vertex
+    _vlist_edges  — GL_LINES, je zwei Positionen pro Mesh-Edge
+    _vlist_verts  — GL_POINTS, eine Position pro Mesh-Vertex
+
+Expanded VBO erlaubt unterschiedliche Normalen pro Face-Vertex (Flat Shading)
+ohne Shared-Vertex-Konflikte, auf Kosten etwas höheren Speicherverbrauchs.
 """
 
 from __future__ import annotations
@@ -29,30 +43,36 @@ from playground._paths import ensure_paths
 
 ensure_paths()
 
+from mirai.viewport.display import DisplayMode  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
+from playground.vbo_builder import build_edge_data, build_face_data, build_vertex_data  # noqa: E402
 
-# Shader-Quellen (identisch zum Integration Lab, Wiederverwendung aus WP-IL-01).
-_VERT_SRC = """
+# -- Shader-Quellen ----------------------------------------------------------
+
+_FACE_VERT = """
 #version 330 core
 in vec3 position;
-in vec3 normal;
+in vec3 smooth_normal;
+in vec3 flat_normal;
 in vec3 color;
 uniform mat4 u_view;
 uniform mat4 u_proj;
 uniform vec4 u_base_color;
 uniform vec3 u_light_dir;
+uniform int u_use_flat;
 out vec4 frag_color;
 void main() {
     gl_Position = u_proj * u_view * vec4(position, 1.0);
-    float ndl = max(dot(normal, u_light_dir), 0.0);
+    vec3 n = u_use_flat != 0 ? flat_normal : smooth_normal;
+    float ndl = max(dot(n, u_light_dir), 0.0);
     vec3 shaded = color * mix(vec3(0.35), vec3(1.0), ndl);
     frag_color = vec4(shaded * u_base_color.rgb, 1.0);
 }
 """
 
-_FRAG_SRC = """
+_FACE_FRAG = """
 #version 330 core
 in vec4 frag_color;
 out vec4 out_color;
@@ -61,7 +81,34 @@ void main() {
 }
 """
 
+_OVERLAY_VERT = """
+#version 330 core
+in vec3 position;
+uniform mat4 u_view;
+uniform mat4 u_proj;
+out vec4 frag_color;
+uniform vec4 u_color;
+void main() {
+    gl_Position = u_proj * u_view * vec4(position, 1.0);
+    frag_color = u_color;
+}
+"""
+
+_OVERLAY_FRAG = """
+#version 330 core
+in vec4 frag_color;
+out vec4 out_color;
+void main() {
+    out_color = frag_color;
+}
+"""
+
+# -- Render-Konstanten -------------------------------------------------------
+
 _DEFAULT_BASE_COLOR = (0.6, 0.7, 0.9, 1.0)
+_EDGE_COLOR = (0.15, 0.15, 0.15, 1.0)
+_VERTEX_COLOR = (1.0, 0.75, 0.1, 1.0)
+_VERTEX_POINT_SIZE = 4.0
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
 
@@ -69,39 +116,42 @@ class PlaygroundWindow(pyglet.window.Window):
     """Leichtgewichtiges pyglet-Fenster für das Artist Playground.
 
     Orchestriert PlaygroundApp, PlaygroundRenderer und PlaygroundHUD.
-    Eigener Shader + VertexList für den Draw (analog Integration Lab,
-    da Production Viewport.render() noch kein GL-Backend hat).
+    Zwei Shader-Programme + drei VBOs (Faces, Edges, Vertices) für
+    AP-02.5 Presentation Lab.
     """
 
     def __init__(self, app: PlaygroundApp) -> None:
         super().__init__(
             1280, 800,
-            caption="Mirai-Bastel — Artist Playground [WP-AP-01]",
+            caption="Mirai-Bastel — Artist Playground [WP-AP-02.5]",
             resizable=True,
             vsync=True,
         )
         self.app = app
-        self.program = shader.ShaderProgram(
-            shader.Shader(_VERT_SRC, "vertex"),
-            shader.Shader(_FRAG_SRC, "fragment"),
+
+        self._face_program = shader.ShaderProgram(
+            shader.Shader(_FACE_VERT, "vertex"),
+            shader.Shader(_FACE_FRAG, "fragment"),
+        )
+        self._overlay_program = shader.ShaderProgram(
+            shader.Shader(_OVERLAY_VERT, "vertex"),
+            shader.Shader(_OVERLAY_FRAG, "fragment"),
         )
 
-        # Renderer-Adapter (hält Viewport-Notifikations-API)
         if app.viewport is not None:
             self._renderer = PlaygroundRenderer(app.viewport)
         else:
             self._renderer = None
 
-        # Eigene VBO-Daten für den Draw-Pass
-        self._vlist = None
+        self._vlist_faces = None
+        self._vlist_edges = None
+        self._vlist_verts = None
         self._rebuild_vbo()
 
-        # HUD
         self._hud = PlaygroundHUD(x=10, y_bottom=10, width=self.width - 20)
         self._hud.update_layout(self.width, self.height)
         self._update_hud()
 
-        # Maus-Drag-State
         self._drag_button = None
         self._drag_moved = 0.0
 
@@ -110,71 +160,73 @@ class PlaygroundWindow(pyglet.window.Window):
     # -- VBO-Aufbau -----------------------------------------------------------
 
     def _rebuild_vbo(self) -> None:
-        """VBO aus dem aktuellen Mesh neu aufbauen."""
-        if self._vlist is not None:
-            self._vlist.delete()
-            self._vlist = None
+        """Alle VBOs (Faces, Edges, Vertices) aus dem aktuellen Mesh neu bauen."""
+        for vlist in (self._vlist_faces, self._vlist_edges, self._vlist_verts):
+            if vlist is not None:
+                vlist.delete()
+        self._vlist_faces = None
+        self._vlist_edges = None
+        self._vlist_verts = None
 
         if self.app.viewport is None:
             return
 
-        # Renderer-Adapter neu binden (nach Mesh-Wechsel)
-        self._renderer = PlaygroundRenderer(self.app.viewport)
+        if self.app.viewport is not None:
+            self._renderer = PlaygroundRenderer(self.app.viewport)
 
-        mesh = self.app.scene.mesh
-        from viewport.derived import triangulate_face  # noqa: PLC0415
+        mesh = self.app.viewport.render_mesh.mesh
+        derived = self.app.viewport.render_mesh.derived
 
-        vertex_ids = list(mesh.all_vertex_ids())
-        id_to_index = {vid: i for i, vid in enumerate(vertex_ids)}
+        face_positions, smooth_normals, flat_normals, colors = build_face_data(mesh, derived)
+        n_face_verts = len(face_positions) // 3
+        if n_face_verts > 0:
+            self._vlist_faces = self._face_program.vertex_list(
+                n_face_verts,
+                gl.GL_TRIANGLES,
+                position=("f", face_positions),
+                smooth_normal=("f", smooth_normals),
+                flat_normal=("f", flat_normals),
+                color=("f", colors),
+            )
 
-        positions: list[float] = []
-        for vid in vertex_ids:
-            positions.extend(mesh.vertex_position(vid))
+        edge_positions = build_edge_data(mesh)
+        n_edge_verts = len(edge_positions) // 3
+        if n_edge_verts > 0:
+            self._vlist_edges = self._overlay_program.vertex_list(
+                n_edge_verts,
+                gl.GL_LINES,
+                position=("f", edge_positions),
+            )
 
-        # Normalen aus dem RenderMesh (Production-Ableitung)
-        render_mesh = self.app.viewport.render_mesh
-        derived = render_mesh.derived
-        normals: list[float] = []
-        for vid in vertex_ids:
-            n = derived.vertex_normals.get(vid, (0.0, 1.0, 0.0))
-            normals.extend(n)
-
-        colors: list[float] = [1.0, 1.0, 1.0] * len(vertex_ids)
-
-        indices: list[int] = []
-        for fid in mesh.all_face_ids():
-            boundary = mesh.face_vertices(fid)
-            for a, b, c in triangulate_face(boundary):
-                indices.extend([id_to_index[a], id_to_index[b], id_to_index[c]])
-
-        if not indices:
-            return
-
-        self._vlist = self.program.vertex_list_indexed(
-            len(vertex_ids),
-            gl.GL_TRIANGLES,
-            indices,
-            position=("f", positions),
-            normal=("f", normals),
-            color=("f", colors),
-        )
+        vert_positions = build_vertex_data(mesh)
+        n_verts = len(vert_positions) // 3
+        if n_verts > 0:
+            self._vlist_verts = self._overlay_program.vertex_list(
+                n_verts,
+                gl.GL_POINTS,
+                position=("f", vert_positions),
+            )
 
     # -- HUD-Update -----------------------------------------------------------
 
     def _update_hud(self) -> None:
         cam = self.app.camera
         self._hud.update_camera(cam.yaw, cam.pitch, cam.distance)
-        mesh = self.app.scene.mesh
-        v_count = len(list(mesh.all_vertex_ids()))
-        e_count = len(list(mesh.all_edge_ids()))
-        f_count = len(list(mesh.all_face_ids()))
-        self._hud.update_mesh(v_count, e_count, f_count)
+        mesh = self.app.viewport.render_mesh.mesh if self.app.viewport else None
+        if mesh is not None:
+            v_count = len(list(mesh.all_vertex_ids()))
+            e_count = len(list(mesh.all_edge_ids()))
+            f_count = len(list(mesh.all_face_ids()))
+            self._hud.update_mesh(v_count, e_count, f_count)
         self._hud.update_experiment(self.app.active_experiment)
+        display_label = self.app.display_state.label
+        if self.app.show_vertices:
+            display_label += " + V"
+        self._hud.update_display(display_label)
 
     # -- Kamera-Push ----------------------------------------------------------
 
     def _push_camera(self) -> None:
-        """Kamera-Zustand in den Production-Viewport übertragen."""
         if self.height == 0:
             return
         aspect = self.width / self.height
@@ -232,6 +284,15 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.load_head()
             self._rebuild_vbo()
             self._push_camera()
+        elif symbol == _key.D:
+            self.app.display_state.cycle()
+            self._update_hud()
+        elif symbol == _key.Z:
+            self.app.display_state.toggle_wireframe_overlay()
+            self._update_hud()
+        elif symbol == _key.V:
+            self.app.show_vertices = not self.app.show_vertices
+            self._update_hud()
         elif symbol in (_key.Q, _key.ESCAPE):
             self.close()
         return pyglet.event.EVENT_HANDLED
@@ -245,29 +306,61 @@ class PlaygroundWindow(pyglet.window.Window):
         gl.glClearColor(0.08, 0.08, 0.12, 1.0)
         self.clear()
 
-        if self._vlist is not None:
-            self.program.use()
-            self.program["u_view"] = self.app.camera.build_view_matrix()
-            self.program["u_proj"] = self.app.camera.build_projection_matrix(
-                self.width / self.height
-            )
-            self.program["u_light_dir"] = (
-                _LIGHT_DIR_INV,
-                _LIGHT_DIR_INV,
-                _LIGHT_DIR_INV,
-            )
-            self.program["u_base_color"] = list(_DEFAULT_BASE_COLOR)
-            gl.glEnable(gl.GL_DEPTH_TEST)
-            self._vlist.draw(gl.GL_TRIANGLES)
+        display_state = self.app.display_state
+        view = self.app.camera.build_view_matrix()
+        proj = self.app.camera.build_projection_matrix(self.width / self.height)
 
-        # Experiment-Draw (vor HUD)
+        # -- Face-Pass (Shaded / Flat Shaded / Wireframe ohne Faces) ----------
+        if display_state.show_faces and self._vlist_faces is not None:
+            self._face_program.use()
+            self._face_program["u_view"] = view
+            self._face_program["u_proj"] = proj
+            self._face_program["u_light_dir"] = (
+                _LIGHT_DIR_INV, _LIGHT_DIR_INV, _LIGHT_DIR_INV,
+            )
+            self._face_program["u_base_color"] = list(_DEFAULT_BASE_COLOR)
+            self._face_program["u_use_flat"] = (
+                1 if display_state.mode is DisplayMode.FLAT_SHADED else 0
+            )
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            # Polygon-Offset pusht Faces leicht nach hinten → Wireframe-Overlay
+            # ohne Z-Fighting (nur wenn Edges zusätzlich gezeichnet werden).
+            if display_state.show_edges:
+                gl.glEnable(gl.GL_POLYGON_OFFSET_FILL)
+                gl.glPolygonOffset(1.0, 1.0)
+            self._vlist_faces.draw(gl.GL_TRIANGLES)
+            if display_state.show_edges:
+                gl.glDisable(gl.GL_POLYGON_OFFSET_FILL)
+            self._face_program.stop()
+
+        # -- Edge-Pass (Wireframe / Wireframe-Overlay) ------------------------
+        if display_state.show_edges and self._vlist_edges is not None:
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_EDGE_COLOR)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            self._vlist_edges.draw(gl.GL_LINES)
+            self._overlay_program.stop()
+
+        # -- Vertex-Pass (GL_POINTS, immer vor HUD) ---------------------------
+        if self.app.show_vertices and self._vlist_verts is not None:
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_VERTEX_COLOR)
+            gl.glDisable(gl.GL_DEPTH_TEST)
+            gl.glPointSize(_VERTEX_POINT_SIZE)
+            self._vlist_verts.draw(gl.GL_POINTS)
+            self._overlay_program.stop()
+
+        # -- Experiment-Hook --------------------------------------------------
         self.app.active_experiment.draw()
 
-        # HUD: Depth-Test deaktivieren, Shader stoppen (Constraint aus WP-IL-01)
+        # -- HUD (program.stop() vor Label.draw() — Constraint aus WP-IL-01) --
         gl.glDisable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-        self.program.stop()
         self._hud.draw()
 
         return pyglet.event.EVENT_HANDLED

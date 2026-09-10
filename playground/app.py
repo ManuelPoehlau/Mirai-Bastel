@@ -28,6 +28,8 @@ from adapters.obj_to_core import (  # noqa: E402 (Integration Lab)
     frame_camera_on_bounds,
 )
 
+from mirai.viewport.display import DisplayState  # noqa: E402
+
 from playground.camera import PlaygroundCamera  # noqa: E402
 from playground.experiment import Experiment  # noqa: E402
 from playground.slot import ExperimentSlot  # noqa: E402
@@ -56,6 +58,8 @@ class PlaygroundApp:
         self._app.camera = PlaygroundCamera()
         self._active_experiment: Experiment = Experiment()
         self._active_slot: ExperimentSlot | None = None
+        self.display_state: DisplayState = DisplayState()
+        self.show_vertices: bool = False
 
     # -- Properties -----------------------------------------------------------
 
