@@ -30,6 +30,7 @@ from adapters.obj_to_core import (  # noqa: E402 (Integration Lab)
 
 from playground.camera import PlaygroundCamera  # noqa: E402
 from playground.experiment import Experiment  # noqa: E402
+from playground.slot import ExperimentSlot  # noqa: E402
 
 
 class PlaygroundApp:
@@ -54,6 +55,7 @@ class PlaygroundApp:
         # bleibt Production-unverändert. Keine Änderung an src/mirai.
         self._app.camera = PlaygroundCamera()
         self._active_experiment: Experiment = Experiment()
+        self._active_slot: ExperimentSlot | None = None
 
     # -- Properties -----------------------------------------------------------
 
@@ -117,12 +119,28 @@ class PlaygroundApp:
 
     # -- Experiment -----------------------------------------------------------
 
+    @property
+    def active_slot(self) -> ExperimentSlot | None:
+        return self._active_slot
+
     def set_experiment(self, experiment: Experiment) -> None:
         """Aktives Experiment wechseln. Deaktiviert das alte, aktiviert das neue."""
         if self._active_experiment is not experiment:
             self._active_experiment.deactivate()
             self._active_experiment = experiment
             self._active_experiment.activate()
+
+    def set_slot(self, slot: ExperimentSlot) -> None:
+        """Aktiven Experiment-Slot setzen und erste Variante aktivieren (WP-AP-02)."""
+        self._active_slot = slot
+        self.set_experiment(slot.active_experiment)
+
+    def activate_variant(self, index: int) -> None:
+        """Variante im aktiven Slot wechseln (WP-AP-02)."""
+        if self._active_slot is None:
+            raise RuntimeError("Kein aktiver ExperimentSlot. Erst set_slot() aufrufen.")
+        self._active_slot.activate(index)
+        self.set_experiment(self._active_slot.active_experiment)
 
     # -- Per-Frame-Tick -------------------------------------------------------
 

@@ -59,11 +59,15 @@ class PlaygroundHUD:
         self._mesh_line = f"Mesh: V:{vertex_count} E:{edge_count} F:{face_count}"
         self._invalidate()
 
-    def update_experiment(self, experiment: "Experiment") -> None:
-        """Experiment-Zeile aktualisieren."""
+    def update_experiment(self, experiment: "Experiment", decision: str = "") -> None:
+        """Experiment-Zeile aktualisieren.
+
+        `decision` ist optional (WP-AP-02): z.B. "KEEP", "ITERATE", "REJECT".
+        """
         variant = f" {experiment.variant}" if experiment.variant else ""
+        status = f" [{decision}]" if decision and decision != "UNDECIDED" else ""
         self._experiment_line = (
-            f"Experiment: [{experiment.id}] {experiment.name}{variant}"
+            f"Experiment: [{experiment.id}] {experiment.name}{variant}{status}"
         )
         self._invalidate()
 
