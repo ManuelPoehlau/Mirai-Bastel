@@ -4,7 +4,8 @@ Steuerung:
     LMB ziehen      Orbit
     MMB ziehen      Pan
     Mausrad         Zoom
-    LMB click       Face Select (AP-03 Phase 1)
+    LMB click       Face Select (AP-03 Phase 1–3)
+    LMB drag (BOX)  Box Select (AP-03 Phase 3)
     X (gedrückt)    Move (gedrückt halten + ziehen, AP-04)
     R (gedrückt)    Rotate (gedrückt halten + ziehen, AP-04)
     S (gedrückt)    Scale (gedrückt halten + ziehen, AP-04)
@@ -13,7 +14,7 @@ Steuerung:
     D               Display-Mode cyclen (Shaded → Flat → Wireframe)
     Z               Wireframe-Overlay togglen
     V               Vertex-Darstellung togglen
-    M               Selection-Modus cyclen (Replace/Modifier/Toggle)
+    M               Selection-Modus cyclen (Replace/Modifier/Toggle/Box)
     Q / ESC         Fenster schließen
 
 Shader:
@@ -53,7 +54,12 @@ from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
-from playground.selector import CLICK_THRESHOLD, dispatch_face_click  # noqa: E402
+from playground.selector import (  # noqa: E402
+    CLICK_THRESHOLD,
+    dispatch_face_click,
+    handle_box_select,
+    handle_face_click,
+)
 from playground.transformer import create_tool_for_type  # noqa: E402
 from playground.vbo_builder import (  # noqa: E402
     build_edge_data,
@@ -173,6 +179,12 @@ class PlaygroundWindow(pyglet.window.Window):
         # Transform-State (AP-04)
         self._transform_key_down = None  # 'x', 'r', 's' oder None
         self._transform_started = False
+        self._last_mouse_x = 0
+        self._last_mouse_y = 0
+
+        # Box-Select-State (AP-03 Variante C)
+        self._box_start: tuple[int, int] | None = None
+        self._box_end: tuple[int, int] | None = None
 
         self.activate()
 
@@ -299,6 +311,13 @@ class PlaygroundWindow(pyglet.window.Window):
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         self._drag_button = button
         self._drag_moved = 0.0
+        if (
+            self.app.select_mode is SelectMode.BOX
+            and button == self.input_map.select_button
+            and self._transform_key_down is None
+        ):
+            self._box_start = (x, y)
+            self._box_end = (x, y)
         self.activate()
 
     def on_mouse_drag(
@@ -331,9 +350,17 @@ class PlaygroundWindow(pyglet.window.Window):
                     float(-dy),  # Y umkehren (pyglet y nach oben)
                     self.width,
                     self.height,
-                    self.app.camera,
                 )
                 self._push_camera()
+            return pyglet.event.EVENT_HANDLED
+
+        # Box-Select: LMB-Drag in BOX-Modus → Gummiband aktualisieren
+        if (
+            self.app.select_mode is SelectMode.BOX
+            and self._drag_button == self.input_map.select_button
+            and self._box_start is not None
+        ):
+            self._box_end = (x, y)
             return pyglet.event.EVENT_HANDLED
 
         # Normale Kamera-Bedienung
@@ -351,20 +378,37 @@ class PlaygroundWindow(pyglet.window.Window):
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
         was_click = self._drag_moved < CLICK_THRESHOLD
         self._drag_button = None
-        if (
-            was_click
-            and button == self.input_map.select_button
-            and self.app.viewport is not None
-        ):
+
+        if button == self.input_map.select_button and self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
-            changed = dispatch_face_click(
-                self.app.camera, mesh, self.app.scene.selection,
-                x, y, self.width, self.height,
-                modifiers, self.input_map, self.app.select_mode,
-            )
+            changed = False
+
+            if self.app.select_mode is SelectMode.BOX and self._box_start is not None:
+                if was_click:
+                    # Kleiner Drag in BOX-Modus → Replace-Fallback
+                    changed = handle_face_click(
+                        self.app.camera, mesh, self.app.scene.selection,
+                        x, y, self.width, self.height,
+                    )
+                else:
+                    bx1, by1 = self._box_start
+                    changed = handle_box_select(
+                        self.app.camera, mesh, self.app.scene.selection,
+                        bx1, by1, x, y, self.width, self.height,
+                    )
+                self._box_start = None
+                self._box_end = None
+            elif was_click:
+                changed = dispatch_face_click(
+                    self.app.camera, mesh, self.app.scene.selection,
+                    x, y, self.width, self.height,
+                    modifiers, self.input_map, self.app.select_mode,
+                )
+
             if changed:
                 self._rebuild_selection_vbo()
                 self._update_hud()
+
         return pyglet.event.EVENT_HANDLED
 
     def on_mouse_scroll(
@@ -373,6 +417,37 @@ class PlaygroundWindow(pyglet.window.Window):
         self.app.camera.dolly(0.9 if scroll_y > 0 else 1.1)
         self._push_camera()
         return pyglet.event.EVENT_HANDLED
+
+    def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
+        """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
+        # Transform: wenn Hotkey gedrückt ohne Mausklick
+        if (
+            self._transform_key_down is not None
+            and self.app.active_tool is not None
+            and self.app.viewport is not None
+        ):
+            if not self._transform_started:
+                # Erste Bewegung: Transform starten
+                success = begin_transform(
+                    self.app.active_tool,
+                    self.app.scene,
+                    self.app.camera,
+                    self.app.scene.selection,
+                )
+                if success:
+                    self._transform_started = True
+
+            if self._transform_started:
+                # Update während Motion
+                update_transform(
+                    self.app.active_tool,
+                    float(dx),
+                    float(-dy),  # Y umkehren (pyglet y nach oben)
+                    self.width,
+                    self.height,
+                )
+                self._push_camera()
+            return pyglet.event.EVENT_HANDLED
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         if symbol == _key.C:
@@ -393,10 +468,12 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.show_vertices = not self.app.show_vertices
             self._update_hud()
         elif symbol == _key.M:
-            # Cycle SelectMode: REPLACE → MODIFIER → TOGGLE → REPLACE
-            modes = [SelectMode.REPLACE, SelectMode.MODIFIER, SelectMode.TOGGLE]
-            current_idx = modes.index(self.app.select_mode)
+            # Cycle SelectMode: REPLACE → MODIFIER → TOGGLE → BOX → REPLACE
+            modes = [SelectMode.REPLACE, SelectMode.MODIFIER, SelectMode.TOGGLE, SelectMode.BOX]
+            current_idx = modes.index(self.app.select_mode) if self.app.select_mode in modes else 0
             self.app.select_mode = modes[(current_idx + 1) % len(modes)]
+            self._box_start = None
+            self._box_end = None
             self._update_hud()
         elif symbol == _key.X:
             # X: Move Tool aktivieren
@@ -507,6 +584,30 @@ class PlaygroundWindow(pyglet.window.Window):
 
         # -- Experiment-Hook --------------------------------------------------
         self.app.active_experiment.draw()
+
+        # -- Box-Select Rubber Band (2D, Screen-Space) -----------------------
+        if self._box_start is not None and self._box_end is not None:
+            x1, y1 = self._box_start
+            x2, y2 = self._box_end
+            bx = min(x1, x2)
+            by = min(y1, y2)
+            bw = abs(x2 - x1)
+            bh = abs(y2 - y1)
+            if bw > 1 and bh > 1:
+                import pyglet.shapes as _shapes
+                gl.glDisable(gl.GL_DEPTH_TEST)
+                gl.glEnable(gl.GL_BLEND)
+                gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+                fill = _shapes.Rectangle(bx, by, bw, bh, color=(100, 160, 255, 35))
+                fill.draw()
+                for lx1, ly1, lx2, ly2 in (
+                    (bx,      by,      bx + bw, by),
+                    (bx + bw, by,      bx + bw, by + bh),
+                    (bx + bw, by + bh, bx,      by + bh),
+                    (bx,      by + bh, bx,      by),
+                ):
+                    line = _shapes.Line(lx1, ly1, lx2, ly2, width=1, color=(100, 160, 255, 200))
+                    line.draw()
 
         # -- HUD (program.stop() vor Label.draw() — Constraint aus WP-IL-01) --
         gl.glDisable(gl.GL_DEPTH_TEST)

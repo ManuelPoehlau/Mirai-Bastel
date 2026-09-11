@@ -22,9 +22,11 @@ from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
     SelectMode,
     dispatch_face_click,
+    handle_box_select,
     handle_face_click,
     handle_face_click_modifier,
     handle_face_click_toggle,
+    pick_faces_in_rect,
 )
 from playground.vbo_builder import build_selection_data  # noqa: E402
 
@@ -53,6 +55,23 @@ class _MissCamera:
         return None
 
 
+class _ProjectCamera:
+    """Kamera die Welt-x,y linear auf Screen projiziert: screen = (x*100, y*100).
+
+    Einheitswürfel-Centroids:
+      Front/Back (0, 0, ±1) → (0,   0)
+      Right      (1, 0,  0) → (100, 0)
+      Left       (-1,0,  0) → (-100,0)
+      Top        (0, 1,  0) → (0, 100)
+      Bottom     (0,-1,  0) → (0,-100)
+    """
+    def project_to_screen(self, world_pos, width, height):
+        return (world_pos[0] * 100.0, world_pos[1] * 100.0)
+
+    def screen_to_ray(self, sx, sy, width, height):
+        return (0.0, 0.0, 5.0), (0.0, 0.0, -1.0)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -72,6 +91,10 @@ def front_cam():
 @pytest.fixture
 def miss_cam():
     return _MissCamera()
+
+@pytest.fixture
+def proj_cam():
+    return _ProjectCamera()
 
 
 # ---------------------------------------------------------------------------
@@ -338,14 +361,16 @@ class TestDispatchFaceClick:
 
 class TestSelectMode:
 
-    def test_three_modes_exist(self):
+    def test_four_modes_exist(self):
         assert SelectMode.REPLACE is not None
         assert SelectMode.MODIFIER is not None
         assert SelectMode.TOGGLE is not None
+        assert SelectMode.BOX is not None
 
     def test_modes_are_distinct(self):
         assert SelectMode.REPLACE != SelectMode.MODIFIER
         assert SelectMode.MODIFIER != SelectMode.TOGGLE
+        assert SelectMode.TOGGLE != SelectMode.BOX
 
 
 # ---------------------------------------------------------------------------
@@ -382,3 +407,81 @@ class TestHudSelectionLine:
         hud = PlaygroundHUD()
         hud.update_selection(1, "Modifier")
         assert "Modifier" in hud.selection_line
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Variante C: Box-Select
+# ---------------------------------------------------------------------------
+
+class TestPickFacesInRect:
+    """pick_faces_in_rect: Centroid-Projektion gegen Bildschirm-Rechteck."""
+
+    def test_center_box_hits_front_and_back(self, cube, proj_cam):
+        # Centroids von Front+Back liegen bei (0,0) → screen (0,0)
+        faces = pick_faces_in_rect(proj_cam, cube, -50, -50, 50, 50, 640, 480)
+        assert len(faces) >= 2  # mindestens Front + Back
+
+    def test_right_box_hits_right_face(self, cube, proj_cam):
+        # Right-Face-Centroid bei (1,0,0) → screen (100,0)
+        faces = pick_faces_in_rect(proj_cam, cube, 50, -50, 150, 50, 640, 480)
+        assert len(faces) == 1
+
+    def test_large_box_hits_all_faces(self, cube, proj_cam):
+        faces = pick_faces_in_rect(proj_cam, cube, -200, -200, 200, 200, 640, 480)
+        total = len(list(cube.all_face_ids()))
+        assert len(faces) == total
+
+    def test_empty_box_returns_empty_set(self, cube, proj_cam):
+        # Box weit außerhalb aller Centroids
+        faces = pick_faces_in_rect(proj_cam, cube, 500, 500, 600, 600, 640, 480)
+        assert faces == set()
+
+    def test_returns_valid_face_ids(self, cube, proj_cam):
+        faces = pick_faces_in_rect(proj_cam, cube, -200, -200, 200, 200, 640, 480)
+        all_ids = set(cube.all_face_ids())
+        assert faces.issubset(all_ids)
+
+    def test_order_of_corners_does_not_matter(self, cube, proj_cam):
+        a = pick_faces_in_rect(proj_cam, cube, -200, -200, 200, 200, 640, 480)
+        b = pick_faces_in_rect(proj_cam, cube, 200, 200, -200, -200, 640, 480)
+        assert a == b
+
+
+class TestHandleBoxSelect:
+
+    def test_box_hit_sets_selection(self, cube, sel, proj_cam):
+        changed = handle_box_select(proj_cam, cube, sel, -200, -200, 200, 200, 640, 480)
+        assert changed is True
+        assert len(sel.faces) == len(list(cube.all_face_ids()))
+
+    def test_box_hit_sets_face_mode(self, cube, sel, proj_cam):
+        handle_box_select(proj_cam, cube, sel, -200, -200, 200, 200, 640, 480)
+        assert sel.mode is SelectionMode.FACE
+
+    def test_box_miss_clears_existing_selection(self, cube, sel, front_cam, proj_cam):
+        handle_face_click(front_cam, cube, sel, 320, 240, 640, 480)
+        assert len(sel.faces) == 1
+        changed = handle_box_select(proj_cam, cube, sel, 500, 500, 600, 600, 640, 480)
+        assert changed is True
+        assert sel.faces == set()
+
+    def test_box_miss_on_empty_returns_false(self, cube, sel, proj_cam):
+        changed = handle_box_select(proj_cam, cube, sel, 500, 500, 600, 600, 640, 480)
+        assert changed is False
+
+    def test_box_replaces_existing_selection(self, cube, sel, front_cam, proj_cam):
+        # Erst nur eine Face selektieren (Click)
+        handle_face_click(front_cam, cube, sel, 320, 240, 640, 480)
+        before = frozenset(sel.faces)
+        # Box → selektiert alle
+        handle_box_select(proj_cam, cube, sel, -200, -200, 200, 200, 640, 480)
+        assert len(sel.faces) > len(before)
+
+    def test_dispatch_box_click_fallback(self, cube, sel, front_cam):
+        """dispatch_face_click mit BOX-Modus = Replace-Fallback."""
+        imap = _MockInputMap()
+        changed = dispatch_face_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.BOX
+        )
+        assert changed is True
+        assert len(sel.faces) == 1

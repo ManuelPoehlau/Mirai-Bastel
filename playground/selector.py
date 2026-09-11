@@ -27,6 +27,7 @@ class SelectMode(Enum):
     REPLACE  = auto()   # Klick = Replace (Phase 1 Baseline)
     MODIFIER = auto()   # Shift=Add, Ctrl=Remove, Alt=Toggle (Variante A)
     TOGGLE   = auto()   # Jeder Klick togglet (Variante B)
+    BOX      = auto()   # LMB-Drag = Box-Select (Variante C)
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +135,75 @@ def handle_face_click_toggle(
 # Zentraler Dispatch
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Phase 3 — Variante C: Box-Select (LMB-Drag)
+# ---------------------------------------------------------------------------
+
+def pick_faces_in_rect(
+    camera,
+    mesh,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    width: int,
+    height: int,
+) -> set:
+    """Alle Faces deren Centroid (projected) im Bildschirm-Rechteck liegt.
+
+    Koordinaten in pyglet-Screen-Space (y=0 unten). x1/y1 und x2/y2 können
+    beliebige Ecken sein (kein Vorzeichen-Requirement).
+    Gibt None zurück wenn kein mesh — sonst ein set von FaceIds (ggf. leer).
+    """
+    xmin, xmax = min(x1, x2), max(x1, x2)
+    ymin, ymax = min(y1, y2), max(y1, y2)
+    result = set()
+    for fid in mesh.all_face_ids():
+        verts = mesh.face_vertices(fid)
+        if not verts:
+            continue
+        positions = [mesh.vertex_position(v) for v in verts]
+        cx = sum(p[0] for p in positions) / len(positions)
+        cy = sum(p[1] for p in positions) / len(positions)
+        cz = sum(p[2] for p in positions) / len(positions)
+        projected = camera.project_to_screen((cx, cy, cz), width, height)
+        if projected is None:
+            continue
+        px, py = projected
+        if xmin <= px <= xmax and ymin <= py <= ymax:
+            result.add(fid)
+    return result
+
+
+def handle_box_select(
+    camera,
+    mesh,
+    selection,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    width: int,
+    height: int,
+) -> bool:
+    """Box-Select: Alle Faces im Rechteck ersetzen die Selektion.
+
+    Gibt True zurück wenn sich die Selektion geändert hat.
+    Hit  → selection.set(faces), True.
+    Miss → selection.clear() falls nicht leer, sonst False.
+    """
+    faces = pick_faces_in_rect(camera, mesh, x1, y1, x2, y2, width, height)
+    old_faces = set(selection.faces)
+    if faces:
+        selection.mode = SelectionMode.FACE
+        selection.set(faces)
+        return faces != old_faces
+    if not selection.is_empty():
+        selection.clear()
+        return True
+    return False
+
+
 def dispatch_face_click(
     camera,
     mesh,
@@ -155,4 +225,7 @@ def dispatch_face_click(
         )
     if mode is SelectMode.TOGGLE:
         return handle_face_click_toggle(camera, mesh, selection, sx, sy, width, height)
+    if mode is SelectMode.BOX:
+        # Click in BOX mode = Replace-Fallback (kein Drag gestartet)
+        return handle_face_click(camera, mesh, selection, sx, sy, width, height)
     return False

@@ -73,17 +73,18 @@ def update_transform(
     dy: float,
     width: int,
     height: int,
-    camera,
+    camera=None,  # camera wird ignoriert — ist bereits in begin() gespeichert
 ) -> bool:
     """Tool.update() mit Pixel-Deltas aufrufen.
 
+    Camera ist bereits im Tool gespeichert von begin(), wird nicht übergeben.
     True wenn update erfolgreich war.
     """
     if not tool.is_interacting:
         return False
 
     try:
-        tool.update(dx=dx, dy=dy, width=width, height=height, camera=camera)
+        tool.update(dx=dx, dy=dy, width=width, height=height)
         return True
     except Exception:
         return False
