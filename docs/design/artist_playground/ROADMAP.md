@@ -35,19 +35,46 @@ This roadmap is therefore not a feature checklist. It is a sequence of research 
 ## Dependency Order
 
 ```
-WP-AP-01 (Foundation)
+WP-AP-01 (Foundation)                   ✓ done
     │
     ▼
-WP-AP-02 (Experiment Host)
+WP-AP-02 (Experiment Host)              ✓ done
     │
-    ├──▶ WP-AP-03 (Selection Lab)     ← highest priority
+    ▼
+WP-AP-02.5 (Viewport Presentation Lab)  ✓ done  (b9b7ea6)
     │
-    ├──▶ WP-AP-04 (Tool Variant Lab)  ← possible after WP-AP-03
+    ▼
+WP-AP-03 Phase 0 (Playground Controls)  ✓ done  (aeab079)
     │
-    └──▶ WP-AP-05 (Topology Lab)      ← after WP-AP-04
+    ▼
+WP-AP-03 Phase 1 (Single Select)        ✓ done  (8971502)
+    │
+    ▼
+WP-AP-03 Phase 2 (Modifier/Toggle)      ✓ done  (8b38736)  ← current
+    │
+    ├──▶ WP-AP-03 Phase 3 (Marquee)
+    ├──▶ WP-AP-03 Phase 6 (Feedback)
+    │
+    ├──▶ WP-AP-04 (Tool Variant Lab)
+    │
+    └──▶ WP-AP-05 (Topology Lab)
 ```
 
 WP-AP-03, -04, -05 can run in parallel — they share only the infrastructure from WP-AP-01/02.
+
+---
+
+## WP-AP-02.5 — Viewport Presentation Lab ✓
+
+**Status:** Done | **Baseline-Commit:** `b9b7ea6` (2026-09-11)
+
+Multi-Pass-Rendering im Playground: Smooth Shaded, Flat Shaded, Wireframe, Vertices (GL_POINTS),
+Edges (GL_LINES) und alle Kombinationen davon. Sechs `PresentationExperiment`-Varianten.
+`DisplayState` aus Production direkt wiederverwendet. VBO-Daten-Builder headless testbar.
+
+27 neue Tests. Darstellungsbasis für AP-03 (Selection Feedback) bereit.
+
+Detailed plan: [AP-03_PLAN.md](AP-03_PLAN.md)
 
 ---
 
@@ -143,6 +170,16 @@ playground/
 ---
 
 ## WP-AP-03 — Selection Lab
+
+**Status:** Phase 0–2 done | **Phase-2-Commit:** `8b38736` (2026-09-11)
+
+**Phase 0 — Playground Controls:** `PlaygroundInputMap` (frei konfigurierbar), 15 Tests
+**Phase 1 — Single Select (Replace):** Face-Click → selection, 14 Tests  
+**Phase 2 — Modifier/Toggle:** Shift=Add/Ctrl=Remove/Alt=Toggle oder Toggle-only, 22 Tests
+
+**Total:** 51 Tests, 122 Playground-Tests grün, Selection-Baseline funktioniert.
+
+**Detailed plan:** [AP-03_PLAN.md](AP-03_PLAN.md)
 
 **Goal:** Answer the most important open UX question: *How should selection feel?*
 

@@ -20,6 +20,7 @@ Eine Reference-Datei sollte daher nicht die Research-Dokumentation duplizieren. 
 - `subdivision/` – Catmull-Clark und verwandte Verfahren
 - `topology/` – Winged Edge, Half Edge, Mesh-Datenstrukturen, Topologieoperationen
 - `deformation/` – Skinning, Weight Maps, Morphs, Vertex Maps, nicht-destruktive Deformation und Attribute
+- `viewport/` – Kamera-/Rendering-/OpenGL-Konventionen und Viewport-Untersuchungen
 - `papers/` – Papers, Patente und technische Spezifikationen
 
 ## Recherche-Regeln
