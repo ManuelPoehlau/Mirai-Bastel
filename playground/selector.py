@@ -149,11 +149,11 @@ def pick_faces_in_rect(
     width: int,
     height: int,
 ) -> set:
-    """Alle Faces deren Centroid (projected) im Bildschirm-Rechteck liegt.
+    """Alle Faces bei denen ALLE Vertices im Bildschirm-Rechteck liegen.
 
     Koordinaten in pyglet-Screen-Space (y=0 unten). x1/y1 und x2/y2 können
     beliebige Ecken sein (kein Vorzeichen-Requirement).
-    Gibt None zurück wenn kein mesh — sonst ein set von FaceIds (ggf. leer).
+    Ein Vertex hinter der Kamera (project_to_screen → None) disqualifiziert das Face.
     """
     xmin, xmax = min(x1, x2), max(x1, x2)
     ymin, ymax = min(y1, y2), max(y1, y2)
@@ -162,15 +162,17 @@ def pick_faces_in_rect(
         verts = mesh.face_vertices(fid)
         if not verts:
             continue
-        positions = [mesh.vertex_position(v) for v in verts]
-        cx = sum(p[0] for p in positions) / len(positions)
-        cy = sum(p[1] for p in positions) / len(positions)
-        cz = sum(p[2] for p in positions) / len(positions)
-        projected = camera.project_to_screen((cx, cy, cz), width, height)
-        if projected is None:
-            continue
-        px, py = projected
-        if xmin <= px <= xmax and ymin <= py <= ymax:
+        all_inside = True
+        for vid in verts:
+            projected = camera.project_to_screen(mesh.vertex_position(vid), width, height)
+            if projected is None:
+                all_inside = False
+                break
+            px, py = projected
+            if not (xmin <= px <= xmax and ymin <= py <= ymax):
+                all_inside = False
+                break
+        if all_inside:
             result.add(fid)
     return result
 

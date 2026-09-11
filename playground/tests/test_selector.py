@@ -414,25 +414,31 @@ class TestHudSelectionLine:
 # ---------------------------------------------------------------------------
 
 class TestPickFacesInRect:
-    """pick_faces_in_rect: Centroid-Projektion gegen Bildschirm-Rechteck."""
+    """pick_faces_in_rect: Alle Vertices eines Face müssen im Rechteck liegen.
 
-    def test_center_box_hits_front_and_back(self, cube, proj_cam):
-        # Centroids von Front+Back liegen bei (0,0) → screen (0,0)
-        faces = pick_faces_in_rect(proj_cam, cube, -50, -50, 50, 50, 640, 480)
-        assert len(faces) >= 2  # mindestens Front + Back
+    _ProjectCamera: screen = (world_x * 100, world_y * 100).
+    Einheitswürfel-Vertices liegen bei (±100, ±100).
+    Right-Face-Vertices alle bei x=100: Box (50,-150)..(150,150) erfasst genau eine Face.
+    Kleine Box (-50,-50)..(50,50) erfasst keine Face (Vertices liegen außerhalb).
+    """
 
-    def test_right_box_hits_right_face(self, cube, proj_cam):
-        # Right-Face-Centroid bei (1,0,0) → screen (100,0)
-        faces = pick_faces_in_rect(proj_cam, cube, 50, -50, 150, 50, 640, 480)
+    def test_all_vertices_inside_selects_face(self, cube, proj_cam):
+        # Right-Face: alle Vertices bei x=100, y=±100 → Box (50,-150)..(150,150) trifft genau eine
+        faces = pick_faces_in_rect(proj_cam, cube, 50, -150, 150, 150, 640, 480)
         assert len(faces) == 1
 
+    def test_partial_vertices_does_not_select(self, cube, proj_cam):
+        # Kleine Box — keine Face hat ALLE Vertices drin (Vertices bei ±100)
+        faces = pick_faces_in_rect(proj_cam, cube, -50, -50, 50, 50, 640, 480)
+        assert faces == set()
+
     def test_large_box_hits_all_faces(self, cube, proj_cam):
+        # Box enthält alle Vertices (±100 ≤ 200)
         faces = pick_faces_in_rect(proj_cam, cube, -200, -200, 200, 200, 640, 480)
         total = len(list(cube.all_face_ids()))
         assert len(faces) == total
 
     def test_empty_box_returns_empty_set(self, cube, proj_cam):
-        # Box weit außerhalb aller Centroids
         faces = pick_faces_in_rect(proj_cam, cube, 500, 500, 600, 600, 640, 480)
         assert faces == set()
 
