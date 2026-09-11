@@ -606,7 +606,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     (bx + bw, by + bh, bx,      by + bh),
                     (bx,      by + bh, bx,      by),
                 ):
-                    line = _shapes.Line(lx1, ly1, lx2, ly2, width=1, color=(100, 160, 255, 200))
+                    line = _shapes.Line(lx1, ly1, lx2, ly2, color=(100, 160, 255, 200))
                     line.draw()
 
         # -- HUD (program.stop() vor Label.draw() — Constraint aus WP-IL-01) --
