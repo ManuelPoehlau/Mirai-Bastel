@@ -3,7 +3,20 @@
     "allow": [
       "Bash(python *)",
       "Bash(/c/Users/Manuel/AppData/Local/Programs/Python/Python312/python.exe *)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(xargs ls *)",
+      "Bash(winget install *)",
+      "Bash(cd C:\\\\\\\\Users\\\\\\\\Manuel\\\\\\\\mirai_bastel)",
+      "Bash(xargs wc *)",
+      "Bash(git push *)",
+      "Bash(git -C /c/Users/Manuel/mirai_bastel branch -a)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git stash *)",
+      "Bash(git checkout *)",
+      "Bash(find /c/Users/Manuel/mirai_bastel/tests -name \"test_*.py\" -exec wc -l {} +)",
+      "Bash(git -C C:/Users/Manuel/mirai_bastel log --oneline experiment/artist-playground-v1)",
+      "Bash(git *)"
     ]
   }
 }

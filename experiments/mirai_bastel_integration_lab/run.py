@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 _THIS_DIR = Path(__file__).resolve().parent
-for _p in (str(_THIS_DIR), str(_THIS_DIR.parent.parent)):
+_REPO_ROOT = _THIS_DIR.parent.parent
+for _p in (str(_THIS_DIR), str(_REPO_ROOT / "src"), str(_REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

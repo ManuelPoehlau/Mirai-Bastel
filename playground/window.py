@@ -4,8 +4,9 @@ Steuerung:
     LMB ziehen      Orbit
     MMB ziehen      Pan
     Mausrad         Zoom
-    LMB click       Face Select (AP-03 Phase 1–3)
-    LMB drag (BOX)  Box Select (AP-03 Phase 3)
+    LMB click       Select (Verhalten laut SelectMode)
+    LMB drag (BOX)  Box Select (wenn SelectMethod = BOX aktiv)
+    Alt+LMB drag    Orbit
     X (gedrückt)    Move (gedrückt halten + ziehen, AP-04)
     R (gedrückt)    Rotate (gedrückt halten + ziehen, AP-04)
     S (gedrückt)    Scale (gedrückt halten + ziehen, AP-04)
@@ -14,9 +15,10 @@ Steuerung:
     D               Display-Mode cyclen (Shaded → Flat → Wireframe)
     Z               Wireframe-Overlay togglen
     V               Vertex-Darstellung togglen
-    M               Selection-Modus cyclen (Replace/Modifier/Toggle/Box)
+    M               SelectMode cyclen (Replace → Modifier → Toggle)
+    Q               SelectMethod cyclen (Pick → Box → Lasso → Paint)
     1 / 2 / 3       Component-Modus (Vertex / Edge / Face)
-    Q / ESC         Fenster schließen
+    ESC             Fenster schließen (oder Transform canceln)
 
 Shader:
     _FACE_VERT/_FACE_FRAG    — Phong mit u_use_flat-Uniform (Smooth/Flat).
@@ -45,7 +47,7 @@ ensure_paths()
 
 from core.selection import SelectionMode  # noqa: E402
 from mirai.viewport.display import DisplayMode  # noqa: E402
-from playground.selector import SelectMode  # noqa: E402
+from playground.selector import SelectMethod, SelectMode  # noqa: E402
 from playground.transformer import (  # noqa: E402
     begin_transform,
     cancel_transform,
@@ -60,7 +62,7 @@ from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
     dispatch_click,
     handle_box_select,
-    handle_face_click,
+    pick_component,
 )
 from playground.transformer import create_tool_for_type  # noqa: E402
 from playground.vbo_builder import (  # noqa: E402
@@ -132,6 +134,7 @@ _DEFAULT_BASE_COLOR = (0.6, 0.7, 0.9, 1.0)
 _EDGE_COLOR = (0.15, 0.15, 0.15, 1.0)
 _VERTEX_COLOR = (1.0, 0.75, 0.1, 1.0)
 _SELECTION_COLOR = (0.95, 0.45, 0.1, 1.0)
+_HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
 _VERTEX_POINT_SIZE = 4.0
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
@@ -173,6 +176,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_selection = None
         self._vlist_sel_verts = None
         self._vlist_sel_edges = None
+        self._vlist_hover = None
         self._rebuild_vbo()
 
         self._hud = PlaygroundHUD(x=10, y_bottom=10, width=self.width - 20)
@@ -199,13 +203,16 @@ class PlaygroundWindow(pyglet.window.Window):
     def _rebuild_vbo(self) -> None:
         """Alle Mesh-VBOs (Faces, Edges, Vertices) neu bauen. Selection-VBO separat."""
         for vlist in (self._vlist_faces, self._vlist_edges, self._vlist_verts,
-                      self._vlist_selection):
+                      self._vlist_selection, self._vlist_hover):
             if vlist is not None:
                 vlist.delete()
         self._vlist_faces = None
         self._vlist_edges = None
         self._vlist_verts = None
         self._vlist_selection = None
+        self._vlist_hover = None
+        if self.app.viewport is not None:
+            self.app.scene.selection.hovered = None
 
         if self.app.viewport is None:
             return
@@ -290,6 +297,37 @@ class PlaygroundWindow(pyglet.window.Window):
                     n, gl.GL_LINES, position=("f", positions),
                 )
 
+    def _rebuild_hover_vbo(self) -> None:
+        """Hover-Highlight-VBO für das nächste Element unter dem Cursor."""
+        if self._vlist_hover is not None:
+            self._vlist_hover.delete()
+            self._vlist_hover = None
+
+        if self.app.viewport is None:
+            return
+
+        sel = self.app.scene.selection
+        hovered = sel.hovered
+        if hovered is None:
+            return
+
+        mesh = self.app.viewport.render_mesh.mesh
+        if sel.mode is SelectionMode.VERTEX:
+            positions = build_selection_vertex_data(mesh, {hovered})
+            prim = gl.GL_POINTS
+        elif sel.mode is SelectionMode.EDGE:
+            positions = build_selection_edge_data(mesh, {hovered})
+            prim = gl.GL_LINES
+        else:
+            positions = build_selection_data(mesh, {hovered})
+            prim = gl.GL_TRIANGLES
+
+        n = len(positions) // 3
+        if n > 0:
+            self._vlist_hover = self._overlay_program.vertex_list(
+                n, prim, position=("f", positions),
+            )
+
     # -- HUD-Update -----------------------------------------------------------
 
     def _update_hud(self) -> None:
@@ -318,8 +356,17 @@ class PlaygroundWindow(pyglet.window.Window):
             comp_label = comp.name.capitalize()
         else:
             n_sel, comp_label = 0, "Face"
-        mode_label = self.app.select_mode.name.capitalize()
-        self._hud.update_selection(n_sel, mode_label, comp_label)
+        mode_label   = self.app.select_mode.name.capitalize()
+        method_label = self.app.select_method.name.capitalize()
+        self._hud.update_selection(n_sel, f"{mode_label}/{method_label}", comp_label)
+
+    # -- Transform-Sync -------------------------------------------------------
+
+    def _sync_after_transform(self) -> None:
+        """VBOs nach einer Transform-Operation (update oder commit/cancel) neu bauen."""
+        self._rebuild_vbo()
+        self._rebuild_selection_vbo()
+        self._push_camera()
 
     # -- Kamera-Push ----------------------------------------------------------
 
@@ -345,7 +392,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._drag_button = button
         self._drag_moved = 0.0
         if (
-            self.app.select_mode is SelectMode.BOX
+            self.app.select_method is SelectMethod.BOX
             and button == self.input_map.select_button
             and self._transform_key_down is None
         ):
@@ -376,20 +423,20 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._transform_started = True
 
             if self._transform_started:
-                # Update während Drag
+                # Update während Drag — VBOs neu bauen für Live-Preview
                 update_transform(
                     self.app.active_tool,
                     float(dx),
-                    float(-dy),  # Y umkehren (pyglet y nach oben)
+                    float(dy),
                     self.width,
                     self.height,
                 )
-                self._push_camera()
+                self._sync_after_transform()
             return pyglet.event.EVENT_HANDLED
 
-        # Box-Select: LMB-Drag in BOX-Modus → Gummiband aktualisieren
+        # Box-Select: LMB-Drag in BOX-Methode → Gummiband aktualisieren
         if (
-            self.app.select_mode is SelectMode.BOX
+            self.app.select_method is SelectMethod.BOX
             and self._drag_button == self.input_map.select_button
             and self._box_start is not None
         ):
@@ -397,14 +444,19 @@ class PlaygroundWindow(pyglet.window.Window):
             return pyglet.event.EVENT_HANDLED
 
         # Normale Kamera-Bedienung
+        # Orbit: Alt+LMB (oder Alt+RMB) — Alt freihält LMB für Selection/Tools
+        is_orbit = (
+            self._drag_button in (_mouse.LEFT, _mouse.RIGHT)
+            and modifiers & _key.MOD_ALT
+        )
         is_pan = self._drag_button == _mouse.MIDDLE or (
             self._drag_button in (_mouse.LEFT, _mouse.RIGHT)
             and modifiers & _key.MOD_SHIFT
         )
         if is_pan:
             self.app.camera.pan(dx, dy, self.width, self.height)
-        elif self._drag_button in (_mouse.LEFT, _mouse.RIGHT):
-            self.app.camera.orbit(dx * 0.005, dy * 0.005)
+        elif is_orbit:
+            self.app.camera.orbit(-dx * 0.005, -dy * 0.005)
         self._push_camera()
         return pyglet.event.EVENT_HANDLED
 
@@ -416,18 +468,21 @@ class PlaygroundWindow(pyglet.window.Window):
             mesh = self.app.viewport.render_mesh.mesh
             changed = False
 
-            if self.app.select_mode is SelectMode.BOX and self._box_start is not None:
+            if self.app.select_method is SelectMethod.BOX and self._box_start is not None:
                 if was_click:
-                    # Kleiner Drag in BOX-Modus → Replace-Fallback
-                    changed = handle_face_click(
+                    # Kleiner Drag in BOX-Methode → Click-Fallback (SelectMode-Behaviour)
+                    changed = dispatch_click(
                         self.app.camera, mesh, self.app.scene.selection,
                         x, y, self.width, self.height,
+                        modifiers, self.input_map,
+                        self.app.select_mode, SelectMethod.PICK,
                     )
                 else:
                     bx1, by1 = self._box_start
                     changed = handle_box_select(
                         self.app.camera, mesh, self.app.scene.selection,
                         bx1, by1, x, y, self.width, self.height,
+                        modifiers, self.input_map,
                     )
                 self._box_start = None
                 self._box_end = None
@@ -435,7 +490,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 changed = dispatch_click(
                     self.app.camera, mesh, self.app.scene.selection,
                     x, y, self.width, self.height,
-                    modifiers, self.input_map, self.app.select_mode,
+                    modifiers, self.input_map,
+                    self.app.select_mode, self.app.select_method,
                 )
 
             if changed:
@@ -471,16 +527,25 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._transform_started = True
 
             if self._transform_started:
-                # Update während Motion
+                # Update während Motion — VBOs neu bauen für Live-Preview
                 update_transform(
                     self.app.active_tool,
                     float(dx),
-                    float(-dy),  # Y umkehren (pyglet y nach oben)
+                    float(dy),
                     self.width,
                     self.height,
                 )
-                self._push_camera()
+                self._sync_after_transform()
             return pyglet.event.EVENT_HANDLED
+
+        # Hover Highlighting: nächstes Element unter dem Cursor
+        if self.app.viewport is not None and self._drag_button is None:
+            mesh = self.app.viewport.render_mesh.mesh
+            sel = self.app.scene.selection
+            hit = pick_component(self.app.camera, mesh, sel, x, y, self.width, self.height)
+            if hit != sel.hovered:
+                sel.hovered = hit
+                self._rebuild_hover_vbo()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         if symbol == _key.C:
@@ -501,10 +566,16 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.show_vertices = not self.app.show_vertices
             self._update_hud()
         elif symbol == _key.M:
-            # Cycle SelectMode: REPLACE → MODIFIER → TOGGLE → BOX → REPLACE
-            modes = [SelectMode.REPLACE, SelectMode.MODIFIER, SelectMode.TOGGLE, SelectMode.BOX]
+            # Cycle SelectMode (Behaviour): REPLACE → MODIFIER → TOGGLE → REPLACE
+            modes = [SelectMode.REPLACE, SelectMode.MODIFIER, SelectMode.TOGGLE]
             current_idx = modes.index(self.app.select_mode) if self.app.select_mode in modes else 0
             self.app.select_mode = modes[(current_idx + 1) % len(modes)]
+            self._update_hud()
+        elif symbol == _key.Q:
+            # Cycle SelectMethod (Method): PICK → BOX → LASSO → PAINT → PICK
+            methods = [SelectMethod.PICK, SelectMethod.BOX, SelectMethod.LASSO, SelectMethod.PAINT]
+            current_idx = methods.index(self.app.select_method) if self.app.select_method in methods else 0
+            self.app.select_method = methods[(current_idx + 1) % len(methods)]
             self._box_start = None
             self._box_end = None
             self._update_hud()
@@ -541,30 +612,27 @@ class PlaygroundWindow(pyglet.window.Window):
             # S: Scale Tool aktivieren
             self._transform_key_down = 's'
             self.app.active_tool = create_tool_for_type('scale')
-        elif symbol in (_key.Q, _key.ESCAPE):
-            self.close()
-        return pyglet.event.EVENT_HANDLED
-
-    def on_key_release(self, symbol: int, modifiers: int) -> None:
-        """Handle key release — commit/cancel transform wenn Tool aktiv."""
-        if symbol == _key.ESCAPE:
-            # ESC während Transform: cancel (unabhängig von _transform_key_down)
+        elif symbol == _key.ESCAPE:
             if self._transform_started and self.app.active_tool is not None:
                 cancel_transform(self.app.active_tool)
                 self._transform_started = False
                 self._transform_key_down = None
                 self.app.active_tool = None
-                self._push_camera()
-        elif symbol == _key.X or symbol == _key.R or symbol == _key.S:
-            # Transform-Hotkey losgelassen
+                self._sync_after_transform()
+            else:
+                self.close()
+        return pyglet.event.EVENT_HANDLED
+
+    def on_key_release(self, symbol: int, modifiers: int) -> None:
+        """Handle key release — commit transform wenn Tool aktiv."""
+        if symbol == _key.X or symbol == _key.R or symbol == _key.S:
             if self._transform_key_down is not None and self.app.active_tool is not None:
                 if self._transform_started:
-                    # Commit the transform — ein History-Eintrag
                     commit_transform(self.app.active_tool)
                     self._transform_started = False
+                    self._sync_after_transform()
                 self._transform_key_down = None
                 self.app.active_tool = None
-                self._push_camera()
         return pyglet.event.EVENT_HANDLED
 
     # -- Draw -----------------------------------------------------------------
@@ -612,6 +680,30 @@ class PlaygroundWindow(pyglet.window.Window):
             gl.glEnable(gl.GL_DEPTH_TEST)
             gl.glDepthFunc(gl.GL_LEQUAL)
             self._vlist_selection.draw(gl.GL_TRIANGLES)
+            gl.glDepthFunc(gl.GL_LESS)
+            self._overlay_program.stop()
+
+        # -- Hover-Highlight --------------------------------------------------
+        if self._vlist_hover is not None:
+            sel = self.app.scene.selection
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_HOVER_COLOR)
+            gl.glEnable(gl.GL_BLEND)
+            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LEQUAL)
+            if sel.mode is SelectionMode.VERTEX:
+                gl.glDisable(gl.GL_DEPTH_TEST)
+                gl.glPointSize(10.0)
+                self._vlist_hover.draw(gl.GL_POINTS)
+                gl.glPointSize(_VERTEX_POINT_SIZE)
+                gl.glEnable(gl.GL_DEPTH_TEST)
+            elif sel.mode is SelectionMode.EDGE:
+                self._vlist_hover.draw(gl.GL_LINES)
+            else:
+                self._vlist_hover.draw(gl.GL_TRIANGLES)
             gl.glDepthFunc(gl.GL_LESS)
             self._overlay_program.stop()
 

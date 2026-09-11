@@ -1,7 +1,7 @@
 """AP-03 Phase 2 Variante B — Toggle (jeder Klick togglet, kein Modifier nötig)."""
 
 from playground.experiment import Experiment
-from playground.selector import SelectMode
+from playground.selector import SelectMode, SelectMethod
 
 
 class FaceSelectToggleExperiment(Experiment):
@@ -13,7 +13,8 @@ class FaceSelectToggleExperiment(Experiment):
         self._app = app
 
     def activate(self) -> None:
-        self._app.select_mode = SelectMode.TOGGLE
+        self._app.select_mode   = SelectMode.TOGGLE
+        self._app.select_method = SelectMethod.PICK
 
     def deactivate(self) -> None:
         pass

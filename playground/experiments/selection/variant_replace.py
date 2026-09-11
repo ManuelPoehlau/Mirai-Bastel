@@ -1,7 +1,7 @@
-"""AP-03 Phase 1 / Phase 2 Baseline — Face Select (Replace, explizit)."""
+"""AP-03 Phase 1 Baseline — Face Select Replace."""
 
 from playground.experiment import Experiment
-from playground.selector import SelectMode
+from playground.selector import SelectMode, SelectMethod
 
 
 class FaceSelectReplaceExperiment(Experiment):
@@ -13,7 +13,8 @@ class FaceSelectReplaceExperiment(Experiment):
         self._app = app
 
     def activate(self) -> None:
-        self._app.select_mode = SelectMode.REPLACE
+        self._app.select_mode   = SelectMode.REPLACE
+        self._app.select_method = SelectMethod.PICK
 
     def deactivate(self) -> None:
         pass

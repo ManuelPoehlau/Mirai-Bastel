@@ -1,6 +1,7 @@
-"""Headless-Tests für AP-03 Phase 1+2 — PlaygroundSelector + Selection-VBO.
+"""Headless-Tests für AP-03 Phase 1–3 — PlaygroundSelector + Selection-VBO.
 
-Kein GL, kein Fenster. Prüft Phase 1 (Replace) und Phase 2 (Modifier/Toggle).
+Kein GL, kein Fenster. Prüft Phase 1 (Replace), Phase 2 (Modifier/Toggle),
+Phase 3 (Box-Select) und das neue SelectMethod-Konzept.
 """
 
 from __future__ import annotations
@@ -20,12 +21,15 @@ from core.selection import Selection, SelectionMode  # noqa: E402
 from mirai.scene_factory import create_cube  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
+    SelectMethod,
     SelectMode,
+    dispatch_click,
     dispatch_face_click,
     handle_box_select,
     handle_face_click,
     handle_face_click_modifier,
     handle_face_click_toggle,
+    pick_component,
     pick_faces_in_rect,
 )
 from playground.vbo_builder import build_selection_data  # noqa: E402
@@ -327,7 +331,6 @@ class TestDispatchFaceClick:
         assert len(sel.faces) == 1
 
     def test_dispatch_modifier(self, cube, sel, front_cam):
-        from pyglet.window import key
         imap = _MockInputMap()
         dispatch_face_click(
             front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.MODIFIER
@@ -344,10 +347,7 @@ class TestDispatchFaceClick:
         )
         assert sel.faces == set()
 
-    def test_dispatch_unknown_returns_false(self, cube, sel, front_cam):
-        # SelectMode ist ein echtes Enum — kein unbekannter Wert möglich,
-        # aber dispatch_face_click gibt False für unbekannte zurück (Fallback).
-        # Wir testen den None-Fall direkt über den Rückgabewert.
+    def test_dispatch_returns_bool(self, cube, sel, front_cam):
         imap = _MockInputMap()
         result = dispatch_face_click(
             front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.REPLACE
@@ -356,21 +356,102 @@ class TestDispatchFaceClick:
 
 
 # ---------------------------------------------------------------------------
-# SelectMode Enum
+# SelectMode Enum (Behaviour)
 # ---------------------------------------------------------------------------
 
 class TestSelectMode:
 
-    def test_four_modes_exist(self):
+    def test_three_modes_exist(self):
         assert SelectMode.REPLACE is not None
         assert SelectMode.MODIFIER is not None
         assert SelectMode.TOGGLE is not None
-        assert SelectMode.BOX is not None
 
     def test_modes_are_distinct(self):
         assert SelectMode.REPLACE != SelectMode.MODIFIER
         assert SelectMode.MODIFIER != SelectMode.TOGGLE
-        assert SelectMode.TOGGLE != SelectMode.BOX
+
+
+# ---------------------------------------------------------------------------
+# SelectMethod Enum
+# ---------------------------------------------------------------------------
+
+class TestSelectMethod:
+
+    def test_four_methods_exist(self):
+        assert SelectMethod.PICK is not None
+        assert SelectMethod.BOX is not None
+        assert SelectMethod.LASSO is not None
+        assert SelectMethod.PAINT is not None
+
+    def test_methods_are_distinct(self):
+        assert SelectMethod.PICK != SelectMethod.BOX
+        assert SelectMethod.BOX != SelectMethod.LASSO
+        assert SelectMethod.LASSO != SelectMethod.PAINT
+
+
+# ---------------------------------------------------------------------------
+# dispatch_click — kombiniert SelectMode + SelectMethod
+# ---------------------------------------------------------------------------
+
+class TestDispatchClick:
+    """dispatch_click: SelectMode steuert Verhalten, SelectMethod filtert Methode.
+
+    selection.mode muss auf FACE gesetzt sein, da _FrontCamera Faces trifft.
+    """
+
+    def test_replace_mode_selects_face(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        sel.mode = SelectionMode.FACE
+        dispatch_click(front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.REPLACE)
+        assert len(sel.faces) == 1
+
+    def test_modifier_mode_shift_adds(self, cube, sel, front_cam):
+        from pyglet.window import key
+        imap = _MockInputMap()
+        sel.mode = SelectionMode.FACE
+
+        class _TopCam:
+            def screen_to_ray(self, sx, sy, w, h): return (0.0, 5.0, 0.0), (0.0, -1.0, 0.0)
+            def project_to_screen(self, p, w, h): return None
+
+        dispatch_click(front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.MODIFIER)
+        dispatch_click(_TopCam(), cube, sel, 320, 240, 640, 480, key.MOD_SHIFT, imap, SelectMode.MODIFIER)
+        assert len(sel.faces) == 2
+
+    def test_toggle_mode_toggles_off(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        sel.mode = SelectionMode.FACE
+        dispatch_click(front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.TOGGLE)
+        dispatch_click(front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.TOGGLE)
+        assert sel.faces == set()
+
+    def test_lasso_stub_returns_false(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        sel.mode = SelectionMode.FACE
+        changed = dispatch_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap,
+            SelectMode.REPLACE, SelectMethod.LASSO,
+        )
+        assert changed is False
+
+    def test_paint_stub_returns_false(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        sel.mode = SelectionMode.FACE
+        changed = dispatch_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap,
+            SelectMode.REPLACE, SelectMethod.PAINT,
+        )
+        assert changed is False
+
+    def test_box_method_click_fallback_uses_mode(self, cube, sel, front_cam):
+        imap = _MockInputMap()
+        sel.mode = SelectionMode.FACE
+        changed = dispatch_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap,
+            SelectMode.REPLACE, SelectMethod.BOX,
+        )
+        assert changed is True
+        assert len(sel.faces) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -483,11 +564,13 @@ class TestHandleBoxSelect:
         handle_box_select(proj_cam, cube, sel, -200, -200, 200, 200, 640, 480)
         assert len(sel.faces) > len(before)
 
-    def test_dispatch_box_click_fallback(self, cube, sel, front_cam):
-        """dispatch_face_click mit BOX-Modus = Replace-Fallback."""
+    def test_dispatch_click_box_method_click_fallback(self, cube, sel, front_cam):
+        """dispatch_click mit SelectMethod.BOX (Click, kein Drag) → Replace-Fallback."""
         imap = _MockInputMap()
-        changed = dispatch_face_click(
-            front_cam, cube, sel, 320, 240, 640, 480, 0, imap, SelectMode.BOX
+        sel.mode = SelectionMode.FACE
+        changed = dispatch_click(
+            front_cam, cube, sel, 320, 240, 640, 480, 0, imap,
+            SelectMode.REPLACE, SelectMethod.BOX,
         )
         assert changed is True
         assert len(sel.faces) == 1

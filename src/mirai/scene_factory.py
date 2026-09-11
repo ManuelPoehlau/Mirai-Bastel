@@ -22,14 +22,14 @@ def create_cube(size: float = 2.0) -> Mesh:
     ]
     verts = [mesh.add_vertex(p) for p in positions]
 
-    # Jede Boundary im Uhrzeigersinn von außen betrachtet.
+    # CCW von außen betrachtet → Außen-Normale via (b-a)×(c-a).
     faces = [
-        (0, 1, 2, 3),  # hinten
-        (5, 4, 7, 6),  # vorne
-        (4, 0, 3, 7),  # links
-        (1, 5, 6, 2),  # rechts
-        (3, 2, 6, 7),  # oben
-        (4, 5, 1, 0),  # unten
+        (3, 2, 1, 0),  # hinten  → -Z
+        (6, 7, 4, 5),  # vorne   → +Z
+        (7, 3, 0, 4),  # links   → -X
+        (2, 6, 5, 1),  # rechts  → +X
+        (7, 6, 2, 3),  # oben    → +Y
+        (0, 1, 5, 4),  # unten   → -Y
     ]
     for a, b, c, d in faces:
         mesh.add_face([verts[a], verts[b], verts[c], verts[d]])

@@ -3,8 +3,12 @@
 Phase 1: handle_face_click (Replace)
 Phase 2: SelectMode-Enum + handle_face_click_modifier (A) + handle_face_click_toggle (B)
          + dispatch_face_click (zentraler Einstiegspunkt für das Window)
-Phase 3: pick_faces_in_rect + handle_box_select (BOX-Modus)
+Phase 3: pick_faces_in_rect + handle_box_select (SelectMethod.BOX)
 Phase 5: pick_component + dispatch_click (Component-Mode-aware: Vertex/Edge/Face)
+
+Zwei orthogonale Systeme:
+  SelectMode   — WAS der Klick tut      (REPLACE / MODIFIER / TOGGLE), M-Taste
+  SelectMethod — WIE du auswählst       (PICK / BOX / LASSO / PAINT),  Q-Taste
 
 Kein GL, kein pyglet, vollständig headless testbar.
 Konvention: sx/sy in pyglet-Koordinaten (y=0 unten).
@@ -25,11 +29,24 @@ CLICK_THRESHOLD: float = 5.0  # Pixel (Manhattan-Summe aus on_mouse_drag)
 
 
 class SelectMode(Enum):
-    """Welche Klick-Philosophie gerade aktiv ist."""
+    """WAS der Klick tut (Selection Behaviour)."""
     REPLACE  = auto()   # Klick = Replace (Phase 1 Baseline)
     MODIFIER = auto()   # Shift=Add, Ctrl=Remove, Alt=Toggle (Variante A)
     TOGGLE   = auto()   # Jeder Klick togglet (Variante B)
-    BOX      = auto()   # LMB-Drag = Box-Select (Variante C)
+
+
+class SelectMethod(Enum):
+    """WIE die Auswahl gezeichnet wird (Selection Method).
+
+    PICK  — Einzelklick
+    BOX   — LMB-Drag = Rechteck
+    LASSO — Freihand-Polygon (Stub, noch nicht implementiert)
+    PAINT — Pinsel-Selektion (Stub, noch nicht implementiert)
+    """
+    PICK  = auto()
+    BOX   = auto()
+    LASSO = auto()
+    PAINT = auto()
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +106,6 @@ def handle_face_click_modifier(
     has_modifier = has_add or has_remove or has_toggle
 
     if fid is None:
-        # Nur bare-miss leert die Selektion
         if not has_modifier and not selection.is_empty():
             selection.clear()
             return True
@@ -134,11 +150,7 @@ def handle_face_click_toggle(
 
 
 # ---------------------------------------------------------------------------
-# Zentraler Dispatch
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Phase 3 — Variante C: Box-Select (LMB-Drag)
+# Phase 3 — SelectMethod.BOX: Rechteck-Auswahl
 # ---------------------------------------------------------------------------
 
 def pick_faces_in_rect(
@@ -189,50 +201,35 @@ def handle_box_select(
     y2: float,
     width: int,
     height: int,
+    modifiers: int = 0,
+    input_map=None,
 ) -> bool:
-    """Box-Select: Alle Faces im Rechteck ersetzen die Selektion.
+    """Box-Select: Shift=Add, Ctrl=Remove, kein Modifier=Replace.
 
     Gibt True zurück wenn sich die Selektion geändert hat.
-    Hit  → selection.set(faces), True.
-    Miss → selection.clear() falls nicht leer, sonst False.
+    Miss ohne Modifier → selection.clear() falls nicht leer.
     """
     faces = pick_faces_in_rect(camera, mesh, x1, y1, x2, y2, width, height)
-    old_faces = set(selection.faces)
-    if faces:
-        selection.mode = SelectionMode.FACE
+
+    has_add    = input_map is not None and bool(modifiers & input_map.add_modifier)
+    has_remove = input_map is not None and bool(modifiers & input_map.remove_modifier)
+
+    before = frozenset(selection.faces)
+
+    if not faces:
+        if not has_add and not has_remove and not selection.is_empty():
+            selection.clear()
+            return True
+        return False
+
+    selection.mode = SelectionMode.FACE
+    if has_add:
+        selection.add(faces)
+    elif has_remove:
+        selection.remove(faces)
+    else:
         selection.set(faces)
-        return faces != old_faces
-    if not selection.is_empty():
-        selection.clear()
-        return True
-    return False
-
-
-def dispatch_face_click(
-    camera,
-    mesh,
-    selection,
-    sx: float,
-    sy: float,
-    width: int,
-    height: int,
-    modifiers: int,
-    input_map,
-    mode: SelectMode,
-) -> bool:
-    """Routed den Click zum richtigen Handler basierend auf SelectMode."""
-    if mode is SelectMode.REPLACE:
-        return handle_face_click(camera, mesh, selection, sx, sy, width, height)
-    if mode is SelectMode.MODIFIER:
-        return handle_face_click_modifier(
-            camera, mesh, selection, sx, sy, width, height, modifiers, input_map
-        )
-    if mode is SelectMode.TOGGLE:
-        return handle_face_click_toggle(camera, mesh, selection, sx, sy, width, height)
-    if mode is SelectMode.BOX:
-        # Click in BOX mode = Replace-Fallback (kein Drag gestartet)
-        return handle_face_click(camera, mesh, selection, sx, sy, width, height)
-    return False
+    return frozenset(selection.faces) != before
 
 
 # ---------------------------------------------------------------------------
@@ -259,14 +256,15 @@ def dispatch_click(
     modifiers: int,
     input_map,
     mode: SelectMode,
+    method: SelectMethod = SelectMethod.PICK,
 ) -> bool:
-    """Component-aware Dispatch: kombiniert SelectMode + selection.mode.
+    """Component-aware Dispatch: kombiniert SelectMode (Behaviour) + SelectMethod.
 
-    BOX-Modus im Click-Kontext → Replace-Fallback (nur Face).
-    Alle anderen Modi nutzen pick_component für Vertex/Edge/Face.
+    SelectMethod.LASSO / PAINT sind noch nicht implementiert → False.
+    SelectMethod.PICK / BOX-Click-Fallback verwenden SelectMode für Behaviour.
     """
-    if mode is SelectMode.BOX:
-        return handle_face_click(camera, mesh, selection, sx, sy, width, height)
+    if method is SelectMethod.LASSO or method is SelectMethod.PAINT:
+        return False
 
     hit = pick_component(camera, mesh, selection, sx, sy, width, height)
 
@@ -305,4 +303,28 @@ def dispatch_click(
             selection.set({hit})
         return True
 
+    return False
+
+
+def dispatch_face_click(
+    camera,
+    mesh,
+    selection,
+    sx: float,
+    sy: float,
+    width: int,
+    height: int,
+    modifiers: int,
+    input_map,
+    mode: SelectMode,
+) -> bool:
+    """Face-only Dispatch (ohne Component-Mode). Für Tests und Experimente."""
+    if mode is SelectMode.REPLACE:
+        return handle_face_click(camera, mesh, selection, sx, sy, width, height)
+    if mode is SelectMode.MODIFIER:
+        return handle_face_click_modifier(
+            camera, mesh, selection, sx, sy, width, height, modifiers, input_map
+        )
+    if mode is SelectMode.TOGGLE:
+        return handle_face_click_toggle(camera, mesh, selection, sx, sy, width, height)
     return False

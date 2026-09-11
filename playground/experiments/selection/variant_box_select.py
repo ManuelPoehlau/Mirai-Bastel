@@ -1,7 +1,7 @@
-"""AP-03 Phase 3 / Variante C — Box-Select."""
+"""AP-03 Phase 3 / Variante C — Box-Select (LMB-Drag = Rechteck)."""
 
 from playground.experiment import Experiment
-from playground.selector import SelectMode
+from playground.selector import SelectMode, SelectMethod
 
 
 class BoxSelectExperiment(Experiment):
@@ -13,7 +13,7 @@ class BoxSelectExperiment(Experiment):
         self._app = app
 
     def activate(self) -> None:
-        self._app.select_mode = SelectMode.BOX
+        self._app.select_method = SelectMethod.BOX
 
     def deactivate(self) -> None:
         pass

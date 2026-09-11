@@ -1,6 +1,6 @@
 # AP-03 — Selection Lab: Plan
 
-**Branch:** `experiment/artist-playground-v1`
+**Branch:** `main`
 **Basis:** Commit `b9b7ea6` (AP-02.5 Viewport Presentation Lab, eingefroren)
 **Datum:** 2026-09-11
 

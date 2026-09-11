@@ -1,5 +1,7 @@
 # Future Ideas – Viewport Navigation
 
+(wichtig: Navigation in allen Anwendungen gleich handhaben(oder evtl. später alternative Modi(siehe unten), Playground, Integration Lab (das Vorbild aktuell))
+
 Ideen und Beobachtungen, die bewusst noch nicht umgesetzt werden.
 
 > Im Hinterkopf behalten und später erneut bewerten.
@@ -45,3 +47,7 @@ Später eventuell Navigation relativ zu Objekt oder Auswahl anbieten:
 - Zoom to Selection
 
 V1 bleibt bewusst beim Scene-Zentrum als Orbit-/Zoom-Zentrum.
+
+## Reverse Orbit 
+
+Fühlt sich natürlicher, wenn zB drag nach rechts = Würfel dreht sich gefühlt nach rechts, drag nach oben = würfel dreht sich nach oben

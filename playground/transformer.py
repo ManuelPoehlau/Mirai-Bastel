@@ -15,7 +15,8 @@ from playground._paths import ensure_paths
 
 ensure_paths()
 
-from mirai.interaction.tools.move import MoveTool  # noqa: E402
+from core.selection import SelectionMode  # noqa: E402
+from mirai.interaction.tools.move import MoveTool, resolve_selection_vertices  # noqa: E402
 from mirai.interaction.tools.rotate import RotateTool  # noqa: E402
 from mirai.interaction.tools.scale import ScaleTool  # noqa: E402
 
@@ -47,11 +48,8 @@ def begin_transform(
     if selection.is_empty():
         return False
 
-    # Sammle alle Vertex-IDs aus den selektierten Faces
     mesh = scene.mesh
-    vertex_ids = set()
-    for face_id in selection.faces:
-        vertex_ids.update(mesh.face_vertices(face_id))
+    vertex_ids = resolve_selection_vertices(mesh, selection, selection.mode)
 
     if not vertex_ids:
         return False
