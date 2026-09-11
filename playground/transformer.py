@@ -41,9 +41,19 @@ def begin_transform(
 ) -> bool:
     """Tool aktivieren + begin() aufrufen.
 
+    Konvertiert Face-Selection in Vertex-Selection (alle Vertices der selektierten Faces).
     Gibt True zurück wenn begin erfolgreich war (Selektion nicht leer).
     """
     if selection.is_empty():
+        return False
+
+    # Sammle alle Vertex-IDs aus den selektierten Faces
+    mesh = scene.mesh
+    vertex_ids = set()
+    for face_id in selection.faces:
+        vertex_ids.update(mesh.face_vertices(face_id))
+
+    if not vertex_ids:
         return False
 
     # Tool muss noch nicht aktiviert sein — wir machen das hier
@@ -51,7 +61,7 @@ def begin_transform(
         tool.activate()
 
     try:
-        tool.begin(scene=scene, camera=camera, vertex_ids=selection.vertices)
+        tool.begin(scene=scene, camera=camera, vertex_ids=vertex_ids)
         return True
     except Exception:
         return False

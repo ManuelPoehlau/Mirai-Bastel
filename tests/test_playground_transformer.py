@@ -88,10 +88,17 @@ class TestTransformFunctions(unittest.TestCase):
         self.mock_tool.begin.assert_not_called()
 
     def test_begin_transform_with_selection(self):
-        """begin_transform aktiviert Tool und ruft begin() auf."""
+        """begin_transform konvertiert Faces zu Vertices und ruft begin() auf."""
         self.mock_selection.is_empty.return_value = False
+        self.mock_selection.faces = [1, 2]  # Zwei selektierte Faces
         self.mock_tool.is_active = False
         self.mock_tool.begin.return_value = None
+
+        # Mock mesh.face_vertices() → gibt Vertices für jede Face zurück
+        self.mock_scene.mesh.face_vertices.side_effect = lambda face_id: {
+            1: [10, 11, 12],  # Face 1 hat Vertices 10, 11, 12
+            2: [12, 13, 14],  # Face 2 hat Vertices 12, 13, 14 (gemeinsamer Vertex 12)
+        }.get(face_id, [])
 
         result = begin_transform(
             self.mock_tool,
@@ -103,10 +110,16 @@ class TestTransformFunctions(unittest.TestCase):
         self.assertTrue(result)
         self.mock_tool.activate.assert_called_once()
         self.mock_tool.begin.assert_called_once()
+        # Überprüfe, dass vertex_ids aus den Faces zusammengesetzt wurde
+        call_args = self.mock_tool.begin.call_args
+        vertex_ids = call_args.kwargs.get('vertex_ids')
+        self.assertEqual(vertex_ids, {10, 11, 12, 13, 14})
 
     def test_begin_transform_already_active(self):
         """begin_transform ruft activate() nicht auf wenn Tool bereits aktiv."""
         self.mock_selection.is_empty.return_value = False
+        self.mock_selection.faces = [1]
+        self.mock_scene.mesh.face_vertices.return_value = [10, 11, 12]
         self.mock_tool.is_active = True
         self.mock_tool.begin.return_value = None
 
