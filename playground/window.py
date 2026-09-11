@@ -15,6 +15,7 @@ Steuerung:
     Z               Wireframe-Overlay togglen
     V               Vertex-Darstellung togglen
     M               Selection-Modus cyclen (Replace/Modifier/Toggle/Box)
+    1 / 2 / 3       Component-Modus (Vertex / Edge / Face)
     Q / ESC         Fenster schließen
 
 Shader:
@@ -42,6 +43,7 @@ from playground._paths import ensure_paths
 
 ensure_paths()
 
+from core.selection import SelectionMode  # noqa: E402
 from mirai.viewport.display import DisplayMode  # noqa: E402
 from playground.selector import SelectMode  # noqa: E402
 from playground.transformer import (  # noqa: E402
@@ -56,7 +58,7 @@ from playground.input_map import PlaygroundInputMap  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
-    dispatch_face_click,
+    dispatch_click,
     handle_box_select,
     handle_face_click,
 )
@@ -65,6 +67,8 @@ from playground.vbo_builder import (  # noqa: E402
     build_edge_data,
     build_face_data,
     build_selection_data,
+    build_selection_edge_data,
+    build_selection_vertex_data,
     build_vertex_data,
 )
 
@@ -167,6 +171,8 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_edges = None
         self._vlist_verts = None
         self._vlist_selection = None
+        self._vlist_sel_verts = None
+        self._vlist_sel_edges = None
         self._rebuild_vbo()
 
         self._hud = PlaygroundHUD(x=10, y_bottom=10, width=self.width - 20)
@@ -241,31 +247,48 @@ class PlaygroundWindow(pyglet.window.Window):
             )
 
     def _rebuild_selection_vbo(self) -> None:
-        """Selection-VBO aus den aktuell selektierten Faces neu bauen.
+        """Selection-VBOs für alle Komponenten-Modi neu bauen.
 
-        Wird nach jedem Click aufgerufen (nur selektierte Faces, kleines VBO).
-        Triggert keinen Mesh-Rebuild.
+        Wird nach jedem Click und nach Moduswechsel aufgerufen.
         """
-        if self._vlist_selection is not None:
-            self._vlist_selection.delete()
-            self._vlist_selection = None
+        for vlist in (self._vlist_selection, self._vlist_sel_verts, self._vlist_sel_edges):
+            if vlist is not None:
+                vlist.delete()
+        self._vlist_selection = None
+        self._vlist_sel_verts = None
+        self._vlist_sel_edges = None
 
         if self.app.viewport is None:
             return
 
         mesh = self.app.viewport.render_mesh.mesh
         selection = self.app.scene.selection
-        if not selection.faces:
-            return
 
-        positions = build_selection_data(mesh, selection.faces)
-        n = len(positions) // 3
-        if n > 0:
-            self._vlist_selection = self._overlay_program.vertex_list(
-                n,
-                gl.GL_TRIANGLES,
-                position=("f", positions),
+        if selection.mode is SelectionMode.FACE and selection.faces:
+            positions = build_selection_data(mesh, selection.faces)
+            n = len(positions) // 3
+            if n > 0:
+                self._vlist_selection = self._overlay_program.vertex_list(
+                    n,
+                    gl.GL_TRIANGLES,
+                    position=("f", positions),
             )
+
+        elif selection.mode is SelectionMode.VERTEX and selection.vertices:
+            positions = build_selection_vertex_data(mesh, selection.vertices)
+            n = len(positions) // 3
+            if n > 0:
+                self._vlist_sel_verts = self._overlay_program.vertex_list(
+                    n, gl.GL_POINTS, position=("f", positions),
+                )
+
+        elif selection.mode is SelectionMode.EDGE and selection.edges:
+            positions = build_selection_edge_data(mesh, selection.edges)
+            n = len(positions) // 3
+            if n > 0:
+                self._vlist_sel_edges = self._overlay_program.vertex_list(
+                    n, gl.GL_LINES, position=("f", positions),
+                )
 
     # -- HUD-Update -----------------------------------------------------------
 
@@ -284,9 +307,19 @@ class PlaygroundWindow(pyglet.window.Window):
             display_label += " + V"
         self._hud.update_display(display_label)
         sel = self.app.scene.selection if self.app.viewport is not None else None
-        n_faces = len(sel.faces) if sel is not None else 0
+        if sel is not None:
+            comp = sel.mode
+            if comp is SelectionMode.VERTEX:
+                n_sel = len(sel.vertices)
+            elif comp is SelectionMode.EDGE:
+                n_sel = len(sel.edges)
+            else:
+                n_sel = len(sel.faces)
+            comp_label = comp.name.capitalize()
+        else:
+            n_sel, comp_label = 0, "Face"
         mode_label = self.app.select_mode.name.capitalize()
-        self._hud.update_selection(n_faces, mode_label)
+        self._hud.update_selection(n_sel, mode_label, comp_label)
 
     # -- Kamera-Push ----------------------------------------------------------
 
@@ -399,7 +432,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._box_start = None
                 self._box_end = None
             elif was_click:
-                changed = dispatch_face_click(
+                changed = dispatch_click(
                     self.app.camera, mesh, self.app.scene.selection,
                     x, y, self.width, self.height,
                     modifiers, self.input_map, self.app.select_mode,
@@ -474,6 +507,27 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.select_mode = modes[(current_idx + 1) % len(modes)]
             self._box_start = None
             self._box_end = None
+            self._update_hud()
+        elif symbol == _key._1:
+            # 1: Vertex-Modus
+            sel = self.app.scene.selection
+            sel.mode = SelectionMode.VERTEX
+            sel.clear()
+            self._rebuild_selection_vbo()
+            self._update_hud()
+        elif symbol == _key._2:
+            # 2: Edge-Modus
+            sel = self.app.scene.selection
+            sel.mode = SelectionMode.EDGE
+            sel.clear()
+            self._rebuild_selection_vbo()
+            self._update_hud()
+        elif symbol == _key._3:
+            # 3: Face-Modus
+            sel = self.app.scene.selection
+            sel.mode = SelectionMode.FACE
+            sel.clear()
+            self._rebuild_selection_vbo()
             self._update_hud()
         elif symbol == _key.X:
             # X: Move Tool aktivieren
@@ -559,6 +613,30 @@ class PlaygroundWindow(pyglet.window.Window):
             gl.glDepthFunc(gl.GL_LEQUAL)
             self._vlist_selection.draw(gl.GL_TRIANGLES)
             gl.glDepthFunc(gl.GL_LESS)
+            self._overlay_program.stop()
+
+        # -- Selected Edges ---------------------------------------------------
+        if self._vlist_sel_edges is not None:
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_SELECTION_COLOR)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LEQUAL)
+            self._vlist_sel_edges.draw(gl.GL_LINES)
+            gl.glDepthFunc(gl.GL_LESS)
+            self._overlay_program.stop()
+
+        # -- Selected Vertices ------------------------------------------------
+        if self._vlist_sel_verts is not None:
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_SELECTION_COLOR)
+            gl.glDisable(gl.GL_DEPTH_TEST)
+            gl.glPointSize(8.0)
+            self._vlist_sel_verts.draw(gl.GL_POINTS)
+            gl.glPointSize(_VERTEX_POINT_SIZE)
             self._overlay_program.stop()
 
         # -- Edge-Pass (Wireframe / Wireframe-Overlay) ------------------------

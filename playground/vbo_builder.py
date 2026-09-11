@@ -64,6 +64,24 @@ def build_vertex_data(mesh: Mesh) -> list[float]:
     return vert_positions
 
 
+def build_selection_vertex_data(mesh: Mesh, selected_vertex_ids) -> list[float]:
+    """Positionen für selektierte Vertices (GL_POINTS)."""
+    positions: list[float] = []
+    for vid in selected_vertex_ids:
+        positions.extend(mesh.vertex_position(vid))
+    return positions
+
+
+def build_selection_edge_data(mesh: Mesh, selected_edge_ids) -> list[float]:
+    """Positionen für selektierte Edges (GL_LINES, je 2 Punkte pro Edge)."""
+    positions: list[float] = []
+    for eid in selected_edge_ids:
+        va, vb = mesh.edge_vertices(eid)
+        positions.extend(mesh.vertex_position(va))
+        positions.extend(mesh.vertex_position(vb))
+    return positions
+
+
 def build_selection_data(mesh: Mesh, selected_face_ids) -> list[float]:
     """Positionen für das Selection-Overlay-VBO (GL_TRIANGLES, expanded).
 

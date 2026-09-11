@@ -66,16 +66,18 @@ class PlaygroundHUD:
         self._display_line = f"Display: {label}"
         self._invalidate()
 
-    def update_selection(self, n_faces: int, mode_label: str = "") -> None:
-        """Selection-Zeile aktualisieren (AP-03)."""
-        if n_faces == 0:
+    def update_selection(self, n: int, mode_label: str = "", comp_label: str = "") -> None:
+        """Selection-Zeile aktualisieren (AP-03 Phase 5)."""
+        unit = comp_label.lower() if comp_label else "face"
+        if n == 0:
             self._selection_line = "Selection: none"
-        elif n_faces == 1:
-            self._selection_line = f"Selection: 1 face"
+        elif n == 1:
+            self._selection_line = f"Selection: 1 {unit}"
         else:
-            self._selection_line = f"Selection: {n_faces} faces"
-        if mode_label:
-            self._selection_line += f"  [{mode_label}]"
+            self._selection_line = f"Selection: {n} {unit}s"
+        parts = [p for p in (comp_label, mode_label) if p]
+        if parts:
+            self._selection_line += f"  [{' | '.join(parts)}]"
         self._invalidate()
 
     def update_experiment(self, experiment: "Experiment", decision: str = "") -> None:

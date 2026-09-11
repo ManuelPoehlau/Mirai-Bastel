@@ -28,6 +28,8 @@ Bewusst OHNE Eingriff in die Production:
 
 from __future__ import annotations
 
+import math
+
 from playground._paths import ensure_paths
 
 ensure_paths()
@@ -37,7 +39,17 @@ from mirai.viewport.camera import OrbitCamera  # noqa: E402
 
 
 class PlaygroundCamera(OrbitCamera):
-    """Production-`OrbitCamera` plus GL-View-Matrix-Korrektur (siehe Modul-Doc)."""
+    """Production-`OrbitCamera` plus GL-View-Matrix-Korrektur (siehe Modul-Doc).
+
+    Zusätzlich: Playground-spezifischer Default-`yaw` von 225° statt 45°.
+    Mit yaw=45° startet die Kamera auf der +Z-Seite — was für asymmetrische
+    Assets (z. B. Head-Basemesh, dessen Gesicht zur +Z zeigt) dazu führt,
+    dass von hinten gesehen wird. yaw=225° platziert die Kamera auf der -Z-Seite
+    und blickt so direkt auf das Gesicht des Head-Meshes. Dies ändert nur den
+    Startwinkel; Orbit/Pan/Zoom und Picking bleiben unverändert (Production).
+    """
+
+    yaw: float = math.radians(225)
 
     # -- View-Matrix (GL-korrigiert, siehe Modul-Doc) ------------------------
     def build_view_matrix(self) -> list[float]:

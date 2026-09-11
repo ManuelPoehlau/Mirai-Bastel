@@ -3,6 +3,8 @@
 Phase 1: handle_face_click (Replace)
 Phase 2: SelectMode-Enum + handle_face_click_modifier (A) + handle_face_click_toggle (B)
          + dispatch_face_click (zentraler Einstiegspunkt für das Window)
+Phase 3: pick_faces_in_rect + handle_box_select (BOX-Modus)
+Phase 5: pick_component + dispatch_click (Component-Mode-aware: Vertex/Edge/Face)
 
 Kein GL, kein pyglet, vollständig headless testbar.
 Konvention: sx/sy in pyglet-Koordinaten (y=0 unten).
@@ -17,7 +19,7 @@ from playground._paths import ensure_paths
 ensure_paths()
 
 from core.selection import SelectionMode  # noqa: E402
-from mirai.viewport.picking import pick_face  # noqa: E402
+from mirai.viewport.picking import pick_face, pick_nearest_edge, pick_nearest_vertex  # noqa: E402
 
 CLICK_THRESHOLD: float = 5.0  # Pixel (Manhattan-Summe aus on_mouse_drag)
 
@@ -230,4 +232,77 @@ def dispatch_face_click(
     if mode is SelectMode.BOX:
         # Click in BOX mode = Replace-Fallback (kein Drag gestartet)
         return handle_face_click(camera, mesh, selection, sx, sy, width, height)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Component Mode (Vertex / Edge / Face)
+# ---------------------------------------------------------------------------
+
+def pick_component(camera, mesh, selection, sx: float, sy: float, width: int, height: int):
+    """Picked das nächste Element je nach selection.mode (Vertex/Edge/Face)."""
+    if selection.mode is SelectionMode.VERTEX:
+        return pick_nearest_vertex(camera, mesh, sx, sy, width, height)
+    if selection.mode is SelectionMode.EDGE:
+        return pick_nearest_edge(camera, mesh, sx, sy, width, height)
+    return pick_face(camera, mesh, sx, sy, width, height)
+
+
+def dispatch_click(
+    camera,
+    mesh,
+    selection,
+    sx: float,
+    sy: float,
+    width: int,
+    height: int,
+    modifiers: int,
+    input_map,
+    mode: SelectMode,
+) -> bool:
+    """Component-aware Dispatch: kombiniert SelectMode + selection.mode.
+
+    BOX-Modus im Click-Kontext → Replace-Fallback (nur Face).
+    Alle anderen Modi nutzen pick_component für Vertex/Edge/Face.
+    """
+    if mode is SelectMode.BOX:
+        return handle_face_click(camera, mesh, selection, sx, sy, width, height)
+
+    hit = pick_component(camera, mesh, selection, sx, sy, width, height)
+
+    if mode is SelectMode.REPLACE:
+        if hit is not None:
+            selection.set({hit})
+            return True
+        if not selection.is_empty():
+            selection.clear()
+            return True
+        return False
+
+    if mode is SelectMode.TOGGLE:
+        if hit is None:
+            return False
+        selection.toggle(hit)
+        return True
+
+    if mode is SelectMode.MODIFIER:
+        has_add    = bool(modifiers & input_map.add_modifier)
+        has_remove = bool(modifiers & input_map.remove_modifier)
+        has_toggle = bool(modifiers & input_map.toggle_modifier)
+        has_modifier = has_add or has_remove or has_toggle
+        if hit is None:
+            if not has_modifier and not selection.is_empty():
+                selection.clear()
+                return True
+            return False
+        if has_add:
+            selection.add({hit})
+        elif has_remove:
+            selection.remove({hit})
+        elif has_toggle:
+            selection.toggle(hit)
+        else:
+            selection.set({hit})
+        return True
+
     return False
