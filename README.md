@@ -52,11 +52,25 @@ There is no planned "finished version". The system is expected to remain alive a
 
 The first Core V1 milestone is complete, hardened, reviewed and frozen. Its production baseline is under `src/core/`, while the complete experimental milestone remains under `experiments/mirai_bastel_core_V1/` for reference.
 
+The currently implemented production foundation is:
+
+```text
+src/core/      Domain model, operations, history and serialization
+src/mirai/     Window-free application, interaction/tools, camera and picking
+src/viewport/  Incremental render-data, overlays, resource stores and viewport facade
+```
+
+This is the implemented responsibility boundary, not a claim that all future
+application areas or a production window/entry point already exist.
+
 The interactive Viewport V1 experiment remains under `experiments/mirai_bastel_viewport_V1/`. It has validated the basic Core → Viewport path on real hardware and is now being used as an active research environment for Selection, Workflow and Topology behavior.
 
 The current Topology research is documented centrally in [`experiments/topology/`](experiments/topology/). Phase 1 — interactive use of the existing Core topology primitives — has been practically verified. The next focus is conservative Edge Loop / Edge Ring detection and selection, followed by Loop Insert/Remove and later Extrude experiments.
 
-**No production Viewport or Modeling structure is frozen yet.** Production `src/` boundaries continue to be derived from validated experiments and explicit architecture decisions.
+The Production Viewport, Application and Interaction foundations now exist under
+`src/`. A production window/entry point, production draw call and the final
+modeling/selection workflow remain deliberately open. Experiments continue to
+derive those later requirements; they are not promoted automatically.
 
 ## Current V1 direction
 
@@ -141,7 +155,7 @@ The repository deliberately distinguishes between current canonical documents, d
 ## Repository structure
 
 ```text
-src/          Production application code (currently Core baseline only)
+src/          Production Core, Application/Interaction and Viewport foundations
 experiments/  Isolated milestones, prototypes and practical tests
 tests/        Repository-level tests
 docs/         Architecture, design, research, workflow and future ideas

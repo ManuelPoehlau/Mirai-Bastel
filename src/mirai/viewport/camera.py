@@ -93,9 +93,9 @@ class OrbitCamera:
 
     # ------------------------------------------------------------------
     # GL-Matrizen (Gate 5: fuer RenderMesh.camera_uniforms, siehe Docstring
-    # oben). Spalten-Hauptreihenfolge (GL-Konvention), identisch zur im
-    # V0.2-Proof verifizierten Mathematik
-    # (experiments/mirai_bastel_viewport_V02/camera.py).
+    # oben). Spalten-Hauptreihenfolge in Standard-OpenGL-Konvention:
+    # Punkte vor der Kamera liegen auf negativem Camera-Z, damit die
+    # Projection-Matrix clip.w = -view.z > 0 erzeugt.
     # ------------------------------------------------------------------
 
     def build_view_matrix(self) -> list[float]:
@@ -104,11 +104,11 @@ class OrbitCamera:
 
         tx = -v.dot(eye, right)
         ty = -v.dot(eye, up)
-        tz = -v.dot(eye, forward)
+        tz = v.dot(eye, forward)
         return [
-            right[0], up[0], forward[0], 0.0,
-            right[1], up[1], forward[1], 0.0,
-            right[2], up[2], forward[2], 0.0,
+            right[0], up[0], -forward[0], 0.0,
+            right[1], up[1], -forward[1], 0.0,
+            right[2], up[2], -forward[2], 0.0,
             tx, ty, tz, 1.0,
         ]
 

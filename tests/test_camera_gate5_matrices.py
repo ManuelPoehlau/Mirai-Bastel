@@ -14,6 +14,16 @@ from mirai.viewport.camera import OrbitCamera
 
 
 class CameraMatrixTests(unittest.TestCase):
+    @staticmethod
+    def _apply_view(matrix, point):
+        """Wendet eine column-major 4x4-View-Matrix auf einen Punkt an."""
+        x, y, z = point
+        return (
+            matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+            matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+            matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14],
+        )
+
     def test_view_matrix_has_16_components(self):
         cam = OrbitCamera()
         self.assertEqual(len(cam.build_view_matrix()), 16)
@@ -34,6 +44,18 @@ class CameraMatrixTests(unittest.TestCase):
         p1 = cam.build_projection_matrix(1.0)
         p2 = cam.build_projection_matrix(2.0)
         self.assertNotEqual(p1[0], p2[0])
+
+    def test_front_point_has_negative_view_z_and_positive_clip_w(self):
+        """Production-Kamera und GL-Projektion verwenden dieselbe Z-Konvention."""
+        cam = OrbitCamera()
+        _x, _y, view_z = self._apply_view(
+            cam.build_view_matrix(), cam.target
+        )
+        self.assertLess(view_z, 0.0)
+
+        projection = cam.build_projection_matrix(16 / 9)
+        clip_w = projection[11] * view_z
+        self.assertGreater(clip_w, 0.0)
 
 
 class CameraRevisionTests(unittest.TestCase):
