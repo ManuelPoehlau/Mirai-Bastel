@@ -1,459 +1,261 @@
-# Three-Role Chat Coordination Guide
-**Mirai-Bastel Artist UX Language Development**
+# Three-Role UX Research System — Coordination
+
+The three roles are **separate lenses on one problem**: discovering Mirai-Bastel's interaction language.
+
+They are not a waterfall and they are not three authorities voting on UX.
 
 ---
 
-## The Three Roles
+## Roles
 
-You are running **three separate Claude chats**, each with a distinct specialization:
+| Role | Owns | Does not own |
+|---|---|---|
+| 🧪 UX Researcher | comparative research, principles, hypotheses, unknowns | code, final bindings, production architecture |
+| 🛠️ Interaction Dev | feasibility, tiny prototypes, technical constraints | deciding whether UX is good |
+| 📋 Playground Spec | experiment design, observation, feedback, KEEP/ITERATE/REJECT/UNKNOWN | production architecture, inventing UX without a question |
 
-| Role | Focus | Thinks About | Outputs |
-|------|-------|--------------|---------|
-| **🧪 UX Researcher** | Principles, patterns, comparisons | What interaction principles exist? What patterns work elsewhere? | Research docs, hypotheses, experiment plans |
-| **🛠️ Interaction Dev** | Implementation, feasibility, code | How do I code this pattern? What's the implementation constraint? | Prototypes, formalized patterns, code architecture |
-| **📋 Playground Spec** | Validation, feedback, observation | Does this pattern *feel* good? What should the artist see? | Test plans, feedback designs, empirical results |
+The user remains the **director / synthesis point**. Findings from the three roles are inputs to a decision, not automatic commands.
+
+---
+
+## Shared Context
+
+The common UX knowledge lives in:
+
+`docs/design/artist_playground/UX_RESEARCH.md`
+
+All three roles should also respect:
+
+- existing Artist Playground architecture
+- existing validated Production systems
+- current code and tests
+- `AGENTS.md`
+
+Do not create parallel "truth" documents inside the role system.
 
 ---
 
 ## Information Flow
 
-```
-                    SHARED CONTEXT
-                    (TWEAK_RESEARCH.md
-                    + WP-04 Production Foundation
-                    + Playground Findings)
-                            │
-        ┌───────────────────┼───────────────────┐
-        │                   │                   │
-        ▼                   ▼                   ▼
-    🧪 RESEARCHER      🛠️ DEV            📋 PLAYGROUND
-    
-    Discovers         Implements         Tests
-    Patterns          Patterns           Patterns
-        │                 │                   │
-        └────────┬────────┴────────┬─────────┘
-                 │                 │
-            Questions          Findings
-            Feedback           Issues
-            Constraints        Data
-                 │                 │
-                 └────────┬────────┘
-                          ▼
-                   Synthesis & Learning
+```text
+                 UX_RESEARCH.md
+                       │
+        ┌──────────────┼──────────────┐
+        ↓              ↓              ↓
+   🧪 Researcher   🛠️ Dev       📋 Playground
+        │              │              │
+        │ hypotheses  │ prototypes    │ observations
+        └──────────────┼──────────────┘
+                       ↓
+                  SYNTHESIS
+                       ↓
+             next experiment / later
+             validated production idea
 ```
 
-### Typical Flow for One Hypothesis
-
-```
-1. RESEARCHER discovers pattern
-   "Wings 3D uses temporary overrides for transform operations"
-   → TWEAK_RESEARCH.md updated
-   
-2. RESEARCHER formulates hypothesis
-   "We should test whether sticky modes + temporary overrides work in Mirai"
-   → Creates test plan, hands to Playground Spec
-   
-3. DEV evaluates feasibility
-   "Yes, we can build this. Here's the architecture."
-   → Creates prototype framework
-   
-4. PLAYGROUND runs experiment
-   "Tested on cube and head. Artist understood the pattern immediately."
-   → Records findings: KEEP / ITERATE / REJECT / UNKNOWN
-   
-5. Findings feed back
-   PLAYGROUND → "Results: Artist paused when switching to override. Needs feedback."
-   DEV → "OK, I'll add visual feedback for override state."
-   RESEARCHER → "Should we test this on Selection operations too?"
-   
-6. Cycle repeats with refined understanding
-```
+The arrows are not a fixed sequence. A Playground observation may trigger new research; a technical constraint may change an experiment; a research comparison may suggest a completely different prototype.
 
 ---
 
-## How to Use the Three Chats
+## The Normal Cycle
 
-### Setup
+### 1. Capture the question
 
-1. Create three separate Claude chats in claude.ai
-2. Give each chat its own name:
-   - 🧪 **UX Researcher: Mirai Interaction Patterns**
-   - 🛠️ **Interaction Dev: Mirai Playground**
-   - 📋 **Playground Spec: Mirai Validation**
+Example:
 
-3. In each chat, paste the corresponding role prompt:
-   - Chat 1: Contents of **ROLE_UX_RESEARCHER.md**
-   - Chat 2: Contents of **ROLE_INTERACTION_DEV.md**
-   - Chat 3: Contents of **ROLE_PLAYGROUND_SPEC.md**
+> "If we have a sticky Move mode, does holding another input as a temporary override improve flow or create confusion?"
 
-### Your Workflow
+### 2. Researcher frames it
 
-#### When You Want to Research a Pattern
+The Researcher identifies:
 
-→ **Start in UX Researcher chat**
+- comparable interaction patterns
+- underlying principles
+- alternative explanations
+- unknowns
+- a testable hypothesis
 
-```
-You: "I'm curious about how Wings 3D handles mode switching. What principle do you 
-see there?"
+### 3. Dev checks reality
 
-🧪 Researcher: "Wings uses modal interaction where you select a tool and it stays 
-active. The principle is: 'sticky mode reduces switching overhead.' But Blender 
-uses the opposite — context-sensitive pie menus. The principle there is: 
-'visibility-on-demand reduces cognitive load.' We should test both in Mirai."
-```
+The Dev asks:
 
-#### When You Want to Understand Implementation Constraints
+- What already exists that we can reuse?
+- What is the smallest adapter/prototype needed?
+- What technical constraint could distort the experiment?
 
-→ **Move to Interaction Dev chat**
+**Do not redesign the production architecture just to make a prototype convenient.**
 
-```
-You: "Can we implement a system where pressing M enters Move mode (sticky) and 
-holding S temporarily scales?"
+### 4. Playground tests it
 
-🛠️ Dev: "Yes. The architecture would be:
-1. StickyMode class for press-to-toggle behavior
-2. TemporaryOverride class for hold-to-override
-3. InputRouter that dispatches to the active mode
-This would fit neatly with our current ToolManager. Here's the code structure..."
-```
+The Playground:
 
-#### When You Want to Test a Pattern
+- isolates the variable
+- makes feedback visible
+- plays with Cube / Head or another appropriate test scene
+- records observations before interpreting them
 
-→ **Move to Playground Spec chat**
+### 5. Synthesis
 
-```
-You: "We have a prototype of the sticky/temporary pattern. How should we test 
-whether the distinction is intuitive?"
+We classify the result:
 
-📋 Spec: "Here's a test plan:
-1. Hypothesis: Artist intuitively understands sticky vs temporary after seeing it
-2. Feedback design: Active mode shown in corner, override shown with color shift
-3. Test steps: M→drag, S(hold)→drag, release, M again
-4. Success: Artist predicts behavior on second try"
-```
+- KEEP
+- ITERATE
+- REJECT
+- UNKNOWN
 
-#### When You Get Results and Need to Synthesize
+Then decide what deserves the next experiment.
 
-→ **Bounce findings between all three chats**
-
-```
-📋 Spec (result): "Test complete. Artist understood sticky/temporary immediately. 
-No accidental mode switches. **KEEP this pattern.**"
-
-Then feed to:
-
-🧪 Researcher: "Pattern validated. Now, should we test this with Selection operations 
-next, or Topology operations?"
-
-🛠️ Dev: "Pattern is solid. I can now formalize it for production foundation."
-```
+Only validated findings are candidates for later production formalization.
 
 ---
 
-## Cross-Chat Communication Patterns
+## Interaction Grammar Comes First
 
-### From Researcher to Dev
+The current overarching research question is:
 
-> **Researcher**: "I discovered that ZBrush uses 'grab mode' where you hold a key to temporarily enter a grab operation. This is the principle of **modal temporality** — a mode that exists only while holding."
+> **What small set of interaction principles can organize many Mirai functions without creating shortcut and modifier chaos?**
 
-**Dev responds with**: Implementation questions, feasibility assessment, architectural implications
+Important candidate concepts include:
 
-> **Dev**: "We can implement this. The cost is adding a HeldMode class alongside StickyMode. Question: Should held modes support nested temporary overrides (e.g., hold M for grab, then hold R to rotate the grab)?"
+- mode vs action
+- sticky vs temporary
+- press vs hold
+- target vs selection
+- context
+- gesture
+- modifier
+- feedback
+- precedence / conflict resolution
 
-### From Dev to Playground
-
-> **Dev**: "I've built a prototype of the sticky/temporary pattern for Transform tools. It's ready to test."
-
-**Playground responds with**: Test plan, feedback design, empirical results
-
-> **Playground**: "Tested. Artist immediately understood press=sticky, hold=temporary. Visual feedback was clear. Ready to promote."
-
-### From Playground to Researcher
-
-> **Playground**: "Test result: Sticky Selection (press Q to enter, press Q to exit) worked great. But temporary override in Selection (Shift+hold for different select mode) was confusing."
-
-**Researcher responds with**: Hypothesis refinement, pattern alternatives
-
-> **Researcher**: "Interesting. Maybe Selection should use different semantics — not override, but *operation stacking*. Let me research how this works in Maya and Blender..."
-
-### Feedback Loops
-
-The three chats are **not sequential**. They run in parallel:
-
-```
-Session 1:
-- Research discovers sticky/temporary pattern
-- Dev starts building prototype
-- Playground designs test plan
-
-Session 2:
-- Dev shows prototype
-- Playground runs tests
-- Researcher refines hypothesis based on test results
-
-Session 3:
-- Dev iterates on code based on Playground feedback
-- Researcher applies findings to Selection operations
-- Playground runs next test
-```
+None is fixed merely because it appears in this list.
 
 ---
 
-## Shared Context: What Goes in TWEAK_RESEARCH.md
+## Example: Sticky + Temporary
 
-All findings, hypotheses, and decisions that affect the overall strategy live here.
+This is a good research hypothesis, not a requirement:
 
-### Researcher Updates
-
-When you discover a new principle, add it to TWEAK_RESEARCH.md in the appropriate section:
-
-```markdown
-## 19. [New Finding]: Sticky vs Temporary Distinction
-
-[Description of the pattern, why it matters, where else it appears]
-
-**Principle:** [The underlying rule]
-
-**Test Status:** KEEP / ITERATE / REJECT / UNKNOWN
-
-**Next Question:** [What should we test next?]
+```text
+Move active
+    ↓
+S held
+    ↓
+temporary Scale
+    ↓
+S released
+    ↓
+back to Move
 ```
 
-### Dev Updates
+The question is whether this principle is useful, understandable and scalable — not whether we can invent a `StickyMode` class quickly.
 
-When you formalize a pattern, document it in the Interaction Dev section:
+The same distinction applies to Tweak:
 
-```markdown
-## Dev Pattern: [Pattern Name]
-
-**Implementation Status:** Prototyped / In Production Foundation / Promoted
-
-**Code Location:** src/mirai/[module]
-
-**Design Constraints:** [What limits did we hit?]
-
-**Remaining Unknowns:** [What still needs testing?]
+```text
+Selection = persistent global state
+Hover     = current target
+Tweak     = possible direct manipulation
 ```
 
-### Playground Updates
-
-When you complete an experiment, document results:
-
-```markdown
-## Playground Result: [Experiment Name]
-
-**Hypothesis:** [What we tested]
-
-**Result:** KEEP / ITERATE / REJECT / UNKNOWN
-
-**Key Observation:** [What surprised us?]
-
-**Feedback Design:** [What worked visually?]
-
-**Next Test:** [What should we try next?]
-```
-
----
-
-## Decision Boundaries
-
-### UX Researcher Does NOT Decide
-
-- Whether a pattern is implementable (ask Dev)
-- Whether a pattern *feels* good (ask Playground)
-- Production architecture (that's synthesis)
-
-### Interaction Dev Does NOT Decide
-
-- Whether a pattern is good UX (ask Researcher)
-- Whether a pattern should exist (ask Researcher + Playground)
-- Experiment methodology (ask Playground)
-
-### Playground Spec Does NOT Decide
-
-- Whether a pattern should exist (that's Research + Dev)
-- How to implement it (that's Dev)
-- Which patterns to prioritize (that's a synthesis decision)
+We should test those semantics before freezing an architecture around them.
 
 ---
 
 ## Conflict Resolution
 
-If the three chats disagree:
+### Researcher says it is elegant; Playground says it is confusing
 
-| Conflict | Resolution |
-|----------|-----------|
-| "Is this pattern good UX?" | Playground tests it. Empirical data wins. |
-| "Can we implement this?" | Dev prototypes. If it works, yes. |
-| "Should we test this?" | Researcher says whether it answers a real question. |
-| "Is feedback good?" | Playground runs test. Artist intuition wins. |
+→ Treat that as meaningful evidence. Revisit the hypothesis or test another variant.
 
-**Rule: Always resolve with empirical data when possible.**
+### Dev says it is difficult; UX evidence says it is valuable
 
-If Researcher thinks a pattern is elegant but Playground shows it's confusing, the pattern needs to change.
+→ Do not simply discard it. Ask what the smallest technically honest prototype is and what constraint is real.
 
-If Dev thinks something is hard to implement but Playground shows it's essential for UX, find a way to implement it.
+### Playground result is inconclusive
 
----
+→ Do not call it KEEP or REJECT. Mark UNKNOWN and improve the experiment.
 
-## Session Structure
+### Roles produce different interpretations of the same observation
 
-### Research Session (30-60 minutes)
+→ Separate **observation** from **interpretation**.
 
-1. **Researcher** (15 min): "Here's a pattern I found in Wings 3D. Let me explore implications."
-   - Output: Hypothesis, comparison to other tools, research questions
+Example:
 
-2. **Dev** (15 min): "I can build a prototype for this. Here's the architecture."
-   - Output: Prototype code, implementation constraints, unknowns
+- Observation: "I paused before pressing S."
+- Interpretation A: "The override was unclear."
+- Interpretation B: "The feedback was insufficient."
 
-3. **Playground** (15 min): "Here's how we'd test this. Here's the feedback design."
-   - Output: Test plan, readiness check
-
-4. **Synthesis** (15 min): "Based on all three perspectives, this is the next step."
-   - Output: Priority, timeline, open questions
-
-### Validation Session (30-60 minutes)
-
-1. **Playground** (15 min): "We have a prototype. Let me design the test."
-2. **Playground** (20 min): "Running the test now..."
-3. **Playground** (10 min): "Results: KEEP / ITERATE / REJECT / UNKNOWN"
-4. **All three** (15 min): "What does this mean for the next iteration?"
-
-### Iteration Session (varies)
-
-1. **Playground** (5 min): "Test revealed this issue..."
-2. **Researcher** (5 min): "This suggests a different pattern..."
-3. **Dev** (10 min): "Let me fix the implementation..."
-4. **Playground** (10 min): "Testing the fix..."
-5. **Repeat** until KEEP
+Research the cause instead of pretending the interpretation is a fact.
 
 ---
 
-## Communication Norms
+## Documentation Rules
 
-### Across Chats
+### Research findings
 
-When referring to findings from another chat:
+Go to `UX_RESEARCH.md` when a finding affects the broader interaction-language understanding.
 
-```
-Good: "The Playground test showed that artists preferred sticky modes for 
-Move/Rotate/Scale. Should we apply the same principle to Selection?"
+### Experiment details
 
-Bad: "I think we should use sticky modes everywhere."
-```
+Keep experiment-specific implementation/spec material with the Playground experiment when practical.
 
-When asking the other roles for input:
+### Production decisions
 
-```
-Good: "Dev says this pattern might be costly to implement. What's the actual 
-feasibility?"
+Validated decisions belong in the appropriate production design / ADR documentation, not in this role guide.
 
-Bad: "Dev can't build this, so we can't use it."
-```
+### Role-system changes
 
-### Discipline
+Change these documents only when the **working method itself** changes.
 
-- **Name the assumption** — "I'm assuming this feels good, but we should test it"
-- **Cite the finding** — "Playground showed that...", "Research found that..."
-- **Propose, don't declare** — "We could test...", "Should we consider...?"
-- **Distinguish data from interpretation** — "Artist paused" vs "Artist was confused"
+This prevents the role system from becoming a second project-management system.
 
 ---
 
-## Tools and Documentation
+## What the Roles Should Say to Each Other
 
-### Shared Resources
+Good:
 
-- **TWEAK_RESEARCH.md** — Central research and decision document
-- **Playground Experiment Template** (in Playground Spec prompt) — For documenting tests
-- **Code Architecture** (in Interaction Dev context) — Production foundation reference
-- **Feedback Design Checklist** (in Playground Spec prompt) — For evaluating visibility
+> "Playground observed repeated hesitation when switching from sticky mode to a held override. Let's test whether feedback or the interaction semantics are responsible."
 
-### Where Outputs Go
+Bad:
 
-| Output | Chat | Goes To |
-|--------|------|---------|
-| Research findings | Researcher | TWEAK_RESEARCH.md |
-| Code prototypes | Dev | GitHub repo, experiments/ or src/ |
-| Test plans | Playground | TWEAK_RESEARCH.md or docs/playground/ |
-| Test results | Playground | TWEAK_RESEARCH.md |
-| Production decisions | (synthesis outside chats) | ADRs, docs/architecture/ |
+> "Sticky mode is bad."
 
----
+Good:
 
-## Before You Start
+> "The existing Picker can provide the hover target, so the prototype only needs a direct-manipulation adapter."
 
-### Checklist
+Bad:
 
-- [ ] Three separate Claude chats created
-- [ ] Each chat has its role prompt pasted (ROLE_UX_RESEARCHER.md, ROLE_INTERACTION_DEV.md, ROLE_PLAYGROUND_SPEC.md)
-- [ ] TWEAK_RESEARCH.md is your shared context (everyone references it)
-- [ ] WP-04 production foundation context is shared (everyone knows what exists)
-- [ ] You have a clear research question or hypothesis to start with
+> "We need a new picking system for Tweak."
 
-### First Session
+Good:
 
-Start in **Researcher chat**:
+> "The current experiment needs a temporary override; let's prototype it without changing `src/core`."
 
-```
-You: "I want to research Mirai-Bastel's interaction language. We have a strong 
-hypothesis about sticky modes and temporary overrides. Can you help me understand 
-how other tools implement this pattern?"
+Bad:
 
-🧪 Researcher: "Absolutely. Let me start by examining Wings 3D, Blender, Maya, and 
-ZBrush to find the underlying principles..."
-
-[Researcher builds case]
-
-Then: → Switch to Dev chat
-"Based on the research, Dev — can we implement this pattern?"
-
-[Dev builds architecture]
-
-Then: → Switch to Playground chat
-"Based on both perspectives, Playground — how should we test this?"
-
-[Playground designs test]
-
-Then: → Synthesis decision
-"Across all three perspectives, here's our next step..."
-```
+> "Let's redesign the InputMap now so future tools can use this."
 
 ---
 
-## Why This Structure Works
+## Stop Conditions
 
-1. **Separation of concern** — Each role owns its expertise
-2. **Parallel workflow** — You don't wait for one role to finish before starting another
-3. **Empirical grounding** — Playground tests keep everything honest
-4. **Composable patterns** — Research discovers principles, Dev formalizes them, Playground validates
-5. **Clear decision boundaries** — No ambiguity about who decides what
-6. **Scalable** — This structure works for small experiments or major research initiatives
-7. **Iterative** — Findings loop back to refine hypotheses without starting over
+Pause and reassess when:
 
----
+- a role starts inventing final shortcut layouts
+- a prototype requires broad production refactoring before the hypothesis can be tested
+- the same experiment changes several variables at once
+- observations are being replaced by assumptions
+- a research finding is being treated as an architecture decision
+- an already validated system is being rebuilt instead of reused
 
-## The Bigger Picture
-
-These three roles are working toward the goal from TWEAK_RESEARCH.md:
-
-> **"I understand how this application thinks, so I can operate it almost without thinking about the interface."**
-
-- **Researcher** ensures the principles are *discoverable* (they come from real patterns)
-- **Dev** ensures they're *implementable* (they can be coded without compromise)
-- **Playground** ensures they're *intuitive* (they feel good to artists)
-
-Together, they discover Mirai-Bastel's interaction language **before** locking in shortcuts.
+These are signals to step back, not reasons to push harder.
 
 ---
 
-## Next Steps
+## The Goal
 
-1. Create the three chats with their role prompts
-2. Start in Researcher chat with your current focus (likely: Phase A Interaction Grammar)
-3. Move between chats as needed
-4. Update TWEAK_RESEARCH.md as findings accumulate
-5. Let the process reveal what Mirai-Bastel's interaction language should be
+The three-role system succeeds when it helps us answer increasingly precise questions about how Mirai should feel to use.
 
-Good luck. 🎨
-
+It is a **research and validation tool**, not the final UX architecture.

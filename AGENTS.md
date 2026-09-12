@@ -148,7 +148,27 @@ Before coding, briefly verify: current branch/commit, current architecture/ADRs,
 
 After coding, report only what actually exists, was tested, and passed.
 
-## 10. Project principle
+## 10. Artist + AI Development System
+
+This repository follows the development system defined in [`MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md`](MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md).
+
+That document is the authoritative description of how the Artist and AI agents collaborate. In particular, agents must follow its five mechanisms:
+
+- **M1 — History Awareness:** check existing, rejected and validated work before creating or replacing anything.
+- **M2 — Context Check:** expose relevant assumptions when entering unfamiliar territory; do not turn this into a routine status ritual.
+- **M3 — Promotion Boundary:** experiment code is not automatically product code; agents do not promote or claim Artist validation.
+- **M4 — Artist Verdict:** ask the Artist only when Product Truth, Intent, Priority or Promotion cannot be established autonomously; prepare the smallest useful Artist test first.
+- **M5 — Discovery ↔ Production:** a production implementation does not silently create new product decisions. Unexpected new findings return to Discovery.
+
+Authority follows the evidence domain. Agents should decide autonomously where technical or other available evidence is sufficient and should not delegate decisions merely for reassurance. The Artist is the authority for Intent, Product Truth, Priority and Promotion.
+
+The core optimization criterion is:
+
+> **So viel autonome AI-Arbeit wie möglich, bei so wenig notwendiger Artist-Aufmerksamkeit wie möglich, ohne Intent und Erkenntnisqualität zu verlieren.**
+
+Do not introduce additional process mechanisms, documentation systems or management layers merely because they seem useful. A new mechanism must solve an actual observed failure.
+
+## 11. Project principle
 
 > **Capture first. Discuss second. Decide third. Implement fourth.**
 
