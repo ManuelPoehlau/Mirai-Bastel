@@ -1,480 +1,275 @@
-# Quick Start: Three-Role Chat System
-**Mirai-Bastel UX/Interaction Language Research**
+# Quick Start — Three-Role UX Research System
+
+This is the practical setup for the three-role research workflow.
+
+The important change from the original version is simple:
+
+> **We are not starting with Tweak or with a shortcut table. We are starting with the interaction language itself.**
 
 ---
 
-## 5-Minute Setup
+## 1. Create Three Chats
 
-### Step 1: Create Three Chats (2 min)
+Create three separate Claude chats:
 
-1. Go to claude.ai
-2. Create three new chats with these names:
-   - 🧪 **UX Researcher: Mirai Interaction Patterns**
-   - 🛠️ **Interaction Dev: Mirai Playground**
-   - 📋 **Playground Spec: Mirai Validation**
+- 🧪 **UX Researcher: Mirai Interaction Patterns**
+- 🛠️ **Interaction Dev: Mirai Playground**
+- 📋 **Playground Spec: Mirai Validation**
 
-### Step 2: Paste Role Prompts (2 min)
-
-In each new chat, paste **the first message**:
-
-**Chat 1** (Researcher):
-Copy everything from `ROLE_UX_RESEARCHER.md` and paste as your first message.
-
-**Chat 2** (Dev):
-Copy everything from `ROLE_INTERACTION_DEV.md` and paste as your first message.
-
-**Chat 3** (Playground):
-Copy everything from `ROLE_PLAYGROUND_SPEC.md` and paste as your first message.
-
-(Don't send yet — read step 3 first)
-
-### Step 3: Add Context (1 min)
-
-Before you send the role prompts, send **one message per chat** with context:
-
-**To Researcher Chat** (message before the role prompt):
-```
-Context:
-- We're researching the interaction language for Mirai-Bastel (3D modelling tool)
-- Start with TWEAK_RESEARCH.md (Artist UX — Research / Idea Space)
-- WP-04 Production Foundation is complete (Transform Ops, basic keybindings)
-- Goal: Discover principles before locking in shortcuts
-- Focus: Phase A (Interaction Grammar) — sticky vs temporary, press vs hold, etc.
-
-Here's your role prompt:
-
-[paste ROLE_UX_RESEARCHER.md]
-```
-
-**To Dev Chat**:
-```
-Context:
-- We're implementing interaction patterns for Mirai-Bastel
-- Production foundation: src/mirai/ with Application, ToolManager, basic keybindings
-- Current bindings: R=Rotate, S=Scale, Alt+R=Ring, Shift+S=Split (no conflicts)
-- Testing environment: Python + OpenGL viewport (no React/web)
-- Goal: Build patterns that the UX Research discovers
-
-Here's your role prompt:
-
-[paste ROLE_INTERACTION_DEV.md]
-```
-
-**To Playground Chat**:
-```
-Context:
-- We're validating interaction patterns for Mirai-Bastel
-- Test geometry: Cube (simple) and Head (realistic)
-- Goal: Empirical validation of interaction hypotheses
-- Playground discipline: small experiments, clear results, no over-generalization
-- Current focus: Phase A (Interaction Grammar) experiments
-
-Here's your role prompt:
-
-[paste ROLE_PLAYGROUND_SPEC.md]
-```
-
-Now send all three role prompts.
+Keep them separate so each chat maintains one clear perspective.
 
 ---
 
-## Your First Research Session (30 minutes)
+## 2. Give Each Chat Its Role
 
-### Timeline
+Paste the corresponding role document as the first message/context for that chat:
 
-**Min 0-5: Researcher Chat**
+- Researcher → `ROLE_UX_RESEARCHER.md`
+- Dev → `ROLE_INTERACTION_DEV.md`
+- Playground → `ROLE_PLAYGROUND_SPEC.md`
 
-```
-You: "Let's start with sticky vs temporary distinction. What interaction 
-patterns do you see in Wings 3D and Blender that use this principle?"
+Then give each role the same core context:
 
-🧪 Researcher: [Analyzes patterns, formulates hypothesis]
+```text
+We are researching Mirai-Bastel's artist interaction language.
+The shared research document is:
+  docs/design/artist_playground/UX_RESEARCH.md
 
-→ Copy the hypothesis somewhere (you'll share it with the other chats)
-```
+The goal is to discover interaction principles before finalizing
+individual keyboard and mouse bindings.
 
-**Min 5-10: Dev Chat**
-
-```
-You: "UX Researcher found this hypothesis about sticky vs temporary modes: 
-[paste hypothesis]
-
-Can we implement this? What would the architecture look like?"
-
-🛠️ Dev: [Evaluates feasibility, sketches code structure]
-
-→ Copy the architecture notes
-```
-
-**Min 10-15: Playground Chat**
-
-```
-You: "Researcher discovered sticky/temporary pattern, Dev says we can implement 
-it. How should we design an experiment to test whether this is intuitive?
-
-Here's what we're testing: [paste hypothesis]
-
-Proposed code structure: [paste Dev's architecture]"
-
-📋 Spec: [Designs feedback, test plan, success criteria]
-
-→ Copy the test plan
-```
-
-**Min 15-30: Feedback Loops**
-
-Back to **Dev Chat**:
-```
-You: "Playground designed this feedback system for the test: [paste]
-
-Will this work with your proposed architecture, or does it need changes?"
-
-🛠️ Dev: [Refines design based on feedback needs]
-```
-
-Then back to **Playground Chat**:
-```
-You: "Dev refined the architecture. They're ready to build a prototype. 
-When you have it, run this test plan: [confirm test]"
+Start from the current repository reality. Reuse validated systems.
+Do not redesign production architecture for a Playground experiment.
 ```
 
 ---
 
-## Common First Conversations
+## 3. Start at the Right Level
 
-### Conversation 1: Exploring Sticky/Temporary
+Do **not** start with:
 
-**Researcher Chat:**
-```
-You: "Let me understand the sticky vs temporary distinction better. 
-In Wings 3D, how does modal interaction work? And how is that different 
-from Blender's pie menus?"
+> "What key should Tweak use?"
 
-Expected output:
-- Clear explanation of sticky modes (e.g., press E → extrude mode stays active)
-- Clear explanation of temporary overrides (e.g., hold Shift to scale within extrude)
-- Principle extraction: "This reduces workflow interruption"
-- Question for next research: "Should Mirai use both patterns?"
-```
+or:
 
-### Conversation 2: Can We Build It?
+> "Let's build StickyMode."
 
-**Dev Chat:**
-```
-You: "The Researcher says the sticky/temporary pattern is used in Wings 3D. 
-Looking at our current architecture, how would we implement this?
+Start with a research question such as:
 
-Current state: We have R (Rotate) and S (Scale) as simple tool dispatchers. 
-We need them to become sticky modes with temporary overrides."
+> **"What interaction grammar could let Mirai express many operations without requiring a separate shortcut for every combination?"**
 
-Expected output:
-- Code structure for StickyMode class
-- How to integrate with current ToolManager
-- What feedback systems need to exist
-- Any architectural challenges
-```
+Useful first topics:
 
-### Conversation 3: How Do We Test It?
+- mode vs action
+- sticky vs temporary
+- press vs hold
+- selection vs hover target
+- mouse gesture semantics
+- modifier semantics
+- context and precedence
+- feedback
 
-**Playground Chat:**
-```
-You: "We have a hypothesis about sticky/temporary from research, 
-and a proposed implementation from Dev.
-
-Hypothesis: Artists will intuitively understand:
-- Press M → Move mode (sticky, stays active)
-- While in Move, hold S → Scale (temporary, returns to Move when released)
-
-Question: Is this intuitive? Can an artist understand it in 2-3 interactions?"
-
-Expected output:
-- Test plan with steps (M→drag, S+drag, release, M again)
-- Feedback design (how to show what's active)
-- Success criteria ("Artist predicts behavior on second try")
-- Test geometry (cube first, then head)
-```
+These are hypotheses to compare, not decisions to adopt.
 
 ---
 
-## How to Iterate
+## 4. First Conversation: Researcher
 
-### After First Test
+Example prompt:
 
-Let's say **Playground runs the test and discovers**:
+```text
+Let's start at the interaction-grammar level.
 
+Compare how artist tools such as Wings 3D, Mirai/N-World, Silo,
+3ds Max, Maya, ZBrush and Blender handle persistent modes,
+temporary modifiers, gestures, targets and context.
+
+Don't give me a shortcut table. Extract the underlying principles,
+trade-offs and unknowns that could matter for Mirai-Bastel.
 ```
-Result: ITERATE
 
-Issue: Artist paused before pressing S. Wasn't sure whether holding S 
-would interrupt the drag or work as a modifier.
-
-Feedback was unclear — we showed "active mode" but not "temporary override".
-```
-
-**Next actions:**
-
-1. **Playground → Dev**: "Feedback wasn't clear enough. We need visual 
-   distinction between 'sticky mode active' and 'temporary override active'."
-
-2. **Dev → Playground**: "I've updated feedback. Sticky mode is blue, 
-   temporary override is orange. New version ready to test."
-
-3. **Playground → test again**: "Testing with new feedback..."
-
-4. **Result**: "KEEP. Artist immediately understood with color distinction."
-
-5. **Researcher**: "Good. Should we apply the same color distinction 
-   to Selection operations?"
+The Researcher should return **principles and hypotheses**, not a final design.
 
 ---
 
-## Red Flags (When to Adjust)
+## 5. Bring One Hypothesis to Dev
 
-### Red Flag 1: "We don't know what to test"
+Example:
 
-→ Go back to **Researcher** chat
+```text
+The Researcher found this hypothesis:
+[insert concise hypothesis]
 
-```
-You: "We're stuck. What research question should we be asking right now?"
-
-🧪 Researcher should help you identify the next meaningful hypothesis.
-```
-
-### Red Flag 2: "I don't know if we can build this"
-
-→ Go to **Dev** chat
-
-```
-You: "Is this implementable, or am I asking for something that's 
-too complex for the current architecture?"
-
-🛠️ Dev should give a clear yes/no/maybe with reasoning.
+Can we prototype the smallest version of this in the Artist Playground?
+Please first identify what existing systems we can reuse.
+Do not redesign production architecture unless the experiment genuinely
+requires it.
 ```
 
-### Red Flag 3: "The test is inconclusive"
+The Dev should tell us:
 
-→ Go to **Playground** chat
-
-```
-You: "We ran a test but don't have a clear result. What went wrong?"
-
-📋 Spec should help you identify: was the hypothesis unclear? 
-Feedback insufficient? Test design flawed?
-```
-
-### Red Flag 4: "These three chats are disagreeing"
-
-→ This is normal and healthy. Resolve with **empirical data**.
-
-```
-Researcher: "I think this pattern is elegant."
-Dev: "It's hard to implement."
-Playground: "It's confusing to artists."
-
-→ Trust Playground's data. Change the pattern.
-```
+- what already exists
+- what can be wrapped/adapted
+- what the smallest experiment is
+- which technical constraints could affect the UX result
 
 ---
 
-## Weekly Workflow Example
+## 6. Bring the Prototype Question to Playground
 
-### Week 1: Phase A — Interaction Grammar
+Example:
 
-**Day 1: Researcher**
-- "What's the smallest set of interaction principles that could organize all of Mirai?"
-- Output: Hypothesis about Grammar (sticky/temporary, press/hold, etc.)
+```text
+We want to test this hypothesis:
+[insert hypothesis]
 
-**Day 2-3: Dev + Playground**
-- Dev: "I can prototype this. Here's the architecture."
-- Playground: "Let's test sticky vs temporary first."
-- Playground runs first test.
+Design the smallest experiment that can tell us something useful.
+Define the variable, feedback, test steps and observations to record.
+Use the existing Playground infrastructure where possible.
+```
 
-**Day 4: Iterate**
-- If test result is KEEP: Move to next pattern
-- If test result is ITERATE: Dev refines, Playground re-tests
-- If test result is REJECT: Researcher finds alternative pattern
+Then actually play with it.
 
-**Day 5: Synthesis**
-- All three look at week's findings
-- Document in TWEAK_RESEARCH.md
-- Plan next week's focus
-
-### Week 2: Phase B — Transform Family
-
-**Day 1: Researcher**
-- "How does the grammar apply to Move/Rotate/Scale specifically?"
-- Output: Transform-specific hypotheses
-
-**Day 2-5: Same cycle**
-- Test sticky transform tools
-- Test temporary overrides in transform
-- Test axis constraints
-- Test direct manipulation (Tweak)
+Record what happens, not what you hoped would happen.
 
 ---
 
-## Documents You'll Reference
+## 7. Use the Four Results
 
-### Shared Context
+Every meaningful experiment should end as one of:
 
-Keep open as you work:
+**KEEP** — the tested pattern is promising as-is.
 
-1. **TWEAK_RESEARCH.md** — The shared source of truth
-   - Read: Sections 1-11 (current understanding)
-   - Write: Update when you find something important
+**ITERATE** — the principle looks useful, but this variant needs work.
 
-2. **WP-04 Production Foundation**
-   - Understand: Current architecture, existing keybindings, tool lifecycle
+**REJECT** — evidence argues against this approach.
 
-### Role Documents
+**UNKNOWN** — the test did not answer the question clearly.
 
-One per chat:
-
-1. **ROLE_UX_RESEARCHER.md** — Pasted in Researcher chat
-2. **ROLE_INTERACTION_DEV.md** — Pasted in Dev chat
-3. **ROLE_PLAYGROUND_SPEC.md** — Pasted in Playground chat
-
-### Coordination
-
-Keep as reference:
-
-1. **ROLES_COORDINATION.md** — How the three chats work together
-2. **QUICK_START.md** — This file
+UNKNOWN is a valid result. Do not force a decision just to keep moving.
 
 ---
 
-## Tips for Success
+## 8. Feed the Finding Back
 
-### Do
+If the finding changes our understanding of Mirai's interaction language, update:
 
-✅ **Use shared names** — When referring to a pattern, use the name both chats know it by
+`docs/design/artist_playground/UX_RESEARCH.md`
 
-✅ **Update TWEAK_RESEARCH.md regularly** — This is your institutional memory
+A useful finding has the form:
 
-✅ **Test hypotheses before declaring them true** — "Seems elegant" ≠ "Works well"
+```text
+Observation:
+Artist hesitated before using the held modifier.
 
-✅ **Bounce between chats** — Each one informs the others
+Interpretation:
+Unknown — feedback and semantics both need investigation.
 
-✅ **Record observations, not interpretations** — "Artist paused" vs "Artist was confused"
+Hypothesis:
+The temporary override may be harder to predict than expected.
 
-✅ **Name unknowns** — "We don't know yet" is honest and useful
+Result:
+ITERATE / UNKNOWN
 
-### Don't
+Next question:
+Can clearer pre-action feedback distinguish the base mode
+from the temporary override?
+```
 
-❌ **Assume implementation is free** — Check with Dev first
-
-❌ **Skip feedback design** — If artists can't see the state, the test is broken
-
-❌ **Test five variables at once** — Isolate the one thing you're learning
-
-❌ **Declare victory after one test** — Test multiple times on different geometry
-
-❌ **Skip the Researcher** — Theory matters. It prevents you from going in circles
-
-❌ **Copy shortcuts from other tools** — Copy principles, not key bindings
+Do not turn a single observation into a universal rule.
 
 ---
 
-## First Prompt To Send
+## 9. Tweak Comes Later
 
-When you're ready to start, here's what to send to your **Researcher chat**:
+Tweak is still an excellent experiment because it exposes several grammar questions at once:
 
-```
-I'm researching Mirai-Bastel's interaction language. We need to understand 
-the principles behind how artist tools work before we lock in individual shortcuts.
-
-Our starting hypothesis from TWEAK_RESEARCH.md is that Mirai should have:
-- Sticky modes (press to activate, press again to deactivate)
-- Temporary overrides (hold to temporarily switch operation, release to return)
-
-These two ideas together could dramatically reduce shortcut explosion.
-
-The question I want to start with: What interaction principles in other 3D tools 
-support this idea? Wings 3D, Blender, Maya, ZBrush — who uses modal interaction 
-well, and what's the underlying principle?
-
-Can you research this pattern and help me understand what's working in the tools 
-that do it well?
+```text
+Hover target
+    +
+Direct manipulation
+    +
+Selection independence
+    +
+Mouse/keyboard interaction
+    +
+Possible temporary overrides
 ```
 
-Then send the role prompt.
+But Tweak is **Phase B / Transform-family research**, not the organizational center of the system.
 
 ---
 
-## What Success Looks Like
+## 10. No Artificial Schedule
 
-After 2-3 weeks of this workflow, you should see:
+There is deliberately no "Week 1 = grammar, Week 2 = transforms" requirement.
 
-- ✅ Clear understanding of 3-4 interaction principles (not just "use sticky modes")
-- ✅ Prototyped at least 2-3 patterns
-- ✅ Tested patterns on actual geometry (cube + head)
-- ✅ Clear KEEP/ITERATE/REJECT decisions with reasoning
-- ✅ Updated TWEAK_RESEARCH.md with findings
-- ✅ A sense of what Mirai-Bastel's interaction language *should feel like*
+The research order in `UX_RESEARCH.md` is a useful direction, not a deadline.
 
-After 4-6 weeks:
+If a question is important, we can spend more time on it. If a result makes an earlier assumption questionable, we go back.
 
-- ✅ Phase A (Interaction Grammar) mostly validated
-- ✅ Phase B (Transform Family) in progress
-- ✅ Clear principles that can be formalized for production
-- ✅ Confidence that the shortcuts you eventually design won't conflict
+The correct unit of progress is:
+
+> **a clearer understanding**, not a completed calendar week.
 
 ---
 
-## Still Have Questions?
+## 11. If You Get Stuck
 
-### "Should these be separate chats or projects?"
+### "We don't know what to research."
 
-Separate chats, same project. The chats don't need separate projects — they're working on the same problem with different lenses.
+→ Ask the **Researcher** to identify the most important unresolved interaction question.
 
-If you want to organize them, you could create a project folder:
+### "We don't know how to prototype it."
 
-```
-/Mirai-Bastel/
-├── TWEAK_RESEARCH.md (shared context)
-├── ROLES_COORDINATION.md
-├── QUICK_START.md
-├── ROLE_UX_RESEARCHER.md
-├── ROLE_INTERACTION_DEV.md
-├── ROLE_PLAYGROUND_SPEC.md
-└── Findings/
-    ├── Week 1 — Phase A Findings
-    ├── Week 2 — Transform Tests
-    └── ...
-```
+→ Ask the **Dev** to identify the smallest experiment using existing systems.
 
-Then reference this folder in each chat: "Our project docs are in [folder]".
+### "We built it but don't know what it tells us."
 
-### "Can I combine two roles in one chat?"
+→ Ask the **Playground** to isolate the variable and define the observation criteria.
 
-Technically yes, but not recommended. The roles have different thinking styles and should maintain separation of concern. Keeping them separate helps you:
-- **Think more clearly** (each chat has one perspective)
-- **Avoid conflicts** (forced to reconcile perspectives explicitly)
-- **Iterate faster** (can work on multiple chats simultaneously)
+### "The three roles disagree."
 
-### "What if one chat reaches a dead end?"
+→ Separate observations from interpretations and run the smallest experiment that can resolve the disagreement.
 
-Ask the other chats for help:
+### "We are designing hundreds of bindings."
 
-```
-Playground: "We've tested sticky modes 5 times now and keep hitting the same issue: 
-artists paused before using temporary overrides."
+→ Stop. Return to Interaction Grammar.
 
-→ Researcher: "Maybe we're testing the wrong pattern. What if temporary overrides 
-should work differently?"
+### "We are rebuilding something that already works."
 
-→ Dev: "Or maybe the feedback design is wrong. Let's try a different visual approach."
-```
-
-Use problems as signals. They usually point to a misunderstanding in the hypothesis.
+→ Stop. Find the validated system and adapt/reuse it.
 
 ---
 
-## You're Ready
+## The First Session
 
-You have everything you need. Create the three chats, paste the role prompts, and start asking questions.
+A good first session can be as small as:
 
-The workflow will reveal what Mirai-Bastel's interaction language should be.
+```text
+1. Researcher → compare interaction principles
+2. Pick ONE hypothesis
+3. Dev → identify reuse + smallest prototype
+4. Playground → define one experiment
+5. Play
+6. Record observations
+7. KEEP / ITERATE / REJECT / UNKNOWN
+```
 
-Good luck. 🎨
+That is enough.
 
+No giant UX architecture. No final shortcut map. No production refactor just because an experiment was interesting.
+
+---
+
+## Start Here
+
+Shared research:
+
+`docs/design/artist_playground/UX_RESEARCH.md`
+
+Working method:
+
+`docs/project planning/Three-Role_UX_Research_Sytem/README.md`
+
+Then open the three role prompts and start with **Interaction Grammar**.
