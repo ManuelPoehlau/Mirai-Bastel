@@ -1,28 +1,192 @@
-# Tweak — UX Research / Idea Space
+# Artist UX — Research / Idea Space
 
-**Status:** Open research — no implementation decision
-**Area:** Artist Playground
+**Status:** Open research — no implementation decision  
+**Area:** Artist Playground  
 **Date:** 2026-09-12
 
 ---
 
 ## Purpose
 
-This document is the open idea and research space for **Tweak** as an artist interaction concept.
+This document is the open idea and research space for the **interaction and UX language of Mirai-Bastel**.
 
-It is deliberately **not** a production specification and not yet an implementation plan. The goal is to capture ideas, variants, observations and questions before deciding what Tweak should actually become.
+It started as research into Tweak, but the first Playground experiments exposed a larger problem:
 
-The Artist Playground is the place to build and play with these variants. Findings may later become a validated UX decision, but nothing here automatically becomes Production architecture.
+> **Before we can sensibly assign every function a key, mouse gesture, modifier and combination, we need to understand the interaction system as a whole.**
+
+Otherwise we risk designing hundreds of individual shortcuts independently and discovering much later that they conflict, feel inconsistent, or constantly force the artist out of the current workflow.
+
+This document therefore deliberately moves **one level up**. Tweak remains an important experiment, but it is now treated as one test case for a broader artist interaction language.
+
+This is **not** a production specification and not an implementation plan. It is a place to collect observations, ideas, hypotheses, comparisons and questions before making architectural or UX decisions.
+
+The Artist Playground is the place to build and play with these variants. Findings may later become validated UX decisions, but nothing here automatically becomes Production architecture.
 
 ---
 
-## Core Idea
+# 1. The Problem We Need to Solve First
 
-Tweak is a **direct manipulation workflow**:
+The initial reaction while experimenting with the Slot system was essentially:
+
+> **"Uff. Where do we even start? This is going to take forever if every function needs to be assigned sensible keys, mouse inputs and combinations individually."**
+
+That is probably the wrong level of attack.
+
+The goal is not to create a giant shortcut table first.
+
+The goal is to discover a **small set of interaction principles** from which many individual functions can derive naturally.
+
+Instead of asking:
+
+```text
+Where does function X get its key?
+Where does function Y get its modifier?
+What does Shift+Alt+LMB do here?
+```
+
+we should first ask:
+
+```text
+What is the current interaction state?
+What does a held key mean?
+What does a pressed key mean?
+What does a mouse drag mean?
+What is temporary?
+What is sticky?
+What can override what?
+How does the artist move between actions without losing flow?
+```
+
+If those rules become coherent, individual tools become much easier to map.
+
+---
+
+# 2. Core UX Hypothesis
+
+The working hypothesis is:
+
+> **Mirai should have a small, composable interaction language rather than a huge collection of unrelated shortcuts.**
+
+The artist should learn principles and patterns, not hundreds of exceptions.
+
+A useful mental model may eventually look something like:
+
+```text
+                 ARTIST INTERACTION
+                         │
+          ┌──────────────┼──────────────┐
+          │              │              │
+        STICKY       TEMPORARY       CONTEXT
+         MODE         OVERRIDE       / TARGET
+          │              │              │
+       Move           Scale            Hover
+       Rotate         Rotate           Selection
+       Scale          Axis             Component
+       ...            ...              ...
+```
+
+This is deliberately only a hypothesis. The Playground exists to find out whether such a language actually feels good.
+
+---
+
+# 3. Sticky Modes
+
+A particularly promising idea is the distinction between **press once** and **hold temporarily**.
+
+Example:
+
+```text
+M pressed
+    ↓
+MOVE MODE becomes active / sticky
+
+S held
+    ↓
+temporarily SCALE
+
+S released
+    ↓
+back to MOVE
+```
+
+The important idea is not the exact letters. It is the interaction pattern:
+
+> **A committed/sticky mode establishes the current workflow; a held input temporarily overrides it.**
+
+Potentially:
+
+```text
+MOVE sticky
+ ├── S held → temporary Scale
+ ├── R held → temporary Rotate
+ └── X held → temporary X constraint
+```
+
+This could dramatically reduce the need for separate commands for every combination.
+
+### Why this matters
+
+It gives us a potential answer to the shortcut explosion:
+
+```text
+Tool × Modifier × Context × Mouse Gesture
+```
+
+does not necessarily need a unique binding for every combination.
+
+Instead, the system could have reusable rules such as:
+
+```text
+ACTIVE MODE
+    + temporary override
+    + target/context
+    + gesture
+```
+
+Again: this is a UX hypothesis, not an architecture decision.
+
+---
+
+# 4. Temporary Overrides
+
+Temporary overrides may be more important than individual tools themselves.
+
+Example:
+
+```text
+Active: Move
+
+hold R
+    → Rotate temporarily
+
+release R
+    → Move again
+```
+
+Possible future uses:
+
+- transform type
+- axis constraint
+- selection mode
+- navigation
+- snapping
+- component mode
+- Tweak behavior
+- topology operations
+
+The question is whether the same principle can work consistently across very different contexts.
+
+A successful general rule would be much more valuable than another individual shortcut.
+
+---
+
+# 5. Tweak as the First Test Case
+
+Tweak remains an important research subject, but now as **one experiment inside the larger UX system**.
+
+Its core idea is direct manipulation:
 
 > Hover the component I want to affect, then manipulate it directly — without first making it the global selection.
-
-The cursor identifies the target. The current global Selection is not required as the transform source.
 
 Example:
 
@@ -36,15 +200,11 @@ Tweak B
 → Selection remains {A}
 ```
 
-This separation is important. Tweak should not silently replace, add, remove or toggle the global selection merely because a component was manipulated.
+The cursor identifies the target. The current global Selection is not required as the transform source.
 
----
+### Initial variants
 
-## Initial Interaction Ideas
-
-### Keyboard-driven Tweak
-
-Hover/highlight a component, then use a transform key while dragging:
+**Keyboard-driven:**
 
 ```text
 Hover → T + Drag  → Move
@@ -52,47 +212,27 @@ Hover → R + Drag  → Rotate
 Hover → S + Drag  → Scale
 ```
 
-The exact meaning of `T` is still open. It may represent Tweak/Move, or Move may eventually use another established convention. The experiment should test the interaction before fixing terminology.
-
-### Mouse-driven Tweak
-
-A more direct mouse-first variant:
+**Mouse-driven:**
 
 ```text
 Hover → LMB + Drag → Move
 ```
 
-This is intentionally interesting because it competes with the existing meanings of LMB drag. The conflict is part of the UX question, not something to hide prematurely.
-
-Possible future variants could test contextual activation, a dedicated modifier, or another mouse button — but these should remain ideas until the basic interaction has been experienced.
+The exact input mapping is deliberately open. The purpose is to discover the underlying interaction pattern, not to lock in letters prematurely.
 
 ---
 
-## What Tweak Is Not
+# 6. Selection and Manipulation Are Different Concepts
 
-Tweak should not initially be treated as a replacement for the normal Transform workflow.
-
-The existing workflow remains a baseline:
+One important distinction emerging from Tweak:
 
 ```text
-Select → Move / Rotate / Scale
+Selection = persistent global state
+Hover     = current cursor target
+Tweak     = direct manipulation of target
 ```
 
-Tweak is an alternative direct-manipulation path:
-
-```text
-Hover → Manipulate
-```
-
-The two workflows may coexist and may eventually serve different purposes.
-
----
-
-## Selection Relationship
-
-A central research invariant:
-
-> **Tweak target ≠ necessarily current Selection.**
+These should not automatically be collapsed into one state.
 
 Example:
 
@@ -100,304 +240,428 @@ Example:
 A selected
 B hovered
 
-T + Drag on B
+Tweak B
 
 Expected:
     B moves
     A stays selected
-    Selection state is unchanged
 ```
 
-Multiple selection remains a separate global Selection workflow. Existing Shift-based selection experiments are therefore not part of Tweak itself.
-
-Questions to investigate:
-
-- Should Tweak ever operate on the whole current Selection?
-- Should a modifier allow "tweak selected" instead of "tweak under cursor"?
-- What should happen when the cursor is over a selected component?
-- Should Tweak temporarily expose the target without changing Selection?
-- Is a separate visual state needed for **Hovered**, **Selected**, and **Tweak Target**?
-
----
-
-## Hover / Highlight
-
-Tweak strongly suggests that the component under the cursor should be visually identifiable before the drag begins.
-
-Potential states:
-
-```text
-normal
-   ↓
-hover/highlight
-   ↓
-active tweak target
-   ↓
-commit
-```
+This may become a broader UX principle: **the thing currently being acted upon does not always have to become the global selection.**
 
 Questions:
 
-- Is hover highlighting necessary for reliable direct manipulation?
-- Should the highlight appear only while a Tweak-capable modifier is held?
-- Should it exist continuously in the viewport?
-- How different should Hover and Selected look?
-- Does hover feedback become distracting on dense meshes?
-- Does component mode change what can be hovered?
+- When should an action use Selection?
+- When should it use Hover/Hit Target?
+- Can an operation explicitly choose between them?
+- Can the same transform concept support both workflows without confusing semantics?
 
 ---
 
-## Component Scope
+# 7. Sticky vs Direct / Temporary Interaction
 
-The first useful test can start with vertices, but the concept may generalize:
+We should distinguish at least two different kinds of interaction:
+
+### Persistent workflow
 
 ```text
-Vertex  → direct vertex tweak
-Edge    → direct edge manipulation?
-Face    → direct face manipulation?
+activate Move
+    ↓
+Move remains active
+    ↓
+perform several actions
 ```
 
-The existing component picking infrastructure already provides a useful basis for experimentation.
+### Direct temporary workflow
 
-Do not assume that identical behavior is appropriate for all component types.
+```text
+hover target
+    ↓
+hold input
+    ↓
+perform action
+    ↓
+release
+    ↓
+return to previous state
+```
+
+Tweak may eventually combine both ideas:
+
+```text
+Tweak mode active
+    ↓
+hover B
+    ↓
+hold Scale
+    ↓
+scale B
+    ↓
+release
+    ↓
+Tweak mode remains active
+```
+
+This is precisely the kind of composability that is worth testing before designing dozens of individual bindings.
 
 ---
 
-## Transform Semantics
+# 8. Mouse and Keyboard as Interaction Layers
 
-Tweak may reuse existing transform mathematics and Production transform operations internally, while still being a distinct interaction concept.
+Rather than treating keyboard and mouse bindings as completely separate systems, investigate whether they can act as layers over the same interaction state.
 
-Important distinction:
+For example:
 
 ```text
-Implementation reuse
-        ≠
-UX / tool identity
+Mode: Move
+Target: hovered vertex
+Gesture: drag
+
+Keyboard modifier changes operation
+Mouse button starts gesture
 ```
 
-A Playground prototype may therefore use the existing Move/Rotate/Scale tools as adapters. If Tweak proves valuable, Production can later decide whether it deserves a distinct interaction mode/tool abstraction.
+This could allow a relatively small vocabulary to express many operations.
+
+But we must test whether this remains intuitive or becomes "modifier soup".
+
+### Warning sign
+
+If an interaction requires remembering:
+
+```text
+Ctrl + Alt + Shift + RMB + Space
+```
+
+for ordinary modelling, we have probably failed the UX experiment. 😄
+
+The system should reduce combinations where possible rather than celebrating them.
 
 ---
 
-## Input Questions
+# 9. Context and Target
 
-### Keyboard vs Mouse
+Inputs may not have one universal meaning independent of context.
 
-The first useful comparison is:
+Potential context layers:
 
-| Variant | Interaction |
-|---|---|
-| Keyboard Tweak | Hover + `T/R/S` + Drag |
-| Mouse Tweak | Hover + LMB + Drag |
+```text
+Current Mode
+Current Component Mode
+Hovered Target
+Current Selection
+Current Gesture
+Temporary Modifiers
+Navigation State
+```
 
-Research question:
+The challenge is to make this contextual behavior **predictable**, not magical.
 
-> Which interaction produces the more natural, controllable and low-friction direct manipulation workflow?
+For example:
 
-### LMB Conflict
+```text
+Hover vertex → vertex operation
+Hover edge   → edge operation
+Hover face   → face operation
+```
 
-Current LMB interactions include selection-related behavior and may also participate in navigation depending on modifiers/state.
-
-A Mouse Tweak using plain LMB therefore raises a fundamental question:
-
-> Can LMB mean both "manipulate the thing under the cursor" and "selection/navigation" without becoming ambiguous?
-
-Possible future answers — **ideas only, not decisions**:
-
-- context-sensitive LMB
-- dedicated Tweak modifier
-- temporary Tweak mode
-- different mouse button
-- press/drag timing distinction
-- hover state changes the meaning of drag
-- explicit tool activation
-
-Do not solve this architecturally before the interaction has been tested.
+The artist should ideally understand why the system chose an action.
 
 ---
 
-## Possible Extensions / Ideas
+# 10. Feedback Is Part of the Interaction
 
-These are deliberately uncommitted ideas for later experiments.
+A coherent interaction system also needs coherent feedback.
 
-### 1. Tweak on different components
-
-- vertex
-- edge
-- face
-- perhaps object/element level later
-
-### 2. Axis constraints
-
-Potential variants:
+Potential visual states:
 
 ```text
-T + X + Drag
-T + Y + Drag
-T + Z + Drag
+Selected
+Hovered
+Active Target
+Active Tool
+Temporary Override
+Constraint
+Dragging
 ```
 
-or another constraint vocabulary.
+If the system changes behavior based on context but does not communicate that context, the result will feel unpredictable.
 
-### 3. Camera-space vs world-space manipulation
+Therefore UX research should always ask:
 
-Investigate whether direct Tweak should feel like:
-
-- screen/camera-plane dragging
-- world-axis movement
-- inferred surface direction
-- normal-based movement
-- context-dependent behavior
-
-### 4. Depth / distance behavior
-
-For vertex Tweak especially:
-
-- screen-plane movement
-- depth locked
-- depth inferred from original hit
-- depth controlled by a modifier
-- distance from camera preserved
-
-### 5. Soft / proportional influence
-
-A future Tweak experiment could ask whether nearby components should follow:
-
-```text
-single vertex
-      ↓
-soft influence
-      ↓
-local deformation
-```
-
-This should remain separate from the basic direct-manipulation question.
-
-### 6. Surface-aware Tweak
-
-Possible future direction:
-
-> Drag a component along the visible surface rather than through a camera plane.
-
-Potentially useful for organic modelling, but requires a separate UX investigation.
-
-### 7. Temporary selection / target display
-
-The hovered Tweak target could receive a transient visual indicator without entering global Selection.
-
-This may provide the visual clarity of selection without the state change.
-
-### 8. Sticky / continuous Tweak
-
-Potential future question:
-
-> After committing one tweak, can the artist immediately move to another component without leaving the mode?
-
-This would shift Tweak from a single gesture toward a continuous modelling mode.
-
-### 9. Modifier changes during drag
-
-Potential future test:
-
-```text
-Drag
-  ↓
-hold modifier
-  ↓
-change transform constraint/mode
-```
-
-Useful only after the basic gesture is proven.
-
-### 10. Tweak as a modelling "brush"
-
-Longer-term idea:
-
-Tweak could evolve from a single-component gesture into a family of direct manipulation behaviors, potentially approaching a lightweight modelling brush without becoming a sculpting system.
-
-This is deliberately speculative.
+> **What does the artist see before, during and after the gesture?**
 
 ---
 
-## UX Questions Worth Testing
+# 11. Tweak-Specific Research Questions
+
+These remain useful, but are now subordinate to the larger UX research.
+
+### Direct manipulation
 
 - Does direct manipulation feel faster than Select → Transform?
 - Is hover targeting reliable enough without a click?
 - Is the target obvious before movement starts?
-- Does T/R/S feel natural for direct manipulation?
-- Does LMB-only Tweak feel wonderfully immediate or dangerously ambiguous?
 - Is accidental manipulation a problem?
-- How often does the artist want to manipulate something without selecting it?
-- Does keeping Selection unchanged make workflows clearer?
-- Does Tweak reduce repetitive selection operations on dense meshes?
-- Does it become annoying when the intended target is difficult to pick?
-- How does it behave on the Head Basemesh compared with the Cube?
-- Does it remain usable while orbiting/panning/zooming frequently?
-- Does muscle memory from other DCCs help or hurt?
+
+### Component scope
+
+- vertex
+- edge
+- face
+- object/element level later
+
+### Transform semantics
+
+- screen/camera-plane movement
+- world-axis movement
+- surface direction
+- normal-based movement
+- inferred depth
+
+### Soft influence
+
+Could direct manipulation eventually become a lightweight modelling brush?
+
+This is speculative and should remain separate from the basic interaction question.
+
+### LMB conflict
+
+Mouse Tweak using plain LMB raises an important general UX question:
+
+> Can the same mouse gesture have different meanings based on the current interaction context without becoming ambiguous?
+
+Possible experiments:
+
+- context-sensitive LMB
+- temporary modifier
+- temporary Tweak mode
+- different mouse button
+- press/drag timing
+- hover changes the meaning of drag
+- explicit tool activation
+
+Do not solve this architecturally before testing the interaction.
 
 ---
 
-## Known UX Influences
+# 12. Inspiration / Comparison
 
-Tweak is related conceptually to direct-manipulation workflows found in modelling/sculpting applications, especially the idea of manipulating geometry under the cursor without requiring a conventional selection step first.
+Relevant systems to investigate include:
 
-Specific application behavior should be treated as inspiration to investigate, not as a specification to copy.
+- Wings 3D
+- Mirai / N-World style interaction
+- Silo
+- 3ds Max
+- ZBrush
+- Maya
+- Blender
+- other artist-centric modelling tools
+
+The purpose is **not** to copy shortcut layouts.
+
+Instead ask:
+
+- What interaction principle is behind this behavior?
+- Why does it feel fast?
+- What state does the application remember?
+- What is temporary?
+- What is sticky?
+- How are conflicts avoided?
+- How much does the artist have to remember?
+
+A good finding is therefore something like:
+
+> "This application uses temporary overrides to avoid tool switching."
+
+not:
+
+> "We should copy Ctrl+Shift+something."
 
 ---
 
-## Experiment Discipline
+# 13. What We Should NOT Do Yet
 
-For each Tweak experiment:
+Do **not** begin by creating a complete global shortcut table.
+
+Do **not** attempt to assign every current and future function a final key.
+
+Do **not** freeze the InputMap around today's Playground experiments.
+
+Do **not** create architecture merely because a prototype needs a convenient implementation.
+
+Do **not** optimize individual tool bindings before understanding the interaction grammar.
+
+Instead:
+
+```text
+Observe
+   ↓
+Capture principle
+   ↓
+Build tiny Playground experiment
+   ↓
+Play
+   ↓
+Compare
+   ↓
+Keep / Iterate / Reject / Unknown
+   ↓
+Only then formalize
+```
+
+---
+
+# 14. Proposed UX Research Order
+
+A sensible top-down research sequence may be:
+
+### A — Interaction Grammar
+
+First determine the basic vocabulary:
+
+- sticky vs temporary
+- press vs hold
+- mode vs action
+- selection vs hover target
+- mouse gesture semantics
+- modifier semantics
+- context
+- feedback
+
+### B — Transform Family
+
+Use Move / Rotate / Scale as the first playground for the grammar.
+
+Test:
+
+- sticky tools
+- temporary overrides
+- axis constraints
+- direct manipulation
+- selection-based vs hover-based transforms
+
+### C — Selection Family
+
+Then test how the grammar applies to:
+
+- Replace
+- Add
+- Remove
+- Toggle
+- Box
+- Lasso
+- Paint
+- component modes
+
+### D — Topology / Modelling Family
+
+Only after the interaction grammar becomes clearer:
+
+- Extrude
+- Inset
+- Bevel
+- Connect
+- Cut
+- Bridge
+- etc.
+
+### E — Navigation / Viewport
+
+Then investigate whether navigation can use the same principles without creating conflicts.
+
+### F — Broader Artist Workflow
+
+Eventually apply the principles across:
+
+- Modelling
+- Rigging
+- Skinning
+- Morphing
+- Animation
+- Painting
+
+This is not a rigid milestone plan. It is a research direction.
+
+---
+
+# 15. The Bigger Goal
+
+The eventual goal is not:
+
+> "Mirai-Bastel has a really clever shortcut system."
+
+It is:
+
+> **"I understand how this application thinks, so I can operate it almost without thinking about the interface."**
+
+The artist should develop **muscle memory for principles**, not memorization of arbitrary commands.
+
+That is much closer to the original Mirai / Wings / artist-tool spirit we are looking for.
+
+---
+
+# 16. Experiment Discipline
+
+For each UX experiment:
 
 1. Capture the interaction idea.
-2. Build the smallest possible Playground variant.
-3. Play with it on Cube and Head.
-4. Compare it against the existing Select → Transform workflow.
-5. Record what feels good/bad.
-6. Decide: **KEEP / ITERATE / REJECT / UNKNOWN**.
-7. Only promote a validated finding toward Production later.
+2. State the hypothesis.
+3. Build the smallest possible Playground variant.
+4. Play with it on Cube and Head.
+5. Compare it against the current baseline.
+6. Record what feels good/bad/confusing.
+7. Decide: **KEEP / ITERATE / REJECT / UNKNOWN**.
+8. Only promote validated findings toward Production later.
 
-Do not turn every successful prototype detail into architecture.
+The Playground is allowed to be messy.
+
+Production is not.
 
 ---
 
-## Current Non-Decisions
+# 17. Current Non-Decisions
 
 Nothing below is currently fixed:
 
-- Tweak's final name
-- whether T means Move/Tweak
-- whether Tweak is a tool, mode, interaction layer, or some combination
+- final shortcut layout
+- final mouse layout
+- whether Move/Rotate/Scale are sticky
+- exact temporary override semantics
+- exact meaning of T/R/S/M
+- whether Tweak is a tool, mode, interaction layer, or combination
 - whether Mouse Tweak uses plain LMB
-- whether Keyboard and Mouse Tweak should coexist
-- whether Tweak affects only one component or can affect a selection
-- exact hover appearance
-- exact drag/depth semantics
-- axis constraint behavior
-- soft influence behavior
-- Production architecture
+- whether Hover can act as an operation target without Selection
+- exact component-mode behavior
+- exact feedback appearance
+- exact navigation bindings
+- Production input architecture
 
 ---
 
-## Current Working Hypothesis
+# 18. Current Working Hypothesis
 
-For Playground research, the most useful first comparison is deliberately small:
+The most important current hypothesis is now broader than Tweak:
+
+> **We should discover Mirai-Bastel's interaction language before attempting to finalize Mirai-Bastel's individual input bindings.**
+
+Tweak is one of the first useful test cases because it exposes several important questions at once:
 
 ```text
-A — Keyboard
-Hover → T/R/S + Drag
-
-B — Mouse
-Hover → LMB + Drag
-
-Both:
-    • no prior selection required
-    • target comes from the cursor
-    • global Selection remains unchanged
-    • existing Move/Rotate/Scale machinery may be reused internally
+Hover target
+    +
+Direct manipulation
+    +
+Selection independence
+    +
+Temporary modifiers
+    +
+Sticky mode potential
+    +
+Mouse/keyboard interaction
 ```
 
-This is a **research hypothesis, not a final design**.
+That makes it a good Playground experiment — but **not the place where the whole UX system should begin or end**.
 
 ---
 
