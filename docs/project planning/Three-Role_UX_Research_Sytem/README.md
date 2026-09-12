@@ -1,5 +1,7 @@
 # Mirai-Bastel — Three-Role UX Research System
 
+**Status: Erster Entwurf — noch nicht validiert.** Dieses System ist eine spezialisierte Anwendung des übergeordneten [`MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md`](../../../MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md) für Artist-/UX-/Interaction-Research. M1–M5 bleiben übergeordnet verbindlich; insbesondere Discovery/Production und die Promotion Boundary werden nicht durch dieses System ersetzt.
+
 **Purpose:** A three-role working system for discovering, prototyping and validating Mirai-Bastel's artist interaction language.
 
 The system is deliberately **research-first**. We do not begin by assigning every function a shortcut. We first discover a small, coherent interaction grammar from which concrete bindings can later emerge.
