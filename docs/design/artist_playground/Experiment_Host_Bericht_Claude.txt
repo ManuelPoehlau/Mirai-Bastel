@@ -1,0 +1,100 @@
+ Die drei Dimensionen — aktueller Status
+
+  1. Selection Method — Wo steht der Code heute?
+
+  pick_faces_in_rect() (selector.py:144–179) und handle_box_select() (selector.py:182–220) sind die Marquee-Implementierung. Sie sind sauber geschrieben, aber
+  konzeptuell falsch als SelectMode.BOX eingeordnet.
+
+  Point-Pick (single ray) und Marquee (rect) sind bereits vollständig separate Code-Pfade — die Abstraktion fehlt nur noch.
+
+  2. Selection Behavior — Wo steht der Code heute?
+
+  core/selection.py:32–73 ist die reine State-API:
+  selection.set(ids)     # Replace
+  selection.add(ids)     # Add
+  selection.remove(ids)  # Remove
+  selection.toggle(id_)  # Toggle
+  Diese Ebene ist sauber und korrekt. Das Core-API macht die Trennung implizit schon richtig.
+
+  Das Problem ist in der Playground-Schicht: handle_face_click_modifier() (selector.py:68–108) vermischt Input-Parsing (Modifier-Tasten) direkt mit Behavior-Aufrufen —
+  die Interpretation "Shift = Add" ist in derselben Funktion wie selection.add({hit}).
+
+  3. Modifier / Input — Wo steht der Code heute?
+
+  PlaygroundInputMap (input_map.py:24–36) ist eine saubere Konfigurationsdatenklasse:
+  @dataclass
+  class PlaygroundInputMap:
+      add_modifier:    int = key.MOD_SHIFT
+      remove_modifier: int = key.MOD_CTRL
+      toggle_modifier: int = key.MOD_ALT
+
+  Die Konfiguration ist gut. Aber die Interpretation (welche Taste → welches Behavior) ist in dispatch_click() (selector.py:263–317) direkt in der Routing-Logik kodiert,
+   nicht als separate Mapping-Schicht.
+
+  ---
+  Was bereits sauber getrennt ist
+
+  ┌──────────────────────────────────────────────────┬───────────────────────────┐
+  │                     Bereich                      │          Status           │
+  ├──────────────────────────────────────────────────┼───────────────────────────┤
+  │ core.Selection State-API                         │ ✓ Rein, kein Input        │
+  ├──────────────────────────────────────────────────┼───────────────────────────┤
+  │ Picking-Funktionen (ray/rect)                    │ ✓ Reine Geometrie         │
+  ├──────────────────────────────────────────────────┼───────────────────────────┤
+  │ Experiment-Interface (activate/deactivate)       │ ✓ Minimal, sauber         │
+  ├──────────────────────────────────────────────────┼───────────────────────────┤
+  │ PlaygroundInputMap (Konfiguration)               │ ✓ Reine Datenklasse       │
+  ├──────────────────────────────────────────────────┼───────────────────────────┤
+  │ core.SelectionMode (Component: Vertex/Edge/Face) │ ✓ Orthogonal getrennt     │
+  ├──────────────────────────────────────────────────┼───────────────────────────┤
+  │ VBO-Building (Component-rendering)               │ ✓ Unabhängig von Behavior │
+  └──────────────────────────────────────────────────┴───────────────────────────┘
+
+  ---
+  Ist das vorgeschlagene Modell kompatibel mit der Architektur?
+
+  Ja — mit minimaler Umstrukturierung.
+
+  Dein Drei-Dimensionen-Modell:
+
+  Selection
+  ├── Method      → ersetzt: SelectMode.BOX → eigene Enum/Konzept
+  │   ├── Click (Point-Pick)
+  │   └── Box (Marquee-Pick)
+  │
+  └── Behavior    → ersetzt: SelectMode.REPLACE/MODIFIER/TOGGLE → sauberere Namen
+      ├── Replace
+      ├── Add
+      ├── Remove
+      └── Toggle
+
+  Input / Modifier
+  └── entscheidet, welches Behavior angewendet wird
+      → bestehende InputMap ist fast schon genau das
+
+  Die Dokumentation denkt bereits richtig: AP-03_PLAN.md hat Phase 2 (Behavior) und Phase 3 (Method/Marquee) bewusst als separate Forschungsfragen geführt. Im Code
+  wurden sie dann in eine Enum gestopft.
+
+  Das Core-API (selection.set/add/remove/toggle) ist bereits perfect auf das Behavior-Modell ausgerichtet. Ein sauberes Modell würde nur die Playground-Schicht
+  umstrukturieren, nicht die Core-Schicht.
+
+  ---
+  Zusammenfassung: Was muss ggf. angepasst werden
+
+  ┌────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────┬───────────────┐
+  │                                      Problem                                       │                 Wo                 │    Aufwand    │
+  ├────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼───────────────┤
+  │ SelectMode.BOX nicht im Behavior-Enum                                              │ selector.py:27–33                  │ Klein         │
+  ├────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼───────────────┤
+  │ Method/Behavior gemeinsam in SelectMode                                            │ selector.py:27–33                  │ Klein (Split) │
+  ├────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼───────────────┤
+  │ Input-Interpretation in Behavior-Funktionen                                        │ selector.py:68–108, 263–317        │ Mittel        │
+  ├────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────┼───────────────┤
+  │ Experiment-Varianten setzen SelectMode → würden nach Split zwei Parameter brauchen │ experiments/selection/variant_*.py │ Klein         │
+  └────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────┴───────────────┘
+
+  Was nicht angefasst werden müsste:
+  - core/selection.py — komplett unberührt
+  - PlaygroundInputMap — bleibt wie ist
+  - Experiment-Interface — bleibt wie ist
+  - Die Picking-Funktionen selbst — sauber, nur Einordnung ändert sich
