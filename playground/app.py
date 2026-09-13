@@ -40,13 +40,15 @@ class PlaygroundApp:
     """Minimaler Orchestrator für das Artist Playground.
 
     Wrapping von Application (kein Eingriff in src/mirai/).
-    Hält aktives Experiment (default: "none").
+    Hält aktive Experimente pro Family in einem per-Family-Registry.
 
     Methoden:
-        load_cube()            — Szene mit Würfel laden
-        load_head()            — Szene mit Head-Basemesh laden
-        set_experiment(exp)    — Aktives Experiment wechseln
-        update(dt)             — Per-Frame-Tick
+        load_cube()                       — Szene mit Würfel laden
+        load_head()                       — Szene mit Head-Basemesh laden
+        register_slot(slot, family_id)    — Slot für eine Family registrieren
+        activate_variant(family_id, idx)  — Variante in einer Family wechseln
+        set_experiment(exp)               — Aktives Experiment wechseln (Compat)
+        update(dt)                        — Per-Frame-Tick
     """
 
     def __init__(self) -> None:
@@ -59,6 +61,7 @@ class PlaygroundApp:
         self._app.camera = PlaygroundCamera()
         self._active_experiment: Experiment = Experiment()
         self._active_slot: ExperimentSlot | None = None
+        self._slots: dict[str, ExperimentSlot] = {}
         self.display_state: DisplayState = DisplayState()
         self.show_vertices: bool = False
         self.select_mode:   SelectMode   = SelectMode.REPLACE
@@ -131,6 +134,11 @@ class PlaygroundApp:
     def active_slot(self) -> ExperimentSlot | None:
         return self._active_slot
 
+    @property
+    def slots(self) -> dict[str, ExperimentSlot]:
+        """Per-Family Slot-Registry (family_id → ExperimentSlot)."""
+        return self._slots
+
     def set_experiment(self, experiment: Experiment) -> None:
         """Aktives Experiment wechseln. Deaktiviert das alte, aktiviert das neue."""
         if self._active_experiment is not experiment:
@@ -138,21 +146,43 @@ class PlaygroundApp:
             self._active_experiment = experiment
             self._active_experiment.activate()
 
+    def register_slot(self, slot: ExperimentSlot, family_id: str | None = None) -> None:
+        """Slot für eine Research-Family registrieren.
+
+        family_id: explizite Family-ID; falls None, wird experiment.id genutzt.
+        """
+        fid = family_id if family_id is not None else slot.active_experiment.id
+        self._slots[fid] = slot
+
     def set_slot(self, slot: ExperimentSlot) -> None:
-        """Aktiven Experiment-Slot setzen und erste Variante aktivieren (WP-AP-02)."""
+        """Aktiven Experiment-Slot setzen (Backward-Compat für WP-AP-02-Tests).
+
+        Ruft register_slot() und set_experiment() auf, damit alte Tests und der
+        Experiment-Line-HUD weiterhin funktionieren.
+        """
         self._active_slot = slot
+        self.register_slot(slot)
         self.set_experiment(slot.active_experiment)
 
-    def activate_variant(self, index: int) -> None:
-        """Variante im aktiven Slot wechseln (WP-AP-02)."""
-        if self._active_slot is None:
-            raise RuntimeError("Kein aktiver ExperimentSlot. Erst set_slot() aufrufen.")
-        self._active_slot.activate(index)
-        self.set_experiment(self._active_slot.active_experiment)
+    def activate_variant(self, family_id: str, index: int) -> None:
+        """Variante in einer registrierten Family wechseln.
+
+        Der Slot verwaltet deactivate/activate intern. _active_experiment wird
+        auf die zuletzt aktivierte Variante gesetzt (für HUD / draw-Hook).
+        """
+        if family_id not in self._slots:
+            raise KeyError(f"Kein Slot für Family '{family_id}' registriert.")
+        slot = self._slots[family_id]
+        slot.activate(index)
+        self._active_experiment = slot.active_experiment
 
     # -- Per-Frame-Tick -------------------------------------------------------
 
     def update(self, dt: float) -> None:
-        """Per-Frame-Tick: Viewport-Sync + aktives Experiment."""
+        """Per-Frame-Tick: Viewport-Sync + alle aktiven Experimente."""
         self._app.update_viewport(dt)
-        self._active_experiment.update(dt)
+        if self._slots:
+            for slot in self._slots.values():
+                slot.active_experiment.update(dt)
+        else:
+            self._active_experiment.update(dt)

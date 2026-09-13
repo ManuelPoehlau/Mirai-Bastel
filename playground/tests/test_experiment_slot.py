@@ -229,8 +229,8 @@ def test_app_activate_variant_switches():
 
     app = PlaygroundApp()
     slot = _make_slot("a", "b")
-    app.set_slot(slot)
-    app.activate_variant(1)
+    app.set_slot(slot)  # registers with family_id="a"
+    app.activate_variant("a", 1)
     assert app.active_experiment.id == "b"
 
 
@@ -238,5 +238,5 @@ def test_app_activate_variant_without_slot_raises():
     from playground.app import PlaygroundApp
 
     app = PlaygroundApp()
-    with pytest.raises(RuntimeError):
-        app.activate_variant(0)
+    with pytest.raises(KeyError):
+        app.activate_variant("nonexistent", 0)

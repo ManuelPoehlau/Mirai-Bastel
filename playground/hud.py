@@ -38,6 +38,7 @@ class PlaygroundHUD:
         # Aktueller HUD-State (vor dem ersten draw() setzbar)
         self._camera_line = "Camera: —"
         self._mesh_line = "Mesh: —"
+        self._setting_line = "Setting: —"
         self._experiment_line = "Experiment: [none] No Experiment"
         self._display_line = "Display: Shaded"
         self._selection_line = "Selection: none"
@@ -80,6 +81,22 @@ class PlaygroundHUD:
             self._selection_line += f"  [{' | '.join(parts)}]"
         self._invalidate()
 
+    def update_setting(self, slots: dict) -> None:
+        """Setting-Zeile aus per-Family Slot-Registry aufbauen.
+
+        Format: Setting: selection=Replace | presentation=Shaded | transform=Move
+        """
+        if not slots:
+            self._setting_line = "Setting: —"
+        else:
+            parts = []
+            for fid, slot in slots.items():
+                exp = slot.active_experiment
+                label = exp.variant or exp.id
+                parts.append(f"{fid}={label}")
+            self._setting_line = "Setting: " + " | ".join(parts)
+        self._invalidate()
+
     def update_experiment(self, experiment: "Experiment", decision: str = "") -> None:
         """Experiment-Zeile aktualisieren.
 
@@ -110,6 +127,7 @@ class PlaygroundHUD:
     def _full_text(self) -> str:
         return (
             f"{self._camera_line}\n{self._mesh_line}\n"
+            f"{self._setting_line}\n"
             f"{self._experiment_line}\n{self._display_line}\n{self._selection_line}"
         )
 
@@ -156,6 +174,10 @@ class PlaygroundHUD:
     @property
     def display_line(self) -> str:
         return self._display_line
+
+    @property
+    def setting_line(self) -> str:
+        return self._setting_line
 
     @property
     def selection_line(self) -> str:

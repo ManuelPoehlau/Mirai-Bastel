@@ -57,6 +57,16 @@ from playground.transformer import (  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
+from playground.slot import ExperimentSlot, VariantEntry  # noqa: E402
+from playground.experiments.selection.variant_replace import FaceSelectReplaceExperiment  # noqa: E402
+from playground.experiments.selection.variant_modifier import FaceSelectModifierExperiment  # noqa: E402
+from playground.experiments.selection.variant_toggle import FaceSelectToggleExperiment  # noqa: E402
+from playground.experiments.presentation.variant_shaded import ShadedVariant  # noqa: E402
+from playground.experiments.presentation.variant_flat import FlatVariant  # noqa: E402
+from playground.experiments.presentation.variant_wireframe import WireframeVariant  # noqa: E402
+from playground.experiments.transform.variant_move import MoveVariant  # noqa: E402
+from playground.experiments.transform.variant_rotate import RotateVariant  # noqa: E402
+from playground.experiments.transform.variant_scale import ScaleVariant  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
@@ -155,6 +165,30 @@ class PlaygroundWindow(pyglet.window.Window):
         )
         self.app = app
         self.input_map = input_map if input_map is not None else PlaygroundInputMap()
+
+        # -- Per-Family Slot-Registry aufbauen --------------------------------
+        sel_slot = ExperimentSlot(
+            VariantEntry(FaceSelectReplaceExperiment(app)),
+            VariantEntry(FaceSelectModifierExperiment(app)),
+            VariantEntry(FaceSelectToggleExperiment(app)),
+        )
+        pres_slot = ExperimentSlot(
+            VariantEntry(ShadedVariant(app)),
+            VariantEntry(FlatVariant(app)),
+            VariantEntry(WireframeVariant(app)),
+        )
+        trans_slot = ExperimentSlot(
+            VariantEntry(MoveVariant(app)),
+            VariantEntry(RotateVariant(app)),
+            VariantEntry(ScaleVariant(app)),
+        )
+        app.register_slot(sel_slot, "selection")
+        app.register_slot(pres_slot, "presentation")
+        app.register_slot(trans_slot, "transform")
+        # Initialzustand anwenden und _active_experiment auf selection setzen,
+        # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
+        pres_slot.active_experiment.activate()
+        app.activate_variant("selection", 0)  # setzt _active_experiment + ruft activate() auf
 
         self._face_program = shader.ShaderProgram(
             shader.Shader(_FACE_VERT, "vertex"),
@@ -339,6 +373,7 @@ class PlaygroundWindow(pyglet.window.Window):
             e_count = len(list(mesh.all_edge_ids()))
             f_count = len(list(mesh.all_face_ids()))
             self._hud.update_mesh(v_count, e_count, f_count)
+        self._hud.update_setting(self.app.slots)
         self._hud.update_experiment(self.app.active_experiment)
         display_label = self.app.display_state.label
         if self.app.show_vertices:
@@ -557,7 +592,11 @@ class PlaygroundWindow(pyglet.window.Window):
             self._rebuild_vbo()
             self._push_camera()
         elif symbol == self.input_map.display_cycle:
-            self.app.display_state.cycle()
+            slot = self.app.slots.get("presentation")
+            if slot is not None:
+                self.app.activate_variant("presentation", (slot.active_index + 1) % slot.variant_count)
+            else:
+                self.app.display_state.cycle()
             self._update_hud()
         elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()
@@ -566,10 +605,11 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.show_vertices = not self.app.show_vertices
             self._update_hud()
         elif symbol == _key.M:
-            # Cycle SelectMode (Behaviour): REPLACE → MODIFIER → TOGGLE → REPLACE
-            modes = [SelectMode.REPLACE, SelectMode.MODIFIER, SelectMode.TOGGLE]
-            current_idx = modes.index(self.app.select_mode) if self.app.select_mode in modes else 0
-            self.app.select_mode = modes[(current_idx + 1) % len(modes)]
+            # Cyclt innerhalb der aktuell aktiven Family — nie family-übergreifend.
+            active_family = self.app.active_experiment.id
+            slot = self.app.slots.get(active_family)
+            if slot is not None:
+                self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
             self._update_hud()
         elif symbol == _key.Q:
             # Cycle SelectMethod (Method): PICK → BOX → LASSO → PAINT → PICK
@@ -601,17 +641,20 @@ class PlaygroundWindow(pyglet.window.Window):
             self._rebuild_selection_vbo()
             self._update_hud()
         elif symbol == _key.X:
-            # X: Move Tool aktivieren
             self._transform_key_down = 'x'
             self.app.active_tool = create_tool_for_type('move')
+            self.app.activate_variant("transform", 0)
+            self._update_hud()
         elif symbol == _key.R:
-            # R: Rotate Tool aktivieren
             self._transform_key_down = 'r'
             self.app.active_tool = create_tool_for_type('rotate')
+            self.app.activate_variant("transform", 1)
+            self._update_hud()
         elif symbol == _key.S:
-            # S: Scale Tool aktivieren
             self._transform_key_down = 's'
             self.app.active_tool = create_tool_for_type('scale')
+            self.app.activate_variant("transform", 2)
+            self._update_hud()
         elif symbol == _key.ESCAPE:
             if self._transform_started and self.app.active_tool is not None:
                 cancel_transform(self.app.active_tool)
