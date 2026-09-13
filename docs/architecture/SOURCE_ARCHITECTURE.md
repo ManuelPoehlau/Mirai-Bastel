@@ -25,13 +25,19 @@ Der Produktionscode liegt unter:
 
 ```text
 src/
-└── core/
+├── core/
+├── mirai/
+└── viewport/
 ```
 
-`src/core` ist der bisher etablierte Produktionspfad für den Core. Die
-endgültige Gesamtstruktur von `src/` ist bewusst noch nicht vollständig
-festgelegt.
+`src/core` ist der etablierte Produktionspfad für die fachliche Domain.
+`src/mirai` enthält die window-freie Application-, Interaction- und
+Kamera-/Picking-Schicht. `src/viewport` enthält die unabhängige V0.2-
+Renderdaten- und Viewport-Schicht.
 
+Diese drei Verzeichnisse sind die heute implementierten
+Produktionsverantwortlichkeiten. Sie legen weder ein Production-Fenster,
+einen Draw-Call noch spätere Modellierungs-, UI- oder Dokumentgrenzen fest.
 Der Viewport-V1-Praxistest bleibt unter `experiments/`.
 
 ---
@@ -74,12 +80,18 @@ konkret genug sind.
 Der Core darf keine Abhängigkeit von UI, Fenster-Systemen, Eingabegeräten,
 OpenGL oder einer konkreten Viewport-/Render-Bibliothek benötigen.
 
-### Viewport
+### Viewport (`src/viewport` und `src/mirai/viewport`)
 
 Der Viewport ist für die visuelle Darstellung und räumliche Interaktion mit
 der Scene verantwortlich.
 
-Aus dem V1-Praxistest sind derzeit folgende Verantwortlichkeiten bekannt:
+Die Production-Aufteilung ist bewusst zweigeteilt: `src/viewport` besitzt
+Renderdaten, Dirty-State, Overlay und Resource-Stores; `src/mirai/viewport`
+besitzt die wiederverwendbare Orbit-Kamera, Picking und Display-State. Die
+Bindung erfolgt an der Application-Grenze, ohne dass `src/viewport` von
+`src/mirai` importiert.
+
+Derzeit implementierte Verantwortlichkeiten sind:
 
 - Kamera
 - Projektion
@@ -90,7 +102,7 @@ Aus dem V1-Praxistest sind derzeit folgende Verantwortlichkeiten bekannt:
 Der Viewport benutzt den Core, um dessen aktuellen Zustand darzustellen und
 Operationen anzustoßen. Der Core soll den Viewport nicht kennen.
 
-### Tools
+### Tools (`src/mirai/interaction`)
 
 Tools übersetzen Benutzeraktionen in fachliche Operationen.
 
@@ -118,7 +130,7 @@ z. B. Panels, Menüs, Toolbars und Dialoge.
 
 UI ist nicht gleich Viewport und nicht gleich Tool.
 
-### Application
+### Application (`src/mirai/application.py`)
 
 Die Application-Schicht verbindet und orchestriert die großen Systeme.
 
@@ -215,9 +227,7 @@ eine passendere Produktionsstruktur überführt werden.
 Folgende Fragen bleiben offen, bis weitere Anforderungen oder Experimente
 sie ausreichend klären:
 
-- genaue Unterteilung von `viewport/`
-- genaue Unterteilung von `tools/`
-- Position und Form eines späteren Renderer-Moduls
+- Production-Fenster, Entry-Point und konkrete Draw-Call-Integration
 - konkrete Event-/Input-Architektur
 - Command-System und dessen genaue Grenzen
 - UI-Framework bzw. UI-Architektur
@@ -230,29 +240,9 @@ Ordner angelegt**, nur weil sie irgendwann benötigt werden könnten.
 
 ---
 
-## 6. Vorläufige Zielstruktur
-
-Wenn die Anforderungen ausreichend konkret sind, kann sich daraus ungefähr
-folgende Struktur entwickeln:
-
-```text
-src/
-└── mirai/
-    ├── core/
-    ├── viewport/
-    ├── tools/
-    ├── application/
-    └── ui/
-```
-
-Das ist eine **Zielvorstellung, keine aktuelle Verpflichtung**.
-
-Weitere fachliche Unterteilungen entstehen erst dann, wenn sie durch die
-tatsächliche Komplexität gerechtfertigt sind.
-
 ---
 
-## 7. Architekturprinzipien
+## 6. Architekturprinzipien
 
 ### Kleine, echte Grenzen statt künstlicher Abstraktionen
 
@@ -287,8 +277,8 @@ aber zukünftige Systeme werden nicht vollständig vorimplementiert.
 
 ## Status
 
-**Status: Arbeitsgrundlage für die Produktionsarchitektur.**
+**Status: aktuelle Produktionsarchitektur, Stand nach Gate 3/5/6/7.**
 
-Core V1 und Viewport V1 sind abgeschlossen und dienen als Referenz. Die
-nächste Entwicklungsphase kann auf dieser Grundlage die tatsächliche
-`src/`-Struktur schrittweise aufbauen.
+Core V1 und Viewport V1 bleiben Referenzen. Die implementierten Grenzen unter
+`src/` sind aktuell, während künftige Produktbereiche weiterhin erst aus
+validierten Anforderungen abgeleitet werden.

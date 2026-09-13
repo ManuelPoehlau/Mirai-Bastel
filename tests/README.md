@@ -1,8 +1,10 @@
 # Tests
 
-Automatisierte Tests für Mesh-Topologie, Selection, Operations, History und Serialisierung.
+Automatisierte Tests für Production-Core, Application/Interaction und
+Viewport sowie deren Verträge.
 
-**Produktionspfad:** Alle Repository-Tests laufen gegen `src/core/` (nicht gegen `experiments/mirai_bastel_core_V1/`).
+**Produktionspfad:** Repository-Tests verwenden die Production-Pakete unter
+`src/` (`core`, `mirai`, `viewport`), nicht den Core-V1-Experimentfork.
 
 ## Ausführen
 
@@ -17,7 +19,15 @@ python -m unittest tests.test_identity_continuity -v
 python -m unittest tests.test_topology_history -v
 python -m unittest tests.test_scene_serialization -v
 python -m tests.test_core
+
+# Vollständige aktuell ausführbare Production-Suite
+python -m pytest tests --ignore=tests/test_extrude_tool.py -q
 ```
+
+`tests/test_extrude_tool.py` ist ein historischer V1-Experimenttest mit einem
+veralteten Importpfad und keiner Production-Extrude-Implementierung. Er ist
+nicht Teil der dokumentierten Production-Baseline; seine Einordnung wird
+separat entschieden.
 
 ## Struktur
 
@@ -45,8 +55,9 @@ Seit der WP-04-Verification (2026-09-01) existieren zusätzlich die
 (AD-003) explizit. Sie sind — wie die Phase-E-Tests — bewusst **nicht Teil des
 Standard-Runners** `run_core_suite` (sondern separat ausführbar
 (`python -m unittest tests.test_history_contract -v` usw.), damit die dokumentierte
-„29/29“-Standard-Baseline stabil bleibt. Alle 62 `unittest`-Tests des
-`tests/`-Verzeichnisses sind grün (`python -m unittest discover -s tests -p test_*.py`).
+„29/29“-Standard-Baseline stabil bleibt. Die vollständige unittest-Discovery
+ist derzeit keine grüne Production-Baseline, weil der historische
+`test_extrude_tool.py`-Import fehlschlägt; siehe den Ausführungshinweis oben.
 
 ### Phase A – Invarianten
 

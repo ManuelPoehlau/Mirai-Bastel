@@ -4,30 +4,25 @@ Hier entsteht die eigentliche Anwendung.
 
 ## Aktueller Stand
 
-`src/core/` enthält den derzeitigen Produktionspfad für den Core. Er basiert
-auf dem abgeschlossenen Core-V1-Milestone und entspricht bewusst noch keiner
-endgültigen Gesamtarchitektur.
+Die aktuell implementierte Produktionsstruktur ist:
 
-Der interaktive Viewport aus
-`experiments/mirai_bastel_viewport_V1/` bleibt vorerst ein isolierter
-Praxistest. Seine Erkenntnisse werden verwendet, bevor der eigentliche
-Viewport-/Application-Code unter `src/` aufgebaut wird.
+```text
+src/
+├── core/      3D-Domain: Scene, Mesh, Selection, Operations, History, Serialization
+├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking, Display-State
+└── viewport/  inkrementelle Renderdaten, Dirty-State, Overlay, Resource-Store, Fassade
+```
 
-## Geplante Bereiche
+`src/core/` basiert auf dem abgeschlossenen und eingefrorenen Core-V1-
+Milestone. `src/mirai/` und `src/viewport/` sind die implementierte
+Production-Foundation für Application/Interaction bzw. Viewport. Der
+Viewport-V1-Code bleibt ein isolierter Praxistest unter
+`experiments/mirai_bastel_viewport_V1/`.
 
-Die endgültige Aufteilung wird erst festgelegt, wenn die technischen
-Grenzen zwischen Core, Viewport, Interaction und Application ausreichend
-klar sind. Mögliche spätere Bereiche sind unter anderem:
-
-- core/
-- viewport/
-- interaction/
-- modeling/
-- selection/
-- tools/
-- app/
-
-Diese Liste ist eine Orientierung, keine festgeschriebene Architektur.
+Nicht vorhanden sind weiterhin ein Production-Fenster/Entry-Point, ein
+Production-Draw-Call sowie eine festgelegte Modeling- oder Selection-UX.
+Diese Bereiche werden nicht durch leere Ordner oder Vorabarchitektur
+vorweggenommen.
 
 ## Grundregel
 

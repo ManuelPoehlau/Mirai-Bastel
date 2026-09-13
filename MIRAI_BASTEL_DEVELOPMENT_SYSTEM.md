@@ -187,6 +187,8 @@ Zwei Dinge darf ein Agent nie: **promovieren** und **Artist-Validierung behaupte
 
 Bleibt unverändert. Es behält seinen eigenen Wissensspeicher (`docs/design/artist_playground/UX_RESEARCH.md`), seine drei Rollen und seine eigene Schleife.
 
+Für Artist-/UX-/Interaction-Research ist das [Three-Role UX Research System](docs/project%20planning/Three-Role_UX_Research_Sytem/README.md) die derzeit vorgesehene spezialisierte Arbeitsmethode innerhalb von M4.
+
 Es ist die erste und bisher einzige Instanz von M4. Seine Verdikte laufen in den Entscheidungs-Layer des Projekts ein.
 
 Sein eigentlicher Wert liegt nicht in der Dreizahl der Rollen, sondern in zwei Dingen: dem funktionierenden Erkenntniszyklus, und der Trennung von Erzeuger und Bewerter. Ein Agent, der etwas gebaut hat, ist ein schlechter Bewerter derselben Sache.
