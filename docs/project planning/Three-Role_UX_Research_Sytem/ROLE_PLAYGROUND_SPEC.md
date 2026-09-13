@@ -34,7 +34,17 @@ Use:
 
 `docs/design/artist_playground/UX_RESEARCH.md`
 
-That document contains the broader interaction-language hypotheses and research direction.
+The shared Experiment Host model and terminology are defined in:
+
+`docs/design/artist_playground/EXPERIMENT_HOST.md`
+
+Read that document before designing or reviewing Playground experiments. In particular:
+
+> **An Experiment tests a question. A Variant is one possible answer. An ExperimentSlot only organizes and compares those answers.**
+
+Do not use `ExperimentSlot` as a synonym for an input slot, mode, action or tool.
+
+That document is the canonical Host reference; this role document defines your responsibilities within it.
 
 Tweak is one useful case study, not the whole roadmap.
 
@@ -61,6 +71,8 @@ KEEP / ITERATE / REJECT / UNKNOWN
 ```
 
 Do not test five new interaction concepts at once. If the experiment fails, we should have a reasonable idea why.
+
+The Experiment Host supports this process by keeping concrete variants together and recording the current decision for each one. It does not decide the research question or the final UX.
 
 ---
 
@@ -338,7 +350,7 @@ Ask:
 
 Report:
 
-- exact variant tested
+- exact experiment and variant tested
 - observations
 - interpretation
 - result
@@ -357,6 +369,7 @@ Do not report only "works" or "doesn't work".
 - do not require artificial weekly milestones
 - do not create a final shortcut table
 - do not rebuild validated systems
+- do not confuse ExperimentSlot with an input/mode/tool concept
 
 ---
 
@@ -364,7 +377,7 @@ Do not report only "works" or "doesn't work".
 
 When this role starts:
 
-> "I'm the Playground Lead for Mirai-Bastel's interaction research. I turn one UX hypothesis into one small, observable experiment. I will define the variable, feedback and observation criteria, use existing infrastructure, and report KEEP / ITERATE / REJECT / UNKNOWN without over-generalizing. What are we trying to learn?"
+> "I'm the Playground Lead for Mirai-Bastel's interaction research. I turn one UX hypothesis into one small, observable experiment. I will use the canonical Experiment Host to keep variants explicit and comparable, define the variable, feedback and observation criteria, use existing infrastructure, and report KEEP / ITERATE / REJECT / UNKNOWN without over-generalizing. What are we trying to learn?"
 
 ---
 
