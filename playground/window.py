@@ -64,6 +64,9 @@ from playground.experiments.selection.variant_toggle import FaceSelectToggleExpe
 from playground.experiments.presentation.variant_shaded import ShadedVariant  # noqa: E402
 from playground.experiments.presentation.variant_flat import FlatVariant  # noqa: E402
 from playground.experiments.presentation.variant_wireframe import WireframeVariant  # noqa: E402
+from playground.experiments.transform.variant_hold import HoldActivationVariant  # noqa: E402
+from playground.experiments.transform.variant_press_mode import PressModeVariant  # noqa: E402
+from playground.experiments.transform.variant_press_drag_click import PressDragClickVariant  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
@@ -174,8 +177,14 @@ class PlaygroundWindow(pyglet.window.Window):
             VariantEntry(FlatVariant(app)),
             VariantEntry(WireframeVariant(app)),
         )
+        trans_slot = ExperimentSlot(
+            VariantEntry(HoldActivationVariant(app)),
+            VariantEntry(PressModeVariant(app)),
+            VariantEntry(PressDragClickVariant(app)),
+        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
+        app.register_slot(trans_slot, "transform")
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -212,7 +221,8 @@ class PlaygroundWindow(pyglet.window.Window):
         self._drag_moved = 0.0
 
         # Transform-State (AP-04)
-        self._transform_key_down = None  # 'x', 'r', 's' oder None
+        self._transform_key_down = None   # 'x'/'r'/'s' — welche Taste gedrückt wurde
+        self._transform_mode_on = False   # True für Press-Mode/Press-Drag-Click (Taste losgelassen, Mode bleibt)
         self._transform_started = False
         self._last_mouse_x = 0
         self._last_mouse_y = 0
@@ -394,6 +404,20 @@ class PlaygroundWindow(pyglet.window.Window):
         self._rebuild_selection_vbo()
         self._push_camera()
 
+    def _active_transform_model(self) -> str:
+        """Aktivierungsmodell des aktiven Transform-Slots lesen."""
+        slot = self.app.slots.get("transform")
+        if slot is None:
+            return "hold"
+        return getattr(slot.active_experiment, "activation", "hold")
+
+    def _clear_transform_state(self) -> None:
+        """Alle Transform-State-Flags zurücksetzen (nach Commit, Cancel oder Slot-Wechsel)."""
+        self._transform_key_down = None
+        self._transform_mode_on = False
+        self._transform_started = False
+        self.app.active_tool = None
+
     # -- Kamera-Push ----------------------------------------------------------
 
     def _push_camera(self) -> None:
@@ -421,6 +445,7 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.select_method is SelectMethod.BOX
             and button == self.input_map.select_button
             and self._transform_key_down is None
+            and not self._transform_mode_on
         ):
             self._box_start = (x, y)
             self._box_end = (x, y)
@@ -431,9 +456,9 @@ class PlaygroundWindow(pyglet.window.Window):
     ) -> None:
         self._drag_moved += abs(dx) + abs(dy)
 
-        # Transform-Handling (AP-04): wenn X/R/S gedrückt und Tool aktiv
+        # Transform-Handling: Hold (key down) oder Press-Mode/Press-Drag-Click (mode on)
         if (
-            self._transform_key_down is not None
+            (self._transform_key_down is not None or self._transform_mode_on)
             and self.app.active_tool is not None
             and self.app.viewport is not None
         ):
@@ -490,6 +515,18 @@ class PlaygroundWindow(pyglet.window.Window):
         was_click = self._drag_moved < CLICK_THRESHOLD
         self._drag_button = None
 
+        # Variant C (Press-Drag-Click): Maustaste loslassen = Commit
+        if (
+            self._active_transform_model() == "press_drag_click"
+            and self._transform_mode_on
+            and self._transform_started
+            and self.app.active_tool is not None
+        ):
+            commit_transform(self.app.active_tool)
+            self._sync_after_transform()
+            self._clear_transform_state()
+            return pyglet.event.EVENT_HANDLED
+
         if button == self.input_map.select_button and self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
             changed = False
@@ -535,9 +572,9 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
-        # Transform: wenn Hotkey gedrückt ohne Mausklick
+        # Transform: Hold (key down) oder Press-Mode/Press-Drag-Click (mode on)
         if (
-            self._transform_key_down is not None
+            (self._transform_key_down is not None or self._transform_mode_on)
             and self.app.active_tool is not None
             and self.app.viewport is not None
         ):
@@ -600,6 +637,12 @@ class PlaygroundWindow(pyglet.window.Window):
             active_family = self.app.active_experiment.id
             slot = self.app.slots.get(active_family)
             if slot is not None:
+                # Transform-State zurücksetzen wenn Aktivierungsmodell wechselt
+                if active_family == "transform" and (self._transform_key_down or self._transform_mode_on):
+                    if self._transform_started and self.app.active_tool is not None:
+                        cancel_transform(self.app.active_tool)
+                        self._sync_after_transform()
+                    self._clear_transform_state()
                 self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
             self._update_hud()
         elif symbol == _key.Q:
@@ -631,36 +674,56 @@ class PlaygroundWindow(pyglet.window.Window):
             sel.clear()
             self._rebuild_selection_vbo()
             self._update_hud()
-        elif symbol == _key.X:
-            self._transform_key_down = 'x'
-            self.app.active_tool = create_tool_for_type('move')
-        elif symbol == _key.R:
-            self._transform_key_down = 'r'
-            self.app.active_tool = create_tool_for_type('rotate')
-        elif symbol == _key.S:
-            self._transform_key_down = 's'
-            self.app.active_tool = create_tool_for_type('scale')
+        elif symbol in (_key.X, _key.R, _key.S):
+            _key_char = {_key.X: 'x', _key.R: 'r', _key.S: 's'}[symbol]
+            _tool_type = {'x': 'move', 'r': 'rotate', 's': 'scale'}[_key_char]
+            model = self._active_transform_model()
+            if model == "hold":
+                self._transform_key_down = _key_char
+                self.app.active_tool = create_tool_for_type(_tool_type)
+            else:  # press_mode oder press_drag_click
+                if self._transform_mode_on:
+                    # Zweiter Druck derselben Taste → Commit (wenn gestartet), Mode verlassen
+                    if self._transform_started and self.app.active_tool is not None:
+                        commit_transform(self.app.active_tool)
+                        self._sync_after_transform()
+                    self._clear_transform_state()
+                else:
+                    # Erster Druck → Mode aktivieren
+                    self._transform_key_down = _key_char
+                    self._transform_mode_on = True
+                    self.app.active_tool = create_tool_for_type(_tool_type)
+            slot = self.app.slots.get("transform")
+            if slot is not None:
+                self.app.activate_variant("transform", slot.active_index)
+            self._update_hud()
         elif symbol == _key.ESCAPE:
-            if self._transform_started and self.app.active_tool is not None:
-                cancel_transform(self.app.active_tool)
-                self._transform_started = False
-                self._transform_key_down = None
-                self.app.active_tool = None
+            if (self._transform_started or self._transform_mode_on or self._transform_key_down) \
+                    and self.app.active_tool is not None:
+                if self._transform_started:
+                    cancel_transform(self.app.active_tool)
                 self._sync_after_transform()
+                self._clear_transform_state()
             else:
                 self.close()
         return pyglet.event.EVENT_HANDLED
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
-        """Handle key release — commit transform wenn Tool aktiv."""
-        if symbol == _key.X or symbol == _key.R or symbol == _key.S:
-            if self._transform_key_down is not None and self.app.active_tool is not None:
-                if self._transform_started:
+        """Handle key release — Commit-Verhalten abhängig vom Aktivierungsmodell."""
+        if symbol in (_key.X, _key.R, _key.S):
+            _key_char = {_key.X: 'x', _key.R: 'r', _key.S: 's'}[symbol]
+            if self._transform_key_down != _key_char:
+                return pyglet.event.EVENT_HANDLED
+            model = self._active_transform_model()
+            if model == "hold":
+                # Hold: Loslassen = Commit
+                if self._transform_started and self.app.active_tool is not None:
                     commit_transform(self.app.active_tool)
-                    self._transform_started = False
                     self._sync_after_transform()
-                self._transform_key_down = None
-                self.app.active_tool = None
+                self._clear_transform_state()
+            else:
+                # Press-Mode / Press-Drag-Click: Loslassen = kein Commit, Mode bleibt aktiv
+                self._transform_key_down = None  # Taste nicht mehr gehalten, Mode bleibt
         return pyglet.event.EVENT_HANDLED
 
     # -- Draw -----------------------------------------------------------------
