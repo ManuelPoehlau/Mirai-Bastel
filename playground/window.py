@@ -64,9 +64,6 @@ from playground.experiments.selection.variant_toggle import FaceSelectToggleExpe
 from playground.experiments.presentation.variant_shaded import ShadedVariant  # noqa: E402
 from playground.experiments.presentation.variant_flat import FlatVariant  # noqa: E402
 from playground.experiments.presentation.variant_wireframe import WireframeVariant  # noqa: E402
-from playground.experiments.transform.variant_move import MoveVariant  # noqa: E402
-from playground.experiments.transform.variant_rotate import RotateVariant  # noqa: E402
-from playground.experiments.transform.variant_scale import ScaleVariant  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
@@ -177,14 +174,8 @@ class PlaygroundWindow(pyglet.window.Window):
             VariantEntry(FlatVariant(app)),
             VariantEntry(WireframeVariant(app)),
         )
-        trans_slot = ExperimentSlot(
-            VariantEntry(MoveVariant(app)),
-            VariantEntry(RotateVariant(app)),
-            VariantEntry(ScaleVariant(app)),
-        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
-        app.register_slot(trans_slot, "transform")
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -643,18 +634,12 @@ class PlaygroundWindow(pyglet.window.Window):
         elif symbol == _key.X:
             self._transform_key_down = 'x'
             self.app.active_tool = create_tool_for_type('move')
-            self.app.activate_variant("transform", 0)
-            self._update_hud()
         elif symbol == _key.R:
             self._transform_key_down = 'r'
             self.app.active_tool = create_tool_for_type('rotate')
-            self.app.activate_variant("transform", 1)
-            self._update_hud()
         elif symbol == _key.S:
             self._transform_key_down = 's'
             self.app.active_tool = create_tool_for_type('scale')
-            self.app.activate_variant("transform", 2)
-            self._update_hud()
         elif symbol == _key.ESCAPE:
             if self._transform_started and self.app.active_tool is not None:
                 cancel_transform(self.app.active_tool)
