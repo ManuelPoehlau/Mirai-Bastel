@@ -410,7 +410,9 @@ class PlaygroundWindow(pyglet.window.Window):
             f_count = len(list(mesh.all_face_ids()))
             self._hud.update_mesh(v_count, e_count, f_count)
         self._hud.update_setting(self.app.slots)
-        self._hud.update_experiment(self.app.active_experiment)
+        focused_slot = self.app.slots.get(self.app.focused_family)
+        focused_exp = focused_slot.active_experiment if focused_slot else self.app.active_experiment
+        self._hud.update_experiment(focused_exp)
         display_label = self.app.display_state.label
         if self.app.show_vertices:
             display_label += " + V"
@@ -550,7 +552,6 @@ class PlaygroundWindow(pyglet.window.Window):
             if tv == "v2" and self._tweak_ctrl_held:
                 # V2: Ctrl was held at LMB press → arm Tweak (Ctrl may now be released)
                 self._tweak_v2_armed = True
-                self.app.activate_variant("tweak", self.app.slots["tweak"].active_index)
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
             if tv == "v3" and self._tweak_v3_key is not None:
@@ -559,7 +560,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._tweak_v3_tool_type = {
                     "x": "move", "r": "rotate", "s": "scale"
                 }[self._tweak_v3_key]
-                self.app.activate_variant("tweak", self.app.slots["tweak"].active_index)
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
 
@@ -827,9 +827,17 @@ class PlaygroundWindow(pyglet.window.Window):
         elif symbol == self.input_map.show_vertices:
             self.app.show_vertices = not self.app.show_vertices
             self._update_hud()
+        elif symbol == _key.TAB:
+            # Tab: cycle focused_family through all registered slot families
+            families = list(self.app.slots.keys())
+            if families:
+                cur = self.app.focused_family
+                cur_idx = families.index(cur) if cur in families else 0
+                self.app.focused_family = families[(cur_idx + 1) % len(families)]
+            self._update_hud()
         elif symbol == _key.M:
-            # Cyclt innerhalb der aktuell aktiven Family — nie family-übergreifend.
-            active_family = self.app.active_experiment.id
+            # Cyclt innerhalb der focused_family — nie family-übergreifend.
+            active_family = self.app.focused_family
             slot = self.app.slots.get(active_family)
             if slot is not None:
                 # Transform-State zurücksetzen wenn Aktivierungsmodell wechselt
@@ -902,9 +910,6 @@ class PlaygroundWindow(pyglet.window.Window):
                         self._transform_key_down = _key_char
                         self._transform_mode_on = True
                         self.app.active_tool = create_tool_for_type(_tool_type)
-                slot = self.app.slots.get("transform")
-                if slot is not None:
-                    self.app.activate_variant("transform", slot.active_index)
                 self._update_hud()
         elif symbol == _key.ESCAPE:
             if self._tweak_active and self._tweak_tool is not None:

@@ -67,6 +67,7 @@ class PlaygroundApp:
         self.select_mode:   SelectMode   = SelectMode.REPLACE
         self.select_method: SelectMethod = SelectMethod.PICK
         self.active_tool = None  # wird in Experiment-Variante gesetzt (AP-04)
+        self.focused_family: str = "selection"  # family Tab cycles / M operates on
 
     # -- Properties -----------------------------------------------------------
 
