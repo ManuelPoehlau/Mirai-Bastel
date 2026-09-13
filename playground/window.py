@@ -67,6 +67,16 @@ from playground.experiments.presentation.variant_wireframe import WireframeVaria
 from playground.experiments.transform.variant_hold import HoldActivationVariant  # noqa: E402
 from playground.experiments.transform.variant_press_mode import PressModeVariant  # noqa: E402
 from playground.experiments.transform.variant_press_drag_click import PressDragClickVariant  # noqa: E402
+from playground.experiments.tweak.variant_1_hold_key import TweakV1HoldKey  # noqa: E402
+from playground.experiments.tweak.variant_2_silo import TweakV2Silo  # noqa: E402
+from playground.experiments.tweak.variant_3_hold_click import TweakV3HoldClick  # noqa: E402
+from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # noqa: E402
+from playground.experiments.tweak._target import (  # noqa: E402
+    add_temp_target,
+    clear_temp_target,
+    has_selection as _tweak_has_selection,
+    toggle_persistent_mode,
+)
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
@@ -182,9 +192,16 @@ class PlaygroundWindow(pyglet.window.Window):
             VariantEntry(PressModeVariant(app)),
             VariantEntry(PressDragClickVariant(app)),
         )
+        tweak_slot = ExperimentSlot(
+            VariantEntry(TweakV1HoldKey(app)),
+            VariantEntry(TweakV2Silo(app)),
+            VariantEntry(TweakV3HoldClick(app)),
+            VariantEntry(TweakV4HoldCtrl(app)),
+        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
+        app.register_slot(tweak_slot, "tweak")
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -226,6 +243,24 @@ class PlaygroundWindow(pyglet.window.Window):
         self._transform_started = False
         self._last_mouse_x = 0
         self._last_mouse_y = 0
+
+        # Tweak family state
+        # Persistent mode for V2/V4 (set via V1 mode-toggle or V2/V4 X/R/S press)
+        self._tweak_persistent_mode: str | None = None
+        self._tweak_ctrl_held: bool = False
+        self._tweak_active: bool = False    # currently in a Tweak gesture
+        self._tweak_started: bool = False   # begin_transform() was called
+        self._tweak_tool = None
+        self._tweak_temp_target: bool = False  # temporary target was selected
+        # V1: track motion since key-down
+        self._tweak_v1_key: str | None = None
+        self._tweak_v1_moved: float = 0.0
+        # V3: key held + LMB combo
+        self._tweak_v3_key: str | None = None
+        self._tweak_v3_lmb: bool = False
+        self._tweak_v3_tool_type: str | None = None  # resolved at LMB press
+        # V2: Ctrl was held when LMB was pressed
+        self._tweak_v2_armed: bool = False
 
         # Box-Select-State (AP-03 Variante C)
         self._box_start: tuple[int, int] | None = None
@@ -418,6 +453,74 @@ class PlaygroundWindow(pyglet.window.Window):
         self._transform_started = False
         self.app.active_tool = None
 
+    # -- Tweak-Helpers --------------------------------------------------------
+
+    def _active_tweak_variant(self) -> str | None:
+        """Aktive Tweak-Variante lesen ('v1'/'v2'/'v3'/'v4' oder None)."""
+        slot = self.app.slots.get("tweak")
+        if slot is None:
+            return None
+        return getattr(slot.active_experiment, "tweak_variant", None)
+
+    def _tweak_begin(self, tool_type: str, x: int, y: int) -> bool:
+        """Selection-Fallback auflösen, Tool erstellen und begin_transform() aufrufen.
+
+        Returns True wenn die Geste erfolgreich gestartet wurde.
+        """
+        if self.app.viewport is None:
+            return False
+        sel = self.app.scene.selection
+        if not _tweak_has_selection(sel):
+            mesh = self.app.viewport.render_mesh.mesh
+            hit = pick_component(self.app.camera, mesh, sel, x, y, self.width, self.height)
+            if hit is None:
+                return False
+            add_temp_target(sel, hit)
+            self._tweak_temp_target = True
+
+        self._tweak_tool = create_tool_for_type(tool_type)
+        success = begin_transform(self._tweak_tool, self.app.scene, self.app.camera, sel)
+        if success:
+            self._tweak_active = True
+            self._tweak_started = True
+        else:
+            if self._tweak_temp_target:
+                clear_temp_target(sel)
+                self._tweak_temp_target = False
+            self._tweak_tool = None
+        return success
+
+    def _tweak_commit(self) -> None:
+        """Aktive Tweak-Geste committen."""
+        if self._tweak_started and self._tweak_tool is not None:
+            commit_transform(self._tweak_tool)
+        self._sync_after_transform()
+        if self._tweak_temp_target:
+            clear_temp_target(self.app.scene.selection)
+            self._tweak_temp_target = False
+            self._rebuild_selection_vbo()
+        self._clear_tweak_gesture()
+
+    def _tweak_cancel(self) -> None:
+        """Aktive Tweak-Geste abbrechen."""
+        if self._tweak_started and self._tweak_tool is not None:
+            cancel_transform(self._tweak_tool)
+        self._sync_after_transform()
+        if self._tweak_temp_target:
+            clear_temp_target(self.app.scene.selection)
+            self._tweak_temp_target = False
+            self._rebuild_selection_vbo()
+        self._clear_tweak_gesture()
+
+    def _clear_tweak_gesture(self) -> None:
+        """Tweak-Gesten-Flags zurücksetzen (nicht persistent mode/ctrl/key state)."""
+        self._tweak_active = False
+        self._tweak_started = False
+        self._tweak_tool = None
+        self._tweak_v2_armed = False
+        self._tweak_v3_lmb = False
+        self._tweak_v3_tool_type = None
+
     # -- Kamera-Push ----------------------------------------------------------
 
     def _push_camera(self) -> None:
@@ -441,6 +544,25 @@ class PlaygroundWindow(pyglet.window.Window):
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         self._drag_button = button
         self._drag_moved = 0.0
+
+        tv = self._active_tweak_variant()
+        if button == self.input_map.select_button:
+            if tv == "v2" and self._tweak_ctrl_held:
+                # V2: Ctrl was held at LMB press → arm Tweak (Ctrl may now be released)
+                self._tweak_v2_armed = True
+                self.app.activate_variant("tweak", self.app.slots["tweak"].active_index)
+                self.activate()
+                return pyglet.event.EVENT_HANDLED
+            if tv == "v3" and self._tweak_v3_key is not None:
+                # V3: X/R/S key held + LMB → arm Tweak (key may be released mid-drag)
+                self._tweak_v3_lmb = True
+                self._tweak_v3_tool_type = {
+                    "x": "move", "r": "rotate", "s": "scale"
+                }[self._tweak_v3_key]
+                self.app.activate_variant("tweak", self.app.slots["tweak"].active_index)
+                self.activate()
+                return pyglet.event.EVENT_HANDLED
+
         if (
             self.app.select_method is SelectMethod.BOX
             and button == self.input_map.select_button
@@ -455,6 +577,36 @@ class PlaygroundWindow(pyglet.window.Window):
         self, x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int
     ) -> None:
         self._drag_moved += abs(dx) + abs(dy)
+
+        # Tweak: running gesture update (V2 or V3 — LMB governs)
+        if self._tweak_active and self._tweak_started and self._tweak_tool is not None:
+            update_transform(self._tweak_tool, float(dx), float(dy), self.width, self.height)
+            self._sync_after_transform()
+            return pyglet.event.EVENT_HANDLED
+
+        tv = self._active_tweak_variant()
+
+        # V2: first drag after Ctrl+LMB arm → begin Tweak
+        if tv == "v2" and self._tweak_v2_armed and self.app.viewport is not None:
+            if self._tweak_persistent_mode is not None:
+                ok = self._tweak_begin(self._tweak_persistent_mode, x, y)
+                if ok and self._tweak_started:
+                    update_transform(
+                        self._tweak_tool, float(dx), float(dy), self.width, self.height,
+                    )
+                    self._sync_after_transform()
+            return pyglet.event.EVENT_HANDLED
+
+        # V3: first drag after key+LMB arm → begin Tweak
+        if tv == "v3" and self._tweak_v3_lmb and self.app.viewport is not None:
+            if self._tweak_v3_tool_type is not None:
+                ok = self._tweak_begin(self._tweak_v3_tool_type, x, y)
+                if ok and self._tweak_started:
+                    update_transform(
+                        self._tweak_tool, float(dx), float(dy), self.width, self.height,
+                    )
+                    self._sync_after_transform()
+            return pyglet.event.EVENT_HANDLED
 
         # Transform-Handling: Hold (key down) oder Press-Mode/Press-Drag-Click (mode on)
         if (
@@ -515,6 +667,23 @@ class PlaygroundWindow(pyglet.window.Window):
         was_click = self._drag_moved < CLICK_THRESHOLD
         self._drag_button = None
 
+        tv = self._active_tweak_variant()
+        if button == self.input_map.select_button:
+            # V2: LMB release = commit (Ctrl may already be released)
+            if tv == "v2" and (self._tweak_v2_armed or self._tweak_active):
+                if self._tweak_active:
+                    self._tweak_commit()
+                else:
+                    self._clear_tweak_gesture()
+                return pyglet.event.EVENT_HANDLED
+            # V3: LMB release = commit
+            if tv == "v3" and self._tweak_v3_lmb:
+                if self._tweak_active:
+                    self._tweak_commit()
+                else:
+                    self._clear_tweak_gesture()
+                return pyglet.event.EVENT_HANDLED
+
         # Variant C (Press-Drag-Click): Maustaste loslassen = Commit
         if (
             self._active_transform_model() == "press_drag_click"
@@ -572,6 +741,32 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
+        tv = self._active_tweak_variant()
+
+        # V1: key held + motion → accumulate, start Tweak once past CLICK_THRESHOLD
+        if tv == "v1" and self._tweak_v1_key is not None and self.app.viewport is not None:
+            self._tweak_v1_moved += abs(dx) + abs(dy)
+            if not self._tweak_active and self._tweak_v1_moved >= CLICK_THRESHOLD:
+                tool_type = {"x": "move", "r": "rotate", "s": "scale"}[self._tweak_v1_key]
+                self._tweak_begin(tool_type, x, y)
+            if self._tweak_started and self._tweak_tool is not None:
+                update_transform(
+                    self._tweak_tool, float(dx), float(dy), self.width, self.height,
+                )
+                self._sync_after_transform()
+            return pyglet.event.EVENT_HANDLED
+
+        # V4: Ctrl held + motion → Tweak with persistent mode (no LMB needed)
+        if tv == "v4" and self._tweak_ctrl_held and self.app.viewport is not None:
+            if not self._tweak_active and self._tweak_persistent_mode is not None:
+                self._tweak_begin(self._tweak_persistent_mode, x, y)
+            if self._tweak_started and self._tweak_tool is not None:
+                update_transform(
+                    self._tweak_tool, float(dx), float(dy), self.width, self.height,
+                )
+                self._sync_after_transform()
+            return pyglet.event.EVENT_HANDLED
+
         # Transform: Hold (key down) oder Press-Mode/Press-Drag-Click (mode on)
         if (
             (self._transform_key_down is not None or self._transform_mode_on)
@@ -674,31 +869,55 @@ class PlaygroundWindow(pyglet.window.Window):
             sel.clear()
             self._rebuild_selection_vbo()
             self._update_hud()
+        elif symbol in (_key.LCTRL, _key.RCTRL):
+            self._tweak_ctrl_held = True
         elif symbol in (_key.X, _key.R, _key.S):
             _key_char = {_key.X: 'x', _key.R: 'r', _key.S: 's'}[symbol]
             _tool_type = {'x': 'move', 'r': 'rotate', 's': 'scale'}[_key_char]
-            model = self._active_transform_model()
-            if model == "hold":
-                self._transform_key_down = _key_char
-                self.app.active_tool = create_tool_for_type(_tool_type)
-            else:  # press_mode oder press_drag_click
-                if self._transform_mode_on:
-                    # Zweiter Druck derselben Taste → Commit (wenn gestartet), Mode verlassen
-                    if self._transform_started and self.app.active_tool is not None:
-                        commit_transform(self.app.active_tool)
-                        self._sync_after_transform()
-                    self._clear_transform_state()
-                else:
-                    # Erster Druck → Mode aktivieren
+            tv = self._active_tweak_variant()
+            if tv == "v1":
+                # V1: arm the self-deciding gesture; key-up will decide toggle vs. Tweak
+                self._tweak_v1_key = _key_char
+                self._tweak_v1_moved = 0.0
+                # Does NOT run existing transform handling — V1 owns X/R/S when active
+            elif tv == "v3":
+                # V3: arm the key side of the key+LMB combo (LMB press completes it)
+                self._tweak_v3_key = _key_char
+                # Does NOT run existing transform handling — V3 owns X/R/S when active
+            else:
+                # Existing transform handling (V2, V4, or no tweak)
+                model = self._active_transform_model()
+                if model == "hold":
                     self._transform_key_down = _key_char
-                    self._transform_mode_on = True
                     self.app.active_tool = create_tool_for_type(_tool_type)
-            slot = self.app.slots.get("transform")
-            if slot is not None:
-                self.app.activate_variant("transform", slot.active_index)
-            self._update_hud()
+                else:  # press_mode oder press_drag_click
+                    if self._transform_mode_on:
+                        # Zweiter Druck derselben Taste → Commit (wenn gestartet), Mode verlassen
+                        if self._transform_started and self.app.active_tool is not None:
+                            commit_transform(self.app.active_tool)
+                            self._sync_after_transform()
+                        self._clear_transform_state()
+                    else:
+                        # Erster Druck → Mode aktivieren
+                        self._transform_key_down = _key_char
+                        self._transform_mode_on = True
+                        self.app.active_tool = create_tool_for_type(_tool_type)
+                slot = self.app.slots.get("transform")
+                if slot is not None:
+                    self.app.activate_variant("transform", slot.active_index)
+                self._update_hud()
         elif symbol == _key.ESCAPE:
-            if (self._transform_started or self._transform_mode_on or self._transform_key_down) \
+            if self._tweak_active and self._tweak_tool is not None:
+                self._tweak_cancel()
+            elif self._tweak_v1_key is not None:
+                # V1: key held but no Tweak started — ESC cancels the armed state
+                self._tweak_v1_key = None
+                self._tweak_v1_moved = 0.0
+            elif self._tweak_v3_key is not None or self._tweak_v3_lmb:
+                # V3: armed but no Tweak started — ESC cancels
+                self._tweak_v3_key = None
+                self._clear_tweak_gesture()
+            elif (self._transform_started or self._transform_mode_on or self._transform_key_down) \
                     and self.app.active_tool is not None:
                 if self._transform_started:
                     cancel_transform(self.app.active_tool)
@@ -710,20 +929,50 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key release — Commit-Verhalten abhängig vom Aktivierungsmodell."""
-        if symbol in (_key.X, _key.R, _key.S):
+        if symbol in (_key.LCTRL, _key.RCTRL):
+            self._tweak_ctrl_held = False
+            tv = self._active_tweak_variant()
+            if tv == "v4" and self._tweak_active:
+                # V4: Ctrl release = commit
+                self._tweak_commit()
+                self._update_hud()
+            # V2: Ctrl release does NOT cancel (LMB governs in V2)
+        elif symbol in (_key.X, _key.R, _key.S):
             _key_char = {_key.X: 'x', _key.R: 'r', _key.S: 's'}[symbol]
-            if self._transform_key_down != _key_char:
-                return pyglet.event.EVENT_HANDLED
-            model = self._active_transform_model()
-            if model == "hold":
-                # Hold: Loslassen = Commit
-                if self._transform_started and self.app.active_tool is not None:
-                    commit_transform(self.app.active_tool)
-                    self._sync_after_transform()
-                self._clear_transform_state()
-            else:
-                # Press-Mode / Press-Drag-Click: Loslassen = kein Commit, Mode bleibt aktiv
-                self._transform_key_down = None  # Taste nicht mehr gehalten, Mode bleibt
+            tv = self._active_tweak_variant()
+            if tv == "v1" and self._tweak_v1_key == _key_char:
+                # V1: self-deciding — was it a mode-toggle or a Tweak?
+                if self._tweak_v1_moved < CLICK_THRESHOLD:
+                    # No significant movement → mode toggle (tap without drag)
+                    # [OPEN QUESTION: mode-toggle does NOT fire if a Tweak drag happened.
+                    #  This is the simpler/more-predictable choice: a drag "overwrites"
+                    #  the press intent entirely. Flag for observation during playtesting.]
+                    _tool_type = {"x": "move", "r": "rotate", "s": "scale"}[_key_char]
+                    self._tweak_persistent_mode = toggle_persistent_mode(
+                        self._tweak_persistent_mode, _tool_type,
+                    )
+                else:
+                    # Drag happened → commit if Tweak was active
+                    if self._tweak_active:
+                        self._tweak_commit()
+                self._tweak_v1_key = None
+                self._tweak_v1_moved = 0.0
+                self._update_hud()
+            elif tv == "v3" and self._tweak_v3_key == _key_char:
+                # V3: key released but LMB may still be held → LMB continues to govern
+                self._tweak_v3_key = None
+                # _tweak_v3_lmb and gesture remain active until LMB release
+            elif self._transform_key_down == _key_char:
+                model = self._active_transform_model()
+                if model == "hold":
+                    # Hold: Loslassen = Commit
+                    if self._transform_started and self.app.active_tool is not None:
+                        commit_transform(self.app.active_tool)
+                        self._sync_after_transform()
+                    self._clear_transform_state()
+                else:
+                    # Press-Mode / Press-Drag-Click: Loslassen = kein Commit, Mode bleibt aktiv
+                    self._transform_key_down = None  # Taste nicht mehr gehalten, Mode bleibt
         return pyglet.event.EVENT_HANDLED
 
     # -- Draw -----------------------------------------------------------------
