@@ -44,7 +44,25 @@ Do not redesign production architecture for a Playground experiment.
 
 ---
 
-## 3. Start at the Right Level
+## 3. Know the Experiment Host
+
+Before the roles start designing or implementing experiments, read the canonical Experiment Host document:
+
+`docs/design/artist_playground/EXPERIMENT_HOST.md`
+
+The most important distinction is:
+
+> **An Experiment tests a question. A Variant is one possible answer. An ExperimentSlot only organizes and compares those answers.**
+
+In particular, **ExperimentSlot is not an input slot, mode, action or tool**.
+
+The Host is the shared research infrastructure used by all three roles. It keeps variants together, allows them to be switched cleanly, and records decisions without turning the Playground into a second production architecture.
+
+For actually running the Playground, use `playground/MANUAL.md`.
+
+---
+
+## 4. Start at the Right Level
 
 Do **not** start with:
 
@@ -73,7 +91,7 @@ These are hypotheses to compare, not decisions to adopt.
 
 ---
 
-## 4. First Conversation: Researcher
+## 5. First Conversation: Researcher
 
 Example prompt:
 
@@ -92,7 +110,7 @@ The Researcher should return **principles and hypotheses**, not a final design.
 
 ---
 
-## 5. Bring One Hypothesis to Dev
+## 6. Bring One Hypothesis to Dev
 
 Example:
 
@@ -115,7 +133,7 @@ The Dev should tell us:
 
 ---
 
-## 6. Bring the Prototype Question to Playground
+## 7. Bring the Prototype Question to Playground
 
 Example:
 
@@ -134,7 +152,7 @@ Record what happens, not what you hoped would happen.
 
 ---
 
-## 7. Use the Four Results
+## 8. Use the Four Results
 
 Every meaningful experiment should end as one of:
 
@@ -150,7 +168,7 @@ UNKNOWN is a valid result. Do not force a decision just to keep moving.
 
 ---
 
-## 8. Feed the Finding Back
+## 9. Feed the Finding Back
 
 If the finding changes our understanding of Mirai's interaction language, update:
 
@@ -180,7 +198,7 @@ Do not turn a single observation into a universal rule.
 
 ---
 
-## 9. Tweak Comes Later
+## 10. Tweak Comes Later
 
 Tweak is still an excellent experiment because it exposes several grammar questions at once:
 
@@ -200,7 +218,7 @@ But Tweak is **Phase B / Transform-family research**, not the organizational cen
 
 ---
 
-## 10. No Artificial Schedule
+## 11. No Artificial Schedule
 
 There is deliberately no "Week 1 = grammar, Week 2 = transforms" requirement.
 
@@ -214,7 +232,7 @@ The correct unit of progress is:
 
 ---
 
-## 11. If You Get Stuck
+## 12. If You Get Stuck
 
 ### "We don't know what to research."
 
@@ -267,6 +285,10 @@ No giant UX architecture. No final shortcut map. No production refactor just bec
 Shared research:
 
 `docs/design/artist_playground/UX_RESEARCH.md`
+
+Experiment infrastructure:
+
+`docs/design/artist_playground/EXPERIMENT_HOST.md`
 
 Working method:
 
