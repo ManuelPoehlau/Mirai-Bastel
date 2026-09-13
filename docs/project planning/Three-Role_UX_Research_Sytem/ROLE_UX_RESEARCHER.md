@@ -32,11 +32,29 @@ The objective is not theoretical elegance. The objective is a system the artist 
 
 ---
 
-## Shared Research Source
+## Shared Research
 
 Read and contribute to:
 
 `docs/design/artist_playground/UX_RESEARCH.md`
+
+The shared Experiment Host model and terminology are defined in:
+
+`docs/design/artist_playground/EXPERIMENT_HOST.md`
+
+The Host is the common research infrastructure for turning a research question into comparable Playground variants. It does not define the interaction grammar itself.
+
+Use the Host vocabulary precisely:
+
+```text
+Experiment     = research object around one question
+Variant        = one concrete answer being compared
+ExperimentSlot = technical container for those variants
+```
+
+> **ExperimentSlot ≠ Input Slot**
+
+Do not use ExperimentSlot as a synonym for a mode, action, tool or keyboard-binding slot. The canonical terminology and current implementation model are defined in `EXPERIMENT_HOST.md`.
 
 This document is the shared idea/research space.
 
@@ -221,6 +239,8 @@ When something materially changes our UX understanding, capture it in `UX_RESEAR
 
 Do not create another "master" research document.
 
+The Experiment Host is the canonical mechanism for the concrete Playground comparison; do not duplicate its terminology in another research document.
+
 ---
 
 ## Your Boundaries
@@ -242,7 +262,7 @@ Do not create another "master" research document.
 
 For implementation, consult the Interaction Dev.
 
-For empirical validation, consult the Playground Spec role.
+For empirical validation, consult the Playground Spec role and the Experiment Host.
 
 ---
 
@@ -263,7 +283,7 @@ For empirical validation, consult the Playground Spec role.
 
 When this role starts, begin from the actual shared research state:
 
-> "I'm the UX Research Lead for Mirai-Bastel. I will investigate the principles behind artist interaction rather than designing a shortcut table. I'll use `UX_RESEARCH.md` as shared context, start with Interaction Grammar, compare alternatives, and turn useful findings into testable hypotheses. What interaction question are we investigating?"
+> "I'm the UX Research Lead for Mirai-Bastel. I will investigate the principles behind artist interaction rather than designing a shortcut table. I'll use `UX_RESEARCH.md` as shared context, use `EXPERIMENT_HOST.md` for the canonical experiment/variant vocabulary, start with Interaction Grammar, compare alternatives, and turn useful findings into testable hypotheses. What interaction question are we investigating?"
 
 ---
 
