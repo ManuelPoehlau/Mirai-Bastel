@@ -175,40 +175,36 @@ A **Variant** is one concrete way of answering the experiment's question.
 
 For example, the question might be:
 
-> Which transform operation should be performed?
+> How should Move be activated?
 
-The currently implemented transform experiment has three variants, all sharing the same activation model (hold key + drag → release to commit, ESC to cancel):
+Possible variants could be:
 
 ```text
-Variant A — Move
+Variant A
 X held + drag
-→ vertices/faces translate
+→ Move while dragging
 → release X = commit
 ```
 
 ```text
-Variant B — Rotate
-R held + drag
-→ vertices/faces rotate
-→ release R = commit
+Variant B
+X pressed
+→ Move Mode becomes active
+→ drag performs Move
+→ separate input exits/commits
 ```
 
 ```text
-Variant C — Scale
-S held + drag
-→ vertices/faces scale
-→ release S = commit
+Variant C
+X pressed
+→ Move Mode becomes active
+→ first drag starts interaction
+→ click/gesture commits
 ```
-
-These variants differ in **tool identity** (what operation is performed), not in activation model. All three use the same hold+drag+release+ESC-cancel gesture — that is the current baseline, not itself a researched variable.
 
 The variants should differ in the variable we are actually researching. If every variant changes several unrelated things, the result becomes difficult to interpret.
 
 A variant is therefore **not automatically a mode**. A variant can contain a mode, a temporary interaction, a different gesture, or another implementation detail depending on the research question.
-
-### Open research question: activation model
-
-How Move (or any transform) should be **activated** is a separate, unresolved question. Possible activation models — for example, hold-to-interact vs. press-to-enter-mode vs. press+first-drag — have not yet been built as variants. That experiment would sit alongside the tool-identity experiment, not inside it.
 
 ---
 
@@ -344,7 +340,7 @@ This distinction is especially important when the three roles disagree about wha
 
 ## 9. Example: Move Interaction
 
-The current Playground baseline for Move is:
+Suppose the current Playground behavior is:
 
 ```text
 Click face
@@ -355,24 +351,25 @@ Hold X + drag
     ↓
 Face moves
     ↓
-Release X
+Release
     ↓
 Commit
-(ESC during drag = cancel)
 ```
 
-This is the **implemented baseline**, not a researched variant. The same hold+drag+release+ESC-cancel model applies to Rotate (R) and Scale (S). The three operations are currently separate variants in one ExperimentSlot — the research question they answer is "which transform tool?", not "how should transform be activated?".
-
-For research purposes, the layers of even this baseline can be named separately:
+It is tempting to call this simply "Move Mode" or "the Move Action". For research purposes, we should describe the layers separately:
 
 ```text
-Input      = X / R / S
-Gesture    = hold + drag + release
-Action     = Move / Rotate / Scale
-Activation = hold-to-interact (current; not yet compared against alternatives)
+Input      = X
+Gesture    = hold + drag
+Mode       = possibly a temporary Move interaction/state
+Action     = Move
+Experiment = how Move should be activated/interacted with
+Variant    = this particular activation/gesture model
 ```
 
-Whether this activation model is the right one — compared to, for example, press-to-enter-mode — is an **open research question**. That question has not yet been turned into a playable experiment. When it is, it should be its own ExperimentSlot, separate from the tool-identity slot that already exists.
+Whether the interaction is actually a persistent mode, temporary state, direct manipulation gesture, or some combination is **a research question** if that distinction matters to the UX.
+
+The Host does not decide that terminology for us. It lets us compare concrete alternatives.
 
 ---
 
