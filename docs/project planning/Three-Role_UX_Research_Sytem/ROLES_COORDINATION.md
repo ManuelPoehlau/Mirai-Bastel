@@ -24,6 +24,12 @@ The common UX knowledge lives in:
 
 `docs/design/artist_playground/UX_RESEARCH.md`
 
+The common experiment infrastructure is documented in:
+
+`docs/design/artist_playground/EXPERIMENT_HOST.md`
+
+The Experiment Host is shared infrastructure for all three roles. It is not owned by the Playground role and it is not a production UX architecture.
+
 All three roles should also respect:
 
 - existing Artist Playground architecture
@@ -32,6 +38,34 @@ All three roles should also respect:
 - `AGENTS.md`
 
 Do not create parallel "truth" documents inside the role system.
+
+---
+
+## Experiment Host — Shared Vocabulary
+
+Use these terms consistently:
+
+```text
+Experiment
+    = research object around one question
+
+Variant
+    = one concrete answer/implementation being compared
+
+ExperimentSlot
+    = technical container for those variants
+
+Input / Gesture / Mode / Action / Tool
+    = interaction-language concepts; not Experiment Host containers
+```
+
+Critical distinction:
+
+> **ExperimentSlot ≠ Input Slot**
+
+`ExperimentSlot` is a research-infrastructure term. It does not mean a keyboard shortcut slot, tool slot, mode slot, or action slot.
+
+For the full terminology and current implementation model, use `EXPERIMENT_HOST.md` as the canonical reference.
 
 ---
 
@@ -47,6 +81,14 @@ Do not create parallel "truth" documents inside the role system.
         │ hypotheses  │ prototypes    │ observations
         └──────────────┼──────────────┘
                        ↓
+                  EXPERIMENT HOST
+                       ↓
+                 VARIANT(S)
+                       ↓
+                  ARTIST TEST
+                       ↓
+                  OBSERVATIONS
+                       ↓
                   SYNTHESIS
                        ↓
              next experiment / later
@@ -54,6 +96,8 @@ Do not create parallel "truth" documents inside the role system.
 ```
 
 The arrows are not a fixed sequence. A Playground observation may trigger new research; a technical constraint may change an experiment; a research comparison may suggest a completely different prototype.
+
+The Host provides the common mechanism for switching variants and recording decisions. It does not replace the roles' responsibilities.
 
 ---
 
@@ -93,6 +137,7 @@ The Playground:
 - makes feedback visible
 - plays with Cube / Head or another appropriate test scene
 - records observations before interpreting them
+- uses the Experiment Host to keep variants explicit and comparable
 
 ### 5. Synthesis
 
@@ -106,6 +151,8 @@ We classify the result:
 Then decide what deserves the next experiment.
 
 Only validated findings are candidates for later production formalization.
+
+A Host decision is not itself a Production decision.
 
 ---
 
@@ -197,7 +244,7 @@ Go to `UX_RESEARCH.md` when a finding affects the broader interaction-language u
 
 ### Experiment details
 
-Keep experiment-specific implementation/spec material with the Playground experiment when practical.
+Keep experiment-specific implementation/spec material with the Playground experiment when practical. Use `EXPERIMENT_HOST.md` for the shared Host model and terminology rather than redefining it in individual experiments.
 
 ### Production decisions
 
@@ -249,6 +296,7 @@ Pause and reassess when:
 - observations are being replaced by assumptions
 - a research finding is being treated as an architecture decision
 - an already validated system is being rebuilt instead of reused
+- ExperimentSlot is being used as a generic term for input bindings or interaction modes
 
 These are signals to step back, not reasons to push harder.
 
