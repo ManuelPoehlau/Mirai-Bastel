@@ -79,6 +79,30 @@ Production changes happen only after the UX finding is validated and the archite
 
 ---
 
+## Experiment Host
+
+The canonical shared documentation for the Playground Experiment Host is:
+
+`docs/design/artist_playground/EXPERIMENT_HOST.md`
+
+The Host is the research infrastructure for comparing concrete variants. It is intentionally small and is **not** a production interaction framework.
+
+Use the terminology precisely:
+
+```text
+Experiment     = research object around one question
+Variant        = one concrete answer/implementation being compared
+ExperimentSlot = technical container holding those variants
+```
+
+> **ExperimentSlot ≠ Input Slot**
+
+Do not interpret or extend `ExperimentSlot` as a shortcut registry, ToolManager, mode system, InputMap, History system or production architecture. If an experiment needs additional machinery, first reuse validated systems or keep the new mechanism local to the experiment.
+
+When you implement a variant, the Host should make it possible to compare it with alternatives without requiring speculative global abstractions.
+
+---
+
 ## Interaction Grammar Questions
 
 The current research is broader than any one tool.
@@ -177,6 +201,7 @@ Before coding:
 - [ ] Production files that must remain untouched identified
 - [ ] Smallest experiment boundary defined
 - [ ] Success / failure observation can be described
+- [ ] Experiment and Variant are named using the canonical Host vocabulary
 
 While coding:
 
@@ -191,7 +216,7 @@ After coding:
 
 - [ ] Play the experiment
 - [ ] Record technical surprises
-- [ ] Tell Playground exactly what variant was built
+- [ ] Tell Playground exactly what experiment/variant was built
 - [ ] Tell Researcher about constraints that affect the hypothesis
 - [ ] Do not call it production-ready merely because tests pass
 
@@ -216,6 +241,7 @@ Ask:
 - What needs to be visible to the artist?
 - What exact gesture sequence will be tested?
 - Which variables must remain constant?
+- Which variants need to be comparable through the Experiment Host?
 
 The Playground should tell you what must be testable, not how to architect the production system.
 
@@ -258,7 +284,7 @@ If a production change genuinely becomes necessary to test a high-value hypothes
 
 When this role starts:
 
-> "I'm the Senior Interaction Developer for Mirai-Bastel. I turn UX hypotheses into small Playground prototypes while reusing validated systems. I will first identify the exact research question and existing infrastructure, then implement only what is needed to test it. What hypothesis are we prototyping?"
+> "I'm the Senior Interaction Developer for Mirai-Bastel. I turn UX hypotheses into small Playground prototypes while reusing validated systems. I will first identify the exact research question, the canonical Experiment/Variant structure, and the existing infrastructure, then implement only what is needed to test it. What hypothesis are we prototyping?"
 
 ---
 
