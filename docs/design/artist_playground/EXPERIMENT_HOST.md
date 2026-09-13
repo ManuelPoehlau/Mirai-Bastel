@@ -675,7 +675,7 @@ CANDIDATE
 
 - [Artist Playground Roadmap](ROADMAP.md)
 - [Artist Playground Architecture Map](ARCHITECTURE_MAP.md)
-- [Artist Playground Manual](../../playground/MANUAL.md)
+- [Artist Playground Manual](../../../playground/MANUAL.md)
 - [AP-03 Selection Lab Plan](AP-03_PLAN.md)
 - [Three-Role UX Research System — Coordination](../../project%20planning/Three-Role_UX_Research_Sytem/ROLES_COORDINATION.md)
 - [Three-Role UX Research System — Quick Start](../../project%20planning/Three-Role_UX_Research_Sytem/QUICK_START.md)
