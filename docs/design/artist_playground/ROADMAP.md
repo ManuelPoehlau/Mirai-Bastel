@@ -284,7 +284,10 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 - `playground/window.py` — Taste **J**: Edge-Modus + 2+ Edges selektiert → Connect; neue Verbindungskanten werden selektiert; TopologyToolError → HUD-Meldung statt Crash
 - `playground/tests/test_topology_connect_edges.py` — 7 Headless-Tests, alle grün
 
-**Bewusst ausgeklammert:** "kind v"-Fall (Kette über gemeinsamen regulären Innen-Vertex ohne gemeinsame Face) — erfordert `mesh.add_edge()` in `src/core`, das dort nicht existiert. `src/core` bleibt unangetastet. Fall wird mit klarem TopologyToolError abgelehnt. Auf einem Standard-Cube (Valenz 3 überall) kann dieser Fall ohnehin nicht auftreten.
+**Nachgezogen (2026-09-14):**
+- `src/core/mesh.py` — `add_edge()` als öffentliche Mutation-Primitive (additiv, AD-001/002/003 unberührt)
+- `connect_edges.py` — "kind v"-Fall aktiviert: `_FreeConnectStep` + `mesh.add_edge()` für Ketten-Verbindung über gemeinsamen regulären Innen-Vertex ohne Face-Kontext
+- `playground/tests/test_topology_connect_edges.py` — 9 Headless-Tests (3 neue: kind-v positiv, kind-v Undo/Redo, Boundary-Vertex-Ablehnung), alle grün
 
 ---
 
