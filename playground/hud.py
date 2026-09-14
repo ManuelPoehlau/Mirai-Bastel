@@ -42,6 +42,7 @@ class PlaygroundHUD:
         self._experiment_line = "Experiment: [none] No Experiment"
         self._display_line = "Display: Shaded"
         self._selection_line = "Selection: none"
+        self._action_line = "Action: —"
 
         # Lazy-init Label-Objekte
         self._label = None
@@ -79,6 +80,15 @@ class PlaygroundHUD:
         parts = [p for p in (comp_label, mode_label) if p]
         if parts:
             self._selection_line += f"  [{' | '.join(parts)}]"
+        self._invalidate()
+
+    def update_action(self, text: str) -> None:
+        """Letzte Aktion anzeigen (WP-AP-Enablement-01: Split Edge/Undo/Redo).
+
+        Statische Zeile nach demselben Muster wie update_display() /
+        update_selection() — kein neues Feedback-System, kein Timer/Fade.
+        """
+        self._action_line = f"Action: {text}"
         self._invalidate()
 
     def update_setting(self, slots: dict) -> None:
@@ -128,7 +138,8 @@ class PlaygroundHUD:
         return (
             f"{self._camera_line}\n{self._mesh_line}\n"
             f"{self._setting_line}\n"
-            f"{self._experiment_line}\n{self._display_line}\n{self._selection_line}"
+            f"{self._experiment_line}\n{self._display_line}\n{self._selection_line}\n"
+            f"{self._action_line}"
         )
 
     def _ensure_label(self) -> None:
@@ -182,3 +193,7 @@ class PlaygroundHUD:
     @property
     def selection_line(self) -> str:
         return self._selection_line
+
+    @property
+    def action_line(self) -> str:
+        return self._action_line

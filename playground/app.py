@@ -18,6 +18,7 @@ ensure_paths()
 
 from core import Scene  # noqa: E402
 from mirai.application import Application  # noqa: E402
+from mirai.interaction import commands  # noqa: E402
 from viewport import Viewport  # noqa: E402
 from viewport.resource_store import TraceStore  # noqa: E402
 
@@ -48,6 +49,7 @@ class PlaygroundApp:
         register_slot(slot, family_id)    — Slot für eine Family registrieren
         activate_variant(family_id, idx)  — Variante in einer Family wechseln
         set_experiment(exp)               — Aktives Experiment wechseln (Compat)
+        undo() / redo()                   — History (WP-AP-Enablement-01)
         update(dt)                        — Per-Frame-Tick
     """
 
@@ -176,6 +178,18 @@ class PlaygroundApp:
         slot = self._slots[family_id]
         slot.activate(index)
         self._active_experiment = slot.active_experiment
+
+    # -- History (WP-AP-Enablement-01) -----------------------------------------
+    # Dünner Passthrough auf Application.dispatch_command — dieselbe Undo/Redo-
+    # Dispatch-Logik, die bereits in tests/test_application.py verifiziert ist
+    # (test_dispatch_undo_redo_roundtrip, test_dispatch_undo_on_empty_history_
+    # is_true_noop). Kein neues History-Konzept im Playground.
+
+    def undo(self) -> None:
+        self._app.dispatch_command(commands.UNDO)
+
+    def redo(self) -> None:
+        self._app.dispatch_command(commands.REDO)
 
     # -- Per-Frame-Tick -------------------------------------------------------
 

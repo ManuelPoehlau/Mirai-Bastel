@@ -71,6 +71,7 @@ from playground.experiments.tweak.variant_1_hold_key import TweakV1HoldKey  # no
 from playground.experiments.tweak.variant_2_silo import TweakV2Silo  # noqa: E402
 from playground.experiments.tweak.variant_3_hold_click import TweakV3HoldClick  # noqa: E402
 from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # noqa: E402
+from playground.topology_ops import split_selected_edge  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
     add_temp_target,
     clear_temp_target,
@@ -821,6 +822,33 @@ class PlaygroundWindow(pyglet.window.Window):
             else:
                 self.app.display_state.cycle()
             self._update_hud()
+        elif symbol == _key.Z and modifiers & _key.MOD_CTRL:
+            # Ctrl+Z: Undo (WP-AP-Enablement-01) — dieselbe Bindung wie
+            # Production (tests/test_application.py: bindings["ctrl+z"] == UNDO).
+            self.app.undo()
+            self.app.scene.selection.clear()
+            self._rebuild_vbo()
+            self._hud.update_action("Undo")
+            self._update_hud()
+        elif symbol == _key.Y and modifiers & _key.MOD_CTRL:
+            # Ctrl+Y: Redo — Production-Bindung (siehe oben).
+            self.app.redo()
+            self.app.scene.selection.clear()
+            self._rebuild_vbo()
+            self._hud.update_action("Redo")
+            self._update_hud()
+        elif symbol == _key.K:
+            # K: Split Edge (WP-AP-Enablement-01). Scope: nur Edge-Modus mit
+            # genau einer selektierten Edge; kein Aktivierungsvarianten-
+            # Research (das ist AP-05) — ein fester, einfachster Trigger.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) == 1:
+                (edge_id,) = sel.edges
+                split_selected_edge(self.app.scene, edge_id)
+                sel.clear()
+                self._rebuild_vbo()
+                self._hud.update_action("Split Edge")
+                self._update_hud()
         elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()
             self._update_hud()
