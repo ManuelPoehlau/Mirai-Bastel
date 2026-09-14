@@ -184,3 +184,52 @@ def test_slide_valence3_vertex_raises():
     with pytest.raises(LoopSlideError):
         tool.begin(edge_ids=set(edges))
     tool.deactivate()
+
+
+# ---------------------------------------------------------------------------
+# 8. Richtungs-Konsistenz — Regression für na/nb-Flip-Bug
+# ---------------------------------------------------------------------------
+
+def test_slide_all_vertices_move_in_consistent_direction():
+    """Nach positivem Slide müssen alle Loop-Vertices in dieselbe konsistente
+    Richtung entlang der Seite-A-Achse verschoben worden sein.
+
+    Regressionstest: ohne geordneten Zyklus-Walk konnten na/nb pro Vertex
+    beliebig vertauscht sein → manche Vertices liefen in entgegengesetzte
+    Richtung (visuell: Loop faltet sich statt zu schieben).
+    """
+    app = PlaygroundApp()
+    loop_edges = _insert_and_get_loop(app)
+    mesh = app.scene.mesh
+
+    orig_pos = _vertex_positions(mesh, loop_edges)
+
+    tool = LoopSlideTool(app.scene, app.camera)
+    tool.activate()
+    tool.begin(edge_ids=loop_edges)
+    # Großer positiver Slide-Schritt für klares Signal
+    tool.update(dx=200.0, dy=0.0, width=800, height=600)
+
+    new_pos = _vertex_positions(mesh, loop_edges)
+
+    # Berechne den Bewegungsvektor pro Vertex
+    deltas = [
+        tuple(new_pos[v][i] - orig_pos[v][i] for i in range(3))
+        for v in orig_pos
+    ]
+
+    # Alle Deltas müssen dieselbe Richtung haben (keine entgegengesetzten Vorzeichen
+    # in der dominanten Achse). Prüfung: Dot-Produkt jedes Delta mit dem ersten
+    # Delta muss positiv sein.
+    ref = deltas[0]
+    ref_len_sq = sum(x * x for x in ref)
+    assert ref_len_sq > 1e-12, "Referenz-Delta darf nicht Null sein"
+    for delta in deltas[1:]:
+        dot = sum(ref[i] * delta[i] for i in range(3))
+        assert dot > 0, (
+            f"Vertex bewegt sich entgegen der Referenzrichtung: {delta} vs {ref} — "
+            "na/nb-Konsistenzfehler (Flip-Bug)"
+        )
+
+    tool.cancel()
+    tool.deactivate()
