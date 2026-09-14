@@ -194,6 +194,27 @@ class Mesh:
         self._faces[fid] = _FaceData(boundary=list(vertex_ids))
         return fid
 
+    def add_edge(self, v_a: VertexId, v_b: VertexId) -> EdgeId:
+        """Erzeugt eine freie Edge zwischen zwei bestehenden Vertices, ohne
+        Face-Zugehörigkeit.
+
+        ID-Kontinuität:
+        - beide übergebenen VertexIds bleiben unverändert.
+        - erzeugt genau eine neue EdgeId, falls zwischen v_a und v_b noch
+          keine Edge existiert.
+        - existiert zwischen v_a und v_b bereits eine Edge (frei oder mit
+          Face(s)), wird deren bestehende EdgeId zurückgegeben, keine neue
+          Edge erzeugt (identisches Verhalten zu _get_or_create_edge, das
+          diese Methode direkt aufruft).
+
+        Additiv: verändert keinen bestehenden AD-001/AD-002/AD-003-Vertrag.
+        """
+        if not self.is_valid_vertex(v_a) or not self.is_valid_vertex(v_b):
+            raise MeshError("add_edge benötigt zwei bestehende Vertices.")
+        if v_a == v_b:
+            raise MeshError("add_edge benötigt zwei unterschiedliche Vertices.")
+        return self._get_or_create_edge(v_a, v_b)
+
     def remove_face(self, face_id: FaceId) -> None:
         """Entfernt eine Face.
 

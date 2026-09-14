@@ -125,6 +125,46 @@ def test_ad002_connect_vertices() -> None:
     assert_mesh_invariants(mesh, context="connect_vertices")
 
 
+def test_add_edge() -> None:
+    print("\n--- add_edge() — freie Edge als öffentliche Mutation-Primitive ---")
+    scene, (v0, v1, v2, v3), face = build_quad_scene()
+    mesh = scene.mesh
+
+    # Neue freie Edge zwischen zwei Vertices ohne gemeinsame Face
+    v4 = mesh.add_vertex((2.0, 0.0, 0.0))
+    v5 = mesh.add_vertex((2.0, 1.0, 0.0))
+    eid = mesh.add_edge(v4, v5)
+
+    check("neue EdgeId entsteht", mesh.is_valid_edge(eid))
+    check("edge_faces() liefert leere Liste", mesh.edge_faces(eid) == [])
+    check("beide Vertex-IDs bleiben gültig", mesh.is_valid_vertex(v4) and mesh.is_valid_vertex(v5))
+
+    # Aufruf mit bestehendem Vertex-Paar (Face-Kante) → dieselbe EdgeId, kein Duplikat
+    existing_edge = mesh._get_or_create_edge(v0, v1)
+    returned_edge = mesh.add_edge(v0, v1)
+    check("bereits vorhandene EdgeId wird zurückgegeben", returned_edge == existing_edge)
+    check("bestehende Face bleibt unberührt", mesh.is_valid_face(face))
+    check("edge_faces() der bestehenden Kante bleibt unverändert", face in mesh.edge_faces(returned_edge))
+
+    # v_a == v_b → MeshError
+    try:
+        mesh.add_edge(v0, v0)
+        check("v_a == v_b muss MeshError auslösen", False)
+    except Exception as exc:
+        check("v_a == v_b löst MeshError aus", type(exc).__name__ == "MeshError")
+
+    # Ungültige VertexId → MeshError
+    from core.ids import VertexId as _VId
+    invalid = _VId(9999)
+    try:
+        mesh.add_edge(v0, invalid)
+        check("ungültige VertexId muss MeshError auslösen", False)
+    except Exception as exc:
+        check("ungültige VertexId löst MeshError aus", type(exc).__name__ == "MeshError")
+
+    assert_mesh_invariants(mesh, context="add_edge")
+
+
 def test_ad002_collapse_edge() -> None:
     print("\n--- AD-002: collapse_edge() als Mutation-Primitive ---")
     scene, (v0, v1, v2, v3), face = build_quad_scene()
@@ -301,6 +341,7 @@ def run_all() -> None:
         test_ad001_id_continuity_split_edge,
         test_ad002_query_api_no_internal_access,
         test_ad002_connect_vertices,
+        test_add_edge,
         test_ad002_collapse_edge,
         test_ad002_collapse_edge_no_stale_edges,
         test_ad003_update_is_incremental,
