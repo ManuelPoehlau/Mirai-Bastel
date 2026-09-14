@@ -74,6 +74,7 @@ from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # 
 from playground.topology_ops import split_selected_edge  # noqa: E402
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
+from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
     add_temp_target,
     clear_temp_target,
@@ -203,6 +204,7 @@ class PlaygroundWindow(pyglet.window.Window):
         )
         topo_slot = ExperimentSlot(
             VariantEntry(ExtrudeBaselineVariant(app)),
+            VariantEntry(ExtrudeLmbVariant(app)),
         )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
@@ -467,6 +469,13 @@ class PlaygroundWindow(pyglet.window.Window):
 
     # -- Tweak-Helpers --------------------------------------------------------
 
+    def _active_extrude_model(self) -> str:
+        """Aktivierungsmodell des aktiven Extrude-Slots ('hold' oder 'lmb')."""
+        slot = self.app.slots.get("topology")
+        if slot is None:
+            return "hold"
+        return getattr(slot.active_experiment, "activation", "hold")
+
     def _active_tweak_variant(self) -> str | None:
         """Aktive Tweak-Variante lesen ('v1'/'v2'/'v3'/'v4' oder None)."""
         slot = self.app.slots.get("tweak")
@@ -590,11 +599,13 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
 
-        # Extrude: Drag-Update bei gehaltener E-Taste (AP-05 Hold-Modell)
+        # Extrude: Drag-Update (AP-05)
         if self._extrude_tool is not None:
-            self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
-            self._rebuild_vbo()
-            self._rebuild_selection_vbo()
+            em = self._active_extrude_model()
+            if em == "hold" or (em == "lmb" and buttons & _mouse.LEFT):
+                self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
+                self._rebuild_vbo()
+                self._rebuild_selection_vbo()
             return pyglet.event.EVENT_HANDLED
 
         # Tweak: running gesture update (V2 or V3 — LMB governs)
@@ -703,6 +714,21 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._clear_tweak_gesture()
                 return pyglet.event.EVENT_HANDLED
 
+        # Extrude LMB-Modell: LMB release = Commit (AP-05 Variante 2)
+        if (
+            button == _mouse.LEFT
+            and self._extrude_tool is not None
+            and self._active_extrude_model() == "lmb"
+        ):
+            self._extrude_tool.commit()
+            self._extrude_tool.deactivate()
+            self._extrude_tool = None
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
+            self._hud.update_action("Extrude")
+            self._update_hud()
+            return pyglet.event.EVENT_HANDLED
+
         # Variant C (Press-Drag-Click): Maustaste loslassen = Commit
         if (
             self._active_transform_model() == "press_drag_click"
@@ -763,8 +789,8 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_x = x
         self._last_mouse_y = y
 
-        # Extrude: Motion-Update bei gehaltener E-Taste (AP-05 Hold-Modell)
-        if self._extrude_tool is not None:
+        # Extrude: Motion-Update nur im Hold-Modell (AP-05)
+        if self._extrude_tool is not None and self._active_extrude_model() == "hold":
             self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
             self._rebuild_vbo()
             self._rebuild_selection_vbo()
@@ -1031,7 +1057,7 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key release — Commit-Verhalten abhängig vom Aktivierungsmodell."""
-        if symbol == _key.E and self._extrude_tool is not None:
+        if symbol == _key.E and self._extrude_tool is not None and self._active_extrude_model() == "hold":
             # E loslassen = Commit (AP-05 Hold-Modell)
             self._extrude_tool.commit()
             self._extrude_tool.deactivate()
