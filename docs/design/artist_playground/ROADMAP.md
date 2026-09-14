@@ -289,6 +289,15 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 - `connect_edges.py` — "kind v"-Fall aktiviert: `_FreeConnectStep` + `mesh.add_edge()` für Ketten-Verbindung über gemeinsamen regulären Innen-Vertex ohne Face-Kontext
 - `playground/tests/test_topology_connect_edges.py` — 9 Headless-Tests (3 neue: kind-v positiv, kind-v Undo/Redo, Boundary-Vertex-Ablehnung), alle grün
 
+### AP-05 — Loop/Ring Select (Enablement-Port, kein Production-Schritt)
+
+**Implementiert (2026-09-14):**
+- `playground/topology_tools/loop_ring.py` — 1:1-Logik-Port aus V1 (`loop_ring.py`) gegen Production-`src/core`; reine Query, keine Mutation; `edge_loop()`, `edge_ring()`, `Traversal`, `LoopRingError`
+- `playground/window.py` — **Shift+L**: Edge-Modus + 1+ Edges → Loop Select; **Shift+R**: Edge-Modus + 1+ Edges → Ring Select; HUD zeigt Anzahl + offen/geschlossen
+- `playground/tests/test_topology_loop_ring.py` — 6 Headless-Tests (Ring auf Cube geschlossen, Loop auf Cube stoppt, Loop durch Valenz-4-Vertex, offener Ring, LoopRingError), alle grün
+
+**Bewusst ausgeklammert:** Boundary-Loop-Fortsetzung (offener Rand), Loop Insert als Folgeop.
+
 ---
 
 ## Invariants for All Phases

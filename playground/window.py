@@ -18,6 +18,8 @@ Steuerung:
     M               SelectMode cyclen (Replace → Modifier → Toggle)
     Q               SelectMethod cyclen (Pick → Box → Lasso → Paint)
     1 / 2 / 3       Component-Modus (Vertex / Edge / Face)
+    Shift+L         Loop Select (Edge-Modus, 1+ Edges selektiert)
+    Shift+R         Ring Select (Edge-Modus, 1+ Edges selektiert)
     ESC             Fenster schließen (oder Transform canceln)
 
 Shader:
@@ -75,6 +77,11 @@ from playground.topology_ops import split_selected_edge  # noqa: E402
 from playground.topology_tools.connect_edges import (  # noqa: E402
     connect_selected_edges,
     TopologyToolError as _ConnectEdgesError,
+)
+from playground.topology_tools.loop_ring import (  # noqa: E402
+    edge_loop,
+    edge_ring,
+    LoopRingError as _LoopRingError,
 )
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
@@ -1009,6 +1016,40 @@ class PlaygroundWindow(pyglet.window.Window):
             sel.clear()
             self._rebuild_selection_vbo()
             self._update_hud()
+        elif symbol == _key.L and (modifiers & _key.MOD_SHIFT):
+            # Shift+L: Loop Select (AP-05). Edge-Modus, 1+ Edges selektiert.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
+                start = next(iter(sel.edges))
+                try:
+                    traversal = edge_loop(self.app.scene.mesh, start)
+                    sel.clear()
+                    sel.add(traversal.as_set())
+                    self._rebuild_selection_vbo()
+                    self._hud.update_action(
+                        f"Loop Select — {len(traversal.edges)} Edges"
+                        + (" (geschlossen)" if traversal.closed else "")
+                    )
+                except _LoopRingError as exc:
+                    self._hud.update_action(str(exc))
+                self._update_hud()
+        elif symbol == _key.R and (modifiers & _key.MOD_SHIFT):
+            # Shift+R: Ring Select (AP-05). Edge-Modus, 1+ Edges selektiert.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
+                start = next(iter(sel.edges))
+                try:
+                    traversal = edge_ring(self.app.scene.mesh, start)
+                    sel.clear()
+                    sel.add(traversal.as_set())
+                    self._rebuild_selection_vbo()
+                    self._hud.update_action(
+                        f"Ring Select — {len(traversal.edges)} Edges"
+                        + (" (geschlossen)" if traversal.closed else "")
+                    )
+                except _LoopRingError as exc:
+                    self._hud.update_action(str(exc))
+                self._update_hud()
         elif symbol in (_key.LCTRL, _key.RCTRL):
             self._tweak_ctrl_held = True
         elif symbol in (_key.X, _key.R, _key.S):
