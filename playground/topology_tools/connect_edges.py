@@ -4,13 +4,13 @@
 (Zeilen ~160-477) gegen Production-src/core. Adapter-Muster analog zu
 topology_ops.py::split_selected_edge (Enablement-01).
 
-Bewusst ausgeklammerter Fall ("kind v" / FreeConnect):
-  V1 nutzt mesh.add_edge() für Ketten-Verbindungen über einen gemeinsamen
-  regulären Innen-Vertex ohne gemeinsame Face. Diese Methode existiert NICHT in
-  src/core (nur privates _get_or_create_edge(), intern von add_face() genutzt).
-  src/core bleibt unangetastet — also wird "kind v" hier mit TopologyToolError
-  explizit abgelehnt statt still zu übergehen. Auf einem Cube (Valenz 3 an
-  jedem Vertex) kann "kind v" ohnehin nie auftreten.
+Zwei Verbindungsarten:
+  "kind f" — gegenüberliegende Kanten in einer gemeinsamen Quad-Face →
+             connect_vertices() spaltet die Face.
+  "kind v" — Kette über einen gemeinsamen regulären Innen-Vertex ohne
+             gemeinsame Face → mesh.add_edge() erzeugt eine freie Kante
+             zwischen den Mittelpunkten (erfordert src/core.add_edge(),
+             seit AP-05-Core-Erweiterung verfügbar).
 """
 
 from __future__ import annotations
@@ -33,6 +33,12 @@ class _SplitStep:
 @dataclass(frozen=True)
 class _FaceConnectStep:
     face_id: FaceId
+    edge_a: EdgeId
+    edge_b: EdgeId
+
+
+@dataclass(frozen=True)
+class _FreeConnectStep:
     edge_a: EdgeId
     edge_b: EdgeId
 
@@ -80,9 +86,9 @@ def _opposite_quad_face(mesh, edge_a, edge_b):
 def _build_adjacency(mesh, selected: set) -> dict:
     """Nachbar-Graph der Auswahl.
 
-    "kind v"-Fall (Kette über gemeinsamen regulären Innen-Vertex, keine gemeinsame
-    Face) wird explizit abgelehnt — mesh.add_edge() fehlt in src/core (siehe Modul-
-    Docstring). Kein stilles Fallthrough.
+    Zwei Kanten sind benachbart, wenn sie:
+    - in einer gemeinsamen Quad-Face gegenüberliegen (kind "f"), oder
+    - denselben regulären Innen-Vertex teilen ohne gemeinsame Face (kind "v").
     """
     adjacency = {eid: {} for eid in selected}
     edges = list(selected)
@@ -99,11 +105,9 @@ def _build_adjacency(mesh, selected: set) -> dict:
                             "liegt außerhalb des Connect-Edges-Scope "
                             "(nur reguläre Quad-Topologie)."
                         )
-                    raise TopologyToolError(
-                        "Chain-Connect über einen gemeinsamen Vertex ohne Face ist "
-                        "aktuell nicht unterstützt — benötigt mesh.add_edge() in "
-                        "src/core (siehe playground/topology_tools/connect_edges.py)."
-                    )
+                    adjacency[e1][e2] = ("v", shared)
+                    adjacency[e2][e1] = ("v", shared)
+                    continue
             face_id = _opposite_quad_face(mesh, e1, e2)
             if face_id is not None:
                 adjacency[e1][e2] = ("f", face_id)
@@ -143,10 +147,12 @@ def _order_component_edges(mesh, adjacency: dict, comp: list) -> tuple[list, boo
     return ordered, is_cycle
 
 
-def _connection_step(adjacency: dict, edge_a, edge_b) -> _FaceConnectStep:
+def _connection_step(adjacency: dict, edge_a, edge_b):
     kind, payload = adjacency[edge_a][edge_b]
     if kind == "f":
         return _FaceConnectStep(face_id=payload, edge_a=edge_a, edge_b=edge_b)
+    if kind == "v":
+        return _FreeConnectStep(edge_a=edge_a, edge_b=edge_b)
     raise TopologyToolError("Interner Fehler: unbekannte Verbindungsart.")
 
 
@@ -214,6 +220,10 @@ def _execute_plan(mesh, steps: list) -> list:
             m_b = midpoints[step.edge_b]
             edge_id, _, _ = mesh.connect_vertices(step.face_id, m_a, m_b)
             created.append(edge_id)
+        elif isinstance(step, _FreeConnectStep):
+            m_a = midpoints[step.edge_a]
+            m_b = midpoints[step.edge_b]
+            created.append(mesh.add_edge(m_a, m_b))
         else:
             raise TopologyToolError(
                 f"Interner Fehler: unbekannter Plan-Schritt {type(step).__name__!r}."

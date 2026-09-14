@@ -8,8 +8,9 @@
     3. Undo/Redo-Zyklus
     4. Determinismus: gleiche Edge-Menge in unterschiedlicher Set-Iterationsreihen-
        folge übergeben → identisches Ergebnis
-    5. "kind v"-Fall (Kette über gemeinsamen Vertex ohne Face) →
-       TopologyToolError, Mesh unverändert
+    5. "kind v"-Fall (Kette über gemeinsamen regulären Innen-Vertex ohne
+       gemeinsame Face) → freie Verbindungskante zwischen Mittelpunkten,
+       1 History-Eintrag, Undo/Redo; Boundary-Vertex-Variante → Fehler
 """
 
 from __future__ import annotations
@@ -156,137 +157,123 @@ def test_connect_is_deterministic_regardless_of_set_order():
 
 
 # ---------------------------------------------------------------------------
-# 5. "kind v"-Fall → TopologyToolError, kein Crash, Mesh unverändert
+# Hilfsfunktion: 2×2-Quad-Grid mit "kind v"-Konfiguration am Mittelpunkt
 # ---------------------------------------------------------------------------
 
-def _build_v_case_mesh() -> Mesh:
-    """Minimal-Mesh mit zwei Kanten, die einen gemeinsamen Valenz-4-Vertex
-    teilen, aber keine gemeinsame Face haben (klassischer 'kind v'-Fall).
+def _build_2x2_grid():
+    """3×3 Vertex-Grid → 4 Quads. Mittelpunkt p[(1,1)] hat Valenz 4.
 
-    Struktur: zwei getrennte Quads mit einem gemeinsamen Vertex in der Mitte.
-
-       v0---v1---v4
-       |  A  | B  |
-       v2---v3---v5
-
-    v3 ist der gemeinsame Vertex (Valenz 4). Edges v0-v1 (in Face A) und
-    v4-v5 (in Face B) teilen keine Face, aber eine Kette ließe sich nur
-    über v3/v1 verbinden — hier nicht implementiert.
-
-    Einfachere Konstruktion für den Test: wir bauen zwei Quads die v3
-    gemeinsam haben, und wählen dann e(v0,v1) und e(v4,v5) — die teilen
-    keinen Vertex. Stattdessen wählen wir e(v1,v3) und e(v3,v5), die
-    teilen v3 (shared vertex) aber keine gemeinsame Face.
+    Kante p[(1,0)]-p[(1,1)] und Kante p[(1,1)]-p[(1,2)] teilen den
+    Mittelpunkt als shared vertex, haben aber keine gemeinsame Face →
+    klassischer "kind v"-Fall.
     """
     mesh = Mesh()
-
-    # Face A: v0, v1, v3, v2
-    v0 = mesh.add_vertex((-1.0, 1.0, 0.0))
-    v1 = mesh.add_vertex((0.0, 1.0, 0.0))
-    v2 = mesh.add_vertex((-1.0, 0.0, 0.0))
-    v3 = mesh.add_vertex((0.0, 0.0, 0.0))
-    mesh.add_face([v0, v1, v3, v2])
-
-    # Face B: v1, v4, v5, v3 — teilt v1 und v3 mit Face A
-    v4 = mesh.add_vertex((1.0, 1.0, 0.0))
-    v5 = mesh.add_vertex((1.0, 0.0, 0.0))
-    mesh.add_face([v1, v4, v5, v3])
-
-    return mesh, v1, v3
-
-
-def test_connect_kind_v_raises_topology_error():
-    """'kind v'-Fall (Kette über Vertex ohne gemeinsame Face) → TopologyToolError."""
-    app = PlaygroundApp()
-    app.load_cube()
-
-    # Wir ersetzen das Cube-Mesh durch unser Testmesh und hängen es ans scene
-    mesh, v1, v3 = _build_v_case_mesh()
-
-    # Die Kante zwischen v1 und v3 liegt in BEIDEN Faces — keine Kante zwischen
-    # v0 und v3 ohne Face. Wir brauchen stattdessen zwei Kanten, die v3 teilen
-    # aber keine Face gemeinsam haben.
-    # Auf diesem Mesh gibt es keine solche Konfiguration in einfacher Form.
-    # Daher simulieren wir den Fall direkt auf _build_adjacency:
-    from playground.topology_tools.connect_edges import _build_adjacency
-
-    # Erstelle einen minimalen "kind v"-Fall in einem synthetischen Mesh:
-    # Drei Quads in einer Reihe. Die mittlere Edge-Verbindung hat Valenz 4.
-    mesh2 = Mesh()
-    # Bottom row
-    a = mesh2.add_vertex((-2.0, 0.0, 0.0))
-    b = mesh2.add_vertex((-1.0, 0.0, 0.0))
-    c = mesh2.add_vertex((0.0, 0.0, 0.0))
-    d = mesh2.add_vertex((1.0, 0.0, 0.0))
-    # Top row
-    e = mesh2.add_vertex((-2.0, 1.0, 0.0))
-    f = mesh2.add_vertex((-1.0, 1.0, 0.0))
-    g = mesh2.add_vertex((0.0, 1.0, 0.0))
-    h = mesh2.add_vertex((1.0, 1.0, 0.0))
-    # Three quads
-    mesh2.add_face([a, b, f, e])
-    mesh2.add_face([b, c, g, f])
-    mesh2.add_face([c, d, h, g])
-
-    # Finde Edge a-e (links außen) und Edge d-h (rechts außen) — die teilen
-    # keinen Vertex, also kein "kind v". Wir brauchen Edges die v teilen.
-    # Finde stattdessen Edge e-f und Edge f-g: teilen v=f, aber HABEN eine
-    # gemeinsame Face (quad b,c,g,f enthält f-g, quad a,b,f,e enthält e-f,
-    # beide teilen Face b,c,g,f NICHT... wait let me think again.
-    # e-f ist in Face [a,b,f,e]. f-g ist in Face [b,c,g,f]. Keine gemeinsame Face.
-    # Vertex f hat Valenz: Kanten zu e, a(?), b, g, c(?) — nein.
-    # f verbindet: e-f, f-a (nein, keine direkte Kante), b-f, f-g.
-    # Also Edges incident zu f: e-f, b-f, f-g. Valenz=3 → _is_regular_interior_vertex
-    # gibt False zurück → wirft "Boundary/Mixed-Valence" Error, nicht "kind v".
-    # Kein einfaches 2D-Mesh hat Valenz 4 an einem Interior-Vertex mit nur 2 Faces.
-    # Für echten "kind v" brauchen wir einen Vertex mit Valenz ≥ 4.
-    # Das geht mit einem 2x2-Quad-Grid (4 Faces, Mittelpunkt hat Valenz 4).
-
-    mesh3 = Mesh()
-    # 3x3 Vertex-Grid → 2x2 Quads
     p = {}
     for row in range(3):
         for col in range(3):
-            p[(row, col)] = mesh3.add_vertex((float(col), float(row), 0.0))
+            p[(row, col)] = mesh.add_vertex((float(col), float(row), 0.0))
 
-    mesh3.add_face([p[(0,0)], p[(0,1)], p[(1,1)], p[(1,0)]])
-    mesh3.add_face([p[(0,1)], p[(0,2)], p[(1,2)], p[(1,1)]])
-    mesh3.add_face([p[(1,0)], p[(1,1)], p[(2,1)], p[(2,0)]])
-    mesh3.add_face([p[(1,1)], p[(1,2)], p[(2,2)], p[(2,1)]])
-
-    # p[(1,1)] ist jetzt Mittelpunkt mit Valenz 4 — regulärer Innen-Vertex.
-    # Finde Kanten die p[(1,1)] als Endpunkt haben und zu p[(0,1)] bzw. p[(1,2)] gehen.
-    # Diese teilen p[(1,1)] als shared vertex. Haben sie eine gemeinsame Face?
-    # Kante p[(0,1)]-p[(1,1)] ist in Faces [p00,p01,p11,p10] und [p01,p02,p12,p11].
-    # Kante p[(1,1)]-p[(1,2)] ist in Faces [p01,p02,p12,p11] und [p11,p12,p22,p21].
-    # Gemeinsame Face: [p01,p02,p12,p11] → "kind f", nicht "kind v"!
-    #
-    # Für echtes "kind v": Kanten die p[(1,1)] teilen aber KEINE gemeinsame Face haben.
-    # z.B. Kante p[(1,0)]-p[(1,1)] und Kante p[(1,1)]-p[(1,2)]:
-    #   - p[(1,0)]-p[(1,1)]: in Face [p00,p01,p11,p10] und [p10,p11,p21,p20]
-    #   - p[(1,1)]-p[(1,2)]: in Face [p01,p02,p12,p11] und [p11,p12,p22,p21]
-    #   Keine gemeinsame Face → "kind v"-Fall!
+    mesh.add_face([p[(0, 0)], p[(0, 1)], p[(1, 1)], p[(1, 0)]])
+    mesh.add_face([p[(0, 1)], p[(0, 2)], p[(1, 2)], p[(1, 1)]])
+    mesh.add_face([p[(1, 0)], p[(1, 1)], p[(2, 1)], p[(2, 0)]])
+    mesh.add_face([p[(1, 1)], p[(1, 2)], p[(2, 2)], p[(2, 1)]])
 
     center = p[(1, 1)]
-    # Suche Kante (p10, p11) und (p11, p12)
-    edge_p10_p11 = None
-    edge_p11_p12 = None
-    for eid in mesh3.all_edge_ids():
-        verts = set(mesh3.edge_vertices(eid))
+    edge_left = edge_right = None
+    for eid in mesh.all_edge_ids():
+        verts = set(mesh.edge_vertices(eid))
         if verts == {p[(1, 0)], center}:
-            edge_p10_p11 = eid
+            edge_left = eid
         if verts == {center, p[(1, 2)]}:
-            edge_p11_p12 = eid
+            edge_right = eid
 
-    assert edge_p10_p11 is not None, "Kante p10-p11 nicht gefunden"
-    assert edge_p11_p12 is not None, "Kante p11-p12 nicht gefunden"
+    assert edge_left is not None and edge_right is not None
+    return mesh, p, center, edge_left, edge_right
 
-    # Verifikation: gemeinsamer Vertex aber keine gemeinsame Face
-    shared_v = set(mesh3.edge_vertices(edge_p10_p11)) & set(mesh3.edge_vertices(edge_p11_p12))
-    assert len(shared_v) == 1 and center in shared_v
-    common_faces = set(mesh3.edge_faces(edge_p10_p11)) & set(mesh3.edge_faces(edge_p11_p12))
-    assert len(common_faces) == 0, "Test-Setup fehlerhaft: Kanten teilen unerwartet eine Face"
 
-    # Jetzt _build_adjacency aufrufen — muss TopologyToolError werfen
-    with pytest.raises(TopologyToolError, match="nicht unterstützt"):
-        _build_adjacency(mesh3, {edge_p10_p11, edge_p11_p12})
+# ---------------------------------------------------------------------------
+# 5a. "kind v" positiv — freie Verbindungskante, 1 History-Eintrag
+# ---------------------------------------------------------------------------
+
+def test_connect_kind_v_creates_free_edge():
+    """'kind v': zwei Kanten teilen regulären Innen-Vertex ohne Face →
+    connect_selected_edges erzeugt eine freie Verbindungskante."""
+    app = PlaygroundApp()
+    app.load_cube()
+    mesh, p, center, e_left, e_right = _build_2x2_grid()
+    app.scene.mesh = mesh
+
+    # Verifikation Setup: keine gemeinsame Face
+    common = set(mesh.edge_faces(e_left)) & set(mesh.edge_faces(e_right))
+    assert len(common) == 0, "Test-Setup: Kanten sollen keine gemeinsame Face haben"
+
+    v_before = len(list(mesh.all_vertex_ids()))
+    f_before = len(list(mesh.all_face_ids()))
+
+    result = connect_selected_edges(app.scene, {e_left, e_right})
+
+    assert len(result) == 1, "Genau eine neue Verbindungskante erwartet"
+    new_eid = result[0]
+    assert mesh.is_valid_edge(new_eid), "Neue EdgeId muss gültig sein"
+    assert mesh.edge_faces(new_eid) == [], "Verbindungskante ist frei (keine Faces)"
+    assert len(list(mesh.all_vertex_ids())) == v_before + 2, "Beide Quell-Edges gesplittet"
+    assert len(list(mesh.all_face_ids())) == f_before, "Face-Anzahl unverändert"
+    assert len(app.scene.history) == 1, "Genau ein History-Eintrag"
+
+
+def test_connect_kind_v_undo_redo():
+    """'kind v'-Verbindung ist über Undo/Redo vollständig reversibel."""
+    app = PlaygroundApp()
+    app.load_cube()
+    mesh, p, center, e_left, e_right = _build_2x2_grid()
+    app.scene.mesh = mesh
+
+    v_before = len(list(mesh.all_vertex_ids()))
+    f_before = len(list(mesh.all_face_ids()))
+
+    connect_selected_edges(app.scene, {e_left, e_right})
+    v_after = len(list(mesh.all_vertex_ids()))
+    assert v_after > v_before
+
+    app.undo()
+    assert len(list(app.scene.mesh.all_vertex_ids())) == v_before, "Undo stellt Ausgangszustand her"
+    assert len(list(app.scene.mesh.all_face_ids())) == f_before
+
+    app.redo()
+    assert len(list(app.scene.mesh.all_vertex_ids())) == v_after, "Redo stellt Connect-Zustand her"
+
+
+# ---------------------------------------------------------------------------
+# 5b. "kind v" negativ — Boundary-/Mixed-Valence-Vertex → TopologyToolError
+# ---------------------------------------------------------------------------
+
+def test_connect_kind_v_boundary_vertex_raises():
+    """Kette über Vertex mit Valenz < 4 (Rand-Vertex) → TopologyToolError."""
+    from playground.topology_tools.connect_edges import _build_adjacency
+
+    # 1×2 Quad-Strip: Mittelpunkt b-f hat Valenz 3 (Randmesh, nicht regulär)
+    mesh = Mesh()
+    a = mesh.add_vertex((-2.0, 0.0, 0.0))
+    b = mesh.add_vertex((-1.0, 0.0, 0.0))
+    c = mesh.add_vertex((0.0, 0.0, 0.0))
+    e = mesh.add_vertex((-2.0, 1.0, 0.0))
+    f = mesh.add_vertex((-1.0, 1.0, 0.0))
+    g = mesh.add_vertex((0.0, 1.0, 0.0))
+    mesh.add_face([a, b, f, e])
+    mesh.add_face([b, c, g, f])
+
+    # e-f ist in Face [a,b,f,e]; f-g ist in Face [b,c,g,f]; teilen f, keine gemeinsame Face
+    edge_ef = edge_fg = None
+    for eid in mesh.all_edge_ids():
+        verts = set(mesh.edge_vertices(eid))
+        if verts == {e, f}:
+            edge_ef = eid
+        if verts == {f, g}:
+            edge_fg = eid
+
+    assert edge_ef is not None and edge_fg is not None
+    common = set(mesh.edge_faces(edge_ef)) & set(mesh.edge_faces(edge_fg))
+    assert len(common) == 0
+
+    with pytest.raises(TopologyToolError, match="Boundary"):
+        _build_adjacency(mesh, {edge_ef, edge_fg})
