@@ -21,6 +21,7 @@ Steuerung:
     Shift+L         Loop Select (Edge-Modus, 1+ Edges selektiert)
     Shift+R         Ring Select (Edge-Modus, 1+ Edges selektiert)
     I               Loop Insert (Edge-Modus, 1 Edge selektiert)
+    G (halten)      Loop Slide (Edge-Modus, 1+ Edges selektiert; Maus = slide, loslassen = commit)
     ESC             Fenster schließen (oder Transform canceln)
 
 Shader:
@@ -87,6 +88,10 @@ from playground.topology_tools.loop_ring import (  # noqa: E402
 from playground.topology_tools.loop_insert import (  # noqa: E402
     loop_insert,
     LoopInsertError as _LoopInsertError,
+)
+from playground.topology_tools.loop_slide import (  # noqa: E402
+    LoopSlideTool,
+    LoopSlideError as _LoopSlideError,
 )
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
@@ -289,6 +294,8 @@ class PlaygroundWindow(pyglet.window.Window):
 
         # Extrude-State (AP-05)
         self._extrude_tool: ExtrudeTool | None = None
+        # Loop-Slide-State (AP-05)
+        self._loop_slide_tool: LoopSlideTool | None = None
 
         # Box-Select-State (AP-03 Variante C)
         self._box_start: tuple[int, int] | None = None
@@ -615,6 +622,12 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
 
+        # Loop Slide: Drag-Update (AP-05)
+        if self._loop_slide_tool is not None:
+            self._loop_slide_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
+            self._rebuild_vbo()
+            return pyglet.event.EVENT_HANDLED
+
         # Extrude: Drag-Update (AP-05)
         if self._extrude_tool is not None:
             em = self._active_extrude_model()
@@ -804,6 +817,12 @@ class PlaygroundWindow(pyglet.window.Window):
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
         self._last_mouse_x = x
         self._last_mouse_y = y
+
+        # Loop Slide: Motion-Update im Hold-Modell (AP-05)
+        if self._loop_slide_tool is not None:
+            self._loop_slide_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
+            self._rebuild_vbo()
+            return pyglet.event.EVENT_HANDLED
 
         # Extrude: Motion-Update nur im Hold-Modell (AP-05)
         if self._extrude_tool is not None and self._active_extrude_model() == "hold":
@@ -1035,6 +1054,20 @@ class PlaygroundWindow(pyglet.window.Window):
             sel.clear()
             self._rebuild_selection_vbo()
             self._update_hud()
+        elif symbol == _key.G and self._loop_slide_tool is None:
+            # G: Loop Slide (AP-05). Edge-Modus, 1+ Edges selektiert.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
+                tool = LoopSlideTool(self.app.scene, self.app.camera)
+                try:
+                    tool.activate()
+                    tool.begin(edge_ids=set(sel.edges))
+                    self._loop_slide_tool = tool
+                    self._hud.update_action("Loop Slide — Maus ziehen, G loslassen = commit, ESC = cancel")
+                except _LoopSlideError as exc:
+                    tool.deactivate()
+                    self._hud.update_action(str(exc))
+                self._update_hud()
         elif symbol == _key.L and (modifiers & _key.MOD_SHIFT):
             # Shift+L: Loop Select (AP-05). Edge-Modus, 1+ Edges selektiert.
             sel = self.app.scene.selection
@@ -1104,7 +1137,14 @@ class PlaygroundWindow(pyglet.window.Window):
                         self.app.active_tool = create_tool_for_type(_tool_type)
                 self._update_hud()
         elif symbol == _key.ESCAPE:
-            if self._extrude_tool is not None:
+            if self._loop_slide_tool is not None:
+                self._loop_slide_tool.cancel()
+                self._loop_slide_tool.deactivate()
+                self._loop_slide_tool = None
+                self._rebuild_vbo()
+                self._hud.update_action("Loop Slide cancelled")
+                self._update_hud()
+            elif self._extrude_tool is not None:
                 self._extrude_tool.cancel()
                 self._extrude_tool.deactivate()
                 self._extrude_tool = None
@@ -1134,7 +1174,16 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key release — Commit-Verhalten abhängig vom Aktivierungsmodell."""
-        if symbol == _key.E and self._extrude_tool is not None and self._active_extrude_model() == "hold":
+        if symbol == _key.G and self._loop_slide_tool is not None:
+            # G loslassen = Commit (AP-05 Hold-Modell)
+            self._loop_slide_tool.commit()
+            self._loop_slide_tool.deactivate()
+            self._loop_slide_tool = None
+            self._rebuild_vbo()
+            self._hud.update_action("Loop Slide")
+            self._update_hud()
+            return pyglet.event.EVENT_HANDLED
+        elif symbol == _key.E and self._extrude_tool is not None and self._active_extrude_model() == "hold":
             # E loslassen = Commit (AP-05 Hold-Modell)
             self._extrude_tool.commit()
             self._extrude_tool.deactivate()

@@ -307,6 +307,15 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 
 **Bewusst ausgeklammert:** Interaktive Positionierung (Loop Slide), mehrfache gleichzeitige Inserts.
 
+### AP-05 — Loop Slide (Discovery, kein Production-Schritt)
+
+**Implementiert (2026-09-14):**
+- `playground/topology_tools/loop_slide.py` — `LoopSlideTool(Tool)`: Snapshot → Slide-Vektoren pro Vertex → t via Drag akkumulieren → Positionen interpolieren → MeshStateCommand; `LoopSlideError` für alle Fehlerfälle; Scope: geschlossene Loops mit Valenz-4-Vertices
+- `playground/window.py` — **G** (halten): Edge-Modus + 1+ Edges selektiert → Loop Slide beginnt; Mausbewegung = live slide; G loslassen = Commit; ESC = Cancel
+- `playground/tests/test_topology_loop_slide.py` — 7 Headless-Tests (Positionen ändern sich, dx=0 → unverändert, 1 History-Eintrag, Undo/Redo, Cancel, ungültige Edge, Valenz-3-Vertex), alle grün
+
+**Bewusst ausgeklammert:** Even-spacing, Clamp-Mode, Boundary-Loops, offene Loops (Valenz ≠ 4 an Endvertices).
+
 ---
 
 ## Invariants for All Phases
