@@ -169,3 +169,43 @@ def test_extrude_begin_remaps_selection_to_result_face():
     # Cancel stellt Mesh UND die ursprüngliche Selektion wieder her.
     assert app.scene.mesh.is_valid_face(face_id)
     assert sel.faces == {face_id}
+
+
+def test_extrude_hover_fallback_cancel_restores_empty_selection():
+    """AP-05 Target Resolution: face_id wurde per Hover-Hit-Test ermittelt,
+    nicht vorab selektiert. Cancel muss die Selection auf exakt den Zustand
+    vor E zurücksetzen — hier: leer."""
+    app = PlaygroundApp()
+    app.load_cube()
+    face_id = _pick_face(app)
+    sel = app.scene.selection
+    sel.mode = SelectionMode.FACE
+    # Keine Vorauswahl (leere Selection, wie nach Hover-Fallback)
+
+    tool = ExtrudeTool(app.scene, _FakeCamera(0.5))
+    tool.activate()
+    tool.begin(face_id=face_id)
+    tool.update(dx=1.0, dy=0.0, width=100, height=100)
+    tool.cancel()
+    tool.deactivate()
+
+    assert sel.faces == set()
+    assert app.scene.mesh.is_valid_face(face_id)
+    assert len(app.scene.history) == 0
+
+
+def test_extrude_hover_fallback_commit_selects_new_face():
+    """AP-05 Target Resolution: Commit mit Hover-Target selektiert die neue
+    Result-Face — identisch zum normalen Commit."""
+    app = PlaygroundApp()
+    app.load_cube()
+    face_id = _pick_face(app)
+    sel = app.scene.selection
+    sel.mode = SelectionMode.FACE
+    # Keine Vorauswahl
+
+    new_face_id = _do_extrude(app, face_id)
+
+    assert sel.mode is SelectionMode.FACE
+    assert sel.faces == {new_face_id}
+    assert len(app.scene.history) == 1

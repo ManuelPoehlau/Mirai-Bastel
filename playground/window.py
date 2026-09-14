@@ -586,6 +586,8 @@ class PlaygroundWindow(pyglet.window.Window):
     def on_mouse_drag(
         self, x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int
     ) -> None:
+        self._last_mouse_x = x
+        self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
 
         # Extrude: LMB-Drag während aktiver Geste (AP-05)
@@ -769,6 +771,8 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
+        self._last_mouse_x = x
+        self._last_mouse_y = y
         tv = self._active_tweak_variant()
 
         # V1: key held + motion → accumulate, start Tweak once past CLICK_THRESHOLD
@@ -877,17 +881,30 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._hud.update_action("Split Edge")
                 self._update_hud()
         elif symbol == _key.E:
-            # E: Extrude Face (AP-05 Baseline). Scope: nur Face-Modus mit
-            # genau einer selektierten Face. Drag = Distanz, LMB = Commit,
-            # ESC = Cancel.
+            # E: Extrude Face (AP-05). Scope: Face-Modus.
+            # - 1 Face selektiert → diese extrudieren.
+            # - Leer → Face unter Cursor per Hit-Test (Hover-Fallback, AP-05).
+            # - 2+ Faces → No-op (Multi-Face ist eigenes Thema).
             sel = self.app.scene.selection
             if (
                 sel.mode is SelectionMode.FACE
-                and len(sel.faces) == 1
                 and self.app.viewport is not None
                 and self._extrude_tool is None
             ):
-                (face_id,) = sel.faces
+                if len(sel.faces) == 1:
+                    (face_id,) = sel.faces
+                elif len(sel.faces) == 0:
+                    mesh = self.app.viewport.render_mesh.mesh
+                    hit = pick_component(
+                        self.app.camera, mesh, sel,
+                        self._last_mouse_x, self._last_mouse_y,
+                        self.width, self.height,
+                    )
+                    if hit is None or sel.mode is not SelectionMode.FACE:
+                        return pyglet.event.EVENT_HANDLED
+                    face_id = hit
+                else:
+                    return pyglet.event.EVENT_HANDLED
                 tool = ExtrudeTool(self.app.scene, self.app.camera)
                 tool.activate()
                 tool.begin(face_id=face_id)
