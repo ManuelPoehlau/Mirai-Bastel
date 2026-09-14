@@ -905,18 +905,17 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._update_hud()
         elif symbol == _key.E:
             # E: Extrude Face (AP-05). Scope: Face-Modus.
-            # - 1 Face selektiert → diese extrudieren.
+            # - 1+ Faces selektiert → diese extrudieren (Multi-Face-Extrude).
             # - Leer → Face unter Cursor per Hit-Test (Hover-Fallback, AP-05).
-            # - 2+ Faces → No-op (Multi-Face ist eigenes Thema).
             sel = self.app.scene.selection
             if (
                 sel.mode is SelectionMode.FACE
                 and self.app.viewport is not None
                 and self._extrude_tool is None
             ):
-                if len(sel.faces) == 1:
-                    (face_id,) = sel.faces
-                elif len(sel.faces) == 0:
+                if len(sel.faces) >= 1:
+                    face_ids = set(sel.faces)
+                else:
                     mesh = self.app.viewport.render_mesh.mesh
                     hit = pick_component(
                         self.app.camera, mesh, sel,
@@ -925,16 +924,16 @@ class PlaygroundWindow(pyglet.window.Window):
                     )
                     if hit is None or sel.mode is not SelectionMode.FACE:
                         return pyglet.event.EVENT_HANDLED
-                    face_id = hit
-                else:
-                    return pyglet.event.EVENT_HANDLED
+                    face_ids = {hit}
                 tool = ExtrudeTool(self.app.scene, self.app.camera)
                 tool.activate()
-                tool.begin(face_id=face_id)
+                tool.begin(face_ids=face_ids)
                 self._extrude_tool = tool
                 self._rebuild_vbo()
                 self._rebuild_selection_vbo()
-                self._hud.update_action("Extrude — move mouse to set distance, release E = commit, ESC = cancel")
+                n = len(face_ids)
+                action = f"Extrude ({n} faces)" if n > 1 else "Extrude"
+                self._hud.update_action(f"{action} — move mouse to set distance, release E = commit, ESC = cancel")
                 self._update_hud()
         elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()

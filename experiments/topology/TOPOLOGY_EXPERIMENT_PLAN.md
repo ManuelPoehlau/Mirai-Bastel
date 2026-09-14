@@ -243,13 +243,20 @@ Face / Face Group
 neue Vertices + Edges + Faces
 ```
 
-### Implementierter Stand (Baseline)
+### Implementierter Stand (Multi-Face-Region, 2026-09-14)
 
-- Einzelne Face auswählen (Face-Modus) → E-Taste → Topologie sofort aufgebaut (neue Vertices, Side-Faces, Result-Face, Original-Face entfernt)
-- LMB-Drag → Extrusions-Distanz live (Newell-Normale, Projektion auf Kamera-Bildebene)
-- LMB-Release → Commit (ein MeshStateCommand in der History)
-- ESC → Cancel (Mesh-Restore, kein History-Eintrag)
+- 1+ Faces auswählen (Face-Modus) → E-Taste → Topologie sofort aufgebaut via Boundary-Edge-Regel
+  - Neue Vertices: Union aller Vertices aus allen selektierten Faces (keine Duplikate)
+  - Seitenwände nur für Boundary-Edges (Edges mit genau 1 selektierter Nachbar-Face); interne Edges (2 selektierte Faces) bekommen keine Wand
+  - Caps: je 1 neue Face pro Original-Face, 1:1 auf neue Vertex-IDs gemappt (keine Verschmelzung)
+  - Normale: gemittelte Region-Normale (normalisierte Summe der Newell-Normalen aller Faces) — bewusste erste Version, keine finale Entscheidung
+- Bei genau 1 Face identisch zum bisherigen Single-Face-Verhalten (echter Refaktor, keine Parallel-Implementierung)
+- Hover-Fallback (leere Selection → Hit-Test) bleibt auf 1 Face begrenzt
+- LMB-Drag / Motion → Extrusions-Distanz live (entlang Region-Normale)
+- LMB-Release / E-Release → Commit (ein MeshStateCommand in der History)
+- ESC → Cancel (Mesh-Restore + Multi-Selection-Restore, kein History-Eintrag)
 - Undo/Redo funktioniert identisch zu Split Edge
+- 12 Headless-Tests (8 Baseline-Regression + 4 Multi-Face), alle grün
 
 Zu untersuchen sind insbesondere:
 

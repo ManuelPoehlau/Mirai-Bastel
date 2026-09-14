@@ -1,15 +1,22 @@
-"""AP-05 — Baseline Extrude Tool (Playground).
+"""AP-05 — Multi-Face-Extrude Tool (Playground).
 
-Single-Face-Extrude, 1:1 nach V1-Prototyp, aber gegen Production-`src/core`
-statt gegen den V1-Core-Fork.
+Multi-Face-Extrude via Boundary-Edge-Regel: Jede Edge, die zu genau einer
+selektierten Face gehört, ist eine Boundary-Edge und bekommt eine Seitenwand.
+Edges zwischen zwei selektierten Faces sind intern — keine Wand.
+
+Bei genau 1 selektierter Face ist jede ihrer Edges automatisch Boundary → das
+Single-Face-Verhalten ist identisch zum bisherigen Verhalten (echter Refaktor,
+keine Parallel-Implementierung).
 
 Lifecycle:
     activate()
-    begin(face_id=...)        → Snapshot + Topologie aufgebaut, Selection
-                                 auf Result-Face remapped (INTERACTING)
-    update(dx, dy, w, h)*     → Extrusions-Distanz live
-    commit()                  → MeshStateCommand → history.push(), returns new FaceId
-    cancel()                  → mesh.load_state(before), Selection restore
+    begin(face_ids: set[FaceId], **_)   → Snapshot + Topologie aufgebaut,
+                                          Selection auf Result-Faces remapped
+                                          (INTERACTING)
+    update(dx, dy, w, h)*               → Extrusions-Distanz live
+    commit()                            → MeshStateCommand → history.push(),
+                                          returns frozenset[FaceId] (neue Caps)
+    cancel()                            → mesh.load_state(before), Selection restore
     deactivate()
 """
 
@@ -46,43 +53,45 @@ def _compute_face_normal(
 
 
 class ExtrudeTool(Tool):
-    """Interaktives Single-Face-Extrude-Tool für den Artist Playground.
+    """Interaktives Multi-Face-Extrude-Tool für den Artist Playground.
 
     Adaptiert aus experiments/mirai_bastel_viewport_V1/viewport/extrude_tool.py,
     aber gegen src/core (nicht den V1-Fork) und mit MeshStateCommand statt
-    V1-eigenem _SnapshotCommand.
+    V1-eigenem _SnapshotCommand. Verallgemeinert auf beliebige Face-Mengen
+    via Boundary-Edge-Regel.
     """
 
     def __init__(self, scene, camera) -> None:
         super().__init__()
         self._scene = scene
         self._camera = camera
-        self._face_id: FaceId | None = None
+        self._face_ids: frozenset[FaceId] = frozenset()
         self._normal: tuple[float, float, float] | None = None
-        self._boundary: list[VertexId] = []
         self._original_positions: dict[VertexId, tuple] = {}
-        self._new_vertex_ids: list[VertexId] = []
-        self._new_face_id: FaceId | None = None
+        self._old_to_new: dict[VertexId, VertexId] = {}
+        self._new_face_ids: frozenset[FaceId] = frozenset()
         self._before_state: dict | None = None
         self._before_sel_mode: SelectionMode | None = None
         self._before_sel_faces: frozenset = frozenset()
         self._total_distance: float = 0.0
 
     @property
-    def new_face_id(self) -> FaceId | None:
-        return self._new_face_id
+    def new_face_ids(self) -> frozenset[FaceId]:
+        return self._new_face_ids
 
     # -- Tool hooks ----------------------------------------------------------
 
-    def _on_begin(self, face_id: FaceId, **_: Any) -> None:
+    def _on_begin(self, face_ids: set[FaceId], **_: Any) -> None:
         mesh = self._scene.mesh
+        face_ids_frozen = frozenset(face_ids)
 
-        if not mesh.is_valid_face(face_id):
-            raise TopologyToolError(f"Ungültige Face: {face_id!r}")
-
-        boundary = mesh.face_vertices(face_id)
-        if len(boundary) < 3:
-            raise TopologyToolError("Face benötigt mindestens 3 Vertices.")
+        if not face_ids_frozen:
+            raise TopologyToolError("Mindestens eine Face erforderlich.")
+        for fid in face_ids_frozen:
+            if not mesh.is_valid_face(fid):
+                raise TopologyToolError(f"Ungültige Face: {fid!r}")
+            if len(mesh.face_vertices(fid)) < 3:
+                raise TopologyToolError("Face benötigt mindestens 3 Vertices.")
 
         # Snapshot vor jeder Mutation
         self._before_state = mesh.export_state()
@@ -90,49 +99,66 @@ class ExtrudeTool(Tool):
         self._before_sel_mode = sel.mode
         self._before_sel_faces = frozenset(sel.faces)
 
-        self._face_id = face_id
-        self._boundary = boundary
-        self._normal = _compute_face_normal(mesh, boundary)
-        self._original_positions = {
-            vid: mesh.vertex_position(vid) for vid in boundary
-        }
+        self._face_ids = face_ids_frozen
+
+        # Gemittelte Normale über alle selektierten Faces
+        nx, ny, nz = 0.0, 0.0, 0.0
+        for fid in face_ids_frozen:
+            fn = _compute_face_normal(mesh, mesh.face_vertices(fid))
+            nx += fn[0]; ny += fn[1]; nz += fn[2]
+        length = (nx * nx + ny * ny + nz * nz) ** 0.5
+        self._normal = (nx / length, ny / length, nz / length) if length >= 1e-12 else (0.0, 0.0, 1.0)
+
+        # Union aller Vertices aus allen selektierten Faces (keine Duplikate)
+        all_vids: set[VertexId] = set()
+        for fid in face_ids_frozen:
+            all_vids.update(mesh.face_vertices(fid))
+
+        self._original_positions = {vid: mesh.vertex_position(vid) for vid in all_vids}
         self._total_distance = 0.0
 
-        # Neue Vertices an Original-Positionen (distance = 0)
-        self._new_vertex_ids = []
-        for vid in boundary:
-            new_vid = mesh.add_vertex(mesh.vertex_position(vid))
-            self._new_vertex_ids.append(new_vid)
+        # Ein neuer Vertex pro altem Vertex
+        self._old_to_new = {}
+        for vid in all_vids:
+            self._old_to_new[vid] = mesh.add_vertex(mesh.vertex_position(vid))
 
-        # Side-Faces: [v_curr, v_next, v_next_new, v_curr_new]
-        n = len(boundary)
-        for i in range(n):
-            v_curr = boundary[i]
-            v_next = boundary[(i + 1) % n]
-            v_curr_new = self._new_vertex_ids[i]
-            v_next_new = self._new_vertex_ids[(i + 1) % n]
-            mesh.add_face([v_curr, v_next, v_next_new, v_curr_new])
+        # Seitenwände: nur Boundary-Edges (genau 1 angrenzende Face in face_ids_frozen)
+        for fid in face_ids_frozen:
+            boundary = mesh.face_vertices(fid)
+            edges = mesh.face_edges(fid)
+            n = len(boundary)
+            for i, eid in enumerate(edges):
+                adj = mesh.edge_faces(eid)
+                in_sel = sum(1 for f in adj if f in face_ids_frozen)
+                if in_sel == 1:  # Boundary-Edge → Seitenwand
+                    v_curr = boundary[i]
+                    v_next = boundary[(i + 1) % n]
+                    mesh.add_face([v_curr, v_next, self._old_to_new[v_next], self._old_to_new[v_curr]])
 
-        # Result-Face (gleiche Winding-Richtung)
-        self._new_face_id = mesh.add_face(list(self._new_vertex_ids))
+        # Cap-Faces: eine pro Original-Face, auf neue Vertices gemappt
+        new_face_ids: set[FaceId] = set()
+        for fid in face_ids_frozen:
+            new_boundary = [self._old_to_new[vid] for vid in mesh.face_vertices(fid)]
+            new_face_ids.add(mesh.add_face(new_boundary))
 
-        # Original-Face entfernen
-        mesh.remove_face(face_id)
+        # Original-Faces entfernen
+        for fid in face_ids_frozen:
+            mesh.remove_face(fid)
 
-        # Selection-Sync: Im Playground-Fall ist die extrudierte Face genau
-        # die selektierte Face — remove_face() macht ihre ID ungültig. Ohne
-        # Remap stürzt der nächste Selection-VBO-Rebuild im Window mit
-        # KeyError ab (build_selection_data → mesh.face_vertices() auf einer
-        # toten ID). Die selektierte Face wird auf die neue Result-Face
-        # umgemappt — konsistent mit _on_commit(), das dieselbe Face
-        # selektiert.
-        if sel.mode is SelectionMode.FACE and face_id in sel.faces:
-            sel.remove({face_id})
-            if self._new_face_id is not None:
-                sel.add({self._new_face_id})
+        self._new_face_ids = frozenset(new_face_ids)
+
+        # Selection-Sync: Alle entfernten Faces aus Selection rauswerfen und
+        # auf neue Cap-Faces remappen — verhindert tote FaceIds im VBO-Rebuild.
+        if sel.mode is SelectionMode.FACE:
+            dead = face_ids_frozen & frozenset(sel.faces)
+            if dead:
+                sel.remove(dead)
+                valid_new = {fid for fid in self._new_face_ids if mesh.is_valid_face(fid)}
+                if valid_new:
+                    sel.add(valid_new)
 
     def _on_update(self, dx: float, dy: float, width: int, height: int) -> None:
-        if self._normal is None or not self._new_vertex_ids:
+        if self._normal is None or not self._old_to_new:
             return
 
         mesh = self._scene.mesh
@@ -141,18 +167,17 @@ class ExtrudeTool(Tool):
             anchor, dx, dy, width, height
         )
         nx, ny, nz = self._normal
-        distance_delta = world_delta[0] * nx + world_delta[1] * ny + world_delta[2] * nz
-        self._total_distance += distance_delta
+        self._total_distance += world_delta[0] * nx + world_delta[1] * ny + world_delta[2] * nz
 
-        for i, vid in enumerate(self._new_vertex_ids):
-            orig = self._original_positions[self._boundary[i]]
-            mesh.set_vertex_position(vid, (
+        for old_vid, new_vid in self._old_to_new.items():
+            orig = self._original_positions[old_vid]
+            mesh.set_vertex_position(new_vid, (
                 orig[0] + nx * self._total_distance,
                 orig[1] + ny * self._total_distance,
                 orig[2] + nz * self._total_distance,
             ))
 
-    def _on_commit(self) -> FaceId | None:
+    def _on_commit(self) -> frozenset[FaceId]:
         mesh = self._scene.mesh
         after = mesh.export_state()
         self._scene.history.push(
@@ -166,9 +191,10 @@ class ExtrudeTool(Tool):
         sel = self._scene.selection
         sel.clear()
         sel.mode = SelectionMode.FACE
-        if self._new_face_id is not None and mesh.is_valid_face(self._new_face_id):
-            sel.set({self._new_face_id})
-        return self._new_face_id
+        valid = {fid for fid in self._new_face_ids if mesh.is_valid_face(fid)}
+        if valid:
+            sel.set(valid)
+        return self._new_face_ids
 
     def _on_cancel(self) -> None:
         if self._before_state is not None:
@@ -184,12 +210,11 @@ class ExtrudeTool(Tool):
             sel.set(valid)
 
     def _on_deactivate(self) -> None:
-        self._face_id = None
+        self._face_ids = frozenset()
         self._normal = None
-        self._boundary = []
         self._original_positions = {}
-        self._new_vertex_ids = []
-        self._new_face_id = None
+        self._old_to_new = {}
+        self._new_face_ids = frozenset()
         self._before_state = None
         self._before_sel_mode = None
         self._before_sel_faces = frozenset()
@@ -198,8 +223,10 @@ class ExtrudeTool(Tool):
     # -- Intern --------------------------------------------------------------
 
     def _face_center_original(self) -> tuple[float, float, float]:
-        positions = [self._original_positions[vid] for vid in self._boundary]
+        positions = list(self._original_positions.values())
         n = len(positions)
+        if n == 0:
+            return (0.0, 0.0, 0.0)
         return (
             sum(p[0] for p in positions) / n,
             sum(p[1] for p in positions) / n,

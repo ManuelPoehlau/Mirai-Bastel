@@ -252,7 +252,7 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 
 **Mode:** Playground-first → Candidate → Production.
 
-**Status:** IN PROGRESS — AP-05-Auftakt abgeschlossen (2026-09-14)
+**Status:** IN PROGRESS — Multi-Face-Extrude (Region) implementiert (2026-09-14)
 
 ### AP-05-Auftakt — Baseline Extrude (Discovery, kein Production-Schritt)
 
@@ -260,9 +260,20 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 - `playground/topology_tools/extrude.py` — `ExtrudeTool` als `Tool`-Subklasse (Production-Core, nicht V1-Fork)
 - `playground/experiments/topology/variant_extrude_baseline.py` — Experiment-Wrapper für den topology-Slot
 - `playground/window.py` — topology-Slot registriert; E = activate/begin, LMB-Drag = update, LMB-Release = commit, ESC = cancel
-- `playground/tests/test_topology_extrude_baseline.py` — 6 Headless-Tests (commit/selection/undo/redo/cancel + Regression begin-remap), alle grün
+- `playground/tests/test_topology_extrude_baseline.py` — 8 Headless-Baseline-Tests (commit/selection/undo/redo/cancel + Regression begin-remap + Hover-Fallback), alle grün
 
 **Reihenfolge-Hinweis:** Extrude wurde **vor** Phase 3 (Connect Edges) und Phase 4 (Loop Insert) implementiert, nicht danach wie ursprünglich in `TOPOLOGY_EXPERIMENT_PLAN.md` geplant. Grund: Der AP-05-Auftakt ist ein Discovery-Schritt der gezielt Extrude als erste größere Topologie-Interaktion aufgreift, bevor Connect- und Loop-Insert-Semantik final geklärt ist. Die Phase-Nummerierung im Plan bleibt erhalten — die Durchführungsreihenfolge weicht bewusst ab.
+
+### AP-05 — Multi-Face-Extrude (Region) (Discovery, kein Production-Schritt)
+
+**Implementiert (2026-09-14):**
+- `ExtrudeTool` auf `begin(face_ids: set[FaceId])` verallgemeinert (echter Refaktor via Boundary-Edge-Regel, kein Parallel-Code)
+- `window.py` — 2+-Faces-No-op entfernt; 1+ selektierte Faces → Multi-Face-Extrude; Hover-Fallback bleibt auf 1 Face begrenzt
+- 4 neue Multi-Face-Tests (benachbarte Faces/geteilte Edge ohne Wand, nicht-benachbarte Faces/volle Seitenwände, Cancel/Multi-Selection, Undo/Redo) — 12 Tests gesamt, alle grün
+
+**Bewusste Entscheidungen:**
+- Normale als gemittelte Region-Normale (normalisierte Summe der Newell-Normalen aller Faces) — erste Version, keine finale Antwort auf die Normal-/Richtungsfrage
+- Caps sind 1:1 auf neue Vertex-IDs gemappt, keine Verschmelzung zu größeren Polygonen
 
 **Nächster Schritt:** Artist-Verdict (decision.md für den topology-Slot).
 
