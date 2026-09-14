@@ -314,6 +314,8 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 - `playground/window.py` — **G** (halten): Edge-Modus + 1+ Edges selektiert → Loop Slide beginnt; Mausbewegung = live slide; G loslassen = Commit; ESC = Cancel
 - `playground/tests/test_topology_loop_slide.py` — 7 Headless-Tests (Positionen ändern sich, dx=0 → unverändert, 1 History-Eintrag, Undo/Redo, Cancel, ungültige Edge, Valenz-3-Vertex), alle grün
 
+**Bugfix (2026-09-14):** na/nb-Zuordnung war pro Vertex unabhängig über undefinierte `vertex_edges()`-Reihenfolge bestimmt — Vertices liefen in entgegengesetzte Richtungen. `_on_begin()` baut jetzt zuerst einen geordneten Zyklus-Walk, dann konsistente Seiten-Zuordnung via `face_vertices()`-Winding; Inkonsistenz → `LoopSlideError`. 8 Tests (+ Regressionstest für Richtungskonsistenz), alle grün.
+
 **Bewusst ausgeklammert:** Even-spacing, Clamp-Mode, Boundary-Loops, offene Loops (Valenz ≠ 4 an Endvertices).
 
 ---
