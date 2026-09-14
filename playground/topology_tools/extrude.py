@@ -8,6 +8,11 @@ Bei genau 1 selektierter Face ist jede ihrer Edges automatisch Boundary → das
 Single-Face-Verhalten ist identisch zum bisherigen Verhalten (echter Refaktor,
 keine Parallel-Implementierung).
 
+Normale: pro zusammenhängender Komponente (nicht global) — verhindert, dass
+entgegengesetzt orientierte Regionen eine Null-Summe erzeugen und in den
+Z-Fallback rutschen. Die Distanz-Referenzachse bleibt global (bekannte,
+akzeptierte Ungenauigkeit im entgegengesetzten Fall).
+
 Lifecycle:
     activate()
     begin(face_ids: set[FaceId], **_)   → Snapshot + Topologie aufgebaut,
@@ -52,6 +57,30 @@ def _compute_face_normal(
     return (nx / length, ny / length, nz / length)
 
 
+def _connected_components(
+    face_ids: frozenset[FaceId], mesh
+) -> list[frozenset[FaceId]]:
+    """BFS über Adjazenz-Edges: liefert zusammenhängende Gruppen aus face_ids."""
+    remaining = set(face_ids)
+    components: list[frozenset[FaceId]] = []
+    while remaining:
+        start = next(iter(remaining))
+        component: set[FaceId] = set()
+        queue = [start]
+        while queue:
+            fid = queue.pop()
+            if fid in component:
+                continue
+            component.add(fid)
+            remaining.discard(fid)
+            for eid in mesh.face_edges(fid):
+                for neighbor in mesh.edge_faces(eid):
+                    if neighbor in face_ids and neighbor not in component:
+                        queue.append(neighbor)
+        components.append(frozenset(component))
+    return components
+
+
 class ExtrudeTool(Tool):
     """Interaktives Multi-Face-Extrude-Tool für den Artist Playground.
 
@@ -66,7 +95,8 @@ class ExtrudeTool(Tool):
         self._scene = scene
         self._camera = camera
         self._face_ids: frozenset[FaceId] = frozenset()
-        self._normal: tuple[float, float, float] | None = None
+        self._normal: tuple[float, float, float] | None = None  # globale Referenz für Distanz-Skalar
+        self._vertex_normal: dict[VertexId, tuple[float, float, float]] = {}  # pro Vertex: Komponenten-Normale
         self._original_positions: dict[VertexId, tuple] = {}
         self._old_to_new: dict[VertexId, VertexId] = {}
         self._new_face_ids: frozenset[FaceId] = frozenset()
@@ -101,13 +131,34 @@ class ExtrudeTool(Tool):
 
         self._face_ids = face_ids_frozen
 
-        # Gemittelte Normale über alle selektierten Faces
+        # Globale Referenz-Normale (für Drag-Distanz-Projektion).
+        # Bei entgegengesetzt orientierten Regionen kann die Summe ≈ 0 werden
+        # → Fallback Z. Das ist bekannte, akzeptierte Ungenauigkeit: die Geometrie
+        # bewegt sich trotzdem korrekt (via _vertex_normal), nur der Distanz-
+        # Skalar ist im entgegengesetzten Fall unpräzise.
         nx, ny, nz = 0.0, 0.0, 0.0
         for fid in face_ids_frozen:
             fn = _compute_face_normal(mesh, mesh.face_vertices(fid))
             nx += fn[0]; ny += fn[1]; nz += fn[2]
         length = (nx * nx + ny * ny + nz * nz) ** 0.5
         self._normal = (nx / length, ny / length, nz / length) if length >= 1e-12 else (0.0, 0.0, 1.0)
+
+        # Komponenten-Normale pro zusammenhängender Gruppe.
+        # Jeder Vertex bekommt die Normale seiner Komponente. Corner-Case: ein
+        # Vertex gehört zu zwei Komponenten über eine gemeinsame Ecke (keine Edge)
+        # → letzter Schreibzugriff gewinnt (deterministisch, kommt am Würfel nicht vor).
+        components = _connected_components(face_ids_frozen, mesh)
+        self._vertex_normal = {}
+        for comp in components:
+            cnx, cny, cnz = 0.0, 0.0, 0.0
+            for fid in comp:
+                fn = _compute_face_normal(mesh, mesh.face_vertices(fid))
+                cnx += fn[0]; cny += fn[1]; cnz += fn[2]
+            clen = (cnx * cnx + cny * cny + cnz * cnz) ** 0.5
+            cn = (cnx / clen, cny / clen, cnz / clen) if clen >= 1e-12 else (0.0, 0.0, 1.0)
+            for fid in comp:
+                for vid in mesh.face_vertices(fid):
+                    self._vertex_normal[vid] = cn
 
         # Union aller Vertices aus allen selektierten Faces (keine Duplikate)
         all_vids: set[VertexId] = set()
@@ -166,15 +217,17 @@ class ExtrudeTool(Tool):
         world_delta = self._camera.screen_delta_to_world(
             anchor, dx, dy, width, height
         )
-        nx, ny, nz = self._normal
-        self._total_distance += world_delta[0] * nx + world_delta[1] * ny + world_delta[2] * nz
+        # Globale Referenz-Normale für den Distanz-Skalar (gemeinsam für alle Komponenten)
+        gx, gy, gz = self._normal
+        self._total_distance += world_delta[0] * gx + world_delta[1] * gy + world_delta[2] * gz
 
         for old_vid, new_vid in self._old_to_new.items():
             orig = self._original_positions[old_vid]
+            vn = self._vertex_normal[old_vid]  # Komponenten-Normale dieses Vertex
             mesh.set_vertex_position(new_vid, (
-                orig[0] + nx * self._total_distance,
-                orig[1] + ny * self._total_distance,
-                orig[2] + nz * self._total_distance,
+                orig[0] + vn[0] * self._total_distance,
+                orig[1] + vn[1] * self._total_distance,
+                orig[2] + vn[2] * self._total_distance,
             ))
 
     def _on_commit(self) -> frozenset[FaceId]:
@@ -212,6 +265,7 @@ class ExtrudeTool(Tool):
     def _on_deactivate(self) -> None:
         self._face_ids = frozenset()
         self._normal = None
+        self._vertex_normal = {}
         self._original_positions = {}
         self._old_to_new = {}
         self._new_face_ids = frozenset()

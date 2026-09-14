@@ -249,7 +249,8 @@ neue Vertices + Edges + Faces
   - Neue Vertices: Union aller Vertices aus allen selektierten Faces (keine Duplikate)
   - Seitenwände nur für Boundary-Edges (Edges mit genau 1 selektierter Nachbar-Face); interne Edges (2 selektierte Faces) bekommen keine Wand
   - Caps: je 1 neue Face pro Original-Face, 1:1 auf neue Vertex-IDs gemappt (keine Verschmelzung)
-  - Normale: gemittelte Region-Normale (normalisierte Summe der Newell-Normalen aller Faces) — bewusste erste Version, keine finale Entscheidung
+  - Normale: pro zusammenhängender Komponente (BFS über Adjazenz-Edges), nicht global — entgegengesetzt orientierte Regionen (z.B. linke+rechte Würfelseite) summierten sich sonst zu (0,0,0) und lösten den Z-Fallback aus; jede Komponente bewegt sich entlang ihrer eigenen gemittelten Newell-Normale
+  - Distanz-Referenzachse (Drag-Skalar) bleibt global: bei entgegengesetzten Regionen ungenau — bekannte, noch offene Feinheit
 - Bei genau 1 Face identisch zum bisherigen Single-Face-Verhalten (echter Refaktor, keine Parallel-Implementierung)
 - Hover-Fallback (leere Selection → Hit-Test) bleibt auf 1 Face begrenzt
 - LMB-Drag / Motion → Extrusions-Distanz live (entlang Region-Normale)

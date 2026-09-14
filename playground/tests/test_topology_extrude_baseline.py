@@ -17,6 +17,8 @@ Multi-Face-Extrude:
     10. 2 nicht-benachbarte Faces: jede bekommt vollständige Seitenwand-Kontur
     11. Cancel bei 2+ Faces stellt Mesh + Multi-Selection exakt wieder her
     12. Undo/Redo-Zyklus für Multi-Face-Extrude
+    13. Entgegengesetzt orientierte Faces bewegen sich entlang ihrer eigenen
+        Komponenten-Normale, nicht entlang Z (Regression: globale Null-Summe)
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ for _p in (str(_REPO_SRC), str(_REPO_ROOT), str(_RIGGING)):
 
 from core.selection import SelectionMode  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
-from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
+from playground.topology_tools.extrude import ExtrudeTool, _compute_face_normal  # noqa: E402
 from playground.vbo_builder import build_selection_data  # noqa: E402
 
 
@@ -83,6 +85,21 @@ def _make_non_adjacent_faces(app: PlaygroundApp) -> tuple:
             if not (edges1 & set(mesh.face_edges(f2))):
                 return f1, f2
     raise ValueError("Keine nicht-benachbarten Faces gefunden")
+
+
+def _find_opposing_faces(app: PlaygroundApp) -> tuple:
+    """Zwei Faces mit entgegengesetzten Normalen (dot ≈ -1), z.B. links+rechts am Würfel."""
+    mesh = app.scene.mesh
+    all_faces = list(mesh.all_face_ids())
+    face_normals = {fid: _compute_face_normal(mesh, mesh.face_vertices(fid)) for fid in all_faces}
+    for i, f1 in enumerate(all_faces):
+        n1 = face_normals[f1]
+        for f2 in all_faces[i + 1:]:
+            n2 = face_normals[f2]
+            dot = n1[0]*n2[0] + n1[1]*n2[1] + n1[2]*n2[2]
+            if dot < -0.99:
+                return f1, f2, n1, n2
+    raise ValueError("Keine entgegengesetzt orientierten Faces gefunden")
 
 
 def _count_boundary_edges(mesh, face_ids: set) -> int:
@@ -343,3 +360,45 @@ def test_multiface_undo_redo_cycle():
     app.redo()
     assert _counts(app) == after_counts
     assert all(app.scene.mesh.is_valid_face(fid) for fid in new_face_ids)
+
+
+def test_multiface_opposing_normals_each_moves_along_own_normal():
+    """Regression: entgegengesetzt orientierte Faces (z.B. linke+rechte Würfelseite)
+    dürfen sich nicht beide entlang Z bewegen. Jede Region muss sich entlang ihrer
+    eigenen Komponenten-Normale bewegen (globale Summe ≈ 0 → kein Z-Fallback)."""
+    app = PlaygroundApp()
+    app.load_cube()
+    mesh = app.scene.mesh
+    f1, f2, n1, n2 = _find_opposing_faces(app)
+
+    verts1 = list(mesh.face_vertices(f1))
+    verts2 = list(mesh.face_vertices(f2))
+    orig1 = {v: mesh.vertex_position(v) for v in verts1}
+    orig2 = {v: mesh.vertex_position(v) for v in verts2}
+
+    tool = ExtrudeTool(app.scene, _FakeCamera(0.5))
+    tool.activate()
+    tool.begin(face_ids={f1, f2})
+    tool.update(dx=1.0, dy=0.0, width=100, height=100)
+    new_face_ids = tool.commit()
+    tool.deactivate()
+
+    # Erwartete Cap-Positionen: orig + eigene_Normale * distance
+    def expected_set(orig_dict, normal, dist=0.5):
+        return {(round(p[0] + normal[0]*dist, 9),
+                 round(p[1] + normal[1]*dist, 9),
+                 round(p[2] + normal[2]*dist, 9))
+                for p in orig_dict.values()}
+
+    exp1 = expected_set(orig1, n1)
+    exp2 = expected_set(orig2, n2)
+    all_expected = exp1 | exp2
+
+    for new_fid in new_face_ids:
+        for v in mesh.face_vertices(new_fid):
+            pos = mesh.vertex_position(v)
+            rounded = (round(pos[0], 9), round(pos[1], 9), round(pos[2], 9))
+            assert rounded in all_expected, (
+                f"Cap-Vertex bei {pos} entspricht nicht der erwarteten "
+                f"Komponenten-Normale {n1} oder {n2}"
+            )
