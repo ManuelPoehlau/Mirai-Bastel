@@ -229,6 +229,10 @@ Für das Modeling-Experiment wird **Remove zunächst als Dissolve** verstanden, 
 
 ## Phase 5 — Extrude
 
+**Status: Baseline-Variante implementiert und headless-getestet (2026-09-14). Noch kein Artist-Verdict.**
+
+> **Reihenfolge-Hinweis:** Phase 5 (Extrude) wurde im Rahmen des AP-05-Auftakts **vor** Phase 3 (Connect Edges) und Phase 4 (Loop Insert) implementiert — nicht danach wie ursprünglich geplant. Die Phase-Nummerierung wird bewusst beibehalten (sie beschreibt die konzeptuelle Abhängigkeitsstruktur, nicht die Durchführungsreihenfolge). Extrude wurde vorgezogen, weil es ein eigenständig validierbarer Topologie-Fall ist und für den AP-05-Auftakt als erster Discovery-Schritt dient.
+
 Als nächster größerer Topologie-Fall soll **Extrude** untersucht werden.
 
 ```text
@@ -238,6 +242,14 @@ Face / Face Group
        ↓
 neue Vertices + Edges + Faces
 ```
+
+### Implementierter Stand (Baseline)
+
+- Einzelne Face auswählen (Face-Modus) → E-Taste → Topologie sofort aufgebaut (neue Vertices, Side-Faces, Result-Face, Original-Face entfernt)
+- LMB-Drag → Extrusions-Distanz live (Newell-Normale, Projektion auf Kamera-Bildebene)
+- LMB-Release → Commit (ein MeshStateCommand in der History)
+- ESC → Cancel (Mesh-Restore, kein History-Eintrag)
+- Undo/Redo funktioniert identisch zu Split Edge
 
 Zu untersuchen sind insbesondere:
 

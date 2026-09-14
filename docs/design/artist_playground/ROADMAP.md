@@ -252,7 +252,19 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 
 **Mode:** Playground-first → Candidate → Production.
 
-**Status:** Deferred until WP-AP-04 completes.
+**Status:** IN PROGRESS — AP-05-Auftakt abgeschlossen (2026-09-14)
+
+### AP-05-Auftakt — Baseline Extrude (Discovery, kein Production-Schritt)
+
+**Implementiert:**
+- `playground/topology_tools/extrude.py` — `ExtrudeTool` als `Tool`-Subklasse (Production-Core, nicht V1-Fork)
+- `playground/experiments/topology/variant_extrude_baseline.py` — Experiment-Wrapper für den topology-Slot
+- `playground/window.py` — topology-Slot registriert; E = activate/begin, LMB-Drag = update, LMB-Release = commit, ESC = cancel
+- `playground/tests/test_topology_extrude_baseline.py` — 5 Headless-Tests (commit/selection/undo/redo/cancel), alle grün
+
+**Reihenfolge-Hinweis:** Extrude wurde **vor** Phase 3 (Connect Edges) und Phase 4 (Loop Insert) implementiert, nicht danach wie ursprünglich in `TOPOLOGY_EXPERIMENT_PLAN.md` geplant. Grund: Der AP-05-Auftakt ist ein Discovery-Schritt der gezielt Extrude als erste größere Topologie-Interaktion aufgreift, bevor Connect- und Loop-Insert-Semantik final geklärt ist. Die Phase-Nummerierung im Plan bleibt erhalten — die Durchführungsreihenfolge weicht bewusst ab.
+
+**Nächster Schritt:** Artist-Verdict (decision.md für den topology-Slot).
 
 ---
 

@@ -72,6 +72,8 @@ from playground.experiments.tweak.variant_2_silo import TweakV2Silo  # noqa: E40
 from playground.experiments.tweak.variant_3_hold_click import TweakV3HoldClick  # noqa: E402
 from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # noqa: E402
 from playground.topology_ops import split_selected_edge  # noqa: E402
+from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
+from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
     add_temp_target,
     clear_temp_target,
@@ -199,10 +201,14 @@ class PlaygroundWindow(pyglet.window.Window):
             VariantEntry(TweakV3HoldClick(app)),
             VariantEntry(TweakV4HoldCtrl(app)),
         )
+        topo_slot = ExperimentSlot(
+            VariantEntry(ExtrudeBaselineVariant(app)),
+        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
         app.register_slot(tweak_slot, "tweak")
+        app.register_slot(topo_slot, "topology")
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -262,6 +268,9 @@ class PlaygroundWindow(pyglet.window.Window):
         self._tweak_v3_tool_type: str | None = None  # resolved at LMB press
         # V2: Ctrl was held when LMB was pressed
         self._tweak_v2_armed: bool = False
+
+        # Extrude-State (AP-05)
+        self._extrude_tool: ExtrudeTool | None = None
 
         # Box-Select-State (AP-03 Variante C)
         self._box_start: tuple[int, int] | None = None
@@ -579,6 +588,13 @@ class PlaygroundWindow(pyglet.window.Window):
     ) -> None:
         self._drag_moved += abs(dx) + abs(dy)
 
+        # Extrude: LMB-Drag während aktiver Geste (AP-05)
+        if self._extrude_tool is not None and buttons & _mouse.LEFT:
+            self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
+            return pyglet.event.EVENT_HANDLED
+
         # Tweak: running gesture update (V2 or V3 — LMB governs)
         if self._tweak_active and self._tweak_started and self._tweak_tool is not None:
             update_transform(self._tweak_tool, float(dx), float(dy), self.width, self.height)
@@ -684,6 +700,17 @@ class PlaygroundWindow(pyglet.window.Window):
                 else:
                     self._clear_tweak_gesture()
                 return pyglet.event.EVENT_HANDLED
+
+        # Extrude: LMB release = Commit (AP-05)
+        if button == _mouse.LEFT and self._extrude_tool is not None:
+            self._extrude_tool.commit()
+            self._extrude_tool.deactivate()
+            self._extrude_tool = None
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
+            self._hud.update_action("Extrude")
+            self._update_hud()
+            return pyglet.event.EVENT_HANDLED
 
         # Variant C (Press-Drag-Click): Maustaste loslassen = Commit
         if (
@@ -849,6 +876,26 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_vbo()
                 self._hud.update_action("Split Edge")
                 self._update_hud()
+        elif symbol == _key.E:
+            # E: Extrude Face (AP-05 Baseline). Scope: nur Face-Modus mit
+            # genau einer selektierten Face. Drag = Distanz, LMB = Commit,
+            # ESC = Cancel.
+            sel = self.app.scene.selection
+            if (
+                sel.mode is SelectionMode.FACE
+                and len(sel.faces) == 1
+                and self.app.viewport is not None
+                and self._extrude_tool is None
+            ):
+                (face_id,) = sel.faces
+                tool = ExtrudeTool(self.app.scene, self.app.camera)
+                tool.activate()
+                tool.begin(face_id=face_id)
+                self._extrude_tool = tool
+                self._rebuild_vbo()
+                self._rebuild_selection_vbo()
+                self._hud.update_action("Extrude — drag to set distance, LMB = commit, ESC = cancel")
+                self._update_hud()
         elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()
             self._update_hud()
@@ -940,7 +987,15 @@ class PlaygroundWindow(pyglet.window.Window):
                         self.app.active_tool = create_tool_for_type(_tool_type)
                 self._update_hud()
         elif symbol == _key.ESCAPE:
-            if self._tweak_active and self._tweak_tool is not None:
+            if self._extrude_tool is not None:
+                self._extrude_tool.cancel()
+                self._extrude_tool.deactivate()
+                self._extrude_tool = None
+                self._rebuild_vbo()
+                self._rebuild_selection_vbo()
+                self._hud.update_action("Extrude cancelled")
+                self._update_hud()
+            elif self._tweak_active and self._tweak_tool is not None:
                 self._tweak_cancel()
             elif self._tweak_v1_key is not None:
                 # V1: key held but no Tweak started — ESC cancels the armed state
