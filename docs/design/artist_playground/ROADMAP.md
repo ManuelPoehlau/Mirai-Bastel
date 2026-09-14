@@ -277,6 +277,15 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 
 **Nächster Schritt:** Artist-Verdict (decision.md für den topology-Slot).
 
+### AP-05 — Connect Edges (Enablement-Port, kein Production-Schritt)
+
+**Implementiert (2026-09-14):**
+- `playground/topology_tools/connect_edges.py` — 1:1-Logik-Port aus V1 gegen Production-`src/core`; 3-Phasen-Plan (Analyze → Plan/Dry-Run → Apply); 1 MeshStateCommand pro Operation
+- `playground/window.py` — Taste **J**: Edge-Modus + 2+ Edges selektiert → Connect; neue Verbindungskanten werden selektiert; TopologyToolError → HUD-Meldung statt Crash
+- `playground/tests/test_topology_connect_edges.py` — 7 Headless-Tests, alle grün
+
+**Bewusst ausgeklammert:** "kind v"-Fall (Kette über gemeinsamen regulären Innen-Vertex ohne gemeinsame Face) — erfordert `mesh.add_edge()` in `src/core`, das dort nicht existiert. `src/core` bleibt unangetastet. Fall wird mit klarem TopologyToolError abgelehnt. Auf einem Standard-Cube (Valenz 3 überall) kann dieser Fall ohnehin nicht auftreten.
+
 ---
 
 ## Invariants for All Phases

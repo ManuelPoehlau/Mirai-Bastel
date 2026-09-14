@@ -72,6 +72,10 @@ from playground.experiments.tweak.variant_2_silo import TweakV2Silo  # noqa: E40
 from playground.experiments.tweak.variant_3_hold_click import TweakV3HoldClick  # noqa: E402
 from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # noqa: E402
 from playground.topology_ops import split_selected_edge  # noqa: E402
+from playground.topology_tools.connect_edges import (  # noqa: E402
+    connect_selected_edges,
+    TopologyToolError as _ConnectEdgesError,
+)
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
@@ -902,6 +906,20 @@ class PlaygroundWindow(pyglet.window.Window):
                 sel.clear()
                 self._rebuild_vbo()
                 self._hud.update_action("Split Edge")
+                self._update_hud()
+        elif symbol == _key.J:
+            # J: Connect Edges (AP-05). Scope: Edge-Modus, 2+ Edges selektiert.
+            # Kein Hover-Fallback — Connect Edges verlangt echte Mehrfachauswahl.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 2:
+                try:
+                    new_edges = connect_selected_edges(self.app.scene, set(sel.edges))
+                    sel.clear()
+                    sel.add(set(new_edges))
+                    self._rebuild_vbo()
+                    self._hud.update_action("Connect Edges")
+                except _ConnectEdgesError as exc:
+                    self._hud.update_action(str(exc))
                 self._update_hud()
         elif symbol == _key.E:
             # E: Extrude Face (AP-05). Scope: Face-Modus.

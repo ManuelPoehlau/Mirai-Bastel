@@ -142,11 +142,25 @@ Die Detection bleibt damit bewusst ein konservatives Experiment und kein endgül
 
 ## Phase 3 — Connect Edges: Semantik und robuste Multi-Selection
 
-**Status: als nächster Forschungsblock priorisiert; noch nicht implementiert.**
+**Status: als Enablement-Port implementiert und headless-getestet (2026-09-14). "kind v" / FreeConnect bewusst ausgeklammert.**
 
-Connect Edges wird bewusst **vor Loop Insert / Loop Remove** untersucht. Es handelt sich um eine grundlegende Modeling-Primitive, und die aktuelle experimentelle Multi-Selection zeigt bereits, dass die Semantik noch geklärt werden muss.
+Connect Edges wurde als 1:1-Logik-Port aus dem V1-Experiment (`experiments/mirai_bastel_viewport_V1/viewport/topology_tools.py`) gegen Production-`src/core` implementiert, analog zu Split Edge (Enablement-01).
 
-### Forschungsziel
+### Implementierter Stand (2026-09-14)
+
+- `playground/topology_tools/connect_edges.py` — `connect_selected_edges(scene, edge_ids)`, 3-Phasen-Plan (Analyze/Validate → Plan/Dry-Run → Apply/Commit), 1 MeshStateCommand
+- `playground/window.py` — Taste **J** (Edge-Modus, 2+ Edges selektiert); Selection danach auf neue Verbindungskanten; TopologyToolError → HUD-Anzeige statt Crash
+- `playground/tests/test_topology_connect_edges.py` — 7 Headless-Tests: 1 History-Eintrag, neue Vertices/Kante, TopologyToolError bei Einzelauswahl, Undo/Redo, Determinismus (Set-Reihenfolge), "kind v"-Fall → expliziter Error; alle grün
+
+### Bewusst ausgeklammerter Fall: "kind v" / FreeConnect
+
+V1 nutzt `mesh.add_edge()` für Ketten-Verbindungen über einen gemeinsamen regulären Innen-Vertex ohne gemeinsame Face. Diese Methode existiert **nicht** in `src/core` (nur privates `_get_or_create_edge()`, intern von `add_face()` genutzt, keine öffentliche API für freistehende Edges ohne Face).
+
+`src/core` bleibt unangetastet (Grundregel seit Enablement-01). Praktische Konsequenz: Auf einem Standard-Cube hat jeder Vertex Valenz 3 — `_is_regular_interior_vertex()` verlangt Valenz ≥ 4, also kann der "kind v"-Fall dort ohnehin nie auftreten. Der Fall wird deshalb **explizit abgelehnt** (TopologyToolError mit klarer Meldung), nicht still übergangen oder gecrashed.
+
+Falls `mesh.add_edge()` in `src/core` je hinzugefügt wird (nach einer expliziten Architecture Decision), kann der "v"-Zweig in `_build_adjacency()` und `_execute_plan()` ohne Logik-Änderung nachgerüstet werden.
+
+### Forschungsziel (ursprünglich)
 
 Eine ausgewählte Menge von Edges soll nicht nur technisch mutiert werden, sondern eine klar definierte und reproduzierbare Connect-Operation darstellen.
 
@@ -162,18 +176,17 @@ Topologie + Selection
 
 ### Untersuchungsmatrix
 
-| Fall | Frage |
+| Fall | Status |
 |---|---|
-| 2 Edges | Was ist die definierte Verbindung? |
-| 3+ zusammenhängende Edges | Welche Verbindungen entstehen? |
-| kompletter Edge Loop | Ist Loop-Connect sinnvoll bzw. identisch mit einer anderen Operation? |
-| kompletter Edge Ring | Welche Verbindungen entstehen über die betroffenen Faces? |
-| disjunkte Edges | Ablehnen, getrennt verbinden oder andere Semantik? |
-| Boundary Edges | Welche Fälle sind zulässig? |
-| gemischte Face-Typen | Wann wird abgebrochen? |
-| ungültige Auswahl | Keine Teilmutation; verständlicher Fehler? |
-
-Zusätzlich werden Topologie, neue IDs, Selection/Mode und die Folgen für spätere History untersucht.
+| 2 Edges gegenüberliegend in Quad-Face | ✓ implementiert |
+| 3+ zusammenhängende Edges (Kette/Ring) | ✓ implementiert (deterministisch geordnet) |
+| kompletter Edge Loop | ✓ funktioniert (Kette oder Ring via Adjacency-Graph) |
+| disjunkte Edges ohne gemeinsame Topologie | TopologyToolError (keine Partner-Edge) |
+| Boundary Edges (0 Faces) | TopologyToolError (außerhalb Scope) |
+| Non-Manifold Edges (>2 Faces) | TopologyToolError (außerhalb Scope) |
+| Non-Quad-Faces | TopologyToolError (außerhalb Scope) |
+| Kette über gemeinsamen Vertex ohne Face ("kind v") | TopologyToolError (bewusst ausgeklammert — mesh.add_edge() fehlt in src/core) |
+| ungültige Auswahl (< 2 Edges) | TopologyToolError |
 
 ### Wichtige Abgrenzung
 
