@@ -10,7 +10,7 @@ from playground.experiment import Experiment
 class ExtrudeBaselineVariant(Experiment):
     id = "topology"
     name = "Extrude"
-    variant = "Baseline (E + drag + LMB)"
+    variant = "Hold (E + motion + release)"
 
     def __init__(self, app) -> None:
         self._app = app

@@ -590,8 +590,8 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
 
-        # Extrude: LMB-Drag während aktiver Geste (AP-05)
-        if self._extrude_tool is not None and buttons & _mouse.LEFT:
+        # Extrude: Drag-Update bei gehaltener E-Taste (AP-05 Hold-Modell)
+        if self._extrude_tool is not None:
             self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
             self._rebuild_vbo()
             self._rebuild_selection_vbo()
@@ -703,17 +703,6 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._clear_tweak_gesture()
                 return pyglet.event.EVENT_HANDLED
 
-        # Extrude: LMB release = Commit (AP-05)
-        if button == _mouse.LEFT and self._extrude_tool is not None:
-            self._extrude_tool.commit()
-            self._extrude_tool.deactivate()
-            self._extrude_tool = None
-            self._rebuild_vbo()
-            self._rebuild_selection_vbo()
-            self._hud.update_action("Extrude")
-            self._update_hud()
-            return pyglet.event.EVENT_HANDLED
-
         # Variant C (Press-Drag-Click): Maustaste loslassen = Commit
         if (
             self._active_transform_model() == "press_drag_click"
@@ -773,6 +762,14 @@ class PlaygroundWindow(pyglet.window.Window):
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
         self._last_mouse_x = x
         self._last_mouse_y = y
+
+        # Extrude: Motion-Update bei gehaltener E-Taste (AP-05 Hold-Modell)
+        if self._extrude_tool is not None:
+            self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
+            return pyglet.event.EVENT_HANDLED
+
         tv = self._active_tweak_variant()
 
         # V1: key held + motion → accumulate, start Tweak once past CLICK_THRESHOLD
@@ -911,7 +908,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._extrude_tool = tool
                 self._rebuild_vbo()
                 self._rebuild_selection_vbo()
-                self._hud.update_action("Extrude — drag to set distance, LMB = commit, ESC = cancel")
+                self._hud.update_action("Extrude — move mouse to set distance, release E = commit, ESC = cancel")
                 self._update_hud()
         elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()
@@ -1034,7 +1031,17 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:
         """Handle key release — Commit-Verhalten abhängig vom Aktivierungsmodell."""
-        if symbol in (_key.LCTRL, _key.RCTRL):
+        if symbol == _key.E and self._extrude_tool is not None:
+            # E loslassen = Commit (AP-05 Hold-Modell)
+            self._extrude_tool.commit()
+            self._extrude_tool.deactivate()
+            self._extrude_tool = None
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
+            self._hud.update_action("Extrude")
+            self._update_hud()
+            return pyglet.event.EVENT_HANDLED
+        elif symbol in (_key.LCTRL, _key.RCTRL):
             self._tweak_ctrl_held = False
             tv = self._active_tweak_variant()
             if tv == "v4" and self._tweak_active:
