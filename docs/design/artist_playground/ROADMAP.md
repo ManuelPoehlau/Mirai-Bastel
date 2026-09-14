@@ -298,6 +298,15 @@ WP-AP-04 will be scoped based on what WP-AP-03 reveals.
 
 **Bewusst ausgeklammert:** Boundary-Loop-Fortsetzung (offener Rand), Loop Insert als Folgeop.
 
+### AP-05 — Loop Insert (Enablement-Port, kein Production-Schritt)
+
+**Implementiert (2026-09-14):**
+- `playground/topology_tools/loop_insert.py` — `loop_insert(scene, start_edge)`: erkennt Ring via `edge_ring()`, delegiert an `connect_selected_edges()`; 1 MeshStateCommand (via Connect Edges), `LoopInsertError` für alle Fehlerfälle
+- `playground/window.py` — Taste **I**: Edge-Modus + 1+ Edges selektiert → Loop Insert; neue Kanten werden selektiert; Fehler → HUD-Meldung
+- `playground/tests/test_topology_loop_insert.py` — 6 Headless-Tests (Topologie wächst, 1 History-Eintrag, Undo/Redo, ungültige Edge, freie Edge, Determinismus), alle grün
+
+**Bewusst ausgeklammert:** Interaktive Positionierung (Loop Slide), mehrfache gleichzeitige Inserts.
+
 ---
 
 ## Invariants for All Phases

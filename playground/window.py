@@ -20,6 +20,7 @@ Steuerung:
     1 / 2 / 3       Component-Modus (Vertex / Edge / Face)
     Shift+L         Loop Select (Edge-Modus, 1+ Edges selektiert)
     Shift+R         Ring Select (Edge-Modus, 1+ Edges selektiert)
+    I               Loop Insert (Edge-Modus, 1 Edge selektiert)
     ESC             Fenster schließen (oder Transform canceln)
 
 Shader:
@@ -82,6 +83,10 @@ from playground.topology_tools.loop_ring import (  # noqa: E402
     edge_loop,
     edge_ring,
     LoopRingError as _LoopRingError,
+)
+from playground.topology_tools.loop_insert import (  # noqa: E402
+    loop_insert,
+    LoopInsertError as _LoopInsertError,
 )
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
@@ -913,6 +918,20 @@ class PlaygroundWindow(pyglet.window.Window):
                 sel.clear()
                 self._rebuild_vbo()
                 self._hud.update_action("Split Edge")
+                self._update_hud()
+        elif symbol == _key.I:
+            # I: Loop Insert (AP-05). Scope: Edge-Modus, genau 1 Edge selektiert.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
+                start = next(iter(sel.edges))
+                try:
+                    new_edges = loop_insert(self.app.scene, start)
+                    sel.clear()
+                    sel.add(set(new_edges))
+                    self._rebuild_vbo()
+                    self._hud.update_action(f"Loop Insert — {len(new_edges)} Edges")
+                except _LoopInsertError as exc:
+                    self._hud.update_action(str(exc))
                 self._update_hud()
         elif symbol == _key.J:
             # J: Connect Edges (AP-05). Scope: Edge-Modus, 2+ Edges selektiert.
