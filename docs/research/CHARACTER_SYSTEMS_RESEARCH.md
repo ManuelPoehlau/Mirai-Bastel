@@ -1,342 +1,342 @@
 # Character Systems Research
 
-**Status:** Discovery — externe Research, keine Entscheidungen
-**Datum:** 2026-09-15
-**Version:** V1 (erste Fassung)
+**Status:** Discovery — external research, no decisions
+**Date:** 2026-09-15
+**Version:** V1 (initial draft)
 
 ---
 
 ## Scope
 
-Dieses Dokument ist das autoritative Zuhause für die **artist-seitige Research zu Character Systems**: Rigging, Controls/Handles, Skinning, Weighting, Deformation, Posing, Morphing/Blendshapes, Correctives, Facial Deformation, prozedurales/automatisches Rigging.
+This document is the authoritative home for **artist-side research on Character Systems**: rigging, controls/handles, skinning, weighting, deformation, posing, morphing/blendshapes, correctives, facial deformation, procedural/automatic rigging.
 
-Es sammelt, **was andere Menschen ausprobiert haben**, und wie sie dabei gedacht haben.
+It collects **what other people have tried**, and how they thought about it.
 
-### Was dieses Dokument nicht ist
+### What this document is not
 
-- keine Rigging-Architektur
-- keine technische Spezifikation
-- keine Entscheidungsliste
-- keine Best-Practice-Sammlung
-- keine Implementierungsplanung
-- keine Empfehlung für Mirai-Bastel
+* not a rigging architecture
+* not a technical specification
+* not a decision list
+* not a best-practice collection
+* not an implementation plan
+* not a recommendation for Mirai-Bastel
 
-### Abgrenzung zu bestehenden Dokumenten
+### Boundary to existing documents
 
-| Dokument | Verantwortung |
-|---|---|
-| `docs/design/artist_playground/UX_RESEARCH.md` + Three-Role UX System | Interaction Grammar und Research-Methode |
-| `experiments/rigging-skinning-morphing/` (RESEARCH, DESIGN, AD-005, FINDINGS) | technische Experimente, Core-Verhalten, Architekturwissen |
-| **dieses Dokument** | externe Research, Konzepte, Observations, mögliche Experimentideen |
+| Document                                                                      | Responsibility                                                        |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `docs/design/artist_playground/UX_RESEARCH.md` + Three-Role UX System         | Interaction Grammar and research methodology                          |
+| `experiments/rigging-skinning-morphing/` (RESEARCH, DESIGN, AD-005, FINDINGS) | technical experiments, core behavior, architectural knowledge         |
+| **this document**                                                             | external research, concepts, observations, potential experiment ideas |
 
-Querverweise sind erwünscht. Verantwortungen werden nicht vermischt. Insbesondere: Eine Observation hier ist **nie** eine Antwort auf eine offene Architekturfrage aus AD-005. Sie kann eine Frage *beleuchten*, aber nicht entscheiden.
+Cross-references are encouraged. Responsibilities must not be mixed. In particular: an observation here is **never** an answer to an open architectural question from AD-005. It may *inform* a question, but it cannot decide it.
 
-### Sprache
+### Language
 
-Dieses Dokument ist auf Deutsch geschrieben, weil es ein Denk- und Diskussionsdokument ist (wie `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md`). Die englischsprachigen Design-/Agent-Dokumente bleiben unberührt. Falls die Repo-Konvention Englisch verlangt, ist das eine Umstellung, keine Umschreibung des Inhalts.
+This document is written in English because it is intended as an agent-/research-facing document. The English-language design/agent documents remain unchanged in their responsibility and structure.
 
 ---
 
 ## Research Principles
 
-**1. Observation statt Empfehlung.**
-Nicht: „X ist besser als Weight Painting."
-Sondern: „X verschiebt die Aufgabe von expliziter Weight-Bearbeitung nach …"
+**1. Observation instead of recommendation.**
+Not: “X is better than Weight Painting.”
+Instead: “X shifts the task from explicit weight editing to …”
 
-**2. Existenz ist keine Validierung.**
-Dass Maya, Blender, ein Plugin oder ein SIGGRAPH-Paper etwas so macht, sagt nichts darüber, ob es für Mirai richtig ist. Marktanteil ist kein Argument. Alter ist kein Argument.
+**2. Existence is not validation.**
+The fact that Maya, Blender, a plugin, or a SIGGRAPH paper does something in a particular way says nothing about whether it is right for Mirai-Bastel. Market share is not an argument. Age is not an argument.
 
-**3. Belegt vs. angenommen wird gekennzeichnet.**
-Jede Observation trägt ein Evidenzniveau:
+**3. Evidence vs. assumption is explicitly marked.**
+Every observation carries an evidence level:
 
-- `[Quelle]` — mit Referenz unten belegt
-- `[Erfahrungswissen]` — aus allgemeiner Kenntnis formuliert, noch nicht gegenbelegt; vor Weiterverwendung prüfen
+* `[Source]` — supported by a reference below
+* `[Experience Knowledge]` — formulated from general knowledge, not yet cross-checked; verify before further use
 
-**4. Die interessante Frage ist die Unzufriedenheit.**
-Wir suchen nicht „die besten Rigging-Tools", sondern Leute, die mit einem etablierten Workflow nicht zurechtkamen und deshalb etwas anderes gebaut haben. Das gelöste Problem ist wertvoller als die Lösung.
+**4. The interesting question is dissatisfaction.**
+We are not looking for “the best rigging tools,” but for people who could not work effectively with an established workflow and therefore built something different. The problem being solved is more valuable than the solution.
 
-**5. Implementierungsentscheidung ≠ UX-Idee.**
-Vieles, was nach einem Konzept aussieht, ist nur eine technische Notwendigkeit von damals. Jede Observation fragt deshalb: Was davon ist Technik, was davon ist eine andere Denkweise?
+**5. Implementation decision ≠ UX idea.**
+Many things that look like concepts are merely technical necessities from their time. Each observation therefore asks: Which part is technology, and which part is a different way of thinking?
 
-### Observation-Format
+### Observation Format
 
-```
+```text
 O-xx — Name
-Problem                — was den Autor gestört hat
-Konventioneller Weg    — was man vorher tat
-Veränderte Annahme     — welche DCC-Selbstverständlichkeit fällt weg
-Interaktion            — was der Artist konkret tut
-Mentales Modell        — womit der Artist jetzt denkt
-Verschobene Verantwortung — was der Artist nicht mehr tut, wer es stattdessen tut
-Beobachtbarer Vorteil
-Neue Probleme / offene Fragen
-Technik oder UX-Idee?
+Problem                   — what bothered the author
+Conventional Approach     — what was done before
+Changed Assumption        — which DCC convention is removed
+Interaction               — what the Artist actually does
+Mental Model              — what the Artist thinks in terms of now
+Shifted Responsibility    — what the Artist no longer does, who does it instead
+Observable Benefit
+New Problems / Open Questions
+Technology or UX Idea?
 ```
 
 ---
 
 ## Research Map
 
-Bewusst eine Ablage, kein Raster zum Ausfüllen. Leere Bereiche sind normal und bleiben normal.
+Intentionally a filing structure, not a grid to fill out. Empty areas are normal and should remain normal.
 
-| Bereich | bisher gesammelt |
-|---|---|
+| Area                     | collected so far       |
+| ------------------------ | ---------------------- |
 | Rig / Controls / Handles | O-04, O-05, O-07, O-08 |
-| Skinning / Weights | O-01, O-06, O-09 |
-| Deformation | O-02, O-04 |
-| Posing | O-03, O-07 |
-| Morphs / Shapes | — |
-| Correctives | O-05 |
-| Facial Systems | — |
-| Automatic / Procedural | O-08 |
-| Alternative Paradigmen | O-03, O-04 |
+| Skinning / Weights       | O-01, O-06, O-09       |
+| Deformation              | O-02, O-04             |
+| Posing                   | O-03, O-07             |
+| Morphs / Shapes          | —                      |
+| Correctives              | O-05                   |
+| Facial Systems           | —                      |
+| Automatic / Procedural   | O-08                   |
+| Alternative Paradigms    | O-03, O-04             |
 
-Ein System kann in mehreren Bereichen stehen. Das ist kein Fehler, sondern oft der interessante Teil.
+A system can appear in multiple areas. This is not an error; it is often the interesting part.
 
 ---
 
 ## Observations
 
-### O-01 — Weight Transfer über Topologiegrenzen (GATOR, copySkinWeights, Data Transfer)
+### O-01 — Weight Transfer Across Topology Boundaries (GATOR, copySkinWeights, Data Transfer)
 
-`[Erfahrungswissen]`
+`[Experience Knowledge]`
 
-**Problem:** Retopo oder Meshänderung nach dem Skinning macht die Gewichtung wertlos.
-**Konventioneller Weg:** Gewichte neu malen.
-**Veränderte Annahme:** Gewichte gehören nicht diesem konkreten Mesh mit diesen konkreten IDs. Sie sind räumlich definierte Information, die von einem Mesh auf ein anderes übertragen werden kann.
-**Interaktion:** Altes und neues Mesh selektieren, Transfer auslösen.
-**Mentales Modell:** „Die Gewichtung liegt im Raum, nicht in der Vertexliste."
-**Verschobene Verantwortung:** Der Artist wählt die Zuordnungsmethode; die räumliche Suche übernimmt das System.
-**Beobachtbarer Vorteil:** Topologiefreiheit nach dem Rigging; Umbauten ohne ID-Verwandtschaft überleben.
-**Neue Probleme:** Proximity irrt systematisch an Spalten (Lippen, Achsel, Finger). Das alte Mesh muss aufbewahrt werden. Es ist ein Batch-Vorgang mit einem Vorher und Nachher — kein lebendiger Zustand.
-**Technik oder UX-Idee?** Beides. Die Implementierung ist Geometrie-Suche. Die Idee „Rig-Daten sind nicht an Mesh-Identität gebunden" ist ein anderes mentales Modell.
+**Problem:** Retopology or mesh changes after skinning make the weighting useless.
+**Conventional Approach:** Paint the weights again.
+**Changed Assumption:** Weights do not belong to this specific mesh with these specific IDs. They are spatially defined information that can be transferred from one mesh to another.
+**Interaction:** Select old and new mesh, trigger transfer.
+**Mental Model:** “The weighting exists in space, not in the vertex list.”
+**Shifted Responsibility:** The Artist chooses the mapping method; the system performs the spatial search.
+**Observable Benefit:** Topology freedom after rigging; structural changes can survive without ID correspondence.
+**New Problems:** Proximity systematically gets things wrong around narrow regions (lips, armpits, fingers). The old mesh must be preserved. It is a batch operation with a before and after — not a living state.
+**Technology or UX Idea?** Both. The implementation is geometry search. The idea that “rig data is not bound to mesh identity” is a different mental model.
 
 ---
 
 ### O-02 — Delta Mush / Corrective Smooth
 
-`[Erfahrungswissen]` — Rhythm & Hues, SIGGRAPH 2014 Talk; in Blender als Modifier „Corrective Smooth"
+`[Experience Knowledge]` — Rhythm & Hues, SIGGRAPH 2014 talk; available in Blender as the “Corrective Smooth” modifier
 
-**Problem:** Die letzten 20 % Gewichtungsqualität kosten 80 % der Zeit.
-**Konventioneller Weg:** Einzelvertices polieren, bis Kollaps und Zacken verschwinden.
-**Veränderte Annahme:** Deformationsqualität muss nicht aus der Gewichtung selbst kommen.
-**Interaktion:** Grob zuweisen, Deformer hinzufügen, weiterarbeiten.
-**Mentales Modell:** Das deformierte Ergebnis wird geglättet; das im Rest-Zustand gemessene lokale Detail wird wieder aufgesetzt. Der Artist denkt in „Silhouette grob richtig, Detail kommt zurück".
-**Verschobene Verantwortung:** Von manueller Weight-Bearbeitung zu einem nachgelagerten Deformationsprozess.
-**Beobachtbarer Vorteil:** Grobe Gewichte liefern brauchbare Ergebnisse; die Fehlertoleranz der Gewichtung steigt deutlich.
-**Neue Probleme:** Der Artist sieht nicht mehr, *warum* etwas gut aussieht. Kosten pro Frame. Absichtlich scharfe Kanten werden mitgeglättet. Die Vorberechnung hängt an der Rest-Topologie — bei Loop-Insert entsteht dasselbe Problem eine Schicht höher.
-**Technik oder UX-Idee?** Die Glättung ist Technik. Die Idee „Qualität nachgelagert erzeugen statt vorne präzise arbeiten" ist eine Haltung, die auch anderswo auftauchen könnte.
-
----
-
-### O-03 — Posen ohne Rig: Blender Pose Brush
-
-`[Quelle]` — Dobarro, Blender 2.81/2.82
-
-**Problem:** Um Deformation zu *beurteilen*, braucht man normalerweise erst ein fertiges Rig. Bones bauen, binden, gewichten — und erst dann sieht man, ob die Absicht funktioniert.
-**Konventioneller Weg:** Rig zuerst, Pose danach.
-**Veränderte Annahme:** Die Deformationsstruktur muss nicht vor der Geste existieren und nicht nach ihr weiterleben.
-**Interaktion:** Cursor auf den Unterarm, ziehen — der Arm knickt. Der Brush bestimmt den Ursprungspunkt selbst und zeigt ihn als weiße Linie im Cursor an. IK-Segmente entstehen automatisch, Brush-Falloff bestimmt, wie weit die Rotation durch die Kette läuft.
-**Mentales Modell:** „Ich fasse die Figur an", nicht „ich bediene einen Controller".
-**Verschobene Verantwortung:** Segmentierung und Pivotbestimmung wandern komplett zum System; der Artist liefert nur Ort und Richtung.
-**Beobachtbarer Vorteil:** Deformationsabsicht wird testbar, bevor Rig-Daten existieren. Das Ergebnis ist reine Geometrie — topologisch weiter frei bearbeitbar.
-**Neue Probleme:** Nicht wiederholbar, nicht animierbar, keine Zeitkonsistenz. Der Ursprungspunkt ist eine Systemschätzung; wenn sie danebenliegt, hat der Artist kein direktes Korrekturmittel außer der Geste selbst.
-**Technik oder UX-Idee?** Deutlich UX-Idee. Interessant ist nicht der IK-Solver (klein und bekannt), sondern die Entscheidung, die Struktur **pro Geste** entstehen und wieder verschwinden zu lassen.
+**Problem:** The last 20% of weighting quality costs 80% of the time.
+**Conventional Approach:** Polish individual vertices until collapses and spikes disappear.
+**Changed Assumption:** Deformation quality does not have to come from the weights themselves.
+**Interaction:** Assign rough weights, add a deformer, continue working.
+**Mental Model:** The deformed result is smoothed; local detail measured in the rest state is reapplied. The Artist thinks in terms of “silhouette roughly right, detail comes back.”
+**Shifted Responsibility:** From manual weight editing to a downstream deformation process.
+**Observable Benefit:** Rough weights produce usable results; weighting becomes significantly more tolerant of errors.
+**New Problems:** The Artist can no longer see *why* something looks good. Per-frame cost. Intentionally sharp features are also smoothed. The precomputation depends on the rest topology — loop insertion creates the same problem one layer higher.
+**Technology or UX Idea?** The smoothing itself is technology. The idea of “generating quality downstream instead of working precisely upfront” is a mindset that could appear elsewhere as well.
 
 ---
 
-### O-04 — Ein Weight-System für Punkte, Bones und Cages (Bounded Biharmonic Weights)
+### O-03 — Posing Without a Rig: Blender Pose Brush
 
-`[Quelle]` — Jacobson, Baran, Popović, Sorkine-Hornung, SIGGRAPH 2011
+`[Source]` — Dobarro, Blender 2.81/2.82
 
-**Problem:** Die Autoren benennen zwei Zumutungen des linearen Blendings ausdrücklich: Man muss entweder Gewichte von Hand malen oder geschlossene Käfige um das Objekt modellieren.
-**Konventioneller Weg:** Pro Deformerart ein eigenes System — Joints mit Weight Painting, Cluster mit Falloff, Lattice mit Käfig.
-**Veränderte Annahme:** Der Handle-Typ muss nicht bestimmen, welches Deformationssystem läuft. Punkte, Bones und Cages beliebiger Topologie können **gleichzeitig** und **gemischt** dasselbe Objekt steuern.
-**Interaktion:** Der Artist setzt den Handle-Typ, der für die jeweilige Teilaufgabe am bequemsten ist — Bones für starre Teile, Cages für großflächige präzise Kontrolle, Punkte für weiche Bereiche.
-**Mentales Modell:** „Ich setze Einflusspunkte" statt „ich baue ein Skelett und dazu noch einen Lattice".
-**Verschobene Verantwortung:** Die Gewichtsberechnung wandert in eine Optimierung zur Bind-Zeit; der Artist entscheidet nur noch *wo* Einfluss sitzt, nicht *wie stark wo*.
-**Beobachtbarer Vorteil:** Die Wahl des Werkzeugs richtet sich nach der Aufgabe, nicht nach der Systemarchitektur. Weight Painting entfällt als Pflichtschritt.
-**Neue Probleme:** Die Autoren nennen selbst Raumdiskretisierung und Optimierung als Nachteil. Gewichte entstehen zur Bind-Zeit — was bei Topologieänderung passiert, ist damit noch nicht beantwortet. Und: Wenn der Artist die Gewichte nicht mehr malt, wie korrigiert er eine Stelle, an der die Automatik falsch liegt?
-**Technik oder UX-Idee?** Die Gewichtsformel ist Technik. Die Aussage „der Artist soll frei mit der bequemsten Kombination von Handle-Typen arbeiten" ist explizit als UX-Ziel formuliert und ist der interessante Teil.
-
----
-
-### O-05 — Smart Bones und Smart Bone Dials (Moho / früher Anime Studio)
-
-`[Quelle]`
-
-**Problem:** Ein gebeugter Ellbogen kollabiert. In einem 3D-DCC hieße die Lösung Pose Space Deformation oder Corrective Shape — beides Begriffe, die ein 2D-Animator nicht lernen will.
-**Konventioneller Weg:** Driven Keys, PSD-Setups, Corrective-Blendshape-Pipelines mit eigener Terminologie.
-**Veränderte Annahme:** Eine Korrektur muss kein eigenes Systemkonzept sein. Sie kann eine aufgezeichnete Aktion sein, die an einem Knochenwinkel hängt.
-**Interaktion:** Knochen zum Smart Bone erklären, Aktion anlegen, den Knochen in die problematische Stellung drehen, die Form dort von Hand zurechtziehen. Moho interpoliert zwischen gestrecktem und korrigiertem Zustand.
-**Mentales Modell:** „Wenn dieser Knochen so steht, soll es so aussehen." Kein Solver-Begriff, kein Shape-Editor, kein Zwischenobjekt.
-**Verschobene Verantwortung:** Die gesamte PSD-Maschinerie verschwindet hinter einer Aufnahmegeste.
-**Zweite, separate Beobachtung:** Der **Smart Bone Dial** ist ein Knochen, der an gar nichts gebunden ist und außerhalb der Figur liegt. Er wird nur als Regler benutzt — für Kopfdrehungen, Blinzeln, Gesichtsausdrücke. Technisch ein Bone, funktional ein Slider. Der Systemtyp sagt nichts über die Rolle im Rig.
-**Beobachtbarer Vorteil:** Correctives werden für Leute zugänglich, die nie ein PSD-Setup gebaut hätten. Ein einziges Primitiv (Knochen) deckt Deformation *und* Steuerung ab.
-**Neue Probleme:** Aus den Anwenderforen: Namenskonventionen sind kritisch (Aktionsname muss exakt zum Knochennamen passen), Winkelbereiche und Richtungen sind fehleranfällig, Verschachtelung wird schnell undurchsichtig. Die Einfachheit der Geste kauft man mit einer unsichtbaren Regel-Ebene.
-**Technik oder UX-Idee?** Beides, und beide getrennt interessant: die Korrektur-als-Aufnahme, und der zweckentfremdete Knochen als Regler.
+**Problem:** To *evaluate* deformation, you normally need a finished rig first. Build bones, bind, weight — and only then do you see whether the intended result works.
+**Conventional Approach:** Rig first, pose afterward.
+**Changed Assumption:** The deformation structure does not have to exist before the gesture and does not have to survive afterward.
+**Interaction:** Place the cursor on the forearm and drag — the arm bends. The Brush determines the origin point automatically and displays it as a white line in the cursor. IK segments are generated automatically; brush falloff determines how far the rotation propagates through the chain.
+**Mental Model:** “I grab the character,” not “I operate a controller.”
+**Shifted Responsibility:** Segmentation and pivot determination move entirely to the system; the Artist provides only location and direction.
+**Observable Benefit:** Deformation intent can be tested before rig data exists. The result is pure geometry and remains topologically editable.
+**New Problems:** Not repeatable, not animatable, no temporal consistency. The origin point is a system estimate; when it is wrong, the Artist has no direct correction mechanism other than the gesture itself.
+**Technology or UX Idea?** Clearly a UX idea. The interesting part is not the IK solver (small and well-known), but the decision to create and discard the structure **per gesture**.
 
 ---
 
-### O-06 — Gewichte als Ebenen statt als Zahlenfeld (ngSkinTools)
+### O-04 — One Weight System for Points, Bones, and Cages (Bounded Biharmonic Weights)
 
-`[Quelle]` — Maya-Plugin, Viktoras Makauskas
+`[Source]` — Jacobson, Baran, Popović, Sorkine-Hornung, SIGGRAPH 2011
 
-**Problem:** Weight Painting ist destruktiv. Jeder Strich überschreibt den vorherigen Zustand; die *Absicht* hinter einer Gewichtung ist nachträglich nicht mehr auffindbar. Die klassische Gegenmaßnahme ist Influence Locking und Mikromanagement einzelner Werte.
-**Konventioneller Weg:** Ein flaches Gewichtsfeld pro Vertex, mühsam gegen Überschreiben gesichert.
-**Veränderte Annahme:** Gewichte müssen kein flacher Endzustand sein. Sie können wie in einem Bildbearbeitungsprogramm aus Ebenen mit Masken zusammengesetzt werden, die erst zur Laufzeit kombiniert werden.
-**Interaktion:** Wirbelsäule in einer Ebene malen, Arme in einer anderen; das System kombiniert in Echtzeit zum Endgewicht für den Skin Cluster. Eine untere „Sicherheitsebene" mit 100 % garantiert die Normalisierung.
-**Mentales Modell:** Photoshop. Ausdrücklich so beworben: schmutzig anfangen, experimentieren, später verfeinern.
-**Verschobene Verantwortung:** Das Zusammenrechnen; der Artist arbeitet in Absichtsschichten statt in Endwerten. Influence Locking wurde bewusst weggelassen — mit Ebenen sei es unnötige Komplexität.
-**Beobachtbarer Vorteil:** Eine Entscheidung kann rückgängig gemacht werden, ohne die Nachbarentscheidungen zu zerstören. Symmetrie wird pro Ebene aktivierbar, statt als globaler Vorgang.
-**Neue Probleme:** Zwei Wahrheiten im selben Dokument — Anwender werden gewarnt, die Maya-Standardwerkzeuge nicht parallel zu benutzen, weil die Ebenen die Änderungen beim nächsten Zugriff überschreiben. Das ist die Kernspannung: Eine Absichtsschicht über einem Endzustand ist nur konsistent, wenn niemand den Endzustand direkt anfasst.
-**Technik oder UX-Idee?** UX-Idee mit klarer Architekturfolge. „Der Artist bearbeitet nicht das Ergebnis, sondern die Herkunft des Ergebnisses" ist ein Muster, das weit über Skinning hinausgeht.
-
----
-
-### O-07 — ZSpheres und Transpose (ZBrush)
-
-`[Erfahrungswissen]`
-
-**Problem:** Skelettaufbau und Bindung sind zwei getrennte Fachdisziplinen, bevor man überhaupt eine Pose sehen kann.
-**Konventioneller Weg:** Joints platzieren, orientieren, binden, gewichten.
-**Veränderte Annahme:** Dieselbe Primitivkette, die die Struktur beschreibt, kann auch die Geometrie erzeugen bzw. steuern. Und: Posieren kann eine Maskierungsgeste sein statt eine Hierarchieauswahl.
-**Interaktion (Transpose):** Bereich maskieren, Linie ziehen, ziehen/drehen. Der „Rig" ist die Maske.
-**Mentales Modell:** Die Auswahl *ist* die Einflusszone. Kein persistenter Controller.
-**Verschobene Verantwortung:** Keine Bindung, keine Gewichtung — dafür trägt der Artist die volle Verantwortung für die Qualität der Maske.
-**Beobachtbarer Vorteil:** Sehr kurzer Weg von „ich will das sehen" zu „ich sehe es".
-**Neue Probleme:** Nicht animierbar; Übergangsbereiche sind nur so gut wie die Maskenkante; kein wiederverwendbarer Zustand.
-**Status:** Nicht gegenbelegt. Vor Weiterverwendung prüfen.
+**Problem:** The authors explicitly identify two burdens of linear blending: you either have to paint weights manually or model closed cages around the object.
+**Conventional Approach:** A separate system for each deformer type — joints with weight painting, clusters with falloff, lattice with a cage.
+**Changed Assumption:** The handle type does not have to determine which deformation system runs. Points, bones, and cages of arbitrary topology can **simultaneously** and **in combination** control the same object.
+**Interaction:** The Artist chooses whichever handle type is most convenient for the specific task — bones for rigid parts, cages for precise large-scale control, points for soft areas.
+**Mental Model:** “I place influence points” instead of “I build a skeleton and then a lattice as well.”
+**Shifted Responsibility:** Weight computation moves into an optimization performed at bind time; the Artist decides only *where* influence exists, not *how much* influence exists where.
+**Observable Benefit:** Tool choice follows the task rather than the system architecture. Weight Painting is no longer mandatory.
+**New Problems:** The authors themselves identify spatial discretization and optimization as disadvantages. Weights are generated at bind time — what happens when topology changes is therefore not answered. And: if the Artist no longer paints the weights, how do they correct a location where the automation is wrong?
+**Technology or UX Idea?** The weight formula is technology. The statement that “the Artist should be free to use the most convenient combination of handle types” is explicitly formulated as a UX goal and is the interesting part.
 
 ---
 
-### O-08 — Rig als Geometrie und Graph (Houdini KineFX)
+### O-05 — Smart Bones and Smart Bone Dials (Moho / formerly Anime Studio)
 
-`[Erfahrungswissen]`
+`[Source]`
 
-**Problem:** Rigging ist eine Einbahnstraße. Ist gebunden, sind Änderungen upstream teuer.
-**Konventioneller Weg:** Modell → Rig → gebundener Zustand; danach ist das Mesh weitgehend eingefroren.
-**Veränderte Annahme:** Ein Skelett muss kein Sondertyp sein. Es kann Geometrie mit Attributen sein — und damit mit normalen Geometriewerkzeugen bearbeitbar.
-**Interaktion:** Rigging findet als Knotenkette statt. Eine Topologieänderung ist ein weiterer Knoten vor dem Deform; danach wird neu ausgewertet.
-**Mentales Modell:** „Der Rig ist ein Rezept, kein Zustand."
-**Verschobene Verantwortung:** Vom Artist zum Graphen — mit dem Preis, dass der Artist prozedural denken muss.
-**Beobachtbarer Vorteil:** Genau die Frage, an der das bestehende Mirai-Experiment hängt (Topologieänderung nach dem Rigging), wird strukturell aufgelöst statt nachträglich repariert.
-**Neue Probleme:** Direkte Manipulation geht tendenziell verloren; der prozedurale Mehraufwand ist für ein kleines direktes Modellierwerkzeug erheblich; Gewichte als Attribute brauchen eigene Erzeugungsregeln.
-**Status:** Nicht gegenbelegt. Vor Weiterverwendung prüfen.
-
----
-
-### O-09 — Der „Weight Hammer" als Symptom
-
-`[Quelle]` — Anwenderdiskussion, Maya LT
-
-Kleine Beobachtung aus der Praxis, kein System: Ein Anwender fügt nach dem Rigging Polygone hinzu und kann auf den neuen Vertices keine Gewichte mehr malen. Die verbreitete Antwort ist ein Werkzeug namens „Weight Hammer", das die Gewichte der Nachbarvertices auf die neuen überträgt.
-
-**Warum das hier steht:** Das Problem ist in etablierten DCCs so normal, dass es dafür ein Werkzeug mit eigenem Namen und Icon gibt — und der Standardumgang trotzdem Verwirrung erzeugt. Das ist ein Hinweis darauf, dass „Topologieänderung nach dem Rigging" nicht ein Mirai-Sonderfall ist, sondern ein branchenweiter Dauerschmerz mit lauter Teillösungen.
-
-**Offene Frage:** Wie oft passiert das wirklich, und was tun Artists stattdessen — bearbeiten sie einfach nicht mehr? Das wäre eine Vermeidungshaltung, nicht eine Lösung, und sie wäre in keiner Dokumentation sichtbar.
+**Problem:** A bent elbow collapses. In a 3D DCC, the solution would be called Pose Space Deformation or Corrective Shape — concepts a 2D animator should not have to learn.
+**Conventional Approach:** Driven Keys, PSD setups, corrective blendshape pipelines with their own terminology.
+**Changed Assumption:** A correction does not need to be its own system concept. It can be a recorded action tied to a bone angle.
+**Interaction:** Assign a bone as a Smart Bone, create an action, rotate the bone into the problematic position, and manually reshape the form there. Moho interpolates between the straight and corrected state.
+**Mental Model:** “When this bone is in this position, it should look like this.” No solver terminology, no Shape Editor, no intermediate object.
+**Shifted Responsibility:** The entire PSD machinery disappears behind a recording gesture.
+**Second, separate observation:** The **Smart Bone Dial** is a bone that is not bound to anything and sits outside the character. It is used only as a control — for head rotations, blinking, facial expressions. Technically a Bone, functionally a Slider. The system type says nothing about its role in the rig.
+**Observable Benefit:** Correctives become accessible to people who would never have built a PSD setup. A single primitive (bone) covers both deformation *and* control.
+**New Problems:** User forums indicate that naming conventions are critical (the action name must exactly match the bone name), angle ranges and directions are error-prone, and nesting quickly becomes opaque. The simplicity of the gesture is paid for with an invisible rule layer.
+**Technology or UX Idea?** Both, and both are separately interesting: correction-as-recording, and the repurposed bone as a control.
 
 ---
 
-## Research-Faden 1 — Ein Handle-Begriff statt Bone / Cluster / Lattice / Cage
+### O-06 — Weights as Layers Instead of a Numeric Field (ngSkinTools)
 
-**Forschungsfrage:**
+`[Source]` — Maya plugin, Viktoras Makauskas
 
-> Muss ein Artist überhaupt wissen, welche technische Deformationsstruktur hinter einem Manipulationspunkt steckt?
+**Problem:** Weight Painting is destructive. Every stroke overwrites the previous state; the *intent* behind a weighting decision can no longer be recovered afterward. The classic countermeasure is Influence Locking and micromanagement of individual values.
+**Conventional Approach:** A flat weight field per vertex, painstakingly protected against overwriting.
+**Changed Assumption:** Weights do not have to be a flat final state. They can be composed like layers with masks in an image editor and combined only at runtime.
+**Interaction:** Paint the spine on one layer, arms on another; the system combines them in real time into the final skin-cluster weights. A lower “safety layer” with 100% guarantees normalization.
+**Mental Model:** Photoshop. Explicitly marketed this way: start messy, experiment, refine later.
+**Shifted Responsibility:** The combination/calculation; the Artist works in layers of intent instead of final values. Influence Locking was deliberately omitted because layers make it unnecessary complexity.
+**Observable Benefit:** A decision can be undone without destroying neighboring decisions. Symmetry can be enabled per layer instead of as a global operation.
+**New Problems:** Two truths exist in the same document — users are warned not to use Maya's standard tools in parallel because the layers overwrite those changes on the next access. This is the core tension: an intent layer above a final state is only consistent if nobody directly edits the final state.
+**Technology or UX Idea?** UX idea with a clear architectural consequence. “The Artist edits the source of the result rather than the result itself” is a pattern that extends far beyond skinning.
 
-Ausdrücklich **nicht** vorausgesetzt, dass „Handle" die richtige Antwort ist. Die Frage ist, welche Antworten reale Systeme geben.
+---
 
-### Wie die bisherigen Observations antworten
+### O-07 — ZSpheres and Transpose (ZBrush)
 
-| System | Antwort auf die Frage | Wodurch |
-|---|---|---|
-| Klassisches DCC | **Ja** — der Artist muss es wissen | Joint, Cluster, Lattice, Wire haben je eigene Erzeugung, eigene UI, eigenes Weight-Konzept |
-| BBW (O-04) | **Nein** — der Typ ist eine Bequemlichkeitsfrage | ein Gewichtssystem trägt Punkte, Bones und Cages gemischt |
-| Pose Brush (O-03) | **Nein** — es gibt gar keine persistente Struktur | Pivot und Segmentierung entstehen pro Geste und verschwinden wieder |
-| Smart Bone Dial (O-05) | **Nein, aber verdeckt** — es ist ein Knochen, der kein Knochen ist | Systemtyp und Rolle sind entkoppelt, ohne dass das System das benennt |
-| Transpose (O-07) | **Nein** — die Maske ist die Struktur | Auswahl statt Controller |
-| KineFX (O-08) | **Ja, aber anders** — der Artist denkt in Daten, nicht in Deformertypen | Skelett ist Geometrie |
+`[Experience Knowledge]`
 
-### Was in dieser Übersicht auffällt
+**Problem:** Skeleton construction and binding are two separate disciplines before you can even see a pose.
+**Conventional Approach:** Place joints, orient them, bind, weight.
+**Changed Assumption:** The same primitive chain that describes the structure can also generate or control the geometry. And: posing can be a masking gesture rather than a hierarchy selection.
+**Interaction (Transpose):** Mask an area, draw a line, then translate/rotate. The “rig” is the mask.
+**Mental Model:** The selection *is* the influence zone. No persistent controller.
+**Shifted Responsibility:** No binding, no weighting — but the Artist bears full responsibility for mask quality.
+**Observable Benefit:** A very short path from “I want to see this” to “I see it.”
+**New Problems:** Not animatable; transition areas are only as good as the mask edge; no reusable state.
+**Status:** Not cross-checked. Verify before further use.
 
-Die interessante Achse ist möglicherweise gar nicht „ein Typ vs. viele Typen", sondern **wie lange die Struktur lebt**:
+---
 
+### O-08 — Rig as Geometry and Graph (Houdini KineFX)
+
+`[Experience Knowledge]`
+
+**Problem:** Rigging is a one-way street. Once bound, upstream changes become expensive.
+**Conventional Approach:** Model → Rig → bound state; afterward, the mesh is largely frozen.
+**Changed Assumption:** A skeleton does not have to be a special type. It can be geometry with attributes — and therefore be editable with normal geometry tools.
+**Interaction:** Rigging happens as a node chain. A topology change is simply another node before the deform; the result is then re-evaluated.
+**Mental Model:** “The rig is a recipe, not a state.”
+**Shifted Responsibility:** From the Artist to the graph — at the cost of requiring the Artist to think procedurally.
+**Observable Benefit:** This structurally addresses exactly the problem the existing Mirai experiment is concerned with (topology changes after rigging), rather than repairing it afterward.
+**New Problems:** Direct manipulation tends to be lost; the procedural overhead is substantial for a small direct-modeling tool; weights as attributes require their own generation rules.
+**Status:** Not cross-checked. Verify before further use.
+
+---
+
+### O-09 — The “Weight Hammer” as a Symptom
+
+`[Source]` — user discussion, Maya LT
+
+A small practical observation, not a system: An Artist adds polygons after rigging and cannot paint weights onto the new vertices. The common answer is a tool called “Weight Hammer,” which transfers neighboring vertices' weights to the new ones.
+
+**Why it is here:** The problem is so normal in established DCCs that it has a tool with its own name and icon — and yet the standard workflow still causes confusion. This suggests that “topology changes after rigging” is not a Mirai-specific edge case but a persistent industry-wide pain point with many partial solutions.
+
+**Open Question:** How often does this actually happen, and what do Artists do instead — do they simply stop editing the topology? That would be an avoidance strategy, not a solution, and would not appear in any documentation.
+
+---
+
+## Research Thread 1 — One Handle Concept Instead of Bone / Cluster / Lattice / Cage
+
+**Research Question:**
+
+> Does an Artist actually need to know which technical deformation structure is behind a manipulation point?
+
+It is explicitly **not** assumed that “Handle” is the right answer. The question is what answers real systems provide.
+
+### How the current observations answer it
+
+| System                 | Answer to the question                                                   | Through                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Classical DCC          | **Yes** — the Artist has to know                                         | Joint, Cluster, Lattice, Wire each have their own creation method, UI, and weight concept |
+| BBW (O-04)             | **No** — type is a convenience question                                  | one weighting system supports points, bones, and cages in combination                     |
+| Pose Brush (O-03)      | **No** — there is no persistent structure at all                         | pivot and segmentation are created per gesture and discarded again                        |
+| Smart Bone Dial (O-05) | **No, but hidden** — it is a bone that is not a bone                     | system type and role are decoupled without the system explicitly naming this              |
+| Transpose (O-07)       | **No** — the mask is the structure                                       | selection instead of controller                                                           |
+| KineFX (O-08)          | **Yes, but differently** — the Artist thinks in data, not deformer types | skeleton is geometry                                                                      |
+
+### What stands out in this comparison
+
+The interesting axis may not actually be “one type vs. many types,” but **how long the structure lives**:
+
+```text
+created and discarded per gesture       → Pose Brush, Transpose
+created at bind time, then fixed        → BBW
+persistent and maintained by Artist     → classical rig
+regenerated on every evaluation         → KineFX
 ```
-pro Geste erzeugt und verworfen     →  Pose Brush, Transpose
-zur Bind-Zeit erzeugt, dann fest    →  BBW
-dauerhaft und vom Artist gepflegt   →  klassisches Rig
-bei jeder Auswertung neu erzeugt    →  KineFX
-```
 
-Das ist eine Hypothese aus der Gegenüberstellung, keine Erkenntnis. Sie bräuchte mehr Fälle.
+This is a hypothesis from the comparison, not a finding. It needs more cases.
 
-### Noch nicht untersucht in diesem Faden
+### Not yet investigated in this thread
 
-Implicit Skinning (Kontakt und Bulge statt Gewichtspolitur) · Wires (Singh/Fiume 1998, Kurve als Deformer) · Blender Hook-Modifier (beliebiges Objekt wird zum Handle) · Houdini-Handles als vom Knoten entkoppelte Manipulatoren · Cage-basierte IK · Direct Manipulation Blendshapes · Poser-Magnete · Daz JCM · Cascadeur AutoPosing · Spine/Live2D/Rive (2D-Rigging mit ganz anderen Grundannahmen) · Ziva (Deformation als Anatomiesimulation) · automatische Rigger (Pinocchio, Mixamo, RigNet).
+Implicit Skinning (contact and bulge instead of weight polishing) · Wires (Singh/Fiume 1998, curve as deformer) · Blender Hook Modifier (arbitrary object becomes a handle) · Houdini handles as manipulators decoupled from nodes · Cage-based IK · Direct Manipulation Blendshapes · Poser magnets · Daz JCM · Cascadeur AutoPosing · Spine/Live2D/Rive (2D rigging with very different underlying assumptions) · Ziva (deformation as anatomical simulation) · automatic riggers (Pinocchio, Mixamo, RigNet).
 
 ---
 
 ## Candidate Playground Experiments
 
-Ideen, keine Vorschläge zur Umsetzung. Ob, wann und in welcher Reihenfolge etwas davon gebaut wird, entscheidet Manu. Jedes davon wäre ein isoliertes Artist-Playground-Experiment nach `EXPERIMENT_HOST.md`, kein Rigging-Feature.
+Ideas, not implementation proposals. Whether, when, and in what order anything is built is decided by Manu. Each would be an isolated Artist Playground experiment according to `EXPERIMENT_HOST.md`, not a rigging feature.
 
-**CE-1 — Nur Punkt-Handles**
-Head-Basemesh, ausschließlich Punkt-Handles mit Falloff, kein Skelett, keine Hierarchie. Frage: Wie weit trägt ein einziger Handle-Begriff, bevor der Artist etwas vermisst — und was genau vermisst er zuerst?
-Berührt: O-04, Forschungsfrage Faden 1.
+**CE-1 — Point Handles Only**
+Head base mesh, exclusively point handles with falloff, no skeleton, no hierarchy. Question: How far does a single handle concept carry before the Artist starts missing something — and what exactly is missing first?
+Touches: O-04, Research Thread 1.
 
-**CE-2 — Sichtbarer vs. unsichtbarer Einflussbereich**
-Derselbe Handle, einmal mit dargestelltem Einflussgebiet, einmal ohne. Frage: Ist der Einfluss überhaupt vorhersagbar, ohne ihn zu sehen? Achtung: Das variiert *Signalling*, was laut Research Map V1 die größte Confounding-Gefahr ist — hier ist Signalling ausnahmsweise die Variable selbst.
+**CE-2 — Visible vs. Invisible Influence Region**
+The same handle, once with its influence region displayed and once without. Question: Is the influence predictable without seeing it? Note: This varies *signalling*, which according to Research Map V1 is the largest confounding risk — here, signalling is deliberately the variable itself.
 
-**CE-3 — Gestenabgeleiteter Pivot vs. gesetzter Pivot**
-Ziehen an einer Stelle des Meshes; einmal bestimmt das System den Drehpunkt (Pose-Brush-artig), einmal setzt ihn der Artist vorher. Frage: Wo genau kippt Bequemlichkeit in Kontrollverlust?
-Berührt: O-03.
+**CE-3 — Gesture-Derived Pivot vs. Explicit Pivot**
+Drag at a location on the mesh; in one version the system determines the pivot (Pose Brush-like), in the other the Artist sets it beforehand. Question: Where exactly does convenience turn into loss of control?
+Touches: O-03.
 
-**CE-4 — Korrektur als Aufnahme**
-Element in eine Stellung bringen, Form dort zurechtziehen, System interpoliert. Frage: Ist „wenn es so steht, sieht es so aus" ohne Shape-/PSD-Terminologie verständlich und beherrschbar?
-Berührt: O-05.
+**CE-4 — Correction as Recording**
+Move an element into a pose, reshape the form there, and let the system interpolate. Question: Is “when it is in this position, it should look like this” understandable and controllable without Shape/PSD terminology?
+Touches: O-05.
 
-**CE-5 — Absichtsschicht statt Endzustand**
-Ein beliebiger Wert (nicht notwendigerweise Gewichte) wird in zwei Ebenen bearbeitet statt direkt. Frage: Fühlt sich „ich bearbeite die Herkunft des Ergebnisses" freier oder indirekter an?
-Berührt: O-06.
+**CE-5 — Intent Layer Instead of Final State**
+Edit an arbitrary value (not necessarily weights) in two layers instead of directly. Question: Does “I am editing the source of the result” feel freer or more indirect?
+Touches: O-06.
 
-**Nicht als Kandidat aufgeführt:** alles, was Topologieänderung unter aktiver Deformation testet. Das ist Gegenstand des bestehenden technischen Experiments (`experiments/rigging-skinning-morphing/`) und gehört nicht als UX-Experiment hierher dupliziert.
+**Not listed as a candidate:** anything that tests topology changes under active deformation. That is the subject of the existing technical experiment (`experiments/rigging-skinning-morphing/`) and should not be duplicated here as a UX experiment.
 
 ---
 
 ## Open Questions
 
-1. Ist „wie lange lebt die Deformationsstruktur" tatsächlich die tragende Achse, oder ein Artefakt der bisher gesammelten sechs Fälle?
-2. Wenn die Automatik die Gewichte bestimmt (O-04) — wie korrigiert der Artist eine Stelle, an der sie falsch liegt, ohne das ganze Konzept zu verlassen?
-3. Gibt es reale Beispiele, in denen die Trennung Modellieren/Rigging vollständig aufgehoben wurde, und nicht nur nachträglich repariert wird?
-4. Was machen Artists, die Topologieänderung nach dem Rigging schlicht *vermeiden*? Diese Vermeidungshaltung ist in keiner Dokumentation sichtbar, aber vermutlich der häufigste Umgang.
-5. 2D-Rigging (Moho, Spine, Live2D) hat Annahmen, die im 3D-Kontext gar nicht gelten. Welche der dortigen Ideen sind übertragbar, und welche funktionieren nur, weil es 2D ist?
-6. Wieviel der bekannten DCC-Rigging-Komplexität existiert für Filmproduktion in großen Teams — und ist für einen einzelnen Artist an einem Kopf-Basemesh schlicht irrelevant?
+1. Is “how long the deformation structure lives” actually the fundamental axis, or an artifact of the six cases collected so far?
+2. If automation determines the weights (O-04), how does the Artist correct a location where the automation is wrong without abandoning the entire concept?
+3. Are there real examples where the separation between modeling and rigging has been completely removed, rather than merely repaired afterward?
+4. What do Artists do when they simply *avoid* topology changes after rigging? This avoidance behavior is invisible in documentation, but may be the most common approach.
+5. 2D rigging (Moho, Spine, Live2D) has assumptions that do not apply in 3D at all. Which ideas are transferable, and which work only because the medium is 2D?
+6. How much of the known DCC rigging complexity exists because of large-team film production — and is therefore simply irrelevant to a single Artist working on a head base mesh?
 
 ---
 
 ## Sources / References
 
-**Belegt:**
+**Supported:**
 
-- Bounded Biharmonic Weights — Jacobson, Baran, Popović, Sorkine-Hornung, SIGGRAPH 2011. https://igl.ethz.ch/projects/bbw/ · Paper-PDF: https://igl.ethz.ch/projects/bbw/bounded-biharmonic-weights-siggraph-2011-jacobson-et-al.pdf · CACM-Fassung: https://cacm.acm.org/research/bounded-biharmonic-weights-for-real-time-deformation/
-- Blender Pose Brush — Handbuch: https://docs.blender.org/manual/en/latest/sculpt_paint/sculpting/brushes/pose.html · Entwicklerbericht: https://code.blender.org/2020/02/sculpt-mode-features-update/ · Erste Vorstellung: https://www.blendernation.com/2019/12/12/preview-sculpt-mode-pose-brush/ · Dobarro zum Sculpt-Mode allgemein: https://pablodp606.artstation.com/blog/1vEn/new-blender-sculpt-mode-introduction
-- Moho Smart Bones — Herstellerbeschreibung: https://moho.lostmarble.com/pages/features · Einordnung als Corrective/PSD-Äquivalent: https://lesterbanks.com/2016/11/working-mohos-smart-bone-actions/ · Smart Bone vs. Smart Bone Dial (Anwenderforum): https://lostmarble.net/forum/viewtopic.php?t=35634
-- ngSkinTools — Produktbeschreibung: https://www.ngskintools.com/ · Layer-Konzept: https://www.ngskintools.com/documentation/userguide/quickstart/ · bewusstes Weglassen von Influence Locking: https://www.ngskintools.com/documentation/userguide/faq/ · Praxiserfahrungen inkl. Konflikt mit Maya-Standardwerkzeugen: https://rigmarolestudio.com/ngskintools-skinning-tips/
-- Weight Hammer / Polygone nach dem Rigging: https://steamcommunity.com/app/243580/discussions/0/357287935556802103
+* Bounded Biharmonic Weights — Jacobson, Baran, Popović, Sorkine-Hornung, SIGGRAPH 2011. https://igl.ethz.ch/projects/bbw/ · Paper PDF: https://igl.ethz.ch/projects/bbw/bounded-biharmonic-weights-siggraph-2011-jacobson-et-al.pdf · CACM version: https://cacm.acm.org/research/bounded-biharmonic-weights-for-real-time-deformation/
+* Blender Pose Brush — Manual: https://docs.blender.org/manual/en/latest/sculpt_paint/sculpting/brushes/pose.html · Developer report: https://code.blender.org/2020/02/sculpt-mode-features-update/ · First presentation: https://www.blendernation.com/2019/12/12/preview-sculpt-mode-pose-brush/ · Dobarro on Sculpt Mode generally: https://pablodp606.artstation.com/blog/1vEn/new-blender-sculpt-mode-introduction
+* Moho Smart Bones — Manufacturer description: https://moho.lostmarble.com/pages/features · Corrective/PSD equivalent context: https://lesterbanks.com/2016/11/working-mohos-smart-bone-actions/ · Smart Bone vs. Smart Bone Dial (user forum): https://lostmarble.net/forum/viewtopic.php?t=35634
+* ngSkinTools — Product description: https://www.ngskintools.com/ · Layer concept: https://www.ngskintools.com/documentation/userguide/quickstart/ · deliberate omission of Influence Locking: https://www.ngskintools.com/documentation/userguide/faq/ · practical experiences including conflict with Maya standard tools: https://rigmarolestudio.com/ngskintools-skinning-tips/
+* Weight Hammer / polygons after rigging: https://steamcommunity.com/app/243580/discussions/0/357287935556802103
 
-**Noch nicht gegenbelegt (Erfahrungswissen, vor Weiterverwendung prüfen):**
+**Not yet cross-checked (Experience Knowledge, verify before further use):**
 
-- GATOR (Softimage), Maya `copySkinWeights`, Blender Data Transfer
-- Delta Mush (Rhythm & Hues, SIGGRAPH 2014) / Blender Corrective Smooth
-- ZBrush ZSpheres und Transpose / Transpose Master
-- Houdini KineFX
+* GATOR (Softimage), Maya `copySkinWeights`, Blender Data Transfer
+* Delta Mush (Rhythm & Hues, SIGGRAPH 2014) / Blender Corrective Smooth
+* ZBrush ZSpheres and Transpose / Transpose Master
+* Houdini KineFX
 
 ---
 
-## Verwandte Dokumente
+## Related Documents
 
-- `AGENTS.md` — Repository-weite Agenten- und Dokumentationsregeln
-- `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` — M1–M5, Discovery/Production, Artist Verdict
-- `docs/design/artist_playground/UX_RESEARCH.md` — Interaction Grammar (andere Verantwortung)
-- `docs/design/artist_playground/EXPERIMENT_HOST.md` — Experiment/Variant/Slot-Vokabular für spätere Experimente
-- `experiments/rigging-skinning-morphing/` — technisches Rigging-Experiment, AD-005, FINDINGS (andere Verantwortung)
+* `AGENTS.md` — repository-wide agent and documentation rules
+* `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` — M1–M5, Discovery/Production, Artist Verdict
+* `docs/design/artist_playground/UX_RESEARCH.md` — Interaction Grammar (different responsibility)
+* `docs/design/artist_playground/EXPERIMENT_HOST.md` — experiment/variant/slot vocabulary for future experiments
+* `experiments/rigging-skinning-morphing/` — technical rigging experiment, AD-005, FINDINGS (different responsibility)
