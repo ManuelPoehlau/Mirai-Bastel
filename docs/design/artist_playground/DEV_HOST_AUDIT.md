@@ -1,126 +1,247 @@
-# Artist Playground — Experiment Host Audit vs. Research Map V1
+# Artist Playground — Experiment Host Audit vs. Research Map V2
 
-**Status:** Technical assessment — no implementation performed
-**Date:** 2026-09-13
-**Author:** Interaction Dev role
-**Scope:** Does the current Experiment Host support the research mode described in `RESEARCH_MAP.md`?
-**Method:** Direct inspection of the repository (`ManuelPoehlau/Mirai-Bastel`, `main`), not documentation alone. Headless test subset executed (`playground/tests/test_experiment_slot.py`, `test_playground_app.py`, `test_playground_camera.py`, `test_presentation.py` — 71/71 pass). `test_input_map.py` and `test_selector.py` could not be executed in this sandbox (no X11 display available for pyglet's shadow window) — this is an environment limitation of the audit, not a claim about the project's own test environment.
+**Status:** Technical assessment — no implementation performed  
+**Date:** 2026-09-15  
+**Author:** Interaction Dev role  
+**Scope:** Current Experiment Host capability and its relationship to the Artist Playground research mode.  
+**Method:** Current repository state on `main` is the source of truth. This audit supersedes the 2026-09-13 V1 audit where findings have become obsolete.
 
----
-
-## 1. Current Capability
-
-### Proven (implemented, headless-tested, verified by reading the code)
-
-- `Experiment` (`playground/experiment.py`) — minimal lifecycle interface (`activate`/`deactivate`/`update`/`draw`). Unchanged, exactly as documented.
-- `ExperimentSlot` (`playground/slot.py`) — variant container for **one** family: index-based `activate()` with correct `deactivate()`→`activate()` ordering, `Decision` enum (`UNDECIDED/KEEP/ITERATE/REJECT`), `generate_decision_md()` / `write_decision_md()`. All behaviour matches `EXPERIMENT_HOST.md` §6–7. 10 dedicated tests pass.
-- `PlaygroundApp.set_slot()` / `activate_variant()` — wired and tested, but only against **one** slot at a time (see Gap A below).
-- Concrete variant classes exist for three families and are correctly thin: `playground/experiments/selection/*` (Replace, Toggle, Modifier, BoxSelect, FaceSelect), `playground/experiments/transform/*` (Move, Rotate, Scale), `playground/experiments/presentation/*` (six shading variants, AP-02.5). Each `activate()` only sets shared `PlaygroundApp` state (`select_mode`, `select_method`, `display_state`, `show_vertices`) — no duplicated selection/transform/rendering logic.
-- `PlaygroundHUD.update_experiment()` and a dedicated "Experiment:" line exist and are called every frame from `window.py`.
-
-### Documented but not verified at runtime
-
-- None of the Experiment subclasses above are ever instantiated outside tests. `grep`-ing the whole `playground/` tree for `ExperimentSlot(`, `set_slot(`, `activate_variant(` finds **zero** call sites in `app.py`, `run.py`, or `window.py` — only in `playground/tests/`. The Host machinery is a correctly built, tested library that the live Playground currently does not call.
-- Consequence: `PlaygroundHUD`'s "Experiment:" line is wired but inert during real play — `app.active_experiment` never leaves its `Experiment()` default, so this line always reads `[none] No Experiment` while the artist is actually working.
-
-### Missing
-
-- Any mechanism inside the Host for more than one `ExperimentSlot`/`Experiment` to be tracked as "active" at the same time. `PlaygroundApp` holds exactly one `_active_slot: ExperimentSlot | None` and one `_active_experiment: Experiment` (singular, not keyed by family).
-- Any built-in "what is the whole Setting right now" query. (See Gap C.)
-
-### What the artist actually plays with today (the de-facto Setting)
-
-`PlaygroundWindow` does **not** go through Experiment/ExperimentSlot at all for live interaction. It mutates flat `PlaygroundApp` attributes directly from hardcoded key handlers:
-
-| Key(s) | Effect | Attribute mutated |
-|---|---|---|
-| `M` | cycle Replace → Modifier → Toggle | `app.select_mode` |
-| `Q` | cycle Pick → Box → Lasso → Paint | `app.select_method` |
-| `1`/`2`/`3` | Vertex/Edge/Face component mode | `scene.selection.mode` |
-| `D` / `Z` / `V` | display mode / wire overlay / vertices | `app.display_state`, `app.show_vertices` |
-| `X`/`R`/`S` (held) | arm Move/Rotate/Scale, hold+drag+release | `app.active_tool` |
-
-This is, in effect, already a working answer to Research Map §1 ("simultaneously active, freely changeable"): selection mode, selection method, component mode, display mode and the armed transform tool are five independent pieces of state that can each change at runtime without touching the others or restarting anything. It just does this through ad-hoc attributes on `PlaygroundApp`, not through the Host's own container/decision apparatus — so switching a variant this way leaves no `Decision`, no `decision.md`, and no HUD line identifying it as a tracked Experiment.
-
-Only a subset of these keys is even routed through `PlaygroundInputMap` (`display_cycle`, `wire_overlay`, `show_vertices`, `select_button`, the three selection modifiers). `M`, `Q`, `1`/`2`/`3`, `X`/`R`/`S`, `C`/`H`, `ESC` are hardcoded `pyglet.window.key` constants inside `window.py`, independent of the input map.
+> **Reality rule:** This document describes the current implementation. Do not infer missing capabilities from an older roadmap or from the previous audit. If implementation and documentation disagree, inspect the current code and tests first.
 
 ---
 
-## 2. Research Map Requirements → Host Capabilities
+## 1. Audit Result
 
-| Research Map requirement | Concrete Host capability required |
-|---|---|
-| §1 Multiple experiments active simultaneously | N independently-held "current variant" references, one per research family (Navigate / Select / Transform / Topology / Display), readable together at any moment |
-| §2 Independent variant switching | Switching one family's variant must not call `deactivate()`/`activate()` on any other family |
-| §3 Runtime switching | Switch while the pyglet loop is running, no restart |
-| §4 Navigation + modelling coexistence | Input routing where camera gestures and operation gestures can compose — or a clear, evidenced statement of where they currently can't |
-| §5 Technical provenance of the Setting | At any moment: "which variant is active per family?" — answerable without a database |
+The Experiment Host has progressed beyond the state described by the 2026-09-13 audit.
 
----
+The previous audit correctly identified the need for concurrent per-family experiment state, but that gap has since been addressed in the Playground runtime. The current `PlaygroundApp` maintains a registry of experiment slots by family, and the runtime window registers and activates multiple experiment families rather than relying only on one singular Host slot.
 
-## 3. Gap Analysis
+Current experiment families wired into the runtime include:
 
-### Gap A — `PlaygroundApp` can only track one active Slot/Experiment
+- **Selection**
+- **Presentation**
+- **Transform**
+- **Tweak**
+- **Topology**
 
-- **What's missing:** a per-family registry instead of a single `_active_slot` / `_active_experiment`.
-- **Existing extension point:** `ExperimentSlot` is already scoped to one family by convention (`Experiment.id == "selection"`, `"transform"`, etc.) and has zero coupling to being "the" slot — nothing in its `activate()` touches other slots.
-- **Reuse:** Full. `Experiment` and `ExperimentSlot` need no change; neither do any of the eleven existing variant classes.
-- **Smallest change:** replace the two singular attributes with `self._slots: dict[str, ExperimentSlot]`, plus `register_slot(slot)` and `activate_variant(family_id, index)`.
+Topology and Tweak are therefore **not missing capabilities** and must not be treated as deferred or absent when reasoning about the current Playground.
 
-### Gap B — The Host machinery and the live window are two disconnected paths
-
-- **What's missing:** nothing new — the variant classes already write to the exact attributes `window.py`'s hardcoded keys write to (`select_mode`, `select_method`, `display_state`). Only the *dispatch* differs.
-- **Existing extension point:** `on_key_press`'s existing `M`/`Q`/`D`/`X`/`R`/`S` branches.
-- **Reuse:** Full — no duplicate selection/transform/display logic exists anywhere to reconcile.
-- **Smallest change:** point those key handlers at `app.activate_variant(family_id, next_index)` (from Gap A) instead of inline enum-cycling. This alone makes every existing variant class live, and gives the HUD "Experiment:" line real content and `decision.md` for free, per family — without writing a single new Experiment.
-
-### Gap C — Provenance/recoverability of the Setting
-
-- **What's missing:** a single "what's active right now" readout across families.
-- **Existing extension point:** `PlaygroundHUD` already renders one line per dimension and already calls `update_experiment()` every frame.
-- **Reuse:** Full.
-- **Smallest change:** once Gap A/B exist, the Setting is just `{family_id: active_variant_name}` from the registry — one compact HUD line, and (if wanted) one line appended to a plain text note next to an observation. No schema, no database — consistent with Research Map §8's explicit rejection of an observation database.
-
-### Gap D — Navigation/Transform composability (finding, not a Host gap)
-
-- `on_mouse_drag` and `on_mouse_motion` check `self._transform_key_down is not None` **first** and `return EVENT_HANDLED` before ever reaching the orbit/pan branch. `on_mouse_press` similarly blocks a Box-Select start while a transform key is held. So today, holding X/R/S makes orbit and pan gesturally impossible for the duration of the hold — not by researched decision, by construction/precedence order.
-- This directly answers part of Research Map's "Navigation coexistence — UNKNOWN": the current fact is not unknown, it's **exclusive by construction**. Whether that's the right feel is still an open Focus question — but it's now a known baseline to test against, not a blank.
-- **No Host extension recommended here.** This is Research material for the UX Researcher / Playground Spec roles, not an Experiment Host defect.
+The remaining questions are primarily about research quality, runtime interaction behaviour, completeness of individual experiment families, and whether every desired operation is exposed through the Host in the same way — not about whether the Host is still a single-slot prototype.
 
 ---
 
-## 4. Architectural Risk
+## 2. Current Host Capability
 
-- **Combination-matrix drift.** A per-family registry must store exactly one active index per family and nothing about cross-family compatibility or dependency. Research Map §8 and this task's brief explicitly reject a validity/dependency system — flag, don't build one, if this temptation appears during implementation.
-- **HUD panel creep.** The "Setting" readout should stay one compact line, not grow into a permanent multi-line research dashboard.
-- **Keymap conflation.** `M`/`Q`/`1`/`2`/`3`/`X`/`R`/`S`/`C`/`H`/`ESC` currently bypass `PlaygroundInputMap` entirely. Routing them through per-family slots is a good moment to *also* route them through the input map — but that's a separate, separable improvement. Don't bundle a keymap redesign into the slot-registry change.
-- **Built ≠ decided, regardless of path.** Wiring an existing variant class into the live Host doesn't make its UX validated — it only makes it observable and decidable via `decision.md` instead of silently.
+### 2.1 Experiment lifecycle
+
+`playground/experiment.py` provides the minimal experiment lifecycle interface (`activate`, `deactivate`, `update`, `draw`).
+
+This remains a deliberately small abstraction. Existing experiment variants should continue to reuse shared Playground state rather than duplicating selection, transform, topology, or rendering logic.
+
+### 2.2 ExperimentSlot
+
+`playground/slot.py` provides the per-family variant container and decision apparatus, including:
+
+- indexed variant activation,
+- `deactivate()` → `activate()` ordering,
+- `Decision` states (`UNDECIDED`, `KEEP`, `ITERATE`, `REJECT`),
+- decision-document generation/writing.
+
+The Host remains a research apparatus, not a combination-matrix or dependency system.
+
+### 2.3 Multiple active families
+
+The previous V1 audit described a singular `_active_slot` / `_active_experiment` limitation. The current application instead supports a **per-family slot registry** and activation by family/variant.
+
+This is important because the Research Map calls for independent dimensions that can coexist at runtime. A Selection variant can therefore be changed without conceptually replacing the Transform, Presentation, Tweak, or Topology family.
+
+The current implementation should still be treated as an experiment host rather than as a finished production tool system: the existence of a registered variant means that it is available for observation, not that it has been validated or selected as a final UX decision.
 
 ---
 
-## 5. Recommended Minimal Extension
+## 3. Current Runtime Experiment Families
 
-**Problem:** `PlaygroundApp` can only hold one active `ExperimentSlot`/`Experiment`, so Selection/Transform/Display/(future Navigate/Topology) can't be seen or switched as independent, simultaneously-active research dimensions *through the Host's own apparatus* — even though the live window already achieves independent, simultaneous switching today through separate flat attributes, with no decision-tracking attached.
+### Selection
 
-**Existing mechanism:** `Experiment` + `ExperimentSlot` (variant container, `Decision`, `decision.md` generation) already do exactly what's needed per family; the eleven existing Selection/Transform/Presentation variant classes already write to the correct shared app state.
+The current Selection experiment family includes the established variants such as:
 
-**Smallest extension:**
-1. `PlaygroundApp`: singular `_active_slot`/`_active_experiment` → `dict[str, ExperimentSlot]`, with `register_slot()` / `activate_variant(family_id, index)`.
-2. `PlaygroundHUD`: one new compact line built from that dict (e.g. `Setting: select=Replace | display=Shaded | transform=—`).
-3. `window.py`: re-point the existing `M`/`Q`/`X`/`R`/`S`/`D` handlers at `activate_variant(...)` instead of inline cycling.
+- Replace
+- Toggle
+- Modifier
+- Box Select
+- Face Select
 
-**Why:** reuses every existing class unchanged, touches only the two places that currently assume singularity (`PlaygroundApp`'s two attributes) or duplicate dispatch (`window.py`'s key handlers), introduces no new concepts, no persistence, and no combination framework — matching the "smallest enabling extension" mandate exactly.
+These are part of the current Playground research surface.
 
-Not recommended as part of this extension: wiring Navigate or Topology families (no Topology playground experiments exist yet, per `ROADMAP.md` — AP-05 is deferred; Navigate has no variants to switch between yet, only the Gap D finding above).
+### Presentation
+
+The Presentation family is implemented and provides the current shading/display research variants.
+
+### Transform
+
+The Transform family is implemented with the current Move / Rotate / Scale experiment variants. The runtime still has interaction details worth observing, particularly around transform-key precedence versus camera navigation.
+
+### Tweak
+
+`playground/experiments/tweak/` exists as a real research family and must be treated as such. The current variants and their supporting decision/handoff documentation are evidence that Tweak/Soft-Selection research is no longer a merely proposed or missing area.
+
+Whether the current Tweak variants are sufficient for a particular research question is a separate question and must be established by inspecting the actual variants, not by assuming that Tweak is absent.
+
+### Topology
+
+`playground/experiments/topology/` exists as a real research family.
+
+The current Playground also contains runtime topology operations beyond a purely observational surface, including operations such as:
+
+- Split Edge
+- Connect Edges
+- Loop / Ring selection
+- Loop Insert
+- Loop Slide
+- Extrude
+
+These operations are therefore available as actual topology manipulation material for Playground research where the runtime path exposes them.
+
+**Important correction to V1:** topology is **not** a future/deferred AP-05 capability. AP-05 has become an active and substantially implemented research area.
 
 ---
 
-## 6. Dev Handoff Recommendation
+## 4. Runtime Topology Path
 
-### MINIMAL HOST EXTENSION REQUIRED
+The current runtime topology surface is not merely a set of placeholder experiment names. Topology operations can modify the mesh and feed those changes through the existing state/history mechanisms.
 
-The Host's core apparatus (`Experiment`, `ExperimentSlot`, decision recording) is sound, tested, and needs no redesign. The gap is narrow and structural: `PlaygroundApp` assumes one active slot where the Research Map needs several concurrent ones, and the live window currently bypasses the Host entirely via hardcoded, per-key flat-state mutation. Both are closed by the change in §5, which is additive and reuses all eleven existing variant classes as-is.
+The current architecture includes snapshot-based mesh state commands for topology changes. Where an operation uses this path, the intended model is:
 
-This is not an architectural blocker: the underlying live-switching behaviour the Research Map asks for already exists in practice (§1 "current live setup" above) — it's just not yet expressed through the Host's own tracked, decidable form.
+**Selection → topology operation → mesh state update → history entry → undo/redo**
+
+This is particularly important for EX-A and related research: an artist can potentially perform an actual topology intervention after observing a problem under temporary articulation. The experiment therefore does not need to be artificially reduced to “see and name the problem” when the required topology manipulation is already available.
+
+Individual topology operations still need to be considered separately. Not every operation necessarily has identical runtime exposure, boundary behaviour, or test coverage. The existence of the family must not be confused with every conceivable topology workflow being complete.
+
+---
+
+## 5. Undo / Redo and Snapshot Behaviour
+
+Topology changes that use the existing `MeshStateCommand` path are snapshot-based and participate in the shared history mechanism.
+
+Current tests cover topology state changes and history behaviour, including commit/cancel and undo/redo scenarios for the implemented operations. This provides the required reversibility for research use without introducing a second topology-specific history system.
+
+This is sufficient to treat topology manipulation as observable experimental action rather than an irreversible prototype-only mutation.
+
+Remaining operation-specific edge cases are research/implementation details and should be documented against the relevant experiment rather than generalized into a claim that “Topology is missing.”
+
+---
+
+## 6. Selection → Topology → Mesh Update
+
+The current system separates selection state from topology operation state while allowing topology operations to consume the current mesh/selection and produce an updated mesh state.
+
+The important architectural principle is:
+
+- Selection identifies the current component/context.
+- A topology operation acts on that context.
+- The resulting mesh state is committed through the existing history/state machinery.
+- The renderer then observes the updated mesh state through the established Playground rendering path.
+
+This is already enough infrastructure for research questions in which the artist notices a deformation/topology issue, edits the mesh, and continues observing.
+
+The exact affordance and interaction quality of each operation remains an empirical question; the Host audit should not turn that into a blanket architectural rewrite.
+
+---
+
+## 7. What the Previous V1 Audit Got Right
+
+The 2026-09-13 audit remains useful as historical context. Its central observations were valid at that time:
+
+- `Experiment` and `ExperimentSlot` were sound minimal abstractions.
+- The live window and Host were initially disconnected.
+- A single active slot was insufficient for the intended multi-family research model.
+- Navigation/transform precedence was a real runtime interaction finding rather than a missing Host concept.
+- A research Host should not grow into a dependency matrix or observation database.
+
+Those findings should not be discarded; they are simply no longer a description of the complete current implementation.
+
+---
+
+## 8. Obsolete V1 Findings
+
+The following V1 conclusions are now obsolete and must **not** be reused as current repository facts:
+
+### Obsolete: single active Host slot
+
+The application is no longer limited to one tracked family slot. The current Host uses a per-family registry.
+
+### Obsolete: Host machinery unused by the live Playground
+
+The current runtime registers and activates experiment families through the Host machinery. The previous statement that the Host existed only as a tested library while the real Playground bypassed it is no longer an accurate description of the current main branch.
+
+### Obsolete: only Selection / Transform / Presentation families exist
+
+Tweak and Topology are now present in `playground/experiments/` and are wired into the current runtime research surface.
+
+### Obsolete: Topology does not exist / AP-05 is deferred
+
+This is explicitly superseded. Topology experiments and runtime topology operations exist today.
+
+---
+
+## 9. Remaining Current Gaps
+
+The current gaps should be understood as **research/runtime completeness gaps**, not as justification for rebuilding the Host.
+
+### A — Not every experiment family represents a final UX decision
+
+The Host makes variants observable and recordable. It does not decide which interaction is best. `UNDECIDED`, `KEEP`, `ITERATE`, and `REJECT` remain research states.
+
+### B — Individual topology behaviours remain incomplete/open
+
+Some topology behaviours and edge cases remain unresolved or intentionally under research. Examples include boundary-loop continuation, open-loop slide behaviour, even-spacing/clamping, and other operation-specific details documented by the topology experiments/tests.
+
+These should remain localized to the relevant experiment rather than becoming a reason to redesign the Host.
+
+### C — Navigation and transform coexistence remains an interaction finding
+
+The existing transform-key precedence means that holding transform keys can prevent camera orbit/pan gestures during the same interaction. This remains a useful baseline observation and should be treated as a UX research question, not silently “fixed” as part of Host maintenance.
+
+### D — Runtime wiring should remain verified against code
+
+Because the Playground is evolving quickly, future audits should verify actual registration, activation, and runtime paths instead of assuming that a folder or roadmap entry proves live availability.
+
+---
+
+## 10. Implications for EX-A
+
+EX-A asks:
+
+> **Does temporary articulation help the artist detect and respond to problems earlier while modeling?**
+
+The current Host/Playground state supports a stronger experiment than a pure visual inspection task.
+
+If temporary articulation exposes a topology/deformation problem, the artist can potentially:
+
+1. inspect the articulated result,
+2. identify the relevant topology/components,
+3. modify the topology using the existing Playground operations,
+4. observe the result again,
+5. undo/redo as needed,
+6. and record what actually changed in the modeling decision.
+
+That makes the **actual intervention itself observable evidence**. EX-A should therefore not be constrained to “see and name” if the current runtime already provides the required topology manipulation.
+
+The Blender/DCC calibration remains useful as a low-cost discovery step for articulation feel, pivot behaviour, deformation visibility, and general experiment design. It is **not** a prerequisite for establishing whether the Playground can manipulate topology — that capability already exists in the current repository.
+
+---
+
+## 11. Audit Conclusion
+
+The Experiment Host is no longer in the early single-slot state described by the 2026-09-13 audit.
+
+The current Playground has a functioning multi-family experiment surface covering Selection, Presentation, Transform, Tweak, and Topology. Topology is substantially implemented and can be used for actual mesh manipulation, with existing history/snapshot mechanisms providing reversibility for the relevant operations.
+
+The correct development posture is therefore:
+
+> **Use and audit the current Host and experiments; do not rebuild them based on stale documentation.**
+
+For future work, current code/tests on `main` remain authoritative. Research documents describe questions and observations; they must not be used to infer that an implemented capability is missing simply because an older audit or roadmap predates it.
 
 **Stop condition reached. No implementation performed.**
