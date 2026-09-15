@@ -1,8 +1,8 @@
 # Artist Playground — Roadmap
 
-**Status:** Planning (pre-implementation)
-**Date:** 2026-09-10
-**Derived from:** [Architecture Map](ARCHITECTURE_MAP.md)
+**Status:** Active research / implementation
+**Date:** 2026-09-15
+**Source of truth:** current Playground code + experiment assets; this roadmap must not describe planned work as missing when it already exists in the repository.
 
 ---
 
@@ -10,16 +10,16 @@
 
 The Artist Playground follows a research-first model, not a feature-delivery model.
 
-```
+```text
 Question
     ↓
-Playground
+Playground experiment
     ↓
-Variant A / B / C
+Variant / setting
     ↓
 Manuel plays with it
     ↓
-Artist Verdict
+Observation / Artist Verdict
     ↓
 Candidate
     ↓
@@ -28,310 +28,265 @@ Production
 
 **Production is not where we discover what is good. Production is where we cleanly implement what has already proven itself.**
 
-This roadmap is therefore not a feature checklist. It is a sequence of research phases, each enabling the next. Later phases may be redefined based on what earlier phases reveal.
+The roadmap is therefore a research roadmap, but its status sections must reflect the actual repository state. Research documents may remain open-ended; implementation status must be factual.
 
 ---
 
-## Dependency Order
+## Current Repository Snapshot — 2026-09-15
 
-```
-WP-AP-01 (Foundation)                   ✓ done
-    │
-    ▼
-WP-AP-02 (Experiment Host)              ✓ done
-    │
-    ▼
-WP-AP-02.5 (Viewport Presentation Lab)  ✓ done  (b9b7ea6)
-    │
-    ▼
-WP-AP-03 Phase 0 (Playground Controls)  ✓ done  (aeab079)
-    │
-    ▼
-WP-AP-03 Phase 1 (Single Select)        ✓ done  (8971502)
-    │
-    ▼
-WP-AP-03 Phase 2 (Modifier/Toggle)      ✓ done  (8b38736)  ← current
-    │
-    ├──▶ WP-AP-03 Phase 3 (Marquee)
-    ├──▶ WP-AP-03 Phase 6 (Feedback)
-    │
-    ├──▶ WP-AP-04 (Tool Variant Lab)
-    │
-    └──▶ WP-AP-05 (Topology Lab)
+The original 2026-09-10 roadmap is now substantially behind the implementation. In particular, the following are already present in `playground/`:
+
+- Experiment Host / Slot infrastructure.
+- Viewport presentation variants.
+- Selection experiments including Replace, Toggle, Modifier, Box Select and Face Select.
+- Transform experiments including Move, Rotate, Scale and interaction-style variants.
+- A topology experiment family.
+- Topology mutation tools: Extrude, Connect Edges, Loop Insert and Loop Slide.
+- Topology query/selection support: Loop/Ring Select.
+- A Tweak experiment family with multiple interaction variants and decision/handoff documentation.
+- Headless tests for the above areas.
+
+Therefore, **Topology Lab is not a future empty work package** and **Tweak is not an unimplemented idea**. They are existing Playground research assets whose runtime/Host integration and research status may still evolve.
+
+This distinction is important: an experiment family existing in the repository does not mean that its UX verdict is final, nor that it belongs in Production.
+
+---
+
+## Dependency / Research Order
+
+The original strict linear dependency has been relaxed because the Playground is now a multi-family research workshop.
+
+```text
+WP-AP-01 Foundation                         ✓ done
+        │
+        ▼
+WP-AP-02 Experiment Host                    ✓ done
+        │
+        ▼
+WP-AP-02.5 Viewport Presentation Lab        ✓ done
+        │
+        ├───────────────┬───────────────────┬───────────────────┐
+        ▼               ▼                   ▼                   ▼
+   Selection Lab   Transform Lab      Topology Lab         Tweak Lab
+     AP-03             AP-04             AP-05          research family
+        │               │                   │
+        └───────────────┴───────────────────┴───────────────┐
+                                                            ▼
+                                                Artist Research / Verdicts
+                                                            │
+                                                            ▼
+                                                      Production candidates
 ```
 
-WP-AP-03, -04, -05 can run in parallel — they share only the infrastructure from WP-AP-01/02.
+Families may be researched in parallel. A decision in one family must not silently become a setting or dependency of another family unless that relationship is explicitly part of the experiment.
+
+---
+
+## WP-AP-01 — Artist Playground Foundation ✓
+
+**Status:** Done.
+
+The Playground runs as a lightweight artist-facing experiment host with camera/navigation, mesh loading, HUD, rendering and headless-testable infrastructure.
+
+Validated/reused foundations include:
+
+- Playground window/app orchestration.
+- Orbit camera, picking and mesh loading.
+- Production viewport/core access through adapters rather than rebuilding Production systems.
+- Head and cube test scenes.
+- Presentation/HUD infrastructure.
+
+Production `src/core/` and `src/viewport/` remain protected boundaries. The Playground adapts and experiments around them.
+
+---
+
+## WP-AP-02 — Experiment Host ✓
+
+**Status:** Implemented and tested.
+
+The repository contains an `ExperimentSlot` abstraction with variant identity and decision state (`UNDECIDED`, `KEEP`, `ITERATE`, `REJECT`) plus per-experiment decision documentation.
+
+The Host is research infrastructure, not a final production tool framework.
+
+**Important current limitation:** the Host abstraction and the runtime window are not yet equivalent concepts. Some experiment families/variants are still routed through direct Playground runtime handlers rather than being uniformly instantiated as independent runtime slots. This is an integration/design issue, not evidence that the experiment family itself is missing.
 
 ---
 
 ## WP-AP-02.5 — Viewport Presentation Lab ✓
 
-**Status:** Done | **Baseline-Commit:** `b9b7ea6` (2026-09-11)
+**Status:** Done.
 
-Multi-Pass-Rendering im Playground: Smooth Shaded, Flat Shaded, Wireframe, Vertices (GL_POINTS),
-Edges (GL_LINES) und alle Kombinationen davon. Sechs `PresentationExperiment`-Varianten.
-`DisplayState` aus Production direkt wiederverwendet. VBO-Daten-Builder headless testbar.
-
-27 neue Tests. Darstellungsbasis für AP-03 (Selection Feedback) bereit.
-
-Detailed plan: [AP-03_PLAN.md](AP-03_PLAN.md)
-
----
-
-## WP-AP-01 — Artist Playground Foundation
-
-**Goal:** The Playground runs. The artist can see a mesh, operate the camera, and start a first experiment.
-
-### What gets built
-
-| Component | Type | Source |
-|-----------|------|--------|
-| `PlaygroundWindow` — lightweight pyglet GL host, no fixed scene | 🔴 NEW | Integration Lab `lab_viewport.py` as reference |
-| `PlaygroundApp` — minimal orchestrator with Experiment Slot | 🔴 NEW | `Application` (WRAP, not changed) |
-| `PlaygroundHUD` — standalone HUD class, configurable | 🟡 ADAPT | extracted from `lab_viewport.py` |
-| `PlaygroundRenderer` — adapter onto `src/viewport/` | 🔵 WRAP | Production Viewport untouched |
-| Camera, Picking, Input, Commands connected | 🟢 REUSE | ready now |
-| Cube + Head Basemesh loadable | 🟢 REUSE | OBJ loader already present |
-| Playground test harness (base) | 🔴 NEW | Lab test pattern as template |
-
-### Result after WP-AP-01
-
-```
-python playground/run.py
-→ Window opens
-→ Cube or Head visible
-→ Orbit / Zoom / Pan works
-→ HUD shows: camera state, active experiment, mesh info
-→ Production tests: green
-```
-
-### Explicitly NOT in WP-AP-01
-
-- No Select Tool
-- No experiment variants
-- No decision system
-- No new modeling tools
-
----
-
-## WP-AP-02 — Experiment Host
-
-**Goal:** Anti-chaos system. We can define variants, test them, and record a decision.
-
-### Minimal scope (deliberately)
-
-```python
-class Experiment:
-    id: str
-    name: str
-    variant: str
-    def activate(): ...
-    def deactivate(): ...
-    def update(): ...
-    def draw(): ...
-```
-
-Switching variant = one line change. Decision = fill in `decision.md`. No framework, no registry overhead, no persistence engine.
-
-### Decision record format
-
-```markdown
-# <Experiment Name> — <Variant>
-
-Decision: KEEP / ITERATE / REJECT
-
-What felt better:
-- ...
-
-What felt worse:
-- ...
-
-Artist verdict:
-- ...
-```
-
-### File structure
-
-```
-playground/
-  experiments/
-    select_box/
-      variant_a.py
-      variant_b.py
-      decision.md
-```
-
-### Result after WP-AP-02
-
-- New variant = new file, no refactoring
-- Decision documented in `decision.md`
-- Active experiment visible in HUD
+The Playground supports multiple presentation variants, including smooth/flat shading, wireframe, vertices and combinations thereof. Presentation is available as a controlled setting for other experiments.
 
 ---
 
 ## WP-AP-03 — Selection Lab
 
-**Status:** Phase 0–2 done | **Phase-2-Commit:** `8b38736` (2026-09-11)
+**Status:** Implemented baseline + extended research variants; not a final UX verdict.
 
-**Phase 0 — Playground Controls:** `PlaygroundInputMap` (frei konfigurierbar), 15 Tests
-**Phase 1 — Single Select (Replace):** Face-Click → selection, 14 Tests  
-**Phase 2 — Modifier/Toggle:** Shift=Add/Ctrl=Remove/Alt=Toggle oder Toggle-only, 22 Tests
+Selection infrastructure and variants now exist beyond the original Phase 0–2 roadmap snapshot.
 
-**Total:** 51 Tests, 122 Playground-Tests grün, Selection-Baseline funktioniert.
+Present experiment assets include:
 
-**Detailed plan:** [AP-03_PLAN.md](AP-03_PLAN.md)
+- Replace selection.
+- Toggle selection.
+- Modifier selection.
+- Box Select.
+- Face Select.
+- Selector/picking integration and hover feedback.
 
-**Goal:** Answer the most important open UX question: *How should selection feel?*
+The original roadmap statement that the Picking → Selection connection was still missing is **obsolete**.
 
-This is the first major research work package. It comes before Tool Variants because Selection is the foundation for almost everything else in the editor.
+### Research questions remain open
 
-### Open research questions
+- What selection semantics feel natural?
+- What should modifiers mean?
+- How should box/lasso/paint-like selection behave?
+- How should selection persist across operations?
+- How should selection interact with transform and topology tools?
 
-- What feels right when clicking a vertex / face / edge?
-- How should selection be visualized?
-- What does Shift do?
-- How does Box-Select behave?
-- Does Lasso feel right?
-- Is Paint Select useful at all?
-- What happens on Drag vs. Click?
-- How fast does feedback need to arrive?
-- How important is "selection persists across operations"?
-- How should Selection interact with Tools?
-
-### Missing piece (from Architecture Map)
-
-The connection between Picking hit → `core.selection.set_selection()` does not yet exist. This is the core build in WP-AP-03.
-
-### Experiment variants
-
-| Variant | Experiment |
-|---------|-----------|
-| Click-Select (single) | Baseline |
-| Toggle-Select (Shift) | Variant A |
-| Box-Select | Variant B |
-| Lasso-Select | Variant C |
-| Paint-Select | Variant D |
-
-Each variant is its own Experiment Slot. Artist plays with each. Decision record captures the verdict.
-
-### Dependencies
-
-- WP-AP-01 (Playground runs)
-- WP-AP-02 (Experiment Slot system)
+Selection variants remain research material until an explicit Artist Verdict promotes one to candidate status.
 
 ---
 
-## WP-AP-04 — Tool Variant Lab
+## WP-AP-04 — Transform / Tool Variant Lab
 
-**Goal:** Research Move / Transform variants not yet present in Production.
+**Status:** Active / implemented experiment material.
 
-**Status: Open — content defined after WP-AP-03 Artist Verdict.**
+The Playground already contains transform variants and runtime transform behaviour for:
 
-The current hypotheses (axis constraint, soft selection, incremental vs. absolute) may not turn out to be the right research questions. After WP-AP-03, the actual open questions may shift — for example:
+- Move.
+- Rotate.
+- Scale.
+- Hold-based interaction.
+- Press/mode and press-drag/click interaction variants.
 
-> "Our biggest problem is not Move itself, but how Selection and Transform flow together."
+The current implementation must not be interpreted as a final answer to the Transform interaction grammar. In particular, the fact that `Move`, `Rotate` and `Scale` work is implementation evidence, not an Artist Verdict.
 
-WP-AP-04 will be scoped based on what WP-AP-03 reveals.
+Current research should remain decoupled from Selection choices unless the experiment explicitly focuses on their interaction.
 
-### Dependencies
-
-- WP-AP-01
-- WP-AP-02
-- WP-AP-03 (Artist Verdict informs scope)
+Known runtime behaviour to keep visible during future research: held transform keys can currently take precedence over camera navigation. This is an interaction observation/issue, not a reason to rewrite the camera system.
 
 ---
 
 ## WP-AP-05 — Topology Lab
 
-**Goal:** Research Topology Phase 4 (Loop Insert) and Phase 5 (Extrude) in the Playground before Production integration.
+**Status:** Active and substantially implemented in the Playground.
 
-**Basis:**
-- V1 `topology_tools.py` as reference code
-- Topology specs from `experiments/topology/`
-- Production `operations/topology.py` (MeshStateCommand)
+Topology is **not missing**. The Playground currently contains topology experiment assets and mutation tools sufficient for real mesh editing during research.
 
-**Mode:** Playground-first → Candidate → Production.
+### Implemented topology capabilities
 
-**Status:** IN PROGRESS — Multi-Face-Extrude (Region) implementiert (2026-09-14)
+- **Extrude** — baseline and multi-face/region behaviour.
+- **Connect Edges** — including the current enablement port and free-connect case.
+- **Loop/Ring Select** — query/traversal based selection.
+- **Loop Insert** — topology mutation through the existing topology operation path.
+- **Loop Slide** — interactive drag-based loop movement with snapshot/commit/cancel and Undo/Redo.
 
-### AP-05-Auftakt — Baseline Extrude (Discovery, kein Production-Schritt)
+The current topology tests cover commit/cancel/history and important geometry/topology cases. The latest roadmap work also includes the Loop Slide direction-consistency fix and regression coverage.
 
-**Implementiert:**
-- `playground/topology_tools/extrude.py` — `ExtrudeTool` als `Tool`-Subklasse (Production-Core, nicht V1-Fork)
-- `playground/experiments/topology/variant_extrude_baseline.py` — Experiment-Wrapper für den topology-Slot
-- `playground/window.py` — topology-Slot registriert; E = activate/begin, LMB-Drag = update, LMB-Release = commit, ESC = cancel
-- `playground/tests/test_topology_extrude_baseline.py` — 8 Headless-Baseline-Tests (commit/selection/undo/redo/cancel + Regression begin-remap + Hover-Fallback), alle grün
+### Important research boundary
 
-**Reihenfolge-Hinweis:** Extrude wurde **vor** Phase 3 (Connect Edges) und Phase 4 (Loop Insert) implementiert, nicht danach wie ursprünglich in `TOPOLOGY_EXPERIMENT_PLAN.md` geplant. Grund: Der AP-05-Auftakt ist ein Discovery-Schritt der gezielt Extrude als erste größere Topologie-Interaktion aufgreift, bevor Connect- und Loop-Insert-Semantik final geklärt ist. Die Phase-Nummerierung im Plan bleibt erhalten — die Durchführungsreihenfolge weicht bewusst ab.
+These tools are **Playground research implementations**, not a declaration that all topology semantics are ready for Production. Some behaviours are deliberately scoped or excluded, for example boundary-loop continuation, open-loop slide behaviour, even-spacing/clamping modes, and other unresolved interaction questions.
 
-### AP-05 — Multi-Face-Extrude (Region) (Discovery, kein Production-Schritt)
+The Playground is therefore already capable of the kind of workflow relevant to EX-A:
 
-**Implementiert (2026-09-14):**
-- `ExtrudeTool` auf `begin(face_ids: set[FaceId])` verallgemeinert (echter Refaktor via Boundary-Edge-Regel, kein Parallel-Code)
-- `window.py` — 2+-Faces-No-op entfernt; 1+ selektierte Faces → Multi-Face-Extrude; Hover-Fallback bleibt auf 1 Face begrenzt
-- 4 neue Multi-Face-Tests (benachbarte Faces/geteilte Edge ohne Wand, nicht-benachbarte Faces/volle Seitenwände, Cancel/Multi-Selection, Undo/Redo) — 12 Tests gesamt, alle grün
+```text
+articulate / inspect
+        ↓
+recognize a topology or form problem
+        ↓
+change topology in the Playground
+        ↓
+articulate / inspect again
+```
 
-**Bewusste Entscheidungen:**
-- Normale als gemittelte Region-Normale (normalisierte Summe der Newell-Normalen aller Faces) — erste Version, keine finale Antwort auf die Normal-/Richtungsfrage
-- Caps sind 1:1 auf neue Vertex-IDs gemappt, keine Verschmelzung zu größeren Polygonen
-
-**Nächster Schritt:** Artist-Verdict (decision.md für den topology-Slot).
-
-### AP-05 — Connect Edges (Enablement-Port, kein Production-Schritt)
-
-**Implementiert (2026-09-14):**
-- `playground/topology_tools/connect_edges.py` — 1:1-Logik-Port aus V1 gegen Production-`src/core`; 3-Phasen-Plan (Analyze → Plan/Dry-Run → Apply); 1 MeshStateCommand pro Operation
-- `playground/window.py` — Taste **J**: Edge-Modus + 2+ Edges selektiert → Connect; neue Verbindungskanten werden selektiert; TopologyToolError → HUD-Meldung statt Crash
-- `playground/tests/test_topology_connect_edges.py` — 7 Headless-Tests, alle grün
-
-**Nachgezogen (2026-09-14):**
-- `src/core/mesh.py` — `add_edge()` als öffentliche Mutation-Primitive (additiv, AD-001/002/003 unberührt)
-- `connect_edges.py` — "kind v"-Fall aktiviert: `_FreeConnectStep` + `mesh.add_edge()` für Ketten-Verbindung über gemeinsamen regulären Innen-Vertex ohne Face-Kontext
-- `playground/tests/test_topology_connect_edges.py` — 9 Headless-Tests (3 neue: kind-v positiv, kind-v Undo/Redo, Boundary-Vertex-Ablehnung), alle grün
-
-### AP-05 — Loop/Ring Select (Enablement-Port, kein Production-Schritt)
-
-**Implementiert (2026-09-14):**
-- `playground/topology_tools/loop_ring.py` — 1:1-Logik-Port aus V1 (`loop_ring.py`) gegen Production-`src/core`; reine Query, keine Mutation; `edge_loop()`, `edge_ring()`, `Traversal`, `LoopRingError`
-- `playground/window.py` — **Shift+L**: Edge-Modus + 1+ Edges → Loop Select; **Shift+R**: Edge-Modus + 1+ Edges → Ring Select; HUD zeigt Anzahl + offen/geschlossen
-- `playground/tests/test_topology_loop_ring.py` — 6 Headless-Tests (Ring auf Cube geschlossen, Loop auf Cube stoppt, Loop durch Valenz-4-Vertex, offener Ring, LoopRingError), alle grün
-
-**Bewusst ausgeklammert:** Boundary-Loop-Fortsetzung (offener Rand), Loop Insert als Folgeop.
-
-### AP-05 — Loop Insert (Enablement-Port, kein Production-Schritt)
-
-**Implementiert (2026-09-14):**
-- `playground/topology_tools/loop_insert.py` — `loop_insert(scene, start_edge)`: erkennt Ring via `edge_ring()`, delegiert an `connect_selected_edges()`; 1 MeshStateCommand (via Connect Edges), `LoopInsertError` für alle Fehlerfälle
-- `playground/window.py` — Taste **I**: Edge-Modus + 1+ Edges selektiert → Loop Insert; neue Kanten werden selektiert; Fehler → HUD-Meldung
-- `playground/tests/test_topology_loop_insert.py` — 6 Headless-Tests (Topologie wächst, 1 History-Eintrag, Undo/Redo, ungültige Edge, freie Edge, Determinismus), alle grün
-
-**Bewusst ausgeklammert:** Interaktive Positionierung (Loop Slide), mehrfache gleichzeitige Inserts.
-
-### AP-05 — Loop Slide (Discovery, kein Production-Schritt)
-
-**Implementiert (2026-09-14):**
-- `playground/topology_tools/loop_slide.py` — `LoopSlideTool(Tool)`: Snapshot → Slide-Vektoren pro Vertex → t via Drag akkumulieren → Positionen interpolieren → MeshStateCommand; `LoopSlideError` für alle Fehlerfälle; Scope: geschlossene Loops mit Valenz-4-Vertices
-- `playground/window.py` — **G** (halten): Edge-Modus + 1+ Edges selektiert → Loop Slide beginnt; Mausbewegung = live slide; G loslassen = Commit; ESC = Cancel
-- `playground/tests/test_topology_loop_slide.py` — 7 Headless-Tests (Positionen ändern sich, dx=0 → unverändert, 1 History-Eintrag, Undo/Redo, Cancel, ungültige Edge, Valenz-3-Vertex), alle grün
-
-**Bugfix (2026-09-14):** na/nb-Zuordnung war pro Vertex unabhängig über undefinierte `vertex_edges()`-Reihenfolge bestimmt — Vertices liefen in entgegengesetzte Richtungen. `_on_begin()` baut jetzt zuerst einen geordneten Zyklus-Walk, dann konsistente Seiten-Zuordnung via `face_vertices()`-Winding; Inkonsistenz → `LoopSlideError`. 8 Tests (+ Regressionstest für Richtungskonsistenz), alle grün.
-
-**Bewusst ausgeklammert:** Even-spacing, Clamp-Mode, Boundary-Loops, offene Loops (Valenz ≠ 4 an Endvertices).
+EX-A does not need to fake the modelling step by asking the artist to merely write down what they would change if the existing topology tools are sufficient for the observation.
 
 ---
 
-## Invariants for All Phases
+## Tweak Lab — Existing Research Family
 
+**Status:** Existing experiment material; research/Host integration still evolving.
+
+The repository contains a dedicated `playground/experiments/tweak/` family with multiple interaction variants and research/decision handoff material.
+
+This means **Tweak/Soft-Selection-style interaction must be audited from the current code before being described as missing**.
+
+Its existence does not imply that it is the same thing as deformation/articulation. A topology-preserving Tweak and an EX-A bend probe are separate research questions unless an experiment explicitly combines them.
+
+---
+
+## EX-A — “Bend Probe” (Character Systems Research)
+
+**Status:** Discovery / experiment design. No implementation decision yet.
+
+Origin: `CHARACTER_SYSTEMS_RESEARCH.md`, Axis 6, sub-hypothesis 6a.
+
+### Research question
+
+> Does having temporary articulation available during modelling make topology/form problems visible earlier, while the mesh is still cheap to change?
+
+### Current scope implication
+
+Because the Playground already supports real topology editing, EX-A does **not** need to be reduced to “bend and write down what you would change”. Actual topology edits may be part of the observation when they occur naturally.
+
+The focal variable remains the availability of temporary articulation. Selection, topology operation, presentation, camera and other settings should remain controlled unless explicitly under study.
+
+### Still open
+
+- What kind of bend is useful: true rotational/bending behaviour versus soft/falloff displacement?
+- How long must a bent state remain inspectable?
+- How should the temporary deformation return to rest?
+- How is the pivot determined/signalled?
+- Can the artist distinguish deformation artefacts from genuine topology problems?
+- Does the artist actually use the bend during normal modelling?
+
+The existing rigging/skinning/morphing experiment remains a separate technical research track. EX-A should not pull that system into the Playground unless the minimum viable bend probe demonstrably requires it.
+
+---
+
+## Documentation / Reality Rule
+
+The following rule is now explicit for Playground documentation:
+
+> **When implementation and roadmap disagree, inspect the current code and tests before declaring a capability missing.**
+
+Roadmaps describe intent and research order. They are not an inventory of what exists.
+
+In particular, do not infer “not implemented” from an old AP phase number. Check:
+
+- `playground/experiments/`
+- `playground/topology_tools/`
+- `playground/window.py`
+- `playground/slot.py`
+- `playground/tests/`
+- the relevant experiment/decision documents
+
+This prevents stale planning documents from causing duplicate implementation or unnecessary rebuilding.
+
+---
+
+## Invariants for All Playground Work
+
+```text
+🏭 src/core/       → protected; change only with explicit Production decision
+🏭 src/viewport/   → protected; Playground wraps/adapts rather than rebuilds
+🧪 Playground     → experiments may be rough, local and reversible
+📝 Research docs  → questions and observations, not hidden implementation decisions
+✅ Tests           → remain green
 ```
-🏭 src/core/     →  never change
-🏭 src/viewport/ →  never change directly (WRAP only)
-🏭 tests/        →  always green
-```
+
+Most importantly:
+
+> **Don't rebuild if it is already validated, documented, and working. Nutzen/adaptieren, nicht neu machen.**
 
 ---
 
 ## Relationship to the Main Project Roadmap
 
-The Artist Playground is a research initiative that feeds the main production roadmap (`docs/architecture/ROADMAP.md`). Candidates that prove themselves in the Playground become inputs to WP-02 (Interaction & Tool Framework), the Modeling Track, and future work packages.
+The Artist Playground is a research initiative that feeds the main production roadmap (`docs/architecture/ROADMAP.md`).
 
-The Playground does not replace the production roadmap. It is the mechanism by which future production work packages get validated UX foundations rather than assumed ones.
+A Playground capability is not automatically a Production feature. A successful experiment becomes a candidate only after an explicit research/Artist verdict and an implementation review.
+
+The Playground exists to answer questions cheaply, visibly and reversibly before Production architecture is changed.
