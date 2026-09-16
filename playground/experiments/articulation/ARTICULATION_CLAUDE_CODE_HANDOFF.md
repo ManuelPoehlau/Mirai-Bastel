@@ -1,4 +1,14 @@
-# Task: EX-A — Wire Temporary Articulation into the Playground (H02) + Topology Limits Report (H03)
+# EX-A — H02: Wire Temporary Articulation into the Playground
+
+> **Status (2026-09-17):** H02 is implemented and on `main`.
+> The implementation is **Single-Bend** — one bend gesture per session, restore
+> via F/ESC, Auto-Restore before topology operations (K/I/J/E/G).
+> See §H02 Result below for the definitive description.
+> H03 (topology limits report) is separate and still pending.
+>
+> `ARTICULATION_MULTI_BEND_ADDENDUM.md` was authored, implemented, and then
+> reverted — Multi-Bend is parked as future research. That file is superseded
+> and kept for project memory only.
 
 **Mode:** Production for H02 — the research decision on *what* to build (H01's
 scope) is made and already implemented, tested, and committed. Build the
@@ -199,3 +209,62 @@ turned out to be awkward to wire (in which case: describe the problem, don't
 silently work around it by changing the module's semantics).
 
 For H03: the classified findings list, nothing else.
+
+---
+
+## H02 Result (authoritative as of 2026-09-17)
+
+### Articulation lifecycle
+
+```
+REST (exact vertex positions, immutable until session ends)
+  ↓  LMB press on articulation family (vertex hit = pivot)
+BEND  — press+drag: update() called per mouse-drag event, angle from total
+         drag distance × 0.01 rad/px, axis from drag direction in screen space
+  ↓  mouse release
+BENT / INSPECTION  — mesh stays deformed, camera navigation fully free
+                     (Orbit / Pan / Zoom / Wireframe all work normally)
+  ↓  F  or  ESC
+REST  — restore() writes back exact _rest_positions values, bit-identical
+```
+
+A new LMB press while BENT: existing session is `restore()`d first, then a
+fresh `ArticulationState` is created and `begin()` is called. There is no
+multi-bend within a single session.
+
+### Auto-Restore before topology operations
+
+When **K / I / J / E / G** is pressed while a session is active
+(`_articulation_state is not None and is_bent`), `_articulation_auto_restore()`
+runs first:
+
+```
+BENT
+  ↓  K / I / J / E / G
+AUTO RESTORE  (restore() → exact REST, _articulation_state = None)
+  ↓
+TOPOLOGY OPERATION  (runs on rest geometry — no stale-vertex risk)
+  ↓
+(artist can articulate again normally with a fresh LMB press)
+```
+
+HUD action text appends `(articulation restored)` so the implicit restore
+is visible.
+
+### Pivot / axis / radius rules
+
+- **Pivot:** nearest vertex to the click point (`pick_nearest_vertex`).
+- **Axis:** recomputed each drag event from the total screen-space drag vector:
+  `normalize(-total_dx * forward + total_dy * right)`.  No fixed axis at
+  press — the bend direction tracks where the user drags.
+- **Radius:** `_mesh_bounding_radius(mesh)` at press time — full bounding
+  radius so the falloff reaches every vertex from any on-surface pivot.
+
+### Files
+
+| File | Role |
+|------|------|
+| `playground/experiments/articulation/articulation.py` | `ArticulationState` — begin/update/restore, falloff math |
+| `playground/experiments/articulation/variant_articulation.py` | Sixth Host family variant |
+| `playground/window.py` | LMB press/drag/release wiring, F/ESC restore, K/I/J/E/G auto-restore |
+| `playground/tests/test_articulation.py` | Headless tests: falloff, restore exactness, topology lock |
