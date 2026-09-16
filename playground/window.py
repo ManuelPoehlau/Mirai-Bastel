@@ -335,6 +335,13 @@ class PlaygroundWindow(pyglet.window.Window):
         self._articulation_dragging: bool = False  # True only during the LMB drag that produces the angle
         self._articulation_press_x: int = 0
         self._articulation_press_y: int = 0
+        # dist_offset: added to the raw pixel-distance in on_mouse_drag so that
+        # gesture B's effective angle starts from gesture A's ending angle, not
+        # from zero. Without this, update(~0 rad) at the start of every new
+        # gesture snaps all vertices to near-REST before the user has dragged
+        # far enough to produce a visible bend — a flash visible from BENT A.
+        self._articulation_dist_offset: float = 0.0
+        self._articulation_effective_dist: float = 0.0  # last (dist + offset) used in update()
 
         # Box-Select-State (AP-03 Variante C)
         self._box_start: tuple[int, int] | None = None
@@ -541,6 +548,8 @@ class PlaygroundWindow(pyglet.window.Window):
             self._articulation_state.restore()
             self._articulation_state = None
             self._articulation_dragging = False
+            self._articulation_dist_offset = 0.0
+            self._articulation_effective_dist = 0.0
             return True
         return False
 
@@ -659,9 +668,15 @@ class PlaygroundWindow(pyglet.window.Window):
                 radius = _mesh_bounding_radius(mesh)
                 if self._articulation_state is not None and self._articulation_state.is_bent:
                     # Continue existing session — same rest snapshot, new gesture.
+                    # Carry the ending effective dist of gesture A as the offset
+                    # for gesture B so update() never receives a near-zero angle
+                    # at drag-start (which would snap the mesh to near-REST).
+                    self._articulation_dist_offset = self._articulation_effective_dist
                     self._articulation_state.retarget(pivot, (0.0, 1.0, 0.0), radius)
                 else:
                     # Axis is a placeholder; overridden on every drag update before update() is called.
+                    self._articulation_dist_offset = 0.0
+                    self._articulation_effective_dist = 0.0
                     self._articulation_state = ArticulationState(mesh, pivot, (0.0, 1.0, 0.0), radius)
                     self._articulation_state.begin()
                 self._articulation_press_x = x
@@ -726,7 +741,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 ay = -total_dx * forward[1] + total_dy * right[1]
                 az = -total_dx * forward[2] + total_dy * right[2]
                 self._articulation_state.axis = (ax / dist, ay / dist, az / dist)
-                self._articulation_state.update(dist * _ARTICULATION_SENSITIVITY)
+                effective = dist + self._articulation_dist_offset
+                self._articulation_state.update(effective * _ARTICULATION_SENSITIVITY)
+                self._articulation_effective_dist = effective
                 self._rebuild_vbo()
             return pyglet.event.EVENT_HANDLED
 
@@ -1025,6 +1042,8 @@ class PlaygroundWindow(pyglet.window.Window):
             if self._articulation_state is not None:
                 self._articulation_state = None
                 self._articulation_dragging = False
+                self._articulation_dist_offset = 0.0
+                self._articulation_effective_dist = 0.0
             self._rebuild_vbo()
             self._rebuild_selection_vbo()
             self._push_camera()
@@ -1274,6 +1293,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._articulation_state.restore()
                 self._articulation_state = None
                 self._articulation_dragging = False
+                self._articulation_dist_offset = 0.0
+                self._articulation_effective_dist = 0.0
                 self._rebuild_vbo()
                 self._hud.update_action("Articulation restored")
                 self._update_hud()
@@ -1282,6 +1303,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._articulation_state.restore()
                 self._articulation_state = None
                 self._articulation_dragging = False
+                self._articulation_dist_offset = 0.0
+                self._articulation_effective_dist = 0.0
                 self._rebuild_vbo()
                 self._hud.update_action("Articulation restored")
                 self._update_hud()
