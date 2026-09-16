@@ -529,6 +529,21 @@ class PlaygroundWindow(pyglet.window.Window):
         self._transform_started = False
         self.app.active_tool = None
 
+    # -- Articulation-Helpers -------------------------------------------------
+
+    def _articulation_auto_restore(self) -> bool:
+        """Restore articulation session if active. Returns True if a restore happened.
+
+        Caller is responsible for VBO rebuild and HUD update — this method only
+        ends the session so topology operations execute against exact rest geometry.
+        """
+        if self._articulation_state is not None and self._articulation_state.is_bent:
+            self._articulation_state.restore()
+            self._articulation_state = None
+            self._articulation_dragging = False
+            return True
+        return False
+
     # -- Tweak-Helpers --------------------------------------------------------
 
     def _active_extrude_model(self) -> str:
@@ -642,11 +657,13 @@ class PlaygroundWindow(pyglet.window.Window):
             if vid is not None:
                 pivot = mesh.vertex_position(vid)
                 radius = _mesh_bounding_radius(mesh)
-                if self._articulation_state is not None:
-                    self._articulation_state.restore()
-                # Axis is a placeholder; it is overridden on every drag update before update() is called.
-                self._articulation_state = ArticulationState(mesh, pivot, (0.0, 1.0, 0.0), radius)
-                self._articulation_state.begin()
+                if self._articulation_state is not None and self._articulation_state.is_bent:
+                    # Continue existing session — same rest snapshot, new gesture.
+                    self._articulation_state.retarget(pivot, (0.0, 1.0, 0.0), radius)
+                else:
+                    # Axis is a placeholder; overridden on every drag update before update() is called.
+                    self._articulation_state = ArticulationState(mesh, pivot, (0.0, 1.0, 0.0), radius)
+                    self._articulation_state.begin()
                 self._articulation_press_x = x
                 self._articulation_press_y = y
                 self._articulation_dragging = True
@@ -1039,23 +1056,27 @@ class PlaygroundWindow(pyglet.window.Window):
             # Research (das ist AP-05) — ein fester, einfachster Trigger.
             sel = self.app.scene.selection
             if sel.mode is SelectionMode.EDGE and len(sel.edges) == 1:
+                restored = self._articulation_auto_restore()
                 (edge_id,) = sel.edges
                 split_selected_edge(self.app.scene, edge_id)
                 sel.clear()
                 self._rebuild_vbo()
-                self._hud.update_action("Split Edge")
+                action = "Split Edge (articulation restored)" if restored else "Split Edge"
+                self._hud.update_action(action)
                 self._update_hud()
         elif symbol == _key.I:
             # I: Loop Insert (AP-05). Scope: Edge-Modus, genau 1 Edge selektiert.
             sel = self.app.scene.selection
             if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
+                restored = self._articulation_auto_restore()
                 start = next(iter(sel.edges))
                 try:
                     new_edges = loop_insert(self.app.scene, start)
                     sel.clear()
                     sel.add(set(new_edges))
                     self._rebuild_vbo()
-                    self._hud.update_action(f"Loop Insert — {len(new_edges)} Edges")
+                    suffix = " (articulation restored)" if restored else ""
+                    self._hud.update_action(f"Loop Insert — {len(new_edges)} Edges{suffix}")
                 except _LoopInsertError as exc:
                     self._hud.update_action(str(exc))
                 self._update_hud()
@@ -1064,12 +1085,14 @@ class PlaygroundWindow(pyglet.window.Window):
             # Kein Hover-Fallback — Connect Edges verlangt echte Mehrfachauswahl.
             sel = self.app.scene.selection
             if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 2:
+                restored = self._articulation_auto_restore()
                 try:
                     new_edges = connect_selected_edges(self.app.scene, set(sel.edges))
                     sel.clear()
                     sel.add(set(new_edges))
                     self._rebuild_vbo()
-                    self._hud.update_action("Connect Edges")
+                    action = "Connect Edges (articulation restored)" if restored else "Connect Edges"
+                    self._hud.update_action(action)
                 except _ConnectEdgesError as exc:
                     self._hud.update_action(str(exc))
                 self._update_hud()
@@ -1083,6 +1106,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 and self.app.viewport is not None
                 and self._extrude_tool is None
             ):
+                restored = self._articulation_auto_restore()
                 if len(sel.faces) >= 1:
                     face_ids = set(sel.faces)
                 else:
@@ -1103,7 +1127,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_selection_vbo()
                 n = len(face_ids)
                 action = f"Extrude ({n} faces)" if n > 1 else "Extrude"
-                self._hud.update_action(f"{action} — move mouse to set distance, release E = commit, ESC = cancel")
+                restore_note = " (articulation restored)" if restored else ""
+                self._hud.update_action(f"{action}{restore_note} — move mouse to set distance, release E = commit, ESC = cancel")
                 self._update_hud()
         elif symbol == self.input_map.wire_overlay:
             self.app.display_state.toggle_wireframe_overlay()

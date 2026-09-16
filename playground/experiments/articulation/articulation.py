@@ -155,6 +155,18 @@ class ArticulationState:
             self.mesh.set_vertex_position(vid, rest)
         self._bent = False
 
+    def retarget(self, pivot: tuple, axis: tuple, radius: float) -> None:
+        """Start a new gesture within the SAME session — no re-snapshot.
+
+        Must only be called while a session is active (after begin(), before
+        restore()). Does not touch `_rest_positions`. The next update() call
+        computes the new gesture's pose fully from the existing rest snapshot,
+        exactly as any update() call already does.
+        """
+        if not self._bent:
+            raise ArticulationError("retarget() requires an active session — begin() first.")
+        self.pivot, self.axis, self.radius = pivot, axis, radius
+
     @property
     def is_bent(self) -> bool:
         return self._bent

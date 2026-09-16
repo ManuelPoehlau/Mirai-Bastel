@@ -215,6 +215,140 @@ def test_cylinder_is_deterministic():
     assert _positions(a) == _positions(b)
 
 
+# ---------------------------------------------------------------------------
+# H02 addendum: retarget() — multi-bend session semantics
+# ---------------------------------------------------------------------------
+
+
+def test_retarget_second_gesture_replaces_first():
+    """Second gesture with a different angle completely replaces the first —
+    positions must match a single session that only applied the second angle."""
+    mesh = _cylinder()
+    rest = _positions(mesh)
+    state = ArticulationState(mesh=mesh, pivot=(0.0, 0.0, 0.0), axis=(1.0, 0.0, 0.0), radius=2.0)
+    state.begin()
+    state.update(math.radians(45))  # first gesture
+
+    state.retarget((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), 2.0)
+    state.update(math.radians(20))  # second gesture replaces first
+    after_retarget = _positions(mesh)
+
+    # Reference: fresh session from same rest, same params, angle=20
+    mesh2 = _cylinder()
+    ref = ArticulationState(mesh=mesh2, pivot=(0.0, 0.0, 0.0), axis=(1.0, 0.0, 0.0), radius=2.0)
+    ref.begin()
+    ref.update(math.radians(20))
+    reference = _positions(mesh2)
+
+    for vid in after_retarget:
+        ax, ay, az = after_retarget[vid]
+        bx, by, bz = reference[vid]
+        assert math.isclose(ax, bx, abs_tol=1e-9)
+        assert math.isclose(ay, by, abs_tol=1e-9)
+        assert math.isclose(az, bz, abs_tol=1e-9)
+
+
+def test_retarget_preserves_rest_snapshot():
+    """_rest_positions must be identical (same content) before and after retarget()."""
+    mesh = _cylinder()
+    state = ArticulationState(mesh=mesh, pivot=(0.0, 0.0, 0.0), axis=(1.0, 0.0, 0.0), radius=2.0)
+    state.begin()
+    state.update(math.radians(30))
+    rest_before = dict(state._rest_positions)  # copy of content
+
+    state.retarget((0.0, 0.5, 0.0), (0.0, 1.0, 0.0), 1.5)
+
+    assert state._rest_positions == rest_before, "_rest_positions must not change after retarget()"
+
+
+def test_restore_after_multiple_gestures_is_exact():
+    """Three gestures then restore() must return bit-identical rest positions."""
+    mesh = _cylinder()
+    before = _positions(mesh)
+    state = ArticulationState(mesh=mesh, pivot=(0.0, 0.0, 0.0), axis=(1.0, 0.0, 0.0), radius=2.0)
+    state.begin()
+    state.update(math.radians(10))
+    state.retarget((0.0, 0.5, 0.0), (0.0, 0.0, 1.0), 1.5)
+    state.update(math.radians(55))
+    state.retarget((0.0, -0.3, 0.0), (1.0, 0.0, 0.0), 2.0)
+    state.update(math.radians(80))
+    state.restore()
+    assert _positions(mesh) == before, "restore() after multiple gestures must reproduce exact rest"
+
+
+def test_retarget_before_begin_raises():
+    mesh = _cylinder()
+    state = ArticulationState(mesh=mesh, pivot=(0, 0, 0), axis=(1, 0, 0), radius=1.0)
+    with pytest.raises(ArticulationError):
+        state.retarget((0, 0, 0), (1, 0, 0), 1.0)
+
+
+def test_retarget_after_restore_raises():
+    mesh = _cylinder()
+    state = ArticulationState(mesh=mesh, pivot=(0, 0, 0), axis=(1, 0, 0), radius=1.0)
+    state.begin()
+    state.update(math.radians(30))
+    state.restore()
+    with pytest.raises(ArticulationError):
+        state.retarget((0, 0, 0), (1, 0, 0), 1.0)
+
+
+# ---------------------------------------------------------------------------
+# H02 addendum: topology lock — auto-restore before topology operations
+# ---------------------------------------------------------------------------
+
+
+def test_topology_lock_split_uses_rest_geometry():
+    """Sequence the K handler uses: begin, bend, restore, split — new midpoint
+    must equal the rest-space midpoint, not the bent-space midpoint."""
+    mesh = _cylinder()
+    rest = _positions(mesh)
+
+    state = ArticulationState(mesh=mesh, pivot=(0.0, 0.0, 0.0), axis=(1.0, 0.0, 0.0), radius=2.0)
+    state.begin()
+    state.update(math.radians(60))
+
+    # Capture expected rest-space midpoint for some edge before the restore
+    some_edge = next(iter(mesh.all_edge_ids()))
+    v0, v1 = mesh.edge_vertices(some_edge)
+    p0_rest = rest[v0]
+    p1_rest = rest[v1]
+    expected_mid = (
+        (p0_rest[0] + p1_rest[0]) / 2.0,
+        (p0_rest[1] + p1_rest[1]) / 2.0,
+        (p0_rest[2] + p1_rest[2]) / 2.0,
+    )
+
+    # Auto-restore (what the handler does)
+    state.restore()
+    assert _positions(mesh) == rest, "mesh must be at exact rest before the split executes"
+
+    vids_before = set(mesh.all_vertex_ids())
+    mesh.split_edge(some_edge)
+    vids_after = set(mesh.all_vertex_ids())
+    new_vids = vids_after - vids_before
+    assert len(new_vids) == 1
+    new_vid = next(iter(new_vids))
+    actual_mid = mesh.vertex_position(new_vid)
+
+    for i in range(3):
+        assert math.isclose(actual_mid[i], expected_mid[i], abs_tol=1e-9), (
+            f"split midpoint axis {i}: {actual_mid[i]} != {expected_mid[i]} (rest-space expected)"
+        )
+
+
+def test_topology_lock_state_cleared_after_auto_restore():
+    """After the auto-restore sequence, the session is fully ended — is_bent False."""
+    mesh = _cylinder()
+    state = ArticulationState(mesh=mesh, pivot=(0.0, 0.0, 0.0), axis=(1.0, 0.0, 0.0), radius=2.0)
+    state.begin()
+    state.update(math.radians(45))
+    assert state.is_bent
+
+    state.restore()  # simulates what _articulation_auto_restore() does
+    assert not state.is_bent
+
+
 def test_cylinder_has_only_two_poles():
     """Confirms the design rationale in demo_cylinder.py: unlike the Head
     Basemesh (52 poles), this body is regular everywhere except the two
