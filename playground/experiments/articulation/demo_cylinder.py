@@ -61,6 +61,8 @@ def build_cylinder(
         ring_vertex_ids.append(row)
 
     # Side quads between consecutive rings.
+    # Winding: CCW from outside (v3→v2→v1→v0 = top-left → top-right → bot-right → bot-left
+    # viewed from the exterior), so (b-a)×(c-a) gives an outward-pointing normal.
     for r in range(rings - 1):
         for s in range(segments):
             s_next = (s + 1) % segments
@@ -68,14 +70,14 @@ def build_cylinder(
             v1 = ring_vertex_ids[r][s_next]
             v2 = ring_vertex_ids[r + 1][s_next]
             v3 = ring_vertex_ids[r + 1][s]
-            mesh.add_face([v0, v1, v2, v3])
+            mesh.add_face([v3, v2, v1, v0])
 
     # Caps: triangle fan from a center vertex (the only poles in this mesh).
     bottom_center = mesh.add_vertex((0.0, -height / 2.0, 0.0))
     top_center = mesh.add_vertex((0.0, height / 2.0, 0.0))
     for s in range(segments):
         s_next = (s + 1) % segments
-        mesh.add_face([bottom_center, ring_vertex_ids[0][s_next], ring_vertex_ids[0][s]])
-        mesh.add_face([top_center, ring_vertex_ids[-1][s], ring_vertex_ids[-1][s_next]])
+        mesh.add_face([bottom_center, ring_vertex_ids[0][s], ring_vertex_ids[0][s_next]])
+        mesh.add_face([top_center, ring_vertex_ids[-1][s_next], ring_vertex_ids[-1][s]])
 
     return mesh

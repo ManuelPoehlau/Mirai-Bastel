@@ -12,6 +12,7 @@ Steuerung:
     S (gedrückt)    Scale (gedrückt halten + ziehen, AP-04)
     C               load_cube (Szene wechseln)
     H               load_head (Szene wechseln)
+    Y               load_cylinder (EX-A test body)
     D               Display-Mode cyclen (Shaded → Flat → Wireframe)
     Z               Wireframe-Overlay togglen
     V               Vertex-Darstellung togglen
@@ -22,7 +23,8 @@ Steuerung:
     Shift+R         Ring Select (Edge-Modus, 1+ Edges selektiert)
     I               Loop Insert (Edge-Modus, 1 Edge selektiert)
     G (halten)      Loop Slide (Edge-Modus, 1+ Edges selektiert; Maus = slide, loslassen = commit)
-    ESC             Fenster schließen (oder Transform canceln)
+    F               Articulation restore (EX-A: LMB drag to bend, F to restore)
+    ESC             Fenster schließen (oder Transform/Articulation canceln)
 
 Shader:
     _FACE_VERT/_FACE_FRAG    — Phong mit u_use_flat-Uniform (Smooth/Flat).
@@ -96,6 +98,8 @@ from playground.topology_tools.loop_slide import (  # noqa: E402
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
+from playground.experiments.articulation.articulation import ArticulationState  # noqa: E402
+from playground.experiments.articulation.variant_articulation import ArticulationVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
     add_temp_target,
     clear_temp_target,
@@ -109,6 +113,7 @@ from playground.selector import (  # noqa: E402
     handle_box_select,
     pick_component,
 )
+from mirai.viewport.picking import pick_nearest_vertex  # noqa: E402
 from playground.transformer import create_tool_for_type  # noqa: E402
 from playground.vbo_builder import (  # noqa: E402
     build_edge_data,
@@ -183,6 +188,30 @@ _HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
 _VERTEX_POINT_SIZE = 4.0
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
+# Articulation constants (EX-A / H02)
+# 0.01 rad/px: 100px drag ≈ 57° bend, feels responsive without being twitchy.
+_ARTICULATION_SENSITIVITY: float = 0.01
+
+
+def _mesh_bounding_radius(mesh) -> float:
+    """Max distance from centroid to any vertex — used as articulation radius.
+
+    Using the full bounding radius means the falloff reaches every vertex
+    from any on-surface pivot, so the whole mesh participates in the bend
+    regardless of where the artist clicks.
+    """
+    vids = list(mesh.all_vertex_ids())
+    if not vids:
+        return 1.0
+    positions = [mesh.vertex_position(v) for v in vids]
+    cx = sum(p[0] for p in positions) / len(positions)
+    cy = sum(p[1] for p in positions) / len(positions)
+    cz = sum(p[2] for p in positions) / len(positions)
+    return max(
+        math.sqrt((p[0] - cx) ** 2 + (p[1] - cy) ** 2 + (p[2] - cz) ** 2)
+        for p in positions
+    )
+
 
 class PlaygroundWindow(pyglet.window.Window):
     """Leichtgewichtiges pyglet-Fenster für das Artist Playground."""
@@ -227,11 +256,15 @@ class PlaygroundWindow(pyglet.window.Window):
             VariantEntry(ExtrudeBaselineVariant(app)),
             VariantEntry(ExtrudeLmbVariant(app)),
         )
+        artic_slot = ExperimentSlot(
+            VariantEntry(ArticulationVariant(app)),
+        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
         app.register_slot(tweak_slot, "tweak")
         app.register_slot(topo_slot, "topology")
+        app.register_slot(artic_slot, "articulation")
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -296,6 +329,12 @@ class PlaygroundWindow(pyglet.window.Window):
         self._extrude_tool: ExtrudeTool | None = None
         # Loop-Slide-State (AP-05)
         self._loop_slide_tool: LoopSlideTool | None = None
+
+        # Articulation state (EX-A / H02)
+        self._articulation_state: ArticulationState | None = None
+        self._articulation_dragging: bool = False  # True only during the LMB drag that produces the angle
+        self._articulation_press_x: int = 0
+        self._articulation_press_y: int = 0
 
         # Box-Select-State (AP-03 Variante C)
         self._box_start: tuple[int, int] | None = None
@@ -589,6 +628,34 @@ class PlaygroundWindow(pyglet.window.Window):
         self._drag_button = button
         self._drag_moved = 0.0
 
+        # Articulation: LMB press when articulation family is focused starts a bend gesture.
+        # Axis: computed per-frame from drag direction — see on_mouse_drag.
+        # Radius: full bounding radius — every vertex participates regardless of pivot location.
+        if (
+            button == _mouse.LEFT
+            and not (modifiers & _key.MOD_ALT)
+            and self.app.focused_family == "articulation"
+            and self.app.viewport is not None
+        ):
+            mesh = self.app.viewport.render_mesh.mesh
+            vid = pick_nearest_vertex(self.app.camera, mesh, x, y, self.width, self.height)
+            if vid is not None:
+                pivot = mesh.vertex_position(vid)
+                radius = _mesh_bounding_radius(mesh)
+                if self._articulation_state is not None:
+                    self._articulation_state.restore()
+                # Axis is a placeholder; it is overridden on every drag update before update() is called.
+                self._articulation_state = ArticulationState(mesh, pivot, (0.0, 1.0, 0.0), radius)
+                self._articulation_state.begin()
+                self._articulation_press_x = x
+                self._articulation_press_y = y
+                self._articulation_dragging = True
+                self._rebuild_vbo()
+                self._hud.update_action("Articulation — drag to bend, F = restore")
+                self._update_hud()
+                self.activate()
+                return pyglet.event.EVENT_HANDLED
+
         tv = self._active_tweak_variant()
         if button == self.input_map.select_button:
             if tv == "v2" and self._tweak_ctrl_held:
@@ -621,6 +688,30 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_x = x
         self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
+
+        # Articulation: consume the drag while the gesture is active (EX-A / H02).
+        # Axis is derived from the total drag vector so the visible bend direction matches
+        # the drag direction on screen:
+        #   drag right (+dx) → axis = -forward → top moves screen-right
+        #   drag up   (+dy) → axis = +right   → top moves away from camera
+        # Derivation: for a vertical mesh, v = axis × (top - pivot). We want v ∝ screen_right
+        # for a right drag, so axis ∝ -forward. For v ∝ screen_depth for an up drag, axis ∝ right.
+        # Combined: axis = normalize(-total_dx * forward + total_dy * right).
+        # Once released, _articulation_dragging is False and camera navigation resumes
+        # through the normal event path below — no special-casing needed there.
+        if self._articulation_dragging and self._articulation_state is not None:
+            total_dx = x - self._articulation_press_x
+            total_dy = y - self._articulation_press_y
+            dist = math.sqrt(total_dx * total_dx + total_dy * total_dy)
+            if dist > 0.5:
+                forward, right, _ = self.app.camera.basis()
+                ax = -total_dx * forward[0] + total_dy * right[0]
+                ay = -total_dx * forward[1] + total_dy * right[1]
+                az = -total_dx * forward[2] + total_dy * right[2]
+                self._articulation_state.axis = (ax / dist, ay / dist, az / dist)
+                self._articulation_state.update(dist * _ARTICULATION_SENSITIVITY)
+                self._rebuild_vbo()
+            return pyglet.event.EVENT_HANDLED
 
         # Loop Slide: Drag-Update (AP-05)
         if self._loop_slide_tool is not None:
@@ -725,6 +816,13 @@ class PlaygroundWindow(pyglet.window.Window):
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
         was_click = self._drag_moved < CLICK_THRESHOLD
         self._drag_button = None
+
+        # Articulation drag end — bent state persists, mouse is now free for camera.
+        if self._articulation_dragging:
+            self._articulation_dragging = False
+            self._hud.update_action("Articulation bent — F = restore")
+            self._update_hud()
+            return pyglet.event.EVENT_HANDLED
 
         tv = self._active_tweak_variant()
         if button == self.input_map.select_button:
@@ -903,6 +1001,15 @@ class PlaygroundWindow(pyglet.window.Window):
         elif symbol == _key.H:
             self.app.load_head()
             self._rebuild_vbo()
+            self._push_camera()
+        elif symbol == _key.Y and not (modifiers & _key.MOD_CTRL):
+            # Y (bare): load cylinder (EX-A test body). Ctrl+Y remains Redo.
+            self.app.load_cylinder()
+            if self._articulation_state is not None:
+                self._articulation_state = None
+                self._articulation_dragging = False
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
             self._push_camera()
         elif symbol == self.input_map.display_cycle:
             slot = self.app.slots.get("presentation")
@@ -1136,8 +1243,24 @@ class PlaygroundWindow(pyglet.window.Window):
                         self._transform_mode_on = True
                         self.app.active_tool = create_tool_for_type(_tool_type)
                 self._update_hud()
+        elif symbol == _key.F:
+            # F: Restore articulation to exact rest pose (EX-A / H02).
+            if self._articulation_state is not None:
+                self._articulation_state.restore()
+                self._articulation_state = None
+                self._articulation_dragging = False
+                self._rebuild_vbo()
+                self._hud.update_action("Articulation restored")
+                self._update_hud()
         elif symbol == _key.ESCAPE:
-            if self._loop_slide_tool is not None:
+            if self._articulation_state is not None:
+                self._articulation_state.restore()
+                self._articulation_state = None
+                self._articulation_dragging = False
+                self._rebuild_vbo()
+                self._hud.update_action("Articulation restored")
+                self._update_hud()
+            elif self._loop_slide_tool is not None:
                 self._loop_slide_tool.cancel()
                 self._loop_slide_tool.deactivate()
                 self._loop_slide_tool = None

@@ -106,6 +106,19 @@ class PlaygroundApp:
 
     # -- Szene-Loading --------------------------------------------------------
 
+    def load_cylinder(self) -> None:
+        """Cylinder scene (EX-A test body) — 12 segments, 6 rings, all-quad sides."""
+        from playground.experiments.articulation.demo_cylinder import build_cylinder
+        mesh = build_cylinder()
+        self._app.scene.mesh = mesh
+        self._app.viewport = Viewport(
+            self._app.scene.mesh,
+            selection=self._app.scene.selection,
+            store_type=TraceStore,
+        )
+        self._app.viewport.bind_camera(self._app.camera)
+        self._frame_camera()
+
     def load_cube(self) -> None:
         """Würfel-Szene laden (über Application.init_scene)."""
         self._app.init_scene("cube")
