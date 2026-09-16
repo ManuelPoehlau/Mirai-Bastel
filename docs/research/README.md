@@ -1,8 +1,14 @@
 # Research
 
-`docs/research/` ist das **Forschungsarchiv** des Projekts. Hier sammeln und analysieren wir externe Quellen, historische Informationen, technische Rekonstruktionen, Experimente, Hypothesen und daraus abgeleitete Erkenntnisse.
+`docs/research/` is the **research archive** of the project. Here we collect and analyze external sources, historical information, technical reconstructions, experiments, hypotheses and derived findings.
 
-Research ist ausführlich und darf sich mit einzelnen Systemen oder technischen Fragen tiefgehend beschäftigen.
+Research is detailed and may investigate individual systems or technical questions deeply.
+
+## Character Systems Research
+
+- [CHARACTER_SYSTEMS_RESEARCH.md](CHARACTER_SYSTEMS_RESEARCH.md) — **authoritative artist-side research** on rigging, controls/handles, skinning, weighting, deformation, posing, morphs/blendshapes, correctives and related character workflows.
+
+This document is the canonical home for the artist-side Character Systems research. Technical implementation experiments are kept separately under `experiments/rigging-skinning-morphing/` and should not be treated as a substitute for the research document.
 
 ## Abgrenzung zu `references/`
 
