@@ -720,9 +720,9 @@ class PlaygroundWindow(pyglet.window.Window):
             dist = math.sqrt(total_dx * total_dx + total_dy * total_dy)
             if dist > 0.5:
                 forward, right, _ = self.app.camera.basis()
-                ax = -total_dx * forward[0] + total_dy * right[0]
-                ay = -total_dx * forward[1] + total_dy * right[1]
-                az = -total_dx * forward[2] + total_dy * right[2]
+                ax = total_dx * forward[0] - total_dy * right[0]
+                ay = total_dx * forward[1] - total_dy * right[1]
+                az = total_dx * forward[2] - total_dy * right[2]
                 self._articulation_state.axis = (ax / dist, ay / dist, az / dist)
                 self._articulation_state.update(dist * _ARTICULATION_SENSITIVITY)
                 self._rebuild_vbo()
