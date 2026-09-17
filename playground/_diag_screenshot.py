@@ -50,7 +50,11 @@ def main() -> int:
         print(f"  mesh bounds : X {min(xs):.3f}..{max(xs):.3f} Y {min(ys):.3f}..{max(ys):.3f} Z {min(zs):.3f}..{max(zs):.3f}")
 
     # Fenster (sichtbar) bauen und EINEN Frame zeichnen.
-    win = PlaygroundWindow(app)
+    # AD-010: PlaygroundWindow lädt "head" intern erneut mit dem echten
+    # GL-Store (PlaygroundPygletStore) — der obige app.load_head() lief
+    # bewusst headless (TraceStore, Default) nur für die Konsolen-Diagnose
+    # vor Fenster-/Kontext-Erzeugung.
+    win = PlaygroundWindow(app, initial_mesh="head")
     win.dispatch_event("on_draw")
     import pyglet
     from pyglet.gl import glFinish

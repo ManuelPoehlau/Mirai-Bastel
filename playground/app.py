@@ -20,7 +20,7 @@ from core import Scene  # noqa: E402
 from mirai.application import Application  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
 from viewport import Viewport  # noqa: E402
-from viewport.resource_store import TraceStore  # noqa: E402
+from viewport.resource_store import ResourceStore, TraceStore  # noqa: E402
 
 # Framing-/Mesh-Helper direkt aus dem Integration Lab (Wiederverwendung statt
 # Duplikat — identischer Startpfad zu lab_viewport.py, siehe _paths.py).
@@ -106,31 +106,53 @@ class PlaygroundApp:
 
     # -- Szene-Loading --------------------------------------------------------
 
-    def load_cylinder(self) -> None:
-        """Cylinder scene (EX-A test body) — 12 segments, 6 rings, all-quad sides."""
+    def load_cylinder(self, store_type: type[ResourceStore] = TraceStore) -> None:
+        """Cylinder scene (EX-A test body) — 12 segments, 6 rings, all-quad sides.
+
+        store_type: Store-Backend für den Viewport (AD-010). Default
+        `TraceStore` — headless, deterministisch, Basis der Test-Suite
+        (unverändertes Verhalten für alle bestehenden Aufrufer/Tests). Das
+        Live-Fenster übergibt explizit `playground.gl_store.
+        PlaygroundPygletStore` (echtes GL-Backend, benötigt aktiven Kontext).
+        """
         from playground.experiments.articulation.demo_cylinder import build_cylinder
         mesh = build_cylinder()
         self._app.scene.mesh = mesh
         self._app.viewport = Viewport(
             self._app.scene.mesh,
             selection=self._app.scene.selection,
-            store_type=TraceStore,
+            store_type=store_type,
         )
         self._app.viewport.bind_camera(self._app.camera)
         self._frame_camera()
 
-    def load_cube(self) -> None:
-        """Würfel-Szene laden (über Application.init_scene)."""
-        self._app.init_scene("cube")
+    def load_cube(self, store_type: type[ResourceStore] = TraceStore) -> None:
+        """Würfel-Szene laden.
+
+        Baut Mesh + Viewport direkt (statt über `Application.init_scene()`,
+        das keinen `store_type`-Parameter kennt) — Production-`Application`
+        bleibt dabei bewusst unverändert (Promotion Boundary, AGENTS.md §M3:
+        `src/mirai` ist nicht Playground-spezifisch und wird nicht für einen
+        Playground-Bedarf angepasst). store_type: siehe `load_cylinder()`.
+        """
+        from mirai.scene_factory import create_cube
+        self._app.scene.mesh = create_cube()
+        self._app.viewport = Viewport(
+            self._app.scene.mesh,
+            selection=self._app.scene.selection,
+            store_type=store_type,
+        )
+        self._app.viewport.bind_camera(self._app.camera)
         self._frame_camera()
 
-    def load_head(self) -> None:
+    def load_head(self, store_type: type[ResourceStore] = TraceStore) -> None:
         """Head-Basemesh via OBJ-Adapter laden (identisch zum Integration Lab).
 
         Nutzt den Lab-Adapter `build_core_scene_from_obj` (OBJ → ObjMeshData →
         src.core.Scene) — exakt dieselbe Mesh-Erzeugung wie
         scene/scene_objects.py::build_head_scene im Integration Lab. Danach
         Viewport neu binden (analog Application.init_scene) und Kamera rahmen.
+        store_type: siehe `load_cylinder()`.
         """
         scene = build_core_scene_from_obj(DEFAULT_HEAD_ASSET)
         self._app.scene.mesh = scene.mesh
@@ -139,7 +161,7 @@ class PlaygroundApp:
         self._app.viewport = Viewport(
             self._app.scene.mesh,
             selection=self._app.scene.selection,
-            store_type=TraceStore,
+            store_type=store_type,
         )
         self._app.viewport.bind_camera(self._app.camera)
         self._frame_camera()

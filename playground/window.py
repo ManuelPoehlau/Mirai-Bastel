@@ -106,6 +106,7 @@ from playground.experiments.tweak._target import (  # noqa: E402
     has_selection as _tweak_has_selection,
     toggle_persistent_mode,
 )
+from playground.gl_store import PlaygroundPygletStore  # noqa: E402
 from playground.renderer import PlaygroundRenderer  # noqa: E402
 from playground.selector import (  # noqa: E402
     CLICK_THRESHOLD,
@@ -220,6 +221,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self,
         app: PlaygroundApp,
         input_map: PlaygroundInputMap | None = None,
+        initial_mesh: str = "cube",
     ) -> None:
         super().__init__(
             1280, 800,
@@ -229,6 +231,16 @@ class PlaygroundWindow(pyglet.window.Window):
         )
         self.app = app
         self.input_map = input_map if input_map is not None else PlaygroundInputMap()
+
+        # AD-010: Szene-/Viewport-Load bewusst ERST HIER, nach
+        # pyglet.window.Window.__init__() oben — PlaygroundPygletStore.
+        # allocate() braucht einen aktiven GL-Kontext (analog
+        # IntegrationLabWindow._add_object() im Integration Lab). Ersetzt
+        # einen von einem Aufrufer ggf. vorab headless geladenen
+        # (TraceStore-)Viewport durch das echte GL-Backend — z. B. wenn
+        # `_diag_screenshot.py` vor der Fenstererzeugung bereits
+        # `app.load_head()` für Diagnose-Ausgaben aufgerufen hat.
+        self._load_initial_scene(initial_mesh)
 
         # -- Per-Family Slot-Registry aufbauen --------------------------------
         sel_slot = ExperimentSlot(
@@ -341,6 +353,24 @@ class PlaygroundWindow(pyglet.window.Window):
         self._box_end: tuple[int, int] | None = None
 
         self.activate()
+
+    # -- Initial-Szene (AD-010: mit echtem GL-Store, nach Kontext) -------------
+
+    def _load_initial_scene(self, initial_mesh: str) -> None:
+        """Lädt die Startszene mit `PlaygroundPygletStore` (echtes GL-Backend).
+
+        Einzige Stelle, an der das Live-Fenster eine Szene lädt — Aufrufer
+        (run.py, _diag_screenshot.py) übergeben nur noch die gewünschte
+        Szene als String, statt selbst `app.load_*()` mit einem Store-Typ
+        aufzurufen (der vor Fenster-/Kontext-Erzeugung ohnehin nicht
+        GL-fähig wäre).
+        """
+        if initial_mesh == "head":
+            self.app.load_head(store_type=PlaygroundPygletStore)
+        elif initial_mesh == "cylinder":
+            self.app.load_cylinder(store_type=PlaygroundPygletStore)
+        else:
+            self.app.load_cube(store_type=PlaygroundPygletStore)
 
     # -- VBO-Aufbau -----------------------------------------------------------
 
@@ -1010,16 +1040,16 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         if symbol == _key.C:
-            self.app.load_cube()
+            self.app.load_cube(store_type=PlaygroundPygletStore)
             self._rebuild_vbo()
             self._push_camera()
         elif symbol == _key.H:
-            self.app.load_head()
+            self.app.load_head(store_type=PlaygroundPygletStore)
             self._rebuild_vbo()
             self._push_camera()
         elif symbol == _key.Y and not (modifiers & _key.MOD_CTRL):
             # Y (bare): load cylinder (EX-A test body). Ctrl+Y remains Redo.
-            self.app.load_cylinder()
+            self.app.load_cylinder(store_type=PlaygroundPygletStore)
             if self._articulation_state is not None:
                 self._articulation_state = None
                 self._articulation_dragging = False

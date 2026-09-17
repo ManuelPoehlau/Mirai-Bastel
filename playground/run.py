@@ -26,11 +26,10 @@ from playground.window import PlaygroundWindow  # noqa: E402
 def main() -> None:
     mesh = sys.argv[1] if len(sys.argv) > 1 else "cube"
     app = PlaygroundApp()
-    if mesh == "head":
-        app.load_head()
-    else:
-        app.load_cube()
-    win = PlaygroundWindow(app)
+    # AD-010: Szene-Load passiert in PlaygroundWindow selbst, NACH
+    # GL-Kontext-Erzeugung (PlaygroundPygletStore braucht einen aktiven
+    # Kontext) — hier nur noch die gewünschte Szene auswählen.
+    win = PlaygroundWindow(app, initial_mesh=mesh)
     pyglet.app.run()
 
 

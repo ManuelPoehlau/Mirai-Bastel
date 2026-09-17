@@ -16,7 +16,9 @@ from playground._paths import ensure_paths
 ensure_paths()
 
 from viewport import Viewport  # noqa: E402  (Production-Viewport)
-from viewport.resource_store import TraceStore  # noqa: E402
+# Store-Backend (TraceStore/PygletStore, AD-010) wird nicht hier, sondern bei
+# der Viewport-Konstruktion gewählt (siehe playground/app.py::load_*
+# store_type-Parameter) — dieser Adapter wrappt nur einen fertigen Viewport.
 
 
 class PlaygroundRenderer:
