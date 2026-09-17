@@ -185,6 +185,8 @@
   },
   "active": "535b74a755f265aa",
   "lastOpenFiles": [
+    "docs/architecture/AD-011-PLAYGROUND-IDENTITY-STATUS-QUO.md",
+    "runde2-ad011-playground-identity-status-quo.patch",
     "docs/architecture/AD-010-PLAYGROUND-SUPERSEDES-LAB-BINDING.md",
     "runde2-ad010-playground-supersedes-lab.patch",
     "docs/architecture/AD-009-AXIS-PLANE-CONSTRAINTS.md",
