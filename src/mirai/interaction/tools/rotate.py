@@ -15,6 +15,11 @@ begin(vertex_ids=..., axis=None, pivot=None):
     axis=None          → Blickachse der Kamera im begin()-Moment
                          (Screen-Plane-Rotation); während der Interaktion fix.
     axis="x"/"y"/"z"   → Weltachse durch den Pivot (Achsen-Constraint).
+    axis="xy"/"yz"/"xz" → Rotation in dieser Ebene (AD-009) = Rotation um die
+                         Flächennormale (Ebene XY → Achse Z, usw.). Anders als
+                         bei Move/Scale ist das KEINE Maske, sondern weiterhin
+                         eine einzelne Richtung — eine Rotation hat immer genau
+                         eine Achse, auch wenn sie als "Ebene" benannt wird.
     axis=Vec3          → beliebige Richtung durch den Pivot.
 
 Geste (V1): horizontales Ziehen rotiert; der Zielwinkel wird aus der
@@ -34,15 +39,28 @@ from .transform import TransformTool, _WORLD_AXES
 
 VEC3 = tuple[float, float, float]
 
+# AD-009: Ebenen-Constraint für Rotate = Rotation um die Flächennormale.
+# Bewusst getrennt von _WORLD_AXES (dort sind "xy"/"yz"/"xz" Masken für
+# Scale/Move, hier ist es die eine Achse senkrecht zur genannten Ebene).
+_PLANE_ROTATION_AXES: dict[str, VEC3] = {
+    "xy": (0.0, 0.0, 1.0),  # Rotation in der XY-Ebene → um Z
+    "yz": (1.0, 0.0, 0.0),  # Rotation in der YZ-Ebene → um X
+    "xz": (0.0, 1.0, 0.0),  # Rotation in der XZ-Ebene → um Y
+}
+
 
 def _resolve_axis(axis) -> VEC3:
-    """Normalisiert die Achs-Angabe: "x"/"y"/"z" oder Richtungsvektor."""
+    """Normalisiert die Achs-Angabe: "x"/"y"/"z", "xy"/"yz"/"xz" oder Richtungsvektor."""
     if isinstance(axis, str):
+        key = axis.lower()
+        if key in _PLANE_ROTATION_AXES:
+            return _PLANE_ROTATION_AXES[key]
         try:
-            return _WORLD_AXES[axis.lower()]
+            return _WORLD_AXES[key]
         except KeyError:
             raise ValueError(
-                f"Unbekannte Weltachse {axis!r} — erlaubt: 'x', 'y', 'z'."
+                f"Unbekannte Achse/Ebene {axis!r} — erlaubt: "
+                "'x', 'y', 'z', 'xy', 'yz', 'xz'."
             ) from None
     if axis is None:
         raise ValueError("axis=None ist hier nicht gültig.")

@@ -38,9 +38,19 @@ from core import OperationContext, VertexId
 from ..tool import Tool
 
 _WORLD_AXES = {
+    # Einzelachsen.
     "x": (1.0, 0.0, 0.0),
     "y": (0.0, 1.0, 0.0),
     "z": (0.0, 0.0, 1.0),
+    # Ebenen (AD-009): als Achsenmaske — beide Komponenten bleiben frei, die
+    # jeweils dritte wird gesperrt. Für ScaleTool/MoveTool direkt als Maske
+    # verwendbar (komponentenweise, da Weltachsen orthogonale Einheitsvektoren
+    # sind). Für RotateTool NICHT direkt verwendbar — dort bedeutet "Ebene"
+    # "Rotation um die Flächennormale", eine einzelne Richtung, keine Maske;
+    # siehe die eigene Auflösung in rotate.py.
+    "xy": (1.0, 1.0, 0.0),
+    "yz": (0.0, 1.0, 1.0),
+    "xz": (1.0, 0.0, 1.0),
 }
 
 

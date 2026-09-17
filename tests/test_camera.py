@@ -115,5 +115,33 @@ class OrbitCameraTests(unittest.TestCase):
         self.assertGreater(d_far, d_near)
 
 
+class FrameOnBoundsTests(unittest.TestCase):
+    """AD-008: portiert aus dem Lab (`frame_camera_on_bounds`), jetzt Methode."""
+
+    def test_frame_on_bounds_sets_target_to_center(self):
+        cam = OrbitCamera(target=(9.0, 9.0, 9.0), distance=1.0)
+        cam.frame_on_bounds(center=(1.0, 2.0, 3.0), radius=2.0)
+        self.assertEqual(cam.target, (1.0, 2.0, 3.0))
+
+    def test_frame_on_bounds_distance_grows_with_radius(self):
+        cam = OrbitCamera()
+        cam.frame_on_bounds(center=(0.0, 0.0, 0.0), radius=1.0)
+        d_small = cam.distance
+        cam.frame_on_bounds(center=(0.0, 0.0, 0.0), radius=10.0)
+        d_large = cam.distance
+        self.assertGreater(d_large, d_small)
+
+    def test_frame_on_bounds_never_below_minimum_distance(self):
+        cam = OrbitCamera()
+        cam.frame_on_bounds(center=(0.0, 0.0, 0.0), radius=0.0)
+        self.assertGreaterEqual(cam.distance, 0.5)
+
+    def test_frame_on_bounds_bumps_camera_revision(self):
+        cam = OrbitCamera()
+        before = cam.camera_revision
+        cam.frame_on_bounds(center=(1.0, 0.0, 0.0), radius=1.0)
+        self.assertEqual(cam.camera_revision, before + 1)
+
+
 if __name__ == "__main__":
     unittest.main()

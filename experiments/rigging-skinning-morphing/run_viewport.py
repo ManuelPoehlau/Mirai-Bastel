@@ -1,9 +1,14 @@
 """Living Mesh Research — Viewport-V1-Launcher des Rigging-Experiments.
 
+**Retiriert (AD-006, 2026-09-17):** Der V1-Viewport wird nicht mehr verwendet — der Artist
+Playground (Taste `H`) deckt den Anzeige-/Bearbeitungszweck ab. Dieses Skript bleibt als
+historische Referenz lauffähig (V1 selbst ist nicht gelöscht, siehe AD-006), ist aber kein
+empfohlener Startpunkt mehr für neue Arbeit an diesem Experiment.
+
 Startet den vorhandenen All-Tools-Playground des Viewport-V1-Experiments mit
 dem echten Head-Basemesh als Szene:
 
-    meshes/head_basemesh.obj → loaders/obj_loader.py
+    examples/meshes/head_basemesh.obj → examples/loaders/obj_loader.py
                              → Mesh (mirai_bastel_core) → Scene
                              → AllToolsWindow (Viewport V1)
 
@@ -23,8 +28,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Bootstrap: Experiment-Ordner (viewport_adapter, loaders) + Viewport-V1-Ordner
-# (viewport-Paket). Der Core-V1-Ordner wird von viewport_adapter selbst gesetzt.
+# Bootstrap: Experiment-Ordner (viewport_adapter) + Viewport-V1-Ordner
+# (viewport-Paket). loaders/ liegt seit AD-007 in examples/ und wird von
+# viewport_adapter selbst auf sys.path gelegt. Der Core-V1-Ordner wird
+# ebenfalls von viewport_adapter selbst gesetzt.
 _THIS_DIR = Path(__file__).resolve().parent
 _VIEWPORT_V1_DIR = _THIS_DIR.parent / "mirai_bastel_viewport_V1"
 for _path in (str(_THIS_DIR), str(_VIEWPORT_V1_DIR)):

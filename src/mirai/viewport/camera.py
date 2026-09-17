@@ -75,6 +75,31 @@ class OrbitCamera:
         self.distance = max(0.5, min(200.0, self.distance * factor))
         self.camera_revision += 1
 
+    def frame_on_bounds(self, center: Vec3, radius: float, margin: float = 1.25) -> None:
+        """Richtet die Kamera auf einen Bounds-Mittelpunkt/-Radius aus ("Zoom to Object").
+
+        AD-008: Portiert aus `experiments/mirai_bastel_integration_lab/adapters/
+        obj_to_core.py::frame_camera_on_bounds` (dort duck-typed gegen `target`/
+        `distance`; hier direkt als Methode, weil `OrbitCamera` bereits die
+        konkrete Klasse ist). Nimmt bewusst Center/Radius statt eines Mesh
+        entgegen — Geometrie-Abfragen (`mirai.mesh_geometry.mesh_center_and_radius`)
+        bleiben von der reinen Kamera-Mathematik getrennt (diese Datei hat sonst
+        keine `core`-Abhängigkeit, siehe Moduldocstring).
+
+        Reiner View-Effekt: Setzt nur `target`/`distance`, verändert kein Mesh.
+        Schon als Idee vorgemerkt in `docs/future_ideas/VIEWPORT_NAVIGATION.md`
+        ("Zoom to Object").
+        """
+        fov_degrees = self.fov_degrees
+        half_height = math.tan(math.radians(fov_degrees / 2.0))
+        if half_height <= 0.0:
+            distance = max(radius * 2.0, 0.5)
+        else:
+            distance = max((radius / half_height) * margin, 0.5)
+        self.target = center
+        self.distance = distance
+        self.camera_revision += 1
+
     def eye(self) -> Vec3:
         cp = math.cos(self.pitch)
         return (

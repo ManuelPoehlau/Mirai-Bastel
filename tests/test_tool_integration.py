@@ -285,6 +285,16 @@ class TransformToolLifecycleTests(unittest.TestCase):
             self.app.tool_manager.active_tool.axis, (0.0, 0.0, 1.0)
         )
 
+    def test_rotate_plane_constraint_resolves_to_perpendicular_axis(self):
+        # AD-009: Rotation "in der XY-Ebene" = Rotation um die Z-Achse (die
+        # Flächennormale), NICHT die Maske (1,1,0) wie bei Move/Scale.
+        self.app.dispatch_command(cmd.ROTATE)
+        ctx = dict(self.ctx, axis="xy")
+        self.app.tool_manager.begin_current_interaction(context=ctx)
+        self.assertEqual(
+            self.app.tool_manager.active_tool.axis, (0.0, 0.0, 1.0)
+        )
+
     def test_rotate_invalid_axis_raises(self):
         self.app.dispatch_command(cmd.ROTATE)
         with self.assertRaises(ValueError):
@@ -334,11 +344,64 @@ class TransformToolLifecycleTests(unittest.TestCase):
         self.app.tool_manager.commit()
         self.assertEqual(len(self.app.history), 1)
 
+    def test_scale_explicit_plane(self):
+        # AD-009: Ebenen-Constraint — beide Achsen frei, die dritte gesperrt.
+        self.app.dispatch_command(cmd.SCALE)
+        ctx = dict(self.ctx, axes="xz")
+        self.app.tool_manager.begin_current_interaction(context=ctx)
+        self.assertEqual(
+            self.app.tool_manager.active_tool.axes_mask, (1.0, 0.0, 1.0)
+        )
+        self.app.tool_manager.update(dx=200, dy=0, width=800, height=600)
+        self.app.tool_manager.commit()
+        self.assertEqual(len(self.app.history), 1)
+
     def test_scale_invalid_axis_raises(self):
         self.app.dispatch_command(cmd.SCALE)
         with self.assertRaises(ValueError):
             self.app.tool_manager.begin_current_interaction(
                 context=dict(self.ctx, axes="nope")
+            )
+
+    # --- Move (AD-009: axis/plane constraint, vorher gar nicht vorhanden) --
+
+    def test_move_default_has_no_constraint(self):
+        self.app.dispatch_command(cmd.MOVE)
+        self.app.tool_manager.begin_current_interaction(context=self.ctx)
+        self.assertEqual(
+            self.app.tool_manager.active_tool.axes_mask, (1.0, 1.0, 1.0)
+        )
+
+    def test_move_explicit_single_axis_masks_other_components(self):
+        self.app.dispatch_command(cmd.MOVE)
+        ctx = dict(self.ctx, axis="x")
+        self.app.tool_manager.begin_current_interaction(context=ctx)
+        self.assertEqual(
+            self.app.tool_manager.active_tool.axes_mask, (1.0, 0.0, 0.0)
+        )
+        before = _positions(self.app)
+        self.app.tool_manager.update(dx=100, dy=100, width=800, height=600)
+        self.app.tool_manager.commit()
+        after = _positions(self.app)
+        self.assertNotEqual(before, after)
+        self.assertEqual(len(self.app.history), 1)
+
+    def test_move_explicit_plane_constraint(self):
+        self.app.dispatch_command(cmd.MOVE)
+        ctx = dict(self.ctx, axis="yz")
+        self.app.tool_manager.begin_current_interaction(context=ctx)
+        self.assertEqual(
+            self.app.tool_manager.active_tool.axes_mask, (0.0, 1.0, 1.0)
+        )
+        self.app.tool_manager.update(dx=100, dy=0, width=800, height=600)
+        self.app.tool_manager.commit()
+        self.assertEqual(len(self.app.history), 1)
+
+    def test_move_invalid_axis_raises(self):
+        self.app.dispatch_command(cmd.MOVE)
+        with self.assertRaises(ValueError):
+            self.app.tool_manager.begin_current_interaction(
+                context=dict(self.ctx, axis="nope")
             )
 
     # --- Cross-cutting ------------------------------------------------------

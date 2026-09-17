@@ -1,8 +1,9 @@
 """sys.path-Bootstrap für das Artist Playground.
 
 Legt Repo-Root, Repo-`src/` (für Production-Pakete `core`/`viewport`/`mirai`),
-das Rigging-Experiment (für den OBJ-Loader) und das Integration Lab (für die
-Framing-/Mesh-Adapter `adapters.obj_to_core`) auf sys.path.
+`examples/` (für den geteilten OBJ-Loader und den Head-Basemesh-Asset, AD-007)
+und das Integration Lab (für die Framing-/Mesh-Adapter `adapters.obj_to_core`)
+auf sys.path.
 
 Dadurch funktionieren alle Playground-Imports sowohl als Skript
 (`python playground/run.py`) als auch unter pytest aus dem Repo-Root.
@@ -25,21 +26,21 @@ from pathlib import Path
 _PLAYGROUND_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _PLAYGROUND_DIR.parent
 _REPO_SRC_DIR = _REPO_ROOT / "src"
-_RIGGING_DIR = _REPO_ROOT / "experiments" / "rigging-skinning-morphing"
+_EXAMPLES_DIR = _REPO_ROOT / "examples"
 _LAB_DIR = _REPO_ROOT / "experiments" / "mirai_bastel_integration_lab"
 
 
 def ensure_paths() -> None:
-    """Legt Integration Lab, Repo-Root, Repo-`src/` und Rigging auf sys.path."""
+    """Legt Integration Lab, Repo-Root, Repo-`src/` und `examples/` auf sys.path."""
     for _path in (
         str(_LAB_DIR),
         str(_REPO_SRC_DIR),
         str(_REPO_ROOT),
-        str(_RIGGING_DIR),
+        str(_EXAMPLES_DIR),
     ):
         if _path not in sys.path:
             sys.path.insert(0, _path)
 
 
-# Repository-relativer Standardpfad zum Head-Basemesh-Asset.
-DEFAULT_HEAD_ASSET = _RIGGING_DIR / "meshes" / "head_basemesh.obj"
+# Repository-relativer Standardpfad zum Head-Basemesh-Asset (AD-007: examples/, geteilt).
+DEFAULT_HEAD_ASSET = _EXAMPLES_DIR / "meshes" / "head_basemesh.obj"

@@ -2,21 +2,27 @@
 
 Konvention wie in den vorhandenen Tests dieses Experiments: sys.path-
 Bootstrap statt Paket-Imports, Klassen-Gruppierung, pytest.
+
+Der Loader selbst lebt seit AD-007 geteilt in `examples/loaders/` (nicht mehr
+lokal in diesem Experiment) — dieser Test bleibt hier, weil er den Loader aus
+Sicht des Rigging-Experiments (inkl. des echten Head-Basemesh) prüft.
 """
 
 import sys
 from pathlib import Path
 
-# Experiment-Ordner in den Pfad (Konvention wie in den vorhandenen Tests):
+# examples/ in den Pfad (AD-007: geteilter Loader-Standort):
 _EXPERIMENT_DIR = Path(__file__).resolve().parent.parent
-if str(_EXPERIMENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_EXPERIMENT_DIR))
+_EXAMPLES_DIR = _EXPERIMENT_DIR.parent.parent / "examples"
+for _path in (str(_EXAMPLES_DIR), str(_EXPERIMENT_DIR)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 import pytest
 
 from loaders.obj_loader import ObjLoadError, load_obj, parse_obj
 
-_HEAD_ASSET = _EXPERIMENT_DIR / "meshes" / "head_basemesh.obj"
+_HEAD_ASSET = _EXAMPLES_DIR / "meshes" / "head_basemesh.obj"
 
 SIMPLE_QUAD = "\n".join(
     [

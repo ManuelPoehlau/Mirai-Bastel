@@ -70,7 +70,8 @@ Lokaler Einstieg: [`topology/README.md`](topology/README.md)
 ### `rigging-skinning-morphing/`
 
 Research-Experiment zu Rigging, Skinning und Morph-Targets in Kombination mit
-Topologie-Editing. Stellt seinen Head-Basemesh (`meshes/head_basemesh.obj`) bisher über einen
+Topologie-Editing. Stellt seinen Head-Basemesh (`examples/meshes/head_basemesh.obj`, geteilt seit
+[AD-007](../docs/architecture/AD-007-SHARED-ASSET-LOADER-OWNERSHIP.md)) bisher über einen
 minimalen Adapter als normale `Scene`/`Mesh` im **V1-Viewport** dar (All-Tools-Playground,
 `python run_viewport.py`) — ohne Viewport-Fork und ohne Core-Änderung. **Diese Abhängigkeit ist seit
 [AD-006](../docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md) (2026-09-17) zur Portierung

@@ -33,8 +33,9 @@ from pathlib import Path
 _EXPERIMENT_DIR = Path(__file__).resolve().parent
 _EXPERIMENTS_DIR = _EXPERIMENT_DIR.parent
 _REPO_ROOT = _EXPERIMENTS_DIR.parent
+_EXAMPLES_DIR = _REPO_ROOT / "examples"
 for _path in (
-    str(_EXPERIMENT_DIR),                            # loaders/ Paket
+    str(_EXAMPLES_DIR),                              # loaders/ Paket (AD-007: geteilt, examples/)
     str(_EXPERIMENTS_DIR / "mirai_bastel_core_V1"),  # mirai_bastel_core
 ):
     if _path not in sys.path:
@@ -44,8 +45,8 @@ from mirai_bastel_core import Scene  # noqa: E402
 
 from loaders.obj_loader import ObjMeshData, load_obj  # noqa: E402
 
-# Repository-relativer Standardpfad zum Head-Basemesh-Asset.
-DEFAULT_HEAD_ASSET = _EXPERIMENT_DIR / "meshes" / "head_basemesh.obj"
+# Repository-relativer Standardpfad zum Head-Basemesh-Asset (AD-007: examples/, geteilt).
+DEFAULT_HEAD_ASSET = _EXAMPLES_DIR / "meshes" / "head_basemesh.obj"
 
 Bounds = tuple[tuple[float, float, float], tuple[float, float, float]]
 

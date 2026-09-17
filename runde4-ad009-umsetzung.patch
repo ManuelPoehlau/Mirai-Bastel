@@ -1,0 +1,289 @@
+diff --git a/src/mirai/interaction/tools/move.py b/src/mirai/interaction/tools/move.py
+index 779f7c1..84c5def 100644
+--- a/src/mirai/interaction/tools/move.py
++++ b/src/mirai/interaction/tools/move.py
+@@ -13,7 +13,8 @@ Pfad:
+ Verantwortlichkeiten (INPUT_COMMAND_TOOL_CONTRACT.md §2):
+ 
+ - MoveTool besitzt temporären Interaktionszustand (Anchor-Vertex, laufende
+-  MoveOperation, Menge der betroffenen Vertex-IDs).
++  MoveOperation, Menge der betroffenen Vertex-IDs, optionale Achsen-/
++  Ebenen-Maske).
+ - Die eigentliche persistente Domain-Mutation macht die bestehende
+   `MoveOperation` aus `src.core` — es wird bewusst KEINE zweite
+   Move-Mutationslogik gebaut.
+@@ -21,6 +22,18 @@ Verantwortlichkeiten (INPUT_COMMAND_TOOL_CONTRACT.md §2):
+   Selection → betroffene Vertex-IDs übernimmt die reine Hilfsfunktion
+   `resolve_selection_vertices()`.
+ 
++begin(vertex_ids=..., axis=None, pivot=None) (AD-009, analog Rotate/Scale):
++
++    axis=None           → frei auf der Bildebene der Kamera (bisheriges Verhalten).
++    axis="x"/"y"/"z"    → Bewegung nur entlang dieser Weltachse.
++    axis="xy"/"yz"/"xz" → Bewegung in dieser Weltebene (die jeweils dritte
++                          Komponente bleibt gesperrt).
++
++Constraint-Mechanik: Das ohnehin über die Bildebene berechnete Welt-Delta
++wird komponentenweise mit der Achsen-/Ebenenmaske multipliziert (identisches
++Prinzip wie bei `ScaleTool.axes_mask` — siehe `transform.py::_WORLD_AXES`),
++statt eine zweite, unabhängige Constraint-Mathematik einzuführen.
++
+ Produktions-Design (WP-04): parameterloser `__init__`; `scene`, `camera`
+ und `vertex_ids` kommen über den Interaktions-Kontext in
+ `_on_begin(scene=..., camera=..., vertex_ids=...)` (Pattern A/B).
+@@ -44,6 +57,7 @@ from core import (
+ )
+ 
+ from ..tool import Tool
++from .transform import _WORLD_AXES
+ 
+ 
+ class _MoveSelectionView:
+@@ -104,6 +118,7 @@ class MoveTool(Tool):
+         self._operation: MoveOperation | None = None
+         self._vertex_ids: set[VertexId] = set()
+         self._anchor_vertex: VertexId | None = None
++        self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
+ 
+     # -- Beobachtbarkeit für Tests/Integration ------------------------------
+ 
+@@ -116,10 +131,15 @@ class MoveTool(Tool):
+         """Von dieser Interaktion betroffene Vertex-IDs (Live-Daten)."""
+         return set(self._vertex_ids)
+ 
++    @property
++    def axes_mask(self) -> tuple[float, float, float]:
++        """Achsen-/Ebenenmaske dieser Interaktion (1.0 = frei, AD-009)."""
++        return self._axes_mask
++
+     # -- Hooks -----------------------------------------------------------------
+ 
+     def _on_begin(
+-        self, scene=None, camera=None, vertex_ids=None, **params: Any
++        self, scene=None, camera=None, vertex_ids=None, axis=None, **params: Any
+     ) -> None:
+         vertex_ids = set(vertex_ids or ())
+         if not vertex_ids:
+@@ -128,6 +148,16 @@ class MoveTool(Tool):
+         self._camera = camera
+         self._vertex_ids = vertex_ids
+         self._anchor_vertex = min(vertex_ids)
++        if axis is None:
++            self._axes_mask = (1.0, 1.0, 1.0)
++        else:
++            try:
++                self._axes_mask = _WORLD_AXES[str(axis).lower()]
++            except KeyError:
++                raise ValueError(
++                    f"Unbekannte Move-Achse/-Ebene {axis!r} — erlaubt: "
++                    "'x', 'y', 'z', 'xy', 'yz', 'xz'."
++                ) from None
+         context = OperationContext(
+             target=self._scene.mesh,
+             selection=_MoveSelectionView(vertex_ids),
+@@ -145,6 +175,13 @@ class MoveTool(Tool):
+         world_delta = self._camera.screen_delta_to_world(
+             anchor_pos, dx, dy, width, height
+         )
++        # AD-009: Achsen-/Ebenen-Constraint — komponentenweise Maske auf das
++        # ohnehin berechnete Bildebenen-Delta (kein zweiter Mechanismus).
++        if self._axes_mask != (1.0, 1.0, 1.0):
++            world_delta = tuple(
++                component * mask
++                for component, mask in zip(world_delta, self._axes_mask)
++            )
+         self._operation.update(delta=world_delta)
+ 
+     def _on_commit(self) -> Any:
+@@ -159,4 +196,5 @@ class MoveTool(Tool):
+     def _on_deactivate(self) -> None:
+         self._anchor_vertex = None
+         self._scene = None
+-        self._camera = None
+\ No newline at end of file
++        self._camera = None
++        self._axes_mask = (1.0, 1.0, 1.0)
+\ No newline at end of file
+diff --git a/src/mirai/interaction/tools/rotate.py b/src/mirai/interaction/tools/rotate.py
+index b91d2f3..a1d9171 100644
+--- a/src/mirai/interaction/tools/rotate.py
++++ b/src/mirai/interaction/tools/rotate.py
+@@ -15,6 +15,11 @@ begin(vertex_ids=..., axis=None, pivot=None):
+     axis=None          → Blickachse der Kamera im begin()-Moment
+                          (Screen-Plane-Rotation); während der Interaktion fix.
+     axis="x"/"y"/"z"   → Weltachse durch den Pivot (Achsen-Constraint).
++    axis="xy"/"yz"/"xz" → Rotation in dieser Ebene (AD-009) = Rotation um die
++                         Flächennormale (Ebene XY → Achse Z, usw.). Anders als
++                         bei Move/Scale ist das KEINE Maske, sondern weiterhin
++                         eine einzelne Richtung — eine Rotation hat immer genau
++                         eine Achse, auch wenn sie als "Ebene" benannt wird.
+     axis=Vec3          → beliebige Richtung durch den Pivot.
+ 
+ Geste (V1): horizontales Ziehen rotiert; der Zielwinkel wird aus der
+@@ -34,15 +39,28 @@ from .transform import TransformTool, _WORLD_AXES
+ 
+ VEC3 = tuple[float, float, float]
+ 
++# AD-009: Ebenen-Constraint für Rotate = Rotation um die Flächennormale.
++# Bewusst getrennt von _WORLD_AXES (dort sind "xy"/"yz"/"xz" Masken für
++# Scale/Move, hier ist es die eine Achse senkrecht zur genannten Ebene).
++_PLANE_ROTATION_AXES: dict[str, VEC3] = {
++    "xy": (0.0, 0.0, 1.0),  # Rotation in der XY-Ebene → um Z
++    "yz": (1.0, 0.0, 0.0),  # Rotation in der YZ-Ebene → um X
++    "xz": (0.0, 1.0, 0.0),  # Rotation in der XZ-Ebene → um Y
++}
++
+ 
+ def _resolve_axis(axis) -> VEC3:
+-    """Normalisiert die Achs-Angabe: "x"/"y"/"z" oder Richtungsvektor."""
++    """Normalisiert die Achs-Angabe: "x"/"y"/"z", "xy"/"yz"/"xz" oder Richtungsvektor."""
+     if isinstance(axis, str):
++        key = axis.lower()
++        if key in _PLANE_ROTATION_AXES:
++            return _PLANE_ROTATION_AXES[key]
+         try:
+-            return _WORLD_AXES[axis.lower()]
++            return _WORLD_AXES[key]
+         except KeyError:
+             raise ValueError(
+-                f"Unbekannte Weltachse {axis!r} — erlaubt: 'x', 'y', 'z'."
++                f"Unbekannte Achse/Ebene {axis!r} — erlaubt: "
++                "'x', 'y', 'z', 'xy', 'yz', 'xz'."
+             ) from None
+     if axis is None:
+         raise ValueError("axis=None ist hier nicht gültig.")
+diff --git a/src/mirai/interaction/tools/scale.py b/src/mirai/interaction/tools/scale.py
+index d87429d..ffbfe00 100644
+--- a/src/mirai/interaction/tools/scale.py
++++ b/src/mirai/interaction/tools/scale.py
+@@ -15,6 +15,8 @@ begin(vertex_ids=..., axes=None, pivot=None):
+     axes=None          → uniformer Scale (V1_SPEC: Uniform Scale)
+     axes="x"/"y"/"z"   → Scale entlang dieser einen Achse
+                          (V1_SPEC: Scale entlang X/Y/Z)
++    axes="xy"/"yz"/"xz" → Scale in dieser Ebene (AD-009): beide Achsen frei,
++                         die jeweils dritte gesperrt.
+ 
+ Geste (V1): Ziehen (rechts/oben vergrößert) skaliert; der Zielfaktor wird
+ kumuliert bestimmt und als Multiplikator-Schritt übergeben (Chunking-
+@@ -64,7 +66,8 @@ class ScaleTool(TransformTool):
+                 self._axes_mask = _WORLD_AXES[str(axes).lower()]
+             except KeyError:
+                 raise ValueError(
+-                    f"Unbekannte Scale-Achse {axes!r} — erlaubt: 'x', 'y', 'z'."
++                    f"Unbekannte Scale-Achse {axes!r} — erlaubt: "
++                    "'x', 'y', 'z', 'xy', 'yz', 'xz'."
+                 ) from None
+         self._drag_pixels = 0.0
+         self._applied_scale = 1.0
+diff --git a/src/mirai/interaction/tools/transform.py b/src/mirai/interaction/tools/transform.py
+index 0cf27cc..1184a37 100644
+--- a/src/mirai/interaction/tools/transform.py
++++ b/src/mirai/interaction/tools/transform.py
+@@ -38,9 +38,19 @@ from core import OperationContext, VertexId
+ from ..tool import Tool
+ 
+ _WORLD_AXES = {
++    # Einzelachsen.
+     "x": (1.0, 0.0, 0.0),
+     "y": (0.0, 1.0, 0.0),
+     "z": (0.0, 0.0, 1.0),
++    # Ebenen (AD-009): als Achsenmaske — beide Komponenten bleiben frei, die
++    # jeweils dritte wird gesperrt. Für ScaleTool/MoveTool direkt als Maske
++    # verwendbar (komponentenweise, da Weltachsen orthogonale Einheitsvektoren
++    # sind). Für RotateTool NICHT direkt verwendbar — dort bedeutet "Ebene"
++    # "Rotation um die Flächennormale", eine einzelne Richtung, keine Maske;
++    # siehe die eigene Auflösung in rotate.py.
++    "xy": (1.0, 1.0, 0.0),
++    "yz": (0.0, 1.0, 1.0),
++    "xz": (1.0, 0.0, 1.0),
+ }
+ 
+ 
+diff --git a/tests/test_tool_integration.py b/tests/test_tool_integration.py
+index adf218b..0e31c6f 100644
+--- a/tests/test_tool_integration.py
++++ b/tests/test_tool_integration.py
+@@ -285,6 +285,16 @@ class TransformToolLifecycleTests(unittest.TestCase):
+             self.app.tool_manager.active_tool.axis, (0.0, 0.0, 1.0)
+         )
+ 
++    def test_rotate_plane_constraint_resolves_to_perpendicular_axis(self):
++        # AD-009: Rotation "in der XY-Ebene" = Rotation um die Z-Achse (die
++        # Flächennormale), NICHT die Maske (1,1,0) wie bei Move/Scale.
++        self.app.dispatch_command(cmd.ROTATE)
++        ctx = dict(self.ctx, axis="xy")
++        self.app.tool_manager.begin_current_interaction(context=ctx)
++        self.assertEqual(
++            self.app.tool_manager.active_tool.axis, (0.0, 0.0, 1.0)
++        )
++
+     def test_rotate_invalid_axis_raises(self):
+         self.app.dispatch_command(cmd.ROTATE)
+         with self.assertRaises(ValueError):
+@@ -334,6 +344,18 @@ class TransformToolLifecycleTests(unittest.TestCase):
+         self.app.tool_manager.commit()
+         self.assertEqual(len(self.app.history), 1)
+ 
++    def test_scale_explicit_plane(self):
++        # AD-009: Ebenen-Constraint — beide Achsen frei, die dritte gesperrt.
++        self.app.dispatch_command(cmd.SCALE)
++        ctx = dict(self.ctx, axes="xz")
++        self.app.tool_manager.begin_current_interaction(context=ctx)
++        self.assertEqual(
++            self.app.tool_manager.active_tool.axes_mask, (1.0, 0.0, 1.0)
++        )
++        self.app.tool_manager.update(dx=200, dy=0, width=800, height=600)
++        self.app.tool_manager.commit()
++        self.assertEqual(len(self.app.history), 1)
++
+     def test_scale_invalid_axis_raises(self):
+         self.app.dispatch_command(cmd.SCALE)
+         with self.assertRaises(ValueError):
+@@ -341,6 +363,47 @@ class TransformToolLifecycleTests(unittest.TestCase):
+                 context=dict(self.ctx, axes="nope")
+             )
+ 
++    # --- Move (AD-009: axis/plane constraint, vorher gar nicht vorhanden) --
++
++    def test_move_default_has_no_constraint(self):
++        self.app.dispatch_command(cmd.MOVE)
++        self.app.tool_manager.begin_current_interaction(context=self.ctx)
++        self.assertEqual(
++            self.app.tool_manager.active_tool.axes_mask, (1.0, 1.0, 1.0)
++        )
++
++    def test_move_explicit_single_axis_masks_other_components(self):
++        self.app.dispatch_command(cmd.MOVE)
++        ctx = dict(self.ctx, axis="x")
++        self.app.tool_manager.begin_current_interaction(context=ctx)
++        self.assertEqual(
++            self.app.tool_manager.active_tool.axes_mask, (1.0, 0.0, 0.0)
++        )
++        before = _positions(self.app)
++        self.app.tool_manager.update(dx=100, dy=100, width=800, height=600)
++        self.app.tool_manager.commit()
++        after = _positions(self.app)
++        self.assertNotEqual(before, after)
++        self.assertEqual(len(self.app.history), 1)
++
++    def test_move_explicit_plane_constraint(self):
++        self.app.dispatch_command(cmd.MOVE)
++        ctx = dict(self.ctx, axis="yz")
++        self.app.tool_manager.begin_current_interaction(context=ctx)
++        self.assertEqual(
++            self.app.tool_manager.active_tool.axes_mask, (0.0, 1.0, 1.0)
++        )
++        self.app.tool_manager.update(dx=100, dy=0, width=800, height=600)
++        self.app.tool_manager.commit()
++        self.assertEqual(len(self.app.history), 1)
++
++    def test_move_invalid_axis_raises(self):
++        self.app.dispatch_command(cmd.MOVE)
++        with self.assertRaises(ValueError):
++            self.app.tool_manager.begin_current_interaction(
++                context=dict(self.ctx, axis="nope")
++            )
++
+     # --- Cross-cutting ------------------------------------------------------
+ 
+     def test_tool_switch_cancels_in_flight_interaction(self):

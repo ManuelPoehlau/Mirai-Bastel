@@ -15,6 +15,8 @@ begin(vertex_ids=..., axes=None, pivot=None):
     axes=None          → uniformer Scale (V1_SPEC: Uniform Scale)
     axes="x"/"y"/"z"   → Scale entlang dieser einen Achse
                          (V1_SPEC: Scale entlang X/Y/Z)
+    axes="xy"/"yz"/"xz" → Scale in dieser Ebene (AD-009): beide Achsen frei,
+                         die jeweils dritte gesperrt.
 
 Geste (V1): Ziehen (rechts/oben vergrößert) skaliert; der Zielfaktor wird
 kumuliert bestimmt und als Multiplikator-Schritt übergeben (Chunking-
@@ -64,7 +66,8 @@ class ScaleTool(TransformTool):
                 self._axes_mask = _WORLD_AXES[str(axes).lower()]
             except KeyError:
                 raise ValueError(
-                    f"Unbekannte Scale-Achse {axes!r} — erlaubt: 'x', 'y', 'z'."
+                    f"Unbekannte Scale-Achse {axes!r} — erlaubt: "
+                    "'x', 'y', 'z', 'xy', 'yz', 'xz'."
                 ) from None
         self._drag_pixels = 0.0
         self._applied_scale = 1.0
