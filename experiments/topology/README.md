@@ -2,7 +2,7 @@
 
 Dieser Bereich ist die **Dokumentations- und Planstelle für die Topologie-Forschung**.
 
-Der eigentliche experimentelle Code liegt derzeit bewusst unter `experiments/mirai_bastel_viewport_V1/viewport/`. Die Trennung ist absichtlich: Das Viewport-Experiment stellt die interaktive Umgebung bereit, während dieser Ordner die Topology-Forschung als zusammenhängenden Arbeitsbereich dokumentiert.
+Der aktive experimentelle Code liegt heute unter `playground/topology_tools/` (interaktiv über den Artist Playground); `experiments/mirai_bastel_viewport_V1/viewport/` enthält die ursprüngliche, inzwischen portierte Fassung als Referenz. Die Trennung zwischen Code und Dokumentation bleibt absichtlich: Dieser Ordner dokumentiert die Topology-Forschung als zusammenhängenden Arbeitsbereich, unabhängig davon, wo der Code gerade läuft.
 
 ## Einstieg
 
@@ -74,17 +74,19 @@ Praktisch verifiziert über `tests/test_connect_edges.py`: 2 kompatible Edges, 3
 
 Scope: reguläre kompatible Quad-Topologie (Ketten, Ringe). Boundary-, Non-Quad-, Mixed-Valence- und Non-Manifold-Fälle werden explizit abgelehnt und sind damit weiterhin offene Forschungsfragen.
 
-**Noch offen:** Loop Insert als eigene Höher-Level-Operation (Phase 4) - Connect Edges bleibt bewusst davon getrennt.
+**Phase 4 — Loop Insert / Loop Remove: Loop Insert implementiert (AP-05); Loop Remove/Dissolve noch offen.**
 
-**Phase 4 — Loop Insert / Loop Remove: geplant.**
+Loop Insert (`playground/topology_tools/loop_insert.py`) ist umgesetzt und headless getestet: erkennt den Edge Ring über eine gewählte Start-Kante und verbindet die Ring-Kanten via `connect_selected_edges()` — Taste **I** im Playground. Wiederverwendet damit bewusst die Phase-2-Ring-Erkennung und die Phase-3-Connect-Mutation, statt eine eigene Topologie-Mutation zu erfinden.
 
-Erst nach der Connect-Edges-Untersuchung werden Loop Insert und Loop Remove/Dissolve als höhere Modeling-Operationen erforscht.
+Loop Remove/Dissolve ist noch nicht untersucht.
 
-Dabei soll insbesondere geprüft werden, welche Teile der vorhandenen Loop-/Ring-Traversierung wiederverwendet werden können und welche eigene Topologie-Mutation notwendig ist. Loop Insert wird nicht einfach mit `Ring Selection + Connect Edges` gleichgesetzt.
+**Phase 5 — Extrude: Baseline-Variante implementiert und headless getestet, noch kein Artist-Verdict.**
 
-**Phase 5 — Extrude: geplant.**
+`playground/topology_tools/extrude.py` — Taste **E**. Richtungsfragen, Datenkontinuität über mehrere Extrude-Schritte und weitere Varianten sind noch offene Forschungsfragen.
 
-Danach folgt die Untersuchung von Extrude einschließlich neuer Vertices/Edges/Faces, Auswahl der Region, Richtungsfragen und Datenkontinuität.
+Zusätzlich implementiert, ursprünglich nicht in diesem Plan benannt: **Loop Slide** (`playground/topology_tools/loop_slide.py`, Taste **G**) und **Connect Edges** ist mit Phase 3 bereits als eigener Punkt oben dokumentiert.
+
+Laufender, genauerer Stand: [`TOPOLOGY_EXPERIMENT_PLAN.md`](TOPOLOGY_EXPERIMENT_PLAN.md) — dieses README fasst nur zusammen und wurde zuvor nicht synchron gehalten; im Zweifel gilt der Plan.
 
 ## Langfristiger Forschungszweck
 

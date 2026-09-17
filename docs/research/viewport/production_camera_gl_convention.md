@@ -1,18 +1,23 @@
 # Production Camera / OpenGL Convention Investigation
 
-**Status:** `INVESTIGATION — UNRESOLVED` (Production-Kamera-Entscheidung offen)
-**Date:** 2026-09-10
+**Status:** `RESOLVED — Production `OrbitCamera` corrected` (siehe Update 2026-09-12)
+**Date:** 2026-09-10 (investigation), resolved 2026-09-12
 **Trigger:** Erste Artist-Tests im [`playground/`](../../../playground/README.md) (Branch `experiment/artist-playground-v1`, WP-AP-01) haben den technischen Befund sichtbar gemacht.
+
+> **Update 2026-09-12 (Auflösung):** Commit `bbeef97` ("docs/core(viewport): reconcile production
+> architecture and camera convention") hat `src/mirai/viewport/camera.py` geändert:
+> `build_view_matrix()` nutzt jetzt `-forward` in Zeile 3 mit `tz = +dot(eye, forward)` (gluLookAt-
+> Konvention) und ist damit identisch zu `LabOrbitCamera`/`PlaygroundCamera`. Regressionstest:
+> `tests/test_camera_gate5_matrices.py::test_front_point_has_negative_view_z_and_positive_clip_w`.
+> Die drei Fragen aus §5 sind damit beantwortet: Die Production Camera wurde korrigiert (Frage 4),
+> nicht die GL-Boundary adaptiert (Frage 5). Die Lab-/Playground-Overrides (`LabOrbitCamera`,
+> `PlaygroundCamera`) sind seither **redundant** (byte-identische Formel), aber noch nicht entfernt
+> — ihr Entfernen ist eine offene, eigene Entscheidung (siehe Repository-Wide Structural Health
+> Audit, 2026-09-17, Finding D2), keine technische Frage mehr.
 
 > **Update 2026-09-10:** Der Playground hat den Befund an seiner GL-Grenze adapter-artig gelöst
 > (`playground/camera.py::PlaygroundCamera`, nur `build_view_matrix()` im gluLookAt-Sinne,
-> analog `LabOrbitCamera`). **Die Production-Entscheidung ist damit NICHT entschieden** — siehe
-> §5. Keine Änderung an `src/mirai/viewport/camera.py`, `src/core/` oder `src/viewport/`.
-
-> **WICHTIG:** Dies ist eine technische Investigation, KEINE beschlossene Änderung an der Production Camera.
-> Es wird ausdrücklich noch NICHT entschieden, ob (1) die Production `OrbitCamera` korrigiert wird,
-> (2) die GL-Ausgabe an einer Boundary adaptiert wird, oder (3) eine andere Lösung die richtige
-> Architektur ist.
+> analog `LabOrbitCamera`) — historisch, bevor die Production-Kamera selbst korrigiert wurde.
 
 ---
 
@@ -23,14 +28,20 @@ pyglet-GL-Draw-Pfad (PlaygroundWindow/Shader). Der erste Artist-Lauf zeigt: Das 
 tatsächlichen GL-Pfad vollständig weggeclippt — obwohl Mesh-Geometrie und Kamera-Framing
 plausibel sind und der identische Cube im Integration Lab korrekt erscheint.
 
-Der technische Kernbefund ist in der Integration-Lab-Reconciliation **bereits autoritativ
-dokumentiert** (Single Source of Truth):
+Der technische Kernbefund wurde ursprünglich in der Integration-Lab-Reconciliation dokumentiert:
 
-- [`experiments/mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md`](../../../experiments/mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md) — **§A.1 „Kritischer dokumentierter Befund: View-Matrix-Konvention (nur dokumentiert, NICHT behoben)"**
+- [`experiments/mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md`](../../../experiments/mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md) — §A.1 „Kritischer dokumentierter Befund: View-Matrix-Konvention (nur dokumentiert, NICHT behoben)"
 - [`experiments/mirai_bastel_integration_lab/lab_camera.py`](../../../experiments/mirai_bastel_integration_lab/lab_camera.py)
 
+**Hinweis (seit 2026-09-12):** §A.1 des Reconciliation-Audits ist historisches Belegmaterial vom
+Stand 2026-09-08 (vor dem Fix) und wird hier nicht mehr als aktuelle SSOT geführt — der Fund war
+zum Zeitpunkt der Aufnahme korrekt, ist inzwischen aber durch `bbeef97` überholt. Das Audit-Dokument
+selbst bleibt unverändert als Beleg stehen (`AGENTS.md` §6: unabhängige Reviews werden nicht
+nachträglich an spätere Entscheidungen angeglichen); **dieses** Dokument hier ist ab jetzt die
+aktuelle Quelle für den Kamera-Konventions-Status.
+
 Dieses Dokument ergänzt die **Playground-Sicht** (Observation, Architektur-Bedeutung, offene
-Fragen) und verweist für den Detail-Nachweis auf §A.1, statt ihn zu duplizieren.
+Fragen) und verweist für den historischen Detail-Nachweis auf §A.1, statt ihn zu duplizieren.
 
 ---
 
@@ -85,9 +96,10 @@ geclippt. Detaillierter Nachweis inkl. Zeilen: [§A.1 des Reconciliation-Audits]
 - Der **Playground** hat den Befund sichtbar gemacht; das bedeutet nicht automatisch, dass der
   Playground fehlerhaft ist — es handelt sich möglicherweise um einen bereits vorhandenen
   **Production-Grenzfall** (siehe §A.1).
-- `src/core/` bleibt **unverändert**.
-- `src/viewport/` bleibt **unverändert**.
-- `OrbitCamera` wird in diesem Task **NICHT** verändert.
+- `src/core/` bleibt unverändert.
+- `src/viewport/` bleibt unverändert.
+- `OrbitCamera` wurde **nicht** in diesem Investigation-Task, sondern in einem separaten, späteren
+  Schritt (`bbeef97`, 2026-09-12) korrigiert — siehe Update oben.
 - `PlaygroundRenderer` bleibt gemäß
   [`docs/design/artist_playground/ARCHITECTURE_MAP.md`](../../design/artist_playground/ARCHITECTURE_MAP.md)
   ein 🔵 **WRAP**/Adapter auf den Production Viewport.
@@ -95,18 +107,17 @@ geclippt. Detaillierter Nachweis inkl. Zeilen: [§A.1 des Reconciliation-Audits]
 
 ---
 
-## 5. Noch offen (bewusst in diesem Task NICHT entschieden)
+## 5. Damals offen, seit 2026-09-12 entschieden
 
-Folgende Fragen müssen separat geprüft und entschieden werden:
+Die ursprünglichen fünf Fragen (Konvention, Consumer, API- vs. Renderer-Zugehörigkeit, Fix-Ort)
+wurden mit `bbeef97` beantwortet: **Die Production `OrbitCamera` selbst wurde auf die
+gluLookAt-Konvention korrigiert** (nicht die GL-Boundary adaptiert). Damit ist die GL-Konvention
+Bestandteil der Production Camera API, nicht nur des Renderers.
 
-1. Welche Kamera-Konvention ist tatsächlich als **Production-Konvention** beabsichtigt?
-2. Welche anderen Consumer verwenden `OrbitCamera.build_view_matrix()`?
-3. Ist die GL-Konvention Bestandteil der **Production Camera API** oder nur des jeweiligen **Renderers**?
-4. Sollte die **Production Camera selbst** korrigiert werden?
-5. Oder sollte die **GL-Boundary** die bestehende Kamerakonvention adaptieren?
-
-Keine dieser Fragen wird in diesem Task endgültig entschieden. Bis zur Entscheidung bleibt der
-Befund **UNRESOLVED.**
+**Neu offen** (Folgefrage, kein technisches Investigation-Thema mehr, sondern eine
+Cleanup-Entscheidung): Dürfen `LabOrbitCamera.build_view_matrix()` und
+`PlaygroundCamera.build_view_matrix()` gelöscht werden, jetzt wo sie redundant sind? Siehe
+Repository-Wide Structural Health Audit (2026-09-17), Finding D2.
 
 ---
 

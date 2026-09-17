@@ -34,7 +34,7 @@ Das meiste ist vorhanden und wird nicht ersetzt. Dieses Dokument verbindet die T
 | Schicht | vorhanden als |
 |---|---|
 | Intent / Vision | `docs/architecture/PROJECT_VISION_AND_V1_PRINCIPLE.md`, AD-004 |
-| Entscheidungen | AD-001, AD-004, AD-005, ADR-001 (append-only) |
+| Entscheidungen | AD-001, AD-004, AD-005, AD-006, AD-007, AD-008, AD-009, AD-010, ADR-001 (append-only) |
 | Architektur-Realität | `docs/architecture/SOURCE_ARCHITECTURE.md`, `CORE_API_AUDIT.md` |
 | Reifegrad-Grenze | `experiments/` ↔ `src/core` ↔ `src/mirai` (strukturell, nicht dokumentarisch) |
 | Technische Wahrheit | Tests, Gates, Fehlerregel in `tests/README.md` |

@@ -10,6 +10,16 @@ Beim Arbeiten in einem Experiment zuerst dessen lokale `README.md` lesen. Sie is
 
 Experimentcode und Experimentdokumentation sind **keine automatische Produktionsspezifikation**. Erst eine bewusst getroffene Architekturentscheidung kann eine Erkenntnis in `src/` überführen.
 
+**Nicht zu verwechseln mit `playground/experiments/`:** Dieses Verzeichnis hier ist die
+Repository-Ebene — ein Ordner pro eigenständigem Forschungsprogramm (eigene README, eigene Tests,
+teils eigener Core-Fork). `playground/experiments/` ist etwas anderes: Varianten-Familien
+*innerhalb* des Artist-Playground-Hosts (`<family>/variant_*.py` + `decision.md`), mit eigenem
+Verdikt-Mechanismus (KEEP/ITERATE/REJECT). Siehe
+[`../docs/design/artist_playground/EXPERIMENT_HOST.md`](../docs/design/artist_playground/EXPERIMENT_HOST.md)
+für die Playground-Seite. `playground/` selbst ist die einzige lauffähige Anwendung des Repos und
+ist kein Eintrag hier, weil es kein Experiment im Sinne dieses Ordners ist — siehe
+[`../playground/README.md`](../playground/README.md).
+
 ## Aktuelle Experimente
 
 ### `mirai_bastel_core_V1/`
@@ -23,9 +33,20 @@ Aktuelle Architektur:
 
 ### `mirai_bastel_viewport_V1/`
 
-Aktives interaktives Forschungs- und Praxistestfeld für die Verbindung des Core mit einem minimalen OpenGL-Viewport. Der bisherige V1-Praxistest hat insbesondere Scene/Mesh, Selection, Move, Commit, History/Undo/Redo sowie grundlegende Kamera-Interaktion validiert.
+**Status (aktualisiert 2026-09-17, [AD-006](../docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md)):
+retiriert — kein aktives Forschungsfeld mehr, kein aktiver Consumer mehr vorgesehen.**
 
-Der Viewport-V1-Code ist **kein Produktions-Viewport**. Neue Selection- und Topology-Experimente bleiben hier, bis aus ihnen bewusst Produktionsanforderungen abgeleitet werden.
+Bis 2026-09-17 hatte V1 noch einen einzigen Laufzeit-Consumer
+(`experiments/rigging-skinning-morphing/run_viewport.py`, Betrachten/Von-Hand-Bearbeiten des
+Head-Basemesh). Per Artist-Verdikt (AD-006) ist diese Rolle nicht mehr nötig — der Playground
+(Taste `H`) deckt sie ab. **Die eigentliche Portierung/Entfernung von `run_viewport.py` ist noch
+nicht ausgeführt** — AD-006 hält nur die Entscheidung fest, nicht die Umsetzung.
+
+V1 bleibt als **reine Archiv-/Referenzquelle** erhalten (Projektgedächtnis nach `AGENTS.md` M1):
+Ursprungsreferenz für bereits nach `src/mirai/*` promovierten Code (Vecmath, Camera, Picking,
+Commands, Bindings, Tool-Lifecycle, Move/Transform-Tools) und für die nach
+`playground/topology_tools/` portierten Topology-Primitive. Sein Testbaum ist vollständig grün
+(184 Tests + 21 Subtests, headless) und bleibt es auch nach der Retirierung.
 
 Lokaler Einstieg: [`mirai_bastel_viewport_V1/README.md`](mirai_bastel_viewport_V1/README.md)
 
@@ -39,17 +60,21 @@ Research-Baseline: [`../docs/viewport/VIEWPORT_V02_RESEARCH.md`](../docs/viewpor
 
 ### `topology/`
 
-Zentrale Dokumentations- und Planstelle für die Topology-Forschung. Der experimentelle Topology-Code selbst liegt derzeit im Viewport-Experiment unter `mirai_bastel_viewport_V1/viewport/`.
+Zentrale Dokumentations- und Planstelle für die Topology-Forschung. Der aktive Topology-Code lebt
+heute in `playground/topology_tools/` (1:1-Ports gegen die Production-Core, siehe
+`TOPOLOGY_EXPERIMENT_PLAN.md`); `mirai_bastel_viewport_V1/viewport/` enthält die ursprüngliche,
+inzwischen portierte Fassung als Referenz.
 
 Lokaler Einstieg: [`topology/README.md`](topology/README.md)
 
 ### `rigging-skinning-morphing/`
 
 Research-Experiment zu Rigging, Skinning und Morph-Targets in Kombination mit
-Topologie-Editing. Seit dem Viewport-Integrationsschritt stellt es seinen
-Head-Basemesh (`meshes/head_basemesh.obj`) über einen minimalen Adapter als
-normale `Scene`/`Mesh` im **vorhandenen Viewport V1** dar (All-Tools-Playground,
-`python run_viewport.py`) — ohne Viewport-Fork und ohne Core-Änderung.
+Topologie-Editing. Stellt seinen Head-Basemesh (`meshes/head_basemesh.obj`) bisher über einen
+minimalen Adapter als normale `Scene`/`Mesh` im **V1-Viewport** dar (All-Tools-Playground,
+`python run_viewport.py`) — ohne Viewport-Fork und ohne Core-Änderung. **Diese Abhängigkeit ist seit
+[AD-006](../docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md) (2026-09-17) zur Portierung
+vorgesehen** (V1 ist retiriert); `run_viewport.py` selbst ist noch nicht angepasst.
 
 Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.md`](rigging-skinning-morphing/rigging-skinning-morphing-README.md)
 

@@ -1,8 +1,8 @@
 # Mirai-Bastel Core V1 — Produktions-Freeze
 
-**Status:** FROZEN (with authorized exceptions; see §7.1)  
-**Datum:** 2026-08-27  
-**Revidiert:** 2026-09-04 (ADR-001 precedent added)  
+**Status:** FROZEN (with authorized exceptions; see §7.1)
+**Datum:** 2026-08-27
+**Revidiert:** 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -24,6 +24,16 @@ Transform operations (`RotateOperation`, `ScaleOperation`) are promoted from exp
 **Rationale:** These operations are fundamental modeling operations, not speculative future systems. They are production-grade (per Gate 2 classification) and belong in Core as first-class citizenship.
 
 **Process for future exceptions:** Follow same analysis as ADR-001 (classify operation, justify promotion, document precedent).
+
+**Decision:** AP-05 (2026-09-14, commit `50fbee8`)
+
+`Mesh.add_edge()` is promoted from the topology experiment (Connect Edges' "kind v" / FreeConnect
+case) to `src/core/mesh.py` as an authorized production extension — a minimal, public mutation
+primitive for a free edge between two vertices without a shared face. Covered by an
+architecture-contract test including error cases and invariants (`tests/test_core.py:128-165`).
+Follows exactly the flow this document's own §7 (below) and `docs/architecture/ROADMAP.md §13`
+describe: experiment demonstrated the need (Connect Edges' "kind v" case), finding documented, Core
+extended, existing methods (`split_edge`/`connect_vertices`) left unchanged.
 
 ## 2. Was vor dem Freeze validiert wurde
 

@@ -9,8 +9,19 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 **Structure**:
 - `src/core/` — Production: V1 Core baseline, frozen (don't change without explicit reason)
 - `src/viewport/`, `src/mirai/` — In-progress production areas
-- `experiments/` — Research, prototypes, practical validation (OK to be messy)
-- `tests/` — pytest suite. Bootstrap adds `src/` to path; run via `pytest tests/`
+- `playground/` — **The only runnable application.** Artist research host (selection, tweak,
+  topology, articulation experiments live inside it as variant families); depends on `src/` plus a
+  small number of helpers from `experiments/mirai_bastel_integration_lab` and
+  `experiments/rigging-skinning-morphing` (OBJ→Scene loading, camera framing, the head asset).
+  Own test tree: `playground/tests/` (run via `pytest playground/tests`).
+- `experiments/` — Research, prototypes, practical validation at the repository level (OK to be
+  messy). Not the same thing as `playground/experiments/` (variant families inside the Playground
+  host) — see `docs/design/artist_playground/EXPERIMENT_HOST.md` for that distinction.
+- `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path; run via
+  `pytest tests --ignore=tests/test_extrude_tool.py` (bare `pytest` from the repo root currently
+  fails with 46 collection errors caused by a `viewport` package-name collision with
+  `experiments/mirai_bastel_viewport_V1/` — not a code defect, see
+  `docs/Repository_Wide Structural_Codebase_Health_Audit.md` D1).
 - `docs/` — Architecture, design, research decisions. Hierarchy: `README.md` → index → local docs → plans/specs
 - `references/` — External material (historical Mirai docs, etc.)
 
@@ -55,8 +66,12 @@ Move validated code to src/ (only if decision is explicit)
 
 - Tests live in `tests/test_*.py` and use pytest conventions
 - Test bootstrap (`_bootstrap.py`) adds `src/` to path; tests import directly from `src.core` etc.
-- Before submitting, run: `pytest tests/ -v` (or specific file)
-- Use `_measure_coverage.py` to check test coverage
+- Before submitting, run: `pytest tests --ignore=tests/test_extrude_tool.py -v` (or a specific file).
+  Plain `pytest tests/ -v` currently fails on `tests/test_extrude_tool.py`, which imports an
+  experiment module that isn't on the path from the repo root — excluded from the documented run,
+  not a regression.
+- If touching `playground/`, also run `pytest playground/tests`
+- `_measure_coverage.py` is a self-described *temporary* Gate-3 coverage script, not a general tool
 
 ## Documentation maintenance
 

@@ -204,7 +204,7 @@ Der aktuelle Test `Edge Ring → Connect Edges` hat diese Abgrenzung praktisch s
 
 ## Phase 4 — Loop Insert / Loop Remove
 
-**Status: geplant; wird nach der Connect-Edges-Untersuchung begonnen.**
+**Status: Loop Insert implementiert und headless getestet (AP-05, `playground/topology_tools/loop_insert.py`, Taste I) — wiederverwendet Phase-2-Ring-Erkennung + Phase-3-Connect-Mutation. Loop Remove/Dissolve weiterhin geplant.**
 
 Die beiden zusammengehörigen Fälle werden als nächste große Forschungsgruppe betrachtet.
 
