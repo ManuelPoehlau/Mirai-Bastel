@@ -171,6 +171,48 @@ class OperationLifecycleStateMachineTests(unittest.TestCase):
         self.assertIsNotNone(command)
         self.assertEqual(len(self.history), 1)
 
+    # -- Move pivot-independence (WP-A regression test) -------------------------
+
+    def test_move_is_pivot_independent(self) -> None:
+        """Prove MoveOperation ignores pivot parameter (pivot-independent by construction).
+
+        Move with default pivot (centroid) and explicit far pivot must
+        produce identical vertex positions after identical deltas. Move's
+        _transform_position() never reads self._pivot.
+        """
+        # First pass: move with default pivot (centroid).
+        mesh_a, selection_a, history_a, v0_a = _make_scene()
+        context_a = OperationContext(target=mesh_a, selection=selection_a, history=history_a)
+        op_a = MoveOperation(context_a)
+        start_pos_a = mesh_a.vertex_position(v0_a)
+
+        op_a.begin()  # Default: pivot = centroid
+        op_a.update(delta=(2.0, 3.0, 4.0))
+        op_a.commit()
+        end_pos_a = mesh_a.vertex_position(v0_a)
+
+        # Second pass: move with arbitrary far pivot (should have no effect).
+        mesh_b, selection_b, history_b, v0_b = _make_scene()
+        far_pivot = (1000.0, 2000.0, 3000.0)
+        context_b = OperationContext(
+            target=mesh_b,
+            selection=selection_b,
+            history=history_b,
+            params={"pivot": far_pivot},
+        )
+        op_b = MoveOperation(context_b)
+        start_pos_b = mesh_b.vertex_position(v0_b)
+
+        op_b.begin()
+        op_b.update(delta=(2.0, 3.0, 4.0))
+        op_b.commit()
+        end_pos_b = mesh_b.vertex_position(v0_b)
+
+        # Both should produce identical results despite different pivots.
+        self.assertEqual(start_pos_a, start_pos_b)
+        self.assertEqual(end_pos_a, end_pos_b,
+                        "Move must be pivot-independent: same delta → same result")
+
 
 if __name__ == "__main__":
     unittest.main()
