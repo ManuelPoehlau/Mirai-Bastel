@@ -1,5 +1,5 @@
-from .move import MoveOperation, MoveVerticesCommand
+from .move import MoveOperation
 from .topology import MeshStateCommand
-from .transform import RotateOperation, ScaleOperation
+from .transform import RotateOperation, ScaleOperation, VertexTransformCommand
 
-__all__ = ["MoveOperation", "MoveVerticesCommand", "MeshStateCommand", "RotateOperation", "ScaleOperation"]
+__all__ = ["MoveOperation", "VertexTransformCommand", "MeshStateCommand", "RotateOperation", "ScaleOperation"]

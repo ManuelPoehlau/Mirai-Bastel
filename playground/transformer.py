@@ -16,9 +16,10 @@ from playground._paths import ensure_paths
 ensure_paths()
 
 from core.selection import SelectionMode  # noqa: E402
-from mirai.interaction.tools.move import MoveTool, resolve_selection_vertices  # noqa: E402
+from mirai.interaction.tools.move import MoveTool  # noqa: E402
 from mirai.interaction.tools.rotate import RotateTool  # noqa: E402
 from mirai.interaction.tools.scale import ScaleTool  # noqa: E402
+from mirai.interaction.tools.selection_helpers import resolve_selection_vertices  # noqa: E402
 
 ToolType = Literal["move", "rotate", "scale"]
 

@@ -1,15 +1,12 @@
-"""Transform-Foundation: wiederverwendbare Vertex-Transformationen (WP-03).
+"""Transform-Foundation: wiederverwendbare Vertex-Transformationen (WP-03, WP-A).
 
 Bezug: ROADMAP.md §5 WP-03 (Transform Foundation), V1_SPEC.md §4 (Transform).
 
-Rotate und Scale folgen demselben interaktiven Lifecycle-Vertrag wie
-MoveOperation (AD-003) - hier als gemeinsame Basis umgesetzt, statt drei
-unabhängige Features zu implementieren (WP-03-Ziel: ein wiederverwendbares
-Transform-Konzept, keine unrelated Einzel-Features).
-
-Verhältnis zu operations/move.py: MoveOperation bleibt bewusst UNANGETASTET
-(sie ist die getestete WP-02-Basis). Eine spätere Vereinheitlichung auf diese
-Basis ist eine explizite Architekturentscheidung, kein Nebeneffekt von WP-03.
+Rotate, Scale, und Move folgen alle demselben interaktiven Lifecycle-Vertrag
+(AD-003): begin() → update()* → commit() | cancel(). Gemeinsame Basis
+VertexTransformOperation eliminates duplication. MoveOperation was the first
+WP-02 prototype before Rotate/Scale existed; consolidated onto this base
+in WP-A (Move Unification).
 
 Architekturvertrag (siehe operation.py):
 

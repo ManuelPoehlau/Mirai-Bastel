@@ -23,9 +23,10 @@ from core import Scene, SelectionMode
 from mirai.application import Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input, KeymapConfigError
-from mirai.interaction.tools.move import MoveTool, resolve_selection_vertices
+from mirai.interaction.tools.move import MoveTool
 from mirai.interaction.tools.rotate import RotateTool
 from mirai.interaction.tools.scale import ScaleTool
+from mirai.interaction.tools.selection_helpers import resolve_selection_vertices
 
 
 def _key(value: str, *modifiers: str) -> Input:

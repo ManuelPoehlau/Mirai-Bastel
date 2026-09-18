@@ -48,54 +48,14 @@ from __future__ import annotations
 from typing import Any
 
 from core import (
-    Mesh,
     MoveOperation,
     OperationContext,
-    Selection,
-    SelectionMode,
     VertexId,
 )
 
 from ..tool import Tool
+from .selection_helpers import _VertexSelectionView
 from .transform import _WORLD_AXES
-
-
-class _MoveSelectionView:
-    """Minimaler Selection-View für die Core-MoveOperation.
-
-    Die Core-Operation benötigt für V1 lediglich die Menge der tatsächlich
-    zu bewegenden Vertex-IDs; die sichtbare UI-Selection bleibt unberührt.
-    """
-
-    def __init__(self, vertex_ids: set[VertexId]) -> None:
-        self.vertices = set(vertex_ids)
-
-
-def resolve_selection_vertices(
-    mesh: Mesh, selection: Selection, mode: SelectionMode
-) -> set[VertexId]:
-    """Löst die aktuelle Sub-Object-Selection auf betroffene Vertex-IDs auf.
-
-    Vertex-Mode → selektierte Vertices
-    Edge-Mode   → Endpunkt-Vertices aller selektierten Edges
-    Face-Mode   → Boundary-Vertices aller selektierten Faces
-
-    Bei mehreren Edges/Faces ist das Ergebnis die Vereinigungsmenge — ein
-    gemeinsamer Vertex wird nur einmal bewegt.
-    """
-    if mode == SelectionMode.VERTEX:
-        return set(selection.vertices)
-    if mode == SelectionMode.EDGE:
-        result: set[VertexId] = set()
-        for eid in selection.edges:
-            result.update(mesh.edge_vertices(eid))
-        return result
-    if mode == SelectionMode.FACE:
-        result = set()
-        for fid in selection.faces:
-            result.update(mesh.face_vertices(fid))
-        return result
-    return set()
 
 
 class MoveTool(Tool):
@@ -160,7 +120,7 @@ class MoveTool(Tool):
                 ) from None
         context = OperationContext(
             target=self._scene.mesh,
-            selection=_MoveSelectionView(vertex_ids),
+            selection=_VertexSelectionView(vertex_ids),
             history=self._scene.history,
         )
         operation = MoveOperation(context)

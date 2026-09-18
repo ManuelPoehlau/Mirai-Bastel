@@ -33,9 +33,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from core import OperationContext, VertexId
+from core import Mesh, OperationContext, VertexId
 
 from ..tool import Tool
+from .selection_helpers import _VertexSelectionView, selection_pivot
 
 _WORLD_AXES = {
     # Einzelachsen.
@@ -52,17 +53,6 @@ _WORLD_AXES = {
     "yz": (0.0, 1.0, 1.0),
     "xz": (1.0, 0.0, 1.0),
 }
-
-
-class _VertexSelectionView:
-    """Minimaler Selection-View für die Transform-Operationen.
-
-    Die Core-Operationen benötigen für V1 lediglich die Menge der zu
-    transformierenden Vertex-IDs (analog _MoveSelectionView in move.py).
-    """
-
-    def __init__(self, vertex_ids: set[VertexId]) -> None:
-        self.vertices = set(vertex_ids)
 
 
 class TransformTool(Tool):
@@ -136,16 +126,3 @@ class TransformTool(Tool):
     def _create_operation(self, context: OperationContext):
         """Erzeugt die konkrete Core-Operation für diese Interaktion."""
         raise NotImplementedError
-
-
-def selection_pivot(mesh, vertex_ids) -> tuple[float, float, float]:
-    """Zentroid der betroffenen Vertices (Selection Pivot / Center, V1_SPEC §4)."""
-    positions = [mesh.vertex_position(vid) for vid in vertex_ids]
-    if not positions:
-        raise ValueError("selection_pivot() benötigt mindestens einen Vertex.")
-    count = len(positions)
-    return (
-        sum(p[0] for p in positions) / count,
-        sum(p[1] for p in positions) / count,
-        sum(p[2] for p in positions) / count,
-    )

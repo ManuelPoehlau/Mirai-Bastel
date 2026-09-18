@@ -5,10 +5,11 @@ nutzen ausschließlich Core-Operationen (src/core) für persistente
 Domain-Mutationen.
 """
 
-from .move import MoveTool, resolve_selection_vertices
+from .move import MoveTool
 from .rotate import RotateTool
 from .scale import ScaleTool
-from .transform import TransformTool, selection_pivot
+from .selection_helpers import resolve_selection_vertices, selection_pivot
+from .transform import TransformTool
 
 __all__ = [
     "MoveTool",

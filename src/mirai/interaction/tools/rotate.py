@@ -33,8 +33,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from core import OperationContext, RotateOperation
+from core import OperationContext, RotateOperation, Selection, SelectionMode
 
+from .selection_helpers import selection_normal
 from .transform import TransformTool, _WORLD_AXES
 
 VEC3 = tuple[float, float, float]
@@ -49,10 +50,30 @@ _PLANE_ROTATION_AXES: dict[str, VEC3] = {
 }
 
 
-def _resolve_axis(axis) -> VEC3:
-    """Normalisiert die Achs-Angabe: "x"/"y"/"z", "xy"/"yz"/"xz" oder Richtungsvektor."""
+def _resolve_axis(axis, derived_geometry=None, mesh=None, selection: Selection | None = None) -> VEC3:
+    """Resolve axis specification: "x"/"y"/"z", "xy"/"yz"/"xz", "normal", or vector.
+
+    axis="normal" requires derived_geometry, mesh, and selection to compute
+    the normal from the current component selection.
+    """
     if isinstance(axis, str):
         key = axis.lower()
+        if key == "normal":
+            if derived_geometry is None or mesh is None or selection is None:
+                raise ValueError(
+                    "axis='normal' requires derived_geometry, mesh, and selection."
+                )
+            mode = selection.mode
+            if mode is None:
+                raise ValueError("Selection has no active mode.")
+            result = selection_normal(derived_geometry, mesh, selection, mode)
+            length = (result[0] ** 2 + result[1] ** 2 + result[2] ** 2) ** 0.5
+            if length < 1e-12:
+                raise ValueError(
+                    "Normal derived from selection is zero (degenerate case, e.g., "
+                    "opposing vertex normals). Unable to rotate around null axis."
+                )
+            return result
         if key in _PLANE_ROTATION_AXES:
             return _PLANE_ROTATION_AXES[key]
         try:
@@ -60,7 +81,7 @@ def _resolve_axis(axis) -> VEC3:
         except KeyError:
             raise ValueError(
                 f"Unbekannte Achse/Ebene {axis!r} — erlaubt: "
-                "'x', 'y', 'z', 'xy', 'yz', 'xz'."
+                "'x', 'y', 'z', 'xy', 'yz', 'xz', 'normal'."
             ) from None
     if axis is None:
         raise ValueError("axis=None ist hier nicht gültig.")
@@ -88,7 +109,7 @@ class RotateTool(TransformTool):
         return RotateOperation(context)
 
     def _on_begin(
-        self, scene=None, camera=None, vertex_ids=None, axis=None, **params: Any
+        self, scene=None, camera=None, vertex_ids=None, axis=None, derived_geometry=None, **params: Any
     ) -> None:
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
         if axis is None:
@@ -96,7 +117,12 @@ class RotateTool(TransformTool):
             forward, _, _ = self._camera.basis()
             self._axis = forward
         else:
-            self._axis = _resolve_axis(axis)
+            self._axis = _resolve_axis(
+                axis,
+                derived_geometry=derived_geometry,
+                mesh=self._scene.mesh if self._scene else None,
+                selection=self._scene.selection if self._scene else None,
+            )
         self._drag_pixels = 0.0
         self._applied_angle = 0.0
 
