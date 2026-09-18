@@ -62,3 +62,58 @@ binding) "beantwortet die Frage eigentlich sogut wie selbst" — logical, not a 
 5. `docs/design/artist_playground/ARCHITECTURE_MAP.md`'s claim that `src/viewport` is *"the only
    complete renderer in the repository"* (flagged as drift in the Structural Health Audit, row 3)
    becomes accurate only after this port — update that document at execution time, not now.
+
+---
+
+## Execution Update — 2026-09-18
+
+**Executed** (commit `8353c56`): the store-swap portion of Consequence #1 —
+`playground/app.py`, `playground/window.py`, `playground/run.py`,
+`playground/_diag_screenshot.py`, `playground/renderer.py`, new
+`playground/gl_store.py` (`PlaygroundPygletStore`, vec3-padded subclass of
+`PygletStore`, adapted from `LabPygletStore` rather than cross-imported from
+`experiments/` — keeps the Promotion Boundary intact).
+
+Scope actually delivered:
+- Live window path (`run.py`, `_diag_screenshot.py`, hotkeys `C`/`H`/`Y`) now
+  runs the Viewport's Store on `PlaygroundPygletStore` instead of `TraceStore`.
+- Headless default stays `TraceStore` — `load_cube`/`load_head`/`load_cylinder`
+  gained a `store_type` parameter instead of a global default change, so the
+  existing test suite needed zero edits.
+- **New finding, not anticipated in the original Decision text above:** the
+  Playground's entry points (`run.py`, `_diag_screenshot.py`) construct the
+  scene/Viewport *before* the `pyglet.window.Window` (and its GL context)
+  exists — the opposite order from the Lab's `IntegrationLabWindow`. A bare
+  store swap would have crashed `PygletStore.allocate()` on missing context.
+  Fixed by moving scene load into `PlaygroundWindow.__init__`, after
+  `super().__init__()`.
+
+**Verified** (this conversation, via Xvfb — software GL/Mesa-llvmpipe, *not*
+real hardware): Viewport genuinely runs on `PlaygroundPygletStore` at
+runtime (no silent fallback); real GPU resource allocation succeeds for all
+four `RenderMesh` resources plus `camera_uniforms`; **GPU Resource
+Persistence holds** — after a vertex move + `sync()`, all pre-existing
+resource IDs stay identical (in-place `update()`, not reallocation);
+`glGetError() == 0` across `on_draw()`, scene reload, and hotkey-equivalent
+scene switching; full `playground/tests/` suite (233 tests) stays green,
+including under a real X display. Real-hardware confirmation is still
+outstanding — same caveat the Lab's original evidence needed before it
+counted as proven.
+
+**Deliberately NOT done** (unchanged from the Decision above — not silently
+expanded):
+- `window.py`'s ~20 `_rebuild_vbo()` call sites still fully rebuild on every
+  interaction. **Note for the next agent:** the Lab's reference
+  (`lab_viewport.py::_move_picked_vertex`) only demonstrates in-place
+  patching for the single-vertex-move case, on its own hand-built `vlist`
+  (`pos_buf.set_region()`/`nrm_buf.set_region()`), bypassing the Production
+  `PygletStore.update()` entirely. Selection, hover, and topology changes are
+  fully rebuilt in the Lab too — there is no proven reference pattern for
+  those. Treat "replace remaining full rebuilds with in-place patching" as
+  new engineering per case, not a port, when scoping it.
+- Lab retirement (Consequence #2): not started.
+- `ARCHITECTURE_MAP.md` (Consequence #5): not updated — the "only complete
+  renderer" claim is still arguably contested by the Playground's own
+  hand-rolled draw path in `window.py`, independent of which Store backend
+  feeds its accounting.
+
