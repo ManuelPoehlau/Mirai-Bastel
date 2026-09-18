@@ -303,6 +303,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_sel_verts = None
         self._vlist_sel_edges = None
         self._vlist_hover = None
+        self._hud_mesh_counts_dirty: bool = True
         self._rebuild_vbo()
 
         self._hud = PlaygroundHUD(x=10, y_bottom=10, width=self.width - 20)
@@ -376,6 +377,7 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def _rebuild_vbo(self) -> None:
         """Alle Mesh-VBOs (Faces, Edges, Vertices) neu bauen. Selection-VBO separat."""
+        self._hud_mesh_counts_dirty = True
         for vlist in (self._vlist_faces, self._vlist_edges, self._vlist_verts,
                       self._vlist_selection, self._vlist_hover):
             if vlist is not None:
@@ -507,12 +509,14 @@ class PlaygroundWindow(pyglet.window.Window):
     def _update_hud(self) -> None:
         cam = self.app.camera
         self._hud.update_camera(cam.yaw, cam.pitch, cam.distance)
-        mesh = self.app.viewport.render_mesh.mesh if self.app.viewport else None
-        if mesh is not None:
-            v_count = len(list(mesh.all_vertex_ids()))
-            e_count = len(list(mesh.all_edge_ids()))
-            f_count = len(list(mesh.all_face_ids()))
-            self._hud.update_mesh(v_count, e_count, f_count)
+        if self._hud_mesh_counts_dirty:
+            mesh = self.app.viewport.render_mesh.mesh if self.app.viewport else None
+            if mesh is not None:
+                v_count = len(list(mesh.all_vertex_ids()))
+                e_count = len(list(mesh.all_edge_ids()))
+                f_count = len(list(mesh.all_face_ids()))
+                self._hud.update_mesh(v_count, e_count, f_count)
+            self._hud_mesh_counts_dirty = False
         self._hud.update_setting(self.app.slots)
         focused_slot = self.app.slots.get(self.app.focused_family)
         focused_exp = focused_slot.active_experiment if focused_slot else self.app.active_experiment
