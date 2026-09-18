@@ -541,9 +541,91 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def _sync_after_transform(self) -> None:
         """VBOs nach einer Transform-Operation (update oder commit/cancel) neu bauen."""
-        self._rebuild_vbo()
-        self._rebuild_selection_vbo()
+        sel = self.app.scene.selection
+        if (
+            self._tweak_started
+            and sel.mode is SelectionMode.VERTEX
+            and len(sel.vertices) == 1
+            and self.app.viewport is not None
+        ):
+            self._patch_vbo_single_vertex(next(iter(sel.vertices)))
+        else:
+            self._rebuild_vbo()
+            self._rebuild_selection_vbo()
         self._push_camera()
+
+    def _patch_vbo_single_vertex(self, vid) -> None:
+        """In-place VBO patch for a single-vertex Tweak move.
+
+        Patches only the slots affected by moving `vid`: position and normals
+        in _vlist_faces; position in _vlist_edges, _vlist_verts, _vlist_sel_verts.
+        GPU buffers are updated in-place via set_region() — no VBO reallocation.
+        """
+        from viewport.derived import triangulate_face  # noqa: E402
+
+        mesh = self.app.viewport.render_mesh.mesh
+        derived = self.app.viewport.render_mesh.derived
+
+        # Recompute derived geometry for the affected neighborhood.
+        # (update_transform moves the mesh without calling viewport.sync, so
+        # derived is stale at this point — same partial-update path as _sync_geometry.)
+        affected_faces, affected_vertices = derived.affected_neighborhood(mesh, {vid})
+        derived.update_face_normals(mesh, affected_faces)
+        derived.update_vertex_normals(mesh, affected_vertices)
+
+        new_pos = list(mesh.vertex_position(vid))
+        nbhd_normals = {
+            v: list(derived.vertex_normals.get(v, (0.0, 1.0, 0.0)))
+            for v in affected_vertices
+        }
+
+        # Face VBO: position of vid, smooth_normal of 1-ring, flat_normal of affected faces.
+        if self._vlist_faces is not None:
+            pos_buf  = self._vlist_faces.domain.attrib_name_buffers["position"]
+            snrm_buf = self._vlist_faces.domain.attrib_name_buffers["smooth_normal"]
+            fnrm_buf = self._vlist_faces.domain.attrib_name_buffers["flat_normal"]
+            flat_slot = 0
+            for fid in mesh.all_face_ids():
+                boundary = mesh.face_vertices(fid)
+                is_affected = fid in affected_faces
+                face_normal = (
+                    list(derived.face_normals.get(fid, (0.0, 1.0, 0.0)))
+                    if is_affected else None
+                )
+                for a, b, c in triangulate_face(boundary):
+                    for slot_vid in (a, b, c):
+                        if slot_vid == vid:
+                            pos_buf.set_region(flat_slot, 1, new_pos)
+                        if slot_vid in affected_vertices:
+                            snrm_buf.set_region(flat_slot, 1, nbhd_normals[slot_vid])
+                        if is_affected:
+                            fnrm_buf.set_region(flat_slot, 1, face_normal)
+                        flat_slot += 1
+
+        # Edge VBO: position of vid in each incident edge.
+        if self._vlist_edges is not None:
+            pos_buf = self._vlist_edges.domain.attrib_name_buffers["position"]
+            flat_slot = 0
+            for eid in mesh.all_edge_ids():
+                va, vb = mesh.edge_vertices(eid)
+                if va == vid:
+                    pos_buf.set_region(flat_slot, 1, new_pos)
+                if vb == vid:
+                    pos_buf.set_region(flat_slot + 1, 1, new_pos)
+                flat_slot += 2
+
+        # Vertex VBO: position of vid.
+        if self._vlist_verts is not None:
+            pos_buf = self._vlist_verts.domain.attrib_name_buffers["position"]
+            for flat_slot, v in enumerate(mesh.all_vertex_ids()):
+                if v == vid:
+                    pos_buf.set_region(flat_slot, 1, new_pos)
+                    break
+
+        # Selection VBO: single selected vertex highlight (always slot 0 for single-vertex selection).
+        if self._vlist_sel_verts is not None:
+            pos_buf = self._vlist_sel_verts.domain.attrib_name_buffers["position"]
+            pos_buf.set_region(0, 1, new_pos)
 
     def _active_transform_model(self) -> str:
         """Aktivierungsmodell des aktiven Transform-Slots lesen."""
