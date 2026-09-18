@@ -16,7 +16,9 @@
       "Bash(git checkout *)",
       "Bash(find /c/Users/Manuel/mirai_bastel/tests -name \"test_*.py\" -exec wc -l {} +)",
       "Bash(git -C C:/Users/Manuel/mirai_bastel log --oneline experiment/artist-playground-v1)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(python3 -c \"import pyglet; help\\(pyglet.graphics.vertexbuffer.BufferObject.set_region\\)\")",
+      "Bash(python3 -c \"import pyglet; from pyglet.graphics import vertexbuffer; print\\(dir\\(vertexbuffer\\)\\)\")"
     ]
   }
 }

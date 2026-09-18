@@ -117,3 +117,41 @@ expanded):
   hand-rolled draw path in `window.py`, independent of which Store backend
   feeds its accounting.
 
+---
+
+## Execution Update 2 — 2026-09-18 (VBO in-place patching, single-vertex case)
+
+**Executed** (commit `a0c9691`): the single-vertex-move slice of the item the
+previous update listed under "Deliberately NOT done" above — that line is now
+**superseded for this one case**, left in place rather than edited, per
+AGENTS.md §6 (archived record, not retroactively rewritten).
+
+`_sync_after_transform()` now detects the single-vertex Tweak case
+(`_tweak_started` + `SelectionMode.VERTEX` + exactly one selected vertex) and
+dispatches to `_patch_vbo_single_vertex(vid)`, which patches
+`_vlist_faces`/`_vlist_edges`/`_vlist_verts`/`_vlist_sel_verts` in place via
+`set_region()` — adapted from `lab_viewport.py::_move_picked_vertex` for the
+window's flat non-indexed VBO layout (one slot per triangle-vertex
+occurrence) instead of the Lab's indexed `vlist`. Every other path (multi-
+vertex, non-Tweak transforms, selection/hover/topology changes) still falls
+through to `_rebuild_vbo()` unchanged — exactly the boundary the task brief
+set, not expanded.
+
+**Verified** (this conversation, via Xvfb): during a single-vertex Tweak
+sync, `_rebuild_vbo()` is called zero times (patch path genuinely taken, not
+just present in code); the Production Store's tracked resource IDs
+(`positions`/`normals`/`indices`/`highlight_flags`) stay unchanged (the
+window-local patch doesn't touch the Store, as designed — the two systems
+remain independent); the new vertex position is actually present in the
+patched face VBO's GPU buffer (not just "no crash" — the write is
+functionally correct); `glGetError() == 0` after the patch and a subsequent
+`on_draw()`; a multi-vertex selection correctly falls back to
+`_rebuild_vbo()` (guard condition confirmed, no silent scope creep into the
+excluded cases). Full `playground/tests/` suite (233 tests) stays green.
+Real-hardware confirmation still outstanding, same caveat as Update 1.
+
+**Still open, unchanged:** selection, hover, and topology-change VBO updates
+remain full-rebuild — no reference pattern exists for those (see Update 1).
+Lab retirement and `ARCHITECTURE_MAP.md` also still untouched.
+
+
