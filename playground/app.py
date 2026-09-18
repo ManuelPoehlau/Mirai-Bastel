@@ -6,7 +6,7 @@ scene/camera/viewport/active_experiment bereit.
 
 Import-Pfade: Repo-Root muss im sys.path sein (über playground/_paths.py
 sichergestellt). core/viewport/mirai werden aus src/ importiert; Framing- und
-Mesh-Helper aus dem Integration Lab (adapters/obj_to_core.py, _paths.py).
+Mesh-Helper aus src/mirai/ (scene_factory, mesh_geometry, viewport/camera).
 """
 
 from __future__ import annotations
@@ -22,12 +22,8 @@ from mirai.interaction import commands  # noqa: E402
 from viewport import Viewport  # noqa: E402
 from viewport.resource_store import ResourceStore, TraceStore  # noqa: E402
 
-# Framing-/Mesh-Helper direkt aus dem Integration Lab (Wiederverwendung statt
-# Duplikat — identischer Startpfad zu lab_viewport.py, siehe _paths.py).
-from adapters.obj_to_core import (  # noqa: E402 (Integration Lab)
-    build_core_scene_from_obj,
-    frame_camera_on_bounds,
-)
+from mirai.mesh_geometry import mesh_center_and_radius  # noqa: E402
+from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
 
 from mirai.viewport.display import DisplayState  # noqa: E402
 
@@ -94,15 +90,15 @@ class PlaygroundApp:
     def _frame_camera(self) -> None:
         """Kamera auf die Mesh-Bounds ausrichten (margin=1.4).
 
-        Wiederverwendung des Integration-Lab-Helfers `frame_camera_on_bounds`
-        (adapters/obj_to_core.py) statt einer duplizierten Formel — damit ist
-        der Startpfad 1:1 identisch zu lab_viewport.py::_focus_camera
-        (target = Bounds-Zentrum, distance = radius/tan(fov/2) * margin).
+        Nutzt `mesh_center_and_radius` (mirai.mesh_geometry) und
+        `camera.frame_on_bounds()` (mirai.viewport.camera.OrbitCamera) —
+        beides Production-API, kein Lab-Import mehr nötig.
         """
         mesh = self._app.scene.mesh
         if not mesh.all_vertex_ids():
             return
-        frame_camera_on_bounds(self._app.camera, mesh, margin=1.4)
+        center, radius = mesh_center_and_radius(mesh)
+        self._app.camera.frame_on_bounds(center, radius, margin=1.4)
 
     # -- Szene-Loading --------------------------------------------------------
 
@@ -146,12 +142,11 @@ class PlaygroundApp:
         self._frame_camera()
 
     def load_head(self, store_type: type[ResourceStore] = TraceStore) -> None:
-        """Head-Basemesh via OBJ-Adapter laden (identisch zum Integration Lab).
+        """Head-Basemesh via OBJ-Adapter laden.
 
-        Nutzt den Lab-Adapter `build_core_scene_from_obj` (OBJ → ObjMeshData →
-        src.core.Scene) — exakt dieselbe Mesh-Erzeugung wie
-        scene/scene_objects.py::build_head_scene im Integration Lab. Danach
-        Viewport neu binden (analog Application.init_scene) und Kamera rahmen.
+        Nutzt `build_core_scene_from_obj` aus `mirai.scene_factory`
+        (OBJ → ObjMeshData → src.core.Scene, AD-008). Danach Viewport neu
+        binden (analog Application.init_scene) und Kamera rahmen.
         store_type: siehe `load_cylinder()`.
         """
         scene = build_core_scene_from_obj(DEFAULT_HEAD_ASSET)

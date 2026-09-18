@@ -27,7 +27,7 @@ This document records the current repository state as a starting point for the A
 
 **What:** GPU resource management with Dirty-State / Incremental-Update architecture (v0.2). Core: `render_mesh.py`, `resource_store.py`, `overlay.py`, `derived.py`. ~1,300 LOC.
 
-**Relevant because:** The only complete renderer in the repository that works with the Production Mesh.
+**Relevant because:** The production renderer for the Playground — works with the Production Mesh and is the authoritative rendering path.
 
 **Dependencies:** `src/core/` (Mesh/Selection), duck-typed Camera.
 

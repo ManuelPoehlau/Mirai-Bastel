@@ -16,8 +16,7 @@ from unittest.mock import MagicMock, patch
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _REPO_SRC = _REPO_ROOT / "src"
 _RIGGING = _REPO_ROOT / "experiments" / "rigging-skinning-morphing"
-_LAB = _REPO_ROOT / "experiments" / "mirai_bastel_integration_lab"
-for _p in (str(_LAB), str(_REPO_SRC), str(_REPO_ROOT), str(_RIGGING)):
+for _p in (str(_REPO_SRC), str(_REPO_ROOT), str(_RIGGING)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
