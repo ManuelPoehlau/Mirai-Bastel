@@ -744,7 +744,6 @@ class PlaygroundWindow(pyglet.window.Window):
         if self._renderer is not None:
             self._renderer.notify_camera_changed(aspect=aspect)
             self._renderer.sync()
-        self._update_hud()
 
     # -- Events ---------------------------------------------------------------
 
@@ -1648,6 +1647,10 @@ class PlaygroundWindow(pyglet.window.Window):
                     line.draw()
 
         # -- HUD (program.stop() vor Label.draw() — Constraint aus WP-IL-01) --
+        # _update_hud() hier (per-Frame), nicht in _push_camera() (per-Event) —
+        # identisch zum Lab-Pattern: label.text wird nur einmal pro gerendertem
+        # Frame gesetzt, nie pro Maus-Event.
+        self._update_hud()
         gl.glDisable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
