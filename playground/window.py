@@ -63,6 +63,8 @@ from playground.transformer import (  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
+from playground.input_adapter import PlaygroundInputBinding, _key_from_pyglet, determine_input_context  # noqa: E402
+from playground.command_handler import PlaygroundCommandHandler  # noqa: E402
 from playground.slot import ExperimentSlot, VariantEntry  # noqa: E402
 from playground.experiments.selection.variant_replace import FaceSelectReplaceExperiment  # noqa: E402
 from playground.experiments.selection.variant_modifier import FaceSelectModifierExperiment  # noqa: E402
@@ -281,6 +283,10 @@ class PlaygroundWindow(pyglet.window.Window):
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
         app.activate_variant("selection", 0)  # setzt _active_experiment + ruft activate() auf
+
+        # WP-AP: Input adapter + command handler für Production-Binding-Integration
+        self._input_binding = PlaygroundInputBinding()
+        self._command_handler = PlaygroundCommandHandler(app, self)
 
         self._face_program = shader.ShaderProgram(
             shader.Shader(_FACE_VERT, "vertex"),
@@ -1124,6 +1130,17 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_hover_vbo()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
+        # WP-AP: Try routing through production BindingSet/Command infrastructure.
+        # Determine context based on active experiment family (variant-aware).
+        context = determine_input_context(self.app.focused_family)
+        input_obj = _key_from_pyglet(symbol, modifiers)
+        command = self._input_binding.command_for(input_obj, context)
+
+        # If command resolved, try handler. Handler returns True if it handled the command.
+        if command is not None and self._command_handler.handle_command(command):
+            return pyglet.event.EVENT_HANDLED
+
+        # Fallthrough: commands not yet wired, or special Playground-only logic
         if symbol == _key.C:
             self.app.load_cube(store_type=PlaygroundPygletStore)
             self._rebuild_vbo()

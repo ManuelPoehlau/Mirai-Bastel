@@ -56,4 +56,9 @@ COLLAPSE = "Collapse"
 CONNECT = "Connect"
 EDGE_LOOP = "EdgeLoop"
 EDGE_RING = "EdgeRing"
+LOOP_INSERT = "LoopInsert"
+LOOP_SLIDE = "LoopSlide"
 EXTRUDE = "Extrude"
+
+# --- Articulation (EX-A / H02) -----------------------------------------------
+ARTICULATION_RESTORE = "ArticulationRestore"
