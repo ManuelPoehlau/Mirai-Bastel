@@ -1,0 +1,630 @@
+{
+  "artistTruthVersion": 1,
+  "note": "Artist-owned interaction language for Mirai-Bastel. This file is the Artist Truth (see tools/input_binding_config/README.md). It is independent of src/mirai/interaction/commands.py and of any keymap.json — 'runtime_ref' is an informational reference only, not a dependency. Nothing in this file is wired into the running application yet.",
+  "bindings": [
+    {
+      "id": "navigation.orbit",
+      "label": "Orbit",
+      "category": "Navigation",
+      "binding": "Alt+LMB",
+      "runtime_ref": "Orbit",
+      "notes": ""
+    },
+    {
+      "id": "navigation.pan",
+      "label": "Pan",
+      "category": "Navigation",
+      "binding": "",
+      "runtime_ref": "Pan",
+      "notes": ""
+    },
+    {
+      "id": "navigation.zoom",
+      "label": "Zoom",
+      "category": "Navigation",
+      "binding": "Alt+Wheel Down",
+      "runtime_ref": "Zoom",
+      "notes": ""
+    },
+    {
+      "id": "navigation.frame_selection",
+      "label": "Frame / Focus Selection",
+      "category": "Navigation",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "navigation.reset_view",
+      "label": "Reset / Home View",
+      "category": "Navigation",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.set_vertex_mode",
+      "label": "Vertex Selection Mode",
+      "category": "Selection Mode",
+      "binding": "",
+      "runtime_ref": "SetVertexMode",
+      "notes": ""
+    },
+    {
+      "id": "selection.set_edge_mode",
+      "label": "Edge Selection Mode",
+      "category": "Selection Mode",
+      "binding": "",
+      "runtime_ref": "SetEdgeMode",
+      "notes": ""
+    },
+    {
+      "id": "selection.set_face_mode",
+      "label": "Face Selection Mode",
+      "category": "Selection Mode",
+      "binding": "",
+      "runtime_ref": "SetFaceMode",
+      "notes": ""
+    },
+    {
+      "id": "selection.replace",
+      "label": "Replace Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.toggle",
+      "label": "Toggle Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.modifier",
+      "label": "Modifier Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.box_select",
+      "label": "Box Select",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.lasso_select",
+      "label": "Lasso Select",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.paint_select",
+      "label": "Paint Select",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.face_picking",
+      "label": "Face Picking",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": "Select",
+      "notes": ""
+    },
+    {
+      "id": "selection.hover_preview",
+      "label": "Hover / Preview Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.add",
+      "label": "Add to Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.remove",
+      "label": "Remove from Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.clear",
+      "label": "Clear Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": "ClearSelection",
+      "notes": ""
+    },
+    {
+      "id": "selection.select_all",
+      "label": "Select All",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "selection.invert",
+      "label": "Invert Selection",
+      "category": "Selection Behavior",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.move",
+      "label": "Move",
+      "category": "Transform",
+      "binding": "",
+      "runtime_ref": "Move",
+      "notes": ""
+    },
+    {
+      "id": "transform.rotate",
+      "label": "Rotate",
+      "category": "Transform",
+      "binding": "",
+      "runtime_ref": "Rotate",
+      "notes": ""
+    },
+    {
+      "id": "transform.scale",
+      "label": "Scale",
+      "category": "Transform",
+      "binding": "",
+      "runtime_ref": "Scale",
+      "notes": ""
+    },
+    {
+      "id": "transform.move_axis_x",
+      "label": "Move X Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.move_axis_y",
+      "label": "Move Y Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.move_axis_z",
+      "label": "Move Z Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.move_plane_xy",
+      "label": "Move XY Plane",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.move_plane_xz",
+      "label": "Move XZ Plane",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.move_plane_yz",
+      "label": "Move YZ Plane",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.rotate_axis_x",
+      "label": "Rotate X Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.rotate_axis_y",
+      "label": "Rotate Y Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.rotate_axis_z",
+      "label": "Rotate Z Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.scale_axis_x",
+      "label": "Scale X Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.scale_axis_y",
+      "label": "Scale Y Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.scale_axis_z",
+      "label": "Scale Z Axis",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.scale_plane_xy",
+      "label": "Scale XY Plane",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.scale_plane_xz",
+      "label": "Scale XZ Plane",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "transform.scale_plane_yz",
+      "label": "Scale YZ Plane",
+      "category": "Transform Constraints",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "topology.extrude",
+      "label": "Extrude",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "Extrude",
+      "notes": ""
+    },
+    {
+      "id": "topology.connect",
+      "label": "Connect Edges",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "Connect",
+      "notes": ""
+    },
+    {
+      "id": "topology.split_edge",
+      "label": "Split Edge",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "SplitEdge",
+      "notes": ""
+    },
+    {
+      "id": "topology.collapse",
+      "label": "Collapse",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "Collapse",
+      "notes": ""
+    },
+    {
+      "id": "topology.edge_loop_select",
+      "label": "Loop Select",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "EdgeLoop",
+      "notes": ""
+    },
+    {
+      "id": "topology.edge_ring_select",
+      "label": "Ring Select",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "EdgeRing",
+      "notes": ""
+    },
+    {
+      "id": "topology.loop_insert",
+      "label": "Loop Insert",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "LoopInsert",
+      "notes": ""
+    },
+    {
+      "id": "topology.loop_slide",
+      "label": "Loop Slide",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "LoopSlide",
+      "notes": ""
+    },
+    {
+      "id": "topology.restore_articulation",
+      "label": "Restore Articulation",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "ArticulationRestore",
+      "notes": ""
+    },
+    {
+      "id": "topology.cancel_operation",
+      "label": "Cancel Current Operation",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "Cancel",
+      "notes": ""
+    },
+    {
+      "id": "topology.undo",
+      "label": "Undo",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "Undo",
+      "notes": ""
+    },
+    {
+      "id": "topology.redo",
+      "label": "Redo",
+      "category": "Topology",
+      "binding": "",
+      "runtime_ref": "Redo",
+      "notes": ""
+    },
+    {
+      "id": "display.cycle_display_mode",
+      "label": "Cycle Display Mode",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "CycleDisplayMode",
+      "notes": ""
+    },
+    {
+      "id": "display.toggle_wireframe_overlay",
+      "label": "Toggle Wireframe Overlay",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "ToggleWireframeOverlay",
+      "notes": ""
+    },
+    {
+      "id": "display.set_shaded",
+      "label": "Set Shaded",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "SetShaded",
+      "notes": ""
+    },
+    {
+      "id": "display.set_flat_shaded",
+      "label": "Set Flat Shaded",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "SetFlatShaded",
+      "notes": ""
+    },
+    {
+      "id": "display.set_wireframe",
+      "label": "Set Wireframe",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "SetWireframe",
+      "notes": ""
+    },
+    {
+      "id": "display.toggle_vertex_display",
+      "label": "Toggle Vertex Display",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.vertex_move",
+      "label": "Vertex Move",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.edge_move",
+      "label": "Edge Move",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.face_move",
+      "label": "Face Move",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.vertex_rotate",
+      "label": "Vertex Rotate",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.edge_rotate",
+      "label": "Edge Rotate",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.face_rotate",
+      "label": "Face Rotate",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.vertex_scale",
+      "label": "Vertex Scale",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.edge_scale",
+      "label": "Edge Scale",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.face_scale",
+      "label": "Face Scale",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.delete_component",
+      "label": "Delete Component",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.duplicate_component",
+      "label": "Duplicate Component",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "modeling.merge_weld",
+      "label": "Merge / Weld",
+      "category": "Modeling",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "history.undo",
+      "label": "Undo",
+      "category": "History",
+      "binding": "",
+      "runtime_ref": "Undo",
+      "notes": ""
+    },
+    {
+      "id": "history.redo",
+      "label": "Redo",
+      "category": "History",
+      "binding": "",
+      "runtime_ref": "Redo",
+      "notes": ""
+    },
+    {
+      "id": "application.cancel",
+      "label": "Cancel",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": "Cancel",
+      "notes": ""
+    },
+    {
+      "id": "application.confirm",
+      "label": "Confirm / Commit",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "application.save",
+      "label": "Save",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "application.load",
+      "label": "Load",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "application.quit",
+      "label": "Quit",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "application.toggle_hud",
+      "label": "Toggle HUD",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    },
+    {
+      "id": "application.toggle_debug_info",
+      "label": "Toggle Debug Information",
+      "category": "Application",
+      "binding": "",
+      "runtime_ref": null,
+      "notes": ""
+    }
+  ]
+}
