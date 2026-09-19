@@ -54,6 +54,19 @@ class PlaygroundCommandHandler:
         if command is None:
             return False
 
+        # WP-AP-INPUT-FIX-01 §1: Whitelist fix.
+        # Only dispatch commands that are provably identical to their old hardcoded
+        # counterparts and have no Playground-side state machine interference.
+        # Everything else returns False to let window.py's hardcoded logic handle it.
+        SAFE_COMMANDS = {
+            cmd.UNDO, cmd.REDO,
+            cmd.SET_VERTEX_MODE, cmd.SET_EDGE_MODE, cmd.SET_FACE_MODE,
+            cmd.CYCLE_DISPLAY_MODE, cmd.TOGGLE_WIREFRAME_OVERLAY,
+            cmd.SPLIT_EDGE,
+        }
+        if command not in SAFE_COMMANDS:
+            return False
+
         # Dispatch by command category. Precedence is implicit: handlers can
         # check state and return False to defer, allowing fallthrough.
         # (Currently no fallthrough; each handler is responsible for its scope.)
