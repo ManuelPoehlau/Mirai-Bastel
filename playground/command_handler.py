@@ -56,9 +56,9 @@ class PlaygroundCommandHandler:
 
         # WP-AP-INPUT-FIX-01: Whitelist of safe commands for Playground dispatch.
         # §1: Fixed precedence bug that silenced Playground-only state machines.
-        # §2-§4: Re-enabled MOVE/ROTATE/SCALE after key rebinding (now W/E/R in Playground).
-        # These commands are safe because their new keys (W/E/R) don't conflict with
-        # Playground variant cycling (Q) or other operations.
+        # §2-§4: Re-enabled MOVE/ROTATE/SCALE after key rebinding (now Q/W/E in Playground).
+        # These commands are safe because their new keys (Q/W/E) don't conflict with
+        # Playground variant cycling (M) or other operations.
         SAFE_COMMANDS = {
             cmd.UNDO, cmd.REDO,
             cmd.SET_VERTEX_MODE, cmd.SET_EDGE_MODE, cmd.SET_FACE_MODE,

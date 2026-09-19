@@ -51,11 +51,11 @@ def build_default_bindings() -> BindingSet:
     """Erzeugt die Default-Belegung für den Viewport (und das Topology Lab)."""
     bs = BindingSet()
 
-    # --- Selection-Modi (bestehende V1-Konvention) -------------------------
+    # --- Selection-Modi (bestehende V1-Konvention, E now used for transform) -----
     for value in ("v", "1"):
         bs.set_default(_key(value), cmd.SET_VERTEX_MODE)
-    for value in ("e", "2"):
-        bs.set_default(_key(value), cmd.SET_EDGE_MODE)
+    # WP-AP-INPUT-FIX-01 §2: E moved to transform tools (SCALE), use 2 for edge mode
+    bs.set_default(_key("2"), cmd.SET_EDGE_MODE)
     for value in ("f", "3"):
         bs.set_default(_key(value), cmd.SET_FACE_MODE)
 
@@ -63,19 +63,18 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)
     bs.set_default(_key("y", "ctrl"), cmd.REDO)
     bs.set_default(_key("ESCAPE"), cmd.CANCEL)
-    # M aktiviert das modale Move-Tool (WP-02). Das Mapping ist austauschbar
-    # (z. B. "g" per keymap.json) — MoveTool bleibt davon unberührt.
-    bs.set_default(_key("m"), cmd.MOVE)
-    # R/S aktivieren die modalen Transform-Tools (WP-03): Rotate/Scale nutzen
-    # dieselben Lifecycle-/History-Verträge wie das Move-Tool.
-    bs.set_default(_key("r"), cmd.ROTATE)
-    bs.set_default(_key("s"), cmd.SCALE)
+    # WP-AP-INPUT-FIX-01 §2: Rebind transform tools to Q/W/E (was M/R/S).
+    # These activate the modal Move/Rotate/Scale tools; the mapping is exchangeable
+    # (e.g., "g" via keymap.json) — the tool implementations remain unaffected.
+    bs.set_default(_key("q"), cmd.MOVE)
+    bs.set_default(_key("w"), cmd.ROTATE)
+    bs.set_default(_key("e"), cmd.SCALE)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 
     # --- Display ------------------------------------------------------------
     bs.set_default(_key("o"), cmd.CYCLE_DISPLAY_MODE)
-    bs.set_default(_key("w"), cmd.TOGGLE_WIREFRAME_OVERLAY)
+    bs.set_default(_key("d", "shift"), cmd.TOGGLE_WIREFRAME_OVERLAY)
 
     # --- Maus ----------------------------------------------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)

@@ -804,10 +804,10 @@ class PlaygroundWindow(pyglet.window.Window):
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
             if tv == "v3" and self._tweak_v3_key is not None:
-                # V3: X/R/S key held + LMB → arm Tweak (key may be released mid-drag)
+                # V3: Q/W/E key held + LMB → arm Tweak (key may be released mid-drag)
                 self._tweak_v3_lmb = True
                 self._tweak_v3_tool_type = {
-                    "x": "move", "r": "rotate", "s": "scale"
+                    "q": "move", "w": "rotate", "e": "scale"
                 }[self._tweak_v3_key]
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
@@ -1076,7 +1076,7 @@ class PlaygroundWindow(pyglet.window.Window):
         if tv == "v1" and self._tweak_v1_key is not None and self.app.viewport is not None:
             self._tweak_v1_moved += abs(dx) + abs(dy)
             if not self._tweak_active and self._tweak_v1_moved >= CLICK_THRESHOLD:
-                tool_type = {"x": "move", "r": "rotate", "s": "scale"}[self._tweak_v1_key]
+                tool_type = {"q": "move", "w": "rotate", "e": "scale"}[self._tweak_v1_key]
                 self._tweak_begin(tool_type, x, y)
             if self._tweak_started and self._tweak_tool is not None:
                 update_transform(
@@ -1283,13 +1283,13 @@ class PlaygroundWindow(pyglet.window.Window):
                 cur_idx = families.index(cur) if cur in families else 0
                 self.app.focused_family = families[(cur_idx + 1) % len(families)]
             self._update_hud()
-        elif symbol == _key.Q:
-            # WP-AP-INPUT-FIX-01 §2: Q (rebind from M) — Cycle transform variants
-            # Cyclt innerhalb der focused_family — nie family-übergreifend.
+        elif symbol == _key.M and not (modifiers & _key.MOD_SHIFT):
+            # WP-AP-INPUT-FIX-01 §2: Bare M — Cycle transform variants (moved from Q)
+            # Cycles within the focused_family — never across families.
             active_family = self.app.focused_family
             slot = self.app.slots.get(active_family)
             if slot is not None:
-                # Transform-State zurücksetzen wenn Aktivierungsmodell wechselt
+                # Reset transform state if activation model changes
                 if active_family == "transform" and (self._transform_key_down or self._transform_mode_on):
                     if self._transform_started and self.app.active_tool is not None:
                         cancel_transform(self.app.active_tool)
@@ -1297,12 +1297,8 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._clear_transform_state()
                 self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
             self._update_hud()
-        elif symbol == _key.M:
-            # WP-AP-INPUT-FIX-01 §2: M — Old selection mode cycling (now handled by 1/2/3)
-            # Kept as no-op for now; Q now cycles transform variants
-            pass
-        elif False:  # Placeholder for old symbol == _key.Q logic
-            # Cycle SelectMethod (Method): PICK → BOX → LASSO → PAINT → PICK
+        elif symbol == _key.M and (modifiers & _key.MOD_SHIFT):
+            # WP-AP-INPUT-FIX-01 §2: Shift+M — Cycle SelectMethod (PICK → BOX → LASSO → PAINT → PICK)
             methods = [SelectMethod.PICK, SelectMethod.BOX, SelectMethod.LASSO, SelectMethod.PAINT]
             current_idx = methods.index(self.app.select_method) if self.app.select_method in methods else 0
             self.app.select_method = methods[(current_idx + 1) % len(methods)]
@@ -1403,9 +1399,9 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._axis_constraint = "xy"
             self._hud.update_constraint(self._axis_constraint)
             self._update_hud()
-        # WP-AP-INPUT-FIX-01 §2: Rebind transform tools to X/W/E (was X/R/S)
-        if symbol in (_key.X, _key.W, _key.E) and not (modifiers & _key.MOD_SHIFT):
-            _key_map = {_key.X: ('x', 'move'), _key.W: ('w', 'rotate'), _key.E: ('e', 'scale')}
+        # WP-AP-INPUT-FIX-01 §2: Rebind transform tools to Q/W/E (was X/R/S)
+        if symbol in (_key.Q, _key.W, _key.E) and not (modifiers & _key.MOD_SHIFT):
+            _key_map = {_key.Q: ('q', 'move'), _key.W: ('w', 'rotate'), _key.E: ('e', 'scale')}
             if symbol in _key_map:
                 _key_char, _tool_type = _key_map[symbol]
             else:
@@ -1421,11 +1417,11 @@ class PlaygroundWindow(pyglet.window.Window):
                 # V1: arm the self-deciding gesture; key-up will decide toggle vs. Tweak
                 self._tweak_v1_key = _key_char
                 self._tweak_v1_moved = 0.0
-                # Does NOT run existing transform handling — V1 owns X/R/S when active
+                # Does NOT run existing transform handling — V1 owns Q/W/E when active
             elif tv == "v3":
                 # V3: arm the key side of the key+LMB combo (LMB press completes it)
                 self._tweak_v3_key = _key_char
-                # Does NOT run existing transform handling — V3 owns X/R/S when active
+                # Does NOT run existing transform handling — V3 owns Q/W/E when active
             else:
                 # Existing transform handling (V2, V4, or no tweak)
                 model = self._active_transform_model()
@@ -1537,13 +1533,13 @@ class PlaygroundWindow(pyglet.window.Window):
             if self._axis_constraint is None:
                 self._hud.update_constraint(None)
                 self._update_hud()
-        elif symbol in (_key.X, _key.W, _key.E):
-            # WP-AP-INPUT-FIX-01 §2: Transform tool keys X/W/E (was X/R/S)
-            _key_map = {_key.X: 'x', _key.W: 'w', _key.E: 'e'}
+        elif symbol in (_key.Q, _key.W, _key.E):
+            # WP-AP-INPUT-FIX-01 §2: Transform tool keys Q/W/E (was X/R/S)
+            _key_map = {_key.Q: 'q', _key.W: 'w', _key.E: 'e'}
             if symbol not in _key_map:
                 return pyglet.event.EVENT_HANDLED
             _key_char = _key_map[symbol]
-            _tool_type_map = {'x': 'move', 'w': 'rotate', 'e': 'scale'}
+            _tool_type_map = {'q': 'move', 'w': 'rotate', 'e': 'scale'}
             _tool_type = _tool_type_map.get(_key_char)
 
             tv = self._active_tweak_variant()

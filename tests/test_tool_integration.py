@@ -65,9 +65,9 @@ class ModalMoveIntegrationTests(unittest.TestCase):
         self.app = _make_app()
         _select_all(self.app)
 
-    def test_m_key_activates_move_tool(self):
+    def test_q_key_activates_move_tool(self):
         self.assertIsNone(self.app.tool_manager.active_tool)
-        command = self.app.bindings.command_for(_key("m"))
+        command = self.app.bindings.command_for(_key("q"))
         self.assertEqual(command, cmd.MOVE)
         self.assertTrue(self.app.dispatch_command(command))
         self.assertIsInstance(self.app.tool_manager.active_tool, MoveTool)
@@ -129,14 +129,14 @@ class ModalTransformToolIntegrationTests(unittest.TestCase):
         _select_all(self.app)
         self.ctx = _context_for(self.app)
 
-    def test_r_key_activates_rotate_tool(self):
-        command = self.app.bindings.command_for(_key("r"))
+    def test_w_key_activates_rotate_tool(self):
+        command = self.app.bindings.command_for(_key("w"))
         self.assertEqual(command, cmd.ROTATE)
         self.assertTrue(self.app.dispatch_command(command))
         self.assertIsInstance(self.app.tool_manager.active_tool, RotateTool)
 
-    def test_s_key_activates_scale_tool(self):
-        command = self.app.bindings.command_for(_key("s"))
+    def test_e_key_activates_scale_tool(self):
+        command = self.app.bindings.command_for(_key("e"))
         self.assertEqual(command, cmd.SCALE)
         self.assertTrue(self.app.dispatch_command(command))
         self.assertIsInstance(self.app.tool_manager.active_tool, ScaleTool)
@@ -206,7 +206,7 @@ class FullPipelineTests(unittest.TestCase):
         _select_all(app)
 
         # Input → Command
-        command = app.bindings.command_for(_key("m"))
+        command = app.bindings.command_for(_key("q"))
         self.assertEqual(command, cmd.MOVE)
 
         # Command → Tool
@@ -420,7 +420,7 @@ class TransformToolLifecycleTests(unittest.TestCase):
     def test_full_pipeline_rotate_input_to_history(self):
         app = _make_app()
         _select_all(app)
-        command = app.bindings.command_for(_key("r"))
+        command = app.bindings.command_for(_key("w"))
         self.assertEqual(command, cmd.ROTATE)
         self.assertTrue(app.dispatch_command(command))
         app.tool_manager.begin_current_interaction(context=_context_for(app))

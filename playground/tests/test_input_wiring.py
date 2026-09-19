@@ -86,30 +86,30 @@ class TestPlaygroundInputBinding:
         assert cmd_result == cmd.UNDO
 
     def test_move_binding_works(self):
-        """M resolves to MOVE."""
+        """Q resolves to MOVE."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.M, 0)
+        inp = _key_from_pyglet(_key.Q, 0)
         cmd_result = binding.command_for(inp, GLOBAL_CONTEXT)
         assert cmd_result == cmd.MOVE
 
     def test_rotate_binding_works(self):
-        """R resolves to ROTATE."""
+        """W resolves to ROTATE."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.R, 0)
+        inp = _key_from_pyglet(_key.W, 0)
         cmd_result = binding.command_for(inp, GLOBAL_CONTEXT)
         assert cmd_result == cmd.ROTATE
 
     def test_scale_binding_works(self):
-        """S resolves to SCALE."""
+        """E resolves to SCALE."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.S, 0)
+        inp = _key_from_pyglet(_key.E, 0)
         cmd_result = binding.command_for(inp, GLOBAL_CONTEXT)
         assert cmd_result == cmd.SCALE
 
     def test_global_context_r_is_rotate(self):
-        """In global context, R → ROTATE."""
+        """In global context, W → ROTATE (rebinded from R)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.R, 0)
+        inp = _key_from_pyglet(_key.W, 0)
         assert binding.command_for(inp, GLOBAL_CONTEXT) == cmd.ROTATE
 
     def test_topology_context_r_is_ring(self):
@@ -124,10 +124,10 @@ class TestPlaygroundInputBinding:
         inp = _key_from_pyglet(_key.S, 0)
         assert binding.command_for(inp, TOPOLOGY_CONTEXT) == cmd.SPLIT_EDGE
 
-    def test_global_context_s_is_scale(self):
-        """In global context, S → SCALE."""
+    def test_global_context_e_is_scale(self):
+        """In global context, E → SCALE (rebinded from S)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.S, 0)
+        inp = _key_from_pyglet(_key.E, 0)
         assert binding.command_for(inp, GLOBAL_CONTEXT) == cmd.SCALE
 
 

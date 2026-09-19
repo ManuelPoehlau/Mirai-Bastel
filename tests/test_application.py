@@ -81,7 +81,9 @@ class ApplicationInstantiationTests(unittest.TestCase):
 
     def test_bindings_are_default(self):
         app = Application()
-        self.assertEqual(app.bindings.command_for(_key("m")), cmd.MOVE)
+        self.assertEqual(app.bindings.command_for(_key("q")), cmd.MOVE)
+        self.assertEqual(app.bindings.command_for(_key("w")), cmd.ROTATE)
+        self.assertEqual(app.bindings.command_for(_key("e")), cmd.SCALE)
         self.assertEqual(app.bindings.command_for(_key("z", "ctrl")), cmd.UNDO)
         self.assertEqual(app.bindings.command_for(_key("y", "ctrl")), cmd.REDO)
 
@@ -156,8 +158,8 @@ class ApplicationDispatchTests(unittest.TestCase):
         self.assertTrue(self.app.dispatch_command(cmd.UNDO))
         self.assertEqual(len(self.app.history), 0)
 
-    def test_m_key_through_bindings_dispatch_move(self):
-        command = self.app.bindings.command_for(_key("m"))
+    def test_q_key_through_bindings_dispatch_move(self):
+        command = self.app.bindings.command_for(_key("q"))
         self.assertEqual(command, cmd.MOVE)
         self.assertTrue(self.app.dispatch_command(command))
         self.assertIsInstance(self.app.tool_manager.active_tool, MoveTool)
@@ -226,7 +228,7 @@ class ApplicationKeymapTests(unittest.TestCase):
                         "bindings": [
                             {
                                 "context": "global",
-                                "input": {"kind": "key", "value": "m", "modifiers": []},
+                                "input": {"kind": "key", "value": "q", "modifiers": []},
                                 "command": cmd.SCALE,
                             }
                         ],
@@ -235,7 +237,7 @@ class ApplicationKeymapTests(unittest.TestCase):
                 encoding="utf-8",
             )
             app = Application(keymap_path=path)
-            self.assertEqual(app.bindings.command_for(_key("m")), cmd.SCALE)
+            self.assertEqual(app.bindings.command_for(_key("q")), cmd.SCALE)
             self.assertEqual(app.bindings.command_for(_key("z", "ctrl")), cmd.UNDO)
 
     def test_keymap_path_with_null_unbinds_default(self):
@@ -248,7 +250,7 @@ class ApplicationKeymapTests(unittest.TestCase):
                         "bindings": [
                             {
                                 "context": "global",
-                                "input": {"kind": "key", "value": "m", "modifiers": []},
+                                "input": {"kind": "key", "value": "q", "modifiers": []},
                                 "command": None,
                             }
                         ],
@@ -257,11 +259,11 @@ class ApplicationKeymapTests(unittest.TestCase):
                 encoding="utf-8",
             )
             app = Application(keymap_path=path)
-            self.assertIsNone(app.bindings.command_for(_key("m")))
+            self.assertIsNone(app.bindings.command_for(_key("q")))
 
     def test_missing_keymap_path_is_noop(self):
         app = Application(keymap_path=Path("does-not-exist.json"))
-        self.assertEqual(app.bindings.command_for(_key("m")), cmd.MOVE)
+        self.assertEqual(app.bindings.command_for(_key("q")), cmd.MOVE)
 
     def test_invalid_keymap_file_raises_controlled_error(self):
         with tempfile.TemporaryDirectory() as tmp:
