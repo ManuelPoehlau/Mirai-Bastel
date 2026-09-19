@@ -11,6 +11,8 @@ Requires only the Python standard library (tkinter).
 
 from __future__ import annotations
 
+import sys
+
 import tkinter as tk
 from tkinter import ttk
 from typing import Optional
@@ -18,14 +20,29 @@ from typing import Optional
 import storage
 
 # -- Modifier bit masks -----------------------------------------------------
-# Tk's event.state bitmask. SHIFT/CONTROL are stable across platforms; ALT
-# is not (X11 uses Mod1, Windows commonly reports 0x20000 / "Mod2"-ish bits
-# depending on Tcl/Tk build). We check both known bits so this behaves
-# correctly on the target machine (Windows). This is best-effort by design —
-# it only affects a design tool, not runtime input handling.
+# Tk's event.state bitmask is NOT portable in the way one might assume.
+# Authoritative sources:
+#
+#   Windows (Tk 8.6, TkWinGetModifierState in win/tkWinPointer.c):
+#       Shift        = 0x0001  (ShiftMask)
+#       Caps Lock    = 0x0002  (LockMask)
+#       Ctrl         = 0x0004  (ControlMask)
+#       Num Lock     = 0x0008  (Mod1Mask)   <- NOT Alt on Windows!
+#       Scroll Lock  = 0x0020  (Mod3Mask)
+#       Alt (VK_MENU)= 0x20000 (ALT_MASK, generic/tkInt.h:
+#                                  (AnyModifier<<2) == (1<<15)<<2)
+#
+#   X11: Alt/Meta is usually Mod1Mask = 0x0008; Num Lock is Mod2Mask = 0x0010.
+#
+# The previous code treated BOTH 0x20000 and 0x0008 as Alt. Because Num
+# Lock maps to Mod1Mask (0x0008) on Windows and is usually enabled, every
+# captured key was reported as "Alt + <key>" (e.g. Space became
+# "Alt+Space"). We now use the platform-correct Alt bit only; the Num
+# Lock / Mod1 bit is deliberately ignored. This only affects this design
+# tool, not runtime input handling.
 _STATE_SHIFT = 0x0001
 _STATE_CONTROL = 0x0004
-_STATE_ALT_BITS = (0x20000, 0x0008)
+_STATE_ALT = 0x20000 if sys.platform == "win32" else 0x0008
 
 _MODIFIER_KEYSYMS = {
     "Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R",
@@ -64,7 +81,7 @@ def _format_binding(state: int, main: str) -> str:
     parts = []
     if state & _STATE_CONTROL:
         parts.append("Ctrl")
-    if any(state & bit for bit in _STATE_ALT_BITS):
+    if state & _STATE_ALT:
         parts.append("Alt")
     if state & _STATE_SHIFT:
         parts.append("Shift")

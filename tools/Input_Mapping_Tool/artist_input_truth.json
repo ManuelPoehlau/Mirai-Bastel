@@ -19,10 +19,18 @@
       "notes": ""
     },
     {
-      "id": "navigation.zoom",
-      "label": "Zoom",
+      "id": "navigation.zoom_in",
+      "label": "Zoom In",
       "category": "Navigation",
-      "binding": "Alt+Wheel Down",
+      "binding": "Wheel Up",
+      "runtime_ref": "Zoom",
+      "notes": ""
+    },
+    {
+      "id": "navigation.zoom_out",
+      "label": "Zoom Out",
+      "category": "Navigation",
+      "binding": "Wheel Down",
       "runtime_ref": "Zoom",
       "notes": ""
     },
@@ -30,7 +38,7 @@
       "id": "navigation.frame_selection",
       "label": "Frame / Focus Selection",
       "category": "Navigation",
-      "binding": "",
+      "binding": "F",
       "runtime_ref": null,
       "notes": ""
     },
@@ -46,7 +54,7 @@
       "id": "selection.set_vertex_mode",
       "label": "Vertex Selection Mode",
       "category": "Selection Mode",
-      "binding": "",
+      "binding": "1",
       "runtime_ref": "SetVertexMode",
       "notes": ""
     },
@@ -54,7 +62,7 @@
       "id": "selection.set_edge_mode",
       "label": "Edge Selection Mode",
       "category": "Selection Mode",
-      "binding": "",
+      "binding": "2",
       "runtime_ref": "SetEdgeMode",
       "notes": ""
     },
@@ -62,7 +70,7 @@
       "id": "selection.set_face_mode",
       "label": "Face Selection Mode",
       "category": "Selection Mode",
-      "binding": "",
+      "binding": "3",
       "runtime_ref": "SetFaceMode",
       "notes": ""
     },
@@ -174,7 +182,7 @@
       "id": "transform.move",
       "label": "Move",
       "category": "Transform",
-      "binding": "",
+      "binding": "Q",
       "runtime_ref": "Move",
       "notes": ""
     },
@@ -182,7 +190,7 @@
       "id": "transform.rotate",
       "label": "Rotate",
       "category": "Transform",
-      "binding": "",
+      "binding": "W",
       "runtime_ref": "Rotate",
       "notes": ""
     },
@@ -190,127 +198,55 @@
       "id": "transform.scale",
       "label": "Scale",
       "category": "Transform",
-      "binding": "",
+      "binding": "E",
       "runtime_ref": "Scale",
       "notes": ""
     },
     {
-      "id": "transform.move_axis_x",
-      "label": "Move X Axis",
+      "id": "transform.constraint_axis_x",
+      "label": "X Axis",
       "category": "Transform Constraints",
-      "binding": "",
+      "binding": "X",
       "runtime_ref": null,
       "notes": ""
     },
     {
-      "id": "transform.move_axis_y",
-      "label": "Move Y Axis",
+      "id": "transform.constraint_axis_y",
+      "label": "Y Axis",
       "category": "Transform Constraints",
-      "binding": "",
+      "binding": "Y",
       "runtime_ref": null,
       "notes": ""
     },
     {
-      "id": "transform.move_axis_z",
-      "label": "Move Z Axis",
+      "id": "transform.constraint_axis_z",
+      "label": "Z Axis",
       "category": "Transform Constraints",
-      "binding": "",
+      "binding": "Z",
       "runtime_ref": null,
       "notes": ""
     },
     {
-      "id": "transform.move_plane_xy",
-      "label": "Move XY Plane",
+      "id": "transform.constraint_plane_xy",
+      "label": "XY Plane",
       "category": "Transform Constraints",
-      "binding": "",
+      "binding": "Shift+X",
       "runtime_ref": null,
       "notes": ""
     },
     {
-      "id": "transform.move_plane_xz",
-      "label": "Move XZ Plane",
+      "id": "transform.constraint_plane_xz",
+      "label": "XZ Plane",
       "category": "Transform Constraints",
-      "binding": "",
+      "binding": "Shift+Z",
       "runtime_ref": null,
       "notes": ""
     },
     {
-      "id": "transform.move_plane_yz",
-      "label": "Move YZ Plane",
+      "id": "transform.constraint_plane_yz",
+      "label": "YZ Plane",
       "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.rotate_axis_x",
-      "label": "Rotate X Axis",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.rotate_axis_y",
-      "label": "Rotate Y Axis",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.rotate_axis_z",
-      "label": "Rotate Z Axis",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.scale_axis_x",
-      "label": "Scale X Axis",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.scale_axis_y",
-      "label": "Scale Y Axis",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.scale_axis_z",
-      "label": "Scale Z Axis",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.scale_plane_xy",
-      "label": "Scale XY Plane",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.scale_plane_xz",
-      "label": "Scale XZ Plane",
-      "category": "Transform Constraints",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
-    },
-    {
-      "id": "transform.scale_plane_yz",
-      "label": "Scale YZ Plane",
-      "category": "Transform Constraints",
-      "binding": "",
+      "binding": "Shift+Y",
       "runtime_ref": null,
       "notes": ""
     },
@@ -398,7 +334,7 @@
       "id": "topology.undo",
       "label": "Undo",
       "category": "Topology",
-      "binding": "",
+      "binding": "Ctrl+Z",
       "runtime_ref": "Undo",
       "notes": ""
     },
@@ -406,7 +342,7 @@
       "id": "topology.redo",
       "label": "Redo",
       "category": "Topology",
-      "binding": "",
+      "binding": "Ctrl+Y",
       "runtime_ref": "Redo",
       "notes": ""
     },
@@ -534,7 +470,7 @@
       "id": "modeling.delete_component",
       "label": "Delete Component",
       "category": "Modeling",
-      "binding": "",
+      "binding": "Delete",
       "runtime_ref": null,
       "notes": ""
     },

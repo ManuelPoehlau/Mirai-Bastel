@@ -35,7 +35,8 @@ DEFAULT_INVENTORY: list[dict[str, str | None]] = [
     # --- Navigation ---------------------------------------------------
     {"id": "navigation.orbit", "label": "Orbit", "category": "Navigation", "runtime_ref": "Orbit"},
     {"id": "navigation.pan", "label": "Pan", "category": "Navigation", "runtime_ref": "Pan"},
-    {"id": "navigation.zoom", "label": "Zoom", "category": "Navigation", "runtime_ref": "Zoom"},
+    {"id": "navigation.zoom_in", "label": "Zoom In", "category": "Navigation", "runtime_ref": "Zoom"},
+    {"id": "navigation.zoom_out", "label": "Zoom Out", "category": "Navigation", "runtime_ref": "Zoom"},
     {"id": "navigation.frame_selection", "label": "Frame / Focus Selection", "category": "Navigation", "runtime_ref": None},
     {"id": "navigation.reset_view", "label": "Reset / Home View", "category": "Navigation", "runtime_ref": None},
 
@@ -65,21 +66,15 @@ DEFAULT_INVENTORY: list[dict[str, str | None]] = [
     {"id": "transform.scale", "label": "Scale", "category": "Transform", "runtime_ref": "Scale"},
 
     # --- Transform Constraints -----------------------------------------
-    {"id": "transform.move_axis_x", "label": "Move X Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.move_axis_y", "label": "Move Y Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.move_axis_z", "label": "Move Z Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.move_plane_xy", "label": "Move XY Plane", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.move_plane_xz", "label": "Move XZ Plane", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.move_plane_yz", "label": "Move YZ Plane", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.rotate_axis_x", "label": "Rotate X Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.rotate_axis_y", "label": "Rotate Y Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.rotate_axis_z", "label": "Rotate Z Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.scale_axis_x", "label": "Scale X Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.scale_axis_y", "label": "Scale Y Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.scale_axis_z", "label": "Scale Z Axis", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.scale_plane_xy", "label": "Scale XY Plane", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.scale_plane_xz", "label": "Scale XZ Plane", "category": "Transform Constraints", "runtime_ref": None},
-    {"id": "transform.scale_plane_yz", "label": "Scale YZ Plane", "category": "Transform Constraints", "runtime_ref": None},
+    # Constraint setzen ist unabhängig davon, ob Move, Rotate oder Scale
+    # aktiv ist — deshalb existiert pro Achse/Fläche genau EIN Eintrag
+    # (Artist-Entscheidung, nicht pro Transform-Modus dupliziert).
+    {"id": "transform.constraint_axis_x", "label": "X Axis", "category": "Transform Constraints", "runtime_ref": None},
+    {"id": "transform.constraint_axis_y", "label": "Y Axis", "category": "Transform Constraints", "runtime_ref": None},
+    {"id": "transform.constraint_axis_z", "label": "Z Axis", "category": "Transform Constraints", "runtime_ref": None},
+    {"id": "transform.constraint_plane_xy", "label": "XY Plane", "category": "Transform Constraints", "runtime_ref": None},
+    {"id": "transform.constraint_plane_xz", "label": "XZ Plane", "category": "Transform Constraints", "runtime_ref": None},
+    {"id": "transform.constraint_plane_yz", "label": "YZ Plane", "category": "Transform Constraints", "runtime_ref": None},
 
     # --- Topology ---------------------------------------------------
     {"id": "topology.extrude", "label": "Extrude", "category": "Topology", "runtime_ref": "Extrude"},
