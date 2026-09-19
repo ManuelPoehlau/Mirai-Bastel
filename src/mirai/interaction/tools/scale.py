@@ -10,13 +10,14 @@ Pfad:
         ↓
     Mesh / History
 
-begin(vertex_ids=..., axes=None, pivot=None):
+begin(vertex_ids=..., space=None, pivot=None, derived_geometry=None):
 
-    axes=None          → uniformer Scale (V1_SPEC: Uniform Scale)
-    axes="x"/"y"/"z"   → Scale entlang dieser einen Achse
+    space=None         → uniformer Scale (V1_SPEC: Uniform Scale)
+    space="x"/"y"/"z"  → Scale entlang dieser einen Achse
                          (V1_SPEC: Scale entlang X/Y/Z)
-    axes="xy"/"yz"/"xz" → Scale in dieser Ebene (AD-009): beide Achsen frei,
+    space="xy"/"yz"/"xz" → Scale in dieser Ebene (AD-009): beide Achsen frei,
                          die jeweils dritte gesperrt.
+    space="normal"     → Scale entlang der aus der Selection abgeleiteten Normal.
 
 Geste (V1): Ziehen (rechts/oben vergrößert) skaliert; der Zielfaktor wird
 kumuliert bestimmt und als Multiplikator-Schritt übergeben (Chunking-
@@ -29,7 +30,7 @@ from typing import Any
 
 from core import OperationContext, ScaleOperation
 
-from .transform import TransformTool, _WORLD_AXES
+from .transform import TransformTool, _resolve_space
 
 
 class ScaleTool(TransformTool):
@@ -46,6 +47,7 @@ class ScaleTool(TransformTool):
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
         self._drag_pixels = 0.0
         self._applied_scale = 1.0
+        self._normal: tuple[float, float, float] | None = None  # Für space="normal"
 
     @property
     def axes_mask(self) -> tuple[float, float, float]:
@@ -56,19 +58,49 @@ class ScaleTool(TransformTool):
         return ScaleOperation(context)
 
     def _on_begin(
-        self, scene=None, camera=None, vertex_ids=None, axes=None, **params: Any
+        self, scene=None, camera=None, vertex_ids=None, space=None, axes=None, derived_geometry=None, **params: Any
     ) -> None:
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
-        if axes is None:
+        self._normal = None
+
+        # Backward compatibility: axes → space (axes wird nicht mehr verwendet, space ist neu)
+        if space is None and axes is not None:
+            space = axes
+
+        if space is None:
             self._axes_mask = (1.0, 1.0, 1.0)
-        else:
-            try:
-                self._axes_mask = _WORLD_AXES[str(axes).lower()]
-            except KeyError:
+        elif isinstance(space, str):
+            space_lower = space.lower()
+            # Achsen und Ebenen via _resolve_space (for_rotation=False → gibt Maske zurück)
+            if space_lower in ("x", "y", "z", "xy", "yz", "xz"):
+                axis_or_mask = _resolve_space(
+                    space,
+                    derived_geometry=derived_geometry,
+                    mesh=self._scene.mesh if self._scene else None,
+                    selection=self._scene.selection if self._scene else None,
+                    for_rotation=False,
+                )
+                # Konvertiere Achse zu Maske: axis (1,0,0) → mask (1,0,0)
+                # (für Scale verwendet man die Achse direkt als Maske)
+                self._axes_mask = axis_or_mask
+            elif space_lower == "normal":
+                # Normal auflösen und speichern
+                self._normal = _resolve_space(
+                    space,
+                    derived_geometry=derived_geometry,
+                    mesh=self._scene.mesh if self._scene else None,
+                    selection=self._scene.selection if self._scene else None,
+                    for_rotation=False,
+                )
+                self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet
+            else:
                 raise ValueError(
-                    f"Unbekannte Scale-Achse {axes!r} — erlaubt: "
-                    "'x', 'y', 'z', 'xy', 'yz', 'xz'."
+                    f"Unbekannter Scale-Space {space!r} — erlaubt: "
+                    "'x', 'y', 'z', 'xy', 'yz', 'xz', 'normal'."
                 ) from None
+        else:
+            raise ValueError(f"ScaleTool.begin(): space-Parameter muss String oder None sein, nicht {type(space).__name__}.")
+
         self._drag_pixels = 0.0
         self._applied_scale = 1.0
 
@@ -82,7 +114,27 @@ class ScaleTool(TransformTool):
         step = target_scale / self._applied_scale
         if step == 1.0:
             return
-        # Achsenmaske: nur maskierte Achsen skalieren, die anderen bleiben.
-        factor = tuple(step if mask else 1.0 for mask in self._axes_mask)
+
+        # Skalierungsfaktor anwenden: entweder Normal-basiert oder Achsen-Maske.
+        if self._normal is not None:
+            # Skalierung entlang der Normal-Richtung: interpoliere zwischen
+            # 1.0 und step basierend auf der Normal-Komponente.
+            # Für eine nicht-axiale Normal (z.B. (0.7, 0.7, 0)), skaliere
+            # Achsen proportional zu ihrer Normalkomponente.
+            factor = tuple(
+                1.0 + (step - 1.0) * abs(comp)
+                for comp in self._normal
+            )
+        else:
+            # Achsenmaske: nur maskierte Achsen skalieren, die anderen bleiben.
+            factor = tuple(step if mask else 1.0 for mask in self._axes_mask)
+
         self._operation.update(factor=factor)
         self._applied_scale = target_scale
+
+    def _on_deactivate(self) -> None:
+        super()._on_deactivate()
+        self._axes_mask = (1.0, 1.0, 1.0)
+        self._normal = None
+        self._drag_pixels = 0.0
+        self._applied_scale = 1.0

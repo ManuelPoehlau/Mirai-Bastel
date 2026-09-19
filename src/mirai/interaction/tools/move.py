@@ -14,7 +14,7 @@ Verantwortlichkeiten (INPUT_COMMAND_TOOL_CONTRACT.md §2):
 
 - MoveTool besitzt temporären Interaktionszustand (Anchor-Vertex, laufende
   MoveOperation, Menge der betroffenen Vertex-IDs, optionale Achsen-/
-  Ebenen-Maske).
+  Ebenen-Maske, optional normal für "space='normal'"-Constraint).
 - Die eigentliche persistente Domain-Mutation macht die bestehende
   `MoveOperation` aus `src.core` — es wird bewusst KEINE zweite
   Move-Mutationslogik gebaut.
@@ -22,12 +22,13 @@ Verantwortlichkeiten (INPUT_COMMAND_TOOL_CONTRACT.md §2):
   Selection → betroffene Vertex-IDs übernimmt die reine Hilfsfunktion
   `resolve_selection_vertices()`.
 
-begin(vertex_ids=..., axis=None, pivot=None) (AD-009, analog Rotate/Scale):
+begin(vertex_ids=..., space=None, pivot=None, derived_geometry=None) (AD-009, analog Rotate/Scale):
 
-    axis=None           → frei auf der Bildebene der Kamera (bisheriges Verhalten).
-    axis="x"/"y"/"z"    → Bewegung nur entlang dieser Weltachse.
-    axis="xy"/"yz"/"xz" → Bewegung in dieser Weltebene (die jeweils dritte
+    space=None          → frei auf der Bildebene der Kamera (bisheriges Verhalten).
+    space="x"/"y"/"z"   → Bewegung nur entlang dieser Weltachse.
+    space="xy"/"yz"/"xz" → Bewegung in dieser Weltebene (die jeweils dritte
                           Komponente bleibt gesperrt).
+    space="normal"      → Bewegung entlang der aus der Selection abgeleiteten Normal.
 
 Constraint-Mechanik: Das ohnehin über die Bildebene berechnete Welt-Delta
 wird komponentenweise mit der Achsen-/Ebenenmaske multipliziert (identisches
@@ -55,7 +56,7 @@ from core import (
 
 from ..tool import Tool
 from .selection_helpers import _VertexSelectionView
-from .transform import _WORLD_AXES
+from .transform import _resolve_space
 
 
 class MoveTool(Tool):
@@ -79,6 +80,7 @@ class MoveTool(Tool):
         self._vertex_ids: set[VertexId] = set()
         self._anchor_vertex: VertexId | None = None
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
+        self._normal: tuple[float, float, float] | None = None  # Für space="normal"
 
     # -- Beobachtbarkeit für Tests/Integration ------------------------------
 
@@ -99,7 +101,7 @@ class MoveTool(Tool):
     # -- Hooks -----------------------------------------------------------------
 
     def _on_begin(
-        self, scene=None, camera=None, vertex_ids=None, axis=None, **params: Any
+        self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None, **params: Any
     ) -> None:
         vertex_ids = set(vertex_ids or ())
         if not vertex_ids:
@@ -108,16 +110,52 @@ class MoveTool(Tool):
         self._camera = camera
         self._vertex_ids = vertex_ids
         self._anchor_vertex = min(vertex_ids)
-        if axis is None:
+        self._normal = None
+
+        # Backward compatibility: axis → space (axis wird nicht mehr verwendet, space ist neu)
+        if space is None and axis is not None:
+            space = axis
+
+        if space is None:
             self._axes_mask = (1.0, 1.0, 1.0)
-        else:
-            try:
-                self._axes_mask = _WORLD_AXES[str(axis).lower()]
-            except KeyError:
+        elif isinstance(space, str):
+            space_lower = space.lower()
+            # Achsen und Ebenen via _resolve_space (for_rotation=False → gibt Maske zurück)
+            if space_lower in ("x", "y", "z", "xy", "yz", "xz"):
+                axis_or_mask = _resolve_space(
+                    space,
+                    derived_geometry=derived_geometry,
+                    mesh=self._scene.mesh if self._scene else None,
+                    selection=self._scene.selection if self._scene else None,
+                    for_rotation=False,
+                )
+                # Konvertiere Achse zu Maske: axis (1,0,0) → mask (0,1,1)
+                # (wenn X gebunden ist, sind Y/Z frei)
+                if space_lower in ("x", "y", "z"):
+                    self._axes_mask = tuple(
+                        1.0 - comp for comp in axis_or_mask
+                    )
+                else:
+                    # Ebenenmaske verwenden wie sie ist
+                    self._axes_mask = axis_or_mask
+            elif space_lower == "normal":
+                # Normal auflösen und speichern
+                self._normal = _resolve_space(
+                    space,
+                    derived_geometry=derived_geometry,
+                    mesh=self._scene.mesh if self._scene else None,
+                    selection=self._scene.selection if self._scene else None,
+                    for_rotation=False,
+                )
+                self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet
+            else:
                 raise ValueError(
-                    f"Unbekannte Move-Achse/-Ebene {axis!r} — erlaubt: "
-                    "'x', 'y', 'z', 'xy', 'yz', 'xz'."
+                    f"Unbekannter Move-Space {space!r} — erlaubt: "
+                    "'x', 'y', 'z', 'xy', 'yz', 'xz', 'normal'."
                 ) from None
+        else:
+            raise ValueError(f"MoveTool.begin(): space-Parameter muss String oder None sein, nicht {type(space).__name__}.")
+
         context = OperationContext(
             target=self._scene.mesh,
             selection=_VertexSelectionView(vertex_ids),
@@ -135,13 +173,28 @@ class MoveTool(Tool):
         world_delta = self._camera.screen_delta_to_world(
             anchor_pos, dx, dy, width, height
         )
-        # AD-009: Achsen-/Ebenen-Constraint — komponentenweise Maske auf das
-        # ohnehin berechnete Bildebenen-Delta (kein zweiter Mechanismus).
-        if self._axes_mask != (1.0, 1.0, 1.0):
+
+        # Constraint anwenden: entweder Normal-Projektion oder Achsen-Maske.
+        if self._normal is not None:
+            # Projekt world_delta auf die Normal-Richtung: (delta · normal) * normal
+            dot = (
+                world_delta[0] * self._normal[0] +
+                world_delta[1] * self._normal[1] +
+                world_delta[2] * self._normal[2]
+            )
+            world_delta = (
+                dot * self._normal[0],
+                dot * self._normal[1],
+                dot * self._normal[2],
+            )
+        elif self._axes_mask != (1.0, 1.0, 1.0):
+            # AD-009: Achsen-/Ebenen-Constraint — komponentenweise Maske auf das
+            # ohnehin berechnete Bildebenen-Delta (kein zweiter Mechanismus).
             world_delta = tuple(
                 component * mask
                 for component, mask in zip(world_delta, self._axes_mask)
             )
+
         self._operation.update(delta=world_delta)
 
     def _on_commit(self) -> Any:
@@ -158,3 +211,4 @@ class MoveTool(Tool):
         self._scene = None
         self._camera = None
         self._axes_mask = (1.0, 1.0, 1.0)
+        self._normal = None

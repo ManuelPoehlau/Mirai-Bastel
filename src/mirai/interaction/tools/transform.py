@@ -33,10 +33,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from core import Mesh, OperationContext, VertexId
+from core import Mesh, OperationContext, Selection, SelectionMode, VertexId
 
 from ..tool import Tool
-from .selection_helpers import _VertexSelectionView, selection_pivot
+from .selection_helpers import _VertexSelectionView, selection_normal, selection_pivot
 
 _WORLD_AXES = {
     # Einzelachsen.
@@ -55,18 +55,149 @@ _WORLD_AXES = {
 }
 
 
+def axis_component(axis: str) -> tuple[float, float, float]:
+    """Liefert Weltachsenvektor für Achse ("x", "y", "z").
+
+    Wirft ValueError für unbekannte Achsen. "normal" wird hier nicht
+    verarbeitet — siehe _resolve_space() für Normal-Auflösung.
+    """
+    axis_lower = axis.lower()
+    if axis_lower in _WORLD_AXES:
+        result = _WORLD_AXES[axis_lower]
+        # Nur Einzelachsen zurückgeben, keine Ebenen.
+        if result.count(1.0) == 1:
+            return result
+    raise ValueError(f"axis_component(): unbekannte Achse '{axis}' (erwartet 'x', 'y', 'z')")
+
+
+def plane_component(plane: str) -> tuple[float, float, float]:
+    """Liefert Ebenenmaske für Ebene ("xy", "yz", "xz").
+
+    Eine Ebenenmaske hat zwei 1.0-Komponenten (frei) und eine 0.0 (gesperrt).
+    Wirft ValueError für unbekannte Ebenen.
+    """
+    plane_lower = plane.lower()
+    if plane_lower in _WORLD_AXES:
+        result = _WORLD_AXES[plane_lower]
+        # Nur Ebenen zurückgeben, keine Einzelachsen.
+        if result.count(1.0) == 2:
+            return result
+    raise ValueError(f"plane_component(): unbekannte Ebene '{plane}' (erwartet 'xy', 'yz', 'xz')")
+
+
+# Plane-to-axis mapping für RotateTool: in Ebene XY rotieren = um Z-Achse rotieren.
+_PLANE_ROTATION_AXES: dict[str, tuple[float, float, float]] = {
+    "xy": (0.0, 0.0, 1.0),  # Rotation in der XY-Ebene → um Z
+    "yz": (1.0, 0.0, 0.0),  # Rotation in der YZ-Ebene → um X
+    "xz": (0.0, 1.0, 0.0),  # Rotation in der XZ-Ebene → um Y
+}
+
+
+def _resolve_space(
+    space: str | None,
+    derived_geometry=None,
+    mesh: Mesh | None = None,
+    selection: Selection | None = None,
+    for_rotation: bool = False,
+) -> tuple[float, float, float]:
+    """Auflösen von Raum-Parametern: "x"/"y"/"z", "xy"/"yz"/"xz", "normal", oder None.
+
+    space=None:
+        → Wird vom Aufrufer behandelt (z. B. Kamera-Achse für Rotate,
+          freiform für Move, uniform für Scale).
+    space="x"/"y"/"z":
+        → Weltachse aus _WORLD_AXES.
+    space="xy"/"yz"/"xz":
+        → Ebenenmaske (zwei 1.0, eine 0.0) für Move/Scale;
+        → bei for_rotation=True: Rotationsachse (senkrecht zur Ebene).
+    space="normal":
+        → Normal aus selection_normal(); erfordert derived_geometry, mesh, selection.
+        Wirft ValueError wenn degenerierten Normal oder fehlende Parameter.
+
+    Für Rotate (for_rotation=True): plane "xy" gibt Rotationsachse Z zurück.
+    Für Move/Scale (for_rotation=False): plane "xy" gibt Maske (1,1,0) zurück.
+    """
+    if space is None:
+        raise ValueError("_resolve_space(): space=None wird vom Aufrufer explizit behandelt.")
+
+    key = space.lower()
+
+    # Einzelachsen
+    if key in ("x", "y", "z"):
+        return axis_component(key)
+
+    # Ebenen
+    if key in _WORLD_AXES and _WORLD_AXES[key].count(1.0) == 2:
+        if for_rotation:
+            # Für Rotate: gebe die Rotationsachse zurück (senkrecht zur Ebene).
+            return _PLANE_ROTATION_AXES[key]
+        else:
+            # Für Move/Scale: gebe die Ebenenmaske zurück.
+            return plane_component(key)
+
+    # Normal
+    if key == "normal":
+        if derived_geometry is None or mesh is None or selection is None:
+            raise ValueError(
+                "space='normal' erfordert derived_geometry, mesh und selection "
+                "(aktuell: mindestens einer ist None)."
+            )
+        mode = selection.mode
+        if mode is None:
+            raise ValueError("Selection hat keinen aktiven Mode für Normal-Berechnung.")
+        result = selection_normal(derived_geometry, mesh, selection, mode)
+        length = (result[0] ** 2 + result[1] ** 2 + result[2] ** 2) ** 0.5
+        if length < 1e-12:
+            raise ValueError(
+                "Normal aus Selection ist Null (Degeneration, z. B. "
+                "entgegengesetzte Vertex-Normalen heben sich auf). Kann nicht "
+                "um Null-Achse rotieren/verschieben/skalieren."
+            )
+        return result
+
+    raise ValueError(
+        f"_resolve_space(): unbekannter Space '{space}' — erlaubt: "
+        "'x', 'y', 'z', 'xy', 'yz', 'xz', 'normal'."
+    )
+
+
 class TransformTool(Tool):
-    """Gemeinsame Basis der interaktiven Rotate-/Scale-Tools.
+    """Gemeinsame Basis der interaktiven Rotate-/Scale-/Move-Tools.
 
     Lifecycle-Zustellung (ToolManager, unverändert):
 
         activate()  → Tool bereit (keine Interaktion)
-        begin(scene=..., camera=..., vertex_ids=..., [pivot=...]) →
+        begin(scene=..., camera=..., vertex_ids=..., [space=...], [pivot=...],
+              [derived_geometry=...]) →
                     Operation.begin() mit fixem Pivot
         update(dx, dy, width, height)* → Operation.update(Schritt)
         commit()    → Operation.commit()  (genau eine History-Grenze)
         cancel()    → Operation.cancel()  (exakter Vorzustand, keine History)
         deactivate()→ Rückkehr nach IDLE, ohne die History zu berühren
+
+    Space-Parameter-Kontrakt (AD-012):
+    ------------------------------------
+    Alle drei Transform-Tools (Rotate, Move, Scale) akzeptieren einen optionalen
+    `space`-Parameter in begin(), der die Transformations-Richtung oder -Einschränkung
+    definiert:
+
+    space=None
+        → unkonstraniert (Bildebenen-basiert für Move, Kamera-Achse für Rotate,
+          uniform für Scale — Vorgabe-Verhalten).
+    space="x" | "y" | "z"
+        → Einzelachsen-Weltraum-Constraint (Weltachse durch den Pivot).
+        Rotate: dreht um diese Achse.
+        Move: bewegt nur entlang dieser Achse.
+        Scale: skaliert nur entlang dieser Achse.
+    space="xy" | "yz" | "xz"
+        → Ebenen-Constraint (zwei Achsen frei, eine gesperrt).
+        Rotate: dreht um die Senkrechte (xy → z, yz → x, xz → y).
+        Move/Scale: arbeitet in dieser Ebene.
+    space="normal"
+        → Normale der aktuellen Selection (erfordert derived_geometry, mesh, selection).
+        Rotate: dreht um die Normal-Richtung.
+        Move: bewegt entlang der Normale.
+        Scale: skaliert entlang der Normale.
     """
 
     def __init__(self) -> None:

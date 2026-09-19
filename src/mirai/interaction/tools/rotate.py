@@ -10,17 +10,18 @@ Pfad:
         ↓
     Mesh / History
 
-begin(vertex_ids=..., axis=None, pivot=None):
+begin(vertex_ids=..., space=None, pivot=None):
 
-    axis=None          → Blickachse der Kamera im begin()-Moment
+    space=None         → Blickachse der Kamera im begin()-Moment
                          (Screen-Plane-Rotation); während der Interaktion fix.
-    axis="x"/"y"/"z"   → Weltachse durch den Pivot (Achsen-Constraint).
-    axis="xy"/"yz"/"xz" → Rotation in dieser Ebene (AD-009) = Rotation um die
+    space="x"/"y"/"z"  → Weltachse durch den Pivot (Achsen-Constraint).
+    space="xy"/"yz"/"xz" → Rotation in dieser Ebene (AD-009) = Rotation um die
                          Flächennormale (Ebene XY → Achse Z, usw.). Anders als
                          bei Move/Scale ist das KEINE Maske, sondern weiterhin
                          eine einzelne Richtung — eine Rotation hat immer genau
                          eine Achse, auch wenn sie als "Ebene" benannt wird.
-    axis=Vec3          → beliebige Richtung durch den Pivot.
+    space="normal"     → Rotation um die aus der Selection abgeleitete Normal.
+    space=Vec3         → beliebige Richtung durch den Pivot.
 
 Geste (V1): horizontales Ziehen rotiert; der Zielwinkel wird aus der
 KUMULIERTEN Pixel-Distanz berechnet und als inkrementeller Schritt an die
@@ -33,59 +34,11 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from core import OperationContext, RotateOperation, Selection, SelectionMode
+from core import OperationContext, RotateOperation
 
-from .selection_helpers import selection_normal
-from .transform import TransformTool, _WORLD_AXES
+from .transform import TransformTool, _resolve_space
 
 VEC3 = tuple[float, float, float]
-
-# AD-009: Ebenen-Constraint für Rotate = Rotation um die Flächennormale.
-# Bewusst getrennt von _WORLD_AXES (dort sind "xy"/"yz"/"xz" Masken für
-# Scale/Move, hier ist es die eine Achse senkrecht zur genannten Ebene).
-_PLANE_ROTATION_AXES: dict[str, VEC3] = {
-    "xy": (0.0, 0.0, 1.0),  # Rotation in der XY-Ebene → um Z
-    "yz": (1.0, 0.0, 0.0),  # Rotation in der YZ-Ebene → um X
-    "xz": (0.0, 1.0, 0.0),  # Rotation in der XZ-Ebene → um Y
-}
-
-
-def _resolve_axis(axis, derived_geometry=None, mesh=None, selection: Selection | None = None) -> VEC3:
-    """Resolve axis specification: "x"/"y"/"z", "xy"/"yz"/"xz", "normal", or vector.
-
-    axis="normal" requires derived_geometry, mesh, and selection to compute
-    the normal from the current component selection.
-    """
-    if isinstance(axis, str):
-        key = axis.lower()
-        if key == "normal":
-            if derived_geometry is None or mesh is None or selection is None:
-                raise ValueError(
-                    "axis='normal' requires derived_geometry, mesh, and selection."
-                )
-            mode = selection.mode
-            if mode is None:
-                raise ValueError("Selection has no active mode.")
-            result = selection_normal(derived_geometry, mesh, selection, mode)
-            length = (result[0] ** 2 + result[1] ** 2 + result[2] ** 2) ** 0.5
-            if length < 1e-12:
-                raise ValueError(
-                    "Normal derived from selection is zero (degenerate case, e.g., "
-                    "opposing vertex normals). Unable to rotate around null axis."
-                )
-            return result
-        if key in _PLANE_ROTATION_AXES:
-            return _PLANE_ROTATION_AXES[key]
-        try:
-            return _WORLD_AXES[key]
-        except KeyError:
-            raise ValueError(
-                f"Unbekannte Achse/Ebene {axis!r} — erlaubt: "
-                "'x', 'y', 'z', 'xy', 'yz', 'xz', 'normal'."
-            ) from None
-    if axis is None:
-        raise ValueError("axis=None ist hier nicht gültig.")
-    return tuple(axis)
 
 
 class RotateTool(TransformTool):
@@ -109,20 +62,28 @@ class RotateTool(TransformTool):
         return RotateOperation(context)
 
     def _on_begin(
-        self, scene=None, camera=None, vertex_ids=None, axis=None, derived_geometry=None, **params: Any
+        self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None, **params: Any
     ) -> None:
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
-        if axis is None:
+        # Backward compatibility: axis → space (axis wird nicht mehr verwendet, space ist neu)
+        if space is None and axis is not None:
+            space = axis
+
+        if space is None:
             # Default: Blickachse im begin()-Moment (Screen-Plane-Rotation).
             forward, _, _ = self._camera.basis()
             self._axis = forward
-        else:
-            self._axis = _resolve_axis(
-                axis,
+        elif isinstance(space, str):
+            self._axis = _resolve_space(
+                space,
                 derived_geometry=derived_geometry,
                 mesh=self._scene.mesh if self._scene else None,
                 selection=self._scene.selection if self._scene else None,
+                for_rotation=True,
             )
+        else:
+            # space als Vektor übergeben
+            self._axis = tuple(space)
         self._drag_pixels = 0.0
         self._applied_angle = 0.0
 

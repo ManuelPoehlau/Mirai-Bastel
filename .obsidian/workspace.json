@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/Experiment_Genealogy_Follow_up_Report.md",
+                "file": "INPUT_WIRING_MAP.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Experiment_Genealogy_Follow_up_Report"
+              "title": "INPUT_WIRING_MAP"
             }
           }
         ]
@@ -41,7 +41,9 @@
               "type": "file-explorer",
               "state": {
                 "sortOrder": "alphabetical",
-                "autoReveal": false
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
               },
               "icon": "lucide-folder-closed",
               "title": "Dateiexplorer"
@@ -185,6 +187,9 @@
   },
   "active": "535b74a755f265aa",
   "lastOpenFiles": [
+    "WP-AP_INPUT_WIRING_REPORT.md",
+    "INPUT_WIRING_MAP.md",
+    "docs/Experiment_Genealogy_Follow_up_Report.md",
     "docs/architecture/AD-011-PLAYGROUND-IDENTITY-STATUS-QUO.md",
     "runde2-ad011-playground-identity-status-quo.patch",
     "docs/architecture/AD-010-PLAYGROUND-SUPERSEDES-LAB-BINDING.md",
