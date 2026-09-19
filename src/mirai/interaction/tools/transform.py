@@ -93,71 +93,175 @@ _PLANE_ROTATION_AXES: dict[str, tuple[float, float, float]] = {
 }
 
 
+def _normalize(v: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Normalize a vector."""
+    x, y, z = v
+    length = (x * x + y * y + z * z) ** 0.5
+    if length < 1e-12:
+        return (0.0, 0.0, 0.0)
+    return (x / length, y / length, z / length)
+
+
+def _cross(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Cross product a × b."""
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _face_tangent_basis(
+    mesh: Mesh, selection: Selection, derived_geometry
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]:
+    """Derive orthonormal basis (normal, tangent_x, tangent_y) for single-face selection.
+
+    Requires:
+    - selection.mode == SelectionMode.FACE
+    - exactly one face in selection.faces
+
+    Tangent basis is right-handed:
+    - tangent_x: normalized direction of first edge of the face (winding-order-deterministic)
+    - tangent_y: normal × tangent_x
+    - normal: face normal (from selection_normal)
+
+    Returns (normal, tangent_x, tangent_y) — all unit vectors, orthonormal.
+    Raises ValueError if selection is not a single face or if normal is degenerate.
+    """
+    if selection.mode != SelectionMode.FACE:
+        raise ValueError(
+            f"_face_tangent_basis() requires FACE mode, got {selection.mode}."
+        )
+    if len(selection.faces) != 1:
+        raise ValueError(
+            f"_face_tangent_basis() requires exactly one face, got {len(selection.faces)}."
+        )
+
+    # Get the face
+    face_id = list(selection.faces)[0]
+    face_verts = mesh.face_vertices(face_id)
+    if len(face_verts) < 2:
+        raise ValueError(f"Face {face_id} has fewer than 2 vertices (degenerate).")
+
+    # Get the normal
+    normal = selection_normal(derived_geometry, mesh, selection, SelectionMode.FACE)
+    normal_length = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
+    if normal_length < 1e-12:
+        raise ValueError(
+            "Normal for single face is zero (degenerate). Cannot derive tangent basis."
+        )
+
+    # Get the first edge (from first vertex to second vertex)
+    v0 = mesh.vertex_position(face_verts[0])
+    v1 = mesh.vertex_position(face_verts[1])
+    edge = (v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2])
+    tangent_x = _normalize(edge)
+
+    if (tangent_x[0] ** 2 + tangent_x[1] ** 2 + tangent_x[2] ** 2) < 1e-12:
+        raise ValueError(
+            f"First edge of face {face_id} is degenerate (zero length)."
+        )
+
+    # Compute tangent_y = normal × tangent_x (right-handed)
+    tangent_y = _cross(normal, tangent_x)
+    tangent_y = _normalize(tangent_y)
+
+    return (normal, tangent_x, tangent_y)
+
+
 def _resolve_space(
     space: str | None,
     derived_geometry=None,
     mesh: Mesh | None = None,
     selection: Selection | None = None,
+    axis: str | None = None,
     for_rotation: bool = False,
 ) -> tuple[float, float, float]:
-    """Auflösen von Raum-Parametern: "x"/"y"/"z", "xy"/"yz"/"xz", "normal", oder None.
+    """Auflösen von Raum-Parametern mit optionalem Achsen-Modifier (WP-03C).
 
-    space=None:
-        → Wird vom Aufrufer behandelt (z. B. Kamera-Achse für Rotate,
-          freiform für Move, uniform für Scale).
-    space="x"/"y"/"z":
-        → Weltachse aus _WORLD_AXES.
-    space="xy"/"yz"/"xz":
-        → Ebenenmaske (zwei 1.0, eine 0.0) für Move/Scale;
-        → bei for_rotation=True: Rotationsachse (senkrecht zur Ebene).
-    space="normal":
-        → Normal aus selection_normal(); erfordert derived_geometry, mesh, selection.
-        Wirft ValueError wenn degenerierten Normal oder fehlende Parameter.
+    Flache Strings (backward compat):
+        "x", "y", "z", "xy", "yz", "xz", "normal" → wie bisher
 
-    Für Rotate (for_rotation=True): plane "xy" gibt Rotationsachse Z zurück.
-    Für Move/Scale (for_rotation=False): plane "xy" gibt Maske (1,1,0) zurück.
+    Orthogonale (space, axis)-Parameter (WP-03C):
+        space="world", axis="x"/...   → Weltachse
+        space="normal", axis=None/"z" → Single-direction normal (existing)
+        space="normal", axis="x"/"y"  → Tangent basis (single-face only)
+
+    Backward compat: flache Strings werden automatisch zu (space, axis) übersetzt.
     """
     if space is None:
         raise ValueError("_resolve_space(): space=None wird vom Aufrufer explizit behandelt.")
 
     key = space.lower()
 
-    # Einzelachsen
-    if key in ("x", "y", "z"):
-        return axis_component(key)
-
-    # Ebenen
-    if key in _WORLD_AXES and _WORLD_AXES[key].count(1.0) == 2:
-        if for_rotation:
-            # Für Rotate: gebe die Rotationsachse zurück (senkrecht zur Ebene).
-            return _PLANE_ROTATION_AXES[key]
+    # Backward compat: translate flat strings to (space, axis) form
+    # "x"/"y"/"z" → space="world", axis="x"/"y"/"z"
+    # "xy"/"yz"/"xz" → space="world", axis="xy"/"yz"/"xz"
+    # "normal" → space="normal", axis="z" (default)
+    if axis is None:
+        if key in ("x", "y", "z", "xy", "yz", "xz"):
+            space = "world"
+            axis = key
+        elif key == "normal":
+            axis = "z"  # default: single-direction normal
         else:
-            # Für Move/Scale: gebe die Ebenenmaske zurück.
-            return plane_component(key)
+            # Unknown string, let it fail below
+            space = key
+            axis = None
 
-    # Normal
-    if key == "normal":
+    # Now process (space, axis) form
+    space_lower = space.lower()
+    axis_lower = axis.lower() if axis else None
+
+    # World space
+    if space_lower == "world":
+        if axis_lower in ("x", "y", "z"):
+            return axis_component(axis_lower)
+        elif axis_lower in ("xy", "yz", "xz"):
+            if for_rotation:
+                return _PLANE_ROTATION_AXES[axis_lower]
+            else:
+                return plane_component(axis_lower)
+        else:
+            raise ValueError(
+                f"_resolve_space(space='world', axis='{axis}'): "
+                f"axis muss 'x'/'y'/'z' oder 'xy'/'yz'/'xz' sein."
+            )
+
+    # Normal space
+    if space_lower == "normal":
         if derived_geometry is None or mesh is None or selection is None:
             raise ValueError(
-                "space='normal' erfordert derived_geometry, mesh und selection "
-                "(aktuell: mindestens einer ist None)."
+                "space='normal' erfordert derived_geometry, mesh und selection."
             )
-        mode = selection.mode
-        if mode is None:
-            raise ValueError("Selection hat keinen aktiven Mode für Normal-Berechnung.")
-        result = selection_normal(derived_geometry, mesh, selection, mode)
-        length = (result[0] ** 2 + result[1] ** 2 + result[2] ** 2) ** 0.5
-        if length < 1e-12:
-            raise ValueError(
-                "Normal aus Selection ist Null (Degeneration, z. B. "
-                "entgegengesetzte Vertex-Normalen heben sich auf). Kann nicht "
-                "um Null-Achse rotieren/verschieben/skalieren."
-            )
-        return result
+
+        # Single-direction normal (axis="z" or None)
+        if axis_lower in (None, "z"):
+            mode = selection.mode
+            if mode is None:
+                raise ValueError("Selection hat keinen aktiven Mode für Normal-Berechnung.")
+            result = selection_normal(derived_geometry, mesh, selection, mode)
+            length = (result[0] ** 2 + result[1] ** 2 + result[2] ** 2) ** 0.5
+            if length < 1e-12:
+                raise ValueError(
+                    "Normal aus Selection ist Null. Kann nicht "
+                    "um Null-Achse rotieren/verschieben/skalieren."
+                )
+            return result
+
+        # Tangent basis (axis="x" or "y")
+        if axis_lower in ("x", "y"):
+            normal, tangent_x, tangent_y = _face_tangent_basis(mesh, selection, derived_geometry)
+            return tangent_x if axis_lower == "x" else tangent_y
+
+        raise ValueError(
+            f"_resolve_space(space='normal', axis='{axis}'): "
+            f"axis muss None/'z' (single-normal) oder 'x'/'y' (tangent) sein."
+        )
 
     raise ValueError(
-        f"_resolve_space(): unbekannter Space '{space}' — erlaubt: "
-        "'x', 'y', 'z', 'xy', 'yz', 'xz', 'normal'."
+        f"_resolve_space(): unbekannter space='{space}' "
+        f"(erlaubt: 'world', 'normal' mit axis='x'/'y'/'z')."
     )
 
 

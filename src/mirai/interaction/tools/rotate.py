@@ -84,9 +84,18 @@ class RotateTool(TransformTool):
         self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None, **params: Any
     ) -> None:
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
-        # Backward compatibility: axis → space (axis wird nicht mehr verwendet, space ist neu)
-        if space is None and axis is not None:
+        # WP-03C: axis is now an explicit parameter (separate from space)
+        # Backward compatibility: if only 'axis' is passed (old API), treat it as 'space'
+        if space is None and axis is not None and not isinstance(axis, str):
+            # axis passed as vector (old API) — treat as space
             space = axis
+            axis = None
+        elif space is None and axis is not None:
+            # axis passed as string (could be old flat API like axis="normal"
+            # or new axis="x" from space="normal", axis="x")
+            # Let _resolve_space figure it out
+            space = axis
+            axis = None
 
         if space is None:
             # Default: Blickachse im begin()-Moment (Screen-Plane-Rotation).
@@ -98,6 +107,7 @@ class RotateTool(TransformTool):
                 derived_geometry=derived_geometry,
                 mesh=self._scene.mesh if self._scene else None,
                 selection=self._scene.selection if self._scene else None,
+                axis=axis,  # Pass through new axis parameter (WP-03C)
                 for_rotation=True,
             )
         else:

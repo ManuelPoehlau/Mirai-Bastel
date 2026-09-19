@@ -58,14 +58,25 @@ class ScaleTool(TransformTool):
         return ScaleOperation(context)
 
     def _on_begin(
-        self, scene=None, camera=None, vertex_ids=None, space=None, axes=None, derived_geometry=None, **params: Any
+        self, scene=None, camera=None, vertex_ids=None, space=None, axes=None, axis=None, derived_geometry=None, **params: Any
     ) -> None:
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
         self._normal = None
 
-        # Backward compatibility: axes → space (axes wird nicht mehr verwendet, space ist neu)
+        # WP-03C: axis is now an explicit parameter (separate from space)
+        # Backward compatibility: axes → space (old parameter name)
         if space is None and axes is not None:
             space = axes
+        # Additional backward compat: if old API passes axis as space parameter
+        if space is None and axis is not None and not isinstance(axis, str):
+            # axis passed as vector — treat as space
+            space = axis
+            axis = None
+        elif space is None and axis is not None:
+            # axis passed as string (old flat API)
+            # Let _resolve_space figure it out
+            space = axis
+            axis = None
 
         if space is None:
             self._axes_mask = (1.0, 1.0, 1.0)
@@ -78,18 +89,20 @@ class ScaleTool(TransformTool):
                     derived_geometry=derived_geometry,
                     mesh=self._scene.mesh if self._scene else None,
                     selection=self._scene.selection if self._scene else None,
+                    axis=axis,  # Pass through new axis parameter (WP-03C)
                     for_rotation=False,
                 )
                 # Konvertiere Achse zu Maske: axis (1,0,0) → mask (1,0,0)
                 # (für Scale verwendet man die Achse direkt als Maske)
                 self._axes_mask = axis_or_mask
             elif space_lower == "normal":
-                # Normal auflösen und speichern
+                # Normal auflösen und speichern (WP-03C: axis kann tangent sein)
                 self._normal = _resolve_space(
                     space,
                     derived_geometry=derived_geometry,
                     mesh=self._scene.mesh if self._scene else None,
                     selection=self._scene.selection if self._scene else None,
+                    axis=axis,  # Pass through axis ("x"/"y"/"z")
                     for_rotation=False,
                 )
                 self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet

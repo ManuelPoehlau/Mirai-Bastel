@@ -112,9 +112,17 @@ class MoveTool(Tool):
         self._anchor_vertex = min(vertex_ids)
         self._normal = None
 
-        # Backward compatibility: axis → space (axis wird nicht mehr verwendet, space ist neu)
-        if space is None and axis is not None:
+        # WP-03C: axis is now an explicit parameter (separate from space)
+        # Backward compatibility: if old API passes axis as space parameter
+        if space is None and axis is not None and not isinstance(axis, str):
+            # axis passed as vector — treat as space
             space = axis
+            axis = None
+        elif space is None and axis is not None:
+            # axis passed as string (old flat API like axis="normal")
+            # Let _resolve_space figure it out
+            space = axis
+            axis = None
 
         if space is None:
             self._axes_mask = (1.0, 1.0, 1.0)
@@ -127,17 +135,19 @@ class MoveTool(Tool):
                     derived_geometry=derived_geometry,
                     mesh=self._scene.mesh if self._scene else None,
                     selection=self._scene.selection if self._scene else None,
+                    axis=axis,  # Pass through new axis parameter (WP-03C)
                     for_rotation=False,
                 )
                 # Verwende die Maske direkt (axis/plane aus _WORLD_AXES)
                 self._axes_mask = axis_or_mask
             elif space_lower == "normal":
-                # Normal auflösen und speichern
+                # Normal auflösen und speichern (WP-03C: axis kann tangent sein)
                 self._normal = _resolve_space(
                     space,
                     derived_geometry=derived_geometry,
                     mesh=self._scene.mesh if self._scene else None,
                     selection=self._scene.selection if self._scene else None,
+                    axis=axis,  # Pass through axis ("x"/"y"/"z")
                     for_rotation=False,
                 )
                 self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet

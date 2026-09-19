@@ -1,6 +1,6 @@
 # AD-012: Transform Space Unification
 
-**Status:** Accepted  
+**Status:** Accepted — amended 2026-09-19 (see Amendment below)  
 **Date:** 2026-09-19  
 **Decision:** Unify Move/Rotate/Scale tools with a shared `space` parameter, replacing tool-specific `axis=`/`axes=` names and generalizing axis-masking math into vector projection.
 
@@ -222,7 +222,8 @@ Existing experiment code (e.g., `tests/test_selection_normals.py`) imports `_res
 - **AD-003**: Incremental update contract (Core operations unchanged)
 - **AD-009**: Axis and plane constraints (the vocabulary this decision codifies)
 - **ARCH-01**: Local and gimbal space (future extension point)
-- **WP-03B**: Transform Space Unification (implementation)
+- **WP-03B**: Transform Space Unification (initial implementation)
+- **WP-03C**: Normal Space Tangent Basis + space/axis Split (amendment implementation)
 - **WP-04**: Gate-4 Hotkey Wiring (consumer of this API)
 
 ## Decision
@@ -232,3 +233,61 @@ Existing experiment code (e.g., `tests/test_selection_normals.py`) imports `_res
 ✅ Support normal-constrained transformations for all three tools.  
 ✅ Maintain backward compatibility with old parameter names.  
 ✅ Defer local/gimbal/screen-space to ARCH-01 and future work.
+
+## Amendment (2026-09-19, same-day correction)
+
+**Status:** Accepted — corrects the original `space="normal"` design before broader
+adoption (Gate-4 hotkey wiring, Playground) builds on it.
+
+### What was wrong
+
+The original decision (above) treats `space="normal"` as a single direction vector,
+identical in kind to a single world axis. Verified against `main` (commits `82372f7`,
+`a83347a`): `_resolve_space()` returns one `Position` for `"normal"`, used unmodified
+by all three tools.
+
+This is insufficient for anisotropic Scale on a face not aligned to world axes: a
+rectangular face scaled along a single normal-perpendicular direction shears unless
+the *second* in-plane direction is also defined and orthogonal to the first. A single
+vector cannot express this — a full basis is required.
+
+Separately, and independently of the above: `space` was implemented as one flat
+string parameter conflating **coordinate system** (world / normal) with **axis
+selection within that system** (`"x"`, `"xy"`, ...). This was not the two-level
+design the original request specified (space chosen first, axis constrained within
+it, as in Blender/Max) — it happened to still work while Normal had only one
+possible axis. It stops working now that Normal needs `x`/`y`/`z` sub-selection.
+
+### What changes
+
+1. **`space` and `axis` become two orthogonal parameters** on all three tools'
+   `begin()`: `space: "world" | "normal"` (`"screen"` unchanged, still axis-less
+   per the original deferral), `axis: "x" | "y" | "z" | "xy" | "yz" | "xz" | None`.
+2. **Old flat strings remain valid as aliases**, resolved to the new two-parameter
+   form internally: `space="x"` → `space="world", axis="x"`; `space="normal"`
+   (no axis) → `space="normal", axis="z"`. No caller, test, or Playground wiring
+   needs to change.
+3. **`space="normal"` now resolves a basis, not a vector**, for a single selected
+   face (`SelectionMode.FACE`, exactly one face in `selection.faces`):
+   - `axis="z"` / `None` → the face normal (today's behavior, unchanged output).
+   - `axis="x"` → tangent 1, derived from the face's first edge
+     (`mesh.face_vertices(face_id)[1] - mesh.face_vertices(face_id)[0]`,
+     projected onto the plane perpendicular to the normal, then normalized).
+     Deterministic: winding order fixes which edge is "first", not an artist choice.
+   - `axis="y"` → tangent 2 = `cross(normal, tangent_x)`.
+   - `axis="xy"` / `"yz"` / `"xz"` → same plane-mask convention as World, expressed
+     in this local basis instead of world axes.
+4. **Multi-element selections (multiple faces, or vertex/edge mode) get no tangent
+   basis.** `axis="x"`/`"y"` raises `ValueError` in this case; `axis="z"`/`None`
+   continues to work exactly as today (falls back to `selection_normal()`'s
+   existing averaging behavior — no regression). Deriving a stable tangent for
+   multi-element selections is deferred to Artist Playground research — see
+   `docs/future_ideas/TRANSFORM.md`; even Blender's own multi-element Normal
+   orientation is a long-standing, unresolved UX complaint (not a solved reference
+   to copy from).
+
+### Not changed
+
+- `space="screen"` — still axis-less, per the original deferral.
+- `space="local"` / gimbal — still ARCH-01-blocked, unrelated to this amendment.
+- Core (`VertexTransformOperation` and subclasses) — untouched, per AD-003.
