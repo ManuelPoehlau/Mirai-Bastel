@@ -1,11 +1,14 @@
-"""Tests for WP-AP-INPUT-FIX-01 §1: Command Handler Whitelist Fix.
+"""Tests for WP-AP-INPUT-FIX-01: Command Handler Whitelist Fix and Re-enabling.
 
-Verifies that PlaygroundCommandHandler only dispatches safe commands,
+§1: Verified that PlaygroundCommandHandler only dispatches safe commands initially,
 allowing hardcoded Playground state machines (variant cycling, Tweak V1/V3)
-to work correctly on the old keys (M, R, S) before rebinding.
+to work correctly before rebinding.
 
-Tests the early return behavior: unsafe commands should return False immediately
-without even trying to call their handlers.
+§2-§4: After key rebinding (X/W/E for Move/Rotate/Scale, Q for variant cycling),
+MOVE/ROTATE/SCALE commands are now re-enabled in the whitelist since their new keys
+(W/E/R in Playground) don't conflict with other operations.
+
+Tests verify the whitelist routing and that re-enabled commands dispatch correctly.
 """
 
 from __future__ import annotations
@@ -28,20 +31,23 @@ class TestWhitelistFix(unittest.TestCase):
         self.window = Mock()
         self.handler = PlaygroundCommandHandler(self.app, self.window)
 
-    def test_move_not_dispatched(self):
-        """MOVE should not reach handler (return False)."""
-        result = self.handler.handle_command(cmd.MOVE)
-        self.assertFalse(result, "MOVE should not be dispatched by handler")
+    def test_move_dispatched(self):
+        """WP-AP-INPUT-FIX-01 §2: MOVE is now re-enabled after key rebinding."""
+        with patch.object(self.handler, '_handle_interaction_commands', return_value=True):
+            result = self.handler.handle_command(cmd.MOVE)
+            self.assertTrue(result, "MOVE should be dispatched by handler (re-enabled in §2)")
 
-    def test_rotate_not_dispatched(self):
-        """ROTATE should not reach handler (return False)."""
-        result = self.handler.handle_command(cmd.ROTATE)
-        self.assertFalse(result, "ROTATE should not be dispatched by handler")
+    def test_rotate_dispatched(self):
+        """WP-AP-INPUT-FIX-01 §2: ROTATE is now re-enabled after key rebinding."""
+        with patch.object(self.handler, '_handle_interaction_commands', return_value=True):
+            result = self.handler.handle_command(cmd.ROTATE)
+            self.assertTrue(result, "ROTATE should be dispatched by handler (re-enabled in §2)")
 
-    def test_scale_not_dispatched(self):
-        """SCALE should not reach handler (return False)."""
-        result = self.handler.handle_command(cmd.SCALE)
-        self.assertFalse(result, "SCALE should not be dispatched by handler")
+    def test_scale_dispatched(self):
+        """WP-AP-INPUT-FIX-01 §2: SCALE is now re-enabled after key rebinding."""
+        with patch.object(self.handler, '_handle_interaction_commands', return_value=True):
+            result = self.handler.handle_command(cmd.SCALE)
+            self.assertTrue(result, "SCALE should be dispatched by handler (re-enabled in §2)")
 
     def test_extrude_not_dispatched(self):
         """EXTRUDE should not reach handler (return False)."""
@@ -118,13 +124,16 @@ class TestWhitelistFix(unittest.TestCase):
             self.assertTrue(result, "SPLIT_EDGE should be dispatched by handler")
 
     def test_whitelist_is_complete(self):
-        """Verify whitelist contains exactly the safe commands."""
+        """Verify whitelist contains exactly the safe commands (including re-enabled §2-§4)."""
         # The whitelist check in handle_command() should only allow these commands through
+        # §1: Original safe commands
+        # §2-§4: Re-enabled MOVE/ROTATE/SCALE after key rebinding
         safe_commands = {
             cmd.UNDO, cmd.REDO,
             cmd.SET_VERTEX_MODE, cmd.SET_EDGE_MODE, cmd.SET_FACE_MODE,
             cmd.CYCLE_DISPLAY_MODE, cmd.TOGGLE_WIREFRAME_OVERLAY,
             cmd.SPLIT_EDGE,
+            cmd.MOVE, cmd.ROTATE, cmd.SCALE,  # Re-enabled in §2-§4
         }
 
         # Verify that these commands don't immediately return False

@@ -40,10 +40,13 @@ def begin_transform(
     scene,
     camera,
     selection,
+    axis: str | None = None,
 ) -> bool:
     """Tool aktivieren + begin() aufrufen.
 
     Konvertiert Face-Selection in Vertex-Selection (alle Vertices der selektierten Faces).
+    WP-AXIS-CONSTRAINT-WIRING: optionaler axis-Parameter für X/Y/Z Constraints.
+
     Gibt True zurück wenn begin erfolgreich war (Selektion nicht leer).
     """
     if selection.is_empty():
@@ -60,7 +63,7 @@ def begin_transform(
         tool.activate()
 
     try:
-        tool.begin(scene=scene, camera=camera, vertex_ids=vertex_ids)
+        tool.begin(scene=scene, camera=camera, vertex_ids=vertex_ids, axis=axis)
         return True
     except Exception:
         return False

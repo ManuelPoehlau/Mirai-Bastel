@@ -344,6 +344,10 @@ class PlaygroundWindow(pyglet.window.Window):
         # V2: Ctrl was held when LMB was pressed
         self._tweak_v2_armed: bool = False
 
+        # WP-AXIS-CONSTRAINT-WIRING: Track held axis-constraint keys
+        # X/Y/Z → record "x"/"y"/"z", or "xy"/"yz"/"xz" if Shift is held
+        self._axis_constraint: str | None = None
+
         # Extrude-State (AP-05)
         self._extrude_tool: ExtrudeTool | None = None
         # Loop-Slide-State (AP-05)
@@ -907,6 +911,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     self.app.scene,
                     self.app.camera,
                     self.app.scene.selection,
+                    axis=self._axis_constraint,
                 )
                 if success:
                     self._transform_started = True
@@ -1104,6 +1109,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     self.app.scene,
                     self.app.camera,
                     self.app.scene.selection,
+                    axis=self._axis_constraint,
                 )
                 if success:
                     self._transform_started = True
@@ -1226,8 +1232,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 except _ConnectEdgesError as exc:
                     self._hud.update_action(str(exc))
                 self._update_hud()
-        elif symbol == _key.E:
-            # E: Extrude Face (AP-05). Scope: Face-Modus.
+        elif symbol == _key.R:
+            # WP-AP-INPUT-FIX-01 §2: R (rebind Extrude from E)
+            # R: Extrude Face (AP-05). Scope: Face-Modus.
             # - 1+ Faces selektiert → diese extrudieren (Multi-Face-Extrude).
             # - Leer → Face unter Cursor per Hit-Test (Hover-Fallback, AP-05).
             sel = self.app.scene.selection
@@ -1235,6 +1242,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 sel.mode is SelectionMode.FACE
                 and self.app.viewport is not None
                 and self._extrude_tool is None
+                and not (modifiers & _key.MOD_SHIFT)  # Avoid conflict with Shift+R (ring select)
             ):
                 restored = self._articulation_auto_restore()
                 if len(sel.faces) >= 1:
@@ -1258,9 +1266,10 @@ class PlaygroundWindow(pyglet.window.Window):
                 n = len(face_ids)
                 action = f"Extrude ({n} faces)" if n > 1 else "Extrude"
                 restore_note = " (articulation restored)" if restored else ""
-                self._hud.update_action(f"{action}{restore_note} — move mouse to set distance, release E = commit, ESC = cancel")
+                self._hud.update_action(f"{action}{restore_note} — move mouse to set distance, release R = commit, ESC = cancel")
                 self._update_hud()
-        elif symbol == self.input_map.wire_overlay:
+        elif symbol == self.input_map.wire_overlay or (symbol == _key.D and modifiers & _key.MOD_SHIFT):
+            # WP-AP-INPUT-FIX-01 §2: Shift+D for wireframe toggle (in addition to existing binding)
             self.app.display_state.toggle_wireframe_overlay()
             self._update_hud()
         elif symbol == self.input_map.show_vertices:
@@ -1274,7 +1283,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 cur_idx = families.index(cur) if cur in families else 0
                 self.app.focused_family = families[(cur_idx + 1) % len(families)]
             self._update_hud()
-        elif symbol == _key.M:
+        elif symbol == _key.Q:
+            # WP-AP-INPUT-FIX-01 §2: Q (rebind from M) — Cycle transform variants
             # Cyclt innerhalb der focused_family — nie family-übergreifend.
             active_family = self.app.focused_family
             slot = self.app.slots.get(active_family)
@@ -1287,7 +1297,11 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._clear_transform_state()
                 self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
             self._update_hud()
-        elif symbol == _key.Q:
+        elif symbol == _key.M:
+            # WP-AP-INPUT-FIX-01 §2: M — Old selection mode cycling (now handled by 1/2/3)
+            # Kept as no-op for now; Q now cycles transform variants
+            pass
+        elif False:  # Placeholder for old symbol == _key.Q logic
             # Cycle SelectMethod (Method): PICK → BOX → LASSO → PAINT → PICK
             methods = [SelectMethod.PICK, SelectMethod.BOX, SelectMethod.LASSO, SelectMethod.PAINT]
             current_idx = methods.index(self.app.select_method) if self.app.select_method in methods else 0
@@ -1368,9 +1382,40 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._update_hud()
         elif symbol in (_key.LCTRL, _key.RCTRL):
             self._tweak_ctrl_held = True
-        elif symbol in (_key.X, _key.R, _key.S):
-            _key_char = {_key.X: 'x', _key.R: 'r', _key.S: 's'}[symbol]
-            _tool_type = {'x': 'move', 'r': 'rotate', 's': 'scale'}[_key_char]
+        # WP-AXIS-CONSTRAINT-WIRING: Track held axis-constraint keys (separate from transform tools)
+        # X can be both axis constraint and Move tool; Y/Z are axis constraints only
+        if symbol in (_key.X, _key.Y, _key.Z) and not (modifiers & _key.MOD_CTRL):
+            if not (modifiers & _key.MOD_SHIFT):
+                # X/Y/Z alone → single-axis constraint
+                if symbol == _key.X:
+                    self._axis_constraint = "x"
+                elif symbol == _key.Y:
+                    self._axis_constraint = "y"
+                elif symbol == _key.Z:
+                    self._axis_constraint = "z"
+            else:
+                # Shift+X/Y/Z → plane constraint (not that axis)
+                if symbol == _key.X:
+                    self._axis_constraint = "yz"
+                elif symbol == _key.Y:
+                    self._axis_constraint = "xz"
+                elif symbol == _key.Z:
+                    self._axis_constraint = "xy"
+            self._hud.update_constraint(self._axis_constraint)
+            self._update_hud()
+        # WP-AP-INPUT-FIX-01 §2: Rebind transform tools to X/W/E (was X/R/S)
+        if symbol in (_key.X, _key.W, _key.E) and not (modifiers & _key.MOD_SHIFT):
+            _key_map = {_key.X: ('x', 'move'), _key.W: ('w', 'rotate'), _key.E: ('e', 'scale')}
+            if symbol in _key_map:
+                _key_char, _tool_type = _key_map[symbol]
+            else:
+                _key_char = None
+                _tool_type = None
+        else:
+            _key_char = None
+            _tool_type = None
+
+        if _key_char is not None and _tool_type is not None:
             tv = self._active_tweak_variant()
             if tv == "v1":
                 # V1: arm the self-deciding gesture; key-up will decide toggle vs. Tweak
@@ -1481,8 +1526,26 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._tweak_commit()
                 self._update_hud()
             # V2: Ctrl release does NOT cancel (LMB governs in V2)
-        elif symbol in (_key.X, _key.R, _key.S):
-            _key_char = {_key.X: 'x', _key.R: 'r', _key.S: 's'}[symbol]
+        elif symbol in (_key.X, _key.Y, _key.Z):
+            # WP-AXIS-CONSTRAINT-WIRING: Clear axis constraint only if it matches the released key
+            if symbol == _key.X and self._axis_constraint in ("x", "xy", "xz"):
+                self._axis_constraint = None
+            elif symbol == _key.Y and self._axis_constraint in ("y", "xy", "yz"):
+                self._axis_constraint = None
+            elif symbol == _key.Z and self._axis_constraint in ("z", "xz", "yz"):
+                self._axis_constraint = None
+            if self._axis_constraint is None:
+                self._hud.update_constraint(None)
+                self._update_hud()
+        elif symbol in (_key.X, _key.W, _key.E):
+            # WP-AP-INPUT-FIX-01 §2: Transform tool keys X/W/E (was X/R/S)
+            _key_map = {_key.X: 'x', _key.W: 'w', _key.E: 'e'}
+            if symbol not in _key_map:
+                return pyglet.event.EVENT_HANDLED
+            _key_char = _key_map[symbol]
+            _tool_type_map = {'x': 'move', 'w': 'rotate', 'e': 'scale'}
+            _tool_type = _tool_type_map.get(_key_char)
+
             tv = self._active_tweak_variant()
             if tv == "v1" and self._tweak_v1_key == _key_char:
                 # V1: self-deciding — was it a mode-toggle or a Tweak?
@@ -1491,10 +1554,10 @@ class PlaygroundWindow(pyglet.window.Window):
                     # [OPEN QUESTION: mode-toggle does NOT fire if a Tweak drag happened.
                     #  This is the simpler/more-predictable choice: a drag "overwrites"
                     #  the press intent entirely. Flag for observation during playtesting.]
-                    _tool_type = {"x": "move", "r": "rotate", "s": "scale"}[_key_char]
-                    self._tweak_persistent_mode = toggle_persistent_mode(
-                        self._tweak_persistent_mode, _tool_type,
-                    )
+                    if _tool_type is not None:
+                        self._tweak_persistent_mode = toggle_persistent_mode(
+                            self._tweak_persistent_mode, _tool_type,
+                        )
                 else:
                     # Drag happened → commit if Tweak was active
                     if self._tweak_active:

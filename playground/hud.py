@@ -43,6 +43,7 @@ class PlaygroundHUD:
         self._display_line = "Display: Shaded"
         self._selection_line = "Selection: none"
         self._action_line = "Action: —"
+        self._constraint_line = "Constraint: none"  # WP-AXIS-CONSTRAINT-WIRING
 
         # Lazy-init Label-Objekte
         self._label = None
@@ -89,6 +90,14 @@ class PlaygroundHUD:
         update_selection() — kein neues Feedback-System, kein Timer/Fade.
         """
         self._action_line = f"Action: {text}"
+        self._invalidate()
+
+    def update_constraint(self, constraint: str | None) -> None:
+        """WP-AXIS-CONSTRAINT-WIRING: Show active axis constraint."""
+        if constraint is None:
+            self._constraint_line = "Constraint: none"
+        else:
+            self._constraint_line = f"Constraint: {constraint}"
         self._invalidate()
 
     def update_setting(self, slots: dict) -> None:
@@ -139,7 +148,7 @@ class PlaygroundHUD:
             f"{self._camera_line}\n{self._mesh_line}\n"
             f"{self._setting_line}\n"
             f"{self._experiment_line}\n{self._display_line}\n{self._selection_line}\n"
-            f"{self._action_line}"
+            f"{self._constraint_line}\n{self._action_line}"
         )
 
     def _ensure_label(self) -> None:

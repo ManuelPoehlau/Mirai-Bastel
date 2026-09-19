@@ -54,15 +54,17 @@ class PlaygroundCommandHandler:
         if command is None:
             return False
 
-        # WP-AP-INPUT-FIX-01 §1: Whitelist fix.
-        # Only dispatch commands that are provably identical to their old hardcoded
-        # counterparts and have no Playground-side state machine interference.
-        # Everything else returns False to let window.py's hardcoded logic handle it.
+        # WP-AP-INPUT-FIX-01: Whitelist of safe commands for Playground dispatch.
+        # §1: Fixed precedence bug that silenced Playground-only state machines.
+        # §2-§4: Re-enabled MOVE/ROTATE/SCALE after key rebinding (now W/E/R in Playground).
+        # These commands are safe because their new keys (W/E/R) don't conflict with
+        # Playground variant cycling (Q) or other operations.
         SAFE_COMMANDS = {
             cmd.UNDO, cmd.REDO,
             cmd.SET_VERTEX_MODE, cmd.SET_EDGE_MODE, cmd.SET_FACE_MODE,
             cmd.CYCLE_DISPLAY_MODE, cmd.TOGGLE_WIREFRAME_OVERLAY,
             cmd.SPLIT_EDGE,
+            cmd.MOVE, cmd.ROTATE, cmd.SCALE,  # Re-enabled in §2-§4
         }
         if command not in SAFE_COMMANDS:
             return False
