@@ -129,15 +129,8 @@ class MoveTool(Tool):
                     selection=self._scene.selection if self._scene else None,
                     for_rotation=False,
                 )
-                # Konvertiere Achse zu Maske: axis (1,0,0) → mask (0,1,1)
-                # (wenn X gebunden ist, sind Y/Z frei)
-                if space_lower in ("x", "y", "z"):
-                    self._axes_mask = tuple(
-                        1.0 - comp for comp in axis_or_mask
-                    )
-                else:
-                    # Ebenenmaske verwenden wie sie ist
-                    self._axes_mask = axis_or_mask
+                # Verwende die Maske direkt (axis/plane aus _WORLD_AXES)
+                self._axes_mask = axis_or_mask
             elif space_lower == "normal":
                 # Normal auflösen und speichern
                 self._normal = _resolve_space(

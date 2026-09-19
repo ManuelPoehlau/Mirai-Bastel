@@ -41,6 +41,25 @@ from .transform import TransformTool, _resolve_space
 VEC3 = tuple[float, float, float]
 
 
+def _resolve_axis(axis, derived_geometry=None, mesh=None, selection=None):
+    """Backward compatibility wrapper for _resolve_space (axis → space parameter).
+
+    Deprecated: Use _resolve_space() directly.
+    """
+    if axis is None:
+        raise ValueError("axis=None ist hier nicht gültig.")
+    if not isinstance(axis, str):
+        # Vector passed directly
+        return tuple(axis)
+    return _resolve_space(
+        axis,
+        derived_geometry=derived_geometry,
+        mesh=mesh,
+        selection=selection,
+        for_rotation=True,
+    )
+
+
 class RotateTool(TransformTool):
     """Modal-interaktives Rotate-Tool (Basis: TransformTool)."""
 
