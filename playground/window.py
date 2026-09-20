@@ -1169,20 +1169,6 @@ class PlaygroundWindow(pyglet.window.Window):
             self._rebuild_vbo()
             self._hud.update_action("Redo")
             self._update_hud()
-        elif symbol == _key.K:
-            # K: Split Edge (WP-AP-Enablement-01). Scope: nur Edge-Modus mit
-            # genau einer selektierten Edge; kein Aktivierungsvarianten-
-            # Research (das ist AP-05) — ein fester, einfachster Trigger.
-            sel = self.app.scene.selection
-            if sel.mode is SelectionMode.EDGE and len(sel.edges) == 1:
-                restored = self._articulation_auto_restore()
-                (edge_id,) = sel.edges
-                split_selected_edge(self.app.scene, edge_id)
-                sel.clear()
-                self._rebuild_vbo()
-                action = "Split Edge (articulation restored)" if restored else "Split Edge"
-                self._hud.update_action(action)
-                self._update_hud()
         elif symbol == _key.I:
             # I: Loop Insert (AP-05). Scope: Edge-Modus, genau 1 Edge selektiert.
             sel = self.app.scene.selection
@@ -1197,22 +1183,6 @@ class PlaygroundWindow(pyglet.window.Window):
                     suffix = " (articulation restored)" if restored else ""
                     self._hud.update_action(f"Loop Insert — {len(new_edges)} Edges{suffix}")
                 except _LoopInsertError as exc:
-                    self._hud.update_action(str(exc))
-                self._update_hud()
-        elif symbol == _key.J:
-            # J: Connect Edges (AP-05). Scope: Edge-Modus, 2+ Edges selektiert.
-            # Kein Hover-Fallback — Connect Edges verlangt echte Mehrfachauswahl.
-            sel = self.app.scene.selection
-            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 2:
-                restored = self._articulation_auto_restore()
-                try:
-                    new_edges = connect_selected_edges(self.app.scene, set(sel.edges))
-                    sel.clear()
-                    sel.add(set(new_edges))
-                    self._rebuild_vbo()
-                    action = "Connect Edges (articulation restored)" if restored else "Connect Edges"
-                    self._hud.update_action(action)
-                except _ConnectEdgesError as exc:
                     self._hud.update_action(str(exc))
                 self._update_hud()
         elif symbol == _key.R and (modifiers & _key.MOD_SHIFT):
