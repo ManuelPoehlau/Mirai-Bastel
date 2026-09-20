@@ -44,6 +44,7 @@ class PlaygroundHUD:
         self._selection_line = "Selection: none"
         self._action_line = "Action: —"
         self._constraint_line = "Constraint: none"  # WP-AXIS-CONSTRAINT-WIRING
+        self._space_line = "Space: world"  # WP-AP-INPUT-FIX-03
 
         # Lazy-init Label-Objekte
         self._label = None
@@ -100,6 +101,11 @@ class PlaygroundHUD:
             self._constraint_line = f"Constraint: {constraint}"
         self._invalidate()
 
+    def update_space(self, space: str) -> None:
+        """WP-AP-INPUT-FIX-03: Show active transform coordinate space."""
+        self._space_line = f"Space: {space}"
+        self._invalidate()
+
     def update_setting(self, slots: dict) -> None:
         """Setting-Zeile aus per-Family Slot-Registry aufbauen.
 
@@ -148,7 +154,7 @@ class PlaygroundHUD:
             f"{self._camera_line}\n{self._mesh_line}\n"
             f"{self._setting_line}\n"
             f"{self._experiment_line}\n{self._display_line}\n{self._selection_line}\n"
-            f"{self._constraint_line}\n{self._action_line}"
+            f"{self._constraint_line}\n{self._space_line}\n{self._action_line}"
         )
 
     def _ensure_label(self) -> None:
@@ -206,3 +212,7 @@ class PlaygroundHUD:
     @property
     def action_line(self) -> str:
         return self._action_line
+
+    @property
+    def space_line(self) -> str:
+        return self._space_line

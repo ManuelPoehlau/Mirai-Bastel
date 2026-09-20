@@ -96,6 +96,7 @@ def observe(win: PlaygroundWindow) -> dict:
         "extrude_tool": win._extrude_tool is not None,
         "loop_slide_tool": win._loop_slide_tool is not None,
         "axis_constraint": win._axis_constraint,
+        "transform_space": win._transform_space,
         "selection_mode": getattr(sel.mode, "name", str(sel.mode)),
         "selection_count": len(sel.faces) + len(sel.edges) + len(sel.vertices),
         "show_vertices": app.show_vertices,
@@ -143,6 +144,147 @@ def probe(symbol: int, modifiers: int = 0, family: str = "selection",
         win.close()
 
 
+def probe_x_twice() -> dict:
+    """Press X twice on a fresh window — second press should toggle off."""
+    win = make_window()
+    try:
+        win.on_key_press(_key.X, 0)
+        after_first = observe(win)
+        win.on_key_press(_key.X, 0)
+        after_second = observe(win)
+        return {
+            "after_first_press": after_first["axis_constraint"],
+            "after_second_press": after_second["axis_constraint"],
+        }
+    finally:
+        win.close()
+
+
+def probe_x_then_y() -> dict:
+    """Press X then Y — Y should replace X (not stack)."""
+    win = make_window()
+    try:
+        win.on_key_press(_key.X, 0)
+        after_x = observe(win)
+        win.on_key_press(_key.Y, 0)
+        after_y = observe(win)
+        return {
+            "after_x": after_x["axis_constraint"],
+            "after_y": after_y["axis_constraint"],
+        }
+    finally:
+        win.close()
+
+
+def probe_constraint_survives_commit() -> dict:
+    """Constraint set before a gesture survives commit."""
+    win = make_window(fixture="face")
+    try:
+        win.on_key_press(_key.X, 0)
+        constraint_before = observe(win)["axis_constraint"]
+        # Simulate a full gesture: press Q, drag, release Q
+        win.on_key_press(_key.Q, 0)
+        win.on_mouse_motion(700, 400, 40, 0)
+        win.on_key_release(_key.Q, 0)
+        constraint_after = observe(win)["axis_constraint"]
+        return {
+            "constraint_before_gesture": constraint_before,
+            "constraint_after_commit": constraint_after,
+        }
+    finally:
+        win.close()
+
+
+def probe_constraint_survives_cancel() -> dict:
+    """Constraint set before a gesture survives ESC cancel."""
+    win = make_window(fixture="face")
+    try:
+        win.on_key_press(_key.X, 0)
+        constraint_before = observe(win)["axis_constraint"]
+        win.on_key_press(_key.Q, 0)
+        win.on_mouse_motion(700, 400, 40, 0)
+        win.on_key_press(_key.ESCAPE, 0)
+        constraint_after = observe(win)["axis_constraint"]
+        return {
+            "constraint_before_gesture": constraint_before,
+            "constraint_after_cancel": constraint_after,
+        }
+    finally:
+        win.close()
+
+
+def probe_release_does_nothing() -> dict:
+    """Releasing X after press does NOT clear the constraint (sticky model)."""
+    win = make_window()
+    try:
+        win.on_key_press(_key.X, 0)
+        before_release = observe(win)["axis_constraint"]
+        win.on_key_release(_key.X, 0)
+        after_release = observe(win)["axis_constraint"]
+        return {
+            "before_release": before_release,
+            "after_release": after_release,
+            "changed": before_release != after_release,
+        }
+    finally:
+        win.close()
+
+
+def probe_k_toggle_space() -> dict:
+    """K toggles _transform_space world→normal→world across two presses."""
+    win = make_window()
+    try:
+        initial = observe(win)["transform_space"]
+        win.on_key_press(_key.K, 0)
+        after_first = observe(win)["transform_space"]
+        win.on_key_press(_key.K, 0)
+        after_second = observe(win)["transform_space"]
+        return {
+            "initial": initial,
+            "after_first_k": after_first,
+            "after_second_k": after_second,
+        }
+    finally:
+        win.close()
+
+
+def probe_tweak_v1_space_axis(space: str, axis_key: int | None = None) -> dict:
+    """Tweak-V1 gesture begins with expected transform_space and axis_constraint.
+
+    Sets up space and optional axis constraint, then drives a V1 gesture (Q+motion)
+    to the point where begin_transform is called. Observes _tweak_started and
+    the window state fed into begin_transform.
+    """
+    win = make_window(family="tweak", fixture="face")
+    # Ensure tweak family is V1
+    tweak_slot = win.app.slots.get("tweak")
+    if tweak_slot is not None:
+        win.app.activate_variant("tweak", 0)
+    try:
+        # Set coordinate space
+        if space == "normal":
+            win.on_key_press(_key.K, 0)
+        # Optionally set axis constraint
+        if axis_key is not None:
+            win.on_key_press(axis_key, 0)
+        state_before = {
+            "transform_space": observe(win)["transform_space"],
+            "axis_constraint": observe(win)["axis_constraint"],
+        }
+        # Arm V1 gesture and move past threshold
+        win.on_key_press(_key.Q, 0)
+        for _ in range(10):
+            win.on_mouse_motion(700 + _ * 5, 400, 5, 0)
+        state_after = {
+            "tweak_started": observe(win)["tweak_started"],
+            "transform_space": observe(win)["transform_space"],
+            "axis_constraint": observe(win)["axis_constraint"],
+        }
+        return {"before": state_before, "after": state_after}
+    finally:
+        win.close()
+
+
 # label, symbol, modifiers, family, fixture, drag
 GESTURES: list[tuple[str, int, int, str, str, bool]] = [
     ("Q drag   [face]", _key.Q, 0, "selection", "face", True),
@@ -157,6 +299,11 @@ GESTURES: list[tuple[str, int, int, str, str, bool]] = [
     ("S        [edge]", _key.S, 0, "selection", "edge_single", False),
     ("Shift+C  [edge]", _key.C, _key.MOD_SHIFT, "selection", "edge_single", False),
     ("Z press  [face]", _key.Z, 0, "selection", "face", False),
+    # WP-AP-INPUT-FIX-03 probes
+    ("X twice (toggle off)", _key.X, 0, "selection", "empty", False),
+    ("X then Y (replace)", _key.X, 0, "selection", "empty", False),
+    ("K toggle space",   _key.K, 0, "selection", "empty", False),
+    ("Q drag Normal [face]", _key.Q, 0, "selection", "face", True),
 ]
 
 
@@ -207,6 +354,51 @@ def main() -> None:
     print("PLAYGROUND KEY DISPATCH — CHARACTERIZATION SNAPSHOT")
     print("Records observed behaviour of the real handlers. Not a correctness claim.")
     print("=" * 78)
+
+    print("\nWP-AP-INPUT-FIX-03 — Sticky Constraint + Space Toggle")
+    print("=" * 78)
+    try:
+        r = probe_x_twice()
+        print(f"\nX twice (toggle off): after_first={r['after_first_press']!r}  after_second={r['after_second_press']!r}")
+    except Exception as exc:
+        print(f"\nX twice !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_x_then_y()
+        print(f"X then Y (replace):  after_x={r['after_x']!r}  after_y={r['after_y']!r}")
+    except Exception as exc:
+        print(f"\nX then Y !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_constraint_survives_commit()
+        print(f"Constraint survives commit: before={r['constraint_before_gesture']!r}  after_commit={r['constraint_after_commit']!r}")
+    except Exception as exc:
+        print(f"\nConstraint survives commit !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_constraint_survives_cancel()
+        print(f"Constraint survives cancel: before={r['constraint_before_gesture']!r}  after_cancel={r['constraint_after_cancel']!r}")
+    except Exception as exc:
+        print(f"\nConstraint survives cancel !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_release_does_nothing()
+        print(f"Release does nothing:       before={r['before_release']!r}  after={r['after_release']!r}  changed={r['changed']}")
+    except Exception as exc:
+        print(f"\nRelease does nothing !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_k_toggle_space()
+        print(f"K toggle space:             initial={r['initial']!r}  after_K={r['after_first_k']!r}  after_KK={r['after_second_k']!r}")
+    except Exception as exc:
+        print(f"\nK toggle space !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_tweak_v1_space_axis("world", None)
+        print(f"Tweak-V1 World/None:        before={r['before']}  after={r['after']}")
+    except Exception as exc:
+        print(f"\nTweak-V1 World/None !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_tweak_v1_space_axis("normal", _key.X)
+        print(f"Tweak-V1 Normal/x:          before={r['before']}  after={r['after']}")
+    except Exception as exc:
+        print(f"\nTweak-V1 Normal/x !! RAISED {type(exc).__name__}: {exc}")
+
+    print("\n" + "=" * 78)
     for label, symbol, modifiers, family in KEYS:
         try:
             result = probe(symbol, modifiers, family)

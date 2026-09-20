@@ -347,9 +347,10 @@ class PlaygroundWindow(pyglet.window.Window):
         # V2: Ctrl was held when LMB was pressed
         self._tweak_v2_armed: bool = False
 
-        # WP-AXIS-CONSTRAINT-WIRING: Track held axis-constraint keys
-        # X/Y/Z → record "x"/"y"/"z", or "xy"/"yz"/"xz" if Shift is held
+        # WP-AXIS-CONSTRAINT-WIRING: sticky axis/plane constraint (X/Y/Z, Shift+X/Y/Z)
         self._axis_constraint: str | None = None
+        # WP-AP-INPUT-FIX-03: coordinate space toggle (K) — "world" or "normal"
+        self._transform_space: str = "world"
 
         # Extrude-State (AP-05)
         self._extrude_tool: ExtrudeTool | None = None
@@ -706,7 +707,11 @@ class PlaygroundWindow(pyglet.window.Window):
             self._tweak_temp_target = True
 
         self._tweak_tool = create_tool_for_type(tool_type)
-        success = begin_transform(self._tweak_tool, self.app.scene, self.app.camera, sel)
+        _space = "normal" if self._transform_space == "normal" else None
+        success = begin_transform(
+            self._tweak_tool, self.app.scene, self.app.camera, sel,
+            axis=self._axis_constraint, space=_space,
+        )
         if success:
             self._tweak_active = True
             self._tweak_started = True
@@ -909,12 +914,14 @@ class PlaygroundWindow(pyglet.window.Window):
         ):
             if not self._transform_started:
                 # Erste Drag-Bewegung: Transform starten
+                _space = "normal" if self._transform_space == "normal" else None
                 success = begin_transform(
                     self.app.active_tool,
                     self.app.scene,
                     self.app.camera,
                     self.app.scene.selection,
                     axis=self._axis_constraint,
+                    space=_space,
                 )
                 if success:
                     self._transform_started = True
@@ -1107,12 +1114,14 @@ class PlaygroundWindow(pyglet.window.Window):
         ):
             if not self._transform_started:
                 # Erste Bewegung: Transform starten
+                _space = "normal" if self._transform_space == "normal" else None
                 success = begin_transform(
                     self.app.active_tool,
                     self.app.scene,
                     self.app.camera,
                     self.app.scene.selection,
                     axis=self._axis_constraint,
+                    space=_space,
                 )
                 if success:
                     self._transform_started = True
@@ -1375,25 +1384,15 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._update_hud()
         elif symbol in (_key.LCTRL, _key.RCTRL):
             self._tweak_ctrl_held = True
-        # WP-AXIS-CONSTRAINT-WIRING: Track held axis-constraint keys (separate from transform tools)
-        # X can be both axis constraint and Move tool; Y/Z are axis constraints only
+        # WP-AP-INPUT-FIX-03: sticky axis/plane constraint toggle
+        # Pressing the active constraint again clears it (toggle off); pressing a different
+        # one replaces it. Release does nothing — constraint persists across gestures.
         if symbol in (_key.X, _key.Y, _key.Z) and not (modifiers & _key.MOD_CTRL):
             if not (modifiers & _key.MOD_SHIFT):
-                # X/Y/Z alone → single-axis constraint
-                if symbol == _key.X:
-                    self._axis_constraint = "x"
-                elif symbol == _key.Y:
-                    self._axis_constraint = "y"
-                elif symbol == _key.Z:
-                    self._axis_constraint = "z"
+                _target = {_key.X: "x", _key.Y: "y", _key.Z: "z"}[symbol]
             else:
-                # Shift+X/Y/Z → plane constraint (not that axis)
-                if symbol == _key.X:
-                    self._axis_constraint = "yz"
-                elif symbol == _key.Y:
-                    self._axis_constraint = "xz"
-                elif symbol == _key.Z:
-                    self._axis_constraint = "xy"
+                _target = {_key.X: "yz", _key.Y: "xz", _key.Z: "xy"}[symbol]
+            self._axis_constraint = None if self._axis_constraint == _target else _target
             self._hud.update_constraint(self._axis_constraint)
             self._update_hud()
         # WP-AP-INPUT-FIX-01 §2: Rebind transform tools to Q/W/E (was X/R/S)
@@ -1438,6 +1437,11 @@ class PlaygroundWindow(pyglet.window.Window):
                         self._transform_mode_on = True
                         self.app.active_tool = create_tool_for_type(_tool_type)
                 self._update_hud()
+        elif symbol == _key.K and not modifiers:
+            # K: toggle transform coordinate space World ↔ Normal (WP-AP-INPUT-FIX-03)
+            self._transform_space = "normal" if self._transform_space == "world" else "world"
+            self._hud.update_space(self._transform_space)
+            self._update_hud()
         elif symbol == _key.F:
             # F: Restore articulation to exact rest pose (EX-A / H02).
             if self._articulation_state is not None:
@@ -1519,17 +1523,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._tweak_commit()
                 self._update_hud()
             # V2: Ctrl release does NOT cancel (LMB governs in V2)
-        elif symbol in (_key.X, _key.Y, _key.Z):
-            # WP-AXIS-CONSTRAINT-WIRING: Clear axis constraint only if it matches the released key
-            if symbol == _key.X and self._axis_constraint in ("x", "xy", "xz"):
-                self._axis_constraint = None
-            elif symbol == _key.Y and self._axis_constraint in ("y", "xy", "yz"):
-                self._axis_constraint = None
-            elif symbol == _key.Z and self._axis_constraint in ("z", "xz", "yz"):
-                self._axis_constraint = None
-            if self._axis_constraint is None:
-                self._hud.update_constraint(None)
-                self._update_hud()
         elif symbol in (_key.Q, _key.W, _key.E):
             # WP-AP-INPUT-FIX-01 §2: Transform tool keys Q/W/E (was X/R/S)
             _key_map = {_key.Q: 'q', _key.W: 'w', _key.E: 'e'}
