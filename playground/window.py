@@ -63,8 +63,9 @@ from playground.transformer import (  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.hud import PlaygroundHUD  # noqa: E402
 from playground.input_map import PlaygroundInputMap  # noqa: E402
-from playground.input_adapter import PlaygroundInputBinding, _key_from_pyglet, determine_input_context  # noqa: E402
-from playground.command_handler import PlaygroundCommandHandler  # noqa: E402
+# AD-013 I4: input_adapter / command_handler are no longer wired into the
+# Playground dispatch (single interaction authority). Imports removed with the
+# wiring; the modules themselves are untouched.
 from playground.slot import ExperimentSlot, VariantEntry  # noqa: E402
 from playground.experiments.selection.variant_replace import FaceSelectReplaceExperiment  # noqa: E402
 from playground.experiments.selection.variant_modifier import FaceSelectModifierExperiment  # noqa: E402
@@ -284,9 +285,11 @@ class PlaygroundWindow(pyglet.window.Window):
         pres_slot.active_experiment.activate()
         app.activate_variant("selection", 0)  # setzt _active_experiment + ruft activate() auf
 
-        # WP-AP: Input adapter + command handler für Production-Binding-Integration
-        self._input_binding = PlaygroundInputBinding()
-        self._command_handler = PlaygroundCommandHandler(app, self)
+        # AD-013 I4: no second binding authority is constructed here. The
+        # Playground resolves its own input in on_key_press/on_key_release.
+        # playground/input_adapter.py and playground/command_handler.py are
+        # intentionally left in the tree but UNWIRED — removing them is a
+        # separate cleanup decision, not part of this ownership restoration.
 
         self._face_program = shader.ShaderProgram(
             shader.Shader(_FACE_VERT, "vertex"),
@@ -1136,17 +1139,12 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_hover_vbo()
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
-        # WP-AP: Try routing through production BindingSet/Command infrastructure.
-        # Determine context based on active experiment family (variant-aware).
-        context = determine_input_context(self.app.focused_family)
-        input_obj = _key_from_pyglet(symbol, modifiers)
-        command = self._input_binding.command_for(input_obj, context)
-
-        # If command resolved, try handler. Handler returns True if it handled the command.
-        if command is not None and self._command_handler.handle_command(command):
-            return pyglet.event.EVENT_HANDLED
-
-        # Fallthrough: commands not yet wired, or special Playground-only logic
+        # AD-013 I3/I4: the Playground window is the single interaction authority
+        # for its own input. Activation and termination are resolved here and in
+        # on_key_release against ONE key alphabet. Production BindingSet is NOT
+        # consulted: capability is shared (create_tool_for_type), binding and
+        # gesture are owned by the Playground (AD-013 "Capability promotion is
+        # not UX promotion"). Restores the pre-54e9840 ownership split.
         if symbol == _key.C:
             self.app.load_cube(store_type=PlaygroundPygletStore)
             self._rebuild_vbo()
@@ -1164,7 +1162,9 @@ class PlaygroundWindow(pyglet.window.Window):
             self._rebuild_vbo()
             self._rebuild_selection_vbo()
             self._push_camera()
-        elif symbol == self.input_map.display_cycle:
+        elif symbol == self.input_map.display_cycle and not (modifiers & _key.MOD_SHIFT):
+            # Shift+D is the wireframe-overlay toggle further down this chain;
+            # without this guard the bare-D branch would swallow it.
             slot = self.app.slots.get("presentation")
             if slot is not None:
                 self.app.activate_variant("presentation", (slot.active_index + 1) % slot.variant_count)

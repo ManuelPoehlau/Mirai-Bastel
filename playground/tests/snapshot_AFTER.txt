@@ -1,0 +1,196 @@
+PLAYGROUND KEY DISPATCH — CHARACTERIZATION SNAPSHOT
+Records observed behaviour of the real handlers. Not a correctness claim.
+==============================================================================
+
+Q            family=selection
+   press  : tweak_v1_key = None -> 'q'
+   release: tweak_persistent_mode = None -> 'move'
+   release: tweak_v1_key = 'q' -> None
+
+W            family=selection
+   press  : tweak_v1_key = None -> 'w'
+   release: tweak_persistent_mode = None -> 'rotate'
+   release: tweak_v1_key = 'w' -> None
+
+E            family=selection
+   press  : tweak_v1_key = None -> 'e'
+   release: tweak_persistent_mode = None -> 'scale'
+   release: tweak_v1_key = 'e' -> None
+
+R            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+S            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+M            family=selection
+   press  : hud_constraint = 'Setting: selection=Replace | presentation=Shaded | transform=Hold (key + drag + release) | tweak=V1-HoldKey (X/R/S, self-deciding) | topology=Hold (E + motion + release) | articulation=LMB drag (F = restore)' -> 'Setting: selection=Modifier (Shift/Ctrl/Alt) | presentation=Shaded | transform=Hold (key + drag + release) | tweak=V1-HoldKey (X/R/S, self-deciding) | topology=Hold (E + motion + release) | articulation=LMB drag (F = restore)'
+   press  : slot_indices = {'articulation': 0, 'presentation': 0, 'selection': 0, 'topology': 0, 'transform': 0, 'tweak': 0} -> {'articulation': 0, 'presentation': 0, 'selection': 1, 'topology': 0, 'transform': 0, 'tweak': 0}
+   release: (no observable change)
+
+Shift+M      family=selection
+   press  : select_method = 'PICK' -> 'BOX'
+   release: (no observable change)
+
+X            family=selection
+   press  : axis_constraint = None -> 'x'
+   release: axis_constraint = 'x' -> None
+
+Y            family=selection
+   press  : axis_constraint = None -> 'y'
+   press  : face_count = 6 -> 84
+   press  : vertex_count = 8 -> 74
+   release: axis_constraint = 'y' -> None
+
+Z            family=selection
+   press  : axis_constraint = None -> 'z'
+   press  : hud_display = 'Display: Shaded' -> 'Display: Shaded + Wire'
+   release: axis_constraint = 'z' -> None
+
+Shift+X      family=selection
+   press  : axis_constraint = None -> 'yz'
+   release: (no observable change)
+
+Ctrl+Z       family=selection
+   press  : hud_action = 'Action: —' -> 'Action: Undo'
+   release: (no observable change)
+
+Ctrl+Y       family=selection
+   press  : hud_action = 'Action: —' -> 'Action: Redo'
+   release: (no observable change)
+
+1            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+2            family=selection
+   press  : selection_mode = 'VERTEX' -> 'EDGE'
+   release: (no observable change)
+
+3            family=selection
+   press  : selection_mode = 'VERTEX' -> 'FACE'
+   release: (no observable change)
+
+V            family=selection
+   press  : hud_display = 'Display: Shaded' -> 'Display: Shaded + V'
+   press  : show_vertices = False -> True
+   release: (no observable change)
+
+F            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+D            family=selection
+   press  : hud_constraint = 'Setting: selection=Replace | presentation=Shaded | transform=Hold (key + drag + release) | tweak=V1-HoldKey (X/R/S, self-deciding) | topology=Hold (E + motion + release) | articulation=LMB drag (F = restore)' -> 'Setting: selection=Replace | presentation=Flat Shaded | transform=Hold (key + drag + release) | tweak=V1-HoldKey (X/R/S, self-deciding) | topology=Hold (E + motion + release) | articulation=LMB drag (F = restore)'
+   press  : hud_display = 'Display: Shaded' -> 'Display: Flat Shaded'
+   press  : slot_indices = {'articulation': 0, 'presentation': 0, 'selection': 0, 'topology': 0, 'transform': 0, 'tweak': 0} -> {'articulation': 0, 'presentation': 1, 'selection': 0, 'topology': 0, 'transform': 0, 'tweak': 0}
+   release: (no observable change)
+
+Shift+D      family=selection
+   press  : hud_display = 'Display: Shaded' -> 'Display: Shaded + Wire'
+   release: (no observable change)
+
+O            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+K            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+I            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+J            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+G            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+L            family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+Shift+L      family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+Shift+R      family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+TAB          family=selection
+   press  : focused_family = 'selection' -> 'presentation'
+   release: (no observable change)
+
+ESCAPE       family=selection
+   press  : (no observable change)
+   release: (no observable change)
+
+R  [topo]    family=topology
+   press  : (no observable change)
+   release: (no observable change)
+
+S  [topo]    family=topology
+   press  : (no observable change)
+   release: (no observable change)
+
+L  [topo]    family=topology
+   press  : (no observable change)
+   release: (no observable change)
+
+K  [topo]    family=topology
+   press  : (no observable change)
+   release: (no observable change)
+
+C  [topo]    family=topology
+   press  : (no observable change)
+   release: (no observable change)
+
+==============================================================================
+GESTURES — press, drag, release (one face selected, FACE mode)
+==============================================================================
+
+Q drag   [face]  family=selection
+   press  : tweak_v1_key = None -> 'q'
+   drag   : tweak_active = False -> True
+   drag   : tweak_started = False -> True
+   release: tweak_active = True -> False
+   release: tweak_started = True -> False
+   release: tweak_v1_key = 'q' -> None
+
+W drag   [face]  family=selection
+   press  : tweak_v1_key = None -> 'w'
+   drag   : tweak_active = False -> True
+   drag   : tweak_started = False -> True
+   release: tweak_active = True -> False
+   release: tweak_started = True -> False
+   release: tweak_v1_key = 'w' -> None
+
+E drag   [face]  family=selection
+   press  : tweak_v1_key = None -> 'e'
+   drag   : tweak_active = False -> True
+   drag   : tweak_started = False -> True
+   release: tweak_active = True -> False
+   release: tweak_started = True -> False
+   release: tweak_v1_key = 'e' -> None
+
+R        [face]  family=selection
+   press  : extrude_tool = False -> True
+   press  : face_count = 6 -> 10
+   press  : hud_action = 'Action: —' -> 'Action: Extrude — move mouse to set distance, release R = commit, ESC = cancel'
+   press  : vertex_count = 8 -> 12
+   release: (no observable change)
+
+R drag   [face]  family=selection
+   press  : extrude_tool = False -> True
+   press  : face_count = 6 -> 10
+   press  : hud_action = 'Action: —' -> 'Action: Extrude — move mouse to set distance, release R = commit, ESC = cancel'
+   press  : vertex_count = 8 -> 12
+   drag   : (no observable change)
+   release: (no observable change)
