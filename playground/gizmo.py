@@ -39,13 +39,18 @@ def gizmo_mode(selection, transform_space: str, axis_constraint: str | None) -> 
     """Classify which gizmo appearance applies for the current tool state.
 
     Returns one of:
-        'screen'        — no axis constraint; show a billboard ring
-        'world'         — world-space axis/plane constraint active
+        'world'         — world-space tripod; axis_constraint (if any) is
+                          highlighted, but the full X/Y/Z + planes always show
         'normal_full'   — normal space, single FACE selection (full tangent frame)
         'normal_z_only' — normal space, any other selection (normal direction only)
+
+    'screen' (billboard ring) is intentionally not reachable from here anymore —
+    it was the default for axis_constraint=None, but the artist-facing default
+    should be the tripod itself (so an axis is directly clickable without first
+    setting a constraint via keyboard). The ring geometry/draw path is kept in
+    this module and in window.py, unused for now — reserved as a likely default
+    for Tweak later, a different interaction model this function doesn't govern.
     """
-    if axis_constraint is None:
-        return "screen"
     if transform_space == "world":
         return "world"
     # Normal space — full frame only for a single-face selection (AD-012 scope).

@@ -686,6 +686,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._transform_mode_on = False
         self._transform_started = False
         self.app.active_tool = None
+        self._hud.update_action("—")
 
     # -- Articulation-Helpers -------------------------------------------------
 
@@ -1481,6 +1482,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 if model == "hold":
                     self._transform_key_down = _key_char
                     self.app.active_tool = create_tool_for_type(_tool_type)
+                    self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
                 else:  # press_mode oder press_drag_click
                     if self._transform_mode_on:
                         # Zweiter Druck derselben Taste → Commit (wenn gestartet), Mode verlassen
@@ -1493,6 +1495,7 @@ class PlaygroundWindow(pyglet.window.Window):
                         self._transform_key_down = _key_char
                         self._transform_mode_on = True
                         self.app.active_tool = create_tool_for_type(_tool_type)
+                        self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
                 self._update_hud()
         elif symbol == _key.K and not modifiers:
             # K: toggle transform coordinate space World ↔ Normal (WP-AP-INPUT-FIX-03)

@@ -56,13 +56,16 @@ def _edge_sel(edge_ids: set) -> Selection:
 # ---------------------------------------------------------------------------
 
 class TestGizmoMode:
-    def test_no_constraint_returns_screen(self):
+    def test_no_constraint_world_shows_tripod(self):
+        # No axis chosen yet: default is the full World tripod, not the
+        # (retired-as-default) screen ring — an axis must be directly
+        # clickable without first setting a constraint via keyboard.
         sel = _vertex_sel({0})
-        assert gizmo_mode(sel, "world", None) == "screen"
+        assert gizmo_mode(sel, "world", None) == "world"
 
-    def test_no_constraint_normal_space_still_screen(self):
+    def test_no_constraint_normal_space_shows_tangent_frame(self):
         sel = _face_sel({0})
-        assert gizmo_mode(sel, "normal", None) == "screen"
+        assert gizmo_mode(sel, "normal", None) == "normal_full"
 
     def test_world_constraint_x(self):
         sel = _vertex_sel({0, 1})
