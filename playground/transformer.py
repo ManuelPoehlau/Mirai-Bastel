@@ -42,12 +42,16 @@ def begin_transform(
     selection,
     axis: str | None = None,
     space: str | None = None,
+    derived_geometry=None,
 ) -> bool:
     """Tool aktivieren + begin() aufrufen.
 
     Konvertiert Face-Selection in Vertex-Selection (alle Vertices der selektierten Faces).
     WP-AXIS-CONSTRAINT-WIRING: optionaler axis-Parameter für X/Y/Z Constraints.
     WP-AP-INPUT-FIX-03: optionaler space-Parameter für World/Normal toggle.
+    WP-AP-INPUT-FIX-03-HOTFIX: derived_geometry ist für space="normal" zwingend
+    (siehe _resolve_space in tools/transform.py) — ohne dieses Argument scheitert
+    jeder Normal-Space-Transform mit einer von hier verschluckten ValueError.
 
     Gibt True zurück wenn begin erfolgreich war (Selektion nicht leer).
     """
@@ -65,7 +69,10 @@ def begin_transform(
         tool.activate()
 
     try:
-        tool.begin(scene=scene, camera=camera, vertex_ids=vertex_ids, axis=axis, space=space)
+        tool.begin(
+            scene=scene, camera=camera, vertex_ids=vertex_ids,
+            axis=axis, space=space, derived_geometry=derived_geometry,
+        )
         return True
     except Exception:
         return False

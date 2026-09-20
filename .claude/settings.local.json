@@ -19,7 +19,11 @@
       "Bash(git *)",
       "Bash(python3 -c \"import pyglet; help\\(pyglet.graphics.vertexbuffer.BufferObject.set_region\\)\")",
       "Bash(python3 -c \"import pyglet; from pyglet.graphics import vertexbuffer; print\\(dir\\(vertexbuffer\\)\\)\")",
-      "Bash(grep -E \"\\\\.py$|^d\")"
+      "Bash(grep -E \"\\\\.py$|^d\")",
+      "Bash(grep *)",
+      "Bash(PYGLET_HEADLESS=1 python -m pytest playground/tests/input_characterization.py -v)",
+      "Bash(PYGLET_HEADLESS=1 python playground/tests/input_characterization.py)",
+      "Bash(python3 *)"
     ]
   }
 }

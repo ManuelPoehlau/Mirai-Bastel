@@ -711,6 +711,7 @@ class PlaygroundWindow(pyglet.window.Window):
         success = begin_transform(
             self._tweak_tool, self.app.scene, self.app.camera, sel,
             axis=self._axis_constraint, space=_space,
+            derived_geometry=self.app.viewport.render_mesh.derived,
         )
         if success:
             self._tweak_active = True
@@ -922,6 +923,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     self.app.scene.selection,
                     axis=self._axis_constraint,
                     space=_space,
+                    derived_geometry=self.app.viewport.render_mesh.derived,
                 )
                 if success:
                     self._transform_started = True
@@ -1122,6 +1124,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     self.app.scene.selection,
                     axis=self._axis_constraint,
                     space=_space,
+                    derived_geometry=self.app.viewport.render_mesh.derived,
                 )
                 if success:
                     self._transform_started = True
