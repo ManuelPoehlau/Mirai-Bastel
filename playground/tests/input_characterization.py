@@ -301,6 +301,23 @@ def probe_tweak_v1_space_axis(space: str, axis_key: int | None = None) -> dict:
         win.close()
 
 
+def probe_transform_slot_default() -> dict:
+    """WP-AP-GIZMO-02: confirm the transform slot's active variant is PressDragClickVariant."""
+    from playground.experiments.transform.variant_press_drag_click import PressDragClickVariant
+    win = make_window()
+    try:
+        slot = win.app.slots.get("transform")
+        if slot is None:
+            return {"variant": None, "is_press_drag_click": False}
+        active = slot.active_experiment
+        return {
+            "variant": type(active).__name__,
+            "is_press_drag_click": isinstance(active, PressDragClickVariant),
+        }
+    finally:
+        win.close()
+
+
 # label, symbol, modifiers, family, fixture, drag
 GESTURES: list[tuple[str, int, int, str, str, bool]] = [
     ("Q drag   [face]", _key.Q, 0, "selection", "face", True),
@@ -370,6 +387,14 @@ def main() -> None:
     print("PLAYGROUND KEY DISPATCH — CHARACTERIZATION SNAPSHOT")
     print("Records observed behaviour of the real handlers. Not a correctness claim.")
     print("=" * 78)
+
+    print("\nWP-AP-GIZMO-02 — Transform Slot Default")
+    print("=" * 78)
+    try:
+        r = probe_transform_slot_default()
+        print(f"Transform slot default: variant={r['variant']!r}  is_press_drag_click={r['is_press_drag_click']}")
+    except Exception as exc:
+        print(f"\nTransform slot default !! RAISED {type(exc).__name__}: {exc}")
 
     print("\nWP-AP-INPUT-FIX-03 — Sticky Constraint + Space Toggle")
     print("=" * 78)

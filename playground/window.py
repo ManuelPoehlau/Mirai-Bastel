@@ -128,7 +128,11 @@ from playground.vbo_builder import (  # noqa: E402
     build_vertex_data,
 )
 from playground.gizmo import (  # noqa: E402
+    GIZMO_SCALE,
+    WORLD_AXES,
+    WORLD_PLANES,
     gizmo_mode,
+    pick_gizmo_handle,
     screen_ring_positions,
     axis_line_positions,
     plane_indicator_positions,
@@ -205,7 +209,7 @@ _VERTEX_POINT_SIZE = 4.0
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
 # Gizmo constants (WP-AP-GIZMO-01) — widths/colors are tunable once on screen
-_GIZMO_SCALE: float = 0.18
+# GIZMO_SCALE is the single source of truth (imported from gizmo.py).
 _GIZMO_LINE_WIDTH_DEFAULT: float = 2.0
 _GIZMO_LINE_WIDTH_ACTIVE: float = 4.0
 _GIZMO_COLOR_X = (0.9, 0.15, 0.15, 1.0)
@@ -281,9 +285,9 @@ class PlaygroundWindow(pyglet.window.Window):
             VariantEntry(WireframeVariant(app)),
         )
         trans_slot = ExperimentSlot(
+            VariantEntry(PressDragClickVariant(app)),
             VariantEntry(HoldActivationVariant(app)),
             VariantEntry(PressModeVariant(app)),
-            VariantEntry(PressDragClickVariant(app)),
         )
         tweak_slot = ExperimentSlot(
             VariantEntry(TweakV1HoldKey(app)),
@@ -828,6 +832,32 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._update_hud()
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
+
+        # Gizmo click: if a transform is armed, intercept LMB on a handle to
+        # set _axis_constraint (same path as X/Y/Z keys). Falls through on no hit.
+        if (
+            button == _mouse.LEFT
+            and not (modifiers & _key.MOD_ALT)
+            and self.app.viewport is not None
+            and not self.app.scene.selection.is_empty()
+            and self.app.active_tool is not None
+            and (self._transform_key_down is not None or self._transform_mode_on)
+        ):
+            mesh = self.app.viewport.render_mesh.mesh
+            derived = self.app.viewport.render_mesh.derived
+            sel = self.app.scene.selection
+            vertex_ids = resolve_selection_vertices(mesh, sel, sel.mode)
+            if vertex_ids:
+                pivot = selection_pivot(mesh, vertex_ids)
+                mode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
+                hit = pick_gizmo_handle(
+                    self.app.camera, pivot, mode, self._transform_space,
+                    sel, mesh, derived, x, y, self.width, self.height,
+                )
+                if hit is not None:
+                    self._axis_constraint = hit
+                    self._hud.update_constraint(self._axis_constraint)
+                    return pyglet.event.EVENT_HANDLED
 
         tv = self._active_tweak_variant()
         if button == self.input_map.select_button:
@@ -1626,7 +1656,7 @@ class PlaygroundWindow(pyglet.window.Window):
             + (pivot[1] - cam_eye[1]) ** 2
             + (pivot[2] - cam_eye[2]) ** 2
         )
-        size = max(dist * _GIZMO_SCALE, 1e-6)
+        size = max(dist * GIZMO_SCALE, 1e-6)
 
         mode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
         constraint = self._axis_constraint
@@ -1656,12 +1686,8 @@ class PlaygroundWindow(pyglet.window.Window):
             )
 
         elif mode == "world":
-            _WORLD_AXES = [
-                ("x", (1.0, 0.0, 0.0), _GIZMO_COLOR_X),
-                ("y", (0.0, 1.0, 0.0), _GIZMO_COLOR_Y),
-                ("z", (0.0, 0.0, 1.0), _GIZMO_COLOR_Z),
-            ]
-            for name, direction, color in _WORLD_AXES:
+            _AXIS_COLORS = (_GIZMO_COLOR_X, _GIZMO_COLOR_Y, _GIZMO_COLOR_Z)
+            for (name, direction), color in zip(WORLD_AXES, _AXIS_COLORS):
                 active = constraint == name
                 _draw(
                     axis_line_positions(pivot, direction, size),
@@ -1669,12 +1695,8 @@ class PlaygroundWindow(pyglet.window.Window):
                     gl.GL_LINES,
                     _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
                 )
-            _WORLD_PLANES = [
-                ("xy", (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), _GIZMO_COLOR_PLANE_XY),
-                ("xz", (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), _GIZMO_COLOR_PLANE_XZ),
-                ("yz", (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), _GIZMO_COLOR_PLANE_YZ),
-            ]
-            for name, axis_a, axis_b, color in _WORLD_PLANES:
+            _PLANE_COLORS = (_GIZMO_COLOR_PLANE_XY, _GIZMO_COLOR_PLANE_XZ, _GIZMO_COLOR_PLANE_YZ)
+            for (name, axis_a, axis_b), color in zip(WORLD_PLANES, _PLANE_COLORS):
                 active = constraint == name
                 _draw(
                     plane_indicator_positions(pivot, axis_a, axis_b, size),

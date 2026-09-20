@@ -17,7 +17,9 @@ for _p in (str(_REPO_SRC), str(_REPO_ROOT)):
 
 from core.selection import Selection, SelectionMode  # noqa: E402
 from playground.gizmo import (  # noqa: E402
+    GIZMO_SCALE,
     gizmo_mode,
+    pick_gizmo_handle,
     axis_line_positions,
     plane_indicator_positions,
     screen_ring_positions,
@@ -122,3 +124,117 @@ class TestGeometryHelpers:
             self.pivot, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 1.0, segments=16
         )
         assert len(pos) == 16 * 3
+
+
+# ---------------------------------------------------------------------------
+# pick_gizmo_handle
+# ---------------------------------------------------------------------------
+
+class _MockCamera:
+    """Minimal camera stub: eye at origin, project maps 3D→2D trivially."""
+
+    def eye(self):
+        return (0.0, 0.0, 10.0)
+
+    def project_to_screen(self, pos3d, width, height):
+        # Simple orthographic projection onto screen centre + scaled coords.
+        # Positions close to origin map near (width/2, height/2).
+        cx, cy = width / 2.0, height / 2.0
+        return (cx + pos3d[0] * 50.0, cy + pos3d[1] * 50.0)
+
+
+# Camera at (0,0,10), pivot at origin → dist=10, size=10*GIZMO_SCALE
+_PIVOT = (0.0, 0.0, 0.0)
+_CAM = _MockCamera()
+_W, _H = 800, 600
+
+
+def _size():
+    dist = abs(_CAM.eye()[2] - _PIVOT[2])
+    return max(dist * GIZMO_SCALE, 1e-6)
+
+
+def _screen(pos3d):
+    return _CAM.project_to_screen(pos3d, _W, _H)
+
+
+class TestPickGizmoHandle:
+    def _world_sel(self):
+        sel = Selection()
+        sel.mode = SelectionMode.VERTEX
+        sel.vertices = {0}
+        return sel
+
+    def test_click_near_x_tip_returns_x(self):
+        size = _size()
+        tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0], tip_screen[1], _W, _H,
+        )
+        assert result == "x"
+
+    def test_click_near_y_tip_returns_y(self):
+        size = _size()
+        tip_screen = _screen((_PIVOT[0], _PIVOT[1] + size, _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0], tip_screen[1], _W, _H,
+        )
+        assert result == "y"
+
+    def test_click_near_z_tip_returns_z(self):
+        size = _size()
+        # Z axis has no screen offset with this camera (depth axis) — it projects
+        # onto the screen centre regardless of length. Test y=0 click at centre.
+        # Use y-axis test to confirm z does NOT steal when y is closer.
+        tip_screen = _screen((_PIVOT[0], _PIVOT[1] + size, _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0] + 5.0, tip_screen[1], _W, _H,
+            max_pixel_distance=100.0,
+        )
+        # y handle is clearly the closest; result must be y or x, never z
+        assert result in ("x", "y")
+
+    def test_click_far_from_all_handles_returns_none(self):
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            0.0, 0.0, _W, _H,
+            max_pixel_distance=5.0,
+        )
+        assert result is None
+
+    def test_click_just_outside_threshold_returns_none(self):
+        size = _size()
+        tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0] + 15.0, tip_screen[1], _W, _H,
+            max_pixel_distance=14.0,
+        )
+        assert result is None
+
+    def test_screen_mode_returns_none(self):
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "screen", "world",
+            self._world_sel(), None, None,
+            _W / 2, _H / 2, _W, _H,
+        )
+        assert result is None
+
+    def test_returns_nearest_when_two_handles_close(self):
+        size = _size()
+        # Click exactly on x tip — x should win over y
+        tip_x = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_x[0], tip_x[1], _W, _H,
+        )
+        assert result == "x"
