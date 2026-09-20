@@ -30,7 +30,7 @@ from typing import Any
 
 from core import OperationContext, ScaleOperation
 
-from .transform import TransformTool, _resolve_space
+from .transform import TransformTool, _face_tangent_basis, _resolve_space
 
 
 class ScaleTool(TransformTool):
@@ -47,8 +47,13 @@ class ScaleTool(TransformTool):
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
         self._drag_pixels = 0.0
         self._applied_scale = 1.0
-        self._normal: tuple[float, float, float] | None = None  # Für space="normal" single-axis
-        self._plane_exclude: tuple[float, float, float] | None = None  # Für space="normal" plane (WP-03D)
+        self._normal: tuple[float, float, float] | None = None
+        self._plane_exclude: tuple[float, float, float] | None = None
+        # Tangent basis and per-basis-vector active flags for normal-space scale.
+        # _tangent_basis = (tangent_x, tangent_y, normal), all unit vectors.
+        # _active_axes[i] = True means basis vector i gets the step factor.
+        self._tangent_basis: tuple | None = None
+        self._active_axes: tuple[bool, bool, bool] | None = None
 
     @property
     def axes_mask(self) -> tuple[float, float, float]:
@@ -99,29 +104,36 @@ class ScaleTool(TransformTool):
                 self._axes_mask = axis_or_mask
             elif space_lower == "normal":
                 axis_lower_check = axis.lower() if isinstance(axis, str) else None
-                if axis_lower_check in ("xy", "yz", "xz"):
-                    # WP-03D: plane constraint — scale in plane, freeze excluded direction
-                    self._plane_exclude = _resolve_space(
-                        space,
-                        derived_geometry=derived_geometry,
-                        mesh=self._scene.mesh if self._scene else None,
-                        selection=self._scene.selection if self._scene else None,
-                        axis=axis,
-                        for_rotation=False,
+                if derived_geometry is None:
+                    raise ValueError(
+                        "space='normal' erfordert derived_geometry, mesh und selection."
                     )
+                # Derive full tangent basis (raises ValueError for invalid selections).
+                normal_vec, tx, ty = _face_tangent_basis(
+                    self._scene.mesh,
+                    self._scene.selection,
+                    derived_geometry,
+                )
+                # Canonical basis order: b0=tangent_x, b1=tangent_y, b2=normal.
+                self._tangent_basis = (tx, ty, normal_vec)
+                if axis_lower_check in ("xy", "yz", "xz"):
+                    # WP-03D: plane constraint — scale in plane, freeze excluded direction.
+                    # "xy" = tangent plane → freeze normal (b2)
+                    # "yz" = yz plane    → freeze tangent_x (b0)
+                    # "xz" = xz plane    → freeze tangent_y (b1)
+                    _plane_freeze = {"xy": (True, True, False), "yz": (False, True, True), "xz": (True, False, True)}
+                    self._active_axes = _plane_freeze[axis_lower_check]
+                    self._plane_exclude = self._tangent_basis[{"xy": 2, "yz": 0, "xz": 1}[axis_lower_check]]
                     self._normal = None
                 else:
-                    # WP-03C: single-axis — scale along this direction
-                    self._normal = _resolve_space(
-                        space,
-                        derived_geometry=derived_geometry,
-                        mesh=self._scene.mesh if self._scene else None,
-                        selection=self._scene.selection if self._scene else None,
-                        axis=axis,
-                        for_rotation=False,
-                    )
+                    # WP-03C: single-axis — scale along one basis direction.
+                    # "x" → tangent_x (b0), "y" → tangent_y (b1), else → normal (b2)
+                    _axis_active = {"x": (True, False, False), "y": (False, True, False)}
+                    self._active_axes = _axis_active.get(axis_lower_check, (False, False, True))
+                    _axis_idx = {"x": 0, "y": 1}
+                    self._normal = self._tangent_basis[_axis_idx.get(axis_lower_check, 2)]
                     self._plane_exclude = None
-                self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet
+                self._axes_mask = (1.0, 1.0, 1.0)  # unused when _tangent_basis is set
             else:
                 raise ValueError(
                     f"Unbekannter Scale-Space {space!r} — erlaubt: "
@@ -144,28 +156,14 @@ class ScaleTool(TransformTool):
         if step == 1.0:
             return
 
-        # Skalierungsfaktor anwenden: plane-exclude, Normal-basiert oder Achsen-Maske.
-        if self._plane_exclude is not None:
-            # WP-03D: scale in the tangent plane — each world axis contributes proportionally
-            # to how much it lies in the plane (complement of exclude-direction component).
-            factor = tuple(
-                1.0 + (step - 1.0) * (1.0 - abs(comp))
-                for comp in self._plane_exclude
-            )
-        elif self._normal is not None:
-            # Skalierung entlang der Normal-Richtung: interpoliere zwischen
-            # 1.0 und step basierend auf der Normal-Komponente.
-            # Für eine nicht-axiale Normal (z.B. (0.7, 0.7, 0)), skaliere
-            # Achsen proportional zu ihrer Normalkomponente.
-            factor = tuple(
-                1.0 + (step - 1.0) * abs(comp)
-                for comp in self._normal
-            )
+        # Skalierungsfaktor anwenden: tangent-basis, oder Weltachsen-Maske.
+        if self._tangent_basis is not None:
+            factor = tuple(step if active else 1.0 for active in self._active_axes)
+            self._operation.update(factor=factor, basis=self._tangent_basis)
         else:
-            # Achsenmaske: nur maskierte Achsen skalieren, die anderen bleiben.
+            # Weltachsenmaske (uniform oder x/y/z/xy/yz/xz): diagonal exakt.
             factor = tuple(step if mask else 1.0 for mask in self._axes_mask)
-
-        self._operation.update(factor=factor)
+            self._operation.update(factor=factor)
         self._applied_scale = target_scale
 
     def _on_deactivate(self) -> None:
@@ -173,5 +171,7 @@ class ScaleTool(TransformTool):
         self._axes_mask = (1.0, 1.0, 1.0)
         self._normal = None
         self._plane_exclude = None
+        self._tangent_basis = None
+        self._active_axes = None
         self._drag_pixels = 0.0
         self._applied_scale = 1.0

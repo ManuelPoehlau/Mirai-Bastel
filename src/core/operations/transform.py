@@ -242,16 +242,39 @@ class RotateOperation(VertexTransformOperation):
 class ScaleOperation(VertexTransformOperation):
     """Skaliert die betroffenen Vertices inkrementell um den fixen Pivot.
 
-    update(factor=...): `factor` ist ein float (uniform) oder ein 3-Tupel
-    (per Achse). Faktoren mehrerer update()-Aufrufe multiplizieren sich
-    (inkrementeller Core-Vertrag): zwei updates mit 2.0 erzeugen 4x.
+    update(factor=..., basis=None): `factor` ist ein float (uniform) oder
+    ein 3-Tupel (per Achse). Faktoren mehrerer update()-Aufrufe multiplizieren
+    sich (inkrementeller Core-Vertrag): zwei updates mit 2.0 erzeugen 4x.
+
+    `basis` ist ein optionales Tupel aus drei orthonormalen Vektoren (b0, b1,
+    b2). Wenn angegeben, wird `factor` gegen diese Basis dekomponiert statt
+    gegen die impliziten Weltachsen:
+
+        q = pos - pivot
+        c0, c1, c2 = dot(q,b0), dot(q,b1), dot(q,b2)
+        result = pivot + f0*c0*b0 + f1*c1*b1 + f2*c2*b2
+
+    `basis=None` (Standard) erhält das exakte heutige Verhalten — die
+    Weltachsen-Diagonalformel. Inkrementeller Vertrag gilt für beide Pfade.
     """
 
     description = "Scale Vertices"
 
     def _transform_position(
-        self, pos: Position, factor: "float | Iterable[float]", **_
+        self,
+        pos: Position,
+        factor: "float | Iterable[float]",
+        basis: "tuple[Position, Position, Position] | None" = None,
+        **_,
     ) -> Position:
         f = _as_triple(factor)
         q = _sub(pos, self._pivot)
-        return _add(self._pivot, (f[0] * q[0], f[1] * q[1], f[2] * q[2]))
+        if basis is None:
+            return _add(self._pivot, (f[0] * q[0], f[1] * q[1], f[2] * q[2]))
+        b0, b1, b2 = basis
+        c0, c1, c2 = _dot(q, b0), _dot(q, b1), _dot(q, b2)
+        scaled = _add(
+            _add(_scale(b0, f[0] * c0), _scale(b1, f[1] * c1)),
+            _scale(b2, f[2] * c2),
+        )
+        return _add(self._pivot, scaled)
