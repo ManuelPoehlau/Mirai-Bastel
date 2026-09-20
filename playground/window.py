@@ -1145,24 +1145,7 @@ class PlaygroundWindow(pyglet.window.Window):
         # consulted: capability is shared (create_tool_for_type), binding and
         # gesture are owned by the Playground (AD-013 "Capability promotion is
         # not UX promotion"). Restores the pre-54e9840 ownership split.
-        if symbol == _key.C:
-            self.app.load_cube(store_type=PlaygroundPygletStore)
-            self._rebuild_vbo()
-            self._push_camera()
-        elif symbol == _key.H:
-            self.app.load_head(store_type=PlaygroundPygletStore)
-            self._rebuild_vbo()
-            self._push_camera()
-        elif symbol == _key.Y and not (modifiers & _key.MOD_CTRL):
-            # Y (bare): load cylinder (EX-A test body). Ctrl+Y remains Redo.
-            self.app.load_cylinder(store_type=PlaygroundPygletStore)
-            if self._articulation_state is not None:
-                self._articulation_state = None
-                self._articulation_dragging = False
-            self._rebuild_vbo()
-            self._rebuild_selection_vbo()
-            self._push_camera()
-        elif symbol == self.input_map.display_cycle and not (modifiers & _key.MOD_SHIFT):
+        if symbol == self.input_map.display_cycle and not (modifiers & _key.MOD_SHIFT):
             # Shift+D is the wireframe-overlay toggle further down this chain;
             # without this guard the bare-D branch would swallow it.
             slot = self.app.slots.get("presentation")
@@ -1232,6 +1215,67 @@ class PlaygroundWindow(pyglet.window.Window):
                 except _ConnectEdgesError as exc:
                     self._hud.update_action(str(exc))
                 self._update_hud()
+        elif symbol == _key.R and (modifiers & _key.MOD_SHIFT):
+            # WP-AP-INPUT-FIX-02 §2: Shift+R checked first to avoid shadowing by bare R
+            # Shift+R: Ring Select (AP-05). Edge-Modus, 1+ Edges selektiert.
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
+                start = next(iter(sel.edges))
+                try:
+                    traversal = edge_ring(self.app.scene.mesh, start)
+                    sel.clear()
+                    sel.add(traversal.as_set())
+                    self._rebuild_selection_vbo()
+                    self._hud.update_action(
+                        f"Ring Select — {len(traversal.edges)} Edges"
+                        + (" (geschlossen)" if traversal.closed else "")
+                    )
+                except _LoopRingError as exc:
+                    self._hud.update_action(str(exc))
+                self._update_hud()
+        elif symbol == _key.C and (modifiers & _key.MOD_SHIFT):
+            # WP-AP-INPUT-FIX-02 §5: Shift+C checked first to avoid shadowing by bare C
+            # Shift+C triggers Collapse Edge (exactly 1 edge selected)
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) == 1:
+                restored = self._articulation_auto_restore()
+                (edge_id,) = sel.edges
+                try:
+                    self.app.scene.mesh.collapse_edge(edge_id)
+                    sel.clear()
+                    self._rebuild_vbo()
+                    action = "Collapse Edge (articulation restored)" if restored else "Collapse Edge"
+                    self._hud.update_action(action)
+                except Exception as exc:
+                    self._hud.update_action(str(exc))
+                self._update_hud()
+        elif symbol == _key.C:
+            # WP-AP-INPUT-FIX-02 §5: C triggers Connect Edges (2+ edges selected)
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 2:
+                restored = self._articulation_auto_restore()
+                try:
+                    new_edges = connect_selected_edges(self.app.scene, set(sel.edges))
+                    sel.clear()
+                    sel.add(set(new_edges))
+                    self._rebuild_vbo()
+                    action = "Connect Edges (articulation restored)" if restored else "Connect Edges"
+                    self._hud.update_action(action)
+                except _ConnectEdgesError as exc:
+                    self._hud.update_action(str(exc))
+                self._update_hud()
+        elif symbol == _key.S:
+            # WP-AP-INPUT-FIX-02 §5: S triggers Split Edge (exactly 1 edge selected)
+            sel = self.app.scene.selection
+            if sel.mode is SelectionMode.EDGE and len(sel.edges) == 1:
+                restored = self._articulation_auto_restore()
+                (edge_id,) = sel.edges
+                split_selected_edge(self.app.scene, edge_id)
+                sel.clear()
+                self._rebuild_vbo()
+                action = "Split Edge (articulation restored)" if restored else "Split Edge"
+                self._hud.update_action(action)
+                self._update_hud()
         elif symbol == _key.R:
             # WP-AP-INPUT-FIX-01 §2: R (rebind Extrude from E)
             # R: Extrude Face (AP-05). Scope: Face-Modus.
@@ -1268,8 +1312,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 restore_note = " (articulation restored)" if restored else ""
                 self._hud.update_action(f"{action}{restore_note} — move mouse to set distance, release R = commit, ESC = cancel")
                 self._update_hud()
-        elif symbol == self.input_map.wire_overlay or (symbol == _key.D and modifiers & _key.MOD_SHIFT):
-            # WP-AP-INPUT-FIX-01 §2: Shift+D for wireframe toggle (in addition to existing binding)
+        elif symbol == _key.D and modifiers & _key.MOD_SHIFT:
+            # WP-AP-INPUT-FIX-01 §3: Shift+D only — Z is axis-constraint only
             self.app.display_state.toggle_wireframe_overlay()
             self._update_hud()
         elif symbol == self.input_map.show_vertices:
@@ -1354,23 +1398,6 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._rebuild_selection_vbo()
                     self._hud.update_action(
                         f"Loop Select — {len(traversal.edges)} Edges"
-                        + (" (geschlossen)" if traversal.closed else "")
-                    )
-                except _LoopRingError as exc:
-                    self._hud.update_action(str(exc))
-                self._update_hud()
-        elif symbol == _key.R and (modifiers & _key.MOD_SHIFT):
-            # Shift+R: Ring Select (AP-05). Edge-Modus, 1+ Edges selektiert.
-            sel = self.app.scene.selection
-            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 1:
-                start = next(iter(sel.edges))
-                try:
-                    traversal = edge_ring(self.app.scene.mesh, start)
-                    sel.clear()
-                    sel.add(traversal.as_set())
-                    self._rebuild_selection_vbo()
-                    self._hud.update_action(
-                        f"Ring Select — {len(traversal.edges)} Edges"
                         + (" (geschlossen)" if traversal.closed else "")
                     )
                 except _LoopRingError as exc:
@@ -1504,8 +1531,8 @@ class PlaygroundWindow(pyglet.window.Window):
             self._hud.update_action("Loop Slide")
             self._update_hud()
             return pyglet.event.EVENT_HANDLED
-        elif symbol == _key.E and self._extrude_tool is not None and self._active_extrude_model() == "hold":
-            # E loslassen = Commit (AP-05 Hold-Modell)
+        elif symbol == _key.R and self._extrude_tool is not None and self._active_extrude_model() == "hold":
+            # WP-AP-INPUT-FIX-02 §1: R release = Commit (AP-05 Hold-Modell, Extrude moved from E to R)
             self._extrude_tool.commit()
             self._extrude_tool.deactivate()
             self._extrude_tool = None

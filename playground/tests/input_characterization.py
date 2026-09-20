@@ -54,6 +54,27 @@ def make_window(family: str = "selection", fixture: str = "empty") -> Playground
         sel.mode = SelectionMode.FACE
         sel.clear()
         sel.add({sorted(app.scene.mesh.all_face_ids())[0]})
+    elif fixture == "edge_single":
+        from core.selection import SelectionMode
+
+        sel = app.scene.selection
+        sel.mode = SelectionMode.EDGE
+        sel.clear()
+        sel.add({sorted(app.scene.mesh.all_edge_ids())[0]})
+    elif fixture == "edge_multi":
+        from core.selection import SelectionMode
+
+        sel = app.scene.selection
+        sel.mode = SelectionMode.EDGE
+        sel.clear()
+        sel.add(set(sorted(app.scene.mesh.all_edge_ids())[:2]))
+    elif fixture == "vertex":
+        from core.selection import SelectionMode
+
+        sel = app.scene.selection
+        sel.mode = SelectionMode.VERTEX
+        sel.clear()
+        sel.add({sorted(app.scene.mesh.all_vertex_ids())[0]})
     return win
 
 
@@ -129,6 +150,13 @@ GESTURES: list[tuple[str, int, int, str, str, bool]] = [
     ("E drag   [face]", _key.E, 0, "selection", "face", True),
     ("R        [face]", _key.R, 0, "selection", "face", False),
     ("R drag   [face]", _key.R, 0, "selection", "face", True),
+    # WP-AP-INPUT-FIX-02 probes
+    ("R release commit [face]", _key.R, 0, "selection", "face", True),
+    ("Shift+R  [edge*2]", _key.R, _key.MOD_SHIFT, "selection", "edge_multi", False),
+    ("C        [edge*2]", _key.C, 0, "selection", "edge_multi", False),
+    ("S        [edge]", _key.S, 0, "selection", "edge_single", False),
+    ("Shift+C  [edge]", _key.C, _key.MOD_SHIFT, "selection", "edge_single", False),
+    ("Z press  [face]", _key.Z, 0, "selection", "face", False),
 ]
 
 
@@ -139,6 +167,8 @@ KEYS: list[tuple[str, int, int, str]] = [
     ("E",           _key.E,        0,                         "selection"),
     ("R",           _key.R,        0,                         "selection"),
     ("S",           _key.S,        0,                         "selection"),
+    ("C",           _key.C,        0,                         "selection"),
+    ("Shift+C",     _key.C,        _key.MOD_SHIFT,            "selection"),
     ("M",           _key.M,        0,                         "selection"),
     ("Shift+M",     _key.M,        _key.MOD_SHIFT,            "selection"),
     ("X",           _key.X,        0,                         "selection"),
