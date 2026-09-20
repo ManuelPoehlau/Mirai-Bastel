@@ -61,7 +61,7 @@ not need to change.
 ## Running it
 
 ```
-cd tools/input_binding_config
+cd tools/Input_Mapping_Tool
 python app.py
 ```
 
@@ -72,8 +72,19 @@ dependencies.
 
 1. Click a function row (or use the search box to find one).
 2. Click **"Bindung erfassen"** (or double-click the row, or press Enter).
-3. Press the desired key or mouse combination. `Esc` cancels.
-4. The binding is saved immediately to `artist_input_truth.json`.
+3. Press the desired key or mouse combination. The binding is saved
+   immediately to `artist_input_truth.json`.
+
+### Special keys
+
+- **Esc = Abbrechen.** A single press of `Esc` cancels capture. To assign
+  `Escape` itself as a binding, press `Esc` **twice** (the status bar asks
+  for the second press). Any other key or mouse click while armed cancels.
+  `Escape` is always assigned without modifiers (a plain `Esc` press).
+- **Tab** is captured via a widget-level binding on the focused widget.
+  Reason: Tk's keyboard-traversal class bindings consume `Tab` before
+  `bind_all` handlers ever see it (verified on Windows / Tk 8.6). This
+  works because widget-level bindings run before class bindings.
 
 Conflicts (the same binding assigned to more than one function) are shown
 inline in the row (highlighted) and summarized at the bottom of the window.

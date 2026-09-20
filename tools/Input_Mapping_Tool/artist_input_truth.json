@@ -14,7 +14,7 @@
       "id": "navigation.pan",
       "label": "Pan",
       "category": "Navigation",
-      "binding": "",
+      "binding": "Shift+LMB",
       "runtime_ref": "Pan",
       "notes": ""
     },
@@ -142,7 +142,7 @@
       "id": "selection.add",
       "label": "Add to Selection",
       "category": "Selection Behavior",
-      "binding": "",
+      "binding": "Shift+LMB",
       "runtime_ref": null,
       "notes": ""
     },
@@ -150,7 +150,7 @@
       "id": "selection.remove",
       "label": "Remove from Selection",
       "category": "Selection Behavior",
-      "binding": "",
+      "binding": "Ctrl+LMB",
       "runtime_ref": null,
       "notes": ""
     },
@@ -254,7 +254,7 @@
       "id": "topology.extrude",
       "label": "Extrude",
       "category": "Topology",
-      "binding": "",
+      "binding": "R",
       "runtime_ref": "Extrude",
       "notes": ""
     },
@@ -262,7 +262,7 @@
       "id": "topology.connect",
       "label": "Connect Edges",
       "category": "Topology",
-      "binding": "",
+      "binding": "C",
       "runtime_ref": "Connect",
       "notes": ""
     },
@@ -270,7 +270,7 @@
       "id": "topology.split_edge",
       "label": "Split Edge",
       "category": "Topology",
-      "binding": "",
+      "binding": "S",
       "runtime_ref": "SplitEdge",
       "notes": ""
     },
@@ -278,7 +278,7 @@
       "id": "topology.collapse",
       "label": "Collapse",
       "category": "Topology",
-      "binding": "",
+      "binding": "Shift+C",
       "runtime_ref": "Collapse",
       "notes": ""
     },
@@ -286,7 +286,7 @@
       "id": "topology.edge_loop_select",
       "label": "Loop Select",
       "category": "Topology",
-      "binding": "",
+      "binding": "Shift+L",
       "runtime_ref": "EdgeLoop",
       "notes": ""
     },
@@ -294,7 +294,7 @@
       "id": "topology.edge_ring_select",
       "label": "Ring Select",
       "category": "Topology",
-      "binding": "",
+      "binding": "Shift+R",
       "runtime_ref": "EdgeRing",
       "notes": ""
     },
@@ -302,7 +302,7 @@
       "id": "topology.loop_insert",
       "label": "Loop Insert",
       "category": "Topology",
-      "binding": "",
+      "binding": "I",
       "runtime_ref": "LoopInsert",
       "notes": ""
     },
@@ -310,7 +310,7 @@
       "id": "topology.loop_slide",
       "label": "Loop Slide",
       "category": "Topology",
-      "binding": "",
+      "binding": "G",
       "runtime_ref": "LoopSlide",
       "notes": ""
     },
@@ -326,7 +326,7 @@
       "id": "topology.cancel_operation",
       "label": "Cancel Current Operation",
       "category": "Topology",
-      "binding": "",
+      "binding": "Escape",
       "runtime_ref": "Cancel",
       "notes": ""
     },
@@ -350,7 +350,7 @@
       "id": "display.cycle_display_mode",
       "label": "Cycle Display Mode",
       "category": "Display",
-      "binding": "",
+      "binding": "D",
       "runtime_ref": "CycleDisplayMode",
       "notes": ""
     },
@@ -358,7 +358,7 @@
       "id": "display.toggle_wireframe_overlay",
       "label": "Toggle Wireframe Overlay",
       "category": "Display",
-      "binding": "",
+      "binding": "Shift+D",
       "runtime_ref": "ToggleWireframeOverlay",
       "notes": ""
     },
@@ -550,7 +550,7 @@
       "id": "application.toggle_hud",
       "label": "Toggle HUD",
       "category": "Application",
-      "binding": "",
+      "binding": "H",
       "runtime_ref": null,
       "notes": ""
     },

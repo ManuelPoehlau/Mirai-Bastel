@@ -98,6 +98,8 @@ class InputBindingConfigApp:
         self.doc = storage.load_or_seed()
         self.capturing_id: Optional[str] = None
         self._capture_bind_ids: list[tuple[tk.Misc, str, str]] = []
+        self._tab_capture_widget: Optional[tk.Misc] = None
+        self._escape_armed: bool = False
 
         self._build_ui()
         self._populate_tree()
@@ -247,6 +249,7 @@ class InputBindingConfigApp:
         if self.capturing_id is not None:
             return
         self.capturing_id = entry_id
+        self._escape_armed = False
         label = self._entry_by_id(entry_id)["label"]
         self.status_var.set(f"Warte auf Eingabe für '{label}' … (Esc zum Abbrechen)")
 
@@ -254,6 +257,17 @@ class InputBindingConfigApp:
         for button, name in (("1", "LMB"), ("2", "MMB"), ("3", "RMB")):
             self._bind_capture(self.root, f"<ButtonPress-{button}>", self._make_button_handler(name))
         self._bind_capture(self.root, "<MouseWheel>", self._on_capture_wheel)
+
+        # Tab never reaches bind_all("<KeyPress>"): Tk's keyboard-traversal
+        # class bindings (tk::TabToWindow / focusPrev) consume it before the
+        # "all" bindtag runs (verified on Windows / Tk 8.6). Widget-level
+        # bindings run BEFORE class bindings, so we bind <Tab> directly on
+        # the widget that currently owns focus; the handler returns "break"
+        # to suppress the focus change.
+        focus = self.root.focus_get()
+        if focus is not None and hasattr(focus, "bind"):
+            focus.bind("<Tab>", self._on_capture_tab)
+            self._tab_capture_widget = focus
 
     def _bind_capture(self, widget: tk.Misc, sequence: str, handler) -> None:
         widget.bind_all(sequence, handler, add=False)
@@ -263,23 +277,51 @@ class InputBindingConfigApp:
         for widget, sequence, _ in self._capture_bind_ids:
             widget.unbind_all(sequence)
         self._capture_bind_ids.clear()
+        if self._tab_capture_widget is not None:
+            try:
+                self._tab_capture_widget.unbind("<Tab>")
+            except tk.TclError:
+                pass  # widget already destroyed
+            self._tab_capture_widget = None
         self.capturing_id = None
+        self._escape_armed = False
         self.status_var.set("Bereit.")
 
     def _make_button_handler(self, name: str):
         def handler(event):
+            if self._escape_armed:
+                self._end_capture()
+                return
             self._finalize_capture(_format_binding(event.state, name))
         return handler
 
     def _on_capture_key(self, event) -> None:
         if event.keysym == "Escape":
-            self._end_capture()
+            if self._escape_armed:
+                self._finalize_capture("Escape")
+            else:
+                self._escape_armed = True
+                self.status_var.set(
+                    "Nochmals Esc drücken, um 'Escape' zuzuweisen. "
+                    "Jede andere Taste oder Mausklick bricht ab."
+                )
             return
         if event.keysym in _MODIFIER_KEYSYMS:
             return  # keep listening — this was only a modifier going down
+        if self._escape_armed:
+            # Escape was pressed once; any other key means "cancel".
+            self._end_capture()
+            return
         self._finalize_capture(_format_binding(event.state, _key_display(event.keysym)))
 
+    def _on_capture_tab(self, event) -> str:
+        self._finalize_capture(_format_binding(event.state, _key_display("Tab")))
+        return "break"  # suppress Tk focus traversal
+
     def _on_capture_wheel(self, event) -> None:
+        if self._escape_armed:
+            self._end_capture()
+            return
         direction = "Wheel Up" if event.delta > 0 else "Wheel Down"
         self._finalize_capture(_format_binding(event.state, direction))
 
