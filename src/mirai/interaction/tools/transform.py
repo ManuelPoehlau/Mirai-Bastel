@@ -254,9 +254,24 @@ def _resolve_space(
             normal, tangent_x, tangent_y = _face_tangent_basis(mesh, selection, derived_geometry)
             return tangent_x if axis_lower == "x" else tangent_y
 
+        # Normal-space plane constraints (WP-03D) — axis="xy"/"yz"/"xz"
+        # for_rotation=True:  return the axis to rotate around (perpendicular to the plane)
+        # for_rotation=False: return the vector to exclude (subtract from delta)
+        # Mapping: "xy" excludes normal, "yz" excludes tangent_x, "xz" excludes tangent_y.
+        # Both rotation and exclusion use the same perpendicular vector; the caller's
+        # _on_update decides how to apply it.
+        if axis_lower in ("xy", "yz", "xz"):
+            normal, tangent_x, tangent_y = _face_tangent_basis(mesh, selection, derived_geometry)
+            if axis_lower == "xy":
+                return normal
+            elif axis_lower == "yz":
+                return tangent_x
+            else:  # "xz"
+                return tangent_y
+
         raise ValueError(
             f"_resolve_space(space='normal', axis='{axis}'): "
-            f"axis muss None/'z' (single-normal) oder 'x'/'y' (tangent) sein."
+            f"axis muss None/'z' (single-normal), 'x'/'y' (tangent) oder 'xy'/'yz'/'xz' (Ebene) sein."
         )
 
     raise ValueError(

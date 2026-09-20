@@ -47,7 +47,8 @@ class ScaleTool(TransformTool):
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
         self._drag_pixels = 0.0
         self._applied_scale = 1.0
-        self._normal: tuple[float, float, float] | None = None  # Für space="normal"
+        self._normal: tuple[float, float, float] | None = None  # Für space="normal" single-axis
+        self._plane_exclude: tuple[float, float, float] | None = None  # Für space="normal" plane (WP-03D)
 
     @property
     def axes_mask(self) -> tuple[float, float, float]:
@@ -62,6 +63,7 @@ class ScaleTool(TransformTool):
     ) -> None:
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
         self._normal = None
+        self._plane_exclude = None
 
         # WP-03C: axis is now an explicit parameter (separate from space)
         # Backward compatibility: axes → space (old parameter name)
@@ -96,15 +98,29 @@ class ScaleTool(TransformTool):
                 # (für Scale verwendet man die Achse direkt als Maske)
                 self._axes_mask = axis_or_mask
             elif space_lower == "normal":
-                # Normal auflösen und speichern (WP-03C: axis kann tangent sein)
-                self._normal = _resolve_space(
-                    space,
-                    derived_geometry=derived_geometry,
-                    mesh=self._scene.mesh if self._scene else None,
-                    selection=self._scene.selection if self._scene else None,
-                    axis=axis,  # Pass through axis ("x"/"y"/"z")
-                    for_rotation=False,
-                )
+                axis_lower_check = axis.lower() if isinstance(axis, str) else None
+                if axis_lower_check in ("xy", "yz", "xz"):
+                    # WP-03D: plane constraint — scale in plane, freeze excluded direction
+                    self._plane_exclude = _resolve_space(
+                        space,
+                        derived_geometry=derived_geometry,
+                        mesh=self._scene.mesh if self._scene else None,
+                        selection=self._scene.selection if self._scene else None,
+                        axis=axis,
+                        for_rotation=False,
+                    )
+                    self._normal = None
+                else:
+                    # WP-03C: single-axis — scale along this direction
+                    self._normal = _resolve_space(
+                        space,
+                        derived_geometry=derived_geometry,
+                        mesh=self._scene.mesh if self._scene else None,
+                        selection=self._scene.selection if self._scene else None,
+                        axis=axis,
+                        for_rotation=False,
+                    )
+                    self._plane_exclude = None
                 self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet
             else:
                 raise ValueError(
@@ -128,8 +144,15 @@ class ScaleTool(TransformTool):
         if step == 1.0:
             return
 
-        # Skalierungsfaktor anwenden: entweder Normal-basiert oder Achsen-Maske.
-        if self._normal is not None:
+        # Skalierungsfaktor anwenden: plane-exclude, Normal-basiert oder Achsen-Maske.
+        if self._plane_exclude is not None:
+            # WP-03D: scale in the tangent plane — each world axis contributes proportionally
+            # to how much it lies in the plane (complement of exclude-direction component).
+            factor = tuple(
+                1.0 + (step - 1.0) * (1.0 - abs(comp))
+                for comp in self._plane_exclude
+            )
+        elif self._normal is not None:
             # Skalierung entlang der Normal-Richtung: interpoliere zwischen
             # 1.0 und step basierend auf der Normal-Komponente.
             # Für eine nicht-axiale Normal (z.B. (0.7, 0.7, 0)), skaliere
@@ -149,5 +172,6 @@ class ScaleTool(TransformTool):
         super()._on_deactivate()
         self._axes_mask = (1.0, 1.0, 1.0)
         self._normal = None
+        self._plane_exclude = None
         self._drag_pixels = 0.0
         self._applied_scale = 1.0

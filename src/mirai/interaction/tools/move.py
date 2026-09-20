@@ -80,7 +80,8 @@ class MoveTool(Tool):
         self._vertex_ids: set[VertexId] = set()
         self._anchor_vertex: VertexId | None = None
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
-        self._normal: tuple[float, float, float] | None = None  # Für space="normal"
+        self._normal: tuple[float, float, float] | None = None  # Für space="normal" single-axis
+        self._plane_exclude: tuple[float, float, float] | None = None  # Für space="normal" plane (WP-03D)
 
     # -- Beobachtbarkeit für Tests/Integration ------------------------------
 
@@ -111,6 +112,7 @@ class MoveTool(Tool):
         self._vertex_ids = vertex_ids
         self._anchor_vertex = min(vertex_ids)
         self._normal = None
+        self._plane_exclude = None
 
         # WP-03C: axis is now an explicit parameter (separate from space)
         # Backward compatibility: if old API passes axis as space parameter
@@ -141,15 +143,29 @@ class MoveTool(Tool):
                 # Verwende die Maske direkt (axis/plane aus _WORLD_AXES)
                 self._axes_mask = axis_or_mask
             elif space_lower == "normal":
-                # Normal auflösen und speichern (WP-03C: axis kann tangent sein)
-                self._normal = _resolve_space(
-                    space,
-                    derived_geometry=derived_geometry,
-                    mesh=self._scene.mesh if self._scene else None,
-                    selection=self._scene.selection if self._scene else None,
-                    axis=axis,  # Pass through axis ("x"/"y"/"z")
-                    for_rotation=False,
-                )
+                axis_lower_check = axis.lower() if isinstance(axis, str) else None
+                if axis_lower_check in ("xy", "yz", "xz"):
+                    # WP-03D: plane constraint — subtract the excluded direction from delta
+                    self._plane_exclude = _resolve_space(
+                        space,
+                        derived_geometry=derived_geometry,
+                        mesh=self._scene.mesh if self._scene else None,
+                        selection=self._scene.selection if self._scene else None,
+                        axis=axis,
+                        for_rotation=False,
+                    )
+                    self._normal = None
+                else:
+                    # WP-03C: single-axis — project delta onto this direction
+                    self._normal = _resolve_space(
+                        space,
+                        derived_geometry=derived_geometry,
+                        mesh=self._scene.mesh if self._scene else None,
+                        selection=self._scene.selection if self._scene else None,
+                        axis=axis,
+                        for_rotation=False,
+                    )
+                    self._plane_exclude = None
                 self._axes_mask = (1.0, 1.0, 1.0)  # Dummy-Maske, wird nicht verwendet
             else:
                 raise ValueError(
@@ -177,8 +193,17 @@ class MoveTool(Tool):
             anchor_pos, dx, dy, width, height
         )
 
-        # Constraint anwenden: entweder Normal-Projektion oder Achsen-Maske.
-        if self._normal is not None:
+        # Constraint anwenden: plane-exclude, Normal-Projektion oder Achsen-Maske.
+        if self._plane_exclude is not None:
+            # WP-03D: subtract the excluded component (non-axis-aligned plane constraint).
+            ex = self._plane_exclude
+            dot = world_delta[0] * ex[0] + world_delta[1] * ex[1] + world_delta[2] * ex[2]
+            world_delta = (
+                world_delta[0] - dot * ex[0],
+                world_delta[1] - dot * ex[1],
+                world_delta[2] - dot * ex[2],
+            )
+        elif self._normal is not None:
             # Projekt world_delta auf die Normal-Richtung: (delta · normal) * normal
             dot = (
                 world_delta[0] * self._normal[0] +
@@ -215,3 +240,4 @@ class MoveTool(Tool):
         self._camera = None
         self._axes_mask = (1.0, 1.0, 1.0)
         self._normal = None
+        self._plane_exclude = None
