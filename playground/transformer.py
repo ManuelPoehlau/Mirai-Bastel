@@ -9,7 +9,10 @@ neue Implementierung. Rein Playground-Adapter.
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
+
+_log = logging.getLogger(__name__)
 
 from playground._paths import ensure_paths
 
@@ -74,7 +77,8 @@ def begin_transform(
             axis=axis, space=space, derived_geometry=derived_geometry,
         )
         return True
-    except Exception:
+    except Exception as exc:
+        _log.debug("begin_transform: tool.begin() raised %s: %s", type(exc).__name__, exc)
         return False
 
 

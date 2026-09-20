@@ -1442,7 +1442,10 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._update_hud()
         elif symbol == _key.K and not modifiers:
             # K: toggle transform coordinate space World ↔ Normal (WP-AP-INPUT-FIX-03)
+            # Clear axis constraint: same letter means a different physical direction per space.
             self._transform_space = "normal" if self._transform_space == "world" else "world"
+            self._axis_constraint = None
+            self._hud.update_constraint(None)
             self._hud.update_space(self._transform_space)
             self._update_hud()
         elif symbol == _key.F:

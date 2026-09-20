@@ -248,6 +248,22 @@ def probe_k_toggle_space() -> dict:
         win.close()
 
 
+def probe_k_clears_axis_constraint() -> dict:
+    """K resets _axis_constraint to None (WP-AP-INPUT-FIX-04).
+
+    Set X constraint in World, press K → constraint must be None, not 'x'.
+    """
+    win = make_window()
+    try:
+        win.on_key_press(_key.X, 0)
+        after_x = observe(win)["axis_constraint"]
+        win.on_key_press(_key.K, 0)
+        after_k = observe(win)["axis_constraint"]
+        return {"after_x": after_x, "after_k": after_k}
+    finally:
+        win.close()
+
+
 def probe_tweak_v1_space_axis(space: str, axis_key: int | None = None) -> dict:
     """Tweak-V1 gesture begins with expected transform_space and axis_constraint.
 
@@ -387,6 +403,11 @@ def main() -> None:
         print(f"K toggle space:             initial={r['initial']!r}  after_K={r['after_first_k']!r}  after_KK={r['after_second_k']!r}")
     except Exception as exc:
         print(f"\nK toggle space !! RAISED {type(exc).__name__}: {exc}")
+    try:
+        r = probe_k_clears_axis_constraint()
+        print(f"K clears axis constraint:   after_X={r['after_x']!r}  after_K={r['after_k']!r}")
+    except Exception as exc:
+        print(f"\nK clears axis constraint !! RAISED {type(exc).__name__}: {exc}")
     try:
         r = probe_tweak_v1_space_axis("world", None)
         print(f"Tweak-V1 World/None:        before={r['before']}  after={r['after']}")
