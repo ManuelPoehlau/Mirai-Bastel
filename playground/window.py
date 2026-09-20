@@ -127,6 +127,18 @@ from playground.vbo_builder import (  # noqa: E402
     build_selection_vertex_data,
     build_vertex_data,
 )
+from playground.gizmo import (  # noqa: E402
+    gizmo_mode,
+    screen_ring_positions,
+    axis_line_positions,
+    plane_indicator_positions,
+)
+from mirai.interaction.tools.selection_helpers import (  # noqa: E402
+    resolve_selection_vertices,
+    selection_pivot,
+    selection_normal,
+)
+from mirai.interaction.tools.transform import _face_tangent_basis  # noqa: E402
 
 # -- Shader-Quellen ----------------------------------------------------------
 
@@ -191,6 +203,18 @@ _SELECTION_COLOR = (0.95, 0.45, 0.1, 1.0)
 _HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
 _VERTEX_POINT_SIZE = 4.0
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
+
+# Gizmo constants (WP-AP-GIZMO-01) — widths/colors are tunable once on screen
+_GIZMO_SCALE: float = 0.18
+_GIZMO_LINE_WIDTH_DEFAULT: float = 2.0
+_GIZMO_LINE_WIDTH_ACTIVE: float = 4.0
+_GIZMO_COLOR_X = (0.9, 0.15, 0.15, 1.0)
+_GIZMO_COLOR_Y = (0.15, 0.85, 0.15, 1.0)
+_GIZMO_COLOR_Z = (0.15, 0.35, 0.9, 1.0)
+_GIZMO_COLOR_SCREEN = (0.75, 0.75, 0.75, 1.0)
+_GIZMO_COLOR_PLANE_XY = (0.75, 0.75, 0.15, 1.0)
+_GIZMO_COLOR_PLANE_XZ = (0.75, 0.15, 0.75, 1.0)
+_GIZMO_COLOR_PLANE_YZ = (0.15, 0.75, 0.75, 1.0)
 
 # Articulation constants (EX-A / H02)
 # 0.01 rad/px: 100px drag ≈ 57° bend, feels responsive without being twitchy.
@@ -1576,6 +1600,123 @@ class PlaygroundWindow(pyglet.window.Window):
 
     # -- Draw -----------------------------------------------------------------
 
+    def _draw_gizmo(self, view, proj) -> None:
+        """WP-AP-GIZMO-01 Phase 1: draw-only transform gizmo at the selection pivot.
+
+        Renders the appropriate visual (screen ring, world axes, or normal axes)
+        over all geometry without depth testing.  No mouse interaction here.
+        """
+        if self.app.viewport is None:
+            return
+        sel = self.app.scene.selection
+        if sel.is_empty():
+            return
+
+        mesh = self.app.viewport.render_mesh.mesh
+        derived = self.app.viewport.render_mesh.derived
+        vertex_ids = resolve_selection_vertices(mesh, sel, sel.mode)
+        if not vertex_ids:
+            return
+
+        pivot = selection_pivot(mesh, vertex_ids)
+
+        cam_eye = self.app.camera.eye()
+        dist = math.sqrt(
+            (pivot[0] - cam_eye[0]) ** 2
+            + (pivot[1] - cam_eye[1]) ** 2
+            + (pivot[2] - cam_eye[2]) ** 2
+        )
+        size = max(dist * _GIZMO_SCALE, 1e-6)
+
+        mode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
+        constraint = self._axis_constraint
+
+        self._overlay_program.use()
+        self._overlay_program["u_view"] = view
+        self._overlay_program["u_proj"] = proj
+        gl.glDisable(gl.GL_DEPTH_TEST)
+
+        def _draw(positions: list[float], color: tuple, prim: int, width: float) -> None:
+            n = len(positions) // 3
+            if n == 0:
+                return
+            gl.glLineWidth(width)
+            self._overlay_program["u_color"] = list(color)
+            vl = self._overlay_program.vertex_list(n, prim, position=("f", positions))
+            vl.draw(prim)
+            vl.delete()
+
+        if mode == "screen":
+            _, right, up = self.app.camera.basis()
+            _draw(
+                screen_ring_positions(pivot, right, up, size),
+                _GIZMO_COLOR_SCREEN,
+                gl.GL_LINE_LOOP,
+                _GIZMO_LINE_WIDTH_DEFAULT,
+            )
+
+        elif mode == "world":
+            _WORLD_AXES = [
+                ("x", (1.0, 0.0, 0.0), _GIZMO_COLOR_X),
+                ("y", (0.0, 1.0, 0.0), _GIZMO_COLOR_Y),
+                ("z", (0.0, 0.0, 1.0), _GIZMO_COLOR_Z),
+            ]
+            for name, direction, color in _WORLD_AXES:
+                active = constraint == name
+                _draw(
+                    axis_line_positions(pivot, direction, size),
+                    color,
+                    gl.GL_LINES,
+                    _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
+                )
+            _WORLD_PLANES = [
+                ("xy", (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), _GIZMO_COLOR_PLANE_XY),
+                ("xz", (1.0, 0.0, 0.0), (0.0, 0.0, 1.0), _GIZMO_COLOR_PLANE_XZ),
+                ("yz", (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), _GIZMO_COLOR_PLANE_YZ),
+            ]
+            for name, axis_a, axis_b, color in _WORLD_PLANES:
+                active = constraint == name
+                _draw(
+                    plane_indicator_positions(pivot, axis_a, axis_b, size),
+                    color,
+                    gl.GL_LINES,
+                    _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
+                )
+
+        elif mode == "normal_full":
+            try:
+                normal, tangent_x, tangent_y = _face_tangent_basis(mesh, sel, derived)
+            except ValueError:
+                pass
+            else:
+                _NORMAL_AXES = [
+                    ("x", tangent_x, _GIZMO_COLOR_X),
+                    ("y", tangent_y, _GIZMO_COLOR_Y),
+                    ("z", normal,    _GIZMO_COLOR_Z),
+                ]
+                for name, direction, color in _NORMAL_AXES:
+                    active = constraint == name
+                    _draw(
+                        axis_line_positions(pivot, direction, size),
+                        color,
+                        gl.GL_LINES,
+                        _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
+                    )
+
+        elif mode == "normal_z_only":
+            normal = selection_normal(derived, mesh, sel, sel.mode)
+            if any(v != 0.0 for v in normal):
+                z_active = constraint is not None and "z" in constraint
+                _draw(
+                    axis_line_positions(pivot, normal, size),
+                    _GIZMO_COLOR_Z,
+                    gl.GL_LINES,
+                    _GIZMO_LINE_WIDTH_ACTIVE if z_active else _GIZMO_LINE_WIDTH_DEFAULT,
+                )
+
+        self._overlay_program.stop()
+        gl.glLineWidth(1.0)
+
     def on_draw(self) -> None:
         if self.height == 0:
             return pyglet.event.EVENT_HANDLED
@@ -1690,6 +1831,9 @@ class PlaygroundWindow(pyglet.window.Window):
             gl.glPointSize(_VERTEX_POINT_SIZE)
             self._vlist_verts.draw(gl.GL_POINTS)
             self._overlay_program.stop()
+
+        # -- Transform Gizmo (WP-AP-GIZMO-01, Phase 1: draw-only) -------------
+        self._draw_gizmo(view, proj)
 
         # -- Experiment-Hook --------------------------------------------------
         self.app.active_experiment.draw()

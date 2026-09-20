@@ -23,7 +23,8 @@
       "Bash(grep *)",
       "Bash(PYGLET_HEADLESS=1 python -m pytest playground/tests/input_characterization.py -v)",
       "Bash(PYGLET_HEADLESS=1 python playground/tests/input_characterization.py)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(find *)"
     ]
   }
 }
