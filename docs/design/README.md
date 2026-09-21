@@ -10,6 +10,7 @@ This directory contains interaction and workflow principles that guide how Mirai
 
 - [Artist Playground — Architecture Map](artist_playground/ARCHITECTURE_MAP.md) — building block status analysis: what exists, what is missing, what must not be changed
 - [Artist Playground — Roadmap](artist_playground/ROADMAP.md) — WP-AP work package sequence and development model (research-first, Playground → Candidate → Production)
+- [Input Ownership Audit](artist_playground/INPUT_OWNERSHIP_AUDIT.md) — factual inventory of interaction state, dispatch order, and Gizmo preconditions; evidence base for the pending input-ownership architecture decision (2026-09-21)
 
 ## Relationship to other documentation
 
