@@ -1,6 +1,6 @@
 # Connect Edges — Behavior Specification
 
-Status: **Experiment / design contract — implementiert (Scope: reguläre Quad-Topologie)**  
+Status: **Experiment / design contract — implementiert (Scope: reguläre Quad-Topologie)** — practical limits of this scope: see §11  
 Purpose: define the intended semantics; the experimental implementation in `experiments/mirai_bastel_viewport_V1/viewport/topology_tools.py` now follows this contract (Analyze → Plan → Apply/Commit, atomic and deterministic). Section 7 documents the superseded pre-implementation state.
 
 ## 1. Purpose
@@ -181,3 +181,34 @@ The following remain deliberately open until the implementation analysis and ref
 - attribute propagation once UVs, weights, morphs and other data exist in the Core.
 
 These questions should be resolved by tests and explicit design decisions rather than accidental behavior of the current prototype.
+
+> 2026-09-21: The non-quad / mixed-valence questions above are being investigated in
+> [`CONNECT_NONQUAD_DISCOVERY.md`](CONNECT_NONQUAD_DISCOVERY.md) (Discovery, no decision yet).
+
+## 11. Characterization findings (2026-09-21)
+
+Status: **evidence, not a decision.** Behavior pinned by
+`playground/tests/test_topology_connect_edges_characterization.py` (F1–F10).
+Code state: `main` @ `01ea6f9`.
+
+Trigger: artist observation that the current Connect tool does not allow reasonable topology work.
+
+| # | Finding |
+|---|---|
+| F1 | A partial connect that ends inside the mesh leaves 2 pentagons (mathematically unavoidable: a quad strip cannot terminate in the interior of a mesh). |
+| F2 | Connect rejects every edge adjacent to a non-quad face — the pentagons from F1 therefore block any follow-up connect at that spot. In practice only "full loop or nothing" remains. |
+| F3 | Corner connect (two adjacent edges of one face) is rejected. |
+| F4 | A selection path that turns is rejected. |
+| F5 | Two edges with one quad in between are rejected (error, not a no-op). |
+| F6 | Boundary-to-boundary and closed rings work and produce only quads. |
+| F7 | "kind v" creates a free edge that lies geometrically on top of the existing edges (through the shared vertex) and splits no face; 4 pentagons result. See the discovery document, D6 — this bears on the justification of the `Mesh.add_edge()` Core exception (CORE_V1_FREEZE, AP-05). Documented as a problem only; no architecture change made. |
+| F8 | All rejections are atomic: mesh and history unchanged. |
+| F9 | The Core primitives (`split_edge`, `connect_vertices`) already perform a corner cut and resolve a pentagon. The limits above live in the playground tool layer, not in `src/core`. |
+| F10 | Selecting all four edges of one quad: the planned "+" cross fails with an internal message ("Operationsplan nicht auf gültige Topologie abbildbar: FaceId(…)"), because the second pair targets a face that no longer exists after the first split. |
+
+Dependency note: `playground/topology_tools/loop_insert.py` calls `connect_selected_edges()`
+directly. Any change to Connect semantics affects Loop Insert.
+
+Reference note: the Wings 3D source (the reference named in §9) implements Edge Connect as
+cut → per-face vertex connect → dissolve unconnected midpoints, independent of face size.
+Details and a Core-only probe of that semantics: discovery document §2–§3.

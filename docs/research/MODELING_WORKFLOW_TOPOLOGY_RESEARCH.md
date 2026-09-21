@@ -1101,6 +1101,8 @@ Auswahl und Priorität entscheidet der Artist.
 - Wie sich Creases unter Deformation verhalten.
 - Ob Mirai-Bastel die hier beschriebenen Strategien heute bereits mit vorhandenen Operationen
   ermöglicht. Das ist eine Prüffrage für die Topologie-Experimente (M1), keine Research-Frage.
+  *Nachtrag 2026-09-21:* Für Connect geprüft — mit dem aktuellen Werkzeug nicht (nur ganze Loops);
+  mit den Core-Primitiven mechanisch ja. Siehe `docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md`.
 
 ---
 

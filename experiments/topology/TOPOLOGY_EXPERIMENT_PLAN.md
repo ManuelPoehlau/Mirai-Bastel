@@ -142,17 +142,32 @@ Die Detection bleibt damit bewusst ein konservatives Experiment und kein endgül
 
 ## Phase 3 — Connect Edges: Semantik und robuste Multi-Selection
 
-**Status: als Enablement-Port implementiert und headless-getestet (2026-09-14). "kind v" / FreeConnect bewusst ausgeklammert.**
+**Status: als Enablement-Port implementiert und headless-getestet (2026-09-14). "kind v" / FreeConnect seit AP-05 über `Mesh.add_edge()` umgesetzt. Praktische Grenzen des Quad-Scopes charakterisiert (2026-09-21) — Nicht-Quads, Ecken und Fortsetzen in Discovery, siehe unten.**
+
+### Stand 2026-09-21 — Praxisgrenze und Discovery
+
+Artist-Beobachtung: Mit dem aktuellen Connect ist kein vernünftiges Arbeiten an der Topologie möglich.
+Ursache (reproduziert): Jeder Teilschnitt erzeugt zwangsläufig Fünfecke, und Connect verweigert danach jede
+Kante an Nicht-Quads; Ecken und Knicke werden abgelehnt. Übrig bleibt praktisch "ganzer Loop oder nichts".
+
+- Befunde F1–F10: [`CONNECT_EDGES_SPEC.md` §11](../../docs/research/topology/CONNECT_EDGES_SPEC.md)
+- Charakterisierungstests: `playground/tests/test_topology_connect_edges_characterization.py`
+- Discovery (Wings-Semantik, Core-Probe, Designfragen D1–D8, vorbereiteter Artist-Test): [`CONNECT_NONQUAD_DISCOVERY.md`](../../docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md)
+- Probe-Skript: `experiments/topology/connect_per_face_probe.py`
+
+Die Abschnitte darunter beschreiben den Stand vom 2026-09-14; abweichende Punkte sind markiert.
 
 Connect Edges wurde als 1:1-Logik-Port aus dem V1-Experiment (`experiments/mirai_bastel_viewport_V1/viewport/topology_tools.py`) gegen Production-`src/core` implementiert, analog zu Split Edge (Enablement-01).
 
 ### Implementierter Stand (2026-09-14)
 
 - `playground/topology_tools/connect_edges.py` — `connect_selected_edges(scene, edge_ids)`, 3-Phasen-Plan (Analyze/Validate → Plan/Dry-Run → Apply/Commit), 1 MeshStateCommand
-- `playground/window.py` — Taste **J** (Edge-Modus, 2+ Edges selektiert); Selection danach auf neue Verbindungskanten; TopologyToolError → HUD-Anzeige statt Crash
+- `playground/window.py` — Taste **J** (Edge-Modus, 2+ Edges selektiert; *seit WP-AP-INPUT-FIX-02: Taste **C***); Selection danach auf neue Verbindungskanten; TopologyToolError → HUD-Anzeige statt Crash
 - `playground/tests/test_topology_connect_edges.py` — 7 Headless-Tests: 1 History-Eintrag, neue Vertices/Kante, TopologyToolError bei Einzelauswahl, Undo/Redo, Determinismus (Set-Reihenfolge), "kind v"-Fall → expliziter Error; alle grün
 
 ### Bewusst ausgeklammerter Fall: "kind v" / FreeConnect
+
+> *Überholt:* `Mesh.add_edge()` wurde mit AP-05 als Core-Ausnahme ergänzt (CORE_V1_FREEZE) und der "v"-Zweig ist aktiv. Befund F7 (2026-09-21): Das Ergebnis liegt geometrisch auf den bestehenden Kanten und teilt keine Face — als Problem dokumentiert in der Discovery (D6), nicht entschieden. Der folgende Text ist der historische Stand.
 
 V1 nutzt `mesh.add_edge()` für Ketten-Verbindungen über einen gemeinsamen regulären Innen-Vertex ohne gemeinsame Face. Diese Methode existiert **nicht** in `src/core` (nur privates `_get_or_create_edge()`, intern von `add_face()` genutzt, keine öffentliche API für freistehende Edges ohne Face).
 
@@ -182,10 +197,14 @@ Topologie + Selection
 | 3+ zusammenhängende Edges (Kette/Ring) | ✓ implementiert (deterministisch geordnet) |
 | kompletter Edge Loop | ✓ funktioniert (Kette oder Ring via Adjacency-Graph) |
 | disjunkte Edges ohne gemeinsame Topologie | TopologyToolError (keine Partner-Edge) |
-| Boundary Edges (0 Faces) | TopologyToolError (außerhalb Scope) |
+| freie Edges (0 Faces) | TopologyToolError (außerhalb Scope) |
+| Boundary Edges (1 Face, Quad) | ✓ zulässig (Rand → Rand funktioniert) |
+| benachbarte Kanten einer Face (Ecke) | TopologyToolError — Discovery D1 |
+| Pfad mit Knick | TopologyToolError — Discovery D1 |
+| alle 4 Kanten eines Quads | interner Abbruch (F10) — Discovery D3 |
 | Non-Manifold Edges (>2 Faces) | TopologyToolError (außerhalb Scope) |
 | Non-Quad-Faces | TopologyToolError (außerhalb Scope) |
-| Kette über gemeinsamen Vertex ohne Face ("kind v") | TopologyToolError (bewusst ausgeklammert — mesh.add_edge() fehlt in src/core) |
+| Kette über gemeinsamen Vertex ohne Face ("kind v") | freie Kante via `add_edge()` — geometrisch fragwürdig (F7), Discovery D6 |
 | ungültige Auswahl (< 2 Edges) | TopologyToolError |
 
 ### Wichtige Abgrenzung
