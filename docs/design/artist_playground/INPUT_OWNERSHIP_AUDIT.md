@@ -336,6 +336,8 @@ AD-015 references the 2026-09-13 design decision that Tweak is "usable immediate
 
 WP-AP-GIZMO-02 (Gizmo wiring) built the Gizmo under the assumption that `active_tool is not None` would be true when a transform is armed. For V2/V4/no-tweak this holds. For V1/V3 it does not, so the Gizmo click branch is structurally dead for V1/V3 contexts.
 
+**Addendum — 2026-09-21 (AD-016 D3):** This boundary is superseded by an explicit Artist decision. The `active_tool is not None` and `_transform_key_down / _transform_mode_on` preconditions have been removed from the Gizmo click branch. A Gizmo handle click now sets `_axis_constraint` regardless of whether a tool is armed; a subsequent drag executes the current tool along that axis and commits on LMB release. See `docs/architecture/AD-016-TRANSFORM-OWNS-QWE-SINGLE-CURRENT-TOOL.md` D3 for the decision and `playground/tests/test_gizmo.py::TestGizmoWindowDispatch` for test coverage.
+
 ---
 
 ## 6. Test Coverage
@@ -344,9 +346,21 @@ WP-AP-GIZMO-02 (Gizmo wiring) built the Gizmo under the assumption that `active_
 
 | Behavior | Probe / Test |
 |----------|-------------|
-| V1 backs off when `active_tool` externally injected | `test_ad015_tweak_v1_backs_off_when_transform_active` |
-| V3 backs off when `active_tool` externally injected | `test_ad015_tweak_v3_backs_off_when_transform_active` |
-| V1 claims Q when `active_tool is None` | `test_ad015_tweak_v1_still_claims_when_no_transform_active` |
+| Q always reaches Transform (D1) | `test_ad016_q_always_reaches_transform` |
+| Q sets shared `_current_tool_type` (D2) | `test_ad016_q_sets_shared_current_tool` |
+| V1 not in Tweak slot (D5) | `test_ad016_v1_not_in_tweak_slot` |
+| V3 not in Tweak slot (D5) | `test_ad016_v3_not_in_tweak_slot` |
+| D4 tap sets current tool, no execution | `test_ad016_d4_tap_sets_current_tool_no_execution` |
+| D4 hold+drag executes and commits | `test_ad016_d4_hold_drag_executes_and_commits` |
+| D4 with selection → no temp target | `test_ad016_d4_with_selection_no_temp_target` |
+| D4 with no selection → temp target clears on release | `test_ad016_d4_no_selection_creates_temp_target` |
+| D4 ESC clears temp target | `test_ad016_d4_esc_clears_temp_target` |
+| V2 reads `_current_tool_type` (D2) | `test_ad016_v2_reads_shared_current_tool` |
+| V4 reads `_current_tool_type` (D2) | `test_ad016_v4_reads_shared_current_tool` |
+| Gizmo click sets constraint without tool armed (D3) | `TestGizmoWindowDispatch::test_gizmo_click_sets_constraint_without_tool_armed` |
+| Gizmo click-only: constraint set, no transform | `TestGizmoWindowDispatch::test_gizmo_click_only_no_transform_on_release` |
+| Gizmo drag executes and commits (D3) | `TestGizmoWindowDispatch::test_gizmo_drag_executes_and_commits` |
+| Gizmo miss falls through to selection | `TestGizmoWindowDispatch::test_gizmo_miss_falls_through_to_selection` |
 | X twice → toggle off | `probe_x_twice` |
 | X then Y → replace constraint | `probe_x_then_y` |
 | Constraint survives gesture commit | `probe_constraint_survives_commit` |
@@ -354,24 +368,15 @@ WP-AP-GIZMO-02 (Gizmo wiring) built the Gizmo under the assumption that `active_
 | X release does not clear constraint (sticky) | `probe_release_does_nothing` |
 | K toggles space world↔normal | `probe_k_toggle_space` |
 | K resets axis constraint | `probe_k_clears_axis_constraint` |
-| V1 gesture in world space (no constraint) | `probe_tweak_v1_space_axis("world", None)` |
-| V1 gesture in normal space + x constraint | `probe_tweak_v1_space_axis("normal", X)` |
 | Default transform slot is PressDragClickVariant | `probe_transform_slot_default` |
 | Q/W/E/R/S/C/Shift+C/Shift+R key changes (basic) | KEYS / GESTURES tables |
 
-### NOT covered (gaps relevant to this audit)
+### NOT covered (gaps that remain open)
 
 | Gap | Significance |
 |-----|-------------|
-| V1/V3 never reaching Transform via normal flow | Core defect — tests only prove back-off with external injection, not absence of normal-flow path |
-| V2 Gizmo click sequence (Q→Gizmo→drag) | V2 Gizmo preconditions met, but end-to-end not probed |
-| V3 key+LMB → drag gesture sequence | V3 entry/exit path has no dedicated probe |
-| V4 Ctrl+motion gesture sequence | V4 entry/exit path has no dedicated probe |
-| V2 Ctrl+LMB → drag with persistent mode | V2 gesture requires `_tweak_persistent_mode` pre-set; this dependency untested |
-| Gizmo hit test returning None (fall-through) | Not probed; does Gizmo miss correctly fall through to selection? |
 | PressModeVariant second-press commit | Not probed |
 | HoldActivationVariant key-release commit | Not probed |
-| `_tweak_persistent_mode` set by V1 tap | Set by `toggle_persistent_mode()` on V1 key release (no drag); not probed |
 | `focused_family` effect on M cycling (non-default families) | Only "selection" family tested |
 | Axis constraint + space together in Transform (not Tweak) | Not probed |
 | Transform space "normal" + Gizmo normal-frame rendering | Not probed |

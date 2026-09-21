@@ -2,6 +2,10 @@
 
 `gizmo_mode` is pure (no GL, no window), so it's fully testable here.
 Geometry helpers are smoke-tested for shape/length.
+
+Also contains TestGizmoWindowDispatch: integration tests for D3 (AD-016) —
+Gizmo as entry point (click sets constraint without tool armed; drag executes tool).
+Uses unittest.mock.patch to inject a gizmo hit without real GL coordinates.
 """
 
 from __future__ import annotations
@@ -241,3 +245,95 @@ class TestPickGizmoHandle:
             tip_x[0], tip_x[1], _W, _H,
         )
         assert result == "x"
+
+
+# ---------------------------------------------------------------------------
+# D3 (AD-016): Gizmo as entry point — window-level dispatch tests
+# ---------------------------------------------------------------------------
+
+class TestGizmoWindowDispatch:
+    """Integration tests for AD-016 D3: Gizmo click/drag without a pre-armed tool.
+
+    Uses unittest.mock.patch to inject a gizmo hit so the tests are independent
+    of the camera projection and GL context.
+    """
+
+    def _make_window_face_selected(self):
+        from playground.app import PlaygroundApp
+        from playground.window import PlaygroundWindow
+        from core.selection import SelectionMode
+        app = PlaygroundApp()
+        win = PlaygroundWindow(app, initial_mesh="cube")
+        sel = app.scene.selection
+        sel.mode = SelectionMode.FACE
+        sel.add({sorted(app.scene.mesh.all_face_ids())[0]})
+        return win
+
+    def test_gizmo_click_sets_constraint_without_tool_armed(self):
+        """D3 (AD-016): clicking a gizmo handle sets axis constraint even with no active tool."""
+        from unittest.mock import patch
+        from pyglet.window import mouse as _mouse
+        win = self._make_window_face_selected()
+        try:
+            assert win.app.active_tool is None
+            assert win._transform_key_down is None
+            assert win._transform_mode_on is False
+            # Simulate a gizmo handle hit (patch pick_gizmo_handle to return "x")
+            with patch("playground.window.pick_gizmo_handle", return_value="x"):
+                win.on_mouse_press(400, 300, _mouse.LEFT, 0)
+            assert win._axis_constraint == "x", "axis constraint must be set by gizmo click"
+            assert win._gizmo_drag_armed is True, "gizmo drag must be armed"
+            assert win.app.active_tool is None, "no keyboard tool was armed before the click"
+        finally:
+            win.close()
+
+    def test_gizmo_click_only_no_transform_on_release(self):
+        """D3 (AD-016): a gizmo click without drag sets constraint and does not execute a transform."""
+        from unittest.mock import patch
+        from pyglet.window import mouse as _mouse
+        win = self._make_window_face_selected()
+        try:
+            with patch("playground.window.pick_gizmo_handle", return_value="y"):
+                win.on_mouse_press(400, 300, _mouse.LEFT, 0)
+            assert win._axis_constraint == "y"
+            # Release without drag → no transform started, state cleared
+            win.on_mouse_release(400, 300, _mouse.LEFT, 0)
+            assert win._gizmo_drag_armed is False
+            assert win._gizmo_drag_started is False
+            assert win._axis_constraint == "y", "constraint survives a click-only gizmo interaction"
+        finally:
+            win.close()
+
+    def test_gizmo_drag_executes_and_commits(self):
+        """D3 (AD-016): gizmo handle drag executes the current tool and commits on LMB release."""
+        from unittest.mock import patch
+        from pyglet.window import mouse as _mouse
+        win = self._make_window_face_selected()
+        try:
+            with patch("playground.window.pick_gizmo_handle", return_value="x"):
+                win.on_mouse_press(400, 300, _mouse.LEFT, 0)
+            assert win._gizmo_drag_armed is True
+            # Drag → begin_transform should be called; gizmo_drag_started set
+            win.on_mouse_drag(440, 300, 40, 0, _mouse.LEFT, 0)
+            assert win._gizmo_drag_started is True, "drag must start the gizmo transform"
+            # Release → commit
+            win.on_mouse_release(440, 300, _mouse.LEFT, 0)
+            assert win._gizmo_drag_armed is False
+            assert win._gizmo_drag_started is False
+            assert win._gizmo_drag_tool is None
+        finally:
+            win.close()
+
+    def test_gizmo_miss_falls_through_to_selection(self):
+        """D3 (AD-016): a gizmo miss does not arm gizmo drag, falls through to selection."""
+        from unittest.mock import patch
+        from pyglet.window import mouse as _mouse
+        win = self._make_window_face_selected()
+        try:
+            # pick_gizmo_handle returns None → miss
+            with patch("playground.window.pick_gizmo_handle", return_value=None):
+                win.on_mouse_press(400, 300, _mouse.LEFT, 0)
+            assert win._gizmo_drag_armed is False, "gizmo must not arm on a miss"
+            assert win._axis_constraint is None, "constraint must not change on a miss"
+        finally:
+            win.close()
