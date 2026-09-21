@@ -113,19 +113,26 @@ class PlaygroundCommandHandler:
 
     # --- History Commands ------------------------------------------------
 
+    def _recompute_derived_and_rebuild_vbo(self) -> None:
+        if self.window.app.viewport is not None:
+            mesh = self.window.app.viewport.render_mesh.mesh
+            derived = self.window.app.viewport.render_mesh.derived
+            derived.full_recompute(mesh)
+        self.window._rebuild_vbo()
+
     def _handle_history_commands(self, command: str) -> bool:
         """Handle undo/redo commands."""
         if command == cmd.UNDO:
             self.app.undo()
             self.app.scene.selection.clear()
-            self.window._rebuild_vbo()
+            self._recompute_derived_and_rebuild_vbo()
             self.window._hud.update_action("Undo")
             self.window._update_hud()
             return True
         elif command == cmd.REDO:
             self.app.redo()
             self.app.scene.selection.clear()
-            self.window._rebuild_vbo()
+            self._recompute_derived_and_rebuild_vbo()
             self.window._hud.update_action("Redo")
             self.window._update_hud()
             return True

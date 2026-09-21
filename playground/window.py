@@ -595,6 +595,12 @@ class PlaygroundWindow(pyglet.window.Window):
 
     # -- Transform-Sync -------------------------------------------------------
 
+    def _recompute_derived(self) -> None:
+        if self.app.viewport is not None:
+            mesh = self.app.viewport.render_mesh.mesh
+            derived = self.app.viewport.render_mesh.derived
+            derived.full_recompute(mesh)
+
     def _sync_after_transform(self) -> None:
         """VBOs nach einer Transform-Operation (update oder commit/cancel) neu bauen."""
         sel = self.app.scene.selection
@@ -606,6 +612,7 @@ class PlaygroundWindow(pyglet.window.Window):
         ):
             self._patch_vbo_single_vertex(next(iter(sel.vertices)))
         else:
+            self._recompute_derived()
             self._rebuild_vbo()
             self._rebuild_selection_vbo()
         self._push_camera()
@@ -1258,6 +1265,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # Production (tests/test_application.py: bindings["ctrl+z"] == UNDO).
             self.app.undo()
             self.app.scene.selection.clear()
+            self._recompute_derived()
             self._rebuild_vbo()
             self._hud.update_action("Undo")
             self._update_hud()
@@ -1265,6 +1273,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # Ctrl+Y: Redo — Production-Bindung (siehe oben).
             self.app.redo()
             self.app.scene.selection.clear()
+            self._recompute_derived()
             self._rebuild_vbo()
             self._hud.update_action("Redo")
             self._update_hud()
