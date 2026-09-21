@@ -301,6 +301,55 @@ def probe_tweak_v1_space_axis(space: str, axis_key: int | None = None) -> dict:
         win.close()
 
 
+def probe_ad015_tweak_v1_backs_off_when_transform_active() -> dict:
+    """AD-015: V1 must not claim Q when app.active_tool is already set."""
+    win = make_window()
+    win.app.activate_variant("tweak", 0)  # ensure V1
+    try:
+        from playground.transformer import create_tool_for_type
+        win.app.active_tool = create_tool_for_type("move")  # simulate active transform
+        win.on_key_press(_key.Q, 0)
+        return {
+            "tweak_v1_key": win._tweak_v1_key,   # must remain None
+            "transform_key_down": win._transform_key_down,  # transform branch ran
+            "active_tool_present": win.app.active_tool is not None,
+        }
+    finally:
+        win.close()
+
+
+def probe_ad015_tweak_v3_backs_off_when_transform_active() -> dict:
+    """AD-015: V3 must not claim Q when app.active_tool is already set."""
+    win = make_window()
+    win.app.activate_variant("tweak", 2)  # V3
+    try:
+        from playground.transformer import create_tool_for_type
+        win.app.active_tool = create_tool_for_type("move")
+        win.on_key_press(_key.Q, 0)
+        return {
+            "tweak_v3_key": win._tweak_v3_key,   # must remain None
+            "transform_key_down": win._transform_key_down,
+            "active_tool_present": win.app.active_tool is not None,
+        }
+    finally:
+        win.close()
+
+
+def probe_ad015_tweak_v1_claims_when_no_transform_active() -> dict:
+    """AD-015: V1 still claims Q when no transform interaction is running."""
+    win = make_window()
+    win.app.activate_variant("tweak", 0)  # V1
+    try:
+        assert win.app.active_tool is None  # precondition
+        win.on_key_press(_key.Q, 0)
+        return {
+            "tweak_v1_key": win._tweak_v1_key,  # must be 'q'
+            "transform_key_down": win._transform_key_down,  # must be None
+        }
+    finally:
+        win.close()
+
+
 def probe_transform_slot_default() -> dict:
     """WP-AP-GIZMO-02: confirm the transform slot's active variant is PressDragClickVariant."""
     from playground.experiments.transform.variant_press_drag_click import PressDragClickVariant
@@ -484,6 +533,31 @@ def main() -> None:
             else:
                 for k, (a, b) in sorted(changes.items()):
                     print(f"   {phase:<7}: {k} = {a!r} -> {b!r}")
+
+
+# ---------------------------------------------------------------------------
+# AD-015 pytest assertions
+# ---------------------------------------------------------------------------
+
+def test_ad015_tweak_v1_backs_off_when_transform_active():
+    """V1 must not arm its gesture while a transform-owning interaction is running (AD-015)."""
+    r = probe_ad015_tweak_v1_backs_off_when_transform_active()
+    assert r["tweak_v1_key"] is None, "V1 must not set _tweak_v1_key when active_tool is set"
+    assert r["active_tool_present"], "active_tool must still be set after V1 backs off"
+
+
+def test_ad015_tweak_v3_backs_off_when_transform_active():
+    """V3 must not arm its gesture while a transform-owning interaction is running (AD-015)."""
+    r = probe_ad015_tweak_v3_backs_off_when_transform_active()
+    assert r["tweak_v3_key"] is None, "V3 must not set _tweak_v3_key when active_tool is set"
+    assert r["active_tool_present"], "active_tool must still be set after V3 backs off"
+
+
+def test_ad015_tweak_v1_still_claims_when_no_transform_active():
+    """V1 still arms its gesture when no transform is running (existing behavior, AD-015)."""
+    r = probe_ad015_tweak_v1_claims_when_no_transform_active()
+    assert r["tweak_v1_key"] == "q", "V1 must arm on Q when no active_tool"
+    assert r["transform_key_down"] is None, "transform branch must not fire when V1 claims"
 
 
 if __name__ == "__main__":

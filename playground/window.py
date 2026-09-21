@@ -1467,15 +1467,14 @@ class PlaygroundWindow(pyglet.window.Window):
 
         if _key_char is not None and _tool_type is not None:
             tv = self._active_tweak_variant()
-            if tv == "v1":
+            # AD-015: Tweak (V1/V3) backs off when a transform-owning interaction is already active.
+            if tv == "v1" and self.app.active_tool is None:
                 # V1: arm the self-deciding gesture; key-up will decide toggle vs. Tweak
                 self._tweak_v1_key = _key_char
                 self._tweak_v1_moved = 0.0
-                # Does NOT run existing transform handling — V1 owns Q/W/E when active
-            elif tv == "v3":
+            elif tv == "v3" and self.app.active_tool is None:
                 # V3: arm the key side of the key+LMB combo (LMB press completes it)
                 self._tweak_v3_key = _key_char
-                # Does NOT run existing transform handling — V3 owns Q/W/E when active
             else:
                 # Existing transform handling (V2, V4, or no tweak)
                 model = self._active_transform_model()
