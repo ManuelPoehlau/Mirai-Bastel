@@ -2,7 +2,7 @@
 
 *(File name kept for link stability; the original title "One Cut Engine" was retired by the Artist decision below.)*
 
-**Status:** DECIDED ✓ (2026-09-22) — fully decided, incl. Split and Knife residue
+**Status:** IMPLEMENTED ✓ (2026-09-22) — decided and implemented; see WP-AP-CUT_PLAN.md
 **Date:** proposed 2026-09-21 · decided 2026-09-22
 **Owner:** Manu (Project Owner)
 **Decision input:** `AD-017_FINAL_DECISIONS_2026-09-22.md` (Artist statement, archived)

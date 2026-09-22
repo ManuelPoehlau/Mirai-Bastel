@@ -209,6 +209,11 @@ Trigger: artist observation that the current Connect tool does not allow reasona
 Dependency note: `playground/topology_tools/loop_insert.py` calls `connect_selected_edges()`
 directly. Any change to Connect semantics affects Loop Insert.
 
+AD-017 note (2026-09-22): the `C` key no longer dispatches through `connect_selected_edges()`
+(strip / baseline semantics). `C` now uses contextual dispatch (`contextual_c.py`): 2+ edges
+→ `connect_per_face.py` (per-face / Wings semantics, Artist KEEP decision). Strip semantics are
+no longer reachable from `C`. Loop Insert is unchanged and still calls `connect_selected_edges()`.
+
 Reference note: the Wings 3D source (the reference named in §9) implements Edge Connect as
 cut → per-face vertex connect → dissolve unconnected midpoints, independent of face size.
 Details and a Core-only probe of that semantics: discovery document §2–§3.

@@ -87,6 +87,60 @@ def test_ad001_id_continuity_split_edge() -> None:
     assert_mesh_invariants(mesh, context="split_edge")
 
 
+def test_split_edge_with_t() -> None:
+    print("\n--- AD-017: split_edge with t parameter ---")
+    scene, (v0, v1, v2, v3), face = build_quad_scene()
+    mesh = scene.mesh
+    target_edge = mesh._get_or_create_edge(v0, v1)
+    p0 = mesh.vertex_position(v0)
+    p1 = mesh.vertex_position(v1)
+
+    # t=0.25: new vertex at 1/4 from v0
+    mid, ea, eb = mesh.split_edge(target_edge, t=0.25)
+    expected = tuple(a * 0.75 + b * 0.25 for a, b in zip(p0, p1))
+    actual = mesh.vertex_position(mid)
+    check("t=0.25 position is correct", actual == expected)
+    assert_mesh_invariants(mesh, context="split_edge t=0.25")
+
+    scene2, (v0b, v1b, v2b, v3b), face2 = build_quad_scene()
+    mesh2 = scene2.mesh
+    edge2 = mesh2._get_or_create_edge(v0b, v1b)
+    p0b = mesh2.vertex_position(v0b)
+    p1b = mesh2.vertex_position(v1b)
+
+    # t=0.75: new vertex at 3/4 from v0
+    mid2, _, _ = mesh2.split_edge(edge2, t=0.75)
+    expected2 = tuple(a * 0.25 + b * 0.75 for a, b in zip(p0b, p1b))
+    check("t=0.75 position is correct", mesh2.vertex_position(mid2) == expected2)
+    assert_mesh_invariants(mesh2, context="split_edge t=0.75")
+
+    scene3, (v0c, v1c, v2c, v3c), face3 = build_quad_scene()
+    mesh3 = scene3.mesh
+    edge3 = mesh3._get_or_create_edge(v0c, v1c)
+    p0c = mesh3.vertex_position(v0c)
+    p1c = mesh3.vertex_position(v1c)
+
+    # default t=0.5 must be bit-identical to old midpoint formula
+    mid3, _, _ = mesh3.split_edge(edge3)
+    expected3 = tuple((a + b) / 2.0 for a, b in zip(p0c, p1c))
+    check("default t=0.5 is bit-identical to midpoint", mesh3.vertex_position(mid3) == expected3)
+
+    # invalid t values must raise MeshError, mesh unchanged
+    scene4, (v0d, v1d, v2d, v3d), face4 = build_quad_scene()
+    mesh4 = scene4.mesh
+    edge4 = mesh4._get_or_create_edge(v0d, v1d)
+    state_before = mesh4.export_state()
+    for bad_t in [0.0, 1.0, -0.1, 1.5]:
+        try:
+            mesh4.split_edge(edge4, t=bad_t)
+            check(f"t={bad_t} should have raised MeshError", False)
+        except Exception:
+            pass
+        check(f"mesh unchanged after t={bad_t} rejection", mesh4.export_state() == state_before)
+
+    print("test_split_edge_with_t: PASS")
+
+
 def test_ad002_query_api_no_internal_access() -> None:
     print("\n--- AD-002: Query-API statt interner Container ---")
     scene, (v0, v1, v2, v3), face = build_quad_scene()
@@ -339,6 +393,7 @@ def run_all() -> None:
     tests = [
         test_ad001_stable_ids,
         test_ad001_id_continuity_split_edge,
+        test_split_edge_with_t,
         test_ad002_query_api_no_internal_access,
         test_ad002_connect_vertices,
         test_add_edge,

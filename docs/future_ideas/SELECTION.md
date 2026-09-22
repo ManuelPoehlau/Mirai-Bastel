@@ -4,6 +4,11 @@ Ideen und Beobachtungen rund um Selection, die bewusst noch nicht umgesetzt werd
 
 > Im Hinterkopf behalten und später erneut bewerten.
 
+> **AD-017 Entscheidung (2026-09-22):** Die Residue-Regeln für Split, Edge Connect,
+> Vertex Connect und Knife sind ENTSCHIEDEN — siehe
+> `docs/architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md` Tabelle "Selection residue (mode-specific)".
+> Die offenen Fragen in diesem Dokument bleiben als Forschungsgrundlage erhalten.
+
 ## Post-Operation Selection / Mode Behavior
 
 Bei Topologieoperationen kann sich durch die Aktion die Art der sinnvollen Auswahl ändern. Das Verhalten nach einer Operation ist deshalb ein wichtiger Bestandteil des späteren Modeling-Workflows und nicht nur ein UI-Detail.

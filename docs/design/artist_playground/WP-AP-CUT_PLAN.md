@@ -1,6 +1,6 @@
 # WP-AP-CUT — Contextual C: Implementation Brief (for Claude Code)
 
-**Status:** READY FOR IMPLEMENTATION — AD-017 fully DECIDED (2026-09-22), incl. Split and Knife residue
+**Status:** IMPLEMENTED (2026-09-22) — all §1 items built and tested; see git history for files changed
 **Date:** 2026-09-22 (supersedes the 2026-09-21 plan version of this file)
 **Mode (M5):** Production — the product decisions are made. **BUILD must not claim new knowledge:**
 if something unexpected appears, stop, record it as an open question, do not decide it while building.

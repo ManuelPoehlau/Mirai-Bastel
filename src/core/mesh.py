@@ -234,25 +234,35 @@ class Mesh:
             eid = self._edge_lookup[frozenset((v_a, v_b))]
             self._edges[eid].faces.remove(face_id)
 
-    def split_edge(self, edge_id: EdgeId) -> tuple[VertexId, EdgeId, EdgeId]:
-        """Teilt eine Edge an ihrem Mittelpunkt.
+    def split_edge(self, edge_id: EdgeId, t: float = 0.5) -> tuple[VertexId, EdgeId, EdgeId]:
+        """Teilt eine Edge an der durch t parametrisierten Position.
+
+        t ist der Interpolationsparameter: 0.0 entspricht edge.v0,
+        1.0 entspricht edge.v1. Der Standardwert t=0.5 entspricht
+        bit-identisch dem bisherigen Mittelpunkt-Verhalten.
+
+        Vorbedingung: t muss im offenen Intervall (0.0, 1.0) liegen.
+        Liegt t außerhalb dieses Bereichs, wird MeshError ausgelöst,
+        bevor der Mesh-Zustand verändert wird.
 
         ID-Kontinuität:
         - die ursprüngliche EdgeId wird ungültig.
         - beide ursprünglichen Endpunkt-VertexIds bleiben unverändert.
-        - es entsteht genau eine neue VertexId (Mittelpunkt) und zwei
-          neue EdgeIds.
+        - es entsteht genau eine neue VertexId und zwei neue EdgeIds.
         - jede angrenzende Face behält ihre FaceId, ihre Boundary-Liste
-          wird jedoch aktualisiert (Mittelpunkt wird eingefügt).
+          wird jedoch aktualisiert (neuer Vertex wird eingefügt).
 
         Rückgabe: (neue_vertex_id, neue_edge_id_a, neue_edge_id_b)
         """
+        if t <= 0.0 or t >= 1.0:
+            raise MeshError("split_edge: t must be in (0.0, 1.0)")
+
         edge = self._edges.pop(edge_id)
         del self._edge_lookup[frozenset((edge.v0, edge.v1))]
 
         p0 = self.vertex_position(edge.v0)
         p1 = self.vertex_position(edge.v1)
-        mid_pos = tuple((a + b) / 2.0 for a, b in zip(p0, p1))
+        mid_pos = tuple(a * (1.0 - t) + b * t for a, b in zip(p0, p1))
         mid = self.add_vertex(mid_pos)
 
         eid_a = self._edge_alloc.allocate()

@@ -102,9 +102,11 @@ from playground.topology_tools.loop_slide import (  # noqa: E402
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
-from playground.experiments.connect import active_connect_fn  # noqa: E402
-from playground.experiments.connect.variant_strip import ConnectStripVariant  # noqa: E402
-from playground.experiments.connect.variant_per_face import ConnectPerFaceVariant  # noqa: E402
+from playground.topology_tools.contextual_c import CContext, resolve_c_context  # noqa: E402
+from playground.topology_tools.connect_per_face import connect_selected_edges_per_face  # noqa: E402
+from playground.topology_tools.connect_vertices_per_face import connect_vertices_per_face, VertexConnectError as _VertexConnectError  # noqa: E402
+from playground.topology_tools.knife import KnifeTool  # noqa: E402
+from playground.topology_tools.knife_pick import knife_pick  # noqa: E402
 from playground.experiments.articulation.articulation import ArticulationState  # noqa: E402
 from playground.experiments.articulation.variant_articulation import ArticulationVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
@@ -306,19 +308,13 @@ class PlaygroundWindow(pyglet.window.Window):
         artic_slot = ExperimentSlot(
             VariantEntry(ArticulationVariant(app)),
         )
-        # Connect Lab (CONNECT_NONQUAD_DISCOVERY §6): index 0 = baseline, so the
-        # default behaviour of C is unchanged (AD-013 A2 lab override).
-        connect_slot = ExperimentSlot(
-            VariantEntry(ConnectStripVariant(app)),
-            VariantEntry(ConnectPerFaceVariant(app)),
-        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
         app.register_slot(tweak_slot, "tweak")
         app.register_slot(topo_slot, "topology")
         app.register_slot(artic_slot, "articulation")
-        app.register_slot(connect_slot, "connect")
+        # AD-017 §1.10: connect slot unregistered — C now uses contextual dispatch.
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -404,6 +400,8 @@ class PlaygroundWindow(pyglet.window.Window):
         self._extrude_tool: ExtrudeTool | None = None
         # Loop-Slide-State (AP-05)
         self._loop_slide_tool: LoopSlideTool | None = None
+        # Knife-State (AD-017)
+        self._knife_tool: KnifeTool | None = None
 
         # Articulation state (EX-A / H02)
         self._articulation_state: ArticulationState | None = None
@@ -1113,6 +1111,21 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._clear_tweak_gesture()
                 return pyglet.event.EVENT_HANDLED
 
+        # Knife: LMB click = add cut point (AD-017)
+        if (
+            button == _mouse.LEFT
+            and was_click
+            and self._knife_tool is not None
+            and self.app.viewport is not None
+        ):
+            mesh = self.app.viewport.render_mesh.mesh
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            accepted = self._knife_tool.click(target)
+            if accepted:
+                self._rebuild_vbo()
+                self._update_hud()
+            return pyglet.event.EVENT_HANDLED
+
         # Extrude LMB-Modell: LMB release = Commit (AP-05 Variante 2)
         if (
             button == _mouse.LEFT
@@ -1187,6 +1200,14 @@ class PlaygroundWindow(pyglet.window.Window):
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
         self._last_mouse_x = x
         self._last_mouse_y = y
+
+        # Knife: hover preview (AD-017)
+        if self._knife_tool is not None and self.app.viewport is not None:
+            mesh = self.app.viewport.render_mesh.mesh
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            self._knife_tool.hover(target)
+            # No VBO rebuild needed for hover — visual highlight handled by renderer
+            return pyglet.event.EVENT_HANDLED
 
         # Loop Slide: Motion-Update im Hold-Modell (AP-05)
         if self._loop_slide_tool is not None:
@@ -1273,14 +1294,19 @@ class PlaygroundWindow(pyglet.window.Window):
                 self.app.display_state.cycle()
             self._update_hud()
         elif symbol == _key.Z and modifiers & _key.MOD_CTRL:
-            # Ctrl+Z: Undo (WP-AP-Enablement-01) — dieselbe Bindung wie
-            # Production (tests/test_application.py: bindings["ctrl+z"] == UNDO).
-            self.app.undo()
-            self.app.scene.selection.clear()
-            self._recompute_derived()
-            self._rebuild_vbo()
-            self._hud.update_action("Undo")
-            self._update_hud()
+            # Ctrl+Z: in-session undo for knife, else global undo (AD-017 / WP-AP-Enablement-01)
+            if self._knife_tool is not None:
+                self._knife_tool.undo_step()
+                self._rebuild_vbo()
+                self._hud.update_action("Knife — undo last cut")
+                self._update_hud()
+            else:
+                self.app.undo()
+                self.app.scene.selection.clear()
+                self._recompute_derived()
+                self._rebuild_vbo()
+                self._hud.update_action("Undo")
+                self._update_hud()
         elif symbol == _key.Y and modifiers & _key.MOD_CTRL:
             # Ctrl+Y: Redo — Production-Bindung (siehe oben).
             self.app.redo()
@@ -1340,15 +1366,27 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._hud.update_action(str(exc))
                 self._update_hud()
         elif symbol == _key.C:
-            # WP-AP-INPUT-FIX-02 §5: C triggers Connect Edges (2+ edges selected)
+            # AD-017: Contextual C dispatch
             sel = self.app.scene.selection
-            if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 2:
+            ctx = resolve_c_context(sel)
+            if ctx is CContext.SPLIT:
+                # Edge mode, 1 edge — Split; residue: Vertex mode, new vertex selected (D-S, AD-017)
+                restored = self._articulation_auto_restore()
+                (edge_id,) = sel.edges
+                new_vid, _, _ = split_selected_edge(self.app.scene, edge_id)
+                sel.mode = SelectionMode.VERTEX
+                sel.clear()
+                sel.add({new_vid})
+                self._rebuild_vbo()
+                self._rebuild_selection_vbo()
+                action = "Split (articulation restored)" if restored else "Split"
+                self._hud.update_action(action)
+                self._update_hud()
+            elif ctx is CContext.EDGE_CONNECT:
+                # Edge mode, 2+ edges — Connect Edges (per-face semantics)
                 restored = self._articulation_auto_restore()
                 try:
-                    # Semantics chosen by the active "connect" lab variant
-                    # (baseline unless the artist switched via Tab/M).
-                    connect_fn = active_connect_fn(self.app.slots)
-                    new_edges = connect_fn(self.app.scene, set(sel.edges))
+                    new_edges = connect_selected_edges_per_face(self.app.scene, set(sel.edges))
                     sel.clear()
                     sel.add(set(new_edges))
                     self._rebuild_vbo()
@@ -1357,6 +1395,36 @@ class PlaygroundWindow(pyglet.window.Window):
                 except _ConnectEdgesError as exc:
                     self._hud.update_action(str(exc))
                 self._update_hud()
+            elif ctx is CContext.VERTEX_CONNECT:
+                # Vertex mode, 2+ vertices — Vertex Connect
+                restored = self._articulation_auto_restore()
+                try:
+                    new_edges = connect_vertices_per_face(self.app.scene, set(sel.vertices))
+                    if new_edges:
+                        self._rebuild_vbo()
+                        action = "Vertex Connect (articulation restored)" if restored else "Vertex Connect"
+                        self._hud.update_action(action)
+                    else:
+                        self._hud.update_action("Vertex Connect — nothing connectable")
+                except _VertexConnectError as exc:
+                    self._hud.update_action(str(exc))
+                self._update_hud()
+            elif ctx is CContext.KNIFE:
+                # Empty selection — enter Knife mode
+                if self._knife_tool is None and self.app.viewport is not None:
+                    mesh = self.app.viewport.render_mesh.mesh
+                    self._knife_tool = KnifeTool()
+                    self._knife_tool.activate()
+                    self._knife_tool.begin(
+                        mesh=mesh,
+                        scene=self.app.scene,
+                        selection=self.app.scene.selection,
+                    )
+                    self._hud.update_action("Knife — click vertices/edges; Enter=commit, Esc=cancel")
+                    self._update_hud()
+            elif ctx is CContext.NONE:
+                # Nothing applicable — no-op
+                pass
         elif symbol == _key.S:
             # WP-AP-INPUT-FIX-02 §5: S triggers Split Edge (exactly 1 edge selected)
             sel = self.app.scene.selection
@@ -1576,8 +1644,27 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_vbo()
                 self._hud.update_action("Articulation restored")
                 self._update_hud()
+        elif symbol in (_key.ENTER, _key.NUM_ENTER):
+            if self._knife_tool is not None:
+                cmd = self._knife_tool.commit()
+                self._knife_tool.deactivate()
+                self._knife_tool = None
+                self._rebuild_vbo()
+                self._rebuild_selection_vbo()
+                if cmd is not None:
+                    self._hud.update_action("Knife committed")
+                else:
+                    self._hud.update_action("Knife — no cuts made")
+                self._update_hud()
         elif symbol == _key.ESCAPE:
-            if self._articulation_state is not None:
+            if self._knife_tool is not None:
+                self._knife_tool.cancel()
+                self._knife_tool.deactivate()
+                self._knife_tool = None
+                self._rebuild_vbo()
+                self._hud.update_action("Knife cancelled")
+                self._update_hud()
+            elif self._articulation_state is not None:
                 self._articulation_state.restore()
                 self._articulation_state = None
                 self._articulation_dragging = False

@@ -32,9 +32,34 @@ Das Fenster öffnet mit dem Playground. Die HUD zeigt oben:
 
 | Taste | Aktion |
 |---|---|
-| C | Würfel laden |
 | H | Head-Basemesh laden |
 | Q, Esc | Fenster schließen |
+
+### Topology (AD-017 — Contextual C)
+
+| Selection | C macht |
+|---|---|
+| Edge-Modus, 1 Edge | **Split** — teilt die Edge am Mittelpunkt; wechselt zu Vertex-Modus, neuer Vertex selektiert |
+| Edge-Modus, 2+ Edges | **Edge Connect** — Wings-artige Pro-Face-Verbindung; neue Kanten selektiert |
+| Vertex-Modus, 2+ Vertices | **Vertex Connect** — Wings-artige Pro-Face-Verbindung; Selektion bleibt |
+| Leer (beliebiger Modus) | **Knife** — modales Schnitt-Werkzeug (interaktiver Pfad) |
+| Sonstige | No-op |
+
+**Knife-Modus** (während aktiv):
+
+| Taste / Aktion | Effekt |
+|---|---|
+| LMB auf Vertex | Start setzen / nächsten Schnittpunkt setzen |
+| LMB auf Edge | Edge an t splitten, Verbindung zum Start |
+| LMB außerhalb Mesh | Session committen |
+| Enter | Session committen (eine History-Operation) |
+| Ctrl+Z | Letzten Schnitt rückgängig |
+| Esc | Session abbrechen (Mesh wiederhergestellt) |
+
+| Taste | Aktion |
+|---|---|
+| S | Split Edge (1 Edge selektiert, unverändert) |
+| Shift+C | Collapse Edge (1 Edge selektiert, unverändert) |
 
 ### Display (Darstellung)
 

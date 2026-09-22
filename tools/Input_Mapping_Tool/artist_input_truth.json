@@ -260,11 +260,35 @@
     },
     {
       "id": "topology.connect",
-      "label": "Connect Edges",
+      "label": "Contextual C (Split / Edge Connect / Vertex Connect / Knife)",
       "category": "Topology",
       "binding": "C",
       "runtime_ref": "Connect",
-      "notes": ""
+      "notes": "AD-017: 1 edge→Split, 2+ edges→Edge Connect, 2+ vertices→Vertex Connect, empty selection→Knife"
+    },
+    {
+      "id": "topology.knife_commit",
+      "label": "Knife — Commit session",
+      "category": "Topology",
+      "binding": "Enter",
+      "runtime_ref": "KnifeCommit",
+      "notes": "AD-017: commits the knife session as one history operation; also triggered by LMB outside mesh"
+    },
+    {
+      "id": "topology.knife_cancel",
+      "label": "Knife — Cancel session",
+      "category": "Topology",
+      "binding": "Escape",
+      "runtime_ref": "KnifeCancel",
+      "notes": "AD-017: discards the whole knife session, restores the pre-session mesh state"
+    },
+    {
+      "id": "topology.knife_undo_cut",
+      "label": "Knife — Undo last cut",
+      "category": "Topology",
+      "binding": "Ctrl+Z",
+      "runtime_ref": "KnifeUndoStep",
+      "notes": "AD-017: removes the most recent knife cut; does not touch the global history during session"
     },
     {
       "id": "topology.split_edge",

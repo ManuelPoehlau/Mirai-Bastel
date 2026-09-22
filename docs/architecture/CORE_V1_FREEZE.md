@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -34,6 +34,17 @@ architecture-contract test including error cases and invariants (`tests/test_cor
 Follows exactly the flow this document's own §7 (below) and `docs/architecture/ROADMAP.md §13`
 describe: experiment demonstrated the need (Connect Edges' "kind v" case), finding documented, Core
 extended, existing methods (`split_edge`/`connect_vertices`) left unchanged.
+
+**Decision:** AD-017 (2026-09-22)
+
+`Mesh.split_edge(edge_id, t=0.5)` is extended with an optional `t` parameter (default 0.5,
+bit-identical to the existing midpoint behaviour). Rationale: Knife mode makes non-midpoint splits
+the normal case; the documented "splits at the midpoint" contract would otherwise misrepresent the
+result; the rigging experiment's midpoint-matching fallback (FINDINGS-3C, 3C-2) fails for t ≠ 0.5,
+leaving the (edge, t) pair as the reliable provenance path (AD-017 B5/B1b). Backward compatible:
+all callers that call `split_edge(eid)` are unaffected. Covered by new contract tests in
+`tests/test_core.py`. `Mesh.add_edge()` retained unchanged; no active production consumer after
+strip Connect was rejected; retained for potential future construction/curve work (AD-017 §13).
 
 ## 2. Was vor dem Freeze validiert wurde
 
