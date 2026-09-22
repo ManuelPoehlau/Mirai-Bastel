@@ -1119,8 +1119,19 @@ class PlaygroundWindow(pyglet.window.Window):
             and self.app.viewport is not None
         ):
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            # Temporary [KNIFE] diagnosis logging (AD-017 edge targeting)
+            print(f"[KNIFE] click at ({x},{y})")
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height, debug=True)
+            kind = target.get("kind")
+            if kind == "vertex":
+                print(f"[KNIFE] hit=VERTEX id={int(target['vertex_id'])}")
+            elif kind == "edge":
+                t_hit = target.get("t")
+                print(f"[KNIFE] hit=EDGE id={int(target['edge_id'])} t={t_hit:.6f}")
+            else:
+                print(f"[KNIFE] hit=NONE ({kind})")
             accepted = self._knife_tool.click(target)
+            print(f"[KNIFE] click accepted={accepted}")
             if accepted:
                 self._rebuild_vbo()
                 self._update_hud()
@@ -1653,8 +1664,10 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_selection_vbo()
                 if cmd is not None:
                     self._hud.update_action("Knife committed")
+                    print("[KNIFE] session result: committed (1 history entry, residue = connecting-edge path)")
                 else:
                     self._hud.update_action("Knife — no cuts made")
+                    print("[KNIFE] session result: no cuts made (mesh state unchanged since session begin)")
                 self._update_hud()
         elif symbol == _key.ESCAPE:
             if self._knife_tool is not None:

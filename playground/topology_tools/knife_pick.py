@@ -45,7 +45,9 @@ def _edge_t_3d(origin: _Vec3, direction: _Vec3, p0: _Vec3, p1: _Vec3) -> float:
     return max(0.0, min(1.0, t))
 
 
-def knife_pick(camera, mesh, sx: float, sy: float, width: int, height: int) -> dict:
+def knife_pick(
+    camera, mesh, sx: float, sy: float, width: int, height: int, debug: bool = False
+) -> dict:
     """Resolve cursor position to a knife target.
 
     Returns one of:
@@ -53,29 +55,53 @@ def knife_pick(camera, mesh, sx: float, sy: float, width: int, height: int) -> d
       {"kind": "edge", "edge_id": eid, "t": float}  — t in (THRESHOLD, 1-THRESHOLD)
       {"kind": "face", "face_id": fid}               — "on mesh, no target"
       {"kind": "outside"}
+
+    debug=True prints the temporary [KNIFE] pick trace (AD-017 diagnosis).
+    Hover calls must pass debug=False to avoid flooding the console.
     """
+    if debug:
+        print(f"[KNIFE] pick cursor=({sx:.1f},{sy:.1f})")
+
     # Vertex hit first
     vid = pick_nearest_vertex(camera, mesh, sx, sy, width, height)
+    if debug:
+        print(f"[KNIFE] pick_nearest_vertex -> vertex:{int(vid)}" if vid is not None
+              else "[KNIFE] pick_nearest_vertex -> None")
     if vid is not None:
         return {"kind": "vertex", "vertex_id": vid}
 
     # Edge hit with perspective-correct t
     eid = pick_nearest_edge(camera, mesh, sx, sy, width, height)
+    if debug:
+        print(f"[KNIFE] pick_nearest_edge -> edge:{int(eid)}" if eid is not None
+              else "[KNIFE] pick_nearest_edge -> None")
     if eid is not None:
         origin, direction = camera.screen_to_ray(sx, sy, width, height)
         va, vb = mesh.edge_vertices(eid)
         p0 = mesh.vertex_position(va)
         p1 = mesh.vertex_position(vb)
         t = _edge_t_3d(origin, direction, p0, p1)
+        if debug:
+            print(f"[KNIFE] EdgePoint t={t:.6f} on edge:{int(eid)} "
+                  f"({int(va)}-{int(vb)}), snap thresholds {ENDPOINT_THRESHOLD}/{1.0 - ENDPOINT_THRESHOLD}")
         if t <= ENDPOINT_THRESHOLD:
+            if debug:
+                print(f"[KNIFE] t<=threshold -> snap to vertex:{int(va)}")
             return {"kind": "vertex", "vertex_id": va}
         if t >= 1.0 - ENDPOINT_THRESHOLD:
+            if debug:
+                print(f"[KNIFE] t>=1-threshold -> snap to vertex:{int(vb)}")
             return {"kind": "vertex", "vertex_id": vb}
         return {"kind": "edge", "edge_id": eid, "t": t}
 
     # Face hit → "on mesh, no target"
     fid = pick_face(camera, mesh, sx, sy, width, height)
+    if debug:
+        print(f"[KNIFE] pick_face -> face:{int(fid)}" if fid is not None
+              else "[KNIFE] pick_face -> None")
     if fid is not None:
         return {"kind": "face", "face_id": fid}
 
+    if debug:
+        print("[KNIFE] pick -> outside")
     return {"kind": "outside"}
