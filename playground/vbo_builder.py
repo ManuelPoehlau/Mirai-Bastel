@@ -82,6 +82,11 @@ def build_selection_edge_data(mesh: Mesh, selected_edge_ids) -> list[float]:
     return positions
 
 
+def build_knife_preview_point_data(world_pos: tuple[float, float, float]) -> list[float]:
+    """Single world-space point for Knife split-point preview (GL_POINTS)."""
+    return list(world_pos)
+
+
 def build_selection_data(mesh: Mesh, selected_face_ids) -> list[float]:
     """Positionen für das Selection-Overlay-VBO (GL_TRIANGLES, expanded).
 

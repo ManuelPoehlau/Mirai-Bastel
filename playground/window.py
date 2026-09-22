@@ -107,6 +107,8 @@ from playground.topology_tools.connect_per_face import connect_selected_edges_pe
 from playground.topology_tools.connect_vertices_per_face import connect_vertices_per_face, VertexConnectError as _VertexConnectError  # noqa: E402
 from playground.topology_tools.knife import KnifeTool  # noqa: E402
 from playground.topology_tools.knife_pick import knife_pick  # noqa: E402
+from playground.experiments.knife.variant_a import KnifeVariantA  # noqa: E402
+from playground.experiments.knife.variant_b import KnifeVariantB  # noqa: E402
 from playground.experiments.articulation.articulation import ArticulationState  # noqa: E402
 from playground.experiments.articulation.variant_articulation import ArticulationVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
@@ -127,6 +129,7 @@ from playground.transformer import create_tool_for_type  # noqa: E402
 from playground.vbo_builder import (  # noqa: E402
     build_edge_data,
     build_face_data,
+    build_knife_preview_point_data,
     build_selection_data,
     build_selection_edge_data,
     build_selection_vertex_data,
@@ -308,12 +311,17 @@ class PlaygroundWindow(pyglet.window.Window):
         artic_slot = ExperimentSlot(
             VariantEntry(ArticulationVariant(app)),
         )
+        knife_slot = ExperimentSlot(
+            VariantEntry(KnifeVariantA(app)),
+            VariantEntry(KnifeVariantB(app)),
+        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
         app.register_slot(tweak_slot, "tweak")
         app.register_slot(topo_slot, "topology")
         app.register_slot(artic_slot, "articulation")
+        app.register_slot(knife_slot, "knife")
         # AD-017 §1.10: connect slot unregistered — C now uses contextual dispatch.
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
@@ -402,6 +410,12 @@ class PlaygroundWindow(pyglet.window.Window):
         self._loop_slide_tool: LoopSlideTool | None = None
         # Knife-State (AD-017)
         self._knife_tool: KnifeTool | None = None
+        # Knife hover VBOs — separate from sel.hovered/_rebuild_hover_vbo (WP-AP-CUT)
+        self._vlist_knife_hover_edge = None
+        self._vlist_knife_preview_point = None
+        self._knife_hover_last_target: dict | None = None
+        # Variant B slide state
+        self._knife_slide_armed: bool = False
 
         # Articulation state (EX-A / H02)
         self._articulation_state: ArticulationState | None = None
@@ -746,6 +760,23 @@ class PlaygroundWindow(pyglet.window.Window):
             return None
         return getattr(slot.active_experiment, "tweak_variant", None)
 
+    def _active_knife_model(self) -> str:
+        """Aktivierungsmodell des aktiven Knife-Slots lesen."""
+        slot = self.app.slots.get("knife")
+        if slot is None:
+            return "live_preview"
+        return getattr(slot.active_experiment, "activation", "live_preview")
+
+    def _clear_knife_hover_vbos(self) -> None:
+        """Knife-Hover-VBOs freigeben und Zustand zurücksetzen."""
+        if self._vlist_knife_hover_edge is not None:
+            self._vlist_knife_hover_edge.delete()
+            self._vlist_knife_hover_edge = None
+        if self._vlist_knife_preview_point is not None:
+            self._vlist_knife_preview_point.delete()
+            self._vlist_knife_preview_point = None
+        self._knife_hover_last_target = None
+
     def _tweak_begin(self, tool_type: str, x: int, y: int) -> bool:
         """Selection-Fallback auflösen, Tool erstellen und begin_transform() aufrufen.
 
@@ -906,6 +937,43 @@ class PlaygroundWindow(pyglet.window.Window):
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
 
+        # Knife Variant B: LMB press on valid edge = arm slide (WP-AP-CUT)
+        if (
+            button == _mouse.LEFT
+            and self._knife_tool is not None
+            and self.app.viewport is not None
+            and self._active_knife_model() == "press_slide_release"
+        ):
+            mesh = self.app.viewport.render_mesh.mesh
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            hover_result = self._knife_tool.hover(target)
+            if target.get("kind") == "edge" and hover_result.get("valid", False):
+                self._knife_slide_armed = True
+                self._clear_knife_hover_vbos()
+                self._knife_hover_last_target = target
+                eid = target["edge_id"]
+                edge_positions = build_selection_edge_data(mesh, {eid})
+                if edge_positions:
+                    self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
+                        len(edge_positions) // 3, gl.GL_LINES,
+                        position=("f", edge_positions),
+                    )
+                t = target["t"]
+                va, vb = mesh.edge_vertices(eid)
+                p0 = mesh.vertex_position(va)
+                p1 = mesh.vertex_position(vb)
+                world_pos = (
+                    p0[0] + t * (p1[0] - p0[0]),
+                    p0[1] + t * (p1[1] - p0[1]),
+                    p0[2] + t * (p1[2] - p0[2]),
+                )
+                pt_positions = build_knife_preview_point_data(world_pos)
+                self._vlist_knife_preview_point = self._overlay_program.vertex_list(
+                    1, gl.GL_POINTS,
+                    position=("f", pt_positions),
+                )
+                return pyglet.event.EVENT_HANDLED
+
         if (
             self.app.select_method is SelectMethod.BOX
             and button == self.input_map.select_button
@@ -922,6 +990,38 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_x = x
         self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
+
+        # Knife Variant B: LMB drag while slide armed = update preview (WP-AP-CUT)
+        if self._knife_slide_armed and self._knife_tool is not None and self.app.viewport is not None:
+            if buttons & _mouse.LEFT:
+                mesh = self.app.viewport.render_mesh.mesh
+                target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+                hover_result = self._knife_tool.hover(target)
+                self._clear_knife_hover_vbos()
+                self._knife_hover_last_target = target
+                if target.get("kind") == "edge" and hover_result.get("valid", False):
+                    eid = target["edge_id"]
+                    edge_positions = build_selection_edge_data(mesh, {eid})
+                    if edge_positions:
+                        self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
+                            len(edge_positions) // 3, gl.GL_LINES,
+                            position=("f", edge_positions),
+                        )
+                    t = target["t"]
+                    va, vb = mesh.edge_vertices(eid)
+                    p0 = mesh.vertex_position(va)
+                    p1 = mesh.vertex_position(vb)
+                    world_pos = (
+                        p0[0] + t * (p1[0] - p0[0]),
+                        p0[1] + t * (p1[1] - p0[1]),
+                        p0[2] + t * (p1[2] - p0[2]),
+                    )
+                    pt_positions = build_knife_preview_point_data(world_pos)
+                    self._vlist_knife_preview_point = self._overlay_program.vertex_list(
+                        1, gl.GL_POINTS,
+                        position=("f", pt_positions),
+                    )
+            return pyglet.event.EVENT_HANDLED
 
         # Articulation: consume the drag while the gesture is active (EX-A / H02).
         # Axis is derived from the total drag vector so the visible bend direction matches
@@ -1111,6 +1211,25 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._clear_tweak_gesture()
                 return pyglet.event.EVENT_HANDLED
 
+        # Knife Variant B: LMB release = commit or cancel slide (WP-AP-CUT)
+        if (
+            button == _mouse.LEFT
+            and self._knife_slide_armed
+            and self._knife_tool is not None
+            and self.app.viewport is not None
+        ):
+            self._knife_slide_armed = False
+            mesh = self.app.viewport.render_mesh.mesh
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            hover_result = self._knife_tool.hover(target)
+            if target.get("kind") == "edge" and hover_result.get("valid", False):
+                accepted = self._knife_tool.click(target)
+                if accepted:
+                    self._rebuild_vbo()
+                    self._update_hud()
+            self._clear_knife_hover_vbos()
+            return pyglet.event.EVENT_HANDLED
+
         # Knife: LMB click = add cut point (AD-017)
         if (
             button == _mouse.LEFT
@@ -1133,6 +1252,7 @@ class PlaygroundWindow(pyglet.window.Window):
             accepted = self._knife_tool.click(target)
             print(f"[KNIFE] click accepted={accepted}")
             if accepted:
+                self._clear_knife_hover_vbos()
                 self._rebuild_vbo()
                 self._update_hud()
             return pyglet.event.EVENT_HANDLED
@@ -1212,12 +1332,57 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_x = x
         self._last_mouse_y = y
 
-        # Knife: hover preview (AD-017)
+        # Knife: hover preview (WP-AP-CUT)
         if self._knife_tool is not None and self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
             target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
-            self._knife_tool.hover(target)
-            # No VBO rebuild needed for hover — visual highlight handled by renderer
+            hover_result = self._knife_tool.hover(target)
+            kind = target.get("kind")
+
+            # Guard: skip VBO rebuild when target hasn't changed, except for
+            # "edge" in live_preview mode (preview point moves continuously).
+            live = self._active_knife_model() == "live_preview"
+            target_changed = (target != self._knife_hover_last_target)
+            if target_changed or (kind == "edge" and live):
+                self._knife_hover_last_target = target
+                self._clear_knife_hover_vbos()
+
+                if kind == "vertex":
+                    vid = target["vertex_id"]
+                    positions = build_selection_vertex_data(mesh, {vid})
+                    if positions:
+                        self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
+                            len(positions) // 3, gl.GL_POINTS,
+                            position=("f", positions),
+                        )
+
+                elif kind == "edge":
+                    eid = target["edge_id"]
+                    edge_positions = build_selection_edge_data(mesh, {eid})
+                    if edge_positions:
+                        self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
+                            len(edge_positions) // 3, gl.GL_LINES,
+                            position=("f", edge_positions),
+                        )
+                    # Variant A: live split-point preview at current t
+                    if live and hover_result.get("valid", False):
+                        t = target["t"]
+                        va, vb = mesh.edge_vertices(eid)
+                        p0 = mesh.vertex_position(va)
+                        p1 = mesh.vertex_position(vb)
+                        world_pos = (
+                            p0[0] + t * (p1[0] - p0[0]),
+                            p0[1] + t * (p1[1] - p0[1]),
+                            p0[2] + t * (p1[2] - p0[2]),
+                        )
+                        pt_positions = build_knife_preview_point_data(world_pos)
+                        self._vlist_knife_preview_point = self._overlay_program.vertex_list(
+                            1, gl.GL_POINTS,
+                            position=("f", pt_positions),
+                        )
+
+                # "face" / "outside" → no highlight (no-op, out of scope)
+
             return pyglet.event.EVENT_HANDLED
 
         # Loop Slide: Motion-Update im Hold-Modell (AP-05)
@@ -1539,6 +1704,15 @@ class PlaygroundWindow(pyglet.window.Window):
                         cancel_transform(self.app.active_tool)
                         self._sync_after_transform()
                     self._clear_transform_state()
+                # Cancel in-progress Knife session before switching variant (WP-AP-CUT)
+                if active_family == "knife" and self._knife_tool is not None:
+                    self._knife_tool.cancel()
+                    self._knife_tool.deactivate()
+                    self._knife_tool = None
+                    self._knife_slide_armed = False
+                    self._clear_knife_hover_vbos()
+                    self._rebuild_vbo()
+                    self._hud.update_action("Knife cancelled (variant switch)")
                 self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
             self._update_hud()
         elif symbol == _key.M and (modifiers & _key.MOD_SHIFT):
@@ -1688,6 +1862,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 cmd = self._knife_tool.commit()
                 self._knife_tool.deactivate()
                 self._knife_tool = None
+                self._knife_slide_armed = False
+                self._clear_knife_hover_vbos()
                 self._rebuild_vbo()
                 self._rebuild_selection_vbo()
                 if cmd is not None:
@@ -1702,6 +1878,8 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._knife_tool.cancel()
                 self._knife_tool.deactivate()
                 self._knife_tool = None
+                self._knife_slide_armed = False
+                self._clear_knife_hover_vbos()
                 self._rebuild_vbo()
                 self._hud.update_action("Knife cancelled")
                 self._update_hud()
@@ -1994,6 +2172,30 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._vlist_hover.draw(gl.GL_LINES)
             else:
                 self._vlist_hover.draw(gl.GL_TRIANGLES)
+            gl.glDepthFunc(gl.GL_LESS)
+            self._overlay_program.stop()
+
+        # -- Knife Hover (edge highlight + split-point preview) ---------------
+        if self._knife_tool is not None and (
+            self._vlist_knife_hover_edge is not None
+            or self._vlist_knife_preview_point is not None
+        ):
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            self._overlay_program["u_color"] = list(_HOVER_COLOR)
+            gl.glEnable(gl.GL_BLEND)
+            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LEQUAL)
+            if self._vlist_knife_hover_edge is not None:
+                self._vlist_knife_hover_edge.draw(gl.GL_LINES)
+            if self._vlist_knife_preview_point is not None:
+                gl.glDisable(gl.GL_DEPTH_TEST)
+                gl.glPointSize(10.0)
+                self._vlist_knife_preview_point.draw(gl.GL_POINTS)
+                gl.glPointSize(_VERTEX_POINT_SIZE)
+                gl.glEnable(gl.GL_DEPTH_TEST)
             gl.glDepthFunc(gl.GL_LESS)
             self._overlay_program.stop()
 
