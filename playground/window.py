@@ -1304,8 +1304,10 @@ class PlaygroundWindow(pyglet.window.Window):
             else:
                 self.app.display_state.cycle()
             self._update_hud()
-        elif symbol == _key.Z and modifiers & _key.MOD_CTRL:
-            # Ctrl+Z: in-session undo for knife, else global undo (AD-017 / WP-AP-Enablement-01)
+        elif symbol == _key.Z and modifiers & _key.MOD_CTRL and not (modifiers & _key.MOD_SHIFT):
+            # Ctrl+Z: in-session undo for knife, else global undo (AD-017 / WP-AP-Enablement-01).
+            # Shift is excluded so Ctrl+Shift+Z can reach the redo branch below
+            # (same guard pattern as the bare-D branch above).
             if self._knife_tool is not None:
                 self._knife_tool.undo_step()
                 self._rebuild_vbo()
@@ -1318,14 +1320,40 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_vbo()
                 self._hud.update_action("Undo")
                 self._update_hud()
+        elif symbol == _key.Z and modifiers & _key.MOD_CTRL and modifiers & _key.MOD_SHIFT:
+            # Ctrl+Shift+Z: alternative redo gesture (DECIDED 2026-09-22); the
+            # Ctrl+Z undo branch above excludes Shift, so this is unambiguous.
+            # (Ctrl+Y without Shift is the canonical redo gesture below.)
+            if self._knife_tool is not None:
+                self._knife_tool.redo_step()
+                self._rebuild_vbo()
+                self._hud.update_action("Knife — redo last cut")
+                self._update_hud()
+            else:
+                self.app.redo()
+                self.app.scene.selection.clear()
+                self._recompute_derived()
+                self._rebuild_vbo()
+                self._hud.update_action("Redo")
+                self._update_hud()
         elif symbol == _key.Y and modifiers & _key.MOD_CTRL:
-            # Ctrl+Y: Redo — Production-Bindung (siehe oben).
-            self.app.redo()
-            self.app.scene.selection.clear()
-            self._recompute_derived()
-            self._rebuild_vbo()
-            self._hud.update_action("Redo")
-            self._update_hud()
+            # Ctrl+Y: canonical Redo. While a Knife session is active, undo and
+            # redo operate exclusively on the session's own step history — the
+            # global stacks are neither mutated nor replayed (AD-017, DECIDED
+            # 2026-09-22; otherwise a pre-session global state could destroy the
+            # in-session cuts and stale the session baseline).
+            if self._knife_tool is not None:
+                self._knife_tool.redo_step()
+                self._rebuild_vbo()
+                self._hud.update_action("Knife — redo last cut")
+                self._update_hud()
+            else:
+                self.app.redo()
+                self.app.scene.selection.clear()
+                self._recompute_derived()
+                self._rebuild_vbo()
+                self._hud.update_action("Redo")
+                self._update_hud()
         elif symbol == _key.I:
             # I: Loop Insert (AP-05). Scope: Edge-Modus, genau 1 Edge selektiert.
             sel = self.app.scene.selection
