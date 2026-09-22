@@ -5,6 +5,7 @@
 ```bash
 python playground/run.py          # Cube (Standard)
 python playground/run.py head     # Head-Basemesh
+python playground/run.py grid     # flaches 8x8-Quad-Raster (Connect Lab)
 ```
 
 Das Fenster öffnet mit dem Playground. Die HUD zeigt oben:

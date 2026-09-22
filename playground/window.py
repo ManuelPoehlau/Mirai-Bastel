@@ -102,6 +102,9 @@ from playground.topology_tools.loop_slide import (  # noqa: E402
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
+from playground.experiments.connect import active_connect_fn  # noqa: E402
+from playground.experiments.connect.variant_strip import ConnectStripVariant  # noqa: E402
+from playground.experiments.connect.variant_per_face import ConnectPerFaceVariant  # noqa: E402
 from playground.experiments.articulation.articulation import ArticulationState  # noqa: E402
 from playground.experiments.articulation.variant_articulation import ArticulationVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
@@ -303,12 +306,19 @@ class PlaygroundWindow(pyglet.window.Window):
         artic_slot = ExperimentSlot(
             VariantEntry(ArticulationVariant(app)),
         )
+        # Connect Lab (CONNECT_NONQUAD_DISCOVERY §6): index 0 = baseline, so the
+        # default behaviour of C is unchanged (AD-013 A2 lab override).
+        connect_slot = ExperimentSlot(
+            VariantEntry(ConnectStripVariant(app)),
+            VariantEntry(ConnectPerFaceVariant(app)),
+        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
         app.register_slot(tweak_slot, "tweak")
         app.register_slot(topo_slot, "topology")
         app.register_slot(artic_slot, "articulation")
+        app.register_slot(connect_slot, "connect")
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
@@ -422,6 +432,8 @@ class PlaygroundWindow(pyglet.window.Window):
             self.app.load_head(store_type=PlaygroundPygletStore)
         elif initial_mesh == "cylinder":
             self.app.load_cylinder(store_type=PlaygroundPygletStore)
+        elif initial_mesh == "grid":
+            self.app.load_grid(store_type=PlaygroundPygletStore)
         else:
             self.app.load_cube(store_type=PlaygroundPygletStore)
 
@@ -1333,7 +1345,10 @@ class PlaygroundWindow(pyglet.window.Window):
             if sel.mode is SelectionMode.EDGE and len(sel.edges) >= 2:
                 restored = self._articulation_auto_restore()
                 try:
-                    new_edges = connect_selected_edges(self.app.scene, set(sel.edges))
+                    # Semantics chosen by the active "connect" lab variant
+                    # (baseline unless the artist switched via Tab/M).
+                    connect_fn = active_connect_fn(self.app.slots)
+                    new_edges = connect_fn(self.app.scene, set(sel.edges))
                     sel.clear()
                     sel.add(set(new_edges))
                     self._rebuild_vbo()

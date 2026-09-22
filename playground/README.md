@@ -7,6 +7,7 @@ Experimentier-Host für UX-Fragen (Viewport-Display, Selection-Philosophie, Inte
 ```bash
 python playground/run.py          # Cube
 python playground/run.py head     # Head-Basemesh
+python playground/run.py grid     # flaches 8x8-Quad-Raster (Connect Lab)
 ```
 
 Fenster öffnet mit HUD (Kamera, Mesh-Info, aktuelles Experiment, Display-Modus, Selection-Count).

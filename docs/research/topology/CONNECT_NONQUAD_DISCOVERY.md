@@ -130,6 +130,12 @@ Mechanik entscheidet der Agent anhand von Tests, Produktverhalten entscheidet de
 
 ### D1 — Welche Kanten werden miteinander verbunden?
 
+> **Artist-Verdikt (2026-09-21, Connect Lab):** D1-a (Streifen, Baseline) → **REJECT**.
+> D1-b (pro Face, Wings-artig) → **KEEP**. Gespielt auf dem 8×8-Raster, Aufgaben 1–4.
+> Aufgabe 1 (Weiterschneiden) hakte erwartungsgemäß in beiden Varianten — bestätigt D5,
+> ist kein Urteil über D1. Damit ist „ganze Loop oder nichts" als alleinige Connect-Semantik
+> abgelehnt; die Face-Größen-unabhängige Semantik ist die neue Grundlage.
+
 | Option | Beschreibung | Folge |
 |---|---|---|
 | D1-a (heute) | Nur gegenüberliegende Kanten in Quads, als Kette | Streifen-Schneider |
@@ -158,11 +164,16 @@ Signalling-Frage (Research Map, Querschnittseigenschaft) → **Artist**, aber mi
 
 ### D5 — Weiterschneiden von einem vorhandenen Punkt
 
+> *Weiterführung 2026-09-21:* aufgegriffen in `docs/architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md`
+> (Knife + Connect Vertices über eine gemeinsame Schnitt-Engine).
+
 Mit Kanten-Auswahl allein nicht sauber lösbar (A2). Braucht einen Vertex-Anteil in der Auswahl
 oder eine interaktive Variante. **Kopplung an Connect Vertices** — wird bei der Priorisierung von
 Punkt 3 relevant.
 
 ### D6 — „kind v" und die Core-Ausnahme `add_edge()`
+
+> *Weiterführung 2026-09-21:* als Entscheidungsfrage B4 in AD-017 (PROPOSED).
 
 - **Befund (FAKT, Test F7):** Auf dem Raster, mit dem der Fall abgesichert ist, liegt die erzeugte
   freie Kante genau auf den vorhandenen Kanten und teilt keine Face.
@@ -193,6 +204,9 @@ Heute: die neuen Kanten. Das ist die Residue-Frage aus der Research Map. Nur not
 
 ## 5. Was entschieden werden kann — und von wem
 
+**D1 ist entschieden (siehe §4).** Die Tabelle unten gilt unverändert für D2–D8; D1 dort nur
+noch als Referenz.
+
 | Frage | Wer | Grundlage |
 |---|---|---|
 | Ist Ngon-/Ecken-Connect mit dem Core machbar? | Agent — **beantwortet: ja** | F9, Probe, Invarianten |
@@ -208,14 +222,28 @@ Product Truth.
 
 ---
 
-## 6. Vorbereiteter Artist-Test (M4) — noch nicht gebaut
+## 6. Vorbereiteter Artist-Test (M4) — gebaut, noch nicht gespielt
 
 **Ziel:** In wenigen Minuten erleben, ob sich Wings-artiges Connect (D1-b) richtiger anfühlt als
 das heutige Streifen-Connect (D1-a).
 
-**Voraussetzung (noch nicht vorhanden):** D1-b als umschaltbare Playground-Variante neben der
-heutigen (Lab-Override nach AD-013 A2, Baseline bleibt unberührt). Aufwand gering, weil die
-Probe-Logik existiert. **Wird erst gebaut, wenn der Artist den Test haben will.**
+**Stand 2026-09-21:** D1-b ist als umschaltbare Playground-Variante gebaut (Lab-Override nach
+AD-013 A2). Die Baseline bleibt Standard und unverändert; Loop Insert nutzt weiterhin die Baseline.
+
+- Familie `connect` im Playground: `Tab` bis `connect`, `M` wechselt zwischen
+  „Streifen (nur Quads)" und „Pro Face (Wings-artig)". **Keine neue Taste** — `C` bleibt Connect.
+- Testkörper: `python playground/run.py grid` (8×8-Quad-Raster) oder `… head`.
+- Code: `playground/topology_tools/connect_per_face.py`, `playground/experiments/connect/`
+- Tests: `playground/tests/test_connect_lab.py`
+- Verdikt-Vorlage: `playground/experiments/connect/decision.md`
+
+Bewusste Festlegungen **nur für den Test** (keine Antworten auf D3/D4):
+- Nicht verbindbare Auswahl → dieselbe Fehlermeldung im HUD wie die Baseline. So bleibt das
+  Signalling zwischen den Varianten gleich und verfälscht den Vergleich nicht (Research Map §9).
+- Bliebe ein Mittelpunkt unverbunden, wird die ganze Operation abgelehnt statt — wie in Wings —
+  den Punkt wieder aufzulösen. Dafür fehlt ein Vertex-Dissolve; der Fall tritt nach dem Vorfilter
+  praktisch nicht auf.
+- Mehr als zwei ausgewählte Kanten in einer Face → inneres Polygon wie in Wings (Szenario I).
 
 **Aufgaben** (auf einem vorbereiteten Quad-Stück, je Variante):
 

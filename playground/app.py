@@ -122,6 +122,21 @@ class PlaygroundApp:
         self._app.viewport.bind_camera(self._app.camera)
         self._frame_camera()
 
+    def load_grid(self, store_type: type[ResourceStore] = TraceStore) -> None:
+        """Flaches 8x8-Quad-Raster (Connect Lab, CONNECT_NONQUAD_DISCOVERY §6).
+
+        store_type: siehe `load_cylinder()`.
+        """
+        from playground.experiments.connect.demo_grid import build_grid
+        self._app.scene.mesh = build_grid()
+        self._app.viewport = Viewport(
+            self._app.scene.mesh,
+            selection=self._app.scene.selection,
+            store_type=store_type,
+        )
+        self._app.viewport.bind_camera(self._app.camera)
+        self._frame_camera()
+
     def load_cube(self, store_type: type[ResourceStore] = TraceStore) -> None:
         """Würfel-Szene laden.
 

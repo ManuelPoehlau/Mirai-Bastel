@@ -9,8 +9,16 @@ Aufruf:
 """
 
 import sys
+from pathlib import Path
 
-from playground._paths import ensure_paths
+# sys.path-Bootstrap Stufe 0 — Skriptstart: bei `python
+# playground/_diag_screenshot.py` liegt das Skript-Verzeichnis auf sys.path[0],
+# nicht das Repo-Root — siehe die ausführliche Begründung in `playground/run.py`.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from playground._paths import ensure_paths  # noqa: E402
 
 ensure_paths()
 

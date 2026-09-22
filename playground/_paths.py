@@ -7,8 +7,18 @@ Articulation-Experiment, `playground/experiments/articulation/articulation.py`
 — unabhängig vom OBJ-Loader, der seit AD-007 in `examples/` liegt) auf
 sys.path.
 
-Dadurch funktionieren alle Playground-Imports sowohl als Skript
-(`python playground/run.py`) als auch unter pytest aus dem Repo-Root.
+Dadurch funktionieren alle Playground-Imports, sobald `ensure_paths()`
+gelaufen ist — unter pytest aus dem Repo-Root, unter `python -m
+playground.run` und als Skript (`python playground/run.py`).
+
+Wichtig (beobachteter Fehlerfall): `ensure_paths()` kann diesen Bootstrap
+nicht selbst leisten, wenn die Datei per Skriptaufruf startet. Bei
+`python playground/run.py` legt CPython `playground/` auf sys.path[0] und
+nicht das Repo-Root; `from playground._paths import ensure_paths` scheitert
+dann mit `ModuleNotFoundError: No module named 'playground'`. Skript-
+Einstiegspunkte in `playground/` (aktuell `run.py`, `_diag_screenshot.py`)
+hängen deshalb VOR diesem Import das Repo-Root ein („Stufe 0", siehe
+Kommentar in `playground/run.py`).
 
 Hinweis: `src/` liegt VOR dem Repo-Root — das Top-Level-`viewport` löst
 dadurch auf `src/viewport` (Production) auf, nicht auf das stray-Verzeichnis

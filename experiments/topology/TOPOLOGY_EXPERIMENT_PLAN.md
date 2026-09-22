@@ -154,6 +154,8 @@ Kante an Nicht-Quads; Ecken und Knicke werden abgelehnt. Übrig bleibt praktisch
 - Charakterisierungstests: `playground/tests/test_topology_connect_edges_characterization.py`
 - Discovery (Wings-Semantik, Core-Probe, Designfragen D1–D8, vorbereiteter Artist-Test): [`CONNECT_NONQUAD_DISCOVERY.md`](../../docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md)
 - Probe-Skript: `experiments/topology/connect_per_face_probe.py`
+- Connect Lab (spielbarer Artist-Test, 2 Varianten, Familie `connect`): `playground/experiments/connect/decision.md` — Baseline bleibt Standard
+- Artist-Verdikt: Streifen REJECT, Pro Face KEEP. Nächster Schritt geplant: kontextuelles C (Split/Connect/Knife) — `docs/architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md` (PROPOSED), `docs/design/artist_playground/WP-AP-CUT_PLAN.md`
 
 Die Abschnitte darunter beschreiben den Stand vom 2026-09-14; abweichende Punkte sind markiert.
 
