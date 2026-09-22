@@ -30,6 +30,20 @@ def _edge_t_3d(origin: _Vec3, direction: _Vec3, p0: _Vec3, p1: _Vec3) -> float:
     """Perspective-correct t: closest point on edge segment to view ray.
 
     Returns t in [0, 1] where t=0 is p0, t=1 is p1.
+
+    Convention (standard closest-point-of-two-lines, Ericson §5.1.8):
+      ray     P(s) = origin + s * direction
+      segment Q(t) = p0 + t * d
+      w0 = origin - p0
+      a = direction·direction, b = direction·d, c = d·d,
+      d_val = d·w0, e = direction·w0, denom = a*c - b*b
+      t = (a*e - b*d_val) / denom
+
+    Note: in the variable names used below, `a` is the SEGMENT dot product and
+    `c` is the RAY dot product, so the segment parameter reads
+    `(c * d_val - b * e) / denom`. Using `(b * e - c * d_val)` instead returns
+    the negated parameter, which clamps to 0.0 for every click and makes every
+    edge hit snap to p0.
     """
     d = _sub3(p1, p0)
     w = _sub3(origin, p0)
@@ -41,7 +55,7 @@ def _edge_t_3d(origin: _Vec3, direction: _Vec3, p0: _Vec3, p1: _Vec3) -> float:
     denom = a * c - b * b
     if abs(denom) < 1e-10:
         return 0.0
-    t = (b * e - c * d_val) / denom
+    t = (c * d_val - b * e) / denom
     return max(0.0, min(1.0, t))
 
 
