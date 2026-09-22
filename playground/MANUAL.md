@@ -54,6 +54,7 @@ Das Fenster öffnet mit dem Playground. Die HUD zeigt oben:
 | LMB außerhalb Mesh | Session committen |
 | Enter | Session committen (eine History-Operation) |
 | Ctrl+Z | Letzten Schnitt rückgängig |
+| Ctrl+Y / Ctrl+Shift+Z | Letzten rückgängig gemachten Schnitt wiederherstellen (Ctrl+Y ist die kanonische Bindung) |
 | Esc | Session abbrechen (Mesh wiederhergestellt) |
 
 | Taste | Aktion |

@@ -34,8 +34,9 @@ Artist decisions as recorded in `AD-017_FINAL_DECISIONS_2026-09-22.md`, in short
   | Knife (on commit) | the session's newly created connecting-edge path selected, mode switches to Edge (in-session: new point is the tool-internal knife start, not Selection) |
 
 - **Knife:** incremental explicit path; arbitrary edge position t; two-level history (in-session
-  Undo = last cut, Esc = discard session, commit via Enter or click outside the mesh = one history
-  operation). Face-interior cutting and the preview/mouse UX are **open**.
+  Undo = last cut, in-session Redo = re-apply the last undone cut, Esc = discard session, commit
+  via Enter or click outside the mesh = one history operation; see the DECIDED addendum below).
+  Face-interior cutting and the preview/mouse UX are **open**.
 - **B1 `split_edge(t)`:** delegated to implementation; the implementation brief resolves it as
   "extend `Mesh.split_edge` with optional `t` (default 0.5, bit-identical)" — see brief §1.1.
 - **B2 interior points:** open (Artist question, see brief §7).
@@ -50,6 +51,17 @@ selected", which has no C meaning (no-op).
 **Knife residue: DECIDED (2026-09-22).** After a committed session, select the path's connecting edges
 (not the split-remnant edges, not the vertices) and switch to Edge mode — mirrors Edge Connect's residue
 rule.
+
+**Knife in-session Redo + history isolation: DECIDED (2026-09-22).** Artist-validated workflow
+A→B→C, Undo → A→B, Redo → A→B→C. In-session Undo and Redo restore the complete Knife session state
+(mesh state, current start, `path_edges`). While a session is active, Undo/Redo operate exclusively
+on the session's own step history — the global history stack is neither mutated, consumed, nor
+replayed (a pre-session global state must never be re-applied mid-session). Cancel/Esc still
+discards the entire active session and restores exactly the pre-session state; commit still
+converts the complete session into exactly one global history operation (before = pre-session
+state, after = final session state); after commit, normal global Undo/Redo applies to the
+committed operation. Bindings: `Ctrl+Z` Undo, `Ctrl+Y` Redo (canonical), `Ctrl+Shift+Z` Redo
+(alternative gesture). Implementation contract: `WP-AP-CUT_PLAN.md` §1.7 / §1.9.
 
 The proposal text below is kept unchanged as the record of what was proposed.
 

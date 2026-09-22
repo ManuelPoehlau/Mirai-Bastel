@@ -109,6 +109,12 @@ Modal tool on the existing lifecycle (`mirai.interaction.tool.Tool`, same patter
   - invalid target → no-op (start unchanged, `path_edges` unchanged).
   - each accepted click pushes a step `(state_before_step, start_before_step, path_edges_before_step)`.
 - `undo_step()`: restore the last step's state, start and `path_edges`; empty stack → no-op.
+  The undone step is retained for redo: the redo branch stores the popped step plus the
+  `(state, start, path_edges)` snapshot taken at undo time.
+- `redo_step()`: re-apply the most recently undone cut — restore its post-cut mesh state, start and
+  `path_edges`, and push the step back onto the undo stack; empty redo branch → no-op. Any
+  subsequently **accepted** click clears the redo branch (mirrors `HistoryStack.push` — no history
+  tree); **rejected** clicks do not. `cancel()` and `commit()` discard the redo branch.
 - `cancel()`: `load_state(session_before)`; nothing pushed to history.
 - `commit()`: if the mesh changed → exactly **one** `MeshStateCommand(session_before → now)`,
   description "Knife"; **residue (DECIDED):** `selection.mode = EDGE`, `selection.set(path_edges)`
@@ -136,6 +142,9 @@ Modal tool on the existing lifecycle (`mirai.interaction.tool.Tool`, same patter
     click with "outside mesh" → commit; click "on mesh, no target" → nothing;
   - `Enter` → commit; `Esc` → cancel (add to the existing Esc cancel chain like Loop Slide / Extrude);
   - `Ctrl+Z` → `undo_step` (must not reach the global history while the session is active);
+  - `Ctrl+Y` → `redo_step` (canonical binding); `Ctrl+Shift+Z` → `redo_step` (alternative gesture —
+    the `Ctrl+Z` branch must exclude Shift so it can never swallow `Ctrl+Shift+Z`). Neither gesture
+    may reach the global history while the session is active;
   - navigation inputs pass through unchanged;
   - all other keys, including `C`, are ignored during the session.
 - Click on release, not on press — keeps a later drag-slide variant possible without redesign.
@@ -215,6 +224,13 @@ Knife (headless state machine):
   entry; global undo after commit removes the whole session; commit without changes → no entry;
   **commit residue**: Edge mode active, selection == the session's `path_edges` exactly (no split-remnant
   edges, no vertices, no stale IDs).
+- In-session Redo (contract extension, DECIDED 2026-09-22): redo after undo reproduces the exact
+  session state (mesh, start, `path_edges`); empty redo branch → no-op; undo/redo round-trips are
+  state-identical; an accepted click after undo clears the redo branch, a rejected click does not;
+  cancel with redo entries restores `session_before` exactly; commit after redo → one history entry;
+  **history isolation**: with a non-empty global redo stack, in-session undo/redo never change the
+  global stacks' depths nor replay a pre-session state; `Ctrl+Z`/`Ctrl+Y`/`Ctrl+Shift+Z` routing via
+  the real `PlaygroundWindow.on_key_press` (headless window, cf. `test_gizmo.py`).
 
 Picking:
 - perspective-correct t against known camera setups; endpoint threshold → vertex; vertex priority over edge.
@@ -244,8 +260,10 @@ Regression: full `playground/tests/` and Core suite green.
 ## 6. Acceptance criteria
 
 1. All four C contexts behave as decided on `python playground/run.py grid` and `… head`.
-2. Knife: chains over ≥ 3 faces with arbitrary t; in-session undo, Esc, Enter and click-outside commit
-   behave as in AD-017 §8; one history entry per committed session; on commit the session's connecting-edge
+2. Knife: chains over ≥ 3 faces with arbitrary t; in-session undo **and redo** (A→B→C / Undo→A→B /
+   Redo→A→B→C), Esc, Enter and click-outside commit behave as in AD-017 §8; while a session is active
+   Undo/Redo touch only the session's own history (global history never mutated, consumed or replayed);
+   one history entry per committed session; on commit the session's connecting-edge
    path is selected in Edge mode.
 3. The only `src/` change is `Mesh.split_edge(t)`, with contract tests and the §7.1 precedent entry.
 4. Strip Connect is unreachable from C; Loop Insert unchanged.
