@@ -5,6 +5,7 @@ History: in-session mutations are NOT pushed to global history.
 Commit: pushes exactly one MeshStateCommand; selects the connecting-edge path.
 Cancel / Esc: restores pre-session state; nothing pushed.
 In-session undo: removes only the most recent cut step.
+In-session redo: re-applies the most recently undone cut (DECIDED 2026-09-22).
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ class KnifeTool(Tool):
       knife.hover(target)   # preview, no mutation
       knife.click(target)   # may mutate mesh
       knife.undo_step()     # remove most recent cut step
+      knife.redo_step()     # re-apply the most recently undone cut
       # end session:
       knife.commit()        # push one history entry, apply residue
       # or:
@@ -52,6 +54,7 @@ class KnifeTool(Tool):
         self._start: VertexId | None = None
         self._path_edges: list[EdgeId] = []
         self._step_stack: list[_KnifeStep] = []
+        self._redo_stack: list[tuple[_KnifeStep, _KnifeStep]] = []
 
     def _on_begin(self, mesh=None, scene=None, selection=None, **_) -> None:
         self._mesh = mesh
@@ -61,6 +64,7 @@ class KnifeTool(Tool):
         self._start = None
         self._path_edges = []
         self._step_stack = []
+        self._redo_stack = []
         print("[KNIFE] session begin (start=none, path_edges=0, state captured)")
 
     def hover(self, target: dict) -> dict:
@@ -101,6 +105,7 @@ class KnifeTool(Tool):
             if self._start is None:
                 # First click — set start, no mesh mutation
                 self._push_step()
+                self._redo_stack.clear()
                 self._start = vid
                 print(f"[KNIFE] current_start=vertex:{int(vid)} (first click, no mesh mutation)")
                 return True
@@ -115,6 +120,7 @@ class KnifeTool(Tool):
             prev_start = self._start
             self._path_edges.append(eid)
             self._start = vid
+            self._redo_stack.clear()
             print(f"[KNIFE] connect vertex:{int(prev_start)} -> vertex:{int(vid)} new edge:{int(eid)}; "
                   f"path_edges={len(self._path_edges)}; current_start=vertex:{int(vid)}")
             return True
@@ -140,6 +146,7 @@ class KnifeTool(Tool):
                           f"{type(exc).__name__}: {exc}")
                     raise
                 self._start = new_v
+                self._redo_stack.clear()
                 print(f"[KNIFE] split_edge -> vertex:{int(new_v)}; "
                       f"current_start=vertex:{int(new_v)} (first click on edge)")
                 return True
@@ -183,6 +190,7 @@ class KnifeTool(Tool):
             prev_start = self._start
             self._path_edges.append(conn_eid)
             self._start = new_v
+            self._redo_stack.clear()
             print(f"[KNIFE] connect vertex:{int(prev_start)} -> vertex:{int(new_v)} new edge:{int(conn_eid)}; "
                   f"path_edges={len(self._path_edges)}; current_start=vertex:{int(new_v)}")
             return True
@@ -198,15 +206,44 @@ class KnifeTool(Tool):
         ))
 
     def undo_step(self) -> bool:
-        """Remove the most recent cut step. Returns True if a step was undone."""
+        """Remove the most recent cut step. Returns True if a step was undone.
+
+        The undone step is retained together with the post-cut state so that
+        `redo_step` can re-apply it (AD-017 in-session redo, DECIDED 2026-09-22).
+        """
         if not self._step_stack:
             print("[KNIFE] undo_step: nothing to undo")
             return False
         step = self._step_stack.pop()
+        after = _KnifeStep(
+            state_before=self._mesh.export_state(),
+            start_before=self._start,
+            path_edges_before=list(self._path_edges),
+        )
+        self._redo_stack.append((step, after))
         self._mesh.load_state(step.state_before)
         self._start = step.start_before
         self._path_edges = list(step.path_edges_before)
         print(f"[KNIFE] undo_step: restored; "
+              f"current_start={'none' if self._start is None else f'vertex:{int(self._start)}'}; "
+              f"path_edges={len(self._path_edges)}")
+        return True
+
+    def redo_step(self) -> bool:
+        """Re-apply the most recently undone cut. Returns True if a step was redone.
+
+        Restores the complete post-cut session state (mesh, start, `path_edges`)
+        and pushes the step back onto the undo stack. Empty redo branch → no-op.
+        """
+        if not self._redo_stack:
+            print("[KNIFE] redo_step: nothing to redo")
+            return False
+        step, after = self._redo_stack.pop()
+        self._mesh.load_state(after.state_before)
+        self._start = after.start_before
+        self._path_edges = list(after.path_edges_before)
+        self._step_stack.append(step)
+        print(f"[KNIFE] redo_step: re-applied; "
               f"current_start={'none' if self._start is None else f'vertex:{int(self._start)}'}; "
               f"path_edges={len(self._path_edges)}")
         return True
@@ -234,6 +271,7 @@ class KnifeTool(Tool):
             description="Knife",
         )
         self._scene.history.push(cmd)
+        self._redo_stack.clear()
 
         # Residue (AD-017, DECIDED): select the connecting-edge path, switch to Edge mode
         self._selection.mode = SelectionMode.EDGE
@@ -247,5 +285,6 @@ class KnifeTool(Tool):
         print(f"[KNIFE] cancel: restoring pre-session state; path_edges={len(self._path_edges)} discarded")
         self._mesh.load_state(self._session_before)
         self._step_stack.clear()
+        self._redo_stack.clear()
         self._path_edges = []
         self._start = None

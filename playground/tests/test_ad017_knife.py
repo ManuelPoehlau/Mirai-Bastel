@@ -16,6 +16,7 @@ for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"),
         sys.path.insert(0, _p)
 
 from core import Scene  # noqa: E402
+from core.operations.topology import MeshStateCommand  # noqa: E402
 from core.selection import Selection, SelectionMode  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
@@ -365,3 +366,222 @@ def test_commit_residue():
     assert sel.edges == set(path_edges)
     # All selected edges must be valid
     assert all(mesh.is_valid_edge(e) for e in sel.edges)
+
+
+# ---------------------------------------------------------------------------
+# 12. in-session redo (contract extension, DECIDED 2026-09-22)
+# ---------------------------------------------------------------------------
+
+def test_redo_restores_full_session_state():
+    """A->B->C / Undo -> A->B / Redo -> A->B->C (mesh, start, path_edges)."""
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    knife = _begin_knife(app)
+    # A: start at v0 (no mutation); B: connect v2 (diagonal f1); C: connect v4 (diagonal f2)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    knife.click({"kind": "vertex", "vertex_id": v4})
+    topo_ABC = _topo_snapshot(mesh)
+    start_ABC, path_ABC = knife._start, list(knife._path_edges)
+    assert len(path_ABC) == 2
+
+    assert knife.undo_step()
+    assert _topo_snapshot(mesh) != topo_ABC
+    assert knife._start == v2 and len(knife._path_edges) == 1
+
+    assert knife.redo_step()
+    assert _topo_snapshot(mesh) == topo_ABC
+    assert knife._start == start_ABC
+    assert knife._path_edges == path_ABC
+    assert_mesh_invariants(mesh, context="knife redo")
+
+
+def test_redo_empty_branch_no_op():
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    before = _topo_snapshot(mesh)
+    knife = _begin_knife(app)
+    assert not knife.redo_step()          # nothing undone yet
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    assert not knife.redo_step()          # still nothing undone
+    assert _topo_snapshot(mesh) == before
+    assert knife._start == v0
+
+
+def test_undo_redo_round_trips_are_state_identical():
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    knife.click({"kind": "vertex", "vertex_id": v4})
+    topo_ABC = _topo_snapshot(mesh)
+    start_ABC, path_ABC = knife._start, list(knife._path_edges)
+
+    for _ in range(2):                     # undo/redo x2 stays exact
+        assert knife.undo_step()
+        assert knife.redo_step()
+        assert _topo_snapshot(mesh) == topo_ABC
+        assert knife._start == start_ABC
+        assert knife._path_edges == path_ABC
+    assert len(knife._step_stack) == 3 and len(knife._redo_stack) == 0
+
+
+def test_accepted_click_after_undo_clears_redo_branch():
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})      # B accepted
+    assert knife.undo_step()                              # back to start=v0
+    assert len(knife._redo_stack) == 1
+    # New accepted cut replaces the undone one -> redo branch is gone
+    # (v2 is the f1 diagonal of start v0 — a valid new cut after the undo)
+    assert knife.click({"kind": "vertex", "vertex_id": v2})
+    assert knife._redo_stack == []
+    assert not knife.redo_step()
+
+
+def test_rejected_click_keeps_redo_branch():
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    assert knife.undo_step()
+    assert len(knife._redo_stack) == 1
+    # v5 shares no face with start v0 -> rejected, must NOT clear the redo branch
+    assert not knife.click({"kind": "vertex", "vertex_id": v5})
+    assert len(knife._redo_stack) == 1
+    assert knife.redo_step()
+
+
+def test_cancel_with_redo_entries_restores_session_before():
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    topo_before = _topo_snapshot(mesh)
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    assert knife.undo_step()
+    assert len(knife._redo_stack) == 1
+    knife.cancel()
+    assert _topo_snapshot(mesh) == topo_before
+    assert knife._start is None and knife._path_edges == []
+    assert knife._step_stack == [] and knife._redo_stack == []
+
+
+def test_commit_after_redo_pushes_one_history_entry():
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    topo_before = _topo_snapshot(mesh)
+    before_hist = _hist_depth(app)
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    knife.click({"kind": "vertex", "vertex_id": v4})
+    assert knife.undo_step()
+    assert knife.redo_step()
+    cmd = knife.commit()
+    knife.deactivate()
+    assert cmd is not None
+    assert _hist_depth(app) == before_hist + 1
+    # Global undo removes the whole (redone) session
+    app.undo()
+    assert _topo_snapshot(mesh) == topo_before
+
+
+# ---------------------------------------------------------------------------
+# 13. history isolation: in-session undo/redo never touch global history
+# ---------------------------------------------------------------------------
+
+def _depths(app):
+    """(global undo depth, global redo depth)."""
+    h = app.scene.history
+    return (len(h._undo_stack), len(h._redo_stack))
+
+
+def _push_history_split_then_undo(app, edge_id):
+    """Create a real global history entry (edge split) and immediately undo it,
+    leaving a non-empty global redo branch — the diagnosed corruption setup."""
+    mesh = app.scene.mesh
+    before = mesh.export_state()
+    mesh.split_edge(edge_id, 0.5)
+    app.scene.history.push(MeshStateCommand(
+        mesh=mesh,
+        before_state=before,
+        after_state=mesh.export_state(),
+        description="pre-session",
+    ))
+    app.undo()  # mesh back to the pre-split state; redo branch = 1
+
+
+def test_session_undo_redo_never_touch_global_history():
+    """Central invariant: while a session is active, undo/redo operate
+    exclusively on the session's own step history."""
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    topo_initial = _topo_snapshot(mesh)
+    eid = mesh._get_or_create_edge(v1, v2)  # existing shared edge — no mutation
+    _push_history_split_then_undo(app, eid)
+    assert _topo_snapshot(mesh) == topo_initial
+    depths = _depths(app)
+    assert depths == (0, 1)               # one global undo entry, one pending redo
+
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    knife.click({"kind": "vertex", "vertex_id": v4})
+    topo_ABC = _topo_snapshot(mesh)
+    assert topo_ABC != topo_initial
+
+    # Full in-session undo/redo cycles — global stacks must never change.
+    for _ in range(2):
+        while knife.undo_step():
+            assert _depths(app) == depths
+        while knife.redo_step():
+            assert _depths(app) == depths
+    assert _topo_snapshot(mesh) == topo_ABC
+    assert _depths(app) == depths
+
+    # The pre-session global redo entry was not consumed: after cancelling the
+    # session it is still pending and still functional.
+    knife.cancel()
+    assert _topo_snapshot(mesh) == topo_initial
+    assert _depths(app) == depths
+    app.redo()
+    assert _depths(app) == (1, 0)
+    assert _topo_snapshot(mesh) != topo_initial
+
+
+def test_global_redo_state_not_replayed_mid_session():
+    """The diagnosed corruption must be impossible: the global pre-session
+    state is never re-applied over in-session cuts."""
+    app, (v0, v1, v2, v3, v4, v5), _ = _two_quad_app()
+    mesh = app.scene.mesh
+    topo_initial = _topo_snapshot(mesh)
+    eid = mesh._get_or_create_edge(v1, v2)  # existing shared edge — no mutation
+    _push_history_split_then_undo(app, eid)
+    assert _topo_snapshot(mesh) == topo_initial
+
+    knife = _begin_knife(app)
+    knife.click({"kind": "vertex", "vertex_id": v0})
+    knife.click({"kind": "vertex", "vertex_id": v2})
+    topo_session = _topo_snapshot(mesh)
+    assert topo_session != topo_initial
+    assert len(knife._step_stack) == 2
+
+    # In-session redo restores session state, never the pre-session entry.
+    assert knife.undo_step()
+    assert knife.redo_step()
+    assert _topo_snapshot(mesh) == topo_session
+    assert _topo_snapshot(mesh) != topo_initial
+    assert len(knife._step_stack) == 2
+    assert _depths(app) == (0, 1)
+
+    # Cancel restores exactly the pre-session state; the global entry survives.
+    knife.cancel()
+    assert _topo_snapshot(mesh) == topo_initial
+    assert _depths(app) == (0, 1)
+    app.redo()
+    assert _depths(app) == (1, 0)
+    assert _topo_snapshot(mesh) != topo_initial
+
