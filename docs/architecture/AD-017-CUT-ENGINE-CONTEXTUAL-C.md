@@ -1,14 +1,57 @@
-# AD-017 — One Cut Engine for Split / Connect / Knife ("contextual C")
+# AD-017 — Contextual C: Distinct Topology Modes on Shared Split/Connect Helpers
 
-**Status:** PROPOSED — review pending. Nothing implemented.
-**Date:** 2026-09-21
+*(File name kept for link stability; the original title "One Cut Engine" was retired by the Artist decision below.)*
+
+**Status:** DECIDED ✓ (2026-09-22) — fully decided, incl. Split and Knife residue
+**Date:** proposed 2026-09-21 · decided 2026-09-22
 **Owner:** Manu (Project Owner)
-**Mode (M5):** Discovery → Architecture Gate (ROADMAP §10, Type C)
-**Evidence:** `docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md`, `playground/experiments/connect/decision.md`,
-`playground/tests/test_topology_connect_edges_characterization.py`, `playground/tests/test_connect_lab.py`
-**Relates to:** CORE_V1_FREEZE §7 / §7.1 (AP-05 `add_edge()`), AD-013 (UX ownership), ARCH-02 (provenance),
-`docs/future_ideas/SELECTION.md` (post-operation selection)
-**Implementation plan (after this AD is decided):** `docs/design/artist_playground/WP-AP-CUT_PLAN.md`
+**Decision input:** `AD-017_FINAL_DECISIONS_2026-09-22.md` (Artist statement, archived)
+**Reviews:** `AD-017_ARTIST_SEMANTICS_2026-09-22.md` (input) · `AD-017_REVIEW_AUTHOR_001.md` (author review, not independent)
+**Implementation brief:** `docs/design/artist_playground/WP-AP-CUT_PLAN.md`
+**Relates to:** CORE_V1_FREEZE §7 / §7.1, AD-013, AD-016, ARCH-02, `docs/future_ideas/SELECTION.md`
+
+---
+
+## Decision (2026-09-22)
+
+Artist decisions as recorded in `AD-017_FINAL_DECISIONS_2026-09-22.md`, in short:
+
+- **Contextual C:** 1 edge → Split · 2+ edges → Edge Connect · 2+ vertices → Vertex Connect ·
+  no selection → Knife. Four distinct modes.
+- **No universal operator.** §3 and §5 of the proposal below are **superseded**: there is no shared
+  `CutPath`/`apply()`. Shared are only small mode-agnostic helpers (resolve a vertex or edge+t point,
+  split at t, connect two vertices through a valid shared face, return created elements). Pairing,
+  rejection, interaction state, selection residue and history semantics belong to each mode.
+- **Vertex Connect:** Wings-like per-face cyclic pairing; no ordered selection (B3 → B3a).
+- **Edge Connect:** Wings-like per-face semantics (Connect Lab KEEP); strip semantics stay rejected.
+- **Selection residue (mode-specific):**
+
+  | Mode | After the operation |
+  |---|---|
+  | Edge Connect | new connecting edge(s) selected |
+  | Vertex Connect | selected vertices stay selected, Vertex mode |
+  | Split | new vertex selected, mode switches to Vertex |
+  | Knife (on commit) | the session's newly created connecting-edge path selected, mode switches to Edge (in-session: new point is the tool-internal knife start, not Selection) |
+
+- **Knife:** incremental explicit path; arbitrary edge position t; two-level history (in-session
+  Undo = last cut, Esc = discard session, commit via Enter or click outside the mesh = one history
+  operation). Face-interior cutting and the preview/mouse UX are **open**.
+- **B1 `split_edge(t)`:** delegated to implementation; the implementation brief resolves it as
+  "extend `Mesh.split_edge` with optional `t` (default 0.5, bit-identical)" — see brief §1.1.
+- **B2 interior points:** open (Artist question, see brief §7).
+- **B4 `add_edge()`:** retained; not removed or repurposed. No active production consumer after
+  Connect's strip semantics were rejected; recorded in CORE_V1_FREEZE §7.1.
+
+**D-S — Split residue: CONFIRMED (2026-09-22).** `Selection` stores only the active mode's set
+(`src/core/selection.py`), so selecting the new vertex requires switching from Edge to Vertex mode — the
+Artist confirmed this literal reading. Consequence: a second `C` right after Split meets "1 vertex
+selected", which has no C meaning (no-op).
+
+**Knife residue: DECIDED (2026-09-22).** After a committed session, select the path's connecting edges
+(not the split-remnant edges, not the vertices) and switch to Edge mode — mirrors Edge Connect's residue
+rule.
+
+The proposal text below is kept unchanged as the record of what was proposed.
 
 ---
 

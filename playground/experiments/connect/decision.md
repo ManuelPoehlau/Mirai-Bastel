@@ -1,6 +1,6 @@
 # Connect Lab — Artist Verdict
 
-**Status:** ENTSCHIEDEN (2026-09-21) — Baseline REJECT, Pro Face KEEP
+**Status:** ENTSCHIEDEN (2026-09-21) — Baseline REJECT, Pro Face KEEP · Folgeentscheidung: kontextuelles C, `docs/architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md` (DECIDED 2026-09-22)
 **Hintergrund:** `docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md` (§6 Testaufbau, D1–D8)
 **Bedienung:** `Tab` bis `connect` fokussiert ist → `M` wechselt die Variante (HUD: `Setting: … connect=…`).
 Kanten-Modus (`2`), Kanten wählen, `C` = Connect. `Ctrl+Z` = Undo.
