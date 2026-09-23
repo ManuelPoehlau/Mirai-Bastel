@@ -45,3 +45,30 @@ def split_selected_edge(scene, edge_id: EdgeId) -> tuple:
         )
     )
     return result
+
+
+def collapse_selected_edge(scene, edge_id: EdgeId):
+    """Kollabiert eine Edge und pusht genau einen MeshStateCommand.
+
+    Mirrors `split_selected_edge` exactly in shape (WP-STAB-06): same
+    snapshot-before/mutate/snapshot-after/push-one-MeshStateCommand
+    composition, so `Ctrl+Z` after Collapse Edge reverts it symmetrically
+    with Split/Connect (which already pushed history the same way).
+
+    Gibt die VertexId des überlebenden Vertex zurück, wie Mesh.collapse_edge().
+    Wirft dieselbe Exception wie Mesh.collapse_edge() bei ungültiger edge_id
+    (kein Push in diesem Fall, da before/after dann nie verglichen wird).
+    """
+    mesh = scene.mesh
+    before = mesh.export_state()
+    result = mesh.collapse_edge(edge_id)
+    after = mesh.export_state()
+    scene.history.push(
+        MeshStateCommand(
+            mesh=mesh,
+            before_state=before,
+            after_state=after,
+            description="Collapse Edge",
+        )
+    )
+    return result

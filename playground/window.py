@@ -62,7 +62,7 @@ from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # 
 # (variant_3_hold_click) parked (conflicts with D1). Neither is imported here
 # since only V2 and V4 are registered below — the modules themselves are
 # untouched and still exercised directly by playground/tests/test_tweak.py.
-from playground.topology_ops import split_selected_edge  # noqa: E402
+from playground.topology_ops import collapse_selected_edge, split_selected_edge  # noqa: E402
 from playground.topology_tools.connect_edges import (  # noqa: E402
     connect_selected_edges,
     TopologyToolError as _ConnectEdgesError,
@@ -1622,7 +1622,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 restored = self._articulation_auto_restore()
                 (edge_id,) = sel.edges
                 try:
-                    self.app.scene.mesh.collapse_edge(edge_id)
+                    # WP-STAB-06: history-wrapped, symmetric with Split/Connect
+                    # (mirrors split_selected_edge's snapshot-command shape).
+                    collapse_selected_edge(self.app.scene, edge_id)
                     sel.clear()
                     # WP-STAB-07: recompute derived before the VBO rebuild — see
                     # the Loop Insert branch above for the invalidation rationale.
