@@ -755,6 +755,38 @@ class PlaygroundWindow(pyglet.window.Window):
         self.app.active_tool = None
         self._hud.update_action("—")
 
+    def _transform_arm(self, x: int, y: int) -> bool:
+        """WP-STAB-04: selection-or-hover fallback shared by all Transform activation
+        models, mirroring _tweak_begin()'s rule (selection non-empty → use it as-is;
+        empty → hit-test and add a temp target). Unlike Tweak, Transform arms at key
+        press but only calls begin_transform() lazily on the first drag/motion, so this
+        only resolves *what* will be transformed — not the gesture itself.
+
+        Returns True if there is something to transform (selection or hit under the
+        cursor), False if both are empty and the caller must refuse.
+        """
+        sel = self.app.scene.selection
+        if _tweak_has_selection(sel):
+            return True
+        if self.app.viewport is None:
+            return False
+        mesh = self.app.viewport.render_mesh.mesh
+        hit = pick_component(self.app.camera, mesh, sel, x, y, self.width, self.height)
+        if hit is None:
+            return False
+        add_temp_target(sel, hit)
+        self._transform_temp_target = True
+        self._rebuild_selection_vbo()
+        return True
+
+    def _clear_transform_temp_target(self) -> None:
+        """WP-STAB-04: teardown counterpart of _transform_arm(), mirroring the Tweak
+        temp-target clear + overlay rebuild fixed for Tweak in WP-STAB-08."""
+        if self._transform_temp_target:
+            clear_temp_target(self.app.scene.selection)
+            self._transform_temp_target = False
+            self._rebuild_selection_vbo()
+
     # -- Articulation-Helpers -------------------------------------------------
 
     def _articulation_auto_restore(self) -> bool:
@@ -1319,6 +1351,7 @@ class PlaygroundWindow(pyglet.window.Window):
         ):
             commit_transform(self.app.active_tool)
             self._sync_after_transform()
+            self._clear_transform_temp_target()
             self._clear_transform_state()
             return pyglet.event.EVENT_HANDLED
 
@@ -1792,6 +1825,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     if self._transform_started and self.app.active_tool is not None:
                         cancel_transform(self.app.active_tool)
                         self._sync_after_transform()
+                    self._clear_transform_temp_target()
                     self._clear_transform_state()
                 # Cancel in-progress Knife session before switching variant (WP-AP-CUT)
                 if active_family == "knife" and self._knife_tool is not None:
@@ -1902,37 +1936,40 @@ class PlaygroundWindow(pyglet.window.Window):
             self._current_tool_type = _tool_type
             model = self._active_transform_model()
             if model == "hold":
-                self._transform_key_down = _key_char
-                self.app.active_tool = create_tool_for_type(_tool_type)
-                self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
+                # WP-STAB-04: selection-or-hover fallback, refuse only if both are empty
+                if self._transform_arm(self._last_mouse_x, self._last_mouse_y):
+                    self._transform_key_down = _key_char
+                    self.app.active_tool = create_tool_for_type(_tool_type)
+                    self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
+                else:
+                    self._hud.update_action("Nothing to transform")
             elif model == "hold_key_hover":
-                # D4 (AD-016): like Hold, but tap = set tool only; no-selection → temp target
-                self._transform_key_down = _key_char
-                self.app.active_tool = create_tool_for_type(_tool_type)
-                self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
-                if self.app.viewport is not None and not _tweak_has_selection(self.app.scene.selection):
-                    mesh = self.app.viewport.render_mesh.mesh
-                    hit = pick_component(
-                        self.app.camera, mesh, self.app.scene.selection,
-                        self._last_mouse_x, self._last_mouse_y,
-                        self.width, self.height,
-                    )
-                    if hit is not None:
-                        add_temp_target(self.app.scene.selection, hit)
-                        self._transform_temp_target = True
+                # D4 (AD-016): like Hold, but tap = set tool only; no-selection → temp
+                # target. WP-STAB-04: refuse (don't arm) if there's also nothing under
+                # the cursor — previously this always armed active_tool unconditionally.
+                if self._transform_arm(self._last_mouse_x, self._last_mouse_y):
+                    self._transform_key_down = _key_char
+                    self.app.active_tool = create_tool_for_type(_tool_type)
+                    self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
+                else:
+                    self._hud.update_action("Nothing to transform")
             else:  # press_mode or press_drag_click
                 if self._transform_mode_on:
                     # Second press of same key → commit (if started), leave mode
                     if self._transform_started and self.app.active_tool is not None:
                         commit_transform(self.app.active_tool)
                         self._sync_after_transform()
+                    self._clear_transform_temp_target()
                     self._clear_transform_state()
                 else:
-                    # First press → enter mode
-                    self._transform_key_down = _key_char
-                    self._transform_mode_on = True
-                    self.app.active_tool = create_tool_for_type(_tool_type)
-                    self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
+                    # First press → enter mode. WP-STAB-04: selection-or-hover fallback.
+                    if self._transform_arm(self._last_mouse_x, self._last_mouse_y):
+                        self._transform_key_down = _key_char
+                        self._transform_mode_on = True
+                        self.app.active_tool = create_tool_for_type(_tool_type)
+                        self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
+                    else:
+                        self._hud.update_action("Nothing to transform")
                 self._update_hud()
         elif symbol == _key.K and not modifiers:
             # K: toggle transform coordinate space World ↔ Normal (WP-AP-INPUT-FIX-03)
@@ -2014,10 +2051,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 if self._transform_started:
                     cancel_transform(self.app.active_tool)
                 self._sync_after_transform()
-                if self._transform_temp_target:
-                    clear_temp_target(self.app.scene.selection)
-                    self._transform_temp_target = False
-                    self._rebuild_selection_vbo()
+                self._clear_transform_temp_target()
                 self._clear_transform_state()
             else:
                 self.close()
@@ -2071,6 +2105,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     if self._transform_started and self.app.active_tool is not None:
                         commit_transform(self.app.active_tool)
                         self._sync_after_transform()
+                    self._clear_transform_temp_target()
                     self._clear_transform_state()
                 elif model == "hold_key_hover":
                     # D4 (AD-016): release = commit if dragged; tap = set current tool only
@@ -2083,10 +2118,7 @@ class PlaygroundWindow(pyglet.window.Window):
                         self._hud.update_action(
                             f"Tool: {_tl.get(self._current_tool_type or _tool_type, '?')}"
                         )
-                    if self._transform_temp_target:
-                        clear_temp_target(self.app.scene.selection)
-                        self._transform_temp_target = False
-                        self._rebuild_selection_vbo()
+                    self._clear_transform_temp_target()
                     self._clear_transform_state()
                     self._update_hud()
                 else:
