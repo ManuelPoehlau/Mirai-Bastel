@@ -1,30 +1,9 @@
 """PlaygroundWindow — pyglet-Fenster für das Artist Playground.
 
-Steuerung:
-    LMB ziehen      Orbit
-    MMB ziehen      Pan
-    Mausrad         Zoom
-    LMB click       Select (Verhalten laut SelectMode)
-    LMB drag (BOX)  Box Select (wenn SelectMethod = BOX aktiv)
-    Alt+LMB drag    Orbit
-    X (gedrückt)    Move (gedrückt halten + ziehen, AP-04)
-    R (gedrückt)    Rotate (gedrückt halten + ziehen, AP-04)
-    S (gedrückt)    Scale (gedrückt halten + ziehen, AP-04)
-    C               load_cube (Szene wechseln)
-    H               load_head (Szene wechseln)
-    Y               load_cylinder (EX-A test body)
-    D               Display-Mode cyclen (Shaded → Flat → Wireframe)
-    Z               Wireframe-Overlay togglen
-    V               Vertex-Darstellung togglen
-    M               SelectMode cyclen (Replace → Modifier → Toggle)
-    Q               SelectMethod cyclen (Pick → Box → Lasso → Paint)
-    1 / 2 / 3       Component-Modus (Vertex / Edge / Face)
-    Shift+L         Loop Select (Edge-Modus, 1+ Edges selektiert)
-    Shift+R         Ring Select (Edge-Modus, 1+ Edges selektiert)
-    I               Loop Insert (Edge-Modus, 1 Edge selektiert)
-    G (halten)      Loop Slide (Edge-Modus, 1+ Edges selektiert; Maus = slide, loslassen = commit)
-    F               Articulation restore (EX-A: LMB drag to bend, F to restore)
-    ESC             Fenster schließen (oder Transform/Articulation canceln)
+Steuerung: die aktuelle Key-/Maus-Belegung ist in
+tools/Input_Mapping_Tool/artist_input_truth.json gepflegt (Source of Truth) —
+nicht hier duplizieren, das driftet sonst auseinander. Siehe auch
+docs/design/artist_playground/ für den Kontext der Belegung.
 
 Shader:
     _FACE_VERT/_FACE_FRAG    — Phong mit u_use_flat-Uniform (Smooth/Flat).
@@ -77,10 +56,12 @@ from playground.experiments.transform.variant_hold import HoldActivationVariant 
 from playground.experiments.transform.variant_press_mode import PressModeVariant  # noqa: E402
 from playground.experiments.transform.variant_press_drag_click import PressDragClickVariant  # noqa: E402
 from playground.experiments.transform.variant_hold_key_hover import HoldKeyHoverVariant  # noqa: E402
-from playground.experiments.tweak.variant_1_hold_key import TweakV1HoldKey  # noqa: E402
 from playground.experiments.tweak.variant_2_silo import TweakV2Silo  # noqa: E402
-from playground.experiments.tweak.variant_3_hold_click import TweakV3HoldClick  # noqa: E402
 from playground.experiments.tweak.variant_4_hold_ctrl import TweakV4HoldCtrl  # noqa: E402
+# D5 (AD-016): V1 (variant_1_hold_key) moved into Transform as D4; V3
+# (variant_3_hold_click) parked (conflicts with D1). Neither is imported here
+# since only V2 and V4 are registered below — the modules themselves are
+# untouched and still exercised directly by playground/tests/test_tweak.py.
 from playground.topology_ops import split_selected_edge  # noqa: E402
 from playground.topology_tools.connect_edges import (  # noqa: E402
     connect_selected_edges,
@@ -405,13 +386,6 @@ class PlaygroundWindow(pyglet.window.Window):
         self._tweak_started: bool = False   # begin_transform() was called
         self._tweak_tool = None
         self._tweak_temp_target: bool = False  # temporary target was selected
-        # V1 fields kept for state completeness (V1 is unregistered under AD-016 D5)
-        self._tweak_v1_key: str | None = None
-        self._tweak_v1_moved: float = 0.0
-        # V3 fields kept for state completeness (V3 is parked under AD-016 D5)
-        self._tweak_v3_key: str | None = None
-        self._tweak_v3_lmb: bool = False
-        self._tweak_v3_tool_type: str | None = None
         # V2: Ctrl was held when LMB was pressed
         self._tweak_v2_armed: bool = False
 
@@ -876,8 +850,6 @@ class PlaygroundWindow(pyglet.window.Window):
         self._tweak_started = False
         self._tweak_tool = None
         self._tweak_v2_armed = False
-        self._tweak_v3_lmb = False
-        self._tweak_v3_tool_type = None
 
     # -- Kamera-Push ----------------------------------------------------------
 
@@ -964,14 +936,6 @@ class PlaygroundWindow(pyglet.window.Window):
             if tv == "v2" and self._tweak_ctrl_held:
                 # V2: Ctrl was held at LMB press → arm Tweak (Ctrl may now be released)
                 self._tweak_v2_armed = True
-                self.activate()
-                return pyglet.event.EVENT_HANDLED
-            if tv == "v3" and self._tweak_v3_key is not None:
-                # V3: Q/W/E key held + LMB → arm Tweak (key may be released mid-drag)
-                self._tweak_v3_lmb = True
-                self._tweak_v3_tool_type = {
-                    "q": "move", "w": "rotate", "e": "scale"
-                }[self._tweak_v3_key]
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
 
@@ -1115,7 +1079,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_selection_vbo()
             return pyglet.event.EVENT_HANDLED
 
-        # Tweak: running gesture update (V2 or V3 — LMB governs)
+        # Tweak: running gesture update (V2/V4 — LMB governs)
         if self._tweak_active and self._tweak_started and self._tweak_tool is not None:
             update_transform(self._tweak_tool, float(dx), float(dy), self.width, self.height)
             self._sync_after_transform()
@@ -1149,17 +1113,6 @@ class PlaygroundWindow(pyglet.window.Window):
         if tv == "v2" and self._tweak_v2_armed and self.app.viewport is not None:
             if self._current_tool_type is not None:
                 ok = self._tweak_begin(self._current_tool_type, x, y)
-                if ok and self._tweak_started:
-                    update_transform(
-                        self._tweak_tool, float(dx), float(dy), self.width, self.height,
-                    )
-                    self._sync_after_transform()
-            return pyglet.event.EVENT_HANDLED
-
-        # V3: first drag after key+LMB arm → begin Tweak
-        if tv == "v3" and self._tweak_v3_lmb and self.app.viewport is not None:
-            if self._tweak_v3_tool_type is not None:
-                ok = self._tweak_begin(self._tweak_v3_tool_type, x, y)
                 if ok and self._tweak_started:
                     update_transform(
                         self._tweak_tool, float(dx), float(dy), self.width, self.height,
@@ -1251,13 +1204,6 @@ class PlaygroundWindow(pyglet.window.Window):
         if button == self.input_map.select_button:
             # V2: LMB release = commit (Ctrl may already be released)
             if tv == "v2" and (self._tweak_v2_armed or self._tweak_active):
-                if self._tweak_active:
-                    self._tweak_commit()
-                else:
-                    self._clear_tweak_gesture()
-                return pyglet.event.EVENT_HANDLED
-            # V3: LMB release = commit
-            if tv == "v3" and self._tweak_v3_lmb:
                 if self._tweak_active:
                     self._tweak_commit()
                 else:
