@@ -507,6 +507,14 @@ class PlaygroundWindow(pyglet.window.Window):
                 position=("f", vert_positions),
             )
 
+        # R-SEL-1 (WP-STAB-01): a mesh-topology rebuild invalidates the old
+        # selection overlay VBOs (they reference vertex/edge/face ids from
+        # the pre-rebuild mesh) even when they were not explicitly deleted
+        # above. Rebuild all three overlays here so they always match the
+        # current Selection after split/collapse/undo/loop-insert/loop-slide
+        # etc. — callers no longer need a manual follow-up call for this.
+        self._rebuild_selection_vbo()
+
     def _rebuild_selection_vbo(self) -> None:
         """Selection-VBOs für alle Komponenten-Modi neu bauen.
 
@@ -640,7 +648,6 @@ class PlaygroundWindow(pyglet.window.Window):
         else:
             self._recompute_derived()
             self._rebuild_vbo()
-            self._rebuild_selection_vbo()
         self._push_camera()
 
     def _patch_vbo_single_vertex(self, vid) -> None:
@@ -1076,7 +1083,6 @@ class PlaygroundWindow(pyglet.window.Window):
             if em == "hold" or (em == "lmb" and buttons & _mouse.LEFT):
                 self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
                 self._rebuild_vbo()
-                self._rebuild_selection_vbo()
             return pyglet.event.EVENT_HANDLED
 
         # Tweak: running gesture update (V2/V4 — LMB governs)
@@ -1275,7 +1281,6 @@ class PlaygroundWindow(pyglet.window.Window):
             self._extrude_tool.deactivate()
             self._extrude_tool = None
             self._rebuild_vbo()
-            self._rebuild_selection_vbo()
             self._hud.update_action("Extrude")
             self._update_hud()
             return pyglet.event.EVENT_HANDLED
@@ -1418,7 +1423,6 @@ class PlaygroundWindow(pyglet.window.Window):
         if self._extrude_tool is not None and self._active_extrude_model() == "hold":
             self._extrude_tool.update(dx=float(dx), dy=float(dy), width=self.width, height=self.height)
             self._rebuild_vbo()
-            self._rebuild_selection_vbo()
             return pyglet.event.EVENT_HANDLED
 
         tv = self._active_tweak_variant()
@@ -1605,7 +1609,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 sel.clear()
                 sel.add({new_vid})
                 self._rebuild_vbo()
-                self._rebuild_selection_vbo()
                 action = "Split (articulation restored)" if restored else "Split"
                 self._hud.update_action(action)
                 self._update_hud()
@@ -1694,7 +1697,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 tool.begin(face_ids=face_ids)
                 self._extrude_tool = tool
                 self._rebuild_vbo()
-                self._rebuild_selection_vbo()
                 n = len(face_ids)
                 action = f"Extrude ({n} faces)" if n > 1 else "Extrude"
                 restore_note = " (articulation restored)" if restored else ""
@@ -1892,7 +1894,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._clear_knife_hover_vbos()
                 self._clear_knife_start_vbo()
                 self._rebuild_vbo()
-                self._rebuild_selection_vbo()
                 if cmd is not None:
                     self._hud.update_action("Knife committed")
                     print("[KNIFE] session result: committed (1 history entry, residue = connecting-edge path)")
@@ -1931,7 +1932,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._extrude_tool.deactivate()
                 self._extrude_tool = None
                 self._rebuild_vbo()
-                self._rebuild_selection_vbo()
                 self._hud.update_action("Extrude cancelled")
                 self._update_hud()
             elif self._tweak_active and self._tweak_tool is not None:
@@ -1973,7 +1973,6 @@ class PlaygroundWindow(pyglet.window.Window):
             self._extrude_tool.deactivate()
             self._extrude_tool = None
             self._rebuild_vbo()
-            self._rebuild_selection_vbo()
             self._hud.update_action("Extrude")
             self._update_hud()
             return pyglet.event.EVENT_HANDLED
