@@ -1,8 +1,8 @@
-"""Transform Gizmo helpers — WP-AP-GIZMO-01/02.
+"""Transform Gizmo helpers — WP-AP-GIZMO-01/02/04.
 
-`gizmo_mode` and `pick_gizmo_handle` are pure (no GL), callable from
-headless tests.  Geometry helpers are thin math wrappers with zero GL
-dependencies.
+`gizmo_mode`, `pick_gizmo_handle`, and `hover_gizmo_handle` are pure
+(no GL), callable from headless tests.  Geometry helpers are thin math
+wrappers with zero GL dependencies.
 """
 
 from __future__ import annotations
@@ -133,6 +133,77 @@ def plane_indicator_positions(
     ]
 
 
+def _perp_basis(
+    direction: tuple[float, float, float],
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Two orthonormal vectors perpendicular to direction (right, up)."""
+    dx, dy, dz = direction
+    if abs(dx) <= abs(dy) and abs(dx) <= abs(dz):
+        ref = (1.0, 0.0, 0.0)
+    elif abs(dy) <= abs(dz):
+        ref = (0.0, 1.0, 0.0)
+    else:
+        ref = (0.0, 0.0, 1.0)
+    dot = ref[0] * dx + ref[1] * dy + ref[2] * dz
+    r = (ref[0] - dot * dx, ref[1] - dot * dy, ref[2] - dot * dz)
+    rlen = math.sqrt(r[0] ** 2 + r[1] ** 2 + r[2] ** 2)
+    r = (r[0] / rlen, r[1] / rlen, r[2] / rlen)
+    u = (dy * r[2] - dz * r[1], dz * r[0] - dx * r[2], dx * r[1] - dy * r[0])
+    return r, u
+
+
+def axis_ring_positions(
+    pivot: tuple[float, float, float],
+    axis_direction: tuple[float, float, float],
+    radius: float,
+    segments: int = 32,
+) -> list[float]:
+    """Flat float list (x,y,z …) for a ring in the plane perpendicular to axis_direction, GL_LINE_LOOP."""
+    right, up = _perp_basis(axis_direction)
+    return screen_ring_positions(pivot, right, up, radius, segments)
+
+
+def arrow_cap_positions(
+    tip: tuple[float, float, float],
+    direction: tuple[float, float, float],
+    cap_size: float,
+) -> list[float]:
+    """GL_LINES pairs — four wing lines forming an arrowhead at tip pointing in direction."""
+    right, up = _perp_basis(direction)
+    back = cap_size * 0.7
+    wing = cap_size * 0.35
+    out: list[float] = []
+    for px, py, pz in [right, up, (-right[0], -right[1], -right[2]), (-up[0], -up[1], -up[2])]:
+        end = (
+            tip[0] - direction[0] * back + px * wing,
+            tip[1] - direction[1] * back + py * wing,
+            tip[2] - direction[2] * back + pz * wing,
+        )
+        out.extend([tip[0], tip[1], tip[2], end[0], end[1], end[2]])
+    return out
+
+
+def box_cap_positions(
+    tip: tuple[float, float, float],
+    direction: tuple[float, float, float],
+    cap_size: float,
+) -> list[float]:
+    """GL_LINES pairs — four edges of a small square at tip in the plane perpendicular to direction."""
+    right, up = _perp_basis(direction)
+    h = cap_size * 0.5
+    corners = [
+        (tip[0] + right[0]*h + up[0]*h, tip[1] + right[1]*h + up[1]*h, tip[2] + right[2]*h + up[2]*h),
+        (tip[0] - right[0]*h + up[0]*h, tip[1] - right[1]*h + up[1]*h, tip[2] - right[2]*h + up[2]*h),
+        (tip[0] - right[0]*h - up[0]*h, tip[1] - right[1]*h - up[1]*h, tip[2] - right[2]*h - up[2]*h),
+        (tip[0] + right[0]*h - up[0]*h, tip[1] + right[1]*h - up[1]*h, tip[2] + right[2]*h - up[2]*h),
+    ]
+    out: list[float] = []
+    for i in range(4):
+        a, b = corners[i], corners[(i + 1) % 4]
+        out.extend([a[0], a[1], a[2], b[0], b[1], b[2]])
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Hit testing (pure, no GL — mirrors picking.py::pick_nearest_vertex pattern)
 # ---------------------------------------------------------------------------
@@ -149,13 +220,14 @@ def pick_gizmo_handle(
     click_y: float,
     width: int,
     height: int,
-    max_pixel_distance: float = 14.0,
+    max_pixel_distance: float = 22.0,
+    current_tool: str = "move",
 ) -> str | None:
     """Return the name of the gizmo handle nearest to (click_x, click_y), or None.
 
     Pure function: no GL calls, testable headless.  `mode` is the result of
-    `gizmo_mode()` for the current state.  Axis handles are tested at their
-    tip; plane handles at the L-bracket corner.
+    `gizmo_mode()` for the current state.  For rotate, ring segment points are
+    tested instead of tips; for scale, a center/pivot candidate is added.
     """
     cam_eye = camera.eye()
     dist = math.sqrt(
@@ -165,24 +237,34 @@ def pick_gizmo_handle(
     )
     size = max(dist * GIZMO_SCALE, 1e-6)
 
+    def _axis_cands(name: str, direction: tuple) -> list:
+        if current_tool == "rotate":
+            ring_pts = axis_ring_positions(pivot, direction, size)
+            return [(name, (ring_pts[i], ring_pts[i + 1], ring_pts[i + 2]))
+                    for i in range(0, len(ring_pts), 3)]
+        tip = (
+            pivot[0] + direction[0] * size,
+            pivot[1] + direction[1] * size,
+            pivot[2] + direction[2] * size,
+        )
+        return [(name, tip)]
+
     candidates: list[tuple[str, tuple[float, float, float]]] = []
 
     if mode == "world":
         for name, direction in WORLD_AXES:
-            tip = (
-                pivot[0] + direction[0] * size,
-                pivot[1] + direction[1] * size,
-                pivot[2] + direction[2] * size,
-            )
-            candidates.append((name, tip))
-        s = size * 0.35
-        for name, axis_a, axis_b in WORLD_PLANES:
-            corner = (
-                pivot[0] + axis_a[0] * s + axis_b[0] * s,
-                pivot[1] + axis_a[1] * s + axis_b[1] * s,
-                pivot[2] + axis_a[2] * s + axis_b[2] * s,
-            )
-            candidates.append((name, corner))
+            candidates.extend(_axis_cands(name, direction))
+        if current_tool != "rotate":
+            s = size * 0.35
+            for name, axis_a, axis_b in WORLD_PLANES:
+                corner = (
+                    pivot[0] + axis_a[0] * s + axis_b[0] * s,
+                    pivot[1] + axis_a[1] * s + axis_b[1] * s,
+                    pivot[2] + axis_a[2] * s + axis_b[2] * s,
+                )
+                candidates.append((name, corner))
+        if current_tool == "scale":
+            candidates.append(("center", pivot))
 
     elif mode == "normal_full":
         from mirai.interaction.tools.transform import _face_tangent_basis  # noqa: PLC0415
@@ -191,23 +273,17 @@ def pick_gizmo_handle(
         except (ValueError, AttributeError):
             return None
         for name, direction in [("x", tangent_x), ("y", tangent_y), ("z", normal)]:
-            tip = (
-                pivot[0] + direction[0] * size,
-                pivot[1] + direction[1] * size,
-                pivot[2] + direction[2] * size,
-            )
-            candidates.append((name, tip))
+            candidates.extend(_axis_cands(name, direction))
+        if current_tool == "scale":
+            candidates.append(("center", pivot))
 
     elif mode == "normal_z_only":
         from mirai.interaction.tools.selection_helpers import selection_normal  # noqa: PLC0415
         normal = selection_normal(derived_geometry, mesh, selection, selection.mode)
         if any(v != 0.0 for v in normal):
-            tip = (
-                pivot[0] + normal[0] * size,
-                pivot[1] + normal[1] * size,
-                pivot[2] + normal[2] * size,
-            )
-            candidates.append(("z", tip))
+            candidates.extend(_axis_cands("z", normal))
+        if current_tool == "scale":
+            candidates.append(("center", pivot))
 
     best_name = None
     best_dist = max_pixel_distance
@@ -221,3 +297,29 @@ def pick_gizmo_handle(
             best_dist = d
             best_name = name
     return best_name
+
+
+def hover_gizmo_handle(
+    camera,
+    pivot: tuple[float, float, float],
+    mode: str,
+    transform_space: str,
+    selection,
+    mesh,
+    derived_geometry,
+    cursor_x: float,
+    cursor_y: float,
+    width: int,
+    height: int,
+    max_pixel_distance: float = 22.0,
+    current_tool: str = "move",
+) -> str | None:
+    """Return the handle name nearest to the cursor for hover feedback, or None.
+
+    Pure; separate entry point from pick_gizmo_handle so hover queries never
+    accidentally arm a drag at the call site.
+    """
+    return pick_gizmo_handle(
+        camera, pivot, mode, transform_space, selection, mesh, derived_geometry,
+        cursor_x, cursor_y, width, height, max_pixel_distance, current_tool,
+    )

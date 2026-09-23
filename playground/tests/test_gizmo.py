@@ -1,7 +1,9 @@
-"""Unit tests for WP-AP-GIZMO-01: transform gizmo mode classification.
+"""Unit tests for WP-AP-GIZMO-01/04: transform gizmo mode classification,
+geometry helpers, pick/hover, and GIZMO-04 additions (rings, caps, hover,
+hit-radius enlargement, scale center handle).
 
-`gizmo_mode` is pure (no GL, no window), so it's fully testable here.
-Geometry helpers are smoke-tested for shape/length.
+`gizmo_mode`, `pick_gizmo_handle`, and `hover_gizmo_handle` are pure (no GL),
+fully testable here.
 
 Also contains TestGizmoWindowDispatch: integration tests for D3 (AD-016) —
 Gizmo as entry point (click sets constraint without tool armed; drag executes tool).
@@ -19,12 +21,18 @@ for _p in (str(_REPO_SRC), str(_REPO_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+import math  # noqa: E402
+
 from core.selection import Selection, SelectionMode  # noqa: E402
 from playground.gizmo import (  # noqa: E402
     GIZMO_SCALE,
     gizmo_mode,
     pick_gizmo_handle,
+    hover_gizmo_handle,
     axis_line_positions,
+    axis_ring_positions,
+    arrow_cap_positions,
+    box_cap_positions,
     plane_indicator_positions,
     screen_ring_positions,
 )
@@ -337,3 +345,255 @@ class TestGizmoWindowDispatch:
             assert win._axis_constraint is None, "constraint must not change on a miss"
         finally:
             win.close()
+
+
+# ---------------------------------------------------------------------------
+# GIZMO-04: axis_ring_positions geometry tests
+# ---------------------------------------------------------------------------
+
+class TestAxisRingPositions:
+    _PIVOT = (1.0, 2.0, 3.0)
+
+    def test_segment_count(self):
+        pos = axis_ring_positions(self._PIVOT, (0.0, 0.0, 1.0), 1.0, segments=16)
+        assert len(pos) == 16 * 3
+
+    def test_default_segments(self):
+        pos = axis_ring_positions(self._PIVOT, (1.0, 0.0, 0.0), 1.0)
+        assert len(pos) == 32 * 3
+
+    def test_all_points_at_correct_radius(self):
+        radius = 2.5
+        pos = axis_ring_positions(self._PIVOT, (0.0, 1.0, 0.0), radius, segments=24)
+        for i in range(0, len(pos), 3):
+            dx = pos[i] - self._PIVOT[0]
+            dy = pos[i+1] - self._PIVOT[1]
+            dz = pos[i+2] - self._PIVOT[2]
+            r = math.sqrt(dx*dx + dy*dy + dz*dz)
+            assert abs(r - radius) < 1e-6, f"point {i//3} radius {r} != {radius}"
+
+    def test_all_points_in_perpendicular_plane(self):
+        axis = (0.0, 0.0, 1.0)
+        pos = axis_ring_positions(self._PIVOT, axis, 1.0, segments=32)
+        for i in range(0, len(pos), 3):
+            dx = pos[i] - self._PIVOT[0]
+            dy = pos[i+1] - self._PIVOT[1]
+            dz = pos[i+2] - self._PIVOT[2]
+            dot = dx * axis[0] + dy * axis[1] + dz * axis[2]
+            assert abs(dot) < 1e-6, f"point {i//3} not in perpendicular plane: dot={dot}"
+
+    def test_general_axis_perpendicular_plane(self):
+        axis_raw = (1.0, 1.0, 1.0)
+        length = math.sqrt(3.0)
+        axis = (axis_raw[0]/length, axis_raw[1]/length, axis_raw[2]/length)
+        pos = axis_ring_positions(self._PIVOT, axis, 1.5, segments=20)
+        for i in range(0, len(pos), 3):
+            dx = pos[i] - self._PIVOT[0]
+            dy = pos[i+1] - self._PIVOT[1]
+            dz = pos[i+2] - self._PIVOT[2]
+            dot = dx * axis[0] + dy * axis[1] + dz * axis[2]
+            assert abs(dot) < 1e-6, f"general axis: point {i//3} not perpendicular: dot={dot}"
+
+
+# ---------------------------------------------------------------------------
+# GIZMO-04: cap geometry smoke tests
+# ---------------------------------------------------------------------------
+
+class TestCapGeometry:
+    _TIP = (2.0, 0.0, 0.0)
+    _DIR = (1.0, 0.0, 0.0)
+
+    def test_arrow_cap_has_4_lines(self):
+        pos = arrow_cap_positions(self._TIP, self._DIR, 0.2)
+        assert len(pos) == 4 * 6  # 4 lines × 2 vertices × 3 floats
+
+    def test_arrow_cap_all_lines_start_at_tip(self):
+        pos = arrow_cap_positions(self._TIP, self._DIR, 0.2)
+        for i in range(0, len(pos), 6):
+            assert abs(pos[i] - self._TIP[0]) < 1e-9
+            assert abs(pos[i+1] - self._TIP[1]) < 1e-9
+            assert abs(pos[i+2] - self._TIP[2]) < 1e-9
+
+    def test_box_cap_has_4_edges(self):
+        pos = box_cap_positions(self._TIP, self._DIR, 0.2)
+        assert len(pos) == 4 * 6  # 4 edges × 2 vertices × 3 floats
+
+
+# ---------------------------------------------------------------------------
+# GIZMO-04: rotate ring hit test
+# ---------------------------------------------------------------------------
+
+class TestRotateRingHit:
+    def _world_sel(self):
+        sel = Selection()
+        sel.mode = SelectionMode.VERTEX
+        sel.vertices = {0}
+        return sel
+
+    def test_click_near_x_ring_returns_x(self):
+        size = _size()
+        # A point on the X-axis ring lies in the YZ-plane through the tip circle.
+        # At angle=0: pivot + right, where right is one of the perp vectors.
+        # axis_ring_positions for x=(1,0,0) uses perp basis: right=(0,1,0), up=(0,0,1)
+        # first ring point = pivot + size * (1*0 + 0) * right + ... = pivot + (0,size,0)
+        ring_pts = axis_ring_positions(_PIVOT, (1.0, 0.0, 0.0), size)
+        first_pt = (ring_pts[0], ring_pts[1], ring_pts[2])
+        sx, sy = _screen(first_pt)
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            sx, sy, _W, _H,
+            current_tool="rotate",
+        )
+        assert result == "x"
+
+    def test_click_far_from_rings_returns_none(self):
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            0.0, 0.0, _W, _H,
+            max_pixel_distance=5.0,
+            current_tool="rotate",
+        )
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# GIZMO-04: scale center handle test
+# ---------------------------------------------------------------------------
+
+class _MockCameraOblique:
+    """Camera from a diagonal — all three world axes project to distinct screen offsets.
+
+    The standard _MockCamera aligns with the Z axis, causing the Z tip and the pivot
+    to project to the exact same screen point (both have screen_x=cx, screen_y=cy).
+    This camera mixes all three axes so pivot ≠ any axis tip in screen space.
+    """
+
+    def eye(self):
+        return (-8.0, -6.0, 10.0)
+
+    def project_to_screen(self, pos3d, width, height):
+        cx, cy = width / 2.0, height / 2.0
+        return (cx + pos3d[0] * 40.0 - pos3d[2] * 15.0,
+                cy + pos3d[1] * 40.0 + pos3d[2] * 15.0)
+
+
+_CAM_OBLIQUE = _MockCameraOblique()
+_PIVOT_O = (0.0, 0.0, 0.0)
+
+
+def _size_oblique():
+    eye = _CAM_OBLIQUE.eye()
+    dist = math.sqrt(
+        (_PIVOT_O[0] - eye[0])**2 + (_PIVOT_O[1] - eye[1])**2 + (_PIVOT_O[2] - eye[2])**2
+    )
+    return max(dist * GIZMO_SCALE, 1e-6)
+
+
+class TestScaleCenterHandle:
+    def _world_sel(self):
+        sel = Selection()
+        sel.mode = SelectionMode.VERTEX
+        sel.vertices = {0}
+        return sel
+
+    def test_click_at_pivot_returns_center_for_scale(self):
+        # Use the oblique camera so pivot screen pos is distinct from any axis tip.
+        sx, sy = _CAM_OBLIQUE.project_to_screen(_PIVOT_O, _W, _H)
+        result = pick_gizmo_handle(
+            _CAM_OBLIQUE, _PIVOT_O, "world", "world",
+            self._world_sel(), None, None,
+            sx, sy, _W, _H,
+            max_pixel_distance=8.0,
+            current_tool="scale",
+        )
+        assert result == "center"
+
+    def test_move_tool_has_no_center_handle(self):
+        sx, sy = _CAM_OBLIQUE.project_to_screen(_PIVOT_O, _W, _H)
+        result = pick_gizmo_handle(
+            _CAM_OBLIQUE, _PIVOT_O, "world", "world",
+            self._world_sel(), None, None,
+            sx, sy, _W, _H,
+            max_pixel_distance=8.0,
+            current_tool="move",
+        )
+        # No center candidate for move — miss at the pivot position.
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# GIZMO-04: hover_gizmo_handle
+# ---------------------------------------------------------------------------
+
+class TestHoverGizmoHandle:
+    def _world_sel(self):
+        sel = Selection()
+        sel.mode = SelectionMode.VERTEX
+        sel.vertices = {0}
+        return sel
+
+    def test_hover_returns_handle_under_cursor(self):
+        size = _size()
+        tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        result = hover_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0], tip_screen[1], _W, _H,
+        )
+        assert result == "x"
+
+    def test_hover_returns_none_on_miss(self):
+        result = hover_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            0.0, 0.0, _W, _H,
+            max_pixel_distance=5.0,
+        )
+        assert result is None
+
+    def test_hover_is_pure_repeated_calls_agree(self):
+        size = _size()
+        tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        sel = self._world_sel()
+        r1 = hover_gizmo_handle(_CAM, _PIVOT, "world", "world", sel, None, None,
+                                 tip_screen[0], tip_screen[1], _W, _H)
+        r2 = hover_gizmo_handle(_CAM, _PIVOT, "world", "world", sel, None, None,
+                                 tip_screen[0], tip_screen[1], _W, _H)
+        assert r1 == r2
+
+
+# ---------------------------------------------------------------------------
+# GIZMO-04: enlarged hit radius
+# ---------------------------------------------------------------------------
+
+class TestHitRadiusEnlarged:
+    def _world_sel(self):
+        sel = Selection()
+        sel.mode = SelectionMode.VERTEX
+        sel.vertices = {0}
+        return sel
+
+    def test_default_radius_catches_click_beyond_old_threshold(self):
+        # Click 16px from x-tip: outside old 14px default, inside new 22px default.
+        size = _size()
+        tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0] + 16.0, tip_screen[1], _W, _H,
+        )
+        assert result == "x", "default radius must cover 16px offset (regression of D0-4 fix)"
+
+    def test_old_threshold_still_misses_at_15px(self):
+        # Explicit 14px threshold: 15px still misses (existing test, unchanged).
+        size = _size()
+        tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            tip_screen[0] + 15.0, tip_screen[1], _W, _H,
+            max_pixel_distance=14.0,
+        )
+        assert result is None

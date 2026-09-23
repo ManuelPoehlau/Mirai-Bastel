@@ -24,7 +24,9 @@
       "Bash(PYGLET_HEADLESS=1 python -m pytest playground/tests/input_characterization.py -v)",
       "Bash(PYGLET_HEADLESS=1 python playground/tests/input_characterization.py)",
       "Bash(python3 *)",
-      "Bash(find *)"
+      "Bash(find *)",
+      "Bash(PYTHONPATH=src python -c \"from core.mesh import Mesh; import inspect; src = inspect.getsource\\(Mesh.split_edge\\); print\\(src[:300]\\)\")",
+      "Bash(PYTHONPATH=\"src;.;experiments/rigging-skinning-morphing\" python -c \"from core import Scene; from playground.app import PlaygroundApp; app = PlaygroundApp\\(\\); print\\(dir\\(app.scene.history\\)\\)\")"
     ]
   }
 }

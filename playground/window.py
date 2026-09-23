@@ -126,8 +126,12 @@ from playground.gizmo import (  # noqa: E402
     WORLD_PLANES,
     gizmo_mode,
     pick_gizmo_handle,
+    hover_gizmo_handle,
     screen_ring_positions,
     axis_line_positions,
+    axis_ring_positions,
+    arrow_cap_positions,
+    box_cap_positions,
     plane_indicator_positions,
 )
 from mirai.interaction.tools.selection_helpers import (  # noqa: E402
@@ -224,6 +228,7 @@ _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 # Gizmo constants (WP-AP-GIZMO-01) — widths/colors are tunable once on screen
 # GIZMO_SCALE is the single source of truth (imported from gizmo.py).
 _GIZMO_LINE_WIDTH_DEFAULT: float = 2.0
+_GIZMO_LINE_WIDTH_HOVER: float = 3.0
 _GIZMO_LINE_WIDTH_ACTIVE: float = 4.0
 _GIZMO_COLOR_X = (0.9, 0.15, 0.15, 1.0)
 _GIZMO_COLOR_Y = (0.15, 0.85, 0.15, 1.0)
@@ -232,6 +237,8 @@ _GIZMO_COLOR_SCREEN = (0.75, 0.75, 0.75, 1.0)
 _GIZMO_COLOR_PLANE_XY = (0.75, 0.75, 0.15, 1.0)
 _GIZMO_COLOR_PLANE_XZ = (0.75, 0.15, 0.75, 1.0)
 _GIZMO_COLOR_PLANE_YZ = (0.15, 0.75, 0.75, 1.0)
+_GIZMO_COLOR_CENTER = (0.85, 0.85, 0.85, 1.0)
+_GIZMO_CAP_SIZE_RATIO: float = 0.12  # engineering default, needs playtest
 
 # Articulation constants (EX-A / H02)
 # 0.01 rad/px: 100px drag ≈ 57° bend, feels responsive without being twitchy.
@@ -411,6 +418,8 @@ class PlaygroundWindow(pyglet.window.Window):
         self._gizmo_drag_armed: bool = False
         self._gizmo_drag_started: bool = False
         self._gizmo_drag_tool = None
+        # GIZMO-04: hover state — handle name under cursor, or None
+        self._gizmo_hover: str | None = None
 
         # WP-AXIS-CONSTRAINT-WIRING: sticky axis/plane constraint (X/Y/Z, Shift+X/Y/Z)
         self._axis_constraint: str | None = None
@@ -922,6 +931,7 @@ class PlaygroundWindow(pyglet.window.Window):
         return pick_gizmo_handle(
             self.app.camera, pivot, mode, self._transform_space,
             sel, mesh, derived, x, y, self.width, self.height,
+            current_tool=self._current_tool_type or "move",
         )
 
     # -- Articulation-Helpers -------------------------------------------------
@@ -1099,6 +1109,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     # the running Transform executes the drag, and in
                     # Press-Drag-Click the LMB release still commits it.
                     self._axis_constraint = hit
+                    self._gizmo_hover = None
                     self._hud.update_constraint(self._axis_constraint)
                     return pyglet.event.EVENT_HANDLED
             if not self._session_owns_press(session, button):
@@ -1141,6 +1152,7 @@ class PlaygroundWindow(pyglet.window.Window):
             hit = self._gizmo_handle_at(x, y)
             if hit is not None:
                 self._axis_constraint = hit
+                self._gizmo_hover = None
                 self._hud.update_constraint(self._axis_constraint)
                 # Arm gizmo drag: click-only = constraint only; LMB+drag = execute tool
                 _gt = self._current_tool_type or "move"
@@ -1725,6 +1737,23 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._hover_key = hover_key
                 sel.hovered = hit
                 self._rebuild_hover_vbo()
+
+            # GIZMO-04: gizmo handle hover (display only, never arms a drag)
+            if not sel.is_empty() and not self._gizmo_drag_armed:
+                vertex_ids = resolve_selection_vertices(mesh, sel, sel.mode)
+                if vertex_ids:
+                    pivot = selection_pivot(mesh, vertex_ids)
+                    gmode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
+                    derived = self.app.viewport.render_mesh.derived
+                    new_hover = hover_gizmo_handle(
+                        self.app.camera, pivot, gmode, self._transform_space,
+                        sel, mesh, derived, x, y, self.width, self.height,
+                        current_tool=self._current_tool_type or "move",
+                    )
+                    if new_hover != self._gizmo_hover:
+                        self._gizmo_hover = new_hover
+                elif self._gizmo_hover is not None:
+                    self._gizmo_hover = None
 
     def on_key_press(self, symbol: int, modifiers: int) -> None:
         # AD-013 I3/I4: the Playground window is the single interaction authority
@@ -2313,10 +2342,11 @@ class PlaygroundWindow(pyglet.window.Window):
     # -- Draw -----------------------------------------------------------------
 
     def _draw_gizmo(self, view, proj) -> None:
-        """WP-AP-GIZMO-01 Phase 1: draw-only transform gizmo at the selection pivot.
+        """WP-AP-GIZMO-04: tool-specific handle shapes with hover and hit-radius improvements.
 
-        Renders the appropriate visual (screen ring, world axes, or normal axes)
-        over all geometry without depth testing.  No mouse interaction here.
+        Renders the appropriate visual per current_tool (move/rotate/scale) over all
+        geometry without depth testing.  Three visual states: default / hover / active.
+        No mouse interaction here.
         """
         if self.app.viewport is None:
             return
@@ -2342,6 +2372,9 @@ class PlaygroundWindow(pyglet.window.Window):
 
         mode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
         constraint = self._axis_constraint
+        current_tool = self._current_tool_type or "move"
+        hover = self._gizmo_hover
+        cap_size = size * _GIZMO_CAP_SIZE_RATIO
 
         self._overlay_program.use()
         self._overlay_program["u_view"] = view
@@ -2358,6 +2391,46 @@ class PlaygroundWindow(pyglet.window.Window):
             vl.draw(prim)
             vl.delete()
 
+        def _w(name: str) -> float:
+            if constraint == name:
+                return _GIZMO_LINE_WIDTH_ACTIVE
+            if hover == name:
+                return _GIZMO_LINE_WIDTH_HOVER
+            return _GIZMO_LINE_WIDTH_DEFAULT
+
+        def _c(base: tuple, name: str) -> tuple:
+            if hover == name and constraint != name:
+                r, g, b, a = base
+                return (min(r * 1.4, 1.0), min(g * 1.4, 1.0), min(b * 1.4, 1.0), a)
+            return base
+
+        def _draw_axes(axes_with_colors: list) -> None:
+            for name, direction, color in axes_with_colors:
+                tip = (
+                    pivot[0] + direction[0] * size,
+                    pivot[1] + direction[1] * size,
+                    pivot[2] + direction[2] * size,
+                )
+                if current_tool == "rotate":
+                    _draw(axis_ring_positions(pivot, direction, size), _c(color, name), gl.GL_LINE_LOOP, _w(name))
+                else:
+                    _draw(axis_line_positions(pivot, direction, size), _c(color, name), gl.GL_LINES, _w(name))
+                    if current_tool == "move":
+                        _draw(arrow_cap_positions(tip, direction, cap_size), _c(color, name), gl.GL_LINES, _w(name))
+                    elif current_tool == "scale":
+                        _draw(box_cap_positions(tip, direction, cap_size), _c(color, name), gl.GL_LINES, _w(name))
+
+        def _draw_center() -> None:
+            r = size * 0.07
+            _draw(
+                [pivot[0]-r, pivot[1], pivot[2], pivot[0]+r, pivot[1], pivot[2],
+                 pivot[0], pivot[1]-r, pivot[2], pivot[0], pivot[1]+r, pivot[2],
+                 pivot[0], pivot[1], pivot[2]-r, pivot[0], pivot[1], pivot[2]+r],
+                _c(_GIZMO_COLOR_CENTER, "center"),
+                gl.GL_LINES,
+                _w("center"),
+            )
+
         if mode == "screen":
             _, right, up = self.app.camera.basis()
             _draw(
@@ -2368,24 +2441,24 @@ class PlaygroundWindow(pyglet.window.Window):
             )
 
         elif mode == "world":
-            _AXIS_COLORS = (_GIZMO_COLOR_X, _GIZMO_COLOR_Y, _GIZMO_COLOR_Z)
-            for (name, direction), color in zip(WORLD_AXES, _AXIS_COLORS):
-                active = constraint == name
-                _draw(
-                    axis_line_positions(pivot, direction, size),
-                    color,
-                    gl.GL_LINES,
-                    _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
-                )
-            _PLANE_COLORS = (_GIZMO_COLOR_PLANE_XY, _GIZMO_COLOR_PLANE_XZ, _GIZMO_COLOR_PLANE_YZ)
-            for (name, axis_a, axis_b), color in zip(WORLD_PLANES, _PLANE_COLORS):
-                active = constraint == name
-                _draw(
-                    plane_indicator_positions(pivot, axis_a, axis_b, size),
-                    color,
-                    gl.GL_LINES,
-                    _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
-                )
+            _draw_axes([
+                ("x", (1.0, 0.0, 0.0), _GIZMO_COLOR_X),
+                ("y", (0.0, 1.0, 0.0), _GIZMO_COLOR_Y),
+                ("z", (0.0, 0.0, 1.0), _GIZMO_COLOR_Z),
+            ])
+            if current_tool == "rotate":
+                # Unconstrained rotate: screen ring shows camera-axis default
+                if constraint is None:
+                    _, right, up = self.app.camera.basis()
+                    _draw(screen_ring_positions(pivot, right, up, size * 1.1),
+                          _c(_GIZMO_COLOR_SCREEN, "screen"), gl.GL_LINE_LOOP, _w("screen"))
+            else:
+                _PLANE_COLORS = (_GIZMO_COLOR_PLANE_XY, _GIZMO_COLOR_PLANE_XZ, _GIZMO_COLOR_PLANE_YZ)
+                for (name, axis_a, axis_b), color in zip(WORLD_PLANES, _PLANE_COLORS):
+                    _draw(plane_indicator_positions(pivot, axis_a, axis_b, size),
+                          _c(color, name), gl.GL_LINES, _w(name))
+                if current_tool == "scale":
+                    _draw_center()
 
         elif mode == "normal_full":
             try:
@@ -2393,30 +2466,20 @@ class PlaygroundWindow(pyglet.window.Window):
             except ValueError:
                 pass
             else:
-                _NORMAL_AXES = [
+                _draw_axes([
                     ("x", tangent_x, _GIZMO_COLOR_X),
                     ("y", tangent_y, _GIZMO_COLOR_Y),
                     ("z", normal,    _GIZMO_COLOR_Z),
-                ]
-                for name, direction, color in _NORMAL_AXES:
-                    active = constraint == name
-                    _draw(
-                        axis_line_positions(pivot, direction, size),
-                        color,
-                        gl.GL_LINES,
-                        _GIZMO_LINE_WIDTH_ACTIVE if active else _GIZMO_LINE_WIDTH_DEFAULT,
-                    )
+                ])
+                if current_tool == "scale":
+                    _draw_center()
 
         elif mode == "normal_z_only":
             normal = selection_normal(derived, mesh, sel, sel.mode)
             if any(v != 0.0 for v in normal):
-                z_active = constraint is not None and "z" in constraint
-                _draw(
-                    axis_line_positions(pivot, normal, size),
-                    _GIZMO_COLOR_Z,
-                    gl.GL_LINES,
-                    _GIZMO_LINE_WIDTH_ACTIVE if z_active else _GIZMO_LINE_WIDTH_DEFAULT,
-                )
+                _draw_axes([("z", normal, _GIZMO_COLOR_Z)])
+                if current_tool == "scale":
+                    _draw_center()
 
         self._overlay_program.stop()
         gl.glLineWidth(1.0)
