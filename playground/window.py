@@ -703,7 +703,7 @@ class PlaygroundWindow(pyglet.window.Window):
             pos_buf  = self._vlist_faces.domain.attrib_name_buffers["position"]
             snrm_buf = self._vlist_faces.domain.attrib_name_buffers["smooth_normal"]
             fnrm_buf = self._vlist_faces.domain.attrib_name_buffers["flat_normal"]
-            flat_slot = 0
+            flat_slot = self._vlist_faces.start
             for fid in mesh.all_face_ids():
                 boundary = mesh.face_vertices(fid)
                 is_affected = fid in affected_faces
@@ -724,7 +724,7 @@ class PlaygroundWindow(pyglet.window.Window):
         # Edge VBO: position of vid in each incident edge.
         if self._vlist_edges is not None:
             pos_buf = self._vlist_edges.domain.attrib_name_buffers["position"]
-            flat_slot = 0
+            flat_slot = self._vlist_edges.start
             for eid in mesh.all_edge_ids():
                 va, vb = mesh.edge_vertices(eid)
                 if va == vid:
@@ -736,15 +736,16 @@ class PlaygroundWindow(pyglet.window.Window):
         # Vertex VBO: position of vid.
         if self._vlist_verts is not None:
             pos_buf = self._vlist_verts.domain.attrib_name_buffers["position"]
+            verts_start = self._vlist_verts.start
             for flat_slot, v in enumerate(mesh.all_vertex_ids()):
                 if v == vid:
-                    pos_buf.set_region(flat_slot, 1, new_pos)
+                    pos_buf.set_region(verts_start + flat_slot, 1, new_pos)
                     break
 
-        # Selection VBO: single selected vertex highlight (always slot 0 for single-vertex selection).
+        # Selection VBO: single selected vertex highlight.
         if self._vlist_sel_verts is not None:
             pos_buf = self._vlist_sel_verts.domain.attrib_name_buffers["position"]
-            pos_buf.set_region(0, 1, new_pos)
+            pos_buf.set_region(self._vlist_sel_verts.start, 1, new_pos)
 
     def _active_transform_model(self) -> str:
         """Aktivierungsmodell des aktiven Transform-Slots lesen."""
