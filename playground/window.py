@@ -1312,13 +1312,13 @@ class PlaygroundWindow(pyglet.window.Window):
 
         # V2: first drag after Ctrl+LMB arm → begin Tweak
         if tv == "v2" and self._tweak_v2_armed and self.app.viewport is not None:
-            if self._current_tool_type is not None:
-                ok = self._tweak_begin(self._current_tool_type, x, y)
-                if ok and self._tweak_started:
-                    update_transform(
-                        self._tweak_tool, float(dx), float(dy), self.width, self.height,
-                    )
-                    self._sync_after_transform()
+            _tt = self._current_tool_type or "move"
+            ok = self._tweak_begin(_tt, x, y)
+            if ok and self._tweak_started:
+                update_transform(
+                    self._tweak_tool, float(dx), float(dy), self.width, self.height,
+                )
+                self._sync_after_transform()
             return pyglet.event.EVENT_HANDLED
 
         # Transform-Handling: Hold (key down) oder Press-Mode/Press-Drag-Click (mode on)
@@ -1643,8 +1643,8 @@ class PlaygroundWindow(pyglet.window.Window):
             and self.app.viewport is not None
             and self._active_session() in (None, "tweak")
         ):
-            if not self._tweak_active and self._current_tool_type is not None:
-                self._tweak_begin(self._current_tool_type, x, y)
+            if not self._tweak_active:
+                self._tweak_begin(self._current_tool_type or "move", x, y)
             if self._tweak_started and self._tweak_tool is not None:
                 update_transform(
                     self._tweak_tool, float(dx), float(dy), self.width, self.height,
