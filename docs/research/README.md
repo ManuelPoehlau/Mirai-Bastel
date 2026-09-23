@@ -10,6 +10,10 @@ Research is detailed and may investigate individual systems or technical questio
 
 This document is the canonical home for the artist-side Character Systems research. Technical implementation experiments are kept separately under `experiments/rigging-skinning-morphing/` and should not be treated as a substitute for the research document.
 
+## Edit-Mode Mirror / Symmetry Research
+
+- [EDIT_MODE_SYMMETRY_RESEARCH.md](EDIT_MODE_SYMMETRY_RESEARCH.md) — Research zu Edit-Mode Mirror/Symmetry-Systemen über mehrere DCCs (3ds Max, Blender, Cinema 4D, Modo, Wings 3D, ZBrush, Houdini, Maya). Vergleicht technische Modelle (abgeleitete Hälfte, Positions-Korrespondenz, topologische Korrespondenz), Stressfälle und Naht-Schutz-Mechanismen. Status: Discovery, keine Architekturentscheidung, keine Empfehlung für Mirai-Bastel.
+
 ## Abgrenzung zu `references/`
 
 - `references/` = **kuratierter Wegweiser** zu externen Projekten, Original-Repositories, Dokumentationen und relevanten Bereichen. Kurz: *Was ist interessant und warum?*
