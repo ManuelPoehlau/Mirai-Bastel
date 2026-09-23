@@ -1511,6 +1511,7 @@ class PlaygroundWindow(pyglet.window.Window):
             self._extrude_tool.commit()
             self._extrude_tool.deactivate()
             self._extrude_tool = None
+            self._recompute_derived()
             self._rebuild_vbo()
             self._hud.update_action("Extrude")
             self._update_hud()
@@ -2199,6 +2200,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._knife_slide_edge_id = None
                 self._clear_knife_hover_vbos()
                 self._clear_knife_start_vbo()
+                self._recompute_derived()
                 self._rebuild_vbo()
                 if cmd is not None:
                     self._hud.update_action("Knife committed")
@@ -2220,6 +2222,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._knife_slide_edge_id = None
                 self._clear_knife_hover_vbos()
                 self._clear_knife_start_vbo()
+                self._recompute_derived()
                 self._rebuild_vbo()
                 self._hud.update_action("Knife cancelled")
                 self._update_hud()
@@ -2241,6 +2244,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._extrude_tool.cancel()
                 self._extrude_tool.deactivate()
                 self._extrude_tool = None
+                self._recompute_derived()
                 self._rebuild_vbo()
                 self._hud.update_action("Extrude cancelled")
                 self._update_hud()
@@ -2291,6 +2295,7 @@ class PlaygroundWindow(pyglet.window.Window):
             self._extrude_tool.commit()
             self._extrude_tool.deactivate()
             self._extrude_tool = None
+            self._recompute_derived()
             self._rebuild_vbo()
             self._hud.update_action("Extrude")
             self._update_hud()

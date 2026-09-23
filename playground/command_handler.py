@@ -233,7 +233,7 @@ class PlaygroundCommandHandler:
             from playground.transformer import cancel_transform
             cancel_transform(self.window._extrude_tool)
             self.window._extrude_tool = None
-            self.window._rebuild_vbo()
+            self._recompute_derived_and_rebuild_vbo()
             self.window._rebuild_selection_vbo()
             self.window._hud.update_action("Extrude cancelled")
             self.window._update_hud()
