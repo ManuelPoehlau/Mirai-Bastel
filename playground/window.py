@@ -1584,6 +1584,12 @@ class PlaygroundWindow(pyglet.window.Window):
                     new_edges = loop_insert(self.app.scene, start)
                     sel.clear()
                     sel.add(set(new_edges))
+                    # WP-STAB-07: derived (adjacency/normal cache) references ids
+                    # from before the mutation — stale by now. Recompute before/
+                    # alongside the VBO rebuild so the next single-vertex Tweak/
+                    # Gizmo update (_patch_vbo_single_vertex -> affected_neighborhood)
+                    # never sees a deleted FaceId/VertexId.
+                    self._recompute_derived()
                     self._rebuild_vbo()
                     suffix = " (articulation restored)" if restored else ""
                     self._hud.update_action(f"Loop Insert — {len(new_edges)} Edges{suffix}")
@@ -1618,6 +1624,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 try:
                     self.app.scene.mesh.collapse_edge(edge_id)
                     sel.clear()
+                    # WP-STAB-07: recompute derived before the VBO rebuild — see
+                    # the Loop Insert branch above for the invalidation rationale.
+                    self._recompute_derived()
                     self._rebuild_vbo()
                     action = "Collapse Edge (articulation restored)" if restored else "Collapse Edge"
                     self._hud.update_action(action)
@@ -1636,6 +1645,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 sel.mode = SelectionMode.VERTEX
                 sel.clear()
                 sel.add({new_vid})
+                # WP-STAB-07: recompute derived before the VBO rebuild — see
+                # the Loop Insert branch above for the invalidation rationale.
+                self._recompute_derived()
                 self._rebuild_vbo()
                 action = "Split (articulation restored)" if restored else "Split"
                 self._hud.update_action(action)
@@ -1647,6 +1659,9 @@ class PlaygroundWindow(pyglet.window.Window):
                     new_edges = connect_selected_edges_per_face(self.app.scene, set(sel.edges))
                     sel.clear()
                     sel.add(set(new_edges))
+                    # WP-STAB-07: recompute derived before the VBO rebuild — see
+                    # the Loop Insert branch above for the invalidation rationale.
+                    self._recompute_derived()
                     self._rebuild_vbo()
                     action = "Connect Edges (articulation restored)" if restored else "Connect Edges"
                     self._hud.update_action(action)
@@ -1659,6 +1674,10 @@ class PlaygroundWindow(pyglet.window.Window):
                 try:
                     new_edges = connect_vertices_per_face(self.app.scene, set(sel.vertices))
                     if new_edges:
+                        # WP-STAB-07: recompute derived before the VBO rebuild —
+                        # see the Loop Insert branch above for the invalidation
+                        # rationale.
+                        self._recompute_derived()
                         self._rebuild_vbo()
                         action = "Vertex Connect (articulation restored)" if restored else "Vertex Connect"
                         self._hud.update_action(action)
@@ -1695,6 +1714,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 (edge_id,) = sel.edges
                 split_selected_edge(self.app.scene, edge_id)
                 sel.clear()
+                # WP-STAB-07: recompute derived before the VBO rebuild — see
+                # the Loop Insert branch above for the invalidation rationale.
+                self._recompute_derived()
                 self._rebuild_vbo()
                 action = "Split Edge (articulation restored)" if restored else "Split Edge"
                 self._hud.update_action(action)
@@ -1998,6 +2020,11 @@ class PlaygroundWindow(pyglet.window.Window):
             self._loop_slide_tool.commit()
             self._loop_slide_tool.deactivate()
             self._loop_slide_tool = None
+            # WP-STAB-07: LoopSlideTool.commit() moves vertices but does not
+            # touch `derived` itself (checked: no derived/recompute call in
+            # topology_tools/loop_slide.py) — recompute here, same as the
+            # other topology-mutating handlers above.
+            self._recompute_derived()
             self._rebuild_vbo()
             self._hud.update_action("Loop Slide")
             self._update_hud()
