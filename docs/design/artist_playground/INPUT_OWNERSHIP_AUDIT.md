@@ -396,3 +396,47 @@ WP-AP-GIZMO-02 (Gizmo wiring) built the Gizmo under the assumption that `active_
 4. **How should `active_tool` signal "transform is armed" for V1/V3?** Options include: setting `active_tool` in the V1/V3 path (but then the Tweak tool and the Transform tool coexist), using a separate ownership flag, or restructuring the dispatch.
 5. **Should the Gizmo constraint be settable independently of `active_tool`?** Currently it is gated on `active_tool is not None`. For V1/V3, the Gizmo could alternatively be consulted during `_tweak_begin()` rather than at LMB time.
 6. **Is the X/Y/Z constraint toggle independent-`if` structure intentional?** It always fires for bare X/Y/Z, unconditionally. Is this the desired behavior when Extrude or Loop Slide is running?
+
+---
+
+## Addendum 2026-09-23 — WP-STAB-03 Session Gate (implemented)
+
+The structural gap behind engineering question 6 (and the pairwise AD-015/AD-016-style guards) is closed
+by one general mechanism in `playground/window.py`. **The gate supersedes per-branch pairwise guards as the
+way to keep sessions from interfering; new session types should extend the gate, not add pairwise checks.**
+
+- **`_active_session()`** reads the existing flags (no parallel state machine) and returns the owner:
+  `knife` (`_knife_tool`), `articulation` (`_articulation_dragging` only), `loop_slide`, `extrude`,
+  `tweak` (`_tweak_active` or `_tweak_v2_armed`), `gizmo` (`_gizmo_drag_armed`),
+  `transform` (`_transform_key_down` or `_transform_mode_on`).
+- **Keys (`on_key_press`)** — per Artist decision Q4, while a session is live only its own keys and Esc
+  pass: Knife Enter / Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z; Articulation F; Tweak Ctrl; Transform X/Y/Z
+  (+Shift), K, and the *same* Q/W/E key in the press models (second press = commit). Everything else is
+  swallowed — including M and Tab (no variant/focus switch mid-session, B11), 1/2/3, global undo/redo, and
+  the display toggles D / Shift+D / V. Key releases are not gated: each release branch already checks its
+  own session flag.
+- **Esc** is routed to the owning session instead of the first matching flag in the old `elif` chain:
+  an armed-but-not-dragged Gizmo or Tweak-V2 no longer falls through to `close()`, and a bent-idle
+  Articulation no longer absorbs the Esc meant for a running Transform. Esc still closes the window when
+  no session is live.
+- **Mouse (`on_mouse_press`/`on_mouse_release`)** — during a session a press is camera navigation
+  (MMB, Alt/Shift+LMB/RMB), the session's own gesture (Knife LMB, Extrude-LMB model LMB, Press-Drag-Click
+  LMB), or swallowed together with its release (tracked per button in `_gated_buttons`). The Articulation
+  press, Gizmo arm, Tweak-V2 arm and Box-select start only run with no session live. A selection click /
+  box release never mutates the Selection under a live session. A gizmo handle click during a Transform
+  sets the constraint only (the X/Y/Z equivalent, AD-016 D3) and does not arm a second tool.
+- **Camera** — orbit/pan pressed during a session always reaches the camera, even though the session drag
+  branches (Loop Slide, Extrude, Tweak, Transform) consume every other drag; the release of such a drag
+  never commits the session. Zoom (`on_mouse_scroll`) was never gated.
+- **Tweak V4** cannot begin inside another session (its motion branch runs before Transform's).
+- Tests: `playground/tests/test_session_gate.py` (key matrix over every session × foreign key, repro
+  cases, camera during every session, Esc/commit end every session).
+
+**Deliberately unchanged / noted:**
+- *Articulation bent-idle* is not a session: it is designed to coexist with other tools (topology
+  handlers auto-restore it; the mouse is free for camera after the drag). Only the live bend drag gates.
+- *Articulation focus-gating* (B14): with `focused_family == "articulation"` and no session live, LMB
+  still always starts a bend and never selects — unchanged, treated as intentional focus-gating. The gate
+  only stops it from firing inside another session.
+- Q4's strictness also blocks harmless display toggles (D, Shift+D, V) mid-session; relaxing that, and
+  per-session modifiers such as Shift-for-midpoint-snapping, is future work.

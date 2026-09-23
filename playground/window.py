@@ -434,6 +434,12 @@ class PlaygroundWindow(pyglet.window.Window):
         self._box_start: tuple[int, int] | None = None
         self._box_end: tuple[int, int] | None = None
 
+        # WP-STAB-03: mouse presses the session gate took away from the running
+        # session, per button — "camera" (drag navigates) or "blocked" (swallowed).
+        # Per button so e.g. an MMB pan during a Tweak-V2 LMB hold can't swallow
+        # the LMB release that commits it.
+        self._gated_buttons: dict[int, str] = {}
+
         self.activate()
 
     # -- Initial-Szene (AD-010: mit echtem GL-Store, nach Kontext) -------------
@@ -787,6 +793,120 @@ class PlaygroundWindow(pyglet.window.Window):
             self._transform_temp_target = False
             self._rebuild_selection_vbo()
 
+    # -- Session Gate (WP-STAB-03) --------------------------------------------
+
+    def _active_session(self) -> str | None:
+        """Which modal session currently owns input, read from the existing flags.
+
+        Articulation counts only while its LMB drag is live: the bent-but-idle
+        pose is designed to coexist with other tools (topology handlers
+        auto-restore it, the mouse is explicitly "free for camera" afterwards).
+        """
+        if self._knife_tool is not None:
+            return "knife"
+        if self._articulation_dragging:
+            return "articulation"
+        if self._loop_slide_tool is not None:
+            return "loop_slide"
+        if self._extrude_tool is not None:
+            return "extrude"
+        if self._tweak_active or self._tweak_v2_armed:
+            return "tweak"
+        if self._gizmo_drag_armed:
+            return "gizmo"
+        if self._transform_key_down is not None or self._transform_mode_on:
+            return "transform"
+        return None
+
+    def _session_owns_key(self, session: str, symbol: int, modifiers: int) -> bool:
+        """Q4 (2026-09-23): only the owning session's own keys plus Esc pass the gate.
+
+        Key *releases* are not gated — every release branch already checks its
+        own session flag, and with presses gated no foreign session can exist.
+        """
+        if symbol == _key.ESCAPE:
+            return True
+        if session == "knife":
+            if symbol in (_key.ENTER, _key.NUM_ENTER):
+                return True
+            # In-session undo/redo (AD-017): Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y.
+            return bool(modifiers & _key.MOD_CTRL) and symbol in (_key.Z, _key.Y)
+        if session == "articulation":
+            return symbol == _key.F
+        if session == "tweak":
+            # V4 commits on Ctrl release; V2 may see Ctrl re-pressed while LMB is held.
+            return symbol in (_key.LCTRL, _key.RCTRL)
+        if session == "transform":
+            if symbol in (_key.X, _key.Y, _key.Z):
+                return not (modifiers & _key.MOD_CTRL)
+            if symbol == _key.K:
+                return not modifiers
+            if symbol in (_key.Q, _key.W, _key.E) and not (modifiers & _key.MOD_SHIFT):
+                # Only the key of the tool already running, and only in the press
+                # models where a second press is the commit gesture. A different
+                # key would swap app.active_tool under a started transform.
+                tool = {_key.Q: "move", _key.W: "rotate", _key.E: "scale"}[symbol]
+                return (
+                    self._active_transform_model() in ("press_mode", "press_drag_click")
+                    and tool == self._current_tool_type
+                )
+        return False
+
+    @staticmethod
+    def _is_camera_press(button: int, modifiers: int) -> bool:
+        """Same button/modifier classification as the camera fallback in on_mouse_drag."""
+        if button == _mouse.MIDDLE:
+            return True
+        return button in (_mouse.LEFT, _mouse.RIGHT) and bool(
+            modifiers & (_key.MOD_ALT | _key.MOD_SHIFT)
+        )
+
+    def _session_owns_press(self, session: str, button: int) -> bool:
+        """Mouse buttons that are part of a running session's own gesture."""
+        if button != _mouse.LEFT:
+            return False
+        if session == "knife":
+            return True
+        if session == "extrude":
+            return self._active_extrude_model() == "lmb"
+        if session == "transform":
+            return self._active_transform_model() == "press_drag_click"
+        # Tweak V2, Gizmo and Articulation already hold LMB; a second press is foreign.
+        return False
+
+    def _camera_navigate(self, dx: int, dy: int, modifiers: int) -> None:
+        # Orbit: Alt+LMB (oder Alt+RMB) — Alt freihält LMB für Selection/Tools
+        is_orbit = (
+            self._drag_button in (_mouse.LEFT, _mouse.RIGHT)
+            and modifiers & _key.MOD_ALT
+        )
+        is_pan = self._drag_button == _mouse.MIDDLE or (
+            self._drag_button in (_mouse.LEFT, _mouse.RIGHT)
+            and modifiers & _key.MOD_SHIFT
+        )
+        if is_pan:
+            self.app.camera.pan(dx, dy, self.width, self.height)
+        elif is_orbit:
+            self.app.camera.orbit(-dx * 0.005, -dy * 0.005)
+        self._push_camera()
+
+    def _gizmo_handle_at(self, x: int, y: int) -> str | None:
+        """Gizmo handle under the cursor for the current selection, or None."""
+        if self.app.viewport is None or self.app.scene.selection.is_empty():
+            return None
+        mesh = self.app.viewport.render_mesh.mesh
+        derived = self.app.viewport.render_mesh.derived
+        sel = self.app.scene.selection
+        vertex_ids = resolve_selection_vertices(mesh, sel, sel.mode)
+        if not vertex_ids:
+            return None
+        pivot = selection_pivot(mesh, vertex_ids)
+        mode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
+        return pick_gizmo_handle(
+            self.app.camera, pivot, mode, self._transform_space,
+            sel, mesh, derived, x, y, self.width, self.height,
+        )
+
     # -- Articulation-Helpers -------------------------------------------------
 
     def _articulation_auto_restore(self) -> bool:
@@ -937,12 +1057,38 @@ class PlaygroundWindow(pyglet.window.Window):
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         self._drag_button = button
         self._drag_moved = 0.0
+        self._gated_buttons.pop(button, None)
+
+        # WP-STAB-03 Session Gate: while a session owns input, a press is either
+        # camera navigation, the session's own gesture, or swallowed. The
+        # Articulation / Gizmo-arm / Tweak-V2-arm / Box-start branches below only
+        # run when no session is live — each would otherwise start a second,
+        # concurrent session (or rubber band) inside the running one.
+        session = self._active_session()
+        if session is not None:
+            if self._is_camera_press(button, modifiers):
+                self._gated_buttons[button] = "camera"
+                return pyglet.event.EVENT_HANDLED
+            if session == "transform" and button == _mouse.LEFT:
+                hit = self._gizmo_handle_at(x, y)
+                if hit is not None:
+                    # D3 (AD-016): a handle click is the X/Y/Z equivalent, which
+                    # the Transform session owns. It must not arm a second tool —
+                    # the running Transform executes the drag, and in
+                    # Press-Drag-Click the LMB release still commits it.
+                    self._axis_constraint = hit
+                    self._hud.update_constraint(self._axis_constraint)
+                    return pyglet.event.EVENT_HANDLED
+            if not self._session_owns_press(session, button):
+                self._gated_buttons[button] = "blocked"
+                return pyglet.event.EVENT_HANDLED
 
         # Articulation: LMB press when articulation family is focused starts a bend gesture.
         # Axis: computed per-frame from drag direction — see on_mouse_drag.
         # Radius: full bounding radius — every vertex participates regardless of pivot location.
         if (
-            button == _mouse.LEFT
+            session is None
+            and button == _mouse.LEFT
             and not (modifiers & _key.MOD_ALT)
             and self.app.focused_family == "articulation"
             and self.app.viewport is not None
@@ -969,34 +1115,19 @@ class PlaygroundWindow(pyglet.window.Window):
         # Gizmo click/drag: D3 (AD-016) — hit on a handle sets the axis constraint;
         # a subsequent drag executes the current tool along that axis.
         # Works whether or not a transform is currently armed (precondition removed).
-        if (
-            button == _mouse.LEFT
-            and not (modifiers & _key.MOD_ALT)
-            and self.app.viewport is not None
-            and not self.app.scene.selection.is_empty()
-        ):
-            mesh = self.app.viewport.render_mesh.mesh
-            derived = self.app.viewport.render_mesh.derived
-            sel = self.app.scene.selection
-            vertex_ids = resolve_selection_vertices(mesh, sel, sel.mode)
-            if vertex_ids:
-                pivot = selection_pivot(mesh, vertex_ids)
-                mode = gizmo_mode(sel, self._transform_space, self._axis_constraint)
-                hit = pick_gizmo_handle(
-                    self.app.camera, pivot, mode, self._transform_space,
-                    sel, mesh, derived, x, y, self.width, self.height,
-                )
-                if hit is not None:
-                    self._axis_constraint = hit
-                    self._hud.update_constraint(self._axis_constraint)
-                    # Arm gizmo drag: click-only = constraint only; LMB+drag = execute tool
-                    _gt = self._current_tool_type or "move"
-                    self._gizmo_drag_tool = create_tool_for_type(_gt)
-                    self._gizmo_drag_armed = True
-                    return pyglet.event.EVENT_HANDLED
+        if session is None and button == _mouse.LEFT and not (modifiers & _key.MOD_ALT):
+            hit = self._gizmo_handle_at(x, y)
+            if hit is not None:
+                self._axis_constraint = hit
+                self._hud.update_constraint(self._axis_constraint)
+                # Arm gizmo drag: click-only = constraint only; LMB+drag = execute tool
+                _gt = self._current_tool_type or "move"
+                self._gizmo_drag_tool = create_tool_for_type(_gt)
+                self._gizmo_drag_armed = True
+                return pyglet.event.EVENT_HANDLED
 
         tv = self._active_tweak_variant()
-        if button == self.input_map.select_button:
+        if session is None and button == self.input_map.select_button:
             if tv == "v2" and self._tweak_ctrl_held:
                 # V2: Ctrl was held at LMB press → arm Tweak (Ctrl may now be released)
                 self._tweak_v2_armed = True
@@ -1042,10 +1173,9 @@ class PlaygroundWindow(pyglet.window.Window):
                 return pyglet.event.EVENT_HANDLED
 
         if (
-            self.app.select_method is SelectMethod.BOX
+            session is None
+            and self.app.select_method is SelectMethod.BOX
             and button == self.input_map.select_button
-            and self._transform_key_down is None
-            and not self._transform_mode_on
         ):
             self._box_start = (x, y)
             self._box_end = (x, y)
@@ -1057,6 +1187,13 @@ class PlaygroundWindow(pyglet.window.Window):
         self._last_mouse_x = x
         self._last_mouse_y = y
         self._drag_moved += abs(dx) + abs(dy)
+
+        # WP-STAB-03: camera navigation pressed during a session always reaches
+        # the camera — the session drag branches below (Loop Slide, Extrude,
+        # Tweak, Transform) consume every drag regardless of modifiers.
+        if self._gated_buttons.get(self._drag_button) == "camera":
+            self._camera_navigate(dx, dy, modifiers)
+            return pyglet.event.EVENT_HANDLED
 
         # Knife Variant B: LMB drag while slide armed = update preview (WP-AP-CUT)
         if self._knife_slide_armed and self._knife_tool is not None and self.app.viewport is not None:
@@ -1226,25 +1363,28 @@ class PlaygroundWindow(pyglet.window.Window):
             return pyglet.event.EVENT_HANDLED
 
         # Normale Kamera-Bedienung
-        # Orbit: Alt+LMB (oder Alt+RMB) — Alt freihält LMB für Selection/Tools
-        is_orbit = (
-            self._drag_button in (_mouse.LEFT, _mouse.RIGHT)
-            and modifiers & _key.MOD_ALT
-        )
-        is_pan = self._drag_button == _mouse.MIDDLE or (
-            self._drag_button in (_mouse.LEFT, _mouse.RIGHT)
-            and modifiers & _key.MOD_SHIFT
-        )
-        if is_pan:
-            self.app.camera.pan(dx, dy, self.width, self.height)
-        elif is_orbit:
-            self.app.camera.orbit(-dx * 0.005, -dy * 0.005)
-        self._push_camera()
+        self._camera_navigate(dx, dy, modifiers)
         return pyglet.event.EVENT_HANDLED
 
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int) -> None:
         was_click = self._drag_moved < CLICK_THRESHOLD
         self._drag_button = None
+
+        # WP-STAB-03: the release of a gated press never reaches a session's
+        # commit branch (an Alt-orbit during Extrude-LMB must not commit it).
+        # Exception: a camera-modified *click* on the session's own button is
+        # still the session's click (e.g. Shift/Alt+click during Knife), as
+        # before the gate.
+        gate = self._gated_buttons.pop(button, None)
+        if gate is not None:
+            session = self._active_session()
+            if not (
+                gate == "camera"
+                and was_click
+                and session is not None
+                and self._session_owns_press(session, button)
+            ):
+                return pyglet.event.EVENT_HANDLED
 
         # Articulation drag end — bent state persists, mouse is now free for camera.
         if self._articulation_dragging:
@@ -1353,6 +1493,14 @@ class PlaygroundWindow(pyglet.window.Window):
             self._sync_after_transform()
             self._clear_transform_temp_target()
             self._clear_transform_state()
+            return pyglet.event.EVENT_HANDLED
+
+        # WP-STAB-03: every session's own release was handled above; a selection
+        # click or box-select must not mutate the Selection under a live session
+        # (also covers a press that started before the session did).
+        if self._active_session() is not None:
+            self._box_start = None
+            self._box_end = None
             return pyglet.event.EVENT_HANDLED
 
         if button == self.input_map.select_button and self.app.viewport is not None:
@@ -1486,7 +1634,14 @@ class PlaygroundWindow(pyglet.window.Window):
         tv = self._active_tweak_variant()
 
         # V4: Ctrl held + motion → Tweak with shared current tool (D2 / AD-016)
-        if tv == "v4" and self._tweak_ctrl_held and self.app.viewport is not None:
+        # WP-STAB-03: this branch runs before Transform's, so without the session
+        # check a Ctrl held from before Q would start a Tweak inside the Transform.
+        if (
+            tv == "v4"
+            and self._tweak_ctrl_held
+            and self.app.viewport is not None
+            and self._active_session() in (None, "tweak")
+        ):
             if not self._tweak_active and self._current_tool_type is not None:
                 self._tweak_begin(self._current_tool_type, x, y)
             if self._tweak_started and self._tweak_tool is not None:
@@ -1556,6 +1711,16 @@ class PlaygroundWindow(pyglet.window.Window):
         # consulted: capability is shared (create_tool_for_type), binding and
         # gesture are owned by the Playground (AD-013 "Capability promotion is
         # not UX promotion"). Restores the pre-54e9840 ownership split.
+
+        # WP-STAB-03 Session Gate: while a session owns input, only its own keys
+        # and Esc get through. Supersedes the pairwise per-branch guards (AD-015/
+        # AD-016 style) as the general mechanism — the branches below, and the
+        # independent X/Y/Z and Q/W/E blocks after the chain, never see a key
+        # that belongs to no running session.
+        session = self._active_session()
+        if session is not None and not self._session_owns_key(session, symbol, modifiers):
+            return pyglet.event.EVENT_HANDLED
+
         if symbol == self.input_map.display_cycle and not (modifiers & _key.MOD_SHIFT):
             # Shift+D is the wireframe-overlay toggle further down this chain;
             # without this guard the bare-D branch would swallow it.
@@ -1817,27 +1982,13 @@ class PlaygroundWindow(pyglet.window.Window):
         elif symbol == _key.M and not (modifiers & _key.MOD_SHIFT):
             # WP-AP-INPUT-FIX-01 §2: Bare M — Cycle transform variants (moved from Q)
             # Cycles within the focused_family — never across families.
+            # WP-STAB-03: M is not reachable while any session is live (gate at
+            # the top), so the former per-family "cancel Transform/Knife before
+            # switching" handling here is gone — a variant can no longer change
+            # under a running gesture of any family.
             active_family = self.app.focused_family
             slot = self.app.slots.get(active_family)
             if slot is not None:
-                # Reset transform state if activation model changes
-                if active_family == "transform" and (self._transform_key_down or self._transform_mode_on):
-                    if self._transform_started and self.app.active_tool is not None:
-                        cancel_transform(self.app.active_tool)
-                        self._sync_after_transform()
-                    self._clear_transform_temp_target()
-                    self._clear_transform_state()
-                # Cancel in-progress Knife session before switching variant (WP-AP-CUT)
-                if active_family == "knife" and self._knife_tool is not None:
-                    self._knife_tool.cancel()
-                    self._knife_tool.deactivate()
-                    self._knife_tool = None
-                    self._knife_slide_armed = False
-                    self._knife_slide_edge_id = None
-                    self._clear_knife_hover_vbos()
-                    self._clear_knife_start_vbo()
-                    self._rebuild_vbo()
-                    self._hud.update_action("Knife cancelled (variant switch)")
                 self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
             self._update_hud()
         elif symbol == _key.M and (modifiers & _key.MOD_SHIFT):
@@ -2006,7 +2157,11 @@ class PlaygroundWindow(pyglet.window.Window):
                     print("[KNIFE] session result: no cuts made (mesh state unchanged since session begin)")
                 self._update_hud()
         elif symbol == _key.ESCAPE:
-            if self._knife_tool is not None:
+            # WP-STAB-03: Esc goes to the owning session, not to whichever flag
+            # comes first in this chain — a bent-idle Articulation must not
+            # absorb the Esc meant for a running Transform, and an armed-but-not-
+            # dragged Gizmo / Tweak-V2 must not fall through to close().
+            if session == "knife":
                 self._knife_tool.cancel()
                 self._knife_tool.deactivate()
                 self._knife_tool = None
@@ -2017,44 +2172,51 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_vbo()
                 self._hud.update_action("Knife cancelled")
                 self._update_hud()
-            elif self._articulation_state is not None:
+            elif session == "articulation" or (session is None and self._articulation_state is not None):
                 self._articulation_state.restore()
                 self._articulation_state = None
                 self._articulation_dragging = False
                 self._rebuild_vbo()
                 self._hud.update_action("Articulation restored")
                 self._update_hud()
-            elif self._loop_slide_tool is not None:
+            elif session == "loop_slide":
                 self._loop_slide_tool.cancel()
                 self._loop_slide_tool.deactivate()
                 self._loop_slide_tool = None
                 self._rebuild_vbo()
                 self._hud.update_action("Loop Slide cancelled")
                 self._update_hud()
-            elif self._extrude_tool is not None:
+            elif session == "extrude":
                 self._extrude_tool.cancel()
                 self._extrude_tool.deactivate()
                 self._extrude_tool = None
                 self._rebuild_vbo()
                 self._hud.update_action("Extrude cancelled")
                 self._update_hud()
-            elif self._tweak_active and self._tweak_tool is not None:
-                self._tweak_cancel()
-            elif self._gizmo_drag_started and self._gizmo_drag_tool is not None:
-                cancel_transform(self._gizmo_drag_tool)
-                self._sync_after_transform()
+            elif session == "tweak":
+                if self._tweak_active and self._tweak_tool is not None:
+                    self._tweak_cancel()
+                else:
+                    self._clear_tweak_gesture()  # V2 armed, not yet dragged
+            elif session == "gizmo":
+                if self._gizmo_drag_started and self._gizmo_drag_tool is not None:
+                    cancel_transform(self._gizmo_drag_tool)
+                    self._sync_after_transform()
                 self._gizmo_drag_armed = False
                 self._gizmo_drag_started = False
                 self._gizmo_drag_tool = None
-            elif (self._transform_started or self._transform_mode_on or self._transform_key_down) \
-                    and self.app.active_tool is not None:
-                if self._transform_started:
+            elif session == "transform":
+                if self._transform_started and self.app.active_tool is not None:
                     cancel_transform(self.app.active_tool)
                 self._sync_after_transform()
                 self._clear_transform_temp_target()
                 self._clear_transform_state()
             else:
                 self.close()
+            if session is not None and self._drag_button is not None:
+                # A button still held for the cancelled gesture (Gizmo, Tweak V2,
+                # Articulation, Knife slide) must not turn into a selection click.
+                self._gated_buttons.setdefault(self._drag_button, "blocked")
         return pyglet.event.EVENT_HANDLED
 
     def on_key_release(self, symbol: int, modifiers: int) -> None:

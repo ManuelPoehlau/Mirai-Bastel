@@ -37,6 +37,11 @@ There is exactly one "current transform tool" state (move / rotate / scale). Q/W
 - If no tool has been chosen yet, the current tool defaults to Move *(engineering default, not an Artist statement)*.
 - A hit on a gizmo handle takes priority over selection clicks at that position; a miss falls through unchanged.
 
+*Addendum 2026-09-23 (WP-STAB-03 Session Gate):* while a Transform session is already live, a handle
+click sets the constraint only — the running Transform executes the drag (and Press-Drag-Click's LMB
+release commits it); no second Gizmo tool is armed. Outside a Transform the behavior above is unchanged.
+See `docs/design/artist_playground/INPUT_OWNERSHIP_AUDIT.md` (Addendum 2026-09-23).
+
 This lifts the WP-AP-GIZMO Phase-1 boundary ("a Gizmo click does not choose/start a tool") by explicit Artist decision.
 
 ### D4 — New Transform activation variant: "Hold-Key Hover" (Playground experiment)
