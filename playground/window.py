@@ -360,6 +360,11 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_sel_verts = None
         self._vlist_sel_edges = None
         self._vlist_hover = None
+        # WP-STAB-02 (R-SEL-2): window-local (mode, id) hover key. Kept
+        # alongside sel.hovered (a bare id, core.selection is frozen) so
+        # on_mouse_motion can tell "vertex 5" from "edge 5" apart and never
+        # suppress a hover update on a same-numbered id across modes.
+        self._hover_key: tuple | None = None
         self._hud_mesh_counts_dirty: bool = True
         self._rebuild_vbo()
 
@@ -453,6 +458,18 @@ class PlaygroundWindow(pyglet.window.Window):
 
     # -- VBO-Aufbau -----------------------------------------------------------
 
+    def _clear_hover(self) -> None:
+        """Reset hover state (sel.hovered, the window-local hover key, and the
+        hover overlay VBO). Call on any component-mode change and on Knife-begin
+        (WP-STAB-02 / R-SEL-2) so a stale or wrong-kind hover from before the
+        switch never carries into the new mode/session.
+        """
+        self.app.scene.selection.hovered = None
+        self._hover_key = None
+        if self._vlist_hover is not None:
+            self._vlist_hover.delete()
+            self._vlist_hover = None
+
     def _rebuild_vbo(self) -> None:
         """Alle Mesh-VBOs (Faces, Edges, Vertices) neu bauen. Selection-VBO separat."""
         self._hud_mesh_counts_dirty = True
@@ -466,7 +483,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_selection = None
         self._vlist_hover = None
         if self.app.viewport is not None:
-            self.app.scene.selection.hovered = None
+            self._clear_hover()
 
         if self.app.viewport is None:
             return
@@ -1476,7 +1493,18 @@ class PlaygroundWindow(pyglet.window.Window):
             mesh = self.app.viewport.render_mesh.mesh
             sel = self.app.scene.selection
             hit = pick_component(self.app.camera, mesh, sel, x, y, self.width, self.height)
-            if hit != sel.hovered:
+            # R-SEL-2 (WP-STAB-02): compare as (mode, id), not bare id — sel.mode
+            # can only be the current mode here (single-kind hover; the window
+            # code never picks against a different kind), but a bare-id compare
+            # would still equate e.g. vertex id 5 with edge id 5 across a mode
+            # switch if _clear_hover() were ever skipped, silently keeping a
+            # stale/wrong-kind hover. TODO: this system only ever hovers one
+            # kind at a time; full kind-based hover dispatch for arbitrary
+            # (mode, id) pairs (matching Knife's per-kind hover) is a separate,
+            # larger follow-up — not implemented here.
+            hover_key = (sel.mode, hit) if hit is not None else None
+            if hover_key != self._hover_key:
+                self._hover_key = hover_key
                 sel.hovered = hit
                 self._rebuild_hover_vbo()
 
@@ -1650,6 +1678,10 @@ class PlaygroundWindow(pyglet.window.Window):
                         scene=self.app.scene,
                         selection=self.app.scene.selection,
                     )
+                    # R-SEL-2: Knife has its own hover overlay (see the "Knife
+                    # hover VBOs" note above) — clear any leftover regular
+                    # selection hover so it doesn't stay drawn underneath it.
+                    self._clear_hover()
                     self._hud.update_action("Knife — click vertices/edges; Enter=commit, Esc=cancel")
                     self._update_hud()
             elif ctx is CContext.NONE:
@@ -1755,6 +1787,7 @@ class PlaygroundWindow(pyglet.window.Window):
             sel = self.app.scene.selection
             sel.mode = SelectionMode.VERTEX
             sel.clear()
+            self._clear_hover()  # R-SEL-2: no stale hover from the previous mode
             self._rebuild_selection_vbo()
             self._update_hud()
         elif symbol == _key._2:
@@ -1762,6 +1795,7 @@ class PlaygroundWindow(pyglet.window.Window):
             sel = self.app.scene.selection
             sel.mode = SelectionMode.EDGE
             sel.clear()
+            self._clear_hover()  # R-SEL-2: no stale hover from the previous mode
             self._rebuild_selection_vbo()
             self._update_hud()
         elif symbol == _key._3:
@@ -1769,6 +1803,7 @@ class PlaygroundWindow(pyglet.window.Window):
             sel = self.app.scene.selection
             sel.mode = SelectionMode.FACE
             sel.clear()
+            self._clear_hover()  # R-SEL-2: no stale hover from the previous mode
             self._rebuild_selection_vbo()
             self._update_hud()
         elif symbol == _key.G and self._loop_slide_tool is None:
