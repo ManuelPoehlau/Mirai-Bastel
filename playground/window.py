@@ -258,6 +258,16 @@ def _mesh_bounding_radius(mesh) -> float:
     )
 
 
+def _sel_contains_hovered(sel) -> bool:
+    """True if sel.hovered is an element of the active-mode selection set."""
+    h = sel.hovered
+    if sel.mode is SelectionMode.VERTEX:
+        return h in sel.vertices
+    if sel.mode is SelectionMode.EDGE:
+        return h in sel.edges
+    return h in sel.faces
+
+
 class PlaygroundWindow(pyglet.window.Window):
     """Leichtgewichtiges pyglet-Fenster für das Artist Playground."""
 
@@ -774,6 +784,9 @@ class PlaygroundWindow(pyglet.window.Window):
         """
         sel = self.app.scene.selection
         if _tweak_has_selection(sel):
+            # WP-STAB-11: same clear-on-arm rule as _tweak_begin.
+            if sel.hovered is not None and _sel_contains_hovered(sel):
+                self._clear_hover()
             return True
         if self.app.viewport is None:
             return False
@@ -784,6 +797,9 @@ class PlaygroundWindow(pyglet.window.Window):
         add_temp_target(sel, hit)
         self._transform_temp_target = True
         self._rebuild_selection_vbo()
+        # WP-STAB-11: same clear-on-arm rule as _tweak_begin.
+        if sel.hovered is not None and sel.hovered == hit:
+            self._clear_hover()
         return True
 
     def _clear_transform_temp_target(self) -> None:
@@ -989,6 +1005,11 @@ class PlaygroundWindow(pyglet.window.Window):
             # the way out (after clear_temp_target()); this is the missing
             # rebuild on the way in.
             self._rebuild_selection_vbo()
+
+        # WP-STAB-11: once the gesture's target is resolved, hovering and
+        # "being the active target" are mutually exclusive — clear the marker.
+        if sel.hovered is not None and _sel_contains_hovered(sel):
+            self._clear_hover()
 
         self._tweak_tool = create_tool_for_type(tool_type)
         _space = "normal" if self._transform_space == "normal" else None
