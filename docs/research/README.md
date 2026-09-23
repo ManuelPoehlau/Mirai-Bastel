@@ -12,7 +12,7 @@ This document is the canonical home for the artist-side Character Systems resear
 
 ## Edit-Mode Mirror / Symmetry Research
 
-- [EDIT_MODE_SYMMETRY_RESEARCH.md](EDIT_MODE_SYMMETRY_RESEARCH.md) — Research zu Edit-Mode Mirror/Symmetry-Systemen über mehrere DCCs (3ds Max, Blender, Cinema 4D, Modo, Wings 3D, ZBrush, Houdini, Maya). Vergleicht technische Modelle (abgeleitete Hälfte, Positions-Korrespondenz, topologische Korrespondenz), Stressfälle und Naht-Schutz-Mechanismen. Status: Discovery, keine Architekturentscheidung, keine Empfehlung für Mirai-Bastel.
+- [symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md](symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md) — Research zu Edit-Mode Mirror/Symmetry-Systemen über mehrere DCCs (3ds Max, Blender, Cinema 4D, Modo, Wings 3D, ZBrush, Houdini, Maya). Vergleicht technische Modelle (abgeleitete Hälfte, Positions-Korrespondenz, topologische Korrespondenz), Stressfälle und Naht-Schutz-Mechanismen. Status: Discovery, keine Architekturentscheidung, keine Empfehlung für Mirai-Bastel.
 
 ## Abgrenzung zu `references/`
 
