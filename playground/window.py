@@ -828,6 +828,14 @@ class PlaygroundWindow(pyglet.window.Window):
                 return False
             add_temp_target(sel, hit)
             self._tweak_temp_target = True
+            # WP-STAB-08: add_temp_target() mutates sel.vertices/.edges/.faces
+            # directly — without this, the highlight overlay VBO (built from
+            # the pre-gesture Selection) stays whatever it was before (usually
+            # None), so no highlight is drawn for the whole temp-target
+            # gesture. _tweak_commit()/_tweak_cancel() already rebuild it on
+            # the way out (after clear_temp_target()); this is the missing
+            # rebuild on the way in.
+            self._rebuild_selection_vbo()
 
         self._tweak_tool = create_tool_for_type(tool_type)
         _space = "normal" if self._transform_space == "normal" else None
