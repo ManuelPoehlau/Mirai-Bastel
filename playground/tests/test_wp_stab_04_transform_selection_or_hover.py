@@ -145,6 +145,7 @@ def test_hold_refuses_when_nothing_to_transform(cube_win, monkeypatch):
     assert win._transform_temp_target is False
     assert sel.is_empty()
     assert "Nothing to transform" in win._hud.action_line
+    assert "Move" in win._hud.action_line
 
     # Regression check: subsequent mouse motion must not produce a phantom
     # transform (no crash, mesh unchanged).
@@ -208,6 +209,7 @@ def test_press_drag_click_refuses_when_nothing_to_transform(cube_win, monkeypatc
     assert win._transform_temp_target is False
     assert sel.is_empty()
     assert "Nothing to transform" in win._hud.action_line
+    assert "Scale" in win._hud.action_line
 
     win.on_mouse_motion(650, 400, 5, 5)
     win.on_mouse_drag(660, 410, 10, 10, 1, 0)
@@ -236,3 +238,4 @@ def test_hold_key_hover_refuses_when_nothing_to_transform(cube_win, monkeypatch)
     assert win._transform_temp_target is False
     assert sel.is_empty()
     assert "Nothing to transform" in win._hud.action_line
+    assert "Move" in win._hud.action_line

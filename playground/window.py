@@ -2115,7 +2115,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     self.app.active_tool = create_tool_for_type(_tool_type)
                     self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
                 else:
-                    self._hud.update_action("Nothing to transform")
+                    self._hud.update_action(f"Nothing to transform ({_tool_type.capitalize()})")
             elif model == "hold_key_hover":
                 # D4 (AD-016): like Hold, but tap = set tool only; no-selection → temp
                 # target. WP-STAB-04: refuse (don't arm) if there's also nothing under
@@ -2125,7 +2125,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     self.app.active_tool = create_tool_for_type(_tool_type)
                     self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
                 else:
-                    self._hud.update_action("Nothing to transform")
+                    self._hud.update_action(f"Nothing to transform ({_tool_type.capitalize()})")
             else:  # press_mode or press_drag_click
                 if self._transform_mode_on:
                     # Second press of same key → commit (if started), leave mode
@@ -2142,7 +2142,7 @@ class PlaygroundWindow(pyglet.window.Window):
                         self.app.active_tool = create_tool_for_type(_tool_type)
                         self._hud.update_action(f"Transform: {_tool_type.capitalize()}")
                     else:
-                        self._hud.update_action("Nothing to transform")
+                        self._hud.update_action(f"Nothing to transform ({_tool_type.capitalize()})")
                 self._update_hud()
         elif symbol == _key.K and not modifiers:
             # K: toggle transform coordinate space World ↔ Normal (WP-AP-INPUT-FIX-03)
