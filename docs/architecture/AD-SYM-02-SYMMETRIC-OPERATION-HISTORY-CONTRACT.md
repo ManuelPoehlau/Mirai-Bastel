@@ -1,6 +1,6 @@
 # AD-SYM-02 — Symmetric Operation / History Contract
 
-**Status:** PROPOSED — Architekturreview ausstehend
+**Status:** DECIDED ✓
 **Datum:** 2026-09-24
 **Modus (M5):** Production-Planung. Keine Implementierung.
 **Gehört zu:** WP-SYM-01 (Symmetry V1 Kern)
@@ -46,16 +46,16 @@ späteres Influence-System. Konkrete Transformationen implementieren nur
 `_transform_position()`.
 
 > Daraus folgt: Für die gesamte Transform-Familie existiert **genau eine Stelle**,
-> an der Symmetrie eingehängt werden kann — was INV-9/AR-10 („keine Spiegel-Logik
-> pro Tool") strukturell begünstigt statt nur appelliert.
+an der Symmetrie eingehängt werden kann — was INV-9/AR-10 („keine Spiegel-Logik
+pro Tool") strukturell begünstigt statt nur appelliert.
 
 **[FAKT·Code] Topologie-Mutationen laufen ohne Operation-Lifecycle** (atomare
 Aufrufe), ihr Undo ist `MeshStateCommand` mit Vorher-/Nachher-Snapshot des ganzen
 Mesh.
 
 > Daraus folgt: Eine symmetrische Topologie-Mutation, die beide Seiten **innerhalb
-> eines** Before/After-Paars erledigt, ist bereits exakt ein Undo-Schritt. Auch hier
-> keine Erweiterung nötig.
+eines** Before/After-Paars erledigt, ist bereits exakt ein Undo-Schritt. Auch hier
+keine Erweiterung nötig.
 
 **[FAKT·Code] `description`** ist ein Klassenattribut auf den Operation-Unterklassen
 (`"Move Vertices"`, `"Rotate Vertices"`, …). Es gibt also einen Präzedenzfall dafür,
