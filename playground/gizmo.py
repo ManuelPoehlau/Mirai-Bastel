@@ -220,14 +220,18 @@ def pick_gizmo_handle(
     click_y: float,
     width: int,
     height: int,
-    max_pixel_distance: float = 22.0,
+    max_pixel_distance: float = 16.0,
     current_tool: str = "move",
 ) -> str | None:
     """Return the name of the gizmo handle nearest to (click_x, click_y), or None.
 
     Pure function: no GL calls, testable headless.  `mode` is the result of
-    `gizmo_mode()` for the current state.  For rotate, ring segment points are
-    tested instead of tips; for scale, a center/pivot candidate is added.
+    `gizmo_mode()` for the current state.
+
+    Axis and plane-bracket handles use segment-based picking: nearest point on the
+    projected 2D segment, so any click along the axis line or bracket arm registers
+    (not just at the tip or corner).  Rotate rings use dense sample points along the
+    ring.  Scale center is a single pivot point.
     """
     cam_eye = camera.eye()
     dist = math.sqrt(
@@ -237,34 +241,64 @@ def pick_gizmo_handle(
     )
     size = max(dist * GIZMO_SCALE, 1e-6)
 
-    def _axis_cands(name: str, direction: tuple) -> list:
-        if current_tool == "rotate":
-            ring_pts = axis_ring_positions(pivot, direction, size)
-            return [(name, (ring_pts[i], ring_pts[i + 1], ring_pts[i + 2]))
-                    for i in range(0, len(ring_pts), 3)]
+    def _seg_dist(p1: tuple, p2: tuple) -> float:
+        """Screen-space distance from click to projected segment p1→p2."""
+        s1 = camera.project_to_screen(p1, width, height)
+        s2 = camera.project_to_screen(p2, width, height)
+        if s1 is None or s2 is None:
+            return float("inf")
+        ax, ay = s1
+        bx, by = s2
+        dx, dy = bx - ax, by - ay
+        len_sq = dx * dx + dy * dy
+        if len_sq < 1e-12:
+            return math.hypot(ax - click_x, ay - click_y)
+        t = max(0.0, min(1.0, ((click_x - ax) * dx + (click_y - ay) * dy) / len_sq))
+        return math.hypot(ax + t * dx - click_x, ay + t * dy - click_y)
+
+    def _pt_dist(pos3d: tuple) -> float:
+        """Screen-space distance from click to a projected 3D point."""
+        s = camera.project_to_screen(pos3d, width, height)
+        return math.hypot(s[0] - click_x, s[1] - click_y) if s is not None else float("inf")
+
+    # seg_candidates: (name, p1_3d, p2_3d) — picked along the full segment
+    seg_candidates: list[tuple[str, tuple, tuple]] = []
+    # pt_candidates: (name, point_3d) — picked at a single projected point
+    pt_candidates: list[tuple[str, tuple]] = []
+
+    def _add_axis(name: str, direction: tuple) -> None:
         tip = (
             pivot[0] + direction[0] * size,
             pivot[1] + direction[1] * size,
             pivot[2] + direction[2] * size,
         )
-        return [(name, tip)]
+        if current_tool == "rotate":
+            ring_pts = axis_ring_positions(pivot, direction, size)
+            for i in range(0, len(ring_pts), 3):
+                pt_candidates.append((name, (ring_pts[i], ring_pts[i + 1], ring_pts[i + 2])))
+        else:
+            seg_candidates.append((name, pivot, tip))
 
-    candidates: list[tuple[str, tuple[float, float, float]]] = []
+    def _add_plane(name: str, axis_a: tuple, axis_b: tuple) -> None:
+        s = size * 0.35
+        corner = (
+            pivot[0] + axis_a[0] * s + axis_b[0] * s,
+            pivot[1] + axis_a[1] * s + axis_b[1] * s,
+            pivot[2] + axis_a[2] * s + axis_b[2] * s,
+        )
+        end_a = (pivot[0] + axis_a[0] * s * 2, pivot[1] + axis_a[1] * s * 2, pivot[2] + axis_a[2] * s * 2)
+        end_b = (pivot[0] + axis_b[0] * s * 2, pivot[1] + axis_b[1] * s * 2, pivot[2] + axis_b[2] * s * 2)
+        seg_candidates.append((name, corner, end_a))
+        seg_candidates.append((name, corner, end_b))
 
     if mode == "world":
         for name, direction in WORLD_AXES:
-            candidates.extend(_axis_cands(name, direction))
+            _add_axis(name, direction)
         if current_tool != "rotate":
-            s = size * 0.35
             for name, axis_a, axis_b in WORLD_PLANES:
-                corner = (
-                    pivot[0] + axis_a[0] * s + axis_b[0] * s,
-                    pivot[1] + axis_a[1] * s + axis_b[1] * s,
-                    pivot[2] + axis_a[2] * s + axis_b[2] * s,
-                )
-                candidates.append((name, corner))
+                _add_plane(name, axis_a, axis_b)
         if current_tool == "scale":
-            candidates.append(("center", pivot))
+            pt_candidates.append(("center", pivot))
 
     elif mode == "normal_full":
         from mirai.interaction.tools.transform import _face_tangent_basis  # noqa: PLC0415
@@ -273,26 +307,29 @@ def pick_gizmo_handle(
         except (ValueError, AttributeError):
             return None
         for name, direction in [("x", tangent_x), ("y", tangent_y), ("z", normal)]:
-            candidates.extend(_axis_cands(name, direction))
+            _add_axis(name, direction)
         if current_tool == "scale":
-            candidates.append(("center", pivot))
+            pt_candidates.append(("center", pivot))
 
     elif mode == "normal_z_only":
         from mirai.interaction.tools.selection_helpers import selection_normal  # noqa: PLC0415
         normal = selection_normal(derived_geometry, mesh, selection, selection.mode)
         if any(v != 0.0 for v in normal):
-            candidates.extend(_axis_cands("z", normal))
+            _add_axis("z", normal)
         if current_tool == "scale":
-            candidates.append(("center", pivot))
+            pt_candidates.append(("center", pivot))
 
     best_name = None
     best_dist = max_pixel_distance
-    for name, pos3d in candidates:
-        projected = camera.project_to_screen(pos3d, width, height)
-        if projected is None:
-            continue
-        px, py = projected
-        d = math.hypot(px - click_x, py - click_y)
+    # Point candidates (center handle) are checked first so they win ties with
+    # segments that share the same screen position (all axis segs start at pivot).
+    for name, pos3d in pt_candidates:
+        d = _pt_dist(pos3d)
+        if d < best_dist:
+            best_dist = d
+            best_name = name
+    for name, p1, p2 in seg_candidates:
+        d = _seg_dist(p1, p2)
         if d < best_dist:
             best_dist = d
             best_name = name
@@ -311,7 +348,7 @@ def hover_gizmo_handle(
     cursor_y: float,
     width: int,
     height: int,
-    max_pixel_distance: float = 22.0,
+    max_pixel_distance: float = 16.0,
     current_tool: str = "move",
 ) -> str | None:
     """Return the handle name nearest to the cursor for hover feedback, or None.

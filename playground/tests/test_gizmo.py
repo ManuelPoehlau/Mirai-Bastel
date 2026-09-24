@@ -519,8 +519,8 @@ class TestScaleCenterHandle:
             max_pixel_distance=8.0,
             current_tool="move",
         )
-        # No center candidate for move — miss at the pivot position.
-        assert result is None
+        # Axis segments start at pivot so clicking there hits an axis — but NOT "center".
+        assert result != "center", "move tool must not expose a center handle"
 
 
 # ---------------------------------------------------------------------------
@@ -568,6 +568,39 @@ class TestHoverGizmoHandle:
 # GIZMO-04: enlarged hit radius
 # ---------------------------------------------------------------------------
 
+class TestSegmentBasedPicking:
+    """Verify that axis lines and plane brackets are hittable along their full length."""
+
+    def _world_sel(self):
+        sel = Selection()
+        sel.mode = SelectionMode.VERTEX
+        sel.vertices = {0}
+        return sel
+
+    def test_click_midpoint_of_x_axis_returns_x(self):
+        size = _size()
+        # Midpoint of x-axis segment in 3D: pivot + direction * size/2
+        mid = (_PIVOT[0] + size * 0.5, _PIVOT[1], _PIVOT[2])
+        sx, sy = _screen(mid)
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            sx, sy, _W, _H,
+        )
+        assert result == "x"
+
+    def test_click_quarter_of_y_axis_returns_y(self):
+        size = _size()
+        pt = (_PIVOT[0], _PIVOT[1] + size * 0.25, _PIVOT[2])
+        sx, sy = _screen(pt)
+        result = pick_gizmo_handle(
+            _CAM, _PIVOT, "world", "world",
+            self._world_sel(), None, None,
+            sx, sy, _W, _H,
+        )
+        assert result == "y"
+
+
 class TestHitRadiusEnlarged:
     def _world_sel(self):
         sel = Selection()
@@ -576,15 +609,15 @@ class TestHitRadiusEnlarged:
         return sel
 
     def test_default_radius_catches_click_beyond_old_threshold(self):
-        # Click 16px from x-tip: outside old 14px default, inside new 22px default.
+        # Click 15px from x-tip: outside old 14px default, inside new 16px default.
         size = _size()
         tip_screen = _screen((_PIVOT[0] + size, _PIVOT[1], _PIVOT[2]))
         result = pick_gizmo_handle(
             _CAM, _PIVOT, "world", "world",
             self._world_sel(), None, None,
-            tip_screen[0] + 16.0, tip_screen[1], _W, _H,
+            tip_screen[0] + 15.0, tip_screen[1], _W, _H,
         )
-        assert result == "x", "default radius must cover 16px offset (regression of D0-4 fix)"
+        assert result == "x", "default radius must cover 15px offset (regression of D0-4 fix)"
 
     def test_old_threshold_still_misses_at_15px(self):
         # Explicit 14px threshold: 15px still misses (existing test, unchanged).
