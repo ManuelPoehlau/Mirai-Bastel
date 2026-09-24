@@ -62,6 +62,15 @@ der Artist Playground deckt diese Rolle ab.
 
 Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.md`](rigging-skinning-morphing/rigging-skinning-morphing-README.md)
 
+### `symmetry_lab/`
+
+Symmetry Lab (WP-SYM-LAB-01): eigenständiges Fenster für die Symmetrie-Forschung, mit eigenem
+minimalem Draw-Pfad, Production-`OrbitCamera` und Bindings im Lab-Kontext `symmetry_lab`.
+Importiert bewusst nicht aus `playground/`. Stand Slice 2: Mesh sehen, navigieren, Vertex
+auswählen — noch keine Symmetrie-Funktion.
+
+Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
+
 ### `mirai_bastel_integration_lab/`
 
 Removed — functionality graduated to src/mirai/ (AD-008). See git history.
