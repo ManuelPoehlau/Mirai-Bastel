@@ -3,7 +3,9 @@
 Pfad: pyglet-Event → `mirai.pyglet_input` → `app.bindings.command_for(input,
 SYMMETRY_LAB_CONTEXT)` → dieser Dispatcher. Das Fenster übersetzt nur Events
 und reicht `Input` + Pixelkoordinaten durch; alles Weitere passiert hier,
-damit es ohne GL-Kontext testbar ist.
+damit es ohne GL-Kontext testbar ist. Was sich sichtbar geändert hat, sammelt
+der Dispatcher als `Change`-Flags; das Fenster holt sie nach jedem Event mit
+`take_changes()` ab und baut entsprechend neu auf.
 
 Drag-/Klick-Semantik ist bewusst Lab-lokal (AD-013 A3 bleibt offen):
 
@@ -11,15 +13,26 @@ Drag-/Klick-Semantik ist bewusst Lab-lokal (AD-013 A3 bleibt offen):
   Release derselben Maustaste; Drag-Deltas gehen an die Kamera. Modifier, die
   während des Drags wechseln, ändern die Geste nicht.
 - `Select` merkt sich den Press und wird bei Release ausgeführt, wenn die
-  Bewegung unter `CLICK_THRESHOLD_PX` blieb (sonst verworfen — kein Box-Select
-  in diesem Slice).
-- Jedes andere Command (z. B. globale Defaults auf Tasten) ist ein No-op.
+  Bewegung unter `CLICK_THRESHOLD_PX` blieb (sonst verworfen — kein Box-Select).
 - Während eine Geste läuft, werden weitere Maus-Presses ignoriert.
+
+Move (Slice 3, Artist A1 + E5/E6): Q schaltet scharf (`app.dispatch_command
+(MOVE)` → `ToolManager.activate`, Pattern A) — nur mit Auswahl. Solange scharf,
+startet nur LMB ohne Modifier den Move (`begin_current_interaction`); Alt+LMB,
+Shift+LMB, MMB und Wheel navigieren weiter, eine Auswahl per Klick findet
+nicht statt. Drag → `update(dx, dy, width, height)` (inkrementell). Release
+unter der Klick-Schwelle → `cancel()`, sonst `commit()`; danach immer
+`deactivate()` (one-shot). Die Symmetrie liest `MoveTool` selbst aus dem Mesh.
+
+Tasten (`key`): `SymmetryCycle`, `Move`, `Cancel`, `Undo`/`Redo`. Während ein
+Move-Drag läuft, besitzt die Geste den Input — nur ESC (Abbruch) wirkt.
+Jedes andere Command ist ein No-op und gilt als „nicht behandelt".
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, Flag, auto
 from typing import Optional
 
 from mirai.application import Application
@@ -27,7 +40,8 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
 
-from .lab_bindings import SYMMETRY_LAB_CONTEXT
+from .lab_bindings import SYMMETRY_CYCLE, SYMMETRY_LAB_CONTEXT
+from .lab_symmetry import cycle_symmetry
 
 #: Wert und Messart (Manhattan-Summe der Drag-Deltas) wie
 #: `playground/selector.py::CLICK_THRESHOLD` (Stand `47f821b`).
@@ -36,6 +50,21 @@ CLICK_THRESHOLD_PX = 5.0
 ORBIT_RAD_PER_PX = 0.005
 ZOOM_IN_FACTOR = 0.9
 ZOOM_OUT_FACTOR = 1.1
+
+
+class Change(Flag):
+    """Was das Fenster nach einem Event neu aufbauen muss."""
+
+    NONE = 0
+    STATUS = auto()
+    SELECTION = auto()  # Auswahl-Highlight + gespiegelte Vorschau
+    MESH = auto()  # Mesh-VBOs + Symmetrie-Overlays (Positionen oder Definition)
+
+
+class MoveState(Enum):
+    READY = "bereit"
+    ARMED = "scharf"
+    DRAGGING = "zieht"
 
 
 @dataclass
@@ -51,11 +80,30 @@ class LabDispatcher:
         self.width = width
         self.height = height
         self._gesture: Optional[_Gesture] = None
+        self._move_armed = False
+        self._changes = Change.NONE
+        #: Letzte Rückmeldung an den Artist (Statuszeile), z. B. „Move: keine Auswahl".
+        self.message = ""
 
     @property
     def active_command(self) -> Optional[str]:
-        """Command der laufenden Maus-Geste (`Orbit`/`Pan`/`Select`) oder None."""
+        """Command der laufenden Maus-Geste (`Orbit`/`Pan`/`Select`/`Move`) oder None."""
         return self._gesture.command if self._gesture is not None else None
+
+    @property
+    def move_state(self) -> MoveState:
+        if self.active_command == cmd.MOVE:
+            return MoveState.DRAGGING
+        return MoveState.ARMED if self._move_armed else MoveState.READY
+
+    def take_changes(self) -> Change:
+        changes, self._changes = self._changes, Change.NONE
+        return changes
+
+    def _mark(self, change: Change, message: Optional[str] = None) -> None:
+        self._changes |= change | Change.STATUS
+        if message is not None:
+            self.message = message
 
     def resize(self, width: int, height: int) -> None:
         self.width = width
@@ -64,13 +112,100 @@ class LabDispatcher:
     def resolve(self, inp: Input) -> Optional[str]:
         return self.app.bindings.command_for(inp, SYMMETRY_LAB_CONTEXT)
 
+    # -- Tastatur -----------------------------------------------------------
+
+    def key(self, inp: Optional[Input]) -> bool:
+        """Führt das Tasten-Command aus. False = nicht behandelt (Fenster-Default)."""
+        if inp is None or inp.kind != "key":
+            return False
+        command = self.resolve(inp)
+        if command == cmd.CANCEL:
+            return self._cancel()
+        if command not in (SYMMETRY_CYCLE, cmd.MOVE, cmd.UNDO, cmd.REDO):
+            return False
+        if self.move_state is MoveState.DRAGGING:
+            return True  # die laufende Geste besitzt den Input
+        if command == SYMMETRY_CYCLE:
+            axis = cycle_symmetry(self.app.scene)
+            self._mark(Change.MESH | Change.SELECTION, f"Symmetrie: {axis or 'aus'}")
+        elif command == cmd.MOVE:
+            self._arm_move()
+        else:
+            self._undo_redo(command)
+        return True
+
+    def _cancel(self) -> bool:
+        state = self.move_state
+        if state is MoveState.DRAGGING:
+            self.app.tool_manager.cancel()
+            self._gesture = None
+            self._disarm_move()
+            self._mark(Change.MESH | Change.SELECTION, "Move abgebrochen")
+            return True
+        if state is MoveState.ARMED:
+            self._disarm_move()
+            self._mark(Change.STATUS, "Move entschärft")
+            return True
+        return False
+
+    def _undo_redo(self, command: str) -> None:
+        self.app.dispatch_command(command)
+        # Wie Playground: nach Undo/Redo Auswahl leeren — ein Snapshot-Load
+        # kann Vertex-IDs ungültig machen. Ohne Auswahl ist ein scharfer Move
+        # sinnlos, also mit entschärfen.
+        self.app.scene.selection.clear()
+        self._disarm_move()
+        self._mark(Change.MESH | Change.SELECTION, command)
+
+    # -- Move ---------------------------------------------------------------
+
+    def _arm_move(self) -> None:
+        if self.app.scene.selection.is_empty():
+            self._mark(Change.STATUS, "Move: keine Auswahl — erst Vertex wählen")
+            return
+        self.app.dispatch_command(cmd.MOVE)
+        self._move_armed = True
+        self._mark(Change.STATUS, "Move scharf — LMB ziehen")
+
+    def _disarm_move(self) -> None:
+        if self._move_armed:
+            self.app.tool_manager.deactivate()
+        self._move_armed = False
+
+    def _begin_move(self) -> None:
+        app = self.app
+        app.tool_manager.begin_current_interaction(
+            {
+                "scene": app.scene,
+                "camera": app.camera,
+                "vertex_ids": set(app.scene.selection.vertices),
+            }
+        )
+        self._gesture = _Gesture(cmd.MOVE, "LEFT")
+        self._mark(Change.STATUS, "")
+
+    def _end_move(self, gesture: _Gesture) -> None:
+        manager = self.app.tool_manager
+        if gesture.moved < CLICK_THRESHOLD_PX:
+            manager.cancel()
+            message = "Move: nicht gezogen — kein Schritt"
+        else:
+            manager.commit()
+            message = "Move übernommen"
+        self._disarm_move()
+        self._mark(Change.MESH | Change.SELECTION, message)
+
     # -- Maus -------------------------------------------------------------
 
     def press(self, inp: Input) -> None:
         if inp.kind != "mouse" or self._gesture is not None:
             return
+        if self._move_armed and inp.value == "LEFT" and not inp.modifiers:
+            self._begin_move()
+            return
         command = self.resolve(inp)
-        if command in (cmd.ORBIT, cmd.PAN, cmd.SELECT):
+        allowed = (cmd.ORBIT, cmd.PAN) if self._move_armed else (cmd.ORBIT, cmd.PAN, cmd.SELECT)
+        if command in allowed:
             self._gesture = _Gesture(command, inp.value)
 
     def drag(self, dx: float, dy: float) -> None:
@@ -82,6 +217,9 @@ class LabDispatcher:
             self.app.camera.orbit(-dx * ORBIT_RAD_PER_PX, -dy * ORBIT_RAD_PER_PX)
         elif gesture.command == cmd.PAN:
             self.app.camera.pan(dx, dy, self.width, self.height)
+        elif gesture.command == cmd.MOVE:
+            self.app.tool_manager.update(dx=dx, dy=dy, width=self.width, height=self.height)
+            self._mark(Change.MESH | Change.SELECTION)
 
     def release(self, button: str, x: float, y: float) -> bool:
         """Beendet die Geste von `button`. True, wenn sich die Auswahl geändert hat."""
@@ -89,6 +227,9 @@ class LabDispatcher:
         if gesture is None or gesture.button != button:
             return False
         self._gesture = None
+        if gesture.command == cmd.MOVE:
+            self._end_move(gesture)
+            return False
         if gesture.command == cmd.SELECT and gesture.moved < CLICK_THRESHOLD_PX:
             return self.select_at(x, y)
         return False
@@ -112,4 +253,7 @@ class LabDispatcher:
             selection.clear()
         else:
             selection.set({vid})
-        return set(selection.vertices) != before
+        changed = set(selection.vertices) != before
+        if changed:
+            self._mark(Change.SELECTION, "")
+        return changed

@@ -12,6 +12,11 @@ beim Start aus und die README-Tabelle beschreibt dieselben Einträge.
 API-Wahl: Die Orbit-/Pan-Overrides sind Lab-*Defaults* (`set_default`). Das
 explizite Abbinden von RMB geht nur über die User-Ebene (`bind(..., None)`),
 weil `set_default` kein `None` kennt — daher die gemischte Nutzung.
+
+Slice 3: `SYMMETRY_CYCLE` ist ein Lab-lokaler Command-String (Handoff §4.1),
+bewusst nicht in `mirai.interaction.commands`. Q/ESC/Ctrl+Z/Ctrl+Y sind keine
+Overrides — sie fallen auf die globalen Defaults `Move`/`Cancel`/`Undo`/`Redo`
+zurück.
 """
 
 from __future__ import annotations
@@ -23,6 +28,8 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import BindingSet, Input
 
 SYMMETRY_LAB_CONTEXT = "symmetry_lab"
+#: Shift+S: Symmetrie aus → X → Y → Z → aus (Artist A2).
+SYMMETRY_CYCLE = "SymmetryCycle"
 
 
 @dataclass(frozen=True)
@@ -54,6 +61,11 @@ LAB_OVERRIDES: tuple[LabOverride, ...] = (
         Input("mouse", "RIGHT"),
         None,
         "eine Primärbindung pro Funktion (Orbit liegt auf Alt+LMB)",
+    ),
+    LabOverride(
+        Input("key", "s", frozenset({"shift"})),
+        SYMMETRY_CYCLE,
+        "Artist A2 (2026-09-24)",
     ),
 )
 
