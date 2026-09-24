@@ -8,8 +8,8 @@ lieber jetzt gründlicher als eine subtile Spiegel-Mathematik durchrutschen
 lassen).
 **Modus (M5):** Production. AD-SYM-02 ist DECIDED, dieser Slice setzt ihren
 noch offenen Umsetzungsteil um.
-**Weiterhin headless/testbar, kein Fenster:** `src/mirai/application.py` ist
-bewusst window-frei; laut `docs/WP-04_GATE_PLANNING.md` ist Gate 5b (Selection
+**Weiterhin headless/testbar, kein Fenster:** `../../src/mirai/application.py` ist
+bewusst window-frei; laut `../WP-04_GATE_PLANNING.md` ist Gate 5b (Selection
 & Display) *DROPPED* und Gate 10 (E2E) *BLOCKED* — es gibt aktuell kein
 Production-Fenster. Dieser Slice bleibt deshalb wie Slice 1 vollständig durch
 automatisierte Tests verifiziert, nicht durch Anschauen. Das ist kein Mangel
@@ -19,20 +19,20 @@ dieses Slices, sondern der aktuelle Projektstand.
 
 ## 1. Referenzdokumente (gelten, nicht neu verhandeln)
 
-- `docs/architecture/AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md` — DECIDED,
+- `AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md` — DECIDED,
   umgesetzt (Slice 1): `Mesh.symmetry_definition`.
-- `docs/architecture/AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md` —
+- `AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md` —
   DECIDED. Relevant hier vor allem §2.3 (Unterstützungsgrad-Aussage, noch
   nicht umgesetzt) und §2.4 (Gegenseite = gespiegelte Absicht, nicht
   nachträgliche Zuordnung — inkl. der als „Beobachtung, keine Entscheidung"
   markierten Notiz zu `VertexTransformOperation._on_update()`).
-- `docs/research/symmetry/SYMMETRY_DESIGN_BRIEF.md` — INV-2 (Seam bleibt auf
+- `../research/symmetry/SYMMETRY_DESIGN_BRIEF.md` — INV-2 (Seam bleibt auf
   der Plane), INV-6, INV-7, INV-9, INV-11 (Gegenseite sichtbar *vor*
   Bestätigen — hier: berechenbar, s.o. zum Fenster).
-- `src/mirai/symmetry.py` (Slice 1) — `vertex_correspondence()`,
+- `../../src/mirai/symmetry.py` (Slice 1) — `vertex_correspondence()`,
   `mirror_position()`, `CorrespondenceState`. Wird hier konsumiert, nicht
   verändert, außer eine kleine, klar benannte Ergänzung ist unvermeidbar.
-- `docs/architecture/CORE_V1_FREEZE.md` §7 — auch dieser Slice ändert
+- `CORE_V1_FREEZE.md` §7 — auch dieser Slice ändert
   gefrorenen Core-Code (`operation.py`, evtl. `transform.py`) und braucht
   denselben Eintrag wie AD-SYM-01 in §7.1.
 
@@ -52,7 +52,7 @@ Zwei zusammengehörige Stücke, beide headless testbar:
 
 ### 3.1 Unterstützungsgrad-Aussage (AD-SYM-02 §2.3)
 
-Der Operation-Vertrag (`src/core/operation.py`) bekommt eine Aussage, ob eine
+Der Operation-Vertrag (`../../src/core/operation.py`) bekommt eine Aussage, ob eine
 Operation vor `begin()` symmetrisch wirken kann. Präzedenzfall im selben
 Modul: `description` ist heute schon ein Klassenattribut, das den Lifecycle
 nicht berührt — dieselbe Form hier. Konkrete Ausprägung (Boolean reicht laut
@@ -62,8 +62,8 @@ hier) ist eure Wahl, dokumentiert im Code wie bei Slice 1 üblich.
 ### 3.2 Symmetrisches Move
 
 Betroffene Stellen (nicht vorgeschrieben, aber das sind die Kandidaten):
-`src/core/operations/transform.py` (`VertexTransformOperation`,
-`MoveOperation`) und `src/mirai/interaction/tools/move.py` (`MoveTool`).
+`../../src/core/operations/transform.py` (`VertexTransformOperation`,
+`MoveOperation`) und `../../src/mirai/interaction/tools/move.py` (`MoveTool`).
 
 Die eigentliche Design-Frage, die AD-SYM-02 §2.4 bewusst offen gelassen hat:
 **Drei Vertex-Kategorien** brauchen unterschiedliche Mechanik innerhalb
@@ -125,18 +125,18 @@ liefert (leer, wenn Symmetrie aus ist). Kein Cache (AR-1, wie Slice 1).
 - Der Randfall aus §3.2 (Partner zusätzlich selbst selektiert) mit
   mindestens einem Test.
 - **Bestehende Suite bleibt grün:** `run_core_suite.py`, alle
-  `tests/test_transform_operations.py`, `tests/test_symmetry.py`.
+  `../../tests/test_transform_operations.py`, `../../tests/test_symmetry.py`.
 
 ## 6. Betroffene Dateien (erwartet, nicht abschließend)
 
-- `src/core/operation.py` — Unterstützungsgrad-Aussage
-- `src/core/operations/transform.py` — Mirror-/Seam-Mechanik in
+- `../../src/core/operation.py` — Unterstützungsgrad-Aussage
+- `../../src/core/operations/transform.py` — Mirror-/Seam-Mechanik in
   `VertexTransformOperation`/`MoveOperation`
-- `src/mirai/interaction/tools/move.py` — löst Partner-Vertices auf, bevor
+- `../../src/mirai/interaction/tools/move.py` — löst Partner-Vertices auf, bevor
   die Operation beginnt (analog zu `resolve_selection_vertices()`)
-- `src/mirai/symmetry.py` — `mirrored_selection()` oder Äquivalent
-- `tests/test_symmetry.py` und/oder neue Testdatei
-- `docs/architecture/CORE_V1_FREEZE.md` §7.1 — neuer Eintrag, gleiches Muster
+- `../../src/mirai/symmetry.py` — `mirrored_selection()` oder Äquivalent
+- `../../tests/test_symmetry.py` und/oder neue Testdatei
+- `CORE_V1_FREEZE.md` §7.1 — neuer Eintrag, gleiches Muster
   wie AD-SYM-01
 
 ## 7. Bekannte Constraints
