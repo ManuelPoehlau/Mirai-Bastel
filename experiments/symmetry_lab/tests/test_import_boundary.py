@@ -59,6 +59,8 @@ def test_no_playground_module_after_importing_all_lab_modules():
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout.strip().splitlines()[-1])
 
-    assert {"lab_window", "lab_render", "lab_dispatch", "run"} <= set(report["lab_modules"])
+    assert {
+        "lab_window", "lab_render", "lab_dispatch", "lab_symmetry", "lab_status", "run"
+    } <= set(report["lab_modules"])
     assert report["playground_reachable"], "Test wäre ohne importierbares playground wertlos"
     assert report["playground_loaded"] == []
