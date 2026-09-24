@@ -1,6 +1,6 @@
 # AD-SYM-01 — Symmetry Definition Storage
 
-**Status:** PROPOSED — Architekturreview ausstehend (Core-Freeze §7)
+**Status:** DECIDED ✓
 **Datum:** 2026-09-24
 **Modus (M5):** Production-Planung. Keine Implementierung.
 **Gehört zu:** WP-SYM-01 (Symmetry V1 Kern)
@@ -146,13 +146,12 @@ und wie, ist AD-SYM-02 und WP-SYM-01, nicht dieses Dokument.
 
 ### 3.1 Prozess-Status
 
-Dies ist eine Änderung am gefrorenen Core und daher **noch nicht wirksam**. Offen
-nach Core-Freeze §7:
-- Schritt 5 (Tests/Vertrag ergänzen) — Teil von WP-SYM-01
-- Architekturreview. Präzedenz AD-017: ein **unabhängiges** Review vor der
-  Umsetzung, archiviert vor der Diskussion (AGENTS.md §6). Erzeuger und Bewerter
-  sollen getrennt sein — dieses Dokument ist vom Vorschlagenden geschrieben und
-  ersetzt kein Review.
+**Entscheidung:** AD-SYM-01 ist nach Architekturprüfung freigegeben.
+
+Die Core-Freeze-Schritte 1–4 sind durch dieses Dokument abgedeckt; Schritt 5
+(Tests/Vertrag ergänzen) gehört zur Umsetzung von WP-SYM-01. Die Entscheidung legt
+keine konkrete Datenstruktur, Feldnamen oder Formatversion fest — diese bleiben
+bewusst Teil der Implementierung innerhalb des beschlossenen Rahmens.
 
 ---
 
