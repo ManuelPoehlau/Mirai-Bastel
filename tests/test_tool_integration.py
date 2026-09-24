@@ -21,7 +21,7 @@ import unittest
 
 import tests._bootstrap  # noqa: F401
 
-from core import RotateOperation, ScaleOperation, SelectionMode
+from core import RotateOperation, ScaleOperation, SelectionMode, SymmetryDefinition
 from mirai.application import Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
@@ -29,6 +29,7 @@ from mirai.interaction.tools.move import MoveTool
 from mirai.interaction.tools.rotate import RotateTool
 from mirai.interaction.tools.scale import ScaleTool
 from mirai.interaction.tools.selection_helpers import resolve_selection_vertices
+from mirai.symmetry import mirror_position, mirrored_selection
 
 
 def _key(value: str, *modifiers: str) -> Input:
@@ -433,6 +434,65 @@ class TransformToolLifecycleTests(unittest.TestCase):
         self.assertEqual(_positions(app), before)
         app.dispatch_command(cmd.REDO)
         self.assertNotEqual(_positions(app), before)
+
+
+class SymmetricMoveIntegrationTests(unittest.TestCase):
+    """WP-SYM-01 Slice 2: symmetrisches Move über die öffentliche API
+    (Input -> Command -> MoveTool -> MoveOperation -> History), nicht nur auf
+    Operation-Ebene (siehe tests/test_symmetric_move.py für die reine
+    Mathematik) - "über die öffentliche API nutzbar" (Handoff §9 Definition
+    of Done) heißt: der Weg über echtes MoveTool.begin()/update()/commit(),
+    mit einer nur einseitig selektierten Vertex-Menge.
+
+    Der Produktions-Würfel (create_cube()) ist um die Plane x=0 exakt
+    spiegelsymmetrisch (vier Mirror-Paare, keine Seam) - ausreichend für
+    diesen Slice, kein eigenes Testmesh nötig.
+    """
+
+    def setUp(self):
+        self.app = _make_app()
+        self.mesh = self.app.scene.mesh
+        self.mesh.symmetry_definition = SymmetryDefinition(
+            plane_point=(0.0, 0.0, 0.0), plane_normal=(1.0, 0.0, 0.0)
+        )
+        self.source_vid = next(
+            vid for vid in self.mesh.all_vertex_ids() if self.mesh.vertex_position(vid)[0] < 0
+        )
+        self.partner_vid = next(iter(mirrored_selection(self.mesh, {self.source_vid})))
+        self.app.selection.mode = SelectionMode.VERTEX
+        self.app.selection.set({self.source_vid})
+
+    def _begin(self):
+        self.app.dispatch_command(cmd.MOVE)
+        self.app.tool_manager.begin_current_interaction(context=_context_for(self.app))
+
+    def test_move_tool_pulls_in_mirrored_partner(self):
+        self._begin()
+        moves = self.app.tool_manager.active_tool.moves
+        self.assertIn(self.source_vid, moves)
+        self.assertIn(self.partner_vid, moves)
+
+    def test_drag_moves_mirrored_partner_too_and_stays_mirrored(self):
+        self._begin()
+        before = _positions(self.app)
+        self.app.tool_manager.update(dx=60, dy=20, width=800, height=600)
+        after = _positions(self.app)
+        self.app.tool_manager.commit()
+
+        self.assertNotEqual(after[self.source_vid], before[self.source_vid])
+        self.assertNotEqual(after[self.partner_vid], before[self.partner_vid])
+
+        source_pos = after[self.source_vid]
+        self.assertEqual(mirror_position(source_pos, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0)), after[self.partner_vid])
+        self.assertEqual(len(self.app.history), 1)
+
+    def test_undo_restores_both_sides(self):
+        self._begin()
+        before = _positions(self.app)
+        self.app.tool_manager.update(dx=60, dy=20, width=800, height=600)
+        self.app.tool_manager.commit()
+        self.app.history.undo()
+        self.assertEqual(_positions(self.app), before)
 
 
 if __name__ == "__main__":

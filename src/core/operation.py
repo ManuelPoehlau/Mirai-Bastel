@@ -30,6 +30,17 @@ Architekturvertrag:
   (V1 hat noch keinen Viewport) - der Haken (`_on_update`) ist aber genau
   die Stelle, an der ein späteres System ein "dirty"-Flag statt eines
   Events pro Aufruf setzen würde.
+
+Symmetrie-Unterstützungsgrad (AD-SYM-02 §2.3, WP-SYM-01 Slice 2): `Operation`
+trägt zusätzlich `supports_symmetry`, ein Klassenattribut nach demselben
+Muster wie `description` auf `VertexTransformOperation` - eine Aussage auf
+Klassenebene, die den Lifecycle nicht berührt und ohne Instanz, also vor
+jedem `begin()`, abfragbar ist. Default `False`. Boolean reicht laut
+AD-SYM-02 §4 für diesen Slice; eine abgestufte Aussage ist bewusst nicht
+Teil davon. Die Aussage betrifft die Fähigkeit der Operation-*Klasse*, nicht
+ob eine konkrete Operation-Instanz gerade symmetrisch wirkt - ob Symmetrie
+für einen Aufruf tatsächlich aktiv ist, entscheidet `mesh.symmetry_definition`
+zur Laufzeit, nicht dieses Attribut.
 """
 
 from __future__ import annotations
@@ -73,6 +84,8 @@ class Operation(ABC):
     (genau ein History-Eintrag in commit(), kein History-Eintrag in
     update()/cancel()) an einer einzigen Stelle erzwungen.
     """
+
+    supports_symmetry: bool = False
 
     def __init__(self, context: OperationContext) -> None:
         self.context = context

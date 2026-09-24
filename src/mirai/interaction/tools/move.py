@@ -42,6 +42,17 @@ und `vertex_ids` kommen über den Interaktions-Kontext in
 Bewusst pyglet-frei und ohne physische Key-/Button-Konstanten: Pointer-
 Bewegung wird als semantisches Pixel-Delta übergeben und erst hier mit der
 Kamera-Hilfsfunktion in ein Welt-Delta übersetzt.
+
+Symmetrisches Move (AD-SYM-02 §2.4, WP-SYM-01 Slice 2): Ist eine Symmetry
+Definition aktiv, löst `_on_begin()` die gespiegelten Partner-Vertices der
+Artist-Auswahl auf (`mirai.symmetry.mirrored_selection()`) - analog zu
+`resolve_selection_vertices()` - und klassifiziert die Seam-Vertices unter
+den selektierten. Beide Mengen reisen über
+`OperationContext.params["symmetry"]` in die bestehende `MoveOperation`
+(AD-SYM-02 §2.2: kein neues Feld an `OperationContext`, keine
+MirrorResult-Struktur). Die eigentliche Spiegel-/Projektions-Mechanik lebt
+in `core.operations.move.MoveOperation`, nicht hier - MoveTool löst nur auf,
+was betroffen ist, es rechnet nicht selbst.
 """
 
 from __future__ import annotations
@@ -54,6 +65,7 @@ from core import (
     VertexId,
 )
 
+from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 from ..tool import Tool
 from .selection_helpers import _VertexSelectionView
 from .transform import _resolve_space
@@ -175,10 +187,34 @@ class MoveTool(Tool):
         else:
             raise ValueError(f"MoveTool.begin(): space-Parameter muss String oder None sein, nicht {type(space).__name__}.")
 
+        mesh = self._scene.mesh
+        affected_vertex_ids = set(vertex_ids)
+        operation_params: dict[str, Any] = {}
+        definition = mesh.symmetry_definition
+        if definition is not None:
+            mirrored_vertex_ids = mirrored_selection(mesh, vertex_ids)
+            correspondence = vertex_correspondence(mesh)
+            seam_vertex_ids = {
+                vid
+                for vid in vertex_ids
+                if correspondence.get(vid) is not None
+                and correspondence[vid].state is CorrespondenceState.SEAM
+            }
+            affected_vertex_ids |= mirrored_vertex_ids
+            operation_params["symmetry"] = {
+                "plane_normal": definition.plane_normal,
+                "mirrored_vertex_ids": mirrored_vertex_ids,
+                "seam_vertex_ids": seam_vertex_ids,
+            }
+        # .moves (Beobachtbarkeit) berichtet die tatsächlich betroffene Menge,
+        # inklusive gespiegelter Partner — nicht nur die Artist-Auswahl.
+        self._vertex_ids = affected_vertex_ids
+
         context = OperationContext(
-            target=self._scene.mesh,
-            selection=_VertexSelectionView(vertex_ids),
+            target=mesh,
+            selection=_VertexSelectionView(affected_vertex_ids),
             history=self._scene.history,
+            params=operation_params,
         )
         operation = MoveOperation(context)
         operation.begin()

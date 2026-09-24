@@ -27,6 +27,7 @@ from mirai.symmetry import (
     CorrespondenceState,
     SymmetryState,
     mirror_position,
+    mirrored_selection,
     symmetry_state,
     vertex_correspondence,
 )
@@ -301,6 +302,46 @@ class TestSymmetryState(unittest.TestCase):
         )
 
         self.assertEqual(symmetry_state(mesh), SymmetryState.VIOLATED)
+
+
+class TestMirroredSelection(unittest.TestCase):
+    """`mirrored_selection()` — symmetrische Auswahl-Vorschau (Slice 2 Handoff §3.3)."""
+
+    def test_empty_when_symmetry_off(self) -> None:
+        mesh = Mesh()
+        v0 = mesh.add_vertex((0.0, 0.0, 0.0))
+        self.assertEqual(mirrored_selection(mesh, {v0}), set())
+
+    def test_returns_partner_of_paired_vertex(self) -> None:
+        mesh, _definition, ids = build_symmetry_test_mesh()
+        self.assertEqual(mirrored_selection(mesh, {ids["left"]}), {ids["right"]})
+        self.assertEqual(mirrored_selection(mesh, {ids["right"]}), {ids["left"]})
+
+    def test_selecting_both_sides_yields_no_extra_partner(self) -> None:
+        """Randfall (Slice 2 Handoff §3.2): Partner bereits selbst Teil der
+        Auswahl -> die explizite Auswahl hat Vorrang, kein zusätzlicher
+        Partner wird aufgelöst (siehe core.operations.move-Modul-Docstring
+        für die vollständige Begründung)."""
+        mesh, _definition, ids = build_symmetry_test_mesh()
+        self.assertEqual(mirrored_selection(mesh, {ids["left"], ids["right"]}), set())
+
+    def test_seam_and_unpaired_vertices_contribute_nothing(self) -> None:
+        mesh, _definition, ids = build_symmetry_test_mesh()
+        self.assertEqual(mirrored_selection(mesh, {ids["seam0"], ids["unpaired"]}), set())
+
+    def test_union_over_multiple_selected_vertices(self) -> None:
+        mesh = Mesh()
+        v0 = mesh.add_vertex((0.0, 0.0, 0.0))
+        v1 = mesh.add_vertex((0.0, 1.0, 0.0))
+        seam_edge = mesh.add_edge(v0, v1)
+        left_a = mesh.add_vertex((-1.0, 0.0, 0.0))
+        right_a = mesh.add_vertex((1.0, 0.0, 0.0))
+        left_b = mesh.add_vertex((-1.0, 2.0, 0.0))
+        right_b = mesh.add_vertex((1.0, 2.0, 0.0))
+        mesh.symmetry_definition = SymmetryDefinition(
+            plane_point=PLANE_POINT, plane_normal=PLANE_NORMAL, seam_edges=frozenset({seam_edge})
+        )
+        self.assertEqual(mirrored_selection(mesh, {left_a, left_b}), {right_a, right_b})
 
 
 if __name__ == "__main__":

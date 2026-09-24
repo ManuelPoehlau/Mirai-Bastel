@@ -1,8 +1,10 @@
-"""Symmetry V1 — Correspondence-Ableitung und State-Aggregation (WP-SYM-01 Slice 1).
+"""Symmetry V1 — Correspondence-Ableitung und State-Aggregation
+(WP-SYM-01 Slice 1) plus symmetrische Auswahl-Vorschau (Slice 2).
 
 Bezug: docs/architecture/AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md,
 docs/architecture/AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md,
-docs/architecture/SLICE1_CLAUDE_CODE_HANDOFF.md.
+docs/architecture/SLICE1_CLAUDE_CODE_HANDOFF.md,
+docs/architecture/SLICE2_CLAUDE_CODE_HANDOFF.md.
 
 Modul-Pfad (Handoff §3.2, bewusst offen gelassen - hier entschieden): liegt
 in `mirai`, nicht im gefrorenen Core, genau wie `scene_factory.py`
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Iterable
 
 from core.ids import VertexId
 from core.mesh import Mesh, Position, SymmetryDefinition
@@ -186,3 +189,36 @@ def symmetry_state(mesh: Mesh) -> SymmetryState:
         return SymmetryState.PARTIAL
 
     return SymmetryState.VALID
+
+
+def mirrored_selection(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> set[VertexId]:
+    """Gespiegelte Partner-IDs zu `vertex_ids` (Slice 2 Handoff §3.3).
+
+    Leer, wenn Symmetrie aus ist (`mesh.symmetry_definition is None`) - es
+    gibt nichts zu spiegeln. Sonst: für jeden übergebenen Vertex mit
+    CorrespondenceState.PAIRED wird sein Partner aufgenommen - AUSSER der
+    Partner ist selbst bereits Teil von `vertex_ids`. Das ist die bewusste
+    Auflösung des in Slice 2 Handoff §3.2 offen gelassenen Randfalls (siehe
+    ausführliche Begründung in `core.operations.move`): die explizite
+    Artist-Auswahl hat Vorrang vor der abgeleiteten Spiegel-Vorschau, statt
+    beide Seiten einer bereits beidseitig getroffenen Auswahl zusätzlich
+    noch als "Partner" zu behandeln.
+
+    Reine Funktion, kein Cache (AR-1, wie der Rest dieses Moduls) - leitet
+    bei jedem Aufruf über `vertex_correspondence()` neu ab.
+    """
+    if mesh.symmetry_definition is None:
+        return set()
+
+    selected = set(vertex_ids)
+    correspondence = vertex_correspondence(mesh)
+
+    result: set[VertexId] = set()
+    for vid in selected:
+        corr = correspondence.get(vid)
+        if corr is None or corr.state != CorrespondenceState.PAIRED:
+            continue
+        if corr.partner in selected:
+            continue
+        result.add(corr.partner)
+    return result

@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -64,6 +64,39 @@ all four Correspondence states, all Symmetry State outcomes) and a roundtrip reg
 `tests/test_scene_serialization.py`. No operation, tool, or Undo/Redo *behavior* for the Definition
 itself in this slice (Definition is set directly, e.g. `mesh.symmetry_definition = ...`) — that is
 explicitly out of scope for WP-SYM-01 Slice 1.
+
+**Decision:** AD-SYM-02 (2026-09-24, WP-SYM-01 Slice 2)
+
+`Operation` (`src/core/operation.py`) gains `supports_symmetry: bool = False`, a class attribute
+following the same precedent as `description` — an Operation-level statement, not touching the
+lifecycle, abstractly queryable before any `begin()` and even without an instance. `MoveOperation`
+overrides it to `True`; `RotateOperation`/`ScaleOperation` keep the default `False` (symmetric
+Rotate/Scale is explicitly out of scope for this slice). Authorized by
+`docs/architecture/AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md` (DECIDED) §2.3.
+
+`VertexTransformOperation._on_update()` (`src/core/operations/transform.py`) additionally passes
+`vertex_id=vid` into `_transform_position()` — the one minimal extension of the shared Move/
+Rotate/Scale loop needed for per-vertex differentiation (analogous to the existing `self._weights`
+soft-selection placeholder). `RotateOperation`/`ScaleOperation` are unaffected (both already accept
+arbitrary kwargs via `**_`); only `MoveOperation` (`src/core/operations/move.py`) uses it, to apply
+one of three vertex-category deltas per AD-SYM-02 §2.4: directly selected vertices get the plain
+`delta`; mirrored partner vertices (inferred via `mirai.symmetry.vertex_correspondence()`, resolved
+by `MoveTool` before `begin()`, never a vertex already part of the Artist's explicit selection — see
+`core/operations/move.py` module docstring for the full edge-case rationale) get the delta *vector*
+reflected across `plane_normal` (`d' = d - 2*(d·n)*n`); Seam vertices among the selected get the
+delta projected onto the plane (`d_proj = d - (d·n)*n`, INV-2). The symmetry context travels through
+the existing, unmodified `OperationContext.params["symmetry"]` (same channel `pivot` already uses,
+AD-SYM-02 §2.2) — no new field on `OperationContext`, no `MirrorResult` structure, no History
+extension: one symmetric Move is still exactly one `Operation` instance and exactly one History
+entry (AD-SYM-02 §2.1, already guaranteed by the existing `Operation.commit()` contract). Covered by
+`tests/test_symmetric_move.py` (mirrored-delta math, the mirror invariant held after the move,
+multi-update incrementality, single History entry + Undo/Redo across both sides, Cancel restoring
+both sides exactly, Seam projection staying exactly on the plane, the unaffected no-symmetry
+regression case, the explicit-both-sides-selected edge case, and the `supports_symmetry` flag) plus
+`SymmetricMoveIntegrationTests` in `tests/test_tool_integration.py` (same behavior through the real
+`MoveTool`/`Application` pipeline, not just the Operation layer). `mirai.symmetry` additionally gains
+`mirrored_selection()` (pure function, no cache, AR-1) — covered by `TestMirroredSelection` in
+`tests/test_symmetry.py`.
 
 ## 2. Was vor dem Freeze validiert wurde
 

@@ -24,6 +24,14 @@ Architekturvertrag (siehe operation.py):
 - Soft-Selection-Platzhalter wie in MoveOperation: alle Gewichte sind V1 auf
   1.0 gesetzt; die Struktur (`self._weights`) hält die Stelle für ein
   späteres Influence-Map-System frei, ohne den Lifecycle zu ändern.
+- Symmetrie (AD-SYM-02 §2.4, WP-SYM-01 Slice 2): `_on_update()` reicht die
+  gerade verarbeitete `VertexId` zusätzlich als `vertex_id=` an
+  `_transform_position()` durch - die einzige Erweiterung des gemeinsamen
+  Loops, die eine Pro-Vertex-Differenzierung ermöglicht (analog zu
+  `self._weights`). Rotate/Scale ignorieren den zusätzlichen Kwarg über ihr
+  bestehendes `**_`; nur `MoveOperation` nutzt ihn (Rotate/Scale symmetrisch
+  ist bewusst nicht Teil dieses Slices - die Spiegel-/Projektions-Mechanik
+  selbst lebt ausschließlich in `move.py`, nicht hier).
 """
 
 from __future__ import annotations
@@ -188,7 +196,7 @@ class VertexTransformOperation(Operation):
     def _on_update(self, **kwargs) -> None:
         for vid in self._vertex_ids:
             pos = self._mesh.vertex_position(vid)
-            new = self._transform_position(pos, **kwargs)
+            new = self._transform_position(pos, vertex_id=vid, **kwargs)
             weight = self._weights[vid]
             if weight != 1.0:
                 # Soft-Selection-Platzhalter: Interpolation zwischen aktueller
