@@ -6,12 +6,15 @@ Kein GL, kein Fenster. Prüft:
     3. active_experiment default = Experiment("none")
     4. set_experiment() wechselt aktives Experiment
     5. update(0.016) wirft keine Exception
+    6. load_asset(name) → geteilte OBJ-Assets per Registry-Namen (AD-007)
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+
+import pytest
 
 # sys.path-Bootstrap: Repo-Root und src/ einbinden,
 # damit Production-Pakete (core/viewport/mirai) importierbar sind.
@@ -188,3 +191,50 @@ def test_update_calls_experiment_update():
     app.update(0.016)
     app.update(0.016)
     assert counter.ticks == 2, f"Erwartet 2 Ticks, erhalten: {counter.ticks}"
+
+
+# ---------------------------------------------------------------------------
+# 6. load_asset() — geteilte OBJ-Assets per Registry-Namen (AD-007)
+# ---------------------------------------------------------------------------
+
+def test_load_asset_subd_cube_counts():
+    """`subd_cube` (examples/meshes/SubD_Cube.obj): 26 Vertices, 24 Quads."""
+    app = PlaygroundApp()
+    app.load_asset("subd_cube")
+    assert len(list(app.scene.mesh.all_vertex_ids())) == 26
+    assert len(list(app.scene.mesh.all_face_ids())) == 24
+
+
+def test_load_asset_man_with_shoes_counts():
+    """`man_with_shoes_basemesh`: 928 Vertices, 926 Quads."""
+    app = PlaygroundApp()
+    app.load_asset("man_with_shoes_basemesh")
+    assert len(list(app.scene.mesh.all_vertex_ids())) == 928
+    assert len(list(app.scene.mesh.all_face_ids())) == 926
+
+
+def test_load_asset_head_matches_load_head():
+    """`load_asset("head_basemesh")` lädt dasselbe Asset wie `load_head()`."""
+    via_asset = PlaygroundApp()
+    via_asset.load_asset("head_basemesh")
+    via_head = PlaygroundApp()
+    via_head.load_head()
+    assert len(list(via_asset.scene.mesh.all_vertex_ids())) == len(
+        list(via_head.scene.mesh.all_vertex_ids())
+    )
+    assert len(list(via_asset.scene.mesh.all_face_ids())) == len(
+        list(via_head.scene.mesh.all_face_ids())
+    )
+
+
+def test_load_asset_binds_viewport():
+    app = PlaygroundApp()
+    app.load_asset("subd_cube")
+    assert app.viewport is not None, "Viewport muss nach load_asset() gebunden sein"
+
+
+def test_load_asset_unknown_name_raises():
+    """Unbekannter Registry-Name fliegt laut (kein stiller Würfel-Fallback)."""
+    app = PlaygroundApp()
+    with pytest.raises(KeyError):
+        app.load_asset("gibt_es_nicht")

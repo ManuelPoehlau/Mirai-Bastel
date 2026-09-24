@@ -1,8 +1,8 @@
 """PlaygroundApp — Orchestrator für das Artist Playground.
 
-Wrapping von src.mirai.application.Application. Lädt Szene (Cube oder
-Head-Basemesh via OBJ-Adapter), hält das aktive Experiment und stellt
-scene/camera/viewport/active_experiment bereit.
+Wrapping von src.mirai.application.Application. Lädt Szene (Cube, Head-Basemesh
+oder ein anderes registriertes geteiltes OBJ-Asset via OBJ-Adapter), hält das
+aktive Experiment und stellt scene/camera/viewport/active_experiment bereit.
 
 Import-Pfade: Repo-Root muss im sys.path sein (über playground/_paths.py
 sichergestellt). core/viewport/mirai werden aus src/ importiert; Framing- und
@@ -25,6 +25,10 @@ from viewport.resource_store import ResourceStore, TraceStore  # noqa: E402
 from mirai.mesh_geometry import mesh_center_and_radius  # noqa: E402
 from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
 
+# AD-007: geteilte Assets liegen in `examples/meshes/` (dort liegt auch `examples/`
+# auf sys.path) — Namen → Pfad über die Registratur statt eigener Konstanten.
+from loaders.assets import asset_path  # noqa: E402
+
 from mirai.viewport.display import DisplayState  # noqa: E402
 
 from playground.camera import PlaygroundCamera  # noqa: E402
@@ -42,6 +46,7 @@ class PlaygroundApp:
     Methoden:
         load_cube()                       — Szene mit Würfel laden
         load_head()                       — Szene mit Head-Basemesh laden
+        load_asset(name)                  — Szene aus geteiltem OBJ-Asset laden (AD-007)
         register_slot(slot, family_id)    — Slot für eine Family registrieren
         activate_variant(family_id, idx)  — Variante in einer Family wechseln
         set_experiment(exp)               — Aktives Experiment wechseln (Compat)
@@ -165,6 +170,31 @@ class PlaygroundApp:
         store_type: siehe `load_cylinder()`.
         """
         scene = build_core_scene_from_obj(DEFAULT_HEAD_ASSET)
+        self._app.scene.mesh = scene.mesh
+
+        # Viewport neu binden (analog Application.init_scene)
+        self._app.viewport = Viewport(
+            self._app.scene.mesh,
+            selection=self._app.scene.selection,
+            store_type=store_type,
+        )
+        self._app.viewport.bind_camera(self._app.camera)
+        self._frame_camera()
+
+    def load_asset(self, name: str, store_type: type[ResourceStore] = TraceStore) -> None:
+        """Geteiltes OBJ-Asset per Registry-Namen laden (`examples/loaders/assets.py`).
+
+        Ermöglicht z. B. den Start mit einem anderen Mesh als dem Default-Würfel:
+        `python playground/run.py subd_cube`. Gültige Namen: siehe
+        `loaders.assets.asset_names()` — aktuell `"head_basemesh"`,
+        `"man_with_shoes_basemesh"`, `"subd_cube"`. Unbekannter Name → `KeyError`,
+        fehlende Datei → `ObjLoadError` (beides laut statt still).
+
+        Gleicher Weg wie `load_head()` (OBJ → ObjMeshData → src.core.Scene,
+        AD-008) inkl. Viewport-Rebind und Kamera-Framing.
+        store_type: siehe `load_cylinder()`.
+        """
+        scene = build_core_scene_from_obj(asset_path(name))
         self._app.scene.mesh = scene.mesh
 
         # Viewport neu binden (analog Application.init_scene)

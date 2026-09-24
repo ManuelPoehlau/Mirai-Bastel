@@ -31,6 +31,7 @@ from playground._paths import ensure_paths
 ensure_paths()
 
 from core.selection import SelectionMode  # noqa: E402
+from loaders.assets import asset_names  # noqa: E402  # AD-007: geteilte OBJ-Assets
 from mirai.viewport.display import DisplayMode  # noqa: E402
 from playground.selector import SelectMethod, SelectMode  # noqa: E402
 from playground.transformer import (  # noqa: E402
@@ -243,6 +244,12 @@ _GIZMO_CAP_SIZE_RATIO: float = 0.12  # engineering default, needs playtest
 # Articulation constants (EX-A / H02)
 # 0.01 rad/px: 100px drag ≈ 57° bend, feels responsive without being twitchy.
 _ARTICULATION_SENSITIVITY: float = 0.01
+
+# Registry-Namen der geteilten OBJ-Assets (AD-007, `examples/loaders/assets.py`).
+# `initial_mesh` darf jeden dieser Namen tragen — z. B. "subd_cube", um statt des
+# Default-Würfels direkt mit dem SubD-Cube zu starten; "head" bleibt daneben als
+# Alias bestehen.
+_OBJ_ASSET_NAMES: frozenset[str] = frozenset(asset_names())
 
 
 def _mesh_bounding_radius(mesh) -> float:
@@ -471,9 +478,18 @@ class PlaygroundWindow(pyglet.window.Window):
         Szene als String, statt selbst `app.load_*()` mit einem Store-Typ
         aufzurufen (der vor Fenster-/Kontext-Erzeugung ohnehin nicht
         GL-fähig wäre).
+
+        Gültige Werte: `"cube"` (Default), `"head"`, `"cylinder"`, `"grid"`
+        sowie jeder Registry-Name der geteilten OBJ-Assets (AD-007,
+        `_OBJ_ASSET_NAMES`) — z. B. `"subd_cube"` oder
+        `"man_with_shoes_basemesh"`. Alles Unbekannte fällt auf den Würfel
+        zurück (bestehendes Verhalten).
         """
         if initial_mesh == "head":
             self.app.load_head(store_type=PlaygroundPygletStore)
+        elif initial_mesh in _OBJ_ASSET_NAMES:
+            # Geteiltes Asset aus examples/meshes über die Registratur (AD-007).
+            self.app.load_asset(initial_mesh, store_type=PlaygroundPygletStore)
         elif initial_mesh == "cylinder":
             self.app.load_cylinder(store_type=PlaygroundPygletStore)
         elif initial_mesh == "grid":

@@ -3,10 +3,15 @@
 ## Start
 
 ```bash
-python playground/run.py          # Cube (Standard)
-python playground/run.py head     # Head-Basemesh
-python playground/run.py grid     # flaches 8x8-Quad-Raster (Connect Lab)
+python playground/run.py                        # Cube (Standard)
+python playground/run.py head                   # Head-Basemesh
+python playground/run.py subd_cube              # SubD-Cube (statt Default-Würfel)
+python playground/run.py man_with_shoes_basemesh  # Charakter-Basemesh
+python playground/run.py grid                   # flaches 8x8-Quad-Raster (Connect Lab)
 ```
+
+Als Startszene gültig ist jeder Registry-Name der geteilten OBJ-Assets
+(`examples/loaders/assets.py`, AD-007); unbekannte Argumente fallen auf den Würfel zurück.
 
 Das Fenster öffnet mit dem Playground. Die HUD zeigt oben:
 - Kamera-Position (Orbit-Winkel, Zoom-Abstand)
@@ -34,6 +39,11 @@ Das Fenster öffnet mit dem Playground. Die HUD zeigt oben:
 |---|---|
 | H | Head-Basemesh laden |
 | Q, Esc | Fenster schließen |
+
+Weitere geteilte Assets (z. B. `subd_cube`, `man_with_shoes_basemesh`) werden
+**über den Startparameter** gewählt (`python playground/run.py subd_cube`),
+bewusst ohne eigene Hotkeys — neue Tasten kollidieren mit den Kontext-Belegungen
+(AD-017 Contextual C).
 
 ### Topology (AD-017 — Contextual C)
 

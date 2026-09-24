@@ -5,10 +5,15 @@ Experimentier-Host für UX-Fragen (Viewport-Display, Selection-Philosophie, Inte
 ## Start
 
 ```bash
-python playground/run.py          # Cube
-python playground/run.py head     # Head-Basemesh
-python playground/run.py grid     # flaches 8x8-Quad-Raster (Connect Lab)
+python playground/run.py                        # Cube
+python playground/run.py head                   # Head-Basemesh
+python playground/run.py subd_cube              # SubD-Cube (statt Default-Würfel)
+python playground/run.py man_with_shoes_basemesh  # Charakter-Basemesh
+python playground/run.py grid                   # flaches 8x8-Quad-Raster (Connect Lab)
 ```
+
+Als Startszene gültig ist jeder Registry-Name der geteilten OBJ-Assets
+(`examples/loaders/assets.py`, AD-007); unbekannte Argumente fallen auf den Würfel zurück.
 
 Fenster öffnet mit HUD (Kamera, Mesh-Info, aktuelles Experiment, Display-Modus, Selection-Count).
 
@@ -20,7 +25,7 @@ Fenster öffnet mit HUD (Kamera, Mesh-Info, aktuelles Experiment, Display-Modus,
 - **Kamera:** LMB = Orbit, MMB = Pan, Mausrad = Zoom
 - **Display:** D = Modus cyclen, Z = Wireframe-Overlay, V = Vertices
 - **Selection:** LMB-Click = Face selecten (abhängig vom Modus)
-- **Szene:** C = Cube, H = Head
+- **Szene:** C = Cube, H = Head (weitere geteilte Assets per Startparameter, s. oben)
 - **Ende:** Q oder Esc
 
 ## Experimente

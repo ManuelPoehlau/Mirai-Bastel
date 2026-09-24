@@ -4,7 +4,13 @@ Verwendung:
     python playground/run.py          # Cube (default)
     python playground/run.py cube     # explizit Cube
     python playground/run.py head     # Head-Basemesh
+    python playground/run.py subd_cube                  # SubD-Cube statt Default-Würfel
+    python playground/run.py man_with_shoes_basemesh    # Charakter-Basemesh
     python playground/run.py grid     # flaches 8x8-Quad-Raster (Connect Lab)
+
+Als Startszene gültig ist die Liste oben plus jeder Registry-Name der geteilten
+OBJ-Assets (`examples/loaders/assets.py`, AD-007 — dort steht auch `asset_names()`
+als Source of Truth). Unbekannte Argumente fallen auf den Würfel zurück.
 
 Oder als Modul vom Repo-Root:
     python -m playground.run
