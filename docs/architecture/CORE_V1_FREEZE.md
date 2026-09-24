@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -45,6 +45,25 @@ leaving the (edge, t) pair as the reliable provenance path (AD-017 B5/B1b). Back
 all callers that call `split_edge(eid)` are unaffected. Covered by new contract tests in
 `tests/test_core.py`. `Mesh.add_edge()` retained unchanged; no active production consumer after
 strip Connect was rejected; retained for potential future construction/curve work (AD-017 §13).
+
+**Decision:** AD-SYM-01 (2026-09-24, WP-SYM-01 Slice 1)
+
+`Mesh` gains a `symmetry_definition: SymmetryDefinition | None` attribute (`src/core/mesh.py`) —
+Plane (point + unit normal) and a declared set of Seam `EdgeId`s, default `None` ("symmetry off").
+Authorized by `docs/architecture/AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md` (DECIDED): the
+Definition is bound to the Mesh's own ID space and must not outlive a Mesh replacement or
+desynchronize from an Undo — both already hold for Mesh's own containers, neither holds for a
+Scene-level location (measured regression in AD-SYM-01 §1.1). `export_state()`/`load_state()` gain
+an additive, optional `"symmetry"` key (no `FORMAT_VERSION` bump; `state.get("symmetry")` so a dict
+without the key still loads); `MeshStateCommand` therefore carries the Definition through Undo/Redo
+without any new History machinery (AD-SYM-02 §5). Mesh stores this declaration only — it does not
+interpret it; Correspondence-Ableitung and State-Aggregation live in `src/mirai/symmetry.py`
+(outside the frozen Core, same placement rationale as `scene_factory.py`/`mesh_geometry.py`,
+AD-008). Covered by `tests/test_symmetry.py` (storage/roundtrip, the AD-SYM-01 §1.1 regression case,
+all four Correspondence states, all Symmetry State outcomes) and a roundtrip regression added to
+`tests/test_scene_serialization.py`. No operation, tool, or Undo/Redo *behavior* for the Definition
+itself in this slice (Definition is set directly, e.g. `mesh.symmetry_definition = ...`) — that is
+explicitly out of scope for WP-SYM-01 Slice 1.
 
 ## 2. Was vor dem Freeze validiert wurde
 

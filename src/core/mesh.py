@@ -25,6 +25,13 @@ Bewusst NICHT enthalten: volle Winged-/Half-Edge-Struktur, Non-Manifold-
 Multi-Shell-Support, Genus-Tracking. Die Implementierung geht von einem
 einfachen (meist manifold) Mesh aus, wie es für einen V1-Modeler
 ausreicht.
+
+Symmetry Definition (AD-SYM-01, WP-SYM-01 Slice 1): Mesh trägt zusätzlich
+eine optionale `SymmetryDefinition` (Plane + deklarierte Seam-Edges) als
+öffentliches Attribut `symmetry_definition`, nimmt an `export_state()`/
+`load_state()` teil und damit ohne weitere Maschinerie auch an
+`MeshStateCommand`-Undo/Redo. Mesh speichert diese Deklaration nur - jede
+Symmetrie-*Logik* (Correspondence, State) lebt in `mirai.symmetry`.
 """
 
 from __future__ import annotations
@@ -62,6 +69,34 @@ class MeshError(ValueError):
     """Verletzung eines Topologie-Invarianten."""
 
 
+@dataclass(frozen=True)
+class SymmetryDefinition:
+    """Symmetrie-Deklaration: Plane + deklarierte Seam-Edges (AD-SYM-01).
+
+    Das Mesh *besitzt* diese Deklaration (speichert, serialisiert, trägt sie
+    durch `load_state()` mit), *kennt* aber keine Symmetrie-Semantik
+    (AD-SYM-01 §3) - Correspondence-Ableitung und State-Aggregation leben
+    oberhalb des Core (siehe `mirai.symmetry`), nicht hier.
+
+    Plane-Repräsentation (AD-SYM-01 §4, bewusst offen gelassen -
+    hier entschieden): Punkt + Normale. Die Normale wird als Einheitsvektor
+    vorausgesetzt (Aufrufer-Vertrag, hier NICHT normalisiert) - eine
+    automatische Normalisierung würde eine zusätzliche Rundungsentscheidung
+    einführen, die niemand verlangt hat.
+
+    Seam-Repräsentation (AD-SYM-01 §4, ebenfalls offen gelassen - hier
+    entschieden): Menge von EdgeIds, analog Maya Seam-Edge (Research R1
+    §3.8). Vertex-IDs wären ebenso möglich gewesen (Wings-Muster); Edge-IDs
+    sind gewählt, weil eine Seam als zusammenhängender Kantenzug zwischen
+    zwei Mesh-Hälften natürlicher beschrieben wird als eine lose
+    Vertex-Menge.
+    """
+
+    plane_point: Position
+    plane_normal: Position
+    seam_edges: frozenset[EdgeId] = field(default_factory=frozenset)
+
+
 class Mesh:
     def __init__(self) -> None:
         self._vertex_alloc = IdAllocator(VertexId)
@@ -75,6 +110,14 @@ class Mesh:
         # Interner Lookup-Index (Implementierungsdetail, kein öffentlicher
         # Vertrag): ungeordnetes Vertex-Paar -> existierende EdgeId.
         self._edge_lookup: dict[frozenset[VertexId], EdgeId] = {}
+
+        # Symmetry Definition (AD-SYM-01): bewusst ein PUBLIC-Attribut statt
+        # Getter/Setter-Paar - analog zu Scene.morph_targets/rig/animation
+        # (reservierter Subsystem-Platz, direkt settbar), nicht analog zur
+        # Topologie-Query-API (AD-002 §15 Punkt 1), die ausschließlich für
+        # die Vertex-/Edge-/Face-Container gilt. Default: keine Definition
+        # (Symmetrie "aus").
+        self.symmetry_definition: SymmetryDefinition | None = None
 
     # ------------------------------------------------------------------
     # Gültigkeitsprüfung (AD-001)
@@ -441,7 +484,15 @@ class Mesh:
     def export_state(self) -> dict:
         """Reine Datenstruktur, JSON-kompatibel. Enthält auch die
         Allocator-Zählerstände, damit künftig neu erzeugte IDs nach dem
-        Laden nicht mit gespeicherten IDs kollidieren (§8)."""
+        Laden nicht mit gespeicherten IDs kollidieren (§8).
+
+        `"symmetry"` (AD-SYM-01): additiver, optionaler Schlüssel statt
+        eines Formatversionssprungs - `None`, solange keine Symmetry
+        Definition gesetzt ist (Default-Zustand). Dadurch bleibt
+        `serialization.py`/`FORMAT_VERSION` unverändert: `scene_to_dict()`
+        ruft bereits `mesh.export_state()` auf, der neue Schlüssel reist
+        also ohne jede Änderung an der Scene-Hülle mit.
+        """
         return {
             "vertex_id_counter": self._vertex_alloc.peek_next(),
             "edge_id_counter": self._edge_alloc.peek_next(),
@@ -461,6 +512,17 @@ class Mesh:
                 int(fid): [int(v) for v in data.boundary]
                 for fid, data in self._faces.items()
             },
+            "symmetry": self._export_symmetry_definition(),
+        }
+
+    def _export_symmetry_definition(self) -> dict | None:
+        definition = self.symmetry_definition
+        if definition is None:
+            return None
+        return {
+            "plane_point": list(definition.plane_point),
+            "plane_normal": list(definition.plane_normal),
+            "seam_edges": [int(eid) for eid in sorted(definition.seam_edges)],
         }
 
     def load_state(self, state: dict) -> None:
@@ -484,6 +546,12 @@ class Mesh:
         vorwärts (siehe ids.py) - beim Undo (Zielzustand hat einen
         niedrigeren gespeicherten Zählerstand als aktuell) bleibt der
         Zähler deshalb unverändert auf dem höheren, aktuellen Wert.
+
+        Symmetry Definition (AD-SYM-01): nimmt am selben In-Place-Vertrag
+        teil wie Vertices/Edges/Faces - `state.get("symmetry")` statt
+        `state["symmetry"]`, damit ein `state`-Dict ohne diesen Schlüssel
+        (additiv, siehe export_state()) ebenfalls ladbar bleibt, statt mit
+        KeyError abzubrechen.
         """
         self._vertices.clear()
         self._edges.clear()
@@ -506,6 +574,16 @@ class Mesh:
         self._vertex_alloc.restore_counter(state["vertex_id_counter"])
         self._edge_alloc.restore_counter(state["edge_id_counter"])
         self._face_alloc.restore_counter(state["face_id_counter"])
+
+        symmetry_raw = state.get("symmetry")
+        if symmetry_raw is None:
+            self.symmetry_definition = None
+        else:
+            self.symmetry_definition = SymmetryDefinition(
+                plane_point=tuple(symmetry_raw["plane_point"]),
+                plane_normal=tuple(symmetry_raw["plane_normal"]),
+                seam_edges=frozenset(EdgeId(eid) for eid in symmetry_raw["seam_edges"]),
+            )
 
     @classmethod
     def from_state(cls, state: dict) -> "Mesh":

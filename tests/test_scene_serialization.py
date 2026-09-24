@@ -33,7 +33,7 @@ import unittest
 
 import tests._bootstrap  # noqa: F401
 
-from core.mesh import Mesh
+from core.mesh import Mesh, SymmetryDefinition
 from core.scene import Scene
 from core.serialization import scene_from_dict, scene_from_json, scene_to_dict, scene_to_json
 from tests.mesh_invariants import assert_mesh_invariants
@@ -167,6 +167,34 @@ class TestSceneSerializationRoundtrip(unittest.TestCase):
         data["version"] = 999
         with self.assertRaises(ValueError):
             scene_from_dict(data)
+
+    def test_symmetry_definition_survives_scene_roundtrip(self) -> None:
+        """AD-SYM-01 (WP-SYM-01 Slice 1): die Symmetry Definition lebt im
+        Mesh, nicht in der Scene-Hülle - `scene_to_dict()`/`scene_from_dict()`
+        rufen bereits `mesh.export_state()`/`load_state()` auf, also reist
+        sie ohne jede Änderung an `serialization.py` mit. Hier als expliziter
+        Regressionsschutz auf Scene-Ebene festgeschrieben, nicht nur auf
+        Mesh-Ebene angenommen."""
+        scene, (v0, v1, _v2, _v3, _v4, _face) = build_mutated_scene()
+        seam_edge = scene.mesh.add_edge(v0, v1)
+        definition = SymmetryDefinition(
+            plane_point=(0.0, 0.0, 0.0),
+            plane_normal=(1.0, 0.0, 0.0),
+            seam_edges=frozenset({seam_edge}),
+        )
+        scene.mesh.symmetry_definition = definition
+
+        restored = scene_from_dict(scene_to_dict(scene))
+
+        self.assertEqual(restored.mesh.symmetry_definition, definition)
+
+    def test_symmetry_definition_absent_by_default_after_scene_roundtrip(self) -> None:
+        scene, _ids = build_mutated_scene()
+        self.assertIsNone(scene.mesh.symmetry_definition)
+
+        restored = scene_from_dict(scene_to_dict(scene))
+
+        self.assertIsNone(restored.mesh.symmetry_definition)
 
 
 class TestSceneSerializationEmptyScene(unittest.TestCase):
