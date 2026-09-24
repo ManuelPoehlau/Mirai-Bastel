@@ -10,34 +10,139 @@ und Per-Vertex-Farben entfallen, weil das Lab nur einen Shaded-Modus zeichnet.
 Slice 3: `plane_outline_data` (Lab-eigen) zeichnet die Symmetrie-Ebene als
 Rechteck-Umriss in der Ebene durch den Ursprung (E1), bemessen auf die
 Mesh-Bounds der beiden Achsen, die in der Ebene liegen.
+
+Slice 4 (E10, Lab-lokal — keine Änderung an `viewport.derived`): `face_data`
+trianguliert und berechnet Normalen selbst, statt `DerivedGeometry`/
+`triangulate_face` zu benutzen:
+
+- Befund (verifiziert): Die Production-Fan-Triangulierung wählt die
+  Quad-Diagonale nach der gespeicherten Vertex-Reihenfolge (immer v0-v2).
+  Bei einem gespiegelten Quad-Paar ist diese Diagonale i. A. nicht die
+  gespiegelte der anderen Seite (`subd_cube` X: alle 24 gespiegelten
+  Quad-Zuordnungen asymmetrisch). Mit "kürzere Diagonale" (Abstände sind
+  spiegelinvariant) sind es 0 (`head_basemesh` X: dort war die
+  Fan-Diagonale bereits in beiden Fällen 0 — kein Unterschied).
+- Deshalb: Quads werden hier an der kürzeren Diagonale trianguliert (bei
+  exakt gleicher Länge: bisheriges Fan-Verhalten, Diagonale v0-v2).
+  Dreiecke und n-Gons bleiben unverändert `triangulate_face`.
+- Face-Normale ebenfalls lab-lokal nach Newell (ordnungsunabhängig vom
+  Start-Vertex, spiegeläquivariant) statt "erstes Fan-Dreieck"
+  (`DerivedGeometry`, dort vom Start-Vertex abhängig und deshalb bei
+  gespiegelten Quads asymmetrisch). Vertex-Normale = normierte Summe der
+  Normalen der angrenzenden Faces — gleiches Schema wie `DerivedGeometry`,
+  hier nur mit den Newell-Face-Normalen.
+- Grenze, dokumentiert, nicht gelöst: Ein Quad, das selbst über die
+  Symmetrie-Ebene reicht, kann prinzipiell nicht symmetrisch in zwei
+  Dreiecke geteilt werden (siehe README).
+- Reine Anzeige-Entscheidung des Labs: Übernahme nach Production (betrifft
+  Playground, Picking, Normal-Space) ist eine spätere, eigene Entscheidung.
 """
 
 from __future__ import annotations
 
+import math
+from collections import defaultdict
 from collections.abc import Iterable
 
 from typing import Optional
 
-from core import Mesh, VertexId
+from core import FaceId, Mesh, VertexId
 from mirai.mesh_geometry import mesh_bounds
-from viewport.derived import DerivedGeometry, triangulate_face
+from viewport.derived import triangulate_face
 
 from .lab_symmetry import AXIS_INDEX
+
+Vec3 = tuple[float, float, float]
 
 #: Umriss ragt um diesen Anteil der größten In-Ebene-Ausdehnung über die Bounds.
 PLANE_MARGIN = 0.1
 
 
+def _distance(a: Vec3, b: Vec3) -> float:
+    return math.sqrt(sum((ai - bi) ** 2 for ai, bi in zip(a, b)))
+
+
+def _newell_normal(positions: list[Vec3]) -> Vec3:
+    """Face-Normale nach Newell (E10): ordnungsunabhängig vom Start-Vertex
+    der Boundary, spiegeläquivariant — anders als die Production-Face-Normale
+    (`viewport.derived.DerivedGeometry`), die das erste Fan-Dreieck nimmt.
+    """
+    nx = ny = nz = 0.0
+    count = len(positions)
+    for i in range(count):
+        x0, y0, z0 = positions[i]
+        x1, y1, z1 = positions[(i + 1) % count]
+        nx += (y0 - y1) * (z0 + z1)
+        ny += (z0 - z1) * (x0 + x1)
+        nz += (x0 - x1) * (y0 + y1)
+    length = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if length < 1e-12:
+        return (0.0, 0.0, 0.0)
+    return (nx / length, ny / length, nz / length)
+
+
+def face_normals(mesh: Mesh) -> dict[FaceId, Vec3]:
+    """Face-Normale je Face nach Newell (E10). Öffentlich für die
+    Charakterisierungstests (`tests/test_draw_data.py`)."""
+    return {
+        fid: _newell_normal([mesh.vertex_position(v) for v in mesh.face_vertices(fid)])
+        for fid in mesh.all_face_ids()
+    }
+
+
+def vertex_normals(mesh: Mesh) -> dict[VertexId, Vec3]:
+    """Normierte Summe der Normalen der angrenzenden Faces (gleiches Schema
+    wie `viewport.derived.DerivedGeometry`, hier mit den Newell-Face-Normalen,
+    E10). Öffentlich für die Charakterisierungstests."""
+    fn = face_normals(mesh)
+    sums: dict[VertexId, list[float]] = defaultdict(lambda: [0.0, 0.0, 0.0])
+    for fid in mesh.all_face_ids():
+        normal = fn[fid]
+        for vid in mesh.face_vertices(fid):
+            acc = sums[vid]
+            acc[0] += normal[0]
+            acc[1] += normal[1]
+            acc[2] += normal[2]
+    result: dict[VertexId, Vec3] = {}
+    for vid in mesh.all_vertex_ids():
+        acc = sums.get(vid, [0.0, 0.0, 0.0])
+        length = math.sqrt(sum(c * c for c in acc))
+        result[vid] = tuple(c / length for c in acc) if length >= 1e-12 else (0.0, 0.0, 0.0)
+    return result
+
+
+def triangulate_face_symmetric(
+    mesh: Mesh, face_id: FaceId
+) -> list[tuple[VertexId, VertexId, VertexId]]:
+    """Trianguliert ein Quad an der kürzeren Diagonale (E10, spiegelinvariant,
+    da Abstände sich unter Spiegelung nicht ändern). Bei exakt gleicher
+    Diagonalenlänge: bisheriges Fan-Verhalten (Diagonale v0-v2). Dreiecke und
+    n-Gons: unverändert `triangulate_face`. Öffentlich für die
+    Charakterisierungstests.
+    """
+    boundary = mesh.face_vertices(face_id)
+    if len(boundary) != 4:
+        return triangulate_face(boundary)
+    v0, v1, v2, v3 = boundary
+    p0, p1, p2, p3 = (mesh.vertex_position(v) for v in boundary)
+    if _distance(p1, p3) < _distance(p0, p2):
+        return [(v0, v1, v3), (v1, v2, v3)]
+    return [(v0, v1, v2), (v0, v2, v3)]
+
+
 def face_data(mesh: Mesh) -> tuple[list[float], list[float]]:
-    """(positions, normals) für GL_TRIANGLES, expandiert (kein Index-Buffer)."""
-    derived = DerivedGeometry(mesh)
+    """(positions, normals) für GL_TRIANGLES, expandiert (kein Index-Buffer).
+
+    Triangulierung und Normalen sind lab-lokal (E10, siehe Modul-Docstring).
+    """
+    v_normals = vertex_normals(mesh)
     positions: list[float] = []
     normals: list[float] = []
     for fid in mesh.all_face_ids():
-        for tri in triangulate_face(mesh.face_vertices(fid)):
+        for tri in triangulate_face_symmetric(mesh, fid):
             for vid in tri:
                 positions.extend(mesh.vertex_position(vid))
-                normals.extend(derived.vertex_normals.get(vid, (0.0, 1.0, 0.0)))
+                normals.extend(v_normals.get(vid, (0.0, 1.0, 0.0)))
     return positions, normals
 
 

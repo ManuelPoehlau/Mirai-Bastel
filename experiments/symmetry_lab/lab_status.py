@@ -1,4 +1,8 @@
-"""Statuszeile des Labs — reiner Text, GL-frei (Handoff Slice 3 §4.6)."""
+"""Statuszeile des Labs — reiner Text, GL-frei (Handoff Slice 3 §4.6).
+
+Slice 4: zeigt zusätzlich, was ein scharfer/ziehender Move bewegen wird
+("Auswahl" / "Hover v<id>", `dispatcher.move_target_label`, A4/E7).
+"""
 
 from __future__ import annotations
 
@@ -23,7 +27,10 @@ def status_text(
         if report.ambiguous:
             unpaired += f", mehrdeutig: {len(report.ambiguous)}"
         parts.append(unpaired)
-    parts.append(f"Move: {dispatcher.move_state.value}")
+    move_part = f"Move: {dispatcher.move_state.value}"
+    if dispatcher.move_target_label:
+        move_part += f" ({dispatcher.move_target_label})"
+    parts.append(move_part)
     parts.append(f"Auswahl: {picked}")
     if dispatcher.message:
         parts.append(dispatcher.message)

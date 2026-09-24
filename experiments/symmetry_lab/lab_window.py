@@ -7,6 +7,9 @@ gesammelten `Change`-Flags ab und baut VBOs/Overlays/Statuszeile neu auf.
 Tastatur (Slice 3): `on_key_press` geht an den Dispatcher. Meldet er „nicht
 behandelt" (z. B. ESC ohne scharfen oder laufenden Move), läuft das
 pyglet-Standardverhalten — ESC schließt das Fenster wie in Slice 2.
+
+Slice 4: `on_mouse_motion` reicht die Cursor-Position an
+`dispatcher.motion()` (Hover-Ziel, E9) weiter.
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ class SymmetryLabWindow(pyglet.window.Window):
             "", x=10, y=10, font_size=11, color=(220, 220, 220, 255)
         )
         self._report = symmetry_report(app.scene.mesh)
-        self._sync(Change.MESH | Change.SELECTION | Change.STATUS)
+        self._sync(Change.MESH | Change.SELECTION | Change.HOVER | Change.STATUS)
 
     def _sync(self, changes: Change) -> None:
         mesh = self.app.scene.mesh
@@ -55,6 +58,13 @@ class SymmetryLabWindow(pyglet.window.Window):
             self.renderer.rebuild_highlight(
                 mesh, selected, mirrored_selection(mesh, selected)
             )
+        if changes & (Change.MESH | Change.HOVER):
+            hovered = (
+                {self.dispatcher.hover_vertex}
+                if self.dispatcher.hover_vertex is not None
+                else set()
+            )
+            self.renderer.rebuild_hover(mesh, hovered, mirrored_selection(mesh, hovered))
         if changes:
             self._status.text = status_text(
                 self.app, self.asset_name, self.dispatcher, self._report
@@ -97,6 +107,10 @@ class SymmetryLabWindow(pyglet.window.Window):
 
     def on_mouse_scroll(self, x: int, y: int, scroll_x: float, scroll_y: float) -> None:
         self.dispatcher.scroll(wheel_from_pyglet(scroll_y))
+
+    def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
+        self.dispatcher.motion(x, y)
+        self._flush()
 
     def on_draw(self) -> None:
         if self.height == 0:
