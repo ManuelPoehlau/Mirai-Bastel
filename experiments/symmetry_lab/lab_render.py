@@ -11,6 +11,12 @@ Voller Rebuild bei jeder Änderung (Handoff §2.3) — kein Patching.
 Slice 3: Symmetrie-Overlays (Ebenen-Umriss, Seam/ohne Partner/mehrdeutig)
 hängen an Mesh + Definition und werden mit `rebuild_mesh` neu gebaut; die
 gespiegelte Vorschau hängt an der Auswahl und kommt mit `rebuild_highlight`.
+
+Slice 4 (E9): der Hover-Vertex (eigene Farbe) und sein gespiegelter Partner
+(gleiche Farbe wie die Auswahl-Vorschau, `MIRRORED_VERTEX_COLOR`) kommen mit
+`rebuild_hover`, unabhängig von `rebuild_highlight` — Hover berührt die
+Auswahl nicht (E8).
+
 Farblegende: README.
 """
 
@@ -76,6 +82,7 @@ MIRRORED_VERTEX_COLOR = (0.1, 0.85, 0.95, 1.0)
 SEAM_VERTEX_COLOR = (0.2, 0.9, 0.3, 1.0)
 UNPAIRED_VERTEX_COLOR = (0.95, 0.2, 0.85, 1.0)
 AMBIGUOUS_VERTEX_COLOR = (1.0, 1.0, 1.0, 1.0)
+HOVER_VERTEX_COLOR = (1.0, 0.9, 0.15, 1.0)
 PLANE_COLOR = (0.4, 0.75, 1.0, 1.0)
 VERTEX_POINT_SIZE = 4.0
 STATE_POINT_SIZE = 7.0
@@ -101,6 +108,9 @@ class LabRenderer:
         self._state_points: list = []
         self._mirrored = None
         self._highlight = None
+        #: Hover-Vertex + gespiegelter Partner (Slice 4, E9) — unabhängig von der Auswahl.
+        self._hover = None
+        self._hover_mirrored = None
 
     @staticmethod
     def _delete(vlist) -> None:
@@ -138,6 +148,17 @@ class LabRenderer:
             lab_draw_data.highlight_data(mesh, selected), gl.GL_POINTS
         )
         self._mirrored = self._overlay_list(
+            lab_draw_data.highlight_data(mesh, mirrored), gl.GL_POINTS
+        )
+
+    def rebuild_hover(self, mesh: Mesh, hovered, mirrored) -> None:
+        """Slice 4, E9: Hover-Vertex + gespiegelter Partner, getrennt von der Auswahl."""
+        self._delete(self._hover)
+        self._delete(self._hover_mirrored)
+        self._hover = self._overlay_list(
+            lab_draw_data.highlight_data(mesh, hovered), gl.GL_POINTS
+        )
+        self._hover_mirrored = self._overlay_list(
             lab_draw_data.highlight_data(mesh, mirrored), gl.GL_POINTS
         )
 
@@ -190,7 +211,16 @@ class LabRenderer:
             if vlist is not None:
                 program["u_color"] = color
                 vlist.draw(gl.GL_POINTS)
-        # Auswahl zuletzt: sie überdeckt Seam/ohne-Partner-Markierungen.
+        # Hover-Vorschau (E9): eigene Farbe, gespiegelter Partner wie bei der
+        # Auswahl (MIRRORED_VERTEX_COLOR). Berührt die Auswahl nicht (E8).
+        for color, vlist in (
+            (MIRRORED_VERTEX_COLOR, self._hover_mirrored),
+            (HOVER_VERTEX_COLOR, self._hover),
+        ):
+            if vlist is not None:
+                program["u_color"] = color
+                vlist.draw(gl.GL_POINTS)
+        # Auswahl zuletzt: sie überdeckt Hover- und Symmetrie-Markierungen.
         gl.glPointSize(SELECTED_POINT_SIZE)
         for color, vlist in (
             (MIRRORED_VERTEX_COLOR, self._mirrored),
