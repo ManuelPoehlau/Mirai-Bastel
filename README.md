@@ -30,6 +30,50 @@ continue working with the rest of the scene
 
 The goal is not to pretend that topology changes, skin weights and morph data are magically trivial. The goal is to build a Core architecture that can eventually support this kind of workflow rather than forcing modeling, rigging and animation into completely separate worlds.
 
+## The experimental ambition
+
+The workflow above is deliberately more ambitious than the conventional "finish topology, then build the character" boundary used by many production pipelines.
+
+That boundary is not treated here as evidence that a more persistent workflow is impossible. It is understood as a powerful production trade-off: when topology becomes the foundation for skinning, morphs, rigging and animation, keeping a stable hand-off point makes dependencies easier to reason about, failures easier to localize and production results more predictable.
+
+Mirai-Bastel explores the opposite question:
+
+> **Can modeling remain a living part of the character pipeline after rigging, deformation and morph work have started — without sacrificing the ability to understand what changed and without hiding broken dependencies?**
+
+This is an experimental direction, not a promise that the problem is already solved.
+
+The important distinction is:
+
+```text
+technically possible
+        ↓
+practically robust
+        ↓
+production-safe
+```
+
+These are different goals. A workflow that lets topology change after character data exists may be technically achievable while still being difficult to make robust, computationally expensive, or unsuitable for production until many dependency and recovery cases are solved.
+
+Mirai therefore does not assume that the conventional boundary is "wrong". It treats it as a useful, stable solution — and investigates whether a different boundary can be made reliable enough for an artist-driven workflow.
+
+A key research principle follows from this:
+
+```text
+one modeling intention
+        ↓
+known operation context
+        ↓
+known identity changes
+        ↓
+dependent systems can react deliberately
+```
+
+For example, a symmetric topology operation should conceptually be one operation with two corresponding sides, not two unrelated edits that happen to produce similar geometry. This does not solve future weight or morph transfer by itself. It preserves the information and semantics that a later system could use when solving those problems.
+
+This is why the project intentionally starts small. Symmetry, topology operations, stable element identity and explicit state are useful not only as modeling features, but as experiments into whether a more persistent modeling → character → modeling workflow can remain understandable, reliable and performant on real hardware.
+
+The project is willing to discover that some parts of the vision are impractical, too costly, or require stronger boundaries than originally hoped. Such findings are part of the research rather than failures of the project.
+
 ## Architecture principle
 
 > **Implement little. Assume much.**
