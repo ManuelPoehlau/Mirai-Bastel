@@ -32,6 +32,20 @@ Zwei Backends:
 
 Die Entscheidungslogik (welche Update-Kategorie welche Ressource verändern
 darf, partial vs. rebuild) liegt in `RenderMesh`, NICHT hier.
+
+AD-018 §5 (Option B, additiv): Vier optionale Layout-/Bracket-Methoden
+(`declare_group`, `declare_uniform`, `begin_rebuild`, `end_rebuild`) ergänzen
+den Vertrag. Sie ersetzen die *inferierte* Aufrufreihenfolge, auf der der
+Draw-Binding-Spike (`experiments/viewport_draw_binding_spike/spike_gl_store.py`)
+beruhte ("positions, normals, indices, dann optional highlight_flags" - nirgends
+vom `ResourceStore`-Vertrag selbst zugesichert), durch eine explizite Aussage
+von `RenderMesh`: welche benannten Ressourcen zusammen EIN Drawable (Attribut-
+Gruppe + Indexbuffer) bilden, welche reine Uniforms sind, und wann ein
+zusammengehöriger Rebuild-Zyklus beginnt/endet. Alle vier haben No-Op-
+Default-Implementierungen hier in der Basisklasse - ein Store, der sie nicht
+braucht (`TraceStore`, `PygletStore`), muss nichts überschreiben und bleibt
+unverändert lauffähig. `allocate()`/`update()`/`destroy()`-Signaturen und
+`resource_ids()`-Semantik sind davon nicht betroffen.
 """
 
 from __future__ import annotations
@@ -91,6 +105,45 @@ class ResourceStore(ABC):
     def resource_ids(self) -> dict[str, int]:
         """Snapshot aller aktuell aktiven Ressourcen-IDs (für Persistence-Checks)."""
         return {name: r.resource_id for name, r in self._resources.items()}
+
+    # -- Layout-Deklaration (AD-018 §5, additiv; siehe Modul-Docstring) -------
+    #
+    # Optional. `RenderMesh` ruft diese auf, um dem Store einmalig (bzw. um
+    # einen Rebuild-Zyklus herum) zu sagen, WELCHE Struktur seine benannten
+    # Ressourcen haben - statt dass ein Store das aus der Aufrufreihenfolge
+    # erraten muss. Default: No-Op, damit bestehende Stores unverändert
+    # lauffähig bleiben.
+
+    def declare_group(
+        self, group: str, attributes: dict[str, tuple[str, int]], index: str
+    ) -> None:
+        """Deklariert, dass die in `attributes` genannten Ressourcen-Namen
+        zusammen mit der Index-Ressource `index` EIN drawbares GPU-Objekt
+        bilden (Attribut-Gruppe + Indexbuffer).
+
+        `attributes` bildet Ressourcen-Name -> (Attribut-Name, Komponenten
+        pro Vertex) ab, z. B. `{"positions": ("position", 3)}`. Kein
+        allgemeiner Ressourcen-Registry-Mechanismus (VIEWPORT_V02_ARCHITECTURE.md
+        §1 Non-Goal bleibt bestehen) - beschreibt exakt das heutige
+        `RenderMesh`-Layout, nicht beliebige künftige Ressourcen.
+        """
+
+    def declare_uniform(self, name: str) -> None:
+        """Deklariert, dass die Ressource `name` reine CPU-seitige
+        Uniform-Daten ist (z. B. `camera_uniforms`, `material_uniforms`),
+        kein Buffer/Attribut einer Drawable-Gruppe."""
+
+    def begin_rebuild(self, group: str) -> None:
+        """Markiert den Beginn eines zusammengehörigen Rebuild-Zyklus für
+        `group` - der explizite Ersatz für das Erraten "alle Trio-Mitglieder
+        frisch alloziert" aus der Aufrufreihenfolge (siehe AD-018 §5, Option A
+        Cost 1). Alle `allocate()`/`update()`-Aufrufe für Ressourcen dieser
+        Gruppe zwischen `begin_rebuild()` und `end_rebuild()` gehören zu
+        genau diesem einen Rebuild."""
+
+    def end_rebuild(self, group: str) -> None:
+        """Markiert das Ende des mit `begin_rebuild()` begonnenen
+        Rebuild-Zyklus für `group`."""
 
 
 class TraceStore(ResourceStore):

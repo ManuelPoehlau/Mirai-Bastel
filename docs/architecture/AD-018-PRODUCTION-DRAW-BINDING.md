@@ -225,3 +225,203 @@ validation of any rendering result.
 - Q2–Q7 from the spike README (flat shading, edge/point data, overlay
   representation, triangulation under symmetry, entry-point location,
   tool → viewport notification).
+
+---
+
+## 6. Implementation — 2026-09-25
+
+Implementation package per the handoff "AD-018 Option B: `ResourceStore`
+Layout Contract + Drawable GL Store". Built the declared contract extension
+and one real drawable `ResourceStore` implementation within the binding
+constraints (§5). No architecture redecision — this section records what
+was built and what was verified, per §5's own instruction to append rather
+than edit §1–§5.
+
+### API shipped
+
+`src/viewport/resource_store.py` — `ResourceStore` gained four optional
+methods, all with no-op default bodies in the ABC:
+
+```python
+def declare_group(self, group: str, attributes: dict[str, tuple[str, int]], index: str) -> None: ...
+def declare_uniform(self, name: str) -> None: ...
+def begin_rebuild(self, group: str) -> None: ...
+def end_rebuild(self, group: str) -> None: ...
+```
+
+- `declare_group(group, attributes, index)` — states once that the named
+  resources in `attributes` (mapped to `(gl_attribute_name, components)`,
+  e.g. `{"positions": ("position", 3)}`) plus the index resource `index`
+  form one drawable GPU object. Replaces the spike's inferred
+  `STRUCTURAL_TRIO`/`VERTEX_ATTR_NAMES` name-based guessing with an
+  explicit statement from `RenderMesh`.
+- `declare_uniform(name)` — states a resource name is CPU-side uniform
+  storage (`camera_uniforms`, `material_uniforms`), never a group member.
+- `begin_rebuild(group)` / `end_rebuild(group)` — an explicit bracket
+  around one structural rebuild cycle, replacing the spike's inference
+  "all trio members freshly allocated within this cycle" from call order
+  alone.
+
+`src/viewport/render_mesh.py` — `RenderMesh.__init__` calls
+`declare_group("mesh", MESH_GROUP_ATTRIBUTES, "indices")` and
+`declare_uniform("camera_uniforms"/"material_uniforms")` once, and
+`_rebuild_resources()` wraps its existing `put()` calls for
+`positions`/`normals`/`indices`/`highlight_flags` in
+`begin_rebuild("mesh")`/`end_rebuild("mesh")`. Nothing else in
+`_rebuild_resources()`, `sync()`, or any `_sync_*` method changed — what is
+computed and when `sync()` dispatches is unchanged; only how the store is
+told about resource structure is new. `RenderMesh` also gained
+`render(camera)` (VIEWPORT_V02_ARCHITECTURE.md §4.2): it does not mutate
+dirty state itself, and delegates the actual draw to `store.draw()` via
+duck typing — a no-op for stores without a `draw()` (`TraceStore`,
+`PygletStore`).
+
+`src/viewport/gl_render_store.py` (new) — `GLRenderStore(ResourceStore)`:
+one real `ShaderProgram.vertex_list_indexed(...)` per declared group,
+built from buffered `allocate()`/`update()` calls collected between
+`begin_rebuild()`/`end_rebuild()`; outside a rebuild bracket, `update()`
+patches the existing VertexList's attribute slice in place (GPU Resource
+Persistence, §7). `declare_uniform()`-named resources are pure CPU
+dictionaries, applied as program uniforms (`u_view`, `u_proj`,
+`u_light_dir`, `u_base_color`) at `draw()` time — never touching the
+VertexList. Shader: position/normal/highlight_flag attributes, one
+directional light, base color driven by `material_uniforms` (3 floats) if
+bound, else a default gray (adapted from the spike's `shaders.py`, extended
+with the material-uniform-driven base color named in scope §4).
+
+### Test results
+
+Before (baseline, this implementation's starting point):
+
+```
+$ python3 -m pytest tests/ -q --ignore=tests/test_extrude_tool.py
+546 passed
+$ xvfb-run -a python3 -m pytest playground/tests -q
+843 passed
+```
+
+After:
+
+```
+$ python3 -m pytest tests/ -q --ignore=tests/test_extrude_tool.py
+560 passed
+$ xvfb-run -a python3 -m pytest playground/tests -q
+843 passed
+$ xvfb-run -a python3 -m pytest tests/ -q --ignore=tests/test_extrude_tool.py -k "resource_store or render_mesh or viewport_facade or camera_gate"
+85 passed, 475 deselected
+```
+
+560 − 546 = 14 new tests, all headless/GL-optional:
+
+- `tests/test_resource_store.py` — 4 new tests
+  (`TraceStoreLayoutDeclarationTests`): `declare_group`/`declare_uniform`/
+  `begin_rebuild`/`end_rebuild` are no-ops on `TraceStore` — the empirical
+  proof of "additive", not just the claim. A store that never calls them at
+  all (pre-AD-018 code) also still passes unchanged.
+- `tests/test_gl_render_store.py` — 10 new tests (real GL, needs Xvfb or a
+  display; skips cleanly via `pytest.importorskip`/context-creation
+  fallback if none is available): persistence (camera/selection/position →
+  same VertexList object + resource IDs, `geometry_uploads` delta 0 for
+  camera/selection), topology (new IDs, new VertexList, correct index
+  count/content), content equality vs. `TraceStore` for four scenarios
+  (initial/geometry/selection/topology, cube mesh), and two pixel-level
+  smoke tests: a cube (silhouette visible, single-vertex move changes
+  pixels — the sensitive assertion, works reliably on a large-triangle
+  mesh) and the real head mesh (silhouette visible through
+  `RenderMesh.render(camera)` → `GLRenderStore.draw()`, no separate assert
+  for a single-vertex-move pixel diff — see "Findings" below for why).
+
+`playground/gl_store.py::PlaygroundPygletStore` and `playground/tests/`
+were not touched; the full playground suite (843) passed unchanged before
+and after, run via `xvfb-run -a python3 -m pytest playground/tests -q`
+without any edits to `playground/`.
+
+### Practical viewport test (§4/§8)
+
+`experiments/ad018_gl_render_store_verification/run.py` (throwaway, not a
+Production entry point) loads `examples/meshes/head_basemesh.obj`, binds
+`mirai.viewport.camera.OrbitCamera`, and drives all four V02 scenarios
+through `RenderMesh` + `GLRenderStore` end to end under Xvfb:
+
+```
+Loaded head_basemesh.obj: 326 vertices
+Initial resource_ids: {'positions': 1, 'normals': 2, 'indices': 3, 'highlight_flags': 4, 'camera_uniforms': 5}
+After 20x camera.orbit(): vertex_list identity unchanged = True | resource_ids unchanged = True | geometry_uploads = 0
+After selection change: positions/normals ids unchanged = True
+After single-vertex move: same VertexList object = True | patched position = (-1.443..., 1.353..., -1.229...)
+After edge split: vertex_list identity changed = True | new vertex count = 327
+Screenshot written to .../head_mesh_render.png
+```
+
+The written screenshot shows the head mesh shaded (directional light,
+smooth normals) with the selected vertex's highlight (yellow) visible —
+confirming the draw call is real GL through `RenderMesh`'s own data, not a
+parallel path. `run_visible.py` (non-headless variant, same scene) is
+provided for Manu's PC; not run in this environment (no display), not
+required for this package's Definition of Done, and not an Artist verdict.
+
+### Findings (boundaries tested, not just assumed)
+
+- **`TraceStore` needed zero changes.** It never overrides the four new
+  ABC methods; they resolve to the no-op base implementation. Confirmed by
+  `TraceStoreLayoutDeclarationTests`, not merely asserted.
+- **`PygletStore`/`PlaygroundPygletStore` needed zero changes** and stay
+  fully out of scope for the new declaration — they never call
+  `declare_group`/`declare_uniform`, and their existing single-attribute
+  persistence-probe behavior (`resource_store.py` "Scope-Grenze" docstring)
+  is untouched. `playground/tests` (843) confirm this empirically.
+- **A single interior vertex move on the head mesh does not reliably
+  change any rasterized pixel at 128×128** (unlike the cube, whose 8
+  vertices each own a large fraction of the visible silhouette). This is a
+  test-design finding, not a store defect: `GLRenderStore`'s in-place patch
+  path was verified correct by the persistence tests (`resource_ids`
+  unchanged, buffer content correct via direct `vlist.position[...]`
+  readback) independently of whether that patch happens to move a visible
+  pixel. The pixel-diff-on-vertex-move assertion therefore uses the cube
+  (matches the spike's own test design), and the head mesh gets a
+  silhouette-visible-only pixel check plus the practical viewport script's
+  explicit position-patch readback instead of a pixel-diff assertion.
+- **Sparse normal patching** (`VIEWPORT_V02_ARCHITECTURE.md` §12) is
+  unchanged and still open: `RenderMesh._sync_geometry()` issues one
+  `store.update()` call per modified vertex for positions and one per
+  affected vertex for normals, same as before this package — `GLRenderStore`
+  patches each with its own attribute-slice write, same cost shape the
+  spike measured. Not addressed here (out of scope, handoff §5).
+- **Mesh path discrepancy** (spike README "Mesh path discrepancy"):
+  corrected as the one-line doc fix allowed by handoff §9 —
+  `VIEWPORT_V02_ARCHITECTURE.md` (Reference Mesh line + Appendix B) now
+  point at `examples/meshes/head_basemesh.obj`, matching where the file
+  actually is.
+
+### Scope check (`git diff --stat`)
+
+Changes outside `src/viewport/`: this completion record (§6 above) and the
+Appendix B / Reference Mesh path fix in `VIEWPORT_V02_ARCHITECTURE.md`
+(both allowed by handoff §9/§10), plus new test files
+(`tests/test_gl_render_store.py`, new tests appended to
+`tests/test_resource_store.py`) and a new throwaway evidence directory
+(`experiments/ad018_gl_render_store_verification/`) — both named in scope
+§4 ("Tests", "Practical viewport test"). No edits to any existing test file
+beyond the additions to `test_resource_store.py`; no edits to `playground/`
+or any other `experiments/` directory.
+
+### Definition of Done — status
+
+- [x] Contract extension implemented in `src/viewport/`, additive,
+      documented in module docstrings
+- [x] New drawable GL store implemented (`GLRenderStore`), real indexed
+      multi-attribute VertexList, real `render(camera)` draw call
+- [x] All four V02 invariants verified against the new store under real GL
+      (Xvfb) — `tests/test_gl_render_store.py` + practical viewport script
+- [x] `TraceStore` compatibility with the new declaration confirmed (not
+      just assumed) — `TraceStoreLayoutDeclarationTests`
+- [x] Existing viewport test suite: 100% still green, zero edits (546→560,
+      all additions), exact numbers reported above
+- [x] Playground test suite: 100% still green, zero edits (843/843)
+- [x] Head mesh renders visibly through the new store under Xvfb,
+      evidenced (`head_mesh_render.png` + pixel-non-background assertion in
+      `test_head_mesh_renders_visibly_through_new_store`)
+- [x] Completion record appended to AD-018 (this section)
+- [x] No changes outside `src/viewport/` except the completion record, the
+      one-line mesh-path doc fix, and the new tests/evidence script named in
+      scope §4 — confirmed via `git diff --stat`

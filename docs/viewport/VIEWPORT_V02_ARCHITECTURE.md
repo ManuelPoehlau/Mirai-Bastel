@@ -4,7 +4,7 @@
 **Derives from:** `VIEWPORT_V02_RESEARCH.md` + V0.2 Proof-of-Architecture Review  
 **Scope:** Incremental update architecture for responsive polygon/SubD modeling viewport  
 **Target Platform:** Low-end developer hardware (Intel i5 Gen 4, 4GB RAM) is first-class  
-**Reference Mesh:** `experiments/rigging-skinning-morphing/meshes/head_basemesh.obj` (326V, 324Q)  
+**Reference Mesh:** `examples/meshes/head_basemesh.obj` (326V, 324Q)  
 
 ---
 
@@ -682,7 +682,10 @@ counters = {
 
 ### Reference Mesh
 
-- Path: `experiments/rigging-skinning-morphing/meshes/head_basemesh.obj`
+- Path: `examples/meshes/head_basemesh.obj` (stale path corrected 2026-09-25,
+  AD-018 §6 — the file was already at this location, only the doc was wrong;
+  see the draw-binding spike README "Mesh path discrepancy" for the
+  original finding)
 - Vertices: 326
 - Faces: 324 (100% quads)
 - Manifold: Yes

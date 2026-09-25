@@ -83,5 +83,50 @@ class TraceStoreTests(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+class TraceStoreLayoutDeclarationTests(unittest.TestCase):
+    """AD-018 §5 (Option B, additiv): die neuen Layout-/Bracket-Methoden
+    (`declare_group`, `declare_uniform`, `begin_rebuild`, `end_rebuild`)
+    müssen für `TraceStore` No-Ops sein - das ist der empirische Nachweis
+    (nicht nur die Behauptung), dass die Erweiterung additiv ist und
+    bestehendes Store-Verhalten unverändert lässt."""
+
+    def setUp(self):
+        self.stats = BenchmarkCounters()
+        self.store = TraceStore(self.stats)
+
+    def test_declare_group_does_not_raise_or_change_behavior(self):
+        self.store.declare_group(
+            "mesh",
+            {"positions": ("position", 3), "normals": ("normal", 3)},
+            "indices",
+        )
+        self.store.allocate("positions", 12)
+        self.store.update("positions", 0, [1.0, 2.0, 3.0], 12)
+        self.assertEqual(self.store.data("positions"), [1.0, 2.0, 3.0])
+        self.assertEqual(self.stats.get("gpu_resource_creations"), 1)
+
+    def test_declare_uniform_does_not_raise_or_change_behavior(self):
+        self.store.declare_uniform("camera_uniforms")
+        self.store.allocate("camera_uniforms", 4)
+        self.store.update("camera_uniforms", 0, [1.0], 4)
+        self.assertEqual(self.store.data("camera_uniforms"), [1.0])
+
+    def test_begin_end_rebuild_bracket_does_not_raise_or_change_behavior(self):
+        self.store.declare_group("mesh", {"positions": ("position", 3)}, "indices")
+        self.store.begin_rebuild("mesh")
+        self.store.allocate("positions", 12)
+        self.store.update("positions", 0, [1.0, 2.0, 3.0], 12)
+        self.store.end_rebuild("mesh")
+        self.assertEqual(self.store.data("positions"), [1.0, 2.0, 3.0])
+        self.assertEqual(self.stats.get("gpu_resource_creations"), 1)
+
+    def test_undeclared_store_ignores_declaration_calls_entirely(self):
+        # A store that never calls declare_group/declare_uniform at all
+        # (the pre-AD-018 behavior) must still work unchanged.
+        self.store.allocate("positions", 12)
+        self.store.update("positions", 0, [4.0, 5.0, 6.0], 12)
+        self.assertEqual(self.store.data("positions"), [4.0, 5.0, 6.0])
+
+
 if __name__ == "__main__":
     unittest.main()
