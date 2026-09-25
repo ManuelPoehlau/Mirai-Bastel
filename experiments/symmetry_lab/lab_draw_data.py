@@ -36,6 +36,9 @@ trianguliert und berechnet Normalen selbst, statt `DerivedGeometry`/
   Dreiecke geteilt werden (siehe README).
 - Reine Anzeige-Entscheidung des Labs: Übernahme nach Production (betrifft
   Playground, Picking, Normal-Space) ist eine spätere, eigene Entscheidung.
+
+Slice 5 (E15): `resym_preview_data` liefert die Punkte/Linien der
+Re-Symmetrize-Vorschau aus demselben `ResymPlan`, den die Ausführung benutzt.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from typing import Optional
 
@@ -50,6 +54,7 @@ from core import FaceId, Mesh, VertexId
 from mirai.mesh_geometry import mesh_bounds
 from viewport.derived import triangulate_face
 
+from .lab_resymmetrize import PositionChange, ResymPlan
 from .lab_symmetry import AXIS_INDEX
 
 Vec3 = tuple[float, float, float]
@@ -196,3 +201,39 @@ def plane_outline_data(mesh: Mesh, axis: Optional[str]) -> list[float]:
         positions.extend(a)
         positions.extend(b)
     return positions
+
+
+@dataclass(frozen=True)
+class ResymPreviewData:
+    """GL_POINTS-/GL_LINES-Positionen der Re-Symmetrize-Vorschau (E15)."""
+
+    #: Zielseiten-Vertices, die sich bewegen werden: aktuelle Position + Linie zum Ziel.
+    move_points: list[float]
+    move_lines: list[float]
+    #: Seam-Vertices, die auf die Ebene gelegt werden: aktuelle Position + Linie.
+    seam_points: list[float]
+    seam_lines: list[float]
+    #: Zielseiten-Vertices ohne Partner, die unverändert bleiben.
+    keep_points: list[float]
+
+
+def _points_and_lines(changes: Iterable[PositionChange]) -> tuple[list[float], list[float]]:
+    points: list[float] = []
+    lines: list[float] = []
+    for change in changes:
+        points.extend(change.before)
+        lines.extend(change.before)
+        lines.extend(change.after)
+    return points, lines
+
+
+def resym_preview_data(mesh: Mesh, plan: Optional[ResymPlan]) -> ResymPreviewData:
+    """Leer, wenn keine Vorschau aktiv ist (`plan is None`)."""
+    if plan is None:
+        return ResymPreviewData([], [], [], [], [])
+    move_points, move_lines = _points_and_lines(plan.moves)
+    seam_points, seam_lines = _points_and_lines(plan.seam_moves)
+    keep = sorted(plan.unmatched, key=int)
+    return ResymPreviewData(
+        move_points, move_lines, seam_points, seam_lines, highlight_data(mesh, keep)
+    )

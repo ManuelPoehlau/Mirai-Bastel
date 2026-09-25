@@ -37,9 +37,21 @@ Leerlauf und bei scharfem, aber noch nicht ziehendem Move (`self._gesture is
 None`); während einer laufenden Geste (Kamera, Select, Move-Drag) bleibt der
 Hover unverändert.
 
-Tasten (`key`): `SymmetryCycle`, `Move`, `Cancel`, `Undo`/`Redo`. Während ein
-Move-Drag läuft, besitzt die Geste den Input — nur ESC (Abbruch) wirkt.
-Jedes andere Command ist ein No-op und gilt als „nicht behandelt".
+Tasten (`key`): `SymmetryCycle`, `Move`, `ReSymmetrize`, `Cancel`,
+`Undo`/`Redo`. Während ein Move-Drag läuft, besitzt die Geste den Input — nur
+ESC (Abbruch) wirkt. Jedes andere Command ist ein No-op und gilt als „nicht
+behandelt".
+
+Re-Symmetrize (Slice 5, Artist A6/A7, E12–E15): M öffnet die Vorschau —
+abgelehnt (nur Statuszeile, kein Zustand), wenn ein Move scharf ist oder
+läuft, die Symmetrie aus ist, keine Auswahl besteht, ein Seam-Vertex gewählt
+ist oder die Seam das Mesh nicht in genau zwei Teile teilt. Sonst hält der
+Dispatcher den `ResymPlan` (`resym_plan`) als Vorschau-Zustand. M erneut →
+`apply_plan` (ein Undo-Schritt; bei „0 Änderungen" keiner), ESC → Vorschau
+endet ohne Änderung. Während der Vorschau sind nur Orbit/Pan/Zoom erlaubt;
+Select, Q, Shift+S, Undo/Redo werden mit Hinweis ignoriert, und der Hover
+ist pausiert (ausgeblendet, keine Aktualisierung) — so kann sich das Mesh
+zwischen Anzeige und Ausführung des Plans nicht ändern.
 """
 
 from __future__ import annotations
@@ -54,7 +66,8 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
 
-from .lab_bindings import SYMMETRY_CYCLE, SYMMETRY_LAB_CONTEXT
+from .lab_bindings import RESYMMETRIZE, SYMMETRY_CYCLE, SYMMETRY_LAB_CONTEXT
+from .lab_resymmetrize import ResymmetrizeRejected, ResymPlan, apply_plan, plan_resymmetrize
 from .lab_symmetry import cycle_symmetry
 
 #: Wert und Messart (Manhattan-Summe der Drag-Deltas) wie
@@ -64,6 +77,8 @@ CLICK_THRESHOLD_PX = 5.0
 ORBIT_RAD_PER_PX = 0.005
 ZOOM_IN_FACTOR = 0.9
 ZOOM_OUT_FACTOR = 1.1
+#: Hinweis, wenn während der Re-Symmetrize-Vorschau ein anderes Command kommt (E15).
+PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
 
 
 class Change(Flag):
@@ -74,6 +89,7 @@ class Change(Flag):
     SELECTION = auto()  # Auswahl-Highlight + gespiegelte Vorschau
     HOVER = auto()  # Hover-Highlight + gespiegelte Vorschau (Slice 4)
     MESH = auto()  # Mesh-VBOs + Symmetrie-Overlays (Positionen oder Definition)
+    PREVIEW = auto()  # Re-Symmetrize-Vorschau (Slice 5)
 
 
 class MoveState(Enum):
@@ -102,6 +118,8 @@ class LabDispatcher:
         self._move_target_label: Optional[str] = None
         #: Vertex unter dem Cursor (Slice 4, E9) — reiner Anzeige-Zustand.
         self._hover_vertex: Optional[VertexId] = None
+        #: Re-Symmetrize-Vorschau (Slice 5, E15); None = keine Vorschau aktiv.
+        self._resym_plan: Optional[ResymPlan] = None
         self._changes = Change.NONE
         #: Letzte Rückmeldung an den Artist (Statuszeile), z. B. „Move: keine Auswahl".
         self.message = ""
@@ -126,6 +144,11 @@ class LabDispatcher:
     def hover_vertex(self) -> Optional[VertexId]:
         return self._hover_vertex
 
+    @property
+    def resym_plan(self) -> Optional[ResymPlan]:
+        """Plan der aktiven Re-Symmetrize-Vorschau, sonst None."""
+        return self._resym_plan
+
     def take_changes(self) -> Change:
         changes, self._changes = self._changes, Change.NONE
         return changes
@@ -149,8 +172,13 @@ class LabDispatcher:
         if inp is None or inp.kind != "key":
             return False
         command = self.resolve(inp)
+        if self._resym_plan is not None:
+            return self._preview_key(command)
         if command == cmd.CANCEL:
             return self._cancel()
+        if command == RESYMMETRIZE:
+            self._open_preview()
+            return True
         if command not in (SYMMETRY_CYCLE, cmd.MOVE, cmd.UNDO, cmd.REDO):
             return False
         if self.move_state is MoveState.DRAGGING:
@@ -186,6 +214,50 @@ class LabDispatcher:
         self.app.scene.selection.clear()
         self._disarm_move()
         self._mark(Change.MESH | Change.SELECTION, command)
+
+    # -- Re-Symmetrize (Slice 5) ----------------------------------------------
+
+    def _open_preview(self) -> None:
+        """E15: Vorschau öffnen oder mit Grund in der Statuszeile ablehnen."""
+        if self.move_state is not MoveState.READY:
+            self._mark(Change.STATUS, f"Re-Symmetrize: nicht während Move ({self.move_state.value})")
+            return
+        selected = self.app.scene.selection.vertices
+        mesh = self.app.scene.mesh
+        try:
+            if mesh.symmetry_definition is None:
+                raise ResymmetrizeRejected("Symmetrie aus")
+            if not selected:
+                raise ResymmetrizeRejected("keine Auswahl")
+            if len(selected) != 1:
+                raise ResymmetrizeRejected("genau einen Vertex auswählen")
+            plan = plan_resymmetrize(mesh, next(iter(selected)))
+        except ResymmetrizeRejected as exc:
+            self._mark(Change.STATUS, f"Re-Symmetrize: {exc}")
+            return
+        self._resym_plan = plan
+        self._hover_vertex = None  # Hover pausiert während der Vorschau
+        self._mark(Change.PREVIEW | Change.HOVER, "")
+
+    def _preview_key(self, command: Optional[str]) -> bool:
+        """Tasten während der Vorschau: M führt aus, ESC bricht ab, Rest ignoriert."""
+        if command == RESYMMETRIZE:
+            plan = self._resym_plan
+            self._resym_plan = None
+            if apply_plan(self.app.scene, plan):
+                message = f"Re-Symmetrize ausgeführt: {len(plan.changes)} Änderungen"
+                self._mark(Change.MESH | Change.SELECTION | Change.PREVIEW, message)
+            else:
+                self._mark(Change.PREVIEW, "Re-Symmetrize: 0 Änderungen — kein Schritt")
+            return True
+        if command == cmd.CANCEL:
+            self._resym_plan = None
+            self._mark(Change.PREVIEW, "Re-Symmetrize abgebrochen")
+            return True
+        if command is None:
+            return False
+        self._mark(Change.STATUS, PREVIEW_HINT)
+        return True
 
     # -- Move ---------------------------------------------------------------
 
@@ -251,6 +323,10 @@ class LabDispatcher:
             self._begin_move()
             return
         command = self.resolve(inp)
+        if self._resym_plan is not None and command not in (cmd.ORBIT, cmd.PAN):
+            if command is not None:
+                self._mark(Change.STATUS, PREVIEW_HINT)
+            return
         allowed = (cmd.ORBIT, cmd.PAN) if self._move_armed else (cmd.ORBIT, cmd.PAN, cmd.SELECT)
         if command in allowed:
             self._gesture = _Gesture(command, inp.value)
@@ -278,14 +354,19 @@ class LabDispatcher:
             self._end_move(gesture)
             return False
         if gesture.command == cmd.SELECT and gesture.moved < CLICK_THRESHOLD_PX:
+            if self._resym_plan is not None:
+                # LMB wurde vor dem M gedrückt: keine Auswahl während der Vorschau (E15).
+                self._mark(Change.STATUS, PREVIEW_HINT)
+                return False
             return self.select_at(x, y)
         return False
 
     def motion(self, x: float, y: float) -> None:
         """E9: aktualisiert das Hover-Ziel im Leerlauf und bei scharfem (aber
         noch nicht ziehendem) Move. No-op während einer laufenden Geste
-        (Kamera, Select, Move-Drag) — die Geste besitzt den Input."""
-        if self._gesture is not None:
+        (Kamera, Select, Move-Drag) — die Geste besitzt den Input — und während
+        der Re-Symmetrize-Vorschau (Hover pausiert, E15)."""
+        if self._gesture is not None or self._resym_plan is not None:
             return
         vid = pick_nearest_vertex(
             self.app.camera, self.app.scene.mesh, x, y, self.width, self.height

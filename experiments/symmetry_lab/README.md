@@ -1,18 +1,21 @@
 # Symmetry Lab (WP-SYM-LAB-01)
 
-Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 4** — das Lab zeigt
+Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 5** — das Lab zeigt
 ein Mesh (shaded + Edges + Vertices), navigiert mit Orbit/Pan/Zoom, wählt per Klick einen
 Vertex aus, schaltet mit Shift+S die Symmetrie-Ebene durch (aus → X → Y → Z → aus), zeigt
 Ebene, Seam, Vertices ohne Partner und den gespiegelten Partner der Auswahl, zeigt den Vertex
 unter dem Cursor (Hover) und dessen gespiegelten Partner, und verschiebt mit Hover/Auswahl → Q →
 LMB-Drag einen Vertex symmetrisch. Bei symmetrischen Meshes ist auch die Schattierung symmetrisch
-(eigene, lab-lokale Anzeige-Triangulierung/Normalen — Slice 4, E10). Jede Handlung
-(Symmetrie-Schritt oder Move) ist genau ein Undo-Schritt.
+(eigene, lab-lokale Anzeige-Triangulierung/Normalen — Slice 4, E10). Mit **M** (Vorschau) und
+**M** (ausführen) spiegelt Re-Symmetrize die Seite der Auswahl exakt auf die andere Seite; die
+Partner dafür kommen aus einer topologischen Paarung ab der Seam (Slice 5, Lab-Experiment). Jede
+Handlung (Symmetrie-Schritt, Move oder Re-Symmetrize) ist genau ein Undo-Schritt.
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
 [Slice 3](../../docs/architecture/WP-SYM-LAB-01_SLICE3_CLAUDE_CODE_HANDOFF.md) (Symmetrie + Move, Entscheidungen A1/A2, E1–E6 in §2),
-[Slice 4](../../docs/architecture/WP-SYM-LAB-01_SLICE4_CLAUDE_CODE_HANDOFF.md) (Hover-Ziel für Move, symmetrische Anzeige-Triangulierung, Entscheidungen A3/A4, E7–E10 in §2).
+[Slice 4](../../docs/architecture/WP-SYM-LAB-01_SLICE4_CLAUDE_CODE_HANDOFF.md) (Hover-Ziel für Move, symmetrische Anzeige-Triangulierung, Entscheidungen A3/A4, E7–E10 in §2),
+[Slice 5](../../docs/architecture/WP-SYM-LAB-01_SLICE5_CLAUDE_CODE_HANDOFF.md) (Re-Symmetrize über topologische Paarung, Entscheidungen A5–A7, E11–E15 in §2).
 
 > **Importiert nicht aus `playground/`.** Benötigte Draw-Stücke sind kopiert/adaptiert, mit
 > Herkunftsvermerk im jeweiligen Docstring (Präzedenz AD-010). Abgesichert durch
@@ -67,6 +70,44 @@ Noch **nicht** vom Artist validiert. Vorschlag für die Prüfung:
 11. `python experiments/symmetry_lab/run.py man_with_shoes_basemesh`, **Shift+S** →
     `Symmetrie: X (partial) | ohne Partner: 54`; die 54 Vertices sind magenta markiert (siehe
     Befund E4 unten).
+
+### Manuelle Prüfung Slice 5 (Manu, Windows) — offen
+
+Noch **nicht** vom Artist validiert. Baut auf Slice 3/4 auf; hier nur, was neu ist.
+
+1. `python experiments/symmetry_lab/run.py man_with_shoes_basemesh` starten. Die Konsole listet
+   zusätzlich `key:m -> ReSymmetrize`.
+2. **Shift+S** → `Symmetrie: X (partial) | ohne Partner: 54`; die 54 Vertices sind magenta.
+3. Einen Vertex auf der **rechten** Körperseite **anklicken** (rot).
+4. **M** drücken → Vorschau: über der Statuszeile erscheint eine blaue Zeile, z. B.
+   `Re-Symmetrize Quelle +X → Ziel −X: bewegt 27, Seam → Ebene 0 | M = ausführen, ESC = abbrechen`
+   (welches Vorzeichen „rechts" ist, hängt von der Ansicht ab). Die 27 Vertices der anderen
+   Seite, die sich bewegen werden, sind **blau** markiert. Die Linien von der aktuellen zur neuen
+   Position sind hier nur ~`1e-6` lang und deshalb nicht zu sehen.
+5. Während die Vorschau offen ist: Alt+LMB / Shift+LMB / MMB / Mausrad navigieren weiter.
+   **Q**, **Shift+S**, **Ctrl+Z**, **Ctrl+Y** und ein LMB-Klick tun nichts; die Statuszeile
+   meldet `Vorschau aktiv — Befehl ignoriert`. Die gelbe Hover-Markierung ist ausgeblendet.
+6. **M** erneut → `Symmetrie: X (valid) | ohne Partner: 0`, `Re-Symmetrize ausgeführt: 27
+   Änderungen`. Alle magenta Markierungen sind verschwunden; die ehemals magenta Vertices
+   zeigen beim Hover/bei Auswahl jetzt einen türkisen Partner.
+7. **Ctrl+Z** → wieder `partial`, 54 magenta (ein Schritt). **Ctrl+Y** → wieder `valid`.
+8. Abbrechen: Vertex wählen, **M**, dann **ESC** → Vorschau verschwindet, nichts geändert,
+   kein Undo-Schritt; das Fenster bleibt offen.
+9. Dasselbe mit einem Vertex auf der **linken** Seite wiederholen (vorher Ctrl+Z) → Richtung in
+   der Vorschau-Zeile ist umgekehrt, Ergebnis ebenfalls `valid`.
+10. Mit `head_basemesh` (schon exakt symmetrisch), Symmetrie X, Vertex wählen, **M** → Vorschau
+    zeigt `0 Änderungen`; **M** → `0 Änderungen — kein Schritt`, Ctrl+Z nimmt dann das
+    Shift+S zurück, nicht Re-Symmetrize.
+11. Quellseite folgt der Topologie, nicht der Position: `head_basemesh` neu starten und
+    **ohne** Symmetrie einen Vertex seitlich am Kopf wählen, mit **Q** + LMB-Ziehen **über die
+    Mittelebene hinaus** auf die andere Seite ziehen (ohne Symmetrie bewegt sich nur dieser
+    eine Vertex). Dann **Shift+S** (→ X; der Vertex und sein alter Partner sind jetzt magenta,
+    die Auswahl bleibt) und **M** → die Vorschau nennt als Quelle die **ursprüngliche** Seite
+    des Vertex, und blau markiert ist sein alter Partner. **M** → der Partner springt
+    spiegelbildlich ebenfalls über die Ebene, `Symmetrie: X (valid)`.
+12. Ablehnungen (Statuszeile, keine Vorschau): **M** ohne Auswahl; **M** bei Symmetrie aus;
+    **M** mit einem grünen Seam-Vertex als Auswahl; **M** bei Symmetrie **Y** auf `subd_cube`
+    (Seam teilt das Mesh nicht in zwei Teile); **Q** und dann **M** (Move scharf).
 
 ### Manuelle Prüfung Slice 4 (Manu, Windows) — offen
 
@@ -127,10 +168,12 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Symmetrie durchschalten (aus → X → Y → Z → aus) | Shift+S | `SymmetryCycle` (Lab-lokal) | Lab-Override — Artist A2 |
 | Move scharf schalten (Ziel: Auswahl, sonst Hover) | Q | `Move` | Artist A3/A4, globaler Default (Fallback) |
 | Move ziehen (wenn scharf) | LMB ohne Modifier (Drag) | — (Lab-Geste, `MoveTool`) | Artist A1/A3, E5 |
-| Abbrechen | ESC | `Cancel` | globaler Default (Fallback) |
+| Re-Symmetrize: Vorschau öffnen / ausführen | M / M erneut | `ReSymmetrize` (Lab-lokal) | Lab-Override — Artist A7 |
+| Abbrechen (Move, Re-Symmetrize-Vorschau) | ESC | `Cancel` | globaler Default (Fallback) |
 | Undo / Redo | Ctrl+Z / Ctrl+Y | `Undo` / `Redo` | globaler Default (Fallback) |
 
-`SymmetryCycle` ist im Lab definiert (`lab_bindings.py`), nicht in `mirai.interaction.commands`.
+`SymmetryCycle` und `ReSymmetrize` sind im Lab definiert (`lab_bindings.py`), nicht in
+`mirai.interaction.commands`.
 Andere global gebundene Commands (z. B. `f` → `SetFaceMode`) lösen zwar auf, sind im Lab aber
 No-ops und gelten als „nicht behandelt". Die Mausbewegung selbst (`on_mouse_motion`, ohne
 gedrückte Taste) ist kein Command — sie treibt nur das Hover-Ziel (siehe unten).
@@ -167,8 +210,36 @@ Hover aktualisiert sich nur im Leerlauf und solange Move scharf, aber noch nicht
 — während eines Kamera- oder Move-Drags bleibt er unverändert (die laufende Geste besitzt den
 Input). Der Hover ist reine Anzeige; er berührt `scene.selection` nicht.
 
-**ESC-Regel:** Move-Drag läuft → Abbruch auf den exakten Vorzustand, kein History-Eintrag;
-Move nur scharf → entschärfen; sonst nicht behandelt → pyglet-Standard (Fenster schließt).
+**Re-Symmetrize (Slice 5, Artist A6/A7, E12–E15):**
+
+- **Quellseite = Seite der Auswahl (A6).** Genau ein Vertex muss ausgewählt sein. Seine Seite
+  ist **topologisch** bestimmt (Seiten = die zwei Face-Komponenten links und rechts der Seam,
+  siehe unten), nicht über das Vorzeichen seiner Position — ein Vertex, der schon über die Ebene
+  gewandert ist, zählt weiterhin zu seiner ursprünglichen Seite. Die Anzeige „+X"/„−X" benennt
+  die Seite mit dem größeren bzw. kleineren mittleren Achsenwert ihrer Vertices.
+- **M** öffnet die Vorschau (nichts wird geändert). Abgelehnt — nur Statuszeile, keine
+  Vorschau — wenn: ein Move scharf ist oder läuft; Symmetrie aus; keine Auswahl; ein
+  Seam-Vertex ausgewählt ist; die Seam das Mesh nicht in genau zwei Teile teilt.
+- Die Vorschau zeigt: Zielseiten-Vertices, die sich bewegen werden (blau, mit Linie zur neuen
+  Position); Seam-Vertices, die auf die Ebene gelegt werden (hellgrün, mit Linie — nur die, die
+  nicht schon exakt darauf liegen); Zielseiten-Vertices ohne Partner, die unverändert bleiben
+  (hellrot). Eine eigene Zeile über der Statuszeile nennt Richtung, Anzahlen und
+  „M = ausführen, ESC = abbrechen".
+- **M** erneut → ausführen: jeder Zielseiten-Vertex mit topologischem Partner auf der
+  Quellseite wird exakt auf dessen Spiegelposition gesetzt (`mirai.symmetry.mirror_position`),
+  jeder Seam-Vertex exakt auf die Ebene (Achsenkomponente `0.0`); die Quellseite bleibt
+  unverändert. Genau ein Undo-Schritt (`MeshStateCommand`). Gibt es nichts zu tun
+  („0 Änderungen" — alles schon exakt symmetrisch, A5), entsteht **kein** History-Eintrag.
+- **ESC** → Vorschau endet ohne Änderung, kein History-Eintrag.
+- Während der Vorschau: Orbit/Pan/Zoom erlaubt; Select, Q, Shift+S, Ctrl+Z/Ctrl+Y werden
+  ignoriert (Hinweis in der Statuszeile); der Hover ist pausiert (ausgeblendet) und kehrt mit
+  der nächsten Mausbewegung nach der Vorschau zurück. So kann sich das Mesh zwischen Vorschau
+  und Ausführung nicht ändern — ausgeführt wird genau der angezeigte Plan.
+- Die Auswahl bleibt nach der Ausführung erhalten (keine Topologie-Änderung, IDs bleiben gültig).
+
+**ESC-Regel:** Re-Symmetrize-Vorschau offen → Vorschau schließen; Move-Drag läuft → Abbruch auf
+den exakten Vorzustand, kein History-Eintrag; Move nur scharf → entschärfen; sonst nicht
+behandelt → pyglet-Standard (Fenster schließt).
 
 **Undo/Redo** leeren danach die Auswahl (wie Playground — ein Snapshot-Load kann Vertex-IDs
 ungültig machen) und entschärfen einen scharfen Move.
@@ -187,10 +258,15 @@ ungültig machen) und entschärfen einen scharfen Move.
 | weiß, mittel | Vertex mit mehrdeutigem Partner (`AMBIGUOUS`) — nur bei aktiver Symmetrie |
 | gelb, mittel | Hover-Vertex — Vertex unter dem Cursor (Slice 4, E9) |
 | hellblau, Linien | Umriss der Symmetrie-Ebene, auf die Mesh-Bounds + 10 % bemessen |
+| blau, groß + Linie | Re-Symmetrize-Vorschau: Zielseiten-Vertex wird bewegt; Linie zur neuen Position (Slice 5) |
+| hellgrün, groß + Linie | Re-Symmetrize-Vorschau: Seam-Vertex wird auf die Ebene gelegt; Linie zur neuen Position |
+| hellrot, groß | Re-Symmetrize-Vorschau: Zielseiten-Vertex ohne topologischen Partner — bleibt unverändert |
+| blaue Textzeile über der Statuszeile | Re-Symmetrize-Vorschau aktiv: Richtung, Anzahlen, Tasten |
 
 Punkte werden ohne Depth-Test gezeichnet (wie Slice 2): Rückseiten-Markierungen sind sichtbar.
-Zeichenreihenfolge: Symmetrie-Markierungen (Seam/ohne Partner/mehrdeutig) → Hover + dessen
-gespiegelter Partner → Auswahl + deren gespiegelter Partner zuletzt (überdeckt alles andere).
+Zeichenreihenfolge: Symmetrie-Markierungen (Seam/ohne Partner/mehrdeutig) → Re-Symmetrize-Vorschau
+→ Hover + dessen gespiegelter Partner → Auswahl + deren gespiegelter Partner zuletzt (überdeckt
+alles andere).
 Der gespiegelte Partner des Hover-Vertex nutzt dieselbe Farbe wie der gespiegelte Partner der
 Auswahl (türkis) — es ist dieselbe Vorschau-Mechanik (`mirrored_selection`), nur auf den
 Hover statt auf `scene.selection` angewandt.
@@ -215,6 +291,10 @@ Hover statt auf `scene.selection` angewandt.
   Seam-Vertex auf die Ebene projiziert), entscheidet `MoveTool`/`MoveOperation` selbst aus
   der Definition im Mesh.
 
+- **Re-Symmetrize:** benutzt **nicht** die Positions-Paarung der Capability, sondern die
+  topologische Paarung des Labs (nächster Abschnitt). Move und die Markierungen
+  (grün/magenta/weiß/türkis) bleiben positionsbasiert und exakt.
+
 Charakterisierung der heutigen Assets (Tests in `tests/test_lab_symmetry.py`):
 
 | Asset | X | Y | Z |
@@ -222,6 +302,60 @@ Charakterisierung der heutigen Assets (Tests in `tests/test_lab_symmetry.py`):
 | `subd_cube` | 8 Seam-Edges, `valid` | 0 Seam-Edges, `partial` (26 ohne Partner) | 8 Seam-Edges, `valid` |
 | `head_basemesh` | 36 Seam-Edges, `valid` | `partial` | `partial` |
 | `man_with_shoes_basemesh` | 44 Seam-Edges, `partial`, 54 ohne Partner | `partial` | `partial` |
+
+## Topologische Paarung — Lab-Experiment (Slice 5, E11/E12)
+
+`lab_topology.py`. **Lab-Experiment, keine Capability** — nicht in `mirai.symmetry`, keine
+Änderung an `src/`; eine Übernahme wäre eine eigene Entscheidung (AD-013).
+
+**Was:** Partner und Seiten werden aus dem Netz abgeleitet, ausgehend von der gespeicherten Seam
+— nicht aus Positionen:
+
+1. Jeder Vertex einer Seam-Edge ist selbst-gepaart.
+2. Die beiden Faces an einer Seam-Edge (genau zwei) sind ein Spiegel-Paar.
+3. Ein Face-Paar wird ab seiner gemeinsamen Anker-Edge gleichzeitig umlaufen (im einen Face
+   a→b, im anderen a'→b'); die Vertices werden paarweise zugeordnet. Andere Face-Länge oder ein
+   Anker, der keine Kante des Face ist → Konflikt für dieses Face-Paar, dort geht es nicht weiter.
+4. Über jede Edge des Face-Paars zum nächsten Face-Paar (Breitensuche, jedes Paar einmal).
+5. Ein Vertex mit zwei verschiedenen Partnern ist im Konflikt und gilt als nicht gepaart
+   (INV-5). **Lab-Auslegung:** Auch ein Vertex, dessen Partner im Konflikt ist, gilt als nicht
+   gepaart — sonst könnten zwei Vertices denselben Partner haben und Re-Symmetrize legte beide
+   auf dieselbe Position. Die Partner-Map ist dadurch immer eine Involution.
+
+Seiten (E12): Faces werden in Zusammenhangskomponenten zerlegt, ohne Seam-Edges zu überqueren.
+Genau zwei Komponenten sind Voraussetzung für Re-Symmetrize. Ein Vertex gehört zur Seite der
+Faces, die er berührt; Seam-Vertices gehören zu keiner Seite.
+
+**Warum:** Die Positions-Paarung findet ohne Toleranz (A5) keinen Partner für Vertices, die
+`1e-6` neben ihrer Spiegelposition liegen (Befund E4) — genau die Vertices, die Re-Symmetrize
+reparieren soll. Die Seam ist das, was Verformung überlebt (INV-4), und von ihr aus ist die
+Paarung jederzeit neu ableitbar (INV-3): nicht gespeichert, bei jedem Aufruf neu berechnet,
+positionsunabhängig.
+
+**Charakterisierung** (Ebene X, Seam aus E3; `tests/test_lab_topology.py`):
+
+| Asset | topologisch gepaart | Konflikte | stimmt mit Capability-`PAIRED` überein | Faces je Seite |
+|---|---|---|---|---|
+| `subd_cube` | 26/26 | 0 | 18/18 | 12 / 12 |
+| `head_basemesh` | 326/326 | 0 | 290/290 | 162 / 162 |
+| `man_with_shoes_basemesh` | 928/928 | 0 | 830/830 | 463 / 463 |
+
+Alle 54 `UNPAIRED`-Vertices von `man_with_shoes_basemesh` haben einen topologischen Partner
+(27 Paare); Re-Symmetrize von jeder Seite aus ergibt `valid` mit 0 ohne Partner.
+
+**Grenzen:**
+
+- Braucht eine Seam mit mindestens einer Edge, die genau zwei Faces hat. Ohne Seam (z. B.
+  `subd_cube` auf Y: 0 Seam-Edges → eine Komponente) wird Re-Symmetrize abgelehnt.
+- Faces, die über keine Kette von Face-Paaren von der Seam aus erreichbar sind (z. B. eine
+  zweite, nicht an die Seam angebundene Mesh-Insel), bleiben ungepaart.
+- Asymmetrische Topologie wird nicht „repariert": Ein Face-Paar mit unterschiedlicher Länge
+  (z. B. nach `split_edge` auf einer Seite) wird übersprungen; ein Vertex ohne Gegenstück bleibt
+  ohne Partner und wird bei Re-Symmetrize nicht bewegt (hellrot in der Vorschau). Die übrigen
+  Vertices dieser Faces werden meist über benachbarte Face-Paare trotzdem gepaart.
+- Die Seam selbst wird nicht geprüft: sie ist gespeicherte Deklaration (E3). Liegt sie nicht
+  zwischen zwei gespiegelten Hälften, ist auch die Paarung falsch — das Lab kann das nicht
+  erkennen, nur (über die Komponentenzahl) eine Seam, die das Mesh nicht in zwei Teile teilt.
 
 ## Anzeige-Triangulierung (Slice 4, E10)
 
@@ -278,16 +412,19 @@ pyglet-Event → mirai.pyglet_input → app.bindings.command_for(input, "symmetr
 | `_paths.py` | sys.path-Bootstrap (`src/` vor Repo-Root, `examples/`, `experiments/`) | nein |
 | `lab_bindings.py` | `SYMMETRY_LAB_CONTEXT`, `LAB_OVERRIDES` (einzige Quelle der Overrides) | nein |
 | `lab_scene.py` | Asset per Registry-Name laden, Auswahl leeren, Kamera rahmen | nein |
-| `lab_dispatch.py` | Command → Kamera-Geste / Vertex-Pick / Hover / Symmetrie-Zyklus / Move (Ziel-Regel) / Undo | nein |
+| `lab_dispatch.py` | Command → Kamera-Geste / Vertex-Pick / Hover / Symmetrie-Zyklus / Move (Ziel-Regel) / Re-Symmetrize-Vorschau / Undo | nein |
 | `lab_symmetry.py` | Ebene (E1), Seam-Ableitung (E3), Zyklus als `MeshStateCommand` (E2), Befund | nein |
-| `lab_status.py` | Text der Statuszeile (inkl. Move-Ziel-Label) | nein |
-| `lab_draw_data.py` | VBO-Daten (Faces/Edges/Vertices/Highlight/Ebenen-Umriss); lab-lokale Triangulierung + Normalen (E10) | nein |
+| `lab_topology.py` | Topologische Paarung (E11) und Seiten (E12) — Lab-Experiment | nein |
+| `lab_resymmetrize.py` | Re-Symmetrize-Plan (E12/E13), Ausführung als `MeshStateCommand` (E14), Vorschau-Text | nein |
+| `lab_status.py` | Text der Statuszeile (inkl. Move-Ziel-Label) und der Vorschau-Zeile | nein |
+| `lab_draw_data.py` | VBO-Daten (Faces/Edges/Vertices/Highlight/Ebenen-Umriss/Re-Symmetrize-Vorschau); lab-lokale Triangulierung + Normalen (E10) | nein |
 | `lab_render.py` | Shader + Vertex-Lists, Draw-Reihenfolge | ja |
 | `lab_window.py` | pyglet-Fenster: Events übersetzen (inkl. `on_mouse_motion` → Hover), zeichnen, Statuszeile | ja |
 
 Zustand ausschließlich über `mirai.application.Application` (`scene`, `scene.selection`,
 `camera`, `bindings`, `tool_manager`, `history`) plus der reinen Hover-Anzeige im Dispatcher
-(`hover_vertex`, berührt `scene.selection` nicht — E8). Move läuft über `app.tool_manager`
+(`hover_vertex`, berührt `scene.selection` nicht — E8) und dem Plan einer offenen
+Re-Symmetrize-Vorschau (`resym_plan`). Move läuft über `app.tool_manager`
 (Pattern A: `activate` → `begin_current_interaction` → `update`* → `commit`/`cancel` →
 `deactivate`). Kamera ist die Production-`OrbitCamera` direkt. Kein `Viewport`, kein
 `PygletStore`; bei Änderungen werden die Vertex-Lists komplett neu gebaut.
@@ -301,8 +438,10 @@ python -m pytest experiments/symmetry_lab/tests
 Headless: GL-freie Module werden direkt getestet. Tests, die `pyglet.window` brauchen
 (Import-Grenze, Input-Pfad mit echten pyglet-Konstanten), setzen auf Linux ohne Display
 `pyglet.options["headless"] = True` — Details und die Abweichung von Slice 1 in
-`tests/_pyglet_headless.py`. Symmetrie-Zyklus und Move laufen headless über den Dispatcher
-(`tests/test_lab_symmetry.py`, `tests/test_lab_move.py`).
+`tests/_pyglet_headless.py`. Symmetrie-Zyklus, Move und Re-Symmetrize laufen headless über den
+Dispatcher (`tests/test_lab_symmetry.py`, `tests/test_lab_move.py`,
+`tests/test_lab_resymmetrize.py`); die topologische Paarung ist in `tests/test_lab_topology.py`
+charakterisiert.
 
 ## Beobachtungen aus Slice 2 (nicht gelöst, zur Einordnung)
 

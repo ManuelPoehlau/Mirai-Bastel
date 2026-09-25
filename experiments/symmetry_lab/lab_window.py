@@ -10,6 +10,9 @@ pyglet-Standardverhalten — ESC schließt das Fenster wie in Slice 2.
 
 Slice 4: `on_mouse_motion` reicht die Cursor-Position an
 `dispatcher.motion()` (Hover-Ziel, E9) weiter.
+
+Slice 5: `Change.PREVIEW` baut die Re-Symmetrize-Vorschau aus
+`dispatcher.resym_plan` neu (E15); ihre Textzeile steht über der Statuszeile.
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from mirai.symmetry import mirrored_selection
 from .lab_dispatch import Change, LabDispatcher
 from .lab_render import LabRenderer
 from .lab_scene import load_asset_into
-from .lab_status import status_text
+from .lab_status import preview_text, status_text
 from .lab_symmetry import symmetry_report
 
 
@@ -45,8 +48,13 @@ class SymmetryLabWindow(pyglet.window.Window):
         self._status = pyglet.text.Label(
             "", x=10, y=10, font_size=11, color=(220, 220, 220, 255)
         )
+        self._preview_status = pyglet.text.Label(
+            "", x=10, y=30, font_size=11, color=(130, 170, 255, 255)
+        )
         self._report = symmetry_report(app.scene.mesh)
-        self._sync(Change.MESH | Change.SELECTION | Change.HOVER | Change.STATUS)
+        self._sync(
+            Change.MESH | Change.SELECTION | Change.HOVER | Change.PREVIEW | Change.STATUS
+        )
 
     def _sync(self, changes: Change) -> None:
         mesh = self.app.scene.mesh
@@ -65,10 +73,13 @@ class SymmetryLabWindow(pyglet.window.Window):
                 else set()
             )
             self.renderer.rebuild_hover(mesh, hovered, mirrored_selection(mesh, hovered))
+        if changes & (Change.MESH | Change.PREVIEW):
+            self.renderer.rebuild_preview(mesh, self.dispatcher.resym_plan)
         if changes:
             self._status.text = status_text(
                 self.app, self.asset_name, self.dispatcher, self._report
             )
+            self._preview_status.text = preview_text(self.dispatcher)
 
     def _flush(self) -> None:
         self._sync(self.dispatcher.take_changes())
@@ -123,3 +134,4 @@ class SymmetryLabWindow(pyglet.window.Window):
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
         self._status.draw()
+        self._preview_status.draw()
