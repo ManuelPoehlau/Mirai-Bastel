@@ -20,6 +20,10 @@ zurück.
 
 Slice 5: `RESYMMETRIZE` (Taste M, Artist A7) ist ebenfalls Lab-lokal; M ist in
 den globalen Defaults und in `artist_input_truth.json` frei.
+
+Slice 7: `KNIFE` (Taste C, Artist A8) ist Lab-lokal. Die Production-Bindung
+von C (`Connect`) liegt in `TOPOLOGY_CONTEXT` und greift für
+`SYMMETRY_LAB_CONTEXT` nie (E23). Enter ist bewusst nicht belegt (A13).
 """
 
 from __future__ import annotations
@@ -35,6 +39,8 @@ SYMMETRY_LAB_CONTEXT = "symmetry_lab"
 SYMMETRY_CYCLE = "SymmetryCycle"
 #: M: Re-Symmetrize-Vorschau öffnen, M erneut: ausführen (Artist A7, Slice 5).
 RESYMMETRIZE = "ReSymmetrize"
+#: C: gespiegelten Knife starten (Artist A8, Slice 7).
+KNIFE = "Knife"
 
 
 @dataclass(frozen=True)
@@ -76,6 +82,11 @@ LAB_OVERRIDES: tuple[LabOverride, ...] = (
         Input("key", "m"),
         RESYMMETRIZE,
         "Artist A7 (2026-09-25)",
+    ),
+    LabOverride(
+        Input("key", "c"),
+        KNIFE,
+        "Artist A8 (2026-09-25)",
     ),
 )
 
