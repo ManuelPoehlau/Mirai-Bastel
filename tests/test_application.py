@@ -104,6 +104,33 @@ class ApplicationSceneTests(unittest.TestCase):
         app.init_scene()
         self.assertEqual(len(app.scene.mesh.all_vertex_ids()), 8)
 
+    def test_init_scene_default_store_type_is_tracestore(self):
+        # Stage A (AD-018 §5/§6): additive `store_type` param — default
+        # unchanged, so this existing-shape call site stays unaffected.
+        from viewport.resource_store import TraceStore
+
+        app = Application()
+        app.init_scene()
+        self.assertIsInstance(app.viewport.render_mesh.store, TraceStore)
+
+    def test_init_scene_passes_store_type_through_to_viewport(self):
+        from viewport.resource_store import ResourceStore, TraceStore
+
+        class _StubStore(TraceStore):
+            pass
+
+        app = Application()
+        app.init_scene(store_type=_StubStore)
+        self.assertIsInstance(app.viewport.render_mesh.store, _StubStore)
+        self.assertIsInstance(app.viewport.render_mesh.store, ResourceStore)
+
+    def test_init_scene_store_type_keeps_camera_binding(self):
+        from viewport.resource_store import TraceStore
+
+        app = Application()
+        app.init_scene(store_type=TraceStore)
+        self.assertIs(app.viewport.render_mesh.camera, app.camera)
+
 
 class ApplicationDispatchTests(unittest.TestCase):
     def setUp(self):

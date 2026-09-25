@@ -90,6 +90,30 @@ class ViewportFacadeTests(unittest.TestCase):
         # Darf nicht raisen, auch ohne gebundene Kamera/GL-Backend.
         self.viewport.render()
 
+    def test_render_is_noop_without_bound_camera(self):
+        # Kamera nie gebunden -> render_mesh.render() darf nicht aufgerufen
+        # werden (kein `self.camera is None`-AttributeError o.ä.).
+        calls = []
+        self.viewport.render_mesh.render = lambda camera: calls.append(camera)
+        self.viewport.render()
+        self.assertEqual(calls, [])
+
+    def test_render_delegates_to_render_mesh_render_with_bound_camera(self):
+        # AD-018 §5 Stage-A-Handoff §4.3: Viewport.render() delegiert an
+        # RenderMesh.render(self.render_mesh.camera) - der Draw-Call selbst
+        # bleibt Store-spezifisch (Duck-Typing über render_mesh.render()),
+        # hier wird nur die Delegation/Weitergabe der gebundenen Kamera
+        # geprüft (kein echter GL-Kontext nötig).
+        cam = OrbitCamera()
+        self.viewport.bind_camera(cam)
+
+        calls = []
+        self.viewport.render_mesh.render = lambda camera: calls.append(camera)
+
+        self.viewport.render()
+
+        self.assertEqual(calls, [cam])
+
 
 if __name__ == "__main__":
     unittest.main()
