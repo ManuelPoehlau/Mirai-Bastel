@@ -17,6 +17,11 @@ Slice 4 (E9): der Hover-Vertex (eigene Farbe) und sein gespiegelter Partner
 `rebuild_hover`, unabhängig von `rebuild_highlight` — Hover berührt die
 Auswahl nicht (E8).
 
+Slice 5 (E15): die Re-Symmetrize-Vorschau (was sich bewegt, welche
+Seam-Vertices auf die Ebene gelegt werden, welche Zielseiten-Vertices mangels
+Partner bleiben) kommt mit `rebuild_preview` und wird über den
+Symmetrie-Markierungen gezeichnet, unter der Auswahl.
+
 Farblegende: README.
 """
 
@@ -84,6 +89,10 @@ UNPAIRED_VERTEX_COLOR = (0.95, 0.2, 0.85, 1.0)
 AMBIGUOUS_VERTEX_COLOR = (1.0, 1.0, 1.0, 1.0)
 HOVER_VERTEX_COLOR = (1.0, 0.9, 0.15, 1.0)
 PLANE_COLOR = (0.4, 0.75, 1.0, 1.0)
+#: Re-Symmetrize-Vorschau (Slice 5, E15).
+RESYM_MOVE_COLOR = (0.25, 0.5, 1.0, 1.0)
+RESYM_SEAM_COLOR = (0.75, 1.0, 0.1, 1.0)
+RESYM_KEEP_COLOR = (1.0, 0.55, 0.55, 1.0)
 VERTEX_POINT_SIZE = 4.0
 STATE_POINT_SIZE = 7.0
 SELECTED_POINT_SIZE = 10.0
@@ -111,6 +120,8 @@ class LabRenderer:
         #: Hover-Vertex + gespiegelter Partner (Slice 4, E9) — unabhängig von der Auswahl.
         self._hover = None
         self._hover_mirrored = None
+        #: Re-Symmetrize-Vorschau: (Farbe, Punkte, Linien) je Kategorie (Slice 5).
+        self._preview: list = []
 
     @staticmethod
     def _delete(vlist) -> None:
@@ -162,6 +173,25 @@ class LabRenderer:
             lab_draw_data.highlight_data(mesh, mirrored), gl.GL_POINTS
         )
 
+    def rebuild_preview(self, mesh: Mesh, plan) -> None:
+        """Slice 5, E15: Vorschau aus dem `ResymPlan` (None = keine Vorschau)."""
+        for _color, points, lines in self._preview:
+            self._delete(points)
+            self._delete(lines)
+        data = lab_draw_data.resym_preview_data(mesh, plan)
+        self._preview = [
+            (
+                color,
+                self._overlay_list(points, gl.GL_POINTS),
+                self._overlay_list(lines, gl.GL_LINES),
+            )
+            for color, points, lines in (
+                (RESYM_MOVE_COLOR, data.move_points, data.move_lines),
+                (RESYM_SEAM_COLOR, data.seam_points, data.seam_lines),
+                (RESYM_KEEP_COLOR, data.keep_points, []),
+            )
+        ]
+
     def _overlay_list(self, positions: list[float], mode: int):
         if not positions:
             return None
@@ -211,6 +241,16 @@ class LabRenderer:
             if vlist is not None:
                 program["u_color"] = color
                 vlist.draw(gl.GL_POINTS)
+        # Re-Symmetrize-Vorschau (E15): Linie von der aktuellen zur neuen
+        # Position, Punkt an der aktuellen Position.
+        gl.glPointSize(SELECTED_POINT_SIZE)
+        for color, points, lines in self._preview:
+            program["u_color"] = color
+            if lines is not None:
+                lines.draw(gl.GL_LINES)
+            if points is not None:
+                points.draw(gl.GL_POINTS)
+        gl.glPointSize(STATE_POINT_SIZE)
         # Hover-Vorschau (E9): eigene Farbe, gespiegelter Partner wie bei der
         # Auswahl (MIRRORED_VERTEX_COLOR). Berührt die Auswahl nicht (E8).
         for color, vlist in (
