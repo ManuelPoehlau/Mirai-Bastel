@@ -39,6 +39,12 @@ trianguliert und berechnet Normalen selbst, statt `DerivedGeometry`/
 
 Slice 5 (E15): `resym_preview_data` liefert die Punkte/Linien der
 Re-Symmetrize-Vorschau aus demselben `ResymPlan`, den die Ausführung benutzt.
+
+Slice 7 (E30): `knife_preview_data` liefert die Marker der Knife-Session —
+Start-Vertex + Spiegelpartner aus der Session, Hover-Punkt + Spiegelpunkt
+aus demselben Dry-Run (`KnifeHoverPreview`), den die Statuszeile nennt.
+Der geschnittene Pfad selbst braucht keine eigene Struktur: jeder
+angenommene Klick mutiert das Mesh sofort (Slice 6).
 """
 
 from __future__ import annotations
@@ -54,6 +60,8 @@ from core import FaceId, Mesh, VertexId
 from mirai.mesh_geometry import mesh_bounds
 from viewport.derived import triangulate_face
 
+from .lab_knife import LabKnifeTool
+from .lab_knife_preview import KnifeHoverPreview
 from .lab_resymmetrize import PositionChange, ResymPlan
 from .lab_symmetry import AXIS_INDEX
 
@@ -237,3 +245,44 @@ def resym_preview_data(mesh: Mesh, plan: Optional[ResymPlan]) -> ResymPreviewDat
     return ResymPreviewData(
         move_points, move_lines, seam_points, seam_lines, highlight_data(mesh, keep)
     )
+
+
+@dataclass(frozen=True)
+class KnifePreviewData:
+    """GL_POINTS-Positionen der Knife-Marker (E30); alle leer ohne Session."""
+
+    #: Start-Vertex der Session und sein Spiegelpartner (nicht, wenn auf der Seam).
+    start_points: list[float]
+    start_mirror_points: list[float]
+    #: Klickbares Hover-Ziel (Vertex oder interpolierter Edge-Punkt) und Spiegelpunkt.
+    hover_points: list[float]
+    hover_mirror_points: list[float]
+    #: Hover-Ziel, das nicht klickbar ist (`KnifeHoverPreview.clickable` falsch).
+    blocked_points: list[float]
+
+
+def knife_preview_data(
+    mesh: Mesh, knife: Optional[LabKnifeTool], hover: Optional[KnifeHoverPreview]
+) -> KnifePreviewData:
+    if knife is None:
+        return KnifePreviewData([], [], [], [], [])
+    start = knife.start
+    start_points: list[float] = []
+    start_mirror: list[float] = []
+    if start is not None:
+        start_points = highlight_data(mesh, [start])
+        # Symmetrie aus: `partner` setzt eine Definition voraus (Seam-Abfrage).
+        partner = knife.partner(start) if knife.mirrored else None
+        if partner is not None and partner != start:
+            start_mirror = highlight_data(mesh, [partner])
+    hover_points: list[float] = []
+    hover_mirror: list[float] = []
+    blocked: list[float] = []
+    if hover is not None:
+        if hover.clickable:
+            hover_points = list(hover.source_position)
+            if hover.mirror_position is not None:
+                hover_mirror = list(hover.mirror_position)
+        else:
+            blocked = list(hover.source_position)
+    return KnifePreviewData(start_points, start_mirror, hover_points, hover_mirror, blocked)

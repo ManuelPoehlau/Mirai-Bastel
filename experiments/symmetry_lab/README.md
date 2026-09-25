@@ -1,6 +1,6 @@
 # Symmetry Lab (WP-SYM-LAB-01)
 
-Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 5** — das Lab zeigt
+Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 7** — das Lab zeigt
 ein Mesh (shaded + Edges + Vertices), navigiert mit Orbit/Pan/Zoom, wählt per Klick einen
 Vertex aus, schaltet mit Shift+S die Symmetrie-Ebene durch (aus → X → Y → Z → aus), zeigt
 Ebene, Seam, Vertices ohne Partner und den gespiegelten Partner der Auswahl, zeigt den Vertex
@@ -10,15 +10,18 @@ LMB-Drag einen Vertex symmetrisch. Bei symmetrischen Meshes ist auch die Schatti
 **M** (ausführen) spiegelt Re-Symmetrize die Seite der Auswahl exakt auf die andere Seite; die
 Partner dafür kommen aus einer topologischen Paarung ab der Seam (Slice 5, Lab-Experiment). Jede
 Handlung (Symmetrie-Schritt, Move oder Re-Symmetrize) ist genau ein Undo-Schritt. Slice 6 fügt
-eine **headless** Engine für einen gespiegelten Knife hinzu (`lab_knife.py`) — noch ohne Fenster,
-Taste oder Vorschau, also im Lab noch nicht spielbar (das folgt in Slice 7).
+eine **headless** Engine für einen gespiegelten Knife hinzu (`lab_knife.py`); Slice 7 macht sie im
+Fenster spielbar: **C** startet den Knife, der Punkt unter dem Cursor und sein Spiegelpunkt sind vor
+dem Klick sichtbar (auch, wenn nicht gespiegelt werden kann), **LMB** schneidet, ein Klick auf den
+Hintergrund committet, **ESC** bricht ab. Slice 7 ist **noch nicht vom Artist geprüft**.
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
 [Slice 3](../../docs/architecture/WP-SYM-LAB-01_SLICE3_CLAUDE_CODE_HANDOFF.md) (Symmetrie + Move, Entscheidungen A1/A2, E1–E6 in §2),
 [Slice 4](../../docs/architecture/WP-SYM-LAB-01_SLICE4_CLAUDE_CODE_HANDOFF.md) (Hover-Ziel für Move, symmetrische Anzeige-Triangulierung, Entscheidungen A3/A4, E7–E10 in §2),
 [Slice 5](../../docs/architecture/WP-SYM-LAB-01_SLICE5_CLAUDE_CODE_HANDOFF.md) (Re-Symmetrize über topologische Paarung, Entscheidungen A5–A7, E11–E15 in §2),
-[Slice 6](../../docs/architecture/WP-SYM-LAB-01_SLICE6_CLAUDE_CODE_HANDOFF.md) (gespiegelter Knife, headless Engine, Entscheidungen A8–A11, E16–E22 in §2).
+[Slice 6](../../docs/architecture/WP-SYM-LAB-01_SLICE6_CLAUDE_CODE_HANDOFF.md) (gespiegelter Knife, headless Engine, Entscheidungen A8–A11, E16–E22 in §2),
+[Slice 7](../../docs/architecture/WP-SYM-LAB-01_SLICE7_CLAUDE_CODE_HANDOFF.md) (gespiegelter Knife im Fenster, Entscheidungen A12/A13, E23–E30 in §2).
 
 > **Importiert nicht aus `playground/`.** Benötigte Draw-Stücke sind kopiert/adaptiert, mit
 > Herkunftsvermerk im jeweiligen Docstring (Präzedenz AD-010). Abgesichert durch
@@ -38,7 +41,57 @@ Gültige Namen sind die Registry-Namen aus `examples/loaders/assets.py` (`asset_
 Ein unbekannter Name bricht **vor** dem Öffnen des Fensters mit der Liste der gültigen Namen ab
 (Exit-Code 2). Voraussetzung wie beim Playground: `pyglet` ist installiert
 (`python -m pip install pyglet`). Beim Start listet die Konsole die aktiven Lab-Overrides.
-Schließen: ESC (wenn kein Move scharf ist oder läuft) oder Fenster-X.
+Schließen: ESC (wenn kein Move scharf ist oder läuft, keine Vorschau offen und keine
+Knife-Session aktiv ist) oder Fenster-X.
+
+### Manuelle Prüfung Slice 7 (Manu, Windows) — offen, noch nicht geprüft
+
+**Artist-Verdikt: steht aus.** Baut auf Slice 3–5 auf; hier nur, was neu ist. Die Konsole listet
+beim Start zusätzlich `key:c -> Knife`.
+
+1. `python experiments/symmetry_lab/run.py head_basemesh`, **Shift+S** → `Symmetrie: X (valid)`,
+   dann **C** → Statuszeile zeigt `Knife: aktiv (kein Start)` und `Knife gestartet`. Die gelbe
+   Vertex-Hover-Markierung aus Slice 4 ist ab jetzt durch die Knife-Markierung ersetzt.
+2. Maus über eine Kante seitlich am Kopf bewegen (nicht auf der Mittellinie) → **großer gelber
+   Punkt** auf der Kante (dort, wo geschnitten würde), **türkiser Punkt** an der gespiegelten
+   Stelle auf der anderen Seite. Nahe an einem Kantenende rastet der Punkt auf den Vertex ein
+   (wie im Playground).
+3. **Klicken** → der Punkt wird real, auf beiden Seiten entsteht ein neuer Vertex. Der Startpunkt
+   ist jetzt **violett**, sein Spiegelpartner türkis; Statuszeile `Knife: aktiv (Start v<id>)`,
+   `Knife: Schritt angenommen`.
+4. Maus über eine zweite Kante **derselben Face** bewegen (gelb + türkis), klicken → die
+   Verbindung entsteht auf beiden Seiten; der Startpunkt wandert an das neue Ende. Weitere Klicks
+   setzen den Schnitt fort.
+5. Maus auf eine Kante **auf der Mittellinie** (zwischen zwei grünen Seam-Vertices) bewegen →
+   gelber Punkt **ohne** türkisen Spiegelpunkt: der Schnittpunkt liegt auf der Seam und ist sein
+   eigenes Spiegelbild (Sonderfall, kein Fehler). Klicken geht.
+6. Nicht auflösbar vor dem Klick: einen **grünen Seam-Vertex als Start** anklicken (neue Session
+   oder nach Schritt 5), dann die Maus auf einen **anderen grünen Seam-Vertex** oder eine
+   **andere Seam-Kante** bewegen → der Punkt wird **magenta**, kein türkiser Punkt, die
+   Statuszeile nennt `Ziel: Schnitt entlang der Seam nicht unterstützt`. Ein Klick dort wird
+   abgelehnt, am Mesh ändert sich nichts.
+   Der Fall aus Slice 6 („Beobachtet, nicht entschieden": nach einem Schnitt `a → m` mit `m` auf der
+   Seam den Spiegelpunkt `a'` anklicken) zeigt sich **anders**: `a'` hat einen eindeutigen Partner
+   (`a`), die Vorschau zeigt ihn deshalb gelb + türkis; erst der Klick wird mit
+   `Verbindung … existiert bereits` abgelehnt. **Erste offene Frage an dich:** stört das den Fluss,
+   oder ist es erwartbar?
+7. **Klick auf den freien Hintergrund** (neben dem Kopf) → `Knife committet`, die Session endet,
+   die Knife-Zeile verschwindet aus der Statuszeile. **Ctrl+Z** nimmt den ganzen Schnitt in einem
+   Schritt zurück, **Ctrl+Y** stellt ihn wieder her. Ohne vorherigen Schnitt (nur C, dann
+   Hintergrund) → `Knife — keine Schnitte`, kein Undo-Schritt.
+8. Schritte 1–4 wiederholen und statt Schritt 7 **ESC** drücken → `Knife abgebrochen`, das Mesh ist
+   wie vor dem C, kein Undo-Schritt; das Fenster bleibt offen.
+9. **Frage A12:** Während einer Session auf eine **Fläche** klicken (auf dem Mesh, aber weder
+   Vertex noch Kante in Reichweite) → es passiert nichts, die Session läuft weiter. Fühlt sich
+   dieses „No-op" richtig an, oder hättest du erwartet, dass auch das committet?
+10. Während der Session: Alt+LMB / Shift+LMB / MMB / Mausrad navigieren weiter. **Shift+S**, **Q**,
+    **M**, **Ctrl+Z**, **Ctrl+Y** tun nichts, die Statuszeile meldet
+    `Knife aktiv — Befehl ignoriert`. **Enter** ist im Lab nicht belegt (A13) — falls du beim
+    Testen Enter zum Bestätigen vermisst, bitte notieren.
+11. Ablehnungen beim Start (Statuszeile, keine Session): **C** bei `man_with_shoes_basemesh` mit
+    Symmetrie X (`partial`); **C** bei `subd_cube` mit Symmetrie Y; **Q** (Move scharf) und dann
+    **C**; **M** (Re-Symmetrize-Vorschau offen) und dann **C**. Ohne Symmetrie startet **C** einen
+    ungespiegelten Knife (`Knife: aktiv (kein Start, ungespiegelt)`), ohne türkise Punkte.
 
 ### Manuelle Prüfung Slice 3 (Manu, Windows) — KEEP (2026-09-25)
 
@@ -186,11 +239,16 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Move scharf schalten (Ziel: Auswahl, sonst Hover) | Q | `Move` | Artist A3/A4, globaler Default (Fallback) |
 | Move ziehen (wenn scharf) | LMB ohne Modifier (Drag) | — (Lab-Geste, `MoveTool`) | Artist A1/A3, E5 |
 | Re-Symmetrize: Vorschau öffnen / ausführen | M / M erneut | `ReSymmetrize` (Lab-lokal) | Lab-Override — Artist A7 |
-| Abbrechen (Move, Re-Symmetrize-Vorschau) | ESC | `Cancel` | globaler Default (Fallback) |
+| Knife starten | C | `Knife` (Lab-lokal) | Lab-Override — Artist A8, E23 |
+| Knife: schneiden (Vertex oder Kante unter dem Cursor) | LMB ohne Modifier (Klick, während Knife aktiv) | — (Lab-Geste, `LabKnifeTool.click`) | Artist A8, E25/E29 |
+| Knife: committen | LMB-Klick auf den Hintergrund (außerhalb des Mesh) | — (Lab-Geste, `LabKnifeTool.commit`) | Artist A8/A12, E25 |
+| Abbrechen (Move, Re-Symmetrize-Vorschau, Knife-Session) | ESC | `Cancel` | globaler Default (Fallback) |
 | Undo / Redo | Ctrl+Z / Ctrl+Y | `Undo` / `Redo` | globaler Default (Fallback) |
 
-`SymmetryCycle` und `ReSymmetrize` sind im Lab definiert (`lab_bindings.py`), nicht in
-`mirai.interaction.commands`.
+`SymmetryCycle`, `ReSymmetrize` und `Knife` sind im Lab definiert (`lab_bindings.py`), nicht in
+`mirai.interaction.commands`. C ist im globalen Kontext frei; die Production-Bindung C → `Connect`
+liegt im `topology`-Kontext und greift im Lab nie (E23). Enter ist nicht belegt (A13; `mirai.pyglet_input`
+übersetzt Enter gar nicht in ein `Input`).
 Andere global gebundene Commands (z. B. `f` → `SetFaceMode`) lösen zwar auf, sind im Lab aber
 No-ops und gelten als „nicht behandelt". Die Mausbewegung selbst (`on_mouse_motion`, ohne
 gedrückte Taste) ist kein Command — sie treibt nur das Hover-Ziel (siehe unten).
@@ -254,7 +312,10 @@ Input). Der Hover ist reine Anzeige; er berührt `scene.selection` nicht.
   und Ausführung nicht ändern — ausgeführt wird genau der angezeigte Plan.
 - Die Auswahl bleibt nach der Ausführung erhalten (keine Topologie-Änderung, IDs bleiben gültig).
 
-**ESC-Regel:** Re-Symmetrize-Vorschau offen → Vorschau schließen; Move-Drag läuft → Abbruch auf
+**Knife (Slice 7):** siehe Abschnitt „Gespiegelter Knife im Fenster (Slice 7)" unten.
+
+**ESC-Regel:** Re-Symmetrize-Vorschau offen → Vorschau schließen; Knife-Session aktiv → Session
+abbrechen, Mesh wie vor C, kein History-Eintrag; Move-Drag läuft → Abbruch auf
 den exakten Vorzustand, kein History-Eintrag; Move nur scharf → entschärfen; sonst nicht
 behandelt → pyglet-Standard (Fenster schließt).
 
@@ -279,11 +340,20 @@ ungültig machen) und entschärfen einen scharfen Move.
 | hellgrün, groß + Linie | Re-Symmetrize-Vorschau: Seam-Vertex wird auf die Ebene gelegt; Linie zur neuen Position |
 | hellrot, groß | Re-Symmetrize-Vorschau: Zielseiten-Vertex ohne topologischen Partner — bleibt unverändert |
 | blaue Textzeile über der Statuszeile | Re-Symmetrize-Vorschau aktiv: Richtung, Anzahlen, Tasten |
+| violett, groß | Knife: Start-Vertex der laufenden Session (Slice 7, E30) |
+| türkis, groß (Knife) | Knife: Spiegelpartner des Starts bzw. Spiegelpunkt des Hover-Ziels — gespiegelte Vorschau wie überall |
+| gelb, groß | Knife: Hover-Ziel, klickbar — Vertex oder der Punkt auf der Kante, an dem geschnitten würde |
+| magenta, groß | Knife: Hover-Ziel, **nicht** klickbar (kein Spiegelpartner, Seam-Sehne, Kante am Start); Grund in der Statuszeile |
 
 Punkte werden ohne Depth-Test gezeichnet (wie Slice 2): Rückseiten-Markierungen sind sichtbar.
 Zeichenreihenfolge: Symmetrie-Markierungen (Seam/ohne Partner/mehrdeutig) → Re-Symmetrize-Vorschau
-→ Hover + dessen gespiegelter Partner → Auswahl + deren gespiegelter Partner zuletzt (überdeckt
-alles andere).
+→ Hover + dessen gespiegelter Partner → Knife-Marker (Hover-Ziel, darüber Start) → Auswahl + deren
+gespiegelter Partner zuletzt (überdeckt alles andere). Der Knife-Start liegt über dem Hover-Ziel,
+weil der Cursor nach einem Klick genau auf dem neuen Start steht.
+Magenta groß (Knife, nicht klickbar) und magenta mittel (Vertex ohne Partner) teilen die Farbe mit
+Absicht: beides heißt „hier gibt es keine eindeutige Gegenseite".
+Die Statuszeile bricht an der Fensterbreite um (Slice 7): mit Knife-Zeile und Ablehnungsgrund wird
+sie breiter als das Fenster, und der Grund steht am Ende.
 Der gespiegelte Partner des Hover-Vertex nutzt dieselbe Farbe wie der gespiegelte Partner der
 Auswahl (türkis) — es ist dieselbe Vorschau-Mechanik (`mirrored_selection`), nur auf den
 Hover statt auf `scene.selection` angewandt.
@@ -459,6 +529,9 @@ geschnitten wird zwischen den Edges (v0, v1) bei t=0.3 und (v2, v3) bei t=0.6:
   bestätigt das Paar in diesem Fall trotzdem — die beiden Prüfungen können also
   unterschiedlich urteilen, genau dafür sind beide da.
 
+**Slice 7:** jetzt im Fenster spielbar, siehe nächster Abschnitt. Die Engine selbst ist
+unverändert.
+
 **Beobachtet, nicht entschieden:** Nach einem Schnitt `a → m` (m auf der Seam) ist der
 Klick auf den bestehenden Spiegelpunkt `a'` abgelehnt, weil `m–a'` schon existiert
 („Verbindung existiert bereits"); kein doppelter Edge, keine Sonderlogik.
@@ -471,6 +544,68 @@ Klick auf den bestehenden Spiegelpunkt `a'` abgelehnt, weil `m–a'` schon exist
   die ID-Zähler in `export_state()` aber nicht: `load_state` setzt sie nur vorwärts
   (AD-001, eine vergebene ID wird nie wieder ausgegeben). Redo ist auch in den Zählern
   bitgleich. Gleiche Ausnahme wie in den Playground-Knife-Tests.
+
+## Gespiegelter Knife im Fenster (Slice 7)
+
+**Nicht vom Artist geprüft** — Prüfanleitung oben („Manuelle Prüfung Slice 7"). Die Engine aus
+Slice 6 (`lab_knife.py`) ist unverändert; Slice 7 ruft sie nur auf (`begin`, `click`, `commit`,
+`cancel`) und liest sie an (`start`, `intent_pairs`, `partner()`, `last_message`,
+`last_validation`).
+
+**Ablauf (A8, E24/E25/E29):**
+
+- **C** startet eine Session. Abgelehnt (nur Statuszeile) bei scharfem oder laufendem Move, bei
+  offener Re-Symmetrize-Vorschau (deren Hinweis), wenn schon eine Session läuft, und wenn `begin`
+  ablehnt (Symmetrie an, aber nicht `valid` mit 2 Seiten — Meldung aus Slice 6, E20). Symmetrie
+  aus → ungespiegelter Knife wie im Playground.
+- **LMB-Klick** (unter 5 px Bewegung, wie Select) löst das Ziel unter dem Cursor mit
+  `lab_knife_pick.knife_pick` auf (Lab-Kopie der Playground-Version, E27):
+  - Vertex oder Kante → `knife.click` (Schnitt beider Seiten in einem Schritt, Slice 6).
+    Angenommen → `Knife: Schritt angenommen`. Abgelehnt → die Meldung aus `knife.last_message`;
+    ist die Validierung (E19) dieses Klicks gescheitert, steht dort, welche Prüfung (A11).
+  - **Hintergrund** (außerhalb des Mesh) → Commit: ein History-Eintrag, oder keiner, wenn nichts
+    geschnitten wurde (`Knife — keine Schnitte`). Die Session endet.
+  - **Fläche** (auf dem Mesh, kein Vertex/keine Kante in Reichweite) → nichts (A12, Annahme, beim
+    Test zu klären).
+- **ESC** → `knife.cancel()`: Mesh und Symmetrie-Definition wie vor C (ID-Zähler ausgenommen,
+  siehe Slice 6), kein History-Eintrag.
+- Während der Session: Orbit/Pan/Zoom erlaubt; jedes andere Command wird mit
+  `Knife aktiv — Befehl ignoriert` ignoriert, auch Ctrl+Z/Ctrl+Y (In-Session-Undo ist in Slice 7
+  nicht an Tasten gebunden). Kein Enter-Commit (A13).
+
+**Vorschau vor dem Klick (E26/E28, `lab_knife_preview.py`):** Bei jeder Mausbewegung bestimmt
+`knife_hover_preview` ohne Mutation, was ein Klick erzeugen würde:
+
+- **Quellpunkt:** der Vertex, bzw. auf einer Kante der Punkt bei `t` mit derselben Arithmetik wie
+  `split_edge`.
+- **Spiegelpunkt:** dieselbe Auflösung wie der echte Klick (E17/E18), mit den Methoden der Engine
+  selbst (`partner`, `_seam_vertices`, `_is_seam_edge`, `edge_between`) — kein zweiter
+  Algorithmus. Vertex → Position seines Partners; Kante auf der Seam → kein Spiegelpunkt (eigener
+  Partner); sonst Partner-Kante über die Partner der Endpunkte → `mirror_position(Quellpunkt)`.
+- **Nicht klickbar** (magenta, Grund in der Statuszeile): kein Spiegelpartner, keine Spiegel-Kante,
+  Kante ist ihr eigenes Spiegelbild ohne Seam-Kante zu sein, Seam-Sehne (Start und Ziel auf der
+  Seam), oder `knife.hover` lehnt das Ziel ab (Kante am Start-Vertex). Die Texte sind wortgleich
+  mit den Ablehnungen des echten Klicks.
+
+**Belegt (headless, `tests/test_lab_knife_window.py`):**
+
+- Vorschau == echter Klick, bitgenau: für **jede** Kante von `subd_cube` und jede 7. Kante von
+  `head_basemesh` als erster Klick (Quellpunkt, Spiegelpunkt bzw. Seam-Selbstpaarung) und für alle
+  Vertices/Kanten der Faces um einen gesetzten Start als zweiter Klick.
+- Was die Vorschau „nicht klickbar" nennt, lehnt der Klick immer ab.
+- **Grenze (bewusst, E28 deckt nur Spiegel-Auflösbarkeit und Seam-Sehne ab):** Umgekehrt kann ein
+  gelb angezeigtes Ziel beim Klick noch abgelehnt werden — in der Charakterisierung um einen Start
+  (je Asset 20 Vertex-/Kanten-Ziele, davon 10 angenommen, 4 vorab magenta): der Start-Vertex selbst (`Ziel ist der Start-Vertex`) und
+  seine schon verbundenen Nachbarn (`Verbindung … existiert bereits`), je 2+2+2 Fälle. Ebenso
+  nicht vorab geprüft: keine gemeinsame Face, keine Spiegel-Face, gescheiterte Validierung (E19).
+  Das sind Gründe des Klicks, nicht der Spiegelung; der Spiegelpunkt, den die Vorschau zeigt,
+  stimmt in allen geprüften Fällen mit dem Ergebnis überein. Der Slice-6-Befund „`a'` nach
+  `a → m`" gehört genau hierher (gelb, dann `existiert bereits`).
+- Ein im Test erzwungener Validierungsfehler (Slice-6-Monkeypatch `1−t`) erscheint mit
+  `Validierung gescheitert: Position (…)` in der Statuszeile.
+- Der GL-Pfad (Renderer, Fenster, Statuszeile) wurde für diesen Slice einmal headless über EGL
+  gezeichnet und die Bilder angesehen (Start violett, Hover gelb + türkis, Seam-Sehne magenta,
+  umbrechende Statuszeile) — kein automatischer Test, keine Artist-Aussage.
 
 ## Anzeige-Triangulierung (Slice 4, E10)
 
@@ -527,20 +662,23 @@ pyglet-Event → mirai.pyglet_input → app.bindings.command_for(input, "symmetr
 | `_paths.py` | sys.path-Bootstrap (`src/` vor Repo-Root, `examples/`, `experiments/`) | nein |
 | `lab_bindings.py` | `SYMMETRY_LAB_CONTEXT`, `LAB_OVERRIDES` (einzige Quelle der Overrides) | nein |
 | `lab_scene.py` | Asset per Registry-Name laden, Auswahl leeren, Kamera rahmen | nein |
-| `lab_dispatch.py` | Command → Kamera-Geste / Vertex-Pick / Hover / Symmetrie-Zyklus / Move (Ziel-Regel) / Re-Symmetrize-Vorschau / Undo | nein |
+| `lab_dispatch.py` | Command → Kamera-Geste / Vertex-Pick / Hover / Symmetrie-Zyklus / Move (Ziel-Regel) / Re-Symmetrize-Vorschau / Knife-Session (Slice 7) / Undo | nein |
 | `lab_symmetry.py` | Ebene (E1), Seam-Ableitung (E3), Zyklus als `MeshStateCommand` (E2), Befund | nein |
 | `lab_topology.py` | Topologische Paarung (E11) und Seiten (E12) — Lab-Experiment | nein |
 | `lab_resymmetrize.py` | Re-Symmetrize-Plan (E12/E13), Ausführung als `MeshStateCommand` (E14), Vorschau-Text | nein |
-| `lab_knife.py` | Gespiegelter Knife (E16–E22), Validierung `validate_step` (E19) — headless Engine, noch nicht im Fenster | nein |
-| `lab_status.py` | Text der Statuszeile (inkl. Move-Ziel-Label) und der Vorschau-Zeile | nein |
-| `lab_draw_data.py` | VBO-Daten (Faces/Edges/Vertices/Highlight/Ebenen-Umriss/Re-Symmetrize-Vorschau); lab-lokale Triangulierung + Normalen (E10) | nein |
+| `lab_knife.py` | Gespiegelter Knife (E16–E22), Validierung `validate_step` (E19) — Engine, seit Slice 7 über `lab_dispatch` im Fenster | nein |
+| `lab_knife_pick.py` | Cursor → Knife-Ziel (Vertex/Kante mit `t`/Fläche/außerhalb), Lab-Kopie aus dem Playground (E27) | nein |
+| `lab_knife_preview.py` | Dry-Run eines Hover-Ziels: Quellpunkt, Spiegelpunkt, klickbar oder Grund (E28) | nein |
+| `lab_status.py` | Text der Statuszeile (inkl. Move-Ziel-Label und Knife-Zeile) und der Vorschau-Zeile | nein |
+| `lab_draw_data.py` | VBO-Daten (Faces/Edges/Vertices/Highlight/Ebenen-Umriss/Re-Symmetrize-Vorschau/Knife-Marker); lab-lokale Triangulierung + Normalen (E10) | nein |
 | `lab_render.py` | Shader + Vertex-Lists, Draw-Reihenfolge | ja |
 | `lab_window.py` | pyglet-Fenster: Events übersetzen (inkl. `on_mouse_motion` → Hover), zeichnen, Statuszeile | ja |
 
 Zustand ausschließlich über `mirai.application.Application` (`scene`, `scene.selection`,
 `camera`, `bindings`, `tool_manager`, `history`) plus der reinen Hover-Anzeige im Dispatcher
 (`hover_vertex`, berührt `scene.selection` nicht — E8) und dem Plan einer offenen
-Re-Symmetrize-Vorschau (`resym_plan`). Move läuft über `app.tool_manager`
+Re-Symmetrize-Vorschau (`resym_plan`) und der laufenden Knife-Session (`knife`) samt ihrem
+Hover-Dry-Run (`knife_hover`). Move läuft über `app.tool_manager`
 (Pattern A: `activate` → `begin_current_interaction` → `update`* → `commit`/`cancel` →
 `deactivate`). Kamera ist die Production-`OrbitCamera` direkt. Kein `Viewport`, kein
 `PygletStore`; bei Änderungen werden die Vertex-Lists komplett neu gebaut.
@@ -557,7 +695,9 @@ Headless: GL-freie Module werden direkt getestet. Tests, die `pyglet.window` bra
 `tests/_pyglet_headless.py`. Symmetrie-Zyklus, Move und Re-Symmetrize laufen headless über den
 Dispatcher (`tests/test_lab_symmetry.py`, `tests/test_lab_move.py`,
 `tests/test_lab_resymmetrize.py`); die topologische Paarung ist in `tests/test_lab_topology.py`
-charakterisiert, der gespiegelte Knife (Befunde P1–P3 und Engine) in `tests/test_lab_knife.py`.
+charakterisiert, der gespiegelte Knife (Befunde P1–P3 und Engine) in `tests/test_lab_knife.py`,
+der Knife im Fenster (Dispatcher, Picking, Vorschau vs. Klick, Marker-Daten, Statuszeile) in
+`tests/test_lab_knife_window.py`.
 
 ## Beobachtungen aus Slice 2 (nicht gelöst, zur Einordnung)
 

@@ -13,6 +13,12 @@ Slice 4: `on_mouse_motion` reicht die Cursor-Position an
 
 Slice 5: `Change.PREVIEW` baut die Re-Symmetrize-Vorschau aus
 `dispatcher.resym_plan` neu (E15); ihre Textzeile steht über der Statuszeile.
+
+Slice 7: `Change.HOVER` (und `MESH`) baut zusätzlich die Knife-Marker aus
+`dispatcher.knife`/`dispatcher.knife_hover` neu (E30) — kein eigenes Flag.
+Die Statuszeile bricht an der Fensterbreite um, statt am Rand abgeschnitten zu
+werden: mit Knife-Zeile und Ablehnungsgrund (A11) wird sie bis ~1700 px breit,
+und gerade der Grund steht am Ende. Die Vorschau-Zeile rückt darüber.
 """
 
 from __future__ import annotations
@@ -46,7 +52,8 @@ class SymmetryLabWindow(pyglet.window.Window):
         self.renderer = LabRenderer()
         load_asset_into(app, asset_name)
         self._status = pyglet.text.Label(
-            "", x=10, y=10, font_size=11, color=(220, 220, 220, 255)
+            "", x=10, y=10, font_size=11, color=(220, 220, 220, 255),
+            multiline=True, width=self._status_width(self.width), anchor_y="bottom",
         )
         self._preview_status = pyglet.text.Label(
             "", x=10, y=30, font_size=11, color=(130, 170, 255, 255)
@@ -73,6 +80,7 @@ class SymmetryLabWindow(pyglet.window.Window):
                 else set()
             )
             self.renderer.rebuild_hover(mesh, hovered, mirrored_selection(mesh, hovered))
+            self.renderer.rebuild_knife(mesh, self.dispatcher.knife, self.dispatcher.knife_hover)
         if changes & (Change.MESH | Change.PREVIEW):
             self.renderer.rebuild_preview(mesh, self.dispatcher.resym_plan)
         if changes:
@@ -80,6 +88,14 @@ class SymmetryLabWindow(pyglet.window.Window):
                 self.app, self.asset_name, self.dispatcher, self._report
             )
             self._preview_status.text = preview_text(self.dispatcher)
+            self._place_preview_status()
+
+    @staticmethod
+    def _status_width(window_width: int) -> int:
+        return max(window_width - 20, 100)
+
+    def _place_preview_status(self) -> None:
+        self._preview_status.y = self._status.y + self._status.content_height + 6
 
     def _flush(self) -> None:
         self._sync(self.dispatcher.take_changes())
@@ -89,6 +105,10 @@ class SymmetryLabWindow(pyglet.window.Window):
     def on_resize(self, width: int, height: int) -> None:
         super().on_resize(width, height)
         self.dispatcher.resize(width, height)
+        # on_resize kommt beim Öffnen vor dem Ende von __init__.
+        if hasattr(self, "_preview_status"):
+            self._status.width = self._status_width(width)
+            self._place_preview_status()
 
     def on_key_press(self, symbol: int, modifiers: int):
         handled = self.dispatcher.key(key_from_pyglet(symbol, modifiers))

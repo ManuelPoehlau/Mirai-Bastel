@@ -52,6 +52,19 @@ endet ohne Änderung. Während der Vorschau sind nur Orbit/Pan/Zoom erlaubt;
 Select, Q, Shift+S, Undo/Redo werden mit Hinweis ignoriert, und der Hover
 ist pausiert (ausgeblendet, keine Aktualisierung) — so kann sich das Mesh
 zwischen Anzeige und Ausführung des Plans nicht ändern.
+
+Knife (Slice 7, Artist A8/A12/A13, E23–E30): C startet eine Knife-Session
+(`LabKnifeTool` aus Slice 6, Klick-Semantik unverändert) — abgelehnt, wenn
+ein Move scharf ist oder läuft, bereits eine Session läuft oder `begin`
+`KnifeRejected` wirft (E20); während der Re-Symmetrize-Vorschau greift deren
+Hinweis. Während der Session: Orbit/Pan/Zoom erlaubt, jedes andere Command
+wird mit `KNIFE_HINT` ignoriert (auch Enter bleibt unbelegt, A13). Plain LMB
+ist eine eigene Klick-Geste mit derselben Schwelle wie Select; bei Release
+unter der Schwelle löst `knife_pick` das Ziel auf (E25): `"vertex"`/`"edge"`
+→ `knife.click`, `"outside"` → Commit und Session-Ende, `"face"` → No-op
+(A12). ESC → `knife.cancel()`, Mesh wie vor C. `motion()` hält statt des
+Vertex-Hovers den Dry-Run des Ziels unter dem Cursor (`knife_hover`, E26/E28)
+und meldet ihn über `Change.HOVER`.
 """
 
 from __future__ import annotations
@@ -66,7 +79,10 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
 
-from .lab_bindings import RESYMMETRIZE, SYMMETRY_CYCLE, SYMMETRY_LAB_CONTEXT
+from .lab_bindings import KNIFE, RESYMMETRIZE, SYMMETRY_CYCLE, SYMMETRY_LAB_CONTEXT
+from .lab_knife import KnifeRejected, LabKnifeTool
+from .lab_knife_pick import knife_pick
+from .lab_knife_preview import KnifeHoverPreview, knife_hover_preview
 from .lab_resymmetrize import ResymmetrizeRejected, ResymPlan, apply_plan, plan_resymmetrize
 from .lab_symmetry import cycle_symmetry
 
@@ -79,6 +95,8 @@ ZOOM_IN_FACTOR = 0.9
 ZOOM_OUT_FACTOR = 1.1
 #: Hinweis, wenn während der Re-Symmetrize-Vorschau ein anderes Command kommt (E15).
 PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
+#: Hinweis, wenn während einer Knife-Session ein anderes Command kommt (E24).
+KNIFE_HINT = "Knife aktiv — Befehl ignoriert"
 
 
 class Change(Flag):
@@ -87,7 +105,7 @@ class Change(Flag):
     NONE = 0
     STATUS = auto()
     SELECTION = auto()  # Auswahl-Highlight + gespiegelte Vorschau
-    HOVER = auto()  # Hover-Highlight + gespiegelte Vorschau (Slice 4)
+    HOVER = auto()  # Hover-Highlight + gespiegelte Vorschau (Slice 4), Knife-Marker (Slice 7)
     MESH = auto()  # Mesh-VBOs + Symmetrie-Overlays (Positionen oder Definition)
     PREVIEW = auto()  # Re-Symmetrize-Vorschau (Slice 5)
 
@@ -120,13 +138,17 @@ class LabDispatcher:
         self._hover_vertex: Optional[VertexId] = None
         #: Re-Symmetrize-Vorschau (Slice 5, E15); None = keine Vorschau aktiv.
         self._resym_plan: Optional[ResymPlan] = None
+        #: Knife-Session (Slice 7, E24); None = keine Session.
+        self._knife: Optional[LabKnifeTool] = None
+        #: Dry-Run des Ziels unter dem Cursor während der Session (E26/E28).
+        self._knife_hover: Optional[KnifeHoverPreview] = None
         self._changes = Change.NONE
         #: Letzte Rückmeldung an den Artist (Statuszeile), z. B. „Move: keine Auswahl".
         self.message = ""
 
     @property
     def active_command(self) -> Optional[str]:
-        """Command der laufenden Maus-Geste (`Orbit`/`Pan`/`Select`/`Move`) oder None."""
+        """Command der laufenden Maus-Geste (`Orbit`/`Pan`/`Select`/`Move`/`Knife`) oder None."""
         return self._gesture.command if self._gesture is not None else None
 
     @property
@@ -148,6 +170,20 @@ class LabDispatcher:
     def resym_plan(self) -> Optional[ResymPlan]:
         """Plan der aktiven Re-Symmetrize-Vorschau, sonst None."""
         return self._resym_plan
+
+    @property
+    def knife(self) -> Optional[LabKnifeTool]:
+        """Laufende Knife-Session, sonst None (nur lesen: `start`, `partner()`, …)."""
+        return self._knife
+
+    @property
+    def knife_active(self) -> bool:
+        return self._knife is not None
+
+    @property
+    def knife_hover(self) -> Optional[KnifeHoverPreview]:
+        """Dry-Run des Ziels unter dem Cursor; None außerhalb der Session oder ohne Ziel."""
+        return self._knife_hover
 
     def take_changes(self) -> Change:
         changes, self._changes = self._changes, Change.NONE
@@ -174,10 +210,15 @@ class LabDispatcher:
         command = self.resolve(inp)
         if self._resym_plan is not None:
             return self._preview_key(command)
+        if self._knife is not None:
+            return self._knife_key(command)
         if command == cmd.CANCEL:
             return self._cancel()
         if command == RESYMMETRIZE:
             self._open_preview()
+            return True
+        if command == KNIFE:
+            self._start_knife()
             return True
         if command not in (SYMMETRY_CYCLE, cmd.MOVE, cmd.UNDO, cmd.REDO):
             return False
@@ -193,6 +234,12 @@ class LabDispatcher:
         return True
 
     def _cancel(self) -> bool:
+        if self._knife is not None:
+            # Snapshot-Restore kann Positionen, Topologie und Seam ändern.
+            self._knife.cancel()
+            self._end_knife()
+            self._mark(Change.MESH | Change.HOVER, "Knife abgebrochen")
+            return True
         state = self.move_state
         if state is MoveState.DRAGGING:
             self.app.tool_manager.cancel()
@@ -259,6 +306,95 @@ class LabDispatcher:
         self._mark(Change.STATUS, PREVIEW_HINT)
         return True
 
+    # -- Knife (Slice 7) ------------------------------------------------------
+
+    def _start_knife(self) -> None:
+        """E24: Session starten oder mit Grund in der Statuszeile ablehnen."""
+        if self.move_state is not MoveState.READY:
+            self._mark(Change.STATUS, f"Knife: nicht während Move ({self.move_state.value})")
+            return
+        scene = self.app.scene
+        knife = LabKnifeTool()
+        knife.activate()
+        try:
+            knife.begin(mesh=scene.mesh, scene=scene)
+        except KnifeRejected as exc:
+            knife.deactivate()
+            self._mark(Change.STATUS, str(exc))
+            return
+        self._knife = knife
+        self._knife_hover = None
+        self._hover_vertex = None  # Vertex-Hover pausiert, Knife-Hover übernimmt (E26)
+        self._mark(Change.HOVER, "Knife gestartet")
+
+    def _end_knife(self) -> None:
+        self._knife.deactivate()
+        self._knife = None
+        self._knife_hover = None
+        if self._gesture is not None and self._gesture.command == KNIFE:
+            self._gesture = None
+
+    def _knife_key(self, command: Optional[str]) -> bool:
+        """Tasten während der Session: ESC bricht ab, Rest ignoriert (E24, A13)."""
+        if command == cmd.CANCEL:
+            return self._cancel()
+        if command is None:
+            return False
+        if command == KNIFE:
+            self._mark(Change.STATUS, "Knife: läuft bereits")
+        else:
+            self._mark(Change.STATUS, KNIFE_HINT)
+        return True
+
+    def _knife_press(self, inp: Input) -> None:
+        """E29: plain LMB = Knife-Klick-Geste; Orbit/Pan erlaubt; Rest ignoriert."""
+        if inp.value == "LEFT" and not inp.modifiers:
+            self._gesture = _Gesture(KNIFE, "LEFT")
+            return
+        command = self.resolve(inp)
+        if command in (cmd.ORBIT, cmd.PAN):
+            self._gesture = _Gesture(command, inp.value)
+        elif command is not None:
+            self._mark(Change.STATUS, KNIFE_HINT)
+
+    def _pick_knife_target(self, x: float, y: float) -> dict:
+        return knife_pick(self.app.camera, self.app.scene.mesh, x, y, self.width, self.height)
+
+    def _knife_click_at(self, x: float, y: float) -> None:
+        """E25: Vertex/Edge → Schnitt, Hintergrund → Commit, Face → No-op (A12)."""
+        knife = self._knife
+        target = self._pick_knife_target(x, y)
+        kind = target["kind"]
+        if kind == "face":
+            return
+        if kind == "outside":
+            command = knife.commit()
+            self._end_knife()
+            message = "Knife committet" if command is not None else "Knife — keine Schnitte"
+            # Slice 6 mutiert pro Klick: der Mesh-Zustand kann schon der Nachher-Zustand sein.
+            self._mark(Change.MESH | Change.HOVER, message)
+            return
+        validation_before = knife.last_validation
+        if knife.click(target):
+            message = "Knife: Schritt angenommen"
+        else:
+            message = knife.last_message or "Knife abgelehnt"
+            validation = knife.last_validation
+            # Nur ein Ergebnis dieses Klicks nennen, kein altes (A11).
+            if validation is not None and validation is not validation_before and not validation.ok:
+                summary = validation.summary()
+                if summary not in message:
+                    message = f"{message} — {summary}"
+        # Das Mesh hat sich ggf. geändert: Vorschau für dieselbe Cursor-Position neu.
+        self._knife_hover = knife_hover_preview(knife, self._pick_knife_target(x, y))
+        self._mark(Change.MESH | Change.HOVER, message)
+
+    def _update_knife_hover(self, x: float, y: float) -> None:
+        preview = knife_hover_preview(self._knife, self._pick_knife_target(x, y))
+        if preview != self._knife_hover:
+            self._knife_hover = preview
+            self._mark(Change.HOVER)
+
     # -- Move ---------------------------------------------------------------
 
     def _arm_move(self) -> None:
@@ -322,6 +458,9 @@ class LabDispatcher:
         if self._move_armed and inp.value == "LEFT" and not inp.modifiers:
             self._begin_move()
             return
+        if self._knife is not None:
+            self._knife_press(inp)
+            return
         command = self.resolve(inp)
         if self._resym_plan is not None and command not in (cmd.ORBIT, cmd.PAN):
             if command is not None:
@@ -353,6 +492,10 @@ class LabDispatcher:
         if gesture.command == cmd.MOVE:
             self._end_move(gesture)
             return False
+        if gesture.command == KNIFE:
+            if gesture.moved < CLICK_THRESHOLD_PX and self._knife is not None:
+                self._knife_click_at(x, y)
+            return False
         if gesture.command == cmd.SELECT and gesture.moved < CLICK_THRESHOLD_PX:
             if self._resym_plan is not None:
                 # LMB wurde vor dem M gedrückt: keine Auswahl während der Vorschau (E15).
@@ -365,8 +508,12 @@ class LabDispatcher:
         """E9: aktualisiert das Hover-Ziel im Leerlauf und bei scharfem (aber
         noch nicht ziehendem) Move. No-op während einer laufenden Geste
         (Kamera, Select, Move-Drag) — die Geste besitzt den Input — und während
-        der Re-Symmetrize-Vorschau (Hover pausiert, E15)."""
+        der Re-Symmetrize-Vorschau (Hover pausiert, E15). Während einer
+        Knife-Session: Knife-Hover statt Vertex-Hover (E26)."""
         if self._gesture is not None or self._resym_plan is not None:
+            return
+        if self._knife is not None:
+            self._update_knife_hover(x, y)
             return
         vid = pick_nearest_vertex(
             self.app.camera, self.app.scene.mesh, x, y, self.width, self.height

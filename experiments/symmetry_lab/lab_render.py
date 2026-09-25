@@ -22,6 +22,11 @@ Seam-Vertices auf die Ebene gelegt werden, welche Zielseiten-Vertices mangels
 Partner bleiben) kommt mit `rebuild_preview` und wird über den
 Symmetrie-Markierungen gezeichnet, unter der Auswahl.
 
+Slice 7 (E30): Knife-Marker (Start + Spiegelpartner, Hover-Punkt +
+Spiegelpunkt, nicht klickbares Ziel) kommen mit `rebuild_knife` und werden
+über dem Vertex-Hover, unter der Auswahl gezeichnet. Türkis heißt wie überall
+„gespiegelte Vorschau", magenta wie „ohne Partner".
+
 Farblegende: README.
 """
 
@@ -93,6 +98,10 @@ PLANE_COLOR = (0.4, 0.75, 1.0, 1.0)
 RESYM_MOVE_COLOR = (0.25, 0.5, 1.0, 1.0)
 RESYM_SEAM_COLOR = (0.75, 1.0, 0.1, 1.0)
 RESYM_KEEP_COLOR = (1.0, 0.55, 0.55, 1.0)
+#: Knife-Session (Slice 7, E30).
+KNIFE_START_COLOR = (0.65, 0.35, 1.0, 1.0)
+KNIFE_HOVER_COLOR = HOVER_VERTEX_COLOR
+KNIFE_BLOCKED_COLOR = UNPAIRED_VERTEX_COLOR
 VERTEX_POINT_SIZE = 4.0
 STATE_POINT_SIZE = 7.0
 SELECTED_POINT_SIZE = 10.0
@@ -122,6 +131,8 @@ class LabRenderer:
         self._hover_mirrored = None
         #: Re-Symmetrize-Vorschau: (Farbe, Punkte, Linien) je Kategorie (Slice 5).
         self._preview: list = []
+        #: Knife-Marker: (Farbe, Punkte) je Kategorie (Slice 7).
+        self._knife: list = []
 
     @staticmethod
     def _delete(vlist) -> None:
@@ -192,6 +203,24 @@ class LabRenderer:
             )
         ]
 
+    def rebuild_knife(self, mesh: Mesh, knife, hover) -> None:
+        """Slice 7, E30: Knife-Marker aus Session und Hover-Dry-Run (None = keine Session)."""
+        for _color, vlist in self._knife:
+            self._delete(vlist)
+        data = lab_draw_data.knife_preview_data(mesh, knife, hover)
+        # Reihenfolge = Zeichenreihenfolge: der Start liegt über dem Hover-Ziel —
+        # nach einem Klick steht der Cursor genau auf dem neuen Start.
+        self._knife = [
+            (color, self._overlay_list(points, gl.GL_POINTS))
+            for color, points in (
+                (MIRRORED_VERTEX_COLOR, data.hover_mirror_points),
+                (KNIFE_HOVER_COLOR, data.hover_points),
+                (KNIFE_BLOCKED_COLOR, data.blocked_points),
+                (MIRRORED_VERTEX_COLOR, data.start_mirror_points),
+                (KNIFE_START_COLOR, data.start_points),
+            )
+        ]
+
     def _overlay_list(self, positions: list[float], mode: int):
         if not positions:
             return None
@@ -257,6 +286,12 @@ class LabRenderer:
             (MIRRORED_VERTEX_COLOR, self._hover_mirrored),
             (HOVER_VERTEX_COLOR, self._hover),
         ):
+            if vlist is not None:
+                program["u_color"] = color
+                vlist.draw(gl.GL_POINTS)
+        # Knife-Marker (E30), groß, damit sie über Seam-/Partner-Markierungen lesbar sind.
+        gl.glPointSize(SELECTED_POINT_SIZE)
+        for color, vlist in self._knife:
             if vlist is not None:
                 program["u_color"] = color
                 vlist.draw(gl.GL_POINTS)
