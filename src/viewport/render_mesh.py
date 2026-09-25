@@ -32,6 +32,21 @@ Face-Boundaries in der Core-Mesh sind n-gonal (i. d. R. Quads, siehe
 Dreiecke -> Fan-Triangulierung über `derived.triangulate_face()`, ausgeführt
 bei jedem (Re-)Aufbau des Indexbuffers (nur bei Topology-Changes, siehe
 `_rebuild_index_buffer`).
+
+AD-018 §5 (Option B, additiv): `_rebuild_resources()` deklariert einmalig
+(im Konstruktor) über `ResourceStore.declare_group()`/`declare_uniform()`,
+welche der vier Kern-Ressourcen (`positions`/`normals`/`highlight_flags` +
+`indices`) zusammen EIN drawbares GPU-Objekt bilden, und dass
+`camera_uniforms`/`material_uniforms` reine Uniforms sind - statt dass ein
+Store das aus der Aufrufreihenfolge in `_rebuild_resources()` erraten muss
+(die Fragilität, die der Draw-Binding-Spike als offenen Befund gemeldet
+hat, siehe AD-018 §2 Option A). `_rebuild_resources()` klammert die
+Vertex-Gruppen-Puts zusätzlich in `begin_rebuild()`/`end_rebuild()` - ein
+Store weiß dadurch unzweideutig, wann ein zusammengehöriger Rebuild-Zyklus
+beginnt/endet, statt das aus "alle Trio-Mitglieder frisch alloziert" zu
+folgern. WAS berechnet wird und WANN `sync()` dispatcht, ist dadurch
+unverändert - nur wie der Store über die Ressourcen-Struktur informiert
+wird, ist neu.
 """
 
 from __future__ import annotations
@@ -46,6 +61,19 @@ from .resource_store import ResourceStore, TraceStore
 
 FLOAT_BYTES = 4
 COMPONENTS_PER_VERTEX = 3  # vec3: Position bzw. Normale
+
+# AD-018 §5: Layout-Deklaration für die "mesh"-Attributgruppe. Einmalig an
+# den Store übergeben (siehe `RenderMesh.__init__`), damit ein Store, der
+# ein drawbares Objekt bauen will (z. B. `GLRenderStore`), nicht mehr aus
+# der Aufrufreihenfolge in `_rebuild_resources()` erraten muss, welche
+# Ressourcen zusammengehören.
+MESH_GROUP = "mesh"
+MESH_GROUP_ATTRIBUTES: dict[str, tuple[str, int]] = {
+    "positions": ("position", COMPONENTS_PER_VERTEX),
+    "normals": ("normal", COMPONENTS_PER_VERTEX),
+    "highlight_flags": ("highlight_flag", 1),
+}
+MESH_GROUP_INDEX = "indices"
 
 
 def _flatten_vec3(values) -> list[float]:
@@ -73,6 +101,9 @@ class RenderMesh:
         self.mesh = mesh
         self.stats = BenchmarkCounters()
         self.store: ResourceStore = store_type(self.stats)
+        self.store.declare_group(MESH_GROUP, MESH_GROUP_ATTRIBUTES, MESH_GROUP_INDEX)
+        self.store.declare_uniform("camera_uniforms")
+        self.store.declare_uniform("material_uniforms")
         self.derived = DerivedGeometry(mesh)
         self.dirty = DirtyState()
         self.overlay = overlay
@@ -148,12 +179,15 @@ class RenderMesh:
                 # Structural Recreation einer bereits existierenden Ressource.
                 self.stats.count("structural_rebuilds")
 
+        self.store.begin_rebuild(MESH_GROUP)
         put("positions", self._positions_flat())
         put("normals", self._normals_flat())
         put("indices", self._indices_flat())
 
         if self.overlay is not None:
             put("highlight_flags", self.overlay.build_highlight_flags(self.mesh))
+        self.store.end_rebuild(MESH_GROUP)
+
         if self.material is not None:
             put("material_uniforms", self.material.uniform_packet())
         if self.camera is not None:
@@ -310,6 +344,23 @@ class RenderMesh:
             "camera_uniforms", 0, uniforms, len(uniforms) * FLOAT_BYTES
         )
         self.stats.count("partial_updates")
+
+    # -- Draw (VIEWPORT_V02_ARCHITECTURE.md §4.2, AD-018 §5 Punkt 3) ---------
+
+    def render(self, camera) -> None:
+        """Issue Draw Call ("RenderMesh.render(camera)", VIEWPORT_V02_ARCHITECTURE.md
+        §4.2). Mutiert KEINEN Dirty-State selbst - `sync()` muss bereits
+        gelaufen sein (Camera-/Geometry-/Selection-/Material-Updates sind
+        weiterhin ausschließlich über `mark_*_dirty()` + `sync()` gesteuert,
+        siehe Architektur-Invariante "Camera changes never invalidate mesh
+        render data"). Der eigentliche Draw-Call ist Store-spezifisch
+        (nicht jeder Store ist drawbar, z. B. `TraceStore`/`PygletStore`) -
+        Delegation über Duck-Typing an `store.draw()`, sofern vorhanden."""
+        if self.camera is None:
+            self.bind_camera(camera)
+        draw = getattr(self.store, "draw", None)
+        if draw is not None:
+            draw()
 
     # -- Zugriff für Rendering/Tests ------------------------------------------
 

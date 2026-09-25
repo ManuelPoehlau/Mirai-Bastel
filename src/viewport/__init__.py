@@ -35,6 +35,7 @@ from .category import (
     DirtyState,
 )
 from .derived import DerivedGeometry, compute_bounds, triangulate_face
+from .gl_render_store import GLRenderStore
 from .overlay import OverlayElementKind, SelectionOverlay
 from .render_mesh import RenderMesh
 from .resource_store import GpuResource, PygletStore, ResourceStore, TraceStore
@@ -59,5 +60,6 @@ __all__ = [
     "ResourceStore",
     "TraceStore",
     "PygletStore",
+    "GLRenderStore",
     "Viewport",
 ]
