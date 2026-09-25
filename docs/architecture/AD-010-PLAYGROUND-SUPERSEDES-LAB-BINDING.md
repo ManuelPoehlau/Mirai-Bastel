@@ -155,3 +155,24 @@ remain full-rebuild — no reference pattern exists for those (see Update 1).
 Lab retirement and `ARCHITECTURE_MAP.md` also still untouched.
 
 
+## Addendum 2026-09-25 — Artist Verdict on the deferred question
+
+**Verdict (Manu): KEEP** — The first Production application is a standalone
+window/entry point, separate from the Playground. The Playground remains a
+research host and is not changed as part of this.
+
+Context: raised during a Discovery assessment of the Production Viewport /
+Renderer V02 state (`docs/archive/viewport_v02/reviews/VIEWPORT_V02_STATE_REVIEW_CLAUDE_001.md`),
+which found that no environment — not the V02 experiment, not the Lab, not
+the Playground — has ever drawn through the Production `RenderMesh`/
+`ResourceStore` path itself; every prior draw ran through a separate,
+parallel VBO path.
+
+Consequences:
+- The Production draw path is built for the Production app, not by porting
+  `playground/window.py`. Playground draw code is a technical reference only.
+- This decision's Consequence #1 (replacing Playground full rebuilds with
+  in-place patching) is not a prerequisite for the Production app.
+- Open for the Production app: Draw Binding contract, buffer layout,
+  edge/point overlay data, entry-point location — see the review above and
+  its accompanying Draw Binding Spike handoff (not committed to the repo).
