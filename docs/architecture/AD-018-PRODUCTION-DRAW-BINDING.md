@@ -1,6 +1,6 @@
 # AD-018 — Production Draw Binding for `RenderMesh`
 
-**Status:** PROPOSED — draft from the draw-binding spike, not a decision.
+**Status:** DECIDED ✓ — Option B, additive form (see §5, 2026-09-25). Original draft status: PROPOSED — draft from the draw-binding spike, not a decision.
 Per AGENTS.md §5 ("Never silently change architecture") this document
 proposes alternatives; it does not select one. Per M5 (Discovery ↔
 Production) any new finding here returns to Discovery, it does not
@@ -139,3 +139,89 @@ run tripped it).
 | Date | Change |
 |---|---|
 | 2026-09-25 | Initial draft from `experiments/viewport_draw_binding_spike/` |
+| 2026-09-25 | Moved to `docs/architecture/`; §5 Decision appended (Option B, additive). §1–§3 left as drafted. |
+
+---
+
+## 5. Decision — 2026-09-25
+
+**Decision: Option B — extend the `ResourceStore` contract, in additive form.**
+
+**Authority:** Manu delegated this explicitly as a technical decision:
+choose the option with the greatest long-term value, no interim solution
+chosen only because it is faster. The option was selected by the reviewing
+agent (Claude, claude.ai Project), which did not author the spike
+(separation of generation and evaluation, Development System §6). This is
+**not** an Artist verdict on product behavior and claims no Artist
+validation of any rendering result.
+
+### Why B
+
+1. **Single source of truth for render layout.** Under Option A the
+   knowledge "which named resources form one drawable object, and which
+   are uniforms" exists twice: implicitly in `RenderMesh`'s call order and
+   explicitly in the store (`VERTEX_ATTR_NAMES`, `STRUCTURAL_TRIO` in
+   `spike_gl_store.py`). Every layout change must be made in both places,
+   and a mismatch fails silently (§2 Option A, cost 1). B makes
+   `RenderMesh` the only place that states the layout; stores implement it.
+2. **Known future requirements add resources.** Already-open questions
+   each add names or groups: flat shading (Q2), edge/point overlay data
+   (Q3), overlay representation (Q4), later per-object meshes (ARCH-01) and
+   evaluated geometry from a deformation stack (ROADMAP WP-05+). With A,
+   each addition widens the inferred-order fragility; with B, each is one
+   declared entry. This follows "Implement little. Assume much." — known
+   future goals must not become unnecessarily expensive.
+3. **The draw call belongs to the viewport per the spec.**
+   `VIEWPORT_V02_ARCHITECTURE.md` §4.2 lists `RenderMesh.render(camera)` —
+   "issue draw call" — as part of the RenderMesh contract. Gate 5 deferred
+   it as a scoping choice, not an architectural exclusion. A real draw path
+   therefore needs the contract to carry drawable structure, not just
+   named byte ranges.
+4. **C rejected:** a separate GL mirror recreates the parallel draw path
+   that every earlier harness used and that this work set out to end
+   (§2 Option C). `C wird nicht verwendet, weil` it duplicates the
+   persistence/counter machinery and re-splits the render truth.
+5. **A rejected as the permanent design:** it works today (spike evidence
+   stands and remains the reference for GL mechanics), but its correctness
+   rests on an uncontracted call order. `A wird nicht als Dauerlösung
+   verwendet, weil` the fragility grows with every known future resource
+   (point 2) and the layout would live in two places (point 1).
+
+### Binding constraints for the implementation
+
+- **Additive, not replacing.** The existing per-name `allocate()` /
+  `update()` / `destroy()` primitives, `resource_ids()` semantics (one
+  stable ID per named resource) and all `BenchmarkCounters` stay valid.
+  The new information (layout declaration: attribute groups, index buffer,
+  uniform kind; and an explicit rebuild bracket replacing the inferred
+  "trio" cycle) is added with defaults, so stores that do not need it are
+  unaffected.
+- **Existing tests stay green without edits** (Gate 5/7 viewport tests in
+  `tests/`). If a test must change, that is a finding to report, not to
+  fix silently.
+- **Playground stays unchanged** (AD-010 Addendum 2026-09-25).
+  `playground/gl_store.py::PlaygroundPygletStore` subclasses `PygletStore`
+  and must keep working without edits. If that proves impossible, stop
+  and return to Discovery.
+- **Not a general GPU resource manager** (spec §1 non-goal stands). The
+  layout declaration describes exactly what `RenderMesh` draws — no
+  registry, no render graph, no pluggable passes.
+- **The spike is reference, not source.** Mechanics proven in
+  `experiments/viewport_draw_binding_spike/` (indexed multi-attribute
+  VertexList, in-place attribute slices, uniforms at draw time, rebuild on
+  topology) inform the Production implementation; its code is not copied
+  into `src/` wholesale (Promotion Boundary, M3).
+
+### Deliberately not decided here
+
+- Exact API names and signatures of the layout declaration / rebuild
+  bracket.
+- Whether the current `PygletStore` (single-attribute persistence probe)
+  is kept as-is next to a new drawable GL store or reimplemented — both
+  must satisfy the Playground constraint above.
+- Batched range updates for multi-vertex moves (spec §12, spike
+  measurement "multi-vertex move"). B makes them expressible; whether and
+  when to add them is a separate, measured question.
+- Q2–Q7 from the spike README (flat shading, edge/point data, overlay
+  representation, triangulation under symmetry, entry-point location,
+  tool → viewport notification).

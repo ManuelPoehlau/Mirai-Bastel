@@ -2,7 +2,7 @@
 
 > Type B — Research Package. See the handoff document for full scope,
 > acceptance criteria and known pitfalls. Results here feed
-> `AD-018-PRODUCTION-DRAW-BINDING.md` (draft, status PROPOSED) and, per
+> [`docs/architecture/AD-018-PRODUCTION-DRAW-BINDING.md`](../../docs/architecture/AD-018-PRODUCTION-DRAW-BINDING.md) (drafted here as PROPOSED, decided 2026-09-25) and, per
 > AGENTS.md §5/M5, do NOT themselves change any architecture decision.
 
 ## Question (H1)
