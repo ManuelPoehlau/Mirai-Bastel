@@ -77,14 +77,19 @@ class Viewport:
         self.render_mesh.sync()
 
     def render(self) -> None:
-        """Issue Draw-Call. No-Op, solange kein GL-Backend (PygletStore)
-        gebunden ist - siehe `resource_store.PygletStore`."""
-        # Gate 5 Scope: Der eigentliche Draw-Call (glDrawElements o.ä.) ist
-        # Teil des Entry-Points/Window-Adapters (nicht Teil dieses Gates,
-        # siehe VIEWPORT_V02_ARCHITECTURE.md §1 "Non-Goals" / Gate-Planung
-        # Task 3.9/3.10-Verschiebung). Diese Methode existiert als stabiler
-        # Aufrufpunkt für einen künftigen Renderer.
-        return None
+        """Issue Draw-Call (AD-018 §4.3): delegiert an
+        `RenderMesh.render(camera)`, mit der bereits über `bind_camera()`
+        gebundenen Kamera. No-Op, solange kein GL-Backend (z.B. `GLRenderStore`)
+        gebunden ist oder noch keine Kamera gebunden wurde - siehe
+        `RenderMesh.render()`/`resource_store.PygletStore`.
+
+        Bleibt bewusst ohne eigenes Kamera-Argument (wie `sync()`), damit
+        `src.mirai`/Entry-Points einen stabilen No-Arg-Aufrufpfad behalten;
+        die Kamera-Instanz lebt weiterhin ausschließlich in `RenderMesh`
+        (Duck-Typing-Bindung, siehe Paket-Docstring)."""
+        if self.render_mesh.camera is None:
+            return None
+        self.render_mesh.render(self.render_mesh.camera)
 
     # -- Zugriff für Tests/Diagnose -------------------------------------------
 

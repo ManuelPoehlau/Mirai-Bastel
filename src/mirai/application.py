@@ -38,6 +38,7 @@ from typing import Optional
 from core import HistoryStack, Scene, Selection
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
+from viewport.resource_store import ResourceStore, TraceStore
 
 from .interaction import BindingSet, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
@@ -85,8 +86,21 @@ class Application:
             if tool_class:
                 self.tool_manager.register(command, tool_class)
 
-    def init_scene(self, geometry_type: str = "cube") -> None:
-        """Initialisiert die Default-Szene (aktuell: Würfel)."""
+    def init_scene(
+        self,
+        geometry_type: str = "cube",
+        store_type: type[ResourceStore] = TraceStore,
+    ) -> None:
+        """Initialisiert die Default-Szene (aktuell: Würfel).
+
+        `store_type` (Stage A, AD-018 §5/§6): additiv durchgereicht an
+        `Viewport(...)`. Default bleibt `TraceStore` (headless, kein GL-
+        Kontext nötig) — bestehende Aufrufstellen/Tests bleiben unverändert.
+        Ein Entry-Point mit echtem Fenster übergibt hier `GLRenderStore`
+        (`src/viewport/gl_render_store.py`), um durch den echten Draw-Pfad
+        zu rendern. `geometry_type` bleibt für dieses Paket "cube"-only
+        (kein OBJ-Loading über `Application.init_scene()`, siehe AD-018 §5
+        Stage-A-Handoff §4.2)."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
@@ -97,7 +111,9 @@ class Application:
         # Duck-Typing an RenderMesh.bind_camera() übergeben (siehe
         # VIEWPORT_V02_ARCHITECTURE.md §9). Es entsteht KEINE zweite
         # Kamera-Repräsentation.
-        self.viewport = Viewport(self.scene.mesh, selection=self.scene.selection)
+        self.viewport = Viewport(
+            self.scene.mesh, selection=self.scene.selection, store_type=store_type
+        )
         self.viewport.bind_camera(self.camera)
 
     def dispatch_command(
