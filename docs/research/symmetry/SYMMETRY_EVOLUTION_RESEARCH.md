@@ -292,7 +292,7 @@ Jeweils: scheinbar einfache V1-Entscheidung → warum sie später teuer wird →
   - Führende Seite beim Modellieren? (E1/E6)
   - Seam-Schutz hart oder mit Übergangszone? (E2)
   - Nicht unterstützte Tools blockieren oder nur markieren? (E5)
-- **Priorität:** Connect oder Knife als V1-Pfad-Fall? Vorschlag Connect (AD-017-Kontext), aber das entscheidet der Artist.
+- **Priorität:** Connect oder Knife als V1-Pfad-Fall? Vorschlag Connect (AD-017-Kontext), aber das entscheidet der Artist. Artist-Entscheidung 2026-09-25: Knife (A8, WP-SYM-LAB-01 Slice 6).
 - **Referenzzustand:** Auf welcher Form wird Korrespondenz später berechnet — Rest, Basis, Modellierzustand? Relevant erst in V3, aber V1 soll es nicht ausschließen.
 - **ARCH-02-Schnittstelle:** Reicht „eine Absicht mit zwei Seiten" als Semantik, oder braucht Remapping mehr? Offen.
 - **ARCH-01:** Ist die Definition an Objekt, Mesh oder Geltungsbereich gebunden? Hängt am Object/Component-Modell.
