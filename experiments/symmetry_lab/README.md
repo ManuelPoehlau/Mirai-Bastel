@@ -37,9 +37,10 @@ Ein unbekannter Name bricht **vor** dem Öffnen des Fensters mit der Liste der g
 (`python -m pip install pyglet`). Beim Start listet die Konsole die aktiven Lab-Overrides.
 Schließen: ESC (wenn kein Move scharf ist oder läuft) oder Fenster-X.
 
-### Manuelle Prüfung Slice 3 (Manu, Windows) — offen
+### Manuelle Prüfung Slice 3 (Manu, Windows) — KEEP (2026-09-25)
 
-Noch **nicht** vom Artist validiert. Vorschlag für die Prüfung:
+**Artist-Verdikt (Manu, 2026-09-25): KEEP.** Aussage: „Läuft bisher alles wie geplant."
+Prüfschritte, wie geprüft:
 
 1. Terminal öffnen, in den Repo-Ordner wechseln (`cd <pfad>\Mirai-Bastel`).
 2. `python experiments/symmetry_lab/run.py head_basemesh` starten. Die Konsole listet jetzt
@@ -71,9 +72,21 @@ Noch **nicht** vom Artist validiert. Vorschlag für die Prüfung:
     `Symmetrie: X (partial) | ohne Partner: 54`; die 54 Vertices sind magenta markiert (siehe
     Befund E4 unten).
 
-### Manuelle Prüfung Slice 5 (Manu, Windows) — offen
+### Manuelle Prüfung Slice 5 (Manu, Windows) — KEEP (2026-09-25)
 
-Noch **nicht** vom Artist validiert. Baut auf Slice 3/4 auf; hier nur, was neu ist.
+**Artist-Verdikt (Manu, 2026-09-25): KEEP.** Aussage: Solange die Vertices exakt auf der
+Symmetrie-Linie liegen, funktioniert Re-Symmetrize reibungslos. Liegt ein Vertex nicht exakt in
+der Mitte, funktioniert Symmetrie weiterhin, Re-Symmetrize aber erwartungsgemäß nicht — so wie der
+aktuelle Stand sein soll.
+
+*Einordnung (Agent, nicht Teil des Verdikts):* Nachgestellt am Code. Rutscht ein Seam-Vertex erst
+**nach** dem Einschalten von der Ebene, legt Re-Symmetrize ihn wieder exakt darauf (`valid`).
+Liegt ein Mittel-Vertex schon **beim Einschalten** nicht exakt auf `0.0`, entsteht durch E3 eine
+Lücke in der Seam, das Mesh zerfällt nicht in zwei Teile und Re-Symmetrize wird mit
+„Seam teilt das Mesh in 1 Teile (nötig: genau 2)" abgelehnt. Folgefrage für spätere Versionen:
+`docs/research/symmetry/SYMMETRY_EVOLUTION_RESEARCH.md` §12.
+
+Baut auf Slice 3/4 auf; hier nur, was neu ist.
 
 1. `python experiments/symmetry_lab/run.py man_with_shoes_basemesh` starten. Die Konsole listet
    zusätzlich `key:m -> ReSymmetrize`.
@@ -109,9 +122,10 @@ Noch **nicht** vom Artist validiert. Baut auf Slice 3/4 auf; hier nur, was neu i
     **M** mit einem grünen Seam-Vertex als Auswahl; **M** bei Symmetrie **Y** auf `subd_cube`
     (Seam teilt das Mesh nicht in zwei Teile); **Q** und dann **M** (Move scharf).
 
-### Manuelle Prüfung Slice 4 (Manu, Windows) — offen
+### Manuelle Prüfung Slice 4 (Manu, Windows) — KEEP (2026-09-25)
 
-Noch **nicht** vom Artist validiert. Baut auf Slice 3 auf; hier nur, was neu ist.
+**Artist-Verdikt (Manu, 2026-09-25): KEEP.** Aussage: „Läuft bisher alles wie geplant."
+Baut auf Slice 3 auf; hier nur, was neu ist.
 
 1. `python experiments/symmetry_lab/run.py head_basemesh` starten, Symmetrie mit **Shift+S**
    auf `X` schalten (siehe Slice 3, Schritt 3).

@@ -298,6 +298,14 @@ Jeweils: scheinbar einfache V1-Entscheidung → warum sie später teuer wird →
 - **ARCH-01:** Ist die Definition an Objekt, Mesh oder Geltungsbereich gebunden? Hängt am Object/Component-Modell.
 - **Absichtliche Asymmetrie:** Braucht sie ein eigenes Konzept (Layer, Markierung) oder genügt „teilweise"? V2/V3.
 - **Nicht untersucht:** Radiale Symmetrie für Characters (Spinnen, Oktopus), UV-Symmetrie.
+- **Seam-Deklaration bei nicht exakter Mitte (V2+, Artist-Frage, 2026-09-25):** Wie erklärt der
+  Artist die Seam, wenn Mittel-Vertices nicht exakt auf der Ebene liegen (z. B. OBJ-Rundung, von
+  Hand verschoben)? Anlass: Symmetry Lab Slice 5 (KEEP). Dort wird die Seam beim Einschalten aus
+  exakten Positionen abgeleitet (Lab-Annahme E3); ein Mittel-Vertex neben der Ebene reißt eine
+  Lücke, und Re-Symmetrize lehnt ab. Das ist für V1 gewollt (keine Toleranz, A5), berührt aber den
+  Grundsatz des Design Brief, dass Position die Seam nur *vorschlagen*, nicht *definieren* darf.
+  Mögliche Richtungen (nicht bewertet): Seam explizit wählen/korrigieren, Vorschlag mit Bestätigung,
+  Toleranz nur als Vorschlagshilfe.
 
 ---
 
