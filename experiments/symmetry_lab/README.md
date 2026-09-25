@@ -9,13 +9,16 @@ LMB-Drag einen Vertex symmetrisch. Bei symmetrischen Meshes ist auch die Schatti
 (eigene, lab-lokale Anzeige-Triangulierung/Normalen — Slice 4, E10). Mit **M** (Vorschau) und
 **M** (ausführen) spiegelt Re-Symmetrize die Seite der Auswahl exakt auf die andere Seite; die
 Partner dafür kommen aus einer topologischen Paarung ab der Seam (Slice 5, Lab-Experiment). Jede
-Handlung (Symmetrie-Schritt, Move oder Re-Symmetrize) ist genau ein Undo-Schritt.
+Handlung (Symmetrie-Schritt, Move oder Re-Symmetrize) ist genau ein Undo-Schritt. Slice 6 fügt
+eine **headless** Engine für einen gespiegelten Knife hinzu (`lab_knife.py`) — noch ohne Fenster,
+Taste oder Vorschau, also im Lab noch nicht spielbar (das folgt in Slice 7).
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
 [Slice 3](../../docs/architecture/WP-SYM-LAB-01_SLICE3_CLAUDE_CODE_HANDOFF.md) (Symmetrie + Move, Entscheidungen A1/A2, E1–E6 in §2),
 [Slice 4](../../docs/architecture/WP-SYM-LAB-01_SLICE4_CLAUDE_CODE_HANDOFF.md) (Hover-Ziel für Move, symmetrische Anzeige-Triangulierung, Entscheidungen A3/A4, E7–E10 in §2),
-[Slice 5](../../docs/architecture/WP-SYM-LAB-01_SLICE5_CLAUDE_CODE_HANDOFF.md) (Re-Symmetrize über topologische Paarung, Entscheidungen A5–A7, E11–E15 in §2).
+[Slice 5](../../docs/architecture/WP-SYM-LAB-01_SLICE5_CLAUDE_CODE_HANDOFF.md) (Re-Symmetrize über topologische Paarung, Entscheidungen A5–A7, E11–E15 in §2),
+[Slice 6](../../docs/architecture/WP-SYM-LAB-01_SLICE6_CLAUDE_CODE_HANDOFF.md) (gespiegelter Knife, headless Engine, Entscheidungen A8–A11, E16–E22 in §2).
 
 > **Importiert nicht aus `playground/`.** Benötigte Draw-Stücke sind kopiert/adaptiert, mit
 > Herkunftsvermerk im jeweiligen Docstring (Präzedenz AD-010). Abgesichert durch
@@ -371,6 +374,104 @@ Alle 54 `UNPAIRED`-Vertices von `man_with_shoes_basemesh` haben einen topologisc
   zwischen zwei gespiegelten Hälften, ist auch die Paarung falsch — das Lab kann das nicht
   erkennen, nur (über die Komponentenzahl) eine Seam, die das Mesh nicht in zwei Teile teilt.
 
+## Gespiegelter Knife — Lab-Experiment (Slice 6, headless)
+
+`lab_knife.py`. **Lab-Experiment, keine Capability** — keine Änderung an `src/` oder am
+Playground-Knife. Nur die Engine: kein Fenster, kein Edge-Hover, keine Pfad-Vorschau, keine
+Taste (alles Slice 7). **Nicht vom Artist geprüft** — belegt ist nur das headless Verhalten
+unten. Die Engine ist eine Kopie von `playground/topology_tools/knife.py` und
+`connect_in_shared_face` (Herkunftsvermerk im Docstring, Präzedenz AD-010, E16) und läuft nach
+dem gleichen Session-Modell (AD-017 §6–§8): Klick = nächster Schnitt, In-Session-Undo/Redo =
+letzter Schnitt, Cancel = alles verwerfen, Commit = genau ein `MeshStateCommand`. Kein
+Auswahl-Residue: der Knife fasst `scene.selection` nicht an (E22).
+
+**Was:** Ist Symmetrie an, erzeugt jeder Klick beide Seiten in *einem* Session-Schritt
+(AD-SYM-02 §2.1, INV-7):
+
+- **Edge-Klick:** Quelle `split_edge(e, t)` → `n`. Auf der Spiegel-Edge `split_edge(e', 0.5)` →
+  `n'`, danach `n'` exakt auf `mirror_position(pos(n))` — **nicht** über ein gespiegeltes `t`
+  (Befund P3). `n ↔ n'` wird als Absichts-Paar gemerkt.
+- **Connect:** Quelle wie im Playground (niedrigste gemeinsame Face). Gespiegelt wird in **der**
+  Face, deren Vertex-Menge das Partnerbild der Quell-Face ist — nicht in „irgendeiner" Face.
+  Ist die Verbindung ihr eigenes Spiegelbild, entsteht sie genau einmal.
+- **Seam-Edge-Klick:** kein Spiegel-Split; `n` ist selbst-gepaart und liegt exakt auf der Ebene
+  (Achsenkomponente `0.0`). Die **Seam wird im selben Schritt nachgeführt**: neue
+  `SymmetryDefinition` mit gleicher Ebene, die tote Edge raus, die zwei Halb-Edges rein. Ohne
+  das zerfällt die Seam (Befund P1). Weil die Definition Teil von `export_state()` ist, nehmen
+  In-Session-Undo und der Commit-Eintrag die Seam-Änderung automatisch mit.
+- **Abgelehnt:** Start und Ziel beide auf der Seam („Schnitt entlang der Seam nicht
+  unterstützt" — die Spiegel-Face würde dieselbe Verbindung ein zweites Mal verlangen; Vorbild
+  Maya sperrt die Seam für Multi-Cut; Artist-Semantik offen), ein Ziel ohne auflösbaren
+  Spiegelpartner (INV-5), eine fehlende Spiegel-Edge/-Face, eine schon existierende Verbindung.
+
+**Warum so (A9):** Das Spiegelziel kommt aus dem **Operationskontext**, nicht aus Positionen
+oder Topologie. Reihenfolge (E17): (1) Vertex in dieser Session erzeugt → sein Absichts-Partner
+(`intent_pairs`, INV-6 „Gegenseite aus der Absicht"); (2) Endpunkt einer gültigen Seam-Edge →
+er selbst (INV-4); (3) bestehende Geometrie → Capability-Korrespondenz `PAIRED` (bei `valid`
+vollständig und exakt); (4) sonst abgelehnt. Position und Topologie sind danach **unabhängige
+Validierung** jedes Schritts (E19, `validate_step`, als Datenobjekt `KnifeValidation`
+abrufbar):
+
+- **Position:** jedes Absichts-Paar `x ↔ y` ist in der Capability `PAIRED` mit Partner `y`,
+  jeder selbst-gepaarte Vertex ist `SEAM`;
+- **Topologie:** `lab_topology.topological_pairing` bildet jedes Absichts-Paar identisch ab;
+- **Seam/Seiten:** `symmetry_state == valid`, genau 2 Seiten, 0 Konflikte.
+
+Scheitert eine Prüfung, wird der ganze Schritt zurückgerollt (Mesh, Start, Pfad,
+`intent_pairs`), die Meldung nennt die Prüfung (A11). Das ist die Regel dieses Experiments,
+keine Architekturentscheidung über eine künftige Capability.
+
+**Gate (A10, E20):** Symmetrie aus → Knife läuft ungespiegelt wie im Playground, ohne
+Validierung. Symmetrie an und nicht (`valid` und 2 Seiten) → `begin` wird abgelehnt
+(`KnifeRejected`), keine Session — z. B. `man_with_shoes_basemesh` X (`partial`) und
+`subd_cube` Y (keine Seam, 1 Seite).
+
+**Befunde** (Ebene X, Seam aus E3; `tests/test_lab_knife.py`). Die „+X-Quad" ist die niedrigste
+FaceId unter den Quads mit allen Vertices auf +X (`subd_cube` f12, `head_basemesh` f163);
+geschnitten wird zwischen den Edges (v0, v1) bei t=0.3 und (v2, v3) bei t=0.6:
+
+| Befund | `subd_cube` | `head_basemesh` |
+|---|---|---|
+| Baseline | `valid`, topo 26/26, Seiten 12/12 | `valid`, topo 326/326, Seiten 162/162 |
+| **P1** Seam-Edge roh splitten (ohne Nachführung), t=0.37 | Vertex x = 0.0; `partial`; Seam 7/8 gültig; **1 Seite** | x = 0.0; `partial`; Seam 35/36; **1 Seite** |
+| **P2** einseitiger Schnitt split(0.3) + split(0.6) + connect in einer +X-Quad | topo **0/28**, 28 Konflikte, 40 Face-Paar-Konflikte | topo **0/328**, 328 Konflikte, 644 Face-Paar-Konflikte |
+| **P3** gespiegelter Schnitt über `1−t` (Kanten hier umgekehrt orientiert) | ein Spiegelpunkt 1.1e-16 daneben → `partial`, topo 30/30 | exakt → `valid` |
+| **P3′** Spiegelpunkt über `mirror_position` (E18) | `valid`, topo 30/30, Seiten 13/13 | — |
+| Engine: gespiegelter Schnitt Edge→Edge | `valid`, topo 30/30, Seiten 13/13 | `valid`, topo 330/330, Seiten 163/163 |
+
+- **P1** ist der Grund für die Seam-Nachführung: die gesplittete Seam-Edge ist tot, die Seam
+  hat eine Lücke, die Seiten laufen ineinander.
+- **P2** — Gegenprobe (deckt sich mit Slice 5): einseitiger `split_edge` allein → topo 326/327
+  (`head_basemesh`); einseitiger `connect_vertices` allein → Positionszustand `valid` bei
+  asymmetrischer Topologie. Die *Ursache* des Totalausfalls ist nicht untersucht.
+  **Beobachtung** (Probe mit einem Spion auf `lab_topology._walk`, ohne Code-Änderung): beide
+  Hälften der geschnittenen Quad sind wieder 4-Ecke, gleich lang wie die ungeschnittene
+  Spiegel-Quad, und die Breitensuche akzeptiert beide als Face-Paar mit ihr. Von diesen
+  falschen Paaren läuft sie weiter (die Spiegel-Quad wird in 21 bzw. 320 Face-Paaren
+  besucht), bis selbst alle Seam-Vertices im Konflikt sind (8/8, 36/36; im Test festgehalten:
+  4-Ecke und Seam-Vertices im Konflikt). Der gespiegelte Knife vermeidet P2, weil beide Seiten
+  im selben Schritt geschnitten werden; `lab_topology.py` bleibt unverändert.
+- **P3:** Die Spiegel-Edges der +X-Quad sind in beiden Assets umgekehrt orientiert, also
+  `1−t`. Auf `subd_cube` liegt ein so gesetzter Punkt eine Rundungsstufe neben der
+  Spiegelposition; ohne Toleranz (A5) ist er dann `UNPAIRED`. Deshalb setzt die Engine den
+  Punkt mit `mirror_position`. Wird die Platzierung künstlich auf `1−t` zurückgestellt
+  (Monkeypatch im Test), lehnt die Validierung `Position` ab und rollt zurück; die Topologie
+  bestätigt das Paar in diesem Fall trotzdem — die beiden Prüfungen können also
+  unterschiedlich urteilen, genau dafür sind beide da.
+
+**Beobachtet, nicht entschieden:** Nach einem Schnitt `a → m` (m auf der Seam) ist der
+Klick auf den bestehenden Spiegelpunkt `a'` abgelehnt, weil `m–a'` schon existiert
+(„Verbindung existiert bereits"); kein doppelter Edge, keine Sonderlogik.
+
+**Grenzen:**
+
+- Nur bei `valid` mit 2 Seiten; Knife bei `partial` ist offen (A10).
+- Keine Face-Cuts (AD-017 §6 offen), keine Vorschau, keine Artist-Semantik für Seam-Sehnen.
+- Undo/Cancel/Rollback stellen Vertices, Edges, Faces und Symmetrie-Definition bitgleich her,
+  die ID-Zähler in `export_state()` aber nicht: `load_state` setzt sie nur vorwärts
+  (AD-001, eine vergebene ID wird nie wieder ausgegeben). Redo ist auch in den Zählern
+  bitgleich. Gleiche Ausnahme wie in den Playground-Knife-Tests.
+
 ## Anzeige-Triangulierung (Slice 4, E10)
 
 Nur im Lab, keine Änderung an `src/viewport/derived.py` — reine Anzeige-Entscheidung, keine
@@ -430,6 +531,7 @@ pyglet-Event → mirai.pyglet_input → app.bindings.command_for(input, "symmetr
 | `lab_symmetry.py` | Ebene (E1), Seam-Ableitung (E3), Zyklus als `MeshStateCommand` (E2), Befund | nein |
 | `lab_topology.py` | Topologische Paarung (E11) und Seiten (E12) — Lab-Experiment | nein |
 | `lab_resymmetrize.py` | Re-Symmetrize-Plan (E12/E13), Ausführung als `MeshStateCommand` (E14), Vorschau-Text | nein |
+| `lab_knife.py` | Gespiegelter Knife (E16–E22), Validierung `validate_step` (E19) — headless Engine, noch nicht im Fenster | nein |
 | `lab_status.py` | Text der Statuszeile (inkl. Move-Ziel-Label) und der Vorschau-Zeile | nein |
 | `lab_draw_data.py` | VBO-Daten (Faces/Edges/Vertices/Highlight/Ebenen-Umriss/Re-Symmetrize-Vorschau); lab-lokale Triangulierung + Normalen (E10) | nein |
 | `lab_render.py` | Shader + Vertex-Lists, Draw-Reihenfolge | ja |
@@ -455,7 +557,7 @@ Headless: GL-freie Module werden direkt getestet. Tests, die `pyglet.window` bra
 `tests/_pyglet_headless.py`. Symmetrie-Zyklus, Move und Re-Symmetrize laufen headless über den
 Dispatcher (`tests/test_lab_symmetry.py`, `tests/test_lab_move.py`,
 `tests/test_lab_resymmetrize.py`); die topologische Paarung ist in `tests/test_lab_topology.py`
-charakterisiert.
+charakterisiert, der gespiegelte Knife (Befunde P1–P3 und Engine) in `tests/test_lab_knife.py`.
 
 ## Beobachtungen aus Slice 2 (nicht gelöst, zur Einordnung)
 
