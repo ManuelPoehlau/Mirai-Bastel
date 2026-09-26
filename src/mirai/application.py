@@ -35,7 +35,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from core import HistoryStack, Scene, Selection
+from core import HistoryStack, Scene, Selection, SelectionMode
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
@@ -107,6 +107,9 @@ class Application:
         self.pointer: PointerGestures = PointerGestures(self.bindings)
         self.viewport_width: int = 1
         self.viewport_height: int = 1
+        # WP-06 B2b (E20): letzte bekannte Cursor-Position (None = unbekannt
+        # bzw. Cursor außerhalb des Fensters) - für das Hover-Re-Pick nach Zoom.
+        self._cursor: tuple[float, float] | None = None
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -229,6 +232,7 @@ class Application:
 
     def pointer_release(self, button: str, x: float, y: float) -> bool:
         """Maustaste losgelassen. True = ein Klick-Command wurde ausgeführt."""
+        self._cursor = (x, y)
         click = self.pointer.release(button, x, y)
         return click is not None and self._execute_click(click)
 
@@ -239,6 +243,47 @@ class Application:
             return False
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
         self._camera_changed()
+        # Unter dem ruhenden Cursor liegt nach dem Zoom ggf. ein anderer Vertex.
+        if self._cursor is not None and not self.pointer.active:
+            self._update_hover(*self._cursor)
+        return True
+
+    # -- Hover (WP-06 B2b, E20) -------------------------------------------------
+
+    def pointer_motion(self, x: float, y: float) -> bool:
+        """Mausbewegung ohne gedrückte Taste: Vertex-Hover unter dem Cursor.
+
+        Während einer laufenden Pointer-Geste wird Hover nicht aktualisiert.
+        True = `selection.hovered` hat sich geändert."""
+        self._cursor = (x, y)
+        if self.pointer.active:
+            return False
+        return self._update_hover(x, y)
+
+    def pointer_leave(self) -> bool:
+        """Cursor hat das Fenster verlassen: Hover löschen."""
+        self._cursor = None
+        return self._set_hovered(None)
+
+    def _update_hover(self, x: float, y: float) -> bool:
+        # Nur Vertex-Mode (B2b); andere Modi haben noch keinen Hover.
+        if self.viewport is None or self.selection.mode is not SelectionMode.VERTEX:
+            return False
+        vid = pick_nearest_vertex(
+            self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
+        )
+        return self._set_hovered(vid)
+
+    def _set_hovered(self, hovered) -> bool:
+        """Setzt `selection.hovered` (reiner UI-State, kein History-Eintrag) und
+        benachrichtigt den Viewport nur bei einer echten Änderung."""
+        current = self.selection.hovered
+        # IDs sind int-Subklassen: VertexId(3) == EdgeId(3) - Typ mitvergleichen.
+        if type(current) is type(hovered) and current == hovered:
+            return False
+        self.selection.hovered = hovered
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:
@@ -249,6 +294,9 @@ class Application:
         else:
             return False
         self._camera_changed()
+        # Eine laufende Orbit-/Pan-Geste löscht Hover; er kehrt mit der
+        # nächsten Mausbewegung nach dem Release zurück.
+        self._set_hovered(None)
         return True
 
     def _execute_click(self, click: Click) -> bool:
