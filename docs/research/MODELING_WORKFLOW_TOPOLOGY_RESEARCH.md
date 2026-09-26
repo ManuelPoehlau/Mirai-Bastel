@@ -1,7 +1,7 @@
-# Modeling Workflow & Topology Grammar — Research V1.1
+# Modeling Workflow & Topology Grammar — Research V1.2
 
 **Status:** Discovery — Recherche, keine Entscheidungen
-**Datum:** 2026-09-21 (V1) · 2026-09-21 (V1.1: §15 Local Topology Control — Deep Dive)
+**Datum:** 2026-09-21 (V1) · 2026-09-21 (V1.1: §15 Local Topology Control — Deep Dive) · 2026-09-26 (V1.2: §16 Topologie-Absicht und zusammengesetzte Operationen)
 **Modus (M5):** Discovery
 **Rolle:** Modeling Workflow Researcher / Artist-Workflow-Analyse
 **Vorgesehene Ablage:** `docs/research/MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md`
@@ -1106,6 +1106,561 @@ Auswahl und Priorität entscheidet der Artist.
 
 ---
 
+## 16. Topologie-Absicht und zusammengesetzte Operationen — Deep Dive 2
+
+**Ergänzt:** 2026-09-26 (V1.2) · **Modus (M5):** Discovery · **Verhältnis zu V1/V1.1:** baut auf
+§6.2 (Fluss-Tätigkeiten), §10 (Mechanik / Operation / Absicht) und §15.0 (drei harte Regeln) auf und
+wiederholt sie nicht. Neu ist der Blick auf **bestehende Werkzeuge und Forschungssysteme**, die
+Absicht und Mechanik bereits trennen — und auf die Frage, wo sie das *nicht* tun.
+
+> **Leitfrage dieses Abschnitts:**
+> Wie könnte klassisches Box-Modeling artist-freundlicher werden, wenn der Artist Topologie-Absicht
+> direkt ausdrücken könnte und die Software die wiederkehrende, mechanische Topologiearbeit übernähme?
+
+Wie der Rest des Dokuments: **keine** Architektur, **keine** Tastenbelegung, **keine** Produktentscheidung,
+**keine** Implementierungsaufgaben. Was hier „denkbar" heißt, ist genau das — denkbar, nicht empfohlen.
+
+---
+
+### 16.0 History Awareness (M1) und Context Check (M2) für diesen Abschnitt
+
+**Existenzprüfung** (Repository gelesen, Stand `main` @ `d4cf93f`):
+
+| Existiert | Wo | Bedeutung hier |
+|---|---|---|
+| Fluss-Verben (starten, fortsetzen, umlenken, terminieren, verdichten, umverteilen, herumführen) | §6.2 | Ausgangsvokabular; wird in 16.3 geprüft, nicht neu erfunden. |
+| Drei Ebenen Mechanik / Operation / Absicht, Hypothese A vs. B | §10.2–10.3 | Wird in 16.8 gegen die neue Evidenz geprüft. |
+| Mathematik der lokalen Kontrolle (Streifen enden nicht, Polbilanz, Dipole, Paritätsregel) | §15.0, §15.3 | Liefert die Begründung, warum manche Absichten sich auf wenige Grundformen reduzieren (16.3). |
+| Experiment-Kandidaten E1–E5, L1–L5 | §13, §15.11 | **Keiner davon ist bisher gespielt** (kein Verdikt, kein Verweis in anderen Dokumenten gefunden). 16.9 ergänzt deshalb möglichst *Varianten* bestehender Kandidaten statt neuer Experimente. |
+| Connect/Split/Knife-Semantik, kontextuelles C | `docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md`, AD-017 | Mirai hat damit bereits ein kontextsensitives Operationsmuster (Auswahlkontext → Operation). Wird zitiert, nicht neu verhandelt. |
+| Interaction-Grammatik (Activation, Termination, Residue, **Composition**) | `docs/design/artist_playground/RESEARCH_MAP.md`, `UX_RESEARCH.md` | Alle *Interaktions*fragen aus 16.5/16.7 gehören dorthin. Hier nur als Fragen markiert. |
+| Temporäre Artikulation (EX-A) | `playground/experiments/articulation/` | Relevant für E4 („Biegen und Schauen"): Die Infrastruktur für schnelles Biegen existiert inzwischen im Playground. |
+| Topologie-Identität / Provenienz | `ROADMAP.md` ARCH-02 | 16.7 H6 berührt diese Frage und wird dorthin verwiesen, nicht hier beantwortet. |
+| Symmetrie-Prinzip „eine Absicht → bekannter Operationskontext" | `README.md`, `docs/research/symmetry/` | Verwandter Gedanke; 16.7 H6. |
+
+**Verworfenes:** Kein Hinweis, dass Absichts- oder Composite-Operationen je geprüft und abgelehnt wurden.
+Abgelehnt ist nur die Streifen-Semantik von Connect als alleinige Semantik (Connect Lab, D1-a REJECT) —
+das ist eine Mechanik-, keine Absichtsentscheidung.
+
+**Ehrlicher Hinweis zum Dokument selbst:** Der Schluss dieses Dokuments empfiehlt ausdrücklich, *nicht*
+weiter zu erweitern, sondern zu spielen. Dieser Abschnitt entsteht trotzdem, weil der Artist die Recherche
+ausdrücklich angefragt hat (Priorität ist Artist-Entscheidung). Konsequenz: 16.9 hängt neue Fragen
+möglichst an die bereits vorbereiteten Experimente an, statt die Liste zu verlängern.
+
+**Context Check — Annahmen (nur korrigieren, wenn falsch):**
+
+1. Topologie-Operationen im Playground (Stand `d4cf93f`): Split an Parameter t, Collapse, Connect
+   pro Face (Wings-artig), Vertex Connect, Knife-Session, Loop Insert, Loop Slide (nur geschlossene
+   Loops in regulären Quads), Loop-/Ring-Auswahl (konservativ: Loop nur über Valenz-4-Vertices,
+   Ring nur über Quads), Multi-Face-Extrude.
+2. **Nicht vorhanden:** Dissolve / Merge Faces (im Code ausdrücklich als fehlendes Primitive vermerkt),
+   Kante drehen („spin edge"), Relax / Set-Flow-artige Positionshilfen, SubD-Vorschau, Creases.
+3. Diese Liste ist eine **Feststellung**, keine Wunschliste. Ob etwas davon gebraucht wird, ist offen.
+
+---
+
+### 16.1 Methode dieses Abschnitts
+
+Für jedes untersuchte Werkzeug wurden zwei Fragen gestellt, nicht „welches Feature gibt es":
+
+1. **Was muss der Artist beim Benutzen noch denken?**
+2. **Welche mechanische Arbeit nimmt die Software ihm ab?**
+
+Die Differenz zwischen beidem ist die *Absicht*, die das Werkzeug bedient.
+
+**Quellenlage (Methodenkritik, ergänzt §3):**
+- Hersteller-Handbücher (Autodesk, Blender, SideFX, Maxon) → **FAKT** für *Verhalten*, nicht für Wirkung.
+- Fachpublikationen (SIGGRAPH, SGP, Eurographics) → **FAKT** für das, was das jeweilige System tut;
+  die Übertragung auf Box-Modeling ist immer **INTERPRETATION**, weil fast alle Retopologie-Systeme sind.
+- Händler-/Tipp-Blogs → höchstens **KONSENS**. Beispiel für die Unzuverlässigkeit: Zwei Tipp-Artikel
+  desselben Händlers zu ZRemesher geben für die Dichte-Bemalung **entgegengesetzte** Farbkonventionen an
+  (einmal „weiß = dichter", einmal „dunkler = dichter"). Solche Details werden hier nicht verwendet.
+- Community-Foren → **KONSENS** oder **BEOBACHTUNG**, wertvoll vor allem dort, wo Artists ein Problem
+  in eigenen Worten beschreiben.
+
+Nicht geprüft: Modo, Cinema 4D, Silo im Detail (Silo und Wings sind über AD-017 und
+`CONNECT_NONQUAD_DISCOVERY.md` bereits abgedeckt). Die Stichprobe ist also **nicht vollständig**.
+
+---
+
+### 16.2 A — Bestehende Ansätze, geordnet nach der Absicht, die sie bedienen
+
+Die Tabelle ist bewusst **nicht nach Programm** geordnet. Sie gruppiert Mechanismen nach der
+Absicht dahinter.
+
+#### 16.2.1 „Die Punkte sollen der Form folgen" — Positions-Absicht
+
+| Mechanismus | Was der Artist noch denkt | Was die Software abnimmt | Evidenz |
+|---|---|---|---|
+| **Maya Edit Edge Flow** — verschiebt gewählte Kanten so, dass sie der Krümmung der Umgebung folgen; Stärke 0 = flach mittig, 1 = volle Krümmungsanpassung; Wert lässt sich danach über den Node nachstellen | *Welcher* Loop; wie stark | Die Neupositionierung jedes Vertex | FAKT (Autodesk-Handbuch). Handbuch warnt: mehr als zwei nicht benachbarte Loops → unvorhersehbare Ergebnisse. |
+| **3ds Max Set Flow** (+ „Auto Loop": wählt zu jeder gewählten Kante den Loop mit) | Welche Kanten | Loop-Auswahl *und* Positionierung | FAKT (Autodesk-Handbuch) |
+| **3ds Max Flow Connect** — Loop durch einen Ring einfügen **und** sofort an die Form anpassen | Welcher Ring | Einfügen + Nachpositionieren als *ein* Schritt | FAKT. Das ist ein echtes Composite: „Loop Insert → Set Flow". |
+| **Relax-Pinsel** (Maya Quad Draw, RetopoFlow) — gleichmäßige Verteilung; Quad Draw sperrt automatisch Rand- oder Innenvertices, je nachdem wo der Pinsel ansetzt | Wo | Gleichmäßiges Verteilen, Randschutz | FAKT (Handbücher) |
+
+**BEOBACHTUNG:** Diese Gruppe ist in den etablierten DCCs **breit und seit Langem** vorhanden.
+Keines dieser Werkzeuge ändert die Konnektivität.
+
+**Begriffsfund (FAKT + INTERPRETATION):** „Edge Flow" bedeutet in Mayas Werkzeugname etwas **Geometrisches**
+(Krümmungsstetigkeit der Positionen), in der Artist-Sprache (§6) etwas **Topologisches** (Richtung der Loops).
+Derselbe Begriff bezeichnet zwei verschiedene Dinge. Das dürfte Gespräche über „Flow" still verunklaren —
+auch in diesem Projekt.
+
+#### 16.2.2 „Dieser Loop soll hier enden / abbiegen" — Konnektivitäts-Idiome als Einzelbefehl
+
+| Mechanismus | Was der Artist noch denkt | Was die Software abnimmt | Evidenz |
+|---|---|---|---|
+| **3ds Max Build End** — baut aus zwei parallelen Loops, die an derselben Kante enden, einen Quad-Abschluss | Welche zwei Loops enden gemeinsam, und wo | Den Umbau der Endstelle in Quads | FAKT. **Vorbedingung laut Handbuch:** funktioniert nur, wenn *genau zwei* parallele Loops auf derselben Seite derselben Innenkante enden. |
+| **3ds Max Build Corner** — baut eine Quad-Ecke, damit ein Loop abbiegt | Wo der Loop abbiegen soll | Den Umbau an der Abbiegestelle | FAKT (Handbuch). Community-Bericht: funktioniert im Edit-Poly-Modifier nicht (mehrere Versionen) — BEOBACHTUNG. |
+| **3ds Max Distance Connect** — verbindet zwei Endpunkte über die dazwischenliegende Topologie hinweg | Start und Ende | Den Pfad dazwischen | FAKT |
+| **MESHmachine (Blender-Addon)** — u. a. „Fluss einer Fase durch Umdrehen der Ecken umlenken", dreieckige Fasenecken in Quad-Ecken umwandeln | Welche Ecke | Den Umbau | FAKT (Herstellerbeschreibung), Hard-Surface-Kontext |
+
+**INTERPRETATION — der wichtigste Einzelfund dieses Abschnitts:** *Build End* ist genau die **Kehre**
+aus §15.3 — zwei parallele Reihen, die in Wahrheit ein Streifen sind. Ein Hersteller hat also
+„Loop terminieren" als eigenen Befehl gebaut, und die Vorbedingung („genau zwei parallele Loops") ist
+nichts anderes als Regel 1 aus §15.0: Ein Quad-Streifen kann nur zusammen mit einem Partner enden.
+Die Werkzeugwelt hat die Mathematik unabhängig wiederentdeckt — als Bedienungseinschränkung.
+
+**BEOBACHTUNG zur Auffindbarkeit:** Laut Handbuch erscheinen Build End und Build Corner nur, wenn die
+Werkzeugleiste maximiert oder das Panel abgelöst ist. Die einzigen Absichts-Befehle für Konnektivität
+im untersuchten Mainstream sind also zugleich die am schwersten auffindbaren.
+
+#### 16.2.3 „Nur hier, nicht überall" — Reichweite begrenzen
+
+| Mechanismus | Was der Artist noch denkt | Was die Software abnimmt | Evidenz |
+|---|---|---|---|
+| **ZBrush ZModeler: Aktion + Ziel** (Target) — z. B. Edge Delete für einzelne Kanten, Teil-Loops oder ganze Loops; „EdgeLoop Complete" vs. „EdgeLoop Partial" | Komponente, Aktion, Reichweite | Das Finden der betroffenen Elemente | FAKT (Maxon-Dokumentation) |
+| **Maskieren/Verstecken als Reichweitenbegrenzung** | Welche Region *nicht* betroffen sein darf | — (Umweg) | BEOBACHTUNG (ZBrushCentral) |
+
+**BEOBACHTUNG, in Artist-Worten:** Ein Nutzer fragt im ZBrush-Forum wörtlich nach der Absicht aus §15.4:
+Wie verhindert man, dass „Insert EdgeLoop" durch die ganze Geometrie läuft, *um den Fluss umzulenken*?
+Seine eigene Lösung: vorher Polygone löschen, wo der Loop enden soll. Die Antwort: Maskieren/Verstecken,
+keine Garantie, dass komplizierte Pfade als Loop erkannt werden, die Eck-Polygone seien das Problem;
+Alternativen seien Inset, mehrere Teil-Loops plus Nachnähen, oder ein Schnittpinsel.
+→ Die Absicht ist klar formuliert. Das Werkzeug kennt sie nicht. Der Artist baut sie aus Umwegen.
+
+**INTERPRETATION:** ZModelers *Aktion × Ziel* ist das im Mainstream **nächstgelegene Vorbild einer
+Grammatik** — Verb (Aktion) und Reichweite (Ziel) sind getrennte, frei kombinierbare Wahlen. Es ist aber
+eine Grammatik über **Auswahlreichweite**, nicht über **Flussabsicht**: „EdgeLoop Partial" sagt, *wie viel*
+betroffen ist, nicht *wie der Fluss danach verlaufen soll*.
+
+#### 16.2.4 „Der Fluss soll hier entlang" — Striche und Skizzen
+
+| Mechanismus | Artist gibt vor | Software bestimmt | Evidenz |
+|---|---|---|---|
+| **Maya Quad Draw** — Loop, Kante oder Rand verlängern; automatisches Verschweißen | Richtung durch Ziehen | Neue Faces, Verschweißen | FAKT (Handbuch) |
+| **RetopoFlow** — PolyStrips (wichtige Loops als Strich skizzieren, verlängert/überbrückt), Strokes (zwei ungefähr parallele Striche → gleichmäßiges Quad-Raster dazwischen), Contours (Ring um zylindrische Form) | Verlauf, Segmentzahl | Vertexpositionen, Raster, Einrasten auf Oberfläche | FAKT (Herstellerdoku). Selbstbeschreibung: gute Topologie-Praktiken sollen der Normalfall sein. |
+| **Takayama et al., SIGGRAPH 2013** — Artist skizziert Patch-Ränder; Flussrichtung folgt den Rändern; Topologie wird über die **Unterteilungszahl je Rand** gesteuert; Singularitäten werden bei Bedarf automatisch eingefügt, **Ort bleibt steuerbar** | WAS (Patch), WO (Ränder), RICHTUNG, ANZAHL | WIE (Innenaufteilung, Polsetzung) | FAKT (Paper). Evaluierung mit professionellen Artists. |
+| **Takayama et al., 2014 (Pattern-based N-sided)** — N-seitiger Patch (2 ≤ N ≤ 6) mit vorgegebenen Randzahlen wird garantiert quadrangulierbar gemacht, sofern die Eingabe gültig ist; Standard: minimale Zahl irregulärer Vertices; **andere zulässige Lösungen wählbar** | Randzahlen | Muster, Pole | FAKT |
+| **Marcias et al., SIGGRAPH 2015 (Data-driven)** — Quadrangulierungsmuster werden **aus von Artists gebauten Modellen gelernt**; Striche im Patch schlagen eine Flussrichtung vor, das System wählt ein passendes Muster | Patch + gewünschter Fluss | Muster aus einer Datenbank echter Artist-Lösungen | FAKT (Paper), informelle Studie mit drei Artists |
+| **Campen & Kobbelt, SIGGRAPH Asia 2014 (Dual Strip Weaving)** — atomare Operation ist ein **ganzer geschlossener Streifen**; beim **Hovern** wird sofort der beste Streifen an der Mausposition gezeigt, ein Klick fixiert ihn; fixierte Streifen schränken die nächsten Vorschläge ein; Farbhinweise zeigen, wo Änderungen die Qualität verbessern würden | Welcher der vorgeschlagenen Streifen | Streifenverlauf, Konsistenz, Vorschläge | FAKT (Paper) |
+
+**FAKT, sinngemäß aus Takayama 2013:** Artists wollen bei Charakter-Meshes ausdrückliche Kontrolle über
+Fluss **und** Singularitäten; automatische Verfahren erreichten die Qualität manueller Lösungen (Stand
+2013) noch nicht. Das ist eine Forschungsgruppe, die genau die Mitte sucht, nach der Mirai fragt.
+
+**Die Grenze dieser ganzen Gruppe (INTERPRETATION, wichtig):** Alle Einträge sind **Retopologie** —
+sie setzen eine *fertige Referenzoberfläche* voraus, auf die neue Topologie einrastet. Beim Box-Modeling
+existiert diese Oberfläche nicht; sie entsteht gerade erst (§5.1, §5.8). Die ausgereiftesten
+Absichts-Werkzeuge der Branche leben also genau in dem Workflow, den die Mirai-Linie *nicht* als
+Grundlinie hat.
+
+#### 16.2.5 „So ungefähr, rechne du" — Führung für Automatik
+
+| Mechanismus | Artist gibt vor | Software bestimmt | Evidenz |
+|---|---|---|---|
+| **ZRemesher** mit Führungskurven, Kurvenstärke, Dichte-Bemalung, Zielpolygonzahl | Hauptflüsse, Dichteverteilung, Budget | Die gesamte Topologie | FAKT für die Existenz der Parameter (Maxon-Dokumentation). Details der Bedienung nur KONSENS (Händlerblogs, s. 16.1). |
+| **Instant Meshes** (bereits §4.5) | Orientierungsstriche | Feld und Mesh | FAKT |
+
+**BEOBACHTUNG:** Hier gibt der Artist WAS, WO, RICHTUNG und DICHTE vor; das WIE ist vollständig
+automatisch — aber **global**: Das ganze Mesh wird neu erzeugt, nicht eine Stelle geändert. Mehrere
+Tipp-Quellen empfehlen, bei unbefriedigendem Ergebnis einfach eine **alternative Lösung** rechnen zu
+lassen (KONSENS) — das Vertrauen beruht also auf Auswahl, nicht auf Vorhersage.
+
+#### 16.2.6 „Die Absicht soll nach dem Schritt weiterleben"
+
+| Mechanismus | Worum es geht | Evidenz |
+|---|---|---|
+| **Blender „Adjust Last Operation"** — Parameter einer Operation *nach* dem Ausführen nachstellen | Die letzte Absicht bleibt kurz editierbar | FAKT (Blender-Handbuch) |
+| **Maya Node-History** (z. B. Edit-Edge-Flow-Wert nachträglich am Node) | Parameter bleibt am Ergebnis hängen | FAKT (Autodesk-Handbuch) |
+| **MESHmachine Fuse/Unfuse, Unchamfer, Change Width** — eine *vorhandene* Fase wird **aus der Geometrie wiedererkannt** und lässt sich zurück in eine harte Kante, in eine Rundung oder auf eine andere Breite bringen; der Autor nennt das „re-constructive" | Absicht wird nicht gespeichert, sondern **rekonstruiert** | FAKT (Herstellerdoku). Begründung dort: Fasen seien ohne solche Werkzeuge eine Sackgasse, weil man für Änderungen wieder auf Kanten-/Vertex-Ebene muss. |
+
+**INTERPRETATION:** Es gibt zwei grundverschiedene Wege, eine Absicht über den Schritt hinaus zu
+erhalten: **Erinnern** (Parameter/History am Ergebnis) oder **Wiedererkennen** (Muster in der Geometrie
+lesen). MESHmachine ist der einzige gefundene Fall des zweiten Wegs im Modeling-Alltag.
+
+#### 16.2.7 Rezepte — Artist-Wissen als wiederverwendbare Operation
+
+| Mechanismus | Worum es geht | Evidenz |
+|---|---|---|
+| **Houdini Digital Assets** — eigene Node-Netzwerke werden zu wiederverwendbaren Nodes; ausgewählte innere Parameter werden nach außen „promoted" | Rezept = feste Kette + wenige nach außen gegebene Regler | FAKT (SideFX-Doku) |
+| **Autocomplete 3D Sculpting** (Peng, Xing, Wei, SIGGRAPH 2018) — zeichnet den Arbeitsablauf still auf, sagt voraus, was der Nutzer als Nächstes tun könnte; Vorschläge annehmen, teilweise annehmen oder ignorieren; vergangene Abläufe auf andere Regionen klonen | Rezepte **aus dem eigenen Verhalten** statt vorab definiert | FAKT (Paper) |
+| **Artist-Skripte/Makros** (Maya, Blender-Operatoren, Modo) | aufgezeichnete Befehlsketten | KONSENS, in dieser Session nicht im Detail geprüft |
+
+**INTERPRETATION:** Bei Houdini ist die entscheidende Designfrage eines Rezepts nicht die Kette,
+sondern **welche Parameter nach außen gegeben werden**. Die Kette enthält das Wissen des Artists;
+die freigegebenen Regler enthalten seine verbleibende Kontrolle.
+
+#### 16.2.8 Forschung: Singularitäten direkt bearbeiten
+
+| System | Kern | Evidenz |
+|---|---|---|
+| **Peng, Zhang, Kobayashi, Wonka, SIGGRAPH Asia 2011** — Operationen, die Ort, Ausrichtung, Typ und Anzahl irregulärer Vertices ausdrücklich steuern; drei Grundoperationen **bewegen oder drehen ein Polpaar**; ergänzt um Teilen, Verschmelzen, Aufheben und Ausrichten von Polen; umgesetzt **durch Quad-Collapse, Edge-Flip und Edge-Split** | Die Absicht „Pol versetzen" als *eine* Operation, gebaut aus Primitiven | FAKT (Paper), inkl. Analyse, welche Edits möglich und welche unmöglich sind |
+| **Peng & Wonka, SGP 2013** — dasselbe für quad-dominante Meshes: irreguläre Vertices *und* irreguläre Faces; Trade-off laut Paper: Pole halten scharfe Merkmale, erzeugen aber stärkere Richtungsabweichungen in glatten Bereichen; Nicht-Quads geben glattere Linien, halten aber keine scharfen Merkmale | Die „Währungsfrage" aus §15.0 als Designraum | FAKT (Paper) |
+| **Q-zip** (bereits §15.1) | lokale Singularitäts-Operation | FAKT |
+
+**BEOBACHTUNG (mit Stichproben-Vorbehalt):** „Pol versetzen" existiert in der Forschung seit mindestens
+2011 als eigene Operation mit sauberer Zerlegung in Primitive. In den untersuchten DCC-Handbüchern wurde
+keine Entsprechung gefunden.
+
+#### 16.2.9 Querschnittsbefund
+
+> **BEOBACHTUNG:** Die etablierten DCCs automatisieren **Position** breit (Set Flow, Edit Edge Flow,
+> Relax) und **Konnektivität** nur punktuell (Build End / Build Corner mit engen Vorbedingungen,
+> Hard-Surface-Addons). Absichts-Werkzeuge für Konnektivität existieren fast nur in der **Forschung**
+> und in der **Retopologie**.
+
+Das ist eine Beobachtung über eine unvollständige Stichprobe, keine Marktanalyse.
+
+---
+
+### 16.3 B — Wiederkehrende Absichten: das kleinste brauchbare Vokabular
+
+#### 16.3.1 Unabhängige Belege je Absicht
+
+| Absicht | Artist-Sprache (§6.2, §15) | Werkzeug-Evidenz (16.2) | Forschung | Hard Surface |
+|---|---|---|---|---|
+| **Fortsetzen** | Fluss fortsetzen | Quad Draw „Extend Loop", RetopoFlow Strokes | Dual Strip Weaving | — |
+| **Beenden** | Loop terminieren | Build End; ZBrush-Forum („nicht durchs ganze Mesh") | Pattern-based (Randzahlen) | Polycount: Stützkanten auf flachen Flächen früh enden lassen |
+| **Abbiegen / Umlenken** | Fluss umlenken | Build Corner; MESHmachine „Ecken drehen" | Peng 2011 (Umorientieren) | MESHmachine |
+| **Pol versetzen** | Pol verschieben (§15.1) | — (nicht gefunden) | Peng 2011, Q-zip | — |
+| **Verdichten (lokal)** | mehr Kontrolle hier | ZModeler Teil-Loops; ZRemesher Dichte-Bemalung | Takayama (Randunterteilung) | — |
+| **Ausdünnen / Übergang** | Dichte senken | — | Pattern-based; Chord-Reduktion (§15.5) | früh enden lassen |
+| **Verbinden** | Regionen verbinden | Distance Connect, PolyStrips-Brücke, Grid Fill | Pattern-based N-sided | Stützkante über Eckvertices verbinden (Polycount) |
+| **Form folgen** | Krümmung erhalten | Set Flow, Edit Edge Flow, Flow Connect | — | — |
+| **Verteilen** | Verteilung ist hässlich | Relax (Quad Draw, RetopoFlow) | — | — |
+| **Begrenzen** | nur hier | ZModeler-Ziele, Maskieren | — | — |
+| **Bewahren** | Silhouette/Kontur halten (§5.3) | Quad Draw Auto-Lock (Rand vs. Innen) | — | Stützkantenbreite steuert Rundung (Polycount) |
+
+**BEOBACHTUNG:** Die meisten Absichten aus §6.2 tauchen **unabhängig** in mindestens zwei der vier
+Spalten auf. Die Verben aus der Aufgabenstellung, die *nicht* eigenständig belegt wurden:
+**Trennen** (taucht nur als Regionsgrenze auf, z. B. Polygroups) und **Starten** (fällt in der Praxis
+mit Fortsetzen oder mit einer neuen Form wie Extrude zusammen).
+
+#### 16.3.2 Die Reduktion — drei Achsen statt einer Liste
+
+**INTERPRETATION:** Das Vokabular zerfällt in drei Arten, die sich in der Evidenz unterschiedlich verhalten:
+
+| Art | Absichten | Ändert … | Typisches Ergebnis |
+|---|---|---|---|
+| **Konnektivität** | fortsetzen, beenden, abbiegen, Pol versetzen, verdichten, ausdünnen, verbinden | die Topologie | **diskret** — es gibt wenige, abzählbare Lösungen |
+| **Position** | Form folgen, verteilen | nur Koordinaten | **kontinuierlich** — stufenlos nachstellbar |
+| **Reichweite / Schutz** | begrenzen, bewahren | nichts selbst — beschränkt die anderen | Randbedingung |
+
+#### 16.3.3 Noch kleiner — der Streifen-Kern (HYPOTHESE, mathematisch gestützt)
+
+Aus §15.0 folgt, dass sich die Konnektivitäts-Absichten auf **drei Grundformen am Streifen**
+zurückführen lassen könnten:
+
+| Grundform | Bedeutung | Zusammengesetzte Absichten |
+|---|---|---|
+| **Streifen legen** | einen Quad-Streifen beginnen oder weiterführen | fortsetzen, verbinden |
+| **Streifen enden lassen** | Kehre, Nicht-Quad, Rand oder Ring (§15.3 — es gibt keine fünfte Möglichkeit) | beenden, ausdünnen |
+| **Streifen abbiegen** | Richtungswechsel an einem Pol | umlenken |
+
+Und dann:
+- **lokal verdichten** = Streifen legen + an beiden Enden enden lassen (oder als Ring schließen);
+- **Pol versetzen** = Abbiegen an einer Stelle aufheben und an einer anderen einführen (Dipol-Bewegung);
+- **beenden** = in reinen Quads **mit einem Partnerstreifen verschmelzen** (Kehre) — genau das, was
+  3ds Max' Build End als Vorbedingung verlangt.
+
+**Stützende Evidenz:** Dual Strip Weaving macht den **Streifen** zur atomaren Operation und begründet das
+mit geringerem Planungsaufwand für den Nutzer (FAKT). Raitts Loop ist ein **Muskel-Griff** (§6.1) —
+ebenfalls ein Streifen, kein einzelnes Element.
+
+**Gegenargument (ernst gemeint):** Die Reduktion ist mathematisch sauber, sagt aber nichts darüber, ob
+ein Artist so *denkt*. Möglich ist, dass „Loop beenden" für den Artist eine unteilbare Einheit ist und
+„mit Partner verschmelzen" sich fremd anfühlt. Das ist eine Artist-Frage (16.9, T6).
+
+---
+
+### 16.4 C — Zusammengesetzte Operationsmuster
+
+| Absicht | Heutige typische Kette (branchenweit) | Was davon ist Artist-Entscheidung? | Was ist Mechanik? | Existiert irgendwo als *ein* Befehl? |
+|---|---|---|---|---|
+| Lokal verdichten mit Kehre | Teilschnitt → Eckverbindung an der Kehre → Fünfecke auflösen → Slide → Relax | Start, Ende, Seite der Kehre, Anzahl Reihen | Auflösen der Enden, Nachpositionieren | Teilweise: Build End (nur die Endstelle) |
+| Loop abbiegen | Schnitt → Kanten auflösen → Kante drehen, oft mehrfach | Ort der Biegung, Richtung | Umbau um die Biegung | Build Corner |
+| Pol versetzen | Kanten schrittweise drehen oder Collapse + Split | Zielort | alle Zwischenschritte | Forschung: Peng 2011 |
+| Dichteübergang (3→1, 4→2, 5→3) | Muster von Hand schneiden | Wo der Übergang liegt; bei ungerader Differenz: Dreieck, Ngon oder Zusatzloop | Das Muster selbst | Forschung: Pattern-based N-sided (inkl. Auswahl von Alternativen) |
+| Loop einfügen + Form halten | Loop Insert → Set Flow | Welcher Ring | Nachpositionieren | Flow Connect |
+| Region neu füllen | Löschen → Füllen → Relax | Region, Randzahlen | Innenaufteilung | Grid Fill (rechteckig), Patches (RetopoFlow) |
+| Stützkante (Hard Surface) | Bevel → Eckvertices verbinden → auf flachen Flächen früh enden | Breite (= Rundung), wo enden | Eckverbindungen | Teilweise: MESHmachine |
+| Öffnung anlegen (§10.1) | Faces löschen → Rand bereinigen → Ringe anlegen | Lage und Größe | Rand und Ringe | nicht gefunden |
+
+**HYPOTHESE — Kriterium für „mechanisch genug":** Eine Kette eignet sich als *eine* Artist-Aktion, wenn
+(1) die Artist-Entscheidungen **wenige und benennbare Größen** sind (Start, Ende, Anzahl, Seite),
+(2) der Rest bis auf **wenige abzählbare Alternativen** festliegt, und
+(3) das Ergebnis **lokal begrenzt** bleibt.
+Build End erfüllt (1)–(3); ZRemesher erfüllt (1), aber nicht (3); „Pol an eine gute Stelle setzen"
+erfüllt (1) nicht, weil *gut* eine künstlerische und deformationsabhängige Frage ist.
+
+**Ausdrücklich nicht gefolgert:** dass irgendeine dieser Ketten automatisiert werden sollte.
+
+---
+
+### 16.5 D — Chancen: wo DCCs den Artist weiterhin Mechanik erledigen lassen
+
+1. **Konnektivitäts-Absichten sind Handarbeit.** (16.2.9) Beenden, Abbiegen und Pol versetzen bestehen
+   im Alltag aus Ketten von Einzeloperationen. **BEOBACHTUNG.**
+2. **Absichts-Werkzeuge gibt es fast nur für Retopologie.** (16.2.4) Für das *gleichzeitige* Formen und
+   Topologisieren des Box-Modelings wurde kaum etwas Vergleichbares gefunden. Das ist genau das Gebiet
+   der Mirai-Linie. **INTERPRETATION.**
+3. **Werkzeuge sind standardmäßig global.** Loop-Werkzeuge laufen ums ganze Modell; „nur hier" braucht
+   Umwege (Maskieren, Polygone löschen). **BEOBACHTUNG** (ZBrush-Forum, §15.4).
+4. **Der Preis einer Entscheidung ist unsichtbar, bevor sie getroffen ist.** Die Software könnte aus
+   §15.0 wissen, ob ein gewünschter Übergang in reinen Quads überhaupt geht (Parität) und was er kostet
+   (Polpaar, Dreieck oder Zusatzloop). Der Artist erfährt es heute durch Scheitern — wie in
+   `CONNECT_NONQUAD_DISCOVERY.md` F1/F2 beschrieben. **INTERPRETATION.**
+5. **Vorschau vor dem Commit ist selten.** Dual Strip Weaving zeigt den Vorschlag beim Hovern, *bevor*
+   etwas passiert; die meisten Modeling-Werkzeuge zeigen das Ergebnis erst danach. Knüpft an die
+   Hypothese aus §7.3 an (Wert hängt an der Sichtbarkeit der Konsequenz). **BEOBACHTUNG.**
+6. **Die Absicht geht nach dem Schritt verloren.** Außer Node-History und MESHmachines Wiedererkennung
+   wird nirgends festgehalten, *warum* eine Topologie so aussieht. **BEOBACHTUNG.**
+
+---
+
+### 16.6 E — Grenzen: wo Automatik vermutlich NICHT übernehmen sollte
+
+| Situation | Warum der Artist entscheiden sollte | Evidenz |
+|---|---|---|
+| **Wo der Pol landet** | Keine belastbare Distanzregel (§15.1); abhängig von Glanz, Krümmung, Deformation | FAKT (Takayama 2013: Artists wollen Kontrolle über Singularitäten) + §15.1 |
+| **Pol vs. Dreieck vs. Ngon vs. Zusatzloop** | Das ist die Währungsfrage (§15.0); beide Seiten haben je nach Kontext recht (§15.9) | FAKT (Peng & Wonka 2013: Trade-off Pole ↔ Nicht-Quads) + KONSENS (Polycount) |
+| **Deformationsgetriebene Topologie** | Die Software kennt das Gelenkmodell nicht (Raitts Schulter, §5.5) | FAKT (Raitt/Minter) |
+| **Mehrdeutige Eingaben** | Mehr als zwei Loops → „unvorhersehbar" steht sogar im Maya-Handbuch | FAKT |
+| **Globale Löser** | Ändern mehr als gefragt (ZRemesher, Chord Collapse §15.5) | FAKT / BEOBACHTUNG |
+| **Versteckte Vorbedingungen** | Build End nur bei genau zwei Loops; Build Corner mit Modifier-Problem → brüchige Idiome untergraben Vertrauen | FAKT + BEOBACHTUNG |
+| **Nicht-Determinismus** | „Anderes Ergebnis rechnen lassen" ersetzt Vorhersagbarkeit durch Ausprobieren | KONSENS |
+
+#### Interaktionskosten — Low-Level vs. Absichts-Ebene
+
+| Kriterium | Low-Level-Kette | Absichts-Operation | Evidenzlage |
+|---|---|---|---|
+| Kontrolle | vollständig, Schritt für Schritt | auf die freigegebenen Größen beschränkt | INTERPRETATION |
+| Vorhersagbarkeit | hoch pro Schritt, niedrig fürs Gesamtergebnis | hoch, *wenn* das Ergebnis in Artist-Begriffen beschreibbar ist | INTERPRETATION |
+| Auffindbarkeit | Grundwerkzeuge sichtbar | Idiome oft versteckt (Build End) | BEOBACHTUNG |
+| Umkehrbarkeit | Undo pro Schritt, Zwischenzustände oft ungültig | ein Schritt; Nachjustieren möglich (Adjust Last Operation) | FAKT (Blender) / INTERPRETATION |
+| Mehrdeutigkeit | Artist löst sie im Kopf | Software muss sie auflösen oder fragen | INTERPRETATION |
+| Vertrauen | wächst mit Übung | bricht bei jeder verletzten Vorbedingung | BEOBACHTUNG (Build-Corner-Bericht) |
+| Topologiequalität | so gut wie der Artist | so gut wie das Muster — Forschung: Muster aus Artist-Modellen (Marcias) | FAKT / INTERPRETATION |
+| Tempo | viele Schritte | wenige | trivial |
+| Lernkurve | Werkzeugwissen *und* Topologiewissen | Topologiewissen bleibt nötig, um das Ergebnis zu beurteilen | INTERPRETATION |
+
+> **INTERPRETATION — wo Automatik unverständlicher wird als Handarbeit:**
+> Eine Absichts-Operation bleibt verständlich, solange der Artist ihr Ergebnis **vorher** in den Begriffen
+> beschreiben kann, in denen er selbst denkt („zwei Reihen enden hier, das Polpaar sitzt an der
+> Nasolabialfalte"), und **nachher** sehen kann, *warum* es so gekommen ist. Wo eine dieser beiden
+> Bedingungen fehlt, kippt sie vermutlich — unabhängig davon, wie gut das Ergebnis objektiv ist.
+
+---
+
+### 16.7 F — Neue Hypothesen
+
+Alle Punkte sind **HYPOTHESE** oder **OFFENE FRAGE**. Keiner ist eine Empfehlung.
+
+**H1 — Beenden heißt einen Partner wählen.** *(HYPOTHESE, gestützt auf §15.0 und Build End)*
+Weil ein Quad-Streifen nur zusammen mit einem Partner enden kann, reduziert sich „diesen Loop hier beenden"
+auf zwei Artist-Entscheidungen: **mit welchem Nachbarstreifen** und **wo**. Wenn das stimmt, ist die
+Absicht „beenden" kleiner und präziser, als sie klingt.
+
+**H2 — Der Streifen ist die Denkeinheit.** *(HYPOTHESE)*
+Artists denken in Streifen/Loops, nicht in Kanten (Raitts Muskel-Griff, Dual Strip Weaving; Polycount-
+Hinweis, dass reine Quads vor allem Loop-/Ring-Auswahl nutzbar halten). Mirai hat Loop-/Ring-Erkennung bereits — der Test ist billig (16.9 T2).
+
+**H3 — Der Preis ist wichtiger als die Automatik.** *(HYPOTHESE)*
+Den Preis einer Absicht **vor** dem Commit zu zeigen („kostet ein Polpaar" / „geht nur mit Dreieck oder
+einem Zusatzloop") könnte mehr Probierschleifen verhindern als das automatische Ausführen selbst.
+Das ist die Konsequenz-Sichtbarkeits-Hypothese aus §7.3, übertragen von der Geometrie auf die Topologie.
+
+**H4 — Position darf eine Antwort geben, Konnektivität sollte Alternativen zeigen.** *(HYPOTHESE)*
+Positions-Hilfen sind breit etabliert, Konnektivitäts-Hilfen kaum (16.2.9). Mögliche Erklärung:
+Positionsergebnisse sind kontinuierlich und nachstellbar, Konnektivitätsergebnisse sind diskrete Varianten.
+Auffällig ist, dass die erfolgreichen Konnektivitäts-Systeme **Auswahl** anbieten (Pattern-based: andere
+zulässige Lösungen; Dual Strip Weaving: Vorschlag + Klick; ZRemesher: alternative Lösung).
+
+**H5 — Hover-Vorschlag passt zur Mirai-Linie.** *(HYPOTHESE, gehört als Frage ins UX-System)*
+Dual Strip Weaving zeigt beim Hovern den besten Streifen. Mirai-Bastel arbeitet ohnehin hover-lastig
+(Tweak, Knife-Hover). Ob „Hover zeigt, wo dieser Loop enden würde und was es kostet" zur Interaction
+Language passt, ist eine **UX-Frage** → `UX_RESEARCH.md` / Research Map (*Signalling*, *Composition*),
+nicht hier zu entscheiden.
+
+**H6 — Absicht als Operationskontext.** *(OFFENE FRAGE, Zuständigkeit ARCH-02)*
+Das README formuliert für Symmetrie: eine Modellierabsicht → bekannter Operationskontext → bekannte
+Identitätsänderungen. Eine Absichts-Operation („Kehre zwischen Streifen A und B") trägt mehr Bedeutung
+als ihre Primitive-Kette (drei Connects, ein Collapse). Ob das für spätere Remapping-Fragen (Weights,
+Morphs) nützlich wäre, ist eine Frage für **ARCH-02** — hier nur benannt, keine Architekturaussage.
+
+**H7 — Wiedererkennen statt Erinnern.** *(HYPOTHESE)*
+MESHmachine zeigt, dass eine Absicht aus der Geometrie rekonstruierbar sein kann. Topologische Muster
+sind ebenfalls lesbar: Eine Kehre ist ein erkennbares Dipol-Muster, ein 3→1-Übergang ein erkennbares
+Muster. Absichts-Bearbeitung bräuchte dann nicht zwingend gespeicherte History.
+
+**H8 — Ein Rezept ist eine Kette mit Löchern.** *(HYPOTHESE)*
+Ein persönliches Artist-Rezept („Lippe", „Augenhöhle", „Dichteübergang") wäre eine feste Kette plus
+wenige offene Größen (Start, Ende, Anzahl, Seite) — genau wie Houdinis promotete Parameter. Das Wissen
+steckt in der Kette, die Kontrolle in den Löchern. Die schwierige Frage ist nicht das Aufzeichnen,
+sondern **welche Löcher offen bleiben**.
+
+**H9 — Das Wort „Flow" ist doppelt belegt.** *(BEOBACHTUNG → HYPOTHESE)*
+Geometrischer Fluss (Positionen folgen der Krümmung) und topologischer Fluss (Richtung der Streifen)
+werden im selben Wort geführt. Eine Trennung im Vokabular könnte Gespräche und Experimente in diesem
+Projekt schärfer machen — auch ganz ohne Werkzeug.
+
+#### Die ambitionierte Frage: Was würde denkbar, wenn Mirai um Absichten herum gedacht wäre?
+
+Nur Denkräume, ausdrücklich keine Vorschläge:
+
+- **Der Streifen als anfassbares Objekt.** Einen Loop greifen und sein *Ende* an eine andere Stelle ziehen,
+  statt Kanten umzubauen.
+- **Der Pol als Griff.** Einen Pol ziehen, und die Umgebung baut sich per Dipol-Bewegung nach
+  (die Operationen dafür existieren in der Forschung, 16.2.8).
+- **Ein „Unruhe-Budget" malen.** Das Gegenstück zur ZRemesher-Dichtebemalung: nicht malen, wo *Dichte*
+  hin soll, sondern wo *Unregelmäßigkeit* erlaubt ist (ruhige Zonen, §15.4). Absichten legen ihre Pole
+  dann bevorzugt dorthin. In der untersuchten Literatur nicht gefunden.
+- **Preisschilder statt Fehlermeldungen.** Statt „Operation nicht möglich" die Liste der Wege, wie es
+  ginge — und was jeder kostet.
+- **History in Absichtssprache.** Die History zeigt „Kehre an der Wange" statt „Connect ×3, Collapse".
+- **Rezepte aus dem eigenen Verhalten.** Wiederkehrende Ketten aus dem Griffzähler (E1) werden
+  sichtbar und können benannt werden (Autocomplete-Sculpting-Gedanke, aber für Topologie).
+- **Konsequenz in Bewegung.** Absicht auslösen und sofort im gebogenen Zustand sehen (verbindet §8.3,
+  E4 und die vorhandene Artikulation).
+
+---
+
+### 16.8 Mirais spezifische Lücke — ist das Ebenenmodell belegt?
+
+Die Aufgabenstellung schlägt vor: **Primitive → Topologie-Operation → Topologie-Absicht → Artist-Workflow**.
+§10.3 hatte bereits drei Ebenen (Mechanik / Operation / Absicht).
+
+**Was die Evidenz stützt:**
+- **FAKT:** Peng 2011 baut Absichts-Operationen („Polpaar bewegen") ausdrücklich **aus** Primitiven
+  (Collapse, Flip, Split). Die Trennung Mechanik ↔ höhere Operation ist dort real und funktioniert.
+- **FAKT:** Pattern-based (2014) und Data-driven (2015) arbeiten mit einer **Musterebene** — einer kleinen
+  Menge topologischer Muster zwischen Absicht und Mechanik. Die Community kennt dasselbe als
+  „Reduktionsmuster" (§15.3).
+
+**Was die Evidenz ergänzt (INTERPRETATION):** Zwischen Operation und Absicht scheint eine eigene Ebene
+zu liegen — **Muster / Idiom** (Kehre, 3→1, Quad-Ecke, Build End). Und die Absichtsebene selbst ist
+nicht homogen, sondern zerfällt in Konnektivität, Position und Reichweite (16.3.2):
+
+```
+Mechanik        split · collapse · connect · (dissolve) · (flip/spin)
+    ↓
+Operation       Connect · Knife · Loop Insert · Extrude · Slide
+    ↓
+Muster/Idiom    Kehre · Quad-Ecke · 3→1 · 4→2 · Ring um Merkmal
+    ↓
+Absicht         Konnektivität (legen / enden / abbiegen) · Position (Form folgen / verteilen)
+                · Reichweite (begrenzen / bewahren)
+    ↓
+Workflow        Volumen → Oberfläche → Prüfen an Silhouette / Kontur / Bewegung (§5)
+```
+
+Das ist eine Deutung, **kein Architekturvorschlag**.
+
+**Was zwischen Mirais heutigen Operationen und dem Artist-Denken fehlt (Feststellung, Stand `d4cf93f`):**
+
+- Die Operationsebene ist für **Streifen legen** gut besetzt (Connect pro Face, Knife, Loop Insert).
+- Für **Streifen enden lassen** ist sie seit dem Connect-Lab-Verdikt mechanisch möglich (Teilschnitte
+  hinterlassen Fünfecke, die weiterbearbeitet werden können), aber es gibt keine Muster-Ebene darüber.
+- Für **Streifen abbiegen / Pol versetzen** fehlen die zwei billigsten Mechaniken aus §15.1/§15.2:
+  **Kante drehen** und **Dissolve**. (Feststellung, keine Empfehlung.)
+- Für **Position** gibt es Loop Slide (nur geschlossene reguläre Loops), keine Form-folgen- oder
+  Verteilen-Hilfe.
+- **Kopplung, die leicht übersehen wird:** Loop-Auswahl und Loop Slide funktionieren nur über reguläre
+  Valenz-4-Topologie. Genau dort, wo der Artist lokal Kontrolle schafft (Teil-Loops mit Polen), enden
+  also auch die Loop-Griffe (§15.6 Punkt 5). Wer lokale Kontrolle erzeugt, verliert an dieser Stelle
+  heute seine Streifen-Werkzeuge.
+
+---
+
+### 16.9 G — Kandidaten für Artist-Experimente
+
+Wie §13 und §15.11: klein, mit vorhandener Infrastruktur, als **KANDIDAT** markiert. Wo möglich als
+**Variante eines bestehenden Kandidaten**, damit die Liste nicht nur wächst.
+
+**T1 — Absichtssatz mit freiem Vokabular** *(Variante von E2)*
+- *Frage:* Deckt das kleine Vokabular aus 16.3 Manus eigene Wörter ab? Hypothese A vs. B (§10.2).
+- *Aufbau:* Wie E2 — vor drei Topologie-Handlungen je ein Satz, was er will. Zusätzlich hinterher:
+  Welche seiner Wörter passen in die Tabelle 16.3.1, welche nicht?
+- *Kosten:* keine Codezeile.
+- *Mögliche Ergebnisse:* Wörter passen (Vokabular trägt) / Werkzeugnamen dominieren (Hypothese B) /
+  ganz andere Wörter (Vokabular ist persönlich, §14 Punkt 2).
+
+**T2 — Strich statt Klick** *(neu, ohne Code)*
+- *Frage:* H2 (Streifen als Denkeinheit) und das Gesten-Modell (C der Aufgabenstellung).
+- *Aufbau:* Screenshot eines Playground-Meshes (Kopf oder Raster). Manu zeichnet *vor* dem Modellieren
+  mit einem beliebigen Malprogramm, wo Fluss hin soll und wo er enden soll. Danach modelliert er es.
+  Verglichen wird Zeichnung mit Ergebnis und Anzahl der Operationen.
+- *Was es zeigt:* ob die Absicht als Linie/Streifen, als Region oder als Punkt gedacht wird.
+
+**T3 — Preisschild** *(Variante von L2, Wizard-of-Oz)*
+- *Frage:* H3, H4.
+- *Aufbau:* Die vier vorbereiteten L2-Lösungen (Kehre, Dreieck-Ende, lokaler Ring, durchgehender Loop)
+  einmal ohne und einmal **mit Beschriftung des Preises** zeigen („+1 Polpaar", „+1 Dreieck",
+  „+1 Loop über 40 Faces"). Die Beschriftung macht ein Agent vorab von Hand — keine Software.
+- *Was es zeigt:* ob sichtbarer Preis die Wahl verändert oder beschleunigt.
+- *Voraussetzung:* L2-Meshes müssen vorbereitet sein (Agentenarbeit, nicht Artist-Arbeit).
+
+**T4 — Unruhe-Zonen malen** *(neu, Wizard-of-Oz)*
+- *Frage:* Ist eine Regions-Absicht (D der Aufgabenstellung) für Manu sinnvoll — in der Umkehrung
+  „wo darf Unregelmäßigkeit hin"?
+- *Aufbau:* Auf einem Screenshot markiert Manu ruhige Zonen. Ein Agent löst eine Verdichtungsaufgabe von
+  Hand so, dass die Pole dort landen. Manu beurteilt nur das Ergebnis: KEEP / ITERATE / REJECT / UNKNOWN.
+- *Was es zeigt:* ob „Zonen markieren" als Ausdrucksform überhaupt trägt, bevor irgendetwas gebaut wird.
+
+**T5 — Rezept aus der eigenen Kette** *(Folge von E1, erst danach sinnvoll)*
+- *Frage:* H8.
+- *Aufbau:* Aus einem E1-Mitschnitt die wiederkehrenden Ketten heraussuchen. Manu entscheidet, welche
+  er benennen würde, und welche Größen (Start, Ende, Anzahl …) für ihn offen bleiben müssten.
+
+**T6 — Beenden als Partnerwahl** *(Variante von L3)*
+- *Frage:* H1 und das Gegenargument aus 16.3.3.
+- *Aufbau:* Wie L3, aber die Aufgabe einmal als „lass den Loop hier enden" und einmal als „lass diesen
+  Loop mit jenem Nachbarn verschmelzen" formulieren. Welche Formulierung fühlt sich natürlich an?
+
+**Vorgeschlagene Reihenfolge nach Erkenntnis pro Aufwand:** T1 (= E2) → T2 → T6 (mit L3) → T3 (mit L2)
+→ T4 → T5 (nach E1). Die Priorität entscheidet der Artist.
+
+**Bewusst nicht vorgeschlagen:** Experimente, die eine SubD-Vorschau, Dissolve oder Kante-drehen
+voraussetzen. Diese existieren nicht, und sie für ein Experiment zu bauen, wäre eine
+Prioritätsentscheidung des Artists (vgl. L4).
+
+---
+
+### 16.10 Offene Fragen dieses Abschnitts
+
+| # | Frage | Art |
+|---|---|---|
+| I-Q1 | Denkt Manu Konnektivitäts-Absichten als Linie (Streifen), als Region oder als Punkt? | Artist-Selbstversuch (T2) |
+| I-Q2 | Ist „beenden" für ihn eine Einheit oder „mit Partner verschmelzen"? | Artist-Selbstversuch (T6) |
+| I-Q3 | Verändert ein sichtbarer Preis die Topologieentscheidung? | Experiment (T3) |
+| I-Q4 | Gibt es in DCCs, die hier nicht geprüft wurden (Modo, Cinema 4D, Plasticity, Houdini-Modeling-Tools), weitere Konnektivitäts-Idiome? | Recherche |
+| I-Q5 | Tragen Absichts-Operationen Informationen, die für spätere Remapping-Fragen nützlich sind? | ARCH-02 |
+| I-Q6 | Wiedererkennen oder Erinnern — welcher Weg würde Absichten über den Schritt hinaus tragen, und welcher passt zu Undo über Snapshots (AD-001)? | Architektur, erst nach Artist-Evidenz |
+| I-Q7 | Wie viele der Muster (Kehre, 3→1, Quad-Ecke) braucht Manu tatsächlich? Wenige oder viele? | Messbar (E1) |
+
+---
+
+### 16.11 Was dieser Abschnitt NICHT beantwortet
+
+- Ob Mirai-Bastel Absichts-Operationen bauen sollte. **Nicht gefolgert.**
+- Wie Manu tatsächlich denkt — nur, was die Branche und die Forschung anbieten.
+- Wie gut die Forschungssysteme sich im Alltag bewähren. Belegt sind Papers mit kleinen Nutzerstudien,
+  keine Produktionserfahrung.
+- Ob die Stichprobe der DCCs repräsentativ ist (16.1).
+- Irgendeine Interaktions-, Tasten- oder Architekturfrage.
+
+---
+
 ## Quellen
 
 | Quelle | Art | Evidenzstärke |
@@ -1128,6 +1683,24 @@ Auswahl und Priorität entscheidet der Artist.
 | topologyguides.com: *Optimal Edge Loop Reduction Flows*, *Moving and Manipulating Edge Poles* | Community-Anleitung | niedrig–mittel |
 | CG Cookie: *The Art of Good Topology*; Forum *Optimal Edge Loop Reduction* | Community | niedrig |
 | E-/N-Pol-Terminologie (diverse Community-Texte) | Community | niedrig |
+| Autodesk 3ds Max Hilfe: *Loops Panel* (Set Flow, Auto Loop, Flow Connect, Distance Connect, Build End, Build Corner) | Software-Dokumentation | hoch (für Verhalten) |
+| Autodesk-Forum: *Build Corner does not work* (Edit-Poly-Modifier) | Community | niedrig (BEOBACHTUNG) |
+| Autodesk Maya Hilfe: *Edit Edge Flow*, *Quad Draw Tool Options*, *Quad Draw marking menu* | Software-Dokumentation | hoch (für Verhalten) |
+| Maxon ZBrush-Dokumentation: ZModeler Edge Actions/Targets; ZRemesher-Funktionsübersicht | Software-Dokumentation | hoch (für Existenz der Funktionen) |
+| ZBrushCentral: *ZModeler insert edgeLoop redirect edge flow*; *How to create an edge loop* | Community | niedrig–mittel (Artist-Problembeschreibung) |
+| Novedge-Tippartikel zu ZRemesher und ZModeler | Händlerblog, teils widersprüchlich | niedrig (nur KONSENS) |
+| RetopoFlow 3/4 — Herstellerbeschreibung (CG Cookie / Orange Turbine) | Herstellerdoku | mittel |
+| Blender-Handbuch: *Grid Fill*; *Undo & Redo — Adjust Last Operation* | Software-Dokumentation | hoch (für Verhalten) |
+| MACHIN3: *MESHmachine* Dokumentation und Produktbeschreibung | Herstellerdoku | mittel |
+| SideFX: *Houdini Digital Assets* (Einführung, Asset-UI/Parameter-Promotion) | Software-Dokumentation | hoch (für Verhalten) |
+| Polycount: *Holding edges (bevel) while maintaining quad based geometry* | Community | niedrig–mittel (KONSENS) |
+| Takayama, Panozzo, Sorkine-Hornung, Sorkine-Hornung: *Sketch-Based Generation and Editing of Quad Meshes*, SIGGRAPH 2013 | Fachpublikation | hoch |
+| Takayama, Panozzo, Sorkine-Hornung: *Pattern-Based Quadrangulation for N-Sided Patches*, SGP 2014 | Fachpublikation | hoch |
+| Marcias et al.: *Data-Driven Interactive Quadrangulation*, SIGGRAPH 2015 | Fachpublikation | hoch |
+| Campen, Kobbelt: *Dual Strip Weaving*, SIGGRAPH Asia 2014 | Fachpublikation | hoch |
+| Peng, Zhang, Kobayashi, Wonka: *Connectivity Editing for Quadrilateral Meshes*, SIGGRAPH Asia 2011 | Fachpublikation | hoch |
+| Peng, Wonka: *Connectivity Editing for Quad-Dominant Meshes*, SGP 2013 | Fachpublikation | hoch |
+| Peng, Xing, Wei: *Autocomplete 3D Sculpting*, SIGGRAPH 2018 | Fachpublikation | hoch |
 
 ---
 
@@ -1140,8 +1713,13 @@ Auswahl und Priorität entscheidet der Artist.
 - `docs/design/artist_playground/UX_RESEARCH.md` und Research Map V1 — Interaction Grammar
 - `experiments/rigging-skinning-morphing/` — technische Realität der Topologie-Mutation
 - `experiments/topology/` — Loop/Ring, Connect Edges
+- `docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md` und AD-017 — Connect/Split/Knife-Semantik (§16)
+- `docs/design/artist_playground/RESEARCH_MAP.md` — Composition/Signalling als Ziel der UX-Fragen aus §16
+- `playground/experiments/articulation/` — temporäre Artikulation (relevant für E4)
 
 ---
 
 **Nächster sinnvoller Schritt ist nicht, dieses Dokument zu erweitern.**
-Er ist, eines der Experimente aus §13 zu spielen und zu beobachten, was passiert.
+Er ist, eines der Experimente aus §13, §15.11 oder §16.9 zu spielen und zu beobachten, was passiert.
+Mit V1.2 gilt das umso mehr: Die Recherche beschreibt jetzt Branche, Forschung und Mathematik recht
+vollständig — und noch immer nichts über den einen Artist, für den das Werkzeug gebaut wird.
