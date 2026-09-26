@@ -46,17 +46,17 @@ Decided 2026-09-26 (Manu), directly — informs WP-06 Slice B2's Production sele
 ## Component Mode (1 / 2 / 3)
 
 ### Vertex (Taste 1)
-**Fühlt sich an:**
+**Fühlt sich an:** KEEP
 
 **Verdict:** KEEP / ITERATE / REJECT
 
 ### Edge (Taste 2)
-**Fühlt sich an:**
+**Fühlt sich an:** KEEP
 
 **Verdict:** KEEP / ITERATE / REJECT
 
 ### Face (Taste 3)
-**Fühlt sich an:**
+**Fühlt sich an:** KEEP
 
 **Verdict:** KEEP / ITERATE / REJECT
 
