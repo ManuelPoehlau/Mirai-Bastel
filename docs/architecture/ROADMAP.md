@@ -1,7 +1,7 @@
 # Mirai-Bastel — Architecture & Development Roadmap
 
-**Status:** Roadmap V1.0 reviewed and accepted for current development
-**Date:** 2026-08-29
+**Status:** Roadmap V1.1 — updated to reflect actual repository state and to add the Integration Track (Stage B)
+**Date:** 2026-09-26 (previously 2026-08-29, §14 last touched 2026-09-04)
 **Branch:** `main`
 
 This document records the architecture and dependency roadmap developed in Phases A–F. It is the canonical roadmap for the project. It is intentionally a dependency- and work-package-oriented plan, not a feature checklist.
@@ -46,12 +46,21 @@ This roadmap is a current architectural plan, not a promise that every future su
 - Loop / Ring experiments
 - Topology experiments
 - Connect Edges experiment / implementation
+- WP-02 Interaction & Tool Framework, WP-04 Gates 3–7 (Application orchestrator, Viewport v0.2)
+- AD-018 Production Draw Binding (Option B, `GLRenderStore`) — **DECIDED**
+- **Stage A Production Entry Point** (`src/main.py`): real window, camera navigation, real Core→Viewport→GLRenderStore draw path — read-only, no mutation yet (2026-09-25)
+- AD-017 Knife/Cut system, promoted Core exception `split_edge(edge_id, t)` (2026-09-22)
+- WP-STAB stabilization pass on Playground selection/overlay/history edge cases (2026-09-23)
+- WP-SYM-01 / WP-SYM-LAB-01 Symmetry Lab, Slices 1–7 (definition, correspondence, symmetric Move, mirrored Knife) — Core exceptions AD-SYM-01/02
+- WP-SHADE-LAB-01 Viewport Shading Lab, Slice 1 (Key+Fill worklight) — **just started, 2026-09-26**
 
-`src/core/` is deliberately conserved/frozen. Experiments may reveal requirements for future Core changes, but experiment code does not become production architecture automatically.
+`src/core/` is deliberately conserved/frozen, with the above exceptions each individually documented in `CORE_V1_FREEZE.md` §7.1. Experiments may reveal requirements for future Core changes, but experiment code does not become production architecture automatically.
 
 ### Current development direction
 
-The project is moving from isolated experiments toward larger, bounded technical work packages. The next production-oriented foundation is the editor boundary: Production Viewport, Interaction and Tools, followed by a general Transform foundation.
+The project has moved past the editor-boundary foundation: Stage A gives it a real, if read-only, production window. Three research tracks are now running in parallel in the Playground (Symmetry, Shading, and the older Topology/Tweak families), each producing candidates that are individually decided (KEEP/ITERATE/REJECT) but that have **no single place where decided candidates are actually assembled into the running app**.
+
+That gap is the current priority: an **Integration Track (Stage B, WP-06 below)** that pulls already-decided Playground/Lab results into `src/main.py` incrementally — one small, real capability at a time — rather than waiting for every open research question to close first. See §7a.
 
 **WP-01A (Basic Viewport & Input Foundation)** ist im Viewport-V1-Experiment umgesetzt und praktisch validiert: konfigurierbare Keyboard-/Mouse-Bindings über eine Mapping-Schicht (Input → Context → Binding → Command), Display-Modi (Shaded / Flat Shaded / Wireframe + Wireframe Overlay), Pan sowie Nachführung der bestehenden Selection- und Topology-Interaction. `src/core/` blieb dabei unverändert (Core-Freeze). Die konkrete Produktionsstruktur unter `src/` wird als explizite Architekturentscheidung aus diesem Stand abgeleitet (siehe §5 WP-01 und SOURCE_ARCHITECTURE.md).
 
@@ -428,6 +437,43 @@ A reviewed architectural model and documented constraints. Do not build a large 
 
 ---
 
+## WP-06 — Stage B: Incremental Integration into the Production App
+
+**Goal:** Give the project one actual place — `src/main.py` — where already-decided Playground/Lab candidates land in the running app, piece by piece, instead of staying scattered across Symmetry Lab, Shading Lab, Topology Lab and Tweak Lab indefinitely.
+
+### Why now
+
+Stage A (window + camera + real draw path) exists and is stable. Three research tracks are simultaneously active with no shared destination for their output. The risk is not that any one Lab is unproductive — each produces real, tested candidates — but that "decided" never turns into "in the app," and the gap between Playground and Production keeps widening.
+
+### Scope
+
+- One first real mutation in the Production window (e.g. Move, since it already has committed Core/Tool/History support) — selection, live update, commit, undo/redo, through the real `Application → Viewport → GLRenderStore` path from Stage A.
+- A visible, explicit "candidate intake" step: before something is wired into `src/main.py`, it must already carry an Artist Verdict (KEEP) from its originating Lab. No experiment is promoted merely because it exists.
+- Small, sequential slices — one capability per slice, each independently shippable and revertable, in the spirit of the Symmetry Lab's own slice model.
+
+### Not in scope
+
+- Merging or resolving the still-open UX questions across Selection, Transform, Topology and Tweak in one sweep. Only individually decided pieces get pulled in.
+- A general "promotion pipeline" framework. Start concrete (one tool at a time); generalize only if a second and third promotion prove the same shape is needed.
+- Any new Lab research. WP-06 consumes Lab output; it does not generate it.
+
+### Dependencies
+
+- Stage A (`src/main.py`, AD-018) — **Hard**
+- An explicit Artist Verdict (KEEP) per candidate, from its Lab — **Hard**
+- WP-02 Interaction & Tool Framework — **Hard**
+
+### Architecture contracts
+
+- A promoted capability uses the existing production `Tool`/`Operation`/`History` path unchanged (per WP-02's Definition of Done) — it does not bring its own Playground-only input or commit machinery along.
+- Promotion is a documented decision (a short `AD-0xx` or a dated note in this roadmap), not a silent code merge — consistent with §5 "Never silently change architecture" in `AGENTS.md`.
+
+### Definition of Done
+
+At least one Lab-validated capability (e.g. Move) is reachable and usable in `src/main.py`, through the real production path, with its own practical-viewport verification — and the process used to get it there is repeatable for the next candidate.
+
+---
+
 ## Later: WP-05+ — Deformation & Rigging
 
 Deformation Stack foundation will follow WP-04 production infrastructure.
@@ -748,16 +794,20 @@ This policy is intentionally based on the Connect Edges experience: the experime
 ## Completed
 
 - WP-02 — Interaction & Tool Framework
-- Core V1
+- Core V1 (frozen, with documented exceptions — see §7.1 of `CORE_V1_FREEZE.md`)
 - Viewport V1 experiment
 - Selection foundation and selection experiments
 - History / Undo / Redo
 - Loop / Ring experiments
 - Connect Edges
+- WP-04 Gates 3–7 — Application orchestrator, Viewport v0.2 render architecture
+- AD-018 — Production Draw Binding (Option B, `GLRenderStore`)
+- **Stage A — Production Entry Point** (`src/main.py`): window, camera, real rendering — **DONE 2026-09-25**, deliberately read-only
+- AD-017 — Knife/Cut system (Core exception: `split_edge(t)`)
 
 ## Artist Playground (active research initiative)
 
-**WP-AP — Artist Playground** (2026-09-10: planning complete, foundation next)
+**WP-AP — Artist Playground**
 
 The Artist Playground is a research-first initiative that precedes production tool decisions. Instead of implementing features and hoping they feel right, the Playground allows experimenting with variants and letting the artist decide before anything enters production.
 
@@ -765,29 +815,36 @@ Reference: `docs/design/artist_playground/ROADMAP.md` and `docs/design/artist_pl
 
 Work packages: WP-AP-01 (Foundation) → WP-AP-02 (Experiment Host) → WP-AP-03 (Selection Lab) → WP-AP-04 (Tool Variants, open) → WP-AP-05 (Topology Lab)
 
-Candidates proven in the Playground feed back into the production roadmap (WP-02, WP-03, Modeling Track).
+**Currently active, in parallel** (as of 2026-09-26):
+
+- **Symmetry Lab** (WP-SYM-LAB-01) — Slices 1–7 done: symmetry definition/correspondence, symmetric Move, mirrored Knife (lab-local)
+- **Viewport Shading Lab** (WP-SHADE-LAB-01) — Slice 1 just started: Key+Fill worklight, background contrast presets still open
+- **Tweak Lab** — existing research family, Host integration still evolving
+- WP-STAB — ongoing stabilization fixes on Playground selection/overlay/history behavior (not a Lab, but recurring maintenance across all of them)
+
+Candidates proven in the Playground feed back into the production roadmap — but see **WP-06** below: that hand-off currently has no concrete destination yet.
 
 ## Next production-oriented work
 
-1. **WP-04 — Production Foundation** (2026-09-04: GATES 3–12 ACTIVE)
-   - Application orchestrator, Interaction framework, Viewport v0.2
-   - 12 gates planned; currently 3–4 queued for implementation
-   - Reference: `docs/WP-04_GATE_PLANNING.md` v2.0
-   
-2. **WP-01 — Production Viewport Foundation** (WP-01A validated in experiment; production structure TBD after WP-04)
+1. **WP-06 — Stage B: Incremental Integration** *(new top priority)*
+   - One real, Lab-validated capability (starting candidate: Move) wired into `src/main.py` through the existing Stage A draw path
+   - Purpose: stop candidates from accumulating across Labs with nowhere to land; pull in only what already has an Artist Verdict, one slice at a time
+   - See the WP-06 entry in §7 above for scope/non-scope
 
-3. **WP-03 — Transform Foundation** (dependent on WP-04 Application)
+2. **WP-01 — Production Viewport Foundation** — superseded in practice by Stage A; no further separate work expected here beyond what WP-06 needs
 
-Modeling / Topology Expansion remains a parallel track.
+3. **WP-03 — Transform Foundation** — Move/Rotate/Scale already exist as Core operations and Playground tools; the open part is exactly WP-06 (getting them into the app), not new Core work
+
+Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife) remains a parallel research track, feeding WP-06 the same way Symmetry and Shading do.
 
 ## Strategic research / gates
 
 - **ARCH-01 — Object / Component Model**
 - **ARCH-02 — Topology Identity / Provenance / Remapping**
 
-## Later (after WP-04 complete)
+## Later (after WP-06 / production foundation stabilizes)
 
-- **WP-05+ — Deformation & Rigging Foundation** (rescheduled from WP-04)
+- **WP-05+ — Deformation & Rigging Foundation**
 - Morph Targets
 - Advanced rigging / skinning
 - Animation Foundation
