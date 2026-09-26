@@ -1,7 +1,9 @@
-"""Application: Navigation über Bindings + PointerGestures (WP-06 B2, AD-019).
+"""Application: Navigation + Vertex-Selektion über Bindings (WP-06 B2, AD-019).
 
 Headless (TraceStore), kein pyglet/Fenster. Prüft den Pfad
-Input → BindingSet → PointerGestures → Application → Camera/Viewport.
+Input → BindingSet → PointerGestures → Application → Camera/Selection/Viewport.
+Selektion = Playground-Modifier-Variante (AP-03): LMB ersetzt, Shift fügt
+hinzu, Ctrl entfernt, Alt togglet; Klick ins Leere leert nur ohne Modifier.
 """
 
 from __future__ import annotations
@@ -130,3 +132,153 @@ def test_pointer_before_init_scene_does_not_crash():
     app.set_viewport_size(WIDTH, HEIGHT)
     _drag(app, _mouse("LEFT", "alt"), [(10, 0)])
     assert app.pointer_scroll(_wheel("UP"))
+
+
+# -- Vertex-Selektion (Modifier-Variante) ---------------------------------------
+
+MISS = (2.0, 2.0)  # Bildecke: weit weg von jedem Würfel-Vertex
+
+
+def _screen_pos(app: Application, vid):
+    pos = app.camera.project_to_screen(app.scene.mesh.vertex_position(vid), WIDTH, HEIGHT)
+    assert pos is not None
+    return pos
+
+
+def _two_vertices(app: Application):
+    vids = sorted(app.scene.mesh.all_vertex_ids())
+    return vids[0], vids[-1]
+
+
+def _click(app: Application, inp: Input, at) -> None:
+    app.pointer_press(inp)
+    app.pointer_release(inp.value, *at)
+
+
+def _selection_rev(app: Application) -> int:
+    return app.viewport.render_mesh.dirty.selection_rev
+
+
+def test_miss_position_really_misses(app):
+    from mirai.viewport.picking import pick_nearest_vertex
+
+    assert pick_nearest_vertex(app.camera, app.scene.mesh, *MISS, WIDTH, HEIGHT) is None
+
+
+def test_click_replaces(app):
+    a, b = _two_vertices(app)
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    assert app.selection.vertices == {a}
+    _click(app, _mouse("LEFT"), _screen_pos(app, b))
+    assert app.selection.vertices == {b}
+
+
+def test_click_on_empty_space_clears(app):
+    a, _ = _two_vertices(app)
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    _click(app, _mouse("LEFT"), MISS)
+    assert app.selection.is_empty()
+
+
+def test_shift_click_adds(app):
+    a, b = _two_vertices(app)
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    _click(app, _mouse("LEFT", "shift"), _screen_pos(app, b))
+    assert app.selection.vertices == {a, b}
+
+
+def test_ctrl_click_removes(app):
+    a, b = _two_vertices(app)
+    app.selection.set({a, b})
+    _click(app, _mouse("LEFT", "ctrl"), _screen_pos(app, a))
+    assert app.selection.vertices == {b}
+
+
+def test_alt_click_toggles_on_and_off(app):
+    a, b = _two_vertices(app)
+    app.selection.set({b})
+    _click(app, _mouse("LEFT", "alt"), _screen_pos(app, a))
+    assert app.selection.vertices == {a, b}
+    _click(app, _mouse("LEFT", "alt"), _screen_pos(app, a))
+    assert app.selection.vertices == {b}
+
+
+@pytest.mark.parametrize("mods", [("shift",), ("ctrl",), ("alt",)])
+def test_modifier_click_on_empty_space_keeps_selection(app, mods):
+    a, b = _two_vertices(app)
+    app.selection.set({a, b})
+    rev = _selection_rev(app)
+    _click(app, _mouse("LEFT", *mods), MISS)
+    assert app.selection.vertices == {a, b}
+    assert _selection_rev(app) == rev
+
+
+def test_small_movement_is_still_a_click(app):
+    a, _ = _two_vertices(app)
+    app.pointer_press(_mouse("LEFT"))
+    app.pointer_drag(2, 1)
+    app.pointer_release("LEFT", *_screen_pos(app, a))
+    assert app.selection.vertices == {a}
+
+
+def test_lmb_drag_selects_nothing(app):
+    a, _ = _two_vertices(app)
+    app.pointer_press(_mouse("LEFT"))
+    app.pointer_drag(10, 0)
+    app.pointer_release("LEFT", *_screen_pos(app, a))
+    assert app.selection.is_empty()
+
+
+def test_alt_drag_orbits_without_toggling(app):
+    a, _ = _two_vertices(app)
+    yaw = app.camera.yaw
+    app.pointer_press(_mouse("LEFT", "alt"))
+    app.pointer_drag(8, 0)
+    app.pointer_release("LEFT", *_screen_pos(app, a))
+    assert app.camera.yaw != yaw
+    assert app.selection.is_empty()
+
+
+def test_viewport_selection_dirty_only_on_real_change(app):
+    a, b = _two_vertices(app)
+    rev = _selection_rev(app)
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    assert _selection_rev(app) == rev + 1
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))  # gleiche Auswahl
+    _click(app, _mouse("LEFT", "shift"), _screen_pos(app, a))  # schon drin
+    _click(app, _mouse("LEFT", "ctrl"), _screen_pos(app, b))  # nicht drin
+    assert _selection_rev(app) == rev + 1
+    _click(app, _mouse("LEFT"), MISS)
+    assert _selection_rev(app) == rev + 2
+    _click(app, _mouse("LEFT"), MISS)  # schon leer
+    assert _selection_rev(app) == rev + 2
+
+
+def test_selection_reaches_highlight_flags(app):
+    a, _ = _two_vertices(app)
+    app.viewport.sync()
+    flags_before = list(app.viewport.render_mesh.store.data("highlight_flags"))
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    app.viewport.sync()
+    assert list(app.viewport.render_mesh.store.data("highlight_flags")) != flags_before
+
+
+def test_selection_creates_no_history_and_keeps_mesh(app):
+    a, b = _two_vertices(app)
+    mesh = app.scene.mesh
+    positions = {vid: mesh.vertex_position(vid) for vid in mesh.all_vertex_ids()}
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    _click(app, _mouse("LEFT", "shift"), _screen_pos(app, b))
+    _click(app, _mouse("LEFT", "alt"), _screen_pos(app, a))
+    _click(app, _mouse("LEFT"), MISS)
+    assert not app.history.can_undo()
+    assert {vid: mesh.vertex_position(vid) for vid in mesh.all_vertex_ids()} == positions
+
+
+def test_selection_stays_in_vertex_mode(app):
+    from core import SelectionMode
+
+    a, _ = _two_vertices(app)
+    _click(app, _mouse("LEFT"), _screen_pos(app, a))
+    assert app.selection.mode is SelectionMode.VERTEX
+    assert not app.selection.edges and not app.selection.faces

@@ -46,6 +46,7 @@ from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .mesh_geometry import mesh_center_and_radius
 from .viewport import DisplayState, OrbitCamera
+from .viewport.picking import pick_nearest_vertex
 
 
 #: Orbit-Rate (rad/px) und Dolly-Faktoren — aus `src/main.py` (Stage A/B1)
@@ -53,6 +54,21 @@ from .viewport import DisplayState, OrbitCamera
 ORBIT_RADIANS_PER_PX = 0.005
 DOLLY_IN_FACTOR = 0.9
 DOLLY_OUT_FACTOR = 1.1
+
+_SELECT_COMMANDS = (
+    commands.SELECT,
+    commands.SELECT_ADD,
+    commands.SELECT_REMOVE,
+    commands.SELECT_TOGGLE,
+)
+
+
+def _selection_state(selection: Selection) -> tuple[frozenset, frozenset, frozenset]:
+    return (
+        frozenset(selection.vertices),
+        frozenset(selection.edges),
+        frozenset(selection.faces),
+    )
 
 
 class Application:
@@ -228,7 +244,42 @@ class Application:
         return True
 
     def _execute_click(self, click: Click) -> bool:
+        if click.command in _SELECT_COMMANDS:
+            self.select_vertex_at(click.command, click.x, click.y)
+            return True
         return False
+
+    def select_vertex_at(self, command: str, x: float, y: float) -> bool:
+        """Vertex-Klick-Selektion, Modifier-Variante AP-03 (WP-06 B2, A7/E13).
+
+        Treffer: SELECT ersetzt, SELECT_ADD fügt hinzu, SELECT_REMOVE entfernt,
+        SELECT_TOGGLE schaltet um. Klick ins Leere: nur SELECT leert, die
+        Modifier-Commands lassen die Auswahl unverändert. Nur Vertex-Mode
+        (`Selection.mode` wird nicht angefasst), kein History-Eintrag.
+        True = die Auswahl hat sich tatsächlich geändert (nur dann wird der
+        Viewport benachrichtigt)."""
+        if self.viewport is None:
+            return False
+        selection = self.selection
+        before = _selection_state(selection)
+        vid = pick_nearest_vertex(
+            self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
+        )
+        if vid is None:
+            if command == commands.SELECT:
+                selection.clear()
+        elif command == commands.SELECT:
+            selection.set({vid})
+        elif command == commands.SELECT_ADD:
+            selection.add({vid})
+        elif command == commands.SELECT_REMOVE:
+            selection.remove({vid})
+        elif command == commands.SELECT_TOGGLE:
+            selection.toggle(vid)
+        if _selection_state(selection) == before:
+            return False
+        self.viewport.on_selection_changed()
+        return True
 
     def _camera_changed(self) -> None:
         if self.viewport is not None:
