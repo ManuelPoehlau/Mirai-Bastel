@@ -58,6 +58,10 @@ void main() {
 }
 """
 
+# WP-06 B2b (AD-018 §7 addendum, E18): the selection face tint is gone
+# (Artist REJECT); selection is drawn by `GLPointOverlay`. `v_highlight` stays
+# declared because the `highlight_flags` pipeline is kept until its
+# documented follow-up cleanup.
 FRAGMENT_SRC = """
 #version 330 core
 in vec3 v_normal;
@@ -72,8 +76,7 @@ void main() {
     vec3 n = normalize(v_normal);
     float ndl = max(dot(n, normalize(u_light_dir)), 0.0);
     vec3 shaded = mix(u_base_color * 0.35, u_base_color, ndl);
-    vec3 highlighted = mix(shaded, vec3(1.0, 0.82, 0.15), clamp(v_highlight, 0.0, 1.0));
-    out_color = vec4(highlighted, 1.0);
+    out_color = vec4(shaded, 1.0);
 }
 """
 

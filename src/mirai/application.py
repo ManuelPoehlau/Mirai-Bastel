@@ -123,6 +123,7 @@ class Application:
         geometry_type: str = "cube",
         store_type: type[ResourceStore] = TraceStore,
         obj_path: str | Path | None = None,
+        point_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
 
@@ -139,7 +140,11 @@ class Application:
         — `self.scene` selbst bleibt dieselbe Instanz (Scene-Identität,
         siehe Klassen-/Moduldocstring), damit `Selection`/`HistoryStack`
         an derselben Scene hängen bleiben wie vor `init_scene()`.
-        `obj_path` ist bei `geometry_type="obj"` erforderlich."""
+        `obj_path` ist bei `geometry_type="obj"` erforderlich.
+
+        `point_overlay_type` (WP-06 B2b, E17): gleiches Durchreich-Muster wie
+        `store_type`. Default `None` = kein GL-Punkt-Overlay (headless); der
+        Entry-Point übergibt `GLPointOverlay`."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
@@ -158,7 +163,10 @@ class Application:
         # VIEWPORT_V02_ARCHITECTURE.md §9). Es entsteht KEINE zweite
         # Kamera-Repräsentation.
         self.viewport = Viewport(
-            self.scene.mesh, selection=self.scene.selection, store_type=store_type
+            self.scene.mesh,
+            selection=self.scene.selection,
+            store_type=store_type,
+            point_overlay_type=point_overlay_type,
         )
         self.viewport.bind_camera(self.camera)
 

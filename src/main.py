@@ -19,6 +19,9 @@ Scope (binding, see the handoffs):
   `BindingSet` + `PointerGestures` (click vs. drag, AD-019). Orbit =
   Alt+LMB drag, Pan = Alt+Shift+LMB drag, Zoom = wheel; LMB click =
   select (Shift add, Ctrl remove, Alt toggle). RMB/MMB are unbound.
+- Selected vertices are drawn as small round yellow points by
+  `GLPointOverlay` on top of the mesh; the mesh itself is no longer tinted
+  (Slice B2b, AD-018 §7 addendum).
 - No mutation, no tool activation (Move etc. is a later slice).
 - No imports from `playground/` (AD-010 Addendum).
 
@@ -51,6 +54,7 @@ import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
 from mirai.pyglet_input import mouse_from_pyglet, wheel_from_pyglet  # noqa: E402
+from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 
 _DEFAULT_HEAD_OBJ = _ROOT / "examples" / "meshes" / "head_basemesh.obj"
@@ -68,15 +72,16 @@ def main() -> None:
     app = Application()
 
     arg = sys.argv[1] if len(sys.argv) > 1 else None
+    gl_types = {"store_type": GLRenderStore, "point_overlay_type": GLPointOverlay}
     if arg == "cube":
-        app.init_scene("cube", store_type=GLRenderStore)
+        app.init_scene("cube", **gl_types)
     else:
         obj_path = Path(arg) if arg is not None else _DEFAULT_HEAD_OBJ
         try:
-            app.init_scene("obj", obj_path=obj_path, store_type=GLRenderStore)
+            app.init_scene("obj", obj_path=obj_path, **gl_types)
         except Exception as exc:
             print(f"Failed to load '{obj_path}': {exc}", file=sys.stderr)
-            app.init_scene("cube", store_type=GLRenderStore)
+            app.init_scene("cube", **gl_types)
 
     app.frame_scene()
 

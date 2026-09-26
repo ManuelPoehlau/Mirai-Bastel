@@ -23,6 +23,13 @@ Ansatz). Das erfüllt die Kern-Invariante (kein Base-Mesh-Rebuild bei
 Selection) mit minimalem Zusatzaufwand. Eine echte separate Overlay-Mesh-
 Geometrie (Kugeln an Vertices, Linien an Edges) bleibt für Gate 5b (Display-
 Integration) offen, falls visuelle Anforderungen das nötig machen.
+
+2026-09-26 (WP-06 B2b, AD-018 §7 Addendum): Für Vertex-Punkte ist die echte
+separate Overlay-Geometrie jetzt umgesetzt. `point_layers()` liefert die
+Weltpositionen (selektierte Vertices, gehoverter Vertex) rein headless;
+gezeichnet werden sie von `gl_point_overlay.GLPointOverlay`. Der Face-Tint
+über `highlight_flags` ist aus dem Shader entfernt (Artist REJECT); die
+Flag-Ressource selbst bleibt bis zum dokumentierten Follow-up bestehen.
 """
 
 from __future__ import annotations
@@ -30,6 +37,12 @@ from __future__ import annotations
 from enum import Enum, auto
 
 from core import EdgeId, FaceId, Selection, SelectionMode, VertexId
+
+#: Punkt-Layer der Overlay-Geometrie, in Zeichenreihenfolge (Hover unter
+#: der Selektion, wie Playground `window.on_draw`).
+HOVER_LAYER = "hover"
+SELECTED_LAYER = "selected"
+POINT_LAYERS = (HOVER_LAYER, SELECTED_LAYER)
 
 
 class OverlayElementKind(Enum):
@@ -97,3 +110,34 @@ class SelectionOverlay:
         if isinstance(hovered, FaceId):
             return set(mesh.face_vertices(hovered))
         return set()
+
+    # -- Punkt-Overlay (WP-06 B2b) --------------------------------------------
+
+    def selected_vertex_positions(self, mesh) -> list[tuple[float, float, float]]:
+        """Weltpositionen der selektierten Vertices — nur im Vertex-Modus.
+
+        IDs, die in `mesh` nicht (mehr) existieren (z. B. nach einer
+        Topology-Änderung), werden übersprungen. Reihenfolge: nach ID
+        sortiert (deterministisch, IDs werden nie wiederverwendet)."""
+        if self.selection.mode is not SelectionMode.VERTEX:
+            return []
+        return [
+            mesh.vertex_position(vertex_id)
+            for vertex_id in sorted(self.selection.vertices)
+            if mesh.is_valid_vertex(vertex_id)
+        ]
+
+    def hovered_vertex_positions(self, mesh) -> list[tuple[float, float, float]]:
+        """Weltposition des gehoverten Vertex (0 oder 1 Eintrag). Edge-/Face-
+        Hover erzeugt hier keinen Punkt."""
+        hovered = self.selection.hovered
+        if isinstance(hovered, VertexId) and mesh.is_valid_vertex(hovered):
+            return [mesh.vertex_position(hovered)]
+        return []
+
+    def point_layers(self, mesh) -> dict[str, list[tuple[float, float, float]]]:
+        """Alle Punkt-Layer (`POINT_LAYERS`) mit ihren aktuellen Weltpositionen."""
+        return {
+            HOVER_LAYER: self.hovered_vertex_positions(mesh),
+            SELECTED_LAYER: self.selected_vertex_positions(mesh),
+        }
