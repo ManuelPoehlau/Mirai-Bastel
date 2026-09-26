@@ -192,7 +192,14 @@ class GLRenderStore(ResourceStore):
         if name == index_name:
             return  # index buffer only ever changes via a structural rebuild
         attr_name, _components = attributes[name]
-        getattr(vlist, attr_name)[0:len(data)] = data
+        target = getattr(vlist, attr_name, None)
+        if target is None:
+            # The driver optimized this attribute out of the program (e.g.
+            # `highlight_flag` since the fragment shader no longer reads it,
+            # AD-018 §7); pyglet then built the VertexList without it, so
+            # there is nothing on the GPU to patch. CPU copy stays in `_cpu`.
+            return
+        target[0:len(data)] = data
 
     def _rebuild_vertex_list(self, group: str) -> None:
         import pyglet

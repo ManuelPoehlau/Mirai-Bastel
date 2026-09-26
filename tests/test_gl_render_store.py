@@ -305,3 +305,56 @@ def test_head_mesh_renders_visibly_through_new_store(gl_window):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# -- Inactive attribute (WP-06 B2b hotfix) ------------------------------------
+# Once the fragment shader stopped reading `v_highlight` (E18), some drivers
+# (seen on Windows) optimize `highlight_flag` out of the program. pyglet then
+# builds the VertexList without it, and the selection partial update must not
+# crash on the missing attribute.
+
+
+def _no_highlight_store_type():
+    from pyglet.graphics.shader import Shader, ShaderProgram
+
+    from viewport.gl_render_store import FRAGMENT_SRC, VERTEX_SRC
+
+    class NoHighlightStore(GLRenderStore):
+        _program = None
+
+        @classmethod
+        def program(cls):
+            if cls._program is None:
+                # Never reading `highlight_flag` makes it inactive on every driver.
+                vertex_src = VERTEX_SRC.replace(
+                    "v_highlight = highlight_flag;", "v_highlight = 0.0;"
+                )
+                cls._program = ShaderProgram(
+                    Shader(vertex_src, "vertex"), Shader(FRAGMENT_SRC, "fragment")
+                )
+            return cls._program
+
+    return NoHighlightStore
+
+
+def test_selection_update_survives_driver_dropping_highlight_attribute(gl_window):
+    store_type = _no_highlight_store_type()
+    mesh, selection, rm = _build(gl_window, store_type=store_type)
+    assert "highlight_flag" not in store_type.program().attributes
+    vlist = rm.store.vertex_list()
+
+    selection.set({mesh.all_vertex_ids()[0]})
+    rm.mark_selection_dirty()
+    rm.sync()  # must not raise AttributeError
+
+    assert rm.store.vertex_list() is vlist
+    assert rm.store.uniform_data("highlight_flags")[0] == 1.0  # CPU copy still kept
+
+    camera = OrbitCamera()
+    center, radius = mesh_center_and_radius(mesh)
+    camera.frame_on_bounds(center, radius)
+    rm.bind_camera(camera)
+    rm.mark_camera_dirty(aspect=gl_window.width / gl_window.height)
+    rm.sync()
+    pixels = _render_via_render_mesh(gl_window, rm, camera)
+    assert pixels != bytes([12, 12, 20]) * (len(pixels) // 3)

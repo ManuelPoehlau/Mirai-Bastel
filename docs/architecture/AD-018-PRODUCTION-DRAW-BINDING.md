@@ -476,6 +476,16 @@ shaded base color only; the `v_highlight` mix is gone. The
 `highlight_flags` attribute, its `RenderMesh` layout slot and its
 selection-dirty update path are left in place on purpose.
 
+*Hotfix 2026-09-26:* on Manu's Windows machine the driver optimized
+`highlight_flag` out of the program once the fragment shader stopped reading
+`v_highlight`; pyglet then built the VertexList without it and the kept
+selection update path crashed (`AttributeError` in
+`GLRenderStore._patch_attribute`, on the first hover). `_patch_attribute`
+now skips attributes absent from the VertexList (same as pyglet does at
+VertexList creation). Mesa/llvmpipe keeps the attribute, which is why the
+Xvfb tests did not catch it; `test_selection_update_survives_driver_dropping_
+highlight_attribute` now forces the inactive case on every driver.
+
 **Follow-up (not done here).** Remove the now visually unused
 `highlight_flags` pipeline (`MESH_GROUP_ATTRIBUTES` entry, vertex shader
 input, `RenderMesh._sync_selection()` upload, `SelectionOverlay.
