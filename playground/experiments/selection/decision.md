@@ -20,7 +20,8 @@
 
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** KEEP
+Decided 2026-09-26 (Manu), directly — informs WP-06 Slice B2's Production selection baseline.
 
 ---
 
