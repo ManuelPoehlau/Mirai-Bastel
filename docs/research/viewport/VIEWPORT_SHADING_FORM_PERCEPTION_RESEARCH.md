@@ -331,6 +331,7 @@ Vorbild für die Form des Labs: `experiments/ad018_gl_render_store_verification/
    - Preset „Heute" ist exakt die jetzige Formel — Vergleichsbasis ohne Extra-Aufwand.
    - Schalter „folgt Kamera / weltfest" (F1).
    - Automatische Tests: Ressourcen-IDs bleiben beim Verstellen jedes Reglers gleich (prüft die K0-Einschätzung, statt sie nur zu behaupten); `glGetError() == 0`; Pixel-Unterschied zwischen „Heute" und jeder Variante > 0 (Regler wirkt wirklich).
+   - Umgesetzt in experiments/viewport_shading_lab/ (Commit 6167480). Artist-Verdikte zu F1/F8/F9 ausstehend.
 2. **Slice 2 — Screen-Cavity (B3)** als unabhängig schaltbare Schicht. Getrennt von Slice 1, damit ein Verdikt immer nur eine Veränderung bewertet.
 3. **Slice 3 — Hintergrund und Kontrast** nach §4.1b (Vorschlag Manu, 2026-09-26): Einzelfarbe und Verlauf, Presets über Polarität × Kontraststufe, Preset „Heute" als Vergleichsbasis. Automatischer Tageszeit-Wechsel ist nicht Teil davon.
 4. **Slice 4 — Rim:** drittes echtes Licht gegen Fresnel-Term (F7). Bewusst *nach* dem Hintergrund, weil Slice 3 zeigen kann, dass Rim gar nicht mehr gebraucht wird (§4.1b).
