@@ -182,25 +182,25 @@
       "id": "transform.move",
       "label": "Move",
       "category": "Transform",
-      "binding": "Q",
+      "binding": "W",
       "runtime_ref": "Move",
-      "notes": ""
+      "notes": "Changed from Q — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
     },
     {
       "id": "transform.rotate",
       "label": "Rotate",
       "category": "Transform",
-      "binding": "W",
+      "binding": "E",
       "runtime_ref": "Rotate",
-      "notes": ""
+      "notes": "Changed from W — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
     },
     {
       "id": "transform.scale",
       "label": "Scale",
       "category": "Transform",
-      "binding": "E",
+      "binding": "R",
       "runtime_ref": "Scale",
-      "notes": ""
+      "notes": "Changed from E — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
     },
     {
       "id": "transform.constraint_axis_x",
@@ -254,9 +254,9 @@
       "id": "topology.extrude",
       "label": "Extrude",
       "category": "Topology",
-      "binding": "R",
+      "binding": "T",
       "runtime_ref": "Extrude",
-      "notes": ""
+      "notes": "Changed from R — Manu 2026-09-26 (WP-06 B1, AD-013 addendum); implementation later"
     },
     {
       "id": "topology.connect",
@@ -568,7 +568,7 @@
       "category": "Application",
       "binding": "",
       "runtime_ref": null,
-      "notes": ""
+      "notes": "Window close button (X) only — Manu 2026-09-26"
     },
     {
       "id": "application.toggle_hud",

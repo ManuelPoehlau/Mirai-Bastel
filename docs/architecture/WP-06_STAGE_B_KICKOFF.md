@@ -129,3 +129,16 @@ Bewusst **nicht** in den ersten Slices: Edge/Face-Selection, Box-Select, Tweak, 
 ## 7. Definition of Done für WP-06 (Gesamtpaket, aus ROADMAP §7)
 
 Mindestens eine Lab-validierte Fähigkeit ist in `src/main.py` über den echten Production-Pfad nutzbar, praktisch verifiziert — und der Weg dorthin ist für den nächsten Kandidaten wiederholbar dokumentiert.
+
+---
+
+## 8. Resolved (2026-09-26)
+
+Manu hat die offenen Fragen aus §5 im Slice-B1-Handoff ("WP-06 — Slice B1:
+Head mesh as default scene + camera framing") entschieden:
+
+- **Q1** — beantwortet: PROVISIONAL-Baseline erlaubt (AD-013 gilt; ROADMAP §7 "Intake log").
+- **Q2** — beantwortet: neue Artist Input Truth W/E/R (Move/Rotate/Scale), Extrude → T, Q unbelegt (`tools/Input_Mapping_Tool/artist_input_truth.json`; AD-013-Addendum 2026-09-26).
+- **Q3** — beantwortet: Slice-Reihenfolge B1 (Kopf-Mesh + Framing) → B2 (Picking + Highlight) → B3 (Move + Undo/Redo) → B4 (Rotate/Scale + Constraints) → B5+ (Promotions) — Kopf-Mesh vorgezogen.
+- **Q4** — beantwortet: Playground bleibt unverändert parallel bestehen (Artist-Verdikt KEEP, 2026-09-25).
+- **Q5** — beantwortet: laufende, datierte Liste in ROADMAP §7 ("Intake log"); eigenes AD nur, wenn eine Promotion Architektur berührt. Kein neues `APP_INTEGRATION_LOG.md`.
