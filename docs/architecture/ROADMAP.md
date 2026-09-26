@@ -481,7 +481,8 @@ Two separate paths bring a capability's *interaction* into `src/main.py` (AD-013
 
 Dated entries:
 
-- 2026-09-26 — Slice B1: head basemesh as the default `src/main.py` scene + camera framing (view-only; no new interaction). `PROVISIONAL` groundwork for the slices that follow (B2 picking, B3 Move + Undo/Redo, B4 Rotate/Scale).
+- 2026-09-26 — Slice B1: head basemesh as the default `src/main.py` scene + camera framing (view-only; no new interaction). `PROVISIONAL` groundwork for the slices that follow (B2 picking, B3 Move + Undo/Redo, B4 Rotate/Scale). Verdict: **KEEP (Manu, 2026-09-26)**.
+- 2026-09-26 — Slice B2: vertex selection, Selection-Modifier variant (LMB replace, Shift add, Ctrl remove, Alt toggle; click on empty space clears, modifier click on empty space keeps) — **`PROMOTED`**, Artist Verdict KEEP from the Selection Lab (`playground/experiments/selection/decision.md`, Manu 2026-09-26). Navigation rebind per Artist Input Truth (Orbit = Alt+LMB drag, Pan = Alt+Shift+LMB drag, Zoom = wheel; RMB/MMB unbound) — `PROVISIONAL`. Click vs. drag on one physical input: AD-019.
 
 ---
 

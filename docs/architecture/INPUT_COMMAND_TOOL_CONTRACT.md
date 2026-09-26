@@ -258,7 +258,7 @@ BindingSet
 
 - `schemaVersion` ist verpflichtend und muss exakt `1` sein (`KEYMAP_SCHEMA_VERSION`). Es gibt kein Migrationsframework.
 - `context`: `"global"` oder `"topology"` (bestehende Kontexte; ein unbekannter Context wird abgelehnt).
-- `input.kind`: `"key"` | `"mouse"` | `"wheel"`; `input.value` ein String; `input.modifiers` eine Liste aus `"ctrl"`, `"shift"`, `"alt"`.
+- `input.kind`: `"key"` | `"mouse"` | `"drag"` | `"wheel"`; `input.value` ein String; `input.modifiers` eine Liste aus `"ctrl"`, `"shift"`, `"alt"`. `mouse` = click, `drag` = press+move ≥ threshold (AD-019).
 - `command`: String (Command-Name) oder `null`.
 
 Die Case-Semantik der bestehenden Auflösung bleibt erhalten (exakter Vergleich, keine pauschale Lowercase-Transformation). `command` wird unverändert als String behandelt.

@@ -4,12 +4,19 @@ Abgeleitet aus dem bisherigen V1-Verhalten (siehe README/SELECTION_MODES):
 - V/1, E/2, F/3  → Selection-Modi (bestehende Konvention, bleibt erhalten)
 - Ctrl+Z / Ctrl+Y → Undo / Redo
 - Esc             → laufende Interaktion abbrechen
-- LMB             → Select (Klick toggelt; Drag startet Move)
-- RMB             → Orbit
 - Wheel           → Zoom (Dolly)
 
+Maus (WP-06 B2, Artist Input Truth + Selection-Modifier-Variante AP-03):
+`mouse` = Klick, `drag` = Press + Bewegung ≥ Schwelle (AD-019). Dieselbe
+physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
+- LMB-Klick       → Select (Replace; Klick ins Leere leert)
+- Shift+LMB-Klick → SelectAdd, Ctrl+LMB-Klick → SelectRemove
+- Alt+LMB-Klick   → SelectToggle
+- Alt+LMB-Drag    → Orbit, Alt+Shift+LMB-Drag → Pan
+- RMB/MMB         → bewusst ungebunden (eine Primärbindung pro Funktion,
+                    AD-013 Truth-Regel 2)
+
 Neu hinzugekommen (bewusst minimal, keine unnötigen Hotkeys):
-- MMB            → Pan (neue Navigation, Modeler-üblich)
 - O              → Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
 - W              → Wireframe Overlay AN/AUS
 
@@ -41,6 +48,10 @@ def _key(value: str, *modifiers: str) -> Input:
 
 def _mouse(value: str, *modifiers: str) -> Input:
     return Input("mouse", value, frozenset(modifiers))
+
+
+def _drag(value: str, *modifiers: str) -> Input:
+    return Input("drag", value, frozenset(modifiers))
 
 
 def _wheel(direction: str) -> Input:
@@ -76,10 +87,13 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("o"), cmd.CYCLE_DISPLAY_MODE)
     bs.set_default(_key("d", "shift"), cmd.TOGGLE_WIREFRAME_OVERLAY)
 
-    # --- Maus ----------------------------------------------------------------
+    # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)
-    bs.set_default(_mouse("RIGHT"), cmd.ORBIT)
-    bs.set_default(_mouse("MIDDLE"), cmd.PAN)
+    bs.set_default(_mouse("LEFT", "shift"), cmd.SELECT_ADD)
+    bs.set_default(_mouse("LEFT", "ctrl"), cmd.SELECT_REMOVE)
+    bs.set_default(_mouse("LEFT", "alt"), cmd.SELECT_TOGGLE)
+    bs.set_default(_drag("LEFT", "alt"), cmd.ORBIT)
+    bs.set_default(_drag("LEFT", "alt", "shift"), cmd.PAN)
     bs.set_default(_wheel("UP"), cmd.ZOOM)
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
 

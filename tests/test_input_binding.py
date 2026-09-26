@@ -52,6 +52,10 @@ def _mouse(value: str, *modifiers: str) -> Input:
     return Input("mouse", value, frozenset(modifiers))
 
 
+def _drag(value: str, *modifiers: str) -> Input:
+    return Input("drag", value, frozenset(modifiers))
+
+
 def _wheel(direction: str) -> Input:
     return Input("wheel", direction)
 
@@ -103,11 +107,28 @@ class DefaultBindingsTests(unittest.TestCase):
         )
 
     def test_mouse_bindings(self):
+        # WP-06 B2: click = Selection-Modifier-Variante, RMB/MMB ungebunden (E8).
         self.assertEqual(self.bs.command_for(_mouse("LEFT")), cmd.SELECT)
-        self.assertEqual(self.bs.command_for(_mouse("RIGHT")), cmd.ORBIT)
-        self.assertEqual(self.bs.command_for(_mouse("MIDDLE")), cmd.PAN)
+        self.assertEqual(self.bs.command_for(_mouse("LEFT", "shift")), cmd.SELECT_ADD)
+        self.assertEqual(self.bs.command_for(_mouse("LEFT", "ctrl")), cmd.SELECT_REMOVE)
+        self.assertEqual(self.bs.command_for(_mouse("LEFT", "alt")), cmd.SELECT_TOGGLE)
+        self.assertIsNone(self.bs.command_for(_mouse("RIGHT")))
+        self.assertIsNone(self.bs.command_for(_mouse("MIDDLE")))
         self.assertEqual(self.bs.command_for(_wheel("UP")), cmd.ZOOM)
         self.assertEqual(self.bs.command_for(_wheel("DOWN")), cmd.ZOOM)
+
+    def test_drag_bindings(self):
+        # WP-06 B2 (A6, AD-019): Navigation per Artist Truth.
+        self.assertEqual(self.bs.command_for(_drag("LEFT", "alt")), cmd.ORBIT)
+        self.assertEqual(self.bs.command_for(_drag("LEFT", "alt", "shift")), cmd.PAN)
+        self.assertIsNone(self.bs.command_for(_drag("LEFT")))
+        self.assertIsNone(self.bs.command_for(_drag("LEFT", "shift")))
+        self.assertIsNone(self.bs.command_for(_drag("RIGHT")))
+        self.assertIsNone(self.bs.command_for(_drag("MIDDLE")))
+
+    def test_click_and_drag_on_same_button_are_separate_bindings(self):
+        self.assertEqual(self.bs.command_for(_mouse("LEFT", "alt")), cmd.SELECT_TOGGLE)
+        self.assertEqual(self.bs.command_for(_drag("LEFT", "alt")), cmd.ORBIT)
 
     def test_unbound_input_resolves_to_none(self):
         self.assertIsNone(self.bs.command_for(_key("x")))
@@ -358,6 +379,18 @@ class KeymapValidationTests(unittest.TestCase):
     def test_invalid_kind_raises(self):
         with self.assertRaises(KeymapConfigError):
             self._load(_keymap(_entry(GLOBAL_CONTEXT, "gesture", "g", [], cmd.MOVE)))
+
+    def test_drag_kind_loads(self):
+        # AD-019: "drag" ist ein gültiger input.kind in keymap.json.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "keymap.json"
+            path.write_text(
+                json.dumps(_keymap(_entry(GLOBAL_CONTEXT, "drag", "MIDDLE", [], cmd.PAN))),
+                encoding="utf-8",
+            )
+            merged = load_keymap_overrides(build_default_bindings(), path)
+        self.assertEqual(merged.command_for(_drag("MIDDLE")), cmd.PAN)
+        self.assertIsNone(merged.command_for(_mouse("MIDDLE")))
 
     def test_invalid_modifier_raises(self):
         with self.assertRaises(KeymapConfigError):

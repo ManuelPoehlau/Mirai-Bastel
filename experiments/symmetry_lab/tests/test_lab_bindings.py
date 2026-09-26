@@ -72,7 +72,8 @@ def test_global_context_unchanged(bindings):
         assert bindings.command_for(inp, GLOBAL_CONTEXT) == reference.command_for(
             inp, GLOBAL_CONTEXT
         )
-    assert bindings.command_for(RMB, GLOBAL_CONTEXT) == cmd.ORBIT
+    # WP-06 B2 (E8): RMB is unbound in the global defaults.
+    assert bindings.command_for(RMB, GLOBAL_CONTEXT) is None
     assert bindings.command_for(SHIFT_S, GLOBAL_CONTEXT) is None
     # Slice 5 §4.3: M ist in den globalen Defaults frei.
     assert bindings.command_for(M, GLOBAL_CONTEXT) is None

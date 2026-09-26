@@ -51,7 +51,7 @@ TOPOLOGY_CONTEXT = "topology"
 
 KEYMAP_SCHEMA_VERSION = 1
 
-_VALID_KINDS = ("key", "mouse", "wheel")
+_VALID_KINDS = ("key", "mouse", "drag", "wheel")
 _VALID_MODIFIERS = ("ctrl", "shift", "alt")
 _VALID_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT)
 
@@ -69,7 +69,7 @@ class KeymapConfigError(ValueError):
 def _parse_input(data: dict[str, Any]) -> Input:
     """Streng validierendes Parsen eines `input`-Objekts aus keymap.json.
 
-    Prüft kind (`key`/`mouse`/`wheel`), value (String) und modifiers
+    Prüft kind (`key`/`mouse`/`drag`/`wheel`), value (String) und modifiers
     (`ctrl`/`shift`/`alt`). Wirft bei Verstößen `KeymapConfigError`.
     """
     kind = data.get("kind")
@@ -106,7 +106,12 @@ class Input:
         Input("key", "z", frozenset({"ctrl"}))
         Input("mouse", "LEFT")
         Input("mouse", "MIDDLE", frozenset({"shift"}))
+        Input("drag", "LEFT", frozenset({"alt"}))
         Input("wheel", "UP")
+
+    `mouse` = Klick (Press + Release mit Bewegung unter der Schwelle),
+    `drag` = Press + Bewegung ≥ Schwelle (AD-019). Welche der beiden Gesten
+    ein Press wird, entscheidet `mirai.interaction.pointer.PointerGestures`.
 
     Für das Lesen einer externen `keymap.json` bitte `BindingSet.from_dict`/
     `from_json_file` verwenden — dort validieren kind/value/modifiers streng

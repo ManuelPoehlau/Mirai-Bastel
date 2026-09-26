@@ -402,3 +402,8 @@ silently left inconsistent:
   is an **open, recorded discrepancy** between Playground and the new
   Artist Input Truth — not in WP-06's scope, and no decision about closing
   it has been made here.
+
+WP-06 Slice B2 (2026-09-26): Manu changed `navigation.pan` from Shift+LMB to
+Alt+Shift+LMB (drag); this resolves the recorded Truth conflict Shift+LMB
+(pan vs. `selection.add`). Alt+LMB now carries drag = orbit and click =
+`selection.toggle` — an intended, noted overlap resolved by AD-019.

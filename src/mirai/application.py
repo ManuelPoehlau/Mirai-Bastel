@@ -40,11 +40,35 @@ from core import HistoryStack, Scene, Selection
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
 
-from .interaction import BindingSet, ToolManager, commands
+from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
+from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .mesh_geometry import mesh_center_and_radius
 from .viewport import DisplayState, OrbitCamera
+from .viewport.picking import pick_nearest_vertex
+
+
+#: Orbit-Rate (rad/px) und Dolly-Faktoren — aus `src/main.py` (Stage A/B1)
+#: hierher verschoben, Werte unverändert (WP-06 B2, E11).
+ORBIT_RADIANS_PER_PX = 0.005
+DOLLY_IN_FACTOR = 0.9
+DOLLY_OUT_FACTOR = 1.1
+
+_SELECT_COMMANDS = (
+    commands.SELECT,
+    commands.SELECT_ADD,
+    commands.SELECT_REMOVE,
+    commands.SELECT_TOGGLE,
+)
+
+
+def _selection_state(selection: Selection) -> tuple[frozenset, frozenset, frozenset]:
+    return (
+        frozenset(selection.vertices),
+        frozenset(selection.edges),
+        frozenset(selection.faces),
+    )
 
 
 class Application:
@@ -76,6 +100,13 @@ class Application:
         self.bindings: BindingSet = build_default_bindings()
         if keymap_path is not None:
             load_keymap_overrides(self.bindings, keymap_path)
+
+        # WP-06 B2 (AD-019): Pointer-Gesten laufen über dieselben Bindings.
+        # Größe in logischen Fenster-Pixeln (gleiche Einheit wie die
+        # Maus-Koordinaten); der Entry-Point setzt sie über set_viewport_size().
+        self.pointer: PointerGestures = PointerGestures(self.bindings)
+        self.viewport_width: int = 1
+        self.viewport_height: int = 1
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -169,6 +200,90 @@ class Application:
             return True
 
         return False
+
+    # -- Pointer / Navigation (WP-06 B2, AD-019) ------------------------------
+
+    def set_viewport_size(self, width: int, height: int) -> None:
+        """Setzt die Viewport-Größe (Maus-Koordinaten-Einheit) und meldet den
+        neuen Aspect an den Viewport."""
+        self.viewport_width = max(int(width), 1)
+        self.viewport_height = max(int(height), 1)
+        self._camera_changed()
+
+    def pointer_press(self, input: Input) -> None:
+        """Maustaste gedrückt (`input.kind == "mouse"`, Modifier beim Press)."""
+        self.pointer.press(input)
+
+    def pointer_drag(self, dx: float, dy: float) -> bool:
+        """Mausbewegung mit gedrückter Taste. True = ein Command wurde ausgeführt."""
+        step = self.pointer.drag(dx, dy)
+        return step is not None and self._execute_drag(step)
+
+    def pointer_release(self, button: str, x: float, y: float) -> bool:
+        """Maustaste losgelassen. True = ein Klick-Command wurde ausgeführt."""
+        click = self.pointer.release(button, x, y)
+        return click is not None and self._execute_click(click)
+
+    def pointer_scroll(self, input: Input) -> bool:
+        """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings."""
+        command = self.bindings.command_for(input)
+        if command != commands.ZOOM:
+            return False
+        self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
+        self._camera_changed()
+        return True
+
+    def _execute_drag(self, step: DragStep) -> bool:
+        if step.command == commands.ORBIT:
+            self.camera.orbit(-step.dx * ORBIT_RADIANS_PER_PX, -step.dy * ORBIT_RADIANS_PER_PX)
+        elif step.command == commands.PAN:
+            self.camera.pan(step.dx, step.dy, self.viewport_width, self.viewport_height)
+        else:
+            return False
+        self._camera_changed()
+        return True
+
+    def _execute_click(self, click: Click) -> bool:
+        if click.command in _SELECT_COMMANDS:
+            self.select_vertex_at(click.command, click.x, click.y)
+            return True
+        return False
+
+    def select_vertex_at(self, command: str, x: float, y: float) -> bool:
+        """Vertex-Klick-Selektion, Modifier-Variante AP-03 (WP-06 B2, A7/E13).
+
+        Treffer: SELECT ersetzt, SELECT_ADD fügt hinzu, SELECT_REMOVE entfernt,
+        SELECT_TOGGLE schaltet um. Klick ins Leere: nur SELECT leert, die
+        Modifier-Commands lassen die Auswahl unverändert. Nur Vertex-Mode
+        (`Selection.mode` wird nicht angefasst), kein History-Eintrag.
+        True = die Auswahl hat sich tatsächlich geändert (nur dann wird der
+        Viewport benachrichtigt)."""
+        if self.viewport is None:
+            return False
+        selection = self.selection
+        before = _selection_state(selection)
+        vid = pick_nearest_vertex(
+            self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
+        )
+        if vid is None:
+            if command == commands.SELECT:
+                selection.clear()
+        elif command == commands.SELECT:
+            selection.set({vid})
+        elif command == commands.SELECT_ADD:
+            selection.add({vid})
+        elif command == commands.SELECT_REMOVE:
+            selection.remove({vid})
+        elif command == commands.SELECT_TOGGLE:
+            selection.toggle(vid)
+        if _selection_state(selection) == before:
+            return False
+        self.viewport.on_selection_changed()
+        return True
+
+    def _camera_changed(self) -> None:
+        if self.viewport is not None:
+            self.viewport.on_camera_changed(self.viewport_width / self.viewport_height)
 
     def update_viewport(self, delta_t: float) -> None:
         """Viewport-Tick (delta_t in Sekunden).

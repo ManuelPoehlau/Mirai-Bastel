@@ -8,15 +8,15 @@
       "category": "Navigation",
       "binding": "Alt+LMB",
       "runtime_ref": "Orbit",
-      "notes": ""
+      "notes": "drag; Alt+LMB click = selection.toggle"
     },
     {
       "id": "navigation.pan",
       "label": "Pan",
       "category": "Navigation",
-      "binding": "Shift+LMB",
+      "binding": "Alt+Shift+LMB",
       "runtime_ref": "Pan",
-      "notes": ""
+      "notes": "drag; changed from Shift+LMB, Manu 2026-09-26"
     },
     {
       "id": "navigation.zoom_in",
@@ -78,17 +78,17 @@
       "id": "selection.replace",
       "label": "Replace Selection",
       "category": "Selection Behavior",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
+      "binding": "LMB",
+      "runtime_ref": "Select",
+      "notes": "click (< 5 px); Modifier variant AP-03, Manu 2026-09-26"
     },
     {
       "id": "selection.toggle",
       "label": "Toggle Selection",
       "category": "Selection Behavior",
-      "binding": "",
-      "runtime_ref": null,
-      "notes": ""
+      "binding": "Alt+LMB",
+      "runtime_ref": "SelectToggle",
+      "notes": "click (< 5 px); Modifier variant AP-03, Manu 2026-09-26"
     },
     {
       "id": "selection.modifier",
@@ -143,16 +143,16 @@
       "label": "Add to Selection",
       "category": "Selection Behavior",
       "binding": "Shift+LMB",
-      "runtime_ref": null,
-      "notes": ""
+      "runtime_ref": "SelectAdd",
+      "notes": "click"
     },
     {
       "id": "selection.remove",
       "label": "Remove from Selection",
       "category": "Selection Behavior",
       "binding": "Ctrl+LMB",
-      "runtime_ref": null,
-      "notes": ""
+      "runtime_ref": "SelectRemove",
+      "notes": "click"
     },
     {
       "id": "selection.clear",

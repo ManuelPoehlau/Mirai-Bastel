@@ -21,9 +21,14 @@ UNDO = "Undo"
 REDO = "Redo"
 
 # --- Interaktion ----------------------------------------------------------
-# SELECT deckt den bestehenden LMB-Fall ab: Klick toggelt die Selection,
-# ein Drag auf der Selection startet die Move-Interaktion (V1-Verhalten).
+# SELECT* sind Klick-Commands (WP-06 B2, Selection-Modifier-Variante AP-03):
+# SELECT ersetzt die Auswahl durch das getroffene Element (Klick ins Leere
+# leert sie); ADD/REMOVE/TOGGLE ändern nur das getroffene Element, ein Klick
+# ins Leere lässt die Auswahl unverändert.
 SELECT = "Select"
+SELECT_ADD = "SelectAdd"
+SELECT_REMOVE = "SelectRemove"
+SELECT_TOGGLE = "SelectToggle"
 # MOVE ist das explizite modale Move-Command (WP-02): Es wird über die
 # Mapping-Schicht auf das MoveTool geroutet — Bindings (z. B. M oder G)
 # verändern das Tool nicht.
