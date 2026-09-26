@@ -37,7 +37,7 @@ Die vier Varianten unten kreuzen zwei Achsen der Aktivierung:
 
 |  | Ohne Klick (reines Hold+Drag) | Mit Klick (Click+Drag) |
 |---|---|---|
-| **Tool-spezifische Taste (X/R/S)** | Variante 1 | Variante 3 |
+| **Tool-spezifische Taste (W/E/R)** | Variante 1 | Variante 3 |
 | **Generischer Modifier (Ctrl)** | Variante 4 | Variante 2 (Silo) |
 
 Das erlaubt nach dem Spielen eine Zuordnung: Fühlen sich z.B. 1 und 4 ähnlich an,
@@ -78,7 +78,7 @@ Die Geste entscheidet sich also selbst, je nachdem ob eine Bewegung dazwischenko
 
 **Versehentliche Aktivierungen:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** REJECT
 
 ---
 
@@ -98,7 +98,7 @@ gehaltene Taste nötig — nur ein kurzer Tastendruck zu Beginn. Welches Tool
 
 **Versehentliche Aktivierungen:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** KEEP
 
 ---
 
@@ -119,7 +119,7 @@ die ganze Geste über gehalten werden).
 
 **Versehentliche Aktivierungen:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:**REJECT
 
 ---
 
@@ -132,6 +132,14 @@ Release von `Ctrl` = Commit. ESC während Drag = Cancel.
 Semantik: Kombiniert die Ergonomie von Variante 1 (kein Maustasten-Druck während
 des Ziehens) mit der Tool-Unabhängigkeit von Variante 2 (ein generischer Modifier
 statt dreier tool-spezifischer Tasten).
+
+**Fühlt sich an:**
+
+**Ermüdung nach längerer Session:**
+
+**Versehentliche Aktivierungen:**
+
+**Verdict:**REJECT
 
 ---
 
