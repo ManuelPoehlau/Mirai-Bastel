@@ -425,3 +425,60 @@ or any other `experiments/` directory.
 - [x] No changes outside `src/viewport/` except the completion record, the
       one-line mesh-path doc fix, and the new tests/evidence script named in
       scope §4 — confirmed via `git diff --stat`
+
+---
+
+## 7. Addendum — 2026-09-26: vertex point overlay (WP-06 Slice B2b)
+
+**Resolves** from §5 "Deliberately not decided here", item Q2–Q7: the
+*overlay representation* and the *point data* part (vertex points only).
+Edge data, flat shading, triangulation under symmetry and tool → viewport
+notification stay open.
+
+**Trigger.** Artist verdict on B2 (Manu, 2026-09-26): highlight readability
+**REJECT** — the per-vertex face tint (the `highlight_flags` mix in
+`GLRenderStore.FRAGMENT_SRC`) reads like vertex paint. Selected vertices are
+to be shown as small round points in the production yellow; vertex hover
+comes in as a slightly larger, translucent pale-yellow point
+(`PROVISIONAL`, see ROADMAP §7 intake log).
+
+**Decision (E15).** Overlay representation = `VIEWPORT_V02_ARCHITECTURE.md`
+§4.7 Option A — separate small overlay geometry drawn after the mesh —
+implemented **outside** `GLRenderStore`:
+
+- New module `src/viewport/gl_point_overlay.py`, class `GLPointOverlay`:
+  its own flat-color point program (lazily compiled, class-level shared,
+  like `GLRenderStore`), one `GL_POINTS` vertex list per layer (`hover`,
+  `selected`), rebuilt only when that layer's positions change. Round
+  points via `GL_PROGRAM_POINT_SIZE` + `gl_PointCoord` discard with a 1-px
+  smoothstep edge; depth test off (points stay visible through the mesh);
+  draw order hover, then selected.
+- Data is headless (E16): `SelectionOverlay` computes the world positions
+  (selected vertices in vertex mode, the hovered vertex); `Viewport.sync()`
+  pushes them to the optional point overlay when selection/hover changed
+  and after `on_vertices_moved` / `on_topology_changed`. Camera matrices
+  come from the same packet `RenderMesh` builds for `camera_uniforms` —
+  no second camera-matrix path.
+- Wiring (E17): `Viewport(..., point_overlay_type=None)` /
+  `Application.init_scene(..., point_overlay_type=None)`, same pass-through
+  pattern as `store_type`; `src/main.py` passes `GLPointOverlay`.
+
+`GLRenderStore` keeps its one-group scope boundary (§5 binding constraint
+"not a general GPU resource manager"); its only change is E18 below.
+
+**Rejected alternatives.** A second drawable group inside `GLRenderStore`
+(breaks its stated one-group scope); keeping the face tint (Artist
+REJECT); drawing in `src/main.py` (thin entry point; `Application` stays
+window-free).
+
+**E18 — face tint removed.** `GLRenderStore.FRAGMENT_SRC` outputs the
+shaded base color only; the `v_highlight` mix is gone. The
+`highlight_flags` attribute, its `RenderMesh` layout slot and its
+selection-dirty update path are left in place on purpose.
+
+**Follow-up (not done here).** Remove the now visually unused
+`highlight_flags` pipeline (`MESH_GROUP_ATTRIBUTES` entry, vertex shader
+input, `RenderMesh._sync_selection()` upload, `SelectionOverlay.
+build_highlight_flags()`). It touches the `RenderMesh` layout, the
+dirty-state tests and the benchmark scenarios, so it is a separate
+cleanup slice.
