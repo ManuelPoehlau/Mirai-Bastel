@@ -12,6 +12,14 @@ Verdrahtung + einen stabilen Aufrufpfad:
     viewport.sync()                          # einmal pro Frame vor dem Draw
     viewport.render()                        # Draw-Call (nur mit GL-Backend sinnvoll)
 
+Punkt-Overlay (WP-06 B2b, AD-018 §7 Addendum): `sync()` berechnet die
+Weltpositionen der Punkt-Layer (`SelectionOverlay.point_layers()`) neu, wenn
+sich Selektion/Hover, Vertex-Positionen oder Topologie geändert haben, und
+hält sie in `point_positions` (auch headless beobachtbar). Ist ein
+`point_overlay_type` übergeben (z. B. `GLPointOverlay`), werden sie dorthin
+weitergereicht und in `render()` nach dem Mesh gezeichnet. Das Base-Mesh
+wird dabei nie neu aufgebaut.
+
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
 
@@ -32,6 +40,7 @@ class Viewport:
         mesh: Mesh,
         selection: Selection | None = None,
         store_type: type[ResourceStore] = TraceStore,
+        point_overlay_type: type | None = None,
     ) -> None:
         self.mesh = mesh
         self.selection = selection if selection is not None else Selection()
@@ -39,6 +48,12 @@ class Viewport:
         self.render_mesh = RenderMesh(
             mesh, overlay=self.overlay, store_type=store_type
         )
+        # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
+        self.point_overlay = (
+            point_overlay_type() if point_overlay_type is not None else None
+        )
+        self.point_positions: dict[str, list[tuple[float, float, float]]] = {}
+        self._points_dirty = True
 
     # -- Kamera-Bindung (duck-typed, siehe Paket-Docstring) ------------------
 
@@ -56,12 +71,16 @@ class Viewport:
 
     def on_vertices_moved(self, vertex_ids: set[VertexId]) -> None:
         self.render_mesh.mark_vertices_dirty(vertex_ids)
+        if vertex_ids:
+            self._points_dirty = True
 
     def on_topology_changed(self) -> None:
         self.render_mesh.mark_topology_dirty()
+        self._points_dirty = True
 
     def on_selection_changed(self) -> None:
         self.render_mesh.mark_selection_dirty()
+        self._points_dirty = True
 
     def on_material_changed(self) -> None:
         self.render_mesh.mark_material_dirty()
@@ -75,6 +94,15 @@ class Viewport:
         """Verarbeitet alle seit dem letzten `sync()` markierten Änderungen.
         Muss vor `render()` aufgerufen werden (typischerweise 1x pro Frame)."""
         self.render_mesh.sync()
+        if self._points_dirty:
+            self._sync_points()
+
+    def _sync_points(self) -> None:
+        self.point_positions = self.overlay.point_layers(self.mesh)
+        if self.point_overlay is not None:
+            for layer, positions in self.point_positions.items():
+                self.point_overlay.set_points(layer, positions)
+        self._points_dirty = False
 
     def render(self) -> None:
         """Issue Draw-Call (AD-018 §4.3): delegiert an
@@ -90,6 +118,11 @@ class Viewport:
         if self.render_mesh.camera is None:
             return None
         self.render_mesh.render(self.render_mesh.camera)
+        if self.point_overlay is not None:
+            # Dieselbe Matrix-Quelle wie die `camera_uniforms` des Mesh
+            # (gebundene Kamera + synchronisierter Aspect) - kein zweiter
+            # Kamera-Matrix-Pfad (WP-06 B2b, E17).
+            self.point_overlay.draw(self.render_mesh._camera_uniforms())
 
     # -- Zugriff für Tests/Diagnose -------------------------------------------
 

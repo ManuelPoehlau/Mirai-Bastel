@@ -483,6 +483,8 @@ Dated entries:
 
 - 2026-09-26 — Slice B1: head basemesh as the default `src/main.py` scene + camera framing (view-only; no new interaction). `PROVISIONAL` groundwork for the slices that follow (B2 picking, B3 Move + Undo/Redo, B4 Rotate/Scale). Verdict: **KEEP (Manu, 2026-09-26)**.
 - 2026-09-26 — Slice B2: vertex selection, Selection-Modifier variant (LMB replace, Shift add, Ctrl remove, Alt toggle; click on empty space clears, modifier click on empty space keeps) — **`PROMOTED`**, Artist Verdict KEEP from the Selection Lab (`playground/experiments/selection/decision.md`, Manu 2026-09-26). Navigation rebind per Artist Input Truth (Orbit = Alt+LMB drag, Pan = Alt+Shift+LMB drag, Zoom = wheel; RMB/MMB unbound) — `PROVISIONAL`. Click vs. drag on one physical input: AD-019.
+- 2026-09-26 — Slice B2 verdicts (Manu, 2026-09-26): navigation **KEEP**, selection behaviour **KEEP**, highlight readability **REJECT** (the per-vertex face tint reads like vertex paint).
+- 2026-09-26 — Slice B2b: selected vertex drawn as a small round point in the production yellow `(1.0, 0.82, 0.15)`, face tint removed — Artist-specified (Manu, 2026-09-26, A10). Vertex hover as a slightly larger, translucent pale-yellow point `(0.95, 0.90, 0.35, 0.55)`, Playground look — **`PROVISIONAL`** (no Lab verdict for hover exists; A11). Overlay representation: AD-018 addendum 2026-09-26.
 
 ---
 

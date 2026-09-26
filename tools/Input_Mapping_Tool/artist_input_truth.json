@@ -136,7 +136,7 @@
       "category": "Selection Behavior",
       "binding": "",
       "runtime_ref": null,
-      "notes": ""
+      "notes": "always on, no binding — vertex hover in production app, Manu 2026-09-26 (WP-06 B2b)"
     },
     {
       "id": "selection.add",

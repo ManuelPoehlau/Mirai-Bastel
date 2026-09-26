@@ -245,6 +245,8 @@ if core.topology_revision != last_render_topology_revision:
 
 **Decision:** Option A (separate overlay) is recommended to ensure selection never invalidates base mesh. Implementation choice to be made during detailed design phase.
 
+*2026-09-26:* Option A implemented for vertex points (WP-06 B2b, AD-018 addendum 2026-09-26).
+
 ---
 
 ## 5. Data Flow and Update Sequences
@@ -533,7 +535,7 @@ Before implementation, clarify:
 | **Normal definition:** Face-average or per-vertex smooth? | Affects adjacent-vertex set for updates | Implement both; measure visual quality and performance; choose based on reference visual |
 | **Bounds strategy:** Recompute every position update, or only when position exits old AABB? | Affects perceived latency | Benchmark both strategies; choose simpler unless measurement shows clear win for complex version |
 | **Sparse normal patching:** Upload each affected vertex range separately, or always upload full buffer? | Affects GPU bandwidth usage | For reference mesh (326V), full buffer is ~13 KB; likely cheaper than multiple small uploads. Benchmark on low-end hardware. |
-| **Selection rendering:** Separate overlay mesh (Option A) or material layer (Option B)? | Affects code structure and rendering complexity | Implement Option A first (simpler). Option B if profiling shows overhead. |
+| **Selection rendering:** Separate overlay mesh (Option A) or material layer (Option B)? | Affects code structure and rendering complexity | Implement Option A first (simpler). Option B if profiling shows overhead. *2026-09-26:* Option A implemented for vertex points (WP-06 B2b, AD-018 addendum). |
 | **Interleaving:** Can multiple update categories apply in one frame (e.g., camera + selection + position)? | Affects dirty-state model complexity | Assume yes; design state model to handle concurrent dirty flags; test with stress scenarios. |
 | **Core change semantics:** Exact API for position_revision and modified_vertices? | Affects viewport implementation | Inspect Core during Phase 1; adapt viewport to real API rather than assumed API. |
 
