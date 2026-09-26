@@ -74,3 +74,5 @@ This is the former V1 behavior, re-owned by Transform. Its product value is not 
 
 ## Canonical Product Truth
 > **Q/W/E gehören Transform und wählen das Werkzeug. Es gibt genau ein gewähltes Werkzeug. Ein Klick auf eine Gizmo-Achse setzt nur den Constraint; Klick + Ziehen führt das gewählte Werkzeug entlang der Achse aus, Loslassen committet. In der Variante „Hold-Key Hover" bewegt Halten + Ziehen + Loslassen die Auswahl; nur ohne Auswahl wird das Element unter der Maus genommen.**
+
+**Note (2026-09-26):** The Artist Input Truth for transform bindings changed outside Playground scope (`transform.move/rotate/scale` → W/E/R, see AD-013's 2026-09-26 addendum). Playground/AD-016 still uses Q/W/E — recorded there as an open, unresolved discrepancy, not decided or closed here.

@@ -120,9 +120,11 @@ The current Topology research is documented centrally in [`experiments/topology/
 The Production Viewport, Application and Interaction foundations now exist under
 `src/`, and the production draw call (AD-018) and the Stage A production
 window/entry point (`src/main.py`, camera + rendering, above) are now real.
-The final modeling/selection workflow — live mutation through the window
-(Stage B) — remains deliberately open. Experiments continue to derive those
-later requirements; they are not promoted automatically.
+Stage B — incrementally wiring the final modeling/selection workflow into
+that window, capability by capability — is now in progress (WP-06); see
+`docs/architecture/ROADMAP.md` §"WP-06" for the current slice and intake
+log. Experiments continue to derive later requirements; they are not
+promoted automatically.
 
 ## Current V1 direction
 

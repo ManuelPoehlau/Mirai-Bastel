@@ -470,7 +470,18 @@ Stage A (window + camera + real draw path) exists and is stable. Three research 
 
 ### Definition of Done
 
-At least one Lab-validated capability (e.g. Move) is reachable and usable in `src/main.py`, through the real production path, with its own practical-viewport verification — and the process used to get it there is repeatable for the next candidate.
+Move is a production-validated capability (Core/Tool/History already committed via WP-02) whose *interaction* enters `src/main.py` as `PROVISIONAL` (AD-013) — not a Lab-validated capability being promoted. At least one such capability is reachable and usable in `src/main.py`, through the real production path, with its own practical-viewport verification — and the process used to get it there is repeatable for the next candidate.
+
+### Intake log
+
+Two separate paths bring a capability's *interaction* into `src/main.py` (AD-013: capability promotion ≠ UX promotion):
+
+- **`PROVISIONAL`** — a conventional, exchangeable baseline for an indispensable basic function per Artist Input Truth (`tools/Input_Mapping_Tool/artist_input_truth.json`). Not a UX decision; explicitly a placeholder, swappable via `keymap.json`/`BindingSet`.
+- **`PROMOTED`** — a Lab result with an explicit Artist verdict of KEEP/DECIDED, carried over with a short note or AD.
+
+Dated entries:
+
+- 2026-09-26 — Slice B1: head basemesh as the default `src/main.py` scene + camera framing (view-only; no new interaction). `PROVISIONAL` groundwork for the slices that follow (B2 picking, B3 Move + Undo/Redo, B4 Rotate/Scale).
 
 ---
 

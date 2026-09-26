@@ -371,3 +371,34 @@ And:
 > **Neue, noch nicht validierte Capabilities werden standardmäßig zuerst im Playground bzw. im entsprechenden Experiment untersucht. Eine Production-Promotion erfolgt erst durch eine explizite Entscheidung oder einen bereits dokumentierten Product-/Architecture-Entscheid.**
 
 These rules are canonical for future architecture decisions, implementation tasks, AI-agent prompts, and code reviews.
+
+---
+
+## Addendum (2026-09-26, WP-06 Stage B, Slice B1)
+
+Manu decided a new Artist Input Truth for transform bindings (recorded in
+`tools/Input_Mapping_Tool/artist_input_truth.json`):
+
+```
+transform.move    = W   (was Q)
+transform.rotate  = E   (was W)
+transform.scale   = R   (was E)
+topology.extrude  = T   (was R; implementation follows in a later slice)
+```
+
+`Q` is no longer bound. `application.quit` stays unbound (binding `""`);
+the window is closed via the window's X button only.
+
+Per this AD's own rules (§ Artist Input Truth, rule 6/7), this is an Artist
+Input Truth change — implementation follows it, not the other way round.
+As of this addendum, that implementation has **not** yet happened
+everywhere, and both discrepancies are intentionally recorded rather than
+silently left inconsistent:
+
+- Production `src/mirai/interaction/bindings.py::build_default_bindings()`
+  still returns q/w/e. Aligning it with this addendum is WP-06 Slice B3
+  (Move + Undo/Redo), not this slice (B1).
+- Playground (AD-016, `playground/`) still uses Q/W/E for Transform. This
+  is an **open, recorded discrepancy** between Playground and the new
+  Artist Input Truth — not in WP-06's scope, and no decision about closing
+  it has been made here.

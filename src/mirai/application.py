@@ -43,6 +43,7 @@ from viewport.resource_store import ResourceStore, TraceStore
 from .interaction import BindingSet, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.routing import tool_for_command
+from .mesh_geometry import mesh_center_and_radius
 from .viewport import DisplayState, OrbitCamera
 
 
@@ -90,21 +91,35 @@ class Application:
         self,
         geometry_type: str = "cube",
         store_type: type[ResourceStore] = TraceStore,
+        obj_path: str | Path | None = None,
     ) -> None:
-        """Initialisiert die Default-Szene (aktuell: Würfel).
+        """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
 
         `store_type` (Stage A, AD-018 §5/§6): additiv durchgereicht an
         `Viewport(...)`. Default bleibt `TraceStore` (headless, kein GL-
         Kontext nötig) — bestehende Aufrufstellen/Tests bleiben unverändert.
         Ein Entry-Point mit echtem Fenster übergibt hier `GLRenderStore`
         (`src/viewport/gl_render_store.py`), um durch den echten Draw-Pfad
-        zu rendern. `geometry_type` bleibt für dieses Paket "cube"-only
-        (kein OBJ-Loading über `Application.init_scene()`, siehe AD-018 §5
-        Stage-A-Handoff §4.2)."""
+        zu rendern.
+
+        `geometry_type="obj"` (WP-06 Slice B1): lädt `obj_path` über
+        `scene_factory.build_core_scene_from_obj` (lazy `examples/`-Import
+        dort, siehe dessen Moduldocstring) und übernimmt nur dessen `.mesh`
+        — `self.scene` selbst bleibt dieselbe Instanz (Scene-Identität,
+        siehe Klassen-/Moduldocstring), damit `Selection`/`HistoryStack`
+        an derselben Scene hängen bleiben wie vor `init_scene()`.
+        `obj_path` ist bei `geometry_type="obj"` erforderlich."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
             self.scene.mesh = create_cube()
+        elif geometry_type == "obj":
+            if obj_path is None:
+                raise ValueError('geometry_type="obj" requires obj_path')
+
+            from .scene_factory import build_core_scene_from_obj
+
+            self.scene.mesh = build_core_scene_from_obj(obj_path).mesh
 
         # Gate 7: Produktionsintegration — verbindet Application.camera mit
         # dem V0.2-Viewport. Die dieselbe OrbitCamera-Instanz wird über
@@ -115,6 +130,21 @@ class Application:
             self.scene.mesh, selection=self.scene.selection, store_type=store_type
         )
         self.viewport.bind_camera(self.camera)
+
+    def frame_scene(self) -> None:
+        """Richtet die Kamera auf die Bounds des aktuellen Meshs aus (WP-06 B1).
+
+        Reiner View-Effekt (wie `OrbitCamera.frame_on_bounds`): kein Mesh-
+        Wechsel, kein History-Eintrag. No-op vor `init_scene()` oder wenn
+        das Mesh keine Vertices hat (portiert aus `playground/app.py::
+        _frame_camera`, jetzt als Production-API in `Application`)."""
+        if self.viewport is None:
+            return
+        mesh = self.scene.mesh
+        if not mesh.all_vertex_ids():
+            return
+        center, radius = mesh_center_and_radius(mesh)
+        self.camera.frame_on_bounds(center, radius)
 
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params
