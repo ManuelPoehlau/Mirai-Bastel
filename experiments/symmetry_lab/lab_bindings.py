@@ -4,7 +4,8 @@ Eine Binding-Autorität: `app.bindings` (das Production-`BindingSet` der
 `Application`). Das Lab legt keinen zweiten Resolver an, sondern ergänzt nur
 Einträge im eigenen Kontext `SYMMETRY_LAB_CONTEXT` über die öffentliche API.
 Alles, was hier nicht steht, fällt über den `global`-Kontext auf die
-Production-Defaults zurück (MMB → Pan, Wheel → Zoom, LMB → Select).
+Production-Defaults zurück (Wheel → Zoom, LMB → Select; MMB → Pan ist seit
+WP-06 B2 ein Lab-Override, weil global ungebunden).
 
 `LAB_OVERRIDES` ist die einzige Quelle der Lab-Abweichungen; `run.py` gibt sie
 beim Start aus und die README-Tabelle beschreibt dieselben Einträge.
@@ -72,6 +73,11 @@ LAB_OVERRIDES: tuple[LabOverride, ...] = (
         Input("mouse", "RIGHT"),
         None,
         "eine Primärbindung pro Funktion (Orbit liegt auf Alt+LMB)",
+    ),
+    LabOverride(
+        Input("mouse", "MIDDLE"),
+        cmd.PAN,
+        "preserve lab MMB pan after WP-06 B2 global change",
     ),
     LabOverride(
         Input("key", "s", frozenset({"shift"})),

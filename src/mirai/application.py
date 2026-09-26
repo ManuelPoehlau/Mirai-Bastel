@@ -40,11 +40,19 @@ from core import HistoryStack, Scene, Selection
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
 
-from .interaction import BindingSet, ToolManager, commands
+from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
+from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .mesh_geometry import mesh_center_and_radius
 from .viewport import DisplayState, OrbitCamera
+
+
+#: Orbit-Rate (rad/px) und Dolly-Faktoren — aus `src/main.py` (Stage A/B1)
+#: hierher verschoben, Werte unverändert (WP-06 B2, E11).
+ORBIT_RADIANS_PER_PX = 0.005
+DOLLY_IN_FACTOR = 0.9
+DOLLY_OUT_FACTOR = 1.1
 
 
 class Application:
@@ -76,6 +84,13 @@ class Application:
         self.bindings: BindingSet = build_default_bindings()
         if keymap_path is not None:
             load_keymap_overrides(self.bindings, keymap_path)
+
+        # WP-06 B2 (AD-019): Pointer-Gesten laufen über dieselben Bindings.
+        # Größe in logischen Fenster-Pixeln (gleiche Einheit wie die
+        # Maus-Koordinaten); der Entry-Point setzt sie über set_viewport_size().
+        self.pointer: PointerGestures = PointerGestures(self.bindings)
+        self.viewport_width: int = 1
+        self.viewport_height: int = 1
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -169,6 +184,55 @@ class Application:
             return True
 
         return False
+
+    # -- Pointer / Navigation (WP-06 B2, AD-019) ------------------------------
+
+    def set_viewport_size(self, width: int, height: int) -> None:
+        """Setzt die Viewport-Größe (Maus-Koordinaten-Einheit) und meldet den
+        neuen Aspect an den Viewport."""
+        self.viewport_width = max(int(width), 1)
+        self.viewport_height = max(int(height), 1)
+        self._camera_changed()
+
+    def pointer_press(self, input: Input) -> None:
+        """Maustaste gedrückt (`input.kind == "mouse"`, Modifier beim Press)."""
+        self.pointer.press(input)
+
+    def pointer_drag(self, dx: float, dy: float) -> bool:
+        """Mausbewegung mit gedrückter Taste. True = ein Command wurde ausgeführt."""
+        step = self.pointer.drag(dx, dy)
+        return step is not None and self._execute_drag(step)
+
+    def pointer_release(self, button: str, x: float, y: float) -> bool:
+        """Maustaste losgelassen. True = ein Klick-Command wurde ausgeführt."""
+        click = self.pointer.release(button, x, y)
+        return click is not None and self._execute_click(click)
+
+    def pointer_scroll(self, input: Input) -> bool:
+        """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings."""
+        command = self.bindings.command_for(input)
+        if command != commands.ZOOM:
+            return False
+        self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
+        self._camera_changed()
+        return True
+
+    def _execute_drag(self, step: DragStep) -> bool:
+        if step.command == commands.ORBIT:
+            self.camera.orbit(-step.dx * ORBIT_RADIANS_PER_PX, -step.dy * ORBIT_RADIANS_PER_PX)
+        elif step.command == commands.PAN:
+            self.camera.pan(step.dx, step.dy, self.viewport_width, self.viewport_height)
+        else:
+            return False
+        self._camera_changed()
+        return True
+
+    def _execute_click(self, click: Click) -> bool:
+        return False
+
+    def _camera_changed(self) -> None:
+        if self.viewport is not None:
+            self.viewport.on_camera_changed(self.viewport_width / self.viewport_height)
 
     def update_viewport(self, delta_t: float) -> None:
         """Viewport-Tick (delta_t in Sekunden).

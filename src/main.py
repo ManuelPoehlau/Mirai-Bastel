@@ -1,44 +1,31 @@
-"""Production entry point — Stage B, Slice B1 (Head mesh + camera framing).
+"""Production entry point — Stage B, Slices B1 + B2.
 
-Handoff: "WP-06 — Slice B1: Head mesh as default scene + camera framing"
-(2026-09-26), building on Stage A ("Minimal First Mirai App, Stage A
-(Window + Camera + Rendering)", AD-018 §5/§6, AD-010 Addendum 2026-09-25).
-Opens a standalone `pyglet` window that shows the default scene through the
-real Production draw path:
+Handoffs: "WP-06 — Slice B1: Head mesh as default scene + camera framing"
+and "WP-06 — Slice B2: Navigation per Artist Truth + vertex selection,
+Modifier variant" (2026-09-26), building on Stage A (AD-018 §5/§6, AD-010
+Addendum 2026-09-25). Opens a standalone `pyglet` window that shows the
+default scene through the real Production draw path:
 
     Application -> Viewport -> GLRenderStore -> RenderMesh.render(camera)
 
-Scope (binding, see the handoff):
-- Camera navigation only (orbit/pan/zoom) — no mutation, no tool
-  activation, no `dispatch_command()` for MOVE/ROTATE/SCALE. Live
-  mutation (e.g. MoveTool) is explicitly deferred to a later slice and is
-  NOT started here even though the window now exists.
-- Default scene is now the head basemesh (`examples/meshes/
-  head_basemesh.obj`), loaded through `Application.init_scene("obj",
-  obj_path=...)` (WP-06 B1, E2/E4) and framed once via
-  `Application.frame_scene()` (E3) before the first camera-change push.
-  An optional single CLI argument overrides this: a path to an `.obj`, or
-  the literal `cube`. A load failure prints one line to stderr and falls
-  back to the cube; the window still opens.
-- No imports from `playground/` (AD-010 Addendum — Playground stays a
-  separate, untouched app).
+Scope (binding, see the handoffs):
+- Default scene is the head basemesh (`examples/meshes/head_basemesh.obj`),
+  loaded through `Application.init_scene("obj", obj_path=...)` and framed
+  once via `Application.frame_scene()`. An optional single CLI argument
+  overrides this: a path to an `.obj`, or the literal `cube`. A load
+  failure prints one line to stderr and falls back to the cube.
+- Navigation and vertex selection (B2) go through the bindings:
+  pyglet event -> `mirai.pyglet_input` -> `Application.pointer_*` ->
+  `BindingSet` + `PointerGestures` (click vs. drag, AD-019). Orbit =
+  Alt+LMB drag, Pan = Alt+Shift+LMB drag, Zoom = wheel; LMB click =
+  select (Shift add, Ctrl remove, Alt toggle). RMB/MMB are unbound.
+- No mutation, no tool activation (Move etc. is a later slice).
+- No imports from `playground/` (AD-010 Addendum).
 
-This file is intentionally thin: construction and event wiring only, no
-new business logic. All state lives in `Application`/`Viewport`
+This file is intentionally thin: construction and event translation only,
+no business logic. All state and execution live in `Application`/`Viewport`
 (`src/mirai/application.py`, `src/viewport/viewport.py`), which stay
 window-free.
-
-Camera input (Stage A handoff §4.4, deliberate choice, not an oversight):
-mouse drag/scroll deltas are read directly from the raw pyglet event
-arguments and passed straight to `OrbitCamera.orbit()`/`.pan()`/`.dolly()`
-— the proven Playground pattern (`playground/window.py::
-_camera_navigate`, technical reference only, no import). `mirai.
-pyglet_input`'s `Input` translation is built for discrete key/button
-events, not continuous per-frame drag deltas, so it is not used for this
-specific interaction. `Application.dispatch_command()` does not handle
-ORBIT/PAN/ZOOM today (`src/mirai/interaction/bindings.py`) — routing
-continuous drag gestures through the discrete command system is a
-separate, unresolved design question, not opened here.
 
 Usage:
     python3 src/main.py                       # head basemesh (default)
@@ -61,9 +48,9 @@ for _p in (str(_SRC), str(_ROOT), str(_ROOT / "examples")):
         sys.path.insert(0, _p)
 
 import pyglet  # noqa: E402
-from pyglet.window import mouse as _mouse  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
+from mirai.pyglet_input import mouse_from_pyglet, wheel_from_pyglet  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 
 _DEFAULT_HEAD_OBJ = _ROOT / "examples" / "meshes" / "head_basemesh.obj"
@@ -93,36 +80,36 @@ def main() -> None:
 
     app.frame_scene()
 
-    def _push_camera_change() -> None:
-        aspect = window.width / window.height if window.height else 1.0
-        app.viewport.on_camera_changed(aspect)
-
-    # Initial aspect so the first frame is not distorted (before any resize
-    # or camera event has fired).
-    _push_camera_change()
+    # Initial size/aspect so the first frame is not distorted (before any
+    # resize or camera event has fired).
+    app.set_viewport_size(window.width, window.height)
 
     @window.event
     def on_resize(width: int, height: int):
-        _push_camera_change()
+        app.set_viewport_size(window.width, window.height)
         return pyglet.event.EVENT_HANDLED
 
     @window.event
+    def on_mouse_press(x: int, y: int, button: int, modifiers: int):
+        inp = mouse_from_pyglet(button, modifiers)
+        if inp is not None:
+            app.pointer_press(inp)
+
+    @window.event
     def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
-        # Right-drag = orbit, middle-drag = pan — matches the ORBIT/PAN
-        # defaults in `mirai.interaction.bindings.build_default_bindings()`.
-        # Raw pixel deltas straight to the camera (handoff §4.4), not routed
-        # through `Application.dispatch_command()`.
-        if buttons & _mouse.RIGHT:
-            app.camera.orbit(-dx * 0.005, -dy * 0.005)
-            _push_camera_change()
-        elif buttons & _mouse.MIDDLE:
-            app.camera.pan(dx, dy, window.width, window.height)
-            _push_camera_change()
+        app.pointer_drag(dx, dy)
+
+    @window.event
+    def on_mouse_release(x: int, y: int, button: int, modifiers: int):
+        inp = mouse_from_pyglet(button, modifiers)
+        if inp is not None:
+            app.pointer_release(inp.value, x, y)
 
     @window.event
     def on_mouse_scroll(x: int, y: int, scroll_x: float, scroll_y: float):
-        app.camera.dolly(0.9 if scroll_y > 0 else 1.1)
-        _push_camera_change()
+        inp = wheel_from_pyglet(scroll_y)
+        if inp is not None:
+            app.pointer_scroll(inp)
 
     @window.event
     def on_draw():

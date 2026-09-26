@@ -230,7 +230,7 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Aktion | Input | Command | Herkunft |
 |---|---|---|---|
 | Orbit | Alt+LMB (Drag) | `Orbit` | Lab-Override — Artist Truth + Playground-Praxis |
-| Pan | MMB (Drag) | `Pan` | globaler Default (Fallback) |
+| Pan | MMB (Drag) | `Pan` | Lab-Override — preserve lab MMB pan after WP-06 B2 global change |
 | Pan | Shift+LMB (Drag) | `Pan` | Lab-Override — Artist Truth + Playground-Praxis |
 | Zoom | Wheel Up/Down | `Zoom` | globaler Default (Fallback) |
 | Vertex auswählen | LMB (Klick) | `Select` | globaler Default (Fallback) |
