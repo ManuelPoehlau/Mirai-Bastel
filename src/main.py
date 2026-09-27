@@ -27,7 +27,12 @@ Scope (binding, see the handoffs):
   `on_mouse_motion`/`on_mouse_leave` -> `Application.pointer_motion`/
   `pointer_leave`.
 - Keys (B3): `on_key_press`/`on_key_release` -> `mirai.pyglet_input` ->
-  `Application.key_press`/`key_release` -> `BindingSet` (GLOBAL). Esc =
+  `Application.key_press`/`key_release` -> `BindingSet` (GLOBAL). Move
+  (`PROMOTED`, AD-016 hold-key-hover): hold W and move the mouse (no button
+  needed; `on_mouse_motion` passes `dx, dy` through) — the selection, or
+  else the hovered vertex, follows live; releasing W commits, a tap without
+  motion does nothing. Motion with a button held (`on_mouse_drag`) does not
+  feed the Move — accepted gap, nothing is bound to a bare LMB drag. Esc =
   Cancel only, Ctrl+Z / Ctrl+Y = Undo / Redo. Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
@@ -136,7 +141,7 @@ def main() -> None:
 
     @window.event
     def on_mouse_motion(x: int, y: int, dx: int, dy: int):
-        app.pointer_motion(x, y)
+        app.pointer_motion(x, y, dx, dy)
 
     @window.event
     def on_mouse_leave(x: int, y: int):

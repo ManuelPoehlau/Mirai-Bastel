@@ -35,7 +35,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from core import HistoryStack, Scene, Selection, SelectionMode
+from core import HistoryStack, Scene, Selection, SelectionMode, VertexId
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
@@ -44,6 +44,7 @@ from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
+from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
 from .viewport import DisplayState, OrbitCamera
 from .viewport.picking import pick_nearest_vertex
@@ -117,6 +118,16 @@ class Application:
         # (z. B. zweimal "Undo") erkennt.
         self.status_message: str = ""
         self.status_serial: int = 0
+
+        # WP-06 B3 (E21, AD-016 D4 hold-key-hover): Move-Zustand. `_move_key`
+        # ist die Taste, die scharf geschaltet hat (None = nicht scharf); das
+        # Release wird über ihren Wert erkannt, nicht über die Bindings, weil
+        # sich die Modifier zwischen Press und Release ändern dürfen (z. B.
+        # Alt für Orbit, während W gehalten wird). Das Ziel ist ab dem Press
+        # fix; `begin()` läuft erst bei der ersten Mausbewegung.
+        self._move_key: str | None = None
+        self._move_target: frozenset[VertexId] = frozenset()
+        self._move_begun: bool = False
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -221,6 +232,21 @@ class Application:
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
 
+    @property
+    def move_armed(self) -> bool:
+        """Move-Taste gehalten (scharf oder bereits laufend)."""
+        return self._move_key is not None
+
+    @property
+    def move_interacting(self) -> bool:
+        """Move läuft (erste Mausbewegung nach dem Scharfschalten erfolgt)."""
+        return self._move_begun
+
+    @property
+    def move_target(self) -> frozenset[VertexId]:
+        """Beim Scharfschalten fixierte Ziel-Vertices (leer = nicht scharf)."""
+        return self._move_target
+
     def key_press(self, input: Input) -> bool:
         """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
         (GLOBAL). True = der Druck hat etwas bewirkt.
@@ -228,19 +254,104 @@ class Application:
         ROTATE/SCALE lösen auf, bleiben aber bis B4 bewusst wirkungslos (kein
         Tool, keine Zustandsänderung)."""
         command = self.bindings.command_for(input)
+        if command == commands.MOVE:
+            return self._move_arm(input.value)
         if command == commands.CANCEL:
             return self._cancel()
         if command in (commands.UNDO, commands.REDO):
+            # E23: während eines laufenden Moves ignoriert; nur scharf →
+            # erst entschärfen, dann ausführen.
+            if self._move_begun:
+                return False
+            if self._move_key is not None:
+                self._move_end()
+                self._refresh_hover()
             return self._undo_redo(command)
         return False
 
     def key_release(self, input: Input) -> bool:
-        """Taste losgelassen. True = das Loslassen hat etwas bewirkt."""
-        return False
+        """Taste losgelassen. True = das Loslassen hat etwas bewirkt.
+
+        Loslassen der Move-Taste committet, wenn seit dem Scharfschalten eine
+        Mausbewegung kam; ein bloßes Antippen entschärft nur (E21)."""
+        if self._move_key is None or input.value != self._move_key:
+            return False
+        if self._move_begun:
+            command = self.tool_manager.commit()
+            self._set_status("Move committed" if command is not None else "Move: no change")
+        else:
+            self._set_status("Move: tool set (no motion, nothing moved)")
+        self._move_end()
+        self._refresh_hover()
+        return True
+
+    def _move_arm(self, key: str) -> bool:
+        """Move scharf schalten (E21): Ziel = Selection, sonst der gehoverte
+        Vertex, sonst ablehnen. Tool aktiv, `begin()` erst bei Bewegung."""
+        if self._move_key is not None or self.viewport is None:
+            return False
+        selection = self.selection
+        target = resolve_selection_vertices(self.scene.mesh, selection, selection.mode)
+        hovered = selection.hovered
+        if not target and isinstance(hovered, VertexId):
+            target = {hovered}
+        if not target:
+            self._set_status("Move: nothing to move (select or hover a vertex)")
+            return False
+        self.dispatch_command(commands.MOVE)
+        self._move_key = key
+        self._move_target = frozenset(target)
+        self._move_begun = False
+        # Kein Hover-Punkt über den Punkten, die gleich bewegt werden.
+        if isinstance(hovered, VertexId) and hovered in self._move_target:
+            self._set_hovered(None)
+        count = len(self._move_target)
+        noun = "vertex" if count == 1 else "vertices"
+        self._set_status(
+            f"Move: {count} {noun} - move the mouse, release {key.upper()} to commit"
+        )
+        return True
+
+    def _move_step(self, dx: float, dy: float) -> bool:
+        """Eine Mausbewegung, während Move scharf ist. Die erste Bewegung
+        startet die Interaktion (keine Schwelle, AD-016); ein Nullschritt zählt
+        nicht als Bewegung."""
+        if dx == 0 and dy == 0:
+            return False
+        if not self._move_begun:
+            self.tool_manager.begin_current_interaction(
+                {"scene": self.scene, "camera": self.camera, "vertex_ids": set(self._move_target)}
+            )
+            self._move_begun = True
+        self.tool_manager.update(
+            dx=float(dx), dy=float(dy), width=self.viewport_width, height=self.viewport_height
+        )
+        self.viewport.on_vertices_moved(self.tool_manager.active_tool.moves)
+        return True
+
+    def _move_end(self) -> None:
+        """Move-Tool deaktivieren und den Move-Zustand löschen."""
+        self.tool_manager.deactivate()
+        self._move_key = None
+        self._move_target = frozenset()
+        self._move_begun = False
 
     def _cancel(self) -> bool:
-        """Esc = nur Abbrechen (B1 A3: kein Quit). Idle: nichts."""
-        return False
+        """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Move →
+        exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
+        nichts."""
+        if self._move_key is None:
+            return False
+        if self._move_begun:
+            moved = self.tool_manager.active_tool.moves
+            self.tool_manager.cancel()
+            self.viewport.on_vertices_moved(moved)
+            self._set_status("Move cancelled")
+        else:
+            self._set_status("Move disarmed")
+        self._move_end()
+        self._refresh_hover()
+        return True
 
     def _undo_redo(self, command: str) -> bool:
         can = self.history.can_undo() if command == commands.UNDO else self.history.can_redo()
@@ -299,20 +410,25 @@ class Application:
 
     # -- Hover (WP-06 B2b, E20) -------------------------------------------------
 
-    def pointer_motion(self, x: float, y: float) -> bool:
-        """Mausbewegung ohne gedrückte Taste: Vertex-Hover unter dem Cursor.
+    def pointer_motion(self, x: float, y: float, dx: float = 0.0, dy: float = 0.0) -> bool:
+        """Mausbewegung ohne gedrückte Taste.
 
-        Während einer laufenden Pointer-Geste wird Hover nicht aktualisiert.
-        True = `selection.hovered` hat sich geändert."""
+        Move scharf (W gehalten, B3): `dx`/`dy` treiben den Move, kein Hover
+        (E24). Sonst Vertex-Hover unter dem Cursor (B2b). Während einer
+        laufenden Pointer-Geste (Kamera) passiert beides nicht — Navigation
+        gewinnt. True = ein Move-Schritt lief bzw. `selection.hovered` hat
+        sich geändert."""
         self._cursor = (x, y)
         if self.pointer.active:
             return False
+        if self._move_key is not None:
+            return self._move_step(dx, dy)
         return self._update_hover(x, y)
 
     def _refresh_hover(self) -> None:
         """Hover an der letzten Cursor-Position neu picken (nach Zoom bzw.
         wenn sich das Mesh unter dem ruhenden Cursor bewegt hat)."""
-        if self._cursor is not None and not self.pointer.active:
+        if self._cursor is not None and not self.pointer.active and self._move_key is None:
             self._update_hover(*self._cursor)
 
     def pointer_leave(self) -> bool:
