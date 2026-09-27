@@ -37,6 +37,16 @@ MOVE = "Move"
 # tool_for_command() auf RotateTool/ScaleTool, gleiche Lifecycle-Verträge.
 ROTATE = "Rotate"
 SCALE = "Scale"
+# CONSTRAIN_* schränken den gerade scharfen Transform ein (WP-06 B4, E30-E33),
+# nur vor der ersten Mausbewegung. Die Ebenen-Commands benennen die Ebene;
+# welche Taste sie auslöst (Blender: Shift+Achse schließt diese Achse aus),
+# entscheidet allein die Bindung.
+CONSTRAIN_AXIS_X = "ConstrainAxisX"
+CONSTRAIN_AXIS_Y = "ConstrainAxisY"
+CONSTRAIN_AXIS_Z = "ConstrainAxisZ"
+CONSTRAIN_PLANE_XY = "ConstrainPlaneXY"
+CONSTRAIN_PLANE_XZ = "ConstrainPlaneXZ"
+CONSTRAIN_PLANE_YZ = "ConstrainPlaneYZ"
 CLEAR_SELECTION = "ClearSelection"
 CANCEL = "Cancel"
 

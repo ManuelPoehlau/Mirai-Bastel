@@ -153,20 +153,29 @@ def test_status_serial_counts_repeated_messages(app):
     assert app.status_serial == serial + 2
 
 
-# -- Rotate / Scale (erst B4) ---------------------------------------------------
+# -- Transform-/Constraint-Bindings (B3/B4) ---------------------------------------
 
 
-@pytest.mark.parametrize("key", ["e", "r"])
-def test_rotate_scale_keys_are_inert_until_b4(app, key):
-    app.selection.set({_visible_target(app)})
-    before = _positions(app)
-    serial = app.status_serial
-    assert app.bindings.command_for(_key(key)) in (cmd.ROTATE, cmd.SCALE)
-    assert not app.key_press(_key(key))
-    assert not app.key_release(_key(key))
-    assert app.tool_manager.active_tool is None
-    assert _positions(app) == before
-    assert app.status_serial == serial
+@pytest.mark.parametrize(
+    "inp, command",
+    [
+        (_key("w"), cmd.MOVE),
+        (_key("e"), cmd.ROTATE),
+        (_key("r"), cmd.SCALE),
+        (_key("x"), cmd.CONSTRAIN_AXIS_X),
+        (_key("y"), cmd.CONSTRAIN_AXIS_Y),
+        (_key("z"), cmd.CONSTRAIN_AXIS_Z),
+        # Blender-Konvention: Shift+Achse schließt diese Achse aus (E32/E33).
+        (_key("x", "shift"), cmd.CONSTRAIN_PLANE_YZ),
+        (_key("y", "shift"), cmd.CONSTRAIN_PLANE_XZ),
+        (_key("z", "shift"), cmd.CONSTRAIN_PLANE_XY),
+        # Kein Konflikt mit Undo/Redo: anderes Modifier-Set.
+        (CTRL_Z, cmd.UNDO),
+        (CTRL_Y, cmd.REDO),
+    ],
+)
+def test_transform_and_constraint_bindings(app, inp, command):
+    assert app.bindings.command_for(inp) == command
 
 
 def test_q_is_unbound(app):

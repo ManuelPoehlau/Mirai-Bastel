@@ -192,7 +192,7 @@
       "category": "Transform",
       "binding": "E",
       "runtime_ref": "Rotate",
-      "notes": "Changed from W — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
+      "notes": "E: same AD-016 hold-key-hover as Move, wired in app (WP-06 B4, 2026-09-27). Changed from W — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
     },
     {
       "id": "transform.scale",
@@ -200,55 +200,55 @@
       "category": "Transform",
       "binding": "R",
       "runtime_ref": "Scale",
-      "notes": "Changed from E — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
+      "notes": "R: same AD-016 hold-key-hover as Move, wired in app (WP-06 B4, 2026-09-27). Changed from E — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
     },
     {
       "id": "transform.constraint_axis_x",
       "label": "X Axis",
       "category": "Transform Constraints",
       "binding": "X",
-      "runtime_ref": null,
-      "notes": ""
+      "runtime_ref": "ConstrainAxisX",
+      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4)"
     },
     {
       "id": "transform.constraint_axis_y",
       "label": "Y Axis",
       "category": "Transform Constraints",
       "binding": "Y",
-      "runtime_ref": null,
-      "notes": ""
+      "runtime_ref": "ConstrainAxisY",
+      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4)"
     },
     {
       "id": "transform.constraint_axis_z",
       "label": "Z Axis",
       "category": "Transform Constraints",
       "binding": "Z",
-      "runtime_ref": null,
-      "notes": ""
+      "runtime_ref": "ConstrainAxisZ",
+      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4)"
     },
     {
       "id": "transform.constraint_plane_xy",
       "label": "XY Plane",
       "category": "Transform Constraints",
-      "binding": "Shift+X",
-      "runtime_ref": null,
-      "notes": ""
+      "binding": "Shift+Z",
+      "runtime_ref": "ConstrainPlaneXY",
+      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4); Rotate turns about the plane normal. Changed from Shift+X to Blender's exclude-axis convention — Manu 2026-09-27"
     },
     {
       "id": "transform.constraint_plane_xz",
       "label": "XZ Plane",
       "category": "Transform Constraints",
-      "binding": "Shift+Z",
-      "runtime_ref": null,
-      "notes": ""
+      "binding": "Shift+Y",
+      "runtime_ref": "ConstrainPlaneXZ",
+      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4); Rotate turns about the plane normal. Changed from Shift+Z to Blender's exclude-axis convention — Manu 2026-09-27"
     },
     {
       "id": "transform.constraint_plane_yz",
       "label": "YZ Plane",
       "category": "Transform Constraints",
-      "binding": "Shift+Y",
-      "runtime_ref": null,
-      "notes": ""
+      "binding": "Shift+X",
+      "runtime_ref": "ConstrainPlaneYZ",
+      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4); Rotate turns about the plane normal. Changed from Shift+Y to Blender's exclude-axis convention — Manu 2026-09-27"
     },
     {
       "id": "topology.extrude",

@@ -131,7 +131,8 @@ class DefaultBindingsTests(unittest.TestCase):
         self.assertEqual(self.bs.command_for(_drag("LEFT", "alt")), cmd.ORBIT)
 
     def test_unbound_input_resolves_to_none(self):
-        self.assertIsNone(self.bs.command_for(_key("x")))
+        # X ist seit WP-06 B4 ConstrainAxisX; J ist unbelegt.
+        self.assertIsNone(self.bs.command_for(_key("j")))
 
 
 class BindingOverrideTests(unittest.TestCase):
@@ -155,8 +156,10 @@ class BindingOverrideTests(unittest.TestCase):
 
     def test_modifier_discrimination(self):
         bs = build_default_bindings()
-        # 'z' ohne Modifier ist ungebunden; Strg+Z ist Undo.
-        self.assertIsNone(bs.command_for(_key("z")))
+        # 'z' ohne Modifier ist die Z-Constraint (WP-06 B4), Shift+Z die
+        # XY-Ebene, Strg+Z bleibt Undo.
+        self.assertEqual(bs.command_for(_key("z")), cmd.CONSTRAIN_AXIS_Z)
+        self.assertEqual(bs.command_for(_key("z", "shift")), cmd.CONSTRAIN_PLANE_XY)
         self.assertEqual(bs.command_for(_key("z", "ctrl")), cmd.UNDO)
 
 

@@ -33,7 +33,11 @@ Scope (binding, see the handoffs):
   else the hovered vertex, follows live; releasing W commits, a tap without
   motion does nothing. Motion with a button held (`on_mouse_drag`) does not
   feed the Move — accepted gap, nothing is bound to a bare LMB drag. Esc =
-  Cancel only, Ctrl+Z / Ctrl+Y = Undo / Redo. Status lines
+  Cancel only, Ctrl+Z / Ctrl+Y = Undo / Redo. Rotate (E) and Scale (R)
+  work the same way (B4). While W/E/R is held and before the first mouse
+  motion, X/Y/Z constrain to that axis and Shift+X/Y/Z to the plane
+  without that axis (Blender convention; Rotate turns about the plane's
+  normal); a constraint key after the first motion is ignored. Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).

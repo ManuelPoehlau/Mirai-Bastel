@@ -64,6 +64,32 @@ _SELECT_COMMANDS = (
 )
 
 
+#: WP-06 B4 (E28): die drei Transform-Commands, die über denselben AD-016-
+#: hold-key-hover-Pfad scharf geschaltet werden. Werte: (Label, Verb, Partizip)
+#: für die Statuszeilen (E34, `PROVISIONAL`).
+_TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
+    commands.MOVE: ("Move", "move", "moved"),
+    commands.ROTATE: ("Rotate", "rotate", "rotated"),
+    commands.SCALE: ("Scale", "scale", "scaled"),
+}
+
+#: WP-06 B4 (E32): Constraint-Command → `space`-String nach AD-012
+#: (`transform._resolve_space`). Welche Taste welches Command auslöst
+#: (Blender: Shift+Achse schließt diese Achse aus), steht in `bindings.py`.
+_CONSTRAINT_SPACES: dict[str, str] = {
+    commands.CONSTRAIN_AXIS_X: "x",
+    commands.CONSTRAIN_AXIS_Y: "y",
+    commands.CONSTRAIN_AXIS_Z: "z",
+    commands.CONSTRAIN_PLANE_XY: "xy",
+    commands.CONSTRAIN_PLANE_XZ: "xz",
+    commands.CONSTRAIN_PLANE_YZ: "yz",
+}
+
+#: Rotate deutet eine Ebene als Drehung um ihre Flächennormale
+#: (`transform._PLANE_ROTATION_AXES`) - nur für die Statuszeile.
+_PLANE_NORMAL_AXIS = {"xy": "Z", "xz": "Y", "yz": "X"}
+
+
 def _selection_state(selection: Selection) -> tuple[frozenset, frozenset, frozenset]:
     return (
         frozenset(selection.vertices),
@@ -119,15 +145,19 @@ class Application:
         self.status_message: str = ""
         self.status_serial: int = 0
 
-        # WP-06 B3 (E21, AD-016 D4 hold-key-hover): Move-Zustand. `_move_key`
-        # ist die Taste, die scharf geschaltet hat (None = nicht scharf); das
-        # Release wird über ihren Wert erkannt, nicht über die Bindings, weil
-        # sich die Modifier zwischen Press und Release ändern dürfen (z. B.
-        # Alt für Orbit, während W gehalten wird). Das Ziel ist ab dem Press
-        # fix; `begin()` läuft erst bei der ersten Mausbewegung.
-        self._move_key: str | None = None
-        self._move_target: frozenset[VertexId] = frozenset()
-        self._move_begun: bool = False
+        # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
+        # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
+        # geschaltet hat (None = nicht scharf); das Release wird über ihren
+        # Wert erkannt, nicht über die Bindings, weil sich die Modifier
+        # zwischen Press und Release ändern dürfen (z. B. Alt für Orbit,
+        # während W gehalten wird). Das Ziel ist ab dem Press fix; `begin()`
+        # läuft erst bei der ersten Mausbewegung. `_transform_space` ist die
+        # vor dieser Bewegung gewählte Constraint (E30, None = frei).
+        self._transform_key: str | None = None
+        self._transform_command: str | None = None
+        self._transform_target: frozenset[VertexId] = frozenset()
+        self._transform_begun: bool = False
+        self._transform_space: str | None = None
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -235,36 +265,55 @@ class Application:
     @property
     def move_armed(self) -> bool:
         """Move-Taste gehalten (scharf oder bereits laufend)."""
-        return self._move_key is not None
+        return self._transform_command == commands.MOVE
 
     @property
     def move_interacting(self) -> bool:
         """Move läuft (erste Mausbewegung nach dem Scharfschalten erfolgt)."""
-        return self._move_begun
+        return self.move_armed and self._transform_begun
 
     @property
     def move_target(self) -> frozenset[VertexId]:
         """Beim Scharfschalten fixierte Ziel-Vertices (leer = nicht scharf)."""
-        return self._move_target
+        return self._transform_target if self.move_armed else frozenset()
+
+    @property
+    def transform_command(self) -> str | None:
+        """Scharf geschalteter Transform (MOVE/ROTATE/SCALE, None = keiner)."""
+        return self._transform_command
+
+    @property
+    def transform_interacting(self) -> bool:
+        """Der scharfe Transform läuft (erste Mausbewegung erfolgt)."""
+        return self._transform_begun
+
+    @property
+    def transform_target(self) -> frozenset[VertexId]:
+        """Beim Scharfschalten fixierte Ziel-Vertices (leer = nicht scharf)."""
+        return self._transform_target
+
+    @property
+    def transform_space(self) -> str | None:
+        """Gewählte Constraint als `space`-String (None = frei, E30/E32)."""
+        return self._transform_space
 
     def key_press(self, input: Input) -> bool:
         """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
-        (GLOBAL). True = der Druck hat etwas bewirkt.
-
-        ROTATE/SCALE lösen auf, bleiben aber bis B4 bewusst wirkungslos (kein
-        Tool, keine Zustandsänderung)."""
+        (GLOBAL). True = der Druck hat etwas bewirkt."""
         command = self.bindings.command_for(input)
-        if command == commands.MOVE:
-            return self._move_arm(input.value)
+        if command in _TRANSFORM_COMMANDS:
+            return self._transform_arm(command, input.value)
+        if command in _CONSTRAINT_SPACES:
+            return self._constrain(_CONSTRAINT_SPACES[command])
         if command == commands.CANCEL:
             return self._cancel()
         if command in (commands.UNDO, commands.REDO):
-            # E23: während eines laufenden Moves ignoriert; nur scharf →
+            # E23: während eines laufenden Transforms ignoriert; nur scharf →
             # erst entschärfen, dann ausführen.
-            if self._move_begun:
+            if self._transform_begun:
                 return False
-            if self._move_key is not None:
-                self._move_end()
+            if self._transform_key is not None:
+                self._transform_end()
                 self._refresh_hover()
             return self._undo_redo(command)
         return False
@@ -272,84 +321,128 @@ class Application:
     def key_release(self, input: Input) -> bool:
         """Taste losgelassen. True = das Loslassen hat etwas bewirkt.
 
-        Loslassen der Move-Taste committet, wenn seit dem Scharfschalten eine
-        Mausbewegung kam; ein bloßes Antippen entschärft nur (E21)."""
-        if self._move_key is None or input.value != self._move_key:
+        Loslassen der Transform-Taste committet, wenn seit dem Scharfschalten
+        eine Mausbewegung kam; ein bloßes Antippen entschärft nur (E21)."""
+        if self._transform_key is None or input.value != self._transform_key:
             return False
-        if self._move_begun:
+        label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
+        if self._transform_begun:
             command = self.tool_manager.commit()
-            self._set_status("Move committed" if command is not None else "Move: no change")
+            self._set_status(f"{label} committed" if command is not None else f"{label}: no change")
         else:
-            self._set_status("Move: tool set (no motion, nothing moved)")
-        self._move_end()
+            self._set_status(f"{label}: tool set (no motion, nothing {participle})")
+        self._transform_end()
         self._refresh_hover()
         return True
 
-    def _move_arm(self, key: str) -> bool:
-        """Move scharf schalten (E21): Ziel = Selection, sonst der gehoverte
-        Vertex, sonst ablehnen. Tool aktiv, `begin()` erst bei Bewegung."""
-        if self._move_key is not None or self.viewport is None:
+    def _transform_arm(self, command: str, key: str) -> bool:
+        """Transform scharf schalten (E21/E28): Ziel = Selection, sonst der
+        gehoverte Vertex, sonst ablehnen. Tool aktiv, `begin()` erst bei
+        Bewegung. Ist schon eine Transform-Taste gehalten, wird abgelehnt."""
+        if self._transform_key is not None or self.viewport is None:
             return False
+        label, verb, _ = _TRANSFORM_COMMANDS[command]
         selection = self.selection
         target = resolve_selection_vertices(self.scene.mesh, selection, selection.mode)
         hovered = selection.hovered
         if not target and isinstance(hovered, VertexId):
             target = {hovered}
         if not target:
-            self._set_status("Move: nothing to move (select or hover a vertex)")
+            self._set_status(f"{label}: nothing to {verb} (select or hover a vertex)")
             return False
-        self.dispatch_command(commands.MOVE)
-        self._move_key = key
-        self._move_target = frozenset(target)
-        self._move_begun = False
-        # Kein Hover-Punkt über den Punkten, die gleich bewegt werden.
-        if isinstance(hovered, VertexId) and hovered in self._move_target:
+        self.dispatch_command(command)
+        self._transform_key = key
+        self._transform_command = command
+        self._transform_target = frozenset(target)
+        self._transform_begun = False
+        self._transform_space = None
+        # Kein Hover-Punkt über den Punkten, die gleich transformiert werden.
+        if isinstance(hovered, VertexId) and hovered in self._transform_target:
             self._set_hovered(None)
-        count = len(self._move_target)
+        count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
         self._set_status(
-            f"Move: {count} {noun} - move the mouse, release {key.upper()} to commit"
+            f"{label}: {count} {noun} - move the mouse, release {key.upper()} to commit"
         )
         return True
 
-    def _move_step(self, dx: float, dy: float) -> bool:
-        """Eine Mausbewegung, während Move scharf ist. Die erste Bewegung
-        startet die Interaktion (keine Schwelle, AD-016); ein Nullschritt zählt
-        nicht als Bewegung."""
+    def _constrain(self, space: str) -> bool:
+        """Constraint-Taste (E30/E31): wirkt nur zwischen Scharfschalten und
+        erster Mausbewegung, weil das Tool `space` in `begin()` fixiert; die
+        letzte Taste vor der Bewegung gewinnt. Ohne scharfen Transform ein
+        stiller No-op (kein vorgemerkter Zustand)."""
+        if self._transform_key is None:
+            return False
+        label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
+        if self._transform_begun:
+            self._set_status(f"{label}: axis constraint only before the first mouse motion")
+            return False
+        self._transform_space = space
+        if len(space) == 1:
+            self._set_status(f"{label}: constrained to {space.upper()}")
+        elif self._transform_command == commands.ROTATE:
+            self._set_status(
+                f"{label}: constrained to {space.upper()} plane "
+                f"(around {_PLANE_NORMAL_AXIS[space]})"
+            )
+        else:
+            self._set_status(f"{label}: constrained to {space.upper()} plane")
+        return True
+
+    def _transform_step(self, dx: float, dy: float) -> bool:
+        """Eine Mausbewegung, während ein Transform scharf ist. Die erste
+        Bewegung startet die Interaktion (keine Schwelle, AD-016); ein
+        Nullschritt zählt nicht als Bewegung."""
         if dx == 0 and dy == 0:
             return False
-        if not self._move_begun:
+        if not self._transform_begun:
             self.tool_manager.begin_current_interaction(
-                {"scene": self.scene, "camera": self.camera, "vertex_ids": set(self._move_target)}
+                {
+                    "scene": self.scene,
+                    "camera": self.camera,
+                    "vertex_ids": set(self._transform_target),
+                    "space": self._transform_space,
+                }
             )
-            self._move_begun = True
+            self._transform_begun = True
         self.tool_manager.update(
             dx=float(dx), dy=float(dy), width=self.viewport_width, height=self.viewport_height
         )
-        self.viewport.on_vertices_moved(self.tool_manager.active_tool.moves)
+        self.viewport.on_vertices_moved(self._active_transform_vertex_ids())
         return True
 
-    def _move_end(self) -> None:
-        """Move-Tool deaktivieren und den Move-Zustand löschen."""
+    def _active_transform_vertex_ids(self) -> set[VertexId]:
+        """Vom laufenden Transform betroffene Vertex-IDs (E29): `MoveTool.moves`
+        (inkl. Symmetrie-Partner) bzw. `TransformTool.vertex_ids` - bewusst
+        nicht vereinheitlicht, MoveTool erbt nicht von TransformTool."""
+        tool = self.tool_manager.active_tool
+        moves = getattr(tool, "moves", None)
+        return moves if moves is not None else tool.vertex_ids
+
+    def _transform_end(self) -> None:
+        """Transform-Tool deaktivieren und den Transform-Zustand löschen."""
         self.tool_manager.deactivate()
-        self._move_key = None
-        self._move_target = frozenset()
-        self._move_begun = False
+        self._transform_key = None
+        self._transform_command = None
+        self._transform_target = frozenset()
+        self._transform_begun = False
+        self._transform_space = None
 
     def _cancel(self) -> bool:
-        """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Move →
+        """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
         exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
         nichts."""
-        if self._move_key is None:
+        if self._transform_key is None:
             return False
-        if self._move_begun:
-            moved = self.tool_manager.active_tool.moves
+        label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
+        if self._transform_begun:
+            moved = self._active_transform_vertex_ids()
             self.tool_manager.cancel()
             self.viewport.on_vertices_moved(moved)
-            self._set_status("Move cancelled")
+            self._set_status(f"{label} cancelled")
         else:
-            self._set_status("Move disarmed")
-        self._move_end()
+            self._set_status(f"{label} disarmed")
+        self._transform_end()
         self._refresh_hover()
         return True
 
@@ -413,22 +506,22 @@ class Application:
     def pointer_motion(self, x: float, y: float, dx: float = 0.0, dy: float = 0.0) -> bool:
         """Mausbewegung ohne gedrückte Taste.
 
-        Move scharf (W gehalten, B3): `dx`/`dy` treiben den Move, kein Hover
-        (E24). Sonst Vertex-Hover unter dem Cursor (B2b). Während einer
-        laufenden Pointer-Geste (Kamera) passiert beides nicht — Navigation
-        gewinnt. True = ein Move-Schritt lief bzw. `selection.hovered` hat
-        sich geändert."""
+        Transform scharf (W/E/R gehalten, B3/B4): `dx`/`dy` treiben den
+        Transform, kein Hover (E24). Sonst Vertex-Hover unter dem Cursor
+        (B2b). Während einer laufenden Pointer-Geste (Kamera) passiert beides
+        nicht — Navigation gewinnt. True = ein Transform-Schritt lief bzw.
+        `selection.hovered` hat sich geändert."""
         self._cursor = (x, y)
         if self.pointer.active:
             return False
-        if self._move_key is not None:
-            return self._move_step(dx, dy)
+        if self._transform_key is not None:
+            return self._transform_step(dx, dy)
         return self._update_hover(x, y)
 
     def _refresh_hover(self) -> None:
         """Hover an der letzten Cursor-Position neu picken (nach Zoom bzw.
         wenn sich das Mesh unter dem ruhenden Cursor bewegt hat)."""
-        if self._cursor is not None and not self.pointer.active and self._move_key is None:
+        if self._cursor is not None and not self.pointer.active and self._transform_key is None:
             self._update_hover(*self._cursor)
 
     def pointer_leave(self) -> bool:

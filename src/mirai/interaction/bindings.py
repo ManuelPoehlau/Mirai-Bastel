@@ -24,7 +24,12 @@ Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
 - W              → Move (MoveTool)
 - E              → Rotate (RotateTool)
 - R              → Scale (ScaleTool)
-Q ist unbelegt. Im Topology-Lab behält das kontextspezifische R-Binding
+Q ist unbelegt. Achsen-Constraints (WP-06 B4, Blender-Konvention
+„Shift+Achse schließt diese Achse aus", Manu 2026-09-27):
+- X / Y / Z      → nur entlang dieser Achse
+- Shift+X        → YZ-Ebene, Shift+Y → XZ-Ebene, Shift+Z → XY-Ebene
+Ctrl+Z / Ctrl+Y (Undo/Redo) sind ein anderes Modifier-Set und bleiben
+unberührt. Im Topology-Lab behält das kontextspezifische R-Binding
 (EdgeRing) Vorrang vor dieser globalen Bindung (Kontext-Priorität in
 input_binding.BindingSet.command_for).
 
@@ -81,6 +86,13 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("w"), cmd.MOVE)
     bs.set_default(_key("e"), cmd.ROTATE)
     bs.set_default(_key("r"), cmd.SCALE)
+    # WP-06 B4 (E33): Constraints, nur wirksam solange ein Transform scharf ist.
+    bs.set_default(_key("x"), cmd.CONSTRAIN_AXIS_X)
+    bs.set_default(_key("y"), cmd.CONSTRAIN_AXIS_Y)
+    bs.set_default(_key("z"), cmd.CONSTRAIN_AXIS_Z)
+    bs.set_default(_key("x", "shift"), cmd.CONSTRAIN_PLANE_YZ)
+    bs.set_default(_key("y", "shift"), cmd.CONSTRAIN_PLANE_XZ)
+    bs.set_default(_key("z", "shift"), cmd.CONSTRAIN_PLANE_XY)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 
