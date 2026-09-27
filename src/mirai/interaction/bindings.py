@@ -1,7 +1,8 @@
 """Default-Key- und Mouse-Bindings für den Viewport-Praxistest.
 
 Abgeleitet aus dem bisherigen V1-Verhalten (siehe README/SELECTION_MODES):
-- V/1, 2, F/3    → Selection-Modi (E ist seit WP-AP-INPUT-FIX-01 Transform)
+- 1, 2, 3        → Vertex-/Edge-/Face-Modus (Artist Input Truth; die Legacy-
+                   Tasten V/F sind seit WP-06 B5b entfernt, E47)
 - Ctrl+Z / Ctrl+Y → Undo / Redo
 - Esc             → laufende Interaktion abbrechen
 - Wheel           → Zoom (Dolly)
@@ -70,13 +71,11 @@ def build_default_bindings() -> BindingSet:
     """Erzeugt die Default-Belegung für den Viewport (und das Topology Lab)."""
     bs = BindingSet()
 
-    # --- Selection-Modi (bestehende V1-Konvention, E now used for transform) -----
-    for value in ("v", "1"):
-        bs.set_default(_key(value), cmd.SET_VERTEX_MODE)
-    # WP-AP-INPUT-FIX-01 §2: E moved to transform tools (SCALE), use 2 for edge mode
+    # --- Selection-Modi (Artist Input Truth: nur 1/2/3; WP-06 B5b E47 hat die
+    # V1-Legacy-Tasten V und F entfernt - F ist für frame_selection reserviert).
+    bs.set_default(_key("1"), cmd.SET_VERTEX_MODE)
     bs.set_default(_key("2"), cmd.SET_EDGE_MODE)
-    for value in ("f", "3"):
-        bs.set_default(_key(value), cmd.SET_FACE_MODE)
+    bs.set_default(_key("3"), cmd.SET_FACE_MODE)
 
     # --- History / Interaktion ---------------------------------------------
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)

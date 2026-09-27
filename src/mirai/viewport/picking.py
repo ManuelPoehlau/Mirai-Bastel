@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-from core import EdgeId, FaceId, Mesh, VertexId
+from core import EdgeId, FaceId, Mesh, SelectionMode, VertexId
 
 from .camera import OrbitCamera
 
@@ -110,3 +110,14 @@ def pick_face(camera, mesh, sx, sy, width, height, debug=False):
     if debug:
         print(f"[FACE DEBUG] result face={best_id} t={best_t}")
     return best_id
+
+
+def pick_component(camera, mesh, mode, sx, sy, width, height):
+    """Picker nach Selection-Modus (WP-06 B5b, E43): nächster Vertex, nächste
+    Edge oder vorderste Face unter dem Cursor (Playground `selector.
+    pick_component`, dort mit der ganzen Selection statt nur dem Modus)."""
+    if mode is SelectionMode.VERTEX:
+        return pick_nearest_vertex(camera, mesh, sx, sy, width, height)
+    if mode is SelectionMode.EDGE:
+        return pick_nearest_edge(camera, mesh, sx, sy, width, height)
+    return pick_face(camera, mesh, sx, sy, width, height)

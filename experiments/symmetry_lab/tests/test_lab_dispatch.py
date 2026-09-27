@@ -115,13 +115,14 @@ def test_rmb_is_unbound_in_lab(app, dispatcher):
 
 
 def test_foreign_commands_are_noops(app, dispatcher):
-    # Globaler Default (Taste f → SetFaceMode) und ein Maus-Input, der im
-    # Lab-Kontext auf ein fremdes Command auflöst: beide ohne Wirkung.
-    assert dispatcher.resolve(Input("key", "f")) == cmd.SET_FACE_MODE
+    # Globaler Default (Taste 3 → SetFaceMode; die Legacy-Taste f ist seit
+    # WP-06 B5b ungebunden) und ein Maus-Input, der im Lab-Kontext auf ein
+    # fremdes Command auflöst: beide ohne Wirkung.
+    assert dispatcher.resolve(Input("key", "3")) == cmd.SET_FACE_MODE
     ctrl_lmb = Input("mouse", "LEFT", frozenset({"ctrl"}))
     app.bindings.set_default(ctrl_lmb, cmd.UNDO, context=SYMMETRY_LAB_CONTEXT)
     before = camera_state(app)
-    for inp in (Input("key", "f"), ctrl_lmb):
+    for inp in (Input("key", "3"), ctrl_lmb):
         dispatcher.press(inp)
         assert dispatcher.active_command is None
         dispatcher.drag(30, 30)

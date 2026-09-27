@@ -30,6 +30,12 @@ Weltpositionen (selektierte Vertices, gehoverter Vertex) rein headless;
 gezeichnet werden sie von `gl_point_overlay.GLPointOverlay`. Der Face-Tint
 über `highlight_flags` ist aus dem Shader entfernt (Artist REJECT); die
 Flag-Ressource selbst bleibt bis zum dokumentierten Follow-up bestehen.
+
+2026-09-27 (WP-06 B5b, E44): dasselbe für Edges und Faces. `line_layers()`
+liefert Segmente (selektierte Edges im Edge-Modus, gehoverte Edge),
+`face_layers()` Dreiecke (selektierte Faces im Face-Modus, gehoverte Face;
+gleiche Fan-Triangulierung wie `RenderMesh`). Gezeichnet von
+`gl_line_overlay.GLLineOverlay` bzw. `gl_triangle_overlay.GLTriangleOverlay`.
 """
 
 from __future__ import annotations
@@ -37,6 +43,8 @@ from __future__ import annotations
 from enum import Enum, auto
 
 from core import EdgeId, FaceId, Selection, SelectionMode, VertexId
+
+from .derived import triangulate_face
 
 #: Punkt-Layer der Overlay-Geometrie, in Zeichenreihenfolge (Hover unter
 #: der Selektion, wie Playground `window.on_draw`).
@@ -141,3 +149,49 @@ class SelectionOverlay:
             HOVER_LAYER: self.hovered_vertex_positions(mesh),
             SELECTED_LAYER: self.selected_vertex_positions(mesh),
         }
+
+    # -- Edge-/Face-Overlay (WP-06 B5b) ---------------------------------------
+
+    def line_layers(self, mesh) -> dict[str, list]:
+        """Segment-Layer (`POINT_LAYERS`-Namen): je Edge ein `(a, b)`-Paar von
+        Weltpositionen. Selektierte Edges nur im Edge-Modus; ungültige IDs
+        werden übersprungen, Reihenfolge nach ID."""
+        selected: list = []
+        if self.selection.mode is SelectionMode.EDGE:
+            selected = [
+                _edge_segment(mesh, edge_id)
+                for edge_id in sorted(self.selection.edges)
+                if mesh.is_valid_edge(edge_id)
+            ]
+        hovered = self.selection.hovered
+        hover: list = []
+        if isinstance(hovered, EdgeId) and mesh.is_valid_edge(hovered):
+            hover = [_edge_segment(mesh, hovered)]
+        return {HOVER_LAYER: hover, SELECTED_LAYER: selected}
+
+    def face_layers(self, mesh) -> dict[str, list]:
+        """Dreieck-Layer (`POINT_LAYERS`-Namen): je Dreieck drei Weltpositionen.
+        Selektierte Faces nur im Face-Modus; ungültige IDs werden
+        übersprungen, Reihenfolge nach ID."""
+        selected: list = []
+        if self.selection.mode is SelectionMode.FACE:
+            for face_id in sorted(self.selection.faces):
+                if mesh.is_valid_face(face_id):
+                    selected.extend(_face_triangles(mesh, face_id))
+        hovered = self.selection.hovered
+        hover: list = []
+        if isinstance(hovered, FaceId) and mesh.is_valid_face(hovered):
+            hover = _face_triangles(mesh, hovered)
+        return {HOVER_LAYER: hover, SELECTED_LAYER: selected}
+
+
+def _edge_segment(mesh, edge_id: EdgeId) -> tuple:
+    va, vb = mesh.edge_vertices(edge_id)
+    return (mesh.vertex_position(va), mesh.vertex_position(vb))
+
+
+def _face_triangles(mesh, face_id: FaceId) -> list[tuple]:
+    return [
+        tuple(mesh.vertex_position(vid) for vid in tri)
+        for tri in triangulate_face(mesh.face_vertices(face_id))
+    ]

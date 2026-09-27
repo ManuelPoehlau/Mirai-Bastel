@@ -94,11 +94,15 @@ class DefaultBindingsTests(unittest.TestCase):
         )
 
     def test_selection_mode_keys(self):
-        for value in ("v", "1"):
-            self.assertEqual(self.bs.command_for(_key(value)), cmd.SET_VERTEX_MODE)
+        self.assertEqual(self.bs.command_for(_key("1")), cmd.SET_VERTEX_MODE)
         self.assertEqual(self.bs.command_for(_key("2")), cmd.SET_EDGE_MODE)
-        for value in ("f", "3"):
-            self.assertEqual(self.bs.command_for(_key(value)), cmd.SET_FACE_MODE)
+        self.assertEqual(self.bs.command_for(_key("3")), cmd.SET_FACE_MODE)
+
+    def test_legacy_mode_keys_v_and_f_are_unbound(self):
+        # WP-06 B5b (E47): Artist Input Truth kennt nur 1/2/3; F ist für
+        # navigation.frame_selection reserviert.
+        for value in ("v", "f"):
+            self.assertIsNone(self.bs.command_for(_key(value)))
 
     def test_display_keys(self):
         # WP-06 B5a (E42): Artist Input Truth — D statt O.
@@ -175,7 +179,7 @@ class ContextResolutionTests(unittest.TestCase):
 
     def test_global_fallback_in_topology_context(self):
         bs = build_default_bindings()
-        self.assertEqual(bs.command_for(_key("v"), TOPOLOGY_CONTEXT), cmd.SET_VERTEX_MODE)
+        self.assertEqual(bs.command_for(_key("1"), TOPOLOGY_CONTEXT), cmd.SET_VERTEX_MODE)
         self.assertEqual(bs.command_for(_key("z", "ctrl"), TOPOLOGY_CONTEXT), cmd.UNDO)
 
     def test_global_scale_is_not_topology_split(self):
@@ -198,7 +202,7 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(merged.command_for(_mouse("MIDDLE", "shift")), cmd.ORBIT)
         # Defaults unverändert.
         self.assertEqual(merged.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
-        self.assertEqual(merged.command_for(_key("v")), cmd.SET_VERTEX_MODE)
+        self.assertEqual(merged.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_json_roundtrip(self):
         bs = BindingSet()
@@ -269,7 +273,7 @@ class KeymapOverrideTests(unittest.TestCase):
         )
         bs.add_overrides(overlay)
         self.assertEqual(bs.command_for(_key("z", "ctrl")), cmd.UNDO)
-        self.assertEqual(bs.command_for(_key("v")), cmd.SET_VERTEX_MODE)
+        self.assertEqual(bs.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_keymap_override_via_file(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -312,7 +316,7 @@ class ExplicitUnbindTests(unittest.TestCase):
         )
         bs.add_overrides(overlay)
         self.assertEqual(bs.command_for(_key("z", "ctrl")), cmd.UNDO)
-        self.assertEqual(bs.command_for(_key("v")), cmd.SET_VERTEX_MODE)
+        self.assertEqual(bs.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_unbind_is_scoped_to_context(self):
         # topology: s → null; global: r → Scale bleibt erhalten.
@@ -424,13 +428,13 @@ class KeymapContextTests(unittest.TestCase):
     def test_topology_override_wins_over_global_default(self):
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(TOPOLOGY_CONTEXT, "key", "v", [], cmd.CLEAR_SELECTION))
+            _keymap(_entry(TOPOLOGY_CONTEXT, "key", "1", [], cmd.CLEAR_SELECTION))
         )
         bs.add_overrides(overlay)
         self.assertEqual(
-            bs.command_for(_key("v"), TOPOLOGY_CONTEXT), cmd.CLEAR_SELECTION
+            bs.command_for(_key("1"), TOPOLOGY_CONTEXT), cmd.CLEAR_SELECTION
         )
-        self.assertEqual(bs.command_for(_key("v"), GLOBAL_CONTEXT), cmd.SET_VERTEX_MODE)
+        self.assertEqual(bs.command_for(_key("1"), GLOBAL_CONTEXT), cmd.SET_VERTEX_MODE)
 
     def test_global_override_applies_in_topology_via_fallback(self):
         bs = build_default_bindings()

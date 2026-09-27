@@ -169,10 +169,12 @@ def test_leave_clears_hover_and_forgets_cursor(app, notifications):
     assert len(notifications) == 2
 
 
-def test_hover_only_in_vertex_mode(app):
-    app.selection.mode = SelectionMode.FACE
-    assert not app.pointer_motion(*_screen(app, _visible_target(app)))
-    assert app.selection.hovered is None
+def test_hover_follows_the_active_mode(app):
+    # B2b hatte Hover nur im Vertex-Modus; seit B5b (E43) hovert jeder Modus
+    # sein eigenes Element (Details: tests/test_application_component_modes.py).
+    app.selection.mode = SelectionMode.EDGE
+    assert app.pointer_motion(*_screen(app, _visible_target(app)))
+    assert isinstance(app.selection.hovered, EdgeId)
 
 
 def test_hover_leaves_selection_and_history_untouched(app):

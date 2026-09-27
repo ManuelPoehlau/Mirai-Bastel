@@ -1,4 +1,4 @@
-"""Production entry point — Stage B, Slices B1, B2, B2b, B3, B4 + B5a.
+"""Production entry point — Stage B, Slices B1, B2, B2b, B3, B4, B5a + B5b.
 
 Handoffs: "WP-06 — Slice B1: Head mesh as default scene + camera framing",
 "WP-06 — Slice B2: Navigation per Artist Truth + vertex selection,
@@ -40,7 +40,11 @@ Scope (binding, see the handoffs):
   across gestures and applies from the next gesture on (B4.1, same as the
   Playground). Display (B5a, `PROVISIONAL`): D cycles Shaded → Flat
   Shaded → Wireframe, Shift+D toggles the wire overlay; edges are drawn
-  by `GLLineOverlay` after the mesh. Status lines
+  by `GLLineOverlay` after the mesh. Component modes (B5b, `PROMOTED`):
+  1 / 2 / 3 switch to Vertex / Edge / Face (clears selection and hover);
+  click selection, hover and W/E/R then work on edges / faces. Selected
+  faces are a yellow fill (`GLTriangleOverlay`), selected edges yellow
+  lines, hover pale yellow (look `PROVISIONAL`). Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).
@@ -77,6 +81,7 @@ from mirai.pyglet_input import key_from_pyglet, mouse_from_pyglet, wheel_from_py
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
+from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
 
 _DEFAULT_HEAD_OBJ = _ROOT / "examples" / "meshes" / "head_basemesh.obj"
 
@@ -97,6 +102,7 @@ def main() -> None:
         "store_type": GLRenderStore,
         "point_overlay_type": GLPointOverlay,
         "line_overlay_type": GLLineOverlay,
+        "face_overlay_type": GLTriangleOverlay,
     }
     if arg == "cube":
         app.init_scene("cube", **gl_types)

@@ -35,7 +35,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from core import HistoryStack, Scene, Selection, SelectionMode, VertexId
+from core import EdgeId, FaceId, HistoryStack, Scene, Selection, SelectionMode, VertexId
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
@@ -47,7 +47,7 @@ from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
 from .viewport import DisplayMode, DisplayState, OrbitCamera
-from .viewport.picking import pick_nearest_vertex
+from .viewport.picking import pick_component
 
 
 #: Orbit-Rate (rad/px) und Dolly-Faktoren — aus `src/main.py` (Stage A/B1)
@@ -101,6 +101,36 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
     commands.SET_FLAT_SHADED: DisplayMode.FLAT_SHADED,
     commands.SET_WIREFRAME: DisplayMode.WIREFRAME,
 }
+
+
+#: WP-06 B5b (E43): Component-Modi 1/2/3 (Selection Lab KEEP, `PROMOTED`).
+_MODE_COMMANDS: dict[str, SelectionMode] = {
+    commands.SET_VERTEX_MODE: SelectionMode.VERTEX,
+    commands.SET_EDGE_MODE: SelectionMode.EDGE,
+    commands.SET_FACE_MODE: SelectionMode.FACE,
+}
+
+
+def _element_vertices(mesh, element) -> set[VertexId]:
+    """Vertices eines einzelnen Vertex/Edge/Face (Hover-Fallback des Transforms)."""
+    if isinstance(element, VertexId):
+        return {element}
+    if isinstance(element, EdgeId):
+        return set(mesh.edge_vertices(element))
+    if isinstance(element, FaceId):
+        return set(mesh.face_vertices(element))
+    return set()
+
+
+def _active_selection_contains(selection: Selection, element) -> bool:
+    """Liegt `element` in der Auswahl des aktiven Modus (Playground
+    `_sel_contains_hovered`)? Typ mitprüfen - IDs sind int-Subklassen."""
+    kind, members = {
+        SelectionMode.VERTEX: (VertexId, selection.vertices),
+        SelectionMode.EDGE: (EdgeId, selection.edges),
+        SelectionMode.FACE: (FaceId, selection.faces),
+    }[selection.mode]
+    return isinstance(element, kind) and element in members
 
 
 def _constraint_label(space: str | None) -> str:
@@ -201,6 +231,7 @@ class Application:
         obj_path: str | Path | None = None,
         point_overlay_type: type | None = None,
         line_overlay_type: type | None = None,
+        face_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
 
@@ -225,7 +256,10 @@ class Application:
 
         `line_overlay_type` (WP-06 B5a, E38): dasselbe Muster für das
         Edge-Linien-Overlay; der Entry-Point übergibt `GLLineOverlay`. Der
-        aktuelle `DisplayState` wird sofort an den neuen Viewport gegeben."""
+        aktuelle `DisplayState` wird sofort an den neuen Viewport gegeben.
+
+        `face_overlay_type` (WP-06 B5b, E45): dasselbe Muster für selektierte
+        bzw. gehoverte Faces; der Entry-Point übergibt `GLTriangleOverlay`."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
@@ -249,6 +283,7 @@ class Application:
             store_type=store_type,
             point_overlay_type=point_overlay_type,
             line_overlay_type=line_overlay_type,
+            face_overlay_type=face_overlay_type,
         )
         self.viewport.bind_camera(self.camera)
         self._apply_display()
@@ -277,6 +312,7 @@ class Application:
         mit `context` sofort `begin(**context)`).
         Undo/Redo → History.
         Display-Commands → `DisplayState` + Viewport (WP-06 B5a, E42).
+        Modus-Commands → `Selection.mode` (WP-06 B5b, E43).
         Alles andere → False (bewusst minimal gehalten).
         """
         tool_class = tool_for_command(command)
@@ -291,8 +327,25 @@ class Application:
             return True
         if command in _DISPLAY_COMMANDS:
             return self._display_command(command)
+        if command in _MODE_COMMANDS:
+            return self._set_selection_mode(_MODE_COMMANDS[command])
 
         return False
+
+    # -- Component-Modi (WP-06 B5b) ---------------------------------------------
+
+    def _set_selection_mode(self, mode: SelectionMode) -> bool:
+        """1/2/3 wie Playground `window.py`: Modus setzen, Auswahl leeren, Hover
+        löschen (R-SEL-2). Auch der bereits aktive Modus leert die Auswahl
+        (Playground-Verhalten). Kein History-Eintrag; der Hover kommt mit der
+        nächsten Mausbewegung im neuen Modus zurück."""
+        self.selection.mode = mode
+        self.selection.clear()
+        self.selection.hovered = None
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._set_status(f"Mode: {mode.name.capitalize()}")
+        return True
 
     # -- Display (WP-06 B5a) ----------------------------------------------------
 
@@ -374,6 +427,11 @@ class Application:
         if command in _DISPLAY_COMMANDS:
             # Reine Darstellung: auch während eines Transforms erlaubt.
             return self.dispatch_command(command)
+        if command in _MODE_COMMANDS:
+            # Kein Moduswechsel mitten in einer Geste (Playground Session Gate).
+            if self._transform_key is not None:
+                return False
+            return self.dispatch_command(command)
         if command in (commands.UNDO, commands.REDO):
             # E23: während eines laufenden Transforms ignoriert; nur scharf →
             # erst entschärfen, dann ausführen.
@@ -404,27 +462,31 @@ class Application:
         return True
 
     def _transform_arm(self, command: str, key: str) -> bool:
-        """Transform scharf schalten (E21/E28): Ziel = Selection, sonst der
-        gehoverte Vertex, sonst ablehnen. Tool aktiv, `begin()` erst bei
-        Bewegung. Ist schon eine Transform-Taste gehalten, wird abgelehnt."""
+        """Transform scharf schalten (E21/E28): Ziel = aufgelöste Selection,
+        sonst die Vertices des gehoverten Elements (Vertex/Edge/Face, B5b),
+        sonst ablehnen. Tool aktiv, `begin()` erst bei Bewegung. Ist schon
+        eine Transform-Taste gehalten, wird abgelehnt."""
         if self._transform_key is not None or self.viewport is None:
             return False
         label, verb, _ = _TRANSFORM_COMMANDS[command]
         selection = self.selection
         target = resolve_selection_vertices(self.scene.mesh, selection, selection.mode)
         hovered = selection.hovered
-        if not target and isinstance(hovered, VertexId):
-            target = {hovered}
+        from_hover = not target and hovered is not None
+        if from_hover:
+            target = _element_vertices(self.scene.mesh, hovered)
         if not target:
-            self._set_status(f"{label}: nothing to {verb} (select or hover a vertex)")
+            noun = selection.mode.name.lower()
+            self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
             return False
         self.dispatch_command(command)
         self._transform_key = key
         self._transform_command = command
         self._transform_target = frozenset(target)
         self._transform_begun = False
-        # Kein Hover-Punkt über den Punkten, die gleich transformiert werden.
-        if isinstance(hovered, VertexId) and hovered in self._transform_target:
+        # Kein Hover-Highlight über dem, was gleich transformiert wird
+        # (Playground WP-STAB-11 clear-on-arm).
+        if from_hover or _active_selection_contains(selection, hovered):
             self._set_hovered(None)
         count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
@@ -567,9 +629,9 @@ class Application:
         """Mausbewegung ohne gedrückte Taste.
 
         Transform scharf (W/E/R gehalten, B3/B4): `dx`/`dy` treiben den
-        Transform, kein Hover (E24). Sonst Vertex-Hover unter dem Cursor
-        (B2b). Während einer laufenden Pointer-Geste (Kamera) passiert beides
-        nicht — Navigation gewinnt. True = ein Transform-Schritt lief bzw.
+        Transform, kein Hover (E24). Sonst Hover unter dem Cursor im aktiven
+        Modus (Vertex B2b, Edge/Face B5b). Während einer laufenden
+        Pointer-Geste (Kamera) passiert beides nicht — Navigation gewinnt. True = ein Transform-Schritt lief bzw.
         `selection.hovered` hat sich geändert."""
         self._cursor = (x, y)
         if self.pointer.active:
@@ -590,13 +652,22 @@ class Application:
         return self._set_hovered(None)
 
     def _update_hover(self, x: float, y: float) -> bool:
-        # Nur Vertex-Mode (B2b); andere Modi haben noch keinen Hover.
-        if self.viewport is None or self.selection.mode is not SelectionMode.VERTEX:
+        # Hover im aktiven Modus: Vertex (B2b), Edge oder Face (B5b).
+        if self.viewport is None:
             return False
-        vid = pick_nearest_vertex(
-            self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
+        return self._set_hovered(self._pick(x, y))
+
+    def _pick(self, x: float, y: float):
+        """E43: Element unter dem Cursor im aktiven Selection-Modus (oder None)."""
+        return pick_component(
+            self.camera,
+            self.scene.mesh,
+            self.selection.mode,
+            x,
+            y,
+            self.viewport_width,
+            self.viewport_height,
         )
-        return self._set_hovered(vid)
 
     def _set_hovered(self, hovered) -> bool:
         """Setzt `selection.hovered` (reiner UI-State, kein History-Eintrag) und
@@ -625,41 +696,42 @@ class Application:
 
     def _execute_click(self, click: Click) -> bool:
         if click.command in _SELECT_COMMANDS:
-            self.select_vertex_at(click.command, click.x, click.y)
+            self.select_at(click.command, click.x, click.y)
             return True
         return False
 
-    def select_vertex_at(self, command: str, x: float, y: float) -> bool:
-        """Vertex-Klick-Selektion, Modifier-Variante AP-03 (WP-06 B2, A7/E13).
+    def select_at(self, command: str, x: float, y: float) -> bool:
+        """Klick-Selektion, Modifier-Variante AP-03 (WP-06 B2, A7/E13), im
+        aktiven Modus (Vertex/Edge/Face, B5b E43).
 
         Treffer: SELECT ersetzt, SELECT_ADD fügt hinzu, SELECT_REMOVE entfernt,
         SELECT_TOGGLE schaltet um. Klick ins Leere: nur SELECT leert, die
-        Modifier-Commands lassen die Auswahl unverändert. Nur Vertex-Mode
-        (`Selection.mode` wird nicht angefasst), kein History-Eintrag.
-        True = die Auswahl hat sich tatsächlich geändert (nur dann wird der
-        Viewport benachrichtigt)."""
+        Modifier-Commands lassen die Auswahl unverändert. `Selection.mode`
+        wird nicht angefasst, kein History-Eintrag. True = die Auswahl hat
+        sich tatsächlich geändert (nur dann wird der Viewport benachrichtigt)."""
         if self.viewport is None:
             return False
         selection = self.selection
         before = _selection_state(selection)
-        vid = pick_nearest_vertex(
-            self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
-        )
-        if vid is None:
+        hit = self._pick(x, y)
+        if hit is None:
             if command == commands.SELECT:
                 selection.clear()
         elif command == commands.SELECT:
-            selection.set({vid})
+            selection.set({hit})
         elif command == commands.SELECT_ADD:
-            selection.add({vid})
+            selection.add({hit})
         elif command == commands.SELECT_REMOVE:
-            selection.remove({vid})
+            selection.remove({hit})
         elif command == commands.SELECT_TOGGLE:
-            selection.toggle(vid)
+            selection.toggle(hit)
         if _selection_state(selection) == before:
             return False
         self.viewport.on_selection_changed()
         return True
+
+    #: B2-Name, bleibt als Weiterleitung (E43).
+    select_vertex_at = select_at
 
     def _camera_changed(self) -> None:
         if self.viewport is not None:

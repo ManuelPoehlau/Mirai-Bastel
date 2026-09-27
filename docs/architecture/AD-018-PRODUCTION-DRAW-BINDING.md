@@ -514,3 +514,13 @@ separate addendum, not taken here. `GLRenderStore` still draws exactly one
 group; its only additions are the `u_flat` uniform, the world-position
 varying and `set_draw_style(flat, polygon_offset)`. Edge picking / hover /
 highlight remain open (B5b).
+
+*Extension 2026-09-27 (WP-06 Slice B5b, component modes):* the precedent now
+covers the **edge and face highlight** — `GLLineOverlay` gains `hover` /
+`selected` layers next to `wire`, and `src/viewport/gl_triangle_overlay.py`,
+class `GLTriangleOverlay`, draws selected / hovered faces as `GL_TRIANGLES`
+(same fan triangulation as `RenderMesh`); both share the flat-colour layer
+mechanics (`FlatColorLayers`), data is headless (`SelectionOverlay.
+line_layers()` / `face_layers()`), draw order mesh → wire → face highlight →
+edge highlight → points, depth `GL_LEQUAL`; faces keep the polygon offset
+also while an edge highlight is drawn. No new AD, `GLRenderStore` unchanged.

@@ -38,6 +38,7 @@ from .derived import DerivedGeometry, compute_bounds, triangulate_face
 from .gl_line_overlay import GLLineOverlay
 from .gl_point_overlay import GLPointOverlay
 from .gl_render_store import GLRenderStore
+from .gl_triangle_overlay import GLTriangleOverlay
 from .overlay import OverlayElementKind, SelectionOverlay
 from .render_mesh import RenderMesh
 from .resource_store import GpuResource, PygletStore, ResourceStore, TraceStore
@@ -66,6 +67,7 @@ __all__ = [
     "GLRenderStore",
     "GLPointOverlay",
     "GLLineOverlay",
+    "GLTriangleOverlay",
     "edge_segments",
     "Viewport",
 ]

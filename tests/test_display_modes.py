@@ -17,6 +17,7 @@ from mirai.interaction.input import GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, Input
 from mirai.scene_factory import create_cube
 from mirai.viewport.display import DisplayMode
 from viewport import GLLineOverlay, Viewport, edge_segments
+from viewport.gl_line_overlay import WIRE_LAYER
 
 WIDTH, HEIGHT = 800, 600
 
@@ -33,17 +34,24 @@ CTRL_Y = _key("y", "ctrl")
 
 
 class RecordingLineOverlay:
-    """Stellvertreter für `GLLineOverlay` (gleiche Schnittstelle, kein GL)."""
+    """Stellvertreter für `GLLineOverlay` (gleiche Schnittstelle, kein GL).
+    `segments`/`draws` beziehen sich auf den Wire-Layer (B5a); die
+    Highlight-Layer (B5b) landen in `layers`."""
 
     def __init__(self) -> None:
         self.segments: list = []
+        self.layers: dict[str, list] = {}
         self.draws = 0
 
-    def set_segments(self, segments) -> None:
-        self.segments = list(segments)
+    def set_segments(self, segments, layer: str = WIRE_LAYER) -> None:
+        if layer == WIRE_LAYER:
+            self.segments = list(segments)
+        else:
+            self.layers[layer] = list(segments)
 
-    def draw(self, camera_uniforms) -> None:
-        self.draws += 1
+    def draw(self, camera_uniforms, layers=(WIRE_LAYER,)) -> None:
+        if WIRE_LAYER in layers:
+            self.draws += 1
 
 
 @pytest.fixture
