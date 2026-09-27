@@ -1,6 +1,6 @@
 # Selection Lab — Artist Verdict (WP-AP-03)
 
-**Status:** OFFEN — noch nicht gespielt
+**Status:** DECIDED
 
 ---
 
@@ -11,7 +11,7 @@
 
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:**  REJECT
 
 ---
 
@@ -30,7 +30,7 @@ Decided 2026-09-26 (Manu), directly — informs WP-06 Slice B2's Production sele
 
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** REJECT
 
 ---
 
@@ -39,8 +39,10 @@ Decided 2026-09-26 (Manu), directly — informs WP-06 Slice B2's Production sele
 
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** KEEP
 
+LMB hold down + drag außerhalb des Meshs aktiviert box select. Shift + LMB hold down + Drag für add box select, ctrl + LMB hold down + drag remove box select
+Zusatz: wenn man über die modifier tasten add oder remove  nutzt, kann man auch innerhalb eines Meshes die Box aufziehen (wings 3d style)
 ---
 
 ## Component Mode (1 / 2 / 3)
@@ -48,28 +50,35 @@ Decided 2026-09-26 (Manu), directly — informs WP-06 Slice B2's Production sele
 ### Vertex (Taste 1)
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** KEEP
 
 ### Edge (Taste 2)
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** KEEP
 
 ### Face (Taste 3)
 **Fühlt sich an:**
 
-**Verdict:** KEEP / ITERATE / REJECT
+**Verdict:** KEEP
 
 ---
 
-## Offene Fragen nach dem Spielen
+Paint Select
 
-- Welche Kombination fühlt sich am natürlichsten an?
-- Fehlt etwas (Lasso, Paint)?
-- Wie soll Selection in AP-04 (Transform) interagieren?
+LMB mouse down + drag um auswahl zu malen. Modifier keys Shit für hinzufügen und Strg für Auswahl wegnehmen
+
+---
+
+Lasso Select 
+
+
+*wird später entschieden*
 
 ---
 
 ## Kandidaten für Production (nach Verdict)
-
-*(nach dem Spielen ausfüllen)*
+[Modifier]` → Shift+LMB addiert, Ctrl+LMB entfernt, Alt+LMB togglet
+Component Mode (1 / 2 / 3)
+Box-Select (siehe Beschreibung oben)
+Paint Select
