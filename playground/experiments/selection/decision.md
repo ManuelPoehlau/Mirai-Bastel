@@ -68,6 +68,8 @@ Paint Select
 
 LMB mouse down + drag um auswahl zu malen. Modifier keys Shit für hinzufügen und Strg für Auswahl wegnehmen
 
+**Offener Punkt (Performance):** Paint Select (inkl. Paint Edge) ist für das Basic Selection Toolset fest eingeplant. `pick_face`/`pick_nearest_edge`/`pick_nearest_vertex` in `src/mirai/viewport/picking.py` sind bewusst lineare CPU-Suchen ohne räumlichen Index (siehe Docstring dort: „VIEWPORT_V02-Scope"). Bei Paint-Interaktion wird der Pick pro Mausbewegungs-Event neu ausgeführt — auf schwacher Hardware und/oder dichteren Meshes ist Ruckeln plausibel, zusätzlich zum bekannten Edge-Hover-Problem (dünnes Ziel wird bei schneller Bewegung übersprungen, siehe Selection Lab). Vor oder bei Start der Paint-Select-Implementierung: bewusst practical testen (dichteres Mesh, schnelle Mausbewegung, Referenz-Hardware), nicht stillschweigend annehmen, dass es reicht. Falls nicht: zurück zur VIEWPORT_V02-Scope-Entscheidung (Problem dokumentieren → Alternativen prüfen → Architekturentscheidung aktualisieren), nicht am bestehenden Code vorbeipatchen.
+
 ---
 
 Lasso Select 
