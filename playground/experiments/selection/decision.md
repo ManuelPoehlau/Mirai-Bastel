@@ -48,17 +48,17 @@ Zusatz: wenn man über die modifier tasten add oder remove  nutzt, kann man auch
 ## Component Mode (1 / 2 / 3)
 
 ### Vertex (Taste 1)
-**Fühlt sich an:**
+**Fühlt sich an:** KEEP
 
 **Verdict:** KEEP
 
 ### Edge (Taste 2)
-**Fühlt sich an:**
+**Fühlt sich an:** KEEP
 
 **Verdict:** KEEP
 
 ### Face (Taste 3)
-**Fühlt sich an:**
+**Fühlt sich an:** KEEP
 
 **Verdict:** KEEP
 
