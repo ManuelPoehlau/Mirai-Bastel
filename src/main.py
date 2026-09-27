@@ -1,4 +1,4 @@
-"""Production entry point — Stage B, Slices B1, B2, B2b + B3.
+"""Production entry point — Stage B, Slices B1, B2, B2b, B3, B4 + B5a.
 
 Handoffs: "WP-06 — Slice B1: Head mesh as default scene + camera framing",
 "WP-06 — Slice B2: Navigation per Artist Truth + vertex selection,
@@ -38,7 +38,9 @@ Scope (binding, see the handoffs):
   Shift+X/Y/Z a plane without that axis (Blender convention; Rotate turns
   about the plane's normal) — with or without W/E/R held; it persists
   across gestures and applies from the next gesture on (B4.1, same as the
-  Playground). Status lines
+  Playground). Display (B5a, `PROVISIONAL`): D cycles Shaded → Flat
+  Shaded → Wireframe, Shift+D toggles the wire overlay; edges are drawn
+  by `GLLineOverlay` after the mesh. Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).
@@ -72,6 +74,7 @@ import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
 from mirai.pyglet_input import key_from_pyglet, mouse_from_pyglet, wheel_from_pyglet  # noqa: E402
+from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 
@@ -90,7 +93,11 @@ def main() -> None:
     app = Application()
 
     arg = sys.argv[1] if len(sys.argv) > 1 else None
-    gl_types = {"store_type": GLRenderStore, "point_overlay_type": GLPointOverlay}
+    gl_types = {
+        "store_type": GLRenderStore,
+        "point_overlay_type": GLPointOverlay,
+        "line_overlay_type": GLLineOverlay,
+    }
     if arg == "cube":
         app.init_scene("cube", **gl_types)
     else:

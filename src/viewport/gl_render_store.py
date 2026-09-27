@@ -50,11 +50,13 @@ uniform mat4 u_proj;
 
 out vec3 v_normal;
 out float v_highlight;
+out vec3 v_world_pos;
 
 void main() {
     gl_Position = u_proj * u_view * vec4(position, 1.0);
     v_normal = normal;
     v_highlight = highlight_flag;
+    v_world_pos = position;
 }
 """
 
@@ -62,18 +64,30 @@ void main() {
 # (Artist REJECT); selection is drawn by `GLPointOverlay`. `v_highlight` stays
 # declared because the `highlight_flags` pipeline is kept until its
 # documented follow-up cleanup.
+#
+# WP-06 B5a (E37, `PROVISIONAL`, zur Artist-Prüfung): Flat Shading per
+# `u_flat` aus der Bildschirm-Ableitung der Weltposition - eine Normale pro
+# Dreieck, ohne Layout-Wechsel. Bei nicht-planaren Quads wird die
+# Triangulations-Diagonale sichtbar (Playground: eine Normale pro Polygon
+# über aufgesplittete Vertices); das ist bewusst nicht kaschiert. Die
+# Ableitung steht außerhalb jeder Verzweigung (dFdx/dFdy sind in nicht-
+# uniformem Kontrollfluss undefiniert). Rückseiten werden gecullt, daher
+# zeigt cross(dFdx, dFdy) immer zur Kamera.
 FRAGMENT_SRC = """
 #version 330 core
 in vec3 v_normal;
 in float v_highlight;
+in vec3 v_world_pos;
 
 uniform vec3 u_light_dir;
 uniform vec3 u_base_color;
+uniform int u_flat;
 
 out vec4 out_color;
 
 void main() {
-    vec3 n = normalize(v_normal);
+    vec3 flat_n = normalize(cross(dFdx(v_world_pos), dFdy(v_world_pos)));
+    vec3 n = u_flat != 0 ? flat_n : normalize(v_normal);
     float ndl = max(dot(n, normalize(u_light_dir)), 0.0);
     vec3 shaded = mix(u_base_color * 0.35, u_base_color, ndl);
     out_color = vec4(shaded, 1.0);
@@ -108,6 +122,9 @@ class GLRenderStore(ResourceStore):
         self._uniforms: set[str] = set()
         self._vertex_lists: dict[str, object] = {}
         self._rebuild_active: set[str] = set()
+        # WP-06 B5a (E36/E40): vom Viewport gesetzt, wirkt nur in `draw()`.
+        self.flat = False
+        self.polygon_offset = False
 
     @classmethod
     def program(cls):
@@ -232,6 +249,15 @@ class GLRenderStore(ResourceStore):
         if old_vlist is not None:
             old_vlist.delete()
 
+    # -- draw style (WP-06 B5a) -------------------------------------------------
+
+    def set_draw_style(self, flat: bool, polygon_offset: bool) -> None:
+        """Flat Shading (E37) und Polygon-Offset der Faces (E40: nur wenn
+        zusätzlich Edges gezeichnet werden). Reiner Draw-Zustand - keine
+        Ressource, kein Rebuild."""
+        self.flat = bool(flat)
+        self.polygon_offset = bool(polygon_offset)
+
     # -- draw-time access -------------------------------------------------------
 
     def vertex_list(self, group: str = "mesh"):
@@ -273,10 +299,18 @@ class GLRenderStore(ResourceStore):
         self._apply_camera_uniforms(program)
         program["u_light_dir"] = LIGHT_DIR
         program["u_base_color"] = self._base_color()
+        program["u_flat"] = 1 if self.flat else 0
 
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_CULL_FACE)
         gl.glCullFace(gl.GL_BACK)
+        if self.polygon_offset:
+            # Faces leicht nach hinten, damit das Linien-Overlay (GL_LEQUAL)
+            # nicht mit ihnen z-fightet (Playground-Verhalten, E40).
+            gl.glEnable(gl.GL_POLYGON_OFFSET_FILL)
+            gl.glPolygonOffset(1.0, 1.0)
         vlist.draw(gl.GL_TRIANGLES)
+        if self.polygon_offset:
+            gl.glDisable(gl.GL_POLYGON_OFFSET_FILL)
         gl.glDisable(gl.GL_CULL_FACE)
         gl.glDisable(gl.GL_DEPTH_TEST)

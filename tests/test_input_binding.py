@@ -101,7 +101,9 @@ class DefaultBindingsTests(unittest.TestCase):
             self.assertEqual(self.bs.command_for(_key(value)), cmd.SET_FACE_MODE)
 
     def test_display_keys(self):
-        self.assertEqual(self.bs.command_for(_key("o")), cmd.CYCLE_DISPLAY_MODE)
+        # WP-06 B5a (E42): Artist Input Truth — D statt O.
+        self.assertEqual(self.bs.command_for(_key("d")), cmd.CYCLE_DISPLAY_MODE)
+        self.assertIsNone(self.bs.command_for(_key("o")))
         self.assertEqual(
             self.bs.command_for(_key("d", "shift")), cmd.TOGGLE_WIREFRAME_OVERLAY
         )

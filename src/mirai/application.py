@@ -46,7 +46,7 @@ from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
-from .viewport import DisplayState, OrbitCamera
+from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.picking import pick_nearest_vertex
 
 
@@ -83,6 +83,23 @@ _CONSTRAINT_SPACES: dict[str, str] = {
     commands.CONSTRAIN_PLANE_XY: "xy",
     commands.CONSTRAIN_PLANE_XZ: "xz",
     commands.CONSTRAIN_PLANE_YZ: "yz",
+}
+
+
+#: WP-06 B5a (E42): Display-Commands, alle über die bestehenden
+#: `DisplayState`-Übergänge.
+_DISPLAY_COMMANDS = (
+    commands.CYCLE_DISPLAY_MODE,
+    commands.TOGGLE_WIREFRAME_OVERLAY,
+    commands.SET_SHADED,
+    commands.SET_FLAT_SHADED,
+    commands.SET_WIREFRAME,
+)
+
+_SET_DISPLAY_MODES: dict[str, DisplayMode] = {
+    commands.SET_SHADED: DisplayMode.SHADED,
+    commands.SET_FLAT_SHADED: DisplayMode.FLAT_SHADED,
+    commands.SET_WIREFRAME: DisplayMode.WIREFRAME,
 }
 
 
@@ -183,6 +200,7 @@ class Application:
         store_type: type[ResourceStore] = TraceStore,
         obj_path: str | Path | None = None,
         point_overlay_type: type | None = None,
+        line_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
 
@@ -203,7 +221,11 @@ class Application:
 
         `point_overlay_type` (WP-06 B2b, E17): gleiches Durchreich-Muster wie
         `store_type`. Default `None` = kein GL-Punkt-Overlay (headless); der
-        Entry-Point übergibt `GLPointOverlay`."""
+        Entry-Point übergibt `GLPointOverlay`.
+
+        `line_overlay_type` (WP-06 B5a, E38): dasselbe Muster für das
+        Edge-Linien-Overlay; der Entry-Point übergibt `GLLineOverlay`. Der
+        aktuelle `DisplayState` wird sofort an den neuen Viewport gegeben."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
@@ -226,8 +248,10 @@ class Application:
             selection=self.scene.selection,
             store_type=store_type,
             point_overlay_type=point_overlay_type,
+            line_overlay_type=line_overlay_type,
         )
         self.viewport.bind_camera(self.camera)
+        self._apply_display()
 
     def frame_scene(self) -> None:
         """Richtet die Kamera auf die Bounds des aktuellen Meshs aus (WP-06 B1).
@@ -252,8 +276,8 @@ class Application:
         Tool-Commands → ToolManager (Pattern A: nur aktivieren; Pattern B:
         mit `context` sofort `begin(**context)`).
         Undo/Redo → History.
-        Alles andere → False (wird in Gate 4 um Selection-/Display-Commands
-        erweitert; bewusst minimal gehalten).
+        Display-Commands → `DisplayState` + Viewport (WP-06 B5a, E42).
+        Alles andere → False (bewusst minimal gehalten).
         """
         tool_class = tool_for_command(command)
         if tool_class:
@@ -265,8 +289,34 @@ class Application:
         if command == commands.REDO:
             self.history.redo()
             return True
+        if command in _DISPLAY_COMMANDS:
+            return self._display_command(command)
 
         return False
+
+    # -- Display (WP-06 B5a) ----------------------------------------------------
+
+    def _display_command(self, command: str) -> bool:
+        if command == commands.CYCLE_DISPLAY_MODE:
+            self.display.cycle()
+        elif command == commands.TOGGLE_WIREFRAME_OVERLAY:
+            self.display.toggle_wireframe_overlay()
+        else:
+            self.display.set_mode(_SET_DISPLAY_MODES[command])
+        self._apply_display()
+        self._set_status(f"Display: {self.display.label}")
+        return True
+
+    def _apply_display(self) -> None:
+        """E36: `DisplayState` → Grundwerte für `Viewport.set_display` (der
+        Viewport kennt kein `DisplayState`)."""
+        if self.viewport is None:
+            return
+        self.viewport.set_display(
+            show_faces=self.display.show_faces,
+            show_edges=self.display.show_edges,
+            flat=self.display.mode is DisplayMode.FLAT_SHADED,
+        )
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
 
@@ -321,6 +371,9 @@ class Application:
             return self._constrain(_CONSTRAINT_SPACES[command])
         if command == commands.CANCEL:
             return self._cancel()
+        if command in _DISPLAY_COMMANDS:
+            # Reine Darstellung: auch während eines Transforms erlaubt.
+            return self.dispatch_command(command)
         if command in (commands.UNDO, commands.REDO):
             # E23: während eines laufenden Transforms ignoriert; nur scharf →
             # erst entschärfen, dann ausführen.

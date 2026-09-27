@@ -492,3 +492,25 @@ input, `RenderMesh._sync_selection()` upload, `SelectionOverlay.
 build_highlight_flags()`). It touches the `RenderMesh` layout, the
 dirty-state tests and the benchmark scenarios, so it is a separate
 cleanup slice.
+
+*Extension 2026-09-27 (WP-06 Slice B5a, display modes):* the same
+precedent now also covers **edge lines**. `src/viewport/gl_line_overlay.py`,
+class `GLLineOverlay`: one `GL_LINES` vertex list (two vertices per edge),
+own flat-color program, lazily built in `draw()`, drawn after the mesh and
+before the points with depth test `GL_LEQUAL`; faces get
+`GL_POLYGON_OFFSET_FILL` (1, 1) while edges are shown. Segment positions are
+headless (`src/viewport/wireframe.py`, `edge_segments(mesh)`), recomputed by
+`Viewport.sync()` after `on_vertices_moved`/`on_topology_changed` only while
+edges are visible (counter `line_overlay_rebuilds`). Wiring:
+`line_overlay_type`, same pass-through as `point_overlay_type`; `Viewport`
+takes plain values via `set_display(show_faces, show_edges, flat)` and
+imports nothing from `src/mirai`. **Flat shading** (open item from above)
+is handled *without* a layout change: `GLRenderStore`'s fragment shader
+switches on a `u_flat` uniform to `normalize(cross(dFdx(p), dFdy(p)))` of the
+world position (one normal per triangle; `PROVISIONAL`, submitted to Manu
+because non-planar quads show their triangulation diagonal). A per-polygon
+flat normal would need split vertices — a `RenderMesh` layout change and a
+separate addendum, not taken here. `GLRenderStore` still draws exactly one
+group; its only additions are the `u_flat` uniform, the world-position
+varying and `set_draw_style(flat, polygon_offset)`. Edge picking / hover /
+highlight remain open (B5b).

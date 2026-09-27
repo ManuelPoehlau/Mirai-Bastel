@@ -16,9 +16,10 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
 - RMB/MMB         → bewusst ungebunden (eine Primärbindung pro Funktion,
                     AD-013 Truth-Regel 2)
 
-Neu hinzugekommen (bewusst minimal, keine unnötigen Hotkeys):
-- O              → Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
+Display (Artist Input Truth, WP-06 B5a E42: vorher O):
+- D              → Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
 - Shift+D        → Wireframe Overlay AN/AUS
+SetShaded/SetFlatShaded/SetWireframe bleiben ohne Taste.
 
 Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
 - W              → Move (MoveTool)
@@ -98,7 +99,7 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 
     # --- Display ------------------------------------------------------------
-    bs.set_default(_key("o"), cmd.CYCLE_DISPLAY_MODE)
+    bs.set_default(_key("d"), cmd.CYCLE_DISPLAY_MODE)
     bs.set_default(_key("d", "shift"), cmd.TOGGLE_WIREFRAME_OVERLAY)
 
     # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------

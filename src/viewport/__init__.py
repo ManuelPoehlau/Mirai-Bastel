@@ -35,12 +35,14 @@ from .category import (
     DirtyState,
 )
 from .derived import DerivedGeometry, compute_bounds, triangulate_face
+from .gl_line_overlay import GLLineOverlay
 from .gl_point_overlay import GLPointOverlay
 from .gl_render_store import GLRenderStore
 from .overlay import OverlayElementKind, SelectionOverlay
 from .render_mesh import RenderMesh
 from .resource_store import GpuResource, PygletStore, ResourceStore, TraceStore
 from .viewport import Viewport
+from .wireframe import edge_segments
 
 __all__ = [
     "ALL_CATEGORIES",
@@ -63,5 +65,7 @@ __all__ = [
     "PygletStore",
     "GLRenderStore",
     "GLPointOverlay",
+    "GLLineOverlay",
+    "edge_segments",
     "Viewport",
 ]
