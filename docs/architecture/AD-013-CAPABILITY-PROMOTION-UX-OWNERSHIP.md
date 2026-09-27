@@ -186,6 +186,8 @@ It has not yet been decided whether press/hold/gesture semantics should be globa
 
 No architecture should prematurely force this decision.
 
+*2026-09-27 (WP-06 B3): resolved for Transform only — answered by AD-016 (hold-key-hover, WP-AP-04 KEEP); still open for everything else. See the 2026-09-26 addendum below.*
+
 ### A4 — Artist Input Truth as authority
 
 **DECIDED: YES**
@@ -407,3 +409,14 @@ WP-06 Slice B2 (2026-09-26): Manu changed `navigation.pan` from Shift+LMB to
 Alt+Shift+LMB (drag); this resolves the recorded Truth conflict Shift+LMB
 (pan vs. `selection.add`). Alt+LMB now carries drag = orbit and click =
 `selection.toggle` — an intended, noted overlap resolved by AD-019.
+
+WP-06 Slice B3 (2026-09-27): production `build_default_bindings()` now follows
+this addendum (GLOBAL `w` → Move, `e` → Rotate, `r` → Scale; `q` unbound), and
+the production Move mechanism is the Transform Lab's AD-016-decided
+hold-key-hover model (WP-AP-04 KEEP), not a Symmetry-Lab-style separate drag.
+The Symmetry Lab keeps Q (and leaves W inert) via its own lab override, for its
+own, different, already-KEEP-verdicted arm-then-drag gesture. The Playground
+runtime (AD-016 itself) still uses Q/W/E for its own hotkeys — unchanged, still
+an open discrepancy. A3 (press vs. hold as a general input-ownership question)
+is answered for Transform by AD-016 and is resolved for that scope only; it stays
+open for everything else.
