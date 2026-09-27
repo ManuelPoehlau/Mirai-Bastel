@@ -59,7 +59,8 @@ def test_pyglet_scroll_zooms(dispatcher, scroll_y, closer):
     [
         (_key.S, _key.MOD_SHIFT, SYMMETRY_CYCLE),
         (_key.S, _key.MOD_SHIFT | _key.MOD_CAPSLOCK, SYMMETRY_CYCLE),
-        (_key.Q, 0, cmd.MOVE),
+        (_key.W, 0, cmd.MOVE),
+        (_key.Q, 0, None),
         (_key.ESCAPE, 0, cmd.CANCEL),
         (_key.Z, _key.MOD_CTRL, cmd.UNDO),
         (_key.Y, _key.MOD_CTRL, cmd.REDO),
@@ -74,7 +75,7 @@ def test_pyglet_keys_drive_cycle_and_move(dispatcher):
     assert dispatcher.key(key_from_pyglet(_key.S, _key.MOD_SHIFT)) is True
     assert app.scene.mesh.symmetry_definition is not None
     app.scene.selection.set({min(app.scene.mesh.all_vertex_ids())})
-    assert dispatcher.key(key_from_pyglet(_key.Q, 0)) is True
+    assert dispatcher.key(key_from_pyglet(_key.W, 0)) is True
     assert dispatcher.move_state is MoveState.ARMED
     assert dispatcher.key(key_from_pyglet(_key.ESCAPE, 0)) is True
     assert dispatcher.move_state is MoveState.READY

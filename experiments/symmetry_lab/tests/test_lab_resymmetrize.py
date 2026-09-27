@@ -30,7 +30,7 @@ from symmetry_lab.lab_topology import topology_report
 W, H = 1280, 800
 M = Input("key", "m")
 ESC = Input("key", "ESCAPE")
-Q = Input("key", "q")
+KEY_W = Input("key", "w")
 SHIFT_S = Input("key", "s", frozenset({"shift"}))
 CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
 CTRL_Y = Input("key", "y", frozenset({"ctrl"}))
@@ -216,7 +216,7 @@ def test_rejected_while_move_armed():
     app = make_app("subd_cube")
     dispatcher = LabDispatcher(app, W, H)
     app.scene.selection.set({vertex_on_side(app, 0)})
-    dispatcher.key(Q)
+    dispatcher.key(KEY_W)
     assert dispatcher.move_state is MoveState.ARMED
     _assert_rejected(app, dispatcher, "Move")
     assert dispatcher.move_state is MoveState.ARMED
@@ -226,9 +226,8 @@ def test_rejected_while_move_dragging():
     app = make_app("subd_cube")
     dispatcher = LabDispatcher(app, W, H)
     app.scene.selection.set({vertex_on_side(app, 0)})
-    dispatcher.key(Q)
-    dispatcher.press(LMB)
-    dispatcher.drag(6, 2)
+    dispatcher.key(KEY_W)
+    dispatcher.motion(646.0, 402.0, 6, 2)
     assert dispatcher.move_state is MoveState.DRAGGING
     assert dispatcher.key(M) is True
     assert dispatcher.resym_plan is None
@@ -273,7 +272,7 @@ def test_m_m_executes_with_one_history_entry(previewing):
     assert "ausgeführt" in dispatcher.message
 
 
-@pytest.mark.parametrize("inp", [SHIFT_S, Q, CTRL_Z, CTRL_Y])
+@pytest.mark.parametrize("inp", [SHIFT_S, KEY_W, CTRL_Z, CTRL_Y])
 def test_other_keys_are_ignored_during_preview(previewing, inp):
     app, dispatcher = previewing
     state_before = app.scene.mesh.export_state()

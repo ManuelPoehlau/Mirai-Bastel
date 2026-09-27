@@ -36,7 +36,7 @@ from .test_lab_knife import content, plus_quad, quad_edges, seam_quad
 W, H = 1280, 800
 C = Input("key", "c")
 M = Input("key", "m")
-Q = Input("key", "q")
+KEY_W = Input("key", "w")
 ESC = Input("key", "ESCAPE")
 SHIFT_S = Input("key", "s", frozenset({"shift"}))
 CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
@@ -181,15 +181,14 @@ def test_c_rejected_while_move_armed_or_dragging():
     app = make_app()
     dispatcher = LabDispatcher(app, W, H)
     app.scene.selection.set({app.scene.mesh.all_vertex_ids()[0]})
-    dispatcher.key(Q)
+    dispatcher.key(KEY_W)
     dispatcher.key(C)
     assert not dispatcher.knife_active
     assert "nicht während Move (scharf)" in dispatcher.message
-    dispatcher.press(LMB)
-    dispatcher.drag(6, 2)
+    dispatcher.motion(646.0, 402.0, 6, 2)
     dispatcher.key(C)
     assert not dispatcher.knife_active
-    assert "nicht während Move (zieht)" in dispatcher.message
+    assert "nicht während Move (bewegt)" in dispatcher.message
     dispatcher.key(ESC)
 
 
@@ -215,11 +214,11 @@ def test_c_rejected_when_session_already_runs():
 
 
 def test_move_and_resym_are_rejected_during_session():
-    # Umgekehrte Richtung: Q/M während der Session sind ignoriert (E24).
+    # Umgekehrte Richtung: W/M während der Session sind ignoriert (E24).
     app = make_app()
     app.scene.selection.set({app.scene.mesh.all_vertex_ids()[0]})
     dispatcher = start(app)
-    for inp in (Q, M):
+    for inp in (KEY_W, M):
         assert dispatcher.key(inp) is True
         assert dispatcher.message == KNIFE_HINT
     assert dispatcher.resym_plan is None
@@ -550,7 +549,7 @@ def test_other_commands_are_ignored_with_hint():
     app.scene.selection.set({mesh.all_vertex_ids()[0]})
     dispatcher = start(app)
     before = content(mesh)
-    for inp in (SHIFT_S, Q, M, CTRL_Z, CTRL_Y):
+    for inp in (SHIFT_S, KEY_W, M, CTRL_Z, CTRL_Y):
         dispatcher.message = ""
         assert dispatcher.key(inp) is True
         assert dispatcher.message == KNIFE_HINT

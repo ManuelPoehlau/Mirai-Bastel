@@ -15,9 +15,10 @@ explizite Abbinden von RMB geht nur über die User-Ebene (`bind(..., None)`),
 weil `set_default` kein `None` kennt — daher die gemischte Nutzung.
 
 Slice 3: `SYMMETRY_CYCLE` ist ein Lab-lokaler Command-String (Handoff §4.1),
-bewusst nicht in `mirai.interaction.commands`. Q/ESC/Ctrl+Z/Ctrl+Y sind keine
+bewusst nicht in `mirai.interaction.commands`. W/ESC/Ctrl+Z/Ctrl+Y sind keine
 Overrides — sie fallen auf die globalen Defaults `Move`/`Cancel`/`Undo`/`Redo`
-zurück.
+zurück (seit 2026-09-27 wie in der Production-App: W = Move, Q ungebunden,
+Artist Manu, WP-06 B3).
 
 Slice 5: `RESYMMETRIZE` (Taste M, Artist A7) ist ebenfalls Lab-lokal; M ist in
 den globalen Defaults und in `artist_input_truth.json` frei.
@@ -94,8 +95,6 @@ LAB_OVERRIDES: tuple[LabOverride, ...] = (
         KNIFE,
         "Artist A8 (2026-09-25)",
     ),
-    LabOverride(Input("key", "q"), cmd.MOVE, "preserve lab Move key after WP-06 B3 global change"),
-    LabOverride(Input("key", "w"), None, "keep W inert in the lab as tested"),
 )
 
 

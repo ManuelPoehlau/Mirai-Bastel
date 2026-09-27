@@ -56,8 +56,8 @@ def bindings():
         (SHIFT_S, SYMMETRY_CYCLE),
         (M, RESYMMETRIZE),
         (C, KNIFE),
-        (Q, cmd.MOVE),
-        (W, None),
+        (W, cmd.MOVE),
+        (Q, None),
         (ESC, cmd.CANCEL),
         (CTRL_Z, cmd.UNDO),
         (CTRL_Y, cmd.REDO),
@@ -99,16 +99,13 @@ def test_c_is_free_in_global_and_only_connect_in_topology(bindings):
 
 
 def test_key_overrides_are_shift_s_m_and_c():
-    # ESC/Ctrl+Z/Ctrl+Y sind globale Defaults (Fallback), keine Overrides.
-    # Q -> Move und W -> ungebunden sind seit WP-06 B3 Overrides (globale
-    # Defaults jetzt W/E/R), damit das Lab sein getestetes Verhalten behält.
+    # W/ESC/Ctrl+Z/Ctrl+Y sind globale Defaults (Fallback), keine Overrides —
+    # seit 2026-09-27 bedient sich Move im Lab wie in der App (W, Q ungebunden).
     keys = [o for o in LAB_OVERRIDES if o.input.kind == "key"]
     assert [(o.input, o.command) for o in keys] == [
         (SHIFT_S, SYMMETRY_CYCLE),
         (M, RESYMMETRIZE),
         (C, KNIFE),
-        (Q, cmd.MOVE),
-        (W, None),
     ]
     assert "SymmetryCycle" in keys[0].describe()
     assert "ReSymmetrize" in keys[1].describe()

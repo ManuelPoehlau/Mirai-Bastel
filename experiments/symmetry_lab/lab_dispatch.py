@@ -7,7 +7,7 @@ damit es ohne GL-Kontext testbar ist. Was sich sichtbar geändert hat, sammelt
 der Dispatcher als `Change`-Flags; das Fenster holt sie nach jedem Event mit
 `take_changes()` ab und baut entsprechend neu auf.
 
-Drag-/Klick-Semantik ist bewusst Lab-lokal (AD-013 A3 bleibt offen):
+Drag-/Klick-Semantik der Maus ist Lab-lokal:
 
 - Press löst das Command auf. `Orbit`/`Pan` halten diesen Zustand bis zum
   Release derselben Maustaste; Drag-Deltas gehen an die Kamera. Modifier, die
@@ -16,31 +16,38 @@ Drag-/Klick-Semantik ist bewusst Lab-lokal (AD-013 A3 bleibt offen):
   Bewegung unter `CLICK_THRESHOLD_PX` blieb (sonst verworfen — kein Box-Select).
 - Während eine Geste läuft, werden weitere Maus-Presses ignoriert.
 
-Move (Slice 3, Artist A1 + E5/E6; Ziel-Regel Slice 4 A4/E7/E8): Q löst das
-Ziel auf — Auswahl nicht leer → Auswahl; sonst Hover-Vertex → dieser; beides
-leer → abgelehnt (Statuszeile, nichts wird scharf). Das Ziel wird beim
-Q-Druck einmal festgelegt (E7) und bis Commit/Cancel unverändert an
-`begin_current_interaction({..., "vertex_ids": ...})` übergeben — ein
-späteres Wegbewegen der Maus ändert es nicht. Ein Hover-Ziel berührt
-`scene.selection` nicht (E8): nach Commit/Cancel ist die Auswahl unverändert.
-Solange scharf, startet nur LMB ohne Modifier den Move
-(`begin_current_interaction`); Alt+LMB, Shift+LMB, MMB und Wheel navigieren
-weiter, eine Auswahl per Klick findet nicht statt. Drag →
-`update(dx, dy, width, height)` (inkrementell). Release unter der
-Klick-Schwelle → `cancel()`, sonst `commit()`; danach immer `deactivate()`
-(one-shot). Die Symmetrie liest `MoveTool` selbst aus dem Mesh.
+Move — seit 2026-09-27 dieselbe Bedienung wie die Production-App (Artist
+Manu: W + AD-016 hold-key-hover, WP-06 B3; ersetzt die Slice-3-Geste „Q
+scharf, dann LMB ziehen, 5-px-Schwelle"). W-Druck löst das Ziel auf (Ziel-Regel
+Slice 4 A4/E7/E8 unverändert): Auswahl nicht leer → Auswahl; sonst
+Hover-Vertex → dieser; beides leer → abgelehnt (Statuszeile, nichts wird
+scharf). Das Ziel wird beim Druck einmal festgelegt (E7) und bis
+Commit/Cancel unverändert an `begin_current_interaction({..., "vertex_ids":
+...})` übergeben. Ein Hover-Ziel berührt `scene.selection` nicht (E8).
+Solange W gehalten wird, treibt jede Mausbewegung ohne gedrückte Taste
+(`motion(x, y, dx, dy)`) den Move: die erste (nicht leere) Bewegung ruft
+`begin_current_interaction` auf — keine Schwelle —, jede weitere
+`update(dx, dy, width, height)`. Loslassen von W → `commit()`, wenn bewegt
+wurde; ein bloßes Antippen entschärft nur. Danach immer `deactivate()`
+(one-shot). Das Loslassen wird über den Tastenwert erkannt, nicht über die
+Bindings, damit Modifier-Wechsel (z. B. Alt zum Orbiten) es nicht verschlucken.
+Während W gehalten wird, navigieren Alt+LMB, Shift+LMB, MMB und Wheel weiter
+(die Kamera gewinnt: während einer Kamerageste bewegt `motion()` nichts); eine
+Auswahl per Klick findet nicht statt. Die Symmetrie liest `MoveTool` selbst
+aus dem Mesh.
 
 Hover (Slice 4, E9): `motion()` löst per `pick_nearest_vertex` den Vertex
 unter dem Cursor auf und hält ihn als reinen Anzeige-Zustand (`hover_vertex`,
 GL-frei, testbar) — getrennt von `scene.selection`. Aktualisiert wird nur im
-Leerlauf und bei scharfem, aber noch nicht ziehendem Move (`self._gesture is
-None`); während einer laufenden Geste (Kamera, Select, Move-Drag) bleibt der
-Hover unverändert.
+Leerlauf; während einer laufenden Geste (Kamera, Select) und solange Move
+scharf ist oder läuft, bleibt er stehen (wie Production, WP-06 B3 E24). Ein
+Hover-Punkt auf einem Move-Ziel wird beim Scharfschalten ausgeblendet; nach
+Commit/Cancel/Undo/Redo wird an der letzten Cursorposition neu gepickt.
 
-Tasten (`key`): `SymmetryCycle`, `Move`, `ReSymmetrize`, `Cancel`,
-`Undo`/`Redo`. Während ein Move-Drag läuft, besitzt die Geste den Input — nur
-ESC (Abbruch) wirkt. Jedes andere Command ist ein No-op und gilt als „nicht
-behandelt".
+Tasten (`key`/`key_release`): `SymmetryCycle`, `Move`, `ReSymmetrize`,
+`Cancel`, `Undo`/`Redo`. Während ein Move läuft, besitzt er den Input — nur
+ESC (Abbruch) und das Loslassen von W wirken. Jedes andere Command ist ein
+No-op und gilt als „nicht behandelt".
 
 Re-Symmetrize (Slice 5, Artist A6/A7, E12–E15): M öffnet die Vorschau —
 abgelehnt (nur Statuszeile, kein Zustand), wenn ein Move scharf ist oder
@@ -49,7 +56,7 @@ ist oder die Seam das Mesh nicht in genau zwei Teile teilt. Sonst hält der
 Dispatcher den `ResymPlan` (`resym_plan`) als Vorschau-Zustand. M erneut →
 `apply_plan` (ein Undo-Schritt; bei „0 Änderungen" keiner), ESC → Vorschau
 endet ohne Änderung. Während der Vorschau sind nur Orbit/Pan/Zoom erlaubt;
-Select, Q, Shift+S, Undo/Redo werden mit Hinweis ignoriert, und der Hover
+Select, W, Shift+S, Undo/Redo werden mit Hinweis ignoriert, und der Hover
 ist pausiert (ausgeblendet, keine Aktualisierung) — so kann sich das Mesh
 zwischen Anzeige und Ausführung des Plans nicht ändern.
 
@@ -113,7 +120,7 @@ class Change(Flag):
 class MoveState(Enum):
     READY = "bereit"
     ARMED = "scharf"
-    DRAGGING = "zieht"
+    DRAGGING = "bewegt"
 
 
 @dataclass
@@ -130,7 +137,13 @@ class LabDispatcher:
         self.height = height
         self._gesture: Optional[_Gesture] = None
         self._move_armed = False
-        #: Beim Q-Druck festgelegtes Ziel (E7); bleibt bis Commit/Cancel unverändert.
+        #: Taste, die Move scharf geschaltet hat (ihr Loslassen committet).
+        self._move_key: Optional[str] = None
+        #: Erste Bewegung nach dem Scharfschalten erfolgt (`begin()` gelaufen).
+        self._move_begun = False
+        #: Letzte bekannte Cursorposition (Hover-Re-Pick nach Commit/Cancel/Undo).
+        self._cursor: Optional[tuple[float, float]] = None
+        #: Beim W-Druck festgelegtes Ziel (E7); bleibt bis Commit/Cancel unverändert.
         self._move_target: Optional[frozenset] = None
         #: Anzeige-Label des Ziels ("Auswahl" / "Hover v<id>"), für die Statuszeile.
         self._move_target_label: Optional[str] = None
@@ -148,12 +161,12 @@ class LabDispatcher:
 
     @property
     def active_command(self) -> Optional[str]:
-        """Command der laufenden Maus-Geste (`Orbit`/`Pan`/`Select`/`Move`/`Knife`) oder None."""
+        """Command der laufenden Maus-Geste (`Orbit`/`Pan`/`Select`/`Knife`) oder None."""
         return self._gesture.command if self._gesture is not None else None
 
     @property
     def move_state(self) -> MoveState:
-        if self.active_command == cmd.MOVE:
+        if self._move_begun:
             return MoveState.DRAGGING
         return MoveState.ARMED if self._move_armed else MoveState.READY
 
@@ -228,9 +241,29 @@ class LabDispatcher:
             axis = cycle_symmetry(self.app.scene)
             self._mark(Change.MESH | Change.SELECTION, f"Symmetrie: {axis or 'aus'}")
         elif command == cmd.MOVE:
-            self._arm_move()
+            if not self._move_armed:  # W gehalten (auch Key-Repeat): Ziel bleibt fest
+                self._arm_move(inp.value)
         else:
             self._undo_redo(command)
+        return True
+
+    def key_release(self, inp: Optional[Input]) -> bool:
+        """Loslassen der Move-Taste: committen, wenn bewegt wurde, sonst nur
+        entschärfen (Antippen). True = behandelt."""
+        if inp is None or inp.kind != "key" or not self._move_armed:
+            return False
+        if inp.value != self._move_key:
+            return False
+        if self._move_begun:
+            command = self.app.tool_manager.commit()
+            message = "Move übernommen" if command is not None else "Move: keine Änderung"
+            changes = Change.MESH | Change.SELECTION
+        else:
+            message = "Move: nur angetippt — nichts bewegt"
+            changes = Change.STATUS
+        self._disarm_move()
+        self._mark(changes, message)
+        self._refresh_hover()
         return True
 
     def _cancel(self) -> bool:
@@ -243,13 +276,14 @@ class LabDispatcher:
         state = self.move_state
         if state is MoveState.DRAGGING:
             self.app.tool_manager.cancel()
-            self._gesture = None
             self._disarm_move()
             self._mark(Change.MESH | Change.SELECTION, "Move abgebrochen")
+            self._refresh_hover()
             return True
         if state is MoveState.ARMED:
             self._disarm_move()
             self._mark(Change.STATUS, "Move entschärft")
+            self._refresh_hover()
             return True
         return False
 
@@ -261,6 +295,7 @@ class LabDispatcher:
         self.app.scene.selection.clear()
         self._disarm_move()
         self._mark(Change.MESH | Change.SELECTION, command)
+        self._refresh_hover()
 
     # -- Re-Symmetrize (Slice 5) ----------------------------------------------
 
@@ -397,11 +432,11 @@ class LabDispatcher:
 
     # -- Move ---------------------------------------------------------------
 
-    def _arm_move(self) -> None:
+    def _arm_move(self, key: str) -> None:
         """A4/E7: Ziel-Regel — Auswahl nicht leer → Auswahl; sonst Hover; beides
         leer → ablehnen. Das Ziel wird hier einmal festgelegt (E7) und ändert
         sich bis Commit/Cancel nicht mehr, auch wenn sich Auswahl oder Hover
-        danach ändern."""
+        danach ändern. Tool aktiv, `begin()` erst bei der ersten Bewegung."""
         selection = self.app.scene.selection
         if not selection.is_empty():
             target = frozenset(selection.vertices)
@@ -414,49 +449,59 @@ class LabDispatcher:
             return
         self.app.dispatch_command(cmd.MOVE)
         self._move_armed = True
+        self._move_key = key
+        self._move_begun = False
         self._move_target = target
         self._move_target_label = label
-        self._mark(Change.STATUS, "Move scharf — LMB ziehen")
+        changes = Change.STATUS
+        # Kein Hover-Punkt über einem Punkt, der gleich bewegt wird.
+        if self._hover_vertex is not None and self._hover_vertex in target:
+            self._hover_vertex = None
+            changes |= Change.HOVER
+        self._mark(changes, f"Move scharf — Maus bewegen, {key.upper()} loslassen übernimmt")
 
     def _disarm_move(self) -> None:
         if self._move_armed:
+            # Ein laufender Move wurde vorher committet/gecancelt; der
+            # ToolManager würde sonst selbst canceln.
             self.app.tool_manager.deactivate()
         self._move_armed = False
+        self._move_key = None
+        self._move_begun = False
         self._move_target = None
         self._move_target_label = None
 
-    def _begin_move(self) -> None:
-        app = self.app
-        app.tool_manager.begin_current_interaction(
-            {
-                "scene": app.scene,
-                "camera": app.camera,
-                # E8: das bei Q festgelegte Ziel, nicht die (ggf. leere) Auswahl —
-                # MoveTool liest die Symmetrie selbst aus dem Mesh.
-                "vertex_ids": set(self._move_target),
-            }
-        )
-        self._gesture = _Gesture(cmd.MOVE, "LEFT")
-        self._mark(Change.STATUS, "")
-
-    def _end_move(self, gesture: _Gesture) -> None:
+    def _move_step(self, dx: float, dy: float) -> None:
+        """Eine Mausbewegung bei gehaltenem W. Die erste nicht leere Bewegung
+        startet die Interaktion (keine Schwelle, AD-016)."""
+        if dx == 0 and dy == 0:
+            return
         manager = self.app.tool_manager
-        if gesture.moved < CLICK_THRESHOLD_PX:
-            manager.cancel()
-            message = "Move: nicht gezogen — kein Schritt"
-        else:
-            manager.commit()
-            message = "Move übernommen"
-        self._disarm_move()
-        self._mark(Change.MESH | Change.SELECTION, message)
+        if not self._move_begun:
+            app = self.app
+            manager.begin_current_interaction(
+                {
+                    "scene": app.scene,
+                    "camera": app.camera,
+                    # E8: das bei W festgelegte Ziel, nicht die (ggf. leere) Auswahl —
+                    # MoveTool liest die Symmetrie selbst aus dem Mesh.
+                    "vertex_ids": set(self._move_target),
+                }
+            )
+            self._move_begun = True
+        manager.update(dx=dx, dy=dy, width=self.width, height=self.height)
+        self._mark(Change.MESH | Change.SELECTION)
+
+    def _refresh_hover(self) -> None:
+        """Hover an der letzten Cursorposition neu picken (das Mesh kann sich
+        unter dem ruhenden Cursor bewegt haben)."""
+        if self._cursor is not None:
+            self._update_hover(*self._cursor)
 
     # -- Maus -------------------------------------------------------------
 
     def press(self, inp: Input) -> None:
         if inp.kind != "mouse" or self._gesture is not None:
-            return
-        if self._move_armed and inp.value == "LEFT" and not inp.modifiers:
-            self._begin_move()
             return
         if self._knife is not None:
             self._knife_press(inp)
@@ -479,9 +524,6 @@ class LabDispatcher:
             self.app.camera.orbit(-dx * ORBIT_RAD_PER_PX, -dy * ORBIT_RAD_PER_PX)
         elif gesture.command == cmd.PAN:
             self.app.camera.pan(dx, dy, self.width, self.height)
-        elif gesture.command == cmd.MOVE:
-            self.app.tool_manager.update(dx=dx, dy=dy, width=self.width, height=self.height)
-            self._mark(Change.MESH | Change.SELECTION)
 
     def release(self, button: str, x: float, y: float) -> bool:
         """Beendet die Geste von `button`. True, wenn sich die Auswahl geändert hat."""
@@ -489,9 +531,6 @@ class LabDispatcher:
         if gesture is None or gesture.button != button:
             return False
         self._gesture = None
-        if gesture.command == cmd.MOVE:
-            self._end_move(gesture)
-            return False
         if gesture.command == KNIFE:
             if gesture.moved < CLICK_THRESHOLD_PX and self._knife is not None:
                 self._knife_click_at(x, y)
@@ -504,16 +543,28 @@ class LabDispatcher:
             return self.select_at(x, y)
         return False
 
-    def motion(self, x: float, y: float) -> None:
-        """E9: aktualisiert das Hover-Ziel im Leerlauf und bei scharfem (aber
-        noch nicht ziehendem) Move. No-op während einer laufenden Geste
-        (Kamera, Select, Move-Drag) — die Geste besitzt den Input — und während
-        der Re-Symmetrize-Vorschau (Hover pausiert, E15). Während einer
-        Knife-Session: Knife-Hover statt Vertex-Hover (E26)."""
+    def motion(self, x: float, y: float, dx: float = 0.0, dy: float = 0.0) -> None:
+        """Mausbewegung ohne gedrückte Taste. W gehalten → `dx`/`dy` treiben den
+        Move (kein Hover). Sonst E9: Hover-Ziel im Leerlauf aktualisieren.
+        No-op während einer laufenden Geste (Kamera, Select) — die Geste
+        besitzt den Input — und während der Re-Symmetrize-Vorschau (Hover
+        pausiert, E15). Während einer Knife-Session: Knife-Hover statt
+        Vertex-Hover (E26)."""
+        self._cursor = (x, y)
         if self._gesture is not None or self._resym_plan is not None:
+            return
+        if self._move_armed:
+            self._move_step(dx, dy)
             return
         if self._knife is not None:
             self._update_knife_hover(x, y)
+            return
+        self._update_hover(x, y)
+
+    def _update_hover(self, x: float, y: float) -> None:
+        if self._gesture is not None or self._resym_plan is not None or self._move_armed:
+            return
+        if self._knife is not None:
             return
         vid = pick_nearest_vertex(
             self.app.camera, self.app.scene.mesh, x, y, self.width, self.height

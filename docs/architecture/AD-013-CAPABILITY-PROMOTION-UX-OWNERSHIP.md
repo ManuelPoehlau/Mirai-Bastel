@@ -414,8 +414,9 @@ WP-06 Slice B3 (2026-09-27): production `build_default_bindings()` now follows
 this addendum (GLOBAL `w` → Move, `e` → Rotate, `r` → Scale; `q` unbound), and
 the production Move mechanism is the Transform Lab's AD-016-decided
 hold-key-hover model (WP-AP-04 KEEP), not a Symmetry-Lab-style separate drag.
-The Symmetry Lab keeps Q (and leaves W inert) via its own lab override, for its
-own, different, already-KEEP-verdicted arm-then-drag gesture. The Playground
+Artist decision (Manu, 2026-09-27): the Symmetry Lab takes over the same
+controls — W and hold-key-hover, no lab key override — replacing its own
+Slice-3 arm-then-LMB-drag gesture (Q, KEEP 2026-09-25). The Playground
 runtime (AD-016 itself) still uses Q/W/E for its own hotkeys — unchanged, still
 an open discrepancy. A3 (press vs. hold as a general input-ownership question)
 is answered for Transform by AD-016 and is resolved for that scope only; it stays

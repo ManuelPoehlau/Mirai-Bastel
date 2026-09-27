@@ -11,6 +11,10 @@ pyglet-Standardverhalten — ESC schließt das Fenster wie in Slice 2.
 Slice 4: `on_mouse_motion` reicht die Cursor-Position an
 `dispatcher.motion()` (Hover-Ziel, E9) weiter.
 
+Move wie Production (2026-09-27, WP-06 B3): `on_mouse_motion` reicht zusätzlich
+`dx, dy` durch (W gehalten → Move), `on_key_release` geht an
+`dispatcher.key_release()` (Loslassen von W committet).
+
 Slice 5: `Change.PREVIEW` baut die Re-Symmetrize-Vorschau aus
 `dispatcher.resym_plan` neu (E15); ihre Textzeile steht über der Statuszeile.
 
@@ -117,6 +121,13 @@ class SymmetryLabWindow(pyglet.window.Window):
             return pyglet.event.EVENT_HANDLED
         return super().on_key_press(symbol, modifiers)
 
+    def on_key_release(self, symbol: int, modifiers: int):
+        handled = self.dispatcher.key_release(key_from_pyglet(symbol, modifiers))
+        self._flush()
+        if handled:
+            return pyglet.event.EVENT_HANDLED
+        return None
+
     def on_mouse_press(self, x: int, y: int, button: int, modifiers: int) -> None:
         inp = mouse_from_pyglet(button, modifiers)
         if inp is not None:
@@ -140,7 +151,7 @@ class SymmetryLabWindow(pyglet.window.Window):
         self.dispatcher.scroll(wheel_from_pyglet(scroll_y))
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
-        self.dispatcher.motion(x, y)
+        self.dispatcher.motion(x, y, dx, dy)
         self._flush()
 
     def on_draw(self) -> None:

@@ -4,8 +4,9 @@ Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 7** 
 ein Mesh (shaded + Edges + Vertices), navigiert mit Orbit/Pan/Zoom, wählt per Klick einen
 Vertex aus, schaltet mit Shift+S die Symmetrie-Ebene durch (aus → X → Y → Z → aus), zeigt
 Ebene, Seam, Vertices ohne Partner und den gespiegelten Partner der Auswahl, zeigt den Vertex
-unter dem Cursor (Hover) und dessen gespiegelten Partner, und verschiebt mit Hover/Auswahl → Q →
-LMB-Drag einen Vertex symmetrisch. Bei symmetrischen Meshes ist auch die Schattierung symmetrisch
+unter dem Cursor (Hover) und dessen gespiegelten Partner, und verschiebt mit Hover/Auswahl → **W
+halten + Maus bewegen** einen Vertex symmetrisch (seit 2026-09-27 dieselbe Move-Bedienung wie die
+Production-App, siehe unten). Bei symmetrischen Meshes ist auch die Schattierung symmetrisch
 (eigene, lab-lokale Anzeige-Triangulierung/Normalen — Slice 4, E10). Mit **M** (Vorschau) und
 **M** (ausführen) spiegelt Re-Symmetrize die Seite der Auswahl exakt auf die andere Seite; die
 Partner dafür kommen aus einer topologischen Paarung ab der Seam (Slice 5, Lab-Experiment). Jede
@@ -43,6 +44,26 @@ Ein unbekannter Name bricht **vor** dem Öffnen des Fensters mit der Liste der g
 (`python -m pip install pyglet`). Beim Start listet die Konsole die aktiven Lab-Overrides.
 Schließen: ESC (wenn kein Move scharf ist oder läuft, keine Vorschau offen und keine
 Knife-Session aktiv ist) oder Fenster-X.
+
+### Move-Bedienung wie die App (2026-09-27) — offen, noch nicht geprüft
+
+**Artist-Entscheidung (Manu, 2026-09-27):** Das Lab bekommt dieselbe Move-Bedienung wie die
+Production-App (WP-06 B3): **W** statt Q, und AD-016 hold-key-hover statt „Q scharf, dann
+LMB ziehen". Ersetzt die Slice-3-Geste (KEEP 2026-09-25); Ziel-Regel (Slice 4 A4/E7/E8) und
+symmetrisches Verhalten bleiben unverändert. Q ist im Lab jetzt ungebunden. Die Konsole listet
+beim Start keine `key:q`/`key:w`-Overrides (W fällt auf den globalen Default `Move` zurück).
+
+1. `python experiments/symmetry_lab/run.py`, **Shift+S** (→ X), einen gepaarten Vertex anklicken.
+2. **W gedrückt halten und die Maus bewegen** (keine Maustaste) → Vertex und Partner folgen
+   live, spiegelbildlich (`Move: bewegt`). **W loslassen** → `Move übernommen`, ein
+   Undo-Schritt.
+3. **W antippen** ohne Mausbewegung → `Move: nur angetippt — nichts bewegt`, kein Undo-Schritt.
+4. W halten, bewegen, **ESC** → zurück auf den Ausgangszustand, kein Undo-Schritt.
+5. Ohne Auswahl über einem Vertex schweben, W halten, bewegen → der gehoverte Vertex bewegt sich.
+6. Während W gehalten wird: Alt+LMB orbitet weiter; danach bewegt die Maus wieder den Vertex.
+7. **Ctrl+Z** / **Ctrl+Y** → Move zurück / wieder.
+
+Verdikt (KEEP / ITERATE / REJECT / UNKNOWN): steht aus.
 
 ### Manuelle Prüfung Slice 7 (Manu, Windows) — offen, noch nicht geprüft
 
@@ -84,16 +105,19 @@ beim Start zusätzlich `key:c -> Knife`.
 9. **Frage A12:** Während einer Session auf eine **Fläche** klicken (auf dem Mesh, aber weder
    Vertex noch Kante in Reichweite) → es passiert nichts, die Session läuft weiter. Fühlt sich
    dieses „No-op" richtig an, oder hättest du erwartet, dass auch das committet?
-10. Während der Session: Alt+LMB / Shift+LMB / MMB / Mausrad navigieren weiter. **Shift+S**, **Q**,
+10. Während der Session: Alt+LMB / Shift+LMB / MMB / Mausrad navigieren weiter. **Shift+S**, **W**,
     **M**, **Ctrl+Z**, **Ctrl+Y** tun nichts, die Statuszeile meldet
     `Knife aktiv — Befehl ignoriert`. **Enter** ist im Lab nicht belegt (A13) — falls du beim
     Testen Enter zum Bestätigen vermisst, bitte notieren.
 11. Ablehnungen beim Start (Statuszeile, keine Session): **C** bei `man_with_shoes_basemesh` mit
-    Symmetrie X (`partial`); **C** bei `subd_cube` mit Symmetrie Y; **Q** (Move scharf) und dann
-    **C**; **M** (Re-Symmetrize-Vorschau offen) und dann **C**. Ohne Symmetrie startet **C** einen
+    Symmetrie X (`partial`); **C** bei `subd_cube` mit Symmetrie Y; **W** gedrückt halten (Move
+    scharf) und dann **C**; **M** (Re-Symmetrize-Vorschau offen) und dann **C**. Ohne Symmetrie startet **C** einen
     ungespiegelten Knife (`Knife: aktiv (kein Start, ungespiegelt)`), ohne türkise Punkte.
 
 ### Manuelle Prüfung Slice 3 (Manu, Windows) — KEEP (2026-09-25)
+
+*Historisch (2026-09-27): geprüft mit **Q** + LMB-Ziehen. Seit 2026-09-27 ist Move **W halten +
+Maus bewegen** — siehe „Move-Bedienung wie die App" oben.*
 
 **Artist-Verdikt (Manu, 2026-09-25): KEEP.** Aussage: „Läuft bisher alles wie geplant."
 Prüfschritte, wie geprüft:
@@ -129,6 +153,9 @@ Prüfschritte, wie geprüft:
     Befund E4 unten).
 
 ### Manuelle Prüfung Slice 5 (Manu, Windows) — KEEP (2026-09-25)
+
+*Historisch (2026-09-27): geprüft mit **Q** + LMB-Ziehen. Seit 2026-09-27 ist Move **W halten +
+Maus bewegen** — siehe „Move-Bedienung wie die App" oben.*
 
 **Artist-Verdikt (Manu, 2026-09-25): KEEP.** Aussage: Solange die Vertices exakt auf der
 Symmetrie-Linie liegen, funktioniert Re-Symmetrize reibungslos. Liegt ein Vertex nicht exakt in
@@ -179,6 +206,9 @@ Baut auf Slice 3/4 auf; hier nur, was neu ist.
     (Seam teilt das Mesh nicht in zwei Teile); **Q** und dann **M** (Move scharf).
 
 ### Manuelle Prüfung Slice 4 (Manu, Windows) — KEEP (2026-09-25)
+
+*Historisch (2026-09-27): geprüft mit **Q** + LMB-Ziehen. Seit 2026-09-27 ist Move **W halten +
+Maus bewegen** — siehe „Move-Bedienung wie die App" oben.*
 
 **Artist-Verdikt (Manu, 2026-09-25): KEEP.** Aussage: „Läuft bisher alles wie geplant."
 Baut auf Slice 3 auf; hier nur, was neu ist.
@@ -236,8 +266,8 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Vertex auswählen | LMB (Klick) | `Select` | globaler Default (Fallback) |
 | — | RMB | *explizit ungebunden* | Lab-Override — eine Primärbindung pro Funktion |
 | Symmetrie durchschalten (aus → X → Y → Z → aus) | Shift+S | `SymmetryCycle` (Lab-lokal) | Lab-Override — Artist A2 |
-| Move scharf schalten (Ziel: Auswahl, sonst Hover) | Q | `Move` | Artist A3/A4, globaler Default (Fallback) |
-| Move ziehen (wenn scharf) | LMB ohne Modifier (Drag) | — (Lab-Geste, `MoveTool`) | Artist A1/A3, E5 |
+| Move scharf schalten (Ziel: Auswahl, sonst Hover) | W (gedrückt halten) | `Move` | Artist Manu 2026-09-27 (wie App, WP-06 B3), globaler Default (Fallback) |
+| Move bewegen / übernehmen | Mausbewegung bei gehaltenem W (keine Maustaste) / W loslassen | — (AD-016 hold-key-hover, `MoveTool`) | Artist Manu 2026-09-27 |
 | Re-Symmetrize: Vorschau öffnen / ausführen | M / M erneut | `ReSymmetrize` (Lab-lokal) | Lab-Override — Artist A7 |
 | Knife starten | C | `Knife` (Lab-lokal) | Lab-Override — Artist A8, E23 |
 | Knife: schneiden (Vertex oder Kante unter dem Cursor) | LMB ohne Modifier (Klick, während Knife aktiv) | — (Lab-Geste, `LabKnifeTool.click`) | Artist A8, E25/E29 |
@@ -253,37 +283,39 @@ Andere global gebundene Commands (z. B. `f` → `SetFaceMode`) lösen zwar auf, 
 No-ops und gelten als „nicht behandelt". Die Mausbewegung selbst (`on_mouse_motion`, ohne
 gedrückte Taste) ist kein Command — sie treibt nur das Hover-Ziel (siehe unten).
 
-**Drag/Klick-Semantik (Lab-lokal, AD-013 A3 bleibt offen):** Der Press bestimmt das Command;
+**Drag/Klick-Semantik der Maus (Lab-lokal):** Der Press bestimmt das Command;
 Orbit/Pan laufen bis zum Release derselben Maustaste, auch wenn währenddessen Modifier
 losgelassen werden. Select wird beim Release ausgeführt, wenn die Maus weniger als 5 px
 (Manhattan-Summe, wie Playground) bewegt wurde; sonst passiert nichts (kein Box-Select).
 
-**Move (Slice 3, one-shot — E5) — Ziel-Regel (Slice 4, Artist A3/A4):** Der Artist zeigt auf
-einen Vertex, drückt **Q** und zieht mit **LMB**, ohne vorher zu klicken. Welcher Vertex sich
-bewegt, entscheidet beim Q-Druck (wie im Playground, WP-STAB-04):
+**Move (seit 2026-09-27 wie die App: W, AD-016 hold-key-hover) — Ziel-Regel (Slice 4, Artist
+A3/A4):** Der Artist zeigt auf einen Vertex, hält **W** und bewegt die Maus (ohne Maustaste),
+ohne vorher zu klicken. Welcher Vertex sich bewegt, entscheidet beim W-Druck (wie im
+Playground, WP-STAB-04):
 
 1. Auswahl nicht leer → die Auswahl bewegt sich (unverändert seit Slice 3).
 2. Auswahl leer, aber ein Vertex liegt unter dem Cursor (Hover) → **dieser** Vertex bewegt
    sich, ohne dass er zuvor ausgewählt werden musste. `scene.selection` bleibt dabei leer
    (E8) — nach Commit/Cancel ist die Auswahl genau wie vorher.
-3. Beides leer → Q wird abgelehnt (Statuszeile: „Move: keine Auswahl, kein Hover"), nichts
+3. Beides leer → W wird abgelehnt (Statuszeile: „Move: keine Auswahl, kein Hover"), nichts
    wird scharf.
 
-Das Ziel wird beim Q-Druck **einmal** festgelegt (E7) und bleibt bis Commit/Cancel fest — die
-Maus danach woanders hinzubewegen (z. B. um vorher noch mit Alt+LMB die Ansicht zu drehen)
-ändert es nicht mehr. Die Statuszeile zeigt während Move scharf/zieht, was sich bewegen wird
-(„Auswahl" bzw. „Hover v<id>"). Solange scharf, startet ausschließlich LMB ohne Modifier den
-Move; Alt+LMB, Shift+LMB, MMB und Wheel navigieren weiter, ein Klick wählt nichts aus. Release
-unter 5 px Bewegung → `cancel()` (kein Undo-Schritt), sonst `commit()` (genau ein
-Undo-Schritt); in beiden Fällen ist Move danach entschärft — für den nächsten Move erneut Q.
-Während eines Move-Drags werden Shift+S, Q, Ctrl+Z/Ctrl+Y und weitere Maus-Presses ignoriert;
-nur ESC bricht ab.
+Das Ziel wird beim W-Druck **einmal** festgelegt (E7) und bleibt bis Commit/Cancel fest. Die
+erste Mausbewegung bei gehaltenem W startet den Move (keine Schwelle), jede weitere bewegt live
+weiter. **W loslassen** → `commit()` (genau ein Undo-Schritt); **W nur antippen** (keine
+Bewegung dazwischen) → nichts passiert, kein Undo-Schritt. Danach ist Move entschärft — für den
+nächsten Move erneut W. Die Statuszeile zeigt während Move scharf/bewegt, was sich bewegen wird
+(„Auswahl" bzw. „Hover v<id>"). Solange W gehalten wird, navigieren Alt+LMB, Shift+LMB, MMB und
+Wheel weiter (während einer Kamerageste bewegt sich der Vertex nicht); ein Klick wählt nichts
+aus. Während eines laufenden Moves werden Shift+S, W, Ctrl+Z/Ctrl+Y ignoriert; nur ESC bricht ab
+(und das Loslassen von W übernimmt). Q ist im Lab ungebunden.
 
 **Hover (Slice 4, E9):** Der Vertex unter dem Cursor wird laufend hervorgehoben (gelb), bei
 aktiver Symmetrie zusätzlich sein gespiegelter Partner (türkis, wie bei der Auswahl). Der
-Hover aktualisiert sich nur im Leerlauf und solange Move scharf, aber noch nicht ziehend ist
-— während eines Kamera- oder Move-Drags bleibt er unverändert (die laufende Geste besitzt den
-Input). Der Hover ist reine Anzeige; er berührt `scene.selection` nicht.
+Hover aktualisiert sich nur im Leerlauf — während eines Kamera-Drags und solange W gehalten wird,
+bleibt er unverändert (wie App, WP-06 B3 E24). Liegt der Hover auf einem Move-Ziel, wird er beim
+W-Druck ausgeblendet; nach Commit/Cancel/Undo/Redo wird er an der letzten Cursorposition neu
+bestimmt. Der Hover ist reine Anzeige; er berührt `scene.selection` nicht.
 
 **Re-Symmetrize (Slice 5, Artist A6/A7, E12–E15):**
 
@@ -306,7 +338,7 @@ Input). Der Hover ist reine Anzeige; er berührt `scene.selection` nicht.
   unverändert. Genau ein Undo-Schritt (`MeshStateCommand`). Gibt es nichts zu tun
   („0 Änderungen" — alles schon exakt symmetrisch, A5), entsteht **kein** History-Eintrag.
 - **ESC** → Vorschau endet ohne Änderung, kein History-Eintrag.
-- Während der Vorschau: Orbit/Pan/Zoom erlaubt; Select, Q, Shift+S, Ctrl+Z/Ctrl+Y werden
+- Während der Vorschau: Orbit/Pan/Zoom erlaubt; Select, W, Shift+S, Ctrl+Z/Ctrl+Y werden
   ignoriert (Hinweis in der Statuszeile); der Hover ist pausiert (ausgeblendet) und kehrt mit
   der nächsten Mausbewegung nach der Vorschau zurück. So kann sich das Mesh zwischen Vorschau
   und Ausführung nicht ändern — ausgeführt wird genau der angezeigte Plan.
@@ -315,7 +347,7 @@ Input). Der Hover ist reine Anzeige; er berührt `scene.selection` nicht.
 **Knife (Slice 7):** siehe Abschnitt „Gespiegelter Knife im Fenster (Slice 7)" unten.
 
 **ESC-Regel:** Re-Symmetrize-Vorschau offen → Vorschau schließen; Knife-Session aktiv → Session
-abbrechen, Mesh wie vor C, kein History-Eintrag; Move-Drag läuft → Abbruch auf
+abbrechen, Mesh wie vor C, kein History-Eintrag; Move läuft → Abbruch auf
 den exakten Vorzustand, kein History-Eintrag; Move nur scharf → entschärfen; sonst nicht
 behandelt → pyglet-Standard (Fenster schließt).
 
@@ -373,7 +405,7 @@ Hover statt auf `scene.selection` angewandt.
   **54** Vertices ohne Partner — sie liegen ca. `1e-6` neben der Spiegelposition
   (OBJ-Rundung). Das Lab markiert sie magenta, korrigiert sie aber nicht und führt keinen
   Toleranzwert ein.
-- **Move:** Das Lab reicht `scene`, `camera` und das per Q festgelegte Ziel (Auswahl oder
+- **Move:** Das Lab reicht `scene`, `camera` und das per W festgelegte Ziel (Auswahl oder
   Hover, Slice 4 A4/E7/E8) an `MoveTool`; ob und wie gespiegelt wird (Partner gespiegelt,
   Seam-Vertex auf die Ebene projiziert), entscheidet `MoveTool`/`MoveOperation` selbst aus
   der Definition im Mesh.
