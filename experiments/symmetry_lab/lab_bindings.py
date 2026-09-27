@@ -94,6 +94,8 @@ LAB_OVERRIDES: tuple[LabOverride, ...] = (
         KNIFE,
         "Artist A8 (2026-09-25)",
     ),
+    LabOverride(Input("key", "q"), cmd.MOVE, "preserve lab Move key after WP-06 B3 global change"),
+    LabOverride(Input("key", "w"), None, "keep W inert in the lab as tested"),
 )
 
 

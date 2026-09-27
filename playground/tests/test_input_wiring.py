@@ -86,30 +86,30 @@ class TestPlaygroundInputBinding:
         assert cmd_result == cmd.UNDO
 
     def test_move_binding_works(self):
-        """Q resolves to MOVE."""
+        """W resolves to MOVE (production defaults, WP-06 B3)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.Q, 0)
+        inp = _key_from_pyglet(_key.W, 0)
         cmd_result = binding.command_for(inp, GLOBAL_CONTEXT)
         assert cmd_result == cmd.MOVE
 
     def test_rotate_binding_works(self):
-        """W resolves to ROTATE."""
+        """E resolves to ROTATE (production defaults, WP-06 B3)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.W, 0)
+        inp = _key_from_pyglet(_key.E, 0)
         cmd_result = binding.command_for(inp, GLOBAL_CONTEXT)
         assert cmd_result == cmd.ROTATE
 
     def test_scale_binding_works(self):
-        """E resolves to SCALE."""
+        """R resolves to SCALE (production defaults, WP-06 B3)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.E, 0)
+        inp = _key_from_pyglet(_key.R, 0)
         cmd_result = binding.command_for(inp, GLOBAL_CONTEXT)
         assert cmd_result == cmd.SCALE
 
     def test_global_context_r_is_rotate(self):
-        """In global context, W → ROTATE (rebinded from R)."""
+        """In global context, E → ROTATE (production defaults, WP-06 B3)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.W, 0)
+        inp = _key_from_pyglet(_key.E, 0)
         assert binding.command_for(inp, GLOBAL_CONTEXT) == cmd.ROTATE
 
     def test_topology_context_r_is_ring(self):
@@ -125,9 +125,9 @@ class TestPlaygroundInputBinding:
         assert binding.command_for(inp, TOPOLOGY_CONTEXT) == cmd.SPLIT_EDGE
 
     def test_global_context_e_is_scale(self):
-        """In global context, E → SCALE (rebinded from S)."""
+        """In global context, R → SCALE (production defaults, WP-06 B3)."""
         binding = PlaygroundInputBinding()
-        inp = _key_from_pyglet(_key.E, 0)
+        inp = _key_from_pyglet(_key.R, 0)
         assert binding.command_for(inp, GLOBAL_CONTEXT) == cmd.SCALE
 
 

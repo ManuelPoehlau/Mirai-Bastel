@@ -1,4 +1,4 @@
-"""Production entry point — Stage B, Slices B1, B2 + B2b.
+"""Production entry point — Stage B, Slices B1, B2, B2b + B3.
 
 Handoffs: "WP-06 — Slice B1: Head mesh as default scene + camera framing",
 "WP-06 — Slice B2: Navigation per Artist Truth + vertex selection,
@@ -26,7 +26,11 @@ Scope (binding, see the handoffs):
   slightly larger, translucent pale-yellow hover point (`PROVISIONAL`):
   `on_mouse_motion`/`on_mouse_leave` -> `Application.pointer_motion`/
   `pointer_leave`.
-- No mutation, no tool activation (Move etc. is a later slice).
+- Keys (B3): `on_key_press`/`on_key_release` -> `mirai.pyglet_input` ->
+  `Application.key_press`/`key_release` -> `BindingSet` (GLOBAL). Esc =
+  Cancel only, Ctrl+Z / Ctrl+Y = Undo / Redo. Status lines
+  (`Application.status_message`) are printed to stdout — `PROVISIONAL`
+  until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -57,7 +61,7 @@ for _p in (str(_SRC), str(_ROOT), str(_ROOT / "examples")):
 import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
-from mirai.pyglet_input import mouse_from_pyglet, wheel_from_pyglet  # noqa: E402
+from mirai.pyglet_input import key_from_pyglet, mouse_from_pyglet, wheel_from_pyglet  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 
@@ -99,6 +103,22 @@ def main() -> None:
         return pyglet.event.EVENT_HANDLED
 
     @window.event
+    def on_key_press(symbol: int, modifiers: int):
+        inp = key_from_pyglet(symbol, modifiers)
+        if inp is not None:
+            app.key_press(inp)
+        # Always handled: pyglet's default handler would close the window on
+        # Esc, but Esc is Cancel only (B1 A3 — the X button closes).
+        return pyglet.event.EVENT_HANDLED
+
+    @window.event
+    def on_key_release(symbol: int, modifiers: int):
+        inp = key_from_pyglet(symbol, modifiers)
+        if inp is not None:
+            app.key_release(inp)
+        return pyglet.event.EVENT_HANDLED
+
+    @window.event
     def on_mouse_press(x: int, y: int, button: int, modifiers: int):
         inp = mouse_from_pyglet(button, modifiers)
         if inp is not None:
@@ -137,10 +157,17 @@ def main() -> None:
         app.viewport.sync()
         app.viewport.render()
 
+    status_seen = app.status_serial
+
     def _tick(dt: float) -> None:
+        nonlocal status_seen
         # Keeps `viewport.sync()` running once per frame even without a
         # camera event (Stage B hook — no behavior change for this package).
         app.update_viewport(dt)
+        # Console status (B3, E26) — PROVISIONAL until a HUD exists.
+        if app.status_serial != status_seen:
+            status_seen = app.status_serial
+            print(app.status_message, flush=True)
 
     pyglet.clock.schedule_interval(_tick, 1 / 60.0)
     pyglet.app.run()

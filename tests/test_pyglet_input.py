@@ -137,9 +137,9 @@ class TestWheelFromPyglet:
 class TestIntegrationWithDefaultBindings:
     """Belegt, dass die Value-Strings zu `build_default_bindings()` passen."""
 
-    def test_q_is_move(self):
+    def test_w_is_move(self):
         bindings = build_default_bindings()
-        inp = key_from_pyglet(_key.Q, 0)
+        inp = key_from_pyglet(_key.W, 0)
         assert bindings.command_for(inp, GLOBAL_CONTEXT) == cmd.MOVE
 
     def test_ctrl_z_is_undo(self):
@@ -171,7 +171,7 @@ class TestSecondContextWithoutBindingSetChange:
 
     def test_context_specific_binding_wins(self):
         bindings = build_default_bindings()
-        inp = key_from_pyglet(_key.Q, 0)
+        inp = key_from_pyglet(_key.W, 0)
         bindings.set_default(inp, "SymmetryLabSpecialMove", context=self.SYMMETRY_LAB_CONTEXT)
 
         assert bindings.command_for(inp, self.SYMMETRY_LAB_CONTEXT) == "SymmetryLabSpecialMove"

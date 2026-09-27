@@ -111,6 +111,13 @@ class Application:
         # bzw. Cursor außerhalb des Fensters) - für das Hover-Re-Pick nach Zoom.
         self._cursor: tuple[float, float] | None = None
 
+        # WP-06 B3 (E26, `PROVISIONAL` bis ein HUD existiert): letzte
+        # Statusmeldung für den Nutzer. `status_serial` zählt jede Meldung,
+        # damit der Entry-Point auch eine wiederholte, gleichlautende Meldung
+        # (z. B. zweimal "Undo") erkennt.
+        self.status_message: str = ""
+        self.status_serial: int = 0
+
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
         for command, tool_class in (
@@ -212,6 +219,49 @@ class Application:
 
         return False
 
+    # -- Tasten (WP-06 B3) ------------------------------------------------------
+
+    def key_press(self, input: Input) -> bool:
+        """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
+        (GLOBAL). True = der Druck hat etwas bewirkt.
+
+        ROTATE/SCALE lösen auf, bleiben aber bis B4 bewusst wirkungslos (kein
+        Tool, keine Zustandsänderung)."""
+        command = self.bindings.command_for(input)
+        if command == commands.CANCEL:
+            return self._cancel()
+        if command in (commands.UNDO, commands.REDO):
+            return self._undo_redo(command)
+        return False
+
+    def key_release(self, input: Input) -> bool:
+        """Taste losgelassen. True = das Loslassen hat etwas bewirkt."""
+        return False
+
+    def _cancel(self) -> bool:
+        """Esc = nur Abbrechen (B1 A3: kein Quit). Idle: nichts."""
+        return False
+
+    def _undo_redo(self, command: str) -> bool:
+        can = self.history.can_undo() if command == commands.UNDO else self.history.can_redo()
+        if not can:
+            self._set_status(f"{command}: nothing to {command.lower()}")
+            return False
+        self.dispatch_command(command)
+        # E23: `HistoryStack` bietet keinen öffentlichen Zugriff auf das
+        # gerade rückgängig gemachte Command (und `core/history.py` ist
+        # tabu) - daher der gröbere, aber für jedes Command korrekte Rebuild
+        # statt `on_vertices_moved(ids)`.
+        if self.viewport is not None:
+            self.viewport.on_topology_changed()
+        self._set_status(command)
+        self._refresh_hover()
+        return True
+
+    def _set_status(self, message: str) -> None:
+        self.status_message = message
+        self.status_serial += 1
+
     # -- Pointer / Navigation (WP-06 B2, AD-019) ------------------------------
 
     def set_viewport_size(self, width: int, height: int) -> None:
@@ -244,8 +294,7 @@ class Application:
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
         self._camera_changed()
         # Unter dem ruhenden Cursor liegt nach dem Zoom ggf. ein anderer Vertex.
-        if self._cursor is not None and not self.pointer.active:
-            self._update_hover(*self._cursor)
+        self._refresh_hover()
         return True
 
     # -- Hover (WP-06 B2b, E20) -------------------------------------------------
@@ -259,6 +308,12 @@ class Application:
         if self.pointer.active:
             return False
         return self._update_hover(x, y)
+
+    def _refresh_hover(self) -> None:
+        """Hover an der letzten Cursor-Position neu picken (nach Zoom bzw.
+        wenn sich das Mesh unter dem ruhenden Cursor bewegt hat)."""
+        if self._cursor is not None and not self.pointer.active:
+            self._update_hover(*self._cursor)
 
     def pointer_leave(self) -> bool:
         """Cursor hat das Fenster verlassen: Hover löschen."""

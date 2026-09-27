@@ -1,7 +1,7 @@
 """Default-Key- und Mouse-Bindings für den Viewport-Praxistest.
 
 Abgeleitet aus dem bisherigen V1-Verhalten (siehe README/SELECTION_MODES):
-- V/1, E/2, F/3  → Selection-Modi (bestehende Konvention, bleibt erhalten)
+- V/1, 2, F/3    → Selection-Modi (E ist seit WP-AP-INPUT-FIX-01 Transform)
 - Ctrl+Z / Ctrl+Y → Undo / Redo
 - Esc             → laufende Interaktion abbrechen
 - Wheel           → Zoom (Dolly)
@@ -18,14 +18,15 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
 
 Neu hinzugekommen (bewusst minimal, keine unnötigen Hotkeys):
 - O              → Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
-- W              → Wireframe Overlay AN/AUS
+- Shift+D        → Wireframe Overlay AN/AUS
 
-WP-03 (Transform-Tools, modale Tools wie M → Move):
-- R              → Rotate (RotateTool)
-- S              → Scale (ScaleTool)
-Im Topology-Lab behalten die kontextspezifischen S/R-Bindings
-(SplitEdge/EdgeRing) Vorrang vor diesen globalen Bindungen
-(Kontext-Priorität in input_binding.BindingSet.command_for).
+Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
+- W              → Move (MoveTool)
+- E              → Rotate (RotateTool)
+- R              → Scale (ScaleTool)
+Q ist unbelegt. Im Topology-Lab behält das kontextspezifische R-Binding
+(EdgeRing) Vorrang vor dieser globalen Bindung (Kontext-Priorität in
+input_binding.BindingSet.command_for).
 
 Die Topology-Lab-Keys (S/K/C/Shift+C/L/R) liegen im Kontext "topology" und
 gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
@@ -74,12 +75,12 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)
     bs.set_default(_key("y", "ctrl"), cmd.REDO)
     bs.set_default(_key("ESCAPE"), cmd.CANCEL)
-    # WP-AP-INPUT-FIX-01 §2: Rebind transform tools to Q/W/E (was M/R/S).
-    # These activate the modal Move/Rotate/Scale tools; the mapping is exchangeable
-    # (e.g., "g" via keymap.json) — the tool implementations remain unaffected.
-    bs.set_default(_key("q"), cmd.MOVE)
-    bs.set_default(_key("w"), cmd.ROTATE)
-    bs.set_default(_key("e"), cmd.SCALE)
+    # WP-06 B3 (E27): Transform-Tasten nach Artist Input Truth (AD-013
+    # Addendum 2026-09-26): W/E/R, Q ist unbelegt. Austauschbar über
+    # keymap.json — die Tool-Implementierungen bleiben unberührt.
+    bs.set_default(_key("w"), cmd.MOVE)
+    bs.set_default(_key("e"), cmd.ROTATE)
+    bs.set_default(_key("r"), cmd.SCALE)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
 
