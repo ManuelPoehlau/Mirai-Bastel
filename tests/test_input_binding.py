@@ -79,9 +79,9 @@ class DefaultBindingsTests(unittest.TestCase):
         self.bs = build_default_bindings()
 
     def test_tool_activation_keys(self):
-        self.assertEqual(self.bs.command_for(_key("q"), GLOBAL_CONTEXT), cmd.MOVE)
-        self.assertEqual(self.bs.command_for(_key("w"), GLOBAL_CONTEXT), cmd.ROTATE)
-        self.assertEqual(self.bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.SCALE)
+        self.assertEqual(self.bs.command_for(_key("w"), GLOBAL_CONTEXT), cmd.MOVE)
+        self.assertEqual(self.bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.ROTATE)
+        self.assertEqual(self.bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
 
     def test_history_keys(self):
         self.assertEqual(self.bs.command_for(_key("z", "ctrl"), GLOBAL_CONTEXT), cmd.UNDO)
@@ -174,9 +174,9 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("z", "ctrl"), TOPOLOGY_CONTEXT), cmd.UNDO)
 
     def test_global_scale_is_not_topology_split(self):
-        # Im default/global context ist 'e' Scale, im Topology-Kontext 's' SplitEdge.
+        # Im default/global context ist 'r' Scale, im Topology-Kontext 's' SplitEdge.
         bs = build_default_bindings()
-        self.assertEqual(bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.SCALE)
+        self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
         self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
 
 
@@ -252,15 +252,15 @@ class KeymapOverrideTests(unittest.TestCase):
     def test_keymap_overrides_default_binding(self):
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(GLOBAL_CONTEXT, "key", "q", [], cmd.SCALE))
+            _keymap(_entry(GLOBAL_CONTEXT, "key", "w", [], cmd.SCALE))
         )
         bs.add_overrides(overlay)
-        self.assertEqual(bs.command_for(_key("q")), cmd.SCALE)
+        self.assertEqual(bs.command_for(_key("w")), cmd.SCALE)
 
     def test_keymap_override_keeps_other_defaults(self):
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(GLOBAL_CONTEXT, "key", "q", [], cmd.SCALE))
+            _keymap(_entry(GLOBAL_CONTEXT, "key", "w", [], cmd.SCALE))
         )
         bs.add_overrides(overlay)
         self.assertEqual(bs.command_for(_key("z", "ctrl")), cmd.UNDO)
@@ -270,17 +270,17 @@ class KeymapOverrideTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "keymap.json"
             path.write_text(
-                json.dumps(_keymap(_entry(GLOBAL_CONTEXT, "key", "q", [], cmd.SCALE))),
+                json.dumps(_keymap(_entry(GLOBAL_CONTEXT, "key", "w", [], cmd.SCALE))),
                 encoding="utf-8",
             )
             bs = build_default_bindings()
             load_keymap_overrides(bs, path)
-            self.assertEqual(bs.command_for(_key("q")), cmd.SCALE)
+            self.assertEqual(bs.command_for(_key("w")), cmd.SCALE)
 
     def test_default_bindings_unchanged_without_config(self):
         # Bestehende Defaults funktionieren unverändert, wenn keine Config da ist.
         bs = build_default_bindings()
-        self.assertEqual(bs.command_for(_key("q")), cmd.MOVE)
+        self.assertEqual(bs.command_for(_key("w")), cmd.MOVE)
         self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
 
 
@@ -290,40 +290,40 @@ class ExplicitUnbindTests(unittest.TestCase):
     def test_null_command_unbinds_default_binding(self):
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(GLOBAL_CONTEXT, "key", "q", [], None))
+            _keymap(_entry(GLOBAL_CONTEXT, "key", "w", [], None))
         )
         bs.add_overrides(overlay)
-        self.assertIsNone(bs.command_for(_key("q")))
+        self.assertIsNone(bs.command_for(_key("w")))
 
     def test_bind_none_has_same_semantics(self):
         bs = build_default_bindings()
-        bs.bind(_key("q"), None)
-        self.assertIsNone(bs.command_for(_key("q")))
+        bs.bind(_key("w"), None)
+        self.assertIsNone(bs.command_for(_key("w")))
 
     def test_unbind_does_not_affect_other_defaults(self):
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(GLOBAL_CONTEXT, "key", "q", [], None))
+            _keymap(_entry(GLOBAL_CONTEXT, "key", "w", [], None))
         )
         bs.add_overrides(overlay)
         self.assertEqual(bs.command_for(_key("z", "ctrl")), cmd.UNDO)
         self.assertEqual(bs.command_for(_key("v")), cmd.SET_VERTEX_MODE)
 
     def test_unbind_is_scoped_to_context(self):
-        # topology: s → null; global: e → Scale bleibt erhalten.
+        # topology: s → null; global: r → Scale bleibt erhalten.
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
             _keymap(_entry(TOPOLOGY_CONTEXT, "key", "s", [], None))
         )
         bs.add_overrides(overlay)
         self.assertIsNone(bs.command_for(_key("s"), TOPOLOGY_CONTEXT))
-        self.assertEqual(bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.SCALE)
+        self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
 
     def test_unbind_survives_json_roundtrip(self):
         bs = BindingSet()
-        bs.bind(_key("q"), None)
+        bs.bind(_key("w"), None)
         restored = BindingSet.from_dict(json.loads(bs.to_json()))
-        self.assertIsNone(restored.command_for(_key("q")))
+        self.assertIsNone(restored.command_for(_key("w")))
 
 
 class KeymapValidationTests(unittest.TestCase):

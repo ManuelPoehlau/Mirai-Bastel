@@ -184,7 +184,7 @@
       "category": "Transform",
       "binding": "W",
       "runtime_ref": "Move",
-      "notes": "Changed from Q — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
+      "notes": "W: hold + move mouse (any motion, no button needed) transforms live, release commits; tap with no motion = no-op — AD-016 hold-key-hover, PROMOTED in app (WP-06 B3). Changed from Q — Manu 2026-09-26 (WP-06 B1, AD-013 addendum)"
     },
     {
       "id": "transform.rotate",
