@@ -1,9 +1,10 @@
-"""Application: Rotate/Scale auf E/R + Achsen-Constraints (WP-06 B4, E28-E35).
+"""Application: Rotate/Scale auf E/R + Achsen-Constraints (WP-06 B4/B4.1).
 
 Headless (TraceStore), kein pyglet/Fenster. Gleicher AD-016-Pfad wie Move
 (`test_application_move.py`): Taste → `Application.key_press` (scharf, Tool
-aktiv) → optional Constraint-Taste → `pointer_motion(x, y, dx, dy)` (erste
-Bewegung: `begin(space=...)`, dann `update`) → Release → `commit`.
+aktiv) → `pointer_motion(x, y, dx, dy)` (erste Bewegung: `begin(space=...)`,
+dann `update`) → Release → `commit`. Constraints (B4.1, Playground-Modell):
+sticky Toggle, unabhängig vom scharfen Tool, gelesen bei jedem `begin()`.
 """
 
 from __future__ import annotations
@@ -316,99 +317,191 @@ def test_undo_ignored_while_transforming_and_disarms_when_armed(app, command):
     assert _positions(app) != moved
 
 
-# -- Constraints (E30-E33) ---------------------------------------------------------------
+# -- Constraints (B4.1: sticky Toggle wie im Playground) ------------------------------
+
+
+@pytest.mark.parametrize("key, space", CONSTRAINTS)
+def test_constraint_key_sets_state_without_armed_tool(app, key, space):
+    serial = app.status_serial
+    assert app.key_press(key)
+    assert app.axis_constraint == space
+    assert app.status_serial == serial + 1
+    label = space.upper() if len(space) == 1 else f"{space.upper()} plane"
+    assert app.status_message == f"Constraint: {label}"
+    assert app.tool_manager.active_tool is None
+
+
+@pytest.mark.parametrize("key, space", CONSTRAINTS)
+def test_same_key_again_toggles_off(app, key, space):
+    app.key_press(key)
+    assert app.key_press(key)
+    assert app.axis_constraint is None
+    assert app.status_message == "Constraint: none"
+
+
+def test_other_key_replaces(app):
+    app.key_press(_key("x"))
+    app.key_press(_key("y"))
+    assert app.axis_constraint == "y"
+    app.key_press(_key("z", "shift"))
+    assert app.axis_constraint == "xy"
+    app.key_press(_key("x", "shift"))
+    assert app.axis_constraint == "yz"
+    app.key_press(_key("y", "shift"))
+    assert app.axis_constraint == "xz"
+
+
+def test_axis_and_shift_axis_are_different_constraints(app):
+    app.key_press(_key("x"))
+    app.key_press(_key("x", "shift"))  # ersetzt, kein Toggle
+    assert app.axis_constraint == "yz"
 
 
 @pytest.mark.parametrize("command", ALL_TRANSFORMS)
 @pytest.mark.parametrize("key, space", CONSTRAINTS)
-def test_constraint_before_first_motion_reaches_begin(app, begins, command, key, space):
+def test_constraint_set_before_arming_reaches_begin(app, begins, command, key, space):
     _select_all(app)
+    app.key_press(key)
     app.key_press(TRANSFORM_KEYS[command])
-    assert app.key_press(key)
-    assert app.transform_space == space
     _move(app)
     assert len(begins) == 1
     assert begins[0]["space"] == space
+    assert app.transform_space == space
     assert app.key_release(TRANSFORM_KEYS[command])
     assert len(app.history) == 1
     _assert_idle(app)
+    assert app.axis_constraint == space
 
 
 @pytest.mark.parametrize("command", ALL_TRANSFORMS)
-def test_constraint_after_first_motion_is_ignored_with_status(app, begins, command):
+def test_constraint_set_while_armed_before_motion_reaches_begin(app, begins, command):
     _select_all(app)
     app.key_press(TRANSFORM_KEYS[command])
+    app.key_press(_key("z"))
+    _move(app)
+    assert begins[0]["space"] == "z"
+
+
+@pytest.mark.parametrize("command", ALL_TRANSFORMS)
+def test_constraint_persists_across_commit_and_cancel(app, begins, command):
+    _select_all(app)
+    app.key_press(_key("x"))
+    key = TRANSFORM_KEYS[command]
+
+    app.key_press(key)
+    _move(app)
+    app.key_release(key)  # Commit
+    app.key_press(key)
+    _move(app)
+    app.key_press(ESC)  # Cancel
+    app.key_release(key)
+    app.key_press(key)
+    app.key_release(key)  # Antippen: entschärft nur
+    app.key_press(key)
+    _move(app)
+    app.key_release(key)
+
+    assert app.axis_constraint == "x"
+    assert [b["space"] for b in begins] == ["x", "x", "x"]
+    assert len(app.history) == 2
+
+
+def test_constraint_carries_over_between_tools(app, begins):
+    _select_all(app)
+    app.key_press(_key("z"))
+    for key in (W, E, R):
+        app.key_press(key)
+        _move(app)
+        app.key_release(key)
+    assert [b["space"] for b in begins] == ["z", "z", "z"]
+
+
+@pytest.mark.parametrize("command", ALL_TRANSFORMS)
+def test_key_during_motion_changes_state_but_not_running_gesture(app, begins, command):
+    _select_all(app)
+    key = TRANSFORM_KEYS[command]
+    app.key_press(key)
     _move(app, steps=1)
-    serial = app.status_serial
-    assert not app.key_press(_key("x"))
+    tool = app.tool_manager.active_tool
+    assert app.key_press(_key("y"))
+    assert app.axis_constraint == "y"
+    assert app.status_message == "Constraint: Y"
+    # Laufende Geste: kein Neustart, `space` bleibt der von begin().
+    assert app.transform_interacting
+    assert app.tool_manager.active_tool is tool
     assert app.transform_space is None
-    assert app.status_serial == serial + 1
-    assert app.status_message == (
-        f"{LABELS[command]}: axis constraint only before the first mouse motion"
-    )
     _move(app, steps=2)
     assert len(begins) == 1
-    assert begins[0]["space"] is None
+    app.key_release(key)
+    assert len(app.history) == 1
+    # Nächste Geste nutzt den neuen Wert.
+    app.key_press(key)
+    _move(app)
+    assert begins[1]["space"] == "y"
 
 
-@pytest.mark.parametrize("key, _space", CONSTRAINTS)
-def test_constraint_without_armed_transform_is_a_silent_noop(app, key, _space):
-    _select_all(app)
-    serial = app.status_serial
-    assert not app.key_press(key)
-    assert app.status_serial == serial
-    _assert_idle(app)
-
-
-def test_constraint_is_not_remembered_for_the_next_arm(app, begins):
+def test_toggle_off_during_motion_frees_the_next_gesture(app, begins):
     _select_all(app)
     app.key_press(_key("x"))
-    app.key_press(E)
-    assert app.transform_space is None
+    app.key_press(W)
+    _move(app, steps=1)
+    app.key_press(_key("x"))  # aus
+    _move(app, steps=1)
+    app.key_release(W)
+    app.key_press(W)
     _move(app)
-    assert begins[0]["space"] is None
+    assert [b["space"] for b in begins] == ["x", None]
 
 
-def test_constraint_is_reset_between_arms(app, begins):
+def test_undo_redo_unaffected_by_constraint(app):
     _select_all(app)
-    app.key_press(R)
     app.key_press(_key("x"))
-    app.key_release(R)  # Antippen: entschärft
+    before = _positions(app)
     app.key_press(R)
-    assert app.transform_space is None
     _move(app)
-    assert begins[0]["space"] is None
-
-
-def test_last_constraint_before_motion_wins(app, begins):
-    _select_all(app)
-    app.key_press(R)
-    app.key_press(_key("x"))
-    app.key_press(_key("z", "shift"))
-    assert app.transform_space == "xy"
-    # Gleiche Taste erneut: kein Toggle zurück auf frei (E31).
-    app.key_press(_key("z", "shift"))
-    assert app.transform_space == "xy"
-    _move(app)
-    assert begins[0]["space"] == "xy"
+    app.key_release(R)
+    after = _positions(app)
+    assert app.key_press(CTRL_Z)
+    assert _positions(app) == before
+    assert app.axis_constraint == "x"
+    assert app.key_press(CTRL_Y)
+    assert _positions(app) == after
+    assert app.axis_constraint == "x"
+    # Ctrl+Z/Ctrl+Y sind keine Constraint-Tasten.
+    assert app.status_message == cmd.REDO
 
 
 @pytest.mark.parametrize(
-    "command, key, expected",
+    "command, constraint_key, arm_suffix",
     [
-        (cmd.ROTATE, _key("x"), "Rotate: constrained to X"),
-        (cmd.ROTATE, _key("z", "shift"), "Rotate: constrained to XY plane (around Z)"),
-        (cmd.ROTATE, _key("x", "shift"), "Rotate: constrained to YZ plane (around X)"),
-        (cmd.SCALE, _key("y"), "Scale: constrained to Y"),
-        (cmd.SCALE, _key("y", "shift"), "Scale: constrained to XZ plane"),
-        (cmd.MOVE, _key("z"), "Move: constrained to Z"),
+        (cmd.ROTATE, _key("z"), " (constraint Z)"),
+        (cmd.SCALE, _key("x", "shift"), " (constraint YZ plane)"),
+        (cmd.MOVE, None, ""),
     ],
 )
-def test_constraint_status_line(app, command, key, expected):
+def test_arm_and_commit_status_show_active_constraint(app, command, constraint_key, arm_suffix):
     _select_all(app)
-    app.key_press(TRANSFORM_KEYS[command])
+    if constraint_key is not None:
+        app.key_press(constraint_key)
+    key = TRANSFORM_KEYS[command]
     app.key_press(key)
-    assert app.status_message == expected
+    assert app.status_message == (
+        f"{LABELS[command]}: 8 vertices{arm_suffix} - move the mouse, "
+        f"release {key.value.upper()} to commit"
+    )
+    _move(app)
+    app.key_release(key)
+    assert app.status_message == f"{LABELS[command]} committed{arm_suffix}"
+
+
+def test_commit_status_shows_the_gestures_constraint_not_a_later_change(app):
+    _select_all(app)
+    app.key_press(_key("x"))
+    app.key_press(W)
+    _move(app, steps=1)
+    app.key_press(_key("y"))
+    app.key_release(W)
+    assert app.status_message == "Move committed (constraint X)"
 
 
 # -- Constraint-Wirkung über die bestehenden Tools (E32, keine neue Mathematik) ------

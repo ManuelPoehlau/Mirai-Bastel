@@ -54,6 +54,12 @@ Grundfunktion je Achse (`variant_move.py`, `variant_rotate.py`, `variant_scale.p
 
 ---
 
+## Offene Fragen (kein Verdict)
+
+- **Muster A (Blender): Constraint live während der Bewegung wechseln**, Mehrfachdruck Global→Local→aus. Nicht untersucht; würde den Vertrag „`space` fix ab `begin()`" berühren. (Eingetragen 2026-09-27 mit WP-06 B4.1 — Production übernimmt bis dahin das Playground-Modell: sticky Toggle, wirkt ab der nächsten Geste.)
+
+---
+
 ## Aufräum-Hinweis (nicht Teil des Verdicts, sondern eine Code-Beobachtung)
 
 `variant_press_mode.py` und `variant_hold_key_hover.py` implementieren denselben entschiedenen Mechanismus doppelt. Da `experiments/` bewusst Spielwiese bleibt (M3, Promotion Boundary), ist das kein Zwang zum Aufräumen — nur ein Hinweis, falls ihr die Lab-Dateien irgendwann konsolidiert.

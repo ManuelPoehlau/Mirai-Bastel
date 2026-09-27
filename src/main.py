@@ -34,10 +34,11 @@ Scope (binding, see the handoffs):
   motion does nothing. Motion with a button held (`on_mouse_drag`) does not
   feed the Move — accepted gap, nothing is bound to a bare LMB drag. Esc =
   Cancel only, Ctrl+Z / Ctrl+Y = Undo / Redo. Rotate (E) and Scale (R)
-  work the same way (B4). While W/E/R is held and before the first mouse
-  motion, X/Y/Z constrain to that axis and Shift+X/Y/Z to the plane
-  without that axis (Blender convention; Rotate turns about the plane's
-  normal); a constraint key after the first motion is ignored. Status lines
+  work the same way (B4). X/Y/Z toggle a sticky axis constraint and
+  Shift+X/Y/Z a plane without that axis (Blender convention; Rotate turns
+  about the plane's normal) — with or without W/E/R held; it persists
+  across gestures and applies from the next gesture on (B4.1, same as the
+  Playground). Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).

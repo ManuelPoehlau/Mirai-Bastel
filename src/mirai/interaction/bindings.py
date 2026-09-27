@@ -28,6 +28,7 @@ Q ist unbelegt. Achsen-Constraints (WP-06 B4, Blender-Konvention
 „Shift+Achse schließt diese Achse aus", Manu 2026-09-27):
 - X / Y / Z      → nur entlang dieser Achse
 - Shift+X        → YZ-Ebene, Shift+Y → XZ-Ebene, Shift+Z → XY-Ebene
+  (B4.1: sticky Toggle — dieselbe Taste erneut hebt auf, bleibt über Gesten)
 Ctrl+Z / Ctrl+Y (Undo/Redo) sind ein anderes Modifier-Set und bleiben
 unberührt. Im Topology-Lab behält das kontextspezifische R-Binding
 (EdgeRing) Vorrang vor dieser globalen Bindung (Kontext-Priorität in
@@ -86,7 +87,7 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("w"), cmd.MOVE)
     bs.set_default(_key("e"), cmd.ROTATE)
     bs.set_default(_key("r"), cmd.SCALE)
-    # WP-06 B4 (E33): Constraints, nur wirksam solange ein Transform scharf ist.
+    # WP-06 B4 (E33): Constraints; B4.1: sticky Toggle wie im Playground.
     bs.set_default(_key("x"), cmd.CONSTRAIN_AXIS_X)
     bs.set_default(_key("y"), cmd.CONSTRAIN_AXIS_Y)
     bs.set_default(_key("z"), cmd.CONSTRAIN_AXIS_Z)

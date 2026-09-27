@@ -85,9 +85,12 @@ _CONSTRAINT_SPACES: dict[str, str] = {
     commands.CONSTRAIN_PLANE_YZ: "yz",
 }
 
-#: Rotate deutet eine Ebene als Drehung um ihre Flächennormale
-#: (`transform._PLANE_ROTATION_AXES`) - nur für die Statuszeile.
-_PLANE_NORMAL_AXIS = {"xy": "Z", "xz": "Y", "yz": "X"}
+
+def _constraint_label(space: str | None) -> str:
+    """Statuszeilen-Text einer Constraint: "X", "YZ plane", "none"."""
+    if space is None:
+        return "none"
+    return space.upper() if len(space) == 1 else f"{space.upper()} plane"
 
 
 def _selection_state(selection: Selection) -> tuple[frozenset, frozenset, frozenset]:
@@ -151,13 +154,18 @@ class Application:
         # Wert erkannt, nicht über die Bindings, weil sich die Modifier
         # zwischen Press und Release ändern dürfen (z. B. Alt für Orbit,
         # während W gehalten wird). Das Ziel ist ab dem Press fix; `begin()`
-        # läuft erst bei der ersten Mausbewegung. `_transform_space` ist die
-        # vor dieser Bewegung gewählte Constraint (E30, None = frei).
+        # läuft erst bei der ersten Mausbewegung. `_transform_space` ist der
+        # `space`, mit dem die laufende Geste begonnen hat (None = frei).
         self._transform_key: str | None = None
         self._transform_command: str | None = None
         self._transform_target: frozenset[VertexId] = frozenset()
         self._transform_begun: bool = False
         self._transform_space: str | None = None
+        # WP-06 B4.1 (Artist-Entscheidung Manu 2026-09-27, Playground-Verhalten
+        # WP-AP-INPUT-FIX-03 1:1): sticky Achsen-Constraint, unabhängig vom
+        # scharfen Tool, überlebt Commit/Cancel/neues Scharfschalten und wird
+        # bei jedem `begin()` gelesen. None = frei.
+        self._axis_constraint: str | None = None
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -294,8 +302,14 @@ class Application:
 
     @property
     def transform_space(self) -> str | None:
-        """Gewählte Constraint als `space`-String (None = frei, E30/E32)."""
+        """`space` der laufenden Geste, fix ab `begin()` (None = frei bzw.
+        keine Geste)."""
         return self._transform_space
+
+    @property
+    def axis_constraint(self) -> str | None:
+        """Sticky Achsen-/Ebenen-Constraint als `space`-String (None = frei)."""
+        return self._axis_constraint
 
     def key_press(self, input: Input) -> bool:
         """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
@@ -328,7 +342,8 @@ class Application:
         label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
         if self._transform_begun:
             command = self.tool_manager.commit()
-            self._set_status(f"{label} committed" if command is not None else f"{label}: no change")
+            outcome = f"{label} committed" if command is not None else f"{label}: no change"
+            self._set_status(outcome + self._constraint_suffix(self._transform_space))
         else:
             self._set_status(f"{label}: tool set (no motion, nothing {participle})")
         self._transform_end()
@@ -355,38 +370,29 @@ class Application:
         self._transform_command = command
         self._transform_target = frozenset(target)
         self._transform_begun = False
-        self._transform_space = None
         # Kein Hover-Punkt über den Punkten, die gleich transformiert werden.
         if isinstance(hovered, VertexId) and hovered in self._transform_target:
             self._set_hovered(None)
         count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
         self._set_status(
-            f"{label}: {count} {noun} - move the mouse, release {key.upper()} to commit"
+            f"{label}: {count} {noun}{self._constraint_suffix(self._axis_constraint)}"
+            f" - move the mouse, release {key.upper()} to commit"
         )
         return True
 
+    @staticmethod
+    def _constraint_suffix(space: str | None) -> str:
+        return "" if space is None else f" (constraint {_constraint_label(space)})"
+
     def _constrain(self, space: str) -> bool:
-        """Constraint-Taste (E30/E31): wirkt nur zwischen Scharfschalten und
-        erster Mausbewegung, weil das Tool `space` in `begin()` fixiert; die
-        letzte Taste vor der Bewegung gewinnt. Ohne scharfen Transform ein
-        stiller No-op (kein vorgemerkter Zustand)."""
-        if self._transform_key is None:
-            return False
-        label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
-        if self._transform_begun:
-            self._set_status(f"{label}: axis constraint only before the first mouse motion")
-            return False
-        self._transform_space = space
-        if len(space) == 1:
-            self._set_status(f"{label}: constrained to {space.upper()}")
-        elif self._transform_command == commands.ROTATE:
-            self._set_status(
-                f"{label}: constrained to {space.upper()} plane "
-                f"(around {_PLANE_NORMAL_AXIS[space]})"
-            )
-        else:
-            self._set_status(f"{label}: constrained to {space.upper()} plane")
+        """Constraint-Taste (B4.1, wie Playground `window.py`): dieselbe Taste
+        erneut → frei, eine andere ersetzt. Wirkt auch ohne scharfes Tool;
+        während einer laufenden Geste ändert sich nur der Zustand — der
+        Tool-`space` ist ab `begin()` fix, der neue Wert gilt ab der nächsten
+        Geste."""
+        self._axis_constraint = None if self._axis_constraint == space else space
+        self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
         return True
 
     def _transform_step(self, dx: float, dy: float) -> bool:
@@ -396,6 +402,7 @@ class Application:
         if dx == 0 and dy == 0:
             return False
         if not self._transform_begun:
+            self._transform_space = self._axis_constraint
             self.tool_manager.begin_current_interaction(
                 {
                     "scene": self.scene,

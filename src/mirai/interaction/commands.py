@@ -37,8 +37,9 @@ MOVE = "Move"
 # tool_for_command() auf RotateTool/ScaleTool, gleiche Lifecycle-Verträge.
 ROTATE = "Rotate"
 SCALE = "Scale"
-# CONSTRAIN_* schränken den gerade scharfen Transform ein (WP-06 B4, E30-E33),
-# nur vor der ersten Mausbewegung. Die Ebenen-Commands benennen die Ebene;
+# CONSTRAIN_* schalten einen sticky Achsen-/Ebenen-Constraint um (WP-06 B4,
+# Modell seit B4.1 wie im Playground: Toggle, gilt für jede folgende Transform-
+# Geste, auch ohne gehaltenes Tool). Die Ebenen-Commands benennen die Ebene;
 # welche Taste sie auslöst (Blender: Shift+Achse schließt diese Achse aus),
 # entscheidet allein die Bindung.
 CONSTRAIN_AXIS_X = "ConstrainAxisX"

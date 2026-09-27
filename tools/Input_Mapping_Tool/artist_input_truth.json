@@ -208,7 +208,7 @@
       "category": "Transform Constraints",
       "binding": "X",
       "runtime_ref": "ConstrainAxisX",
-      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4)"
+      "notes": "sticky toggle, persists across gestures: same key again = off, another key replaces; works with or without W/E/R held, applies from the next gesture on (WP-06 B4.1, Playground model, Manu 2026-09-27)"
     },
     {
       "id": "transform.constraint_axis_y",
@@ -216,7 +216,7 @@
       "category": "Transform Constraints",
       "binding": "Y",
       "runtime_ref": "ConstrainAxisY",
-      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4)"
+      "notes": "sticky toggle, persists across gestures: same key again = off, another key replaces; works with or without W/E/R held, applies from the next gesture on (WP-06 B4.1, Playground model, Manu 2026-09-27)"
     },
     {
       "id": "transform.constraint_axis_z",
@@ -224,7 +224,7 @@
       "category": "Transform Constraints",
       "binding": "Z",
       "runtime_ref": "ConstrainAxisZ",
-      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4)"
+      "notes": "sticky toggle, persists across gestures: same key again = off, another key replaces; works with or without W/E/R held, applies from the next gesture on (WP-06 B4.1, Playground model, Manu 2026-09-27)"
     },
     {
       "id": "transform.constraint_plane_xy",
@@ -232,7 +232,7 @@
       "category": "Transform Constraints",
       "binding": "Shift+Z",
       "runtime_ref": "ConstrainPlaneXY",
-      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4); Rotate turns about the plane normal. Changed from Shift+X to Blender's exclude-axis convention — Manu 2026-09-27"
+      "notes": "sticky toggle, persists across gestures: same key again = off, another key replaces; works with or without W/E/R held, applies from the next gesture on (WP-06 B4.1, Playground model, Manu 2026-09-27); Rotate turns about the plane normal. Changed from Shift+X to Blender's exclude-axis convention — Manu 2026-09-27"
     },
     {
       "id": "transform.constraint_plane_xz",
@@ -240,7 +240,7 @@
       "category": "Transform Constraints",
       "binding": "Shift+Y",
       "runtime_ref": "ConstrainPlaneXZ",
-      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4); Rotate turns about the plane normal. Changed from Shift+Z to Blender's exclude-axis convention — Manu 2026-09-27"
+      "notes": "sticky toggle, persists across gestures: same key again = off, another key replaces; works with or without W/E/R held, applies from the next gesture on (WP-06 B4.1, Playground model, Manu 2026-09-27); Rotate turns about the plane normal. Changed from Shift+Z to Blender's exclude-axis convention — Manu 2026-09-27"
     },
     {
       "id": "transform.constraint_plane_yz",
@@ -248,7 +248,7 @@
       "category": "Transform Constraints",
       "binding": "Shift+X",
       "runtime_ref": "ConstrainPlaneYZ",
-      "notes": "only while W/E/R is held, before the first mouse motion (WP-06 B4); Rotate turns about the plane normal. Changed from Shift+Y to Blender's exclude-axis convention — Manu 2026-09-27"
+      "notes": "sticky toggle, persists across gestures: same key again = off, another key replaces; works with or without W/E/R held, applies from the next gesture on (WP-06 B4.1, Playground model, Manu 2026-09-27); Rotate turns about the plane normal. Changed from Shift+Y to Blender's exclude-axis convention — Manu 2026-09-27"
     },
     {
       "id": "topology.extrude",
