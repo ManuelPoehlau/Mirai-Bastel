@@ -20,7 +20,7 @@ import pytest  # noqa: E402
 from core import Scene  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
-from playground.topology_tools.connect_vertices_per_face import (  # noqa: E402
+from mirai.topology.connect_vertices_per_face import (  # noqa: E402
     VertexConnectError,
     connect_vertices_per_face,
 )

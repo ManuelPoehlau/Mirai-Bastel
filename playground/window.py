@@ -84,9 +84,9 @@ from playground.topology_tools.loop_slide import (  # noqa: E402
 from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
-from playground.topology_tools.contextual_c import CContext, resolve_c_context  # noqa: E402
-from playground.topology_tools.connect_per_face import connect_selected_edges_per_face  # noqa: E402
-from playground.topology_tools.connect_vertices_per_face import connect_vertices_per_face, VertexConnectError as _VertexConnectError  # noqa: E402
+from mirai.topology.contextual_c import CContext, resolve_c_context  # noqa: E402
+from mirai.topology.connect_per_face import connect_selected_edges_per_face  # noqa: E402
+from mirai.topology.connect_vertices_per_face import connect_vertices_per_face, VertexConnectError as _VertexConnectError  # noqa: E402
 from playground.topology_tools.knife import KnifeTool  # noqa: E402
 from playground.topology_tools.knife_pick import (  # noqa: E402
     knife_pick,

@@ -18,7 +18,7 @@ from core.operations.topology import MeshStateCommand
 from core.selection import Selection, SelectionMode
 from mirai.interaction.tool import Tool
 
-from playground.topology_tools.topology_points import connect_in_shared_face
+from mirai.topology.topology_points import connect_in_shared_face
 
 
 @dataclass

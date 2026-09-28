@@ -20,9 +20,7 @@ from dataclasses import dataclass
 from core import EdgeId, FaceId, Mesh
 from core.operations.topology import MeshStateCommand
 
-
-class TopologyToolError(ValueError):
-    pass
+from mirai.topology.connect_per_face import TopologyToolError
 
 
 @dataclass(frozen=True)

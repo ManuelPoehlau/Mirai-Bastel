@@ -118,11 +118,22 @@ class TestPlaygroundInputBinding:
         inp = _key_from_pyglet(_key.R, 0)
         assert binding.command_for(inp, TOPOLOGY_CONTEXT) == cmd.EDGE_RING
 
-    def test_topology_context_s_is_split(self):
-        """In topology context, S → SPLIT_EDGE."""
+    def test_topology_context_s_has_no_default(self):
+        """WP-06 B6 (AD-017): 's'/SplitEdge lost its TOPOLOGY_CONTEXT default —
+        superseded by the global, contextual 'C' (Split/Edge Connect/Vertex
+        Connect, `Application._connect_command`)."""
         binding = PlaygroundInputBinding()
         inp = _key_from_pyglet(_key.S, 0)
-        assert binding.command_for(inp, TOPOLOGY_CONTEXT) == cmd.SPLIT_EDGE
+        assert binding.command_for(inp, TOPOLOGY_CONTEXT) is None
+
+    def test_global_context_c_is_connect(self):
+        """WP-06 B6 (AD-017): 'c' is global (not topology-scoped) — the
+        Contextual C dispatch resolves Split/Edge Connect/Vertex Connect from
+        the active selection, not from the binding."""
+        binding = PlaygroundInputBinding()
+        inp = _key_from_pyglet(_key.C, 0)
+        assert binding.command_for(inp, GLOBAL_CONTEXT) == cmd.CONNECT
+        assert binding.command_for(inp, TOPOLOGY_CONTEXT) == cmd.CONNECT
 
     def test_global_context_e_is_scale(self):
         """In global context, R → SCALE (production defaults, WP-06 B3)."""

@@ -1,10 +1,12 @@
-"""Connect Edges — per-face semantics (Wings-3D-style). DISCOVERY VARIANT.
+"""Connect Edges — per-face semantics (Wings-3D-style).
 
-Lab override for the Artist test prepared in
-docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md §6.
-It does NOT replace connect_edges.py (the baseline) and is NOT used by
-Loop Insert. Selected at runtime via the "connect" experiment family
-(Tab → connect, M → cycle variant). No new key binding.
+Promoted from the Playground Topology Lab (Connect Lab KEEP verdict,
+2026-09-21; AD-017 DECIDED 2026-09-22, WP-06 Slice B6). Originated as a
+discovery variant for the Artist test prepared in
+docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md §6, compared against
+the rejected strip-semantics baseline (`playground/topology_tools/
+connect_edges.py`, kept unreachable). `TopologyToolError` lives here now;
+`connect_edges.py` imports it from here rather than the reverse.
 
 Semantics (understood from the Wings 3D source, not copied):
   1. Drop selected edges whose adjacent faces contain no other selected
@@ -14,16 +16,16 @@ Semantics (understood from the Wings 3D source, not copied):
      boundary order. 2 midpoints → connect them. >2 → connect consecutive
      midpoints cyclically (inner polygon). Face size does not matter.
 
-Deliberate choices for the test (open questions D3/D4, not decisions):
+Deliberate choices (open questions D3/D4, not decisions):
   - Nothing connectable → TopologyToolError, same signalling as the
     baseline (Research Map: keep signalling constant across a comparison).
   - A midpoint that would stay unconnected → the whole operation is
     rejected and the mesh is restored (Wings would dissolve it instead;
     that needs a vertex-dissolve primitive we do not have).
 
-Contract identical to connect_selected_edges(): exactly one
-MeshStateCommand on success, mesh byte-identical on any rejection.
-Only existing Core primitives are used (split_edge, connect_vertices).
+Contract: exactly one MeshStateCommand on success, mesh byte-identical on
+any rejection. Only existing Core primitives are used (split_edge,
+connect_vertices).
 """
 
 from __future__ import annotations
@@ -31,7 +33,9 @@ from __future__ import annotations
 from core import EdgeId
 from core.operations.topology import MeshStateCommand
 
-from playground.topology_tools.connect_edges import TopologyToolError
+
+class TopologyToolError(ValueError):
+    pass
 
 
 def _midpoint(mesh, eid) -> tuple:

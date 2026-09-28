@@ -21,8 +21,8 @@ from core.selection import Selection, SelectionMode  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
 from playground.topology_ops import split_selected_edge  # noqa: E402
-from playground.topology_tools.contextual_c import CContext, resolve_c_context  # noqa: E402
-from playground.topology_tools.topology_points import (  # noqa: E402
+from mirai.topology.contextual_c import CContext, resolve_c_context  # noqa: E402
+from mirai.topology.topology_points import (  # noqa: E402
     EdgePoint,
     VertexPoint,
     connect_in_shared_face,

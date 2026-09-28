@@ -7,6 +7,17 @@ if something unexpected appears, stop, record it as an open question, do not dec
 **Authority:** `docs/architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md` → "Decision"
 **Artist decisions (archived):** `docs/architecture/AD-017_FINAL_DECISIONS_2026-09-22.md`
 
+**Addendum (2026-09-28, WP-06 Slice B6):** the mode-agnostic helpers and the three modes this brief
+built under `playground/topology_tools/` (`contextual_c.py`, `topology_points.py`, `connect_per_face.py`,
+`connect_vertices_per_face.py`) and `playground/topology_ops.py::split_selected_edge` were promoted —
+moved, not copied — to `src/mirai/topology/` (`contextual_c.py`, `topology_points.py`, `connect_per_face.py`,
+`connect_vertices_per_face.py`, `split.py`); `playground/topology_ops.py::split_selected_edge` now forwards
+to `mirai.topology.split.split_selected_edge`. The file paths below (§1.2–§1.6, §"Files touched") describe
+where this brief originally built them, not their current location; see `docs/architecture/
+AD-017-CUT-ENGINE-CONTEXTUAL-C.md` §10 and `docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B6) for
+the promotion record. Knife (not built in B6) and the rejected strip-semantics `connect_edges.py` stay in
+`playground/topology_tools/` as this brief left them.
+
 ---
 
 ## 0. Pre-implementation consistency check (2026-09-22)

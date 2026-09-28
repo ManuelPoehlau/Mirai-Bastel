@@ -172,7 +172,6 @@ class BindingOverrideTests(unittest.TestCase):
 class ContextResolutionTests(unittest.TestCase):
     def test_topology_context_wins(self):
         bs = build_default_bindings()
-        self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
         self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
         self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
         self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.EDGE_RING)
@@ -183,10 +182,22 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("z", "ctrl"), TOPOLOGY_CONTEXT), cmd.UNDO)
 
     def test_global_scale_is_not_topology_split(self):
-        # Im default/global context ist 'r' Scale, im Topology-Kontext 's' SplitEdge.
+        # Im default/global context ist 'r' Scale, im Topology-Kontext EdgeRing
+        # (WP-06 B6, AD-017: 's'/SplitEdge und das alte 'c'/Connect im
+        # TOPOLOGY_CONTEXT haben keinen Default mehr — ersetzt durch das
+        # globale, kontextuelle 'C').
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
-        self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
+        self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.EDGE_RING)
+        self.assertIsNone(bs.command_for(_key("s"), TOPOLOGY_CONTEXT))
+
+    def test_global_connect_is_contextual_c(self):
+        # WP-06 B6 (AD-017): 'c' ist global, nicht topology-spezifisch —
+        # Split/Edge Connect/Vertex Connect je nach Selection-Kontext
+        # (Application._connect_command), nicht durch die Bindings entschieden.
+        bs = build_default_bindings()
+        self.assertEqual(bs.command_for(_key("c"), GLOBAL_CONTEXT), cmd.CONNECT)
+        self.assertEqual(bs.command_for(_key("c"), TOPOLOGY_CONTEXT), cmd.CONNECT)
 
 
 class SerializationTests(unittest.TestCase):
@@ -201,7 +212,7 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(merged.command_for(_key("g"), TOPOLOGY_CONTEXT), cmd.REDO)
         self.assertEqual(merged.command_for(_mouse("MIDDLE", "shift")), cmd.ORBIT)
         # Defaults unverändert.
-        self.assertEqual(merged.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
+        self.assertEqual(merged.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
         self.assertEqual(merged.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_json_roundtrip(self):
@@ -290,7 +301,7 @@ class KeymapOverrideTests(unittest.TestCase):
         # Bestehende Defaults funktionieren unverändert, wenn keine Config da ist.
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("w")), cmd.MOVE)
-        self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SPLIT_EDGE)
+        self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
 
 
 class ExplicitUnbindTests(unittest.TestCase):
@@ -319,13 +330,14 @@ class ExplicitUnbindTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_unbind_is_scoped_to_context(self):
-        # topology: s → null; global: r → Scale bleibt erhalten.
+        # topology: k → null (überschreibt den Collapse-Default); global:
+        # r → Scale bleibt erhalten.
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(TOPOLOGY_CONTEXT, "key", "s", [], None))
+            _keymap(_entry(TOPOLOGY_CONTEXT, "key", "k", [], None))
         )
         bs.add_overrides(overlay)
-        self.assertIsNone(bs.command_for(_key("s"), TOPOLOGY_CONTEXT))
+        self.assertIsNone(bs.command_for(_key("k"), TOPOLOGY_CONTEXT))
         self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
 
     def test_unbind_survives_json_roundtrip(self):

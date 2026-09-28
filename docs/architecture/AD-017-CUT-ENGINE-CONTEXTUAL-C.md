@@ -233,3 +233,24 @@ Archived so far (2026-09-22):
 - `AD-017_ARTIST_SEMANTICS_2026-09-22.md` — additional Artist semantics (input).
 - `AD-017_REVIEW_AUTHOR_001.md` — author review, **not independent**.
 - Independent review: pending.
+
+## 10. Addendum (2026-09-28) — Promotion to `src/mirai/topology/` (WP-06 Slice B6)
+
+The mode-agnostic helpers and the three decided modes (Split, Edge Connect, Vertex Connect) were moved
+from `playground/topology_tools/` to `src/mirai/topology/` (`contextual_c.py`, `topology_points.py`,
+`connect_per_face.py`, `connect_vertices_per_face.py`, `split.py`), so `src/mirai/application.py` and the
+Playground share one implementation instead of Playground importing its own copy. This is the promotion
+this AD's §5/§9 anticipated ("Promotion to `src/` is a separate Artist decision (M3)"), recorded here per
+`AGENTS.md` §5/§6 (promotion is a documented decision, not a silent merge) and dated in
+`docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B6, 2026-09-28).
+
+Not part of this promotion (unchanged, still Playground-only): Knife (`knife.py`, `knife_pick.py` — no Lab
+verdict yet, §7 open questions), the rejected strip-semantics baseline (`playground/topology_tools/
+connect_edges.py`, kept unreachable from Production), Loop Insert/Slide, Extrude, Articulation.
+`TopologyToolError` now lives in `mirai.topology.connect_per_face` (previously the reverse: the Discovery
+variant imported it from the rejected baseline); `connect_edges.py` imports it from there.
+
+No `src/core` change was needed: `Mesh.split_edge(edge_id, t=0.5)` (B1b) and `Mesh.connect_vertices`
+already supported everything §4 required. `C` is wired in `src/main.py` per §"Selection residue" above,
+through `Application._connect_command`; implementation and test details are in the WP-06 Slice B6 handoff
+and `docs/architecture/ROADMAP.md`.

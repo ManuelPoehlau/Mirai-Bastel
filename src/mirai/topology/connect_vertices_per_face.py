@@ -14,7 +14,7 @@ from __future__ import annotations
 from core import VertexId
 from core.operations.topology import MeshStateCommand
 
-from playground.topology_tools.topology_points import connect_in_shared_face
+from .topology_points import connect_in_shared_face
 
 
 class VertexConnectError(Exception):

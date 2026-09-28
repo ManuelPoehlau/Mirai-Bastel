@@ -1,7 +1,7 @@
 """Connect Lab — Discovery-Variante: pro Face (Wings-artig), Face-Größe egal."""
 
 from playground.experiment import Experiment
-from playground.topology_tools.connect_per_face import connect_selected_edges_per_face
+from mirai.topology.connect_per_face import connect_selected_edges_per_face
 
 
 class ConnectPerFaceVariant(Experiment):

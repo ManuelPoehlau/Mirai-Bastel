@@ -36,8 +36,16 @@ unberührt. Im Topology-Lab behält das kontextspezifische R-Binding
 (EdgeRing) Vorrang vor dieser globalen Bindung (Kontext-Priorität in
 input_binding.BindingSet.command_for).
 
-Die Topology-Lab-Keys (S/K/C/Shift+C/L/R) liegen im Kontext "topology" und
-gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
+Contextual C (WP-06 B6, AD-017): `C` ist GLOBAL, nicht Topology-Lab —
+Split (Edge-Modus, 1 Edge) / Edge Connect (Edge-Modus, 2+ Edges) / Vertex
+Connect (Vertex-Modus, 2+ Vertices); leere Auswahl = Knife, in Production
+noch nicht verfügbar (No-op mit eigener Statuszeile). Ignoriert, solange
+W/E/R scharf ist (`Application.key_press`, wie die Modus-Tasten). Ersetzt
+die alten Topology-Lab-Tasten `s` (SplitEdge) und `c` (Connect); siehe
+`mirai.topology`.
+
+Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
+und gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
 
 Jede Bindung ist über die optionale `keymap.json` im Experiment-Ordner
 überschreibbar (siehe input_binding.BindingSet / load_keymap_overrides).
@@ -96,6 +104,11 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("z", "shift"), cmd.CONSTRAIN_PLANE_XY)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
+    # WP-06 B6 (AD-017): Contextual C — Split (1 edge) / Edge Connect (2+
+    # edges) / Vertex Connect (2+ vertices); empty selection = Knife, not
+    # yet available in Production (no-op, own status line). Global, not
+    # TOPOLOGY_CONTEXT — Artist Input Truth `topology.connect`.
+    bs.set_default(_key("c"), cmd.CONNECT)
 
     # --- Display ------------------------------------------------------------
     bs.set_default(_key("d"), cmd.CYCLE_DISPLAY_MODE)
@@ -112,11 +125,11 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
 
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
-    bs.set_default(_key("s"), cmd.SPLIT_EDGE, context=TOPOLOGY_CONTEXT)
+    # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-
+    # Zweiteilung) sind hier entfernt — beide durch das globale, kontextuelle
+    # `C` oben ersetzt (AD-017). `k`/`l`/`r`/`alt+e` bleiben unverändert
+    # (Legacy, außerhalb des B6-Scopes; siehe Handoff-Report).
     bs.set_default(_key("k"), cmd.COLLAPSE, context=TOPOLOGY_CONTEXT)
-    # C ist kontextabhängig: Connect Vertices (Vertex-Mode) / Connect Edges
-    # (Edge-Mode) — Shift+C ist dadurch nicht mehr nötig.
-    bs.set_default(_key("c"), cmd.CONNECT, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("l"), cmd.EDGE_LOOP, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("r"), cmd.EDGE_RING, context=TOPOLOGY_CONTEXT)
     # Alt+E: Single-Face-Extrude (Experiment, Topology-Lab)

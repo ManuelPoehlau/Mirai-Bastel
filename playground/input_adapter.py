@@ -143,7 +143,9 @@ def determine_input_context(active_family: str | None) -> str:
 
     Playground variants can override input precedence via context.
     Currently, only "topology" family uses TOPOLOGY_CONTEXT to give
-    topology-specific bindings precedence (S→SPLIT_EDGE instead of SCALE, etc.).
+    topology-specific bindings precedence (K→Collapse, L→EdgeLoop, etc.;
+    WP-06 B6/AD-017: 'S'/SplitEdge no longer has a default here — superseded
+    by the global, contextual 'C').
 
     Args:
         active_family: Currently focused experiment family (e.g., "topology", "selection")

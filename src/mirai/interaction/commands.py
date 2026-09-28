@@ -63,13 +63,16 @@ SET_SHADED = "SetShaded"
 SET_FLAT_SHADED = "SetFlatShaded"
 SET_WIREFRAME = "SetWireframe"
 
+# CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
+# 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
+# → Vertex Connect (per-face); leere Auswahl → Knife (in Production noch
+# nicht implementiert, No-op). Siehe `mirai.topology.contextual_c` /
+# `mirai.application.Application._connect_command`.
+CONNECT = "Connect"
+
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"
 COLLAPSE = "Collapse"
-# CONNECT ist kontextabhängig: verbindet Vertices im Vertex-Mode und Edges
-# im Edge-Mode (gewünschtes Verhalten laut WP-01-BUGS_AND_TODOS; ein C-Button
-# für beide Fälle).
-CONNECT = "Connect"
 EDGE_LOOP = "EdgeLoop"
 EDGE_RING = "EdgeRing"
 LOOP_INSERT = "LoopInsert"

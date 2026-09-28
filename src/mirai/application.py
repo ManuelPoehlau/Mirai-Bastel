@@ -46,6 +46,10 @@ from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
+from .topology.connect_per_face import TopologyToolError, connect_selected_edges_per_face
+from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
+from .topology.contextual_c import CContext, resolve_c_context
+from .topology.split import split_selected_edge
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.picking import pick_component
 
@@ -329,6 +333,8 @@ class Application:
             return self._display_command(command)
         if command in _MODE_COMMANDS:
             return self._set_selection_mode(_MODE_COMMANDS[command])
+        if command == commands.CONNECT:
+            return self._connect_command()
 
         return False
 
@@ -346,6 +352,72 @@ class Application:
             self.viewport.on_selection_changed()
         self._set_status(f"Mode: {mode.name.capitalize()}")
         return True
+
+    # -- Contextual C: Split / Edge Connect / Vertex Connect (WP-06 B6, AD-017) --
+
+    def _connect_command(self) -> bool:
+        """`C`: resolves the selection context (`resolve_c_context`, same
+        dispatch as the Playground `window.py`) and applies Split / Edge
+        Connect / Vertex Connect through the shared `mirai.topology`
+        implementation. Knife (empty selection) is not yet available in
+        Production — B6 scope is only the three selection-driven contexts —
+        so it stays a no-op with its own status line. Mutates only through
+        `Mesh.split_edge`/`Mesh.connect_vertices` (ARCH-02); exactly one
+        `MeshStateCommand` per success, mesh and history untouched on
+        rejection or no-op."""
+        selection = self.selection
+        ctx = resolve_c_context(selection)
+
+        if ctx is CContext.SPLIT:
+            (edge_id,) = selection.edges
+            new_vid, _, _ = split_selected_edge(self.scene, edge_id)
+            selection.mode = SelectionMode.VERTEX
+            selection.clear()
+            selection.add({new_vid})
+            self._notify_topology_changed()
+            self._set_status("Split")
+            return True
+
+        if ctx is CContext.EDGE_CONNECT:
+            try:
+                new_edges = connect_selected_edges_per_face(self.scene, set(selection.edges))
+            except TopologyToolError as exc:
+                self._set_status(str(exc))
+                return False
+            selection.clear()
+            selection.add(set(new_edges))
+            self._notify_topology_changed()
+            self._set_status("Connect Edges")
+            return True
+
+        if ctx is CContext.VERTEX_CONNECT:
+            try:
+                new_edges = connect_vertices_per_face(self.scene, set(selection.vertices))
+            except VertexConnectError as exc:
+                self._set_status(str(exc))
+                return False
+            if not new_edges:
+                self._set_status("Vertex Connect: nothing connectable")
+                return False
+            # Residue (AD-017): the original vertices stay selected, Vertex
+            # mode unchanged — connect_vertices_per_face never touches
+            # `selection` itself.
+            self._notify_topology_changed()
+            self._set_status("Vertex Connect")
+            return True
+
+        if ctx is CContext.KNIFE:
+            self._set_status("C: Knife not available yet")
+            return False
+
+        # CContext.NONE: 1 vertex, Face mode, or another combination with no
+        # C meaning (AD-017 §7).
+        self._set_status("C: nothing to do here")
+        return False
+
+    def _notify_topology_changed(self) -> None:
+        if self.viewport is not None:
+            self.viewport.on_topology_changed()
 
     # -- Display (WP-06 B5a) ----------------------------------------------------
 
@@ -429,6 +501,12 @@ class Application:
             return self.dispatch_command(command)
         if command in _MODE_COMMANDS:
             # Kein Moduswechsel mitten in einer Geste (Playground Session Gate).
+            if self._transform_key is not None:
+                return False
+            return self.dispatch_command(command)
+        if command == commands.CONNECT:
+            # Wie die Modus-Tasten (B5b): C wird ignoriert, solange W/E/R
+            # scharf ist (Playground Session Gate).
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)

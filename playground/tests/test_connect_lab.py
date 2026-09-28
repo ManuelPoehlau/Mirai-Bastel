@@ -31,7 +31,7 @@ from playground.topology_tools.connect_edges import (  # noqa: E402
     connect_selected_edges,
     TopologyToolError,
 )
-from playground.topology_tools.connect_per_face import (  # noqa: E402
+from mirai.topology.connect_per_face import (  # noqa: E402
     connect_selected_edges_per_face as connect_pf,
 )
 
