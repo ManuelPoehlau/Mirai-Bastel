@@ -18,6 +18,10 @@ technical reference only: `playground/window.py` `_HOVER_COLOR`, selected
 - selected: production yellow `(1.0, 0.82, 0.15)`, opaque, 8 px
 - hover:    pale yellow `(0.95, 0.90, 0.35)`, alpha 0.55, 10 px — PROVISIONAL
 
+Tool layers (WP-06 B7, `overlay.TOOL_LAYERS`, Knife session): no new look -
+`tool_preview` (prospective point) uses the hover style, `tool_active`
+(start vertex) the selected style. Drawn after the selection layers.
+
 Points are round (fragment discards outside the unit circle of
 `gl_PointCoord`, 1-px smoothstep edge, blending on) and ignore depth, so
 they stay visible through the mesh (Playground behaviour).
@@ -30,7 +34,14 @@ no GL context.
 
 from __future__ import annotations
 
-from .overlay import HOVER_LAYER, POINT_LAYERS, SELECTED_LAYER
+from .overlay import (
+    HOVER_LAYER,
+    POINT_LAYERS,
+    SELECTED_LAYER,
+    TOOL_ACTIVE_LAYER,
+    TOOL_LAYERS,
+    TOOL_PREVIEW_LAYER,
+)
 
 SELECTED_COLOR = (1.0, 0.82, 0.15, 1.0)
 SELECTED_POINT_SIZE = 8.0
@@ -40,7 +51,11 @@ HOVER_POINT_SIZE = 10.0
 LAYER_STYLES: dict[str, tuple[tuple[float, float, float, float], float]] = {
     HOVER_LAYER: (HOVER_COLOR, HOVER_POINT_SIZE),
     SELECTED_LAYER: (SELECTED_COLOR, SELECTED_POINT_SIZE),
+    TOOL_PREVIEW_LAYER: (HOVER_COLOR, HOVER_POINT_SIZE),
+    TOOL_ACTIVE_LAYER: (SELECTED_COLOR, SELECTED_POINT_SIZE),
 }
+#: Draw order: selection layers, then the tool layers on top.
+DRAW_ORDER = POINT_LAYERS + TOOL_LAYERS
 
 POINT_VERTEX_SRC = """
 #version 330 core
@@ -92,7 +107,7 @@ class GLPointOverlay:
 
     def __init__(self) -> None:
         self._positions: dict[str, list[tuple[float, float, float]]] = {
-            layer: [] for layer in POINT_LAYERS
+            layer: [] for layer in DRAW_ORDER
         }
         self._vertex_lists: dict[str, object] = {}
         self._stale: set[str] = set()
@@ -142,14 +157,14 @@ class GLPointOverlay:
         self.rebuilds += 1
 
     def draw(self, camera_uniforms) -> None:
-        """Draws all non-empty layers (hover, then selected) with the given
+        """Draws all non-empty layers (`DRAW_ORDER`) with the given
         camera packet: 32 floats, view matrix then projection matrix - the
         same layout `RenderMesh` uploads as `camera_uniforms`."""
         from pyglet import gl
 
         if len(camera_uniforms) != 32:
             return
-        for layer in POINT_LAYERS:
+        for layer in DRAW_ORDER:
             if layer in self._stale:
                 self._rebuild(layer)
         self._stale.clear()
@@ -166,7 +181,7 @@ class GLPointOverlay:
         gl.glDisable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-        for layer in POINT_LAYERS:
+        for layer in DRAW_ORDER:
             vlist = self._vertex_lists.get(layer)
             if vlist is None:
                 continue

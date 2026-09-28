@@ -8,6 +8,7 @@ from .input import (
     Input,
     KEYMAP_SCHEMA_VERSION,
     KeymapConfigError,
+    KNIFE_CONTEXT,
     TOPOLOGY_CONTEXT,
 )
 from . import commands
@@ -19,6 +20,7 @@ __all__ = [
     "Input",
     "KEYMAP_SCHEMA_VERSION",
     "KeymapConfigError",
+    "KNIFE_CONTEXT",
     "TOPOLOGY_CONTEXT",
     "Tool",
     "ToolState",

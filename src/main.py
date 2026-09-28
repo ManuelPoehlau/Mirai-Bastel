@@ -1,4 +1,4 @@
-"""Production entry point — Stage B, Slices B1, B2, B2b, B3, B4, B5a + B5b.
+"""Production entry point — Stage B, Slices B1, B2, B2b, B3, B4, B5a, B5b, B6 + B7.
 
 Handoffs: "WP-06 — Slice B1: Head mesh as default scene + camera framing",
 "WP-06 — Slice B2: Navigation per Artist Truth + vertex selection,
@@ -44,7 +44,15 @@ Scope (binding, see the handoffs):
   1 / 2 / 3 switch to Vertex / Edge / Face (clears selection and hover);
   click selection, hover and W/E/R then work on edges / faces. Selected
   faces are a yellow fill (`GLTriangleOverlay`), selected edges yellow
-  lines, hover pale yellow (look `PROVISIONAL`). Status lines
+  lines, hover pale yellow (look `PROVISIONAL`). Contextual C (B6):
+  Split / Edge Connect / Vertex Connect from the selection. Knife (B7,
+  `PROVISIONAL` interaction): `C` with an empty selection starts a session
+  — hover previews the prospective point, LMB click or press-slide-release
+  (the pressed edge stays locked) cuts, a line runs from the start to the
+  prospective point; Enter or a click outside the mesh commits, Esc
+  cancels, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z undo / redo the last cut. The
+  press and drag handlers pass the cursor position through for this.
+  Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).
@@ -145,11 +153,11 @@ def main() -> None:
     def on_mouse_press(x: int, y: int, button: int, modifiers: int):
         inp = mouse_from_pyglet(button, modifiers)
         if inp is not None:
-            app.pointer_press(inp)
+            app.pointer_press(inp, x, y)
 
     @window.event
     def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
-        app.pointer_drag(dx, dy)
+        app.pointer_drag(dx, dy, x, y)
 
     @window.event
     def on_mouse_release(x: int, y: int, button: int, modifiers: int):

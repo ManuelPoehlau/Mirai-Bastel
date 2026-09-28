@@ -13,6 +13,9 @@ Layers (`LINE_LAYERS`):
   by `Viewport.sync()` only while edges are shown.
 - `hover`, `selected` (B5b): the hovered edge and the selected edges, from
   `SelectionOverlay.line_layers()`.
+- `tool_preview`, `tool_active` (B7, Knife session, `overlay.TOOL_LAYERS`):
+  the hovered/locked edge plus the start → prospective-point line preview
+  (hover style), and the session's path edges so far (selected style).
 
 The viewport draws `wire` right after the mesh and `hover`/`selected` after
 the face highlight (`draw(..., layers=...)`); this class holds no mesh or
@@ -27,7 +30,10 @@ reference only: `playground/window.py` `_EDGE_COLOR`, `_HOVER_COLOR`):
   colour for all modes instead of the Playground orange)
 
 Depth test on with `GL_LEQUAL` (E40/E45), so edges on the visible surface
-show and edges behind it are hidden; the faces are pushed back by
+show and edges behind it are hidden — except `NO_DEPTH_LAYERS`
+(`tool_preview`, B7 `PROVISIONAL`): the line preview runs straight across a
+face whose triangulated surface (non-planar quads on the head mesh) can lie
+in front of it, so it is drawn on top like the points; the faces are pushed back by
 `GLRenderStore`'s polygon offset while the wire is drawn. In pure Wireframe
 there are no faces, so every edge is visible.
 
@@ -41,12 +47,18 @@ and setting data needs no GL context.
 from __future__ import annotations
 
 from .gl_point_overlay import HOVER_COLOR, SELECTED_COLOR
-from .overlay import HOVER_LAYER, SELECTED_LAYER
+from .overlay import (
+    HOVER_LAYER,
+    SELECTED_LAYER,
+    TOOL_ACTIVE_LAYER,
+    TOOL_LAYERS,
+    TOOL_PREVIEW_LAYER,
+)
 
 WIRE_LAYER = "wire"
 #: Draw order when several layers are drawn in one call (hover under selected,
-#: like the points).
-LINE_LAYERS = (WIRE_LAYER, HOVER_LAYER, SELECTED_LAYER)
+#: like the points; tool layers last).
+LINE_LAYERS = (WIRE_LAYER, HOVER_LAYER, SELECTED_LAYER) + TOOL_LAYERS
 
 EDGE_COLOR = (0.15, 0.15, 0.15, 1.0)
 EDGE_LINE_WIDTH = 1.0
@@ -96,6 +108,8 @@ class FlatColorLayers:
 
     LAYERS: tuple[str, ...] = ()
     LAYER_STYLES: dict[str, tuple[tuple[float, float, float, float], float]] = {}
+    #: Layers drawn without the depth test (on top of the mesh).
+    NO_DEPTH_LAYERS: frozenset[str] = frozenset()
     VERTS_PER_ITEM = 1
 
     _program = None  # lazily compiled, shared across instances (one GL context)
@@ -188,6 +202,10 @@ class FlatColorLayers:
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthFunc(gl.GL_LEQUAL)
         for layer, vlist in drawn:
+            if layer in self.NO_DEPTH_LAYERS:
+                gl.glDisable(gl.GL_DEPTH_TEST)
+            else:
+                gl.glEnable(gl.GL_DEPTH_TEST)
             color, line_width = self.LAYER_STYLES[layer]
             if color[3] < 1.0:
                 gl.glEnable(gl.GL_BLEND)
@@ -211,7 +229,10 @@ class GLLineOverlay(FlatColorLayers):
         WIRE_LAYER: (EDGE_COLOR, EDGE_LINE_WIDTH),
         HOVER_LAYER: (HOVER_COLOR, HOVER_EDGE_LINE_WIDTH),
         SELECTED_LAYER: (SELECTED_COLOR, SELECTED_EDGE_LINE_WIDTH),
+        TOOL_PREVIEW_LAYER: (HOVER_COLOR, HOVER_EDGE_LINE_WIDTH),
+        TOOL_ACTIVE_LAYER: (SELECTED_COLOR, SELECTED_EDGE_LINE_WIDTH),
     }
+    NO_DEPTH_LAYERS = frozenset({TOOL_PREVIEW_LAYER})
     VERTS_PER_ITEM = 2
 
     @staticmethod

@@ -20,7 +20,7 @@ from core.operations.topology import MeshStateCommand  # noqa: E402
 from core.selection import Selection, SelectionMode  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from playground.app import PlaygroundApp  # noqa: E402
-from playground.topology_tools.knife import KnifeTool  # noqa: E402
+from mirai.topology.knife import KnifeTool  # noqa: E402
 
 
 def _topo_snapshot(mesh):

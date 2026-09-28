@@ -1,0 +1,769 @@
+"""Application: Knife session in Production (WP-06 Slice B7, AD-017).
+
+Headless (TraceStore), no pyglet/window. Path: `C` with an empty selection →
+`Application._connect_command` → `_knife_begin` → `mirai.topology.knife.
+KnifeTool` (the same session engine the Playground imports). Input during a
+session: pointer motion = hover preview (Variant A), LMB press → slide →
+release (Variant B, F1 edge lock, F2 endpoint → vertex), Enter / click
+outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z = in-session
+undo / redo; navigation keeps working, every other key is gated.
+
+Fixture: the framed default cube. Seen from the default camera, vertex 6
+(1, 1, 1) is the front corner; faces 1 (z = +1), 3 (x = +1) and 4 (y = +1)
+face the camera. The main path cuts across those three faces:
+vertex 7 → edge 5-6 → edge 2-6 → edge 7-3.
+"""
+
+from __future__ import annotations
+
+import math
+
+import pytest
+
+import tests._bootstrap  # noqa: F401
+
+from core import EdgeId, SelectionMode, VertexId
+from mirai.application import Application
+from mirai.interaction import commands as cmd
+from mirai.interaction.input import Input
+from mirai.topology.knife import KnifeTool
+from mirai.topology.knife_pick import knife_pick
+from mirai.topology.knife_preview import build_knife_render_data, target_position
+from mirai.viewport import DisplayMode
+from tests.mesh_invariants import assert_mesh_invariants
+from viewport.overlay import TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER
+
+WIDTH, HEIGHT = 800, 600
+
+
+def _key(value: str, *modifiers: str) -> Input:
+    return Input("key", value, frozenset(modifiers))
+
+
+def _mouse(value: str, *modifiers: str) -> Input:
+    return Input("mouse", value, frozenset(modifiers))
+
+
+C = _key("c")
+ENTER = _key("enter")
+ESC = _key("ESCAPE")
+CTRL_Z = _key("z", "ctrl")
+CTRL_Y = _key("y", "ctrl")
+CTRL_SHIFT_Z = _key("z", "ctrl", "shift")
+LMB = _mouse("LEFT")
+OUTSIDE = (5.0, 5.0)
+
+
+@pytest.fixture
+def app() -> Application:
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    return app
+
+
+# -- helpers -------------------------------------------------------------------
+
+
+def _v(app, index: int) -> VertexId:
+    """Cube vertex by `scene_factory.create_cube` construction order (0-7)."""
+    return sorted(app.scene.mesh.all_vertex_ids(), key=int)[index]
+
+
+def _edge(app, a: VertexId, b: VertexId) -> EdgeId:
+    mesh = app.scene.mesh
+    return next(e for e in mesh.all_edge_ids() if set(mesh.edge_vertices(e)) == {a, b})
+
+
+def _screen(app, point) -> tuple[float, float]:
+    return app.camera.project_to_screen(point, WIDTH, HEIGHT)
+
+
+def _edge_point(app, eid: EdgeId, t: float):
+    """World point at `t` along `eid` from its first endpoint."""
+    return target_position(app.scene.mesh, {"kind": "edge", "edge_id": eid, "t": t})
+
+
+def _vertex_screen(app, vid) -> tuple[float, float]:
+    return _screen(app, app.scene.mesh.vertex_position(vid))
+
+
+def _edge_screen(app, eid, t: float) -> tuple[float, float]:
+    """Screen position of the point at `t`; asserts the knife picks exactly
+    that edge there (so the test really exercises the hovered element)."""
+    pos = _screen(app, _edge_point(app, eid, t))
+    target = knife_pick(app.camera, app.scene.mesh, *pos, WIDTH, HEIGHT)
+    assert target["kind"] == "edge" and target["edge_id"] == eid, target
+    return pos
+
+
+def _click(app, pos) -> bool:
+    app.pointer_motion(*pos)
+    app.pointer_press(LMB, *pos)
+    return app.pointer_release("LEFT", *pos)
+
+
+def _begin(app) -> None:
+    app.selection.clear()
+    assert app.key_press(C) is True
+    assert app.knife_active
+
+
+def _history_depths(app) -> tuple[int, int]:
+    h = app.scene.history
+    return (len(h._undo_stack), len(h._redo_stack))
+
+
+def _topology(mesh) -> dict:
+    """`export_state()` without the monotonic ID counters (AD-001, same
+    pattern as `tests/test_application_contextual_c.py::_topology`)."""
+    return {k: v for k, v in mesh.export_state().items() if not k.endswith("_id_counter")}
+
+
+def _close(a, b, tol=1e-6) -> bool:
+    return all(abs(x - y) <= tol for x, y in zip(a, b))
+
+
+def _cut_three_faces(app):
+    """vertex 7 → edge 5-6 @0.3 → edge 2-6 @0.5 → edge 7-3 @0.5 (faces 1, 3, 4).
+    Returns the topology (`_topology`) after each accepted click (index 0 =
+    after the start click, which does not mutate)."""
+    mesh = app.scene.mesh
+    v2, v3, v5, v6, v7 = (_v(app, i) for i in (2, 3, 5, 6, 7))
+    e56, e26, e73 = _edge(app, v5, v6), _edge(app, v2, v6), _edge(app, v7, v3)
+    states = []
+    for pos in (
+        lambda: _vertex_screen(app, v7),
+        lambda: _edge_screen(app, e56, 0.3),
+        lambda: _edge_screen(app, e26, 0.5),
+        lambda: _edge_screen(app, e73, 0.5),
+    ):
+        assert _click(app, pos()) is True
+        assert_mesh_invariants(mesh, context="after knife cut")
+        states.append(_topology(mesh))
+    return states
+
+
+# -- 1. begin / not begin --------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", [SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE])
+def test_c_with_empty_selection_begins_session(app, mode):
+    app.key_press({SelectionMode.VERTEX: _key("1"), SelectionMode.EDGE: _key("2"),
+                   SelectionMode.FACE: _key("3")}[mode])
+    app.pointer_motion(*_vertex_screen(app, _v(app, 6)))
+    before = _topology(app.scene.mesh)
+
+    assert app.key_press(C) is True
+
+    assert app.knife_active
+    assert app.selection.hovered is None  # R-SEL-2: the Knife draws its own preview
+    assert app.selection.mode is mode
+    assert _topology(app.scene.mesh) == before
+    assert _history_depths(app) == (0, 0)
+    assert app.status_message.startswith("Knife:")
+
+
+def test_c_with_selection_does_not_begin_session(app):
+    app.selection.mode = SelectionMode.EDGE
+    app.selection.set({_edge(app, _v(app, 5), _v(app, 6))})
+
+    assert app.key_press(C) is True  # Split
+
+    assert not app.knife_active
+    assert app.status_message == "Split"
+
+
+# -- 2. click path ---------------------------------------------------------------
+
+
+def test_click_path_vertex_edge_edge_across_three_faces(app):
+    mesh = app.scene.mesh
+    _begin(app)
+    n_vertices = len(mesh.all_vertex_ids())
+    n_faces = len(mesh.all_face_ids())
+
+    _cut_three_faces(app)
+
+    knife = app._knife
+    assert len(knife.path_edges) == 3
+    assert len(mesh.all_vertex_ids()) == n_vertices + 3  # three edge points
+    assert len(mesh.all_face_ids()) == n_faces + 3  # three faces cut in two
+    # Consecutive path edges share their endpoints: one connected path from v7.
+    ends = [set(mesh.edge_vertices(e)) for e in knife.path_edges]
+    assert _v(app, 7) in ends[0]
+    assert ends[0] & ends[1] and ends[1] & ends[2]
+    assert knife.start in ends[2]
+    # Nothing reached the global history or the Selection yet.
+    assert _history_depths(app) == (0, 0)
+    assert app.selection.is_empty()
+
+
+def test_edge_first_click_splits_and_sets_start(app):
+    mesh = app.scene.mesh
+    _begin(app)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+    point = _edge_point(app, e56, 0.3)
+
+    assert _click(app, _edge_screen(app, e56, 0.3)) is True
+
+    start = app._knife.start
+    assert start is not None and _close(mesh.vertex_position(start), point, 1e-4)
+    assert app._knife.path_edges == []
+    assert app.status_message == "Knife: start point set"
+    assert_mesh_invariants(mesh)
+
+
+# -- 3. hover preview and line preview ---------------------------------------------
+
+
+def test_hover_vertex_shows_point_without_line_before_start(app):
+    _begin(app)
+    v7 = _v(app, 7)
+
+    app.pointer_motion(*_vertex_screen(app, v7))
+
+    data = app.knife_render_data
+    assert data.prospective_point == app.scene.mesh.vertex_position(v7)
+    assert data.start_point is None
+    assert data.line_preview is None
+    assert data.target_edge is None
+    assert app.viewport.tool_point_layers[TOOL_PREVIEW_LAYER] == [data.prospective_point]
+    assert app.viewport.tool_point_layers[TOOL_ACTIVE_LAYER] == []
+
+
+def test_hover_edge_shows_point_at_t_and_edge_highlight(app):
+    _begin(app)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+
+    app.pointer_motion(*_edge_screen(app, e56, 0.3))
+
+    data = app.knife_render_data
+    assert _close(data.prospective_point, _edge_point(app, e56, 0.3), 1e-4)
+    mesh = app.scene.mesh
+    assert set(data.target_edge) == {mesh.vertex_position(v) for v in mesh.edge_vertices(e56)}
+    assert data.line_preview is None  # no start yet
+    assert app.viewport.tool_line_layers[TOOL_PREVIEW_LAYER] == [data.target_edge]
+
+
+def test_line_preview_runs_from_start_to_prospective_point(app):
+    _begin(app)
+    v7 = _v(app, 7)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+    _click(app, _vertex_screen(app, v7))
+
+    app.pointer_motion(*_edge_screen(app, e56, 0.3))
+
+    data = app.knife_render_data
+    start = app.scene.mesh.vertex_position(v7)
+    assert data.start_point == start
+    assert data.line_preview == (start, data.prospective_point)
+    assert _close(data.prospective_point, _edge_point(app, e56, 0.3), 1e-4)
+    # Rendered: edge highlight + line in the preview layer, start in the active layer.
+    assert app.viewport.tool_line_layers[TOOL_PREVIEW_LAYER] == [data.target_edge, data.line_preview]
+    assert app.viewport.tool_point_layers[TOOL_ACTIVE_LAYER] == [start]
+
+
+def test_line_preview_follows_the_hover(app):
+    _begin(app)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+    _click(app, _vertex_screen(app, _v(app, 7)))
+
+    app.pointer_motion(*_edge_screen(app, e56, 0.3))
+    first = app.knife_render_data.line_preview
+    app.pointer_motion(*_edge_screen(app, e56, 0.6))
+    second = app.knife_render_data.line_preview
+
+    assert first[0] == second[0]
+    assert _close(second[1], _edge_point(app, e56, 0.6), 1e-4)
+
+
+def test_start_and_path_stay_drawn_while_hovering_elsewhere(app):
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    _click(app, _edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
+    start = app._knife.start
+
+    app.pointer_motion(*OUTSIDE)
+
+    data = app.knife_render_data
+    assert data.start_point == app.scene.mesh.vertex_position(start)
+    assert len(data.path_segments) == 1
+    assert data.prospective_point is None and data.line_preview is None
+    assert app.viewport.tool_line_layers[TOOL_ACTIVE_LAYER] == list(data.path_segments)
+    assert app.viewport.tool_point_layers[TOOL_ACTIVE_LAYER] == [data.start_point]
+
+
+# -- 4. press → slide → release ------------------------------------------------------
+
+
+def _offset(pos, direction, distance):
+    dx, dy = direction
+    n = math.hypot(dx, dy)
+    return (pos[0] + dx / n * distance, pos[1] + dy / n * distance)
+
+
+def _edge_normal_on_screen(app, eid):
+    a, b = (app.scene.mesh.vertex_position(v) for v in app.scene.mesh.edge_vertices(eid))
+    sa, sb = _screen(app, a), _screen(app, b)
+    return (-(sb[1] - sa[1]), sb[0] - sa[0])
+
+
+def test_press_slide_release_cuts_at_slide_position_and_keeps_lock_off_edge(app):
+    mesh = app.scene.mesh
+    _begin(app)
+    v4, v5, v7 = _v(app, 4), _v(app, 5), _v(app, 7)
+    e45 = _edge(app, v4, v5)  # on face 1 with the start v7, not incident to it
+    _click(app, _vertex_screen(app, v7))
+
+    press = _edge_screen(app, e45, 0.3)
+    app.pointer_motion(*press)
+    app.pointer_press(LMB, *press)
+    assert app.knife_locked_edge == e45
+
+    # Slide along the edge, then drift far off it: the lock holds.
+    along = _screen(app, _edge_point(app, e45, 0.6))
+    app.pointer_drag(along[0] - press[0], along[1] - press[1], *along)
+    drift = _offset(along, _edge_normal_on_screen(app, e45), 60.0)
+    fresh = knife_pick(app.camera, mesh, *drift, WIDTH, HEIGHT)
+    assert fresh.get("edge_id") != e45  # the cursor has left the edge's hit region
+    app.pointer_drag(drift[0] - along[0], drift[1] - along[1], *drift)
+
+    assert app.knife_locked_edge == e45
+    data = app.knife_render_data
+    assert data.target_edge is not None
+    expected = _edge_point(app, e45, 0.6)
+    assert _close(data.prospective_point, expected, 0.05)
+    assert data.line_preview == (mesh.vertex_position(v7), data.prospective_point)
+    assert _history_depths(app) == (0, 0)
+    assert len(app._knife.path_edges) == 0  # nothing cut before the release
+
+    assert app.pointer_release("LEFT", *drift) is True
+
+    assert app.knife_locked_edge is None
+    assert len(app._knife.path_edges) == 1
+    new_v = app._knife.start
+    assert _close(mesh.vertex_position(new_v), data.prospective_point, 1e-9)
+    assert_mesh_invariants(mesh)
+
+
+def test_release_near_endpoint_snaps_to_vertex_and_connects(app):
+    mesh = app.scene.mesh
+    _begin(app)
+    v4, v5, v7 = _v(app, 4), _v(app, 5), _v(app, 7)
+    e45 = _edge(app, v4, v5)
+    _click(app, _vertex_screen(app, v7))
+    n_vertices = len(mesh.all_vertex_ids())
+
+    press = _edge_screen(app, e45, 0.3)
+    app.pointer_press(LMB, *press)
+    near_v5 = _offset(_vertex_screen(app, v5), _edge_normal_on_screen(app, e45), 30.0)
+    app.pointer_drag(near_v5[0] - press[0], near_v5[1] - press[1], *near_v5)
+
+    assert app.knife_render_data.prospective_point == mesh.vertex_position(v5)
+
+    assert app.pointer_release("LEFT", *near_v5) is True
+
+    assert len(mesh.all_vertex_ids()) == n_vertices  # no split: vertex connect
+    (path_edge,) = app._knife.path_edges
+    assert set(mesh.edge_vertices(path_edge)) == {v7, v5}
+    assert app._knife.start == v5
+    assert_mesh_invariants(mesh)
+
+
+def test_press_release_without_movement_is_a_click_at_the_hover_position(app):
+    _begin(app)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    pos = _edge_screen(app, e56, 0.3)
+    app.pointer_motion(*pos)
+    hovered = app.knife_render_data.prospective_point
+
+    app.pointer_press(LMB, *pos)
+    assert app.pointer_release("LEFT", *pos) is True
+
+    assert _close(app.scene.mesh.vertex_position(app._knife.start), hovered, 1e-9)
+    assert len(app._knife.path_edges) == 1
+
+
+def test_unlocked_press_drag_release_is_not_a_click(app):
+    mesh = app.scene.mesh
+    _begin(app)
+    pos = _vertex_screen(app, _v(app, 7))  # a vertex: no edge lock
+    before = _topology(mesh)
+
+    app.pointer_press(LMB, *pos)
+    app.pointer_drag(20, 0, pos[0] + 20, pos[1])
+    assert app.pointer_release("LEFT", pos[0] + 20, pos[1]) is False
+
+    assert app._knife.start is None
+    assert _topology(mesh) == before
+
+
+# -- 5. in-session undo / redo -------------------------------------------------------
+
+
+def test_in_session_undo_redo_restores_session_state_and_never_touches_global_history(app):
+    mesh = app.scene.mesh
+    # A pre-session global entry the in-session Ctrl+Z must not reach.
+    app.selection.mode = SelectionMode.EDGE
+    app.selection.set({_edge(app, _v(app, 0), _v(app, 1))})
+    app.key_press(C)  # Split
+    assert _history_depths(app) == (1, 0)
+    split_state = _topology(mesh)
+    _begin(app)
+
+    states = _cut_three_faces(app)
+    knife = app._knife
+
+    assert app.key_press(CTRL_Z) is True
+    assert _topology(mesh) == states[2]
+    assert len(knife.path_edges) == 2
+    assert app.knife_render_data.start_point is not None
+    assert app.key_press(CTRL_Z) is True
+    assert _topology(mesh) == states[1]
+    assert app.key_press(CTRL_Y) is True
+    assert _topology(mesh) == states[2]
+    assert app.key_press(CTRL_SHIFT_Z) is True
+    assert _topology(mesh) == states[3]
+    assert len(knife.path_edges) == 3
+    assert app.key_press(CTRL_Y) is False  # redo branch empty
+    assert app.status_message == "Knife: nothing to redo"
+
+    # Undo every step, then once more: the session never reaches the Split.
+    for _ in range(4):
+        assert app.key_press(CTRL_Z) is True
+    assert _topology(mesh) == split_state
+    assert knife.start is None
+    assert app.key_press(CTRL_Z) is False
+    assert _topology(mesh) == split_state
+    assert _history_depths(app) == (1, 0)
+    assert_mesh_invariants(mesh)
+
+
+def test_dispatch_undo_during_session_is_routed_to_the_session(app):
+    _begin(app)
+    states = _cut_three_faces(app)
+
+    assert app.dispatch_command(cmd.UNDO) is True
+
+    assert _topology(app.scene.mesh) == states[2]
+    assert _history_depths(app) == (0, 0)
+
+
+def test_undo_redo_ignored_while_the_knife_button_is_held(app):
+    _begin(app)
+    states = _cut_three_faces(app)
+    pos = _vertex_screen(app, _v(app, 0))
+    app.pointer_press(LMB, *pos)
+
+    assert app.key_press(CTRL_Z) is False
+    assert _topology(app.scene.mesh) == states[3]
+
+
+# -- 6. cancel / commit ------------------------------------------------------------
+
+
+def test_esc_restores_pre_session_mesh_selection_and_history(app):
+    mesh = app.scene.mesh
+    app.key_press(_key("2"))  # Edge mode, empty selection
+    before_mesh = _topology(mesh)
+    _begin(app)
+    _cut_three_faces(app)
+
+    assert app.key_press(ESC) is True
+
+    assert not app.knife_active
+    assert _topology(mesh) == before_mesh
+    assert app.selection.mode is SelectionMode.EDGE
+    assert app.selection.is_empty()
+    assert _history_depths(app) == (0, 0)
+    assert app.status_message == "Knife cancelled"
+    assert all(not v for v in app.viewport.tool_point_layers.values())
+    assert all(not v for v in app.viewport.tool_line_layers.values())
+
+
+@pytest.mark.parametrize("finish", ["enter", "click_outside"])
+def test_commit_pushes_exactly_one_entry_and_selects_the_path(app, finish):
+    mesh = app.scene.mesh
+    app.key_press(_key("1"))  # Vertex mode before the session
+    _begin(app)
+    _cut_three_faces(app)
+    path = app._knife.path_edges
+
+    if finish == "enter":
+        assert app.key_press(ENTER) is True
+    else:
+        assert _click(app, OUTSIDE) is True
+
+    assert not app.knife_active
+    assert _history_depths(app) == (1, 0)
+    assert app.selection.mode is SelectionMode.EDGE
+    assert app.selection.edges == set(path)
+    assert app.status_message == "Knife committed (3 path edges selected)"
+    assert_mesh_invariants(mesh, context="after knife commit")
+    assert all(not v for v in app.viewport.tool_line_layers.values())
+
+
+def test_commit_without_cuts_pushes_nothing(app):
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))  # start only, no mutation
+
+    assert app.key_press(ENTER) is True
+
+    assert not app.knife_active
+    assert _history_depths(app) == (0, 0)
+    assert app.selection.is_empty()
+    assert app.status_message == "Knife: no cuts made, nothing committed"
+
+
+def test_global_undo_after_commit_restores_mesh_and_selection_redo_restores_residue(app):
+    mesh = app.scene.mesh
+    app.key_press(_key("3"))  # Face mode, empty selection
+    before_topology = _topology(mesh)
+    _begin(app)
+    _cut_three_faces(app)
+    app.key_press(ENTER)
+    after_state = _topology(mesh)
+    residue = set(app.selection.edges)
+
+    assert app.key_press(CTRL_Z) is True
+    assert _topology(mesh) == before_topology
+    assert app.selection.mode is SelectionMode.FACE
+    assert app.selection.is_empty()
+    assert_mesh_invariants(mesh)
+
+    assert app.key_press(CTRL_Y) is True
+    assert _topology(mesh) == after_state
+    assert app.selection.mode is SelectionMode.EDGE
+    assert app.selection.edges == residue
+    assert_mesh_invariants(mesh)
+
+
+# -- 7. session gate / navigation ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key",
+    [_key("w"), _key("e"), _key("r"), _key("1"), _key("2"), _key("3"),
+     _key("d"), _key("d", "shift"), _key("c"), _key("x"), _key("z", "shift")],
+    ids=lambda k: "+".join(sorted(k.modifiers) + [k.value]),
+)
+def test_session_gate_ignores_other_keys(app, key):
+    _begin(app)
+    states = _cut_three_faces(app)
+    mode, display = app.selection.mode, (app.display.mode, app.display.show_edges)
+    constraint = app.axis_constraint
+
+    assert app.key_press(key) is False
+    app.key_release(key)
+
+    assert app.knife_active
+    assert _topology(app.scene.mesh) == states[3]
+    assert app.selection.mode is mode
+    assert (app.display.mode, app.display.show_edges) == display
+    assert app.axis_constraint == constraint
+    assert app.transform_command is None
+
+
+def test_enter_and_ctrl_shift_z_do_nothing_outside_a_session(app):
+    assert app.key_press(ENTER) is False
+    assert app.key_press(CTRL_SHIFT_Z) is False
+    assert not app.knife_active
+
+
+def test_navigation_keeps_working_during_a_session(app):
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    mesh_state = _topology(app.scene.mesh)
+    start = app._knife.start
+    yaw, target, distance = app.camera.yaw, app.camera.target, app.camera.distance
+
+    # Alt+LMB drag = orbit
+    app.pointer_press(_mouse("LEFT", "alt"), 400, 300)
+    assert app.pointer_drag(30, 0, 430, 300) is True
+    app.pointer_release("LEFT", 430, 300)
+    assert app.camera.yaw != yaw
+    # Alt+Shift+LMB drag = pan
+    app.pointer_press(_mouse("LEFT", "alt", "shift"), 400, 300)
+    assert app.pointer_drag(0, 30, 400, 330) is True
+    app.pointer_release("LEFT", 400, 330)
+    assert app.camera.target != target
+    # Wheel = zoom
+    assert app.pointer_scroll(Input("wheel", "UP")) is True
+    assert app.camera.distance != distance
+
+    assert app.knife_active
+    assert app._knife.start == start
+    assert _topology(app.scene.mesh) == mesh_state
+    assert app.selection.is_empty()
+
+
+def test_modified_click_during_session_neither_cuts_nor_selects(app):
+    _begin(app)
+    pos = _vertex_screen(app, _v(app, 7))
+    before = _topology(app.scene.mesh)
+
+    for modifiers in (("alt",), ("shift",), ("ctrl",)):
+        app.pointer_press(_mouse("LEFT", *modifiers), *pos)
+        assert app.pointer_release("LEFT", *pos) is False
+
+    assert app._knife.start is None
+    assert _topology(app.scene.mesh) == before
+    assert app.selection.is_empty()
+
+
+# -- 8. invalid targets ----------------------------------------------------------------
+
+
+def _face_center_screen(app, vertex_indices):
+    mesh = app.scene.mesh
+    points = [mesh.vertex_position(_v(app, i)) for i in vertex_indices]
+    center = tuple(sum(p[i] for p in points) / len(points) for i in range(3))
+    return _screen(app, center)
+
+
+def _assert_no_preview(app):
+    data = app.knife_render_data
+    assert data.prospective_point is None
+    assert data.line_preview is None
+    assert app.viewport.tool_point_layers[TOOL_PREVIEW_LAYER] == []
+
+
+def _assert_click_rejected(app, pos):
+    before = _topology(app.scene.mesh)
+    start, path = app._knife.start, app._knife.path_edges
+    assert _click(app, pos) is False
+    assert app.status_message == "Knife: no valid cut target here"
+    assert _topology(app.scene.mesh) == before
+    assert (app._knife.start, app._knife.path_edges) == (start, path)
+    assert app.knife_active
+    assert _history_depths(app) == (0, 0)
+
+
+def test_face_target_has_no_preview_and_click_does_nothing(app):
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    pos = _face_center_screen(app, (2, 6, 5, 1))  # face 3
+    assert knife_pick(app.camera, app.scene.mesh, *pos, WIDTH, HEIGHT)["kind"] == "face"
+
+    app.pointer_motion(*pos)
+    _assert_no_preview(app)
+    _assert_click_rejected(app, pos)
+
+
+def test_edge_incident_to_start_has_no_preview_and_click_does_nothing(app):
+    _begin(app)
+    v7 = _v(app, 7)
+    _click(app, _vertex_screen(app, v7))
+    pos = _edge_screen(app, _edge(app, v7, _v(app, 6)), 0.5)
+
+    app.pointer_motion(*pos)
+    _assert_no_preview(app)
+    assert app.knife_render_data.target_edge is None
+    _assert_click_rejected(app, pos)
+
+
+def test_edge_sharing_no_face_with_start_has_no_preview_and_click_does_nothing(app):
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    pos = _edge_screen(app, _edge(app, _v(app, 2), _v(app, 1)), 0.5)  # faces 0, 3
+
+    app.pointer_motion(*pos)
+    _assert_no_preview(app)
+    _assert_click_rejected(app, pos)
+
+
+def test_vertex_adjacent_to_start_has_no_preview(app):
+    _begin(app)
+    v7 = _v(app, 7)
+    _click(app, _vertex_screen(app, v7))
+
+    app.pointer_motion(*_vertex_screen(app, _v(app, 6)))  # 6-7 is an edge
+
+    _assert_no_preview(app)
+
+
+def test_outside_hover_has_no_preview_and_leave_clears_it(app):
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    app.pointer_motion(*_edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
+    assert app.knife_render_data.line_preview is not None
+
+    app.pointer_motion(*OUTSIDE)
+    _assert_no_preview(app)
+
+    app.pointer_motion(*_edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
+    assert app.pointer_leave() is True
+    _assert_no_preview(app)
+
+
+# -- 9. engine preview gate and render data -----------------------------------------------
+
+
+def test_accepts_matches_click_for_every_pickable_target(app):
+    """`KnifeTool.accepts` (preview gate) must agree with `click` - checked on
+    a fresh copy of the session for each target on a screen grid."""
+    mesh = app.scene.mesh
+    _begin(app)
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    _click(app, _edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
+    knife = app._knife
+    session_state = _topology(mesh)
+    checked = set()
+    for sx in range(20, WIDTH, 23):
+        for sy in range(20, HEIGHT, 23):
+            target = knife_pick(app.camera, mesh, sx, sy, WIDTH, HEIGHT)
+            key = (target["kind"], target.get("vertex_id"), target.get("edge_id"))
+            if key in checked:
+                continue
+            checked.add(key)
+            expected = knife.accepts(target)
+            probe = KnifeTool()
+            probe.activate()
+            probe.begin(mesh=mesh, scene=app.scene, selection=app.selection)
+            probe._start = knife.start
+            assert probe.click(target) is expected, target
+            probe.cancel()
+            assert _topology(mesh) == session_state
+    kinds = {k[0] for k in checked}
+    assert {"vertex", "edge", "face", "outside"} <= kinds
+
+
+def test_render_data_has_line_only_with_start_and_target(app):
+    mesh = app.scene.mesh
+    v7, e56 = _v(app, 7), _edge(app, _v(app, 5), _v(app, 6))
+    target = {"kind": "edge", "edge_id": e56, "t": 0.25}
+
+    assert build_knife_render_data(mesh, None, target, e56, []).line_preview is None
+    assert build_knife_render_data(mesh, v7, None, None, []).line_preview is None
+    data = build_knife_render_data(mesh, v7, target, e56, [])
+    assert data.line_preview == (mesh.vertex_position(v7), _edge_point(app, e56, 0.25))
+    # Stale handles (AD-001) are skipped, not raised.
+    stale_target = {"kind": "edge", "edge_id": EdgeId(997), "t": 0.5}
+    assert build_knife_render_data(
+        mesh, VertexId(999), stale_target, EdgeId(999), [EdgeId(998)]
+    ) == build_knife_render_data(mesh, None, None, None, [])
+
+
+def test_shutdown_discards_a_running_session(app):
+    before = _topology(app.scene.mesh)
+    _begin(app)
+    _cut_three_faces(app)
+
+    app.shutdown()
+
+    assert not app.knife_active
+    assert _topology(app.scene.mesh) == before
+    assert _history_depths(app) == (0, 0)
+
+
+def test_session_gate_keeps_display_mode(app):
+    # D is gated during the session; outside it still cycles (sanity).
+    _begin(app)
+    app.key_press(_key("d"))
+    assert app.display.mode is DisplayMode.SHADED
+    app.key_press(ESC)
+    app.key_press(_key("d"))
+    assert app.display.mode is not DisplayMode.SHADED

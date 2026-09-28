@@ -563,10 +563,17 @@ def test_other_commands_are_ignored_with_hint():
 
 
 def test_enter_has_no_lab_input():
+    # A13: Enter ist im Lab nicht belegt. Seit WP-06 B7 übersetzt
+    # `key_from_pyglet` Enter (Production-Knife-Commit, nur im Kontext "knife"
+    # gebunden); im Lab-Kontext löst es weiterhin zu keinem Command auf.
     pyglet = import_pyglet()
     from mirai.pyglet_input import key_from_pyglet
 
-    assert key_from_pyglet(pyglet.window.key.ENTER, 0) is None
+    dispatcher = start(make_app())
+    inp = key_from_pyglet(pyglet.window.key.ENTER, 0)
+    assert dispatcher.resolve(inp) is None
+    assert dispatcher.key(inp) is False
+    assert dispatcher.knife_active
 
 
 def test_orbit_pan_zoom_work_during_session():

@@ -87,11 +87,10 @@ from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVarian
 from mirai.topology.contextual_c import CContext, resolve_c_context  # noqa: E402
 from mirai.topology.connect_per_face import connect_selected_edges_per_face  # noqa: E402
 from mirai.topology.connect_vertices_per_face import connect_vertices_per_face, VertexConnectError as _VertexConnectError  # noqa: E402
-from playground.topology_tools.knife import KnifeTool  # noqa: E402
-from playground.topology_tools.knife_pick import (  # noqa: E402
+from mirai.topology.knife import KnifeTool  # noqa: E402
+from mirai.topology.knife_pick import (  # noqa: E402
     knife_pick,
-    _edge_t_3d as _knife_edge_t_3d,
-    ENDPOINT_THRESHOLD as _KNIFE_ENDPOINT_THRESHOLD,
+    project_locked_edge as _knife_project_locked_edge,
 )
 from playground.experiments.knife.variant_a import KnifeVariantA  # noqa: E402
 from playground.experiments.knife.variant_b import KnifeVariantB  # noqa: E402
@@ -141,26 +140,6 @@ from mirai.interaction.tools.selection_helpers import (  # noqa: E402
     selection_normal,
 )
 from mirai.interaction.tools.transform import _face_tangent_basis  # noqa: E402
-
-# -- Knife helpers -----------------------------------------------------------
-
-def _knife_project_locked_edge(camera, mesh, x, y, width, height, locked_eid):
-    """Project cursor ray onto a locked edge, applying endpoint-threshold snap.
-
-    Returns a target dict identical to knife_pick() output but always referencing
-    the locked edge — the cursor may be anywhere on screen.
-    """
-    origin, direction = camera.screen_to_ray(x, y, width, height)
-    va, vb = mesh.edge_vertices(locked_eid)
-    p0 = mesh.vertex_position(va)
-    p1 = mesh.vertex_position(vb)
-    t = _knife_edge_t_3d(origin, direction, p0, p1)
-    if t <= _KNIFE_ENDPOINT_THRESHOLD:
-        return {"kind": "vertex", "vertex_id": va}
-    if t >= 1.0 - _KNIFE_ENDPOINT_THRESHOLD:
-        return {"kind": "vertex", "vertex_id": vb}
-    return {"kind": "edge", "edge_id": locked_eid, "t": t}
-
 
 # -- Shader-Quellen ----------------------------------------------------------
 

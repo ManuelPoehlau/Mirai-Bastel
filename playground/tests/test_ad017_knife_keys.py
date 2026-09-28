@@ -47,7 +47,7 @@ def _depths(app):
 
 def _arm_knife(win):
     """Arm a Knife session exactly like the window's C-key path does."""
-    from playground.topology_tools.knife import KnifeTool
+    from mirai.topology.knife import KnifeTool
     knife = KnifeTool()
     knife.activate()
     knife.begin(

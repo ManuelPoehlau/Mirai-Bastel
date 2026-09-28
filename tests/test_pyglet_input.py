@@ -76,6 +76,11 @@ class TestKeyFromPyglet:
         inp = key_from_pyglet(symbol, 0)
         assert inp == Input("key", value, frozenset())
 
+    @pytest.mark.parametrize("symbol", [_key.ENTER, _key.NUM_ENTER])
+    def test_enter_and_keypad_enter_are_enter(self, symbol):
+        # WP-06 B7: Knife commit (Artist Input Truth `topology.knife_commit`).
+        assert key_from_pyglet(symbol, 0) == Input("key", "enter", frozenset())
+
     def test_unknown_symbol_returns_none(self):
         assert key_from_pyglet(999999, 0) is None
 

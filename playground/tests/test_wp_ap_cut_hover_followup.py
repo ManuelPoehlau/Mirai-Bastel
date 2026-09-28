@@ -5,11 +5,10 @@ the projection onto the edge must apply the same ENDPOINT_THRESHOLD snap as
 knife_pick() uses — returning a vertex target near the endpoints and an edge target
 in the middle.
 
-The function is replicated here as a pure function so it can be tested without
-importing window.py (which would require a full GL context).  It shares the same
-ENDPOINT_THRESHOLD constant and _edge_t_3d function from knife_pick.py, so there
-is no duplicated threshold logic — only duplicated function structure for import
-isolation purposes.
+WP-06 Slice B7: the function was extracted from window.py into
+`mirai.topology.knife_pick.project_locked_edge`; the local replica that used to
+live here (import isolation from window.py's GL context) is replaced by an
+import of the real function. Test cases unchanged.
 """
 
 from __future__ import annotations
@@ -23,14 +22,14 @@ for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"),
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from playground.topology_tools.knife_pick import (  # noqa: E402
-    _edge_t_3d,
+from mirai.topology.knife_pick import (  # noqa: E402
     ENDPOINT_THRESHOLD,
+    project_locked_edge as _project_locked_edge,
 )
 
 
 # ---------------------------------------------------------------------------
-# Pure-function replica of _knife_project_locked_edge for headless testing
+# Stubs
 # ---------------------------------------------------------------------------
 
 class _FakeMesh:
@@ -58,20 +57,6 @@ class _FakeCamera:
     """Minimal camera stub: screen_to_ray returns a fixed -Z ray through (x, y, 5)."""
     def screen_to_ray(self, x, y, width, height):
         return (float(x), float(y), 5.0), (0.0, 0.0, -1.0)
-
-
-def _project_locked_edge(camera, mesh, x, y, width, height, locked_eid):
-    """Local replica of window._knife_project_locked_edge for headless testing."""
-    origin, direction = camera.screen_to_ray(x, y, width, height)
-    va, vb = mesh.edge_vertices(locked_eid)
-    p0 = mesh.vertex_position(va)
-    p1 = mesh.vertex_position(vb)
-    t = _edge_t_3d(origin, direction, p0, p1)
-    if t <= ENDPOINT_THRESHOLD:
-        return {"kind": "vertex", "vertex_id": va}
-    if t >= 1.0 - ENDPOINT_THRESHOLD:
-        return {"kind": "vertex", "vertex_id": vb}
-    return {"kind": "edge", "edge_id": locked_eid, "t": t}
 
 
 # ---------------------------------------------------------------------------

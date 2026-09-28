@@ -38,6 +38,13 @@ auch `line_layers` (gehoverte/selektierte Edges als Segmente) und
 Edge-Layer gehen an dasselbe `line_overlay` wie die Wire-Segmente.
 Zeichenreihenfolge: Mesh → Wire → Faces → Edges → Punkte.
 
+Tool-Layer (WP-06 B7, Knife-Session): `set_tool_overlay(points, segments)`
+nimmt fertige Weltpositionen für `overlay.TOOL_LAYERS` entgegen (der
+Viewport kennt kein Knife) und reicht sie sofort an Punkt- bzw. Linien-
+Overlay weiter; sichtbar headless in `tool_point_layers`/`tool_line_layers`.
+Gezeichnet werden sie nach den Selection-Layern (Linien: Pfad-Edges mit
+Depth-Test, Preview ohne; Punkte wie alle Punkte ohne Depth-Test).
+
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
 
@@ -46,7 +53,14 @@ from __future__ import annotations
 from core import Mesh, Selection, VertexId
 
 from .gl_line_overlay import WIRE_LAYER
-from .overlay import HOVER_LAYER, SELECTED_LAYER, SelectionOverlay
+from .overlay import (
+    HOVER_LAYER,
+    SELECTED_LAYER,
+    TOOL_ACTIVE_LAYER,
+    TOOL_LAYERS,
+    TOOL_PREVIEW_LAYER,
+    SelectionOverlay,
+)
 from .render_mesh import RenderMesh
 from .resource_store import ResourceStore, TraceStore
 from .wireframe import edge_segments
@@ -89,6 +103,8 @@ class Viewport:
         )
         self.edge_segments: list = []
         self._edges_dirty = True
+        self.tool_point_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
+        self.tool_line_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
         # Startzustand = DisplayState-Default (Shaded, kein Overlay).
         self.show_faces = True
         self.show_edges = False
@@ -103,6 +119,33 @@ class Viewport:
         self.show_edges = bool(show_edges)
         self.flat = bool(flat)
         self._apply_draw_style()
+
+    # -- Tool-Layer (WP-06 B7) -------------------------------------------------
+
+    def set_tool_overlay(self, points=None, segments=None) -> None:
+        """Ersetzt die Tool-Layer (`TOOL_LAYERS`): `points`/`segments` sind
+        `{layer: [...]}`; fehlende Layer bzw. `None` = leer. Reiner
+        Overlay-Zustand - keine Base-Geometrie, kein Selection-Bezug."""
+        points = points or {}
+        segments = segments or {}
+        for layer in TOOL_LAYERS:
+            self.tool_point_layers[layer] = [tuple(p) for p in points.get(layer, ())]
+            self.tool_line_layers[layer] = [tuple(s) for s in segments.get(layer, ())]
+            if self.point_overlay is not None:
+                self.point_overlay.set_points(layer, self.tool_point_layers[layer])
+            if self.line_overlay is not None:
+                self.line_overlay.set_segments(self.tool_line_layers[layer], layer=layer)
+        self._update_edge_highlight()
+
+    def _update_edge_highlight(self) -> None:
+        # Pfad-Edges liegen wie das Edge-Highlight auf den Faces (Polygon-
+        # Offset nötig); die Preview-Linie zeichnet ohne Depth-Test.
+        edge_highlight = any(self.line_layers.values()) or bool(
+            self.tool_line_layers[TOOL_ACTIVE_LAYER]
+        )
+        if edge_highlight != self._edge_highlight:
+            self._edge_highlight = edge_highlight
+            self._apply_draw_style()
 
     def _apply_draw_style(self) -> None:
         # Polygon-Offset, sobald Linien auf den Faces liegen: Wire (E40) oder
@@ -171,10 +214,7 @@ class Viewport:
         if self.line_overlay is not None:
             for layer, segments in self.line_layers.items():
                 self.line_overlay.set_segments(segments, layer=layer)
-        edge_highlight = any(self.line_layers.values())
-        if edge_highlight != self._edge_highlight:
-            self._edge_highlight = edge_highlight
-            self._apply_draw_style()
+        self._update_edge_highlight()
         self.face_layers = self.overlay.face_layers(self.mesh)
         if self.face_overlay is not None:
             for layer, triangles in self.face_layers.items():
@@ -202,8 +242,8 @@ class Viewport:
         (Duck-Typing-Bindung, siehe Paket-Docstring)."""
         if self.render_mesh.camera is None:
             return None
-        # Reihenfolge (E40, E45): Mesh, Wire, Face-Highlight, Edge-Highlight,
-        # Punkte.
+        # Reihenfolge (E40, E45, B7): Mesh, Wire, Face-Highlight,
+        # Edge-Highlight, Tool-Linien, Punkte.
         if self.show_faces:
             self.render_mesh.render(self.render_mesh.camera)
         if (
@@ -222,6 +262,8 @@ class Viewport:
             self.face_overlay.draw(camera_uniforms)
         if self.line_overlay is not None and any(self.line_layers.values()):
             self.line_overlay.draw(camera_uniforms, layers=(HOVER_LAYER, SELECTED_LAYER))
+        if self.line_overlay is not None and any(self.tool_line_layers.values()):
+            self.line_overlay.draw(camera_uniforms, layers=(TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER))
         if self.point_overlay is not None:
             self.point_overlay.draw(camera_uniforms)
 

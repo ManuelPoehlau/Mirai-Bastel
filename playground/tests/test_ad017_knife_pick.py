@@ -4,7 +4,8 @@ Covers §1.8 of WP-AP-CUT_PLAN.md — "edge hit with perspective-correct 3D `t`
 (closest point between the view ray and the edge segment; screen-space t is not
 sufficient); t within a documented endpoint threshold → treat as that vertex".
 
-Contract locked here (`playground/topology_tools/knife_pick.py`):
+Contract locked here (`src/mirai/topology/knife_pick.py`, moved from
+`playground/topology_tools/` in WP-06 Slice B7):
     t = 0.0 at the first endpoint (p0) · t ≈ 0.5 in the middle ·
     t = 1.0 at the second endpoint (p1), clamped to [0, 1] outside the edge.
 
@@ -32,7 +33,7 @@ for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"),
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from playground.topology_tools.knife_pick import _edge_t_3d  # noqa: E402
+from mirai.topology.knife_pick import _edge_t_3d  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

@@ -65,10 +65,15 @@ SET_WIREFRAME = "SetWireframe"
 
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
-# → Vertex Connect (per-face); leere Auswahl → Knife (in Production noch
-# nicht implementiert, No-op). Siehe `mirai.topology.contextual_c` /
+# → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).
+# Siehe `mirai.topology.contextual_c` /
 # `mirai.application.Application._connect_command`.
 CONNECT = "Connect"
+# KNIFE_COMMIT (WP-06 B7, Artist Input Truth `topology.knife_commit`): schließt
+# eine laufende Knife-Session als genau einen History-Eintrag ab. Nur im
+# KNIFE_CONTEXT gebunden (Enter). Abbrechen = CANCEL, Undo/Redo des letzten
+# Schnitts = UNDO/REDO, während der Session auf die Session-History geroutet.
+KNIFE_COMMIT = "KnifeCommit"
 
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"

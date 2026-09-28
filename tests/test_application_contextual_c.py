@@ -9,8 +9,9 @@ Edge Connect / Vertex Connect (`mirai.topology.split` /
 per_face`) — dieselbe Implementierung, die auch der Playground importiert
 (kein zweiter Codepfad).
 
-Knife (leere Auswahl) ist in B6 nicht gebaut: No-op mit eigener Statuszeile,
-siehe `test_empty_selection_is_knife_noop`.
+Knife (leere Auswahl) war in B6 ein No-op; seit WP-06 B7 beginnt `C` hier
+eine Knife-Session (`test_empty_selection_begins_knife_session`, Session-
+Verhalten in `tests/test_application_knife.py`).
 """
 
 from __future__ import annotations
@@ -311,11 +312,12 @@ def test_vertex_connect_adjacent_vertices_no_op(app):
 
 
 # ---------------------------------------------------------------------------
-# 4. Knife (empty selection) — not in B6 scope: no-op
+# 4. Knife (empty selection) — WP-06 B7: begins a session (was a B6 no-op);
+#    the session itself is covered in tests/test_application_knife.py
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("mode", [SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE])
-def test_empty_selection_is_knife_noop(app, mode):
+def test_empty_selection_begins_knife_session(app, mode):
     mesh = app.scene.mesh
     sel = app.scene.selection
     sel.mode = mode
@@ -324,11 +326,12 @@ def test_empty_selection_is_knife_noop(app, mode):
     before_state = mesh.export_state()
     before_hist = len(app.history)
 
-    assert app.key_press(C) is False
+    assert app.key_press(C) is True
 
+    assert app.knife_active
     assert mesh.export_state() == before_state
     assert len(app.history) == before_hist
-    assert app.status_message == "C: Knife not available yet"
+    assert sel.mode is mode
 
 
 # ---------------------------------------------------------------------------

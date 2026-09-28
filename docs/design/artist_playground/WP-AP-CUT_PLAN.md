@@ -18,6 +18,11 @@ AD-017-CUT-ENGINE-CONTEXTUAL-C.md` §10 and `docs/architecture/ROADMAP.md` §WP-
 the promotion record. Knife (not built in B6) and the rejected strip-semantics `connect_edges.py` stay in
 `playground/topology_tools/` as this brief left them.
 
+**Addendum (2026-09-28, WP-06 Slice B7):** the Knife (§1.7 `knife.py`, §1.8 `knife_pick.py`) was moved —
+not copied — to `src/mirai/topology/` as well, together with the F1 locked-edge projection from
+`playground/window.py` (now `mirai.topology.knife_pick.project_locked_edge`). The §1.7/§1.8 paths below are
+where this brief built them. See AD-017 §11 and the ROADMAP intake log (Slice B7).
+
 ---
 
 ## 0. Pre-implementation consistency check (2026-09-22)

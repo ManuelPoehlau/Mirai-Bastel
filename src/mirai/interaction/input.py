@@ -30,7 +30,8 @@ plattform-Events in `Input`-Objekte (die einzige Stelle mit einer Render-/
 Fenster-Abhängigkeit).
 
 Context bleibt minimal: Es gibt einen GLOBAL_CONTEXT plus optionale
-benannte Kontexte (hier: TOPOLOGY_CONTEXT für die Topology-Lab-Belegung).
+benannte Kontexte (hier: TOPOLOGY_CONTEXT für die Topology-Lab-Belegung,
+KNIFE_CONTEXT für die Tasten einer laufenden Knife-Session, WP-06 B7).
 Bei der Auflösung gewinnt der spezifische Kontext, sonst greift der
 GLOBAL_CONTEXT-Fallback.
 
@@ -48,12 +49,15 @@ from typing import Any, Optional
 
 GLOBAL_CONTEXT = "global"
 TOPOLOGY_CONTEXT = "topology"
+#: WP-06 B7: während einer Knife-Session aufgelöst (Enter = Commit,
+#: Ctrl+Shift+Z = Redo); alles andere fällt auf GLOBAL_CONTEXT zurück.
+KNIFE_CONTEXT = "knife"
 
 KEYMAP_SCHEMA_VERSION = 1
 
 _VALID_KINDS = ("key", "mouse", "drag", "wheel")
 _VALID_MODIFIERS = ("ctrl", "shift", "alt")
-_VALID_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT)
+_VALID_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT)
 
 
 class KeymapConfigError(ValueError):

@@ -1,5 +1,10 @@
 """Knife picking — resolve screen cursor to knife target (AD-017 §1.8).
 
+Moved (not copied) from `playground/topology_tools/knife_pick.py` in WP-06
+Slice B7; `project_locked_edge` was extracted from `playground/window.py`
+(`_knife_project_locked_edge`, F1 edge lock) in the same slice. Logic
+unchanged.
+
 Reuses src/mirai/viewport/picking.py without modification.
 Priority order: vertex hit first; else edge hit with perspective-correct 3D t;
 endpoint threshold → treat as vertex; else face hit → "on mesh, no target";
@@ -11,7 +16,7 @@ segment in world space (not screen space).
 
 from __future__ import annotations
 
-from mirai.viewport.picking import pick_nearest_vertex, pick_nearest_edge, pick_face
+from ..viewport.picking import pick_nearest_vertex, pick_nearest_edge, pick_face
 
 ENDPOINT_THRESHOLD = 0.05  # t values within this threshold of 0 or 1 snap to vertex
 
@@ -119,3 +124,22 @@ def knife_pick(
     if debug:
         print("[KNIFE] pick -> outside")
     return {"kind": "outside"}
+
+
+def project_locked_edge(camera, mesh, x, y, width, height, locked_eid) -> dict:
+    """Project cursor ray onto a locked edge, applying endpoint-threshold snap.
+
+    Returns a target dict identical to knife_pick() output but always referencing
+    the locked edge — the cursor may be anywhere on screen (F1 edge lock, F2
+    vertex-kind release: near an endpoint the target becomes that vertex).
+    """
+    origin, direction = camera.screen_to_ray(x, y, width, height)
+    va, vb = mesh.edge_vertices(locked_eid)
+    p0 = mesh.vertex_position(va)
+    p1 = mesh.vertex_position(vb)
+    t = _edge_t_3d(origin, direction, p0, p1)
+    if t <= ENDPOINT_THRESHOLD:
+        return {"kind": "vertex", "vertex_id": va}
+    if t >= 1.0 - ENDPOINT_THRESHOLD:
+        return {"kind": "vertex", "vertex_id": vb}
+    return {"kind": "edge", "edge_id": locked_eid, "t": t}

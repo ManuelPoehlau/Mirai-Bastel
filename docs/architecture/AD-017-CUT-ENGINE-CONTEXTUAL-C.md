@@ -254,3 +254,19 @@ No `src/core` change was needed: `Mesh.split_edge(edge_id, t=0.5)` (B1b) and `Me
 already supported everything §4 required. `C` is wired in `src/main.py` per §"Selection residue" above,
 through `Application._connect_command`; implementation and test details are in the WP-06 Slice B6 handoff
 and `docs/architecture/ROADMAP.md`.
+
+## 11. Addendum (2026-09-28) — Knife session engine in `src/mirai/topology/` (WP-06 Slice B7)
+
+The Knife session engine (§"Knife", the DECIDED residue and in-session Redo / history-isolation addenda
+above) was moved — not copied — from `playground/topology_tools/` to `src/mirai/topology/knife.py` and
+`src/mirai/topology/knife_pick.py`; the F1 locked-edge projection (`_knife_project_locked_edge` in
+`playground/window.py`) moved into `knife_pick.py` as `project_locked_edge`. Logic unchanged; the Playground
+imports it from there, its Variant A/B stay as they are. Additive, Playground-unused API:
+`KnifeTool.start`, `KnifeTool.path_edges`, `KnifeTool.accepts(target)` (click acceptance without mutation).
+New: `src/mirai/topology/knife_preview.py` (headless render data incl. the line preview).
+
+The engine is **PROMOTED** (this AD, DECIDED). The Production *interaction* — one combined Knife: hover
+preview, press → slide → release with edge lock, and a line preview from the start to the prospective point
+(Artist decision Manu 2026-09-28) — is **PROVISIONAL**, verdict pending. §7's open questions stay open
+except that the preview/mouse UX now has a provisional Production answer; face-interior cutting remains a
+separate Discovery. Record: `docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B7, 2026-09-28).

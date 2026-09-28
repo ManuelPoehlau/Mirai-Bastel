@@ -62,6 +62,16 @@ HOVER_LAYER = "hover"
 SELECTED_LAYER = "selected"
 POINT_LAYERS = (HOVER_LAYER, SELECTED_LAYER)
 
+#: Tool-Layer (WP-06 B7): Overlay-Geometrie einer laufenden modalen Tool-
+#: Session (derzeit nur Knife), unabhängig von `Selection`. Kein eigener
+#: Look: `tool_preview` zeichnet im Hover-Stil (prospektiver Punkt, gehoverte
+#: bzw. gelockte Edge, Linien-Preview), `tool_active` im Selected-Stil
+#: (Start-Vertex, bisherige Pfad-Edges). Die Positionen kommen fertig vom
+#: Aufrufer (`Viewport.set_tool_overlay`); diese Klasse berechnet sie nicht.
+TOOL_PREVIEW_LAYER = "tool_preview"
+TOOL_ACTIVE_LAYER = "tool_active"
+TOOL_LAYERS = (TOOL_PREVIEW_LAYER, TOOL_ACTIVE_LAYER)
+
 
 class OverlayElementKind(Enum):
     VERTEX = auto()

@@ -38,11 +38,20 @@ input_binding.BindingSet.command_for).
 
 Contextual C (WP-06 B6, AD-017): `C` ist GLOBAL, nicht Topology-Lab —
 Split (Edge-Modus, 1 Edge) / Edge Connect (Edge-Modus, 2+ Edges) / Vertex
-Connect (Vertex-Modus, 2+ Vertices); leere Auswahl = Knife, in Production
-noch nicht verfügbar (No-op mit eigener Statuszeile). Ignoriert, solange
-W/E/R scharf ist (`Application.key_press`, wie die Modus-Tasten). Ersetzt
-die alten Topology-Lab-Tasten `s` (SplitEdge) und `c` (Connect); siehe
-`mirai.topology`.
+Connect (Vertex-Modus, 2+ Vertices); leere Auswahl = Knife-Session (WP-06
+B7). Ignoriert, solange W/E/R scharf ist (`Application.key_press`, wie die
+Modus-Tasten). Ersetzt die alten Topology-Lab-Tasten `s` (SplitEdge) und
+`c` (Connect); siehe `mirai.topology`.
+
+Knife-Session (WP-06 B7, AD-017; Kontext "knife", nur während einer
+Session aufgelöst, sonst ungebunden):
+- Enter           → KnifeCommit (genau ein History-Eintrag)
+- Ctrl+Shift+Z    → Redo (alternative Geste, AD-017 DECIDED 2026-09-22)
+Esc (Cancel), Ctrl+Z (Undo) und Ctrl+Y (Redo) kommen über den GLOBAL-
+Fallback; `Application` routet sie während der Session auf die Knife-
+Session-History. LMB gehört während der Session dem Knife (kein Binding —
+`Application.pointer_press`), Alt+LMB-Drag/Alt+Shift+LMB-Drag/Wheel
+navigieren weiter.
 
 Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
 und gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
@@ -56,7 +65,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import commands as cmd
-from .input import BindingSet, Input, TOPOLOGY_CONTEXT
+from .input import KNIFE_CONTEXT, BindingSet, Input, TOPOLOGY_CONTEXT
 
 
 def _key(value: str, *modifiers: str) -> Input:
@@ -105,10 +114,17 @@ def build_default_bindings() -> BindingSet:
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
     # WP-06 B6 (AD-017): Contextual C — Split (1 edge) / Edge Connect (2+
-    # edges) / Vertex Connect (2+ vertices); empty selection = Knife, not
-    # yet available in Production (no-op, own status line). Global, not
-    # TOPOLOGY_CONTEXT — Artist Input Truth `topology.connect`.
+    # edges) / Vertex Connect (2+ vertices); empty selection = Knife session
+    # (WP-06 B7). Global, not TOPOLOGY_CONTEXT — Artist Input Truth
+    # `topology.connect`.
     bs.set_default(_key("c"), cmd.CONNECT)
+
+    # --- Knife session (WP-06 B7, AD-017; context "knife") ------------------
+    # Artist Input Truth `topology.knife_commit` (Enter); Ctrl+Shift+Z is the
+    # alternative in-session Redo gesture (AD-017 DECIDED 2026-09-22). Bound
+    # only in this context, so neither key does anything outside a session.
+    bs.set_default(_key("enter"), cmd.KNIFE_COMMIT, context=KNIFE_CONTEXT)
+    bs.set_default(_key("z", "ctrl", "shift"), cmd.REDO, context=KNIFE_CONTEXT)
 
     # --- Display ------------------------------------------------------------
     bs.set_default(_key("d"), cmd.CYCLE_DISPLAY_MODE)

@@ -1,5 +1,10 @@
 """Knife session tool — incremental explicit path cutting (AD-017 §1.7).
 
+Moved (not copied) from `playground/topology_tools/knife.py` in WP-06 Slice
+B7 (session engine PROMOTED, AD-017 DECIDED); logic unchanged. Production
+(`mirai.application`) and the Playground (`playground/window.py`) share this
+one implementation.
+
 Modal tool. Headless-testable (no window code).
 History: in-session mutations are NOT pushed to global history.
 Commit: pushes exactly one MeshStateCommand; selects the connecting-edge path.
@@ -16,9 +21,8 @@ from typing import Any
 from core import EdgeId, VertexId
 from core.operations.topology import MeshStateCommand
 from core.selection import Selection, SelectionMode
-from mirai.interaction.tool import Tool
-
-from mirai.topology.topology_points import connect_in_shared_face
+from ..interaction.tool import Tool
+from .topology_points import connect_in_shared_face
 
 
 @dataclass
@@ -26,6 +30,22 @@ class _KnifeStep:
     state_before: Any
     start_before: VertexId | None
     path_edges_before: list[EdgeId]
+
+
+def _connectable_in_shared_face(mesh, a: VertexId, b: VertexId) -> bool:
+    """Non-mutating mirror of `connect_in_shared_face`'s face search: some face
+    contains both vertices and they are not adjacent (nor identical) in it."""
+    if a == b:
+        return False
+    for fid in mesh.all_face_ids():
+        boundary = mesh.face_vertices(fid)
+        if a not in boundary or b not in boundary:
+            continue
+        n = len(boundary)
+        dist = (boundary.index(b) - boundary.index(a)) % n
+        if dist not in (1, n - 1):
+            return True
+    return False
 
 
 class KnifeTool(Tool):
@@ -66,6 +86,48 @@ class KnifeTool(Tool):
         self._step_stack = []
         self._redo_stack = []
         print("[KNIFE] session begin (start=none, path_edges=0, state captured)")
+
+    @property
+    def start(self) -> VertexId | None:
+        """Current start vertex (tool state, not Selection); None before the first click."""
+        return self._start
+
+    @property
+    def path_edges(self) -> list[EdgeId]:
+        """The session's connecting edges so far, in creation order (copy)."""
+        return list(self._path_edges)
+
+    def accepts(self, target: dict) -> bool:
+        """Would `click(target)` be accepted? No mutation (WP-06 B7 preview gate).
+
+        Same acceptance rules as `click()`, including the ones `hover()` does
+        not check (edge sharing no face with the start; vertex that is the
+        start or adjacent to it in every shared face). Kept separate from
+        `hover()` so the Playground's preview behaviour stays unchanged.
+        """
+        kind = target.get("kind") if target else None
+        if kind == "vertex":
+            vid = target.get("vertex_id")
+            if vid is None or not self._mesh.is_valid_vertex(vid):
+                return False
+            if self._start is None:
+                return True
+            return _connectable_in_shared_face(self._mesh, self._start, vid)
+        if kind == "edge":
+            eid = target.get("edge_id")
+            t = target.get("t", 0.5)
+            if eid is None or not self._mesh.is_valid_edge(eid) or not (0.0 < t < 1.0):
+                return False
+            if self._start is None:
+                return True
+            if self._start in self._mesh.edge_vertices(eid):
+                return False
+            start_faces = set(
+                f for e in self._mesh.vertex_edges(self._start)
+                for f in self._mesh.edge_faces(e)
+            )
+            return bool(start_faces & set(self._mesh.edge_faces(eid)))
+        return False
 
     def hover(self, target: dict) -> dict:
         """Return preview info without mutating the mesh.
