@@ -65,11 +65,13 @@ def _screen(app, vid) -> tuple[float, float]:
 
 
 def _visible_targets(app) -> list[VertexId]:
-    """Vertices, die ein Hover/Klick auf ihre Projektion auch trifft."""
+    """Vertices, die ein Hover/Klick auf ihre Projektion auch trifft.
+    `occlusion=True` (WP-06 B8): matches `Application._pick()`'s default
+    Shaded occlusion, which excludes the cube's one fully hidden corner."""
     hits = []
     for vid in sorted(app.scene.mesh.all_vertex_ids()):
         sx, sy = _screen(app, vid)
-        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT) == vid:
+        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT, occlusion=True) == vid:
             hits.append(vid)
     assert len(hits) >= 2
     return hits

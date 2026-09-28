@@ -57,6 +57,7 @@ from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .topology.split import split_selected_edge
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.picking import pick_component
+from .viewport.picking_cache import PickCache
 
 
 #: Orbit-Rate (rad/px) und Dolly-Faktoren — aus `src/main.py` (Stage A/B1)
@@ -173,6 +174,15 @@ class Application:
         # Viewport-State (kein Rendering in Gate 3)
         self.camera: OrbitCamera = OrbitCamera()
         self.display: DisplayState = DisplayState()
+
+        # WP-06 B8 (picking speed + occlusion, PROVISIONAL): screen-space pick
+        # cache, refreshed lazily per camera/mesh state (`picking_cache.py`).
+        # Orbit/zoom/pan invalidate it automatically (keyed on
+        # `camera.camera_revision`); every other trigger from the handoff
+        # (Move/Rotate/Scale commit, Undo/Redo, Split/Connect, Knife cut,
+        # display-mode change) calls `self._pick_cache.invalidate()`
+        # explicitly at its existing mutation/notification call site.
+        self._pick_cache: PickCache = PickCache()
 
         # Gate 7: V0.2 Viewport wird in init_scene() mit dem Mesh gebunden.
         # Bliebt None, bis init_scene() aufgerufen wurde (kein Mesh verfügbar).
@@ -483,6 +493,7 @@ class Application:
         Aufbau der Overlays (AD-001: Gültigkeit wird über
         `mesh.is_valid_*()` geprüft, nie über die ID selbst).
         """
+        self._pick_cache.invalidate()
         if self.viewport is not None:
             self.viewport.on_topology_changed()
         self._refresh_hover()
@@ -593,6 +604,7 @@ class Application:
             self._set_status("Knife: no valid cut target here")
             self._refresh_hover()
             return False
+        self._pick_cache.invalidate()
         self.viewport.on_topology_changed()
         path = len(self._knife.path_edges)
         if path == before_path:
@@ -612,6 +624,7 @@ class Application:
         if not done:
             self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
             return False
+        self._pick_cache.invalidate()
         self.viewport.on_topology_changed()
         self._set_status("Knife: last cut undone" if undo else "Knife: cut redone")
         self._refresh_hover()
@@ -645,6 +658,7 @@ class Application:
             self._set_status("Knife: no cuts made, nothing committed")
         else:
             self._set_status("Knife cancelled")
+        self._pick_cache.invalidate()
         self.viewport.set_tool_overlay()
         self.viewport.on_topology_changed()
         self.viewport.on_selection_changed()
@@ -655,8 +669,17 @@ class Application:
         return self._knife_set_preview(self._knife_pick(x, y))
 
     def _knife_pick(self, x: float, y: float) -> dict:
+        """WP-06 B8: same cache/occlusion as `_pick()` - a hidden edge/vertex
+        cannot be a Knife target while faces are shown."""
         return knife_pick(
-            self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
+            self.camera,
+            self.scene.mesh,
+            x,
+            y,
+            self.viewport_width,
+            self.viewport_height,
+            cache=self._pick_cache,
+            occlusion=self.display.show_faces,
         )
 
     def _knife_set_preview(self, target: dict) -> bool:
@@ -714,7 +737,10 @@ class Application:
 
     def _apply_display(self) -> None:
         """E36: `DisplayState` → Grundwerte für `Viewport.set_display` (der
-        Viewport kennt kein `DisplayState`)."""
+        Viewport kennt kein `DisplayState`). WP-06 B8: the pick cache's
+        occlusion pre-filter depends on `show_faces` - invalidated on every
+        display-mode change, including the initial one from `init_scene()`."""
+        self._pick_cache.invalidate()
         if self.viewport is None:
             return
         self.viewport.set_display(
@@ -896,6 +922,7 @@ class Application:
         self.tool_manager.update(
             dx=float(dx), dy=float(dy), width=self.viewport_width, height=self.viewport_height
         )
+        self._pick_cache.invalidate()
         self.viewport.on_vertices_moved(self._active_transform_vertex_ids())
         return True
 
@@ -926,6 +953,7 @@ class Application:
         if self._transform_begun:
             moved = self._active_transform_vertex_ids()
             self.tool_manager.cancel()
+            self._pick_cache.invalidate()
             self.viewport.on_vertices_moved(moved)
             self._set_status(f"{label} cancelled")
         else:
@@ -947,6 +975,7 @@ class Application:
         # laufen bereits in `dispatch_command` (`_apply_undo_redo`), auch für
         # Aufrufer, die `dispatch_command(UNDO/REDO)` direkt statt über
         # `key_press` erreichen.
+        self._pick_cache.invalidate()
         if self.viewport is not None:
             self.viewport.on_topology_changed()
         self._set_status(command)
@@ -1165,7 +1194,10 @@ class Application:
         return self._set_hovered(self._pick(x, y))
 
     def _pick(self, x: float, y: float):
-        """E43: Element unter dem Cursor im aktiven Selection-Modus (oder None)."""
+        """E43: Element unter dem Cursor im aktiven Selection-Modus (oder None).
+        WP-06 B8: cached (`self._pick_cache`) and occlusion-aware - only
+        visible vertices/edges are pickable while faces are shown (Shaded/
+        Flat Shaded); Wireframe leaves everything pickable, as before B8."""
         return pick_component(
             self.camera,
             self.scene.mesh,
@@ -1174,6 +1206,8 @@ class Application:
             y,
             self.viewport_width,
             self.viewport_height,
+            cache=self._pick_cache,
+            occlusion=self.display.show_faces,
         )
 
     def _set_hovered(self, hovered) -> bool:

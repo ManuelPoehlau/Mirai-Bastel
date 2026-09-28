@@ -146,8 +146,19 @@ def _screen_pos(app: Application, vid):
 
 
 def _two_vertices(app: Application):
-    vids = sorted(app.scene.mesh.all_vertex_ids())
-    return vids[0], vids[-1]
+    """Two vertices a click/hover on their own projection actually hits -
+    WP-06 B8: with the default Shaded display, occlusion excludes the cube's
+    one fully hidden corner, so this can no longer just take the first/last
+    vertex id unconditionally."""
+    from mirai.viewport.picking import pick_nearest_vertex
+
+    hits = []
+    for vid in sorted(app.scene.mesh.all_vertex_ids()):
+        sx, sy = _screen_pos(app, vid)
+        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT, occlusion=True) == vid:
+            hits.append(vid)
+    assert len(hits) >= 2
+    return hits[0], hits[-1]
 
 
 def _click(app: Application, inp: Input, at) -> None:

@@ -47,9 +47,11 @@ def _screen(app, vid) -> tuple[float, float]:
 
 
 def _visible_target(app):
+    """`occlusion=True` (WP-06 B8): matches `Application._pick()`'s default
+    Shaded occlusion, which excludes the cube's one fully hidden corner."""
     for vid in app.scene.mesh.all_vertex_ids():
         sx, sy = _screen(app, vid)
-        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT) == vid:
+        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT, occlusion=True) == vid:
             return vid
     raise AssertionError("no pickable vertex")
 

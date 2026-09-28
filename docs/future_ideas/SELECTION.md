@@ -143,3 +143,7 @@ Die Antworten werden zunächst beobachtet und dokumentiert; eine endgültige
 Workflow-Regel entsteht erst, wenn genügend praktische Erfahrung vorliegt.
 
 **Noch keine Entscheidung.**
+
+## X-ray / select-through as a user toggle
+
+WP-06 B8 gave Production an occlusion test (hidden vertices/edges are unpickable while faces are shown); explicitly out of scope for B8 was making that a user-facing option — a future "X-ray" or "select-through" toggle that opts back into today's Wireframe-only see-through-everything behaviour while faces are still shown. Not decided, not built.

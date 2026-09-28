@@ -60,10 +60,12 @@ def _screen(app, vid) -> tuple[float, float]:
 
 
 def _visible_target(app) -> VertexId:
-    """Ein Vertex, den ein Klick/Hover auf seine Projektion auch trifft."""
+    """Ein Vertex, den ein Klick/Hover auf seine Projektion auch trifft.
+    `occlusion=True` (WP-06 B8): the default Shaded display hides the cube's
+    one fully occluded corner from picking, same as `Application._pick()`."""
     for vid in app.scene.mesh.all_vertex_ids():
         sx, sy = _screen(app, vid)
-        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT) == vid:
+        if pick_nearest_vertex(app.camera, app.scene.mesh, sx, sy, WIDTH, HEIGHT, occlusion=True) == vid:
             return vid
     raise AssertionError("no pickable vertex")
 

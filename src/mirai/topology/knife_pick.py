@@ -17,6 +17,7 @@ segment in world space (not screen space).
 from __future__ import annotations
 
 from ..viewport.picking import pick_nearest_vertex, pick_nearest_edge, pick_face
+from ..viewport.picking_cache import PickCache
 
 ENDPOINT_THRESHOLD = 0.05  # t values within this threshold of 0 or 1 snap to vertex
 
@@ -65,7 +66,16 @@ def _edge_t_3d(origin: _Vec3, direction: _Vec3, p0: _Vec3, p1: _Vec3) -> float:
 
 
 def knife_pick(
-    camera, mesh, sx: float, sy: float, width: int, height: int, debug: bool = False
+    camera,
+    mesh,
+    sx: float,
+    sy: float,
+    width: int,
+    height: int,
+    debug: bool = False,
+    *,
+    cache: PickCache | None = None,
+    occlusion: bool = False,
 ) -> dict:
     """Resolve cursor position to a knife target.
 
@@ -77,12 +87,18 @@ def knife_pick(
 
     debug=True prints the temporary [KNIFE] pick trace (AD-017 diagnosis).
     Hover calls must pass debug=False to avoid flooding the console.
+
+    `cache`/`occlusion` (WP-06 B8, PROVISIONAL): forwarded unchanged to the
+    three `mirai.viewport.picking` calls below — see that module's docstring.
+    Both default to `None`/`False`, reproducing the pre-B8 behaviour exactly
+    (the Playground calls `knife_pick()` without them, per AD-017 §11/§12,
+    and stays unaffected).
     """
     if debug:
         print(f"[KNIFE] pick cursor=({sx:.1f},{sy:.1f})")
 
     # Vertex hit first
-    vid = pick_nearest_vertex(camera, mesh, sx, sy, width, height)
+    vid = pick_nearest_vertex(camera, mesh, sx, sy, width, height, cache=cache, occlusion=occlusion)
     if debug:
         print(f"[KNIFE] pick_nearest_vertex -> vertex:{int(vid)}" if vid is not None
               else "[KNIFE] pick_nearest_vertex -> None")
@@ -90,7 +106,7 @@ def knife_pick(
         return {"kind": "vertex", "vertex_id": vid}
 
     # Edge hit with perspective-correct t
-    eid = pick_nearest_edge(camera, mesh, sx, sy, width, height)
+    eid = pick_nearest_edge(camera, mesh, sx, sy, width, height, cache=cache, occlusion=occlusion)
     if debug:
         print(f"[KNIFE] pick_nearest_edge -> edge:{int(eid)}" if eid is not None
               else "[KNIFE] pick_nearest_edge -> None")
@@ -114,7 +130,7 @@ def knife_pick(
         return {"kind": "edge", "edge_id": eid, "t": t}
 
     # Face hit → "on mesh, no target"
-    fid = pick_face(camera, mesh, sx, sy, width, height)
+    fid = pick_face(camera, mesh, sx, sy, width, height, cache=cache)
     if debug:
         print(f"[KNIFE] pick_face -> face:{int(fid)}" if fid is not None
               else "[KNIFE] pick_face -> None")
