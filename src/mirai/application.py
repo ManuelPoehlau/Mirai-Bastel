@@ -222,6 +222,26 @@ class Application:
         # bei jedem `begin()` gelesen. None = frei.
         self._axis_constraint: str | None = None
 
+        # WP-06 B6 Follow-up (Artist-Entscheidung Manu 2026-09-28): Undo/Redo
+        # stellt jetzt auch die Selection wieder her, nicht nur das Mesh.
+        # `HistoryStack` (core, frozen) kennt kein Selection-Konzept und
+        # bietet keinen Hook vor/nach push() - deshalb führt Application
+        # einen eigenen Stack von (before, after)-Selection-Snapshots parallel
+        # zu jedem `history.push()`, den sie selbst auslöst (Split/Edge
+        # Connect/Vertex Connect in `_connect_command`, Transform-Commit in
+        # `key_release`; das sind aktuell die einzigen Aufrufer). `before` =
+        # Snapshot unmittelbar vor der Mutation, `after` = Snapshot danach
+        # (die von `_connect_command` gesetzte Residue-Auswahl bzw. bei
+        # Transformen dieselbe Auswahl, da Move/Rotate/Scale die Selection
+        # nicht ändern). Struktur und Semantik spiegeln `HistoryStack`
+        # bewusst 1:1 (ein `_record_selection_history()` pro Push, Redo-Stack
+        # wird dabei geleert). Ist der Mirror-Stack leer, obwohl History
+        # Undo/Redo erlaubt (z. B. künftiger Push-Pfad, der hier noch nicht
+        # verdrahtet ist), fällt `_apply_undo_redo()` auf reines Pruning
+        # zurück statt zu crashen.
+        self._selection_undo_stack: list[tuple[tuple, tuple]] = []
+        self._selection_redo_stack: list[tuple[tuple, tuple]] = []
+
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
         for command, tool_class in (
@@ -327,11 +347,8 @@ class Application:
         if tool_class:
             return self.tool_manager.activate(command, context=context)
 
-        if command == commands.UNDO:
-            self.history.undo()
-            return True
-        if command == commands.REDO:
-            self.history.redo()
+        if command in (commands.UNDO, commands.REDO):
+            self._apply_undo_redo(command)
             return True
         if command in _DISPLAY_COMMANDS:
             return self._display_command(command)
@@ -370,9 +387,12 @@ class Application:
         `MeshStateCommand` per success, mesh and history untouched on
         rejection or no-op. Each success branch reports the topology change
         through `_notify_topology_changed()`, which also re-anchors the hover
-        (the hovered edge/face handle can be gone after Split/Connect)."""
+        (the hovered edge/face handle can be gone after Split/Connect), and
+        records the pre-mutation selection for Undo/Redo restore (WP-06 B6
+        follow-up, `_record_selection_history`)."""
         selection = self.selection
         ctx = resolve_c_context(selection)
+        before = self._selection_snapshot()
 
         if ctx is CContext.SPLIT:
             (edge_id,) = selection.edges
@@ -380,6 +400,7 @@ class Application:
             selection.mode = SelectionMode.VERTEX
             selection.clear()
             selection.add({new_vid})
+            self._record_selection_history(before)
             self._notify_topology_changed()
             self._set_status("Split")
             return True
@@ -392,6 +413,7 @@ class Application:
                 return False
             selection.clear()
             selection.add(set(new_edges))
+            self._record_selection_history(before)
             self._notify_topology_changed()
             self._set_status("Connect Edges")
             return True
@@ -408,6 +430,7 @@ class Application:
             # Residue (AD-017): the original vertices stay selected, Vertex
             # mode unchanged — connect_vertices_per_face never touches
             # `selection` itself.
+            self._record_selection_history(before)
             self._notify_topology_changed()
             self._set_status("Vertex Connect")
             return True
@@ -552,7 +575,12 @@ class Application:
             return False
         label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
         if self._transform_begun:
+            before = self._selection_snapshot()
             command = self.tool_manager.commit()
+            if command is not None:
+                # Move/Rotate/Scale never change the Selection itself, only
+                # vertex positions — before and after are the same snapshot.
+                self._record_selection_history(before)
             outcome = f"{label} committed" if command is not None else f"{label}: no change"
             self._set_status(outcome + self._constraint_suffix(self._transform_space))
         else:
@@ -677,29 +705,98 @@ class Application:
         # E23: `HistoryStack` bietet keinen öffentlichen Zugriff auf das
         # gerade rückgängig gemachte Command (und `core/history.py` ist
         # tabu) - daher der gröbere, aber für jedes Command korrekte Rebuild
-        # statt `on_vertices_moved(ids)`.
+        # statt `on_vertices_moved(ids)`. Selection-Restore und Ghost-Pruning
+        # laufen bereits in `dispatch_command` (`_apply_undo_redo`), auch für
+        # Aufrufer, die `dispatch_command(UNDO/REDO)` direkt statt über
+        # `key_press` erreichen.
         if self.viewport is not None:
             self.viewport.on_topology_changed()
-        self._prune_ghost_selection()
         self._set_status(command)
         self._refresh_hover()
         return True
 
-    def _prune_ghost_selection(self) -> None:
-        """WP-06 B6 Follow-up: entfernt nach Undo/Redo jedes Handle, das
-        `mesh` nicht mehr kennt ("ghost selection").
+    def _apply_undo_redo(self, command: str) -> None:
+        """Führt `history.undo()`/`redo()` aus und stellt dabei die Selection
+        wieder her (WP-06 B6 Follow-up, Artist-Entscheidung Manu 2026-09-28).
 
-        `MeshStateCommand` stellt das Mesh wieder her, aber nicht die
-        `Selection` - Handles von Elementen, die die Mutation entfernt hatte,
-        blieben bisher als tote IDs in `selection` liegen. Der B6-Crash-Fix
+        `HistoryStack` (core, frozen) kennt kein Selection-Konzept; Application
+        führt deshalb einen eigenen Mirror-Stack aus (before, after)-Snapshots,
+        einen pro `history.push()`, den sie selbst über `_record_selection_
+        history()` befüllt (Split/Edge Connect/Vertex Connect, Transform-
+        Commit — aktuell die einzigen Push-Aufrufer). Der Mirror-Pop läuft in
+        derselben Reihenfolge wie `HistoryStack`s eigener Undo-/Redo-Stack
+        (LIFO), Undo restauriert den `before`-Snapshot (Auswahl, wie sie vor
+        der Mutation war), Redo den `after`-Snapshot (die von der Mutation
+        gesetzte Residue-Auswahl). Ist der Mirror-Stack leer, obwohl History
+        Undo/Redo erlaubt (Desync, z. B. ein künftiger Push-Pfad, der hier noch
+        nicht verdrahtet ist), bleibt es beim reinen Pruning (Fallback, kein
+        Crash) - `_prune_ghost_selection()` läuft danach in jedem Fall als
+        Sicherheitsnetz, auch nach einem erfolgreichen Restore (dort ein
+        No-op, weil der restaurierte Snapshot per Konstruktion gültig ist)."""
+        restored = None
+        if command == commands.UNDO and self._selection_undo_stack:
+            entry = self._selection_undo_stack.pop()
+            self._selection_redo_stack.append(entry)
+            restored = entry[0]
+        elif command == commands.REDO and self._selection_redo_stack:
+            entry = self._selection_redo_stack.pop()
+            self._selection_undo_stack.append(entry)
+            restored = entry[1]
+
+        if command == commands.UNDO:
+            self.history.undo()
+        else:
+            self.history.redo()
+
+        if restored is not None:
+            self._restore_selection(restored)
+        self._prune_ghost_selection()
+
+    def _selection_snapshot(self) -> tuple:
+        """Momentaufnahme von Modus + Auswahl (kein Hover - der wird nach
+        Undo/Redo ohnehin über `_refresh_hover()` neu am Cursor gepickt,
+        nicht wiederhergestellt)."""
+        selection = self.selection
+        return (
+            selection.mode,
+            frozenset(selection.vertices),
+            frozenset(selection.edges),
+            frozenset(selection.faces),
+        )
+
+    def _restore_selection(self, snapshot: tuple) -> None:
+        mode, vertices, edges, faces = snapshot
+        selection = self.selection
+        selection.mode = mode
+        selection.vertices = set(vertices)
+        selection.edges = set(edges)
+        selection.faces = set(faces)
+
+    def _record_selection_history(self, before: tuple) -> None:
+        """Von jedem Aufrufer, der gerade `history.push()` ausgelöst hat (bzw.
+        gleich auslösen wird - siehe Aufrufstellen), mit dem VOR der Mutation
+        genommenen `_selection_snapshot()` aufzurufen. Spiegelt `HistoryStack.
+        push()`: ein neuer Eintrag verwirft den Mirror-Redo-Zweig genau wie
+        dort den echten."""
+        after = self._selection_snapshot()
+        self._selection_undo_stack.append((before, after))
+        self._selection_redo_stack.clear()
+
+    def _prune_ghost_selection(self) -> None:
+        """Entfernt jedes Handle, das `mesh` nicht mehr kennt ("ghost
+        selection") - Sicherheitsnetz nach `_apply_undo_redo()`.
+
+        `MeshStateCommand` stellt das Mesh wieder her; ohne den Selection-
+        Restore oben blieben Handles von Elementen, die die Mutation entfernt
+        hatte, als tote IDs in `selection` liegen. Der B6-Crash-Fix
         (`_notify_topology_changed`, `_element_vertices`, `resolve_selection_
-        vertices`) machte Konsumenten nur tolerant gegenüber solchen IDs;
-        sie zählten aber weiter in `len(selection.edges/vertices/faces)`, was
-        z. B. `resolve_c_context` nach einem Undo in den falschen Kontext
-        auflösen konnte. Dieselbe `is_valid_*`-Prüfung wie dort, kein zweiter
-        Mechanismus. Nur Pruning - ob Undo die vorherige Auswahl
-        wiederherstellen sollte, ist eine offene Artist-Frage (ROADMAP) und
-        wird hier bewusst nicht entschieden."""
+        vertices`) machte Konsumenten nur tolerant gegenüber solchen IDs; sie
+        zählten aber weiter in `len(selection.edges/vertices/faces)`, was z. B.
+        `resolve_c_context` in den falschen Kontext auflösen konnte. Dieselbe
+        `is_valid_*`-Prüfung wie dort, kein zweiter Mechanismus. Läuft nach
+        jedem Undo/Redo, auch nach einem erfolgreichen Restore (dort ein
+        No-op) - der einzige Fall, in dem hier tatsächlich noch etwas entfernt
+        wird, ist der Mirror-Stack-Desync-Fallback in `_apply_undo_redo()`."""
         mesh = self.scene.mesh
         selection = self.selection
         selection.vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}

@@ -511,16 +511,18 @@ def test_split_does_not_leave_the_hovered_edge_stale(app):
 
 def test_undo_after_edge_connect_does_not_crash_the_render_path(app):
     """Zweiter Crash-Punkt derselben Klasse: Undo nach Edge Connect entfernte
-    ursprünglich die neu entstandenen Edges aus dem Mesh, während die
-    Auswahl sie behielt (Undo stellt keine Selection wieder her). Seit dem
-    B6-Follow-up (`_prune_ghost_selection`) prunt `Application` genau diese
-    ungültigen Handles direkt nach Undo/Redo; die Auswahl ist danach leer,
-    nicht bloß tolerierbar."""
+    ursprünglich die neu entstandenen Edges aus dem Mesh, während die Auswahl
+    sie behielt (Undo stellte keine Selection wieder her). Seit dem B6-
+    Follow-up (Selection-Restore, `_apply_undo_redo`) stellt Undo die Auswahl
+    wieder her, wie sie vor Edge Connect war — die ursprünglich selektierten
+    Edges, die das Undo wieder gültig gemacht hat, nicht die (jetzt
+    ungültigen) neu entstandenen."""
     mesh = app.scene.mesh
     sel = app.scene.selection
     sel.mode = SelectionMode.EDGE
     v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
-    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
+    original = {_edge(mesh, v3, v2), _edge(mesh, v1, v0)}
+    sel.add(set(original))
 
     assert app.key_press(C) is True
     app.update_viewport(0.0)
@@ -528,111 +530,159 @@ def test_undo_after_edge_connect_does_not_crash_the_render_path(app):
     assert new_edges and all(mesh.is_valid_edge(e) for e in new_edges)
 
     assert app.key_press(CTRL_Z) is True
-    assert sel.edges == set()  # ghost selection pruned, not merely tolerated
-
-    app.update_viewport(0.0)  # war die zweite Crash-Stelle
-
-    assert set(_highlight_flags(app)) == {0.0}  # nichts Ungültiges markiert
-
-
-def test_transform_arm_after_undo_of_edge_connect_is_rejected_not_a_crash(app):
-    """Zweiter Fund derselben Klasse (Praxistest, 2026-09-28): `C` →
-    Edge Connect → `Ctrl+Z` → `W`. Seit dem B6-Follow-up prunt Undo die
-    inzwischen ungültig gewordenen Edges bereits aus der Auswahl; das
-    Scharfschalten lehnt trotzdem normal ab ("nothing to move"), weil keine
-    Selection und kein Hover mehr übrig ist — kein `KeyError`."""
-    mesh = app.scene.mesh
-    sel = app.scene.selection
-    sel.mode = SelectionMode.EDGE
-    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
-    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
-
-    assert app.key_press(C) is True
-    connected = set(sel.edges)
-    assert app.key_press(CTRL_Z) is True
-    assert sel.edges == set()  # pruned, not just left as (tolerated) ghosts
-    assert not any(mesh.is_valid_edge(e) for e in connected)
-
-    assert app.key_press(W) is False
-    assert app.transform_command is None
-    assert app.status_message == "Move: nothing to move (select or hover a edge)"
-
-
-# ---------------------------------------------------------------------------
-# 9. Ghost-selection pruning after Undo/Redo (WP-06 B6 follow-up, 2026-09-28)
-# ---------------------------------------------------------------------------
-
-def test_edge_connect_then_undo_prunes_invalid_edges_and_rejects_second_c(app):
-    """`C` (Edge Connect) → `Ctrl+Z`: the selection must contain no invalid
-    edges afterwards, and a second `C` must not resolve Edge Connect on the
-    now-nonexistent edges (it should report "no valid context" instead)."""
-    mesh = app.scene.mesh
-    sel = app.scene.selection
-    sel.mode = SelectionMode.EDGE
-    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
-    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
-
-    assert app.key_press(C) is True
-    assert app.key_press(CTRL_Z) is True
-
+    assert sel.edges == original  # restored, not left as (pruned) ghosts
     assert all(mesh.is_valid_edge(e) for e in sel.edges)
-    assert sel.edges == set()
 
-    before_state = mesh.export_state()
+    app.update_viewport(0.0)  # war die zweite Crash-Stelle (kein Crash mehr)
+
+    # Die wiederhergestellten (wieder gültigen) Edges dürfen als selektiert
+    # markiert sein - nur kein ungültiges Handle darf den Sync sprengen.
+    assert set(_highlight_flags(app)) <= {0.0, 1.0}
+
+
+def test_transform_arm_after_undo_of_edge_connect_uses_the_restored_selection(app):
+    """Zweiter Fund derselben Klasse (Praxistest, 2026-09-28): `C` →
+    Edge Connect → `Ctrl+Z` → `W`. Seit dem B6-Follow-up (Selection-Restore)
+    ist die Auswahl nach dem Undo wieder die ursprünglich selektierten,
+    jetzt wieder gültigen Edges — `W` scharfschalten arbeitet also normal auf
+    ihnen, statt (wie mit reinem Pruning) mangels Auswahl abzulehnen. Kein
+    `KeyError`, kein stale Handle."""
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
+    original = {_edge(mesh, v3, v2), _edge(mesh, v1, v0)}
+    sel.add(set(original))
+
+    assert app.key_press(C) is True
+    assert app.key_press(CTRL_Z) is True
+    assert sel.edges == original
+    assert all(mesh.is_valid_edge(e) for e in sel.edges)
+
+    assert app.key_press(W) is True
+    assert app.transform_command == cmd.MOVE
+    expected_target = {v for e in original for v in mesh.edge_vertices(e)}
+    assert app.move_target == frozenset(expected_target)
+
+
+# ---------------------------------------------------------------------------
+# 9. Selection restore + ghost-selection pruning after Undo/Redo
+#    (WP-06 B6 follow-up, 2026-09-28; Artist-Entscheidung Manu: Undo/Redo
+#    restores the Selection, not just the mesh.)
+# ---------------------------------------------------------------------------
+
+def test_edge_connect_then_undo_restores_the_original_edges_and_second_c_repeats(app):
+    """`C` (Edge Connect) → `Ctrl+Z`: the selection is restored to the
+    originally selected (now valid again) edges, contains no invalid edges,
+    and a second `C` resolves the same Edge Connect context again — not the
+    stale/ghost result the old prune-only fix left behind."""
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
+    original = {_edge(mesh, v3, v2), _edge(mesh, v1, v0)}
+    sel.add(set(original))
+
+    assert app.key_press(C) is True
+    assert app.key_press(CTRL_Z) is True
+
+    assert sel.edges == original
+    assert all(mesh.is_valid_edge(e) for e in sel.edges)
+
     before_hist = len(app.history)
-    assert app.key_press(C) is False
-    assert mesh.export_state() == before_state
-    assert len(app.history) == before_hist
-    # Pruned to empty -> Knife context (AD-017), not Edge Connect: the
-    # ghost edges no longer resolve a context at all.
-    assert app.status_message == "C: Knife not available yet"
+    assert app.key_press(C) is True
+    assert app.status_message == "Connect Edges"
+    assert len(app.history) == before_hist + 1
 
 
-def test_split_undo_redo_leaves_no_invalid_handles_at_any_step(app):
-    """`C` (Split) → `Ctrl+Z` → `Ctrl+Y`: no invalid handles at any step."""
+def test_split_undo_redo_leaves_no_invalid_handles_and_restores_selection(app):
+    """`C` (Split) → `Ctrl+Z` → `Ctrl+Y`: no invalid handles at any step, and
+    the selection at each step matches what it was right before/after Split
+    (restore, not just prune)."""
     mesh = app.scene.mesh
     sel = app.scene.selection
     sel.mode = SelectionMode.EDGE
     v0, v1 = _vertex_by_position(mesh, 0), _vertex_by_position(mesh, 1)
-    sel.add({_edge(mesh, v0, v1)})
+    eid = _edge(mesh, v0, v1)
+    sel.add({eid})
 
     assert app.key_press(C) is True
+    after_split_vertices = set(sel.vertices)
     assert all(mesh.is_valid_vertex(v) for v in sel.vertices)
 
     assert app.key_press(CTRL_Z) is True
+    assert sel.mode is SelectionMode.EDGE
+    assert sel.edges == {eid}
     assert all(mesh.is_valid_vertex(v) for v in sel.vertices)
     assert all(mesh.is_valid_edge(e) for e in sel.edges)
     assert all(mesh.is_valid_face(f) for f in sel.faces)
 
     assert app.key_press(_key("y", "ctrl")) is True
+    assert sel.mode is SelectionMode.VERTEX
+    assert sel.vertices == after_split_vertices
     assert all(mesh.is_valid_vertex(v) for v in sel.vertices)
     assert all(mesh.is_valid_edge(e) for e in sel.edges)
     assert all(mesh.is_valid_face(f) for f in sel.faces)
 
 
-def test_undo_prunes_only_invalid_handles_and_keeps_survivors(app):
-    """Selected elements that survive Undo must not be over-pruned: a
-    still-valid, unrelated vertex stays selected across an Undo of an
-    unrelated topology mutation."""
+def test_undo_restores_the_selection_as_of_the_undone_command(app):
+    """Undo restores the Selection to what it was immediately before the
+    undone command ran — a manual selection change made *after* that command
+    (and not itself undone) is not what Undo restores to; it goes back with
+    the command whose selection state it overwrote. This is the intended
+    restore semantics (Artist decision Manu 2026-09-28), not over-pruning:
+    the restored elements themselves are always valid."""
     mesh = app.scene.mesh
     sel = app.scene.selection
     sel.mode = SelectionMode.EDGE
     v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
     v6, v7 = _vertex_by_position(mesh, 6), _vertex_by_position(mesh, 7)
-    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
+    original = {_edge(mesh, v3, v2), _edge(mesh, v1, v0)}
+    sel.add(set(original))
 
     assert app.key_press(C) is True
 
-    # A second, unrelated selection (Vertex mode) that Split/Connect never
-    # touches must survive the Undo untouched.
+    # A later, unrelated selection change (Vertex mode) made after Edge
+    # Connect but before Undo is not part of that command's history entry.
     sel.mode = SelectionMode.VERTEX
     sel.add({v6, v7})
     assert mesh.is_valid_vertex(v6) and mesh.is_valid_vertex(v7)
 
     assert app.key_press(CTRL_Z) is True
 
-    assert sel.vertices == {v6, v7}
-    assert mesh.is_valid_vertex(v6) and mesh.is_valid_vertex(v7)
+    # Restored to the pre-Edge-Connect state, not the later manual pick.
+    assert sel.mode is SelectionMode.EDGE
+    assert sel.edges == original
+    assert all(mesh.is_valid_edge(e) for e in sel.edges)
+
+
+def test_undo_falls_back_to_pruning_when_mesh_was_mutated_outside_application(app):
+    """Safety net: if the mesh is ever mutated through a path Application's
+    selection-history mirror does not know about (e.g. a future push site
+    not yet wired into `_record_selection_history`), Undo/Redo must still
+    never leave an invalid handle in `selection` — `_prune_ghost_selection()`
+    runs unconditionally after every Undo/Redo, even when nothing was
+    restored."""
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
+    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
+
+    assert app.key_press(C) is True  # pushes a real history entry + mirror
+    new_edges = set(sel.edges)
+    assert new_edges and all(mesh.is_valid_edge(e) for e in new_edges)
+
+    # Simulate a desynced mirror (as if some other path had pushed to
+    # history without recording a selection snapshot) - Undo can then only
+    # fall back to pruning, not restoring.
+    app._selection_undo_stack.clear()
+
+    assert app.key_press(CTRL_Z) is True
+    assert not any(mesh.is_valid_edge(e) for e in new_edges)
+    assert all(mesh.is_valid_vertex(v) for v in sel.vertices)
+    assert all(mesh.is_valid_edge(e) for e in sel.edges)
+    assert all(mesh.is_valid_face(f) for f in sel.faces)
 
 
 def test_edge_connect_reanchors_the_hovered_edge(app):
