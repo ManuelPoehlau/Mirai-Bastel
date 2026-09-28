@@ -1,12 +1,17 @@
-"""Application: Knife session in Production (WP-06 Slice B7, AD-017).
+"""Application: Knife session in Production (WP-06 Slice B7 / B7.1, AD-017).
 
 Headless (TraceStore), no pyglet/window. Path: `C` with an empty selection →
 `Application._connect_command` → `_knife_begin` → `mirai.topology.knife.
 KnifeTool` (the same session engine the Playground imports). Input during a
-session: pointer motion = hover preview (Variant A), LMB press → slide →
-release (Variant B, F1 edge lock, F2 endpoint → vertex), Enter / click
-outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z = in-session
-undo / redo; navigation keeps working, every other key is gated.
+session: pointer motion = hover preview (Playground Variant A), a click
+(press+release under the click threshold) cuts at the previewed position - a
+press that moved past the threshold is not a click and does nothing; Enter /
+click outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z =
+in-session undo / redo; navigation keeps working, every other key is gated.
+B7.1 (Artist decision Manu 2026-09-28, after the B7 window test): the F1
+edge-lock/slide gesture (Playground Variant B) was removed from Production as
+redundant with the live hover preview; `project_locked_edge` stays in
+`mirai.topology.knife_pick` for the Playground's own Variant B (AD-013 A2).
 
 Fixture: the framed default cube. Seen from the default camera, vertex 6
 (1, 1, 1) is the front corner; faces 1 (z = +1), 3 (x = +1) and 4 (y = +1)
@@ -15,8 +20,6 @@ vertex 7 → edge 5-6 → edge 2-6 → edge 7-3.
 """
 
 from __future__ import annotations
-
-import math
 
 import pytest
 
@@ -295,81 +298,60 @@ def test_start_and_path_stay_drawn_while_hovering_elsewhere(app):
     assert app.viewport.tool_point_layers[TOOL_ACTIVE_LAYER] == [data.start_point]
 
 
-# -- 4. press → slide → release ------------------------------------------------------
+# -- 4. click (press → release under the threshold) ----------------------------------
 
 
-def _offset(pos, direction, distance):
-    dx, dy = direction
-    n = math.hypot(dx, dy)
-    return (pos[0] + dx / n * distance, pos[1] + dy / n * distance)
-
-
-def _edge_normal_on_screen(app, eid):
-    a, b = (app.scene.mesh.vertex_position(v) for v in app.scene.mesh.edge_vertices(eid))
-    sa, sb = _screen(app, a), _screen(app, b)
-    return (-(sb[1] - sa[1]), sb[0] - sa[0])
-
-
-def test_press_slide_release_cuts_at_slide_position_and_keeps_lock_off_edge(app):
+def test_lmb_drag_over_an_edge_neither_locks_nor_cuts(app):
+    """B7.1: the F1 edge lock is gone - a press on a valid edge target
+    followed by a drag along it does not track the cursor (no slide) and does
+    not cut on release; the preview at the press position stays exactly as
+    the last hover showed it."""
     mesh = app.scene.mesh
     _begin(app)
     v4, v5, v7 = _v(app, 4), _v(app, 5), _v(app, 7)
     e45 = _edge(app, v4, v5)  # on face 1 with the start v7, not incident to it
     _click(app, _vertex_screen(app, v7))
+    before = _topology(mesh)
 
     press = _edge_screen(app, e45, 0.3)
     app.pointer_motion(*press)
     app.pointer_press(LMB, *press)
-    assert app.knife_locked_edge == e45
+    preview_at_press = app.knife_render_data.prospective_point
 
-    # Slide along the edge, then drift far off it: the lock holds.
     along = _screen(app, _edge_point(app, e45, 0.6))
-    app.pointer_drag(along[0] - press[0], along[1] - press[1], *along)
-    drift = _offset(along, _edge_normal_on_screen(app, e45), 60.0)
-    fresh = knife_pick(app.camera, mesh, *drift, WIDTH, HEIGHT)
-    assert fresh.get("edge_id") != e45  # the cursor has left the edge's hit region
-    app.pointer_drag(drift[0] - along[0], drift[1] - along[1], *drift)
+    assert app.pointer_drag(along[0] - press[0], along[1] - press[1], *along) is False
+    assert app.knife_render_data.prospective_point == preview_at_press
+    assert len(app._knife.path_edges) == 0
 
-    assert app.knife_locked_edge == e45
-    data = app.knife_render_data
-    assert data.target_edge is not None
-    expected = _edge_point(app, e45, 0.6)
-    assert _close(data.prospective_point, expected, 0.05)
-    assert data.line_preview == (mesh.vertex_position(v7), data.prospective_point)
-    assert _history_depths(app) == (0, 0)
-    assert len(app._knife.path_edges) == 0  # nothing cut before the release
+    assert app.pointer_release("LEFT", *along) is False
 
-    assert app.pointer_release("LEFT", *drift) is True
-
-    assert app.knife_locked_edge is None
-    assert len(app._knife.path_edges) == 1
-    new_v = app._knife.start
-    assert _close(mesh.vertex_position(new_v), data.prospective_point, 1e-9)
+    assert len(app._knife.path_edges) == 0
+    assert _topology(mesh) == before
     assert_mesh_invariants(mesh)
 
 
-def test_release_near_endpoint_snaps_to_vertex_and_connects(app):
+def test_line_preview_after_failed_drag_still_follows_hover(app):
+    """B7.1 regression: a drag-release that is not a click must not leave the
+    line preview stuck - the next hover updates it exactly as in section 3,
+    unaffected by the removed slide."""
     mesh = app.scene.mesh
     _begin(app)
-    v4, v5, v7 = _v(app, 4), _v(app, 5), _v(app, 7)
-    e45 = _edge(app, v4, v5)
+    v7 = _v(app, 7)
     _click(app, _vertex_screen(app, v7))
-    n_vertices = len(mesh.all_vertex_ids())
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
 
-    press = _edge_screen(app, e45, 0.3)
+    press = _edge_screen(app, e56, 0.2)
+    app.pointer_motion(*press)
     app.pointer_press(LMB, *press)
-    near_v5 = _offset(_vertex_screen(app, v5), _edge_normal_on_screen(app, e45), 30.0)
-    app.pointer_drag(near_v5[0] - press[0], near_v5[1] - press[1], *near_v5)
+    far = _screen(app, _edge_point(app, e56, 0.8))
+    app.pointer_drag(far[0] - press[0], far[1] - press[1], *far)
+    assert app.pointer_release("LEFT", *far) is False
 
-    assert app.knife_render_data.prospective_point == mesh.vertex_position(v5)
+    app.pointer_motion(*_edge_screen(app, e56, 0.6))
 
-    assert app.pointer_release("LEFT", *near_v5) is True
-
-    assert len(mesh.all_vertex_ids()) == n_vertices  # no split: vertex connect
-    (path_edge,) = app._knife.path_edges
-    assert set(mesh.edge_vertices(path_edge)) == {v7, v5}
-    assert app._knife.start == v5
-    assert_mesh_invariants(mesh)
+    data = app.knife_render_data
+    assert _close(data.prospective_point, _edge_point(app, e56, 0.6), 1e-4)
+    assert data.line_preview == (mesh.vertex_position(v7), data.prospective_point)
 
 
 def test_press_release_without_movement_is_a_click_at_the_hover_position(app):

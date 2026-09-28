@@ -52,7 +52,7 @@ from .topology.connect_per_face import TopologyToolError, connect_selected_edges
 from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.knife import KnifeTool
-from .topology.knife_pick import knife_pick, project_locked_edge
+from .topology.knife_pick import knife_pick
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .topology.split import split_selected_edge
 from .viewport import DisplayMode, DisplayState, OrbitCamera
@@ -247,19 +247,19 @@ class Application:
         self._selection_undo_stack: list[tuple[tuple, tuple]] = []
         self._selection_redo_stack: list[tuple[tuple, tuple]] = []
 
-        # WP-06 B7 (AD-017 Knife; kombinierte Interaktion = Artist-Entscheidung
-        # Manu 2026-09-28, `PROVISIONAL`): laufende Knife-Session (None = keine).
-        # `KnifeTool` hält Mesh-Schritte, Start und Pfad; hier liegt nur der
-        # Interaktionszustand: das gültige prospektive Ziel (None = keins oder
-        # ungültig), die hervorgehobene Edge (gehovert oder gelockt), die beim
-        # LMB-Press gelockte Edge (F1) und ob die LMB-Geste des Knife gerade
-        # gehalten wird. `_knife_selection_before` ist der Snapshot vor der
-        # Session für den Selection-Mirror-Stack beim Commit.
+        # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
+        # after the B7 window test: press-slide-release was redundant with the
+        # live hover preview): laufende Knife-Session (None = keine). `KnifeTool`
+        # hält Mesh-Schritte, Start und Pfad; hier liegt nur der Interaktions-
+        # zustand: das gültige prospektive Ziel (None = keins oder ungültig),
+        # die hervorgehobene Edge (gehovert) und ob die LMB-Geste des Knife
+        # gerade gehalten wird (nur zur Klick-Schwellen-Erkennung).
+        # `_knife_selection_before` ist der Snapshot vor der Session für den
+        # Selection-Mirror-Stack beim Commit.
         self._knife: KnifeTool | None = None
         self._knife_selection_before: tuple | None = None
         self._knife_target: dict | None = None
         self._knife_highlight_edge: EdgeId | None = None
-        self._knife_locked_edge: EdgeId | None = None
         self._knife_gesture: bool = False
         self._knife_gesture_moved: float = 0.0
 
@@ -487,24 +487,24 @@ class Application:
             self.viewport.on_topology_changed()
         self._refresh_hover()
 
-    # -- Knife session (WP-06 B7, AD-017) ---------------------------------------
+    # -- Knife session (WP-06 B7 / B7.1, AD-017) ---------------------------------
     #
-    # One combined interaction (Artist decision Manu 2026-09-28, `PROVISIONAL`):
-    # hover preview as Playground Variant A, press -> slide -> release as
-    # Variant B (F1 edge lock, F2 endpoint -> vertex), start highlight (F3), and
-    # a line preview from the start to the prospective point (new). Session
-    # engine, in-session history, commit/cancel and residue are `KnifeTool`'s
-    # (AD-017 DECIDED); this section only routes input and builds render data.
+    # Click-only interaction (Artist decision Manu 2026-09-28, after the B7
+    # window test: press -> slide -> release was redundant with the live hover
+    # preview, which already slides along the edge while hovering) = Playground
+    # Variant A only: hover preview, a click cuts at the previewed position,
+    # start highlight, and a line preview from the start to the prospective
+    # point. Session engine, in-session history, commit/cancel and residue are
+    # `KnifeTool`'s (AD-017 DECIDED); this section only routes input and builds
+    # render data. Blender-style drag cutting (Variant B / F1 edge lock) is a
+    # possible Knife V2 idea — not built, not prepared; the Playground's own
+    # Variant B (`project_locked_edge` in `mirai.topology.knife_pick`) is
+    # unaffected (AD-013 A2, contextual deviation).
 
     @property
     def knife_active(self) -> bool:
         """A Knife session is running (`C` with an empty selection)."""
         return self._knife is not None
-
-    @property
-    def knife_locked_edge(self) -> EdgeId | None:
-        """Edge locked by the Knife's LMB press (F1), None if none."""
-        return self._knife_locked_edge
 
     @property
     def knife_render_data(self) -> KnifeRenderData | None:
@@ -532,7 +532,7 @@ class Application:
         self._set_hovered(None)
         self._refresh_hover()
         self._set_status(
-            "Knife: click or press-slide on vertices/edges to cut - Enter or click"
+            "Knife: click on vertices/edges to cut - Enter or click"
             " outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo cut"
         )
         return True
@@ -561,41 +561,31 @@ class Application:
         )
 
     def _knife_press(self) -> None:
-        """LMB press: a valid edge under the cursor is locked (F1) - the slide
-        then projects the cursor onto it until release."""
+        """LMB press: only starts the click-threshold gesture (B7.1); the
+        preview at the cursor is already current from the last hover."""
         self._knife_gesture = True
         self._knife_gesture_moved = 0.0
         if self._cursor is None:
             return
-        target = self._knife_pick(*self._cursor)
-        # Same lock rule as the Playground's Variant B (`KnifeTool.hover`).
-        if target.get("kind") == "edge" and self._knife.hover(target)["valid"]:
-            self._knife_locked_edge = target["edge_id"]
-        self._knife_set_preview(target)
+        self._knife_set_preview(self._knife_pick(*self._cursor))
 
     def _knife_drag(self, dx: float, dy: float) -> bool:
+        """LMB held and moved: only tracks distance for the click threshold
+        (B7.1, no slide) - a drag past the threshold neither locks nor cuts."""
         self._knife_gesture_moved += abs(dx) + abs(dy)
-        if self._knife_locked_edge is None or self._cursor is None:
-            return False
-        return self._knife_set_preview(self._knife_project(*self._cursor))
+        return False
 
     def _knife_release(self, x: float, y: float) -> bool:
-        """LMB release: cut at the slide position (locked edge; near an
-        endpoint that vertex, F2), else - for a click - at the cursor. A click
-        outside the mesh commits; an unlocked press that moved past the click
-        threshold is not a click and does nothing (Playground click rule)."""
-        locked = self._knife_locked_edge
+        """LMB release: press+release under the click threshold cuts at the
+        cursor; a press that moved past it is not a click and does nothing
+        (Playground click rule, B7.1). A click outside the mesh commits."""
         moved = self._knife_gesture_moved
         self._knife_gesture = False
         self._knife_gesture_moved = 0.0
-        self._knife_locked_edge = None
-        if locked is not None:
-            target = self._knife_project(x, y, locked)
-        elif moved >= CLICK_THRESHOLD_PX:
+        if moved >= CLICK_THRESHOLD_PX:
             self._refresh_hover()
             return False
-        else:
-            target = self._knife_pick(x, y)
+        target = self._knife_pick(x, y)
         if target.get("kind") == "outside":
             return self._knife_end(commit=True)
         before_path = len(self._knife.path_edges)
@@ -643,7 +633,6 @@ class Application:
         self._knife_selection_before = None
         self._knife_gesture = False
         self._knife_gesture_moved = 0.0
-        self._knife_locked_edge = None
         self._knife_target = None
         self._knife_highlight_edge = None
         if command is not None:
@@ -670,29 +659,13 @@ class Application:
             self.camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height
         )
 
-    def _knife_project(self, x: float, y: float, edge_id: EdgeId | None = None) -> dict:
-        return project_locked_edge(
-            self.camera,
-            self.scene.mesh,
-            x,
-            y,
-            self.viewport_width,
-            self.viewport_height,
-            self._knife_locked_edge if edge_id is None else edge_id,
-        )
-
     def _knife_set_preview(self, target: dict) -> bool:
         """Prospective target = `target` only if the click would be accepted
-        (`KnifeTool.accepts`); invalid → no point, no line (`PROVISIONAL`). The
-        locked edge stays highlighted for the whole slide. True = changed."""
+        (`KnifeTool.accepts`); invalid → no point, no line (`PROVISIONAL`).
+        True = changed."""
         valid = self._knife.accepts(target)
         prospective = target if valid else None
-        if self._knife_locked_edge is not None:
-            highlight = self._knife_locked_edge
-        elif valid and target.get("kind") == "edge":
-            highlight = target["edge_id"]
-        else:
-            highlight = None
+        highlight = target["edge_id"] if valid and target.get("kind") == "edge" else None
         changed = (prospective, highlight) != (self._knife_target, self._knife_highlight_edge)
         self._knife_target = prospective
         self._knife_highlight_edge = highlight
@@ -1092,8 +1065,8 @@ class Application:
         self, input: Input, x: float | None = None, y: float | None = None
     ) -> None:
         """Maustaste gedrückt (`input.kind == "mouse"`, Modifier beim Press).
-        `x`/`y` (optional, B7): Cursor beim Press - der Knife lockt hier die
-        Edge; ohne Angabe gilt die letzte bekannte Cursor-Position."""
+        `x`/`y` (optional, B7): Cursor beim Press - ohne Angabe gilt die
+        letzte bekannte Cursor-Position."""
         if x is not None and y is not None:
             self._cursor = (x, y)
         if self._knife is not None and self._knife_owns_press(input):
@@ -1104,10 +1077,9 @@ class Application:
     def pointer_drag(
         self, dx: float, dy: float, x: float | None = None, y: float | None = None
     ) -> bool:
-        """Mausbewegung mit gedrückter Taste. True = ein Command wurde ausgeführt
-        bzw. der Knife-Slide hat seine Vorschau geändert. `x`/`y` (optional,
-        B7): aktuelle Cursor-Position, die der Knife-Slide auf die gelockte
-        Edge projiziert."""
+        """Mausbewegung mit gedrückter Taste. True = ein Command wurde ausgeführt.
+        Während einer Knife-Geste (B7.1) zählt nur die Distanz für die
+        Klick-Schwelle - `x`/`y` werden nicht für eine Vorschau verwendet."""
         if x is not None and y is not None:
             self._cursor = (x, y)
         if self._knife_gesture:

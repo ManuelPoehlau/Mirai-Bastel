@@ -270,3 +270,32 @@ preview, press → slide → release with edge lock, and a line preview from the
 (Artist decision Manu 2026-09-28) — is **PROVISIONAL**, verdict pending. §7's open questions stay open
 except that the preview/mouse UX now has a provisional Production answer; face-interior cutting remains a
 separate Discovery. Record: `docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B7, 2026-09-28).
+
+## 12. Addendum (2026-09-28) — Knife click-only (Variant A), WP-06 Slice B7.1
+
+Artist decision (Manu, 2026-09-28), after the §11 B7 practical window test: press → slide → release
+(Playground Variant B, F1 edge lock) is redundant with the live hover preview, which already slides along
+the edge while hovering. Production Knife is now click-only — Playground Variant A: hover preview + line
+preview, a click cuts at the previewed position. The click rule is unchanged: press+release under the click
+threshold (`CLICK_THRESHOLD_PX`) is a click at the cursor; a press that moved past the threshold is not a
+click and does nothing.
+
+Removed from `Application` (`src/mirai/application.py`): the `_knife_locked_edge` state, the `knife_locked_edge`
+property, the F1 lock in `_knife_press`, the slide in `_knife_drag` (now only tracks distance for the click
+threshold), and the locked branch in `_knife_release`; `_knife_project` (the Application-side wrapper around
+`project_locked_edge`) is gone with it, as is the now-unneeded `project_locked_edge` import.
+`project_locked_edge` itself stays in `mirai.topology.knife_pick` unchanged — the Playground's own Variant B
+still uses it (AD-013 A2, contextual deviation: Playground and Labs may deliberately deviate from the common
+interaction). Endpoint snap is unaffected: it lives in `knife_pick()` itself, not in the removed slide.
+
+Blender-style drag cutting is a possible Knife V2 idea — not built, not prepared.
+
+Tests (`tests/test_application_knife.py`): the press-slide-release cases (slide-to-cut with the lock held off
+the edge, release-near-endpoint-snaps-and-connects) were removed; new cases cover a drag over what used to be
+a lockable edge target neither locking nor cutting, and the line preview still following the hover correctly
+after such a failed drag-release (regression check that removing the slide left no stale preview state). The
+existing click-at-hover-position and unlocked-drag-is-not-a-click cases needed no change — they already
+exercised the kept click rule, not the removed lock.
+
+Status: **PROVISIONAL**, verdict pending. Record: `docs/architecture/ROADMAP.md` §WP-06 intake log
+(Slice B7.1, 2026-09-28).
