@@ -200,6 +200,43 @@ class SelectionResolutionIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(resolved, set(self.mesh.face_vertices(face)))
 
+    def test_stale_selection_handles_are_skipped(self):
+        """Ein Handle, das das Mesh nicht mehr kennt (Topologie-Mutation,
+        Undo), wird übersprungen statt einen `KeyError` auszulösen —
+        gefunden 2026-09-28 (Edge Connect → Ctrl+Z → `W`)."""
+        edge = next(iter(self.mesh.all_edge_ids()))
+        _, split_a, _ = self.mesh.split_edge(edge)  # edge wird ungültig
+
+        self.app.selection.mode = SelectionMode.EDGE
+        self.app.selection.set({edge})
+        self.assertEqual(
+            resolve_selection_vertices(
+                self.mesh, self.app.selection, SelectionMode.EDGE
+            ),
+            set(),
+        )
+
+        face = next(iter(self.mesh.all_face_ids()))
+        self.mesh.remove_face(face)
+        self.app.selection.mode = SelectionMode.FACE
+        self.app.selection.set({face})
+        self.assertEqual(
+            resolve_selection_vertices(
+                self.mesh, self.app.selection, SelectionMode.FACE
+            ),
+            set(),
+        )
+
+        # Der Skip ist selektiv: das gültige Handle bleibt aufgelöst.
+        self.app.selection.mode = SelectionMode.EDGE
+        self.app.selection.set({edge, split_a})
+        self.assertEqual(
+            resolve_selection_vertices(
+                self.mesh, self.app.selection, SelectionMode.EDGE
+            ),
+            set(self.mesh.edge_vertices(split_a)),
+        )
+
 
 class FullPipelineTests(unittest.TestCase):
     def test_input_to_history_full_pipeline(self):

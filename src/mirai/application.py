@@ -116,13 +116,17 @@ _MODE_COMMANDS: dict[str, SelectionMode] = {
 
 
 def _element_vertices(mesh, element) -> set[VertexId]:
-    """Vertices eines einzelnen Vertex/Edge/Face (Hover-Fallback des Transforms)."""
+    """Vertices eines einzelnen Vertex/Edge/Face (Hover-Fallback des Transforms).
+
+    Ein Handle, das `mesh` nicht mehr kennt (Topologie-Mutation seither),
+    ergibt eine leere Menge statt eines `KeyError` — dieselbe Regel wie im
+    Viewport-Overlay (`viewport/overlay.py`)."""
     if isinstance(element, VertexId):
-        return {element}
+        return {element} if mesh.is_valid_vertex(element) else set()
     if isinstance(element, EdgeId):
-        return set(mesh.edge_vertices(element))
+        return set(mesh.edge_vertices(element)) if mesh.is_valid_edge(element) else set()
     if isinstance(element, FaceId):
-        return set(mesh.face_vertices(element))
+        return set(mesh.face_vertices(element)) if mesh.is_valid_face(element) else set()
     return set()
 
 
@@ -364,7 +368,9 @@ class Application:
         so it stays a no-op with its own status line. Mutates only through
         `Mesh.split_edge`/`Mesh.connect_vertices` (ARCH-02); exactly one
         `MeshStateCommand` per success, mesh and history untouched on
-        rejection or no-op."""
+        rejection or no-op. Each success branch reports the topology change
+        through `_notify_topology_changed()`, which also re-anchors the hover
+        (the hovered edge/face handle can be gone after Split/Connect)."""
         selection = self.selection
         ctx = resolve_c_context(selection)
 
@@ -416,8 +422,24 @@ class Application:
         return False
 
     def _notify_topology_changed(self) -> None:
+        """Meldet dem Viewport eine Topologie-Änderung und richtet den Hover
+        neu aus.
+
+        Grund (WP-06 B6 fix, gefunden im Praxistest `C` → Split): Split und
+        Connect entfernen die Edge-IDs, die sie ersetzen. War eine davon
+        gehovert (oder selektiert), zeigt `selection.hovered` danach auf ein
+        Element, das es nicht mehr gibt — im Praxistest crashte genau das den
+        Draw-Loop (`KeyError: EdgeId(11)` in `mesh.edge_vertices`, siehe
+        `viewport/overlay.py`). `_refresh_hover()` pickt am ruhenden Cursor im
+        dann aktuellen Modus neu — dasselbe Muster wie nach Undo/Redo
+        (`_undo_redo`). Ist kein Cursor bekannt, bleibt `selection.hovered`
+        bewusst unangetastet; der Viewport überspringt die stale ID beim
+        Aufbau der Overlays (AD-001: Gültigkeit wird über
+        `mesh.is_valid_*()` geprüft, nie über die ID selbst).
+        """
         if self.viewport is not None:
             self.viewport.on_topology_changed()
+        self._refresh_hover()
 
     # -- Display (WP-06 B5a) ----------------------------------------------------
 

@@ -31,18 +31,26 @@ def resolve_selection_vertices(
 
     When multiple edges/faces are selected, the result is their union —
     a shared vertex is only moved once.
+
+    Handles that `mesh` no longer knows are skipped (findings 2026-09-28:
+    a topology mutation / Undo can leave the Selection pointing at removed
+    edges — e.g. Edge Connect, `Ctrl+Z`, then `W` raised `KeyError` here).
+    Same rule as the Viewport overlays; validity is always asked from the
+    mesh, never inferred from the ID (AD-001).
     """
     if mode == SelectionMode.VERTEX:
-        return set(selection.vertices)
+        return {vid for vid in selection.vertices if mesh.is_valid_vertex(vid)}
     if mode == SelectionMode.EDGE:
         result: set[VertexId] = set()
         for eid in selection.edges:
-            result.update(mesh.edge_vertices(eid))
+            if mesh.is_valid_edge(eid):
+                result.update(mesh.edge_vertices(eid))
         return result
     if mode == SelectionMode.FACE:
         result = set()
         for fid in selection.faces:
-            result.update(mesh.face_vertices(fid))
+            if mesh.is_valid_face(fid):
+                result.update(mesh.face_vertices(fid))
         return result
     return set()
 

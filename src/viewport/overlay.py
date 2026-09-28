@@ -36,6 +36,16 @@ liefert Segmente (selektierte Edges im Edge-Modus, gehoverte Edge),
 `face_layers()` Dreiecke (selektierte Faces im Face-Modus, gehoverte Face;
 gleiche Fan-Triangulierung wie `RenderMesh`). Gezeichnet von
 `gl_line_overlay.GLLineOverlay` bzw. `gl_triangle_overlay.GLTriangleOverlay`.
+
+2026-09-28 (WP-06 B6 fix): `build_highlight_flags()` überspringt ungültige
+IDs genauso wie die Punkt-/Linien-/Face-Methoden oben. Ursache: eine
+Topologie-Mutation (Split/Connect, Undo/Redo, Szenenwechsel) kann die
+gehoverte/selektierte ID aus dem Mesh entfernen; `mesh.edge_vertices()` /
+`mesh.face_vertices()` werfen dann `KeyError`, und weil der Aufruf mitten im
+Draw-Pfad liegt (`_sync_topology` → `_rebuild_resources`), crasht das den
+Zeichen-Loop. Der Viewport ist passiv und kann die Zustands-Invarianten der
+Application nicht kennen — er überspringt stale IDs, statt zu werfen (AD-001:
+eine ungültige ID ist über `mesh.is_valid_*()` erkennbar).
 """
 
 from __future__ import annotations
@@ -83,19 +93,31 @@ class SelectionOverlay:
         Im Face-Modus: alle Vertices selektierter Faces markiert.
         Hover kommt zusätzlich (mit demselben Flag) oben drauf, unabhängig
         vom aktuellen Selection-Modus.
+
+        IDs, die in `mesh` nicht (mehr) existieren (z. B. nach einer
+        Topologie-Änderung), werden übersprungen — dieselbe Regel wie in
+        `selected_vertex_positions()`/`line_layers()`/`face_layers()`.
         """
         highlighted: set[VertexId] = set()
 
         mode = self.selection.mode
         if mode is SelectionMode.VERTEX:
-            highlighted.update(self.selection.vertices)
+            highlighted.update(
+                vertex_id
+                for vertex_id in self.selection.vertices
+                if mesh.is_valid_vertex(vertex_id)
+            )
         elif mode is SelectionMode.EDGE:
             for edge_id in self.selection.edges:
+                if not mesh.is_valid_edge(edge_id):
+                    continue
                 va, vb = mesh.edge_vertices(edge_id)
                 highlighted.add(va)
                 highlighted.add(vb)
         elif mode is SelectionMode.FACE:
             for face_id in self.selection.faces:
+                if not mesh.is_valid_face(face_id):
+                    continue
                 highlighted.update(mesh.face_vertices(face_id))
 
         hovered = self.selection.hovered
@@ -110,12 +132,19 @@ class SelectionOverlay:
         return flags
 
     def _hovered_to_vertices(self, mesh, hovered) -> set[VertexId]:
+        """Vertices, die der gehoverte Hover-Treffer markiert. Ungültige IDs
+        (Element existiert nicht mehr, z. B. nach Split/Connect/Undo) und
+        unbekannte Typen ergeben eine leere Menge — siehe Moduldocstring."""
         if isinstance(hovered, VertexId):
-            return {hovered}
+            return {hovered} if mesh.is_valid_vertex(hovered) else set()
         if isinstance(hovered, EdgeId):
+            if not mesh.is_valid_edge(hovered):
+                return set()
             va, vb = mesh.edge_vertices(hovered)
             return {va, vb}
         if isinstance(hovered, FaceId):
+            if not mesh.is_valid_face(hovered):
+                return set()
             return set(mesh.face_vertices(hovered))
         return set()
 

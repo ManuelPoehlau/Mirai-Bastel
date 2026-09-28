@@ -19,11 +19,12 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 
-from core import SelectionMode
+from core import EdgeId, SelectionMode, VertexId
 from core.mesh import Mesh
 from mirai.application import Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
+from mirai.viewport.picking import pick_nearest_edge
 from tests.mesh_invariants import assert_mesh_invariants
 
 WIDTH, HEIGHT = 800, 600
@@ -33,8 +34,13 @@ def _key(value: str, *modifiers: str) -> Input:
     return Input("key", value, frozenset(modifiers))
 
 
+def _mouse(value: str, *modifiers: str) -> Input:
+    return Input("mouse", value, frozenset(modifiers))
+
+
 C = _key("c")
 W, E, R = _key("w"), _key("e"), _key("r")
+CTRL_Z = _key("z", "ctrl")
 
 
 @pytest.fixture
@@ -61,6 +67,55 @@ def _topology(mesh) -> dict:
     legitimately stays higher after Undo than it was pre-op; see
     `playground/tests/test_connect_lab.py::_topology` for the same pattern)."""
     return {k: v for k, v in mesh.export_state().items() if not k.endswith("_id_counter")}
+
+
+def _centroid(points) -> tuple[float, float, float]:
+    points = list(points)
+    return tuple(sum(p[i] for p in points) / len(points) for i in range(3))
+
+
+def _edge_screen(app, eid) -> tuple[float, float]:
+    """Bildposition der Kantenmitte (Projektion, wie in B5b-Tests)."""
+    mesh = app.scene.mesh
+    midpoint = _centroid(mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
+    return app.camera.project_to_screen(midpoint, WIDTH, HEIGHT)
+
+
+def _pickable_edge(app):
+    """Eine Edge, die ein Hover/Klick auf ihre Mitte auch trifft."""
+    mesh = app.scene.mesh
+    for eid in sorted(mesh.all_edge_ids()):
+        if pick_nearest_edge(app.camera, mesh, *_edge_screen(app, eid), WIDTH, HEIGHT) == eid:
+            return eid
+    raise AssertionError("no pickable edge")
+
+
+def _pickable_connectable_pair(app):
+    """`(gehoverte, partner)`-Edge-Paar für den Edge-Connect-Kontext: die
+    erste Edge wird unter dem Cursor wirklich gepickt, und beide teilen eine
+    Face, ohne benachbart zu sein (Connect Lab / AD-017 §1.4)."""
+    mesh = app.scene.mesh
+    for a in sorted(mesh.all_edge_ids()):
+        if pick_nearest_edge(app.camera, mesh, *_edge_screen(app, a), WIDTH, HEIGHT) != a:
+            continue
+        va, vb = mesh.edge_vertices(a)
+        faces_a = set(mesh.edge_faces(a))
+        for b in sorted(mesh.all_edge_ids()):
+            vc, vd = mesh.edge_vertices(b)
+            if b == a or {vc, vd} & {va, vb}:
+                continue  # benachbart → connect_vertices lehnt ab
+            if faces_a & set(mesh.edge_faces(b)):
+                return a, b
+    raise AssertionError("no pickable connectable edge pair")
+
+
+def _click(app, inp: Input, pos) -> None:
+    app.pointer_press(inp)
+    app.pointer_release(inp.value, *pos)
+
+
+def _highlight_flags(app) -> list[float]:
+    return list(app.viewport.render_mesh.store.data("highlight_flags"))
 
 
 # ---------------------------------------------------------------------------
@@ -411,3 +466,118 @@ def test_edge_connect_reaches_per_face_not_strip():
 
     assert len(app.history) == 2
     assert_mesh_invariants(mesh, context="pentagon continuation via C")
+
+
+# ---------------------------------------------------------------------------
+# 8. Hover/Selection nach einer Topologie-Mutation (Praxistest-Bug 2026-09-28)
+#
+# Praxistest: Edge hovern, anklicken, `C` → Split. `selection.hovered` zeigte
+# danach weiter auf die gerade entfernte Edge-ID; der nächste Frame crashte
+# beim Aufbau der `highlight_flags` (`KeyError: EdgeId(11)` in
+# `mesh.edge_vertices`, aufgerufen aus `RenderMesh._rebuild_resources`).
+# Zwei unabhängige Absicherungen werden hier geprüft:
+# - Production richtet den Hover nach einer Topologie-Änderung neu aus
+#   (`_notify_topology_changed` → `_refresh_hover`),
+# - der Viewport überspringt ungültige IDs, statt zu werfen (stale Auswahl
+#   bleibt möglich, weil Undo die Selection nicht wiederherstellt).
+# ---------------------------------------------------------------------------
+
+def test_split_does_not_leave_the_hovered_edge_stale(app):
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    eid = _pickable_edge(app)
+
+    # Wie im Fenster: Hover entsteht durch die Maus, der Klick wählt genau
+    # das gehoverte Element.
+    app.pointer_motion(*_edge_screen(app, eid))
+    assert sel.hovered == eid
+    _click(app, _mouse("LEFT"), _edge_screen(app, eid))
+    assert sel.edges == {eid}
+
+    assert app.key_press(C) is True
+    assert not mesh.is_valid_edge(eid)
+
+    app.update_viewport(0.0)  # war der Crash (Sync → highlight_flags)
+
+    # Kein stale/wrong-kind Hover: Split setzt den Vertex-Modus, also ist der
+    # Hover None oder ein gültiger Vertex — nie die entfernte Edge.
+    hovered = sel.hovered
+    assert hovered != eid
+    assert hovered is None or (
+        isinstance(hovered, VertexId) and mesh.is_valid_vertex(hovered)
+    )
+
+
+def test_undo_after_edge_connect_does_not_crash_the_render_path(app):
+    """Zweiter Crash-Punkt derselben Klasse: Undo nach Edge Connect entfernt
+    die neu entstandenen Edges, die Auswahl behält sie aber (Undo stellt
+    keine Selection wieder her). Der Sync danach muss die ungültige Auswahl
+    überspringen."""
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
+    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
+
+    assert app.key_press(C) is True
+    app.update_viewport(0.0)
+    new_edges = set(sel.edges)
+    assert new_edges and all(mesh.is_valid_edge(e) for e in new_edges)
+
+    assert app.key_press(CTRL_Z) is True
+    assert not any(mesh.is_valid_edge(e) for e in sel.edges)
+
+    app.update_viewport(0.0)  # war die zweite Crash-Stelle
+
+    assert set(_highlight_flags(app)) == {0.0}  # nichts Ungültiges markiert
+
+
+def test_transform_arm_after_undo_of_edge_connect_is_rejected_not_a_crash(app):
+    """Zweiter Fund derselben Klasse (Praxistest, 2026-09-28): `C` →
+    Edge Connect → `Ctrl+Z` → `W`. Die Auswahl behält die durch Undo
+    entfernten Edges; das Scharfschalten löst die Auswahl auf und muss die
+    ungültigen Handles überspringen — es bleibt bei der normalen Ablehnung
+    ("nothing to move"), statt mit `KeyError` abzustürzen."""
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    v0, v1, v2, v3 = (_vertex_by_position(mesh, i) for i in range(4))
+    sel.add({_edge(mesh, v3, v2), _edge(mesh, v1, v0)})
+
+    assert app.key_press(C) is True
+    connected = set(sel.edges)
+    assert app.key_press(CTRL_Z) is True
+    assert sel.edges == connected  # Undo stellt keine Selection her
+    assert not any(mesh.is_valid_edge(e) for e in connected)
+
+    assert app.key_press(W) is False
+    assert app.transform_command is None
+    assert app.status_message == "Move: nothing to move (select or hover a edge)"
+
+
+def test_edge_connect_reanchors_the_hovered_edge(app):
+    """Edge Connect ersetzt ebenfalls die selektierten Edges (samt der
+    gehoverten) — der Hover muss danach auf ein existierendes Element zeigen.
+    Vertex Connect fügt nur Edges hinzu und kann deshalb keinen stale Hover
+    erzeugen; nur der Edge-Connect-Zweig wird hier geprüft."""
+    mesh = app.scene.mesh
+    sel = app.scene.selection
+    sel.mode = SelectionMode.EDGE
+    hovered_edge, partner = _pickable_connectable_pair(app)
+
+    app.pointer_motion(*_edge_screen(app, hovered_edge))
+    assert sel.hovered == hovered_edge
+    sel.set({hovered_edge, partner})
+
+    assert app.key_press(C) is True
+    assert app.status_message == "Connect Edges"
+    assert not mesh.is_valid_edge(hovered_edge)
+
+    app.update_viewport(0.0)
+
+    hovered = sel.hovered
+    assert hovered != hovered_edge
+    assert hovered is None or (
+        isinstance(hovered, EdgeId) and mesh.is_valid_edge(hovered)
+    )
