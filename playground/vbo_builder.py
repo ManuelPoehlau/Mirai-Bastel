@@ -87,6 +87,27 @@ def build_knife_preview_point_data(world_pos: tuple[float, float, float]) -> lis
     return list(world_pos)
 
 
+def build_point_list_data(positions) -> list[float]:
+    """Several world-space points (GL_POINTS) — Knife Face Lab pending/path
+    interior points, which are not (yet) mesh vertices and so have no ID to
+    key a `build_selection_vertex_data`-style lookup by."""
+    out: list[float] = []
+    for pos in positions:
+        out.extend(pos)
+    return out
+
+
+def build_polyline_data(positions) -> list[float]:
+    """Consecutive world-space points as GL_LINES segments (p0-p1, p1-p2, ...)
+    — Knife Face Lab pending-path / hover-preview line, built from raw
+    positions (start/path points are not necessarily mesh vertices yet)."""
+    out: list[float] = []
+    for a, b in zip(positions, positions[1:]):
+        out.extend(a)
+        out.extend(b)
+    return out
+
+
 def build_selection_data(mesh: Mesh, selected_face_ids) -> list[float]:
     """Positionen für das Selection-Overlay-VBO (GL_TRIANGLES, expanded).
 

@@ -1,0 +1,842 @@
+"""Knife Face Cut Lab — engine (Discovery, no Core change, no Production change).
+
+LAB STAND-IN: every mesh mutation below goes through the *public* Core API only
+(add_vertex, add_face, remove_face, split_edge, connect_vertices) — the same
+"B2b" pattern as `experiments/topology/knife_face_cut_probe.py::split_face_path`,
+which is the evidence base for this file
+(`docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` §2/§3). It is not a Core
+primitive proposal by itself — that would be a separate AD (§3 "B2c sketch").
+
+Two session engines, both `mirai.interaction.tool.Tool` subclasses (same
+session/undo/commit/cancel state machine `mirai.topology.knife.KnifeTool`
+already uses — reused as-is here, not modified):
+
+  KnifeFaceImmediate (Variant B) — interior clicks are pending (non-mutating)
+    steps inside the *current* face; the whole path (start -> interior* ->
+    boundary) is applied in one mutation as soon as it reaches a vertex/edge
+    of that face. No interior start. Covers FC1-FC4.
+
+  KnifeFaceCollected (Variant D) — every click (vertex/edge/face) only
+    extends a virtual path; nothing mutates the mesh until commit. At commit,
+    the path is grouped into per-face runs and each run is resolved
+    (boundary-interior*-boundary -> split; interior-only closed path with
+    >=3 points -> closed shape with 2 bridges; anything left over is
+    dropped). Interior start allowed.
+
+Per AD-017 §1.10/decision #1 ("no universal Cut Engine"): the two variants
+are written independently, sharing only small mode-agnostic helpers (picking,
+`split_face_path`, `connect_in_shared_face`) - not a shared "path resolver".
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+from core import EdgeId, FaceId, VertexId
+from core.mesh import MeshError
+from core.selection import SelectionMode
+from core.operations.topology import MeshStateCommand
+
+from mirai.interaction.tool import Tool
+from mirai.topology.knife_pick import knife_pick as _base_knife_pick
+from mirai.topology.topology_points import connect_in_shared_face
+
+Position = tuple[float, float, float]
+
+# H3 (discovery §0): production edge pick radius is 9px — an interior point
+# needs at least that much clearance from every edge of its face, or there is
+# no room to distinguish "on the edge" from "inside the face".
+EDGE_MARGIN_PX = 9.0
+
+
+# ---------------------------------------------------------------------------
+# Picking — lab-local face-interior hit position (H1: pick_face returns only
+# the FaceId; src/mirai/viewport/picking.py is not touched, its algorithm is
+# duplicated here on purpose so the fan-triangulation/non-planar behaviour
+# (H2) matches exactly what Production already does for face hover).
+# ---------------------------------------------------------------------------
+
+def _ray_triangle_t(origin, direction, a, b, c):
+    """Same Möller-Trumbore test as `mirai.viewport.picking._ray_triangle_intersection`."""
+    eps = 1e-9
+    edge1 = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
+    edge2 = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
+    h = (
+        direction[1] * edge2[2] - direction[2] * edge2[1],
+        direction[2] * edge2[0] - direction[0] * edge2[2],
+        direction[0] * edge2[1] - direction[1] * edge2[0],
+    )
+    det = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2]
+    if abs(det) < eps:
+        return None
+    inv_det = 1.0 / det
+    s = (origin[0] - a[0], origin[1] - a[1], origin[2] - a[2])
+    u = inv_det * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2])
+    if u < -eps or u > 1.0 + eps:
+        return None
+    q = (
+        s[1] * edge1[2] - s[2] * edge1[1],
+        s[2] * edge1[0] - s[0] * edge1[2],
+        s[0] * edge1[1] - s[1] * edge1[0],
+    )
+    v = inv_det * (direction[0] * q[0] + direction[1] * q[1] + direction[2] * q[2])
+    if v < -eps or u + v > 1.0 + eps:
+        return None
+    t = inv_det * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2])
+    return t if t > eps else None
+
+
+def face_interior_hit(camera, mesh, face_id: FaceId, sx, sy, width, height) -> Position | None:
+    """World-space ray-hit position on `face_id`'s fan triangulation.
+
+    Fan from boundary[0], exactly like `pick_face` — so a hit on a non-planar
+    quad (H2, the `head` asset) lands on the same triangle `pick_face` itself
+    used to select this face. Returns None only in the numerically-degenerate
+    case where the ray, recomputed here, no longer intersects any fan
+    triangle of this specific face (should not happen since `pick_face`
+    already chose it, kept as a defensive fallback -> caller treats it as
+    "outside").
+    """
+    origin, direction = camera.screen_to_ray(sx, sy, width, height)
+    boundary = mesh.face_vertices(face_id)
+    if len(boundary) < 3:
+        return None
+    p0 = mesh.vertex_position(boundary[0])
+    best_t = None
+    for i in range(1, len(boundary) - 1):
+        p1 = mesh.vertex_position(boundary[i])
+        p2 = mesh.vertex_position(boundary[i + 1])
+        t = _ray_triangle_t(origin, direction, p0, p1, p2)
+        if t is not None and (best_t is None or t < best_t):
+            best_t = t
+    if best_t is None:
+        return None
+    return (
+        origin[0] + best_t * direction[0],
+        origin[1] + best_t * direction[1],
+        origin[2] + best_t * direction[2],
+    )
+
+
+def _point_segment_distance_px(px, py, ax, ay, bx, by) -> float:
+    abx, aby = bx - ax, by - ay
+    denom = abx * abx + aby * aby
+    if denom <= 1e-12:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * abx + (py - ay) * aby) / denom))
+    qx, qy = ax + t * abx, ay + t * aby
+    return math.hypot(px - qx, py - qy)
+
+
+def min_edge_distance_px(camera, mesh, face_id: FaceId, sx, sy, width, height) -> float | None:
+    """Screen-space distance from the cursor to the nearest boundary edge of
+    `face_id` — H3's "9px from every edge" gate. Since the face-interior hit
+    position corresponds to the cursor itself, this is simply the cursor's
+    own screen distance to each boundary edge (no reprojection needed)."""
+    boundary = mesh.face_vertices(face_id)
+    n = len(boundary)
+    best = None
+    for i in range(n):
+        a = camera.project_to_screen(mesh.vertex_position(boundary[i]), width, height)
+        b = camera.project_to_screen(mesh.vertex_position(boundary[(i + 1) % n]), width, height)
+        if a is None or b is None:
+            continue
+        d = _point_segment_distance_px(sx, sy, a[0], a[1], b[0], b[1])
+        if best is None or d < best:
+            best = d
+    return best
+
+
+def knife_face_pick(camera, mesh, sx, sy, width, height) -> dict:
+    """Like `mirai.topology.knife_pick.knife_pick`, plus a hit position and
+    edge-clearance for the "face" kind (reused unmodified for vertex/edge/
+    outside — H1 only needs a position on top of what it already returns)."""
+    target = _base_knife_pick(camera, mesh, sx, sy, width, height)
+    if target.get("kind") != "face":
+        return target
+    fid = target["face_id"]
+    pos = face_interior_hit(camera, mesh, fid, sx, sy, width, height)
+    if pos is None:
+        return {"kind": "outside"}
+    dist_px = min_edge_distance_px(camera, mesh, fid, sx, sy, width, height)
+    return {"kind": "face", "face_id": fid, "position": pos, "distance_px": dist_px}
+
+
+# ---------------------------------------------------------------------------
+# Shared mode-agnostic helpers (AD-017 §11 shape: small, reusable, no session
+# state) - not a "generic CutPath", just the same non-adjacency test KnifeTool
+# already makes and a chain-edge lookup after a face split.
+# ---------------------------------------------------------------------------
+
+def _shares_nonadjacent_face(mesh, a: VertexId, b: VertexId) -> bool:
+    """True if some face contains both `a` and `b` and they are not adjacent
+    in it. Local copy of `mirai.topology.knife._connectable_in_shared_face`
+    (private there) — same rule, used by both variants' "no pending points"
+    case (plain vertex-vertex connect, same as Production Knife)."""
+    if a == b:
+        return False
+    for fid in mesh.all_face_ids():
+        boundary = mesh.face_vertices(fid)
+        if a not in boundary or b not in boundary:
+            continue
+        n = len(boundary)
+        dist = (boundary.index(b) - boundary.index(a)) % n
+        if dist not in (1, n - 1):
+            return True
+    return False
+
+
+def _find_edge(mesh, a: VertexId, b: VertexId) -> EdgeId:
+    for eid in mesh.vertex_edges(a):
+        if set(mesh.edge_vertices(eid)) == {a, b}:
+            return eid
+    raise MeshError(f"internal: no edge between {a!r} and {b!r} after split")
+
+
+def _cyclic_walk(seq: list, i: int, j: int, step: int = 1) -> list:
+    """Walk `seq` cyclically from index `i` to index `j` (inclusive),
+    stepping by `step` (+1 forward / -1 backward), wrapping with `% n`."""
+    n = len(seq)
+    out = []
+    k = i
+    while True:
+        out.append(seq[k])
+        if k == j:
+            break
+        k = (k + step) % n
+    return out
+
+
+def split_face_path(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions: list[Position]):
+    """LAB STAND-IN for a possible Core `split_face` primitive (discovery §3
+    "B2c sketch") - split `face_id` along a path a -> positions... -> b, both
+    `a` and `b` existing boundary vertices of `face_id` (adjacent allowed,
+    unlike `Mesh.connect_vertices` - that is exactly what makes FC3/FC4
+    possible here).
+
+    Adapted from `experiments/topology/knife_face_cut_probe.py::split_face_path`
+    (same B2b construction: remove_face + add_vertex + add_face): the boundary
+    is partitioned into its two arcs a->b and b->a via a cyclic walk (correct
+    for every boundary order, including a/b adjacent through the wrap - the
+    probe's own index-slice-with-swap turns out to already be a correct,
+    equivalent normalization; the cyclic walk here is written out explicitly
+    because it is what this file's own reasoning was checked against).
+
+    H7: `Mesh.add_face` does not reject repeated boundary vertices - checked
+    here explicitly (both resulting loops, plus the path itself).
+
+    Returns (new_vertex_ids, face_1, face_2, path_edge_ids) - `face_1` is the
+    side running a -> b in boundary order (matches the B2c sketch's stated
+    convention); `path_edge_ids` are the k+1 new edges a-p0-p1-...-pk-b, in
+    that order.
+    """
+    if a == b:
+        raise MeshError("split_face_path: a and b must be distinct vertices")
+    boundary = mesh.face_vertices(face_id)
+    if a not in boundary or b not in boundary:
+        raise MeshError("split_face_path: a, b must be boundary vertices of face_id")
+
+    new_vs = [mesh.add_vertex(p) for p in positions]
+    chain = [a] + new_vs + [b]
+    if len(set(chain)) != len(chain):
+        raise MeshError("split_face_path: cut path revisits a vertex")
+
+    i, j = boundary.index(a), boundary.index(b)
+    seg_ab = _cyclic_walk(boundary, i, j)      # a .. b, forward
+    seg_ba = _cyclic_walk(boundary, j, i)      # b .. a, forward
+    loop1 = seg_ab + list(reversed(new_vs))    # face 1: a -> b along boundary, back through the path
+    loop2 = seg_ba + list(new_vs)              # face 2: b -> a along boundary, forward through the path
+
+    for name, loop in (("1", loop1), ("2", loop2)):
+        if len(loop) < 3 or len(set(loop)) != len(loop):
+            raise MeshError(f"split_face_path: face {name} degenerate ({loop!r})")
+
+    mesh.remove_face(face_id)
+    f1 = mesh.add_face(loop1)
+    f2 = mesh.add_face(loop2)
+    path_edges = [_find_edge(mesh, u, v) for u, v in zip(chain, chain[1:])]
+    return new_vs, f1, f2, path_edges
+
+
+def _dist3(p, q) -> float:
+    return math.sqrt(sum((p[k] - q[k]) ** 2 for k in range(3)))
+
+
+def _loop_adjacent(a: int, b: int, k: int) -> bool:
+    return (a - b) % k in (1, k - 1)
+
+
+def select_bridge(mesh, boundary: list[VertexId], loop_positions: list[Position]):
+    """LAB DEFAULT rule (spec §2, explicitly "not a UX decision") for closing
+    an interior loop: pick two loop points, each nearest to a *distinct*
+    boundary vertex, whose loop indices are not themselves loop-adjacent
+    (except for a 3-point loop, where every pair is mutually adjacent and the
+    constraint is dropped).
+
+    Simplification flagged in decision.md: "nearest" is measured in *world*
+    space, not screen space as the spec's default wording suggests - this
+    engine has no camera (kept headless-testable, see §6); for a face viewed
+    close to head-on the two rankings coincide in practice.
+
+    Returns (loop_index_1, boundary_vertex_1, loop_index_2, boundary_vertex_2).
+    """
+    k = len(loop_positions)
+    candidates = []
+    for li, pos in enumerate(loop_positions):
+        best_bv, best_d = None, None
+        for bv in boundary:
+            d = _dist3(pos, mesh.vertex_position(bv))
+            if best_d is None or d < best_d:
+                best_bv, best_d = bv, d
+        candidates.append((best_d, li, best_bv))
+    candidates.sort(key=lambda c: c[0])
+
+    i1, bv1 = candidates[0][1], candidates[0][2]
+    for _dist, li, bv in candidates[1:]:
+        if bv == bv1:
+            continue
+        if k > 3 and _loop_adjacent(li, i1, k):
+            continue
+        return i1, bv1, li, bv
+    raise MeshError("select_bridge: no valid second bridge point (lab default rule)")
+
+
+def close_loop_with_bridges(
+    mesh, face_id: FaceId, loop_positions: list[Position],
+    i1: int, bv1: VertexId, i2: int, bv2: VertexId,
+):
+    """LAB STAND-IN: close an interior loop (>=3 points) inside `face_id` by
+    bridging it to the boundary with 2 edges (spec §2 "closed shape stand-in").
+
+    Splits `face_id` into exactly 3 faces (spec: "3 pieces in a quad"):
+      - the loop itself (a pure k-gon, all loop edges);
+      - the wing between boundary-arc(bv1->bv2) and loop-arc(i2->i1, backward);
+      - the wing between boundary-arc(bv2->bv1) and loop-arc(i1->i2, forward);
+    the two bridge edges (bv1-loop[i1], bv2-loop[i2]) each border both wings.
+
+    This is a genuine 3-way split of one face - not two applications of
+    `split_face_path` - because neither wing can be built without the other
+    already existing (each bridge edge borders both of them, and the loop's
+    own edges border the loop face and exactly one wing each). Written out
+    directly (H7 checked per resulting loop) rather than composed.
+    """
+    k = len(loop_positions)
+    if k < 3:
+        raise MeshError("close_loop_with_bridges: needs >= 3 interior points")
+    if i1 == i2 or bv1 == bv2:
+        raise MeshError("close_loop_with_bridges: bridges must be distinct")
+    boundary = mesh.face_vertices(face_id)
+    if bv1 not in boundary or bv2 not in boundary:
+        raise MeshError("close_loop_with_bridges: bridge vertices must be on face_id's boundary")
+
+    loop_vs = [mesh.add_vertex(p) for p in loop_positions]
+
+    bi, bj = boundary.index(bv1), boundary.index(bv2)
+    seg_ab = _cyclic_walk(boundary, bi, bj)                      # bv1 .. bv2, forward
+    seg_ba = _cyclic_walk(boundary, bj, bi)                      # bv2 .. bv1, forward
+    # The loop's two arcs between the bridge points, both walked *forward*
+    # (increasing index, wrapping) so they are true complements of each other
+    # covering every loop vertex exactly once outside {i1, i2} — walking one
+    # of them backward (decreasing index) does not give the complementary
+    # arc, it can retrace the *same* short arc as arc_fwd (observed for a
+    # 3-point loop with loop-adjacent bridges: both arcs collapsed onto the
+    # single edge between i1/i2, leaving that edge shared by 3 faces).
+    arc_back = _cyclic_walk(loop_vs, i2, i1, step=1)             # loop[i2] .. loop[i1], forward
+    arc_fwd = _cyclic_walk(loop_vs, i1, i2, step=1)              # loop[i1] .. loop[i2], forward
+
+    face_inner = list(loop_vs)
+    face_a = seg_ab + arc_back
+    face_b = seg_ba + arc_fwd
+
+    for name, loop in (("inner", face_inner), ("A", face_a), ("B", face_b)):
+        if len(loop) < 3 or len(set(loop)) != len(loop):
+            raise MeshError(f"close_loop_with_bridges: face {name} degenerate ({loop!r})")
+
+    mesh.remove_face(face_id)
+    f_inner = mesh.add_face(face_inner)
+    f_a = mesh.add_face(face_a)
+    f_b = mesh.add_face(face_b)
+    loop_edges = [_find_edge(mesh, loop_vs[idx], loop_vs[(idx + 1) % k]) for idx in range(k)]
+    return loop_vs, f_inner, f_a, f_b, loop_edges
+
+
+def _copy_attr(value):
+    return list(value) if isinstance(value, list) else value
+
+
+# ---------------------------------------------------------------------------
+# Session base — shared step/undo/redo/commit/cancel bookkeeping only (AD-017
+# §1.10 decision #1: the two variants' own click/accepts/hover logic is NOT
+# shared - "no universal Cut Engine").
+# ---------------------------------------------------------------------------
+
+class _KnifeFaceSession(Tool):
+    history_description = "Knife Face"
+    _SNAPSHOT_ATTRS: tuple[str, ...] = ()
+
+    def _on_activate(self) -> None:
+        self._mesh = None
+        self._scene = None
+        self._selection = None
+        self._session_before: Any = None
+        self._path_edges: list[EdgeId] = []
+        self._step_stack: list[dict] = []
+        self._redo_stack: list[tuple[dict, dict]] = []
+        self.last_message = ""
+
+    def _on_begin(self, mesh=None, scene=None, selection=None, **_) -> None:
+        self._mesh = mesh
+        self._scene = scene
+        self._selection = selection
+        self._session_before = mesh.export_state()
+        self._path_edges = []
+        self._step_stack = []
+        self._redo_stack = []
+        self.last_message = ""
+        self._init_state()
+
+    def _init_state(self) -> None:
+        """Subclass hook: reset variant-specific session state."""
+
+    @property
+    def path_edges(self) -> list[EdgeId]:
+        return list(self._path_edges)
+
+    def _snapshot(self) -> dict:
+        snap = {"state": self._mesh.export_state(), "path_edges": list(self._path_edges)}
+        for attr in self._SNAPSHOT_ATTRS:
+            snap[attr] = _copy_attr(getattr(self, attr))
+        return snap
+
+    def _restore(self, snap: dict) -> None:
+        self._mesh.load_state(snap["state"])
+        self._path_edges = list(snap["path_edges"])
+        for attr in self._SNAPSHOT_ATTRS:
+            setattr(self, attr, _copy_attr(snap[attr]))
+
+    def _push_step(self) -> None:
+        self._step_stack.append(self._snapshot())
+
+    def undo_step(self) -> bool:
+        if not self._step_stack:
+            return False
+        before = self._step_stack.pop()
+        after = self._snapshot()
+        self._redo_stack.append((before, after))
+        self._restore(before)
+        return True
+
+    def redo_step(self) -> bool:
+        if not self._redo_stack:
+            return False
+        before, after = self._redo_stack.pop()
+        self._restore(after)
+        self._step_stack.append(before)
+        return True
+
+    def _on_update(self, **kwargs) -> None:
+        pass
+
+    def _on_commit(self) -> Any:
+        current_state = self._mesh.export_state()
+        if current_state == self._session_before:
+            self.last_message = self.last_message or "commit: nothing changed"
+            return None
+        valid_path = [e for e in self._path_edges if self._mesh.is_valid_edge(e)]
+        cmd = MeshStateCommand(
+            mesh=self._mesh,
+            before_state=self._session_before,
+            after_state=current_state,
+            description=self.history_description,
+        )
+        self._scene.history.push(cmd)
+        self._redo_stack.clear()
+        self._selection.mode = SelectionMode.EDGE
+        self._selection.clear()
+        self._selection.add(set(valid_path))
+        return cmd
+
+    def _on_cancel(self) -> None:
+        self._mesh.load_state(self._session_before)
+        self._step_stack.clear()
+        self._redo_stack.clear()
+        self._path_edges = []
+        self._init_state()
+
+
+# ---------------------------------------------------------------------------
+# Variant B — Immediate (control): existing Knife semantics extended.
+# ---------------------------------------------------------------------------
+
+class KnifeFaceImmediate(_KnifeFaceSession):
+    """Variant B: interior clicks are pending inside the *current* face; the
+    whole a -> interior* -> boundary path applies in one mutation as soon as
+    the path reaches a vertex/edge of that face. No interior start (spec §2,
+    acceptance criterion 3)."""
+
+    history_description = "Knife Face (Immediate)"
+    _SNAPSHOT_ATTRS = ("_start", "_pending_face", "_pending_positions")
+
+    def _init_state(self) -> None:
+        self._start: VertexId | None = None
+        self._pending_face: FaceId | None = None
+        self._pending_positions: list[Position] = []
+
+    @property
+    def start(self) -> VertexId | None:
+        return self._start
+
+    @property
+    def pending_face(self) -> FaceId | None:
+        return self._pending_face
+
+    @property
+    def pending_positions(self) -> list[Position]:
+        return list(self._pending_positions)
+
+    def accepts(self, target: dict) -> bool:
+        kind = target.get("kind") if target else None
+        if kind == "vertex":
+            vid = target.get("vertex_id")
+            if vid is None or not self._mesh.is_valid_vertex(vid):
+                return False
+            if self._start is None:
+                return True
+            if self._pending_positions:
+                return vid in self._mesh.face_vertices(self._pending_face)
+            return _shares_nonadjacent_face(self._mesh, self._start, vid)
+
+        if kind == "edge":
+            eid, t = target.get("edge_id"), target.get("t", 0.5)
+            if eid is None or not self._mesh.is_valid_edge(eid) or not (0.0 < t < 1.0):
+                return False
+            if self._start is None:
+                return True
+            if self._pending_positions:
+                return eid in self._mesh.face_edges(self._pending_face)
+            if self._start in self._mesh.edge_vertices(eid):
+                return False
+            start_faces = {f for e in self._mesh.vertex_edges(self._start) for f in self._mesh.edge_faces(e)}
+            return bool(start_faces & set(self._mesh.edge_faces(eid)))
+
+        if kind == "face":
+            fid = target.get("face_id")
+            if fid is None or self._start is None:
+                return False  # B: no interior start (acceptance criterion 3)
+            if self._pending_positions:
+                if fid != self._pending_face:
+                    return False
+            elif self._start not in self._mesh.face_vertices(fid):
+                return False
+            dist = target.get("distance_px")
+            return dist is not None and dist >= EDGE_MARGIN_PX
+
+        return False
+
+    def hover(self, target: dict) -> dict:
+        """`valid` follows `accepts()` exactly (acceptance criterion 6)."""
+        return {
+            "valid": self.accepts(target),
+            "target": target,
+            "start": self._start,
+            "pending_face": self._pending_face,
+            "pending_positions": list(self._pending_positions),
+        }
+
+    def _resolve_boundary(self, target: dict, face_id: FaceId) -> VertexId | None:
+        if target["kind"] == "vertex":
+            vid = target["vertex_id"]
+            return vid if vid in self._mesh.face_vertices(face_id) else None
+        eid = target["edge_id"]
+        if eid not in self._mesh.face_edges(face_id):
+            return None
+        new_v, _, _ = self._mesh.split_edge(eid, target["t"])
+        return new_v
+
+    def click(self, target: dict) -> bool:
+        if not self.accepts(target):
+            self.last_message = "rejected"
+            return False
+        kind = target["kind"]
+
+        if kind == "face":
+            self._push_step()
+            if self._pending_face is None:
+                self._pending_face = target["face_id"]
+            self._pending_positions.append(target["position"])
+            self._redo_stack.clear()
+            self.last_message = f"pending interior point ({len(self._pending_positions)})"
+            return True
+
+        self._push_step()
+
+        if self._pending_positions:
+            face_id = self._pending_face
+            b = self._resolve_boundary(target, face_id)
+            if b is None:
+                self._step_stack.pop()
+                self.last_message = "rejected: target not on the pending face's boundary"
+                return False
+            try:
+                new_vs, _f1, _f2, path_edges = split_face_path(
+                    self._mesh, face_id, self._start, b, self._pending_positions,
+                )
+            except MeshError as exc:
+                self._step_stack.pop()
+                self.last_message = f"cut rejected: {exc}"
+                return False
+            self._path_edges.extend(path_edges)
+            self._start = b
+            self._pending_face = None
+            self._pending_positions = []
+            self._redo_stack.clear()
+            self.last_message = f"cut applied ({len(new_vs)} interior point(s))"
+            return True
+
+        # No pending points — same semantics as Production Knife (AD-017).
+        if kind == "vertex":
+            vid = target["vertex_id"]
+            if self._start is None:
+                self._start = vid
+                self.last_message = "start set"
+                return True
+            eid = connect_in_shared_face(self._mesh, self._start, vid)
+            if eid is None:
+                self._step_stack.pop()
+                self.last_message = "connect failed"
+                return False
+            self._path_edges.append(eid)
+            self._start = vid
+            self._redo_stack.clear()
+            self.last_message = "cut applied"
+            return True
+
+        # kind == "edge"
+        eid, t = target["edge_id"], target["t"]
+        if self._start is None:
+            new_v, _, _ = self._mesh.split_edge(eid, t)
+            self._start = new_v
+            self.last_message = "start set"
+            return True
+        new_v, _, _ = self._mesh.split_edge(eid, t)
+        conn = connect_in_shared_face(self._mesh, self._start, new_v)
+        if conn is None:
+            step = self._step_stack.pop()
+            self._restore(step)
+            self.last_message = "connect failed"
+            return False
+        self._path_edges.append(conn)
+        self._start = new_v
+        self._redo_stack.clear()
+        self.last_message = "cut applied"
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Variant D — Collected (Silo-like): applied at commit.
+# ---------------------------------------------------------------------------
+
+class KnifeFaceCollected(_KnifeFaceSession):
+    """Variant D: every click only extends a virtual path; the mesh changes
+    only at commit. Interior start allowed (unlike B)."""
+
+    history_description = "Knife Face (Collected)"
+    _SNAPSHOT_ATTRS = ("_path",)
+
+    def _init_state(self) -> None:
+        self._path: list[dict] = []
+
+    @property
+    def path(self) -> list[dict]:
+        return list(self._path)
+
+    def _point_faces(self, p: dict) -> set[FaceId]:
+        if p["kind"] == "vertex":
+            vid = p["vertex_id"]
+            return {f for e in self._mesh.vertex_edges(vid) for f in self._mesh.edge_faces(e)}
+        if p["kind"] == "edge":
+            return set(self._mesh.edge_faces(p["edge_id"]))
+        if p["kind"] == "face":
+            return {p["face_id"]}
+        return set()
+
+    def accepts(self, target: dict) -> bool:
+        kind = target.get("kind") if target else None
+        if kind == "vertex":
+            vid = target.get("vertex_id")
+            if vid is None or not self._mesh.is_valid_vertex(vid):
+                return False
+        elif kind == "edge":
+            eid, t = target.get("edge_id"), target.get("t", 0.5)
+            if eid is None or not self._mesh.is_valid_edge(eid) or not (0.0 < t < 1.0):
+                return False
+        elif kind == "face":
+            if target.get("face_id") is None or target.get("position") is None:
+                return False
+            dist = target.get("distance_px")
+            if dist is None or dist < EDGE_MARGIN_PX:
+                return False
+        else:
+            return False
+
+        if not self._path:
+            return True  # D: interior start allowed (acceptance criterion 3)
+
+        prev = self._path[-1]
+        if prev["kind"] == "face":
+            fid = prev["face_id"]
+            if kind == "face":
+                return target["face_id"] == fid
+            if kind == "vertex":
+                return target["vertex_id"] in self._mesh.face_vertices(fid)
+            return target["edge_id"] in self._mesh.face_edges(fid)  # kind == "edge"
+
+        prev_faces = self._point_faces(prev)
+        if kind == "face":
+            return target["face_id"] in prev_faces
+        if not (prev_faces & self._point_faces(target)):
+            return False
+        # Directly-adjacent boundary-to-boundary (no interior point between
+        # them yet) follows the same non-adjacency rule as Production Knife;
+        # once an interior point sits between two boundary points, that pair
+        # is never checked against each other directly (each side is checked
+        # against the face-interior point instead, above) — the notch/FC3/
+        # FC4 cases stay reachable exactly as they are for Variant B.
+        if kind == "vertex" and prev["kind"] == "vertex":
+            return _shares_nonadjacent_face(self._mesh, prev["vertex_id"], target["vertex_id"])
+        if kind == "edge" and prev["kind"] == "vertex":
+            if prev["vertex_id"] in self._mesh.edge_vertices(target["edge_id"]):
+                return False
+        return True
+
+    def hover(self, target: dict) -> dict:
+        return {"valid": self.accepts(target), "target": target, "path": list(self._path)}
+
+    def click(self, target: dict) -> bool:
+        if not self.accepts(target):
+            self.last_message = "rejected"
+            return False
+        self._push_step()
+        self._path.append(dict(target))
+        self._redo_stack.clear()
+        self.last_message = f"pending: {len(self._path)} point(s)"
+        return True
+
+    # -- commit-time resolution --------------------------------------------
+
+    def _resolve_boundary_point(self, p: dict) -> VertexId:
+        if p["kind"] == "vertex":
+            return p["vertex_id"]
+        v, _, _ = self._mesh.split_edge(p["edge_id"], p["t"])
+        return v
+
+    def _resolve_shared_edge_pair(self, eid: EdgeId, t_first: float, t_second: float):
+        """Both run ends are edge-points on the *same* original (pre-commit)
+        edge — the notch/FC3 case. Splits once at the smaller t, then splits
+        the remainder at the adjusted second t; returns the two new vertices
+        in click order (first, second)."""
+        lo_t, hi_t = (t_first, t_second) if t_first <= t_second else (t_second, t_first)
+        v_lo, _e_a, e_b = self._mesh.split_edge(eid, lo_t)
+        hi_t_adj = (hi_t - lo_t) / (1.0 - lo_t)
+        v_hi, _, _ = self._mesh.split_edge(e_b, hi_t_adj)
+        return (v_lo, v_hi) if t_first <= t_second else (v_hi, v_lo)
+
+    def _apply_run(self, run: list[dict]) -> bool:
+        first, last = run[0], run[-1]
+        interior = run[1:-1]
+        positions = [p["position"] for p in interior]
+
+        if (
+            first["kind"] == "edge" and last["kind"] == "edge"
+            and first["edge_id"] == last["edge_id"]
+        ):
+            a, b = self._resolve_shared_edge_pair(first["edge_id"], first["t"], last["t"])
+        else:
+            a = self._resolve_boundary_point(first)
+            b = self._resolve_boundary_point(last)
+
+        if not positions:
+            eid = connect_in_shared_face(self._mesh, a, b)
+            if eid is None:
+                return False
+            self._path_edges.append(eid)
+            return True
+
+        face_id = interior[0]["face_id"]
+        try:
+            _new_vs, _f1, _f2, path_edges = split_face_path(self._mesh, face_id, a, b, positions)
+        except MeshError:
+            return False
+        self._path_edges.extend(path_edges)
+        return True
+
+    def _resolve_closed_loop(self, path: list[dict]) -> str:
+        fid = path[0]["face_id"]
+        positions = [p["position"] for p in path]
+        boundary = self._mesh.face_vertices(fid)
+        try:
+            i1, bv1, i2, bv2 = select_bridge(self._mesh, boundary, positions)
+            _loop_vs, _f_inner, _f_a, _f_b, loop_edges = close_loop_with_bridges(
+                self._mesh, fid, positions, i1, bv1, i2, bv2,
+            )
+        except MeshError as exc:
+            return f"closed shape rejected: {exc}"
+        self._path_edges.extend(loop_edges)
+        return f"closed shape — {len(positions)} points, 2 bridges, 3 faces"
+
+    def _resolve_path(self) -> None:
+        path = self._path
+        if not path:
+            self.last_message = "no points"
+            return
+
+        if all(p["kind"] == "face" for p in path):
+            fid = path[0]["face_id"]
+            if len(path) < 3 or any(p["face_id"] != fid for p in path):
+                self.last_message = (
+                    f"closed shape needs >= 3 points in one face — dropped "
+                    f"({len(path)} point(s)); mesh unchanged"
+                )
+                return
+            self.last_message = self._resolve_closed_loop(path)
+            return
+
+        # Leading interior points before the first boundary point have no
+        # boundary vertex to anchor a split_face_path on (same class as the
+        # discovery's FC5 "dangling start" — not a valid cut result unless
+        # the path closes back on itself, which only the pure-interior-loop
+        # branch above handles) — dropped, same as a dangling tail.
+        lead_drop = 0
+        while lead_drop < len(path) and path[lead_drop]["kind"] == "face":
+            lead_drop += 1
+        dropped_lead = lead_drop > 0
+        path = path[lead_drop:]
+
+        runs: list[list[dict]] = []
+        current: list[dict] = []
+        for p in path:
+            current.append(p)
+            if p["kind"] in ("vertex", "edge"):
+                if len(current) >= 2:
+                    runs.append(current)
+                current = [p]
+        dropped_tail = len(current) > 1
+
+        applied = 0
+        for run in runs:
+            if self._apply_run(run):
+                applied += 1
+        msg = f"{applied}/{len(runs)} cut(s) applied" if runs else "no complete cut"
+        notes = []
+        if dropped_lead:
+            notes.append("leading interior point(s) dropped (no boundary reached before them)")
+        if dropped_tail:
+            notes.append("trailing interior point(s) dropped (no boundary reached)")
+        if notes:
+            msg += "; " + "; ".join(notes)
+        self.last_message = msg
+
+    def _on_commit(self) -> Any:
+        self._resolve_path()
+        return super()._on_commit()
