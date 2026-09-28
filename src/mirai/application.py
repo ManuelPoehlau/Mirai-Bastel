@@ -680,9 +680,38 @@ class Application:
         # statt `on_vertices_moved(ids)`.
         if self.viewport is not None:
             self.viewport.on_topology_changed()
+        self._prune_ghost_selection()
         self._set_status(command)
         self._refresh_hover()
         return True
+
+    def _prune_ghost_selection(self) -> None:
+        """WP-06 B6 Follow-up: entfernt nach Undo/Redo jedes Handle, das
+        `mesh` nicht mehr kennt ("ghost selection").
+
+        `MeshStateCommand` stellt das Mesh wieder her, aber nicht die
+        `Selection` - Handles von Elementen, die die Mutation entfernt hatte,
+        blieben bisher als tote IDs in `selection` liegen. Der B6-Crash-Fix
+        (`_notify_topology_changed`, `_element_vertices`, `resolve_selection_
+        vertices`) machte Konsumenten nur tolerant gegenüber solchen IDs;
+        sie zählten aber weiter in `len(selection.edges/vertices/faces)`, was
+        z. B. `resolve_c_context` nach einem Undo in den falschen Kontext
+        auflösen konnte. Dieselbe `is_valid_*`-Prüfung wie dort, kein zweiter
+        Mechanismus. Nur Pruning - ob Undo die vorherige Auswahl
+        wiederherstellen sollte, ist eine offene Artist-Frage (ROADMAP) und
+        wird hier bewusst nicht entschieden."""
+        mesh = self.scene.mesh
+        selection = self.selection
+        selection.vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
+        selection.edges = {e for e in selection.edges if mesh.is_valid_edge(e)}
+        selection.faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        hovered = selection.hovered
+        if isinstance(hovered, VertexId) and not mesh.is_valid_vertex(hovered):
+            selection.hovered = None
+        elif isinstance(hovered, EdgeId) and not mesh.is_valid_edge(hovered):
+            selection.hovered = None
+        elif isinstance(hovered, FaceId) and not mesh.is_valid_face(hovered):
+            selection.hovered = None
 
     def _set_status(self, message: str) -> None:
         self.status_message = message
