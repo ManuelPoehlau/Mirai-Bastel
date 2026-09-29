@@ -62,12 +62,16 @@ paragraph describes the earlier A/B/C variants, not these):
   interior start followed by exactly one edge/vertex click has no second anchor to cut between, so `Enter`
   drops the interior point and leaves the mesh unchanged (same class as a dangling tail, HUD note). This
   was found live (not assumed) while building — see Observations.
-- Task 4: both variants cut inside the cheek quad. Continuing into the *neighbouring* quad's interior is
-  not blocked by construction (once the cut reaches a shared vertex, that vertex sits on the neighbour's
-  boundary too, so a fresh interior click there is a *new* face-local run, not a same-segment crossing —
-  Q5 cross-face segments, which are genuinely out of scope, are about one click-to-click segment spanning
-  two faces, not this). Whether the line/preview makes this legible, or reads as "it kept going" without
-  the Artist expecting it, is exactly what this task asks Manu to notice.
+- Task 4: both variants cut inside the cheek quad. Continuing straight into the *neighbouring* quad's
+  interior right after that (no line, click rejected, HUD note) is a **known limitation, not a bug** —
+  cross-face cutting (seeing the line continue into the neighbour face and having the click cut through
+  both, Blender-like) is a required *later* capability (discovery Q5) deliberately left out of this lab so
+  it does not confound the Face Cut verdict (Manu, A5, 2026-09-28). A plain vertex/edge click (no interior
+  point) *does* still open the neighbour face up for its own, separate interior cut afterwards — only the
+  direct "cut → interior click in the next face" jump is blocked.
+- Task 4 addendum: watch specifically for the *moment* the neighbour face's interior click gets rejected
+  right after finishing the cheek cut — that is the one line/point this lab intentionally never shows,
+  per A5.
 - Task 5: **D** only (B has no closed-shape support at all — the family doesn't offer it, `M` still only
   toggles between B and D). Produces 3 faces from 1, per the stand-in rule above.
 
@@ -105,3 +109,12 @@ _(incidental evidence — raises priority of other questions, does not decide th
   fan-triangulation `pick_face` already used to select the face — so a hit on a non-planar quad lands
   wherever that triangulation puts it, not necessarily where it visually looks centered. Note whether this
   was visible on the head asset.
+- **A5's exact mechanism is a build-time choice, not something Manu specified beyond "stays invalid, no
+  line":** a face is locked out for a fresh interior click only for the *one* click right after an
+  interior-involving cut resolves; any plain (no-interior) vertex/edge click clears the lock again,
+  wherever it goes — including back toward the same neighbour face. This was picked so ordinary multi-quad
+  chaining (already normal Knife behaviour, unrelated to Face Cut) stays free, while the specific "slide
+  straight from one cut into the next face's interior" transition the discovery doc's own §8 flagged for
+  the original Variant B ("the neighbour-quad click in task 4 is invalid by design") is blocked. Whether
+  this specific unlock rule (one plain click, any direction) matches what Manu would expect is untested —
+  flagging it rather than assuming it's obviously right.

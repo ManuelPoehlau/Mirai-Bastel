@@ -476,12 +476,23 @@ class KnifeFaceImmediate(_KnifeFaceSession):
     acceptance criterion 3)."""
 
     history_description = "Knife Face (Immediate)"
-    _SNAPSHOT_ATTRS = ("_start", "_pending_face", "_pending_positions")
+    _SNAPSHOT_ATTRS = ("_start", "_pending_face", "_pending_positions", "_face_cut_lock")
 
     def _init_state(self) -> None:
         self._start: VertexId | None = None
         self._pending_face: FaceId | None = None
         self._pending_positions: list[Position] = []
+        # Manu, A5 (2026-09-28): moving from a just-finished interior cut
+        # straight into a *neighbouring* face's interior must stay invalid,
+        # with no line — that would visually read as a cross-face cut
+        # (Blender-like), which is explicitly deferred (discovery Q5), not
+        # this lab. Set True the moment an interior-involving cut resolves;
+        # cleared by any subsequent plain (no-interior) vertex/edge click —
+        # an explicit boundary hop "un-ambiguates" which face comes next.
+        # Matches the discovery doc's own §8 "Expected" note for the
+        # original Variant B ("the neighbour-quad click in task 4 is
+        # invalid by design").
+        self._face_cut_lock: bool = False
 
     @property
     def start(self) -> VertexId | None:
@@ -527,8 +538,11 @@ class KnifeFaceImmediate(_KnifeFaceSession):
             if self._pending_positions:
                 if fid != self._pending_face:
                     return False
-            elif self._start not in self._mesh.face_vertices(fid):
-                return False
+            else:
+                if self._face_cut_lock:
+                    return False  # A5: neighbour face right after a cut — invalid, no line
+                if self._start not in self._mesh.face_vertices(fid):
+                    return False
             dist = target.get("distance_px")
             return dist is not None and dist >= EDGE_MARGIN_PX
 
@@ -590,15 +604,19 @@ class KnifeFaceImmediate(_KnifeFaceSession):
             self._start = b
             self._pending_face = None
             self._pending_positions = []
+            self._face_cut_lock = True  # A5: block a neighbour-face interior click next
             self._redo_stack.clear()
             self.last_message = f"cut applied ({len(new_vs)} interior point(s))"
             return True
 
         # No pending points — same semantics as Production Knife (AD-017).
+        # A plain boundary click always clears the lock: it is the explicit
+        # "un-ambiguating" hop A5 asks for before a new face may be opened.
         if kind == "vertex":
             vid = target["vertex_id"]
             if self._start is None:
                 self._start = vid
+                self._face_cut_lock = False
                 self.last_message = "start set"
                 return True
             eid = connect_in_shared_face(self._mesh, self._start, vid)
@@ -608,6 +626,7 @@ class KnifeFaceImmediate(_KnifeFaceSession):
                 return False
             self._path_edges.append(eid)
             self._start = vid
+            self._face_cut_lock = False
             self._redo_stack.clear()
             self.last_message = "cut applied"
             return True
@@ -617,6 +636,7 @@ class KnifeFaceImmediate(_KnifeFaceSession):
         if self._start is None:
             new_v, _, _ = self._mesh.split_edge(eid, t)
             self._start = new_v
+            self._face_cut_lock = False
             self.last_message = "start set"
             return True
         new_v, _, _ = self._mesh.split_edge(eid, t)
@@ -628,6 +648,7 @@ class KnifeFaceImmediate(_KnifeFaceSession):
             return False
         self._path_edges.append(conn)
         self._start = new_v
+        self._face_cut_lock = False
         self._redo_stack.clear()
         self.last_message = "cut applied"
         return True
@@ -642,10 +663,19 @@ class KnifeFaceCollected(_KnifeFaceSession):
     only at commit. Interior start allowed (unlike B)."""
 
     history_description = "Knife Face (Collected)"
-    _SNAPSHOT_ATTRS = ("_path",)
+    _SNAPSHOT_ATTRS = ("_path", "_face_cut_lock")
 
     def _init_state(self) -> None:
         self._path: list[dict] = []
+        # Manu, A5 (2026-09-28) — same rule as Variant B (see there for the
+        # rationale): True right after the path completes a [boundary,
+        # interior+, boundary] run, blocking a fresh interior click in a
+        # *neighbouring* face until a plain boundary-to-boundary click
+        # "un-ambiguates" which face comes next. Recomputed on every
+        # boundary-kind click from the path itself (nothing mutates in D
+        # before commit, so there is no click-time mesh state to hang a
+        # simpler flag off of).
+        self._face_cut_lock: bool = False
 
     @property
     def path(self) -> list[dict]:
@@ -694,6 +724,8 @@ class KnifeFaceCollected(_KnifeFaceSession):
 
         prev_faces = self._point_faces(prev)
         if kind == "face":
+            if self._face_cut_lock:
+                return False  # A5: neighbour face right after a completed run — invalid, no line
             return target["face_id"] in prev_faces
         if not (prev_faces & self._point_faces(target)):
             return False
@@ -719,6 +751,16 @@ class KnifeFaceCollected(_KnifeFaceSession):
             return False
         self._push_step()
         self._path.append(dict(target))
+        if target["kind"] in ("vertex", "edge"):
+            # A5: lock iff an interior point occurred since the previous
+            # boundary point — i.e. this click just closed a [boundary,
+            # interior+, boundary] run, not a plain boundary-to-boundary hop.
+            had_interior = False
+            for p in reversed(self._path[:-1]):
+                if p["kind"] in ("vertex", "edge"):
+                    break
+                had_interior = True
+            self._face_cut_lock = had_interior
         self._redo_stack.clear()
         self.last_message = f"pending: {len(self._path)} point(s)"
         return True
