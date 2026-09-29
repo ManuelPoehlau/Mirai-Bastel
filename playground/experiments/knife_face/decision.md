@@ -1,6 +1,6 @@
 # Knife Face Cut Lab — Artist Verdict
 
-**Status:** Discovery (built, not yet played) — see the Claude Code handoff (not committed) and
+**Status:** Discovery — played, verdicts recorded 2026-09-29 — see the Claude Code handoff (not committed) and
 `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` (archived first impression, Q1–Q5, §7 Lab
 options, §8 prepared Artist test — this file copies and updates that section for the two variants
 actually built, B and D; C and A were dropped per the handoff's scope §2).
@@ -86,11 +86,31 @@ paragraph describes the earlier A/B/C variants, not these):
 
 ### B — Immediate (control)
 
-**Verdict:** _KEEP / ITERATE / REJECT / UNKNOWN_
+**Verdict:** **REJECT** (Artist, 2026-09-29)
+
+**Reason:** structurally cannot start inside a face and cannot produce a closed shape — covers only 2 of
+the 4 required shapes (bent cut, notch, closed shape, interior start).
 
 ### D — Collected (applied at commit)
 
-**Verdict:** _KEEP / ITERATE / REJECT / UNKNOWN_
+**Verdict:** **KEEP** (Artist, 2026-09-29)
+
+**Reason:** produces all four required shapes.
+
+**Known, accepted gaps** (not blockers, noted for later):
+
+1. Closing by clicking the start point only works for pure interior shapes (e.g. a triangle), not for
+   shapes cut across several edges — `path[0]` must be of kind `face`; the boundary-start case was never
+   built.
+2. No hover feedback that the cursor is inside the 14 px close zone — a hit zone without preview, not real
+   snapping.
+3. In-session Undo/Redo acts on the virtual click list, not on real mesh cuts (nothing is applied before
+   commit). Deviates from AD-017's "undo = last cut" model; **consciously accepted**, because otherwise D
+   could not deliver any of the four shapes.
+   *Note:* this is an Artist acceptance for the Lab, **not** an AD-017 change. Whether the Production
+   Knife's history model changes is a separate decision (AD-017 files are not edited here).
+4. Bridges instead of a hole for closed shapes (Silo presumably different, see
+   `docs/research/topology/FACE_HOLES_DISCOVERY.md`) — architectural, separate topic.
 
 ---
 
