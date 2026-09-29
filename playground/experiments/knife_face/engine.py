@@ -784,31 +784,88 @@ class KnifeFaceCollected(_KnifeFaceSession):
         v_hi, _, _ = self._mesh.split_edge(e_b, hi_t_adj)
         return (v_lo, v_hi) if t_first <= t_second else (v_hi, v_lo)
 
-    def _apply_run(self, run: list[dict]) -> bool:
+    def _resolve_boundary_points(self, runs: list[list[dict]]) -> dict[int, VertexId]:
+        """Resolve every run-end boundary point to a VertexId exactly once,
+        keyed by `id(point)` (not by edge_id/t: two clicks can land at the same
+        t on different edges, and float equality is fragile).
+
+        Adjacent runs share their joint point (`[A, B]` and `[B, C]` both hold
+        B), and `split_edge` consumes its edge id — resolving per run would
+        split B's edge twice (KeyError). Edge points that share one original
+        edge (notch/FC3, or across runs) are resolved together in t order,
+        since splitting one invalidates the others' edge id/t. A point whose
+        resolution fails is simply absent from the map; its runs get dropped."""
+        resolved: dict[int, VertexId] = {}
+        by_edge: dict[EdgeId, list[dict]] = {}
+        seen: set[int] = set()
+        # Only run ends: a lone boundary point with no run must not split its
+        # edge (no cut, so the mesh has to stay untouched).
+        for p in (q for run in runs for q in (run[0], run[-1])):
+            if id(p) in seen:
+                continue
+            seen.add(id(p))
+            if p["kind"] == "vertex":
+                resolved[id(p)] = p["vertex_id"]
+            else:
+                by_edge.setdefault(p["edge_id"], []).append(p)
+        for eid, pts in by_edge.items():
+            try:
+                if len(pts) == 1:
+                    resolved[id(pts[0])] = self._resolve_boundary_point(pts[0])
+                elif len(pts) == 2:
+                    a, b = self._resolve_shared_edge_pair(eid, pts[0]["t"], pts[1]["t"])
+                    resolved[id(pts[0])], resolved[id(pts[1])] = a, b
+                else:
+                    cur, prev_t = eid, 0.0
+                    for p in sorted(pts, key=lambda q: q["t"]):
+                        v, _e_a, e_b = self._mesh.split_edge(cur, (p["t"] - prev_t) / (1.0 - prev_t))
+                        resolved[id(p)] = v
+                        cur, prev_t = e_b, p["t"]
+            except (MeshError, LookupError):
+                continue
+        return resolved
+
+    def _live_face_for(self, face_id: FaceId, a: VertexId, b: VertexId) -> FaceId | None:
+        """The face an interior run cuts. The click-time `face_id` goes stale
+        when an earlier run of the same commit already split that face; then
+        the face now holding both run ends (lowest id, like
+        `connect_in_shared_face`) is the one the interior points lie in."""
+        m = self._mesh
+        if m.is_valid_face(face_id):
+            vs = m.face_vertices(face_id)
+            if a in vs and b in vs:
+                return face_id
+        for fid in sorted(m.all_face_ids(), key=int):
+            vs = m.face_vertices(fid)
+            if a in vs and b in vs:
+                return fid
+        return None
+
+    def _apply_run(self, run: list[dict], resolved: dict[int, VertexId]) -> bool:
         first, last = run[0], run[-1]
         interior = run[1:-1]
         positions = [p["position"] for p in interior]
 
-        if (
-            first["kind"] == "edge" and last["kind"] == "edge"
-            and first["edge_id"] == last["edge_id"]
-        ):
-            a, b = self._resolve_shared_edge_pair(first["edge_id"], first["t"], last["t"])
-        else:
-            a = self._resolve_boundary_point(first)
-            b = self._resolve_boundary_point(last)
+        a, b = resolved.get(id(first)), resolved.get(id(last))
+        if a is None or b is None:
+            return False
 
-        if not positions:
-            eid = connect_in_shared_face(self._mesh, a, b)
-            if eid is None:
-                return False
-            self._path_edges.append(eid)
-            return True
-
-        face_id = interior[0]["face_id"]
         try:
+            if not positions:
+                eid = connect_in_shared_face(self._mesh, a, b)
+                if eid is None:
+                    return False
+                self._path_edges.append(eid)
+                return True
+
+            face_id = self._live_face_for(interior[0]["face_id"], a, b)
+            if face_id is None:
+                return False
             _new_vs, _f1, _f2, path_edges = split_face_path(self._mesh, face_id, a, b, positions)
-        except MeshError:
+        except (MeshError, LookupError):
+            # Safety net: a run that trips over Core degrades to a dropped
+            # run (HUD "N/M") — never an exception out of commit, which would
+            # skip the History push for whatever earlier runs already mutated.
             return False
         self._path_edges.extend(path_edges)
         return True
@@ -865,9 +922,10 @@ class KnifeFaceCollected(_KnifeFaceSession):
                 current = [p]
         dropped_tail = len(current) > 1
 
+        resolved = self._resolve_boundary_points(runs)
         applied = 0
         for run in runs:
-            if self._apply_run(run):
+            if self._apply_run(run, resolved):
                 applied += 1
         msg = f"{applied}/{len(runs)} cut(s) applied" if runs else "no complete cut"
         notes = []
