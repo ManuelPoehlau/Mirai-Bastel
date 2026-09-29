@@ -5,7 +5,7 @@
 options, §8 prepared Artist test — this file copies and updates that section for the two variants
 actually built, B and D; C and A were dropped per the handoff's scope §2).
 **Q5 (cross-face segments, 2026-09-29):** a third variant, **Q5**, is built on top of D — see "Q5 — Cross-Face" below
-(Artist answers, what was built, lab defaults, adapted test, empty verdict slots). Background:
+(Artist answers, what was built, lab defaults, adapted test, verdicts). Background:
 `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived, not edited).
 **Background:** `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md`, `docs/architecture/
 AD-017_FINAL_DECISIONS_2026-09-22.md` (session model, history, Esc, commit — reused unchanged).
@@ -108,12 +108,13 @@ the 4 required shapes (bent cut, notch, closed shape, interior start).
 2. No hover feedback that the cursor is inside the 14 px close zone — a hit zone without preview, not real
    snapping.
 3. In-session Undo/Redo acts on the virtual click list, not on real mesh cuts (nothing is applied before
-   commit). Deviates from AD-017's "undo = last cut" model; **consciously accepted**, because otherwise D
-   could not deliver any of the four shapes.
-   *Note:* this is an Artist acceptance for the Lab, **not** an AD-017 change. Whether the Production
-   Knife's history model changes is a separate decision (AD-017 files are not edited here).
+   commit). Deviates from AD-017's "undo = last cut" model; accepted for the Lab.
+   *Update 2026-09-29:* now an **Artist requirement for the Production Knife**: visible behaviour as in
+   "Artist decisions after Q5" (3) — in-session undo takes back the last cut, one Undo after commit reverts
+   the whole session; **implementation open** (real cuts or virtual list). Not an AD-017 change here (AD-017 files are not edited).
 4. Bridges instead of a hole for closed shapes (Silo presumably different, see
-   `docs/research/topology/FACE_HOLES_DISCOVERY.md`) — architectural, separate topic.
+   `docs/research/topology/FACE_HOLES_DISCOVERY.md`) — **Face Holes set aside (Artist, 2026-09-29); H0 bridges
+   for now.** The click-order/direction defect of the bridges is Task A.
 
 ---
 
@@ -121,7 +122,7 @@ the 4 required shapes (bent cut, notch, closed shape, interior start).
 
 # Q5 — Cross-Face (Variant Q5, built on D)
 
-**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict slots below are empty** — no verdict has been given.
+**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict: Q5 = KEEP (Artist, 2026-09-29, after `5c777a0`); D = superseded by Q5, not judged separately.** KEEP is a Lab verdict, **not a promotion** — see "Artist decisions after Q5". Follow-ups from those decisions are open: bridges independent of click order/direction (Task A), click on an earlier cut point (Task B).
 **Background:** `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived — §2 planners, §3 camera finding,
 §4 cases, §5 closed loops, §6 preview / A5 lock, §8 lab options). No Core change, no Production change: everything
 below is Playground-only (`playground/experiments/knife_face/`: `planner.py`, `engine_q5.py`, `variant_q5.py`,
@@ -183,7 +184,7 @@ line = skipped stretch. `Ctrl+Z` / `Ctrl+Y` = in-session undo/redo, `Enter` = co
    points hidden behind the surface are not snap targets. A snapped earlier point that is **not** the current chain's start
    (an earlier point of this chain, or a point of an already closed chain other than the closing vertex) shows the snap but
    the click is **rejected** with the HUD note "connecting to earlier cut points not supported yet". What that click
-   *should* do is untested. Right after a close the closed chain's start *is* the new chain's seed, i.e. its last point:
+   *should* do: Artist decision 2026-09-29 (connect and continue) — **to be built (Task B)**; this rejection is the state before that change. Right after a close the closed chain's start *is* the new chain's seed, i.e. its last point:
    clicking it is rejected as "already the last point"; once the new chain has ≥ 3 clicked points (seed included), a click
    on it closes that chain again.
 7. **Closing across a gap:** if the chain or the closing segment contains a skipped stretch, the loop cannot be resolved
@@ -248,34 +249,56 @@ included). Zoom in so faces are large (interior clicks need ≥ 9 px clearance f
 Blender behaviour Manu asked for) what happens on the nose? Does the snap highlight make closing predictable? Does the
 rejected "earlier point" click feel wrong (what should it do)? How many attempts per task, where does frustration appear?
 
-## Q5 — Verdict slots
+## Q5 — Verdict
 
 ### D — control (cross-face test)
 
-**Verdict:** _KEEP / ITERATE / REJECT / UNKNOWN_
+**Verdict:** **Superseded by Q5 — not judged separately** (Artist, 2026-09-29: D is "really only the older version of Knife Face"; Q5 = D + planner supersedes it).
 
-**Reason:**
+**Reason:** Q5 contains D's session and resolver unchanged and adds the planner on top; a separate D verdict would judge the same thing twice. D's earlier verdict (KEEP, "The two variants" above) stands as history.
 
 ### Q5 — Cross-Face
 
-**Verdict:** _KEEP / ITERATE / REJECT / UNKNOWN_
+**Verdict:** **KEEP** (Artist, 2026-09-29)
 
-**Reason:**
+**Reason:** tasks 1–5 worked as expected in the first play test; the task 6 deviation (a new cut after a close was not connected to the closing vertex) was fixed in `5c777a0`, and the verdict followed the fix.
+
+**Not a promotion:** KEEP is a **Lab verdict** only. No `src/` change, no Production structure. The one-Knife requirement is unchanged: Knife and Knife Face become **one** Production tool later; Q5 stays a variant of the `knife_face` family until that is decided explicitly (with docs, per the repository workflow).
 
 **Open points (record, do not decide):**
 
-- What a click on a snapped earlier path point (not the chain's start) should do (lab default: snap shown, click rejected).
+- What a click on a snapped earlier path point (not the chain's start) should do — **Artist decision 2026-09-29: connect to it and continue from it** (see "Artist decisions after Q5"); **to be built (Task B)**. Lab default until then: snap shown, click rejected.
 - Whether a shared **interior** start point behaves sensibly when the continued chain cuts the same face again. Seen while
   building (grid, vertex start): a continuation from the closing vertex whose chord crosses the loop's own cut inside one
   face cannot be connected in the already split face — that run is dropped ("N-1/N cut(s) applied"). Untested by the Artist.
 - Where exactly a piece "ends" next to a gap on curved surfaces (lab default: last visible crossing).
 - Anything in the Blender-like behaviour that feels wrong while playing → Observations below.
+- Face Holes: **set aside** (Artist, 2026-09-29); H0 bridges for now. Known defect (click-order dependent winding, `FACE_HOLES_DISCOVERY.md` §6) → Task A.
+- Production Knife: real cuts vs. virtual click list is an **implementation choice**; the visible behaviour is fixed by Artist decision (3) below.
+
+---
+
+## Artist decisions after Q5 (2026-09-29)
+
+_Statements 1–3 are Manu's, recorded in meaning. The two interpretations below them are **interpretations** (Context Check) — Manu corrects them only if wrong._
+
+1. **Face Holes: set aside.** For now use the **Blender solution: bridges** (= H0). No H1/H2/H5 work. Problem to fix: depending on click order and/or direction, odd connections appear and the resulting "islands" cannot be edited properly.
+2. **A click on an earlier cut point must not be rejected** (before: the snap shows, the click is refused with a HUD note).
+3. **Undo:** inside a session it works like the normal Knife — **undo takes back the last cut**. After commit, **one Undo reverts the whole session.**
+4. **Verdicts:** Q5 = KEEP (after `5c777a0`); D = no separate verdict (see above).
+
+**Interpretations (not Artist statements):**
+
+- (2): clicking an earlier point **connects the last point to it** (a segment through the planner) and the chain **continues from that point**, same as after a close. Closing on the chain start stays the special case that seals the loop.
+- (3): a click that adds a segment (with all its crossings) is one in-session step — Q5 already behaves that way; commit = one history entry, so one Undo after commit reverts the whole session. Whether the Production Knife stores real cuts or a virtual list is an **implementation choice**, not an Artist matter, as long as this visible behaviour holds.
+
+**Not a promotion, one Knife:** KEEP is a Lab verdict. Knife and Knife Face still become one Production tool; nothing here changes `src/`.
 
 ---
 
 ## Artist play-test observations (2026-09-29)
 
-_(Manu, first Q5 play test — recorded in meaning, not a verdict; the Q5 and D verdict slots above stay empty.)_
+_(Manu, first Q5 play test — recorded in meaning, not a verdict; the verdicts were given afterwards, see "Q5 — Verdict".)_
 
 - **Tasks 1–5:** "check" — worked as expected.
 - **Task 6 (closed loop):** after closing, a new cut is **not connected to the last clicked vertex**. Read as (Context
