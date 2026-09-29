@@ -33,6 +33,7 @@ from __future__ import annotations
 import math
 
 from core import EdgeId, FaceId, Mesh, SelectionMode, VertexId
+from viewport.derived import triangulate_mesh_face
 
 from . import vecmath
 from .camera import OrbitCamera
@@ -205,16 +206,11 @@ def pick_face(camera, mesh, sx, sy, width, height, debug=False, *, cache: PickCa
     best_id = None
     best_t = float("inf")
     for fid in face_ids:
-        boundary = mesh.face_vertices(fid)
-        if len(boundary) < 3:
-            continue
-        p0 = mesh.vertex_position(boundary[0])
-        for i in range(1, len(boundary) - 1):
-            p1 = mesh.vertex_position(boundary[i])
-            p2 = mesh.vertex_position(boundary[i + 1])
+        for i, tri in enumerate(triangulate_mesh_face(mesh, fid)):
+            p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
             t = _ray_triangle_intersection(origin, direction, p0, p1, p2)
             if debug:
-                print(f"[FACE DEBUG] face={fid} tri={i-1} p0={p0} p1={p1} p2={p2} t={t}")
+                print(f"[FACE DEBUG] face={fid} tri={i} p0={p0} p1={p1} p2={p2} t={t}")
             if t is not None and t < best_t:
                 best_t = t
                 best_id = fid
@@ -249,13 +245,8 @@ def _point_occluded(camera, mesh, cache, point, width, height, exclude_faces, de
             minx, miny, maxx, maxy = bbox
             if screen[0] < minx or screen[0] > maxx or screen[1] < miny or screen[1] > maxy:
                 continue
-        boundary = mesh.face_vertices(fid)
-        if len(boundary) < 3:
-            continue
-        p0 = mesh.vertex_position(boundary[0])
-        for i in range(1, len(boundary) - 1):
-            p1 = mesh.vertex_position(boundary[i])
-            p2 = mesh.vertex_position(boundary[i + 1])
+        for tri in triangulate_mesh_face(mesh, fid):
+            p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
             t = _ray_triangle_intersection(eye, direction, p0, p1, p2)
             if t is not None and t < dist - depth_tolerance:
                 return True

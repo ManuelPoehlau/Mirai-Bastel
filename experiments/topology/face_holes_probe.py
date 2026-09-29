@@ -42,7 +42,7 @@ from core.selection import SelectionMode  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from mirai.viewport.picking import pick_face  # noqa: E402
-from viewport.derived import DerivedGeometry, triangulate_face  # noqa: E402
+from viewport.derived import DerivedGeometry, triangulate_mesh_face  # noqa: E402
 
 from playground.experiments.knife_face.engine import (  # noqa: E402
     close_loop_with_bridges,
@@ -177,7 +177,7 @@ def face_report(m, f):
     vs = m.face_vertices(f)
     pts = [_xy(m, v) for v in vs]
     area = _signed_area(pts)
-    tris = triangulate_face(vs)
+    tris = triangulate_mesh_face(m, f)
     tri_areas = [_signed_area([_xy(m, v) for v in t]) for t in tris]
     flipped = sum(1 for a in tri_areas if a * area < 0)
     first_tri_up = tri_areas[0] > 0
@@ -217,7 +217,7 @@ def coverage(m, n=40):
     point how many faces cover it — (a) as true polygons, (b) as fan triangles, which is
     exactly what the RenderMesh index buffer and pick_face iterate over."""
     polys = [[_xy(m, v) for v in m.face_vertices(f)] for f in m.all_face_ids()]
-    tris = [[_xy(m, v) for v in t] for f in m.all_face_ids() for t in triangulate_face(m.face_vertices(f))]
+    tris = [[_xy(m, v) for v in t] for f in m.all_face_ids() for t in triangulate_mesh_face(m, f)]
     poly_hist, fan_hist = collections.Counter(), collections.Counter()
     for i in range(n):
         for j in range(n):
@@ -235,7 +235,7 @@ def covering_faces(m, point):
     as_poly = sorted(int(f) for f in m.all_face_ids()
                      if _in_polygon(point[:2], [_xy(m, v) for v in m.face_vertices(f)]))
     as_fan = sorted(int(f) for f in m.all_face_ids()
-                    if any(_in_tri(point[:2], *[_xy(m, v) for v in t]) for t in triangulate_face(m.face_vertices(f))))
+                    if any(_in_tri(point[:2], *[_xy(m, v) for v in t]) for t in triangulate_mesh_face(m, f)))
     return f"polygons {as_poly}, fan {as_fan}"
 
 

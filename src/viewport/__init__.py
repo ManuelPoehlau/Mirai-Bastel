@@ -34,7 +34,7 @@ from .category import (
     TOPOLOGY,
     DirtyState,
 )
-from .derived import DerivedGeometry, compute_bounds, triangulate_face
+from .derived import DerivedGeometry, compute_bounds, triangulate_face, triangulate_mesh_face
 from .gl_line_overlay import GLLineOverlay
 from .gl_point_overlay import GLPointOverlay
 from .gl_render_store import GLRenderStore
@@ -57,6 +57,7 @@ __all__ = [
     "DerivedGeometry",
     "compute_bounds",
     "triangulate_face",
+    "triangulate_mesh_face",
     "OverlayElementKind",
     "SelectionOverlay",
     "RenderMesh",
