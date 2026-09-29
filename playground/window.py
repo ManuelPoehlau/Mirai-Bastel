@@ -97,6 +97,7 @@ from playground.experiments.knife.variant_b import KnifeVariantB  # noqa: E402
 from playground.experiments.knife_face.engine import knife_face_pick  # noqa: E402
 from playground.experiments.knife_face.variant_b import KnifeFaceVariantB  # noqa: E402
 from playground.experiments.knife_face.variant_d import KnifeFaceVariantD  # noqa: E402
+from playground.experiments.knife_face.variant_q5 import KnifeFaceVariantQ5  # noqa: E402
 from playground.experiments.articulation.articulation import ArticulationState  # noqa: E402
 from playground.experiments.articulation.variant_articulation import ArticulationVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
@@ -208,6 +209,11 @@ _VERTEX_COLOR = (1.0, 0.75, 0.1, 1.0)
 _SELECTION_COLOR = (0.95, 0.45, 0.1, 1.0)
 _HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
 _VERTEX_POINT_SIZE = 4.0
+# Knife Face Q5 overlay (cross-face lab): skipped "no cut" stretch, crossing
+# dots, one consistent snap highlight (mesh vertex or session point).
+_KFQ5_SKIP_COLOR = (0.55, 0.60, 0.70, 0.85)
+_KFQ5_CROSSING_COLOR = (0.95, 0.90, 0.35, 1.0)
+_KFQ5_SNAP_COLOR = (0.30, 0.90, 0.95, 1.0)
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
 # Gizmo constants (WP-AP-GIZMO-01) — widths/colors are tunable once on screen
@@ -363,11 +369,12 @@ class PlaygroundWindow(pyglet.window.Window):
         )
         # Knife Face Cut Lab (Discovery, docs/research/topology/
         # KNIFE_FACE_CUT_DISCOVERY.md) — a separate family/session from
-        # "knife" above: B/D have their own interaction model (interior
+        # "knife" above: B/D/Q5 have their own interaction model (interior
         # points), not a hover-presentation variant of Production Knife.
         knife_face_slot = ExperimentSlot(
             VariantEntry(KnifeFaceVariantB(app)),
             VariantEntry(KnifeFaceVariantD(app)),
+            VariantEntry(KnifeFaceVariantQ5(app)),
         )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
@@ -486,6 +493,10 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_knife_face_start = None           # GL_POINTS — persistent start vertex (B only)
         self._knife_face_hover_last_target: dict | None = None
         self._knife_face_last_start = None            # last drawn start vertex id (B only)
+        # Q5 overlay VBOs by name: "stored_*" persist across hover (rebuilt on
+        # click/undo/redo), "hover_*" are per-motion-frame.
+        self._kfq5_vlists: dict = {}
+        self._kfq5_hud_note: str = ""
 
         # Articulation state (EX-A / H02)
         self._articulation_state: ArticulationState | None = None
@@ -1052,7 +1063,7 @@ class PlaygroundWindow(pyglet.window.Window):
         return getattr(slot.active_experiment, "activation", "live_preview")
 
     def _knife_face_session_cls(self):
-        """Session engine class of the active knife_face variant (B or D)."""
+        """Session engine class of the active knife_face variant (B, D or Q5)."""
         slot = self.app.slots.get("knife_face")
         if slot is None:
             return None
@@ -1072,12 +1083,72 @@ class PlaygroundWindow(pyglet.window.Window):
         if self._vlist_knife_face_pending_line is not None:
             self._vlist_knife_face_pending_line.delete()
             self._vlist_knife_face_pending_line = None
+        self._kfq5_clear("hover_")
         self._knife_face_hover_last_target = None
 
     def _clear_knife_face_pending_vbo(self) -> None:
         if self._vlist_knife_face_pending_points is not None:
             self._vlist_knife_face_pending_points.delete()
             self._vlist_knife_face_pending_points = None
+        self._kfq5_clear("stored_")
+
+    # -- Knife Face Q5 (cross-face lab): view, overlay ---------------------------
+
+    def _knife_face_apply_view(self) -> None:
+        """Give a camera-aware session (Q5) the view of the coming hover/click."""
+        tool = self._knife_face_tool
+        if tool is not None and hasattr(tool, "set_view"):
+            tool.set_view(
+                self.app.camera, self.width, self.height,
+                cache=self.app.pick_cache, occlusion=self.app.display_state.show_faces,
+            )
+
+    def _kfq5_clear(self, group: str) -> None:
+        for name in [n for n in self._kfq5_vlists if n.startswith(group)]:
+            self._kfq5_vlists.pop(name).delete()
+
+    def _kfq5_put(self, name: str, mode, data) -> None:
+        old = self._kfq5_vlists.pop(name, None)
+        if old is not None:
+            old.delete()
+        if data:
+            self._kfq5_vlists[name] = self._overlay_program.vertex_list(
+                len(data) // 3, mode, position=("f", data),
+            )
+
+    @staticmethod
+    def _kfq5_segments(pairs) -> list[float]:
+        out: list[float] = []
+        for a, b in pairs:
+            out.extend(a)
+            out.extend(b)
+        return out
+
+    def _kfq5_rebuild_stored(self) -> None:
+        """Stored part of the Q5 overlay: cut lines, skipped lines, crossing dots
+        of the path so far (the clicked points go into the pending-points VBO)."""
+        self._kfq5_clear("stored_")
+        tool = self._knife_face_tool
+        if tool is None or not hasattr(tool, "preview_stored"):
+            return
+        pv = tool.preview_stored()
+        self._kfq5_put("stored_cut", gl.GL_LINES, self._kfq5_segments(pv["cut"]))
+        self._kfq5_put("stored_skip", gl.GL_LINES, self._kfq5_segments(pv["skip"]))
+        self._kfq5_put("stored_cross", gl.GL_POINTS, build_point_list_data(pv["crossings"]))
+
+    def _kfq5_rebuild_hover(self, plan) -> None:
+        """Pending segment: cut line through its planned crossings, skipped
+        stretches in the "no cut" style, crossing dots, snap highlight. A
+        rejected plan still shows its snap (Manu: snap shown, click rejected)."""
+        self._kfq5_clear("hover_")
+        if plan.ok:
+            cut = [(a, b) for a, b, style in plan.lines if style == "cut"]
+            skip = [(a, b) for a, b, style in plan.lines if style != "cut"]
+            self._kfq5_put("hover_cut", gl.GL_LINES, self._kfq5_segments(cut))
+            self._kfq5_put("hover_skip", gl.GL_LINES, self._kfq5_segments(skip))
+            self._kfq5_put("hover_cross", gl.GL_POINTS, build_point_list_data(plan.crossings))
+        if plan.snap_position is not None:
+            self._kfq5_put("hover_snap", gl.GL_POINTS, list(plan.snap_position))
 
     def _clear_knife_face_start_vbo(self) -> None:
         if self._vlist_knife_face_start is not None:
@@ -1093,7 +1164,10 @@ class PlaygroundWindow(pyglet.window.Window):
         tool = self._knife_face_tool
         if tool is None:
             return
-        if hasattr(tool, "pending_positions"):
+        if hasattr(tool, "preview_stored"):  # Q5: every clicked point (the start must stay visible to close on it)
+            self._kfq5_rebuild_stored()
+            positions = tool.preview_stored()["points"]
+        elif hasattr(tool, "pending_positions"):
             positions = tool.pending_positions
         else:
             positions = [pt["position"] for pt in tool.path if pt["kind"] == "face"]
@@ -1112,6 +1186,7 @@ class PlaygroundWindow(pyglet.window.Window):
         self._clear_knife_face_hover_vbos()
         self._clear_knife_face_pending_vbo()
         self._clear_knife_face_start_vbo()
+        self._kfq5_hud_note = ""
         self._recompute_derived()
         self._rebuild_vbo()
 
@@ -1672,13 +1747,21 @@ class PlaygroundWindow(pyglet.window.Window):
             mesh = self.app.viewport.render_mesh.mesh
             target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
                 **self._pick_kwargs())
+            # Q5: the click uses the camera *of this click* (crossings are fixed
+            # now, stored in the path) and the snap rule (mesh vertex or one of
+            # the session's own points within 14 px). Closing is a click on the
+            # snapped start point handled inside the session — it does not commit.
+            is_q5 = hasattr(self._knife_face_tool, "snap_target")
+            if is_q5:
+                self._knife_face_apply_view()
+                target = self._knife_face_tool.snap_target(target, x, y)
 
             # D: clicking back on the first (interior) point closes the loop
             # and commits immediately (spec §2/§1: "clicking on the first
             # point = close + commit"), in addition to the tested Enter path
             # (acceptance criterion 4). Screen-space snap, mirroring the
             # vertex pick radius (H3).
-            path = getattr(self._knife_face_tool, "path", None)
+            path = None if is_q5 else getattr(self._knife_face_tool, "path", None)
             if (
                 target.get("kind") == "face"
                 and path
@@ -1692,6 +1775,7 @@ class PlaygroundWindow(pyglet.window.Window):
                     return pyglet.event.EVENT_HANDLED
 
             accepted = self._knife_face_tool.click(target)
+            self._kfq5_hud_note = ""
             if accepted:
                 self._clear_knife_face_hover_vbos()
                 self._rebuild_knife_face_pending_vbo()
@@ -1791,6 +1875,9 @@ class PlaygroundWindow(pyglet.window.Window):
         mesh = self.app.viewport.render_mesh.mesh
         target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
             **self._pick_kwargs())
+        if hasattr(self._knife_face_tool, "snap_target"):
+            self._knife_face_refresh_hover_q5(mesh, target, x, y)
+            return
         hover_result = self._knife_face_tool.hover(target)
         kind = target.get("kind")
         valid = hover_result.get("valid", False)
@@ -1851,6 +1938,42 @@ class PlaygroundWindow(pyglet.window.Window):
                         len(start_positions) // 3, gl.GL_POINTS,
                         position=("f", start_positions),
                     )
+
+    def _knife_face_refresh_hover_q5(self, mesh, target: dict, x: float, y: float) -> None:
+        """Q5 hover: snap, plan the pending segment (crossings under *this*
+        camera), draw line / crossing dots / skipped stretch / snap highlight."""
+        tool = self._knife_face_tool
+        self._knife_face_apply_view()
+        target = tool.snap_target(target, x, y)
+        plan = tool.hover(target)["plan"]
+        kind = target.get("kind")
+        self._clear_knife_face_hover_vbos()
+        self._knife_face_hover_last_target = target
+
+        if plan.ok and kind == "edge":
+            edge_positions = build_selection_edge_data(mesh, {target["edge_id"]})
+            if edge_positions:
+                self._vlist_knife_face_hover_edge = self._overlay_program.vertex_list(
+                    len(edge_positions) // 3, gl.GL_LINES, position=("f", edge_positions),
+                )
+        elif plan.ok and kind == "face":
+            self._vlist_knife_face_preview_point = self._overlay_program.vertex_list(
+                1, gl.GL_POINTS, position=("f", build_knife_preview_point_data(target["position"])),
+            )
+        self._kfq5_rebuild_hover(plan)
+
+        # HUD: what the pending click would do / why it is rejected / what it skips.
+        if plan.ok and (plan.skipped or plan.closing):
+            note = f"Knife Face Q5 — {plan.message}"
+        elif not plan.ok and plan.snap_position is not None:
+            note = f"Knife Face Q5 — {plan.reason}"
+        else:
+            note = ""
+        if note != self._kfq5_hud_note:
+            self._kfq5_hud_note = note
+            if note:
+                self._hud.update_action(note)
+                self._update_hud()
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
@@ -2977,6 +3100,40 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._vlist_knife_face_preview_point.draw(gl.GL_POINTS)
                 gl.glPointSize(_VERTEX_POINT_SIZE)
                 gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LESS)
+            self._overlay_program.stop()
+
+        # -- Knife Face Q5: stored + pending cut lines, skipped ("no cut")
+        #    stretches, crossing dots, snap highlight --------------------------
+        if self._knife_face_tool is not None and self._kfq5_vlists:
+            vl = self._kfq5_vlists
+            self._overlay_program.use()
+            self._overlay_program["u_view"] = view
+            self._overlay_program["u_proj"] = proj
+            gl.glEnable(gl.GL_BLEND)
+            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+            gl.glEnable(gl.GL_DEPTH_TEST)
+            gl.glDepthFunc(gl.GL_LEQUAL)
+            self._overlay_program["u_color"] = list(_HOVER_COLOR)
+            for name in ("stored_cut", "hover_cut"):
+                if name in vl:
+                    vl[name].draw(gl.GL_LINES)
+            gl.glDisable(gl.GL_DEPTH_TEST)
+            self._overlay_program["u_color"] = list(_KFQ5_SKIP_COLOR)
+            for name in ("stored_skip", "hover_skip"):
+                if name in vl:
+                    vl[name].draw(gl.GL_LINES)
+            self._overlay_program["u_color"] = list(_KFQ5_CROSSING_COLOR)
+            gl.glPointSize(7.0)
+            for name in ("stored_cross", "hover_cross"):
+                if name in vl:
+                    vl[name].draw(gl.GL_POINTS)
+            if "hover_snap" in vl:
+                self._overlay_program["u_color"] = list(_KFQ5_SNAP_COLOR)
+                gl.glPointSize(14.0)
+                vl["hover_snap"].draw(gl.GL_POINTS)
+            gl.glPointSize(_VERTEX_POINT_SIZE)
+            gl.glEnable(gl.GL_DEPTH_TEST)
             gl.glDepthFunc(gl.GL_LESS)
             self._overlay_program.stop()
 

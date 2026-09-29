@@ -4,9 +4,12 @@
 `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` (archived first impression, Q1–Q5, §7 Lab
 options, §8 prepared Artist test — this file copies and updates that section for the two variants
 actually built, B and D; C and A were dropped per the handoff's scope §2).
+**Q5 (cross-face segments, 2026-09-29):** a third variant, **Q5**, is built on top of D — see "Q5 — Cross-Face" below
+(Artist answers, what was built, lab defaults, adapted test, empty verdict slots). Background:
+`docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived, not edited).
 **Background:** `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md`, `docs/architecture/
 AD-017_FINAL_DECISIONS_2026-09-22.md` (session model, history, Esc, commit — reused unchanged).
-**Controls:** `Tab` until `knife_face` is focused → `M` switches the variant (HUD: `Setting: … knife_face=…`).
+**Controls:** `Tab` until `knife_face` is focused → `M` cycles the variants **B → D → Q5** (HUD: `Setting: … knife_face=…`).
 Empty selection, `C` = start a session. Click vertices, edges, or (this lab only) face interiors.
 `Enter` or click outside = commit. `Esc` = cancel (mesh restored, no history entry). `Ctrl+Z` = in-session
 undo of the last step (a pending interior point, or a whole cut in Variant B); `Ctrl+Y` / `Ctrl+Shift+Z` =
@@ -114,6 +117,138 @@ the 4 required shapes (bent cut, notch, closed shape, interior start).
 
 ---
 
+---
+
+# Q5 — Cross-Face (Variant Q5, built on D)
+
+**Status:** Discovery Lab — built 2026-09-29, **not yet played**. Verdict slots below are empty.
+**Background:** `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived — §2 planners, §3 camera finding,
+§4 cases, §5 closed loops, §6 preview / A5 lock, §8 lab options). No Core change, no Production change: everything
+below is Playground-only (`playground/experiments/knife_face/`: `planner.py`, `engine_q5.py`, `variant_q5.py`,
+plus the knife_face paths of `playground/window.py`).
+**One Knife:** Knife and Knife Face become **one** Production tool later. Q5 is one more variant of the existing
+`knife_face` family — no new family, no structure that assumes two tools. D stays the control, B stays in the family
+unchanged (REJECT, kept for reference).
+
+## Q5 — Artist answers (2026-09-29)
+
+This is the authoritative home of these answers (the archived discovery is not edited).
+
+| Question | Answer (Manu) | Consequence for the Lab |
+|---|---|---|
+| A-Q1 — line over hole / border / silhouette / hidden stretch | **Like Blender: the visible part is cut**, the rest skipped | Discovery option Q5-b. Q5-a (refuse) is **not built**. |
+| A-Q2 — visible only or cut-through | **Visible only for now.** Cut Through maybe later as an extra option, like Blender | No cut-through. Future idea recorded in `docs/future_ideas/MODELING.md`. |
+| A-Q3 — closed shapes across faces | **Yes: snap to the start point, click closes the shape, but you can keep cutting — only commit ends the session.** Correction: the snap always engages near **any** vertex, not only the start point | Close ≠ commit (changes today's D close-on-start in this variant). Snap feedback required. Covers D gaps 1 and 2 in this variant. |
+| Assumption (not contradicted) | One segment may cross **any number** of faces | Planner is not limited to the neighbour face. |
+
+## Variants for this test: D (control) and Q5
+
+| | D — Collected (control, unchanged) | Q5 — Cross-Face (D + planner) |
+|---|---|---|
+| Target outside the last point's faces | rejected — no line, click refused ("Hangeln": click every intermediate edge) | a planner turns it into the visible crossings in between; **one click = one segment across any number of faces** |
+| Line that cannot be cut everywhere (hole, mesh border, silhouette, hidden stretch) | — | **visible pieces are cut, the gaps are skipped**, the click is accepted, the HUD names what was skipped; skipped stretch drawn in a distinct "no cut" style (grey-blue) |
+| Camera | picking only | crossings fixed **at click time with that click's camera**, stored in the path; orbiting between clicks or before commit never changes them |
+| Snap | 14 px zone around the start point only, no feedback | within **14 px of any vertex** (mesh vertex or one of your own clicked points) the point jumps onto it; one cyan highlight for both |
+| Close | click on the start (interior start only) **commits**, cuts only part of a cross-face loop | click on the snapped start point (chain ≥ 3 points) **closes** the chain, loop resolved cyclically (no bridges across faces); **session continues**, the next click starts a new independent chain; only commit ends the session |
+| A5 lock (no interior click in the neighbour face right after a cut) | active | **off** |
+| In-session undo | one step per click | one step per click **including all its crossings**; the closing click is one step |
+| Preview | line through the stored path + hover point | line through stored crossings + pending segment through its planned crossings, **crossing dots**, skipped stretch, snap highlight |
+| Commit | Enter | Enter (unchanged; see "click outside" note in Observations) |
+
+**Controls (Q5):** `Tab` until `knife_face`, `M` until Q5 (HUD names it), `C` with an empty selection. Click vertices, edges,
+face interiors (≥ 9 px from every edge, as in D). Yellow dots = planned/stored crossings, cyan square = snap, grey-blue
+line = skipped stretch. `Ctrl+Z` / `Ctrl+Y` = in-session undo/redo, `Enter` = commit, `Esc` = cancel.
+
+**Lab defaults (flagged — not decisions; each one is untested and open to change):**
+
+1. **Planner: WALK first, PLANE only when needed.** WALK (walk face to face along the 2D screen line, Wings-like) is used
+   whenever it reaches the target without crossing a hidden surface; otherwise PLANE (every edge against the plane through
+   eye/A/B, only **visible** hits kept, B8 occlusion test, Blender-like). Where both succeed they cut identically
+   (discovery §2.2). Cost on `head` (324 quads, 150 random segments of 40–220 px): with the app's shared pick cache
+   **0.44 ms mean / 2.8 ms max** per plan (147 walk, 3 plane); WALK alone 0.14 ms; PLANE alone 1.1 ms mean / 2.9 ms max.
+   Without the cache (headless only) 9.7 ms mean / 51 ms max — the per-crossing occlusion test dominates. Hover stays
+   responsive with the cache; the window always passes it.
+2. **Vertex tolerance 0.5 px** (Blender's constant, discovery §4): a crossing that close to a vertex becomes a vertex hit.
+3. **Crossings on an existing edge-collinear stretch are skipped, not refused** (Blender skips them): the click is accepted,
+   a "no cut" break is stored, the HUD says "along an existing edge".
+4. **Pieces:** the visible crossings form face-connected pieces; every piece is cut; a face that gets only one point from a
+   piece is not cut (Blender's "≥ 2 hits" rule); a piece ends at its **last visible crossing** (on curved surfaces this is
+   where a piece "ends" next to a gap — open point, see below).
+5. **Gaps are path breaks** (`{"kind": "break"}` entries): D's resolver assumes consecutive points share a face, so runs are
+   never connected across a gap or across a closed chain. The resolver change is additive: `KnifeFaceCollected` is
+   untouched, Q5 subclasses it; D's behaviour on paths without breaks is what the unchanged D tests prove.
+6. **Snap:** the nearer of (picked mesh vertex, own clicked point) wins. The chain's **last** point, **crossings** and
+   points hidden behind the surface are not snap targets. A snapped earlier point that is **not** the current chain's start
+   (an earlier point of this chain, or a point of an already closed chain) shows the snap but the click is **rejected** with
+   the HUD note "connecting to earlier cut points not supported yet". What that click *should* do is untested.
+7. **Closing across a gap:** if the chain or the closing segment contains a skipped stretch, the loop cannot be resolved
+   cyclically; the click still ends the chain but its pieces are cut as open pieces (HUD says so).
+8. **Interior-only chains (D parity):** three or more clicks in one face still form D's 2-bridge closed shape — closed by
+   clicking the start or (unclosed) at commit. Face Holes stays a separate topic.
+9. **Same-face links use no planner** (D parity): D's "no geometric in-face check" (a chord across a concave face's notch is
+   accepted) is inherited unchanged.
+
+## Q5 — Artist test (≤ 5 min per variant; adapted from discovery §8)
+
+Start: `python playground/run.py grid` (flat 8×8 quads) and `python playground/run.py head`.
+`Tab` until `knife_face` is focused; `M` selects the variant: **D (control)**, **Q5**. `C` with an empty selection starts the
+Knife. `Enter` = commit, `Esc` = cancel, `Ctrl+Z` / `Ctrl+Y` = in-session undo / redo (one click = one step, crossings
+included). Zoom in so faces are large (interior clicks need ≥ 9 px clearance from every edge).
+
+1. **Grid — straight across:** click an edge of a quad, move the cursor over two more quads (watch line and dots), click the
+   far edge of the third. Commit.
+2. **Grid — interior through the neighbour:** click an edge, click inside the quad, click inside the *neighbouring* quad,
+   finish on an edge of that quad. Commit.
+3. **Grid — start inside, cross over:** first click inside a quad, then inside the next quad, then an edge of it. Commit.
+4. **Head — across the cheek, then over the nose:** from an edge on one cheek, click 3–4 quads away on the same cheek; then
+   aim at the other cheek so the line passes the nose silhouette. Commit.
+5. **Head — orbit between clicks:** click a point, orbit ~25° (`Alt`+drag), click the target (the line seen now is the cut).
+   Orbit again, commit and compare with what the line showed.
+6. **Grid — closed loop over 4 quads:** four interior clicks in the four quads around one vertex, then click the first point
+   again (move the cursor near it first: the snap highlight shows). Then make **one more independent cut** elsewhere
+   (edge → edge). Commit.
+
+**Expected, not a verdict on the variant:**
+
+- **Task 1:** D refuses the far click (no line) — with D you click every intermediate edge instead. **Q5** cuts all three
+  quads in one click, one history entry.
+- **Task 2:** D refuses the neighbour-quad click (an interior click must stay in the previous interior point's face). **Q5** cuts both quads (the path is anchored on edges at both ends).
+- **Task 3:** D refuses the second click. **Q5**: the first quad is **not** cut — the interior start has no second anchor
+  (D's FC5 rule, unchanged); the neighbour quad is cut.
+- **Task 4:** D refuses. **Q5** cuts the **visible** part; the HUD names what was skipped ("skipped: over a hole, border or
+  hidden part", "N hidden crossing(s) not cut"), the skipped stretch is drawn in the "no cut" style.
+- **Task 5:** the cut follows the line seen at the second click, not the view at commit.
+- **Task 6:** D cannot place the second point (it lies in another face) — the loop cannot even be built. **Q5**: the click
+  on the start **closes** all 4 quads **without bridges** and the session **continues**; the extra cut is an independent chain
+  (nothing runs across the break); `Enter` commits everything as one history entry. Also try `Ctrl+Z` right after the closing
+  click (one step) and clicking an earlier point that is not the start (snap shows, click rejected with a note).
+
+**Observe:** does line + dots read as "this is what will be cut"? Is cutting the visible part and skipping the rest (the
+Blender behaviour Manu asked for) what happens on the nose? Does the snap highlight make closing predictable? Does the
+rejected "earlier point" click feel wrong (what should it do)? How many attempts per task, where does frustration appear?
+
+## Q5 — Verdict slots
+
+### D — control (cross-face test)
+
+**Verdict:** _KEEP / ITERATE / REJECT / UNKNOWN_
+
+**Reason:**
+
+### Q5 — Cross-Face
+
+**Verdict:** _KEEP / ITERATE / REJECT / UNKNOWN_
+
+**Reason:**
+
+**Open points (record, do not decide):**
+
+- What a click on a snapped earlier path point (not the chain's start) should do (lab default: snap shown, click rejected).
+- Where exactly a piece "ends" next to a gap on curved surfaces (lab default: last visible crossing).
+- Anything in the Blender-like behaviour that feels wrong while playing → Observations below.
+
+---
+
 ## Observations outside the question
 
 _(incidental evidence — raises priority of other questions, does not decide them)_
@@ -143,3 +278,28 @@ _(incidental evidence — raises priority of other questions, does not decide th
   the original Variant B ("the neighbour-quad click in task 4 is invalid by design") is blocked. Whether
   this specific unlock rule (one plain click, any direction) matches what Manu would expect is untested —
   flagging it rather than assuming it's obviously right.
+
+### Q5 build-time findings (2026-09-29 — build-time, not Artist-tested)
+
+- **Occluders are visible hits.** With the B8 occlusion filter on, a face that floats in front of the surface hides the
+  crossings behind it *and* is itself cut where the line visibly crosses it (its own edges are visible PLANE hits) — the
+  Blender-like reading of "visible part is cut". With occlusion off (Wireframe) the WALK follows the mesh's own
+  connectivity and ignores unconnected geometry. Whether the in-front face should be cut is exactly what the head silhouette
+  task will show.
+- **A one-hit piece end still splits its edge.** A piece that ends on an edge (the next face gets no second hit) is not cut
+  into that face, but D's resolver splits the run-end edge, so the neighbouring face gains a vertex (a quad becomes a
+  pentagon) without being divided. Inherited from D's resolver; may or may not match what Blender leaves behind.
+- **"Click outside = commit" is not implemented for `knife_face`.** This file and the Q5 handoff say "Enter or click outside
+  = commit", but `window.py` only routes `Enter`; a click on `outside` is rejected by every variant (unchanged). Q5 keeps
+  Enter as the only commit.
+- **Snap takes precedence over placing a point near an earlier one.** Within 14 px of one of your own clicked points
+  (other than the chain's last) every click is a snap — rejected unless it is the chain start. An edge/face point cannot be
+  placed that close to an earlier point; this follows directly from "snap always engages".
+- **Interior loop + another run through the same face.** A closed all-interior chain and a run that cuts the same face in
+  the same commit: runs are applied first, so the loop's face is already gone and the loop is skipped with a HUD note
+  (`closed shape skipped — its face was already cut by another run`). Rare; not investigated further.
+- **Crossing dots and the "no cut" style were checked in a headless render** (real window under Xvfb, `grid`: yellow
+  crossing dots, cyan snap square, orange clicked points, HUD text) — a smoke check that the overlay draws, not a judgement
+  of how it feels; the Artist test decides that.
+- **Head stress (not a test):** 120 random Q5 sessions on `head` (2–5 clicks, three cameras, cache on, some closed) all
+  committed with mesh invariants intact.
