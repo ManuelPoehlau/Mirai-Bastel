@@ -455,7 +455,7 @@ def test_interior_start_loop_over_four_quads_closes_without_bridges():
     for t in pts:
         assert knife.click(t)
     assert _close_by_click(knife, cam, mesh, pts[0])
-    assert knife.path[-1] == {"kind": "break", "reason": "closed", "cyclic": True}
+    assert knife.path[-2] == {"kind": "break", "reason": "closed", "cyclic": True}  # [-1] is the seed
     assert len(scene.history) == 0                          # closing does not commit
     assert mesh.export_state() == scene.mesh.export_state()  # nothing applied yet (D model)
 
@@ -482,7 +482,7 @@ def test_boundary_start_loop_across_faces_closes_fully():
     target = knife.snap_target(knife_face_pick(cam, mesh, px[0] + 3.0, px[1], W, H, occlusion=True), px[0] + 3.0, px[1])
     assert target == {"kind": "path", "index": 0}
     assert knife.click(target)
-    assert knife.path[-1]["reason"] == "closed" and knife.path[-1]["cyclic"]
+    assert knife.path[-2]["reason"] == "closed" and knife.path[-2]["cyclic"]
     knife.commit()
     assert "2/2 cut(s) applied" in knife.last_message
     assert_mesh_invariants(mesh, context="Q5 boundary-start loop")
@@ -497,12 +497,27 @@ def test_vertex_start_loop_closes_by_clicking_that_vertex():
               _face_at(cam, mesh, (2.5, 2.5, 0.0))):
         assert knife.click(t)
     assert knife.click(_vpt(v))  # a picked mesh vertex that is the chain start closes it
-    assert knife.path[-1]["reason"] == "closed"
+    assert knife.path[-2]["reason"] == "closed"
     knife.commit()
     assert_mesh_invariants(mesh, context="Q5 vertex-start loop")
 
 
-def test_after_close_a_new_independent_chain_starts_and_commit_ends_the_session():
+def _vertices_at(mesh, pos, tol=1e-6):
+    return [v for v in mesh.all_vertex_ids() if math.dist(mesh.vertex_position(v), pos) < tol]
+
+
+def _assert_no_duplicates(mesh):
+    """No two vertices at one location, no zero-length edge."""
+    ids = list(mesh.all_vertex_ids())
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            assert math.dist(mesh.vertex_position(a), mesh.vertex_position(b)) > 1e-6, (a, b)
+    for e in mesh.all_edge_ids():
+        va, vb = mesh.edge_vertices(e)
+        assert math.dist(mesh.vertex_position(va), mesh.vertex_position(vb)) > 1e-6, e
+
+
+def test_close_seeds_the_next_chain_with_the_closing_vertex_behind_the_break():
     mesh, p = _grid()
     cam = _camera(mesh)
     knife, scene = _session(mesh, cam)
@@ -510,19 +525,173 @@ def test_after_close_a_new_independent_chain_starts_and_commit_ends_the_session(
     for t in pts:
         knife.click(t)
     assert _close_by_click(knife, cam, mesh, pts[0])
+    assert knife.path[-2] == {"kind": "break", "reason": "closed", "cyclic": True}
+    assert knife.path[-1] is knife.path[0]                  # the very same dict: one point, not a copy
+    assert knife.chain == [knife.path[0]]                   # the new chain consists of the seed
     n_closed = len(knife.path)
 
-    # a new chain far from the loop: two edge points of quad (0,0)
-    assert knife.click(_ept(mesh, p[(0, 0)], p[(0, 1)], 0.5))
-    assert knife.click(_ept(mesh, p[(1, 0)], p[(1, 1)], 0.5))
-    assert len(knife.path) == n_closed + 2
-    assert [q["kind"] for q in knife.path[n_closed - 1:n_closed + 1]] == ["break", "edge"]  # no run across the break
-    assert len(scene.history) == 0
+    # the next click draws a segment that starts at the closing vertex (planner, like any last point)
+    far = _ept(mesh, p[(0, 3)], p[(0, 4)], 0.5)
+    plan = knife.plan(far)
+    assert plan.ok and plan.lines[0][0] == point_position(mesh, pts[0])
+    assert knife.click(far)
+    assert len(scene.history) == 0                          # still no commit: only Enter ends the session
+    assert knife.path[n_closed - 1] is knife.path[0] and len(knife.path) > n_closed + 1
+    assert _crossings(knife)                                # the segment crosses faces on its way to the edge
+
+    seed_pos = pts[0]["position"]
+    ids_before = set(mesh.all_vertex_ids())
     knife.commit()
-    assert "5/5 cut(s) applied" in knife.last_message
-    assert _sizes(mesh)[6] == 4
-    assert_mesh_invariants(mesh, context="Q5 close then continue")
+    assert "8/8 cut(s) applied" in knife.last_message       # 4 loop cuts + 4 from the seed to the edge
+    assert "dropped" not in knife.last_message
+    v = _vertices_at(mesh, seed_pos)
+    assert len(v) == 1                                      # closing vertex = ONE vertex, loop and continuation share it
+    assert len(mesh.vertex_edges(v[0])) == 3                # its two loop edges + the continuation edge
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 close then continue (interior start)")
+    cut = [e for e in knife.path_edges if mesh.is_valid_edge(e)]
+    assert len(cut) == 12
+    assert not [e for e in cut if set(mesh.edge_vertices(e)) & ids_before]  # still no bridge to an original vertex
     assert len(scene.history) == 1
+
+
+def test_close_then_commit_at_once_is_unchanged_by_the_seed():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, _scene = _session(mesh, cam)
+    pts = _loop4(cam, mesh)
+    for t in pts:
+        knife.click(t)
+    assert _close_by_click(knife, cam, mesh, pts[0])
+    knife.commit()
+    assert knife.last_message == "4/4 cut(s) applied"       # a seed alone is neither a cut nor a note
+    assert _sizes(mesh) == {4: 16, 6: 4}
+    assert len(_vertices_at(mesh, pts[0]["position"])) == 1
+    assert_mesh_invariants(mesh, context="Q5 close, commit at once")
+
+
+def test_edge_start_close_then_continue_merges_into_one_vertex():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, scene = _session(mesh, cam)
+    start = _ept(mesh, p[(1, 2)], p[(2, 2)], 0.2)           # on the edge x=2 between two quads
+    for t in (start, _face_at(cam, mesh, (1.4, 1.5, 0.0)),
+              _ept(mesh, p[(1, 2)], p[(2, 2)], 0.8), _face_at(cam, mesh, (2.6, 1.5, 0.0))):
+        assert knife.click(t)
+    px = cam.project_to_screen(point_position(mesh, start), W, H)
+    target = knife.snap_target(knife_face_pick(cam, mesh, px[0] + 3.0, px[1], W, H, occlusion=True), px[0] + 3.0, px[1])
+    assert knife.click(target) and knife.path[-1] is knife.path[0]
+    assert knife.click(_ept(mesh, p[(0, 3)], p[(0, 4)], 0.5))
+    start_pos = point_position(mesh, start)
+    ids_before = set(mesh.all_vertex_ids())
+    knife.commit()
+    assert "dropped" not in knife.last_message
+    v = _vertices_at(mesh, start_pos)
+    assert len(v) == 1 and v[0] not in ids_before           # the edge is split once, not once per occurrence
+    assert len(mesh.vertex_edges(v[0])) == 5                # 2 along the split edge + 2 loop + 1 continuation
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 close then continue (edge start)")
+    assert len(scene.history) == 1
+
+
+def test_vertex_start_close_then_continue_uses_the_existing_vertex():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, _scene = _session(mesh, cam)
+    v = p[(2, 2)]
+    for t in (_vpt(v), _face_at(cam, mesh, (1.5, 1.5, 0.0)), _face_at(cam, mesh, (2.5, 1.5, 0.0)),
+              _face_at(cam, mesh, (2.5, 2.5, 0.0))):
+        assert knife.click(t)
+    assert knife.click(_vpt(v)) and knife.path[-1] is knife.path[0]
+    assert knife.click(_ept(mesh, p[(3, 0)], p[(3, 1)], 0.5))
+    n_vertices = len(list(mesh.all_vertex_ids()))
+    deg = len(mesh.vertex_edges(v))
+    knife.commit()
+    assert "dropped" not in knife.last_message
+    assert _vertices_at(mesh, mesh.vertex_position(v)) == [v]   # no second vertex on the existing one
+    assert len(mesh.vertex_edges(v)) == deg + 3                 # loop in/out + the continuation
+    assert len(list(mesh.all_vertex_ids())) > n_vertices
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 close then continue (vertex start)")
+
+
+def test_close_with_a_skipped_stretch_is_no_loop_and_seeds_from_the_last_point():
+    mesh, p = _grid(hole=(1, 2))
+    cam = _camera(mesh)
+    knife, scene = _session(mesh, cam)
+    start = _ept(mesh, p[(1, 1)], p[(2, 1)], 0.5)
+    for t in (start, _face_at(cam, mesh, (0.5, 1.5, 0.0)), _face_at(cam, mesh, (0.5, 3.5, 0.0)),
+              _face_at(cam, mesh, (2.5, 3.5, 0.0))):
+        assert knife.click(t)
+    px = cam.project_to_screen(point_position(mesh, start), W, H)
+    target = knife.snap_target(knife_face_pick(cam, mesh, px[0] + 3.0, px[1], W, H, occlusion=True), px[0] + 3.0, px[1])
+    assert knife.click(target)
+    assert knife.path[-2] == {"kind": "break", "reason": "closed", "cyclic": False}   # skipped stretch: no cyclic loop
+    assert _breaks(knife, "gap")
+    assert knife.path[-1] is knife.path[0]                  # the chain's last point IS the closing vertex here
+    assert knife.click(_ept(mesh, p[(3, 3)], p[(3, 4)], 0.5))
+    start_pos = point_position(mesh, start)
+    knife.commit()
+    assert "skipped" in knife.last_message and "dropped" not in knife.last_message
+    assert len(_vertices_at(mesh, start_pos)) == 1
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 open close then continue")
+    assert len(scene.history) == 1
+
+
+def test_continuing_from_the_seed_does_not_connect_across_the_closed_loop():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, _scene = _session(mesh, cam)
+    pts = _loop4(cam, mesh)
+    for t in pts:
+        knife.click(t)
+    assert _close_by_click(knife, cam, mesh, pts[0])
+    n_closed = len(knife.path)
+    assert knife.click(_ept(mesh, p[(0, 3)], p[(0, 4)], 0.5))
+    # the continuation is its own chain (seed first); the closed chain's entries are untouched
+    assert [q["kind"] for q in knife.path[n_closed - 2:n_closed]] == ["break", "face"]
+    chains = knife._chains()
+    assert [(closed, cyclic, seeded) for _e, closed, cyclic, seeded in chains] == [(True, True, False), (False, False, True)]
+    assert chains[1][0][0] is chains[0][0][0]
+    knife.commit()
+    # 4 loop cuts (cyclic, no edge from the last click to the seed but the closing one) + the continuation only
+    assert "8/8 cut(s) applied" in knife.last_message
+    assert len([e for e in knife.path_edges if mesh.is_valid_edge(e)]) == 12
+
+
+def test_random_close_and_continue_sessions_never_duplicate_the_closing_vertex():
+    """Grid sessions with closes and continuations (deterministic): invariants hold and the seeded
+    start point is never doubled. (Other vertex doublings are a planner matter, not covered here.)"""
+    closes = 0
+    for seed in range(60):
+        rnd = random.Random(seed)
+        mesh, p = _grid(5)
+        cam = _camera(mesh, yaw=rnd.choice([0, 20, 40]), pitch=rnd.choice([35, 60]))
+        knife, _scene = _session(mesh, cam)
+        for _ in range(rnd.randint(4, 8)):
+            if rnd.random() < 0.5:
+                try:
+                    t = _face_at(cam, mesh, (rnd.uniform(0.6, 4.4), rnd.uniform(0.6, 4.4), 0.0))
+                except AssertionError:
+                    continue
+            else:
+                r, c = rnd.randrange(5), rnd.randrange(4)
+                a, b = (p[(r, c)], p[(r, c + 1)]) if rnd.random() < 0.5 else (p[(c, r)], p[(c + 1, r)])
+                t = _ept(mesh, a, b, rnd.uniform(0.2, 0.8))
+            knife.click(t)
+            clicked = knife._clicked()
+            if len(clicked) >= 3 and rnd.random() < 0.5:
+                sx, sy = cam.project_to_screen(point_position(mesh, clicked[0]), W, H)
+                snapped = knife.snap_target(knife_face_pick(cam, mesh, sx + 2, sy + 2, W, H, occlusion=True), sx + 2, sy + 2)
+                closes += bool(snapped.get("kind") == "path" and knife.click(snapped))
+        starts = [point_position(mesh, next(q for q in entries if q["kind"] != "break"))
+                  for entries, _closed, _cyclic, seeded in knife._chains() if seeded]
+        knife.commit()
+        assert_mesh_invariants(mesh, context=f"Q5 random close/continue {seed}")
+        for pos in starts:
+            assert len(_vertices_at(mesh, pos)) <= 1, (seed, pos)
+    assert closes > 20  # the sessions really do close and continue
 
 
 def test_close_is_one_undo_step_and_redo_restores_it():
@@ -535,10 +704,20 @@ def test_close_is_one_undo_step_and_redo_restores_it():
     before_close = knife.path
     assert _close_by_click(knife, cam, mesh, pts[0])
     closed = knife.path
+    assert closed[-1] is closed[0]                   # the seed is part of the closing step
     assert knife.undo_step()
-    assert knife.path == before_close                # the whole closing click (crossings + break) is gone
+    assert knife.path == before_close                # the whole closing click (crossings + break + seed) is gone
+    assert not [q for q in knife.path if q["kind"] == "break"]
     assert knife.redo_step()
     assert knife.path == closed
+    assert knife.path[-1] is knife.path[0] and knife.path[-2]["reason"] == "closed"  # redo restores close and seed
+
+    # a click after the close is its own step: undoing it leaves close + seed, the next undo removes both
+    assert knife.click(_ept(mesh, p[(0, 3)], p[(0, 4)], 0.5))
+    assert knife.undo_step()
+    assert knife.path == closed
+    assert knife.undo_step()
+    assert knife.path == before_close
 
 
 def test_click_on_a_snapped_earlier_point_is_rejected_with_a_note():
@@ -556,8 +735,8 @@ def test_click_on_a_snapped_earlier_point_is_rejected_with_a_note():
     assert len(knife.path) == n
 
     assert _close_by_click(knife, cam, mesh, pts[0])
-    assert not knife.click({"kind": "path", "index": 0})   # a point of an already closed chain
-    assert knife.last_message == f"rejected: {EARLIER_POINT_NOTE}"
+    assert not knife.click({"kind": "path", "index": 0})   # the closed chain's start is now the seed: the last point
+    assert knife.last_message == "rejected: already the last point"
 
 
 def test_closing_needs_three_points():
@@ -771,19 +950,50 @@ def test_window_q5_snap_close_continue_undo_and_commit(q5_window):
     win.on_mouse_motion(sx + 6, sy + 4, 0, 0)     # near the start: snap highlight, closing preview
     assert "hover_snap" in win._kfq5_vlists
     _click(win, sx + 6, sy + 4)
-    assert knife.path[-1]["reason"] == "closed" and knife.path[-1]["cyclic"]
+    assert knife.path[-2]["reason"] == "closed" and knife.path[-2]["cyclic"]
     assert win._knife_face_tool is knife and len(app.scene.history) == 0   # closing does not commit
 
     win.on_mouse_motion(sx + 6, sy + 4, 0, 0)     # the closed chain's start still snaps, but the click is rejected
     n = len(knife.path)
     _click(win, sx + 6, sy + 4)
-    assert len(knife.path) == n and EARLIER_POINT_NOTE in knife.last_message
+    assert len(knife.path) == n and "already the last point" in knife.last_message
 
     win.on_key_press(_key.Z, _key.MOD_CTRL)       # undo = the whole closing click
     assert knife.path[-1]["kind"] != "break"
     win.on_key_press(_key.Y, _key.MOD_CTRL)
-    assert knife.path[-1]["reason"] == "closed"
+    assert knife.path[-2]["reason"] == "closed"
 
     win.on_key_press(_key.ENTER, 0)               # only commit ends the session
     assert win._knife_face_tool is None and len(app.scene.history) == 1
     assert_mesh_invariants(app.scene.mesh, context="window Q5 loop")
+
+
+def test_window_q5_after_close_the_preview_and_the_click_start_at_the_closing_vertex(q5_window):
+    from pyglet.window import key as _key
+    win, app = q5_window
+    mesh = app.scene.mesh
+    knife = _start_q5(win)
+    xs = sorted({round(mesh.vertex_position(v)[0], 6) for v in mesh.all_vertex_ids()})
+    ys = sorted({round(mesh.vertex_position(v)[1], 6) for v in mesh.all_vertex_ids()})
+    cx, cy = xs[4], ys[4]
+    worlds = [(cx - 0.4, cy - 0.4, 0.0), (cx + 0.4, cy - 0.4, 0.0), (cx + 0.4, cy + 0.4, 0.0), (cx - 0.4, cy + 0.4, 0.0)]
+    for w in worlds:
+        _click(win, *_screen(win, w))
+    sx, sy = _screen(win, worlds[0])
+    _click(win, sx + 6, sy + 4)                     # snap onto the start: closes, seeds
+    assert knife.path[-2]["reason"] == "closed" and knife.path[-1] is knife.path[0]
+    assert len(win.app.scene.history) == 0 and win._knife_face_tool is knife
+
+    a, b = (v for v in mesh.all_vertex_ids() if mesh.vertex_position(v) in ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)))
+    tx, ty = _screen(win, _edge_mid(mesh, a, b))
+    win.on_mouse_motion(tx, ty, 0, 0)               # hover: the pending segment runs from the closing vertex
+    plan = knife.last_plan
+    assert plan.ok and plan.lines[0][0] == pytest.approx(worlds[0])
+    assert "hover_cut" in win._kfq5_vlists
+    n = len(knife.path)
+    _click(win, tx, ty)
+    assert len(knife.path) > n and knife.path[n] is not knife.path[0]
+
+    win.on_key_press(_key.ENTER, 0)
+    assert win._knife_face_tool is None and len(app.scene.history) == 1
+    assert_mesh_invariants(app.scene.mesh, context="window Q5 close then continue")

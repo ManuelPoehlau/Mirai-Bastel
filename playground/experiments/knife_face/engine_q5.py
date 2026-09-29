@@ -14,7 +14,12 @@ same residue) plus:
     never connected across a break;
   * close without commit (A-Q3): a click on the snapped start point of the current
     chain (>= 3 clicked points) ends that chain — resolved *cyclically* at commit
-    (probe P8 (c)) — and the next click starts a new, independent chain;
+    (probe P8 (c)). The new chain is *seeded* with the closing vertex (Artist play
+    test 2026-09-29): the same start-point dict again, behind the break, so the next
+    click draws a segment from there while no run is ever resolved across the closed
+    loop. One shared dict = one vertex at commit (resolution is keyed by `id`); an
+    interior start point has no vertex before commit, so the seeded chain is anchored
+    on the vertex the closed chain's cut creates there (see `_resolve_path`);
   * one snap rule: within 14 px of a mesh vertex or of one of the session's own
     clicked points the prospective point jumps onto it;
   * A5 lock off (its reason — hide the missing cross-face cut — is gone here).
@@ -297,10 +302,16 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
             if cyclic:
                 entries.pop()  # the closing point is the start already: resolved as a cycle at commit
             entries.append({"kind": "break", "reason": "closed", "cyclic": cyclic})
+            # Seed of the next chain: the closing vertex (= the chain's start). Same dict on
+            # purpose — never a copy — so commit resolves both occurrences to one vertex. With a
+            # skipped stretch (no cyclic loop) `b` is also the chain's last point, so "seed from
+            # the last point" and "seed from the closing vertex" coincide.
+            entries.append(b)
 
         parts = [f"{len(crossing_positions)} crossing(s)"]
         if closing:
             parts.append("closes the chain" if cyclic else "closes the chain (open pieces: a stretch is skipped)")
+            parts.append("the next cut continues from the closing vertex")
         if skipped:
             parts.append("skipped: " + ", ".join(sorted(set(skipped))))
         if hidden:
@@ -343,17 +354,23 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         crossings: list[Position] = []
         prev = first = None
         pending_skip = None
+        first_entry = closed_first = None
         for p in self._path:
             if _is_chain_end(p):
                 if p.get("cyclic") and prev is not None and first is not None:
                     cut.append((prev, first))
                 prev = first = pending_skip = None
+                closed_first, first_entry = first_entry, None
                 continue
             if _is_break(p):
                 pending_skip, prev = prev, None
                 continue
             pos = self._pos(p)
-            (crossings if p.get("crossing") else points).append(pos)
+            if p is not closed_first:  # the seed repeats the closed chain's start: one dot
+                (crossings if p.get("crossing") else points).append(pos)
+            if first_entry is None:
+                first_entry = p
+            closed_first = None
             if prev is not None:
                 cut.append((prev, pos))
             elif pending_skip is not None:
@@ -366,17 +383,22 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
 
     # -- commit-time resolution -------------------------------------------------------
 
-    def _chains(self) -> list[tuple[list[dict], bool, bool]]:
-        """[(entries, closed, cyclic)] — a chain's entries keep its gap breaks."""
-        out, cur = [], []
+    def _chains(self) -> list[tuple[list[dict], bool, bool, bool]]:
+        """[(entries, closed, cyclic, seeded)] — a chain's entries keep its gap breaks.
+        `seeded`: the chain starts with the closing vertex of the chain before it (the
+        very same dict). A chain holding nothing but its seed has no cut and is left out."""
+        out, cur, prev_first = [], [], None
         for p in self._path:
             if _is_chain_end(p):
-                out.append((cur, True, bool(p.get("cyclic"))))
+                first = next((q for q in cur if not _is_break(q)), None)
+                out.append((cur, True, bool(p.get("cyclic")), first is not None and first is prev_first))
+                prev_first = first
                 cur = []
             else:
                 cur.append(p)
-        if any(not _is_break(p) for p in cur):
-            out.append((cur, False, False))
+        points = [q for q in cur if not _is_break(q)]
+        if points and not (len(points) == 1 and points[0] is prev_first):
+            out.append((cur, False, False, points[0] is prev_first))
         return out
 
     @staticmethod
@@ -395,16 +417,56 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 cur = [p]
         return runs, lead > 0 and len(chunk) > 1, len(cur) > 1
 
+    # -- interior start points shared by a seeded chain ---------------------------------
+
+    def _record_new_vertices(self, points: list[dict], before: set) -> None:
+        """Remember which mesh vertex a run / loop created for each interior point, so a
+        chain seeded with that point can be anchored on it (positions are unique per
+        point: an interior click never lands within 14 px of another one — snap)."""
+        new = [v for v in self._mesh.all_vertex_ids() if v not in before]
+        for pt in points:
+            for v in new:
+                if math.dist(self._mesh.vertex_position(v), pt["position"]) < 1e-9:
+                    self._interior_vertices[id(pt)] = v
+                    break
+
+    def _apply_run(self, run: list[dict], resolved: dict[int, VertexId]) -> bool:
+        interior = run[1:-1]
+        before = set(self._mesh.all_vertex_ids()) if interior else set()
+        ok = super()._apply_run(run, resolved)
+        if ok and interior:
+            self._record_new_vertices(interior, before)
+        return ok
+
+    def _resolve_closed_loop(self, path: list[dict]) -> str:
+        before = set(self._mesh.all_vertex_ids())
+        msg = super()._resolve_closed_loop(path)
+        self._record_new_vertices(path, before)
+        return msg
+
     def _resolve_path(self) -> None:
         if not self._path:
             self.last_message = "no points"
             return
 
+        self._interior_vertices: dict[int, VertexId] = {}
         runs: list[list[dict]] = []
+        seeded_runs: list[list[dict]] = []     # chains anchored on an interior start point: applied last
+        anchors: dict[int, tuple[dict, dict]] = {}  # id(interior seed) -> (seed, vertex placeholder)
         loops: list[list[dict]] = []
         notes: list[str] = []
         dropped_lead = dropped_tail = False
-        for entries, closed, cyclic in self._chains():
+        for entries, closed, cyclic, seeded in self._chains():
+            target_runs = runs
+            if seeded:
+                first = next(p for p in entries if not _is_break(p))
+                if first["kind"] == "face":
+                    # An interior start is no vertex before commit: this chain waits for the
+                    # vertex that the closed chain's cut creates at that point. The placeholder
+                    # is bound (vertex_id resolved) right before its runs are applied.
+                    ph = anchors.setdefault(id(first), (first, {"kind": "vertex", "vertex_id": None}))[1]
+                    entries = [ph if p is first else p for p in entries]
+                    target_runs = seeded_runs
             chunks, cur = [], []
             for p in entries:
                 if _is_break(p):
@@ -435,23 +497,35 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 chunks = [pts[start:] + pts[:start] + [pts[start]]]
             for chunk in chunks:
                 r, lead, tail = self._runs_of(chunk)
-                runs.extend(r)
+                target_runs.extend(r)
                 dropped_lead |= lead
                 dropped_tail |= tail
 
-        resolved = self._resolve_boundary_points(runs)
+        resolved = self._resolve_boundary_points(runs + seeded_runs)
         applied = sum(1 for run in runs if self._apply_run(run, resolved))
 
         parts: list[str] = []
-        if runs:
-            parts.append(f"{applied}/{len(runs)} cut(s) applied")
         for pts in loops:
             fid: FaceId = pts[0]["face_id"]
             if not self._mesh.is_valid_face(fid):
                 notes.append("closed shape skipped — its face was already cut by another run")
                 continue
             parts.append(self._resolve_closed_loop(pts))
-        if not runs and not loops:
+
+        for run in seeded_runs:
+            for seed, ph in anchors.values():
+                vid = self._interior_vertices.get(id(seed))
+                if vid is not None and self._mesh.is_valid_vertex(vid):
+                    resolved[id(ph)] = vid
+            if self._apply_run(run, resolved):
+                applied += 1
+        if any(self._interior_vertices.get(id(seed)) is None for seed, _ph in anchors.values()):
+            notes.append("continuation from an interior start point dropped (no cut created a vertex there)")
+
+        total = len(runs) + len(seeded_runs)
+        if total:
+            parts.insert(0, f"{applied}/{total} cut(s) applied")
+        if not total and not loops:
             parts.append("no complete cut")
         if dropped_lead:
             notes.append("leading interior point(s) dropped (no boundary reached before them)")

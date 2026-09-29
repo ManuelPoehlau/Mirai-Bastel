@@ -121,7 +121,7 @@ the 4 required shapes (bent cut, notch, closed shape, interior start).
 
 # Q5 — Cross-Face (Variant Q5, built on D)
 
-**Status:** Discovery Lab — built 2026-09-29, **not yet played**. Verdict slots below are empty.
+**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict slots below are empty** — no verdict has been given.
 **Background:** `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived — §2 planners, §3 camera finding,
 §4 cases, §5 closed loops, §6 preview / A5 lock, §8 lab options). No Core change, no Production change: everything
 below is Playground-only (`playground/experiments/knife_face/`: `planner.py`, `engine_q5.py`, `variant_q5.py`,
@@ -141,6 +141,8 @@ This is the authoritative home of these answers (the archived discovery is not e
 | A-Q3 — closed shapes across faces | **Yes: snap to the start point, click closes the shape, but you can keep cutting — only commit ends the session.** Correction: the snap always engages near **any** vertex, not only the start point | Close ≠ commit (changes today's D close-on-start in this variant). Snap feedback required. Covers D gaps 1 and 2 in this variant. |
 | Assumption (not contradicted) | One segment may cross **any number** of faces | Planner is not limited to the neighbour face. |
 
+*"You can keep cutting" (A-Q3) is read as: the next cut continues from the closing vertex — see "Artist play-test observations (2026-09-29)". An earlier build read it as "a new, independent chain"; that was a spec reading, not an Artist statement.*
+
 ## Variants for this test: D (control) and Q5
 
 | | D — Collected (control, unchanged) | Q5 — Cross-Face (D + planner) |
@@ -149,9 +151,9 @@ This is the authoritative home of these answers (the archived discovery is not e
 | Line that cannot be cut everywhere (hole, mesh border, silhouette, hidden stretch) | — | **visible pieces are cut, the gaps are skipped**, the click is accepted, the HUD names what was skipped; skipped stretch drawn in a distinct "no cut" style (grey-blue) |
 | Camera | picking only | crossings fixed **at click time with that click's camera**, stored in the path; orbiting between clicks or before commit never changes them |
 | Snap | 14 px zone around the start point only, no feedback | within **14 px of any vertex** (mesh vertex or one of your own clicked points) the point jumps onto it; one cyan highlight for both |
-| Close | click on the start (interior start only) **commits**, cuts only part of a cross-face loop | click on the snapped start point (chain ≥ 3 points) **closes** the chain, loop resolved cyclically (no bridges across faces); **session continues**, the next click starts a new independent chain; only commit ends the session |
+| Close | click on the start (interior start only) **commits**, cuts only part of a cross-face loop | click on the snapped start point (chain ≥ 3 points) **closes** the chain, loop resolved cyclically (no bridges across faces); **session continues**: the new chain is **seeded with the closing vertex**, so the next click draws a segment *from that vertex* (through the planner, like from any last point). The loop and the seeded chain are separated by a break — no run crosses the closed loop. Only commit ends the session |
 | A5 lock (no interior click in the neighbour face right after a cut) | active | **off** |
-| In-session undo | one step per click | one step per click **including all its crossings**; the closing click is one step |
+| In-session undo | one step per click | one step per click **including all its crossings**; the closing click is one step **including the seeding** (undo removes close and seed, redo restores both) |
 | Preview | line through the stored path + hover point | line through stored crossings + pending segment through its planned crossings, **crossing dots**, skipped stretch, snap highlight |
 | Commit | Enter | Enter (unchanged; see "click outside" note in Observations) |
 
@@ -179,10 +181,27 @@ line = skipped stretch. `Ctrl+Z` / `Ctrl+Y` = in-session undo/redo, `Enter` = co
    untouched, Q5 subclasses it; D's behaviour on paths without breaks is what the unchanged D tests prove.
 6. **Snap:** the nearer of (picked mesh vertex, own clicked point) wins. The chain's **last** point, **crossings** and
    points hidden behind the surface are not snap targets. A snapped earlier point that is **not** the current chain's start
-   (an earlier point of this chain, or a point of an already closed chain) shows the snap but the click is **rejected** with
-   the HUD note "connecting to earlier cut points not supported yet". What that click *should* do is untested.
+   (an earlier point of this chain, or a point of an already closed chain other than the closing vertex) shows the snap but
+   the click is **rejected** with the HUD note "connecting to earlier cut points not supported yet". What that click
+   *should* do is untested. Right after a close the closed chain's start *is* the new chain's seed, i.e. its last point:
+   clicking it is rejected as "already the last point"; once the new chain has ≥ 3 clicked points (seed included), a click
+   on it closes that chain again.
 7. **Closing across a gap:** if the chain or the closing segment contains a skipped stretch, the loop cannot be resolved
-   cyclically; the click still ends the chain but its pieces are cut as open pieces (HUD says so).
+   cyclically; the click still ends the chain but its pieces are cut as open pieces (HUD says so). Here the chain's last
+   point *is* the start point again (the closing segment ends on it), so "seed from the last point" and "seed from the
+   closing vertex" are the same point: the next chain is seeded with it exactly as after a cyclic close.
+7a. **Seed after a close (Artist play test 2026-09-29):** the new chain's first point is the closing vertex — stored as the
+   *same* path entry again behind the `closed` break (never a copy), so commit resolves loop and continuation to **one**
+   vertex (boundary points are resolved once per entry). Per kind of start point:
+   - **existing mesh vertex:** the continuation starts at that vertex; no new vertex.
+   - **edge crossing:** the edge is split once; the loop and the continuation both attach to that one new vertex — no double
+     `split_edge` on the same edge/t, no zero-length edge.
+   - **interior (virtual) point:** it has no vertex before commit. The seeded chain is anchored on the vertex that the closed
+     chain's own cut creates at that position; that continuation is applied after the closed chain (and after D's
+     closed-shape stand-in, when the start belongs to an all-interior loop). If no cut created a vertex there, the
+     continuation is dropped with a HUD note. A continuation that stays entirely inside faces (no boundary reached) is
+     dropped like any dangling tail.
+   - a chain holding nothing but its seed (close, then commit at once) has no cut and no HUD note — identical to before.
 8. **Interior-only chains (D parity):** three or more clicks in one face still form D's 2-bridge closed shape — closed by
    clicking the start or (unclosed) at commit. Face Holes stays a separate topic.
 9. **Same-face links use no planner** (D parity): D's "no geometric in-face check" (a chord across a concave face's notch is
@@ -205,8 +224,8 @@ included). Zoom in so faces are large (interior clicks need ≥ 9 px clearance f
 5. **Head — orbit between clicks:** click a point, orbit ~25° (`Alt`+drag), click the target (the line seen now is the cut).
    Orbit again, commit and compare with what the line showed.
 6. **Grid — closed loop over 4 quads:** four interior clicks in the four quads around one vertex, then click the first point
-   again (move the cursor near it first: the snap highlight shows). Then make **one more independent cut** elsewhere
-   (edge → edge). Commit.
+   again (move the cursor near it first: the snap highlight shows). Then **continue cutting from the closing vertex** to an
+   edge (one more click; watch the line start at the closing vertex). Commit.
 
 **Expected, not a verdict on the variant:**
 
@@ -219,9 +238,11 @@ included). Zoom in so faces are large (interior clicks need ≥ 9 px clearance f
   hidden part", "N hidden crossing(s) not cut"), the skipped stretch is drawn in the "no cut" style.
 - **Task 5:** the cut follows the line seen at the second click, not the view at commit.
 - **Task 6:** D cannot place the second point (it lies in another face) — the loop cannot even be built. **Q5**: the click
-  on the start **closes** all 4 quads **without bridges** and the session **continues**; the extra cut is an independent chain
-  (nothing runs across the break); `Enter` commits everything as one history entry. Also try `Ctrl+Z` right after the closing
-  click (one step) and clicking an earlier point that is not the start (snap shows, click rejected with a note).
+  on the start **closes** all 4 quads **without bridges** and the session **continues**; the next click draws a segment from
+  the closing vertex to the edge (through the planner, crossings included), while nothing runs across the closed loop;
+  `Enter` commits everything as one history entry, the closing vertex being one vertex. Also try `Ctrl+Z` right after the
+  closing click (one step: close and seed go together) and clicking an earlier point that is not the start (snap shows,
+  click rejected with a note).
 
 **Observe:** does line + dots read as "this is what will be cut"? Is cutting the visible part and skipping the rest (the
 Blender behaviour Manu asked for) what happens on the nose? Does the snap highlight make closing predictable? Does the
@@ -244,10 +265,27 @@ rejected "earlier point" click feel wrong (what should it do)? How many attempts
 **Open points (record, do not decide):**
 
 - What a click on a snapped earlier path point (not the chain's start) should do (lab default: snap shown, click rejected).
+- Whether a shared **interior** start point behaves sensibly when the continued chain cuts the same face again. Seen while
+  building (grid, vertex start): a continuation from the closing vertex whose chord crosses the loop's own cut inside one
+  face cannot be connected in the already split face — that run is dropped ("N-1/N cut(s) applied"). Untested by the Artist.
 - Where exactly a piece "ends" next to a gap on curved surfaces (lab default: last visible crossing).
 - Anything in the Blender-like behaviour that feels wrong while playing → Observations below.
 
 ---
+
+## Artist play-test observations (2026-09-29)
+
+_(Manu, first Q5 play test — recorded in meaning, not a verdict; the Q5 and D verdict slots above stay empty.)_
+
+- **Tasks 1–5:** "check" — worked as expected.
+- **Task 6 (closed loop):** after closing, a new cut is **not connected to the last clicked vertex**. Read as (Context
+  Check, Manu corrects only if wrong): after a close the last clicked vertex is the closing vertex (= the chain's start
+  point), and the Artist expects the next cut to **continue from that vertex** instead of starting a disconnected chain —
+  like continuing a Blender knife line after clicking an existing point.
+- **Consequence built:** the closing click seeds the new chain with the closing vertex (lab default 7a). Unchanged: a click on
+  the snapped start closes the shape without committing; only commit (`Enter`) ends the session.
+- The earlier "independent chain after a close" behaviour was a spec reading of "you can keep cutting", never an Artist
+  statement.
 
 ## Observations outside the question
 
@@ -301,5 +339,10 @@ _(incidental evidence — raises priority of other questions, does not decide th
 - **Crossing dots and the "no cut" style were checked in a headless render** (real window under Xvfb, `grid`: yellow
   crossing dots, cyan snap square, orange clicked points, HUD text) — a smoke check that the overlay draws, not a judgement
   of how it feels; the Artist test decides that.
+- **Close-and-continue stress (2026-09-29, headless):** 300 random grid sessions (2–8 clicks, several cameras, ~270 closes
+  followed by further clicks) committed with mesh invariants intact and no doubled vertex at any seeded start point (a
+  compact 60-session version is in `test_knife_face_q5.py`). The same runs show vertices doubled at an *existing* vertex when
+  the planner emits an edge crossing at t = 0.0 (a segment passing exactly through a vertex) — present with and without the
+  seed, planner territory, not touched here.
 - **Head stress (not a test):** 120 random Q5 sessions on `head` (2–5 clicks, three cameras, cache on, some closed) all
   committed with mesh invariants intact.
