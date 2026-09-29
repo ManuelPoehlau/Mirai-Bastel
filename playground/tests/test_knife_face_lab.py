@@ -584,3 +584,160 @@ def test_min_edge_distance_px_shrinks_towards_boundary():
     d_near_edge = min_edge_distance_px(camera, mesh, fid, sx_e, sy_e, width, height)
 
     assert d_near_edge < d_center
+
+
+# ---------------------------------------------------------------------------
+# D — multi-run commit: shared joint points resolved once (KeyError regression)
+# ---------------------------------------------------------------------------
+
+def _ngon_scene(n: int):
+    scene = Scene()
+    mesh = scene.mesh
+    vs = [mesh.add_vertex((math.cos(2 * math.pi * k / n), math.sin(2 * math.pi * k / n), 0.0))
+          for k in range(n)]
+    fid = mesh.add_face(vs)
+    return scene, fid
+
+
+def _state_no_counters(mesh):
+    return {k: v for k, v in mesh.export_state().items() if not k.endswith("_id_counter")}
+
+
+def test_d_three_boundary_points_on_three_edges_commit_without_crash():
+    """Handoff repro: interior click + 3 boundary clicks on 3 edges of one quad
+    used to raise KeyError(EdgeId) in split_edge (joint point split twice)."""
+    scene, fid = _ngon_scene(4)
+    mesh = scene.mesh
+    edges = mesh.face_edges(fid)
+    before = _state_no_counters(mesh)
+    knife = _begin(KnifeFaceCollected, scene)
+
+    assert knife.click(_face_target(fid, (0.0, 0.0, 0.0)))
+    assert knife.click(_edge_target(edges[0], 0.3))
+    assert knife.click(_edge_target(edges[1], 0.5))
+    assert knife.click(_edge_target(edges[2], 0.5))
+    cmd = knife.commit()
+    knife.deactivate()
+
+    assert cmd is not None
+    assert "2/2 cut(s) applied" in knife.last_message
+    assert len(mesh.all_face_ids()) == 3
+    assert_mesh_invariants(mesh, context="D 3 boundary points")
+    assert len(scene.history) == 1
+    scene.history.undo()
+    assert _state_no_counters(mesh) == before
+
+
+@pytest.mark.parametrize("n_edges", [4, 5])
+def test_d_boundary_chain_on_n_edges_of_a_polygon(n_edges):
+    scene, fid = _ngon_scene(6)
+    mesh = scene.mesh
+    edges = mesh.face_edges(fid)
+    knife = _begin(KnifeFaceCollected, scene)
+
+    for e in edges[:n_edges]:
+        assert knife.click(_edge_target(e, 0.5))
+    cmd = knife.commit()
+    knife.deactivate()
+
+    assert cmd is not None
+    assert f"{n_edges - 1}/{n_edges - 1} cut(s) applied" in knife.last_message
+    assert_mesh_invariants(mesh, context=f"D {n_edges}-point chain")
+    assert len(mesh.all_face_ids()) == n_edges
+    assert len(scene.history) == 1
+
+
+def test_d_mixed_interior_run_and_plain_runs_share_joints():
+    """interior, B1, B2, interior, B3, B4 -> leading interior dropped; runs
+    [B1, B2], [B2, i, B3], [B3, B4] with two shared joints. The interior-bearing
+    run must keep its interior position while each joint is resolved once.
+    (The handoff's literal `i, B, i, B, B` is not clickable: A5 locks out a face
+    click right after a boundary that closes a lead-interior run.)"""
+    scene, fid = _ngon_scene(6)
+    mesh = scene.mesh
+    edges = mesh.face_edges(fid)
+    knife = _begin(KnifeFaceCollected, scene)
+
+    assert knife.click(_face_target(fid, (0.0, 0.1, 0.0)))
+    assert knife.click(_edge_target(edges[0], 0.5))
+    assert knife.click(_edge_target(edges[1], 0.5))
+    assert knife.click(_face_target(fid, (-0.2, 0.0, 0.0)))
+    assert knife.click(_edge_target(edges[3], 0.5))
+    assert knife.click(_edge_target(edges[4], 0.5))
+    cmd = knife.commit()
+    knife.deactivate()
+
+    assert cmd is not None
+    assert "3/3 cut(s) applied" in knife.last_message
+    assert "leading interior" in knife.last_message
+    assert_mesh_invariants(mesh, context="D mixed interior + shared joints")
+    assert len(mesh.all_face_ids()) == 4
+    assert any(
+        math.isclose(mesh.vertex_position(v)[0], -0.2) and math.isclose(mesh.vertex_position(v)[1], 0.0)
+        for v in mesh.all_vertex_ids()
+    )
+    assert len(scene.history) == 1
+
+
+def test_d_two_runs_on_same_original_edge_do_not_crash():
+    """Different runs whose ends land on one original edge: splitting for the
+    first must not invalidate the second's edge id."""
+    scene, fid = _ngon_scene(6)
+    mesh = scene.mesh
+    edges = mesh.face_edges(fid)
+    knife = _begin(KnifeFaceCollected, scene)
+
+    assert knife.click(_edge_target(edges[0], 0.2))
+    assert knife.click(_edge_target(edges[2], 0.5))
+    assert knife.click(_edge_target(edges[4], 0.5))
+    assert knife.click(_edge_target(edges[0], 0.8))
+    knife.commit()
+    knife.deactivate()
+
+    assert_mesh_invariants(mesh, context="D shared original edge across runs")
+
+
+def test_d_run_failure_is_dropped_and_rest_stays_one_undoable_step(monkeypatch):
+    """Safety net: an exception from Core inside one run drops only that run
+    (HUD N/M), the commit still reaches the History push for the rest."""
+    import playground.experiments.knife_face.engine as eng
+
+    scene, fid = _ngon_scene(6)
+    mesh = scene.mesh
+    edges = mesh.face_edges(fid)
+    before = _state_no_counters(mesh)
+    knife = _begin(KnifeFaceCollected, scene)
+    for e in edges[:3]:
+        assert knife.click(_edge_target(e, 0.5))
+
+    real, calls = eng.connect_in_shared_face, []
+
+    def flaky(mesh_, a, b):
+        calls.append((a, b))
+        if len(calls) == 1:
+            raise KeyError("forced")
+        return real(mesh_, a, b)
+
+    monkeypatch.setattr(eng, "connect_in_shared_face", flaky)
+    cmd = knife.commit()
+    knife.deactivate()
+
+    assert cmd is not None
+    assert "1/2 cut(s) applied" in knife.last_message
+    assert len(scene.history) == 1
+    assert_mesh_invariants(mesh, context="D dropped run")
+    scene.history.undo()
+    assert _state_no_counters(mesh) == before
+    scene.history.redo()
+    assert len(mesh.all_face_ids()) == 2
+
+
+def test_d_lone_boundary_point_leaves_mesh_untouched():
+    scene, fid = _ngon_scene(4)
+    mesh = scene.mesh
+    before = mesh.export_state()
+    knife = _begin(KnifeFaceCollected, scene)
+    assert knife.click(_edge_target(mesh.face_edges(fid)[0], 0.5))
+    assert knife.commit() is None
+    knife.deactivate()
+    assert mesh.export_state() == before
