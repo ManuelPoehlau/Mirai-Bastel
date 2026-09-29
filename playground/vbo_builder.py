@@ -14,7 +14,7 @@ from playground._paths import ensure_paths
 ensure_paths()
 
 from core import Mesh  # noqa: E402
-from viewport.derived import DerivedGeometry, triangulate_face  # noqa: E402
+from viewport.derived import DerivedGeometry, triangulate_mesh_face  # noqa: E402
 
 
 def build_face_data(
@@ -33,8 +33,7 @@ def build_face_data(
 
     for fid in mesh.all_face_ids():
         face_normal = derived.face_normals.get(fid, (0.0, 1.0, 0.0))
-        boundary = mesh.face_vertices(fid)
-        for a, b, c in triangulate_face(boundary):
+        for a, b, c in triangulate_mesh_face(mesh, fid):
             for vid in (a, b, c):
                 positions.extend(mesh.vertex_position(vid))
                 smooth_normals.extend(
@@ -116,8 +115,7 @@ def build_selection_data(mesh: Mesh, selected_face_ids) -> list[float]:
     """
     positions: list[float] = []
     for fid in selected_face_ids:
-        boundary = mesh.face_vertices(fid)
-        for a, b, c in triangulate_face(boundary):
+        for a, b, c in triangulate_mesh_face(mesh, fid):
             for vid in (a, b, c):
                 positions.extend(mesh.vertex_position(vid))
     return positions

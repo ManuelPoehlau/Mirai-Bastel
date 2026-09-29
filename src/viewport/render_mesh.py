@@ -29,7 +29,7 @@ Paket-Docstring in `__init__.py`).
 
 Face-Boundaries in der Core-Mesh sind n-gonal (i. d. R. Quads, siehe
 `scene_factory.create_cube`), das GPU-Indexbuffer-Format braucht aber
-Dreiecke -> Fan-Triangulierung über `derived.triangulate_face()`, ausgeführt
+Dreiecke -> Triangulierung über `derived.triangulate_mesh_face()`, ausgeführt
 bei jedem (Re-)Aufbau des Indexbuffers (nur bei Topology-Changes, siehe
 `_rebuild_index_buffer`).
 
@@ -55,7 +55,7 @@ from core import FaceId, Mesh, VertexId
 
 from .benchmark import BenchmarkCounters
 from .category import DirtyState
-from .derived import DerivedGeometry, triangulate_face
+from .derived import DerivedGeometry, triangulate_mesh_face
 from .overlay import SelectionOverlay
 from .resource_store import ResourceStore, TraceStore
 
@@ -149,8 +149,7 @@ class RenderMesh:
         }
         triangles: list[tuple[VertexId, VertexId, VertexId]] = []
         for face_id in self.mesh.all_face_ids():
-            boundary = self.mesh.face_vertices(face_id)
-            triangles.extend(triangulate_face(boundary))
+            triangles.extend(triangulate_mesh_face(self.mesh, face_id))
         self._triangle_indices = triangles
 
     def _positions_flat(self) -> list[float]:

@@ -6,7 +6,7 @@ Adaptiert aus dem verifizierten Proof-of-Architecture-Experiment
 
 - Faces sind n-gonale, geordnete Vertex-Boundaries (`mesh.face_vertices`),
   nicht fest triangulierte 3-Tupel wie im Experiment. Für Normalen/Rendering
-  wird hier per Fan-Triangulierung trianguliert (siehe `triangulate_face`).
+  wird hier per Ear Clipping trianguliert (siehe `triangulate_face`).
 - Vertex-/Face-IDs sind opake `VertexId`/`FaceId`-Objekte (siehe
   `src.core.ids`), keine Array-Indizes — die Adjazenz-Struktur ist deshalb
   ein Dict, kein `list`.
@@ -18,7 +18,7 @@ strukturellen Rebuild.
 Normalen-Definition (wie im Experiment gewählt und im Proof verifiziert):
 
 - Face-Normale: rechtshändige, normalisierte Normale aus dem ersten
-  Dreieck der Fan-Triangulierung einer Face-Boundary.
+  Dreieck der Triangulierung einer Face-Boundary.
 - Vertex-Normale: flächengewichteter Durchschnitt der Normalen aller
   incident Faces.
 
@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Mapping
 
 from core import FaceId, Mesh, VertexId
 
@@ -66,20 +67,111 @@ def _normalize(a: Vec3) -> Vec3:
     return (a[0] / length, a[1] / length, a[2] / length)
 
 
-def triangulate_face(vertex_ids: list[VertexId]) -> list[tuple[VertexId, VertexId, VertexId]]:
-    """Fan-Triangulierung einer geordneten (konvexen) Face-Boundary.
+_EAR_EPS = 1e-12
 
-    Für Dreiecke/Quads (der V1-Regelfall) korrekt; für allgemeine konkave
-    n-Gons eine bewusste Vereinfachung (siehe VIEWPORT_V02_ARCHITECTURE.md
-    Non-Goals: kein allgemeiner Polygon-Trianguliator).
+
+def _polygon_plane_axes(pts: list[Vec3]) -> tuple[int, int, float]:
+    """(u-Achse, v-Achse, Vorzeichen) der Projektion entlang der dominanten
+    Newell-Normalen. Das Vorzeichen spiegelt die Projektion so, dass die
+    Boundary in 2D immer gegen den Uhrzeigersinn (positive Fläche) läuft —
+    unabhängig davon, von welcher Seite die Face betrachtet wird."""
+    nx = ny = nz = 0.0
+    for i, a in enumerate(pts):
+        b = pts[(i + 1) % len(pts)]
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    ax, ay, az = abs(nx), abs(ny), abs(nz)
+    if az >= ax and az >= ay:
+        return 0, 1, 1.0 if nz >= 0 else -1.0
+    if ax >= ay:
+        return 1, 2, 1.0 if nx >= 0 else -1.0
+    return 2, 0, 1.0 if ny >= 0 else -1.0
+
+
+def _cross2(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def triangulate_face(
+    vertex_ids: list[VertexId],
+    positions: Mapping[VertexId, Vec3] | None = None,
+) -> list[tuple[VertexId, VertexId, VertexId]]:
+    """Triangulierung einer geordneten Face-Boundary (Ear Clipping).
+
+    Mit `positions` (VertexId -> Position) korrekt für einfache
+    (nicht selbstschneidende) konkave n-Gons: die Dreiecke überdecken das
+    Polygon genau einmal und behalten die Boundary-Orientierung. Die Face wird
+    dafür in ihre beste Ebene (dominante Newell-Normale) projiziert; nicht-
+    planare Faces werden dort nur approximiert (keine allgemeine
+    Nicht-Planar-Triangulierung).
+
+    Konvexe Faces (und alles ohne `positions`) ergeben unverändert den Fan von
+    `vertex_ids[0]` — Dreiecke/Quads/konvexe n-Gons ändern sich dadurch nicht.
+    Immer n-2 Dreiecke (für n >= 3); leere Liste bei < 3 Vertices.
     """
-    if len(vertex_ids) < 3:
+    n = len(vertex_ids)
+    if n < 3:
         return []
     v0 = vertex_ids[0]
-    return [
-        (v0, vertex_ids[i], vertex_ids[i + 1])
-        for i in range(1, len(vertex_ids) - 1)
-    ]
+    fan = [(v0, vertex_ids[i], vertex_ids[i + 1]) for i in range(1, n - 1)]
+    if positions is None or n == 3:
+        return fan
+
+    pts3 = [positions[v] for v in vertex_ids]
+    u, w, sign = _polygon_plane_axes(pts3)
+    # sign < 0 negiert die u-Achse (Spiegelung) -> Orientierung wird positiv.
+    pts = [(sign * p[u], p[w]) for p in pts3]
+
+    def cross_at(ring: list[int], k: int) -> float:
+        m = len(ring)
+        return _cross2(pts[ring[k - 1]], pts[ring[k]], pts[ring[(k + 1) % m]])
+
+    ring = list(range(n))
+    if all(cross_at(ring, k) >= -_EAR_EPS for k in range(n)):
+        return fan  # konvex (Kollineare erlaubt) -> bisheriges Verhalten
+
+    def is_ear(ring: list[int], k: int) -> bool:
+        m = len(ring)
+        ia, ib, ic = ring[k - 1], ring[k], ring[(k + 1) % m]
+        a, b, c = pts[ia], pts[ib], pts[ic]
+        if _cross2(a, b, c) <= _EAR_EPS:
+            return False
+        for j in ring:
+            if j in (ia, ib, ic):
+                continue
+            p = pts[j]
+            if p in (a, b, c):
+                continue  # koinzidente Vertices (Bridges) blockieren nicht
+            if (
+                _cross2(a, b, p) >= -_EAR_EPS
+                and _cross2(b, c, p) >= -_EAR_EPS
+                and _cross2(c, a, p) >= -_EAR_EPS
+            ):
+                return False
+        return True
+
+    tris: list[tuple[VertexId, VertexId, VertexId]] = []
+    while len(ring) > 3:
+        m = len(ring)
+        k = next((k for k in range(m) if is_ear(ring, k)), None)
+        if k is None:
+            # Degeneriert / selbstschneidend: kollinearen Vertex abtrennen,
+            # sonst den flachsten — terminiert immer, n-2 Dreiecke bleiben.
+            k = min(range(m), key=lambda k: abs(cross_at(ring, k)))
+        tris.append((vertex_ids[ring[k - 1]], vertex_ids[ring[k]], vertex_ids[ring[(k + 1) % m]]))
+        del ring[k]
+    tris.append(tuple(vertex_ids[i] for i in ring))  # type: ignore[arg-type]
+    return tris
+
+
+def triangulate_mesh_face(
+    mesh: Mesh, face_id: FaceId
+) -> list[tuple[VertexId, VertexId, VertexId]]:
+    """`triangulate_face` für eine Mesh-Face inkl. Positions-Lookup — der eine
+    Ort, an dem Render, Overlay, Normalen und Picking ihre Dreiecke beziehen."""
+    boundary = mesh.face_vertices(face_id)
+    return triangulate_face(boundary, {v: mesh.vertex_position(v) for v in boundary})
 
 
 def triangle_normal(positions: dict[VertexId, Vec3], tri: tuple[VertexId, VertexId, VertexId]) -> Vec3:
@@ -138,11 +230,11 @@ class DerivedGeometry:
         self.face_normals = {}
         for face_id in mesh.all_face_ids():
             boundary = mesh.face_vertices(face_id)
-            tris = triangulate_face(boundary)
+            tris = triangulate_face(boundary, positions)
             if not tris:
                 self.face_normals[face_id] = (0.0, 0.0, 0.0)
                 continue
-            # Face-Normale = Normale des ersten Fan-Dreiecks (planare Faces
+            # Face-Normale = Normale des ersten Dreiecks (planare Faces
             # in V1 - siehe scene_factory.create_cube).
             self.face_normals[face_id] = triangle_normal(positions, tris[0])
 
@@ -176,11 +268,11 @@ class DerivedGeometry:
         """Berechnet die Normale jeder betroffenen Face neu (aus aktueller Position)."""
         for face_id in face_ids:
             boundary = mesh.face_vertices(face_id)
-            tris = triangulate_face(boundary)
+            positions = {v: mesh.vertex_position(v) for v in boundary}
+            tris = triangulate_face(boundary, positions)
             if not tris:
                 self.face_normals[face_id] = (0.0, 0.0, 0.0)
                 continue
-            positions = {v: mesh.vertex_position(v) for v in boundary}
             self.face_normals[face_id] = triangle_normal(positions, tris[0])
 
     def update_vertex_normals(self, mesh: Mesh, vertex_ids: set[VertexId]) -> None:

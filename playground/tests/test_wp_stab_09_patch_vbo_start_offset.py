@@ -35,7 +35,7 @@ for _p in (str(_ROOT / "src"), str(_ROOT), str(_ROOT / "tests")):
 
 from core.selection import SelectionMode  # noqa: E402
 from playground.transformer import update_transform  # noqa: E402
-from viewport.derived import triangulate_face  # noqa: E402
+from viewport.derived import triangulate_mesh_face  # noqa: E402
 
 
 def _window(initial_mesh: str = "cube"):
@@ -198,8 +198,7 @@ def test_s4_faces_vbo_still_correct(cube_win):
     slot = 0
     found = False
     for fid in mesh.all_face_ids():
-        boundary = mesh.face_vertices(fid)
-        for a, b, c in triangulate_face(boundary):
+        for a, b, c in triangulate_mesh_face(mesh, fid):
             for slot_vid in (a, b, c):
                 if slot_vid == drag_vid:
                     got = tuple(win._vlist_faces.position[slot * 3: slot * 3 + 3])

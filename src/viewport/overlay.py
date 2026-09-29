@@ -54,7 +54,7 @@ from enum import Enum, auto
 
 from core import EdgeId, FaceId, Selection, SelectionMode, VertexId
 
-from .derived import triangulate_face
+from .derived import triangulate_mesh_face
 
 #: Punkt-Layer der Overlay-Geometrie, in Zeichenreihenfolge (Hover unter
 #: der Selektion, wie Playground `window.on_draw`).
@@ -232,5 +232,5 @@ def _edge_segment(mesh, edge_id: EdgeId) -> tuple:
 def _face_triangles(mesh, face_id: FaceId) -> list[tuple]:
     return [
         tuple(mesh.vertex_position(vid) for vid in tri)
-        for tri in triangulate_face(mesh.face_vertices(face_id))
+        for tri in triangulate_mesh_face(mesh, face_id)
     ]

@@ -752,7 +752,7 @@ class PlaygroundWindow(pyglet.window.Window):
         in _vlist_faces; position in _vlist_edges, _vlist_verts, _vlist_sel_verts.
         GPU buffers are updated in-place via set_region() — no VBO reallocation.
         """
-        from viewport.derived import triangulate_face  # noqa: E402
+        from viewport.derived import triangulate_mesh_face  # noqa: E402
 
         mesh = self.app.viewport.render_mesh.mesh
         derived = self.app.viewport.render_mesh.derived
@@ -777,13 +777,12 @@ class PlaygroundWindow(pyglet.window.Window):
             fnrm_buf = self._vlist_faces.domain.attrib_name_buffers["flat_normal"]
             flat_slot = self._vlist_faces.start
             for fid in mesh.all_face_ids():
-                boundary = mesh.face_vertices(fid)
                 is_affected = fid in affected_faces
                 face_normal = (
                     list(derived.face_normals.get(fid, (0.0, 1.0, 0.0)))
                     if is_affected else None
                 )
-                for a, b, c in triangulate_face(boundary):
+                for a, b, c in triangulate_mesh_face(mesh, fid):
                     for slot_vid in (a, b, c):
                         if slot_vid == vid:
                             pos_buf.set_region(flat_slot, 1, new_pos)

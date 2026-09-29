@@ -41,6 +41,7 @@ from core.operations.topology import MeshStateCommand
 from mirai.interaction.tool import Tool
 from mirai.topology.knife_pick import knife_pick as _base_knife_pick
 from mirai.topology.topology_points import connect_in_shared_face
+from viewport.derived import triangulate_mesh_face
 
 Position = tuple[float, float, float]
 
@@ -90,23 +91,18 @@ def _ray_triangle_t(origin, direction, a, b, c):
 def face_interior_hit(camera, mesh, face_id: FaceId, sx, sy, width, height) -> Position | None:
     """World-space ray-hit position on `face_id`'s fan triangulation.
 
-    Fan from boundary[0], exactly like `pick_face` — so a hit on a non-planar
-    quad (H2, the `head` asset) lands on the same triangle `pick_face` itself
-    used to select this face. Returns None only in the numerically-degenerate
+    Same triangulation as `pick_face` (`viewport.derived.triangulate_mesh_face`)
+    — so a hit on a non-planar quad (H2, the `head` asset) or a concave face
+    lands on the same triangle `pick_face` itself used to select this face. Returns None only in the numerically-degenerate
     case where the ray, recomputed here, no longer intersects any fan
     triangle of this specific face (should not happen since `pick_face`
     already chose it, kept as a defensive fallback -> caller treats it as
     "outside").
     """
     origin, direction = camera.screen_to_ray(sx, sy, width, height)
-    boundary = mesh.face_vertices(face_id)
-    if len(boundary) < 3:
-        return None
-    p0 = mesh.vertex_position(boundary[0])
     best_t = None
-    for i in range(1, len(boundary) - 1):
-        p1 = mesh.vertex_position(boundary[i])
-        p2 = mesh.vertex_position(boundary[i + 1])
+    for tri in triangulate_mesh_face(mesh, face_id):
+        p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
         t = _ray_triangle_t(origin, direction, p0, p1, p2)
         if t is not None and (best_t is None or t < best_t):
             best_t = t
