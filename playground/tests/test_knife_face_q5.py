@@ -38,7 +38,7 @@ from playground.experiments.knife_face import (  # noqa: E402
 )
 from playground.experiments.knife_face.engine import KnifeFaceCollected, knife_face_pick  # noqa: E402
 from playground.experiments.knife_face.engine_q5 import (  # noqa: E402
-    EARLIER_POINT_NOTE,
+    EARLIER_INTERIOR_NOTE,
     SNAP_PX,
     KnifeFaceCrossFace,
 )
@@ -720,7 +720,9 @@ def test_close_is_one_undo_step_and_redo_restores_it():
     assert knife.path == before_close
 
 
-def test_click_on_a_snapped_earlier_point_is_rejected_with_a_note():
+def test_click_on_a_snapped_earlier_interior_point_is_still_rejected_with_a_note():
+    """Task B keeps this sub-case: an interior point has no vertex before commit, and a second run
+    through it needs a graph, not a polyline (decision.md, "Task B")."""
     mesh, p = _grid()
     cam = _camera(mesh)
     knife, _scene = _session(mesh, cam)
@@ -728,15 +730,233 @@ def test_click_on_a_snapped_earlier_point_is_rejected_with_a_note():
     for t in pts:
         knife.click(t)
     n = len(knife.path)
-    plan = knife.plan({"kind": "path", "index": 2})   # not the chain start
-    assert not plan.ok and plan.reason == EARLIER_POINT_NOTE and plan.snap_position is not None
+    plan = knife.plan({"kind": "path", "index": 2})   # an interior point that is not the chain start
+    assert not plan.ok and plan.reason == EARLIER_INTERIOR_NOTE and plan.snap_position is not None
     assert not knife.click({"kind": "path", "index": 2})
-    assert knife.last_message == f"rejected: {EARLIER_POINT_NOTE}"
+    assert knife.last_message == f"rejected: {EARLIER_INTERIOR_NOTE}"
     assert len(knife.path) == n
 
     assert _close_by_click(knife, cam, mesh, pts[0])
     assert not knife.click({"kind": "path", "index": 0})   # the closed chain's start is now the seed: the last point
     assert knife.last_message == "rejected: already the last point"
+
+
+# ---------------------------------------------------------------------------
+# Task B (2026-09-29): a click on an earlier cut point connects and continues
+# ---------------------------------------------------------------------------
+
+def _index_of(knife, target):
+    """Path index of the clicked entry a (vertex / edge) target created."""
+    return next(i for i, q in enumerate(knife.path)
+                if q["kind"] == target["kind"] and not q.get("crossing")
+                and q.get("edge_id") == target.get("edge_id") and q.get("vertex_id") == target.get("vertex_id"))
+
+
+def _applied(knife):
+    import re
+    m = re.search(r"(\d+)/(\d+) cut\(s\) applied", knife.last_message)
+    assert m, knife.last_message
+    return int(m.group(1)), int(m.group(2))
+
+
+def _earlier_edge_scene():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, scene = _session(mesh, cam)
+    pts = {
+        "A": _ept(mesh, p[(1, 0)], p[(2, 0)], 0.5),   # (0, 1.5)
+        "B": _ept(mesh, p[(1, 2)], p[(2, 2)], 0.5),   # (2, 1.5)
+        "C": _ept(mesh, p[(3, 2)], p[(3, 3)], 0.5),   # (2.5, 3)
+        "D": _ept(mesh, p[(1, 2)], p[(1, 3)], 0.5),   # (2.5, 1)
+        "E": _ept(mesh, p[(0, 2)], p[(0, 3)], 0.5),   # (2.5, 0)
+    }
+    return mesh, p, cam, knife, scene, pts
+
+
+def test_click_on_an_earlier_edge_point_connects_and_the_chain_continues_from_it():
+    mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
+    for name in "ABCD":
+        assert knife.click(pts[name])
+    b = knife.path[_index_of(knife, pts["B"])]
+    n = len(knife.path)
+
+    target = {"kind": "path", "index": _index_of(knife, pts["B"])}
+    plan = knife.plan(target)
+    assert plan.ok and not plan.closing and "connects to an earlier cut point" in plan.message
+    assert plan.lines[0][0] == point_position(mesh, pts["D"]) and plan.lines[-1][1] == point_position(mesh, pts["B"])
+    assert knife.click(target)
+    assert len(scene.history) == 0                        # still a session step, not a commit
+    assert knife.path[-1] is b and len(knife.path) > n    # the very same dict again: one point, not a copy
+    assert knife.chain[-1] is b                           # ...and the chain continues from it
+
+    assert knife.click(pts["E"])                          # the next segment starts at B
+    assert point_position(mesh, knife.path[-1]) == (2.5, 0.0, 0.0)
+    cmd = knife.commit()
+    assert cmd is not None and len(scene.history) == 1
+    done, total = _applied(knife)
+    assert done == total and "dropped" not in knife.last_message and "repeated" not in knife.last_message
+
+    v = _vertices_at(mesh, (2.0, 1.5, 0.0))
+    assert len(v) == 1                                    # one merged vertex at the earlier point
+    assert len(mesh.vertex_edges(v[0])) == 6              # 2 halves of its split edge + cuts to A-side, C, D, E
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 earlier edge point")
+
+
+def test_click_on_an_earlier_existing_vertex_point_connects_and_continues():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, scene = _session(mesh, cam)
+    v1 = p[(1, 1)]
+    for t in (_ept(mesh, p[(1, 0)], p[(2, 0)], 0.5), _vpt(v1), _ept(mesh, p[(1, 3)], p[(2, 3)], 0.5),
+              _ept(mesh, p[(3, 2)], p[(3, 3)], 0.5)):
+        assert knife.click(t)
+    n_vertices = len(mesh.all_vertex_ids())
+    assert knife.plan(_vpt(v1)).ok                        # a picked mesh vertex that is an earlier point of the chain
+    assert knife.click(_vpt(v1))
+    assert knife.chain[-1] == _vpt(v1)
+    assert knife.click(_ept(mesh, p[(0, 3)], p[(0, 4)], 0.5))
+    knife.commit()
+    done, total = _applied(knife)
+    assert done == total
+    assert len(_vertices_at(mesh, mesh.vertex_position(v1))) == 1     # no second vertex on the existing one
+    assert mesh.is_valid_vertex(v1)
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 earlier vertex point")
+    assert len(mesh.all_vertex_ids()) > n_vertices        # the edge points did become vertices
+
+
+def test_earlier_point_click_is_one_undo_step_with_its_crossings():
+    mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
+    for name in "ABCD":
+        knife.click(pts[name])
+    before = knife.path
+    assert knife.click({"kind": "path", "index": _index_of(knife, pts["B"])})
+    after = knife.path
+    assert len(after) > len(before)
+    assert knife.undo_step() and knife.path == before     # the segment with its crossings and the point: one step
+    assert knife.redo_step() and knife.path == after
+    assert knife.chain[-1] is knife.path[_index_of(knife, pts["B"])]
+
+
+def test_retracing_a_segment_merges_instead_of_splitting_twice():
+    """B -> C, then back to B: same edge crossing again. No double split, no zero-length edge."""
+    mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
+    for name in "ABC":
+        assert knife.click(pts[name])
+    assert knife.click({"kind": "path", "index": _index_of(knife, pts["B"])})
+    assert knife.click(pts["E"])
+    knife.commit()
+    assert "repeated segment(s) merged" in knife.last_message
+    done, total = _applied(knife)
+    assert done == total
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 retraced segment")
+
+
+def _diamond(mesh, p):
+    return [_ept(mesh, p[(1, 1)], p[(1, 2)], 0.5),        # (1.5, 1)
+            _ept(mesh, p[(1, 2)], p[(2, 2)], 0.5),        # (2, 1.5)
+            _ept(mesh, p[(2, 1)], p[(2, 2)], 0.5),        # (1.5, 2)
+            _ept(mesh, p[(1, 1)], p[(2, 1)], 0.5)]        # (1, 1.5)
+
+
+def test_click_on_a_point_of_an_already_closed_chain_connects_and_continues():
+    """Case (ii): the earlier point lies behind the closing break — attempted and additive."""
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, scene = _session(mesh, cam)
+    e1, e2, e3, e4 = _diamond(mesh, p)
+    for t in (e1, e2, e3, e4):
+        assert knife.click(t)
+    assert knife.click({"kind": "path", "index": 0})       # close on the start; the seed is E1 again
+    assert knife.path[-2]["reason"] == "closed" and knife.path[-1] is knife.path[0]
+
+    i3 = _index_of(knife, e3)
+    plan = knife.plan({"kind": "path", "index": i3})       # E3 belongs to the closed chain
+    assert plan.ok and plan.lines[0][0] == point_position(mesh, e1)
+    assert knife.click({"kind": "path", "index": i3})
+    assert knife.chain[-1] is knife.path[i3]
+    assert knife.click(_ept(mesh, p[(3, 1)], p[(3, 2)], 0.5))  # (1.5, 3): from E3 into the quad above
+    knife.commit()
+    done, total = _applied(knife)
+    assert done == total and "dropped" not in knife.last_message
+    for pos in ((1.5, 1.0, 0.0), (2.0, 1.5, 0.0), (1.5, 2.0, 0.0), (1.0, 1.5, 0.0)):
+        assert len(_vertices_at(mesh, pos)) == 1
+    assert len(mesh.all_face_ids()) == 16 + 4 + 1 + 1     # 4 corner triangles + diamond, diamond split, quad above split
+    _assert_no_duplicates(mesh)
+    assert_mesh_invariants(mesh, context="Q5 earlier point behind a closed chain")
+
+
+def test_click_on_an_earlier_point_of_a_closed_chain_next_to_the_seed_merges_the_loop_edge():
+    mesh, p = _grid()
+    cam = _camera(mesh)
+    knife, scene = _session(mesh, cam)
+    e1, e2, e3, e4 = _diamond(mesh, p)
+    for t in (e1, e2, e3, e4):
+        knife.click(t)
+    knife.click({"kind": "path", "index": 0})
+    assert knife.click({"kind": "path", "index": _index_of(knife, e2)})   # E1 -> E2 is a loop edge already
+    knife.commit()
+    assert "1 repeated segment(s) merged" in knife.last_message
+    assert len(mesh.all_face_ids()) == 16 + 4
+    assert_mesh_invariants(mesh, context="Q5 loop edge retraced")
+
+
+def test_start_of_the_chain_still_closes_after_an_earlier_point_click():
+    mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
+    for name in "ABCD":
+        knife.click(pts[name])
+    assert knife.click({"kind": "path", "index": _index_of(knife, pts["B"])})
+    plan = knife.plan({"kind": "path", "index": 0})
+    assert plan.ok and plan.closing                       # A is the chain start: sealing stays the special case
+    assert knife.click({"kind": "path", "index": 0})
+    assert knife.path[-2]["reason"] == "closed"
+    knife.commit()
+    assert_mesh_invariants(mesh, context="Q5 close after an earlier point")
+    _assert_no_duplicates(mesh)
+
+
+def test_the_last_point_and_planner_crossings_are_not_earlier_points():
+    mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
+    for name in "AB":
+        knife.click(pts[name])
+    plan = knife.plan({"kind": "path", "index": _index_of(knife, pts["B"])})
+    assert not plan.ok and plan.reason == "already the last point"
+    crossing_index = next(i for i, q in enumerate(knife.path) if q.get("crossing"))
+    # a crossing is never offered as a snap target:
+    world = point_position(mesh, knife.path[crossing_index])
+    sx, sy = cam.project_to_screen(world, W, H)
+    target = knife.snap_target(knife_face_pick(cam, mesh, sx, sy, W, H, occlusion=True), sx, sy)
+    assert target.get("kind") != "path"
+
+
+def test_random_sessions_with_earlier_point_clicks_commit_cleanly():
+    """60 random edge-point sessions (3-8 steps, about half of them earlier-point clicks): commit never raises,
+    invariants hold and no point that was clicked twice ends up as two vertices."""
+    for seed in range(60):
+        rnd = random.Random(seed)
+        mesh, p = _grid()
+        cam = _camera(mesh, yaw=rnd.choice([0.0, 20.0, -30.0]), pitch=rnd.choice([35.0, 60.0]))
+        knife, scene = _session(mesh, cam)
+        eids = list(mesh.all_edge_ids())
+        for step in range(rnd.randint(3, 8)):
+            last = knife.chain[-1] if knife.chain else None
+            earlier = [i for i, q in enumerate(knife.path)
+                       if q["kind"] in ("edge", "vertex") and not q.get("crossing") and q is not last]
+            if step >= 2 and earlier and rnd.random() < 0.5:
+                knife.click({"kind": "path", "index": rnd.choice(earlier)})
+                continue
+            for _ in range(20):
+                e = rnd.choice(eids)
+                if mesh.is_valid_edge(e) and knife.click({"kind": "edge", "edge_id": e, "t": rnd.uniform(0.2, 0.8)}):
+                    break
+        knife.commit()
+        assert_mesh_invariants(mesh, context=f"Q5 earlier-point stress seed {seed}")
+        positions = collections.Counter(tuple(round(c, 6) for c in mesh.vertex_position(v)) for v in mesh.all_vertex_ids())
+        # A doubled vertex on an *original* grid vertex is the planner's t = 0 case (decision.md, close-and-continue
+        # stress) and happens without any earlier-point click; a doubled non-grid position would be this feature.
+        assert not [k for k, c in positions.items() if c > 1 and not all(abs(x - round(x)) < 1e-6 for x in k)], seed
 
 
 def test_closing_needs_three_points():
@@ -1002,6 +1222,49 @@ def test_window_q5_snap_close_continue_undo_and_commit(q5_window):
     win.on_key_press(_key.ENTER, 0)               # only commit ends the session
     assert win._knife_face_tool is None and len(app.scene.history) == 1
     assert_mesh_invariants(app.scene.mesh, context="window Q5 loop")
+
+
+def test_window_q5_click_on_an_earlier_edge_point_connects_and_continues(q5_window):
+    from pyglet.window import key as _key
+    win, app = q5_window
+    mesh = app.scene.mesh
+    knife = _start_q5(win)
+    xs = sorted({round(mesh.vertex_position(v)[0], 6) for v in mesh.all_vertex_ids()})
+    ys = sorted({round(mesh.vertex_position(v)[1], 6) for v in mesh.all_vertex_ids()})
+    at = {tuple(round(c, 6) for c in mesh.vertex_position(v)[:2]): v for v in mesh.all_vertex_ids()}
+
+    def mid(c0, r0, c1, r1):
+        return _edge_mid(mesh, at[(xs[c0], ys[r0])], at[(xs[c1], ys[r1])])
+
+    a, b = mid(1, 3, 1, 4), mid(3, 3, 3, 4)
+    c, d, e = mid(3, 5, 4, 5), mid(3, 3, 4, 3), mid(3, 1, 4, 1)
+    for w in (a, b, c, d):
+        _click(win, *_screen(win, w))
+    assert len([q for q in knife.path if not q.get("crossing")]) == 4
+    b_entry = next(q for q in knife.path if q["kind"] == "edge" and not q.get("crossing")
+                   and math.dist(point_position(mesh, q), b) < 1e-6)
+
+    bx, by = _screen(win, b)
+    win.on_mouse_motion(bx + 4, by + 3, 0, 0)               # near an earlier point: the snap shows
+    assert "hover_snap" in win._kfq5_vlists
+    n = len(knife.path)
+    _click(win, bx + 4, by + 3)
+    assert len(knife.path) > n and knife.chain[-1] is b_entry   # accepted; the chain continues from B
+    assert "earlier cut point" in knife.last_message and "rejected" not in knife.last_message
+
+    _click(win, *_screen(win, e))                              # the next segment starts at B
+    assert point_position(mesh, knife.path[-1]) != point_position(mesh, b_entry)
+    win.on_key_press(_key.Z, _key.MOD_CTRL)                    # undo: just the last click
+    assert knife.chain[-1] is b_entry
+    win.on_key_press(_key.Z, _key.MOD_CTRL)                    # undo: the earlier-point click, crossings included
+    assert len(knife.path) == n
+    win.on_key_press(_key.Y, _key.MOD_CTRL)
+    win.on_key_press(_key.Y, _key.MOD_CTRL)
+    win.on_key_press(_key.ENTER, 0)
+    assert win._knife_face_tool is None and len(app.scene.history) == 1
+    assert len([v for v in app.scene.mesh.all_vertex_ids()
+                if math.dist(app.scene.mesh.vertex_position(v), b) < 1e-6]) == 1
+    assert_mesh_invariants(app.scene.mesh, context="window Q5 earlier point")
 
 
 def test_window_q5_after_close_the_preview_and_the_click_start_at_the_closing_vertex(q5_window):

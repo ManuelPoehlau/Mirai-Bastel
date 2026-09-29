@@ -125,7 +125,7 @@ the 4 required shapes (bent cut, notch, closed shape, interior start).
 
 # Q5 — Cross-Face (Variant Q5, built on D)
 
-**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict: Q5 = KEEP (Artist, 2026-09-29, after `5c777a0`); D = superseded by Q5, not judged separately.** KEEP is a Lab verdict, **not a promotion** — see "Artist decisions after Q5". Follow-ups from those decisions are open: bridges independent of click order/direction (Task A), click on an earlier cut point (Task B).
+**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict: Q5 = KEEP (Artist, 2026-09-29, after `5c777a0`); D = superseded by Q5, not judged separately.** KEEP is a Lab verdict, **not a promotion** — see "Artist decisions after Q5". Follow-ups from those decisions: bridges independent of click order/direction (Task A, done), click on an earlier cut point (Task B, done for boundary points — an earlier *interior* point is still rejected, see "Task B").
 **Background:** `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived — §2 planners, §3 camera finding,
 §4 cases, §5 closed loops, §6 preview / A5 lock, §8 lab options). No Core change, no Production change: everything
 below is Playground-only (`playground/experiments/knife_face/`: `planner.py`, `engine_q5.py`, `variant_q5.py`,
@@ -185,11 +185,13 @@ line = skipped stretch. `Ctrl+Z` / `Ctrl+Y` = in-session undo/redo, `Enter` = co
    untouched, Q5 subclasses it; D's behaviour on paths without breaks is what the unchanged D tests prove.
 6. **Snap:** the nearer of (picked mesh vertex, own clicked point) wins. The chain's **last** point, **crossings** and
    points hidden behind the surface are not snap targets. A snapped earlier point that is **not** the current chain's start
-   (an earlier point of this chain, or a point of an already closed chain other than the closing vertex) shows the snap but
-   the click is **rejected** with the HUD note "connecting to earlier cut points not supported yet". What that click
-   *should* do: Artist decision 2026-09-29 (connect and continue) — **to be built (Task B)**; this rejection is the state before that change. Right after a close the closed chain's start *is* the new chain's seed, i.e. its last point:
-   clicking it is rejected as "already the last point"; once the new chain has ≥ 3 clicked points (seed included), a click
-   on it closes that chain again.
+   (an earlier point of this chain, or a point of an already closed chain other than the closing vertex) is **accepted**
+   since Task B (Artist decision 2026-09-29): a segment from the last point to it through the planner, the chain continues
+   from that point, one in-session undo step including the crossings. This holds for **boundary points** (edge point,
+   mesh vertex). An earlier **interior** point is still **rejected** with the HUD note "connecting to an earlier interior
+   point is not supported yet" (open question, see "Task B"). Right after a close the closed chain's start *is* the new
+   chain's seed, i.e. its last point: clicking it is rejected as "already the last point"; once the new chain has ≥ 3
+   clicked points (seed included), a click on it closes that chain again.
 7. **Closing across a gap:** if the chain or the closing segment contains a skipped stretch, the loop cannot be resolved
    cyclically; the click still ends the chain but its pieces are cut as open pieces (HUD says so). Here the chain's last
    point *is* the start point again (the closing segment ends on it), so "seed from the last point" and "seed from the
@@ -245,12 +247,15 @@ included). Zoom in so faces are large (interior clicks need ≥ 9 px clearance f
   on the start **closes** all 4 quads **without bridges** and the session **continues**; the next click draws a segment from
   the closing vertex to the edge (through the planner, crossings included), while nothing runs across the closed loop;
   `Enter` commits everything as one history entry, the closing vertex being one vertex. Also try `Ctrl+Z` right after the
-  closing click (one step: close and seed go together) and clicking an earlier point that is not the start (snap shows,
-  click rejected with a note).
+  closing click (one step: close and seed go together). *Add-on (Task B):* **click an earlier point that is not the
+  start** — on an edge point or a mesh vertex of your chain (or of the loop you just closed): the snap shows, the click is
+  accepted, a segment from the last point to it appears and the next click continues from that point (`Ctrl+Z` takes back
+  that one click). On an interior (face) point of your chain the click is still refused with a note.
 
 **Observe:** does line + dots read as "this is what will be cut"? Is cutting the visible part and skipping the rest (the
-Blender behaviour Manu asked for) what happens on the nose? Does the snap highlight make closing predictable? Does the
-rejected "earlier point" click feel wrong (what should it do)? How many attempts per task, where does frustration appear?
+Blender behaviour Manu asked for) what happens on the nose? Does the snap highlight make closing predictable? Does
+connecting to an earlier point behave as expected (branching from it, retracing a segment, crossing your own line)? Does the
+still-refused earlier *interior* point feel wrong? How many attempts per task, where does frustration appear?
 
 ## Q5 — Verdict
 
@@ -270,7 +275,7 @@ rejected "earlier point" click feel wrong (what should it do)? How many attempts
 
 **Open points (record, do not decide):**
 
-- What a click on a snapped earlier path point (not the chain's start) should do — **Artist decision 2026-09-29: connect to it and continue from it** (see "Artist decisions after Q5"); **to be built (Task B)**. Lab default until then: snap shown, click rejected.
+- What a click on a snapped earlier path point (not the chain's start) should do — **Artist decision 2026-09-29: connect to it and continue from it** (see "Artist decisions after Q5"); **built for boundary points (Task B)**. Open: earlier **interior** points (still rejected) — needs a resolver that is not a polyline, see "Task B".
 - Whether a shared **interior** start point behaves sensibly when the continued chain cuts the same face again. Seen while
   building (grid, vertex start): a continuation from the closing vertex whose chord crosses the loop's own cut inside one
   face cannot be connected in the already split face — that run is dropped ("N-1/N cut(s) applied"). Untested by the Artist.
@@ -353,6 +358,61 @@ placement limitation of the Lab default rule, not the reported symptom. Not chan
 
 ---
 
+## Task B — click on an earlier cut point (2026-09-29)
+
+**Artist decision 2 (interpretation, see above):** the click connects the last point to the earlier one and the chain continues
+from there; closing on the chain start stays the sealing special case.
+
+**Built** (`engine_q5.py` only; `window.py` unchanged — it already routes snap + click through `plan`/`click`):
+
+- `_plan_existing`: an earlier *boundary* point (vertex or edge point) of the current chain, **or of an already closed chain**
+  (case (ii) below the closing break), is accepted. The segment from the last point runs through the planner like any other
+  click (crossings fixed with that click's camera); the earlier point goes into the path **again as the very same dict**
+  (the trick of `5c777a0`), so commit resolves it to one vertex. Break markers and skipped stretches behave as for any segment.
+  In-session undo/redo: one click = one step including its crossings (unchanged mechanism).
+- `_merge_repeated_points` (commit): boundary run ends on the same edge point / vertex become one dict, and a straight segment
+  between the same two points that is already cut (or from a point to itself) is dropped, with the HUD note "N repeated
+  segment(s) merged". Reason: retracing a segment (`B -> C`, later `C -> B`) brings fresh crossing dicts on the same edge/t,
+  which resolving separately splits twice (zero-length edge). Interior points and the interior-seed placeholders are untouched.
+- A vertex click on a mesh vertex where the planner put a *crossing* is a new click, not an "earlier point" (crossings are not
+  snap targets; before, such a click was refused with the earlier-point note).
+- The pending-overlay draws a repeated entry once.
+
+**Sub-case (ii), a point of an already closed chain:** done additively. Test: a diamond loop through four edge points of one
+quad, closed by clicking its start; then the opposite point (E3) — the segment from the seed E1 to E3 cuts the diamond, the chain
+continues from E3 into the quad above, all runs applied, one vertex per point. A point next to the seed (a loop edge already cut)
+merges as a repeated segment.
+
+**Sub-case not built — earlier *interior* point (rejected, note "connecting to an earlier interior point is not supported yet"):**
+`[PROBE]` (a scratch run with the rejection lifted; not kept as code): grid quad, chain `edge A, interior I, edge B, edge C, I again,
+edge D`. The click on `I` was accepted, but at commit `2/3 cut(s) applied` — the run `C, I, D` was dropped and the mesh was left with
+the first cut only (no doubled vertex, invariants intact, but the segment the Artist drew is silently missing); with `I` as the
+chain's *last* point the connection is dropped as a dangling tail. Why: an interior point is not a vertex before commit; D's resolver
+creates one new vertex **per occurrence** in a run (`split_face_path`), and a second run that ends at `I` would have to attach to the
+vertex the *first* run creates — i.e. a run that starts/ends at a not-yet-existing vertex, applied after the run that creates it,
+with its face found afterwards. Q5 already does this for exactly one case (the seed of a closed chain: placeholder + `_interior_vertices`,
+applied last), but generalising it to any repeated interior point means re-splitting runs at every later occurrence, ordering runs by
+dependency and re-deriving the face after each split — plus sub-loops closed inside one face (D's bridge stand-in). That is a graph
+over the click sequence, not an additive change to a polyline resolver — **not implemented** (handoff: STOP for this). Open
+question for the Artist / the Production Knife design: is "click an earlier interior point" needed in the Lab, or does the
+Production Knife (real cuts instead of a virtual list, see Artist decision (3)) make it trivial? With real cuts the interior point is
+a real vertex the moment it is clicked and the click is an ordinary vertex click.
+
+**Stress `[PROBE]`:** 400 random grid sessions of 3–8 edge-point clicks, about half earlier-point clicks (209 sessions with at least one
+accepted earlier click), commit: 0 exceptions, 0 invariant failures, 0 doubled vertices at any clicked position. Doubled vertices
+at *original* grid vertices — the planner's t = 0 case already recorded under "Close-and-continue stress" — occur without any earlier-point
+click as well (31 of 400 sessions with earlier clicks switched off, 24 of 400 with them); untouched (planner territory). A compact
+60-session version is in `test_knife_face_q5.py`.
+
+**Known gaps, not fixed:** a segment that crosses an *earlier cut of the same face* cannot be connected there (the run is dropped,
+"N-1/N cut(s) applied" — the open point under "Q5 — Verdict"); connecting to an earlier point makes this easier to hit
+(the first scenario tried, `B → E` crossing the `C → D` line inside one quad, lost that run). A segment retraced after orbiting the
+camera merges completely on the flat `grid` (probed: same crossings, "2 repeated segment(s) merged", 6/6 applied); on a curved
+surface (`head`) the planner's crossings depend on the view, so a retrace under another camera may bring slightly different
+crossings that do not merge — **untested**, not assumed either way.
+
+---
+
 ## Artist play-test observations (2026-09-29)
 
 _(Manu, first Q5 play test — recorded in meaning, not a verdict; the verdicts were given afterwards, see "Q5 — Verdict".)_
@@ -411,8 +471,8 @@ _(incidental evidence — raises priority of other questions, does not decide th
   = commit", but `window.py` only routes `Enter`; a click on `outside` is rejected by every variant (unchanged). Q5 keeps
   Enter as the only commit.
 - **Snap takes precedence over placing a point near an earlier one.** Within 14 px of one of your own clicked points
-  (other than the chain's last) every click is a snap — rejected unless it is the chain start. An edge/face point cannot be
-  placed that close to an earlier point; this follows directly from "snap always engages".
+  (other than the chain's last) every click is a snap — an earlier-point connection (Task B) or the close on the chain start.
+  An edge/face point cannot be placed that close to an earlier point; this follows directly from "snap always engages".
 - **Interior loop + another run through the same face.** A closed all-interior chain and a run that cuts the same face in
   the same commit: runs are applied first, so the loop's face is already gone and the loop is skipped with a HUD note
   (`closed shape skipped — its face was already cut by another run`). Rare; not investigated further.

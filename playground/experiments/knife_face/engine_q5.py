@@ -24,8 +24,14 @@ same residue) plus:
     clicked points the prospective point jumps onto it;
   * A5 lock off (its reason — hide the missing cross-face cut — is gone here).
 
-LAB DEFAULTS flagged in decision.md, not decisions: a snapped earlier point that
-is not the chain's start is rejected; crossings are not snap targets; a segment
+Earlier points (Artist decision 2026-09-29): a click on a snapped earlier *boundary* point (vertex or
+edge point) of the chain that is not the start is accepted — a segment from the last point to it, through
+the planner, appended with the very same dict, and the chain continues from that point. Commit resolves
+repeated boundary points to one vertex (`_merge_repeated_points`). An earlier *interior* point is still
+rejected: it has no vertex before commit and a second run through it would need a graph, not a polyline
+(decision.md, "Task B").
+
+LAB DEFAULTS flagged in decision.md, not decisions: crossings are not snap targets; a segment
 along an existing edge is skipped, not refused; an unclosed all-interior chain of
 >= 3 points in one face still closes implicitly at commit (D parity).
 
@@ -55,7 +61,7 @@ from playground.experiments.knife_face.planner import View, plan_crossings, poin
 # same radius as the existing vertex pick (H3) and D's close-on-start zone.
 SNAP_PX = 14.0
 MIN_CLOSE_POINTS = 3
-EARLIER_POINT_NOTE = "connecting to earlier cut points not supported yet"
+EARLIER_INTERIOR_NOTE = "connecting to an earlier interior point is not supported yet"
 
 _GAP_TEXT = {
     "gap": "over a hole, border or hidden part",
@@ -154,8 +160,15 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 return "edge"
         return "cut"
 
+    @staticmethod
+    def _same_point(a: dict, b: dict) -> bool:
+        """The very same path entry, or two entries on one mesh vertex (a vertex needs no identity)."""
+        return a is b or (a["kind"] == b["kind"] == "vertex" and a["vertex_id"] == b["vertex_id"])
+
     def _vertex_entries(self, vid: VertexId) -> list[dict]:
-        found = [p for p in self._path if p["kind"] == "vertex" and p["vertex_id"] == vid]
+        """Clicked path entries on mesh vertex `vid` (a planner crossing on a vertex is not a click target)."""
+        found = [p for p in self._path
+                 if p["kind"] == "vertex" and p["vertex_id"] == vid and not p.get("crossing")]
         start = self._chain_points()[:1]
         found.sort(key=lambda p: 0 if start and p is start[0] else 1)  # chain start first
         return found
@@ -257,16 +270,23 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         """A prospective point that *is* an earlier path point (snapped)."""
         snap = self._pos(existing)
         if not chain:
-            return Q5Plan(False, EARLIER_POINT_NOTE, snap_position=snap)
-        if existing is chain[-1]:
+            return Q5Plan(False, "no chain", snap_position=snap)
+        if self._same_point(existing, chain[-1]):
             return Q5Plan(False, "already the last point", snap_position=snap)
-        if existing is chain[0]:
+        if self._same_point(existing, chain[0]):
             if len(self._clicked()) < MIN_CLOSE_POINTS:
                 return Q5Plan(False, f"closing needs at least {MIN_CLOSE_POINTS} points", snap_position=snap)
-            return self._plan_segment(chain[-1], existing, closing=True, snap=snap)
-        return Q5Plan(False, EARLIER_POINT_NOTE, snap_position=snap)
+            return self._plan_segment(chain[-1], chain[0], closing=True, snap=snap)
+        if existing["kind"] == "face":
+            return Q5Plan(False, EARLIER_INTERIOR_NOTE, snap_position=snap)
+        # An earlier boundary point of this chain, or of an already closed chain: connect to it
+        # and continue from it. `existing` (not a copy) goes into the path again, so commit
+        # resolves both occurrences to one vertex.
+        return self._plan_segment(chain[-1], existing, closing=False, snap=snap, earlier=True)
 
-    def _plan_segment(self, a: dict, b: dict, *, closing: bool, snap: Position | None) -> Q5Plan:
+    def _plan_segment(
+        self, a: dict, b: dict, *, closing: bool, snap: Position | None, earlier: bool = False,
+    ) -> Q5Plan:
         m = self._mesh
         crossings: list[dict] = []
         hidden = 0
@@ -309,6 +329,8 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
             entries.append(b)
 
         parts = [f"{len(crossing_positions)} crossing(s)"]
+        if earlier:
+            parts.append("connects to an earlier cut point; the next cut continues from it")
         if closing:
             parts.append("closes the chain" if cyclic else "closes the chain (open pieces: a stretch is skipped)")
             parts.append("the next cut continues from the closing vertex")
@@ -355,6 +377,7 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         prev = first = None
         pending_skip = None
         first_entry = closed_first = None
+        drawn: set[int] = set()
         for p in self._path:
             if _is_chain_end(p):
                 if p.get("cyclic") and prev is not None and first is not None:
@@ -366,8 +389,9 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 pending_skip, prev = prev, None
                 continue
             pos = self._pos(p)
-            if p is not closed_first:  # the seed repeats the closed chain's start: one dot
+            if p is not closed_first and id(p) not in drawn:  # a repeated entry (seed, earlier point): one dot
                 (crossings if p.get("crossing") else points).append(pos)
+            drawn.add(id(p))
             if first_entry is None:
                 first_entry = p
             closed_first = None
@@ -429,6 +453,46 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 if math.dist(self._mesh.vertex_position(v), pt["position"]) < 1e-9:
                     self._interior_vertices[id(pt)] = v
                     break
+
+    @staticmethod
+    def _merge_repeated_points(groups: list[list[list[dict]]]) -> tuple[list[list[list[dict]]], int]:
+        """One entry per boundary point, one run per segment. Connecting to an earlier point puts
+        that point into a run again — usually as the very same dict, but a segment retraced under
+        another camera brings fresh crossing dicts on the same edge/t, which resolving separately
+        would split twice (zero-length edge). Boundary run ends on the same edge point / vertex are
+        replaced by their first dict (`resolved` is keyed by identity), and a straight segment
+        between the same two points that an earlier run already cuts (or from a point to itself)
+        is dropped. Works over all `groups` of runs together (a segment can repeat across chains) and
+        returns them in the same shape with the number of dropped repeats. Interior points and the vertex
+        placeholders of an interior seed (vertex_id still None) are never touched."""
+        canon: dict[tuple, dict] = {}
+
+        def key(p: dict):
+            if p["kind"] == "edge":
+                return ("e", p["edge_id"], round(p["t"], 9))
+            if p["kind"] == "vertex" and p["vertex_id"] is not None:
+                return ("v", p["vertex_id"])
+            return None
+
+        def unify(p: dict) -> dict:
+            k = key(p)
+            return p if k is None else canon.setdefault(k, p)
+
+        result, cut, dropped = [], set(), 0
+        for runs in groups:
+            out = []
+            for run in runs:
+                run = [unify(run[0])] + run[1:-1] + [unify(run[-1])]
+                if len(run) == 2:
+                    a, b = run
+                    pair = frozenset((id(a), id(b)))
+                    if a is b or pair in cut:
+                        dropped += 1
+                        continue
+                    cut.add(pair)
+                out.append(run)
+            result.append(out)
+        return result, dropped
 
     def _apply_run(self, run: list[dict], resolved: dict[int, VertexId]) -> bool:
         interior = run[1:-1]
@@ -501,6 +565,7 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 dropped_lead |= lead
                 dropped_tail |= tail
 
+        (runs, seeded_runs), repeats = self._merge_repeated_points([runs, seeded_runs])
         resolved = self._resolve_boundary_points(runs + seeded_runs)
         applied = sum(1 for run in runs if self._apply_run(run, resolved))
 
@@ -531,6 +596,8 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
             notes.append("leading interior point(s) dropped (no boundary reached before them)")
         if dropped_tail:
             notes.append("trailing interior point(s) dropped (no boundary reached)")
+        if repeats:
+            notes.append(f"{repeats} repeated segment(s) merged")
         gaps = sum(1 for p in self._path if _is_break(p) and p.get("reason") in ("gap", "edge"))
         if gaps:
             notes.append(f"{gaps} stretch(es) skipped (hole/border/hidden part or along an existing edge)")
