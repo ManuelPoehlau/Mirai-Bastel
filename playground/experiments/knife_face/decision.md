@@ -7,6 +7,8 @@ actually built, B and D; C and A were dropped per the handoff's scope §2).
 **Q5 (cross-face segments, 2026-09-29):** a third variant, **Q5**, is built on top of D — see "Q5 — Cross-Face" below
 (Artist answers, what was built, lab defaults, adapted test, verdicts). Background:
 `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived, not edited).
+**Integrity (2026-09-29):** faces that "sit under a cut" (Artist report) — probe, root causes and fix in
+"Q5 integrity findings (2026-09-29)" below.
 **Background:** `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md`, `docs/architecture/
 AD-017_FINAL_DECISIONS_2026-09-22.md` (session model, history, Esc, commit — reused unchanged).
 **Controls:** `Tab` until `knife_face` is focused → `M` cycles the variants **B → D → Q5** (HUD: `Setting: … knife_face=…`).
@@ -144,6 +146,7 @@ This is the authoritative home of these answers (the archived discovery is not e
 | A-Q2 — visible only or cut-through | **Visible only for now.** Cut Through maybe later as an extra option, like Blender | No cut-through. Future idea recorded in `docs/future_ideas/MODELING.md`. |
 | A-Q3 — closed shapes across faces | **Yes: snap to the start point, click closes the shape, but you can keep cutting — only commit ends the session.** Correction: the snap always engages near **any** vertex, not only the start point | Close ≠ commit (changes today's D close-on-start in this variant). Snap feedback required. Covers D gaps 1 and 2 in this variant. |
 | Assumption (not contradicted) | One segment may cross **any number** of faces | Planner is not limited to the neighbour face. |
+| Q1 (integrity, 2026-09-29) — a segment crosses an earlier segment of the same session inside one face | **Like Blender: an intersection vertex is created and both cuts are fully applied.** Refusing the click is **not** wanted | Built only if the integrity probe shows crossing segments cause the defects — see "Q5 integrity findings (2026-09-29)". |
 
 *"You can keep cutting" (A-Q3) is read as: the next cut continues from the closing vertex — see "Artist play-test observations (2026-09-29)". An earlier build read it as "a new, independent chain"; that was a spec reading, not an Artist statement.*
 
@@ -410,6 +413,116 @@ click as well (31 of 400 sessions with earlier clicks switched off, 24 of 400 wi
 camera merges completely on the flat `grid` (probed: same crossings, "2 repeated segment(s) merged", 6/6 applied); on a curved
 surface (`head`) the planner's crossings depend on the view, so a retrace under another camera may bring slightly different
 crossings that do not merge — **untested**, not assumed either way.
+
+---
+
+## Q5 integrity findings (2026-09-29)
+
+**Trigger:** Artist report (tested at `5c777a0`): on the default cube after several Knife Face sessions a face sometimes seems to
+sit *under* a cut, one thin triangle shows dense parallel hatching (overlapping / degenerate triangles), some lines end in the
+middle of a face. Nobody knew how it arises, so it had to be reproduced, not guessed.
+
+**Known before?** Only related: `FACE_HOLES_DISCOVERY.md` §6 (concave faces and fan triangulation — fixed in `src`, every
+render/pick call now ear-clips; winding defect of the bridges — fixed in `8e4e014`). Neither explains this. **Not covered by
+tests:** `assert_mesh_invariants` checks topology only; the Q5 stress tests check invariants and doubled vertices, not geometry.
+
+**Probe** `experiments/topology/knife_integrity_probe.py` (public API only, no Core change). A run = a fresh mesh
+(`grid`: 4 × 4 unit quads, the Q5 test fixture; `cube`: `create_cube`), 1–3 committed sessions of 2–9 clicks each, four
+cameras, 20 % chance to orbit between clicks. Each click aims a screen position at a random face interior (45 %),
+vertex (15 %) or edge point (40 %) of the *current* mesh and then goes the window's way:
+`knife_face_pick` (occlusion on) → `set_view` + `snap_target` → `click`; `commit()`. After every commit the mesh is checked for
+**geometric integrity** — per face in its best-fit plane: `zero_area`, `non_simple` (boundary edges intersect or touch, or a
+spike), `tri_area` (sum of `triangulate_mesh_face` triangle areas ≠ polygon area — the hatching the Artist saw); per mesh:
+`winding` (an edge walked the same way by both faces), `dangling` (edge without face), `flipped` / `coverage` (every face lies
+in one reference plane — z = 0, or one cube side — with that plane's normal, and each plane adds up to its area: 16 / 4),
+plus `assert_mesh_invariants`. The runs are seeded (`random.Random(seed)`); failing sessions are shrunk to the smallest click
+list that keeps the defect class (`--minimise`).
+
+**Numbers `[PROBE]`** (400 runs each, before the fix, `8936a1d`; the handoff's own seed file was not attached, so this picker
+differs from the one in the report — it makes more clicks and more sessions per run, hence more failures than the 24/400 there):
+
+| runs with an integrity failure | grid | cube |
+|---|---|---|
+| Q5 | 76/400 (non_simple 61, zero_area 32, tri_area 32, flipped 23, winding 7, **invariants 7**) | 130/400 (non_simple 112, tri_area 109, flipped 71, coverage 32, zero_area 5, invariants 1) |
+| Q5, edge-only sessions (a click the pick resolves to a face interior is skipped) | 37/400 (zero_area 36, non_simple 35) | 21/400 (zero_area 21, non_simple 16) |
+| D, same seeds (first session: identical clicks; D keeps the ones it accepts) | 1/400 | 41/400 |
+| B, same seeds | 0/400 | 38/400 |
+
+The **invariant** failures (`Edge … an mehr als 2 Faces angehängt (4)`) are real: a degenerate chord (`along`, below) can
+connect two vertices that sit on top of each other's edge chain. So even the topology check was not always green.
+
+**Attribution `[PROBE]`.** Every failing session is tagged with *pre-commit* features of its path (D and Q5 do not touch the
+mesh before commit, so the session-start mesh is what every click saw). **Every one of the 206 failing Q5 sessions carries at
+least one of them** (none is left unexplained):
+
+| feature | failing sessions (grid / cube) | clean sessions (grid / cube) |
+|---|---|---|
+| `cross` — two segments of the session intersect inside one face | 54 / 110 | 280 / 192 |
+| `stale` — a run with interior points whose face another segment also cuts, both run ends also on a second face | 24 / 76 | 28 / 101 |
+| `along` — a straight segment lies on its shared face's boundary (a straight-angle vertex between its ends) | 41 / 9 | 0 / 1 |
+| `tzero` — a planner crossing on an edge at t within 1e-9 of an end | 30 / 0 | 0 / 1 |
+| `leave` — a straight segment between two points of a shared face is not inside that face (concave face) | 3 / 16 | 1 / 5 |
+| `multi` — a straight segment two shared faces could take, only one of which contains it | 3 / 15 | 6 / 15 |
+| `fold` — a run whose interior points lie in more than one face (H-c) | 0 / 0 | 0 / 0 |
+
+`cross` is frequent in *clean* sessions too — because then the crossing run is usually **dropped** instead: sessions with a
+dropped run ("N-1/N cut(s) applied") — with `cross` 320/334 (grid), 207/302 (cube); without `cross` 5/377, 6/385. So a crossing
+either breaks geometry or silently loses the cut the Artist drew (the "known gap" noted under Task B). `stale` passes when the
+lowest face id happens to be the right face.
+
+**Hypotheses** — targeted cases (`--cases`; minimal click lists written as world positions: `e(A→B, t)` = edge point from A
+towards B, `f(P)` = face-interior click, `v(P)` = vertex; grid unless noted):
+
+| hypothesis | case (minimal click list) | Q5 | D | B | verdict |
+|---|---|---|---|---|---|
+| **H-b** a segment crosses an earlier segment of the same session inside one face | **HB1** `e((0,0)→(1,0), .2)`, `f(0.8,0.5)`, `e((0,0)→(1,0), .6)`, `e((0,1)→(1,1), .5)` — the last chord crosses the notch | non_simple | non_simple | non_simple | **confirmed** — the main cause (grid and cube) |
+| | **HB2** `e((0,0)→(0,1), .5)`, `f(0.5,0.8)`, `e((1,0)→(1,1), .5)`, `f(0.2,0.9)`, `e((0,1)→(1,1), .2)` — two bent runs cross | non_simple | click 4 refused (A5 lock) | refused (A5) | confirmed (Q5 only: its A5 lock is off) |
+| **H-a** later runs on a face an earlier run of the same commit already changed | **HA1** `e((1,1)→(1,2), .5)`, `e((2,1)→(2,2), .5)`, `e((1,1)→(2,1), .7)`, `f(1.5,1.3)`, `e((1,1)→(2,1), .3)` — the notch's quad is already split; both notch ends also lie on the quad below | flipped | flipped | clean | **confirmed, narrower**: see R2 |
+| | **HA2** (cube, camera yaw 35° / pitch 30°) `e((-1,1,1)→(1,1,1), .6)`, `e((1,1,1)→(1,1,-1), .4)`, `f(0.6,1,-0.3)`, `e((1,1,1)→(1,1,-1), .75)` — a notch on the top whose ends lie on the top/right fold edge, after the top was split | flipped, off-plane face | same | clean | confirmed — this is what the cube shows |
+| **H-c** interior points on several cube sides joined into one run across a 90° fold | **HC1** (cube) `e(top-front, .5)`, `f(0,1,0)` (top), `f(0,0,1)` (front), `e(bottom-front, .5)` | clean — the planner puts a crossing on the fold edge between the two points | refuses click 3 | refuses | **killed** — no run ever spans a fold (`fold` = 0 in 800 runs); the cube's extra failures come from R2 at fold edges |
+| **H-d** one-hit piece end splits an edge / dropped trailing points leave inconsistent runs | **HD1** `e((0,0)→(0,1), .5)`, `f(0.5,0.5)`, Enter | clean (tail dropped, mesh unchanged) | clean | pending only | **killed as a cause** — dropped points never reach the resolver |
+| | **HD2** session 1 `e((1,1)→(2,1), .5)`, `e((1,2)→(2,2), .5)`; session 2 `v(1,1)`, `e((1.5,1)→(2,1), .5)` | session 1 clean — the quad below gains a straight-angle vertex; session 2 **zero_area** | same | same | the split edge is clean geometry, but it is the precondition of R3 |
+| open point "t = 0" (zero-area faces) | **T0** (camera yaw 0° / pitch 89°) `v(3,3)`, `e((1,3)→(2,3), .514)` — a line along a grid row | zero_area + non_simple | refused (no shared face) | refused | **related**: R4 |
+| — (found by the probe) | **L1** session 1 `e((0,0)→(1,0), .5)`, `f(0.5,0.5)`, `e((0,0)→(0,1), .5)` (an L cut); session 2 `e((0.5,0)→(1,0), .6)`, `e((0,0.5)→(0,1), .6)` — straight across the L's missing corner | non_simple | non_simple | non_simple | R5 |
+
+**Root causes** (agent decision — all are defects against the already decided behaviour, none needs an Artist choice):
+
+- **R1 — crossing segments (H-b).** D's resolver (Q5 inherits it) applies the runs of a commit one after another. A later run
+  is resolved in "the face that holds both of its ends" (`_live_face_for` for runs with interior points,
+  `connect_in_shared_face` for straight runs) — but its cut crosses an earlier run's cut edge inside the click-time face. No
+  intersection vertex is created, so the new cut leaves the face it is built in (non-simple, overlapping faces — the
+  hatching), or no face holds both ends and the run is dropped.
+- **R2 — stale face, wrong face (H-a, narrower).** Once an earlier run of the same commit has split the click-time face,
+  `_live_face_for` falls back to the *lowest-id* face holding both run ends. When both ends also lie on another face —
+  a notch (both ends on one edge) or, on the cube, both ends on a fold edge — that is often the **neighbour**: the interior
+  points are inserted into a face they do not lie in (flipped, off-plane faces — the face "under" a cut).
+- **R3 — chord along the boundary.** A straight segment between two boundary points of one face that lie on one straight
+  boundary line, non-adjacent only because a straight-angle vertex sits between them (every run end on an edge leaves one in
+  the neighbouring face). Q5's `_link` and D's `accepts` only test direct edge membership, so the chord is cut: zero-area
+  face; with doubled vertices even an edge with 4 faces. Also reachable on the Production Knife (below).
+- **R4 — planner t ≈ 0 (the open point).** `plane_hits` skips the endpoints of the segment's own end edges as vertex hits,
+  but not the edges incident to them; a line running along a grid row through such an endpoint gets an *edge* hit at
+  t ≈ 1e-15 there, which `split_edge` turns into a second vertex on top of the first (a zero-area sliver). Q5 only. Same
+  origin as the "vertices doubled at an existing vertex (t = 0.0)" noted under Task B and the close-and-continue stress.
+- **R5 — straight segment not inside its face (concave faces).** A straight segment between two points of a shared face is
+  assumed to lie inside it; that holds for convex faces only. After an earlier bent cut the face is concave, the segment
+  leaves it (L1), or `connect_in_shared_face` takes a lower-id face that holds both points but not the segment (`multi`).
+
+**Where:** R1, R2, R3, R5 are in the **shared resolver** (D and Q5: `_apply_run`, `_live_face_for`, and the
+`connect_in_shared_face` helper from `src`), R4 in Q5's **planner**. The planner's crossings are otherwise correct (the runs it
+produces never span a fold, H-c). B shares R1/R3/R5 through `connect_in_shared_face` and has no R2 (it cuts the current mesh
+at every click).
+
+**Production Knife (read / probe only, not changed — Core freeze):** `src/mirai/topology/knife.py` connects every straight
+segment through `connect_in_shared_face` (lowest face id, no geometric check). `[PROBE]` (`--production`): HD2's second session
+played with `KnifeTool` leaves a **zero-area** face, L1's a **non-simple** face. R3 and R5 therefore exist in Production too;
+recorded for the one-Knife Production design, not fixed here.
+
+**Agent decisions:** (1) the defect is in the resolver (shared by D and Q5), plus one planner defect (R4); (2) a run has to be
+resolved against the *current* faces — walked through them, not looked up by its ends; (3) since H-b is confirmed, the
+Artist's crossing decision (Q1: intersection vertex, both cuts applied) is needed to satisfy the integrity requirement and is
+built; (4) a post-commit validity check is needed anyway (the resolver works on floats; a check is cheap, a broken face is
+not) — rollback of the whole commit on failure.
 
 ---
 
