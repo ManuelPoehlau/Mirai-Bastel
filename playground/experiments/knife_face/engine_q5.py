@@ -48,12 +48,16 @@ import math
 from dataclasses import dataclass, field
 
 from core import FaceId, VertexId
+from core.mesh import MeshError
 
 from playground.experiments.knife_face.engine import (
     EDGE_MARGIN_PX,
+    FaceFrame,
     KnifeFaceCollected,
     Position,
+    _proper_cross2,
     _shares_nonadjacent_face,
+    segment_in_face,
 )
 from playground.experiments.knife_face.planner import View, plan_crossings, point_faces, point_position
 
@@ -139,11 +143,13 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         return point_position(self._mesh, p)
 
     def _link(self, a: dict, b: dict) -> str | None:
-        """How two consecutive points connect: "cut" (a chord in a shared face),
-        "edge" (they lie along an existing edge — nothing to cut, Blender skips
-        it) or None (no shared face — a gap)."""
+        """How two consecutive points connect: "cut" (a chord inside a shared face),
+        "edge" (they lie along an existing edge, or a straight run of edges — nothing to
+        cut, Blender skips it) or None (no shared face holds the straight line — a gap,
+        or a concave face the line leaves: the planner finds the crossings)."""
         m = self._mesh
-        if not (point_faces(m, a) & point_faces(m, b)):
+        shared = point_faces(m, a) & point_faces(m, b)
+        if not shared:
             return None
         ka, kb = a["kind"], b["kind"]
         if ka == "vertex" and kb == "vertex":
@@ -158,7 +164,16 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         elif ka == "edge" and kb == "edge":
             if a["edge_id"] == b["edge_id"]:
                 return "edge"
-        return "cut"
+        # Integrity finding R3/R5 (decision.md): sharing a face is not enough — the straight line
+        # has to lie inside it. Along a straight run of boundary edges nothing is cut; out of a
+        # concave face the line is planned like any cross-face segment.
+        pa, pb = self._pos(a), self._pos(b)
+        where = {segment_in_face(m, f, pa, pb) for f in shared}
+        if "inside" in where:
+            return "cut"
+        if "boundary" in where:
+            return "edge"
+        return None
 
     @staticmethod
     def _same_point(a: dict, b: dict) -> bool:
@@ -301,9 +316,12 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         lines: list[tuple] = []
         skipped: list[str] = []
         crossing_positions: list[Position] = []
+        new_segs: list[tuple[dict, dict]] = []
         last = len(nodes) - 1
         for k in range(1, last + 1):
             link = self._link(nodes[k - 1], nodes[k])
+            if link == "cut":
+                new_segs.append((nodes[k - 1], nodes[k]))
             lines.append((self._pos(nodes[k - 1]), self._pos(nodes[k]), "cut" if link == "cut" else "skip"))
             if link != "cut":
                 reason = link or "gap"
@@ -328,7 +346,13 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
             # the last point" and "seed from the closing vertex" coincide.
             entries.append(b)
 
-        parts = [f"{len(crossing_positions)} crossing(s)"]
+        # Where the new segment crosses a stored cut inside one face: commit makes that one vertex
+        # of both cuts — shown as a crossing dot like the planner's.
+        meets = self._intersections(new_segs, self._stored_cut_segments())
+        crossing_positions.extend(meets)
+        parts = [f"{len(crossing_positions) - len(meets)} crossing(s)"]
+        if meets:
+            parts.append(f"{len(meets)} intersection(s) with earlier cuts")
         if earlier:
             parts.append("connects to an earlier cut point; the next cut continues from it")
         if closing:
@@ -364,6 +388,59 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         self._redo_stack.clear()
         self.last_message = plan.message
         return True
+
+    # -- crossing cuts (Artist decision 2026-09-29: intersection vertex, both cuts applied) -----
+
+    def _stored_cut_segments(self) -> list[tuple[dict, dict]]:
+        """Consecutive stored points of every chain that are cut (not across a break; a cyclic
+        close adds last -> first) — what commit will cut."""
+        segs, prev, first = [], None, None
+        for p in self._path:
+            if _is_chain_end(p):
+                if p.get("cyclic") and prev is not None and first is not None and prev is not first:
+                    segs.append((prev, first))
+                prev = first = None
+                continue
+            if _is_break(p):
+                prev = None
+                continue
+            if prev is not None and prev is not p:
+                segs.append((prev, p))
+            if first is None:
+                first = p
+            prev = p
+        return segs
+
+    def _intersections(self, new_segs, old_segs) -> list[Position]:
+        """Where a segment of `new_segs` crosses one of `old_segs` inside a face they share — the
+        intersection vertices commit will create. Preview only: commit finds them itself by walking
+        each run through the faces the earlier runs left behind."""
+        m = self._mesh
+        frames: dict = {}
+        out: list[Position] = []
+        for a, b in new_segs:
+            fa = point_faces(m, a) & point_faces(m, b)
+            pa, pb = self._pos(a), self._pos(b)
+            for c, d in old_segs:
+                if {id(a), id(b)} & {id(c), id(d)}:
+                    continue
+                for f in fa & point_faces(m, c) & point_faces(m, d):
+                    if f not in frames:
+                        try:
+                            frames[f] = FaceFrame(m, f)
+                        except MeshError:
+                            frames[f] = None
+                    fr = frames[f]
+                    if fr is None:
+                        continue
+                    a2, b2, c2, d2 = fr.p2(pa), fr.p2(pb), fr.p2(self._pos(c)), fr.p2(self._pos(d))
+                    if not _proper_cross2(a2, b2, c2, d2, fr.eps):
+                        continue
+                    den = (b2[0] - a2[0]) * (d2[1] - c2[1]) - (b2[1] - a2[1]) * (d2[0] - c2[0])
+                    t = ((c2[0] - a2[0]) * (d2[1] - c2[1]) - (c2[1] - a2[1]) * (d2[0] - c2[0])) / den
+                    out.append(tuple(pa[k] + t * (pb[k] - pa[k]) for k in range(3)))
+                    break
+        return out
 
     # -- preview of what is already stored ------------------------------------------
 
@@ -403,6 +480,9 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
             prev = pos
             if first is None:
                 first = pos
+        segs = self._stored_cut_segments()
+        for i, sg in enumerate(segs):
+            crossings.extend(self._intersections([sg], segs[i + 1:]))
         return {"cut": cut, "skip": skip, "points": points, "crossings": crossings}
 
     # -- commit-time resolution -------------------------------------------------------
@@ -598,6 +678,7 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
             notes.append("trailing interior point(s) dropped (no boundary reached)")
         if repeats:
             notes.append(f"{repeats} repeated segment(s) merged")
+        notes.extend(self._loop_at_point_note())
         gaps = sum(1 for p in self._path if _is_break(p) and p.get("reason") in ("gap", "edge"))
         if gaps:
             notes.append(f"{gaps} stretch(es) skipped (hole/border/hidden part or along an existing edge)")

@@ -25,7 +25,7 @@ import pytest  # noqa: E402
 from core import Mesh, Scene  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from mirai.mesh_geometry import mesh_center_and_radius  # noqa: E402
-from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
+from mirai.scene_factory import build_core_scene_from_obj, create_cube  # noqa: E402
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from mirai.viewport.picking_cache import PickCache  # noqa: E402
 
@@ -36,7 +36,15 @@ from playground.experiments.knife_face import (  # noqa: E402
     KnifeFaceVariantD,
     KnifeFaceVariantQ5,
 )
-from playground.experiments.knife_face.engine import KnifeFaceCollected, knife_face_pick  # noqa: E402
+from playground.experiments.knife_face.engine import (  # noqa: E402
+    FaceFrame,
+    KnifeFaceCollected,
+    KnifeFaceImmediate,
+    face_problem,
+    knife_face_pick,
+    segment_in_face,
+    split_face_path,
+)
 from playground.experiments.knife_face.engine_q5 import (  # noqa: E402
     EARLIER_INTERIOR_NOTE,
     SNAP_PX,
@@ -44,6 +52,7 @@ from playground.experiments.knife_face.engine_q5 import (  # noqa: E402
 )
 from playground.experiments.knife_face.planner import View, plan_crossings, point_position  # noqa: E402
 from playground.slot import ExperimentSlot, VariantEntry  # noqa: E402
+from viewport.derived import triangulate_mesh_face  # noqa: E402
 
 W, H = 1280, 800
 
@@ -1083,6 +1092,348 @@ def test_esc_restores_the_mesh_and_commit_writes_one_history_entry():
     knife.cancel()
     knife.deactivate()
     assert mesh.export_state() == state and len(scene.history) == 0
+
+
+# ---------------------------------------------------------------------------
+# Geometric integrity (decision.md "Q5 integrity findings (2026-09-29)"; probe:
+# experiments/topology/knife_integrity_probe.py). Minimal reproductions of every defect
+# class, the commit safety net, and seeded random sessions on grid and cube.
+# ---------------------------------------------------------------------------
+
+GRID_PLANES = [(2, 0.0, 1.0, 16.0)]
+CUBE_PLANES = [(a, s, s, 4.0) for a in range(3) for s in (-1.0, 1.0)]
+
+
+def _newell(pts):
+    n = [0.0, 0.0, 0.0]
+    for i, p in enumerate(pts):
+        q = pts[(i + 1) % len(pts)]
+        n[0] += (p[1] - q[1]) * (p[2] + q[2])
+        n[1] += (p[2] - q[2]) * (p[0] + q[0])
+        n[2] += (p[0] - q[0]) * (p[1] + q[1])
+    return n
+
+
+def _tri_area(a, b, c):
+    u = [b[k] - a[k] for k in range(3)]
+    v = [c[k] - a[k] for k in range(3)]
+    return 0.5 * math.sqrt((u[1] * v[2] - u[2] * v[1]) ** 2 + (u[2] * v[0] - u[0] * v[2]) ** 2
+                           + (u[0] * v[1] - u[1] * v[0]) ** 2)
+
+
+def assert_geometric_integrity(mesh, planes=None, *, context=""):
+    """What `assert_mesh_invariants` does not see: every face a simple polygon with area whose
+    triangulation covers exactly its area (overlapping triangles = the Artist's "hatching"), no
+    edge without a face, every edge walked in opposite directions by its two faces; on planar
+    reference surfaces (`planes`: (axis, value, outward sign, area)) every face lies in one
+    plane, faces outward, and the faces of each plane add up to its area (no overlap, no gap)."""
+    assert_mesh_invariants(mesh, context=context)
+    directed = collections.Counter()
+    sums = [0.0] * len(planes or [])
+    for fid in mesh.all_face_ids():
+        problem = face_problem(mesh, fid)
+        assert problem is None, f"{context}: face {fid!r} would {problem}"
+        pts = [mesh.vertex_position(v) for v in mesh.face_vertices(fid)]
+        area = 0.5 * math.sqrt(sum(c * c for c in _newell(pts)))
+        tri = sum(_tri_area(*(mesh.vertex_position(v) for v in t)) for t in triangulate_mesh_face(mesh, fid))
+        assert abs(tri - area) <= 1e-6 * max(1.0, area), f"{context}: face {fid!r} triangles {tri} != area {area}"
+        b = mesh.face_vertices(fid)
+        for i in range(len(b)):
+            directed[(b[i], b[(i + 1) % len(b)])] += 1
+        if planes:
+            k = next((k for k, (ax, val, _s, _a) in enumerate(planes)
+                      if all(abs(p[ax] - val) <= 1e-6 for p in pts)), None)
+            assert k is not None, f"{context}: face {fid!r} lies in no reference plane"
+            ax, _val, sign, _area = planes[k]
+            signed = 0.5 * _newell(pts)[ax] * sign
+            assert signed > 0.0, f"{context}: face {fid!r} is flipped"
+            sums[k] += signed
+    assert max(directed.values(), default=1) == 1, f"{context}: inconsistent winding"
+    assert all(mesh.edge_faces(e) for e in mesh.all_edge_ids()), f"{context}: edge without a face"
+    for k, total in enumerate(sums):
+        assert abs(total - planes[k][3]) <= 1e-6, f"{context}: plane {planes[k][:3]} covered {total}"
+
+
+def _vid_at(mesh, pos):
+    return next(v for v in mesh.all_vertex_ids() if math.dist(mesh.vertex_position(v), pos) < 1e-9)
+
+
+def _spec(mesh, spec):
+    """("v", pos) vertex, ("e", pos_a, pos_b, t) the point a + t (b - a) on whichever current edge
+    holds it, ("f", pos) the face interior holding pos (a face-interior click)."""
+    kind = spec[0]
+    if kind == "v":
+        return _vpt(_vid_at(mesh, spec[1]))
+    if kind == "e":
+        a, b, t = spec[1], spec[2], spec[3]
+        pos = tuple(a[k] + t * (b[k] - a[k]) for k in range(3))
+        for eid in mesh.all_edge_ids():
+            p0, p1 = (mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
+            d = [p1[k] - p0[k] for k in range(3)]
+            u = sum((pos[k] - p0[k]) * d[k] for k in range(3)) / sum(c * c for c in d)
+            if 1e-9 < u < 1 - 1e-9 and math.dist(pos, tuple(p0[k] + u * d[k] for k in range(3))) < 1e-9:
+                return {"kind": "edge", "edge_id": eid, "t": u}
+        raise LookupError(pos)
+    pos = spec[1]
+    for fid in mesh.all_face_ids():
+        fr = FaceFrame(mesh, fid)
+        if fr.height(pos) > 1e-9:
+            continue
+        if segment_in_face(mesh, fid, pos, pos) == "inside":
+            return {"kind": "face", "face_id": fid, "position": tuple(pos), "distance_px": 20.0}
+    raise LookupError(pos)
+
+
+def _play(cls, mesh, specs, cam=None):
+    knife, scene = _session(mesh, cam, cls=cls)
+    accepted = [knife.click(_spec(mesh, sp)) for sp in specs]
+    cmd = knife.commit()
+    knife.deactivate()
+    return knife, scene, cmd, accepted
+
+
+def _vertices_at(mesh, pos):
+    return [v for v in mesh.all_vertex_ids() if math.dist(mesh.vertex_position(v), pos) < 1e-9]
+
+
+def _seg_x(p, q, r, s):
+    """Intersection of the 2D lines pq and rs (x, y)."""
+    d = (q[0] - p[0]) * (s[1] - r[1]) - (q[1] - p[1]) * (s[0] - r[0])
+    t = ((r[0] - p[0]) * (s[1] - r[1]) - (r[1] - p[1]) * (s[0] - r[0])) / d
+    return (p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1]), 0.0)
+
+
+# HB1: the last chord crosses the notch's first segment inside quad (0,0).
+HB1 = [("e", (0, 0, 0), (1, 0, 0), 0.2), ("f", (0.8, 0.5, 0)), ("e", (0, 0, 0), (1, 0, 0), 0.6),
+       ("e", (0, 1, 0), (1, 1, 0), 0.5)]
+HB1_X = _seg_x((0.2, 0.0), (0.8, 0.5), (0.6, 0.0), (0.5, 1.0))
+
+
+@pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
+def test_crossing_cut_gets_one_intersection_vertex_and_both_cuts_apply(cls):
+    """H-b / Artist decision 2026-09-29 ("like Blender"): the crossing is one vertex of both cuts."""
+    mesh, _p = _grid()
+    before = mesh.export_state()
+    knife, scene, cmd, accepted = _play(cls, mesh, HB1)
+    assert all(accepted) and cmd is not None
+    assert "2/2 cut(s) applied" in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} HB1")
+    xs = _vertices_at(mesh, HB1_X)
+    assert len(xs) == 1                                     # one vertex, no duplicate
+    assert len(mesh.vertex_edges(xs[0])) == 4               # on both cuts: four cut edges meet there
+    assert len(scene.history) == 1
+    scene.history.undo()
+    assert mesh.export_state()["faces"] == before["faces"]
+
+
+def test_bent_runs_crossing_each_other_both_apply():
+    """H-b with interior points on both runs (Q5 only: D/B refuse the click by their A5 lock)."""
+    mesh, _p = _grid()
+    specs = [("e", (0, 0, 0), (0, 1, 0), 0.5), ("f", (0.5, 0.8, 0)), ("e", (1, 0, 0), (1, 1, 0), 0.5),
+             ("f", (0.2, 0.9, 0)), ("e", (0, 1, 0), (1, 1, 0), 0.2)]
+    knife, _scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, specs, _camera(mesh, 0.0, 0.0))
+    assert all(accepted) and cmd is not None and "2/2 cut(s) applied" in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context="HB2")
+    assert len(_vertices_at(mesh, _seg_x((1.0, 0.5), (0.2, 0.9), (0.0, 0.5), (0.5, 0.8)))) == 1
+
+
+@pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
+def test_notch_on_a_shared_edge_stays_in_its_split_quad(cls):
+    """H-a (R2): the notch's quad is split by earlier runs of the same commit; both notch ends
+    also lie on the quad below. Before: the notch was built into the quad below (flipped)."""
+    mesh, p = _grid()
+    below = next(f for f in mesh.all_face_ids() if set(mesh.face_vertices(f)) == {p[(0, 1)], p[(0, 2)], p[(1, 2)], p[(1, 1)]})
+    specs = [("e", (1, 1, 0), (1, 2, 0), 0.5), ("e", (2, 1, 0), (2, 2, 0), 0.5), ("e", (1, 1, 0), (2, 1, 0), 0.7),
+             ("f", (1.5, 1.3, 0)), ("e", (1, 1, 0), (2, 1, 0), 0.3)]
+    knife, _scene, cmd, accepted = _play(cls, mesh, specs)
+    assert all(accepted) and cmd is not None and "3/3 cut(s) applied" in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} HA1")
+    (inner,) = _vertices_at(mesh, (1.5, 1.3, 0.0))
+    faces = {f for e in mesh.vertex_edges(inner) for f in mesh.edge_faces(e)}
+    assert all(min(mesh.vertex_position(v)[1] for v in mesh.face_vertices(f)) >= 1.0 - 1e-9 for f in faces)
+    assert all(mesh.vertex_position(v)[1] <= 1.0 + 1e-9 for v in mesh.face_vertices(below))
+
+
+def test_cube_notch_on_a_fold_edge_stays_on_the_top_side():
+    """H-a at a fold (what the Artist saw on the cube): both notch ends on the top/right edge."""
+    mesh = create_cube()
+    specs = [("e", (-1, 1, 1), (1, 1, 1), 0.6), ("e", (1, 1, 1), (1, 1, -1), 0.4), ("f", (0.6, 1, -0.3)),
+             ("e", (1, 1, 1), (1, 1, -1), 0.75)]
+    knife, _scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, specs, _camera(mesh, 35.0, 30.0))
+    assert all(accepted) and cmd is not None and "2/2 cut(s) applied" in knife.last_message
+    assert_geometric_integrity(mesh, CUBE_PLANES, context="HA2")
+
+
+def test_straight_segment_along_a_split_boundary_line_is_skipped():
+    """R3: v(1,1) -> a point on the far piece of the same (already split) edge runs along the
+    boundary — nothing to cut, like an existing edge. Before: a zero-area face."""
+    mesh, _p = _grid()
+    _play(KnifeFaceCrossFace, mesh, [("e", (1, 1, 0), (2, 1, 0), 0.5), ("e", (1, 2, 0), (2, 2, 0), 0.5)])
+    before = mesh.export_state()["faces"]
+    knife, scene = _session(mesh, _camera(mesh))
+    assert knife.click(_spec(mesh, ("v", (1, 1, 0))))
+    assert knife.click(_spec(mesh, ("e", (1.5, 1, 0), (2, 1, 0), 0.5)))
+    assert _breaks(knife, "edge")
+    knife.commit()
+    knife.deactivate()
+    assert mesh.export_state()["faces"] == before and len(scene.history) == 0
+    assert_geometric_integrity(mesh, GRID_PLANES, context="R3 Q5")
+    # D (no planner) walks along the boundary at commit: nothing is cut either.
+    knife, scene, _cmd, _acc = _play(KnifeFaceCollected, mesh, [("v", (1, 1, 0)), ("e", (1.5, 1, 0), (2, 1, 0), 0.5)])
+    assert_geometric_integrity(mesh, GRID_PLANES, context="R3 D")
+
+
+def test_plane_planner_reports_a_vertex_hit_not_an_edge_end():
+    """R4 (the open "t = 0" point): a line along a grid row through (2,3); PLANE used to report
+    an edge hit at t ~ 1e-15 there, which became a second vertex on top of (2,3)."""
+    mesh, p = _grid()
+    cam = _camera(mesh, 0.0, 0.0)
+    a, b = _vpt(p[(3, 3)]), _ept(mesh, p[(3, 1)], p[(3, 2)], 0.514)
+    res = plan_crossings(View(cam, W, H, None, True), mesh, a, b)
+    assert all(c["kind"] == "vertex" or 1e-9 < c["t"] < 1 - 1e-9 for c in res.crossings)
+    assert {"kind": "vertex", "vertex_id": p[(3, 2)]} in res.crossings
+    before = mesh.export_state()["faces"]
+    knife, _scene, _cmd, _acc = _play(KnifeFaceCrossFace, mesh, [("v", (3, 3, 0)), ("e", (1, 3, 0), (2, 3, 0), 0.514)], cam)
+    assert mesh.export_state()["faces"] == before              # all along existing edges: nothing cut
+    assert_geometric_integrity(mesh, GRID_PLANES, context="R4")
+
+
+def test_straight_line_out_of_a_concave_face_is_planned_across_faces():
+    """R5: after an L cut the big piece is concave; a straight line between two of its points
+    leaves it. Q5 plans it like any cross-face segment (both faces cut) instead of one chord."""
+    mesh, _p = _grid()
+    cam = _camera(mesh, 0.0, 0.0)
+    _play(KnifeFaceCrossFace, mesh, [("e", (0, 0, 0), (1, 0, 0), 0.5), ("f", (0.5, 0.5, 0)),
+                                     ("e", (0, 0, 0), (0, 1, 0), 0.5)], cam)
+    knife, _scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, [("e", (0.5, 0, 0), (1, 0, 0), 0.6),
+                                                                    ("e", (0, 0.5, 0), (0, 1, 0), 0.6)], cam)
+    assert all(accepted) and cmd is not None
+    assert "3/3 cut(s) applied" in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context="R5")
+
+
+@pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
+def test_a_run_crossing_itself_is_dropped_with_a_note_and_the_rest_applies(cls):
+    """A run that crosses itself inside one face would enclose a loop touching the rest at one
+    vertex only — not representable yet (open point): that run is dropped, named in the HUD."""
+    mesh, _p = _grid()
+    specs = [("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.3, 0.4, 0)), ("f", (0.5, 0.8, 0)), ("f", (0.5, 0.1, 0)),
+             ("e", (0, 0, 0), (1, 0, 0), 0.7), ("e", (0, 0, 0), (0, 1, 0), 0.5)]
+    knife, _scene, cmd, accepted = _play(cls, mesh, specs)
+    assert all(accepted) and cmd is not None
+    assert "1/2 cut(s) applied" in knife.last_message
+    assert "1 cut(s) closing a loop at a single point dropped" in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} self-crossing")
+
+
+def test_commit_rolls_back_broken_geometry_and_names_the_reason():
+    """Safety net: B cuts at every click through `connect_in_shared_face` (lowest face id, no
+    geometric check) — HB1 there leaves a face crossing itself. The whole session is taken back,
+    History gets nothing, the HUD says why."""
+    mesh, _p = _grid()
+    before = mesh.export_state()
+    knife, scene, cmd, accepted = _play(KnifeFaceImmediate, mesh, HB1)
+    assert all(accepted) and cmd is None and len(scene.history) == 0
+    assert knife.last_message == "commit rolled back — a face would cross itself; mesh unchanged"
+    assert mesh.export_state()["faces"] == before["faces"]
+    assert_geometric_integrity(mesh, GRID_PLANES, context="rollback")
+
+
+def test_commit_check_catches_a_face_flipped_against_its_neighbour():
+    """The pre-fix R2 result, built by hand: the notch inside the quad *below* its own. It passes
+    the invariant catalogue; the commit check refuses it."""
+    mesh, p = _grid()
+    knife, scene = _session(mesh, None, cls=KnifeFaceCollected)
+    below = next(f for f in mesh.all_face_ids() if set(mesh.face_vertices(f)) == {p[(0, 1)], p[(0, 2)], p[(1, 2)], p[(1, 1)]})
+    e = _edge(mesh, p[(1, 1)], p[(1, 2)])
+    v1, _ea, eb = mesh.split_edge(e, 0.3 if mesh.edge_vertices(e)[0] == p[(1, 1)] else 0.7)
+    v2 = mesh.split_edge(eb, 0.5)[0]
+    split_face_path(mesh, below, v1, v2, [(1.5, 1.3, 0.0)])
+    assert_mesh_invariants(mesh, context="hand-built flipped notch")
+    assert knife.commit() is None and len(scene.history) == 0
+    assert knife.last_message.startswith("commit rolled back — a face would")
+    assert_geometric_integrity(mesh, GRID_PLANES, context="flipped rolled back")
+
+
+def test_hover_and_stored_preview_show_the_intersection_with_an_earlier_cut():
+    mesh, _p = _grid()
+    knife, _scene = _session(mesh, _camera(mesh))
+    for sp in HB1[:3]:
+        assert knife.click(_spec(mesh, sp))
+    plan = knife.plan(_spec(mesh, HB1[3]))
+    assert plan.ok and "1 intersection(s) with earlier cuts" in plan.message
+    assert any(math.dist(c, HB1_X) < 1e-9 for c in plan.crossings)
+    assert knife.click(_spec(mesh, HB1[3]))
+    assert any(math.dist(c, HB1_X) < 1e-9 for c in knife.preview_stored()["crossings"])
+    assert knife.undo_step() and not any(math.dist(c, HB1_X) < 1e-9 for c in knife.preview_stored()["crossings"])
+    assert knife.redo_step()
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert len(_vertices_at(mesh, HB1_X)) == 1
+
+
+def _random_sessions(scene_name, cls, runs, seed0=0):
+    """Seeded random sessions like the probe's (smaller): screen positions aimed at face interiors,
+    vertices and edge points of the current mesh, picked and snapped as the window does."""
+    from mirai.scene_factory import create_cube as _cube
+    failures = []
+    for seed in range(seed0, seed0 + runs):
+        rnd = random.Random(seed)
+        mesh = _grid()[0] if scene_name == "grid" else _cube()
+        planes = GRID_PLANES if scene_name == "grid" else CUBE_PLANES
+        cams = [_camera(mesh, y, pt) for y, pt in (((20, 35), (0, 0), (-30, 60), (45, 25)) if scene_name == "grid"
+                                                   else ((35, 30), (-40, 25), (130, -30), (60, 55)))]
+        for _session_no in range(rnd.randint(1, 3)):
+            knife, _scene = _session(mesh, None, cls=cls)
+            for _ in range(rnd.randint(2, 9)):
+                cam = rnd.choice(cams)
+                r = rnd.random()
+                if r < 0.45:
+                    fid = rnd.choice(mesh.all_face_ids())
+                    tri = rnd.choice(triangulate_mesh_face(mesh, fid))
+                    u, v = rnd.random(), rnd.random()
+                    if u + v > 1:
+                        u, v = 1 - u, 1 - v
+                    a, b, c = (mesh.vertex_position(x) for x in tri)
+                    world = tuple(a[k] + u * (b[k] - a[k]) + v * (c[k] - a[k]) for k in range(3))
+                elif r < 0.6:
+                    world = mesh.vertex_position(rnd.choice(mesh.all_vertex_ids()))
+                else:
+                    va, vb = mesh.edge_vertices(rnd.choice(mesh.all_edge_ids()))
+                    t = rnd.uniform(0.1, 0.9)
+                    pa, pb = mesh.vertex_position(va), mesh.vertex_position(vb)
+                    world = tuple(pa[k] + t * (pb[k] - pa[k]) for k in range(3))
+                sp = cam.project_to_screen(world, W, H)
+                if sp is None:
+                    continue
+                sx, sy = sp[0] + rnd.uniform(-2, 2) * (r >= 0.45), sp[1] + rnd.uniform(-2, 2) * (r >= 0.45)
+                target = knife_face_pick(cam, mesh, sx, sy, W, H, occlusion=True)
+                if hasattr(knife, "set_view"):
+                    knife.set_view(cam, W, H, occlusion=True)
+                    target = knife.snap_target(target, sx, sy)
+                knife.click(target)
+            knife.commit()
+            knife.deactivate()
+            try:
+                assert_geometric_integrity(mesh, planes, context=f"{scene_name} seed {seed}")
+            except AssertionError as exc:
+                failures.append(str(exc))
+                break
+            if "rolled back" in knife.last_message:
+                failures.append(f"{scene_name} seed {seed}: {knife.last_message}")
+    return failures
+
+
+@pytest.mark.parametrize("scene_name", ["grid", "cube"])
+def test_random_q5_sessions_keep_the_geometry_sound(scene_name):
+    """80 seeded runs (1-3 sessions of 2-9 clicks each): no integrity failure and no rollback
+    (the resolver itself stays sound). The probe runs the same with 400."""
+    assert _random_sessions(scene_name, KnifeFaceCrossFace, 80) == []
+
+
+@pytest.mark.parametrize("scene_name", ["grid", "cube"])
+def test_random_d_sessions_keep_the_geometry_sound(scene_name):
+    assert _random_sessions(scene_name, KnifeFaceCollected, 60) == []
 
 
 # ---------------------------------------------------------------------------

@@ -21,11 +21,16 @@ already uses — reused as-is here, not modified):
     the path is grouped into per-face runs and each run is resolved
     (boundary-interior*-boundary -> split; interior-only closed path with
     >=3 points -> closed shape with 2 bridges; anything left over is
-    dropped). Interior start allowed.
+    dropped). Interior start allowed. Each run is walked through the faces
+    the runs before it left behind; where it crosses one of their cuts it
+    gets an intersection vertex (integrity fix 2026-09-29, decision.md
+    "Q5 integrity findings").
 
 Per AD-017 §1.10/decision #1 ("no universal Cut Engine"): the two variants
 are written independently, sharing only small mode-agnostic helpers (picking,
 `split_face_path`, `connect_in_shared_face`) - not a shared "path resolver".
+Both share the commit safety net: faces the session touched are checked
+before History, a broken result is rolled back as a whole.
 """
 
 from __future__ import annotations
@@ -400,6 +405,176 @@ def close_loop_with_bridges(
     return loop_vs, f_inner, f_a, f_b, loop_edges
 
 
+# ---------------------------------------------------------------------------
+# Geometric integrity (decision.md "Q5 integrity findings (2026-09-29)"): a run is
+# walked through the *current* faces at commit, and the faces a commit touched are
+# checked before anything reaches History. Lab-local, public Core API only.
+# ---------------------------------------------------------------------------
+
+# Lengths closer than this (relative to the face's size) are one point; directions
+# closer than this (radians) are one direction.
+_GEO_EPS = 1e-9
+_ANGLE_EPS = 1e-9
+
+
+def _v_sub(p, q):
+    return (p[0] - q[0], p[1] - q[1], p[2] - q[2])
+
+
+def _v_dot(p, q):
+    return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]
+
+
+def _v_cross(p, q):
+    return (p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0])
+
+
+def _v_len(p) -> float:
+    return math.sqrt(_v_dot(p, p))
+
+
+def _c2(o, a, b) -> float:
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+class FaceFrame:
+    """One face in its own Newell plane: 2D coordinates in which the boundary runs
+    counter-clockwise (u x v = the face normal), the unit normal and a length scale.
+    Raises MeshError for a face without area (no plane to work in)."""
+
+    def __init__(self, mesh, face_id: FaceId):
+        self.face_id = face_id
+        self.boundary = mesh.face_vertices(face_id)
+        pts = [mesh.vertex_position(v) for v in self.boundary]
+        n = _newell(pts)
+        length = _v_len(n)
+        lo = [min(p[k] for p in pts) for k in range(3)]
+        hi = [max(p[k] for p in pts) for k in range(3)]
+        self.size = max(1e-12, max(hi[k] - lo[k] for k in range(3)))
+        if length <= _GEO_EPS * self.size * self.size:
+            raise MeshError(f"face {face_id!r} has no area")
+        self.normal = (n[0] / length, n[1] / length, n[2] / length)
+        self.area = 0.5 * length
+        axis = (1.0, 0.0, 0.0) if abs(self.normal[0]) < 0.9 else (0.0, 1.0, 0.0)
+        u = _v_cross(axis, self.normal)
+        lu = _v_len(u)
+        self.u = (u[0] / lu, u[1] / lu, u[2] / lu)
+        self.v = _v_cross(self.normal, self.u)
+        self.origin = pts[0]
+        self.pts2 = [self.p2(p) for p in pts]
+        self.eps = _GEO_EPS * self.size
+
+    def p2(self, p: Position) -> tuple[float, float]:
+        d = _v_sub(p, self.origin)
+        return (_v_dot(d, self.u), _v_dot(d, self.v))
+
+    def height(self, p: Position) -> float:
+        return abs(_v_dot(_v_sub(p, self.origin), self.normal))
+
+
+def _proper_cross2(a, b, c, d, eps: float) -> bool:
+    """Segments ab and cd cross at one point strictly inside both: each end of one lies more
+    than `eps` (a distance) off the other's line, on opposite sides."""
+    lab, lcd = math.dist(a, b), math.dist(c, d)
+    if lab <= eps or lcd <= eps:
+        return False
+    o1, o2 = _c2(a, b, c) / lab, _c2(a, b, d) / lab
+    o3, o4 = _c2(c, d, a) / lcd, _c2(c, d, b) / lcd
+    return ((o1 > eps and o2 < -eps) or (o1 < -eps and o2 > eps)) and \
+           ((o3 > eps and o4 < -eps) or (o3 < -eps and o4 > eps))
+
+
+def polygon_is_simple(pts2: list, eps: float) -> bool:
+    """No two boundary edges meet except neighbours at their shared corner, and the
+    boundary never turns straight back on itself (a spike) — no two corners coincide either."""
+    n = len(pts2)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if math.dist(pts2[i], pts2[j]) <= eps:
+                return False
+    for i in range(n):
+        a, b, c = pts2[i - 1], pts2[i], pts2[(i + 1) % n]
+        if abs(_c2(a, b, c)) <= eps * max(math.dist(a, b), math.dist(b, c)) and \
+                (a[0] - b[0]) * (c[0] - b[0]) + (a[1] - b[1]) * (c[1] - b[1]) > 0.0:
+            return False
+    for i in range(n):
+        a, b = pts2[i], pts2[(i + 1) % n]
+        for j in range(i + 2, n):
+            if (j + 1) % n == i:
+                continue
+            c, d = pts2[j], pts2[(j + 1) % n]
+            if _proper_cross2(a, b, c, d, eps):
+                return False
+            # A corner lying on another (non-neighbouring) edge: the boundary touches itself.
+            for p, (s, t) in ((a, (c, d)), (b, (c, d)), (c, (a, b)), (d, (a, b))):
+                if abs(_c2(s, t, p)) <= eps * math.dist(s, t) and \
+                        min(s[0], t[0]) - eps <= p[0] <= max(s[0], t[0]) + eps and \
+                        min(s[1], t[1]) - eps <= p[1] <= max(s[1], t[1]) + eps:
+                    return False
+    return True
+
+
+def face_problem(mesh, face_id: FaceId) -> str | None:
+    """Why a face is geometrically broken ("have no area", "cross itself"), or None."""
+    try:
+        fr = FaceFrame(mesh, face_id)
+    except MeshError:
+        return "have no area"
+    if not polygon_is_simple(fr.pts2, fr.eps):
+        return "cross itself"
+    return None
+
+
+def segment_in_face(mesh, face_id: FaceId, p: Position, q: Position) -> str:
+    """Where the straight segment p-q (both on or in the face) lies: "inside" (it may touch the
+    boundary only at its own ends), "boundary" (it runs along the boundary) or "outside" (it
+    leaves the face or passes through a corner — a concave face)."""
+    try:
+        fr = FaceFrame(mesh, face_id)
+    except MeshError:
+        return "outside"
+    a2, b2 = fr.p2(p), fr.p2(q)
+    m2 = (0.5 * (a2[0] + b2[0]), 0.5 * (a2[1] + b2[1]))
+    k = len(fr.pts2)
+    inside = False
+    for j in range(k):
+        c, d = fr.pts2[j], fr.pts2[(j + 1) % k]
+        e_len = math.dist(c, d)
+        if e_len > 0.0 and abs(_c2(c, d, m2)) <= fr.eps * e_len and \
+                min(c[0], d[0]) - fr.eps <= m2[0] <= max(c[0], d[0]) + fr.eps and \
+                min(c[1], d[1]) - fr.eps <= m2[1] <= max(c[1], d[1]) + fr.eps:
+            return "boundary"
+        if (c[1] > m2[1]) != (d[1] > m2[1]) and c[0] + (m2[1] - c[1]) * (d[0] - c[0]) / (d[1] - c[1]) > m2[0]:
+            inside = not inside
+    if not inside:
+        return "outside"
+    seg = math.dist(a2, b2)
+    for j in range(k):
+        c, d = fr.pts2[j], fr.pts2[(j + 1) % k]
+        if _proper_cross2(a2, b2, c, d, fr.eps):
+            return "outside"
+        if min(math.dist(c, a2), math.dist(c, b2)) > fr.eps and seg > 0.0 and \
+                abs(_c2(a2, b2, c)) <= fr.eps * seg and \
+                0.0 < (c[0] - a2[0]) * (b2[0] - a2[0]) + (c[1] - a2[1]) * (b2[1] - a2[1]) < seg * seg:
+            return "outside"  # passes through a corner
+    return "inside"
+
+
+def cut_in_face(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions: list[Position]):
+    """Cut one face from boundary vertex `a` to boundary vertex `b` through `positions`
+    (straight when empty). Returns (path_edges, new_face_ids); ([], []) when a and b are
+    neighbours on the face (along an existing edge: nothing to cut)."""
+    if not positions:
+        boundary = mesh.face_vertices(face_id)
+        n = len(boundary)
+        if (boundary.index(a) - boundary.index(b)) % n in (1, n - 1):
+            return [], []
+        eid, f1, f2 = mesh.connect_vertices(face_id, a, b)
+        return [eid], [f1, f2]
+    _new_vs, f1, f2, path_edges = split_face_path(mesh, face_id, a, b, positions)
+    return path_edges, [f1, f2]
+
+
 def _copy_attr(value):
     return list(value) if isinstance(value, list) else value
 
@@ -477,10 +652,61 @@ class _KnifeFaceSession(Tool):
     def _on_update(self, **kwargs) -> None:
         pass
 
+    def _integrity_problem(self) -> str | None:
+        """Safety net before History (integrity findings, 2026-09-29): the first geometric
+        problem among the faces this session touched (new, or boundary changed), or None.
+        Checks each touched face (area, simple polygon) and, across each of its edges, the
+        neighbour: at most two faces per edge, walked in opposite directions, and not
+        facing the other way where the two lie (nearly) in one plane."""
+        m = self._mesh
+        before = self._session_before["faces"]
+        touched = [f for f in m.all_face_ids()
+                   if before.get(int(f)) != [int(v) for v in m.face_vertices(f)]]
+        normals: dict[FaceId, Position] = {}
+
+        def normal(f):
+            if f not in normals:
+                normals[f] = FaceFrame(m, f).normal
+            return normals[f]
+
+        for f in touched:
+            problem = face_problem(m, f)
+            if problem is not None:
+                return f"a face would {problem}"
+        for f in touched:
+            boundary = m.face_vertices(f)
+            k = len(boundary)
+            for i, e in enumerate(m.face_edges(f)):
+                faces = m.edge_faces(e)
+                if len(faces) > 2:
+                    return "an edge would join more than two faces"
+                x, y = boundary[i], boundary[(i + 1) % k]
+                for g in faces:
+                    if g == f:
+                        continue
+                    gb = m.face_vertices(g)
+                    j = gb.index(x)
+                    if gb[(j + 1) % len(gb)] == y:
+                        return "a face would be wound against its neighbour"
+                    try:
+                        if _v_dot(normal(f), normal(g)) < -0.5:
+                            return "a face would be flipped against its neighbour"
+                    except MeshError:
+                        return "a face would have no area"
+        return None
+
     def _on_commit(self) -> Any:
         current_state = self._mesh.export_state()
         if current_state == self._session_before:
             self.last_message = self.last_message or "commit: nothing changed"
+            return None
+        problem = self._integrity_problem()
+        if problem is not None:
+            # Never commit half-broken geometry: the whole session is taken back, History
+            # gets nothing, the HUD names the reason.
+            self._mesh.load_state(self._session_before)
+            self._path_edges = []
+            self.last_message = f"commit rolled back — {problem}; mesh unchanged"
             return None
         valid_path = [e for e in self._path_edges if self._mesh.is_valid_edge(e)]
         cmd = MeshStateCommand(
@@ -845,6 +1071,10 @@ class KnifeFaceCollected(_KnifeFaceSession):
             seen.add(id(p))
             if p["kind"] == "vertex":
                 resolved[id(p)] = p["vertex_id"]
+            elif p["t"] <= _GEO_EPS or p["t"] >= 1.0 - _GEO_EPS:
+                # An edge point on the edge's end *is* that vertex — splitting there would put a
+                # second vertex on top of it (a zero-area sliver, integrity finding R4).
+                resolved[id(p)] = self._mesh.edge_vertices(p["edge_id"])[0 if p["t"] <= 0.5 else 1]
             else:
                 by_edge.setdefault(p["edge_id"], []).append(p)
         for eid, pts in by_edge.items():
@@ -864,62 +1094,242 @@ class KnifeFaceCollected(_KnifeFaceSession):
                 continue
         return resolved
 
-    def _live_face_for(self, face_id: FaceId, a: VertexId, b: VertexId) -> FaceId | None:
-        """The face an interior run cuts. The click-time `face_id` goes stale
-        when an earlier run of the same commit already split that face; then
-        the face now holding both run ends (lowest id, like
-        `connect_in_shared_face`) is the one the interior points lie in."""
+    # -- resolving one run against the current faces (integrity fix, 2026-09-29) --------------
+    #
+    # Runs are applied one after another, so a run meets the faces the runs before it left
+    # behind — never the click-time face it was drawn on. It is therefore *walked*: from its
+    # first vertex into the face that holds its next segment, cutting that face up to the
+    # first point where the run meets the face's boundary, and on from there. Where it meets
+    # a cut of this commit (an edge between two pieces of one click-time face) that edge is
+    # split — one intersection vertex, part of both cuts (Artist decision 2026-09-29,
+    # "crossing cuts like Blender"). Where it runs along the boundary nothing is cut. Where it
+    # would leave its click-time face it cannot be resolved and is dropped (HUD "N-1/N").
+
+    def _root(self, face_id: FaceId) -> FaceId:
+        """The click-time face a face descends from (itself for an untouched face)."""
+        return self._face_root.get(face_id, face_id)
+
+    def _adopt(self, parent: FaceId, children) -> None:
+        root = self._root(parent)
+        for f in children:
+            self._face_root[f] = root
+
+    def _crossable(self, eid: EdgeId) -> bool:
+        """A cut of this commit: an edge between two pieces of one click-time face."""
+        faces = self._mesh.edge_faces(eid)
+        return len(faces) == 2 and self._root(faces[0]) == self._root(faces[1])
+
+    def _step_from(self, p: VertexId, target: Position, root: FaceId | None):
+        """Where the run goes from vertex `p` towards `target`: ("face", frame) — into that face
+        (its corner at `p` holds the direction) — or ("along", q) — along the boundary edge p-q
+        (q not beyond the target). Of several candidates, the face whose plane holds the target
+        best wins (a fold edge borders two cube sides; only one holds the target). None: the run
+        cannot continue (no face of `root` at `p` holds the direction)."""
         m = self._mesh
-        if m.is_valid_face(face_id):
-            vs = m.face_vertices(face_id)
-            if a in vs and b in vs:
-                return face_id
-        for fid in sorted(m.all_face_ids(), key=int):
-            vs = m.face_vertices(fid)
-            if a in vs and b in vs:
-                return fid
+        pp = m.vertex_position(p)
+        dist = _dist3(pp, target)
+        if dist <= _GEO_EPS:
+            return None
+        best = None
+        faces = {f for e in m.vertex_edges(p) for f in m.edge_faces(e)}
+        for f in sorted(faces, key=int):
+            if root is not None and self._root(f) != root:
+                continue
+            try:
+                fr = FaceFrame(m, f)
+            except MeshError:
+                continue
+            i = fr.boundary.index(p)
+            k = len(fr.boundary)
+            p2, t2 = fr.pts2[i], fr.p2(target)
+            d2 = (t2[0] - p2[0], t2[1] - p2[1])
+            if math.hypot(*d2) <= fr.eps:
+                continue
+            tilt = fr.height(target) / dist
+            nxt, prv = fr.pts2[(i + 1) % k], fr.pts2[i - 1]
+            e1 = (nxt[0] - p2[0], nxt[1] - p2[1])
+            e2 = (prv[0] - p2[0], prv[1] - p2[1])
+
+            def angle(w):
+                return math.atan2(e1[0] * w[1] - e1[1] * w[0], e1[0] * w[0] + e1[1] * w[1]) % (2 * math.pi)
+
+            a_d, a_e2 = angle(d2), angle(e2)
+            if a_d < _ANGLE_EPS or a_d > 2 * math.pi - _ANGLE_EPS:
+                step = ("along", fr.boundary[(i + 1) % k])
+            elif abs(a_d - a_e2) < _ANGLE_EPS:
+                step = ("along", fr.boundary[i - 1])
+            elif a_d < a_e2:
+                step = ("face", fr)
+            else:
+                continue
+            if step[0] == "along" and _dist3(pp, m.vertex_position(step[1])) > dist + fr.eps:
+                continue  # the target lies on this edge, before its far end: not a vertex to walk to
+            if best is None or tilt < best[0] - _GEO_EPS:
+                best = (tilt, step)
+        return None if best is None else best[1]
+
+    @staticmethod
+    def _first_hit(fr: FaceFrame, a2, b2, skip_vertex: int | None):
+        """First point after `a2` where the segment a2 -> b2 meets the face's boundary, as
+        (s, "vertex", boundary index) or (s, "edge", boundary index of the edge's start, lam);
+        s in (0, 1] along the segment, lam in (0, 1) along the edge. `skip_vertex`: the boundary
+        index the segment starts on (it and its two edges are not hits). A vertex wins over an
+        edge at the same point."""
+        k = len(fr.pts2)
+        dx, dy = b2[0] - a2[0], b2[1] - a2[1]
+        length = math.hypot(dx, dy)
+        if length <= fr.eps:
+            return None
+        s_eps = fr.eps / length
+        hits = []
+        for j, q in enumerate(fr.pts2):
+            if j == skip_vertex:
+                continue
+            s = ((q[0] - a2[0]) * dx + (q[1] - a2[1]) * dy) / (length * length)
+            off = abs(dx * (q[1] - a2[1]) - dy * (q[0] - a2[0])) / length
+            if off <= fr.eps and s_eps < s <= 1.0 + s_eps:
+                hits.append((s, 0, "vertex", j))
+        for j in range(k):
+            if skip_vertex is not None and skip_vertex in (j, (j + 1) % k):
+                continue
+            c, d = fr.pts2[j], fr.pts2[(j + 1) % k]
+            ex, ey = d[0] - c[0], d[1] - c[1]
+            den = dx * ey - dy * ex
+            if abs(den) <= 1e-300:
+                continue
+            cx, cy = c[0] - a2[0], c[1] - a2[1]
+            s = (cx * ey - cy * ex) / den
+            lam = (cx * dy - cy * dx) / den
+            e_len = math.hypot(ex, ey)
+            lam_eps = fr.eps / e_len if e_len > 0 else 1.0
+            if s_eps < s <= 1.0 + s_eps and lam_eps < lam < 1.0 - lam_eps:
+                hits.append((s, 1, "edge", j, lam))
+        if not hits:
+            return None
+        hits.sort(key=lambda h: (h[0], h[1]))
+        first = hits[0]
+        for h in hits:  # a vertex at (numerically) the same point as an edge hit wins
+            if h[0] - first[0] > s_eps:
+                break
+            if h[2] == "vertex":
+                return (h[0],) + h[2:]
+        return (first[0],) + first[2:]
+
+    def _walk_run(self, a: VertexId, positions: list[Position], b: VertexId, root: FaceId | None):
+        """Cut the run a -> positions -> b through the current faces; returns the new cut edges
+        (a -> b order) or None if the run cannot be resolved (the caller restores the mesh)."""
+        m = self._mesh
+        if a == b:
+            # Out of one point and back into it: a loop that touches the rest of the face at that
+            # point only — like a run crossing itself (below), not representable yet.
+            self._loop_at_point = bool(positions)
+            return None
+        targets = list(positions) + [m.vertex_position(b)]
+        last = len(targets) - 1
+        p, k, out = a, 0, []
+        for _guard in range(4 * (len(targets) + len(m.all_face_ids())) + 8):
+            if p == b:
+                return out
+            step = self._step_from(p, targets[k], root)
+            if step is None:
+                return None
+            if step[0] == "along":
+                p = step[1]
+                if k < last and _dist3(m.vertex_position(p), targets[k]) <= _GEO_EPS:
+                    return None  # an interior point on an existing vertex: not a clean cut
+                continue
+            fr = step[1]
+            if root is None:
+                root = self._root(fr.face_id)  # a straight run stays in the face it starts in, too
+            i0 = fr.boundary.index(p)
+            cur2, skip, pending = fr.pts2[i0], i0, []
+            trail = [cur2]  # the run inside this face so far, in 2D
+            while True:
+                t2 = fr.p2(targets[k])
+                hit = self._first_hit(fr, cur2, t2, skip)
+                end2 = t2 if hit is None else (cur2[0] + hit[0] * (t2[0] - cur2[0]),
+                                                cur2[1] + hit[0] * (t2[1] - cur2[1]))
+                if any(_proper_cross2(trail[j], trail[j + 1], cur2, end2, fr.eps)
+                       for j in range(len(trail) - 2)):
+                    # The run crosses itself inside this face: the part between the two passes is
+                    # a loop that would touch the rest of the face at one vertex only — not
+                    # representable without a bridge or a hole (open, decision.md).
+                    self._loop_at_point = True
+                    return None
+                if hit is None:
+                    if k == last:
+                        return None  # b is not on this face's boundary where the run ends
+                    pending.append(targets[k])
+                    trail.append(t2)
+                    cur2, skip, k = t2, None, k + 1
+                    continue
+                s = hit[0]
+                if hit[1] == "vertex":
+                    q = fr.boundary[hit[2]]
+                else:
+                    j, lam = hit[2], hit[3]
+                    va, vb = fr.boundary[j], fr.boundary[(j + 1) % len(fr.boundary)]
+                    eid = _find_edge(m, va, vb)
+                    if not self._crossable(eid):
+                        return None  # the run would leave its click-time face
+                    t = lam if m.edge_vertices(eid)[0] == va else 1.0 - lam
+                    q, _e1, _e2 = m.split_edge(eid, t)
+                if q == p:
+                    return None
+                edges, children = cut_in_face(m, fr.face_id, p, q, pending)
+                self._adopt(fr.face_id, children)
+                out.extend(edges)
+                if s >= 1.0 - _GEO_EPS * 10 and k < last:
+                    k += 1  # the interior point itself lies on that boundary point
+                p = q
+                break
         return None
 
     def _apply_run(self, run: list[dict], resolved: dict[int, VertexId]) -> bool:
         first, last = run[0], run[-1]
         interior = run[1:-1]
-        positions = [p["position"] for p in interior]
-
         a, b = resolved.get(id(first)), resolved.get(id(last))
         if a is None or b is None:
             return False
-
+        # Every interior point of a run lies in one click-time face (the planner puts a crossing
+        # at every face change; D accepts no other face) — the run may not leave it.
+        root = interior[0]["face_id"] if interior else None
+        state, roots = self._mesh.export_state(), dict(self._face_root)
+        self._loop_at_point = False
         try:
-            if not positions:
-                eid = connect_in_shared_face(self._mesh, a, b)
-                if eid is None:
-                    return False
-                self._path_edges.append(eid)
-                return True
-
-            face_id = self._live_face_for(interior[0]["face_id"], a, b)
-            if face_id is None:
-                return False
-            _new_vs, _f1, _f2, path_edges = split_face_path(self._mesh, face_id, a, b, positions)
-        except (MeshError, LookupError):
-            # Safety net: a run that trips over Core degrades to a dropped
-            # run (HUD "N/M") — never an exception out of commit, which would
-            # skip the History push for whatever earlier runs already mutated.
+            edges = self._walk_run(a, [p["position"] for p in interior], b, root)
+        except (MeshError, LookupError, ValueError, ZeroDivisionError):
+            # Safety net: a run that trips over Core degrades to a dropped run (HUD "N/M") —
+            # never an exception out of commit, which would skip the History push for
+            # whatever earlier runs already mutated.
+            edges = None
+        if edges is None:
+            self._mesh.load_state(state)
+            self._face_root = roots
+            self._loops_at_point += self._loop_at_point
             return False
-        self._path_edges.extend(path_edges)
+        self._path_edges.extend(edges)
         return True
 
     def _resolve_closed_loop(self, path: list[dict]) -> str:
         fid = path[0]["face_id"]
         positions = [p["position"] for p in path]
         boundary = self._mesh.face_vertices(fid)
+        state = self._mesh.export_state()
         try:
             i1, bv1, i2, bv2 = select_bridge(self._mesh, boundary, positions)
-            _loop_vs, _f_inner, _f_a, _f_b, loop_edges = close_loop_with_bridges(
+            _loop_vs, f_inner, f_a, f_b, loop_edges = close_loop_with_bridges(
                 self._mesh, fid, positions, i1, bv1, i2, bv2,
             )
         except MeshError as exc:
             return f"closed shape rejected: {exc}"
+        problem = next((pr for pr in (face_problem(self._mesh, f) for f in (f_inner, f_a, f_b)) if pr), None)
+        if problem is not None:
+            # An outline that crosses itself, or a bridge through the loop (Task A observation):
+            # only this shape is taken back, the rest of the commit stands.
+            self._mesh.load_state(state)
+            return f"closed shape rejected: a face would {problem} (its outline or a bridge crosses the loop)"
+        self._adopt(fid, (f_inner, f_a, f_b))
         self._path_edges.extend(loop_edges)
         return f"closed shape — {len(positions)} points, 2 bridges, 3 faces"
 
@@ -972,10 +1382,18 @@ class KnifeFaceCollected(_KnifeFaceSession):
             notes.append("leading interior point(s) dropped (no boundary reached before them)")
         if dropped_tail:
             notes.append("trailing interior point(s) dropped (no boundary reached)")
+        notes.extend(self._loop_at_point_note())
         if notes:
             msg += "; " + "; ".join(notes)
         self.last_message = msg
 
+    def _loop_at_point_note(self) -> list[str]:
+        n = self._loops_at_point
+        return [f"{n} cut(s) closing a loop at a single point dropped (crossing itself, or back to its "
+                "start — not supported yet)"] if n else []
+
     def _on_commit(self) -> Any:
+        self._face_root: dict[FaceId, FaceId] = {}
+        self._loops_at_point = 0
         self._resolve_path()
         return super()._on_commit()

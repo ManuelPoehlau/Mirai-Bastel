@@ -713,15 +713,17 @@ def test_d_run_failure_is_dropped_and_rest_stays_one_undoable_step(monkeypatch):
     for e in edges[:3]:
         assert knife.click(_edge_target(e, 0.5))
 
-    real, calls = eng.connect_in_shared_face, []
+    # The resolver cuts each face through `cut_in_face` (integrity fix 2026-09-29; before, the
+    # straight runs went through `connect_in_shared_face` and this test patched that).
+    real, calls = eng.cut_in_face, []
 
-    def flaky(mesh_, a, b):
+    def flaky(mesh_, face_id, a, b, positions):
         calls.append((a, b))
         if len(calls) == 1:
             raise KeyError("forced")
-        return real(mesh_, a, b)
+        return real(mesh_, face_id, a, b, positions)
 
-    monkeypatch.setattr(eng, "connect_in_shared_face", flaky)
+    monkeypatch.setattr(eng, "cut_in_face", flaky)
     cmd = knife.commit()
     knife.deactivate()
 

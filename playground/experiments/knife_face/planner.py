@@ -28,6 +28,8 @@ Position = tuple[float, float, float]
 # Blender's KNIFE_FLT_EPS_PX_VERT (discovery §4): a vertex whose projection lies
 # this close to the screen segment is a vertex hit, not two slivers next to it.
 VERTEX_TOL_PX = 0.5
+# An edge hit this close to the edge's end (in t) is a hit on the end vertex.
+END_T_EPS = 1e-9
 
 
 @dataclass
@@ -344,6 +346,26 @@ def plane_hits(view: View, mesh, a: dict, b: dict, *, vertex_tol_px=VERTEX_TOL_P
             continue
         lam = d0 / (d0 - d1)
         if not (0.0 < lam < 1.0):
+            continue
+        if lam < END_T_EPS or lam > 1.0 - END_T_EPS:
+            # A hit at the edge's end is a hit on that vertex (integrity finding R4): as an edge
+            # hit it would become a second vertex on top of it. The segment's own end vertices
+            # (and the ones of its end edges) are not tested as vertex hits above, so do it here.
+            w = va if lam < 0.5 else vb
+            own = {q["vertex_id"] for q in (a, b) if q["kind"] == "vertex"}
+            if w in own or w in vhit:
+                continue
+            w2 = view.v2(mesh, w)
+            if w2 is None:
+                continue
+            s = _dot(_sub(w2, A2), d2) / LL
+            if not (1e-6 < s < 1.0 - 1e-6):
+                continue
+            if view.vertex_hidden(mesh, w):
+                hidden += 1
+                continue
+            vhit.add(w)
+            hits.append((s, {"kind": "vertex", "vertex_id": w}))
             continue
         x2 = view.p2(_lerp(p0, p1, lam))
         if x2 is None:

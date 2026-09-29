@@ -468,7 +468,7 @@ def play(cls, mesh, clicks, cams, *, feats: dict | None = None, no_face=False) -
 
 
 CAMS = {
-    "grid": [(20.0, 35.0), (0.0, 89.0), (-30.0, 60.0), (45.0, 25.0)],
+    "grid": [(20.0, 35.0), (0.0, 0.0), (-30.0, 60.0), (45.0, 25.0)],
     "cube": [(35.0, 30.0), (-40.0, 25.0), (130.0, -30.0), (60.0, 55.0)],
 }
 
@@ -505,15 +505,26 @@ def random_run(scene: str, seed: int, *, sessions=(1, 3), clicks=(2, 9), p_face=
 def fuzz(scene: str, n: int, **kw):
     """[(seed, failing session, issue classes, features of that session)] and the feature counts of
     every clean session (for comparison)."""
+    import re
     fails, clean = [], collections.Counter()
     for seed in range(n):
-        _record, si, issues, feats = random_run(scene, seed, **kw)
+        record, si, issues, feats = random_run(scene, seed, **kw)
         if si is not None:
             fails.append((seed, si, sorted(issues), feats[si]))
         for k, f in enumerate(feats):
             if k != si:
                 clean[frozenset(f)] += 1
+        for _c, _b, msg in record:
+            m = re.search(r"(\d+)/(\d+) cut", msg)
+            STATS[scene]["sessions"] += 1
+            STATS[scene]["rolled back"] += "rolled back" in msg
+            STATS[scene]["with a dropped run"] += bool(m and int(m.group(1)) < int(m.group(2)))
+            if "rolled back" in msg:
+                STATS[scene]["rollbacks"].append((seed, msg))
     return fails, clean
+
+
+STATS: dict = collections.defaultdict(lambda: collections.Counter({"rollbacks": []}))
 
 
 # -- minimising ----------------------------------------------------------------------------
@@ -634,7 +645,7 @@ CASES = {
           ("e", (0, 1, 0), (1, 1, 0), 0.5)]],
         "a later straight segment crosses an earlier segment of the same commit inside one quad"),
     "HB2 bent run crosses an earlier bent run": (
-        "H-b", "grid", (0.0, 89.0),
+        "H-b", "grid", (0.0, 0.0),
         [[("e", (0, 0, 0), (0, 1, 0), 0.5), ("f", (0.5, 0.8, 0)), ("e", (1, 0, 0), (1, 1, 0), 0.5),
           ("f", (0.2, 0.9, 0)), ("e", (0, 1, 0), (1, 1, 0), 0.2)]],
         "both runs have interior points; the second crosses the first"),
@@ -663,11 +674,11 @@ CASES = {
          [("v", (1, 1, 0)), ("e", (1.5, 1, 0), (2, 1, 0), 0.5)]],
         "session 1 is clean (the quad below gains a straight-angle vertex); session 2's chord runs along it"),
     "T0 planner edge hit at t = 0": (
-        "tzero", "grid", (0.0, 89.0),
+        "tzero", "grid", (0.0, 0.0),
         [[("v", (3, 3, 0)), ("e", (1, 3, 0), (2, 3, 0), 0.514)]],
-        "a line along a grid row: PLANE reports vertex (2,3) as an edge hit at t ~ 1e-15"),
+        "a line along a grid row: PLANE reports vertex (2,3) as an edge hit at t ~ 1e-15 (head-on view)"),
     "L1 chord leaves a face made concave by an earlier session": (
-        "leave", "grid", None,
+        "leave", "grid", (0.0, 0.0),
         [[("e", (0, 0, 0), (1, 0, 0), 0.5), ("f", (0.5, 0.5, 0)), ("e", (0, 0, 0), (0, 1, 0), 0.5)],
          [("e", (0.5, 0, 0), (1, 0, 0), 0.6), ("e", (0, 0.5, 0), (0, 1, 0), 0.6)]],
         "session 2 connects two points of the L-shaped face straight across its missing corner"),
@@ -744,6 +755,13 @@ def _summary(label, fails, clean, n):
     clean_any = collections.Counter(k for fs, c in clean.items() for k in fs for _ in range(c))
     print(f"    feature present in failing sessions: {dict(feat_any)}; in clean sessions: {dict(clean_any)}"
           f" (clean sessions: {sum(clean.values())})")
+    scene = label.split()[0]
+    st = STATS.pop(scene, None)
+    if st:
+        print(f"    sessions: {st['sessions']}, rolled back by the commit check: {st['rolled back']}, "
+              f"with a dropped run: {st['with a dropped run']}")
+        for seed, msg in st["rollbacks"][:10]:
+            print(f"      rolled back: seed {seed}: {msg}")
 
 
 def main(argv=None):
