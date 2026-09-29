@@ -209,6 +209,48 @@ def test_fc4_vertex_interior_adjacent_vertex(cls):
 
 
 # ---------------------------------------------------------------------------
+# A5 (Manu, 2026-09-28): a neighbour face right after a completed
+# interior-involving cut stays invalid (no line) — cleared only by an
+# explicit plain (no-interior) boundary-to-boundary click. Cross-face
+# cutting (Blender-like) is a separate, deferred capability (Q5).
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("cls", [KnifeFaceImmediate, KnifeFaceCollected])
+def test_a5_neighbour_face_locked_right_after_a_cut(cls):
+    scene, p = _scene_with_grid()
+    mesh = scene.mesh
+    f1 = _face_with(mesh, p[(1, 1)], p[(2, 2)])
+    f2 = _face_with(mesh, p[(1, 2)], p[(2, 3)])
+    e1 = _edge(mesh, p[(1, 1)], p[(2, 1)])           # f1's own edge
+    e_shared = _edge(mesh, p[(1, 2)], p[(2, 2)])     # shared boundary of f1 and f2
+
+    knife = _begin(cls, scene)
+    assert knife.click(_edge_target(e1, 0.5))
+    assert knife.click(_face_target(f1, (1.5, 1.3, 0.0)))
+    assert knife.click(_edge_target(e_shared, 0.5))  # completes the f1 cut
+
+    # The exit vertex sits on the boundary shared with f2 — but f2 must
+    # still be rejected until an explicit plain boundary click intervenes.
+    neighbour_click = _face_target(f2, (2.5, 1.5, 0.0))
+    assert knife.accepts(neighbour_click) is False
+    assert knife.click(neighbour_click) is False
+    if hasattr(knife, "path"):  # D: nothing mutates anyway, path unaffected
+        assert len(knife.path) == 3
+    assert mesh.is_valid_face(f2)
+
+    # A plain (no-interior) boundary hop clears the lock — through one of
+    # the split face's *own* remnants (p[(1, 1)] is on the exit vertex's
+    # other incident face, not f2), so f2 itself stays untouched by this
+    # clearing click. `start`/the path's anchor moves away from f2's
+    # boundary with this click (same as any plain Knife click always
+    # moves the anchor) — the lock itself is what's under test here, not
+    # whether f2 specifically is reachable *from the new anchor*.
+    assert knife.click(_vertex_target(p[(1, 1)]))
+    assert mesh.is_valid_face(f2)
+    assert knife._face_cut_lock is False
+
+
+# ---------------------------------------------------------------------------
 # B: interior start rejected
 # ---------------------------------------------------------------------------
 
