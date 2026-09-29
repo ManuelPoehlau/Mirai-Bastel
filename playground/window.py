@@ -1697,6 +1697,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_knife_face_pending_vbo()
                 self._recompute_derived()
                 self._rebuild_vbo()
+                self._knife_face_refresh_hover(x, y)
             self._hud.update_action(f"Knife Face — {self._knife_face_tool.last_message}")
             self._update_hud()
             return pyglet.event.EVENT_HANDLED
@@ -1780,6 +1781,77 @@ class PlaygroundWindow(pyglet.window.Window):
         self._push_camera()
         return pyglet.event.EVENT_HANDLED
 
+    def _knife_face_refresh_hover(self, x: float, y: float) -> None:
+        """Rebuild the Knife Face Lab hover preview at cursor (x, y).
+
+        Called from on_mouse_motion and right after an accepted click, so the
+        preview line does not stay empty until the next motion event (the click
+        handler clears the hover VBOs and resets the last-target guard).
+        """
+        mesh = self.app.viewport.render_mesh.mesh
+        target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
+            **self._pick_kwargs())
+        hover_result = self._knife_face_tool.hover(target)
+        kind = target.get("kind")
+        valid = hover_result.get("valid", False)
+
+        target_changed = (target != self._knife_face_hover_last_target)
+        if target_changed or kind in ("edge", "face"):
+            self._knife_face_hover_last_target = target
+            self._clear_knife_face_hover_vbos()
+
+            if kind == "vertex":
+                positions = build_selection_vertex_data(mesh, {target["vertex_id"]})
+                if positions:
+                    self._vlist_knife_face_hover_vertex = self._overlay_program.vertex_list(
+                        len(positions) // 3, gl.GL_POINTS,
+                        position=("f", positions),
+                    )
+            elif kind == "edge":
+                edge_positions = build_selection_edge_data(mesh, {target["edge_id"]})
+                if edge_positions:
+                    self._vlist_knife_face_hover_edge = self._overlay_program.vertex_list(
+                        len(edge_positions) // 3, gl.GL_LINES,
+                        position=("f", edge_positions),
+                    )
+            elif kind == "face" and valid:
+                pt_positions = build_knife_preview_point_data(target["position"])
+                self._vlist_knife_face_preview_point = self._overlay_program.vertex_list(
+                    1, gl.GL_POINTS,
+                    position=("f", pt_positions),
+                )
+            # "outside", or an invalid face (too close to an edge / wrong
+            # face / B's no-interior-start) → no highlight — acceptance
+            # criterion 6: faces elsewhere stay invalid, no line.
+
+            if valid:
+                anchor = _knife_face_path_positions(self._knife_face_tool, mesh)
+                if anchor:
+                    line_positions = anchor + [_knife_face_target_position(mesh, target)]
+                    line_data = build_polyline_data(line_positions)
+                    if line_data:
+                        self._vlist_knife_face_pending_line = self._overlay_program.vertex_list(
+                            len(line_data) // 3, gl.GL_LINES,
+                            position=("f", line_data),
+                        )
+
+        # Persistent start-vertex highlight (B only — D's "start" may be
+        # a face-interior point, already covered by the pending-points
+        # marker rebuilt on click, see _rebuild_knife_face_pending_vbo).
+        start_vid = getattr(self._knife_face_tool, "start", None)
+        if start_vid != self._knife_face_last_start:
+            self._knife_face_last_start = start_vid
+            if self._vlist_knife_face_start is not None:
+                self._vlist_knife_face_start.delete()
+                self._vlist_knife_face_start = None
+            if start_vid is not None:
+                start_positions = build_selection_vertex_data(mesh, {start_vid})
+                if start_positions:
+                    self._vlist_knife_face_start = self._overlay_program.vertex_list(
+                        len(start_positions) // 3, gl.GL_POINTS,
+                        position=("f", start_positions),
+                    )
+
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
         self._last_mouse_x = x
@@ -1861,69 +1933,7 @@ class PlaygroundWindow(pyglet.window.Window):
         # Knife block above deliberately leaves as a no-op (WP-AP-CUT
         # handoff §3: "ready for it later" — this is that later).
         if self._knife_face_tool is not None and self.app.viewport is not None:
-            mesh = self.app.viewport.render_mesh.mesh
-            target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
-                **self._pick_kwargs())
-            hover_result = self._knife_face_tool.hover(target)
-            kind = target.get("kind")
-            valid = hover_result.get("valid", False)
-
-            target_changed = (target != self._knife_face_hover_last_target)
-            if target_changed or kind in ("edge", "face"):
-                self._knife_face_hover_last_target = target
-                self._clear_knife_face_hover_vbos()
-
-                if kind == "vertex":
-                    positions = build_selection_vertex_data(mesh, {target["vertex_id"]})
-                    if positions:
-                        self._vlist_knife_face_hover_vertex = self._overlay_program.vertex_list(
-                            len(positions) // 3, gl.GL_POINTS,
-                            position=("f", positions),
-                        )
-                elif kind == "edge":
-                    edge_positions = build_selection_edge_data(mesh, {target["edge_id"]})
-                    if edge_positions:
-                        self._vlist_knife_face_hover_edge = self._overlay_program.vertex_list(
-                            len(edge_positions) // 3, gl.GL_LINES,
-                            position=("f", edge_positions),
-                        )
-                elif kind == "face" and valid:
-                    pt_positions = build_knife_preview_point_data(target["position"])
-                    self._vlist_knife_face_preview_point = self._overlay_program.vertex_list(
-                        1, gl.GL_POINTS,
-                        position=("f", pt_positions),
-                    )
-                # "outside", or an invalid face (too close to an edge / wrong
-                # face / B's no-interior-start) → no highlight — acceptance
-                # criterion 6: faces elsewhere stay invalid, no line.
-
-                if valid:
-                    anchor = _knife_face_path_positions(self._knife_face_tool, mesh)
-                    if anchor:
-                        line_positions = anchor + [_knife_face_target_position(mesh, target)]
-                        line_data = build_polyline_data(line_positions)
-                        if line_data:
-                            self._vlist_knife_face_pending_line = self._overlay_program.vertex_list(
-                                len(line_data) // 3, gl.GL_LINES,
-                                position=("f", line_data),
-                            )
-
-            # Persistent start-vertex highlight (B only — D's "start" may be
-            # a face-interior point, already covered by the pending-points
-            # marker rebuilt on click, see _rebuild_knife_face_pending_vbo).
-            start_vid = getattr(self._knife_face_tool, "start", None)
-            if start_vid != self._knife_face_last_start:
-                self._knife_face_last_start = start_vid
-                if self._vlist_knife_face_start is not None:
-                    self._vlist_knife_face_start.delete()
-                    self._vlist_knife_face_start = None
-                if start_vid is not None:
-                    start_positions = build_selection_vertex_data(mesh, {start_vid})
-                    if start_positions:
-                        self._vlist_knife_face_start = self._overlay_program.vertex_list(
-                            len(start_positions) // 3, gl.GL_POINTS,
-                            position=("f", start_positions),
-                        )
+            self._knife_face_refresh_hover(x, y)
 
             return pyglet.event.EVENT_HANDLED
 
