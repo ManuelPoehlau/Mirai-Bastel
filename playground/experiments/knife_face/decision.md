@@ -62,6 +62,11 @@ paragraph describes the earlier A/B/C variants, not these):
   interior start followed by exactly one edge/vertex click has no second anchor to cut between, so `Enter`
   drops the interior point and leaves the mesh unchanged (same class as a dangling tail, HUD note). This
   was found live (not assumed) while building — see Observations.
+  *Clarification (2026-09-29, documentation only):* "reaches a second boundary point" means a cut
+  **between the boundary points**. Every interior point *before the first boundary click* is dropped, never
+  used as a mid-path point — so `interior → boundary → boundary` cuts boundary-to-boundary as a straight
+  connect and the interior click has no effect. Only interior points *between* two boundary clicks bend a
+  cut (`boundary → interior → boundary`).
 - Task 4: both variants cut inside the cheek quad. Continuing straight into the *neighbouring* quad's
   interior right after that (no line, click rejected, HUD note) is a **known limitation, not a bug** —
   cross-face cutting (seeing the line continue into the neighbour face and having the click cut through
