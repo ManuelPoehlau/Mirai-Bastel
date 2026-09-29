@@ -259,6 +259,10 @@ def split_face_path(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions: 
     return new_vs, f1, f2, path_edges
 
 
+# Distances closer than this are ties (a symmetric shape: the same distance up to float noise).
+_TIE_DIGITS = 9
+
+
 def _dist3(p, q) -> float:
     return math.sqrt(sum((p[k] - q[k]) ** 2 for k in range(3)))
 
@@ -267,12 +271,37 @@ def _loop_adjacent(a: int, b: int, k: int) -> bool:
     return (a - b) % k in (1, k - 1)
 
 
+def _newell(points: list[Position]) -> Position:
+    """Newell normal (unnormalised; its length is twice the projected area) of a polygon."""
+    nx = ny = nz = 0.0
+    for i, p in enumerate(points):
+        q = points[(i + 1) % len(points)]
+        nx += (p[1] - q[1]) * (p[2] + q[2])
+        ny += (p[2] - q[2]) * (p[0] + q[0])
+        nz += (p[0] - q[0]) * (p[1] + q[1])
+    return (nx, ny, nz)
+
+
+def loop_matches_winding(loop_positions: list[Position], boundary_positions: list[Position]) -> bool:
+    """True if the loop, in the given order, winds like the parent face's boundary (its Newell
+    normal points to the same side). A degenerate loop (no area, e.g. a bow-tie) has no winding
+    of its own and counts as matching — it is left as clicked."""
+    nl, nb = _newell(loop_positions), _newell(boundary_positions)
+    return sum(nl[k] * nb[k] for k in range(3)) >= 0.0
+
+
 def select_bridge(mesh, boundary: list[VertexId], loop_positions: list[Position]):
     """LAB DEFAULT rule (spec §2, explicitly "not a UX decision") for closing
     an interior loop: pick two loop points, each nearest to a *distinct*
     boundary vertex, whose loop indices are not themselves loop-adjacent
     (except for a 3-point loop, where every pair is mutually adjacent and the
     constraint is dropped).
+
+    Depends on geometry only, never on click order or direction (Artist decision
+    2026-09-29, Task A): ties in distance are broken by position — first the loop point's,
+    then the boundary vertex's, lexicographically — and only as a last resort by loop index
+    (two loop points at one position). Loop adjacency is symmetric, so rotating or reversing
+    the loop cannot change which points are chosen.
 
     Simplification flagged in decision.md: "nearest" is measured in *world*
     space, not screen space as the spec's default wording suggests - this
@@ -284,16 +313,17 @@ def select_bridge(mesh, boundary: list[VertexId], loop_positions: list[Position]
     k = len(loop_positions)
     candidates = []
     for li, pos in enumerate(loop_positions):
-        best_bv, best_d = None, None
+        best = None
         for bv in boundary:
-            d = _dist3(pos, mesh.vertex_position(bv))
-            if best_d is None or d < best_d:
-                best_bv, best_d = bv, d
-        candidates.append((best_d, li, best_bv))
-    candidates.sort(key=lambda c: c[0])
+            bpos = mesh.vertex_position(bv)
+            key = (round(_dist3(pos, bpos), _TIE_DIGITS), tuple(bpos))
+            if best is None or key < best[0]:
+                best = (key, bv)
+        candidates.append((best[0][0], tuple(pos), best[0][1], li, best[1]))
+    candidates.sort(key=lambda c: c[:4])
 
-    i1, bv1 = candidates[0][1], candidates[0][2]
-    for _dist, li, bv in candidates[1:]:
+    i1, bv1 = candidates[0][3], candidates[0][4]
+    for _dist, _pos, _bpos, li, bv in candidates[1:]:
         if bv == bv1:
             continue
         if k > 3 and _loop_adjacent(li, i1, k):
@@ -311,9 +341,17 @@ def close_loop_with_bridges(
 
     Splits `face_id` into exactly 3 faces (spec: "3 pieces in a quad"):
       - the loop itself (a pure k-gon, all loop edges);
-      - the wing between boundary-arc(bv1->bv2) and loop-arc(i2->i1, backward);
-      - the wing between boundary-arc(bv2->bv1) and loop-arc(i1->i2, forward);
+      - the wing between boundary-arc(bv1->bv2) and the loop arc between the bridge points on
+        that side;
+      - the wing between boundary-arc(bv2->bv1) and the loop arc on the other side;
     the two bridge edges (bv1-loop[i1], bv2-loop[i2]) each border both wings.
+
+    Winding (Artist decision 2026-09-29, Task A; `FACE_HOLES_DISCOVERY.md` §6): the loop is
+    first oriented like the parent face's boundary, whichever way it was clicked, so the inner
+    face has the parent's orientation and the wings traverse every loop edge *against* the inner
+    face (consistent interior edges) — they cover the ring, never the loop. `i1`/`i2` and the
+    returned `loop_vs` / `loop_edges` keep the caller's (click) order; only the faces are built
+    in the canonical order.
 
     This is a genuine 3-way split of one face - not two applications of
     `split_face_path` - because neither wing can be built without the other
@@ -330,24 +368,25 @@ def close_loop_with_bridges(
     if bv1 not in boundary or bv2 not in boundary:
         raise MeshError("close_loop_with_bridges: bridge vertices must be on face_id's boundary")
 
+    reverse = not loop_matches_winding(loop_positions, [mesh.vertex_position(v) for v in boundary])
     loop_vs = [mesh.add_vertex(p) for p in loop_positions]
+    order = list(range(k - 1, -1, -1)) if reverse else list(range(k))
+    canon = [loop_vs[j] for j in order]                    # loop, wound like the parent
+    c1, c2 = order.index(i1), order.index(i2)              # bridge points in canonical indices
 
     bi, bj = boundary.index(bv1), boundary.index(bv2)
     seg_ab = _cyclic_walk(boundary, bi, bj)                      # bv1 .. bv2, forward
     seg_ba = _cyclic_walk(boundary, bj, bi)                      # bv2 .. bv1, forward
-    # The loop's two arcs between the bridge points, both walked *forward*
-    # (increasing index, wrapping) so they are true complements of each other
-    # covering every loop vertex exactly once outside {i1, i2} — walking one
-    # of them backward (decreasing index) does not give the complementary
-    # arc, it can retrace the *same* short arc as arc_fwd (observed for a
-    # 3-point loop with loop-adjacent bridges: both arcs collapsed onto the
-    # single edge between i1/i2, leaving that edge shared by 3 faces).
-    arc_back = _cyclic_walk(loop_vs, i2, i1, step=1)             # loop[i2] .. loop[i1], forward
-    arc_fwd = _cyclic_walk(loop_vs, i1, i2, step=1)              # loop[i1] .. loop[i2], forward
+    # Each wing runs its boundary arc forward, crosses to the loop, and comes back along the
+    # loop arc *backward* (decreasing canonical index): the loop face walks the same edges
+    # forward, so every loop edge is used once in each direction. The two arcs
+    # (c2 down to c1, c1 down to c2) are complements of each other.
+    arc_a = _cyclic_walk(canon, c2, c1, step=-1)                 # canon[c2] .. canon[c1], backward
+    arc_b = _cyclic_walk(canon, c1, c2, step=-1)                 # canon[c1] .. canon[c2], backward
 
-    face_inner = list(loop_vs)
-    face_a = seg_ab + arc_back
-    face_b = seg_ba + arc_fwd
+    face_inner = list(canon)
+    face_a = seg_ab + arc_a
+    face_b = seg_ba + arc_b
 
     for name, loop in (("inner", face_inner), ("A", face_a), ("B", face_b)):
         if len(loop) < 3 or len(set(loop)) != len(loop):

@@ -40,6 +40,9 @@ nearest a distinct boundary vertex each (world-space nearest, not screen-space �
 camera), excluding loop-adjacent pairs when the loop has more than 3 points. This is **not** what Silo
 is presumed to do (§1 of the discovery doc: a ring-with-hole, which Mirai's Core cannot represent — one
 boundary list per face, no holes) — compare deliberately, this is a different, coarser result.
+*Since Task A (2026-09-29):* the rule depends on geometry only — ties are broken by position, never by click
+order — and the loop is oriented like the parent face before the faces are built, so the result is the same for every
+start point and direction (see "Task A" below).
 
 ---
 
@@ -293,6 +296,60 @@ _Statements 1–3 are Manu's, recorded in meaning. The two interpretations below
 - (3): a click that adds a segment (with all its crossings) is one in-session step — Q5 already behaves that way; commit = one history entry, so one Undo after commit reverts the whole session. Whether the Production Knife stores real cuts or a virtual list is an **implementation choice**, not an Artist matter, as long as this visible behaviour holds.
 
 **Not a promotion, one Knife:** KEEP is a Lab verdict. Knife and Knife Face still become one Production tool; nothing here changes `src/`.
+
+---
+
+## Task A — closed-shape bridges: click order and direction (2026-09-29)
+
+**Trigger:** Artist decision 1 ("depending on click order and/or direction, odd connections appear and the resulting islands cannot
+be edited properly"). Known before: `FACE_HOLES_DISCOVERY.md` §6 (winding defect of `close_loop_with_bridges`, never fixed).
+Probe: `experiments/topology/knife_bridge_order_probe.py` (drives D's `click` / `commit`; Q5 subclasses D's resolver unchanged).
+
+**Probe `[PROBE]`** — k = 3..8 loop points × every start rotation × both directions; shapes "sym" (regular k-gon, centred), "skew"
+(off-centre, unequal radii), "tie" (k = 4, a square loop whose distances to the four corners are exactly equal). Surfaces: a unit
+quad on `grid` (140 runs, 13 configurations) and 8 sampled `head` quads (704 runs, 72 configurations, non-planar; k = 3, 4, 5, 8).
+Measures: bridge edge set and face partition as position-based (not id-based) sets — the partition includes each face's winding;
+per face the Newell normal · the parent's Newell normal; overlap as *sum of |face areas| / parent area* and as coverage of a
+41×41 sample grid over the parent's projection onto the plane through its centroid perpendicular to its Newell normal (the projected
+measure used for the non-planar `head` quads: every sample must lie in exactly one face); interior edges traversed the same way by
+both of their faces; `assert_mesh_invariants`.
+
+| | before (`5c777a0`) grid | before head | after grid | after head |
+|---|---|---|---|---|
+| runs | 140 | 704 | 140 | 704 |
+| configurations with more than one bridge set | 1 (the "tie" square: 2 sets) | 0 | 0 | 0 |
+| configurations with more than one partition (topology or winding) | 13 of 13 | 9 of 72 | 0 | 0 |
+| runs with a face normal disagreeing with the parent's | 70 | 332 | 0 | 0 |
+| runs with overlapping faces (coverage ≠ 1; area sum up to 1.35 × parent) | 70 | 332 | 0 | 0 |
+| runs with inconsistent interior winding | 140 | 664 | 0 | 0 |
+| invariant failures | 0 | 0 | 0 | 0 |
+
+Reading: the reported defect is the winding defect of `FACE_HOLES_DISCOVERY.md` §6, as described there — clicks in the parent's
+direction overlap the inner shape (area sum up to 1.3536 × the parent for k = 8), clicks against it partition cleanly but with a
+flipped inner face; in both directions the ring faces and the inner face walk the loop edges the same way (inconsistent winding),
+which is what makes the island a poor citizen for select / delete / extrude. Both pass the invariant catalogue, so only this probe
+sees it. The bridge *selection* was already click-independent except on exact ties (the "tie" square: 2 different bridge sets by start
+point), because the distance ordering fell back to the loop index.
+
+**Fix** (`engine.py`): (1) `close_loop_with_bridges` orients the loop like the parent face's boundary (Newell normals) before building
+the faces — the inner face has the parent's orientation, each ring face walks its loop arc *against* the inner face; the caller's
+indices and the returned `loop_vs` / `loop_edges` stay in click order; a loop without area (bow-tie) stays as clicked;
+(2) `select_bridge` breaks ties by position (loop point, then boundary vertex, lexicographically; distances compared to 9 digits)
+and only last by loop index — geometry only. Rule otherwise unchanged (nearest distinct boundary vertices, non-adjacent loop
+points); no H5 ring meshing. `[PROBE]` same probe afterwards: the "after" columns above. No D/Q5 test pinned the old winding, so
+**no existing assertion was adapted**.
+
+**Observation (not fixed, not Task A) `[PROBE]`:** with the unchanged placement rule (nearest boundary vertex per loop point) a
+bridge can pass through the loop: 300 random star-shaped loops (k = 3..8, off-centre, random radii; 191 were valid) on the unit
+quad — 3 of 191 configurations produce overlapping faces because one bridge crosses one loop edge. It is **the same for every start
+and direction** (0 order-dependent configurations and 0 normal / winding failures among the same 191 × 2k runs), so it is a
+placement limitation of the Lab default rule, not the reported symptom. Not changed — the Artist has not seen the fixed bridges yet.
+
+**Open points (record, do not decide):**
+
+- Whether bridge *placement* (nearest vertices) looks right to the Artist once the winding is fixed — only after a play test
+  (see the observation above for irregular loops where a bridge crosses the loop).
+- Delete-face leaves free bridge edges (`FACE_HOLES_DISCOVERY.md` §6) — Production concern.
 
 ---
 

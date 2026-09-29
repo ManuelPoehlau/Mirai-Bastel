@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"),
+for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"), str(_REPO_ROOT / "examples"),
            str(_REPO_ROOT / "experiments" / "rigging-skinning-morphing")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -32,9 +32,12 @@ from playground.experiments.knife_face.engine import (  # noqa: E402
     EDGE_MARGIN_PX,
     KnifeFaceCollected,
     KnifeFaceImmediate,
+    close_loop_with_bridges,
     face_interior_hit,
     knife_face_pick,
+    loop_matches_winding,
     min_edge_distance_px,
+    select_bridge,
 )
 
 
@@ -741,3 +744,254 @@ def test_d_lone_boundary_point_leaves_mesh_untouched():
     assert knife.commit() is None
     knife.deactivate()
     assert mesh.export_state() == before
+
+
+# ---------------------------------------------------------------------------
+# Closed shape: bridges independent of click order and direction (Task A, 2026-09-29)
+# Reference: FACE_HOLES_DISCOVERY.md §6 (winding defect) — probe:
+# experiments/topology/knife_bridge_order_probe.py
+# ---------------------------------------------------------------------------
+
+def _rnd(p):
+    return tuple(round(c, 6) + 0.0 for c in p)
+
+
+def _dot3(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+def _bilinear(corners, u, v):
+    a, b, c, d = corners
+    return tuple((1 - u) * (1 - v) * a[i] + u * (1 - v) * b[i] + u * v * c[i] + (1 - u) * v * d[i]
+                 for i in range(3))
+
+
+def _loop_points(corners, k, shape):
+    """k loop points, counter-clockwise in the quad's (u, v) parameter square."""
+    pts = []
+    for i in range(k):
+        if shape == "tie":  # k == 4: the square whose distances to all four corners are exactly equal
+            u, v = ((0.25, 0.25), (0.75, 0.25), (0.75, 0.75), (0.25, 0.75))[i]
+        else:
+            a = 2 * math.pi * i / k
+            if shape == "sym":
+                u, v = 0.5 + 0.25 * math.cos(a), 0.5 + 0.25 * math.sin(a)
+            else:  # "skew": off-centre, unequal radii
+                r = 0.16 + 0.10 * ((i * 7) % 5) / 4.0
+                u, v = 0.44 + r * math.cos(a), 0.58 + r * math.sin(a)
+        pts.append(_bilinear(corners, u, v))
+    return pts
+
+
+def _rotations_both_ways(pts):
+    k = len(pts)
+    for seq in (pts, list(reversed(pts))):
+        for s in range(k):
+            yield seq[s:] + seq[:s]
+
+
+def _lowest_first(seq):
+    i = min(range(len(seq)), key=lambda j: seq[j])
+    return tuple(seq[i:] + seq[:i])
+
+
+def _closed_shape_signature(mesh, scene_faces_before, loop, parent_normal, parent_poly2d, project):
+    """Everything an order-independent result must agree on, plus the per-run quality checks."""
+    orig = set(scene_faces_before["vertices"])
+    seqs, inner = set(), None
+    for f in mesh.all_face_ids():
+        pts = [mesh.vertex_position(v) for v in mesh.face_vertices(f)]
+        assert _dot3(_newell(pts), parent_normal) > 0, "face normal disagrees with the parent's"
+        seqs.add(_lowest_first([_rnd(p) for p in pts]))
+        if {_rnd(p) for p in pts} == {_rnd(p) for p in loop}:
+            inner = f
+    bridges = frozenset(
+        frozenset(_rnd(mesh.vertex_position(v)) for v in mesh.edge_vertices(e))
+        for e in mesh.all_edge_ids()
+        if len(set(mesh.edge_vertices(e)) & orig) == 1 and len(set(mesh.edge_vertices(e)) - orig) == 1
+    )
+    assert inner is not None and len(bridges) == 2 and len(seqs) == 3
+
+    # no overlap: every sample of the parent (projected) lies in exactly one face
+    polys = [[project(mesh.vertex_position(v)) for v in mesh.face_vertices(f)] for f in mesh.all_face_ids()]
+    xs, ys = [q[0] for q in parent_poly2d], [q[1] for q in parent_poly2d]
+    n = 23
+    for i in range(n):
+        for j in range(n):
+            pt = (min(xs) + (max(xs) - min(xs)) * (i + 0.3183) / n, min(ys) + (max(ys) - min(ys)) * (j + 0.2718) / n)
+            if _in_poly2d(pt, parent_poly2d):
+                assert sum(1 for pl in polys if _in_poly2d(pt, pl)) == 1, f"overlap/gap at {pt}"
+    return bridges, frozenset(seqs), inner
+
+
+def _newell(pts):
+    n = [0.0, 0.0, 0.0]
+    for i, p in enumerate(pts):
+        q = pts[(i + 1) % len(pts)]
+        n[0] += (p[1] - q[1]) * (p[2] + q[2])
+        n[1] += (p[2] - q[2]) * (p[0] + q[0])
+        n[2] += (p[0] - q[0]) * (p[1] + q[1])
+    return tuple(n)
+
+
+def _in_poly2d(pt, poly):
+    x, y = pt
+    inside = False
+    for i in range(len(poly)):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % len(poly)]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
+
+
+def _projector(parent_pts, normal):
+    """Projection onto the plane through the parent's centroid (non-planar quads: the projected measure)."""
+    cen = tuple(sum(p[i] for p in parent_pts) / len(parent_pts) for i in range(3))
+    L = math.sqrt(_dot3(normal, normal))
+    n = tuple(c / L for c in normal)
+    ref = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
+    u = (n[1] * ref[2] - n[2] * ref[1], n[2] * ref[0] - n[0] * ref[2], n[0] * ref[1] - n[1] * ref[0])
+    L = math.sqrt(_dot3(u, u))
+    u = tuple(c / L for c in u)
+    v = (n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0])
+    return lambda p: (_dot3(tuple(p[i] - cen[i] for i in range(3)), u), _dot3(tuple(p[i] - cen[i] for i in range(3)), v))
+
+
+def _one_face_scene(corners, orientation=1):
+    scene = Scene()
+    vs = [scene.mesh.add_vertex(c) for c in (corners if orientation == 1 else list(reversed(corners)))]
+    fid = scene.mesh.add_face(vs)
+    return scene, fid
+
+
+def _click_loop_and_commit(cls, scene, fid, loop):
+    knife = _begin(cls, scene)
+    for p in loop:
+        assert knife.click(_face_target(fid, p))
+    cmd = knife.commit()
+    knife.deactivate()
+    assert cmd is not None
+    return cmd
+
+
+def _permutation_matrix(corners, ks, shapes, orientation=1):
+    for shape in shapes:
+        for k in ks:
+            if shape == "tie" and k != 4:
+                continue
+            loop = _loop_points(corners, k, shape)
+            results = set()
+            for clicks in _rotations_both_ways(loop):
+                scene, fid = _one_face_scene(corners, orientation)
+                mesh = scene.mesh
+                parent = [mesh.vertex_position(v) for v in mesh.face_vertices(fid)]
+                normal = _newell(parent)
+                before = {"vertices": list(mesh.all_vertex_ids())}
+                project = _projector(parent, normal)
+                _click_loop_and_commit(KnifeFaceCollected, scene, fid, clicks)
+                assert_mesh_invariants(mesh, context=f"D closed shape {shape} k={k}")
+                assert _winding_mismatches(mesh) == 0
+                bridges, partition, inner = _closed_shape_signature(
+                    mesh, before, loop, normal, [project(p) for p in parent], project)
+                results.add((bridges, partition))
+            assert len(results) == 1, f"{shape} k={k}: click order/direction changed the result ({len(results)} variants)"
+
+
+def _winding_mismatches(mesh):
+    """Interior edges traversed in the same direction by both of their faces."""
+    directed = collections.defaultdict(list)
+    for f in mesh.all_face_ids():
+        b = mesh.face_vertices(f)
+        for i in range(len(b)):
+            directed[frozenset((b[i], b[(i + 1) % len(b)]))].append((b[i], b[(i + 1) % len(b)]))
+    return sum(1 for uses in directed.values() if len(uses) == 2 and uses[0] == uses[1])
+
+
+_UNIT_QUAD = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+
+
+def test_closed_shape_grid_quad_is_independent_of_click_order_and_direction():
+    _permutation_matrix(_UNIT_QUAD, range(3, 9), ("sym", "skew", "tie"))
+
+
+def test_closed_shape_clockwise_parent_face_is_independent_too():
+    """The canonical winding is the *parent's*, not "counter-clockwise": a face stored the other way round."""
+    _permutation_matrix(_UNIT_QUAD, (3, 4, 6), ("sym", "skew", "tie"), orientation=-1)
+
+
+def test_closed_shape_nonplanar_head_quads_are_independent_of_click_order_and_direction():
+    from mirai.scene_factory import build_core_scene_from_obj
+    from playground._paths import DEFAULT_HEAD_ASSET
+
+    head = build_core_scene_from_obj(DEFAULT_HEAD_ASSET).mesh
+    quads = [f for f in sorted(head.all_face_ids(), key=int) if len(head.face_vertices(f)) == 4]
+    for f in quads[:: max(1, len(quads) // 4)][:4]:
+        corners = [head.vertex_position(v) for v in head.face_vertices(f)]
+        _permutation_matrix(corners, (3, 5, 8), ("sym", "skew"))
+
+
+def test_close_loop_with_bridges_orients_the_loop_like_the_parent():
+    """Direct call, both click directions: inner face has the parent's normal, ring faces do not overlap it."""
+    for loop in ([(0.3, 0.3, 0.0), (0.7, 0.3, 0.0), (0.5, 0.7, 0.0)],
+                 [(0.3, 0.3, 0.0), (0.5, 0.7, 0.0), (0.7, 0.3, 0.0)]):
+        scene, fid = _one_face_scene(_UNIT_QUAD)
+        mesh = scene.mesh
+        boundary = mesh.face_vertices(fid)
+        i1, bv1, i2, bv2 = select_bridge(mesh, boundary, loop)
+        loop_vs, f_inner, f_a, f_b, loop_edges = close_loop_with_bridges(mesh, fid, loop, i1, bv1, i2, bv2)
+        assert [mesh.vertex_position(v) for v in loop_vs] == loop   # caller's order kept
+        assert len(loop_edges) == 3 and all(mesh.is_valid_edge(e) for e in loop_edges)
+        assert _newell([mesh.vertex_position(v) for v in mesh.face_vertices(f_inner)])[2] > 0
+        assert _winding_mismatches(mesh) == 0
+        assert_mesh_invariants(mesh, context="close_loop_with_bridges")
+        areas = [abs(_newell([mesh.vertex_position(v) for v in mesh.face_vertices(f)])[2]) / 2 for f in (f_inner, f_a, f_b)]
+        assert math.isclose(sum(areas), 1.0, abs_tol=1e-9)
+
+
+def test_loop_matches_winding():
+    boundary = list(_UNIT_QUAD)
+    ccw = [(0.3, 0.3, 0.0), (0.7, 0.3, 0.0), (0.5, 0.7, 0.0)]
+    assert loop_matches_winding(ccw, boundary)
+    assert not loop_matches_winding(list(reversed(ccw)), boundary)
+    assert loop_matches_winding(list(reversed(ccw)), list(reversed(boundary)))
+    assert loop_matches_winding([(0.3, 0.3, 0.0), (0.6, 0.3, 0.0), (0.9, 0.3, 0.0)], boundary)  # no area: as clicked
+
+
+def test_closed_shape_island_is_an_ordinary_face_select_and_delete():
+    """The inner face ("island") can be selected and deleted with existing Core API; the ring keeps consistent winding."""
+    for direction in (1, -1):
+        loop = _loop_points(_UNIT_QUAD, 5, "skew")[::direction]
+        scene, fid = _one_face_scene(_UNIT_QUAD)
+        mesh = scene.mesh
+        _click_loop_and_commit(KnifeFaceCollected, scene, fid, loop)
+        inner = next(f for f in mesh.all_face_ids() if {_rnd(mesh.vertex_position(v)) for v in mesh.face_vertices(f)}
+                     == {_rnd(p) for p in loop})
+
+        scene.selection.mode = SelectionMode.FACE
+        scene.selection.clear()
+        scene.selection.add({inner})
+        assert inner in scene.selection.faces
+        mesh.remove_face(inner)
+
+        assert len(mesh.all_face_ids()) == 2
+        assert not mesh.is_valid_face(inner)
+        assert_mesh_invariants(mesh, context="island deleted")
+        assert _winding_mismatches(mesh) == 0
+        # the two ring faces still wind like the original quad
+        for f in mesh.all_face_ids():
+            assert _newell([mesh.vertex_position(v) for v in mesh.face_vertices(f)])[2] > 0
+
+
+def test_select_bridge_does_not_depend_on_loop_order_on_exact_ties():
+    """A square loop in a square face: every loop point is exactly as far from its corner as any other."""
+    scene, fid = _one_face_scene(_UNIT_QUAD)
+    mesh = scene.mesh
+    boundary = mesh.face_vertices(fid)
+    loop = _loop_points(_UNIT_QUAD, 4, "tie")
+    chosen = set()
+    for clicks in _rotations_both_ways(loop):
+        i1, bv1, i2, bv2 = select_bridge(mesh, boundary, clicks)
+        chosen.add(frozenset({(_rnd(clicks[i1]), _rnd(mesh.vertex_position(bv1))),
+                              (_rnd(clicks[i2]), _rnd(mesh.vertex_position(bv2)))}))
+    assert len(chosen) == 1

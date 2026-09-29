@@ -764,6 +764,42 @@ def test_loop_inside_one_face_keeps_the_two_bridge_stand_in():
     assert_mesh_invariants(mesh, context="Q5 in-face loop")
 
 
+def test_loop_inside_one_face_is_independent_of_click_order_and_direction():
+    """Task A (2026-09-29): same bridges, same faces, parent's winding — for every start and direction,
+    closed by clicking the start (Q5 subclasses D's resolver)."""
+    k = 5
+    centre = (1.5, 1.5)
+    loop = [(centre[0] + 0.25 * math.cos(2 * math.pi * i / k), centre[1] + 0.25 * math.sin(2 * math.pi * i / k), 0.0)
+            for i in range(k)]
+    results = set()
+    for seq in (loop, loop[::-1]):
+        for s in range(k):
+            clicks = seq[s:] + seq[:s]
+            mesh, p = _grid()
+            cam = _camera(mesh, yaw=0.0, pitch=0.0)
+            knife, scene = _session(mesh, cam)
+            orig = set(mesh.all_vertex_ids())
+            targets = [_face_at(cam, mesh, w) for w in clicks]
+            for t in targets:
+                assert knife.click(t)
+            assert _close_by_click(knife, cam, mesh, targets[0])
+            assert knife.commit() is not None
+            assert "2 bridges" in knife.last_message
+            assert_mesh_invariants(mesh, context="Q5 in-face loop order")
+            assert len(mesh.all_face_ids()) == 16 + 2
+
+            for f in mesh.all_face_ids():
+                pts = [mesh.vertex_position(v) for v in mesh.face_vertices(f)]
+                assert sum((a[0] * b[1] - b[0] * a[1]) for a, b in zip(pts, pts[1:] + pts[:1])) > 0  # CCW like the grid
+            seqs = set()
+            for f in mesh.all_face_ids():
+                pts = [tuple(round(c, 4) + 0.0 for c in mesh.vertex_position(v)) for v in mesh.face_vertices(f)]
+                i = min(range(len(pts)), key=lambda j: pts[j])
+                seqs.add(tuple(pts[i:] + pts[:i]))
+            results.add(frozenset(seqs))
+    assert len(results) == 1
+
+
 # ---------------------------------------------------------------------------
 # 4.3 Undo / redo, A5 lock
 # ---------------------------------------------------------------------------
