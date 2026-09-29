@@ -297,27 +297,33 @@ class PlaygroundCommandHandler:
             slot = self.app.slots.get("presentation")
             if slot is not None:
                 self.app.activate_variant("presentation", (slot.active_index + 1) % slot.variant_count)
+                self.window._invalidate_pick_cache()
             else:
                 self.app.display_state.cycle()
+                self.window._invalidate_pick_cache()
             self.window._update_hud()
             return True
         elif command == cmd.TOGGLE_WIREFRAME_OVERLAY:
             self.app.display_state.toggle_wireframe_overlay()
+            self.window._invalidate_pick_cache()
             self.window._update_hud()
             return True
         elif command == cmd.SET_SHADED:
             from mirai.viewport.display import DisplayMode
             self.app.display_state.mode = DisplayMode.SHADED
+            self.window._invalidate_pick_cache()
             self.window._update_hud()
             return True
         elif command == cmd.SET_FLAT_SHADED:
             from mirai.viewport.display import DisplayMode
             self.app.display_state.mode = DisplayMode.FLAT_SHADED
+            self.window._invalidate_pick_cache()
             self.window._update_hud()
             return True
         elif command == cmd.SET_WIREFRAME:
             from mirai.viewport.display import DisplayMode
             self.app.display_state.mode = DisplayMode.WIREFRAME
+            self.window._invalidate_pick_cache()
             self.window._update_hud()
             return True
         return False

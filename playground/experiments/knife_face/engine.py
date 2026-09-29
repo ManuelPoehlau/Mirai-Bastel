@@ -144,11 +144,15 @@ def min_edge_distance_px(camera, mesh, face_id: FaceId, sx, sy, width, height) -
     return best
 
 
-def knife_face_pick(camera, mesh, sx, sy, width, height) -> dict:
+def knife_face_pick(camera, mesh, sx, sy, width, height, *, cache=None, occlusion: bool = False) -> dict:
     """Like `mirai.topology.knife_pick.knife_pick`, plus a hit position and
     edge-clearance for the "face" kind (reused unmodified for vertex/edge/
-    outside — H1 only needs a position on top of what it already returns)."""
-    target = _base_knife_pick(camera, mesh, sx, sy, width, height)
+    outside — H1 only needs a position on top of what it already returns).
+
+    `cache`/`occlusion` pass straight through to the base pick (WP-06 B8). The
+    face-only lookups below work on the face it already resolved, so they
+    need no occlusion pass of their own."""
+    target = _base_knife_pick(camera, mesh, sx, sy, width, height, cache=cache, occlusion=occlusion)
     if target.get("kind") != "face":
         return target
     fid = target["face_id"]

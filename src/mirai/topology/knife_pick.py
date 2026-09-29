@@ -91,8 +91,8 @@ def knife_pick(
     `cache`/`occlusion` (WP-06 B8, PROVISIONAL): forwarded unchanged to the
     three `mirai.viewport.picking` calls below — see that module's docstring.
     Both default to `None`/`False`, reproducing the pre-B8 behaviour exactly
-    (the Playground calls `knife_pick()` without them, per AD-017 §11/§12,
-    and stays unaffected).
+    (callers that pass neither are unaffected; the Playground window passes
+    the shared `PlaygroundApp.pick_cache` with occlusion on while faces are shown).
     """
     if debug:
         print(f"[KNIFE] pick cursor=({sx:.1f},{sy:.1f})")

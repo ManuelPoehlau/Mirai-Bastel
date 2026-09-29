@@ -83,6 +83,12 @@ class PlaygroundApp:
         return self._app.camera
 
     @property
+    def pick_cache(self):
+        """WP-06 B8: the wrapped Application's single `PickCache` - Playground
+        Knife picking shares it instead of owning a second one."""
+        return self._app._pick_cache
+
+    @property
     def viewport(self) -> Viewport | None:
         return self._app.viewport
 

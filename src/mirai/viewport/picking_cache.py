@@ -11,8 +11,9 @@ and, when `occlusion=True`, as a cheap 2D pre-filter before the exact
 ray-triangle occlusion test.
 
 Opt-in only: every picker in `picking.py` keeps its exact old behaviour when
-called without a `cache` (the Playground's own call sites, unchanged per
-WP-06 B8 scope). `Application` is the only owner of a `PickCache` instance.
+called without a `cache`. `Application` is the only owner of a `PickCache`
+instance; the Playground's Knife call sites (window + Knife Face Cut Lab) share
+it via `PlaygroundApp.pick_cache` (B8 wiring, 2026-09-29).
 
 Invalidation is explicit, not automatic mesh-content hashing — `core.Mesh`
 is frozen (AD-001/ADR-001) and exposes no revision counter to read cheaply.

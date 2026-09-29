@@ -550,6 +550,7 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def _rebuild_vbo(self) -> None:
         """Alle Mesh-VBOs (Faces, Edges, Vertices) neu bauen. Selection-VBO separat."""
+        self._invalidate_pick_cache()
         self._hud_mesh_counts_dirty = True
         for vlist in (self._vlist_faces, self._vlist_edges, self._vlist_verts,
                       self._vlist_selection, self._vlist_hover):
@@ -724,7 +725,22 @@ class PlaygroundWindow(pyglet.window.Window):
 
     # -- Transform-Sync -------------------------------------------------------
 
+    def _pick_kwargs(self) -> dict:
+        """WP-06 B8: shared cache + occlusion for Knife pickers (hidden
+        vertices/edges are not targets while faces are shown; Wireframe keeps
+        everything pickable)."""
+        return {
+            "cache": self.app.pick_cache,
+            "occlusion": self.app.display_state.show_faces,
+        }
+
+    def _invalidate_pick_cache(self) -> None:
+        """Mesh (topology/positions) or display mode changed - see
+        `mirai.viewport.picking_cache` invalidation contract."""
+        self.app.pick_cache.invalidate()
+
     def _recompute_derived(self) -> None:
+        self._invalidate_pick_cache()
         if self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
             derived = self.app.viewport.render_mesh.derived
@@ -732,6 +748,7 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def _sync_after_transform(self) -> None:
         """VBOs nach einer Transform-Operation (update oder commit/cancel) neu bauen."""
+        self._invalidate_pick_cache()
         sel = self.app.scene.selection
         if (
             self._tweak_started
@@ -1267,7 +1284,8 @@ class PlaygroundWindow(pyglet.window.Window):
             and self.app.viewport is not None
         ):
             mesh = self.app.viewport.render_mesh.mesh
-            vid = pick_nearest_vertex(self.app.camera, mesh, x, y, self.width, self.height)
+            vid = pick_nearest_vertex(self.app.camera, mesh, x, y, self.width, self.height,
+                **self._pick_kwargs())
             if vid is not None:
                 pivot = mesh.vertex_position(vid)
                 radius = _mesh_bounding_radius(mesh)
@@ -1316,7 +1334,8 @@ class PlaygroundWindow(pyglet.window.Window):
             and self._active_knife_model() == "press_slide_release"
         ):
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height,
+                **self._pick_kwargs())
             hover_result = self._knife_tool.hover(target)
             if target.get("kind") == "edge" and hover_result.get("valid", False):
                 self._knife_slide_armed = True
@@ -1625,7 +1644,8 @@ class PlaygroundWindow(pyglet.window.Window):
             mesh = self.app.viewport.render_mesh.mesh
             # Temporary [KNIFE] diagnosis logging (AD-017 edge targeting)
             print(f"[KNIFE] click at ({x},{y})")
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height, debug=True)
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height, debug=True,
+                                 **self._pick_kwargs())
             kind = target.get("kind")
             if kind == "vertex":
                 print(f"[KNIFE] hit=VERTEX id={int(target['vertex_id'])}")
@@ -1650,7 +1670,8 @@ class PlaygroundWindow(pyglet.window.Window):
             and self.app.viewport is not None
         ):
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
+                **self._pick_kwargs())
 
             # D: clicking back on the first (interior) point closes the loop
             # and commits immediately (spec §2/§1: "clicking on the first
@@ -1767,7 +1788,8 @@ class PlaygroundWindow(pyglet.window.Window):
         # Knife: hover preview (WP-AP-CUT)
         if self._knife_tool is not None and self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height,
+                **self._pick_kwargs())
             hover_result = self._knife_tool.hover(target)
             kind = target.get("kind")
 
@@ -1840,7 +1862,8 @@ class PlaygroundWindow(pyglet.window.Window):
         # handoff §3: "ready for it later" — this is that later).
         if self._knife_face_tool is not None and self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height)
+            target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
+                **self._pick_kwargs())
             hover_result = self._knife_face_tool.hover(target)
             kind = target.get("kind")
             valid = hover_result.get("valid", False)
@@ -2031,6 +2054,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self.app.activate_variant("presentation", (slot.active_index + 1) % slot.variant_count)
             else:
                 self.app.display_state.cycle()
+                self._invalidate_pick_cache()
             self._update_hud()
         elif symbol == _key.Z and modifiers & _key.MOD_CTRL and not (modifiers & _key.MOD_SHIFT):
             # Ctrl+Z: in-session undo for knife, else global undo (AD-017 / WP-AP-Enablement-01).
@@ -2321,6 +2345,7 @@ class PlaygroundWindow(pyglet.window.Window):
         elif symbol == _key.D and modifiers & _key.MOD_SHIFT:
             # WP-AP-INPUT-FIX-01 §3: Shift+D only — Z is axis-constraint only
             self.app.display_state.toggle_wireframe_overlay()
+            self._invalidate_pick_cache()
             self._update_hud()
         elif symbol == self.input_map.show_vertices:
             self.app.show_vertices = not self.app.show_vertices
