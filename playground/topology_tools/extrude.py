@@ -192,9 +192,17 @@ class ExtrudeTool(Tool):
             new_boundary = [self._old_to_new[vid] for vid in mesh.face_vertices(fid)]
             new_face_ids.add(mesh.add_face(new_boundary))
 
+        # Kanten der Original-Region merken, bevor die Faces verschwinden: nur
+        # diese dürfen anschließend als Rest-Geometrie bereinigt werden.
+        region_edges: set = set()
+        for fid in face_ids_frozen:
+            region_edges.update(mesh.face_edges(fid))
+
         # Original-Faces entfernen
         for fid in face_ids_frozen:
             mesh.remove_face(fid)
+
+        self._prune_leftover_geometry(mesh, region_edges, all_vids)
 
         self._new_face_ids = frozenset(new_face_ids)
 
@@ -275,6 +283,38 @@ class ExtrudeTool(Tool):
         self._total_distance = 0.0
 
     # -- Intern --------------------------------------------------------------
+
+    @staticmethod
+    def _prune_leftover_geometry(mesh, region_edges: set, region_vertices: set) -> None:
+        """Entfernt die Rest-Geometrie der ursprünglichen Region.
+
+        Mesh.remove_face() lässt freie Edges/Vertices bewusst stehen und der
+        Core (eingefroren) hat keine remove_edge/remove_vertex-Primitive. Ohne
+        Bereinigung blieben die *inneren* Edges (und innere Vertices) der Region
+        als Wireframe ohne Fläche an der Originalposition zurück.
+
+        Es werden ausschließlich Edges aus `region_edges` ohne Face und
+        anschließend Vertices aus `region_vertices` ohne Edge entfernt — fremde
+        freie Edges (Knife/Connect) bleiben unberührt. Umsetzung über den
+        öffentlichen export_state()/load_state()-Weg; IDs übriger Elemente
+        bleiben unverändert (AD-001), Allocator-Zähler laufen nur vorwärts.
+        """
+        orphan_edges = {e for e in region_edges if not mesh.edge_faces(e)}
+        if not orphan_edges:
+            return
+        state = mesh.export_state()
+        for eid in orphan_edges:
+            del state["edges"][int(eid)]
+        still_used = set()
+        for edata in state["edges"].values():
+            still_used.add(edata["v0"])
+            still_used.add(edata["v1"])
+        for boundary in state["faces"].values():
+            still_used.update(int(v) for v in boundary)
+        for vid in region_vertices:
+            if int(vid) not in still_used:
+                del state["vertices"][int(vid)]
+        mesh.load_state(state)
 
     def _face_center_original(self) -> tuple[float, float, float]:
         positions = list(self._original_positions.values())

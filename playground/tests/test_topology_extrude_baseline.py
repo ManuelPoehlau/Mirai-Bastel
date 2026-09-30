@@ -402,3 +402,71 @@ def test_multiface_opposing_normals_each_moves_along_own_normal():
                 f"Cap-Vertex bei {pos} entspricht nicht der erwarteten "
                 f"Komponenten-Normale {n1} oder {n2}"
             )
+
+
+# -- Regression: Multi-Face-Extrude darf keine Rest-Geometrie zurücklassen ----
+#
+# Befund (Artist-Screenshot 2026-09-30): Nach Multi-Face-Extrude blieben die
+# ursprünglichen *inneren* Edges (und ein innerer Vertex) der Region als
+# Wireframe ohne Fläche an der Originalposition stehen ("unsichtbare Faces").
+# Ursache: Mesh.remove_face() löscht bewusst keine freien Edges/Vertices, und
+# der Core hat keine remove_edge/remove_vertex-Primitive.
+
+def _make_grid_patch(app: PlaygroundApp, n: int = 2) -> list:
+    """n×n Quad-Patch als eigene Insel (z=0). Für n=2 gibt es einen inneren Vertex."""
+    mesh = app.scene.mesh
+    v = [[mesh.add_vertex((10.0 + x, float(y), 0.0)) for x in range(n + 1)] for y in range(n + 1)]
+    return [
+        mesh.add_face([v[y][x], v[y][x + 1], v[y + 1][x + 1], v[y + 1][x]])
+        for y in range(n) for x in range(n)
+    ]
+
+
+def _free_edges(mesh) -> set:
+    return {e for e in mesh.all_edge_ids() if not mesh.edge_faces(e)}
+
+
+def _unused_vertices(mesh) -> set:
+    used = {v for f in mesh.all_face_ids() for v in mesh.face_vertices(f)}
+    return {v for v in mesh.all_vertex_ids() if v not in used}
+
+
+def test_multi_face_extrude_leaves_no_orphan_edges_or_vertices():
+    for distance in (0.3, -0.3):  # nach außen UND nach innen
+        app = PlaygroundApp()
+        app.load_cube()
+        faces = _make_grid_patch(app)
+        mesh = app.scene.mesh
+        free_before, unused_before = _free_edges(mesh), _unused_vertices(mesh)
+        _do_extrude(app, set(faces), distance=distance)
+        assert _free_edges(mesh) == free_before
+        assert _unused_vertices(mesh) == unused_before
+
+
+def test_extrude_keeps_preexisting_free_edges():
+    """Nur Rest-Geometrie DIESER Extrusion wird entfernt, nicht fremde freie Edges."""
+    app = PlaygroundApp()
+    app.load_cube()
+    faces = _make_grid_patch(app)
+    mesh = app.scene.mesh
+    a = mesh.add_vertex((20.0, 0.0, 0.0))
+    b = mesh.add_vertex((21.0, 0.0, 0.0))
+    free = mesh.add_edge(a, b)
+    _do_extrude(app, set(faces))
+    assert mesh.is_valid_edge(free)
+    assert free in _free_edges(mesh)
+
+
+def test_multi_face_extrude_cleanup_survives_undo_redo_cancel():
+    app = PlaygroundApp()
+    app.load_cube()
+    faces = _make_grid_patch(app)
+    mesh = app.scene.mesh
+    before = _counts(app)
+    _do_extrude(app, set(faces))
+    after = _counts(app)
+    app.scene.history.undo()
+    assert _counts(app) == before
+    app.scene.history.redo()
+    assert _counts(app) == after
+    assert not _free_edges(mesh) and not _unused_vertices(mesh)
