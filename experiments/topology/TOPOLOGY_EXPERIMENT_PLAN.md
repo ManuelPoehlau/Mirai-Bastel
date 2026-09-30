@@ -292,6 +292,8 @@ neue Vertices + Edges + Faces
 - ESC → Cancel (Mesh-Restore + Multi-Selection-Restore, kein History-Eintrag)
 - Undo/Redo funktioniert identisch zu Split Edge
 - 12 Headless-Tests (8 Baseline-Regression + 4 Multi-Face), alle grün
+- **Fix 2026-09-30 (Artist-Fund, Screenshot):** Multi-Face-Extrude ließ die *inneren* Edges (und innere Vertices) der Originalregion als Wireframe ohne Fläche stehen. Ursache: `Mesh.remove_face()` löscht freie Edges/Vertices bewusst nicht (V1-Entscheidung), und der eingefrorene Core hat keine `remove_edge`/`remove_vertex`-Primitive. Behelf **nur im Playground**: `ExtrudeTool._prune_leftover_geometry()` entfernt ausschließlich Rest-Geometrie der eigenen Region über `export_state()`/`load_state()`; fremde freie Edges bleiben. +3 Regressionstests (16 gesamt). **Offene Core-Frage (keine Entscheidung):** Braucht Production eine echte Lösch-Primitive für freie Edges/Vertices? Wird relevant für Face-Delete, Dissolve und Production-Extrude → gehört in eine spätere Architekturprüfung, nicht in diesen Fix.
+- **Artist-Soll (Manu, 2026-09-30):** Vor der Mulde darf kein Wireframe stehen bleiben. Der Fix ist vom Artist noch **nicht getestet** — kein Verdikt.
 
 Zu untersuchen sind insbesondere:
 
