@@ -10,7 +10,8 @@ actually built, B and D; C and A were dropped per the handoff's scope §2).
 **Integrity (2026-09-29):** faces that "sit under a cut" (Artist report) — probe, root causes and fix in
 "Q5 integrity findings (2026-09-29)" below.
 **Loop closed at a single point (2026-09-30):** Artist decision (a) — the loop becomes its own face with one bridge; see
-"Loop closed at a single point (2026-09-30)" below.
+"Loop closed at a single point (2026-09-30)" below; dropped runs leave no trace (Task B, same section); the dark shading
+after that commit is a zero face normal in `src/viewport/derived.py` — "Dark shading after a commit" under Observations.
 **Background:** `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md`, `docs/architecture/
 AD-017_FINAL_DECISIONS_2026-09-22.md` (session model, history, Esc, commit — reused unchanged).
 **Controls:** `Tab` until `knife_face` is focused → `M` cycles the variants **B → D → Q5** (HUD: `Setting: … knife_face=…`).
@@ -628,7 +629,7 @@ in the screenshot):** click 1 on the top/right edge, clicks 2 and 3 inside the t
 (intersection dot X), segment 3 runs on over the top/front edge, click 4 inside the front. "So sah der **gewollte** Cut vor
 Commit aus." Result at `d8e346b`: `0/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); 1 cut(s)
 closing a loop at a single point dropped` — nothing cut, but the mesh went from V8/E12/F6 to **V10/E14/F6** (Task B below)
-and the cube turned uniformly dark (Task C below).
+and the cube turned uniformly dark ("Dark shading after a commit (Task C, 2026-09-30)" under Observations).
 
 **Decision:** option **(a)** of the open point under "Q5 integrity findings" — the loop is kept as its own face, joined to
 the surrounding face by a **bridge** (H0 — Face Holes stay set aside). (b) refuse the click and (c) drop at commit are not
@@ -837,3 +838,65 @@ _(incidental evidence — raises priority of other questions, does not decide th
   seed, planner territory, not touched here.
 - **Head stress (not a test):** 120 random Q5 sessions on `head` (2–5 clicks, three cameras, cache on, some closed) all
   committed with mesh invariants intact.
+
+### Dark shading after a commit (Task C, 2026-09-30)
+
+**Observation (Manu's screenshot after the sequence in "Loop closed at a single point"):** after the commit the whole cube was
+shaded uniformly dark (before: normal shading with a gradient). Cause was unknown.
+
+**Reproduced `[PROBE]`, headless and in the real window.** Manu's sequence replayed in a real `PlaygroundWindow` under Xvfb
+(camera yaw 39.6 / pitch 24.1 / dist 6.92, `C`, clicks through `on_mouse_release`, `Enter`) at `d8e346b`: the HUD shows exactly
+his text and `V:10 E:14 F:6`, and the rendered frame is uniformly dark — the pixels at the centres of the top, front and right
+faces are all (54, 62, 80), before the commit (107, 125, 160) / (108, 126, 163) / (96, 113, 145). The same without GL:
+`knife_integrity_probe.py --shading` (the window's post-commit path is `_knife_face_teardown` → `_recompute_derived` =
+`DerivedGeometry.full_recompute` → `_rebuild_vbo` = `vbo_builder.build_face_data`; the probe runs exactly those two).
+
+**Cause:** `src/viewport/derived.py`, `DerivedGeometry.full_recompute` (and `update_face_normals`) take a face's normal from
+the **first triangle** of `triangulate_face` (`triangle_normal(positions, tris[0])`, comment "planare Faces in V1"). A convex
+face is fan-triangulated from its first corner, so when its first three corners lie on one line — a straight-angle vertex from
+an edge split sitting at boundary index 1 — that triangle has no area and the face normal is **(0, 0, 0)**. Vertex normals are
+the normalised sum of the face normals around a vertex: where the visible faces at a corner all have zero normals, only the
+hidden faces count, and they point away from the light. The face shader (`n · L`, ambient 0.35) then lights those vertices
+with ambient only: uniformly dark. In Manu's session the dropped run left **two** splits (Task B) that put such a vertex on all
+three visible faces — hence the *whole* visible cube.
+
+**Hypotheses:**
+
+| | verdict | evidence `[PROBE]` |
+|---|---|---|
+| H1 incremental refresh with stale ids | **killed** | the window's knife_face commit path uses `full_recompute`, not `update_*`; in every replay the window's derived normals are identical to a fresh `DerivedGeometry(mesh)` |
+| H2 bounds / shadow extents | **killed** | bounds stay (−1, −1, −1)..(1, 1, 1); `shadow_map.py` is not used by `window.py` at all (no import, no draw pass) |
+| H3 a leftover / degenerate vertex confuses the rebuild | **confirmed, narrower** | not the VBO rebuild — the straight-angle vertex makes the *face normal* zero in `derived.py` |
+| H4 only after a dropped run | **no** | a dropped run made it total (its splits changed three visible faces, no new faces), but a plain successful cut does it to the faces next to its ends too |
+
+| `[PROBE]` (`--shading`, cube) | zero face normals | face-VBO vertices lit by ambient only (n · L ≤ 0) |
+|---|---|---|
+| untouched cube | 0 | 17/36 (the three hidden sides) |
+| one edge split at t = 0.5, no cut | a zero normal for 5 of the 12 edges | — |
+| Manu's sequence at `d8e346b` (dropped, two splits) | 3 (top, front, right) | **48/48** — all |
+| Manu's sequence now (loop built, Tasks A + B) | 2 (front, right: the faces next to the run's ends) | 30/66 |
+| P4 at `d8e346b` / now | 2 / 1 | 36/42 / 22/54 |
+| a plain successful cut across the top (right edge → front edge), before and now | 2 (front, right) | 34/48 |
+
+In the real window at HEAD the top of Manu's result is lit again (pixel (111, 129, 166)), the front and right faces are darker
+than before the commit ((82, 96, 124) and (71, 83, 107)).
+
+**Where, and what was changed:** the cause is in `src/viewport` → **not changed** (handoff §6/§8: record only; no playground
+refresh is at fault, so `window.py` / `vbo_builder.py` / `renderer.py` / `shadow_map.py` stay untouched). Tasks A and B remove
+the *total* darkening of Manu's session (no more leftover splits; his loop is cut), not the cause: any cut that ends on an
+edge — the Production Knife included, since every `split_edge` does it — can still zero the normal of the neighbouring face.
+**Proposal for an explicit decision (not built):** take the face normal from the Newell normal of the whole boundary (the same
+sum `_polygon_plane_axes` already computes in that file) in `full_recompute` and `update_face_normals`; it is exact for planar
+faces and does not depend on which corner comes first.
+
+**Prepared check for Manu (2 minutes, after these commits):** Q5 on the default cube, same camera, `Shaded`. Click a point on
+the top/right edge, then a point on the top/front edge (a plain straight cut across the top), `Enter`. Look at the front and
+the right side: expected (headless render) **the shading changes at once** — the right side clearly darker, a dark smudge
+towards the corner the two sides share (their face normals are zero now); the top pieces lit normally. `Ctrl+Z` → the front and right sides are lit as before. Then repeat the sequence from "Loop closed at a single
+point": the cube must no longer go dark as a whole.
+
+| Check | Seen (Manu) |
+|---|---|
+| plain cut: right side darker, smudge at the front/right corner after `Enter` | |
+| `Ctrl+Z`: lit as before | |
+| Manu's sequence: no uniform darkening | |

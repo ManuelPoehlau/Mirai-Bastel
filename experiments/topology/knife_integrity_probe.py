@@ -29,6 +29,7 @@ Run:  python experiments/topology/knife_integrity_probe.py              # fuzz 4
       python experiments/topology/knife_integrity_probe.py --variants   # the same seeds under D and B
       python experiments/topology/knife_integrity_probe.py --dropped    # dropped runs with / without crossings
       python experiments/topology/knife_integrity_probe.py --production # plain-chord cases on the Production Knife
+      python experiments/topology/knife_integrity_probe.py --shading    # zero face normals after a commit (Task C)
 """
 
 from __future__ import annotations
@@ -811,6 +812,59 @@ def run_production():
         print(f"[PROBE] production {name}: " + " | ".join(out))
 
 
+def run_shading():
+    """Task C (2026-09-30, "the whole cube went dark after the commit"): the window rebuilds its face VBO after
+    every knife_face commit with `DerivedGeometry.full_recompute` + `vbo_builder.build_face_data` — replayed here
+    without GL. `full_recompute` takes a face's normal from the *first* fan triangle of `triangulate_face`; when the
+    face's first three corners lie on one line (a straight-angle vertex from an edge split at boundary index 1)
+    that triangle has no area and the normal is (0, 0, 0). The face shader then gets n . L = 0: ambient only."""
+    from viewport.derived import DerivedGeometry
+    from playground.vbo_builder import build_face_data
+
+    light = (1 / math.sqrt(3),) * 3
+
+    def shading(mesh):
+        d = DerivedGeometry(mesh)
+        _pos, smooth, _flat, _col = build_face_data(mesh, d)
+        k = len(smooth) // 3
+        dark = sum(1 for i in range(k) if sum(smooth[3 * i + j] * light[j] for j in range(3)) <= 0.0)
+        zero = sum(1 for n in d.face_normals.values() if n == (0.0, 0.0, 0.0))
+        return zero, dark, k
+
+    mesh = create_cube()
+    single = 0
+    for eid in list(mesh.all_edge_ids()):
+        st = mesh.export_state()
+        mesh.split_edge(eid, 0.5)
+        single += shading(mesh)[0] > 0
+        mesh.load_state(st)
+    print(f"[PROBE] shading: cube, one edge split at t = 0.5 (no cut): {single}/12 edges leave a face with a zero normal")
+    for name in ("P3 Manu 2026-09-30 (cube: top loop, on into the front)", "P4 loop hanging off a fold edge point (cube)"):
+        _hyp, scene, cam, sessions, _what = CASES[name]
+        mesh = SCENES[scene]()
+        before = shading(mesh)
+        knife, _ = new_session(KnifeFaceCrossFace, mesh)
+        if cam is not None:
+            knife.set_view(camera_for(mesh, *cam), W, H, occlusion=True)
+        for spec in sessions[0]:
+            knife.click(target(mesh, spec))
+        knife.commit()
+        knife.deactivate()
+        z, dark, k = shading(mesh)
+        print(f"[PROBE] shading: {name}: zero face normals {before[0]} -> {z}; face-VBO vertices with smooth "
+              f"n.L <= 0 {before[1]}/{before[2]} -> {dark}/{k}")
+    mesh = create_cube()
+    knife, _ = new_session(KnifeFaceCrossFace, mesh)
+    knife.set_view(camera_for(mesh, 35.0, 30.0), W, H, occlusion=True)
+    for spec in (("e", (1, 1, -1), (1, 1, 1), 0.6), ("e", (-1, 1, 1), (1, 1, 1), 0.5)):
+        knife.click(target(mesh, spec))
+    knife.commit()
+    knife.deactivate()
+    z, dark, k = shading(mesh)
+    print(f"[PROBE] shading: a plain successful cut across the top (right edge -> front edge): zero face normals {z}; "
+          f"face-VBO vertices with smooth n.L <= 0 {dark}/{k}")
+
+
 # -- main ----------------------------------------------------------------------------------
 
 def _summary(label, fails, clean, n):
@@ -846,8 +900,12 @@ def main(argv=None):
     ap.add_argument("--edge-only", action="store_true")
     ap.add_argument("--dropped", action="store_true")
     ap.add_argument("--production", action="store_true")
+    ap.add_argument("--shading", action="store_true")
     args = ap.parse_args(argv)
 
+    if args.shading:
+        run_shading()
+        return
     if args.production:
         run_production()
         return
