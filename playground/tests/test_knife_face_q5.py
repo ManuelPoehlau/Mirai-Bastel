@@ -1312,18 +1312,195 @@ def test_straight_line_out_of_a_concave_face_is_planned_across_faces():
     assert_geometric_integrity(mesh, GRID_PLANES, context="R5")
 
 
+# -- a loop closed at a single point (Artist decision 2026-09-30, option (a)) -------------------
+#
+# The loop becomes its own face through its one shared vertex; the ring around it is split by one
+# bridge so no face visits that vertex twice.
+
+def _partition(mesh):
+    """Faces as position sets (id-free): comparable across click orders."""
+    return sorted(tuple(sorted(tuple(round(c, 9) for c in mesh.vertex_position(v)) for v in mesh.face_vertices(f)))
+                  for f in mesh.all_face_ids())
+
+
+def _loop_face(mesh, corner_positions):
+    """The face whose corners are exactly `corner_positions`."""
+    want = sorted(tuple(round(c, 9) for c in pos) for pos in corner_positions)
+    found = [f for f in mesh.all_face_ids()
+             if sorted(tuple(round(c, 9) for c in mesh.vertex_position(v)) for v in mesh.face_vertices(f)) == want]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def _assert_one_bridge(mesh, loop_face, x):
+    """Exactly one loop point other than `x` has a third edge (the bridge), and it leads out of the loop."""
+    others = [v for v in mesh.face_vertices(loop_face) if v != x]
+    degrees = sorted(len(mesh.vertex_edges(v)) for v in others)
+    assert degrees == [2] * (len(others) - 1) + [3], degrees
+
+
+# P1 (probe): segment 3 crosses segment 1 inside quad (0,0); the triangle X-I2-I3 is the loop.
+LOOP_FWD = [("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)), ("f", (0.8, 0.8, 0)), ("e", (0, 0, 0), (1, 0, 0), 0.4)]
+LOOP_REV = [LOOP_FWD[3], LOOP_FWD[2], LOOP_FWD[1], LOOP_FWD[0]]
+LOOP_X = _seg_x((1.0, 0.3), (0.2, 0.6), (0.8, 0.8), (0.4, 0.0))
+
+
 @pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
-def test_a_run_crossing_itself_is_dropped_with_a_note_and_the_rest_applies(cls):
-    """A run that crosses itself inside one face would enclose a loop touching the rest at one
-    vertex only — not representable yet (open point): that run is dropped, named in the HUD."""
+def test_a_run_crossing_itself_keeps_the_loop_as_its_own_face_with_one_bridge(cls):
+    mesh, _p = _grid()
+    before = mesh.export_state()
+    knife, scene, cmd, accepted = _play(cls, mesh, LOOP_FWD)
+    assert all(accepted) and cmd is not None
+    assert knife.last_message == "1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge"
+    assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} loop")
+    (x,) = _vertices_at(mesh, LOOP_X)                           # one vertex at the crossing
+    assert len(mesh.vertex_edges(x)) == 4                       # main cut in and out, loop out and back
+    loop = _loop_face(mesh, [LOOP_X, (0.2, 0.6, 0.0), (0.8, 0.8, 0.0)])
+    _assert_one_bridge(mesh, loop, x)
+    assert len(mesh.all_face_ids()) == 16 + 3                   # quad -> main cut 2, loop 1, bridge 1
+    assert len(scene.history) == 1
+    scene.history.undo()
+    assert mesh.export_state()["faces"] == before["faces"]
+
+
+@pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
+def test_a_run_crossing_itself_before_other_runs_leaves_them_applied(cls):
+    """The old "dropped" case: the loop is built and the chord after it still crosses the main cut."""
     mesh, _p = _grid()
     specs = [("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.3, 0.4, 0)), ("f", (0.5, 0.8, 0)), ("f", (0.5, 0.1, 0)),
              ("e", (0, 0, 0), (1, 0, 0), 0.7), ("e", (0, 0, 0), (0, 1, 0), 0.5)]
     knife, _scene, cmd, accepted = _play(cls, mesh, specs)
     assert all(accepted) and cmd is not None
-    assert "1/2 cut(s) applied" in knife.last_message
-    assert "1 cut(s) closing a loop at a single point dropped" in knife.last_message
+    assert knife.last_message == "2/2 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge"
     assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} self-crossing")
+
+
+def test_loop_at_a_crossing_is_independent_of_click_order_and_direction():
+    parts = []
+    for cls in (KnifeFaceCrossFace, KnifeFaceCollected):
+        for specs in (LOOP_FWD, LOOP_REV):
+            mesh, _p = _grid()
+            knife, _scene, cmd, _acc = _play(cls, mesh, specs)
+            assert cmd is not None and "1 loop(s) closed" in knife.last_message
+            parts.append(_partition(mesh))
+    assert all(pt == parts[0] for pt in parts)
+
+
+def _back_to_start(mesh, interior):
+    """Q5: edge point -> interior points -> the same edge point again (the closing click)."""
+    knife, scene = _session(mesh, _camera(mesh))
+    assert knife.click(_spec(mesh, ("e", (1, 0, 0), (1, 1, 0), 0.5)))
+    for pos in interior:
+        assert knife.click(_spec(mesh, ("f", pos)))
+    assert knife.click({"kind": "path", "index": 0})
+    return knife, scene
+
+
+@pytest.mark.parametrize("interior", [[(0.3, 0.3, 0.0), (0.3, 0.7, 0.0)], [(0.3, 0.7, 0.0), (0.3, 0.3, 0.0)]])
+def test_back_to_the_same_edge_point_keeps_the_loop_with_one_bridge(interior):
+    """The second form: out of an edge point and back into it (handoff §3's reproduction). Before:
+    dropped, and the edge split stayed behind (V9/E13/F6 on the cube)."""
+    mesh, _p = _grid()
+    before = mesh.export_state()
+    knife, scene = _back_to_start(mesh, interior)
+    steps = len(knife._step_stack)
+    assert knife.undo_step() and knife.redo_step() and len(knife._step_stack) == steps   # one step per click
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert knife.last_message == "1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge"
+    assert_geometric_integrity(mesh, GRID_PLANES, context="back to start")
+    (e,) = _vertices_at(mesh, (1.0, 0.5, 0.0))
+    loop = _loop_face(mesh, [(1.0, 0.5, 0.0), (0.3, 0.3, 0.0), (0.3, 0.7, 0.0)])
+    _assert_one_bridge(mesh, loop, e)
+    assert (len(mesh.all_vertex_ids()), len(mesh.all_face_ids())) == (25 + 3, 16 + 2)
+    assert len(scene.history) == 1
+    scene.history.undo()
+    assert mesh.export_state()["faces"] == before["faces"]
+    scene.history.redo()
+    assert _vertices_at(mesh, (1.0, 0.5, 0.0))
+
+
+def test_back_to_the_same_edge_point_is_independent_of_direction():
+    parts = []
+    for interior in ([(0.3, 0.3, 0.0), (0.3, 0.7, 0.0)], [(0.3, 0.7, 0.0), (0.3, 0.3, 0.0)]):
+        mesh, _p = _grid()
+        knife, _scene = _back_to_start(mesh, interior)
+        knife.commit()
+        knife.deactivate()
+        parts.append(_partition(mesh))
+    assert parts[0] == parts[1]
+
+
+# Manu, 2026-09-30 (screenshot "before commit"): on the cube's top, segment 3 crosses segment 1 and
+# runs on over the top/front edge into the front, where the last click stays inside (trailing).
+MANU_TOP = [("e", (1, 1, -1), (1, 1, 1), 0.6), ("f", (-0.5, 1, -0.6)), ("f", (0.6, 1, -0.7))]
+MANU_FRONT_EDGE = ("e", (-1, 1, 1), (1, 1, 1), 0.5)
+
+
+def _top_partition(mesh):
+    return [f for f in _partition(mesh) if all(abs(p[1] - 1.0) < 1e-9 for p in f)]
+
+
+def test_manus_cube_sequence_keeps_the_triangle_as_its_own_face():
+    mesh = create_cube()
+    cam = _camera(mesh, 35.0, 30.0)
+    knife, scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, MANU_TOP + [("f", (-0.4, 0.3, 1))], cam)
+    assert all(accepted) and cmd is not None
+    assert knife.last_message == ("1/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); "
+                                  "1 loop(s) closed at a single point — own face, 1 bridge")
+    assert_geometric_integrity(mesh, CUBE_PLANES, context="Manu cube")
+    tops = _top_partition(mesh)
+    assert len(tops) == 4                                       # main cut 2, triangle 1, bridge 1
+    tri = [f for f in tops if len(f) == 3 and (-0.5, 1.0, -0.6) in f and (0.6, 1.0, -0.7) in f]
+    assert len(tri) == 1                                        # the triangle X-I2-I3
+    x = next(p for p in tri[0] if p not in ((-0.5, 1.0, -0.6), (0.6, 1.0, -0.7)))
+    assert len(_vertices_at(mesh, x)) == 1
+    # Only the run's own points are new: E1, the crossing on the top/front edge, I2, I3, X.
+    assert len(mesh.all_vertex_ids()) == 8 + 5
+    assert len(scene.history) == 1
+
+
+def test_manus_top_loop_is_the_same_from_either_end():
+    parts = []
+    for specs in (MANU_TOP + [MANU_FRONT_EDGE], [MANU_FRONT_EDGE] + MANU_TOP[::-1]):
+        for cls in (KnifeFaceCrossFace, KnifeFaceCollected):
+            mesh = create_cube()
+            knife, _scene, cmd, accepted = _play(cls, mesh, specs, _camera(mesh, 35.0, 30.0))
+            assert all(accepted) and cmd is not None and "1 loop(s) closed" in knife.last_message
+            assert_geometric_integrity(mesh, CUBE_PLANES, context=f"{cls.__name__} top loop")
+            parts.append(_top_partition(mesh))
+    assert all(pt == parts[0] for pt in parts)
+
+
+def test_loop_hanging_off_a_fold_edge_point_is_joined_only_by_its_bridge():
+    """Cube: the loop touches the rest of the mesh at one point on the top/front edge; the bridge
+    stays on the top; the front only gains that one edge point."""
+    mesh = create_cube()
+    knife, scene = _session(mesh, _camera(mesh, 35.0, 30.0))
+    for sp in (MANU_FRONT_EDGE, ("f", (-0.3, 1, 0.4)), ("f", (0.3, 1, 0.4))):
+        assert knife.click(_spec(mesh, sp))
+    assert knife.click({"kind": "path", "index": 0})
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert "1 loop(s) closed" in knife.last_message
+    assert_geometric_integrity(mesh, CUBE_PLANES, context="fold loop")
+    assert len(_top_partition(mesh)) == 3
+    front = [f for f in _partition(mesh) if all(abs(p[2] - 1.0) < 1e-9 for p in f)]
+    assert [len(f) for f in front] == [5]
+
+
+@pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
+def test_a_run_that_cuts_through_its_own_loop_is_dropped_with_a_note(cls):
+    """Not built: after the loop closes, the run cuts back through it (overlapping loops)."""
+    mesh, _p = _grid()
+    specs = [("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)), ("f", (0.8, 0.8, 0)),
+             ("f", (0.55, 0.15, 0)), ("f", (0.3, 0.75, 0)), ("e", (0, 0, 0), (0, 1, 0), 0.9)]
+    knife, _scene, _cmd, accepted = _play(cls, mesh, specs)
+    assert all(accepted)
+    assert "0/1 cut(s) applied" in knife.last_message
+    assert "1 cut(s) closing a loop at a single point dropped (the run cuts through its own loop again)" \
+        in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} loop crossed")
 
 
 def test_commit_rolls_back_broken_geometry_and_names_the_reason():

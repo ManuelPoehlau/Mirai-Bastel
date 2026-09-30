@@ -519,6 +519,8 @@ def fuzz(scene: str, n: int, **kw):
             STATS[scene]["sessions"] += 1
             STATS[scene]["rolled back"] += "rolled back" in msg
             STATS[scene]["with a dropped run"] += bool(m and int(m.group(1)) < int(m.group(2)))
+            STATS[scene]["with a loop at a point"] += "closed at a single point" in msg
+            STATS[scene]["with a loop at a point dropped"] += "single point dropped" in msg
             if "rolled back" in msg:
                 STATS[scene]["rollbacks"].append((seed, msg))
     return fails, clean
@@ -592,6 +594,9 @@ def _vid_at(mesh, pos):
 
 def target(mesh, spec) -> dict:
     kind = spec[0]
+    if kind == "p":
+        # A click on the session's own path entry `spec[1]` (the snap onto an earlier point).
+        return {"kind": "path", "index": spec[1]}
     if kind == "v":
         return {"kind": "vertex", "vertex_id": _vid_at(mesh, spec[1])}
     if kind == "e":
@@ -682,6 +687,40 @@ CASES = {
         [[("e", (0, 0, 0), (1, 0, 0), 0.5), ("f", (0.5, 0.5, 0)), ("e", (0, 0, 0), (0, 1, 0), 0.5)],
          [("e", (0.5, 0, 0), (1, 0, 0), 0.6), ("e", (0, 0.5, 0), (0, 1, 0), 0.6)]],
         "session 2 connects two points of the L-shaped face straight across its missing corner"),
+    # Loops closed at a single point (Artist decision 2026-09-30, option (a): own face + 1 bridge).
+    "P1 run crosses itself inside one quad": (
+        "loop", "grid", None,
+        [[("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)), ("f", (0.8, 0.8, 0)),
+          ("e", (0, 0, 0), (1, 0, 0), 0.4)]],
+        "segment 3 crosses segment 1: triangle X-I2-I3 is its own face, 1 bridge"),
+    "P1r the same, clicked the other way round": (
+        "loop", "grid", None,
+        [[("e", (0, 0, 0), (1, 0, 0), 0.4), ("f", (0.8, 0.8, 0)), ("f", (0.2, 0.6, 0)),
+          ("e", (1, 0, 0), (1, 1, 0), 0.3)]],
+        "same partition as P1 expected"),
+    "P2 back to the same edge point": (
+        "loop", "grid", (20.0, 35.0),
+        [[("e", (1, 0, 0), (1, 1, 0), 0.5), ("f", (0.3, 0.3, 0)), ("f", (0.3, 0.7, 0)), ("p", 0)]],
+        "edge point -> two interior points -> the same edge point (Q5: the closing click)"),
+    "P3 Manu 2026-09-30 (cube: top loop, on into the front)": (
+        "loop", "cube", (35.0, 30.0),
+        [[("e", (1, 1, -1), (1, 1, 1), 0.6), ("f", (-0.5, 1, -0.6)), ("f", (0.6, 1, -0.7)),
+          ("e", (-1, 1, 1), (1, 1, 1), 0.5), ("f", (-0.4, 0.3, 1))]],
+        "segment 3 crosses segment 1 on the top, runs over the top/front edge; trailing point dropped"),
+    "P3r the same top loop, clicked from the front edge": (
+        "loop", "cube", (35.0, 30.0),
+        [[("e", (-1, 1, 1), (1, 1, 1), 0.5), ("f", (0.6, 1, -0.7)), ("f", (-0.5, 1, -0.6)),
+          ("e", (1, 1, -1), (1, 1, 1), 0.6)]],
+        "same top-face partition as P3 expected"),
+    "P4 loop hanging off a fold edge point (cube)": (
+        "loop", "cube", (35.0, 30.0),
+        [[("e", (-1, 1, 1), (1, 1, 1), 0.5), ("f", (-0.3, 1, 0.4)), ("f", (0.3, 1, 0.4)), ("p", 0)]],
+        "the loop touches the rest of the mesh only at a point on the top/front edge; 1 bridge on the top"),
+    "P5 the run crosses its own loop again": (
+        "loop", "grid", None,
+        [[("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)), ("f", (0.8, 0.8, 0)),
+          ("f", (0.55, 0.15, 0)), ("f", (0.3, 0.75, 0)), ("e", (0, 0, 0), (0, 1, 0), 0.9)]],
+        "after the loop the run cuts through the loop it just closed: not built, dropped with the note"),
 }
 
 
@@ -759,7 +798,9 @@ def _summary(label, fails, clean, n):
     st = STATS.pop(scene, None)
     if st:
         print(f"    sessions: {st['sessions']}, rolled back by the commit check: {st['rolled back']}, "
-              f"with a dropped run: {st['with a dropped run']}")
+              f"with a dropped run: {st['with a dropped run']}, "
+              f"with a loop at a point built: {st['with a loop at a point']}, "
+              f"dropped: {st['with a loop at a point dropped']}")
         for seed, msg in st["rollbacks"][:10]:
             print(f"      rolled back: seed {seed}: {msg}")
 

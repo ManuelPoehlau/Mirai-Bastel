@@ -9,6 +9,8 @@ actually built, B and D; C and A were dropped per the handoff's scope §2).
 `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived, not edited).
 **Integrity (2026-09-29):** faces that "sit under a cut" (Artist report) — probe, root causes and fix in
 "Q5 integrity findings (2026-09-29)" below.
+**Loop closed at a single point (2026-09-30):** Artist decision (a) — the loop becomes its own face with one bridge; see
+"Loop closed at a single point (2026-09-30)" below.
 **Background:** `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md`, `docs/architecture/
 AD-017_FINAL_DECISIONS_2026-09-22.md` (session model, history, Esc, commit — reused unchanged).
 **Controls:** `Tab` until `knife_face` is focused → `M` cycles the variants **B → D → Q5** (HUD: `Setting: … knife_face=…`).
@@ -552,7 +554,8 @@ not) — rollback of the whole commit on failure.
   ("N cut(s) closing a loop at a single point dropped (crossing itself, or back to its start — not supported yet)"): the
   part between the two passes would be a loop touching the rest of the face at one vertex only, which one boundary list per
   face cannot represent without a bridge or a hole — a behaviour question, see open points. The back-to-its-start case was
-  dropped before as well (silently).
+  dropped before as well (silently). *Superseded 2026-09-30:* built as its own face with one bridge (Artist decision (a)) —
+  see "Loop closed at a single point (2026-09-30)".
 - **Edge points at t within 1e-9 of an end resolve to that vertex** (`_resolve_boundary_points`) — never a second vertex on
   top of it (R4, second line of defence).
 - **Closed-shape stand-in:** if one of its three faces would be broken (an outline that crosses itself, or a bridge through the
@@ -601,8 +604,9 @@ forced its Core failure by patching `connect_in_shared_face`, which the resolver
 
 **Open points (record, do not decide):**
 
-- **Artist question — a cut that closes a loop at a single point** (it crosses itself inside one face, or leaves a point and
-  comes back into it): today dropped at commit with a HUD note. Prepared 5-minute test (grid, Q5): (1) from the right edge of a
+- ~~**Artist question — a cut that closes a loop at a single point**~~ — **closed: Artist, 2026-09-30: (a)** (see "Loop
+  closed at a single point (2026-09-30)"). Kept for the record: (it crosses itself inside one face, or leaves a point and
+  comes back into it): until then dropped at commit with a HUD note. Prepared 5-minute test (grid, Q5): (1) from the right edge of a
   quad click three points inside it so that the third segment crosses the first, then out through the bottom edge, `Enter`;
   (2) from an edge point into a quad and click that same edge point again, `Enter`. Options: **(a)** keep the loop as its own
   face, joined to the rest by a bridge like the closed-shape stand-in (H0); **(b)** refuse the click that closes the loop (the
@@ -616,6 +620,91 @@ forced its Core failure by patching `connect_in_shared_face`, which the resolver
   superseded).
 - `segment_in_face` and the walk work in each face's Newell plane; on the non-planar `head` quads that is a projection — the
   head stress plans exactly as before (same crossings, gaps and "along an edge" breaks), but it is not exact geometry.
+
+## Loop closed at a single point (2026-09-30)
+
+**Artist input (Manu, 2026-09-30, two screenshots, Q5, default cube, camera yaw 39.6 / pitch 24.1 / dist 6.92 per the HUD
+in the screenshot):** click 1 on the top/right edge, clicks 2 and 3 inside the top so that segment 3 crosses segment 1
+(intersection dot X), segment 3 runs on over the top/front edge, click 4 inside the front. "So sah der **gewollte** Cut vor
+Commit aus." Result at `d8e346b`: `0/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); 1 cut(s)
+closing a loop at a single point dropped` — nothing cut, but the mesh went from V8/E12/F6 to **V10/E14/F6** (Task B below)
+and the cube turned uniformly dark (Task C below).
+
+**Decision:** option **(a)** of the open point under "Q5 integrity findings" — the loop is kept as its own face, joined to
+the surrounding face by a **bridge** (H0 — Face Holes stay set aside). (b) refuse the click and (c) drop at commit are not
+wanted. *Interpretation (Context Check — Manu corrects only if wrong):* the small triangle X–click 2–click 3 is the intended
+cut; X is one vertex, shared by the loop and the main cut (Blender-like). The trailing segment that ends inside the front
+without reaching a boundary keeps today's rule (dropped with the note) — not part of this decision.
+
+**Built** (`engine.py`, shared resolver — D and Q5; `window.py` unchanged):
+
+- `KnifeFaceCollected._walk_run` no longer drops these runs. **Form 1 — the run crosses itself inside one face:** the first
+  crossing along the new segment gives X (on the crossed segment, in 3D); the points since that segment become a loop
+  X → … → X, the run goes on from X (X becomes a vertex of the face's cut). **Form 2 — the run comes back into a vertex it
+  left** (the Q5 closing click on an edge point / vertex after ≥ 2 interior points; also `a == b` runs): the loop is
+  anchored at that vertex, the run goes on from there. Loops are built **at the end of the run**, in the face at their vertex
+  that holds them, so later runs of the same commit see them (their edges are crossable like any cut of this commit).
+- `close_loop_at_vertex` (new, next to `close_loop_with_bridges`): the loop face `[x, c1 … cm]` wound like the parent; the
+  ring walks the outer boundary from x round to x and the loop backwards; **one** bridge from a loop point to a boundary
+  vertex other than x splits it into two faces holding x once each — no face visits a vertex twice. (A loop touching
+  nothing needs two bridges, the closed-shape stand-in; touching at x needs one.) Bridge rule = the closed shape's: the
+  **shortest** (loop point, boundary vertex) pair, ties by position, never by index — so the result does not depend on
+  click order or direction; the first candidate whose three faces are simple and face like the parent wins.
+- Not built, dropped with the HUD note and its reason (`N cut(s) closing a loop at a single point dropped (<reason>)`):
+  *out to one point and straight back — no area* (vertex → one interior point → the same vertex); *it winds round another
+  loop's point* (a second self-crossing whose loop contains the first loop's X); *the run cuts through its own loop again*;
+  *no bridge fits*. Built loops add `N loop(s) closed at a single point — own face, 1 bridge`.
+- Commit check / rollback, one History entry per commit, in-session undo (one step per click) — unchanged; nothing is
+  resolved before commit.
+- STOP rule of the handoff (Core change / new face-splitting primitive): **not needed** — built from the public Core API
+  (`add_vertex`, `add_face`, `remove_face`, `split_edge`) like `split_face_path` / `close_loop_with_bridges`.
+
+**Probe `[PROBE]`** (`knife_integrity_probe.py`, same seeds as before; new `--cases` P1–P5, fuzz counts loops):
+
+| | grid | cube |
+|---|---|---|
+| Q5 runs with an integrity failure | 0/400 | 0/400 |
+| Q5 sessions rolled back by the commit check | 0/771 | 0/771 |
+| Q5 loops at a point built / dropped (before: 0 / 2 grid, 0 / 16 cube) | 2 / 0 | 13 / 3 (2 "no area", 1 "winds round another loop's point") |
+| D failures / rollbacks; loops built / dropped | 0/400 / 0; 0 / 2 ("no area") | 0/400 / 0; 3 / 1 ("no area") |
+| Q5 edge-only failures | 0/400 | 0/400 |
+
+Cases: **P1** (grid, segment 3 crosses segment 1) and **P1r** (clicked the other way round) — same partition for Q5 and D;
+**P2** (edge point → two interior points → the same edge point, the handoff §3 form) — built; **P3** (Manu's sequence on the
+cube, trailing front point) and **P3r** (the same top loop clicked from the front edge) — same top-face partition, Q5 and D;
+**P4** (a loop hanging off a point on the top/front fold edge — joined to the rest only by its bridge on the top; the front
+gains only that edge point); **P5** (the run cuts back through the loop it just closed) — dropped with its reason. B has no
+loop support (REJECTed variant): P1/P3/P5 are rolled back by its commit check, as before.
+
+**Tests** (`test_knife_face_q5.py`, block "a loop closed at a single point"): P1 for Q5 and D (one vertex at X with four
+edges, the triangle face, exactly one bridge, one history entry, undo); P1 vs. P1r for Q5 and D (identical partition); form
+2 in both directions (one in-session step per click, loop face + one bridge, V/F counts, history undo/redo; identical
+partition); Manu's cube sequence (the triangle, one vertex at X, only the run's own 5 points new, trailing note); P3 vs. P3r
+for Q5 and D (identical top partition); P4; P5 (dropped with its reason). **Adapted existing assertion (one):**
+`test_a_run_crossing_itself_is_dropped_with_a_note_and_the_rest_applies` pinned option (c) — it is now
+`test_a_run_crossing_itself_before_other_runs_leaves_them_applied` (same click list: "2/2 cut(s) applied" with the loop
+built instead of "1/2 … dropped").
+
+**Open points (record, do not decide):**
+
+- **Where the bridge goes** for a loop attached at X — the nearest-vertex rule is the Lab default; look only after a play test.
+- **Trailing interior point beyond a boundary crossing** is still dropped (Lab default). *Observation:* Manu's screenshot
+  shows the segment over the top/front edge and a last click inside the front — he may want that segment kept up to the
+  front's next boundary (or up to the click). Not changed here.
+- Nested / overlapping loops in one run (P5, "winds round another loop's point") and the there-and-back case stay dropped —
+  seen 3 times in 771 random cube sessions, never on the grid.
+
+**Prepared Artist test (5 minutes, after this commit):** Q5 on the default cube, same camera.
+(1) Repeat the sequence above → expected: the triangle is its own face, one bridge from it to a top corner, the main cut
+E1–X–(top/front edge) applied, no leftover vertices, normal shading. (2) Edge point → two interior points → the same edge
+point again (snap, closing click) → `Enter` → expected: loop face + one bridge. (3) `Ctrl+Z` once after the commit → the
+whole session is back.
+
+| Task | Verdict (Manu) | Notes |
+|---|---|---|
+| (1) Manu's sequence | | |
+| (2) back to the same edge point | | |
+| (3) Undo | | |
 
 ---
 
