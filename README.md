@@ -115,7 +115,7 @@ a claim that the final modeling/selection workflow already exists.
 
 The interactive Viewport V1 experiment remains under `experiments/mirai_bastel_viewport_V1/`. It has validated the basic Core → Viewport path on real hardware and is now being used as an active research environment for Selection, Workflow and Topology behavior.
 
-The current Topology research is documented centrally in [`experiments/topology/`](experiments/topology/). Phase 1 — interactive use of the existing Core topology primitives — has been practically verified. The next focus is conservative Edge Loop / Edge Ring detection and selection, followed by Loop Insert/Remove and later Extrude experiments.
+The Topology research is documented in [`experiments/topology/`](experiments/topology/) and [`docs/research/topology/`](docs/research/topology/). Loop/Ring selection, Connect, Loop Insert/Slide, Extrude and the Knife family (including the Knife Face Cut Lab) have been explored in the Artist Playground; results reach the production app only one slice at a time and only after an Artist verdict (WP-06).
 
 The Production Viewport, Application and Interaction foundations now exist under
 `src/`, and the production draw call (AD-018) and the Stage A production

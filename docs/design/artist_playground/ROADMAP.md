@@ -1,7 +1,7 @@
 # Artist Playground — Roadmap
 
 **Status:** Active research / implementation
-**Date:** 2026-09-15
+**Date:** 2026-09-29 (snapshot of 2026-09-15 kept below; update section added)
 **Source of truth:** current Playground code + experiment assets; this roadmap must not describe planned work as missing when it already exists in the repository.
 
 ---
@@ -45,6 +45,14 @@ The original 2026-09-10 roadmap is now substantially behind the implementation. 
 - Topology query/selection support: Loop/Ring Select.
 - A Tweak experiment family with multiple interaction variants and decision/handoff documentation.
 - Headless tests for the above areas.
+
+### Update — 2026-09-29
+
+Since the snapshot above, the following exist in the repository (details live in each family's own record, not here):
+
+- **Knife Face Cut Lab** — `playground/experiments/knife_face/` (variants B / D / Q5). Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 KEEP. Record: `decision.md` in that folder; background in `docs/research/topology/` (`KNIFE_FACE_CUT_DISCOVERY.md`, `KNIFE_CROSS_FACE_DISCOVERY.md`, `FACE_HOLES_DISCOVERY.md` — Face Holes set aside, no decision). A Lab KEEP is not a promotion.
+- **Symmetry Lab** (WP-SYM-LAB-01, isolated from the Playground variant/slot system) and **Viewport Shading Lab** (WP-SHADE-LAB-01, Slice 1) — status in `docs/architecture/ROADMAP.md` §14.
+- The **Production App** (`src/main.py`, WP-06 Stage B) now receives decided Playground results slice by slice — see the intake log in `docs/architecture/ROADMAP.md` §7.
 
 Therefore, **Topology Lab is not a future empty work package** and **Tweak is not an unimplemented idea**. They are existing Playground research assets whose runtime/Host integration and research status may still evolve.
 
