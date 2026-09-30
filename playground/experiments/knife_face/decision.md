@@ -746,6 +746,17 @@ cube). **Tests:** the bow-tie in both directions (two loop faces, one X, one his
 and on the cube top like the play test. On that cube case the second loop's shortest bridge runs to a point of the first loop
 instead of a cube corner (a third small triangle) — valid, and exactly the open point "where the bridge goes".
 
+**Bridges go to outside corners (Artist, 2026-09-30, play test 13:22–13:24, two screenshots):** Manu replayed the bow-tie
+(`V:13 E:21 F:10`, "2 loop(s) … 1 bridge each") and drew what he expects by hand: the edge between the two triangles (the
+left triangle's bridge to the right triangle's point) **should not be there — the left triangle should bridge to the nearest
+outside corner** instead. **Built** (`close_loop_at_vertex`, parameter `outside`): bridge candidates are ordered first by
+"existed before this commit" (the corners the Artist clicked on — the session-start vertices), then by distance and position as
+before; vertices this commit created (other loops' points, cut points) are used only if no outside corner gives a valid bridge.
+Still order- and direction-independent. `[PROBE]` fuzz Q5 / D / B on grid and cube: 0/400 integrity failures each; all `--cases`
+clean. Test: the cube bow-tie — both bridges end at cube corners. This settles the open point "where the bridge goes" for loops
+at a point in the direction Manu showed (nearest outside corner); the closed-shape stand-in (a loop touching nothing,
+`select_bridge`) already bridges to the face's own corners.
+
 ### Last click inside a face (2026-09-30)
 
 **Artist decision (Manu, 2026-09-30, answer to the question above):** when the last click of a cut lies inside a face, `Enter`

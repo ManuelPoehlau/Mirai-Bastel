@@ -412,7 +412,8 @@ def close_loop_with_bridges(
     return loop_vs, f_inner, f_a, f_b, loop_edges
 
 
-def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: list[Position]):
+def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: list[Position],
+                         outside: set[VertexId] | None = None):
     """LAB STAND-IN: a loop x -> loop_positions -> x inside `face_id`, touching its boundary at the
     one vertex `x` only (a cut that crosses itself, or leaves a point and comes back to it —
     Artist decision 2026-09-30, option (a)). Built as its own face plus **one** bridge, the same
@@ -423,6 +424,8 @@ def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: lis
     Order- and direction-independent like the closed shape (Task A, 2026-09-29): the loop is wound
     like the parent; the bridge is the shortest one (loop point, boundary vertex other than `x`)
     that leaves every face simple and facing like the parent — ties by position, never by index.
+    `outside`: vertices a bridge should go to first — the corners the Artist clicked on, not
+    another loop's points (Artist play test 2026-09-30); the rest only if none of those works.
 
     Returns (loop_vertices, loop_face, ring_faces, loop_edges) — `loop_edges` in `loop_positions`
     order, x -> first ... last -> x. Raises MeshError (mesh possibly changed: the caller restores
@@ -452,8 +455,9 @@ def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: lis
         pc = mesh.vertex_position(c)
         for bi in range(1, n):
             pb = mesh.vertex_position(outer[bi])
-            candidates.append((round(_dist3(pc, pb), _TIE_DIGITS), tuple(pc), tuple(pb), j, bi))
-    candidates.sort(key=lambda c: c[:3])
+            first = 0 if outside is None or outer[bi] in outside else 1
+            candidates.append((first, round(_dist3(pc, pb), _TIE_DIGITS), tuple(pc), tuple(pb), j, bi))
+    candidates.sort(key=lambda c: c[:4])
     base = mesh.export_state()
     for *_key, j, bi in candidates:
         ic = n + m - j                                           # canon[j] in `ring`
@@ -1435,7 +1439,9 @@ class KnifeFaceCollected(_KnifeFaceSession):
                 self._loop_at_point = LOOP_CROSSED
                 return None
             try:
-                _vs, f_loop, ring, loop_edges = close_loop_at_vertex(m, face, x, pts)
+                # Bridges go to vertices that existed before this commit (outside corners) first.
+                outside = {v for v in m.all_vertex_ids() if int(v) in self._session_before["vertices"]}
+                _vs, f_loop, ring, loop_edges = close_loop_at_vertex(m, face, x, pts, outside)
             except MeshError:
                 self._loop_at_point = LOOP_NO_BRIDGE
                 return None

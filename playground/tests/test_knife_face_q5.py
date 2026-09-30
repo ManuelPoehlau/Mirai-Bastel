@@ -1550,10 +1550,17 @@ def test_bow_tie_on_the_cube_top_like_the_play_test():
     x = _seg_x((1.0, 0.2), (-0.6, 0.0), (0.1, -0.8), (-0.2, 0.8))       # in (x, z) of the top
     x3 = (x[0], 1.0, x[1])
     assert len(_vertices_at(mesh, x3)) == 1
-    _loop_face(mesh, [(1.0, 1.0, 0.2), x3, (-0.2, 1.0, 0.8)])
-    _loop_face(mesh, [x3, (-0.6, 1.0, 0.0), (0.1, 1.0, -0.8)])
-    # Here the shortest bridge of the second loop runs to a point of the first one (nearest-vertex
-    # Lab default — where bridges go is an open Artist point).
+    loops = [_loop_face(mesh, [(1.0, 1.0, 0.2), x3, (-0.2, 1.0, 0.8)]),
+             _loop_face(mesh, [x3, (-0.6, 1.0, 0.0), (0.1, 1.0, -0.8)])]
+    # Artist play test 2026-09-30: each loop's bridge goes to the nearest *outside* corner, never to a
+    # point of the other loop (before: the second loop's shortest bridge ran to the first loop's I3).
+    loop_vs = {v for f in loops for v in mesh.face_vertices(f)}
+    (e_start,) = _vertices_at(mesh, (1.0, 1.0, 0.2))           # on the cube edge: its edges are no bridges
+    bridges = [(u, w) for u in loop_vs - {e_start} for e in mesh.vertex_edges(u)
+               for w in mesh.edge_vertices(e) if w not in loop_vs]
+    assert len(bridges) == 2
+    for _u, w in bridges:
+        assert all(abs(abs(c) - 1.0) < 1e-12 for c in mesh.vertex_position(w)), mesh.vertex_position(w)
 
 
 @pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
