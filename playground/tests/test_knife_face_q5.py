@@ -1493,6 +1493,7 @@ def test_loop_hanging_off_a_fold_edge_point_is_joined_only_by_its_bridge():
 def test_a_run_that_cuts_through_its_own_loop_is_dropped_with_a_note(cls):
     """Not built: after the loop closes, the run cuts back through it (overlapping loops)."""
     mesh, _p = _grid()
+    before = mesh.export_state()
     specs = [("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)), ("f", (0.8, 0.8, 0)),
              ("f", (0.55, 0.15, 0)), ("f", (0.3, 0.75, 0)), ("e", (0, 0, 0), (0, 1, 0), 0.9)]
     knife, _scene, _cmd, accepted = _play(cls, mesh, specs)
@@ -1501,6 +1502,96 @@ def test_a_run_that_cuts_through_its_own_loop_is_dropped_with_a_note(cls):
     assert "1 cut(s) closing a loop at a single point dropped (the run cuts through its own loop again)" \
         in knife.last_message
     assert_geometric_integrity(mesh, GRID_PLANES, context=f"{cls.__name__} loop crossed")
+    assert _content(mesh.export_state()) == _content(before)    # Task B: no edge split left behind
+
+
+# -- dropped runs leave no trace (Task B, 2026-09-30) ------------------------------------------
+#
+# Rule (engineering): a commit that applies nothing does not change the mesh, and a dropped run does
+# not leave its edge splits behind. Each run splits its own end edges inside its own rollback scope.
+
+def _counts(mesh):
+    return len(mesh.all_vertex_ids()), len(mesh.all_edge_ids()), len(mesh.all_face_ids())
+
+
+def _content(state):
+    """A mesh state without the id counters (they only move forward, AD-001)."""
+    return {k: v for k, v in state.items() if not k.endswith("_counter")}
+
+
+def test_handoff_reproduction_dropped_leaves_the_cube_at_8_12_6(monkeypatch):
+    """Handoff §3 at `d8e346b`: cube, edge point -> two interior points -> the same edge point,
+    dropped at commit, but the mesh went V8/E12/F6 -> V9/E13/F6 (the run's edge split stayed).
+    Since Task A that loop is built; to keep the reproduction a *dropped* run, the bridge is made
+    to fail — the resolver's own reason for dropping it."""
+    import playground.experiments.knife_face.engine as eng
+
+    def no_bridge(*_a, **_kw):
+        raise eng.MeshError("close_loop_at_vertex: no bridge fits")
+
+    monkeypatch.setattr(eng, "close_loop_at_vertex", no_bridge)
+    mesh = create_cube()
+    before = mesh.export_state()
+    knife, scene = _session(mesh, _camera(mesh, 35.0, 30.0))
+    for sp in (MANU_FRONT_EDGE, ("f", (-0.3, 1, 0.4)), ("f", (0.3, 1, 0.4))):
+        assert knife.click(_spec(mesh, sp))
+    assert knife.click({"kind": "path", "index": 0})
+    assert knife.commit() is None
+    knife.deactivate()
+    assert "0/1 cut(s) applied" in knife.last_message
+    assert "1 cut(s) closing a loop at a single point dropped (no bridge fits)" in knife.last_message
+    assert _counts(mesh) == (8, 12, 6)
+    assert _content(mesh.export_state()) == _content(before) and len(scene.history) == 0
+
+
+def test_manus_sequence_dropped_leaves_the_cube_unchanged(monkeypatch):
+    """Manu's screenshot showed V10/E14/F6 after a commit that applied nothing (two splits left)."""
+    import playground.experiments.knife_face.engine as eng
+
+    monkeypatch.setattr(eng, "close_loop_at_vertex",
+                        lambda *_a, **_kw: (_ for _ in ()).throw(eng.MeshError("no bridge fits")))
+    mesh = create_cube()
+    before = mesh.export_state()
+    knife, scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, MANU_TOP + [("f", (-0.4, 0.3, 1))],
+                                        _camera(mesh, 35.0, 30.0))
+    assert all(accepted) and cmd is None
+    assert knife.last_message.startswith("0/1 cut(s) applied")
+    assert _counts(mesh) == (8, 12, 6) and _content(mesh.export_state()) == _content(before)
+    assert len(scene.history) == 0
+
+
+def test_a_dropped_run_takes_back_only_its_own_splits():
+    """Two runs share one edge point; the second is dropped (it cuts through its own loop). The
+    first run and the shared point stay, the second run's far end split goes."""
+    mesh, _p = _grid()
+    specs = [("e", (2, 0, 0), (2, 1, 0), 0.5), ("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)),
+             ("f", (0.8, 0.8, 0)), ("f", (0.55, 0.15, 0)), ("f", (0.3, 0.75, 0)), ("e", (0, 0, 0), (0, 1, 0), 0.9)]
+    knife, _scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, specs, _camera(mesh))
+    assert all(accepted) and cmd is not None
+    assert knife.last_message.startswith("1/2 cut(s) applied")
+    assert_geometric_integrity(mesh, GRID_PLANES, context="one of two dropped")
+    assert _vertices_at(mesh, (1.0, 0.3, 0.0))                 # shared: used by the applied run
+    assert not _vertices_at(mesh, (0.0, 0.9, 0.0))             # the dropped run's own end
+    assert len(mesh.all_vertex_ids()) == 25 + 2
+
+
+def test_closed_shape_rejected_after_adding_its_vertices_leaves_none_behind(monkeypatch):
+    """`close_loop_with_bridges` adds the loop's vertices before its last checks; a MeshError
+    after that used to leave them in the mesh (isolated vertices) although nothing was cut."""
+    import playground.experiments.knife_face.engine as eng
+
+    def half_built(mesh_, _fid, positions, *_a):
+        for pos in positions:
+            mesh_.add_vertex(pos)
+        raise eng.MeshError("close_loop_with_bridges: face A degenerate (forced)")
+
+    monkeypatch.setattr(eng, "close_loop_with_bridges", half_built)
+    mesh, _p = _grid()
+    before = mesh.export_state()
+    knife, _scene, cmd, _acc = _play(KnifeFaceCollected, mesh, [("f", (0.2, 0.2, 0)), ("f", (0.8, 0.3, 0)),
+                                                                ("f", (0.5, 0.8, 0))])
+    assert cmd is None and knife.last_message.startswith("closed shape rejected")
+    assert _content(mesh.export_state()) == _content(before)
 
 
 def test_commit_rolls_back_broken_geometry_and_names_the_reason():
@@ -1549,6 +1640,26 @@ def test_hover_and_stored_preview_show_the_intersection_with_an_earlier_cut():
     assert len(_vertices_at(mesh, HB1_X)) == 1
 
 
+def _leftover_splits(mesh, before_state):
+    """New vertices with exactly two edges on one line, lying on a session-start edge: an edge split
+    no cut uses (a run end always has its cut as a third edge; an interior click is never on an edge)."""
+    old = Mesh.from_state(before_state)
+    segs = [tuple(old.vertex_position(v) for v in old.edge_vertices(e)) for e in old.all_edge_ids()]
+    old_ids = set(old.all_vertex_ids())
+    found = 0
+    for v in mesh.all_vertex_ids():
+        if v in old_ids or len(mesh.vertex_edges(v)) != 2:
+            continue
+        p = mesh.vertex_position(v)
+        for a, b in segs:
+            d = [b[k] - a[k] for k in range(3)]
+            u = sum((p[k] - a[k]) * d[k] for k in range(3)) / sum(c * c for c in d)
+            if 0.0 < u < 1.0 and math.dist(p, tuple(a[k] + u * d[k] for k in range(3))) < 1e-9:
+                found += 1
+                break
+    return found
+
+
 def _random_sessions(scene_name, cls, runs, seed0=0):
     """Seeded random sessions like the probe's (smaller): screen positions aimed at face interiors,
     vertices and edge points of the current mesh, picked and snapped as the window does."""
@@ -1561,7 +1672,8 @@ def _random_sessions(scene_name, cls, runs, seed0=0):
         cams = [_camera(mesh, y, pt) for y, pt in (((20, 35), (0, 0), (-30, 60), (45, 25)) if scene_name == "grid"
                                                    else ((35, 30), (-40, 25), (130, -30), (60, 55)))]
         for _session_no in range(rnd.randint(1, 3)):
-            knife, _scene = _session(mesh, None, cls=cls)
+            before = mesh.export_state()
+            knife, scene = _session(mesh, None, cls=cls)
             for _ in range(rnd.randint(2, 9)):
                 cam = rnd.choice(cams)
                 r = rnd.random()
@@ -1591,6 +1703,11 @@ def _random_sessions(scene_name, cls, runs, seed0=0):
                 knife.click(target)
             knife.commit()
             knife.deactivate()
+            # Task B: nothing applied -> nothing changed; no edge split without a cut through it.
+            if not scene.history and _content(mesh.export_state()) != _content(before):
+                failures.append(f"{scene_name} seed {seed}: mesh changed without a history entry ({knife.last_message})")
+            if _leftover_splits(mesh, before):
+                failures.append(f"{scene_name} seed {seed}: edge split left behind ({knife.last_message})")
             try:
                 assert_geometric_integrity(mesh, planes, context=f"{scene_name} seed {seed}")
             except AssertionError as exc:

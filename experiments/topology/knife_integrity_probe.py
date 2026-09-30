@@ -184,6 +184,28 @@ def face_issues(mesh, fid, *, area_eps=1e-9) -> list[str]:
     return out
 
 
+def leftover_splits(mesh, before_state) -> int:
+    """Vertices a commit left on an edge of the session-start mesh without using them: new, exactly two
+    edges, and those two edges on one straight line — an edge split whose run was dropped (Task B,
+    2026-09-30). A run end always has a third edge (its cut); an interior click never lies on an edge."""
+    old = Mesh.from_state(before_state)
+    old_ids = set(old.all_vertex_ids())
+    segs = [tuple(old.vertex_position(v) for v in old.edge_vertices(e)) for e in old.all_edge_ids()]
+    n = 0
+    for v in mesh.all_vertex_ids():
+        if v in old_ids or len(mesh.vertex_edges(v)) != 2:
+            continue
+        p = mesh.vertex_position(v)
+        for a, b in segs:
+            d = [b[k] - a[k] for k in range(3)]
+            dd = sum(c * c for c in d)
+            u = sum((p[k] - a[k]) * d[k] for k in range(3)) / dd
+            if 0.0 < u < 1.0 and math.dist(p, tuple(a[k] + u * d[k] for k in range(3))) < 1e-9:
+                n += 1
+                break
+    return n
+
+
 def _plane_of(pts, planes, eps=1e-6):
     for k, (axis, value, _sign) in enumerate(planes):
         if all(abs(p[axis] - value) <= eps for p in pts):
@@ -463,6 +485,7 @@ def play(cls, mesh, clicks, cams, *, feats: dict | None = None, no_face=False) -
         feats.update(path_features(mesh, knife.path))
     knife.commit()
     msg = knife.last_message
+    knife.scene_history_len = len(_scene.history)
     knife.deactivate()
     return knife, accepted, msg
 
@@ -494,6 +517,12 @@ def random_run(scene: str, seed: int, *, sessions=(1, 3), clicks=(2, 9), p_face=
                 cl.append((ci, s[0], s[1]))
         f: dict = {}
         _knife, _acc, msg = play(cls, mesh, cl, cams, feats=f, no_face=p_face == 0.0)
+        STATS[scene]["leftover edge splits"] += leftover_splits(mesh, before)
+        # Without the id counters: `load_state` only moves them forward (AD-001).
+        if not _knife.scene_history_len and \
+                {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")} != \
+                {k: v for k, v in before.items() if not k.endswith("_counter")}:
+            STATS[scene]["mesh changed without a history entry"] += 1
         record.append((cl, before, msg))
         feats.append(f)
         issues = integrity(mesh, scene)
@@ -801,6 +830,9 @@ def _summary(label, fails, clean, n):
               f"with a dropped run: {st['with a dropped run']}, "
               f"with a loop at a point built: {st['with a loop at a point']}, "
               f"dropped: {st['with a loop at a point dropped']}")
+        print(f"    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): "
+              f"{st['leftover edge splits']}; sessions without a history entry that changed the mesh: "
+              f"{st['mesh changed without a history entry']}")
         for seed, msg in st["rollbacks"][:10]:
             print(f"      rolled back: seed {seed}: {msg}")
 

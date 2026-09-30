@@ -735,6 +735,9 @@ def test_d_run_failure_is_dropped_and_rest_stays_one_undoable_step(monkeypatch):
     assert _state_no_counters(mesh) == before
     scene.history.redo()
     assert len(mesh.all_face_ids()) == 2
+    # Task B (2026-09-30): the dropped run's own end split (edge 0) is taken back with it — only
+    # the applied run's two points are new.
+    assert len(mesh.all_vertex_ids()) == 6 + 2
 
 
 def test_d_lone_boundary_point_leaves_mesh_untouched():

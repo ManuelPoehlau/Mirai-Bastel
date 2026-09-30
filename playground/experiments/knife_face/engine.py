@@ -644,6 +644,13 @@ def cut_in_face(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions: list
     return path_edges, [f1, f2]
 
 
+def _mesh_content(state: dict) -> dict:
+    """A mesh state without its id allocator counters. `load_state` only ever moves the counters
+    forward (AD-001), so a mesh restored after a dropped run equals its old self in everything
+    but them — and must still count as unchanged (no History entry, Task B 2026-09-30)."""
+    return {k: v for k, v in state.items() if not k.endswith("_counter")}
+
+
 def _copy_attr(value):
     return list(value) if isinstance(value, list) else value
 
@@ -766,7 +773,7 @@ class _KnifeFaceSession(Tool):
 
     def _on_commit(self) -> Any:
         current_state = self._mesh.export_state()
-        if current_state == self._session_before:
+        if _mesh_content(current_state) == _mesh_content(self._session_before):
             self.last_message = self.last_message or "commit: nothing changed"
             return None
         problem = self._integrity_problem()
@@ -1101,67 +1108,55 @@ class KnifeFaceCollected(_KnifeFaceSession):
 
     # -- commit-time resolution --------------------------------------------
 
-    def _resolve_boundary_point(self, p: dict) -> VertexId:
-        if p["kind"] == "vertex":
-            return p["vertex_id"]
-        v, _, _ = self._mesh.split_edge(p["edge_id"], p["t"])
-        return v
-
-    def _resolve_shared_edge_pair(self, eid: EdgeId, t_first: float, t_second: float):
-        """Both run ends are edge-points on the *same* original (pre-commit)
-        edge — the notch/FC3 case. Splits once at the smaller t, then splits
-        the remainder at the adjusted second t; returns the two new vertices
-        in click order (first, second)."""
-        lo_t, hi_t = (t_first, t_second) if t_first <= t_second else (t_second, t_first)
-        v_lo, _e_a, e_b = self._mesh.split_edge(eid, lo_t)
-        hi_t_adj = (hi_t - lo_t) / (1.0 - lo_t)
-        v_hi, _, _ = self._mesh.split_edge(e_b, hi_t_adj)
-        return (v_lo, v_hi) if t_first <= t_second else (v_hi, v_lo)
-
     def _resolve_boundary_points(self, runs: list[list[dict]]) -> dict[int, VertexId]:
-        """Resolve every run-end boundary point to a VertexId exactly once,
-        keyed by `id(point)` (not by edge_id/t: two clicks can land at the same
-        t on different edges, and float equality is fragile).
+        """Start the commit-time resolution of run ends: returns the identity map (`id(point)` ->
+        VertexId, not edge_id/t — two clicks can land at the same t on different edges) that
+        `_apply_run` fills.
 
-        Adjacent runs share their joint point (`[A, B]` and `[B, C]` both hold
-        B), and `split_edge` consumes its edge id — resolving per run would
-        split B's edge twice (KeyError). Edge points that share one original
-        edge (notch/FC3, or across runs) are resolved together in t order,
-        since splitting one invalidates the others' edge id/t. A point whose
-        resolution fails is simply absent from the map; its runs get dropped."""
-        resolved: dict[int, VertexId] = {}
-        by_edge: dict[EdgeId, list[dict]] = {}
-        seen: set[int] = set()
-        # Only run ends: a lone boundary point with no run must not split its
-        # edge (no cut, so the mesh has to stay untouched).
-        for p in (q for run in runs for q in (run[0], run[-1])):
-            if id(p) in seen:
-                continue
-            seen.add(id(p))
-            if p["kind"] == "vertex":
-                resolved[id(p)] = p["vertex_id"]
-            elif p["t"] <= _GEO_EPS or p["t"] >= 1.0 - _GEO_EPS:
+        Nothing is split here (Task B, 2026-09-30): each run splits its own end edges inside its
+        own rollback scope (`_run_end_vertex`), so a dropped run leaves no edge split behind and a
+        commit that applies nothing leaves the mesh as it was. Before, every run end was split up
+        front and a dropped run's splits stayed (handoff reproduction: V8/E12/F6 -> V9/E13/F6)."""
+        self._edge_ends: dict[EdgeId, tuple[VertexId, VertexId]] = {}
+        self._edge_splits: dict[EdgeId, list[tuple[float, VertexId]]] = {}
+        return {}
+
+    def _run_end_vertex(self, p: dict, resolved: dict[int, VertexId]) -> VertexId | None:
+        """The vertex of run end `p`, splitting its click-time edge now if no earlier run did.
+
+        Adjacent runs share their joint point (`[A, B]` and `[B, C]` both hold B): it is split
+        once and reused (`resolved`). Several points on one click-time edge (notch/FC3, or across
+        runs) are placed on the chain of pieces that edge has become — by their t on the original
+        edge, so the order in which runs split it does not matter; a point at the same t as an
+        existing split *is* that vertex (never a second vertex on top of it)."""
+        m = self._mesh
+        v = resolved.get(id(p))
+        if v is not None and m.is_valid_vertex(v):
+            return v
+        if p["kind"] == "vertex":
+            v = p["vertex_id"]
+        else:
+            eid, t = p["edge_id"], p["t"]
+            if eid not in self._edge_ends:
+                self._edge_ends[eid] = tuple(m.edge_vertices(eid))   # never split before this point
+            ends = self._edge_ends[eid]
+            splits = self._edge_splits.setdefault(eid, [])
+            if t <= _GEO_EPS or t >= 1.0 - _GEO_EPS:
                 # An edge point on the edge's end *is* that vertex — splitting there would put a
                 # second vertex on top of it (a zero-area sliver, integrity finding R4).
-                resolved[id(p)] = self._mesh.edge_vertices(p["edge_id"])[0 if p["t"] <= 0.5 else 1]
+                v = ends[0 if t <= 0.5 else 1]
             else:
-                by_edge.setdefault(p["edge_id"], []).append(p)
-        for eid, pts in by_edge.items():
-            try:
-                if len(pts) == 1:
-                    resolved[id(pts[0])] = self._resolve_boundary_point(pts[0])
-                elif len(pts) == 2:
-                    a, b = self._resolve_shared_edge_pair(eid, pts[0]["t"], pts[1]["t"])
-                    resolved[id(pts[0])], resolved[id(pts[1])] = a, b
-                else:
-                    cur, prev_t = eid, 0.0
-                    for p in sorted(pts, key=lambda q: q["t"]):
-                        v, _e_a, e_b = self._mesh.split_edge(cur, (p["t"] - prev_t) / (1.0 - prev_t))
-                        resolved[id(p)] = v
-                        cur, prev_t = e_b, p["t"]
-            except (MeshError, LookupError):
-                continue
-        return resolved
+                v = next((sv for st, sv in splits if abs(st - t) <= _GEO_EPS), None)
+                if v is None:
+                    lo = max(((st, sv) for st, sv in splits if st < t), default=(0.0, ends[0]))
+                    hi = min(((st, sv) for st, sv in splits if st > t), default=(1.0, ends[1]))
+                    piece = _find_edge(m, lo[1], hi[1])
+                    u = (t - lo[0]) / (hi[0] - lo[0])
+                    v, _e1, _e2 = m.split_edge(piece, u if m.edge_vertices(piece)[0] == lo[1] else 1.0 - u)
+                    splits.append((t, v))
+        if v is not None:
+            resolved[id(p)] = v
+        return v
 
     # -- resolving one run against the current faces (integrity fix, 2026-09-29) --------------
     #
@@ -1433,25 +1428,33 @@ class KnifeFaceCollected(_KnifeFaceSession):
     def _apply_run(self, run: list[dict], resolved: dict[int, VertexId]) -> bool:
         first, last = run[0], run[-1]
         interior = run[1:-1]
-        a, b = resolved.get(id(first)), resolved.get(id(last))
-        if a is None or b is None:
-            return False
         # Every interior point of a run lies in one click-time face (the planner puts a crossing
         # at every face change; D accepts no other face) — the run may not leave it.
         root = interior[0]["face_id"] if interior else None
         state, roots, built = self._mesh.export_state(), dict(self._face_root), self._loops_built
+        saved_resolved = dict(resolved)
+        saved_splits = {e: list(v) for e, v in self._edge_splits.items()}
         self._loop_at_point = None
         try:
-            edges = self._walk_run(a, [p["position"] for p in interior], b, root)
+            # The run's own end splits happen here, inside its rollback scope (Task B).
+            a, b = self._run_end_vertex(first, resolved), self._run_end_vertex(last, resolved)
+            edges = None if a is None or b is None else \
+                self._walk_run(a, [p["position"] for p in interior], b, root)
         except (MeshError, LookupError, ValueError, ZeroDivisionError):
             # Safety net: a run that trips over Core degrades to a dropped run (HUD "N/M") —
             # never an exception out of commit, which would skip the History push for
             # whatever earlier runs already mutated.
             edges = None
-        if edges is None:
+        if not edges:
+            # None: dropped. []: the run only walks along existing edges (D, no planner) — it cuts
+            # nothing, so it is not "applied" either, and its end splits go too.
+            # A dropped run leaves nothing behind, its end splits included (Task B, 2026-09-30).
             self._mesh.load_state(state)
             self._face_root = roots
             self._loops_built = built
+            resolved.clear()
+            resolved.update(saved_resolved)
+            self._edge_splits = saved_splits
             if self._loop_at_point:
                 self._loops_at_point[self._loop_at_point] += 1
             return False
@@ -1469,6 +1472,7 @@ class KnifeFaceCollected(_KnifeFaceSession):
                 self._mesh, fid, positions, i1, bv1, i2, bv2,
             )
         except MeshError as exc:
+            self._mesh.load_state(state)  # close_loop_with_bridges may have added the loop's vertices
             return f"closed shape rejected: {exc}"
         problem = next((pr for pr in (face_problem(self._mesh, f) for f in (f_inner, f_a, f_b)) if pr), None)
         if problem is not None:

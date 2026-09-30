@@ -617,7 +617,7 @@ forced its Core failure by patching `connect_in_shared_face`, which the resolver
 - **Zero-area faces from the planner's t = 0 case** (handoff open point): *related* — it is R4 (PLANE, a line through an end
   vertex of the segment's own end edge), fixed in the planner and guarded in the resolver.
 - D reports a straight run that only walks along the boundary as "applied" although nothing was cut (cosmetic, D is
-  superseded).
+  superseded). *Resolved 2026-09-30 (Task B):* such a run cuts nothing, is not counted as applied and leaves no split.
 - `segment_in_face` and the walk work in each face's Newell plane; on the non-planar `head` quads that is a projection — the
   head stress plans exactly as before (same crossings, gaps and "along an edge" breaks), but it is not exact geometry.
 
@@ -705,6 +705,62 @@ whole session is back.
 | (1) Manu's sequence | | |
 | (2) back to the same edge point | | |
 | (3) Undo | | |
+
+### Dropped runs leave no trace (Task B, 2026-09-30)
+
+**Found:** handoff reproduction (cube, Q5, edge point → two interior points → the same edge point, commit at `d8e346b`):
+"0/1 cut(s) applied … loop dropped", yet V8/E12/F6 → **V9/E13/F6**; Manu's screenshot after his sequence: **V10/E14/F6**
+(two splits). Cause: `_resolve_boundary_points` split **every** run end up front, before any run was walked; `_apply_run`
+rolled back only its walk, so a dropped run's end splits stayed (on the edge and in the neighbouring face, which gained a
+straight-angle vertex).
+
+**Rule (agent decision, engineering — not an Artist question):** a commit that applies nothing does not change the mesh; a
+dropped run does not leave its edge splits behind.
+
+**Fix** (`engine.py`, shared resolver — D and Q5):
+
+- **Each run splits its own ends inside its own rollback scope** (`_run_end_vertex`, called by `_apply_run` after the
+  snapshot). A point on a click-time edge is placed on the chain of pieces that edge has become, by its t on the original
+  edge — so the order in which runs split an edge does not matter (replaces `_resolve_shared_edge_pair` and the up-front
+  grouping); a point at the same t as an existing split *is* that vertex. Points shared by two runs are split once and reused;
+  a dropped run takes back its own splits only (a shared point used by an applied run stays).
+- **A run that cuts nothing** (D: a straight run that only walks along existing edges) is not "applied" and leaves no split
+  either (the cosmetic D point in "Q5 integrity findings" is resolved).
+- **"Nothing changed" ignores the id counters.** `Mesh.load_state` only moves the id allocators forward (AD-001), so after a
+  rollback the mesh equals its old self in everything but them; `_on_commit` compared the whole state and would push an
+  empty History entry. It now compares without the counters (`_mesh_content`). The same slip already existed for a closed
+  shape rejected after `load_state`.
+- **Closed shape rejected by a MeshError** (`close_loop_with_bridges` adds the loop's vertices before its last checks): the
+  mesh is restored — before, those vertices stayed isolated.
+
+**Numbers `[PROBE]`** (fuzz, 400 runs each, same seeds; *leftover* = a new vertex with exactly two edges on one line, lying on
+a session-start edge — a split no cut uses; *changed without History* compares without the id counters):
+
+| | before (commit A) | after |
+|---|---|---|
+| Q5 grid / cube: leftover edge splits | 0 / 1 | **0 / 0** |
+| D grid / cube: leftover edge splits | 74 / 118 | **0 / 0** |
+| Q5, D: sessions without a History entry that changed the mesh | 0 | 0 |
+| Q5 / D / Q5 edge-only: integrity failures, rollbacks (grid and cube) | 0, 0 | 0, 0 |
+| D grid / cube: sessions reporting "N-1/N" | 2 / 11 | 62 / 115 — the runs that only walk along existing edges (64 / 112 such runs) are no longer counted as applied |
+| Q5 loops at a point built / dropped, grid / cube | 2 / 0, 13 / 3 | 2 / 1, 12 / 4 — all dropped ones "no area" |
+
+The later sessions of a fuzz run are drawn on the mesh the earlier ones left, so without the leftover splits they differ
+slightly (hence the shifted loop counts). The targeted cases (`--cases`) all end clean.
+
+B (Immediate, REJECTed, not the shared resolver) splits at click time and keeps its leftovers (338 grid / 198 cube) — not
+touched.
+
+**Acceptance 8.2 vs. Task A:** the handoff §3 click list is no longer dropped — since Task A it builds the loop (form 2).
+The reproduction is therefore kept as a test with the bridge made to fail (the resolver's own reason for dropping it): the
+cube stays at **8/12/6**, no History entry. Same for Manu's sequence (two splits before): unchanged mesh.
+
+**Tests** (`test_knife_face_q5.py`, block "dropped runs leave no trace"): §3 reproduction dropped → 8/12/6, identical content,
+no History; Manu's sequence dropped → unchanged; one of two runs dropped → the shared point stays, the dropped run's own end
+split goes; a closed shape rejected after adding its vertices → unchanged; P5 (the run cuts through its own loop) → unchanged;
+the seeded random sessions (Q5 80 + D 60 runs on grid and cube) now also fail on *any* mesh change without a History entry
+and on *any* leftover split. `test_knife_face_lab.py::test_d_run_failure_is_dropped_and_rest_stays_one_undoable_step` gains
+one assertion (only the applied run's two points are new) — nothing adapted.
 
 ---
 
