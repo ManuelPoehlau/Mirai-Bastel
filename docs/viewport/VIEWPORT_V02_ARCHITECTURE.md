@@ -4,6 +4,7 @@
 **Derives from:** `VIEWPORT_V02_RESEARCH.md` + V0.2 Proof-of-Architecture Review  
 **Scope:** Incremental update architecture for responsive polygon/SubD modeling viewport  
 **Target Platform:** Low-end developer hardware (Intel i5 Gen 4, 4GB RAM) is first-class  
+**Reference test PC (actual):** see [`../architecture/REFERENCE_HARDWARE.md`](../architecture/REFERENCE_HARDWARE.md) — older and slower than the target stated above; the target definition itself stays an Artist decision  
 **Reference Mesh:** `examples/meshes/head_basemesh.obj` (326V, 324Q)  
 
 ---
@@ -575,7 +576,7 @@ Before claiming v0.2 ready:
 - [ ] Memory resident stable (no leaks after 1000 operations)
 - [ ] Visual output matches V1 reference on all scenarios
 - [ ] Benchmark data collected (average, 95th percentile, peak)
-- [ ] Low-end hardware tested (reference old developer PC)
+- [ ] Low-end hardware tested (reference PC: [REFERENCE_HARDWARE.md](../architecture/REFERENCE_HARDWARE.md))
 - [ ] Topology operations verified correct (edges, faces updated)
 
 ---

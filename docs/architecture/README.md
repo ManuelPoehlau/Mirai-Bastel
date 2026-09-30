@@ -10,6 +10,7 @@ This directory contains the current architectural contracts and accepted directi
 | [Architecture & Development Roadmap](ROADMAP.md) | Current system dependency graph, work packages, architecture gates and development workflow |
 | [Input / Command / Tool / Operation Contract](INPUT_COMMAND_TOOL_CONTRACT.md) | Accepted input/tool separation and configurable binding contract for WP-01A |
 | [Source Architecture](SOURCE_ARCHITECTURE.md) | Production `src/` boundaries and dependency direction |
+| [Reference Hardware](REFERENCE_HARDWARE.md) | The developer/test PC (CPU, GPU, RAM, input devices) and what follows from it for performance and rendering questions |
 | [V1 Core](V1_CORE.md) | Core V1 architecture and contracts |
 | [Core V1 Freeze](CORE_V1_FREEZE.md) | Final accepted Core V1 state and freeze boundary |
 | [AD-004 — System Vision Reevaluation](AD-004-SYSTEM-VISION-REEVALUATION.md) | Recorded architectural decision about the larger system direction |

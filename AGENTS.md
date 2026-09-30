@@ -11,6 +11,7 @@ Before working in a repository area:
 3. Follow links to applicable architecture, design, research and future-idea documents.
 4. Check whether the requested information or decision already has an authoritative document.
 5. Do not assume experiment code is production architecture.
+6. For performance, rendering or GPU-feature questions, read `docs/architecture/REFERENCE_HARDWARE.md` (the developer/test PC).
 
 When a task crosses boundaries, read the relevant parent-level documentation as well.
 

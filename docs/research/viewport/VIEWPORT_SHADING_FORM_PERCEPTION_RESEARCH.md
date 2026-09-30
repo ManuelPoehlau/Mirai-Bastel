@@ -305,6 +305,8 @@ Presets wären Kombinationen daraus, z. B. „Dunkel · mittel" (nah am heutigen
 
 ## 6. Low-End-Hardware — Einschätzung
 
+Der Referenz-PC ist in [`docs/architecture/REFERENCE_HARDWARE.md`](../../architecture/REFERENCE_HARDWARE.md) beschrieben (Stand 2026-09-30, nach dieser Research ergänzt).
+
 **EINSCHÄTZUNG, nicht gemessen:**
 - K0- und K1-Techniken kosten bei Meshes im Bereich des Referenzkopfes (326 Vertices) auf der GPU praktisch nichts.
 - Relevant werden auf altem PC: K3-Pässe (Füllrate bei voller Fenstergröße) und alles, was Python pro Event rechnet (K2 bei häufiger Änderung, D1/D3 bei Hover).
