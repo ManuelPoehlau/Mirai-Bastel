@@ -172,6 +172,17 @@ Die Spec (§4.7, "Unresolved Decisions") ließ offen, ob Selection über eine ko
 
 Wie im Experiment gewählt und hier für n-gonale Faces (Quads) adaptiert: Face-Normale = Normale des ersten Dreiecks der Fan-Triangulierung; Vertex-Normale = ungewichteter Durchschnitt der Normalen aller incident Faces. Das entspricht einer der beiden in `VIEWPORT_V02_ARCHITECTURE.md` §12 offen gelassenen Optionen (nicht flächengewichtet). Getestet gegen vollen Rebuild als Referenz (`test_incremental_normal_update_matches_full_recompute`).
 
+> **Nachtrag 2026-09-30 — Face-Normale geändert (Bug-Fix, Artist-Freigabe Manu):** Die Face-Normale kommt jetzt aus der
+> **Newell-Normalen der ganzen Boundary** (`viewport.derived.face_normal`, in `full_recompute` und `update_face_normals`),
+> nicht mehr aus dem ersten Fan-Dreieck. Grund: Liegt nach einem `split_edge` (Knife, Knife Face, jede Operation, die eine
+> Kante teilt) ein Split-Vertex an Boundary-Index 1, sind die ersten drei Vertices kollinear, das erste Dreieck hat keine
+> Fläche und die Normale war `(0, 0, 0)` — die Face wurde nur noch ambient beleuchtet (Würfel: 5 von 12 einzelnen
+> Kanten-Splits trafen das; nach Manus Knife-Face-Session wurde der ganze sichtbare Würfel dunkel). Evidenz und Hypothesen:
+> `playground/experiments/knife_face/decision.md`, "Dark shading after a commit (Task C, 2026-09-30)". Für planare Faces
+> ist das Ergebnis dieselbe Richtung wie vorher (bis auf Float-Rundung), für nicht-planare der flächengewichtete Mittelwert
+> statt der Normalen eines beliebigen Dreiecks. Die Vertex-Normale bleibt wie oben definiert. Regressionstests:
+> `tests/test_derived_geometry.py::FaceNormalStraightAngleVertexTests`.
+
 ### 7.3 Core-Mutation bleibt außerhalb von `src/viewport`
 
 `RenderMesh` mutiert die `core.Mesh` **nie** selbst (anders als das Experiment, das `move_vertex()` direkt aufrief). Stattdessen: `mark_vertices_dirty()`/`mark_topology_dirty()` werden von außen (künftig: `src.mirai`, nach einer Core-Operation) aufgerufen; `RenderMesh` liest danach nur den bereits mutierten Zustand. Das hält `src/viewport` vollständig unabhängig von Core-Operationen/History und bestätigt die in Audit-Punkt 10 getroffene Struktur-Entscheidung.

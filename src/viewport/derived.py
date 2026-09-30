@@ -17,8 +17,11 @@ strukturellen Rebuild.
 
 Normalen-Definition (wie im Experiment gewählt und im Proof verifiziert):
 
-- Face-Normale: rechtshändige, normalisierte Normale aus dem ersten
-  Dreieck der Triangulierung einer Face-Boundary.
+- Face-Normale: normalisierte Newell-Normale der ganzen Face-Boundary
+  (`face_normal`). Bis 2026-09-30: Normale des ersten Dreiecks der
+  Triangulierung — (0,0,0), sobald die ersten drei Boundary-Vertices auf
+  einer Linie lagen (Split-Vertex auf einer Kante); siehe
+  docs/WP-04_GATE_5_COMPLETION.md §7.2 (Nachtrag).
 - Vertex-Normale: flächengewichteter Durchschnitt der Normalen aller
   incident Faces.
 
@@ -70,17 +73,23 @@ def _normalize(a: Vec3) -> Vec3:
 _EAR_EPS = 1e-12
 
 
-def _polygon_plane_axes(pts: list[Vec3]) -> tuple[int, int, float]:
-    """(u-Achse, v-Achse, Vorzeichen) der Projektion entlang der dominanten
-    Newell-Normalen. Das Vorzeichen spiegelt die Projektion so, dass die
-    Boundary in 2D immer gegen den Uhrzeigersinn (positive Fläche) läuft —
-    unabhängig davon, von welcher Seite die Face betrachtet wird."""
+def _newell(pts: list[Vec3]) -> Vec3:
+    """Newell-Normale (unnormiert, Länge = doppelte Fläche) einer Boundary."""
     nx = ny = nz = 0.0
     for i, a in enumerate(pts):
         b = pts[(i + 1) % len(pts)]
         nx += (a[1] - b[1]) * (a[2] + b[2])
         ny += (a[2] - b[2]) * (a[0] + b[0])
         nz += (a[0] - b[0]) * (a[1] + b[1])
+    return (nx, ny, nz)
+
+
+def _polygon_plane_axes(pts: list[Vec3]) -> tuple[int, int, float]:
+    """(u-Achse, v-Achse, Vorzeichen) der Projektion entlang der dominanten
+    Newell-Normalen. Das Vorzeichen spiegelt die Projektion so, dass die
+    Boundary in 2D immer gegen den Uhrzeigersinn (positive Fläche) läuft —
+    unabhängig davon, von welcher Seite die Face betrachtet wird."""
+    nx, ny, nz = _newell(pts)
     ax, ay, az = abs(nx), abs(ny), abs(nz)
     if az >= ax and az >= ay:
         return 0, 1, 1.0 if nz >= 0 else -1.0
@@ -179,6 +188,21 @@ def triangle_normal(positions: dict[VertexId, Vec3], tri: tuple[VertexId, Vertex
     return _normalize(_cross(_sub(b, a), _sub(c, a)))
 
 
+def face_normal(positions: Mapping[VertexId, Vec3], boundary: list[VertexId]) -> Vec3:
+    """Einheits-Normale einer Face aus der Newell-Summe über die ganze Boundary.
+
+    Nicht aus dem ersten Fan-Dreieck: liegen die ersten drei Boundary-Vertices
+    auf einer Linie (ein Split-Vertex auf einer Kante, z. B. nach Knife/
+    `split_edge`), hat dieses Dreieck keine Fläche und die Normale wäre (0,0,0)
+    — die Face wurde dann nur noch ambient beleuchtet (Knife Face Lab, Task C
+    2026-09-30). Für planare Faces exakt, für nicht-planare der Flächen-
+    gewichtete Mittelwert. (0,0,0) nur für Faces ohne Fläche oder < 3 Vertices.
+    """
+    if len(boundary) < 3:
+        return (0.0, 0.0, 0.0)
+    return _normalize(_newell([positions[v] for v in boundary]))
+
+
 def compute_bounds(positions: list[Vec3]) -> tuple[Vec3, Vec3]:
     """(min, max) AABB über eine Liste von Positionen."""
     if not positions:
@@ -229,14 +253,7 @@ class DerivedGeometry:
 
         self.face_normals = {}
         for face_id in mesh.all_face_ids():
-            boundary = mesh.face_vertices(face_id)
-            tris = triangulate_face(boundary, positions)
-            if not tris:
-                self.face_normals[face_id] = (0.0, 0.0, 0.0)
-                continue
-            # Face-Normale = Normale des ersten Dreiecks (planare Faces
-            # in V1 - siehe scene_factory.create_cube).
-            self.face_normals[face_id] = triangle_normal(positions, tris[0])
+            self.face_normals[face_id] = face_normal(positions, mesh.face_vertices(face_id))
 
         sums: dict[VertexId, Vec3] = {v: (0.0, 0.0, 0.0) for v in mesh.all_vertex_ids()}
         for vertex_id, face_ids in self.vertex_to_faces.items():
@@ -269,11 +286,7 @@ class DerivedGeometry:
         for face_id in face_ids:
             boundary = mesh.face_vertices(face_id)
             positions = {v: mesh.vertex_position(v) for v in boundary}
-            tris = triangulate_face(boundary, positions)
-            if not tris:
-                self.face_normals[face_id] = (0.0, 0.0, 0.0)
-                continue
-            self.face_normals[face_id] = triangle_normal(positions, tris[0])
+            self.face_normals[face_id] = face_normal(positions, boundary)
 
     def update_vertex_normals(self, mesh: Mesh, vertex_ids: set[VertexId]) -> None:
         """Berechnet die Vertex-Normale für die gegebenen Vertices neu.

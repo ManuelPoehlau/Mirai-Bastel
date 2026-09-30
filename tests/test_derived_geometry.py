@@ -148,3 +148,44 @@ class DerivedGeometryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FaceNormalStraightAngleVertexTests(unittest.TestCase):
+    """Regression (Knife Face Lab Task C, 2026-09-30): a split vertex on an edge made the first
+    fan triangle of the neighbouring face degenerate; the face normal was (0, 0, 0) and the face
+    was lit by ambient only. The normal now comes from the whole boundary (Newell)."""
+
+    @staticmethod
+    def _outward(mesh, fid):
+        pts = [mesh.vertex_position(v) for v in mesh.face_vertices(fid)]
+        axis = next(k for k in range(3) if all(abs(p[k] - pts[0][k]) < 1e-12 for p in pts))
+        out = [0.0, 0.0, 0.0]
+        out[axis] = 1.0 if pts[0][axis] > 0 else -1.0
+        return tuple(out)
+
+    def test_every_single_edge_split_keeps_all_face_normals(self):
+        mesh = create_cube()
+        for eid in list(mesh.all_edge_ids()):
+            state = mesh.export_state()
+            mesh.split_edge(eid, 0.3)
+            derived = DerivedGeometry(mesh)
+            for fid in mesh.all_face_ids():
+                n = derived.face_normals[fid]
+                for a, b in zip(n, self._outward(mesh, fid)):
+                    self.assertAlmostEqual(a, b, places=12)
+            for vid in mesh.all_vertex_ids():
+                self.assertAlmostEqual(_length(derived.vertex_normals[vid]), 1.0, places=9)
+            mesh.load_state(state)
+
+    def test_incremental_update_gives_the_same_normal_after_a_split(self):
+        mesh = create_cube()
+        derived = DerivedGeometry(mesh)
+        eid = next(iter(mesh.all_edge_ids()))
+        vid, _e1, _e2 = mesh.split_edge(eid, 0.5)
+        derived.rebuild_adjacency(mesh)
+        faces = set(derived.vertex_to_faces[vid])
+        derived.update_face_normals(mesh, faces)
+        reference = DerivedGeometry(mesh)
+        for fid in faces:
+            self.assertEqual(derived.face_normals[fid], reference.face_normals[fid])
+            self.assertAlmostEqual(_length(derived.face_normals[fid]), 1.0, places=12)

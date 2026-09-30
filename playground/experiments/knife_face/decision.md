@@ -956,6 +956,15 @@ edge — the Production Knife included, since every `split_edge` does it — can
 sum `_polygon_plane_axes` already computes in that file) in `full_recompute` and `update_face_normals`; it is exact for planar
 faces and does not depend on which corner comes first.
 
+**Fixed 2026-09-30 (Artist: "yes fix the shading").** `src/viewport/derived.py`: new `face_normal` (Newell normal of the whole
+boundary), used by `full_recompute` and `update_face_normals`; the documented decision is amended in place
+(`docs/WP-04_GATE_5_COMPLETION.md` §7.2, dated note; module docstring). Regression tests:
+`tests/test_derived_geometry.py::FaceNormalStraightAngleVertexTests` (every one of the 12 single cube-edge splits: all face
+normals equal the side's outward axis; incremental update equals the full rebuild). `[PROBE]` `--shading` afterwards: 0/12
+single splits leave a zero normal; Manu's sequence 0 zero normals (20/72 ambient-only vertices = the hidden sides); the plain
+cut 0 (18/48). Real window (Xvfb): after the plain cut the front and right pixels are **identical** to before the cut
+((108, 126, 163) / (96, 113, 145)); after Manu's sequence (111, 129, 166) / (101, 118, 152) — lit normally.
+
 **Prepared check for Manu (2 minutes, after these commits):** Q5 on the default cube, same camera, `Shaded`. Click a point on
 the top/right edge, then a point on the top/front edge (a plain straight cut across the top), `Enter`. Look at the front and
 the right side: expected (headless render) **the shading changes at once** — the right side clearly darker, a dark smudge
@@ -971,5 +980,5 @@ point": the cube must no longer go dark as a whole.
 *Recorded from Manu's three screenshots (2026-09-30, 12:11–12:12; camera yaw 45 / pitch 25 / dist 8.37 — another view than the
 prepared one, which does not matter for this check).* **Result:** the headless finding holds in the real app on Manu's
 machine — a plain, successful cut darkens the faces next to its ends, and Undo restores them. The cause stays where it was
-found (`src/viewport/derived.py`, first-triangle face normal); nothing in `src/` was changed. The Newell-normal fix above is
-**waiting for an explicit decision** (it changes `src/viewport`, which every tool's shading goes through).
+found (`src/viewport/derived.py`, first-triangle face normal); nothing in `src/` was changed. The Newell-normal fix above was
+waiting for an explicit decision — *given and built 2026-09-30, see "Fixed 2026-09-30" above.*
