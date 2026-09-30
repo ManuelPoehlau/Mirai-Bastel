@@ -481,7 +481,8 @@ Alle 54 `UNPAIRED`-Vertices von `man_with_shoes_basemesh` haben einen topologisc
 `lab_knife.py`. **Lab-Experiment, keine Capability** — keine Änderung an `src/` oder am
 Playground-Knife. Nur die Engine: kein Fenster, kein Edge-Hover, keine Pfad-Vorschau, keine
 Taste (alles Slice 7). **Nicht vom Artist geprüft** — belegt ist nur das headless Verhalten
-unten. Die Engine ist eine Kopie von `playground/topology_tools/knife.py` und
+unten. Die Engine ist eine Kopie (Stand Slice 6) von `playground/topology_tools/knife.py` (seit WP-06 B7 liegt der
+Knife unter `src/mirai/topology/knife.py`) und
 `connect_in_shared_face` (Herkunftsvermerk im Docstring, Präzedenz AD-010, E16) und läuft nach
 dem gleichen Session-Modell (AD-017 §6–§8): Klick = nächster Schnitt, In-Session-Undo/Redo =
 letzter Schnitt, Cancel = alles verwerfen, Commit = genau ein `MeshStateCommand`. Kein

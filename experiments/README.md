@@ -47,8 +47,8 @@ Research-Baseline: [`../docs/viewport/VIEWPORT_V02_RESEARCH.md`](../docs/viewpor
 
 Zentrale Dokumentations- und Planstelle für die Topology-Forschung. Der aktive Topology-Code lebt
 heute in `playground/topology_tools/` (1:1-Ports gegen die Production-Core, siehe
-`TOPOLOGY_EXPERIMENT_PLAN.md`); `mirai_bastel_viewport_V1/viewport/` enthält die ursprüngliche,
-inzwischen portierte Fassung als Referenz.
+`TOPOLOGY_EXPERIMENT_PLAN.md`). Die ursprüngliche Fassung im entfernten `mirai_bastel_viewport_V1/`
+ist nur noch Git-Historie (AD-006).
 
 Lokaler Einstieg: [`topology/README.md`](topology/README.md)
 
@@ -66,8 +66,9 @@ Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.m
 
 Symmetry Lab (WP-SYM-LAB-01): eigenständiges Fenster für die Symmetrie-Forschung, mit eigenem
 minimalem Draw-Pfad, Production-`OrbitCamera` und Bindings im Lab-Kontext `symmetry_lab`.
-Importiert bewusst nicht aus `playground/`. Stand Slice 2: Mesh sehen, navigieren, Vertex
-auswählen — noch keine Symmetrie-Funktion.
+Importiert bewusst nicht aus `playground/`. Stand Slice 7: Symmetrie-Definition und
+Korrespondenz, symmetrisches Move, Re-Symmetrize, gespiegelter Knife (Slice 7 noch nicht vom Artist
+geprüft) — Details in der lokalen README.
 
 Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
 
@@ -80,6 +81,25 @@ Presets, A/B-Vergleich gegen „Heute“ und Aufnahme. Jede Rig-Änderung kostet
 Buffer-Uploads. Nicht Artist-validiert.
 
 Lokaler Einstieg: [`viewport_shading_lab/README.md`](viewport_shading_lab/README.md)
+
+### `viewport_draw_binding_spike/`
+
+Research-Paket (Typ B) zum Draw-Binding zwischen Production-Viewport und Rendering. Seine Ergebnisse
+fließen in [AD-018](../docs/architecture/AD-018-PRODUCTION-DRAW-BINDING.md) (entschieden 2026-09-25); das
+Experiment selbst ändert keine Architekturentscheidung.
+
+Lokaler Einstieg: [`viewport_draw_binding_spike/README.md`](viewport_draw_binding_spike/README.md)
+
+### `ad018_gl_render_store_verification/`
+
+Wegwerf-Evidenzskripte für die AD-018-Option-B-Implementierung (`GLRenderStore`). Kein Production-Entry-Point.
+
+Lokaler Einstieg: [`ad018_gl_render_store_verification/README.md`](ad018_gl_render_store_verification/README.md)
+
+### `stage_a_entry_point_verification/`
+
+Headless-Evidenzlauf (`run_headless_evidence.py`, Screenshot) zu Stage A (`src/main.py`). Keine lokale README;
+Kontext: [`../docs/architecture/PRODUCTION_ENTRY_POINT_STAGE_A.md`](../docs/architecture/PRODUCTION_ENTRY_POINT_STAGE_A.md).
 
 ### `mirai_bastel_integration_lab/`
 

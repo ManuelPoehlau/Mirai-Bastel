@@ -41,6 +41,13 @@ Aktuell verfügbar:
 - **Modifier:** Shift=Add, Ctrl=Remove, Alt=Toggle
 - **Toggle:** Jeder Click togglet (Max-ähnlich)
 
+### Weitere Familien (Stand 2026-09-29)
+
+`transform/`, `connect/`, `knife/`, `knife_face/`, `topology/`, `tweak/`, `articulation/` — jeweils unter
+`playground/experiments/<familie>/`. Verdikte stehen in der `decision.md` der Familie (vorhanden für
+`selection`, `transform`, `connect`, `knife_face`; Tweak: `tweak_decision.md`). Ein Lab-Verdikt ist keine Promotion;
+entschiedene Ergebnisse gelangen einzeln in die Production-App (WP-06, siehe `docs/architecture/ROADMAP.md` §7).
+
 ## Für Anpassungen
 
 **Bindings konfigurieren:**
@@ -75,4 +82,4 @@ app.select_mode = SelectMode.MODIFIER  # oder REPLACE, TOGGLE
 
 - [MANUAL.md](MANUAL.md) — Vollständige Bedienungsanleitung
 - [docs/design/artist_playground/](../docs/design/artist_playground/) — Architektur & Plan
-- [experiments/mirai_bastel_integration_lab/](../experiments/mirai_bastel_integration_lab/) — Referenz-Harness
+- Der frühere Referenz-Harness `experiments/mirai_bastel_integration_lab/` wurde entfernt; seine Funktionen sind nach `src/mirai/` übergegangen ([AD-008](../docs/architecture/AD-008-IMPORT-FRAMING-PRODUCTION.md))

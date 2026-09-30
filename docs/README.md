@@ -11,6 +11,7 @@ This directory contains the durable project knowledge that should survive indivi
 | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |
 | [Research](research/README.md) | Historical and technical investigation |
 | [Archive](archive/README.md) | Historical reviews and superseded working material |
+| [Viewport](viewport/VIEWPORT_V02_ARCHITECTURE.md) | Viewport v0.2 architecture and research (`viewport/`) |
 
 ## Important distinction
 
@@ -24,15 +25,17 @@ Not every document is a current specification.
 
 When documents overlap, the canonical document wins. Other documents should link to it rather than silently maintaining a second version.
 
-## WP-04 working set (production foundation
+## WP-04 working set (production foundation)
 
 | Document | Purpose |
-|---|---|---|
+|---|---|
 | [WP-04_GATE_PLANNING.md](WP-04_GATE_PLANNING.md) | Gate-Plan + Akzeptanzkriterien |
 | [WP-04_OPEN_QUESTIONS.md](WP-04_OPEN_QUESTIONS.md) | Offene Entscheidungen Q1–Q4 |
 | [WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md](WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md) | Repository-Analyse, Produktions-Boundaries, Extraktionspfade |
 | [WP-04_AGENT_VERIFICATION_REPORT.md](WP-04_AGENT_VERIFICATION_REPORT.md) | Agent-Verifikation, Test-Inventar, Teststrategie, Aufgabenteilung Agent/Claude/Manuel |
 | [WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md](WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md) | Gate-für-Gate-Konsistenz-Audit (12→2) gegen Repo-Stand, Amendment/ADRs und Viewport-V0.2-Architektur |
+
+Weitere WP-04-Dokumente (Gate-Berichte, Amendments) liegen im selben Ordner.
 
 ## For AI collaborators
 

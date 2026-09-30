@@ -40,6 +40,8 @@ separat entschieden.
 | `test_topology_history.py` | D | commit → undo → redo, exakter Zustand inkl. IDs und Beziehungen |
 | `test_scene_serialization.py` | E | Dict-/JSON-Roundtrip nach Mutationen, Allocator, Kollisionen, Versionsprüfung |
 | `test_core.py` | — | Architekturverträge AD-001/002/003, Basis-Serialisierung |
+
+Die Tabelle zeigt nur die Core-Hardening-Module. Seitdem sind Tests für Application/Interaction (`test_application_*.py`, `test_tool_lifecycle.py`, `test_input_binding.py`), Kamera/Picking (`test_camera.py`, `test_application_picking_cache.py`), Mesh-Geometrie und die Topologie-Capabilities (Contextual C, Knife) dazugekommen — Stand 2026-09-29 insgesamt 61 `test_*.py`-Module in `tests/`. Der Artist Playground hat einen eigenen Testbaum: `playground/tests/` (Ausführung: `python -m pytest playground/tests`).
 | `test_history_contract.py` | WP-04 | HistoryStack-Vertrag (No-op-undo/redo, Redo-Zweig-Verwerfen, LIFO) — separat ausführbar |
 | `test_operation_lifecycle.py` | WP-04 | Operation-Lifecycle-Guards (AD-003: begin/update/commit/cancel-State-Machine, History-Grenzen, No-op/Boundary) — separat ausführbar |
 

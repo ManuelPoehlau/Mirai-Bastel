@@ -113,7 +113,7 @@ It is deliberately read-only: no mutation, no tool activation, no modeling
 workflow yet — that is Stage B, a later, separate package. This is still not
 a claim that the final modeling/selection workflow already exists.
 
-The interactive Viewport V1 experiment remains under `experiments/mirai_bastel_viewport_V1/`. It has validated the basic Core → Viewport path on real hardware and is now being used as an active research environment for Selection, Workflow and Topology behavior.
+The former interactive Viewport V1 experiment (`experiments/mirai_bastel_viewport_V1/`) validated the basic Core → Viewport path on real hardware and has since been retired ([AD-006](docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md), 2026-09-17). Selection, Workflow and Topology research now runs in the Artist Playground ([`playground/`](playground/README.md)).
 
 The Topology research is documented in [`experiments/topology/`](experiments/topology/) and [`docs/research/topology/`](docs/research/topology/). Loop/Ring selection, Connect, Loop Insert/Slide, Extrude and the Knife family (including the Knife Face Cut Lab) have been explored in the Artist Playground; results reach the production app only one slice at a time and only after an Artist verdict (WP-06).
 
@@ -209,8 +209,10 @@ The repository deliberately distinguishes between current canonical documents, d
 ## Repository structure
 
 ```text
-src/          Production Core, Application/Interaction and Viewport foundations
+src/          Production Core, Application/Interaction and Viewport foundations, production entry point (`src/main.py`)
+playground/   Artist Playground: research host with variant families and Artist verdicts (the research application)
 experiments/  Isolated milestones, prototypes and practical tests
+tools/        Small helper tools (e.g. Input Mapping Tool)
 tests/        Repository-level tests
 docs/         Architecture, design, research, workflow and future ideas
 examples/     Small usage examples

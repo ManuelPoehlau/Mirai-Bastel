@@ -24,7 +24,7 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
   - Phase A–E completed; Phase F (Production Freeze)
   - Key finding: ID-management constraints affect skinning design (see Phase C findings)
 
-- **Topology Experiment (Phase 2):** [experiments/mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md](../mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md)
+- **Topology Experiment (Phase 2):** [experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md](../topology/TOPOLOGY_EXPERIMENT_PLAN.md)
   - Edge-loop selection, insertion, removal already working
   - This experiment builds on that foundation
 
@@ -33,38 +33,27 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
 - **AD-001 (ID Continuity):** Why Undo/Redo uses state snapshots, not semantic ops
 - **Viewport:** Python + OpenGL (not web-based)
 
-## Viewport V1 Integration — Living Mesh Research (current)
+## Viewport-Integration — Living Mesh Research (Stand 2026-09-29)
 
-Das Experiment hat **keinen eigenen Viewport** und soll auch keinen bekommen.
-Stattdessen nutzt es den vorhandenen Viewport V1 (All-Tools-Playground) aus
-[`experiments/mirai_bastel_viewport_V1/`](../mirai_bastel_viewport_V1/README.md)
-als gemeinsame Darstellungsschicht:
+> **Korrigiert:** Dieses Experiment nutzte früher den Viewport V1 (`experiments/mirai_bastel_viewport_V1/`, All-Tools-Playground) über `run_viewport.py`. Beides wurde per [AD-006](../../docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md) (2026-09-17) ausgemustert und existiert nicht mehr. OBJ-Loader und Head-Basemesh gehören seit [AD-007](../../docs/architecture/AD-007-SHARED-ASSET-LOADER-OWNERSHIP.md) den geteilten Beispielen (`examples/loaders/`, `examples/meshes/head_basemesh.obj`). Die Rolle der Darstellungsschicht übernimmt der Artist Playground.
+
+Das Experiment hat weiterhin **keinen eigenen Viewport** und soll auch keinen bekommen:
 
 ```text
-Viewport V1 (All-Tools-Playground)
+Artist Playground (playground/)
         ↓
-Rigging Experiment Scene  (OBJ Head Basemesh → Mesh)
+Head Basemesh (examples/meshes/head_basemesh.obj → Mesh)
         ↓
 Living Mesh / RigController  (später)
 ```
 
-Der Viewport sieht dabei **nur eine normale `Scene`/`Mesh`** — er weiß nicht,
-dass es ein Rigging-Experiment ist. Kein Viewport-Fork, keine Änderung an
-Viewport- oder Core-Dateien.
-
 ### Start
 
 ```bash
-cd experiments/rigging-skinning-morphing
-python run_viewport.py
+python playground/run.py head
 ```
 
-Öffnet den All-Tools-Playground mit dem echten Head-Basemesh
-(`meshes/head_basemesh.obj`) statt der Würfel-Testszene, inklusive
-Start-Report (Vertices/Edges/Faces/Face-Typen/Bounds) auf der Konsole und
-Window-Titel „Mirai-Bastel — Living Mesh Research". Alle vorhandenen
-Werkzeuge laufen unverändert weiter: Selection (V/E/F), Topology (S/K/C/L/R),
-Transform (M, Shift+R, Shift+S, X/Y/Z), Undo/Redo, Display-Modi (O/W).
+Die Unterabschnitte „Dateien dieser Integration“, „Architekturentscheidungen“ und „Bekannte Grenzen“ unten beschreiben den Stand **vor** AD-006/AD-007. `run_viewport.py` und `loaders/obj_loader.py` existieren nicht mehr.
 
 ### Dateien dieser Integration
 

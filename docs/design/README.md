@@ -10,6 +10,12 @@ This directory contains interaction and workflow principles that guide how Mirai
 
 - [Artist Playground — Architecture Map](artist_playground/ARCHITECTURE_MAP.md) — building block status analysis: what exists, what is missing, what must not be changed
 - [Artist Playground — Roadmap](artist_playground/ROADMAP.md) — WP-AP work package sequence and development model (research-first, Playground → Candidate → Production)
+- [Experiment Host](artist_playground/EXPERIMENT_HOST.md) — canonical documentation of the Playground's experiment host (variant families)
+- [UX Research](artist_playground/UX_RESEARCH.md) — open research / idea space; shared knowledge store of the Three-Role UX system
+- [Research Map](artist_playground/RESEARCH_MAP.md) — discovery: conceptual map of the research space
+- [Experiment Host Audit](artist_playground/DEV_HOST_AUDIT.md) — technical assessment of the host against Research Map V2
+- [AP-03 Selection Lab plan](artist_playground/AP-03_PLAN.md)
+- [WP-AP-CUT plan](artist_playground/WP-AP-CUT_PLAN.md) — Contextual C implementation brief (IMPLEMENTED 2026-09-22)
 - [Input Ownership Audit](artist_playground/INPUT_OWNERSHIP_AUDIT.md) — factual inventory of interaction state, dispatch order, and Gizmo preconditions; evidence base for the pending input-ownership architecture decision (2026-09-21)
 
 ## Relationship to other documentation

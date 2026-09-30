@@ -2,12 +2,12 @@
 
 Dieser Bereich ist die **Dokumentations- und Planstelle für die Topologie-Forschung**.
 
-Der aktive experimentelle Code liegt heute unter `playground/topology_tools/` (interaktiv über den Artist Playground); `experiments/mirai_bastel_viewport_V1/viewport/` enthält die ursprüngliche, inzwischen portierte Fassung als Referenz. Die Trennung zwischen Code und Dokumentation bleibt absichtlich: Dieser Ordner dokumentiert die Topology-Forschung als zusammenhängenden Arbeitsbereich, unabhängig davon, wo der Code gerade läuft.
+Der aktive experimentelle Code liegt heute unter `playground/topology_tools/` (interaktiv über den Artist Playground); die ursprüngliche Fassung im entfernten `mirai_bastel_viewport_V1/` ist nur noch Git-Historie (AD-006). Die Trennung zwischen Code und Dokumentation bleibt absichtlich: Dieser Ordner dokumentiert die Topology-Forschung als zusammenhängenden Arbeitsbereich, unabhängig davon, wo der Code gerade läuft.
 
 ## Einstieg
 
 - [Topology Experiment Plan](TOPOLOGY_EXPERIMENT_PLAN.md) — **aktiver Single Source of Truth für Richtung, Phasen und Prüfmatrix**
-- [Viewport V1 Selection Experiment](../mirai_bastel_viewport_V1/SELECTION_MODES.md) — aktuelle Selection-/Workflow-Erkenntnisse aus dem interaktiven Viewport
+- [Selection Lab — Artist-Verdikte](../../playground/experiments/selection/decision.md) — aktuelle Selection-Erkenntnisse aus dem Artist Playground (der frühere V1-Viewport-Selection-Text ist mit dem V1-Viewport entfernt, AD-006)
 - [Selection Future Ideas](../../docs/future_ideas/SELECTION.md) — längerfristige Selection-Ideen, die nicht nur dieses Experiment betreffen
 - [Workflow Design](../../docs/design/WORKFLOW.md) — allgemeine Interaktionsprinzipien
 - [Core V1 Architecture](../../docs/architecture/V1_CORE.md) — eingefrorene Core-Verträge
@@ -70,7 +70,7 @@ Connect Edges wurde bewusst vor Loop Insert priorisiert. Die Operation ist eine 
 - deterministisch: Selection-Reihenfolge und numerische Edge-IDs beeinflussen weder Gruppierung noch Ergebnis
 - genau ein History-Snapshot pro Operation
 
-Praktisch verifiziert über `tests/test_connect_edges.py`: 2 kompatible Edges, 3+ Ketten, 4+ zusammenhängende Edges, kompletter Edge Ring, Edge Loop als Input, mehrere disjunkte Gruppen, ungültige Auswahl, mehrere Selection-Reihenfolgen, genau ein History-Snapshot mit Undo/Redo, atomare Fehlerfälle.
+Praktisch verifiziert über `playground/tests/test_topology_connect_edges.py`: 2 kompatible Edges, 3+ Ketten, 4+ zusammenhängende Edges, kompletter Edge Ring, Edge Loop als Input, mehrere disjunkte Gruppen, ungültige Auswahl, mehrere Selection-Reihenfolgen, genau ein History-Snapshot mit Undo/Redo, atomare Fehlerfälle.
 
 Scope: reguläre kompatible Quad-Topologie (Ketten, Ringe). Boundary-, Non-Quad-, Mixed-Valence- und Non-Manifold-Fälle werden explizit abgelehnt und sind damit weiterhin offene Forschungsfragen.
 

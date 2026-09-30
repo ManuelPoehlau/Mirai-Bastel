@@ -14,6 +14,15 @@ This document is the canonical home for the artist-side Character Systems resear
 
 - [symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md](symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md) — Research zu Edit-Mode Mirror/Symmetry-Systemen über mehrere DCCs (3ds Max, Blender, Cinema 4D, Modo, Wings 3D, ZBrush, Houdini, Maya). Vergleicht technische Modelle (abgeleitete Hälfte, Positions-Korrespondenz, topologische Korrespondenz), Stressfälle und Naht-Schutz-Mechanismen. Status: Discovery, keine Architekturentscheidung, keine Empfehlung für Mirai-Bastel.
 
+## Modeling Workflow & Topologie
+
+- [MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md](MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md) — Modeling-Workflow, Topologie-Grammatik, lokale Topologiekontrolle (Discovery, keine Entscheidungen)
+- [topology/README.md](topology/README.md) — Connect-, Knife-, Face-Cut- und Face-Holes-Discoveries
+
+## Viewport Shading
+
+- [viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md](viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md) — Shading/Lighting für Formwahrnehmung (Research, keine Entscheidung)
+
 ## Abgrenzung zu `references/`
 
 - `references/` = **kuratierter Wegweiser** zu externen Projekten, Original-Repositories, Dokumentationen und relevanten Bereichen. Kurz: *Was ist interessant und warum?*
