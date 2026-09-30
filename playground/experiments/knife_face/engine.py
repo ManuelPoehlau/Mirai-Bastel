@@ -1130,6 +1130,8 @@ class KnifeFaceCollected(_KnifeFaceSession):
         edge, so the order in which runs split it does not matter; a point at the same t as an
         existing split *is* that vertex (never a second vertex on top of it)."""
         m = self._mesh
+        if p["kind"] == "vertex" and p["vertex_id"] is not None:
+            return p["vertex_id"]  # never through the id cache: a short-lived dict's id can be reused
         v = resolved.get(id(p))
         if v is not None and m.is_valid_vertex(v):
             return v

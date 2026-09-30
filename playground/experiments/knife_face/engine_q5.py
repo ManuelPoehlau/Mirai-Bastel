@@ -358,6 +358,9 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         if closing:
             parts.append("closes the chain" if cyclic else "closes the chain (open pieces: a stretch is skipped)")
             parts.append("the next cut continues from the closing vertex")
+        if b["kind"] == "face" and not closing and \
+                any(p["kind"] != "face" for p in self._chain_points()):
+            parts.append("Enter joins the last point to the nearest corner")
         if skipped:
             parts.append("skipped: " + ", ".join(sorted(set(skipped))))
         if hidden:
@@ -483,6 +486,11 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         segs = self._stored_cut_segments()
         for i, sg in enumerate(segs):
             crossings.extend(self._intersections([sg], segs[i + 1:]))
+        tail = self._open_tail()
+        corners = self._tail_corners(tail) if tail else []
+        if corners:
+            # What Enter does with a last click inside a face: joined to the nearest corner.
+            cut.append((self._pos(tail[-1]), self._mesh.vertex_position(corners[0])))
         return {"cut": cut, "skip": skip, "points": points, "crossings": crossings}
 
     # -- commit-time resolution -------------------------------------------------------
@@ -506,9 +514,11 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         return out
 
     @staticmethod
-    def _runs_of(chunk: list[dict]) -> tuple[list[list[dict]], bool, bool]:
+    def _runs_of(chunk: list[dict]) -> tuple[list[list[dict]], bool, list[dict]]:
         """D's run splitting for one break-free stretch: leading interior points
-        have no anchor and are dropped (FC5), a dangling tail likewise."""
+        have no anchor and are dropped (FC5). The tail — the last boundary point and the
+        interior points after it — is returned (empty if the stretch ends on a boundary):
+        commit joins it to the nearest corner (Artist decision 2026-09-30)."""
         lead = 0
         while lead < len(chunk) and chunk[lead]["kind"] == "face":
             lead += 1
@@ -519,7 +529,31 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 if len(cur) >= 2:
                     runs.append(cur)
                 cur = [p]
-        return runs, lead > 0 and len(chunk) > 1, len(cur) > 1
+        return runs, lead > 0 and len(chunk) > 1, cur if len(cur) > 1 else []
+
+    # -- a cut whose last click lies inside a face (Artist decision 2026-09-30) ----------
+
+    def _tail_corners(self, tail: list[dict]) -> list[VertexId]:
+        """Corners of the face the tail's last click lies in, nearest to that click first (ties by
+        position): commit joins the tail to the first one it can cut to. The tail's own boundary
+        start is no candidate. Read on the session-start mesh (what the Artist clicked on)."""
+        m = self._mesh
+        last = tail[-1]
+        fid = last["face_id"]
+        if not m.is_valid_face(fid):
+            return []
+        start = tail[0]["vertex_id"] if tail[0]["kind"] == "vertex" else None
+        pos = last["position"]
+        cands = [v for v in m.face_vertices(fid) if v != start]
+        return sorted(cands, key=lambda v: (round(math.dist(pos, m.vertex_position(v)), 9),
+                                            tuple(m.vertex_position(v))))
+
+    def _open_tail(self) -> list[dict]:
+        """The open chain's tail (last boundary point + interior points after it), or []."""
+        chunk = []
+        for p in self._path[self._chain_start():]:
+            chunk = [] if _is_break(p) else chunk + [p]
+        return self._runs_of(chunk)[2] if chunk else []
 
     # -- interior start points shared by a seeded chain ---------------------------------
 
@@ -598,6 +632,7 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         seeded_runs: list[list[dict]] = []     # chains anchored on an interior start point: applied last
         anchors: dict[int, tuple[dict, dict]] = {}  # id(interior seed) -> (seed, vertex placeholder)
         loops: list[list[dict]] = []
+        tails: list[tuple[list[dict], list[VertexId], bool]] = []   # (tail, corners, seeded)
         notes: list[str] = []
         dropped_lead = dropped_tail = False
         for entries, closed, cyclic, seeded in self._chains():
@@ -643,11 +678,39 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                 r, lead, tail = self._runs_of(chunk)
                 target_runs.extend(r)
                 dropped_lead |= lead
-                dropped_tail |= tail
+                if tail:
+                    # Corners are read now, before any run changes the faces.
+                    tails.append((tail, self._tail_corners(tail), target_runs is seeded_runs))
 
         (runs, seeded_runs), repeats = self._merge_repeated_points([runs, seeded_runs])
         resolved = self._resolve_boundary_points(runs + seeded_runs)
         applied = sum(1 for run in runs if self._apply_run(run, resolved))
+        joined = 0
+
+        def join_tails(seeded: bool) -> None:
+            # The tail's last click is joined to the nearest corner it can be cut to (Artist
+            # decision 2026-09-30); a corner that does not work (the cut would leave the face or
+            # cross itself) is taken back like any dropped run and the next one is tried.
+            nonlocal joined, dropped_tail
+            for tail, corners, is_seeded in tails:
+                if is_seeded != seeded:
+                    continue
+                ends = [{"kind": "vertex", "vertex_id": v} for v in corners]   # kept alive: `resolved` is keyed by id
+                before = self._loops_at_point.copy()
+                ok = any(self._apply_run(tail + [end], resolved)
+                         for end in ends if self._mesh.is_valid_vertex(end["vertex_id"]))
+                # A loop reason is a property of the tail, not of each corner tried: counted once, and
+                # only if no corner worked.
+                tried = self._loops_at_point - before
+                self._loops_at_point = before
+                if ok:
+                    joined += 1
+                else:
+                    dropped_tail = True
+                    if tried:
+                        self._loops_at_point[tried.most_common(1)[0][0]] += 1
+
+        join_tails(False)
 
         parts: list[str] = []
         for pts in loops:
@@ -664,18 +727,26 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
                     resolved[id(ph)] = vid
             if self._apply_run(run, resolved):
                 applied += 1
+        for seed, ph in anchors.values():
+            vid = self._interior_vertices.get(id(seed))
+            if vid is not None and self._mesh.is_valid_vertex(vid):
+                resolved[id(ph)] = vid
+        join_tails(True)
         if any(self._interior_vertices.get(id(seed)) is None for seed, _ph in anchors.values()):
             notes.append("continuation from an interior start point dropped (no cut created a vertex there)")
 
-        total = len(runs) + len(seeded_runs)
+        total = len(runs) + len(seeded_runs) + len(tails)
+        applied += joined
         if total:
             parts.insert(0, f"{applied}/{total} cut(s) applied")
         if not total and not loops:
             parts.append("no complete cut")
         if dropped_lead:
             notes.append("leading interior point(s) dropped (no boundary reached before them)")
+        if joined:
+            notes.append(f"{joined} last point(s) inside a face joined to the nearest corner")
         if dropped_tail:
-            notes.append("trailing interior point(s) dropped (no boundary reached)")
+            notes.append("trailing interior point(s) dropped (no corner of their face could be joined)")
         if repeats:
             notes.append(f"{repeats} repeated segment(s) merged")
         notes.extend(self._loop_at_point_note())

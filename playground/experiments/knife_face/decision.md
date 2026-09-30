@@ -635,7 +635,8 @@ and the cube turned uniformly dark ("Dark shading after a commit (Task C, 2026-0
 the surrounding face by a **bridge** (H0 — Face Holes stay set aside). (b) refuse the click and (c) drop at commit are not
 wanted. *Interpretation (Context Check — Manu corrects only if wrong):* the small triangle X–click 2–click 3 is the intended
 cut; X is one vertex, shared by the loop and the main cut (Blender-like). The trailing segment that ends inside the front
-without reaching a boundary keeps today's rule (dropped with the note) — not part of this decision.
+without reaching a boundary keeps today's rule (dropped with the note) — not part of this decision. *Superseded the same day:*
+the last click inside a face is joined to the nearest corner — see "Last click inside a face (2026-09-30)".
 
 **Built** (`engine.py`, shared resolver — D and Q5; `window.py` unchanged):
 
@@ -701,7 +702,8 @@ built instead of "1/2 … dropped").
   boundary, (ii) connect it to the nearest vertex (his screenshot ends on a corner), (iii) keep the chain open and wait for a
   further click that reaches a boundary before `Enter` counts (today `Enter` drops the tail), (iv) keep dropping, but show the
   tail in the "no cut" style so the preview says so. A line that ends inside a face (a dangling edge) cannot be one face's
-  boundary without a bridge — the same limit as the loop at a point. Asked back; nothing changed.
+  boundary without a bridge — the same limit as the loop at a point. **Answered (Artist, 2026-09-30): (ii) connect to the
+  nearest corner** — built, see "Last click inside a face (2026-09-30)".
 - Nested / overlapping loops in one run (P5, "winds round another loop's point") and the there-and-back case stay dropped —
   seen 3 times in 771 random cube sessions, never on the grid.
 
@@ -716,6 +718,58 @@ whole session is back.
 | (1) Manu's sequence | *(no verdict stated)* | Played 2026-09-30 12:16–12:17 (two screenshots, camera yaw 45 / pitch 25 / dist 8.37). Before `Enter`: "pending: 1 crossing(s); 1 intersection(s) with earlier cuts", X and the top/front crossing shown as dots. After: `V:13 E:20 F:9`, "1/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); 1 loop(s) closed at a single point — own face, 1 bridge", 5 edges selected. The triangle is its own face; the bridge runs from the loop's left point to the top's left corner (in this view). No leftover vertices, no uniform darkening — same counts and message as the headless replay. |
 | (2) back to the same edge point | | |
 | (3) Undo | | |
+
+### Last click inside a face (2026-09-30)
+
+**Artist decision (Manu, 2026-09-30, answer to the question above):** when the last click of a cut lies inside a face, `Enter`
+**joins it to the nearest corner** of that face (option (ii); not (i) extend to the edge, (iii) wait for a boundary click,
+(iv) keep dropping). His hand-made screenshot (`V:14 E:22 F:10`) is the expected result of his sequence.
+
+**Built** (`engine_q5.py`; Q5 only — D is superseded and keeps dropping its tail):
+
+- The *tail* of a stretch — its last boundary point and the interior points after it — is no longer dropped: it becomes a run
+  `B → I1 … Ik → V`, V a corner of the face Ik was clicked in. **Lab defaults (not decisions):** "nearest" is the world
+  distance from Ik to the corners of that face as it was clicked (the session-start mesh — what the Artist saw; vertices
+  other runs of the same commit create are not candidates); the tail's own start vertex is no candidate; ties by position.
+  If the nearest corner cannot be cut to (the line would leave the face, or the tail would wind round its own loop), the
+  next one is tried, each try taken back like a dropped run (Task B). A tail that no corner works for is dropped with the
+  note "trailing interior point(s) dropped (no corner of their face could be joined)".
+- Tails are applied after the other runs of the commit (seeded ones after the seeded runs). They count in "N/M cut(s)
+  applied"; the HUD adds "K last point(s) inside a face joined to the nearest corner".
+- **Preview:** the stored-path overlay draws the joining line from the open chain's last interior click to its corner (same
+  cut style); the hover message says "Enter joins the last point to the nearest corner" when the hovered point is inside a
+  face. `window.py` unchanged (it already draws the stored cut lines and prints the message).
+- **Bug found while building (fixed):** commit's `resolved` map is keyed by `id(point)`; the corner end points were short-lived
+  dicts, and CPython reuses a freed dict's id — the second tail of a commit was answered with the *first* tail's corner (a
+  vertex of another face) and dropped. A vertex point is now never looked up in that cache, and the corner dicts stay alive.
+
+**Numbers `[PROBE]`** (fuzz, same seeds): Q5 grid 0/400 and cube 0/400 integrity failures, 0 rollbacks, 0 leftover splits,
+0 mesh changes without History; tails joined 157 (grid) / 366 (cube), not joined 0 / 1 (a five-point zig-zag winding round its
+own loop — "it winds round another loop's point"). All `--cases` clean; HD1 (edge point → one interior point, `Enter`) now
+joins the centre click to the quad's corner (0, 0, 0) (all four equally far — first by position).
+
+**Tests** (`test_knife_face_q5.py`): the nearest corner on the grid (hover message, preview line, the cut's two edges);
+ties by position independent of the start edge; the next corner when the nearest is the tail's own start; two tails in one
+commit, each to a corner of its own quad; the id-cache invariant (a vertex point resolves to its own vertex whatever the
+cache holds — fails without the fix). **Adapted (two, both pinned the dropped tail):** Manu's cube sequence now ends
+"2/2 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner; 1 loop(s) …" with I4 joined to the front's
+corner (−1, 1, 1) (the nearest for the test's click; Manu's own click lies lower on the front, nearer its bottom-left corner,
+as in his screenshot); the Task B test with the top run forced to drop now checks that only the tail is cut and the top run's
+split E1 is gone (renamed `test_manus_sequence_dropped_leaves_no_split_of_the_dropped_run`).
+
+**Open points (record, do not decide):** whether "nearest" should be measured on screen instead of in world space (they can
+differ on a face seen at a slant); whether a vertex created earlier in the same commit (e.g. the crossing on an edge) should be
+a candidate; the leading-interior rule (a cut *starting* inside a face) is unchanged — still dropped.
+
+**Prepared Artist test (2 minutes):** Q5, default cube. (1) Repeat the original sequence (top/right edge, two top clicks so
+segment 3 crosses segment 1, last click inside the front) — watch the stored line from the last click to a front corner
+before `Enter`; expected after: `V:14 E:22 F:10`, the front divided as in the hand-made screenshot. (2) Edge point on the top,
+one click in the middle of the top, `Enter` — the click is joined to the nearest top corner.
+
+| Task | Seen (Manu) |
+|---|---|
+| (1) original sequence, front joined to a corner | |
+| (2) one interior click, `Enter` | |
 
 ### Dropped runs leave no trace (Task B, 2026-09-30)
 

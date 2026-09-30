@@ -1446,7 +1446,7 @@ def test_manus_cube_sequence_keeps_the_triangle_as_its_own_face():
     cam = _camera(mesh, 35.0, 30.0)
     knife, scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, MANU_TOP + [("f", (-0.4, 0.3, 1))], cam)
     assert all(accepted) and cmd is not None
-    assert knife.last_message == ("1/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); "
+    assert knife.last_message == ("2/2 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner; "
                                   "1 loop(s) closed at a single point — own face, 1 bridge")
     assert_geometric_integrity(mesh, CUBE_PLANES, context="Manu cube")
     tops = _top_partition(mesh)
@@ -1455,8 +1455,15 @@ def test_manus_cube_sequence_keeps_the_triangle_as_its_own_face():
     assert len(tri) == 1                                        # the triangle X-I2-I3
     x = next(p for p in tri[0] if p not in ((-0.5, 1.0, -0.6), (0.6, 1.0, -0.7)))
     assert len(_vertices_at(mesh, x)) == 1
-    # Only the run's own points are new: E1, the crossing on the top/front edge, I2, I3, X.
-    assert len(mesh.all_vertex_ids()) == 8 + 5
+    # Only the run's own points are new: E1, the crossing on the top/front edge, I2, I3, X, I4.
+    assert len(mesh.all_vertex_ids()) == 8 + 6
+    # The last click inside the front is joined to the front's nearest corner (-1, 1, 1):
+    # the front is divided, one piece holds I4 and that corner (Artist decision 2026-09-30).
+    (i4,) = _vertices_at(mesh, (-0.4, 0.3, 1.0))
+    (corner,) = _vertices_at(mesh, (-1.0, 1.0, 1.0))
+    assert any(set(mesh.edge_vertices(e)) == {i4, corner} for e in mesh.vertex_edges(i4))
+    front = [f for f in _partition(mesh) if all(abs(q[2] - 1.0) < 1e-9 for q in f)]
+    assert len(front) == 2
     assert len(scene.history) == 1
 
 
@@ -1505,6 +1512,85 @@ def test_a_run_that_cuts_through_its_own_loop_is_dropped_with_a_note(cls):
     assert _content(mesh.export_state()) == _content(before)    # Task B: no edge split left behind
 
 
+# -- a last click inside a face is joined to the nearest corner (Artist decision 2026-09-30) ---
+
+def test_last_click_inside_a_face_is_joined_to_the_nearest_corner():
+    mesh, _p = _grid()
+    knife, scene = _session(mesh, _camera(mesh))
+    assert knife.click(_spec(mesh, ("e", (0, 0, 0), (0, 1, 0), 0.5)))
+    plan = knife.plan(_spec(mesh, ("f", (0.6, 0.7, 0))))
+    assert plan.ok and "Enter joins the last point to the nearest corner" in plan.message
+    assert knife.click(_spec(mesh, ("f", (0.6, 0.7, 0))))
+    cut = knife.preview_stored()["cut"]                        # the preview shows the joining line
+    assert any(math.dist(a, (0.6, 0.7, 0.0)) < 1e-9 and math.dist(b, (1.0, 1.0, 0.0)) < 1e-9 for a, b in cut)
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert knife.last_message == "1/1 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner"
+    assert_geometric_integrity(mesh, GRID_PLANES, context="tail joined")
+    (i,) = _vertices_at(mesh, (0.6, 0.7, 0.0))
+    ends = {mesh.vertex_position(v) for e in mesh.vertex_edges(i) for v in mesh.edge_vertices(e) if v != i}
+    assert {tuple(q) for q in ends} == {(0.0, 0.5, 0.0), (1.0, 1.0, 0.0)}
+    assert len(scene.history) == 1
+
+
+def test_tail_corner_ties_are_broken_by_position_not_click_order():
+    """HD1: the last click in the quad's centre is equally far from all four corners."""
+    results = set()
+    for start in (("e", (0, 0, 0), (0, 1, 0), 0.5), ("e", (0, 0, 0), (1, 0, 0), 0.5)):
+        mesh, _p = _grid()
+        knife, _scene, cmd, _acc = _play(KnifeFaceCrossFace, mesh, [start, ("f", (0.5, 0.5, 0))])
+        assert cmd is not None and "joined to the nearest corner" in knife.last_message
+        assert_geometric_integrity(mesh, GRID_PLANES, context="tie")
+        (i,) = _vertices_at(mesh, (0.5, 0.5, 0.0))
+        results.add(tuple(sorted(tuple(mesh.vertex_position(v)) for e in mesh.vertex_edges(i)
+                                 for v in mesh.edge_vertices(e) if v != i and mesh.vertex_position(v)[0] in (0.0, 1.0)
+                                 and mesh.vertex_position(v)[1] in (0.0, 1.0))))
+    assert results == {((0.0, 0.0, 0.0),)}                    # always the lexicographically first corner
+
+
+def test_two_tails_in_one_commit_each_join_a_corner_of_their_own_face():
+    """A chain with a skipped stretch has a tail before and after the gap (the planner stores it
+    that way when the line crosses a hidden part). Each tail goes to a corner of its own quad.
+    Before the fix the second tail reused the first one's corner (an id()-keyed cache hit on a
+    short-lived dict) and was dropped."""
+    mesh, _p = _grid()
+    knife, scene = _session(mesh, _camera(mesh))
+    specs = [("e", (0, 0, 0), (0, 1, 0), 0.5), ("f", (0.6, 0.7, 0)), None,
+             ("e", (3, 3, 0), (4, 3, 0), 0.5), ("f", (3.4, 3.3, 0))]
+    knife._path = [{"kind": "break", "reason": "gap"} if sp is None else _spec(mesh, sp) for sp in specs]
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert knife.last_message.startswith("2/2 cut(s) applied; 2 last point(s) inside a face joined to the nearest corner")
+    assert_geometric_integrity(mesh, GRID_PLANES, context="two tails")
+    for pos, corner in (((0.6, 0.7, 0.0), (1.0, 1.0, 0.0)), ((3.4, 3.3, 0.0), (3.0, 3.0, 0.0))):
+        (i,) = _vertices_at(mesh, pos)
+        (c,) = _vertices_at(mesh, corner)
+        assert any(set(mesh.edge_vertices(e)) == {i, c} for e in mesh.vertex_edges(i))
+
+
+def test_a_vertex_point_resolves_to_its_own_vertex_whatever_the_id_cache_holds():
+    """The deterministic core of the two-tails bug: `resolved` is keyed by id(), and CPython reuses
+    the id of a freed dict. A vertex point must never be answered from that cache."""
+    mesh, p = _grid()
+    knife, _scene = _session(mesh, None)
+    knife._resolve_boundary_points([])
+    end = _vpt(p[(0, 0)])
+    stale = {id(end): p[(4, 4)]}                               # what a freed dict with the same id left
+    assert knife._run_end_vertex(end, stale) == p[(0, 0)]
+    knife.cancel()
+    knife.deactivate()
+
+
+def test_a_tail_whose_nearest_corner_cannot_be_cut_takes_the_next_one():
+    """The nearest corner is the tail's own start vertex (not a candidate) — the next corner is used."""
+    mesh, _p = _grid()
+    knife, _scene, cmd, _acc = _play(KnifeFaceCrossFace, mesh, [("v", (0, 0, 0)), ("f", (0.2, 0.3, 0))], _camera(mesh))
+    assert cmd is not None and "joined to the nearest corner" in knife.last_message
+    assert_geometric_integrity(mesh, GRID_PLANES, context="next corner")
+    (i,) = _vertices_at(mesh, (0.2, 0.3, 0.0))
+    assert len(mesh.vertex_edges(i)) == 2
+
+
 # -- dropped runs leave no trace (Task B, 2026-09-30) ------------------------------------------
 #
 # Rule (engineering): a commit that applies nothing does not change the mesh, and a dropped run does
@@ -1544,8 +1630,10 @@ def test_handoff_reproduction_dropped_leaves_the_cube_at_8_12_6(monkeypatch):
     assert _content(mesh.export_state()) == _content(before) and len(scene.history) == 0
 
 
-def test_manus_sequence_dropped_leaves_the_cube_unchanged(monkeypatch):
-    """Manu's screenshot showed V10/E14/F6 after a commit that applied nothing (two splits left)."""
+def test_manus_sequence_dropped_leaves_no_split_of_the_dropped_run(monkeypatch):
+    """Manu's screenshot showed V10/E14/F6 after a commit that applied nothing (two splits left). With
+    the top run dropped, only the front's tail (joined to its nearest corner) is cut: the top run's
+    edge point E1 leaves nothing behind."""
     import playground.experiments.knife_face.engine as eng
 
     monkeypatch.setattr(eng, "close_loop_at_vertex",
@@ -1554,10 +1642,12 @@ def test_manus_sequence_dropped_leaves_the_cube_unchanged(monkeypatch):
     before = mesh.export_state()
     knife, scene, cmd, accepted = _play(KnifeFaceCrossFace, mesh, MANU_TOP + [("f", (-0.4, 0.3, 1))],
                                         _camera(mesh, 35.0, 30.0))
-    assert all(accepted) and cmd is None
-    assert knife.last_message.startswith("0/1 cut(s) applied")
-    assert _counts(mesh) == (8, 12, 6) and _content(mesh.export_state()) == _content(before)
-    assert len(scene.history) == 0
+    assert all(accepted) and cmd is not None
+    assert knife.last_message.startswith("1/2 cut(s) applied")
+    assert not _vertices_at(mesh, (1.0, 1.0, 0.2))             # E1: the dropped run's own split, gone
+    assert _counts(mesh) == (8 + 2, 12 + 3, 6 + 1)             # C splits its edge, C-I4-corner divides the front
+    assert_geometric_integrity(mesh, CUBE_PLANES, context="top dropped, tail joined")
+    assert len(scene.history) == 1
 
 
 def test_a_dropped_run_takes_back_only_its_own_splits():

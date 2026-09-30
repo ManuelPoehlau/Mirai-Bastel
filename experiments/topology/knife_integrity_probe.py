@@ -702,7 +702,7 @@ CASES = {
     "HD1 trailing interior point dropped": (
         "H-d", "grid", None,
         [[("e", (0, 0, 0), (0, 1, 0), 0.5), ("f", (0.5, 0.5, 0))]],
-        "a dangling tail never reaches the resolver"),
+        "a dangling tail never reaches the resolver (since 2026-09-30 Q5 joins it to the nearest corner)"),
     "HD2 run end leaves a collinear vertex, a later chord runs along it": (
         "H-d / along", "grid", None,
         [[("e", (1, 1, 0), (2, 1, 0), 0.5), ("e", (1, 2, 0), (2, 2, 0), 0.5)],
@@ -736,7 +736,7 @@ CASES = {
         "loop", "cube", (35.0, 30.0),
         [[("e", (1, 1, -1), (1, 1, 1), 0.6), ("f", (-0.5, 1, -0.6)), ("f", (0.6, 1, -0.7)),
           ("e", (-1, 1, 1), (1, 1, 1), 0.5), ("f", (-0.4, 0.3, 1))]],
-        "segment 3 crosses segment 1 on the top, runs over the top/front edge; trailing point dropped"),
+        "segment 3 crosses segment 1 on the top, runs over the top/front edge; the last click (front) joined to its nearest corner"),
     "P3r the same top loop, clicked from the front edge": (
         "loop", "cube", (35.0, 30.0),
         [[("e", (-1, 1, 1), (1, 1, 1), 0.5), ("f", (0.6, 1, -0.7)), ("f", (-0.5, 1, -0.6)),
