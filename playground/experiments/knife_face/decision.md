@@ -897,6 +897,12 @@ point": the cube must no longer go dark as a whole.
 
 | Check | Seen (Manu) |
 |---|---|
-| plain cut: right side darker, smudge at the front/right corner after `Enter` | |
-| `Ctrl+Z`: lit as before | |
-| Manu's sequence: no uniform darkening | |
+| plain cut: right side darker, smudge at the front/right corner after `Enter` | **Yes** — cut across the top close to the front corner (top/left → top/right edge), `V:10 E:15 F:7`, "1/1 cut(s) applied": both visible sides lose their light, the right one most; the top keeps its gradient |
+| `Ctrl+Z`: lit as before | **Yes** — `V:8 E:12 F:6`, shading as before the cut |
+| Manu's sequence: no uniform darkening | *not played in this round* |
+
+*Recorded from Manu's three screenshots (2026-09-30, 12:11–12:12; camera yaw 45 / pitch 25 / dist 8.37 — another view than the
+prepared one, which does not matter for this check).* **Result:** the headless finding holds in the real app on Manu's
+machine — a plain, successful cut darkens the faces next to its ends, and Undo restores them. The cause stays where it was
+found (`src/viewport/derived.py`, first-triangle face normal); nothing in `src/` was changed. The Newell-normal fix above is
+**waiting for an explicit decision** (it changes `src/viewport`, which every tool's shading goes through).
