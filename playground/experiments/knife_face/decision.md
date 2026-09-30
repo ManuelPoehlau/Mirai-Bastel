@@ -736,9 +736,11 @@ whole session is back.
   note "trailing interior point(s) dropped (no corner of their face could be joined)".
 - Tails are applied after the other runs of the commit (seeded ones after the seeded runs). They count in "N/M cut(s)
   applied"; the HUD adds "K last point(s) inside a face joined to the nearest corner".
-- **Preview:** the stored-path overlay draws the joining line from the open chain's last interior click to its corner (same
+- ~~**Preview:** the stored-path overlay draws the joining line from the open chain's last interior click to its corner (same
   cut style); the hover message says "Enter joins the last point to the nearest corner" when the hovered point is inside a
-  face. `window.py` unchanged (it already draws the stored cut lines and prints the message).
+  face.~~ *Removed 2026-09-30 (Artist: "the connect to nearest vertex should apply after cut session commit, not while
+  cutting"; "nearest in 3D seems the right way"):* while cutting, nothing shows or announces the join — the preview is only
+  what was clicked; the join is made at `Enter`. `window.py` unchanged.
 - **Bug found while building (fixed):** commit's `resolved` map is keyed by `id(point)`; the corner end points were short-lived
   dicts, and CPython reuses a freed dict's id — the second tail of a commit was answered with the *first* tail's corner (a
   vertex of another face) and dropped. A vertex point is now never looked up in that cache, and the corner dicts stay alive.
@@ -757,13 +759,14 @@ corner (−1, 1, 1) (the nearest for the test's click; Manu's own click lies low
 as in his screenshot); the Task B test with the top run forced to drop now checks that only the tail is cut and the top run's
 split E1 is gone (renamed `test_manus_sequence_dropped_leaves_no_split_of_the_dropped_run`).
 
-**Open points (record, do not decide):** whether "nearest" should be measured on screen instead of in world space (they can
-differ on a face seen at a slant); whether a vertex created earlier in the same commit (e.g. the crossing on an edge) should be
+**Open points (record, do not decide):** ~~whether "nearest" should be measured on screen instead of in world space~~ —
+*closed, Artist 2026-09-30: 3D (world) distance is right;* whether a vertex created earlier in the same commit (e.g. the crossing on an edge) should be
 a candidate; the leading-interior rule (a cut *starting* inside a face) is unchanged — still dropped.
 
 **Prepared Artist test (2 minutes):** Q5, default cube. (1) Repeat the original sequence (top/right edge, two top clicks so
 segment 3 crosses segment 1, last click inside the front) — watch the stored line from the last click to a front corner
-before `Enter`; expected after: `V:14 E:22 F:10`, the front divided as in the hand-made screenshot. (2) Edge point on the top,
+before `Enter` *(superseded: no such line while cutting)*; expected after: `V:14 E:22 F:10`, the front divided as in the
+hand-made screenshot. (2) Edge point on the top,
 one click in the middle of the top, `Enter` — the click is joined to the nearest top corner.
 
 | Task | Seen (Manu) |

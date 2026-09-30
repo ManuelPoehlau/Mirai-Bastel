@@ -358,9 +358,6 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         if closing:
             parts.append("closes the chain" if cyclic else "closes the chain (open pieces: a stretch is skipped)")
             parts.append("the next cut continues from the closing vertex")
-        if b["kind"] == "face" and not closing and \
-                any(p["kind"] != "face" for p in self._chain_points()):
-            parts.append("Enter joins the last point to the nearest corner")
         if skipped:
             parts.append("skipped: " + ", ".join(sorted(set(skipped))))
         if hidden:
@@ -486,11 +483,7 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         segs = self._stored_cut_segments()
         for i, sg in enumerate(segs):
             crossings.extend(self._intersections([sg], segs[i + 1:]))
-        tail = self._open_tail()
-        corners = self._tail_corners(tail) if tail else []
-        if corners:
-            # What Enter does with a last click inside a face: joined to the nearest corner.
-            cut.append((self._pos(tail[-1]), self._mesh.vertex_position(corners[0])))
+        # No line to the nearest corner while cutting (Artist, 2026-09-30): that join is made at commit only.
         return {"cut": cut, "skip": skip, "points": points, "crossings": crossings}
 
     # -- commit-time resolution -------------------------------------------------------
@@ -547,13 +540,6 @@ class KnifeFaceCrossFace(KnifeFaceCollected):
         cands = [v for v in m.face_vertices(fid) if v != start]
         return sorted(cands, key=lambda v: (round(math.dist(pos, m.vertex_position(v)), 9),
                                             tuple(m.vertex_position(v))))
-
-    def _open_tail(self) -> list[dict]:
-        """The open chain's tail (last boundary point + interior points after it), or []."""
-        chunk = []
-        for p in self._path[self._chain_start():]:
-            chunk = [] if _is_break(p) else chunk + [p]
-        return self._runs_of(chunk)[2] if chunk else []
 
     # -- interior start points shared by a seeded chain ---------------------------------
 

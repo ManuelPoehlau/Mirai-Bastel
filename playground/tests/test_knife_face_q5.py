@@ -1519,10 +1519,13 @@ def test_last_click_inside_a_face_is_joined_to_the_nearest_corner():
     knife, scene = _session(mesh, _camera(mesh))
     assert knife.click(_spec(mesh, ("e", (0, 0, 0), (0, 1, 0), 0.5)))
     plan = knife.plan(_spec(mesh, ("f", (0.6, 0.7, 0))))
-    assert plan.ok and "Enter joins the last point to the nearest corner" in plan.message
+    assert plan.ok and "corner" not in plan.message
     assert knife.click(_spec(mesh, ("f", (0.6, 0.7, 0))))
-    cut = knife.preview_stored()["cut"]                        # the preview shows the joining line
-    assert any(math.dist(a, (0.6, 0.7, 0.0)) < 1e-9 and math.dist(b, (1.0, 1.0, 0.0)) < 1e-9 for a, b in cut)
+    # Artist, 2026-09-30: the join to the corner happens at commit, not while cutting — the stored
+    # preview shows only the clicked segment, no line to a corner.
+    cut = knife.preview_stored()["cut"]
+    assert not any(math.dist(b, (1.0, 1.0, 0.0)) < 1e-9 or math.dist(a, (1.0, 1.0, 0.0)) < 1e-9 for a, b in cut)
+    assert len(cut) == 1
     assert knife.commit() is not None
     knife.deactivate()
     assert knife.last_message == "1/1 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner"
