@@ -1314,7 +1314,9 @@ class KnifeFaceCollected(_KnifeFaceSession):
         targets = list(positions) + [m.vertex_position(b)]
         last = len(targets) - 1
         p, k, out = a, 0, []
-        loops: list[tuple[VertexId, list[Position]]] = []   # (the loop's vertex, its other points)
+        # (the loop's vertex — a VertexId, or the position of a point another loop or cut creates —,
+        # its other points)
+        loops: list[tuple[VertexId | Position, list[Position]]] = []
         for _guard in range(4 * (len(targets) + len(m.all_face_ids())) + 8):
             if p == b and k == last:
                 return self._build_loops(loops, root, out)
@@ -1333,7 +1335,7 @@ class KnifeFaceCollected(_KnifeFaceSession):
             cur2, skip, pending = fr.pts2[i0], i0, []
             trail = [cur2]                          # the run inside this face so far, in 2D ...
             trail3 = [m.vertex_position(p)]         # ... and in 3D
-            pinches: list[tuple[int, list[Position]]] = []   # (index in pending, loop points)
+            pinches: list[tuple[Position, list[Position]]] = []   # (crossing X, loop points)
             while True:
                 t2 = fr.p2(targets[k])
                 hit = self._first_hit(fr, cur2, t2, skip)
@@ -1344,13 +1346,12 @@ class KnifeFaceCollected(_KnifeFaceSession):
                     # The run crosses itself inside this face at X: X -> (the points since the
                     # crossed segment) -> X is a loop, the run goes on from X. X becomes a vertex
                     # of this face's cut; the loop is built on it once the run is through.
+                    # An earlier X among those points is fine: its loop hangs off this loop and is
+                    # built once this loop has made X a vertex (`_build_loops`).
                     j, lam = cross
-                    if any(idx >= j for idx, _pts in pinches):
-                        self._loop_at_point = LOOP_NESTED
-                        return None
                     c3, d3 = trail3[j], trail3[j + 1]
                     x3 = tuple(c3[q] + lam * (d3[q] - c3[q]) for q in range(3))
-                    pinches.append((j, pending[j:]))
+                    pinches.append((x3, pending[j:]))
                     pending = pending[:j] + [x3]
                     trail, trail3 = trail[:j + 1] + [fr.p2(x3)], trail3[:j + 1] + [x3]
                     cur2, skip = trail[-1], None
@@ -1378,29 +1379,45 @@ class KnifeFaceCollected(_KnifeFaceSession):
                     k += 1  # the interior point itself lies on that boundary point
                 if q == p:
                     # Back into the vertex the run entered this face through: a loop at that
-                    # vertex. Nothing else is cut in this face; the run goes on from p.
-                    if len(pending) < 2 or pinches:
-                        self._loop_at_point = LOOP_NO_AREA if len(pending) < 2 else LOOP_NESTED
+                    # vertex. Nothing else is cut in this face; the run goes on from p. Loops that
+                    # crossed on the way (a bow-tie, Artist play test 2026-09-30) hang off points
+                    # of this loop.
+                    if len(pending) < 2:
+                        self._loop_at_point = LOOP_NO_AREA
                         return None
                     loops.append((p, pending))
+                    loops.extend(pinches)
                     break
                 edges, children = cut_in_face(m, fr.face_id, p, q, pending)
                 self._adopt(fr.face_id, children)
                 out.extend(edges)
-                for idx, pts in pinches:
-                    x3 = pending[idx]
-                    xv = next(v for f in children for v in m.face_vertices(f)
-                               if _dist3(m.vertex_position(v), x3) <= 1e-12)
-                    loops.append((xv, pts))
+                loops.extend(pinches)
                 p = q
                 break
         return None
 
     def _build_loops(self, loops, root: FaceId | None, out: list[EdgeId]):
         """Build the loops a run closed at single points (see `_walk_run`), each in the face at its
-        vertex that holds it; None (the run is dropped) if one cannot be built."""
+        vertex that holds it; None (the run is dropped) if one cannot be built.
+
+        A loop's vertex is a VertexId or the position of a crossing X, which becomes a vertex when
+        the face's cut or another loop through X is built — so loops are built in that order: a loop
+        whose X is still missing waits for the others (any order of clicks gives the same result)."""
         m = self._mesh
-        for x, pts in loops:
+
+        def vertex_at(anchor):
+            if not isinstance(anchor, tuple):
+                return anchor
+            return next((v for v in m.all_vertex_ids() if _dist3(m.vertex_position(v), anchor) <= 1e-12), None)
+
+        todo = list(loops)
+        while todo:
+            ready = next((i for i, (anchor, _pts) in enumerate(todo) if vertex_at(anchor) is not None), None)
+            if ready is None:
+                self._loop_at_point = LOOP_NESTED
+                return None
+            anchor, pts = todo.pop(ready)
+            x = vertex_at(anchor)
             probe = pts[0]
             face = None
             for f in sorted({f for e in m.vertex_edges(x) for f in m.edge_faces(e)}, key=int):
@@ -1543,7 +1560,8 @@ class KnifeFaceCollected(_KnifeFaceSession):
     def _loop_at_point_note(self) -> list[str]:
         notes = []
         if self._loops_built:
-            notes.append(f"{self._loops_built} loop(s) closed at a single point — own face, 1 bridge")
+            each = " each" if self._loops_built > 1 else ""
+            notes.append(f"{self._loops_built} loop(s) closed at a single point — own face, 1 bridge{each}")
         for reason, n in sorted(self._loops_at_point.items()):
             notes.append(f"{n} cut(s) closing a loop at a single point dropped ({reason})")
         return notes

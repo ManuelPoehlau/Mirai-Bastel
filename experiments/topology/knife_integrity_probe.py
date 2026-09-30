@@ -746,6 +746,10 @@ CASES = {
         "loop", "cube", (35.0, 30.0),
         [[("e", (-1, 1, 1), (1, 1, 1), 0.5), ("f", (-0.3, 1, 0.4)), ("f", (0.3, 1, 0.4)), ("p", 0)]],
         "the loop touches the rest of the mesh only at a point on the top/front edge; 1 bridge on the top"),
+    "P6 bow-tie back to the start (Manu's play test 2026-09-30)": (
+        "loop", "grid", (20.0, 35.0),
+        [[("e", (1, 0, 0), (1, 1, 0), 0.5), ("f", (0.1, 0.45, 0)), ("f", (0.5, 0.9, 0)), ("f", (0.4, 0.1, 0)), ("p", 0)]],
+        "segment 3 crosses segment 1, then back to the start: two loops, one hanging off the other's point X"),
     "P5 the run crosses its own loop again": (
         "loop", "grid", None,
         [[("e", (1, 0, 0), (1, 1, 0), 0.3), ("f", (0.2, 0.6, 0)), ("f", (0.8, 0.8, 0)),

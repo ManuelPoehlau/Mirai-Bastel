@@ -705,7 +705,9 @@ built instead of "1/2 … dropped").
   boundary without a bridge — the same limit as the loop at a point. **Answered (Artist, 2026-09-30): (ii) connect to the
   nearest corner** — built, see "Last click inside a face (2026-09-30)".
 - Nested / overlapping loops in one run (P5, "winds round another loop's point") and the there-and-back case stay dropped —
-  seen 3 times in 771 random cube sessions, never on the grid.
+  seen 3 times in 771 random cube sessions, never on the grid. *Update 2026-09-30:* loops that hang off another loop's point
+  (bow-tie) are built now — see "Bow-tie back to the start"; P5 (the run cutting through its own loop) and the there-and-back
+  case are still dropped.
 
 **Prepared Artist test (5 minutes, after this commit):** Q5 on the default cube, same camera.
 (1) Repeat the sequence above → expected: the triangle is its own face, one bridge from it to a top corner, the main cut
@@ -716,8 +718,33 @@ whole session is back.
 | Task | Verdict (Manu) | Notes |
 |---|---|---|
 | (1) Manu's sequence | *(no verdict stated)* | Played 2026-09-30 12:16–12:17 (two screenshots, camera yaw 45 / pitch 25 / dist 8.37). Before `Enter`: "pending: 1 crossing(s); 1 intersection(s) with earlier cuts", X and the top/front crossing shown as dots. After: `V:13 E:20 F:9`, "1/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); 1 loop(s) closed at a single point — own face, 1 bridge", 5 edges selected. The triangle is its own face; the bridge runs from the loop's left point to the top's left corner (in this view). No leftover vertices, no uniform darkening — same counts and message as the headless replay. |
-| (2) back to the same edge point | | |
-| (3) Undo | | |
+| (2) back to the same edge point | *(no verdict stated)* | Played 2026-09-30 13:06 with **three** interior clicks, the third segment crossing the first (a bow-tie): "0/1 cut(s) applied; 1 cut(s) closing a loop at a single point dropped (it winds round another loop's point)", mesh unchanged. Manu: "there might be a fix for this" → built, see "Bow-tie back to the start (2026-09-30)" below. |
+| (3) Undo | *(no verdict stated)* | After Undo the shading looks fine (Manu, 2026-09-30). |
+
+### Bow-tie back to the start (2026-09-30)
+
+**Artist play test (Manu, 13:06, two screenshots, cube top, camera yaw 41 / pitch 43.7):** edge point on the top/right edge →
+three clicks inside the top → the edge point again (closing click); the third segment crosses the first at X (the preview
+showed the intersection dot). Commit: "0/1 cut(s) applied; 1 cut(s) closing a loop at a single point dropped (it winds round
+another loop's point)" — nothing cut. "There might be a fix for this."
+
+**Cause:** two loops, one hanging off the other: the crossing closes loop A = X → I1 → I2 → X; the run goes on from X to I3
+and back into the edge point E, which closes loop B = E → X → I3 → E. X is a point of loop B, and the resolver refused any loop
+whose points contained another loop's X (it only knew loops anchored at an existing vertex or at a vertex of the face's cut).
+
+**Fix** (`engine.py`, shared resolver — D and Q5): a loop is anchored at a vertex **or at the position of its crossing X**;
+`_build_loops` builds them in dependency order — a loop whose X is not a vertex yet waits until the face's cut or another loop
+through X has made it one. So loop B (at E) is built first, then loop A at B's vertex X, in whichever face now holds it (the
+ring outside B for a bow-tie, B's own face if A lay inside B). The same covers a run that crosses itself twice with the second
+loop around the first X. Result on Manu's figure: **two triangles, each its own face with one bridge**, one vertex at X, the
+same for both click directions. HUD: "2 loop(s) closed at a single point — own face, 1 bridge each".
+
+**Numbers `[PROBE]`:** new case **P6** (the bow-tie on the grid) clean; all `--cases` clean; fuzz Q5 grid / cube 0/400 integrity
+failures, 0 rollbacks, 0 leftover splits; loops dropped as "winds round another loop's point": **0** (before 1); what is still
+dropped: "out to one point and straight back — no area" (Q5 1 grid / 2 cube) and "the run cuts through its own loop again" (1
+cube). **Tests:** the bow-tie in both directions (two loop faces, one X, one history entry), direction-independent partition,
+and on the cube top like the play test. On that cube case the second loop's shortest bridge runs to a point of the first loop
+instead of a cube corner (a third small triangle) — valid, and exactly the open point "where the bridge goes".
 
 ### Last click inside a face (2026-09-30)
 
@@ -772,7 +799,7 @@ one click in the middle of the top, `Enter` — the click is joined to the neare
 | Task | Seen (Manu) |
 |---|---|
 | (1) original sequence, front joined to a corner | |
-| (2) one interior click, `Enter` | |
+| (2) one interior click, `Enter` | **Works** (Manu, 2026-09-30: "edge point > one click into the face > enter > joins the nearest corner") |
 
 ### Dropped runs leave no trace (Task B, 2026-09-30)
 

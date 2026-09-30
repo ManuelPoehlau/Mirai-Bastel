@@ -1386,6 +1386,16 @@ def test_loop_at_a_crossing_is_independent_of_click_order_and_direction():
     assert all(pt == parts[0] for pt in parts)
 
 
+def _back_to_start_at(mesh, start, interior, cam=None):
+    """Q5: `start` edge point -> interior points -> the same edge point again (the closing click)."""
+    knife, scene = _session(mesh, cam or _camera(mesh))
+    assert knife.click(_spec(mesh, start))
+    for pos in interior:
+        assert knife.click(_spec(mesh, ("f", pos)))
+    assert knife.click({"kind": "path", "index": 0})
+    return knife, scene
+
+
 def _back_to_start(mesh, interior):
     """Q5: edge point -> interior points -> the same edge point again (the closing click)."""
     knife, scene = _session(mesh, _camera(mesh))
@@ -1494,6 +1504,56 @@ def test_loop_hanging_off_a_fold_edge_point_is_joined_only_by_its_bridge():
     assert len(_top_partition(mesh)) == 3
     front = [f for f in _partition(mesh) if all(abs(p[2] - 1.0) < 1e-9 for p in f)]
     assert [len(f) for f in front] == [5]
+
+
+# Manu's play test 2026-09-30 (screenshot "0/1 cut(s) applied … it winds round another loop's point"):
+# edge point -> three clicks inside -> back to the edge point, the third segment crossing the first —
+# a bow-tie. Two loops: one at the edge point (E, X, I3) and one hanging off its point X (X, I1, I2).
+BOWTIE = [(0.1, 0.45, 0.0), (0.5, 0.9, 0.0), (0.4, 0.1, 0.0)]
+BOWTIE_X = _seg_x((1.0, 0.5), (0.1, 0.45), (0.5, 0.9), (0.4, 0.1))
+
+
+@pytest.mark.parametrize("interior", [BOWTIE, BOWTIE[::-1]])
+def test_bow_tie_back_to_the_start_builds_both_loops(interior):
+    mesh, _p = _grid()
+    knife, scene = _back_to_start_at(mesh, ("e", (1, 0, 0), (1, 1, 0), 0.5), interior)
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert knife.last_message == "1/1 cut(s) applied; 2 loop(s) closed at a single point — own face, 1 bridge each"
+    assert_geometric_integrity(mesh, GRID_PLANES, context="bow-tie")
+    (x,) = _vertices_at(mesh, BOWTIE_X)                         # one vertex where the run crosses itself
+    _loop_face(mesh, [(1.0, 0.5, 0.0), BOWTIE_X, (0.4, 0.1, 0.0)])
+    _loop_face(mesh, [BOWTIE_X, (0.1, 0.45, 0.0), (0.5, 0.9, 0.0)])
+    assert len(scene.history) == 1
+
+
+def test_bow_tie_is_independent_of_direction():
+    parts = []
+    for interior in (BOWTIE, BOWTIE[::-1]):
+        mesh, _p = _grid()
+        knife, _scene = _back_to_start_at(mesh, ("e", (1, 0, 0), (1, 1, 0), 0.5), interior)
+        knife.commit()
+        knife.deactivate()
+        parts.append(_partition(mesh))
+    assert parts[0] == parts[1]
+
+
+def test_bow_tie_on_the_cube_top_like_the_play_test():
+    mesh = create_cube()
+    knife, _scene = _back_to_start_at(mesh, ("e", (1, 1, -1), (1, 1, 1), 0.6),
+                                      [(-0.6, 1.0, 0.0), (0.1, 1.0, -0.8), (-0.2, 1.0, 0.8)],
+                                      cam=_camera(mesh, 41.0, 43.7))
+    assert knife.commit() is not None
+    knife.deactivate()
+    assert "2 loop(s) closed at a single point" in knife.last_message
+    assert_geometric_integrity(mesh, CUBE_PLANES, context="cube bow-tie")
+    x = _seg_x((1.0, 0.2), (-0.6, 0.0), (0.1, -0.8), (-0.2, 0.8))       # in (x, z) of the top
+    x3 = (x[0], 1.0, x[1])
+    assert len(_vertices_at(mesh, x3)) == 1
+    _loop_face(mesh, [(1.0, 1.0, 0.2), x3, (-0.2, 1.0, 0.8)])
+    _loop_face(mesh, [x3, (-0.6, 1.0, 0.0), (0.1, 1.0, -0.8)])
+    # Here the shortest bridge of the second loop runs to a point of the first one (nearest-vertex
+    # Lab default — where bridges go is an open Artist point).
 
 
 @pytest.mark.parametrize("cls", [KnifeFaceCrossFace, KnifeFaceCollected])
