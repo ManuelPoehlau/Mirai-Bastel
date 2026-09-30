@@ -757,6 +757,10 @@ clean. Test: the cube bow-tie — both bridges end at cube corners. This settles
 at a point in the direction Manu showed (nearest outside corner); the closed-shape stand-in (a loop touching nothing,
 `select_bridge`) already bridges to the face's own corners.
 
+**Artist confirmation (Manu, 2026-09-30 13:39, screenshot `V:13 E:21 F:10`, "2 loop(s) closed at a single point — own face, 1
+bridge each"):** "Sehr gut. Jetzt entspricht es dem, was ich erwarte." — the bow-tie with both bridges to outside corners is
+the expected result.
+
 ### Last click inside a face (2026-09-30)
 
 **Artist decision (Manu, 2026-09-30, answer to the question above):** when the last click of a cut lies inside a face, `Enter`
