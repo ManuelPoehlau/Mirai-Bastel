@@ -692,6 +692,16 @@ built instead of "1/2 … dropped").
 - **Trailing interior point beyond a boundary crossing** is still dropped (Lab default). *Observation:* Manu's screenshot
   shows the segment over the top/front edge and a last click inside the front — he may want that segment kept up to the
   front's next boundary (or up to the click). Not changed here.
+  **Artist input (Manu, 2026-09-30 12:21, screenshot, recorded in meaning):** "I would expect something like this, because
+  the last cut (click) was on the front face — but probably the behaviour now is just temporary." The screenshot shows the
+  result he expects, made by hand in a second session on top of the first commit (`V:14 E:22 F:10`, "1/1 cut(s) applied"):
+  the cut goes on from the top/front crossing through his last click inside the front and on to the front's bottom-left
+  corner — the front is divided, not left with a line ending inside it. *Open (Context Check, not decided):* what the tool
+  should do on its own when the last click lies inside a face — (i) extend the last segment in its direction to the face's
+  boundary, (ii) connect it to the nearest vertex (his screenshot ends on a corner), (iii) keep the chain open and wait for a
+  further click that reaches a boundary before `Enter` counts (today `Enter` drops the tail), (iv) keep dropping, but show the
+  tail in the "no cut" style so the preview says so. A line that ends inside a face (a dangling edge) cannot be one face's
+  boundary without a bridge — the same limit as the loop at a point. Asked back; nothing changed.
 - Nested / overlapping loops in one run (P5, "winds round another loop's point") and the there-and-back case stay dropped —
   seen 3 times in 771 random cube sessions, never on the grid.
 
