@@ -703,7 +703,7 @@ whole session is back.
 
 | Task | Verdict (Manu) | Notes |
 |---|---|---|
-| (1) Manu's sequence | | |
+| (1) Manu's sequence | *(no verdict stated)* | Played 2026-09-30 12:16–12:17 (two screenshots, camera yaw 45 / pitch 25 / dist 8.37). Before `Enter`: "pending: 1 crossing(s); 1 intersection(s) with earlier cuts", X and the top/front crossing shown as dots. After: `V:13 E:20 F:9`, "1/1 cut(s) applied; trailing interior point(s) dropped (no boundary reached); 1 loop(s) closed at a single point — own face, 1 bridge", 5 edges selected. The triangle is its own face; the bridge runs from the loop's left point to the top's left corner (in this view). No leftover vertices, no uniform darkening — same counts and message as the headless replay. |
 | (2) back to the same edge point | | |
 | (3) Undo | | |
 
@@ -899,7 +899,7 @@ point": the cube must no longer go dark as a whole.
 |---|---|
 | plain cut: right side darker, smudge at the front/right corner after `Enter` | **Yes** — cut across the top close to the front corner (top/left → top/right edge), `V:10 E:15 F:7`, "1/1 cut(s) applied": both visible sides lose their light, the right one most; the top keeps its gradient |
 | `Ctrl+Z`: lit as before | **Yes** — `V:8 E:12 F:6`, shading as before the cut |
-| Manu's sequence: no uniform darkening | *not played in this round* |
+| Manu's sequence: no uniform darkening | **Yes** (12:17 screenshot) — the top keeps its gradient; both visible sides are darker than before, the known neighbour-face effect of the cut's ends (zero face normals), not the whole cube |
 
 *Recorded from Manu's three screenshots (2026-09-30, 12:11–12:12; camera yaw 45 / pitch 25 / dist 8.37 — another view than the
 prepared one, which does not matter for this check).* **Result:** the headless finding holds in the real app on Manu's
