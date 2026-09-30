@@ -130,7 +130,7 @@ the 4 required shapes (bent cut, notch, closed shape, interior start).
 
 # Q5 — Cross-Face (Variant Q5, built on D)
 
-**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict: Q5 = KEEP (Artist, 2026-09-29, after `5c777a0`); D = superseded by Q5, not judged separately.** KEEP is a Lab verdict, **not a promotion** — see "Artist decisions after Q5". Follow-ups from those decisions: bridges independent of click order/direction (Task A, done), click on an earlier cut point (Task B, done for boundary points — an earlier *interior* point is still rejected, see "Task B").
+**Status:** Discovery Lab — built 2026-09-29; first play test 2026-09-29 (tasks 1–5 as expected, task 6 led to the close-and-continue change, see "Artist play-test observations" below). **Verdict: Q5 = KEEP (Artist, 2026-09-29, after `5c777a0`; again KEEP for the Lab state at `f2d34e8`, Artist, 2026-09-30); D = superseded by Q5, not judged separately.** KEEP is a Lab verdict, **not a promotion** — see "Artist decisions after Q5". Follow-ups from those decisions: bridges independent of click order/direction (Task A, done), click on an earlier cut point (Task B, done for boundary points — an earlier *interior* point is still rejected, see "Task B").
 **Background:** `docs/research/topology/KNIFE_CROSS_FACE_DISCOVERY.md` (archived — §2 planners, §3 camera finding,
 §4 cases, §5 closed loops, §6 preview / A5 lock, §8 lab options). No Core change, no Production change: everything
 below is Playground-only (`playground/experiments/knife_face/`: `planner.py`, `engine_q5.py`, `variant_q5.py`,
@@ -276,6 +276,12 @@ still-refused earlier *interior* point feel wrong? How many attempts per task, w
 **Verdict:** **KEEP** (Artist, 2026-09-29)
 
 **Reason:** tasks 1–5 worked as expected in the first play test; the task 6 deviation (a new cut after a close was not connected to the closing vertex) was fixed in `5c777a0`, and the verdict followed the fix.
+
+**Verdict (2026-09-30):** **KEEP** (Artist, 2026-09-30) for the Lab state at **`f2d34e8`** — after Tasks A/B, the loop
+closed at a single point, the bow-tie, bridges to outside corners, the last click joined to the nearest corner and "cutting
+back the same way does nothing". Manu's remark, recorded in meaning: further unwanted results may still show up later; they
+will be recorded here when they do. Still a Lab verdict — **KEEP ≠ promotion** (see below). The play-test rows further down
+that say *(no verdict stated)* stay as they are.
 
 **Not a promotion:** KEEP is a **Lab verdict** only. No `src/` change, no Production structure. The one-Knife requirement is unchanged: Knife and Knife Face become **one** Production tool later; Q5 stays a variant of the `knife_face` family until that is decided explicitly (with docs, per the repository workflow).
 
