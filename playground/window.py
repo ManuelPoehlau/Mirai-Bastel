@@ -19,6 +19,7 @@ VBO-Struktur:
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pyglet
 from pyglet import gl
@@ -47,6 +48,7 @@ from playground.input_map import PlaygroundInputMap  # noqa: E402
 # Playground dispatch (single interaction authority). Imports removed with the
 # wiring; the modules themselves are untouched.
 from playground.slot import ExperimentSlot, VariantEntry  # noqa: E402
+from playground import session_state  # noqa: E402
 from playground.experiments.selection.variant_replace import FaceSelectReplaceExperiment  # noqa: E402
 from playground.experiments.selection.variant_modifier import FaceSelectModifierExperiment  # noqa: E402
 from playground.experiments.selection.variant_toggle import FaceSelectToggleExperiment  # noqa: E402
@@ -313,6 +315,8 @@ class PlaygroundWindow(pyglet.window.Window):
         app: PlaygroundApp,
         input_map: PlaygroundInputMap | None = None,
         initial_mesh: str = "cube",
+        session_state_path: Path | None = None,
+        restore_session: bool = True,
     ) -> None:
         super().__init__(
             1280, 800,
@@ -322,6 +326,11 @@ class PlaygroundWindow(pyglet.window.Window):
         )
         self.app = app
         self.input_map = input_map if input_map is not None else PlaygroundInputMap()
+        # Session-State (playground/session_state.py): nur aktiv, wenn ein Pfad
+        # übergeben wird (run.py) — Tests/Diagnose-Skripte bleiben hermetisch.
+        # restore_session=False (--reset-state): Registry-Defaults, gespeichert
+        # wird trotzdem ab der nächsten Änderung / beim Schließen.
+        self._session_state_path = session_state_path
 
         # AD-010: Szene-/Viewport-Load bewusst ERST HIER, nach
         # pyglet.window.Window.__init__() oben — PlaygroundPygletStore.
@@ -388,7 +397,18 @@ class PlaygroundWindow(pyglet.window.Window):
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
         pres_slot.active_experiment.activate()
-        app.activate_variant("selection", 0)  # setzt _active_experiment + ruft activate() auf
+        # Selection-Default ist Modifier (KEEP, playground/experiments/selection/
+        # decision.md, 2026-09-26) — per Typ statt per Index gewählt, damit die
+        # Registrierungsreihenfolge (Replace = Baseline zuerst) ihn nicht bestimmt.
+        app.activate_variant("selection", next(
+            i for i, v in enumerate(sel_slot.variants)
+            if isinstance(v.experiment, FaceSelectModifierExperiment)
+        ))  # setzt _active_experiment + ruft activate() auf
+        # Zuletzt benutzten Zustand wiederherstellen: einmal, nach der Registrierung
+        # aller Slots, vor dem ersten Frame; gleiche Wege wie ein manueller Wechsel.
+        if self._session_state_path is not None and restore_session:
+            session_state.restore(app, self._session_state_path)
+            self._invalidate_pick_cache()  # Display-Modus kann sich geändert haben
 
         # AD-013 I4: no second binding authority is constructed here. The
         # Playground resolves its own input in on_key_press/on_key_release.
@@ -696,6 +716,18 @@ class PlaygroundWindow(pyglet.window.Window):
             self._vlist_hover = self._overlay_program.vertex_list(
                 n, prim, position=("f", positions),
             )
+
+    # -- Session-State ---------------------------------------------------------
+
+    def _save_session_state(self) -> None:
+        """Fokus/Variante/Display in die State-Datei schreiben (no-op ohne Pfad)."""
+        path = getattr(self, "_session_state_path", None)
+        if path is not None:
+            session_state.save_app(self.app, path)
+
+    def close(self) -> None:
+        self._save_session_state()
+        super().close()
 
     # -- HUD-Update -----------------------------------------------------------
 
@@ -2188,6 +2220,7 @@ class PlaygroundWindow(pyglet.window.Window):
             else:
                 self.app.display_state.cycle()
                 self._invalidate_pick_cache()
+            self._save_session_state()
             self._update_hud()
         elif symbol == _key.Z and modifiers & _key.MOD_CTRL and not (modifiers & _key.MOD_SHIFT):
             # Ctrl+Z: in-session undo for knife, else global undo (AD-017 / WP-AP-Enablement-01).
@@ -2479,6 +2512,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # WP-AP-INPUT-FIX-01 §3: Shift+D only — Z is axis-constraint only
             self.app.display_state.toggle_wireframe_overlay()
             self._invalidate_pick_cache()
+            self._save_session_state()
             self._update_hud()
         elif symbol == self.input_map.show_vertices:
             self.app.show_vertices = not self.app.show_vertices
@@ -2490,6 +2524,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 cur = self.app.focused_family
                 cur_idx = families.index(cur) if cur in families else 0
                 self.app.focused_family = families[(cur_idx + 1) % len(families)]
+            self._save_session_state()
             self._update_hud()
         elif symbol == _key.M and not (modifiers & _key.MOD_SHIFT):
             # WP-AP-INPUT-FIX-01 §2: Bare M — Cycle transform variants (moved from Q)
@@ -2502,6 +2537,7 @@ class PlaygroundWindow(pyglet.window.Window):
             slot = self.app.slots.get(active_family)
             if slot is not None:
                 self.app.activate_variant(active_family, (slot.active_index + 1) % slot.variant_count)
+            self._save_session_state()
             self._update_hud()
         elif symbol == _key.M and (modifiers & _key.MOD_SHIFT):
             # WP-AP-INPUT-FIX-01 §2: Shift+M — Cycle SelectMethod (PICK → BOX → LASSO → PAINT → PICK)

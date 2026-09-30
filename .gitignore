@@ -43,3 +43,7 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
+
+# Playground session state (user-local, playground/session_state.py)
+playground/.session_state.json
+playground/.session_state.json.tmp

@@ -17,6 +17,15 @@ Als Startszene gültig ist jeder Registry-Name der geteilten OBJ-Assets
 
 Fenster öffnet mit HUD (Kamera, Mesh-Info, aktuelles Experiment, Display-Modus, Selection-Count).
 
+**Session-State:** Beim Neustart stellt das Playground die zuletzt benutzte Einrichtung wieder her —
+fokussierte Family (Tab), aktive Variante je Family (M) sowie Display-Modus und Wireframe-Overlay.
+Gespeichert wird in `playground/.session_state.json` (user-lokal, nicht in git) bei jedem Wechsel und beim
+Schließen; Varianten werden über ihren Klassennamen identifiziert. Nicht gespeichert: Komponenten-Modus (1/2/3),
+Selection-Method (Shift+M), Mesh, Selection, Undo, Kamera. Unbekannte oder kaputte Einträge fallen einzeln auf die
+Registry-Defaults zurück (eine Logzeile). Zurück zu den reinen Defaults: `python playground/run.py --reset-state`
+(die Datei wird beim nächsten Wechsel bzw. Schließen überschrieben). Reine Session-Bequemlichkeit — keine Entscheidung,
+keine Promotion. Der Selection-Default ist Modifier (`experiments/selection/decision.md`).
+
 ## Bedienung
 
 → **[MANUAL.md](MANUAL.md)** für alle Tasten und Bedienung

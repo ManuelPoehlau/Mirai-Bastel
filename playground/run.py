@@ -7,6 +7,7 @@ Verwendung:
     python playground/run.py subd_cube                  # SubD-Cube statt Default-Würfel
     python playground/run.py man_with_shoes_basemesh    # Charakter-Basemesh
     python playground/run.py grid     # flaches 8x8-Quad-Raster (Connect Lab)
+    python playground/run.py --reset-state   # ohne gespeicherte Session (Registry-Defaults)
 
 Als Startszene gültig ist die Liste oben plus jeder Registry-Name der geteilten
 OBJ-Assets (`examples/loaders/assets.py`, AD-007 — dort steht auch `asset_names()`
@@ -45,16 +46,23 @@ from playground._paths import ensure_paths  # noqa: E402
 import pyglet  # noqa: E402
 
 from playground.app import PlaygroundApp  # noqa: E402
+from playground.session_state import DEFAULT_STATE_PATH, RESET_FLAG  # noqa: E402
 from playground.window import PlaygroundWindow  # noqa: E402
 
 
 def main() -> None:
-    mesh = sys.argv[1] if len(sys.argv) > 1 else "cube"
+    args = [a for a in sys.argv[1:] if a != RESET_FLAG]
+    mesh = args[0] if args else "cube"
     app = PlaygroundApp()
     # AD-010: Szene-Load passiert in PlaygroundWindow selbst, NACH
     # GL-Kontext-Erzeugung (PlaygroundPygletStore braucht einen aktiven
     # Kontext) — hier nur noch die gewünschte Szene auswählen.
-    win = PlaygroundWindow(app, initial_mesh=mesh)
+    win = PlaygroundWindow(
+        app,
+        initial_mesh=mesh,
+        session_state_path=DEFAULT_STATE_PATH,
+        restore_session=RESET_FLAG not in sys.argv[1:],
+    )
     pyglet.app.run()
 
 
