@@ -708,6 +708,10 @@ built instead of "1/2 … dropped").
   seen 3 times in 771 random cube sessions, never on the grid. *Update 2026-09-30:* loops that hang off another loop's point
   (bow-tie) are built now — see "Bow-tie back to the start"; P5 (the run cutting through its own loop) and the there-and-back
   case are still dropped.
+  **Artist decision (Manu, 2026-09-30): cutting back along the same way is not a valid operation — it does nothing (dropped).**
+  That is the current behaviour, now decided: out to one point and straight back is dropped with the note "out to one point
+  and straight back — no area", and a segment retraced over an already cut one merges ("N repeated segment(s) merged", Task B
+  2026-09-29) — neither changes the mesh.
 
 **Prepared Artist test (5 minutes, after this commit):** Q5 on the default cube, same camera.
 (1) Repeat the sequence above → expected: the triangle is its own face, one bridge from it to a top corner, the main cut
