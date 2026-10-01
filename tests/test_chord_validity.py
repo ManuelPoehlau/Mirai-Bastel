@@ -195,31 +195,37 @@ def test_predicate_face_without_area_has_no_valid_chord():
 # -- R3: chord along the boundary ----------------------------------------------------------
 
 
-def test_r3_knife_vertex_chord_along_the_boundary_refused():
+def test_r3_knife_vertex_chord_along_the_boundary_is_a_skip_and_cuts_nothing():
+    """WP-KNIFE-01 S2 (AQ1 = Q5 behaviour; F2 refused it): along a straight run of boundary edges
+    there is nothing to cut — the click is accepted as a skip, the commit changes nothing."""
     mesh = grid_with_straight_vertices()
     before = content(mesh)
     knife = new_knife(mesh)
     assert knife.click({"kind": "vertex", "vertex_id": vid(mesh, 1.0, 1.0)})
     target = {"kind": "vertex", "vertex_id": vid(mesh, 2.0, 1.0)}
-    assert knife.accepts(target) is False
-    assert knife.click(target) is False
+    assert knife.accepts(target) is True
+    assert knife.click(target) is True
+    assert knife.cut_segments == []
+    assert knife.commit() is None
     assert content(mesh) == before and knife.path_edges == []
     assert_mesh_invariants(mesh, context="R3 knife vertex")
 
 
-def test_r3_knife_edge_chord_along_the_boundary_refused():
-    """The discovery's HD2: vertex (1,1) -> edge point (1.75, 1) on the straight line (1,1)-(2,1)."""
+def test_r3_knife_edge_chord_along_the_boundary_is_a_skip_and_cuts_nothing():
+    """The discovery's HD2: vertex (1,1) -> edge point (1.75, 1) on the straight line (1,1)-(2,1).
+    WP-KNIFE-01 S2: a skip along existing edges (F2 refused it); nothing is cut, no History."""
     mesh = grid_with_straight_vertices()
     before = content(mesh)
     knife = new_knife(mesh)
     assert knife.click({"kind": "vertex", "vertex_id": vid(mesh, 1.0, 1.0)})
     edge = edge_between(mesh, vid(mesh, 1.5, 1.0), vid(mesh, 2.0, 1.0))
     target = {"kind": "edge", "edge_id": edge, "t": 0.5}
-    assert knife.hover(target)["valid"] is True  # hover stays as loose as documented
-    assert knife.accepts(target) is False
-    assert knife.click(target) is False
+    assert knife.hover(target)["valid"] is True
+    assert knife.accepts(target) is True
+    assert knife.click(target) is True
+    assert knife.cut_segments == [] and knife.last_point["edge_id"] == edge
+    assert knife.commit() is None and len(knife._scene.history) == 0
     assert content(mesh) == before and knife.path_edges == []
-    assert knife.start == vid(mesh, 1.0, 1.0)
     assert_mesh_invariants(mesh, context="R3 knife edge")
     assert_no_degenerate_face(mesh)
 
@@ -230,6 +236,7 @@ def test_r3_knife_ordinary_chord_from_the_same_vertex_still_works():
     assert knife.click({"kind": "vertex", "vertex_id": vid(mesh, 1.0, 1.0)})
     target = {"kind": "vertex", "vertex_id": vid(mesh, 2.0, 2.0)}  # the quad's diagonal
     assert knife.accepts(target) is True and knife.click(target) is True
+    assert knife.commit() is not None and len(knife.path_edges) == 1
     assert_mesh_invariants(mesh, context="R3 knife valid chord")
     assert_no_degenerate_face(mesh)
 
@@ -277,7 +284,9 @@ def test_r5_l_face_knife_across_the_missing_corner_refused():
     # ... while a chord inside the same face is fine
     inner = {"kind": "vertex", "vertex_id": vid(mesh, 0.0, 0.0)}
     assert knife.accepts(inner) is True and knife.click(inner) is True
+    assert knife.commit() is not None and len(knife.path_edges) == 1
     assert_mesh_invariants(mesh, context="R5 L knife")
+    assert_no_degenerate_face(mesh)
 
 
 def test_r5_l_face_vertex_connect_is_a_noop():
@@ -328,7 +337,7 @@ def test_r5_concave_grid_face_every_route_refused():
     # The discovery's L1 session 2: edge point (0.8, 0) -> edge point (0, 0.8), also over the corner
     knife = new_knife(mesh)
     first = {"kind": "edge", "edge_id": edge_between(mesh, m1, vid(mesh, 1.0, 0.0)), "t": 0.6}
-    assert knife.click(first)  # the split itself is the start
+    assert knife.click(first)  # the edge point is the start (split at commit, S2)
     second = {"kind": "edge", "edge_id": edge_between(mesh, m2, vid(mesh, 0.0, 1.0)), "t": 0.6}
     assert knife.accepts(second) is False and knife.click(second) is False
     knife.undo_step()
@@ -569,9 +578,12 @@ def test_knife_accepts_matches_click_on_every_vertex_and_edge_target(build):
             before = content(mesh)
             clicked = knife.click(target)
             assert clicked is expected, (build.__name__, start, target)
+            assert content(mesh) == before  # S2: nothing changes before commit
             if not clicked:
                 refused += 1
-                assert content(mesh) == before
+                knife.cancel()
+                continue
+            knife.commit()  # an accepted click must commit cleanly (or cut nothing)
             assert_mesh_invariants(mesh, context=f"{build.__name__} {start!r} {target!r}")
-            knife.cancel()
+            assert_no_degenerate_face(mesh)
     assert refused > 0

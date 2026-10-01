@@ -84,26 +84,29 @@ def win_app():
 # ---------------------------------------------------------------------------
 
 def test_ctrl_y_routes_to_knife_redo_during_session(win_app):
-    """A->B / Ctrl+Z / Ctrl+Y: redo restores the cut; global stacks untouched."""
+    """A->B / Ctrl+Z / Ctrl+Y: redo restores the cut segment; global stacks untouched.
+    (WP-KNIFE-01 S2: the session's path, not the mesh, carries the cut until commit.)"""
     from pyglet.window import key as _key
     win, app = win_app
     knife = _arm_knife(win)
     va, vb = _face_diagonal(app)
     assert knife.click({"kind": "vertex", "vertex_id": va})
     assert knife.click({"kind": "vertex", "vertex_id": vb})
-    topo_cut = _topo(app)
+    path_cut = knife.path
+    topo = _topo(app)
     depths = _depths(app)
 
     win.on_key_press(_key.Z, _key.MOD_CTRL)          # in-session undo
-    assert _topo(app) != topo_cut
-    assert knife._start == va
+    assert knife.path != path_cut
+    assert knife.last_point["vertex_id"] == va
     assert _depths(app) == depths                    # global history untouched
 
     win.on_key_press(_key.Y, _key.MOD_CTRL)          # canonical in-session redo
-    assert _topo(app) == topo_cut
-    assert knife._start == vb
-    assert len(knife._path_edges) == 1
+    assert knife.path == path_cut
+    assert knife.last_point["vertex_id"] == vb
+    assert len(knife.cut_segments) == 1
     assert _depths(app) == depths
+    assert _topo(app) == topo                        # nothing cut before commit
     assert win._knife_tool is knife                  # session still active
 
 
@@ -115,15 +118,15 @@ def test_ctrl_shift_z_routes_to_knife_redo_during_session(win_app):
     va, vb = _face_diagonal(app)
     knife.click({"kind": "vertex", "vertex_id": va})
     knife.click({"kind": "vertex", "vertex_id": vb})
-    topo_cut = _topo(app)
+    path_cut = knife.path
     depths = _depths(app)
 
     win.on_key_press(_key.Z, _key.MOD_CTRL)          # undo
-    assert _topo(app) != topo_cut
+    assert knife.path != path_cut
 
     win.on_key_press(_key.Z, _key.MOD_CTRL | _key.MOD_SHIFT)  # alternative redo
-    assert _topo(app) == topo_cut
-    assert knife._start == vb
+    assert knife.path == path_cut
+    assert knife.last_point["vertex_id"] == vb
     assert _depths(app) == depths
 
 
@@ -135,11 +138,11 @@ def test_ctrl_shift_z_never_enters_the_undo_branch(win_app):
     va, vb = _face_diagonal(app)
     knife.click({"kind": "vertex", "vertex_id": va})
     knife.click({"kind": "vertex", "vertex_id": vb})
-    topo_cut = _topo(app)
+    path_cut = knife.path
 
     win.on_key_press(_key.Z, _key.MOD_CTRL | _key.MOD_SHIFT)
-    assert _topo(app) == topo_cut                    # redo no-op, NOT an undo
-    assert len(knife._step_stack) == 2
+    assert knife.path == path_cut                    # redo no-op, NOT an undo
+    assert len(knife.cut_segments) == 1
 
 # ---------------------------------------------------------------------------
 # 2. no session: gestures route to the global history
@@ -199,3 +202,38 @@ def test_no_session_ctrl_shift_z_is_global_redo(win_app):
     win.on_key_press(_key.Z, _key.MOD_CTRL | _key.MOD_SHIFT)  # alternative gesture
     assert _depths(app) == (1, 0)
     assert _topo(app) != topo_before
+
+# ---------------------------------------------------------------------------
+# 3. WP-KNIFE-01 S2: the session is drawn from its virtual path
+# ---------------------------------------------------------------------------
+
+def test_knife_family_draws_the_path_while_the_mesh_stays_uncut(win_app):
+    """The shared `KnifeTool` no longer cuts per click: the window draws the placed points and the
+    segments commit will cut (same render data as Production), rebuilt on click / undo / redo and
+    when a hover sees a new start point; the mesh changes only at Enter."""
+    from pyglet.window import key as _key
+    win, app = win_app
+    knife = _arm_knife(win)
+    va, vb = _face_diagonal(app)
+    topo = _topo(app)
+    assert knife.click({"kind": "vertex", "vertex_id": va})
+    assert knife.click({"kind": "vertex", "vertex_id": vb})
+
+    # A hover sees the new start point (hover()["start"] is the last path record) -> path rebuilt.
+    sx, sy = app.camera.project_to_screen(app.scene.mesh.vertex_position(va), win.width, win.height)
+    win.on_mouse_motion(int(sx), int(sy), 0, 0)
+    assert win._knife_last_start == knife.last_point["pid"]
+    assert win._vlist_knife_start is not None and win._vlist_knife_path is not None
+    win.on_draw()
+    assert _topo(app) == topo
+
+    win.on_key_press(_key.Z, _key.MOD_CTRL)          # undo: one point left, no segment
+    assert win._vlist_knife_start is not None and win._vlist_knife_path is None
+    win.on_key_press(_key.Y, _key.MOD_CTRL)          # redo: the segment is back
+    assert win._vlist_knife_path is not None
+
+    win.on_key_press(_key.ENTER, 0)                  # commit: the cut, one history entry
+    assert win._knife_tool is None
+    assert win._vlist_knife_start is None and win._vlist_knife_path is None
+    assert _topo(app) != topo
+    assert _depths(app) == (1, 0)

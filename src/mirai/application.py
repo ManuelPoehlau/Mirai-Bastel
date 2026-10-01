@@ -511,6 +511,11 @@ class Application:
     # possible Knife V2 idea — not built, not prepared; the Playground's own
     # Variant B (`project_locked_edge` in `mirai.topology.knife_pick`) is
     # unaffected (AD-013 A2, contextual deviation).
+    #
+    # WP-KNIFE-01 S2 (PROVISIONAL): a click adds a point to the session's
+    # virtual path; the mesh is cut at commit (`Enter` / click outside). The
+    # session is drawn from the path (`knife_render_data`), so neither the
+    # mesh nor the pick cache changes while clicking.
 
     @property
     def knife_active(self) -> bool:
@@ -524,10 +529,9 @@ class Application:
             return None
         return build_knife_render_data(
             self.scene.mesh,
-            self._knife.start,
+            self._knife.path,
             self._knife_target,
             self._knife_highlight_edge,
-            self._knife.path_edges,
         )
 
     def _knife_begin(self) -> bool:
@@ -599,18 +603,21 @@ class Application:
         target = self._knife_pick(x, y)
         if target.get("kind") == "outside":
             return self._knife_end(commit=True)
-        before_path = len(self._knife.path_edges)
+        before_cuts = len(self._knife.cut_segments)
         if not self._knife.click(target):
             self._set_status("Knife: no valid cut target here")
             self._refresh_hover()
             return False
-        self._pick_cache.invalidate()
-        self.viewport.on_topology_changed()
-        path = len(self._knife.path_edges)
-        if path == before_path:
+        # WP-KNIFE-01 S2: a click only adds a point to the session's path - the
+        # mesh (and with it the pick cache) is unchanged until commit.
+        cuts = len(self._knife.cut_segments)
+        segments = f"{cuts} path {'segment' if cuts == 1 else 'segments'}"
+        if len(self._knife.points) == 1:
             self._set_status("Knife: start point set")
+        elif cuts == before_cuts:
+            self._set_status(f"Knife: along an existing edge - nothing to cut ({segments})")
         else:
-            self._set_status(f"Knife: cut ({path} path {'edge' if path == 1 else 'edges'})")
+            self._set_status(f"Knife: cut ({segments})")
         self._refresh_hover()
         return True
 
@@ -624,8 +631,6 @@ class Application:
         if not done:
             self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
             return False
-        self._pick_cache.invalidate()
-        self.viewport.on_topology_changed()
         self._set_status("Knife: last cut undone" if undo else "Knife: cut redone")
         self._refresh_hover()
         return True
@@ -651,9 +656,15 @@ class Application:
         if command is not None:
             self._record_selection_history(before)
             count = len(self.selection.edges)
-            self._set_status(
-                f"Knife committed ({count} path {'edge' if count == 1 else 'edges'} selected)"
-            )
+            status = f"Knife committed ({count} path {'edge' if count == 1 else 'edges'} selected)"
+            res = knife.last_resolution
+            if res is not None and res.applied < res.runs:
+                # Valid while clicking, dropped at commit (the run would have
+                # left its face) - the Q5 "N-1/N" note (WP-KNIFE-01 S2).
+                status += f" - {res.runs - res.applied} of {res.runs} cuts dropped"
+            self._set_status(status)
+        elif commit and knife.last_problem is not None:
+            self._set_status(f"Knife: result taken back ({knife.last_problem}), nothing committed")
         elif commit:
             self._set_status("Knife: no cuts made, nothing committed")
         else:
@@ -704,15 +715,17 @@ class Application:
 
     def _knife_sync_overlay(self) -> None:
         """Knife render data → viewport tool layers: prospective point, target
-        edge and line preview in the hover style, start vertex and path edges
-        in the selected style (no new look)."""
+        edge and line preview in the hover style, the placed points (the start
+        among them) and the segments commit will cut in the selected style (no
+        new look; WP-KNIFE-01 S2: drawn from the path, the mesh is not cut
+        before commit)."""
         data = self.knife_render_data
         if self.viewport is None or data is None:
             return
         self.viewport.set_tool_overlay(
             points={
                 TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None],
-                TOOL_ACTIVE_LAYER: [p for p in (data.start_point,) if p is not None],
+                TOOL_ACTIVE_LAYER: list(data.placed_points),
             },
             segments={
                 TOOL_PREVIEW_LAYER: [

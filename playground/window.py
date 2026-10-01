@@ -94,6 +94,7 @@ from mirai.topology.knife_pick import (  # noqa: E402
     knife_pick,
     project_locked_edge as _knife_project_locked_edge,
 )
+from mirai.topology.knife_preview import build_knife_render_data  # noqa: E402
 from playground.experiments.knife.variant_a import KnifeVariantA  # noqa: E402
 from playground.experiments.knife.variant_b import KnifeVariantB  # noqa: E402
 from playground.experiments.knife_face.engine import knife_face_pick  # noqa: E402
@@ -496,9 +497,10 @@ class PlaygroundWindow(pyglet.window.Window):
         self._vlist_knife_hover_edge = None      # GL_LINES — edge highlight
         self._vlist_knife_hover_vertex = None    # GL_POINTS — vertex hover point
         self._vlist_knife_preview_point = None   # GL_POINTS — split-point preview
-        self._vlist_knife_start = None           # GL_POINTS — persistent start vertex
+        self._vlist_knife_start = None           # GL_POINTS — the session's placed points
+        self._vlist_knife_path = None            # GL_LINES — the segments commit will cut
         self._knife_hover_last_target: dict | None = None
-        self._knife_last_start = None            # last drawn start vertex id
+        self._knife_last_start = None            # point id of the last drawn start point
         # Variant B slide state
         self._knife_slide_armed: bool = False
         self._knife_slide_edge_id = None         # locked edge id during slide
@@ -1250,11 +1252,36 @@ class PlaygroundWindow(pyglet.window.Window):
         self._knife_hover_last_target = None
 
     def _clear_knife_start_vbo(self) -> None:
-        """Persistent start-vertex VBO freigeben (session end only)."""
+        """Persistent path VBOs (placed points, cut segments) freigeben."""
         if self._vlist_knife_start is not None:
             self._vlist_knife_start.delete()
             self._vlist_knife_start = None
+        if self._vlist_knife_path is not None:
+            self._vlist_knife_path.delete()
+            self._vlist_knife_path = None
         self._knife_last_start = None
+
+    def _rebuild_knife_path_vbo(self) -> None:
+        """The session's virtual path (WP-KNIFE-01 S2: `KnifeTool` cuts the mesh at
+        commit, not per click): placed points and the segments commit will cut, in
+        the start-vertex style — the same render data Production draws."""
+        self._clear_knife_start_vbo()
+        tool = self._knife_tool
+        if tool is None or self.app.viewport is None:
+            return
+        data = build_knife_render_data(self.app.viewport.render_mesh.mesh, tool.path, None, None)
+        last = tool.last_point
+        self._knife_last_start = None if last is None else last["pid"]
+        if data.placed_points:
+            pts = build_point_list_data(data.placed_points)
+            self._vlist_knife_start = self._overlay_program.vertex_list(
+                len(pts) // 3, gl.GL_POINTS, position=("f", pts),
+            )
+        if data.path_segments:
+            seg = self._kfq5_segments(data.path_segments)
+            self._vlist_knife_path = self._overlay_program.vertex_list(
+                len(seg) // 3, gl.GL_LINES, position=("f", seg),
+            )
 
     def _tweak_begin(self, tool_type: str, x: int, y: int) -> bool:
         """Selection-Fallback auflösen, Tool erstellen und begin_transform() aufrufen.
@@ -1735,7 +1762,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 accepted = self._knife_tool.click(target)
                 if accepted:
                     self._clear_knife_hover_vbos()
-                    self._rebuild_vbo()
+                    self._rebuild_knife_path_vbo()
                     self._update_hud()
             else:
                 self._clear_knife_hover_vbos()
@@ -1765,7 +1792,7 @@ class PlaygroundWindow(pyglet.window.Window):
             print(f"[KNIFE] click accepted={accepted}")
             if accepted:
                 self._clear_knife_hover_vbos()
-                self._rebuild_vbo()
+                self._rebuild_knife_path_vbo()
                 self._update_hud()
             return pyglet.event.EVENT_HANDLED
 
@@ -2064,20 +2091,11 @@ class PlaygroundWindow(pyglet.window.Window):
 
                 # "face" / "outside" → no highlight (no-op, out of scope)
 
-            # Persistent start-vertex highlight: rebuild when start changes
-            start_vid = hover_result.get("start")
-            if start_vid != self._knife_last_start:
-                self._knife_last_start = start_vid
-                if self._vlist_knife_start is not None:
-                    self._vlist_knife_start.delete()
-                    self._vlist_knife_start = None
-                if start_vid is not None:
-                    start_positions = build_selection_vertex_data(mesh, {start_vid})
-                    if start_positions:
-                        self._vlist_knife_start = self._overlay_program.vertex_list(
-                            len(start_positions) // 3, gl.GL_POINTS,
-                            position=("f", start_positions),
-                        )
+            # Persistent path highlight (placed points + cut segments): rebuild
+            # when the start point changes (S2: `start` is the last path record).
+            start = hover_result.get("start")
+            if (None if start is None else start["pid"]) != self._knife_last_start:
+                self._rebuild_knife_path_vbo()
 
             return pyglet.event.EVENT_HANDLED
 
@@ -2228,7 +2246,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # (same guard pattern as the bare-D branch above).
             if self._knife_tool is not None:
                 self._knife_tool.undo_step()
-                self._rebuild_vbo()
+                self._rebuild_knife_path_vbo()
                 self._hud.update_action("Knife — undo last cut")
                 self._update_hud()
             elif self._knife_face_tool is not None:
@@ -2252,7 +2270,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # (Ctrl+Y without Shift is the canonical redo gesture below.)
             if self._knife_tool is not None:
                 self._knife_tool.redo_step()
-                self._rebuild_vbo()
+                self._rebuild_knife_path_vbo()
                 self._hud.update_action("Knife — redo last cut")
                 self._update_hud()
             elif self._knife_face_tool is not None:
@@ -2278,7 +2296,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # in-session cuts and stale the session baseline).
             if self._knife_tool is not None:
                 self._knife_tool.redo_step()
-                self._rebuild_vbo()
+                self._rebuild_knife_path_vbo()
                 self._hud.update_action("Knife — redo last cut")
                 self._update_hud()
             elif self._knife_face_tool is not None:
@@ -3090,8 +3108,11 @@ class PlaygroundWindow(pyglet.window.Window):
             gl.glDepthFunc(gl.GL_LESS)
             self._overlay_program.stop()
 
-        # -- Knife Start-Vertex (persistent selection-style indicator) ---------
-        if self._knife_tool is not None and self._vlist_knife_start is not None:
+        # -- Knife path (persistent selection-style indicator: placed points and
+        #    the segments commit will cut — WP-KNIFE-01 S2, the mesh is cut at commit)
+        if self._knife_tool is not None and (
+            self._vlist_knife_start is not None or self._vlist_knife_path is not None
+        ):
             self._overlay_program.use()
             self._overlay_program["u_view"] = view
             self._overlay_program["u_proj"] = proj
@@ -3099,8 +3120,11 @@ class PlaygroundWindow(pyglet.window.Window):
             gl.glEnable(gl.GL_BLEND)
             gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
             gl.glDisable(gl.GL_DEPTH_TEST)
-            gl.glPointSize(_VERTEX_POINT_SIZE)
-            self._vlist_knife_start.draw(gl.GL_POINTS)
+            if self._vlist_knife_path is not None:
+                self._vlist_knife_path.draw(gl.GL_LINES)
+            if self._vlist_knife_start is not None:
+                gl.glPointSize(_VERTEX_POINT_SIZE)
+                self._vlist_knife_start.draw(gl.GL_POINTS)
             gl.glEnable(gl.GL_DEPTH_TEST)
             self._overlay_program.stop()
 

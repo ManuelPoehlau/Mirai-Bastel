@@ -1,22 +1,31 @@
-"""Knife session render data (WP-06 Slice B7) — headless, no GPU.
+"""Knife session render data (WP-06 Slice B7; WP-KNIFE-01 S2) — headless, no GPU.
 
-What a running Knife session shows, as plain world positions: the start
-vertex (F3), the prospective point (hover or press-slide, Variant A/B), the
-hovered or locked edge (F1), the line preview from the start to the
-prospective point (new in B7, Blender-knife style) and the session's
-connecting edges so far. `Application` builds it from `KnifeTool` state and
-hands it to the viewport's tool layers; tests read it directly.
+What a running Knife session shows, as plain world positions. Since S2 the
+mesh is not cut while clicking (`KnifeTool` keeps a virtual path, resolved at
+commit), so the session is drawn from its path:
 
-Invalid targets never reach this module as a prospective target — the caller
-passes `target=None` for them, so there is no preview point and no line
-(`PROVISIONAL`, mirrors the Playground's "invalid → hover cleared").
+- `placed_points`: every point placed so far, once each (vertex or edge
+  point; an earlier point clicked again is not drawn twice);
+- `path_segments`: the segments commit will cut, between their points'
+  positions (a skip along an existing edge is not drawn — it cuts nothing);
+- `start_point`: the last placed point, where the next segment starts (F3);
+- `prospective_point`: the hovered target — the vertex, the point at `t` on
+  the hovered edge (G1, also before the first click), or an own point;
+- `target_edge`: the hovered edge;
+- `line_preview`: from the start point to the prospective point.
+
+`Application` builds it from `KnifeTool.path` and hands it to the viewport's
+tool layers; tests read it directly. Invalid targets never reach this module
+as a prospective target — the caller passes `target=None` for them, so there
+is no preview point and no line (`PROVISIONAL`, mirrors the Playground's
+"invalid → hover cleared").
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core import EdgeId, VertexId
+from core import EdgeId
 
 Vec3 = tuple[float, float, float]
 Segment = tuple[Vec3, Vec3]
@@ -29,12 +38,13 @@ class KnifeRenderData:
     target_edge: Segment | None
     line_preview: Segment | None
     path_segments: tuple[Segment, ...]
+    placed_points: tuple[Vec3, ...] = ()
 
 
 def target_position(mesh, target: dict) -> Vec3 | None:
-    """World position of a knife target: the vertex itself, or the point at
-    `t` along the edge (same lerp the Playground preview uses). None for other
-    kinds and for handles the mesh no longer knows."""
+    """World position of a knife target or path record: the vertex itself, or
+    the point at `t` along the edge (same lerp the Playground preview uses).
+    None for other kinds and for handles the mesh no longer knows."""
     kind = target.get("kind")
     if kind == "vertex" and mesh.is_valid_vertex(target["vertex_id"]):
         return tuple(mesh.vertex_position(target["vertex_id"]))
@@ -54,20 +64,41 @@ def _segment(mesh, edge_id: EdgeId) -> Segment:
 
 def build_knife_render_data(
     mesh,
-    start: VertexId | None,
+    path,
     target: dict | None,
     highlight_edge: EdgeId | None,
-    path_edges,
 ) -> KnifeRenderData:
-    """`target` = the valid prospective target or None; `highlight_edge` =
-    hovered (valid) or locked edge. Handles the mesh no longer knows are
-    skipped, like the selection overlays (AD-001)."""
-    start_point = (
-        tuple(mesh.vertex_position(start))
-        if start is not None and mesh.is_valid_vertex(start)
-        else None
-    )
-    prospective = target_position(mesh, target) if target is not None else None
+    """`path` = `KnifeTool.path` (records incl. skip breaks); `target` = the
+    valid prospective target or None (an own-point target `{"kind": "point",
+    "pid"}` is looked up in `path`); `highlight_edge` = the hovered edge.
+    Handles the mesh no longer knows are skipped, like the selection overlays
+    (AD-001)."""
+    positions: dict = {}
+    placed: list[Vec3] = []
+    segments: list[Segment] = []
+    prev = None
+    for p in path:
+        if p["kind"] == "break":
+            prev = None
+            continue
+        pos = target_position(mesh, p)
+        if pos is None:
+            prev = None
+            continue
+        if p["pid"] not in positions:
+            positions[p["pid"]] = pos
+            placed.append(pos)
+        if prev is not None:
+            segments.append((prev, pos))
+        prev = pos
+    last = next((p for p in reversed(path) if p["kind"] != "break"), None)
+    start_point = positions.get(last["pid"]) if last is not None else None
+    if target is None:
+        prospective = None
+    elif target.get("kind") == "point":
+        prospective = positions.get(target.get("pid"))
+    else:
+        prospective = target_position(mesh, target)
     target_edge = (
         _segment(mesh, highlight_edge)
         if highlight_edge is not None and mesh.is_valid_edge(highlight_edge)
@@ -78,5 +109,4 @@ def build_knife_render_data(
         if start_point is not None and prospective is not None
         else None
     )
-    path = tuple(_segment(mesh, e) for e in path_edges if mesh.is_valid_edge(e))
-    return KnifeRenderData(start_point, prospective, target_edge, line, path)
+    return KnifeRenderData(start_point, prospective, target_edge, line, tuple(segments), tuple(placed))

@@ -6,9 +6,9 @@ Every literal below was recorded from the tool *before* S2 (commit "Tests: parit
 real-cut `KnifeTool` — and S2 (virtual path, resolved at commit) must reproduce it unchanged.
 
 Intended changes (decided: AQ1 = Q5 behaviour, Manu 2026-10-01; and the stated assumption "a session
-that cuts nothing leaves mesh and History untouched") are written with their *new* expected value
-and marked `xfail(strict=True)` while the pre-S2 tool runs; S2 flips them and drops the mark. P10 (edge -> edge across faces that share
-nothing) stays refused until slice S4 (planner).
+that cuts nothing leaves mesh and History untouched") are written with their *new* expected value;
+they were `xfail(strict=True)` on the pre-S2 tool, S2 flipped all of them and dropped the mark.
+P10 (edge -> edge across faces that share nothing) stays refused until slice S4 (planner).
 
 Asserted per row: which clicks are accepted, `accepts() == click()` on every click, the mesh
 (position-canonical face hash + V/E/F), History length, the selection residue (selected edges as
@@ -177,17 +177,13 @@ def test_p15_head_edge_rings(n, start):
 
 
 # -- intended changes (AQ1; "a session that cuts nothing leaves mesh and History untouched") --------
+# Today = before S2.
 
-S2_CHANGE = pytest.mark.xfail(strict=True, reason="S2: expected to change (AQ1 / no-cut session), see docstring")
-
-
-@S2_CHANGE
 def test_p08_vertex_to_adjacent_vertex_is_accepted_as_skip():
     """Today: 2nd click refused (`+-`). S2 (AQ1): accepted, nothing cut, nothing committed."""
     _nothing(run(*ROWS["P08"]), "++")
 
 
-@S2_CHANGE
 def test_p08b_the_chain_continues_from_the_neighbour():
     """Today: `+--`, nothing. S2: `+++`, the third click cuts from the neighbour (2,1) to (3,2) —
     the same mesh as that plain cut."""
@@ -195,14 +191,12 @@ def test_p08b_the_chain_continues_from_the_neighbour():
     _committed(run(*ROWS["P08b"]), ref.faces, ref.vef, ref.residue, "+++")
 
 
-@S2_CHANGE
 def test_p09_two_points_on_the_same_edge_commit_nothing():
     """Today: 2nd refused, the 1st split is committed (V+1/E+1, History 1). S2: both accepted
     (skip), no change, no History."""
     _nothing(run(*ROWS["P09"]), "++")
 
 
-@S2_CHANGE
 def test_p09b_the_chain_continues_from_the_second_point_on_the_edge():
     """Today: `+-+`, the cut runs from the *first* point. S2: from the second — the same mesh as
     the plain cut from (1.7, 1) to (1.5, 2)."""
@@ -210,26 +204,22 @@ def test_p09b_the_chain_continues_from_the_second_point_on_the_edge():
     _committed(run(*ROWS["P09b"]), ref.faces, ref.vef, ref.residue, "+++")
 
 
-@S2_CHANGE
 def test_p10_the_refused_session_leaves_no_lone_vertex():
     """Today: the first click's split is committed (V+1/E+1, History 1). S2: nothing committed."""
     _nothing(run(*ROWS["P10"]), "+-")
 
 
-@S2_CHANGE
 def test_p11_one_edge_click_then_enter_commits_nothing():
     """Today: the lone split is committed (V+1/E+1, History 1, empty residue). S2: nothing."""
     _nothing(run(*ROWS["P11"]), "+")
 
 
-@S2_CHANGE
 def test_p14_edge_click_then_click_outside_commits_nothing():
     """Engine level: the outside click is refused, the commit (Application: the outside click
     itself) commits nothing. Today: the lone split, History 1."""
     _nothing(run(*ROWS["P14"]), "+-")
 
 
-@S2_CHANGE
 def test_s4_undo_everything_then_commit_pushes_nothing():
     """Today: History 1 with unchanged content (an empty Undo step). S2: History 0."""
     r = run("grid", SESSION_BASE, ops=SESSIONS["S4"])
@@ -237,7 +227,6 @@ def test_s4_undo_everything_then_commit_pushes_nothing():
     _nothing(r, "++++")
 
 
-@S2_CHANGE
 def test_r3_chord_along_a_straight_run_of_boundary_edges_is_a_skip():
     """R3 (HD2): from (1,1) to (1.75,1), along the straight bottom line a first session left (vertex at
     (1.5,1)). Today: refused by F2, and the rolled-back split still pushes an empty History entry
@@ -252,8 +241,84 @@ def test_r3_stays_clean():
     assert r.faces == R3_SETUP_FACES
 
 
-@S2_CHANGE
 def test_g3_the_mesh_is_not_changed_during_a_session():
     """S2 (M1, model B): clicks change the path, not the mesh — the mesh changes at commit."""
     r = run(*ROWS["P04"])
     assert r.session_mutations == [False, False, False, False]
+
+
+# -- seeded random vertex/edge sessions (the golden driver's pattern, Production tool) --------------
+
+def _random_target(rnd, tool, mesh):
+    """Mostly a vertex / edge point of a face the last point touches (a productive session), now and
+    then one of the session's own points or any vertex / edge of the mesh."""
+    last = tool.last_point
+    roll = rnd.random()
+    if tool.points and roll < 0.1:
+        return {"kind": "point", "pid": rnd.choice(tool.points)["pid"]}
+    if last is not None and roll < 0.85:
+        faces = sorted(
+            mesh.edge_faces(last["edge_id"]) if last["kind"] == "edge"
+            else {f for ed in mesh.vertex_edges(last["vertex_id"]) for f in mesh.edge_faces(ed)},
+            key=int,
+        )
+        face = rnd.choice(faces)
+        if rnd.random() < 0.4:
+            return {"kind": "vertex", "vertex_id": rnd.choice(mesh.face_vertices(face))}
+        return {"kind": "edge", "edge_id": rnd.choice(mesh.face_edges(face)), "t": rnd.uniform(0.1, 0.9)}
+    if rnd.random() < 0.4:
+        return {"kind": "vertex", "vertex_id": rnd.choice(sorted(mesh.all_vertex_ids(), key=int))}
+    return {"kind": "edge", "edge_id": rnd.choice(sorted(mesh.all_edge_ids(), key=int)), "t": rnd.uniform(0.1, 0.9)}
+
+
+@pytest.mark.parametrize("scene_name,runs", [("grid", 60), ("cube", 60), ("head", 12)])
+def test_seeded_random_sessions_stay_clean(scene_name, runs):
+    """Per session: accepts() == click() on every click; the mesh is not touched before commit (undo,
+    redo and rejected clicks included); commit pushes at most one History entry, which Undo / Redo
+    take back / restore exactly; the result passes the geometry check. Each run plays 1-3 sessions on
+    the mesh the previous one left."""
+    import random
+
+    from core import Mesh
+    from tests.knife_parity_driver import SCENES, begin, broken, canon_faces, content, quiet
+
+    if scene_name == "head" and not HEAD_ASSET.is_file():
+        pytest.skip("head asset not found (examples/meshes/)")
+    rnd = random.Random(20261001)
+    committed = rolled_back = 0
+    for run_index in range(runs):
+        mesh: Mesh = SCENES[scene_name]()
+        for _session in range(rnd.randint(1, 3)):
+            before = mesh.export_state()
+            tool, scene = begin(mesh)
+            for _ in range(rnd.randint(1, 7)):
+                op = rnd.random()
+                with quiet():
+                    if op < 0.1:
+                        tool.undo_step()
+                    elif op < 0.15:
+                        tool.redo_step()
+                    else:
+                        target = _random_target(rnd, tool, mesh)
+                        assert tool.accepts(target) is tool.click(target), (scene_name, run_index, target)
+                assert content(mesh.export_state()) == content(before), "mesh changed during the session"
+            with quiet():
+                cmd = tool.commit()
+                tool.deactivate()
+            context = f"{scene_name} run {run_index}"
+            assert len(scene.history) == (0 if cmd is None else 1), context
+            if tool.last_problem is not None:
+                rolled_back += 1
+                assert content(mesh.export_state()) == content(before), context
+            if cmd is None:
+                continue
+            committed += 1
+            assert broken(mesh, scene_name) == [], context
+            assert scene.selection.edges == set(tool.path_edges) and tool.path_edges, context
+            after = canon_faces(mesh)
+            scene.history.undo()
+            assert content(mesh.export_state()) == content(before), context
+            scene.history.redo()
+            assert canon_faces(mesh) == after, context
+    assert committed > runs // 2  # the sessions really cut
+    assert rolled_back == 0       # vertex/edge-only paths never need the safety net

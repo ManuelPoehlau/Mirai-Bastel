@@ -218,8 +218,8 @@ def test_split_edge_makes_the_new_vertex_immediately_hoverable(app):
 def test_knife_cut_makes_the_new_vertex_immediately_hoverable(app):
     """Fixture geometry (`tests/test_application_knife.py`): vertex 7 is a
     valid Knife start, edge 5-6 is not incident to it and shares a face with
-    it (face 1) - a valid second click, which splits that edge and creates a
-    new vertex."""
+    it (face 1) - a valid second click; the commit splits that edge and
+    creates a new vertex (WP-KNIFE-01 S2: at commit, not at the click)."""
     from mirai.topology.knife_pick import knife_pick
     from mirai.topology.knife_preview import target_position
 
@@ -244,8 +244,9 @@ def test_knife_cut_makes_the_new_vertex_immediately_hoverable(app):
     app.pointer_press(_mouse("LEFT"), *cut_screen)
     assert app.pointer_release("LEFT", *cut_screen) is True
 
-    new_vid = app._knife.start
     assert app.key_press(_key("enter")) is True  # commit
+    new_vid = next(v for v in mesh.all_vertex_ids()
+                   if all(abs(a - b) < 1e-9 for a, b in zip(mesh.vertex_position(v), cut_point)))
     app.selection.mode = SelectionMode.VERTEX
     app.pointer_motion(*_vertex_screen(app, new_vid))
     assert app.selection.hovered == new_vid
