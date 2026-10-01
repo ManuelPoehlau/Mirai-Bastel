@@ -1,4 +1,4 @@
-"""Knife session overlays in the real GL path (WP-06 B7): tool layers of
+"""Knife session overlays in the real GL path (WP-06 B7; WP-KNIFE-01 S2): tool layers of
 `GLPointOverlay` / `GLLineOverlay` fed by `Application` through
 `Viewport.set_tool_overlay`.
 
@@ -128,18 +128,23 @@ def test_start_point_line_preview_and_path_are_drawn_and_cleared_on_cancel(gl_wi
     mid = _screen(app, _lerp(p7, target, 0.5))
     assert _near(previewed, mid, lambda rgb: rgb != _pixel(started, int(mid[0]), int(mid[1])))
 
-    # Cut across face 4 → 5: the path edge is a selected-yellow line.
+    # Cut across face 4 → 5: the path segment is a selected-yellow line. WP-KNIFE-01 S2:
+    # the mesh is cut at commit, so the placed edge point is drawn as a selected-yellow
+    # point too (no split vertex to show yet).
+    n_vertices = len(mesh.all_vertex_ids())
     assert _click(app, _screen(app, target)) is True
+    assert len(mesh.all_vertex_ids()) == n_vertices
     app.pointer_motion(2, 2)
     cut = _render(gl_window, app)
     path_mid = _screen(app, _lerp(p7, target, 0.5))
     assert _near(cut, path_mid, _is_selected_yellow)
+    assert _near(cut, _screen(app, target), _is_selected_yellow)
 
     # A second cut target on edge 4-5 from the new start keeps the old path.
     app.pointer_motion(*_screen(app, _lerp(p4, p5, 0.5)))
     assert _near(_render(gl_window, app), path_mid, _is_selected_yellow)
 
-    # Esc: mesh restored, every tool layer gone - the frame equals the idle one.
+    # Esc: mesh untouched, every tool layer gone - the frame equals the idle one.
     app.key_press(Input("key", "ESCAPE", frozenset()))
     app.pointer_motion(2, 2)
     assert _render(gl_window, app) == idle

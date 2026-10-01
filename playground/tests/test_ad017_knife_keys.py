@@ -237,3 +237,28 @@ def test_knife_family_draws_the_path_while_the_mesh_stays_uncut(win_app):
     assert win._vlist_knife_start is None and win._vlist_knife_path is None
     assert _topo(app) != topo
     assert _depths(app) == (1, 0)
+
+
+def test_knife_family_hover_snaps_to_an_own_edge_point(win_app):
+    """Over one of the session's own edge points the hover target is that point (S2 own-point snap,
+    `knife_pick.snap_own_point`) and it is highlighted like a vertex — a click there reaches the
+    very point again instead of placing a second one next to it."""
+    win, app = win_app
+    knife = _arm_knife(win)
+    mesh = app.scene.mesh
+    fid = sorted(mesh.all_face_ids())[0]
+    eid = mesh.face_edges(fid)[0]
+    assert knife.click({"kind": "edge", "edge_id": eid, "t": 0.5})
+    a, b = (mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
+    mid = tuple((a[i] + b[i]) / 2 for i in range(3))
+    sx, sy = app.camera.project_to_screen(mid, win.width, win.height)
+
+    from mirai.topology.knife_pick import knife_pick
+    picked = knife_pick(app.camera, mesh, sx, sy, win.width, win.height, **win._pick_kwargs())
+    assert picked["kind"] == "edge"
+    assert win._knife_snap(mesh, sx, sy, picked) == {"kind": "point", "pid": knife.last_point["pid"]}
+
+    win.on_mouse_motion(round(sx), round(sy), 0, 0)
+    assert win._vlist_knife_hover_vertex is not None   # highlighted like a vertex
+    assert win._vlist_knife_preview_point is None      # not an edge preview
+    win.on_draw()

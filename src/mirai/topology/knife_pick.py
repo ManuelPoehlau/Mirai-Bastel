@@ -6,6 +6,10 @@ Slice B7; `project_locked_edge` was extracted from `playground/window.py`
 unchanged.
 
 Reuses src/mirai/viewport/picking.py without modification.
+
+WP-KNIFE-01 S2: `snap_own_point` adds the session's own edge points (not
+mesh vertices before commit) as targets, so a click on one reaches the very
+point again — what the real-cut Knife got from the vertex it had split there.
 Priority order: vertex hit first; else edge hit with perspective-correct 3D t;
 endpoint threshold → treat as vertex; else face hit → "on mesh, no target";
 else "outside mesh".
@@ -16,8 +20,19 @@ segment in world space (not screen space).
 
 from __future__ import annotations
 
-from ..viewport.picking import pick_nearest_vertex, pick_nearest_edge, pick_face
+import math
+
+from ..viewport.picking import (
+    DEPTH_TOLERANCE,
+    _edge_point_occluded,  # private: the planner's known smell too (decision.md S1-g, slice S4)
+    pick_face,
+    pick_nearest_edge,
+    pick_nearest_vertex,
+)
 from ..viewport.picking_cache import PickCache
+
+# Same radius as the vertex pick (`pick_nearest_vertex`'s default; Q5's SNAP_PX).
+OWN_POINT_SNAP_PX = 14.0
 
 ENDPOINT_THRESHOLD = 0.05  # t values within this threshold of 0 or 1 snap to vertex
 
@@ -159,3 +174,51 @@ def project_locked_edge(camera, mesh, x, y, width, height, locked_eid) -> dict:
     if t >= 1.0 - ENDPOINT_THRESHOLD:
         return {"kind": "vertex", "vertex_id": vb}
     return {"kind": "edge", "edge_id": locked_eid, "t": t}
+
+
+def snap_own_point(
+    camera,
+    mesh,
+    sx: float,
+    sy: float,
+    width: int,
+    height: int,
+    points,
+    target: dict,
+    *,
+    cache: PickCache | None = None,
+    occlusion: bool = False,
+) -> dict:
+    """`target` (a `knife_pick` result), or `{"kind": "point", "pid": ...}` when the
+    cursor is within the vertex pick radius of one of the session's own edge points
+    (`points`: `KnifeTool.points`). Own points behave like the vertices they become
+    at commit: they beat an edge or face hit, a mesh vertex wins only when it is at
+    least as near on screen (same nearest-wins rule), a hidden one is skipped
+    when `occlusion` is on. Vertex points need nothing here — they are mesh vertices
+    and `knife_pick` returns them already."""
+    best = None
+    for p in points:
+        if p["kind"] != "edge" or not mesh.is_valid_edge(p["edge_id"]):
+            continue
+        va, vb = mesh.edge_vertices(p["edge_id"])
+        p0, p1 = mesh.vertex_position(va), mesh.vertex_position(vb)
+        pos = tuple(p0[i] + p["t"] * (p1[i] - p0[i]) for i in range(3))
+        projected = camera.project_to_screen(pos, width, height)
+        if projected is None:
+            continue
+        dist = math.hypot(projected[0] - sx, projected[1] - sy)
+        if dist >= OWN_POINT_SNAP_PX or (best is not None and dist >= best[0]):
+            continue
+        if occlusion and _edge_point_occluded(
+            camera, mesh, cache, p["edge_id"], p["t"], width, height, DEPTH_TOLERANCE
+        ):
+            continue
+        best = (dist, p)
+    if best is None:
+        return target
+    if target.get("kind") == "vertex":
+        projected = camera.project_to_screen(mesh.vertex_position(target["vertex_id"]), width, height)
+        if projected is not None and math.hypot(projected[0] - sx, projected[1] - sy) <= best[0]:
+            return target
+    return {"kind": "point", "pid": best[1]["pid"]}
+

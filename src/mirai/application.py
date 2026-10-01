@@ -52,7 +52,7 @@ from .topology.connect_per_face import TopologyToolError, connect_selected_edges
 from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.knife import KnifeTool
-from .topology.knife_pick import knife_pick
+from .topology.knife_pick import knife_pick, snap_own_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .topology.split import split_selected_edge
 from .viewport import DisplayMode, DisplayState, OrbitCamera
@@ -681,16 +681,18 @@ class Application:
 
     def _knife_pick(self, x: float, y: float) -> dict:
         """WP-06 B8: same cache/occlusion as `_pick()` - a hidden edge/vertex
-        cannot be a Knife target while faces are shown."""
-        return knife_pick(
-            self.camera,
-            self.scene.mesh,
-            x,
-            y,
-            self.viewport_width,
-            self.viewport_height,
-            cache=self._pick_cache,
-            occlusion=self.display.show_faces,
+        cannot be a Knife target while faces are shown. WP-KNIFE-01 S2: then
+        the session's own edge points (`snap_own_point`) - a click on one
+        reaches that point again, as the real-cut Knife's split vertex did."""
+        kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
+        size = (self.viewport_width, self.viewport_height)
+        target = knife_pick(self.camera, self.scene.mesh, x, y, *size, **kwargs)
+        if self._knife is None:
+            return target
+        # Also over "outside": the real-cut Knife's split vertex was caught by the
+        # 14 px vertex pick just off the silhouette too.
+        return snap_own_point(
+            self.camera, self.scene.mesh, x, y, *size, self._knife.points, target, **kwargs
         )
 
     def _knife_set_preview(self, target: dict) -> bool:

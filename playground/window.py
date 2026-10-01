@@ -93,6 +93,7 @@ from mirai.topology.knife import KnifeTool  # noqa: E402
 from mirai.topology.knife_pick import (  # noqa: E402
     knife_pick,
     project_locked_edge as _knife_project_locked_edge,
+    snap_own_point,
 )
 from mirai.topology.knife_preview import build_knife_render_data  # noqa: E402
 from playground.experiments.knife.variant_a import KnifeVariantA  # noqa: E402
@@ -1261,6 +1262,13 @@ class PlaygroundWindow(pyglet.window.Window):
             self._vlist_knife_path = None
         self._knife_last_start = None
 
+    def _knife_snap(self, mesh, x: float, y: float, target: dict) -> dict:
+        """WP-KNIFE-01 S2: the session's own edge points are not mesh vertices before
+        commit — within the vertex pick radius the target becomes that point, as the
+        vertex the Knife used to split there was (`knife_pick.snap_own_point`)."""
+        return snap_own_point(self.app.camera, mesh, x, y, self.width, self.height,
+                              self._knife_tool.points, target, **self._pick_kwargs())
+
     def _rebuild_knife_path_vbo(self) -> None:
         """The session's virtual path (WP-KNIFE-01 S2: `KnifeTool` cuts the mesh at
         commit, not per click): placed points and the segments commit will cut, in
@@ -1468,8 +1476,8 @@ class PlaygroundWindow(pyglet.window.Window):
             and self._active_knife_model() == "press_slide_release"
         ):
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height,
-                **self._pick_kwargs())
+            target = self._knife_snap(mesh, x, y, knife_pick(
+                self.app.camera, mesh, x, y, self.width, self.height, **self._pick_kwargs()))
             hover_result = self._knife_tool.hover(target)
             if target.get("kind") == "edge" and hover_result.get("valid", False):
                 self._knife_slide_armed = True
@@ -1780,6 +1788,7 @@ class PlaygroundWindow(pyglet.window.Window):
             print(f"[KNIFE] click at ({x},{y})")
             target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height, debug=True,
                                  **self._pick_kwargs())
+            target = self._knife_snap(mesh, x, y, target)
             kind = target.get("kind")
             if kind == "vertex":
                 print(f"[KNIFE] hit=VERTEX id={int(target['vertex_id'])}")
@@ -2042,8 +2051,8 @@ class PlaygroundWindow(pyglet.window.Window):
         # Knife: hover preview (WP-AP-CUT)
         if self._knife_tool is not None and self.app.viewport is not None:
             mesh = self.app.viewport.render_mesh.mesh
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height,
-                **self._pick_kwargs())
+            target = self._knife_snap(mesh, x, y, knife_pick(
+                self.app.camera, mesh, x, y, self.width, self.height, **self._pick_kwargs()))
             hover_result = self._knife_tool.hover(target)
             kind = target.get("kind")
 
@@ -2062,6 +2071,15 @@ class PlaygroundWindow(pyglet.window.Window):
                         self._vlist_knife_hover_vertex = self._overlay_program.vertex_list(
                             len(positions) // 3, gl.GL_POINTS,
                             position=("f", positions),
+                        )
+
+                elif kind == "point":
+                    # One of the session's own edge points (S2 own-point snap): shown like
+                    # the vertex it becomes at commit.
+                    pos = self._knife_tool.point_position(target)
+                    if pos is not None:
+                        self._vlist_knife_hover_vertex = self._overlay_program.vertex_list(
+                            1, gl.GL_POINTS, position=("f", build_knife_preview_point_data(pos)),
                         )
 
                 elif kind == "edge":

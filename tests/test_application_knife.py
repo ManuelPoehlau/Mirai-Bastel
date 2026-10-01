@@ -4,8 +4,10 @@ Headless (TraceStore), no pyglet/window. Path: `C` with an empty selection →
 `Application._connect_command` → `_knife_begin` → `mirai.topology.knife.
 KnifeTool` (the same session engine the Playground imports). Input during a
 session: pointer motion = hover preview (Playground Variant A), a click
-(press+release under the click threshold) cuts at the previewed position - a
-press that moved past the threshold is not a click and does nothing; Enter /
+(press+release under the click threshold) adds the previewed point to the
+session's path - a press that moved past the threshold is not a click and
+does nothing (WP-KNIFE-01 S2: the mesh is cut at commit, not per click; a
+click along an existing edge is a skip, Artist decision AQ1); Enter /
 click outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z =
 in-session undo / redo; navigation keeps working, every other key is gated.
 B7.1 (Artist decision Manu 2026-09-28, after the B7 window test): the F1
@@ -830,3 +832,104 @@ def test_session_gate_keeps_display_mode(app):
     app.key_press(ESC)
     app.key_press(_key("d"))
     assert app.display.mode is not DisplayMode.SHADED
+
+
+# -- 10. WP-KNIFE-01 S2: the virtual path in the window ---------------------------------------
+
+
+def test_g1_marker_at_t_while_hovering_an_edge_before_and_after_the_first_click(app):
+    """G1: the point marker sits at `t` on the hovered edge - before the first click (nothing to
+    start a line from) and from a start on, at the end of the line preview."""
+    _begin(app)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+
+    app.pointer_motion(*_edge_screen(app, e56, 0.4))
+    marker = _edge_point(app, e56, 0.4)
+    data = app.knife_render_data
+    assert _close(data.prospective_point, marker, 1e-4) and data.line_preview is None
+    assert app.viewport.tool_point_layers[TOOL_PREVIEW_LAYER] == [data.prospective_point]
+
+    _click(app, _vertex_screen(app, _v(app, 7)))
+    app.pointer_motion(*_edge_screen(app, e56, 0.4))
+    data = app.knife_render_data
+    assert _close(data.prospective_point, marker, 1e-4)
+    assert data.line_preview[1] == data.prospective_point
+    assert app.viewport.tool_point_layers[TOOL_PREVIEW_LAYER] == [data.prospective_point]
+
+
+def test_clicks_change_neither_the_mesh_nor_the_pick_cache(app):
+    """The mesh is cut at commit only, so a click keeps the pick cache (no per-click invalidation);
+    the commit invalidates it."""
+    mesh = app.scene.mesh
+    before = _topology(mesh)
+    _begin(app)
+    app.pointer_motion(*_vertex_screen(app, _v(app, 7)))
+    generation = app._pick_cache._generation
+
+    _cut_three_faces(app)
+    app.key_press(CTRL_Z)
+    app.key_press(CTRL_Y)
+
+    assert app._pick_cache._generation == generation
+    assert _topology(mesh) == before
+    app.key_press(ENTER)
+    assert app._pick_cache._generation > generation
+    assert _topology(mesh) != before
+
+
+def test_a_click_on_an_own_edge_point_reaches_that_point_again(app):
+    """P05 in the window: a triangle round the front corner (vertex 6) through the midpoints of its
+    three edges, closed by clicking the first point again. The own-point snap turns that click into
+    the first point itself (the real-cut Knife clicked the vertex it had split there) - one vertex
+    per point at commit, not a second one next to the first."""
+    mesh = app.scene.mesh
+    n_vertices, n_faces = len(mesh.all_vertex_ids()), len(mesh.all_face_ids())
+    _begin(app)
+    v6 = _v(app, 6)
+    edges = [_edge(app, _v(app, i), v6) for i in (5, 2, 7)]
+    for eid in edges:
+        assert _click(app, _edge_screen(app, eid, 0.5)) is True
+    first = app._knife.points[0]
+
+    pos = _screen(app, _edge_point(app, edges[0], 0.5))
+    assert app._knife_pick(*pos) == {"kind": "point", "pid": first["pid"]}
+    app.pointer_motion(*pos)
+    assert app.knife_render_data.prospective_point == app._knife.point_position(first)
+    assert _click(app, pos) is True
+    assert app._knife.last_point is first and len(app._knife.cut_segments) == 3
+
+    assert app.key_press(ENTER) is True
+    assert len(mesh.all_vertex_ids()) == n_vertices + 3
+    assert len(mesh.all_face_ids()) == n_faces + 3
+    assert len(app.selection.edges) == 3
+    assert_mesh_invariants(mesh, context="corner triangle")
+
+
+def test_the_own_point_snap_loses_to_a_nearer_mesh_vertex_and_ignores_far_points(app):
+    from mirai.topology.knife_pick import snap_own_point
+
+    mesh = app.scene.mesh
+    _begin(app)
+    e56 = _edge(app, _v(app, 5), _v(app, 6))
+    _click(app, _edge_screen(app, e56, 0.08))  # an own point close to vertex 5
+    points = app._knife.points
+    own = _screen(app, _edge_point(app, e56, 0.08))
+    v5 = _vertex_screen(app, _v(app, 5))
+    vertex_target = {"kind": "vertex", "vertex_id": _v(app, 5)}
+
+    assert snap_own_point(app.camera, mesh, *v5, WIDTH, HEIGHT, points, vertex_target) == vertex_target
+    assert snap_own_point(app.camera, mesh, *own, WIDTH, HEIGHT, points, vertex_target) == {
+        "kind": "point", "pid": points[0]["pid"]}
+    far = {"kind": "outside"}
+    assert snap_own_point(app.camera, mesh, *OUTSIDE, WIDTH, HEIGHT, points, far) == far
+
+
+def test_status_line_names_skips_and_cuts(app):
+    _begin(app)
+    v7 = _v(app, 7)
+    _click(app, _vertex_screen(app, v7))
+    assert app.status_message == "Knife: start point set"
+    _click(app, _vertex_screen(app, _v(app, 6)))  # neighbour along an edge (AQ1)
+    assert app.status_message == "Knife: along an existing edge - nothing to cut (0 path segments)"
+    _click(app, _edge_screen(app, _edge(app, _v(app, 2), _v(app, 1)), 0.5))  # across face 3
+    assert app.status_message == "Knife: cut (1 path segment)"
