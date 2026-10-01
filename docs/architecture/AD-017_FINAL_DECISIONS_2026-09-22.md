@@ -95,3 +95,76 @@ Detail (agent-recorded, not an Artist question):
 - **Not changed:** Core, `Split`, the Knife session model, History behaviour, `playground/` code. The
   Playground Lab keeps its own predicate for now (the One-Knife slice S1 will make the `src` one the single
   implementation).
+
+---
+
+## Addendum 2026-10-01 (Artist: K1) — B2c chosen: `Mesh.split_face`
+
+**2026-10-01 — K1 / B2c chosen (Artist): `Mesh.split_face`; B5 satisfied; K0 not chosen.** Manu chose K1 over the
+planned K0 after the comparison in chat (`docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md` §3). M1 (promote
+the KEEP'd Q5 model in slices) stays the migration path; this addendum covers only the Core primitive (WP-KNIFE-00).
+The Knife, the Lab and the resolver are the next package (WP-KNIFE-01 S1, which calls `Mesh.split_face` instead of
+`remove_face` + `add_vertex` + `add_face`).
+
+- **B5 satisfied:** the cut engine still mutates the mesh only through `split_edge` / `connect_vertices` and — now
+  chosen — B2c. No face surgery in the tool layer.
+- **K0 not chosen, because** a primitive that knows the parent face, the path and both sides is the natural
+  provenance hook (ARCH-02) and keeps AD-017 B5 and the V1_SPEC mutation-layer principle intact, where K0 would
+  have amended B5 to allow face surgery in the tool.
+
+**Freeze rule (`CORE_V1_FREEZE.md` §7), step by step:**
+
+| Step | Result |
+|---|---|
+| 1 Concrete requirement | Q5 face constructions, Artist KEEP (2026-09-30) + the One Knife requirement (one Knife in Production, not two engines). |
+| 2 Solvable with the public API? | Yes, via `remove_face` + `add_vertex` + `add_face` (B2b) — but that contradicts AD-017 B5 and the mutation-layer principle (`ONE_KNIFE_PROMOTION_DISCOVERY.md` §3). |
+| 3 Problem documented | `ONE_KNIFE_PROMOTION_DISCOVERY.md` §3 and `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` §3 (both archived). |
+| 4 Smallest extension | One additive primitive, `Mesh.split_face`. `connect_vertices`, `split_edge`, `add_face`, `add_edge` unchanged. |
+| 5 Tests / contract | Contract below; contract tests `tests/test_core.py` (`test_split_face_*`); equivalence against the Lab stand-ins `playground/tests/test_split_face_equivalence.py`. |
+| 6 Change | After 1–5: commit "Core: Mesh.split_face (WP-KNIFE-00 K1)". |
+
+**Accepted contract** (the B2c sketch of `KNIFE_FACE_CUT_DISCOVERY.md` §3, refined only where marked *pinned*;
+the method docstring in `src/core/mesh.py` restates it, this addendum is the decision record):
+
+```text
+Mesh.split_face(face_id, v_a, v_b, positions: Sequence[Position] = ())
+    -> tuple[list[VertexId], list[EdgeId], FaceId, FaceId]     # (new vertices, new edges, face_1, face_2)
+```
+
+- **Preconditions.** Face valid; `v_a != v_b`, both on the face boundary; both resulting faces ≥ 3 vertices. With
+  `positions == ()` adjacent ends are rejected (as `connect_vertices`); with ≥ 1 position they are allowed (notch,
+  FC3/FC4). *Pinned:* a face whose boundary repeats a vertex is rejected (`add_face` accepts one, H7); every
+  position must have 3 coordinates; with `positions == ()`, an existing edge `v_a`–`v_b` that already borders
+  another face is rejected — `connect_vertices` would give that edge 3 or 4 faces. Any violation → `MeshError`,
+  and the mesh is unchanged, **allocator counters included** (everything is validated before the first mutation).
+- **`positions == ()` ≡ `connect_vertices`:** same faces, same boundaries (same start vertex), same ids, same
+  `export_state()` — on every input `connect_vertices` accepts, except the rejected edge-already-has-a-face case
+  above. An existing *free* edge `v_a`–`v_b` is reused, as `connect_vertices` does (then no new EdgeId).
+- **Path.** `positions` are the k interior points in order `v_a → v_b`; k new vertices at exactly these positions.
+- **ID continuity (AD-001).** `face_id` invalid; k new VertexIds in path order; k + 1 new EdgeIds in path order
+  `v_a → v_b`; two new FaceIds, `face_1` allocated before `face_2`; boundary vertices and all boundary edges keep
+  their IDs; no edge is removed; monotonic, no reuse.
+- **Face order — *pinned*.** Let `s` be the end with the lower index in `face_vertices(face_id)`, `e` the other.
+  `face_1` = boundary `s … e` forward, then back along the path `e → s`; `face_2` = boundary `e … s` forward
+  (through the end of the list), then along the path `s → e`. For `v_a` before `v_b` this is the sketch's
+  "side running `v_a → v_b` in boundary order"; for `v_b` before `v_a` it is the same swap `connect_vertices`
+  makes. Consequence: both faces and their order do not depend on the argument order — only the path's vertex
+  and edge ids follow `v_a → v_b`.
+- **Winding.** Both faces run like the parent face (each path edge is traversed once in each direction).
+- **Edge endpoint order** (`edge_vertices`) is not semantic (as everywhere in `Mesh`); the path edges are
+  stored the way `face_1` traverses them, which is what makes `positions == ()` bit-identical.
+- **Not included:** geometric checks (path inside the face, self-crossing, flipped children — tool/F2), dangling
+  ends, holes, auto-bridging (tool policy), cross-face (the tool composes per face), a closed ring (`v_a == v_b`),
+  a new `Operation` class (the Knife uses `MeshStateCommand` snapshots), any change to the existing primitives.
+- **Provenance hook only (ARCH-02):** input + return value expose the parent face, the new vertices with their
+  creation positions, the path edges and both sides. No registry, no framework.
+- **Symmetry:** `symmetry_definition` is not touched; a face split creates no seam edge and removes no edge, so
+  seam ids stay valid.
+
+**Open points (recorded, not decided):**
+
+- whether a single call taking two paths, or a closed ring (`v_a == v_b`), is ever worth adding — not now;
+- whether a later provenance layer wants the interior vertex's "parent corner data at creation time" passed in —
+  hook only;
+- the two-call constructions (closed shape, loop at a point) burn one intermediate FaceId compared to the Lab's
+  3-way split — expected, not "fixed"; S1's golden net compares position-canonical results.

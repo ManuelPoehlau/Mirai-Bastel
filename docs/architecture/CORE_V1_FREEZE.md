@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -97,6 +97,23 @@ regression case, the explicit-both-sides-selected edge case, and the `supports_s
 `MoveTool`/`Application` pipeline, not just the Operation layer). `mirai.symmetry` additionally gains
 `mirrored_selection()` (pure function, no cache, AR-1) — covered by `TestMirroredSelection` in
 `tests/test_symmetry.py`.
+
+**Decision:** AD-017 K1 (2026-10-01, WP-KNIFE-00)
+
+`Mesh.split_face(face_id, v_a, v_b, positions=())` is added to `src/core/mesh.py` as an authorized production
+extension — one additive primitive that splits a face along a path `v_a → positions… → v_b` (the B2c sketch of
+`docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` §3). Rationale: the Artist KEEP'd the Q5 face constructions
+(notch, closed shape, loop at a point) and chose K1 for the One Knife (Manu, 2026-10-01); the public API can build
+them only by face surgery in the tool (`remove_face` + `add_vertex` + `add_face`), which contradicts AD-017 B5 and
+the V1_SPEC mutation-layer principle; a primitive that knows the parent face, the path and both sides is also the
+natural provenance hook (ARCH-02). With `positions == ()` it is bit-identical to `connect_vertices` (one documented
+refusal more: a chord that is already an edge of another face). The accepted contract and the freeze-rule table are
+in `docs/architecture/AD-017_FINAL_DECISIONS_2026-09-22.md`, Addendum 2026-10-01. Covered by the `test_split_face_*`
+contract tests in `tests/test_core.py` (ID continuity, `connect_vertices` twin, notch, unchanged mesh incl. allocator
+counters on every error, winding, both argument orders, serialization and `MeshStateCommand` Undo/Redo round trips,
+symmetry definition untouched) and by `playground/tests/test_split_face_equivalence.py` (same faces as the Lab
+stand-ins on grid, cube and head). `connect_vertices` and `split_edge` unchanged; no new `Operation`, no
+serialization change.
 
 ## 2. Was vor dem Freeze validiert wurde
 

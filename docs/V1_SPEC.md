@@ -170,6 +170,7 @@ remove_face()
 split_edge()
 collapse_edge()
 connect_vertices()
+split_face()
 ```
 
 Die genaue Primitive-Liste darf mit den realen Operationen wachsen.
