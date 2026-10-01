@@ -10,8 +10,13 @@ Reuses src/mirai/viewport/picking.py without modification.
 WP-KNIFE-01 S2: `snap_own_point` adds the session's own edge points (not
 mesh vertices before commit) as targets, so a click on one reaches the very
 point again — what the real-cut Knife got from the vertex it had split there.
+WP-KNIFE-01 S3: a face hit carries the hit position and its screen clearance
+from the face's edges (moved from the Knife Face Lab's `knife_face_pick`, H1 of
+`KNIFE_FACE_CUT_DISCOVERY.md`); the session's own interior points snap too.
 Priority order: vertex hit first; else edge hit with perspective-correct 3D t;
-endpoint threshold → treat as vertex; else face hit → "on mesh, no target";
+endpoint threshold → treat as vertex; else face hit → a face point (the Knife
+refuses it closer than `EDGE_MARGIN_PX` to an edge: there the edge is the
+target, which the 9 px edge pick already returns when it is visible);
 else "outside mesh".
 
 The 3D t is computed as the closest point between the view ray and the edge
@@ -24,15 +29,22 @@ import math
 
 from ..viewport.picking import (
     DEPTH_TOLERANCE,
-    _edge_point_occluded,  # private: the planner's known smell too (decision.md S1-g, slice S4)
+    edge_point_occluded,
+    face_edge_distance_px,
+    face_hit_position,
     pick_face,
     pick_nearest_edge,
     pick_nearest_vertex,
+    point_occluded,
 )
 from ..viewport.picking_cache import PickCache
 
 # Same radius as the vertex pick (`pick_nearest_vertex`'s default; Q5's SNAP_PX).
 OWN_POINT_SNAP_PX = 14.0
+
+# H3 (KNIFE_FACE_CUT_DISCOVERY.md): the edge pick radius is 9 px — an interior point needs at least
+# that much clearance from every edge of its face, or "on the edge" and "inside" cannot be told apart.
+EDGE_MARGIN_PX = 9.0
 
 ENDPOINT_THRESHOLD = 0.05  # t values within this threshold of 0 or 1 snap to vertex
 
@@ -97,7 +109,8 @@ def knife_pick(
     Returns one of:
       {"kind": "vertex", "vertex_id": vid}
       {"kind": "edge", "edge_id": eid, "t": float}  — t in (THRESHOLD, 1-THRESHOLD)
-      {"kind": "face", "face_id": fid}               — "on mesh, no target"
+      {"kind": "face", "face_id": fid, "position": (x, y, z), "distance_px": float | None}
+                                                     — the hit on the face, its clearance from the edges
       {"kind": "outside"}
 
     debug=True prints the temporary [KNIFE] pick trace (AD-017 diagnosis).
@@ -144,13 +157,20 @@ def knife_pick(
             return {"kind": "vertex", "vertex_id": vb}
         return {"kind": "edge", "edge_id": eid, "t": t}
 
-    # Face hit → "on mesh, no target"
+    # Face hit → a face point: where the ray hits it, and how far the cursor is from its edges.
+    # The face is the nearest one along the ray, so it needs no occlusion pass of its own.
     fid = pick_face(camera, mesh, sx, sy, width, height, cache=cache)
     if debug:
         print(f"[KNIFE] pick_face -> face:{int(fid)}" if fid is not None
               else "[KNIFE] pick_face -> None")
     if fid is not None:
-        return {"kind": "face", "face_id": fid}
+        pos = face_hit_position(camera, mesh, fid, sx, sy, width, height)
+        if pos is None:  # numerically degenerate: the face was hit a moment ago
+            return {"kind": "outside"}
+        dist = face_edge_distance_px(camera, mesh, fid, sx, sy, width, height, cache=cache)
+        if debug:
+            print(f"[KNIFE] face point clearance={dist}px (margin {EDGE_MARGIN_PX})")
+        return {"kind": "face", "face_id": fid, "position": pos, "distance_px": dist}
 
     if debug:
         print("[KNIFE] pick -> outside")
@@ -190,28 +210,33 @@ def snap_own_point(
     occlusion: bool = False,
 ) -> dict:
     """`target` (a `knife_pick` result), or `{"kind": "point", "pid": ...}` when the
-    cursor is within the vertex pick radius of one of the session's own edge points
-    (`points`: `KnifeTool.points`). Own points behave like the vertices they become
-    at commit: they beat an edge or face hit, a mesh vertex wins only when it is at
-    least as near on screen (same nearest-wins rule), a hidden one is skipped
-    when `occlusion` is on. Vertex points need nothing here — they are mesh vertices
-    and `knife_pick` returns them already."""
+    cursor is within the vertex pick radius of one of the session's own edge or
+    interior points (`points`: `KnifeTool.points`). Own points behave like the
+    vertices they become at commit: they beat an edge or face hit, a mesh vertex
+    wins only when it is at least as near on screen (same nearest-wins rule), a
+    hidden one is skipped when `occlusion` is on. Vertex points need nothing here —
+    they are mesh vertices and `knife_pick` returns them already."""
     best = None
     for p in points:
-        if p["kind"] != "edge" or not mesh.is_valid_edge(p["edge_id"]):
+        if p["kind"] == "edge":
+            if not mesh.is_valid_edge(p["edge_id"]):
+                continue
+            va, vb = mesh.edge_vertices(p["edge_id"])
+            p0, p1 = mesh.vertex_position(va), mesh.vertex_position(vb)
+            pos = tuple(p0[i] + p["t"] * (p1[i] - p0[i]) for i in range(3))
+        elif p["kind"] == "face":
+            if not mesh.is_valid_face(p["face_id"]):
+                continue
+            pos = p["position"]
+        else:
             continue
-        va, vb = mesh.edge_vertices(p["edge_id"])
-        p0, p1 = mesh.vertex_position(va), mesh.vertex_position(vb)
-        pos = tuple(p0[i] + p["t"] * (p1[i] - p0[i]) for i in range(3))
         projected = camera.project_to_screen(pos, width, height)
         if projected is None:
             continue
         dist = math.hypot(projected[0] - sx, projected[1] - sy)
         if dist >= OWN_POINT_SNAP_PX or (best is not None and dist >= best[0]):
             continue
-        if occlusion and _edge_point_occluded(
-            camera, mesh, cache, p["edge_id"], p["t"], width, height, DEPTH_TOLERANCE
-        ):
+        if occlusion and _own_point_hidden(camera, mesh, cache, p, pos, width, height):
             continue
         best = (dist, p)
     if best is None:
@@ -222,3 +247,9 @@ def snap_own_point(
             return target
     return {"kind": "point", "pid": best[1]["pid"]}
 
+
+def _own_point_hidden(camera, mesh, cache, p: dict, pos, width: int, height: int) -> bool:
+    """The picks' occlusion rule for an own point: hidden behind a face that does not hold it."""
+    if p["kind"] == "edge":
+        return edge_point_occluded(camera, mesh, cache, p["edge_id"], p["t"], width, height, DEPTH_TOLERANCE)
+    return point_occluded(camera, mesh, cache, pos, width, height, {p["face_id"]}, DEPTH_TOLERANCE)

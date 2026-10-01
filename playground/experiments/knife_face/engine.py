@@ -3,7 +3,8 @@
 The commit-time resolver of Variants D and Q5 lives in `src/mirai/topology/knife_resolve.py` since
 WP-KNIFE-01 S1 (one implementation, camera-free, faces built through `Mesh.split_face`); the face
 geometry it uses in `src/mirai/topology/face_geometry.py`. What stays here is the Lab's click-time
-part: face-interior picking, the sessions' path / undo / redo / accepts / hover / click, the HUD text.
+part: the sessions' path / undo / redo / accepts / hover / click, the HUD text (face-interior picking moved to
+`mirai.topology.knife_pick` in WP-KNIFE-01 S3).
 
 Three session engines, all `mirai.interaction.tool.Tool` subclasses (same
 session/undo/commit/cancel state machine `mirai.topology.knife.KnifeTool`
@@ -31,7 +32,6 @@ is rolled back as a whole.
 from __future__ import annotations
 
 import itertools
-import math
 from typing import Any
 
 from core import EdgeId, FaceId, VertexId
@@ -41,7 +41,7 @@ from core.operations.topology import MeshStateCommand
 
 from mirai.interaction.tool import Tool
 from mirai.topology.face_geometry import Position
-from mirai.topology.knife_pick import knife_pick as _base_knife_pick
+from mirai.topology.knife_pick import EDGE_MARGIN_PX, knife_pick
 from mirai.topology.knife_resolve import (
     ClosedShape,
     KnifeResolution,
@@ -50,124 +50,22 @@ from mirai.topology.knife_resolve import (
     split_face_path,
 )
 from mirai.topology.topology_points import connect_in_shared_face
-from viewport.derived import triangulate_mesh_face
-
-# H3 (discovery §0): production edge pick radius is 9px — an interior point
-# needs at least that much clearance from every edge of its face, or there is
-# no room to distinguish "on the edge" from "inside the face".
-EDGE_MARGIN_PX = 9.0
-
+from mirai.viewport.picking import face_edge_distance_px, face_hit_position
 
 # ---------------------------------------------------------------------------
-# Picking — lab-local face-interior hit position (H1: pick_face returns only
-# the FaceId; src/mirai/viewport/picking.py is not touched, its algorithm is
-# duplicated here on purpose so the fan-triangulation/non-planar behaviour
-# (H2) matches exactly what Production already does for face hover).
+# Picking — moved to Production in WP-KNIFE-01 S3: `mirai.topology.knife_pick.knife_pick` returns the
+# face hit with its position and edge clearance (H1), `EDGE_MARGIN_PX` (H3) lives there, the face hit
+# position and clearance in `mirai.viewport.picking`. The Lab names stay for the Lab's callers.
 # ---------------------------------------------------------------------------
 
-def _ray_triangle_t(origin, direction, a, b, c):
-    """Same Möller-Trumbore test as `mirai.viewport.picking._ray_triangle_intersection`."""
-    eps = 1e-9
-    edge1 = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
-    edge2 = (c[0] - a[0], c[1] - a[1], c[2] - a[2])
-    h = (
-        direction[1] * edge2[2] - direction[2] * edge2[1],
-        direction[2] * edge2[0] - direction[0] * edge2[2],
-        direction[0] * edge2[1] - direction[1] * edge2[0],
-    )
-    det = edge1[0] * h[0] + edge1[1] * h[1] + edge1[2] * h[2]
-    if abs(det) < eps:
-        return None
-    inv_det = 1.0 / det
-    s = (origin[0] - a[0], origin[1] - a[1], origin[2] - a[2])
-    u = inv_det * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2])
-    if u < -eps or u > 1.0 + eps:
-        return None
-    q = (
-        s[1] * edge1[2] - s[2] * edge1[1],
-        s[2] * edge1[0] - s[0] * edge1[2],
-        s[0] * edge1[1] - s[1] * edge1[0],
-    )
-    v = inv_det * (direction[0] * q[0] + direction[1] * q[1] + direction[2] * q[2])
-    if v < -eps or u + v > 1.0 + eps:
-        return None
-    t = inv_det * (edge2[0] * q[0] + edge2[1] * q[1] + edge2[2] * q[2])
-    return t if t > eps else None
-
-
-def face_interior_hit(camera, mesh, face_id: FaceId, sx, sy, width, height) -> Position | None:
-    """World-space ray-hit position on `face_id`'s fan triangulation.
-
-    Same triangulation as `pick_face` (`viewport.derived.triangulate_mesh_face`)
-    — so a hit on a non-planar quad (H2, the `head` asset) or a concave face
-    lands on the same triangle `pick_face` itself used to select this face. Returns None only in the numerically-degenerate
-    case where the ray, recomputed here, no longer intersects any fan
-    triangle of this specific face (should not happen since `pick_face`
-    already chose it, kept as a defensive fallback -> caller treats it as
-    "outside").
-    """
-    origin, direction = camera.screen_to_ray(sx, sy, width, height)
-    best_t = None
-    for tri in triangulate_mesh_face(mesh, face_id):
-        p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
-        t = _ray_triangle_t(origin, direction, p0, p1, p2)
-        if t is not None and (best_t is None or t < best_t):
-            best_t = t
-    if best_t is None:
-        return None
-    return (
-        origin[0] + best_t * direction[0],
-        origin[1] + best_t * direction[1],
-        origin[2] + best_t * direction[2],
-    )
-
-
-def _point_segment_distance_px(px, py, ax, ay, bx, by) -> float:
-    abx, aby = bx - ax, by - ay
-    denom = abx * abx + aby * aby
-    if denom <= 1e-12:
-        return math.hypot(px - ax, py - ay)
-    t = max(0.0, min(1.0, ((px - ax) * abx + (py - ay) * aby) / denom))
-    qx, qy = ax + t * abx, ay + t * aby
-    return math.hypot(px - qx, py - qy)
-
-
-def min_edge_distance_px(camera, mesh, face_id: FaceId, sx, sy, width, height) -> float | None:
-    """Screen-space distance from the cursor to the nearest boundary edge of
-    `face_id` — H3's "9px from every edge" gate. Since the face-interior hit
-    position corresponds to the cursor itself, this is simply the cursor's
-    own screen distance to each boundary edge (no reprojection needed)."""
-    boundary = mesh.face_vertices(face_id)
-    n = len(boundary)
-    best = None
-    for i in range(n):
-        a = camera.project_to_screen(mesh.vertex_position(boundary[i]), width, height)
-        b = camera.project_to_screen(mesh.vertex_position(boundary[(i + 1) % n]), width, height)
-        if a is None or b is None:
-            continue
-        d = _point_segment_distance_px(sx, sy, a[0], a[1], b[0], b[1])
-        if best is None or d < best:
-            best = d
-    return best
+face_interior_hit = face_hit_position
+min_edge_distance_px = face_edge_distance_px
 
 
 def knife_face_pick(camera, mesh, sx, sy, width, height, *, cache=None, occlusion: bool = False) -> dict:
-    """Like `mirai.topology.knife_pick.knife_pick`, plus a hit position and
-    edge-clearance for the "face" kind (reused unmodified for vertex/edge/
-    outside — H1 only needs a position on top of what it already returns).
-
-    `cache`/`occlusion` pass straight through to the base pick (WP-06 B8). The
-    face-only lookups below work on the face it already resolved, so they
-    need no occlusion pass of their own."""
-    target = _base_knife_pick(camera, mesh, sx, sy, width, height, cache=cache, occlusion=occlusion)
-    if target.get("kind") != "face":
-        return target
-    fid = target["face_id"]
-    pos = face_interior_hit(camera, mesh, fid, sx, sy, width, height)
-    if pos is None:
-        return {"kind": "outside"}
-    dist_px = min_edge_distance_px(camera, mesh, fid, sx, sy, width, height)
-    return {"kind": "face", "face_id": fid, "position": pos, "distance_px": dist_px}
+    """`mirai.topology.knife_pick.knife_pick` (since S3 it returns the face hit with "position" and
+    "distance_px" itself). `cache`/`occlusion` pass straight through (WP-06 B8)."""
+    return knife_pick(camera, mesh, sx, sy, width, height, cache=cache, occlusion=occlusion)
 
 
 # ---------------------------------------------------------------------------

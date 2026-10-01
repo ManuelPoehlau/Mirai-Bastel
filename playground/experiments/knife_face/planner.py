@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass, field
 
 from mirai.topology.knife_pick import _edge_t_3d
-from mirai.viewport.picking import DEPTH_TOLERANCE, _edge_point_occluded, _point_occluded, _vertex_occluded
+from mirai.viewport.picking import DEPTH_TOLERANCE, edge_point_occluded, point_occluded, vertex_occluded
 
 Position = tuple[float, float, float]
 
@@ -62,15 +62,15 @@ class View:
         return self._memo[vid]
 
     def edge_point_hidden(self, mesh, eid, t) -> bool:
-        return bool(self.occlusion and _edge_point_occluded(
+        return bool(self.occlusion and edge_point_occluded(
             self.camera, mesh, self.cache, eid, t, self.width, self.height, DEPTH_TOLERANCE))
 
     def vertex_hidden(self, mesh, vid) -> bool:
-        return bool(self.occlusion and _vertex_occluded(
+        return bool(self.occlusion and vertex_occluded(
             self.camera, mesh, self.cache, vid, self.width, self.height, DEPTH_TOLERANCE))
 
     def point_hidden(self, mesh, world: Position, exclude_faces) -> bool:
-        return bool(self.occlusion and _point_occluded(
+        return bool(self.occlusion and point_occluded(
             self.camera, mesh, self.cache, world, self.width, self.height, exclude_faces, DEPTH_TOLERANCE))
 
 

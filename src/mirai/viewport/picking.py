@@ -20,6 +20,13 @@ exact behaviour:
   pre-B8 behaviour (no visibility test, only 2D screen distance) — Wireframe
   callers pass `False`.
 
+WP-KNIFE-01 S3 (additive): the occlusion helpers are public
+(`point_occluded`, `vertex_occluded`, `edge_point_occluded`; the private names
+stay as aliases), and a face hit has a position (`face_hit_position`, H1 of
+`KNIFE_FACE_CUT_DISCOVERY.md`) and a screen clearance from the face's edges
+(`face_edge_distance_px`) — both moved from the Knife Face Lab, used by
+`mirai.topology.knife_pick`. `pick_face` keeps its signature and result.
+
 With both left at their defaults, every function below is behaviourally and
 numerically identical to the pre-B8 implementation (same nearest element,
 same distance/`t`) — the cache only changes *how* a screen position is
@@ -43,7 +50,7 @@ from .picking_cache import PickCache
 # occlusion ray-vs-mesh test: a face intersection within this margin of the
 # picked point's own distance from the eye does not count as "in front of
 # it" - without this, floating-point noise on a point's own incident faces
-# (excluded explicitly, see `_point_occluded`) or a near-grazing silhouette
+# (excluded explicitly, see `point_occluded`) or a near-grazing silhouette
 # face could otherwise flip a barely-visible element to "occluded".
 DEPTH_TOLERANCE = 1e-3
 
@@ -76,7 +83,7 @@ def pick_nearest_vertex(
         dist = math.hypot(px - sx, py - sy)
         if dist >= best_dist:
             continue
-        if occlusion and _vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance):
+        if occlusion and vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance):
             continue
         best_dist = dist
         best_id = vid
@@ -136,7 +143,7 @@ def pick_nearest_edge(
         dist, t = _point_segment_distance_t(sx, sy, a[0], a[1], b[0], b[1])
         if dist >= best_dist:
             continue
-        if occlusion and _edge_point_occluded(
+        if occlusion and edge_point_occluded(
             camera, mesh, cache, eid, t, width, height, depth_tolerance
         ):
             continue
@@ -220,11 +227,60 @@ def pick_face(camera, mesh, sx, sy, width, height, debug=False, *, cache: PickCa
     return best_id
 
 
+def face_hit_position(camera, mesh, face_id, sx, sy, width, height):
+    """World position where the cursor ray hits `face_id` (nearest hit on its
+    fan triangulation — the triangles `pick_face` tests, so a non-planar quad
+    or a concave face is hit where `pick_face` hit it). None if the ray misses
+    the face. Moved from the Knife Face Lab (`face_interior_hit`, WP-KNIFE-01
+    S3) unchanged."""
+    origin, direction = camera.screen_to_ray(sx, sy, width, height)
+    best_t = None
+    for tri in triangulate_mesh_face(mesh, face_id):
+        p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
+        t = _ray_triangle_intersection(origin, direction, p0, p1, p2)
+        if t is not None and (best_t is None or t < best_t):
+            best_t = t
+    if best_t is None:
+        return None
+    return (
+        origin[0] + best_t * direction[0],
+        origin[1] + best_t * direction[1],
+        origin[2] + best_t * direction[2],
+    )
+
+
+def face_edge_distance_px(camera, mesh, face_id, sx, sy, width, height, *, cache: PickCache | None = None):
+    """Screen distance from the cursor to the nearest boundary edge of
+    `face_id` (None if no edge projects) — the Knife's 9 px clearance for a
+    face-interior point. The hit position lies under the cursor, so this is
+    the cursor's own distance to each projected edge. Moved from the Knife
+    Face Lab (`min_edge_distance_px`, WP-KNIFE-01 S3); `cache` only changes
+    how the screen positions are obtained, not their values."""
+    if cache is not None:
+        cache.refresh(camera, mesh, width, height)
+    boundary = mesh.face_vertices(face_id)
+    n = len(boundary)
+    best = None
+    for i in range(n):
+        if cache is not None:
+            a = cache.vertex_screen.get(boundary[i])
+            b = cache.vertex_screen.get(boundary[(i + 1) % n])
+        else:
+            a = camera.project_to_screen(mesh.vertex_position(boundary[i]), width, height)
+            b = camera.project_to_screen(mesh.vertex_position(boundary[(i + 1) % n]), width, height)
+        if a is None or b is None:
+            continue
+        d = _point_segment_distance(sx, sy, a[0], a[1], b[0], b[1])
+        if best is None or d < best:
+            best = d
+    return best
+
+
 # -- B8: occlusion (Shaded/Flat Shaded only - the caller decides via
 # `occlusion=`, this module has no `DisplayState` dependency) ----------------
 
 
-def _point_occluded(camera, mesh, cache, point, width, height, exclude_faces, depth_tolerance):
+def point_occluded(camera, mesh, cache, point, width, height, exclude_faces, depth_tolerance=DEPTH_TOLERANCE):
     """True if some face other than `exclude_faces` lies strictly closer to
     the camera than `point` along the ray from the eye through it (a small
     `depth_tolerance` keeps silhouette elements pickable, per the handoff's
@@ -260,13 +316,15 @@ def _incident_faces_of_vertex(mesh, vid):
     return faces
 
 
-def _vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance):
+def vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance=DEPTH_TOLERANCE):
+    """True if vertex `vid` is hidden behind a face not incident to it."""
     point = mesh.vertex_position(vid)
     exclude = _incident_faces_of_vertex(mesh, vid)
-    return _point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
+    return point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
 
 
-def _edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_tolerance):
+def edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_tolerance=DEPTH_TOLERANCE):
+    """True if the point at `t` on edge `eid` is hidden behind a face not incident to the edge."""
     va, vb = mesh.edge_vertices(eid)
     pa, pb = mesh.vertex_position(va), mesh.vertex_position(vb)
     point = (
@@ -275,7 +333,13 @@ def _edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_toler
         pa[2] + (pb[2] - pa[2]) * t,
     )
     exclude = set(mesh.edge_faces(eid))
-    return _point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
+    return point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
+
+
+# Pre-S3 private names (callers outside this module: the Knife Face Lab planner, tests).
+_point_occluded = point_occluded
+_vertex_occluded = vertex_occluded
+_edge_point_occluded = edge_point_occluded
 
 
 def pick_component(
