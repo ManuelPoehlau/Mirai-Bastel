@@ -168,3 +168,14 @@ Mesh.split_face(face_id, v_a, v_b, positions: Sequence[Position] = ())
   hook only;
 - the two-call constructions (closed shape, loop at a point) burn one intermediate FaceId compared to the Lab's
   3-way split — expected, not "fixed"; S1's golden net compares position-canonical results.
+
+**Sufficiency result (WP-KNIFE-00, 2026-10-01, agent-recorded):** `playground/tests/test_split_face_equivalence.py`
+compares `Mesh.split_face` against the Lab stand-ins as an oracle (position-canonical faces, winding kept) on the
+grid, the cube (folds) and the head (non-planar quads: the 6 least planar plus every 40th, 15 in all). FC1–FC4
+(incl. reversed arguments) are one call each and allocate exactly the Lab's ids; the closed shape (FC6, 2 bridges;
+square either way round, triangle either way round, pentagon) and the loop at a point (every corner, both click
+directions) are two calls each and give the Lab's faces with the same vertex and edge ids and **one FaceId more**
+(the intermediate face of call 1, burned per AD-001). No case needed more than these calls; the Lab refused none.
+Which piece hosts call 2 is the caller's choice, by winding (the inner face runs like the parent) — resolver policy
+for S1, not Core. Cost on `head` is negligible (two calls 0.08 ms vs the Lab's 3-way split 0.28 ms, this machine).
+No new open question from this check.
