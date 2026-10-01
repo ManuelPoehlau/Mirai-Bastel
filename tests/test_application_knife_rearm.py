@@ -51,8 +51,6 @@ from viewport.overlay import TOOL_ACTIVE_LAYER
 
 HEAD_OBJ = _EXAMPLES_DIR / "meshes" / "head_basemesh.obj"
 COMMITTED_TAIL = "next cut ready - Esc leaves the Knife"
-# Spec written before the build: strict, so removing the marker is the proof (UX1 Task 2).
-UX1 = pytest.mark.xfail(strict=True, reason="UX1: the Knife still ends at commit")
 EMPTY_TAIL = "Knife still active, Esc leaves"
 
 
@@ -124,7 +122,6 @@ def _assert_pick_cache_current(app) -> None:
 
 
 @pytest.mark.parametrize("finish", ["enter", "click_outside"])
-@UX1
 def test_commit_keeps_the_knife_active_with_a_fresh_session(app, finish):
     app.key_press(_key("1"))  # Vertex mode before the session
     _begin(app)
@@ -143,7 +140,6 @@ def test_commit_keeps_the_knife_active_with_a_fresh_session(app, finish):
     _assert_fresh_session(app)
 
 
-@UX1
 def test_the_re_armed_session_cuts_again_and_records_its_own_selection_history(app):
     _begin(app)
     _front_cut(app)
@@ -159,7 +155,6 @@ def test_the_re_armed_session_cuts_again_and_records_its_own_selection_history(a
     _assert_fresh_session(app)
 
 
-@UX1
 def test_an_empty_commit_changes_nothing_and_keeps_the_knife(app):
     _begin(app)
     before = _topology(app.scene.mesh)
@@ -174,7 +169,6 @@ def test_an_empty_commit_changes_nothing_and_keeps_the_knife(app):
     _assert_fresh_session(app)
 
 
-@UX1
 def test_a_start_point_only_commit_changes_nothing_and_keeps_the_knife(app):
     _begin(app)
     before = _topology(app.scene.mesh)
@@ -192,7 +186,6 @@ def test_a_start_point_only_commit_changes_nothing_and_keeps_the_knife(app):
 # -- 4. Esc leaves ------------------------------------------------------------------------------
 
 
-@UX1
 def test_esc_in_a_re_armed_session_with_points_cancels_it_and_leaves(app):
     _begin(app)
     _front_cut(app)
@@ -209,7 +202,6 @@ def test_esc_in_a_re_armed_session_with_points_cancels_it_and_leaves(app):
     assert app.status_message == "Knife cancelled"
 
 
-@UX1
 def test_esc_in_a_fresh_re_armed_session_just_leaves(app):
     _begin(app)
     _front_cut(app)
@@ -229,7 +221,6 @@ def test_esc_in_a_fresh_re_armed_session_just_leaves(app):
 # -- 5-7. Ctrl+Z / Ctrl+Y right after a commit ---------------------------------------------------
 
 
-@UX1
 def test_ctrl_z_right_after_a_commit_undoes_it_and_ctrl_y_redoes_it_knife_stays(app):
     app.key_press(_key("3"))  # Face mode, empty selection
     mesh = app.scene.mesh
@@ -258,7 +249,6 @@ def test_ctrl_z_right_after_a_commit_undoes_it_and_ctrl_y_redoes_it_knife_stays(
     assert _history_depths(app) == (2, 0)
 
 
-@UX1
 def test_after_a_click_ctrl_z_is_in_session_only_and_never_falls_through(app):
     _begin(app)
     _front_cut(app)
@@ -277,7 +267,6 @@ def test_after_a_click_ctrl_z_is_in_session_only_and_never_falls_through(app):
     assert app.knife_active
 
 
-@UX1
 def test_ctrl_y_after_an_in_session_redo_stays_in_session(app):
     _begin(app)
     _front_cut(app)
@@ -290,7 +279,6 @@ def test_ctrl_y_after_an_in_session_redo_stays_in_session(app):
     assert _history_depths(app) == (1, 0)
 
 
-@UX1
 def test_two_commits_then_two_ctrl_z_undo_them_one_by_one(app):
     mesh = app.scene.mesh
     states = [(_topology(mesh), _selection(app))]
@@ -318,7 +306,6 @@ def test_two_commits_then_two_ctrl_z_undo_them_one_by_one(app):
     _assert_fresh_session(app)
 
 
-@UX1
 def test_ctrl_z_with_nothing_to_undo_keeps_the_re_armed_session(app):
     _begin(app)
     _front_cut(app)
@@ -357,7 +344,6 @@ def test_a_session_begun_with_c_keeps_the_in_session_rule(app):
      _key("d"), _key("d", "shift"), _key("c"), _key("x"), _key("z", "shift")],
     ids=lambda k: "+".join(sorted(k.modifiers) + [k.value]),
 )
-@UX1
 def test_session_gate_holds_in_a_re_armed_session(app, key):
     _begin(app)
     _front_cut(app)
@@ -378,7 +364,6 @@ def test_session_gate_holds_in_a_re_armed_session(app, key):
 # -- 9-10. preview and pick cache ---------------------------------------------------------------
 
 
-@UX1
 def test_preview_is_current_after_re_arm_and_global_undo_redo(app):
     _begin(app)
     e56 = _edge(app, _v(app, 5), _v(app, 6))
@@ -396,7 +381,6 @@ def test_preview_is_current_after_re_arm_and_global_undo_redo(app):
     _assert_fresh_session(app)
 
 
-@UX1
 def test_re_arm_and_global_undo_without_a_cursor_do_not_crash(app):
     _begin(app)
     _front_cut(app)
@@ -443,7 +427,6 @@ def _visible_quad_cut(app):
     raise LookupError("no visible head quad")
 
 
-@UX1
 def test_head_commit_re_arms_and_ctrl_z_ctrl_y_round_trip():
     app = _head_app()
     mesh = app.scene.mesh

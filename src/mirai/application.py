@@ -306,6 +306,11 @@ class Application:
         self._knife_highlight_edge: EdgeId | None = None
         self._knife_gesture: bool = False
         self._knife_gesture_moved: float = 0.0
+        # WP-KNIFE-01 UX1: the session was re-armed by a commit (or a global
+        # undo/redo from it) and has not been touched since - only then do
+        # Ctrl+Z / Ctrl+Y reach the global History (AD-017 addendum UX1).
+        self._knife_rearmed: bool = False
+        self._knife_touched: bool = False
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -576,20 +581,29 @@ class Application:
     def _knife_begin(self) -> bool:
         if self.viewport is None:
             return False
-        self._knife_selection_before = self._selection_snapshot()
-        knife = KnifeTool()
-        knife.activate()
-        knife.begin(mesh=self.scene.mesh, scene=self.scene, selection=self.selection)
-        self._knife = knife
-        # R-SEL-2 (as in the Playground): the Knife draws its own preview, the
-        # selection hover must not stay drawn underneath it.
-        self._set_hovered(None)
-        self._refresh_hover()
+        self._knife_start(rearmed=False)
         self._set_status(
             "Knife: click on vertices, edges or inside faces to cut - Enter or click"
             " outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo cut"
         )
         return True
+
+    def _knife_start(self, rearmed: bool) -> None:
+        """A fresh session on the current mesh and selection: from `C`, or
+        re-armed after a commit / a global undo-redo (UX1)."""
+        self._knife_selection_before = self._selection_snapshot()
+        knife = KnifeTool()
+        knife.activate()
+        knife.begin(mesh=self.scene.mesh, scene=self.scene, selection=self.selection)
+        self._knife = knife
+        self._knife_rearmed = rearmed
+        self._knife_touched = False
+        self._knife_target = None
+        self._knife_highlight_edge = None
+        # R-SEL-2 (as in the Playground): the Knife draws its own preview, the
+        # selection hover must not stay drawn underneath it.
+        self._set_hovered(None)
+        self._refresh_hover()
 
     def _knife_key(self, input: Input) -> bool:
         """Session Gate: only commit, cancel and the in-session Undo/Redo pass;
@@ -646,6 +660,7 @@ class Application:
             self._set_status(_KNIFE_REFUSED.get(self._knife.last_plan.reason, "Knife: no valid cut target here"))
             self._refresh_hover()
             return False
+        self._knife_touched = True
         # WP-KNIFE-01 S2: a click only adds a point to the session's path - the
         # mesh (and with it the pick cache) is unchanged until commit.
         plan = self._knife.last_plan
@@ -668,19 +683,44 @@ class Application:
         if self._knife_gesture:
             return False
         undo = command == commands.UNDO
+        if self._knife_rearmed and not self._knife_touched:
+            return self._knife_global_step(command)
         done = self._knife.undo_step() if undo else self._knife.redo_step()
         if not done:
             self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
             return False
+        self._knife_touched = True
         self._set_status("Knife: last cut undone" if undo else "Knife: cut redone")
         self._refresh_hover()
         return True
 
+    def _knife_global_step(self, command: str) -> bool:
+        """UX1 (Artist decision Manu 2026-10-01): Ctrl+Z / Ctrl+Y on the
+        untouched re-armed session undo / redo the last commit through the
+        global History (selection mirror included); the session is rebuilt on
+        the restored mesh - the old one's start state is stale."""
+        undo = command == commands.UNDO
+        if not (self.history.can_undo() if undo else self.history.can_redo()):
+            self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
+            return False
+        self._knife.cancel()
+        self._knife.deactivate()
+        self._apply_undo_redo(command)
+        self._pick_cache.invalidate()
+        self.viewport.on_topology_changed()
+        self.viewport.on_selection_changed()
+        self._knife_start(rearmed=True)
+        done = "last commit undone" if undo else "commit redone"
+        self._set_status(f"Knife: {done} - next cut ready, Esc leaves the Knife")
+        return True
+
     def _knife_end(self, commit: bool) -> bool:
         """Enter / click outside = commit (exactly one history entry, residue =
-        path edges selected, Edge mode); Esc = cancel (mesh, selection and
-        history exactly as before the session)."""
+        path edges selected, Edge mode), then a fresh session (UX1: the Knife
+        stays active, also after a commit that changed nothing); Esc = cancel
+        (mesh, selection and history exactly as before the session) and leave."""
         knife = self._knife
+        rearmed = self._knife_rearmed
         before = self._knife_selection_before
         if commit:
             command = knife.commit()
@@ -694,7 +734,10 @@ class Application:
         self._knife_gesture_moved = 0.0
         self._knife_target = None
         self._knife_highlight_edge = None
+        self._knife_rearmed = False
+        self._knife_touched = False
         notes = _knife_notes(knife.last_resolution) if commit else []
+        still = " - Knife still active, Esc leaves"
         if command is not None:
             self._record_selection_history(before)
             count = len(self.selection.edges)
@@ -704,18 +747,23 @@ class Application:
                 # Valid while clicking, dropped at commit (the run would have
                 # left its face) - the Q5 "N-1/N" note (WP-KNIFE-01 S2).
                 status += f" - {res.runs - res.applied} of {res.runs} cuts dropped"
-            self._set_status("; ".join([status] + notes))
+            self._set_status("; ".join([status] + notes + ["next cut ready - Esc leaves the Knife"]))
         elif commit and knife.last_problem is not None:
-            self._set_status(f"Knife: result taken back ({knife.last_problem}), nothing committed")
+            self._set_status(f"Knife: result taken back ({knife.last_problem}), nothing committed{still}")
         elif commit:
-            self._set_status("Knife: no cuts made, nothing committed" + (f" ({'; '.join(notes)})" if notes else ""))
+            self._set_status("Knife: no cuts made, nothing committed"
+                             + (f" ({'; '.join(notes)})" if notes else "") + still)
         else:
             self._set_status("Knife cancelled")
         self._pick_cache.invalidate()
         self.viewport.set_tool_overlay()
         self.viewport.on_topology_changed()
         self.viewport.on_selection_changed()
-        self._refresh_hover()
+        if commit:
+            # A commit that changed nothing keeps "right after a commit" as it was.
+            self._knife_start(rearmed=command is not None or rearmed)
+        else:
+            self._refresh_hover()
         return True
 
     def _knife_hover(self, x: float, y: float) -> bool:
