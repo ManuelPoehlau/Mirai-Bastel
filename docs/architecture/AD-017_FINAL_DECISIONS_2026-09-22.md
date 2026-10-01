@@ -179,3 +179,15 @@ directions) are two calls each and give the Lab's faces with the same vertex and
 Which piece hosts call 2 is the caller's choice, by winding (the inner face runs like the parent) — resolver policy
 for S1, not Core. Cost on `head` is negligible (two calls 0.08 ms vs the Lab's 3-way split 0.28 ms, this machine).
 No new open question from this check.
+
+---
+
+## Addendum 2026-10-01 (Manu: M1 + K1, "K1 zuerst") — One Knife S1: resolver home
+
+**2026-10-01 / One Knife S1 (M1 + K1):** the Knife-owned resolver lives in `src/mirai/topology/` and builds faces only
+through `Mesh.split_face`, `split_edge`, `connect_vertices`; whole-session rollback via `export_state`/`load_state`;
+resolver stays Knife-owned (AD-017 #1).
+
+Manu's statement (2026-10-01): "K1 zuerst" — M1 (promote the KEEP'd Q5 model in slices) with K1 (`Mesh.split_face`,
+addendum above) first. Work package: WP-KNIFE-01 S1, draft spec in `docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md`
+§6.3; intake line in `docs/architecture/ROADMAP.md` (WP-06 intake log).
