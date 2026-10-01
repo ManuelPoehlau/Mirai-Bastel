@@ -1162,6 +1162,7 @@ a click outside the mesh keeps committing (AD-017 #8); the point marker at `t` w
 | S2-h | `knife_pick.snap_own_point` imports the private `picking._edge_point_occluded` — same smell as S1-g (planner); public picking helpers are slice S4. | — |
 | S2-i | **Preview ≠ result at `Enter`** (discovery §6.4): a run valid while clicking can still be dropped at commit (status "K of M cuts dropped"). Not seen in 259 random vertex/edge sessions. | seeded random test |
 | S2-j | Handoff §9, open: whether the status line should show the pending count / what the Artist expects there; whether in-session feedback should show the *predicted* cut result (only after this verdict); P10 (cross-face edge → edge) stays refused until S4 — the first planner slice may start from Q5's `plan()`. | — |
+| S2-l | **The preview line is sometimes hidden by a face** (added 2026-10-01, S3b handoff Task 0). Manu, S2 row 1: "je nach Face wird die Vorschaulinie manchmal vom Face verdeckt" — overlay drawn with depth vs on top. Recorded, not decided; not touched. | — |
 
 **Rollback:** S2 is one revertable commit series (`git revert` of the five S2 commits restores the real-cut Knife); M2
 (real cuts) is the documented fallback if "the cut appears at `Enter`" feels wrong.
@@ -1200,7 +1201,11 @@ and is identical on 3.12 — not changed. No production change.
 
 ---
 
-## One Knife S3 — face points in the Production `KnifeTool` (2026-10-01, PROVISIONAL)
+## One Knife S3 — face points in the Production `KnifeTool` (2026-10-01, Artist verdict KEEP)
+
+**Status (recorded 2026-10-01, WP-KNIFE-01 S3b handoff, Task 0):** PROVISIONAL → **Artist verdict KEEP (Manu,
+2026-10-01, "Weg 1")** — see the verdict row at the end of this section. **KEEP ≠ promotion.** The text below is the
+S3 build record as written before the verdict and is not changed by it.
 
 **Decision basis:** M1 (Manu, 2026-10-01); S2 verdict KEEP (above); scope decision of the S3 handoff (the planner stays in
 S4): S3 promotes **everything Q5 does inside one face**, a segment across several faces stays refused. Slice table
@@ -1286,6 +1291,8 @@ applies nothing leaves mesh and History untouched.
 | S3-g | **A face point inside the 9 px margin** comes up only where the edge pick did not return the edge (occluded, or off-screen ends); it is refused with "too close to an edge". `KnifeTool` needs the target's `distance_px` (`knife_pick` gives it) — a face target without it is refused too. | `test_an_interior_click_inside_the_edge_margin_is_refused` |
 | S3-h | `hover()` (Playground `knife` family) stays looser than `accepts()` (S2-g) — for face points too (a face point inside the margin is "valid" there); the window shows the face marker only when `accepts()`. | — |
 | S3-i | Carried, not touched: an earlier **interior** point as a target (Q5 neither); whether vertices created earlier in the same commit are tail-join candidates; where a piece ends next to a gap on curved surfaces (S4); whether hover should show the predicted corner / tail join before `Enter` (only after this verdict); S1-a (two simplicity tests: F2 for boundary pairs, `segment_in_face` with an interior end — 0 differences in 496 random sessions); hover cost relative to the S4 planner (S4 needs the click's camera and visibility per segment). | — |
+| S3-j | **Bow-tie / loops at a point fail on non-planar faces** (added 2026-10-01, S3b handoff Task 0). Manu's row 6 below; measured headless (handoff §3, not Artist-tested): on `head` 0 of 324 quads commit the bow-tie recipe, status "the run cuts through its own loop again"; grid quad warped by one corner: works up to 1e-6, fails from 1e-4. Worked on in its own slice before S4 — "One Knife S3b" below. | `tests/test_knife_nonplanar_loops.py` |
+| S3-k | **Start inside, then edges (row 4):** Manu, 2026-10-01: "später evtl Überlegen, ob der erste Klick zur nearest Vertex verbinden soll, bleibt noch offen" — whether the dropped first interior click should later be joined to the nearest vertex. Recorded, not decided; not built. | — |
 
 **Rollback:** S3 is one revertable commit series (the four code / test commits after "Records + test robustness …");
 reverting restores the S2 tool (vertex / edge targets only).
@@ -1309,4 +1316,6 @@ Knife (`C` with an empty selection; `Enter` / click outside = commit, `Esc` = ca
 
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
-| | |
+| **KEEP** (Manu, 2026-10-01) | *"Weg 1"* — the option he chose: S3 is KEEP; the head limitation is an open point, fixed in its own small slice before S4. |
+
+*Recorded 2026-10-01 (WP-KNIFE-01 S3b handoff, Task 0).* Context of the answer (chat 2026-10-01, as summarised in the handoff, not Manu's wording): row 6 passes on the cube with the clarified recipe and fails on the head. **KEEP ≠ promotion.** The open points S3-a…k stay open; the verdict does not decide them. S2-a (a straight run of boundary edges is a skip) has still not been commented on by Manu and stays open. The head limitation is S3-j → "One Knife S3b".
