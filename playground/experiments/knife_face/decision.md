@@ -1197,3 +1197,116 @@ cannot flip a digit any more). Grid / cube / L literals unchanged; the nine head
 real-cut tool (`d323be6`) with the new rounding — identical on 3.11 / 3.12 / 3.13 and equal to today's tool. Before: 3.11
 39/39, 3.12 35/39; after: 39/39 on both. The golden driver (`playground/tests/knife_golden_driver.py`) rounds to 9 digits
 and is identical on 3.12 — not changed. No production change.
+
+---
+
+## One Knife S3 — face points in the Production `KnifeTool` (2026-10-01, PROVISIONAL)
+
+**Decision basis:** M1 (Manu, 2026-10-01); S2 verdict KEEP (above); scope decision of the S3 handoff (the planner stays in
+S4): S3 promotes **everything Q5 does inside one face**, a segment across several faces stays refused. Slice table
+`docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md` §6.2 (S3 row). **PROVISIONAL until Manu's verdict** — nothing
+below is Artist-validated. The Artist decisions it carries over are the Lab's (not re-asked): closing a shape by clicking its
+snapped start closes but does not commit and the next cut continues from the closing vertex; a click on an earlier own
+(boundary) point connects to it and continues; a loop closed at a single point becomes its own face with one bridge (also the
+bow-tie back to the start, bridges to outside corners); crossing an earlier segment inside one face makes one intersection
+vertex; the last click inside a face is joined to the nearest corner at `Enter` (nothing announces it while cutting); snap to
+any vertex / own point within 14 px; undo = last click, one Undo after commit takes the whole session back; a commit that
+applies nothing leaves mesh and History untouched.
+
+**What changed (commits "Records + test robustness …" → "One Knife S3: Application + preview wiring …"):**
+
+- `src/mirai/viewport/picking.py` (additive): `face_hit_position` and `face_edge_distance_px` — moved from this Lab
+  (`face_interior_hit`, `min_edge_distance_px`); the occlusion helpers are public (`point_occluded`, `vertex_occluded`,
+  `edge_point_occluded`; the private names stay as aliases). `pick_face` unchanged.
+- `src/mirai/topology/knife_pick.py`: a face hit is `{"kind": "face", "face_id", "position", "distance_px"}` (H1);
+  `EDGE_MARGIN_PX = 9.0` (H3) lives here; `snap_own_point` covers the session's own interior points; the public occlusion
+  helpers replace the private import (S2-h closed; S1-g closed for the occlusion helpers — the planner's `_edge_t_3d`
+  import stays, S4). This Lab's `engine.py` keeps its names as imports of the moved code; the planner imports the public
+  helpers.
+- `src/mirai/topology/knife.py`: path records of kind `face`; `plan(target) → KnifePlan` (accepts / click / status share it;
+  `last_plan`) in Q5's order — invalid target ("too close to an edge" below 9 px) → own point or a vertex already on the path
+  → new point; closing (≥ 3 points of the chain, a "closed" break, cyclic when nothing was skipped, the start again as the
+  seed); earlier boundary point connected; earlier interior point refused; a segment with an interior end is cut when Q5's
+  `segment_in_face` puts it inside a shared face, boundary pairs keep the S2 rules; cross-face refused with the S2 reason.
+  `cut_segments` = Q5's stored cut segments (a cyclic close's segment included), new `chain_points`; commit always resolves
+  (`resolve_cross_face` + `check_commit`), one `MeshStateCommand` ("Knife"), residue unchanged.
+- `knife_preview.py`: interior points in `placed_points`, the closing segment drawn, the hovered face point as the
+  prospective point. `application.py`: pick order own-point snap > vertex > edge > face > outside (as Q5), status texts
+  (S3-f), pick cache unchanged. `playground/window.py` (`knife` family): the face-point hover marker.
+
+**Evidence `[TEST]` / `[PROBE]`:**
+
+- **Differential spec** `playground/tests/test_knife_q5_differential.py` (driver `knife_q5_differential_driver.py`, written
+  first: 44 strict xfails on the S2 tool, all flipped): the same world-position clicks through Q5 (no camera, so it refuses
+  exactly the segments that need the planner) and the Production tool; compared: accepted clicks and refusal reasons,
+  `accepts() == click()`, path records after every step (undo / redo included), mesh untouched in the session, the
+  position-canonical mesh, every count and note of the commit's `KnifeResolution`, rollback, History + Undo / Redo, residue.
+  **47 passed:** 34 recorded single-face sequences (FC1–FC4, closed shape by `Enter` / by click / both directions / then
+  continue / vertex and edge start, loop at a single point both directions, back to the start both directions, bow-tie both
+  directions, crossing cut HB1, tail join + tie, out-and-back from the start and from an earlier point, earlier-point connect,
+  earlier interior refused, closing needs 3 points, too close to an edge, same point twice, undo / redo incl. the closing
+  click), Manu's cube **bow-tie `V:13 E:21 F:10`** and **tail join `V:14 E:22 F:10`** (the planner's top/front crossing
+  clicked as an edge point — the as-clicked sequence needs the planner and its 4th click is refused, S4); 3 multi-face
+  sequences refused by both; the two documented differences (S3-a, S3-b); a forced rollback; **seeded random single-face
+  sessions grid 150 / cube 150 / head 40 runs — 496 sessions, 2 262 clicks, 1 148 of them inside faces, 0 differences, 0
+  rollbacks** (28 / 37 / 4 closes; joined tails 65 / 83 / 11; loops at a point built 17 / 31 / 0; closed shapes 17 / 9 / 3).
+- `tests/test_knife_face_points.py` (Production only, 12): the rules one by one, and seeded random sessions with interior
+  points on grid 80 / cube 80 / head 20 runs — geometry clean, mesh untouched during every session, ≤ 1 History entry, Undo /
+  Redo exact, 0 rollbacks. `tests/test_knife_pick_face.py` (10): face hit position / clearance, the edge wins inside the
+  margin, cache parity, interior-point snap and occlusion, public aliases, import hygiene (`knife.py`, `knife_pick.py`,
+  `knife_preview.py` import nothing from `playground` and no private names). `tests/test_application_knife_faces.py` (7) and
+  one Playground `knife`-family window test.
+- Unchanged in meaning and green: parity rows P01–P15 / S1–S5 / R3 / R5 and the seeded vertex/edge sessions
+  (`tests/test_knife_parity.py`), the golden net (byte-identical), F2 tests, the Lab Q5 / D / B suites. One S2 test renamed,
+  same assertions: `test_a_face_the_last_point_does_not_touch_has_no_preview_and_click_does_nothing` (was
+  `test_face_target_has_no_preview…` — a face hit is a target now; that face is refused as cross-face, S2-d).
+- `[PROBE]` `knife_integrity_probe.py --production` now also runs the fuzz on the Production tool (window path: pick with
+  occlusion → own-point snap → click), face points included: **grid 0/400, cube 0/400 runs with an integrity failure**, 0
+  rollbacks, 0 leftover edge splits, 0 mesh changes without History (771 sessions each; loops at a point built 2 / 12). The
+  Q5 fuzz is unchanged (0/400 each). `one_knife_parity_probe.py` (Production now gets the own-point snap the Application
+  applies): every face row of the CORE section equals Q5 (FC1, FC3, closed shape, loop at a point, tail join, HB1 — before:
+  refused / nothing); `--parity` / `--session` / `--defects` unchanged.
+- **Hover cost on `head`** (`Application.pointer_motion` during a session with two points, occlusion on, 1280 × 800, a 40 × 25
+  grid over the head, 5 rounds; this container, not the reference PC; median / min ms per move, three runs each): default
+  framing S2 0.90/0.73, 0.76/0.70, 0.88/0.75 → S3 0.82/0.79, 0.80/0.73, 0.84/0.72; zoomed in (26 % face hits) S2 0.98/0.87,
+  0.94/0.90, 0.97/0.88 → S3 1.11/0.94, 1.02/0.92, 0.97/0.88. Within run-to-run noise (A/B with face targets short-circuited:
+  0.88–0.91 vs 0.88–1.08); the face pick itself is ~1 % of the hover (profile) — no extra cache added.
+- Suites: `tests` 1080 → 1109 passed; `playground/tests` (xvfb) 1042 → 1090 passed.
+
+### One Knife S3 — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| S3-a | **Back on the chain start after one other boundary click.** Production keeps the S2 rule — an ordinary earlier-point click (a retrace is a skip, S2-b): e.g. edge A → edge B → A is `+++`. Q5 refuses it ("closing needs at least 3 points"): `++-`. Same mesh either way. With an interior point involved Production follows Q5 (refused) — e.g. "out to one point and straight back" from the start, `++-` in both. | `test_documented_difference_back_to_the_start_after_one_click` |
+| S3-b | **Retracing the session's own cut between boundary points** (incl. the closing segment of a closed chain): Production skips it (S2-b, a break), Q5 connects to the earlier point and merges the repeat at commit. Same clicks accepted, same mesh / History / residue; only the record and the notes differ (1 skipped stretch vs "1 repeated segment(s) merged"). | `test_documented_difference_retraced_segment` |
+| S3-c | **The chain's last point is a snap target in Production, not in Q5.** Within 14 px of the last point Production snaps to it and refuses the click ("already the last point", no preview); Q5 places a new point next to it (a very short segment). Picking only — the differential driver resolves clicks by position and does not see it. | — |
+| S3-d | **A refused click shows nothing while hovering** (S2 rule kept: invalid → no point, no line); Q5 still shows its snap highlight and names the reason in the HUD while hovering ("closing needs at least 3 points" …). Production names the S3 reasons in the status line when the click is made (S3-f). | `test_refusals_name_the_s3_reasons` |
+| S3-e | **Lab defaults now Production behaviour** (inherited through `resolve_cross_face`, not new decisions): three or more interior clicks in one face that are not closed by a click still close at `Enter` (the closed-shape stand-in, two bridges — D parity); interior clicks *before* the first edge / vertex click are dropped (FC4: start inside, then two edges = the straight cut between the edges; then one edge = nothing — status "first point(s) inside a face before any edge or vertex dropped"). Watch in the practical test. | recorded sequences "closed shape, Enter", "FC4 …" |
+| S3-f | **Status line texts** (PROVISIONAL wording): refusals "Knife: too close to an edge - click on the edge or further inside the face", "Knife: closing a shape needs at least 3 points", "Knife: an earlier point inside a face cannot be clicked again (not yet)" (every other refusal keeps "Knife: no valid cut target here"); a close "Knife: shape closed - the next click cuts on from its start (N path segments)"; after `Enter`, appended with "; ": "N last point(s) inside a face joined to the nearest corner", "a last point inside a face could not be joined to a corner - dropped", "first point(s) inside a face before any edge or vertex dropped", "N closed shape(s) could not be built", "N shape(s) inside a face with fewer than 3 points dropped", "N closed shape(s) skipped - their face was already cut", "N loop(s) closed at a point dropped (reason)", "the cut on from an interior start point dropped"; with nothing committed they follow "no cuts made, nothing committed" in brackets. The session hint now says "click on vertices, edges or inside faces". | `test_application_knife_faces.py` |
+| S3-g | **A face point inside the 9 px margin** comes up only where the edge pick did not return the edge (occluded, or off-screen ends); it is refused with "too close to an edge". `KnifeTool` needs the target's `distance_px` (`knife_pick` gives it) — a face target without it is refused too. | `test_an_interior_click_inside_the_edge_margin_is_refused` |
+| S3-h | `hover()` (Playground `knife` family) stays looser than `accepts()` (S2-g) — for face points too (a face point inside the margin is "valid" there); the window shows the face marker only when `accepts()`. | — |
+| S3-i | Carried, not touched: an earlier **interior** point as a target (Q5 neither); whether vertices created earlier in the same commit are tail-join candidates; where a piece ends next to a gap on curved surfaces (S4); whether hover should show the predicted corner / tail join before `Enter` (only after this verdict); S1-a (two simplicity tests: F2 for boundary pairs, `segment_in_face` with an interior end — 0 differences in 496 random sessions); hover cost relative to the S4 planner (S4 needs the click's camera and visibility per segment). | — |
+
+**Rollback:** S3 is one revertable commit series (the four code / test commits after "Records + test robustness …");
+reverting restores the S2 tool (vertex / edge targets only).
+
+**Prepared practical test (Manu, 5 minutes, `src/main.py`, cube — `python3 src/main.py cube` — and head):** S3 stays
+**PROVISIONAL** until these slots and the verdict are filled. Expected throughout: **exactly what Q5 did**, now in the one
+Knife (`C` with an empty selection; `Enter` / click outside = commit, `Esc` = cancel, `Ctrl+Z` / `Ctrl+Y`).
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | Bent cut: an edge of a quad → one click inside the quad → the opposite edge, `Enter` | a marker follows the cursor inside the face, the line bends at the click; the cut appears at `Enter`, one Undo step | |
+| 2 | Notch: from an edge into the quad and back out through the same edge, `Enter` | a V-shaped cut, the quad split in two | |
+| 3 | Closed shape: three clicks inside one face, then click the first again (snap) | status "shape closed …", nothing committed yet; `Enter` → the shape is its own face, two bridges (3 faces from 1) | |
+| 4 | Start inside: first click inside a quad, then two edges of it, `Enter` | the straight cut between the two edges; the first click has no effect (S3-e) | |
+| 5 | Close, then keep cutting: close a shape as in 3, then click an edge of the face, `Enter` | the cut goes on from the closing point (one vertex there) | |
+| 6 | Loop at a single point (cube top): top/right edge → three clicks in the top, the third segment crossing the first → the edge point again, `Enter` | bow-tie `V:13 E:21 F:10`, two loops, each with one bridge to an outside corner | |
+| 7 | Last click inside a face: an edge point → one click inside the face, `Enter` | status "… 1 last point(s) inside a face joined to the nearest corner"; nothing announced before `Enter` | |
+| 8 | A click right next to an edge (within ~9 px) | the edge is picked (point on the edge), not a face point | |
+| 9 | An interior click in the *neighbouring* face right after a cut | refused — cross-face is S4 | |
+| 10 | Undo / Redo / `Esc` / click outside as in S2 | as in S2 | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |

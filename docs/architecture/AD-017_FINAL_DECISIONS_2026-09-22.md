@@ -211,3 +211,16 @@ WP-KNIFE-01 S2; record and open points: `playground/experiments/knife_face/decis
 Enter passiert — ob die Linie eine Vorschau oder der echte Schnitt ist, ändert weder visuell noch den Workflow."* The virtual
 path (M1) stays; real cuts per click (M2) remain only the documented fallback. A verdict on S2, nothing beyond it. Next slice:
 WP-KNIFE-01 S3 (face points inside one face), PROVISIONAL until its own verdict.
+
+---
+
+## Addendum 2026-10-01 (Manu: M1, scope "planner stays S4") — One Knife S3: face points inside one face
+
+**2026-10-01 / One Knife S3 (M1):** the Production `KnifeTool` does everything the KEEP'd Q5 does inside one face —
+face-interior points (9 px edge margin), closing a shape by clicking its start (close ≠ commit, the next cut continues from the
+closing point), earlier-point connect, loops at a point, crossing cuts, the last click joined to the nearest corner at
+commit — through the S1 resolver; a segment across several faces stays refused (planner = S4). Where the S2 rules already
+decided a vertex/edge-only case differently from Q5, S2 is kept and recorded (S3-a/b). Unchanged: one History entry per
+session, in-session Undo/Redo, Esc = discard, residue. PROVISIONAL until Manu's verdict. Work package: WP-KNIFE-01 S3;
+record, evidence and open points: `playground/experiments/knife_face/decision.md`, "One Knife S3".
+

@@ -28,7 +28,8 @@ Run:  python experiments/topology/knife_integrity_probe.py              # fuzz 4
       python experiments/topology/knife_integrity_probe.py --cases      # targeted hypothesis cases H-a..H-d
       python experiments/topology/knife_integrity_probe.py --variants   # the same seeds under D and B
       python experiments/topology/knife_integrity_probe.py --dropped    # dropped runs with / without crossings
-      python experiments/topology/knife_integrity_probe.py --production # plain-chord cases on the Production Knife
+      python experiments/topology/knife_integrity_probe.py --production # plain-chord cases + the fuzz (face points
+                                                                        # included, S3) on the Production Knife
       python experiments/topology/knife_integrity_probe.py --shading    # zero face normals after a commit (Task C)
 """
 
@@ -36,6 +37,8 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
+import io
 import math
 import random
 import sys
@@ -470,6 +473,18 @@ def play(cls, mesh, clicks, cams, *, feats: dict | None = None, no_face=False) -
     """One session: `clicks` = [(cam_index, sx, sy)]. Returns (knife, accepted clicks, commit message).
     `feats` (optional) receives the path features of the session, read before commit. `no_face`: a click
     the pick resolves to a face interior is skipped (edge-only sessions)."""
+    from mirai.topology.knife import KnifeTool
+
+    if cls is KnifeTool:  # its temporary [KNIFE] console trace, once per click
+        with contextlib.redirect_stdout(io.StringIO()):
+            return _play(cls, mesh, clicks, cams, feats=feats, no_face=no_face)
+    return _play(cls, mesh, clicks, cams, feats=feats, no_face=no_face)
+
+
+def _play(cls, mesh, clicks, cams, *, feats, no_face):
+    from mirai.topology.knife import KnifeTool
+    from mirai.topology.knife_pick import snap_own_point
+
     knife, _scene = new_session(cls, mesh)
     accepted = 0
     for ci, sx, sy in clicks:
@@ -480,12 +495,20 @@ def play(cls, mesh, clicks, cams, *, feats: dict | None = None, no_face=False) -
         if hasattr(knife, "set_view"):
             knife.set_view(cam, W, H, occlusion=True)
             target = knife.snap_target(target, sx, sy)
+        elif isinstance(knife, KnifeTool):
+            # The Production path (`Application._knife_pick`): the own-point snap after the pick.
+            target = snap_own_point(cam, mesh, sx, sy, W, H, knife.points, target, occlusion=True)
         if knife.click(target):
             accepted += 1
     if feats is not None and hasattr(knife, "path"):
         feats.update(path_features(mesh, knife.path))
     knife.commit()
-    msg = knife.last_message
+    if isinstance(knife, KnifeTool):
+        # Worded like Q5's HUD (the counts are the resolver's either way).
+        msg = (f"commit rolled back — {knife.last_problem}" if knife.last_problem
+               else KnifeFaceCrossFace._message(knife.last_resolution))
+    else:
+        msg = knife.last_message
     knife.scene_history_len = len(_scene.history)
     knife.deactivate()
     return knife, accepted, msg
@@ -795,7 +818,7 @@ def dropped_runs(scene, n, **kw):
           f"{tot[(False, True)] + tot[(False, False)]}")
 
 
-def run_production():
+def run_production(n: int = 400):
     """Open point (handoff §8): the Production Knife (`src/mirai/topology/knife.py`, read-only here) connects
     every straight segment through `connect_in_shared_face` (lowest face id, no geometric check), like
     D/Q5's plain runs. Plays the plain-chord cases on it: HD2 (along) and L1 (leave)."""
@@ -814,6 +837,11 @@ def run_production():
             knife.deactivate()
             out.append(f"{cls.__name__} {acc}/{len(specs)} -> {sorted(integrity(mesh, scene)) or 'clean'}")
         print(f"[PROBE] production {name}: " + " | ".join(out))
+    # WP-KNIFE-01 S3: the fuzz on the Production Knife, face points included (the same seeds and clicks as
+    # the Q5 fuzz; cross-face clicks are refused there — slice S4).
+    for scene in ("grid", "cube"):
+        fails, clean = fuzz(scene, n, cls=KnifeTool)
+        _summary(f"{scene} Production KnifeTool", fails, clean, n)
 
 
 def run_shading():
@@ -911,7 +939,7 @@ def main(argv=None):
         run_shading()
         return
     if args.production:
-        run_production()
+        run_production(args.n)
         return
     if args.cases:
         run_cases()
