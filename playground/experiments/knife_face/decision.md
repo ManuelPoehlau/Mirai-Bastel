@@ -1398,3 +1398,58 @@ discriminate between faces.
   loop's own plane: found → "the run cuts through its own loop again" (P5, unchanged); none → the new text (another loop's
   bridge or an earlier run's cut splits it). The status line shows it as "N loop(s) closed at a point dropped (the loop does
   not lie inside one face)". The only status-text change; S3-f wording stays PROVISIONAL.
+
+### Result (Task 4, 2026-10-01 — headless, not Artist-tested)
+
+**What changed:** `src/mirai/topology/knife_resolve.py` only (+26 / −10 lines: the face gate, `LOOP_OFF_FACE`,
+`_loop_reason`). `face_geometry.py`, Core, `chord_validity.py`, `knife.py`, `application.py`, picking, Q5: untouched.
+
+**Evidence `[TEST]` / `[PROBE]`:**
+
+- `tests/test_knife_nonplanar_loops.py` (333): grid quad warped by one corner, w ∈ {0, 1e-9, 1e-6, 1e-4, 1e-2, 1e-1} — all
+  build V+5 E+9 F+4, 2 loops, nothing dropped, 1 History entry, Undo restores the session-start content, Redo the result,
+  geometry clean (before: refused from 1e-4); every head quad that builds (307) — the same checks; the 17 that refuse —
+  nothing committed, mesh content unchanged, no History entry, reason "the loop does not lie inside one face", and laid flat
+  15 of them refuse the same way (the other two, quads 4 and 135, build flat: there loop B bridges to another corner than on the head); the flat
+  quad from head quad 62 — refused with the new reason; P5 — still "the run cuts through its own loop again". The 328
+  strict xfails of the spec commit are gone.
+- **Head count (exact):** recipe as in the handoff (clicks lifted into the Newell plane) **307 build, 17 refuse**; with the
+  clicks on the render triangles **309 build, 15 refuse**. Every refusal: loop B's bridge runs through loop A (probe line
+  "B's bridge through loop A: True") — a genuine refusal of the current construction (S3b-a), reason text truthful.
+- **Flat faces:** the 496-session differential fuzz — meshes, counts, History, residue identical to `4631c33`; **one** cube
+  session (seed 41, session 2) now reads "1 loop(s) closed at a point dropped (the loop does not lie inside one face)"
+  instead of "(the run cuts through its own loop again)" — an earlier loop's bridge splits that loop (checked independently:
+  the recorded bridge crosses its outline), so the old text was false there; this is the (b) change, the mesh is the same.
+  Q5 vs Production: 0 differences (they share the resolver). 1 800 further flat sessions (600 seeded random, 1 200
+  loop-heavy): identical meshes, counts and History; the reason text changed in 48, each one an earlier loop's bridge
+  crossing the dropped loop (49 such drops), while every "cuts through its own loop again" has an edge of the run crossing it.
+- `knife_integrity_probe.py` default / `--production` / `--cases` / `--variants` / `--dropped`: same numbers as `4631c33`
+  (Q5 and Production fuzz grid / cube 0/400 integrity failures, 0 rollbacks; P1–P6 unchanged; only the print order of one
+  "features in clean sessions" dict varies with the hash seed). `--nonplanar` as above.
+- Suites (this container, pyglet + xvfb): `tests` (without `test_extrude_tool`, `test_pyglet_input`) 1075 → 1408 passed
+  (+333 new), `tests/run_core_suite.py` PASS before and after, `playground/tests` 1090 → 1090 passed (golden net
+  byte-identical, differential 47, Lab Q5 / D / B suites).
+
+### One Knife S3b — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| S3b-a | **A bow-tie whose first loop's bridge runs through the second loop is refused** — on any face, flat ones included: loop B (at the closing edge point) takes the nearest outside corner without regard to loop A that still hangs off its point X; A then lies in two faces. Head 17 / 324 (15 with the clicks on the render triangles), 15 of the same shapes laid flat; seen once in the 496-session fuzz (cube) and in 49 of 1 200 loop-heavy flat sessions. Now said truthfully ("the loop does not lie inside one face"). *Not decided:* a bridge for B that leaves A whole, or A's bridge first — bridge placement is an Artist decision ("Bridges go to outside corners", 2026-09-30), so a play test first. | `test_bowtie_refused_on_a_head_quad_says_why_and_changes_nothing`, `test_a_loop_split_by_another_loops_bridge_does_not_claim_the_run_crossed_it` |
+| S3b-b | **Two projections of a warped face.** The resolver checks each face in its Newell plane (`FaceFrame`, `face_problem`); the render's `triangulate_face` projects along the dominant Newell axis (`face_geometry`'s docstring calls them the same — they are not, on a non-planar face). 3 of the 307 head bow-ties (clicks lifted into the Newell plane, up to ~3 % of the face size off the surface) leave one ring face that is simple in its Newell plane but folds in the render's projection — a possible shading artefact on that face; 0 of 309 with the clicks on the render triangles (where real clicks land), 0 for a closed shape on all 324 quads. Not touched (`face_geometry` / render are outside this slice). | `knife_integrity_probe.py --nonplanar` ("faces folded in the render projection") |
+| S3b-c | The loop tests stay projections (`segment_in_face`, and `_loop_reason` in the loop's own plane): on a strongly curved face "inside one face" is decided in a plane, as everywhere in the resolver (the 2026-09-29 note "not exact geometry"). | — |
+
+**Rollback:** one revert of "Fix: loops at a point on non-planar faces …" restores the gate (the spec's head tests then fail
+— re-add the xfails).
+
+**Prepared practical test (Manu, ≤ 5 minutes, `python3 src/main.py`, head):** S3b stays **PROVISIONAL** until these slots
+and the verdict are filled.
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | Zoom so one quad facing the camera fills a good part of the screen; `C` with an empty selection; click one of its edges, three clicks inside so that the last inner segment crosses the first, click the first edge point again (it snaps), `Enter` | two small loops, each with one bridge to an outside corner; the status has no "dropped" text; one `Ctrl+Z` reverts everything | |
+| 2 | The same on two more quads, one at a **strongly curved** place | as 1 — or, rarely, "1 loop(s) closed at a point dropped (the loop does not lie inside one face)" with nothing cut (S3b-a: the first loop's bridge would cut the second) | |
+| 3 | Cube regression: the same on the cube top (Top view, recipe from the S3 check) | `V:13 E:21 F:10` | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |

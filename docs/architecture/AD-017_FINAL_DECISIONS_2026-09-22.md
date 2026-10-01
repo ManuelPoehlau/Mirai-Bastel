@@ -224,3 +224,12 @@ decided a vertex/edge-only case differently from Q5, S2 is kept and recorded (S3
 session, in-session Undo/Redo, Esc = discard, residue. PROVISIONAL until Manu's verdict. Work package: WP-KNIFE-01 S3;
 record, evidence and open points: `playground/experiments/knife_face/decision.md`, "One Knife S3".
 
+---
+
+## Addendum 2026-10-01 (Manu: S3 KEEP, "Weg 1") — One Knife S3b: loops at a point on non-planar faces
+
+**2026-10-01 / One Knife S3b:** the face a loop at a single point is built in is no longer required to be flat (the 1e-6 ×
+size height gate assumed planar faces; the face is a piece of the run's click-time face by construction) — the bow-tie now
+builds on 307 of 324 `head` quads; flat-face results unchanged. A loop that no longer fits one face because another loop's
+bridge splits it says so ("the loop does not lie inside one face"). PROVISIONAL until Manu's verdict; S3 itself is KEEP
+(KEEP ≠ promotion). Record and open points S3b-a…c: `playground/experiments/knife_face/decision.md`, "One Knife S3b".
