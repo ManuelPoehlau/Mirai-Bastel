@@ -191,3 +191,18 @@ resolver stays Knife-owned (AD-017 #1).
 Manu's statement (2026-10-01): "K1 zuerst" — M1 (promote the KEEP'd Q5 model in slices) with K1 (`Mesh.split_face`,
 addendum above) first. Work package: WP-KNIFE-01 S1, draft spec in `docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md`
 §6.3; intake line in `docs/architecture/ROADMAP.md` (WP-06 intake log).
+
+---
+
+## Addendum 2026-10-01 (Manu: M1, Artist: AQ1 = Q5 behaviour) — One Knife S2: Production Knife on the virtual path
+
+**2026-10-01 / One Knife S2 (M1, Artist: AQ1 = Q5 behaviour):** Production `KnifeTool` on the virtual path for vertex/edge
+targets; clicks along an existing edge are accepted as skip; session that cuts nothing leaves the mesh and History
+untouched; PROVISIONAL until verdict.
+
+AQ1 (`docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md` §6.6), Manu 2026-10-01: a click along an existing edge — on
+the neighbour vertex, or a second point on the same edge — is accepted, cuts nothing, and the chain continues from there.
+Assumptions stated there and not contradicted: click outside the mesh keeps committing (#8 above); the point marker at `t`
+on edge hover stays. Unchanged: one History entry per session, in-session Undo/Redo behaviour (#6), Esc = discard,
+residue = the session's cut edges selected + Edge mode, cross-face segments refused (planner = slice S4). Work package:
+WP-KNIFE-01 S2; record and open points: `playground/experiments/knife_face/decision.md`, "One Knife S2".

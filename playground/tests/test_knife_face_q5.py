@@ -1750,10 +1750,25 @@ def test_closed_shape_rejected_after_adding_its_vertices_leaves_none_behind(monk
     assert _content(mesh.export_state()) == _content(before)
 
 
-def test_commit_rolls_back_broken_geometry_and_names_the_reason():
-    """Safety net: B cuts at every click through `connect_in_shared_face` (lowest face id, no
-    geometric check) — HB1 there leaves a face crossing itself. The whole session is taken back,
-    History gets nothing, the HUD says why."""
+def test_commit_rolls_back_broken_geometry_and_names_the_reason(monkeypatch):
+    """Safety net: a session whose result is broken is taken back as a whole, History gets nothing,
+    the HUD says why. B cuts at every click through `connect_in_shared_face`; before F2 (2026-09-30)
+    that helper had no geometric check and HB1's 4th click left a face crossing itself. Since F2, B
+    refuses that click (second test below), so the broken geometry is *injected*: the helper is
+    replaced by its pre-F2 rule (lowest shared face id, topology only)."""
+    import playground.experiments.knife_face.engine as b_engine
+
+    def connect_unchecked(mesh_, a, b):
+        shared = {f for e in mesh_.vertex_edges(a) for f in mesh_.edge_faces(e)} & \
+                 {f for e in mesh_.vertex_edges(b) for f in mesh_.edge_faces(e)}
+        for fid in sorted(shared, key=int):
+            boundary = mesh_.face_vertices(fid)
+            if (boundary.index(a) - boundary.index(b)) % len(boundary) in (1, len(boundary) - 1):
+                continue
+            return mesh_.connect_vertices(fid, a, b)[0]
+        return None
+
+    monkeypatch.setattr(b_engine, "connect_in_shared_face", connect_unchecked)
     mesh, _p = _grid()
     before = mesh.export_state()
     knife, scene, cmd, accepted = _play(KnifeFaceImmediate, mesh, HB1)
@@ -1761,6 +1776,16 @@ def test_commit_rolls_back_broken_geometry_and_names_the_reason():
     assert knife.last_message == "commit rolled back — a face would cross itself; mesh unchanged"
     assert mesh.export_state()["faces"] == before["faces"]
     assert_geometric_integrity(mesh, GRID_PLANES, context="rollback")
+
+
+def test_b_refuses_the_click_that_used_to_break_hb1_since_f2():
+    """F2 (2026-09-30): the chord of HB1's 4th click would leave its face — B refuses it now, the
+    first three clicks commit cleanly."""
+    mesh, _p = _grid()
+    knife, scene, cmd, accepted = _play(KnifeFaceImmediate, mesh, HB1)
+    assert accepted == [True, True, True, False]
+    assert cmd is not None and len(scene.history) == 1
+    assert_geometric_integrity(mesh, GRID_PLANES, context="B HB1 after F2")
 
 
 def test_commit_check_catches_a_face_flipped_against_its_neighbour():

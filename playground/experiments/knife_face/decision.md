@@ -1084,7 +1084,27 @@ loops the gradient may run along the other diagonal.
 
 | Check | Expected | Seen (Manu) |
 |---|---|---|
-| bow-tie: top/right edge → three clicks inside the top (third segment crossing the first) → the edge point again → `Enter` | `V:13 E:21 F:10`, "1/1 cut(s) applied; 2 loop(s) closed at a single point — own face, 1 bridge each", bridges to outside corners | |
-| tail join: top/right edge → two top clicks (segment 3 crosses segment 1, on over the top/front edge) → a click inside the front → `Enter` | `V:14 E:22 F:10`, "2/2 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner; 1 loop(s) …" | |
-| closed shape, then continue: four clicks inside, click the first again (closes, no commit), one more click on an edge, `Enter`; then `Ctrl+Z` / `Ctrl+Y` | as before; Undo removes the whole session, Redo brings it back | |
+| bow-tie: top/right edge → three clicks inside the top (third segment crossing the first) → the edge point again → `Enter` | `V:13 E:21 F:10`, "1/1 cut(s) applied; 2 loop(s) closed at a single point — own face, 1 bridge each", bridges to outside corners | Passed — Manu's statement 2026-10-01 ("S1 3-minute test passed"; no per-row detail given) |
+| tail join: top/right edge → two top clicks (segment 3 crosses segment 1, on over the top/front edge) → a click inside the front → `Enter` | `V:14 E:22 F:10`, "2/2 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner; 1 loop(s) …" | Passed — Manu's statement 2026-10-01 ("S1 3-minute test passed"; no per-row detail given) |
+| closed shape, then continue: four clicks inside, click the first again (closes, no commit), one more click on an edge, `Enter`; then `Ctrl+Z` / `Ctrl+Y` | as before; Undo removes the whole session, Redo brings it back | Passed — Manu's statement 2026-10-01 ("S1 3-minute test passed"; no per-row detail given) |
+
+*Recorded 2026-10-01 (WP-KNIFE-01 S2 handoff): Manu's statement — both practical checks passed, the S1 3-minute test above
+and the F2 2-minute test (R3/R5 through the Production Knife, Vertex Connect and Edge Connect: clean, the offending click /
+pair refused; F2 commit `dce82c4`). A statement that the checks passed, not a verdict on S1 or F2.*
+
+---
+
+## One Knife S2 — Production `KnifeTool` on the virtual path (2026-10-01, PROVISIONAL)
+
+**Decision basis:** M1 + K1 (Manu, 2026-10-01); AD-017 addendum 2026-10-01 "One Knife S2"; slice table
+`docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md` §6.2 (S2 row) and parity matrix §1.2. **PROVISIONAL until Manu's
+verdict** — nothing below is Artist-validated.
+
+**Artist decision (Manu, 2026-10-01), AQ1 of the promotion discovery (§6.6):** a click **along an existing edge** — on the
+neighbour vertex, or a second point on the same edge — is **accepted, cuts nothing, and the chain continues from there**
+(the Q5 behaviour; Production used to refuse it). This is the only intended Artist-visible change of *results* in S2.
+
+**Assumptions stated in the discovery (§6.6, not contradicted — carried as decided-by-silence, correct if wrong):**
+a session that cuts nothing leaves the mesh and History untouched (P11/P14: no lone vertex after one edge click + `Enter`);
+a click outside the mesh keeps committing (AD-017 #8); the point marker at `t` while hovering an edge stays (G1).
 
