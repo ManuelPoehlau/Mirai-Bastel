@@ -22,6 +22,7 @@ from core import EdgeId, VertexId
 from core.operations.topology import MeshStateCommand
 from core.selection import Selection, SelectionMode
 from ..interaction.tool import Tool
+from .chord_validity import chord_faces, chord_valid_to_edge_point
 from .topology_points import connect_in_shared_face
 
 
@@ -30,22 +31,6 @@ class _KnifeStep:
     state_before: Any
     start_before: VertexId | None
     path_edges_before: list[EdgeId]
-
-
-def _connectable_in_shared_face(mesh, a: VertexId, b: VertexId) -> bool:
-    """Non-mutating mirror of `connect_in_shared_face`'s face search: some face
-    contains both vertices and they are not adjacent (nor identical) in it."""
-    if a == b:
-        return False
-    for fid in mesh.all_face_ids():
-        boundary = mesh.face_vertices(fid)
-        if a not in boundary or b not in boundary:
-            continue
-        n = len(boundary)
-        dist = (boundary.index(b) - boundary.index(a)) % n
-        if dist not in (1, n - 1):
-            return True
-    return False
 
 
 class KnifeTool(Tool):
@@ -102,8 +87,10 @@ class KnifeTool(Tool):
 
         Same acceptance rules as `click()`, including the ones `hover()` does
         not check (edge sharing no face with the start; vertex that is the
-        start or adjacent to it in every shared face). Kept separate from
-        `hover()` so the Playground's preview behaviour stays unchanged.
+        start or adjacent to it in every shared face; a chord that would run
+        along a face's boundary or leave a concave face — F2, 2026-09-30, the
+        gate of `connect_in_shared_face`). Kept separate from `hover()` so the
+        Playground's preview behaviour stays unchanged.
         """
         kind = target.get("kind") if target else None
         if kind == "vertex":
@@ -112,7 +99,7 @@ class KnifeTool(Tool):
                 return False
             if self._start is None:
                 return True
-            return _connectable_in_shared_face(self._mesh, self._start, vid)
+            return next(chord_faces(self._mesh, self._start, vid), None) is not None
         if kind == "edge":
             eid = target.get("edge_id")
             t = target.get("t", 0.5)
@@ -122,11 +109,11 @@ class KnifeTool(Tool):
                 return True
             if self._start in self._mesh.edge_vertices(eid):
                 return False
-            start_faces = set(
-                f for e in self._mesh.vertex_edges(self._start)
-                for f in self._mesh.edge_faces(e)
+            # The split vertex does not exist yet: test the chord to its future position.
+            return any(
+                chord_valid_to_edge_point(self._mesh, f, self._start, eid, t)
+                for f in self._mesh.edge_faces(eid)
             )
-            return bool(start_faces & set(self._mesh.edge_faces(eid)))
         return False
 
     def hover(self, target: dict) -> dict:
@@ -137,6 +124,10 @@ class KnifeTool(Tool):
                 {"kind": "face", "face_id": ...}  — invalid target
                 {"kind": "outside"}
         Returns: {"valid": bool, "target": target, "start": self._start}
+
+        Deliberately looser than `click()`: "valid" here can still be refused
+        by `click()` / `accepts()` — a chord along a face's boundary (R3) or out
+        of a concave face (R5) is only caught by the F2 gate there.
         """
         kind = target.get("kind") if target else None
         if kind == "vertex":

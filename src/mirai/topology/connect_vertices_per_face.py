@@ -4,8 +4,10 @@ Context: Vertex mode, 2+ vertices selected.
 Pairing: for each face (snapshot at start, ascending FaceId) with ≥ 2 selected
 vertices: collect selected vertices in boundary order, form cyclic consecutive
 pairs, skip adjacent pairs. Connect each pair via the lowest shared face where
-they are non-adjacent (connect_in_shared_face). Vertices without a partner are
-ignored. Nothing connectable → no-op, no history entry.
+they are non-adjacent and the chord lies inside the face
+(connect_in_shared_face; F2, 2026-09-30). A pair with no such face is skipped.
+Vertices without a partner are ignored. Nothing connectable → no-op, no
+history entry.
 Residue: selection and mode unchanged.
 """
 

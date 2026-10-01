@@ -15,13 +15,18 @@ Semantics (understood from the Wings 3D source, not copied):
   3. Per ORIGINAL face, collect the new midpoints on its boundary in
      boundary order. 2 midpoints → connect them. >2 → connect consecutive
      midpoints cyclically (inner polygon). Face size does not matter.
+     Each pair is connected by `connect_in_shared_face`: the lowest-id face
+     in which the chord is non-adjacent *and* lies entirely inside the face
+     (F2, 2026-09-30 — no chord along the boundary, none out of a concave
+     face). A pair with no such face stays unconnected (see below).
 
 Deliberate choices (open questions D3/D4, not decisions):
   - Nothing connectable → TopologyToolError, same signalling as the
     baseline (Research Map: keep signalling constant across a comparison).
-  - A midpoint that would stay unconnected → the whole operation is
-    rejected and the mesh is restored (Wings would dissolve it instead;
-    that needs a vertex-dissolve primitive we do not have).
+  - A midpoint that would stay unconnected (including one whose only chord
+    would leave its face, F2) → the whole operation is rejected and the
+    mesh is restored (Wings would dissolve it instead; that needs a
+    vertex-dissolve primitive we do not have).
 
 Contract: exactly one MeshStateCommand on success, mesh byte-identical on
 any rejection. Only existing Core primitives are used (split_edge,
@@ -32,6 +37,8 @@ from __future__ import annotations
 
 from core import EdgeId
 from core.operations.topology import MeshStateCommand
+
+from .topology_points import connect_in_shared_face
 
 
 class TopologyToolError(ValueError):
@@ -75,17 +82,9 @@ def _apply(mesh, selected: set) -> list[EdgeId]:
 
     created: list[EdgeId] = []
     for a, b in pairs:
-        target = None
-        for f in sorted(mesh.all_face_ids(), key=int):
-            vs = mesh.face_vertices(f)
-            if a in vs and b in vs:
-                d = (vs.index(a) - vs.index(b)) % len(vs)
-                if d not in (1, len(vs) - 1):
-                    target = f
-                    break
-        if target is None:
+        e = connect_in_shared_face(mesh, a, b)
+        if e is None:
             continue
-        e, _, _ = mesh.connect_vertices(target, a, b)
         created.append(e)
 
     connected = {v for e in created for v in mesh.edge_vertices(e)}

@@ -535,6 +535,8 @@ segment through `connect_in_shared_face` (lowest face id, no geometric check). `
 played with `KnifeTool` leaves a **zero-area** face, L1's a **non-simple** face. R3 and R5 therefore exist in Production too;
 recorded for the one-Knife Production design, not fixed here.
 
+*Status 2026-09-30 (F2):* R3/R5 in the Production path (Knife, Vertex Connect, Edge Connect via `connect_in_shared_face`) are fixed — see `docs/architecture/AD-017_FINAL_DECISIONS_2026-09-22.md`, addendum 2026-09-30.
+
 **Agent decisions:** (1) the defect is in the resolver (shared by D and Q5), plus one planner defect (R4); (2) a run has to be
 resolved against the *current* faces — walked through them, not looked up by its ends; (3) since H-b is confirmed, the
 Artist's crossing decision (Q1: intersection vertex, both cuts applied) is needed to satisfy the integrity requirement and is

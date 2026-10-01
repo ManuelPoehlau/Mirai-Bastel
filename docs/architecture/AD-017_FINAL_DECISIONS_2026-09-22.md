@@ -68,3 +68,30 @@ Edge Connect's existing residue rule.
 
 All other open questions in the brief (§7) remain open; per the Artist, they surface through testing
 rather than being decided in advance.
+
+---
+
+## Addendum 2026-09-30 (Artist: F2) — geometry-aware shared face choice for chords
+
+**2026-09-30 (Artist: F2):** the shared face choice of `connect_in_shared_face` and Edge Connect is
+geometry-aware; modes' pairing/rejection rules unchanged; bug fix against decided behaviour, not a new
+mode behaviour.
+
+Detail (agent-recorded, not an Artist question):
+
+- **Rule:** a chord is never created through a face in which it does not lie entirely. Among the shared
+  faces where the two vertices are non-adjacent, the lowest-id face *in which the chord is valid* is used;
+  none qualifies → the helper returns `None`, exactly as it already did for "no shared face".
+- **Validity** (`mirai.topology.chord_validity`, one predicate, in the face's best-fit plane): both child
+  polygons are simple, have an area above 1e-9 of the parent's and the parent's winding. This covers R3
+  (chord along the boundary: zero-area child, an edge in four faces) and R5 (chord leaves a concave face:
+  flipped, overlapping or non-simple children).
+- **Ownership (AD-017 unchanged):** the helper still knows nothing about pairing, residue or rejection.
+  Each mode keeps its own reaction to "no valid face": Vertex Connect skips the pair (nothing created → no-op,
+  no history entry); Edge Connect leaves the midpoint unconnected → whole operation rejected, mesh restored,
+  `TopologyToolError`; Knife refuses the click (`accepts()` and `click()` agree, the mesh is untouched).
+  `KnifeTool.hover()` keeps its documented looseness. Edge Connect's former inline copy of the face search
+  is gone — it calls the helper.
+- **Not changed:** Core, `Split`, the Knife session model, History behaviour, `playground/` code. The
+  Playground Lab keeps its own predicate for now (the One-Knife slice S1 will make the `src` one the single
+  implementation).
