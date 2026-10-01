@@ -1,0 +1,290 @@
+# WP-KNIFE-01 S1 - probe outputs BEFORE the resolver moved (code at 436830f, this container, headless).
+# For the 'unchanged' check after the move. Machine-dependent: the COST section's timings.
+# Expected to change by design (Task 3.6, K1): the CORE section's mutator counts (B2b add_face/remove_face/add_vertex -> split_face).
+
+######## python experiments/topology/one_knife_parity_probe.py
+
+== PARITY: same edge/vertex-only clicks on Production KnifeTool and Q5 ==
+[PROBE] P01 edge -> edge across one quad (grid; straight chord, both ends on edges)
+      prod: clicks ++ (accepts==click yes); V27/E43/F17; history 1; residue 1 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++ (accepts==click yes); V27/E43/F17; history 1; residue 1 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '1/1 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P02 vertex -> vertex (diagonal) (grid; connect_vertices only)
+      prod: clicks ++ (accepts==click yes); V25/E41/F17; history 1; residue 1 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++ (accepts==click yes); V25/E41/F17; history 1; residue 1 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '1/1 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P03 vertex -> edge -> edge -> vertex (3 quads) (grid; AD-017 §4 composite path)
+      prod: clicks ++++ (accepts==click yes); V27/E45/F19; history 1; residue 3 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++++ (accepts==click yes); V27/E45/F19; history 1; residue 3 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '3/3 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P04 zig-zag edge chain (4 points) (grid; consecutive points share a face)
+      prod: clicks ++++ (accepts==click yes); V29/E47/F19; history 1; residue 3 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++++ (accepts==click yes); V29/E47/F19; history 1; residue 3 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '3/3 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P05 closed diamond on edges round a vertex (grid; last click back on the first point (Prod: its split vertex; Q5: snap -> close))
+      prod: clicks +++++ (accepts==click yes); V29/E48/F20; history 1; residue 4 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks +++++ (accepts==click yes); V29/E48/F20; history 1; residue 4 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '4/4 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P06 cube: across the top corner (cube; chord on one side)
+      prod: clicks ++ (accepts==click yes); V10/E15/F7; history 1; residue 1 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++ (accepts==click yes); V10/E15/F7; history 1; residue 1 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '1/1 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P07 cube: ring round four sides, closed (cube; a loop over folds, each segment in one side)
+      prod: clicks +++++ (accepts==click yes); V12/E20/F10; history 1; residue 4 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks +++++ (accepts==click yes); V12/E20/F10; history 1; residue 4 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '4/4 cut(s) applied'
+      => mesh SAME, residue SAME
+[PROBE] P08 vertex -> adjacent vertex (along an edge) (grid; nothing to cut between neighbours)
+      prod: clicks +- (accepts==click yes, hover valid but refused x1); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none
+      q5  : clicks ++ (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none; msg 'no complete cut; 1 stretch(es) skipped (hole/border/hidden part or along an existing edge)'
+      => mesh SAME, residue SAME
+[PROBE] P09 two points on the same edge (grid; second point on the (piece of the) same edge)
+      prod: clicks +- (accepts==click yes); V26/E41/F16; history 1; residue 0 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++ (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none; msg 'no complete cut; 1 stretch(es) skipped (hole/border/hidden part or along an existing edge)'
+      => mesh DIFFERENT, residue SAME
+[PROBE] P10 edge -> edge in faces that share nothing (grid; needs the Q5 planner)
+      prod: clicks +- (accepts==click yes, hover valid but refused x1); V26/E41/F16; history 1; residue 0 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks ++ (accepts==click yes); V28/E45/F18; history 1; residue 2 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none; msg '2/2 cut(s) applied'
+      => mesh DIFFERENT, residue DIFFERENT
+[PROBE] P11 one edge click, then Enter (grid; start only, no segment)
+      prod: clicks + (accepts==click yes); V26/E41/F16; history 1; residue 0 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks + (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none; msg 'no complete cut'
+      => mesh DIFFERENT, residue SAME
+[PROBE] P12 one vertex click, then Enter (grid; start only, no segment)
+      prod: clicks + (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none
+      q5  : clicks + (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none; msg 'no complete cut'
+      => mesh SAME, residue SAME
+[PROBE] P13 same vertex twice (grid; second click on the start)
+      prod: clicks +- (accepts==click yes, hover valid but refused x1); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none
+      q5  : clicks +- (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none; msg 'no complete cut'
+      => mesh SAME, residue SAME
+[PROBE] P14 click outside the mesh (grid; engines only; Application commits on outside, the Playground does not)
+      prod: clicks +- (accepts==click yes); V26/E41/F16; history 1; residue 0 edge(s) EDGE; content changed True, Undo restores True, Redo True; broken none
+      q5  : clicks +- (accepts==click yes); V25/E40/F16; history 0; residue 0 edge(s) -; content changed False; broken none; msg 'no complete cut'
+      => mesh DIFFERENT, residue SAME
+[PROBE] P15 head, 3-point edge rings: mesh + residue identical and clean in 10/10
+[PROBE] P15 head, 6-point edge rings: mesh + residue identical and clean in 10/10
+[PROBE] P15 head, 10-point edge rings: mesh + residue identical and clean in 10/10
+
+== SESSION: in-session Undo/Redo, cancel, undo-everything ==
+[PROBE] S1 A->B->C->D, Undo, Redo, commit (AD-017 redo workflow)
+      prod: V29/E47/F19; history 1; content changed True; residue 3; same mesh as no-undo run: True
+      q5  : V29/E47/F19; history 1; content changed True; residue 3; same mesh as no-undo run: True
+      => prod vs q5 mesh SAME
+[PROBE] S2 A->B->C->D, Undo, Undo, commit
+      prod: V27/E43/F17; history 1; content changed True; residue 1; same mesh as no-undo run: False
+      q5  : V27/E43/F17; history 1; content changed True; residue 1; same mesh as no-undo run: False
+      => prod vs q5 mesh SAME
+[PROBE] S3 A->B->C->D, Undo, new click E, Redo (redo branch cleared?)
+      prod: V29/E47/F19; history 1; content changed True; residue 3; same mesh as no-undo run: False
+      q5  : V29/E47/F19; history 1; content changed True; residue 3; same mesh as no-undo run: False
+      => prod vs q5 mesh SAME
+[PROBE] S4 A->B->C->D, Undo x4 (everything), commit
+      prod: V25/E40/F16; history 1; content changed False; residue 0; same mesh as no-undo run: False
+      q5  : V25/E40/F16; history 0; content changed False; residue 0; same mesh as no-undo run: False
+      => prod vs q5 mesh SAME
+[PROBE] S5 prod: first edge click mutates the mesh during the session: True; Undo of it restores: True; Cancel after more clicks restores: True; history 0
+[PROBE] S5 q5: first edge click mutates the mesh during the session: False; Undo of it restores: True; Cancel after more clicks restores: True; history 0
+
+== DEFECTS R3 / R5 ==
+[PROBE] R3 (HD2) session 2 on prod: clicks +-; V27/E43/F17; history 1; content changed False; broken none (setup V27/E43/F17, broken none)
+[PROBE] R3 (HD2) session 2 on q5: clicks ++; V27/E43/F17; history 0; content changed False; broken none (setup V27/E43/F17, broken none); msg 'no complete cut; 1 stretch(es) skipped (hole/border/hidden part or along an existing edge)'
+[PROBE] R3 gate: the chord (1,1)->(1.75,1) per shared face: {1: 'boundary'}
+[PROBE] R5 (concave L face) prod: clicks +-; V6/E6/F1; history 0; content changed False; broken none
+[PROBE] R5 (concave L face) q5: clicks ++; V6/E6/F1; history 0; content changed False; broken none; msg 'no complete cut; 1 stretch(es) skipped (hole/border/hidden part or along an existing edge)'
+[PROBE] R5 gate: chord (2,1)->(1,2) in the L face: outside; chord (0,0)->(1,1) (for comparison): inside
+[PROBE] R5 (L1, grid) session 2 on prod: clicks +-; V29/E45/F17; broken none
+[PROBE] R5 (L1, grid) session 2 on q5: clicks ++; V32/E51/F20; broken none; msg '3/3 cut(s) applied'
+[PROBE] R3 via Vertex Connect (production, shared helper): 0 edge(s) created; broken none
+[PROBE] R3 via Edge Connect (production): refused (Connect (pro Face) abgebrochen: mindestens ein Mittelpunkt bliebe unverbunden.); broken none
+
+== CORE: public mutators called per session (outermost calls) ==
+[PROBE] edge-only chain (P04):
+      prod [++++] connect_vertices 3, split_edge 4; broken none
+      q5 [++++] connect_vertices 3, split_edge 4; broken none
+[PROBE] closed ring on the cube (P07):
+      prod [+++++] connect_vertices 4, split_edge 4; broken none
+      q5 [+++++] connect_vertices 4, split_edge 4; broken none
+[PROBE] cross-face segment (P10):
+      prod [+-] split_edge 1; broken none
+      q5 [++] connect_vertices 2, split_edge 3; broken none
+[PROBE] bent cut e -> f -> e (FC1):
+      prod [+-+] connect_vertices 1, split_edge 2; broken none
+      q5 [+++] add_face 2, add_vertex 1, remove_face 1, split_edge 2; broken none
+[PROBE] notch, in and out through one edge (FC3):
+      prod [+--] split_edge 1; broken none
+      q5 [+++] add_face 2, add_vertex 1, remove_face 1, split_edge 2; broken none
+[PROBE] closed interior shape (2 bridges):
+      prod [----] none; broken none
+      q5 [++++] add_face 3, add_vertex 3, remove_face 1; broken none
+[PROBE] loop at a point (P2: edge point, 2 interior, back):
+      prod [+---] split_edge 1; broken none
+      q5 [++++] add_face 3, add_vertex 2, remove_face 1, split_edge 1; broken none
+[PROBE] last click inside a face (tail -> corner):
+      prod [+-] split_edge 1; broken none
+      q5 [++] add_face 2, add_vertex 1, remove_face 1, split_edge 1; broken none
+[PROBE] crossing cuts (HB1):
+      prod [+--+] connect_vertices 1, split_edge 2; broken none
+      q5 [++++] add_face 2, add_vertex 1, connect_vertices 2, remove_face 1, split_edge 4; broken none
+
+== B2c: the bridge constructions as two path splits ==
+[PROBE] closed shape, 2 bridges: Lab 3-way split V29/E46/F18 vs two path splits V29/E46/F18; same faces: True; broken none
+[PROBE] loop at a point, 1 bridge: Lab V28/E45/F18 vs two path splits V28/E45/F18; same faces: True; broken none
+
+== COST on head (headless, this machine; NOT the reference PC) ==
+[PROBE] head: V326/E648/F324
+[PROBE] export_state 0.45 ms, load_state 2.00 ms (one full snapshot / restore)
+[PROBE] head, 4-point edge ring: per click prod 0.63 ms, q5 0.53 ms; commit prod 0.57 ms, q5 3.59 ms; q5 hover plan (shared face) 0.09 ms
+[PROBE] head, 8-point edge ring: per click prod 0.67 ms, q5 0.53 ms; commit prod 0.61 ms, q5 6.39 ms; q5 hover plan (shared face) 0.08 ms
+[PROBE] head q5 hover across 2 faces (planner, cache off): 14.77 ms; plan ok True, 4 crossing(s)
+[PROBE] head q5 hover across 4 faces (planner, cache off): 50.39 ms; plan ok True, 9 crossing(s)
+[PROBE] head q5 hover across 7 faces (planner, cache off): 70.11 ms; plan ok True, 13 crossing(s)
+[PROBE] head q5 hover across 2 faces (planner, cache on): 1.00 ms; plan ok True, 4 crossing(s)
+[PROBE] head q5 hover across 4 faces (planner, cache on): 2.46 ms; plan ok True, 9 crossing(s)
+[PROBE] head q5 hover across 7 faces (planner, cache on): 2.27 ms; plan ok True, 13 crossing(s)
+
+######## python experiments/topology/knife_integrity_probe.py
+[PROBE] grid Q5: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {'stale': 75, 'cross': 378, 'multi': 39, 'tzero': 1} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 1, with a loop at a point built: 3, dropped: 1
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 0; sessions without a history entry that changed the mesh: 0
+[PROBE] cube Q5: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {'stale': 191, 'cross': 340, 'multi': 89} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 3, with a loop at a point built: 18, dropped: 3
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 0; sessions without a history entry that changed the mesh: 0
+
+######## python experiments/topology/knife_integrity_probe.py --edge-only
+[PROBE] grid Q5 edge-only: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {'cross': 362} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 0, with a loop at a point built: 0, dropped: 0
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 0; sessions without a history entry that changed the mesh: 0
+[PROBE] cube Q5 edge-only: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {'cross': 229, 'tzero': 1} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 0, with a loop at a point built: 0, dropped: 0
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 0; sessions without a history entry that changed the mesh: 0
+
+######## python experiments/topology/knife_integrity_probe.py --cases
+[PROBE] case HB1 chord crosses an earlier notch (H-b): a later straight segment crosses an earlier segment of the same commit inside one quad
+      Q5: 4/4 clicks accepted; 2/2 cut(s) applied -> clean
+      D: 4/4 clicks accepted; 2/2 cut(s) applied -> clean
+      B: 3/4 clicks accepted; connect failed -> clean
+[PROBE] case HB2 bent run crosses an earlier bent run (H-b): both runs have interior points; the second crosses the first
+      Q5: 5/5 clicks accepted; 2/2 cut(s) applied -> clean
+      D: 4/5 clicks accepted; 2/2 cut(s) applied -> clean
+      B: 4/5 clicks accepted; cut applied -> clean
+[PROBE] case HA1 stale face: notch on a shared edge (H-a): the notch's quad is already split by earlier runs; both notch ends also lie on the quad below
+      Q5: 5/5 clicks accepted; 3/3 cut(s) applied -> clean
+      D: 5/5 clicks accepted; 3/3 cut(s) applied -> clean
+      B: 5/5 clicks accepted; cut applied (1 interior point(s)) -> clean
+[PROBE] case HA2 stale face across the cube's fold (H-a/H-c): a notch on the top side whose ends lie on the top/right fold edge, after the top was split
+      Q5: 4/4 clicks accepted; 2/2 cut(s) applied -> clean
+      D: 4/4 clicks accepted; 2/2 cut(s) applied -> clean
+      B: 4/4 clicks accepted; cut applied (1 interior point(s)) -> clean
+[PROBE] case HC1 interior points on two sides (H-c): Q5 inserts a crossing on the fold edge between the two interior points (D refuses the second)
+      Q5: 4/4 clicks accepted; 2/2 cut(s) applied -> clean
+      D: 2/4 clicks accepted; no complete cut; trailing interior point(s) dropped (no boundary reached) -> clean
+      B: 2/4 clicks accepted; rejected -> clean
+[PROBE] case HD1 trailing interior point dropped (H-d): a dangling tail never reaches the resolver (since 2026-09-30 Q5 joins it to the nearest corner)
+      Q5: 2/2 clicks accepted; 1/1 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner -> clean
+      D: 2/2 clicks accepted; no complete cut; trailing interior point(s) dropped (no boundary reached) -> clean
+      B: 2/2 clicks accepted; pending interior point (1) -> clean
+[PROBE] case HD2 run end leaves a collinear vertex, a later chord runs along it (H-d / along): session 1 is clean (the quad below gains a straight-angle vertex); session 2's chord runs along it
+      Q5: 4/4 clicks accepted; 1/1 cut(s) applied -> clean | no complete cut; 1 stretch(es) skipped (hole/border/hidden part or along an existing edge) -> clean
+      D: 4/4 clicks accepted; 1/1 cut(s) applied -> clean | 0/1 cut(s) applied -> clean
+      B: 3/4 clicks accepted; cut applied -> clean | connect failed -> clean
+[PROBE] case T0 planner edge hit at t = 0 (tzero): a line along a grid row: PLANE reports vertex (2,3) as an edge hit at t ~ 1e-15 (head-on view)
+      Q5: 2/2 clicks accepted; no complete cut; 2 stretch(es) skipped (hole/border/hidden part or along an existing edge) -> clean
+      D: 1/2 clicks accepted; no complete cut -> clean
+      B: 1/2 clicks accepted; rejected -> clean
+[PROBE] case L1 chord leaves a face made concave by an earlier session (leave): session 2 connects two points of the L-shaped face straight across its missing corner
+      Q5: 5/5 clicks accepted; 1/1 cut(s) applied -> clean | 3/3 cut(s) applied -> clean
+      D: 5/5 clicks accepted; 1/1 cut(s) applied -> clean | 0/1 cut(s) applied -> clean
+      B: 4/5 clicks accepted; cut applied (1 interior point(s)) -> clean | connect failed -> clean
+[PROBE] case P1 run crosses itself inside one quad (loop): segment 3 crosses segment 1: triangle X-I2-I3 is its own face, 1 bridge
+      Q5: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      D: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      B: 4/4 clicks accepted; commit rolled back — a face would cross itself; mesh unchanged -> clean
+[PROBE] case P1r the same, clicked the other way round (loop): same partition as P1 expected
+      Q5: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      D: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      B: 4/4 clicks accepted; commit rolled back — a face would cross itself; mesh unchanged -> clean
+[PROBE] case P2 back to the same edge point (loop): edge point -> two interior points -> the same edge point (Q5: the closing click)
+      Q5: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      D: 3/4 clicks accepted; no complete cut; trailing interior point(s) dropped (no boundary reached) -> clean
+      B: 3/4 clicks accepted; rejected -> clean
+[PROBE] case P3 Manu 2026-09-30 (cube: top loop, on into the front) (loop): segment 3 crosses segment 1 on the top, runs over the top/front edge; the last click (front) joined to its nearest corner
+      Q5: 5/5 clicks accepted; 2/2 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      D: 4/5 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      B: 4/5 clicks accepted; commit rolled back — a face would cross itself; mesh unchanged -> clean
+[PROBE] case P3r the same top loop, clicked from the front edge (loop): same top-face partition as P3 expected
+      Q5: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      D: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      B: 4/4 clicks accepted; commit rolled back — a face would cross itself; mesh unchanged -> clean
+[PROBE] case P4 loop hanging off a fold edge point (cube) (loop): the loop touches the rest of the mesh only at a point on the top/front edge; 1 bridge on the top
+      Q5: 4/4 clicks accepted; 1/1 cut(s) applied; 1 loop(s) closed at a single point — own face, 1 bridge -> clean
+      D: 3/4 clicks accepted; no complete cut; trailing interior point(s) dropped (no boundary reached) -> clean
+      B: 3/4 clicks accepted; rejected -> clean
+[PROBE] case P6 bow-tie back to the start (Manu's play test 2026-09-30) (loop): segment 3 crosses segment 1, then back to the start: two loops, one hanging off the other's point X
+      Q5: 5/5 clicks accepted; 1/1 cut(s) applied; 2 loop(s) closed at a single point — own face, 1 bridge each -> clean
+      D: 4/5 clicks accepted; no complete cut; trailing interior point(s) dropped (no boundary reached) -> clean
+      B: 4/5 clicks accepted; rejected -> clean
+[PROBE] case P5 the run crosses its own loop again (loop): after the loop the run cuts through the loop it just closed: not built, dropped with the note
+      Q5: 6/6 clicks accepted; 0/1 cut(s) applied; 1 cut(s) closing a loop at a single point dropped (the run cuts through its own loop again) -> clean
+      D: 6/6 clicks accepted; 0/1 cut(s) applied; 1 cut(s) closing a loop at a single point dropped (the run cuts through its own loop again) -> clean
+      B: 6/6 clicks accepted; commit rolled back — a face would cross itself; mesh unchanged -> clean
+
+######## python experiments/topology/knife_integrity_probe.py --variants
+[PROBE] grid D: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {'along': 59, 'cross': 3, 'stale': 1} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 62, with a loop at a point built: 0, dropped: 2
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 0; sessions without a history entry that changed the mesh: 0
+[PROBE] grid B: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 0, with a loop at a point built: 0, dropped: 0
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 338; sessions without a history entry that changed the mesh: 0
+[PROBE] cube D: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {'along': 104, 'cross': 56, 'stale': 17, 'leave': 9, 'multi': 1} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 0, with a dropped run: 115, with a loop at a point built: 3, dropped: 1
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 0; sessions without a history entry that changed the mesh: 0
+[PROBE] cube B: 0/400 runs with an integrity failure; by class: {}
+    feature present in failing sessions: {}; in clean sessions: {} (clean sessions: 771)
+    sessions: 771, rolled back by the commit check: 8, with a dropped run: 0, with a loop at a point built: 0, dropped: 0
+    leftover edge splits (new straight-angle vertices on a session-start edge, no cut): 204; sessions without a history entry that changed the mesh: 0
+      rolled back: seed 48: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 108: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 133: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 168: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 191: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 300: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 339: commit rolled back — a face would cross itself; mesh unchanged
+      rolled back: seed 356: commit rolled back — a face would cross itself; mesh unchanged
+
+######## python experiments/topology/knife_integrity_probe.py --dropped
+[PROBE] grid: sessions with a dropped run — with 'cross': 1/378, without: 0/393
+[PROBE] cube: sessions with a dropped run — with 'cross': 2/340, without: 1/431
+
+######## python experiments/topology/knife_integrity_probe.py --production
+[KNIFE] session begin (start=none, path_edges=0, state captured)
+[KNIFE] current_start=none target_kind=vertex
+[KNIFE] current_start=vertex:6 (first click, no mesh mutation)
+[KNIFE] current_start=vertex:6 target_kind=edge
+[KNIFE] resolving EdgePoint edge:40 t=0.500000
+[KNIFE] split_edge -> vertex:27 (edge:40 t=0.500000)
+[KNIFE] connect FAILED vertex:6 -> vertex:27 (edge split rolled back)
+[KNIFE] commit: state changed; path_edges=0 valid_connecting_edges=[] -> 1 history entry
+[PROBE] production HD2 run end leaves a collinear vertex, a later chord runs along it: KnifeFaceCollected 2/2 -> clean | KnifeTool 1/2 -> clean
+[KNIFE] session begin (start=none, path_edges=0, state captured)
+[KNIFE] current_start=none target_kind=edge
+[KNIFE] resolving EdgePoint edge:41 t=0.600000
+[KNIFE] split_edge -> vertex:28; current_start=vertex:28 (first click on edge)
+[KNIFE] current_start=vertex:28 target_kind=edge
+[KNIFE] resolving EdgePoint edge:42 t=0.400000
+[KNIFE] split_edge -> vertex:29 (edge:42 t=0.400000)
+[KNIFE] connect FAILED vertex:28 -> vertex:29 (edge split rolled back)
+[KNIFE] commit: state changed; path_edges=0 valid_connecting_edges=[] -> 1 history entry
+[PROBE] production L1 chord leaves a face made concave by an earlier session: KnifeFaceCollected 3/3 -> clean | KnifeTool 1/2 -> clean
+
+######## python experiments/topology/knife_integrity_probe.py --shading
+[PROBE] shading: cube, one edge split at t = 0.5 (no cut): 0/12 edges leave a face with a zero normal
+[PROBE] shading: P3 Manu 2026-09-30 (cube: top loop, on into the front): zero face normals 0 -> 0; face-VBO vertices with smooth n.L <= 0 17/36 -> 20/72
+[PROBE] shading: P4 loop hanging off a fold edge point (cube): zero face normals 0 -> 0; face-VBO vertices with smooth n.L <= 0 17/36 -> 17/54
+[PROBE] shading: a plain successful cut across the top (right edge -> front edge): zero face normals 0; face-VBO vertices with smooth n.L <= 0 18/48
