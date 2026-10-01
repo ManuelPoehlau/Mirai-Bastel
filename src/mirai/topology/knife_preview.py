@@ -42,10 +42,13 @@ class KnifeRenderData:
 
 
 def target_position(mesh, target: dict) -> Vec3 | None:
-    """World position of a knife target or path record: the vertex itself, or
-    the point at `t` along the edge (same lerp the Playground preview uses).
-    None for other kinds and for handles the mesh no longer knows."""
+    """World position of a knife target or path record: the vertex itself, the
+    point at `t` along the edge (same lerp the Playground preview uses), or a
+    face point's own position (S3). None for other kinds and for handles the
+    mesh no longer knows."""
     kind = target.get("kind")
+    if kind == "face" and target.get("position") is not None and mesh.is_valid_face(target["face_id"]):
+        return tuple(target["position"])
     if kind == "vertex" and mesh.is_valid_vertex(target["vertex_id"]):
         return tuple(mesh.vertex_position(target["vertex_id"]))
     if kind == "edge" and mesh.is_valid_edge(target["edge_id"]):

@@ -486,7 +486,7 @@ def s2_divergence(tool, target) -> str | None:
 
 # -- seeded random single-face sessions ----------------------------------------------------------------
 
-RANDOM_RUNS = {"grid": 60, "cube": 60, "head": 15}
+RANDOM_RUNS = {"grid": 150, "cube": 150, "head": 40}
 
 
 def _interior_point(rnd, mesh, fid):
@@ -508,6 +508,12 @@ def _random_spec(rnd, mesh, tool):
     anywhere (often cross-face: refused by both), or an interior point too close to an edge."""
     last = tool.last_point
     roll = rnd.random()
+    chain = getattr(tool, "chain_points", tool.points)
+    if len(chain) >= 2 and rnd.random() < 0.15:  # back to the chain start: a close (or its refusal)
+        start = chain[0]
+        if start["kind"] == "vertex":
+            return v(mesh.vertex_position(start["vertex_id"]))
+        return ("own", point_position(mesh, start))
     own = [p for p in tool.points if p["kind"] in ("edge", "face")]
     if own and roll < 0.12:
         return ("own", point_position(mesh, rnd.choice(own)))
@@ -526,9 +532,10 @@ def _random_spec(rnd, mesh, tool):
     return f(_interior_point(rnd, mesh, fid), 5.0 if rnd.random() < 0.05 else FACE_CLEARANCE_PX, face_key(mesh, fid))
 
 
-def random_run(scene_name: str, seed: int) -> list[tuple[list, list[str]]]:
+def random_run(scene_name: str, seed: int) -> list[tuple[list, list[str], Side]]:
     """One seeded run: 1-2 sessions of 2-8 steps on the mesh the previous session left; returns
-    [(specs, differences)] per session. Clicks under a documented S2 difference are not played."""
+    [(specs, differences, Production side)] per session. Clicks under a documented S2 difference are
+    not played."""
     rnd = random.Random(f"{scene_name}/differential/{seed}")
     mesh_q5, mesh_prod = build_scene(scene_name), build_scene(scene_name)
     out = []
@@ -568,7 +575,7 @@ def random_run(scene_name: str, seed: int) -> list[tuple[list, list[str]]]:
             scratch.deactivate()
         q5 = play_q5(mesh_q5, specs)
         prod = play_production(mesh_prod, specs)
-        out.append((specs, compare(q5, prod)))
+        out.append((specs, compare(q5, prod), prod))
     return out
 
 

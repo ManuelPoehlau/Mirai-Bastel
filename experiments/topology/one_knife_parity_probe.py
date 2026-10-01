@@ -130,6 +130,12 @@ class Session:
             self.tool.set_view(camera_for(mesh, *CAMS[scene_name]), W, H, occlusion=True)
 
     def target(self, spec) -> dict:
+        if self.engine == "prod" and spec[0] in ("e", "f"):
+            # S3: the Production own-point snap (`knife_pick.snap_own_point`, Application) — an edge or
+            # interior point the session already holds is clicked as that point.
+            for p in self.tool.points:
+                if p["kind"] in ("edge", "face") and math.dist(self.tool.point_position(p), _spec_pos(spec)) < 1e-9:
+                    return {"kind": "point", "pid": p["pid"]}
         return resolve(self.mesh, spec, self.tool if self.engine == "q5" else None)
 
     def click(self, spec) -> tuple[bool, bool, bool]:
