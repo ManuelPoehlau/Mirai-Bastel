@@ -1319,3 +1319,67 @@ Knife (`C` with an empty selection; `Enter` / click outside = commit, `Esc` = ca
 | **KEEP** (Manu, 2026-10-01) | *"Weg 1"* — the option he chose: S3 is KEEP; the head limitation is an open point, fixed in its own small slice before S4. |
 
 *Recorded 2026-10-01 (WP-KNIFE-01 S3b handoff, Task 0).* Context of the answer (chat 2026-10-01, as summarised in the handoff, not Manu's wording): row 6 passes on the cube with the clarified recipe and fails on the head. **KEEP ≠ promotion.** The open points S3-a…k stay open; the verdict does not decide them. S2-a (a straight run of boundary edges is a skip) has still not been commented on by Manu and stays open. The head limitation is S3-j → "One Knife S3b".
+
+---
+
+## One Knife S3b — loops at a point on non-planar faces (2026-10-01, PROVISIONAL)
+
+**Decision basis:** S3 KEEP (Manu, 2026-10-01, "Weg 1") with the head limitation S3-j as its own slice before S4.
+Production (M5): *what* is decided (loops at a single point must work on the head); *how* is technical. Q5 and Production
+share the resolver (`knife_resolve`), so the differential tests cannot pin this — the spec is absolute:
+`tests/test_knife_nonplanar_loops.py` (written first, strict xfail). **PROVISIONAL until Manu's verdict.**
+
+### Diagnosis (Task 2, 2026-10-01 — measured headless, not Artist-tested)
+
+**Rerun:** `python experiments/topology/knife_integrity_probe.py --nonplanar` — the bow-tie recipe (handoff §3: edge point
+E on p1-p2 at t = 0.6, interior points I1..I3 at bilinear (0.2, 0.5), (0.55, 0.1), (0.4, 0.9), E again, `Enter`) on the
+grid quad (1,1)-(2,2) with corner (1,2) raised by w, on all 324 `head` quads with the interior clicks **lifted into the
+quad's Newell plane** (the handoff recipe) and **on the render triangles** (where a real face hit lands), and on each head
+quad laid flat in its own Newell plane. Which gate rejected which loop was read from a throwaway copy of `_build_loops`
+that logged each test (not kept); the probe's "refused before any loop / after loop B" lines and the height of X reproduce
+it from outside.
+
+**Observation:**
+
+- The recipe makes **two** loops: the crossing of segment 3 with segment 1 closes loop A = X → I1 → I2 → X; the run goes on
+  from X to I3 and back into E, closing loop B = E → X → I3 → E. B is built first (at the vertex E); A waits until B has made
+  X a vertex ("Bow-tie back to the start").
+- **Before (`4631c33`): every head quad is refused before any loop is built**, status "the run cuts through its own loop
+  again". The rejecting test is the height gate `FaceFrame(f).height(probe) <= 1e-6 * size` for loop B; its probe is X,
+  which lies on the 3D segment E–I1 — and E sits on the quad's 3D edge, off its Newell plane. Height of X / size: min
+  7.6e-6, median 4.4e-3, max 2.8e-2 (lifted clicks); 1.7e-5 / 1.1e-2 / 7.1e-2 (on the render triangles) — every one above
+  1e-6. Warped grid quad: built for w ≤ 1e-6, refused from 1e-4, same message.
+- The handoff's local experiment (gate 0.2 × size): 303 commit; of the 21 left, **4** fail the height gate again for loop
+  **A** (I1 measured against a piece of the ring left by loop B — a smaller face with its own tilted plane: 0.20–0.22 ×
+  size) and **17** fail loop A's outline test.
+- **Without the height term** (only the projected inside test picks the face): **307 / 324** commit (lifted), **309 / 324**
+  (on the render triangles). Every remaining refusal (17 / 15) is loop A after loop B was built: **B's bridge** (the nearest
+  outside corner, Artist decision 2026-09-30, chosen without regard to the loop that still hangs off B) **runs through loop
+  A** in the quad's own frame, so A no longer lies inside one face.
+- **15 of these quad shapes fail the same way when laid perfectly flat**, on the unchanged code (309 / 324 flat quads
+  build; refused: head quads 17, 60, 62, 81, 83, 127, 167, 168, 221, 229, 230, 270, 271, 289, 310). They were never probed:
+  the grid's and the cube's quads give the bridge another corner.
+- The `1e-12` position match (`vertex_at`) never rejects: X is created at exactly the position it is looked up by.
+
+**Answers:**
+
+- **(a)** Only the height gate assumes planarity; it rejected all 324 head quads (and the warped grid from 1e-4) at the
+  *first* loop, and with a looser threshold it still rejects loop A in a ring piece (the second gate). The outline's
+  `segment_in_face` is a projection, not a flatness assumption — on the head it rejects only the bridge cases.
+- **(b)** The ~21: 4 are the height gate again (second loop, a sub-face's own Newell plane); 17 are a **genuine refusal of
+  the current construction**: loop B's bridge cuts loop A in two. Not a lifted-point artifact (15 of the same kind with the
+  clicks on the render triangles), not a point outside the face, and **not a planarity matter** (reproduced on flat quads).
+  *Interpretation:* which bridge loop B takes when another loop hangs off it is a behaviour question (bridge placement is
+  an Artist decision) → **STOP (§7), recorded as S3b-a, not changed here.** The fix only has to say truthfully why it refuses.
+- **(c)** Smallest change: **drop the height term.** Every face the loop is tried in is already filtered to pieces of the
+  run's click-time face (`root` — always set once a run has entered a face, which every loop needs), so the probe came from
+  that face; on a flat face every such piece passes the height test anyway — the gate never chose between faces there — so
+  flat results stay bit-identical. Local experiment with the change: the 496-session differential fuzz gives identical meshes,
+  counts and History (one cube session's reason text changes — the bridge case, see below); the integrity probe's default /
+  `--production` / `--cases` / `--variants` / `--dropped` output is byte-identical; 1 800 further flat sessions (600 seeded
+  random, 1 200 loop-heavy: edge point → 2–5 interior points → back to the start or out through another edge) give
+  identical meshes, counts and History. The reason text: the bridge case is reported as "the run cuts through its own loop
+  again", which is false there — the run does not cross loop A. It needs its own text (Task 3 b).
+
+*Interpretation:* the height gate was a flatness assumption from the flat Lab scenes (grid, cube), where it never had to
+discriminate between faces.

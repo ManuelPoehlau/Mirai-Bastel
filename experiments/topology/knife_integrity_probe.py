@@ -31,6 +31,7 @@ Run:  python experiments/topology/knife_integrity_probe.py              # fuzz 4
       python experiments/topology/knife_integrity_probe.py --production # plain-chord cases + the fuzz (face points
                                                                         # included, S3) on the Production Knife
       python experiments/topology/knife_integrity_probe.py --shading    # zero face normals after a commit (Task C)
+      python experiments/topology/knife_integrity_probe.py --nonplanar  # S3b: the bow-tie on warped / head quads
 """
 
 from __future__ import annotations
@@ -897,6 +898,156 @@ def run_shading():
           f"face-VBO vertices with smooth n.L <= 0 {dark}/{k}")
 
 
+
+# -- WP-KNIFE-01 S3b: loops at a point on non-planar faces -------------------------------------------
+
+def _bowtie(mesh, fid, surface=False):
+    """The S3b handoff §3 recipe on quad `fid`, Production `KnifeTool`: an edge point on p1-p2 at t = 0.6,
+    interior points at bilinear (0.2, 0.5), (0.55, 0.1), (0.4, 0.9) of the corners' Newell-frame 2D
+    coordinates — lifted into the Newell plane, or (`surface`) onto the face's render triangles, where a
+    real face hit lands — then the edge point again; commit. Returns (V/E/F delta, resolution, History
+    length, the clicked positions E, I1, I2, I3)."""
+    from mirai.topology.face_geometry import FaceFrame, cross2
+    from mirai.topology.knife import KnifeTool
+    from viewport.derived import triangulate_face
+
+    fr = FaceFrame(mesh, fid)
+    vs = mesh.face_vertices(fid)
+    p = fr.pts2
+
+    def point(u, v):
+        q = tuple((1 - u) * (1 - v) * p[0][k] + u * (1 - v) * p[1][k] + u * v * p[2][k] + (1 - u) * v * p[3][k]
+                  for k in range(2))
+        if not surface:
+            return tuple(fr.origin[k] + q[0] * fr.u[k] + q[1] * fr.v[k] for k in range(3))
+        pos = {x: mesh.vertex_position(x) for x in vs}
+        for tri in triangulate_face(vs, pos):
+            a, b, c = (pos[x] for x in tri)
+            a2, b2, c2 = fr.p2(a), fr.p2(b), fr.p2(c)
+            l1, l2 = cross2(q, b2, c2) / cross2(a2, b2, c2), cross2(a2, q, c2) / cross2(a2, b2, c2)
+            if min(l1, l2, 1 - l1 - l2) >= -1e-12:
+                return tuple(l1 * a[k] + l2 * b[k] + (1 - l1 - l2) * c[k] for k in range(3))
+        raise LookupError("no render triangle holds the point")
+
+    eid = next(x for x in mesh.all_edge_ids() if set(mesh.edge_vertices(x)) == {vs[1], vs[2]})
+    t = 0.6 if mesh.edge_vertices(eid)[0] == vs[1] else 0.4
+    pa, pb = (mesh.vertex_position(x) for x in mesh.edge_vertices(eid))
+    clicked = [tuple(pa[k] + t * (pb[k] - pa[k]) for k in range(3))]
+    clicked += [point(u, v) for u, v in ((0.2, 0.5), (0.55, 0.1), (0.4, 0.9))]
+    scene = Scene()
+    scene.mesh = mesh
+    tool = KnifeTool()
+    counts = [len(mesh.all_vertex_ids()), len(mesh.all_edge_ids()), len(mesh.all_face_ids())]
+    with contextlib.redirect_stdout(io.StringIO()):
+        tool.activate()
+        tool.begin(mesh=mesh, scene=scene, selection=scene.selection)
+        tool.click({"kind": "edge", "edge_id": eid, "t": t})
+        for pos in clicked[1:]:
+            tool.click({"kind": "face", "face_id": fid, "position": pos, "distance_px": 20.0})
+        tool.click({"kind": "point", "pid": tool.path[0]["pid"]})
+        tool.commit()
+        tool.deactivate()
+    delta = (len(mesh.all_vertex_ids()) - counts[0], len(mesh.all_edge_ids()) - counts[1],
+             len(mesh.all_face_ids()) - counts[2])
+    return delta, tool.last_resolution, len(scene.history), clicked
+
+
+@contextlib.contextmanager
+def _recording_loops(box: list):
+    """Every loop at a point the resolver builds (also those rolled back with their run): (vertex position,
+    loop points, the bridge as two positions)."""
+    from mirai.topology import knife_resolve
+
+    original = knife_resolve.close_loop_at_vertex
+
+    def recording(mesh, face_id, x, loop_positions, outside=None):
+        out = original(mesh, face_id, x, loop_positions, outside)
+        ring = out[2]
+        (bridge,) = set(mesh.face_edges(ring[0])) & set(mesh.face_edges(ring[1]))
+        box.append((mesh.vertex_position(x), list(loop_positions),
+                    tuple(mesh.vertex_position(v) for v in mesh.edge_vertices(bridge))))
+        return out
+
+    knife_resolve.close_loop_at_vertex = recording
+    try:
+        yield
+    finally:
+        knife_resolve.close_loop_at_vertex = original
+
+
+def run_nonplanar():
+    """S3-j / S3b (decision.md "One Knife S3b"): the bow-tie (two loops at a point — loop A at the crossing X,
+    loop B at the edge point E) on a warped grid quad, on every `head` quad, and on each head quad laid flat
+    in its own Newell plane. For a refusal: how many loops were built before it (and rolled back), the height
+    of X over the quad's Newell plane (the old gate: <= 1e-6 x size), and whether loop B's bridge runs
+    through loop A (X, I1, I2) in the quad's own frame."""
+    from tests.knife_parity_driver import broken, head_mesh
+    from mirai.topology.face_geometry import FaceFrame, proper_cross2
+
+    flat = (5, 9, 4)
+    for w in (0.0, 1e-9, 1e-6, 1e-4, 1e-2, 1e-1):
+        mesh = build_grid()
+        corner = next(x for x in mesh.all_vertex_ids() if mesh.vertex_position(x) == (1.0, 2.0, 0.0))
+        mesh.set_vertex_position(corner, (1.0, 2.0, w))
+        fid = next(f for f in mesh.all_face_ids()
+                   if min(mesh.vertex_position(x)[:2] for x in mesh.face_vertices(f)) == (1.0, 1.0))
+        delta, res, hist, _c = _bowtie(mesh, fid)
+        print(f"[PROBE] nonplanar: grid quad (1,1)-(2,2), corner (1,2) raised by {w:g}: delta V/E/F {delta}, "
+              f"loops built {res.loops_built}, dropped {dict(res.loops_dropped) or '-'}, History {hist}")
+    quads = sorted(head_mesh().all_face_ids(), key=int)
+    for surface in (False, True):
+        tally, refused = collections.Counter(), []
+        for fid in quads:
+            box: list = []
+            mesh = head_mesh()
+            fr = FaceFrame(mesh, fid)
+            with _recording_loops(box):
+                delta, res, hist, clicked = _bowtie(mesh, fid, surface)
+            if delta == flat and res.loops_built == 2 and hist == 1:
+                # The resolver's own check (Newell plane of each face) and the render's projection (dominant
+                # Newell axis, `triangulate_face`) can disagree on a warped face; every untouched head face
+                # already has "tri_area" in the latter, so only "non_simple" is counted here.
+                sound = not broken(mesh, "head")
+                folds = sum("non_simple" in face_issues(mesh, f) for f in mesh.all_face_ids())
+                tally[f"built, V+5 E+9 F+4, History 1; resolver check clean: {sound}; faces folded in the "
+                      f"render projection: {folds}"] += 1
+                continue
+            reason = ", ".join(sorted(res.loops_dropped)) or "-"
+            if box:  # loop B was built (then rolled back): does its bridge run through loop A?
+                x3, _pts, (b0, b1) = box[0][0], box[0][1], box[0][2]
+                loop_a = [fr.p2(q) for q in (box[0][1][0], clicked[1], clicked[2])]
+                hit = any(proper_cross2(fr.p2(b0), fr.p2(b1), loop_a[i], loop_a[(i + 1) % 3], fr.eps) for i in range(3))
+                tally[f"refused after loop B ({reason}); B's bridge through loop A: {hit}"] += 1
+            else:  # X = segment E-I1 crossed by I2-I3, on E-I1 in 3D (as the resolver places it)
+                e3, i1, i2, i3 = clicked
+                a, b, c, d = (fr.p2(q) for q in clicked[:2] + clicked[2:])
+                den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+                lam = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den
+                tally[f"refused before any loop ({reason})"] += 1
+                refused.append(fr.height(tuple(e3[k] + lam * (i1[k] - e3[k]) for k in range(3))) / fr.size)
+        label = "on the render triangles" if surface else "lifted into the Newell plane"
+        print(f"[PROBE] nonplanar: head, {len(quads)} quads, interior clicks {label}:")
+        for k, n in tally.most_common():
+            print(f"    {n:4d}  {k}")
+        if refused:
+            refused.sort()
+            print(f"    refused before any loop: height of X (loop B's first point, the gate's probe) over the "
+                  f"quad's Newell plane / size: min {refused[0]:.2e}, median {refused[len(refused) // 2]:.2e}, "
+                  f"max {refused[-1]:.2e} (old gate: <= 1e-6)")
+    tally, bad = collections.Counter(), []
+    base = head_mesh()
+    for fid in quads:
+        fr = FaceFrame(base, fid)
+        mesh = Mesh()
+        f0 = mesh.add_face([mesh.add_vertex(tuple(fr.origin[k] + q[0] * fr.u[k] + q[1] * fr.v[k] for k in range(3)))
+                            for q in fr.pts2])
+        delta, res, hist, _c = _bowtie(mesh, f0)
+        ok = delta == flat and res.loops_built == 2 and hist == 1
+        tally["built" if ok else f"refused ({', '.join(sorted(res.loops_dropped)) or '-'})"] += 1
+        if not ok:
+            bad.append(int(fid))
+    print(f"[PROBE] nonplanar: each head quad laid flat in its own Newell plane: {dict(tally)}; refused: {bad}")
+
 # -- main ----------------------------------------------------------------------------------
 
 def _summary(label, fails, clean, n):
@@ -933,8 +1084,12 @@ def main(argv=None):
     ap.add_argument("--dropped", action="store_true")
     ap.add_argument("--production", action="store_true")
     ap.add_argument("--shading", action="store_true")
+    ap.add_argument("--nonplanar", action="store_true")
     args = ap.parse_args(argv)
 
+    if args.nonplanar:
+        run_nonplanar()
+        return
     if args.shading:
         run_shading()
         return
