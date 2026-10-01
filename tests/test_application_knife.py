@@ -647,7 +647,10 @@ def _assert_click_rejected(app, pos):
     assert _history_depths(app) == (0, 0)
 
 
-def test_face_target_has_no_preview_and_click_does_nothing(app):
+def test_a_face_the_last_point_does_not_touch_has_no_preview_and_click_does_nothing(app):
+    """WP-KNIFE-01 S3: a face hit is a target now (`test_application_knife_faces.py`); this face (x = +1)
+    shares no face with the start vertex 7 - a cross-face segment (planner, S4): no preview, refused.
+    Before S3 every face hit was refused (S2-d)."""
     _begin(app)
     _click(app, _vertex_screen(app, _v(app, 7)))
     pos = _face_center_screen(app, (2, 6, 5, 1))  # face 3

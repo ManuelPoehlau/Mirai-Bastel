@@ -2107,7 +2107,13 @@ class PlaygroundWindow(pyglet.window.Window):
                             position=("f", pt_positions),
                         )
 
-                # "face" / "outside" → no highlight (no-op, out of scope)
+                elif kind == "face" and self._knife_tool.accepts(target):
+                    # WP-KNIFE-01 S3: a point inside a face (as the Knife Face Lab shows it).
+                    self._vlist_knife_preview_point = self._overlay_program.vertex_list(
+                        1, gl.GL_POINTS, position=("f", build_knife_preview_point_data(target["position"])),
+                    )
+
+                # "outside" (or a refused face point) → no highlight
 
             # Persistent path highlight (placed points + cut segments): rebuild
             # when the start point changes (S2: `start` is the last path record).
@@ -2121,8 +2127,8 @@ class PlaygroundWindow(pyglet.window.Window):
         # knife_face/). Kind-based dispatch mirrors the Knife hover block
         # above (same shape, `_HOVER_COLOR`/`_SELECTION_COLOR` reused), plus
         # a "face" arm (interior point + pending-path preview line) that the
-        # Knife block above deliberately leaves as a no-op (WP-AP-CUT
-        # handoff §3: "ready for it later" — this is that later).
+        # Knife block above left as a no-op until WP-KNIFE-01 S3 (now it shows
+        # the face point's marker too).
         if self._knife_face_tool is not None and self.app.viewport is not None:
             self._knife_face_refresh_hover(x, y)
 

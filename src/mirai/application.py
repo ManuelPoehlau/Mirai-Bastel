@@ -51,7 +51,7 @@ from .mesh_geometry import mesh_center_and_radius
 from .topology.connect_per_face import TopologyToolError, connect_selected_edges_per_face
 from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
 from .topology.contextual_c import CContext, resolve_c_context
-from .topology.knife import KnifeTool
+from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .topology.split import split_selected_edge
@@ -161,6 +161,40 @@ def _selection_state(selection: Selection) -> tuple[frozenset, frozenset, frozen
         frozenset(selection.faces),
     )
 
+
+# WP-KNIFE-01 S3 (PROVISIONAL wording, decision.md "One Knife S3"): status for a refused Knife click
+# by the tool's reason - the S3 cases are named, every other refusal keeps the S2 text.
+_KNIFE_REFUSED = {
+    TOO_CLOSE: "Knife: too close to an edge - click on the edge or further inside the face",
+    CLOSE_NEEDS: "Knife: closing a shape needs at least 3 points",
+    EARLIER_INTERIOR: "Knife: an earlier point inside a face cannot be clicked again (not yet)",
+}
+
+
+def _knife_notes(res) -> list[str]:
+    """What the commit joined or dropped (`KnifeResolution`), for the status line. Nothing of it is
+    shown while cutting (Artist, 2026-09-30: the join to the nearest corner is made at commit only)."""
+    if res is None:
+        return []
+    notes = []
+    if res.joined:
+        notes.append(f"{res.joined} last point(s) inside a face joined to the nearest corner")
+    if res.dropped_tail:
+        notes.append("a last point inside a face could not be joined to a corner - dropped")
+    if res.dropped_lead:
+        notes.append("first point(s) inside a face before any edge or vertex dropped")
+    rejected = [shape for shape in res.closed_shapes if not shape.built]
+    if rejected:
+        notes.append(f"{len(rejected)} closed shape(s) could not be built")
+    if res.short_shapes:
+        notes.append(f"{len(res.short_shapes)} shape(s) inside a face with fewer than 3 points dropped")
+    if res.skipped_shapes:
+        notes.append(f"{res.skipped_shapes} closed shape(s) skipped - their face was already cut")
+    for reason, n in sorted(res.loops_dropped.items()):
+        notes.append(f"{n} loop(s) closed at a point dropped ({reason})")
+    if res.lost_continuation:
+        notes.append("the cut on from an interior start point dropped")
+    return notes
 
 class Application:
     """Window-unabhängiger Produktions-Orchestrator."""
@@ -512,10 +546,15 @@ class Application:
     # Variant B (`project_locked_edge` in `mirai.topology.knife_pick`) is
     # unaffected (AD-013 A2, contextual deviation).
     #
-    # WP-KNIFE-01 S2 (PROVISIONAL): a click adds a point to the session's
+    # WP-KNIFE-01 S2 (KEEP 2026-10-01): a click adds a point to the session's
     # virtual path; the mesh is cut at commit (`Enter` / click outside). The
     # session is drawn from the path (`knife_render_data`), so neither the
     # mesh nor the pick cache changes while clicking.
+    #
+    # WP-KNIFE-01 S3 (PROVISIONAL): a click inside a face is a point too
+    # (`knife_pick` face hit, the session's own interior points snap); the
+    # status line names the S3 refusals and closes, and at commit what the
+    # resolver joined or dropped (`_knife_notes`).
 
     @property
     def knife_active(self) -> bool:
@@ -547,7 +586,7 @@ class Application:
         self._set_hovered(None)
         self._refresh_hover()
         self._set_status(
-            "Knife: click on vertices/edges to cut - Enter or click"
+            "Knife: click on vertices, edges or inside faces to cut - Enter or click"
             " outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo cut"
         )
         return True
@@ -603,18 +642,20 @@ class Application:
         target = self._knife_pick(x, y)
         if target.get("kind") == "outside":
             return self._knife_end(commit=True)
-        before_cuts = len(self._knife.cut_segments)
         if not self._knife.click(target):
-            self._set_status("Knife: no valid cut target here")
+            self._set_status(_KNIFE_REFUSED.get(self._knife.last_plan.reason, "Knife: no valid cut target here"))
             self._refresh_hover()
             return False
         # WP-KNIFE-01 S2: a click only adds a point to the session's path - the
         # mesh (and with it the pick cache) is unchanged until commit.
+        plan = self._knife.last_plan
         cuts = len(self._knife.cut_segments)
         segments = f"{cuts} path {'segment' if cuts == 1 else 'segments'}"
-        if len(self._knife.points) == 1:
+        if plan.start:
             self._set_status("Knife: start point set")
-        elif cuts == before_cuts:
+        elif plan.closing:
+            self._set_status(f"Knife: shape closed - the next click cuts on from its start ({segments})")
+        elif plan.skip:
             self._set_status(f"Knife: along an existing edge - nothing to cut ({segments})")
         else:
             self._set_status(f"Knife: cut ({segments})")
@@ -653,6 +694,7 @@ class Application:
         self._knife_gesture_moved = 0.0
         self._knife_target = None
         self._knife_highlight_edge = None
+        notes = _knife_notes(knife.last_resolution) if commit else []
         if command is not None:
             self._record_selection_history(before)
             count = len(self.selection.edges)
@@ -662,11 +704,11 @@ class Application:
                 # Valid while clicking, dropped at commit (the run would have
                 # left its face) - the Q5 "N-1/N" note (WP-KNIFE-01 S2).
                 status += f" - {res.runs - res.applied} of {res.runs} cuts dropped"
-            self._set_status(status)
+            self._set_status("; ".join([status] + notes))
         elif commit and knife.last_problem is not None:
             self._set_status(f"Knife: result taken back ({knife.last_problem}), nothing committed")
         elif commit:
-            self._set_status("Knife: no cuts made, nothing committed")
+            self._set_status("Knife: no cuts made, nothing committed" + (f" ({'; '.join(notes)})" if notes else ""))
         else:
             self._set_status("Knife cancelled")
         self._pick_cache.invalidate()

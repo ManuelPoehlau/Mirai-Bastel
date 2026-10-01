@@ -262,3 +262,39 @@ def test_knife_family_hover_snaps_to_an_own_edge_point(win_app):
     assert win._vlist_knife_hover_vertex is not None   # highlighted like a vertex
     assert win._vlist_knife_preview_point is None      # not an edge preview
     win.on_draw()
+
+
+def test_knife_family_shows_and_accepts_a_point_inside_a_face(win_app):
+    """WP-KNIFE-01 S3: the shared `KnifeTool` takes face points — over the interior of a face of the last
+    point the window shows the point marker (as the Knife Face Lab does), a click adds a face record and
+    the path VBO draws it; the mesh stays uncut until Enter."""
+    from pyglet.window import key as _key
+
+    from mirai.topology.knife_pick import knife_pick
+    win, app = win_app
+    knife = _arm_knife(win)
+    mesh = app.scene.mesh
+    for fid in sorted(mesh.all_face_ids()):                    # a face whose centre is visible
+        ps = [mesh.vertex_position(v) for v in mesh.face_vertices(fid)]
+        centre = tuple(sum(p[i] for p in ps) / len(ps) for i in range(3))
+        cx, cy = app.camera.project_to_screen(centre, win.width, win.height)
+        picked = knife_pick(app.camera, mesh, round(cx), round(cy), win.width, win.height, **win._pick_kwargs())
+        if picked["kind"] == "face" and picked["face_id"] == fid:
+            break
+    else:
+        pytest.fail("no face centre visible")
+    assert knife.click({"kind": "edge", "edge_id": mesh.face_edges(fid)[0], "t": 0.5})
+    topo = _topo(app)
+
+    win.on_mouse_motion(round(cx), round(cy), 0, 0)
+    assert win._vlist_knife_preview_point is not None          # the face point marker
+    target = win._knife_snap(mesh, round(cx), round(cy),
+                             knife_pick(app.camera, mesh, round(cx), round(cy), win.width, win.height,
+                                        **win._pick_kwargs()))
+    assert knife.click(target) and knife.last_point["kind"] == "face"
+    win.on_mouse_motion(round(cx) + 40, round(cy), 0, 0)
+    assert win._knife_last_start == knife.last_point["pid"] and win._vlist_knife_path is not None
+    win.on_draw()
+    assert _topo(app) == topo
+    win.on_key_press(_key.ENTER, 0)                            # the tail is joined to a corner at Enter
+    assert _topo(app) != topo and _depths(app) == (1, 0)

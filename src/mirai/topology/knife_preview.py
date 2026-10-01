@@ -4,13 +4,17 @@ What a running Knife session shows, as plain world positions. Since S2 the
 mesh is not cut while clicking (`KnifeTool` keeps a virtual path, resolved at
 commit), so the session is drawn from its path:
 
-- `placed_points`: every point placed so far, once each (vertex or edge
-  point; an earlier point clicked again is not drawn twice);
+- `placed_points`: every point placed so far, once each (vertex, edge point
+  or — S3 — interior point; an earlier point clicked again, or a closed
+  chain's start continuing the next one, is not drawn twice);
 - `path_segments`: the segments commit will cut, between their points'
-  positions (a skip along an existing edge is not drawn — it cuts nothing);
+  positions (a skip along an existing edge is not drawn — it cuts nothing;
+  a chain closed by clicking its start draws its closing segment);
 - `start_point`: the last placed point, where the next segment starts (F3);
 - `prospective_point`: the hovered target — the vertex, the point at `t` on
-  the hovered edge (G1, also before the first click), or an own point;
+  the hovered edge (G1, also before the first click), the point inside the
+  hovered face (S3, the Lab's face-hover marker), or an own point (the snap:
+  own points and vertices look the same);
 - `target_edge`: the hovered edge;
 - `line_preview`: from the start point to the prospective point.
 
@@ -79,9 +83,13 @@ def build_knife_render_data(
     positions: dict = {}
     placed: list[Vec3] = []
     segments: list[Segment] = []
-    prev = None
+    prev = first = None
     for p in path:
         if p["kind"] == "break":
+            if p.get("reason") == "closed":
+                if p.get("cyclic") and prev is not None and first is not None and prev != first:
+                    segments.append((prev, first))
+                first = None
             prev = None
             continue
         pos = target_position(mesh, p)
@@ -93,6 +101,8 @@ def build_knife_render_data(
             placed.append(pos)
         if prev is not None:
             segments.append((prev, pos))
+        if first is None:
+            first = pos
         prev = pos
     last = next((p for p in reversed(path) if p["kind"] != "break"), None)
     start_point = positions.get(last["pid"]) if last is not None else None
