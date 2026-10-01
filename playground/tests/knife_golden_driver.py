@@ -247,7 +247,7 @@ def spec_target(mesh: Mesh, spec) -> dict:
             if 1e-9 < u < 1 - 1e-9 and math.dist(pos, tuple(p0[k] + u * d[k] for k in range(3))) < 1e-9:
                 return {"kind": "edge", "edge_id": eid, "t": u}
         raise LookupError(pos)
-    from playground.experiments.knife_face.engine import FaceFrame, segment_in_face
+    from mirai.topology.face_geometry import FaceFrame, segment_in_face
     pos = spec[1]
     for fid in mesh.all_face_ids():
         if FaceFrame(mesh, fid).height(pos) > 1e-9:

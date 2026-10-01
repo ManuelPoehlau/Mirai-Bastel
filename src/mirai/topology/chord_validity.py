@@ -10,7 +10,9 @@ Mode-agnostic like the rest of `topology_points`: this knows nothing about
 pairing, residue or what a mode does when no face qualifies.
 
 Predicate (in the face's best-fit plane, Newell normal — the plane
-`viewport.derived.triangulate_face` projects into): the two child polygons the
+`viewport.derived.triangulate_face` projects into; the frame is
+`face_geometry.FaceFrame`, shared with the Knife resolver since WP-KNIFE-01 S1):
+the two child polygons the
 chord cuts out of the boundary must each be simple (no crossing, no corner
 touching a non-neighbouring edge, no spike), have an area above `AREA_EPS` of
 the parent's and the parent's winding (positive in this frame). Signed child
@@ -31,8 +33,11 @@ import math
 from typing import Iterator
 
 from core import FaceId, VertexId
+from core.mesh import MeshError
 
-LENGTH_EPS = 1e-9
+from .face_geometry import GEO_EPS, FaceFrame
+
+LENGTH_EPS = GEO_EPS
 AREA_EPS = 1e-9
 
 Point3 = tuple[float, float, float]
@@ -91,38 +96,14 @@ def _is_simple(pts: list[Point2], eps: float) -> bool:
     return True
 
 
-def _newell(pts: list[Point3]) -> Point3:
-    nx = ny = nz = 0.0
-    for i, p in enumerate(pts):
-        q = pts[(i + 1) % len(pts)]
-        nx += (p[1] - q[1]) * (p[2] + q[2])
-        ny += (p[2] - q[2]) * (p[0] + q[0])
-        nz += (p[0] - q[0]) * (p[1] + q[1])
-    return nx, ny, nz
-
-
-def _project(pts: list[Point3]) -> tuple[list[Point2], float] | None:
-    """2D coordinates in the best-fit plane (boundary counter-clockwise) and the
-    parent's area; None for a face without a plane."""
-    nx, ny, nz = _newell(pts)
-    length = math.sqrt(nx * nx + ny * ny + nz * nz)
-    lo = [min(p[k] for p in pts) for k in range(3)]
-    hi = [max(p[k] for p in pts) for k in range(3)]
-    size = max(1e-12, max(hi[k] - lo[k] for k in range(3)))
-    if length <= LENGTH_EPS * size * size:
+def _project(pts: list[Point3]) -> tuple[list[Point2], float, float] | None:
+    """2D coordinates in the best-fit plane (boundary counter-clockwise), the parent's
+    area and the length tolerance; None for a face without a plane."""
+    try:
+        frame = FaceFrame.of_points(pts)
+    except MeshError:
         return None
-    n = (nx / length, ny / length, nz / length)
-    axis = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
-    u = (axis[1] * n[2] - axis[2] * n[1], axis[2] * n[0] - axis[0] * n[2], axis[0] * n[1] - axis[1] * n[0])
-    ul = math.sqrt(sum(c * c for c in u))
-    u = (u[0] / ul, u[1] / ul, u[2] / ul)
-    v = (n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0])
-    o = pts[0]
-    flat = [
-        (sum((p[k] - o[k]) * u[k] for k in range(3)), sum((p[k] - o[k]) * v[k] for k in range(3)))
-        for p in pts
-    ]
-    return flat, 0.5 * length
+    return frame.pts2, frame.area, frame.eps
 
 
 def chord_valid_in_polygon(points: list[Point3], ia: int, ib: int) -> bool:
@@ -135,10 +116,7 @@ def chord_valid_in_polygon(points: list[Point3], ia: int, ib: int) -> bool:
     projected = _project(points)
     if projected is None:
         return False
-    flat, parent_area = projected
-    eps = LENGTH_EPS * max(1e-12, max(
-        max(p[k] for p in points) - min(p[k] for p in points) for k in range(3)
-    ))
+    flat, parent_area, eps = projected
     lo, hi = (ia, ib) if ia < ib else (ib, ia)
     # Same split as `Mesh.connect_vertices`.
     for child in (flat[lo:hi + 1], flat[hi:] + flat[:lo + 1]):

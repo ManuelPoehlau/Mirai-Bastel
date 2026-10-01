@@ -4,7 +4,8 @@ Evidence for `docs/research/topology/FACE_HOLES_DISCOVERY.md` (Q2, Q3).
 Not a tool, not wired anywhere, no Core change, no Lab change. Uses only the public
 Core API plus existing read-only consumers (fan triangulation, `pick_face`, the
 Playground ExtrudeTool) and the Knife Face Cut Lab's stand-in functions
-(`playground/experiments/knife_face/engine.py`), imported unchanged.
+(`playground/experiments/knife_face/engine.py` when written; since WP-KNIFE-01 S1 in
+`src/mirai/topology/knife_resolve.py`, built from `Mesh.split_face`), imported unchanged.
 
 Scene: 3x3 grid of unit quads in z = 0, faces CCW seen from +Z; the closed shape is a
 triangle inside the centre quad (1,1)-(2,2) — the shape of Lab task 5 / discovery FC6.
@@ -44,7 +45,7 @@ from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from mirai.viewport.picking import pick_face  # noqa: E402
 from viewport.derived import DerivedGeometry, triangulate_mesh_face  # noqa: E402
 
-from playground.experiments.knife_face.engine import (  # noqa: E402
+from mirai.topology.knife_resolve import (  # noqa: E402  (moved from the Lab engine, WP-KNIFE-01 S1)
     close_loop_with_bridges,
     select_bridge,
     split_face_path,

@@ -28,16 +28,15 @@ from core.selection import SelectionMode  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 
+from mirai.topology.face_geometry import loop_matches_winding  # noqa: E402
+from mirai.topology.knife_resolve import close_loop_with_bridges, select_bridge  # noqa: E402
 from playground.experiments.knife_face.engine import (  # noqa: E402
     EDGE_MARGIN_PX,
     KnifeFaceCollected,
     KnifeFaceImmediate,
-    close_loop_with_bridges,
     face_interior_hit,
     knife_face_pick,
-    loop_matches_winding,
     min_edge_distance_px,
-    select_bridge,
 )
 
 
@@ -703,7 +702,7 @@ def test_d_two_runs_on_same_original_edge_do_not_crash():
 def test_d_run_failure_is_dropped_and_rest_stays_one_undoable_step(monkeypatch):
     """Safety net: an exception from Core inside one run drops only that run
     (HUD N/M), the commit still reaches the History push for the rest."""
-    import playground.experiments.knife_face.engine as eng
+    import mirai.topology.knife_resolve as eng   # the resolver's home since WP-KNIFE-01 S1
 
     scene, fid = _ngon_scene(6)
     mesh = scene.mesh

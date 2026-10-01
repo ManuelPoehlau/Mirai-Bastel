@@ -54,11 +54,10 @@ from mirai.topology.knife import KnifeTool  # noqa: E402
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from mirai.viewport.picking_cache import PickCache  # noqa: E402
 from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
-from playground.experiments.knife_face.engine import (  # noqa: E402
+from mirai.topology.face_geometry import face_problem, segment_in_face  # noqa: E402
+from mirai.topology.knife_resolve import (  # noqa: E402  (moved from the Lab engine, WP-KNIFE-01 S1)
     close_loop_at_vertex,
     close_loop_with_bridges,
-    face_problem,
-    segment_in_face,
     select_bridge,
     split_face_path,
 )

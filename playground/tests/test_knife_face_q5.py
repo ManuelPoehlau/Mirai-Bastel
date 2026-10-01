@@ -36,14 +36,12 @@ from playground.experiments.knife_face import (  # noqa: E402
     KnifeFaceVariantD,
     KnifeFaceVariantQ5,
 )
+from mirai.topology.face_geometry import FaceFrame, face_problem, segment_in_face  # noqa: E402
+from mirai.topology.knife_resolve import KnifeResolver, split_face_path  # noqa: E402
 from playground.experiments.knife_face.engine import (  # noqa: E402
-    FaceFrame,
     KnifeFaceCollected,
     KnifeFaceImmediate,
-    face_problem,
     knife_face_pick,
-    segment_in_face,
-    split_face_path,
 )
 from playground.experiments.knife_face.engine_q5 import (  # noqa: E402
     EARLIER_INTERIOR_NOTE,
@@ -823,7 +821,7 @@ def test_click_on_an_earlier_existing_vertex_point_connects_and_continues():
     n_vertices = len(mesh.all_vertex_ids())
     assert knife.plan(_vpt(v1)).ok                        # a picked mesh vertex that is an earlier point of the chain
     assert knife.click(_vpt(v1))
-    assert knife.chain[-1] == _vpt(v1)
+    assert {k: v for k, v in knife.chain[-1].items() if k != "pid"} == _vpt(v1)   # entries carry their point id (S1)
     assert knife.click(_ept(mesh, p[(0, 3)], p[(0, 4)], 0.5))
     knife.commit()
     done, total = _applied(knife)
@@ -1639,16 +1637,14 @@ def test_two_tails_in_one_commit_each_join_a_corner_of_their_own_face():
 
 
 def test_a_vertex_point_resolves_to_its_own_vertex_whatever_the_id_cache_holds():
-    """The deterministic core of the two-tails bug: `resolved` is keyed by id(), and CPython reuses
-    the id of a freed dict. A vertex point must never be answered from that cache."""
+    """The deterministic core of the two-tails bug: `resolved` was keyed by id(), and CPython reuses
+    the id of a freed dict. A vertex point must never be answered from that cache. (Since WP-KNIFE-01
+    S1 the cache is keyed by explicit point ids; a stale entry under the same key must still lose.)"""
     mesh, p = _grid()
-    knife, _scene = _session(mesh, None)
-    knife._resolve_boundary_points([])
-    end = _vpt(p[(0, 0)])
-    stale = {id(end): p[(4, 4)]}                               # what a freed dict with the same id left
-    assert knife._run_end_vertex(end, stale) == p[(0, 0)]
-    knife.cancel()
-    knife.deactivate()
+    resolver = KnifeResolver(mesh, mesh.export_state())
+    end = dict(_vpt(p[(0, 0)]), pid=7)
+    stale = {7: p[(4, 4)]}                                     # what another point under that key left
+    assert resolver._run_end_vertex(end, stale) == p[(0, 0)]
 
 
 def test_a_tail_whose_nearest_corner_cannot_be_cut_takes_the_next_one():
@@ -1680,7 +1676,7 @@ def test_handoff_reproduction_dropped_leaves_the_cube_at_8_12_6(monkeypatch):
     dropped at commit, but the mesh went V8/E12/F6 -> V9/E13/F6 (the run's edge split stayed).
     Since Task A that loop is built; to keep the reproduction a *dropped* run, the bridge is made
     to fail — the resolver's own reason for dropping it."""
-    import playground.experiments.knife_face.engine as eng
+    import mirai.topology.knife_resolve as eng   # the resolver's home since WP-KNIFE-01 S1
 
     def no_bridge(*_a, **_kw):
         raise eng.MeshError("close_loop_at_vertex: no bridge fits")
@@ -1704,7 +1700,7 @@ def test_manus_sequence_dropped_leaves_no_split_of_the_dropped_run(monkeypatch):
     """Manu's screenshot showed V10/E14/F6 after a commit that applied nothing (two splits left). With
     the top run dropped, only the front's tail (joined to its nearest corner) is cut: the top run's
     edge point E1 leaves nothing behind."""
-    import playground.experiments.knife_face.engine as eng
+    import mirai.topology.knife_resolve as eng   # the resolver's home since WP-KNIFE-01 S1
 
     monkeypatch.setattr(eng, "close_loop_at_vertex",
                         lambda *_a, **_kw: (_ for _ in ()).throw(eng.MeshError("no bridge fits")))
@@ -1738,7 +1734,7 @@ def test_a_dropped_run_takes_back_only_its_own_splits():
 def test_closed_shape_rejected_after_adding_its_vertices_leaves_none_behind(monkeypatch):
     """`close_loop_with_bridges` adds the loop's vertices before its last checks; a MeshError
     after that used to leave them in the mesh (isolated vertices) although nothing was cut."""
-    import playground.experiments.knife_face.engine as eng
+    import mirai.topology.knife_resolve as eng   # the resolver's home since WP-KNIFE-01 S1
 
     def half_built(mesh_, _fid, positions, *_a):
         for pos in positions:

@@ -2,7 +2,8 @@
 
 The Core contract tests live in `tests/test_core.py` (`test_split_face_*`) and do not import
 `playground`; this file only checks that the new primitive builds the **same faces** as the Lab
-functions it is meant to replace (`playground/experiments/knife_face/engine.py`):
+functions it is meant to replace (the Lab's `playground/experiments/knife_face/engine.py` at bb07f52,
+frozen since WP-KNIFE-01 S1 as `knife_b2b_oracle.py`):
 
 - FC1–FC4 (`docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` §2): one `split_face` call vs one
   `split_face_path` call;
@@ -48,11 +49,13 @@ from core.mesh import MeshError  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from mirai.scene_factory import build_core_scene_from_obj, create_cube  # noqa: E402
 from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
-from playground.experiments.knife_face.engine import (  # noqa: E402
+from mirai.topology import knife_resolve  # noqa: E402
+from mirai.topology.face_geometry import loop_matches_winding  # noqa: E402
+from mirai.topology.knife_resolve import select_bridge  # noqa: E402
+# The Lab's B2b stand-ins as they were before WP-KNIFE-01 S1 moved the resolver (frozen oracle).
+from playground.tests.knife_b2b_oracle import (  # noqa: E402
     close_loop_at_vertex,
     close_loop_with_bridges,
-    loop_matches_winding,
-    select_bridge,
     split_face_path,
 )
 
@@ -310,3 +313,93 @@ def test_loop_at_a_point_is_two_split_face_calls(scene):
     assert compared >= len(faces) * 4, f"{scene}: only {compared} compared, {refused} refused by the Lab"
     assert refused == 0, f"{scene}: the Lab refused {refused} case(s) - no longer all compared"
 
+
+# -- WP-KNIFE-01 S1: the resolver's constructions (built from split_face) vs the frozen oracle ---------
+
+
+def _pos_list(mesh: Mesh, vids) -> list:
+    return [_r(mesh.vertex_position(v)) for v in vids]
+
+
+def _edge_pos(mesh: Mesh, edges) -> list:
+    return [tuple(sorted(_pos_list(mesh, mesh.edge_vertices(e)))) for e in edges]
+
+
+def _face_cycle(mesh: Mesh, f) -> tuple:
+    cyc = _pos_list(mesh, mesh.face_vertices(f))
+    k = cyc.index(min(cyc))
+    return tuple(cyc[k:] + cyc[:k])
+
+
+@pytest.mark.parametrize("scene", SCENES)
+def test_resolver_split_face_path_matches_the_oracle(scene):
+    """`knife_resolve.split_face_path` (one split_face call): same faces, the same new vertices and
+    path edges in path order, face_1 the side running a -> b — like the Lab's B2b stand-in."""
+    base, faces = _scene(scene)
+    state = base.export_state()
+    for face in faces:
+        for name, prepare, positions in _single_cases(base, face):
+            label = f"{scene} face {int(face)} {name}"
+            ref, alt = Mesh.from_state(state), Mesh.from_state(state)
+            a, b = prepare(ref)
+            assert prepare(alt) == (a, b)
+            r_vs, r_f1, r_f2, r_edges = split_face_path(ref, face, a, b, positions)
+            n_vs, n_f1, n_f2, n_edges = knife_resolve.split_face_path(alt, face, a, b, positions)
+            _assert_same(ref, alt, label)
+            assert _pos_list(alt, n_vs) == _pos_list(ref, r_vs), label
+            assert _edge_pos(alt, n_edges) == _edge_pos(ref, r_edges), label
+            assert (_face_cycle(alt, n_f1), _face_cycle(alt, n_f2)) == (_face_cycle(ref, r_f1), _face_cycle(ref, r_f2)), label
+
+
+@pytest.mark.parametrize("scene", SCENES)
+def test_resolver_closed_shape_matches_the_oracle(scene):
+    """`knife_resolve.close_loop_with_bridges` (two split_face calls): same faces, and the same
+    inner face / wing A / wing B and loop vertices and edges in click order as the Lab's 3-way split."""
+    base, faces = _scene(scene)
+    state = base.export_state()
+    for face in faces:
+        for name, loop in _loops(base, face):
+            label = f"{scene} face {int(face)} closed shape, {name}"
+            ref, alt = Mesh.from_state(state), Mesh.from_state(state)
+            i1, bv1, i2, bv2 = select_bridge(ref, ref.face_vertices(face), loop)
+            r = close_loop_with_bridges(ref, face, loop, i1, bv1, i2, bv2)
+            n = knife_resolve.close_loop_with_bridges(alt, face, loop, i1, bv1, i2, bv2)
+            _assert_same(ref, alt, label)
+            assert _pos_list(alt, n[0]) == _pos_list(ref, r[0]), label
+            assert [_face_cycle(alt, f) for f in n[1:4]] == [_face_cycle(ref, f) for f in r[1:4]], label
+            assert _edge_pos(alt, n[4]) == _edge_pos(ref, r[4]), label
+
+
+@pytest.mark.parametrize("scene", SCENES)
+def test_resolver_loop_at_a_point_matches_the_oracle(scene):
+    """`knife_resolve.close_loop_at_vertex` (two split_face calls per bridge candidate): the same
+    bridge, loop face, ring and loop edges as the Lab's pinched-ring construction, with and without
+    `outside` corners."""
+    base, faces = _scene(scene)
+    state = base.export_state()
+    compared = 0
+    for face in faces:
+        corners = base.face_vertices(face)
+        for x_index in range(4):
+            rot = corners[x_index:] + corners[:x_index]
+            pts0 = [(0.4, 0.2), (0.6, 0.5), (0.2, 0.4)]
+            for name, uv in (("one way", pts0), ("the other way", pts0[::-1])):
+                for outside in (None, {rot[2]}):
+                    label = f"{scene} face {int(face)} loop at corner {x_index}, {name}, outside {outside}"
+                    ref, alt = Mesh.from_state(state), Mesh.from_state(state)
+                    pts = [_bilinear_from(ref, rot, u, v) for u, v in uv]
+                    try:
+                        r = close_loop_at_vertex(ref, face, rot[0], pts, outside)
+                    except MeshError:
+                        with pytest.raises(MeshError):
+                            knife_resolve.close_loop_at_vertex(alt, face, rot[0], pts, outside)
+                        assert canon_faces(alt) == canon_faces(Mesh.from_state(state)), f"{label}: not restored"
+                        continue
+                    n = knife_resolve.close_loop_at_vertex(alt, face, rot[0], pts, outside)
+                    _assert_same(ref, alt, label)
+                    assert _pos_list(alt, n[0]) == _pos_list(ref, r[0]), label
+                    assert _face_cycle(alt, n[1]) == _face_cycle(ref, r[1]), label
+                    assert sorted(_face_cycle(alt, f) for f in n[2]) == sorted(_face_cycle(ref, f) for f in r[2]), label
+                    assert _edge_pos(alt, n[3]) == _edge_pos(ref, r[3]), label
+                    compared += 1
+    assert compared >= len(faces) * 8
