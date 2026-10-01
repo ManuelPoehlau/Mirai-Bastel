@@ -49,8 +49,10 @@ Scope (binding, see the handoffs):
   `PROVISIONAL` interaction): `C` with an empty selection starts a session
   — hover previews the prospective point, LMB click or press-slide-release
   (the pressed edge stays locked) cuts, a line runs from the start to the
-  prospective point; Enter or a click outside the mesh commits, Esc
-  cancels, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z undo / redo the last cut. The
+  prospective point; Enter or a click outside the mesh commits and the
+  Knife stays active for the next cut (WP-KNIFE-01 UX1), Esc cancels and
+  leaves the Knife, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z undo / redo the last
+  cut (right after a commit, before the next click: the commit). The
   press and drag handlers pass the cursor position through for this.
   Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`

@@ -560,10 +560,18 @@ class Application:
     # (`knife_pick` face hit, the session's own interior points snap); the
     # status line names the S3 refusals and closes, and at commit what the
     # resolver joined or dropped (`_knife_notes`).
+    #
+    # WP-KNIFE-01 UX1 (Artist decisions Manu 2026-10-01, PROVISIONAL): a
+    # commit does not end the Knife - a fresh session begins on the result
+    # (`_knife_start`); only Esc leaves. While that re-armed session is
+    # untouched, Ctrl+Z / Ctrl+Y undo / redo the last commit through the
+    # global History and the session is rebuilt (`_knife_global_step`); in
+    # every other state the in-session rule (AD-017) holds unchanged.
 
     @property
     def knife_active(self) -> bool:
-        """A Knife session is running (`C` with an empty selection)."""
+        """A Knife session is running (`C` with an empty selection; stays
+        running after a commit, UX1 - Esc leaves)."""
         return self._knife is not None
 
     @property
@@ -584,7 +592,8 @@ class Application:
         self._knife_start(rearmed=False)
         self._set_status(
             "Knife: click on vertices, edges or inside faces to cut - Enter or click"
-            " outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo cut"
+            " outside = commit (the Knife stays active), Esc = cancel and leave,"
+            " Ctrl+Z / Ctrl+Y = undo / redo cut (right after a commit: the commit)"
         )
         return True
 

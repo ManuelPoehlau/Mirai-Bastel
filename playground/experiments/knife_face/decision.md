@@ -1484,3 +1484,76 @@ and the verdict are filled.
 
 AD-017 record: addendum 2026-10-01 "UX1" (append-only). Build record, evidence and open points: below, after the build.
 
+### UX1 — build (2026-10-01, headless, not Artist-tested)
+
+**What changed** (commit "UX1: the Knife stays active after a commit …"; `src/mirai/application.py`, knife section only,
+~60 lines; `KnifeTool` unchanged — `begin(selection=…)` takes the residue selection as it is, so the §7 STOP did not apply):
+
+- `_knife_start(rearmed)` — the setup `_knife_begin` had, shared: a fresh `KnifeTool` session on the current mesh and
+  selection, preview and overlay refreshed at the cursor. `_knife_end(commit=True)` calls it after the commit's teardown
+  (pick cache invalidated, overlay cleared, selection history recorded as before), so the next commit records its own
+  selection-history entry with the residue as its "before".
+- `_knife_history_step`: on a re-armed, untouched session (`_knife_rearmed` and not `_knife_touched`) → `_knife_global_step`:
+  if the History can undo / redo, the session is dropped, `_apply_undo_redo` runs (the same path as global Undo / Redo, the
+  selection mirror included), pick cache and viewport are refreshed, and a fresh re-armed session begins on the restored
+  mesh; otherwise "Knife: nothing to undo / redo", the session stays. Otherwise the in-session step as before. An accepted
+  click and a successful in-session undo / redo set "touched"; every (re)arm resets it. The `dispatch_command` path
+  (Undo / Redo during a session) goes through the same method.
+- Status (PROVISIONAL wording): after a commit "Knife committed (…)[; notes]; next cut ready - Esc leaves the Knife"; an
+  empty commit "Knife: no cuts made, nothing committed[ (notes)] - Knife still active, Esc leaves" (also after a commit-check
+  rollback); a global step "Knife: last commit undone - next cut ready, Esc leaves the Knife" / "Knife: commit redone - …";
+  session hint "… Enter or click outside = commit (the Knife stays active), Esc = cancel and leave, Ctrl+Z / Ctrl+Y = undo /
+  redo cut (right after a commit: the commit)". `src/main.py`'s usage docstring says the same.
+
+**Evidence `[TEST]`:** `tests/test_application_knife_rearm.py` (27, written first with 26 strict xfails, all removed by the
+build): Enter and click outside re-arm with the residue selection, render data and an empty path
+(`test_commit_keeps_the_knife_active_with_a_fresh_session`); the re-armed session cuts again and records its own selection
+history; empty and start-point-only commits keep the Knife and change nothing; Esc leaves a re-armed session with or without
+points, mesh / selection / History as before that session; `Ctrl+Z` / `Ctrl+Y` right after a commit undo / redo it, mesh and
+selection exact, the Knife active, and the session on the restored mesh cuts again
+(`test_ctrl_z_right_after_a_commit_undoes_it_and_ctrl_y_redoes_it_knife_stays`); two commits undone one by one and redone;
+after a click `Ctrl+Z` is in-session only and a second one says "nothing to undo" (no fall-through, A5); in-session redo
+stays in-session; nothing to undo keeps the session; a session begun with `C` keeps the in-session rule; the session gate in
+a re-armed session (11 keys); after every step the preview target exists in the mesh and equals a fresh pick at the cursor,
+and the cached pick equals an uncached one on a 9 × 7 screen grid (with and without a cursor); the head OBJ: commit, re-arm,
+`Ctrl+Z`, `Ctrl+Y` round trip. `Application` has no grid scene — cube and head instead.
+
+**Changed old tests** (reason for each: "UX1: decided behaviour change (Manu 2026-10-01)"):
+`test_application_knife.py::test_commit_pushes_exactly_one_entry_and_selects_the_path[enter|click_outside]` (Knife active
+after the commit, status tail), `::test_commit_without_cuts_pushes_nothing` (active after an empty commit, A3; status tail),
+`::test_vertex_adjacent_to_start_is_previewed_and_a_skip` (status tail); `test_application_knife_faces.py::
+test_a_bent_cut_through_a_face_is_cut_at_enter_only`, `::test_the_last_click_inside_a_face_is_joined_at_enter_and_the_status_says_so`,
+`::test_a_lone_interior_click_commits_nothing_and_says_why` (status tails);
+`test_application_picking_cache.py::test_knife_cut_makes_the_new_vertex_immediately_hoverable` — outside the handoff's file
+list, but the same kind of test ("inactive after commit"): the new vertex is now hovered by the re-armed Knife's cached pick
+instead of the selection hover after the session ended; same purpose (the cache is fresh right after the commit), not left
+with `Esc` first because that would invalidate the cache itself.
+
+**Unchanged (checked):** `tests` (without `test_extrude_tool`, `test_pyglet_input`, xvfb) 1408 → 1435 passed (+27 new);
+`tests/run_core_suite.py` PASS; `playground/tests` 1090 passed (Q5-vs-Production differential and the 496-session fuzz
+unchanged — the resolver and `KnifeTool` are untouched); integrity probe default / `--production` / `--cases` unchanged.
+
+### UX1 — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| UX1-a | **The undo walk does not stop at the Knife's own commits.** While the re-armed session stays untouched, every `Ctrl+Z` undoes the next History entry — after the session's commits also whatever came before the Knife (a Split, a Move …); the global History is one stack and the rule (decision 2, A5) names no limit. Not limited here. | `test_two_commits_then_two_ctrl_z_undo_them_one_by_one` (the in-range part) |
+| UX1-b | **A session begun with `C` keeps the in-session rule** — decision 2 speaks of "right after a commit"; a fresh `C` session is untouched too, but its `Ctrl+Z` stays "nothing to undo" (AD-017). Interpretation, not decided. | `test_a_session_begun_with_c_keeps_the_in_session_rule` |
+| UX1-c | **An empty commit keeps "right after a commit" as it was** (not named by A3/A5): after a real commit the next empty `Enter` still lets `Ctrl+Z` undo that commit; after a `C` start it stays in-session. | — |
+| UX1-d | From the handoff: whether a *touched* empty session should also fall through to the global History (A5, deliberately not done). | `test_after_a_click_ctrl_z_is_in_session_only_and_never_falls_through` |
+| UX1-e | Status texts above: PROVISIONAL wording. `src/main.py`'s docstring still describes the removed press-slide-release gesture (B7.1) — older text, not touched beyond the commit sentence. | — |
+
+**Prepared practical test (Manu, ≤ 5 minutes, `python3 src/main.py`, cube and head):** UX1 stays **PROVISIONAL** until these
+slots and the verdict are filled; remarks on A1–A5 (and UX1-a…c) welcome.
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | `C` with an empty selection, cut (two clicks), `Enter`; cut again, click **outside the mesh** | committed, **the Knife is still active** (status "next cut ready - Esc leaves the Knife") both times | |
+| 2 | Right after a commit `Ctrl+Z` once, then `Ctrl+Y` | the last cut is gone, the Knife still active; `Ctrl+Y` brings it back | |
+| 3 | One click, then `Ctrl+Z` | only the click is taken back (the commit stays) | |
+| 4 | `Enter` on an empty session; then `Esc` | nothing changes, the tool stays ("Knife still active, Esc leaves"); `Esc` leaves the Knife | |
+| 5 | Cut twice with `Enter` in between, then `Ctrl+Z` twice | both cuts undone one by one, the Knife active throughout | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |
