@@ -1,5 +1,9 @@
 # Knife Face Cut Lab — Artist Verdict
 
+**Resolver home (2026-10-01, WP-KNIFE-01 S1):** the commit-time resolver of D and Q5 lives in
+`src/mirai/topology/knife_resolve.py` (Knife-owned; faces only through `Mesh.split_face`), the face geometry it uses in
+`src/mirai/topology/face_geometry.py`; `engine.py` / `engine_q5.py` keep the click-time Lab part and call it. This file
+keeps the Lab / Artist record — see "One Knife S1 — the resolver moves to `src` (2026-10-01)" at the end.
 **Status:** Discovery — played, verdicts recorded 2026-09-29 — see the Claude Code handoff (not committed) and
 `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` (archived first impression, Q1–Q5, §7 Lab
 options, §8 prepared Artist test — this file copies and updates that section for the two variants
@@ -1036,3 +1040,51 @@ prepared one, which does not matter for this check).* **Result:** the headless f
 machine — a plain, successful cut darkens the faces next to its ends, and Undo restores them. The cause stays where it was
 found (`src/viewport/derived.py`, first-triangle face normal); nothing in `src/` was changed. The Newell-normal fix above was
 waiting for an explicit decision — *given and built 2026-09-30, see "Fixed 2026-09-30" above.*
+
+---
+
+## One Knife S1 — the resolver moves to `src` (2026-10-01)
+
+**Decision basis:** M1 + K1 (Manu, 2026-10-01, "K1 zuerst"); AD-017 addendum 2026-10-01 "One Knife S1"; WP spec draft
+`docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md` §6.3. Production refactoring — **no Artist-visible change
+intended**, no verdict slot filled by it; nothing below is a decision.
+
+**Moved (not copied):** run walking, intersection vertices, loops at a single point, closed shapes, tail join, seeds,
+merged repeats, dropped-run rollback and the commit check → `knife_resolve.py` (`resolve_collected` = D,
+`resolve_cross_face` = Q5, `check_commit`); `FaceFrame`, `face_problem`, `segment_in_face`, winding → `face_geometry.py`
+(F2's `chord_validity` now uses the same frame). The constructions are built from `Mesh.split_face` (closed shape, loop at
+a point: two calls each, the host chosen by winding as in WP-KNIFE-00). Every path point carries an explicit point id
+(`"pid"`, given at click time); nothing is keyed by `id()` any more. **Stays here:** picking (`knife_face_pick`), the
+planner, snap, hover, preview, path / chains / undo / redo, `accepts` / `click`, the HUD text (worded from the resolver's
+`KnifeResolution`, same strings).
+
+**Evidence `[TEST]`:** golden net `playground/tests/test_knife_resolver_golden.py` (recorded before the move: 345 seeded
+runs on grid / cube / head × B / D / Q5 plus Manu's recorded sequences — cube bow-tie `V:13 E:21 F:10`, tail join
+`V:14 E:22 F:10` — compared position-canonically) is **byte-identical** after the move; the Lab suites pass unchanged in
+meaning (import paths and monkeypatch targets moved; one assertion now ignores the new `"pid"` key); the B2b stand-ins are
+frozen as `playground/tests/knife_b2b_oracle.py` and the new constructions equal them on grid, cube and head
+(`test_split_face_equivalence.py`). `[PROBE]` integrity fuzz Q5 / D still 0/400 failures, 0 rollbacks, 0 leftover splits;
+head fuzz (D + Q5, 230 sessions) 0 failures before and after.
+
+### One Knife S1 — open points (recorded, not decided)
+
+| # | Observation | Pinned by / numbers |
+|---|---|---|
+| S1-a | **Two simplicity tests.** `face_geometry.polygon_is_simple` (Knife: a crossing counts when both ends lie more than `eps` off the other line; a corner touching = within `eps` of the line *and* the bounding box) and `chord_validity._is_simple` (F2: sign-change crossing; touching = within `eps` *distance*). Same frame, same `eps`; they can differ only inside the `eps` band. Kept both (handoff Task 3.2) until a visible result is shown identical. | `tests/test_chord_validity.py` (F2), the Lab suites + golden net (Knife). F2's predicate itself is unchanged (200 000 random polygons, 0 differences). |
+| S1-b | **Boundary start of two-call faces.** With `split_face` every new face starts its boundary list at an end of its call's path, so the inner face / the wing from call 2 (closed shape) and the loop face / one ring piece (loop at a point) start at another vertex than the Lab's 3-way split did — provably unavoidable with two calls. Same faces, same winding; but the render triangulation (fan / ear clipping from the first vertex, `viewport.derived.triangulate_face`) of such a quad can take the other diagonal: identical in flat display, the smooth-shading gradient *inside that face* can differ. On Manu's cube bow-tie and tail join: one quad each. Options (not decided): accept; a triangulation that does not depend on the boundary start (viewport); a primitive that keeps the start (Core). | `knife_integrity_probe.py --shading` P4: dark face-VBO corners 17/54 → 19/54 (`playground/tests/golden/probe_baseline.txt`); all other boundaries keep their start (golden random runs 0/345 differ with the start kept). |
+| S1-c | **`split_face(k = 0)` refuses a chord that already borders another face**, where `connect_vertices` went on (the commit check would then have rolled the whole session back; now that run would be dropped, the rest kept). | Never reached: 0 of ~3 000 straight cuts in the golden net + integrity fuzz. |
+| S1-d | Error text: a `MeshError` raised inside `split_face` (German) could appear after "closed shape rejected:" where the Lab named a "degenerate" face — only for a face whose boundary repeats a vertex (no tool builds one). | — |
+| S1-e | The integrity probe's fuzz (and the Lab's own random tests) draw clicks by id order (`rnd.choice(mesh.all_face_ids())`); id values legitimately change with `split_face`, so their later sessions differ (verdicts unchanged). The golden net draws by position. | `golden/probe_baseline.txt` vs. today's `--variants` / default output. |
+| S1-f | `one_knife_parity_probe.py` CORE section does not instrument `split_face` — it now counts the `add_face` calls inside it. | Probe output, CORE section. |
+| S1-g | Planner and picking still import private `src` functions (`_edge_point_occluded`, `_point_occluded`, `_vertex_occluded`, `_edge_t_3d`); `_shares_nonadjacent_face` is still a Lab copy of `KnifeTool`'s private helper — known smells, slices S3 / S4. | — |
+
+**Prepared practical test (Manu, 3 minutes, Playground, `knife_face` Q5, default cube):** replay the recorded sequences.
+Expected: exactly as before — same counts, same HUD messages, same Undo / Redo. Watch S1-b in `Shaded`: inside one quad of the
+loops the gradient may run along the other diagonal.
+
+| Check | Expected | Seen (Manu) |
+|---|---|---|
+| bow-tie: top/right edge → three clicks inside the top (third segment crossing the first) → the edge point again → `Enter` | `V:13 E:21 F:10`, "1/1 cut(s) applied; 2 loop(s) closed at a single point — own face, 1 bridge each", bridges to outside corners | |
+| tail join: top/right edge → two top clicks (segment 3 crosses segment 1, on over the top/front edge) → a click inside the front → `Enter` | `V:14 E:22 F:10`, "2/2 cut(s) applied; 1 last point(s) inside a face joined to the nearest corner; 1 loop(s) …" | |
+| closed shape, then continue: four clicks inside, click the first again (closes, no commit), one more click on an edge, `Enter`; then `Ctrl+Z` / `Ctrl+Y` | as before; Undo removes the whole session, Redo brings it back | |
+
