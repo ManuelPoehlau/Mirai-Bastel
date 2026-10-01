@@ -206,3 +206,8 @@ Assumptions stated there and not contradicted: click outside the mesh keeps comm
 on edge hover stays. Unchanged: one History entry per session, in-session Undo/Redo behaviour (#6), Esc = discard,
 residue = the session's cut edges selected + Edge mode, cross-face segments refused (planner = slice S4). Work package:
 WP-KNIFE-01 S2; record and open points: `playground/experiments/knife_face/decision.md`, "One Knife S2".
+
+2026-10-01 S2 KEEP (Artist): Manu, after S2 — *"macht für mich als User keinen Unterschied, ob der echte Schnitt erst nach
+Enter passiert — ob die Linie eine Vorschau oder der echte Schnitt ist, ändert weder visuell noch den Workflow."* The virtual
+path (M1) stays; real cuts per click (M2) remain only the documented fallback. A verdict on S2, nothing beyond it. Next slice:
+WP-KNIFE-01 S3 (face points inside one face), PROVISIONAL until its own verdict.

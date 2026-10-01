@@ -157,10 +157,12 @@ def test_r5_chord_out_of_a_concave_face_is_refused_and_clean():
     _nothing(run("L", R5_CLICKS), "+-", faces=untouched_hash("L"))
 
 
+# Re-recorded 2026-10-01 (S3 Task 1) from the pre-S2 real-cut tool (commit d323be6) with the 9-then-6
+# digit rounding of `knife_parity_driver._r` — identical on Python 3.11, 3.12 and 3.13 and for today's tool.
 HEAD_EXPECTED = {
-    (3, 0): "04946028ec325e39", (3, 18): "6770b2261f5cc845", (3, 36): "3130fce8deb7796e",
-    (6, 0): "8260b7ac283d2886", (6, 18): "d9c6776868dbf0f2", (6, 36): "d80bc02dbd9711d9",
-    (10, 0): "0ee218e8b9a4430a", (10, 18): "c8565289f003bd88", (10, 36): "279b7cf89bdd40b4",
+    (3, 0): "04946028ec325e39", (3, 18): "765f37a88dc25cc3", (3, 36): "a6e690c26178e208",
+    (6, 0): "22cb638d5a30ded8", (6, 18): "00fb87512a22690c", (6, 36): "987db72a4e373751",
+    (10, 0): "20902f03d87b1909", (10, 18): "52e38320e61f579b", (10, 36): "6d5661a2b70f5e38",
 }
 HEAD_VEF = {3: "329/653/326", 6: "332/659/329", 10: "336/667/333"}
 

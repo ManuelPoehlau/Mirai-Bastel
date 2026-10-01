@@ -143,7 +143,11 @@ def target(tool, mesh, spec) -> dict:
 # -- signatures (ids never compared) ---------------------------------------------------------
 
 def _r(p) -> tuple:
-    return tuple(round(c, 6) + 0.0 for c in p)
+    """Positions rounded to 6 digits, through 9 digits first. Float noise of one ulp must not flip a
+    digit: the head OBJ has 6 decimals, so an edge midpoint lies exactly half-way between two 6-digit
+    values, and a direct `round(c, 6)` went either way with how the clicked `t` was summed (Python 3.12
+    made `sum()` of floats compensated — the P15 head rings hashed differently on 3.12+)."""
+    return tuple(round(round(c, 9), 6) + 0.0 for c in p)
 
 
 def canon_faces(mesh) -> list:

@@ -1180,4 +1180,20 @@ the verdict are filled.
 
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
-| | |
+| **KEEP** (Manu, 2026-10-01) | *"macht für mich als User keinen Unterschied, ob der echte Schnitt erst nach Enter passiert — ob die Linie eine Vorschau oder der echte Schnitt ist, ändert weder visuell noch den Workflow."* |
+
+*Recorded 2026-10-01 (WP-KNIFE-01 S3 handoff, §0).* The verdict is on S2 as a whole; no per-row "Seen" detail was given, so
+the rows above stay as they are. What it settles: M1 / the virtual path (the cut appears at `Enter`) is accepted in practice;
+M2 (real cuts per click) stays only as the documented fallback. **S2-e is answered by this statement:** what the session
+shows (points and the segments to cut; the mesh changes at `Enter`) makes no visual or workflow difference to the Artist —
+no change asked. The other S2 open points (S2-a…d, f…j) stay open; the verdict does not decide them.
+
+**Test robustness (S3 Task 1, 2026-10-01, tests only).** `tests/test_knife_parity.py::test_p15_head_edge_rings[6-0|6-18|10-0|10-18]`
+failed in another environment, also on the commit before S2. Cause: Python 3.12 made `sum()` of floats compensated, so the
+driver's computed `t` of a clicked edge point differed by one ulp; the head OBJ has 6 decimals, so an edge midpoint sits
+exactly half-way between two 6-digit values and the driver's `round(c, 6)` went either way. Reproduced here: those four rows
+fail on Python 3.12 / 3.13, pass on 3.11. Fix: `knife_parity_driver._r` rounds to 9 digits first, then to 6 (float noise
+cannot flip a digit any more). Grid / cube / L literals unchanged; the nine head literals re-recorded from the pre-S2
+real-cut tool (`d323be6`) with the new rounding — identical on 3.11 / 3.12 / 3.13 and equal to today's tool. Before: 3.11
+39/39, 3.12 35/39; after: 39/39 on both. The golden driver (`playground/tests/knife_golden_driver.py`) rounds to 9 digits
+and is identical on 3.12 — not changed. No production change.
