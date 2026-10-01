@@ -1108,3 +1108,76 @@ neighbour vertex, or a second point on the same edge — is **accepted, cuts not
 a session that cuts nothing leaves the mesh and History untouched (P11/P14: no lone vertex after one edge click + `Enter`);
 a click outside the mesh keeps committing (AD-017 #8); the point marker at `t` while hovering an edge stays (G1).
 
+
+**What changed (build, 2026-10-01; commits "Tests+docs: fix the red B-rollback test …" → "One Knife S2: own-point snap …"):**
+
+- `src/mirai/topology/knife.py` — `KnifeTool` keeps a **virtual path**: points (vertex, or edge point with the click-time
+  `t`), each with an explicit `pid`, plus `{"kind": "break", "reason": "edge"}` records before a skipped point. The mesh is
+  untouched until commit; commit runs `knife_resolve.resolve_cross_face` (the Q5 entry — the only one that understands skip
+  breaks and repeated points; D's `resolve_collected` knows neither), then `check_commit`, then pushes **one**
+  `MeshStateCommand` (`"Knife"`) if anything changed; residue = the cut edges, Edge mode (unchanged). Segment rule: shared
+  face required; **cut** when the chord is F2-valid in a shared face (`chord_valid_in_polygon`, edge points inserted where
+  `split_edge` puts them); **skip** when it runs along an existing edge (AQ1); refused otherwise (cross-face → S4). Same
+  point twice in a row refused; a click on an earlier own point reuses its record. In-session Undo/Redo pop/restore one
+  click's records; Cancel drops the path. Gone: `_KnifeStep` mesh snapshots, per-click `export_state`, per-click pick-cache
+  invalidation, `KnifeTool.start` (now `last_point`, a path record).
+- `knife_preview.py` — render data from the path: placed points (once each), the segments commit will cut, start = last
+  point, prospective point (vertex / point at `t` / own point), hovered edge, line preview. `KnifeRenderData` gained
+  `placed_points`; the overlay layers and GL path are the existing ones.
+- `knife_pick.py` — `snap_own_point`: within the vertex pick radius (14 px) of one of the session's own edge points the
+  target becomes `{"kind": "point", "pid"}` (nearest wins against a mesh vertex; occlusion like the picks).
+- `application.py` — render data from `KnifeTool.path`, own-point snap after `knife_pick`, placed points in the active
+  layer, status texts (below), no per-click topology / pick-cache invalidation (invalidated on commit as before). Click
+  outside still commits; `Enter` / `Esc` / in-session Undo-Redo routing unchanged.
+- `playground/window.py` (`knife` family, B7 shares the tool) — reads `hover()["start"]` as the last path record, draws
+  the placed points and cut segments from the same render data, applies the own-point snap. No other change.
+
+**Evidence `[TEST]` / `[PROBE]`:**
+
+- `tests/test_knife_parity.py` (written first, green on the real-cut tool): 26 rows unchanged after S2 (P01–P07, P10
+  acceptance, P12, P13, S1–S3, S5, R5, R3 clean, 9 head edge rings P15 — position-canonical face hashes recorded before
+  S2); the 10 rows marked expected-to-change (strict xfail) flipped: P08 / P08b / P09 / P09b (AQ1), P10 / P11 / P14
+  commit nothing, S4 no History entry, R3 skip, G3 mesh unchanged during the session. Seeded random vertex/edge sessions
+  (grid 60 runs, cube 60, head 12 — 259 sessions): `accepts() == click()` on every click, the mesh unchanged during every
+  session, at most one History entry, Undo/Redo exact, geometry clean, 0 rollbacks, 0 dropped runs.
+- `one_knife_parity_probe.py --parity --session --defects`, Production rows before → after: P08 `+-` → `++`; P09 `+-`,
+  V26/E41, History 1 → `++`, V25/E40, History 0; P10 `+-`, History 1 (lone split) → `+-`, History 0; P11 / P14 History 1 →
+  0; S4 History 1 (empty entry) → 0; S5 "mesh mutated during the session" True → False; R3 (HD2) `+-`, History 1 → `++`,
+  History 0; R5 L1 V29/E45 → V28/E44 (no lone split); everything else unchanged and equal to Q5.
+  `knife_integrity_probe.py --production`: HD2 `KnifeTool 1/2 → 2/2 clean`, L1 `1/2 clean` unchanged.
+- Golden net `playground/tests/test_knife_resolver_golden.py` unchanged and green. Suites: `tests` 1034 → 1080 passed
+  (GL via EGL), `playground/tests` (xvfb) 1038 + 1 red → 1042 passed.
+
+### One Knife S2 — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| S2-a | **A straight run of boundary edges is a skip.** R3 (from (1,1) along the straight line through the straight-angle vertex (1.5,1) to (1.75,1)) is accepted as a skip, nothing cut — Q5's rule (`segment_in_face` = "boundary"), taken as part of "AQ1 = Q5 behaviour". AQ1 itself named only the neighbour vertex and a second point on the same edge; before S2 F2 refused this click. | `test_r3_chord_along_a_straight_run_of_boundary_edges_is_a_skip`, `test_chord_validity.py` R3 tests |
+| S2-b | **Retracing the session's own cut is a skip.** A → B then a click on A again: accepted, nothing cut, the chain continues from A (Q5: "cutting back the same way does nothing" + earlier point). Before S2: refused (A and B were neighbours along the new edge), the chain stayed at B. E.g. grid (1,1) → (2,2) → (1,1) → (2,0): before `++--`, after `++++`, two diagonals. | `KnifeTool._link` (session cut retraced) |
+| S2-c | **A segment may cross an earlier cut of the same session inside one face** — commit makes one intersection vertex (Q5, Artist decision 2026-09-29 "crossing cuts like Blender"). Before S2 the click was refused unless the two points shared a piece of the already-cut face. E.g. one quad: bottom → top midpoint, then left → right midpoint: before `+++-`, after `++++` with a vertex at the centre. Not a parity row. | — (resolver behaviour, `playground/tests` Q5 suites) |
+| S2-d | **A session's own cut line is no target.** Before S2 the cut was a real edge that a later click could split; now that spot is a face target → refused (needs face-interior points, S3, or the planner, S4). | `test_face_target_has_no_preview_and_click_does_nothing` (face case) |
+| S2-e | **What the session shows** (G3, the M1 trade-off): placed points and the segments commit will cut in the selected style, the hovered target / edge / line in the hover style; the start is not drawn differently from the other placed points (it is where the line preview starts); a skip along an edge is not drawn. The mesh itself changes at `Enter` / click outside. | `test_render_data_draws_points_once_cut_segments_only_and_own_point_targets`, `test_gl_knife_overlay.py` |
+| S2-f | **Status line texts** (`PROVISIONAL`, console): new "Knife: along an existing edge - nothing to cut (N path segments)", "Knife: cut (N path segment(s))" (was "N path edges" — nothing is an edge before commit), "Knife committed (…) - K of M cuts dropped" when a run was dropped at commit, "Knife: result taken back (reason), nothing committed" after a commit-check rollback; the others unchanged. | `test_status_line_names_skips_and_cuts` |
+| S2-g | **`hover()` stays looser than `accepts()`** for the Playground `knife` family (F2 addendum); its old exception "edge incident to the start" is gone because AQ1 accepts that click. `Application` previews through `accepts()`. The Playground family now shows the path overlay instead of a cut mesh (G3) and uses the own-point snap. | `test_ad017_knife_keys.py` window tests |
+| S2-h | `knife_pick.snap_own_point` imports the private `picking._edge_point_occluded` — same smell as S1-g (planner); public picking helpers are slice S4. | — |
+| S2-i | **Preview ≠ result at `Enter`** (discovery §6.4): a run valid while clicking can still be dropped at commit (status "K of M cuts dropped"). Not seen in 259 random vertex/edge sessions. | seeded random test |
+| S2-j | Handoff §9, open: whether the status line should show the pending count / what the Artist expects there; whether in-session feedback should show the *predicted* cut result (only after this verdict); P10 (cross-face edge → edge) stays refused until S4 — the first planner slice may start from Q5's `plan()`. | — |
+
+**Rollback:** S2 is one revertable commit series (`git revert` of the five S2 commits restores the real-cut Knife); M2
+(real cuts) is the documented fallback if "the cut appears at `Enter`" feels wrong.
+
+**Prepared practical test (Manu, 5 minutes, `src/main.py`, head scene):** S2 stays **PROVISIONAL** until these slots and
+the verdict are filled.
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | Vertex → vertex diagonal, `Enter` | the diagonal cut appears at `Enter`; one Undo step | |
+| 2 | Edge → edge → edge across a strip of quads, `Enter` | while clicking: points and lines, the line follows the cursor; the mesh unchanged; at `Enter` the cut appears, the cut edges selected (Edge mode) | |
+| 3 | A vertex, then its neighbour **along an edge**, then a vertex across the next quad, `Enter` | the second click is accepted (status "along an existing edge - nothing to cut"), the cut runs from the neighbour (AQ1) | |
+| 4 | One edge click, `Enter` | nothing happens — no stray vertex on the edge, no Undo step ("no cuts made") | |
+| 5 | Four clicks, Undo, Redo, Undo ×4, `Enter`; then a new session, a few clicks, `Esc`; then a few clicks and a click outside the mesh | nothing committed after Undo ×4; `Esc` cancels; the click outside commits | |
+| 6 | Hover over an edge (before and after the first click) | a point marker sits at the cut position on the edge | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |
