@@ -36,6 +36,7 @@ Symmetrie-*Logik* (Correspondence, State) lebt in `mirai.symmetry`.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from .ids import VertexId, EdgeId, FaceId, IdAllocator
@@ -473,6 +474,113 @@ class Mesh:
         new_edge = self._edge_lookup[frozenset((v_a, v_b))]
 
         return new_edge, new_face_1, new_face_2
+
+    def split_face(
+        self,
+        face_id: FaceId,
+        v_a: VertexId,
+        v_b: VertexId,
+        positions: Sequence[Position] = (),
+    ) -> tuple[list[VertexId], list[EdgeId], FaceId, FaceId]:
+        """Teilt eine Face entlang eines Pfads v_a -> positions... -> v_b
+        (AD-017 B2c / K1, Addendum 2026-10-01 in
+        AD-017_FINAL_DECISIONS_2026-09-22.md - dort der akzeptierte Vertrag).
+
+        `positions` sind die k inneren Pfadpunkte in Reihenfolge v_a -> v_b;
+        für jeden entsteht ein neuer Vertex an genau dieser Position. Keine
+        Geometrieprüfung (wie connect_vertices): ob der Pfad in der Face liegt,
+        sich kreuzt oder die Teil-Faces flippt, ist Sache des Aufrufers.
+
+        Vorbedingungen (jede Verletzung -> MeshError, Mesh inkl. Allocator-
+        Zählerständen unverändert - alles wird vor der ersten Mutation geprüft):
+        - face_id gültig, Boundary ohne doppelte Vertices.
+        - v_a != v_b, beide auf der Boundary von face_id.
+        - beide entstehenden Faces haben >= 3 Vertices. Bei k = 0 heißt das wie
+          bei connect_vertices: benachbarte Enden werden abgelehnt; ab k >= 1
+          sind benachbarte Enden erlaubt (Notch).
+        - jede Position ist ein 3-Tupel.
+        - k = 0 und v_a-v_b ist bereits Edge einer anderen Face: abgelehnt
+          (das Ergebnis hätte eine Edge mit mehr als zwei Faces). Das ist der
+          einzige Fall, in dem split_face(k = 0) ablehnt, wo connect_vertices
+          weiterlaufen würde; in allen anderen Fällen ist positions == ()
+          bit-identisch zu connect_vertices (gleiche Faces, gleiche IDs).
+
+        ID-Kontinuität (AD-001):
+        - face_id wird ungültig.
+        - k neue VertexIds, in Pfadreihenfolge v_a -> v_b.
+        - k + 1 neue EdgeIds, in Pfadreihenfolge v_a -> v_b. Einzige Ausnahme
+          (wie connect_vertices): bei k = 0 wird eine bereits bestehende freie
+          Edge v_a-v_b wiederverwendet statt neu erzeugt.
+        - zwei neue FaceIds, face_1 vor face_2. Sei s das Ende mit dem
+          kleineren Index in face_vertices(face_id), e das andere:
+          face_1 = Boundary s .. e vorwärts, zurück über den Pfad e -> s;
+          face_2 = Boundary e .. s vorwärts (über das Listenende), weiter über
+          den Pfad s -> e. Für v_a vor v_b ist face_1 also die Seite, die
+          v_a -> v_b in Boundary-Reihenfolge läuft; für v_b vor v_a dieselbe
+          Vertauschung wie in connect_vertices. Damit hängen die beiden Faces
+          (und ihre Reihenfolge) nicht von der Argumentreihenfolge ab, nur die
+          Vertex-/Edge-IDs des Pfads folgen v_a -> v_b.
+        - alle Boundary-Vertices und alle Boundary-Edges behalten ihre IDs;
+          es wird keine Edge entfernt.
+        - Winding: beide Faces laufen wie die Parent-Face.
+
+        Provenance-Hook (ARCH-02), kein Register: Eingabe + Rückgabe enthalten
+        Parent-Face, die neuen Vertices mit ihren Erzeugungspositionen, die
+        Pfad-Edges und beide Seiten. Eine spätere Provenance-Schicht kann
+        daraus lesen: jeder neue Vertex ist ein Innenpunkt von face_id (nicht
+        Teil einer Edge), jede Pfad-Edge trennt face_1 von face_2, und jede
+        Boundary-Edge von face_id gehört danach zu genau einer der beiden.
+
+        Rückgabe: (neue_vertex_ids, neue_edge_ids, face_1, face_2)
+        """
+        face = self._faces.get(face_id)
+        if face is None:
+            raise MeshError(f"split_face: unbekannte Face {face_id!r}")
+        boundary = face.boundary
+        if len(set(boundary)) != len(boundary):
+            raise MeshError("split_face: Face-Boundary enthält doppelte Vertices.")
+        if v_a == v_b:
+            raise MeshError("split_face benötigt zwei unterschiedliche Vertices.")
+        if v_a not in boundary or v_b not in boundary:
+            raise MeshError("Beide Vertices müssen auf der Face-Boundary liegen.")
+        try:
+            positions = [tuple(p) for p in positions]
+        except TypeError:
+            raise MeshError("split_face: positions muss eine Folge von 3-Tupeln sein.") from None
+        if any(len(p) != 3 for p in positions):
+            raise MeshError("split_face: jede Position braucht genau 3 Koordinaten.")
+        k = len(positions)
+
+        i_a = boundary.index(v_a)
+        i_b = boundary.index(v_b)
+        a_first = i_a < i_b
+        i_s, i_e = (i_a, i_b) if a_first else (i_b, i_a)
+        arc_1 = boundary[i_s:i_e + 1]
+        arc_2 = boundary[i_e:] + boundary[:i_s + 1]
+        if len(arc_1) + k < 3 or len(arc_2) + k < 3:
+            raise MeshError("split_face würde eine degenerierte Face erzeugen.")
+        if k == 0:
+            existing = self._edge_lookup.get(frozenset((v_a, v_b)))
+            if existing is not None and self._edges[existing].faces:
+                raise MeshError("split_face: v_a-v_b ist bereits Edge einer anderen Face.")
+
+        self._remove_face_edges_only(face_id)
+        del self._faces[face_id]
+
+        new_vertices = [self.add_vertex(p) for p in positions]
+        chain = [v_a, *new_vertices, v_b]
+        # Endpunkte jeder Pfad-Edge so, wie face_1 sie durchläuft (e -> s) -
+        # bei k = 0 genau die Edge, die connect_vertices über add_face(loop_1)
+        # anlegen würde. Die Edge-Richtung selbst ist nicht semantisch.
+        new_edges = [
+            self._get_or_create_edge(w, u) if a_first else self._get_or_create_edge(u, w)
+            for u, w in zip(chain, chain[1:])
+        ]
+        interior_s_to_e = new_vertices if a_first else new_vertices[::-1]
+
+        face_1 = self.add_face(arc_1 + interior_s_to_e[::-1])
+        face_2 = self.add_face(arc_2 + interior_s_to_e)
+        return new_vertices, new_edges, face_1, face_2
 
     # ------------------------------------------------------------------
     # Serialisierung (§8, §12) - bewusst hier statt in serialization.py,

@@ -389,6 +389,299 @@ def test_ad001_serialization_roundtrip() -> None:
           int(new_v) not in (int(v0), int(v1), int(v2), int(v3)))
 
 
+# ----------------------------------------------------------------------
+# AD-017 K1 (2026-10-01): Mesh.split_face - contract tests. The accepted
+# contract is the AD-017_FINAL_DECISIONS addendum 2026-10-01.
+# ----------------------------------------------------------------------
+
+def _build_polygon(n: int):
+    """Einzelnes konvexes, CCW gewundenes n-Gon in der XY-Ebene."""
+    import math
+
+    mesh = Mesh()
+    verts = [
+        mesh.add_vertex((math.cos(2 * math.pi * i / n), math.sin(2 * math.pi * i / n), 0.0))
+        for i in range(n)
+    ]
+    return mesh, verts, mesh.add_face(verts)
+
+
+def _build_grid_2x2():
+    """2x2 Quads (3x3 Vertices), CCW; Rückgabe: mesh, {(x, y): VertexId}, {(x, y): FaceId}."""
+    mesh = Mesh()
+    p = {(x, y): mesh.add_vertex((float(x), float(y), 0.0)) for y in range(3) for x in range(3)}
+    f = {
+        (x, y): mesh.add_face([p[(x, y)], p[(x + 1, y)], p[(x + 1, y + 1)], p[(x, y + 1)]])
+        for y in range(2) for x in range(2)
+    }
+    return mesh, p, f
+
+
+def _signed_area_z(mesh: Mesh, face) -> float:
+    pts = [mesh.vertex_position(v) for v in mesh.face_vertices(face)]
+    return 0.5 * sum(
+        pts[i][0] * pts[(i + 1) % len(pts)][1] - pts[(i + 1) % len(pts)][0] * pts[i][1]
+        for i in range(len(pts))
+    )
+
+
+def _directed_edges_unique(mesh: Mesh) -> bool:
+    """Konsistente Orientierung: jede gerichtete Boundary-Kante kommt höchstens einmal vor."""
+    seen = set()
+    for fid in mesh.all_face_ids():
+        b = mesh.face_vertices(fid)
+        for i in range(len(b)):
+            pair = (b[i], b[(i + 1) % len(b)])
+            if pair in seen:
+                return False
+            seen.add(pair)
+    return True
+
+
+def _expect_mesh_error(label: str, mesh: Mesh, call) -> None:
+    from core.mesh import MeshError
+
+    before = mesh.export_state()
+    symmetry_before = mesh.symmetry_definition
+    try:
+        call()
+        check(f"{label}: raises MeshError", False)
+    except MeshError:
+        pass
+    check(f"{label}: mesh unchanged incl. allocator counters", mesh.export_state() == before)
+    check(f"{label}: symmetry definition untouched", mesh.symmetry_definition is symmetry_before)
+
+
+def test_split_face_id_continuity() -> None:
+    print("\n--- AD-017 K1: split_face ID continuity ---")
+    mesh, p, f = _build_grid_2x2()
+    face = f[(0, 0)]
+    v_a, v_b = p[(0, 0)], p[(1, 1)]
+    boundary_edges = mesh.face_edges(face)
+    vids, eids, fids = set(mesh.all_vertex_ids()), set(mesh.all_edge_ids()), set(mesh.all_face_ids())
+    max_v, max_e, max_f = max(map(int, vids)), max(map(int, eids)), max(map(int, fids))
+    path = [(0.3, 0.2, 0.0), (0.6, 0.5, 0.0), (0.8, 0.7, 0.0)]
+
+    new_vs, new_es, face_1, face_2 = mesh.split_face(face, v_a, v_b, path)
+
+    check("parent face becomes invalid", not mesh.is_valid_face(face))
+    check("k new VertexIds, ascending in path order", len(new_vs) == 3
+          and [int(v) for v in new_vs] == list(range(max_v + 1, max_v + 4)))
+    check("new vertices sit exactly at the given positions",
+          [mesh.vertex_position(v) for v in new_vs] == path)
+    check("k + 1 new EdgeIds, ascending in path order", len(new_es) == 4
+          and [int(e) for e in new_es] == list(range(max_e + 1, max_e + 5)))
+    chain = [v_a, *new_vs, v_b]
+    check("edge i joins path vertices i and i + 1 (v_a -> v_b)",
+          all(set(mesh.edge_vertices(e)) == {chain[i], chain[i + 1]} for i, e in enumerate(new_es)))
+    check("two new FaceIds, face_1 allocated before face_2",
+          (int(face_1), int(face_2)) == (max_f + 1, max_f + 2))
+    check("exactly these ids appear, nothing else changes",
+          set(mesh.all_vertex_ids()) == vids | set(new_vs)
+          and set(mesh.all_edge_ids()) == eids | set(new_es)
+          and set(mesh.all_face_ids()) == (fids - {face}) | {face_1, face_2})
+    check("boundary edges keep their ids and now belong to exactly one of the two faces",
+          all(mesh.is_valid_edge(e) for e in boundary_edges)
+          and all(len({face_1, face_2} & set(mesh.edge_faces(e))) == 1 for e in boundary_edges))
+    check("every path edge borders face_1 and face_2",
+          all(sorted(mesh.edge_faces(e)) == sorted([face_1, face_2]) for e in new_es))
+    check("face_1 = boundary v_a .. v_b forward, back along the path",
+          mesh.face_vertices(face_1) == [v_a, p[(1, 0)], v_b, *new_vs[::-1]])
+    check("face_2 = boundary v_b .. v_a forward, then along the path",
+          mesh.face_vertices(face_2) == [v_b, p[(0, 1)], v_a, *new_vs])
+    assert_mesh_invariants(mesh, context="split_face id continuity")
+
+    # A second split allocates above everything ever used - no reuse (AD-001).
+    new_vs2, new_es2, f1b, f2b = mesh.split_face(face_1, p[(1, 0)], new_vs[1])
+    check("second split: ids keep growing (no reuse)",
+          new_vs2 == [] and int(new_es2[0]) == max_e + 5 and (int(f1b), int(f2b)) == (max_f + 3, max_f + 4))
+    assert_mesh_invariants(mesh, context="split_face second split")
+
+
+def test_split_face_empty_path_equals_connect_vertices() -> None:
+    print("\n--- AD-017 K1: split_face(positions=()) == connect_vertices ---")
+    n = 6
+    cases = 0
+    for i in range(n):
+        for j in range(n):
+            if i == j or (i - j) % n in (1, n - 1):
+                continue
+            m_c, v_c, f_c = _build_polygon(n)
+            m_s, v_s, f_s = _build_polygon(n)
+            edge, fc1, fc2 = m_c.connect_vertices(f_c, v_c[i], v_c[j])
+            new_vs, new_es, fs1, fs2 = m_s.split_face(f_s, v_s[i], v_s[j])
+            check(f"hexagon ({i}, {j}): same return ids", (new_vs, new_es, fs1, fs2) == ([], [edge], fc1, fc2))
+            check(f"hexagon ({i}, {j}): same export_state()", m_s.export_state() == m_c.export_state())
+            cases += 1
+    check("all non-adjacent ordered pairs of a hexagon compared", cases == n * (n - 3))
+
+    # Existing free edge v_a-v_b inside the face: reused, as connect_vertices does.
+    m_c, v_c, f_c = _build_polygon(5)
+    m_s, v_s, f_s = _build_polygon(5)
+    free_c, free_s = m_c.add_edge(v_c[0], v_c[2]), m_s.add_edge(v_s[0], v_s[2])
+    edge, fc1, fc2 = m_c.connect_vertices(f_c, v_c[2], v_c[0])
+    _vs, new_es, fs1, fs2 = m_s.split_face(f_s, v_s[2], v_s[0])
+    check("existing free edge is reused (same id as connect_vertices)", new_es == [free_s] and edge == free_c)
+    check("free-edge case: same export_state()", m_s.export_state() == m_c.export_state())
+    assert_mesh_invariants(m_s, context="split_face reuse free edge")
+
+
+def test_split_face_adjacent_ends() -> None:
+    print("\n--- AD-017 K1: split_face with adjacent ends (notch) ---")
+    scene, (v0, v1, v2, v3), face = build_quad_scene()
+    mesh = scene.mesh
+    _expect_mesh_error("adjacent ends, k = 0", mesh, lambda: mesh.split_face(face, v0, v1))
+
+    new_vs, new_es, f1, f2 = mesh.split_face(face, v0, v1, [(0.5, 0.3, 0.0)])
+    check("notch k = 1: triangle + pentagon",
+          sorted((len(mesh.face_vertices(f1)), len(mesh.face_vertices(f2)))) == [3, 5])
+    check("notch k = 1: the existing edge v0-v1 now borders the triangle only",
+          mesh.edge_faces(mesh.face_edges(f1)[0]) == [f1])
+    check("notch k = 1: one vertex, two edges", len(new_vs) == 1 and len(new_es) == 2)
+    assert_mesh_invariants(mesh, context="split_face notch k=1")
+
+    mesh2, (a, b, c), tri = _build_polygon(3)
+    vs, es, g1, g2 = mesh2.split_face(tri, c, a, [(0.0, 0.2, 0.0), (0.1, -0.1, 0.0)])
+    check("notch k = 2 in a triangle across the wrap: quad + pentagon",
+          sorted((len(mesh2.face_vertices(g1)), len(mesh2.face_vertices(g2)))) == [4, 5])
+    check("notch k = 2: two vertices, three edges", len(vs) == 2 and len(es) == 3)
+    assert_mesh_invariants(mesh2, context="split_face notch k=2 triangle")
+
+
+def test_split_face_rejections_leave_mesh_unchanged() -> None:
+    print("\n--- AD-017 K1: split_face rejections (mesh byte-identical) ---")
+    from core import SymmetryDefinition
+    from core.ids import FaceId as _FId, VertexId as _VId
+
+    mesh, p, f = _build_grid_2x2()
+    mesh.symmetry_definition = SymmetryDefinition(
+        plane_point=(1.0, 0.0, 0.0), plane_normal=(1.0, 0.0, 0.0),
+        seam_edges=frozenset(mesh.face_edges(f[(0, 0)])[1:2]),
+    )
+    face = f[(0, 0)]
+    a, b, c, d = p[(0, 0)], p[(1, 0)], p[(1, 1)], p[(0, 1)]
+    elsewhere = p[(2, 2)]
+    _expect_mesh_error("unknown face", mesh, lambda: mesh.split_face(_FId(999), a, c))
+    _expect_mesh_error("v_a == v_b", mesh, lambda: mesh.split_face(face, a, a))
+    _expect_mesh_error("v_a == v_b with positions (closed ring)", mesh,
+                       lambda: mesh.split_face(face, a, a, [(0.2, 0.2, 0.0), (0.5, 0.2, 0.0)]))
+    _expect_mesh_error("v_b not on the boundary", mesh, lambda: mesh.split_face(face, a, elsewhere))
+    _expect_mesh_error("unknown vertex", mesh, lambda: mesh.split_face(face, _VId(999), c))
+    _expect_mesh_error("adjacent ends, k = 0", mesh, lambda: mesh.split_face(face, b, c))
+    _expect_mesh_error("position with 2 coordinates", mesh,
+                       lambda: mesh.split_face(face, a, c, [(0.5, 0.5, 0.0), (0.7, 0.7)]))
+    _expect_mesh_error("position that is not a sequence", mesh,
+                       lambda: mesh.split_face(face, a, c, [(0.5, 0.5, 0.0), 1.0]))
+
+    # Degenerate loop: a triangle, adjacent ends, no interior point.
+    tri_mesh, (t0, t1, _t2), tri = _build_polygon(3)
+    _expect_mesh_error("triangle, adjacent ends, k = 0", tri_mesh, lambda: tri_mesh.split_face(tri, t0, t1))
+
+    # Non-manifold input 1: a face whose boundary repeats a vertex (add_face accepts it, H7).
+    bad = Mesh()
+    q = [bad.add_vertex((x, y, 0.0)) for x, y in ((0, 0), (1, 0), (1, 1), (0, 1))]
+    pinched = bad.add_face([q[0], q[1], q[2], q[1], q[3]])
+    _expect_mesh_error("boundary with a repeated vertex", bad, lambda: bad.split_face(pinched, q[0], q[2]))
+
+    # Non-manifold input 2: the chord a-c is already an edge of another face; connect_vertices
+    # would give it three faces.
+    m2, p2, f2 = _build_grid_2x2()
+    m2.add_face([p2[(0, 0)], p2[(1, 1)], m2.add_vertex((0.5, 0.5, 1.0))])
+    _expect_mesh_error("k = 0 chord already an edge of another face", m2,
+                       lambda: m2.split_face(f2[(0, 0)], p2[(0, 0)], p2[(1, 1)]))
+    # With an interior point the path edges are new, so the same ends are fine.
+    m2.split_face(f2[(0, 0)], p2[(0, 0)], p2[(1, 1)], [(0.6, 0.4, 0.0)])
+    assert_mesh_invariants(m2, context="split_face next to an existing chord edge")
+
+
+def test_split_face_winding_and_argument_order() -> None:
+    print("\n--- AD-017 K1: split_face winding + determinism for both argument orders ---")
+    path = [(0.9, 0.3, 0.0), (0.4, 0.6, 0.0)]
+    results = []
+    for swap in (False, True):
+        mesh, p, f = _build_grid_2x2()
+        ends = (p[(1, 0)], p[(0, 1)])
+        v_a, v_b = ends[::-1] if swap else ends
+        positions = path[::-1] if swap else path
+        new_vs, new_es, f1, f2 = mesh.split_face(f[(0, 0)], v_a, v_b, positions)
+        check(f"swap={swap}: both faces CCW like the parent",
+              _signed_area_z(mesh, f1) > 0 and _signed_area_z(mesh, f2) > 0)
+        check(f"swap={swap}: orientation consistent with the neighbours", _directed_edges_unique(mesh))
+        check(f"swap={swap}: vertex ids follow v_a -> v_b",
+              [mesh.vertex_position(v) for v in new_vs] == positions)
+        assert_mesh_invariants(mesh, context=f"split_face swap={swap}")
+        results.append([[mesh.vertex_position(v) for v in mesh.face_vertices(x)] for x in (f1, f2)]
+                       + [(int(f1), int(f2))])
+    check("both argument orders give the same faces in the same order", results[0] == results[1])
+
+    # face_1 rule pinned: s = lower boundary index. v_a after v_b -> face_1 starts at v_b.
+    mesh, v, face = _build_polygon(6)
+    _vs, _es, f1, f2 = mesh.split_face(face, v[4], v[1], [(0.0, 0.0, 0.0)])
+    check("v_b before v_a: face_1 = boundary v_b .. v_a forward (connect_vertices' swap)",
+          mesh.face_vertices(f1)[:4] == [v[1], v[2], v[3], v[4]])
+    check("v_b before v_a: face_2 = boundary v_a .. v_b through the list end",
+          mesh.face_vertices(f2)[:4] == [v[4], v[5], v[0], v[1]])
+
+    # Same call twice on twin meshes: byte-identical.
+    m_x, p_x, f_x = _build_grid_2x2()
+    m_y, p_y, f_y = _build_grid_2x2()
+    m_x.split_face(f_x[(1, 1)], p_x[(1, 1)], p_x[(2, 2)], path)
+    m_y.split_face(f_y[(1, 1)], p_y[(1, 1)], p_y[(2, 2)], path)
+    check("deterministic: identical calls give identical export_state()", m_x.export_state() == m_y.export_state())
+
+
+def test_split_face_serialization_undo_and_symmetry() -> None:
+    print("\n--- AD-017 K1: split_face round trips (state, scene, MeshStateCommand) + symmetry ---")
+    import json
+
+    from core import HistoryStack, SymmetryDefinition
+    from core.operations.topology import MeshStateCommand
+
+    scene = Scene()
+    mesh = scene.mesh
+    p = {(x, y): mesh.add_vertex((float(x), float(y), 0.0)) for y in range(3) for x in range(3)}
+    f = {
+        (x, y): mesh.add_face([p[(x, y)], p[(x + 1, y)], p[(x + 1, y + 1)], p[(x, y + 1)]])
+        for y in range(2) for x in range(2)
+    }
+    seam = frozenset(e for e in mesh.all_edge_ids() if all(mesh.vertex_position(v)[0] == 1.0
+                                                            for v in mesh.edge_vertices(e)))
+    definition = SymmetryDefinition(plane_point=(1.0, 0.0, 0.0), plane_normal=(1.0, 0.0, 0.0), seam_edges=seam)
+    mesh.symmetry_definition = definition
+
+    history = HistoryStack()
+    before = mesh.export_state()
+    new_vs, new_es, f1, f2 = mesh.split_face(f[(0, 0)], p[(1, 0)], p[(0, 1)], [(0.5, 0.4, 0.0)])
+    after = mesh.export_state()
+    history.push(MeshStateCommand(mesh=mesh, before_state=before, after_state=after))
+
+    check("symmetry definition is the same object", mesh.symmetry_definition is definition)
+    check("seam edges (incl. the split face's own) stay valid and keep their ids",
+          len(seam) == 2 and all(mesh.is_valid_edge(e) for e in seam))
+    check("no path edge became a seam edge", not (set(new_es) & seam))
+    assert_mesh_invariants(mesh, context="split_face with symmetry")
+
+    check("export_state/from_state round trip", Mesh.from_state(after).export_state() == after)
+    restored = scene_from_dict(json.loads(json.dumps(scene_to_dict(scene))))
+    check("scene JSON round trip", restored.mesh.export_state() == after)
+
+    history.undo()
+    check("undo restores the pre-split state", mesh.export_state()["faces"] == before["faces"]
+          and mesh.export_state()["edges"] == before["edges"] and mesh.is_valid_face(f[(0, 0)]))
+    check("undo keeps the allocator counters forward (AD-001)",
+          mesh.export_state()["face_id_counter"] == after["face_id_counter"])
+    history.redo()
+    check("redo restores the split exactly", mesh.export_state() == after)
+
+    history.undo()
+    again = mesh.split_face(f[(0, 0)], p[(1, 0)], p[(0, 1)], [(0.5, 0.4, 0.0)])
+    check("split after undo allocates fresh ids, none reused",
+          all(int(x) > int(y) for x, y in zip(again[0], new_vs))
+          and all(int(x) > int(y) for x, y in zip(again[1], new_es))
+          and int(again[2]) > int(f2))
+    assert_mesh_invariants(mesh, context="split_face after undo")
+
+
 def run_all() -> None:
     tests = [
         test_ad001_stable_ids,
@@ -404,6 +697,12 @@ def run_all() -> None:
         test_ad003_interactive_lifecycle_cancel,
         test_selection_not_in_history,
         test_ad001_serialization_roundtrip,
+        test_split_face_id_continuity,
+        test_split_face_empty_path_equals_connect_vertices,
+        test_split_face_adjacent_ends,
+        test_split_face_rejections_leave_mesh_unchanged,
+        test_split_face_winding_and_argument_order,
+        test_split_face_serialization_undo_and_symmetry,
     ]
     for t in tests:
         t()
