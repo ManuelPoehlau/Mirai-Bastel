@@ -38,7 +38,7 @@ WP-06 soll das nicht lösen, indem alles auf einmal entschieden wird, sondern in
 | `src/main.py` | pyglet-Fenster, Orbit (RMB), Pan (MMB), Zoom (Scroll), Esc/Q schließt. Kamera-Input geht **direkt** an `OrbitCamera`, nicht über `dispatch_command()` (bewusst, siehe Docstring). Kein Key-Dispatch, kein Picking, keine Selection, keine Mutation. Hintergrund fest `(0.05, 0.05, 0.08)`. |
 | `src/mirai/application.py` | Window-frei. `init_scene()` nur `"cube"`. `dispatch_command()` kennt Move/Rotate/Scale (Tool-Aktivierung) und Undo/Redo — sonst nichts (keine Selection-, Display- oder Topologie-Commands). |
 | `src/mirai/interaction/` | `Tool`-Lifecycle (activate/begin/update/commit/cancel/deactivate), `ToolManager`, `BindingSet` + `keymap.json`-Overrides, Routing. |
-| `src/mirai/interaction/tools/move.py` | Production-MoveTool inkl. Achsen/Ebenen/Normal-Constraints und symmetrischem Move (AD-SYM-02). Rotate/Scale analog. |
+| `src/mirai/interaction/tools/move.py` | Production-MoveTool inkl. Achsen/Ebenen/Normal-Constraints und symmetrischem Move (AD-SYM-02). Symmetrie-Support gibt es nur für Move; Rotate/Scale sind nicht symmetrisch. |
 | `src/mirai/viewport/picking.py` | `pick_nearest_vertex`, `pick_nearest_edge`, `pick_face` — existieren, sind in `main.py` **nicht** verdrahtet. |
 | `src/mirai/pyglet_input.py` | pyglet → `Input`-Translator (WP-SYM-LAB-01 Slice 1), für diskrete Tasten/Buttons. |
 | `src/viewport/` | `Viewport` nimmt `selection=` entgegen, `highlight_flags` pro Vertex existieren im `GLRenderStore`-Shader. Ob Selection-Highlight im Fenster sichtbar funktioniert, ist **nicht praktisch verifiziert**. |

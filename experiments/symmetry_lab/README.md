@@ -15,6 +15,7 @@ eine **headless** Engine für einen gespiegelten Knife hinzu (`lab_knife.py`); S
 Fenster spielbar: **C** startet den Knife, der Punkt unter dem Cursor und sein Spiegelpunkt sind vor
 dem Klick sichtbar (auch, wenn nicht gespiegelt werden kann), **LMB** schneidet, ein Klick auf den
 Hintergrund committet, **ESC** bricht ab. Slice 7 ist **noch nicht vom Artist geprüft**.
+Promotion nach `src/main.py`: zurückgestellt, siehe `docs/architecture/ROADMAP.md` §7, Eintrag 2026-10-02.
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
@@ -276,8 +277,8 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Undo / Redo | Ctrl+Z / Ctrl+Y | `Undo` / `Redo` | globaler Default (Fallback) |
 
 `SymmetryCycle`, `ReSymmetrize` und `Knife` sind im Lab definiert (`lab_bindings.py`), nicht in
-`mirai.interaction.commands`. C ist im globalen Kontext frei; die Production-Bindung C → `Connect`
-liegt im `topology`-Kontext und greift im Lab nie (E23). Enter ist nicht belegt (A13; `mirai.pyglet_input`
+`mirai.interaction.commands`. C ist seit WP-06 B6 global an `Connect` gebunden; im
+`symmetry_lab`-Kontext gewinnt der Lab-Override C → `Knife` (E23). Enter ist nicht belegt (A13; `mirai.pyglet_input`
 übersetzt Enter gar nicht in ein `Input`).
 Andere global gebundene Commands (z. B. `f` → `SetFaceMode`) lösen zwar auf, sind im Lab aber
 No-ops und gelten als „nicht behandelt". Die Mausbewegung selbst (`on_mouse_motion`, ohne
