@@ -1171,12 +1171,12 @@ the verdict are filled.
 
 | # | Check | Expected | Seen (Manu) |
 |---|---|---|---|
-| 1 | Vertex → vertex diagonal, `Enter` | the diagonal cut appears at `Enter`; one Undo step | |
-| 2 | Edge → edge → edge across a strip of quads, `Enter` | while clicking: points and lines, the line follows the cursor; the mesh unchanged; at `Enter` the cut appears, the cut edges selected (Edge mode) | |
-| 3 | A vertex, then its neighbour **along an edge**, then a vertex across the next quad, `Enter` | the second click is accepted (status "along an existing edge - nothing to cut"), the cut runs from the neighbour (AQ1) | |
-| 4 | One edge click, `Enter` | nothing happens — no stray vertex on the edge, no Undo step ("no cuts made") | |
-| 5 | Four clicks, Undo, Redo, Undo ×4, `Enter`; then a new session, a few clicks, `Esc`; then a few clicks and a click outside the mesh | nothing committed after Undo ×4; `Esc` cancels; the click outside commits | |
-| 6 | Hover over an edge (before and after the first click) | a point marker sits at the cut position on the edge | |
+| 1 | Vertex → vertex diagonal, `Enter` | the diagonal cut appears at `Enter`; one Undo step |passed - aber je nach Face wird die Vorschaulinie manchmal vom Face verdeckt |
+| 2 | Edge → edge → edge across a strip of quads, `Enter` | while clicking: points and lines, the line follows the cursor; the mesh unchanged; at `Enter` the cut appears, the cut edges selected (Edge mode) |passed |
+| 3 | A vertex, then its neighbour **along an edge**, then a vertex across the next quad, `Enter` | the second click is accepted (status "along an existing edge - nothing to cut"), the cut runs from the neighbour (AQ1) |passed |
+| 4 | One edge click, `Enter` | nothing happens — no stray vertex on the edge, no Undo step ("no cuts made") |passed |
+| 5 | Four clicks, Undo, Redo, Undo ×4, `Enter`; then a new session, a few clicks, `Esc`; then a few clicks and a click outside the mesh | nothing committed after Undo ×4; `Esc` cancels; the click outside commits |passedc |
+| 6 | Hover over an edge (before and after the first click) | a point marker sits at the cut position on the edge |passed |
 
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
@@ -1296,16 +1296,16 @@ Knife (`C` with an empty selection; `Enter` / click outside = commit, `Esc` = ca
 
 | # | Check | Expected | Seen (Manu) |
 |---|---|---|---|
-| 1 | Bent cut: an edge of a quad → one click inside the quad → the opposite edge, `Enter` | a marker follows the cursor inside the face, the line bends at the click; the cut appears at `Enter`, one Undo step | |
-| 2 | Notch: from an edge into the quad and back out through the same edge, `Enter` | a V-shaped cut, the quad split in two | |
-| 3 | Closed shape: three clicks inside one face, then click the first again (snap) | status "shape closed …", nothing committed yet; `Enter` → the shape is its own face, two bridges (3 faces from 1) | |
-| 4 | Start inside: first click inside a quad, then two edges of it, `Enter` | the straight cut between the two edges; the first click has no effect (S3-e) | |
-| 5 | Close, then keep cutting: close a shape as in 3, then click an edge of the face, `Enter` | the cut goes on from the closing point (one vertex there) | |
-| 6 | Loop at a single point (cube top): top/right edge → three clicks in the top, the third segment crossing the first → the edge point again, `Enter` | bow-tie `V:13 E:21 F:10`, two loops, each with one bridge to an outside corner | |
-| 7 | Last click inside a face: an edge point → one click inside the face, `Enter` | status "… 1 last point(s) inside a face joined to the nearest corner"; nothing announced before `Enter` | |
-| 8 | A click right next to an edge (within ~9 px) | the edge is picked (point on the edge), not a face point | |
-| 9 | An interior click in the *neighbouring* face right after a cut | refused — cross-face is S4 | |
-| 10 | Undo / Redo / `Esc` / click outside as in S2 | as in S2 | |
+| 1 | Bent cut: an edge of a quad → one click inside the quad → the opposite edge, `Enter` | a marker follows the cursor inside the face, the line bends at the click; the cut appears at `Enter`, one Undo step |passed |
+| 2 | Notch: from an edge into the quad and back out through the same edge, `Enter` | a V-shaped cut, the quad split in two |passed |
+| 3 | Closed shape: three clicks inside one face, then click the first again (snap) | status "shape closed …", nothing committed yet; `Enter` → the shape is its own face, two bridges (3 faces from 1) |passed |
+| 4 | Start inside: first click inside a quad, then two edges of it, `Enter` | the straight cut between the two edges; the first click has no effect (S3-e) | passed - später evtl Überlegen, ob der erste Klick zur nearest Vertex verbinden soll, bleibt noch offen|
+| 5 | Close, then keep cutting: close a shape as in 3, then click an edge of the face, `Enter` | the cut goes on from the closing point (one vertex there) |passed |
+| 6 | Loop at a single point (cube top): top/right edge → three clicks in the top, the third segment crossing the first → the edge point again, `Enter` | bow-tie `V:13 E:21 F:10`, two loops, each with one bridge to an outside corner | no cuts made, nothing committed (a last point inside a face could not be joined to a corner - dropped; 1 loop(s) closed at a point dropped (the run cuts through its own loop again))|
+| 7 | Last click inside a face: an edge point → one click inside the face, `Enter` | status "… 1 last point(s) inside a face joined to the nearest corner"; nothing announced before `Enter` | passed|
+| 8 | A click right next to an edge (within ~9 px) | the edge is picked (point on the edge), not a face point |passed |
+| 9 | An interior click in the *neighbouring* face right after a cut | refused — cross-face is S4 |no valid cut target here |
+| 10 | Undo / Redo / `Esc` / click outside as in S2 | as in S2 |passed |
 
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
