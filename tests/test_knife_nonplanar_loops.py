@@ -10,6 +10,9 @@ at t = 0.6 (from p1), three interior points at bilinear (u, v) = (0.2, 0.5), (0.
 the corners' 2D frame coordinates, lifted back into `fr`'s plane; the last click is the edge point again
 (the own-point snap); commit. The third segment crosses the first: two loops at a point — loop A at the
 crossing X, loop B at the edge point. On a flat quad: V+5 E+9 F+4, `loops_built == 2`.
+
+Written first with strict xfails (all head quads, the warps from 1e-4, the reason text); the S3b fix removed
+them. What still refuses on the head is listed (`HEAD_REFUSED`) and must refuse truthfully and leave nothing.
 """
 
 from __future__ import annotations
@@ -95,6 +98,12 @@ def assert_bowtie_built(run: Bowtie, scene_name: str) -> None:
     assert canon_faces(run.mesh) == after
 
 
+def _single_quad(corners) -> tuple[Mesh, FaceId]:
+    mesh = Mesh()
+    fid = mesh.add_face([mesh.add_vertex(c) for c in corners])
+    return mesh, fid
+
+
 def grid_quad(mesh: Mesh) -> FaceId:
     """The grid's quad (1, 1)-(2, 2)."""
     return next(fid for fid in mesh.all_face_ids()
@@ -103,12 +112,7 @@ def grid_quad(mesh: Mesh) -> FaceId:
 
 # -- 1. grid quad warped by one corner -----------------------------------------------------------
 
-WARPS = (0.0, 1e-9, 1e-6, 1e-4, 1e-2, 1e-1)
-WARPS_FAILING = {1e-4, 1e-2, 1e-1}       # S3b: refused before the fix (handoff §3)
-
-
-@pytest.mark.parametrize("w", [pytest.param(w, marks=pytest.mark.xfail(strict=True, reason="S3-j"))
-                               if w in WARPS_FAILING else w for w in WARPS])
+@pytest.mark.parametrize("w", [0.0, 1e-9, 1e-6, 1e-4, 1e-2, 1e-1])
 def test_bowtie_on_a_grid_quad_warped_by_one_corner(w):
     mesh = build_grid()
     corner = next(x for x in mesh.all_vertex_ids() if mesh.vertex_position(x) == (1.0, 2.0, 0.0))
@@ -119,18 +123,43 @@ def test_bowtie_on_a_grid_quad_warped_by_one_corner(w):
 # -- 2. every head quad ---------------------------------------------------------------------------
 
 HEAD_QUADS = 324
+# Genuine refusals (decision.md "One Knife S3b", open point S3b-a): loop B's bridge to the nearest outside corner
+# runs through loop A, so loop A no longer lies inside one face. Not a planarity matter — 15 of these shapes refuse
+# the same way laid flat (the other two only on the head: there the nearest corner in 3D differs).
+HEAD_REFUSED = frozenset({4, 17, 60, 62, 81, 83, 127, 135, 167, 168, 221, 229, 230, 270, 271, 289, 310})
+HEAD_REFUSED_FLAT_TOO = HEAD_REFUSED - {4, 135}
 
 
 def test_head_has_the_quads_the_replay_walks():
     mesh = head_mesh()
     assert sorted(int(f) for f in mesh.all_face_ids()) == list(range(HEAD_QUADS))
     assert all(len(mesh.face_vertices(f)) == 4 for f in mesh.all_face_ids())
+    assert len(HEAD_REFUSED) == 17                            # 307 of 324 build the bow-tie
 
 
-@pytest.mark.parametrize("fid", [pytest.param(i, marks=pytest.mark.xfail(strict=True, reason="S3-j"))
-                                 for i in range(HEAD_QUADS)])
+@pytest.mark.parametrize("fid", [i for i in range(HEAD_QUADS) if i not in HEAD_REFUSED])
 def test_bowtie_on_every_head_quad(fid):
     assert_bowtie_built(play_bowtie(head_mesh(), FaceId(fid)), "head")
+
+
+def _laid_flat(mesh: Mesh, fid: FaceId) -> tuple[Mesh, FaceId]:
+    fr = FaceFrame(mesh, fid)
+    return _single_quad([_lift(fr, q) for q in fr.pts2])
+
+
+@pytest.mark.parametrize("fid", sorted(HEAD_REFUSED))
+def test_bowtie_refused_on_a_head_quad_says_why_and_changes_nothing(fid):
+    mesh = head_mesh()
+    run = play_bowtie(mesh, FaceId(fid))
+    assert all(run.accepted)
+    assert not run.committed and run.delta == (0, 0, 0) and len(run.scene.history) == 0
+    assert content(mesh.export_state()) == content(run.before)
+    assert dict(run.resolution.loops_dropped) == {knife_resolve.LOOP_OFF_FACE: 1}
+    flat = play_bowtie(*_laid_flat(head_mesh(), FaceId(fid)))
+    if fid in HEAD_REFUSED_FLAT_TOO:
+        assert dict(flat.resolution.loops_dropped) == {knife_resolve.LOOP_OFF_FACE: 1}
+    else:
+        assert_bowtie_built(flat, "flat")
 
 
 # -- 3. the reason text says what happened -------------------------------------------------------
@@ -141,21 +170,13 @@ def test_bowtie_on_every_head_quad(fid):
 BRIDGE_THROUGH_LOOP_QUAD = ((0.0, 0.0, 0.0), (0.52, 0.03, 0.0), (0.7, 0.71, 0.0), (-0.3, 0.57, 0.0))
 
 
-def _single_quad(corners) -> tuple[Mesh, FaceId]:
-    mesh = Mesh()
-    fid = mesh.add_face([mesh.add_vertex(c) for c in corners])
-    return mesh, fid
-
-
-@pytest.mark.xfail(strict=True, reason="S3-j: the reason text says 'the run cuts through its own loop again'")
 def test_a_loop_split_by_another_loops_bridge_does_not_claim_the_run_crossed_it():
     mesh, fid = _single_quad(BRIDGE_THROUGH_LOOP_QUAD)
     run = play_bowtie(mesh, fid)
     assert all(run.accepted)
     assert not run.committed and run.delta == (0, 0, 0)
     assert content(mesh.export_state()) == content(run.before)
-    assert sum(run.resolution.loops_dropped.values()) == 1
-    assert knife_resolve.LOOP_CROSSED not in run.resolution.loops_dropped
+    assert dict(run.resolution.loops_dropped) == {knife_resolve.LOOP_OFF_FACE: 1}
 
 
 def test_a_run_that_cuts_through_its_own_loop_keeps_its_reason():

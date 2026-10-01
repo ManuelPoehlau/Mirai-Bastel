@@ -1383,3 +1383,18 @@ it from outside.
 
 *Interpretation:* the height gate was a flatness assumption from the flat Lab scenes (grid, cube), where it never had to
 discriminate between faces.
+
+### Fix (Task 3, 2026-10-01)
+
+`knife_resolve.KnifeResolver._build_loops` only (+ one constant, one helper):
+
+- **(a) The height term is gone** from the test that picks the face a loop is built in. Why this and not a relative
+  tolerance: a tolerance needs a margin that has to be justified per face (the ring pieces after loop B measured 0.20–0.22 ×
+  size), while the root filter already proves the probe came from the run's click-time face; the projected inside test
+  (`segment_in_face`, unchanged) picks the piece. Flat faces: unchanged by construction — there every piece passed the
+  height test.
+- **(b) New reason `LOOP_OFF_FACE` = "the loop does not lie inside one face"** (next to `LOOP_CROSSED`). When a loop does not
+  fit one face, `_loop_reason` looks for an edge this run cut (or another of its loops) crossing the loop's outline in the
+  loop's own plane: found → "the run cuts through its own loop again" (P5, unchanged); none → the new text (another loop's
+  bridge or an earlier run's cut splits it). The status line shows it as "N loop(s) closed at a point dropped (the loop does
+  not lie inside one face)". The only status-text change; S3-f wording stays PROVISIONAL.

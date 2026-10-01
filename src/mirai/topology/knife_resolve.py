@@ -77,6 +77,9 @@ _ANGLE_EPS = 1e-9
 LOOP_NO_AREA = "out to one point and straight back — no area"
 LOOP_NESTED = "it winds round another loop's point"
 LOOP_CROSSED = "the run cuts through its own loop again"
+# The loop leaves its face but nothing this run cut crosses it: another loop's bridge or an earlier run's cut
+# splits it (S3b, 2026-10-01).
+LOOP_OFF_FACE = "the loop does not lie inside one face"
 LOOP_NO_BRIDGE = "no bridge fits"
 
 # Distances closer than this are ties (a symmetric shape: the same distance up to float noise).
@@ -765,18 +768,15 @@ class KnifeResolver:
             probe = pts[0]
             face = None
             for f in sorted({f for e in m.vertex_edges(x) for f in m.edge_faces(e)}, key=int):
-                if root is not None and self._root(f) != root:
-                    continue
-                try:
-                    if FaceFrame(m, f).height(probe) <= 1e-6 * FaceFrame(m, f).size and \
-                            segment_in_face(m, f, probe, probe) == "inside":
-                        face = f
-                        break
-                except MeshError:
-                    continue
+                # No flatness test: every face here is a piece of the run's click-time face (`root`,
+                # always set once the run entered a face), so the probe came from it; on a non-planar
+                # face it lies off the piece's Newell plane by the face's own warp (S3b, 2026-10-01).
+                if (root is None or self._root(f) == root) and segment_in_face(m, f, probe, probe) == "inside":
+                    face = f
+                    break
             outline = [m.vertex_position(x)] + list(pts) + [m.vertex_position(x)]
             if face is None or any(segment_in_face(m, face, u, v) != "inside" for u, v in zip(outline, outline[1:])):
-                self._loop_at_point = LOOP_CROSSED
+                self._loop_at_point = self._loop_reason(outline, out)
                 return None
             try:
                 # Bridges go to vertices that existed before this commit (outside corners) first.
@@ -789,6 +789,22 @@ class KnifeResolver:
             out.extend(loop_edges)
             self.loops_built += 1
         return out
+
+    def _loop_reason(self, outline: list[Position], out: list[EdgeId]) -> str:
+        """Why a loop does not lie inside one face: an edge this run cut (or another of its loops)
+        crosses the outline, in the loop's own plane — or nothing of the run does (S3b)."""
+        m = self.mesh
+        try:
+            fr = FaceFrame.of_points(outline[:-1])
+        except MeshError:
+            return LOOP_CROSSED
+        ring = [fr.p2(p) for p in outline]
+        for e in out:
+            if m.is_valid_edge(e):
+                a, b = (fr.p2(m.vertex_position(v)) for v in m.edge_vertices(e))
+                if any(proper_cross2(a, b, c, d, fr.eps) for c, d in zip(ring, ring[1:])):
+                    return LOOP_CROSSED
+        return LOOP_OFF_FACE
 
     def _apply_run(self, run: list[dict], resolved: dict) -> bool:
         first, last = run[0], run[-1]
