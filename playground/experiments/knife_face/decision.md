@@ -1324,6 +1324,9 @@ Knife (`C` with an empty selection; `Enter` / click outside = commit, `Esc` = ca
 
 ## One Knife S3b — loops at a point on non-planar faces (2026-10-01, PROVISIONAL)
 
+**Status (recorded 2026-10-01, WP-KNIFE-01 UX1 handoff, Task 0):** worked in Manu's practical test (*"funktioniert jetzt"*,
+2026-10-01). This is not a verdict: the verdict slot below stays open and S3b stays **PROVISIONAL**.
+
 **Decision basis:** S3 KEEP (Manu, 2026-10-01, "Weg 1") with the head limitation S3-j as its own slice before S4.
 Production (M5): *what* is decided (loops at a single point must work on the head); *how* is technical. Q5 and Production
 share the resolver (`knife_resolve`), so the differential tests cannot pin this — the spec is absolute:
@@ -1453,3 +1456,31 @@ and the verdict are filled.
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
 | | |
+
+---
+
+## WP-KNIFE-01 UX1 — Knife stays active after commit (Artist request 2026-10-01, PROVISIONAL)
+
+**Artist decisions (Manu, 2026-10-01 — not re-asked):**
+
+1. After a **commit** the Knife is **immediately active again** (a fresh, empty session) — he did not want to press `C`
+   again for every cut.
+2. **`Ctrl+Z` right after a commit, while the re-armed session is still untouched (no click yet), undoes the last commit;
+   the Knife stays active.** His answer to the prepared question: *"Ctrl+Z nimmt den letzten Commit zurück, Knife bleibt
+   aktiv"*.
+
+**Defaults of the UX1 handoff (stated, not Artist-decided — Manu corrects only if wrong):**
+
+- **A1** "Commit" = `Enter` **and** a click outside the mesh; both re-arm.
+- **A2** `Esc` unchanged: cancels the running session (mesh, selection, History as before the session) **and leaves the
+  tool** — `Esc` is the way out; on a fresh empty session it simply leaves.
+- **A3** A commit that applies nothing (empty or fully dropped session) still leaves mesh and History untouched and the tool
+  **stays active**; `Enter` / click outside on an empty session no longer leave the tool, only `Esc` does. The status says so.
+- **A4** `Ctrl+Y` mirrors decision 2 (global redo) under the same narrow condition.
+- **A5** "Untouched" = since the session was (re)armed: no accepted click, no in-session undo, no in-session redo. Otherwise
+  the AD-017 in-session rule applies unchanged; once a click was made `Ctrl+Z` is the in-session undo, and at an empty
+  in-session history it says "nothing to undo" (no fall-through to the global history).
+- **A6** Production only (`src/main.py`, `Application`); the Playground families `knife` / `knife_face` are not touched.
+
+AD-017 record: addendum 2026-10-01 "UX1" (append-only). Build record, evidence and open points: below, after the build.
+

@@ -233,3 +233,14 @@ size height gate assumed planar faces; the face is a piece of the run's click-ti
 builds on 307 of 324 `head` quads; flat-face results unchanged. A loop that no longer fits one face because another loop's
 bridge splits it says so ("the loop does not lie inside one face"). PROVISIONAL until Manu's verdict; S3 itself is KEEP
 (KEEP ≠ promotion). Record and open points S3b-a…c: `playground/experiments/knife_face/decision.md`, "One Knife S3b".
+
+---
+
+## Addendum 2026-10-01 (Manu: UX1) — the Knife stays active after a commit; Ctrl+Z / Ctrl+Y right after a commit
+
+**2026-10-01 / UX1 (Artist decisions, Manu):** after a commit (`Enter` / click outside) the Knife begins a fresh, empty
+session at once. While that re-armed session is untouched (no accepted click, no in-session undo / redo), `Ctrl+Z` undoes the
+last commit through the global History and `Ctrl+Y` redoes it (default A4), and the Knife stays active. In every other
+session state the in-session rule above stands unchanged ("only the session's own steps, never the global history"); "after
+commit one Undo removes the whole session" stays true and is reached through this narrow rule. `Esc` leaves the tool.
+Record and defaults A1–A6: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX1".
