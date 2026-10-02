@@ -1846,14 +1846,14 @@ slots and the verdict are filled.
 
 | # | Check | Expected | Seen (Manu) |
 |---|---|---|---|
-| 1 | `C` with an empty selection. Move the cursor onto an edge **without Shift** | the preview point sits where the cursor is | |
-| 2 | **Hold Shift** (no mouse button), then release it | held: the preview point jumps to the **middle of that edge**, the edge is highlighted; released: back at the cursor | |
-| 3 | With Shift held, click | the cut point is exactly where the preview showed it | |
-| 4 | Hold Shift over a **vertex** and over the **inside of a face** | nothing changes compared to without Shift | |
-| 5 | Hold Shift, `Alt+Tab` to another window, release Shift there, come back | the preview is **not** stuck in midpoint mode | |
-| 6 | `Alt+LMB` (orbit) and `Shift+Alt+LMB` (pan); outside a Knife session `Shift`+click | still orbit / pan; `Shift`+click still adds to the selection | |
+| 1 | `C` with an empty selection. Move the cursor onto an edge **without Shift** | the preview point sits where the cursor is |passed |
+| 2 | **Hold Shift** (no mouse button), then release it | held: the preview point jumps to the **middle of that edge**, the edge is highlighted; released: back at the cursor |passed |
+| 3 | With Shift held, click | the cut point is exactly where the preview showed it | passed|
+| 4 | Hold Shift over a **vertex** and over the **inside of a face** | nothing changes compared to without Shift |passed |
+| 5 | Hold Shift, `Alt+Tab` to another window, release Shift there, come back | the preview is **not** stuck in midpoint mode |passed |
+| 6 | `Alt+LMB` (orbit) and `Shift+Alt+LMB` (pan); outside a Knife session `Shift`+click | still orbit / pan; `Shift`+click still adds to the selection |passed |
 
-| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | KEEP |
 |---|---|
 | | |
 
@@ -2050,18 +2050,18 @@ camera):** S4 stays **PROVISIONAL** until these slots and the verdict are filled
 
 | # | Check | Expected | Seen (Manu) |
 |---|---|---|---|
-| 1 | `C`; click an edge on the top face, then an edge on the **front** face far away (no clicks in between); `Enter` | the cut runs through every face in between; one `Ctrl+Z` removes it all | |
-| 2 | The same on the head, from the nose side to the cheek across several faces | while hovering, dots mark the crossings; the status names them after the click | |
-| 3 | A line that runs over a gap / the silhouette | only the **visible** part is cut; the status says what was skipped / hidden | |
-| 4 | Click a far point, **orbit the camera**, click the next far point | the first cut stays as placed | |
-| 5 | Switch to Wireframe (`D` until Wireframe, before `C`), the same far click | it now cuts everything under the line (nothing hidden) | |
+| 1 | `C`; click an edge on the top face, then an edge on the **front** face far away (no clicks in between); `Enter` | the cut runs through every face in between; one `Ctrl+Z` removes it all | passed|
+| 2 | The same on the head, from the nose side to the cheek across several faces | while hovering, dots mark the crossings; the status names them after the click |passed |
+| 3 | A line that runs over a gap / the silhouette | only the **visible** part is cut; the status says what was skipped / hidden | passed|
+| 4 | Click a far point, **orbit the camera**, click the next far point | the first cut stays as placed |passed |
+| 5 | Switch to Wireframe (`D` until Wireframe, before `C`), the same far click | it now cuts everything under the line (nothing hidden) |passed |
 | 6 | A loop across several faces: click the chain's start again (snaps) | it closes without bridges across faces; the next click continues from the closing vertex; `E` / double-click still work | |
-| 7 | Hover over the head | stays smooth | |
-| 7a | **Empty space:** `C`, click an edge on the cube, move the cursor **off the model**, click there | the line follows the cursor over empty space; after the click the part outside **disappears**, only the cut on the model remains (status: "point in space"); `Enter` commits; `Ctrl+Z` reverts it | |
-| 7b | Click outside **left** of the model, then outside on the **right**; `Enter`. Same on the head. A click outside whose line crosses nothing | the line cuts across the model (visible faces only); "crosses nothing" cuts and commits nothing | |
-| 7c | Click outside, **orbit**, click on the model; `E` / `RMB`, double-click, `Esc` | the first point stays where you set it; the keys behave as before; a click outside never commits | |
-| 8 | Replay the recorded Q5 sequences ("One Knife S1" practical test above: bow-tie, tail join as clicked, closed shape then continue) | the results match the Playground Q5 (bow-tie `V:13 E:21 F:10`, tail join `V:14 E:22 F:10`) | |
+| 7 | Hover over the head | stays smooth |passed - it´s ok, but the circle follows delayed when you mouve the cursor quickly, but still passed, we can optimze that later|
+| 7a | **Empty space:** `C`, click an edge on the cube, move the cursor **off the model**, click there | the line follows the cursor over empty space; after the click the part outside **disappears**, only the cut on the model remains (status: "point in space"); `Enter` commits; `Ctrl+Z` reverts it |passed |
+| 7b | Click outside **left** of the model, then outside on the **right**; `Enter`. Same on the head. A click outside whose line crosses nothing | the line cuts across the model (visible faces only); "crosses nothing" cuts and commits nothing |passed |
+| 7c | Click outside, **orbit**, click on the model; `E` / `RMB`, double-click, `Esc` | the first point stays where you set it; the keys behave as before; a click outside never commits |passed |
+| 8 | Replay the recorded Q5 sequences ("One Knife S1" practical test above: bow-tie, tail join as clicked, closed shape then continue) | the results match the Playground Q5 (bow-tie `V:13 E:21 F:10`, tail join `V:14 E:22 F:10`) |passed |
 
-| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | KEEP |
 |---|---|
 | | |
