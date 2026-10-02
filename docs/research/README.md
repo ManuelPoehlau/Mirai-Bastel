@@ -19,6 +19,10 @@ This document is the canonical home for the artist-side Character Systems resear
 - [MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md](MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md) — Modeling-Workflow, Topologie-Grammatik, lokale Topologiekontrolle (Discovery, keine Entscheidungen)
 - [topology/README.md](topology/README.md) — Connect-, Knife-, Face-Cut- und Face-Holes-Discoveries
 
+## Subdivision Surfaces
+
+- [subdivision/README.md](subdivision/README.md) — Einstieg; [subdivision/SUBDIVISION_SURFACES_RESEARCH.md](subdivision/SUBDIVISION_SURFACES_RESEARCH.md) — Research V1 zu SubD (Intent-Modelle, Catmull-Clark, Creases, OpenSubdiv vs. eigene Implementierung, Performance auf der Referenz-Hardware, Käfig/Picking, DCC-Vergleich). Discovery, keine Entscheidung.
+
 ## Viewport Shading
 
 - [viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md](viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md) — Shading/Lighting für Formwahrnehmung (Research, keine Entscheidung)

@@ -326,7 +326,7 @@ The control mesh remains authoritative.
 
 Subdivision is initially a display/modeling system rather than a reason to duplicate the authoritative mesh state.
 
-The current prototype contains a simple Catmull-Clark implementation. It is useful as a learning prototype but should not be treated as the final topology architecture.
+No Catmull-Clark implementation exists in the production code. An early prototype referred to by an earlier draft of this section was never committed (see `docs/research/subdivision/SUBDIVISION_SURFACES_RESEARCH.md` §0.2). Current SubD research: `docs/research/subdivision/`; experimental lab: `experiments/subdivision_lab/`.
 
 ## 11. History / Undo
 
