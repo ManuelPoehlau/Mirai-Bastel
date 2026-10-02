@@ -247,9 +247,12 @@ def test_knife_cut_makes_the_new_vertex_immediately_hoverable(app):
     assert app.key_press(_key("enter")) is True  # commit
     new_vid = next(v for v in mesh.all_vertex_ids()
                    if all(abs(a - b) < 1e-9 for a, b in zip(mesh.vertex_position(v), cut_point)))
-    app.selection.mode = SelectionMode.VERTEX
+    # UX1 (Manu 2026-10-01): the Knife stays active after the commit, so the new vertex is hovered by the
+    # re-armed session's own (cached) pick - was: selection hover in Vertex mode after the session ended.
+    # Not left with Esc first: that would invalidate the cache itself.
+    assert app.knife_active
     app.pointer_motion(*_vertex_screen(app, new_vid))
-    assert app.selection.hovered == new_vid
+    assert app._knife_target == {"kind": "vertex", "vertex_id": new_vid}
 
 
 def test_display_mode_change_gives_fresh_occlusion_immediately(app):

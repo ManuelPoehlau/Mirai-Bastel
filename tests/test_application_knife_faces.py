@@ -87,7 +87,8 @@ def test_a_bent_cut_through_a_face_is_cut_at_enter_only(app):
     assert len(app.knife_render_data.placed_points) == 3 and len(app.knife_render_data.path_segments) == 2
     assert _topology(mesh) == before and app._pick_cache._generation == generation
     assert app.key_press(ENTER)
-    assert app.status_message == "Knife committed (2 path edges selected)"   # edge -> interior -> edge
+    assert app.status_message == ("Knife committed (2 path edges selected); "   # edge -> interior -> edge
+                                  "next cut ready - Esc leaves the Knife")       # UX1
     assert len(mesh.all_vertex_ids()) == n_v + 3 and len(mesh.all_face_ids()) == n_f + 1
     assert _history_depths(app) == (1, 0)
     assert_mesh_invariants(mesh, context="bent cut through the front")
@@ -125,7 +126,8 @@ def test_the_last_click_inside_a_face_is_joined_at_enter_and_the_status_says_so(
     assert app.status_message == "Knife: cut (1 path segment)"   # no announcement while cutting
     assert app.key_press(ENTER)
     assert app.status_message == ("Knife committed (2 path edges selected); "
-                                  "1 last point(s) inside a face joined to the nearest corner")
+                                  "1 last point(s) inside a face joined to the nearest corner; "
+                                  "next cut ready - Esc leaves the Knife")       # UX1
 
 
 def test_a_lone_interior_click_commits_nothing_and_says_why(app):
@@ -135,7 +137,8 @@ def test_a_lone_interior_click_commits_nothing_and_says_why(app):
     assert app.status_message == "Knife: start point set"
     assert app.key_press(ENTER)
     assert app.status_message == ("Knife: no cuts made, nothing committed "
-                                  "(1 shape(s) inside a face with fewer than 3 points dropped)")
+                                  "(1 shape(s) inside a face with fewer than 3 points dropped)"
+                                  " - Knife still active, Esc leaves")            # UX1
     assert _topology(app.scene.mesh) == before and _history_depths(app) == (0, 0)
 
 
