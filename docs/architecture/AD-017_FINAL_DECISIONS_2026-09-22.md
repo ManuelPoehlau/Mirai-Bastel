@@ -263,3 +263,20 @@ Record and defaults A1–A6: `playground/experiments/knife_face/decision.md`, "W
 - The UX1 withdrawal (addendum above) stands: a commit ends the Knife session.
 
 Record, defaults D1–D13 and open points UX2-b…f: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX2".
+
+---
+
+## Addendum 2026-10-02 (Manu: S4) — a click outside the mesh inside a session is a point in space and cuts
+
+**2026-10-02 / S4 (Artist decision, Manu; append-only — the text above, the UX2 addendum included, is unchanged):** Manu's
+words: *"Beim Klick ins Leere innerhalb der Session wird geschnitten, das heißt, die Vorschaulinie kann über das Mesh hinaus
+gehen (wie bei Blender). Bei Klick verschwindet die Vorschaulinie außerhalb des Mesh und man sieht nur noch die Cuts die nach
+Commit entstehen werden (auch Blender Verhalten)"*.
+- **Point in space:** inside a Knife session a click outside the mesh adds a point (Blender's "point in space"); the segment
+  from the last point to it cuts whatever visible mesh it crosses. The hover line runs from the last point to the cursor even
+  over empty space.
+- **After the click** the stretch outside the mesh is not drawn; only the cuts commit will make stay visible.
+- `Enter` still commits; a click outside never commits.
+- This supersedes the UX2 rule "a click outside the mesh does nothing" (UX2 D6) and resolves UX2-b.
+
+Record, defaults and open points S4-a…c: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 S4".

@@ -1856,3 +1856,61 @@ slots and the verdict are filled.
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
 | | |
+
+---
+
+## WP-KNIFE-01 S4 — cross-face planner and points in space (2026-10-02, PROVISIONAL)
+
+*Recorded 2026-10-02 (WP-KNIFE-01 S4 handoff v2, Task B0).* Production only (`src/`); the Lab's Q5 keeps working and its
+behaviour stays identical (S5). **PROVISIONAL until Manu's verdict** — nothing below is Artist-validated.
+
+**Decision basis:** slice table `docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md` §6.2 (S4 row: "planner with the
+click's camera, visible part, snap to own points, close/continue, earlier point"); the KEEP'd Lab model Q5-b (walk + plane
+planner, the **visible part** is cut: A-Q1; Cut Through not now: A-Q2 — "Q5 — Artist answers" above). Production changes
+*where* the code lives, not *what* is cut. Manu (2026-10-02): the Symmetry promotion is re-checked only after S4 is done
+**and verdicted** (ROADMAP 2026-10-02) — nothing about Symmetry is decided here.
+
+**Artist decision (Manu, 2026-10-02 — not re-asked), his words:** *"Beim Klick ins Leere innerhalb der Session wird
+geschnitten, das heißt, die Vorschaulinie kann über das Mesh hinaus gehen (wie bei Blender). Bei Klick verschwindet die
+Vorschaulinie außerhalb des Mesh und man sieht nur noch die Cuts die nach Commit entstehen werden (auch Blender
+Verhalten)"*. So: (a) the hover rubber band runs from the last point to the cursor even over empty space; (b) a click there
+adds a point, and the segment from the last point to it cuts the visible mesh it crosses; (c) after the click the stretch
+outside the mesh is not drawn — only the cuts commit will make. `Enter` commits; a click outside never commits. This
+**supersedes UX2 D6** ("a click outside is a no-op") and **resolves UX2-b** — recorded as the AD-017 addendum
+"2026-10-02 (Manu: S4)" (append-only; the UX2 addendum is not edited).
+
+**Defaults of the S4 handoff (stated, not Artist-decided — Manu corrects only if wrong):**
+
+- **S1** The cross-face model is exactly the Lab's Q5 (`planner.py` + `engine_q5.py::_plan_segment`), including the camera
+  at **click time** and the occlusion switch (`display.show_faces`; wireframe = nothing hidden).
+- **S2** A segment between two points that share no face (refused today as `CROSS_FACE`, parity row P10) is planned through
+  the planner. Without a camera view (headless, no viewport) it stays refused, as today.
+- **S3** Planned crossings are stored **in the path** (records with `crossing=True`, their point id given by the click);
+  commit stays camera-free. Orbiting between clicks does not change an already placed cut.
+- **S4** **Space points.** A click outside the mesh creates a point at the click's camera ray ∩ the plane through the camera
+  `target`, perpendicular to the view direction (Blender 2.79 `knife_start_cut`: the plane through the view offset, normal =
+  view z axis; `KnifePosData.is_space`, `[SRC]`). Stored world-space at click time; the chain continues from it.
+- **S4a** A start in space is allowed; a chain that never touches the mesh commits nothing.
+- **S4b** Space points are no snap targets and no "earlier points"; they take part in undo / redo (one click = one step),
+  the pen lift (`E` / `RMB`), `Enter` / `Esc`; `Shift` has no effect on them.
+- **S4c** Closing a chain (a click on its start, or the UX2 double-click) works only if the chain's start is a mesh point;
+  starting in space, the double-click only lifts and the status says why.
+- **S4d** A segment with **both** ends in space is valid and cuts everything visible it crosses; a segment that crosses
+  nothing is accepted and cuts nothing (the status says so).
+- **S5** The Lab keeps working; its Q5 behaviour stays identical after the move (S1 precedent: move, not copy).
+
+**Parity row P10 flips — an intended change:** "edge → edge, faces share nothing" was "Production refuses" (S2 / S3 parity
+matrix, `ONE_KNIFE_PROMOTION_DISCOVERY.md` §1.3); with S4 Production **plans across** like Q5.
+
+### WP-KNIFE-01 S4 — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| S4-a | **Depth of a space point** = the camera-target plane (Blender-like). A different plane (e.g. the depth of the last mesh point) is a later question. | — |
+| S4-b | **Closing a chain that starts in space** (S4c default: not possible; the double-click only lifts). | — |
+| S4-c | **A space-point segment grazing the silhouette:** which stretch counts as visible (the planner's per-crossing occlusion test decides; a crossing exactly on the silhouette edge may fall either way). | — |
+
+**Inherited Lab limits (recorded, not fixed here):** S3-i (where a piece ends next to a gap on curved surfaces);
+projection vs. render on warped faces (S3b-b); a bridge may cut another loop (S3b-a).
+
+Build record, evidence and the practical test: below, after the build.
