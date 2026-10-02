@@ -405,7 +405,6 @@ def test_straight_line_out_of_a_concave_face_is_planned_across_faces():
     assert_mesh_invariants(mesh, context="S4 concave (R5)")
 
 
-@XFAIL
 def test_planner_with_pick_cache_gives_the_same_crossings_as_without():
     from mirai.topology.knife_planner import View, plan_crossings
     from mirai.viewport.picking_cache import PickCache

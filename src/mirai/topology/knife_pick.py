@@ -92,6 +92,9 @@ def _edge_t_3d(origin: _Vec3, direction: _Vec3, p0: _Vec3, p1: _Vec3) -> float:
     return max(0.0, min(1.0, t))
 
 
+edge_t_3d = _edge_t_3d  # public name for the planner (`knife_planner`, WP-KNIFE-01 S4)
+
+
 def knife_pick(
     camera,
     mesh,

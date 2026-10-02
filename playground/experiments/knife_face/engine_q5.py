@@ -3,10 +3,11 @@
 Q5 is D's session (virtual path, mesh changes only at commit, one History entry,
 same residue) plus:
 
-  * a planner (`planner.py`): a click whose target lies outside the last point's
-    faces is turned into the ordered visible crossings between them, fixed at
-    that click with that click's camera and stored as ordinary path points — the
-    commit-time resolver never sees a camera;
+  * a planner (`planner.py`; since WP-KNIFE-01 S4 `mirai.topology.knife_planner`):
+    a click whose target lies outside the last point's faces is turned into the
+    ordered visible crossings between them, fixed at that click with that click's
+    camera and stored as ordinary path points — the commit-time resolver never
+    sees a camera;
   * Blender-like gaps (Artist A-Q1, 2026-09-29): only visible crossings count, the
     visible ones form face-connected *pieces*, every piece is cut, the stretch
     between pieces is skipped. Skipped stretches are `{"kind": "break"}` markers
@@ -67,7 +68,7 @@ from playground.experiments.knife_face.engine import (
     closed_shape_text,
     loop_at_point_notes,
 )
-from playground.experiments.knife_face.planner import View, plan_crossings, point_faces, point_position
+from mirai.topology.knife_planner import View, plan_crossings, point_faces, point_position
 
 # Manu, 2026-09-29: the cursor always snaps within this radius of any vertex —
 # same radius as the existing vertex pick (H3) and D's close-on-start zone.
