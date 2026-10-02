@@ -248,3 +248,18 @@ Record and defaults A1–A6: `playground/experiments/knife_face/decision.md`, "W
 ---
 
 **Addendum 2026-10-02 (Manu): UX1 withdrawn.** The UX1 addendum above (Ctrl+Z / Ctrl+Y fall-through right after a commit, the Knife re-armed after a commit) is withdrawn on 2026-10-02 (Artist decision, Manu). The earlier rules apply again: a commit ends the Knife session, the in-session Undo never reaches the global history, and one Undo after a commit reverts the session's single History entry.
+
+---
+
+## Addendum 2026-10-02 (Manu: UX2) — chains and the pen lift; a click outside the mesh no longer commits
+
+**2026-10-02 / UX2 (Artist decisions, Manu; append-only — the text above is unchanged):**
+- **Click outside:** a click outside the mesh no longer commits (it does nothing); commit is `Enter`. Reason: cross-face
+  cutting (S4) needs the cursor to leave the silhouette.
+- **Chains:** one Knife session holds several chains; `Enter` applies all of them as exactly one History entry, one Undo
+  reverts the whole session.
+- **Pen lift:** `E` (and an `RMB` click) ends the current chain without committing; the next click starts a new chain. A
+  double-click closes the chain (when it can) and lifts the pen. The lift is an in-session step (in-session Undo / Redo).
+- The UX1 withdrawal (addendum above) stands: a commit ends the Knife session.
+
+Record, defaults D1–D13 and open points UX2-b…f: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX2".

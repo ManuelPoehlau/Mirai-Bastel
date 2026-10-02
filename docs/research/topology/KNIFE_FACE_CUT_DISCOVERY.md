@@ -83,8 +83,26 @@ versions use the same mechanism for everything below. `[SRC]`
   crosses ("line hits"); each crossed edge is split and each face in between is cut. Only visible faces unless
   *Cut Through* is on.
 - Result: arbitrary n-gons (edge-net split).
-- Session keys (v2.79 keymap in the same file): LMB add cut, double-click close, `E` end current cut and start
-  a new one, `Enter`/`Space` confirm. Main adds freehand cutting while the button is held.
+- Session keys (v2.79, `editmesh_knife.c` tag `v2.79`, `knifetool_modal_keymap` ~L2697–2745 and `knifetool_modal`
+  ~L2751; re-read for WP-KNIFE-01 UX2, 2026-10-02) `[SRC]`:
+
+  | Input | v2.79 behaviour |
+  |---|---|
+  | `LMB` | add cut (`KNF_MODAL_ADD_CUT`); held and dragged = freehand (`is_drag_hold`, not with Cut Through) |
+  | `LMB` double-click | close to the chain's first point **and end that chain** (`KNF_MODAL_ADD_CUT_CLOSED` → `knife_add_cut` + `knife_finish_cut`, `MODE_IDLE`) |
+  | `E` | "End Current Cut" (`KNF_MODAL_NEW_CUT` → `knife_finish_cut`, `MODE_IDLE`): **no commit**, the mesh is unchanged, the next click starts a new chain |
+  | `Enter` / `NumEnter` / `Space` | confirm — applies **all** chains of the session at once |
+  | `Esc` / `RMB` | cancel the whole session |
+  | `MMB` | pan |
+  | `Ctrl` held | midpoint snap: an edge hit becomes the edge's midpoint (L1711, L1996) |
+  | `Shift` held | ignore vertex / edge snapping |
+  | `C` | angle constraint toggle (`knife_snap_angle`, L2146) |
+  | `Z` | Cut Through toggle |
+  | — | **no in-session undo** in 2.79 |
+
+  Blender 3.0+ `[DOC]` (manual diff rBM8445): `RMB` = New Cut (as `E`), `C` = Cut Through, `Ctrl+Z` = undo the last cut
+  segment, `V` = X-ray. Earlier cuts of the session count as extra snap targets for new chains. Main also keeps
+  freehand cutting while the button is held.
 
 **Silo** — Nevercenter wiki page "Cut", `[DOC]` excerpts only; Silo is closed source.
 

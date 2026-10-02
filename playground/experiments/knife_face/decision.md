@@ -1560,3 +1560,78 @@ slots and the verdict are filled; remarks on A1–A5 (and UX1-a…c) welcome.
 | | |
 
 **Status (Manu, 2026-10-02) — UX1 backed out:** UX1 wird nicht verwendet, weil es einen Arbeitsgedanken in viele History-Schritte zerlegt und den Workflow in der Praxis behindert (Manu, 2026-10-02). Its open points UX1-a..e are moot. Replacement: Blender-style pen lift (planned, WP-KNIFE-01 UX2).
+
+---
+
+## WP-KNIFE-01 UX2 — pen lift (Artist 2026-10-02, PROVISIONAL)
+
+*Recorded 2026-10-02 (WP-KNIFE-01 UX2 handoff v2, Task 0).* Production only; the Playground families `knife` /
+`knife_face` are not touched.
+
+**Artist decisions (Manu, 2026-10-02 — not re-asked):**
+
+1. **UX1 is backed out.** "Knife stays active after a commit" hindered the workflow in practice ("wir bauen es zurück").
+   Code revert `f02ec19`; Manu's own record: the status line of "WP-KNIFE-01 UX1" above (`631c47a`).
+2. **Pen lift, like Blender (old version):** one session holds **several chains**. A key (Blender 2.79: `E`) ends the
+   current chain **without committing anything**; the session stays active; the next click starts a new chain. Commit stays
+   `Enter`; `Esc` cancels the whole session.
+3. **Double-click** closes / finishes the chain (Blender's double-click, `KNF_MODAL_ADD_CUT_CLOSED`) — "quasi auch wie Stift
+   neu ansetzen".
+4. **A click outside the mesh no longer commits.** Reason (Manu): the next slice (cross-face cuts, S4) needs the cursor to be
+   able to leave the silhouette. The earlier decision "click outside the mesh = commit" (B7, AD-017) is withdrawn.
+5. **Right mouse button = New Cut as well** ("sinnvolle zusätzliche Option"): `RMB` does the same as `E`.
+6. **Midpoint snap with `Shift`+click** (Blender has it as a held `Ctrl`; Manu chose `Shift`).
+7. **Angle constraint stays out for now; the idea is only recorded:** `docs/future_ideas/MODELING.md` ("Knife angle
+   constraint").
+
+Unchanged from earlier decisions: close ≠ commit; a click on the chain's own start closes it and the next click continues
+from the closing vertex; a click on an earlier own boundary point connects; the last interior click joins the nearest corner
+at commit; snap near any vertex (14 px); in-session Undo = last click; one Undo after a commit reverts the whole session; a
+commit that applies nothing leaves mesh and History untouched; AQ1 skip; visible-part cutting; KEEP ≠ promotion.
+
+**History (M1): UX1 wird nicht verwendet, weil** es einen Arbeitsgedanken in viele History-Schritte zerlegt und den
+Workflow in der Praxis behindert (Manu, 2026-10-02) — see the UX1 status line above; UX1-a…e are moot (UX2-e).
+
+**Other verdicts at this point:** S3b **KEEP** (Manu, recorded by himself in `41a182a`, "One Knife S3b" practical-test rows).
+S2-a (a straight run of boundary edges is a skip) has still not been commented on by Manu and stays open.
+
+**Defaults of the UX2 handoff (stated, not Artist-decided — Manu corrects only if wrong):**
+
+- **D1** Keys = `E` (Blender 2.79) **and** `RMB` (Blender 3.0+): one command `KNIFE_LIFT`, two default bindings in the
+  `knife` context. `RMB` acts on a **click** (press + release under the click threshold, AD-019 / B7.1); an `RMB` drag is
+  not a lift and stays free. Blender 2.79's "RMB = cancel" is not taken over: `Esc` cancels.
+- **D2** Double-click = *finish chain*: if the chain (including the point the double-click's first click just added) has
+  ≥ 3 points and the closing segment is valid, it is **closed** (as a click on the chain's start would close it) **and the
+  pen lifts** (no continuation seed). Otherwise it only lifts and the status says why it did not close. A double-click on
+  the chain's start point: the first click closes (as today), the second lifts.
+- **D3** After a lift the next click is a fresh start (vertex, edge point or face point). Clicking an earlier own point (a
+  record with a point id) as the start begins the chain at that very record (one vertex at commit) — a branch off an earlier
+  cut, like Blender's "new snapping points".
+- **D4** The lift is its own in-session step: `Ctrl+Z` right after `E` takes the lift back (the chain continues from its last
+  point); `Ctrl+Y` redoes it. A double-click's second click (close + lift) is one step; its first click is an ordinary click.
+- **D5** `E` with nothing to lift (empty session, or already lifted) is refused with a status text; no state change.
+- **D6** A click outside the mesh is a no-op with a status line; no preview target there. It is not a path point (UX2-b).
+- **D7** Double-click = two releases within 0.35 s and 4 px, measured on an injectable clock. A constant, no setting.
+- **D8** Production only; `knife` / `knife_face` untouched (`knife_face` is retired in S5).
+- **D9** Midpoint snap: a `Shift`+`LMB` click whose pick target is an **edge** places the point at `t = 0.5` of that edge. A
+  vertex target stays the vertex, a face target is unchanged, an own earlier point wins over the midpoint (own-point snap
+  first). The 14 px snap radius is unchanged.
+- **D10** Live preview with `Shift` held — only if the window layer can tell `Application` the `Shift` state while the mouse
+  only moves without touching window code outside the knife path; otherwise click-only and open point UX2-f.
+- **D11** Only the unmodified `LMB` is the Knife's today; it becomes unmodified **or `Shift`-only**. `Alt+LMB`, `Ctrl+…` and
+  every other combination keep going through the pointer gestures. A `Shift`+`LMB` drag past the threshold is not a click.
+- **D12** Blender's `Shift` (ignore snapping) has no equivalent now; a later "ignore snap" key must not use `Shift` (UX2-d).
+- **D13** Double-click detection ignores modifiers; the finishing second click places no point, so `Shift` on it has no
+  effect.
+
+### UX2 — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| UX2-b | **Clicks outside the mesh as path points in empty space** (Blender: a cut position can be "in space"). Now a click outside is a no-op (D6); whether it becomes a path point is an S4 question (cross-face, the cursor leaving the silhouette). | — |
+| UX2-c | **Freehand `LMB`-drag** (Blender: held and dragged = freehand cut) vs. ours: a drag past the click threshold does nothing (B7.1). | — |
+| UX2-d | **The remaining Blender modifiers:** ignore-snap (Blender `Shift`; not on `Shift` here, D12), angle constraint (`docs/future_ideas/MODELING.md`), Cut Through (same file). | — |
+| UX2-e | UX1-a…e are moot after the revert (Manu's status line on "WP-KNIFE-01 UX1"). | — |
+| UX2-f | **Live midpoint preview** while `Shift` is held — only if D10 falls back to click-only (see the build record). | — |
+
+Build record, evidence and the practical test: below, after the build.
