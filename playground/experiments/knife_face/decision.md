@@ -2054,7 +2054,7 @@ camera):** S4 stays **PROVISIONAL** until these slots and the verdict are filled
 | 2 | The same on the head, from the nose side to the cheek across several faces | while hovering, dots mark the crossings; the status names them after the click | |
 | 3 | A line that runs over a gap / the silhouette | only the **visible** part is cut; the status says what was skipped / hidden | |
 | 4 | Click a far point, **orbit the camera**, click the next far point | the first cut stays as placed | |
-| 5 | Switch to Wireframe (`D` before `C`), the same far click | it now cuts everything under the line (nothing hidden) | |
+| 5 | Switch to Wireframe (`D` until Wireframe, before `C`), the same far click | it now cuts everything under the line (nothing hidden) | |
 | 6 | A loop across several faces: click the chain's start again (snaps) | it closes without bridges across faces; the next click continues from the closing vertex; `E` / double-click still work | |
 | 7 | Hover over the head | stays smooth | |
 | 7a | **Empty space:** `C`, click an edge on the cube, move the cursor **off the model**, click there | the line follows the cursor over empty space; after the click the part outside **disappears**, only the cut on the model remains (status: "point in space"); `Enter` commits; `Ctrl+Z` reverts it | |
