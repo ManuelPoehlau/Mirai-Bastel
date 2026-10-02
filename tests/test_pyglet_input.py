@@ -107,6 +107,51 @@ class TestKeyFromPyglet:
         assert inp.modifiers == frozenset({"ctrl"})
 
 
+@pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 UX2b: spec first, not built yet")
+class TestShiftKeysAfter:
+    """WP-KNIFE-01 UX2b: welche Shift-Tasten nach einem Key-Event gehalten sind (A3: links und rechts zählen,
+    der Zustand ist "irgendein Shift gehalten"). Reiner Helfer ohne Fenster; `key_from_pyglet` bleibt
+    unverändert (Shift allein ist kein `Input`)."""
+
+    @staticmethod
+    def _after(held, symbol, pressed):
+        from mirai.pyglet_input import shift_keys_after
+
+        return shift_keys_after(held, symbol, pressed)
+
+    @pytest.mark.parametrize("symbol", [_key.LSHIFT, _key.RSHIFT])
+    def test_press_holds_release_frees(self, symbol):
+        held = self._after(frozenset(), symbol, True)
+        assert held == frozenset({symbol})
+        assert self._after(held, symbol, False) == frozenset()
+
+    @pytest.mark.parametrize("symbol", [_key.A, _key.E, _key.LCTRL, _key.LALT, _key.ENTER, _key.ESCAPE])
+    def test_other_keys_are_none(self, symbol):
+        assert self._after(frozenset({_key.LSHIFT}), symbol, True) is None
+        assert self._after(frozenset({_key.LSHIFT}), symbol, False) is None
+
+    def test_both_held_one_released_is_still_held(self):
+        held = self._after(frozenset(), _key.LSHIFT, True)
+        held = self._after(held, _key.RSHIFT, True)
+        held = self._after(held, _key.LSHIFT, False)
+        assert held == frozenset({_key.RSHIFT})
+        assert self._after(held, _key.RSHIFT, False) == frozenset()
+
+    def test_key_repeat_and_a_stray_release_are_idempotent(self):
+        held = self._after(frozenset(), _key.LSHIFT, True)
+        assert self._after(held, _key.LSHIFT, True) == held
+        assert self._after(frozenset(), _key.RSHIFT, False) == frozenset()
+
+
+class TestShiftStillNoInput:
+    """WP-KNIFE-01 UX2b, Fall 11: Shift allein bleibt ohne `Input` (keine Key-Map-/Binding-Änderung)."""
+
+    @pytest.mark.parametrize("symbol", [_key.LSHIFT, _key.RSHIFT])
+    def test_shift_alone_still_maps_to_no_input(self, symbol):
+        assert key_from_pyglet(symbol, _key.MOD_SHIFT) is None
+        assert key_from_pyglet(symbol, 0) is None
+
+
 class TestMouseFromPyglet:
     @pytest.mark.parametrize(
         "button,value",
