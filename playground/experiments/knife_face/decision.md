@@ -1460,6 +1460,7 @@ and the verdict are filled.
 ---
 
 ## WP-KNIFE-01 UX1 — Knife stays active after commit (Artist request 2026-10-01, PROVISIONAL)
+**BACKED OUT (Artist 2026-10-02): code reverted, see below.**
 
 **Artist decisions (Manu, 2026-10-01 — not re-asked):**
 
@@ -1557,3 +1558,5 @@ slots and the verdict are filled; remarks on A1–A5 (and UX1-a…c) welcome.
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
 | | |
+
+**Status (Manu, 2026-10-02) — UX1 backed out:** UX1 wird nicht verwendet, weil es einen Arbeitsgedanken in viele History-Schritte zerlegt und den Workflow in der Praxis behindert (Manu, 2026-10-02). Its open points UX1-a..e are moot. Replacement: Blender-style pen lift (planned, WP-KNIFE-01 UX2).

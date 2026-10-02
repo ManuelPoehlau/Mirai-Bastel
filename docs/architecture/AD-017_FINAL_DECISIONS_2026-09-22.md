@@ -244,3 +244,7 @@ last commit through the global History and `Ctrl+Y` redoes it (default A4), and 
 session state the in-session rule above stands unchanged ("only the session's own steps, never the global history"); "after
 commit one Undo removes the whole session" stays true and is reached through this narrow rule. `Esc` leaves the tool.
 Record and defaults A1–A6: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX1".
+
+---
+
+**Addendum 2026-10-02 (Manu): UX1 withdrawn.** The UX1 addendum above (Ctrl+Z / Ctrl+Y fall-through right after a commit, the Knife re-armed after a commit) is withdrawn on 2026-10-02 (Artist decision, Manu). The earlier rules apply again: a commit ends the Knife session, the in-session Undo never reaches the global history, and one Undo after a commit reverts the session's single History entry.
