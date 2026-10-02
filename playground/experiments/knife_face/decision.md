@@ -1731,13 +1731,13 @@ slots and the verdict are filled; remarks only on D1–D13 if something feels wr
 
 | # | Check | Expected | Seen (Manu) |
 |---|---|---|---|
-| 1 | `C` with an empty selection. Cut two clicks, press **`E`**, click somewhere else on the model, two more clicks, **`Enter`** | both cuts appear, one `Ctrl+Z` removes both | |
-| 2 | `E` then `Ctrl+Z` | the chain continues from its last point (the lift is taken back); `Ctrl+Y` lifts again | |
-| 3 | Three clicks inside a face and **double-click** the third | the chain closes into a loop and the pen is lifted; the next click starts fresh | |
-| 4 | Lift, then click on **one of your earlier cut points** (on an edge) and continue from there | the new cut branches off it | |
-| 5 | Click **outside the model** | nothing happens (no commit); `Enter` commits; `Esc` cancels; a second `Enter` on an empty session changes nothing | |
-| 6 | **Right mouse button** instead of `E`: cut, `RMB`, cut elsewhere, `Enter` | same result as 1; dragging with `RMB` does nothing | |
-| 7 | **`Shift`+click on an edge** | the point sits exactly in the middle of that edge (the preview shows it only while the button is pressed — click-only, UX2-f); `Shift`+click inside a face or on a vertex behaves like a normal click; `Alt`+`LMB` still orbits | |
+| 1 | `C` with an empty selection. Cut two clicks, press **`E`**, click somewhere else on the model, two more clicks, **`Enter`** | both cuts appear, one `Ctrl+Z` removes both |passed |
+| 2 | `E` then `Ctrl+Z` | the chain continues from its last point (the lift is taken back); `Ctrl+Y` lifts again |passed |
+| 3 | Three clicks inside a face and **double-click** the third | the chain closes into a loop and the pen is lifted; the next click starts fresh |passed |
+| 4 | Lift, then click on **one of your earlier cut points** (on an edge) and continue from there | the new cut branches off it | passed, but if the vertex is inside a face: an earlier point inside a face cannot be clicked again (not yet)|
+| 5 | Click **outside the model** | nothing happens (no commit); `Enter` commits; `Esc` cancels; a second `Enter` on an empty session changes nothing |passed |
+| 6 | **Right mouse button** instead of `E`: cut, `RMB`, cut elsewhere, `Enter` | same result as 1; dragging with `RMB` does nothing |passed |
+| 7 | **`Shift`+click on an edge** | the point sits exactly in the middle of that edge (the preview shows it only while the button is pressed — click-only, UX2-f); `Shift`+click inside a face or on a vertex behaves like a normal click; `Alt`+`LMB` still orbits |passed - but preview should also show the snap visually befor the LMB ist clicked |
 
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
