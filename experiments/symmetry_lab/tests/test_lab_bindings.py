@@ -92,10 +92,10 @@ def test_lab_commands_defined_in_lab_not_in_commands():
     assert KNIFE not in vars(cmd).values()
 
 
-def test_c_is_free_in_global_and_only_connect_in_topology(bindings):
-    # E23: die Production-Bindung von C liegt in TOPOLOGY_CONTEXT und bleibt dort.
-    assert bindings.command_for(C, GLOBAL_CONTEXT) is None
-    assert bindings.command_for(C, TOPOLOGY_CONTEXT) == cmd.CONNECT
+def test_c_is_connect_in_global_and_lab_knife_in_symmetry_lab_context(bindings):
+    # Seit WP-06 B6 ist C global an Connect gebunden; im Lab-Kontext gewinnt der Lab-Override (E23).
+    assert bindings.command_for(C, GLOBAL_CONTEXT) == cmd.CONNECT
+    assert bindings.command_for(C, SYMMETRY_LAB_CONTEXT) == KNIFE
 
 
 def test_key_overrides_are_shift_s_m_and_c():
