@@ -1635,3 +1635,110 @@ S2-a (a straight run of boundary edges is a skip) has still not been commented o
 | UX2-f | **Live midpoint preview** while `Shift` is held — only if D10 falls back to click-only (see the build record). | — |
 
 Build record, evidence and the practical test: below, after the build.
+
+### UX2 — build (2026-10-02, headless, not Artist-tested)
+
+**What changed** (commit "UX2: pen lift …"; PROVISIONAL until Manu's verdict):
+
+- `KnifeTool` (`src/mirai/topology/knife.py`): new path record `{"kind": "break", "reason": "lift"}`. `plan_lift(close)`,
+  `lift()` and `finish_chain()`: a lift appends the record; right after a close (the chain is only its seed) it takes the
+  seed's place, so the closed chain is not continued; `finish_chain()` closes the chain like a click on its start when it has
+  ≥ 3 points and the closing segment is valid — the close's records without the seed, then the lift, one step — and
+  otherwise only lifts with the reason in the plan ("pen lifted (not closed: …)"). Nothing to lift (empty, last record a lift):
+  refused, `NOTHING_TO_LIFT`. `last_point` is None after a lift; `chain_points` / `cut_segments` / the close rule end at the
+  lift (`is_chain_end`). A start may be an existing record (D3: an own boundary point, or a vertex already on the path — the
+  same record, one vertex at commit); an own interior point as a start is refused (`EARLIER_INTERIOR`, the current rule). An
+  in-session step now keeps the records it took away (the replaced seed), so `undo_step` / `redo_step` restore it exactly.
+- Resolver (`knife_resolve.py`): only `is_chain_end` — a lift ends a chain like a close that is not continued; the gap
+  counter (`res.gaps`, reasons `gap` / `edge`) is unchanged, so a lift is no gap. No other resolver change; the §7 STOP did
+  not apply (`split_chains` already handles a chain end without a following seed).
+- Bindings: command `KnifeLift`, `E` and an `RMB` click in the `knife` context only (`E` stays Rotate outside a session, `RMB`
+  stays unbound globally); `keymap.json` can rebind or unbind both. Artist Input Truth: new entry `topology.knife_lift`
+  (`E`, notes name the RMB click and the knife context — the Input Mapping Tool's reporter will list `E` twice, like
+  `Ctrl+Z` / `Escape`, AD-013 rule 3 "visible"); the `topology.knife_commit` note no longer says "LMB outside mesh". No Lab
+  override touches the `knife` context (Symmetry Lab: its own context; 246 → 246 tests).
+- `Application` (knife section and the knife part of the pointer dispatch):
+  - Keys: `KnifeLift` → `_knife_lift()` (ignored while the Knife's button is held, as Undo/Redo). Any key resets the
+    double-click.
+  - Pointer ownership (D11): the plain and the `Shift`-only `LMB`, and a button bound to `KnifeLift` (RMB). `Alt+LMB`,
+    `Ctrl+LMB`, `Ctrl+Shift+LMB`, `Alt+Shift+LMB` go through the pointer gestures as before. One gesture records its
+    button and whether `Shift` was held at the press (fixed at the press, AD-019).
+  - Release under the click threshold: an RMB click lifts; an LMB click within 0.35 s and 4 px (Euclidean) of the previous
+    LMB click is the double-click's second click → `finish_chain()`; otherwise a point. A drag past the threshold is no click
+    and breaks a double-click; a finished double-click does not arm a third click (a triple click = a double-click + a new
+    start). **Interpretation (not in the handoff):** when there is nothing to finish (empty session, already lifted) the second
+    click is an ordinary click, not a "nothing to lift" refusal.
+  - Click outside the mesh: status "Knife: outside the mesh: nothing to cut here", nothing else (D6).
+  - Midpoint (D9): with `Shift` an edge target moves to `t = 0.5` after the own-point snap; if an own point already sits on
+    that edge's midpoint, the click reaches that point (no second record at the same place).
+  - **D10 → click-only (UX2-f):** `Shift` alone never reaches `Application` — `mirai.pyglet_input`'s key map has no Shift key
+    and pyglet's motion events carry no modifiers; adding it would touch window code outside the knife path. The hover shows
+    the free position; the **press** of `Shift`+`LMB` already shows the midpoint (preview point and edge highlight) while the
+    button is held.
+  - Render data: a lift is handed to the preview builder as a non-cyclic chain end (it knows only "closed"), and after a lift
+    there is no start marker and no rubber band (`knife_preview.py` unchanged).
+  - Status (PROVISIONAL wording): "Knife: pen lifted - the next click starts a new cut", "Knife: shape closed, pen lifted -
+    …", "Knife: pen lifted (not closed: closing needs at least 3 points) - …", "Knife: nothing to lift", "Knife: outside the
+    mesh: nothing to cut here", "Knife: start point set on an earlier point" (a branch). Start hint: "Knife: click on
+    vertices, edges or inside faces to cut - Shift+click = edge midpoint, E / right-click = new cut (pen lift), double-click =
+    close + lift, Enter = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo".
+- `src/main.py`: usage text only.
+
+**Evidence `[TEST]`:** `tests/test_knife_pen_lift.py` (13, grid): `test_lift_ends_the_chain_without_touching_mesh_or_history`,
+`test_after_a_lift_the_next_click_is_a_start_and_commit_cuts_both_chains_as_one_entry` (new faces = the union of the two
+chains cut alone, 29/46/18, one Undo), `test_two_lifted_chains_crossing_in_one_face_share_one_intersection_vertex`
+(30/48/19), `test_a_start_on_an_earlier_own_boundary_point_branches_off_it`,
+`test_a_start_on_an_earlier_interior_point_is_refused_as_today`,
+`test_a_lifted_chain_ending_inside_a_face_is_still_joined_to_the_nearest_corner`,
+`test_lift_with_nothing_to_lift_is_refused_and_changes_nothing`, `test_undo_after_a_lift_removes_the_lift_only_and_redo_restores_it`,
+`test_finish_chain_*` (3), `test_a_lift_right_after_a_close_replaces_the_seed_like_finish_chain` (no short-shape / lost-
+continuation note), and a regression (a close still continues from its start). `tests/test_application_knife_pen_lift.py`
+(43 incl. parametrisations, cube, injected clock): E and RMB lift / two chains in one entry / nothing to lift / Ctrl+Z–Ctrl+Y;
+RMB drag; branch off an own point; double-click on a third point, on the start, with < 3 points, outside the window (time
+and distance), triple click, a drag is no second click; click outside (with and without points); Enter / Esc / empty
+commit; Esc after a lift; a lift-only session commits nothing; bindings in the knife context only, the session gate, the
+`keymap.json` rebinding; render data after a lift and after a later cyclic close; Shift+click on an edge / vertex / face /
+near an own point / at an own midpoint / along the last point's edge (skip); pointer ownership; Shift drag; the press
+preview; the combination Shift start → E/RMB → Shift start → Enter; the start hint. Written first as 50 strict xfails (6
+guards held already); all markers removed by the build.
+
+**Changed old tests** (reason: "UX2: decided behaviour change, Manu 2026-10-02"): `test_application_knife.py` — the `app`
+fixture gets a clock that puts clicks 10 s apart (the old tests click the same spot quickly; with the real clock that is now
+a double-click); `test_commit_pushes_exactly_one_entry_and_selects_the_path` without the `click_outside` variant (decision 4;
+the new `test_a_click_outside_the_mesh_does_nothing` pins it); `test_session_gate_ignores_other_keys` without `E` (D1);
+`test_modified_click_during_session_neither_cuts_nor_selects` without `Shift` (D11), `Ctrl+Shift` added.
+`test_application_knife_faces.py::test_refusals_name_the_s3_reasons` — its `_knife_pick` stub accepts the new `midpoint`
+keyword.
+
+**Unchanged (checked, Linux + xvfb):** `tests` (without `test_extrude_tool`, `test_pyglet_input`) 1408 → 1462 passed (−2
+removed parametrisations, +56 new); `tests/run_core_suite.py` PASS; `playground/tests` 1090 → 1090 (the Q5-vs-Production
+differential and the 496-session fuzz unchanged); `experiments/symmetry_lab/tests` 246 → 246; integrity probe `--production`
+and `--cases` identical, the default run identical up to dict key order. `test_pyglet_input.py` errors identically before
+and after here (no EGL library).
+
+### UX2 — open points from the build (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| UX2-f | **No live midpoint preview** (D10 fallback): `Shift` alone does not reach `Application`; the midpoint is shown on the press. A live preview needs the window layer to pass Shift press/release (`mirai.pyglet_input` key map) — outside the knife path. | `test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position` |
+| UX2-g | **Size over the handoff's ~120-line STOP guide:** executable lines +131 / −34 (net +97); the raw diff is +204 / −56 with docstrings and comments. No feature beyond the handoff; the two small additions are the own-midpoint reuse (D9) and the ordinary-click fallback of an empty double-click (above). Recorded instead of decided silently. | — |
+| UX2-h | `Shift`+`LMB` (midpoint) is not listed in the Artist Input Truth (only `topology.knife_lift` was asked for); outside a session `Shift+LMB` stays SelectAdd. | — |
+| UX2-i | Dated discovery documents still describe "click outside = commit" as the state of their time (`ONE_KNIFE_PROMOTION_DISCOVERY.md` §B/§F, `KNIFE_CROSS_FACE_DISCOVERY.md`, `KNIFE_FACE_CUT_DISCOVERY.md` §4/§8) — not edited (project memory); the AD-017 addendum "UX2" is the current rule. | — |
+| UX2-j | **A start on a vertex that is an earlier chain's seed / start** is the same record (D3) — so a lifted chain that starts on the first chain's start counts as "seeded" in the resolver's bookkeeping; with a boundary start this changes nothing (only interior seeds are anchored, and an interior own point cannot be a start). | `test_a_start_on_an_earlier_own_boundary_point_branches_off_it` (the boundary case) |
+
+**Prepared practical test (Manu, ≤ 5 minutes, `python3 src/main.py`, cube then head):** UX2 stays **PROVISIONAL** until these
+slots and the verdict are filled; remarks only on D1–D13 if something feels wrong.
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | `C` with an empty selection. Cut two clicks, press **`E`**, click somewhere else on the model, two more clicks, **`Enter`** | both cuts appear, one `Ctrl+Z` removes both | |
+| 2 | `E` then `Ctrl+Z` | the chain continues from its last point (the lift is taken back); `Ctrl+Y` lifts again | |
+| 3 | Three clicks inside a face and **double-click** the third | the chain closes into a loop and the pen is lifted; the next click starts fresh | |
+| 4 | Lift, then click on **one of your earlier cut points** (on an edge) and continue from there | the new cut branches off it | |
+| 5 | Click **outside the model** | nothing happens (no commit); `Enter` commits; `Esc` cancels; a second `Enter` on an empty session changes nothing | |
+| 6 | **Right mouse button** instead of `E`: cut, `RMB`, cut elsewhere, `Enter` | same result as 1; dragging with `RMB` does nothing | |
+| 7 | **`Shift`+click on an edge** | the point sits exactly in the middle of that edge (the preview shows it only while the button is pressed — click-only, UX2-f); `Shift`+click inside a face or on a vertex behaves like a normal click; `Alt`+`LMB` still orbits | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |
