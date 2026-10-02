@@ -1449,11 +1449,11 @@ and the verdict are filled.
 
 | # | Check | Expected | Seen (Manu) |
 |---|---|---|---|
-| 1 | Zoom so one quad facing the camera fills a good part of the screen; `C` with an empty selection; click one of its edges, three clicks inside so that the last inner segment crosses the first, click the first edge point again (it snaps), `Enter` | two small loops, each with one bridge to an outside corner; the status has no "dropped" text; one `Ctrl+Z` reverts everything | |
-| 2 | The same on two more quads, one at a **strongly curved** place | as 1 — or, rarely, "1 loop(s) closed at a point dropped (the loop does not lie inside one face)" with nothing cut (S3b-a: the first loop's bridge would cut the second) | |
-| 3 | Cube regression: the same on the cube top (Top view, recipe from the S3 check) | `V:13 E:21 F:10` | |
+| 1 | Zoom so one quad facing the camera fills a good part of the screen; `C` with an empty selection; click one of its edges, three clicks inside so that the last inner segment crosses the first, click the first edge point again (it snaps), `Enter` | two small loops, each with one bridge to an outside corner; the status has no "dropped" text; one `Ctrl+Z` reverts everything |passed |
+| 2 | The same on two more quads, one at a **strongly curved** place | as 1 — or, rarely, "1 loop(s) closed at a point dropped (the loop does not lie inside one face)" with nothing cut (S3b-a: the first loop's bridge would cut the second) |passed |
+| 3 | Cube regression: the same on the cube top (Top view, recipe from the S3 check) | `V:13 E:21 F:10` |passed |
 
-| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | KEEP |
 |---|---|
 | | |
 
