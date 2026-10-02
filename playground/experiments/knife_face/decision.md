@@ -1725,7 +1725,7 @@ and after here (no EGL library).
 
 | # | Observation | Pinned by |
 |---|---|---|
-| UX2-f | **No live midpoint preview** (D10 fallback): `Shift` alone does not reach `Application`; the midpoint is shown on the press. A live preview needs the window layer to pass Shift press/release (`mirai.pyglet_input` key map) — outside the knife path. *Being resolved by UX2b (2026-10-02, Manu's row 7 remark), see "WP-KNIFE-01 UX2b".* | `test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position` |
+| UX2-f | **No live midpoint preview** (D10 fallback): `Shift` alone does not reach `Application`; the midpoint is shown on the press. A live preview needs the window layer to pass Shift press/release (`mirai.pyglet_input` key map) — outside the knife path. *Being resolved by UX2b (2026-10-02, Manu's row 7 remark), see "WP-KNIFE-01 UX2b".* **Resolved by UX2b (2026-10-02):** the window passes the held `Shift` (`Application.set_shift_held`), the hover shows the midpoint before the click — "WP-KNIFE-01 UX2b" below. | `test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position` |
 | UX2-g | **Size over the handoff's ~120-line STOP guide:** executable lines +131 / −34 (net +97); the raw diff is +204 / −56 with docstrings and comments. No feature beyond the handoff; the two small additions are the own-midpoint reuse (D9) and the ordinary-click fallback of an empty double-click (above). Recorded instead of decided silently. | — |
 | UX2-h | `Shift`+`LMB` (midpoint) is not listed in the Artist Input Truth (only `topology.knife_lift` was asked for); outside a session `Shift+LMB` stays SelectAdd. | — |
 | UX2-i | Dated discovery documents still describe "click outside = commit" as the state of their time (`ONE_KNIFE_PROMOTION_DISCOVERY.md` §B/§F, `KNIFE_CROSS_FACE_DISCOVERY.md`, `KNIFE_FACE_CUT_DISCOVERY.md` §4/§8) — not edited (project memory); the AD-017 addendum "UX2" is the current rule. | — |
@@ -1776,3 +1776,83 @@ What `Shift`+click does is unchanged (D9).
 Not in this slice: `Shift` as a bindable key, Ctrl / Alt state, ignore-snap, a change to what `Shift` does on a click, UX2-k.
 
 Build record, evidence and the practical test: below, after the build.
+
+**History (M1):** the direction is old — `docs/architecture/AD-017_ARTIST_SEMANTICS_2026-09-22.md` §"Knife position"
+already sketched "Shift held: snap preview to edge midpoint" (2026-09-22, "not a request to implement Shift now").
+Reused: UX2's `_knife_pick(..., midpoint=...)` and `_knife_set_preview`; only the source of the flag is new.
+
+### UX2b — build (2026-10-02, headless + xvfb window smoke test, not Artist-tested)
+
+**What changed** (commit "UX2b: live midpoint preview …"; PROVISIONAL until Manu's verdict):
+
+- `src/mirai/pyglet_input.py`: a pure helper `shift_keys_after(held, symbol, pressed)` — for `LSHIFT` / `RSHIFT` the set of
+  Shift keys held after the event (press adds, release removes; key repeat and a release without a press change nothing),
+  `None` for every other key. `_key_map`, `key_from_pyglet`, `Input`, bindings, commands and the Artist Input Truth are
+  unchanged: `Shift` alone is still no `Input`.
+- `src/main.py` (window events only): `on_key_press` / `on_key_release` first update the held Shift keys through the helper
+  and call `app.set_shift_held(bool(held))`, then continue exactly as before (the event is not consumed, Shift still yields
+  no `Input`). New `on_deactivate`: clears the set and calls `app.set_shift_held(False)` (A4). No `on_activate`: on regaining
+  focus the state stays "not held" until the next Shift press (a Shift held through the focus change shows the plain hover
+  until it is pressed again — the safe side of A2).
+- `src/mirai/application.py` (knife section + the setter): `_shift_held`; `set_shift_held(held)` stores it and, if it changed
+  during a session with a known cursor while no button is held, recomputes the hover preview at once
+  (`_knife_hover`). `_knife_hover` passes the flag as `midpoint` — so every hover refresh (motion, after a click / lift /
+  undo, a session started with Shift held) uses it. The press preview and the click keep using the **press** modifiers
+  (A2, AD-019); a Shift change while the Knife's button is held does not touch the press preview. Outside a session the
+  flag is only stored. The start hint is unchanged (it never said "on the press").
+- Size: production raw diff +77 / −4 (with docstrings and comments); executable lines ≈ 28 — inside the handoff's ~60.
+
+**Platform check (Windows 10, Manu's PC):** pyglet 2.x reports `LSHIFT` / `RSHIFT` on win32 through raw input, deduplicated
+(one press per physical press, no repeats) and clears its own Shift state on deactivate without sending releases
+(`pyglet/window/win32/__init__.py`, read here for pyglet 2.1.16) — hence `on_deactivate`. On X11 key repeat re-sends the
+press: the set makes it a no-op. Not run on Windows here.
+
+**Evidence `[TEST]`:** `tests/test_application_knife_shift_preview.py` (17 incl. parametrisations, cube + head):
+`test_holding_shift_over_an_edge_previews_its_midpoint_and_releasing_it_the_free_position`,
+`test_moving_with_shift_held_keeps_the_midpoint_preview`, the invariant (A2)
+`test_shift_held_preview_equals_the_shift_click_target_on_the_cube[False/True]` (910 positions each; with and without a start
+point: 68 / 39 edge, 12 / 9 vertex, 200 / 86 face targets, the rest refused — preview `None` and the click refused) and
+`…_on_a_head_patch[False/True]` (256 / 441 positions: 27 / 53 edge, 221 / 139 vertex, 8 / 14 face, 0 / 235 refused) — at
+every position the held-Shift preview equals `_knife_pick(midpoint=True)` when accepted, and a `Shift`+click adds exactly the
+records that target plans (each click undone again); `test_with_shift_held_an_own_point_near_the_midpoint_wins_in_preview_and_click`,
+`test_with_shift_held_a_vertex_and_a_face_target_are_unchanged`,
+`test_without_a_session_shift_held_changes_nothing_and_shift_click_still_adds_to_the_selection`,
+`test_a_session_started_with_shift_held_shows_the_midpoint_at_once`, `test_without_a_known_cursor_shift_shows_no_preview`,
+`test_set_shift_held_is_idempotent` (one overlay sync per change, none on a repeat),
+`test_a_plain_click_decides_by_its_press_not_by_the_held_shift[False/True]`,
+`test_the_press_preview_stays_fixed_while_the_button_is_held`, `test_double_click_rmb_lift_enter_and_esc_are_unchanged[False/True]`.
+`tests/test_pyglet_input.py`: `TestShiftKeysAfter` (10: each Shift key, other keys → `None`, both held / one released →
+still held, repeat and a stray release idempotent) and `TestShiftStillNoInput` (2, `key_from_pyglet` unchanged). Written
+first as 27 strict xfails (the 2 guards held already); all markers removed by the build.
+**`[PROBE]` window smoke test** (xvfb, the real `src/main.py` handlers driven through pyglet's dispatcher, cube): free
+`t` 0.105 → `LSHIFT` press 0.5 → `RSHIFT` press + `LSHIFT` release still 0.5 → `on_deactivate` 0.105 / not held →
+`Shift`+click lands at `t` 0.5.
+
+**Unchanged (checked, Linux + xvfb, libEGL installed here so `test_pyglet_input.py` runs):** `tests` (without
+`test_extrude_tool`) 1496 → 1525 passed (+29 new; 1462 + 34 `test_pyglet_input` before); `tests/run_core_suite.py` PASS;
+`playground/tests` 1090 → 1090; `experiments/symmetry_lab/tests` 246 → 246; `knife_integrity_probe.py --production` and
+`--cases` byte-identical to `beec01d` (`PYTHONHASHSEED=0`). Every UX2 test unchanged.
+
+### UX2b — open points (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| UX2b-a | **"Any Shift held" ignores the other modifiers:** with `Ctrl`+`Shift` or `Alt`+`Shift` held (before any button) the hover shows the midpoint, although `Ctrl+Shift+LMB` / `Alt+Shift+LMB` are not Knife clicks (D11; pointer gestures). Harmless (no click lands there), but the preview then promises a midpoint no click makes. Tracking Ctrl / Alt was out of scope (A1, §5). | — |
+| UX2b-b | **Shift held through a focus change** (Alt+Tab back with Shift still down): the state is "not held" until the next Shift press (no `on_activate` query; pyglet has none for key state). The click is right either way (press modifiers). | — |
+| UX2b-c | The UX2 test `test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position` keeps its D10-fallback docstring ("no live midpoint preview before the press"): it still passes unchanged (without `set_shift_held` the hover is the free position) and was left as written (allowed-files rule); its wording is historical. | — |
+
+**Prepared practical test (Manu, ≤ 3 minutes, `python3 src/main.py`, cube then head):** UX2b stays **PROVISIONAL** until these
+slots and the verdict are filled.
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | `C` with an empty selection. Move the cursor onto an edge **without Shift** | the preview point sits where the cursor is | |
+| 2 | **Hold Shift** (no mouse button), then release it | held: the preview point jumps to the **middle of that edge**, the edge is highlighted; released: back at the cursor | |
+| 3 | With Shift held, click | the cut point is exactly where the preview showed it | |
+| 4 | Hold Shift over a **vertex** and over the **inside of a face** | nothing changes compared to without Shift | |
+| 5 | Hold Shift, `Alt+Tab` to another window, release Shift there, come back | the preview is **not** stuck in midpoint mode | |
+| 6 | `Alt+LMB` (orbit) and `Shift+Alt+LMB` (pan); outside a Knife session `Shift`+click | still orbit / pan; `Shift`+click still adds to the selection | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |
