@@ -2,7 +2,9 @@
 
 Moved (not copied) from the Knife Face Lab (`playground/experiments/knife_face/planner.py`, Variant Q5,
 KEEP 2026-09-30) in WP-KNIFE-01 S4; logic unchanged by the move. The Lab's Q5 engine and the Production
-`KnifeTool` both import it from here (the old path is a re-export shim).
+`KnifeTool` both import it from here (the old path is a re-export shim). Since S4 a path point may also
+be a point in empty space (`{"kind": "space", "position"}`, Production only): it lies in no face, so a
+segment from or to it is planned by PLANE alone.
 
 Lab history (as written there):
 
@@ -115,7 +117,7 @@ def point_position(mesh, p: dict) -> Position:
     kind = p["kind"]
     if kind == "vertex":
         return mesh.vertex_position(p["vertex_id"])
-    if kind == "face":
+    if kind in ("face", "space"):
         return p["position"]
     va, vb = mesh.edge_vertices(p["edge_id"])
     return _lerp(mesh.vertex_position(va), mesh.vertex_position(vb), p["t"])
@@ -123,6 +125,8 @@ def point_position(mesh, p: dict) -> Position:
 
 def point_faces(mesh, p: dict) -> set:
     kind = p["kind"]
+    if kind == "space":
+        return set()
     if kind == "face":
         return {p["face_id"]}
     if kind == "edge":
@@ -405,6 +409,10 @@ def plan_crossings(view: View, mesh, a: dict, b: dict) -> Crossings:
     Calls `view.prepare(mesh)` — one refresh per plan; the mesh does not change
     during a session (Variant D's virtual path), so cached projections stay valid."""
     view.prepare(mesh)
+    if "space" in (a["kind"], b["kind"]):
+        # A point in empty space (WP-KNIFE-01 S4) lies in no face: nothing to walk from or to.
+        hits, hidden = plane_hits(view, mesh, a, b)
+        return Crossings(hits, "plane", hidden, "a point in space")
     w = walk(view, mesh, a, b)
     if w.ok and not _walk_hidden(view, mesh, w.crossings):
         return Crossings(w.crossings, "walk")

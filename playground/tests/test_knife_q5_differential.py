@@ -65,12 +65,14 @@ def test_manus_cube_sequences_give_his_counts_in_production():
 
 @pytest.mark.parametrize("name", list(MULTI_FACE))
 def test_multi_face_sequences_are_refused_by_both(name):
-    """A segment over several faces needs the planner (S4): refused, with the S2 reason in Production."""
+    """A segment over several faces needs the planner: without a camera view refused by both — in Production
+    with the no-view reason (S4: "no camera view"; before S4 "not yet"). With a view both plan it
+    (`test_cross_face_sequences_with_a_view_match_q5`)."""
     scene_name, specs, accepted = MULTI_FACE[name]
     q5, prod = play_both(scene_name, specs)
     assert q5.accepted == accepted
     assert prod.accepted[-1] == "-"
-    assert prod.reasons[-1] == "no shared face holds the cut (cross-face: not yet)"
+    assert prod.reasons[-1] == "no shared face holds the cut (cross-face: no camera view)"
 
 
 @pytest.mark.parametrize("name", list(MULTI_FACE))
@@ -133,14 +135,7 @@ def test_a_broken_result_is_taken_back_by_both(monkeypatch):
 CROSS_FACE = load_cross_face()
 
 
-CROSS_FACE_PARAMS = [
-    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 S4: no cross-face planning yet"))
-    if any(p is not None and p[0] != "direct" for p in CROSS_FACE[name]["q5"]["planned"]) else name
-    for name in CROSS_FACE
-]
-
-
-@pytest.mark.parametrize("name", CROSS_FACE_PARAMS)
+@pytest.mark.parametrize("name", list(CROSS_FACE))
 def test_cross_face_sequences_with_a_view_match_q5(name):
     """The S4 golden sequences (`golden/knife_cross_face.json`) through both tools with the same camera: every
     step, every planned crossing (method, hidden count, positions), the mesh, History and residue identical."""

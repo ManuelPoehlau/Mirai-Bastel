@@ -10,6 +10,8 @@ Reuses src/mirai/viewport/picking.py without modification.
 WP-KNIFE-01 S2: `snap_own_point` adds the session's own edge points (not
 mesh vertices before commit) as targets, so a click on one reaches the very
 point again — what the real-cut Knife got from the vertex it had split there.
+WP-KNIFE-01 S4: `space_point` places a point in empty space (the Knife's click
+outside the mesh).
 WP-KNIFE-01 S3: a face hit carries the hit position and its screen clearance
 from the face's edges (moved from the Knife Face Lab's `knife_face_pick`, H1 of
 `KNIFE_FACE_CUT_DISCOVERY.md`); the session's own interior points snap too.
@@ -93,6 +95,18 @@ def _edge_t_3d(origin: _Vec3, direction: _Vec3, p0: _Vec3, p1: _Vec3) -> float:
 
 
 edge_t_3d = _edge_t_3d  # public name for the planner (`knife_planner`, WP-KNIFE-01 S4)
+
+
+def space_point(camera, sx: float, sy: float, width: int, height: int) -> _Vec3:
+    """A Knife point in empty space (WP-KNIFE-01 S4, Manu 2026-10-02: a click outside the mesh cuts): the
+    click's view ray met with the plane through the camera target, perpendicular to the view direction —
+    Blender 2.79's `knife_start_cut` (plane through the view offset, normal = the view z axis). Default S4 /
+    open point S4-a: another depth is a later question."""
+    origin, direction = camera.screen_to_ray(sx, sy, width, height)
+    target = tuple(camera.target)
+    normal = _sub3(target, camera.eye())
+    s = _dot3(_sub3(target, origin), normal) / _dot3(direction, normal)
+    return tuple(origin[i] + s * direction[i] for i in range(3))
 
 
 def knife_pick(

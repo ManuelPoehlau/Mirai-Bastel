@@ -20,8 +20,8 @@ Production. Vertices need no snap (both tools find a vertex already on the path 
 
 Q5 runs **without a camera view**: a segment that needs the planner (one straight line not held by a
 face the two points share — cross-face, slice S4) is refused by Q5 ("no camera view …") exactly where
-the Production tool refuses it ("cross-face: not yet"). So both sides play single-face sequences, and a
-multi-face sequence shows up as the same refused click in both.
+the Production tool refuses it without a view ("cross-face: no camera view"; "not yet" before S4). So both
+sides play single-face sequences, and a multi-face sequence shows up as the same refused click in both.
 
 WP-KNIFE-01 S4: `play_q5` / `play_production` / `play_both` take an optional `view` — `(yaw, pitch,
 occlusion)` of the play-test camera (`knife_golden_driver.camera`, 1280 x 800) — given to both tools
@@ -403,7 +403,7 @@ def play_production(mesh: Mesh, specs, finish: str = "commit", view=None) -> Sid
 
 # Refusal reasons: Q5's text -> the Production tool's text for the same case.
 REASONS = {
-    "no camera view — cannot plan a cross-face segment": "no shared face holds the cut (cross-face: not yet)",
+    "no camera view — cannot plan a cross-face segment": "no shared face holds the cut (cross-face: no camera view)",
 }
 
 

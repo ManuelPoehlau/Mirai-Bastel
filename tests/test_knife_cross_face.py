@@ -139,7 +139,6 @@ def _beyond(cam, a_world, b_world, factor):
 # =========================================================================================================
 
 
-@XFAIL
 def test_far_click_crosses_any_number_of_faces():
     mesh, p = _grid(n=6)
     knife, scene = _session(mesh, _camera(mesh))
@@ -153,7 +152,6 @@ def test_far_click_crosses_any_number_of_faces():
     assert_mesh_invariants(mesh, context="S4 6 quads")
 
 
-@XFAIL
 def test_hole_visible_pieces_cut_gap_skipped_hud_note():
     mesh, p = _grid(hole=(2, 1))
     knife, scene = _session(mesh, _camera(mesh))
@@ -170,7 +168,6 @@ def test_hole_visible_pieces_cut_gap_skipped_hud_note():
     assert len(scene.history) == 1
 
 
-@XFAIL
 def test_no_run_is_connected_across_a_gap():
     mesh, p = _grid(hole=(2, 1))
     knife, _scene = _session(mesh, _camera(mesh))
@@ -183,7 +180,6 @@ def test_no_run_is_connected_across_a_gap():
     assert_mesh_invariants(mesh, context="S4 gap")
 
 
-@XFAIL
 def test_one_hit_face_at_a_piece_end_is_not_cut_and_the_hidden_crossing_is_counted():
     mesh, p = _grid(occluder=True)
     knife, _scene = _session(mesh, _camera(mesh, 0.0, 0.0))
@@ -199,7 +195,6 @@ def test_one_hit_face_at_a_piece_end_is_not_cut_and_the_hidden_crossing_is_count
     assert_mesh_invariants(mesh, context="S4 one-hit faces")
 
 
-@XFAIL
 def test_without_occlusion_nothing_is_hidden_and_nothing_skipped():
     mesh, p = _grid(occluder=True)
     knife, _scene = _session(mesh, _camera(mesh, 0.0, 0.0), occlusion=False)
@@ -209,7 +204,6 @@ def test_without_occlusion_nothing_is_hidden_and_nothing_skipped():
     assert knife.last_plan.hidden == 0
 
 
-@XFAIL
 def test_crossing_dots_and_lines_in_hover_plan():
     mesh, p = _grid()
     knife, _scene = _session(mesh, _camera(mesh))
@@ -229,7 +223,6 @@ def test_cross_face_target_without_a_view_is_rejected():
     assert knife.last_plan.reason == CROSS_FACE
 
 
-@XFAIL
 def test_boundary_start_loop_across_faces_closes_fully():
     mesh, p = _grid()
     cam = _camera(mesh)
@@ -249,7 +242,6 @@ def _loop4(cam, mesh):
     return [_face_at(cam, mesh, w) for w in ((1.5, 1.5, 0.0), (2.5, 1.5, 0.0), (2.5, 2.5, 0.0), (1.5, 2.5, 0.0))]
 
 
-@XFAIL
 def test_interior_start_loop_over_four_quads_closes_without_bridges():
     mesh, p = _grid()
     cam = _camera(mesh)
@@ -268,7 +260,6 @@ def test_interior_start_loop_over_four_quads_closes_without_bridges():
     assert_mesh_invariants(mesh, context="S4 loop4")
 
 
-@XFAIL
 def test_continuing_from_the_seed_does_not_connect_across_the_closed_loop():
     mesh, p = _grid()
     cam = _camera(mesh)
@@ -303,21 +294,19 @@ def _pid_of(knife, target):
                 and q.get("edge_id") == target.get("edge_id") and q.get("vertex_id") == target.get("vertex_id"))
 
 
-@XFAIL
 def test_earlier_point_click_is_one_undo_step_with_its_crossings():
     mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
     for name in "ABCD":
         assert knife.click(pts[name])
     before = knife.path
-    assert knife.click({"kind": "point", "pid": _pid_of(knife, pts["B"])})
+    assert knife.click({"kind": "point", "pid": _pid_of(knife, pts["C"])})     # D -> C crosses y = 2
     after = knife.path
     assert len(after) > len(before) + 1 and any(q.get("crossing") for q in after[len(before):])
     assert knife.undo_step() and knife.path == before
     assert knife.redo_step() and knife.path == after
-    assert knife.last_point["pid"] == _pid_of(knife, pts["B"])
+    assert knife.last_point["pid"] == _pid_of(knife, pts["C"])
 
 
-@XFAIL
 def test_click_on_an_earlier_edge_point_across_faces_connects_and_continues():
     mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
     for name in "ABCD":
@@ -333,7 +322,6 @@ def test_click_on_an_earlier_edge_point_across_faces_connects_and_continues():
     assert_mesh_invariants(mesh, context="S4 earlier edge point")
 
 
-@XFAIL
 def test_the_last_point_and_planner_crossings_are_not_earlier_points():
     mesh, p, cam, knife, scene, pts = _earlier_edge_scene()
     for name in "AB":
@@ -346,7 +334,6 @@ def test_the_last_point_and_planner_crossings_are_not_earlier_points():
         assert knife.plan(_vpt(crossing["vertex_id"])).ok                              # the mesh vertex: a new click
 
 
-@XFAIL
 def test_one_click_with_k_crossings_undoes_as_one_step():
     mesh, p = _grid()
     knife, _scene = _session(mesh, _camera(mesh))
@@ -361,7 +348,6 @@ def test_one_click_with_k_crossings_undoes_as_one_step():
     assert knife.path == [] and not knife.undo_step()
 
 
-@XFAIL
 def test_plane_planner_reports_a_vertex_hit_not_an_edge_end():
     from mirai.topology.knife_planner import View, plan_crossings
 
@@ -378,7 +364,6 @@ def test_plane_planner_reports_a_vertex_hit_not_an_edge_end():
     assert _faces(mesh) == before                                  # all along existing edges: nothing cut
 
 
-@XFAIL
 def test_straight_line_out_of_a_concave_face_is_planned_across_faces():
     mesh, _p = _grid()
     cam = _camera(mesh, 0.0, 0.0)
@@ -461,7 +446,6 @@ def _mesh_twin(knife_clicks, view=CUBE_VIEW):
     return _vef(mesh), _faces(mesh)
 
 
-@XFAIL
 def test_space_point_lies_on_the_click_ray_and_on_the_camera_target_plane():
     from mirai.topology.knife_pick import space_point
 
@@ -477,7 +461,6 @@ def test_space_point_lies_on_the_click_ray_and_on_the_camera_target_plane():
         assert back[0] == pytest.approx(sx, abs=1e-6) and back[1] == pytest.approx(sy, abs=1e-6)
 
 
-@XFAIL
 def test_mesh_start_then_a_click_in_space_cuts_the_visible_faces_up_to_the_last_crossing():
     mesh, cam, knife, scene = _cube_session()
     before = mesh.export_state()
@@ -510,7 +493,6 @@ def _crossing_t(mesh_before):
     return (pos[1] + 1.0) / 2.0
 
 
-@XFAIL
 def test_both_ends_in_space_cut_every_visible_face_in_between():
     mesh, cam, knife, scene = _cube_session()
     left = _beyond(cam, (1.0, 0.0, -0.2), (-1.0, 0.0, 0.8), 1.8)
@@ -528,7 +510,6 @@ def test_both_ends_in_space_cut_every_visible_face_in_between():
     assert_mesh_invariants(mesh, context="S4 space to space")
 
 
-@XFAIL
 def test_a_space_segment_that_crosses_nothing_is_accepted_and_commits_nothing():
     mesh, cam, knife, scene = _cube_session()
     before = mesh.export_state()
@@ -539,7 +520,6 @@ def test_a_space_segment_that_crosses_nothing_is_accepted_and_commits_nothing():
     assert len(scene.history) == 0 and _content(mesh.export_state()) == _content(before)
 
 
-@XFAIL
 def test_a_chain_never_touching_the_mesh_commits_nothing():
     mesh, cam, knife, scene = _cube_session()
     before = mesh.export_state()
@@ -549,7 +529,6 @@ def test_a_chain_never_touching_the_mesh_commits_nothing():
     assert _content(mesh.export_state()) == _content(before)
 
 
-@XFAIL
 def test_start_in_space_then_a_mesh_point():
     mesh, cam, knife, scene = _cube_session()
     b = _cube_edge(mesh, *TOP_RIGHT, 0.5)
@@ -563,7 +542,6 @@ def test_start_in_space_then_a_mesh_point():
     assert_mesh_invariants(mesh, context="S4 space start")
 
 
-@XFAIL
 def test_orbiting_between_clicks_keeps_the_space_points_world_position():
     mesh, cam, knife, _scene = _cube_session()
     assert knife.click(_cube_edge(mesh, *TOP_RIGHT, 0.5))
@@ -578,7 +556,6 @@ def test_orbiting_between_clicks_keeps_the_space_points_world_position():
     assert knife.path[: len(path)] == path
 
 
-@XFAIL
 def test_undo_redo_lift_esc_with_space_points():
     mesh, cam, knife, scene = _cube_session()
     assert knife.click(_cube_edge(mesh, *TOP_RIGHT, 0.5))
@@ -594,7 +571,6 @@ def test_undo_redo_lift_esc_with_space_points():
     assert len(scene.history) == 0
 
 
-@XFAIL
 def test_space_points_are_no_snap_targets_and_no_earlier_points():
     mesh, cam, knife, _scene = _cube_session()
     assert knife.click(_space(cam, 20.0, 20.0))
@@ -607,7 +583,6 @@ def test_space_points_are_no_snap_targets_and_no_earlier_points():
     assert plan.ok and plan.entries[-1] is not space and not plan.closing and not plan.earlier
 
 
-@XFAIL
 def test_a_mesh_started_chain_with_a_space_point_closes_but_not_cyclically():
     mesh, cam, knife, _scene = _cube_session()
     start = _cube_edge(mesh, *TOP_RIGHT, 0.5)
@@ -620,7 +595,6 @@ def test_a_mesh_started_chain_with_a_space_point_closes_but_not_cyclically():
     assert_mesh_invariants(mesh, context="S4 close with a space point")
 
 
-@XFAIL
 def test_a_chain_started_in_space_cannot_close_the_double_click_only_lifts():
     mesh, cam, knife, _scene = _cube_session()
     assert knife.click(_space(cam, 20.0, 20.0))
@@ -633,7 +607,6 @@ def test_a_chain_started_in_space_cannot_close_the_double_click_only_lifts():
     assert knife.finish_chain() and knife.path[-1] == {"kind": "break", "reason": "lift"}
 
 
-@XFAIL
 def test_wireframe_space_line_cuts_everything_under_it():
     mesh, cam, knife, _scene = _cube_session(occlusion=False)
     left = _beyond(cam, (1.0, 0.0, -0.2), (-1.0, 0.0, 0.8), 1.8)
@@ -649,7 +622,6 @@ def test_wireframe_space_line_cuts_everything_under_it():
     assert_mesh_invariants(mesh, context="S4 wireframe space")
 
 
-@XFAIL
 def test_space_records_never_reach_the_resolver(monkeypatch):
     from mirai.topology import knife as knife_module
 
@@ -675,7 +647,6 @@ def test_space_records_never_reach_the_resolver(monkeypatch):
 # =========================================================================================================
 
 
-@XFAIL
 def test_orbit_between_clicks_does_not_change_a_placed_cut():
     mesh, p = _grid()
     cam = _camera(mesh)
@@ -689,7 +660,6 @@ def test_orbit_between_clicks_does_not_change_a_placed_cut():
         assert knife.path == placed
 
 
-@XFAIL
 def test_a_pen_lift_between_cross_face_chains_commits_both_as_one_entry():
     mesh, p = _grid()
     knife, scene = _session(mesh, _camera(mesh))
@@ -702,7 +672,6 @@ def test_a_pen_lift_between_cross_face_chains_commits_both_as_one_entry():
     assert_mesh_invariants(mesh, context="S4 two lifted chains")
 
 
-@XFAIL
 def test_finish_chain_closes_across_faces():
     mesh, p = _grid()
     cam = _camera(mesh)
@@ -718,7 +687,6 @@ def test_finish_chain_closes_across_faces():
     assert (knife.last_resolution.applied, knife.last_resolution.runs) == (4, 4)
 
 
-@XFAIL
 def test_a_midpoint_start_followed_by_a_cross_face_segment():
     mesh, p = _grid()
     knife, _scene = _session(mesh, _camera(mesh))
@@ -730,7 +698,6 @@ def test_a_midpoint_start_followed_by_a_cross_face_segment():
     assert_mesh_invariants(mesh, context="S4 midpoint start")
 
 
-@XFAIL
 def test_a_crossing_on_a_vertex_is_not_found_as_an_earlier_vertex_point():
     mesh, p = _grid()
     knife, _scene = _session(mesh, _camera(mesh))
@@ -744,7 +711,6 @@ def test_a_crossing_on_a_vertex_is_not_found_as_an_earlier_vertex_point():
 # -- integrity: random sessions mixing mesh and space clicks ------------------------------------------------
 
 
-@XFAIL
 @pytest.mark.parametrize("seed", range(12))
 def test_random_sessions_mixing_mesh_and_space_clicks_stay_sound(seed):
     rnd = random.Random(f"s4/space/{seed}")

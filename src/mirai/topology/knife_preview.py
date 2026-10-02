@@ -16,7 +16,14 @@ commit), so the session is drawn from its path:
   hovered face (S3, the Lab's face-hover marker), or an own point (the snap:
   own points and vertices look the same);
 - `target_edge`: the hovered edge;
-- `line_preview`: from the start point to the prospective point.
+- `line_preview`: from the start point to the prospective point;
+- `prospective_crossings`: where the hovered segment crosses edges on its
+  way (WP-KNIFE-01 S4, the planner's crossing dots).
+
+WP-KNIFE-01 S4 (Manu, 2026-10-02): a point in empty space (`{"kind":
+"space", "position"}`) gets no marker and no segment once placed — only the
+cuts commit will make stay drawn — but it can be the start point (the
+rubber band runs from it) and the prospective point (the cursor in space).
 
 `Application` builds it from `KnifeTool.path` and hands it to the viewport's
 tool layers; tests read it directly. Invalid targets never reach this module
@@ -43,6 +50,7 @@ class KnifeRenderData:
     line_preview: Segment | None
     path_segments: tuple[Segment, ...]
     placed_points: tuple[Vec3, ...] = ()
+    prospective_crossings: tuple[Vec3, ...] = ()
 
 
 def target_position(mesh, target: dict) -> Vec3 | None:
@@ -52,6 +60,8 @@ def target_position(mesh, target: dict) -> Vec3 | None:
     mesh no longer knows."""
     kind = target.get("kind")
     if kind == "face" and target.get("position") is not None and mesh.is_valid_face(target["face_id"]):
+        return tuple(target["position"])
+    if kind == "space" and target.get("position") is not None:
         return tuple(target["position"])
     if kind == "vertex" and mesh.is_valid_vertex(target["vertex_id"]):
         return tuple(mesh.vertex_position(target["vertex_id"]))
@@ -74,12 +84,13 @@ def build_knife_render_data(
     path,
     target: dict | None,
     highlight_edge: EdgeId | None,
+    crossings=(),
 ) -> KnifeRenderData:
     """`path` = `KnifeTool.path` (records incl. skip breaks); `target` = the
     valid prospective target or None (an own-point target `{"kind": "point",
     "pid"}` is looked up in `path`); `highlight_edge` = the hovered edge.
     Handles the mesh no longer knows are skipped, like the selection overlays
-    (AD-001)."""
+    (AD-001). `crossings` = the hovered segment's crossing positions (S4)."""
     positions: dict = {}
     placed: list[Vec3] = []
     segments: list[Segment] = []
@@ -91,6 +102,9 @@ def build_knife_render_data(
                     segments.append((prev, first))
                 first = None
             prev = None
+            continue
+        if p["kind"] == "space":
+            prev = None     # no marker, no segment: only the cuts stay drawn (S4)
             continue
         pos = target_position(mesh, p)
         if pos is None:
@@ -105,7 +119,10 @@ def build_knife_render_data(
             first = pos
         prev = pos
     last = next((p for p in reversed(path) if p["kind"] != "break"), None)
-    start_point = positions.get(last["pid"]) if last is not None else None
+    if last is not None and last["kind"] == "space":
+        start_point = target_position(mesh, last)
+    else:
+        start_point = positions.get(last["pid"]) if last is not None else None
     if target is None:
         prospective = None
     elif target.get("kind") == "point":
@@ -122,4 +139,5 @@ def build_knife_render_data(
         if start_point is not None and prospective is not None
         else None
     )
-    return KnifeRenderData(start_point, prospective, target_edge, line, tuple(segments), tuple(placed))
+    return KnifeRenderData(start_point, prospective, target_edge, line, tuple(segments), tuple(placed),
+                           tuple(tuple(c) for c in crossings))

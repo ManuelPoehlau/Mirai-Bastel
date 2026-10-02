@@ -20,6 +20,16 @@ segment that no face of its two points holds stays refused (cross-face, slice
 S4). Where the S2 rules had already decided a vertex/edge-only case differently
 from Q5, S2 is kept (decision.md "One Knife S3", open points S3-a/b).
 
+WP-KNIFE-01 S4 (PROVISIONAL until Manu's verdict): a segment whose two points share no
+face holding the straight line is planned across faces by the Lab's Q5 planner
+(`knife_planner`, moved to `src`) with the camera of the click (`set_view`; without
+a view it stays refused): the visible crossings are stored in the path as points
+(`crossing=True`), a stretch between them that no face holds is a gap break, so
+only the visible part is cut. A click outside the mesh is a point in space (Manu,
+2026-10-02, Blender): `{"kind": "space", "position"}`, stored world-space; the
+segment from or to it cuts what it crosses, the stretch touching it is a `"space"`
+break, and the resolver never sees the space record itself.
+
 Modal tool. Headless-testable (no window code).
 
 Path records (`knife_resolve`'s format): `{"kind": "vertex", "vertex_id"}`,
@@ -29,7 +39,12 @@ Path records (`knife_resolve`'s format): `{"kind": "vertex", "vertex_id"}`,
 `{"kind": "break", "reason": "closed", "cyclic": bool}` where a chain was closed
 — followed by the closing point again (the *seed*: the next chain starts there);
 `{"kind": "break", "reason": "lift"}` where the pen was lifted (WP-KNIFE-01 UX2) —
-a chain end without a seed: the next click starts a new chain.
+a chain end without a seed: the next click starts a new chain. WP-KNIFE-01 S4:
+planner crossings (`"crossing": True`, a vertex or edge record with the click's
+`pid`), `{"kind": "space", "position"}` (a point in space) and the breaks
+`{"kind": "break", "reason": "gap"}` (a stretch no face holds: a hole, the border,
+a hidden part) and `{"kind": "break", "reason": "space"}` (the stretch from or to a
+point in space).
 
 Rules (parity rows P01–P15 / S1–S5, `tests/test_knife_parity.py`; the Q5
 differential spec, `playground/tests/test_knife_q5_differential.py`):
@@ -43,18 +58,21 @@ differential spec, `playground/tests/test_knife_q5_differential.py`):
     boundary edges, or (two boundary points) the session's own earlier cut
     retraced (AQ1, S2-b): accepted, nothing cut, the chain continues from the
     new point, a `{"kind": "break", "reason": "edge"}` record before it;
-  - refused otherwise (no shared face, or no shared face holds the straight
-    line — the planner's job, slice S4).
+  - otherwise (no shared face, or no shared face holds the straight line, or an
+    end in space — S4): planned across faces with the view's camera — the
+    visible crossings in between become points, every stretch between two
+    consecutive ones is a cut, a skip or a gap; refused without a view.
 - An interior click needs `EDGE_MARGIN_PX` clearance from its face's edges.
 - A click on the **start** of the current chain (an own point, or the vertex)
-  after at least 3 points of that chain **closes** it — it does not commit; the
+  after at least 3 clicked points of that chain (crossings do not count) **closes** it — it does not commit; the
   path gets a "closed" break and the start again, so the next click continues
   from the closing point. Fewer than 3 points: refused when an interior point is
   involved (Q5), the S2 rule otherwise (S3-a).
 - A click on an earlier **boundary** point (own edge point, a vertex on the
   path) connects to that very record and continues from it; an earlier
   **interior** point is refused (not supported yet). The same point twice in a
-  row is refused.
+  row is refused. Crossings and points in space are no earlier points (S4b).
+- A chain that starts in space cannot be closed (S4c); `finish_chain()` lifts.
 - Pen lift (`lift()`, WP-KNIFE-01 UX2, Artist 2026-10-02): ends the current chain
   without committing; the next click is a start (a fresh point, or an earlier own
   boundary point — the new chain branches off that very record). Right after a
@@ -80,19 +98,21 @@ from ..interaction.tool import Tool
 from .chord_validity import chord_valid_in_polygon
 from .face_geometry import GEO_EPS, segment_in_face
 from .knife_pick import EDGE_MARGIN_PX
+from .knife_planner import View, plan_crossings
 from .knife_preview import target_position
 from .knife_resolve import KnifeResolution, check_commit, is_break, is_chain_end, resolve_cross_face
 
 # A chain is closed by a click on its start after at least this many points (Q5's MIN_CLOSE_POINTS).
 MIN_CLOSE_POINTS = 3
 
-CROSS_FACE = "no shared face holds the cut (cross-face: not yet)"
+CROSS_FACE = "no shared face holds the cut (cross-face: no camera view)"
 TOO_CLOSE = "too close to an edge"
 CLOSE_NEEDS = f"closing needs at least {MIN_CLOSE_POINTS} points"
 EARLIER_INTERIOR = "connecting to an earlier interior point is not supported yet"
 SAME_POINT = "already the last point"
 LIFTED = "pen lifted"
 NOTHING_TO_LIFT = "nothing to lift"
+SPACE_START = "the chain starts in space"
 
 
 def _is_lift(p: dict) -> bool:
@@ -100,6 +120,8 @@ def _is_lift(p: dict) -> bool:
 
 
 def _faces_of(mesh, p: dict) -> set:
+    if p["kind"] == "space":
+        return set()
     if p["kind"] == "face":
         return {p["face_id"]}
     if p["kind"] == "edge":
@@ -121,6 +143,12 @@ class KnifePlan:
     earlier: bool = False                              # connects to an earlier point
     lift: bool = False                                 # ends the chain (pen lift, UX2)
     replaces: int = 0                                  # trailing path records the step takes away
+    # WP-KNIFE-01 S4 — what the planner found for this segment (empty for a segment inside one face):
+    crossings: list = field(default_factory=list)      # positions of the planned crossings (preview dots)
+    lines: list = field(default_factory=list)          # (pos_a, pos_b, "cut" | "skip") along the segment
+    skipped: list = field(default_factory=list)        # reason per stretch not cut: "edge" / "gap" / "space"
+    hidden: int = 0                                    # crossings hidden behind the surface: not cut
+    method: str = ""                                   # "walk" / "plane" / "none"; "" without the planner
 
 
 class KnifeTool(Tool):
@@ -146,8 +174,13 @@ class KnifeTool(Tool):
 
     Targets: {"kind": "vertex", "vertex_id"}, {"kind": "edge", "edge_id", "t"},
     {"kind": "face", "face_id", "position", "distance_px"} (a `knife_pick` face hit),
-    {"kind": "point", "pid"} (one of the session's own points); anything else
-    ({"kind": "outside"}) is refused.
+    {"kind": "point", "pid"} (one of the session's own clicked points),
+    {"kind": "space", "position"} (a point in empty space, `knife_pick.space_point`, S4);
+    anything else ({"kind": "outside"}) is refused.
+
+    `set_view(camera, width, height, cache=..., occlusion=...)` gives the camera the next
+    hover / click plans a segment across faces with (S4; `Application` sets the live one
+    before each); without a view such a segment is refused.
     """
 
     def _on_activate(self) -> None:
@@ -161,9 +194,15 @@ class KnifeTool(Tool):
         self._redo: list[tuple[list[dict], list[dict]]] = []   # undone steps, most recent last
         self._pids = itertools.count()
         self._path_edges: list = []
+        self._view: View | None = None
         self.last_plan: KnifePlan | None = None
         self.last_resolution: KnifeResolution | None = None
         self.last_problem: str | None = None
+
+    def set_view(self, camera, width: int = 1, height: int = 1, *, cache=None, occlusion: bool = True) -> None:
+        """The camera the next plans across faces use (S4); `camera=None` = no view. Crossings are fixed
+        by the click that stores them — a later view never changes what the path holds."""
+        self._view = None if camera is None else View(camera, width, height, cache, occlusion)
 
     def _on_begin(self, mesh=None, scene=None, selection=None, **_) -> None:
         self._mesh = mesh
@@ -190,8 +229,15 @@ class KnifeTool(Tool):
 
     @property
     def points(self) -> list[dict]:
-        """The placed points in path order; a point clicked again (or a chain's seed) appears again."""
+        """The placed points in path order; a point clicked again (or a chain's seed) appears again.
+        Planner crossings and points in space are records too (S4)."""
         return [p for p in self._path if not is_break(p)]
+
+    @property
+    def snap_points(self) -> list[dict]:
+        """The session's own clicked mesh points — the own-point snap's candidates: no planner crossing,
+        no point in space (Q5: crossings are no snap targets; S4b)."""
+        return [p for p in self.points if not p.get("crossing") and p["kind"] != "space"]
 
     def _chain_start(self) -> int:
         for i in range(len(self._path) - 1, -1, -1):
@@ -270,7 +316,11 @@ class KnifeTool(Tool):
             dist = target.get("distance_px")
             return None if dist is not None and dist >= EDGE_MARGIN_PX else TOO_CLOSE
         if kind == "point":
-            return None if self._point_by_pid(target.get("pid")) is not None else "invalid own point"
+            rec = self._point_by_pid(target.get("pid"))
+            ok = rec is not None and not rec.get("crossing") and rec["kind"] != "space"
+            return None if ok else "invalid own point"
+        if kind == "space":
+            return None if target.get("position") is not None else "invalid space point"
         return f"no target ({kind})"
 
     def _point_for(self, target: dict | None) -> dict | None:
@@ -283,7 +333,8 @@ class KnifeTool(Tool):
             vid = target.get("vertex_id")
             if vid is None or not m.is_valid_vertex(vid):
                 return None
-            known = [p for p in self.points if p["kind"] == "vertex" and p["vertex_id"] == vid]
+            known = [p for p in self.points if p["kind"] == "vertex" and p["vertex_id"] == vid
+                     and not p.get("crossing")]   # a planner crossing on a vertex is no click target (Q5)
             chain = self.chain_points
             known.sort(key=lambda p: 0 if chain and p is chain[0] else 1)   # the chain start first (Q5)
             return known[0] if known else {"kind": "vertex", "vertex_id": vid}
@@ -299,6 +350,8 @@ class KnifeTool(Tool):
             return {"kind": "face", "face_id": fid, "position": tuple(pos)}
         if kind == "point":
             return self._point_by_pid(target.get("pid"))
+        if kind == "space" and target.get("position") is not None:
+            return {"kind": "space", "position": tuple(target["position"])}
         return None
 
     @staticmethod
@@ -386,7 +439,7 @@ class KnifeTool(Tool):
             return KnifePlan(False, SAME_POINT)
         chain = self.chain_points
         if chain and self._same(point, chain[0]):
-            if len(chain) >= MIN_CLOSE_POINTS:
+            if len([p for p in chain if not p.get("crossing")]) >= MIN_CLOSE_POINTS:
                 return self._plan_segment(last, point, closing=True)
             if point["kind"] == "face" or last["kind"] == "face":
                 return KnifePlan(False, CLOSE_NEEDS)
@@ -397,17 +450,45 @@ class KnifeTool(Tool):
         return self._plan_segment(last, point, earlier=True)
 
     def _plan_segment(self, a: dict, b: dict, *, closing: bool = False, earlier: bool = False) -> KnifePlan:
-        link = self._link(a, b)
+        m = self._mesh
+        space = "space" in (a["kind"], b["kind"])
+        link = None if space else self._link(a, b)
+        crossings, hidden, method = [], 0, ""
         if link is None:
-            return KnifePlan(False, CROSS_FACE)
+            # S4: no face holds the straight line (or an end lies in space) — the planner, with the view's
+            # camera, finds the visible crossings in between (Q5's `_plan_segment`).
+            if self._view is None:
+                return KnifePlan(False, CROSS_FACE)
+            res = plan_crossings(self._view, m, a, b)
+            crossings, hidden, method = res.crossings, res.hidden, res.method
+        nodes = [a] + crossings + [b]
         entries: list[dict] = []
-        if link == "edge":
-            entries.append({"kind": "break", "reason": "edge"})
-        entries.append(b)
+        lines: list[tuple] = []
+        skipped: list[str] = []
+        dots: list = []
+        for k in range(1, len(nodes)):
+            p, q = nodes[k - 1], nodes[k]
+            if "space" in (p["kind"], q["kind"]):
+                pair = "space"
+            elif len(nodes) == 2:
+                pair = link or "gap"
+            else:
+                pair = self._link(p, q) or "gap"
+            lines.append((target_position(m, p), target_position(m, q), "cut" if pair == "cut" else "skip"))
+            if pair != "cut":
+                entries.append({"kind": "break", "reason": pair})
+                skipped.append(pair)
+            if k == len(nodes) - 1:
+                entries.append(b)
+            else:
+                crossing = dict(q, crossing=True)
+                crossing.pop("pid", None)   # a new point: its id comes with the click
+                entries.append(crossing)
+                dots.append(target_position(m, crossing))
         cyclic = False
         if closing:
             chain = self._path[self._chain_start():]
-            cyclic = link == "cut" and not any(is_break(p) for p in chain)
+            cyclic = not any(is_break(p) for p in entries) and not any(is_break(p) for p in chain)
             if cyclic:
                 entries.pop()  # the closing point is the start already: resolved as a loop at commit
             entries.append({"kind": "break", "reason": "closed", "cyclic": cyclic})
@@ -421,7 +502,8 @@ class KnifeTool(Tool):
         else:
             reason = "connects to an earlier point" if earlier else "cut"
         return KnifePlan(True, reason, entries=entries, skip=link == "edge", closing=closing,
-                         cyclic=cyclic, earlier=earlier)
+                         cyclic=cyclic, earlier=earlier, crossings=dots, lines=lines, skipped=skipped,
+                         hidden=hidden, method=method)
 
     def plan_lift(self, close: bool = False) -> KnifePlan:
         """What `lift()` (`close=False`) or `finish_chain()` (`close=True`) would do (no change)."""
@@ -436,8 +518,10 @@ class KnifeTool(Tool):
         if not close:
             return KnifePlan(True, LIFTED, entries=[lift], lift=True)
         chain, last = self.chain_points, self.last_point
-        if len(chain) < MIN_CLOSE_POINTS:
+        if len([p for p in chain if not p.get("crossing")]) < MIN_CLOSE_POINTS:
             why = CLOSE_NEEDS
+        elif chain[0]["kind"] == "space":
+            why = SPACE_START
         elif self._same(last, chain[0]):
             why = SAME_POINT
         else:
@@ -445,7 +529,9 @@ class KnifeTool(Tool):
             if closing.ok:
                 # The close's entries without the seed: the pen lifts instead of continuing.
                 return KnifePlan(True, f"{closing.reason}; {LIFTED}", entries=closing.entries[:-1] + [lift],
-                                 skip=closing.skip, closing=True, cyclic=closing.cyclic, lift=True)
+                                 skip=closing.skip, closing=True, cyclic=closing.cyclic, lift=True,
+                                 crossings=closing.crossings, lines=closing.lines, skipped=closing.skipped,
+                                 hidden=closing.hidden, method=closing.method)
             why = closing.reason
         return KnifePlan(True, f"{LIFTED} (not closed: {why})", entries=[lift], lift=True)
 
@@ -534,7 +620,9 @@ class KnifeTool(Tool):
         the resolver did (counts and notes; `empty` for a path without points)."""
         self._redo.clear()
         self.last_problem = None
-        res = resolve_cross_face(self._mesh, list(self._path), self._session_before)
+        # Points in space are no mesh points: the resolver gets the path without them, the "space"
+        # breaks around them keep every run off the stretch outside the mesh (S4).
+        res = resolve_cross_face(self._mesh, [p for p in self._path if p["kind"] != "space"], self._session_before)
         check = check_commit(self._mesh, self._session_before)
         self.last_resolution = res
         self.last_problem = check.problem

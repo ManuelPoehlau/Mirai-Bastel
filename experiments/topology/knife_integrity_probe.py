@@ -493,12 +493,12 @@ def _play(cls, mesh, clicks, cams, *, feats, no_face):
         target = knife_face_pick(cam, mesh, sx, sy, W, H, occlusion=True)
         if no_face and target.get("kind") == "face":
             continue
-        if hasattr(knife, "set_view"):
+        if isinstance(knife, KnifeTool):
+            # The Production path (`Application._knife_pick`): the own-point snap after the pick.
+            target = snap_own_point(cam, mesh, sx, sy, W, H, knife.snap_points, target, occlusion=True)
+        elif hasattr(knife, "set_view"):
             knife.set_view(cam, W, H, occlusion=True)
             target = knife.snap_target(target, sx, sy)
-        elif isinstance(knife, KnifeTool):
-            # The Production path (`Application._knife_pick`): the own-point snap after the pick.
-            target = snap_own_point(cam, mesh, sx, sy, W, H, knife.points, target, occlusion=True)
         if knife.click(target):
             accepted += 1
     if feats is not None and hasattr(knife, "path"):
