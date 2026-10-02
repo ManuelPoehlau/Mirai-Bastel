@@ -499,13 +499,12 @@ def test_commit_pushes_exactly_one_entry_and_selects_the_path(app, finish):
     else:
         assert _click(app, OUTSIDE) is True
 
-    # UX1 (Manu 2026-10-01): the Knife stays active with a fresh session (was: `not knife_active`).
-    assert app.knife_active and app._knife.path == []
+    assert not app.knife_active
     assert _history_depths(app) == (1, 0)
     assert app.selection.mode is SelectionMode.EDGE
     assert len(knife.path_edges) == 3
     assert app.selection.edges == set(knife.path_edges)
-    assert app.status_message == "Knife committed (3 path edges selected); next cut ready - Esc leaves the Knife"
+    assert app.status_message == "Knife committed (3 path edges selected)"
     assert_mesh_invariants(mesh, context="after knife commit")
     assert all(not v for v in app.viewport.tool_line_layers.values())
 
@@ -516,11 +515,10 @@ def test_commit_without_cuts_pushes_nothing(app):
 
     assert app.key_press(ENTER) is True
 
-    # UX1 (Manu 2026-10-01, default A3): an empty commit keeps the Knife (was: `not knife_active`).
-    assert app.knife_active and app._knife.path == []
+    assert not app.knife_active
     assert _history_depths(app) == (0, 0)
     assert app.selection.is_empty()
-    assert app.status_message == "Knife: no cuts made, nothing committed - Knife still active, Esc leaves"
+    assert app.status_message == "Knife: no cuts made, nothing committed"
 
 
 def test_global_undo_after_commit_restores_mesh_and_selection_redo_restores_residue(app):
@@ -717,7 +715,7 @@ def test_vertex_adjacent_to_start_is_previewed_and_a_skip(app):
     assert app._knife.cut_segments == []
     assert app.key_press(ENTER) is True
     assert _history_depths(app) == (0, 0)
-    assert app.status_message == "Knife: no cuts made, nothing committed - Knife still active, Esc leaves"  # UX1
+    assert app.status_message == "Knife: no cuts made, nothing committed"
 
 
 def test_start_vertex_again_has_no_preview(app):
