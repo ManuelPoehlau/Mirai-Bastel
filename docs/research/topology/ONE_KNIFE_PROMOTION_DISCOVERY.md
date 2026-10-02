@@ -95,6 +95,12 @@ Code-only rows (preview, bindings, HUD) are marked `[CODE]` and were **not rende
 | S4 | … Undo ×4 (everything), `Enter` | **History 1 with unchanged content** (an empty Undo step) | History 0 | same mesh, **different History** |
 | S5 | edge click → Undo → clicks → Esc | the edge click cuts the mesh during the session; Undo and Cancel restore | nothing changes before commit; Undo and Cancel restore | same result |
 
+*Note 2026-10-02 (WP-KNIFE-01 S4, appended; the table above is the state of its time):* **P10 flipped — intended.** With a
+camera view the Production `KnifeTool` now plans the segment across faces like Q5 (the Lab's planner moved to
+`src/mirai/topology/knife_planner.py`); headless without a view it still refuses (`CROSS_FACE`, "no camera view"). P14's
+"click outside" is a point in space in Production since S4 (Manu, 2026-10-02; AD-017 addendum "S4"). Evidence and open
+points: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 S4".
+
 `accepts() == click()` held for every click of both engines. Production `KnifeTool.hover()` is looser than `accepts()`
 in P08/P10/P13 — documented in `knife.py`; `Application` previews through `accepts()`, the Playground `knife` family
 through `hover()` `[CODE]`.

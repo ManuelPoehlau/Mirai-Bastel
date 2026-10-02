@@ -597,8 +597,9 @@ class Application:
     #
     # WP-KNIFE-01 UX2 (PROVISIONAL, Artist 2026-10-02): `E` / an RMB click
     # lift the pen (the chain ends, nothing is committed), a double-click
-    # closes the chain and lifts; a click outside the mesh does nothing;
-    # Shift+click on an edge places the point at its midpoint.
+    # closes the chain and lifts; a click outside the mesh does nothing (S4:
+    # it is a point in space now, below); Shift+click on an edge places the
+    # point at its midpoint.
     #
     # WP-KNIFE-01 UX2b (PROVISIONAL, Artist 2026-10-02): while Shift is held
     # (`set_shift_held`, from the window) the hover already shows that midpoint.

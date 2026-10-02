@@ -53,8 +53,10 @@ Scope (binding, see the handoffs):
   Ctrl+Shift+Z undo / redo the last cut. WP-KNIFE-01 UX2 (PROVISIONAL): E or
   a right-click lifts the pen (the next click starts a new cut, nothing is
   committed), a double-click closes the cut and lifts, Shift+click puts the
-  point on the edge's midpoint; a click outside the mesh does nothing. The
-  press and drag handlers pass the cursor position through for this.
+  point on the edge's midpoint. The press and drag handlers pass the cursor
+  position through for this. WP-KNIFE-01 S4 (PROVISIONAL): a far click cuts
+  across faces (only the visible part), and a click outside the mesh is a
+  point in space that cuts too (it never commits; Enter does).
   WP-KNIFE-01 UX2b (PROVISIONAL): holding Shift already shows the midpoint in
   the Knife's hover preview — the key handlers track the held Shift keys
   (`shift_keys_after`) and report "any Shift held" to

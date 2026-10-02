@@ -82,7 +82,22 @@ def build_grid(n: int = 4) -> Mesh:
     return mesh
 
 
-SCENES = {"grid": build_grid, "cube": create_cube}
+_HEAD_STATE: dict | None = None
+
+
+def build_head() -> Mesh:
+    """The default head (WP-KNIFE-01 S4 far-click fuzz); loaded once, copied per run."""
+    global _HEAD_STATE
+    if _HEAD_STATE is None:
+        from mirai.scene_factory import build_core_scene_from_obj
+        from playground._paths import DEFAULT_HEAD_ASSET, ensure_paths
+
+        ensure_paths()
+        _HEAD_STATE = build_core_scene_from_obj(DEFAULT_HEAD_ASSET).mesh.export_state()
+    return Mesh.from_state(_HEAD_STATE)
+
+
+SCENES = {"grid": build_grid, "cube": create_cube, "head": build_head}
 
 # (axis, value, outward sign) of each reference plane and the area it must be covered by.
 REFERENCE_PLANES = {
@@ -256,6 +271,10 @@ def integrity(mesh, scene: str) -> dict[str, list]:
         assert_mesh_invariants(mesh)
     except AssertionError as exc:
         issues["invariants"].append(str(exc))
+    if scene == "head":
+        # The head's quads are not planar: the 3D triangle areas never sum to the projected (Newell) area —
+        # 302 faces of the untouched head already differ — so "tri_area" says nothing about a cut there.
+        issues.pop("tri_area", None)
     return dict(issues)
 
 
@@ -470,34 +489,46 @@ def new_session(cls, mesh):
     return knife, scene
 
 
-def play(cls, mesh, clicks, cams, *, feats: dict | None = None, no_face=False) -> tuple[object, int, str]:
+def play(cls, mesh, clicks, cams, *, feats: dict | None = None, no_face=False, far=False,
+         occlusion=True) -> tuple[object, int, str]:
     """One session: `clicks` = [(cam_index, sx, sy)]. Returns (knife, accepted clicks, commit message).
     `feats` (optional) receives the path features of the session, read before commit. `no_face`: a click
-    the pick resolves to a face interior is skipped (edge-only sessions)."""
+    the pick resolves to a face interior is skipped (edge-only sessions). `far` (WP-KNIFE-01 S4): the
+    Production `KnifeTool` gets the click's camera (`set_view`, as `Application` does) and a click outside
+    the mesh is a point in space; `occlusion` = faces shown (False = wireframe) for picks and planner."""
     from mirai.topology.knife import KnifeTool
 
+    kw = dict(feats=feats, no_face=no_face, far=far, occlusion=occlusion)
     if cls is KnifeTool:  # its temporary [KNIFE] console trace, once per click
         with contextlib.redirect_stdout(io.StringIO()):
-            return _play(cls, mesh, clicks, cams, feats=feats, no_face=no_face)
-    return _play(cls, mesh, clicks, cams, feats=feats, no_face=no_face)
+            return _play(cls, mesh, clicks, cams, **kw)
+    return _play(cls, mesh, clicks, cams, **kw)
 
 
-def _play(cls, mesh, clicks, cams, *, feats, no_face):
+def _play(cls, mesh, clicks, cams, *, feats, no_face, far=False, occlusion=True):
     from mirai.topology.knife import KnifeTool
-    from mirai.topology.knife_pick import snap_own_point
+    from mirai.topology.knife_pick import snap_own_point, space_point
+    from mirai.viewport.picking_cache import PickCache
 
     knife, _scene = new_session(cls, mesh)
     accepted = 0
+    caches: dict = {}   # far mode: one pick cache per camera (the mesh is unchanged within a session)
     for ci, sx, sy in clicks:
         cam = cams[ci]
-        target = knife_face_pick(cam, mesh, sx, sy, W, H, occlusion=True)
+        cache = caches.setdefault(ci, PickCache()) if far else None
+        target = knife_face_pick(cam, mesh, sx, sy, W, H, cache=cache, occlusion=occlusion)
         if no_face and target.get("kind") == "face":
             continue
         if isinstance(knife, KnifeTool):
             # The Production path (`Application._knife_pick`): the own-point snap after the pick.
-            target = snap_own_point(cam, mesh, sx, sy, W, H, knife.snap_points, target, occlusion=True)
+            if far:
+                knife.set_view(cam, W, H, cache=cache, occlusion=occlusion)
+            target = snap_own_point(cam, mesh, sx, sy, W, H, knife.snap_points, target, cache=cache,
+                                    occlusion=occlusion)
+            if far and target.get("kind") == "outside":
+                target = {"kind": "space", "position": space_point(cam, sx, sy, W, H)}
         elif hasattr(knife, "set_view"):
-            knife.set_view(cam, W, H, occlusion=True)
+            knife.set_view(cam, W, H, cache=cache, occlusion=occlusion)
             target = knife.snap_target(target, sx, sy)
         if knife.click(target):
             accepted += 1
@@ -518,11 +549,12 @@ def _play(cls, mesh, clicks, cams, *, feats, no_face):
 CAMS = {
     "grid": [(20.0, 35.0), (0.0, 0.0), (-30.0, 60.0), (45.0, 25.0)],
     "cube": [(35.0, 30.0), (-40.0, 25.0), (130.0, -30.0), (60.0, 55.0)],
+    "head": [(0.0, 10.0), (225.0, 25.0), (90.0, 20.0), (330.0, 5.0)],
 }
 
 
 def random_run(scene: str, seed: int, *, sessions=(1, 3), clicks=(2, 9), p_face=0.45, p_vertex=0.15,
-               cls=KnifeFaceCrossFace):
+               cls=KnifeFaceCrossFace, far=False, occlusion=True, p_space=0.0):
     """A fresh mesh, 1-3 committed sessions with random clicks, checked after every commit.
     Returns (record, failing session index or None, its issues, features per session);
     record = [(clicks, state before the session, commit message)]."""
@@ -537,11 +569,15 @@ def random_run(scene: str, seed: int, *, sessions=(1, 3), clicks=(2, 9), p_face=
         for _ in range(rnd.randint(*clicks)):
             if rnd.random() < 0.2:
                 ci = rnd.randrange(len(cams))  # orbit between clicks
+            if p_space and rnd.random() < p_space:   # S4: anywhere on screen, often off the mesh
+                cl.append((ci, rnd.uniform(0, W), rnd.uniform(0, H)))
+                continue
             s = _random_click(rnd, mesh, cams[ci], p_face, p_vertex)
             if s is not None:
                 cl.append((ci, s[0], s[1]))
         f: dict = {}
-        _knife, _acc, msg = play(cls, mesh, cl, cams, feats=f, no_face=p_face == 0.0)
+        _knife, _acc, msg = play(cls, mesh, cl, cams, feats=f, no_face=p_face == 0.0, far=far,
+                                 occlusion=occlusion)
         STATS[scene]["leftover edge splits"] += leftover_splits(mesh, before)
         # Without the id counters: `load_state` only moves them forward (AD-001).
         if not _knife.scene_history_len and \
@@ -843,6 +879,67 @@ def run_production(n: int = 400):
     for scene in ("grid", "cube"):
         fails, clean = fuzz(scene, n, cls=KnifeTool)
         _summary(f"{scene} Production KnifeTool", fails, clean, n)
+    # WP-KNIFE-01 S4: the same fuzz with the click's camera on the Production Knife (far clicks are planned
+    # across faces) plus clicks anywhere on screen (points in space), occlusion on and off. A failing seed is
+    # replayed through the Lab's Q5 (the same clicks; Q5 refuses the space clicks): failing there too = an
+    # inherited Lab limit, not an S4 defect.
+    for scene, runs in (("grid", n), ("cube", n), ("head", max(n // 10, 1))):
+        for occlusion in (True, False):
+            kw = dict(far=True, occlusion=occlusion, p_space=0.25)
+            fails, clean = fuzz(scene, runs, cls=KnifeTool, **kw)
+            inherited = [seed for seed, si, *_r in fails if _q5_twin_fails(scene, seed, si, kw)]
+            _summary(f"{scene} Production KnifeTool far + space, occlusion {'on' if occlusion else 'off'}",
+                     fails, clean, runs)
+            print(f"    failing seeds: {[seed for seed, *_r in fails]}; the same cut fails in Q5 too (inherited): "
+                  f"{inherited}")
+
+
+def _q5_twin_fails(scene: str, seed: int, si: int, kw: dict) -> bool:
+    """Does the failing Production session's cut fail in the Lab's Q5 too? Q5 has no points in space: each one
+    is replaced by a click on the last crossing before it (the same cut when the space click ends its chain),
+    a space point with no crossing before it is left out; every other click is the Production session's own
+    target, with the same camera. The sessions before `si` are replayed the same way."""
+    from mirai.topology.knife import KnifeTool
+    from mirai.topology.knife_pick import snap_own_point, space_point
+    from mirai.topology.knife_resolve import is_break
+
+    record, *_rest = random_run(scene, seed, cls=KnifeTool, **kw)
+    cams = [camera_for(SCENES[scene](), y, p) for y, p in CAMS[scene]]
+    occlusion = kw.get("occlusion", True)
+    mesh = SCENES[scene]()
+    for k, (clicks, _before, _msg) in enumerate(record[: si + 1]):
+        prod, _ps = new_session(KnifeTool, Mesh.from_state(mesh.export_state()))
+        q5, _qs = new_session(KnifeFaceCrossFace, mesh)
+        with contextlib.redirect_stdout(io.StringIO()):
+            for ci, sx, sy in clicks:
+                cam = cams[ci]
+                pm = prod._mesh
+                prod.set_view(cam, W, H, occlusion=occlusion)
+                q5.set_view(cam, W, H, occlusion=occlusion)
+                t = knife_face_pick(cam, pm, sx, sy, W, H, occlusion=occlusion)
+                t = snap_own_point(cam, pm, sx, sy, W, H, prod.snap_points, t, occlusion=occlusion)
+                if t.get("kind") == "outside":
+                    t = {"kind": "space", "position": space_point(cam, sx, sy, W, H)}
+                n = len(prod.path)
+                if not prod.click(t):
+                    continue
+                added = prod.path[n:]
+                if t["kind"] == "space":
+                    last = next((p for p in reversed(added) if p.get("crossing")), None)
+                    if last is None:
+                        continue
+                    q = {kk: v for kk, v in last.items() if kk not in ("crossing", "pid")}
+                elif t["kind"] == "point":
+                    i = next(i for i, p in enumerate(prod.path) if not is_break(p) and p["pid"] == t["pid"])
+                    q = {"kind": "path", "index": i}   # same path layout up to here (no space points)
+                else:
+                    q = t
+                q5.click(q)
+            q5.commit()
+            q5.deactivate()
+        if k == si:
+            return bool(integrity(mesh, scene))
+    return False
 
 
 def run_shading():

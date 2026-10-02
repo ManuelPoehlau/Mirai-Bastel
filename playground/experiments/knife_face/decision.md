@@ -1633,7 +1633,7 @@ S2-a (a straight run of boundary edges is a skip) has still not been commented o
 
 | # | Observation | Pinned by |
 |---|---|---|
-| UX2-b | **Clicks outside the mesh as path points in empty space** (Blender: a cut position can be "in space"). Now a click outside is a no-op (D6); whether it becomes a path point is an S4 question (cross-face, the cursor leaving the silhouette). | — |
+| UX2-b | **Clicks outside the mesh as path points in empty space** (Blender: a cut position can be "in space"). Now a click outside is a no-op (D6); whether it becomes a path point is an S4 question (cross-face, the cursor leaving the silhouette). **Resolved 2026-10-02 (Manu, S4 handoff v2):** a click outside inside a session is a point in space and cuts — AD-017 addendum "S4", "WP-KNIFE-01 S4" below. | — |
 | UX2-c | **Freehand `LMB`-drag** (Blender: held and dragged = freehand cut) vs. ours: a drag past the click threshold does nothing (B7.1). | — |
 | UX2-d | **The remaining Blender modifiers:** ignore-snap (Blender `Shift`; not on `Shift` here, D12), angle constraint (`docs/future_ideas/MODELING.md`), Cut Through (same file). | — |
 | UX2-e | UX1-a…e are moot after the revert (Manu's status line on "WP-KNIFE-01 UX1"). | — |
@@ -1914,3 +1914,154 @@ matrix, `ONE_KNIFE_PROMOTION_DISCOVERY.md` §1.3); with S4 Production **plans ac
 projection vs. render on warped faces (S3b-b); a bridge may cut another loop (S3b-a).
 
 Build record, evidence and the practical test: below, after the build.
+
+### S4 — build (2026-10-02, headless + xvfb, not Artist-tested)
+
+**What changed** (commits "Move the Q5 segment planner to src …", "S4: KnifeTool plans …", "S4: Application …";
+PROVISIONAL until Manu's verdict):
+
+- **Planner moved, not copied:** `playground/experiments/knife_face/planner.py` → `src/mirai/topology/knife_planner.py`
+  (the old path is a one-line re-export shim; `engine_q5.py` imports from `src`); `knife_pick.edge_t_3d` is a public alias,
+  so the planner needs no private import. Gate (before any behaviour change): `playground/tests` identical, the S1 golden
+  net byte-identical, the new cross-face golden (Lab Q5) identical, the integrity probe identical.
+- **`KnifeTool`** (`knife.py`): `set_view(camera, width, height, cache=, occlusion=)`; without a view a segment across faces
+  stays refused (`CROSS_FACE`, now worded "no camera view" — it said "not yet"). `_plan_segment`: when no face holds the
+  straight line (or an end is in space) the planner gives the visible crossings; `nodes = [last] + crossings + [target]`,
+  one entry per stretch — a cut, or a break `edge` / `gap` / `space` — crossings stored as records with `crossing=True`
+  (their `pid` given by the click), the target last; one click with k crossings is one in-session step. `KnifePlan` carries
+  `crossings` (positions), `lines`, `skipped`, `hidden`, `method`. Closing counts clicked points only (crossings do not
+  count, Q5's `_clicked`); a planner crossing on a vertex is no earlier vertex point (Q5's `_vertex_entries`); crossings
+  and space points are not own-point targets (`snap_points`).
+- **Points in space:** `{"kind": "space", "position"}` (`knife_pick.space_point`: the click's ray ∩ the plane through the
+  camera target, normal = view direction). The stretch from or to one is a break with reason `space`; `commit` hands the
+  resolver the path **without** the space records, the breaks stay — **`knife_resolve.py` unchanged**. A chain started in
+  space cannot be closed: `plan_lift(close=True)` lifts with "not closed: the chain starts in space" (S4c). The planner plans
+  a segment with a space end by PLANE alone (a space point lies in no face; the Lab never passes one, so Q5 is unchanged).
+- **`knife_preview.py`:** a space record gets no marker and no segment; it can be the start point (the rubber band runs
+  from it) and the prospective point; new field `prospective_crossings` (the hover's planned crossings).
+- **`Application`** (knife section): `_knife_pick` sets the live view (camera, viewport size, the shared `PickCache`,
+  `occlusion = display.show_faces`) on the tool before every hover / click plan, snaps own points over `snap_points`, and
+  turns an outside pick into a space target; `_knife_lift` sets it too (a double-click's close may run across faces). The
+  hover previews through `KnifeTool.plan`: the rubber band to the cursor (also over empty space) and the planned crossings
+  as preview dots. `_knife_release`: the UX2 "outside = no-op" branch is gone. Status (PROVISIONAL wording): "Knife: start
+  point set in space", "Knife: point in space - N crossing(s) (M path segments)" / "… - the line crosses nothing …",
+  "Knife: cut across N crossing(s) (M path segments)", appended with "; ": "N hidden crossing(s) not cut", "skipped: over a
+  hole, border or hidden part", "skipped: along an existing edge". Start hint: "Knife: click on vertices, edges, inside faces
+  or outside the mesh to cut - a far click cuts across faces, Shift+click = edge midpoint, E / right-click = new cut (pen
+  lift), double-click = close + lift, Enter = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo".
+- `src/main.py`: usage text only. Viewport / overlay code: **untouched** (no new layer; see S4-d).
+- Size: Part B production diff (without the planner move) +222 / −50 raw, ≈ +192 / −49 non-blank code lines — inside ~450.
+
+**Evidence `[TEST]`:**
+
+- **Golden oracle** `playground/tests/golden/knife_cross_face.json` + `knife_cross_face_golden_driver.py` (recorded from the
+  Lab's Q5 *before* the move): 48 sequences with fixed cameras — grid (task 1–3, 6 quads, vertex pass-through / no
+  over-snap, hole, occluder with occlusion on / off / switched, along an edge, loops over 4 quads from an interior / a
+  boundary / a vertex start, continue from the seed, earlier edge / vertex points, retrace, k-crossing undo / redo, the
+  plane planner's vertex hit, the concave face, orbits, crossing an earlier cross-face cut), cube (2 and 3 faces, interior
+  to interior, Manu's tail join as clicked, a bow-tie across faces, cyclic close across 3 faces and continue, earlier point,
+  a hidden back edge, orbit, wireframe) and 14 seeded head sequences (walk and plane, hidden crossings up to 17 per click,
+  gaps, orbits, a close). `test_knife_cross_face_golden.py`: the Lab replays every one identically **and Production
+  reproduces every one** (written as strict xfail first; 47 needed the planner).
+- **Differential** (`knife_q5_differential_driver.py` now takes a view, `("cam", …)` / `("occl", …)` / `"commit"` steps and
+  compares the planner's result per click): `test_cross_face_sequences_with_a_view_match_q5` — **0 differences** in all
+  48 (every step's path, every planned crossing, mesh, History, residue, resolution). The single-face differential, the
+  documented S2 differences and the seeded random sessions are unchanged.
+- **Production counterparts** `tests/test_knife_cross_face.py` (47): the Q5 tests `test_far_click_crosses_any_number_of_faces`,
+  `test_hole_visible_pieces_cut_gap_skipped_hud_note`, `test_no_run_is_connected_across_a_gap`,
+  `test_one_hit_face_at_a_piece_end_is_not_cut_and_the_hidden_crossing_is_counted`,
+  `test_without_occlusion_nothing_is_hidden_and_nothing_skipped`, `test_crossing_dots_and_lines_in_hover_plan`,
+  `test_cross_face_target_without_a_view_is_rejected`, `test_boundary_start_loop_across_faces_closes_fully`,
+  `test_interior_start_loop_over_four_quads_closes_without_bridges`,
+  `test_continuing_from_the_seed_does_not_connect_across_the_closed_loop`,
+  `test_earlier_point_click_is_one_undo_step_with_its_crossings`,
+  `test_click_on_an_earlier_edge_point_across_faces_connects_and_continues`,
+  `test_the_last_point_and_planner_crossings_are_not_earlier_points`, `test_one_click_with_k_crossings_undoes_as_one_step`,
+  `test_plane_planner_reports_a_vertex_hit_not_an_edge_end`, `test_straight_line_out_of_a_concave_face_is_planned_across_faces`,
+  `test_planner_with_pick_cache_gives_the_same_crossings_as_without`; the space-point spec (absolute, no Lab oracle):
+  `test_space_point_lies_on_the_click_ray_and_on_the_camera_target_plane` (3 cameras, panned target),
+  `test_mesh_start_then_a_click_in_space_cuts_the_visible_faces_up_to_the_last_crossing` (= the same cut by two mesh
+  clicks, one History entry, one Undo), `test_both_ends_in_space_cut_every_visible_face_in_between`,
+  `test_a_space_segment_that_crosses_nothing_is_accepted_and_commits_nothing`, `test_a_chain_never_touching_the_mesh_commits_nothing`,
+  `test_start_in_space_then_a_mesh_point`, `test_orbiting_between_clicks_keeps_the_space_points_world_position`,
+  `test_undo_redo_lift_esc_with_space_points`, `test_space_points_are_no_snap_targets_and_no_earlier_points`,
+  `test_a_mesh_started_chain_with_a_space_point_closes_but_not_cyclically`,
+  `test_a_chain_started_in_space_cannot_close_the_double_click_only_lifts`, `test_wireframe_space_line_cuts_everything_under_it`,
+  `test_space_records_never_reach_the_resolver`, `test_random_sessions_mixing_mesh_and_space_clicks_stay_sound` (12 seeds,
+  4 cameras, orbit, occlusion on / off, undo, lifts); Production-only: `test_orbit_between_clicks_does_not_change_a_placed_cut`,
+  `test_a_pen_lift_between_cross_face_chains_commits_both_as_one_entry`, `test_finish_chain_closes_across_faces`,
+  `test_a_midpoint_start_followed_by_a_cross_face_segment`, `test_a_crossing_on_a_vertex_is_not_found_as_an_earlier_vertex_point`.
+- **Application** `tests/test_application_knife_cross_face.py` (16): hover over a far target (crossing dots in the preview
+  layer = the stored crossings after the click), a face / edge sharing no face with the start, the status naming hidden
+  crossings, orbit between clicks, wireframe vs shaded, a double-click closing across faces, a Shift midpoint start then a
+  cross-face segment, hover in empty space with and without a last point, the space click (no marker, no outside stretch,
+  the cuts stay, the next rubber band starts at the space point), both ends in space + `Enter` + `Ctrl+Z`, "crosses nothing",
+  undo / redo / `E` / `RMB` / `Esc` with a space point, the double-click after a space start ("not closed … space"), Shift has
+  no effect on a space point, the start hint.
+- **`[PROBE]`** `knife_integrity_probe.py --production`, new section "far + space" (the click's camera on the
+  Production Knife, a quarter of the clicks anywhere on screen = points in space, occlusion on and off): grid 1/400 each,
+  cube **0/400** each, head **0/40** each. The one grid failure (seed 210, a zig-zag of 7 clicks ending in space: a
+  zero-area / non-simple face) is **inherited**: the same cut with the space click replaced by a click on its last visible
+  crossing fails identically in the Lab's Q5 (the probe now checks that itself, `_q5_twin_fails`). The commit check
+  (`check_commit`) does not catch that face class — a resolver matter, not touched (S4-i). On the head the probe ignores
+  `tri_area` (the untouched head has 302 such faces: non-planar quads). The first part of `--production`, the default run
+  and `--cases` are byte-identical to `beec01d`.
+- **Hover cost** (`Application.pointer_motion` on `head` during a session with two points, occlusion on, pick cache on,
+  1280 × 800, a 40 × 25 grid over the head's screen bbox incl. empty space around it, 5 rounds; this container, three runs
+  each): default framing **before S4** p50 0.62 / 0.69 / 0.64 ms, p95 1.17 / 1.51 / 1.18 ms → **S4** p50 2.79 / 2.79 / 2.61 ms,
+  p95 6.50 / 6.44 / 5.89 ms; zoomed (dolly 0.6) before p95 1.42–1.53 ms → S4 p95 6.37–6.51 ms. Under the 8 ms STOP line; the
+  pick cache is not rebuilt per hover (one signature change in 5 000 hovers). The cost is the planner: the plane planner's
+  per-hit occlusion test, mostly for hovers over empty space (a space end is planned by PLANE).
+- Suites (Linux + xvfb, libEGL here): `tests` (without `test_extrude_tool`) 1525 → 1588 passed; `tests/run_core_suite.py`
+  PASS; `playground/tests` 1090 → 1235 (+145: the cross-face golden and differential); `experiments/symmetry_lab/tests`
+  246 → 246; S1 golden `--check` identical.
+
+**Changed old tests** (reason: "S4: decided behaviour change, Manu 2026-10-02" — AD-017 addendum "S4", the P10 flip):
+`test_application_knife.py` — `test_start_and_path_stay_drawn_while_hovering_elsewhere` (hover outside now previews a point
+in space), `test_a_face_the_last_point_does_not_touch_is_planned_across_faces` and
+`test_edge_sharing_no_face_with_start_is_planned_across_faces` (were "… has no preview and click does nothing"),
+`test_outside_hover_previews_a_point_in_space_and_leave_clears_it` (was "… has no preview …");
+`test_application_knife_pen_lift.py` — `test_a_click_outside_the_mesh_adds_a_point_in_space_and_never_commits` and
+`test_a_click_outside_on_an_empty_session_starts_the_chain_in_space` (were the UX2 no-op tests), the start-hint test (the hint
+names outside clicks again, as cut points), the far-edge hover in `test_two_chains_with_a_lift_…` (planned across now);
+`test_application_knife_shift_preview.py` — the UX2b sweep also counts space targets (the A2 invariant holds for them);
+`test_knife_parity.py::test_p10_…` — docstring only (headless without a view it still refuses);
+`playground/tests/test_knife_q5_differential.py` / the driver — the no-view refusal text.
+
+### WP-KNIFE-01 S4 — open points from the build (recorded, not decided)
+
+| # | Observation | Pinned by |
+|---|---|---|
+| S4-d | **Preview style:** Production has two tool styles (hover / selected). The hover shows the straight rubber band (also over empty space) and the planned crossings as hover dots; it does **not** draw the skipped stretch in a distinct "no cut" style as the Lab does (grey-blue) — that needs a third tool layer (viewport / overlay change, beyond the handoff's minimum). After the click the skipped and outside stretches are simply not drawn; stored crossings are drawn as placed points (selected style; the Lab draws them as yellow dots). | `test_hover_over_a_far_target_previews_its_crossings_and_the_click_stores_them`, `test_a_click_in_space_adds_a_point_and_only_the_cuts_stay_drawn` |
+| S4-e | **Hover cost rose ~4×** on the head (p95 ~1.3 → ~6.4 ms here; reference PC not measured). Within the STOP limit; hovers over empty space dominate (PLANE + occlusion per hit). A cheaper space hover (e.g. no plan while the cursor is far from the mesh) would change what the preview shows — not done. | numbers above |
+| S4-f | **The space stretch is its own break reason (`space`)**, not `gap`: the commit's "N stretch(es) skipped" counts holes / hidden parts / edges only, so an outside click does not add a "skipped" note at `Enter`. Interpretation of "a gap-type stretch" (handoff). | `test_space_records_never_reach_the_resolver` |
+| S4-g | **Closing count:** points in space count as clicked points for "closing needs at least 3 points" (crossings do not, as in Q5). A chain started on the mesh that holds space points closes non-cyclically (a stretch is skipped). | `test_a_mesh_started_chain_with_a_space_point_closes_but_not_cyclically` |
+| S4-h | `KnifeTool` keeps the last view between `set_view` calls; `Application` sets the live one before every hover / click / close, so no stale camera is used. The Playground `knife` family sets no view: cross-face stays refused there (families untouched). | — |
+| S4-i | **Inherited:** a zig-zag session can leave a zero-area / non-simple face that the commit check does not catch (grid seed 210 of the far-click fuzz; Q5 identical with a mesh click). Resolver / commit-check matter (S3-i family), not touched. | `knife_integrity_probe.py --production` |
+| S4-j | Status texts (PROVISIONAL wording) as listed above; the hover itself names nothing (the Lab's HUD names skips while hovering) — the status line speaks at the click. | `test_the_status_names_hidden_crossings_and_skipped_stretches` |
+| S4-k | Not run in a real window on the reference PC: the GL overlay test (`test_gl_knife_overlay.py`) passes under xvfb; the hover cost was measured headless in this container. | — |
+
+**Rollback:** S4 is one revertable commit series after "Records: S4 …" (spec, planner move, `KnifeTool`, `Application`,
+docs); reverting the two "S4:" code commits restores refusal of cross-face segments and the UX2 outside no-op (re-add the
+xfails of the spec commit), reverting the move restores the Lab-only planner.
+
+**Prepared practical test (Manu, ≤ 5 minutes, `python3 src/main.py`, cube — `python3 src/main.py cube` — then head, default
+camera):** S4 stays **PROVISIONAL** until these slots and the verdict are filled.
+
+| # | Check | Expected | Seen (Manu) |
+|---|---|---|---|
+| 1 | `C`; click an edge on the top face, then an edge on the **front** face far away (no clicks in between); `Enter` | the cut runs through every face in between; one `Ctrl+Z` removes it all | |
+| 2 | The same on the head, from the nose side to the cheek across several faces | while hovering, dots mark the crossings; the status names them after the click | |
+| 3 | A line that runs over a gap / the silhouette | only the **visible** part is cut; the status says what was skipped / hidden | |
+| 4 | Click a far point, **orbit the camera**, click the next far point | the first cut stays as placed | |
+| 5 | Switch to Wireframe (`D` before `C`), the same far click | it now cuts everything under the line (nothing hidden) | |
+| 6 | A loop across several faces: click the chain's start again (snaps) | it closes without bridges across faces; the next click continues from the closing vertex; `E` / double-click still work | |
+| 7 | Hover over the head | stays smooth | |
+| 7a | **Empty space:** `C`, click an edge on the cube, move the cursor **off the model**, click there | the line follows the cursor over empty space; after the click the part outside **disappears**, only the cut on the model remains (status: "point in space"); `Enter` commits; `Ctrl+Z` reverts it | |
+| 7b | Click outside **left** of the model, then outside on the **right**; `Enter`. Same on the head. A click outside whose line crosses nothing | the line cuts across the model (visible faces only); "crosses nothing" cuts and commits nothing | |
+| 7c | Click outside, **orbit**, click on the model; `E` / `RMB`, double-click, `Esc` | the first point stays where you set it; the keys behave as before; a click outside never commits | |
+| 8 | Replay the recorded Q5 sequences ("One Knife S1" practical test above: bow-tie, tail join as clicked, closed shape then continue) | the results match the Playground Q5 (bow-tie `V:13 E:21 F:10`, tail join `V:14 E:22 F:10`) | |
+
+| Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
+|---|---|
+| | |
