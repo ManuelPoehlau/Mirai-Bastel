@@ -23,6 +23,14 @@ face the two points share — cross-face, slice S4) is refused by Q5 ("no camera
 the Production tool refuses it ("cross-face: not yet"). So both sides play single-face sequences, and a
 multi-face sequence shows up as the same refused click in both.
 
+WP-KNIFE-01 S4: `play_q5` / `play_production` / `play_both` take an optional `view` — `(yaw, pitch,
+occlusion)` of the play-test camera (`knife_golden_driver.camera`, 1280 x 800) — given to both tools
+(`set_view`) before the first click; inside a sequence `("cam", yaw, pitch)` orbits to another camera and
+`("occl", bool)` switches the occlusion (wireframe) for the clicks after it, `"commit"` commits and begins a
+new session on the same mesh. With a view, Q5 plans a segment across faces; so does the Production tool once
+it can (before S4 it has no `set_view` and refuses). Per click the planner's result is kept (`planned`:
+method, hidden crossings, the stored crossings by position) and compared too.
+
 Ids are never compared: positions, rounded (9 digits), and point identity as "first seen as the k-th
 distinct point". Run directly to print the recorded cases:
 
@@ -53,7 +61,7 @@ from viewport.derived import triangulate_face  # noqa: E402
 from playground.experiments.knife_face import engine_q5  # noqa: E402
 from playground.experiments.knife_face.engine_q5 import KnifeFaceCrossFace  # noqa: E402
 from playground.experiments.knife_face.planner import point_faces, point_position  # noqa: E402
-from playground.tests.knife_golden_driver import build_scene, camera  # noqa: E402
+from playground.tests.knife_golden_driver import H, W, build_scene, camera  # noqa: E402
 
 EPS = 1e-9
 FACE_CLEARANCE_PX = 20.0
@@ -180,7 +188,8 @@ def path_signature(mesh, path) -> list:
         if p["kind"] == "break":
             out.append(("break", p.get("reason"), p.get("cyclic")))
         else:
-            out.append((p["kind"], _r(point_position(mesh, p)), ids.setdefault(p["pid"], len(ids))))
+            out.append((p["kind"], _r(point_position(mesh, p)), ids.setdefault(p["pid"], len(ids)))
+                       + (("crossing",) if p.get("crossing") else ()))
     return out
 
 
@@ -240,6 +249,7 @@ class Side:
     problem: str | None = None
     undo_restores: bool | None = None
     redo_restores: bool | None = None
+    planned: list = field(default_factory=list)       # per click: (method, hidden, stored crossings) (S4)
 
 
 def _finish(side: Side, mesh, scene, before, cmd, res, problem) -> None:
@@ -262,69 +272,132 @@ def _reason_production(tool, target) -> str:
     return plan(target).reason if plan is not None else "no plan()"
 
 
-def play_q5(mesh: Mesh, specs, finish: str = "commit") -> Side:
+@contextlib.contextmanager
+def capture_planner(module, box: list):
+    """Keep every `plan_crossings` result `module` asks for (the last one of a click is the click's)."""
+    original = getattr(module, "plan_crossings", None)
+    if original is None:
+        yield
+        return
+
+    def recording(view, mesh, a, b):
+        res = original(view, mesh, a, b)
+        box.append(res)
+        return res
+
+    module.plan_crossings = recording
+    try:
+        yield
+    finally:
+        module.plan_crossings = original
+
+
+def _set_view(tool, mesh, view) -> None:
+    """`view` = (yaw, pitch, occlusion) or None; a tool without `set_view` (Production before S4) gets none."""
+    if view is None or not hasattr(tool, "set_view"):
+        return
+    yaw, pitch, occlusion = view
+    tool.set_view(camera(mesh, yaw, pitch), W, H, occlusion=occlusion)
+
+
+def _planned(mesh, box: list, before: list, after: list) -> tuple:
+    """What the click's planner call found: (method, hidden, the crossings the click stored, by position)."""
+    stored = [(p["kind"], _r(point_position(mesh, p))) for p in after[len(before):]
+              if p.get("crossing") and not any(p is q for q in before)]
+    if not box:
+        return ("direct", 0, stored)
+    res = box[-1]
+    return (res.method, res.hidden, stored)
+
+
+def _play(tool, side: Side, mesh, scene, specs, finish, view, target_of, accepts_of, reason_of, box) -> object:
+    before = mesh.export_state()
+    cur_view = view
+    _set_view(tool, mesh, cur_view)
+    cmd = None
+    for spec in specs:
+        if isinstance(spec, tuple) and spec[0] == "cam":
+            cur_view = (spec[1], spec[2], cur_view[2] if cur_view else True)
+            _set_view(tool, mesh, cur_view)
+            continue
+        if isinstance(spec, tuple) and spec[0] == "occl":
+            cur_view = (cur_view[0], cur_view[1], spec[1])
+            _set_view(tool, mesh, cur_view)
+            continue
+        if spec == "commit":
+            cmd = tool.commit()
+            tool.deactivate()
+            tool.activate()
+            tool.begin(mesh=mesh, scene=scene, selection=scene.selection)
+            _set_view(tool, mesh, cur_view)
+            before = mesh.export_state()
+            continue
+        if spec in ("undo", "redo"):
+            ok = tool.undo_step() if spec == "undo" else tool.redo_step()
+            side.steps += ("u" if spec == "undo" else "r") + ("+" if ok else "-")
+        else:
+            target = target_of(tool, mesh, spec)
+            acc = accepts_of(tool, target)
+            path_before = tool.path
+            box.clear()
+            ok = tool.click(target)
+            side.consistent &= acc == ok
+            side.accepted += "+" if ok else "-"
+            if not ok:
+                side.reasons.append(reason_of(tool, target))
+            side.planned.append(_planned(mesh, box, path_before, tool.path) if ok else None)
+        side.paths.append(path_signature(mesh, tool.path))
+        side.mutated |= content(mesh.export_state()) != content(before)
+    return before, cmd
+
+
+def play_q5(mesh: Mesh, specs, finish: str = "commit", view=None) -> Side:
     scene = Scene()
     scene.mesh = mesh
     knife = KnifeFaceCrossFace()
     side = Side()
-    before = mesh.export_state()
     box: list = []
-    with quiet(), capture_q5_resolution(box):
+    planner_box: list = []
+    with quiet(), capture_q5_resolution(box), capture_planner(engine_q5, planner_box):
         knife.activate()
         knife.begin(mesh=mesh, scene=scene, selection=scene.selection)
-        for spec in specs:
-            if spec in ("undo", "redo"):
-                ok = knife.undo_step() if spec == "undo" else knife.redo_step()
-                side.steps += ("u" if spec == "undo" else "r") + ("+" if ok else "-")
-            else:
-                target = q5_target(knife, mesh, spec)
-                plan = knife.plan(target)
-                ok = knife.click(target)
-                side.consistent &= plan.ok == ok
-                side.accepted += "+" if ok else "-"
-                if not ok:
-                    side.reasons.append(plan.reason)
-            side.paths.append(path_signature(mesh, knife.path))
-            side.mutated |= content(mesh.export_state()) != content(before)
+
+        def accepts(k, target):
+            return k.plan(target).ok
+
+        def reason(k, target):
+            return k.plan(target).reason
+
+        start, _cmd = _play(knife, side, mesh, scene, specs, finish, view, q5_target, accepts, reason, planner_box)
         cmd = knife.commit() if finish == "commit" else knife.cancel()
         knife.deactivate()
     problem = None
     if knife.last_message.startswith("commit rolled back"):
         problem = knife.last_message
-    _finish(side, mesh, scene, before, cmd, box[-1] if box else None, problem)
+    _finish(side, mesh, scene, start, cmd, box[-1] if box else None, problem)
     return side
 
 
-def play_production(mesh: Mesh, specs, finish: str = "commit") -> Side:
+def play_production(mesh: Mesh, specs, finish: str = "commit", view=None) -> Side:
+    from mirai.topology import knife as knife_module
+
     scene = Scene()
     scene.mesh = mesh
     tool = KnifeTool()
     side = Side()
-    before = mesh.export_state()
-    with quiet():
+    planner_box: list = []
+    with quiet(), capture_planner(knife_module, planner_box):
         tool.activate()
         tool.begin(mesh=mesh, scene=scene, selection=scene.selection)
-        for spec in specs:
-            if spec in ("undo", "redo"):
-                ok = tool.undo_step() if spec == "undo" else tool.redo_step()
-                side.steps += ("u" if spec == "undo" else "r") + ("+" if ok else "-")
-            else:
-                target = production_target(tool, mesh, spec)
-                acc = tool.accepts(target)
-                ok = tool.click(target)
-                side.consistent &= acc == ok
-                side.accepted += "+" if ok else "-"
-                if not ok:
-                    side.reasons.append(_reason_production(tool, target))
-            side.paths.append(path_signature(mesh, tool.path))
-            side.mutated |= content(mesh.export_state()) != content(before)
+        start, _cmd = _play(tool, side, mesh, scene, specs, finish, view, production_target,
+                            lambda t, target: t.accepts(target), _reason_production, planner_box)
         if finish == "commit":
             cmd = tool.commit()
         else:
             tool.cancel()
             cmd = None
         tool.deactivate()
-    _finish(side, mesh, scene, before, cmd, tool.last_resolution, tool.last_problem)
+    _finish(side, mesh, scene, start, cmd, tool.last_resolution, tool.last_problem)
     return side
 
 
@@ -338,7 +411,7 @@ def compare(q5: Side, prod: Side) -> list[str]:
     """Every difference between the two sides, as text (empty: identical)."""
     out = []
     for name in ("accepted", "steps", "paths", "mutated", "faces", "vef", "history", "residue", "mode",
-                 "resolution", "undo_restores", "redo_restores"):
+                 "resolution", "undo_restores", "redo_restores", "planned"):
         a, b = getattr(q5, name), getattr(prod, name)
         if a != b:
             out.append(f"{name}: Q5 {a!r} != Production {b!r}")
@@ -355,8 +428,9 @@ def compare(q5: Side, prod: Side) -> list[str]:
     return out
 
 
-def play_both(scene_name: str, specs, finish: str = "commit") -> tuple[Side, Side]:
-    return play_q5(build_scene(scene_name), specs, finish), play_production(build_scene(scene_name), specs, finish)
+def play_both(scene_name: str, specs, finish: str = "commit", view=None) -> tuple[Side, Side]:
+    return (play_q5(build_scene(scene_name), specs, finish, view),
+            play_production(build_scene(scene_name), specs, finish, view))
 
 
 # -- recorded sequences ---------------------------------------------------------------------------

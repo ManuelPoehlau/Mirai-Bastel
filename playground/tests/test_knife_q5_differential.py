@@ -27,6 +27,8 @@ if str(_REPO_ROOT) not in sys.path:
 import pytest  # noqa: E402
 
 from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
+from playground.tests.knife_cross_face_golden_driver import load as load_cross_face  # noqa: E402
+from playground.tests.knife_cross_face_golden_driver import from_json, scene  # noqa: E402
 from playground.tests.knife_q5_differential_driver import (  # noqa: E402
     DIFFERENCES,
     MULTI_FACE,
@@ -34,6 +36,8 @@ from playground.tests.knife_q5_differential_driver import (  # noqa: E402
     RECORDED,
     compare,
     play_both,
+    play_production,
+    play_q5,
     random_run,
     recorded_specs,
 )
@@ -122,3 +126,29 @@ def test_a_broken_result_is_taken_back_by_both(monkeypatch):
     q5, prod = play_both(scene_name, specs)
     assert compare(q5, prod) == []
     assert prod.problem == "a face would flip (forced)" and prod.history == 0 and prod.vef == "25/40/16"
+
+
+# -- WP-KNIFE-01 S4: cross-face sequences with a camera view (the planner) --------------------------------------
+
+CROSS_FACE = load_cross_face()
+
+
+CROSS_FACE_PARAMS = [
+    pytest.param(name, marks=pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 S4: no cross-face planning yet"))
+    if any(p is not None and p[0] != "direct" for p in CROSS_FACE[name]["q5"]["planned"]) else name
+    for name in CROSS_FACE
+]
+
+
+@pytest.mark.parametrize("name", CROSS_FACE_PARAMS)
+def test_cross_face_sequences_with_a_view_match_q5(name):
+    """The S4 golden sequences (`golden/knife_cross_face.json`) through both tools with the same camera: every
+    step, every planned crossing (method, hidden count, positions), the mesh, History and residue identical."""
+    entry = CROSS_FACE[name]
+    if entry["scene"] == "head" and not Path(DEFAULT_HEAD_ASSET).is_file():
+        pytest.skip("head asset not found")
+    specs = [from_json(s) for s in entry["specs"]]
+    view = tuple(entry["view"])
+    q5 = play_q5(scene(entry["scene"]), specs, "commit", view)
+    prod = play_production(scene(entry["scene"]), specs, "commit", view)
+    assert compare(q5, prod) == []
