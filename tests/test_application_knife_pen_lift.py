@@ -135,7 +135,9 @@ def test_two_chains_with_a_lift_commit_as_one_entry_and_one_undo_reverts_both(ap
     _chain_a(app)
     far = _edge_screen(app, e["73"], 0.5)
     app.pointer_motion(*far)
-    assert app.knife_render_data.prospective_point is None      # no shared face with the last point
+    # S4 (decided behaviour change, Manu 2026-10-02): no shared face with the last point - planned across
+    # faces now (before S4: no preview); the lift makes the far point a fresh start instead.
+    assert app.knife_render_data.prospective_crossings
 
     assert _lift_with(app, how)
     assert _click(app, far) and app.status_message.startswith("Knife: start point set")
@@ -321,26 +323,29 @@ def test_a_drag_cannot_be_the_second_click_of_a_double_click(app, clock):
 # -- 8. click outside, Enter, Esc ------------------------------------------------------------------------
 
 
-def test_a_click_outside_the_mesh_does_nothing(app):
+def test_a_click_outside_the_mesh_adds_a_point_in_space_and_never_commits(app):
+    """S4 (decided behaviour change, Manu 2026-10-02 — AD-017 addendum "S4"): before, a click outside did
+    nothing (UX2 D6); now it is a point in space and cuts. It still never commits."""
     mesh = app.scene.mesh
     before = _topology(mesh)
     _begin(app)
     _chain_a(app)
     path = app._knife.path
 
-    assert _click(app, OUTSIDE) is False
+    assert _click(app, OUTSIDE) is True
 
-    assert app.knife_active and app._knife.path == path
+    assert app.knife_active and app._knife.path[: len(path)] == path
+    assert app._knife.path[-1]["kind"] == "space"
     assert _history_depths(app) == (0, 0) and _topology(mesh) == before
-    assert app.status_message == "Knife: outside the mesh: nothing to cut here"
-    assert app.knife_render_data.prospective_point is None
+    assert app.status_message.startswith("Knife: point in space")
 
 
-def test_a_click_outside_on_an_empty_session_keeps_the_knife_active(app):
+def test_a_click_outside_on_an_empty_session_starts_the_chain_in_space(app):
+    """S4 (decided behaviour change, Manu 2026-10-02): before, nothing happened; now the start is in space."""
     _begin(app)
-    assert _click(app, OUTSIDE) is False
-    assert app.knife_active and app._knife.path == []
-    assert app.status_message == "Knife: outside the mesh: nothing to cut here"
+    assert _click(app, OUTSIDE) is True
+    assert app.knife_active and [p["kind"] for p in app._knife.path] == ["space"]
+    assert app.status_message == "Knife: start point set in space"
 
 
 def test_enter_still_commits_and_esc_still_cancels(app):
@@ -598,8 +603,10 @@ def test_midpoint_starts_lift_midpoint_start_enter_one_entry_one_undo(app, how):
 
 
 def test_the_start_hint_names_the_new_keys_and_no_longer_click_outside(app):
+    """S4 (decided behaviour change, Manu 2026-10-02): the hint names a click outside the mesh again - as a
+    cut point, no longer as commit (`Enter = commit` only)."""
     _begin(app)
     hint = app.status_message
     for part in ("E / right-click", "double-click", "Shift+click", "Enter = commit", "Esc = cancel"):
         assert part in hint, part
-    assert "outside" not in hint
+    assert "outside the mesh to cut" in hint and hint.count("commit") == 1

@@ -50,7 +50,6 @@ from tests.test_application_knife_pen_lift import (  # noqa: F401  (the `clock` 
 )
 from viewport.overlay import TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER
 
-pytestmark = pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 S4: not built yet")
 
 FAR_LEFT = (60.0, 300.0)      # left of the cube, outside the mesh
 FAR_RIGHT = (760.0, 330.0)    # right of the cube, outside the mesh
@@ -106,9 +105,10 @@ def test_a_face_the_last_point_does_not_touch_is_now_planned_across(app):
 
 
 def test_the_status_names_hidden_crossings_and_skipped_stretches(app):
+    """From the front / right edge to the far left: the line passes over the hidden back corner's edges."""
     e = _edges(app)
     _begin(app)
-    assert _click(app, _edge_screen(app, e["73"], 0.5))
+    assert _click(app, _edge_screen(app, e["56"], 0.5))
     _outside(app, FAR_LEFT)
     assert _click(app, FAR_LEFT)
     plan = app._knife.last_plan
@@ -131,13 +131,13 @@ def test_orbit_between_clicks_keeps_the_placed_cut(app):
 def test_wireframe_shows_and_cuts_what_the_shaded_view_hides(app):
     e = _edges(app)
     _begin(app)
-    assert _click(app, _edge_screen(app, e["73"], 0.5))
+    assert _click(app, _edge_screen(app, e["56"], 0.5))
     app.pointer_motion(*FAR_LEFT)
     shaded = len(app.knife_render_data.prospective_crossings)
     app.key_press(ESC)
     assert app.dispatch_command(cmd.SET_WIREFRAME) and not app.display.show_faces
     _begin(app)
-    assert _click(app, _edge_screen(app, e["73"], 0.5))
+    assert _click(app, _edge_screen(app, e["56"], 0.5))
     app.pointer_motion(*FAR_LEFT)
     assert len(app.knife_render_data.prospective_crossings) > shaded
     assert _click(app, FAR_LEFT) and app._knife.last_plan.hidden == 0
@@ -185,7 +185,8 @@ def test_hover_in_empty_space_draws_the_rubber_band_to_the_cursor(app):
     data = app.knife_render_data
     space = _space_position(app, FAR_LEFT)
     assert data.prospective_point == pytest.approx(space)
-    assert data.line_preview == pytest.approx((_edge_point(app, e["56"], 0.5), space))
+    assert data.line_preview[0] == pytest.approx(_edge_point(app, e["56"], 0.5))
+    assert data.line_preview[1] == pytest.approx(space)
     assert tuple(data.line_preview) in app.viewport.tool_line_layers[TOOL_PREVIEW_LAYER]
 
 

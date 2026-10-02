@@ -56,7 +56,7 @@ from .topology.connect_vertices_per_face import VertexConnectError, connect_vert
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
-from .topology.knife_pick import knife_pick, snap_own_point
+from .topology.knife_pick import knife_pick, snap_own_point, space_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .topology.split import split_selected_edge
 from .viewport import DisplayMode, DisplayState, OrbitCamera
@@ -209,6 +209,18 @@ def _knife_notes(res) -> list[str]:
         notes.append("the cut on from an interior start point dropped")
     return notes
 
+
+def _knife_plan_notes(plan) -> list[str]:
+    """What a click's segment across faces left uncut (WP-KNIFE-01 S4, PROVISIONAL wording)."""
+    notes = []
+    if plan.hidden:
+        notes.append(f"{plan.hidden} hidden crossing(s) not cut")
+    if "gap" in plan.skipped:
+        notes.append("skipped: over a hole, border or hidden part")
+    if plan.method and "edge" in plan.skipped:
+        notes.append("skipped: along an existing edge")
+    return notes
+
 class Application:
     """Window-unabhängiger Produktions-Orchestrator."""
 
@@ -331,6 +343,8 @@ class Application:
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
         self._shift_held: bool = False
+        # WP-KNIFE-01 S4: where the hovered segment crosses edges (the planner's dots).
+        self._knife_hover_crossings: tuple = ()
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -588,6 +602,13 @@ class Application:
     #
     # WP-KNIFE-01 UX2b (PROVISIONAL, Artist 2026-10-02): while Shift is held
     # (`set_shift_held`, from the window) the hover already shows that midpoint.
+    #
+    # WP-KNIFE-01 S4 (PROVISIONAL): the live camera, viewport size, pick cache and
+    # occlusion switch go to the `KnifeTool` at hover and click time, so a far
+    # click is planned across faces with the camera of that click (crossing dots
+    # while hovering). A click outside the mesh is a point in space and cuts
+    # (Manu 2026-10-02, Blender); the hover line runs to the cursor over empty
+    # space, after the click only the cuts commit will make are drawn.
 
     @property
     def knife_active(self) -> bool:
@@ -604,6 +625,7 @@ class Application:
             [_KNIFE_DRAWN_LIFT if p.get("reason") == "lift" else p for p in self._knife.path],
             self._knife_target,
             self._knife_highlight_edge,
+            self._knife_hover_crossings,
         )
         if self._knife.last_point is None:
             # After a pen lift no point starts the next segment: no start marker, no rubber band.
@@ -623,9 +645,9 @@ class Application:
         self._set_hovered(None)
         self._refresh_hover()
         self._set_status(
-            "Knife: click on vertices, edges or inside faces to cut - Shift+click = edge midpoint,"
-            " E / right-click = new cut (pen lift), double-click = close + lift, Enter = commit,"
-            " Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo"
+            "Knife: click on vertices, edges, inside faces or outside the mesh to cut - a far click cuts"
+            " across faces, Shift+click = edge midpoint, E / right-click = new cut (pen lift),"
+            " double-click = close + lift, Enter = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo"
         )
         return True
 
@@ -679,7 +701,8 @@ class Application:
         adds the point at the cursor, the second LMB click of a double-click
         finishes the chain, an RMB click lifts the pen; a press that moved past
         the threshold is not a click and does nothing (Playground click rule,
-        B7.1). A click outside the mesh does nothing (UX2)."""
+        B7.1). A click outside the mesh adds a point in space (S4); it never
+        commits."""
         moved = self._knife_gesture_moved
         self._knife_gesture = False
         self._knife_gesture_moved = 0.0
@@ -698,10 +721,6 @@ class Application:
         ):
             return self._knife_lift(finish=True)
         target = self._knife_pick(x, y, midpoint=self._knife_gesture_midpoint)
-        if target.get("kind") == "outside":
-            self._set_status("Knife: outside the mesh: nothing to cut here")
-            self._refresh_hover()
-            return False
         self._knife_last_click = (now, x, y)
         if not self._knife.click(target):
             self._set_status(_KNIFE_REFUSED.get(self._knife.last_plan.reason, "Knife: no valid cut target here"))
@@ -712,14 +731,21 @@ class Application:
         plan = self._knife.last_plan
         cuts = len(self._knife.cut_segments)
         segments = f"{cuts} path {'segment' if cuts == 1 else 'segments'}"
+        crossings = f"{len(plan.crossings)} crossing(s)" if plan.crossings else "the line crosses nothing"
         if plan.start:
-            self._set_status("Knife: start point set" + (" on an earlier point" if plan.earlier else ""))
+            where = " on an earlier point" if plan.earlier else " in space" if target["kind"] == "space" else ""
+            status = "Knife: start point set" + where
         elif plan.closing:
-            self._set_status(f"Knife: shape closed - the next click cuts on from its start ({segments})")
+            status = f"Knife: shape closed - the next click cuts on from its start ({segments})"
         elif plan.skip:
-            self._set_status(f"Knife: along an existing edge - nothing to cut ({segments})")
+            status = f"Knife: along an existing edge - nothing to cut ({segments})"
+        elif target["kind"] == "space":
+            status = f"Knife: point in space - {crossings} ({segments})"
+        elif plan.method:
+            status = f"Knife: cut across {crossings} ({segments})"
         else:
-            self._set_status(f"Knife: cut ({segments})")
+            status = f"Knife: cut ({segments})"
+        self._set_status("; ".join([status] + _knife_plan_notes(plan)))
         self._refresh_hover()
         return True
 
@@ -727,6 +753,7 @@ class Application:
         """Pen lift (`E` / RMB click), or close + lift (`finish`, the double-click): the
         chain ends, nothing is committed, the next click starts a new chain (UX2)."""
         knife = self._knife
+        self._knife_set_view()   # the close may run across faces (S4)
         if not (knife.finish_chain() if finish else knife.lift()):
             self._set_status("Knife: nothing to lift")
             return False
@@ -769,6 +796,7 @@ class Application:
         self._knife_last_click = None
         self._knife_target = None
         self._knife_highlight_edge = None
+        self._knife_hover_crossings = ()
         notes = _knife_notes(knife.last_resolution) if commit else []
         if command is not None:
             self._record_selection_history(before)
@@ -815,34 +843,48 @@ class Application:
         the session's own edge points (`snap_own_point`) - a click on one
         reaches that point again, as the real-cut Knife's split vertex did.
         UX2 `midpoint` (Shift): an edge target moves to t = 0.5 - after the
-        own-point snap, which wins - or to an own point already there."""
+        own-point snap, which wins - or to an own point already there.
+        S4: the knife gets the live view first (the planner plans with the camera
+        of this hover / click); outside the mesh the target is a point in space."""
         kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
         size = (self.viewport_width, self.viewport_height)
         target = knife_pick(self.camera, self.scene.mesh, x, y, *size, **kwargs)
         if self._knife is None:
             return target
+        self._knife_set_view()
         # Also over "outside": the real-cut Knife's split vertex was caught by the
         # 14 px vertex pick just off the silhouette too.
         target = snap_own_point(
-            self.camera, self.scene.mesh, x, y, *size, self._knife.points, target, **kwargs
+            self.camera, self.scene.mesh, x, y, *size, self._knife.snap_points, target, **kwargs
         )
+        if target.get("kind") == "outside":
+            return {"kind": "space", "position": space_point(self.camera, x, y, *size)}
         if not midpoint or target.get("kind") != "edge":
             return target
         eid = target["edge_id"]
-        own = next((p for p in self._knife.points if p["kind"] == "edge" and p["edge_id"] == eid
+        own = next((p for p in self._knife.snap_points if p["kind"] == "edge" and p["edge_id"] == eid
                     and abs(p["t"] - 0.5) <= GEO_EPS), None)
         return {"kind": "point", "pid": own["pid"]} if own is not None else dict(target, t=0.5)
 
+    def _knife_set_view(self) -> None:
+        """The live camera for the planner (S4) - set before every hover / click plan."""
+        self._knife.set_view(self.camera, self.viewport_width, self.viewport_height,
+                             cache=self._pick_cache, occlusion=self.display.show_faces)
+
     def _knife_set_preview(self, target: dict) -> bool:
         """Prospective target = `target` only if the click would be accepted
-        (`KnifeTool.accepts`); invalid → no point, no line (`PROVISIONAL`).
+        (`KnifeTool.plan`, the same rules as `accepts`); invalid → no point, no
+        line (`PROVISIONAL`); S4: with the segment's planned crossings.
         True = changed."""
-        valid = self._knife.accepts(target)
-        prospective = target if valid else None
-        highlight = target["edge_id"] if valid and target.get("kind") == "edge" else None
-        changed = (prospective, highlight) != (self._knife_target, self._knife_highlight_edge)
+        plan = self._knife.plan(target)
+        prospective = target if plan.ok else None
+        highlight = target["edge_id"] if plan.ok and target.get("kind") == "edge" else None
+        crossings = tuple(tuple(c) for c in plan.crossings) if plan.ok else ()
+        changed = (prospective, highlight, crossings) != (
+            self._knife_target, self._knife_highlight_edge, self._knife_hover_crossings)
         self._knife_target = prospective
         self._knife_highlight_edge = highlight
+        self._knife_hover_crossings = crossings
         self._knife_sync_overlay()
         return changed
 
@@ -850,6 +892,7 @@ class Application:
         changed = self._knife_target is not None or self._knife_highlight_edge is not None
         self._knife_target = None
         self._knife_highlight_edge = None
+        self._knife_hover_crossings = ()
         self._knife_sync_overlay()
         return changed
 
@@ -864,7 +907,8 @@ class Application:
             return
         self.viewport.set_tool_overlay(
             points={
-                TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None],
+                TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None]
+                + list(data.prospective_crossings),
                 TOOL_ACTIVE_LAYER: list(data.placed_points),
             },
             segments={

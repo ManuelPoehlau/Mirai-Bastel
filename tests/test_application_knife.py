@@ -307,6 +307,8 @@ def test_line_preview_follows_the_hover(app):
 
 
 def test_start_and_path_stay_drawn_while_hovering_elsewhere(app):
+    """S4 (decided behaviour change, Manu 2026-10-02): over empty space the hover shows a point in space and
+    the line to it (before S4: no preview there); the start and the path stay as they were."""
     _begin(app)
     _click(app, _vertex_screen(app, _v(app, 7)))
     _click(app, _edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
@@ -317,7 +319,7 @@ def test_start_and_path_stay_drawn_while_hovering_elsewhere(app):
     data = app.knife_render_data
     assert data.start_point == start
     assert data.path_segments == ((app.scene.mesh.vertex_position(_v(app, 7)), start),)
-    assert data.prospective_point is None and data.line_preview is None
+    assert app._knife_target["kind"] == "space" and data.line_preview == (start, data.prospective_point)
     assert app.viewport.tool_line_layers[TOOL_ACTIVE_LAYER] == list(data.path_segments)
     # S2: every placed point is drawn (the mesh has no split vertex to show yet).
     assert app.viewport.tool_point_layers[TOOL_ACTIVE_LAYER] == [
@@ -652,18 +654,18 @@ def _assert_click_rejected(app, pos):
     assert _history_depths(app) == (0, 0)
 
 
-def test_a_face_the_last_point_does_not_touch_has_no_preview_and_click_does_nothing(app):
+def test_a_face_the_last_point_does_not_touch_is_planned_across_faces(app):
     """WP-KNIFE-01 S3: a face hit is a target now (`test_application_knife_faces.py`); this face (x = +1)
-    shares no face with the start vertex 7 - a cross-face segment (planner, S4): no preview, refused.
-    Before S3 every face hit was refused (S2-d)."""
+    shares no face with the start vertex 7. Before S4: no preview, refused. S4 (decided behaviour change,
+    the P10 flip): planned across faces - previewed with its crossing, accepted."""
     _begin(app)
     _click(app, _vertex_screen(app, _v(app, 7)))
     pos = _face_center_screen(app, (2, 6, 5, 1))  # face 3
     assert knife_pick(app.camera, app.scene.mesh, *pos, WIDTH, HEIGHT)["kind"] == "face"
 
     app.pointer_motion(*pos)
-    _assert_no_preview(app)
-    _assert_click_rejected(app, pos)
+    assert app.knife_render_data.prospective_point is not None and app.knife_render_data.prospective_crossings
+    assert _click(app, pos) and any(p.get("crossing") for p in app._knife.path)
 
 
 def test_edge_incident_to_start_is_a_skip_along_the_edge(app):
@@ -696,14 +698,15 @@ def test_edge_incident_to_start_is_a_skip_along_the_edge(app):
     assert_mesh_invariants(mesh)
 
 
-def test_edge_sharing_no_face_with_start_has_no_preview_and_click_does_nothing(app):
+def test_edge_sharing_no_face_with_start_is_planned_across_faces(app):
+    """Before S4: no preview, refused. S4 (decided behaviour change, the P10 flip): planned across faces."""
     _begin(app)
     _click(app, _vertex_screen(app, _v(app, 7)))
     pos = _edge_screen(app, _edge(app, _v(app, 2), _v(app, 1)), 0.5)  # faces 0, 3
 
     app.pointer_motion(*pos)
-    _assert_no_preview(app)
-    _assert_click_rejected(app, pos)
+    assert app.knife_render_data.line_preview is not None and app.knife_render_data.prospective_crossings
+    assert _click(app, pos) and any(p.get("crossing") for p in app._knife.path)
 
 
 def test_vertex_adjacent_to_start_is_previewed_and_a_skip(app):
@@ -734,14 +737,16 @@ def test_start_vertex_again_has_no_preview(app):
     _assert_click_rejected(app, pos)
 
 
-def test_outside_hover_has_no_preview_and_leave_clears_it(app):
+def test_outside_hover_previews_a_point_in_space_and_leave_clears_it(app):
+    """S4 (decided behaviour change, Manu 2026-10-02): over empty space the hover line runs to the cursor
+    (before S4: no preview there); leaving the window still clears it."""
     _begin(app)
     _click(app, _vertex_screen(app, _v(app, 7)))
     app.pointer_motion(*_edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
     assert app.knife_render_data.line_preview is not None
 
     app.pointer_motion(*OUTSIDE)
-    _assert_no_preview(app)
+    assert app._knife_target["kind"] == "space" and app.knife_render_data.line_preview is not None
 
     app.pointer_motion(*_edge_screen(app, _edge(app, _v(app, 5), _v(app, 6)), 0.3))
     assert app.pointer_leave() is True

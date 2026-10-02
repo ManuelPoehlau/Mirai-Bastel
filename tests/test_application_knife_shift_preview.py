@@ -107,7 +107,7 @@ def _sweep(app, positions):
     adds exactly what that target plans; each click is undone again so every position sees the same session."""
     knife = app._knife
     app.set_shift_held(True)
-    seen = {"edge": 0, "vertex": 0, "face": 0, "point": 0, "refused": 0}
+    seen = {"edge": 0, "vertex": 0, "face": 0, "point": 0, "space": 0, "refused": 0}   # space: S4
     for x, y in positions:
         app.pointer_motion(x, y)
         expected = _expected(app, x, y, midpoint=True)
