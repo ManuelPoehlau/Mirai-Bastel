@@ -14,16 +14,11 @@ from __future__ import annotations
 
 import math
 
-import pytest
-
 import tests._bootstrap  # noqa: F401
 
 from mirai.topology.face_geometry import FaceFrame, segment_in_face
-from mirai.topology import knife as knife_module
-from mirai.topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR
+from mirai.topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, NOTHING_TO_LIFT
 from tests.knife_parity_driver import begin, broken, build_grid, canon_faces, content, quiet, target, vef
-
-UX2 = pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 UX2: pen lift not built yet")
 
 LIFT = {"kind": "break", "reason": "lift"}
 
@@ -117,7 +112,6 @@ B_CHAIN = [lambda m: edge(m, *FAR_LEFT, .5), lambda m: edge(m, *FAR_RIGHT, .5)]
 # -- 1. the lift itself ---------------------------------------------------------------------------
 
 
-@UX2
 def test_lift_ends_the_chain_without_touching_mesh_or_history():
     mesh = build_grid()
     before = content(mesh.export_state())
@@ -139,7 +133,6 @@ def test_lift_ends_the_chain_without_touching_mesh_or_history():
 # -- 2. several chains, one commit ------------------------------------------------------------------
 
 
-@UX2
 def test_after_a_lift_the_next_click_is_a_start_and_commit_cuts_both_chains_as_one_entry():
     mesh = build_grid()
     before = mesh.export_state()
@@ -169,7 +162,6 @@ def test_after_a_lift_the_next_click_is_a_start_and_commit_cuts_both_chains_as_o
     assert content(mesh.export_state()) == content(before)
 
 
-@UX2
 def test_two_lifted_chains_crossing_in_one_face_share_one_intersection_vertex():
     mesh, scene, tool, before = session([A_CHAIN, [lambda m: edge(m, *BOTTOM, .5), lambda m: edge(m, *TOP, .5)]])
     assert len(scene.history) == 1
@@ -184,7 +176,6 @@ def test_two_lifted_chains_crossing_in_one_face_share_one_intersection_vertex():
 # -- 3. a start on an earlier own point -------------------------------------------------------------
 
 
-@UX2
 def test_a_start_on_an_earlier_own_boundary_point_branches_off_it():
     mesh = build_grid()
     tool, scene = begin(mesh)
@@ -201,7 +192,6 @@ def test_a_start_on_an_earlier_own_boundary_point_branches_off_it():
     assert vef(mesh) == "28/45/18" and broken(mesh, "grid") == [] and len(scene.history) == 1
 
 
-@UX2
 def test_a_start_on_an_earlier_interior_point_is_refused_as_today():
     """Current rule, unchanged by UX2: an earlier interior point cannot be clicked again (EARLIER_INTERIOR)."""
     mesh = build_grid()
@@ -216,7 +206,6 @@ def test_a_start_on_an_earlier_interior_point_is_refused_as_today():
 # -- 4. the tail join per chain ----------------------------------------------------------------------
 
 
-@UX2
 def test_a_lifted_chain_ending_inside_a_face_is_still_joined_to_the_nearest_corner():
     tail_chain = [lambda m: edge(m, *LEFT, .5), lambda m: face(m, (1.6, 1.7, 0))]
     mesh, scene, tool, before = session([tail_chain, B_CHAIN])
@@ -234,23 +223,21 @@ def test_a_lifted_chain_ending_inside_a_face_is_still_joined_to_the_nearest_corn
 # -- 5. nothing to lift ---------------------------------------------------------------------------
 
 
-@UX2
 def test_lift_with_nothing_to_lift_is_refused_and_changes_nothing():
     mesh = build_grid()
     tool, _scene = begin(mesh)
     assert not lift(tool)
-    assert tool.last_plan.reason == knife_module.NOTHING_TO_LIFT and tool.path == []
+    assert tool.last_plan.reason == NOTHING_TO_LIFT and tool.path == []
     assert click(tool, edge(mesh, *LEFT, .5)) and lift(tool)
     path = tool.path
     assert not lift(tool)
-    assert tool.last_plan.reason == knife_module.NOTHING_TO_LIFT and tool.path == path
+    assert tool.last_plan.reason == NOTHING_TO_LIFT and tool.path == path
     assert undo(tool) and tool.path == path[:-1]          # the refused lift added no step
 
 
 # -- 6. undo / redo ----------------------------------------------------------------------------------
 
 
-@UX2
 def test_undo_after_a_lift_removes_the_lift_only_and_redo_restores_it():
     mesh = build_grid()
     tool, _scene = begin(mesh)
@@ -277,7 +264,6 @@ def test_undo_after_a_lift_removes_the_lift_only_and_redo_restores_it():
 # -- 7. finish_chain (the double-click's second click) -------------------------------------------------
 
 
-@UX2
 def test_finish_chain_closes_a_chain_of_three_and_lifts_in_one_step():
     mesh = build_grid()
     tool, scene = begin(mesh)
@@ -301,7 +287,6 @@ def test_finish_chain_closes_a_chain_of_three_and_lifts_in_one_step():
     assert broken(mesh, "grid") == [] and len(scene.history) == 1
 
 
-@UX2
 def test_finish_chain_with_fewer_than_three_points_only_lifts_and_says_why():
     mesh = build_grid()
     tool, _scene = begin(mesh)
@@ -313,7 +298,6 @@ def test_finish_chain_with_fewer_than_three_points_only_lifts_and_says_why():
     assert "not closed" in tool.last_plan.reason
 
 
-@UX2
 def test_finish_chain_right_after_a_close_lifts_instead_of_the_seed():
     """A double-click on the chain's start: the first click closes (seed appended, as today), the second
     lifts — the seed is replaced, so the closed chain is not continued and leaves no trace at commit."""
@@ -335,7 +319,6 @@ def test_finish_chain_right_after_a_close_lifts_instead_of_the_seed():
     assert not res.short_shapes and not res.lost_continuation and len(scene.history) == 1
 
 
-@UX2
 def test_a_lift_right_after_a_close_replaces_the_seed_like_finish_chain():
     mesh = build_grid()
     tool, _scene = begin(mesh)

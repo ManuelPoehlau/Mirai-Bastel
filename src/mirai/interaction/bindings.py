@@ -46,12 +46,15 @@ Modus-Tasten). Ersetzt die alten Topology-Lab-Tasten `s` (SplitEdge) und
 Knife-Session (WP-06 B7, AD-017; Kontext "knife", nur während einer
 Session aufgelöst, sonst ungebunden):
 - Enter           → KnifeCommit (genau ein History-Eintrag)
+- E / RMB-Klick   → KnifeLift (Stift absetzen: Kette beenden ohne Commit,
+                    WP-KNIFE-01 UX2, Manu 2026-10-02; nur in diesem Kontext,
+                    global bleibt E = Rotate und RMB ungebunden)
 - Ctrl+Shift+Z    → Redo (alternative Geste, AD-017 DECIDED 2026-09-22)
 Esc (Cancel), Ctrl+Z (Undo) und Ctrl+Y (Redo) kommen über den GLOBAL-
 Fallback; `Application` routet sie während der Session auf die Knife-
-Session-History. LMB gehört während der Session dem Knife (kein Binding —
-`Application.pointer_press`), Alt+LMB-Drag/Alt+Shift+LMB-Drag/Wheel
-navigieren weiter.
+Session-History. LMB und Shift+LMB (Mittelpunkt-Snap, UX2) gehören während
+der Session dem Knife (kein Binding — `Application.pointer_press`),
+Alt+LMB-Drag/Alt+Shift+LMB-Drag/Wheel navigieren weiter.
 
 Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
 und gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
@@ -124,6 +127,9 @@ def build_default_bindings() -> BindingSet:
     # alternative in-session Redo gesture (AD-017 DECIDED 2026-09-22). Bound
     # only in this context, so neither key does anything outside a session.
     bs.set_default(_key("enter"), cmd.KNIFE_COMMIT, context=KNIFE_CONTEXT)
+    # WP-KNIFE-01 UX2 (Manu 2026-10-02): pen lift on E and on an RMB click.
+    bs.set_default(_key("e"), cmd.KNIFE_LIFT, context=KNIFE_CONTEXT)
+    bs.set_default(_mouse("RIGHT"), cmd.KNIFE_LIFT, context=KNIFE_CONTEXT)
     bs.set_default(_key("z", "ctrl", "shift"), cmd.REDO, context=KNIFE_CONTEXT)
 
     # --- Display ------------------------------------------------------------

@@ -26,6 +26,7 @@ Path records (dicts; the resolver never mutates them):
       ... optionally "crossing": True (a planner crossing, not clicked)
     {"kind": "break", "reason": "gap" | "edge"}                             # a skipped stretch (Q5)
     {"kind": "break", "reason": "closed", "cyclic": bool}                   # a chain end (Q5)
+    {"kind": "break", "reason": "lift"}                                     # a chain end, no seed (UX2)
 
 `pid` is any hashable id unique per point of the session: the same point appearing twice (a closed
 chain's seed, a click on an earlier point) carries the same `pid`, two different points never do. The
@@ -95,7 +96,8 @@ def is_break(p: dict) -> bool:
 
 
 def is_chain_end(p: dict) -> bool:
-    return p["kind"] == "break" and p.get("reason") == "closed"
+    # A pen lift (WP-KNIFE-01 UX2) ends a chain like a close that is not continued; it is no gap.
+    return p["kind"] == "break" and p.get("reason") in ("closed", "lift")
 
 
 def split_chains(path: list[dict]) -> list[tuple[list[dict], bool, bool, bool]]:

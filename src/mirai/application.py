@@ -32,6 +32,9 @@ Wichtig:
 
 from __future__ import annotations
 
+import dataclasses
+import math
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -51,6 +54,7 @@ from .mesh_geometry import mesh_center_and_radius
 from .topology.connect_per_face import TopologyToolError, connect_selected_edges_per_face
 from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
 from .topology.contextual_c import CContext, resolve_c_context
+from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
@@ -169,6 +173,15 @@ _KNIFE_REFUSED = {
     CLOSE_NEEDS: "Knife: closing a shape needs at least 3 points",
     EARLIER_INTERIOR: "Knife: an earlier point inside a face cannot be clicked again (not yet)",
 }
+
+
+# WP-KNIFE-01 UX2 (D7, decision.md "WP-KNIFE-01 UX2"): two Knife clicks this close in time (s) and
+# place (px) are a double-click.
+KNIFE_DOUBLE_CLICK_S = 0.35
+KNIFE_DOUBLE_CLICK_PX = 4.0
+
+# The preview builder ends a chain at a "closed" break only; a pen lift is drawn the same way.
+_KNIFE_DRAWN_LIFT = {"kind": "break", "reason": "closed", "cyclic": False}
 
 
 def _knife_notes(res) -> list[str]:
@@ -306,6 +319,14 @@ class Application:
         self._knife_highlight_edge: EdgeId | None = None
         self._knife_gesture: bool = False
         self._knife_gesture_moved: float = 0.0
+        # WP-KNIFE-01 UX2: the gesture's button (LMB = a point, RMB = pen lift),
+        # Shift at the press (midpoint snap; the gesture is fixed at the press,
+        # AD-019), and the last LMB click (time, x, y) for the double-click on
+        # `knife_clock` (injectable for headless tests).
+        self._knife_gesture_button: str = "LEFT"
+        self._knife_gesture_midpoint: bool = False
+        self._knife_last_click: tuple[float, float, float] | None = None
+        self.knife_clock = time.monotonic
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -547,7 +568,7 @@ class Application:
     # unaffected (AD-013 A2, contextual deviation).
     #
     # WP-KNIFE-01 S2 (KEEP 2026-10-01): a click adds a point to the session's
-    # virtual path; the mesh is cut at commit (`Enter` / click outside). The
+    # virtual path; the mesh is cut at commit (`Enter`). The
     # session is drawn from the path (`knife_render_data`), so neither the
     # mesh nor the pick cache changes while clicking.
     #
@@ -555,6 +576,11 @@ class Application:
     # (`knife_pick` face hit, the session's own interior points snap); the
     # status line names the S3 refusals and closes, and at commit what the
     # resolver joined or dropped (`_knife_notes`).
+    #
+    # WP-KNIFE-01 UX2 (PROVISIONAL, Artist 2026-10-02): `E` / an RMB click
+    # lift the pen (the chain ends, nothing is committed), a double-click
+    # closes the chain and lifts; a click outside the mesh does nothing;
+    # Shift+click on an edge places the point at its midpoint.
 
     @property
     def knife_active(self) -> bool:
@@ -566,12 +592,16 @@ class Application:
         """What the running session shows (headless), None without a session."""
         if self._knife is None:
             return None
-        return build_knife_render_data(
+        data = build_knife_render_data(
             self.scene.mesh,
-            self._knife.path,
+            [_KNIFE_DRAWN_LIFT if p.get("reason") == "lift" else p for p in self._knife.path],
             self._knife_target,
             self._knife_highlight_edge,
         )
+        if self._knife.last_point is None:
+            # After a pen lift no point starts the next segment: no start marker, no rubber band.
+            data = dataclasses.replace(data, start_point=None, line_preview=None)
+        return data
 
     def _knife_begin(self) -> bool:
         if self.viewport is None:
@@ -586,42 +616,50 @@ class Application:
         self._set_hovered(None)
         self._refresh_hover()
         self._set_status(
-            "Knife: click on vertices, edges or inside faces to cut - Enter or click"
-            " outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo cut"
+            "Knife: click on vertices, edges or inside faces to cut - Shift+click = edge midpoint,"
+            " E / right-click = new cut (pen lift), double-click = close + lift, Enter = commit,"
+            " Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo"
         )
         return True
 
     def _knife_key(self, input: Input) -> bool:
-        """Session Gate: only commit, cancel and the in-session Undo/Redo pass;
-        every other key (W/E/R, 1/2/3, D/Shift+D, C, X/Y/Z, ...) is ignored."""
+        """Session Gate: only commit, cancel, the pen lift and the in-session
+        Undo/Redo pass; every other key (W/R, 1/2/3, D/Shift+D, C, X/Y/Z, ...)
+        is ignored."""
         command = self.bindings.command_for(input, KNIFE_CONTEXT)
+        self._knife_last_click = None     # a key between two clicks is no double-click
         if command == commands.CANCEL:
             return self._knife_end(commit=False)
         if command == commands.KNIFE_COMMIT:
             return self._knife_end(commit=True)
+        if command == commands.KNIFE_LIFT:
+            return False if self._knife_gesture else self._knife_lift()
         if command in (commands.UNDO, commands.REDO):
             return self._knife_history_step(command)
         return False
 
     def _knife_owns_press(self, input: Input) -> bool:
-        # Only the unmodified LMB is the Knife's; Alt+LMB (orbit / pan) and the
-        # other buttons keep going through the pointer gestures.
-        return (
-            input.kind == "mouse"
-            and input.value == "LEFT"
-            and not input.modifiers
-            and not self.pointer.active
-            and not self._knife_gesture
-        )
+        # The unmodified and the Shift-only LMB (midpoint snap, UX2 D11) are the
+        # Knife's, and a button bound to KnifeLift (RMB); Alt+LMB (orbit / pan),
+        # Ctrl+LMB and the other buttons keep going through the pointer gestures.
+        if input.kind != "mouse" or self.pointer.active or self._knife_gesture:
+            return False
+        if input.value == "LEFT" and input.modifiers <= {"shift"}:
+            return True
+        return self.bindings.command_for(input, KNIFE_CONTEXT) == commands.KNIFE_LIFT
 
-    def _knife_press(self) -> None:
-        """LMB press: only starts the click-threshold gesture (B7.1); the
-        preview at the cursor is already current from the last hover."""
+    def _knife_press(self, input: Input) -> None:
+        """Press: only starts the click-threshold gesture (B7.1); the preview
+        at the cursor is already current from the last hover - with Shift the
+        press shows the edge midpoint (UX2 D10: Shift alone does not reach
+        `Application`, so there is no live midpoint hover)."""
         self._knife_gesture = True
         self._knife_gesture_moved = 0.0
-        if self._cursor is None:
+        self._knife_gesture_button = input.value
+        self._knife_gesture_midpoint = input.value == "LEFT" and "shift" in input.modifiers
+        if self._cursor is None or input.value != "LEFT":
             return
-        self._knife_set_preview(self._knife_pick(*self._cursor))
+        self._knife_set_preview(self._knife_pick(*self._cursor, midpoint=self._knife_gesture_midpoint))
 
     def _knife_drag(self, dx: float, dy: float) -> bool:
         """LMB held and moved: only tracks distance for the click threshold
@@ -630,18 +668,34 @@ class Application:
         return False
 
     def _knife_release(self, x: float, y: float) -> bool:
-        """LMB release: press+release under the click threshold cuts at the
-        cursor; a press that moved past it is not a click and does nothing
-        (Playground click rule, B7.1). A click outside the mesh commits."""
+        """Release: press+release under the click threshold is a click - LMB
+        adds the point at the cursor, the second LMB click of a double-click
+        finishes the chain, an RMB click lifts the pen; a press that moved past
+        the threshold is not a click and does nothing (Playground click rule,
+        B7.1). A click outside the mesh does nothing (UX2)."""
         moved = self._knife_gesture_moved
         self._knife_gesture = False
         self._knife_gesture_moved = 0.0
+        last, self._knife_last_click = self._knife_last_click, None
         if moved >= CLICK_THRESHOLD_PX:
             self._refresh_hover()
             return False
-        target = self._knife_pick(x, y)
+        if self._knife_gesture_button != "LEFT":
+            return self._knife_lift()
+        now = self.knife_clock()
+        if (
+            last is not None
+            and now - last[0] <= KNIFE_DOUBLE_CLICK_S
+            and math.hypot(x - last[1], y - last[2]) <= KNIFE_DOUBLE_CLICK_PX
+            and self._knife.plan_lift(close=True).ok
+        ):
+            return self._knife_lift(finish=True)
+        target = self._knife_pick(x, y, midpoint=self._knife_gesture_midpoint)
         if target.get("kind") == "outside":
-            return self._knife_end(commit=True)
+            self._set_status("Knife: outside the mesh: nothing to cut here")
+            self._refresh_hover()
+            return False
+        self._knife_last_click = (now, x, y)
         if not self._knife.click(target):
             self._set_status(_KNIFE_REFUSED.get(self._knife.last_plan.reason, "Knife: no valid cut target here"))
             self._refresh_hover()
@@ -652,13 +706,26 @@ class Application:
         cuts = len(self._knife.cut_segments)
         segments = f"{cuts} path {'segment' if cuts == 1 else 'segments'}"
         if plan.start:
-            self._set_status("Knife: start point set")
+            self._set_status("Knife: start point set" + (" on an earlier point" if plan.earlier else ""))
         elif plan.closing:
             self._set_status(f"Knife: shape closed - the next click cuts on from its start ({segments})")
         elif plan.skip:
             self._set_status(f"Knife: along an existing edge - nothing to cut ({segments})")
         else:
             self._set_status(f"Knife: cut ({segments})")
+        self._refresh_hover()
+        return True
+
+    def _knife_lift(self, finish: bool = False) -> bool:
+        """Pen lift (`E` / RMB click), or close + lift (`finish`, the double-click): the
+        chain ends, nothing is committed, the next click starts a new chain (UX2)."""
+        knife = self._knife
+        if not (knife.finish_chain() if finish else knife.lift()):
+            self._set_status("Knife: nothing to lift")
+            return False
+        plan = knife.last_plan
+        what = "shape closed, pen lifted" if plan.closing or plan.replaces else plan.reason
+        self._set_status(f"Knife: {what} - the next click starts a new cut")
         self._refresh_hover()
         return True
 
@@ -677,9 +744,9 @@ class Application:
         return True
 
     def _knife_end(self, commit: bool) -> bool:
-        """Enter / click outside = commit (exactly one history entry, residue =
-        path edges selected, Edge mode); Esc = cancel (mesh, selection and
-        history exactly as before the session)."""
+        """Enter = commit (exactly one history entry, residue = path edges
+        selected, Edge mode); Esc = cancel (mesh, selection and history exactly
+        as before the session)."""
         knife = self._knife
         before = self._knife_selection_before
         if commit:
@@ -692,6 +759,7 @@ class Application:
         self._knife_selection_before = None
         self._knife_gesture = False
         self._knife_gesture_moved = 0.0
+        self._knife_last_click = None
         self._knife_target = None
         self._knife_highlight_edge = None
         notes = _knife_notes(knife.last_resolution) if commit else []
@@ -721,11 +789,13 @@ class Application:
     def _knife_hover(self, x: float, y: float) -> bool:
         return self._knife_set_preview(self._knife_pick(x, y))
 
-    def _knife_pick(self, x: float, y: float) -> dict:
+    def _knife_pick(self, x: float, y: float, midpoint: bool = False) -> dict:
         """WP-06 B8: same cache/occlusion as `_pick()` - a hidden edge/vertex
         cannot be a Knife target while faces are shown. WP-KNIFE-01 S2: then
         the session's own edge points (`snap_own_point`) - a click on one
-        reaches that point again, as the real-cut Knife's split vertex did."""
+        reaches that point again, as the real-cut Knife's split vertex did.
+        UX2 `midpoint` (Shift): an edge target moves to t = 0.5 - after the
+        own-point snap, which wins - or to an own point already there."""
         kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
         size = (self.viewport_width, self.viewport_height)
         target = knife_pick(self.camera, self.scene.mesh, x, y, *size, **kwargs)
@@ -733,9 +803,15 @@ class Application:
             return target
         # Also over "outside": the real-cut Knife's split vertex was caught by the
         # 14 px vertex pick just off the silhouette too.
-        return snap_own_point(
+        target = snap_own_point(
             self.camera, self.scene.mesh, x, y, *size, self._knife.points, target, **kwargs
         )
+        if not midpoint or target.get("kind") != "edge":
+            return target
+        eid = target["edge_id"]
+        own = next((p for p in self._knife.points if p["kind"] == "edge" and p["edge_id"] == eid
+                    and abs(p["t"] - 0.5) <= GEO_EPS), None)
+        return {"kind": "point", "pid": own["pid"]} if own is not None else dict(target, t=0.5)
 
     def _knife_set_preview(self, target: dict) -> bool:
         """Prospective target = `target` only if the click would be accepted
@@ -1156,7 +1232,7 @@ class Application:
         if x is not None and y is not None:
             self._cursor = (x, y)
         if self._knife is not None and self._knife_owns_press(input):
-            self._knife_press()
+            self._knife_press(input)
             return
         self.pointer.press(input)
 
@@ -1175,9 +1251,9 @@ class Application:
 
     def pointer_release(self, button: str, x: float, y: float) -> bool:
         """Maustaste losgelassen. True = ein Klick-Command wurde ausgeführt
-        bzw. der Knife hat geschnitten/committet."""
+        bzw. der Knife hat einen Punkt gesetzt / den Stift abgesetzt."""
         self._cursor = (x, y)
-        if self._knife_gesture and button == "LEFT":
+        if self._knife_gesture and button == self._knife_gesture_button:
             return self._knife_release(x, y)
         click = self.pointer.release(button, x, y)
         if self._knife is not None:

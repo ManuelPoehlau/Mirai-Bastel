@@ -74,6 +74,11 @@ CONNECT = "Connect"
 # KNIFE_CONTEXT gebunden (Enter). Abbrechen = CANCEL, Undo/Redo des letzten
 # Schnitts = UNDO/REDO, während der Session auf die Session-History geroutet.
 KNIFE_COMMIT = "KnifeCommit"
+# KNIFE_LIFT (WP-KNIFE-01 UX2, Artist Input Truth `topology.knife_lift`, Manu
+# 2026-10-02): Stift absetzen — beendet die aktuelle Kette der Knife-Session
+# ohne Commit, der nächste Klick beginnt eine neue. Nur im KNIFE_CONTEXT
+# gebunden (E und ein RMB-Klick, Blender 2.79 / 3.0+ "New Cut").
+KNIFE_LIFT = "KnifeLift"
 
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"

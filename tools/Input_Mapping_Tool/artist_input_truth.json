@@ -272,7 +272,15 @@
       "category": "Topology",
       "binding": "Enter",
       "runtime_ref": "KnifeCommit",
-      "notes": "AD-017: commits the knife session as one history operation; also triggered by LMB outside mesh"
+      "notes": "AD-017: commits the knife session as one history operation (LMB outside the mesh no longer commits — WP-KNIFE-01 UX2, Manu 2026-10-02)"
+    },
+    {
+      "id": "topology.knife_lift",
+      "label": "Knife — New cut (pen lift)",
+      "category": "Topology",
+      "binding": "E",
+      "runtime_ref": "KnifeLift",
+      "notes": "Knife session only (context knife; E = Rotate outside it). Also an RMB click (Blender 3.0+ New Cut). Ends the current chain without committing; the next click starts a new one. WP-KNIFE-01 UX2, Manu 2026-10-02"
     },
     {
       "id": "topology.knife_cancel",

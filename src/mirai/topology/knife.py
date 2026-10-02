@@ -27,7 +27,9 @@ Path records (`knife_resolve`'s format): `{"kind": "vertex", "vertex_id"}`,
 `{"kind": "face", "face_id", "position"}` (an interior click), each with its
 `pid`; `{"kind": "break", "reason": "edge"}` before a skipped point;
 `{"kind": "break", "reason": "closed", "cyclic": bool}` where a chain was closed
-— followed by the closing point again (the *seed*: the next chain starts there).
+— followed by the closing point again (the *seed*: the next chain starts there);
+`{"kind": "break", "reason": "lift"}` where the pen was lifted (WP-KNIFE-01 UX2) —
+a chain end without a seed: the next click starts a new chain.
 
 Rules (parity rows P01–P15 / S1–S5, `tests/test_knife_parity.py`; the Q5
 differential spec, `playground/tests/test_knife_q5_differential.py`):
@@ -53,8 +55,14 @@ differential spec, `playground/tests/test_knife_q5_differential.py`):
   path) connects to that very record and continues from it; an earlier
   **interior** point is refused (not supported yet). The same point twice in a
   row is refused.
-- In-session Undo removes the last click's records, Redo puts them back; a new
-  click clears the Redo branch (AD-017 DECIDED 2026-09-22).
+- Pen lift (`lift()`, WP-KNIFE-01 UX2, Artist 2026-10-02): ends the current chain
+  without committing; the next click is a start (a fresh point, or an earlier own
+  boundary point — the new chain branches off that very record). Right after a
+  close the lift takes the seed's place. Nothing to lift (empty, already lifted):
+  refused. `finish_chain()` (the double-click's second click) closes the chain
+  like a click on its start when it can (>= 3 points) and lifts in any case.
+- In-session Undo removes the last click's (or lift's) records, Redo puts them
+  back; a new click clears the Redo branch (AD-017 DECIDED 2026-09-22).
 - Cancel / Esc: the path is dropped; mesh and History were never touched.
 - Commit: resolve, check (`check_commit`: a broken result is taken back as a
   whole), push exactly one `MeshStateCommand` ("Knife") if the mesh changed,
@@ -83,6 +91,12 @@ TOO_CLOSE = "too close to an edge"
 CLOSE_NEEDS = f"closing needs at least {MIN_CLOSE_POINTS} points"
 EARLIER_INTERIOR = "connecting to an earlier interior point is not supported yet"
 SAME_POINT = "already the last point"
+LIFTED = "pen lifted"
+NOTHING_TO_LIFT = "nothing to lift"
+
+
+def _is_lift(p: dict) -> bool:
+    return p["kind"] == "break" and p.get("reason") == "lift"
 
 
 def _faces_of(mesh, p: dict) -> set:
@@ -105,6 +119,8 @@ class KnifePlan:
     closing: bool = False                              # closes the current chain (no commit)
     cyclic: bool = False                               # ... as one loop (no skipped stretch in it)
     earlier: bool = False                              # connects to an earlier point
+    lift: bool = False                                 # ends the chain (pen lift, UX2)
+    replaces: int = 0                                  # trailing path records the step takes away
 
 
 class KnifeTool(Tool):
@@ -119,6 +135,8 @@ class KnifeTool(Tool):
       knife.accepts(target) # would click(target) be accepted?
       knife.hover(target)   # preview info
       knife.click(target)   # add a point to the path
+      knife.lift()          # pen lift: end the chain, the next click starts a new one
+      knife.finish_chain()  # close the chain if it can, and lift (the double-click)
       knife.undo_step()     # remove the most recent click
       knife.redo_step()     # put the most recently undone click back
       # end session:
@@ -138,8 +156,9 @@ class KnifeTool(Tool):
         self._selection = None
         self._session_before = None
         self._path: list[dict] = []
-        self._steps: list[int] = []            # records added per accepted click
-        self._redo: list[list[dict]] = []      # undone clicks' records, most recent last
+        # Per accepted click / lift: (records added, records it took away — a lift's replaced seed).
+        self._steps: list[tuple[int, list[dict]]] = []
+        self._redo: list[tuple[list[dict], list[dict]]] = []   # undone steps, most recent last
         self._pids = itertools.count()
         self._path_edges: list = []
         self.last_plan: KnifePlan | None = None
@@ -187,7 +206,9 @@ class KnifeTool(Tool):
 
     @property
     def last_point(self) -> dict | None:
-        """The point the next segment starts from; None before the first click."""
+        """The point the next segment starts from; None before the first click and after a lift."""
+        if self._path and _is_lift(self._path[-1]):
+            return None
         return next((p for p in reversed(self._path) if not is_break(p)), None)
 
     @property
@@ -349,7 +370,10 @@ class KnifeTool(Tool):
         point = self._point_for(target)
         last = self.last_point
         if last is None:
-            return KnifePlan(True, "start point", entries=[point], start=True)
+            if "pid" in point and point["kind"] == "face":
+                return KnifePlan(False, EARLIER_INTERIOR)
+            # After a lift an own point starts the chain as that very record (one vertex at commit).
+            return KnifePlan(True, "start point", entries=[point], start=True, earlier="pid" in point)
         if "pid" in point:
             return self._plan_existing(point, last)
         if self._same(point, last):
@@ -399,6 +423,32 @@ class KnifeTool(Tool):
         return KnifePlan(True, reason, entries=entries, skip=link == "edge", closing=closing,
                          cyclic=cyclic, earlier=earlier)
 
+    def plan_lift(self, close: bool = False) -> KnifePlan:
+        """What `lift()` (`close=False`) or `finish_chain()` (`close=True`) would do (no change)."""
+        path = self._path
+        if not path or _is_lift(path[-1]):
+            return KnifePlan(False, NOTHING_TO_LIFT, lift=True)
+        lift = {"kind": "break", "reason": "lift"}
+        if len(path) >= 2 and path[-2].get("reason") == "closed" and not is_break(path[-1]):
+            # Right after a close the chain is only its seed: the lift takes the seed's place, so the
+            # closed chain is not continued and no seed-only chain reaches the resolver.
+            return KnifePlan(True, f"closed; {LIFTED}", entries=[lift], lift=True, replaces=1)
+        if not close:
+            return KnifePlan(True, LIFTED, entries=[lift], lift=True)
+        chain, last = self.chain_points, self.last_point
+        if len(chain) < MIN_CLOSE_POINTS:
+            why = CLOSE_NEEDS
+        elif self._same(last, chain[0]):
+            why = SAME_POINT
+        else:
+            closing = self._plan_segment(last, chain[0], closing=True)
+            if closing.ok:
+                # The close's entries without the seed: the pen lifts instead of continuing.
+                return KnifePlan(True, f"{closing.reason}; {LIFTED}", entries=closing.entries[:-1] + [lift],
+                                 skip=closing.skip, closing=True, cyclic=closing.cyclic, lift=True)
+            why = closing.reason
+        return KnifePlan(True, f"{LIFTED} (not closed: {why})", entries=[lift], lift=True)
+
     def accepts(self, target: dict) -> bool:
         """Would `click(target)` be accepted? Same rules, no change (the preview gate)."""
         return self.plan(target).ok
@@ -415,7 +465,26 @@ class KnifeTool(Tool):
 
     def click(self, target: dict) -> bool:
         """Add a point. Returns True if accepted, False if refused (no change); `last_plan` says why."""
-        plan = self.plan(target)
+        if not self._apply(self.plan(target)):
+            return False
+        last = self._path[-1]
+        print(f"[KNIFE] point {last['pid']} ({last['kind']}): {self.last_plan.reason}; "
+              f"points={len(self.points)} cuts={len(self.cut_segments)}")
+        return True
+
+    def lift(self) -> bool:
+        """Pen lift: end the current chain without committing (an in-session step). False: nothing to lift."""
+        return self._apply(self.plan_lift()) and self._print_lift()
+
+    def finish_chain(self) -> bool:
+        """The double-click's second click: close the current chain when it can, and lift (one step)."""
+        return self._apply(self.plan_lift(close=True)) and self._print_lift()
+
+    def _print_lift(self) -> bool:
+        print(f"[KNIFE] {self.last_plan.reason}; points={len(self.points)} cuts={len(self.cut_segments)}")
+        return True
+
+    def _apply(self, plan: KnifePlan) -> bool:
         self.last_plan = plan
         if not plan.ok:
             print(f"[KNIFE] rejected: {plan.reason}")
@@ -423,12 +492,11 @@ class KnifeTool(Tool):
         for p in plan.entries:
             if not is_break(p) and "pid" not in p:
                 p["pid"] = next(self._pids)   # a new point: its id comes with this click
+        removed = self._path[len(self._path) - plan.replaces:]
+        del self._path[len(self._path) - plan.replaces:]
         self._path.extend(plan.entries)
-        self._steps.append(len(plan.entries))
+        self._steps.append((len(plan.entries), removed))
         self._redo.clear()
-        last = plan.entries[-1]
-        print(f"[KNIFE] point {last['pid']} ({last['kind']}): {plan.reason}; "
-              f"points={len(self.points)} cuts={len(self.cut_segments)}")
         return True
 
     def undo_step(self) -> bool:
@@ -436,9 +504,10 @@ class KnifeTool(Tool):
         if not self._steps:
             print("[KNIFE] undo_step: nothing to undo")
             return False
-        n = self._steps.pop()
-        self._redo.append(self._path[-n:])
+        n, removed = self._steps.pop()
+        self._redo.append((self._path[-n:], removed))
         del self._path[-n:]
+        self._path.extend(removed)
         print(f"[KNIFE] undo_step: points={len(self.points)}")
         return True
 
@@ -447,9 +516,10 @@ class KnifeTool(Tool):
         if not self._redo:
             print("[KNIFE] redo_step: nothing to redo")
             return False
-        entries = self._redo.pop()
+        entries, removed = self._redo.pop()
+        del self._path[len(self._path) - len(removed):]
         self._path.extend(entries)
-        self._steps.append(len(entries))
+        self._steps.append((len(entries), removed))
         print(f"[KNIFE] redo_step: points={len(self.points)}")
         return True
 

@@ -8,8 +8,10 @@ session: pointer motion = hover preview (Playground Variant A), a click
 session's path - a press that moved past the threshold is not a click and
 does nothing (WP-KNIFE-01 S2: the mesh is cut at commit, not per click; a
 click along an existing edge is a skip, Artist decision AQ1); Enter /
-click outside = commit, Esc = cancel, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z =
-in-session undo / redo; navigation keeps working, every other key is gated.
+Esc = cancel, Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z = in-session undo / redo;
+navigation keeps working, every other key is gated. WP-KNIFE-01 UX2: a click
+outside the mesh no longer commits; the pen lift (E / RMB), the double-click
+and Shift+click are `test_application_knife_pen_lift.py`.
 B7.1 (Artist decision Manu 2026-09-28, after the B7 window test): the F1
 edge-lock/slide gesture (Playground Variant B) was removed from Production as
 redundant with the live hover preview; `project_locked_edge` stays in
@@ -22,6 +24,8 @@ vertex 7 → edge 5-6 → edge 2-6 → edge 7-3.
 """
 
 from __future__ import annotations
+
+import itertools
 
 import pytest
 
@@ -64,6 +68,8 @@ def app() -> Application:
     app.init_scene("cube")
     app.frame_scene()
     app.set_viewport_size(WIDTH, HEIGHT)
+    # WP-KNIFE-01 UX2: clicks 10 s apart - no two are a double-click unless a test sets its own clock.
+    app.knife_clock = itertools.count(0.0, 10.0).__next__
     return app
 
 
@@ -486,18 +492,15 @@ def test_esc_restores_pre_session_mesh_selection_and_history(app):
     assert all(not v for v in app.viewport.tool_line_layers.values())
 
 
-@pytest.mark.parametrize("finish", ["enter", "click_outside"])
-def test_commit_pushes_exactly_one_entry_and_selects_the_path(app, finish):
+def test_commit_pushes_exactly_one_entry_and_selects_the_path(app):
+    # UX2 (Manu 2026-10-02): a click outside the mesh no longer commits - Enter only.
     mesh = app.scene.mesh
     app.key_press(_key("1"))  # Vertex mode before the session
     _begin(app)
     _cut_three_faces(app)
     knife = app._knife
 
-    if finish == "enter":
-        assert app.key_press(ENTER) is True
-    else:
-        assert _click(app, OUTSIDE) is True
+    assert app.key_press(ENTER) is True
 
     assert not app.knife_active
     assert _history_depths(app) == (1, 0)
@@ -549,7 +552,8 @@ def test_global_undo_after_commit_restores_mesh_and_selection_redo_restores_resi
 
 @pytest.mark.parametrize(
     "key",
-    [_key("w"), _key("e"), _key("r"), _key("1"), _key("2"), _key("3"),
+    # UX2: E is the pen lift in a session (`test_application_knife_pen_lift.py`), no longer gated.
+    [_key("w"), _key("r"), _key("1"), _key("2"), _key("3"),
      _key("d"), _key("d", "shift"), _key("c"), _key("x"), _key("z", "shift")],
     ids=lambda k: "+".join(sorted(k.modifiers) + [k.value]),
 )
@@ -610,7 +614,8 @@ def test_modified_click_during_session_neither_cuts_nor_selects(app):
     pos = _vertex_screen(app, _v(app, 7))
     before = _topology(app.scene.mesh)
 
-    for modifiers in (("alt",), ("shift",), ("ctrl",)):
+    # UX2 (D11): Shift+LMB is the Knife's now (midpoint snap) - `test_application_knife_pen_lift.py`.
+    for modifiers in (("alt",), ("ctrl",), ("ctrl", "shift")):
         app.pointer_press(_mouse("LEFT", *modifiers), *pos)
         assert app.pointer_release("LEFT", *pos) is False
 

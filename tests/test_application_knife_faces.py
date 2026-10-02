@@ -154,7 +154,7 @@ def test_refusals_name_the_s3_reasons(app, monkeypatch):
     # A face hit closer than 9 px to an edge (an edge the pick did not return, e.g. hidden): refused.
     near = _face_screen(app, 0.5, 0.5)
     real = app._knife_pick
-    monkeypatch.setattr(app, "_knife_pick", lambda x, y: dict(real(x, y), distance_px=5.0))
+    monkeypatch.setattr(app, "_knife_pick", lambda x, y, **kw: dict(real(x, y, **kw), distance_px=5.0))
     assert not _click(app, near)
     assert app.status_message == "Knife: too close to an edge - click on the edge or further inside the face"
     assert app.knife_render_data.prospective_point is None    # no preview for a refused target

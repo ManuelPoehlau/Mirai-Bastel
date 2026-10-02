@@ -40,15 +40,12 @@ from tests.test_application_knife import (  # noqa: F401  (the `app` fixture)
     _history_depths,
     _key,
     _mouse,
-    _screen,
     _topology,
     _v,
     _vertex_screen,
     app,
 )
 from tests.test_application_knife_faces import _face_screen
-
-UX2 = pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 UX2: pen lift not built yet")
 
 E = _key("e")
 RMB = _mouse("RIGHT")
@@ -113,7 +110,6 @@ def _vertices_at(mesh, pos) -> int:
 # -- 1 / 11. E and RMB lift ---------------------------------------------------------------------------
 
 
-@UX2
 @pytest.mark.parametrize("how", ["e", "rmb"])
 def test_lift_ends_the_chain_without_commit(app, how):
     mesh = app.scene.mesh
@@ -130,7 +126,6 @@ def test_lift_ends_the_chain_without_commit(app, how):
     assert app.status_message == "Knife: pen lifted - the next click starts a new cut"
 
 
-@UX2
 @pytest.mark.parametrize("how", ["e", "rmb"])
 def test_two_chains_with_a_lift_commit_as_one_entry_and_one_undo_reverts_both(app, how):
     mesh = app.scene.mesh
@@ -156,7 +151,6 @@ def test_two_chains_with_a_lift_commit_as_one_entry_and_one_undo_reverts_both(ap
     assert _topology(mesh) == before
 
 
-@UX2
 @pytest.mark.parametrize("how", ["e", "rmb"])
 def test_lift_with_nothing_to_lift_is_refused(app, how):
     _begin(app)
@@ -169,7 +163,6 @@ def test_lift_with_nothing_to_lift_is_refused(app, how):
     assert app._knife.path == path and app.status_message == "Knife: nothing to lift"
 
 
-@UX2
 @pytest.mark.parametrize("how", ["e", "rmb"])
 def test_ctrl_z_takes_the_lift_back_and_ctrl_y_lifts_again(app, how):
     _begin(app)
@@ -189,7 +182,6 @@ def test_ctrl_z_takes_the_lift_back_and_ctrl_y_lifts_again(app, how):
     assert _history_depths(app) == (0, 0)
 
 
-@UX2
 def test_an_rmb_drag_is_no_lift_and_rmb_never_commits_or_cancels(app):
     mesh = app.scene.mesh
     _begin(app)
@@ -206,7 +198,6 @@ def test_an_rmb_drag_is_no_lift_and_rmb_never_commits_or_cancels(app):
 # -- 3. a branch off an earlier own point ----------------------------------------------------------
 
 
-@UX2
 def test_after_a_lift_a_click_on_an_earlier_own_point_starts_the_new_chain_there(app):
     mesh = app.scene.mesh
     e = _edges(app)
@@ -217,8 +208,9 @@ def test_after_a_lift_a_click_on_an_earlier_own_point_starts_the_new_chain_there
     assert _click(app, _edge_screen(app, e["56"], 0.5))           # snaps to the own point
     assert app._knife.path[-1] is shared and app._knife.last_point is shared
     assert _click(app, _edge_screen(app, e["26"], 0.5))
+    mid = _edge_point(app, e["56"], 0.5)
     assert app.key_press(ENTER)
-    assert _vertices_at(mesh, _edge_point(app, e["56"], 0.5)) == 1
+    assert _vertices_at(mesh, mid) == 1
     assert _history_depths(app) == (1, 0)
     assert_mesh_invariants(mesh, context="after a branch")
 
@@ -226,7 +218,6 @@ def test_after_a_lift_a_click_on_an_earlier_own_point_starts_the_new_chain_there
 # -- 7. double-click ----------------------------------------------------------------------------------
 
 
-@UX2
 def test_a_double_click_on_a_third_point_closes_the_chain_and_lifts(app, clock):
     _begin(app)
     p1, p2, p3 = (_face_screen(app, u, w) for u, w in ((0.3, 0.3), (0.7, 0.3), (0.5, 0.7)))
@@ -249,7 +240,6 @@ def test_a_double_click_on_a_third_point_closes_the_chain_and_lifts(app, clock):
     assert _history_depths(app) == (0, 0)
 
 
-@UX2
 def test_a_double_click_on_the_chain_start_closes_with_the_first_click_and_lifts_with_the_second(app, clock):
     _begin(app)
     p1, p2, p3 = (_face_screen(app, u, w) for u, w in ((0.3, 0.3), (0.7, 0.3), (0.5, 0.7)))
@@ -266,7 +256,6 @@ def test_a_double_click_on_the_chain_start_closes_with_the_first_click_and_lifts
     assert _history_depths(app) == (1, 0)
 
 
-@UX2
 def test_a_double_click_with_fewer_than_three_points_only_lifts_and_says_why(app, clock):
     _begin(app)
     e = _edges(app)
@@ -300,7 +289,6 @@ def test_a_second_click_outside_the_double_click_window_is_an_ordinary_click(app
         assert knife.path == path                               # refused as the same point
 
 
-@UX2
 def test_a_triple_click_is_one_double_click_and_one_new_start(app, clock):
     _begin(app)
     e = _edges(app)
@@ -333,7 +321,6 @@ def test_a_drag_cannot_be_the_second_click_of_a_double_click(app, clock):
 # -- 8. click outside, Enter, Esc ------------------------------------------------------------------------
 
 
-@UX2
 def test_a_click_outside_the_mesh_does_nothing(app):
     mesh = app.scene.mesh
     before = _topology(mesh)
@@ -349,7 +336,6 @@ def test_a_click_outside_the_mesh_does_nothing(app):
     assert app.knife_render_data.prospective_point is None
 
 
-@UX2
 def test_a_click_outside_on_an_empty_session_keeps_the_knife_active(app):
     _begin(app)
     assert _click(app, OUTSIDE) is False
@@ -373,7 +359,6 @@ def test_enter_still_commits_and_esc_still_cancels(app):
     assert _history_depths(app) == (1, 0)
 
 
-@UX2
 def test_esc_after_a_lift_restores_mesh_selection_and_history(app):
     mesh = app.scene.mesh
     before = _topology(mesh)
@@ -387,7 +372,6 @@ def test_esc_after_a_lift_restores_mesh_selection_and_history(app):
     assert app.selection.mode is mode and app.selection.is_empty()
 
 
-@UX2
 def test_a_session_of_lifts_only_commits_nothing(app):
     mesh = app.scene.mesh
     before = _topology(mesh)
@@ -402,7 +386,6 @@ def test_a_session_of_lifts_only_commits_nothing(app):
 # -- 9. bindings ------------------------------------------------------------------------------------------
 
 
-@UX2
 def test_e_and_rmb_are_bound_to_knife_lift_in_the_knife_context_only(app):
     b = app.bindings
     assert b.command_for(E, KNIFE_CONTEXT) == cmd.KNIFE_LIFT
@@ -411,7 +394,6 @@ def test_e_and_rmb_are_bound_to_knife_lift_in_the_knife_context_only(app):
     assert b.command_for(RMB) is None
 
 
-@UX2
 @pytest.mark.parametrize("key", ["w", "r", "1", "d", "c", "x"])
 def test_the_session_gate_still_ignores_other_keys(app, key):
     _begin(app)
@@ -422,7 +404,6 @@ def test_the_session_gate_still_ignores_other_keys(app, key):
     assert app.key_press(E) is True
 
 
-@UX2
 def test_knife_lift_is_rebindable_through_keymap_json():
     data = {
         "schemaVersion": 1,
@@ -449,7 +430,6 @@ def test_knife_lift_is_rebindable_through_keymap_json():
 # -- 10. render data after a lift -------------------------------------------------------------------------
 
 
-@UX2
 def test_render_data_after_a_lift_has_no_rubber_band_and_the_next_start_is_marked(app):
     e = _edges(app)
     _begin(app)
@@ -467,11 +447,10 @@ def test_render_data_after_a_lift_has_no_rubber_band_and_the_next_start_is_marke
     assert data.start_point is None and data.prospective_point is None
     assert _click(app, far)
     data = app.knife_render_data
-    assert data.start_point == _edge_point(app, e["73"], 0.5)
+    assert data.start_point == pytest.approx(_edge_point(app, e["73"], 0.5))
     assert len(data.path_segments) == 1
 
 
-@UX2
 def test_after_a_close_and_a_lift_a_new_cyclic_close_draws_its_own_closing_segment(app, clock):
     """The closing segment of a chain after a lift runs back to *that* chain's start, not the first chain's."""
     _begin(app)
@@ -498,7 +477,6 @@ def test_after_a_close_and_a_lift_a_new_cyclic_close_draws_its_own_closing_segme
 # -- 12–15. Shift + click = midpoint snap -------------------------------------------------------------------
 
 
-@UX2
 def test_shift_click_on_an_edge_places_the_point_at_its_midpoint_and_the_cut_passes_through_it(app):
     mesh = app.scene.mesh
     e = _edges(app)
@@ -514,7 +492,6 @@ def test_shift_click_on_an_edge_places_the_point_at_its_midpoint_and_the_cut_pas
     assert_mesh_invariants(mesh, context="after a midpoint cut")
 
 
-@UX2
 def test_shift_click_on_a_vertex_or_inside_a_face_is_a_plain_click(app):
     _begin(app)
     v7 = _v(app, 7)
@@ -528,7 +505,6 @@ def test_shift_click_on_a_vertex_or_inside_a_face_is_a_plain_click(app):
     assert app._knife.path[-1]["position"] == tuple(hit["position"])
 
 
-@UX2
 def test_shift_click_near_an_own_edge_point_reaches_that_point(app):
     e = _edges(app)
     _begin(app)
@@ -541,7 +517,6 @@ def test_shift_click_near_an_own_edge_point_reaches_that_point(app):
     assert app._knife.path[-1] is own and len({p["pid"] for p in app._knife.points}) == n
 
 
-@UX2
 def test_shift_click_at_the_midpoint_of_an_edge_carrying_an_own_midpoint_reaches_that_point(app):
     e = _edges(app)
     _begin(app)
@@ -553,7 +528,6 @@ def test_shift_click_at_the_midpoint_of_an_edge_carrying_an_own_midpoint_reaches
     assert app._knife.path[-1] is own
 
 
-@UX2
 def test_shift_click_along_the_last_points_edge_keeps_the_skip_rule(app):
     e = _edges(app)
     _begin(app)
@@ -564,7 +538,6 @@ def test_shift_click_along_the_last_points_edge_keeps_the_skip_rule(app):
     assert app._knife.path[-2] == {"kind": "break", "reason": "edge"}
 
 
-@UX2
 def test_shift_lmb_belongs_to_the_knife_alt_and_ctrl_lmb_do_not(app):
     _begin(app)
     pos = _edge_screen(app, _edges(app)["47"], 0.3)
@@ -584,7 +557,6 @@ def test_a_shift_lmb_drag_past_the_threshold_is_no_cut(app):
     assert app._knife.path == []
 
 
-@UX2
 def test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position(app):
     """D10 fallback: the window passes no `Shift` while the mouse only moves (pyglet's key map has no Shift
     key, `mirai.pyglet_input`) — the plain hover shows the free position; the press of `Shift`+`LMB` shows the
@@ -604,7 +576,6 @@ def test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_posi
     assert app.knife_render_data.prospective_point == pytest.approx(free)
 
 
-@UX2
 @pytest.mark.parametrize("how", ["e", "rmb"])
 def test_midpoint_starts_lift_midpoint_start_enter_one_entry_one_undo(app, how):
     mesh = app.scene.mesh
@@ -616,9 +587,9 @@ def test_midpoint_starts_lift_midpoint_start_enter_one_entry_one_undo(app, how):
     assert _lift_with(app, how)
     assert _shift_click(app, _edge_screen(app, e["73"], 0.2))
     assert _click(app, _edge_screen(app, e["26"], 0.5))
+    mids = [_edge_point(app, e[name], 0.5) for name in ("47", "73")]
     assert app.key_press(ENTER)
-    assert _vertices_at(mesh, _edge_point(app, e["47"], 0.5)) == 1
-    assert _vertices_at(mesh, _edge_point(app, e["73"], 0.5)) == 1
+    assert [_vertices_at(mesh, m) for m in mids] == [1, 1]
     assert _history_depths(app) == (1, 0)
     assert app.key_press(CTRL_Z) and _topology(mesh) == before
 
@@ -626,7 +597,6 @@ def test_midpoint_starts_lift_midpoint_start_enter_one_entry_one_undo(app, how):
 # -- the start hint --------------------------------------------------------------------------------------------
 
 
-@UX2
 def test_the_start_hint_names_the_new_keys_and_no_longer_click_outside(app):
     _begin(app)
     hint = app.status_message
