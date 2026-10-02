@@ -55,6 +55,10 @@ Scope (binding, see the handoffs):
   committed), a double-click closes the cut and lifts, Shift+click puts the
   point on the edge's midpoint; a click outside the mesh does nothing. The
   press and drag handlers pass the cursor position through for this.
+  WP-KNIFE-01 UX2b (PROVISIONAL): holding Shift already shows the midpoint in
+  the Knife's hover preview — the key handlers track the held Shift keys
+  (`shift_keys_after`) and report "any Shift held" to
+  `Application.set_shift_held`; losing focus (`on_deactivate`) resets it.
   Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
@@ -88,7 +92,12 @@ for _p in (str(_SRC), str(_ROOT), str(_ROOT / "examples")):
 import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
-from mirai.pyglet_input import key_from_pyglet, mouse_from_pyglet, wheel_from_pyglet  # noqa: E402
+from mirai.pyglet_input import (  # noqa: E402
+    key_from_pyglet,
+    mouse_from_pyglet,
+    shift_keys_after,
+    wheel_from_pyglet,
+)
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
@@ -136,8 +145,21 @@ def main() -> None:
         app.set_viewport_size(window.width, window.height)
         return pyglet.event.EVENT_HANDLED
 
+    # WP-KNIFE-01 UX2b: the Shift keys held right now. Shift alone is no `Input`
+    # (no binding); the Knife's hover only needs "any Shift held". Both keys
+    # count, so releasing one while the other is held keeps it held.
+    shift_keys: frozenset[int] = frozenset()
+
+    def track_shift(symbol: int, pressed: bool) -> None:
+        nonlocal shift_keys
+        held = shift_keys_after(shift_keys, symbol, pressed)
+        if held is not None:
+            shift_keys = held
+            app.set_shift_held(bool(held))
+
     @window.event
     def on_key_press(symbol: int, modifiers: int):
+        track_shift(symbol, True)
         inp = key_from_pyglet(symbol, modifiers)
         if inp is not None:
             app.key_press(inp)
@@ -147,10 +169,18 @@ def main() -> None:
 
     @window.event
     def on_key_release(symbol: int, modifiers: int):
+        track_shift(symbol, False)
         inp = key_from_pyglet(symbol, modifiers)
         if inp is not None:
             app.key_release(inp)
         return pyglet.event.EVENT_HANDLED
+
+    @window.event
+    def on_deactivate():
+        # A Shift released while another window has focus sends no release here.
+        nonlocal shift_keys
+        shift_keys = frozenset()
+        app.set_shift_held(False)
 
     @window.event
     def on_mouse_press(x: int, y: int, button: int, modifiers: int):

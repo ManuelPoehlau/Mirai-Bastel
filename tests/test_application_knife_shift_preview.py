@@ -48,8 +48,6 @@ from tests.test_application_knife_pen_lift import (  # noqa: F401  (the `clock` 
     clock,
 )
 
-pytestmark = pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 UX2b: spec first, not built yet")
-
 _HEAD = Path(__file__).resolve().parent.parent / "examples" / "meshes" / "head_basemesh.obj"
 
 

@@ -108,6 +108,23 @@ def key_from_pyglet(symbol: int, modifiers: int) -> Input | None:
     return Input("key", key_name, _modifiers_from_pyglet(modifiers))
 
 
+def shift_keys_after(held: frozenset[int], symbol: int, pressed: bool) -> frozenset[int] | None:
+    """Die nach einem Key-Event gehaltenen Shift-Tasten (WP-KNIFE-01 UX2b).
+
+    `held` = die bisher gehaltenen Shift-Symbole. Für `LSHIFT`/`RSHIFT` die neue
+    Menge (Press fügt hinzu, Release entfernt; Key-Repeat und ein Release ohne
+    Press ändern nichts), für jedes andere Symbol `None`. Linke und rechte
+    Shift-Taste zählen getrennt, damit eine noch gehaltene nicht als losgelassen
+    gilt. Shift bleibt dabei ohne `Input` (`key_from_pyglet` unverändert): das
+    Fenster meldet `Application` nur "irgendein Shift gehalten".
+    """
+    from pyglet.window import key as _key
+
+    if symbol not in (_key.LSHIFT, _key.RSHIFT):
+        return None
+    return held | {symbol} if pressed else held - {symbol}
+
+
 def mouse_from_pyglet(button: int, modifiers: int) -> Input | None:
     """Übersetzt pyglet `on_mouse_press(button, modifiers)` in ein `Input` (kind="mouse").
 

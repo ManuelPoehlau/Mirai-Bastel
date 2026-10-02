@@ -35,6 +35,7 @@ from pyglet.window import key as _key, mouse as _mouse  # noqa: E402
 from mirai.pyglet_input import (  # noqa: E402
     key_from_pyglet,
     mouse_from_pyglet,
+    shift_keys_after,
     wheel_from_pyglet,
 )
 from mirai.interaction.input import GLOBAL_CONTEXT, Input  # noqa: E402
@@ -107,7 +108,6 @@ class TestKeyFromPyglet:
         assert inp.modifiers == frozenset({"ctrl"})
 
 
-@pytest.mark.xfail(strict=True, reason="WP-KNIFE-01 UX2b: spec first, not built yet")
 class TestShiftKeysAfter:
     """WP-KNIFE-01 UX2b: welche Shift-Tasten nach einem Key-Event gehalten sind (A3: links und rechts zählen,
     der Zustand ist "irgendein Shift gehalten"). Reiner Helfer ohne Fenster; `key_from_pyglet` bleibt
@@ -115,8 +115,6 @@ class TestShiftKeysAfter:
 
     @staticmethod
     def _after(held, symbol, pressed):
-        from mirai.pyglet_input import shift_keys_after
-
         return shift_keys_after(held, symbol, pressed)
 
     @pytest.mark.parametrize("symbol", [_key.LSHIFT, _key.RSHIFT])

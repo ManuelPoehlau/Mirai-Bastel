@@ -327,6 +327,10 @@ class Application:
         self._knife_gesture_midpoint: bool = False
         self._knife_last_click: tuple[float, float, float] | None = None
         self.knife_clock = time.monotonic
+        # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
+        # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
+        # the click); a click keeps deciding by its press modifiers (A2, AD-019).
+        self._shift_held: bool = False
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -581,6 +585,9 @@ class Application:
     # lift the pen (the chain ends, nothing is committed), a double-click
     # closes the chain and lifts; a click outside the mesh does nothing;
     # Shift+click on an edge places the point at its midpoint.
+    #
+    # WP-KNIFE-01 UX2b (PROVISIONAL, Artist 2026-10-02): while Shift is held
+    # (`set_shift_held`, from the window) the hover already shows that midpoint.
 
     @property
     def knife_active(self) -> bool:
@@ -650,9 +657,9 @@ class Application:
 
     def _knife_press(self, input: Input) -> None:
         """Press: only starts the click-threshold gesture (B7.1); the preview
-        at the cursor is already current from the last hover - with Shift the
-        press shows the edge midpoint (UX2 D10: Shift alone does not reach
-        `Application`, so there is no live midpoint hover)."""
+        is recomputed with the press's own Shift (the click decides by the
+        press modifiers, AD-019) - with a held Shift the hover showed the same
+        midpoint already (UX2b)."""
         self._knife_gesture = True
         self._knife_gesture_moved = 0.0
         self._knife_gesture_button = input.value
@@ -786,8 +793,21 @@ class Application:
         self._refresh_hover()
         return True
 
+    def set_shift_held(self, held: bool) -> bool:
+        """The window reports whether any Shift key is held (WP-KNIFE-01 UX2b).
+        During a Knife session the hover preview at the known cursor follows it
+        at once (the midpoint before the click); without a session, a cursor or
+        while a button is held it is only stored. True = the preview changed."""
+        held = bool(held)
+        if held == self._shift_held:
+            return False
+        self._shift_held = held
+        if self._knife is None or self._knife_gesture or self._cursor is None or self.pointer.active:
+            return False
+        return self._knife_hover(*self._cursor)
+
     def _knife_hover(self, x: float, y: float) -> bool:
-        return self._knife_set_preview(self._knife_pick(x, y))
+        return self._knife_set_preview(self._knife_pick(x, y, midpoint=self._shift_held))
 
     def _knife_pick(self, x: float, y: float, midpoint: bool = False) -> dict:
         """WP-06 B8: same cache/occlusion as `_pick()` - a hidden edge/vertex
