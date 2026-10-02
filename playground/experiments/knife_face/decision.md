@@ -1563,7 +1563,12 @@ slots and the verdict are filled; remarks on A1–A5 (and UX1-a…c) welcome.
 
 ---
 
-## WP-KNIFE-01 UX2 — pen lift (Artist 2026-10-02, PROVISIONAL)
+## WP-KNIFE-01 UX2 — pen lift (Artist 2026-10-02, Artist verdict KEEP)
+
+**Status (recorded 2026-10-02, WP-KNIFE-01 UX2b / S4 handoff, Task 0):** PROVISIONAL → **Artist verdict KEEP (Manu,
+2026-10-02)** — see the verdict row at the end of this section. **KEEP ≠ promotion.** The text below is the UX2 record and
+build record as written before the verdict and is not changed by it; Manu's practical-test rows 1–7 are untouched. His
+remarks on row 4 and row 7 became UX2-k (recorded only) and "WP-KNIFE-01 UX2b" (the live midpoint preview, below).
 
 *Recorded 2026-10-02 (WP-KNIFE-01 UX2 handoff v2, Task 0).* Production only; the Playground families `knife` /
 `knife_face` are not touched.
@@ -1632,7 +1637,7 @@ S2-a (a straight run of boundary edges is a skip) has still not been commented o
 | UX2-c | **Freehand `LMB`-drag** (Blender: held and dragged = freehand cut) vs. ours: a drag past the click threshold does nothing (B7.1). | — |
 | UX2-d | **The remaining Blender modifiers:** ignore-snap (Blender `Shift`; not on `Shift` here, D12), angle constraint (`docs/future_ideas/MODELING.md`), Cut Through (same file). | — |
 | UX2-e | UX1-a…e are moot after the revert (Manu's status line on "WP-KNIFE-01 UX1"). | — |
-| UX2-f | **Live midpoint preview** while `Shift` is held — only if D10 falls back to click-only (see the build record). | — |
+| UX2-f | **Live midpoint preview** while `Shift` is held — only if D10 falls back to click-only (see the build record). *Being resolved by UX2b (2026-10-02), see "WP-KNIFE-01 UX2b".* | — |
 
 Build record, evidence and the practical test: below, after the build.
 
@@ -1720,11 +1725,12 @@ and after here (no EGL library).
 
 | # | Observation | Pinned by |
 |---|---|---|
-| UX2-f | **No live midpoint preview** (D10 fallback): `Shift` alone does not reach `Application`; the midpoint is shown on the press. A live preview needs the window layer to pass Shift press/release (`mirai.pyglet_input` key map) — outside the knife path. | `test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position` |
+| UX2-f | **No live midpoint preview** (D10 fallback): `Shift` alone does not reach `Application`; the midpoint is shown on the press. A live preview needs the window layer to pass Shift press/release (`mirai.pyglet_input` key map) — outside the knife path. *Being resolved by UX2b (2026-10-02, Manu's row 7 remark), see "WP-KNIFE-01 UX2b".* | `test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position` |
 | UX2-g | **Size over the handoff's ~120-line STOP guide:** executable lines +131 / −34 (net +97); the raw diff is +204 / −56 with docstrings and comments. No feature beyond the handoff; the two small additions are the own-midpoint reuse (D9) and the ordinary-click fallback of an empty double-click (above). Recorded instead of decided silently. | — |
 | UX2-h | `Shift`+`LMB` (midpoint) is not listed in the Artist Input Truth (only `topology.knife_lift` was asked for); outside a session `Shift+LMB` stays SelectAdd. | — |
 | UX2-i | Dated discovery documents still describe "click outside = commit" as the state of their time (`ONE_KNIFE_PROMOTION_DISCOVERY.md` §B/§F, `KNIFE_CROSS_FACE_DISCOVERY.md`, `KNIFE_FACE_CUT_DISCOVERY.md` §4/§8) — not edited (project memory); the AD-017 addendum "UX2" is the current rule. | — |
 | UX2-j | **A start on a vertex that is an earlier chain's seed / start** is the same record (D3) — so a lifted chain that starts on the first chain's start counts as "seeded" in the resolver's bookkeeping; with a boundary start this changes nothing (only interior seeds are anchored, and an interior own point cannot be a start). | `test_a_start_on_an_earlier_own_boundary_point_branches_off_it` (the boundary case) |
+| UX2-k | **An earlier own point inside a face cannot be clicked again** (Manu, row 4 below: *"passed, but if the vertex is inside a face: an earlier point inside a face cannot be clicked again (not yet)"*). This is the existing rule (`EARLIER_INTERIOR`, "not supported yet", S3-i), not a UX2 defect. Whether / when an earlier interior point becomes a valid target or start is Manu's priority call (likely together with S4). Recorded only, not built. | `test_a_start_on_an_earlier_interior_point_is_refused_as_today` |
 
 **Prepared practical test (Manu, ≤ 5 minutes, `python3 src/main.py`, cube then head):** UX2 stays **PROVISIONAL** until these
 slots and the verdict are filled; remarks only on D1–D13 if something feels wrong.
@@ -1741,4 +1747,32 @@ slots and the verdict are filled; remarks only on D1–D13 if something feels wr
 
 | Verdict (KEEP / ITERATE / REJECT / UNKNOWN) | Manu's words |
 |---|---|
-| | |
+| **KEEP** (Manu, 2026-10-02) | *"KEEP"* — chat answer to the prepared question; his rows 1–7 above are all "passed". |
+
+*Recorded 2026-10-02 (WP-KNIFE-01 UX2b / S4 handoff, Task 0).* **KEEP ≠ promotion.** The open points UX2-b…k stay open
+unless a later record resolves them; the verdict does not decide them.
+
+---
+
+## WP-KNIFE-01 UX2b — Shift live preview (Artist remark 2026-10-02, PROVISIONAL)
+
+*Recorded 2026-10-02 (WP-KNIFE-01 UX2b handoff, Task 0).* Production only; the Playground families are not touched.
+
+**Artist request (Manu, 2026-10-02, his words on UX2 practical-test row 7):** *"passed - but preview should also show the
+snap visually befor the LMB ist clicked"*. So: with **`Shift` held** and the cursor near an edge, the hover preview already
+shows the **midpoint** (point + edge highlight) **before** any button is pressed. This resolves UX2-f (the D10 fallback).
+What `Shift`+click does is unchanged (D9).
+
+**Defaults of the UX2b handoff (stated, not Artist-decided — Manu corrects only if wrong):**
+
+- **A1** Only the Knife consumes the held-`Shift` state. No other tool, no global "modifier state" feature.
+- **A2** The click keeps deciding by the modifiers of the **press** (AD-019, fixed at the press, unchanged). The held state
+  only drives the **hover preview**. Invariant: the hover preview with `Shift` held equals the target a `Shift`+click at that
+  cursor position produces.
+- **A3** Left and right `Shift` both count; the state is "any `Shift` currently held".
+- **A4** Losing window focus resets the state (a `Shift` released while another window has focus must not stay stuck).
+- **A5** Production only; Playground families untouched.
+
+Not in this slice: `Shift` as a bindable key, Ctrl / Alt state, ignore-snap, a change to what `Shift` does on a click, UX2-k.
+
+Build record, evidence and the practical test: below, after the build.
