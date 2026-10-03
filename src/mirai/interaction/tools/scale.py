@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 from core import OperationContext, ScaleOperation
+from core.operations.transform import scale_keeps_plane
 
 from .transform import TransformTool, _face_tangent_basis, _resolve_space
 
@@ -144,6 +145,18 @@ class ScaleTool(TransformTool):
 
         self._drag_pixels = 0.0
         self._applied_scale = 1.0
+        self._seam_refusal_message = (
+            "Skalierung würde den Seam-Vertex von der Ebene lösen "
+            "(nur uniform oder an der Ebenennormale ausgerichtet)"
+        )
+        self._refuse_if_seam_unsafe(self._scale_keeps_plane)
+
+    def _scale_keeps_plane(self, normal) -> bool:
+        # Probefaktor: die Ebenenerhaltung hängt nur vom Achsenmuster ab, nicht vom Betrag.
+        if self._tangent_basis is not None:
+            factor = tuple(2.0 if active else 1.0 for active in self._active_axes)
+            return scale_keeps_plane(factor, self._tangent_basis, normal)
+        return scale_keeps_plane(tuple(2.0 if mask else 1.0 for mask in self._axes_mask), None, normal)
 
     def _on_update(self, dx: float, dy: float, width: int, height: int) -> None:
         # Zielfaktor aus kumulierter Pixel-Distanz → Multiplikator-Schritt

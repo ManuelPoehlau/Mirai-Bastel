@@ -115,6 +115,41 @@ symmetry definition untouched) and by `playground/tests/test_split_face_equivale
 stand-ins on grid, cube and head). `connect_vertices` and `split_edge` unchanged; no new `Operation`, no
 serialization change.
 
+**Decision:** AD-SYM-02 §2.4 follow-up (2026-10-03, WP-SYM-LAB-02 S2)
+
+`RotateOperation`/`ScaleOperation` (`src/core/operations/transform.py`) become symmetric the same way
+`MoveOperation` did, and flip `supports_symmetry` to `True` (both inherit it from a new private
+intermediate class `_PivotTransformOperation(VertexTransformOperation)`; `Move`, `Operation`,
+`OperationContext` and History are untouched). The symmetry context travels through the existing
+`OperationContext.params["symmetry"]` (`plane_normal`, `mirrored_vertex_ids`, `seam_vertex_ids`, plus
+`plane_point` — a pivot is a *position* and can only be mirrored with a plane point). Three vertex
+categories, one interaction, one History entry: directly selected vertices get the ordinary transform
+about the pivot; mirrored partners get the *conjugated intent* — rotation about mirror(pivot) around
+mirror(axis) by −angle, scale about mirror(pivot) with factor b_i applied along mirror(b_i) (a
+reflection reverses handedness), computed as `mirror(T(mirror(p)))` so the partner is the *bit-exact*
+mirror of the source position (`mirai.symmetry` finds partners by exact position equality, AR-1; an
+approximation would silently degrade a pair to UNPAIRED); Seam vertices get the ordinary transform,
+projected exactly onto the plane afterwards. The Operation hard-codes no centroid: the pivot is
+`params["pivot"]` (mirrored for partners) or, as before, the centroid of the affected vertices;
+`RotateTool`/`ScaleTool` (shared `TransformTool._on_begin`, helper `resolve_symmetry()` in
+`selection_helpers.py`, same resolution as `MoveTool.begin()`) pass the affected set (selection ∪
+partners; an explicitly selected partner wins and the pair then moves as a rigid group) and, when no
+pivot is given under symmetry, the centroid over selection ∪ partners (a single vertex turns about the
+pair midpoint). Seam contract (INV-2/INV-8): a Seam vertex stays on the plane only if the pivot is on
+the plane AND rotation axis ∥ plane normal / scale is uniform or normal-aligned (normal is an
+eigenvector of the scale matrix); otherwise the tool refuses *before the first motion* with the new
+`SeamConstraintError` (the Operation raises the same error as a backstop, before touching any vertex).
+Agent assumption: "on the plane / parallel" is decided with an absolute tolerance
+`SEAM_TOLERANCE = 1e-9`, inside which the Seam result is projected exactly onto the plane (centroids
+carry ~1e-17 rounding residue; the existing VIOLATED check is exact). Production behaviour is
+unchanged: no symmetry can be switched on in the Production app, so `params` carries no `"symmetry"`
+key and the maths is the previous code path (asserted in `tests/test_symmetric_transform.py`).
+Covered by `tests/test_symmetric_transform.py` (bit-exact mirror equivalence over random axes/angles/
+factors and 60 incremental updates with pivot on and off plane, oblique-plane tolerance case,
+documented-formula equivalence, rotation sense for normal vs. in-plane axis, single vertex, rigid
+explicit pair, Seam allow/refuse cases staying exactly on the plane, cancel/commit/Undo) and
+`tests/test_symmetric_move.py` (flag flipped). Free pivots and a pivot UI remain out of scope.
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten

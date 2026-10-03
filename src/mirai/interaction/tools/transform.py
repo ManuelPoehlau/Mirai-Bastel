@@ -34,9 +34,15 @@ from __future__ import annotations
 from typing import Any
 
 from core import Mesh, OperationContext, Selection, SelectionMode, VertexId
+from core.operations.transform import SeamConstraintError
 
 from ..tool import Tool
-from .selection_helpers import _VertexSelectionView, selection_normal, selection_pivot
+from .selection_helpers import (
+    _VertexSelectionView,
+    resolve_symmetry,
+    selection_normal,
+    selection_pivot,
+)
 
 _WORLD_AXES = {
     # Einzelachsen.
@@ -347,16 +353,41 @@ class TransformTool(Tool):
             raise ValueError("TransformTool.begin() benötigt mindestens einen Vertex.")
         self._scene = scene
         self._camera = camera
+        # Symmetrie (AD-SYM-02 §2.4, wie MoveTool): Partner werden mitbetroffen;
+        # ohne explizites `pivot` ist der Pivot der Zentroid über Auswahl ∪ Partner
+        # (ein einzelner Vertex dreht/skaliert damit um die Paarmitte). Ein gegebener
+        # Pivot gilt unverändert - die Operation spiegelt ihn für die Partner.
+        vertex_ids, symmetry = resolve_symmetry(scene.mesh, vertex_ids)
         self._vertex_ids = vertex_ids
+        pivot = params.get("pivot")
+        op_params: dict[str, Any] = {"pivot": pivot}
+        if symmetry is not None:
+            if pivot is None:
+                op_params["pivot"] = selection_pivot(scene.mesh, vertex_ids)
+            op_params["symmetry"] = symmetry
         context = OperationContext(
             target=scene.mesh,
             selection=_VertexSelectionView(vertex_ids),
             history=scene.history,
-            params={"pivot": params.get("pivot")},
+            params=op_params,
         )
         operation = self._create_operation(context)
-        operation.begin()
+        operation.begin()  # wirft SeamConstraintError bei Seam-Pivot abseits der Ebene
         self._operation = operation
+
+    def _refuse_if_seam_unsafe(self, keeps_plane) -> None:
+        """INV-8: Seam-Vertices dürfen die Ebene nie verlassen - sichtbar ablehnen
+        (SeamConstraintError, vor der ersten Bewegung), nie still driften.
+        `keeps_plane(normal)` beantwortet, ob die gewählte Geste die Ebene erhält."""
+        symmetry = self._operation.context.params.get("symmetry")
+        if symmetry is None or not symmetry["seam_vertex_ids"]:
+            return
+        if not keeps_plane(symmetry["plane_normal"]):
+            self._operation.cancel()  # exakter Vorzustand, keine History
+            self._operation = None
+            raise SeamConstraintError(self._seam_refusal_message)
+
+    _seam_refusal_message = "Seam-Vertex würde die Symmetrieebene verlassen"
 
     def _on_commit(self) -> Any:
         command = self._operation.commit()

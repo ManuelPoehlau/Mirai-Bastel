@@ -6,7 +6,11 @@ selection_pivot() to eliminate duplication across Move/Rotate/Scale tools.
 
 from __future__ import annotations
 
+from typing import Any
+
 from core import Mesh, Selection, SelectionMode, VertexId
+
+from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 
 
 class _VertexSelectionView:
@@ -53,6 +57,33 @@ def resolve_selection_vertices(
                 result.update(mesh.face_vertices(fid))
         return result
     return set()
+
+
+def resolve_symmetry(
+    mesh: Mesh, vertex_ids: set[VertexId]
+) -> tuple[set[VertexId], dict[str, Any] | None]:
+    """Symmetriekontext für eine Transform-Interaktion (wie `MoveTool.begin()`,
+    AD-SYM-02 §2.4): (betroffene Vertices inkl. gespiegelter Partner, `params["symmetry"]`).
+
+    Symmetrie aus → `(vertex_ids, None)`. Die explizite Auswahl gewinnt: ein Partner, der
+    selbst gewählt ist, wird nicht als Partner behandelt (`mirrored_selection()`)."""
+    definition = mesh.symmetry_definition
+    if definition is None:
+        return set(vertex_ids), None
+    mirrored = mirrored_selection(mesh, vertex_ids)
+    correspondence = vertex_correspondence(mesh)
+    seam = {
+        vid
+        for vid in vertex_ids
+        if correspondence.get(vid) is not None
+        and correspondence[vid].state is CorrespondenceState.SEAM
+    }
+    return set(vertex_ids) | mirrored, {
+        "plane_normal": definition.plane_normal,
+        "plane_point": definition.plane_point,
+        "mirrored_vertex_ids": mirrored,
+        "seam_vertex_ids": seam,
+    }
 
 
 def selection_pivot(mesh: Mesh, vertex_ids: set[VertexId]) -> tuple[float, float, float]:

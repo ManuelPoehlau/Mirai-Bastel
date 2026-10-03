@@ -1,6 +1,6 @@
 # Symmetry Lab (WP-SYM-LAB-01)
 
-Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 7 + E5-Harness (WP-SYM-LAB-02 S1)** — das Lab zeigt
+Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 7 + E5-Harness (WP-SYM-LAB-02 S1) + symmetrisches Rotate/Scale (S2)** — das Lab zeigt
 ein Mesh (shaded + Edges + Vertices), navigiert mit Orbit/Pan/Zoom, wählt per Klick einen
 Vertex aus, schaltet mit Shift+S die Symmetrie-Ebene durch (aus → X → Y → Z → aus), zeigt
 Ebene, Seam, Vertices ohne Partner und den gespiegelten Partner der Auswahl, zeigt den Vertex
@@ -66,6 +66,35 @@ beim Start keine `key:q`/`key:w`-Overrides (W fällt auf den globalen Default `M
 
 Verdikt (KEEP / ITERATE / REJECT / UNKNOWN): steht aus.
 
+### Manuelle Prüfung S2 (Manu, Windows) — offen, noch nicht geprüft
+
+**Artist-Verdikt: steht aus.** WP-SYM-LAB-02 S2. Rotate/Scale wirken unter Symmetrie wie Move
+(AD-SYM-02 §2.4, entschieden): der Partner führt die *gespiegelte Absicht* aus — bei Rotation um die
+Ebenennormale im selben Sinn, um eine Achse in der Ebene im Gegensinn; bei Scale je Achse gespiegelt.
+Der **Pivot** (Kandidat, Verdikt offen) ist der Mittelpunkt über Auswahl ∪ Partner, ein einzelner
+Vertex dreht/skaliert also um die Paarmitte auf der Ebene. Neu im Lab: die Constraint-Tasten
+**X / Y / Z** (Shift+X/Y/Z = Ebene) als Toggle wie in der App; sie gelten ab der nächsten Geste und
+nur für E/R (W bleibt unverändert). Die Statuszeile zeigt `Constraint: X`.
+Seam-Vertices (grün) bleiben exakt auf der Ebene oder die Aktion wird **vor der ersten Bewegung**
+mit Meldung abgelehnt (`Rotate: abgelehnt — …`): Rotate nur um X (= Ebenennormale bei Symmetrie X);
+Y, Z und „frei" (Bildachse) werden abgelehnt. Scale ist mit uniform und jedem Weltachsen-Constraint
+erlaubt. Ein einzelner Seam-Vertex ist sein eigener Pivot (nichts zu bewegen: `keine Änderung`).
+
+1. `python experiments/symmetry_lab/run.py head_basemesh`, **Shift+S** → X. Einen Vertex an der
+   Seite des Kopfes anklicken.
+2. **E halten**, Maus bewegen: Vertex und Partner drehen gemeinsam um ihre Mitte (Bildachse).
+   Dann nacheinander **X**, **Y**, **Z** (Constraint) und jeweils neu E halten: beobachten, in
+   welche Richtung der Partner dreht (X: gleicher Sinn, Y/Z: Gegensinn). Ein Undo-Schritt je Geste.
+3. **R halten**: das Paar rückt auseinander/zusammen. Frage: fühlt sich ein einzelner Vertex wie
+   ein Paar an, und ist die Paarmitte der Pivot, den du erwartest?
+4. Einen grünen Seam-Vertex wählen, **E halten** mit X / Y / Z-Constraint (und frei): Y, Z und
+   frei werden mit Meldung abgelehnt, X läuft (bewegt aber den einzelnen Seam-Vertex nicht).
+   Ist die Ablehnung für jetzt akzeptabel?
+5. Beide Vertices eines Paares explizit wählen (Auswahl ersetzt im Lab, daher nur über Tests/Aufruf
+   mit Mehrfachauswahl abgedeckt) — starre Rotation, wie bei Move. Im Lab selbst nicht klickbar.
+
+Verdikt (KEEP / ITERATE / REJECT / UNKNOWN): steht aus.
+
 ### Manuelle Prüfung E5 (Manu, Windows) — offen, noch nicht geprüft
 
 **Artist-Verdikt: steht aus.** WP-SYM-LAB-02 S1, Experiment E5 / INV-8 (AD-SYM-02 §4). Bei aktiver
@@ -92,11 +121,10 @@ unverändert. Ohne Symmetrie verhalten sich E/R wie in der Production-App.
 5. Frage: Womit würdest du im Alltag lieber arbeiten — Tool verweigert (BLOCK) oder läuft
    einseitig mit Warnung (MARK)? Hast du die Statuszeile im MARK überhaupt bemerkt?
 
-**Lab-Behelf Pivot (bis der freie Pivot kommt, ToDo):** Ein einzelner Vertex ist sein eigener
-Mittelpunkt, Rotate/Scale bewegten ihn sonst nicht. Deshalb nutzt das Lab bei E/R, aktiver Symmetrie
-und genau einem Ziel-Vertex den Ursprung (Punkt der Symmetrieebene) als Pivot — nur damit die
-einseitige Bewegung sichtbar wird. Ohne Symmetrie und bei mehreren Vertices gilt das
-Production-Verhalten (Mittelpunkt des Ziels). Der Behelf fällt weg, sobald es den echten Pivot gibt.
+**Seit S2 (2026-10-03):** Rotate/Scale sind symmetrisch (siehe „Manuelle Prüfung S2"). Der
+S1-Behelfs-Pivot (Ursprung) ist entfernt; das Gate findet unter W/E/R/C kein nicht unterstützendes
+Tool mehr, der Code bleibt, weil das E5-Verdikt noch offen ist. Die Schritte 3–4 oben gelten damit
+nur noch mit einem (in Tests simulierten) nicht unterstützenden Tool.
 
 Verdikt (KEEP-BLOCK / KEEP-MARK / ITERATE / UNKNOWN): steht aus.
 
@@ -304,6 +332,7 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Move scharf schalten (Ziel: Auswahl, sonst Hover) | W (gedrückt halten) | `Move` | Artist Manu 2026-09-27 (wie App, WP-06 B3), globaler Default (Fallback) |
 | Move bewegen / übernehmen | Mausbewegung bei gehaltenem W (keine Maustaste) / W loslassen | — (AD-016 hold-key-hover, `MoveTool`) | Artist Manu 2026-09-27 |
 | Rotate / Scale scharf schalten (Ziel wie Move) | E / R (gedrückt halten), Maus bewegen, loslassen übernimmt | `Rotate` / `Scale` | globaler Default (Fallback), AD-016 hold-key-hover — WP-SYM-LAB-02 S1 |
+| Constraint für Rotate/Scale (Toggle, ab nächster Geste) | X / Y / Z, Shift+X/Y/Z (Ebene) | `ConstrainAxis*` / `ConstrainPlane*` | globaler Default (Fallback), WP-SYM-LAB-02 S2 |
 | E5-Modus MARK ↔ BLOCK (nur Lab-Zustand) | Shift+B | `SymmetryGateMode` (Lab-lokal) | Lab-Override — Artist E5 test |
 | Re-Symmetrize: Vorschau öffnen / ausführen | M / M erneut | `ReSymmetrize` (Lab-lokal) | Lab-Override — Artist A7 |
 | Knife starten | C | `Knife` (Lab-lokal) | Lab-Override — Artist A8, E23 |

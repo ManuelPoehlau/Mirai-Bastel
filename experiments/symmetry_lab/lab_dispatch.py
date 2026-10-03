@@ -81,6 +81,7 @@ from enum import Enum, Flag, auto
 from typing import Optional
 
 from core import MoveOperation, RotateOperation, ScaleOperation, VertexId
+from core.operations.transform import SeamConstraintError
 from mirai.application import Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
@@ -97,7 +98,7 @@ from .lab_knife import KnifeRejected, LabKnifeTool
 from .lab_knife_pick import knife_pick
 from .lab_knife_preview import KnifeHoverPreview, knife_hover_preview
 from .lab_resymmetrize import ResymmetrizeRejected, ResymPlan, apply_plan, plan_resymmetrize
-from .lab_symmetry import ORIGIN, cycle_symmetry
+from .lab_symmetry import cycle_symmetry
 
 #: Wert und Messart (Manhattan-Summe der Drag-Deltas) wie
 #: `playground/selector.py::CLICK_THRESHOLD` (Stand `47f821b`).
@@ -110,6 +111,16 @@ ZOOM_OUT_FACTOR = 1.1
 PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
 #: Hinweis, wenn während einer Knife-Session ein anderes Command kommt (E24).
 KNIFE_HINT = "Knife aktiv — Befehl ignoriert"
+#: Constraint-Tasten (X/Y/Z, Shift+X/Y/Z = Ebene) → `space` der Tools (wie `mirai.application`).
+CONSTRAINT_SPACES = {
+    cmd.CONSTRAIN_AXIS_X: "x",
+    cmd.CONSTRAIN_AXIS_Y: "y",
+    cmd.CONSTRAIN_AXIS_Z: "z",
+    cmd.CONSTRAIN_PLANE_XY: "xy",
+    cmd.CONSTRAIN_PLANE_XZ: "xz",
+    cmd.CONSTRAIN_PLANE_YZ: "yz",
+}
+
 #: Modale Transform-Commands (AD-016 hold-key-hover) → (Statuszeilen-Label, Operation).
 #: Nur die Paarung Tool↔Operation; ob gespiegelt wird, liest das Gate am Klassenattribut
 #: `supports_symmetry` der Operation (AD-SYM-02 §2.3) — keine Liste unterstützter Tools.
@@ -160,6 +171,8 @@ class LabDispatcher:
         self._move_armed = False
         #: Command des scharfen Transforms (Move/Rotate/Scale); Move, wenn nichts scharf ist.
         self._move_command: str = cmd.MOVE
+        #: Sticky Achsen-/Ebenen-Constraint für Rotate/Scale (wie die App, B4.1); None = frei.
+        self._axis_constraint: Optional[str] = None
         #: E5-Gate-Modus (Lab-lokal, Default MARK).
         self._gate_mode = GateMode.MARK
         #: Taste, die Move scharf geschaltet hat (ihr Loslassen committet).
@@ -198,6 +211,17 @@ class LabDispatcher:
     @property
     def gate_mode(self) -> GateMode:
         return self._gate_mode
+
+    @property
+    def axis_constraint(self) -> Optional[str]:
+        return self._axis_constraint
+
+    @property
+    def constraint_label(self) -> str:
+        space = self._axis_constraint
+        if space is None:
+            return "frei"
+        return space.upper() if len(space) == 1 else f"{space.upper()}-Ebene"
 
     @property
     def transform_label(self) -> str:
@@ -278,13 +302,17 @@ class LabDispatcher:
         if command == KNIFE:
             self._start_knife()
             return True
-        if command not in (SYMMETRY_CYCLE, SYMMETRY_GATE_MODE, cmd.UNDO, cmd.REDO) and (
-            command not in TRANSFORMS
+        if (
+            command not in (SYMMETRY_CYCLE, SYMMETRY_GATE_MODE, cmd.UNDO, cmd.REDO)
+            and command not in TRANSFORMS
+            and command not in CONSTRAINT_SPACES
         ):
             return False
         if self.move_state is MoveState.DRAGGING:
             return True  # die laufende Geste besitzt den Input
-        if command == SYMMETRY_GATE_MODE:
+        if command in CONSTRAINT_SPACES:
+            self._toggle_constraint(CONSTRAINT_SPACES[command])
+        elif command == SYMMETRY_GATE_MODE:
             self._cycle_gate_mode()
         elif command == SYMMETRY_CYCLE:
             axis = cycle_symmetry(self.app.scene)
@@ -490,6 +518,12 @@ class LabDispatcher:
 
     # -- Move ---------------------------------------------------------------
 
+    def _toggle_constraint(self, space: str) -> None:
+        """Dieselbe Taste erneut → frei, eine andere ersetzt. Gilt ab der nächsten
+        Geste (der Tool-`space` ist ab `begin()` fix); nur Rotate/Scale lesen ihn."""
+        self._axis_constraint = None if self._axis_constraint == space else space
+        self._mark(Change.STATUS, f"Constraint: {self.constraint_label}")
+
     def _cycle_gate_mode(self) -> None:
         """Shift+B: MARK ↔ BLOCK. Ändert nur Lab-Zustand, nie Mesh oder History."""
         self._gate_mode = GateMode.BLOCK if self._gate_mode is GateMode.MARK else GateMode.MARK
@@ -550,12 +584,6 @@ class LabDispatcher:
         self._move_target = None
         self._move_target_label = None
 
-    def _single_vertex_stopgap_pivot(self) -> bool:
-        return (
-            self.app.scene.mesh.symmetry_definition is not None
-            and len(self._move_target) == 1
-        )
-
     def _move_step(self, dx: float, dy: float) -> None:
         """Eine Mausbewegung bei gehaltenem W. Die erste nicht leere Bewegung
         startet die Interaktion (keine Schwelle, AD-016)."""
@@ -571,12 +599,22 @@ class LabDispatcher:
                 # MoveTool liest die Symmetrie selbst aus dem Mesh.
                 "vertex_ids": set(self._move_target),
             }
-            if self._move_command != cmd.MOVE and self._single_vertex_stopgap_pivot():
-                # Lab-Behelf bis zum freien Pivot (ToDo): ein Einzel-Vertex ist sein
-                # eigener Mittelpunkt, Rotate/Scale bewegten ihn nicht — E5 wäre
-                # nicht sichtbar. Nur bei Symmetrie an; ohne Symmetrie wie Production.
-                context["pivot"] = ORIGIN
-            manager.begin_current_interaction(context)
+            if self._move_command != cmd.MOVE:
+                # Rotate/Scale kennen den sticky Constraint (wie die App); Move bleibt
+                # unverändert. Der Symmetrie-Pivot (Auswahl ∪ Partner) kommt vom Tool.
+                context["space"] = self._axis_constraint
+            try:
+                manager.begin_current_interaction(context)
+            except SeamConstraintError as exc:
+                # INV-8: sichtbar ablehnen, vor der ersten Bewegung, nie still driften.
+                label = self.transform_label
+                self._disarm_move()
+                self._mark(
+                    Change.SELECTION | Change.HOVER,
+                    f"{label}: abgelehnt — {exc} (Constraint: {self.constraint_label})",
+                )
+                self._refresh_hover()
+                return
             self._move_begun = True
         manager.update(dx=dx, dy=dy, width=self.width, height=self.height)
         self._mark(Change.MESH | Change.SELECTION)

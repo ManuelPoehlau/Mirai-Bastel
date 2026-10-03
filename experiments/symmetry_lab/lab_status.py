@@ -45,6 +45,8 @@ def status_text(
     parts.append(move_part)
     if report.axis is not None:
         parts.append(f"E5: {dispatcher.gate_mode.value}")
+    if dispatcher.axis_constraint is not None:
+        parts.append(f"Constraint: {dispatcher.constraint_label}")
     knife_part = knife_text(dispatcher)
     if knife_part:
         parts.append(knife_part)

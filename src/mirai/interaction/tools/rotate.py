@@ -35,6 +35,7 @@ import math
 from typing import Any
 
 from core import OperationContext, RotateOperation
+from core.operations.transform import rotation_keeps_plane
 
 from .transform import TransformTool, _resolve_space
 
@@ -115,6 +116,11 @@ class RotateTool(TransformTool):
             self._axis = tuple(space)
         self._drag_pixels = 0.0
         self._applied_angle = 0.0
+        self._seam_refusal_message = (
+            "Rotation um diese Achse würde den Seam-Vertex von der Ebene lösen "
+            "(nur Achse parallel zur Ebenennormale)"
+        )
+        self._refuse_if_seam_unsafe(lambda normal: rotation_keeps_plane(self._axis, normal))
 
     def _on_update(self, dx: float, dy: float, width: int, height: int) -> None:
         # Zielwinkel aus kumulierter Pixel-Distanz → inkrementeller Schritt.

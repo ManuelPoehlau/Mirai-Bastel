@@ -240,11 +240,10 @@ class SupportsSymmetryFlagTests(unittest.TestCase):
     def test_move_supports_symmetry(self):
         self.assertTrue(MoveOperation.supports_symmetry)
 
-    def test_rotate_and_scale_do_not_support_symmetry_yet(self):
-        """Not in scope (Handoff §4): Rotate/Scale symmetrisch bleibt einem
-        späteren Slice vorbehalten — beide melden weiterhin False."""
-        self.assertFalse(RotateOperation.supports_symmetry)
-        self.assertFalse(ScaleOperation.supports_symmetry)
+    def test_rotate_and_scale_support_symmetry(self):
+        """WP-SYM-LAB-02 S2: Rotate/Scale sind symmetrisch (AD-SYM-02 §2.4)."""
+        self.assertTrue(RotateOperation.supports_symmetry)
+        self.assertTrue(ScaleOperation.supports_symmetry)
 
     def test_queryable_before_any_instance_exists(self):
         """Klassenattribut — abfragbar ohne begin(), ohne Instanz."""

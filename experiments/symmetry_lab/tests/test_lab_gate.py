@@ -1,5 +1,11 @@
 """E5-Gate (WP-SYM-LAB-02 S1): Rotate/Scale unter Symmetrie, MARK vs. BLOCK, ohne Fenster.
 
+Seit S2 sind Rotate/Scale symmetrisch; das Gate findet unter W/E/R/C kein nicht unterstützendes
+Tool mehr (E5-Verdikt noch offen, Code bleibt). Die Gate-Tests simulieren ein solches Tool, indem
+sie das Klassenflag `supports_symmetry` der Rotate-/Scale-Operation per Monkeypatch auf False
+setzen (Fixture `unsupported`) - das Gate ist ein Lab-Versprechen über die Meldung/Blockade; die
+Bewegung selbst bleibt die des Tools.
+
 Pattern wie `test_lab_move.py`. Gelesen wird `supports_symmetry` an der Operation-Klasse
 (AD-SYM-02 §2.3); der Monkeypatch-Test belegt, dass keine Tool-Liste dahintersteckt.
 """
@@ -37,6 +43,12 @@ def app():
     apply_lab_bindings(app.bindings)
     load_asset_into(app, "subd_cube")
     return app
+
+
+@pytest.fixture
+def unsupported(monkeypatch):
+    monkeypatch.setattr(RotateOperation, "supports_symmetry", False)
+    monkeypatch.setattr(ScaleOperation, "supports_symmetry", False)
 
 
 @pytest.fixture
@@ -126,7 +138,7 @@ def test_symmetry_off_no_target_rejected(app, dispatcher):
 
 
 @pytest.mark.parametrize("key,label", [(KEY_E, "Rotate"), (KEY_R, "Scale")])
-def test_mark_runs_one_sided_with_message_and_one_undo_step(app, dispatcher, key, label):
+def test_mark_runs_one_sided_with_message_and_one_undo_step(app, dispatcher, unsupported, key, label):
     mesh = app.scene.mesh
     vid, partner = paired(app)
     others = sorted((v for v in mesh.all_vertex_ids() if v not in (vid, partner)), key=int)[:2]
@@ -145,7 +157,6 @@ def test_mark_runs_one_sided_with_message_and_one_undo_step(app, dispatcher, key
     dispatcher.key_release(key)
 
     assert mesh.vertex_position(vid) != p0
-    assert mesh.vertex_position(partner) == q0
     assert dispatcher.message.endswith("(einseitig)")
     assert len(app.history) == before + 1
     dispatcher.key(CTRL_Z)
@@ -153,7 +164,7 @@ def test_mark_runs_one_sided_with_message_and_one_undo_step(app, dispatcher, key
     assert len(app.history) == before
 
 
-def test_mark_hides_partner_marker_only_while_armed(app, dispatcher):
+def test_mark_hides_partner_marker_only_while_armed(app, dispatcher, unsupported):
     vid, _ = paired(app)
     app.scene.selection.set({vid})
     assert dispatcher.one_sided_active is False
@@ -167,7 +178,7 @@ def test_mark_hides_partner_marker_only_while_armed(app, dispatcher):
 
 
 @pytest.mark.parametrize("key,label", [(KEY_E, "Rotate"), (KEY_R, "Scale")])
-def test_block_refuses_to_arm_and_leaves_no_history(app, dispatcher, key, label):
+def test_block_refuses_to_arm_and_leaves_no_history(app, dispatcher, unsupported, key, label):
     dispatcher.key(SHIFT_B)
     assert dispatcher.gate_mode is GateMode.BLOCK
     mesh = app.scene.mesh
@@ -238,54 +249,25 @@ def test_mode_switch_is_lab_state_only(app, dispatcher):
 
 
 def test_gate_reads_class_attribute(app, dispatcher, monkeypatch):
-    assert RotateOperation.supports_symmetry is False and ScaleOperation.supports_symmetry is False
+    assert RotateOperation.supports_symmetry is True  # S2: unterstützt, also kein Gate
     assert MoveOperation.supports_symmetry is True
-    mesh = app.scene.mesh
     vid, partner = paired(app)
     app.scene.selection.set({vid})
 
-    # Rotate gilt als unterstützend → kein Gate, keine Warnung.
-    monkeypatch.setattr(RotateOperation, "supports_symmetry", True)
     dispatcher.key(KEY_E)
     assert dispatcher.message.startswith("Rotate scharf")
     assert dispatcher.one_sided_active is False
     dispatcher.key(ESC)
 
-    # Move gilt als nicht unterstützend → Gate greift, BLOCK verweigert W.
+    # Klassenflag auf False → Gate greift für genau dieses Tool, ohne Tool-Liste.
+    monkeypatch.setattr(RotateOperation, "supports_symmetry", False)
+    dispatcher.key(KEY_E)
+    assert dispatcher.message == WARNING.format("Rotate")
+    dispatcher.key(ESC)
+
+    # Move gilt als nicht unterstützend → BLOCK verweigert W.
     monkeypatch.setattr(MoveOperation, "supports_symmetry", False)
     dispatcher.key(SHIFT_B)
     dispatcher.key(KEY_W)
     assert dispatcher.move_state is MoveState.READY
     assert dispatcher.message.startswith("Symmetrie aktiv — Move spiegelt nicht")
-
-
-# -- Behelfs-Pivot für Einzel-Vertex (bis zum freien Pivot) ---------------------
-
-
-@pytest.mark.parametrize("key", [KEY_E, KEY_R])
-def test_single_vertex_visibly_changes_under_symmetry_partner_stays(app, dispatcher, key):
-    mesh = app.scene.mesh
-    vid, partner = paired(app)
-    app.scene.selection.set({vid})
-    p0, q0 = mesh.vertex_position(vid), mesh.vertex_position(partner)
-    before = len(app.history)
-    dispatcher.key(key)
-    move_mouse(dispatcher)
-    dispatcher.key_release(key)
-    assert mesh.vertex_position(vid) != p0
-    assert mesh.vertex_position(partner) == q0
-    assert len(app.history) == before + 1
-
-
-@pytest.mark.parametrize("key", [KEY_E, KEY_R])
-def test_single_vertex_without_symmetry_stays_production(app, dispatcher, key):
-    symmetry_off(dispatcher)
-    vid = min(app.scene.mesh.all_vertex_ids())
-    app.scene.selection.set({vid})
-    p0 = app.scene.mesh.vertex_position(vid)
-    before = len(app.history)
-    dispatcher.key(key)
-    move_mouse(dispatcher)
-    dispatcher.key_release(key)
-    assert app.scene.mesh.vertex_position(vid) == p0
-    assert len(app.history) == before

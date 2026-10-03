@@ -292,6 +292,10 @@ Jeweils: scheinbar einfache V1-Entscheidung → warum sie später teuer wird →
   - Führende Seite beim Modellieren? (E1/E6)
   - Seam-Schutz hart oder mit Übergangszone? (E2)
   - Nicht unterstützte Tools blockieren oder nur markieren? (E5)
+- **Symmetrischer Pivot (Artist-Beobachtung 2026-10-03, WP-SYM-LAB-02 S2):** Mit Symmetrie
+  „fühlt sich" ein einzelner Vertex wie zwei an; ein Pivot auf der Spiegelebene macht Rotate/Scale
+  erst sinnvoll. Kandidat im Lab: Zentroid über Auswahl ∪ Partner (Paarmitte) — Verdikt des Artists
+  über den S2-Test offen; freier Pivot bleibt ToDo.
 - **Priorität:** Connect oder Knife als V1-Pfad-Fall? Vorschlag Connect (AD-017-Kontext), aber das entscheidet der Artist. Artist-Entscheidung 2026-09-25: Knife (A8, WP-SYM-LAB-01 Slice 6).
 - **Referenzzustand:** Auf welcher Form wird Korrespondenz später berechnet — Rest, Basis, Modellierzustand? Relevant erst in V3, aber V1 soll es nicht ausschließen.
 - **ARCH-02-Schnittstelle:** Reicht „eine Absicht mit zwei Seiten" als Semantik, oder braucht Remapping mehr? Offen.
