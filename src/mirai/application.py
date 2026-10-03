@@ -313,6 +313,10 @@ class Application:
         # host (the Symmetry Lab, H2-R6). None = nothing is refused;
         # `src/main.py` never sets it.
         self.command_gate: CommandGate | None = None
+        # H2 (same addendum): pauses the selection hover while a host's modal
+        # interaction is open (the Lab's Re-Symmetrize preview). Backing field,
+        # because `viewport` is None until `init_scene()`; see `hover_suspended`.
+        self._hover_suspended: bool = False
 
         # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
         # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
@@ -1040,6 +1044,28 @@ class Application:
             return "knife"
         return None
 
+    @property
+    def hover_suspended(self) -> bool:
+        """H2 (AD-013 H2 addendum, review CLAUDE-001 F3): while True the
+        selection hover stays cleared on every hover path (motion, zoom, the
+        refreshes after Undo/Redo, commit, cancel and `apply_mesh_change`),
+        because they all go through `_update_hover`. The cursor is still
+        tracked. Default False; `src/main.py` never sets it. The Knife hover
+        is not affected."""
+        return self._hover_suspended
+
+    @hover_suspended.setter
+    def hover_suspended(self, value: bool) -> None:
+        value = bool(value)
+        if value == self._hover_suspended:
+            return
+        self._hover_suspended = value
+        if value:
+            self._set_hovered(None)
+        else:
+            # Re-pick at the last cursor, as after a zoom.
+            self._refresh_hover()
+
     def key_press(self, input: Input) -> bool:
         """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
         (GLOBAL; während einer Knife-Session zuerst KNIFE_CONTEXT). True = der
@@ -1521,6 +1547,8 @@ class Application:
         # Hover im aktiven Modus: Vertex (B2b), Edge oder Face (B5b).
         if self.viewport is None:
             return False
+        if self._hover_suspended:
+            return self._set_hovered(None)
         return self._set_hovered(self._pick(x, y))
 
     def _pick(self, x: float, y: float):

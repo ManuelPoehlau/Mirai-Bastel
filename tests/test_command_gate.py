@@ -7,7 +7,7 @@ Slice 1b, `hover_suspended` and its T-H in Slice 3):
 - T-R3   a refused key and a refused click return False, post the text
          (`status_serial` + 1, also for a repeated identical refusal); unbound
          input is never refused; the gate does not act inside a Knife session
-- T-R5a  `Application()` has `command_gate is None`
+- T-R5a  `Application()` has `command_gate is None` and `hover_suspended is False`
 - T-R5b  AST guard: `src/main.py` writes no gate data and calls neither
          `apply_mesh_change` nor `set_status` (nor `add_overlay`, plan §4.4)
 - T-R5c  pass-through run of every `tests/test_application_*` with an inert
@@ -114,8 +114,11 @@ def test_gate_value_is_immutable_data():
 
 
 def test_default_gate_is_none():
-    """T-R5a: the default is inert (`hover_suspended` arrives with Slice 3)."""
-    assert Application().command_gate is None
+    """T-R5a: the default is inert: no gate, hover not suspended (Slice 3; more in
+    `tests/test_app_hover_suspended.py`)."""
+    app = Application()
+    assert app.command_gate is None
+    assert app.hover_suspended is False
 
 
 # -- T-R3 -----------------------------------------------------------------------
