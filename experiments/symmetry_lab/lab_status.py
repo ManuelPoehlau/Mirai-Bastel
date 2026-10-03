@@ -39,10 +39,12 @@ def status_text(
         if report.ambiguous:
             unpaired += f", mehrdeutig: {len(report.ambiguous)}"
         parts.append(unpaired)
-    move_part = f"Move: {dispatcher.move_state.value}"
+    move_part = f"{dispatcher.transform_label}: {dispatcher.move_state.value}"
     if dispatcher.move_target_label:
         move_part += f" ({dispatcher.move_target_label})"
     parts.append(move_part)
+    if report.axis is not None:
+        parts.append(f"E5: {dispatcher.gate_mode.value}")
     knife_part = knife_text(dispatcher)
     if knife_part:
         parts.append(knife_part)

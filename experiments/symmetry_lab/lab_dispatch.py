@@ -80,13 +80,19 @@ from dataclasses import dataclass
 from enum import Enum, Flag, auto
 from typing import Optional
 
-from core import VertexId
+from core import MoveOperation, RotateOperation, ScaleOperation, VertexId
 from mirai.application import Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
 
-from .lab_bindings import KNIFE, RESYMMETRIZE, SYMMETRY_CYCLE, SYMMETRY_LAB_CONTEXT
+from .lab_bindings import (
+    KNIFE,
+    RESYMMETRIZE,
+    SYMMETRY_CYCLE,
+    SYMMETRY_GATE_MODE,
+    SYMMETRY_LAB_CONTEXT,
+)
 from .lab_knife import KnifeRejected, LabKnifeTool
 from .lab_knife_pick import knife_pick
 from .lab_knife_preview import KnifeHoverPreview, knife_hover_preview
@@ -104,6 +110,21 @@ ZOOM_OUT_FACTOR = 1.1
 PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
 #: Hinweis, wenn während einer Knife-Session ein anderes Command kommt (E24).
 KNIFE_HINT = "Knife aktiv — Befehl ignoriert"
+#: Modale Transform-Commands (AD-016 hold-key-hover) → (Statuszeilen-Label, Operation).
+#: Nur die Paarung Tool↔Operation; ob gespiegelt wird, liest das Gate am Klassenattribut
+#: `supports_symmetry` der Operation (AD-SYM-02 §2.3) — keine Liste unterstützter Tools.
+TRANSFORMS = {
+    cmd.MOVE: ("Move", MoveOperation),
+    cmd.ROTATE: ("Rotate", RotateOperation),
+    cmd.SCALE: ("Scale", ScaleOperation),
+}
+
+
+class GateMode(Enum):
+    """Lab-lokaler E5-Modus für Tools ohne `supports_symmetry` bei aktiver Symmetrie."""
+
+    MARK = "MARK"
+    BLOCK = "BLOCK"
 
 
 class Change(Flag):
@@ -137,6 +158,10 @@ class LabDispatcher:
         self.height = height
         self._gesture: Optional[_Gesture] = None
         self._move_armed = False
+        #: Command des scharfen Transforms (Move/Rotate/Scale); Move, wenn nichts scharf ist.
+        self._move_command: str = cmd.MOVE
+        #: E5-Gate-Modus (Lab-lokal, Default MARK).
+        self._gate_mode = GateMode.MARK
         #: Taste, die Move scharf geschaltet hat (ihr Loslassen committet).
         self._move_key: Optional[str] = None
         #: Erste Bewegung nach dem Scharfschalten erfolgt (`begin()` gelaufen).
@@ -169,6 +194,26 @@ class LabDispatcher:
         if self._move_begun:
             return MoveState.DRAGGING
         return MoveState.ARMED if self._move_armed else MoveState.READY
+
+    @property
+    def gate_mode(self) -> GateMode:
+        return self._gate_mode
+
+    @property
+    def transform_label(self) -> str:
+        """„Move" / „Rotate" / „Scale" für Statuszeile und Meldungen."""
+        return TRANSFORMS[self._move_command][0]
+
+    def _gated(self, command: str) -> bool:
+        """E5: Symmetrie an, aber die Operation des Commands spiegelt nicht."""
+        if self.app.scene.mesh.symmetry_definition is None:
+            return False
+        return not TRANSFORMS[command][1].supports_symmetry
+
+    @property
+    def one_sided_active(self) -> bool:
+        """Ein scharfer/laufender Transform läuft bei aktiver Symmetrie einseitig (MARK)."""
+        return self._move_armed and self._gated(self._move_command)
 
     @property
     def move_target_label(self) -> Optional[str]:
@@ -233,16 +278,20 @@ class LabDispatcher:
         if command == KNIFE:
             self._start_knife()
             return True
-        if command not in (SYMMETRY_CYCLE, cmd.MOVE, cmd.UNDO, cmd.REDO):
+        if command not in (SYMMETRY_CYCLE, SYMMETRY_GATE_MODE, cmd.UNDO, cmd.REDO) and (
+            command not in TRANSFORMS
+        ):
             return False
         if self.move_state is MoveState.DRAGGING:
             return True  # die laufende Geste besitzt den Input
-        if command == SYMMETRY_CYCLE:
+        if command == SYMMETRY_GATE_MODE:
+            self._cycle_gate_mode()
+        elif command == SYMMETRY_CYCLE:
             axis = cycle_symmetry(self.app.scene)
             self._mark(Change.MESH | Change.SELECTION, f"Symmetrie: {axis or 'aus'}")
-        elif command == cmd.MOVE:
-            if not self._move_armed:  # W gehalten (auch Key-Repeat): Ziel bleibt fest
-                self._arm_move(inp.value)
+        elif command in TRANSFORMS:
+            if not self._move_armed:  # Taste gehalten (auch Key-Repeat): Ziel bleibt fest
+                self._arm_move(inp.value, command)
         else:
             self._undo_redo(command)
         return True
@@ -254,13 +303,18 @@ class LabDispatcher:
             return False
         if inp.value != self._move_key:
             return False
+        label = self.transform_label
         if self._move_begun:
             command = self.app.tool_manager.commit()
-            message = "Move übernommen" if command is not None else "Move: keine Änderung"
+            message = f"{label} übernommen" if command is not None else f"{label}: keine Änderung"
+            if command is not None and self.one_sided_active:
+                message += " (einseitig)"
             changes = Change.MESH | Change.SELECTION
         else:
-            message = "Move: nur angetippt — nichts bewegt"
+            message = f"{label}: nur angetippt — nichts bewegt"
             changes = Change.STATUS
+        if self.one_sided_active:
+            changes |= Change.SELECTION | Change.HOVER
         self._disarm_move()
         self._mark(changes, message)
         self._refresh_hover()
@@ -274,15 +328,19 @@ class LabDispatcher:
             self._mark(Change.MESH | Change.HOVER, "Knife abgebrochen")
             return True
         state = self.move_state
+        label = self.transform_label
         if state is MoveState.DRAGGING:
             self.app.tool_manager.cancel()
             self._disarm_move()
-            self._mark(Change.MESH | Change.SELECTION, "Move abgebrochen")
+            self._mark(Change.MESH | Change.SELECTION, f"{label} abgebrochen")
             self._refresh_hover()
             return True
         if state is MoveState.ARMED:
+            changes = Change.STATUS
+            if self.one_sided_active:
+                changes |= Change.SELECTION | Change.HOVER
             self._disarm_move()
-            self._mark(Change.STATUS, "Move entschärft")
+            self._mark(changes, f"{label} entschärft")
             self._refresh_hover()
             return True
         return False
@@ -432,11 +490,24 @@ class LabDispatcher:
 
     # -- Move ---------------------------------------------------------------
 
-    def _arm_move(self, key: str) -> None:
+    def _cycle_gate_mode(self) -> None:
+        """Shift+B: MARK ↔ BLOCK. Ändert nur Lab-Zustand, nie Mesh oder History."""
+        self._gate_mode = GateMode.BLOCK if self._gate_mode is GateMode.MARK else GateMode.MARK
+        self._mark(Change.NONE, f"E5-Modus: {self._gate_mode.value}")
+
+    def _arm_move(self, key: str, command: str = cmd.MOVE) -> None:
         """A4/E7: Ziel-Regel — Auswahl nicht leer → Auswahl; sonst Hover; beides
         leer → ablehnen. Das Ziel wird hier einmal festgelegt (E7) und ändert
         sich bis Commit/Cancel nicht mehr, auch wenn sich Auswahl oder Hover
         danach ändern. Tool aktiv, `begin()` erst bei der ersten Bewegung."""
+        name = TRANSFORMS[command][0]
+        gated = self._gated(command)
+        if gated and self._gate_mode is GateMode.BLOCK:
+            self._mark(
+                Change.STATUS,
+                f"Symmetrie aktiv — {name} spiegelt nicht (BLOCK: {name} nicht gestartet)",
+            )
+            return
         selection = self.app.scene.selection
         if not selection.is_empty():
             target = frozenset(selection.vertices)
@@ -445,9 +516,10 @@ class LabDispatcher:
             target = frozenset({self._hover_vertex})
             label = f"Hover v{int(self._hover_vertex)}"
         else:
-            self._mark(Change.STATUS, "Move: keine Auswahl, kein Hover — nichts zu bewegen")
+            self._mark(Change.STATUS, f"{name}: keine Auswahl, kein Hover — nichts zu bewegen")
             return
-        self.app.dispatch_command(cmd.MOVE)
+        self.app.dispatch_command(command)
+        self._move_command = command
         self._move_armed = True
         self._move_key = key
         self._move_begun = False
@@ -458,7 +530,13 @@ class LabDispatcher:
         if self._hover_vertex is not None and self._hover_vertex in target:
             self._hover_vertex = None
             changes |= Change.HOVER
-        self._mark(changes, f"Move scharf — Maus bewegen, {key.upper()} loslassen übernimmt")
+        if gated:  # MARK: einseitig, Partner-Markierung ausblenden
+            self._mark(
+                changes | Change.SELECTION | Change.HOVER,
+                f"Symmetrie aktiv — {name} spiegelt nicht (läuft einseitig)",
+            )
+            return
+        self._mark(changes, f"{name} scharf — Maus bewegen, {key.upper()} loslassen übernimmt")
 
     def _disarm_move(self) -> None:
         if self._move_armed:
@@ -466,6 +544,7 @@ class LabDispatcher:
             # ToolManager würde sonst selbst canceln.
             self.app.tool_manager.deactivate()
         self._move_armed = False
+        self._move_command = cmd.MOVE
         self._move_key = None
         self._move_begun = False
         self._move_target = None

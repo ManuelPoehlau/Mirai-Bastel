@@ -15,6 +15,7 @@ from symmetry_lab.lab_bindings import (
     LAB_OVERRIDES,
     RESYMMETRIZE,
     SYMMETRY_CYCLE,
+    SYMMETRY_GATE_MODE,
     SYMMETRY_LAB_CONTEXT,
     apply_lab_bindings,
 )
@@ -27,6 +28,7 @@ RMB = Input("mouse", "RIGHT")
 WHEEL_UP = Input("wheel", "UP")
 WHEEL_DOWN = Input("wheel", "DOWN")
 SHIFT_S = Input("key", "s", frozenset({"shift"}))
+SHIFT_B = Input("key", "b", frozenset({"shift"}))
 Q = Input("key", "q")
 W = Input("key", "w")
 M = Input("key", "m")
@@ -98,7 +100,7 @@ def test_c_is_connect_in_global_and_lab_knife_in_symmetry_lab_context(bindings):
     assert bindings.command_for(C, SYMMETRY_LAB_CONTEXT) == KNIFE
 
 
-def test_key_overrides_are_shift_s_m_and_c():
+def test_key_overrides_are_shift_s_m_c_and_shift_b():
     # W/ESC/Ctrl+Z/Ctrl+Y sind globale Defaults (Fallback), keine Overrides —
     # seit 2026-09-27 bedient sich Move im Lab wie in der App (W, Q ungebunden).
     keys = [o for o in LAB_OVERRIDES if o.input.kind == "key"]
@@ -106,7 +108,9 @@ def test_key_overrides_are_shift_s_m_and_c():
         (SHIFT_S, SYMMETRY_CYCLE),
         (M, RESYMMETRIZE),
         (C, KNIFE),
+        (SHIFT_B, SYMMETRY_GATE_MODE),
     ]
     assert "SymmetryCycle" in keys[0].describe()
     assert "ReSymmetrize" in keys[1].describe()
     assert "Knife" in keys[2].describe()
+    assert "Artist E5 test" in keys[3].describe()

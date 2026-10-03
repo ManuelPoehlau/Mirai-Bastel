@@ -69,13 +69,15 @@ class SymmetryLabWindow(pyglet.window.Window):
 
     def _sync(self, changes: Change) -> None:
         mesh = self.app.scene.mesh
+        one_sided = self.dispatcher.one_sided_active
         if Change.MESH in changes:
             self._report = symmetry_report(mesh)
             self.renderer.rebuild_mesh(mesh, self._report)
         if changes & (Change.MESH | Change.SELECTION):
             selected = self.app.scene.selection.vertices
+            # E5 MARK: Der Partner bewegt sich nicht — keine Partner-Markierung.
             self.renderer.rebuild_highlight(
-                mesh, selected, mirrored_selection(mesh, selected)
+                mesh, selected, set() if one_sided else mirrored_selection(mesh, selected)
             )
         if changes & (Change.MESH | Change.HOVER):
             hovered = (
@@ -83,7 +85,9 @@ class SymmetryLabWindow(pyglet.window.Window):
                 if self.dispatcher.hover_vertex is not None
                 else set()
             )
-            self.renderer.rebuild_hover(mesh, hovered, mirrored_selection(mesh, hovered))
+            self.renderer.rebuild_hover(
+                mesh, hovered, set() if one_sided else mirrored_selection(mesh, hovered)
+            )
             self.renderer.rebuild_knife(mesh, self.dispatcher.knife, self.dispatcher.knife_hover)
         if changes & (Change.MESH | Change.PREVIEW):
             self.renderer.rebuild_preview(mesh, self.dispatcher.resym_plan)

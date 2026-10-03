@@ -26,6 +26,9 @@ den globalen Defaults und in `artist_input_truth.json` frei.
 Slice 7: `KNIFE` (Taste C, Artist A8) ist Lab-lokal. Die Production-Bindung
 von C (`Connect`) liegt in `TOPOLOGY_CONTEXT` und greift für
 `SYMMETRY_LAB_CONTEXT` nie (E23). Enter ist bewusst nicht belegt (A13).
+
+WP-SYM-LAB-02 S1 (E5): `SYMMETRY_GATE_MODE` (Shift+B) ist Lab-lokal. E/R (`Rotate`/`Scale`)
+sind globale Defaults und werden im Lab wie W/Move über AD-016 hold-key-hover bedient.
 """
 
 from __future__ import annotations
@@ -43,6 +46,8 @@ SYMMETRY_CYCLE = "SymmetryCycle"
 RESYMMETRIZE = "ReSymmetrize"
 #: C: gespiegelten Knife starten (Artist A8, Slice 7).
 KNIFE = "Knife"
+#: Shift+B: Gate-Modus MARK ↔ BLOCK für Tools ohne `supports_symmetry` (E5, WP-SYM-LAB-02 S1).
+SYMMETRY_GATE_MODE = "SymmetryGateMode"
 
 
 @dataclass(frozen=True)
@@ -94,6 +99,11 @@ LAB_OVERRIDES: tuple[LabOverride, ...] = (
         Input("key", "c"),
         KNIFE,
         "Artist A8 (2026-09-25)",
+    ),
+    LabOverride(
+        Input("key", "b", frozenset({"shift"})),
+        SYMMETRY_GATE_MODE,
+        "Artist E5 test",
     ),
 )
 

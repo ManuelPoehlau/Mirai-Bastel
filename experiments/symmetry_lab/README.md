@@ -1,6 +1,6 @@
 # Symmetry Lab (WP-SYM-LAB-01)
 
-Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 7** — das Lab zeigt
+Eigenständiges Forschungsfenster für die Symmetrie-Arbeit. **Stand: Slice 7 + E5-Harness (WP-SYM-LAB-02 S1)** — das Lab zeigt
 ein Mesh (shaded + Edges + Vertices), navigiert mit Orbit/Pan/Zoom, wählt per Klick einen
 Vertex aus, schaltet mit Shift+S die Symmetrie-Ebene durch (aus → X → Y → Z → aus), zeigt
 Ebene, Seam, Vertices ohne Partner und den gespiegelten Partner der Auswahl, zeigt den Vertex
@@ -65,6 +65,41 @@ beim Start keine `key:q`/`key:w`-Overrides (W fällt auf den globalen Default `M
 7. **Ctrl+Z** / **Ctrl+Y** → Move zurück / wieder.
 
 Verdikt (KEEP / ITERATE / REJECT / UNKNOWN): steht aus.
+
+### Manuelle Prüfung E5 (Manu, Windows) — offen, noch nicht geprüft
+
+**Artist-Verdikt: steht aus.** WP-SYM-LAB-02 S1, Experiment E5 / INV-8 (AD-SYM-02 §4). Bei aktiver
+Symmetrie verhält sich ein Tool, dessen Operation `supports_symmetry = False` hat (heute Rotate und
+Scale), je nach Lab-Modus so — **entschieden ist nichts**, das Lab macht beide Varianten vergleichbar:
+
+- **MARK** (Default): das Tool läuft einseitig wie in der App; die Statuszeile meldet
+  `Symmetrie aktiv — <Tool> spiegelt nicht (läuft einseitig)`; der Partner bewegt sich nicht und
+  seine Markierung ist währenddessen ausgeblendet. Ein Undo-Schritt.
+- **BLOCK**: das Tool wird nicht scharf, die Statuszeile nennt den Grund; kein History-Eintrag.
+
+Die Statuszeile zeigt bei aktiver Symmetrie den Modus (`E5: MARK` / `E5: BLOCK`). Shift+B schaltet
+nur diesen Lab-Zustand um, nie Mesh, History oder Undo/Redo. Das Gate liest das Klassenattribut
+`supports_symmetry` der Operation (keine Tool-Liste); Move (W) und Knife (C) sind in beiden Modi
+unverändert. Ohne Symmetrie verhalten sich E/R wie in der Production-App.
+
+1. `python experiments/symmetry_lab/run.py head_basemesh`, **Shift+S** → X.
+2. Einen Vertex an der Seite des Kopfes anklicken. **W halten**, Maus bewegen: Vertex und Partner
+   bewegen sich spiegelbildlich (Referenz: so fühlt sich „unterstützt" an).
+3. Denselben Vertex: **E halten**, Maus bewegen (MARK): nur dein Vertex dreht sich; Statuszeile
+   lesen. Loslassen, **Ctrl+Z**. Dasselbe mit **R**.
+4. **Shift+B** (BLOCK). **E halten**, Maus bewegen: nichts passiert, die Statuszeile nennt den
+   Grund. Dasselbe mit **R**.
+5. Frage: Womit würdest du im Alltag lieber arbeiten — Tool verweigert (BLOCK) oder läuft
+   einseitig mit Warnung (MARK)? Hast du die Statuszeile im MARK überhaupt bemerkt?
+
+**Bekannte Einschränkung (Stand S1):** Rotate/Scale drehen/skalieren um den Mittelpunkt des Ziels
+(Production-Verhalten, unverändert). Das Lab wählt nur *einen* Vertex, und ein einzelner Vertex ist
+sein eigener Mittelpunkt — E/R melden dann `keine Änderung` und bewegen nichts.
+Das Gate (Meldung, BLOCK, Partner-Markierung) ist davon unabhängig und sichtbar; die Bewegung in
+Schritt 3 ist es mit einem Einzel-Vertex nicht. Ein Pivot-Vorschlag für das Lab steht im
+S1-Bericht an den Artist.
+
+Verdikt (KEEP-BLOCK / KEEP-MARK / ITERATE / UNKNOWN): steht aus.
 
 ### Manuelle Prüfung Slice 7 (Manu, Windows) — offen, noch nicht geprüft
 
@@ -269,6 +304,8 @@ Start, Orbit/Pan/Zoom, Vertex-Klick wie beschrieben (laut Slice-3-Handoff). Zur 
 | Symmetrie durchschalten (aus → X → Y → Z → aus) | Shift+S | `SymmetryCycle` (Lab-lokal) | Lab-Override — Artist A2 |
 | Move scharf schalten (Ziel: Auswahl, sonst Hover) | W (gedrückt halten) | `Move` | Artist Manu 2026-09-27 (wie App, WP-06 B3), globaler Default (Fallback) |
 | Move bewegen / übernehmen | Mausbewegung bei gehaltenem W (keine Maustaste) / W loslassen | — (AD-016 hold-key-hover, `MoveTool`) | Artist Manu 2026-09-27 |
+| Rotate / Scale scharf schalten (Ziel wie Move) | E / R (gedrückt halten), Maus bewegen, loslassen übernimmt | `Rotate` / `Scale` | globaler Default (Fallback), AD-016 hold-key-hover — WP-SYM-LAB-02 S1 |
+| E5-Modus MARK ↔ BLOCK (nur Lab-Zustand) | Shift+B | `SymmetryGateMode` (Lab-lokal) | Lab-Override — Artist E5 test |
 | Re-Symmetrize: Vorschau öffnen / ausführen | M / M erneut | `ReSymmetrize` (Lab-lokal) | Lab-Override — Artist A7 |
 | Knife starten | C | `Knife` (Lab-lokal) | Lab-Override — Artist A8, E23 |
 | Knife: schneiden (Vertex oder Kante unter dem Cursor) | LMB ohne Modifier (Klick, während Knife aktiv) | — (Lab-Geste, `LabKnifeTool.click`) | Artist A8, E25/E29 |
