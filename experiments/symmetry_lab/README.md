@@ -16,6 +16,7 @@ Fenster spielbar: **C** startet den Knife, der Punkt unter dem Cursor und sein S
 dem Klick sichtbar (auch, wenn nicht gespiegelt werden kann), **LMB** schneidet, ein Klick auf den
 Hintergrund committet, **ESC** bricht ab. Slice 7 ist **noch nicht vom Artist geprüft**.
 Promotion nach `src/main.py`: zurückgestellt, siehe `docs/architecture/ROADMAP.md` §7, Eintrag 2026-10-02.
+Geplant (2026-10-03, noch nichts gebaut): Umbau des Labs auf den Production-Pfad (`Application` + Viewport V02) — [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md).
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
