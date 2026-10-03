@@ -36,9 +36,10 @@ import dataclasses
 import math
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from core import EdgeId, FaceId, HistoryStack, Scene, Selection, SelectionMode, VertexId
+from core.operations import MeshStateCommand
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.overlay import TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER
@@ -303,7 +304,8 @@ class Application:
         # einen eigenen Stack von (before, after)-Selection-Snapshots parallel
         # zu jedem `history.push()`, den sie selbst auslöst (Split/Edge
         # Connect/Vertex Connect in `_connect_command`, Transform-Commit in
-        # `key_release`; das sind aktuell die einzigen Aufrufer). `before` =
+        # `key_release`, Knife-Commit, seit WP-SYM-LAB-03 H3 auch
+        # `apply_mesh_change` für Änderungen eines Hosts). `before` =
         # Snapshot unmittelbar vor der Mutation, `after` = Snapshot danach
         # (die von `_connect_command` gesetzte Residue-Auswahl bzw. bei
         # Transformen dieselbe Auswahl, da Move/Rotate/Scale die Selection
@@ -990,6 +992,18 @@ class Application:
         """Sticky Achsen-/Ebenen-Constraint als `space`-String (None = frei)."""
         return self._axis_constraint
 
+    @property
+    def interaction_owner(self) -> str | None:
+        """Which of `Application`'s own interactions owns the keys right now
+        (AD-013 H2 addendum, H2-R2): `"transform"` while W/E/R is armed or
+        running, `"knife"` during a Knife session, else None. Camera gestures
+        (orbit, pan, zoom) own no keys and are never an owner."""
+        if self._transform_command is not None:
+            return "transform"
+        if self._knife is not None:
+            return "knife"
+        return None
+
     def key_press(self, input: Input) -> bool:
         """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
         (GLOBAL; während einer Knife-Session zuerst KNIFE_CONTEXT). True = der
@@ -1216,6 +1230,53 @@ class Application:
         if restored is not None:
             self._restore_selection(restored)
         self._prune_ghost_selection()
+
+    def apply_mesh_change(
+        self, description: str, mutate: Callable[[], set[VertexId] | None]
+    ) -> bool:
+        """The one entry for a mesh change made outside `Application`
+        (WP-SYM-LAB-03 H3, AD-013 H2 addendum, review CLAUDE-002 N1).
+
+        `mutate()` changes `scene.mesh` through core operations and returns
+        the moved vertex IDs (positions only) or None (topology changed).
+        Raises `RuntimeError` before anything changes while
+        `interaction_owner` is set (D3). If `mutate` raises, the mesh is
+        restored from the snapshot and the exception propagates (ID counters
+        stay forward, AD-001). An unchanged `export_state()` records nothing
+        and returns False. Otherwise: one `MeshStateCommand(description)`, the
+        selection-mirror entry (so Undo/Redo restores the selection, B6
+        follow-up), pick cache invalidated, viewport notified, hover
+        re-picked; returns True."""
+        owner = self.interaction_owner
+        if owner is not None:
+            raise RuntimeError(
+                f"apply_mesh_change({description!r}) while the {owner} interaction runs"
+            )
+        mesh = self.scene.mesh
+        selection_before = self._selection_snapshot()
+        before = mesh.export_state()
+        try:
+            moved = mutate()
+        except BaseException:
+            mesh.load_state(before)
+            raise
+        after = mesh.export_state()
+        if after == before:
+            return False
+        self.history.push(
+            MeshStateCommand(
+                mesh=mesh, before_state=before, after_state=after, description=description
+            )
+        )
+        self._record_selection_history(selection_before)
+        self._pick_cache.invalidate()
+        if self.viewport is not None:
+            if moved is None:
+                self.viewport.on_topology_changed()
+            else:
+                self.viewport.on_vertices_moved(set(moved))
+        self._refresh_hover()
+        return True
 
     def _selection_snapshot(self) -> tuple:
         """Momentaufnahme von Modus + Auswahl (kein Hover - der wird nach
