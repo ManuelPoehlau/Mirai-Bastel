@@ -424,10 +424,15 @@ open for everything else.
 
 ## Addendum (2026-10-03, WP-SYM-LAB-03 H2 — experiment input hook in `Application`)
 
-**Status:** PROPOSED. It becomes DECIDED only after an independent review (fresh agent,
-separate session) is archived unedited as
-`docs/archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md` and every finding
-is answered below. No `src` code for this hook exists before that.
+**Status:** PROPOSED — **revised 2026-10-03** after the first independent review
+([CLAUDE-001](../archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md),
+archived unedited; every finding is answered in § Review below). The revision adopts the
+reviewer's proposal **G** (data-only command gate) instead of the first draft's hook **F**,
+with the additions the review asks for. It deviates from G as proposed in one substantive
+point (D1; D2 and D3 only tighten, § Deviations from G), so it needs a **second independent
+review** before it can become
+DECIDED (archived as `docs/archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_002.md`).
+No `src` code for H2 exists before that.
 **Basis:** Artist decision (Manu, 2026-10-03): the Symmetry Lab must use the Production tools
 instead of its own renderer and input layer; Symmetry itself is not promoted (`src/main.py`
 gets no symmetry UX). Plan: `WP-SYM-LAB-03_REBASE_PLAN.md`, hook H2.
@@ -468,69 +473,261 @@ visible) and the Activation and Termination rule above.
 |---|---|---|
 | 0 | Keep the Lab's own dispatcher (status quo) | Not used: it is the drift source; every app input fix needs a Lab copy |
 | A | Subclass `Application` in the Lab and override `key_press`, `_execute_click`, `pointer_motion` | Not used: couples the experiment to private methods, so an `Application` refactor would change Lab behaviour without any signal. It is a fork of the interaction authority in disguise (I1, I3) |
-| B | A facade in front of `Application` at window level | Not used: blocking a select click but not an Alt+LMB orbit needs the click-vs-drag decision `PointerGestures` makes inside `Application`, so a facade would re-implement it. Workable for keys only |
+| B | A facade in front of `Application` at window level | Not used for pointers: blocking a select click but not an Alt+LMB orbit needs the click-vs-drag decision `PointerGestures` makes inside `Application`, so a facade would re-implement it. Workable for keys only — G uses exactly that part for the Lab's own keys |
 | C | `Application` resolves an "active context" and hands unknown commands to the Lab (fallback only) | Not used: adds commands but cannot pre-empt any. Needs 2 and 3 are not covered |
 | D | Promote the symmetry UX into `src/main.py` behind a flag | Not used: promotion is the Artist's decision and was deferred (ROADMAP §7, 2026-10-02); I7 |
 | E | A general extension/plugin system (command registry, event bus, overlay providers) | Not used: § Engineering Freedom and § Sequencing Principle above; INPUT_COMMAND_TOOL_CONTRACT §3 ("no complex hierarchical context framework without a demonstrated use case") |
-| **F** | **One optional hook object, consulted first at three existing call sites** | **Chosen** (below) |
+| F | One optional hook object (callback), consulted first at three call sites (`key_press`, `_execute_click`, `pointer_motion`) — the first draft of this addendum | **Not used** (below) |
+| **G** | **Data-only command gate in `Application` + Lab keys at window level** (review CLAUDE-001, F9) | **Chosen** (below), with the additions the review asks for and the deviations D1–D3 |
+
+**F is not used because** (review F1, F3, F4, F9):
+
+1. Its precedence relative to `Application`'s own gates exists only as the branch order
+   "hook first", so the rules had to restate `Application`'s gating — and the first draft
+   restated it wrongly: it made the hook back off during camera gestures, during which
+   `Application` gates no keys, so Undo and W ran under the open preview (F1, verified by the
+   reviewer's probe P1). G places the check *after* `Application`'s own routing, so precedence
+   is `Application`'s by construction.
+2. Its `pointer_motion` call site cannot pause hover: zoom and refreshes re-pick hover on paths
+   the hook never sees (F3, probe P2).
+3. A callback that receives raw events can do anything with them, so I1 and I3 were held only by
+   rules (R2, R4) that are hard to test and whose key predicate was undefined (F4, the AD-015
+   failure mode). G's `Application`-side contract is two lookups and one flag, tested as data.
+
+F would cover cases G cannot (see § Limits of G); none of them is a stated need, and needing
+one later is a new review of this addendum (H2-R6).
 
 ### Decision
 
-`Application` gets one optional attribute, the **input hook** (working name
-`input_hook`, default `None`). When it is set, `Application` consults it **first** at exactly
-three call sites. A hook method returns `True` = consumed (`Application` does nothing further
-for this event) or `False` = `Application` proceeds exactly as without a hook.
+H2 is a **command gate**, not a callback. `Application` calls no experiment code. It gets
+these additions, all inert by default (working names; the Python shape stays open):
 
-| Call site | Hook receives | When |
+| Addition | What | Where it acts |
 |---|---|---|
-| `key_press` | the raw `Input` | before `Application` resolves it, including before the Knife session routing |
-| `_execute_click` | the click command (`Select`, `SelectAdd`, …) and its position | after `PointerGestures` has decided that the gesture is a click |
-| `pointer_motion` | the cursor position | before hover update or transform step |
+| `command_gate` (default `None`) | One value holding `refused: dict[command, status text]` (block-list), `allowed: frozenset[command] \| None` (allow-list, `None` = no allow-list) and `not_allowed_text`. A command is refused if it is in `refused` (its text) or if `allowed` is set and does not contain it (`not_allowed_text`). Replaced as a whole on every Lab state change, never mutated in place | `key_press`: right after `command = self.bindings.command_for(input)` (`application.py:999`), i.e. after the Knife routing (`:997-998`) and before every branch. `_execute_click` (`:1440`): before `select_at`, for the click command. A refused event posts the text through `Application`'s own status (`status_serial` + 1) and returns `False`. An unbound input (`command is None`) is never refused |
+| `hover_suspended: bool` (default `False`) | Setting it `True` clears `selection.hovered` (viewport notified); while it is set, `_update_hover` (`:1388`) only keeps hover cleared; setting it `False` re-picks at the last cursor (`_refresh_hover`) | `_update_hover`, which every hover path goes through: motion, zoom (`:1340`), the refresh after Undo/Redo, commit, cancel and `record_mesh_change` |
+| `interaction_owner` (read-only) | `"transform"` while a transform is armed or running (`transform_command is not None`), `"knife"` while a Knife session runs (`knife_active`), else `None`. Camera gestures are **not** owners | Read by the Lab (H2-R2) |
+| `set_status(message)` (plan hook H4) | Public form of `_set_status` (`:1278`), same `status_serial` | The Lab's own refusals and messages |
+| `record_mesh_change(command, selection_before, moved=None)` (plan hook H3) | The one entry for a mesh change produced outside `Application`: `history.push`, the selection-mirror entry (`_record_selection_history`), pick-cache invalidation, viewport notification (`on_vertices_moved(moved)` or `on_topology_changed()`), `_refresh_hover()`. Raises (programming error) while `interaction_owner` is not `None` | Re-Symmetrize, the symmetry cycle |
 
-There are deliberately **no** hook calls on `key_release`, `pointer_press`/`pointer_drag`
-(drags and navigation), `pointer_release` other than through the click, `pointer_scroll` or
-`pointer_leave`. Releases and drags end interactions that `Application` started, so they
-stay with `Application` (I3, Activation and Termination).
+There are deliberately **no** gate checks in `key_release` (a refused press arms nothing, so
+its release is already a no-op, `:1036`), `pointer_press`/`pointer_drag`/`pointer_scroll`
+(navigation is never gated), `pointer_motion` (hover is handled by the flag; a transform step
+can only run for a transform the gate let `Application` arm), `pointer_leave`,
+`set_shift_held`, or `dispatch_command` (the Lab may not call it, H2-R4; `Application`'s
+internal calls happen after the gate).
 
-**Rules the hook must keep** (each is testable; the implementation slice tests each one):
+**Lab side (experiment code, window level).** The Lab's own keys are resolved before
+`Application` sees the event, through the one `BindingSet`:
 
-- **H2-R1 — one binding authority (I4, I5).** The hook resolves inputs only through
-  `app.bindings`, the one `BindingSet`, with its own named context (fallback GLOBAL). It
-  creates no second binding resolver. Its context entries are listed at start-up (I6).
-- **H2-R2 — start and end stay with their owner (I3, AD-015 runtime-state rule).** An
-  interaction the hook starts (the preview) is ended by the hook. An interaction
-  `Application` starts (armed or running transform, Knife session, pointer gesture) is never
-  ended, altered or stolen by the hook. While one runs, the hook consumes nothing except its
-  own commands, which it refuses visibly.
-- **H2-R3 — refusals are visible.** Whenever the hook consumes an app command in order to
-  refuse it, it posts a status message (through the public status setter, plan hook H4).
-  It never swallows input silently.
-- **H2-R4 — no capability fork (I1).** The hook does not re-implement anything
-  `Application` provides: no own gesture recognition, transform arming, picking for app
-  semantics or undo. It uses public `Application` API only, never private members.
-- **H2-R5 — Production is unchanged.** `src/main.py` sets no hook. With the hook `None`,
-  behaviour is identical (existing suites unchanged, plus a guard test that `src/main.py`
-  sets none).
-- **H2-R6 — one user, one hook.** One hook object, no list or registry. A second user
-  (another Lab, the Playground) needs its own review of this addendum; it does not get to
-  extend the hook silently.
+```text
+key press:   cmd = app.bindings.command_for(input, "symmetry_lab")   # GLOBAL fallback
+             cmd is a Lab command                -> the Lab handles it (H2-R2: refused visibly
+                                                    while app.interaction_owner is set)
+             preview open and cmd == Cancel      -> the Lab closes the preview          (D1)
+             otherwise                           -> app.key_press(input)
+key release, pointer events                      -> Application, unchanged
+```
+
+The Lab writes `command_gate` and `hover_suspended` only on its own state changes, from one
+static table (printed at start-up, H2-R3):
+
+| Lab state | `command_gate` | `hover_suspended` |
+|---|---|---|
+| symmetry off | `None` | `False` |
+| symmetry on, Slice 1 (before E5) | refused: `Connect` → `Symmetrie aktiv — C spiegelt nicht` | `False` |
+| symmetry on, E5 MARK (Slice 4) | `None` (one-sided C allowed, HUD marks it) | `False` |
+| symmetry on, E5 BLOCK (Slice 4) | refused: `Connect` and every transform command E5 counts as unsupported (`supports_symmetry`) | `False` |
+| Re-Symmetrize preview open (Slice 3) | allowed: display commands only (`CycleDisplayMode`, `ToggleWireframeOverlay`, `SetShaded`, `SetFlatShaded`, `SetWireframe`); `not_allowed_text` = `Vorschau aktiv — Befehl ignoriert` | `True` |
+
+Every other command, including any app command added in future, is refused during the preview
+by default (F7). Navigation needs no entry: drags and the wheel are never gated.
+
+**Precondition:** H3 (`record_mesh_change`) and H4 (`set_status`) land with or before the gate
+(Slice 1). Without H4 the Lab's own refusals could not be visible (F10); without H3 a Lab
+mutation desynchronises Undo (F2).
+
+### Deviations from G as proposed
+
+G as proposed in review CLAUDE-001 F9, plus the review's own change requests (F2 commit entry,
+F4 `interaction_owner`, F6/F15 exact Lab context with start-up assert, F7 allow-list, F8
+start-up listing, F10 status setter), is adopted. This revision differs from it here:
+
+- **D1 — Esc closes the preview at window level.** G routes only Lab-context commands to the
+  Lab, so Esc (GLOBAL `Cancel`) would reach `Application`, be refused by the preview allow-list,
+  and the preview could not be closed by Esc (S5 KEEP: M / M / Esc). Esc cannot get a Lab-context
+  entry: it is bound in GLOBAL (start-up assert, F15), and a permanent Lab Esc would shadow
+  `Application`'s Cancel for armed transforms. So the window step takes the resolved `Cancel`,
+  and only while the preview is open. This is safe: while the preview is open,
+  `interaction_owner` is `None` (H2-R2), so `Application`'s `_cancel` would be a no-op
+  ("idle → nothing", `:1145-1149`); nothing `Application` owns is ended or stolen. Meaning still
+  comes from the one `BindingSet` (I4). Test T-R2e.
+- **D2 — the start-up assert also covers the KNIFE context.** The Lab step runs before the Knife
+  routing, so a Lab key would shadow a future KNIFE binding as well as a GLOBAL one (F15 names
+  GLOBAL only). Stricter than proposed.
+- **D3 — `record_mesh_change` raises while `interaction_owner` is set.** F2 names the entry; the
+  guard makes H2-R2 ("no Lab mutation during an `Application` interaction") fail loudly in code
+  instead of holding only by rule.
+
+Because of D1 (D2 and D3 only tighten), this revision gets a **second independent review**
+before it becomes DECIDED.
+
+### Limits of G
+
+G refuses by command identity only. It does not cover: refusals that depend on more than the
+command (click position, part of the selection, mirror side); refusing input inside a Knife
+session (the check sits after the Knife routing); a Lab reaction that must run *instead of* an
+`Application` command with the original event (D1 is the one exception, and only for an idle
+`Application`). None is a stated need. Any of them reopens this addendum (H2-R6).
+
+### Rules
+
+- **H2-R1 — one binding authority (I4, I5, I6).** The Lab resolves its keys only through
+  `app.bindings`, the one `BindingSet`, with its context `symmetry_lab` and GLOBAL fallback, and
+  creates no second resolver. The Lab context holds **exactly three entries, all keys:**
+  Shift+S → `SymmetryCycle`, M → `ReSymmetrize`, Shift+B → `SymmetryGateMode`. There are no
+  pointer entries: `Application` resolves pointer input without a context (`application.py:266`,
+  `pointer.py:94-95`), so pointer overrides are impossible under H2 (the current Lab's `C`,
+  Alt+LMB, Shift+LMB, RMB and MMB entries are dropped, F6). At start-up the Lab asserts that each
+  of the three inputs resolves to `None` in GLOBAL and in KNIFE (user and default layers) and
+  fails loudly otherwise (F15, D2). The three entries are printed at start-up. The only app
+  command the Lab interprets is `Cancel`, and only while the preview is open (D1).
+- **H2-R2 — start and end stay with their owner (I3, AD-015 runtime-state rule).**
+  *Key-owning interactions* are: `Application`'s armed or running transform and its Knife
+  session (exactly `app.interaction_owner is not None`), and the Lab's Re-Symmetrize preview.
+  **Camera gestures (orbit, pan, zoom) own no keys:** `Application` does not gate keys during
+  them (`application.py:993-1029`), and the command gate applies during them as at any other
+  time (F1). Consequences:
+  - The Lab opens the preview only while `interaction_owner` is `None`, and only the Lab ends it
+    (M executes, Esc cancels, closing the window ends it). While it is open, the gate allows only
+    display commands, so `Application` cannot start a key-owning interaction; the two never
+    overlap.
+  - While `interaction_owner` is not `None`, the Lab executes none of its commands (refused
+    visibly) and writes neither the gate nor the hover flag nor history. The gate is therefore
+    constant for the whole lifetime of an `Application` interaction: it can stop `Application`
+    from *starting* something, but never ends, alters or steals what runs.
+  - Outside the preview the gate refuses only commands that start an interaction or change the
+    mesh (Connect; transform commands in BLOCK). It never refuses `Cancel`.
+  - Lab mesh changes go through `record_mesh_change` only (D3 enforces the timing).
+- **H2-R3 — refusals are visible and listed (I6).** Every refused event posts a status message
+  (`status_serial` + 1, also for a repeated identical text): `Application` does it for the gate,
+  the Lab through `set_status` (H4) for its own commands. Nothing is swallowed silently. The
+  gate table per Lab state (above) is printed at start-up next to the three binding entries,
+  because a refusal deviates from the Artist language like a rebinding does (F8).
+  **Return contract (F13):** refused input returns `False` ("the model did not change"), like
+  `Application`'s own gates (`:1011-1012`, `:1017-1018`); a Lab command that ran returns `True`,
+  a refused Lab command `False`; allowed commands return what `Application` returns today.
+- **H2-R4 — no capability fork; public allow-list (I1, F5).** Lab code may use only:
+  (a) read-only state — `selection`, `scene`/mesh, `camera`, `display`, `history.can_undo()`/
+  `can_redo()`, `interaction_owner`, `transform_command`, `knife_active`, `status_message`/
+  `status_serial`, and `bindings` (read, plus `set_default` for its own context at start-up);
+  (b) the gate data — `command_gate`, `hover_suspended`; (c) `set_status` (H4);
+  (d) `record_mesh_change` (H3); (e) the public event entry points (`key_press`, `key_release`,
+  `pointer_*`), called only from the window adapter with the original event; plus the Viewport
+  overlay hook H1. **Not allowed:** `dispatch_command`, `select_at`, any member with a leading
+  underscore, `history.push`, and importing `PointerGestures`, `ToolManager` or `pick_component`
+  for app semantics. No own gesture recognition, transform arming, picking for app semantics or
+  undo bookkeeping.
+- **H2-R5 — Production is unchanged.** With the defaults (`command_gate is None`,
+  `hover_suspended is False`) behaviour is identical; `interaction_owner`, `set_status` and
+  `record_mesh_change` are additive. `src/main.py` writes no gate data and calls neither
+  `record_mesh_change` nor `set_status` (guard test).
+- **H2-R6 — one writer (governance, not a test, F14).** The gate has one writer: the Symmetry
+  Lab's window wiring. There is no list, stack or registry of gates. A second user (another Lab,
+  the Playground) needs its own review of this addendum; it does not get to extend the gate
+  silently. Code review enforces this; a test could only assert a type, which proves nothing.
+
+### Required tests
+
+Headless, through `Application`'s public entry points, fixture as in
+`tests/test_application_pointer.py:34-40`; sequences from review CLAUDE-001 Q4 and the appendix
+probes. `src` tests go to `tests/`, Lab tests to `experiments/symmetry_lab/tests/`.
+
+| ID | Rule | Test |
+|---|---|---|
+| T-R1a | R1 | The Lab context contains exactly {key Shift+S, key M, key Shift+B} and no pointer entry |
+| T-R1b | R1, F15, D2 | Each of the three resolves to `None` in GLOBAL and KNIFE; with a user GLOBAL binding on Shift+S the Lab start-up raises |
+| T-R1c | R1 | The Lab holds `app.bindings` by identity; building the Lab creates no further `BindingSet` (counter on `BindingSet.__init__`) |
+| T-R1d | R1, R3, F8 | The start-up listing returns every Lab entry and every gate-table row |
+| T-R2a | R2 | Arm W, press M → returns `False`, status posted, `transform_command == MOVE`; release W commits one history entry |
+| T-R2b | R2 | C with empty selection starts a Knife session; Shift+S → refused, `knife_active` stays `True`; then E → pen lifted (`knife_render_data.start_point is None`) |
+| T-R2c | R2, **F1** | Preview open → Alt+LMB press, drag 10 px (`pointer.active`) → Ctrl+Z returns `False`, history unchanged, status posted; W → `transform_command is None` |
+| T-R2d | R2, F4 | `interaction_owner` is non-`None` in every state where `Application`'s own gates apply (armed, running, Knife) and `None` idle and during an orbit/pan |
+| T-R2e | R2, D1 | Preview open; W, E, R, C, Ctrl+Z, 1/2/3, X, Alt+A, a select click → all refused, `interaction_owner` stays `None`; Esc closes the preview, no history entry, gate and hover flag back to the idle row |
+| T-R3 | R3 | Parametrised over (Lab state × refused command, key and click): return `False`, `status_serial` + 1, `status_message` equals the row's text; twice the same refusal → two increments |
+| T-H | F3 | Preview open → hover `None`; motion over a vertex → still `None`; one wheel step (probe P2) → still `None`; preview closed → hover re-picked at the cursor |
+| T-R4a | R4 | Static: AST scan of the Lab modules for underscore attributes on `Application` objects, `dispatch_command`, `select_at`, `history.push`, and imports of `PointerGestures`, `ToolManager`, `pick_component` |
+| T-R4b | R4, F5 | The Lab suite runs with `Application.dispatch_command` and `select_at` patched to raise when called from a Lab module |
+| T-R4c | R4, **F2** | Probe P3 through the Lab path: select A → W-move → select B → Shift+S (Lab commit via `record_mesh_change`) → Ctrl+Z → selection is {B}; Ctrl+Z again → {A} |
+| T-R4d | F2 | After a Lab mesh change, hover and a click pick the *new* vertex positions (pick cache invalidated) without any camera change |
+| T-R4e | D3 | `record_mesh_change` raises while a transform is armed |
+| T-R5a | R5 | `Application()` has `command_gate is None`, `hover_suspended is False` |
+| T-R5b | R5 | AST guard: `src/main.py` never assigns `command_gate`/`hover_suspended` and never calls `record_mesh_change`/`set_status` |
+| T-R5c | R5 | **Pass-through run:** every `tests/test_application_*` re-run with an *inert but active* gate installed on each new `Application` (`allowed` = every command the default bindings can resolve, `refused` = {an unused sentinel command}) → identical results. Proves the check code path changes nothing, not only the `None` case |
+
+R6 has no test (governance, F14).
 
 ### Consequences
 
-- **Positive:** the Lab runs on the same gestures, arming, constraints, hover, picking and
-  undo as the app, so input drift becomes impossible by construction. Lab behaviour is
-  testable headless through `Application`'s entry points, like `tests/test_application_*`.
-- **Costs:** three branch points in `Application`'s input path. An `Application` change can
-  break Lab tests; that is intended, as the signal the drift lacked. The hook receives raw
-  key input and must handle key repeat itself.
+- **Positive:** the Lab runs on the same gestures, arming, constraints, hover, picking and undo
+  as the app; for app input, drift becomes impossible by construction. Lab mesh changes keep
+  Undo's selection mirror and the pick cache correct *only* because they go through
+  `record_mesh_change` (T-R4c, T-R4d) — that is a rule plus a test, not construction.
+  Precedence between the gate and `Application`'s own gates is `Application`'s branch order,
+  not a second layer. Lab behaviour is testable headless through `Application`'s entry points.
+- **Costs:** two lookups and one flag check in `Application`'s input path, four small public
+  additions, and one window-level step in the Lab. An `Application` change can break Lab tests;
+  that is intended, as the signal the drift lacked. Pointer overrides in the Lab are impossible:
+  MMB pan and the Lab's other mouse entries disappear (a visible change, plan §4.3).
+- **Key repeat:** suppressed by the pyglet adapter for `Application` and the Lab alike (pyglet
+  2.1.16 dispatches no `on_key_press` for auto-repeat on Win32, Cocoa or X11, review F11). The
+  repo pins no pyglet version; if one is pinned later, an adapter test follows.
+- **Focus loss (F12):** W held + Alt-Tab leaves the transform armed (pre-existing,
+  `on_deactivate` resets only Shift, `src/main.py:180-185`). Under H2 the Lab then refuses its
+  commands until W is pressed and released again. Not fixed here (outside H2). The preview is
+  Lab state: it survives focus loss and ends with the Lab window, which resets the gate;
+  `Application.shutdown` needs no knowledge of it.
 
 ### Not decided here
 
-The Python shape (Protocol or duck typing) and final names; whether the Playground could use
-such a hook (H2-R6); any gesture semantics (A3 stays open); any Artist Input Truth (the Lab
-keys stay Lab overrides).
+The Python shape (dataclass or plain attributes) and final names; whether the Playground could
+use such a gate (H2-R6); any gesture semantics (A3 stays open); any Artist Input Truth (the Lab
+keys stay Lab overrides); anything in § Limits of G.
 
 ### Review
 
-Pending. Reviewer findings and the answers to them go here, with a link to the archived
-review.
+**First independent review:**
+[AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md](../archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md)
+(fresh session, `main` @ `bafae30`, archived unedited). Verdict: ACCEPT WITH CHANGES, blockers
+F1 and F2. Outcome: hook F replaced by the reviewer's proposal G (F9) with the requested
+additions; deviations D1–D3 above.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| F1 — R2 lets app commands through during navigation inside the preview | BLOCKER | **Fixed in the revised text.** H2-R2 defines key-owning interactions; camera gestures own none. The gate sits in `key_press` after resolution and applies during camera gestures, so Ctrl+Z/W mid-orbit are refused under the preview. Test T-R2c |
+| F2 — Lab mutations desync the selection mirror and the pick cache | BLOCKER | **Fixed in the revised text.** `record_mesh_change` (plan H3) is part of the Decision and a Slice 1 precondition; H2-R4 forbids `history.push` from Lab code; D3 guards the timing. The "drift impossible by construction" claim is narrowed in § Consequences. Tests T-R4c (probe P3), T-R4d |
+| F3 — consuming `pointer_motion` does not pause hover | SHOULD | **Fixed.** The `pointer_motion` call site is dropped; `hover_suspended` is honoured in `_update_hover`, so motion, zoom and refreshes all respect it; `Application` keeps updating `_cursor`. Test T-H (probe P2). Replacing hover picking with Lab semantics stays out of scope (not a need) |
+| F4 — R2's back-off condition undefined | SHOULD | **Fixed.** Read-only `interaction_owner` (`None` / `"transform"` / `"knife"`), the single predicate in H2-R2. Test T-R2d |
+| F5 — R4 permits public calls that start or alter app interactions | SHOULD | **Fixed.** H2-R4 is an allow-list; `dispatch_command`, `select_at` and `history.push` are excluded. Tests T-R4a (static), T-R4b (patched) |
+| F6 — the existing Lab context is incompatible; R1 does not fix the entry set | SHOULD | **Fixed.** H2-R1 fixes the set to three key entries and states that pointer overrides are impossible; the current `C` and mouse entries are dropped in the new host (the old `run.py` is unchanged until Slice 5). MMB pan loss recorded as a visible change (plan §4.3). Test T-R1a |
+| F7 — the preview gate is a block-list with gaps | SHOULD | **Fixed.** The preview row is an allow-list (display commands only); every other command, including future ones, is refused by default. The open question whether a selection change invalidates the preview becomes moot: selection changes are refused. Test T-R2e, T-R3 |
+| F8 — refusals must be listed like bindings | SHOULD | **Fixed.** The gate table per Lab state is printed at start-up (H2-R3). Test T-R1d |
+| F9 — a smaller, data-only mechanism (G) | SHOULD (Q2) | **Adopted**, with deviations D1–D3 (§ Deviations from G). "F is not used because …" is recorded under § Alternatives. G's own limits are recorded in § Limits of G |
+| F10 — R3 depends on a status setter that does not exist yet | NIT | **Fixed.** H4 is a named precondition in the Decision and moves from Slice 2 to Slice 1 in the plan |
+| F11 — the key-repeat cost is probably moot | NIT | **Fixed.** The cost line is replaced (§ Consequences, "Key repeat"). No adapter test: no pyglet version is pinned |
+| F12 — focus loss | NIT | **Fixed in the text** (§ Consequences, "Focus loss"): the stuck-armed case is described and the preview's lifetime is tied to the Lab window. **Not fixed in code:** the stuck-armed transform is pre-existing `src/main.py` behaviour outside H2 |
+| F13 — return-value contract | NIT | **Fixed.** H2-R3 states it. Test T-R3 |
+| F14 — R4 and R6 are only partly testable | NIT | **Fixed.** The claim "each is testable" is removed; R4 is tested statically and behaviourally, R6 is stated as governance |
+| F15 — the Lab context silently shadows user GLOBAL bindings | NIT | **Fixed.** Start-up assert in H2-R1, extended to the KNIFE context (D2). Test T-R1b |
+
+Review Q3 (call sites): followed — no hook on `key_release`, `pointer_press`/`drag`,
+`pointer_scroll`, `pointer_leave`, `set_shift_held`; the motion site is replaced by the flag;
+`dispatch_command`/`select_at` are off-limits (H2-R4). Q4 (tests): taken over as
+§ Required tests, adapted to G (the pass-through run uses an inert-but-active gate instead of a
+hook returning `False`). Q5 (`src/main.py`, line references): no change needed; the guard test
+is T-R5b.
+
+**Second independent review:** **required** (D1), pending. Scope: D1–D3, the revised H2-R1..R6
+and whether the table above answers F1–F15. Archived unedited as
+`docs/archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_002.md`; its findings are
+answered here. Status becomes DECIDED only after that.

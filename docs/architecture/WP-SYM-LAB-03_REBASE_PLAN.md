@@ -3,6 +3,9 @@
 **Type:** B (research / plan) · **Mode (M5):** Discovery · **Date:** 2026-10-03
 **Status:** PLAN **accepted** (Manu, 2026-10-03; reviewed by the planning agent in chat),
 with the review amendments below. Q1 stays open until the session after Slice 4. Nothing built.
+**H2 status (2026-10-03):** first independent review archived and answered; the AD-013 addendum
+is revised to the data-only command gate (review proposal G) and stays PROPOSED until a
+**second independent review** (deviation D1). Slice 1 code waits for it (A1).
 **Base:** `main` @ `f15957c` (WP-SYM-LAB-02 S2).
 **Trigger:** Artist (Manu, 2026-10-03): Symmetry need not reach Production fast, but it must
 use the Production tools. A Lab with its own renderer makes no sense long-term.
@@ -26,10 +29,11 @@ colour legend) · handoffs [Slice 2](WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md
   symmetry. That needs **four small hooks, one bug guard and one pure refactor in `src/`**
   (§3). It needs **no `src/core` change**, and `src/main.py` behaves exactly as before
   (every hook defaults to "off").
-- **Exactly one hook is an architecture boundary:** H2, letting an experiment handle input
-  before `Application` does. It touches AD-013 I3/I4 (input authority). Per AGENTS.md §5 it
-  needs a short AD-013 addendum before code. That is a technical decision, not an Artist
-  question.
+- **Exactly one hook is an architecture boundary:** H2, letting an experiment refuse app
+  commands and add its own keys. After review CLAUDE-001 it is a data-only command gate inside
+  `Application` plus the Lab's own keys resolved at window level, not a callback (revised AD-013
+  addendum). It touches AD-013 I3/I4 (input authority). Per AGENTS.md §5 it needs an AD-013
+  addendum before code. That is a technical decision, not an Artist question.
 - **Most of the Lab is already in the app or is a stale copy.** Of 34 inventoried Lab
   features: **12 are already in the app (a)**, **13 are symmetry-only and get re-hosted (b)**,
   and **9 are obsolete copies to delete (c)** (§2). Symmetric W/E/R already run in
@@ -73,6 +77,17 @@ session without access to the plan author's reasoning:
   the same commit.
 - **Gate:** Slice 1 code starts only after the review is archived and each finding has an
   answer in the addendum (fixed, or why not). The review itself is never edited.
+- **Status (2026-10-03):** review
+  [CLAUDE-001](../archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md)
+  archived (ACCEPT WITH CHANGES, blockers F1/F2). All 15 findings are answered in the
+  addendum's Review section. Decision revised: the callback hook F is replaced by the reviewer's
+  data-only gate G plus a public external-commit entry (H3), `interaction_owner`, the public
+  status setter (H4), a preview allow-list, the exact Lab context (Shift+S, M, Shift+B, asserted
+  free in GLOBAL and KNIFE) and a start-up listing of refusals. The revision deviates from G as
+  proposed (D1: Esc closes the preview at window level), so a **second independent review is
+  required**: same input rules as above, scope D1–D3 and the revised H2-R1..R6, archived as
+  `docs/archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_002.md`. **Slice 1 code
+  starts only after that review is archived and answered** and the addendum is DECIDED.
 
 **A2 — Slice 5 gate: no Lab test is deleted without a named replacement.**
 Before Slice 5 deletes anything, this plan gets a table with one row per deleted test: the
@@ -195,7 +210,7 @@ Verdicts are quoted from the Lab README; none of them changes here.
 | 7 | Vertex click select, replace only (S2) | `lab_dispatch.select_at` | a | `Application.select_at` (replace/add/remove/toggle, V/E/F modes) | Slice 2 checked |
 | 8 | Asset by registry name, framing (S2) | `lab_scene.py` | a (+ thin b) | `init_scene("obj", obj_path=asset_path(name))` + `frame_scene()`; the registry-name CLI with exit code 2 stays in the Lab | — |
 | 9 | Lab binding context, `LAB_OVERRIDES`, console listing (S2–S7) | `lab_bindings.py`, `run.py` | b | Shrinks to Shift+S, M, Shift+B (navigation and C overrides dropped); console listing kept (AD-013 I6) | — |
-| 10 | Symmetry cycle Shift+S off→X→Y→Z→off, E1–E3, one undo step each (S3) | `lab_symmetry.cycle_symmetry` | b | Via H2 (key) + H3 (history with selection mirror) | Slice 3 KEEP |
+| 10 | Symmetry cycle Shift+S off→X→Y→Z→off, E1–E3, one undo step each (S3) | `lab_symmetry.cycle_symmetry` | b | Via H2 (Lab key at window level) + H3 (history with selection mirror) | Slice 3 KEEP |
 | 11 | Plane outline (S3) | `lab_draw_data.plane_outline_data` | b | Lab line overlay via H1 | Slice 3 KEEP |
 | 12 | State markers: seam green, unpaired magenta, ambiguous white; `SymmetryReport` (S3) | `lab_symmetry.symmetry_report`, renderer | b | Lab point overlay via H1 | Slice 3 KEEP |
 | 13 | Mirrored partner of the selection, turquoise (S3) | renderer + `mirrored_selection` | b | Lab point overlay via H1 | Slice 3 KEEP |
@@ -207,9 +222,9 @@ Verdicts are quoted from the Lab README; none of them changes here.
 | 19 | Symmetric Rotate/Scale + pivot = selection ∪ partners (WP-SYM-LAB-02 S2) | `src` `TransformTool`, `resolve_symmetry` | a | Unchanged | **pending** (S2) |
 | 20 | Constraint keys X/Y/Z, Shift+X/Y/Z as a toggle (S2) | `lab_dispatch._toggle_constraint` | a | `Application._constrain` (B4.1); now also applies to W (D1) | (part of S2, pending) |
 | 21 | Seam refusal shown before the first motion | `lab_dispatch.py:608` | a after H5 | `Application._transform_step` + H5 | (part of S2, pending) |
-| 22 | E5 gate MARK/BLOCK, Shift+B, reads `supports_symmetry` (WP-SYM-LAB-02 S1) | `lab_dispatch._gated`, `_arm_move` | b | Via H2; extended to C (contextual C + Knife), which has no declaration and so counts as unsupported | **pending** (E5) |
+| 22 | E5 gate MARK/BLOCK, Shift+B, reads `supports_symmetry` (WP-SYM-LAB-02 S1) | `lab_dispatch._gated`, `_arm_move` | b | Via H2 (command gate, BLOCK row); extended to C (contextual C + Knife), which has no declaration and so counts as unsupported | **pending** (E5) |
 | 23 | Re-Symmetrize plan/apply, topological source side (S5) | `lab_resymmetrize.py` | b | Unchanged module; push via H3 | Slice 5 KEEP |
-| 24 | Re-Symmetrize preview: modal M/M/Esc, blue/light green/light red + lines, text line, hover paused, other commands ignored with a hint (S5) | `lab_dispatch` preview code, renderer | b | Via H2 (key, click, motion) + H1 + Lab HUD | Slice 5 KEEP |
+| 24 | Re-Symmetrize preview: modal M/M/Esc, blue/light green/light red + lines, text line, hover paused, other commands ignored with a hint (S5) | `lab_dispatch` preview code, renderer | b | Via H2 (Lab keys M/Esc, preview allow-list for keys and clicks, `hover_suspended`) + H3 + H1 + Lab HUD | Slice 5 KEEP |
 | 25 | Topological pairing and sides (S5, E11/E12) | `lab_topology.py` | b | Unchanged module | Slice 5 KEEP |
 | 26 | Undo/Redo clears the selection | `lab_dispatch._undo_redo` | a | App restores the selection (B6 follow-up) | — |
 | 27 | Status line text, on screen (S3–S7) | `lab_status.py`, `lab_window` labels | b | Lab HUD (pyglet label) = Lab state line + `app.status_message`; writes via H4 | — |
@@ -231,9 +246,9 @@ off by default, and `src/main.py` uses none of the hooks.
 | Hook | What (smallest form) | Needed by | Classification (AGENTS.md §5) |
 |---|---|---|---|
 | **H1** Extra overlay | `Viewport.add_overlay(o)`. `o.sync(mesh, selection)` runs inside `Viewport.sync()` whenever the Viewport's own selection/geometry/topology dirty flags were set, or when `o.dirty` is set. `o.draw(camera_uniforms)` runs in `render()` **after the tool lines, before the point overlay**. Plus: `GLPointOverlay` takes its layers/styles as class attributes, like `FlatColorLayers`, so the Lab can subclass it | Inventory #11–13, 15, 24 | **Small detail.** Precedents: `TOOL_LAYERS`/`set_tool_overlay` (B7) and `FlatColorLayers`. The Viewport stays symmetry-agnostic, data still flows Core → Viewport, and there are no new colours in `src` |
-| **H2** Input hook | `Application.input_hook` (default `None`), consulted first at three call sites: `key_press(input) → consumed?` (`application.py:993`), `click(command, x, y) → consumed?` in `_execute_click` (`:1440`, after `PointerGestures` decided click vs. drag), `pointer_motion(x, y) → consumed?` (`:1345`). The hook resolves its own commands through the one `app.bindings` with its context (`symmetry_lab`) | #10, 22, 24, Slice 1 C refusal | **Architecture boundary.** A second interaction authority inside the app's input path touches AD-013 I3 (one authority owns start and end) and I4 (one binding authority), plus AD-015/AD-016 input ownership. Needs an AD-013 addendum (problem, the alternatives below, decision) **before** code. Not an Artist question |
-| **H3** External mesh change | `Application.record_mesh_change(command, selection_before, moved=None)`: `history.push`, `_record_selection_history`, pick cache invalidate, `viewport.on_vertices_moved(moved)` or `on_topology_changed()`, `_refresh_hover()`. The Lab functions return their `MeshStateCommand` instead of pushing it (`lab_symmetry.py:88`, `lab_resymmetrize.py:166`) | #10, 23 | **Small detail.** Completes the push path the B6 follow-up docstring anticipates; `HistoryStack` and core stay unchanged |
-| **H4** Status | `Application.set_status(message)`, the public form of `_set_status` (`:1278`), same `status_serial` | #22, 24, 27 | **Small detail** |
+| **H2** Command gate (revised after review CLAUDE-001) | Data only, no callback (AD-013 addendum, proposal G): `Application.command_gate` (default `None`; `refused: dict[command, status text]`, `allowed: frozenset \| None` allow-list, `not_allowed_text`), checked in `key_press` right after command resolution (`application.py:999`, after the Knife routing) and in `_execute_click` (`:1440`); a refused event posts the text and returns `False`. `Application.hover_suspended` (default `False`), honoured in `_update_hover` (`:1388`). Read-only `Application.interaction_owner` (`None` / `"transform"` / `"knife"`). The Lab's own keys (exactly Shift+S, M, Shift+B in context `symmetry_lab`, asserted free in GLOBAL and KNIFE at start-up) are resolved at window level through the one `app.bindings`; everything else goes to `app.key_press`. Esc closes the preview at window level (D1). Preconditions: H3, H4 | #10, 22, 24, Slice 1 C refusal | **Architecture boundary.** Touches AD-013 I3 (one authority owns start and end) and I4 (one binding authority), plus AD-015/AD-016 input ownership. AD-013 addendum revised; **PROPOSED, second independent review required** (D1) before code. Not an Artist question |
+| **H3** External mesh change | `Application.record_mesh_change(command, selection_before, moved=None)`: `history.push`, `_record_selection_history`, pick cache invalidate, `viewport.on_vertices_moved(moved)` or `on_topology_changed()`, `_refresh_hover()`. Raises while `interaction_owner` is set (AD-013 H2 D3). The Lab functions return their `MeshStateCommand` instead of pushing it (`lab_symmetry.py:88`, `lab_resymmetrize.py:166`). This is the public commit entry review CLAUDE-001 F2 requires; Lab code never calls `history.push` (H2-R4) | #10, 23 | **Small detail.** Completes the push path the B6 follow-up docstring anticipates; `HistoryStack` and core stay unchanged |
+| **H4** Status | `Application.set_status(message)`, the public form of `_set_status` (`:1278`), same `status_serial`. Precondition of H2 (review F10): lands in Slice 1, not Slice 2 | #22, 24, 27 | **Small detail** |
 | **H5** Seam refusal guard | `_transform_step`: catch `SeamConstraintError` from `begin_current_interaction`, end the transform, status `"<Rotate/Scale>: refused — <reason>"`, `_refresh_hover()`. No history entry | #21; reachable as soon as Slice 1 sets a definition | **Small detail.** Bug guard for a refusal AD-SYM-02 §2.4 / INV-8 already decided; status text `PROVISIONAL` like the other app status lines |
 | **H6** Importable entry wiring | Split `src/main.py` into `create_window()`, `install_handlers(window, app)` and `run(window, app)` (plus the `gl_types` constant); `main()` composes them. Behaviour identical | #1 | **Small detail.** Pure refactor; it also makes the wiring headless-testable for the first time (`tests/test_main_entry_point.py` only covers the draw path) |
 
@@ -254,7 +269,7 @@ calls the app's draw first and then its label. That is Lab code, not a hook.
   providers, event bus). *Not used because* of AGENTS.md §7 ("do not build future systems")
   and INPUT_COMMAND_TOOL_CONTRACT §3 ("must not introduce a complex hierarchical context
   framework without a demonstrated use case"). One experiment is one use case, so it gets one
-  hook object with three call sites and no registry.
+  hook (after review CLAUDE-001: one data-only command gate, no callback) and no registry.
 
 **H2 input hook**
 
@@ -270,6 +285,13 @@ calls the app's draw first and then its label. That is Lab code, not a hook.
 - **Fallback-only: Application resolves an "active context" and hands unknown commands to
   the Lab.** *Not used because* it cannot pre-empt anything. The C refusal, the E5 BLOCK and
   the modal Re-Symmetrize preview all have to stop an app command, not just add new ones.
+- **One optional hook object (callback), consulted first in `key_press`, `_execute_click` and
+  `pointer_motion`** (the first H2 draft). *Not used because* (review CLAUDE-001 F1, F3, F4,
+  F9): its precedence over `Application`'s own gates existed only as branch order and was
+  stated wrongly (Undo/W ran under the preview during an orbit), its motion call site cannot
+  pause hover (zoom re-picks it), and its back-off predicate was undefined. The data-only gate
+  sits after `Application`'s routing, so precedence is `Application`'s by construction. The
+  argument is recorded in the AD-013 addendum, § Alternatives.
 
 **H1 overlay**
 
@@ -314,16 +336,16 @@ restricted, and the Lab does not use it).
 
 | KEEP (date) | Behaviour | Provided by after the rebase | Proven by |
 |---|---|---|---|
-| S3 (2026-09-25) | Shift+S off→X→Y→Z→off; one undo step each; Ctrl+Z/Ctrl+Y walk the cycle | Lab via H2 + H3 | ported `test_lab_symmetry` cycle tests + new mirror-alignment test (W commit → Shift+S → Undo ×2 restores the right selection each time) |
+| S3 (2026-09-25) | Shift+S off→X→Y→Z→off; one undo step each; Ctrl+Z/Ctrl+Y walk the cycle | Lab key via H2 + H3 | ported `test_lab_symmetry` cycle tests + new mirror-alignment test (W commit → Shift+S → Undo ×2 restores the right selection each time) |
 | S3 | Plane outline through the origin, bounds + 10 %, light blue | Lab overlay (H1) | kept `plane_outline` tests |
 | S3 | Seam green, unpaired magenta, ambiguous white; `Symmetrie: X (valid) \| ohne Partner: N`; `man_with_shoes` X = 54 unpaired | Lab overlay + HUD | kept asset characterisation |
 | S3 | Selected vertex shows its mirrored partner in turquoise | Lab overlay | new overlay-data test |
 | S3 | W moves vertex and partner mirrored; a seam vertex slides in the plane; one undo step; Esc restores exactly without history | `src` `MoveTool` through `Application` | ported `test_lab_move` symmetric subset |
 | S4 | Hover shows the mirrored partner in turquoise without selecting | Lab overlay reading `selection.hovered` | new overlay-data test |
 | S4 | Move target rule A4/E7/E8 | `Application._transform_arm` (same rule) | app tests (`test_application_move`, `test_application_hover`) |
-| S5 | M preview → M execute (one undo step; 0 changes = no entry) → Esc closes without change | Lab via H2 + H3 | ported dispatcher-level `test_lab_resymmetrize` |
+| S5 | M preview → M execute (one undo step; 0 changes = no entry) → Esc closes without change | Lab keys M/Esc via H2 (Esc: D1) + H3 | ported dispatcher-level `test_lab_resymmetrize` |
 | S5 | Source side is topological (A6); exactly one vertex; the five rejections | `lab_resymmetrize` (unchanged) | kept pure tests |
-| S5 | During the preview: navigation works; select, W/E/R, Shift+S, C, Undo/Redo ignored with `Vorschau aktiv — Befehl ignoriert`; hover paused | H2 key + click + motion | ported preview tests |
+| S5 | During the preview: navigation works; select, W/E/R, Shift+S, C, Undo/Redo ignored with `Vorschau aktiv — Befehl ignoriert`; hover paused | H2 preview allow-list (key + click) + `hover_suspended` | ported preview tests + AD-013 T-R2c (F1 sequence), T-R2e, T-H |
 | S5 | Preview colours blue / light green / light red with lines; text line above the status line | Lab overlay + HUD | kept `test_preview_draw_data` |
 | S5 | Selection kept after execute | H3 (selection snapshot) | ported |
 
@@ -344,7 +366,7 @@ nothing new):
 | Change | App decision |
 |---|---|
 | Selection yellow 8 px instead of red 10 px; hover pale translucent yellow; no orange dot per vertex | B2b (A10/A11) |
-| Navigation: Alt+Shift+LMB drag = Pan, Shift+click = add to selection, MMB unbound, no RMB rule | B2 (Artist Input Truth) |
+| Navigation: Alt+Shift+LMB drag = Pan, Shift+click = add to selection, MMB unbound, no RMB rule | B2 (Artist Input Truth); the Lab cannot override pointer input under H2 (AD-013 H2-R1, review F6) |
 | Picking is occlusion-aware in Shaded (back-side vertices not pickable); hover cleared during orbit | B8, B2b |
 | W honours X/Y/Z (was ignored, D1) | B4.1 |
 | Undo/Redo restores the selection instead of clearing it | B6 follow-up |
@@ -384,11 +406,13 @@ nothing new):
 | **Total** | **263** | **67** | **≈66** | **≈130** | |
 
 New tests in `tests/` (Production): H1 (draw order, `sync` on notifications, no-op without
-overlays), H2 (`None` = identical behaviour; consume/pass for key, click, motion), H3 (mirror
+overlays), H2 (the AD-013 addendum's § Required tests: T-R1a..T-R5c and T-H, including the
+inert-but-active pass-through run of `tests/test_application_*`), H3 (mirror
 alignment), H4, H5 (refusal: no history entry, transform ended, status), H6 (`install_handlers`
 headless) and **symmetric Move with an axis constraint**. That combination is untested in
 `src` today (`tests/test_symmetric_move.py` has no `space` case) and becomes reachable by D1.
-A guard test asserts that `src/main.py` sets no `input_hook` and adds no overlay.
+A guard test asserts that `src/main.py` writes no `command_gate`/`hover_suspended`, calls
+neither `record_mesh_change` nor `set_status`, and adds no overlay.
 
 ---
 
@@ -401,10 +425,10 @@ point and allows an old-vs-new comparison. Each slice is one revertable commit s
 
 | Slice | Scope | `src` touched | Done when |
 |---|---|---|---|
-| **1** App path + cycle + plane/state overlays | Step 0: AD-013 addendum for H2 (from §3.1), independently reviewed and archived before code (A1). `src`: H6, H1, H2 (key call site only), H3, H5. Lab: `run_app.py` builds the app path with registry assets; Shift+S via H2/H3; plane outline + seam/unpaired/ambiguous markers via H1; HUD with the symmetry state. **C is refused while symmetry is on** (fixed, `Symmetrie aktiv — C spiegelt nicht`), because without it C would run one-sided without warning (INV-8); Slice 4 replaces this with the E5 gate. Symmetric W/E/R work from here on through `src`; no Lab code for them | `src/main.py` (refactor), new `src/app_window.py` (or similar), `viewport/viewport.py`, `viewport/gl_point_overlay.py`, `mirai/application.py` | `pytest tests` and `playground/tests` unchanged except the new hook tests; ported cycle/outline/asset tests green; `src/main.py` guard test green |
-| **2** Mirrored previews + HUD | Partner markers for selection and hover (vertex mode); HUD line as `lab_status` (state, unpaired count, target, constraint); H4; drag-cost probe (A3) | `application.py` (H4) | ported symmetric move/transform tests via `Application`; new W + constraint + symmetry test; drag cost measured on the reference PC (A3) |
-| **3** Re-Symmetrize | M preview/execute/Esc via H2 (add the click + motion call sites), H3 with moved IDs; preview overlay and text line; hover paused | `application.py` (H2 call sites) | all 30 resymmetrize tests (kept or ported) green |
-| **4** E5 gate | Shift+B MARK/BLOCK via H2, now for W/E/R (`supports_symmetry`) **and C** (no declaration = unsupported); replaces the Slice 1 refusal; MARK keeps a persistent HUD line while a one-sided C/Knife session runs | — | ported gate tests + C cases (MARK: one-sided, one history entry, seam degradation visible; BLOCK: nothing, no history). **Then the Artist session (§4.3).** |
+| **1** App path + cycle + plane/state overlays | Step 0: AD-013 addendum for H2 (from §3.1), independently reviewed and archived before code (A1). Gate: the second independent H2 review is archived and answered and the addendum is DECIDED (A1). `src`: H6, H1, H2 (`command_gate` with its `key_press` and `_execute_click` checks, `interaction_owner`; not `hover_suspended`), H3, H4, H5. Lab: `run_app.py` builds the app path with registry assets; window-level step for the three Lab keys with the start-up assert (GLOBAL + KNIFE) and the start-up listing of entries and gate rows; Shift+S via H2/H3; plane outline + seam/unpaired/ambiguous markers via H1; HUD with the symmetry state. **C is refused while symmetry is on** (gate row `refused: Connect`, text `Symmetrie aktiv — C spiegelt nicht`), because without it C would run one-sided without warning (INV-8); Slice 4 replaces this with the E5 gate. Symmetric W/E/R work from here on through `src`; no Lab code for them | `src/main.py` (refactor), new `src/app_window.py` (or similar), `viewport/viewport.py`, `viewport/gl_point_overlay.py`, `mirai/application.py` | `pytest tests` and `playground/tests` unchanged except the new hook tests; AD-013 H2 tests T-R1a–d, T-R2a/b/d, T-R3 (Slice 1 rows), T-R4a–e, T-R5a–c green; ported cycle/outline/asset tests green; `src/main.py` guard test green |
+| **2** Mirrored previews + HUD | Partner markers for selection and hover (vertex mode); HUD line as `lab_status` (state, unpaired count, target, constraint); drag-cost probe (A3). (H4 moved to Slice 1, review F10) | — | ported symmetric move/transform tests via `Application`; new W + constraint + symmetry test; drag cost measured on the reference PC (A3) |
+| **3** Re-Symmetrize | M preview/execute via the Lab key, Esc via the window step (D1); preview gate row (allow-list: display commands only) and `hover_suspended`; H3 with moved IDs; preview overlay and text line | `application.py` (`hover_suspended` in `_update_hover`) | all 30 resymmetrize tests (kept or ported) green; AD-013 H2 tests T-R2c (F1 sequence), T-R2e, T-H, T-R3 (preview rows) green |
+| **4** E5 gate | Shift+B MARK/BLOCK via H2 (gate rows MARK/BLOCK), now for W/E/R (`supports_symmetry`) **and C** (no declaration = unsupported); replaces the Slice 1 refusal; MARK keeps a persistent HUD line while a one-sided C/Knife session runs | — | ported gate tests + C cases (MARK: one-sided, one history entry, seam degradation visible; BLOCK: nothing, no history). **Then the Artist session (§4.3).** |
 | **5** Swap and delete | Gate first: the deleted-test → named-replacement table (A2). `run.py` → app host; delete the (c) modules and their tests (§4.4); README rewritten (manual-test sections as history, new steps); ROADMAP §7 entry; W-like-app and Slice 7 marked superseded/moot | — | Lab tests ≈133 + new; no Lab module imports a deleted one; README legend matches the overlays |
 
 **Not in any slice:** the mirrored Knife (a future symmetric One Knife is its own package:
@@ -454,8 +478,9 @@ both `subd_cube`, Shift+S → X, orbit to compare the left and right shading.
 
 ## 7. Risks
 
-- **R1 — the hook grows into a plugin system.** Guard: one hook object, three call sites,
-  documented as experiment-only in the AD-013 addendum; a second user needs its own decision.
+- **R1 — the hook grows into a plugin system.** Guard: one gate value and one hover flag,
+  written by one Lab, no callback into experiment code; documented as experiment-only in the
+  AD-013 addendum (H2-R6, governance); a second user needs its own review.
 - **R2 — Lab tests break on Production changes.** Intended: that is the signal the drift lacked
   (§5, test command).
 - **R3 — cost per change.** `symmetry_report` 6 ms + `topology_report` 10 ms on
