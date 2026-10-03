@@ -97,7 +97,7 @@ from .lab_knife import KnifeRejected, LabKnifeTool
 from .lab_knife_pick import knife_pick
 from .lab_knife_preview import KnifeHoverPreview, knife_hover_preview
 from .lab_resymmetrize import ResymmetrizeRejected, ResymPlan, apply_plan, plan_resymmetrize
-from .lab_symmetry import cycle_symmetry
+from .lab_symmetry import ORIGIN, cycle_symmetry
 
 #: Wert und Messart (Manhattan-Summe der Drag-Deltas) wie
 #: `playground/selector.py::CLICK_THRESHOLD` (Stand `47f821b`).
@@ -550,6 +550,12 @@ class LabDispatcher:
         self._move_target = None
         self._move_target_label = None
 
+    def _single_vertex_stopgap_pivot(self) -> bool:
+        return (
+            self.app.scene.mesh.symmetry_definition is not None
+            and len(self._move_target) == 1
+        )
+
     def _move_step(self, dx: float, dy: float) -> None:
         """Eine Mausbewegung bei gehaltenem W. Die erste nicht leere Bewegung
         startet die Interaktion (keine Schwelle, AD-016)."""
@@ -558,15 +564,19 @@ class LabDispatcher:
         manager = self.app.tool_manager
         if not self._move_begun:
             app = self.app
-            manager.begin_current_interaction(
-                {
-                    "scene": app.scene,
-                    "camera": app.camera,
-                    # E8: das bei W festgelegte Ziel, nicht die (ggf. leere) Auswahl —
-                    # MoveTool liest die Symmetrie selbst aus dem Mesh.
-                    "vertex_ids": set(self._move_target),
-                }
-            )
+            context = {
+                "scene": app.scene,
+                "camera": app.camera,
+                # E8: das bei W festgelegte Ziel, nicht die (ggf. leere) Auswahl —
+                # MoveTool liest die Symmetrie selbst aus dem Mesh.
+                "vertex_ids": set(self._move_target),
+            }
+            if self._move_command != cmd.MOVE and self._single_vertex_stopgap_pivot():
+                # Lab-Behelf bis zum freien Pivot (ToDo): ein Einzel-Vertex ist sein
+                # eigener Mittelpunkt, Rotate/Scale bewegten ihn nicht — E5 wäre
+                # nicht sichtbar. Nur bei Symmetrie an; ohne Symmetrie wie Production.
+                context["pivot"] = ORIGIN
+            manager.begin_current_interaction(context)
             self._move_begun = True
         manager.update(dx=dx, dy=dy, width=self.width, height=self.height)
         self._mark(Change.MESH | Change.SELECTION)

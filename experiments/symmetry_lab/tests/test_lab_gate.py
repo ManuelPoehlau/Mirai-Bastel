@@ -257,3 +257,35 @@ def test_gate_reads_class_attribute(app, dispatcher, monkeypatch):
     dispatcher.key(KEY_W)
     assert dispatcher.move_state is MoveState.READY
     assert dispatcher.message.startswith("Symmetrie aktiv — Move spiegelt nicht")
+
+
+# -- Behelfs-Pivot für Einzel-Vertex (bis zum freien Pivot) ---------------------
+
+
+@pytest.mark.parametrize("key", [KEY_E, KEY_R])
+def test_single_vertex_visibly_changes_under_symmetry_partner_stays(app, dispatcher, key):
+    mesh = app.scene.mesh
+    vid, partner = paired(app)
+    app.scene.selection.set({vid})
+    p0, q0 = mesh.vertex_position(vid), mesh.vertex_position(partner)
+    before = len(app.history)
+    dispatcher.key(key)
+    move_mouse(dispatcher)
+    dispatcher.key_release(key)
+    assert mesh.vertex_position(vid) != p0
+    assert mesh.vertex_position(partner) == q0
+    assert len(app.history) == before + 1
+
+
+@pytest.mark.parametrize("key", [KEY_E, KEY_R])
+def test_single_vertex_without_symmetry_stays_production(app, dispatcher, key):
+    symmetry_off(dispatcher)
+    vid = min(app.scene.mesh.all_vertex_ids())
+    app.scene.selection.set({vid})
+    p0 = app.scene.mesh.vertex_position(vid)
+    before = len(app.history)
+    dispatcher.key(key)
+    move_mouse(dispatcher)
+    dispatcher.key_release(key)
+    assert app.scene.mesh.vertex_position(vid) == p0
+    assert len(app.history) == before

@@ -92,12 +92,11 @@ unverändert. Ohne Symmetrie verhalten sich E/R wie in der Production-App.
 5. Frage: Womit würdest du im Alltag lieber arbeiten — Tool verweigert (BLOCK) oder läuft
    einseitig mit Warnung (MARK)? Hast du die Statuszeile im MARK überhaupt bemerkt?
 
-**Bekannte Einschränkung (Stand S1):** Rotate/Scale drehen/skalieren um den Mittelpunkt des Ziels
-(Production-Verhalten, unverändert). Das Lab wählt nur *einen* Vertex, und ein einzelner Vertex ist
-sein eigener Mittelpunkt — E/R melden dann `keine Änderung` und bewegen nichts.
-Das Gate (Meldung, BLOCK, Partner-Markierung) ist davon unabhängig und sichtbar; die Bewegung in
-Schritt 3 ist es mit einem Einzel-Vertex nicht. Ein Pivot-Vorschlag für das Lab steht im
-S1-Bericht an den Artist.
+**Lab-Behelf Pivot (bis der freie Pivot kommt, ToDo):** Ein einzelner Vertex ist sein eigener
+Mittelpunkt, Rotate/Scale bewegten ihn sonst nicht. Deshalb nutzt das Lab bei E/R, aktiver Symmetrie
+und genau einem Ziel-Vertex den Ursprung (Punkt der Symmetrieebene) als Pivot — nur damit die
+einseitige Bewegung sichtbar wird. Ohne Symmetrie und bei mehreren Vertices gilt das
+Production-Verhalten (Mittelpunkt des Ziels). Der Behelf fällt weg, sobald es den echten Pivot gibt.
 
 Verdikt (KEEP-BLOCK / KEEP-MARK / ITERATE / UNKNOWN): steht aus.
 
