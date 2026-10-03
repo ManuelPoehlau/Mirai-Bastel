@@ -1,8 +1,10 @@
 """Import-Grenze (Handoff Slice 2 §2.6/§7): das Lab lädt nichts aus `playground/`.
 
 Analog `tests/test_pyglet_input.py::TestInteractionStaysPygletFree`: frischer
-Subprozess, alle Lab-Module importieren (inkl. Fenster/Render und `run`, dessen
-`main()` dabei nicht läuft), dann `sys.modules` prüfen. Der Lab-Bootstrap legt
+Subprozess, alle Lab-Module importieren (inkl. Fenster-Adapter und `run`, dessen
+`main()` dabei nicht läuft), dann `sys.modules` prüfen. Seit WP-SYM-LAB-03 Slice 5
+nennt der Test die Modulliste genau — so fällt auch auf, wenn ein gelöschtes Modul
+des alten Labs zurückkommt. Der Lab-Bootstrap legt
 den Repo-Root auf sys.path — ein versehentlicher `import playground...` würde
 also gelingen und hier auffallen, statt als ImportError unterzugehen.
 """
@@ -19,7 +21,34 @@ from symmetry_lab._paths import EXPERIMENTS_DIR
 
 from ._pyglet_headless import import_pyglet, needs_headless
 
-import_pyglet()  # Skip, wenn pyglet fehlt — lab_window/lab_render brauchen es.
+import_pyglet()  # Skip, wenn pyglet fehlt — lab_app_window und run (src/main.py) brauchen es.
+
+#: Die Lab-Module nach Slice 5 (WP-SYM-LAB-03): App-Pfad + Forschungsmodule.
+LAB_MODULES = {
+    "_paths",
+    "lab_app",
+    "lab_app_window",
+    "lab_bindings",
+    "lab_overlays",
+    "lab_resymmetrize",
+    "lab_scene",
+    "lab_symmetry",
+    "lab_topology",
+    "probe_drag_cost",
+    "run",
+}
+#: In Slice 5 gelöscht (Plan §2, Klasse c, und was nur der alte Pfad nutzte).
+DELETED_MODULES = {
+    "lab_dispatch",
+    "lab_draw_data",
+    "lab_knife",
+    "lab_knife_pick",
+    "lab_knife_preview",
+    "lab_render",
+    "lab_status",
+    "lab_window",
+    "run_app",
+}
 
 _SCRIPT = textwrap.dedent(
     """
@@ -59,8 +88,7 @@ def test_no_playground_module_after_importing_all_lab_modules():
     assert result.returncode == 0, result.stderr
     report = json.loads(result.stdout.strip().splitlines()[-1])
 
-    assert {
-        "lab_window", "lab_render", "lab_dispatch", "lab_symmetry", "lab_status", "run"
-    } <= set(report["lab_modules"])
+    assert set(report["lab_modules"]) == LAB_MODULES
+    assert not (DELETED_MODULES & set(report["lab_modules"]))
     assert report["playground_reachable"], "Test wäre ohne importierbares playground wertlos"
     assert report["playground_loaded"] == []

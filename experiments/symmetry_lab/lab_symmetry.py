@@ -5,10 +5,11 @@ State, Spiegel-Vorschau) kommt unverändert aus `mirai.symmetry`; hier liegt
 nur, was das Lab selbst entscheidet:
 
 - **E1:** Ebene immer durch den Welt-Ursprung, Normale exakt eine Weltachse.
-- **E2:** Jeder Zyklus-Schritt ist genau ein Undo-Schritt — Snapshot-Muster
-  `export_state()` → Definition setzen → `export_state()` →
-  `MeshStateCommand`, nachgebaut (nicht importiert) nach
-  `playground/topology_ops.py::split_selected_edge`, Stand `f4ad7d1`.
+- **E2:** Jeder Zyklus-Schritt ist genau ein Undo-Schritt. Seit WP-SYM-LAB-03
+  schreibt ihn `Application.apply_mesh_change` (H3) mit `set_symmetry_axis` als
+  `mutate` (`lab_app`); das Lab pusht selbst nichts (H2-R4). Das frühere
+  `cycle_symmetry` (eigener `MeshStateCommand`) ging in Slice 5 mit dem alten
+  Dispatcher.
 - **E3 (Lab-Annahme, keine Capability-Regel):** Die Seam wird einmal beim
   Wechsel auf eine Ebene abgeleitet — alle Edges, deren beide Endpunkte auf
   der Achse exakt `0.0` haben — und ist danach gespeicherte Deklaration
@@ -18,8 +19,7 @@ nur, was das Lab selbst entscheidet:
 
 `plane_outline_data` (Slice 3) zeichnet die Ebene als Rechteck-Umriss durch den
 Ursprung (E1), bemessen auf die Mesh-Bounds der beiden Achsen in der Ebene; seit
-WP-SYM-LAB-03 Slice 5 hier statt in `lab_draw_data` (das mit dem alten Renderer
-gelöscht wird).
+WP-SYM-LAB-03 Slice 5 hier statt im gelöschten `lab_draw_data`.
 """
 
 from __future__ import annotations
@@ -28,8 +28,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Optional
 
-from core import EdgeId, Mesh, Scene, SymmetryDefinition, VertexId
-from core.operations.topology import MeshStateCommand
+from core import EdgeId, Mesh, SymmetryDefinition, VertexId
 from mirai.mesh_geometry import mesh_bounds
 from mirai.symmetry import (
     CorrespondenceState,
@@ -76,7 +75,7 @@ def current_axis(mesh: Mesh) -> Optional[str]:
     """Achse der gesetzten Definition; `None` = aus.
 
     Eine Definition, die nicht aus E1 stammt, gibt es im Lab nicht (nur
-    `cycle_symmetry` setzt sie); sie würde als ValueError auffallen statt
+    `set_symmetry_axis` setzt sie); sie würde als ValueError auffallen statt
     still als eine der Achsen gelesen zu werden (INV-5).
     """
     definition = mesh.symmetry_definition
@@ -94,31 +93,9 @@ def next_axis(axis: Optional[str]) -> Optional[str]:
 
 
 def set_symmetry_axis(mesh: Mesh, axis: Optional[str]) -> None:
-    """Setzt die Definition für `axis` (E1, Seam nach E3); `None` = aus. Keine History.
-
-    Gemeinsamer Schritt beider Zyklus-Pfade: `cycle_symmetry` (alter Lab-Pfad,
-    pusht selbst) und der App-Pfad (`lab_app`, als `mutate` in
-    `Application.apply_mesh_change`, WP-SYM-LAB-03 S1b).
-    """
+    """Setzt die Definition für `axis` (E1, Seam nach E3); `None` = aus. Keine History —
+    der Aufrufer ist das `mutate` von `Application.apply_mesh_change` (`lab_app`)."""
     mesh.symmetry_definition = definition_for_axis(mesh, axis)
-
-
-def cycle_symmetry(scene: Scene) -> Optional[str]:
-    """Schaltet einen Schritt weiter (aus → X → Y → Z → aus), genau ein History-Eintrag."""
-    mesh = scene.mesh
-    axis = next_axis(current_axis(mesh))
-    before = mesh.export_state()
-    set_symmetry_axis(mesh, axis)
-    after = mesh.export_state()
-    scene.history.push(
-        MeshStateCommand(
-            mesh=mesh,
-            before_state=before,
-            after_state=after,
-            description=f"Symmetry {axis or 'off'}",
-        )
-    )
-    return axis
 
 
 @dataclass(frozen=True)

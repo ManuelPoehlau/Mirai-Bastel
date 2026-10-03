@@ -1,7 +1,10 @@
-"""Symmetrie-Zyklus, Seam-Ableitung und States (Handoff Slice 3 §2 E1–E4, §7).
+"""Seam-Ableitung, Definition und States (Handoff Slice 3 §2 E1–E4, §7) — reine Tests
+von `lab_symmetry`.
 
 Die Zahlen sind Charakterisierung der heutigen Assets (exakter Vergleich,
-keine Toleranz — E4), keine Capability-Regel.
+keine Toleranz — E4), keine Capability-Regel. Der Zyklus (Shift+S), die
+Seam-als-Deklaration-Probe und der Ebenen-Umriss laufen seit WP-SYM-LAB-03 auf dem
+App-Pfad: `test_app_lab_cycle.py` (Plan A2-Tabelle, Slice 5).
 """
 
 from __future__ import annotations
@@ -9,31 +12,20 @@ from __future__ import annotations
 import pytest
 
 from mirai.application import Application
-from mirai.interaction.input import Input
-from mirai.mesh_geometry import mesh_bounds
 from mirai.symmetry import SymmetryState
 
-from symmetry_lab import lab_draw_data
-from symmetry_lab.lab_bindings import apply_lab_bindings
-from symmetry_lab.lab_dispatch import Change, LabDispatcher
 from symmetry_lab.lab_scene import load_asset_into
 from symmetry_lab.lab_symmetry import (
     AXIS_NORMALS,
-    ORIGIN,
     current_axis,
-    cycle_symmetry,
     definition_for_axis,
     derive_seam_edges,
     symmetry_report,
 )
 
-SHIFT_S = Input("key", "s", frozenset({"shift"}))
-CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
-
 
 def make_app(asset: str) -> Application:
     app = Application()
-    apply_lab_bindings(app.bindings)
     load_asset_into(app, asset)
     return app
 
@@ -67,67 +59,6 @@ def test_definition_uses_origin_and_exact_unit_normal():
         assert definition.plane_point == (0.0, 0.0, 0.0)
         assert definition.plane_normal == normal
     assert definition_for_axis(mesh, None) is None
-
-
-def test_seam_is_stored_declaration_not_live_check():
-    # E3: nach dem Einschalten wird die Seam nicht neu geprüft — ein Seam-Vertex,
-    # der die Ebene verlässt, bleibt Seam und zeigt sich als VIOLATED.
-    app = make_app("subd_cube")
-    cycle_symmetry(app.scene)
-    mesh = app.scene.mesh
-    seam = mesh.symmetry_definition.seam_edges
-    vid = mesh.edge_vertices(next(iter(seam)))[0]
-    x, y, z = mesh.vertex_position(vid)
-    mesh.set_vertex_position(vid, (x + 0.25, y, z))
-    assert mesh.symmetry_definition.seam_edges == seam
-    assert symmetry_report(mesh).state is SymmetryState.VIOLATED
-
-
-# -- Zyklus (A2, E1, E2) ----------------------------------------------------------
-
-
-def test_cycle_off_x_y_z_off_one_history_entry_each():
-    app = make_app("subd_cube")
-    dispatcher = LabDispatcher(app, 1280, 800)
-    mesh = app.scene.mesh
-    seen = [mesh.symmetry_definition]
-    for step, expected in enumerate(["X", "Y", "Z", None], start=1):
-        assert dispatcher.key(SHIFT_S) is True
-        assert current_axis(mesh) == expected
-        if expected is None:
-            assert mesh.symmetry_definition is None
-        else:
-            assert mesh.symmetry_definition.plane_normal == AXIS_NORMALS[expected]
-            assert mesh.symmetry_definition.plane_point == ORIGIN
-        assert len(app.history) == step
-        assert Change.MESH in dispatcher.take_changes()
-        seen.append(mesh.symmetry_definition)
-
-    # Undo stellt jeweils die vorherige Definition exakt wieder her.
-    for step in range(4, 0, -1):
-        dispatcher.key(CTRL_Z)
-        assert mesh.symmetry_definition == seen[step - 1]
-        assert len(app.history) == step - 1
-
-
-def test_cycle_does_not_touch_positions_or_topology():
-    app = make_app("head_basemesh")
-    mesh = app.scene.mesh
-    before = mesh.export_state()
-    cycle_symmetry(app.scene)
-    after = mesh.export_state()
-    assert after["symmetry"] is not None
-    assert {k: v for k, v in after.items() if k != "symmetry"} == {
-        k: v for k, v in before.items() if k != "symmetry"
-    }
-
-
-def test_cycle_keeps_selection():
-    app = make_app("subd_cube")
-    vid = next(iter(app.scene.mesh.all_vertex_ids()))
-    app.scene.selection.set({vid})
-    LabDispatcher(app).key(SHIFT_S)
-    assert app.scene.selection.vertices == {vid}
 
 
 # -- States (Charakterisierung, E4) ----------------------------------------------
@@ -179,24 +110,3 @@ def test_current_axis_rejects_foreign_definition():
     mesh.symmetry_definition = SymmetryDefinition((1.0, 0.0, 0.0), (1.0, 0.0, 0.0))
     with pytest.raises(ValueError):
         current_axis(mesh)
-
-
-# -- Ebenen-Umriss ------------------------------------------------------------------
-
-
-def test_plane_outline_off_is_empty():
-    assert lab_draw_data.plane_outline_data(make_app("subd_cube").scene.mesh, None) == []
-
-
-@pytest.mark.parametrize("axis,i", [("X", 0), ("Y", 1), ("Z", 2)])
-def test_plane_outline_lies_in_plane_and_encloses_bounds(axis, i):
-    mesh = make_app("head_basemesh").scene.mesh
-    data = lab_draw_data.plane_outline_data(mesh, axis)
-    assert len(data) == 4 * 2 * 3  # 4 Linien à 2 Punkte
-    points = [data[k:k + 3] for k in range(0, len(data), 3)]
-    assert all(p[i] == 0.0 for p in points)
-    lo, hi = mesh_bounds(mesh)
-    for j in (j for j in range(3) if j != i):
-        assert min(p[j] for p in points) < lo[j]
-        assert max(p[j] for p in points) > hi[j]
-

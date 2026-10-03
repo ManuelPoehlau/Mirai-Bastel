@@ -1,9 +1,12 @@
-"""Szene laden: Registry-Asset → `app.scene.mesh` + Kamera-Framing.
+"""Asset-Namen der Registry prüfen; Mesh ohne Viewport laden (GL-frei).
 
-Muster aus `PlaygroundApp.load_asset` / `_frame_camera` (Stand `47f821b`),
-ohne `Viewport`/`PygletStore` (Handoff Slice 2 §2.3: beides zeichnet nichts).
-GL-frei — der Aufrufer (Fenster) ruft `load_asset_into` erst auf, nachdem
-der GL-Kontext existiert (AD-010-Befund).
+`run.py` nutzt `DEFAULT_ASSET`, `resolve_asset_name` und `UnknownAssetError`
+(Exit-Code 2 vor dem Fenster); geladen wird dort über `Application.init_scene`
+(H2-R4 (f)). `load_asset_into` setzt `app.scene.mesh` direkt, ohne Viewport — seit
+WP-SYM-LAB-03 Slice 5 nur noch für die Forschungs-Tests (`test_lab_topology`,
+`test_lab_knife`, `test_lab_resymmetrize`, `test_lab_symmetry`, `test_lab_scene`),
+nicht für den Lab-Pfad. Muster aus `PlaygroundApp.load_asset` / `_frame_camera`
+(Stand `47f821b`).
 """
 
 from __future__ import annotations

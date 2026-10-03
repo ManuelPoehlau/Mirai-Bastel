@@ -1,7 +1,8 @@
 """Lab-Kontext auf dem App-Pfad: genau drei Tasten, Start-Prüfung, Start-Liste.
 
 AD-013 H2 addendum, § Required tests, Lab-Seite: T-R1a, T-R1b, T-R1c, T-R1d.
-Die Enumeration der Binding-Einträge liest `BindingSet._defaults`/`_user` — nur
+Dazu (Slice 5, Ports aus dem gelöschten `test_lab_bindings.py`): Kontext und
+Commands sind Lab-lokal, nicht in `mirai.interaction`. Die Enumeration der Binding-Einträge liest `BindingSet._defaults`/`_user` — nur
 im Test; die Lab-Module selbst nutzen ausschließlich `command_for`/`set_default`.
 """
 
@@ -11,6 +12,7 @@ import pytest
 
 from mirai.application import Application
 from mirai.interaction import commands as cmd
+from mirai.interaction import input as input_module
 from mirai.interaction.bindings import build_default_bindings
 from mirai.interaction.input import GLOBAL_CONTEXT, KNIFE_CONTEXT, BindingSet
 
@@ -145,3 +147,17 @@ def test_startup_listing_names_every_entry_and_every_gate_row():
     assert "SymmetryCycle" in text and "ReSymmetrize" in text and "SymmetryGateMode" in text
     # Seit Slice 4 tun alle drei Lab-Tasten etwas.
     assert not any("noch nicht verfügbar" in line for line in lines)
+
+
+# -- Lab-lokal (Ports aus `test_lab_bindings.py`, Slice 5) --------------------------
+
+
+def test_context_defined_in_lab_not_in_mirai_interaction():
+    assert SYMMETRY_LAB_CONTEXT == "symmetry_lab"
+    assert "symmetry_lab" not in vars(input_module).values()
+
+
+def test_lab_commands_defined_in_lab_not_in_commands():
+    """Die drei Lab-Commands sind Lab-Strings, keine Production-Commands (Plan §3.2)."""
+    for command in (SYMMETRY_CYCLE, RESYMMETRIZE, SYMMETRY_GATE_MODE):
+        assert command not in vars(cmd).values()

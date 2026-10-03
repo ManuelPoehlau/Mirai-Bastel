@@ -5,7 +5,7 @@ sechs „keep"-Fälle: symmetrischer Partner, Seam gleitet, je ein Undo-Schritt,
 Esc, ohne Symmetrie, Status). Statt `LabDispatcher` laufen die Tasten durch
 `lab_key_press` (Lab-Pfad, Nicht-Lab-Tasten gehen an `app.key_press`), die Maus durch
 `app.pointer_motion` und das Loslassen durch `app.key_release` — wie im Fenster. Die
-Originale bleiben bis Slice 5 unverändert.
+Originale sind in Slice 5 gelöscht (Plan A2-Tabelle).
 
 Abweichungen gegenüber den Originalen, alle App-Entscheidungen (Plan §4.3):
 Meldungen kommen von `Application` (englisch, `Rotate committed`,

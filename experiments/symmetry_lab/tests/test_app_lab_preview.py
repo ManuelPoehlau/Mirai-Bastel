@@ -24,15 +24,12 @@ Die Ports der Dispatcher-Tests aus `test_lab_resymmetrize.py` (Plan §4.4) stehe
 
 from __future__ import annotations
 
-import ast
-
 import pytest
 
 from core import FaceId, SelectionMode, VertexId
 from mirai.interaction import commands as cmd
 from mirai.symmetry import SymmetryState, symmetry_state
 
-from symmetry_lab._paths import LAB_DIR
 from symmetry_lab.lab_app import (
     CANCEL_PREVIEW_LINE,
     DISPLAY_COMMANDS,
@@ -512,21 +509,18 @@ def test_preview_overlays_are_drawn_before_the_app_points(previewing, monkeypatc
     assert log == ["lab plane", "lab preview lines", "lab points", "app points"]
 
 
-def _lab_render_constants() -> dict:
-    """Die Farbwerte aus `lab_render.py` (AST, ohne GL-Import)."""
-    tree = ast.parse((LAB_DIR / "lab_render.py").read_text(encoding="utf-8"))
-    values = {}
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and len(node.targets) == 1:
-            target = node.targets[0]
-            if isinstance(target, ast.Name) and target.id.startswith("RESYM_"):
-                values[target.id] = ast.literal_eval(node.value)
-    return values
+#: Die Farbwerte des alten Renderers (`lab_render.py`, gelöscht in WP-SYM-LAB-03 Slice 5;
+#: Stand `065508c`). Bis Slice 5 las der Test sie per AST aus der Datei.
+OLD_RENDERER_COLOURS = {
+    "RESYM_MOVE_COLOR": (0.25, 0.5, 1.0, 1.0),
+    "RESYM_SEAM_COLOR": (0.75, 1.0, 0.1, 1.0),
+    "RESYM_KEEP_COLOR": (1.0, 0.55, 0.55, 1.0),
+}
 
 
 def test_preview_colours_are_the_old_renderers():
-    """README-Legende: blau / hellgrün / hellrot — Werte aus `lab_render.py`."""
-    colours = _lab_render_constants()
+    """README-Legende: blau / hellgrün / hellrot — Werte des alten `lab_render.py`."""
+    colours = OLD_RENDERER_COLOURS
     styles = SymmetryStateOverlay.LAYER_STYLES
     assert styles[RESYM_MOVE_LAYER][0] == colours["RESYM_MOVE_COLOR"]
     assert styles[RESYM_SEAM_LAYER][0] == colours["RESYM_SEAM_COLOR"]

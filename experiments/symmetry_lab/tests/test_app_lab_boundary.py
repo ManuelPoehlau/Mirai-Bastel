@@ -1,7 +1,11 @@
-"""Keine Capability-Gabel: die Lab-Module des App-Pfads nutzen nur die öffentliche
-H2-R4-Liste von `Application` (AD-013 H2 addendum).
+"""Keine Capability-Gabel: die Lab-Module nutzen nur die öffentliche H2-R4-Liste von
+`Application` (AD-013 H2 addendum).
 
-- T-R4a: statischer AST-Scan der neuen Lab-Module (`LAB_APP_MODULES`) auf
+Seit WP-SYM-LAB-03 Slice 5 decken T-R4a und T-R4b **jedes** Lab-Modul ab
+(`LAB_MODULES`); bis dahin nur die Module des App-Pfads, weil der alte
+`LabDispatcher` daneben lief (Plan §5 Slice 1b).
+
+- T-R4a: statischer AST-Scan der Lab-Module (`LAB_MODULES`) auf
   Unterstrich-Attribute an `Application`-Objekten, `dispatch_command`,
   `select_at`, `history.push` und Importe von `PointerGestures`, `ToolManager`,
   `pick_component`. Seit Slice 2 zusätzlich: jede `Application`-*Methode*, die Lab-Code
@@ -32,7 +36,7 @@ from symmetry_lab.lab_app import lab_key_press
 
 from ._app_lab_support import (  # noqa: F401
     CTRL_Z,
-    LAB_APP_MODULES,
+    LAB_MODULES,
     SHIFT_S,
     forbid_lab_calls,
     lab_app,
@@ -127,9 +131,9 @@ def violations(source: str, module: str = "") -> list[str]:
     return found
 
 
-@pytest.mark.parametrize("module", LAB_APP_MODULES)
+@pytest.mark.parametrize("module", LAB_MODULES)
 def test_lab_app_modules_use_only_the_public_allow_list(module):
-    """T-R4a: kein Lab-Modul des App-Pfads greift an der H2-R4-Liste vorbei."""
+    """T-R4a: kein Lab-Modul greift an der H2-R4-Liste vorbei."""
     path = LAB_DIR / (module.rsplit(".", 1)[-1] + ".py")
     assert path.is_file(), path
     assert violations(path.read_text(encoding="utf-8"), module) == []
@@ -186,7 +190,7 @@ def test_setup_calls_are_allowed_only_in_run(name):
     genau in `run.py`, in jedem anderen Lab-Modul ein Verstoß."""
     source = f"def f(app):\n    app.{name}()\n"
     assert violations(source, SETUP_MODULE) == []
-    for module in LAB_APP_MODULES:
+    for module in LAB_MODULES:
         if module != SETUP_MODULE:
             assert violations(source, module) == [f"app.{name} (nicht auf der H2-R4-Liste)"]
 
@@ -211,17 +215,17 @@ def test_scan_ignores_own_underscore_members():
     assert violations("def f(self, lab):\n    self._set(1)\n    lab._cycle()\n") == []
 
 
-def test_lab_app_modules_cover_every_new_file():
-    """T-R4a: jede Datei des App-Pfads steht in der Scan-Liste."""
-    for name in ("lab_app", "lab_app_window", "lab_overlays", "run", "probe_drag_cost"):
-        assert f"symmetry_lab.{name}" in LAB_APP_MODULES
-        assert (Path(LAB_DIR) / f"{name}.py").is_file()
+def test_lab_modules_cover_every_lab_file():
+    """T-R4a/T-R4b (seit Slice 5): jede Python-Datei des Labs steht in der Liste —
+    ein neues Modul fiele sonst still aus beiden Prüfungen heraus."""
+    files = {p.stem for p in Path(LAB_DIR).glob("*.py") if p.stem != "__init__"}
+    assert {f"symmetry_lab.{name}" for name in files} == set(LAB_MODULES)
 
 
 def test_guard_rejects_a_lab_module_as_immediate_caller(lab_app):
     """T-R4b: `dispatch_command`/`select_at` werfen, wenn ein Lab-Modul sie direkt aufruft."""
     app, _lab = lab_app
-    for module in LAB_APP_MODULES:
+    for module in LAB_MODULES:
         scope = {"__name__": module, "app": app}
         with pytest.raises(AssertionError, match="H2-R4"):
             exec("app.dispatch_command('Undo')", scope)

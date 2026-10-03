@@ -68,9 +68,8 @@ from .lab_symmetry import SymmetryReport, current_axis, next_axis, set_symmetry_
 #: Die drei Lab-Commands (H2-R1). Alles andere geht an `Application`.
 LAB_COMMANDS = frozenset({SYMMETRY_CYCLE, RESYMMETRIZE, SYMMETRY_GATE_MODE})
 
-#: Die Lab-Kontext-Einträge auf dem App-Pfad: genau die drei Tasten, Eingaben und
-#: Begründungen aus `LAB_OVERRIDES` (eine Quelle). Die Navigations- und C-Overrides
-#: des alten Labs entfallen hier (H2-R1: keine Pointer-Einträge, Plan §4.3).
+#: Die Lab-Kontext-Einträge: genau die drei Tasten aus `LAB_OVERRIDES` (eine Quelle;
+#: seit Slice 5 enthält sie nur noch diese drei, H2-R1).
 LAB_KEY_ENTRIES: tuple[LabOverride, ...] = tuple(
     o for o in LAB_OVERRIDES if o.command in LAB_COMMANDS
 )
@@ -127,7 +126,7 @@ def unsupported_commands() -> dict[str, str]:
     return names
 
 #: Text der Vorschau-Zeile für jede Ablehnung (App-Gate und Lab), wie im alten Lab
-#: (`lab_dispatch.PREVIEW_HINT`; hier kopiert, das alte Modul geht in Slice 5).
+#: (`lab_dispatch.PREVIEW_HINT`; hier kopiert, das alte Modul ist seit Slice 5 gelöscht).
 PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
 
 #: Was die Vorschau durchlässt (Addendum, Gate-Tabelle „preview open"): nur die

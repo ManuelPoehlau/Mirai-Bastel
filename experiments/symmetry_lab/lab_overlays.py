@@ -23,9 +23,8 @@ bei offener Vorschau nicht ändern (Gate), deshalb hängen die Layer nur am Plan
 (neu nur bei einem anderen Plan-Objekt); das Lab setzt beim Öffnen und Schließen
 `dirty`.
 
-Farben und Punktgröße der Zustands-Marker = die Werte aus `lab_render.py`
-(README-Farblegende); hier kopiert statt importiert, weil `lab_render` mit dem alten
-Renderer in Slice 5 geht. Die Partner-Marker sind so groß wie die Auswahl der App
+Farben und Punktgröße der Zustands-Marker = die Werte aus dem alten `lab_render.py`
+(README-Farblegende), kopiert; der alte Renderer ist seit Slice 5 gelöscht. Die Partner-Marker sind so groß wie die Auswahl der App
 (8 px), damit ein Partner neben dem gelben Original gleich gewichtet aussieht.
 
 Zeichenreihenfolge (README „Zeichenreihenfolge"): der Viewport zeichnet die

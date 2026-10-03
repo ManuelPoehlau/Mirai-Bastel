@@ -1,8 +1,9 @@
 """Re-Symmetrize-Plan und -Ausführung — reine, GL-freie Funktionen (Lab).
 
 Handoff WP-SYM-LAB-01 Slice 5, §2 E12–E14. Vorschau und Ausführung benutzen
-denselben `ResymPlan` (Handoff §4.2): `plan_resymmetrize` rechnet, der
-Dispatcher zeigt den Plan an und `apply_plan` setzt genau diese Positionen.
+denselben `ResymPlan` (Handoff §4.2): `plan_resymmetrize` rechnet, die Vorschau
+zeigt den Plan (`resym_preview_data`, `plan_summary`) und `set_plan_positions`
+setzt genau diese Positionen.
 
 - **Quellseite (A6, E12):** die topologische Seite (`lab_topology`) des
   ausgewählten Vertex — nicht das Vorzeichen seiner Position. Dadurch auch
@@ -15,16 +16,14 @@ Dispatcher zeigt den Plan an und `apply_plan` setzt genau diese Positionen.
   Konflikt) bleiben unverändert und stehen im Plan unter `unmatched`.
 - **Keine Toleranz (A5):** „schon symmetrisch" heißt exakt gleich; nur echte
   Positionsänderungen landen im Plan.
-- **Ein Undo-Schritt (E14):** `MeshStateCommand` mit Snapshot vorher/nachher
-  — gleiches Muster wie `lab_symmetry.cycle_symmetry` (Slice 3 E2). Ein
-  leerer Plan erzeugt keinen History-Eintrag.
-- **App-Pfad (WP-SYM-LAB-03 Slice 3):** `set_plan_positions` setzt die
-  Positionen ohne History; `apply_plan` (alter Pfad) und das `mutate` von
-  `Application.apply_mesh_change` (`lab_app`) teilen es. Der History-Eintrag
-  entsteht dort in `Application` (H3), nicht hier.
+- **Ein Undo-Schritt (E14):** `set_plan_positions` setzt die Positionen ohne
+  History; es ist das `mutate` von `Application.apply_mesh_change` (`lab_app`,
+  WP-SYM-LAB-03 Slice 3), der History-Eintrag entsteht dort (H3). Ein leerer Plan
+  erzeugt keinen. Das frühere `apply_plan` (eigener `MeshStateCommand`) ging in
+  Slice 5 mit dem alten Dispatcher.
 - **Vorschau-Daten (E15):** `resym_preview_data` liefert Punkte und Linien der
   Vorschau aus demselben Plan (für `lab_overlays`); seit WP-SYM-LAB-03 Slice 5
-  hier statt in `lab_draw_data` (das mit dem alten Renderer gelöscht wird).
+  hier statt im gelöschten `lab_draw_data`.
 """
 
 from __future__ import annotations
@@ -32,8 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from core import Mesh, Scene, VertexId
-from core.operations.topology import MeshStateCommand
+from core import Mesh, VertexId
 from mirai.symmetry import mirror_position
 
 from .lab_symmetry import AXIS_INDEX, current_axis
@@ -158,41 +156,17 @@ def plan_resymmetrize(
 
 
 def plan_description(plan: ResymPlan) -> str:
-    """History-Text eines ausgeführten Plans (alter Pfad und App-Pfad gleich)."""
+    """History-Text eines ausgeführten Plans."""
     return f"Re-Symmetrize {plan.source_label} → {plan.target_label}"
 
 
 def set_plan_positions(mesh: Mesh, plan: ResymPlan) -> set[VertexId]:
     """Setzt genau die Positionen des Plans (E13) und gibt die bewegten Vertex-IDs
-    zurück — ohne History. Geteilt von `apply_plan` (alter Pfad) und dem `mutate`
-    des App-Pfads (`Application.apply_mesh_change`, WP-SYM-LAB-03 Slice 3), wie
-    `lab_symmetry.set_symmetry_axis` in Slice 1b."""
+    zurück — ohne History; das `mutate` von `Application.apply_mesh_change`
+    (WP-SYM-LAB-03 Slice 3), wie `lab_symmetry.set_symmetry_axis` in Slice 1b."""
     for change in plan.changes:
         mesh.set_vertex_position(change.vertex, change.after)
     return {change.vertex for change in plan.changes}
-
-
-def apply_plan(scene: Scene, plan: ResymPlan) -> bool:
-    """E13/E14: setzt die Positionen des Plans als genau einen History-Eintrag.
-
-    Leerer Plan → nichts, kein History-Eintrag (E15). Rückgabe: ob ein
-    History-Eintrag entstanden ist.
-    """
-    if plan.is_empty:
-        return False
-    mesh = scene.mesh
-    before = mesh.export_state()
-    set_plan_positions(mesh, plan)
-    after = mesh.export_state()
-    scene.history.push(
-        MeshStateCommand(
-            mesh=mesh,
-            before_state=before,
-            after_state=after,
-            description=plan_description(plan),
-        )
-    )
-    return True
 
 
 def plan_summary(plan: ResymPlan) -> str:

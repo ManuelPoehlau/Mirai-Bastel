@@ -1,9 +1,9 @@
 """Ports der Dispatcher-Tests aus `test_lab_resymmetrize.py` auf den App-Pfad
 (WP-SYM-LAB-03 Slice 3, Plan §4.4).
 
-Die Originale und die reinen Tests (`plan_resymmetrize`, `apply_plan`,
-`plan_summary`, `resym_preview_data`) bleiben unverändert in `test_lab_resymmetrize.py`
-bis Slice 5. Hier läuft dasselbe Verhalten über `lab_key_press` und die öffentlichen
+Die Originale sind seit Slice 5 gelöscht (Plan A2-Tabelle); die reinen Tests
+(`plan_resymmetrize`, `set_plan_positions`, `plan_summary`, `resym_preview_data`)
+bleiben in `test_lab_resymmetrize.py`. Hier läuft dasselbe Verhalten über `lab_key_press` und die öffentlichen
 Eingänge von `Application` statt über `LabDispatcher`; Auswahl per Klick statt
 `selection.set`. Gleicher Name = gleiche Aussage wie das Original. Zuordnung:
 

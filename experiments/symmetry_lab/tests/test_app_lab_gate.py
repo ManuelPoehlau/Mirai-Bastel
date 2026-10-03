@@ -1,6 +1,6 @@
 """E5-Gate MARK/BLOCK auf dem App-Pfad (WP-SYM-LAB-03 Slice 4), jetzt mit C.
 
-Port der 13 Tests aus `test_lab_gate.py` (altes Lab, bleibt bis Slice 5) auf
+Port der 13 Tests aus `test_lab_gate.py` (altes Lab, in Slice 5 gelöscht) auf
 `lab_key_press` und die öffentlichen Einstiege von `Application`, plus die neuen
 Fälle des Slice-4-Briefs: Shift+B, C unter MARK (sofortiges C und Knife-Session)
 und BLOCK, die Erklärung `supports_symmetry`, Cancel, T-R3 für die BLOCK-Zeile,

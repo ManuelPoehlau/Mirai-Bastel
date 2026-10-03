@@ -5,8 +5,9 @@ wird wie in `run.build_lab` aufgebaut, nur ohne Fenster-Handler.
 
 `forbid_lab_calls` ist T-R4b (AD-013 H2-R4, review CLAUDE-002 N6): jeder Test, der
 diese Fixture importiert, läuft mit `Application.dispatch_command` und `select_at`
-so gepatcht, dass sie werfen, wenn ihr **unmittelbarer** Aufrufer ein neues
-Lab-Modul ist. `key_press` → `dispatch_command` mit einem Lab-Frame weiter oben
+so gepatcht, dass sie werfen, wenn ihr **unmittelbarer** Aufrufer ein Lab-Modul
+ist — seit WP-SYM-LAB-03 Slice 5 jedes Lab-Modul (die Ausnahme für den alten
+`LabDispatcher` ist mit ihm gelöscht). `key_press` → `dispatch_command` mit einem Lab-Frame weiter oben
 im Stack bleibt erlaubt.
 """
 
@@ -37,14 +38,22 @@ CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
 CTRL_Y = Input("key", "y", frozenset({"ctrl"}))
 LMB = Input("mouse", "LEFT")
 
-#: Die neuen Lab-Module des App-Pfads (Slice 1b; Slice 2: die Drag-Kosten-Probe) —
-#: Gegenstand von T-R4a/T-R4b.
-LAB_APP_MODULES = (
+#: Jedes Lab-Modul — Gegenstand von T-R4a/T-R4b. Bis Slice 5 nur die Module des
+#: App-Pfads (Slice 1b; Slice 2: die Drag-Kosten-Probe), weil der alte Dispatcher
+#: daneben noch lief; `test_app_lab_boundary.test_lab_modules_cover_every_lab_file`
+#: hält die Liste vollständig.
+LAB_MODULES = (
+    "symmetry_lab._paths",
     "symmetry_lab.lab_app",
     "symmetry_lab.lab_app_window",
+    "symmetry_lab.lab_bindings",
     "symmetry_lab.lab_overlays",
-    "symmetry_lab.run",
+    "symmetry_lab.lab_resymmetrize",
+    "symmetry_lab.lab_scene",
+    "symmetry_lab.lab_symmetry",
+    "symmetry_lab.lab_topology",
     "symmetry_lab.probe_drag_cost",
+    "symmetry_lab.run",
 )
 
 
@@ -108,7 +117,7 @@ def forbid_lab_calls(monkeypatch):
 
         def guarded(self, *args, __original=original, __name=name, **kwargs):
             caller = sys._getframe(1).f_globals.get("__name__", "")
-            if caller in LAB_APP_MODULES:
+            if caller in LAB_MODULES:
                 raise AssertionError(f"H2-R4: {caller} ruft Application.{__name} auf")
             return __original(self, *args, **kwargs)
 

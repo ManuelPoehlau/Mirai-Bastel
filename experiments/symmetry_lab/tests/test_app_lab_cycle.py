@@ -2,7 +2,7 @@
 
 Portiert nach Plan §4.4 (`test_lab_symmetry`: die Zyklus-Tests laufen jetzt über
 `lab_key_press` → `Application.apply_mesh_change` statt über `LabDispatcher`;
-die Originale in `test_lab_symmetry.py` bleiben bis Slice 5 unverändert):
+die Originale in `test_lab_symmetry.py` sind seit Slice 5 gelöscht, Plan A2-Tabelle):
 
 - off → X → Y → Z → off, je genau ein History-Eintrag, Undo stellt jede Definition her
 - der Zyklus ändert weder Positionen noch Topologie
