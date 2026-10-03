@@ -1,7 +1,8 @@
 """Symmetrisches Rotate/Scale — WP-SYM-LAB-02 S2 (AD-SYM-02 §2.4).
 
 Operation-Ebene: `RotateOperation`/`ScaleOperation` gegen `params["symmetry"]`; Tool-Ebene:
-`RotateTool`/`ScaleTool` lösen den Symmetriekontext selbst auf (Pivot über Auswahl ∪ Partner,
+`RotateTool`/`ScaleTool` lösen den Symmetriekontext selbst auf (Pivot pro Seite = Zentroid der
+eigenen Auswahl, Artist-Verdikt 2026-10-03; Rückfall auf Auswahl ∪ Partner bei einem Seam-Vertex;
 Seam-Ablehnung). Gespiegelte Partner werden als konjugierte Absicht transformiert und müssen
 exakt (bitgleich bei achsenparallelen Ebenen) die Spiegelung der Quelle bleiben, weil
 `mirai.symmetry` Partner per exakter Positionsgleichheit findet.
@@ -231,24 +232,68 @@ class RotationSenseTests(unittest.TestCase):
 
 
 class ToolBehaviourTests(unittest.TestCase):
-    def test_single_vertex_rotates_about_pair_midpoint(self):
-        for tool_cls, update in (
-            (RotateTool, {"dx": 60, "dy": 0, "width": 800, "height": 600}),
-            (ScaleTool, {"dx": 60, "dy": 0, "width": 800, "height": 600}),
-        ):
+    def test_single_vertex_turns_about_itself(self):
+        """Pivot pro Seite (Artist-Verdikt 2026-10-03, B): der Zentroid eines einzelnen
+        Vertex ist der Vertex selbst - Rotate/Scale ändern nichts, der Partner bleibt
+        exakt gespiegelt. (Die frühere Paarmitte bleibt als Idee für ein Pivot-System.)"""
+        for tool_cls in (RotateTool, ScaleTool):
             mesh, pairs, _ = _mesh(pairs=1, seed=6)
             a, b = pairs[0]
             start_a, start_b = mesh.vertex_position(a), mesh.vertex_position(b)
-            tool, scene = _begin_tool(tool_cls, mesh, {a})
+            tool, _ = _begin_tool(tool_cls, mesh, {a})
             self.assertEqual(tool.vertex_ids, {a, b})
-            midpoint = tuple((x + y) / 2 for x, y in zip(start_a, start_b))
-            self.assertAlmostEqual(tool.operation.pivot[0], 0.0, places=12)
-            self.assertTrue(_close(tool.operation.pivot, midpoint))
-            tool.update(**update)
-            self.assertNotEqual(mesh.vertex_position(a), start_a)
+            self.assertEqual(tool.operation.pivot, start_a)
+            tool.update(dx=60, dy=0, width=800, height=600)
+            self.assertTrue(_close(mesh.vertex_position(a), start_a))
             self.assertEqual(
                 mesh.vertex_position(b), mirror_position(mesh.vertex_position(a), ORIGIN, NX)
             )
+            self.assertTrue(_close(mesh.vertex_position(b), start_b))
+            tool.cancel()
+
+    def test_one_sided_group_turns_about_its_own_centroid(self):
+        """Eine einseitige Gruppe (z. B. eine Augenschleife) dreht/skaliert um ihre eigene
+        Mitte; die Partner um die gespiegelte Mitte, exakt gespiegelt."""
+        for tool_cls in (RotateTool, ScaleTool):
+            mesh, pairs, _ = _mesh(pairs=3, seed=12)
+            sources = [a for a, _ in pairs[:2]]
+            partners = [b for _, b in pairs[:2]]
+            centroid = tuple(
+                sum(mesh.vertex_position(v)[k] for v in sources) / 2 for k in range(3)
+            )
+            tool, _ = _begin_tool(tool_cls, mesh, set(sources), space="y")
+            self.assertTrue(_close(tool.operation.pivot, centroid))
+            self.assertLess(tool.operation.pivot[0], 0.0)  # nicht auf der Ebene
+            before = [mesh.vertex_position(v) for v in sources]
+            tool.update(dx=60, dy=0, width=800, height=600)
+            after = [mesh.vertex_position(v) for v in sources]
+            self.assertNotEqual(after, before)
+            # Rotation/Skalierung um den Zentroid lässt ihn an Ort und Stelle.
+            moved_centroid = tuple(sum(p[k] for p in after) / 2 for k in range(3))
+            self.assertTrue(_close(moved_centroid, centroid))
+            for a, b in zip(sources, partners):
+                self.assertEqual(
+                    mesh.vertex_position(b), mirror_position(mesh.vertex_position(a), ORIGIN, NX)
+                )
+            tool.cancel()
+
+    def test_seam_vertex_in_selection_falls_back_to_pivot_on_plane(self):
+        """Mit einem Seam-Vertex läge der eigene Zentroid neben der Ebene und der
+        Seam-Constraint würde jede Rotation ablehnen: Rückfall auf Auswahl ∪ Partner."""
+        for tool_cls in (RotateTool, ScaleTool):
+            mesh, pairs, seam = _mesh(pairs=1, seed=13, seam=True)
+            a, b = pairs[0]
+            selected = {a, seam[0]}
+            affected = {a, b, seam[0]}
+            expected = tuple(
+                sum(mesh.vertex_position(v)[k] for v in affected) / 3 for k in range(3)
+            )
+            tool, _ = _begin_tool(tool_cls, mesh, selected, space="x")
+            self.assertTrue(_close(tool.operation.pivot, expected))
+            self.assertAlmostEqual(tool.operation.pivot[0], 0.0, places=12)
+            tool.update(dx=40, dy=0, width=800, height=600)
+            self.assertAlmostEqual(mesh.vertex_position(seam[0])[0], 0.0, places=12)
+            tool.cancel()
 
     def test_without_symmetry_single_vertex_unchanged(self):
         mesh = Mesh()
@@ -290,8 +335,10 @@ class ToolBehaviourTests(unittest.TestCase):
         for tool_cls in (RotateTool, ScaleTool):
             mesh, pairs, _ = _mesh(pairs=2, seed=10)
             a, b = pairs[0]
+            # Zwei Vertices einer Seite: ein einzelner dreht/skaliert um sich selbst.
+            group = {a, pairs[1][0]}
             before = {v: mesh.vertex_position(v) for v in mesh.all_vertex_ids()}
-            tool, scene = _begin_tool(tool_cls, mesh, {a})
+            tool, scene = _begin_tool(tool_cls, mesh, group)
             tool.update(dx=70, dy=0, width=800, height=600)
             tool.update(dx=20, dy=0, width=800, height=600)
             tool.cancel()
@@ -301,7 +348,7 @@ class ToolBehaviourTests(unittest.TestCase):
             tool.deactivate()
             tool = tool_cls()
             tool.activate()
-            tool.begin(scene=scene, camera=_Camera(), vertex_ids={a})
+            tool.begin(scene=scene, camera=_Camera(), vertex_ids=set(group))
             tool.update(dx=70, dy=0, width=800, height=600)
             tool.update(dx=20, dy=0, width=800, height=600)
             tool.commit()

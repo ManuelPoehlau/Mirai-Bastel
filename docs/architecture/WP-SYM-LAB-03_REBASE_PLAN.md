@@ -428,11 +428,11 @@ restricted, and the Lab does not use it).
 |---|---|
 | W like the app (2026-09-27) | **Superseded, never verdicted.** The Lab *is* the app's W (B3 `PROMOTED`); there is nothing Lab-specific left to judge |
 | Slice 7 mirrored Knife in the window | **Moot, never verdicted.** Not re-hosted (trigger). Findings E23–E30, P1–P3 stay in the Lab README as research for the symmetric One Knife |
-| WP-SYM-LAB-02 S2 (symmetric Rotate/Scale, pivot) | **Still open** after the joint session (2026-10-03): Manu asked where the pivot sits and how it is computed (today: centroid over selection ∪ partners, i.e. on the plane for a one-sided selection; the operation mirrors it for the partners). Answer and alternative (per-side pivot) given in chat; decision pending |
+| WP-SYM-LAB-02 S2 (symmetric Rotate/Scale, pivot) | **Pivot decided: B — per side** (Manu, 2026-10-03, after the joint session): without an explicit `pivot`, the centroid of the explicit selection; the operation mirrors it for the partners; fallback to the centroid over selection ∪ partners when a seam vertex is affected and the own centroid is off the plane (`selection_helpers.symmetric_default_pivot`, used by `TransformTool._on_begin`). A single vertex therefore turns/scales about itself. The pair midpoint (A) stays an idea for a later pivot system (free/temporary pivots). Built 2026-10-03; **re-check in the window open** (Lab README, joint session item 2) |
 | E5 MARK vs. BLOCK | **KEEP-BLOCK** (Manu, 2026-10-03, joint session, tested with C on the app path): a tool that does not mirror is refused under symmetry. Recorded in AD-SYM-02 §4. Lab consequence: BLOCK becomes the default (Slice 5) |
 
 **Joint session after Slice 4 (Manu, 2026-10-03):** 1 S3–S5 smoke on the new host **KEEP** ·
-2 S2 **open** (pivot question) · 3 E5 **KEEP-BLOCK** · 4 Q1 **(a)** · 5 preview lines under the
+2 S2 **open** (pivot question → decided B, built, re-check open) · 3 E5 **KEEP-BLOCK** · 4 Q1 **(a)** · 5 preview lines under the
 symmetry markers **KEEP**. Details in the Lab README, "Gemeinsame Prüf-Session nach Slice 4".
 
 ### 4.3 What visibly changes

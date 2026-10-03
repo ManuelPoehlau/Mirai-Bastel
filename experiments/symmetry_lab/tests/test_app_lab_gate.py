@@ -251,6 +251,18 @@ def test_mark_runs_with_the_one_sided_warning_and_one_undo_step(symmetric, unsup
     mesh = app.scene.mesh
     vid, _partner = paired(app)
     select(app, vid)
+    # Zwei Vertices einer Seite: seit dem Pivot pro Seite (2026-10-03) dreht/skaliert
+    # ein einzelner Vertex um sich selbst.
+    corr = vertex_correspondence(mesh)
+    side = mesh.vertex_position(vid)[0] > 0
+    other = next(
+        v for v in visible(app)
+        if v != vid
+        and corr[v].state is CorrespondenceState.PAIRED
+        and (mesh.vertex_position(v)[0] > 0) == side
+    )
+    app.selection.set({vid, other})
+    app.viewport.on_selection_changed()
     before = len(app.history)
     state0 = mesh.export_state()
     p0 = mesh.vertex_position(vid)

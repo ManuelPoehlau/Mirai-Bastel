@@ -135,7 +135,10 @@ projected exactly onto the plane afterwards. The Operation hard-codes no centroi
 `selection_helpers.py`, same resolution as `MoveTool.begin()`) pass the affected set (selection ∪
 partners; an explicitly selected partner wins and the pair then moves as a rigid group) and, when no
 pivot is given under symmetry, the centroid over selection ∪ partners (a single vertex turns about the
-pair midpoint). Seam contract (INV-2/INV-8): a Seam vertex stays on the plane only if the pivot is on
+pair midpoint). *Superseded 2026-10-03 (Artist decision, WP-SYM-LAB-03 joint session, `src/mirai`
+only, no Core change):* the default is now the centroid of the explicit selection, per side, mirrored
+for the partners by the operation; fallback to selection ∪ partners when a seam vertex is affected and
+the own centroid is off the plane (`selection_helpers.symmetric_default_pivot`). Seam contract (INV-2/INV-8): a Seam vertex stays on the plane only if the pivot is on
 the plane AND rotation axis ∥ plane normal / scale is uniform or normal-aligned (normal is an
 eigenvector of the scale matrix); otherwise the tool refuses *before the first motion* with the new
 `SeamConstraintError` (the Operation raises the same error as a backstop, before touching any vertex).

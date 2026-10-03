@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from core import Mesh, Selection, SelectionMode, VertexId
+from core.operations.transform import pivot_on_plane
 
 from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 
@@ -84,6 +85,34 @@ def resolve_symmetry(
         "mirrored_vertex_ids": mirrored,
         "seam_vertex_ids": seam,
     }
+
+
+def symmetric_default_pivot(
+    mesh: Mesh,
+    selected: set[VertexId],
+    affected: set[VertexId],
+    symmetry: dict[str, Any],
+) -> tuple[float, float, float]:
+    """Default-Pivot für Rotate/Scale unter Symmetrie, wenn keiner gegeben ist.
+
+    Artist-Verdikt (Manu, 2026-10-03, WP-SYM-LAB-03 Prüf-Session, Punkt 2 = B):
+    ein Pivot **pro Seite** — der Zentroid der expliziten Auswahl; die Operation
+    spiegelt ihn für die Partner (AD-SYM-02 §2.4). Eine Augenschleife dreht und
+    skaliert so um ihre eigene Mitte, die Gegenseite gespiegelt; ein einzelner
+    Vertex dreht sich um sich selbst (keine sichtbare Änderung). Liegt eine Auswahl
+    über beiden Seiten symmetrisch, liegt ihr Zentroid ohnehin auf der Ebene.
+
+    Rückfall auf den Zentroid über Auswahl ∪ Partner (die frühere Paarmitte), wenn
+    ein Seam-Vertex betroffen ist und der eigene Zentroid nicht auf der Ebene liegt —
+    sonst würde der Seam-Constraint (INV-2) jede solche Rotation ablehnen. Ein
+    freier/temporärer Pivot ist ein eigenes Thema (Pivot-System, später).
+    """
+    own = selection_pivot(mesh, selected)
+    if symmetry["seam_vertex_ids"] and not pivot_on_plane(
+        own, symmetry["plane_point"], symmetry["plane_normal"]
+    ):
+        return selection_pivot(mesh, affected)
+    return own
 
 
 def selection_pivot(mesh: Mesh, vertex_ids: set[VertexId]) -> tuple[float, float, float]:

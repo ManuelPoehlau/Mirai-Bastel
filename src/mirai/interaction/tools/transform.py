@@ -41,7 +41,7 @@ from .selection_helpers import (
     _VertexSelectionView,
     resolve_symmetry,
     selection_normal,
-    selection_pivot,
+    symmetric_default_pivot,
 )
 
 _WORLD_AXES = {
@@ -348,22 +348,25 @@ class TransformTool(Tool):
     def _on_begin(
         self, scene=None, camera=None, vertex_ids=None, **params: Any
     ) -> None:
-        vertex_ids = set(vertex_ids or ())
-        if not vertex_ids:
+        selected = set(vertex_ids or ())
+        if not selected:
             raise ValueError("TransformTool.begin() benötigt mindestens einen Vertex.")
         self._scene = scene
         self._camera = camera
         # Symmetrie (AD-SYM-02 §2.4, wie MoveTool): Partner werden mitbetroffen;
-        # ohne explizites `pivot` ist der Pivot der Zentroid über Auswahl ∪ Partner
-        # (ein einzelner Vertex dreht/skaliert damit um die Paarmitte). Ein gegebener
-        # Pivot gilt unverändert - die Operation spiegelt ihn für die Partner.
-        vertex_ids, symmetry = resolve_symmetry(scene.mesh, vertex_ids)
+        # ohne explizites `pivot` ist der Pivot der Zentroid der eigenen Auswahl, pro
+        # Seite (Artist-Verdikt 2026-10-03, `symmetric_default_pivot`; Rückfall auf
+        # Auswahl ∪ Partner bei einem Seam-Vertex). Ein gegebener Pivot gilt
+        # unverändert - die Operation spiegelt ihn für die Partner.
+        vertex_ids, symmetry = resolve_symmetry(scene.mesh, selected)
         self._vertex_ids = vertex_ids
         pivot = params.get("pivot")
         op_params: dict[str, Any] = {"pivot": pivot}
         if symmetry is not None:
             if pivot is None:
-                op_params["pivot"] = selection_pivot(scene.mesh, vertex_ids)
+                op_params["pivot"] = symmetric_default_pivot(
+                    scene.mesh, selected, vertex_ids, symmetry
+                )
             op_params["symmetry"] = symmetry
         context = OperationContext(
             target=scene.mesh,

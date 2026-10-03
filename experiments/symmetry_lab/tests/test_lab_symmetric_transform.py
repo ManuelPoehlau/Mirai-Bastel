@@ -55,6 +55,20 @@ def paired(app):
     return vid, vertex_correspondence(app.scene.mesh)[vid].partner
 
 
+def same_side_pair(app, vid):
+    """Ein zweiter gepaarter Vertex auf derselben Seite wie `vid` und sein Partner.
+    Rotate/Scale brauchen seit dem Pivot pro Seite (Artist-Verdikt 2026-10-03) eine
+    Gruppe: ein einzelner Vertex dreht/skaliert um sich selbst."""
+    mesh = app.scene.mesh
+    corr = vertex_correspondence(mesh)
+    side = mesh.vertex_position(vid)[0] > 0
+    for w in sorted(mesh.all_vertex_ids(), key=int):
+        c = corr[w]
+        if w != vid and c.state is CorrespondenceState.PAIRED and (mesh.vertex_position(w)[0] > 0) == side:
+            return w, c.partner
+    raise AssertionError("kein zweiter gepaarter Vertex auf derselben Seite")
+
+
 def move_mouse(d):
     x, y = 640.0, 400.0
     for dx, dy in DRAGS:
@@ -71,9 +85,11 @@ def mirrored_ok(app, vid, partner):
 
 @pytest.mark.parametrize("key,label", [(KEY_E, "Rotate"), (KEY_R, "Scale")])
 def test_single_vertex_runs_symmetric_one_undo_step(app, dispatcher, key, label):
+    """Seit dem Pivot pro Seite (2026-10-03) mit einer einseitigen Zwei-Vertex-Gruppe."""
     mesh = app.scene.mesh
     vid, partner = paired(app)
-    app.scene.selection.set({vid})
+    other, other_partner = same_side_pair(app, vid)
+    app.scene.selection.set({vid, other})
     state0, before = mesh.export_state(), len(app.history)
     p0 = mesh.vertex_position(vid)
 
@@ -86,6 +102,7 @@ def test_single_vertex_runs_symmetric_one_undo_step(app, dispatcher, key, label)
 
     assert mesh.vertex_position(vid) != p0
     assert mirrored_ok(app, vid, partner)
+    assert mirrored_ok(app, other, other_partner)
     assert vertex_correspondence(mesh)[vid].partner == partner  # Paar bleibt PAIRED
     assert dispatcher.message == f"{label} übernommen"
     assert len(app.history) == before + 1
