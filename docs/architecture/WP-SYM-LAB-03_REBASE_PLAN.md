@@ -125,6 +125,275 @@ The hover partner (turquoise) had no test; Slice 2 added them
 (`experiments/symmetry_lab/tests/test_app_lab_partners.py`). Every
 deleted Lab test needs the same row treatment, not only the hover tests.
 
+### A2 table — Slice 5, step 0 (2026-10-03)
+
+Written before any deletion and checked against the code at `fe1b213`. One row per deleted
+test function; a parametrised function lists its cases and counts as that many tests. Paths:
+`lab/` = `experiments/symmetry_lab/tests/`, `tests/` = the Production suite. **Ported (S5)**
+means a test written in Slice 5 under exactly that name; **reason** is used only where the
+rule itself is gone (deleted module or an app decision), never "the app covers it". Names
+refer to the state after Slice 5. Two renames in Slice 5: `lab/test_run_app.py` →
+`lab/test_run.py` (same test names), and in `lab/test_app_lab_cycle.py`
+`test_run_app_rejects_unknown_name_before_opening_a_window` /
+`test_run_app_help_runs_without_a_window` → `test_run_rejects_unknown_name_before_opening_a_window`
+/ `test_run_help_runs_without_a_window`.
+
+**Re-verification of the draft hover mapping (above).** The six "covered" rows hold as
+drafted. The four **port** rows are still ports: since Slice 1b only
+`lab/test_app_lab_hud.py::test_hover_target_when_the_selection_is_empty` touches one of them
+(hover target + empty selection after the commit, E8). It does not check that the partner
+moves mirrored or that exactly one history entry is written. `lab/test_app_lab_partners.py::test_esc_during_drag_restores_markers_without_a_report_run`
+cancels a *selection* target, not a hover target. So all four go into a new
+`lab/test_app_lab_hover.py`. The camera-drag row stays a reason (the app clears the hover
+during orbit, §4.3).
+
+**Kept, not in this table** (module stays, test unchanged or only re-pointed at the moved
+function): `test_lab_topology.py` 19; `test_lab_resymmetrize.py` 8 (the 7 pure tests plus
+`test_preview_draw_data`, made pure: it builds the plan with `plan_resymmetrize` instead of
+opening the preview through the dispatcher, and reads `resym_preview_data` from its new home
+`lab_resymmetrize`); `test_lab_knife.py` 12 (baseline + P1–P3, helpers inlined);
+`test_lab_symmetry.py` 12 (seam derivation, definition, states, the 54 unpaired, report,
+foreign definition); `test_lab_scene.py` 2 (`resolve_asset_name`, `load_asset_into` on an
+unknown name); `test_import_boundary.py` 1 (module list updated); and
+`test_draw_data.py::test_subd_cube_topology_is_as_registered` (moves with its file, see below).
+The plan's §4.4 counted 17 pure resymmetrize tests; Slice 3 had already found that 19 of the 26
+functions drive the dispatcher (§5 row 3), so 7 pure ones are left.
+
+`test_lab_resymmetrize.py` — dispatcher tests (22), ported in Slice 3:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_man_with_shoes_from_either_side_becomes_valid[0,1]` (2) | E13, one undo step | `lab/test_app_lab_resymmetrize.py::test_man_with_shoes_from_either_side_becomes_valid[0,1]` |
+| `test_seam_vertex_moved_off_plane_ends_exactly_on_plane` | E13 seam | `lab/test_app_lab_resymmetrize.py::test_seam_vertex_moved_off_plane_ends_exactly_on_plane` |
+| `test_rejected_when_symmetry_off` | E15 | `lab/test_app_lab_resymmetrize.py::test_rejected_when_symmetry_off` |
+| `test_rejected_without_selection` | E15 | `lab/test_app_lab_resymmetrize.py::test_rejected_without_selection` |
+| `test_rejected_for_seam_vertex` | E15 | `lab/test_app_lab_resymmetrize.py::test_rejected_for_seam_vertex` |
+| `test_rejected_when_seam_does_not_split_into_two` | E15 | `lab/test_app_lab_resymmetrize.py::test_rejected_when_seam_does_not_split_into_two` |
+| `test_rejected_while_move_armed` | E15 | `lab/test_app_lab_resymmetrize.py::test_rejected_while_move_armed_or_dragging[armed]` |
+| `test_rejected_while_move_dragging` | E15 | `lab/test_app_lab_resymmetrize.py::test_rejected_while_move_armed_or_dragging[running]` |
+| `test_m_esc_leaves_mesh_unchanged_and_no_history` | A7 Esc | `lab/test_app_lab_resymmetrize.py::test_m_esc_leaves_mesh_unchanged_and_no_history` |
+| `test_m_m_executes_with_one_history_entry` | A7 execute | `lab/test_app_lab_resymmetrize.py::test_m_m_executes_with_one_history_entry` |
+| `test_other_keys_are_ignored_during_preview[Shift+S,W,Ctrl+Z,Ctrl+Y]` (4) | A7 modal | `lab/test_app_lab_resymmetrize.py::test_other_keys_are_ignored_during_preview` (same 4 keys) |
+| `test_select_is_ignored_during_preview` | A7 modal | `lab/test_app_lab_resymmetrize.py::test_select_is_ignored_during_preview` |
+| `test_click_pressed_before_m_does_not_select_during_preview` | A7 modal | `lab/test_app_lab_resymmetrize.py::test_click_pressed_before_m_does_not_select_during_preview` |
+| `test_navigation_allowed_during_preview` | A7 | `lab/test_app_lab_resymmetrize.py::test_navigation_allowed_during_preview` |
+| `test_hover_paused_during_preview` | A7 hover | `lab/test_app_lab_preview.py::test_t_h_hover_paused_while_open_and_repicked_after` |
+| `test_zero_changes_preview_then_m_creates_no_history_entry` | A5/E15 | `lab/test_app_lab_resymmetrize.py::test_zero_changes_preview_then_m_creates_no_history_entry` |
+| `test_status_line_shows_direction_counts_and_keys` | E15 text | `lab/test_app_lab_resymmetrize.py::test_status_line_shows_direction_counts_and_keys` |
+| `test_paired_state_unaffected_by_preview` | display stays positional | `lab/test_app_lab_resymmetrize.py::test_paired_state_unaffected_by_preview` |
+
+`test_lab_symmetry.py` — 8 deleted (12 kept):
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_seam_is_stored_declaration_not_live_check` | E3 | `lab/test_app_lab_cycle.py::test_seam_is_stored_declaration_not_live_check` |
+| `test_cycle_off_x_y_z_off_one_history_entry_each` | A2/E2 | `lab/test_app_lab_cycle.py::test_cycle_off_x_y_z_off_one_history_entry_each` |
+| `test_cycle_does_not_touch_positions_or_topology` | E2 | `lab/test_app_lab_cycle.py::test_cycle_does_not_touch_positions_or_topology` |
+| `test_cycle_keeps_selection` | E2 | `lab/test_app_lab_cycle.py::test_cycle_keeps_selection` |
+| `test_plane_outline_off_is_empty` | plane outline | `lab/test_app_lab_cycle.py::test_overlays_empty_while_symmetry_off` |
+| `test_plane_outline_lies_in_plane_and_encloses_bounds[X,Y,Z]` (3) | plane outline | `lab/test_app_lab_cycle.py::test_plane_outline_lies_in_plane_and_encloses_bounds[X,Y,Z]` |
+
+`test_lab_scene.py` — 5 deleted (2 kept):
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_registry_matches_expected_assets` | registry, default asset | `lab/test_app_lab_cycle.py::test_registry_matches_expected_assets` |
+| `test_load_by_registry_name[head_basemesh,man_with_shoes_basemesh,subd_cube]` (3) | load + frame + empty vertex selection | `lab/test_app_lab_cycle.py::test_load_by_registry_name_on_the_app_path` (same 3) |
+| `test_run_rejects_unknown_name_before_opening_a_window` | exit code 2 before the window | `lab/test_app_lab_cycle.py::test_run_rejects_unknown_name_before_opening_a_window` |
+
+`test_lab_symmetric_transform.py` — 12, ported in Slice 2:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_single_vertex_runs_symmetric_one_undo_step[Rotate,Scale]` (2) | S2 | `lab/test_app_lab_transform.py::test_single_vertex_runs_symmetric_one_undo_step` (same 2) |
+| `test_cancel_leaves_no_history[E,R]` (2) | S2 cancel | `lab/test_app_lab_transform.py::test_cancel_leaves_no_history` (same 2) |
+| `test_constraint_keys_toggle_and_show_in_status` | B4.1 toggle | `lab/test_app_lab_transform.py::test_constraint_keys_toggle_and_show_in_hud` |
+| `test_constraints_x_y_z_all_keep_the_pair_mirrored` | S2 | `lab/test_app_lab_transform.py::test_constraints_x_y_z_all_keep_the_pair_mirrored` |
+| `test_seam_vertex_rotate_x_allowed` | INV-8 seam | `lab/test_app_lab_transform.py::test_seam_vertex_rotate_x_allowed` |
+| `test_seam_vertex_rotate_other_axes_refused_with_message[Y,Z,free]` (3) | INV-8 + H5 | `lab/test_app_lab_transform.py::test_seam_vertex_rotate_other_axes_refused_with_message` (same 3) |
+| `test_seam_vertex_scale_allowed_and_on_plane` | INV-8 | `lab/test_app_lab_transform.py::test_seam_vertex_scale_allowed_and_on_plane` |
+| `test_move_and_gate_unchanged` | W + constraint (D1) | `lab/test_app_lab_transform.py::test_move_honours_the_constraint_and_stays_mirrored`, `tests/test_application_symmetry.py::test_symmetric_move_with_axis_constraint` |
+
+`test_lab_gate.py` — 13, ported in Slice 4:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_symmetry_off_commit_cancel_and_tap[E,R]` (2) | E5 off | `lab/test_app_lab_gate.py::test_symmetry_off_commit_cancel_and_tap` (same 2) |
+| `test_symmetry_off_no_target_rejected` | A4 | `lab/test_app_lab_gate.py::test_symmetry_off_no_target_rejected` |
+| `test_mark_runs_one_sided_with_message_and_one_undo_step[E,R]` (2) | E5 MARK | `lab/test_app_lab_gate.py::test_mark_runs_with_the_one_sided_warning_and_one_undo_step` (same 2) |
+| `test_mark_hides_partner_marker_only_while_armed` | E5 MARK marker | `lab/test_app_lab_gate.py::test_mark_warning_only_while_armed` (Slice 4 deviation 2: the warning line carries the mark) |
+| `test_block_refuses_to_arm_and_leaves_no_history[E,R]` (2) | E5 BLOCK | `lab/test_app_lab_gate.py::test_block_refuses_to_arm_and_leaves_no_history` (same 2) |
+| `test_block_does_not_apply_with_symmetry_off` | E5 | `lab/test_app_lab_gate.py::test_block_does_not_apply_with_symmetry_off` |
+| `test_move_unchanged_in_both_modes[MARK,BLOCK]` (2) | E5 | `lab/test_app_lab_gate.py::test_move_unchanged_in_both_modes` (same 2) |
+| `test_mode_switch_is_lab_state_only` | Shift+B | `lab/test_app_lab_gate.py::test_mode_switch_is_lab_state_only` |
+| `test_gate_reads_class_attribute` | AD-SYM-02 §2.3 | `lab/test_app_lab_gate.py::test_gate_reads_class_attribute` |
+
+`test_lab_move.py` — 26:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_symmetric_move_one_history_entry_and_exact_undo` | S3 KEEP | `lab/test_app_lab_transform.py::test_symmetric_move_one_history_entry_and_exact_undo` |
+| `test_move_without_symmetry_moves_only_the_selection` | S3 | `lab/test_app_lab_transform.py::test_move_without_symmetry_moves_only_the_selection` |
+| `test_seam_vertex_stays_exactly_on_plane` | S3 seam slide | `lab/test_app_lab_transform.py::test_seam_vertex_stays_exactly_on_plane` |
+| `test_undo_takes_back_exactly_one_action_each` | E2 | `lab/test_app_lab_transform.py::test_undo_takes_back_exactly_one_action_each` |
+| `test_undo_clears_selection_and_disarms` | Lab Undo rule (D8) | reason: superseded by the app decision B6 follow-up (Undo restores the selection, §4.3). App rules: `tests/test_application_move.py::test_undo_while_armed_disarms_first`, `tests/test_application_contextual_c.py::test_undo_restores_the_selection_as_of_the_undone_command` |
+| `test_after_commit_move_is_disarmed` | one-shot (E5 of Slice 3) | `tests/test_application_move.py::test_motion_and_release_commits_one_history_entry` (`_assert_idle` after the release) |
+| `test_tap_without_motion_is_a_noop` | B3 tap | `tests/test_application_move.py::test_tap_without_motion_is_a_noop` |
+| `test_single_pixel_motion_starts_the_move` | B3 | `tests/test_application_move.py::test_single_pixel_motion_starts_the_move` + `::test_zero_delta_motion_does_not_start_the_move` |
+| `test_lmb_while_armed_neither_moves_nor_selects` | Lab click rule | reason: app decision — a click while W is armed selects (`_execute_click` has no transform guard), the target stays fixed: `tests/test_application_move.py::test_target_is_fixed_at_press` |
+| `test_release_with_changed_modifiers_still_commits` | B3 | `tests/test_application_move.py::test_release_with_changed_modifiers_still_commits` |
+| `test_release_of_other_key_does_not_commit` | B3 | `tests/test_application_move.py::test_release_of_another_key_does_not_commit` |
+| `test_second_w_press_while_armed_keeps_target_and_tool` | E7 | `tests/test_application_move.py::test_press_while_armed_is_ignored` + `::test_target_is_fixed_at_press` |
+| `test_q_is_unbound_in_the_lab` | Q unbound | `tests/test_application_keys.py::test_q_is_unbound` |
+| `test_w_without_selection_does_not_arm` | A4 (nothing to move) | `tests/test_application_move.py::test_arm_with_nothing_is_rejected` |
+| `test_navigation_still_works_while_armed` | navigation while armed | `tests/test_application_move.py::test_camera_gesture_wins_while_armed` (Orbit; Shift+LMB Pan is gone, B2 → `tests/test_application_pointer.py::test_alt_shift_lmb_drag_pans`) |
+| `test_camera_gesture_during_move_wins` | navigation during the move | `tests/test_application_move.py::test_camera_gesture_wins_while_armed` (MMB Pan gone, B2) |
+| `test_esc_during_drag_restores_exactly_without_history` | S3 exact Esc | `lab/test_app_lab_transform.py::test_esc_during_drag_restores_exactly_without_history` |
+| `test_esc_while_only_armed_disarms` | Esc armed | `tests/test_application_move.py::test_esc_while_armed_only_disarms` |
+| `test_esc_when_idle_is_not_handled` | Lab: Esc closes the window | reason: app decision B1 A3 (Esc never closes): `tests/test_application_keys.py::test_esc_idle_does_nothing`, `tests/test_main_wiring.py::test_escape_is_handled_and_only_cancels` |
+| `test_unrelated_keys_are_not_handled` | Lab filtered foreign commands | reason: the Lab no longer filters app commands (H2: everything else goes to `Application`); `f` unbound: `tests/test_input_binding.py::DefaultBindingsTests::test_legacy_mode_keys_v_and_f_are_unbound`, `tests/test_application_component_modes.py::test_legacy_mode_keys_do_nothing` |
+| `test_keys_during_drag_are_ignored[Shift+S,Ctrl+Z,Ctrl+Y,W]` (4) | modal move | Shift+S: `lab/test_app_lab_keys.py::test_refusals_are_visible_and_counted[ShiftS_transform_running]`; Ctrl+Z/Ctrl+Y: `tests/test_application_move.py::test_undo_redo_ignored_during_move`; W: `tests/test_application_move.py::test_press_while_armed_is_ignored` |
+| `test_move_drag_marks_mesh_changed` | `Change.MESH` | reason: the `Change` flags go with the dispatcher (inventory #32); live redraw: `tests/test_application_move.py::test_live_update_moves_the_point_overlay`, `lab/test_app_lab_partners.py::test_drag_defers_the_report_and_moves_the_markers` |
+| `test_status_text_shows_plane_state_unpaired_move_and_selection` | status line | `lab/test_app_lab_transform.py::test_hud_shows_plane_state_unpaired_and_move` |
+
+`test_lab_hover.py` — 11 (draft above, re-verified):
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_selection_wins_over_hover` | A4 | `tests/test_application_move.py::test_arming_from_selection_keeps_unrelated_hover`; the mirrored selection target: `lab/test_app_lab_transform.py::test_symmetric_move_one_history_entry_and_exact_undo` |
+| `test_hover_target_moves_when_selection_empty` | A4 + E8 after the commit | **ported (S5):** `lab/test_app_lab_hover.py::test_hover_target_moves_mirrored_and_leaves_the_selection_empty` |
+| `test_w_rejected_when_selection_and_hover_both_empty` | A4 | `tests/test_application_move.py::test_arm_with_nothing_is_rejected` |
+| `test_target_fixed_at_w_press_cursor_over_other_vertex_does_not_retarget` | E7 | **ported (S5):** `lab/test_app_lab_hover.py::test_target_fixed_at_w_press_cursor_over_other_vertex_does_not_retarget` |
+| `test_esc_during_drag_with_hover_target_restores_exactly` | E8 + exact cancel | **ported (S5):** `lab/test_app_lab_hover.py::test_esc_during_drag_with_hover_target_restores_exactly` |
+| `test_hover_does_not_update_during_camera_drag` | E9 freeze | reason: superseded by the app decision B2b (the hover is cleared during orbit, §4.3): `tests/test_application_hover.py::test_starting_orbit_or_pan_clears_hover` |
+| `test_hover_does_not_update_during_move_and_is_repicked_after_commit` | E9 | `tests/test_application_move.py::test_no_hover_recompute_while_armed_or_moving` + `::test_hover_is_repicked_after_commit` |
+| `test_arming_from_selection_hides_hover_on_the_target` | clear-on-arm | `tests/test_application_move.py::test_arming_from_selection_clears_overlapping_hover` |
+| `test_hover_is_repicked_after_cancel_and_tap` | E9 | cancel: `tests/test_application_move.py::test_hover_is_repicked_after_cancel`; tap: **ported (S5):** `lab/test_app_lab_hover.py::test_hover_is_repicked_after_a_tap` |
+| `test_hover_marks_change_only_when_vertex_id_changes` | E9 | `tests/test_application_hover.py::test_no_notification_when_hovered_id_unchanged` |
+| `test_status_shows_move_target_label` | `Hover v<id>` | `lab/test_app_lab_hud.py::test_hover_target_when_the_selection_is_empty` |
+
+`test_lab_dispatch.py` — 11:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_alt_lmb_drag_orbits_until_release` | Orbit | `tests/test_application_pointer.py::test_alt_lmb_drag_orbits` |
+| `test_pan_gestures_move_target[Shift+LMB,MMB]` (2) | Lab Pan overrides | reason: overrides dropped, app decision B2 (Pan = Alt+Shift+LMB, MMB unbound; H2-R1: no pointer entries): `tests/test_application_pointer.py::test_alt_shift_lmb_drag_pans`, `::test_other_drags_change_no_camera[MIDDLE]` |
+| `test_gesture_holds_command_until_same_button_releases` | gesture fixed at press | `tests/test_pointer_gestures.py::test_foreign_button_press_ignored_while_gesture_runs` + `::test_foreign_button_release_ignored` |
+| `test_wheel_zooms` | Zoom | `tests/test_application_pointer.py::test_wheel_dollies` |
+| `test_rmb_is_unbound_in_lab` | RMB unbound | `tests/test_application_pointer.py::test_other_drags_change_no_camera[RIGHT]` |
+| `test_foreign_commands_are_noops` | Lab filtered foreign commands | reason: the Lab no longer filters app commands (H2); what the gate still refuses: `lab/test_app_lab_keys.py::test_refusals_are_visible_and_counted` |
+| `test_click_on_vertex_replaces_selection` | Select | `tests/test_application_pointer.py::test_click_replaces` |
+| `test_click_into_empty_space_clears_selection` | Select | `tests/test_application_pointer.py::test_click_on_empty_space_clears` |
+| `test_select_runs_on_release_below_threshold` | click threshold | `tests/test_application_pointer.py::test_small_movement_is_still_a_click`, `tests/test_pointer_gestures.py::test_click_only_fires_on_release_below_threshold` |
+| `test_lmb_drag_over_threshold_does_not_select` | click threshold | `tests/test_application_pointer.py::test_lmb_drag_selects_nothing` |
+
+`test_lab_bindings.py` — 20:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_lab_context_resolution[…]` (15) | Lab context | Shift+S, M and the GLOBAL fall-through of LMB, wheel ×2, W, Esc, Ctrl+Z, Ctrl+Y (9): `lab/test_app_lab_bindings.py::test_lab_context_has_exactly_three_key_entries_and_global_knife_unchanged`. Alt+LMB, Shift+LMB, MMB, RMB, C → Knife, Q (6): reason: Lab overrides dropped (H2-R1, §4.3); the same test asserts these now resolve as in GLOBAL |
+| `test_global_context_unchanged` | GLOBAL untouched | `lab/test_app_lab_bindings.py::test_lab_context_has_exactly_three_key_entries_and_global_knife_unchanged` |
+| `test_context_defined_in_lab_not_in_mirai_interaction` | Lab-local context | **ported (S5):** `lab/test_app_lab_bindings.py::test_context_defined_in_lab_not_in_mirai_interaction` |
+| `test_lab_commands_defined_in_lab_not_in_commands` | Lab-local commands | **ported (S5):** `lab/test_app_lab_bindings.py::test_lab_commands_defined_in_lab_not_in_commands` (Knife replaced by SymmetryGateMode) |
+| `test_c_is_connect_in_global_and_lab_knife_in_symmetry_lab_context` | C → Knife override (E23) | reason: override dropped, mirrored Knife not re-hosted; C falls through to GLOBAL `Connect`: `lab/test_app_lab_bindings.py::test_lab_context_has_exactly_three_key_entries_and_global_knife_unchanged` |
+| `test_key_overrides_are_shift_s_m_c_and_shift_b` | key entries + listing | `lab/test_app_lab_bindings.py::test_lab_context_has_exactly_three_key_entries_and_global_knife_unchanged` + `::test_startup_listing_names_every_entry_and_every_gate_row` |
+
+`test_input_path.py` — 16 (§4.4 counted 8 functions/cases; the file collects 16 with EGL):
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_pyglet_press_resolves_to_lab_gesture[…]` (6) | pyglet button → command | translation: `tests/test_pyglet_input.py::TestMouseFromPyglet::test_known_buttons_with_modifier`, lock bits: `::TestKeyFromPyglet::test_foreign_modifiers_ignored`; resolution: `tests/test_input_binding.py::DefaultBindingsTests::test_mouse_bindings` + `::test_drag_bindings`. Shift+LMB/MMB Pan: reason as `test_pan_gestures_move_target` |
+| `test_pyglet_scroll_zooms[1.0,-1.0]` (2) | wheel | `tests/test_pyglet_input.py::TestWheelFromPyglet::test_positive_is_up` + `::test_negative_is_down`, `tests/test_main_wiring.py::test_drag_orbits_and_scroll_zooms` |
+| `test_pyglet_key_resolves_in_lab_context[…]` (7) | pyglet key → Lab context | Shift+S through real pyglet constants: `lab/test_run.py::test_one_key_event_through_lab_key_press`; W/Esc/Ctrl+Z/Ctrl+Y: `tests/test_pyglet_input.py::TestIntegrationWithDefaultBindings` (`test_w_is_move`, `test_escape_is_cancel`, `test_ctrl_z_is_undo`, `test_ctrl_y_is_redo`); Q: `tests/test_application_keys.py::test_q_is_unbound`; Caps Lock bit: `tests/test_pyglet_input.py::TestKeyFromPyglet::test_foreign_modifiers_ignored` |
+| `test_pyglet_keys_drive_cycle_and_move` | pyglet → cycle, W, Esc | `lab/test_run.py::test_one_key_event_through_lab_key_press` (Shift+S, Esc, Ctrl+Z through the window handler); the final "idle Esc closes" assertion: reason as `test_esc_when_idle_is_not_handled` |
+
+`test_draw_data.py` — 8 deleted, the file becomes `test_display_characterization.py`:
+
+| Deleted test | Rule | Named replacement / reason |
+|---|---|---|
+| `test_face_data_lengths` | Lab VBO builder | reason: the Lab renderer and its VBO data are deleted (inventory #2/#3, class c); the drawn data is Production's: `tests/test_render_mesh.py::InitialBuildTests::test_positions_buffer_matches_mesh` |
+| `test_edge_and_vertex_data_lengths` | Lab VBO builder | reason as above; edges: `tests/test_display_modes.py::test_cube_gives_twelve_segments_with_edge_endpoints` |
+| `test_highlight_contains_exactly_the_selected_vertex` | selection points | `tests/test_point_overlay.py::test_selected_positions_are_exact_world_positions` |
+| `test_highlight_empty_without_selection` | selection points | `tests/test_point_overlay.py::test_empty_selection_gives_no_points` |
+| `test_quad_diagonal_characterization[subd_cube-24-24,head_basemesh-324-0]` (2) | E10 finding + Lab split | **ported (S5):** `lab/test_display_characterization.py::test_production_quad_diagonal_characterization` (same 2). It keeps the Q1 evidence (Production's quad split: 24/24 asymmetric on `subd_cube`, 0/324 on the head). The "shorter diagonal → 0" half goes with the E10 split (Q1 = (a)) |
+| `test_vertex_normals_mirror_for_paired_vertices[subd_cube,head_basemesh]` (2) | E10 normals | **ported (S5):** `lab/test_display_characterization.py::test_production_vertex_normals_mirror_for_paired_vertices` (same 2), against `viewport.derived.DerivedGeometry` (Newell since `e64de4f`, D6) |
+
+`test_lab_knife.py` — 24 deleted (12 kept). The mirrored Knife engine is not re-hosted
+(inventory #29, D2, trigger). Its rules have no counterpart on the app path, and its findings
+E16–E22 stay in the README history for a future symmetric One Knife. Reason for every row:
+**rule deleted with `lab_knife.py`**.
+
+| Deleted test | Rule |
+|---|---|
+| `test_mirrored_edge_to_edge_cut_is_valid_and_confirmed[subd_cube,head_basemesh]` (2) | E17/E18/E19 |
+| `test_session_of_several_steps_commits_one_history_entry[subd_cube,head_basemesh]` (2) | AD-017 session |
+| `test_in_session_undo_and_redo_cover_both_sides` | in-session undo |
+| `test_cancel_restores_state_before_session_without_history` | cancel |
+| `test_commit_without_change_creates_no_entry` | commit |
+| `test_knife_does_not_touch_selection` | E22 |
+| `test_cut_onto_seam_edge_tracks_seam[subd_cube,head_basemesh]` (2) | seam tracking (P1 fix) |
+| `test_cut_across_the_middle_from_a_seam_vertex[1.0,-1.0]` (2) | seam start |
+| `test_clicking_the_existing_mirror_point_after_reaching_the_seam_is_rejected` | Slice 6 observation |
+| `test_seam_chord_is_rejected` | seam chord |
+| `test_begin_is_rejected_unless_valid_with_two_sides[man_with_shoes_basemesh-X,subd_cube-Y]` (2) | A10/E20 gate |
+| `test_one_minus_t_placement_fails_position_and_rolls_back` | A11 rollback |
+| `test_unresolvable_partner_rejects_without_mutation` | INV-5 |
+| `test_unmirrored_first_click_edge_splits` | unmirrored copy |
+| `test_unmirrored_vertex_to_vertex_and_vertex_to_edge` | unmirrored copy |
+| `test_unmirrored_rejections` | unmirrored copy |
+| `test_unmirrored_undo_redo_cancel_commit` | unmirrored copy |
+| `test_connect_in_shared_face_returns_used_face_and_boundary` | E16 copy |
+| `test_lab_knife_is_lab_local` | Lab-local engine |
+
+`test_lab_knife_window.py` — 40 deleted. The Slice 7 Knife window is not re-hosted
+(§4.2: moot, never verdicted). The app's Knife is `mirai.topology.knife`, and since Slice 4
+the Lab gates it (`lab/test_app_lab_gate.py`). Reason for every row: **rule deleted with
+`lab_dispatch.py` / `lab_knife_pick.py` / `lab_knife_preview.py` / `lab_draw_data.knife_preview_data`**.
+
+| Deleted test | Rule |
+|---|---|
+| `test_c_starts_mirrored_knife_on_valid_two_sides[subd_cube,head_basemesh]` (2) | A8 start |
+| `test_c_with_symmetry_off_starts_unmirrored_session` | A10 off |
+| `test_c_rejected_unless_valid_with_two_sides[man_with_shoes_basemesh-X,subd_cube-Y]` (2) | E20 |
+| `test_c_rejected_while_move_armed_or_dragging` | start refusal |
+| `test_c_rejected_while_resymmetrize_preview_open` | start refusal |
+| `test_c_rejected_when_session_already_runs` | start refusal |
+| `test_move_and_resym_are_rejected_during_session` | modal session |
+| `test_hover_over_plus_x_edge_previews_exactly_what_the_click_creates[subd_cube,head_basemesh]` (2) | E26/E28 |
+| `test_preview_matches_click_for_every_first_edge_target[subd_cube-1,head_basemesh-7]` (2) | E28 |
+| `test_preview_matches_click_for_second_targets_around_the_start[subd_cube,head_basemesh]` (2) | E28 |
+| `test_hover_over_seam_edge_has_no_mirror_point[subd_cube,head_basemesh]` (2) | seam self-pair |
+| `test_seam_chord_is_blocked_before_the_click` | E28 |
+| `test_slice6_observation_existing_mirror_point_previews_ok_but_click_rejects` | observation |
+| `test_unresolvable_partner_is_blocked_with_reason` | E28 |
+| `test_edge_at_start_is_invalid_target` | E28 |
+| `test_face_and_outside_have_no_preview` | E27 |
+| `test_unmirrored_preview_has_no_mirror_point` | unmirrored |
+| `test_click_outside_without_cut_ends_session_without_history` | A8 commit |
+| `test_vertex_edge_outside_commits_one_history_entry[subd_cube,head_basemesh]` (2) | A8 commit |
+| `test_click_on_face_is_a_no_op` | A12 |
+| `test_drag_over_threshold_is_not_a_click` | click threshold |
+| `test_esc_restores_mesh_before_c_without_history[subd_cube,head_basemesh]` (2) | cancel |
+| `test_esc_while_lmb_held_ends_session_and_release_is_harmless` | cancel |
+| `test_rejected_click_shows_failed_validation` | A11 |
+| `test_other_commands_are_ignored_with_hint` | modal session |
+| `test_enter_has_no_lab_input` | A13 |
+| `test_orbit_pan_zoom_work_during_session` | navigation |
+| `test_vertex_hover_pauses_and_knife_hover_takes_over` | hover |
+| `test_knife_pick_resolves_vertex_edge_face_outside` | E27 pick copy |
+| `test_knife_preview_data_markers` | E30 markers |
+| `test_knife_preview_data_seam_start_has_no_mirror_marker` | E30 |
+| `test_knife_preview_data_unmirrored_start` | E30 |
+
+**Totals.** Old Lab test files at `fe1b213`: 15 files, **271** tests (§4.4 said 263; it
+counted `test_input_path.py` as 8). Together with the 253 app-path tests that is the 524 of
+the baseline. **Kept 55:** topology 19, resymmetrize 8, knife 12, symmetry 12, scene 2,
+import boundary 1, display 1. **Deleted 216, each with a row:** 142 with a named replacement
+(ported in Slices 1b–4, or an app test for the same or the superseding rule), 10 whose
+replacement is **ported in Slice 5** (hover 4, bindings 2, display 4), and 64 with a reason
+only (the mirrored Knife: engine 24, window 40). Expected Lab suite after Slice 5:
+524 − 216 + 10 = **318**; actual counts in §5 row 5.
+
 **A3 — Slice 2 acceptance: the cost of a symmetric W drag is measured on the reference PC.**
 Slice 2 adds a headless probe (`experiments/symmetry_lab/probe_drag_cost.py`, no window
 needed, runs on Windows) that drives a symmetric W drag through `Application` with the
@@ -507,7 +776,7 @@ point and allows an old-vs-new comparison. Each slice is one revertable commit s
 | **2** Mirrored previews + HUD — **done 2026-10-03** | Partner markers for selection and hover (vertex mode); HUD line as `lab_status` (state, unpaired count, target, constraint); drag-cost probe (A3). (H4 moved to Slice 1, review F10) | — | ported symmetric move/transform tests via `Application`; new W + constraint + symmetry test; drag cost measured on the reference PC (A3). **Done (container):** `experiments/symmetry_lab/tests` 341 → **406** passed (+65: `test_app_lab_partners.py` 23, `test_app_lab_hud.py` 12, `test_app_lab_transform.py` 18 = the 12 `test_lab_symmetric_transform` ports + the 6 `test_lab_move` "keep" ports, `test_probe_drag_cost.py` 4, `test_app_lab_boundary.py` +7, `test_run_app.py` +1; the old Lab tests unchanged); `pytest tests` 1651 and `playground/tests` 1235 unchanged (Xvfb + EGL). No `src` change, no hook gap. Probe on the reference PC: **passed** (A3, 2026-10-03), hover-change fix afterwards (A3). **As built:** partner markers are two more layers of `SymmetryStateOverlay` (seam → unpaired → ambiguous → hover partner → selection partner, turquoise `(0.1, 0.85, 0.95)` from `lab_render.py`, 8 px = the app's selection size), not a third overlay; partners only from `mirrored_selection`, only in vertex mode, hover only if it is a `VertexId` (Edge/Face IDs are ints too). **Overlay cost:** the `Mesh` exposes no change counter, so the overlays compare a Lab-side `geometry_signature(mesh)` (definition, vertex IDs + positions, seam endpoints; 0.05 ms vs. 4 ms for the report on `man_with_shoes_basemesh`): plane and state markers skip hover/selection-only notifications. Signature alone still exceeded A3 (table above), so while `interaction_owner == "transform"` a *positions-only* change is deferred (report, plane, partner IDs from the drag start; marker positions follow); the overlays keep `dirty` set meanwhile because the commit notifies the Viewport of nothing, and the first sync after the end re-derives. A definition/topology/seam change is never deferred (Shift+S directly before W). One `ReportCache` is shared by the state overlay and the HUD (`lab.report`), so the per-frame HUD derives nothing. **HUD:** `hud_text(app, asset_name, report)`; target from `transform_target` (the app clears the hover on arm), `Hover (<n> V)` for an edge/face hover target; label wraps at the window width; no selection list (brief). **`run_app.build_app_lab`** = the window-free half of `build_lab`, used by the probe and the tests' `make_lab`. **T-R4a** additionally checks every `Application` method Lab code touches against H2-R4 (c)–(e), allows the new (f) only in `run_app.py`, and attribute writes only for (b); the probe is in its scope. **Deviations:** the 1b test `test_hud_text_shows_symmetry_and_status` was rewritten for the new `hud_text` signature (it pinned the 1b placeholder line); the HUD reads the public read-only properties `transform_target`, `transform_interacting` and `axis_constraint`, which H2-R4 (a) does not name (read-only like the listed state; the deferral predicate itself uses the listed `interaction_owner`); a Lab-path "W + constraint + symmetry" test exists as the port of `test_move_and_gate_unchanged` (it adds the `lab_key_press` forwarding and a real asset to the Slice 1a `src` test) |
 | **3** Re-Symmetrize — **done 2026-10-03** | M preview/execute via the Lab key, Esc via the window step (D1); preview gate row (allow-list: display commands only) and `hover_suspended`; H3 with moved IDs; preview overlay and text line | `application.py` (`hover_suspended` in `_update_hover`) | all 30 resymmetrize tests (kept or ported) green; AD-013 H2 tests T-R2c (F1 sequence), T-R2e (incl. Shift+S/Shift+B refused), T-R2g (fuzz), T-H, T-R3 (preview rows) green. **Done (container, Xvfb + EGL; the Lab tests also without a display):** `pytest tests` 1652 → **1659** (+7 in `test_app_hover_suspended.py`: T-H at `Application` level in Face mode with motion, one wheel step and re-pick, negative control without the flag, refresh after Undo, Knife hover untouched, T-R5a extended — also one assertion added to `test_command_gate.py::test_default_gate_is_none`); T-R5c pass-through unchanged; `playground/tests` 1235 unchanged; `experiments/symmetry_lab/tests` 407 → **481** (+74: `test_app_lab_preview.py` 37 — T-R2c, T-R2e, N2 regression, T-R3 preview rows for 14 keys and 2 clicks, Lab-level T-H, execute through H3, Ctrl+Z restores mesh and selection, overlay layers/order/colours, start-up listing, window close; `test_app_lab_preview_fuzz.py` 13 — T-R2g, 12 fixed seeds × 300 events after a random warm-up, plus a negative control without gate and flag; `test_app_lab_resymmetrize.py` 22 — the dispatcher tests of `test_lab_resymmetrize.py` on the app path; `test_app_lab_preview_window.py` 2 — `EVENT_HANDLED` in every branch, preview label); the 30 old resymmetrize tests unchanged and green; `probe_drag_cost.py` OK, no regression (container p95 per move 0.27 ms on `man_with_shoes_basemesh`, 0.30 before). **As built:** `src`: `Application.hover_suspended` property over `_hover_suspended`; setting True clears `selection.hovered` (viewport notified), `_update_hover` keeps it cleared while set, setting False re-picks via `_refresh_hover`; only a change of the value acts. Lab: `SymmetryAppLab.preview` (the `ResymPlan`, computed once on M), `GateRow` gains the `hover_suspended` column, `ROW_PREVIEW` (allow-list = the five display commands, `Vorschau aktiv — Befehl ignoriert`, hover suspended); `_install_row` is the one writer of both and raises `AssertionError` for any other row while the preview is open; `sync_gate` installs nothing while it is open. `lab_key_press`: Lab command → `run_command` (owner refusal first, then M = open/execute, any other Lab command refused with the preview text while open), then `Cancel` while the preview is open → `cancel_preview` (D1), else forward. Source vertex and the three rejection texts as the old dispatcher (`selection.vertices`, exactly one). Execute: `apply_mesh_change(plan_description(plan), mutate)` with the new shared `lab_resymmetrize.set_plan_positions` (returns the moved IDs; `apply_plan` uses it too, its behaviour unchanged); the empty plan reaches `apply_mesh_change` and records nothing. Opening posts an empty status (the old Lab cleared its message; the blue line carries the text). Overlay: preview *points* are three more layers of `SymmetryStateOverlay` between the state markers and the partners (old draw order), preview *lines* a new `ResymPreviewLineOverlay` (no depth test) attached between the plane and the state overlay, so the lines lie under the state markers (old renderer: above) — the one draw-order deviation; point size 8 px (= the app's selection, like the partners); layers keyed on the plan object (the gate keeps the mesh fixed meanwhile). HUD: `preview_text(lab)` as a second label above the HUD line, colour from the old `lab_window`. Window close: `run_app.run_lab` ends the preview when the event loop returns (no extra `on_close` handler, so pyglet's close is unchanged and the pushed handlers stay `on_key_press`/`on_draw`). **Deviations:** four 1b/2 tests that pinned the earlier state were adjusted, not rewritten: T-R1d (`len(GATE_ROWS) == 3`, one "noch nicht verfügbar"), the T-R3 refusal rows `M_idle`/`M_symmetry_on` (now the old Lab's rejection texts), the `_overlays` helpers in `test_app_lab_cycle.py`/`test_app_lab_partners.py` (three overlays) with the attach-order and layer-order assertions. The ports are 22 tests, not 13: §4.4 counted 13, but 19 of the 26 functions in `test_lab_resymmetrize.py` drive the dispatcher; all of them are ported or covered (mapping table in the new file's docstring), plus one new rejection (two selected vertices) |
 | **4** E5 gate — **done 2026-10-03** | Shift+B MARK/BLOCK via H2 (gate rows MARK/BLOCK), now for W/E/R (`supports_symmetry`) **and C** (no declaration = unsupported); replaces the Slice 1 refusal; MARK keeps a persistent HUD line while a one-sided C/Knife session runs | — | ported gate tests + C cases (MARK: one-sided, one history entry, seam degradation visible; BLOCK: nothing, no history). **Then the Artist session (§4.3).** **Done (container, Xvfb + EGL; the Lab tests also without a display):** `experiments/symmetry_lab/tests` 481 → **524** (+43: `test_app_lab_gate.py` 40 — the 13 `test_lab_gate.py` ports, Shift+B (toggle, no history/mesh change, refused during armed/running transform, Knife session and preview, HUD mode only while symmetry is on), C under MARK (Split with a selection: one history entry, one new vertex, unpaired in the report and in the magenta overlay layer, state `partial`; empty selection: Knife session with the warning line, gone after Esc; a one-sided Knife cut + Enter: one history entry, one new edge), C under BLOCK (refused for selection and empty selection: `False`, status, `status_serial` + 1, no history, no session), C with symmetry off in both modes, the BLOCK row derived from the declarations, patched declaration (BLOCK refuses exactly that command, MARK arms it with the "läuft einseitig" line), W/E/R unpatched never refused in BLOCK, Cancel never refused outside the preview (also with every declaration patched off) and Esc still cancels a running Move in BLOCK, T-R3 BLOCK rows (C empty/edge, patched E/R), start-up listing; `test_app_lab_gate_window.py` 2 — Shift+B through the pyglet handler, the orange warning line drawn above the HUD line; T-R2h in `test_app_lab_keys.py` now parametrised over BLOCK and MARK, +1); the old `test_lab_gate.py` (13) unchanged and green; `pytest tests` 1659 and `playground/tests` 1235 unchanged. No `src` change, no hook gap. **As built:** `lab_app.GateMode` (MARK default) as `SymmetryAppLab.gate_mode`, Lab state only; Shift+B → `_toggle_gate_mode` (re-derives the row via `sync_gate`, status `E5-Modus: <MARK\|BLOCK>`, returns `True`; allowed with symmetry off — the row stays "off", the mode applies from the next Shift+S, as in the old Lab). Rows: `ROW_SYMMETRY_OFF` (`None`), `ROW_MARK` (`None`), `block_row()` (refused: `Connect` plus every command of `TRANSFORM_OPERATIONS` — the old Lab's command → Operation pairing — whose Operation class does not declare `supports_symmetry`, read at every derivation; texts `block_text(<Name>)` = the old Lab's `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)`, C's name is `C`), `ROW_PREVIEW`; `gate_rows()` replaces the constant `GATE_ROWS`, `gate_row_for(axis, mode)`. Because `block_row()` is rebuilt on every derivation, `sync_gate` compares the installed gate with `==` (frozen `CommandGate`, equal declarations → equal row) instead of `is`. HUD: `hud_text(…, gate_mode=None)` adds `E5: <MARK\|BLOCK>` after the transform part while symmetry is on (old status line position; without the argument the Slice 2 line is unchanged); `e5_warning_text(lab)` is the orange line above the HUD line (`WARNING_COLOR`, below an open preview line): `Knife läuft einseitig — Symmetrie aktiv` while `knife_active`, the old Lab's `Symmetrie aktiv — <Name> spiegelt nicht (läuft einseitig)` while a transform whose Operation does not declare `supports_symmetry` is armed or running; the Lab writes no status for either (H2-R2). An immediate C (Split/Connect) under MARK keeps the app's own status; its degradation shows through the existing unpaired marker (no one-shot warning built — see deviations). **Deviations:** (1) the warning line depends on symmetry only, not on MARK — under BLOCK neither case is reachable (the gate starts neither, Shift+S/Shift+B are refused during an interaction), so the observable behaviour is the brief's; (2) the old Lab hid the partner marker while a one-sided transform ran (`test_mark_hides_partner_marker_only_while_armed`); the port asserts the warning line instead and the partner markers stay — the brief asks only for the HUD line; (3) the brief's "new seam vertex shows as unpaired" is tested with the Split of an edge with both ends on +X: a Split vertex is unpaired only when it lies off the plane (an edge lying in the plane would give a green seam vertex, no degradation); (4) the one-sided transform warning is reachable only through a patched declaration, and the `src` tools do not read the declaration, so a patched E/R still mirrors — the line is a Lab promise, as in the old Lab's tests; (5) proposal, not built: a one-shot status after an immediate C under MARK (e.g. `C einseitig — Symmetrie aktiv`) would have to overwrite the app's `Split`/`Connect` status, which the brief rules out. **Tests adapted (pinned the Slice 1b row):** `test_app_lab_keys.py` (T-R2h parametrised over BLOCK/MARK and compared by `==`; T-R3 row `C_under_symmetry` → `C_under_symmetry_block` with the BLOCK text; `ShiftB_idle` "noch nicht verfügbar" → `ShiftB_transform_armed`; `ROW_SYMMETRY_ON` → `ROW_MARK`), `test_app_lab_bindings.py` (T-R1d: four rows via `gate_rows()`, BLOCK text instead of the 1b text, no "noch nicht verfügbar" left), `test_app_lab_preview.py` and `test_app_lab_resymmetrize.py` (closed-preview row via `gate_row_for(axis, mode)` and `==`; `ROW_SYMMETRY_ON` → `ROW_MARK`; the N2 assert test also tries `block_row()`), `test_app_lab_preview_window.py` and `test_run_app.py` (`ROW_SYMMETRY_ON` → `ROW_MARK`; the HUD-label test passes the mode and expects `E5: MARK`). **Then the Artist session:** Lab README „Gemeinsame Prüf-Session nach Slice 4" |
-| **5** Swap and delete | Gate first: the deleted-test → named-replacement table (A2). `run.py` → app host; delete the (c) modules and their tests (§4.4); README rewritten (manual-test sections as history, new steps); ROADMAP §7 entry; W-like-app and Slice 7 marked superseded/moot | — | Lab tests ≈133 + new; no Lab module imports a deleted one; README legend matches the overlays |
+| **5** Swap and delete | Gate first: the deleted-test → named-replacement table (A2; **step 0 done 2026-10-03**, § „A2 table — Slice 5, step 0"). `run.py` → app host; delete the (c) modules and their tests (§4.4); README rewritten (manual-test sections as history, new steps); ROADMAP §7 entry; W-like-app and Slice 7 marked superseded/moot | — | Lab tests ≈133 + new; no Lab module imports a deleted one; README legend matches the overlays |
 
 **Not in any slice:** the mirrored Knife (a future symmetric One Knife is its own package:
 mirror the virtual path before resolution, ROADMAP 2026-10-02 (b),
