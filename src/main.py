@@ -67,7 +67,12 @@ Scope (binding, see the handoffs):
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
-no business logic. All state and execution live in `Application`/`Viewport`
+no business logic. WP-SYM-LAB-03 H6 (2026-10-03): the wiring is importable —
+`create_window()`, `install_handlers(window, app)` (all event translation,
+headless-testable with a stand-in window) and `run(window, app)` (frame tick
++ event loop); `main()` composes them with the scene set-up, behaviour
+unchanged. Another host (the Symmetry Lab, `experiments/`) reuses them
+instead of copying the handlers; `main.py` itself knows no experiment. All state and execution live in `Application`/`Viewport`
 (`src/mirai/application.py`, `src/viewport/viewport.py`), which stay
 window-free.
 
@@ -107,40 +112,28 @@ from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
 
 _DEFAULT_HEAD_OBJ = _ROOT / "examples" / "meshes" / "head_basemesh.obj"
 
+#: GL backends handed to `Application.init_scene` (headless callers omit them).
+GL_TYPES = {
+    "store_type": GLRenderStore,
+    "point_overlay_type": GLPointOverlay,
+    "line_overlay_type": GLLineOverlay,
+    "face_overlay_type": GLTriangleOverlay,
+}
 
-def main() -> None:
-    # Window before init_scene(): GLRenderStore needs an active GL context
-    # for its first `allocate()` (its shader is compiled lazily "on first
-    # use", see `viewport.gl_render_store` module docstring) — pyglet only
-    # creates that context together with its first Window.
-    window = pyglet.window.Window(
-        width=1024, height=768, resizable=True, caption="Mirai — Stage B"
-    )
 
-    app = Application()
+def create_window(caption: str = "Mirai — Stage B"):
+    """The resizable 1024x768 window. Create it before `init_scene()`:
+    GLRenderStore needs an active GL context for its first `allocate()` (its
+    shader is compiled lazily "on first use", see `viewport.gl_render_store`
+    module docstring) — pyglet only creates that context together with its
+    first Window."""
+    return pyglet.window.Window(width=1024, height=768, resizable=True, caption=caption)
 
-    arg = sys.argv[1] if len(sys.argv) > 1 else None
-    gl_types = {
-        "store_type": GLRenderStore,
-        "point_overlay_type": GLPointOverlay,
-        "line_overlay_type": GLLineOverlay,
-        "face_overlay_type": GLTriangleOverlay,
-    }
-    if arg == "cube":
-        app.init_scene("cube", **gl_types)
-    else:
-        obj_path = Path(arg) if arg is not None else _DEFAULT_HEAD_OBJ
-        try:
-            app.init_scene("obj", obj_path=obj_path, **gl_types)
-        except Exception as exc:
-            print(f"Failed to load '{obj_path}': {exc}", file=sys.stderr)
-            app.init_scene("cube", **gl_types)
 
-    app.frame_scene()
-
-    # Initial size/aspect so the first frame is not distorted (before any
-    # resize or camera event has fired).
-    app.set_viewport_size(window.width, window.height)
+def install_handlers(window, app: Application) -> None:
+    """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
+    `window.event` (decorator), `window.width`/`height` and, when drawn,
+    `window.clear()` — headless-testable with a stand-in window."""
 
     @window.event
     def on_resize(width: int, height: int):
@@ -223,6 +216,9 @@ def main() -> None:
         app.viewport.sync()
         app.viewport.render()
 
+
+def run(window, app: Application) -> None:
+    """Frame tick + pyglet event loop; returns when the window closes."""
     status_seen = app.status_serial
 
     def _tick(dt: float) -> None:
@@ -237,6 +233,32 @@ def main() -> None:
 
     pyglet.clock.schedule_interval(_tick, 1 / 60.0)
     pyglet.app.run()
+
+
+def main() -> None:
+    window = create_window()
+
+    app = Application()
+
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    if arg == "cube":
+        app.init_scene("cube", **GL_TYPES)
+    else:
+        obj_path = Path(arg) if arg is not None else _DEFAULT_HEAD_OBJ
+        try:
+            app.init_scene("obj", obj_path=obj_path, **GL_TYPES)
+        except Exception as exc:
+            print(f"Failed to load '{obj_path}': {exc}", file=sys.stderr)
+            app.init_scene("cube", **GL_TYPES)
+
+    app.frame_scene()
+
+    # Initial size/aspect so the first frame is not distorted (before any
+    # resize or camera event has fired).
+    app.set_viewport_size(window.width, window.height)
+
+    install_handlers(window, app)
+    run(window, app)
 
 
 if __name__ == "__main__":
