@@ -16,13 +16,12 @@ import sys
 
 import pytest
 
-from loaders.assets import asset_path
 from mirai.application import Application
 from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
 
-from symmetry_lab.lab_app import SymmetryAppLab, lab_key_press, start_lab
-from symmetry_lab.lab_overlays import build_lab_overlays
+from symmetry_lab.lab_app import SymmetryAppLab, lab_key_press
+from symmetry_lab.run_app import build_app_lab
 
 WIDTH, HEIGHT = 800, 600
 MISS = (2.0, 2.0)
@@ -38,7 +37,8 @@ CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
 CTRL_Y = Input("key", "y", frozenset({"ctrl"}))
 LMB = Input("mouse", "LEFT")
 
-#: Die neuen Lab-Module des App-Pfads (Slice 1b) — Gegenstand von T-R4a/T-R4b.
+#: Die neuen Lab-Module des App-Pfads (Slice 1b) —
+#: Gegenstand von T-R4a/T-R4b.
 LAB_APP_MODULES = (
     "symmetry_lab.lab_app",
     "symmetry_lab.lab_app_window",
@@ -48,13 +48,9 @@ LAB_APP_MODULES = (
 
 
 def make_lab(asset: str = "subd_cube") -> tuple[Application, SymmetryAppLab]:
-    app = Application()
-    lab = start_lab(app)
-    app.init_scene("obj", obj_path=asset_path(asset))
-    app.frame_scene()
-    app.set_viewport_size(WIDTH, HEIGHT)
-    lab.attach_overlays(app.viewport, build_lab_overlays())
-    return app, lab
+    """Wie im Fenster: `run_app.build_app_lab` (seit Slice 2 der fensterlose Teil
+    von `build_lab`, auch von `probe_drag_cost` genutzt)."""
+    return build_app_lab(asset, WIDTH, HEIGHT)
 
 
 def press(app: Application, lab: SymmetryAppLab, inp: Input) -> bool:

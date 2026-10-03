@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from symmetry_lab import run_app
-from symmetry_lab.lab_app import ROW_SYMMETRY_ON
+from symmetry_lab.lab_app import ROW_SYMMETRY_ON, hud_text
 
 from ._app_lab_support import HEIGHT, WIDTH, forbid_lab_calls  # noqa: F401
 from ._pyglet_headless import import_pyglet
@@ -134,3 +134,12 @@ def test_draw_runs_main_draw_first_then_the_hud(built, monkeypatch):
     assert window.dispatch("on_draw") is pyglet.event.EVENT_HANDLED
     assert order == ["clear", "render", "hud"]
     assert window.cleared == 1
+
+
+def test_hud_label_text_is_the_full_lab_line(built):
+    """Slice 2: das HUD-Label zeigt `hud_text` mit dem Asset-Namen aus `run_app`
+    und dem Befund-Cache des Labs."""
+    window, app, lab, hud = built
+    window.dispatch("on_key_press", key.S, key.MOD_SHIFT)
+    assert hud.text() == hud_text(app, "subd_cube", lab.report)
+    assert hud.text().startswith("subd_cube | 26 V | Symmetrie: X (valid) | ohne Partner: 0")

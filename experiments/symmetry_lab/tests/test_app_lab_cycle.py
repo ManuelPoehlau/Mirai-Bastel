@@ -283,10 +283,14 @@ def test_overlays_follow_a_committed_move(lab_app):
 
 
 def test_hud_text_shows_symmetry_and_status(lab_app):
+    """Seit Slice 2 ist die HUD-Zeile die volle Zeile (`test_app_lab_hud.py`); die
+    beiden Slice-1b-Teile — Symmetrie-Zustand und letzte Meldung — bleiben."""
     app, lab = lab_app
-    assert hud_text(app).startswith("Symmetrie: aus")
+    assert "Symmetrie: aus (off)" in hud_text(app, "subd_cube", lab.report)
     assert press(app, lab, SHIFT_S)
-    assert hud_text(app) == "Symmetrie: X  |  Shift+S: Symmetrie X"
+    text = hud_text(app, "subd_cube", lab.report)
+    assert "Symmetrie: X (valid)" in text
+    assert text.endswith(" | Shift+S: Symmetrie X")
 
 
 # -- Assets / Einstieg ----------------------------------------------------------------

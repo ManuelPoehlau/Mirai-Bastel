@@ -11,7 +11,10 @@ unverändert durch `Application`. Das Lab ergänzt nur
 - eine Zeile der Gate-Tabelle in `app.command_gate`, abgeleitet aus
   `mesh.symmetry_definition` (H2-R2, nie gecacht);
 - Symmetrie-Wechsel über `app.apply_mesh_change` (H3), Meldungen über
-  `app.set_status` (H4).
+  `app.set_status` (H4);
+- (Slice 2) die HUD-Zeile `hud_text`, gebaut nur aus öffentlichem Zustand
+  (`selection`, `transform_command`/`transform_interacting`/`transform_target`,
+  `axis_constraint`, `status_message`) und dem Symmetrie-Befund.
 
 Erlaubte `Application`-Zugriffe: nur die öffentliche Liste aus H2-R4 (geprüft von
 `tests/test_app_lab_boundary.py`, T-R4a/b). Re-Symmetrize-Vorschau, `hover_suspended`
@@ -39,7 +42,8 @@ from .lab_bindings import (
     SYMMETRY_LAB_CONTEXT,
     LabOverride,
 )
-from .lab_symmetry import current_axis, next_axis, set_symmetry_axis
+from .lab_overlays import ReportCache
+from .lab_symmetry import SymmetryReport, current_axis, next_axis, set_symmetry_axis
 
 #: Die drei Lab-Commands (H2-R1). Alles andere geht an `Application`.
 LAB_COMMANDS = frozenset({SYMMETRY_CYCLE, RESYMMETRIZE, SYMMETRY_GATE_MODE})
@@ -167,10 +171,27 @@ class SymmetryAppLab:
         self.app = app
         #: Overlays mit eigenem `dirty`-Flag (`lab_overlays`); leer = headless ohne Viewport.
         self.overlays: list = []
+        #: Befund-Cache, geteilt mit dem Zustands-Overlay (`build_lab_overlays(lab.reports)`);
+        #: während eines laufenden Transforms aufgeschoben (Plan A3, `lab_overlays`).
+        self.reports = ReportCache(defer=self.transform_running)
 
     @property
     def axis(self) -> Optional[str]:
         return current_axis(self.app.scene.mesh)
+
+    def transform_running(self) -> bool:
+        """W/E/R scharf oder laufend (H2-R2-Prädikat `interaction_owner`): solange
+        werden Befund, Ebene und Partner-IDs nicht neu abgeleitet (Plan A3)."""
+        return self.app.interaction_owner == "transform"
+
+    @property
+    def report(self) -> SymmetryReport:
+        """Symmetrie-Befund zur aktuellen Geometrie, neu abgeleitet nur, wenn sich
+        Definition, Positionen oder Seam geändert haben und kein Transform läuft
+        (Plan A3; der HUD liest ihn pro Frame). Kein
+        Symmetrie-Cache im Sinne von H2-R2: die Achse kommt bei jedem Zugriff aus
+        `mesh.symmetry_definition` (Teil der Signatur)."""
+        return self.reports.get(self.app.scene.mesh)
 
     def attach_overlays(self, viewport, overlays) -> None:
         """H1: hängt die Lab-Overlays an den Viewport der App (Reihenfolge = Zeichenreihenfolge)."""
@@ -266,12 +287,62 @@ def lab_key_press(
     return bool(result)
 
 
-# -- HUD (Slice 1b: nur Symmetrie-Zustand + App-Status; die volle Zeile ist Slice 2) ----
+# -- HUD-Zeile (Slice 2, Inventar #27; Vorbild `lab_status.status_text`) ----------------
+
+#: Status-Wörter wie im alten Lab (`lab_dispatch.MoveState`).
+TRANSFORM_IDLE = "Transform: bereit"
+_TRANSFORM_STATE = {False: "scharf", True: "bewegt"}
 
 
-def hud_text(app: Application) -> str:
-    axis = current_axis(app.scene.mesh)
-    text = f"Symmetrie: {axis or 'aus'}"
+def transform_target_label(app: Application) -> Optional[str]:
+    """„Auswahl" / „Hover v<id>" für einen scharfen oder laufenden Transform, sonst
+    `None` (A4/E7). Das Ziel ist ab dem Tastendruck fix (`transform_target`); kam es
+    vom Hover, ist die Auswahl leer (E8) und der Hover schon gelöscht (clear-on-arm),
+    also wird es aus dem fixen Ziel gelesen, nicht aus `selection.hovered`."""
+    if app.transform_command is None:
+        return None
+    if not app.selection.is_empty():
+        return "Auswahl"
+    target = sorted(app.transform_target, key=int)
+    if len(target) == 1:
+        return f"Hover v{int(target[0])}"
+    return f"Hover ({len(target)} V)"
+
+
+def constraint_label(space: Optional[str]) -> str:
+    """Wie im alten Lab (`lab_dispatch.constraint_label`): „X", „XY-Ebene", „frei"."""
+    if space is None:
+        return "frei"
+    return space.upper() if len(space) == 1 else f"{space.upper()}-Ebene"
+
+
+def hud_text(app: Application, asset_name: str, report: SymmetryReport) -> str:
+    """Die Lab-HUD-Zeile, nur aus öffentlichem `Application`-Zustand und dem
+    Symmetrie-Befund (GL-frei). Teile wie `lab_status.status_text`: Asset und
+    Vertex-Anzahl, Symmetrie mit Zustand, ohne Partner/mehrdeutig, Transform mit
+    Ziel, Constraint (nur wenn gesetzt), letzte Statusmeldung. Ohne E5 (Slice 4)
+    und ohne Vorschau-Zeile (Slice 3).
+
+    `report` kommt aus dem Befund-Cache des Labs (`SymmetryAppLab.report`), damit
+    die Zeile pro Frame nichts neu ableitet."""
+    vertex_count = len(app.scene.mesh.all_vertex_ids())
+    parts = [
+        f"{asset_name} | {vertex_count} V",
+        f"Symmetrie: {report.axis or 'aus'} ({report.state.value})",
+    ]
+    if report.axis is not None:
+        unpaired = f"ohne Partner: {len(report.unpaired)}"
+        if report.ambiguous:
+            unpaired += f", mehrdeutig: {len(report.ambiguous)}"
+        parts.append(unpaired)
+    command = app.transform_command
+    if command is None:
+        parts.append(TRANSFORM_IDLE)
+    else:
+        state = _TRANSFORM_STATE[app.transform_interacting]
+        parts.append(f"{command}: {state} ({transform_target_label(app)})")
+    if app.axis_constraint is not None:
+        parts.append(f"Constraint: {constraint_label(app.axis_constraint)}")
     if app.status_message:
-        text += f"  |  {app.status_message}"
-    return text
+        parts.append(app.status_message)
+    return " | ".join(parts)

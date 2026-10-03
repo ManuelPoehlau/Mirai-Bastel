@@ -8,6 +8,8 @@ Verwendung (vom Repo-Root, Windows und Linux gleich):
 Baut denselben Pfad wie `src/main.py` (`Application` → `Viewport` V02 →
 `GLRenderStore`) über dessen `create_window` / `install_handlers` / `run` (H6)
 und ergänzt nur die Lab-Teile (`lab_app`, `lab_overlays`, `lab_app_window`).
+Der fensterlose Teil (`build_app_lab`) ist auch die Grundlage von
+`probe_drag_cost.py` (Plan A3).
 Gültige Namen = `loaders.assets.asset_names()`; ein unbekannter Name bricht mit
 Exit-Code 2 ab, bevor ein Fenster geöffnet wird. Der alte Einstieg `run.py`
 bleibt bis Slice 5 unverändert.
@@ -53,6 +55,23 @@ def load_src_main():
     return module
 
 
+def build_app_lab(
+    asset_name: str, width: int, height: int, gl_types: dict | None = None
+) -> tuple[Application, SymmetryAppLab]:
+    """Application + Lab + Szene + Overlays, ohne Fenster — der Teil von
+    `build_lab`, den auch `probe_drag_cost.py` nutzt (Plan A3: dieselbe Kette wie
+    im Fenster). Einmalige Einrichtung vor dem Event-Loop wie in `src/main.py`
+    (`init_scene`, `frame_scene`, `set_viewport_size`; AD-013 H2-R4 (f))."""
+    app = Application()
+    lab: SymmetryAppLab = start_lab(app)
+    app.init_scene("obj", obj_path=asset_path(asset_name), **(gl_types or {}))
+    app.frame_scene()
+    # Erste Größe/Aspect wie main.py, damit der erste Frame nicht verzerrt ist.
+    app.set_viewport_size(width, height)
+    lab.attach_overlays(app.viewport, build_lab_overlays(lab.reports, lab.transform_running))
+    return app, lab
+
+
 def build_lab(window, asset_name: str, src_main, gl_types: dict | None = None):
     """Application + Lab + Szene + Overlays + Handler an `window`.
 
@@ -61,14 +80,8 @@ def build_lab(window, asset_name: str, src_main, gl_types: dict | None = None):
     Stellvertreter-Fenster."""
     from symmetry_lab.lab_app_window import install_lab_window
 
-    app = Application()
-    lab: SymmetryAppLab = start_lab(app)
-    app.init_scene("obj", obj_path=asset_path(asset_name), **(gl_types or {}))
-    app.frame_scene()
-    # Erste Größe/Aspect wie main.py, damit der erste Frame nicht verzerrt ist.
-    app.set_viewport_size(window.width, window.height)
-    lab.attach_overlays(app.viewport, build_lab_overlays())
-    hud = install_lab_window(window, app, lab, src_main)
+    app, lab = build_app_lab(asset_name, window.width, window.height, gl_types)
+    hud = install_lab_window(window, app, lab, src_main, asset_name)
     return app, lab, hud
 
 

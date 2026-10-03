@@ -12,7 +12,8 @@ werden nicht kopiert. Das Lab legt nur zwei Handler darüber
   (`shift_keys_after` gibt sonst `None`), die nie Lab-Tasten sind — es geht also
   nichts verloren. Immer `EVENT_HANDLED`, wie `main.py` (Esc schließt das
   Fenster nicht, H2-R3).
-- `on_draw`: erst der Draw aus `main.py`, dann die Lab-HUD-Zeile.
+- `on_draw`: erst der Draw aus `main.py`, dann die Lab-HUD-Zeile (Slice 2: volle
+  Zeile wie die alte Statuszeile, `lab_app.hud_text`).
 
 Um den `main.py`-Handler aufrufen zu können, bekommt `install_handlers` einen
 dünnen Stellvertreter des Fensters, der jeden `@window.event`-Handler am echten
@@ -50,34 +51,47 @@ class HandlerRecorder:
 
 
 class LabHud:
-    """Eine Textzeile unten links: Symmetrie-Zustand + `app.status_message`."""
+    """Die Lab-Zeile unten links (`lab_app.hud_text`); bricht an der Fensterbreite
+    um wie die alte Statuszeile (Slice 7), damit die Statusmeldung am Ende nicht
+    abgeschnitten wird."""
 
-    def __init__(self, app: Application, window) -> None:
+    def __init__(self, app: Application, lab: SymmetryAppLab, window, asset_name: str) -> None:
         self.app = app
+        self.lab = lab
         self.window = window
+        self.asset_name = asset_name
         self.label = None
 
     def text(self) -> str:
-        return hud_text(self.app)
+        return hud_text(self.app, self.asset_name, self.lab.report)
 
     def draw(self) -> None:
         import pyglet
 
         text = self.text()
+        width = max(1, self.window.width - 2 * HUD_MARGIN)
         if self.label is None:
             self.label = pyglet.text.Label(
                 text,
                 x=HUD_MARGIN,
                 y=HUD_MARGIN,
+                width=width,
+                multiline=True,
+                anchor_y="bottom",
                 font_size=HUD_FONT_SIZE,
                 color=HUD_COLOR,
             )
-        elif self.label.text != text:
-            self.label.text = text
+        else:
+            if self.label.width != width:
+                self.label.width = width
+            if self.label.text != text:
+                self.label.text = text
         self.label.draw()
 
 
-def install_lab_window(window, app: Application, lab: SymmetryAppLab, src_main) -> LabHud:
+def install_lab_window(
+    window, app: Application, lab: SymmetryAppLab, src_main, asset_name: str
+) -> LabHud:
     """Installiert die Handler aus `src_main.install_handlers` und darüber die
     Lab-Handler. `src_main` = das Modul `src/main.py`."""
     import pyglet
@@ -86,7 +100,7 @@ def install_lab_window(window, app: Application, lab: SymmetryAppLab, src_main) 
     src_main.install_handlers(recorder, app)
     main_key_press = recorder.handlers["on_key_press"]
     main_draw = recorder.handlers["on_draw"]
-    hud = LabHud(app, window)
+    hud = LabHud(app, lab, window, asset_name)
 
     def on_key_press(symbol: int, modifiers: int):
         inp = key_from_pyglet(symbol, modifiers)
