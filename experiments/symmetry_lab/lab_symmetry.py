@@ -78,12 +78,22 @@ def next_axis(axis: Optional[str]) -> Optional[str]:
     return SYMMETRY_CYCLE[(i + 1) % len(SYMMETRY_CYCLE)]
 
 
+def set_symmetry_axis(mesh: Mesh, axis: Optional[str]) -> None:
+    """Setzt die Definition für `axis` (E1, Seam nach E3); `None` = aus. Keine History.
+
+    Gemeinsamer Schritt beider Zyklus-Pfade: `cycle_symmetry` (alter Lab-Pfad,
+    pusht selbst) und der App-Pfad (`lab_app`, als `mutate` in
+    `Application.apply_mesh_change`, WP-SYM-LAB-03 S1b).
+    """
+    mesh.symmetry_definition = definition_for_axis(mesh, axis)
+
+
 def cycle_symmetry(scene: Scene) -> Optional[str]:
     """Schaltet einen Schritt weiter (aus → X → Y → Z → aus), genau ein History-Eintrag."""
     mesh = scene.mesh
     axis = next_axis(current_axis(mesh))
     before = mesh.export_state()
-    mesh.symmetry_definition = definition_for_axis(mesh, axis)
+    set_symmetry_axis(mesh, axis)
     after = mesh.export_state()
     scene.history.push(
         MeshStateCommand(
