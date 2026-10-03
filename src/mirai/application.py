@@ -36,7 +36,8 @@ import dataclasses
 import math
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from types import MappingProxyType
+from typing import Callable, Mapping, Optional
 
 from core import EdgeId, FaceId, HistoryStack, Scene, Selection, SelectionMode, VertexId
 from core.operations import MeshStateCommand
@@ -222,6 +223,35 @@ def _knife_plan_notes(plan) -> list[str]:
         notes.append("skipped: along an existing edge")
     return notes
 
+@dataclasses.dataclass(frozen=True)
+class CommandGate:
+    """Data-only command gate (WP-SYM-LAB-03 H2, AD-013 H2 addendum, proposal G).
+
+    `refused`: command → status text (block-list). `allowed`: allow-list
+    (None = no allow-list); a command outside it is refused with
+    `not_allowed_text`. Immutable: a host replaces `Application.command_gate`
+    as a whole, never edits it. `Application` checks it in `key_press` (after
+    the Knife routing) and for click commands before `select_at`; it calls no
+    host code."""
+
+    refused: Mapping[str, str] = dataclasses.field(default_factory=dict)
+    allowed: frozenset[str] | None = None
+    not_allowed_text: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "refused", MappingProxyType(dict(self.refused)))
+        if self.allowed is not None:
+            object.__setattr__(self, "allowed", frozenset(self.allowed))
+
+    def refusal(self, command: str) -> str | None:
+        """Status text if `command` is refused, else None."""
+        if command in self.refused:
+            return self.refused[command]
+        if self.allowed is not None and command not in self.allowed:
+            return self.not_allowed_text
+        return None
+
+
 class Application:
     """Window-unabhängiger Produktions-Orchestrator."""
 
@@ -277,6 +307,11 @@ class Application:
         # (z. B. zweimal "Undo") erkennt.
         self.status_message: str = ""
         self.status_serial: int = 0
+
+        # WP-SYM-LAB-03 H2 (AD-013 H2 addendum): optional `CommandGate` of one
+        # host (the Symmetry Lab, H2-R6). None = nothing is refused;
+        # `src/main.py` never sets it.
+        self.command_gate: CommandGate | None = None
 
         # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
         # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
@@ -1007,10 +1042,14 @@ class Application:
     def key_press(self, input: Input) -> bool:
         """Taste gedrückt (`input.kind == "key"`), aufgelöst über die Bindings
         (GLOBAL; während einer Knife-Session zuerst KNIFE_CONTEXT). True = der
-        Druck hat etwas bewirkt."""
+        Druck hat etwas bewirkt. Ein von `command_gate` abgelehntes Command
+        (H2) postet den Ablehnungstext und gibt False zurück; die Knife-Session
+        liegt davor und wird nie gegatet."""
         if self._knife is not None:
             return self._knife_key(input)
         command = self.bindings.command_for(input)
+        if self._gate_refuses(command):
+            return False
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
@@ -1340,6 +1379,18 @@ class Application:
         self.status_message = message
         self.status_serial += 1
 
+    def _gate_refuses(self, command: str | None) -> bool:
+        """H2: True (and the refusal posted as status) if `command_gate`
+        refuses `command`. Unbound input (None) is never refused."""
+        gate = self.command_gate
+        if gate is None or command is None:
+            return False
+        text = gate.refusal(command)
+        if text is None:
+            return False
+        self._set_status(text)
+        return True
+
     def set_status(self, message: str) -> None:
         """Public form of `_set_status` (WP-SYM-LAB-03 H4, AD-013 H2 addendum):
         a host posts its own messages and refusals through the same
@@ -1506,6 +1557,8 @@ class Application:
 
     def _execute_click(self, click: Click) -> bool:
         if click.command in _SELECT_COMMANDS:
+            if self._gate_refuses(click.command):
+                return False
             self.select_at(click.command, click.x, click.y)
             return True
         return False
