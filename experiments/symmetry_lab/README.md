@@ -545,6 +545,8 @@ Alle 54 `UNPAIRED`-Vertices von `man_with_shoes_basemesh` haben einen topologisc
 
 ## Gespiegelter Knife — Lab-Experiment (Slice 6, headless)
 
+*Historisch (2026-10-03, WP-SYM-LAB-03):* Die gespiegelte Knife-Engine (Slice 6/7) wird beim Umbau auf den Production-Pfad **nicht** übernommen. Sie kopiert das Modell vor B7 (inkrementell, ein echter Schnitt pro Klick), Production arbeitet dagegen mit dem virtuellen Pfad (WP-KNIFE-01 S2–S4). Die Befunde E23–E30 und P1–P3 bleiben als Grundlage für einen symmetrischen One Knife erhalten ([Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md)).
+
 `lab_knife.py`. **Lab-Experiment, keine Capability** — keine Änderung an `src/` oder am
 Playground-Knife. Nur die Engine: kein Fenster, kein Edge-Hover, keine Pfad-Vorschau, keine
 Taste (alles Slice 7). **Nicht vom Artist geprüft** — belegt ist nur das headless Verhalten

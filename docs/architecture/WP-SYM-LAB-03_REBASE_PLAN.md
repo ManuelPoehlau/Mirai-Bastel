@@ -1,7 +1,8 @@
 # WP-SYM-LAB-03 — Rebase the Symmetry Lab onto the Production app (PLAN)
 
 **Type:** B (research / plan) · **Mode (M5):** Discovery · **Date:** 2026-10-03
-**Status:** PLAN, nothing decided or built. The target below is a proposal to evaluate.
+**Status:** PLAN **accepted** (Manu, 2026-10-03; reviewed by the planning agent in chat),
+with the review amendments below. Q1 stays open until the session after Slice 4. Nothing built.
 **Base:** `main` @ `f15957c` (WP-SYM-LAB-02 S2).
 **Trigger:** Artist (Manu, 2026-10-03): Symmetry need not reach Production fast, but it must
 use the Production tools. A Lab with its own renderer makes no sense long-term.
@@ -46,6 +47,71 @@ colour legend) · handoffs [Slice 2](WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md
   about 130 are deleted with the copies they test (§4.4).
 - **Visible changes that need a new Artist verdict: two** (§4.3). One is a question (Q1,
   shading of `subd_cube`). The other is a single combined re-check session after Slice 4.
+
+---
+
+## Review amendments (2026-10-03)
+
+Accepted together with the plan. They tighten gates; the slices themselves are unchanged.
+
+**A1 — H2 is reviewed independently before any `src` code (Slice 1, step 0).**
+The H2 decision is recorded as an
+[AD-013 addendum](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-03-wp-sym-lab-03-h2--experiment-input-hook-in-application)
+(status PROPOSED), committed before any Slice 1 code. A fresh agent reviews it in a separate
+session without access to the plan author's reasoning:
+
+- **Input:** the addendum and the documents and code it cites (AD-013 itself,
+  `INPUT_COMMAND_TOOL_CONTRACT.md`, AD-015, AD-016, `src/mirai/application.py`). The
+  addendum has to stand on its own; this plan and the chat are not part of the prompt.
+- **Questions:** Do the rules hold AD-013 I1/I3/I4/I6? Is there a smaller mechanism? Is a
+  call site missing or superfluous? Is each rule testable? Is there any risk to
+  `src/main.py`?
+- **Output:** archived unedited (AGENTS.md §6) as
+  `docs/archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md`, the existing
+  `docs/archive/<area>/reviews/<SUBJECT>_REVIEW_CLAUDE_<NNN>.md` naming. The new
+  `symmetry_lab` archive area gets its README and an entry in `docs/archive/README.md` in
+  the same commit.
+- **Gate:** Slice 1 code starts only after the review is archived and each finding has an
+  answer in the addendum (fixed, or why not). The review itself is never edited.
+
+**A2 — Slice 5 gate: no Lab test is deleted without a named replacement.**
+Before Slice 5 deletes anything, this plan gets a table with one row per deleted test: the
+deleted test, the named `tests/` (or kept Lab) test that covers the same rule, and the reason
+if no replacement exists. A row may not say "the app covers it" without naming the test. A
+deleted test without a named replacement is ported instead.
+
+The 11 hover tests (`test_lab_hover.py`) need special care. The move target rule A4/E7/E8
+and the hover partner are Lab-specific: the Slice 4 KEEP was given on the Lab. Draft mapping,
+to be re-verified against the code when Slice 5 starts:
+
+| Lab test | Rule | Named replacement (draft) | Draft verdict |
+|---|---|---|---|
+| `test_selection_wins_over_hover` | A4 | `tests/test_application_move.py::test_arming_from_selection_keeps_unrelated_hover` | covered |
+| `test_hover_target_moves_when_selection_empty` | A4 + E8 (selection stays empty after the commit) | `test_application_move.py::test_arm_without_selection_uses_hovered_vertex` covers the target only; no named test asserts E8 after a commit | **port** |
+| `test_w_rejected_when_selection_and_hover_both_empty` | A4 | `test_application_move.py::test_arm_with_nothing_is_rejected` | covered |
+| `test_target_fixed_at_w_press_cursor_over_other_vertex_does_not_retarget` | E7 | `test_application_move.py::test_target_is_fixed_at_press` (selection changed) + `::test_no_hover_recompute_while_armed_or_moving` | covered only in combination → **port** (one test for the Lab's exact case) |
+| `test_esc_during_drag_with_hover_target_restores_exactly` | E8 + exact cancel | `test_application_move.py::test_esc_mid_move_restores_exactly_without_history` uses a selection target, not a hover target | **port** |
+| `test_hover_does_not_update_during_camera_drag` | E9 freeze | none: the app *clears* the hover during orbit (`test_application_hover.py::test_starting_orbit_or_pan_clears_hover`), a recorded visible change (§4.3) | delete, reason: superseded by an app decision |
+| `test_hover_does_not_update_during_move_and_is_repicked_after_commit` | E9 | `test_application_move.py::test_no_hover_recompute_while_armed_or_moving` + `::test_hover_is_repicked_after_commit` | covered |
+| `test_arming_from_selection_hides_hover_on_the_target` | clear-on-arm | `test_application_move.py::test_arming_from_selection_clears_overlapping_hover` | covered |
+| `test_hover_is_repicked_after_cancel_and_tap` | E9 | `test_application_move.py::test_hover_is_repicked_after_cancel`; tap: none named | **port** (tap part) |
+| `test_hover_marks_change_only_when_vertex_id_changes` | E9 | `test_application_hover.py::test_no_notification_when_hovered_id_unchanged` | covered |
+| `test_status_shows_move_target_label` | Lab status (`Hover v<id>`) | none; the Lab HUD (Slice 2) decides whether the label stays | port with the HUD, or delete with a reason |
+
+The hover partner (turquoise) has no test today; it gets new Lab tests in Slice 2. Every
+deleted Lab test needs the same row treatment, not only the hover tests.
+
+**A3 — Slice 2 acceptance: the cost of a symmetric W drag is measured on the reference PC.**
+Slice 2 adds a headless probe (`experiments/symmetry_lab/probe_drag_cost.py`, no window
+needed, runs on Windows) that drives a symmetric W drag through `Application` with the
+Lab overlay attached. It reports p50/p95/max per mouse move (transform step + overlay sync)
+on `head_basemesh` and `man_with_shoes_basemesh`. Agents cannot reach the
+[reference PC](REFERENCE_HARDWARE.md): Manu runs the probe there (one command, Slice 2
+handoff), and agents add container numbers labelled as such (REFERENCE_HARDWARE.md §4).
+Threshold: p95 ≤ 8 ms per move, the bar the Knife hover already uses (WP-KNIFE-01 S4 STOP).
+If it is exceeded, the overlay sync is throttled or made incremental (state markers on
+commit only, partner markers only for the moved vertices) before Slice 3 starts. The numbers
+go into this plan.
 
 ---
 
@@ -335,11 +401,11 @@ point and allows an old-vs-new comparison. Each slice is one revertable commit s
 
 | Slice | Scope | `src` touched | Done when |
 |---|---|---|---|
-| **1** App path + cycle + plane/state overlays | Step 0: AD-013 addendum for H2 (from §3.1). `src`: H6, H1, H2 (key call site only), H3, H5. Lab: `run_app.py` builds the app path with registry assets; Shift+S via H2/H3; plane outline + seam/unpaired/ambiguous markers via H1; HUD with the symmetry state. **C is refused while symmetry is on** (fixed, `Symmetrie aktiv — C spiegelt nicht`), because without it C would run one-sided without warning (INV-8); Slice 4 replaces this with the E5 gate. Symmetric W/E/R work from here on through `src`; no Lab code for them | `src/main.py` (refactor), new `src/app_window.py` (or similar), `viewport/viewport.py`, `viewport/gl_point_overlay.py`, `mirai/application.py` | `pytest tests` and `playground/tests` unchanged except the new hook tests; ported cycle/outline/asset tests green; `src/main.py` guard test green |
-| **2** Mirrored previews + HUD | Partner markers for selection and hover (vertex mode); HUD line as `lab_status` (state, unpaired count, target, constraint); H4 | `application.py` (H4) | ported symmetric move/transform tests via `Application`; new W + constraint + symmetry test |
+| **1** App path + cycle + plane/state overlays | Step 0: AD-013 addendum for H2 (from §3.1), independently reviewed and archived before code (A1). `src`: H6, H1, H2 (key call site only), H3, H5. Lab: `run_app.py` builds the app path with registry assets; Shift+S via H2/H3; plane outline + seam/unpaired/ambiguous markers via H1; HUD with the symmetry state. **C is refused while symmetry is on** (fixed, `Symmetrie aktiv — C spiegelt nicht`), because without it C would run one-sided without warning (INV-8); Slice 4 replaces this with the E5 gate. Symmetric W/E/R work from here on through `src`; no Lab code for them | `src/main.py` (refactor), new `src/app_window.py` (or similar), `viewport/viewport.py`, `viewport/gl_point_overlay.py`, `mirai/application.py` | `pytest tests` and `playground/tests` unchanged except the new hook tests; ported cycle/outline/asset tests green; `src/main.py` guard test green |
+| **2** Mirrored previews + HUD | Partner markers for selection and hover (vertex mode); HUD line as `lab_status` (state, unpaired count, target, constraint); H4; drag-cost probe (A3) | `application.py` (H4) | ported symmetric move/transform tests via `Application`; new W + constraint + symmetry test; drag cost measured on the reference PC (A3) |
 | **3** Re-Symmetrize | M preview/execute/Esc via H2 (add the click + motion call sites), H3 with moved IDs; preview overlay and text line; hover paused | `application.py` (H2 call sites) | all 30 resymmetrize tests (kept or ported) green |
 | **4** E5 gate | Shift+B MARK/BLOCK via H2, now for W/E/R (`supports_symmetry`) **and C** (no declaration = unsupported); replaces the Slice 1 refusal; MARK keeps a persistent HUD line while a one-sided C/Knife session runs | — | ported gate tests + C cases (MARK: one-sided, one history entry, seam degradation visible; BLOCK: nothing, no history). **Then the Artist session (§4.3).** |
-| **5** Swap and delete | `run.py` → app host; delete the (c) modules and their tests (§4.4); README rewritten (manual-test sections as history, new steps); ROADMAP §7 entry; W-like-app and Slice 7 marked superseded/moot | — | Lab tests ≈133 + new; no Lab module imports a deleted one; README legend matches the overlays |
+| **5** Swap and delete | Gate first: the deleted-test → named-replacement table (A2). `run.py` → app host; delete the (c) modules and their tests (§4.4); README rewritten (manual-test sections as history, new steps); ROADMAP §7 entry; W-like-app and Slice 7 marked superseded/moot | — | Lab tests ≈133 + new; no Lab module imports a deleted one; README legend matches the overlays |
 
 **Not in any slice:** the mirrored Knife (a future symmetric One Knife is its own package:
 mirror the virtual path before resolution, ROADMAP 2026-10-02 (b),

@@ -421,3 +421,116 @@ runtime (AD-016 itself) still uses Q/W/E for its own hotkeys — unchanged, stil
 an open discrepancy. A3 (press vs. hold as a general input-ownership question)
 is answered for Transform by AD-016 and is resolved for that scope only; it stays
 open for everything else.
+
+## Addendum (2026-10-03, WP-SYM-LAB-03 H2 — experiment input hook in `Application`)
+
+**Status:** PROPOSED. It becomes DECIDED only after an independent review (fresh agent,
+separate session) is archived unedited as
+`docs/archive/symmetry_lab/reviews/AD-013_H2_ADDENDUM_REVIEW_CLAUDE_001.md` and every finding
+is answered below. No `src` code for this hook exists before that.
+**Basis:** Artist decision (Manu, 2026-10-03): the Symmetry Lab must use the Production tools
+instead of its own renderer and input layer; Symmetry itself is not promoted (`src/main.py`
+gets no symmetry UX). Plan: `WP-SYM-LAB-03_REBASE_PLAN.md`, hook H2.
+
+### Problem
+
+The Symmetry Lab (`experiments/symmetry_lab/`) is to run on the Production input path:
+pyglet event → `mirai.pyglet_input` → `Application` (`src/mirai/application.py`). Today
+`Application` is the only interaction authority on that path. It resolves bindings in the
+GLOBAL context only (plus `knife` during a Knife session, `key_press`, `application.py:993`),
+recognises click vs. drag itself (`PointerGestures`, AD-019; clicks executed in
+`_execute_click`, `:1440`) and drives hover or the armed transform from
+`pointer_motion` (`:1345`). Nothing outside it can take part.
+
+The Lab needs three things that `Application` cannot provide without symmetry knowledge:
+
+1. **Own commands:** Shift+S (symmetry cycle), M (Re-Symmetrize), Shift+B (E5 gate mode).
+   These are bound in the Lab context `symmetry_lab`, are free in GLOBAL, and stay out of
+   `mirai.interaction.commands`.
+2. **Pre-empting app commands under symmetry:** refusing C (contextual C / Knife run one-sided
+   under symmetry, INV-8 in AD-SYM-02 §2.3), and refusing W/E/R/C in the E5 BLOCK mode
+   (an open Artist question, AD-SYM-02 §4).
+3. **A modal Lab interaction:** the Re-Symmetrize preview. While it is open, navigation keeps
+   working, but select clicks, W/E/R, C, Shift+S and Undo/Redo are ignored with a hint, and
+   the hover pauses (Slice 5 KEEP, 2026-09-25).
+
+Without a defined entry point the only option is what the Lab does today: a second input
+layer (`LabDispatcher`) that re-implements gestures, arming, hover and undo. That has
+already drifted from `Application` (W ignores constraints, Undo clears instead of restoring
+the selection). It also breaks I1 in spirit ("Labs do not fork the capability implementation
+merely to experiment with its interaction"). The invariants at stake are I3 (one interaction
+authority owns start and end), I4 (one binding authority at a time), I6 (overrides remain
+visible) and the Activation and Termination rule above.
+
+### Alternatives
+
+| | Alternative | Assessment |
+|---|---|---|
+| 0 | Keep the Lab's own dispatcher (status quo) | Not used: it is the drift source; every app input fix needs a Lab copy |
+| A | Subclass `Application` in the Lab and override `key_press`, `_execute_click`, `pointer_motion` | Not used: couples the experiment to private methods, so an `Application` refactor would change Lab behaviour without any signal. It is a fork of the interaction authority in disguise (I1, I3) |
+| B | A facade in front of `Application` at window level | Not used: blocking a select click but not an Alt+LMB orbit needs the click-vs-drag decision `PointerGestures` makes inside `Application`, so a facade would re-implement it. Workable for keys only |
+| C | `Application` resolves an "active context" and hands unknown commands to the Lab (fallback only) | Not used: adds commands but cannot pre-empt any. Needs 2 and 3 are not covered |
+| D | Promote the symmetry UX into `src/main.py` behind a flag | Not used: promotion is the Artist's decision and was deferred (ROADMAP §7, 2026-10-02); I7 |
+| E | A general extension/plugin system (command registry, event bus, overlay providers) | Not used: § Engineering Freedom and § Sequencing Principle above; INPUT_COMMAND_TOOL_CONTRACT §3 ("no complex hierarchical context framework without a demonstrated use case") |
+| **F** | **One optional hook object, consulted first at three existing call sites** | **Chosen** (below) |
+
+### Decision
+
+`Application` gets one optional attribute, the **input hook** (working name
+`input_hook`, default `None`). When it is set, `Application` consults it **first** at exactly
+three call sites. A hook method returns `True` = consumed (`Application` does nothing further
+for this event) or `False` = `Application` proceeds exactly as without a hook.
+
+| Call site | Hook receives | When |
+|---|---|---|
+| `key_press` | the raw `Input` | before `Application` resolves it, including before the Knife session routing |
+| `_execute_click` | the click command (`Select`, `SelectAdd`, …) and its position | after `PointerGestures` has decided that the gesture is a click |
+| `pointer_motion` | the cursor position | before hover update or transform step |
+
+There are deliberately **no** hook calls on `key_release`, `pointer_press`/`pointer_drag`
+(drags and navigation), `pointer_release` other than through the click, `pointer_scroll` or
+`pointer_leave`. Releases and drags end interactions that `Application` started, so they
+stay with `Application` (I3, Activation and Termination).
+
+**Rules the hook must keep** (each is testable; the implementation slice tests each one):
+
+- **H2-R1 — one binding authority (I4, I5).** The hook resolves inputs only through
+  `app.bindings`, the one `BindingSet`, with its own named context (fallback GLOBAL). It
+  creates no second binding resolver. Its context entries are listed at start-up (I6).
+- **H2-R2 — start and end stay with their owner (I3, AD-015 runtime-state rule).** An
+  interaction the hook starts (the preview) is ended by the hook. An interaction
+  `Application` starts (armed or running transform, Knife session, pointer gesture) is never
+  ended, altered or stolen by the hook. While one runs, the hook consumes nothing except its
+  own commands, which it refuses visibly.
+- **H2-R3 — refusals are visible.** Whenever the hook consumes an app command in order to
+  refuse it, it posts a status message (through the public status setter, plan hook H4).
+  It never swallows input silently.
+- **H2-R4 — no capability fork (I1).** The hook does not re-implement anything
+  `Application` provides: no own gesture recognition, transform arming, picking for app
+  semantics or undo. It uses public `Application` API only, never private members.
+- **H2-R5 — Production is unchanged.** `src/main.py` sets no hook. With the hook `None`,
+  behaviour is identical (existing suites unchanged, plus a guard test that `src/main.py`
+  sets none).
+- **H2-R6 — one user, one hook.** One hook object, no list or registry. A second user
+  (another Lab, the Playground) needs its own review of this addendum; it does not get to
+  extend the hook silently.
+
+### Consequences
+
+- **Positive:** the Lab runs on the same gestures, arming, constraints, hover, picking and
+  undo as the app, so input drift becomes impossible by construction. Lab behaviour is
+  testable headless through `Application`'s entry points, like `tests/test_application_*`.
+- **Costs:** three branch points in `Application`'s input path. An `Application` change can
+  break Lab tests; that is intended, as the signal the drift lacked. The hook receives raw
+  key input and must handle key repeat itself.
+
+### Not decided here
+
+The Python shape (Protocol or duck typing) and final names; whether the Playground could use
+such a hook (H2-R6); any gesture semantics (A3 stays open); any Artist Input Truth (the Lab
+keys stay Lab overrides).
+
+### Review
+
+Pending. Reviewer findings and the answers to them go here, with a link to the archived
+review.
