@@ -184,7 +184,18 @@ behaviour unchanged without it) and the Lab passes the one its cached `SymmetryR
 holds (`SymmetryReport.correspondence`, not part of equality). Container after the fix: Lab
 overlays 0.21 ms per hover change; hover change p50 3.47 → **1.04** ms, p95 5.15 → 1.71 ms on
 `man_with_shoes_basemesh` (head: p50 1.24 → 0.45 ms). By the container/reference-PC ratio of the
-first run (≈ 5×) the reference PC should land near 5 ms; **re-run on the reference PC: open.**
+first run (≈ 5×) the reference PC should land near 5 ms.
+
+**Reference PC re-run after the fix (Manu, 2026-10-03), same machine:** per W-drag move p95
+0.40 / 0.82 ms (unchanged, ok). Hover change p50 6.30 → **3.67** ms / 17.36 → **9.46** ms,
+p95 7.51 → 4.77 / 18.54 → **10.78** ms on `head_basemesh` / `man_with_shoes_basemesh`. Commit
+frame p50 11.6 → 6.4 / 34.2 → **18.2** ms (the deferred partner re-derivation now reuses the
+report's correspondence too). The estimate of ≈ 5 ms was too optimistic: the remaining hover cost
+is mostly the app's own pick, not the Lab. In the container the pick is ≈ 70 % of a hover change
+with symmetry on (0.71 of 1.01 ms) and costs the same with symmetry off (0.66 ms), so
+`src/main.py` pays it too (inference from the container split; the probe does not split the
+hover line). 9.5 ms stays within one 60-fps frame (16.7 ms). **Closed for this WP;** a faster
+pick on dense meshes would be a Production topic (B8 pick cache), not Lab work.
 Tests: `tests/test_symmetry.py::TestMirroredSelection::test_given_correspondence_is_used_without_deriving`,
 `experiments/symmetry_lab/tests/test_app_lab_partners.py::test_hover_and_selection_changes_derive_no_correspondence`
 (fails without the Lab change). The commit frame (34 ms once per drag on the reference PC) is
