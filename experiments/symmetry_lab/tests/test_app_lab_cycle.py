@@ -11,7 +11,7 @@ die Originale in `test_lab_symmetry.py` bleiben bis Slice 5 unverändert):
 
 Dazu: Ebenen-Umriss und Zustands-Marker als Viewport-Overlays (H1), Neuaufbau nach
 Shift+S (eigenes `dirty`) und nach Undo (Viewport-Meldung), Assets per Registry-Name
-und der Einstieg `run_app` (Exit-Code 2, `--help`).
+und der Einstieg `run` (Exit-Code 2, `--help`).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from loaders.assets import asset_names
 from mirai.mesh_geometry import mesh_bounds, mesh_center_and_radius
 from mirai.symmetry import SymmetryState
 
-from symmetry_lab import run_app
+from symmetry_lab import run
 from symmetry_lab._paths import LAB_DIR
 from symmetry_lab.lab_app import hud_text
 from symmetry_lab.lab_overlays import (
@@ -300,7 +300,7 @@ def test_hud_text_shows_symmetry_and_status(lab_app):
 
 def test_registry_matches_expected_assets():
     assert set(asset_names()) == set(EXPECTED_VERTEX_COUNTS)
-    assert run_app.DEFAULT_ASSET == "subd_cube"
+    assert run.DEFAULT_ASSET == "subd_cube"
 
 
 @pytest.mark.parametrize("name", sorted(EXPECTED_VERTEX_COUNTS))
@@ -319,16 +319,16 @@ def test_load_by_registry_name_on_the_app_path(name):
     assert len(app.history) == 0
 
 
-def test_run_app_rejects_unknown_name_before_opening_a_window(capsys):
-    assert run_app.main(["no_such_mesh"]) == 2
+def test_run_rejects_unknown_name_before_opening_a_window(capsys):
+    assert run.main(["no_such_mesh"]) == 2
     err = capsys.readouterr().err
     for name in asset_names():
         assert name in err
 
 
-def test_run_app_help_runs_without_a_window():
+def test_run_help_runs_without_a_window():
     result = subprocess.run(
-        [sys.executable, str(LAB_DIR / "run_app.py"), "--help"],
+        [sys.executable, str(LAB_DIR / "run.py"), "--help"],
         capture_output=True,
         text=True,
     )

@@ -1,8 +1,8 @@
-"""`run_app` smoke test: Fenster-Aufbau headless, Handler aus `src/main.py` + Lab darüber.
+"""`run` smoke test (bis Slice 5 `run_app`): Fenster-Aufbau headless, Handler aus `src/main.py` + Lab darüber.
 
 Stellvertreter-Fenster wie `tests/test_main_wiring.py::FakeWindow` (zeichnet nichts,
 kein GL), plus `push_handlers` als oberste Handler-Ebene wie bei pyglet. Gebaut wird
-mit `run_app.build_lab` und dem echten `src/main.py` (`install_handlers`, H6), ohne
+mit `run.build_lab` und dem echten `src/main.py` (`install_handlers`, H6), ohne
 GL-Typen (TraceStore). Die pyglet-Tastenkonstanten brauchen `pyglet.window`
 (`_pyglet_headless`, Skip ohne pyglet).
 """
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from symmetry_lab import run_app
-from symmetry_lab.lab_app import ROW_MARK, hud_text
+from symmetry_lab import run
+from symmetry_lab.lab_app import block_row, hud_text
 
 from ._app_lab_support import HEIGHT, WIDTH, forbid_lab_calls  # noqa: F401
 from ._pyglet_headless import import_pyglet
@@ -56,13 +56,13 @@ class FakeWindow:
 @pytest.fixture
 def built():
     window = FakeWindow()
-    src_main = run_app.load_src_main()
-    app, lab, hud = run_app.build_lab(window, "subd_cube", src_main)
+    src_main = run.load_src_main()
+    app, lab, hud = run.build_lab(window, "subd_cube", src_main)
     return window, app, lab, hud
 
 
 def test_load_src_main_is_the_production_entry():
-    module = run_app.load_src_main()
+    module = run.load_src_main()
     for name in ("create_window", "install_handlers", "run", "GL_TYPES"):
         assert hasattr(module, name)
 
@@ -84,7 +84,7 @@ def test_one_key_event_through_lab_key_press(built):
     window, app, lab, _hud = built
     assert window.dispatch("on_key_press", key.S, key.MOD_SHIFT) is pyglet.event.EVENT_HANDLED
     assert lab.axis == "X"
-    assert app.command_gate is ROW_MARK.gate
+    assert app.command_gate == block_row().gate  # E5-Default BLOCK (Slice 5)
     assert window.dispatch("on_key_press", key.ESCAPE, 0) is pyglet.event.EVENT_HANDLED
     assert window.dispatch("on_key_press", key.Z, key.MOD_CTRL) is pyglet.event.EVENT_HANDLED
     assert lab.axis is None
@@ -137,11 +137,12 @@ def test_draw_runs_main_draw_first_then_the_hud(built, monkeypatch):
 
 
 def test_hud_label_text_is_the_full_lab_line(built):
-    """Slice 2: das HUD-Label zeigt `hud_text` mit dem Asset-Namen aus `run_app`
+    """Slice 2: das HUD-Label zeigt `hud_text` mit dem Asset-Namen aus `run`
     und dem Befund-Cache des Labs."""
     window, app, lab, hud = built
     window.dispatch("on_key_press", key.S, key.MOD_SHIFT)
-    # Slice 4: mit dem E5-Modus des Labs (nur bei aktiver Symmetrie sichtbar).
+    # Slice 4: mit dem E5-Modus des Labs (nur bei aktiver Symmetrie sichtbar),
+    # seit Slice 5 Default BLOCK.
     assert hud.text() == hud_text(app, "subd_cube", lab.report, lab.gate_mode)
-    assert " | E5: MARK | " in hud.text()
+    assert " | E5: BLOCK | " in hud.text()
     assert hud.text().startswith("subd_cube | 26 V | Symmetrie: X (valid) | ohne Partner: 0")

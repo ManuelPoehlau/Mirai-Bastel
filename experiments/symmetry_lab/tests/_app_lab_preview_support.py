@@ -1,7 +1,7 @@
 """Helfer für die Re-Symmetrize-Tests auf dem App-Pfad (WP-SYM-LAB-03 Slice 3).
 
 Wie `_app_lab_support`: headless (TraceStore), Lab gebaut über
-`run_app.build_app_lab`. Auswahl entsteht nur über Klicks (öffentliche Eingänge),
+`run.build_app_lab`. Auswahl entsteht nur über Klicks (öffentliche Eingänge),
 Symmetrie über Shift+S, die Vorschau über M — alles durch `lab_key_press`.
 """
 

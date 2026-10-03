@@ -1,6 +1,6 @@
 """Re-Symmetrize-Vorschau im Fenster-Adapter (WP-SYM-LAB-03 Slice 3).
 
-Stellvertreter-Fenster aus `test_run_app` (kein GL). Geprüft wird H2-R3 („the
+Stellvertreter-Fenster aus `test_run` (kein GL). Geprüft wird H2-R3 („the
 pyglet handler returns EVENT_HANDLED in every branch", review N4) für M öffnen,
 abgelehnte Taste, Esc schließt, M führt aus, und die blaue Vorschau-Zeile über der
 HUD-Zeile (README Slice 5, Schritt 4; Farbe aus dem alten `lab_window`).
@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from symmetry_lab import lab_app_window, run_app
-from symmetry_lab.lab_app import PREVIEW_HINT, ROW_MARK, ROW_PREVIEW, preview_text
+from symmetry_lab import lab_app_window, run
+from symmetry_lab.lab_app import PREVIEW_HINT, ROW_PREVIEW, block_row, preview_text
 
 from ._app_lab_preview_support import first_visible, side_vertices
 from ._app_lab_support import click, forbid_lab_calls, screen  # noqa: F401
 from ._pyglet_headless import import_pyglet
-from .test_run_app import FakeWindow
+from .test_run import FakeWindow
 
 pyglet = import_pyglet()
 try:
@@ -30,7 +30,7 @@ HANDLED = pyglet.event.EVENT_HANDLED
 @pytest.fixture
 def built():
     window = FakeWindow()
-    app, lab, hud = run_app.build_lab(window, "man_with_shoes_basemesh", run_app.load_src_main())
+    app, lab, hud = run.build_lab(window, "man_with_shoes_basemesh", run.load_src_main())
     assert window.dispatch("on_key_press", key.S, key.MOD_SHIFT) is HANDLED
     click(app, *screen(app, first_visible(app, side_vertices(app, 0))))
     return window, app, lab, hud
@@ -45,7 +45,7 @@ def test_every_branch_returns_event_handled(built):
     assert window.dispatch("on_key_release", key.W, 0) is HANDLED
     assert window.dispatch("on_key_press", key.S, key.MOD_SHIFT) is HANDLED  # Lab lehnt ab
     assert window.dispatch("on_key_press", key.ESCAPE, 0) is HANDLED  # D1: schließt
-    assert not lab.preview_open and app.command_gate is ROW_MARK.gate
+    assert not lab.preview_open and app.command_gate == block_row().gate  # E5-Default BLOCK
     history = len(app.history)
     assert window.dispatch("on_key_press", key.M, 0) is HANDLED
     assert window.dispatch("on_key_press", key.M, 0) is HANDLED  # führt aus

@@ -61,7 +61,7 @@ from symmetry_lab.lab_overlays import (
     SymmetryPlaneOverlay,
     SymmetryStateOverlay,
 )
-from symmetry_lab.run_app import run_lab
+from symmetry_lab.run import run_lab
 
 from ._app_lab_preview_support import (
     ALT_A,
@@ -172,7 +172,7 @@ def test_ctrl_z_restores_mesh_and_selection_then_redo(previewing):
     assert app.scene.mesh.export_state() == before
     assert app.selection.vertices == {source}
     assert symmetry_state(app.scene.mesh) is SymmetryState.PARTIAL
-    assert lab.axis == "X" and app.command_gate is ROW_MARK.gate
+    assert lab.axis == "X" and app.command_gate == block_row().gate  # E5-Default BLOCK
     assert press(app, lab, CTRL_Y) is True
     assert app.scene.mesh.export_state() == after
     assert symmetry_state(app.scene.mesh) is SymmetryState.VALID

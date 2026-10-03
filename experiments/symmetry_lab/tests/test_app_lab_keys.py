@@ -15,7 +15,6 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 
 from symmetry_lab.lab_app import (
-    ROW_MARK,
     GateMode,
     block_text,
     gate_row_for,
@@ -172,7 +171,8 @@ def test_gate_row_follows_symmetry_definition_over_undo_redo(lab_app, mode):
     E5-Modus; in BLOCK ist C genau dann abgelehnt, wenn die Symmetrie an ist, in
     MARK nie. Undo/Redo ändert den Modus nicht."""
     app, lab = lab_app
-    if mode is GateMode.BLOCK:
+    assert lab.gate_mode is GateMode.BLOCK  # Default seit Slice 5
+    if mode is not GateMode.BLOCK:
         assert press(app, lab, SHIFT_B)
     assert lab.gate_mode is mode
     assert press(app, lab, SHIFT_S)  # X
@@ -216,7 +216,7 @@ def test_gate_is_not_reinstalled_while_a_transform_owns_the_keys(lab_app):
     app.command_gate = sentinel
     assert press(app, lab, X) is True  # X-Constraint, weitergeleitet
     assert app.command_gate is sentinel
-    app.command_gate = ROW_MARK.gate
+    app.command_gate = gate_row_for(lab.axis, lab.gate_mode).gate
     assert press(app, lab, ESC)
     assert _gate_matches_mesh(app, lab)
 
@@ -241,7 +241,7 @@ def _symmetry_on(app, lab):
 
 
 def _symmetry_on_block(app, lab):
-    assert press(app, lab, SHIFT_B)
+    assert lab.gate_mode is GateMode.BLOCK  # Default seit Slice 5, kein Shift+B nötig
     assert press(app, lab, SHIFT_S)
 
 

@@ -661,6 +661,7 @@ session (the check sits after the Knife routing); a Lab reaction that must run *
   underscore, `history.push`, and importing `PointerGestures`, `ToolManager` or `pick_component`
   for app semantics. No own gesture recognition, transform arming, picking for app semantics or
   undo bookkeeping.
+  *Note 2026-10-03 (WP-SYM-LAB-03 Slice 5): `run_app.py` is renamed to `run.py`; (f) now names `run.py`.*
 - **H2-R5 — Production is unchanged.** With the defaults (`command_gate is None`,
   `hover_suspended is False`) behaviour is identical; `interaction_owner`, `set_status` and
   `apply_mesh_change` are additive. `src/main.py` writes no gate data and calls neither

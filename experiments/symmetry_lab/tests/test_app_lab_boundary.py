@@ -8,7 +8,7 @@ H2-R4-Liste von `Application` (AD-013 H2 addendum).
   anfasst, steht auf der H2-R4-Liste ((c) `set_status`, (d) `apply_mesh_change`,
   (e) die Event-Eingänge); die einmalige Einrichtung vor dem Event-Loop
   (`init_scene`, `frame_scene`, `set_viewport_size`, H2-R4 (f), Klarstellung
-  2026-10-03) nur in `run_app.py`; zugewiesen wird nur das Gate ((b)
+  2026-10-03) nur im Einstieg `run.py` (bis Slice 5 `run_app.py`); zugewiesen wird nur das Gate ((b)
   `command_gate`, `hover_suspended`). Mit Negativkontrollen, damit der Scan nicht
   still nichts findet.
 - T-R4b: die Wächter-Fixture aus `_app_lab_support` greift genau beim
@@ -58,7 +58,7 @@ ALLOWED_APP_METHODS = {
 }
 #: H2-R4 (f): einmalige Einrichtung vor dem Event-Loop, wie `src/main.py` — nur hier.
 SETUP_METHODS = {"init_scene", "frame_scene", "set_viewport_size"}
-SETUP_MODULE = "symmetry_lab.run_app"
+SETUP_MODULE = "symmetry_lab.run"
 #: H2-R4 (b): die einzigen Attribute, die Lab-Code an `Application` setzt.
 ASSIGNABLE = {"command_gate", "hover_suspended"}
 
@@ -90,7 +90,7 @@ def _is_app_expression(node: ast.AST) -> bool:
 
 def violations(source: str, module: str = "") -> list[str]:
     """Verstöße gegen H2-R4 in `source`; `module` = Modulname (für die
-    Einrichtungs-Ausnahme (f), die nur `run_app` hat)."""
+    Einrichtungs-Ausnahme (f), die nur `run` hat)."""
     allowed = ALLOWED_APP_METHODS | (SETUP_METHODS if module == SETUP_MODULE else set())
     found = []
     for node in ast.walk(ast.parse(source)):
@@ -181,9 +181,9 @@ def f(app, lab):
 
 
 @pytest.mark.parametrize("name", sorted(SETUP_METHODS))
-def test_setup_calls_are_allowed_only_in_run_app(name):
+def test_setup_calls_are_allowed_only_in_run(name):
     """H2-R4 (f), Klarstellung Slice 2: `init_scene`/`frame_scene`/`set_viewport_size`
-    genau in `run_app.py`, in jedem anderen Lab-Modul ein Verstoß."""
+    genau in `run.py`, in jedem anderen Lab-Modul ein Verstoß."""
     source = f"def f(app):\n    app.{name}()\n"
     assert violations(source, SETUP_MODULE) == []
     for module in LAB_APP_MODULES:
@@ -197,9 +197,9 @@ def test_method_allow_list_names_real_application_methods():
     assert {"update_viewport", "shutdown", "set_shift_held"} <= APP_METHODS
 
 
-def test_run_app_uses_exactly_the_setup_exception():
-    """`run_app.py` braucht die Ausnahme (f) wirklich — ohne sie wäre es ein Verstoß."""
-    source = (LAB_DIR / "run_app.py").read_text(encoding="utf-8")
+def test_run_uses_exactly_the_setup_exception():
+    """`run.py` braucht die Ausnahme (f) wirklich — ohne sie wäre es ein Verstoß."""
+    source = (LAB_DIR / "run.py").read_text(encoding="utf-8")
     assert violations(source, SETUP_MODULE) == []
     assert sorted(violations(source)) == sorted(
         f"app.{name} (nicht auf der H2-R4-Liste)" for name in SETUP_METHODS
@@ -213,7 +213,7 @@ def test_scan_ignores_own_underscore_members():
 
 def test_lab_app_modules_cover_every_new_file():
     """T-R4a: jede Datei des App-Pfads steht in der Scan-Liste."""
-    for name in ("lab_app", "lab_app_window", "lab_overlays", "run_app", "probe_drag_cost"):
+    for name in ("lab_app", "lab_app_window", "lab_overlays", "run", "probe_drag_cost"):
         assert f"symmetry_lab.{name}" in LAB_APP_MODULES
         assert (Path(LAB_DIR) / f"{name}.py").is_file()
 

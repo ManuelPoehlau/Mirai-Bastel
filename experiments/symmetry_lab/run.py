@@ -1,52 +1,99 @@
-"""Symmetry Lab — Einstiegspunkt.
+"""Symmetry Lab — Einstiegspunkt (WP-SYM-LAB-03; seit Slice 5 der einzige).
 
 Verwendung (vom Repo-Root, Windows und Linux gleich):
     python experiments/symmetry_lab/run.py                 # subd_cube (Default)
     python experiments/symmetry_lab/run.py head_basemesh
     python experiments/symmetry_lab/run.py man_with_shoes_basemesh
 
-Gültige Namen = `loaders.assets.asset_names()` (examples/loaders/assets.py).
-Ein unbekannter Name bricht mit Exit-Code 2 und der Liste der gültigen Namen
-ab, bevor ein Fenster geöffnet wird.
+Baut denselben Pfad wie `src/main.py` (`Application` → `Viewport` V02 →
+`GLRenderStore`) über dessen `create_window` / `install_handlers` / `run` (H6)
+und ergänzt nur die Lab-Teile (`lab_app`, `lab_overlays`, `lab_app_window`).
+Der fensterlose Teil (`build_app_lab`) ist auch die Grundlage von
+`probe_drag_cost.py` (Plan A3).
+Gültige Namen = `loaders.assets.asset_names()`; ein unbekannter Name bricht mit
+Exit-Code 2 ab, bevor ein Fenster geöffnet wird. Bis Slice 5 hieß diese Datei
+`run_app.py` und lief neben dem alten Lab-Einstieg `run.py` (eigener Renderer und
+Dispatcher, in Slice 5 gelöscht).
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# sys.path-Bootstrap Stufe 0 (Skriptstart) — nachgebaut nach playground/run.py.
-# Bei `python experiments/symmetry_lab/run.py` liegt nur dieser Ordner auf
-# sys.path[0]; ohne `experiments/` scheitert der nächste Import mit
-# ModuleNotFoundError: No module named 'symmetry_lab'.
-# ---------------------------------------------------------------------------
+# Stufe 0 (Skriptstart): bei `python experiments/symmetry_lab/run.py` liegt nur
+# dieser Ordner auf sys.path[0]; ohne `experiments/` scheitert der nächste Import
+# mit ModuleNotFoundError: No module named 'symmetry_lab'.
 _EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent
 if str(_EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(_EXPERIMENTS_DIR))
 
-# Stufe 1: src/, Repo-Root, examples/, experiments/ — siehe symmetry_lab/_paths.py.
-from symmetry_lab._paths import ensure_paths  # noqa: E402
+from symmetry_lab._paths import REPO_SRC_DIR, ensure_paths  # noqa: E402
 
 ensure_paths()
 
+from loaders.assets import asset_path  # noqa: E402
 from mirai.application import Application  # noqa: E402
 
-from symmetry_lab.lab_bindings import (  # noqa: E402
-    LAB_OVERRIDES,
-    SYMMETRY_LAB_CONTEXT,
-    apply_lab_bindings,
-)
+from symmetry_lab.lab_app import SymmetryAppLab, start_lab, startup_listing  # noqa: E402
+from symmetry_lab.lab_overlays import build_lab_overlays  # noqa: E402
 from symmetry_lab.lab_scene import (  # noqa: E402
     DEFAULT_ASSET,
     UnknownAssetError,
     resolve_asset_name,
 )
 
+CAPTION = "Mirai — Symmetry Lab (App-Pfad)"
+
+
+def load_src_main():
+    """`src/main.py` als Modul (H6). `ensure_paths()` legt `src/` an den Anfang
+    von sys.path; geprüft wird trotzdem, dass wirklich diese Datei geladen wurde."""
+    module = importlib.import_module("main")
+    if Path(module.__file__).resolve() != (REPO_SRC_DIR / "main.py").resolve():
+        raise ImportError(f"'main' ist nicht src/main.py, sondern {module.__file__}")
+    return module
+
+
+def build_app_lab(
+    asset_name: str, width: int, height: int, gl_types: dict | None = None
+) -> tuple[Application, SymmetryAppLab]:
+    """Application + Lab + Szene + Overlays, ohne Fenster — der Teil von
+    `build_lab`, den auch `probe_drag_cost.py` nutzt (Plan A3: dieselbe Kette wie
+    im Fenster). Einmalige Einrichtung vor dem Event-Loop wie in `src/main.py`
+    (`init_scene`, `frame_scene`, `set_viewport_size`; AD-013 H2-R4 (f))."""
+    app = Application()
+    lab: SymmetryAppLab = start_lab(app)
+    app.init_scene("obj", obj_path=asset_path(asset_name), **(gl_types or {}))
+    app.frame_scene()
+    # Erste Größe/Aspect wie main.py, damit der erste Frame nicht verzerrt ist.
+    app.set_viewport_size(width, height)
+    lab.attach_overlays(
+        app.viewport,
+        build_lab_overlays(lab.reports, lab.transform_running, lambda: lab.preview),
+    )
+    return app, lab
+
+
+def build_lab(window, asset_name: str, src_main, gl_types: dict | None = None):
+    """Application + Lab + Szene + Overlays + Handler an `window`.
+
+    `gl_types` = `src_main.GL_TYPES` im echten Fenster; `None` = headless
+    (TraceStore, keine GL-Overlays des Viewports), für Tests mit einem
+    Stellvertreter-Fenster."""
+    from symmetry_lab.lab_app_window import install_lab_window
+
+    app, lab = build_app_lab(asset_name, window.width, window.height, gl_types)
+    hud = install_lab_window(window, app, lab, src_main, asset_name)
+    return app, lab, hud
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Mirai-Bastel Symmetry Lab")
+    parser = argparse.ArgumentParser(
+        description="Mirai-Bastel Symmetry Lab (App-Pfad, WP-SYM-LAB-03)"
+    )
     parser.add_argument("asset", nargs="?", default=DEFAULT_ASSET,
                         help=f"Registry-Name des Start-Assets (Default: {DEFAULT_ASSET})")
     args = parser.parse_args(argv)
@@ -56,20 +103,28 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         return 2
 
-    app = Application()
-    apply_lab_bindings(app.bindings)
-    print(f"Lab-Overrides (Kontext {SYMMETRY_LAB_CONTEXT!r}):")
-    for override in LAB_OVERRIDES:
-        print(f"  {override.describe()}")
+    for line in startup_listing():
+        print(line)
 
-    # pyglet erst hier: Namensprüfung und --help brauchen kein Fenstersystem.
-    import pyglet
-
-    from symmetry_lab.lab_window import SymmetryLabWindow
-
-    SymmetryLabWindow(app, asset_name)
-    pyglet.app.run()
+    # pyglet (über src/main.py) erst hier: Namensprüfung und --help brauchen
+    # kein Fenstersystem.
+    src_main = load_src_main()
+    window = src_main.create_window(caption=CAPTION)
+    app, lab, _hud = build_lab(window, asset_name, src_main, gl_types=src_main.GL_TYPES)
+    run_lab(window, app, lab, src_main)
     return 0
+
+
+def run_lab(window, app: Application, lab: SymmetryAppLab, src_main) -> None:
+    """Event-Loop aus `src/main.py` (H6). Kehrt zurück, wenn das Fenster zu ist;
+    eine dann noch offene Re-Symmetrize-Vorschau endet mit dem Fenster (AD-013
+    H2-R2, § Consequences „Focus loss"): Gate und Hover-Flag zurück auf die Zeile
+    des Symmetrie-Zustands. Kein eigener `on_close`-Handler: pyglets
+    Standard-Schließen bleibt unverändert."""
+    try:
+        src_main.run(window, app)
+    finally:
+        lab.end_preview()
 
 
 if __name__ == "__main__":

@@ -20,17 +20,18 @@ unverändert durch `Application`. Das Lab ergänzt nur
   (D1, nur solange sie offen ist). Solange sie offen ist, steht die Vorschau-Zeile
   der Gate-Tabelle (nur Anzeige-Commands, `hover_suspended`), und sie dominiert
   jede andere Zeile (H2-R2, review N2);
-- (Slice 4) den E5-Modus MARK/BLOCK (Shift+B, nur Lab-Zustand, AD-SYM-02 §4 —
-  entscheidet der Artist): bei aktiver Symmetrie lehnt BLOCK C und jedes
-  Transform-Command ab, dessen Operation `supports_symmetry` nicht erklärt; MARK
-  lässt alles laufen und warnt im HUD (`e5_warning_text`), ohne Status zu
-  schreiben, solange eine `Application`-Interaktion läuft (H2-R2).
+- (Slice 4) den E5-Modus MARK/BLOCK (Shift+B, nur Lab-Zustand, AD-SYM-02 §4): bei
+  aktiver Symmetrie lehnt BLOCK C und jedes Transform-Command ab, dessen Operation
+  `supports_symmetry` nicht erklärt; MARK lässt alles laufen und warnt im HUD
+  (`e5_warning_text`), ohne Status zu schreiben, solange eine
+  `Application`-Interaktion läuft (H2-R2). Seit Slice 5 ist BLOCK der Default
+  (Artist-Verdikt KEEP-BLOCK, Manu, 2026-10-03); MARK bleibt über Shift+B zum
+  Vergleich erreichbar.
 
 Erlaubte `Application`-Zugriffe: nur die öffentliche Liste aus H2-R4 (geprüft von
 `tests/test_app_lab_boundary.py`, T-R4a/b).
 
-Der alte Einstieg (`run.py`, `lab_dispatch`, `lab_window`) bleibt bis Slice 5
-unverändert daneben bestehen.
+Einstieg: `run.py` (bis Slice 5 `run_app.py`).
 """
 
 from __future__ import annotations
@@ -93,7 +94,8 @@ KNIFE_ONE_SIDED_TEXT = "Knife läuft einseitig — Symmetrie aktiv"
 
 
 class GateMode(Enum):
-    """E5-Modus (Lab-Zustand, Default MARK wie im alten Lab, `lab_dispatch.GateMode`)."""
+    """E5-Modus (Lab-Zustand). Default BLOCK seit Slice 5 (Artist-Verdikt KEEP-BLOCK,
+    2026-10-03); das alte Lab und Slice 4 starteten in MARK."""
 
     MARK = "MARK"
     BLOCK = "BLOCK"
@@ -188,8 +190,8 @@ class GateRow:
 ROW_SYMMETRY_OFF = GateRow("Symmetrie aus (E5-Modus egal)", None)
 #: Slice 4: ersetzt die Slice-1b-Zeile „C abgelehnt". C und W/E/R laufen; ein
 #: einseitiger Lauf wird im HUD markiert (`e5_warning_text`).
-ROW_MARK = GateRow("Symmetrie an, E5 MARK (Default): C und W/E/R laufen, HUD warnt", None)
-_BLOCK_STATE = "Symmetrie an, E5 BLOCK (C und jedes Transform ohne supports_symmetry)"
+ROW_MARK = GateRow("Symmetrie an, E5 MARK: C und W/E/R laufen, HUD warnt", None)
+_BLOCK_STATE = "Symmetrie an, E5 BLOCK (Default; C und jedes Transform ohne supports_symmetry)"
 #: Slice 3: dominiert jede andere Zeile, solange die Vorschau offen ist (H2-R2, N2).
 ROW_PREVIEW = GateRow(
     "Re-Symmetrize-Vorschau offen (Slice 3)",
@@ -211,7 +213,7 @@ def gate_rows() -> tuple[GateRow, ...]:
     return (ROW_SYMMETRY_OFF, ROW_MARK, block_row(), ROW_PREVIEW)
 
 
-def gate_row_for(axis: Optional[str], mode: GateMode = GateMode.MARK) -> GateRow:
+def gate_row_for(axis: Optional[str], mode: GateMode = GateMode.BLOCK) -> GateRow:
     """Zeile zum Lab-Zustand ohne Vorschau (die Vorschau-Zeile setzt `_open_preview`)."""
     if axis is None:
         return ROW_SYMMETRY_OFF
@@ -261,7 +263,7 @@ def startup_listing() -> list[str]:
     lines = [f"Lab-Kontext {SYMMETRY_LAB_CONTEXT!r} (AD-013 H2-R1, genau drei Tasten):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEY_ENTRIES)
     lines.append(
-        "E5-Modus (Shift+B: MARK <-> BLOCK, Default MARK; nur Lab-Zustand, kein Undo-Schritt)"
+        "E5-Modus (Shift+B: BLOCK <-> MARK, Default BLOCK; nur Lab-Zustand, kein Undo-Schritt)"
     )
     lines.append("Gate-Tabelle (AD-013 H2-R3, Ablehnungen je Lab-Zustand):")
     lines.extend(f"  {row.describe()}" for row in gate_rows())
@@ -288,9 +290,10 @@ class SymmetryAppLab:
         #: `None` = keine Vorschau. Lab-Zustand, keine Symmetrie-Kopie: während sie
         #: offen ist, lässt das Gate keine Mesh-Änderung zu.
         self.preview: Optional[ResymPlan] = None
-        #: E5-Modus (Slice 4): reiner Lab-Zustand, nie Mesh oder History — Undo/Redo
-        #: ändert ihn nicht, wohl aber die Symmetrie, aus der die Zeile folgt.
-        self.gate_mode = GateMode.MARK
+        #: E5-Modus (Slice 4, Default BLOCK seit Slice 5): reiner Lab-Zustand, nie
+        #: Mesh oder History — Undo/Redo ändert ihn nicht, wohl aber die Symmetrie,
+        #: aus der die Zeile folgt.
+        self.gate_mode = GateMode.BLOCK
 
     @property
     def preview_open(self) -> bool:
@@ -375,7 +378,7 @@ class SymmetryAppLab:
         return self._toggle_gate_mode()
 
     def _toggle_gate_mode(self) -> bool:
-        """Shift+B: MARK ↔ BLOCK (wie `lab_dispatch._cycle_gate_mode`). Nur
+        """Shift+B: BLOCK ↔ MARK (wie im alten Lab). Nur
         Lab-Zustand und die daraus folgende Gate-Zeile — kein Mesh, keine History,
         kein Undo-Schritt. Auch bei Symmetrie aus erlaubt (die Zeile bleibt dann
         „aus"); der Modus gilt ab dem nächsten Symmetrie-Wechsel."""

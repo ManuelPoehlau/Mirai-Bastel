@@ -1,6 +1,6 @@
 """E5-Modus im Fenster-Adapter (WP-SYM-LAB-03 Slice 4).
 
-Stellvertreter-Fenster aus `test_run_app` (kein GL), Label-Stellvertreter wie in
+Stellvertreter-Fenster aus `test_run` (kein GL), Label-Stellvertreter wie in
 `test_app_lab_preview_window`. Geprüft: Shift+B über den pyglet-Handler
 (`EVENT_HANDLED`, auch abgelehnt), `E5: <Modus>` in der HUD-Zeile und die orange
 E5-Warnzeile über ihr, solange eine Knife-Session unter Symmetrie läuft.
@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from symmetry_lab import lab_app_window, run_app
+from symmetry_lab import lab_app_window, run
 from symmetry_lab.lab_app import KNIFE_ONE_SIDED_TEXT, GateMode, block_row
 
 from ._app_lab_support import MISS, forbid_lab_calls  # noqa: F401
 from ._pyglet_headless import import_pyglet
-from .test_run_app import FakeWindow
+from .test_run import FakeWindow
 
 pyglet = import_pyglet()
 try:
@@ -42,21 +42,24 @@ class _FakeLabel:
 @pytest.fixture
 def built():
     window = FakeWindow()
-    app, lab, hud = run_app.build_lab(window, "subd_cube", run_app.load_src_main())
+    app, lab, hud = run.build_lab(window, "subd_cube", run.load_src_main())
     assert window.dispatch("on_key_press", key.S, key.MOD_SHIFT) is HANDLED
     assert lab.axis == "X"
     return window, app, lab, hud
 
 
 def test_shift_b_through_the_window_toggles_the_mode_and_the_hud(built):
+    """Default BLOCK (Slice 5): C abgelehnt; Shift+B → MARK im HUD, Gate-Zeile leer."""
     window, app, lab, hud = built
-    assert " | E5: MARK | " in hud.text()
-    assert window.dispatch("on_key_press", key.B, key.MOD_SHIFT) is HANDLED
     assert lab.gate_mode is GateMode.BLOCK
     assert app.command_gate == block_row().gate
     assert " | E5: BLOCK | " in hud.text()
     assert window.dispatch("on_key_press", key.C, 0) is HANDLED  # vom Gate abgelehnt
     assert not app.knife_active
+    assert window.dispatch("on_key_press", key.B, key.MOD_SHIFT) is HANDLED
+    assert lab.gate_mode is GateMode.MARK
+    assert app.command_gate is None
+    assert " | E5: MARK | " in hud.text()
 
 
 def test_warning_line_is_drawn_above_the_hud_line_while_a_knife_runs(built, monkeypatch):
@@ -66,6 +69,9 @@ def test_warning_line_is_drawn_above_the_hud_line_while_a_knife_runs(built, monk
     hud.draw()
     assert [color for _t, _y, color in _FakeLabel.drawn] == [lab_app_window.HUD_COLOR]
 
+    # Eine einseitige Knife-Session gibt es nur in MARK (Default seit Slice 5: BLOCK).
+    assert window.dispatch("on_key_press", key.B, key.MOD_SHIFT) is HANDLED
+    assert lab.gate_mode is GateMode.MARK
     app.pointer_motion(*MISS)
     app.selection.clear()
     assert window.dispatch("on_key_press", key.C, 0) is HANDLED

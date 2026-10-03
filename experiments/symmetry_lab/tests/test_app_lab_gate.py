@@ -90,10 +90,13 @@ def unsupported(monkeypatch):
 
 @pytest.fixture
 def symmetric():
-    """subd_cube, Symmetrie X über Shift+S, E5-Modus MARK (Default)."""
+    """subd_cube, Symmetrie X über Shift+S, E5-Modus MARK über Shift+B (Default ist
+    seit Slice 5 BLOCK; die Tests der Ports gehen von MARK aus und schalten selbst
+    um, wie in Slice 4)."""
     app, lab = make_lab()
+    assert lab.gate_mode is GateMode.BLOCK
     assert press(app, lab, SHIFT_S) and lab.axis == "X"
-    assert lab.gate_mode is GateMode.MARK
+    set_mode(app, lab, GateMode.MARK)
     return app, lab
 
 
@@ -122,9 +125,15 @@ def symmetry_off(app, lab) -> None:
     assert lab.axis is None
 
 
+def set_mode(app, lab, mode: GateMode) -> None:
+    """E5-Modus über Shift+B (nur drücken, wenn er nicht schon gilt)."""
+    if lab.gate_mode is not mode:
+        assert press(app, lab, SHIFT_B)
+    assert lab.gate_mode is mode
+
+
 def to_block(app, lab) -> None:
-    assert press(app, lab, SHIFT_B)
-    assert lab.gate_mode is GateMode.BLOCK
+    set_mode(app, lab, GateMode.BLOCK)
 
 
 def hud(app, lab) -> str:
@@ -424,11 +433,13 @@ def test_gate_reads_class_attribute(symmetric, monkeypatch):
 
 
 def test_shift_b_toggles_without_history_or_mesh_change(lab_app):
-    """Shift+B: MARK → BLOCK → MARK, True, `E5-Modus: <M>`; kein History-Eintrag,
-    kein Mesh-Change — auch bei Symmetrie aus (die Zeile bleibt „aus")."""
+    """Shift+B ab dem Default BLOCK (Slice 5): → MARK → BLOCK → MARK → BLOCK, True,
+    `E5-Modus: <M>`; kein History-Eintrag, kein Mesh-Change — auch bei Symmetrie aus
+    (die Zeile bleibt „aus")."""
     app, lab = lab_app
+    assert lab.gate_mode is GateMode.BLOCK
     state = app.scene.mesh.export_state()
-    for expected in (GateMode.BLOCK, GateMode.MARK, GateMode.BLOCK):
+    for expected in (GateMode.MARK, GateMode.BLOCK, GateMode.MARK, GateMode.BLOCK):
         serial = app.status_serial
         assert press(app, lab, SHIFT_B) is True
         assert lab.gate_mode is expected
@@ -489,12 +500,12 @@ def test_shift_b_is_refused_while_the_preview_is_open(symmetric):
 def test_hud_shows_the_mode_only_while_symmetry_is_on(lab_app):
     app, lab = lab_app
     assert "E5:" not in hud(app, lab)
-    assert press(app, lab, SHIFT_B)
+    assert press(app, lab, SHIFT_B)  # Default BLOCK → MARK
     assert "E5:" not in hud(app, lab)
     assert press(app, lab, SHIFT_S)
-    assert " | E5: BLOCK | " in hud(app, lab)
-    assert press(app, lab, SHIFT_B)
     assert " | E5: MARK | " in hud(app, lab)
+    assert press(app, lab, SHIFT_B)
+    assert " | E5: BLOCK | " in hud(app, lab)
     assert press(app, lab, CTRL_Z)  # Undo des Shift+S: Symmetrie aus
     assert "E5:" not in hud(app, lab)
     # Ohne Modus-Argument (Slice-2-Aufrufer) bleibt die Zeile wie bisher.
@@ -603,8 +614,7 @@ def test_c_under_block_is_refused(symmetric, with_selection):
 @pytest.mark.parametrize("mode", [GateMode.MARK, GateMode.BLOCK], ids=["mark", "block"])
 def test_c_with_symmetry_off_runs_in_both_modes(lab_app, mode):
     app, lab = lab_app
-    if mode is GateMode.BLOCK:
-        to_block(app, lab)
+    set_mode(app, lab, mode)
     begin_knife(app, lab)
     assert e5_warning_text(lab) == ""  # ohne Symmetrie nichts einseitig
     assert press(app, lab, ESC)
@@ -758,7 +768,7 @@ def test_startup_listing_has_the_e5_rows_and_shift_b():
     lines = startup_listing()
     text = "\n".join(lines)
     assert "key:Shift+b -> SymmetryGateMode" in text
-    assert any("E5-Modus (Shift+B: MARK <-> BLOCK" in line for line in lines)
+    assert any("E5-Modus (Shift+B: BLOCK <-> MARK, Default BLOCK" in line for line in lines)
     assert ROW_SYMMETRY_OFF.describe() in text
     assert ROW_MARK.describe() in text
     assert block_row().describe() in text

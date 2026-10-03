@@ -8,7 +8,7 @@ Verwendung (vom Repo-Root, Windows und Linux gleich; kein Fenster, kein GL):
 Misst, was ein symmetrischer W-Drag pro Mausbewegung auf der CPU kostet: den
 Transform-Schritt (`app.pointer_motion` → `MoveTool`) plus die Neuberechnung der
 Lab-Overlays (`sync` von Ebene und Markern). Aufbau wie im Fenster
-(`run_app.build_app_lab`: `Application` + Lab + Szene + Overlays, nur ohne Fenster
+(`run.build_app_lab`: `Application` + Lab + Szene + Overlays, nur ohne Fenster
 und mit `TraceStore` statt GL — gemessen wird die CPU-Seite der Overlays, nicht
 das Zeichnen). Ablauf je Asset: Symmetrie X über die Lab-Taste Shift+S, eine
 Auswahl per Klick und Shift+Klick (gepaarte, sichtbare Vertices auf einer Seite
@@ -37,7 +37,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-# Stufe 0 (Skriptstart), wie run_app.py: experiments/ auf sys.path.
+# Stufe 0 (Skriptstart), wie run.py: experiments/ auf sys.path.
 _EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent
 if str(_EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(_EXPERIMENTS_DIR))
@@ -55,7 +55,7 @@ from mirai.symmetry import (  # noqa: E402
 from mirai.viewport.picking import pick_nearest_vertex  # noqa: E402
 
 from symmetry_lab.lab_app import lab_key_press  # noqa: E402
-from symmetry_lab.run_app import build_app_lab  # noqa: E402
+from symmetry_lab.run import build_app_lab  # noqa: E402
 
 THRESHOLD_P95_MS = 8.0
 DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh")

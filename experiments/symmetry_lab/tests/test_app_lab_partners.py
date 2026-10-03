@@ -1,7 +1,7 @@
 """Gespiegelte Partner von Auswahl und Hover, Zeichenreihenfolge und Overlay-Kosten
 auf dem App-Pfad (WP-SYM-LAB-03 Slice 2, Inventar #13/#15, Plan A3).
 
-Headless wie `_app_lab_support` (TraceStore, `run_app.build_app_lab`). Auswahl und
+Headless wie `_app_lab_support` (TraceStore, `run.build_app_lab`). Auswahl und
 Hover entstehen über die öffentlichen Eingänge von `Application` (Klick,
 `pointer_motion`), wie im Fenster. Die Partner kommen aus
 `mirai.symmetry.mirrored_selection`; die Tests prüfen gegen `vertex_correspondence`,

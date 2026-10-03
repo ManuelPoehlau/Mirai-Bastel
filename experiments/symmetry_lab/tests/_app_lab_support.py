@@ -1,7 +1,7 @@
 """Gemeinsame Helfer der Tests für das Lab auf dem App-Pfad (WP-SYM-LAB-03 S1b).
 
 Headless wie `tests/test_application_pointer.py` (TraceStore, kein Fenster). Das Lab
-wird wie in `run_app.build_lab` aufgebaut, nur ohne Fenster-Handler.
+wird wie in `run.build_lab` aufgebaut, nur ohne Fenster-Handler.
 
 `forbid_lab_calls` ist T-R4b (AD-013 H2-R4, review CLAUDE-002 N6): jeder Test, der
 diese Fixture importiert, läuft mit `Application.dispatch_command` und `select_at`
@@ -21,7 +21,7 @@ from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
 
 from symmetry_lab.lab_app import SymmetryAppLab, lab_key_press
-from symmetry_lab.run_app import build_app_lab
+from symmetry_lab.run import build_app_lab
 
 WIDTH, HEIGHT = 800, 600
 MISS = (2.0, 2.0)
@@ -43,13 +43,13 @@ LAB_APP_MODULES = (
     "symmetry_lab.lab_app",
     "symmetry_lab.lab_app_window",
     "symmetry_lab.lab_overlays",
-    "symmetry_lab.run_app",
+    "symmetry_lab.run",
     "symmetry_lab.probe_drag_cost",
 )
 
 
 def make_lab(asset: str = "subd_cube") -> tuple[Application, SymmetryAppLab]:
-    """Wie im Fenster: `run_app.build_app_lab` (seit Slice 2 der fensterlose Teil
+    """Wie im Fenster: `run.build_app_lab` (seit Slice 2 der fensterlose Teil
     von `build_lab`, auch von `probe_drag_cost` genutzt)."""
     return build_app_lab(asset, WIDTH, HEIGHT)
 

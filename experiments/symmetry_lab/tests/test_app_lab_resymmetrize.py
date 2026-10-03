@@ -37,7 +37,7 @@ from mirai.symmetry import SymmetryState, mirror_position, symmetry_state
 
 from symmetry_lab.lab_app import (
     PREVIEW_HINT,
-    ROW_MARK,
+    block_row,
     gate_row_for,
     lab_key_press,
     preview_text,
@@ -232,7 +232,7 @@ def test_rejected_while_move_armed_or_dragging(running):
     assert not lab.preview_open
     assert app.status_serial == serial + 1
     assert app.status_message == "Re-Symmetrize (M) abgelehnt — Transform läuft"
-    assert app.command_gate is ROW_MARK.gate
+    assert app.command_gate == block_row().gate  # E5-Default BLOCK (Slice 5)
     assert app.hover_suspended is False
     assert press(app, lab, ESC)
     assert app.transform_command is None
