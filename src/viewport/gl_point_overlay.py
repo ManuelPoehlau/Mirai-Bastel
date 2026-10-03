@@ -101,13 +101,21 @@ def _build_program():
 
 
 class GLPointOverlay:
-    """Flat-color round point layers, drawn after the mesh (see module docstring)."""
+    """Flat-color round point layers, drawn after the mesh (see module docstring).
+
+    WP-SYM-LAB-03 H1: the layers are class attributes, like
+    `gl_line_overlay.FlatColorLayers`, so a host can subclass it with its own
+    layers and look (an extra `Viewport.add_overlay` overlay) without `src`
+    knowing them. `LAYERS` = draw order, `LAYER_STYLES` = layer → (rgba, px)."""
+
+    LAYERS: tuple[str, ...] = DRAW_ORDER
+    LAYER_STYLES: dict[str, tuple[tuple[float, float, float, float], float]] = LAYER_STYLES
 
     _program = None  # lazily compiled, shared across instances (one GL context)
 
     def __init__(self) -> None:
         self._positions: dict[str, list[tuple[float, float, float]]] = {
-            layer: [] for layer in DRAW_ORDER
+            layer: [] for layer in self.LAYERS
         }
         self._vertex_lists: dict[str, object] = {}
         self._stale: set[str] = set()
@@ -125,7 +133,7 @@ class GLPointOverlay:
     def set_points(self, layer: str, positions) -> None:
         """Replaces `layer`'s world positions. Marks the layer for a rebuild
         only if the positions actually differ from the current ones."""
-        if layer not in LAYER_STYLES:
+        if layer not in self.LAYER_STYLES:
             raise KeyError(f"unknown point layer: {layer!r}")
         new = [tuple(p) for p in positions]
         if new == self._positions[layer]:
@@ -157,14 +165,14 @@ class GLPointOverlay:
         self.rebuilds += 1
 
     def draw(self, camera_uniforms) -> None:
-        """Draws all non-empty layers (`DRAW_ORDER`) with the given
+        """Draws all non-empty layers (`LAYERS` order) with the given
         camera packet: 32 floats, view matrix then projection matrix - the
         same layout `RenderMesh` uploads as `camera_uniforms`."""
         from pyglet import gl
 
         if len(camera_uniforms) != 32:
             return
-        for layer in DRAW_ORDER:
+        for layer in self.LAYERS:
             if layer in self._stale:
                 self._rebuild(layer)
         self._stale.clear()
@@ -181,11 +189,11 @@ class GLPointOverlay:
         gl.glDisable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-        for layer in DRAW_ORDER:
+        for layer in self.LAYERS:
             vlist = self._vertex_lists.get(layer)
             if vlist is None:
                 continue
-            color, size = LAYER_STYLES[layer]
+            color, size = self.LAYER_STYLES[layer]
             program["u_color"] = color
             program["u_point_size"] = size
             vlist.draw(gl.GL_POINTS)

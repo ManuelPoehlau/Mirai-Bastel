@@ -36,7 +36,8 @@ auch `line_layers` (gehoverte/selektierte Edges als Segmente) und
 `SelectionOverlay` neu — gleiche Dirty-Auslöser wie die Punkte. Ein
 `face_overlay_type` (z. B. `GLTriangleOverlay`) bekommt die Dreiecke, die
 Edge-Layer gehen an dasselbe `line_overlay` wie die Wire-Segmente.
-Zeichenreihenfolge: Mesh → Wire → Faces → Edges → Punkte.
+Zeichenreihenfolge: Mesh → Wire → Faces → Edges → Tool-Linien → Zusatz-Overlays
+(H1) → Punkte.
 
 Tool-Layer (WP-06 B7, Knife-Session): `set_tool_overlay(points, segments)`
 nimmt fertige Weltpositionen für `overlay.TOOL_LAYERS` entgegen (der
@@ -44,6 +45,15 @@ Viewport kennt kein Knife) und reicht sie sofort an Punkt- bzw. Linien-
 Overlay weiter; sichtbar headless in `tool_point_layers`/`tool_line_layers`.
 Gezeichnet werden sie nach den Selection-Layern (Linien: Pfad-Edges mit
 Depth-Test, Preview ohne; Punkte wie alle Punkte ohne Depth-Test).
+
+Zusatz-Overlays (WP-SYM-LAB-03 H1): `add_overlay(o)` hängt ein Overlay eines
+Hosts an (z. B. die Marker des Symmetry Lab); der Viewport kennt weder seine
+Layer noch seine Farben. Vertrag (Duck-Typing): `o.sync(mesh, selection)` läuft
+in `sync()`, wenn seit dem letzten `sync()` Selektion/Hover, Vertex-Positionen
+oder Topologie gemeldet wurden, beim ersten `sync()` nach `add_overlay` oder
+wenn `o.dirty` gesetzt ist (das Overlay setzt `dirty` selbst zurück);
+`o.draw(camera_uniforms)` läuft in `render()` nach den Tool-Linien und vor dem
+Punkt-Overlay. Ohne Zusatz-Overlay ändert sich nichts.
 
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
@@ -105,6 +115,10 @@ class Viewport:
         self._edges_dirty = True
         self.tool_point_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
         self.tool_line_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
+        # H1: Zusatz-Overlays eines Hosts; frisch angehängte syncen beim
+        # nächsten `sync()` in jedem Fall.
+        self.extra_overlays: list = []
+        self._extra_overlays_dirty = False
         # Startzustand = DisplayState-Default (Shaded, kein Overlay).
         self.show_faces = True
         self.show_edges = False
@@ -119,6 +133,14 @@ class Viewport:
         self.show_edges = bool(show_edges)
         self.flat = bool(flat)
         self._apply_draw_style()
+
+    # -- Zusatz-Overlays (WP-SYM-LAB-03 H1) ------------------------------------
+
+    def add_overlay(self, overlay) -> None:
+        """Hängt ein Host-Overlay an (Vertrag: Modul-Docstring). Gezeichnet
+        wird in Anhänge-Reihenfolge."""
+        self.extra_overlays.append(overlay)
+        self._extra_overlays_dirty = True
 
     # -- Tool-Layer (WP-06 B7) -------------------------------------------------
 
@@ -200,10 +222,16 @@ class Viewport:
         """Verarbeitet alle seit dem letzten `sync()` markierten Änderungen.
         Muss vor `render()` aufgerufen werden (typischerweise 1x pro Frame)."""
         self.render_mesh.sync()
+        # Selektion/Hover, Vertex-Move und Topologie setzen alle dieses Flag.
+        changed = self._selection_overlays_dirty or self._extra_overlays_dirty
         if self._selection_overlays_dirty:
             self._sync_selection_overlays()
         if self.show_edges and self._edges_dirty:
             self._sync_edges()
+        for overlay in self.extra_overlays:
+            if changed or getattr(overlay, "dirty", False):
+                overlay.sync(self.mesh, self.selection)
+        self._extra_overlays_dirty = False
 
     def _sync_selection_overlays(self) -> None:
         self.point_positions = self.overlay.point_layers(self.mesh)
@@ -242,14 +270,15 @@ class Viewport:
         (Duck-Typing-Bindung, siehe Paket-Docstring)."""
         if self.render_mesh.camera is None:
             return None
-        # Reihenfolge (E40, E45, B7): Mesh, Wire, Face-Highlight,
-        # Edge-Highlight, Tool-Linien, Punkte.
+        # Reihenfolge (E40, E45, B7, H1): Mesh, Wire, Face-Highlight,
+        # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.show_faces:
             self.render_mesh.render(self.render_mesh.camera)
         if (
             self.line_overlay is None
             and self.face_overlay is None
             and self.point_overlay is None
+            and not self.extra_overlays
         ):
             return None
         # Dieselbe Matrix-Quelle wie die `camera_uniforms` des Mesh
@@ -264,6 +293,8 @@ class Viewport:
             self.line_overlay.draw(camera_uniforms, layers=(HOVER_LAYER, SELECTED_LAYER))
         if self.line_overlay is not None and any(self.tool_line_layers.values()):
             self.line_overlay.draw(camera_uniforms, layers=(TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER))
+        for overlay in self.extra_overlays:
+            overlay.draw(camera_uniforms)
         if self.point_overlay is not None:
             self.point_overlay.draw(camera_uniforms)
 
