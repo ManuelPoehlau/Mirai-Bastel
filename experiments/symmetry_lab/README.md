@@ -242,9 +242,10 @@ nie.
     mit einem grünen Seam-Vertex als Auswahl; **M** mit zwei ausgewählten Vertices (Shift+Klick);
     **M** bei Symmetrie **Y** auf `subd_cube`; **W** halten und dabei **M** (Transform läuft).
 
-### Gemeinsame Prüf-Session nach Slice 4 (Manu, Windows) — offen
+### Gemeinsame Prüf-Session nach Slice 4 (Manu, Windows) — geprüft 2026-10-03
 
-**Artist-Verdikt: steht aus.** Plan §4.2/§4.3 (WP-SYM-LAB-03): eine Sitzung, ≈10 Minuten, altes
+**Artist-Verdikte (Manu, 2026-10-03):** 1 KEEP · 2 offen (Rückfrage zum Pivot, siehe Punkt 2) ·
+3 **KEEP-BLOCK** · 4 **(a)** · 5 KEEP. Plan §4.2/§4.3 (WP-SYM-LAB-03): eine Sitzung, ≈10 Minuten, altes
 und neues Lab **nebeneinander**. Für die KEEP-Punkte ist das keine neue Entscheidung — nur „dasselbe
 wie vorher?", was kein Test beweisen kann. Offen entschieden werden S2 und E5; Q1 ist eine
 Prioritätsfrage. Bedienung im neuen Lab wie in der App (W/E/R **halten** + Maus, Pan
@@ -264,7 +265,7 @@ Partner), **W halten** + Maus → beide bewegen sich spiegelbildlich, loslassen 
 dasselbe mit **E** und **R**. Dann `man_with_shoes_basemesh`, Shift+S, Vertex rechts wählen,
 **M** (blaue Vorschau) / **M** (ausführen, `valid`) / Ctrl+Z, und **M** / **Esc** (nichts geändert).
 Schritte im Detail: [„Manuelle Prüfung Re-Symmetrize auf dem App-Pfad"](#manuelle-prüfung-re-symmetrize-auf-dem-app-pfad-manu-windows--offen-noch-nicht-geprüft).
-Verdikt 1 (KEEP / ITERATE / UNKNOWN): steht aus.
+Verdikt 1: **KEEP** (Manu, 2026-10-03).
 
 **2. S2 — symmetrisches Rotate/Scale (offen seit 2026-10-03)**, Schritte wie [„Manuelle Prüfung S2"](#manuelle-prüfung-s2-manu-windows--offen-noch-nicht-geprüft),
 im neuen Lab: `head_basemesh`, Shift+S → X, Vertex seitlich anklicken; **E halten**, dann mit
@@ -272,7 +273,7 @@ im neuen Lab: `head_basemesh`, Shift+S → X, Vertex seitlich anklicken; **E hal
 Y/Z Gegensinn)? **R halten** — ist die Paarmitte der Pivot, den du erwartest? Grünen Seam-Vertex
 wählen, E mit Y/Z/frei → abgelehnt (`Rotate: refused — …`), mit X erlaubt. **Neu klickbar:** beide
 Vertices eines Paars mit Shift+Klick wählen → starre Rotation (Schritt 5 der S2-Liste).
-Verdikt 2 (KEEP / ITERATE / UNKNOWN): steht aus.
+Verdikt 2: **offen** (Manu, 2026-10-03: Rückfrage, wo der Pivot liegt und wie er berechnet wird). Heute: ohne explizites `pivot` der Zentroid über Auswahl ∪ Partner (`TransformTool._on_begin` → `selection_pivot`), bei einer einseitigen Auswahl also ein Punkt auf der Symmetrieebene (Paarmitte); die Operation spiegelt den Pivot für die Partner (`src/core/operations/transform.py`). Antwort und Alternative im Chat; Entscheidung folgt.
 
 **3. E5 mit C — MARK vs. BLOCK** (die Frage aus [„Manuelle Prüfung E5"](#manuelle-prüfung-e5-manu-windows--offen-noch-nicht-geprüft),
 jetzt mit dem echten nicht spiegelnden Tool C). `run_app.py subd_cube`, **Shift+S** → X; die
@@ -288,19 +289,19 @@ HUD-Zeile zeigt `E5: MARK`.
 - Frage: Womit würdest du im Alltag lieber arbeiten — C verweigert (BLOCK) oder läuft einseitig mit
   Markierung (MARK)? Hast du im MARK die orange Zeile und den magenta Vertex überhaupt bemerkt?
 
-Verdikt 3 (KEEP-MARK / KEEP-BLOCK / ITERATE / UNKNOWN): steht aus.
+Verdikt 3: **KEEP-BLOCK** (Manu, 2026-10-03) — ein nicht spiegelndes Tool soll unter Symmetrie verweigert werden, nicht einseitig laufen. Nachgetragen in AD-SYM-02 §4. Folge fürs Lab: BLOCK wird Default (Slice 5).
 
 **4. Q1 — Schattierung von `subd_cube` unter X** (Plan §6): beide Fenster mit `subd_cube`
 (`run.py subd_cube` / `run_app.py subd_cube`), Shift+S → X, orbiten und linke/rechte Seite
 vergleichen. Das alte Lab schattiert symmetrisch (E10, kürzere Diagonale), das neue mit der
 Production-Triangulierung asymmetrisch; `head_basemesh` ist in beiden gleich. (a) im Lab vorerst
 hinnehmen (Empfehlung des Agenten) oder (b) „kürzere Diagonale" als eigenes kleines Paket für
-Production? Verdikt 4 (a / b / UNKNOWN): steht aus.
+Production? Verdikt 4: **(a)** im Lab vorerst hinnehmen (Manu, 2026-10-03).
 
 **5. Zeichenreihenfolge seit Slice 3:** bei offener Re-Symmetrize-Vorschau
 (`man_with_shoes_basemesh`, Schritt 1) liegen die Vorschau-Linien jetzt **unter** den
 Symmetrie-Markern (altes Lab: darüber). Stört das, oder ist es egal (die Linien sind dort
-meist ~1e-6 lang)? Verdikt 5 (KEEP / ITERATE / UNKNOWN): steht aus.
+meist ~1e-6 lang)? Verdikt 5: **KEEP** (Manu, 2026-10-03).
 
 ## Start
 
@@ -402,7 +403,7 @@ nur noch mit einem (in Tests simulierten) nicht unterstützenden Tool.
 **Seit WP-SYM-LAB-03 Slice 4 (2026-10-03):** auf dem App-Pfad prüfbar mit C als nicht spiegelndem
 Tool — [„Gemeinsame Prüf-Session nach Slice 4"](#gemeinsame-prüf-session-nach-slice-4-manu-windows--offen), Punkt 3.
 
-Verdikt (KEEP-BLOCK / KEEP-MARK / ITERATE / UNKNOWN): steht aus.
+Verdikt: **KEEP-BLOCK** (Manu, 2026-10-03, auf dem App-Pfad mit C geprüft — siehe „Gemeinsame Prüf-Session nach Slice 4“, Punkt 3).
 
 ### Manuelle Prüfung Slice 7 (Manu, Windows) — offen, noch nicht geprüft
 

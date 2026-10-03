@@ -157,6 +157,10 @@ Haken sitzt, entscheidet die Implementierung in WP-SYM-01, nicht dieses Dokument
   (z. B. „ja / nur abseits der Seam / nein"). Erst E5 zeigt, was der Artist braucht.
 - Ob Nicht-Unterstützung **blockiert** oder nur **markiert** — das ist eine
   Product-Truth-Frage und gehört zu E5 (M4), nicht in eine Architekturentscheidung.
+  *Nachtrag 2026-10-03:* E5-Artist-Verdikt **KEEP-BLOCK** (Manu, gemeinsame Prüf-Session
+  WP-SYM-LAB-03 nach Slice 4, im Symmetry Lab auf dem App-Pfad mit C als echtem nicht
+  spiegelndem Tool): Nicht-Unterstützung blockiert. Das ist ein Lab-Verdikt; Symmetrie ist
+  nicht promotet (ROADMAP §7), und dieses Dokument entscheidet dadurch nichts für Production.
 - Wo Correspondence berechnet wird und ob sie innerhalb einer Interaktion einmal
   oder pro `update()` abgeleitet wird.
 - Ob und wie eine Operation die Seam **aktualisiert** (Wings-Muster, R2 §3.2), oder

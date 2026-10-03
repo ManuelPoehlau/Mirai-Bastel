@@ -428,8 +428,12 @@ restricted, and the Lab does not use it).
 |---|---|
 | W like the app (2026-09-27) | **Superseded, never verdicted.** The Lab *is* the app's W (B3 `PROMOTED`); there is nothing Lab-specific left to judge |
 | Slice 7 mirrored Knife in the window | **Moot, never verdicted.** Not re-hosted (trigger). Findings E23–E30, P1–P3 stay in the Lab README as research for the symmetric One Knife |
-| WP-SYM-LAB-02 S2 (symmetric Rotate/Scale, pivot) | **Still open.** Same `src` code; the test steps re-run in the rebased Lab. README step 5 (select both vertices of a pair) becomes clickable (Shift+click) |
-| E5 MARK vs. BLOCK | **Still open, testable again.** With the mirrored Knife gone, C (Split/Connect/Knife) is the real "unsupported tool". MARK runs it one-sided and the seam degradation is visible (magenta / `partial`); BLOCK refuses |
+| WP-SYM-LAB-02 S2 (symmetric Rotate/Scale, pivot) | **Still open** after the joint session (2026-10-03): Manu asked where the pivot sits and how it is computed (today: centroid over selection ∪ partners, i.e. on the plane for a one-sided selection; the operation mirrors it for the partners). Answer and alternative (per-side pivot) given in chat; decision pending |
+| E5 MARK vs. BLOCK | **KEEP-BLOCK** (Manu, 2026-10-03, joint session, tested with C on the app path): a tool that does not mirror is refused under symmetry. Recorded in AD-SYM-02 §4. Lab consequence: BLOCK becomes the default (Slice 5) |
+
+**Joint session after Slice 4 (Manu, 2026-10-03):** 1 S3–S5 smoke on the new host **KEEP** ·
+2 S2 **open** (pivot question) · 3 E5 **KEEP-BLOCK** · 4 Q1 **(a)** · 5 preview lines under the
+symmetry markers **KEEP**. Details in the Lab README, "Gemeinsame Prüf-Session nach Slice 4".
 
 ### 4.3 What visibly changes
 
@@ -532,6 +536,7 @@ of 24 mirrored quads) and identical on `head_basemesh` (0 of 324). Choose one:
 the shading of every quad in `src/main.py` (and its picking/face overlays, which use the same
 split).
 *Agent recommendation:* (a). The head, the main asset, is unaffected.
+**Artist answer (Manu, 2026-10-03): (a)** — accepted in the Lab; raised again when Symmetry is promoted.
 *Prepared test:* in the session after Slice 4,
 `python experiments/symmetry_lab/run.py` vs. `python experiments/symmetry_lab/run_app.py`,
 both `subd_cube`, Shift+S → X, orbit to compare the left and right shading.
