@@ -18,6 +18,10 @@ Dispatcher zeigt den Plan an und `apply_plan` setzt genau diese Positionen.
 - **Ein Undo-Schritt (E14):** `MeshStateCommand` mit Snapshot vorher/nachher
   — gleiches Muster wie `lab_symmetry.cycle_symmetry` (Slice 3 E2). Ein
   leerer Plan erzeugt keinen History-Eintrag.
+- **App-Pfad (WP-SYM-LAB-03 Slice 3):** `set_plan_positions` setzt die
+  Positionen ohne History; `apply_plan` (alter Pfad) und das `mutate` von
+  `Application.apply_mesh_change` (`lab_app`) teilen es. Der History-Eintrag
+  entsteht dort in `Application` (H3), nicht hier.
 """
 
 from __future__ import annotations
@@ -150,6 +154,21 @@ def plan_resymmetrize(
     )
 
 
+def plan_description(plan: ResymPlan) -> str:
+    """History-Text eines ausgeführten Plans (alter Pfad und App-Pfad gleich)."""
+    return f"Re-Symmetrize {plan.source_label} → {plan.target_label}"
+
+
+def set_plan_positions(mesh: Mesh, plan: ResymPlan) -> set[VertexId]:
+    """Setzt genau die Positionen des Plans (E13) und gibt die bewegten Vertex-IDs
+    zurück — ohne History. Geteilt von `apply_plan` (alter Pfad) und dem `mutate`
+    des App-Pfads (`Application.apply_mesh_change`, WP-SYM-LAB-03 Slice 3), wie
+    `lab_symmetry.set_symmetry_axis` in Slice 1b."""
+    for change in plan.changes:
+        mesh.set_vertex_position(change.vertex, change.after)
+    return {change.vertex for change in plan.changes}
+
+
 def apply_plan(scene: Scene, plan: ResymPlan) -> bool:
     """E13/E14: setzt die Positionen des Plans als genau einen History-Eintrag.
 
@@ -160,15 +179,14 @@ def apply_plan(scene: Scene, plan: ResymPlan) -> bool:
         return False
     mesh = scene.mesh
     before = mesh.export_state()
-    for change in plan.changes:
-        mesh.set_vertex_position(change.vertex, change.after)
+    set_plan_positions(mesh, plan)
     after = mesh.export_state()
     scene.history.push(
         MeshStateCommand(
             mesh=mesh,
             before_state=before,
             after_state=after,
-            description=f"Re-Symmetrize {plan.source_label} → {plan.target_label}",
+            description=plan_description(plan),
         )
     )
     return True
