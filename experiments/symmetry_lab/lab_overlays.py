@@ -4,7 +4,7 @@ Zwei Unterklassen der `src`-Overlays, angehängt über `Viewport.add_overlay`; `
 kennt weder diese Layer noch ihre Farben (Plan §3.1 H1, AD-013 I7):
 
 - `SymmetryPlaneOverlay` (`FlatColorLayers`, `GL_LINES`): Umriss der Symmetrie-Ebene
-  aus `lab_draw_data.plane_outline_data` (Slice 3), hellblau, mit Depth-Test wie im
+  aus `lab_symmetry.plane_outline_data` (Slice 3), hellblau, mit Depth-Test wie im
   alten Renderer.
 - `SymmetryStateOverlay` (`GLPointOverlay`): Seam grün, ohne Partner magenta,
   mehrdeutig weiß (`symmetry_report`), darüber (Slice 3) die Punkte der
@@ -17,7 +17,7 @@ kennt weder diese Layer noch ihre Farben (Plan §3.1 H1, AD-013 I7):
 
 Vorschau (Slice 3, E15): blau = Zielseiten-Vertex wird bewegt, hellgrün = Seam-Vertex
 wird auf die Ebene gelegt (beide mit Linie), hellrot = Zielseiten-Vertex ohne Partner
-bleibt. Daten aus `lab_draw_data.resym_preview_data` zum offenen Plan
+bleibt. Daten aus `lab_resymmetrize.resym_preview_data` zum offenen Plan
 (`preview()` = `SymmetryAppLab.preview`); leer ohne Vorschau. Das Mesh kann sich
 bei offener Vorschau nicht ändern (Gate), deshalb hängen die Layer nur am Plan
 (neu nur bei einem anderen Plan-Objekt); das Lab setzt beim Öffnen und Schließen
@@ -69,9 +69,8 @@ from mirai.symmetry import mirrored_selection
 from viewport.gl_line_overlay import FlatColorLayers
 from viewport.gl_point_overlay import SELECTED_POINT_SIZE, GLPointOverlay
 
-from .lab_draw_data import plane_outline_data, resym_preview_data
-from .lab_resymmetrize import ResymPlan
-from .lab_symmetry import SymmetryReport, current_axis, symmetry_report
+from .lab_resymmetrize import ResymPlan, resym_preview_data
+from .lab_symmetry import SymmetryReport, current_axis, plane_outline_data, symmetry_report
 
 PLANE_LAYER = "symmetry_plane"
 SEAM_LAYER = "symmetry_seam"

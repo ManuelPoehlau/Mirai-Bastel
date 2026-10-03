@@ -57,18 +57,15 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core import FaceId, Mesh, VertexId
-from mirai.mesh_geometry import mesh_bounds
 from viewport.derived import triangulate_face
 
 from .lab_knife import LabKnifeTool
 from .lab_knife_preview import KnifeHoverPreview
-from .lab_resymmetrize import PositionChange, ResymPlan
-from .lab_symmetry import AXIS_INDEX
+from .lab_resymmetrize import ResymPreviewData as _ResymPreviewData
+from .lab_resymmetrize import resym_preview_data as _resym_preview_data
+from .lab_symmetry import plane_outline_data as _plane_outline_data
 
 Vec3 = tuple[float, float, float]
-
-#: Umriss ragt um diesen Anteil der größten In-Ebene-Ausdehnung über die Bounds.
-PLANE_MARGIN = 0.1
 
 
 def _distance(a: Vec3, b: Vec3) -> float:
@@ -185,66 +182,11 @@ def highlight_data(mesh: Mesh, selected: Iterable[VertexId]) -> list[float]:
     return positions
 
 
-def plane_outline_data(mesh: Mesh, axis: Optional[str]) -> list[float]:
-    """GL_LINES-Positionen (4 Linien) des Ebenen-Umrisses; leer, wenn aus."""
-    if axis is None:
-        return []
-    normal_i = AXIS_INDEX[axis]
-    u, w = (i for i in range(3) if i != normal_i)
-    lo, hi = mesh_bounds(mesh)
-    pad = PLANE_MARGIN * max(hi[u] - lo[u], hi[w] - lo[w], 1e-6)
-    corners2d = (
-        (lo[u] - pad, lo[w] - pad),
-        (hi[u] + pad, lo[w] - pad),
-        (hi[u] + pad, hi[w] + pad),
-        (lo[u] - pad, hi[w] + pad),
-    )
-    corners = []
-    for cu, cw in corners2d:
-        p = [0.0, 0.0, 0.0]
-        p[u], p[w] = cu, cw
-        corners.append(p)
-    positions: list[float] = []
-    for a, b in zip(corners, corners[1:] + corners[:1]):
-        positions.extend(a)
-        positions.extend(b)
-    return positions
-
-
-@dataclass(frozen=True)
-class ResymPreviewData:
-    """GL_POINTS-/GL_LINES-Positionen der Re-Symmetrize-Vorschau (E15)."""
-
-    #: Zielseiten-Vertices, die sich bewegen werden: aktuelle Position + Linie zum Ziel.
-    move_points: list[float]
-    move_lines: list[float]
-    #: Seam-Vertices, die auf die Ebene gelegt werden: aktuelle Position + Linie.
-    seam_points: list[float]
-    seam_lines: list[float]
-    #: Zielseiten-Vertices ohne Partner, die unverändert bleiben.
-    keep_points: list[float]
-
-
-def _points_and_lines(changes: Iterable[PositionChange]) -> tuple[list[float], list[float]]:
-    points: list[float] = []
-    lines: list[float] = []
-    for change in changes:
-        points.extend(change.before)
-        lines.extend(change.before)
-        lines.extend(change.after)
-    return points, lines
-
-
-def resym_preview_data(mesh: Mesh, plan: Optional[ResymPlan]) -> ResymPreviewData:
-    """Leer, wenn keine Vorschau aktiv ist (`plan is None`)."""
-    if plan is None:
-        return ResymPreviewData([], [], [], [], [])
-    move_points, move_lines = _points_and_lines(plan.moves)
-    seam_points, seam_lines = _points_and_lines(plan.seam_moves)
-    keep = sorted(plan.unmatched, key=int)
-    return ResymPreviewData(
-        move_points, move_lines, seam_points, seam_lines, highlight_data(mesh, keep)
-    )
+# Seit WP-SYM-LAB-03 Slice 5 in den bleibenden Modulen; hier nur noch für den alten
+# Renderer, der mit diesem Modul gelöscht wird.
+plane_outline_data = _plane_outline_data
+ResymPreviewData = _ResymPreviewData
+resym_preview_data = _resym_preview_data
 
 
 @dataclass(frozen=True)

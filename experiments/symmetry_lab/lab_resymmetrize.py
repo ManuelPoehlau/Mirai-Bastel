@@ -22,6 +22,9 @@ Dispatcher zeigt den Plan an und `apply_plan` setzt genau diese Positionen.
   Positionen ohne History; `apply_plan` (alter Pfad) und das `mutate` von
   `Application.apply_mesh_change` (`lab_app`) teilen es. Der History-Eintrag
   entsteht dort in `Application` (H3), nicht hier.
+- **Vorschau-Daten (E15):** `resym_preview_data` liefert Punkte und Linien der
+  Vorschau aus demselben Plan (für `lab_overlays`); seit WP-SYM-LAB-03 Slice 5
+  hier statt in `lab_draw_data` (das mit dem alten Renderer gelöscht wird).
 """
 
 from __future__ import annotations
@@ -202,3 +205,40 @@ def plan_summary(plan: ResymPlan) -> str:
     if plan.unmatched:
         counts += f", ohne Partner bleibt {len(plan.unmatched)}"
     return f"Re-Symmetrize {direction}: {counts} | M = ausführen, ESC = abbrechen"
+
+
+@dataclass(frozen=True)
+class ResymPreviewData:
+    """Punkt- und Linien-Positionen der Re-Symmetrize-Vorschau (E15), flach
+    (x, y, z, x, y, z, …)."""
+
+    #: Zielseiten-Vertices, die sich bewegen werden: aktuelle Position + Linie zum Ziel.
+    move_points: list[float]
+    move_lines: list[float]
+    #: Seam-Vertices, die auf die Ebene gelegt werden: aktuelle Position + Linie.
+    seam_points: list[float]
+    seam_lines: list[float]
+    #: Zielseiten-Vertices ohne Partner, die unverändert bleiben.
+    keep_points: list[float]
+
+
+def _points_and_lines(changes) -> tuple[list[float], list[float]]:
+    points: list[float] = []
+    lines: list[float] = []
+    for change in changes:
+        points.extend(change.before)
+        lines.extend(change.before)
+        lines.extend(change.after)
+    return points, lines
+
+
+def resym_preview_data(mesh: Mesh, plan: Optional[ResymPlan]) -> ResymPreviewData:
+    """Leer, wenn keine Vorschau aktiv ist (`plan is None`)."""
+    if plan is None:
+        return ResymPreviewData([], [], [], [], [])
+    move_points, move_lines = _points_and_lines(plan.moves)
+    seam_points, seam_lines = _points_and_lines(plan.seam_moves)
+    keep_points: list[float] = []
+    for vid in sorted(plan.unmatched, key=int):
+        keep_points.extend(mesh.vertex_position(vid))
+    return ResymPreviewData(move_points, move_lines, seam_points, seam_lines, keep_points)

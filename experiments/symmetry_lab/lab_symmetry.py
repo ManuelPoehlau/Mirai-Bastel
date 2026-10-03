@@ -15,6 +15,11 @@ nur, was das Lab selbst entscheidet:
   (INV-1), keine laufende Positionsprüfung.
 - **E4:** Keine Toleranz. Vertices knapp neben der Spiegelposition bleiben
   `UNPAIRED` und werden über `SymmetryReport` sichtbar gemacht (INV-10).
+
+`plane_outline_data` (Slice 3) zeichnet die Ebene als Rechteck-Umriss durch den
+Ursprung (E1), bemessen auf die Mesh-Bounds der beiden Achsen in der Ebene; seit
+WP-SYM-LAB-03 Slice 5 hier statt in `lab_draw_data` (das mit dem alten Renderer
+gelöscht wird).
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from typing import Optional
 
 from core import EdgeId, Mesh, Scene, SymmetryDefinition, VertexId
 from core.operations.topology import MeshStateCommand
+from mirai.mesh_geometry import mesh_bounds
 from mirai.symmetry import (
     CorrespondenceState,
     SymmetryState,
@@ -40,6 +46,8 @@ AXIS_NORMALS = {
     "Y": (0.0, 1.0, 0.0),
     "Z": (0.0, 0.0, 1.0),
 }
+#: Umriss ragt um diesen Anteil der größten In-Ebene-Ausdehnung über die Bounds.
+PLANE_MARGIN = 0.1
 #: Shift+S-Reihenfolge (Artist A2); `None` = Symmetrie aus.
 SYMMETRY_CYCLE: tuple[Optional[str], ...] = (None, "X", "Y", "Z")
 
@@ -145,3 +153,29 @@ def symmetry_report(mesh: Mesh) -> SymmetryReport:
         ambiguous=frozenset(by_state[CorrespondenceState.AMBIGUOUS]),
         correspondence=correspondence,
     )
+
+
+def plane_outline_data(mesh: Mesh, axis: Optional[str]) -> list[float]:
+    """Linien-Positionen (4 Linien à 2 Punkte, flach) des Ebenen-Umrisses; leer, wenn aus."""
+    if axis is None:
+        return []
+    normal_i = AXIS_INDEX[axis]
+    u, w = (i for i in range(3) if i != normal_i)
+    lo, hi = mesh_bounds(mesh)
+    pad = PLANE_MARGIN * max(hi[u] - lo[u], hi[w] - lo[w], 1e-6)
+    corners2d = (
+        (lo[u] - pad, lo[w] - pad),
+        (hi[u] + pad, lo[w] - pad),
+        (hi[u] + pad, hi[w] + pad),
+        (lo[u] - pad, hi[w] + pad),
+    )
+    corners = []
+    for cu, cw in corners2d:
+        p = [0.0, 0.0, 0.0]
+        p[u], p[w] = cu, cw
+        corners.append(p)
+    positions: list[float] = []
+    for a, b in zip(corners, corners[1:] + corners[:1]):
+        positions.extend(a)
+        positions.extend(b)
+    return positions
