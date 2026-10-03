@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from symmetry_lab import run_app
-from symmetry_lab.lab_app import ROW_SYMMETRY_ON, hud_text
+from symmetry_lab.lab_app import ROW_MARK, hud_text
 
 from ._app_lab_support import HEIGHT, WIDTH, forbid_lab_calls  # noqa: F401
 from ._pyglet_headless import import_pyglet
@@ -84,7 +84,7 @@ def test_one_key_event_through_lab_key_press(built):
     window, app, lab, _hud = built
     assert window.dispatch("on_key_press", key.S, key.MOD_SHIFT) is pyglet.event.EVENT_HANDLED
     assert lab.axis == "X"
-    assert app.command_gate is ROW_SYMMETRY_ON.gate
+    assert app.command_gate is ROW_MARK.gate
     assert window.dispatch("on_key_press", key.ESCAPE, 0) is pyglet.event.EVENT_HANDLED
     assert window.dispatch("on_key_press", key.Z, key.MOD_CTRL) is pyglet.event.EVENT_HANDLED
     assert lab.axis is None
@@ -141,5 +141,7 @@ def test_hud_label_text_is_the_full_lab_line(built):
     und dem Befund-Cache des Labs."""
     window, app, lab, hud = built
     window.dispatch("on_key_press", key.S, key.MOD_SHIFT)
-    assert hud.text() == hud_text(app, "subd_cube", lab.report)
+    # Slice 4: mit dem E5-Modus des Labs (nur bei aktiver Symmetrie sichtbar).
+    assert hud.text() == hud_text(app, "subd_cube", lab.report, lab.gate_mode)
+    assert " | E5: MARK | " in hud.text()
     assert hud.text().startswith("subd_cube | 26 V | Symmetrie: X (valid) | ohne Partner: 0")

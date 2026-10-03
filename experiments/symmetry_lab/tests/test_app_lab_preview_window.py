@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from symmetry_lab import lab_app_window, run_app
-from symmetry_lab.lab_app import PREVIEW_HINT, ROW_PREVIEW, ROW_SYMMETRY_ON, preview_text
+from symmetry_lab.lab_app import PREVIEW_HINT, ROW_MARK, ROW_PREVIEW, preview_text
 
 from ._app_lab_preview_support import first_visible, side_vertices
 from ._app_lab_support import click, forbid_lab_calls, screen  # noqa: F401
@@ -45,7 +45,7 @@ def test_every_branch_returns_event_handled(built):
     assert window.dispatch("on_key_release", key.W, 0) is HANDLED
     assert window.dispatch("on_key_press", key.S, key.MOD_SHIFT) is HANDLED  # Lab lehnt ab
     assert window.dispatch("on_key_press", key.ESCAPE, 0) is HANDLED  # D1: schließt
-    assert not lab.preview_open and app.command_gate is ROW_SYMMETRY_ON.gate
+    assert not lab.preview_open and app.command_gate is ROW_MARK.gate
     history = len(app.history)
     assert window.dispatch("on_key_press", key.M, 0) is HANDLED
     assert window.dispatch("on_key_press", key.M, 0) is HANDLED  # führt aus

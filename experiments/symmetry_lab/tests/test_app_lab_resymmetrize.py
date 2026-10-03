@@ -37,8 +37,8 @@ from mirai.symmetry import SymmetryState, mirror_position, symmetry_state
 
 from symmetry_lab.lab_app import (
     PREVIEW_HINT,
-    ROW_SYMMETRY_OFF,
-    ROW_SYMMETRY_ON,
+    ROW_MARK,
+    gate_row_for,
     lab_key_press,
     preview_text,
 )
@@ -80,8 +80,8 @@ PLANE = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
 
 def _assert_closed_on_symmetry_row(app, lab) -> None:
     assert not lab.preview_open
-    row = ROW_SYMMETRY_ON if lab.axis is not None else ROW_SYMMETRY_OFF
-    assert app.command_gate is row.gate
+    # Slice 4: die Zeile hängt auch am E5-Modus; BLOCK wird je Ableitung neu gebaut (==).
+    assert app.command_gate == gate_row_for(lab.axis, lab.gate_mode).gate
     assert app.hover_suspended is False
 
 
@@ -232,7 +232,7 @@ def test_rejected_while_move_armed_or_dragging(running):
     assert not lab.preview_open
     assert app.status_serial == serial + 1
     assert app.status_message == "Re-Symmetrize (M) abgelehnt — Transform läuft"
-    assert app.command_gate is ROW_SYMMETRY_ON.gate
+    assert app.command_gate is ROW_MARK.gate
     assert app.hover_suspended is False
     assert press(app, lab, ESC)
     assert app.transform_command is None

@@ -36,11 +36,13 @@ from symmetry_lab._paths import LAB_DIR
 from symmetry_lab.lab_app import (
     CANCEL_PREVIEW_LINE,
     DISPLAY_COMMANDS,
-    GATE_ROWS,
     PREVIEW_HINT,
+    ROW_MARK,
     ROW_PREVIEW,
     ROW_SYMMETRY_OFF,
-    ROW_SYMMETRY_ON,
+    block_row,
+    gate_row_for,
+    gate_rows,
     lab_key_press,
     startup_listing,
 )
@@ -103,8 +105,8 @@ from ._app_lab_support import (  # noqa: F401
 
 def _assert_closed_on_symmetry_row(app, lab) -> None:
     assert not lab.preview_open
-    row = ROW_SYMMETRY_ON if lab.axis is not None else ROW_SYMMETRY_OFF
-    assert app.command_gate is row.gate
+    # Slice 4: die Zeile hängt auch am E5-Modus; BLOCK wird je Ableitung neu gebaut (==).
+    assert app.command_gate == gate_row_for(lab.axis, lab.gate_mode).gate
     assert app.hover_suspended is False
 
 
@@ -170,7 +172,7 @@ def test_ctrl_z_restores_mesh_and_selection_then_redo(previewing):
     assert app.scene.mesh.export_state() == before
     assert app.selection.vertices == {source}
     assert symmetry_state(app.scene.mesh) is SymmetryState.PARTIAL
-    assert lab.axis == "X" and app.command_gate is ROW_SYMMETRY_ON.gate
+    assert lab.axis == "X" and app.command_gate is ROW_MARK.gate
     assert press(app, lab, CTRL_Y) is True
     assert app.scene.mesh.export_state() == after
     assert symmetry_state(app.scene.mesh) is SymmetryState.VALID
@@ -319,7 +321,7 @@ def test_installing_another_row_while_the_preview_is_open_asserts(previewing):
     """H2-R2 (N2): eine andere Zeile als die Vorschau-Zeile bei offener Vorschau
     ist ein Programmierfehler; `sync_gate` installiert dann gar nichts."""
     app, lab, _source = previewing
-    for row in (ROW_SYMMETRY_OFF, ROW_SYMMETRY_ON):
+    for row in (ROW_SYMMETRY_OFF, ROW_MARK, block_row()):
         with pytest.raises(AssertionError, match="H2-R2"):
             lab._install_row(row)
     assert lab.sync_gate() is False
@@ -540,7 +542,7 @@ def test_preview_colours_are_the_old_renderers():
 def test_startup_listing_contains_the_preview_row_and_the_esc_line():
     lines = startup_listing()
     text = "\n".join(lines)
-    assert ROW_PREVIEW in GATE_ROWS
+    assert ROW_PREVIEW in gate_rows()
     assert ROW_PREVIEW.describe() in text
     assert PREVIEW_HINT in ROW_PREVIEW.describe()
     assert "hover_suspended" in ROW_PREVIEW.describe()

@@ -15,7 +15,10 @@ werden nicht kopiert. Das Lab legt nur zwei Handler darüber
 - `on_draw`: erst der Draw aus `main.py`, dann die Lab-HUD-Zeile (Slice 2: volle
   Zeile wie die alte Statuszeile, `lab_app.hud_text`) und darüber, solange die
   Re-Symmetrize-Vorschau offen ist, die blaue Vorschau-Zeile (Slice 3,
-  `lab_app.preview_text`, Farbe wie im alten `lab_window`).
+  `lab_app.preview_text`, Farbe wie im alten `lab_window`). Slice 4: die
+  HUD-Zeile zeigt bei aktiver Symmetrie den E5-Modus, und darüber steht, solange
+  etwas einseitig läuft (Knife-Session oder ein nicht spiegelnder Transform unter
+  Symmetrie), die orange E5-Warnzeile (`lab_app.e5_warning_text`).
 
 Um den `main.py`-Handler aufrufen zu können, bekommt `install_handlers` einen
 dünnen Stellvertreter des Fensters, der jeden `@window.event`-Handler am echten
@@ -28,7 +31,7 @@ from __future__ import annotations
 from mirai.application import Application
 from mirai.pyglet_input import key_from_pyglet
 
-from .lab_app import SymmetryAppLab, hud_text, lab_key_press, preview_text
+from .lab_app import SymmetryAppLab, e5_warning_text, hud_text, lab_key_press, preview_text
 
 HUD_MARGIN = 8
 HUD_FONT_SIZE = 11
@@ -36,6 +39,9 @@ HUD_COLOR = (230, 230, 230, 255)
 #: Vorschau-Zeile, Farbe aus dem alten `lab_window` (README-Legende: „blaue Textzeile").
 PREVIEW_COLOR = (130, 170, 255, 255)
 PREVIEW_GAP = 6
+#: E5-Warnzeile (Slice 4): orange, damit sie sich von Status (grau) und Vorschau
+#: (blau) abhebt; Farbwahl Lab-lokal, kein App-Vorbild.
+WARNING_COLOR = (255, 170, 60, 255)
 
 
 class HandlerRecorder:
@@ -58,8 +64,8 @@ class HandlerRecorder:
 class LabHud:
     """Die Lab-Zeile unten links (`lab_app.hud_text`); bricht an der Fensterbreite
     um wie die alte Statuszeile (Slice 7), damit die Statusmeldung am Ende nicht
-    abgeschnitten wird. Darüber die Vorschau-Zeile (Slice 3), nur bei offener
-    Vorschau."""
+    abgeschnitten wird. Darüber die E5-Warnzeile (Slice 4) und die
+    Vorschau-Zeile (Slice 3), jeweils nur, wenn sie Text haben."""
 
     def __init__(self, app: Application, lab: SymmetryAppLab, window, asset_name: str) -> None:
         self.app = app
@@ -67,10 +73,14 @@ class LabHud:
         self.window = window
         self.asset_name = asset_name
         self.label = None
+        self.warning_label = None
         self.preview_label = None
 
     def text(self) -> str:
-        return hud_text(self.app, self.asset_name, self.lab.report)
+        return hud_text(self.app, self.asset_name, self.lab.report, self.lab.gate_mode)
+
+    def warning_text(self) -> str:
+        return e5_warning_text(self.lab)
 
     def preview_text(self) -> str:
         return preview_text(self.lab)
@@ -98,29 +108,43 @@ class LabHud:
                 self.label.text = text
         self.label.draw()
 
-        preview = self.preview_text()
-        if not preview:
-            return
         y = HUD_MARGIN + self.label.content_height + PREVIEW_GAP
-        if self.preview_label is None:
-            self.preview_label = pyglet.text.Label(
-                preview,
+        for attr, text, color in (
+            ("warning_label", self.warning_text(), WARNING_COLOR),
+            ("preview_label", self.preview_text(), PREVIEW_COLOR),
+        ):
+            if not text:
+                continue
+            label = self._line(attr, text, y, width, color)
+            label.draw()
+            y += label.content_height + PREVIEW_GAP
+
+    def _line(self, attr: str, text: str, y: float, width: int, color):
+        """Eine Zusatzzeile über der HUD-Zeile; das Label wird einmal gebaut und
+        danach nur aktualisiert."""
+        import pyglet
+
+        label = getattr(self, attr)
+        if label is None:
+            label = pyglet.text.Label(
+                text,
                 x=HUD_MARGIN,
                 y=y,
                 width=width,
                 multiline=True,
                 anchor_y="bottom",
                 font_size=HUD_FONT_SIZE,
-                color=PREVIEW_COLOR,
+                color=color,
             )
-        else:
-            if self.preview_label.width != width:
-                self.preview_label.width = width
-            if self.preview_label.text != preview:
-                self.preview_label.text = preview
-            if self.preview_label.y != y:
-                self.preview_label.y = y
-        self.preview_label.draw()
+            setattr(self, attr, label)
+            return label
+        if label.width != width:
+            label.width = width
+        if label.text != text:
+            label.text = text
+        if label.y != y:
+            label.y = y
+        return label
 
 
 def install_lab_window(

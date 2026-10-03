@@ -15,8 +15,9 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 
 from symmetry_lab.lab_app import (
-    CONNECT_REFUSED_TEXT,
-    ROW_SYMMETRY_ON,
+    ROW_MARK,
+    GateMode,
+    block_text,
     gate_row_for,
 )
 from symmetry_lab.lab_symmetry import current_axis
@@ -46,8 +47,9 @@ from ._app_lab_support import (  # noqa: F401
 X = Input("key", "x")
 
 
-def _gate_matches_mesh(app) -> bool:
-    return app.command_gate is gate_row_for(current_axis(app.scene.mesh)).gate
+def _gate_matches_mesh(app, lab) -> bool:
+    # Slice 4: die Zeile hängt auch am E5-Modus; BLOCK wird je Ableitung neu gebaut (==).
+    return app.command_gate == gate_row_for(current_axis(app.scene.mesh), lab.gate_mode).gate
 
 
 # -- T-R2a ------------------------------------------------------------------------
@@ -81,7 +83,7 @@ def test_m_during_armed_and_running_move_is_refused(lab_app):
 
 
 def test_shift_s_during_knife_is_refused_and_the_session_keeps_running(lab_app):
-    """T-R2b: Symmetrie **aus** (die 1b-Zeile würde C ablehnen): C mit leerer
+    """T-R2b: Symmetrie **aus** (die 1b-Zeile lehnte C ab, BLOCK tut es): C mit leerer
     Auswahl startet den Knife; Shift+S → abgelehnt, `knife_active` bleibt True;
     danach E → Stift angehoben."""
     app, lab = lab_app
@@ -142,7 +144,8 @@ def test_esc_cancels_a_running_move_exactly(lab_app):
 
 
 def _c_refused_exactly_when_on(app, lab) -> None:
-    on = lab.axis is not None
+    """BLOCK: C ist genau bei aktiver Symmetrie abgelehnt; MARK: nie (Slice 4)."""
+    on = lab.axis is not None and lab.gate_mode is GateMode.BLOCK
     app.pointer_motion(*MISS)
     app.selection.clear()
     history = len(app.history)
@@ -151,7 +154,7 @@ def _c_refused_exactly_when_on(app, lab) -> None:
     if on:
         assert result is False
         assert app.status_serial == serial + 1
-        assert app.status_message == CONNECT_REFUSED_TEXT
+        assert app.status_message == block_text("C")
         assert not app.knife_active
     else:
         assert result is True
@@ -161,21 +164,27 @@ def _c_refused_exactly_when_on(app, lab) -> None:
     assert len(app.history) == history
 
 
-def test_gate_row_follows_symmetry_definition_over_undo_redo(lab_app):
-    """T-R2h: Symmetrie an (C abgelehnt) → Shift+S schaltet durch, aus und wieder
-    an → Ctrl+Z/Ctrl+Y über die Zyklus-Schritte → die Gate-Zeile passt nach jedem
-    Schritt zu `mesh.symmetry_definition`; C ist genau dann abgelehnt, wenn die
-    Symmetrie an ist."""
+@pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK], ids=["block", "mark"])
+def test_gate_row_follows_symmetry_definition_over_undo_redo(lab_app, mode):
+    """T-R2h (Slice 4 erweitert, BLOCK und MARK): Symmetrie an → Shift+S schaltet
+    durch, aus und wieder an → Ctrl+Z/Ctrl+Y über die Zyklus-Schritte → die
+    Gate-Zeile passt nach jedem Schritt zu `mesh.symmetry_definition` und dem
+    E5-Modus; in BLOCK ist C genau dann abgelehnt, wenn die Symmetrie an ist, in
+    MARK nie. Undo/Redo ändert den Modus nicht."""
     app, lab = lab_app
+    if mode is GateMode.BLOCK:
+        assert press(app, lab, SHIFT_B)
+    assert lab.gate_mode is mode
     assert press(app, lab, SHIFT_S)  # X
-    assert app.command_gate is ROW_SYMMETRY_ON.gate
+    assert _gate_matches_mesh(app, lab)
+    assert (app.command_gate is None) is (mode is GateMode.MARK)
     _c_refused_exactly_when_on(app, lab)
 
     axes = ["X"]
     for _ in range(5):  # Y, Z, aus, X, Y
         assert press(app, lab, SHIFT_S)
         axes.append(lab.axis)
-        assert _gate_matches_mesh(app)
+        assert _gate_matches_mesh(app, lab)
         _c_refused_exactly_when_on(app, lab)
     assert axes == ["X", "Y", "Z", None, "X", "Y"]
     assert len(app.history) == 6
@@ -183,15 +192,16 @@ def test_gate_row_follows_symmetry_definition_over_undo_redo(lab_app):
     for expected in reversed([None] + axes[:-1]):
         assert press(app, lab, CTRL_Z) is True
         assert lab.axis == expected
-        assert _gate_matches_mesh(app)
+        assert _gate_matches_mesh(app, lab)
         _c_refused_exactly_when_on(app, lab)
     assert not app.history.can_undo()
 
     for expected in axes:
         assert press(app, lab, CTRL_Y) is True
         assert lab.axis == expected
-        assert _gate_matches_mesh(app)
+        assert _gate_matches_mesh(app, lab)
         _c_refused_exactly_when_on(app, lab)
+    assert lab.gate_mode is mode
 
 
 def test_gate_is_not_reinstalled_while_a_transform_owns_the_keys(lab_app):
@@ -206,9 +216,9 @@ def test_gate_is_not_reinstalled_while_a_transform_owns_the_keys(lab_app):
     app.command_gate = sentinel
     assert press(app, lab, X) is True  # X-Constraint, weitergeleitet
     assert app.command_gate is sentinel
-    app.command_gate = ROW_SYMMETRY_ON.gate
+    app.command_gate = ROW_MARK.gate
     assert press(app, lab, ESC)
-    assert _gate_matches_mesh(app)
+    assert _gate_matches_mesh(app, lab)
 
 
 # -- T-R3 -------------------------------------------------------------------------
@@ -230,19 +240,25 @@ def _symmetry_on(app, lab):
     assert press(app, lab, SHIFT_S)
 
 
+def _symmetry_on_block(app, lab):
+    assert press(app, lab, SHIFT_B)
+    assert press(app, lab, SHIFT_S)
+
+
 def _idle(app, lab):
     pass
 
 
 REFUSALS = [
-    ("C_under_symmetry", _symmetry_on, C, CONNECT_REFUSED_TEXT),
+    # Seit Slice 4 nur in BLOCK (MARK lässt C laufen, `test_app_lab_gate.py`).
+    ("C_under_symmetry_block", _symmetry_on_block, C, block_text("C")),
     ("ShiftS_transform_armed", _armed, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_transform_running", _running, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_knife", start_knife, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"),
     # Seit Slice 3 die Ablehnungen des alten Labs (README Slice 5, Schritt 12).
     ("M_idle", _idle, M, "Re-Symmetrize: Symmetrie aus"),
     ("M_symmetry_on", _symmetry_on, M, "Re-Symmetrize: keine Auswahl"),
-    ("ShiftB_idle", _idle, SHIFT_B, "E5-Modus (Shift+B): noch nicht verfügbar (Slice 4)"),
+    ("ShiftB_transform_armed", _armed, SHIFT_B, "E5-Modus (Shift+B) abgelehnt — Transform läuft"),
     ("ShiftB_knife", start_knife, SHIFT_B, "E5-Modus (Shift+B) abgelehnt — Knife-Session läuft"),
 ]
 
@@ -251,7 +267,7 @@ REFUSALS = [
     "setup,inp,text", [r[1:] for r in REFUSALS], ids=[r[0] for r in REFUSALS]
 )
 def test_refusals_are_visible_and_counted(lab_app, setup, inp, text):
-    """T-R3 (Zeilen von 1b, Tasten — 1b lehnt keinen Klick ab): Rückgabe False,
+    """T-R3 (Zeilen von 1b und 4, Tasten — keine dieser Zeilen lehnt einen Klick ab): Rückgabe False,
     `status_serial` + 1, `status_message` = Text der Zeile; zweimal dieselbe
     Ablehnung → zwei Inkremente. Mesh, History, Gate und Owner bleiben."""
     app, lab = lab_app
