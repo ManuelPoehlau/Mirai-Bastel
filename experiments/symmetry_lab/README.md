@@ -16,7 +16,7 @@ Fenster spielbar: **C** startet den Knife, der Punkt unter dem Cursor und sein S
 dem Klick sichtbar (auch, wenn nicht gespiegelt werden kann), **LMB** schneidet, ein Klick auf den
 Hintergrund committet, **ESC** bricht ab. Slice 7 ist **noch nicht vom Artist geprüft**.
 Promotion nach `src/main.py`: zurückgestellt, siehe `docs/architecture/ROADMAP.md` §7, Eintrag 2026-10-02.
-Geplant (2026-10-03, noch nichts gebaut): Umbau des Labs auf den Production-Pfad (`Application` + Viewport V02) — [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md).
+Umbau des Labs auf den Production-Pfad (`Application` + Viewport V02) — [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md): seit Slice 1b (2026-10-03) gibt es daneben den neuen Einstieg `run_app.py`, siehe [„Lab auf dem App-Pfad"](#lab-auf-dem-app-pfad-run_apppy--wp-sym-lab-03-slice-1b); `run.py` und alle Abschnitte darunter beschreiben weiter das alte Lab (bis Slice 5).
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
@@ -29,6 +29,83 @@ Handoffs:
 > **Importiert nicht aus `playground/`.** Benötigte Draw-Stücke sind kopiert/adaptiert, mit
 > Herkunftsvermerk im jeweiligen Docstring (Präzedenz AD-010). Abgesichert durch
 > `tests/test_import_boundary.py`.
+
+## Lab auf dem App-Pfad (`run_app.py`) — WP-SYM-LAB-03 Slice 1b
+
+**Stand 2026-10-03, noch nicht vom Artist geprüft.** Neuer Einstieg **neben** dem alten Lab
+(`run.py` bleibt bis Slice 5 unverändert). Er baut genau den Pfad von `src/main.py`
+(`Application` → Viewport V02 → `GLRenderStore`, dieselben Fenster-Handler über
+`create_window`/`install_handlers`/`run`) und ergänzt nur die Symmetrie. Navigation, Auswahl,
+Hover, W/E/R, Constraints, Anzeige-Modi, V/E/F, kontextuelles C, Knife und Undo/Redo sind damit
+**die der App** — Bedienung wie in `src/main.py` (Docstring dort), nicht wie in der Tabelle
+„Steuerung" unten. Vertrag: [AD-013, Addendum H2](../../docs/architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-03-wp-sym-lab-03-h2--experiment-input-hook-in-application).
+
+```
+python experiments/symmetry_lab/run_app.py                      # subd_cube (Default)
+python experiments/symmetry_lab/run_app.py head_basemesh
+python experiments/symmetry_lab/run_app.py man_with_shoes_basemesh
+python experiments/symmetry_lab/run_app.py --help
+```
+
+Asset-Namen wie bei `run.py` (Registry, unbekannter Name → Exit-Code 2 vor dem Fenster).
+Beim Start listet die Konsole die drei Lab-Tasten und die Gate-Tabelle (AD-013 H2-R1/R3).
+Liegt eine der drei Tasten in der App schon auf einem Command (global oder im Knife-Kontext),
+bricht der Start mit `LabBindingConflict` ab, statt sie still zu überdecken. Schließen: Fenster-X
+(Esc ist wie in der App nur Abbrechen).
+
+| Taste | Lab-Command | Was passiert (Slice 1b) |
+|---|---|---|
+| Shift+S | `SymmetryCycle` | Symmetrie aus → X → Y → Z → aus, genau ein Undo-Schritt (über `Application.apply_mesh_change`); Ctrl+Z/Ctrl+Y gehen die Schritte zurück/vor. Abgelehnt (Statuszeile), solange W/E/R scharf ist oder läuft oder eine Knife-Session aktiv ist |
+| M | `ReSymmetrize` | noch nicht verfügbar (Slice 3) — nur Statuszeile |
+| Shift+B | `SymmetryGateMode` | noch nicht verfügbar (Slice 4) — nur Statuszeile |
+
+**C bei aktiver Symmetrie:** abgelehnt mit `Symmetrie aktiv — C spiegelt nicht` (Statuszeile).
+Kontextuelles C und Knife der App schneiden einseitig; einen gespiegelten Schnitt gibt es auf dem
+App-Pfad nicht (INV-8). Bei Symmetrie aus funktioniert C wie in der App. Ab Slice 4 ersetzt der
+E5-Modus (MARK/BLOCK) diese Ablehnung.
+
+**Symmetrisches W/E/R** kommt ohne Lab-Code aus `src` (`MoveTool`/`TransformTool` lesen die
+Definition im Mesh): Partner gespiegelt, Seam-Vertex gleitet in der Ebene, X/Y/Z-Constraints
+gelten auch für W (Plan §1.2 D1).
+
+**Overlays** (über `Viewport.add_overlay`, Farben wie in der Legende unten, Lab-Klassen in
+`lab_overlays.py`):
+
+| Overlay | Farbe | Inhalt |
+|---|---|---|
+| Ebenen-Umriss | hellblau, Linien (mit Depth-Test) | Symmetrie-Ebene durch den Ursprung, Bounds + 10 % |
+| Seam | grün, Punkt | Seam-Vertex |
+| ohne Partner | magenta, Punkt | `UNPAIRED` |
+| mehrdeutig | weiß, Punkt | `AMBIGUOUS` |
+
+Zeichenreihenfolge wie „Zeichenreihenfolge" unten: die Marker liegen unter Hover und Auswahl der
+App (gelb). Die Overlays bauen sich bei jeder Änderung neu, die die App dem Viewport meldet
+(Auswahl, Hover, Move, Undo/Redo, Knife-Commit), und nach Shift+S.
+
+**HUD:** eine Zeile unten links — `Symmetrie: X` / `Symmetrie: aus` und die letzte Statusmeldung
+der App bzw. des Labs. Die Statusmeldungen stehen außerdem wie in `src/main.py` in der Konsole.
+
+**Noch nicht da (folgt):** gespiegelter Partner von Auswahl und Hover (türkis), volle Statuszeile
+und Messung der Drag-Kosten (Slice 2); Re-Symmetrize mit Vorschau, pausiertem Hover und Esc
+(Slice 3); E5 MARK/BLOCK mit Shift+B (Slice 4); die lab-eigene Anzeige-Triangulierung (E10) — der
+App-Pfad zeichnet mit der Production-Triangulierung, `subd_cube` schattiert unter X deshalb
+asymmetrisch (Artist-Frage Q1 im Plan §6).
+
+**Sichtbar anders als im alten Lab** (alles App-Entscheidungen, Plan §4.3): Auswahl gelb 8 px statt
+rot, keine Vertex-Punkte; Pan = Alt+Shift+LMB-Drag, Shift+Klick = zur Auswahl hinzufügen, MMB/RMB
+ungebunden; Picking verdeckungsabhängig; Undo/Redo stellt die Auswahl wieder her; Esc schließt das
+Fenster nie.
+
+| Datei | Inhalt | GL nötig |
+|---|---|---|
+| `run_app.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`), Event-Loop | – |
+| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, HUD-Text | nein |
+| `lab_overlays.py` | Ebenen-Umriss und Zustands-Marker als Unterklassen von `FlatColorLayers`/`GLPointOverlay` | erst beim Zeichnen |
+| `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-Label | ja |
+
+Tests: `tests/test_app_lab_*.py` und `tests/test_run_app.py` (headless, AD-013 H2 T-R1a–d,
+T-R2a/b/f/h, T-R3, T-R4a–c, portierte Zyklus-/Umriss-/Asset-Tests, Overlay-Neuaufbau,
+Fenster-Smoke-Test); Aufruf wie unten unter „Tests".
 
 ## Start
 

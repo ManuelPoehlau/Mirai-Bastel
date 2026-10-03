@@ -71,6 +71,9 @@ Move validated code to src/ (only if decision is explicit)
   experiment module that isn't on the path from the repo root — excluded from the documented run,
   not a regression.
 - If touching `playground/`, also run `pytest playground/tests`
+- Changes to `src/mirai/application.py` or `src/viewport/`: also run
+  `pytest experiments/symmetry_lab/tests` — the Symmetry Lab runs on the app path
+  (`run_app.py`, WP-SYM-LAB-03) and catches Production changes there instead of drifting
 - `_measure_coverage.py` is a self-described *temporary* Gate-3 coverage script, not a general tool
 
 ## Documentation maintenance
