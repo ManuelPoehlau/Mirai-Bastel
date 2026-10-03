@@ -41,6 +41,7 @@ from typing import Callable, Mapping, Optional
 
 from core import EdgeId, FaceId, HistoryStack, Scene, Selection, SelectionMode, VertexId
 from core.operations import MeshStateCommand
+from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.overlay import TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER
@@ -1156,19 +1157,32 @@ class Application:
     def _transform_step(self, dx: float, dy: float) -> bool:
         """Eine Mausbewegung, während ein Transform scharf ist. Die erste
         Bewegung startet die Interaktion (keine Schwelle, AD-016); ein
-        Nullschritt zählt nicht als Bewegung."""
+        Nullschritt zählt nicht als Bewegung.
+
+        WP-SYM-LAB-03 H5: lehnt das Tool den Start unter Symmetrie ab
+        (`SeamConstraintError`, INV-8 / AD-SYM-02 §2.4: ein Seam-Vertex würde
+        die Ebene verlassen), endet der Transform sichtbar, ohne History und
+        mit unverändertem Mesh (das Tool bricht selbst exakt ab)."""
         if dx == 0 and dy == 0:
             return False
         if not self._transform_begun:
             self._transform_space = self._axis_constraint
-            self.tool_manager.begin_current_interaction(
-                {
-                    "scene": self.scene,
-                    "camera": self.camera,
-                    "vertex_ids": set(self._transform_target),
-                    "space": self._transform_space,
-                }
-            )
+            try:
+                self.tool_manager.begin_current_interaction(
+                    {
+                        "scene": self.scene,
+                        "camera": self.camera,
+                        "vertex_ids": set(self._transform_target),
+                        "space": self._transform_space,
+                    }
+                )
+            except SeamConstraintError as exc:
+                label = _TRANSFORM_COMMANDS[self._transform_command][0]
+                self._transform_end()
+                # Status text PROVISIONAL, like the other transform status lines.
+                self._set_status(f"{label}: refused — {exc}")
+                self._refresh_hover()
+                return False
             self._transform_begun = True
         self.tool_manager.update(
             dx=float(dx), dy=float(dy), width=self.viewport_width, height=self.viewport_height
