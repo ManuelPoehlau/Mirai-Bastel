@@ -68,7 +68,10 @@ def build_app_lab(
     app.frame_scene()
     # Erste Größe/Aspect wie main.py, damit der erste Frame nicht verzerrt ist.
     app.set_viewport_size(width, height)
-    lab.attach_overlays(app.viewport, build_lab_overlays(lab.reports, lab.transform_running))
+    lab.attach_overlays(
+        app.viewport,
+        build_lab_overlays(lab.reports, lab.transform_running, lambda: lab.preview),
+    )
     return app, lab
 
 
@@ -105,9 +108,21 @@ def main(argv: list[str] | None = None) -> int:
     # kein Fenstersystem.
     src_main = load_src_main()
     window = src_main.create_window(caption=CAPTION)
-    app, _lab, _hud = build_lab(window, asset_name, src_main, gl_types=src_main.GL_TYPES)
-    src_main.run(window, app)
+    app, lab, _hud = build_lab(window, asset_name, src_main, gl_types=src_main.GL_TYPES)
+    run_lab(window, app, lab, src_main)
     return 0
+
+
+def run_lab(window, app: Application, lab: SymmetryAppLab, src_main) -> None:
+    """Event-Loop aus `src/main.py` (H6). Kehrt zurück, wenn das Fenster zu ist;
+    eine dann noch offene Re-Symmetrize-Vorschau endet mit dem Fenster (AD-013
+    H2-R2, § Consequences „Focus loss"): Gate und Hover-Flag zurück auf die Zeile
+    des Symmetrie-Zustands. Kein eigener `on_close`-Handler: pyglets
+    Standard-Schließen bleibt unverändert."""
+    try:
+        src_main.run(window, app)
+    finally:
+        lab.end_preview()
 
 
 if __name__ == "__main__":

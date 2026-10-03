@@ -13,7 +13,9 @@ werden nicht kopiert. Das Lab legt nur zwei Handler darüber
   nichts verloren. Immer `EVENT_HANDLED`, wie `main.py` (Esc schließt das
   Fenster nicht, H2-R3).
 - `on_draw`: erst der Draw aus `main.py`, dann die Lab-HUD-Zeile (Slice 2: volle
-  Zeile wie die alte Statuszeile, `lab_app.hud_text`).
+  Zeile wie die alte Statuszeile, `lab_app.hud_text`) und darüber, solange die
+  Re-Symmetrize-Vorschau offen ist, die blaue Vorschau-Zeile (Slice 3,
+  `lab_app.preview_text`, Farbe wie im alten `lab_window`).
 
 Um den `main.py`-Handler aufrufen zu können, bekommt `install_handlers` einen
 dünnen Stellvertreter des Fensters, der jeden `@window.event`-Handler am echten
@@ -26,11 +28,14 @@ from __future__ import annotations
 from mirai.application import Application
 from mirai.pyglet_input import key_from_pyglet
 
-from .lab_app import SymmetryAppLab, hud_text, lab_key_press
+from .lab_app import SymmetryAppLab, hud_text, lab_key_press, preview_text
 
 HUD_MARGIN = 8
 HUD_FONT_SIZE = 11
 HUD_COLOR = (230, 230, 230, 255)
+#: Vorschau-Zeile, Farbe aus dem alten `lab_window` (README-Legende: „blaue Textzeile").
+PREVIEW_COLOR = (130, 170, 255, 255)
+PREVIEW_GAP = 6
 
 
 class HandlerRecorder:
@@ -53,7 +58,8 @@ class HandlerRecorder:
 class LabHud:
     """Die Lab-Zeile unten links (`lab_app.hud_text`); bricht an der Fensterbreite
     um wie die alte Statuszeile (Slice 7), damit die Statusmeldung am Ende nicht
-    abgeschnitten wird."""
+    abgeschnitten wird. Darüber die Vorschau-Zeile (Slice 3), nur bei offener
+    Vorschau."""
 
     def __init__(self, app: Application, lab: SymmetryAppLab, window, asset_name: str) -> None:
         self.app = app
@@ -61,9 +67,13 @@ class LabHud:
         self.window = window
         self.asset_name = asset_name
         self.label = None
+        self.preview_label = None
 
     def text(self) -> str:
         return hud_text(self.app, self.asset_name, self.lab.report)
+
+    def preview_text(self) -> str:
+        return preview_text(self.lab)
 
     def draw(self) -> None:
         import pyglet
@@ -87,6 +97,30 @@ class LabHud:
             if self.label.text != text:
                 self.label.text = text
         self.label.draw()
+
+        preview = self.preview_text()
+        if not preview:
+            return
+        y = HUD_MARGIN + self.label.content_height + PREVIEW_GAP
+        if self.preview_label is None:
+            self.preview_label = pyglet.text.Label(
+                preview,
+                x=HUD_MARGIN,
+                y=y,
+                width=width,
+                multiline=True,
+                anchor_y="bottom",
+                font_size=HUD_FONT_SIZE,
+                color=PREVIEW_COLOR,
+            )
+        else:
+            if self.preview_label.width != width:
+                self.preview_label.width = width
+            if self.preview_label.text != preview:
+                self.preview_label.text = preview
+            if self.preview_label.y != y:
+                self.preview_label.y = y
+        self.preview_label.draw()
 
 
 def install_lab_window(

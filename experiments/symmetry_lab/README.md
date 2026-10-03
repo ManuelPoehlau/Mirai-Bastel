@@ -32,8 +32,8 @@ Handoffs:
 
 ## Lab auf dem App-Pfad (`run_app.py`) — WP-SYM-LAB-03
 
-**Stand 2026-10-03: Slice 1b + Slice 2 (Partner-Marker, HUD-Zeile, Drag-Kosten-Probe), noch
-nicht vom Artist geprüft.** Neuer Einstieg **neben** dem alten Lab
+**Stand 2026-10-03: Slice 1b + Slice 2 (Partner-Marker, HUD-Zeile, Drag-Kosten-Probe) +
+Slice 3 (Re-Symmetrize mit Vorschau), noch nicht vom Artist geprüft.** Neuer Einstieg **neben** dem alten Lab
 (`run.py` bleibt bis Slice 5 unverändert). Er baut genau den Pfad von `src/main.py`
 (`Application` → Viewport V02 → `GLRenderStore`, dieselben Fenster-Handler über
 `create_window`/`install_handlers`/`run`) und ergänzt nur die Symmetrie. Navigation, Auswahl,
@@ -49,7 +49,8 @@ python experiments/symmetry_lab/run_app.py --help
 ```
 
 Asset-Namen wie bei `run.py` (Registry, unbekannter Name → Exit-Code 2 vor dem Fenster).
-Beim Start listet die Konsole die drei Lab-Tasten und die Gate-Tabelle (AD-013 H2-R1/R3).
+Beim Start listet die Konsole die drei Lab-Tasten, die Gate-Tabelle (AD-013 H2-R1/R3) und die
+kontextuelle Bedeutung von Esc (`Cancel (Esc): closes the Re-Symmetrize preview while it is open`).
 Liegt eine der drei Tasten in der App schon auf einem Command (global oder im Knife-Kontext),
 bricht der Start mit `LabBindingConflict` ab, statt sie still zu überdecken. Schließen: Fenster-X
 (Esc ist wie in der App nur Abbrechen).
@@ -57,7 +58,7 @@ bricht der Start mit `LabBindingConflict` ab, statt sie still zu überdecken. Sc
 | Taste | Lab-Command | Was passiert (Slice 1b) |
 |---|---|---|
 | Shift+S | `SymmetryCycle` | Symmetrie aus → X → Y → Z → aus, genau ein Undo-Schritt (über `Application.apply_mesh_change`); Ctrl+Z/Ctrl+Y gehen die Schritte zurück/vor. Abgelehnt (Statuszeile), solange W/E/R scharf ist oder läuft oder eine Knife-Session aktiv ist |
-| M | `ReSymmetrize` | noch nicht verfügbar (Slice 3) — nur Statuszeile |
+| M | `ReSymmetrize` | Slice 3: öffnet die Re-Symmetrize-Vorschau; M bei offener Vorschau führt aus (ein Undo-Schritt), Esc schließt sie — siehe „Re-Symmetrize auf dem App-Pfad" unten |
 | Shift+B | `SymmetryGateMode` | noch nicht verfügbar (Slice 4) — nur Statuszeile |
 
 **C bei aktiver Symmetrie:** abgelehnt mit `Symmetrie aktiv — C spiegelt nicht` (Statuszeile).
@@ -80,14 +81,21 @@ gelten auch für W (Plan §1.2 D1).
 | mehrdeutig | weiß, Punkt | `AMBIGUOUS` |
 | Partner des Hover | türkis, Punkt (8 px) | gespiegelter Partner des Vertex unter dem Cursor, ohne auszuwählen (Slice 2) |
 | Partner der Auswahl | türkis, Punkt (8 px) | gespiegelte Partner der ausgewählten Vertices (Slice 2) |
+| Vorschau: bewegt | blau, Punkt (8 px) + Linie | Zielseiten-Vertex, der auf die Spiegelposition seines Partners gesetzt wird; Linie zur neuen Position (Slice 3) |
+| Vorschau: Seam → Ebene | hellgrün, Punkt (8 px) + Linie | Seam-Vertex, der exakt auf die Ebene gelegt wird (Slice 3) |
+| Vorschau: ohne Partner | hellrot, Punkt (8 px) | Zielseiten-Vertex ohne topologischen Partner — bleibt (Slice 3) |
 
 Die Partner kommen aus `mirai.symmetry.mirrored_selection` (keine eigene Paarung) und gibt es
 **nur im Vertex-Modus** (Edge/Face: keine, Plan „Not in any slice"). Ein Seam-Vertex ist sein
 eigener Partner und ein Vertex ohne Partner hat keinen — beide bekommen keinen türkisen Punkt;
 sind beide Seiten eines Paars ausgewählt, wird keiner als Partner gezeigt.
 
-Zeichenreihenfolge wie „Zeichenreihenfolge" unten: Ebene → Zustands-Marker → Hover-Partner →
-Auswahl-Partner, alles vor den Punkten der App — Hover und Auswahl (gelb) liegen obenauf.
+Zeichenreihenfolge wie „Zeichenreihenfolge" unten: Ebene → Vorschau-Linien → Zustands-Marker →
+Vorschau-Punkte → Hover-Partner → Auswahl-Partner, alles vor den Punkten der App — Hover und
+Auswahl (gelb) liegen obenauf. Einzige Abweichung vom alten Renderer: die Vorschau-Linien liegen
+unter den Zustands-Markern (dort darüber); Linien und Punkte sind getrennte Overlays. Vorschau-Punkte
+und -Linien ohne Depth-Test wie im alten Lab; „groß" = die Auswahlgröße der App (8 px) wie bei
+den Partnern.
 Neu berechnet wird nur, was sich geändert hat: Ebene und Zustands-Marker nur bei geänderter
 Geometrie oder Definition (eine reine Hover- oder Auswahl-Änderung kostet sie nichts), die
 Partner bei Auswahl- bzw. Hover-Wechsel. **Während eines laufenden W/E/R** bleiben Befund,
@@ -117,8 +125,33 @@ Lab-Overlays (p50/p95/max; Schwelle p95 ≤ 8 ms) auf `head_basemesh` und
 `--moves N`, `--assets <Name …>`. Zahlen (Container und Referenz-PC):
 [Plan A3](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md#review-amendments-2026-10-03).
 
-**Noch nicht da (folgt):** Re-Symmetrize mit Vorschau, pausiertem Hover und Esc
-(Slice 3); E5 MARK/BLOCK mit Shift+B (Slice 4); die lab-eigene Anzeige-Triangulierung (E10) — der
+**Re-Symmetrize auf dem App-Pfad (Slice 3):** Verhalten wie im alten Lab (KEEP 2026-09-25,
+„Manuelle Prüfung Slice 5" unten), Plan und Ausführung unverändert aus `lab_resymmetrize`.
+
+- **M ohne Vorschau:** abgelehnt (nur Statuszeile, keine Vorschau) mit den Texten des alten Labs
+  — `Re-Symmetrize: Symmetrie aus`, `… keine Auswahl`, `… genau einen Vertex auswählen`,
+  `… Seam-Vertex gewählt — Quellseite unklar`, `… Seam teilt das Mesh in N Teile (nötig: genau 2)`
+  — und `Re-Symmetrize (M) abgelehnt — Transform läuft` bzw. `— Knife-Session läuft`, solange
+  W/E/R scharf ist oder läuft oder eine Knife-Session aktiv ist. Quelle wie im alten Lab: genau
+  ein ausgewählter Vertex (im Edge-/Face-Modus gibt es keinen → `keine Auswahl`). Sonst wird der
+  Plan **einmal** gerechnet und die Vorschau öffnet: Overlay (blau / hellgrün / hellrot, oben),
+  blaue Zeile über der HUD-Zeile (`Re-Symmetrize Quelle +X → Ziel −X: bewegt 27, Seam → Ebene 0 |
+  M = ausführen, ESC = abbrechen`), Statusmeldung geleert, Hover ausgeblendet.
+- **M bei offener Vorschau:** setzt genau die Positionen des Plans über
+  `Application.apply_mesh_change` (ein Undo-Schritt, Auswahl bleibt; Ctrl+Z stellt Mesh **und**
+  Auswahl wieder her). `Re-Symmetrize ausgeführt: N Änderungen`; bei einem leeren Plan
+  `Re-Symmetrize: 0 Änderungen — kein Schritt` und kein History-Eintrag.
+- **Esc bei offener Vorschau:** schließt sie ohne Änderung und ohne History-Eintrag
+  (`Re-Symmetrize abgebrochen`). Ohne Vorschau ist Esc unverändert das Abbrechen der App.
+- **Während die Vorschau offen ist** (Gate-Zeile „Vorschau", AD-013 H2-R2): Navigation (Alt+LMB
+  Orbit, Alt+Shift+LMB Pan, Mausrad) und die Anzeige-Tasten **D** / **Shift+D** funktionieren;
+  **jedes** andere App-Command — W/E/R, C, Ctrl+Z/Ctrl+Y, 1/2/3, X/Y/Z (auch mit Shift), Alt+A und
+  jeder Auswahl-Klick (auch Shift+Klick) — sowie **Shift+S** und **Shift+B** werden abgelehnt mit
+  `Vorschau aktiv — Befehl ignoriert`. Der Hover ist pausiert (`Application.hover_suspended`):
+  kein gelber Hover, auch nicht nach dem Zoom; nach M oder Esc kommt er am Cursor zurück.
+- **Fenster schließen** beendet die Vorschau (Gate und Hover-Flag zurück, nichts ausgeführt).
+
+**Noch nicht da (folgt):** E5 MARK/BLOCK mit Shift+B (Slice 4); die lab-eigene Anzeige-Triangulierung (E10) — der
 App-Pfad zeichnet mit der Production-Triangulierung, `subd_cube` schattiert unter X deshalb
 asymmetrisch (Artist-Frage Q1 im Plan §6).
 
@@ -130,16 +163,60 @@ Fenster nie.
 | Datei | Inhalt | GL nötig |
 |---|---|---|
 | `run_app.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`), Event-Loop | – |
-| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, Befund-Cache, HUD-Zeile `hud_text` | nein |
-| `lab_overlays.py` | Ebenen-Umriss, Zustands- und Partner-Marker als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Änderungs-Signatur, Aufschub während eines Transforms | erst beim Zeichnen |
-| `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-Label | ja |
+| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, Re-Symmetrize-Vorschau (M/M/Esc), Befund-Cache, HUD-Zeile `hud_text`, Vorschau-Zeile `preview_text` | nein |
+| `lab_overlays.py` | Ebenen-Umriss, Zustands-, Vorschau- und Partner-Marker, Vorschau-Linien als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Änderungs-Signatur, Aufschub während eines Transforms | erst beim Zeichnen |
+| `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-Label und Vorschau-Label | ja |
 | `probe_drag_cost.py` | Drag-Kosten-Probe (Plan A3), baut über `run_app.build_app_lab` | nein |
 
 Tests: `tests/test_app_lab_*.py`, `tests/test_run_app.py` und `tests/test_probe_drag_cost.py`
 (headless, AD-013 H2 T-R1a–d, T-R2a/b/f/h, T-R3, T-R4a–c, portierte Zyklus-/Umriss-/Asset-Tests,
 Overlay-Neuaufbau, Fenster-Smoke-Test; Slice 2: Partner-Marker, Zeichenreihenfolge,
-Overlay-Kosten, HUD-Zeile, portierte symmetrische W/E/R-Tests, Probe-Smoke-Test); Aufruf wie
-unten unter „Tests".
+Overlay-Kosten, HUD-Zeile, portierte symmetrische W/E/R-Tests, Probe-Smoke-Test; Slice 3:
+`test_app_lab_preview.py` (T-R2c, T-R2e, N2-Regression, T-R3 Vorschau-Zeilen, T-H, Ausführen
+über H3, Overlay, Start-Liste, Fenster zu), `test_app_lab_preview_fuzz.py` (T-R2g, feste Seeds,
+mit Negativkontrolle), `test_app_lab_preview_window.py` (pyglet-Handler, Vorschau-Label),
+`test_app_lab_resymmetrize.py` (Ports der Dispatcher-Tests aus `test_lab_resymmetrize.py`)); Aufruf
+wie unten unter „Tests".
+
+### Manuelle Prüfung Re-Symmetrize auf dem App-Pfad (Manu, Windows) — offen, noch nicht geprüft
+
+Aus „Manuelle Prüfung Slice 5" (KEEP 2026-09-25) für `run_app.py` umgeschrieben; erwartet wird
+**dasselbe Verhalten wie dort**. Anders nur, was die App vorgibt: Auswahl gelb statt rot, Move ist
+**W halten + Maus bewegen** (statt Q), Pan Alt+Shift+LMB, MMB ungebunden, Esc schließt das Fenster
+nie.
+
+1. `python experiments/symmetry_lab/run_app.py man_with_shoes_basemesh` starten. Die Konsole
+   listet `key:m -> ReSymmetrize`, die Gate-Zeile `Re-Symmetrize-Vorschau offen (Slice 3)` und die
+   Zeile `Cancel (Esc): closes the Re-Symmetrize preview while it is open`.
+2. **Shift+S** → HUD `Symmetrie: X (partial) | ohne Partner: 54`; die 54 Vertices sind magenta.
+3. Einen Vertex auf der **rechten** Körperseite **anklicken** (gelb).
+4. **M** → über der HUD-Zeile erscheint die blaue Zeile, z. B.
+   `Re-Symmetrize Quelle +X → Ziel −X: bewegt 27, Seam → Ebene 0 | M = ausführen, ESC = abbrechen`.
+   Die 27 Vertices der anderen Seite sind **blau** markiert (Linien ~`1e-6` lang, unsichtbar).
+5. Während die Vorschau offen ist: Alt+LMB-Ziehen, Alt+Shift+LMB-Ziehen und Mausrad navigieren;
+   **D** wechselt den Anzeige-Modus. **W** (halten + bewegen), **Shift+S**, **Ctrl+Z**,
+   **Ctrl+Y**, **C**, **1/2/3** und ein LMB-Klick tun nichts; HUD/Konsole melden
+   `Vorschau aktiv — Befehl ignoriert`. Kein gelber Hover, auch nicht nach dem Mausrad.
+   Zusätzlich (neu, AD-013 F1): mitten im Alt+LMB-Ziehen **Ctrl+Z** → ebenfalls ignoriert.
+6. **M** erneut → `Symmetrie: X (valid) | ohne Partner: 0`, `Re-Symmetrize ausgeführt: 27
+   Änderungen`; die blaue Zeile verschwindet, der Hover ist wieder da, die Auswahl bleibt.
+   Die ehemals magenta Vertices zeigen beim Hover/bei Auswahl einen türkisen Partner.
+7. **Ctrl+Z** → wieder `partial`, 54 magenta (ein Schritt), die Auswahl ist wieder der Vertex aus
+   Schritt 3. **Ctrl+Y** → wieder `valid`.
+8. Abbrechen: Vertex wählen, **M**, dann **Esc** → Vorschau verschwindet, nichts geändert, kein
+   Undo-Schritt (`Re-Symmetrize abgebrochen`); das Fenster bleibt offen.
+9. Dasselbe mit einem Vertex auf der **linken** Seite (vorher Ctrl+Z) → Richtung in der blauen
+   Zeile umgekehrt, Ergebnis ebenfalls `valid`.
+10. `head_basemesh` (schon symmetrisch), Shift+S, Vertex wählen, **M** → `0 Änderungen`; **M** →
+    `Re-Symmetrize: 0 Änderungen — kein Schritt`, Ctrl+Z nimmt dann das Shift+S zurück.
+11. Quellseite folgt der Topologie: `head_basemesh` neu starten, **ohne** Symmetrie einen Vertex
+    seitlich am Kopf wählen, mit **W** halten + Maus **über die Mittelebene hinaus** ziehen, W
+    loslassen. **Shift+S** (→ X; Vertex und alter Partner magenta, die Auswahl bleibt) und **M** →
+    Quelle ist die **ursprüngliche** Seite, blau ist der alte Partner. **M** → der Partner springt
+    spiegelbildlich mit, `Symmetrie: X (valid)`.
+12. Ablehnungen (Statuszeile, keine Vorschau): **M** ohne Auswahl; **M** bei Symmetrie aus; **M**
+    mit einem grünen Seam-Vertex als Auswahl; **M** mit zwei ausgewählten Vertices (Shift+Klick);
+    **M** bei Symmetrie **Y** auf `subd_cube`; **W** halten und dabei **M** (Transform läuft).
 
 ## Start
 

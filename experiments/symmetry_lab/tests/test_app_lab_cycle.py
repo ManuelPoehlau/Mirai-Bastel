@@ -66,7 +66,8 @@ EXPECTED_VERTEX_COUNTS = {
 
 
 def _overlays(lab) -> tuple[SymmetryPlaneOverlay, SymmetryStateOverlay]:
-    plane, state = lab.overlays
+    # Seit Slice 3 hängt dazwischen das Linien-Overlay der Re-Symmetrize-Vorschau.
+    plane, _preview_lines, state = lab.overlays
     assert isinstance(plane, SymmetryPlaneOverlay)
     assert isinstance(state, SymmetryStateOverlay)
     return plane, state
@@ -177,8 +178,9 @@ def test_symmetric_move_runs_through_src(lab_app):
 
 def test_overlays_are_attached_in_draw_order(lab_app):
     app, lab = lab_app
+    assert app.viewport.extra_overlays == list(lab.overlays)
     plane, state = _overlays(lab)
-    assert app.viewport.extra_overlays == [plane, state]
+    assert app.viewport.extra_overlays[0] is plane and app.viewport.extra_overlays[-1] is state
 
 
 def test_overlays_empty_while_symmetry_off(lab_app):

@@ -130,15 +130,17 @@ def test_lab_uses_the_one_binding_set(monkeypatch):
 
 
 def test_startup_listing_names_every_entry_and_every_gate_row():
-    """T-R1d: die Start-Liste enthält jeden Lab-Eintrag und jede Gate-Zeile von 1b."""
+    """T-R1d: die Start-Liste enthält jeden Lab-Eintrag und jede Gate-Zeile (seit
+    Slice 3 mit der Vorschau-Zeile; deren Prüfung und die Esc-Zeile:
+    `test_app_lab_preview.py`)."""
     lines = startup_listing()
     text = "\n".join(lines)
     for entry in LAB_KEY_ENTRIES:
         assert entry.describe() in text
     for row in GATE_ROWS:
         assert row.describe() in text
-    assert len(GATE_ROWS) == 2
+    assert len(GATE_ROWS) == 3
     assert lab_app.CONNECT_REFUSED_TEXT in text
     assert "SymmetryCycle" in text and "ReSymmetrize" in text and "SymmetryGateMode" in text
-    # M und Shift+B existieren schon (H2-R1), tun aber noch nichts.
-    assert sum("noch nicht verfügbar" in line for line in lines) == 2
+    # Shift+B existiert schon (H2-R1), tut aber noch nichts (Slice 4); M seit Slice 3.
+    assert sum("noch nicht verfügbar" in line for line in lines) == 1

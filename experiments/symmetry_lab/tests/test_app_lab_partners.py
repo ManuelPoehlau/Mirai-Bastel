@@ -52,7 +52,8 @@ SHIFT_LMB = Input("mouse", "LEFT", frozenset({"shift"}))
 
 
 def _overlays(lab) -> tuple[SymmetryPlaneOverlay, SymmetryStateOverlay]:
-    plane, state = lab.overlays
+    # Seit Slice 3 hängt dazwischen das Linien-Overlay der Re-Symmetrize-Vorschau.
+    plane, _preview_lines, state = lab.overlays
     return plane, state
 
 
@@ -298,13 +299,11 @@ def test_no_partner_markers_in_edge_or_face_mode(mode_key):
 
 
 def test_partner_layers_are_drawn_after_state_markers():
-    assert SymmetryStateOverlay.LAYERS == (
-        SEAM_LAYER,
-        UNPAIRED_LAYER,
-        AMBIGUOUS_LAYER,
-        HOVER_PARTNER_LAYER,
-        SELECTION_PARTNER_LAYER,
-    )
+    # Seit Slice 3 liegen die Vorschau-Punkte zwischen Zustand und Partnern
+    # (Reihenfolge des alten Renderers, `test_app_lab_preview.py`).
+    layers = SymmetryStateOverlay.LAYERS
+    assert layers[:3] == (SEAM_LAYER, UNPAIRED_LAYER, AMBIGUOUS_LAYER)
+    assert layers[-2:] == (HOVER_PARTNER_LAYER, SELECTION_PARTNER_LAYER)
 
 
 def test_lab_overlays_are_drawn_before_the_app_point_overlay(lab_app, monkeypatch):

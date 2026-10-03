@@ -239,8 +239,9 @@ REFUSALS = [
     ("ShiftS_transform_armed", _armed, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_transform_running", _running, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_knife", start_knife, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"),
-    ("M_idle", _idle, M, "Re-Symmetrize (M): noch nicht verfügbar (Slice 3)"),
-    ("M_symmetry_on", _symmetry_on, M, "Re-Symmetrize (M): noch nicht verfügbar (Slice 3)"),
+    # Seit Slice 3 die Ablehnungen des alten Labs (README Slice 5, Schritt 12).
+    ("M_idle", _idle, M, "Re-Symmetrize: Symmetrie aus"),
+    ("M_symmetry_on", _symmetry_on, M, "Re-Symmetrize: keine Auswahl"),
     ("ShiftB_idle", _idle, SHIFT_B, "E5-Modus (Shift+B): noch nicht verfügbar (Slice 4)"),
     ("ShiftB_knife", start_knife, SHIFT_B, "E5-Modus (Shift+B) abgelehnt — Knife-Session läuft"),
 ]
