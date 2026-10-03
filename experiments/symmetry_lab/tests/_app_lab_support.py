@@ -37,13 +37,14 @@ CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
 CTRL_Y = Input("key", "y", frozenset({"ctrl"}))
 LMB = Input("mouse", "LEFT")
 
-#: Die neuen Lab-Module des App-Pfads (Slice 1b) —
+#: Die neuen Lab-Module des App-Pfads (Slice 1b; Slice 2: die Drag-Kosten-Probe) —
 #: Gegenstand von T-R4a/T-R4b.
 LAB_APP_MODULES = (
     "symmetry_lab.lab_app",
     "symmetry_lab.lab_app_window",
     "symmetry_lab.lab_overlays",
     "symmetry_lab.run_app",
+    "symmetry_lab.probe_drag_cost",
 )
 
 

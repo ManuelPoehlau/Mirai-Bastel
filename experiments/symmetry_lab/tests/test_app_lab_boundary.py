@@ -213,7 +213,7 @@ def test_scan_ignores_own_underscore_members():
 
 def test_lab_app_modules_cover_every_new_file():
     """T-R4a: jede Datei des App-Pfads steht in der Scan-Liste."""
-    for name in ("lab_app", "lab_app_window", "lab_overlays", "run_app"):
+    for name in ("lab_app", "lab_app_window", "lab_overlays", "run_app", "probe_drag_cost"):
         assert f"symmetry_lab.{name}" in LAB_APP_MODULES
         assert (Path(LAB_DIR) / f"{name}.py").is_file()
 

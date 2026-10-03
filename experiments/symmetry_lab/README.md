@@ -16,7 +16,7 @@ Fenster spielbar: **C** startet den Knife, der Punkt unter dem Cursor und sein S
 dem Klick sichtbar (auch, wenn nicht gespiegelt werden kann), **LMB** schneidet, ein Klick auf den
 Hintergrund committet, **ESC** bricht ab. Slice 7 ist **noch nicht vom Artist geprüft**.
 Promotion nach `src/main.py`: zurückgestellt, siehe `docs/architecture/ROADMAP.md` §7, Eintrag 2026-10-02.
-Umbau des Labs auf den Production-Pfad (`Application` + Viewport V02) — [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md): seit Slice 1b (2026-10-03) gibt es daneben den neuen Einstieg `run_app.py`, siehe [„Lab auf dem App-Pfad"](#lab-auf-dem-app-pfad-run_apppy--wp-sym-lab-03-slice-1b); `run.py` und alle Abschnitte darunter beschreiben weiter das alte Lab (bis Slice 5).
+Umbau des Labs auf den Production-Pfad (`Application` + Viewport V02) — [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md): seit Slice 1b (2026-10-03) gibt es daneben den neuen Einstieg `run_app.py`, siehe [„Lab auf dem App-Pfad"](#lab-auf-dem-app-pfad-run_apppy--wp-sym-lab-03); `run.py` und alle Abschnitte darunter beschreiben weiter das alte Lab (bis Slice 5).
 
 Handoffs:
 [Slice 2](../../docs/architecture/WP-SYM-LAB-01_SLICE2_CLAUDE_CODE_HANDOFF.md) (Rendering/Kamera, §2),
@@ -30,9 +30,10 @@ Handoffs:
 > Herkunftsvermerk im jeweiligen Docstring (Präzedenz AD-010). Abgesichert durch
 > `tests/test_import_boundary.py`.
 
-## Lab auf dem App-Pfad (`run_app.py`) — WP-SYM-LAB-03 Slice 1b
+## Lab auf dem App-Pfad (`run_app.py`) — WP-SYM-LAB-03
 
-**Stand 2026-10-03, noch nicht vom Artist geprüft.** Neuer Einstieg **neben** dem alten Lab
+**Stand 2026-10-03: Slice 1b + Slice 2 (Partner-Marker, HUD-Zeile, Drag-Kosten-Probe), noch
+nicht vom Artist geprüft.** Neuer Einstieg **neben** dem alten Lab
 (`run.py` bleibt bis Slice 5 unverändert). Er baut genau den Pfad von `src/main.py`
 (`Application` → Viewport V02 → `GLRenderStore`, dieselben Fenster-Handler über
 `create_window`/`install_handlers`/`run`) und ergänzt nur die Symmetrie. Navigation, Auswahl,
@@ -77,16 +78,46 @@ gelten auch für W (Plan §1.2 D1).
 | Seam | grün, Punkt | Seam-Vertex |
 | ohne Partner | magenta, Punkt | `UNPAIRED` |
 | mehrdeutig | weiß, Punkt | `AMBIGUOUS` |
+| Partner des Hover | türkis, Punkt (8 px) | gespiegelter Partner des Vertex unter dem Cursor, ohne auszuwählen (Slice 2) |
+| Partner der Auswahl | türkis, Punkt (8 px) | gespiegelte Partner der ausgewählten Vertices (Slice 2) |
 
-Zeichenreihenfolge wie „Zeichenreihenfolge" unten: die Marker liegen unter Hover und Auswahl der
-App (gelb). Die Overlays bauen sich bei jeder Änderung neu, die die App dem Viewport meldet
-(Auswahl, Hover, Move, Undo/Redo, Knife-Commit), und nach Shift+S.
+Die Partner kommen aus `mirai.symmetry.mirrored_selection` (keine eigene Paarung) und gibt es
+**nur im Vertex-Modus** (Edge/Face: keine, Plan „Not in any slice"). Ein Seam-Vertex ist sein
+eigener Partner und ein Vertex ohne Partner hat keinen — beide bekommen keinen türkisen Punkt;
+sind beide Seiten eines Paars ausgewählt, wird keiner als Partner gezeigt.
 
-**HUD:** eine Zeile unten links — `Symmetrie: X` / `Symmetrie: aus` und die letzte Statusmeldung
-der App bzw. des Labs. Die Statusmeldungen stehen außerdem wie in `src/main.py` in der Konsole.
+Zeichenreihenfolge wie „Zeichenreihenfolge" unten: Ebene → Zustands-Marker → Hover-Partner →
+Auswahl-Partner, alles vor den Punkten der App — Hover und Auswahl (gelb) liegen obenauf.
+Neu berechnet wird nur, was sich geändert hat: Ebene und Zustands-Marker nur bei geänderter
+Geometrie oder Definition (eine reine Hover- oder Auswahl-Änderung kostet sie nichts), die
+Partner bei Auswahl- bzw. Hover-Wechsel. **Während eines laufenden W/E/R** bleiben Befund,
+Ebene und Partner-IDs die vom Drag-Start, nur die Marker wandern mit; der erste Frame nach dem
+Commit leitet alles neu ab (Plan A3, Messung unten).
 
-**Noch nicht da (folgt):** gespiegelter Partner von Auswahl und Hover (türkis), volle Statuszeile
-und Messung der Drag-Kosten (Slice 2); Re-Symmetrize mit Vorschau, pausiertem Hover und Esc
+**HUD:** eine Zeile unten links (bricht an der Fensterbreite um), gebaut wie die alte
+Statuszeile, nur aus öffentlichem App-Zustand:
+`Asset | Vertex-Anzahl | Symmetrie: <X|Y|Z|aus> (<Zustand>) | ohne Partner: N[, mehrdeutig: M] |
+<Move|Rotate|Scale>: scharf|bewegt (Auswahl | Hover v<id>) bzw. Transform: bereit |
+Constraint: <X|XY-Ebene> | letzte Statusmeldung`. „ohne Partner" nur bei aktiver Symmetrie,
+„Constraint" nur, wenn eine gesetzt ist. „Hover v<id>" steht, wenn die Auswahl leer war und
+der Hover-Vertex das Ziel ist (die App löscht den Hover beim Scharfschalten, die Zeile zeigt das
+Ziel trotzdem). Die Statusmeldungen stehen außerdem wie in `src/main.py` in der Konsole.
+
+**Drag-Kosten-Probe (Plan A3)** — ohne Fenster, Windows und Linux gleich, Ausgabe zum Einfügen
+in den Chat:
+
+```
+python experiments/symmetry_lab/probe_drag_cost.py
+```
+
+Baut App + Lab wie `run_app.py` (ohne Fenster), Symmetrie X, wählt per Klick 6 gepaarte
+Vertices, zieht W über 200 Mausbewegungen und misst je Bewegung Transform-Schritt +
+Lab-Overlays (p50/p95/max; Schwelle p95 ≤ 8 ms) auf `head_basemesh` und
+`man_with_shoes_basemesh`, dazu zur Einordnung den Commit-Frame und Hover-Wechsel. Optionen:
+`--moves N`, `--assets <Name …>`. Zahlen (Container und Referenz-PC):
+[Plan A3](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md#review-amendments-2026-10-03).
+
+**Noch nicht da (folgt):** Re-Symmetrize mit Vorschau, pausiertem Hover und Esc
 (Slice 3); E5 MARK/BLOCK mit Shift+B (Slice 4); die lab-eigene Anzeige-Triangulierung (E10) — der
 App-Pfad zeichnet mit der Production-Triangulierung, `subd_cube` schattiert unter X deshalb
 asymmetrisch (Artist-Frage Q1 im Plan §6).
@@ -99,13 +130,16 @@ Fenster nie.
 | Datei | Inhalt | GL nötig |
 |---|---|---|
 | `run_app.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`), Event-Loop | – |
-| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, HUD-Text | nein |
-| `lab_overlays.py` | Ebenen-Umriss und Zustands-Marker als Unterklassen von `FlatColorLayers`/`GLPointOverlay` | erst beim Zeichnen |
+| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, Befund-Cache, HUD-Zeile `hud_text` | nein |
+| `lab_overlays.py` | Ebenen-Umriss, Zustands- und Partner-Marker als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Änderungs-Signatur, Aufschub während eines Transforms | erst beim Zeichnen |
 | `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-Label | ja |
+| `probe_drag_cost.py` | Drag-Kosten-Probe (Plan A3), baut über `run_app.build_app_lab` | nein |
 
-Tests: `tests/test_app_lab_*.py` und `tests/test_run_app.py` (headless, AD-013 H2 T-R1a–d,
-T-R2a/b/f/h, T-R3, T-R4a–c, portierte Zyklus-/Umriss-/Asset-Tests, Overlay-Neuaufbau,
-Fenster-Smoke-Test); Aufruf wie unten unter „Tests".
+Tests: `tests/test_app_lab_*.py`, `tests/test_run_app.py` und `tests/test_probe_drag_cost.py`
+(headless, AD-013 H2 T-R1a–d, T-R2a/b/f/h, T-R3, T-R4a–c, portierte Zyklus-/Umriss-/Asset-Tests,
+Overlay-Neuaufbau, Fenster-Smoke-Test; Slice 2: Partner-Marker, Zeichenreihenfolge,
+Overlay-Kosten, HUD-Zeile, portierte symmetrische W/E/R-Tests, Probe-Smoke-Test); Aufruf wie
+unten unter „Tests".
 
 ## Start
 
