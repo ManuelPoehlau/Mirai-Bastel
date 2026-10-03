@@ -1279,6 +1279,12 @@ class Application:
         self.status_message = message
         self.status_serial += 1
 
+    def set_status(self, message: str) -> None:
+        """Public form of `_set_status` (WP-SYM-LAB-03 H4, AD-013 H2 addendum):
+        a host posts its own messages and refusals through the same
+        `status_message`/`status_serial`, so a repeated text still counts."""
+        self._set_status(message)
+
     # -- Pointer / Navigation (WP-06 B2, AD-019) ------------------------------
 
     def set_viewport_size(self, width: int, height: int) -> None:
