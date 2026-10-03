@@ -654,7 +654,10 @@ session (the check sits after the Knife routing); a Lab reaction that must run *
   (b) the gate data — `command_gate`, `hover_suspended`; (c) `set_status` (H4);
   (d) `apply_mesh_change` (H3); (e) the public event entry points (`key_press`, `key_release`,
   `pointer_*`), called only from the window adapter with the original event; plus the Viewport
-  overlay hook H1. **Not allowed:** `dispatch_command`, `select_at`, any member with a leading
+  overlay hook H1;
+  (f) one-time setup before the event loop, as `src/main.py` does it: `init_scene`,
+  `frame_scene`, `set_viewport_size` (clarification 2026-10-03, Slice 1b; only in the Lab's
+  entry `run_app.py`, checked by T-R4a). **Not allowed:** `dispatch_command`, `select_at`, any member with a leading
   underscore, `history.push`, and importing `PointerGestures`, `ToolManager` or `pick_component`
   for app semantics. No own gesture recognition, transform arming, picking for app semantics or
   undo bookkeeping.

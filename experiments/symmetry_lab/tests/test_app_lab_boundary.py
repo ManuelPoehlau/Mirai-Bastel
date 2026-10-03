@@ -4,7 +4,13 @@ H2-R4-Liste von `Application` (AD-013 H2 addendum).
 - T-R4a: statischer AST-Scan der neuen Lab-Module (`LAB_APP_MODULES`) auf
   Unterstrich-Attribute an `Application`-Objekten, `dispatch_command`,
   `select_at`, `history.push` und Importe von `PointerGestures`, `ToolManager`,
-  `pick_component`. Mit Negativkontrolle, damit der Scan nicht still nichts findet.
+  `pick_component`. Seit Slice 2 zusätzlich: jede `Application`-*Methode*, die Lab-Code
+  anfasst, steht auf der H2-R4-Liste ((c) `set_status`, (d) `apply_mesh_change`,
+  (e) die Event-Eingänge); die einmalige Einrichtung vor dem Event-Loop
+  (`init_scene`, `frame_scene`, `set_viewport_size`, H2-R4 (f), Klarstellung
+  2026-10-03) nur in `run_app.py`; zugewiesen wird nur das Gate ((b)
+  `command_gate`, `hover_suspended`). Mit Negativkontrollen, damit der Scan nicht
+  still nichts findet.
 - T-R4b: die Wächter-Fixture aus `_app_lab_support` greift genau beim
   unmittelbaren Aufrufer (`sys._getframe(1)`).
 """
@@ -12,10 +18,12 @@ H2-R4-Liste von `Application` (AD-013 H2 addendum).
 from __future__ import annotations
 
 import ast
+import inspect
 from pathlib import Path
 
 import pytest
 
+from mirai.application import Application
 from mirai.interaction.input import Input
 
 from symmetry_lab._paths import LAB_DIR
@@ -35,6 +43,40 @@ D = Input("key", "d")
 FORBIDDEN_CALLS = {"dispatch_command", "select_at", "select_vertex_at"}
 FORBIDDEN_IMPORTS = {"PointerGestures", "ToolManager", "pick_component"}
 
+#: H2-R4 (c), (d), (e): die öffentlichen `Application`-Methoden für Lab-Code.
+ALLOWED_APP_METHODS = {
+    "set_status",
+    "apply_mesh_change",
+    "key_press",
+    "key_release",
+    "pointer_press",
+    "pointer_drag",
+    "pointer_release",
+    "pointer_scroll",
+    "pointer_motion",
+    "pointer_leave",
+}
+#: H2-R4 (f): einmalige Einrichtung vor dem Event-Loop, wie `src/main.py` — nur hier.
+SETUP_METHODS = {"init_scene", "frame_scene", "set_viewport_size"}
+SETUP_MODULE = "symmetry_lab.run_app"
+#: H2-R4 (b): die einzigen Attribute, die Lab-Code an `Application` setzt.
+ASSIGNABLE = {"command_gate", "hover_suspended"}
+
+
+def _public_methods(cls) -> set[str]:
+    return {
+        name
+        for name in dir(cls)
+        if not name.startswith("_")
+        and not isinstance(inspect.getattr_static(cls, name), property)
+        and callable(getattr(cls, name))
+    }
+
+
+#: Öffentliche Methoden, deren Gebrauch der Methoden-Check prüft (die verbotenen
+#: zählt schon `FORBIDDEN_CALLS`).
+APP_METHODS = _public_methods(Application) - FORBIDDEN_CALLS
+
 
 def _is_app_expression(node: ast.AST) -> bool:
     """`app`, `self.app`, `lab.app`, … — die Namen, unter denen Lab-Code die
@@ -46,9 +88,19 @@ def _is_app_expression(node: ast.AST) -> bool:
     return False
 
 
-def violations(source: str) -> list[str]:
+def violations(source: str, module: str = "") -> list[str]:
+    """Verstöße gegen H2-R4 in `source`; `module` = Modulname (für die
+    Einrichtungs-Ausnahme (f), die nur `run_app` hat)."""
+    allowed = ALLOWED_APP_METHODS | (SETUP_METHODS if module == SETUP_MODULE else set())
     found = []
     for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Attribute) and _is_app_expression(node.value):
+            if node.attr in APP_METHODS and node.attr not in allowed:
+                found.append(f"{ast.unparse(node)} (nicht auf der H2-R4-Liste)")
+            if isinstance(node.ctx, ast.Store) and not node.attr.startswith("_") and (
+                node.attr not in ASSIGNABLE
+            ):
+                found.append(f"{ast.unparse(node)} = … (Schreibzugriff)")
         if isinstance(node, ast.Attribute):
             if node.attr.startswith("_") and not node.attr.startswith("__") and _is_app_expression(
                 node.value
@@ -80,7 +132,7 @@ def test_lab_app_modules_use_only_the_public_allow_list(module):
     """T-R4a: kein Lab-Modul des App-Pfads greift an der H2-R4-Liste vorbei."""
     path = LAB_DIR / (module.rsplit(".", 1)[-1] + ".py")
     assert path.is_file(), path
-    assert violations(path.read_text(encoding="utf-8")) == []
+    assert violations(path.read_text(encoding="utf-8"), module) == []
 
 
 def test_scan_finds_every_forbidden_pattern():
@@ -100,6 +152,58 @@ def f(app, lab, self):
 """
     found = violations(bad)
     assert len(found) == 10, found
+
+
+def test_scan_flags_methods_outside_the_allow_list():
+    """T-R4a, Negativkontrolle (Slice 2): öffentliche Methoden außerhalb von H2-R4
+    und Schreibzugriffe außerhalb des Gates werden gefunden."""
+    bad = """
+def f(app, lab):
+    app.update_viewport(0.1)
+    lab.app.set_shift_held(True)
+    app.shutdown()
+    handler = app.dispatch_command
+    app.status_message = "x"
+    app.command_gate = None
+    app.hover_suspended = False
+    app.set_status("ok")
+    app.apply_mesh_change("x", lambda: None)
+    app.key_press(None)
+"""
+    found = violations(bad)
+    assert sorted(found) == sorted([
+        "app.update_viewport (nicht auf der H2-R4-Liste)",
+        "lab.app.set_shift_held (nicht auf der H2-R4-Liste)",
+        "app.shutdown (nicht auf der H2-R4-Liste)",
+        "app.dispatch_command (verboten)",
+        "app.status_message = … (Schreibzugriff)",
+    ]), found
+
+
+@pytest.mark.parametrize("name", sorted(SETUP_METHODS))
+def test_setup_calls_are_allowed_only_in_run_app(name):
+    """H2-R4 (f), Klarstellung Slice 2: `init_scene`/`frame_scene`/`set_viewport_size`
+    genau in `run_app.py`, in jedem anderen Lab-Modul ein Verstoß."""
+    source = f"def f(app):\n    app.{name}()\n"
+    assert violations(source, SETUP_MODULE) == []
+    for module in LAB_APP_MODULES:
+        if module != SETUP_MODULE:
+            assert violations(source, module) == [f"app.{name} (nicht auf der H2-R4-Liste)"]
+
+
+def test_method_allow_list_names_real_application_methods():
+    """Die Listen nennen nur Methoden, die es gibt (Tippfehler fielen sonst nie auf)."""
+    assert ALLOWED_APP_METHODS | SETUP_METHODS <= APP_METHODS
+    assert {"update_viewport", "shutdown", "set_shift_held"} <= APP_METHODS
+
+
+def test_run_app_uses_exactly_the_setup_exception():
+    """`run_app.py` braucht die Ausnahme (f) wirklich — ohne sie wäre es ein Verstoß."""
+    source = (LAB_DIR / "run_app.py").read_text(encoding="utf-8")
+    assert violations(source, SETUP_MODULE) == []
+    assert sorted(violations(source)) == sorted(
+        f"app.{name} (nicht auf der H2-R4-Liste)" for name in SETUP_METHODS
+    )
 
 
 def test_scan_ignores_own_underscore_members():
