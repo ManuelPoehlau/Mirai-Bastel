@@ -245,7 +245,7 @@ nie.
 ### Gemeinsame Prüf-Session nach Slice 4 (Manu, Windows) — geprüft 2026-10-03
 
 **Artist-Verdikte (Manu, 2026-10-03):** 1 KEEP · 2 Pivot → B (siehe Punkt 2) ·
-3 **KEEP-BLOCK** · 4 **(a)** · 5 KEEP. Zu 2 danach: Pivot **B** (pro Seite) entschieden und gebaut, Nachprüfung offen. Plan §4.2/§4.3 (WP-SYM-LAB-03): eine Sitzung, ≈10 Minuten, altes
+3 **KEEP-BLOCK** · 4 **(a)** · 5 KEEP. Zu 2 danach: Pivot **B** (pro Seite) entschieden, gebaut und im Fenster geprüft: **KEEP**. Plan §4.2/§4.3 (WP-SYM-LAB-03): eine Sitzung, ≈10 Minuten, altes
 und neues Lab **nebeneinander**. Für die KEEP-Punkte ist das keine neue Entscheidung — nur „dasselbe
 wie vorher?", was kein Test beweisen kann. Offen entschieden werden S2 und E5; Q1 ist eine
 Prioritätsfrage. Bedienung im neuen Lab wie in der App (W/E/R **halten** + Maus, Pan
@@ -273,7 +273,7 @@ im neuen Lab: `head_basemesh`, Shift+S → X, Vertex seitlich anklicken; **E hal
 Y/Z Gegensinn)? **R halten** — ist die Paarmitte der Pivot, den du erwartest? Grünen Seam-Vertex
 wählen, E mit Y/Z/frei → abgelehnt (`Rotate: refused — …`), mit X erlaubt. **Neu klickbar:** beide
 Vertices eines Paars mit Shift+Klick wählen → starre Rotation (Schritt 5 der S2-Liste).
-Verdikt 2: **Pivot B entschieden, Nachprüfung offen** (Manu, 2026-10-03). Rückfrage war, wo der Pivot liegt: bis dahin der Zentroid über Auswahl ∪ Partner (Paarmitte auf der Ebene). Entscheidung **B — Pivot pro Seite**: ohne explizites `pivot` der Zentroid der *eigenen* Auswahl, die Operation spiegelt ihn für die Partner; Rückfall auf Auswahl ∪ Partner, wenn ein Seam-Vertex betroffen ist und der eigene Zentroid nicht auf der Ebene liegt (`selection_helpers.symmetric_default_pivot`). Die Paarmitte (A) bleibt als Idee für ein Pivot-System (freie/temporäre Pivots, später). **Nachprüfung:** `run_app.py head_basemesh`, Shift+S → X, eine Augen- oder Ohrschleife auf **einer** Seite wählen (Shift+Klick), **E** und **R** halten: dreht/skaliert die Schleife um ihre eigene Mitte und die Gegenseite gespiegelt? Ein einzelner Vertex bewegt sich mit E/R nicht mehr (dreht um sich selbst). Verdikt (KEEP / ITERATE / UNKNOWN): steht aus.
+Verdikt 2: **Pivot B entschieden, Nachprüfung offen** (Manu, 2026-10-03). Rückfrage war, wo der Pivot liegt: bis dahin der Zentroid über Auswahl ∪ Partner (Paarmitte auf der Ebene). Entscheidung **B — Pivot pro Seite**: ohne explizites `pivot` der Zentroid der *eigenen* Auswahl, die Operation spiegelt ihn für die Partner; Rückfall auf Auswahl ∪ Partner, wenn ein Seam-Vertex betroffen ist und der eigene Zentroid nicht auf der Ebene liegt (`selection_helpers.symmetric_default_pivot`). Die Paarmitte (A) bleibt als Idee für ein Pivot-System (freie/temporäre Pivots, später). **Nachprüfung (KEEP, Manu, 2026-10-03):** `run_app.py head_basemesh`, Shift+S → X, eine Augen- oder Ohrschleife auf **einer** Seite wählen (Shift+Klick), **E** und **R** halten: dreht/skaliert die Schleife um ihre eigene Mitte und die Gegenseite gespiegelt? Ein einzelner Vertex bewegt sich mit E/R nicht mehr (dreht um sich selbst). Verdikt: **KEEP** (Manu, 2026-10-03).
 
 **3. E5 mit C — MARK vs. BLOCK** (die Frage aus [„Manuelle Prüfung E5"](#manuelle-prüfung-e5-manu-windows--offen-noch-nicht-geprüft),
 jetzt mit dem echten nicht spiegelnden Tool C). `run_app.py subd_cube`, **Shift+S** → X; die
@@ -340,7 +340,7 @@ beim Start keine `key:q`/`key:w`-Overrides (W fällt auf den globalen Default `M
 
 Verdikt (KEEP / ITERATE / REJECT / UNKNOWN): steht aus.
 
-### Manuelle Prüfung S2 (Manu, Windows) — Pivot entschieden 2026-10-03 (B), Nachprüfung offen
+### Manuelle Prüfung S2 (Manu, Windows) — KEEP 2026-10-03 (Pivot B)
 
 **Artist-Verdikt: steht aus.** WP-SYM-LAB-02 S2. Rotate/Scale wirken unter Symmetrie wie Move
 (AD-SYM-02 §2.4, entschieden): der Partner führt die *gespiegelte Absicht* aus — bei Rotation um die
