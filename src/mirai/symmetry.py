@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from core.ids import VertexId
 from core.mesh import Mesh, Position, SymmetryDefinition
@@ -191,7 +191,11 @@ def symmetry_state(mesh: Mesh) -> SymmetryState:
     return SymmetryState.VALID
 
 
-def mirrored_selection(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> set[VertexId]:
+def mirrored_selection(
+    mesh: Mesh,
+    vertex_ids: Iterable[VertexId],
+    correspondence: Mapping[VertexId, VertexCorrespondence] | None = None,
+) -> set[VertexId]:
     """Gespiegelte Partner-IDs zu `vertex_ids` (Slice 2 Handoff §3.3).
 
     Leer, wenn Symmetrie aus ist (`mesh.symmetry_definition is None`) - es
@@ -205,13 +209,18 @@ def mirrored_selection(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> set[Vertex
     noch als "Partner" zu behandeln.
 
     Reine Funktion, kein Cache (AR-1, wie der Rest dieses Moduls) - leitet
-    bei jedem Aufruf über `vertex_correspondence()` neu ab.
+    bei jedem Aufruf über `vertex_correspondence()` neu ab. Ausnahme: ein
+    Aufrufer, der die Zuordnung zur *aktuellen* Geometrie schon hat, kann sie
+    als `correspondence` übergeben (WP-SYM-LAB-03, Plan A3: der Hover-Partner
+    des Labs soll nicht je Hover-Wechsel das ganze Mesh neu zuordnen). Dass sie
+    zur aktuellen Geometrie gehört, garantiert der Aufrufer.
     """
     if mesh.symmetry_definition is None:
         return set()
 
     selected = set(vertex_ids)
-    correspondence = vertex_correspondence(mesh)
+    if correspondence is None:
+        correspondence = vertex_correspondence(mesh)
 
     result: set[VertexId] = set()
     for vid in selected:

@@ -19,12 +19,19 @@ nur, was das Lab selbst entscheidet:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Optional
 
 from core import EdgeId, Mesh, Scene, SymmetryDefinition, VertexId
 from core.operations.topology import MeshStateCommand
-from mirai.symmetry import CorrespondenceState, SymmetryState, symmetry_state, vertex_correspondence
+from mirai.symmetry import (
+    CorrespondenceState,
+    SymmetryState,
+    VertexCorrespondence,
+    symmetry_state,
+    vertex_correspondence,
+)
 
 ORIGIN = (0.0, 0.0, 0.0)
 AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
@@ -115,6 +122,11 @@ class SymmetryReport:
     seam: frozenset[VertexId] = frozenset()
     unpaired: frozenset[VertexId] = frozenset()
     ambiguous: frozenset[VertexId] = frozenset()
+    #: Die Zuordnung, aus der der Befund stammt (für Partner-Lookups ohne neue
+    #: Ableitung, Plan A3); None bei Symmetrie aus. Nicht Teil des Vergleichs.
+    correspondence: Optional[Mapping[VertexId, VertexCorrespondence]] = field(
+        default=None, compare=False, repr=False
+    )
 
 
 def symmetry_report(mesh: Mesh) -> SymmetryReport:
@@ -122,7 +134,8 @@ def symmetry_report(mesh: Mesh) -> SymmetryReport:
     if axis is None:
         return SymmetryReport(None, SymmetryState.OFF)
     by_state: dict[CorrespondenceState, set[VertexId]] = {s: set() for s in CorrespondenceState}
-    for vid, corr in vertex_correspondence(mesh).items():
+    correspondence = vertex_correspondence(mesh)
+    for vid, corr in correspondence.items():
         by_state[corr.state].add(vid)
     return SymmetryReport(
         axis=axis,
@@ -130,4 +143,5 @@ def symmetry_report(mesh: Mesh) -> SymmetryReport:
         seam=frozenset(by_state[CorrespondenceState.SEAM]),
         unpaired=frozenset(by_state[CorrespondenceState.UNPAIRED]),
         ambiguous=frozenset(by_state[CorrespondenceState.AMBIGUOUS]),
+        correspondence=correspondence,
     )

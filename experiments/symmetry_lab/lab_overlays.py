@@ -193,15 +193,32 @@ class _Partners:
         self.signature: object = None
         self.ids: frozenset = frozenset()
 
-    def update(self, mesh: Mesh, source: frozenset, signature: tuple, defer: bool) -> bool:
+    def update(
+        self,
+        mesh: Mesh,
+        source: frozenset,
+        signature: tuple,
+        defer: bool,
+        report: SymmetryReport,
+    ) -> bool:
         """True = `mirrored_selection` lief. Bei gleicher Quelle und laufendem
-        Transform bleiben die IDs (Modul-Docstring)."""
+        Transform bleiben die IDs (Modul-Docstring). Die Zuordnung kommt aus dem
+        Befund (`report.correspondence`), nicht aus einer neuen Ableitung: ein
+        Hover-Wechsel kostet so einen Dict-Lookup statt einer Zuordnung des ganzen
+        Mesh (Plan A3, Referenz-PC 17 ms je Hover-Wechsel auf
+        `man_with_shoes_basemesh`). Der Befund gehört zur selben Geometrie wie
+        `signature`, außer während eines Transforms, wo ein symmetrischer Move die
+        Paarung erhält (Modul-Docstring)."""
         if source == self.source and (
             signature == self.signature
             or (defer and only_positions_differ(self.signature, signature))
         ):
             return False
-        self.ids = frozenset(mirrored_selection(mesh, source)) if source else frozenset()
+        self.ids = (
+            frozenset(mirrored_selection(mesh, source, report.correspondence))
+            if source
+            else frozenset()
+        )
         self.source = source
         self.signature = signature
         return bool(source)
@@ -272,7 +289,7 @@ class SymmetryStateOverlay(GLPointOverlay):
             (self._hover, hover_source, HOVER_PARTNER_LAYER),
             (self._selection, selection_source, SELECTION_PARTNER_LAYER),
         ):
-            if partners.update(mesh, source, signature, defer):
+            if partners.update(mesh, source, signature, defer, report):
                 self.partner_recomputes += 1
             self.set_points(layer, _positions(mesh, partners.ids))
         self.dirty = defer and (

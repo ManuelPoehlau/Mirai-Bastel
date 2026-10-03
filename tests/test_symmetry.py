@@ -329,6 +329,29 @@ class TestMirroredSelection(unittest.TestCase):
         mesh, _definition, ids = build_symmetry_test_mesh()
         self.assertEqual(mirrored_selection(mesh, {ids["seam0"], ids["unpaired"]}), set())
 
+    def test_given_correspondence_is_used_without_deriving(self) -> None:
+        """WP-SYM-LAB-03 Plan A3: ein Aufrufer mit der Zuordnung zur aktuellen
+        Geometrie übergibt sie; das Ergebnis ist dasselbe, abgeleitet wird nichts."""
+        import mirai.symmetry as symmetry
+
+        mesh, _definition, ids = build_symmetry_test_mesh()
+        correspondence = vertex_correspondence(mesh)
+        expected = mirrored_selection(mesh, {ids["left"], ids["seam0"], ids["unpaired"]})
+        original = symmetry.vertex_correspondence
+
+        def forbidden(_mesh):
+            raise AssertionError("vertex_correspondence darf nicht laufen")
+
+        symmetry.vertex_correspondence = forbidden
+        try:
+            got = mirrored_selection(
+                mesh, {ids["left"], ids["seam0"], ids["unpaired"]}, correspondence
+            )
+        finally:
+            symmetry.vertex_correspondence = original
+        self.assertEqual(got, expected)
+        self.assertEqual(got, {ids["right"]})
+
     def test_union_over_multiple_selected_vertices(self) -> None:
         mesh = Mesh()
         v0 = mesh.add_vertex((0.0, 0.0, 0.0))

@@ -349,6 +349,38 @@ def test_hover_only_change_does_not_recompute_plane_or_state():
     assert state.partner_recomputes > partner_runs  # nur die Partner folgen dem Hover
 
 
+def test_hover_and_selection_changes_derive_no_correspondence(monkeypatch):
+    """Plan A3 (Referenz-PC: 17 ms je Hover-Wechsel auf `man_with_shoes_basemesh`,
+    fast alles in `vertex_correspondence`): die Partner kommen aus der Zuordnung
+    des gecachten Befunds, ein Hover- oder Auswahl-Wechsel ordnet das Mesh nicht
+    neu zu. Die Partner bleiben dieselben wie bei frischer Ableitung."""
+    import mirai.symmetry as symmetry
+    import symmetry_lab.lab_symmetry as lab_symmetry
+
+    app, lab = _symmetric()
+    _plane, state = _overlays(lab)
+    fresh = vertex_correspondence(app.scene.mesh)
+    paired = [v for v in visible(app) if fresh[v].state is CorrespondenceState.PAIRED][:4]
+    assert paired
+    calls = []
+    original = symmetry.vertex_correspondence
+
+    def counting(mesh):
+        calls.append(1)
+        return original(mesh)
+
+    monkeypatch.setattr(symmetry, "vertex_correspondence", counting)
+    monkeypatch.setattr(lab_symmetry, "vertex_correspondence", counting)
+    for vid in paired:
+        _hover(app, vid)
+        app.viewport.sync()
+        assert state.hover_partners == {fresh[vid].partner}
+    click(app, *screen(app, paired[0]))
+    app.viewport.sync()
+    assert state.selection_partners == {fresh[paired[0]].partner}
+    assert calls == []
+
+
 def test_selection_only_change_does_not_recompute_plane_or_state():
     app, lab = _symmetric()
     before = _counts(lab)
