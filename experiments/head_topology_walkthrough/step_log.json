@@ -1,0 +1,2962 @@
+[
+ {
+  "id": "D1.1",
+  "intent": "Cube -> 2x2x2",
+  "tool": "Playground Loop Insert x3 (loop_insert)",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Subdivide the cube into 2 x 2 x 2 (mirror leaves 1 column per half).",
+  "checks": [
+   {
+    "claim": "2 x 2 x 2 = 24 quads, 3 loops",
+    "result": "held",
+    "observed": "F=24 V=26"
+   }
+  ],
+  "observed": [
+   "Eight corner vertices of valence 3 (N-poles) exist from the start: {3: 8}"
+  ],
+  "shot": "screenshots/D1_1_cube_2x2x2.png",
+  "verdict": "held",
+  "before": {
+   "V": 8,
+   "E": 12,
+   "F": 6,
+   "face_sizes": {
+    "4": 6
+   },
+   "poles_total": 8,
+   "poles_half_x_gt0": 4,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 0,
+   "N3": 8
+  },
+  "after": {
+   "V": 26,
+   "E": 48,
+   "F": 24,
+   "face_sizes": {
+    "4": 24
+   },
+   "poles_total": 8,
+   "poles_half_x_gt0": 4,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 0,
+   "N3": 8
+  }
+ },
+ {
+  "id": "D1.2",
+  "intent": "Shape cranium: narrower, taller, eye-line layer",
+  "tool": "Core Move + ScaleTool (axis X)",
+  "where": "src (mirai.interaction)",
+  "topology_changing": false,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Shape the cranium by moving whole faces and edge loops, not vertices.",
+  "checks": [
+   {
+    "claim": "a move changes no topology",
+    "result": "held",
+    "observed": "V/E/F unchanged"
+   },
+   {
+    "claim": "mirror stays exact when every move is applied to both sides by hand",
+    "result": "held",
+    "observed": "symmetric=True"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 26,
+   "E": 48,
+   "F": 24,
+   "face_sizes": {
+    "4": 24
+   },
+   "poles_total": 8,
+   "poles_half_x_gt0": 4,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 0,
+   "N3": 8
+  },
+  "after": {
+   "V": 26,
+   "E": 48,
+   "F": 24,
+   "face_sizes": {
+    "4": 24
+   },
+   "poles_total": 8,
+   "poles_half_x_gt0": 4,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 0,
+   "N3": 8
+  }
+ },
+ {
+  "id": "D1.3",
+  "intent": "Extrude lower-front face pair forward (muzzle and jaw mass)",
+  "tool": "Playground ExtrudeTool (region)",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Extrude the lower-front face pair forward-down once.",
+  "checks": [
+   {
+    "claim": "2 faces selected",
+    "result": "held",
+    "observed": "2 faces"
+   },
+   {
+    "claim": "one Extrude gives 'forward-down'",
+    "result": "deviated",
+    "observed": "ExtrudeTool moves the cap along the face normal only (forward); 'down' needs a separate Move"
+   },
+   {
+    "claim": "+6 quads (6 walls - 2 + 2 caps)",
+    "result": "held",
+    "observed": "F 24 -> 30"
+   }
+  ],
+  "observed": [
+   "poles {3: 10, 5: 2}"
+  ],
+  "shot": "screenshots/D1_3_muzzle_mass.png",
+  "verdict": "deviated",
+  "before": {
+   "V": 26,
+   "E": 48,
+   "F": 24,
+   "face_sizes": {
+    "4": 24
+   },
+   "poles_total": 8,
+   "poles_half_x_gt0": 4,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 0,
+   "N3": 8
+  },
+  "after": {
+   "V": 32,
+   "E": 60,
+   "F": 30,
+   "face_sizes": {
+    "4": 30
+   },
+   "poles_total": 12,
+   "poles_half_x_gt0": 6,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 10,
+    "5": 2
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 2,
+   "N3": 10
+  }
+ },
+ {
+  "id": "D1.4",
+  "intent": "Extrude bottom-back faces down (neck)",
+  "tool": "Playground ExtrudeTool (region)",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Extrude the bottom-back faces down once: the neck.",
+  "checks": [
+   {
+    "claim": "2 faces selected",
+    "result": "held",
+    "observed": "2 faces"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 32,
+   "E": 60,
+   "F": 30,
+   "face_sizes": {
+    "4": 30
+   },
+   "poles_total": 12,
+   "poles_half_x_gt0": 6,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 10,
+    "5": 2
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 2,
+   "N3": 10
+  },
+  "after": {
+   "V": 38,
+   "E": 72,
+   "F": 36,
+   "face_sizes": {
+    "4": 36
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  }
+ },
+ {
+  "id": "D1.5",
+  "intent": "Proportion check, three views, subdivision preview",
+  "tool": "screenshots; Subdivision Lab (SubdSurface)",
+  "where": "lab",
+  "topology_changing": false,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "About 20 to 30 quads. Silhouette right, no features.",
+  "checks": [
+   {
+    "claim": "blockout is 20 to 30 quads",
+    "result": "deviated",
+    "observed": "F=36"
+   }
+  ],
+  "observed": [],
+  "shot": "screenshots/D1_5_three_quarter.png",
+  "verdict": "deviated",
+  "before": null,
+  "after": {
+   "V": 38,
+   "E": 72,
+   "F": 36,
+   "face_sizes": {
+    "4": 36
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  }
+ },
+ {
+  "id": "D2.1",
+  "intent": "Insert vertical loops: 4 columns per half",
+  "tool": "Playground Loop Insert x6",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Insert vertical edge loops through the front until there are 4 columns per half (each runs around the whole head: intended, the last global loops).",
+  "checks": [
+   {
+    "claim": "4 columns per half on the front (9 vertex columns, one on the seam)",
+    "result": "held",
+    "observed": "x columns [-0.85, -0.6375, -0.425, -0.2125, 0.0, 0.2125, 0.425, 0.6375, 0.85]"
+   },
+   {
+    "claim": "loops are 'global': every inserted loop crosses the back and the neck",
+    "result": "held",
+    "observed": "F 36 -> 108 for 6 loops"
+   },
+   {
+    "claim": "mirror stays symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [],
+  "shot": "screenshots/D2_1_columns.png",
+  "verdict": "held",
+  "before": {
+   "V": 38,
+   "E": 72,
+   "F": 36,
+   "face_sizes": {
+    "4": 36
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  },
+  "after": {
+   "V": 110,
+   "E": 216,
+   "F": 108,
+   "face_sizes": {
+    "4": 108
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  }
+ },
+ {
+  "id": "D2.2",
+  "intent": "Insert horizontal loops: forehead, brow, eye x2, cheekbone + four muzzle/jaw rows",
+  "tool": "Playground Loop Insert x7",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Insert horizontal loops until rows are forehead, brow, eye x 2, cheekbone, then four rows on the muzzle and jaw mass.",
+  "checks": [
+   {
+    "claim": "5 rows on the upper front",
+    "result": "held",
+    "observed": "y lines [0.2, 0.3375, 0.475, 0.75, 1.025, 1.3]"
+   },
+   {
+    "claim": "4 rows on the muzzle cap",
+    "result": "held",
+    "observed": "y lines [-0.7, -0.475, -0.25, -0.025, 0.2]"
+   },
+   {
+    "claim": "roughly 70 to 80 quads across the full face before features (section C)",
+    "result": "held",
+    "observed": "72 front-facing quads (8 columns x (5 + 4) rows), plus 8 shelf quads"
+   },
+   {
+    "claim": "the front profile on the seam has 9 rows from forehead top to chin (5 + 4)",
+    "result": "deviated",
+    "observed": "10 vertical steps along the seam from forehead top to chin: 5 upper-front + 1 shelf + 4 muzzle; seam vertices (y,z): (1.300,1.0), (1.025,1.0), (0.750,1.0), (0.475,1.0), (0.338,1.0), (0.200,1.5), (0.200,1.0), (-0.025,1.5), (-0.250,1.5), (-0.475,1.5), (-0.700,1.5)"
+   }
+  ],
+  "observed": [
+   "Between the two row groups the muzzle extrusion of D1.3 leaves a horizontal shelf strip (one more quad row) that D2 does not count."
+  ],
+  "shot": "screenshots/D2_2_rows.png",
+  "verdict": "deviated",
+  "before": {
+   "V": 110,
+   "E": 216,
+   "F": 108,
+   "face_sizes": {
+    "4": 108
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  },
+  "after": {
+   "V": 256,
+   "E": 508,
+   "F": 254,
+   "face_sizes": {
+    "4": 254
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  }
+ },
+ {
+  "id": "D2.3",
+  "intent": "Slide the new loops to their anatomical lines",
+  "tool": "Playground Loop Slide x4",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Slide (not move) each new loop to its anatomical line: brow ridge, lower orbit, cheekbone, lip line.",
+  "checks": [
+   {
+    "claim": "slide reaches the target line on every loop",
+    "result": "held",
+    "observed": "{'y1025': 1.0, 'y075': 0.8, 'y0475': 0.6, 'y03375': 0.4}"
+   },
+   {
+    "claim": "slide changes no topology",
+    "result": "held",
+    "observed": "V/E/F unchanged"
+   },
+   {
+    "claim": "mirror stays symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [],
+  "shot": "screenshots/D2_3_slid.png",
+  "verdict": "held",
+  "before": {
+   "V": 256,
+   "E": 508,
+   "F": 254,
+   "face_sizes": {
+    "4": 254
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  },
+  "after": {
+   "V": 256,
+   "E": 508,
+   "F": 254,
+   "face_sizes": {
+    "4": 254
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  }
+ },
+ {
+  "id": "D2.4",
+  "intent": "Check the mirror seam is a vertex column",
+  "tool": "measurement script (no app tool)",
+  "where": "-",
+  "topology_changing": false,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Check that the mirror seam is a vertex column.",
+  "checks": [
+   {
+    "claim": "no edge crosses the plane x=0 (all crossings land on vertices)",
+    "result": "held",
+    "observed": "0 crossing edges, 26 seam vertices"
+   },
+   {
+    "claim": "Check that the mirror seam is a vertex column.",
+    "result": "blocked",
+    "observed": "missing capability: an in-app seam/symmetry readout in the Playground. checked by script only; the Playground has no symmetry (declared) and no seam display"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "blocked",
+  "before": null,
+  "after": {
+   "V": 256,
+   "E": 508,
+   "F": 254,
+   "face_sizes": {
+    "4": 254
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  },
+  "missing": "an in-app seam/symmetry readout in the Playground"
+ },
+ {
+  "id": "D3.1",
+  "intent": "Select muzzle patch (3 columns per half x 4 lower rows)",
+  "tool": "selection (script stand-in for clicks)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Select the muzzle patch (6 x 4 faces across both halves).",
+  "checks": [
+   {
+    "claim": "patch is 6 x 4 = 24 faces",
+    "result": "held",
+    "observed": "24 faces"
+   },
+   {
+    "claim": "patch boundary has 20 edges",
+    "result": "held",
+    "observed": "20 boundary edges"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D3.2",
+  "intent": "Region-extrude forward, 2 segments",
+  "tool": "Playground ExtrudeTool x2",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Region-extrude forward, with 2 segments if the muzzle is long. Result: a closed ring around the muzzle base; its two outer corner vertices per half become E-poles (upper on the cheekbone, lower at the jowl); centre crossings stay regular.",
+  "checks": [
+   {
+    "claim": "4 new E-poles (2 per half) appear",
+    "result": "held",
+    "observed": "4 E-poles: E5@(-0.637,-0.7,1.5); E5@(-0.637,0.2,1.5); E5@(0.637,-0.7,1.5); E5@(0.637,0.2,1.5)"
+   },
+   {
+    "claim": "the E-poles sit at the 4 corners of the patch (x=+-0.6375, y=0.2 / -0.7) on the old base ring",
+    "result": "held",
+    "observed": "E5@(-0.637,-0.7,1.5); E5@(-0.637,0.2,1.5); E5@(0.637,-0.7,1.5); E5@(0.637,0.2,1.5)"
+   },
+   {
+    "claim": "(D intro) the cap corners become N-poles: 4 of them",
+    "result": "held",
+    "observed": "4 N-poles: N3@(-0.637,-0.7,2.1); N3@(-0.637,0.2,2.1); N3@(0.637,-0.7,2.1); N3@(0.637,0.2,2.1)"
+   },
+   {
+    "claim": "centre crossings stay regular (no pole on the seam x=0)",
+    "result": "held",
+    "observed": "poles on seam: 0"
+   },
+   {
+    "claim": "one closed ring of 20 edges around the muzzle base",
+    "result": "held",
+    "observed": "patch boundary 20, cap boundary 20"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.637,-0.7,2.1); N3@(-0.637,0.2,2.1); N3@(0.637,-0.7,2.1); N3@(0.637,0.2,2.1); E5@(-0.637,-0.7,1.5); E5@(-0.637,0.2,1.5); E5@(0.637,-0.7,1.5); E5@(0.637,0.2,1.5); removed: none"
+  ],
+  "shot": "screenshots/D3_2_muzzle_extruded.png",
+  "verdict": "held",
+  "before": {
+   "V": 256,
+   "E": 508,
+   "F": 254,
+   "face_sizes": {
+    "4": 254
+   },
+   "poles_total": 16,
+   "poles_half_x_gt0": 8,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 12,
+    "5": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 4,
+   "N3": 12
+  },
+  "after": {
+   "V": 296,
+   "E": 588,
+   "F": 294,
+   "face_sizes": {
+    "4": 294
+   },
+   "poles_total": 24,
+   "poles_half_x_gt0": 12,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 16,
+    "5": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 8,
+   "N3": 16
+  }
+ },
+ {
+  "id": "D3.3",
+  "intent": "Scale cap down and tilt",
+  "tool": "ScaleTool + RotateTool (src)",
+  "where": "src (mirai.interaction)",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Scale the cap down slightly and tilt it; shape the walls with loop selection on the extrusion's rings.",
+  "checks": [
+   {
+    "claim": "no topology change",
+    "result": "held",
+    "observed": "V/E/F unchanged"
+   },
+   {
+    "claim": "mirror symmetric (cap is symmetric about x=0, uniform scale + x-axis rotation)",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "'loop selection on the extrusion's rings' was not exercised: shape came from the cap scale and tilt only."
+  ],
+  "shot": "screenshots/D3_3_muzzle_shaped.png",
+  "verdict": "held",
+  "before": {
+   "V": 296,
+   "E": 588,
+   "F": 294,
+   "face_sizes": {
+    "4": 294
+   },
+   "poles_total": 24,
+   "poles_half_x_gt0": 12,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 16,
+    "5": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 8,
+   "N3": 16
+  },
+  "after": {
+   "V": 296,
+   "E": 588,
+   "F": 294,
+   "face_sizes": {
+    "4": 294
+   },
+   "poles_total": 24,
+   "poles_half_x_gt0": 12,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 16,
+    "5": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 8,
+   "N3": 16
+  }
+ },
+ {
+  "id": "D4.1",
+  "intent": "Nose: select the 2 centre faces of the top cap row",
+  "tool": "selection (script)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Select the 2 centre faces of the top cap row.",
+  "checks": [
+   {
+    "claim": "cap is 6 columns x 4 rows",
+    "result": "held",
+    "observed": "6 x 4"
+   },
+   {
+    "claim": "nose patch boundary is 6 edges",
+    "result": "held",
+    "observed": "6"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D4.2",
+  "intent": "Region-extrude forward and up; shape the tip",
+  "tool": "Playground ExtrudeTool + Move",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Region-extrude forward and up. Result: closed 6-edge ring around the nose base; four E-poles at its corners.",
+  "checks": [
+   {
+    "claim": "4 new E-poles at the corners of the nose patch",
+    "result": "held",
+    "observed": "4 E-poles: E5@(-0.187,-0.055,2.066); E5@(-0.187,0.14,2.031); E5@(0.187,-0.055,2.066); E5@(0.187,0.14,2.031)"
+   },
+   {
+    "claim": "(D intro) 4 further N-poles appear on the nose cap corners",
+    "result": "held",
+    "observed": "4 N-poles: N3@(-0.187,0.068,2.312); N3@(-0.187,0.263,2.277); N3@(0.187,0.068,2.312); N3@(0.187,0.263,2.277)"
+   },
+   {
+    "claim": "nose ring is 6 edges",
+    "result": "held",
+    "observed": "6"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.187,0.068,2.312); N3@(-0.187,0.263,2.277); N3@(0.187,0.068,2.312); N3@(0.187,0.263,2.277); E5@(-0.187,-0.055,2.066); E5@(-0.187,0.14,2.031); E5@(0.187,-0.055,2.066); E5@(0.187,0.14,2.031); removed: none"
+  ],
+  "shot": "screenshots/D4_2_nose.png",
+  "verdict": "held",
+  "before": {
+   "V": 296,
+   "E": 588,
+   "F": 294,
+   "face_sizes": {
+    "4": 294
+   },
+   "poles_total": 24,
+   "poles_half_x_gt0": 12,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 16,
+    "5": 8
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 8,
+   "N3": 16
+  },
+  "after": {
+   "V": 302,
+   "E": 600,
+   "F": 300,
+   "face_sizes": {
+    "4": 300
+   },
+   "poles_total": 32,
+   "poles_half_x_gt0": 16,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 20,
+    "5": 12
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 12,
+   "N3": 20
+  }
+ },
+ {
+  "id": "D4.3",
+  "intent": "Leave the underside alone",
+  "tool": "-",
+  "where": "-",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Leave the underside alone: nostrils are secondary (D10).",
+  "checks": [
+   {
+    "claim": "no operation required",
+    "result": "held",
+    "observed": "nothing done"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D5.1",
+  "intent": "Select the 2 x 2 eye patch per side",
+  "tool": "selection (script)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "2 x 2 eye patch per side, on the eye rows.",
+  "checks": [
+   {
+    "claim": "2 x 2 = 4 faces per side",
+    "result": "held",
+    "observed": "4 / 4"
+   },
+   {
+    "claim": "circumferential count (patch boundary) is 8 edges",
+    "result": "held",
+    "observed": "8"
+   },
+   {
+    "claim": "eye patch is the mirror of the other (selected by hand, once per side)",
+    "result": "held",
+    "observed": "mirror_faces(R) == L"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D5.2",
+  "intent": "Inset once: orbit-rim ring",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset by extrude 0 + scale)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset once: the orbit-rim ring. Four E-poles appear on the patch corners; canthi land on the left and right mid-side vertices, both regular.",
+  "checks": [
+   {
+    "claim": "4 new E-poles per eye on the patch corners (8 total)",
+    "result": "held",
+    "observed": "8 E-poles: E5@(-0.637,0.4,1.0); E5@(-0.637,0.8,1.0); E5@(-0.212,0.4,1.0); E5@(-0.212,0.8,1.0); E5@(0.212,0.4,1.0); E5@(0.212,0.8,1.0); E5@(0.637,0.4,1.0); E5@(0.637,0.8,1.0)"
+   },
+   {
+    "claim": "E-poles sit exactly on the 4 corners of the 2 x 2 patch (x=0.2125/0.6375, y=0.4/0.8)",
+    "result": "held",
+    "observed": "E5@(-0.637,0.4,1.0); E5@(-0.637,0.8,1.0); E5@(-0.212,0.4,1.0); E5@(-0.212,0.8,1.0); E5@(0.212,0.4,1.0); E5@(0.212,0.8,1.0); E5@(0.637,0.4,1.0); E5@(0.637,0.8,1.0)"
+   },
+   {
+    "claim": "canthi (left/right mid-side vertices) are regular (valence 4)",
+    "result": "held",
+    "observed": "valences [4, 4, 4, 4]"
+   },
+   {
+    "claim": "(D intro) inner corners are N-poles until the centre is opened: 4 per eye",
+    "result": "held",
+    "observed": "8 N-poles: N3@(-0.578,0.456,1.0); N3@(-0.578,0.744,1.0); N3@(-0.272,0.456,1.0); N3@(-0.272,0.744,1.0); N3@(0.272,0.456,1.0); N3@(0.272,0.744,1.0); N3@(0.578,0.456,1.0); N3@(0.578,0.744,1.0)"
+   },
+   {
+    "claim": "mirror symmetric after doing both eyes by hand",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.578,0.456,1.0); N3@(-0.578,0.744,1.0); N3@(-0.272,0.456,1.0); N3@(-0.272,0.744,1.0); N3@(0.272,0.456,1.0); N3@(0.272,0.744,1.0); N3@(0.578,0.456,1.0); N3@(0.578,0.744,1.0); E5@(-0.637,0.4,1.0); E5@(-0.637,0.8,1.0); E5@(-0.212,0.4,1.0); E5@(-0.212,0.8,1.0); E5@(0.212,0.4,1.0); E5@(0.212,0.8,1.0); E5@(0.637,0.4,1.0); E5@(0.637,0.8,1.0); removed: none"
+  ],
+  "shot": "screenshots/D5_2_inset1.png",
+  "verdict": "held",
+  "before": {
+   "V": 302,
+   "E": 600,
+   "F": 300,
+   "face_sizes": {
+    "4": 300
+   },
+   "poles_total": 32,
+   "poles_half_x_gt0": 16,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 20,
+    "5": 12
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 12,
+   "N3": 20
+  },
+  "after": {
+   "V": 318,
+   "E": 632,
+   "F": 316,
+   "face_sizes": {
+    "4": 316
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  }
+ },
+ {
+  "id": "D5.3",
+  "intent": "Inset again: lid-fold ring",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset by extrude 0 + scale)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset again: the lid-fold ring. No new poles.",
+  "checks": [
+   {
+    "claim": "pole count per eye unchanged (4 E + 4 N)",
+    "result": "held",
+    "observed": "right eye 8 poles, left 8"
+   },
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "mirror symmetric after doing both eyes by hand",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.535,0.496,1.0); N3@(-0.535,0.704,1.0); N3@(-0.315,0.496,1.0); N3@(-0.315,0.704,1.0); N3@(0.315,0.496,1.0); N3@(0.315,0.704,1.0); N3@(0.535,0.496,1.0); N3@(0.535,0.704,1.0); removed: N3@(-0.578,0.456,1.0); N3@(-0.578,0.744,1.0); N3@(-0.272,0.456,1.0); N3@(-0.272,0.744,1.0); N3@(0.272,0.456,1.0); N3@(0.272,0.744,1.0); N3@(0.578,0.456,1.0); N3@(0.578,0.744,1.0)",
+   "literal reading 'no new poles' is false for valence-3 poles: 8 added, 8 removed (they move one ring inward); the document's own D intro predicts this ('inner corners N-poles until the centre is opened or inset again'). See findings F-03."
+  ],
+  "shot": "screenshots/D5_3_inset2.png",
+  "verdict": "held",
+  "before": {
+   "V": 318,
+   "E": 632,
+   "F": 316,
+   "face_sizes": {
+    "4": 316
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  },
+  "after": {
+   "V": 334,
+   "E": 664,
+   "F": 332,
+   "face_sizes": {
+    "4": 332
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  }
+ },
+ {
+  "id": "D5.4",
+  "intent": "Inset again: lid-margin ring",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset by extrude 0 + scale)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset again: the lid-margin ring. No new poles.",
+  "checks": [
+   {
+    "claim": "pole count per eye unchanged (4 E + 4 N)",
+    "result": "held",
+    "observed": "right eye 8 poles, left 8"
+   },
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "mirror symmetric after doing both eyes by hand",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.504,0.525,1.0); N3@(-0.504,0.675,1.0); N3@(-0.346,0.525,1.0); N3@(-0.346,0.675,1.0); N3@(0.346,0.525,1.0); N3@(0.346,0.675,1.0); N3@(0.504,0.525,1.0); N3@(0.504,0.675,1.0); removed: N3@(-0.535,0.496,1.0); N3@(-0.535,0.704,1.0); N3@(-0.315,0.496,1.0); N3@(-0.315,0.704,1.0); N3@(0.315,0.496,1.0); N3@(0.315,0.704,1.0); N3@(0.535,0.496,1.0); N3@(0.535,0.704,1.0)",
+   "literal reading 'no new poles' is false for valence-3 poles: 8 added, 8 removed (they move one ring inward); the document's own D intro predicts this ('inner corners N-poles until the centre is opened or inset again'). See findings F-03."
+  ],
+  "shot": "screenshots/D5_4_inset3.png",
+  "verdict": "held",
+  "before": {
+   "V": 334,
+   "E": 664,
+   "F": 332,
+   "face_sizes": {
+    "4": 332
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  },
+  "after": {
+   "V": 350,
+   "E": 696,
+   "F": 348,
+   "face_sizes": {
+    "4": 348
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  }
+ },
+ {
+  "id": "D5.5",
+  "intent": "Extrude innermost 2 x 2 inward and scale down (lid thickness, socket depth)",
+  "tool": "Playground ExtrudeTool (inward) + ScaleTool",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Instead of deleting the centre, extrude the innermost 2 x 2 inward (into the skull) and scale it down.",
+  "checks": [
+   {
+    "claim": "pole count per eye unchanged (4 E + 4 N)",
+    "result": "held",
+    "observed": "right eye 8 poles, left 8"
+   },
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "mirror symmetric after doing both eyes by hand",
+    "result": "held",
+    "observed": "True"
+   },
+   {
+    "claim": "innermost cap is an 8-edge ring",
+    "result": "held",
+    "observed": "8 / 8"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.488,0.54,0.9); N3@(-0.488,0.66,0.9); N3@(-0.362,0.54,0.9); N3@(-0.362,0.66,0.9); N3@(0.362,0.54,0.9); N3@(0.362,0.66,0.9); N3@(0.488,0.54,0.9); N3@(0.488,0.66,0.9); removed: N3@(-0.504,0.525,1.0); N3@(-0.504,0.675,1.0); N3@(-0.346,0.525,1.0); N3@(-0.346,0.675,1.0); N3@(0.346,0.525,1.0); N3@(0.346,0.675,1.0); N3@(0.504,0.525,1.0); N3@(0.504,0.675,1.0)",
+   "literal reading 'no new poles' is false for valence-3 poles: 8 added, 8 removed (they move one ring inward); the document's own D intro predicts this ('inner corners N-poles until the centre is opened or inset again'). See findings F-03."
+  ],
+  "shot": "screenshots/D5_5_thickness.png",
+  "verdict": "held",
+  "before": {
+   "V": 350,
+   "E": 696,
+   "F": 348,
+   "face_sizes": {
+    "4": 348
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  },
+  "after": {
+   "V": 366,
+   "E": 728,
+   "F": 364,
+   "face_sizes": {
+    "4": 364
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  }
+ },
+ {
+  "id": "D5.6",
+  "intent": "Delete the extruded cap: the hole is an 8-edge border",
+  "tool": "none: the Playground has no delete-face / open-hole operation",
+  "where": "-",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Delete the extruded cap. The hole is an 8-edge border; its corner vertices become regular border vertices.",
+  "checks": [
+   {
+    "claim": "Delete the extruded cap. The hole is an 8-edge border; its corner vertices become regular border vertices.",
+    "result": "blocked",
+    "observed": "missing capability: delete faces (open a hole). ExtrudeTool only removes the faces it replaces; no tool removes a cap. Prediction checked on a throw-away copy below, not in the model."
+   }
+  ],
+  "observed": [
+   "PROBE on a copy (core Mesh.remove_face, not an artist tool): border vertices of the holes have valences [3]; interior poles after opening both eyes in the eye zones: 8 E, 0 N"
+  ],
+  "shot": null,
+  "verdict": "blocked",
+  "before": null,
+  "after": null,
+  "missing": "delete faces (open a hole)"
+ },
+ {
+  "id": "D6.1",
+  "intent": "Select the 4 x 2 mouth patch on the muzzle cap",
+  "tool": "selection (script)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Select the 4 x 2 patch (12-edge boundary).",
+  "checks": [
+   {
+    "claim": "4 x 2 = 8 faces",
+    "result": "held",
+    "observed": "8"
+   },
+   {
+    "claim": "12-edge boundary",
+    "result": "held",
+    "observed": "12"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D6.2",
+  "intent": "Inset: outer orbicularis ring",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset by extrude 0 + scale)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset: the outer orbicularis ring. E-poles on the four patch corners; the commissure is the mid-vertex of each short side: regular.",
+  "checks": [
+   {
+    "claim": "4 E-poles (2 per half) on the patch corners",
+    "result": "held",
+    "observed": "4 E-poles: E5@(-0.374,-0.445,2.134); E5@(-0.374,-0.055,2.066); E5@(0.374,-0.445,2.134); E5@(0.374,-0.055,2.066)"
+   },
+   {
+    "claim": "commissure (mid vertex of each short side) is regular (valence 4)",
+    "result": "held",
+    "observed": "2 vertices, valences [4, 4]"
+   },
+   {
+    "claim": "(D intro) 4 inner-corner N-poles",
+    "result": "held",
+    "observed": "4 N-poles"
+   },
+   {
+    "claim": "no pole at the commissure or on the seam",
+    "result": "held",
+    "observed": "seam poles 0"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.299,-0.406,2.128); N3@(-0.299,-0.094,2.072); N3@(0.299,-0.406,2.128); N3@(0.299,-0.094,2.072); E5@(-0.374,-0.445,2.134); E5@(-0.374,-0.055,2.066); E5@(0.374,-0.445,2.134); E5@(0.374,-0.055,2.066); removed: none"
+  ],
+  "shot": "screenshots/D6_2_mouth_inset1.png",
+  "verdict": "held",
+  "before": {
+   "V": 366,
+   "E": 728,
+   "F": 364,
+   "face_sizes": {
+    "4": 364
+   },
+   "poles_total": 48,
+   "poles_half_x_gt0": 24,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 28,
+    "5": 20
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 20,
+   "N3": 28
+  },
+  "after": {
+   "V": 378,
+   "E": 752,
+   "F": 376,
+   "face_sizes": {
+    "4": 376
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D6.3",
+  "intent": "Inset: vermilion-border ring",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset by extrude 0 + scale)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset: the vermilion-border ring.",
+  "checks": [
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "pole count in the mouth zone unchanged",
+    "result": "held",
+    "observed": "8 vs 8"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.239,-0.375,2.122); N3@(-0.239,-0.125,2.078); N3@(0.239,-0.375,2.122); N3@(0.239,-0.125,2.078); removed: N3@(-0.299,-0.406,2.128); N3@(-0.299,-0.094,2.072); N3@(0.299,-0.406,2.128); N3@(0.299,-0.094,2.072)",
+   "literal reading 'no new poles' is false for valence-3 poles: 4 added, 4 removed (they move one ring inward). See findings F-03."
+  ],
+  "shot": "screenshots/D6_3_mouth_inset2.png",
+  "verdict": "held",
+  "before": {
+   "V": 378,
+   "E": 752,
+   "F": 376,
+   "face_sizes": {
+    "4": 376
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 390,
+   "E": 776,
+   "F": 388,
+   "face_sizes": {
+    "4": 388
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D6.4",
+  "intent": "Inset: lip-margin ring",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset by extrude 0 + scale)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset: the lip-margin ring.",
+  "checks": [
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "pole count in the mouth zone unchanged",
+    "result": "held",
+    "observed": "8 vs 8"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.191,-0.35,2.118); N3@(-0.191,-0.15,2.082); N3@(0.191,-0.35,2.118); N3@(0.191,-0.15,2.082); removed: N3@(-0.239,-0.375,2.122); N3@(-0.239,-0.125,2.078); N3@(0.239,-0.375,2.122); N3@(0.239,-0.125,2.078)",
+   "literal reading 'no new poles' is false for valence-3 poles: 4 added, 4 removed (they move one ring inward). See findings F-03."
+  ],
+  "shot": "screenshots/D6_4_mouth_inset3.png",
+  "verdict": "held",
+  "before": {
+   "V": 390,
+   "E": 776,
+   "F": 388,
+   "face_sizes": {
+    "4": 388
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 402,
+   "E": 800,
+   "F": 400,
+   "face_sizes": {
+    "4": 400
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D6.5",
+  "intent": "Extrude innermost patch inward (lip thickness and roll)",
+  "tool": "Playground ExtrudeTool (inward) + ScaleTool",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Extrude the innermost patch inward: lip thickness and roll.",
+  "checks": [
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "pole count in the mouth zone unchanged",
+    "result": "held",
+    "observed": "8 vs 8"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.172,-0.35,2.057); N3@(-0.172,-0.171,2.025); N3@(0.172,-0.35,2.057); N3@(0.172,-0.171,2.025); removed: N3@(-0.191,-0.35,2.118); N3@(-0.191,-0.15,2.082); N3@(0.191,-0.35,2.118); N3@(0.191,-0.15,2.082)",
+   "literal reading 'no new poles' is false for valence-3 poles: 4 added, 4 removed (they move one ring inward). See findings F-03."
+  ],
+  "shot": "screenshots/D6_5_mouth_thickness.png",
+  "verdict": "held",
+  "before": {
+   "V": 402,
+   "E": 800,
+   "F": 400,
+   "face_sizes": {
+    "4": 400
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 414,
+   "E": 824,
+   "F": 412,
+   "face_sizes": {
+    "4": 412
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D6.6",
+  "intent": "Extrude inward again and scale down (start of the mouth bag), delete the cap",
+  "tool": "Playground ExtrudeTool (inward) + ScaleTool",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Extrude inward again and scale down: start of the mouth bag. Delete the cap. Result: 12-edge count, three concentric rings, lip thickness, two poles per half, none at the commissure.",
+  "checks": [
+   {
+    "claim": "no new E-poles",
+    "result": "held",
+    "observed": "0 new E-poles"
+   },
+   {
+    "claim": "pole count in the mouth zone unchanged",
+    "result": "held",
+    "observed": "8 vs 8"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   },
+   {
+    "claim": "innermost cap is a 12-edge ring",
+    "result": "held",
+    "observed": "12"
+   },
+   {
+    "claim": "Extrude inward again and scale down: start of the mouth bag. Delete the cap. Result: 12-edge count, three concentric rings, lip thickness, two poles per half, none at the commissure.",
+    "result": "blocked",
+    "observed": "missing capability: delete faces (open a hole). the cap stays; the 'delete the cap' half of this step cannot be done with a tool"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.138,-0.367,1.857); N3@(-0.138,-0.223,1.831); N3@(0.138,-0.367,1.857); N3@(0.138,-0.223,1.831); removed: N3@(-0.172,-0.35,2.057); N3@(-0.172,-0.171,2.025); N3@(0.172,-0.35,2.057); N3@(0.172,-0.171,2.025)",
+   "literal reading 'no new poles' is false for valence-3 poles: 4 added, 4 removed (they move one ring inward). See findings F-03.",
+   "PROBE on a copy (core Mesh.remove_face, not an artist tool): mouth poles after opening: 4 E, 0 N"
+  ],
+  "shot": "screenshots/D6_6_mouth_bag.png",
+  "verdict": "blocked",
+  "before": {
+   "V": 414,
+   "E": 824,
+   "F": 412,
+   "face_sizes": {
+    "4": 412
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 426,
+   "E": 848,
+   "F": 424,
+   "face_sizes": {
+    "4": 424
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "missing": "delete faces (open a hole)"
+ },
+ {
+  "id": "D7.1",
+  "intent": "Count poles: expect about 10 per half (4 eye, 2 muzzle, 2 nose, 2 mouth)",
+  "tool": "measurement script; Playground has no valence display or select-by-valence",
+  "where": "-",
+  "topology_changing": false,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Display vertex valence (or select by valence 3 and 5). Expect about 10 poles per half: 4 eye, 2 muzzle, 2 nose, 2 mouth.",
+  "checks": [
+   {
+    "claim": "Display vertex valence (or select by valence 3 and 5). Expect about 10 poles per half: 4 eye, 2 muzzle, 2 nose, 2 mouth.",
+    "result": "blocked",
+    "observed": "missing capability: vertex valence display / select by valence. numbers below come from the measurement script, not from a Playground tool"
+   },
+   {
+    "claim": "about 10 poles per half in total (E and N together)",
+    "result": "deviated",
+    "observed": "28 per half (12 E + 16 N)"
+   },
+   {
+    "claim": "about 10 E-poles per half (only valence-5 counted)",
+    "result": "held",
+    "observed": "12 E-poles per half"
+   },
+   {
+    "claim": "4 E-poles per eye",
+    "result": "held",
+    "observed": "4"
+   },
+   {
+    "claim": "2 E-poles per half at the mouth",
+    "result": "held",
+    "observed": "2"
+   }
+  ],
+  "observed": [
+   "all poles per half (x>0): 28 = 12 E + 16 N; on seam: 0",
+   "per half by zone: blockout (D1)/E: 2, blockout (D1)/N: 6, eye/E: 4, eye/N: 4, mouth/E: 2, mouth/N: 2, muzzle/E: 2, muzzle/N: 2, nose/E: 2, nose/N: 2",
+   "PROBE on a copy with both eye caps and the mouth cap removed: per half 22 poles = 12 E + 10 N"
+  ],
+  "shot": null,
+  "verdict": "blocked",
+  "before": null,
+  "after": null,
+  "missing": "vertex valence display / select by valence"
+ },
+ {
+  "id": "D7.2",
+  "intent": "Cheekbone: eye's lower-outer E-pole and muzzle's upper-outer E-pole one edge apart on the same column",
+  "tool": "measurement script (BFS on the mesh graph)",
+  "where": "-",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "The eye's lower-outer E-pole and the muzzle's upper-outer E-pole sit one edge apart on the same column.",
+  "checks": [
+   {
+    "claim": "both poles exist and lie on one column (x=0.6375)",
+    "result": "held",
+    "observed": "eye pole VertexId(179) valence 5; muzzle pole VertexId(79) valence 5"
+   },
+   {
+    "claim": "they are one edge apart",
+    "result": "deviated",
+    "observed": "graph distance = 2 edges"
+   }
+  ],
+  "observed": [
+   "The extra edge is the horizontal shelf strip D1.3 leaves on top of the muzzle (front: 5 rows, shelf, 4 rows)."
+  ],
+  "shot": null,
+  "verdict": "deviated",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D7.3",
+  "intent": "Nasal side: spin one edge to move the eye's lower-inner pole toward the nose bridge",
+  "tool": "none: no Spin Edge in the Playground",
+  "where": "-",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "If the tear trough must stay smooth, spin one edge to move the pole one step toward the nose bridge.",
+  "checks": [
+   {
+    "claim": "If the tear trough must stay smooth, spin one edge to move the pole one step toward the nose bridge.",
+    "result": "blocked",
+    "observed": "missing capability: spin edge. no Playground tool rotates an edge within its two faces; Collapse/Split/Connect exist but are not equivalent"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "blocked",
+  "before": null,
+  "after": null,
+  "missing": "spin edge"
+ },
+ {
+  "id": "D7.4",
+  "intent": "Slide the cheekbone row to the zygomatic line (do not cut)",
+  "tool": "Playground Loop Slide (loop picked with Edge Loop selection)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Slide the cheekbone row to the zygomatic line; do not cut.",
+  "checks": [
+   {
+    "claim": "cheekbone-row loop (y=0.4) can be selected as a closed loop and slid",
+    "result": "deviated",
+    "observed": "(2, False, 'LoopSlideError: Vertex VertexId(175): kein eindeutiger Loop-Walk m\u00f6glich.')"
+   },
+   {
+    "claim": "shelf-edge loop (y=0.2) can be selected as a closed loop and slid",
+    "result": "deviated",
+    "observed": "(8, False, 'LoopSlideError: Vertex VertexId(15): kein eindeutiger Loop-Walk m\u00f6glich.')"
+   }
+  ],
+  "observed": [
+   "edge loop from the centre edge at y=0.4: (2, False, 'LoopSlideError: Vertex VertexId(175): kein eindeutiger Loop-Walk m\u00f6glich.'); at y=0.2: (8, False, 'LoopSlideError: Vertex VertexId(15): kein eindeutiger Loop-Walk m\u00f6glich.')"
+  ],
+  "shot": null,
+  "verdict": "deviated",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D8.1",
+  "intent": "Loop-select the brow row (forehead/brow line, y=1.0), move it forward and down",
+  "tool": "Playground Edge Loop selection + Core Move",
+  "where": "playground + src",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Loop-select the brow row and move it forward and down over the upper orbit ring.",
+  "checks": [
+   {
+    "claim": "the brow-row loop is a closed edge loop around the head",
+    "result": "held",
+    "observed": "closed=True, 20 edges"
+   },
+   {
+    "claim": "a move changes no topology",
+    "result": "held",
+    "observed": "V/E/F unchanged"
+   },
+   {
+    "claim": "mirror stays symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "Only the front vertices of the loop were moved (the script restricts the selection by position; Playground has box select)."
+  ],
+  "shot": "screenshots/D8_1_brow_forward.png",
+  "verdict": "held",
+  "before": {
+   "V": 426,
+   "E": 848,
+   "F": 424,
+   "face_sizes": {
+    "4": 424
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 426,
+   "E": 848,
+   "F": 424,
+   "face_sizes": {
+    "4": 424
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D8.2",
+  "intent": "Slide the upper orbit ring under the brow",
+  "tool": "Playground Loop Slide (loop = first orbit ring of the right eye)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Slide the upper orbit ring under it to deepen the shadow line.",
+  "checks": [
+   {
+    "claim": "the orbit ring of the right eye is selected as a closed loop",
+    "result": "held",
+    "observed": "closed=True, 8 edges"
+   },
+   {
+    "claim": "the orbit ring of the right eye can be slid (done once per eye by hand)",
+    "result": "held",
+    "observed": "slid"
+   },
+   {
+    "claim": "the orbit ring of the left eye is selected as a closed loop",
+    "result": "held",
+    "observed": "closed=True, 8 edges"
+   },
+   {
+    "claim": "the orbit ring of the left eye can be slid (done once per eye by hand)",
+    "result": "held",
+    "observed": "slid"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "Slid within the orbit-rim annulus (towards the patch boundary), not 'under the brow': the ring lies between the outer ring (E-poles) and the next inset ring."
+  ],
+  "shot": "screenshots/D8_2_orbit_slide.png",
+  "verdict": "held",
+  "before": {
+   "V": 426,
+   "E": 848,
+   "F": 424,
+   "face_sizes": {
+    "4": 424
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 426,
+   "E": 848,
+   "F": 424,
+   "face_sizes": {
+    "4": 424
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D8.3",
+  "intent": "If the ridge needs a harder edge: insert one loop through the orbit-rim face ring (local)",
+  "tool": "Playground Loop Insert on a radial edge of the orbit-rim ring",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Insert one loop through the orbit-rim face ring; that face ring closes around the eye, so the new loop stays local.",
+  "checks": [
+   {
+    "claim": "each loop closes around its eye: 8 new edges and 8 new vertices per eye",
+    "result": "held",
+    "observed": "[8, 8] edges, 16 vertices"
+   },
+   {
+    "claim": "the loops stay inside the eye zones (no new vertex outside)",
+    "result": "held",
+    "observed": "0 outside"
+   },
+   {
+    "claim": "no existing vertex moved",
+    "result": "held",
+    "observed": "positions unchanged"
+   },
+   {
+    "claim": "pole set unchanged",
+    "result": "held",
+    "observed": "56 -> 56"
+   },
+   {
+    "claim": "mirror symmetric (the loop was inserted once per eye by hand)",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "edge ring through the radial edge: [8, 8] edges (right, left)"
+  ],
+  "shot": "screenshots/D8_3_orbit_rim_loop.png",
+  "verdict": "held",
+  "before": {
+   "V": 426,
+   "E": 848,
+   "F": 424,
+   "face_sizes": {
+    "4": 424
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 442,
+   "E": 880,
+   "F": 440,
+   "face_sizes": {
+    "4": 440
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D9.1",
+  "intent": "Slide the bottom muzzle-wall row to the jaw line",
+  "tool": "Playground Loop Slide (loop picked with Edge Loop selection)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Slide the bottom muzzle-wall row to the jaw line; it continues back to below the ear.",
+  "checks": [
+   {
+    "claim": "the bottom muzzle row (y=-0.7, through the base-ring corner poles) can be selected as a closed loop and slid",
+    "result": "deviated",
+    "observed": "6 edges, closed=False, slide: not closed"
+   },
+   {
+    "claim": "a ring around the muzzle wall (no poles on it) can be slid",
+    "result": "held",
+    "observed": "20 edges, closed=True, slide: slid"
+   }
+  ],
+  "observed": [
+   "row y=-0.7 on the muzzle base ring: 6 edges, closed=False, slide: not closed; ring around the muzzle wall (z=1.8, underside): 20 edges, closed=True, slide: slid"
+  ],
+  "shot": null,
+  "verdict": "deviated",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D9.2",
+  "intent": "Extrude the neck bottom once more",
+  "tool": "Playground ExtrudeTool",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Extrude the neck bottom once more if length is needed.",
+  "checks": [
+   {
+    "claim": "neck cap selected (all columns of the neck bottom)",
+    "result": "held",
+    "observed": "8 faces"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 442,
+   "E": 880,
+   "F": 440,
+   "face_sizes": {
+    "4": 440
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 460,
+   "E": 916,
+   "F": 458,
+   "face_sizes": {
+    "4": 458
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D9.3a",
+  "intent": "Ear patch: 2 x 2 faces on the side of the skull exist after D2?",
+  "tool": "selection (script)",
+  "where": "playground",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Ear: select a 2 x 2 patch on the side of the skull (behind the jaw hinge).",
+  "checks": [
+   {
+    "claim": "the D2 grid gives a side grid fine enough for a 2 x 2 ear patch that sits behind the jaw hinge",
+    "result": "deviated",
+    "observed": "depth columns on the side: 2 ([-0.5, 0.5]); a 2 x 2 patch would span half of the head depth each"
+   }
+  ],
+  "observed": [
+   "side face columns along depth (z centres): [-0.5, 0.5, 0.52, 1.25]; rows (y centres): [-0.587, -0.362, -0.137, 0.088, 0.3, 0.5, 0.7, 0.893, 0.9, 1.142, 1.15]"
+  ],
+  "shot": null,
+  "verdict": "deviated",
+  "before": null,
+  "after": null
+ },
+ {
+  "id": "D9.3b",
+  "intent": "Corrective: two coronal loops (z=-0.5 and z=0.5) to get a side grid",
+  "tool": "Playground Loop Insert x2",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "global",
+  "planned": false,
+  "doc_claim": "(not in the document) global loops added after D2, contradicting 'the last global loops'.",
+  "checks": [
+   {
+    "claim": "each loop runs around the head (global, > 20 new quads)",
+    "result": "held",
+    "observed": "F 458 -> 530"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "Each coronal loop also cuts the neck, the jaw underside and the eye-adjacent forehead rows: it is a global cut after the features exist."
+  ],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 460,
+   "E": 916,
+   "F": 458,
+   "face_sizes": {
+    "4": 458
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 532,
+   "E": 1060,
+   "F": 530,
+   "face_sizes": {
+    "4": 530
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  }
+ },
+ {
+  "id": "D9.3c",
+  "intent": "Ear: inset once (ear-root ring)",
+  "tool": "Playground ExtrudeTool + ScaleTool (inset)",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Inset once (ear-root ring); extrude out for the ear volume, inset the outer face for the helix rim, extrude in for the concha. Result: a rigid ear with four poles at its root.",
+  "checks": [
+   {
+    "claim": "2 x 2 ear patch on each side",
+    "result": "held",
+    "observed": "4 / 4"
+   },
+   {
+    "claim": "4 E-poles per ear at the root",
+    "result": "held",
+    "observed": "8 E-poles (both ears)"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.85,0.25,-0.375); N3@(-0.85,0.25,0.375); N3@(-0.85,0.55,-0.375); N3@(-0.85,0.55,0.375); N3@(0.85,0.25,-0.375); N3@(0.85,0.25,0.375); N3@(0.85,0.55,-0.375); N3@(0.85,0.55,0.375); E5@(-0.85,0.2,-0.5); E5@(-0.85,0.2,0.5); E5@(-0.85,0.6,-0.5); E5@(-0.85,0.6,0.5); E5@(0.85,0.2,-0.5); E5@(0.85,0.2,0.5); E5@(0.85,0.6,-0.5); E5@(0.85,0.6,0.5)"
+  ],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 532,
+   "E": 1060,
+   "F": 530,
+   "face_sizes": {
+    "4": 530
+   },
+   "poles_total": 56,
+   "poles_half_x_gt0": 28,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 32,
+    "5": 24
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 24,
+   "N3": 32
+  },
+  "after": {
+   "V": 548,
+   "E": 1092,
+   "F": 546,
+   "face_sizes": {
+    "4": 546
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  }
+ },
+ {
+  "id": "D9.3d",
+  "intent": "Ear: extrude out, inset outer face (helix), extrude in (concha)",
+  "tool": "Playground ExtrudeTool + ScaleTool",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Extrude out for the ear volume, inset the outer face for the helix rim, extrude in for the concha.",
+  "checks": [
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   },
+   {
+    "claim": "the E-poles at the ear root are unchanged by the later ear steps",
+    "result": "held",
+    "observed": "0 new E-poles"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.95,0.295,-0.262); N3@(-0.95,0.295,0.262); N3@(-0.95,0.505,-0.262); N3@(-0.95,0.505,0.262); N3@(0.95,0.295,-0.262); N3@(0.95,0.295,0.262); N3@(0.95,0.505,-0.262); N3@(0.95,0.505,0.262); removed: N3@(-0.85,0.25,-0.375); N3@(-0.85,0.25,0.375); N3@(-0.85,0.55,-0.375); N3@(-0.85,0.55,0.375); N3@(0.85,0.25,-0.375); N3@(0.85,0.25,0.375); N3@(0.85,0.55,-0.375); N3@(0.85,0.55,0.375)"
+  ],
+  "shot": "screenshots/D9_3_ear.png",
+  "verdict": "held",
+  "before": {
+   "V": 548,
+   "E": 1092,
+   "F": 546,
+   "face_sizes": {
+    "4": 546
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  },
+  "after": {
+   "V": 596,
+   "E": 1188,
+   "F": 594,
+   "face_sizes": {
+    "4": 594
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  }
+ },
+ {
+  "id": "D9.4",
+  "intent": "Place the ear-root poles away from the jaw hinge",
+  "tool": "Playground Move / slide (not exercised)",
+  "where": "-",
+  "topology_changing": false,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Place the ear-root poles toward the skull, away from the jaw hinge.",
+  "checks": [
+   {
+    "claim": "Place the ear-root poles toward the skull, away from the jaw hinge.",
+    "result": "blocked",
+    "observed": "missing capability: a way to judge 'jaw hinge' position; no hinge or jaw reference exists in the app. needs an artist judgement on the head shape; poles sit on the patch corners by construction"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "blocked",
+  "before": null,
+  "after": null,
+  "missing": "a way to judge 'jaw hinge' position; no hinge or jaw reference exists in the app"
+ },
+ {
+  "id": "D10.1",
+  "intent": "Lids: inset the lid-margin ring once more",
+  "tool": "Playground ExtrudeTool + ScaleTool",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Lids: inset the lid-margin ring once more for a crisp margin under subdivision.",
+  "checks": [
+   {
+    "claim": "local: no E-pole added anywhere",
+    "result": "held",
+    "observed": "0 E-poles added"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 596,
+   "E": 1188,
+   "F": 594,
+   "face_sizes": {
+    "4": 594
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  },
+  "after": {
+   "V": 612,
+   "E": 1220,
+   "F": 610,
+   "face_sizes": {
+    "4": 610
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  }
+ },
+ {
+  "id": "D10.2",
+  "intent": "Lips: inset once on the vermilion border",
+  "tool": "Playground ExtrudeTool + ScaleTool on the vermilion wall ring",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Lips: inset once on the vermilion border for the lip line.",
+  "checks": [
+   {
+    "claim": "a ring of faces can be inset (region with a hole): no new E-poles beyond the corners",
+    "result": "held",
+    "observed": "0 E-poles added"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "wall faces around the innermost mouth cap: 12",
+   "poles added: none; removed: none"
+  ],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 612,
+   "E": 1220,
+   "F": 610,
+   "face_sizes": {
+    "4": 610
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  },
+  "after": {
+   "V": 636,
+   "E": 1268,
+   "F": 634,
+   "face_sizes": {
+    "4": 634
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  }
+ },
+ {
+  "id": "D10.3",
+  "intent": "Nostrils: select the nose underside face per half, inset, extrude up into the nose",
+  "tool": "Playground ExtrudeTool + ScaleTool",
+  "where": "playground + src",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Nostrils: select the nose underside face per half, inset, extrude up into the nose.",
+  "checks": [
+   {
+    "claim": "exactly one underside face per half",
+    "result": "held",
+    "observed": "2 underside faces from 6 nose wall faces"
+   },
+   {
+    "claim": "every new pole is valence 3 or 5 (no valence-6 vertex)",
+    "result": "deviated",
+    "observed": "valences added: [3, 6]"
+   },
+   {
+    "claim": "no pole sits on the mirror seam",
+    "result": "deviated",
+    "observed": "poles on seam: 2"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "poles added: N3@(-0.15,0.005,2.097); N3@(-0.15,0.079,2.245); N3@(-0.037,0.005,2.097); N3@(-0.037,0.079,2.245); N3@(0.037,0.005,2.097); N3@(0.037,0.079,2.245); N3@(0.15,0.005,2.097); N3@(0.15,0.079,2.245); E6@(-0.187,-0.055,2.066); E6@(0.0,-0.055,2.066); E6@(0.0,0.068,2.312); E6@(0.187,-0.055,2.066)"
+  ],
+  "shot": null,
+  "verdict": "deviated",
+  "before": {
+   "V": 636,
+   "E": 1268,
+   "F": 634,
+   "face_sizes": {
+    "4": 634
+   },
+   "poles_total": 72,
+   "poles_half_x_gt0": 36,
+   "poles_on_seam": 0,
+   "poles_by_valence": {
+    "3": 40,
+    "5": 32
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 32,
+   "N3": 40
+  },
+  "after": {
+   "V": 652,
+   "E": 1300,
+   "F": 650,
+   "face_sizes": {
+    "4": 650
+   },
+   "poles_total": 80,
+   "poles_half_x_gt0": 39,
+   "poles_on_seam": 2,
+   "poles_by_valence": {
+    "3": 46,
+    "5": 30,
+    "6": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 34,
+   "N3": 46
+  }
+ },
+ {
+  "id": "D10.4",
+  "intent": "Mouth bag: extrude the inner border further back and close it",
+  "tool": "Playground ExtrudeTool",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "Mouth bag: extrude the inner border further back and close it.",
+  "checks": [
+   {
+    "claim": "closed by the extruded cap (no hole, no tool needed)",
+    "result": "held",
+    "observed": "boundary vertices: 0"
+   },
+   {
+    "claim": "mirror symmetric",
+    "result": "held",
+    "observed": "True"
+   }
+  ],
+  "observed": [
+   "'Extrude the inner border' presupposes an open hole from D6.6; here the cap is still closed, so the bag is just a further extrusion."
+  ],
+  "shot": "screenshots/D10_face_features.png",
+  "verdict": "held",
+  "before": {
+   "V": 652,
+   "E": 1300,
+   "F": 650,
+   "face_sizes": {
+    "4": 650
+   },
+   "poles_total": 80,
+   "poles_half_x_gt0": 39,
+   "poles_on_seam": 2,
+   "poles_by_valence": {
+    "3": 46,
+    "5": 30,
+    "6": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 34,
+   "N3": 46
+  },
+  "after": {
+   "V": 664,
+   "E": 1324,
+   "F": 662,
+   "face_sizes": {
+    "4": 662
+   },
+   "poles_total": 80,
+   "poles_half_x_gt0": 39,
+   "poles_on_seam": 2,
+   "poles_by_valence": {
+    "3": 46,
+    "5": 30,
+    "6": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 34,
+   "N3": 46
+  }
+ },
+ {
+  "id": "D11.1",
+  "intent": "Freeze one level of subdivision on the cage (global, uniform)",
+  "tool": "Subdivision Lab (preview only, nothing written back)",
+  "where": "lab",
+  "topology_changing": true,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "Freeze one level of subdivision on the cage (global, uniform). Result: eye 16 around, mouth 24 around; all poles remain where they were placed.",
+  "checks": [
+   {
+    "claim": "Freeze one level of subdivision on the cage (global, uniform). Result: eye 16 around, mouth 24 around; all poles remain where they were placed.",
+    "result": "blocked",
+    "observed": "missing capability: apply subdivision to the control mesh. the Subdivision Lab derives a throw-away surface (D1 in its README); nothing writes it back to the mesh. Preview numbers below"
+   },
+   {
+    "claim": "all poles remain: the interior extraordinary vertices of the level-1 surface equal the control cage's interior poles",
+    "result": "held",
+    "observed": "control cage (caps opened) 68 poles; level-1 surface 68 interior vertices with valence != 4"
+   },
+   {
+    "claim": "eye borders become 16, mouth border 24",
+    "result": "held",
+    "observed": "hole border lengths [16, 16, 24]"
+   }
+  ],
+  "observed": [
+   "level-1 preview of the cage with eye and mouth caps opened (probe copy): 2584 faces; hole borders (edge counts) [16, 16, 24]; interior extraordinary vertices 68"
+  ],
+  "shot": null,
+  "verdict": "blocked",
+  "before": null,
+  "after": null,
+  "missing": "apply subdivision to the control mesh"
+ },
+ {
+  "id": "D11.2",
+  "intent": "Density: add a concentric ring inside the mouth feature ring only",
+  "tool": "Playground Loop Insert on a radial edge of the mouth annulus",
+  "where": "playground",
+  "topology_changing": true,
+  "scope": "local",
+  "planned": true,
+  "doc_claim": "If one region needs more, add concentric rings inside its feature ring only.",
+  "checks": [
+   {
+    "claim": "no existing vertex moved",
+    "result": "held",
+    "observed": "positions unchanged"
+   },
+   {
+    "claim": "poles unchanged (no new pole outside)",
+    "result": "held",
+    "observed": "80 -> 80"
+   },
+   {
+    "claim": "the new ring is local: it has the length of the feature ring (12) and every new vertex lies in the mouth zone",
+    "result": "held",
+    "observed": "12 new vertices; x-range 0.00..0.17"
+   }
+  ],
+  "observed": [
+   "edge ring through the picked edge: 12 edges"
+  ],
+  "shot": null,
+  "verdict": "held",
+  "before": {
+   "V": 664,
+   "E": 1324,
+   "F": 662,
+   "face_sizes": {
+    "4": 662
+   },
+   "poles_total": 80,
+   "poles_half_x_gt0": 39,
+   "poles_on_seam": 2,
+   "poles_by_valence": {
+    "3": 46,
+    "5": 30,
+    "6": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 34,
+   "N3": 46
+  },
+  "after": {
+   "V": 676,
+   "E": 1348,
+   "F": 674,
+   "face_sizes": {
+    "4": 674
+   },
+   "poles_total": 80,
+   "poles_half_x_gt0": 39,
+   "poles_on_seam": 2,
+   "poles_by_valence": {
+    "3": 46,
+    "5": 30,
+    "6": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 34,
+   "N3": 46
+  }
+ },
+ {
+  "id": "X1",
+  "intent": "Final cross-checks against the document's pole predictions",
+  "tool": "measurement script (+ probe copy with caps opened)",
+  "where": "-",
+  "topology_changing": false,
+  "scope": "global",
+  "planned": true,
+  "doc_claim": "No poles on lids, canthi, lips, commissure; eye 8 / mouth 12 in the cage; total planned poles about 10 per half.",
+  "checks": [
+   {
+    "claim": "closed mesh stays manifold (every edge has two faces, Euler characteristic 2)",
+    "result": "held",
+    "observed": "edges without two faces 0, Euler 2, loose vertices 0"
+   },
+   {
+    "claim": "cage eye count 8 and mouth count 12 (circumferential edges of the feature ring)",
+    "result": "held",
+    "observed": "eye patch boundary 8 (D5.1), mouth patch boundary 12 (D6.1)"
+   },
+   {
+    "claim": "canthi are regular: 4 mid-side vertices of the eye rings have valence 4 at the end",
+    "result": "held",
+    "observed": "[4, 4, 4, 4]"
+   },
+   {
+    "claim": "no poles on the lids / lips while the feature caps are still closed",
+    "result": "deviated",
+    "observed": "eye N-poles 8, mouth N-poles 4 (valence 3, on the innermost rings)"
+   },
+   {
+    "claim": "no poles on the lids / lips once the caps are opened (probe copy, core remove_face)",
+    "result": "held",
+    "observed": "eye N 0, mouth N 0 on the probe copy"
+   },
+   {
+    "claim": "no pole on the mirror seam in the finished cage",
+    "result": "deviated",
+    "observed": "poles on seam: 2 (valence [6, 6])"
+   },
+   {
+    "claim": "about 10 poles per half in total",
+    "result": "deviated",
+    "observed": "39 per half"
+   },
+   {
+    "claim": "the cage lands near 300 to 500 quads for head and neck (section C)",
+    "result": "deviated",
+    "observed": "674 quads (with ears, nostrils, closed eye/mouth caps)"
+   },
+   {
+    "claim": "one subdivision gives a working mesh of about 1,200 to 2,000 quads (section C)",
+    "result": "deviated",
+    "observed": "4 x 674 = 2696 quads (Catmull-Clark quad count is exactly 4x for an all-quad cage)"
+   }
+  ],
+  "observed": [
+   "final per half (x>0): 39 poles = 16 E + 23 N; seam: 2; total 80",
+   "per half by origin: blockout (D1)/E: 2, blockout (D1)/N: 4, ear/E: 4, ear/N: 4, eye/E: 4, eye/N: 4, mouth/E: 2, mouth/N: 2, muzzle/E: 2, muzzle/N: 2, nose/E: 2, nose/N: 5, other/N: 2"
+  ],
+  "shot": "screenshots/X1_final_front.png",
+  "verdict": "deviated",
+  "before": null,
+  "after": {
+   "V": 676,
+   "E": 1348,
+   "F": 674,
+   "face_sizes": {
+    "4": 674
+   },
+   "poles_total": 80,
+   "poles_half_x_gt0": 39,
+   "poles_on_seam": 2,
+   "poles_by_valence": {
+    "3": 46,
+    "5": 30,
+    "6": 4
+   },
+   "boundary_vertices": 0,
+   "symmetric": true,
+   "euler": 2,
+   "edges_without_two_faces": 0,
+   "loose_vertices": 0,
+   "E5+": 34,
+   "N3": 46
+  },
+  "n_tool_calls": {
+   "loop_insert": 21,
+   "scale": 25,
+   "move": 5,
+   "extrude": 35,
+   "loop_slide": 9,
+   "rotate": 1
+  }
+ }
+]

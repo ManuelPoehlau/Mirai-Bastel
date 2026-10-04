@@ -52,6 +52,15 @@ ist nur noch Git-Historie (AD-006).
 
 Lokaler Einstieg: [`topology/README.md`](topology/README.md)
 
+### `head_topology_walkthrough/`
+
+Discovery (Typ B): führt die Operationsketten D1 bis D11 des Research-Dokuments
+[Character Head Topology — From Box to Deformation-Ready Face](../docs/research/topology/Character%20Head%20Topology%20From%20Box%20to%20Deformation-Ready%20Face.md)
+mit den heute vorhandenen Werkzeugen (Playground-Topologie-Tools) aus und protokolliert pro Schritt, ob die Vorhersage des Dokuments hielt
+(held / deviated / blocked). Enthält Schrittprotokoll, Findings, Tutorial-Entwurf (DE) und Screenshots (Xvfb-Capture). Nicht Artist-validiert.
+
+Lokaler Einstieg: [`head_topology_walkthrough/README.md`](head_topology_walkthrough/README.md)
+
 ### `rigging-skinning-morphing/`
 
 Research-Experiment zu Rigging, Skinning und Morph-Targets in Kombination mit
