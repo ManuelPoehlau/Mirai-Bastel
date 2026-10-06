@@ -4,6 +4,10 @@
 
 Research is detailed and may investigate individual systems or technical questions deeply.
 
+## Interaction / Input Architecture Research
+
+- [CONTEXT_SENSITIVE_INPUT_ARCHITECTURE_RESEARCH_V1.md](CONTEXT_SENSITIVE_INPUT_ARCHITECTURE_RESEARCH_V1.md) — Discovery zur kontextsensitiven Input-/Hotkey-Auflösung: Global, Application/Room, Component/Selection, Hover, Active Tool und Focus. Untersucht eine mögliche Context-Snapshot-/Binding-Resolver-Schicht ohne eine Architekturentscheidung vorwegzunehmen.
+
 ## Character Systems Research
 
 - [CHARACTER_SYSTEMS_RESEARCH.md](CHARACTER_SYSTEMS_RESEARCH.md) — **authoritative artist-side research** on rigging, controls/handles, skinning, weighting, deformation, posing, morphs/blendshapes, correctives and related character workflows.
