@@ -699,10 +699,19 @@ The roadmap deliberately allows several tracks to progress at once.
 
 # 9. Work Package Definition Standard
 
-Every substantial implementation package should be defined before work starts using this structure:
+Every substantial implementation package should be defined before work starts using this structure.
+A Work Package doubles as a handoff once it goes to Claude Code, so it carries the same **An:** /
+**Modell/Effort:** header line as the `*_CLAUDE_CODE_HANDOFF.md` documents (see precedent in
+`docs/architecture/WP-SYM-LAB-01_SLICE*_CLAUDE_CODE_HANDOFF.md`): name the model (Sonnet/Opus) and
+effort level, with a short reason when deviating from the default effort — Core changes, several
+interacting element types, or topology edge cases typically warrant `high` or `xhigh` over the
+Claude Code default.
 
 ```text
 # Work Package: WP-XX
+
+**An:** Claude Code
+**Modell/Effort:** <Sonnet|Opus>, effort `<level>` (Begründung, falls vom Default abweichend)
 
 ## Goal
 

@@ -4,21 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "84caa1001d86d4c1",
+        "id": "4d733b34d24b53dc",
         "type": "tabs",
         "children": [
           {
-            "id": "535b74a755f265aa",
+            "id": "ea434ba3b8b57477",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "docs/research/MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md",
+                "file": "experiments/subdivision_lab/README.md",
                 "mode": "preview",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "MODELING_WORKFLOW_TOPOLOGY_RESEARCH"
+              "title": "README"
             }
           }
         ]
@@ -80,8 +80,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 230.5
   },
   "right": {
     "id": "2f0ecdc97945841c",
@@ -97,7 +96,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "docs/Experiment_Genealogy_Follow_up_Report.md",
+                "file": "experiments/subdivision_lab/README.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -107,7 +106,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Rückverweise auf Experiment_Genealogy_Follow_up_Report"
+              "title": "Rückverweise"
             }
           },
           {
@@ -172,8 +171,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 200
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -186,32 +184,34 @@
       "bases:Neue Base erstellen": false
     }
   },
-  "active": "535b74a755f265aa",
+  "active": "ea434ba3b8b57477",
   "lastOpenFiles": [
-    "playground/tests/test_topology_connect_edges_characterization.py",
-    "experiments/topology/connect_per_face_probe.py",
+    "playground/experiments/knife_face/decision.md",
+    "experiments/subdivision_lab/__pycache__/lab_window.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/subd.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/lab_state.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/lab_lines.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/lab_scene.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/lab_bindings.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/__init__.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__/_paths.cpython-312.pyc",
+    "experiments/subdivision_lab/__pycache__",
+    "experiments/subdivision_lab/tests/test_run_cli.py",
+    "experiments/subdivision_lab/README.md",
+    "docs/research/bay-raitt/README.md",
+    "docs/research/MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md",
     "docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md",
-    "connect_findings_discovery.patch",
-    "playground/experiments/transform/__pycache__/variant_hold_key_hover.cpython-314.pyc",
-    "playground/experiments/transform/variant_hold_key_hover.py",
     "docs/architecture/AD-016-TRANSFORM-OWNS-QWE-SINGLE-CURRENT-TOOL.md",
     "docs/design/artist_playground/INPUT_OWNERSHIP_AUDIT.md",
     "docs/architecture/AD-015-PLAYGROUND-INPUT-OWNERSHIP-TWEAK-TRANSFORM.md",
     "INPUT_WIRING_MAP.md",
-    "docs/research/MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md",
     "WP-AP_INPUT_WIRING_REPORT.md",
     "docs/Experiment_Genealogy_Follow_up_Report.md",
     "docs/architecture/AD-011-PLAYGROUND-IDENTITY-STATUS-QUO.md",
-    "runde2-ad011-playground-identity-status-quo.patch",
     "docs/architecture/AD-010-PLAYGROUND-SUPERSEDES-LAB-BINDING.md",
-    "runde2-ad010-playground-supersedes-lab.patch",
     "docs/architecture/AD-009-AXIS-PLANE-CONSTRAINTS.md",
-    "runde2-ad009-axis-plane-constraints.patch",
     "docs/architecture/AD-008-IMPORT-FRAMING-PRODUCTION.md",
-    "runde2-ad007-confirmed.patch",
-    "runde2-ad008-import-framing-production.patch",
     "docs/architecture/AD-007-SHARED-ASSET-LOADER-OWNERSHIP.md",
-    "runde2-ad007-asset-loader-ownership.patch",
     "docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md",
     "docs/Repository_Wide Structural_Codebase_Health_Audit.md",
     "docs/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md",
