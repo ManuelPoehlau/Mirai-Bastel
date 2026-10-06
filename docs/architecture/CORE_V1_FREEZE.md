@@ -169,17 +169,17 @@ entschieden"): `cleanup` is keyword-only without a default (the variant is a bin
 public signature, never silent); the plan's `dissolve_edge(edge_id, cleanup)` became `dissolve_edges(edge_ids, *,
 cleanup)` — atomic over a selection, because with per-edge cleanup the first edge can remove the endpoint the next
 selected edge hangs on (two edges at a cube corner); for one edge it is the plan's operation. Vertex and Edge Delete
-got own primitives (no public edge removal exists); Delete removes the given elements, their faces, the region's
-inner edges (both faces removed) and vertices left without an edge — region-border edges stay as the hole border,
-also a former mesh-border edge left without a face (literal plan §0.2.3 / §Tests and the V1 `remove_face` decision;
-open question for the practice check, see the plan's Status). A dissolve that merges faces creates one new `FaceId`
+got own primitives (no public edge removal exists); Delete removes the given elements, their faces, every edge of
+those faces that is left without a face (inner edges and former mesh-border edges alike) and vertices left without an
+edge; edges still used by a remaining face stay as the hole border (plan §0.2.3 as clarified by Manu 2026-10-06: "a
+floating edge goes"). `remove_face` keeps its V1 contract (edges stay). A dissolve that merges faces creates one new `FaceId`
 per region (all region `FaceId`s become invalid); removing a 2-valent vertex creates one new `EdgeId` per chain and
 keeps the neighbour face's `FaceId` (its boundary loses the vertex) — the exact inverse of `split_edge` up to the new
 id. Each method documents its ID continuity in the docstring. `collapse_edge`, `remove_face` and every existing
 method unchanged; the Symmetry Definition is not touched (symmetry behaviour is out of scope); no new `Operation`, no
 serialization change; Undo/Redo through the existing `MeshStateCommand`. Covered by
-`tests/test_core_delete_dissolve.py` (40: ID continuity, no-op, error with unchanged state incl. counters, the
-2×2-grid case, cube both variants, 3×3 loop to pure quads, shared chain, degenerate/existing-edge skips, hole and
+`tests/test_core_delete_dissolve.py` (43: ID continuity, no-op, error with unchanged state incl. counters, the
+2×2-grid cases (corner face, two faces), cube both variants, 3×3 loop to pure quads, shared chain, degenerate/existing-edge skips, hole and
 self-touching regions, bowtie, winding, MeshStateCommand Undo/Redo + serialization round trip, symmetry definition
 untouched) and `tests/test_application_delete_dissolve.py` (Production path).
 

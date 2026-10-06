@@ -733,21 +733,23 @@ class Mesh:
         return self._apply_dissolve(plan)
 
     def delete_faces(self, face_ids: Sequence[FaceId]) -> None:
-        """Entfernt Faces destruktiv (Loch) samt allem, was nur innerhalb der
-        entfernten Region lag (WP Delete/Dissolve §0.2.3).
+        """Entfernt Faces destruktiv (Loch) samt allem, was danach frei in der
+        Luft hinge (WP Delete/Dissolve §0.2.3, präzisiert Manu 2026-10-06).
 
-        Mit entfernt werden die inneren Edges der Region (beide Faces
-        entfernt) und Vertices, die dadurch keine Edge mehr haben. Rand-Edges
-        der Region bleiben mit unveränderter ID als Lochrand stehen - auch
-        eine Edge, die vorher Mesh-Rand war und danach keine Face mehr hat
-        (wie remove_face, V1-Entscheidung). Leere Auswahl -> No-op.
+        Mit entfernt wird jede Edge der entfernten Faces, an der danach keine
+        Face mehr hängt - innere Edges der Region ebenso wie frühere Mesh-
+        Rand-Edges -, und jeder Vertex, der dadurch keine Edge mehr hat. Edges,
+        die noch von einer verbleibenden Face genutzt werden, bleiben mit
+        unveränderter ID als Lochrand stehen. Anders als remove_face, das
+        Edges bewusst stehen lässt (V1-Primitive, unverändert). Leere Auswahl
+        -> No-op.
 
         Vorbedingung: jede FaceId gültig (sonst MeshError, Mesh unverändert).
 
-        ID-Kontinuität: die FaceIds, die inneren EdgeIds und die kantenlos
-        gewordenen VertexIds werden ungültig; es entstehen keine neuen IDs;
-        alle übrigen IDs und alle verbleibenden Face-Boundaries bleiben
-        unverändert.
+        ID-Kontinuität: die FaceIds, die face-los gewordenen EdgeIds und die
+        kantenlos gewordenen VertexIds werden ungültig; es entstehen keine
+        neuen IDs; alle übrigen IDs und alle verbleibenden Face-Boundaries
+        bleiben unverändert.
         """
         for fid in face_ids:
             if not self.is_valid_face(fid):
@@ -756,14 +758,14 @@ class Mesh:
 
     def delete_edges(self, edge_ids: Sequence[EdgeId]) -> None:
         """Entfernt Edges destruktiv: die Edge selbst und ihre (bis zu zwei)
-        Faces, danach wie delete_faces (innere Edges der entfernten Region und
-        kantenlos gewordene Vertices mit). Eine Edge ohne Face wird einfach
-        entfernt. Leere Auswahl -> No-op.
+        Faces, danach wie delete_faces (face-los gewordene Edges und kantenlos
+        gewordene Vertices mit). Eine Edge ohne Face wird einfach entfernt.
+        Leere Auswahl -> No-op.
 
         Vorbedingung: jede EdgeId gültig (sonst MeshError, Mesh unverändert).
 
-        ID-Kontinuität: die EdgeIds, die FaceIds ihrer Faces, die inneren
-        EdgeIds der Region und die kantenlos gewordenen VertexIds werden
+        ID-Kontinuität: die EdgeIds, die FaceIds ihrer Faces, die face-los
+        gewordenen EdgeIds und die kantenlos gewordenen VertexIds werden
         ungültig; keine neuen IDs; alles Übrige unverändert.
         """
         for eid in edge_ids:
@@ -775,15 +777,15 @@ class Mesh:
     def delete_vertices(self, vertex_ids: Sequence[VertexId]) -> None:
         """Entfernt Vertices destruktiv: den Vertex, zwingend alle anliegenden
         Edges und Faces (eine Edge kann nicht mit einem Endpunkt existieren),
-        danach wie delete_faces (innere Edges der Region und kantenlos
-        gewordene Vertices mit). Die äußeren Edges des 1-Rings bleiben als
-        Lochrand stehen. Leere Auswahl -> No-op.
+        danach wie delete_faces (face-los gewordene Edges und kantenlos
+        gewordene Vertices mit). Äußere Edges des 1-Rings bleiben nur, wenn
+        sie noch an einer anderen Face hängen. Leere Auswahl -> No-op.
 
         Vorbedingung: jede VertexId gültig (sonst MeshError, Mesh unverändert).
 
         ID-Kontinuität: die VertexIds, alle anliegenden EdgeIds und FaceIds,
-        die inneren EdgeIds der Region und die kantenlos gewordenen VertexIds
-        werden ungültig; keine neuen IDs; alles Übrige unverändert.
+        die face-los gewordenen EdgeIds und die kantenlos gewordenen
+        VertexIds werden ungültig; keine neuen IDs; alles Übrige unverändert.
         """
         for vid in vertex_ids:
             if not self.is_valid_vertex(vid):
@@ -1031,13 +1033,13 @@ class Mesh:
         self, faces: set[FaceId], edges: set[EdgeId], vertices: set[VertexId]
     ) -> None:
         """Gemeinsamer Delete-Kern: entfernt `faces`, `edges`, `vertices`,
-        dazu die inneren Edges der Face-Region und kantenlos gewordene
-        Vertices. Aufrufer haben alle IDs bereits geprüft."""
+        dazu jede Edge der entfernten Faces, an der danach keine Face mehr
+        hängt, und kantenlos gewordene Vertices. Aufrufer haben alle IDs
+        bereits geprüft."""
         removed_edges = set(edges)
         for fid in faces:
             for eid in self.face_edges(fid):
-                adjacent = self._edges[eid].faces
-                if len(adjacent) == 2 and all(f in faces for f in adjacent):
+                if all(f in faces for f in self._edges[eid].faces):
                     removed_edges.add(eid)
         # Ein Durchlauf statt vertex_edges() je Endpunkt (O(E) pro Aufruf).
         touched = {v for e in removed_edges for v in self.edge_vertices(e)}

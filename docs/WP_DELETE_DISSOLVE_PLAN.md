@@ -52,6 +52,11 @@ Gegenstück `Geometrie-Hinzufuegen_als_Modeling-Paradigma_Research_V1.md`
 3. **Face-Region-Löschen:** Wird eine zusammenhängende Face-Region destruktiv entfernt, sollen die
    dadurch face-los gewordenen **inneren** Kanten automatisch mit entfernt werden (nicht die äußeren,
    noch von Nachbar-Faces genutzten Randkanten).
+   *Präzisiert 2026-10-06 (Manu, nach der Umsetzung):* Jede Kante, die nach dem Löschen an keiner
+   Face mehr hängt, wird entfernt — auch eine frühere Mesh-Randkante. Eine Kante, die noch von einer
+   anderen Face gebraucht wird, bleibt. "Eine Kante, die sinnlos in der Luft schwebt, kommt weg."
+   Vertices, die dadurch keine Kante mehr haben, gehen mit. Das korrigiert die beiden 2×2-Sätze
+   unter §Tests und §Practical viewport test, die eine Nachbar-Face an jeder Außenkante annahmen.
 4. **Weg:** Production, Core-first, kein Lab (siehe Kopfzeile). Ein einziger Praxis-Check am Ende
    des gesamten Pakets, keine Per-Slice-Checks. Zeigt sich beim Testen etwas Ungewöhnliches, wird
    das dann gezielt untersucht und behoben (M5: eine dabei auftauchende neue Erkenntnis ist eine
@@ -207,7 +212,7 @@ Kurzverdikt stehen aus — das Verdikt ist Manus Urteil, der Agent setzt es nich
 | Freeze | `docs/architecture/CORE_V1_FREEZE.md` §7.1 | Präzedenzfall-Eintrag "WP Delete/Dissolve" (Freeze-Regel 1–6) |
 | Production | `src/mirai/topology/delete_dissolve.py`, `src/mirai/application.py` (`_removal_command`) | Snapshot → Core → genau ein `MeshStateCommand`; Ablehnung/No-op: Mesh, History, Auswahl unverändert |
 | Commands / Bindings | `commands.py` (`Delete`, `Dissolve`, `DissolveNoCleanup`), `bindings.py`, `pyglet_input.py` | Entf / Rücktaste / Ctrl+Rücktaste; Artist Input Truth `topology.delete`, `topology.dissolve`, `topology.dissolve_no_cleanup` (PROVISIONAL) |
-| Tests | `tests/test_core_delete_dissolve.py` (40), `tests/test_application_delete_dissolve.py` (46), `tests/test_pyglet_input.py` (+2) | siehe §Tests; alle Suiten grün |
+| Tests | `tests/test_core_delete_dissolve.py` (43), `tests/test_application_delete_dissolve.py` (46), `tests/test_pyglet_input.py` (+2) | siehe §Tests; alle Suiten grün |
 | Assets | `examples/meshes/grid_2x2.obj`, `grid_3x3.obj` | für den Praxis-Check mit `python src/main.py <asset>` |
 
 ### Beim Bauen entschieden (Plan: "Entscheidung fällt beim Bauen")
@@ -220,9 +225,11 @@ Kurzverdikt stehen aus — das Verdikt ist Manus Urteil, der Agent setzt es nich
    Für eine einzelne Edge ist es genau die Plan-Operation. `cleanup` ist keyword-only und ohne Default.
 3. **Vertex-/Edge-Delete haben eigene Primitive** (`delete_vertices`, `delete_edges`): Core hat keine öffentliche
    Edge-Entfernung, also lässt sich Vertex-/Edge-Delete nicht aus `remove_face` zusammensetzen.
-4. **"Innere Kanten" bei Delete (§0.2.3)** = Edges, deren beide Faces entfernt werden. Sie gehen mit, ebenso Vertices,
-   die danach keine Edge mehr haben. Rand-Edges der entfernten Region bleiben mit ihrer ID stehen — wörtlich nach
-   §0.2.3/§Tests und der V1-Entscheidung von `remove_face`. Siehe offene Frage DD-1.
+4. **Kanten bei Delete (§0.2.3, präzisiert Manu 2026-10-06):** Jede Edge der entfernten Faces, an der danach keine
+   Face mehr hängt, geht mit — innere Kanten wie frühere Mesh-Randkanten —, ebenso jeder Vertex, der dadurch keine
+   Edge mehr hat. Edges, die noch an einer verbleibenden Face hängen, bleiben mit ihrer ID als Lochrand stehen.
+   Vorher bereits face-lose Edges, die die Operation nicht berührt, bleiben unangetastet. `remove_face` selbst ist
+   unverändert (lässt Edges weiterhin stehen). DD-1 ist damit entschieden.
 5. **2er-Vertex** = Vertex mit genau zwei Edges. Cleanup-Kandidaten sind die Endpunkte der aufgelösten Edges.
    Lässt sich eine 2er-Kette nicht entfernen (Ersatz-Edge existiert schon, oder eine Face fiele unter 3 Vertices),
    bleibt sie ohne Fehler stehen. `dissolve_vertex` an einem 2er-Vertex ist dieselbe Entfernung (Umkehrung von
@@ -244,8 +251,10 @@ Kurzverdikt stehen aus — das Verdikt ist Manus Urteil, der Agent setzt es nich
 Echtes `src/main.py`-Fenster (GLRenderStore, Mesa llvmpipe unter Xvfb), Auswahl per Mausklick über das Picking,
 Tasten als pyglet-Events. Ergebnis:
 
-- **2×2-Grid:** Delete auf einer Face ergibt ein Loch, F 4 → 3, alle 12 Edges bleiben. Zwei Nachbar-Faces: F → 2,
-  nur die gemeinsame Innenkante geht (E 12 → 11). Undo stellt alles wieder her. Siehe aber DD-1.
+- **2×2-Grid** (Stand nach der DD-1-Entscheidung): Delete auf einer Eck-Face ergibt V 9 → 8, E 12 → 10, F 4 → 3 —
+  die zwei Mesh-Randkanten und der Eck-Vertex gehen mit, die zwei Kanten zu den Nachbar-Faces bleiben. Zwei
+  Nachbar-Faces: V → 6, E → 7, F → 2; keine Kante ohne Face bleibt stehen. Undo stellt alles wieder her.
+  (Erster Durchlauf vor der Entscheidung: E 12 → 12 bzw. 11, mit frei schwebenden Randkanten — Anlass für DD-1.)
 - **Würfel:** Edge-Dissolve mit Cleanup ergibt V 8 → 6, Faces `[3, 3, 4, 4, 4]` mit geraden Ersatzkanten. Ohne
   Cleanup: V bleibt 8, ein Sechseck, die beiden 2er-Vertices sind sichtbar. Face-Dissolve an einer Zweier-Region
   liefert in beiden Varianten dasselbe Bild. Vertex-Dissolve: ein Sechseck plus drei Quads. Ctrl+Rücktaste im
@@ -255,14 +264,10 @@ Tasten als pyglet-Events. Ergebnis:
 
 ### Offene Fragen (M5: neue Erkenntnis = offene Frage, keine stille Entscheidung)
 
-- **DD-1 — Mesh-Randkanten nach Delete.** Der Plantext zum 2×2-Grid ("alle vier Kanten … weil sie jeweils noch von
-  einer Nachbar-Face genutzt werden"; "äußere Randkanten … haben noch eine Nachbar-Face") geht davon aus, dass jede
-  Außenkante eine Nachbar-Face hat. Auf dem 2×2-Grid stimmt das nicht: Jede Face hat zwei Kanten am Mesh-Rand.
-  Umgesetzt ist die wörtliche Regel: Diese Kanten bleiben nach dem Delete als **freie Kanten ohne Face** stehen
-  (sichtbar als Linien im Wireframe-Overlay), der Eck-Vertex ebenso. Alternative (Blender): jede Kante, die durch
-  das Delete face-los wird, geht mit, dazu jeder Vertex, der dadurch kantenlos wird. Bei Vertex-Delete (1-Ring)
-  verhalten sich beide Varianten wie Blender: Der äußere Ring bleibt. Frage an Manu beim Praxis-Check: freie
-  Randkanten stehen lassen oder mit entfernen?
+- **DD-1 — Mesh-Randkanten nach Delete. Entschieden (Manu, 2026-10-06):** Randkanten, an denen nach dem Delete keine
+  Face mehr hängt, werden entfernt; Kanten, die noch von anderen Faces gebraucht werden, nicht. "Eine Kante, die
+  sinnlos in der Luft schwebt, kommt weg." Umgesetzt (Punkt 4, §0.2.3). Folge: Delete des Mittel-Vertex im 2×2-Grid
+  entfernt alles, weil keine Kante mehr an einer Face hängt; im 3×3-Grid bleiben die Ring-Kanten zu den Nachbar-Faces.
 - **DD-2 — Symmetrie.** Laut Plan ausdrücklich nicht in scope. Delete/Dissolve spiegeln nicht. Das BLOCK-Gate des
   Symmetry Labs (`unsupported_commands`) kennt die drei neuen Commands nicht. Unter Symmetrie wirken sie im Lab
   deshalb einseitig. Gehört in die Symmetrie-Folgefrage (Entfernungs-Research §9); hier nicht angefasst.
@@ -279,6 +284,6 @@ Tasten als pyglet-Events. Ergebnis:
 
 Start: `python src/main.py examples/meshes/grid_2x2.obj`, `python src/main.py cube`,
 `python src/main.py examples/meshes/grid_3x3.obj`. Modus mit 1/2/3, Auswahl mit Klick/Shift+Klick, Wireframe-Overlay
-mit Shift+D, Undo mit Ctrl+Z. Die drei Szenarien aus §Practical viewport test, dazu Frage DD-1 (Randkanten auf dem
-2×2-Grid) und DD-4 (Residue). Danach das Kurzverdikt KEEP/ITERATE/REJECT hier und in `docs/architecture/ROADMAP.md`
+mit Shift+D, Undo mit Ctrl+Z. Die drei Szenarien aus §Practical viewport test (2×2-Grid nach §0.2.3 in der
+präzisierten Fassung: frei schwebende Randkanten verschwinden mit), dazu DD-3 und DD-4. Danach das Kurzverdikt KEEP/ITERATE/REJECT hier und in `docs/architecture/ROADMAP.md`
 eintragen.

@@ -180,23 +180,26 @@ def test_delete_edge(app):
 
 
 def test_delete_face_single_and_region_on_2x2_grid():
-    """Praxis-Szenario 2×2-Grid als Test: eine Face → Loch, alle vier Kanten
-    bleiben; zwei benachbarte → nur die gemeinsame Innenkante geht mit."""
+    """Praxis-Szenario 2×2-Grid als Test (Regel präzisiert Manu 2026-10-06):
+    face-los gewordene Edges und kantenlose Vertices gehen mit, Edges an einer
+    verbleibenden Face bleiben."""
     app = _app(2)
     mesh = app.scene.mesh
-    edges = set(mesh.all_edge_ids())
     _select(app, SelectionMode.FACE, [_grid_face(app, 0, 0)])
     _press_succeeds(app, DELETE)
-    assert set(mesh.all_edge_ids()) == edges
-    assert len(mesh.all_face_ids()) == 3
+    assert (len(mesh.all_vertex_ids()), len(mesh.all_edge_ids()), len(mesh.all_face_ids())) == (8, 10, 3)
     assert app.status_message == "Delete Faces"
 
     app.key_press(CTRL_Z)
-    inner = _edge(mesh, _grid_vertex(app, 0, 1), _grid_vertex(app, 1, 1))
+    kept = {
+        _edge(mesh, _grid_vertex(app, 1, 0), _grid_vertex(app, 1, 1)),
+        _edge(mesh, _grid_vertex(app, 1, 1), _grid_vertex(app, 1, 2)),
+    }
     _select(app, SelectionMode.FACE, [_grid_face(app, 0, 0), _grid_face(app, 0, 1)])
     _press_succeeds(app, DELETE)
-    assert set(mesh.all_edge_ids()) == edges - {inner}
-    assert len(mesh.all_face_ids()) == 2
+    assert (len(mesh.all_vertex_ids()), len(mesh.all_edge_ids()), len(mesh.all_face_ids())) == (6, 7, 2)
+    assert kept <= set(mesh.all_edge_ids())
+    assert all(mesh.edge_faces(e) for e in mesh.all_edge_ids())
 
 
 # ---------------------------------------------------------------------------

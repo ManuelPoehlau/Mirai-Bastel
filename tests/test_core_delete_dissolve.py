@@ -70,22 +70,37 @@ def _assert_refused(mesh: Mesh, call) -> None:
 # delete_faces — inkl. 2×2-Grid-Fall aus dem Plan
 # ---------------------------------------------------------------------------
 
-def test_delete_faces_2x2_two_adjacent_faces_removes_only_inner_edge() -> None:
+def test_delete_faces_2x2_two_adjacent_faces() -> None:
+    """2×2-Grid, zwei Nachbar-Faces: jede Edge, an der danach keine Face mehr
+    hängt, geht mit (Innenkante und Mesh-Randkanten); die zwei Edges, die noch
+    von den oberen Faces genutzt werden, bleiben (Manu 2026-10-06)."""
     mesh, p, f = _grid(2)
-    inner = _edge(mesh, p[(0, 1)], p[(1, 1)])
+    shared = {_edge(mesh, p[(1, 0)], p[(1, 1)]), _edge(mesh, p[(1, 1)], p[(1, 2)])}
+    bottom_region = {f[(0, 0)], f[(0, 1)]}
+    gone = {e for e in mesh.all_edge_ids() if set(mesh.edge_faces(e)) <= bottom_region}
     verts, edges, faces = _ids(mesh)
 
-    mesh.delete_faces([f[(0, 0)], f[(0, 1)]])
+    mesh.delete_faces(sorted(bottom_region))
 
     assert_mesh_invariants(mesh)
     v_after, e_after, f_after = _ids(mesh)
-    assert f_after == faces - {f[(0, 0)], f[(0, 1)]}
-    # Genau die innere, face-los gewordene Edge verschwindet; alle Rand-Edges
-    # der Zweier-Region (auch die zum Mesh-Rand) bleiben mit ihrer ID.
-    assert e_after == edges - {inner}
-    # Der Vertex unten Mitte behält zwei Rand-Edges -> bleibt.
-    assert v_after == verts
+    assert f_after == faces - bottom_region
+    assert len(gone) == 5 and not gone & shared
+    assert e_after == edges - gone
+    assert v_after == verts - {p[(0, 0)], p[(0, 1)], p[(0, 2)]}
     assert mesh.edge_faces(_edge(mesh, p[(1, 0)], p[(1, 1)])) == [f[(1, 0)]]
+    assert all(mesh.edge_faces(e) for e in mesh.all_edge_ids())  # nichts schwebt
+
+
+def test_delete_faces_2x2_corner_face_removes_floating_border_edges() -> None:
+    mesh, p, f = _grid(2)
+    corner_edges = {_edge(mesh, p[(0, 0)], p[(0, 1)]), _edge(mesh, p[(0, 0)], p[(1, 0)])}
+    verts, edges, faces = _ids(mesh)
+
+    mesh.delete_faces([f[(0, 0)]])
+
+    assert_mesh_invariants(mesh)
+    assert _ids(mesh) == (verts - {p[(0, 0)]}, edges - corner_edges, faces - {f[(0, 0)]})
 
 
 def test_delete_faces_single_face_keeps_all_four_edges() -> None:
@@ -138,30 +153,36 @@ def test_delete_faces_keeps_neighbour_boundaries_and_ids_untouched() -> None:
 def test_delete_edges_removes_edge_and_both_faces() -> None:
     mesh, p, f = _grid(2)
     eid = _edge(mesh, p[(0, 1)], p[(1, 1)])
+    region = {f[(0, 0)], f[(0, 1)]}
+    gone = {e for e in mesh.all_edge_ids() if set(mesh.edge_faces(e)) <= region}
     verts, edges, faces = _ids(mesh)
 
     mesh.delete_edges([eid])
 
     assert_mesh_invariants(mesh)
-    assert _ids(mesh) == (verts, edges - {eid}, faces - {f[(0, 0)], f[(0, 1)]})
+    assert eid in gone
+    assert _ids(mesh) == (verts - {p[(0, 0)], p[(0, 1)], p[(0, 2)]}, edges - gone, faces - region)
 
 
-def test_delete_edges_border_edge_and_wire_edge() -> None:
+def test_delete_edges_border_edge_of_single_quad_removes_everything() -> None:
     mesh, p, f = _grid(1)
-    border = _edge(mesh, p[(0, 0)], p[(0, 1)])
-    mesh.delete_edges([border])
+    mesh.delete_edges([_edge(mesh, p[(0, 0)], p[(0, 1)])])
     assert_mesh_invariants(mesh)
-    assert mesh.all_face_ids() == []
-    assert len(mesh.all_edge_ids()) == 3 and len(mesh.all_vertex_ids()) == 4
+    assert _ids(mesh) == (set(), set(), set())
 
-    # Jetzt face-lose Edge: wird einfach entfernt; p(0,1) verliert damit seine
-    # letzte Edge und geht mit, p(1,1) hängt noch an p(1,0).
-    wire = _edge(mesh, p[(0, 1)], p[(1, 1)])
+
+def test_delete_edges_wire_edge() -> None:
+    mesh, p, f = _grid(1)
+    lone = mesh.add_vertex((3.0, 0.0, 0.0))
+    wire = mesh.add_edge(p[(0, 1)], lone)
+    verts, edges, faces = _ids(mesh)
+
     mesh.delete_edges([wire])
+
     assert_mesh_invariants(mesh)
-    assert not mesh.is_valid_edge(wire)
-    assert not mesh.is_valid_vertex(p[(0, 1)])
-    assert mesh.is_valid_vertex(p[(1, 1)])
+    # Die Edge geht, `lone` hat danach keine Edge mehr und geht mit; das Quad
+    # bleibt unberührt.
+    assert _ids(mesh) == (verts - {lone}, edges - {wire}, faces)
 
 
 def test_delete_edges_noop_and_error() -> None:
@@ -172,19 +193,33 @@ def test_delete_edges_noop_and_error() -> None:
     _assert_refused(mesh, lambda: mesh.delete_edges([type(mesh.all_edge_ids()[0])(999)]))
 
 
-def test_delete_vertices_center_of_2x2_removes_1_ring() -> None:
+def test_delete_vertices_center_of_2x2_removes_everything() -> None:
+    """Alle vier Faces hängen am Mittel-Vertex; danach hängt keine Edge mehr an
+    einer Face, also schwebt nichts stehen bleibend in der Luft."""
     mesh, p, f = _grid(2)
-    center = p[(1, 1)]
-    spokes = set(mesh.vertex_edges(center))
-    verts, edges, _ = _ids(mesh)
+    mesh.delete_vertices([p[(1, 1)]])
+    assert_mesh_invariants(mesh)
+    assert _ids(mesh) == (set(), set(), set())
 
-    mesh.delete_vertices([center])
+
+def test_delete_vertices_center_of_3x3_block_keeps_shared_ring_edges() -> None:
+    mesh, p, f = _grid(3)
+    v = p[(1, 1)]
+    ring_faces = {f[(0, 0)], f[(0, 1)], f[(1, 0)], f[(1, 1)]}
+    gone = {e for e in mesh.all_edge_ids() if set(mesh.edge_faces(e)) <= ring_faces}
+    verts, edges, faces = _ids(mesh)
+
+    mesh.delete_vertices([v])
 
     assert_mesh_invariants(mesh)
     v_after, e_after, f_after = _ids(mesh)
-    assert f_after == set()
-    assert e_after == edges - spokes  # äußerer Ring bleibt als Lochrand stehen
-    assert v_after == verts - {center}
+    assert f_after == faces - ring_faces
+    assert e_after == edges - gone
+    # Rechter und oberer Rand des 1-Rings hängen noch an Nachbar-Faces.
+    assert mesh.is_valid_edge(_edge(mesh, p[(1, 2)], p[(2, 2)]))
+    assert mesh.is_valid_edge(_edge(mesh, p[(2, 1)], p[(2, 2)]))
+    assert v_after == verts - {v, p[(0, 0)], p[(0, 1)], p[(1, 0)]}
+    assert all(mesh.edge_faces(e) for e in mesh.all_edge_ids())
 
 
 def test_delete_vertices_grid_corner_and_noop_and_error() -> None:
