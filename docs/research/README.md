@@ -18,6 +18,7 @@ This document is the canonical home for the artist-side Character Systems resear
 
 - [symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md](symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md) — Research zu Edit-Mode Mirror/Symmetry-Systemen über mehrere DCCs (3ds Max, Blender, Cinema 4D, Modo, Wings 3D, ZBrush, Houdini, Maya). Vergleicht technische Modelle (abgeleitete Hälfte, Positions-Korrespondenz, topologische Korrespondenz), Stressfälle und Naht-Schutz-Mechanismen. Status: Discovery, keine Architekturentscheidung, keine Empfehlung für Mirai-Bastel.
 - [symmetry/SYMMETRY_PRODUCTION_OPERATIONS_DISCOVERY.md](symmetry/SYMMETRY_PRODUCTION_OPERATIONS_DISCOVERY.md) — Discovery (2026-10-06, English): wie Symmetry die bestehenden Production-Operationen (Split, Connect, Knife, Delete/Dissolve, Extrude, Transform) koordinieren könnte statt `SymmetricX`-Kopien; Ist-Architektur, alter gespiegelter Knife, Probe-Ergebnisse (`experiments/topology/symmetry_ops_probe.py`), gemeinsamer Nenner, Klassifikation A–D, Vorschlag für den nächsten Slice. Keine Entscheidung.
+  → Entscheidungsvorschlag dazu: [AD-SYM-03](../architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) (PROPOSED).
 
 ## Modeling Workflow & Topologie
 
