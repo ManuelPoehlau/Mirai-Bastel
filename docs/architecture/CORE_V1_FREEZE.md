@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -152,6 +152,36 @@ factors and 60 incremental updates with pivot on and off plane, oblique-plane to
 documented-formula equivalence, rotation sense for normal vs. in-plane axis, single vertex, rigid
 explicit pair, Seam allow/refuse cases staying exactly on the plane, cancel/commit/Undo) and
 `tests/test_symmetric_move.py` (flag flipped). Free pivots and a pivot UI remain out of scope.
+
+**Decision:** WP Delete/Dissolve (2026-10-06, `docs/WP_DELETE_DISSOLVE_PLAN.md`)
+
+Six additive removal primitives are added to `src/core/mesh.py` as an authorized production extension: the
+preserving `dissolve_vertex(vertex_id)`, `dissolve_edges(edge_ids, *, cleanup)`, `dissolve_faces(face_ids, *,
+cleanup)` and the destructive `delete_vertices(vertex_ids)`, `delete_edges(edge_ids)`, `delete_faces(face_ids)`.
+Freeze rule (§7): (1) requirement — Delete/Dissolve on all three element levels in the Production app (Artist
+decisions Manu 2026-10-06, plan §0.2); until now collapse was the only removal. (2) Not solvable with the public API:
+no public operation removes an edge or a vertex, and merging faces through `remove_face` + `add_face` is the same face
+surgery in the tool that AD-017 B5 / K1 ruled out. (3)/(4) Smallest extension: one internal planner
+(`_region_outline` / `_plan_dissolve`, read-only, every precondition checked before the first mutation — on
+`MeshError` the mesh incl. allocator counters is unchanged) and one apply step shared by all three dissolves; one
+internal delete core shared by the three deletes. Decisions made while building (plan Status: "beim Bauen
+entschieden"): `cleanup` is keyword-only without a default (the variant is a binding choice, §0.2.2, and part of the
+public signature, never silent); the plan's `dissolve_edge(edge_id, cleanup)` became `dissolve_edges(edge_ids, *,
+cleanup)` — atomic over a selection, because with per-edge cleanup the first edge can remove the endpoint the next
+selected edge hangs on (two edges at a cube corner); for one edge it is the plan's operation. Vertex and Edge Delete
+got own primitives (no public edge removal exists); Delete removes the given elements, their faces, the region's
+inner edges (both faces removed) and vertices left without an edge — region-border edges stay as the hole border,
+also a former mesh-border edge left without a face (literal plan §0.2.3 / §Tests and the V1 `remove_face` decision;
+open question for the practice check, see the plan's Status). A dissolve that merges faces creates one new `FaceId`
+per region (all region `FaceId`s become invalid); removing a 2-valent vertex creates one new `EdgeId` per chain and
+keeps the neighbour face's `FaceId` (its boundary loses the vertex) — the exact inverse of `split_edge` up to the new
+id. Each method documents its ID continuity in the docstring. `collapse_edge`, `remove_face` and every existing
+method unchanged; the Symmetry Definition is not touched (symmetry behaviour is out of scope); no new `Operation`, no
+serialization change; Undo/Redo through the existing `MeshStateCommand`. Covered by
+`tests/test_core_delete_dissolve.py` (40: ID continuity, no-op, error with unchanged state incl. counters, the
+2×2-grid case, cube both variants, 3×3 loop to pure quads, shared chain, degenerate/existing-edge skips, hole and
+self-touching regions, bowtie, winding, MeshStateCommand Undo/Redo + serialization round trip, symmetry definition
+untouched) and `tests/test_application_delete_dissolve.py` (Production path).
 
 ## 2. Was vor dem Freeze validiert wurde
 

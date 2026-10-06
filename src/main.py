@@ -61,7 +61,10 @@ Scope (binding, see the handoffs):
   the Knife's hover preview — the key handlers track the held Shift keys
   (`shift_keys_after`) and report "any Shift held" to
   `Application.set_shift_held`; losing focus (`on_deactivate`) resets it.
-  Status lines
+  WP Delete/Dissolve (PROVISIONAL): Delete removes the selection with a
+  hole, Backspace dissolves it (Edge / Face: leftover 2-valent vertices
+  removed; Vertex: the vertex dissolve), Ctrl+Backspace dissolves Edge /
+  Face without that cleanup. Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - No imports from `playground/` (AD-010 Addendum).

@@ -63,6 +63,9 @@ def _key_map() -> dict[int, str]:
             _key.TAB: "tab", _key.ESCAPE: "ESCAPE", _key.SPACE: "space",
             _key.ENTER: "enter", _key.NUM_ENTER: "enter",
             _key.UP: "up", _key.DOWN: "down", _key.LEFT: "left", _key.RIGHT: "right",
+            # WP Delete/Dissolve: Entf und Rücktaste. Auf macOS liefert die
+            # mit "delete" beschriftete Taste BACKSPACE, fn+delete DELETE.
+            _key.BACKSPACE: "backspace", _key.DELETE: "delete",
         }
     return _KEY_MAP
 
@@ -100,7 +103,7 @@ def key_from_pyglet(symbol: int, modifiers: int) -> Input | None:
 
     Gibt `None` zurück, wenn `symbol` nicht im übernommenen Key-Set liegt
     (A–Z, 0–9, TAB, ESCAPE, SPACE, Pfeile, ENTER/Keypad-ENTER — WP-06 B7,
-    beide als `"enter"`).
+    beide als `"enter"`; BACKSPACE/DELETE — WP Delete/Dissolve).
     """
     key_name = _key_map().get(symbol)
     if key_name is None:

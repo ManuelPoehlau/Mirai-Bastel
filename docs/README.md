@@ -37,6 +37,12 @@ When documents overlap, the canonical document wins. Other documents should link
 
 Weitere WP-04-Dokumente (Gate-Berichte, Amendments) liegen im selben Ordner.
 
+## Work Package Delete/Dissolve
+
+| Document | Purpose |
+|---|---|
+| [WP_DELETE_DISSOLVE_PLAN.md](WP_DELETE_DISSOLVE_PLAN.md) | Delete (destruktiv) / Dissolve (bewahrend) auf Vertex-/Edge-/Face-Ebene, Production-first ohne Lab; Status, offene Fragen und Praxis-Check am Ende |
+
 ## For AI collaborators
 
 Start with this index when a task crosses repository areas, then follow the nearest local README. The repository root `AGENTS.md` defines the documentation and collaboration rules that apply to all agents.

@@ -43,6 +43,15 @@ B7). Ignoriert, solange W/E/R scharf ist (`Application.key_press`, wie die
 Modus-Tasten). Ersetzt die alten Topology-Lab-Tasten `s` (SplitEdge) und
 `c` (Connect); siehe `mirai.topology`.
 
+Delete / Dissolve (WP Delete/Dissolve, Artist Input Truth PROVISIONAL,
+docs/WP_DELETE_DISSOLVE_PLAN.md §0.2): zwei Tasten statt Menü (3ds Max),
+global, auf die Auswahl des aktiven Komponentenmodus:
+- Entf             → Delete (destruktiv, Loch) in Vertex/Edge/Face
+- Rücktaste        → Dissolve mit Cleanup (Edge/Face); Vertex-Dissolve
+- Ctrl+Rücktaste   → Dissolve ohne Cleanup (Edge/Face; Vertex: keine Wirkung)
+Wie `C` ignoriert, solange W/E/R scharf ist; während einer Knife-Session
+ungebunden (Session Gate).
+
 Knife-Session (WP-06 B7, AD-017; Kontext "knife", nur während einer
 Session aufgelöst, sonst ungebunden):
 - Enter           → KnifeCommit (genau ein History-Eintrag)
@@ -121,6 +130,11 @@ def build_default_bindings() -> BindingSet:
     # (WP-06 B7). Global, not TOPOLOGY_CONTEXT — Artist Input Truth
     # `topology.connect`.
     bs.set_default(_key("c"), cmd.CONNECT)
+    # WP Delete/Dissolve (§0.2 Punkte 1, 2, 5): Delete destruktiv, Backspace
+    # räumt auf, Ctrl+Backspace nicht. Umbindbar über keymap.json.
+    bs.set_default(_key("delete"), cmd.DELETE)
+    bs.set_default(_key("backspace"), cmd.DISSOLVE)
+    bs.set_default(_key("backspace", "ctrl"), cmd.DISSOLVE_NO_CLEANUP)
 
     # --- Knife session (WP-06 B7, AD-017; context "knife") ------------------
     # Artist Input Truth `topology.knife_commit` (Enter); Ctrl+Shift+Z is the

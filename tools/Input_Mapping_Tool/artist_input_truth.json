@@ -267,6 +267,30 @@
       "notes": "AD-017: 1 edge→Split, 2+ edges→Edge Connect, 2+ vertices→Vertex Connect, empty selection→Knife"
     },
     {
+      "id": "topology.delete",
+      "label": "Delete (destructive, leaves a hole)",
+      "category": "Topology",
+      "binding": "Delete",
+      "runtime_ref": "Delete",
+      "notes": "Vertex / Edge / Face mode, on the selection. PROVISIONAL. WP Delete/Dissolve §0.2 (two keys instead of a menu, 3ds Max), Manu 2026-10-06; pyglet key DELETE (Entf; macOS: fn+delete)"
+    },
+    {
+      "id": "topology.dissolve",
+      "label": "Dissolve with cleanup (keeps the surface closed)",
+      "category": "Topology",
+      "binding": "Backspace",
+      "runtime_ref": "Dissolve",
+      "notes": "Edge / Face: leftover 2-valent vertices are removed; Vertex mode: the one vertex dissolve (no variant). PROVISIONAL. WP Delete/Dissolve §0.2.5, Manu 2026-10-06; pyglet key BACKSPACE (macOS: delete)"
+    },
+    {
+      "id": "topology.dissolve_no_cleanup",
+      "label": "Dissolve without cleanup",
+      "category": "Topology",
+      "binding": "Ctrl+Backspace",
+      "runtime_ref": "DissolveNoCleanup",
+      "notes": "Edge / Face: leftover 2-valent vertices stay; Vertex mode: no effect (no variant). Which variant sits on the plain key is binding config only. PROVISIONAL. WP Delete/Dissolve §0.2.5, Manu 2026-10-06"
+    },
+    {
       "id": "topology.knife_commit",
       "label": "Knife — Commit session",
       "category": "Topology",

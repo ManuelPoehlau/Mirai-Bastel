@@ -5,7 +5,7 @@
 `src/core/mesh.py` mit ID-Kontinuität-Pflicht und mehreren Topologie-Randfällen wie 2er-Vertices,
 face-lose Kanten, Region-Grenzen; dieselbe Klasse Arbeit, bei der im Knife-Strang mehrfach erst
 durch sorgfältiges Durchdenken Überraschungen vermieden wurden)
-**Status:** Entscheidungen abgeschlossen, bereit für Umsetzung
+**Status:** Umgesetzt (2026-10-06) — PROVISIONAL, Verdikt UNKNOWN bis zu Manus Praxis-Check (siehe "Status-Update 2026-10-06" am Ende)
 **Datum:** 2026-10-06 (final nach Manus Entscheidungen zu Weg, Varianten und Default-Bindung)
 **Modus (M5):** Production, Core-first — **kein Lab**. Vorbild: `WP-KNIFE-00`
 (`Mesh.split_face` wurde direkt als eigenständiges Core-Paket gebaut, weil seine Form schon klar
@@ -191,3 +191,94 @@ Alle für den Start nötigen Entscheidungen sind getroffen (§0.2). Das Paket ka
 Code-Agenten gehen. Verbleibende technische Details (genaue Core-Signaturen für Vertex-/Edge-Delete,
 exakte Pyglet-Tastencodes) werden beim Bauen entschieden, mit demselben Dokumentationsstandard wie
 die bestehenden Core-Methoden — nicht hier vorab festgelegt.
+
+---
+
+## Status-Update 2026-10-06 (Umsetzung)
+
+Umgesetzt wie oben beschrieben, Production-first, kein Lab. Der Praxis-Check (Definition of Done) und das
+Kurzverdikt stehen aus — das Verdikt ist Manus Urteil, der Agent setzt es nicht.
+
+### Was gebaut wurde
+
+| Ebene | Ort | Inhalt |
+| --- | --- | --- |
+| Core | `src/core/mesh.py` | `dissolve_vertex(v)`, `dissolve_edges(edge_ids, *, cleanup)`, `dissolve_faces(face_ids, *, cleanup)`, `delete_vertices(ids)`, `delete_edges(ids)`, `delete_faces(ids)`; gemeinsamer, rein lesender Planer (`_region_outline`, `_plan_dissolve`) + ein Apply-Schritt; gemeinsamer Delete-Kern. Docstring je Methode mit ID-Kontinuität. |
+| Freeze | `docs/architecture/CORE_V1_FREEZE.md` §7.1 | Präzedenzfall-Eintrag "WP Delete/Dissolve" (Freeze-Regel 1–6) |
+| Production | `src/mirai/topology/delete_dissolve.py`, `src/mirai/application.py` (`_removal_command`) | Snapshot → Core → genau ein `MeshStateCommand`; Ablehnung/No-op: Mesh, History, Auswahl unverändert |
+| Commands / Bindings | `commands.py` (`Delete`, `Dissolve`, `DissolveNoCleanup`), `bindings.py`, `pyglet_input.py` | Entf / Rücktaste / Ctrl+Rücktaste; Artist Input Truth `topology.delete`, `topology.dissolve`, `topology.dissolve_no_cleanup` (PROVISIONAL) |
+| Tests | `tests/test_core_delete_dissolve.py` (40), `tests/test_application_delete_dissolve.py` (46), `tests/test_pyglet_input.py` (+2) | siehe §Tests; alle Suiten grün |
+| Assets | `examples/meshes/grid_2x2.obj`, `grid_3x3.obj` | für den Praxis-Check mit `python src/main.py <asset>` |
+
+### Beim Bauen entschieden (Plan: "Entscheidung fällt beim Bauen")
+
+1. **Tasten (§0.3.1):** pyglet `key.DELETE` (Entf) = Delete, `key.BACKSPACE` = Dissolve. macOS: die mit "delete"
+   beschriftete Taste liefert `BACKSPACE`, fn+delete liefert `DELETE`.
+2. **`dissolve_edges` statt `dissolve_edge`:** atomar über die ganze Auswahl. Grund: Mit Cleanup pro einzelner Edge
+   kann die erste Edge den Endpunkt entfernen, an dem die nächste ausgewählte hängt (zwei Edges an einer Würfel-Ecke:
+   die zweite verschwände ungewollt). Faces, die über ausgewählte Edges zusammenhängen, verschmelzen als eine Region.
+   Für eine einzelne Edge ist es genau die Plan-Operation. `cleanup` ist keyword-only und ohne Default.
+3. **Vertex-/Edge-Delete haben eigene Primitive** (`delete_vertices`, `delete_edges`): Core hat keine öffentliche
+   Edge-Entfernung, also lässt sich Vertex-/Edge-Delete nicht aus `remove_face` zusammensetzen.
+4. **"Innere Kanten" bei Delete (§0.2.3)** = Edges, deren beide Faces entfernt werden. Sie gehen mit, ebenso Vertices,
+   die danach keine Edge mehr haben. Rand-Edges der entfernten Region bleiben mit ihrer ID stehen — wörtlich nach
+   §0.2.3/§Tests und der V1-Entscheidung von `remove_face`. Siehe offene Frage DD-1.
+5. **2er-Vertex** = Vertex mit genau zwei Edges. Cleanup-Kandidaten sind die Endpunkte der aufgelösten Edges.
+   Lässt sich eine 2er-Kette nicht entfernen (Ersatz-Edge existiert schon, oder eine Face fiele unter 3 Vertices),
+   bleibt sie ohne Fehler stehen. `dissolve_vertex` an einem 2er-Vertex ist dieselbe Entfernung (Umkehrung von
+   `split_edge`) und lehnt in diesen Fällen ab, weil es den Vertex entfernen *muss*.
+6. **Was Dissolve ablehnt** (MeshError, Mesh inkl. ID-Zähler unverändert; App: Statuszeile, keine History):
+   - eine Edge mit nur einer Face (Mesh-Rand),
+   - eine Region, deren Ergebnis ein Loch hätte oder deren Rand sich in einem Vertex berührt,
+   - ein Vertex mit Valenz < 2, ein Bowtie-Vertex oder ein Vertex mit Wire-Edge an einem Fan.
+   Bei einer Mehrfachauswahl lehnt eine einzige solche Edge oder ein einziger solcher Vertex die ganze Operation ab.
+7. **IDs:** Pro verschmolzener Region entsteht eine neue FaceId. Pro entfernter 2er-Kette entsteht eine neue EdgeId.
+   Die Nachbar-Face an der Kette behält ihre FaceId und ihre Boundary verliert den Vertex. Delete erzeugt keine IDs.
+8. **Residue (erster Standard, §Not in scope):** Face-Dissolve wählt die verschmolzenen Faces, alles andere leert
+   die Auswahl; der Modus bleibt.
+9. **Session-Gates:** Wie bei `C` werden die drei Tasten ignoriert, solange W/E/R scharf ist. Während einer
+   Knife-Session sind sie ungebunden.
+
+### Agenten-Vorabdurchlauf der drei Szenarien (kein Ersatz für den Praxis-Check)
+
+Echtes `src/main.py`-Fenster (GLRenderStore, Mesa llvmpipe unter Xvfb), Auswahl per Mausklick über das Picking,
+Tasten als pyglet-Events. Ergebnis:
+
+- **2×2-Grid:** Delete auf einer Face ergibt ein Loch, F 4 → 3, alle 12 Edges bleiben. Zwei Nachbar-Faces: F → 2,
+  nur die gemeinsame Innenkante geht (E 12 → 11). Undo stellt alles wieder her. Siehe aber DD-1.
+- **Würfel:** Edge-Dissolve mit Cleanup ergibt V 8 → 6, Faces `[3, 3, 4, 4, 4]` mit geraden Ersatzkanten. Ohne
+  Cleanup: V bleibt 8, ein Sechseck, die beiden 2er-Vertices sind sichtbar. Face-Dissolve an einer Zweier-Region
+  liefert in beiden Varianten dasselbe Bild. Vertex-Dissolve: ein Sechseck plus drei Quads. Ctrl+Rücktaste im
+  Vertex-Modus bewirkt nichts und meldet das in der Statuszeile.
+- **3×3-Grid, Loop:** Rücktaste dreimal nacheinander auf den Loop-Kanten. Zwischendurch entsteht ein Fünfeck, am
+  Ende sind es 6 reine Quads (V 12, E 17), drei History-Einträge.
+
+### Offene Fragen (M5: neue Erkenntnis = offene Frage, keine stille Entscheidung)
+
+- **DD-1 — Mesh-Randkanten nach Delete.** Der Plantext zum 2×2-Grid ("alle vier Kanten … weil sie jeweils noch von
+  einer Nachbar-Face genutzt werden"; "äußere Randkanten … haben noch eine Nachbar-Face") geht davon aus, dass jede
+  Außenkante eine Nachbar-Face hat. Auf dem 2×2-Grid stimmt das nicht: Jede Face hat zwei Kanten am Mesh-Rand.
+  Umgesetzt ist die wörtliche Regel: Diese Kanten bleiben nach dem Delete als **freie Kanten ohne Face** stehen
+  (sichtbar als Linien im Wireframe-Overlay), der Eck-Vertex ebenso. Alternative (Blender): jede Kante, die durch
+  das Delete face-los wird, geht mit, dazu jeder Vertex, der dadurch kantenlos wird. Bei Vertex-Delete (1-Ring)
+  verhalten sich beide Varianten wie Blender: Der äußere Ring bleibt. Frage an Manu beim Praxis-Check: freie
+  Randkanten stehen lassen oder mit entfernen?
+- **DD-2 — Symmetrie.** Laut Plan ausdrücklich nicht in scope. Delete/Dissolve spiegeln nicht. Das BLOCK-Gate des
+  Symmetry Labs (`unsupported_commands`) kennt die drei neuen Commands nicht. Unter Symmetrie wirken sie im Lab
+  deshalb einseitig. Gehört in die Symmetrie-Folgefrage (Entfernungs-Research §9); hier nicht angefasst.
+- **DD-3 — Vertex-Dissolve und Umbindung.** Wie im Plan hängt die Vertex-Dissolve-Operation am Command "mit
+  Cleanup" (`Dissolve`); `DissolveNoCleanup` bewirkt im Vertex-Modus nichts. Werden die beiden Varianten per
+  `keymap.json` getauscht, wandert Vertex-Dissolve mit auf Ctrl+Rücktaste. Alternative: Beide Commands lösen im
+  Vertex-Modus die eine Vertex-Operation aus.
+- **DD-4 — Residue und Mesh-Rand-Edge-Dissolve.** Erste Standards, Material für den Praxis-Check:
+  - Auswahl nach der Operation, siehe Punkt 8.
+  - Dissolve einer Rand-Edge wird abgelehnt (Blender würde die Face entfernen).
+  - Eine Ersatz-Edge, die schon existiert, wird nicht wiederverwendet (konservativ).
+
+### Praxis-Check (Manu, ein Durchgang)
+
+Start: `python src/main.py examples/meshes/grid_2x2.obj`, `python src/main.py cube`,
+`python src/main.py examples/meshes/grid_3x3.obj`. Modus mit 1/2/3, Auswahl mit Klick/Shift+Klick, Wireframe-Overlay
+mit Shift+D, Undo mit Ctrl+Z. Die drei Szenarien aus §Practical viewport test, dazu Frage DD-1 (Randkanten auf dem
+2×2-Grid) und DD-4 (Residue). Danach das Kurzverdikt KEEP/ITERATE/REJECT hier und in `docs/architecture/ROADMAP.md`
+eintragen.

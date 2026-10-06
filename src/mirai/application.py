@@ -57,6 +57,7 @@ from .mesh_geometry import mesh_center_and_radius
 from .topology.connect_per_face import TopologyToolError, connect_selected_edges_per_face
 from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
 from .topology.contextual_c import CContext, resolve_c_context
+from .topology.delete_dissolve import RemovalRefused, remove_selected, removal_label
 from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point, space_point
@@ -119,6 +120,13 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
     commands.SET_WIREFRAME: DisplayMode.WIREFRAME,
 }
 
+
+#: WP Delete/Dissolve: Command → (dissolve, cleanup) für `remove_selected`.
+_REMOVAL_COMMANDS: dict[str, tuple[bool, bool]] = {
+    commands.DELETE: (False, False),
+    commands.DISSOLVE: (True, True),
+    commands.DISSOLVE_NO_CLEANUP: (True, False),
+}
 
 #: WP-06 B5b (E43): Component-Modi 1/2/3 (Selection Lab KEEP, `PROMOTED`).
 _MODE_COMMANDS: dict[str, SelectionMode] = {
@@ -506,6 +514,8 @@ class Application:
             return self._set_selection_mode(_MODE_COMMANDS[command])
         if command == commands.CONNECT:
             return self._connect_command()
+        if command in _REMOVAL_COMMANDS:
+            return self._removal_command(command)
 
         return False
 
@@ -591,6 +601,51 @@ class Application:
         # C meaning (AD-017 §7).
         self._set_status("C: nothing to do here")
         return False
+
+    # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
+
+    def _removal_command(self, command: str) -> bool:
+        """Entf / Rücktaste / Ctrl+Rücktaste on the selection of the active
+        component mode (`mirai.topology.delete_dissolve`). Exactly one
+        `MeshStateCommand` per success, mesh and history untouched on refusal
+        or no-op. Residue (first default, refinement is material for the
+        practice check): Face Dissolve selects the merged faces, everything
+        else clears the selection; the mode stays."""
+        selection = self.selection
+        mode = selection.mode
+        ids = {
+            SelectionMode.VERTEX: selection.vertices,
+            SelectionMode.EDGE: selection.edges,
+            SelectionMode.FACE: selection.faces,
+        }.get(mode)
+        dissolve, cleanup = _REMOVAL_COMMANDS[command]
+        if not ids:
+            verb = "Dissolve" if dissolve else "Delete"
+            self._set_status(f"{verb}: nothing selected")
+            return False
+        label = removal_label(mode, dissolve=dissolve, cleanup=cleanup)
+        if command == commands.DISSOLVE_NO_CLEANUP and mode is SelectionMode.VERTEX:
+            # §0.2.2: Vertex Dissolve has no variant, so this command does nothing.
+            self._set_status("Dissolve (no cleanup): no variant in Vertex mode")
+            return False
+        before = self._selection_snapshot()
+        try:
+            new_faces = remove_selected(
+                self.scene, mode, set(ids), dissolve=dissolve, cleanup=cleanup
+            )
+        except RemovalRefused as exc:
+            self._set_status(f"{label}: {exc}")
+            return False
+        if new_faces is None:
+            self._set_status(f"{label}: nothing to do")
+            return False
+        selection.clear()
+        if dissolve and mode is SelectionMode.FACE:
+            selection.add(set(new_faces))
+        self._record_selection_history(before)
+        self._notify_topology_changed()
+        self._set_status(label)
+        return True
 
     def _notify_topology_changed(self) -> None:
         """Meldet dem Viewport eine Topologie-Änderung und richtet den Hover
@@ -1091,9 +1146,9 @@ class Application:
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
-        if command == commands.CONNECT:
-            # Wie die Modus-Tasten (B5b): C wird ignoriert, solange W/E/R
-            # scharf ist (Playground Session Gate).
+        if command == commands.CONNECT or command in _REMOVAL_COMMANDS:
+            # Wie die Modus-Tasten (B5b): C, Entf und Rücktaste werden
+            # ignoriert, solange W/E/R scharf ist (Playground Session Gate).
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
@@ -1281,7 +1336,8 @@ class Application:
         führt deshalb einen eigenen Mirror-Stack aus (before, after)-Snapshots,
         einen pro `history.push()`, den sie selbst über `_record_selection_
         history()` befüllt (Split/Edge Connect/Vertex Connect, Transform-
-        Commit — aktuell die einzigen Push-Aufrufer). Der Mirror-Pop läuft in
+        Commit, Knife-Commit, Delete/Dissolve, `apply_mesh_change`). Der
+        Mirror-Pop läuft in
         derselben Reihenfolge wie `HistoryStack`s eigener Undo-/Redo-Stack
         (LIFO), Undo restauriert den `before`-Snapshot (Auswahl, wie sie vor
         der Mutation war), Redo den `after`-Snapshot (die von der Mutation

@@ -80,6 +80,19 @@ KNIFE_COMMIT = "KnifeCommit"
 # gebunden (E und ein RMB-Klick, Blender 2.79 / 3.0+ "New Cut").
 KNIFE_LIFT = "KnifeLift"
 
+# DELETE / DISSOLVE / DISSOLVE_NO_CLEANUP (WP Delete/Dissolve, docs/
+# WP_DELETE_DISSOLVE_PLAN.md): global, wirken auf die Auswahl des aktiven
+# Komponentenmodus. DELETE entfernt destruktiv (Loch). DISSOLVE entfernt
+# bewahrend mit Cleanup (Edge/Face: übrig bleibende 2er-Vertices weg) und ist
+# im Vertex-Modus die eine Vertex-Dissolve-Operation; DISSOLVE_NO_CLEANUP lässt
+# die 2er-Vertices stehen und hat im Vertex-Modus keine Wirkung (keine
+# Variante, §0.2.2). Welche Taste welche Variante trägt, entscheidet allein die
+# Bindung. Siehe `mirai.topology.delete_dissolve` /
+# `mirai.application.Application._removal_command`.
+DELETE = "Delete"
+DISSOLVE = "Dissolve"
+DISSOLVE_NO_CLEANUP = "DissolveNoCleanup"
+
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"
 COLLAPSE = "Collapse"

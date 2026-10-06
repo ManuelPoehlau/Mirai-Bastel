@@ -82,6 +82,11 @@ class TestKeyFromPyglet:
         # WP-06 B7: Knife commit (Artist Input Truth `topology.knife_commit`).
         assert key_from_pyglet(symbol, 0) == Input("key", "enter", frozenset())
 
+    def test_backspace_and_delete(self):
+        # WP Delete/Dissolve: Rücktaste = Dissolve, Entf = Delete (Bindings).
+        assert key_from_pyglet(_key.BACKSPACE, 0) == Input("key", "backspace", frozenset())
+        assert key_from_pyglet(_key.DELETE, 0) == Input("key", "delete", frozenset())
+
     def test_unknown_symbol_returns_none(self):
         assert key_from_pyglet(999999, 0) is None
 
@@ -194,6 +199,13 @@ class TestIntegrationWithDefaultBindings:
         bindings = build_default_bindings()
         inp = key_from_pyglet(_key.Z, _key.MOD_CTRL)
         assert bindings.command_for(inp, GLOBAL_CONTEXT) == cmd.UNDO
+
+    def test_delete_and_backspace_variants(self):
+        bindings = build_default_bindings()
+        assert bindings.command_for(key_from_pyglet(_key.DELETE, 0), GLOBAL_CONTEXT) == cmd.DELETE
+        assert bindings.command_for(key_from_pyglet(_key.BACKSPACE, 0), GLOBAL_CONTEXT) == cmd.DISSOLVE
+        inp = key_from_pyglet(_key.BACKSPACE, _key.MOD_CTRL)
+        assert bindings.command_for(inp, GLOBAL_CONTEXT) == cmd.DISSOLVE_NO_CLEANUP
 
     def test_ctrl_y_is_redo(self):
         bindings = build_default_bindings()

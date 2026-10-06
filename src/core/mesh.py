@@ -583,6 +583,479 @@ class Mesh:
         return new_vertices, new_edges, face_1, face_2
 
     # ------------------------------------------------------------------
+    # Entfernen: Dissolve (bewahrend) und Delete (destruktiv) -
+    # WP Delete/Dissolve (docs/WP_DELETE_DISSOLVE_PLAN.md). Gemeinsamer
+    # Vertrag aller fünf Methoden: jede Vorbedingung wird vor der ersten
+    # Mutation geprüft; bei MeshError bleibt das Mesh inkl. Allocator-
+    # Zählerständen unverändert. Die Symmetry Definition wird nicht
+    # angefasst (wie bei split_edge; Symmetrie-Verhalten ist nicht Teil
+    # dieses Pakets).
+    # ------------------------------------------------------------------
+
+    def dissolve_vertex(self, vertex_id: VertexId) -> FaceId | None:
+        """Entfernt einen Vertex, ohne ein Loch zu hinterlassen.
+
+        Eine Operation, keine Cleanup-Variante (WP Delete/Dissolve §0.2.2).
+        Zwei Fälle, nach Anzahl der anliegenden Edges (Valenz):
+        - Valenz 2 (2er-Vertex, z. B. nach split_edge): der Vertex wird aus
+          jeder anliegenden Face entfernt, seine beiden Edges a-v, v-b werden
+          durch eine Edge a-b ersetzt; die Faces bleiben getrennt (Umkehrung
+          von split_edge, bis auf die neue EdgeId). Rückgabe None.
+        - Valenz >= 3: alle anliegenden Faces verschmelzen zu einer Face
+          (N-Gon), alle Spoke-Edges verschwinden. Liegt der Vertex auf einem
+          offenen Rand (offener Fan), werden die beiden Rand-Spokes a-v, v-b
+          durch eine Rand-Edge a-b ersetzt. Rückgabe: die neue Face.
+
+        Vorbedingungen (Verletzung -> MeshError):
+        - vertex_id gültig, Valenz >= 2.
+        - bei Valenz >= 3: jede anliegende Edge hat mindestens eine Face, und
+          die anliegenden Faces bilden einen einzigen Fan (kein Bowtie).
+        - die Ersatz-Edge a-b existiert noch nicht, und keine Face fällt unter
+          3 Vertices (z. B. 2er-Vertex eines Dreiecks).
+
+        ID-Kontinuität (AD-001):
+        - vertex_id wird ungültig, ebenso alle anliegenden Edges.
+        - Valenz 2: eine neue EdgeId (a-b); anliegende Faces behalten ihre
+          FaceId, ihre Boundary verliert den Vertex.
+        - Valenz >= 3: alle anliegenden FaceIds werden ungültig, genau eine
+          neue FaceId entsteht; bei offenem Fan zusätzlich eine neue EdgeId
+          (a-b). Die äußeren Edges des Fans behalten ihre IDs.
+        - alle übrigen IDs bleiben unverändert. Nachbar-Vertices, die dadurch
+          selbst zu 2er-Vertices werden (Würfel-Ecke), bleiben stehen.
+        """
+        if not self.is_valid_vertex(vertex_id):
+            raise MeshError(f"dissolve_vertex: unbekannter Vertex {vertex_id!r}")
+        edges = self.vertex_edges(vertex_id)
+        if len(edges) < 2:
+            raise MeshError(
+                "dissolve_vertex: Vertex hat weniger als zwei Edges - nichts zu verschmelzen."
+            )
+        if len(edges) == 2:
+            plan = self._plan_dissolve([], cleanup=False, forced=(vertex_id,))
+            self._apply_dissolve(plan)
+            return None
+        if any(not self._edges[e].faces for e in edges):
+            raise MeshError("dissolve_vertex: Vertex hat eine Edge ohne Face (Wire).")
+        fan = {f for e in edges for f in self._edges[e].faces}
+        if len(self._components(fan, set(edges))) != 1:
+            raise MeshError("dissolve_vertex: anliegende Faces bilden keinen einzelnen Fan.")
+        plan = self._plan_dissolve([fan], cleanup=False, forced=(vertex_id,))
+        (face,) = self._apply_dissolve(plan)
+        return face
+
+    def dissolve_edges(self, edge_ids: Sequence[EdgeId], *, cleanup: bool) -> list[FaceId]:
+        """Entfernt Edges, ohne ein Loch zu hinterlassen: die beiden Faces an
+        jeder Edge verschmelzen.
+
+        Faces, die über ausgewählte Edges zusammenhängen, bilden eine Region
+        und verschmelzen gemeinsam zu einer Face (eine Edge: genau ihre beiden
+        Faces). Atomar über die ganze Auswahl, weil der Cleanup einer
+        einzelnen Edge Endpunkte entfernen kann, an denen die nächste
+        ausgewählte Edge hängt (zwei Edges an einer Würfel-Ecke).
+
+        Mit verschwinden alle Edges, deren beide Faces in derselben Region
+        liegen (z. B. eine Kette über einen 2er-Vertex zwischen denselben zwei
+        Faces - sonst entstünde eine Face mit doppeltem Vertex), und Vertices,
+        die dadurch keine Edge mehr haben.
+
+        `cleanup` (keyword-only, bewusst ohne Default - die Wahl ist eine
+        Bindungs-, keine Core-Entscheidung, WP Delete/Dissolve §0.2.2):
+        - True: jeder Endpunkt einer aufgelösten Edge, der danach genau zwei
+          Edges hat, wird entfernt (seine beiden Edges werden zu einer).
+          Ausgenommen bleibt eine 2er-Kette, deren Ersatz-Edge schon existiert
+          oder deren Entfernen eine Face unter 3 Vertices drücken würde - sie
+          bleibt stehen, ohne Fehler.
+        - False: solche 2er-Vertices bleiben stehen.
+
+        Vorbedingungen (Verletzung -> MeshError): jede Edge gültig und an
+        genau zwei Faces; jede Region hat genau einen einfachen Rand (kein
+        Loch, keine Selbstberührung in einem Vertex) und konsistente
+        Orientierung. Leere Auswahl -> No-op, Rückgabe [].
+
+        ID-Kontinuität (AD-001):
+        - die Faces jeder Region werden ungültig; pro Region entsteht genau
+          eine neue FaceId (Rückgabe, Regionen nach kleinster FaceId geordnet).
+        - aufgelöste Edges und dadurch kantenlose Vertices werden ungültig.
+        - cleanup=True: jeder entfernte 2er-Vertex und seine beiden Edges
+          werden ungültig; pro entfernter Kette entsteht eine neue EdgeId;
+          die Nachbar-Face an der Kette behält ihre FaceId, ihre Boundary
+          verliert die Vertices.
+        - alle übrigen IDs bleiben unverändert; die Rand-Edges einer Region
+          behalten ihre IDs.
+        - Winding: die neue Face läuft wie die Faces der Region.
+        """
+        selected = set(edge_ids)
+        for eid in selected:
+            if not self.is_valid_edge(eid):
+                raise MeshError(f"dissolve_edges: unbekannte Edge {eid!r}")
+            if len(self._edges[eid].faces) != 2:
+                raise MeshError(
+                    "dissolve_edges: Edge liegt nicht zwischen zwei Faces - nichts zu verschmelzen."
+                )
+        faces = {f for e in selected for f in self._edges[e].faces}
+        regions = self._components(faces, selected)
+        plan = self._plan_dissolve(regions, cleanup=cleanup)
+        return self._apply_dissolve(plan)
+
+    def dissolve_faces(self, face_ids: Sequence[FaceId], *, cleanup: bool) -> list[FaceId]:
+        """Verschmilzt zusammenhängende Faces zu je einer Face (Innenkanten weg).
+
+        Zusammenhang über gemeinsame Edges; jede Zusammenhangskomponente mit
+        mindestens zwei Faces verschmilzt für sich. Eine Face ohne Nachbarn in
+        der Auswahl bleibt unverändert (kein Fehler); besteht die Auswahl nur
+        aus solchen (oder ist leer), ist der Aufruf ein No-op (Rückgabe []).
+
+        Innenkanten = Edges, deren beide Faces in derselben Komponente liegen;
+        sie verschwinden, ebenso Vertices, die dadurch keine Edge mehr haben.
+        `cleanup` wie bei dissolve_edges (keyword-only, ohne Default):
+        Endpunkte der Innenkanten, die danach genau zwei Edges haben, werden
+        entfernt (True) oder bleiben stehen (False).
+
+        Vorbedingungen (Verletzung -> MeshError): jede FaceId gültig; jede
+        verschmelzende Komponente hat genau einen einfachen Rand (kein Loch,
+        keine Selbstberührung in einem Vertex) und konsistente Orientierung.
+
+        ID-Kontinuität: wie dissolve_edges - die Faces jeder verschmelzenden
+        Komponente werden ungültig, pro Komponente eine neue FaceId (Rückgabe,
+        nach kleinster FaceId geordnet); Innenkanten und kantenlose Vertices
+        ungültig; Cleanup wie dort; alle übrigen IDs unverändert.
+        """
+        selected = set(face_ids)
+        for fid in selected:
+            if not self.is_valid_face(fid):
+                raise MeshError(f"dissolve_faces: unbekannte Face {fid!r}")
+        shared = {
+            e for f in selected for e in self.face_edges(f)
+            if len(self._edges[e].faces) == 2 and set(self._edges[e].faces) <= selected
+        }
+        regions = [c for c in self._components(selected, shared) if len(c) >= 2]
+        plan = self._plan_dissolve(regions, cleanup=cleanup)
+        return self._apply_dissolve(plan)
+
+    def delete_faces(self, face_ids: Sequence[FaceId]) -> None:
+        """Entfernt Faces destruktiv (Loch) samt allem, was nur innerhalb der
+        entfernten Region lag (WP Delete/Dissolve §0.2.3).
+
+        Mit entfernt werden die inneren Edges der Region (beide Faces
+        entfernt) und Vertices, die dadurch keine Edge mehr haben. Rand-Edges
+        der Region bleiben mit unveränderter ID als Lochrand stehen - auch
+        eine Edge, die vorher Mesh-Rand war und danach keine Face mehr hat
+        (wie remove_face, V1-Entscheidung). Leere Auswahl -> No-op.
+
+        Vorbedingung: jede FaceId gültig (sonst MeshError, Mesh unverändert).
+
+        ID-Kontinuität: die FaceIds, die inneren EdgeIds und die kantenlos
+        gewordenen VertexIds werden ungültig; es entstehen keine neuen IDs;
+        alle übrigen IDs und alle verbleibenden Face-Boundaries bleiben
+        unverändert.
+        """
+        for fid in face_ids:
+            if not self.is_valid_face(fid):
+                raise MeshError(f"delete_faces: unbekannte Face {fid!r}")
+        self._delete_region(set(face_ids), set(), set())
+
+    def delete_edges(self, edge_ids: Sequence[EdgeId]) -> None:
+        """Entfernt Edges destruktiv: die Edge selbst und ihre (bis zu zwei)
+        Faces, danach wie delete_faces (innere Edges der entfernten Region und
+        kantenlos gewordene Vertices mit). Eine Edge ohne Face wird einfach
+        entfernt. Leere Auswahl -> No-op.
+
+        Vorbedingung: jede EdgeId gültig (sonst MeshError, Mesh unverändert).
+
+        ID-Kontinuität: die EdgeIds, die FaceIds ihrer Faces, die inneren
+        EdgeIds der Region und die kantenlos gewordenen VertexIds werden
+        ungültig; keine neuen IDs; alles Übrige unverändert.
+        """
+        for eid in edge_ids:
+            if not self.is_valid_edge(eid):
+                raise MeshError(f"delete_edges: unbekannte Edge {eid!r}")
+        edges = set(edge_ids)
+        self._delete_region({f for e in edges for f in self._edges[e].faces}, edges, set())
+
+    def delete_vertices(self, vertex_ids: Sequence[VertexId]) -> None:
+        """Entfernt Vertices destruktiv: den Vertex, zwingend alle anliegenden
+        Edges und Faces (eine Edge kann nicht mit einem Endpunkt existieren),
+        danach wie delete_faces (innere Edges der Region und kantenlos
+        gewordene Vertices mit). Die äußeren Edges des 1-Rings bleiben als
+        Lochrand stehen. Leere Auswahl -> No-op.
+
+        Vorbedingung: jede VertexId gültig (sonst MeshError, Mesh unverändert).
+
+        ID-Kontinuität: die VertexIds, alle anliegenden EdgeIds und FaceIds,
+        die inneren EdgeIds der Region und die kantenlos gewordenen VertexIds
+        werden ungültig; keine neuen IDs; alles Übrige unverändert.
+        """
+        for vid in vertex_ids:
+            if not self.is_valid_vertex(vid):
+                raise MeshError(f"delete_vertices: unbekannter Vertex {vid!r}")
+        vertices = set(vertex_ids)
+        edges = {e for v in vertices for e in self.vertex_edges(v)}
+        faces = {f for e in edges for f in self._edges[e].faces}
+        self._delete_region(faces, edges, vertices)
+
+    # -- interne Bausteine für Dissolve/Delete -------------------------------
+
+    def _components(self, faces: set[FaceId], via: set[EdgeId]) -> list[set[FaceId]]:
+        """Zusammenhangskomponenten von `faces`, verbunden über Edges aus
+        `via`, geordnet nach kleinster FaceId."""
+        remaining = set(faces)
+        components = []
+        while remaining:
+            start = min(remaining, key=int)
+            remaining.discard(start)
+            component, stack = {start}, [start]
+            while stack:
+                fid = stack.pop()
+                for eid in self.face_edges(fid):
+                    if eid not in via:
+                        continue
+                    for other in self._edges[eid].faces:
+                        if other in remaining:
+                            remaining.discard(other)
+                            component.add(other)
+                            stack.append(other)
+            components.append(component)
+        return components
+
+    def _region_outline(
+        self, region: set[FaceId]
+    ) -> tuple[list[VertexId], set[EdgeId], set[VertexId]]:
+        """Rand einer Face-Region als eine geordnete Boundary, plus Innenkanten
+        und Innen-Vertices. Rein lesend; MeshError, wenn die Region keine
+        einfache Scheibe ist."""
+        directions: dict[EdgeId, set[tuple[VertexId, VertexId]]] = {}
+        interior: set[EdgeId] = set()
+        step: dict[VertexId, VertexId] = {}
+        starts: list[VertexId] = []
+        region_vertices: set[VertexId] = set()
+        for fid in sorted(region, key=int):
+            boundary = self._faces[fid].boundary
+            region_vertices.update(boundary)
+            n = len(boundary)
+            for i in range(n):
+                u, w = boundary[i], boundary[(i + 1) % n]
+                eid = self._edge_lookup[frozenset((u, w))]
+                adjacent = self._edges[eid].faces
+                if len(adjacent) == 2 and all(f in region for f in adjacent):
+                    interior.add(eid)
+                    directions.setdefault(eid, set()).add((u, w))
+                    continue
+                if u in step:
+                    raise MeshError("Region berührt sich selbst in einem Vertex.")
+                step[u] = w
+                starts.append(u)
+        for eid in interior:
+            if len(directions[eid]) != 2:
+                raise MeshError("Region ist nicht konsistent orientiert.")
+        if not starts:
+            raise MeshError("Region hat keinen Rand.")
+        outline = [starts[0]]
+        current = step[starts[0]]
+        while current != starts[0]:
+            if current not in step or len(outline) > len(step):
+                raise MeshError("Region-Rand ist nicht geschlossen.")
+            outline.append(current)
+            current = step[current]
+        if len(outline) != len(step):
+            raise MeshError("Region hat mehr als einen Rand (Loch).")
+        if len(outline) < 3:
+            raise MeshError("Region würde eine degenerierte Face ergeben.")
+        inner_vertices = region_vertices - set(outline)
+        for vid in inner_vertices:
+            if any(e not in interior for e in self.vertex_edges(vid)):
+                raise MeshError("Innen-Vertex der Region hat eine Edge nach außen.")
+        return outline, interior, inner_vertices
+
+    def _plan_dissolve(
+        self,
+        regions: list[set[FaceId]],
+        *,
+        cleanup: bool,
+        forced: Sequence[VertexId] = (),
+    ) -> dict:
+        """Berechnet das Ergebnis eines Dissolve rein lesend: jede Region
+        verschmilzt zu einer Face; danach werden 2er-Vertices entfernt -
+        `forced` zwingend (MeshError, wenn nicht möglich), bei `cleanup` die
+        Endpunkte der aufgelösten Edges, soweit möglich."""
+        removed_faces = [f for region in regions for f in sorted(region, key=int)]
+        removed_edges: set[EdgeId] = set()
+        removed_vertices: set[VertexId] = set()
+        merged: list[list[VertexId]] = []
+        for region in regions:
+            outline, interior, inner_vertices = self._region_outline(region)
+            merged.append(outline)
+            removed_edges |= interior
+            removed_vertices |= inner_vertices
+
+        candidates = set(forced)
+        if cleanup:
+            candidates |= {v for e in removed_edges for v in self.edge_vertices(e)}
+        candidates -= removed_vertices
+        removed_face_set = set(removed_faces)
+
+        def remaining_edges(vid: VertexId) -> list[EdgeId]:
+            return [e for e in self.vertex_edges(vid) if e not in removed_edges]
+
+        chain = {v for v in candidates if len(remaining_edges(v)) == 2}
+        for vid in forced:
+            if vid not in removed_vertices and vid not in chain:
+                raise MeshError("Vertex hätte danach nicht genau zwei Edges.")
+
+        # Faces nach dem Verschmelzen: neue (Index in `merged`) und bestehende.
+        boundaries: dict[object, list[VertexId]] = {("new", i): b for i, b in enumerate(merged)}
+        for vid in chain:
+            for eid in remaining_edges(vid):
+                for fid in self._edges[eid].faces:
+                    if fid not in removed_face_set:
+                        boundaries[fid] = self._faces[fid].boundary
+
+        wire_edges: list[tuple[VertexId, VertexId]] = []
+        while True:
+            dropped: set[VertexId] = set()
+            # Ersatz-Edge -> (Faces, die sie tragen würden; Ketten-Vertices).
+            new_pairs: dict[frozenset, tuple[set, set[VertexId]]] = {}
+            for key, boundary in boundaries.items():
+                hits = [v for v in boundary if v in chain]
+                if not hits:
+                    continue
+                if len(boundary) - len(hits) < 3:
+                    dropped |= set(hits)
+                    continue
+                for pair, run in self._chain_runs(boundary, chain):
+                    if pair[0] == pair[1] or self._pair_exists(pair, removed_edges):
+                        dropped |= run
+                        continue
+                    owners, runs = new_pairs.setdefault(frozenset(pair), (set(), set()))
+                    owners.add(key)
+                    runs |= run
+            for owners, runs in new_pairs.values():
+                if len(owners) > 2:
+                    dropped |= runs
+            # 2er-Vertex ohne Face (Wire-Kette, nur über `forced` erreichbar).
+            wire_edges = []
+            for vid in sorted(chain - dropped, key=int):
+                ends = [self._other_end(e, vid) for e in remaining_edges(vid)]
+                in_face = any(
+                    f not in removed_face_set
+                    for e in remaining_edges(vid) for f in self._edges[e].faces
+                ) or any(vid in b for b in merged)
+                if in_face:
+                    continue
+                pair = (ends[0], ends[1])
+                if ends[0] == ends[1] or ends[0] in chain or ends[1] in chain \
+                        or self._pair_exists(pair, removed_edges):
+                    dropped.add(vid)
+                else:
+                    wire_edges.append(pair)
+            if not dropped:
+                break
+            if dropped & set(forced):
+                raise MeshError(
+                    "Vertex lässt sich nicht entfernen (Ersatz-Edge existiert schon oder "
+                    "eine Face fiele unter 3 Vertices)."
+                )
+            chain -= dropped
+
+        for vid in chain:
+            removed_edges |= set(remaining_edges(vid))
+        removed_vertices |= chain
+        updated = {
+            key: [v for v in b if v not in chain]
+            for key, b in boundaries.items() if any(v in chain for v in b)
+        }
+        return {
+            "removed_faces": removed_faces,
+            "removed_edges": removed_edges,
+            "removed_vertices": removed_vertices,
+            "merged": [updated.get(("new", i), b) for i, b in enumerate(merged)],
+            "updated": {k: b for k, b in updated.items() if not isinstance(k, tuple)},
+            "wire_edges": wire_edges,
+        }
+
+    @staticmethod
+    def _chain_runs(
+        boundary: list[VertexId], chain: set[VertexId]
+    ) -> list[tuple[tuple[VertexId, VertexId], set[VertexId]]]:
+        """Läufe aufeinanderfolgender `chain`-Vertices einer zyklischen
+        Boundary als ((Vorgänger, Nachfolger), Lauf). Setzt voraus, dass
+        mindestens ein Vertex nicht in `chain` liegt."""
+        n = len(boundary)
+        first = next(i for i, v in enumerate(boundary) if v not in chain)
+        rotated = boundary[first:] + boundary[:first]
+        runs = []
+        i = 0
+        while i < n:
+            if rotated[i] in chain:
+                j = i
+                while rotated[j % n] in chain:
+                    j += 1
+                runs.append(((rotated[i - 1], rotated[j % n]), set(rotated[i:j])))
+                i = j
+            else:
+                i += 1
+        return runs
+
+    def _pair_exists(self, pair: tuple[VertexId, VertexId], removed: set[EdgeId]) -> bool:
+        eid = self._edge_lookup.get(frozenset(pair))
+        return eid is not None and eid not in removed
+
+    def _other_end(self, edge_id: EdgeId, vertex_id: VertexId) -> VertexId:
+        e = self._edges[edge_id]
+        return e.v1 if e.v0 == vertex_id else e.v0
+
+    def _apply_dissolve(self, plan: dict) -> list[FaceId]:
+        """Wendet einen `_plan_dissolve`-Plan an (keine Prüfungen mehr)."""
+        for fid in plan["removed_faces"]:
+            self._remove_face_edges_only(fid)
+            del self._faces[fid]
+        for fid, boundary in plan["updated"].items():
+            self._faces[fid].boundary = boundary
+        for eid in plan["removed_edges"]:
+            edge = self._edges.pop(eid)
+            del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+        for vid in plan["removed_vertices"]:
+            del self._vertices[vid]
+        new_faces = [self.add_face(boundary) for boundary in plan["merged"]]
+        for fid in sorted(plan["updated"], key=int):
+            boundary = self._faces[fid].boundary
+            n = len(boundary)
+            for i in range(n):
+                eid = self._get_or_create_edge(boundary[i], boundary[(i + 1) % n])
+                if fid not in self._edges[eid].faces:
+                    self._edges[eid].faces.append(fid)
+        for v_a, v_b in plan["wire_edges"]:
+            self._get_or_create_edge(v_a, v_b)
+        return new_faces
+
+    def _delete_region(
+        self, faces: set[FaceId], edges: set[EdgeId], vertices: set[VertexId]
+    ) -> None:
+        """Gemeinsamer Delete-Kern: entfernt `faces`, `edges`, `vertices`,
+        dazu die inneren Edges der Face-Region und kantenlos gewordene
+        Vertices. Aufrufer haben alle IDs bereits geprüft."""
+        removed_edges = set(edges)
+        for fid in faces:
+            for eid in self.face_edges(fid):
+                adjacent = self._edges[eid].faces
+                if len(adjacent) == 2 and all(f in faces for f in adjacent):
+                    removed_edges.add(eid)
+        # Ein Durchlauf statt vertex_edges() je Endpunkt (O(E) pro Aufruf).
+        touched = {v for e in removed_edges for v in self.edge_vertices(e)}
+        keeps_edge = {
+            v for eid, e in self._edges.items() if eid not in removed_edges
+            for v in (e.v0, e.v1) if v in touched
+        }
+        removed_vertices = set(vertices) | (touched - keeps_edge)
+        for fid in faces:
+            self._remove_face_edges_only(fid)
+            del self._faces[fid]
+        for eid in removed_edges:
+            edge = self._edges.pop(eid)
+            del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+        for vid in removed_vertices:
+            del self._vertices[vid]
+
+    # ------------------------------------------------------------------
     # Serialisierung (§8, §12) - bewusst hier statt in serialization.py,
     # weil nur Mesh selbst legitimen Zugriff auf seine internen Container
     # hat (Vertrag aus §15 Punkt 1: keine externe Abhängigkeit von
