@@ -237,6 +237,19 @@ Und falls beim Bauen etwas Neues auftaucht: zurück zu Discovery (M5).
 - kein Backlog, keine Tickets, keine Sprints
 - keine permanenten Agentenrollen auf Projektebene
 
+**Ausnahme (2026-10-07, Manu): Mirai Atelier.** Ein eigenes Claude-Projekt plus `docs/ATELIER.md` für
+Überblick, Übersetzung in Artist-Sprache, Vorbereitung von Verdikt-Sessions und kreatives Erarbeiten von
+Ideen. Begründung ist ein eingetretener Fehler, kein erwarteter: Verdikte gingen zwischen Chat und Repo
+verloren (B7.1, B8) und Status-Angaben widersprachen sich (ROADMAP vs. `decision.md`, Symmetry-Lab-README).
+
+Grenzen: Die Atelier-KI entscheidet nichts, baut nichts, schreibt keine technischen Handoffs an
+Code-Agenten und gibt keine Verdikte ab — Intent, Product Truth, Priorität und Promotion bleiben bei Manu
+(M4, §5). Was im Atelier entsteht, geht als **Atelier-Brief** an die Entwicklung: Intent, gewünschtes
+Gefühl, Referenzen und Beobachtungen aus anderen Programmen, offene Fragen — keine Architektur und keine
+Lösung. Ein Atelier-Brief ist Input für Discovery (M5), keine Entscheidung; die Entwicklung prüft ihn mit
+M1 und baut daraus Experimente oder technische Handoffs. Was dauerhaft festgehalten werden soll, landet
+in `docs/future_ideas/` oder in der zuständigen Research-/Design-Datei, nicht in einem neuen Dokumenttyp.
+
 Regel für alles Weitere:
 
 > **Ein Prozessmechanismus muss einen eingetretenen Fehler lösen, nicht einen erwarteten.**
@@ -254,7 +267,7 @@ Regel für alles Weitere:
 
 **Könnte das System ändern:**
 
-- Retro-Test: drei bis fünf echte Driftfälle rekonstruieren und prüfen, woran es jeweils lag. Falls sich zeigt, dass die Information meist vorhanden, aber nicht angesehen wurde, ist das Problem Auffindbarkeit und nicht Kontext — dann wäre M2 der falsche Mechanismus und es bräuchte stattdessen einen Index. Einmalig, etwa eine Stunde.
+- Retro-Test: drei bis fünf echte Driftfälle rekonstruieren und prüfen, woran es jeweils lag. Falls sich zeigt, dass die Information meist vorhanden, aber nicht angesehen wurde, ist das Problem Auffindbarkeit und nicht Kontext — dann wäre M2 der falsche Mechanismus und es bräuchte stattdessen einen Index. Einmalig, etwa eine Stunde. Erste Evidenz 2026-10-07: drei Driftfälle mit vorhandener, aber nicht übertragener Information → Index (`docs/ATELIER.md`) statt mehr Kontext.
 
 **Ehrliche Unsicherheit:** Mirai-Bastel hat viel Dokumentation relativ zu ausgelieferten Features. Fünf Mechanismen sind für ein Ein-Personen-Projekt an der Obergrenze. Wenn dieses Dokument jemals überarbeitet werden muss, dann durch Streichen.
 

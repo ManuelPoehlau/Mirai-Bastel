@@ -77,6 +77,17 @@ Do not leave a canonical document describing an obsolete state when a newer stat
 
 For completed experiments, record the final result and point readers to the next relevant experiment or decision.
 
+## 4a. Artist overview
+
+`docs/ATELIER.md` is Manu's German index of the current state, open verdicts and next candidates.
+When a change alters something artist-relevant (a new verdict, a new open Artist question, a new capability
+in `src/main.py`), update `docs/ATELIER.md` in the same commit: one sentence plus a link, never canonical content.
+A verdict counts only once it is recorded in its authoritative document, not when it appears in a chat or only here.
+
+An **Atelier-Brief** (from the separate Mirai Atelier context, see Development System §8) carries Manu's intent,
+references and open questions. It is Discovery input, not a decision and not a spec: apply M1 before acting on it,
+and do not read an architecture or a solution into it that the brief does not state.
+
 ## 5. Never silently change architecture
 
 If implementation reveals that a documented architectural decision is wrong:

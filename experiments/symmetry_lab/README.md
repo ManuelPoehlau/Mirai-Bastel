@@ -363,9 +363,9 @@ im neuen Lab: `head_basemesh`, Shift+S → X, Vertex seitlich anklicken; **E hal
 Y/Z Gegensinn)? **R halten** — ist die Paarmitte der Pivot, den du erwartest? Grünen Seam-Vertex
 wählen, E mit Y/Z/frei → abgelehnt (`Rotate: refused — …`), mit X erlaubt. **Neu klickbar:** beide
 Vertices eines Paars mit Shift+Klick wählen → starre Rotation (Schritt 5 der S2-Liste).
-Verdikt 2: **Pivot B entschieden, Nachprüfung offen** (Manu, 2026-10-03). Rückfrage war, wo der Pivot liegt: bis dahin der Zentroid über Auswahl ∪ Partner (Paarmitte auf der Ebene). Entscheidung **B — Pivot pro Seite**: ohne explizites `pivot` der Zentroid der *eigenen* Auswahl, die Operation spiegelt ihn für die Partner; Rückfall auf Auswahl ∪ Partner, wenn ein Seam-Vertex betroffen ist und der eigene Zentroid nicht auf der Ebene liegt (`selection_helpers.symmetric_default_pivot`). Die Paarmitte (A) bleibt als Idee für ein Pivot-System (freie/temporäre Pivots, später). **Nachprüfung (KEEP, Manu, 2026-10-03):** `run_app.py head_basemesh`, Shift+S → X, eine Augen- oder Ohrschleife auf **einer** Seite wählen (Shift+Klick), **E** und **R** halten: dreht/skaliert die Schleife um ihre eigene Mitte und die Gegenseite gespiegelt? Ein einzelner Vertex bewegt sich mit E/R nicht mehr (dreht um sich selbst). Verdikt: **KEEP** (Manu, 2026-10-03).
+Verdikt 2: **Pivot B entschieden, Nachprüfung KEEP** (Manu, 2026-10-03). Rückfrage war, wo der Pivot liegt: bis dahin der Zentroid über Auswahl ∪ Partner (Paarmitte auf der Ebene). Entscheidung **B — Pivot pro Seite**: ohne explizites `pivot` der Zentroid der *eigenen* Auswahl, die Operation spiegelt ihn für die Partner; Rückfall auf Auswahl ∪ Partner, wenn ein Seam-Vertex betroffen ist und der eigene Zentroid nicht auf der Ebene liegt (`selection_helpers.symmetric_default_pivot`). Die Paarmitte (A) bleibt als Idee für ein Pivot-System (freie/temporäre Pivots, später). **Nachprüfung (KEEP, Manu, 2026-10-03):** `run_app.py head_basemesh`, Shift+S → X, eine Augen- oder Ohrschleife auf **einer** Seite wählen (Shift+Klick), **E** und **R** halten: dreht/skaliert die Schleife um ihre eigene Mitte und die Gegenseite gespiegelt? Ein einzelner Vertex bewegt sich mit E/R nicht mehr (dreht um sich selbst). Verdikt: **KEEP** (Manu, 2026-10-03).
 
-**3. E5 mit C — MARK vs. BLOCK** (die Frage aus [„Manuelle Prüfung E5"](#manuelle-prüfung-e5-manu-windows--offen-noch-nicht-geprüft),
+**3. E5 mit C — MARK vs. BLOCK** (die Frage aus [„Manuelle Prüfung E5"](#manuelle-prüfung-e5-manu-windows--keep-block-2026-10-03-siehe-ad-sym-02-4),
 jetzt mit dem echten nicht spiegelnden Tool C). `run_app.py subd_cube`, **Shift+S** → X; die
 HUD-Zeile zeigt `E5: MARK`.
 - **MARK:** **2** (Edge-Modus), eine Edge auf **einer** Seite anklicken, **C** → Split: nur diese
@@ -512,7 +512,7 @@ erlaubt. Ein einzelner Seam-Vertex ist sein eigener Pivot (nichts zu bewegen: `k
 
 Verdikt (KEEP / ITERATE / REJECT / UNKNOWN): steht aus.
 
-### Manuelle Prüfung E5 (Manu, Windows) — offen, noch nicht geprüft
+### Manuelle Prüfung E5 (Manu, Windows) — KEEP-BLOCK 2026-10-03, siehe AD-SYM-02 §4
 
 *Verdikt (Stand 2026-10-03): **KEEP-BLOCK** (Manu, 2026-10-03, auf dem App-Pfad mit C geprüft); BLOCK ist seit Slice 5 der Default.*
 
@@ -550,7 +550,7 @@ Tool — [„Gemeinsame Prüf-Session nach Slice 4"](#gemeinsame-prüf-session-n
 
 Verdikt: **KEEP-BLOCK** (Manu, 2026-10-03, auf dem App-Pfad mit C geprüft — siehe „Gemeinsame Prüf-Session nach Slice 4“, Punkt 3).
 
-### Manuelle Prüfung Slice 7 (Manu, Windows) — offen, noch nicht geprüft
+### Manuelle Prüfung Slice 7 (Manu, Windows) — historisch, nie verdiktet; bezieht sich auf den gelöschten alten Lab-Pfad (WP-SYM-LAB-03 S5)
 
 *Verdikt (Stand 2026-10-03): **Moot, nie verdiktet** (Plan §4.2): der gespiegelte Knife wird nicht auf den App-Pfad übernommen (Kopie vor B7) und ist in Slice 5 gelöscht. Die Befunde E23–E30 bleiben als Forschung für einen künftigen symmetrischen One Knife.*
 

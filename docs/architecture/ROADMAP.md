@@ -53,7 +53,7 @@ This roadmap is a current architectural plan, not a promise that every future su
 - WP-STAB stabilization pass on Playground selection/overlay/history edge cases (2026-09-23)
 - WP-SYM-01 / WP-SYM-LAB-01 Symmetry Lab, Slices 1–7 (definition, correspondence, symmetric Move, mirrored Knife) — Core exceptions AD-SYM-01/02
 - WP-SHADE-LAB-01 Viewport Shading Lab, Slice 1 (Key+Fill worklight, 2026-09-26) — no later slice committed as of 2026-09-29
-- **WP-06 Stage B, slices B1–B8** in `src/main.py` (head scene, vertex selection, Move/Rotate/Scale on W/E/R, display modes, component modes, contextual `C`, Knife click-only, pick cache + occlusion) — verdict state per slice in the WP-06 intake log; B6 selection-restore, B7.1 and B8 are **PROVISIONAL, verdict pending**
+- **WP-06 Stage B, slices B1–B8** in `src/main.py` (head scene, vertex selection, Move/Rotate/Scale on W/E/R, display modes, component modes, contextual `C`, Knife click-only, pick cache + occlusion) — verdict state per slice in the WP-06 intake log; B6 selection-restore and B8 are **KEEP** and B7.1 is absorbed into One Knife (verdict sync 2026-10-07)
 - **Knife Face Cut Lab** (`playground/experiments/knife_face/`) — Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 (cross-face) KEEP. **Lab verdict only, not a promotion**; Face Holes set aside by the Artist (bridges for now). Authoritative record: `playground/experiments/knife_face/decision.md`
 - Concave n-gon triangulation fix (ear clipping) in `src/viewport/derived.py` and its consumers (2026-09-29, found through the Face Holes discovery)
 
@@ -535,6 +535,18 @@ Dated entries:
 
 - 2026-10-06 — WP Delete/Dissolve done — PROVISIONAL, verdict UNKNOWN (Manu's single practice check at the end of the package is still open). Production-first, no Lab (plan header, M5). Core: `Mesh.dissolve_vertex` (one operation, no variant), `dissolve_edges(…, *, cleanup)` and `dissolve_faces(…, *, cleanup)` (cleanup = remove leftover 2-valent vertices, explicit keyword without default), `delete_vertices` / `delete_edges` / `delete_faces` (every edge left without a face and every edge-less vertex goes with it, edges still used by a remaining face stay — §0.2.3 clarified by Manu 2026-10-06); freeze entry `CORE_V1_FREEZE.md` §7.1. Production: `Delete` = Delete, `Backspace` = Dissolve with cleanup (Vertex: the vertex dissolve), `Ctrl+Backspace` = Dissolve without cleanup (Vertex: no effect) — Artist Input Truth `topology.delete` / `topology.dissolve` / `topology.dissolve_no_cleanup` (PROVISIONAL, swappable via `keymap.json`); one History entry per success, refusal/no-op untouched; residue: Face Dissolve selects the merged faces, otherwise cleared. `tests` +91 (43 Core contract, 46 Production, 2 pyglet mapping). Assets for the check: `examples/meshes/grid_2x2.obj`, `grid_3x3.obj`. Agent pre-run of all three scenarios in the real window (Xvfb): as the plan expects; DD-1 (former mesh-border edges floating after Delete) decided by Manu the same day — they go. Record, decisions made while building, open questions DD-2…DD-4 and the practice-check steps: `docs/WP_DELETE_DISSOLVE_PLAN.md`, "Status". Next: Manu's practice check and verdict.
 
+- 2026-10-07 — Verdict sync (documentation only, not a slice): S3b **KEEP** — source `playground/experiments/knife_face/decision.md` ("Other verdicts at this point", recorded by Manu in `41a182a`).
+
+- 2026-10-07 — Verdict sync (documentation only): UX2b **KEEP** — source `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX2b" verdict slot.
+
+- 2026-10-07 — Verdict sync (documentation only): S4 **KEEP** — source `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 S4" verdict slot. Row 6 (a loop across several faces), previously blank, is `passed (2026-10-07)` (Manu). KEEP is not promotion.
+
+- 2026-10-07 — Verdict sync (documentation only): Slice B7.1 — no separate verdict (Manu, 2026-10-07): absorbed into One Knife; its click-only behaviour continues in WP-KNIFE-01 S2–S4 / UX2 (all KEEP).
+
+- 2026-10-07 — Verdict sync (documentation only): Slice B8 (picking speed + occlusion) **KEEP** (Manu, 2026-10-07): speed and the occlusion rule as built (Shaded/Flat: only visible vertices/edges pickable; Wireframe: all). The agent-set values (`DEPTH_TOLERANCE`, the edge-occlusion approximation, the 5 ms target) are covered only as experienced behaviour, not as numbers; hover lag on the head stays a parked "optimize later" point.
+
+- 2026-10-07 — Verdict sync (documentation only): Slice B6 selection restore on Undo/Redo **KEEP** (Manu, 2026-10-07), including the intended overwrite of a later manual selection change by Undo. After this sync only B5a.1 (Per-Polygon-Flat, deferred) remains open from the 2026-09-29 status note's list.
+
 ---
 
 ## Later: WP-05+ — Deformation & Rigging
@@ -876,7 +888,7 @@ This policy is intentionally based on the Connect Edges experience: the experime
 - AD-018 — Production Draw Binding (Option B, `GLRenderStore`)
 - **Stage A — Production Entry Point** (`src/main.py`): window, camera, real rendering — **DONE 2026-09-25**, deliberately read-only
 - AD-017 — Knife/Cut system (Core exception: `split_edge(t)`)
-- **WP-06 Stage B slices B1–B8** in `src/main.py` — see the intake log for each slice's verdict state (B6 restore, B7.1, B8 still PROVISIONAL)
+- **WP-06 Stage B slices B1–B8** in `src/main.py` — see the intake log for each slice's verdict state (B6 restore, B7.1, B8 verdicts synced 2026-10-07; only B5a.1 stays open)
 - **Knife Face Cut Lab** — Lab verdicts 2026-09-29 (B REJECT, D KEEP → superseded, Q5 KEEP); Lab only, not promoted
 
 ## Artist Playground (active research initiative)
@@ -903,7 +915,7 @@ Candidates proven in the Playground feed back into the production roadmap throug
 
 1. **WP-06 — Stage B: Incremental Integration** *(top priority, in progress — B1–B8 done)*
    - Capabilities already wired into `src/main.py`: see the intake log in §7 (selection, Move/Rotate/Scale, display and component modes, contextual `C`, Knife click-only, pick cache + occlusion)
-   - Open items (the Artist sets the priority): verdicts for B6 restore / B7.1 / B8; one-Knife Production tool (candidate: Knife Face Cut Q5); B5a.1 Per-Polygon-Flat
+   - Open items (the Artist sets the priority): one-Knife Production tool (candidate: Knife Face Cut Q5); B5a.1 Per-Polygon-Flat (the B6 restore / B7.1 / B8 verdicts are recorded in the intake log, 2026-10-07)
    - Purpose unchanged: pull in only what already has an Artist verdict, one slice at a time; see the WP-06 entry in §7 for scope/non-scope
 
 2. **WP-01 — Production Viewport Foundation** — superseded in practice by Stage A; no further separate work expected here beyond what WP-06 needs

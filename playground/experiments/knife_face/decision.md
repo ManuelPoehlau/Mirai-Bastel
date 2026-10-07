@@ -2055,7 +2055,7 @@ camera):** S4 stays **PROVISIONAL** until these slots and the verdict are filled
 | 3 | A line that runs over a gap / the silhouette | only the **visible** part is cut; the status says what was skipped / hidden | passed|
 | 4 | Click a far point, **orbit the camera**, click the next far point | the first cut stays as placed |passed |
 | 5 | Switch to Wireframe (`D` until Wireframe, before `C`), the same far click | it now cuts everything under the line (nothing hidden) |passed |
-| 6 | A loop across several faces: click the chain's start again (snaps) | it closes without bridges across faces; the next click continues from the closing vertex; `E` / double-click still work | |
+| 6 | A loop across several faces: click the chain's start again (snaps) | it closes without bridges across faces; the next click continues from the closing vertex; `E` / double-click still work | passed (2026-10-07) |
 | 7 | Hover over the head | stays smooth |passed - it´s ok, but the circle follows delayed when you mouve the cursor quickly, but still passed, we can optimze that later|
 | 7a | **Empty space:** `C`, click an edge on the cube, move the cursor **off the model**, click there | the line follows the cursor over empty space; after the click the part outside **disappears**, only the cut on the model remains (status: "point in space"); `Enter` commits; `Ctrl+Z` reverts it |passed |
 | 7b | Click outside **left** of the model, then outside on the **right**; `Enter`. Same on the head. A click outside whose line crosses nothing | the line cuts across the model (visible faces only); "crosses nothing" cuts and commits nothing |passed |
