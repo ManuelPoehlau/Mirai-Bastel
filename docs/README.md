@@ -6,6 +6,7 @@ This directory contains the durable project knowledge that should survive indivi
 
 | Area | Purpose |
 |---|---|
+| [Atelier](ATELIER.md) | Artist-Übersicht: Stand, offene Verdikte, nächste Kandidaten (Index, Deutsch) |
 | [Architecture](architecture/README.md) | Current system boundaries, accepted architectural direction and V1 decisions |
 | [Design](design/README.md) | Interaction and workflow principles |
 | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |

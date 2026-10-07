@@ -202,6 +202,8 @@ And because this is supposed to remain a place for experimentation, research and
 
 ## Documentation
 
+For the artist-facing overview in German (current state, open verdicts, next candidates), start with [`docs/ATELIER.md`](docs/ATELIER.md).
+
 Start with [`docs/README.md`](docs/README.md) for the documentation map and with [`AGENTS.md`](AGENTS.md) for the rules that keep the documentation and collaboration model coherent across humans, Claude, Cursor and future AI agents.
 
 The repository deliberately distinguishes between current canonical documents, design principles, deferred future ideas, research and archived historical material. Important decisions should be recorded in Git rather than left only in chat history.
