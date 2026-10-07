@@ -456,6 +456,8 @@ slice 3, the midpoint report into slice 2) and add preconditions.
 ## 9. Review
 
 Per AGENTS §6 an independent review should be archived before discussion (e.g.
-`docs/archive/symmetry_lab/reviews/AD-SYM-03_REVIEW_CLAUDE_001.md`), then the decision recorded here. None yet.
+`docs/archive/symmetry_lab/reviews/AD-SYM-03_REVIEW_CLAUDE_001.md`), then the decision recorded here.
+**Archived (2026-10-07):** [review CLAUDE-001](../archive/symmetry_lab/reviews/AD-SYM-03_REVIEW_CLAUDE_001.md)
+(accept the direction with changes; findings F1–F8 not yet answered here).
 Points a reviewer should test: T-a vs. T-b (is the duck-typing objection strong enough?), G-4 vs. G-2, the
 fail-closed row (O1), and whether the exact-plane restriction is too strict for any planned host.
