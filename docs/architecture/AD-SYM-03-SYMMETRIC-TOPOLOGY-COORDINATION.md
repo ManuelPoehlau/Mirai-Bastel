@@ -1,7 +1,7 @@
 # AD-SYM-03 — Symmetric Topology Coordination
 
-**Status:** PROPOSED (not decided; independent review pending, §9)
-**Date:** 2026-10-06
+**Status:** PROPOSED (not decided; review CLAUDE-001 archived and answered, §9)
+**Date:** 2026-10-06 · **revised 2026-10-07** after the independent review CLAUDE-001 (answers in §9; still PROPOSED)
 **Mode (M5):** Discovery → decision preparation. No implementation, no code change.
 **Belongs to:** Symmetry Lab track (WP-SYM-LAB), follow-up of WP-SYM-LAB-03; working milestone
 "Symmetry Basic Modeling Parity" (Discovery header)
@@ -113,7 +113,9 @@ expanded with partners ("explicit wins"; the seam edge's partner is itself, so i
 | Delete seam edge (removes both adjacent faces) | valid / valid | 7/8 / 35/36 | 0 / 0 | 2 / 2 |
 | Delete {seam, opp} expanded | valid / valid | 7/8 / 35/36 | 0 / 0 | 2 / 2 |
 | Delete seam-touching face **pair** (no seam edge selected) | valid / valid | 7/8 / 35/36 | 0 / 0 | 2 / 2 |
-| Dissolve {seam, opp} expanded (plane-spanning face) | valid / valid | 7/8 / 35/36 | **0** / 0 | **1** / 1 |
+| Dissolve {seam, opp} expanded (plane-spanning face) | valid / valid | 7/8 / 35/36 | **0**† / 0† | **1** / 1 |
+
+† The merged face is its own vertex image, so the face-level check counts it as paired.
 
 With a probe rule "drop dead seam ids", every Delete row and the Dissolve row keep their `state`/`sides`
 (declared = live afterwards). The plane-spanning face after Dissolve is its own vertex image, so the face-level
@@ -151,7 +153,34 @@ installed; same failure as Disc.). `tests/test_extrude_tool.py` is excluded beca
 `mirai_bastel_core` from a path computed for an old location (`<repo>/../mirai_bastel_core_V1`) and
 `viewport.extrude_tool`, which no longer exists anywhere in the repo — a stale test, not a regression.
 
-### 1.4 Verdicts this AD may rely on (as recorded, nothing more)
+### 1.4 Review probe results (CLAUDE-001, R1–R5; re-run by the author on `main` @ `1334d8a`, identical)
+
+Observations only; code in the review's appendix.
+
+- **R1 — union call vs. intent + mirrored intent in a plane-spanning face.** One seam edge dissolved (a hexagon
+  spanning the plane), two of its +X edges selected, Edge Connect. (a) one call on selection ∪ partners: 4 / 3
+  chords, 2 / 1 of them crossing the plane; (b) op on the selection, then op on its mirror: 2 / 2 chords, none
+  crossing. Both 0 faces w/o partner (`subd_cube` / `head_basemesh`).
+- **R2 — partial mesh.** `man_with_shoes_basemesh` on X: `partial`, 54 unpaired vertices, 202 of 926 faces touch
+  one. Edge Connect on two opposite edges of such a quad, expanded (union 3, one edge has no partner): 2 new
+  vertices, both not `PAIRED`; the partner edge is dropped by Connect's own "no other selected edge in its faces"
+  rule.
+- **R3 — symmetric Delete and `sides`.** Deleting a horizontal face band closed under the partner map (8 / 56
+  faces): `state` valid → valid, faces w/o partner 0 → 0, **`sides` 2 → 4**.
+- **R4 — negative axis normal.** `(−1,0,0)` through the origin: 0 non-exact mirrors / involution failures in
+  100 000 random points.
+- **R5 — report cost.** Correspondence + indexed face check + `sides`: ~2 ms (`head_basemesh`, 324 faces),
+  ~5–7 ms (`man_with_shoes_basemesh`, 926 faces) per report, in a container.
+
+Code facts the review added (checked): `src/mirai/interaction/commands.py` already declares mutating commands
+`Application` does not handle yet (`SplitEdge`, `Collapse`, `LoopInsert`, `LoopSlide`, `Extrude`,
+`ArticulationRestore`); `_execute_click` consults the same gate as `key_press`; Vertex Connect signals "nothing
+happened" by returning `[]` and `remove_selected` by returning `None`, which `Application` turns into specific
+status lines; the only code outside tests and probes that sets a `SymmetryDefinition` is the Lab, whose
+`current_axis` raises on any non-E1 plane (`lab_symmetry.py:74-87`); while a Knife session runs, the Lab's
+`sync_gate` skips (`lab_app.py:325-338`).
+
+### 1.5 Verdicts this AD may rely on (as recorded, nothing more)
 
 - E5 **KEEP-BLOCK** (Manu, 2026-10-03; AD-SYM-02 §4 note; Lab README): a tool that does not mirror is refused
   under symmetry. Recorded as a Lab verdict; Symmetry is not promoted (ROADMAP §7).
@@ -178,14 +207,18 @@ installed; same failure as Disc.). `tests/test_extrude_tool.py` is excluded beca
 Revision of M-a from the new evidence: **[probe I]** "mirror the path, resolve once" is not sufficient for the Knife
 where `resolve_cross_face` breaks ties by position; style (2) needs a mirror-equivariant resolution or a check
 that rejects (§4). **[F]** Style (1) needs seam maintenance as soon as a seam edge is in the selection (Edge
-Connect, not only Split).
+Connect, not only Split). **[R1, review F3]** Style (1) as "one call on selection ∪ partners" equals "intent +
+mirrored intent" (INV-6) only when no face receives selected elements of both the selection and its image, and no
+self-mirrored face is involved. Otherwise per-face pairing connects across the plane: symmetric, but not the
+mirrored intent. With T-a both forms are available inside one transaction (two `apply_*` calls, or one); which one
+the Artist means there is open (§4, A1/A2).
 
 ### 2.2 Transaction seam — both sides as exactly one Undo step (scope item 2; N3/N4, Disc. Q3)
 
 | | Alternative | Assessment |
 |---|---|---|
-| T-a | **Behaviour-preserving split** of each topology function into a pure `apply_*(mesh, …) -> result` (mutation only; raises on refusal; caller restores) and the existing wrapper (snapshot → `apply_*` → restore on error → push one `MeshStateCommand`). The coordinator calls `apply_*` inside **one** transaction it owns | No `src/core` change. Edge Connect already has `_apply`. Wrappers keep their signatures and tests (Playground and `tests/` callers unchanged). Makes the commit boundary explicit and single per intent. Cost: four small refactors in `src/mirai/topology/` |
-| T-b | **History-less scene stand-in:** the coordinator passes a scene-like object whose `history` swallows pushes, calls the unchanged wrappers, then pushes one outer command | Works with zero op change (the wrappers only use `scene.mesh` and `scene.history.push`). **Not used because** it relies on an unwritten duck-typing contract ("op functions touch nothing but `mesh` and `history.push`"; `KnifeTool` also writes the selection it is given), keeps two commit boundaries (inner fake, outer real) — the ambiguity AGENTS §5 asks to avoid — and pays two extra `export_state()` per inner call |
+| T-a | **Behaviour-preserving split** of each topology function into a pure `apply_*(mesh, …) -> result` (mutation only; raises on refusal; caller restores) and the existing wrapper (snapshot → `apply_*` → restore on error → push one `MeshStateCommand`). The coordinator calls `apply_*` inside **one** transaction it owns | No `src/core` change. Edge Connect already has `_apply`. Wrappers keep their signatures and tests (Playground and `tests/` callers unchanged). Makes the commit boundary explicit and single per intent. Cost (review CLAUDE-001): Split's `apply_*` is `Mesh.split_edge` itself and Edge Connect has `_apply`, so two real refactors (`connect_vertices_per_face`, `remove_selected`) plus one return-value change (`_apply` → midpoints) |
+| T-b | **History-less scene stand-in:** the coordinator passes a scene-like object whose `history` swallows pushes, calls the unchanged wrappers, then pushes one outer command | Works with zero op change; for the four selection-op wrappers the duck-typing contract ("touch nothing but `scene.mesh` and `scene.history.push`") holds today (review CLAUDE-001; the Knife is not in T-b's scope). **Not used because** it keeps two commit boundaries per intent (inner fake, outer real) — the ambiguity AGENTS §5 asks to avoid —, leaves that contract unwritten and unenforced for future ops, and T-a costs little more |
 | T-c | **History-level grouping / merge** of consecutive `MeshStateCommand`s (e.g. `begin_group`/`end_group`, or merging before-of-first with after-of-last) in `HistoryStack` | Needs a `src/core` change. **Not used because** `HistoryStack` is frozen Core whose contract says "kein Merge", AD-SYM-02 §3 item 2 decided `HistoryStack` is not changed, AD-SYM-02 §2.1 forbids the counterpart as a second history entry (a group is two entries glued), and `Application`'s selection mirror stack is 1:1 with pushes and would need group awareness too. The need is solvable above Core (T-a), so the freeze rule's step 2 already fails (CORE_V1_FREEZE §7) |
 | T-c′ | Composite `Command` in `src/mirai` holding several `MeshStateCommand`s, pushed once | No Core change (`Command` is a Protocol). **Not used because** the inner ops still push themselves, so it needs T-a or T-b anyway, and then a single `MeshStateCommand` (before of the first, after of the last) already does the job |
 | T-d | Let the op push, then amend the pushed command's `after_state` with the coordinator's post-op work (snap, seam update) | **Not used because** `HistoryStack` exposes no top-of-stack access (only a private list of a frozen Core class) and a rejected post-check could not take the entry back without consuming the redo branch |
@@ -196,6 +229,10 @@ inside the topology function to **the caller that owns the intent** — `Applica
 transaction per key press). The wrappers stay as the boundary for their other callers (Playground, tests). No op
 function pushes on behalf of another caller. For the Knife the boundary is unchanged (`KnifeTool._on_commit`).
 
+**No-op signalling (slice 2).** Vertex Connect returns `[]` and `remove_selected` returns `None` for "nothing
+happened", and `Application` turns these into specific status lines. The shared transaction helper's "no change →
+no entry" must keep those texts; the `apply_*` results carry the information.
+
 **Selection mirror stack.** Preserved by keeping its one invariant: one `_record_selection_history(before)` per
 push, with `before` taken before the transaction and the residue set before recording (as `_connect_command`
 does today).
@@ -205,18 +242,27 @@ does today).
 | | Alternative | Assessment |
 |---|---|---|
 | C-a | `symmetry_state` grows a face-level component (face w/o partner ⇒ `PARTIAL`) | Makes the visible state honest about one-sided topology (Disc. §1.7 (b), probe I). But changes the meaning of `VALID` for every current consumer (Lab HUD/markers, Re-Symmetrize, `tests/test_symmetric_*`, Lab characterisation tables) in the same step that introduces coordination, and still misses dead seam ids and plane-spanning faces (probe F: Dissolve seam edge → faces w/o partner 0, `sides` 1) |
-| C-b | **Separate derived report** (no stored state): faces without partner, edges without partner, dead seam ids, self-mirrored (plane-spanning) faces, seam components (`sides`) | Covers every one-sided case seen so far: face-level check for Disc. §1.7 and probe I, dead ids and `sides` for probe F. `SymmetryState` contract untouched |
+| C-b | **Separate derived report** (no stored state): faces without partner, edges without partner, dead seam ids, self-mirrored (plane-spanning) faces; `sides` only as a display value | Covers every one-sided case seen so far: face-level check for Disc. §1.7 and probe I, dead ids and self-mirrored faces for probe F (the Dissolve case goes 0 → 1 self-mirrored face). `SymmetryState` contract untouched. `sides` is **not** a delta signal: it measures connectivity, and a symmetric face-band delete raises it 2 → 4 (R3, review F2) |
 | C-c | Reuse the Lab's `topological_pairing` | **Not used as the completeness check because** it is blind to one-sided Delete (Disc. §1.7) and is a Lab experiment (Lab README: "keine Capability") |
 
 How the coordinator uses it — **absolute vs. delta.** Partial symmetry is legitimate (INV-10). A check "result must
 be VALID" would refuse every op on a partial mesh (e.g. `man_with_shoes_basemesh`, 54 unpaired from OBJ rounding,
-Lab README E4). Only a **delta** check ("nothing complete before is incomplete after; every created element is
-paired") follows INV-10 and still catches a one-sided result.
+Lab README E4). A **delta** check is computed **by element id** (Split and Connect replace faces, so counts cannot
+be compared): (1) no surviving element that was complete before is incomplete after; (2) no new self-mirrored face
+and no new dead seam id (seam cases, pending A1); (3) created elements are judged by one of two rules (review F1):
+
+| | Rule for created elements | Assessment |
+|---|---|---|
+| D-strict | every created element is paired | Safe and simple. Refuses every coordinated op in an unpaired region: on `man_with_shoes_basemesh` 202 of 926 faces touch an unpaired vertex, and an expanded Edge Connect there creates 2 unpaired vertices (R2). Way out: symmetry off (Shift+S), as for transforms today |
+| D-source | created elements whose sources are all paired must be paired; others are allowed and reported visibly ("n elements without a partner — one-sided") | Follows INV-10/INV-13 for edits *in* the asymmetric region, still INV-5 ("recognisably not at all"). Needs provenance per op (N5 for Connect/Split; nothing for Delete) |
+
+Which rule the Artist gets is Product Truth (Artist test A3). INV-10 alone does not decide it: it covers asymmetry
+elsewhere in the mesh, not edits inside it.
 
 ### 2.4 Exactness (scope item 4; N5, Disc. Q7)
 
 **Correction to Disc. §1.7 / §4 (scope):** the Discovery probed plane x=0 only. "t=0.5 midpoints are exact" (Edge
-Connect class B, Knife t=0.5) holds for planes with an axis normal and `plane_point[axis] == 0` — exactly Lab E1 —
+Connect class B, Knife t=0.5) holds for planes with a ±unit axis normal and `plane_point[axis] == 0` — Lab E1, and the negative normals too (R4) —
 because mirroring is then exact negation and `a*0.5 + b*0.5` is orientation-independent (§1.2). On an off-origin
 axis plane and on oblique planes it fails (probe G: 1–4 of 4 Edge Connect midpoints not paired), and more
 fundamentally `mirror_position` is not an exact involution there: even a mesh rebuilt from one side has one-way
@@ -244,18 +290,36 @@ Two further facts shape the gate side:
   part of the selection" (AD-013 H2 Limits of G). Options:
   - G-1 refuse `C` until all four contexts are supported — **not used because** it blocks the stated intent
     (support Connect before Knife);
-  - G-2 a data-only extension of `CommandGate` (refusal keyed by resolved context), checked by `Application`
-    in `_connect_command` after `resolve_c_context` — small `src` change, still no callback;
+  - G-2 a data-only extension of `CommandGate` (e.g. `refused_contexts: Mapping[CContext, str]`; `CContext` is
+    a public enum), checked by `Application` in `_connect_command` right after its own `resolve_c_context` —
+    small `src` change, still no callback; one resolution, and the gate table stays a static, printable function
+    of Lab state (H2-R2/R3);
   - G-3 `Application` itself refuses unsupported contexts whenever a definition is set — **not used because** it
     writes the Lab verdict KEEP-BLOCK into Production behaviour without a promotion (M3; AD-SYM-02 §4 note: "dieses
     Dokument entscheidet dadurch nichts für Production") and removes the Lab's MARK comparison;
   - G-4 the Lab resolves the context itself (pure `resolve_c_context` on `app.selection`, read-only per H2-R4)
-    immediately before forwarding `C` and installs the matching row — no `src` change, same pure function on both
-    sides.
+    immediately before forwarding `C` and installs the matching row — no `src` change. **Not used because**
+    (review CLAUDE-001) it resolves the context twice and is correct only by event timing; it turns a gate row
+    from a function of Lab state into one installed per key press (H2-R2/R3); and a row installed for a `C` that
+    starts a Knife session stays installed for the session, because `sync_gate` skips while the Knife owns the
+    keys. Both G-2 and G-4 lift the same Limit of G, so G-4's one advantage (no `src` gate change) saves little
+    where slice 3 changes `_connect_command` anyway.
 - **Fail-open vs. fail-closed.** Today's BLOCK row is a block-list (fail-open: a new command runs one-sided until
   someone adds it). The preview row is already an allow-list for exactly this reason (H2 F7). A BLOCK row of the
   form "allowed = non-operation commands (display, selection, mode, undo/redo, cancel, constraints) ∪ operations
-  with a declaration" fails closed: an omission is refused visibly, never silently one-sided (INV-8).
+  with a declaration" fails closed: an omission is refused visibly, never silently one-sided (INV-8). This
+  matters now: `commands.py` already declares `SplitEdge`, `Collapse`, `LoopInsert`, `LoopSlide`, `Extrude`,
+  `ArticulationRestore`, which a block-list would let run one-sided once they are wired (§1.4). The allow-list
+  must name the click commands `Select`, `SelectAdd`, `SelectRemove`, `SelectToggle` and `ClearSelection`
+  (`_execute_click` consults the same gate), or BLOCK makes selecting impossible. The non-operation set is itself a
+  hand list, but an omission there fails visibly, which is the property that matters.
+- **Runtime refusals are not G-3.** A coordinator that refuses a seam case or a non-exact plane also acts in
+  `Application` whenever a definition is set, in MARK as in BLOCK. The difference to G-3: such a refusal is part of
+  the contract of a *supported* operation ("mirrors correctly or recognisably not at all", INV-5), while G-3 would
+  apply KEEP-BLOCK, the policy for *unsupported* operations, in Production. Consequence: after slice 3, MARK runs
+  declared operations **coordinated** (including their refusals) and only undeclared ones one-sided — the same as
+  transforms today, which mirror whenever a definition is set. The Lab's MARK warning line (`e5_warning_text`;
+  today Knife session and undeclared transforms) must be derived from the same declarations.
 
 ### 2.6 Seam maintenance (scope item 6; N6)
 
@@ -277,6 +341,11 @@ deduplicate (probe F: counted once) — the edge is split once.
 
 These are Product Truth questions (what should the Artist get), prepared as Artist test **A1** (§6).
 
+Note for any rule that leaves on-plane geometry without a declared seam edge (review F8): a vertex on the plane
+that is not an endpoint of a live seam edge is `UNPAIRED`, not its own partner (`vertex_correspondence` excludes
+the vertex itself), so edge-partner resolution fails for edges through it — e.g. the boundary of a plane-spanning
+face after A1 case 2.
+
 ---
 
 ## 3. Proposed decision
@@ -290,40 +359,51 @@ These are Product Truth questions (what should the Artist get), prepared as Arti
    `mirai.topology` (Knife) may import it:
    - edge and face partner resolution (edge = edge between the endpoint partners; face = face whose vertex set is
      the image; an index instead of the probe's scan);
-   - selection expansion per mode with "explicit selection wins" (as `mirrored_selection`) and seam
-     self-partners counted once;
-   - an exact-plane predicate (axis unit normal, `plane_point[axis] == 0`);
-   - mirrored-position snap (`mirror_position(source)`);
+   - selection expansion per mode, seam self-partners counted once;
+   - an exact-plane predicate (±unit axis normal, `plane_point[axis] == 0`);
    - seam rule S1 (split → halves) as a pure function returning a new `SymmetryDefinition`;
-   - the completeness report (C-b) and its delta check.
-   The per-operation coordinators (thin: expand → `apply_*` → snap → seam rule → delta check) and the declaration
+   - the completeness report (C-b) and its delta check by element id;
+   - later, with the Knife (slice 6): the mirrored-position snap and the source/mirror roles where "explicit
+     selection wins" matters (for a union expansion it has no effect, review F6).
+   The per-operation coordinators (thin: expand → `apply_*` → seam rule → delta check) and the declaration
    mapping (D-b) live together in one place above `mirai.topology`; the Knife's coordination runs inside
    `KnifeTool._on_commit` and has its entry in the same mapping. Exact module layout is implementation.
-3. **Transaction seam: T-a.** Each topology function is split, behaviour-preserving, into `apply_*` + the existing
-   wrapper. The commit boundary for a key press moves to `Application`'s handler, through one private transaction
-   helper that shares its steps with `apply_mesh_change` (snapshot, restore on raise, no change → no entry, one
+3. **Transaction seam: T-a.** The topology functions are split, behaviour-preserving, into `apply_*` + the existing
+   wrapper (two real refactors plus Edge Connect's return value). The commit boundary for a key press moves to
+   `Application`'s handler, through one private transaction helper that shares its steps with `apply_mesh_change`
+   (snapshot, restore on raise, no change → no entry while keeping the ops' no-op status texts, one
    `MeshStateCommand`, mirror entry after the residue, pick cache, viewport, hover). Knife: boundary unchanged.
    `src/core` is not changed; T-b, T-c, T-c′, T-d are not used (reasons in §2.2).
 4. **Created-element report (N5), smallest form:** `apply_*` returns what it created tied to its source where a
-   coordinator needs it — Split: `(new_vertex, half_a, half_b)` (exists); Edge Connect: source edge → midpoint
-   vertex (today dropped in `_apply`); Knife: pid → created vertex (later, with the Knife slice). Needed for seam
-   rule S1 when a seam edge is in a Connect selection (probe F), not for exactness on E1 planes.
-5. **Completeness: C-b.** A separate derived report; coordinators run its **delta** check inside the transaction
-   and roll back with a visible status on failure (the `SeamConstraintError` precedent: refused, no history, mesh
-   unchanged). `SymmetryState` is not changed by this AD.
-6. **Exactness:** every coordinated mirror vertex is snapped to `mirror_position(source)` (X-a). Symmetric topology
-   coordination is claimed exact only on exact planes (predicate in item 2; Lab E1). On any other plane a coordinator
-   refuses visibly instead of producing a result the tolerance-free correspondence may not confirm (INV-5). Edge
-   Connect stays class B on exact planes (snap is a no-op there); it would need N5 for the snap on other planes.
+   coordinator uses it — Split: `(new_vertex, half_a, half_b)` (exists); Edge Connect: source edge → midpoint
+   vertex (today dropped in `_apply`); Knife: pid → created vertex (slice 6). Used by seam rule S1 when a seam edge
+   is in a Connect selection (probe F; the probe shows it can also be found by adjacency, so this is the cheaper,
+   less fragile route, not a strict need) and by D-source if A3 chooses it.
+5. **Completeness: C-b.** A separate derived report; coordinators run its delta check (§2.3: by element id; no
+   complete element becomes incomplete; no new self-mirrored face or dead seam id pending A1; created elements by
+   D-strict **as the interim rule until A3**) inside the transaction and roll back with a visible status on failure
+   (the `SeamConstraintError` precedent: refused, no history, mesh unchanged). `sides` is display only.
+   `SymmetryState` is not changed by this AD.
+6. **Exactness:** symmetric topology coordination is claimed exact only on exact planes (predicate in item 2; Lab
+   E1). On any other plane a coordinator refuses visibly instead of producing a result the tolerance-free
+   correspondence may not confirm (INV-5). On exact planes, every position created in slices 3–5 is exact without
+   help (`t = 0.5`, or no new positions); the snap to `mirror_position(source)` (X-a) is the mechanism for
+   arbitrary `t` and is built with the Knife (slice 6).
 7. **Declaration: D-b,** fail-closed. Undeclared operation ⇒ unsupported ⇒ refused under BLOCK (KEEP-BLOCK
-   semantics unchanged). The Lab's BLOCK row becomes derived: allowed = non-operation commands ∪ operations whose
-   coordinator exists (plus transforms with `Operation.supports_symmetry`). For `C` the row is derived from the
-   **resolved context**: proposal **G-4** for the Lab phase (no `src` gate change), which lifts one AD-013 H2 Limit
-   of G and therefore needs a dated H2 amendment and its review (H2-R6) before code. G-2 is the fallback if the
-   review rejects Lab-side context resolution. Selection-dependent limits inside a supported operation (seam
-   cases pending A1, non-exact plane) are **runtime refusals** of the coordinator, not gate rows.
+   semantics unchanged). The Lab's BLOCK row becomes derived: allowed = non-operation commands (incl. the click
+   commands and `ClearSelection`) ∪ operations whose coordinator exists (plus transforms with
+   `Operation.supports_symmetry`). For `C` the refusal is keyed by the **resolved context** through **G-2**
+   (data-only `CommandGate` field checked in `_connect_command` after `resolve_c_context`). G-2 lifts one AD-013
+   H2 Limit of G and therefore needs a dated H2 amendment and its review (H2-R6) before code. Selection-dependent
+   limits inside a supported operation (seam cases pending A1, the both-sides face case of item 9, non-exact
+   plane, D-strict) are **runtime refusals** of the coordinator, not gate rows; they apply in MARK as in BLOCK
+   (§2.5, "Runtime refusals are not G-3"), and the Lab's MARK warning is derived from the same declarations.
 8. **Seam rule S1 (split → halves) is adopted** for every coordinated op that splits a seam edge. All seam-consuming
-   cases (§2.6 table) stay undecided until A1.
+   cases (§2.6 table) are detected after the op (dead seam id, new self-mirrored face) and refused until A1.
+9. **Both sides in one face (review F3):** until A1/A2 decide, a coordinator refuses visibly when a face would
+   receive selected elements of both the selection and its image, or a self-mirrored face is involved. On exact
+   planes with an intact seam this arises only after seam consumption (itself refused, item 8) or on assets that
+   already have plane-spanning faces.
 
 ---
 
@@ -333,23 +413,27 @@ These are Product Truth questions (what should the Artist get), prepared as Arti
 - **`C` with a two-sided explicit selection** — canonicalise to one side first, or keep literal counting: Artist
   test A2. (Missing from the Discovery.) Until decided, coordinators expand after the unchanged
   `resolve_c_context`.
+- **Union call vs. intent + mirrored intent where both sides meet in one face** (R1, review F3): refused for now
+  (item 9); A1/A2 (option B of A2 is exactly this case).
+- **D-strict vs. D-source for created elements** (review F1): Artist test A3. D-strict is the interim rule.
 - **Whether `SymmetryState` later folds in the face-level component** (C-a). The evidence (Disc. §1.7 (b), probe I)
   says the visible state is currently blind to one-sided topology; whether the Lab HUD shows the report next to the
   state is UX.
 - **Knife tie-break equivariance:** mirror-aware tie-breaking in `knife_resolve` (a Knife-owned change, AD-017)
   vs. resolving the source and constructing its mirror vs. rejecting through the delta check. Decided in the Knife
-  slice, after a wider probe than probe I (only `select_bridge` was exercised).
+  slice, after a wider probe than probe I (only `select_bridge` was exercised; note that `select_bridge` rounds
+  distances to `_TIE_DIGITS`, which turns near-ties into ties).
 - **Residue under symmetry:** e.g. after a symmetric Split, only the source vertex or both new vertices selected
   (AD-017 residue table is one-sided). Prepared with slice 4.
 - **General (non-exact) planes:** whether they ever get exact coordination (needs a correspondence decision: X-c or
-  X-d). No host produces them today.
+  X-d). No host produces them today; a loaded `export_state` is the only route (the plane is serialised).
+  **Asymmetry, out of scope here:** transforms are not refused on non-exact planes, topology coordinators would be.
 - **Extrude:** Production port before or after its symmetry work (Disc. Q6, owner priority); `Operation` vs.
   atomic mutation stays open (AD-SYM-02 §4).
-- **Owner check O1 — end of the accepted interim.** A fail-closed, declaration-derived BLOCK row refuses
-  Delete/Dissolve/DissolveNoCleanup under BLOCK as soon as it exists, unless their coordinators exist. That is
-  KEEP-BLOCK applied, but it ends the interim state accepted on 2026-10-06 earlier than "support exists". Owner
-  chooses at slice 3: accept the refusal (MARK still runs them one-sided) or keep a dated, visible interim
-  exception in the row until slice 5.
+- **Owner check O1 — end of the accepted interim, reduced (review F4).** Non-seam Delete/Dissolve is coordinated
+  in slice 3, together with the fail-closed row, so it is supported, not refused. What changes for the Artist is
+  only the seam cases: from "runs one-sided" to "refused visibly" until A1, in MARK as in BLOCK. The owner confirms
+  this at slice 3 (or asks to keep the seam cases one-sided until A1, as a dated, visible exception).
 - Module and function names, the report's data shape, the index structure, any key binding, HUD text or overlay.
 
 ---
@@ -362,26 +446,29 @@ These are Product Truth questions (what should the Artist get), prepared as Arti
 | AD-SYM-02 §2.1 (one instance, one entry) | Topology analogue: one transaction, one `MeshStateCommand` per intent (T-a) | Upheld; T-c rejected for contradicting it |
 | AD-SYM-02 §2.2 (`params` channel) | Knife gets its symmetry context through `begin(**params)` | Same channel idea; `OperationContext` unchanged |
 | AD-SYM-02 §2.3 (support statement before `begin`) | Extended to non-`Operation` ops as D-b | Upheld; the form question of §4 there is narrowed: static declaration per resolved operation + runtime refusal for selection-dependent limits |
-| AD-SYM-02 §2.4 (two mechanics) | M-a confirms selection expansion vs. intent mirroring | Upheld |
+| AD-SYM-02 §2.4 (two mechanics) | M-a confirms selection expansion vs. intent mirroring | Upheld, with the limit of item 9 for style (1) |
 | AD-SYM-02 §4 (seam update vs. degrade) | S1 decides the split case; consumption stays open (A1) | Partly answered, rest open |
-| AD-013 H2 (gate by command identity; Limits of G) | Context-derived row for `C` (G-4) and a fail-closed BLOCK row | **Needs a dated H2 amendment + review (H2-R6) before code.** H2-R4 already allows reading `selection` |
+| AD-013 H2 (gate by command identity; Limits of G) | Context-keyed refusal for `C` (G-2) and a fail-closed BLOCK row | **Needs a dated H2 amendment + review (H2-R6) before code.** The table stays static per Lab state |
 | AD-017 (no universal Cut Engine; Knife session model) | Coordinators are per mode; Knife keeps its virtual path and commit-time resolver | Upheld. A tie-break change, if chosen, is Knife-owned |
 | CORE_V1_FREEZE §7 | No option chosen needs `src/core` | Upheld (T-c recorded as rejected) |
-| `WP_DELETE_DISSOLVE_PLAN.md` DD-2 | Answers the mechanics (expansion through `remove_selected`'s `apply_*`); seam consumption → A1; gate consequence → O1 | DD-2 stays open until slice 5 |
+| `WP_DELETE_DISSOLVE_PLAN.md` DD-2 | Non-seam mechanics answered (slice 3); seam consumption → A1; gate consequence → O1 | DD-2 closes except for A1 with slice 3 |
 
-**Order:** this AD needs AD-SYM-01/02 as they are; the H2 amendment is a precondition of slice 3 only.
+**Order:** this AD needs AD-SYM-01/02 as they are; the H2 amendment and the A1 observation (§6) are
+preconditions of slice 3.
 
 ---
 
 ## 6. Artist tests (prepared, not answered)
 
-Both run in the Symmetry Lab: `python experiments/symmetry_lab/run.py head_basemesh`, then **Shift+S** → `X`.
+All run in the Symmetry Lab: `python experiments/symmetry_lab/run.py <asset>`, then **Shift+S** → `X`.
 Answer options as given; `UNKNOWN` is valid.
 
-### A1 — Seam consumption (≤ 5 min) — partly runnable today
+### A1 — Seam consumption (≤ 5 min) — partly runnable today, **run before slice 3**
 
-*Runnable today* because Delete/Dissolve are not in the BLOCK row (accepted interim); what is shown is today's
-one-sided Core behaviour, not a coordinated operation.
+*Runnable today* (`head_basemesh`) because Delete/Dissolve are not in the BLOCK row (accepted interim); what is
+shown is today's one-sided Core behaviour, not a coordinated operation. **Timing (review F4):** once slice 3 lands,
+these seam cases are refused in MARK and BLOCK, and the observation below is no longer reachable in the Lab. A1
+should be run (or at least its observations recorded) before slice 3.
 
 1. **3** (Face mode). Click a face that touches a green seam edge, Shift+click the face on the other side of that
    same seam edge. **Entf** (Delete).
@@ -400,8 +487,8 @@ Question per case (1, 2; 3 by description): what should happen when an operation
 
 ### A2 — `C` with a two-sided explicit selection (≤ 5 min) — observation runnable today, comparison after slice 4
 
-1. **Shift+B** → `E5-Modus: MARK` (under BLOCK `C` is refused). **2** (Edge mode). Click an edge on +X,
-   Shift+click its mirror edge on −X (turquoise markers show partners only in Vertex mode; pick by eye). **C**.
+1. (`head_basemesh`) **Shift+B** → `E5-Modus: MARK` (under BLOCK `C` is refused). **2** (Edge mode). Click an edge
+   on +X, Shift+click its mirror edge on −X (turquoise markers show partners only in Vertex mode; pick by eye). **C**.
    *Expected observation:* status `Keine verbindbaren Kanten: ausgewählte Kanten teilen sich keine Face.`, nothing
    changes (context Edge Connect, the two edges share no face).
 2. Vertex analogue: **1**, a vertex and its turquoise partner, **C** → today Vertex Connect, nothing connectable.
@@ -409,13 +496,29 @@ Question per case (1, 2; 3 by description): what should happen when an operation
 Question: with both sides selected and symmetry on, what did you mean?
 - **A** count mirror pairs once ("1 edge" → symmetric Split; "1 vertex pair" → no C meaning);
 - **B** count literally (2 edges → Edge Connect; it connects only where the two edges share a face, e.g. a face
-  spanning the plane);
+  spanning the plane — and there it connects across the plane, R1);
 - **C** refuse with a hint ("beide Seiten gewählt — eine Seite wählen");
 - **UNKNOWN**.
 
 *Not yet runnable:* the A/B comparison as behaviour (needs symmetric Split, slice 4, and a Lab switch between A and
-B). Note for B: the only case where literal counting does something today is a face spanning the plane — the
-situation A1 case 2 creates.
+B). Until then the coordinator refuses the both-sides face case (item 9).
+
+### A3 — Editing next to unpaired geometry (≤ 5 min) — observation runnable today, comparison after slice 3
+
+1. `run.py man_with_shoes_basemesh`, **Shift+S** → `X`: HUD `partial`, 54 magenta (unpaired) vertices.
+   **Shift+B** → MARK. **2** (Edge mode). Pick a quad that touches a magenta vertex; click two opposite edges of it
+   (Shift+click). **C**.
+   *Expected observation (today, one-sided):* the quad is cut on this side only; the new vertices have no partner
+   (more magenta). **Ctrl+Z.**
+2. Same on a quad far from any magenta vertex, for comparison (today also one-sided; after slice 3 symmetric).
+
+Question: with symmetry on, what should happen when you edit right next to geometry that has no partner?
+- **S** refuse (status line: one side cannot be mirrored here; turn symmetry off to work one-sided);
+- **P** do what can be mirrored, leave the rest one-sided and say so ("n elements without a partner");
+- **UNKNOWN**.
+
+*Not yet runnable:* S vs. P as behaviour (needs slice 3; S is the interim rule there, P needs a switch and the
+source report).
 
 ---
 
@@ -427,16 +530,16 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 
 | # | Slice | Content | Evidence / note |
 |---|---|---|---|
-| 1 | **Services, tested, not wired** | Edge/face partners (indexed), expansion (explicit wins, seam self once), exact-plane predicate, snap, seam rule S1, completeness report + delta check; `src/mirai/`, tests in `tests/` | Disc. §5.4 step 1. **[Δ]** + exact-plane predicate (G), + `sides`/dead ids/self-mirrored faces in the report (F), + delta form (INV-10) |
-| 2 | **Transaction seam** | `apply_*` split of Split, Edge Connect, Vertex Connect, `remove_selected`; Edge Connect returns edge → midpoint; `Application` handlers use one private transaction helper shared with `apply_mesh_change`. Pure refactor, existing tests unchanged | Disc. step 2; T-a. **[Δ]** + the N5 midpoint report (F) and the shared helper (T-e) |
-| 3 | **Edge + Vertex Connect through `C` (Lab)** | Expansion after `resolve_c_context`, seam edges in the selection via S1, snap, delta check with rollback; declaration-derived, fail-closed BLOCK row with the context-derived `C` row (G-4). Exact planes only | Disc. step 3. **[Δ]** seam edges supported here, not deferred (F); precondition: AD-013 H2 amendment reviewed; owner check O1 |
-| 4 | **Split** | Source + partner edge in one transaction (seam edge once + S1), snap; residue question prepared; A2 comparison becomes runnable | Disc. step 4 |
-| 5 | **Delete / Dissolve** | Expansion through `apply_remove`; seam consumption per A1 verdict; DD-2 closed | Disc. step 5; blocked on A1 |
-| 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, snap, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I), not only an untested risk |
+| 1 | **Services, tested, not wired** | Edge/face partners (indexed), expansion (seam self once), exact-plane predicate (± normals), seam rule S1, completeness report + delta check by element id (D-strict), detection of the both-sides face case; `src/mirai/`, tests in `tests/` | Disc. §5.4 step 1. **[Δ]** + predicate (G, R4), + dead ids/self-mirrored faces in the report (F), `sides` display only (R3), + id-based delta (review F1), no snap yet (review F6) |
+| 2 | **Transaction seam** | `apply_*` split of `connect_vertices_per_face` and `remove_selected` (Split = `Mesh.split_edge`, Edge Connect = `_apply`); Edge Connect returns edge → midpoint; `Application` handlers use one private transaction helper shared with `apply_mesh_change`, no-op status texts kept. Pure refactor, existing tests unchanged | Disc. step 2; T-a. **[Δ]** + the midpoint report (F, review F7), the shared helper (T-e), no-op texts (review) |
+| 3 | **Edge + Vertex Connect through `C`, non-seam Delete/Dissolve (Lab)** | Expansion after `resolve_c_context` / on the removal selection, seam edges in a Connect selection via S1, delta check with rollback, seam consumption and both-sides face case refused; G-2 context refusal; declaration-derived, fail-closed BLOCK row; MARK warning from the declarations. Exact planes only | Disc. steps 3 + 5 (non-seam part). **[Δ]** non-seam Delete/Dissolve moved here (review F4), seam edges in Connect here (F); preconditions: AD-013 H2 amendment reviewed, A1 observed; owner check O1 (seam cases only); A3 comparison becomes runnable |
+| 4 | **Split** | Source + partner edge in one transaction (seam edge once + S1); residue question prepared; A2 comparison becomes runnable | Disc. step 4 |
+| 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part); blocked on A1 |
+| 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6) |
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
-The order of operations is unchanged from the Discovery; the changes move work between slices (seam rule into
-slice 3, the midpoint report into slice 2) and add preconditions.
+The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
+from slice 5 to slice 3 (it is class B and was only waiting for the gate); the seam part stays blocked on A1.
 
 ---
 
@@ -445,19 +548,45 @@ slice 3, the midpoint report into slice 2) and add preconditions.
 - **Positive:** one commit boundary per intent, visible in one place per path; no Core change; declarations cannot
   drift from implementations; a new mutating command is refused under BLOCK until it is coordinated, never silently
   one-sided; one-sided results are detected even where `symmetry_state` is blind (Disc. §1.7 (b), probe I).
-- **Costs:** four refactors in `src/mirai/topology/` (behaviour-preserving), a new services module, an AD-013 H2
-  amendment, and an extra face index per coordinated op. Coordinated ops are refused on non-exact planes until a
-  correspondence decision exists.
-- **Risk:** the fail-closed row changes what the Lab refuses (O1). Mitigated by naming it as an owner check at
-  slice 3.
+- **Costs:** two refactors and one return-value change in `src/mirai/topology/` (behaviour-preserving), a new
+  services module, a small `CommandGate` extension with its AD-013 H2 amendment, and two reports per coordinated op
+  (~2–7 ms each on the Lab assets, R5). Coordinated ops are refused on non-exact planes until a correspondence
+  decision exists, and (interim D-strict) next to unpaired geometry until A3.
+- **Risk:** the fail-closed row and the runtime refusals change what the Lab does in the seam cases, in MARK too
+  (O1, §2.5). Mitigated by running A1 first and naming O1 as an owner check at slice 3.
 
 ---
 
 ## 9. Review
 
-Per AGENTS §6 an independent review should be archived before discussion (e.g.
-`docs/archive/symmetry_lab/reviews/AD-SYM-03_REVIEW_CLAUDE_001.md`), then the decision recorded here.
 **Archived (2026-10-07):** [review CLAUDE-001](../archive/symmetry_lab/reviews/AD-SYM-03_REVIEW_CLAUDE_001.md)
-(accept the direction with changes; findings F1–F8 not yet answered here).
-Points a reviewer should test: T-a vs. T-b (is the duck-typing objection strong enough?), G-4 vs. G-2, the
-fail-closed row (O1), and whether the exact-plane restriction is too strict for any planned host.
+(fresh session, `main` @ `276dbe4`, preserved verbatim). Verdict: accept the direction with changes before
+DECIDED; no architectural blocker; every checked code fact in §1.2 correct. The author re-ran the review probe
+R1–R5 on `main` @ `1334d8a` with identical results (R5 timings vary by run), see §1.4.
+
+**The four questions of the first version of this section:**
+
+| Question | Review answer | Taken over |
+|---|---|---|
+| T-a vs. T-b — is the duck-typing objection strong enough? | T-a, but the duck-typing part is beside the point (the Knife is out of T-b's scope; the four wrappers satisfy the contract today). T-a is carried by "two commit boundaries" and by being cheaper than stated | **Yes.** §2.2 T-a/T-b cells rewritten; cost corrected to two refactors + one return-value change; no-op signalling note added |
+| G-4 vs. G-2 | G-2: one resolution, static table, no stale row during a Knife session | **Yes.** §2.5 and item 7 now take G-2; G-4 recorded as "not used because" |
+| Fail-closed row (O1) | Fail-closed is right (six declared but unwired mutating commands); allow-list must name the click commands and `ClearSelection` | **Yes.** §2.5, item 7; O1 reduced via F4 |
+| Exact-plane restriction too strict? | No host produces another plane; predicate should accept ±normals; list the transform asymmetry | **Yes.** Predicate ±unit axis normal (§2.4, item 2); asymmetry listed in §4 |
+
+**Findings:**
+
+| Finding | Severity | Answer |
+|---|---|---|
+| F1 — the delta rule refuses all coordinated work in unpaired regions | SHOULD | **Fixed in the text.** §2.3 defines the delta by element id and names the two rules D-strict / D-source as a product choice; D-strict is the interim rule (item 5); new Artist test A3 (§6). The earlier claim that the strict rule "follows INV-10" is withdrawn |
+| F2 — `sides` gives false refusals as a delta signal | SHOULD | **Fixed.** `sides` is display only (C-b, item 5); the delta uses self-mirrored faces and dead seam ids, which cover the Dissolve case `sides` was brought in for |
+| F3 — union call ≠ mirrored intent when both sides meet in one face | SHOULD | **Fixed in the text.** §2.1 states the limit of style (1); item 9 refuses that case until A1/A2; §4 lists it; A2 option B now names it. T-a makes both forms available, so the later answer needs no new mechanism |
+| F4 — slice 5 not blocked on A1; O1 shrinks | SHOULD | **Adopted.** Non-seam Delete/Dissolve moves into slice 3 (§7); O1 now covers the seam cases only (§4); A1 is marked "run before slice 3" (§6) |
+| F5 — MARK changes meaning for declared ops; G-3 distinction | SHOULD | **Fixed.** §2.5 "Runtime refusals are not G-3" states the distinction (contract of a supported op vs. policy for unsupported ops) and the MARK consequence; the MARK warning is derived from the declarations (item 7, slice 3). Precision: today's warning line covers the Knife session and undeclared transforms, not an immediate `C` |
+| F6 — the snap is dead code until the Knife slice | NIT | **Adopted.** Snap and source/mirror roles move to slice 6 (item 2, item 6, §7) |
+| F7 — N5 is a convenience for S1, not a need | NIT | **Fixed.** Item 4 says "used by", with the adjacency alternative named; the midpoint report stays in slice 2 as the cheaper route |
+| F8 — smaller corrections | NIT | **Fixed.** Footnote on the Dissolve row (§1.3); R5 cost in §1.4 and §8; the on-plane non-seam vertex note in §2.6 |
+
+No decision beyond the review's own proposals was taken, except: the interim choice of D-strict (the safe default
+until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status stays
+**PROPOSED**; open before DECIDED: the AD-013 H2 amendment for G-2 (its own review), and the owner's confirmation
+of this revision. A second review is not required by the findings (no blocker), but the owner may ask for one.
