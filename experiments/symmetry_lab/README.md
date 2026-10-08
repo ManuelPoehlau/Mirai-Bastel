@@ -80,6 +80,31 @@ Erklärung) und jedes Transform-Command, dessen Operation `supports_symmetry` ni
 gelesen am Klassenattribut, keine Tool-Liste. Heute erklären es W/E/R, praktisch betrifft E5
 also nur C. MARK bleibt über Shift+B zum Vergleich erreichbar.
 
+**Fail-closed (seit AD-SYM-03 Slice 3a, AD-013 H2-Amendment vom 2026-10-08).** Die BLOCK-Zeile ist
+keine Sperrliste mehr, sondern eine Allow-List: durch geht, was in `NON_OPERATION` steht (Anzeige,
+Auswahl samt Klicks und Alt+A, Modi 1/2/3, Undo/Redo, Esc, Constraints, Navigation), was als
+Koordinator **deklariert** ist (`src/mirai/symmetry_declarations.py`, heute leer), die Transforms mit
+`supports_symmetry` und die benannte Übergangsmenge `INTERIM_ONE_SIDED`. Alles andere — auch ein
+künftig verdrahtetes Werkzeug, das niemand eingetragen hat — wird sichtbar abgelehnt
+(`Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)`), nie still einseitig. Ist
+ein C-Kontext deklariert, geht `C` durch, und jeder nicht deklarierte Kontext
+(Split, Edge Connect, Vertex Connect, Knife) wird mit seinem Namen abgelehnt (`refused_contexts`, vom
+Gate in `Application` nach der einen Kontext-Auflösung geprüft); solange keiner deklariert ist, wird
+`C` wie bisher per Identität abgelehnt. Die Zeile ändert sich nur mit dem Lab-Zustand, nie pro
+Tastendruck. Die Start-Liste zeigt jede Zeile mit `refused`, `allowed` und `refused_contexts`
+sowie `NON_OPERATION`, `INTERIM_ONE_SIDED` und die aktuellen Deklarationen.
+
+**Übergangsmenge (`INTERIM_ONE_SIDED`).** Delete, Dissolve und DissolveNoCleanup laufen unter
+Symmetrie + BLOCK weiter einseitig (akzeptiertes Interim, Manu, 2026-10-06), bis ihre Koordinatoren
+da sind. Die Menge ist weder Deklaration noch Auslassung und wird in Slice 3b entfernt.
+
+**MARK-Folge der Kanonisierung.** Sobald eine Symmetrie gesetzt ist, zählt `C` ein Spiegelpaar
+einmal (Verdikt A2 = A): eine Kante plus ihre Spiegelkante ist eine Absicht. Unter MARK läuft das
+bis Slice 4 als einseitiger Split der Kante auf der Seite der Ebenennormalen (früher: „Keine
+verbindbaren Kanten"); ein Vertex plus sein Spiegelvertex ergibt `C: nothing to do here`. Unter
+BLOCK wird `C` abgelehnt, die Auswahl bleibt beidseitig. Die Knife-Warnzeile steht nur, solange der
+Kontext Knife keinen Koordinator hat.
+
 | Zustand | C | W/E/R | HUD |
 |---|---|---|---|
 | Symmetrie aus (Modus egal) | wie in der App | wie in der App | kein `E5:` |
@@ -268,7 +293,7 @@ Application → Viewport V02 → GLRenderStore; Lab-Overlays über Viewport.add_
 | Datei | Inhalt | GL nötig |
 |---|---|---|
 | `run.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`, fensterlos `build_app_lab`), Event-Loop | – |
-| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, Re-Symmetrize-Vorschau (M/M/Esc), E5-Modus (Shift+B, `block_row` aus `supports_symmetry`), Befund-Cache, HUD-Zeile `hud_text`, E5-Warnzeile, Vorschau-Zeile | nein |
+| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, Re-Symmetrize-Vorschau (M/M/Esc), E5-Modus (Shift+B, `block_row` fail-closed aus `NON_OPERATION`, Deklarationen und `supports_symmetry`), Befund-Cache, HUD-Zeile `hud_text`, E5-Warnzeile, Vorschau-Zeile | nein |
 | `lab_overlays.py` | Ebenen-Umriss, Zustands-, Vorschau- und Partner-Marker, Vorschau-Linien als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Änderungs-Signatur, Aufschub während eines Transforms | erst beim Zeichnen |
 | `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-, Warn- und Vorschau-Label | ja |
 | `lab_bindings.py` | `SYMMETRY_LAB_CONTEXT`, die drei Lab-Commands, `LAB_OVERRIDES` (einzige Quelle der Lab-Tasten) | nein |
@@ -294,7 +319,7 @@ Display `pyglet.options["headless"] = True` (`tests/_pyglet_headless.py`). Ände
 `src/mirai/application.py` oder `src/viewport/` sollen diese Tests mitlaufen lassen (CLAUDE.md).
 
 - App-Pfad: `test_app_lab_*.py` (AD-013 H2 T-R1–T-R4, Zyklus, Overlays, Partner, HUD,
-  W/E/R unter Symmetrie, Hover-Ziel, Re-Symmetrize, Vorschau inkl. Fuzz, E5), `test_run.py`
+  W/E/R unter Symmetrie, Hover-Ziel, Re-Symmetrize, Vorschau inkl. Fuzz, E5, fail-closed BLOCK-Zeile in `test_app_lab_fail_closed.py`), `test_run.py`
   (Fenster-Smoke-Test), `test_probe_drag_cost.py`.
 - Forschung, rein: `test_lab_topology.py`, `test_lab_resymmetrize.py`, `test_lab_symmetry.py`,
   `test_lab_scene.py`, `test_lab_knife.py` (P1–P3), `test_display_characterization.py` (E10/Q1).

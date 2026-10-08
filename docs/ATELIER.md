@@ -26,7 +26,7 @@
 
 | Lab | Was man dort ausprobiert | Start | Doku |
 |---|---|---|---|
-| Symmetry Lab | Symmetrie an/aus (`Shift+S`), symmetrisches W/E/R, Re-Symmetrize (`M`); Werkzeuge, die nicht spiegeln, sind blockiert | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) |
+| Symmetry Lab | Symmetrie an/aus (`Shift+S`), symmetrisches W/E/R, Re-Symmetrize (`M`); Werkzeuge, die nicht spiegeln, sind blockiert (neue Befehle ohne Spiegel-Unterstützung werden sichtbar abgelehnt). Übergang bis Slice 3b: Delete/Dissolve laufen weiter einseitig. Mit gesetzter Symmetrie zählt `C` eine Kante plus ihre Spiegelkante als eine Absicht (unter MARK: einseitiger Split der einen Kante) | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) |
 | Subdivision Lab | Wie glatt ist glatt genug, Käfig oder Fläche, Kosten auf dem Referenz-PC | `python experiments/subdivision_lab/run.py` | [README](../experiments/subdivision_lab/README.md) |
 | Shading Lab | Licht/Shading für bessere Formwahrnehmung beim Modellieren | `python experiments/viewport_shading_lab/run.py` | [README](../experiments/viewport_shading_lab/README.md) |
 | Playground | Varianten-Familien: Selection, Transform, Tweak, Connect, Knife, Knife Face, Topology, Articulation | `python playground/run.py head` | [README](../playground/README.md) |
@@ -56,7 +56,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 
 | # | Was | Wo |
 |---|---|---|
-| D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung (Voraussetzung für Slice 3) ist ebenfalls **entschieden** (2026-10-08) | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung (Voraussetzung für Slice 3) ist ebenfalls **entschieden** (2026-10-08); Slice 3a ist umgesetzt (2026-10-08) | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
 ### E. Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
@@ -71,7 +71,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie für Split/Connect/Knife/Delete/Dissolve im Lab | Modellieren mit Symmetrie ohne Blockaden | D1 und die H2-Ergänzung sind entschieden; Slice 1–2 erledigt, Slice 3 frei (AD-SYM-03 §7) |
+| Symmetrie für Split/Connect/Knife/Delete/Dissolve im Lab | Modellieren mit Symmetrie ohne Blockaden | D1 und die H2-Ergänzung sind entschieden; Slice 1–2 und 3a (Infrastruktur) erledigt, 3b (Koordinatoren für Edge/Vertex Connect, Delete, Dissolve) als Nächstes (AD-SYM-03 §7) |
 | Symmetrie in die Production-App | Symmetrie im echten Werkzeug | Lab-Ausbau, danach Promotionsprüfung |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-Optimierung auf dem Head | flüssigeres Arbeiten auf dichten Meshes | — |

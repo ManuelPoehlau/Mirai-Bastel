@@ -807,6 +807,9 @@ revised the same day after the independent review
 § Review below). The decision includes the canonicalisation rule of review S1 (§ Proposal 1) with its
 MARK consequence, which was shown to Manu with the decision. No second review was asked for. Code
 follows in AD-SYM-03 slice 3; until it lands, nothing in `src` or the Lab has changed.
+*Update 2026-10-08:* slice 3 is cut in two. **Slice 3a landed the gate side and the Lab side of this
+amendment** (§ Implementation note 2026-10-08 at the end of this addendum); the sentence "nothing in `src`
+or the Lab has changed" is obsolete from that date. Slice 3b (the coordinators) follows.
 **Basis:** [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) (DECIDED, Manu, 2026-10-08) §2.5,
 §3 item 7, §5 (row "AD-013 H2"), §7 slice 3. The direction is decided there: declaration per resolved
 operation (D-b), a fail-closed BLOCK row, and a context-keyed refusal for `C` with G-2 as the proposed
@@ -1114,3 +1117,52 @@ proposal); Manu did not ask for one.
 canonicalisation rule (S1) and its MARK consequence. Alternatives offered and not chosen: B (canonicalise
 under MARK only for declared contexts; needs two resolutions, a revision and a second review), C (a
 second review first), UNKNOWN.
+
+### Implementation note (2026-10-08, AD-SYM-03 slice 3a)
+
+Slice 3a implemented § Proposal 1 and 2 and the listed tests; no coordinator exists yet. Nothing here
+changes the decision; what the code made concrete or had to add is listed so the text and the code agree.
+
+- **Landed (`src`).** `CommandGate.refused_contexts` (`MappingProxyType`, `==`-comparable, construction
+  raises for `CContext.NONE`) and `CommandGate.context_refusal`; `Application._connect_command` with exactly
+  one `resolve_c_context`, canonicalisation on a temporary value whenever a definition is set
+  (`_canonical_c_selection`, never written to `app.selection`), and the check right after the call
+  (`_context_refuses`: post the text through `_set_status`, return `False`, no branch runs). The static
+  declaration tables are `src/mirai/symmetry_declarations.py` (`C_CONTEXT_COORDINATORS`,
+  `REMOVAL_COORDINATORS`, read through `declared_c_contexts()` and `declared_removal_commands()`); both are
+  empty in 3a. The module imports only the `CContext` enum, so `symmetry_coordination` keeps depending on
+  `core` and `mirai.symmetry` only. `src/main.py` and `src/core` are untouched (T-G3b guards the former).
+- **H2 call-site list, read with the third site.** The gate is consulted in `key_press`, in
+  `_execute_click` and in `_connect_command` (§ Proposal 1, "A third gate site"). A direct
+  `dispatch_command(CONNECT)` is context-gated but not identity-gated; nothing outside `key_press` calls it.
+- **Landed (Lab).** `NON_OPERATION` exactly as in the table above (`EdgeLoop`/`EdgeRing` deliberately not
+  listed), `CONTEXT_NAMES` (display names), `BLOCK_NOT_ALLOWED_TEXT`, `block_row()` derived from the
+  declarations as in § Proposal 2, `e5_warning_text` reading the same declarations (Knife line only while
+  `KNIFE` is undeclared), and a start-up listing that prints each row's `refused`, `allowed` and
+  `refused_contexts` (one rule per line), `NON_OPERATION`, `INTERIM_ONE_SIDED` and the current
+  declarations. `sync_gate` and the single-writer rule are unchanged; no per-press row. With no
+  declaration, `Connect` is refused by identity with `block_text("C")` as before; the four
+  `refused_contexts` are part of the row regardless, so the row is the same function of the declarations
+  before and after slice 3b.
+- **Deviation from the allow-list formula of § Proposal 2 (engineering, set in the slice 3a handoff, not an
+  Artist decision; assumption: acceptable because it keeps today's behaviour).** With zero declarations a
+  pure fail-closed allow-list would refuse `Delete`, `Dissolve` and `DissolveNoCleanup` under BLOCK and so
+  end the accepted interim (Manu, 2026-10-06) silently. `allowed` therefore also contains the named
+  constant `INTERIM_ONE_SIDED = {Delete, Dissolve, DissolveNoCleanup}` (printed at start-up, "accepted
+  interim, Manu 2026-10-06; removed in slice 3b"). It is neither a declaration nor an omission. **Slice 3b
+  deletes it**, together with the interim.
+- **Test IDs.** `tests/test_command_gate_contexts.py`: T-G2a, T-G2b, T-G2c, T-G2d, T-G2e, T-G2f, T-R5a+,
+  T-G3a, T-G3b. `tests/test_command_gate.py` and `tests/_inert_gate_plugin.py`: T-R5c+ (the inert gate
+  carries `refused_contexts = {}` and the plugin counts `_context_refuses` consultations; negative control
+  mode `contexts` lists every operation context and makes the contextual-`C` and Knife tests fail).
+  `experiments/symmetry_lab/tests/test_app_lab_fail_closed.py`: T-FC1 to T-FC5, T-R1d+, T-R2h+, and a
+  test for the interim; `test_app_lab_boundary.py`: T-R4a+. Declarations are patched where a declared
+  context is needed, because the real mapping is empty. T-FC1 covers the six unwired commands of
+  verification (d), `EdgeLoop`/`EdgeRing` and `Connect`.
+- **Observed, not decided.** Canonicalisation applies to vertex pairs too (A2: "1 vertex pair → no C
+  meaning"): a vertex and its mirror vertex, in Vertex mode with a definition set, now give
+  `C: nothing to do here` in MARK, where `C` used to resolve to Vertex Connect between the two (on
+  the head: nothing connectable, A2 observation 2). The
+  amendment's MARK consequence names the edge pair (probe P5); the vertex pair follows from the same rule
+  and from A2 as recorded.
+
