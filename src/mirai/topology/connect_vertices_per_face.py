@@ -44,24 +44,21 @@ def _pairs_for_face(mesh, face_id, selected: set[VertexId]) -> list[tuple[Vertex
     return pairs
 
 
-def connect_vertices_per_face(scene, vertex_ids: set[VertexId]) -> list:
-    """Connect selected vertices using per-face Wings-style cyclic pairing.
+VERTEX_CONNECT_LABEL = "Vertex Connect"
 
-    Returns list of created EdgeIds. Returns [] if nothing connectable
-    (no history entry in that case).
 
-    Raises VertexConnectError on invalid input.
-    """
+def apply_connect_vertices(mesh, vertex_ids: set[VertexId]) -> list:
+    """Validates and mutates `mesh` only; pushes nothing. Returns the created EdgeIds, `[]` if
+    nothing was connectable (the "nothing happened" signal). Raises `VertexConnectError` on
+    invalid input; the caller owns the snapshot (T-a, AD-SYM-03 §2.2)."""
     selected = set(vertex_ids)
     if len(selected) < 2:
         raise VertexConnectError("Vertex Connect benötigt mindestens 2 Vertices.")
 
-    mesh = scene.mesh
     for vid in selected:
         if not mesh.is_valid_vertex(vid):
             raise VertexConnectError(f"Unbekannter Vertex: {vid!r}")
 
-    before = mesh.export_state()
     snapshot_faces = sorted(mesh.all_face_ids(), key=int)
 
     created = []
@@ -75,6 +72,20 @@ def connect_vertices_per_face(scene, vertex_ids: set[VertexId]) -> list:
             eid = connect_in_shared_face(mesh, a, b)
             if eid is not None:
                 created.append(eid)
+    return created
+
+
+def connect_vertices_per_face(scene, vertex_ids: set[VertexId]) -> list:
+    """Connect selected vertices using per-face Wings-style cyclic pairing.
+
+    Returns list of created EdgeIds. Returns [] if nothing connectable
+    (no history entry in that case).
+
+    Raises VertexConnectError on invalid input.
+    """
+    mesh = scene.mesh
+    before = mesh.export_state()
+    created = apply_connect_vertices(mesh, vertex_ids)
 
     if not created:
         # No geometry created — idempotent no-op, no history entry
@@ -86,7 +97,7 @@ def connect_vertices_per_face(scene, vertex_ids: set[VertexId]) -> list:
             mesh=mesh,
             before_state=before,
             after_state=mesh.export_state(),
-            description="Vertex Connect",
+            description=VERTEX_CONNECT_LABEL,
         )
     )
     return created

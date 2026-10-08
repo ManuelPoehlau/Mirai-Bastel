@@ -35,7 +35,9 @@ connect_vertices).
 
 from __future__ import annotations
 
-from core import EdgeId
+from dataclasses import dataclass, field
+
+from core import EdgeId, VertexId
 from core.operations.topology import MeshStateCommand
 
 from .topology_points import connect_in_shared_face
@@ -50,7 +52,20 @@ def _midpoint(mesh, eid) -> tuple:
     return tuple((x + y) / 2.0 for x, y in zip(a, b))
 
 
-def _apply(mesh, selected: set) -> list[EdgeId]:
+EDGE_CONNECT_LABEL = "Connect Edges (pro Face)"
+
+
+@dataclass
+class EdgeConnectResult:
+    """What `apply_connect_edges` created: the connecting edges and, per split source edge,
+    its midpoint vertex (AD-SYM-03 §3 item 4 — lets a coordinator tie a created vertex to
+    its source)."""
+
+    created: list[EdgeId]
+    midpoints: dict[EdgeId, VertexId] = field(default_factory=dict)
+
+
+def _apply(mesh, selected: set) -> EdgeConnectResult:
     """Mutates mesh. Caller is responsible for restore on exception."""
     keep = [
         e for e in selected
@@ -64,10 +79,11 @@ def _apply(mesh, selected: set) -> list[EdgeId]:
 
     original_faces = sorted({f for e in keep for f in mesh.edge_faces(e)}, key=int)
 
-    mids: set = set()
+    midpoints: dict[EdgeId, VertexId] = {}
     for e in keep:
         v, _, _ = mesh.split_edge(e)
-        mids.add(v)
+        midpoints[e] = v
+    mids = set(midpoints.values())
 
     pairs = []
     for f in original_faces:
@@ -92,15 +108,16 @@ def _apply(mesh, selected: set) -> list[EdgeId]:
         raise TopologyToolError(
             "Connect (pro Face) abgebrochen: mindestens ein Mittelpunkt bliebe unverbunden."
         )
-    return created
+    return EdgeConnectResult(created, midpoints)
 
 
-def connect_selected_edges_per_face(scene, edge_ids: set[EdgeId]) -> list[EdgeId]:
+def apply_connect_edges(mesh, edge_ids: set[EdgeId]) -> EdgeConnectResult:
+    """Validates and mutates `mesh` only; pushes nothing. Raises `TopologyToolError` on refusal
+    or failure — the caller owns the snapshot and restores the mesh (T-a, AD-SYM-03 §2.2)."""
     selected = set(edge_ids)
     if len(selected) < 2:
         raise TopologyToolError("Connect Edges benötigt mindestens 2 Edges.")
 
-    mesh = scene.mesh
     for eid in selected:
         if not mesh.is_valid_edge(eid):
             raise TopologyToolError(f"Unbekannte Edge: {eid!r}")
@@ -109,24 +126,31 @@ def connect_selected_edges_per_face(scene, edge_ids: set[EdgeId]) -> list[EdgeId
                 "Non-Manifold-Topologie liegt außerhalb des Connect-Edges-Scope."
             )
 
-    before = mesh.export_state()
     try:
-        created = _apply(mesh, selected)
+        return _apply(mesh, selected)
     except TopologyToolError:
-        mesh.load_state(before)
         raise
     except Exception as exc:
-        mesh.load_state(before)
         raise TopologyToolError(
             f"Connect (pro Face) fehlgeschlagen – Mesh unverändert: {exc}"
         ) from exc
+
+
+def connect_selected_edges_per_face(scene, edge_ids: set[EdgeId]) -> list[EdgeId]:
+    mesh = scene.mesh
+    before = mesh.export_state()
+    try:
+        created = apply_connect_edges(mesh, edge_ids).created
+    except BaseException:
+        mesh.load_state(before)
+        raise
 
     scene.history.push(
         MeshStateCommand(
             mesh=mesh,
             before_state=before,
             after_state=mesh.export_state(),
-            description="Connect Edges (pro Face)",
+            description=EDGE_CONNECT_LABEL,
         )
     )
     return created

@@ -37,9 +37,9 @@ import math
 import time
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from core import EdgeId, FaceId, HistoryStack, Scene, Selection, SelectionMode, VertexId
+from core import EdgeId, FaceId, HistoryStack, Mesh, Scene, Selection, SelectionMode, VertexId
 from core.operations import MeshStateCommand
 from core.operations.transform import SeamConstraintError
 
@@ -54,15 +54,18 @@ from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGes
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
-from .topology.connect_per_face import TopologyToolError, connect_selected_edges_per_face
-from .topology.connect_vertices_per_face import VertexConnectError, connect_vertices_per_face
+from .topology.connect_per_face import EDGE_CONNECT_LABEL, TopologyToolError, apply_connect_edges
+from .topology.connect_vertices_per_face import (
+    VERTEX_CONNECT_LABEL,
+    VertexConnectError,
+    apply_connect_vertices,
+)
 from .topology.contextual_c import CContext, resolve_c_context
-from .topology.delete_dissolve import RemovalRefused, remove_selected, removal_label
+from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point, space_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
-from .topology.split import split_selected_edge
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.picking import pick_component
 from .viewport.picking_cache import PickCache
@@ -119,6 +122,15 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
     commands.SET_FLAT_SHADED: DisplayMode.FLAT_SHADED,
     commands.SET_WIREFRAME: DisplayMode.WIREFRAME,
 }
+
+
+@dataclasses.dataclass(frozen=True)
+class _MeshTransaction:
+    """Outcome of `Application._mesh_transaction`: whether an entry was pushed, and what the
+    mutation returned."""
+
+    changed: bool
+    result: Any
 
 
 #: WP Delete/Dissolve: Command → (dissolve, cleanup) für `remove_selected`.
@@ -551,46 +563,51 @@ class Application:
         follow-up, `_record_selection_history`)."""
         selection = self.selection
         ctx = resolve_c_context(selection)
-        before = self._selection_snapshot()
 
         if ctx is CContext.SPLIT:
             (edge_id,) = selection.edges
-            new_vid, _, _ = split_selected_edge(self.scene, edge_id)
-            selection.mode = SelectionMode.VERTEX
-            selection.clear()
-            selection.add({new_vid})
-            self._record_selection_history(before)
-            self._notify_topology_changed()
+            def residue(split) -> None:
+                selection.mode = SelectionMode.VERTEX
+                selection.clear()
+                selection.add({split[0]})
+
+            self._mesh_transaction(
+                "Split Edge", lambda mesh: mesh.split_edge(edge_id), on_applied=residue
+            )
             self._set_status("Split")
             return True
 
         if ctx is CContext.EDGE_CONNECT:
+            def residue(result) -> None:
+                selection.clear()
+                selection.add(set(result.created))
+
             try:
-                new_edges = connect_selected_edges_per_face(self.scene, set(selection.edges))
+                self._mesh_transaction(
+                    EDGE_CONNECT_LABEL,
+                    lambda mesh: apply_connect_edges(mesh, set(selection.edges)),
+                    on_applied=residue,
+                )
             except TopologyToolError as exc:
                 self._set_status(str(exc))
                 return False
-            selection.clear()
-            selection.add(set(new_edges))
-            self._record_selection_history(before)
-            self._notify_topology_changed()
             self._set_status("Connect Edges")
             return True
 
         if ctx is CContext.VERTEX_CONNECT:
+            # Residue (AD-017): the original vertices stay selected, Vertex
+            # mode unchanged — no `on_applied`, the selection is not touched.
             try:
-                new_edges = connect_vertices_per_face(self.scene, set(selection.vertices))
+                outcome = self._mesh_transaction(
+                    VERTEX_CONNECT_LABEL,
+                    lambda mesh: apply_connect_vertices(mesh, set(selection.vertices)),
+                )
             except VertexConnectError as exc:
                 self._set_status(str(exc))
                 return False
-            if not new_edges:
+            if not outcome.changed:
                 self._set_status("Vertex Connect: nothing connectable")
                 return False
-            # Residue (AD-017): the original vertices stay selected, Vertex
-            # mode unchanged — connect_vertices_per_face never touches
-            # `selection` itself.
-            self._record_selection_history(before)
-            self._notify_topology_changed()
             self._set_status("Vertex Connect")
             return True
 
@@ -628,22 +645,26 @@ class Application:
             # §0.2.2: Vertex Dissolve has no variant, so this command does nothing.
             self._set_status("Dissolve (no cleanup): no variant in Vertex mode")
             return False
-        before = self._selection_snapshot()
+
+        def residue(new_faces) -> None:
+            selection.clear()
+            if dissolve and mode is SelectionMode.FACE:
+                selection.add(set(new_faces))
+
         try:
-            new_faces = remove_selected(
-                self.scene, mode, set(ids), dissolve=dissolve, cleanup=cleanup
+            outcome = self._mesh_transaction(
+                label,
+                lambda mesh: apply_removal(
+                    mesh, mode, set(ids), dissolve=dissolve, cleanup=cleanup
+                ),
+                on_applied=residue,
             )
         except RemovalRefused as exc:
             self._set_status(f"{label}: {exc}")
             return False
-        if new_faces is None:
+        if not outcome.changed:
             self._set_status(f"{label}: nothing to do")
             return False
-        selection.clear()
-        if dissolve and mode is SelectionMode.FACE:
-            selection.add(set(new_faces))
-        self._record_selection_history(before)
-        self._notify_topology_changed()
         self._set_status(label)
         return True
 
@@ -1387,31 +1408,56 @@ class Application:
             raise RuntimeError(
                 f"apply_mesh_change({description!r}) while the {owner} interaction runs"
             )
+        return self._mesh_transaction(
+            description, lambda _mesh: mutate(), moved_of=lambda moved: moved
+        ).changed
+
+    def _mesh_transaction(
+        self,
+        description: str,
+        mutate: Callable[[Mesh], Any],
+        *,
+        on_applied: Callable[[Any], None] | None = None,
+        moved_of: Callable[[Any], set[VertexId] | None] | None = None,
+    ) -> "_MeshTransaction":
+        """The one commit boundary for a mesh change `Application` makes (AD-SYM-03 §2.2 T-a);
+        `apply_mesh_change` is its external-host entry.
+
+        `mutate(mesh)` changes the mesh and returns a result. If it raises, the mesh is restored
+        from the snapshot and the exception propagates. An unchanged `export_state()` records
+        nothing (`changed` False). Otherwise: one `MeshStateCommand(description)`,
+        `on_applied(result)` (sets the selection residue), then the selection-mirror entry
+        taken from the snapshot made before the mutation, pick cache invalidated, viewport
+        notified (`moved_of(result)` = moved vertex IDs for a positions-only change, None or no
+        `moved_of` = topology changed), hover re-picked."""
         mesh = self.scene.mesh
         selection_before = self._selection_snapshot()
         before = mesh.export_state()
         try:
-            moved = mutate()
+            result = mutate(mesh)
         except BaseException:
             mesh.load_state(before)
             raise
         after = mesh.export_state()
         if after == before:
-            return False
+            return _MeshTransaction(False, result)
         self.history.push(
             MeshStateCommand(
                 mesh=mesh, before_state=before, after_state=after, description=description
             )
         )
+        if on_applied is not None:
+            on_applied(result)
         self._record_selection_history(selection_before)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            if moved is None:
-                self.viewport.on_topology_changed()
-            else:
+        moved = moved_of(result) if moved_of is not None else None
+        if moved is None:
+            self._notify_topology_changed()
+        else:
+            self._pick_cache.invalidate()
+            if self.viewport is not None:
                 self.viewport.on_vertices_moved(set(moved))
-        self._refresh_hover()
-        return True
+            self._refresh_hover()
+        return _MeshTransaction(True, result)
 
     def _selection_snapshot(self) -> tuple:
         """Momentaufnahme von Modus + Auswahl (kein Hover - der wird nach

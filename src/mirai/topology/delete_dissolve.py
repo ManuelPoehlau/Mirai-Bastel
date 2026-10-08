@@ -38,20 +38,14 @@ def removal_label(mode: SelectionMode, *, dissolve: bool, cleanup: bool) -> str:
     return label
 
 
-def remove_selected(
-    scene, mode: SelectionMode, ids, *, dissolve: bool, cleanup: bool
-) -> list[FaceId] | None:
-    """Deletes or dissolves `ids` (elements of `mode`) and pushes one
-    `MeshStateCommand`.
-
-    `cleanup` only matters for Edge/Face Dissolve (§0.2.2); Vertex Dissolve has
-    no variant and ignores it. Returns the new faces (Dissolve; empty for
-    Delete and Vertex Dissolve without a merge), or None if nothing changed
-    (no history entry). Raises `RemovalRefused` with the Core message.
-    """
-    mesh = scene.mesh
+def apply_removal(
+    mesh, mode: SelectionMode, ids, *, dissolve: bool, cleanup: bool
+) -> list[FaceId]:
+    """Mutates `mesh` only; pushes nothing. Returns the new faces (Dissolve; empty for Delete and
+    Vertex Dissolve without a merge). Raises `RemovalRefused` with the Core message; the caller
+    owns the snapshot and restores. Whether anything changed is the caller's state comparison
+    ("nothing happened" has no other trace here, a no-op leaves the export unchanged)."""
     ordered = sorted(ids, key=int)
-    before = mesh.export_state()
     new_faces: list[FaceId] = []
     try:
         if not dissolve:
@@ -70,8 +64,29 @@ def remove_selected(
         else:
             new_faces = mesh.dissolve_faces(ordered, cleanup=cleanup)
     except MeshError as exc:
-        mesh.load_state(before)
         raise RemovalRefused(str(exc)) from exc
+    # A later vertex dissolve can merge a face an earlier one created.
+    return [f for f in new_faces if mesh.is_valid_face(f)]
+
+
+def remove_selected(
+    scene, mode: SelectionMode, ids, *, dissolve: bool, cleanup: bool
+) -> list[FaceId] | None:
+    """Deletes or dissolves `ids` (elements of `mode`) and pushes one
+    `MeshStateCommand`.
+
+    `cleanup` only matters for Edge/Face Dissolve (§0.2.2); Vertex Dissolve has
+    no variant and ignores it. Returns the new faces (Dissolve; empty for
+    Delete and Vertex Dissolve without a merge), or None if nothing changed
+    (no history entry). Raises `RemovalRefused` with the Core message.
+    """
+    mesh = scene.mesh
+    before = mesh.export_state()
+    try:
+        new_faces = apply_removal(mesh, mode, ids, dissolve=dissolve, cleanup=cleanup)
+    except RemovalRefused:
+        mesh.load_state(before)
+        raise
     after = mesh.export_state()
     if after == before:
         return None
@@ -83,5 +98,4 @@ def remove_selected(
             description=removal_label(mode, dissolve=dissolve, cleanup=cleanup),
         )
     )
-    # A later vertex dissolve can merge a face an earlier one created.
-    return [f for f in new_faces if mesh.is_valid_face(f)]
+    return new_faces
