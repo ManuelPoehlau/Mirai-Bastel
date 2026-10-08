@@ -1,7 +1,8 @@
 # AD-SYM-03 — Symmetric Topology Coordination
 
-**Status:** PROPOSED (not decided; review CLAUDE-001 archived and answered, §9)
-**Date:** 2026-10-06 · **revised 2026-10-07** after the independent review CLAUDE-001 (answers in §9; still PROPOSED)
+**Status:** **DECIDED** (Manu, 2026-10-08), as revised after review CLAUDE-001 and with the Artist verdicts A1/A2/A3 (§6, §9).
+The AD-013 H2 amendment (G-2) is **still required before Slice 3** (§5, §7); it is not done.
+**Date:** 2026-10-06 · revised 2026-10-07 after the independent review CLAUDE-001 (answers in §9) · decided 2026-10-08
 **Mode (M5):** Discovery → decision preparation. No implementation, no code change.
 **Belongs to:** Symmetry Lab track (WP-SYM-LAB), follow-up of WP-SYM-LAB-03; working milestone
 "Symmetry Basic Modeling Parity" (Discovery header)
@@ -256,7 +257,7 @@ and no new dead seam id (seam cases, pending A1); (3) created elements are judge
 | D-strict | every created element is paired | Safe and simple. Refuses every coordinated op in an unpaired region: on `man_with_shoes_basemesh` 202 of 926 faces touch an unpaired vertex, and an expanded Edge Connect there creates 2 unpaired vertices (R2). Way out: symmetry off (Shift+S), as for transforms today |
 | D-source | created elements whose sources are all paired must be paired; others are allowed and reported visibly ("n elements without a partner — one-sided") | Follows INV-10/INV-13 for edits *in* the asymmetric region, still INV-5 ("recognisably not at all"). Needs provenance per op (N5 for Connect/Split; nothing for Delete) |
 
-Which rule the Artist gets is Product Truth (Artist test A3). INV-10 alone does not decide it: it covers asymmetry
+Which rule the Artist gets is Product Truth (Artist test A3; answered: D-strict, "for now", §6). INV-10 alone does not decide it: it covers asymmetry
 elsewhere in the mesh, not edits inside it.
 
 ### 2.4 Exactness (scope item 4; N5, Disc. Q7)
@@ -381,7 +382,7 @@ face after A1 case 2.
    less fragile route, not a strict need) and by D-source if A3 chooses it.
 5. **Completeness: C-b.** A separate derived report; coordinators run its delta check (§2.3: by element id; no
    complete element becomes incomplete; no new self-mirrored face or dead seam id pending A1; created elements by
-   D-strict **as the interim rule until A3**) inside the transaction and roll back with a visible status on failure
+   D-strict, **Artist-confirmed by A3 = S, "for now"**) inside the transaction and roll back with a visible status on failure
    (the `SeamConstraintError` precedent: refused, no history, mesh unchanged). `sides` is display only.
    `SymmetryState` is not changed by this AD.
 6. **Exactness:** symmetric topology coordination is claimed exact only on exact planes (predicate in item 2; Lab
@@ -412,12 +413,14 @@ face after A1 case 2.
 - **Seam consumption** (Delete/Dissolve/Extrude/Knife on or across the seam; the face-pair delete): Artist test A1.
 - **Seam definition (open since A1 Case 2 = UNKNOWN):** should the seam be defined over plane vertices instead of
   seam edges? To be decided when a second mirror method is planned; it would touch AD-SYM-01 and needs review.
-- **`C` with a two-sided explicit selection** — canonicalise to one side first, or keep literal counting: Artist
-  test A2. (Missing from the Discovery.) Until decided, coordinators expand after the unchanged
-  `resolve_c_context`.
-- **Union call vs. intent + mirrored intent where both sides meet in one face** (R1, review F3): refused for now
-  (item 9); A1/A2 (option B of A2 is exactly this case).
-- **D-strict vs. D-source for created elements** (review F1): Artist test A3. D-strict is the interim rule.
+- **`C` with a two-sided explicit selection** — *answered 2026-10-08: A2 = A* (count mirror pairs once;
+  coordinators canonicalise to one side before `resolve_c_context`; §6). Not covered: scaling whole horizontal
+  loops with both sides selected is a transform case, not decided here.
+- **Union call vs. intent + mirrored intent where both sides meet in one face** (R1, review F3): stays refused
+  as an engineering interim rule (item 9; assumption, not confirmed by Manu). A2 = A canonicalises the selection
+  to one side, which removes the case for `C`; it does not decide the transform case.
+- **D-strict vs. D-source for created elements** (review F1): *answered 2026-10-08: A3 = S, "for now",
+  revisable* (§6). D-strict is Artist-confirmed behaviour; D-source stays recorded as an alternative.
 - **Whether `SymmetryState` later folds in the face-level component** (C-a). The evidence (Disc. §1.7 (b), probe I)
   says the visible state is currently blind to one-sided topology; whether the Lab HUD shows the report next to the
   state is UX.
@@ -432,7 +435,8 @@ face after A1 case 2.
   **Asymmetry, out of scope here:** transforms are not refused on non-exact planes, topology coordinators would be.
 - **Extrude:** Production port before or after its symmetry work (Disc. Q6, owner priority); `Operation` vs.
   atomic mutation stays open (AD-SYM-02 §4).
-- **Owner check O1 — end of the accepted interim, reduced (review F4).** Non-seam Delete/Dissolve is coordinated
+- **Owner check O1 — end of the accepted interim, reduced (review F4). Accepted 2026-10-08 as a consequence of
+  the A1/A2/A3 verdicts; assumption, no separate explicit O1 confirmation was given by Manu.** Non-seam Delete/Dissolve is coordinated
   in slice 3, together with the fail-closed row, so it is supported, not refused. What changes for the Artist is
   only the seam cases: from "runs one-sided" to "refused visibly" until A1, in MARK as in BLOCK. The owner confirms
   this at slice 3 (or asks to keep the seam cases one-sided until A1, as a dated, visible exception).
@@ -516,7 +520,7 @@ Question per case (1, 2; 3 by description): what should happen when an operation
 - Assumption, not confirmed by Manu: seam-edge-selected Delete (a seam edge itself selected) is not covered by
   Case 1 and stays refused per §3 item 8.
 
-A2 and A3 are not affected and remain open.
+A2 and A3 were answered the same day (below).
 
 ### A2 — `C` with a two-sided explicit selection (≤ 5 min) — observation runnable today, comparison after slice 4
 
@@ -534,7 +538,16 @@ Question: with both sides selected and symmetry on, what did you mean?
 - **UNKNOWN**.
 
 *Not yet runnable:* the A/B comparison as behaviour (needs symmetric Split, slice 4, and a Lab switch between A and
-B). Until then the coordinator refuses the both-sides face case (item 9).
+B). Moot after the verdict below; the coordinator still refuses the both-sides face case (item 9).
+
+**Verdict (Manu, 2026-10-08): A.** Count mirror pairs once; one edge plus its mirror edge is one intent, so `C`
+splits both. Stated "from gut feeling". Reason: in symmetric editing one usually selects only one side,
+especially when cutting into the mesh.
+- *Not covered by A2:* Manu noted that scaling whole horizontal loops may involve both sides selected. That is a
+  transform case; it is not decided here.
+- *Consequence:* coordinators canonicalise the selection to one side **before** `resolve_c_context`. This
+  supersedes the interim "expand after the unchanged `resolve_c_context`" wording for the both-sides case.
+- *Engineering, not confirmed by Manu:* item 9 (both sides in one face) stays refused as an interim rule.
 
 ### A3 — Editing next to unpaired geometry (≤ 5 min) — observation runnable today, comparison after slice 3
 
@@ -550,8 +563,14 @@ Question: with symmetry on, what should happen when you edit right next to geome
 - **P** do what can be mirrored, leave the rest one-sided and say so ("n elements without a partner");
 - **UNKNOWN**.
 
-*Not yet runnable:* S vs. P as behaviour (needs slice 3; S is the interim rule there, P needs a switch and the
+*Not yet runnable:* S vs. P as behaviour (needs slice 3; S is the rule there, P would need a switch and the
 source report).
+
+**Verdict (Manu, 2026-10-08): S, "for now"** (revisable). Refuse with a status line next to unpaired geometry; the
+user may turn symmetry off to work one-sided. Reason: P (mirror what can be mirrored, rest one-sided) would likely
+become very imprecise.
+- *Consequence:* D-strict (§2.3, §3 item 5) is now Artist-confirmed behaviour, not only an interim rule.
+  D-source stays recorded as an alternative should the verdict be revisited.
 
 ---
 
@@ -570,6 +589,10 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN). No longer fully blocked on A1 |
 | 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6) |
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
+
+**Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
+after the AD-013 H2 amendment (G-2) is written and reviewed — **that amendment is not done**. Slice 4 follows
+slice 3. Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
 
 The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
 from slice 5 to slice 3 (it is class B and was only waiting for the gate); the seam part is no longer fully blocked on A1 (see slice 5).
@@ -619,7 +642,13 @@ R1–R5 on `main` @ `1334d8a` with identical results (R5 timings vary by run), s
 | F7 — N5 is a convenience for S1, not a need | NIT | **Fixed.** Item 4 says "used by", with the adjacency alternative named; the midpoint report stays in slice 2 as the cheaper route |
 | F8 — smaller corrections | NIT | **Fixed.** Footnote on the Dissolve row (§1.3); R5 cost in §1.4 and §8; the on-plane non-seam vertex note in §2.6 |
 
-No decision beyond the review's own proposals was taken, except: the interim choice of D-strict (the safe default
-until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status stays
-**PROPOSED**; open before DECIDED: the AD-013 H2 amendment for G-2 (its own review), and the owner's confirmation
+**Decision note (2026-10-08).** Manu decided this AD with the revision above and the verdicts A1 (§6, Case 2
+UNKNOWN), A2 = A and A3 = S ("for now"); all three are recorded in §6. Owner check O1 (seam cases move from
+"runs one-sided" to "refused visibly") was presented as a consequence of the verdicts and is recorded as
+accepted, **as an assumption** (no separate explicit O1 confirmation). The AD-013 H2 amendment is **not** done and
+remains a precondition of slice 3 (§5). Items 5 and 9 keep their wording; D-strict is now Artist-confirmed.
+
+*Status line of the 2026-10-07 revision, kept for history:* No decision beyond the review's own proposals was taken, except: the interim choice of D-strict (the safe default
+until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status then stayed
+**PROPOSED**; open before DECIDED were: the AD-013 H2 amendment for G-2 (its own review), and the owner's confirmation
 of this revision. A second review is not required by the findings (no blocker), but the owner may ask for one.

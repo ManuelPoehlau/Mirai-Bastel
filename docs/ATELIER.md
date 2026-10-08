@@ -42,7 +42,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | # | Was | Testschritte |
 |---|---|---|
 | B1 | **Delete/Dissolve**: einziger Praxis-Check des Pakets, Verdikt UNKNOWN; DD-3 und DD-4 sind Material für den Check | [WP Delete/Dissolve, „Status“](WP_DELETE_DISSOLVE_PLAN.md) |
-| B2 | **AD-SYM-03, Artist-Tests A1–A3** (Seam-Verbrauch, `C` mit Auswahl auf beiden Seiten, Arbeiten neben ungepaarter Geometrie): **A1 beantwortet** (Fall 2 UNKNOWN, Verdikte in §6), A2 und A3 offen; Vorbereitung für die Entscheidung unten | [AD-SYM-03 §6](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| B2 | **AD-SYM-03, Artist-Tests A1–A3** (Seam-Verbrauch, `C` mit Auswahl auf beiden Seiten, Arbeiten neben ungepaarter Geometrie): **beantwortet** (A1 mit Fall 2 UNKNOWN, A2 = A, A3 = S „vorerst“; Verdikte in §6) | [AD-SYM-03 §6](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | B3 | **Shading Lab**: Verdikte F1/F8/F9 | [Shading Lab README](../experiments/viewport_shading_lab/README.md) |
 | B4 | **Subdivision Lab**: Tests T-SUBD-1 und T-SUBD-2 | [Subdivision Lab README](../experiments/subdivision_lab/README.md) |
 
@@ -56,7 +56,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 
 | # | Was | Wo |
 |---|---|---|
-| D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): Vorschlag liegt vor, unabhängiges Review ist archiviert und beantwortet, Status PROPOSED | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung steht noch aus und kommt vor Slice 3 | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
 ### E. Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
@@ -71,7 +71,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie für Split/Connect/Knife/Delete/Dissolve im Lab | Modellieren mit Symmetrie ohne Blockaden | D1 (AD-SYM-03) |
+| Symmetrie für Split/Connect/Knife/Delete/Dissolve im Lab | Modellieren mit Symmetrie ohne Blockaden | D1 ist entschieden; Slice 1–2 frei, Slice 3 nach der H2-Ergänzung (AD-SYM-03 §7) |
 | Symmetrie in die Production-App | Symmetrie im echten Werkzeug | Lab-Ausbau, danach Promotionsprüfung |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-Optimierung auf dem Head | flüssigeres Arbeiten auf dichten Meshes | — |
