@@ -107,13 +107,55 @@ Asset man_with_shoes_basemesh: 928 vertices, bounding radius 1.0005, seeds 4 (ve
   | Container, Python 3.13 / 3.14 | 0.05 / 0.07 | 0.18 / 0.21 |
 
   So `math.dist` is ~46x slower on the reference PC, while the hand-written form is ~5x slower,
-  in line with the update columns. Open point: at 3.2 µs, `math.dist` explains only about a third
-  of the ~10 µs per call fitted in R3. Not examined: whether real coordinates are slower than the
-  round benchmark values, and where the rest of the per-call cost goes.
+  in line with the update columns. At 3.2 µs, `math.dist` explained only about a third of the
+  ~10 µs per call fitted in R3; the re-run (R9) shows the rest went away with it too.
 - R7. Consequence in this experiment: `influence.py` now uses `math.sqrt` of the summed squares
   (euclidean compares squared distances and takes one root per vertex). Influenced counts are
-  unchanged, the suite passes (96), and container times are unchanged within noise. **The reference-PC
-  probe has not been re-run since this change**; the §2.1 table is the `math.dist` version.
+  unchanged, the suite passes (96), and container times are unchanged within noise. The §2.1 table is the `math.dist` version; the re-run is §2.2.
+
+### 2.2 Reference PC re-run after R7 (Manu, 2026-10-08)
+
+Same machine and Python as §2.1, code at `ac92943`.
+
+```
+Asset head_basemesh: 326 vertices, bounding radius 3.3717, seeds 5 (vertex 286 + one-ring), 60 update steps per gesture
+  radius          metric     influence_ms  influenced  move_ms  rotate_ms  scale_ms  core_move_ms
+    5%   0.1686  euclidean         0.158           9    0.013      0.055     0.038         0.017
+    5%   0.1686  geodesic          0.446           9    0.013      0.055     0.037         0.016
+   15%   0.5058  euclidean         0.314          36    0.047      0.211     0.177         0.061
+   15%   0.5058  geodesic          0.536          30    0.039      0.177     0.147         0.051
+   30%   1.0115  euclidean         0.525          68    0.089      0.401     0.348         0.117
+   30%   1.0115  geodesic          0.682          61    0.079      0.362     0.312         0.104
+
+Asset man_with_shoes_basemesh: 928 vertices, bounding radius 1.0005, seeds 4 (vertex 121 + one-ring), 60 update steps per gesture
+  radius          metric     influence_ms  influenced  move_ms  rotate_ms  scale_ms  core_move_ms
+    5%   0.0500  euclidean         0.342          18    0.025      0.112     0.094         0.032
+    5%   0.0500  geodesic          1.178          10    0.014      0.064     0.046         0.019
+   15%   0.1501  euclidean         0.632          76    0.098      0.447     0.402         0.131
+   15%   0.1501  geodesic          1.270          28    0.039      0.172     0.141         0.048
+   30%   0.3002  euclidean         0.775         112    0.144      0.660     0.581         0.185
+   30%   0.3002  geodesic          2.155         107    0.137      0.627     0.555         0.178
+```
+
+- R8. `influence_ms` before → after R7:
+
+  | Asset | Metric | 5 % | 15 % | 30 % |
+  |---|---|---|---|---|
+  | head | euclidean | 0.59 → 0.16 | 2.25 → 0.31 | 4.66 → 0.53 |
+  | head | geodesic | 0.63 → 0.45 | 1.15 → 0.54 | 1.85 → 0.68 |
+  | body | euclidean | 1.13 → 0.34 | 4.29 → 0.63 | 5.48 → 0.78 |
+  | body | geodesic | 1.47 → 1.18 | 1.98 → 1.27 | 4.39 → 2.16 |
+
+  Influenced counts and all update columns are unchanged (within run noise).
+- R9. The marginal euclidean cost is now ~0.9 µs (head) to ~1.0 µs (body) per seed comparison
+  (fit over the R3 call counts), close to the 1.08 µs micro-benchmark of the hand-written form. The
+  saving (~4.1 ms on head 30 %) is larger than R6 predicts from round values (~2 µs × 455 ≈ 0.9 ms).
+  *(reading: consistent with `math.dist` being slower on real coordinates than on the benchmark
+  values; not measured.)*
+- R10. The ordering now matches the container: euclidean is cheaper than geodesic in every row.
+  Geodesic has a fixed share of ~1 ms on the body (the one-off adjacency pass over all edges, see
+  the 5 % row). Largest influence time is now 2.2 ms (geodesic, body, 30 %); largest per-update
+  time is still 0.66 ms (Rotate, body, 30 %).
 
 ## 3. Observations — metrics, curves, scale formulas
 
@@ -264,9 +306,11 @@ Also: `Mesh.vertex_edges()` is avoided for cost reasons (N4), not for privacy.
 7. **Changing rotation axis** mid-gesture (L4): does any tool do it? If not, should the contract
    say constant axis?
 8. **Symmetry combination** (refused here, E9): mirrored influence, seam vertices with `w < 1`.
-9. **Cost on the reference PC**: probe run recorded (§2.1). `math.dist` is slow there (R6) and has
-   been replaced (R7). Open: a reference-PC re-run after R7 before choosing a metric on cost grounds;
-   the viewport share of a soft drag (N5) needs the app path.
+9. **Cost on the reference PC**: recorded before and after the `math.dist` swap (§2.1, §2.2, R8–R10).
+   Still open: the viewport share of a soft drag (N5) needs the app path. Also: should `math.dist`
+   be avoided elsewhere, given R6? `src/` uses it in `mirai/mesh_geometry.py`,
+   `mirai/topology/face_geometry.py`, `chord_validity.py`, `knife_resolve.py`; whether any of
+   these is on a hot path was not examined.
 10. Is a tolerance-free radius-0 identity (L3) still required once the pivot comes from the tool
     (default-pivot summation order)?
 
