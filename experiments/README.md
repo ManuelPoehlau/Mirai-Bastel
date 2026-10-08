@@ -81,6 +81,10 @@ geprüft) — Details in der lokalen README.
 
 Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
 
+### `soft_selection/`
+
+Soft Selection (WP-SOFT-01 S1, headless, Typ B): Influence-Map (euklidisch/geodätisch, smooth/linear) und gewichtete Move/Rotate/Scale als Unterklassen der Core-Ops, Kostenprobe auf Kopf und Ganzkörper; keine Defaults, kein Fenster — [`soft_selection/README.md`](soft_selection/README.md), Ergebnisse in [`soft_selection/FINDINGS.md`](soft_selection/FINDINGS.md).
+
 ### `viewport_shading_lab/`
 
 Viewport Shading Lab (WP-SHADE-LAB-01): eigenständiges Fenster für die Worklight-Forschung. Der
