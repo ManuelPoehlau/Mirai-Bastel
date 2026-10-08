@@ -160,7 +160,8 @@ Symmetrie läuft `C` unverändert.
 
 ## Symmetrische Topologie, Slice 3c: Delete und Dissolve
 
-AD-SYM-03 Slice 3c (2026-10-08). **Artist-Verdikt: steht aus** (Praxis-Check B2b in `docs/ATELIER.md`). Mit gesetzter
+AD-SYM-03 Slice 3c (2026-10-08). **Artist-Verdikte (2026-10-08):** Auswahl nach Face Dissolve **KEEP**; A1 Fall 2 verfeinert
+(unten); Praxis-Check zur Nahtregel S2 steht aus (B2b in `docs/ATELIER.md`). Mit gesetzter
 Symmetrie führen **Entf** (Delete), **Rücktaste** (Dissolve) und **Ctrl+Rücktaste** (Dissolve ohne Cleanup) in jedem
 Komponenten-Modus (Vertex, Edge, Face) **eine** koordinierte Operation auf beiden Seiten aus (Auswahl plus Partner, ein
 Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar ab und ändern nichts. Das gilt in
@@ -172,7 +173,7 @@ Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar
 
   | Fall | Text |
   |---|---|
-  | Dissolve (alle Varianten), das eine Face über der Ebene erzeugen oder eine Seam-Kante verbrauchen würde | `Symmetrie: Auflösen an der Seam wird noch nicht unterstützt (Seam-Kante oder -Vertex würde aufgelöst) — nichts geändert; abseits der Seam arbeiten oder Symmetrie ausschalten (Shift+S)` |
+  | Dissolve (alle Varianten) einer Kante **direkt auf der Naht** (beide Enden auf ihr), eines Seam-Vertex oder eines Face-Paars über der Naht, das eine Face über der Ebene erzeugen oder eine Seam-Kante verbrauchen würde | `Symmetrie: Auflösen an der Seam wird noch nicht unterstützt (Seam-Kante oder -Vertex würde aufgelöst) — nichts geändert; abseits der Seam arbeiten oder Symmetrie ausschalten (Shift+S)` |
 
   Die bestehenden Texte „nichts ausgewählt“ und „kein Variant im Vertex-Modus“ (Ctrl+Rücktaste) bleiben.
 - **Naht bei Delete (A1 Fall 1 = M, Manu):** Die Naht verschwindet nur, wo die angrenzenden Faces weg sind. Seam-Kanten,
@@ -180,10 +181,18 @@ Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar
   bleibt `valid`, Undo stellt die alte Naht wieder her. Gilt in allen drei Modi, also auch, wenn du eine Seam-Kante oder
   einen Seam-Vertex selbst löschst (Annahme über Fall 1 hinaus, von Manu nicht bestätigt); wäre das Ergebnis danach
   unvollständig, lehnt die Delta-Prüfung ab.
-- **Naht bei Dissolve (A1 Fall 2 = UNKNOWN, Engineering-Interim R):** verweigert mit dem Text oben, bis Manu entscheidet.
+- **Naht bei Dissolve (A1 Fall 2 verfeinert, Manu 2026-10-08):** Eine Kante **direkt auf der Naht** aufzulösen bleibt
+  verweigert (Text oben), weil eine Face ohne Naht übrig bliebe. Eine Kante, die die Naht **kreuzt** (ein Ende auf ihr),
+  wird aufgelöst: die Naht verschwindet nicht, die zwei Seam-Kanten am aufgeräumten Seam-Vertex werden zu **einer**
+  (Nahtregel S2, Engineering; in derselben Transaktion, der grüne Punkt verschwindet, der HUD bleibt `valid`, Undo
+  stellt Mesh, Naht und Auswahl wieder her). Gilt auch für einen Loop über die Naht (Kanten auf beiden Seiten
+  ausgewählt, auch mehrere Naht-Übergänge). **Ctrl+Rücktaste** (ohne Cleanup) lässt die Naht unverändert. Jede andere
+  verbrauchte Seam-Kante und jede neue Face über der Ebene bleibt verweigert. **Entf** auf einer Seam-Kante bleibt
+  erlaubt („man macht bewusst ein Loch“). Eine Warnung über die Folgen beim Entfernen von Naht-Elementen ist eine
+  mögliche spätere Idee, **nicht entschieden**.
 - **Auswahl danach:** Delete und Vertex-/Edge-Dissolve leeren die Auswahl (der Modus bleibt, wie bisher). Face Dissolve
   wählt die verschmolzenen Faces auf der Seite, auf der die Auswahl lag, bei bewusst beidseitiger Auswahl beider Seiten
-  (derselbe Helfer wie bei Edge Connect; **Engineering-Standard**, von Manu nicht bestätigt).
+  (derselbe Helfer wie bei Edge Connect; **KEEP**, Manu 2026-10-08).
 - **Headless nachgemessen** (nicht Praxis): `tests/test_symmetric_removal.py`,
   `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`; Zahlen und die Durchläufe aller Elemente der Assets:
   [AD-SYM-03 §7, Implementation note 3c](../../docs/architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md).

@@ -20,7 +20,7 @@ from core.mesh import Mesh, SymmetryDefinition
 from mirai.scene_factory import build_core_scene_from_obj
 from mirai.symmetry import SymmetryState, symmetry_state
 from mirai.topology.connect_vertices_per_face import connect_vertices_per_face
-from mirai.topology.delete_dissolve import remove_selected
+from mirai.topology.delete_dissolve import apply_removal, remove_selected
 from mirai.symmetry_coordination import (
     SymmetryIndex,
     both_sides_faces,
@@ -33,6 +33,7 @@ from mirai.symmetry_coordination import (
     expand_faces,
     expand_vertices,
     is_exact_plane,
+    seam_after_cleanup_merge,
     seam_after_split,
 )
 
@@ -199,6 +200,109 @@ class TestSeamRule(unittest.TestCase):
         other = next(e for e in mesh.all_edge_ids() if e not in d.seam_edges)
         _v, h1, h2 = mesh.split_edge(other)
         self.assertEqual(seam_after_split(d, {other: (h1, h2)}).seam_edges, d.seam_edges)
+
+
+def tall_grid():
+    """Quads on x in [-1, 1], y in [0, 3]: the seam x = 0 has two inner vertices (rows 1 and 2)."""
+    mesh, p = Mesh(), {}
+    for r in range(4):
+        for c in range(-1, 2):
+            p[(r, c)] = mesh.add_vertex((float(c), float(r), 0.0))
+    for r in range(3):
+        for c in range(-1, 1):
+            mesh.add_face([p[(r, c)], p[(r, c + 1)], p[(r + 1, c + 1)], p[(r + 1, c)]])
+    seam = frozenset(e for e in mesh.all_edge_ids() if all(mesh.vertex_position(v)[0] == 0.0 for v in mesh.edge_vertices(e)))
+    mesh.symmetry_definition = SymmetryDefinition(ORIGIN, X, seam)
+    return mesh, p
+
+
+def edge_between(mesh, a, b):
+    return next(e for e in mesh.vertex_edges(a) if b in mesh.edge_vertices(e))
+
+
+class TestSeamRuleS2(unittest.TestCase):
+    """Seam rule S2 (A1 Case 2 refined): the cleanup merge of two seam edges at a removed seam vertex."""
+
+    @staticmethod
+    def dissolve(mesh, edges, *, cleanup=True):
+        definition = mesh.symmetry_definition
+        seam_ends = {e: mesh.edge_vertices(e) for e in definition.seam_edges}
+        edges_before = frozenset(mesh.all_edge_ids())
+        apply_removal(mesh, SelectionMode.EDGE, set(edges), dissolve=True, cleanup=cleanup)
+        return definition, seam_ends, edges_before
+
+    def test_two_seam_edges_at_a_removed_seam_vertex_become_the_edge_between_their_outer_ends(self) -> None:
+        mesh, p, _f = grid()
+        crossing = {edge_between(mesh, p[(1, 0)], p[(1, -1)]), edge_between(mesh, p[(1, 0)], p[(1, 1)])}
+        definition, ends, edges_before = self.dissolve(mesh, crossing)
+        self.assertFalse(mesh.is_valid_vertex(p[(1, 0)]))
+        after = seam_after_cleanup_merge(definition, ends, mesh, edges_before)
+        merged = edge_between(mesh, p[(0, 0)], p[(2, 0)])
+        self.assertEqual(after.seam_edges, frozenset({merged}))
+        self.assertNotIn(merged, edges_before)
+        self.assertEqual((after.plane_point, after.plane_normal), (definition.plane_point, definition.plane_normal))
+        mesh.symmetry_definition = after
+        self.assertFalse(completeness_report(mesh).dead_seam_ids)
+
+    def test_a_run_of_removed_seam_vertices_becomes_one_edge(self) -> None:
+        mesh, p = tall_grid()
+        crossing = {edge_between(mesh, p[(r, 0)], p[(r, c)]) for r in (1, 2) for c in (-1, 1)}
+        definition, ends, edges_before = self.dissolve(mesh, crossing)
+        self.assertFalse(mesh.is_valid_vertex(p[(1, 0)]) or mesh.is_valid_vertex(p[(2, 0)]))
+        after = seam_after_cleanup_merge(definition, ends, mesh, edges_before)
+        self.assertEqual(after.seam_edges, frozenset({edge_between(mesh, p[(0, 0)], p[(3, 0)])}))
+
+    def test_two_runs_merge_independently(self) -> None:
+        mesh, p = tall_grid()
+        crossing = {edge_between(mesh, p[(1, 0)], p[(1, c)]) for c in (-1, 1)}
+        definition, ends, edges_before = self.dissolve(mesh, crossing)
+        crossing2 = {edge_between(mesh, p[(2, 0)], p[(2, c)]) for c in (-1, 1)}
+        mesh.symmetry_definition = seam_after_cleanup_merge(definition, ends, mesh, edges_before)
+        definition2, ends2, edges_before2 = self.dissolve(mesh, crossing2)
+        after = seam_after_cleanup_merge(definition2, ends2, mesh, edges_before2)
+        self.assertEqual(after.seam_edges, frozenset({edge_between(mesh, p[(0, 0)], p[(3, 0)])}))
+
+    def test_nothing_dead_returns_the_same_definition(self) -> None:
+        mesh, p, _f = grid()
+        definition, ends, edges_before = self.dissolve(mesh, {edge_between(mesh, p[(0, 1)], p[(1, 1)])})
+        self.assertIs(seam_after_cleanup_merge(definition, ends, mesh, edges_before), definition)
+
+    def test_a_dissolved_seam_edge_is_not_a_merge(self) -> None:
+        mesh, p, _f = grid()
+        seam_edge = edge_between(mesh, p[(0, 0)], p[(1, 0)])
+        definition, ends, edges_before = self.dissolve(mesh, {seam_edge})
+        self.assertFalse(mesh.is_valid_edge(seam_edge))
+        self.assertIs(seam_after_cleanup_merge(definition, ends, mesh, edges_before), definition)
+        mesh.symmetry_definition = definition
+        self.assertIn(seam_edge, completeness_report(mesh).dead_seam_ids)
+
+    def test_a_removed_vertex_with_only_one_dead_seam_edge_is_not_a_merge(self) -> None:
+        mesh, p, _f = grid()
+        # The border seam edge's end vertex is cleaned up, but only one dead seam edge met there.
+        seam_edge = edge_between(mesh, p[(0, 0)], p[(1, 0)])
+        definition, ends, edges_before = self.dissolve(mesh, {seam_edge})
+        self.assertFalse(mesh.is_valid_vertex(p[(0, 0)]))
+        self.assertIs(seam_after_cleanup_merge(definition, ends, mesh, edges_before), definition)
+
+    def test_without_a_created_replacement_edge_nothing_is_derived(self) -> None:
+        mesh, p, _f = grid()
+        crossing = {edge_between(mesh, p[(1, 0)], p[(1, -1)]), edge_between(mesh, p[(1, 0)], p[(1, 1)])}
+        definition, ends, edges_before = self.dissolve(mesh, crossing)
+        # The edge between the ends already existed before the op: not an op-created replacement.
+        self.assertIs(
+            seam_after_cleanup_merge(definition, ends, mesh, edges_before | frozenset(mesh.all_edge_ids())), definition
+        )
+
+    def test_an_extra_dead_seam_edge_without_a_removed_vertex_blocks_the_whole_derivation(self) -> None:
+        mesh, p = tall_grid()
+        crossing = {edge_between(mesh, p[(1, 0)], p[(1, c)]) for c in (-1, 1)}
+        definition, ends, edges_before = self.dissolve(mesh, crossing)
+        # An extra dead seam edge none of whose vertices was removed: no run, so no merge is derived.
+        stray = edge_between(mesh, p[(2, 0)], p[(3, 0)])
+        ends = dict(ends)
+        ends[stray] = mesh.edge_vertices(stray)
+        mesh.delete_edges([stray])
+        self.assertIs(seam_after_cleanup_merge(definition, ends, mesh, edges_before), definition)
 
 
 class TestReportAndDelta(unittest.TestCase):

@@ -244,6 +244,78 @@ def seam_after_split(
     return SymmetryDefinition(definition.plane_point, definition.plane_normal, frozenset(seam))
 
 
+def seam_after_cleanup_merge(
+    definition: SymmetryDefinition,
+    seam_ends_before: Mapping[EdgeId, tuple[VertexId, VertexId]],
+    mesh: Mesh,
+    edges_before: frozenset[EdgeId],
+) -> SymmetryDefinition:
+    """Seam rule S2 (AD-SYM-03 §2.6, engineering reading of the Artist's A1 Case 2 verdict): when a
+    Dissolve with cleanup removed a seam vertex of valence 2, the two seam edges that met there are
+    replaced in the definition by the one edge the cleanup created between their outer endpoints.
+    The seam does not disappear, two seam edges become one; a run of such vertices merges into one
+    edge the same way.
+
+    `seam_ends_before` holds the endpoints of every seam edge valid **before** the op, `mesh` is
+    the mesh **after** it, `edges_before` the edge ids that existed before. A merge is derived only
+    when it is unambiguous from those facts: the dead seam edges of a run meet in removed vertices
+    that each had exactly two dead seam edges, the run has two distinct surviving ends, and an edge
+    between them exists that the op created. Anything else (a dead seam edge that is not part of
+    such a run, a run with a surviving or non-seam neighbour edge, a missing replacement) returns
+    `definition` unchanged, so its dead ids stay and the caller refuses (`TEXT_SEAM_DISSOLVE`).
+    No tolerance, no geometry: ids and incidence only. Returns a new definition; the caller writes
+    it inside the same transaction as the removal."""
+    dead = {
+        e: ends
+        for e, ends in seam_ends_before.items()
+        if e in definition.seam_edges and not mesh.is_valid_edge(e)
+    }
+    if not dead:
+        return definition
+
+    removed = {v for ends in dead.values() for v in ends if not mesh.is_valid_vertex(v)}
+    at_vertex: dict[VertexId, list[EdgeId]] = {}
+    for e, ends in dead.items():
+        for v in ends:
+            at_vertex.setdefault(v, []).append(e)
+    if any(len(at_vertex[v]) != 2 for v in removed):
+        return definition
+
+    # Runs: dead seam edges connected through removed vertices.
+    runs: list[set[EdgeId]] = []
+    unassigned = set(dead)
+    while unassigned:
+        run = {unassigned.pop()}
+        frontier = list(run)
+        while frontier:
+            for v in dead[frontier.pop()]:
+                if v in removed:
+                    for neighbour in at_vertex[v]:
+                        if neighbour in unassigned:
+                            unassigned.discard(neighbour)
+                            run.add(neighbour)
+                            frontier.append(neighbour)
+        runs.append(run)
+
+    replacements: set[EdgeId] = set()
+    for run in runs:
+        run_removed = {v for e in run for v in dead[e] if v in removed}
+        ends = [v for e in run for v in dead[e] if v not in removed]
+        # A path of n edges has n - 1 removed vertices and two distinct surviving ends.
+        if len(run) != len(run_removed) + 1 or len(run_removed) == 0 or len(ends) != 2 or ends[0] == ends[1]:
+            return definition
+        a, b = ends
+        found = [
+            e for e in mesh.vertex_edges(a) if b in mesh.edge_vertices(e) and e not in edges_before
+        ]
+        if len(found) != 1:
+            return definition
+        replacements.update(found)
+
+    seam = (set(definition.seam_edges) - set(dead)) | replacements
+    return SymmetryDefinition(definition.plane_point, definition.plane_normal, frozenset(seam))
+
+
 def seam_without_dead_ids(mesh: Mesh) -> SymmetryDefinition:
     """Seam rule for Delete (AD-SYM-03 §6 A1 Case 1 = M): seam edge ids that no longer exist in
     `mesh` are dropped, the seam disappears only where its faces are gone. Edge ids are never

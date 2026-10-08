@@ -5,8 +5,9 @@ Mit den **echten** Deklarationen (`mirai.symmetry_declarations`). Der Koordinato
 Befehle (das Interim `INTERIM_ONE_SIDED` ist weg), `lab_key_press` Ende-zu-Ende unter BLOCK und MARK
 (eine Undo-Stufe, symmetrisches Ergebnis, HUD `valid`, Undo/Redo), die Laufzeit-Ablehnungen sind in
 MARK wie in BLOCK dieselben („Runtime refusals are not G-3“), der Nahtfall Delete (A1 Fall 1) läuft,
-Dissolve an der Naht (Fall 2) wird mit eigenem Text abgelehnt, und ohne Symmetrie läuft alles einseitig
-wie früher.
+Dissolve einer Kante direkt auf der Naht (Fall 2) wird mit eigenem Text abgelehnt, Dissolve einer Kante,
+die die Naht kreuzt, läuft (Nahtregel S2: die zwei Seam-Kanten werden zu einer), und ohne Symmetrie läuft
+alles einseitig wie früher.
 """
 
 from __future__ import annotations
@@ -196,7 +197,7 @@ def test_delete_of_a_face_pair_at_the_seam_keeps_the_hud_valid_and_undo_restores
 @pytest.mark.parametrize("mode", MODES, ids=MODE_IDS)
 @pytest.mark.parametrize("key", [DISSOLVE, DISSOLVE_NO_CLEANUP], ids=["dissolve", "dissolve_no_cleanup"])
 def test_dissolve_of_a_seam_edge_is_refused_with_its_text_in_block_and_mark(key, mode):
-    """A1 Fall 2 (UNKNOWN): verweigert, nichts ändert sich."""
+    """A1 Fall 2 (Artist 2026-10-08): eine Kante direkt auf der Naht bleibt verweigert, nichts ändert sich."""
     app, lab = lab_on(mode, "head_basemesh")
     seam_edge, _pair = seam_pair(app)
     select(app, E, {seam_edge})
@@ -211,6 +212,50 @@ def test_dissolve_of_a_seam_edge_is_refused_with_its_text_in_block_and_mark(key,
         len(app.history),
         app.scene.mesh.symmetry_definition,
     ) == before
+
+
+def crossing_edge(app):
+    """An edge with exactly one end on the plane (it crosses the seam)."""
+    mesh = app.scene.mesh
+    for e in sorted(mesh.all_edge_ids()):
+        if sum(mesh.vertex_position(v)[0] == 0.0 for v in mesh.edge_vertices(e)) == 1:
+            return e
+    raise AssertionError("keine Kante, die die Naht kreuzt")
+
+
+@pytest.mark.parametrize("mode", MODES, ids=MODE_IDS)
+@pytest.mark.parametrize("key", [DISSOLVE, DISSOLVE_NO_CLEANUP], ids=["dissolve", "dissolve_no_cleanup"])
+def test_dissolve_of_an_edge_crossing_the_seam_runs_in_block_and_mark(key, mode):
+    """A1 Fall 2 verfeinert (Artist 2026-10-08, Nahtregel S2): zwei Seam-Kanten werden zu einer, HUD
+    `valid`, eine Undo-Stufe; Ctrl+Rücktaste (ohne Cleanup) lässt die Naht unverändert."""
+    app, lab = lab_on(mode, "head_basemesh")
+    mesh = app.scene.mesh
+    edge = crossing_edge(app)
+    seam_before = mesh.symmetry_definition.seam_edges
+    select(app, E, {edge})
+    selection_before = selection_state(app)
+    state_before = topology_state(app)
+    history = len(app.history)  # Shift+S has its own entry
+
+    assert press(app, lab, key) is True
+    assert len(app.history) == history + 1
+    assert_clean(app)
+    assert "valid" in hud_text(app, "head_basemesh", lab.report)
+    seam_after = mesh.symmetry_definition.seam_edges
+    if key == DISSOLVE:
+        assert len(seam_after) == len(seam_before) - 1
+        assert all(mesh.is_valid_edge(e) for e in seam_after)
+    else:
+        assert seam_after == seam_before
+
+    assert press(app, lab, CTRL_Z) is True
+    assert len(app.history) == history
+    assert topology_state(app) == state_before
+    assert mesh.symmetry_definition.seam_edges == seam_before
+    assert selection_state(app) == selection_before
+    assert press(app, lab, CTRL_Y) is True
+    assert mesh.symmetry_definition.seam_edges == seam_after
+    assert len(app.history) == history + 1
 
 
 @pytest.mark.parametrize("mode", MODES, ids=MODE_IDS)

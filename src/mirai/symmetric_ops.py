@@ -35,6 +35,7 @@ from .symmetry_coordination import (
     expand_faces,
     expand_vertices,
     is_exact_plane,
+    seam_after_cleanup_merge,
     seam_after_split,
     seam_without_dead_ids,
 )
@@ -198,11 +199,14 @@ def coordinate_removal(
     call. `ids` may hold one side or both (a mirror pair counts once, "explicit wins"); no
     canonicalisation is needed because the union is the same.
 
-    Seam (AD-SYM-03 §6 A1; assumption beyond Case 1, not confirmed by Manu): **Delete** drops the
-    seam edge ids that no longer exist from the definition inside this mutation (M), the delta check
-    stays the guard — it refuses if a surviving vertex lost its seam. **Dissolve** that would create
-    a face spanning the plane or consume a seam edge is refused with `TEXT_SEAM_DISSOLVE` (R,
-    Case 2 is UNKNOWN for the Artist). `RemovalRefused` from Core propagates unchanged."""
+    Seam (AD-SYM-03 §6 A1): **Delete** drops the seam edge ids that no longer exist from the
+    definition inside this mutation (M), the delta check stays the guard — it refuses if a surviving
+    vertex lost its seam. **Dissolve** with cleanup first applies seam rule S2
+    (`seam_after_cleanup_merge`): two seam edges at a cleaned-up seam vertex become the one edge
+    between their outer ends (Artist 2026-10-08, A1 Case 2 refined: an edge *crossing* the seam may
+    be dissolved). What is then left — a face spanning the plane or a seam edge consumed (an edge
+    directly on the seam, a face pair across it) — is refused with `TEXT_SEAM_DISSOLVE` (R).
+    `RemovalRefused` from Core propagates unchanged."""
     definition = _require_definition(mesh)
     if not is_exact_plane(definition):
         raise SymmetryRefusal(TEXT_NON_EXACT_PLANE)
@@ -216,9 +220,13 @@ def coordinate_removal(
         raise SymmetryRefusal(TEXT_BOTH_SIDES_FACE)
     before = completeness_report(mesh, index)
 
+    # Endpoints must be read before the op: a removed edge no longer exists afterwards.
+    seam_ends = {e: mesh.edge_vertices(e) for e in definition.seam_edges if mesh.is_valid_edge(e)}
     new_faces = apply_removal(mesh, mode, set(expansion.union), dissolve=dissolve, cleanup=cleanup)
     if not dissolve:
         mesh.symmetry_definition = seam_without_dead_ids(mesh)
+    elif cleanup:
+        mesh.symmetry_definition = seam_after_cleanup_merge(definition, seam_ends, mesh, before.edges)
 
     after = completeness_report(mesh)
     result = delta_check(before, after)

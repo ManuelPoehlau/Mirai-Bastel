@@ -330,17 +330,27 @@ sides, only with this rule). Under T-a the new definition is written inside the 
 through `MeshStateCommand` (the case AD-SYM-01 §1.1 measured). A seam edge's partner is itself, so expansion must
 deduplicate (probe F: counted once) — the edge is split once.
 
+**Seam rule S2 (added 2026-10-08 with the Artist's A1 Case 2 refinement, §6; engineering reading of that statement,
+mechanical like S1):** if a Dissolve with cleanup removes a seam vertex of valence 2, the two seam edges that met
+there are replaced in the definition by the one edge the cleanup created between their outer endpoints, inside the
+same transaction (a run of such vertices becomes one edge; `symmetry_coordination.seam_after_cleanup_merge`). It is
+derived from ids and incidence before/after, no tolerance; when the merge cannot be derived unambiguously (a dead
+seam edge that is not part of such a run, no op-created replacement edge) the definition stays unchanged, the dead
+ids remain and the op is refused as before (`TEXT_SEAM_DISSOLVE`). Any new self-mirrored face is refused regardless.
+
 **Not unambiguous (Disc. Q1, class D) — options listed, not decided:**
 
 | Case | Observation | Options |
 |---|---|---|
-| Delete a seam edge / seam vertex | seam id dead; `state` valid (F, Disc.); `sides` 2 (F, seam edge) | R refuse · D drop the dead ids (declaration follows the mesh; `state`/`sides` unchanged in every probed case) · V keep the dead ids and show the seam as broken |
+| Delete a seam edge / seam vertex | seam id dead; `state` valid (F, Disc.); `sides` 2 (F, seam edge) | R refuse · D drop the dead ids (declaration follows the mesh; `state`/`sides` unchanged in every probed case) · V keep the dead ids and show the seam as broken. **Delete of a seam edge in Edge mode: allowed (D/M), Artist 2026-10-08** ("one deliberately makes a hole in the mesh"); a seam vertex stays an engineering assumption |
 | Delete a symmetric face **pair** at the seam (no seam element selected) | the seam edge between them dies by DD-1 (F) | as above — notable because the user never selected the seam |
-| Dissolve a seam edge (+ partners) | plane-spanning face, `sides` 1, face check blind (F, Disc.) | R refuse · V allow, visibly invalid (no seam between the halves any more) · an Artist-declared new seam (Re-declare) |
+| Dissolve a seam edge (+ partners) | plane-spanning face, `sides` 1, face check blind (F, Disc.) | R refuse · V allow, visibly invalid (no seam between the halves any more) · an Artist-declared new seam (Re-declare). **Decided 2026-10-08 (Artist, A1 Case 2 refined): R** — a face without a seam would remain |
+| Dissolve an edge **crossing** the seam (one end on it; with cleanup the seam vertex ends with valence 2 and the cleanup merges its two seam edges) | the two seam ids die, no self-mirrored face appears (probe 2026-10-08, `head_basemesh` X: 72/72 refused by the dead-id check, `cleanup=False` no violation) | **Decided 2026-10-08 (Artist, A1 Case 2 refined): allowed**, "two seam edges become one"; implemented as seam rule S2 (above) |
 | Extrude touching the seam (Playground only) | old seam edge dies, cap edge undeclared (Disc. §1.6) | R refuse · M move the seam to the cap edge (Wings pattern, R2 §3.2) · V visibly invalid |
 | Knife path along / across the seam | old Lab Knife refused seam-to-seam chords (Lab README) | R refuse (old Lab) · a defined self-mirror cut (Design Brief §5 "Connect … genau einmal") |
 
-These are Product Truth questions (what should the Artist get), prepared as Artist test **A1** (§6).
+These are Product Truth questions (what should the Artist get), prepared as Artist test **A1** (§6); the decided
+rows are marked with their date.
 
 Note for any rule that leaves on-plane geometry without a declared seam edge (review F8): a vertex on the plane
 that is not an endpoint of a live seam edge is `UNPAIRED`, not its own partner (`vertex_correspondence` excludes
@@ -401,6 +411,8 @@ face after A1 case 2.
    (§2.5, "Runtime refusals are not G-3"), and the Lab's MARK warning is derived from the same declarations.
 8. **Seam rule S1 (split → halves) is adopted** for every coordinated op that splits a seam edge. All seam-consuming
    cases (§2.6 table) are detected after the op (dead seam id, new self-mirrored face) and refused until A1.
+   *(Update 2026-10-08, A1 Case 2 refined: seam rule S2 handles the cleanup merge of two seam edges, §2.6; what is
+   still detected and refused is an edge directly on the seam and a face pair across it.)*
 9. **Both sides in one face (review F3):** until A1/A2 decide, a coordinator refuses visibly when a face would
    receive selected elements of both the selection and its image, or a self-mirrored face is involved. On exact
    planes with an intact seam this arises only after seam consumption (itself refused, item 8) or on assets that
@@ -410,8 +422,11 @@ face after A1 case 2.
 
 ## 4. Deliberately NOT decided
 
-- **Seam consumption** (Delete/Dissolve/Extrude/Knife on or across the seam; the face-pair delete): Artist test A1.
-- **Seam definition (open since A1 Case 2 = UNKNOWN):** should the seam be defined over plane vertices instead of
+- **Seam consumption** (Delete/Dissolve/Extrude/Knife on or across the seam; the face-pair delete): Artist test A1,
+  answered 2026-10-08 (§6). Still open: the Dissolve of seam *vertices* in Vertex mode (refused, not in scope of the
+  Case 2 refinement), Extrude and Knife (slices 6/7); a warning about the consequences of removing seam elements was
+  floated by the Artist as a possible later idea, **not decided** (§6).
+- **Seam definition (open since A1 Case 2 = UNKNOWN; Case 2 was refined 2026-10-08, §6, the question below stays):** should the seam be defined over plane vertices instead of
   seam edges? To be decided when a second mirror method is planned; it would touch AD-SYM-01 and needs review.
 - **`C` with a two-sided explicit selection** — *answered 2026-10-08: A2 = A* (count mirror pairs once;
   coordinators canonicalise to one side before `resolve_c_context`; §6). Not covered: scaling whole horizontal
@@ -444,6 +459,8 @@ face after A1 case 2.
   or vertex as an engineering assumption), **Dissolve** (all variants) is refused visibly (Case 2, interim rule R),
   in MARK as in BLOCK. `INTERIM_ONE_SIDED` is gone; nothing runs silently one-sided any more. Manu confirms the
   Dissolve refusal in the practical test (question (b)); until then it stands as the dated, visible interim.
+  *Update 2026-10-08 (later, §6):* the Artist refined Case 2 — Dissolve of an edge directly on the seam stays
+  refused, Dissolve of an edge crossing the seam is allowed (seam rule S2); Delete of a seam edge stays allowed.
 - *Engineering assessment 2026-10-08, not a decision.* Conditions other mirror methods will likely need from the
   seam:
   - modifier-style (model one half, derive the other): a continuous seam line without gaps, all seam vertices
@@ -537,6 +554,31 @@ verdict, Extrude is not in Production and not touched.
 
 A2 and A3 were answered the same day (below).
 
+**Verdicts, second round (recorded 2026-10-08; after the 3c practical check).** The interim bullets above stay as
+the dated state they describe; where they differ, this block supersedes them.
+
+*Artist statements (Manu, 2026-10-08):*
+- Face Dissolve residue (the merged faces are selected on the side(s) of the live selection): **KEEP.**
+- Case 2 refined: Dissolve of an edge **directly on the seam** (both endpoints on it) is **refused**, because a face
+  without a seam would remain. Dissolve of an edge **crossing the seam** (one endpoint on it) is **allowed**: the seam
+  does not disappear, two seam edges become one, comparable to removing a loop that runs across the seam.
+- Delete of a seam edge stays **allowed** ("one deliberately makes a hole in the mesh"); Case 1 (face pair at the
+  seam) stays **M**.
+- Possible later idea, **not decided**: a warning about the consequences of removing seam elements.
+
+*Engineering, set by the handoff 2026-10-08 (not an Artist decision):*
+- Seam rule **S2** (§2.6, mechanical like S1; the reading of the Artist's statement): if Dissolve with cleanup removes
+  a seam vertex of valence 2, the two dead seam edges are replaced in the definition by the one edge between their
+  outer endpoints, inside the same transaction. Any other dead seam id, and any new self-mirrored face, keeps the
+  refusal with `TEXT_SEAM_DISSOLVE`.
+- A selection that contains crossing edges on both sides (a loop through the seam) is covered by the same rule.
+
+*Implemented 2026-10-08 (S2).* `seam_after_cleanup_merge` in `symmetry_coordination.py`, called in the Dissolve
+branch of `coordinate_removal` before the seam-violation check; Dissolve without cleanup (Ctrl+Rücktaste) never
+kills a seam id by merging, so its behaviour is unchanged. Details and measurements: §7, "Implementation note S2".
+Question to Manu (practical test, `docs/ATELIER.md` B2b): is the vanishing of the green seam point when a crossing
+edge is dissolved acceptable — KEEP / ITERATE / UNKNOWN?
+
 ### A2 — `C` with a two-sided explicit selection (≤ 5 min) — observation runnable today, comparison after slice 4
 
 1. (`head_basemesh`) **Shift+B** → `E5-Modus: MARK` (under BLOCK `C` is refused). **2** (Edge mode). Click an edge
@@ -624,12 +666,12 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 2 | **Transaction seam** — **Done 2026-10-08** (`apply_connect_edges`, `apply_connect_vertices`, `apply_removal`, `Application._mesh_transaction`; `tests` 1695 → 1710 passed / 8 skipped; Lab suite unchanged 311 / 4 / 1 failed; playground unchanged 701 passed / 11 failed / 47 errors, pyglet display errors in this container, same before and after). `apply_removal` carries no no-op flag: the transaction compares states | `apply_*` split of `connect_vertices_per_face` and `remove_selected` (Split = `Mesh.split_edge`, Edge Connect = `_apply`); Edge Connect returns edge → midpoint; `Application` handlers use one private transaction helper shared with `apply_mesh_change`, no-op status texts kept. Pure refactor, existing tests unchanged | Disc. step 2; T-a. **[Δ]** + the midpoint report (F, review F7), the shared helper (T-e), no-op texts (review) |
 | 3 | **Edge + Vertex Connect through `C`, non-seam Delete/Dissolve (Lab)** — cut in two (handoff 2026-10-08): **3a Done 2026-10-08** (infrastructure: `CommandGate.refused_contexts`, the one-resolution context check with canonicalisation in `_connect_command`, `src/mirai/symmetry_declarations.py` (empty), declaration-derived fail-closed BLOCK row with the named `INTERIM_ONE_SIDED`, MARK warning from the declarations, start-up listing; `tests` 1710 → 1780 passed / 8 skipped, Lab suite 311 → 350 passed / 4 skipped / 1 failed (the same pre-existing pyglet overlay-order test), playground unchanged 701 passed / 11 failed / 47 errors; no coordinator, Lab behaviour unchanged except the MARK canonicalisation consequence and the visible refusal of unlisted commands). **3b Done 2026-10-08** (Edge Connect and Vertex Connect: `src/mirai/symmetric_ops.py` with `coordinate_edge_connect` / `coordinate_vertex_connect`, entered in `symmetry_declarations.C_CONTEXT_COORDINATORS`; `Application._connect_command` runs the coordinator of a declared context inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK; refusals (non-exact plane, unpaired selection, both-sides face, D-strict delta) post their text, record no history entry and leave mesh and selection unchanged; seam rule S1 is applied inside the mutation; tests `tests/test_symmetric_ops.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_connect.py`; `tests` 1780 → 1806 passed / 8 skipped, Lab suite 350 → 363 passed / 4 skipped / 1 failed (the same pre-existing pyglet overlay-order test), playground unchanged 701 passed / 11 failed / 47 errors with `--continue-on-collection-errors` (pyglet missing in this container, same before and after; without that flag collection stops at 8 errors); Delete/Dissolve stay one-sided, `INTERIM_ONE_SIDED` stays until **3c**). **3b practical check by Manu 2026-10-08: all steps as expected (§6); 3a/3b verified.** **3c Done 2026-10-08** (Part A of the 3c handoff: Edge Connect residue on the side(s) of the live selection, `symmetric_ops.residue_sides` / `on_residue_sides`; Part B: `coordinate_removal` and the three per-command coordinators `coordinate_delete` / `coordinate_dissolve` / `coordinate_dissolve_no_cleanup` in `src/mirai/symmetric_ops.py`, entered in `symmetry_declarations.REMOVAL_COORDINATORS`; `Application._removal_command` runs the coordinator of a declared command inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK, `SymmetryRefusal` posts its text and changes nothing; Delete drops dead seam ids (M), Dissolve refuses seam cases with `TEXT_SEAM_DISSOLVE` (R); `INTERIM_ONE_SIDED` removed from the Lab; tests `tests/test_symmetric_removal.py`, `tests/test_symmetric_ops.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`; measured in this container after installing `pyglet` (no EGL, so `tests/test_pyglet_input.py` and the GL tests do not run): `tests` 1806 → 1818 (Part A) → 1907 passed / 33 → 39 skipped, Lab suite 365 → 367 → 418 passed / 3 → 7 skipped, playground (under `xvfb-run`) 1235 passed before and after) | Expansion after `resolve_c_context` / on the removal selection, seam edges in a Connect selection via S1, delta check with rollback, seam consumption and both-sides face case refused; G-2 context refusal; declaration-derived, fail-closed BLOCK row; MARK warning from the declarations. Exact planes only | Disc. steps 3 + 5 (non-seam part). **[Δ]** non-seam Delete/Dissolve moved here (review F4), seam edges in Connect here (F); preconditions: AD-013 H2 amendment reviewed, A1 observed; owner check O1 (seam cases only); A3 comparison becomes runnable |
 | 4 | **Split** | Source + partner edge in one transaction (seam edge once + S1); residue question prepared; A2 comparison becomes runnable | Disc. step 4 |
-| 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN). No longer fully blocked on A1 |
+| 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN) — *refined 2026-10-08 (§6): an edge directly on the seam stays refused, an edge crossing the seam is dissolved via seam rule S2 (see Implementation note S2)*. No longer fully blocked on A1 |
 | 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6) |
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
 **Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
-after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c awaits the practical test). Slice 4 follows
+after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c practical test answered in part, §6 second round; S2 awaits its practical test). Slice 4 follows
 slice 3. Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
 
 The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
@@ -688,6 +730,40 @@ from slice 5 to slice 3 (it is class B and was only waiting for the gate); the s
   the Edge Connect residue), without a definition all merged faces (unchanged).
 - **Known behaviour, not a defect.** Delete of a vertex or edge near the seam may drop the ids of seam edges that died
   with a neighbouring face (the seam follows the mesh); a single `+X` face selected at the seam deletes the face pair.
+
+**Implementation note S2 (2026-10-08, A1 Case 2 refined).** Implements an Artist verdict (§6); nothing here is new
+insight.
+
+- **Cause verified, as the handoff expected.** Every edge crossing the seam of `head_basemesh` (X, 72) and `subd_cube`
+  (16) ends the Dissolve with its seam vertex at valence 2 (before: valence 4 = two seam edges, the crossing edge and
+  its mirror); the cleanup removes the vertex and both seam edges, two dead seam ids, no new self-mirrored face. So the
+  stop condition of the handoff did not trigger.
+- **Rule.** `seam_after_cleanup_merge(definition, seam_ends_before, mesh_after, edges_before)` (pure, next to
+  `seam_after_split`): the dead seam edges are grouped into runs through removed vertices; a run is merged only if
+  every removed vertex had exactly two dead seam edges in it, the run has two distinct surviving ends, and exactly one
+  edge between them exists that the op created. Otherwise the definition is returned unchanged (dead ids stay, the
+  existing refusal fires). The coordinator reads the seam edges' endpoints before the op and writes the result inside
+  the same mutation, so Undo/Redo restore mesh and definition together and a later refusal rolls it back.
+- **Effect measured (headless, bare coordinator, before → after S2, one edge at a time).** Edge Dissolve with cleanup:
+  `head_basemesh` crossing 72 refused → 72 run, seam edges 36 refused → 36 refused, other 540 run both times;
+  `subd_cube` crossing 16 refused → 16 run, seam 8 / 8 refused, other 24 run. Vertex and Face mode Dissolve with
+  cleanup (every vertex / face of both assets): outcomes identical before and after (seam vertices and face pairs
+  across the seam still refused). `man_with_shoes_basemesh` (`partial`), every paired `+X` edge (796): 584 ran before
+  and after, 170 delta refusals before and after, of the 42 earlier seam refusals 38 now run and 4 are refused by the
+  D-strict delta check (a crossing edge next to unpaired geometry). Loops: the straight edge line through each seam
+  vertex (both sides selected) ran for every seam vertex of both assets, one merge for a stretch, two for a ring that
+  crosses the seam twice.
+- **Tests (new).** `tests/test_symmetry_coordination.py::TestSeamRuleS2` (the pure rule incl. runs and the non-derivable
+  cases); `tests/test_symmetric_removal.py`: all crossing edges of both assets with Dissolve (symmetric, one Undo step,
+  state `valid`, the seam equals the geometric seam edge for edge, degrees of the surviving seam vertices unchanged,
+  Undo/Redo restore mesh, definition and selection), the same without cleanup (definition unchanged), loops through the
+  seam, two-sided selection counts once, every seam edge still refused (36 / 8), a seam edge plus a crossing edge
+  still refused, Delete of every seam edge still allowed, rollback with the transaction, no definition unchanged;
+  `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`: crossing-edge Dissolve in BLOCK and MARK with
+  HUD `valid`.
+- **Counts** (this container, `pyglet` installed, no EGL so `tests/test_pyglet_input.py` is not run): `tests` 1907 →
+  1941 passed / 39 skipped; Lab suite 418 → 422 passed / 7 skipped; playground (under `xvfb-run`) 1235 passed before
+  and after. `src/core`, `src/main.py`, `playground/` untouched.
 
 ---
 

@@ -8,9 +8,12 @@ amendment, "Runtime refusals are not G-3"); the Lab path is tested in
 Assets and helpers as in `tests/test_symmetric_ops.py`: plane x = 0, the x = 0 edges are the seam,
 `subd_cube` / `head_basemesh` are fully paired, `man_with_shoes_basemesh` is `partial`.
 
-Seam handling under test (AD-SYM-03 §6 A1; Case 1 is an Artist verdict, the rest an engineering
-assumption): **Delete** drops the seam ids that no longer exist (M); **Dissolve** that would span the
-plane or consume a seam id is refused with its own text (R, Case 2 stays UNKNOWN for the Artist).
+Seam handling under test (AD-SYM-03 §6 A1): **Delete** drops the seam ids that no longer exist (M;
+Case 1 is an Artist verdict, Delete of a seam edge too: "one deliberately makes a hole"). **Dissolve** of
+an edge directly on the seam (both ends on it) or that would span the plane is refused with its own text
+(R, Artist verdict 2026-10-08, Case 2 refined); **Dissolve of an edge crossing the seam** (one end on it)
+is allowed: seam rule S2 replaces the two seam edges at the cleaned-up seam vertex by the one edge between
+their outer ends, inside the same transaction.
 """
 
 from __future__ import annotations
@@ -320,7 +323,7 @@ def test_delete_of_a_seam_edge_or_vertex_is_coordinated_or_refused_never_one_sid
 @pytest.mark.parametrize("key", [DISSOLVE, DISSOLVE_NO_CLEANUP], ids=["dissolve", "dissolve_no_cleanup"])
 @pytest.mark.parametrize("asset", PAIRED_ASSETS)
 def test_dissolve_of_a_seam_edge_is_refused_with_the_seam_text(asset, key):
-    """A1 Case 2 (Artist: UNKNOWN; engineering interim R): refused, nothing changes."""
+    """A1 Case 2 (Artist 2026-10-08): an edge directly on the seam stays refused, nothing changes."""
     app = make_app(asset)
     mesh = app.scene.mesh
     seam_edge = next(e for e in sorted(mesh.symmetry_definition.seam_edges) if len(mesh.edge_faces(e)) == 2)
@@ -343,6 +346,247 @@ def test_dissolve_of_a_face_pair_across_the_seam_is_refused_with_the_seam_text(a
     app = make_app(asset)
     select(app, F, seam_edge_pair(app.scene.mesh))
     assert_refused(app, key, TEXT_SEAM_DISSOLVE)
+
+
+# -- Dissolve of an edge crossing the seam (A1 Case 2 refined, seam rule S2) ------------------------
+
+#: Edge counts by kind on the paired assets (X): the evidence of the AD-SYM-03 handoff, verified here.
+EDGE_KINDS = {"subd_cube": (8, 16, 24), "head_basemesh": (36, 72, 540)}  # seam, crossing, away
+
+
+def on_plane(mesh, vertex) -> bool:
+    return mesh.vertex_position(vertex)[0] == 0.0
+
+
+def geometric_seam(mesh) -> frozenset:
+    return frozenset(e for e in mesh.all_edge_ids() if all(on_plane(mesh, v) for v in mesh.edge_vertices(e)))
+
+
+def crossing_edges(mesh) -> list:
+    """Edges with exactly one end on the plane (the others are seam edges or away from it)."""
+    return [e for e in sorted(mesh.all_edge_ids()) if sum(on_plane(mesh, v) for v in mesh.edge_vertices(e)) == 1]
+
+
+def seam_degrees(mesh) -> dict:
+    """Seam edges per seam vertex: a continuous seam keeps every surviving vertex's degree."""
+    degrees: dict = {}
+    for e in mesh.symmetry_definition.seam_edges:
+        for v in mesh.edge_vertices(e):
+            degrees[v] = degrees.get(v, 0) + 1
+    return degrees
+
+
+def opposite_edge(mesh, vertex, edge):
+    """The edge straight across a valence-4 vertex (shares no face with `edge`), or None."""
+    edges = mesh.vertex_edges(vertex)
+    if len(edges) != 4:
+        return None
+    faces = set(mesh.edge_faces(edge))
+    across = [x for x in edges if x != edge and not set(mesh.edge_faces(x)) & faces]
+    return across[0] if len(across) == 1 else None
+
+
+def straight_chain(mesh, seam_vertex) -> set:
+    """The edge line that runs straight through `seam_vertex` across the seam, as far as it stays
+    regular (a closed ring on the cube, a stretch ending at a pole on the head)."""
+    seam = mesh.symmetry_definition.seam_edges
+    chain: list = []
+    for start in [e for e in mesh.vertex_edges(seam_vertex) if e not in seam]:
+        edge, vertex = start, seam_vertex
+        while edge not in chain:
+            chain.append(edge)
+            a, b = mesh.edge_vertices(edge)
+            vertex = b if a == vertex else a
+            edge = opposite_edge(mesh, vertex, edge)
+            if edge is None:
+                break
+    return set(chain)
+
+
+def assert_dissolve_through_the_seam(app: Application, key: Input, selected, *, cleanup: bool) -> int:
+    """One press: symmetric, one Undo step, `valid`, a continuous seam; Undo / Redo restore mesh,
+    definition and selection. Returns how many seam vertices were merged away."""
+    mesh = app.scene.mesh
+    select(app, E, selected)
+    definition = mesh.symmetry_definition
+    state_before = topology_state(app)
+    selection_before = selection_state(app)
+    degrees_before = seam_degrees(mesh)
+    crossed = {
+        v
+        for e in selected | {partner_of(mesh, E, e) for e in selected}
+        for v in mesh.edge_vertices(e)
+        if on_plane(mesh, v)
+    }
+    assert crossed and not any(e in definition.seam_edges for e in selected)
+    history = len(app.history)
+
+    assert app.key_press(key) is True, f"edges {sorted(selected)}: {app.status_message}"
+    assert len(app.history) == history + 1
+    assert_clean(mesh)  # symmetric, no dead seam id, state valid
+    after = mesh.symmetry_definition
+    state_after = topology_state(app)
+    assert after.seam_edges == geometric_seam(mesh), "the seam must follow the mesh, edge for edge"
+    assert (after.plane_point, after.plane_normal) == (definition.plane_point, definition.plane_normal)
+    degrees_after = seam_degrees(mesh)
+    if cleanup:
+        merged = {v for v in crossed if not mesh.is_valid_vertex(v)}
+        assert merged == crossed  # valence 2 after the pair is gone: every crossed seam vertex is cleaned up
+        assert len(after.seam_edges) == len(definition.seam_edges) - len(merged)
+        assert after.seam_edges - definition.seam_edges, "the merged edge is a new id"
+        assert {degrees_before[v] for v in merged} == {2}
+        assert {v: d for v, d in degrees_before.items() if v not in merged} == degrees_after
+    else:
+        merged = set()
+        assert after == definition
+        assert degrees_after == degrees_before and all(mesh.is_valid_vertex(v) for v in crossed)
+    assert not any(mesh.is_valid_edge(e) for e in selected)
+
+    assert app.key_press(CTRL_Z) is True
+    assert len(app.history) == history
+    assert topology_state(app) == state_before
+    assert mesh.symmetry_definition == definition
+    assert selection_state(app) == selection_before
+    assert symmetry_state(mesh) is SymmetryState.VALID
+    assert app.key_press(CTRL_Y) is True
+    assert topology_state(app) == state_after
+    assert mesh.symmetry_definition == after
+    assert len(app.history) == history + 1
+    assert app.key_press(CTRL_Z) is True  # back to the start for the next element
+    assert topology_state(app) == state_before and mesh.symmetry_definition == definition
+    return len(merged)
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_the_asset_edge_kinds_match_the_handoff_evidence(asset):
+    mesh = make_app(asset).scene.mesh
+    seam, crossing, away = EDGE_KINDS[asset]
+    assert len(mesh.symmetry_definition.seam_edges) == seam
+    assert len(crossing_edges(mesh)) == crossing
+    assert len(list(mesh.all_edge_ids())) == seam + crossing + away
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_dissolve_of_every_edge_crossing_the_seam_merges_the_two_seam_edges(asset):
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    edges = crossing_edges(mesh)
+    for edge in edges:
+        assert assert_dissolve_through_the_seam(app, DISSOLVE, {edge}, cleanup=True) == 1
+    assert len(edges) == EDGE_KINDS[asset][1]
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_dissolve_without_cleanup_of_every_crossing_edge_is_unchanged_and_keeps_the_seam(asset):
+    """Ctrl+Backspace: no cleanup, so no seam vertex is removed and the definition does not change."""
+    app = make_app(asset)
+    for edge in crossing_edges(app.scene.mesh):
+        assert assert_dissolve_through_the_seam(app, DISSOLVE_NO_CLEANUP, {edge}, cleanup=False) == 0
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_a_crossing_edge_selected_on_both_sides_counts_once(asset):
+    one, two = make_app(asset), make_app(asset)
+    mesh = two.scene.mesh
+    for edge in crossing_edges(mesh)[:8]:
+        select(one, E, {edge})
+        select(two, E, {edge, partner_of(mesh, E, edge)})
+        assert one.key_press(DISSOLVE) is True and two.key_press(DISSOLVE) is True
+        assert topology_state(one) == topology_state(two)
+        assert one.scene.mesh.symmetry_definition == two.scene.mesh.symmetry_definition
+        assert one.key_press(CTRL_Z) is True and two.key_press(CTRL_Z) is True
+
+
+@pytest.mark.parametrize("key, cleanup", [(DISSOLVE, True), (DISSOLVE_NO_CLEANUP, False)], ids=["dissolve", "dissolve_no_cleanup"])
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_dissolve_of_a_loop_through_the_seam_keeps_the_seam_continuous(asset, key, cleanup):
+    """Crossing edges on both sides selected: the straight edge line through each seam vertex; where it
+    closes into a ring it crosses the seam twice (two merges in one press)."""
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    seam_vertices = sorted({v for e in mesh.symmetry_definition.seam_edges for v in mesh.edge_vertices(e)})
+    merges = set()
+    for vertex in seam_vertices:
+        chain = straight_chain(mesh, vertex)
+        assert len(chain) >= 2
+        sides = {edge_side(mesh, e) for e in chain}
+        assert sides == {1, -1}  # crossing edges on both sides
+        merges.add(assert_dissolve_through_the_seam(app, key, chain, cleanup=cleanup))
+    # A stretch through one seam vertex merges once, a ring through two seam vertices twice in one press.
+    assert merges == ({1, 2} if cleanup else {0})
+
+
+@pytest.mark.parametrize("key", [DISSOLVE, DISSOLVE_NO_CLEANUP], ids=["dissolve", "dissolve_no_cleanup"])
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_dissolve_of_every_seam_edge_is_still_refused(asset, key):
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    seam = sorted(mesh.symmetry_definition.seam_edges)
+    for edge in seam:
+        assert len(mesh.edge_faces(edge)) == 2
+        select(app, E, {edge})
+        assert_refused(app, key, TEXT_SEAM_DISSOLVE)
+        assert mesh.is_valid_edge(edge)
+    assert len(seam) == EDGE_KINDS[asset][0]
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_a_seam_edge_together_with_a_crossing_edge_is_still_refused(asset):
+    """S2 covers the cleanup merge only: a selection that also consumes a seam edge keeps the refusal."""
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    seam_edge = sorted(mesh.symmetry_definition.seam_edges)[0]
+    crossing = next(e for e in crossing_edges(mesh) if not set(mesh.edge_vertices(e)) & set(mesh.edge_vertices(seam_edge)))
+    select(app, E, {seam_edge, crossing})
+    assert_refused(app, DISSOLVE, TEXT_SEAM_DISSOLVE)
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_delete_of_every_seam_edge_in_edge_mode_is_still_allowed(asset):
+    """Artist 2026-10-08: "one deliberately makes a hole in the mesh" - unchanged by S2."""
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    seam_before = mesh.symmetry_definition.seam_edges
+    for edge in sorted(seam_before):
+        select(app, E, {edge})
+        state_before = topology_state(app)
+        assert app.key_press(DELETE) is True
+        assert len(app.history) == 1
+        assert_clean(mesh)
+        assert not mesh.is_valid_edge(edge)
+        assert mesh.symmetry_definition.seam_edges < seam_before
+        assert app.key_press(CTRL_Z) is True
+        assert topology_state(app) == state_before and mesh.symmetry_definition.seam_edges == seam_before
+    assert len(seam_before) == EDGE_KINDS[asset][0]
+
+
+@pytest.mark.parametrize("key", [DISSOLVE, DISSOLVE_NO_CLEANUP], ids=["dissolve", "dissolve_no_cleanup"])
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_without_a_definition_dissolve_of_a_crossing_edge_is_the_unchanged_one_sided_operation(asset, key):
+    app = make_app(asset, definition=False)
+    twin = make_app(asset, definition=False)
+    mesh = app.scene.mesh
+    cleanup = key == DISSOLVE
+    for edge in crossing_edges(mesh)[:6]:
+        select(app, E, {edge})
+        assert app.key_press(key) is True
+        twin_mesh = twin.scene.mesh
+        before = twin_mesh.export_state()
+        apply_removal(twin_mesh, E, {edge}, dissolve=True, cleanup=cleanup)
+        assert topology_state(app) == {k: v for k, v in twin_mesh.export_state().items() if k not in ("vertex_id_counter", "edge_id_counter", "face_id_counter")}
+        assert app.scene.mesh.symmetry_definition is None
+        assert app.key_press(CTRL_Z) is True
+        twin_mesh.load_state(before)
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_the_merge_is_rolled_back_with_the_transaction_when_the_delta_check_refuses(asset, monkeypatch):
+    """The rewritten definition is part of the mesh state the transaction restores."""
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    select(app, E, {crossing_edges(mesh)[0]})
+    monkeypatch.setattr(symmetric_ops, "delta_check", lambda before, after: DeltaResult(("forced",)))
+    assert_refused(app, DISSOLVE, TEXT_DELTA)
 
 
 def test_the_seam_text_is_distinct_and_says_what_to_do():
