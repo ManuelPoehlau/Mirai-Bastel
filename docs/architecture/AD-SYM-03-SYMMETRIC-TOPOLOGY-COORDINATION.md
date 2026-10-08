@@ -410,6 +410,8 @@ face after A1 case 2.
 ## 4. Deliberately NOT decided
 
 - **Seam consumption** (Delete/Dissolve/Extrude/Knife on or across the seam; the face-pair delete): Artist test A1.
+- **Seam definition (open since A1 Case 2 = UNKNOWN):** should the seam be defined over plane vertices instead of
+  seam edges? To be decided when a second mirror method is planned; it would touch AD-SYM-01 and needs review.
 - **`C` with a two-sided explicit selection** — canonicalise to one side first, or keep literal counting: Artist
   test A2. (Missing from the Discovery.) Until decided, coordinators expand after the unchanged
   `resolve_c_context`.
@@ -434,6 +436,16 @@ face after A1 case 2.
   in slice 3, together with the fail-closed row, so it is supported, not refused. What changes for the Artist is
   only the seam cases: from "runs one-sided" to "refused visibly" until A1, in MARK as in BLOCK. The owner confirms
   this at slice 3 (or asks to keep the seam cases one-sided until A1, as a dated, visible exception).
+- *Engineering assessment 2026-10-08, not a decision.* Conditions other mirror methods will likely need from the
+  seam:
+  - modifier-style (model one half, derive the other): a continuous seam line without gaps, all seam vertices
+    exactly on the plane;
+  - one-shot symmetrize: an unambiguous seam saying where to cut and weld;
+  - data mirror (weights, morphs, later rig): seam vertices are their own partner, every other vertex has exactly
+    one partner;
+  - common to all: an exact plane (Lab planes today: axis planes through the origin).
+
+  Transform symmetry already relies on the seam to keep centre vertices on the plane.
 - Module and function names, the report's data shape, the index structure, any key binding, HUD text or overlay.
 
 ---
@@ -485,6 +497,27 @@ Question per case (1, 2; 3 by description): what should happen when an operation
 - **V** allow, but show the seam as broken (state not `valid`, marker on the gap);
 - **UNKNOWN**.
 
+**Verdicts (recorded 2026-10-08).**
+
+*Artist statements (Manu, 2026-10-08):*
+- Case 1 (delete a face pair at the seam): **M**. Reason given: the seam disappears only where the adjacent faces
+  are gone as well.
+- Case 2 (dissolve a seam edge, the merged face stays): **UNKNOWN**. Unsure whether a seam is needed there; it
+  depends on the mirror capability.
+- Case 3 (Extrude at the seam): **M** (the seam follows the mesh, the cap edge becomes the new seam). Judged by
+  description; not runnable in the Lab (Playground-only Extrude).
+- Stated view: a live symmetry that only does transforms can do without the seam edge; other mirror methods will
+  very likely need a continuous seam line later.
+
+*Engineering, set by planning 2026-10-08 (not an Artist verdict):*
+- Interim rule for Case 2: refused visibly (option R: status line, no history entry, mesh unchanged) until the
+  Artist decides. Rests on §2.6 (a plane vertex without a live seam edge is `UNPAIRED`) and §3 item 8. Cheapest and
+  reversible.
+- Assumption, not confirmed by Manu: seam-edge-selected Delete (a seam edge itself selected) is not covered by
+  Case 1 and stays refused per §3 item 8.
+
+A2 and A3 are not affected and remain open.
+
 ### A2 — `C` with a two-sided explicit selection (≤ 5 min) — observation runnable today, comparison after slice 4
 
 1. (`head_basemesh`) **Shift+B** → `E5-Modus: MARK` (under BLOCK `C` is refused). **2** (Edge mode). Click an edge
@@ -534,12 +567,12 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 2 | **Transaction seam** | `apply_*` split of `connect_vertices_per_face` and `remove_selected` (Split = `Mesh.split_edge`, Edge Connect = `_apply`); Edge Connect returns edge → midpoint; `Application` handlers use one private transaction helper shared with `apply_mesh_change`, no-op status texts kept. Pure refactor, existing tests unchanged | Disc. step 2; T-a. **[Δ]** + the midpoint report (F, review F7), the shared helper (T-e), no-op texts (review) |
 | 3 | **Edge + Vertex Connect through `C`, non-seam Delete/Dissolve (Lab)** | Expansion after `resolve_c_context` / on the removal selection, seam edges in a Connect selection via S1, delta check with rollback, seam consumption and both-sides face case refused; G-2 context refusal; declaration-derived, fail-closed BLOCK row; MARK warning from the declarations. Exact planes only | Disc. steps 3 + 5 (non-seam part). **[Δ]** non-seam Delete/Dissolve moved here (review F4), seam edges in Connect here (F); preconditions: AD-013 H2 amendment reviewed, A1 observed; owner check O1 (seam cases only); A3 comparison becomes runnable |
 | 4 | **Split** | Source + partner edge in one transaction (seam edge once + S1); residue question prepared; A2 comparison becomes runnable | Disc. step 4 |
-| 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part); blocked on A1 |
+| 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN). No longer fully blocked on A1 |
 | 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6) |
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
 The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
-from slice 5 to slice 3 (it is class B and was only waiting for the gate); the seam part stays blocked on A1.
+from slice 5 to slice 3 (it is class B and was only waiting for the gate); the seam part is no longer fully blocked on A1 (see slice 5).
 
 ---
 
