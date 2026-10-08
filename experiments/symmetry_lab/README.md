@@ -200,7 +200,7 @@ Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar
 
 ## Symmetrische Topologie, Slice 4: Split
 
-AD-SYM-03 Slice 4 (2026-10-08). **Praxis-Check durch Manu: offen** (B2c in `docs/ATELIER.md`). Mit gesetzter Symmetrie
+AD-SYM-03 Slice 4 (2026-10-08). **Praxis-Check durch Manu am 2026-10-08: alle Schritte bestanden, KEEP** (B2c in `docs/ATELIER.md`). Mit gesetzter Symmetrie
 führt `C` mit **einer** gewählten Kante (Kontext Split) **eine** koordinierte Operation aus: die Kante und ihre
 Spiegelkante werden zusammen geteilt (ein Undo-Schritt), oder `C` lehnt sichtbar ab und ändert nichts. Das gilt in
 **MARK wie in BLOCK**. Ohne Symmetrie teilt `C` unverändert die eine Kante. Seit diesem Slice ist **nur der Knife**
@@ -218,7 +218,7 @@ die BLOCK-Zeile und der Text leiten sich aus den Deklarationen ab (nichts von Ha
   Spiegelpartner; Face von beiden Seiten getroffen, z. B. eine Kante in einer Face über der Ebene; Ergebnis nicht
   spiegelbildlich, D-strict). Kein History-Eintrag, Mesh, Naht und Auswahl bleiben unverändert. Auf
   `man_with_shoes_basemesh` wird eine Kante an einem magentafarbenen Vertex abgelehnt, fern davon läuft Split symmetrisch.
-- **Auswahl danach (Engineering-Annahme, von Manu nicht bestätigt; er beurteilt sie im Praxis-Check):** Vertex-Modus, die
+- **Auswahl danach (Engineering-Regel, im Praxis-Check KEEP, Manu 2026-10-08):** Vertex-Modus, die
   neuen Vertices auf der Seite, auf der die **live** Auswahl lag (derselbe Helfer wie bei Edge Connect): eine Kante auf
   einer Seite → nur der neue Vertex dieser Seite; bewusst beide Seiten gewählt → beide neuen Vertices; nur Elemente auf
   der Ebene (Seam-Kante) → der neue Vertex liegt auf der Ebene und bleibt ausgewählt. Ohne Symmetrie wie bisher ein
