@@ -445,8 +445,12 @@ face after A1 case 2.
   distances to `_TIE_DIGITS`, which turns near-ties into ties).
 - **Residue under symmetry:** *answered for Edge Connect 2026-10-08* (§6, "3b practical check": ITERATE; created
   edges on the side(s) of the live selection, implemented as the engineering rule recorded there). Vertex Connect
-  keeps the live selection (AD-017). **Split stays open** until slice 4 (e.g. only the source vertex or both new
-  vertices selected; the AD-017 residue table is one-sided).
+  keeps the live selection (AD-017). **Split (slice 4, 2026-10-08): engineering default implemented, to be judged in
+  the slice-4 practical test (Question a).** Vertex mode, the new vertex/vertices on the side(s) where the **live**
+  selection had elements (same helper as Edge Connect: `residue_sides` / `on_residue_sides`); one edge selected -> the
+  new vertex of that side only; a mirror pair selected on purpose (A2) -> both new vertices; a seam edge (or only
+  elements on the plane) -> the new vertex lies on the plane and stays, the normal's side otherwise; without a
+  definition the unchanged one-vertex residue. Not an Artist decision until he judges it (KEEP / ITERATE / UNKNOWN).
 - **General (non-exact) planes:** whether they ever get exact coordination (needs a correspondence decision: X-c or
   X-d). No host produces them today; a loaded `export_state` is the only route (the plane is serialised).
   **Asymmetry, out of scope here:** transforms are not refused on non-exact planes, topology coordinators would be.
@@ -493,7 +497,7 @@ face after A1 case 2.
 **Order:** this AD needs AD-SYM-01/02 as they are; the H2 amendment and the A1 observation (§6) are
 preconditions of slice 3.
 
-*Pointer 2026-10-08:* H2 amendment (G-2), see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row): **DECIDED** (Manu, 2026-10-08), after independent review CLAUDE-001 (ACCEPT WITH CHANGES, no blockers, findings answered). It also fixes the A2 canonicalisation rule for slice 3: canonicalise always when a definition is set, for declared and undeclared contexts (in MARK a mirror edge pair runs as a one-sided Split until slice 4).
+*Pointer 2026-10-08:* H2 amendment (G-2), see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row): **DECIDED** (Manu, 2026-10-08), after independent review CLAUDE-001 (ACCEPT WITH CHANGES, no blockers, findings answered). It also fixes the A2 canonicalisation rule for slice 3: canonicalise always when a definition is set, for declared and undeclared contexts (in MARK a mirror edge pair ran as a one-sided Split until slice 4; it is coordinated since slice 4, 2026-10-08).
 
 ---
 
@@ -601,7 +605,9 @@ Question: with both sides selected and symmetry on, what did you mean?
 - **UNKNOWN**.
 
 *Not yet runnable:* the A/B comparison as behaviour (needs symmetric Split, slice 4, and a Lab switch between A and
-B). Moot after the verdict below; the coordinator still refuses the both-sides face case (item 9).
+B). Moot after the verdict below; the coordinator still refuses the both-sides face case (item 9). *Slice 4
+(2026-10-08): symmetric Split exists; with A = canonicalisation a mirror pair is one Split intent and runs coordinated
+in MARK and BLOCK (exactly two new vertices, no double split); the B comparison stays not built, the verdict made it moot.*
 
 **Verdict (Manu, 2026-10-08): A.** Count mirror pairs once; one edge plus its mirror edge is one intent, so `C`
 splits both. Stated "from gut feeling". Reason: in symmetric editing one usually selects only one side,
@@ -671,14 +677,13 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 1 | **Services, tested, not wired** **Done 2026-10-08** (`src/mirai/symmetry_coordination.py`, `tests/test_symmetry_coordination.py`; `tests` 1665 → 1695 passed / 8 skipped, Lab suite unchanged 311 passed / 4 skipped / 1 failed (pre-existing overlay-order test, not from this slice)). | Edge/face partners (indexed), expansion (seam self once), exact-plane predicate (± normals), seam rule S1, completeness report + delta check by element id (D-strict), detection of the both-sides face case; `src/mirai/`, tests in `tests/` | Disc. §5.4 step 1. **[Δ]** + predicate (G, R4), + dead ids/self-mirrored faces in the report (F), `sides` display only (R3), + id-based delta (review F1), no snap yet (review F6) |
 | 2 | **Transaction seam** — **Done 2026-10-08** (`apply_connect_edges`, `apply_connect_vertices`, `apply_removal`, `Application._mesh_transaction`; `tests` 1695 → 1710 passed / 8 skipped; Lab suite unchanged 311 / 4 / 1 failed; playground unchanged 701 passed / 11 failed / 47 errors, pyglet display errors in this container, same before and after). `apply_removal` carries no no-op flag: the transaction compares states | `apply_*` split of `connect_vertices_per_face` and `remove_selected` (Split = `Mesh.split_edge`, Edge Connect = `_apply`); Edge Connect returns edge → midpoint; `Application` handlers use one private transaction helper shared with `apply_mesh_change`, no-op status texts kept. Pure refactor, existing tests unchanged | Disc. step 2; T-a. **[Δ]** + the midpoint report (F, review F7), the shared helper (T-e), no-op texts (review) |
 | 3 | **Edge + Vertex Connect through `C`, non-seam Delete/Dissolve (Lab)** — cut in two (handoff 2026-10-08): **3a Done 2026-10-08** (infrastructure: `CommandGate.refused_contexts`, the one-resolution context check with canonicalisation in `_connect_command`, `src/mirai/symmetry_declarations.py` (empty), declaration-derived fail-closed BLOCK row with the named `INTERIM_ONE_SIDED`, MARK warning from the declarations, start-up listing; `tests` 1710 → 1780 passed / 8 skipped, Lab suite 311 → 350 passed / 4 skipped / 1 failed (the same pre-existing pyglet overlay-order test), playground unchanged 701 passed / 11 failed / 47 errors; no coordinator, Lab behaviour unchanged except the MARK canonicalisation consequence and the visible refusal of unlisted commands). **3b Done 2026-10-08** (Edge Connect and Vertex Connect: `src/mirai/symmetric_ops.py` with `coordinate_edge_connect` / `coordinate_vertex_connect`, entered in `symmetry_declarations.C_CONTEXT_COORDINATORS`; `Application._connect_command` runs the coordinator of a declared context inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK; refusals (non-exact plane, unpaired selection, both-sides face, D-strict delta) post their text, record no history entry and leave mesh and selection unchanged; seam rule S1 is applied inside the mutation; tests `tests/test_symmetric_ops.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_connect.py`; `tests` 1780 → 1806 passed / 8 skipped, Lab suite 350 → 363 passed / 4 skipped / 1 failed (the same pre-existing pyglet overlay-order test), playground unchanged 701 passed / 11 failed / 47 errors with `--continue-on-collection-errors` (pyglet missing in this container, same before and after; without that flag collection stops at 8 errors); Delete/Dissolve stay one-sided, `INTERIM_ONE_SIDED` stays until **3c**). **3b practical check by Manu 2026-10-08: all steps as expected (§6); 3a/3b verified.** **3c Done 2026-10-08** (Part A of the 3c handoff: Edge Connect residue on the side(s) of the live selection, `symmetric_ops.residue_sides` / `on_residue_sides`; Part B: `coordinate_removal` and the three per-command coordinators `coordinate_delete` / `coordinate_dissolve` / `coordinate_dissolve_no_cleanup` in `src/mirai/symmetric_ops.py`, entered in `symmetry_declarations.REMOVAL_COORDINATORS`; `Application._removal_command` runs the coordinator of a declared command inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK, `SymmetryRefusal` posts its text and changes nothing; Delete drops dead seam ids (M), Dissolve refuses seam cases with `TEXT_SEAM_DISSOLVE` (R); `INTERIM_ONE_SIDED` removed from the Lab; tests `tests/test_symmetric_removal.py`, `tests/test_symmetric_ops.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`; measured in this container after installing `pyglet` (no EGL, so `tests/test_pyglet_input.py` and the GL tests do not run): `tests` 1806 → 1818 (Part A) → 1907 passed / 33 → 39 skipped, Lab suite 365 → 367 → 418 passed / 3 → 7 skipped, playground (under `xvfb-run`) 1235 passed before and after) | Expansion after `resolve_c_context` / on the removal selection, seam edges in a Connect selection via S1, delta check with rollback, seam consumption and both-sides face case refused; G-2 context refusal; declaration-derived, fail-closed BLOCK row; MARK warning from the declarations. Exact planes only | Disc. steps 3 + 5 (non-seam part). **[Δ]** non-seam Delete/Dissolve moved here (review F4), seam edges in Connect here (F); preconditions: AD-013 H2 amendment reviewed, A1 observed; owner check O1 (seam cases only); A3 comparison becomes runnable |
-| 4 | **Split** | Source + partner edge in one transaction (seam edge once + S1); residue question prepared; A2 comparison becomes runnable | Disc. step 4 |
+| 4 | **Split** — **Done 2026-10-08** (`coordinate_split` in `src/mirai/symmetric_ops.py`, entered in `symmetry_declarations.C_CONTEXT_COORDINATORS` as `CContext.SPLIT`; the Split branch of `Application._connect_command` runs it inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK; only `CContext.KNIFE` stays undeclared, so the Lab BLOCK row and the named refusals derive automatically (3a); tests `tests/test_symmetric_split.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py` plus the adapted 3a/3b gate and Lab fail-closed tests; measured in this container without `pyglet` (no EGL): `tests` 1941 → 1964 passed / 14 skipped, Lab suite 420 → 428 passed / 8 skipped / 1 failed (the same pre-existing pyglet overlay-order test), `playground/tests` not collectable here (pyglet display), `src/core`, `src/main.py` and `playground/` untouched). Slice 4 practical test by Manu: **open** | Source + partner edge in one transaction (seam edge once + S1); t = 0.5 only, no snap; residue question prepared (engineering default, §4); A2 comparison becomes runnable | Disc. step 4 |
 | 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN) — *refined 2026-10-08 (§6): an edge directly on the seam stays refused, an edge crossing the seam is dissolved via seam rule S2 (see Implementation note S2)*. No longer fully blocked on A1 |
 | 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6) |
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
 **Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
-after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c practical test answered, §6 second round; S2 practical test passed, step 1 KEEP, 2026-10-08). Slice 4 follows
-slice 3. Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
+after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c practical test answered, §6 second round; S2 practical test passed, step 1 KEEP, 2026-10-08). **Slice 4 (Split) implemented 2026-10-08**, practical test open. Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
 
 The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
 from slice 5 to slice 3 (it is class B and was only waiting for the gate); the seam part is no longer fully blocked on A1 (see slice 5).
@@ -709,6 +714,32 @@ from slice 5 to slice 3 (it is class B and was only waiting for the gate); the s
   183 D-strict refusals, no exception.
 - **Not covered:** two seam vertices that are non-adjacent in one face (Vertex Connect would chord the same pair from
   both sides); no asset in the Lab produces that case.
+
+**Implementation note 4 (2026-10-08).** What the code made concrete; nothing here changes a decision.
+
+- **One coordinator, the shared refusals.** `coordinate_split(mesh, edge_ids)` uses `_refuse_before(..., mode="edge")`
+  (exact plane, unpaired selection, both-sides face), reports before, calls `Mesh.split_edge(edge, 0.5)` for the source
+  and, if distinct, for the partner, writes `seam_after_split` inside the same mutation if a seam edge was split, and runs
+  the D-strict delta check. No new refusal text was needed. `Mesh.split_edge` invalidates only the edge it splits, so
+  the partner id stays valid after the first split. A seam edge is its own partner and is split once; the new vertex is
+  exactly on the plane (both endpoints have a zero coordinate on an exact plane) and, through S1, a seam vertex.
+- **Mirror pair (A2 = A).** `_connect_command` canonicalises one edge before resolution, so a selected pair is one
+  Split intent (the pair is the one `Expansion`); exactly two new vertices, no double split. This ends the MARK
+  consequence recorded in the AD-013 amendment: a mirror pair no longer runs as a one-sided Split.
+- **Residue (engineering default, §4).** Vertex mode, the new vertices on the side(s) of the live selection
+  (`residue_sides` taken before the transaction, `on_residue_sides` over the created vertices). Without a definition the
+  one-vertex residue is unchanged.
+- **Measured on the assets (headless, not a committed test).** Every edge as a single selection, `subd_cube` X and Z,
+  `head_basemesh` X: all splits succeeded (seam edges 8 / 8 / 36 with one new vertex, all others with two), each report
+  clean, each one Undo step, Undo restores topology and history. `man_with_shoes_basemesh` (`partial`, X): 44 seam
+  edges (one new vertex) and 1592 edges (two) split with no incomplete element added, 216 unpaired-selection
+  refusals, no delta refusal, no exception.
+- **Known behaviour, reported not decided.** An edge joining two mirror vertices across the plane without being a seam
+  edge is its own partner; Split of it creates a vertex on the plane that is no seam vertex, so the delta check (or, if
+  the edge lies in a plane-spanning face, the both-sides-face refusal) refuses it visibly. On the cube fixture of
+  `tests/test_command_gate_contexts.py` this is edge 7-6. A Split next to unpaired geometry is refused only when the
+  selected edge itself has no partner; a paired edge whose face holds an unpaired vertex splits (the face was
+  incomplete before, INV-10).
 
 **Implementation note 3c (2026-10-08).** What the code made concrete or had to add; nothing here changes a decision.
 
@@ -822,7 +853,7 @@ UNKNOWN), A2 = A and A3 = S ("for now"); all three are recorded in §6. Owner ch
 accepted, **as an assumption** (no separate explicit O1 confirmation). The AD-013 H2 amendment is **not** done and
 remains a precondition of slice 3 (§5). Items 5 and 9 keep their wording; D-strict is now Artist-confirmed.
 
-*Pointer 2026-10-08:* H2 amendment (G-2), see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row): **DECIDED** (Manu, 2026-10-08), after independent review CLAUDE-001 (ACCEPT WITH CHANGES, no blockers, findings answered). It also fixes the A2 canonicalisation rule for slice 3: canonicalise always when a definition is set, for declared and undeclared contexts (in MARK a mirror edge pair runs as a one-sided Split until slice 4).
+*Pointer 2026-10-08:* H2 amendment (G-2), see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row): **DECIDED** (Manu, 2026-10-08), after independent review CLAUDE-001 (ACCEPT WITH CHANGES, no blockers, findings answered). It also fixes the A2 canonicalisation rule for slice 3: canonicalise always when a definition is set, for declared and undeclared contexts (in MARK a mirror edge pair ran as a one-sided Split until slice 4; it is coordinated since slice 4, 2026-10-08).
 
 *Status line of the 2026-10-07 revision, kept for history:* No decision beyond the review's own proposals was taken, except: the interim choice of D-strict (the safe default
 until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status then stayed

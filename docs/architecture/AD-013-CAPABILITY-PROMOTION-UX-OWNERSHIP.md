@@ -1213,3 +1213,24 @@ Slice 3c filled the removal declarations and ended the accepted interim. Nothing
   and the three are declared" plus "undeclared → refused visibly under BLOCK"; T-FC3 with no declaration now expects
   `NON_OPERATION | transforms`; the start-up listing test expects `Removal Delete, Dissolve, DissolveNoCleanup` and no
   `INTERIM_ONE_SIDED`. New: `test_app_lab_symmetric_removal.py` (Lab end to end) and `tests/test_symmetric_removal.py`.
+
+### Implementation note (2026-10-08, AD-SYM-03 slice 4)
+
+Slice 4 declared the Split context. Nothing here changes the decision.
+
+- **Split is declared.** `symmetry_declarations.C_CONTEXT_COORDINATORS` maps `CContext.SPLIT` to `coordinate_split`
+  (`src/mirai/symmetric_ops.py`) besides the two Connect contexts. Only `CContext.KNIFE` stays undeclared, so it is the
+  only named-refused context left under BLOCK: `block_row()` has `refused_contexts` = {Knife} with its named text, `C`
+  with one edge goes through the gate, the start-up listing and the Lab README table follow from the declarations (3a).
+  No Lab row was edited by hand.
+- **The MARK consequence of canonicalisation ends.** The "Behaviour change in MARK" entry above (a mirror edge pair
+  runs as a one-sided Split of one edge) held until this slice: a mirror pair is still one intent (A2 = A), but it
+  now runs the Split coordinator on the edge and its partner (two new vertices, one Undo step), in MARK as in BLOCK
+  ("Runtime refusals are not G-3": the coordinator's refusals are not a gate).
+- **Test changes this legitimately caused.** T-G3a covers only the contexts without a coordinator (Knife, `NONE`);
+  its Split parametrisation and the mirror-pair case moved to the coordinated behaviour (on the cube fixture the top
+  face spans the plane, so the coordinator refuses visibly with `TEXT_BOTH_SIDES_FACE`; the success path is in
+  `tests/test_symmetric_split.py`). The Lab fail-closed and gate tests that expected the named Split refusal or a
+  one-sided MARK Split now expect the coordinated result; the test helper `declare(monkeypatch)` keeps the real
+  coordinator for Split too. New: `tests/test_symmetric_split.py`,
+  `experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py`.

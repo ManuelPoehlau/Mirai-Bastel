@@ -9,8 +9,8 @@ and cannot drift from it. Two keys exist today:
 
 Transforms keep `Operation.supports_symmetry`; there the Operation itself mirrors.
 
-AD-SYM-03 slices 3b/3c: the `C` table holds the Connect coordinators (Edge Connect, Vertex
-Connect) and the removal table the three removal coordinators, all in `mirai.symmetric_ops`;
+AD-SYM-03 slices 3b/3c/4: the `C` table holds the Connect and Split coordinators (Split, Edge
+Connect, Vertex Connect) and the removal table the three removal coordinators, all in `mirai.symmetric_ops`;
 each removal coordinator serves all three component modes. Readers are the Symmetry
 Lab, which derives its gate row and MARK warning from the keys (AD-013 H2 amendment of
 2026-10-08, H2-R4 (h)), and `Application`, which runs the coordinator of a declared context
@@ -32,14 +32,16 @@ from .symmetric_ops import (
     coordinate_dissolve,
     coordinate_dissolve_no_cleanup,
     coordinate_edge_connect,
+    coordinate_split,
     coordinate_vertex_connect,
 )
 from .topology.contextual_c import CContext
 
-#: Resolved `C` context -> coordinator `(mesh, canonical selection ids) -> result`. Split and
-#: Knife are undeclared (slices 4 and 6).
+#: Resolved `C` context -> coordinator `(mesh, canonical selection ids) -> result`. Knife is
+#: undeclared (slice 6).
 C_CONTEXT_COORDINATORS: Mapping[CContext, Any] = MappingProxyType(
     {
+        CContext.SPLIT: coordinate_split,
         CContext.EDGE_CONNECT: coordinate_edge_connect,
         CContext.VERTEX_CONNECT: coordinate_vertex_connect,
     }

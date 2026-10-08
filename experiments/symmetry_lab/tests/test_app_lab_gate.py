@@ -517,36 +517,38 @@ def test_hud_shows_the_mode_only_while_symmetry_is_on(lab_app):
 # -- C unter Symmetrie, MARK ---------------------------------------------------------------
 
 
-def test_c_with_a_selection_under_mark_runs_one_sided(symmetric):
-    """MARK, Edge gewählt, C → Split der App: ein History-Eintrag, einseitig (nur
-    ein neuer Vertex, die Partner-Edge bleibt), der neue Vertex ist ohne Partner
-    und erscheint magenta im Zustands-Overlay; die Symmetrie degradiert zu
-    `partial`. Die Statuszeile ist die der App (`Split`), das Lab überschreibt sie
-    nicht; keine Warnzeile (keine laufende Interaktion)."""
+def test_c_with_a_selection_under_mark_splits_both_sides(symmetric):
+    """MARK, Edge gewählt, C → Split koordiniert (Slice 4, wie unter BLOCK: Laufzeit-Ablehnungen
+    sind kein Gate): ein History-Eintrag, beide Seiten geteilt (zwei neue Vertices, gepaart), die
+    Symmetrie bleibt `valid`, nichts magenta; ausgewählt ist der neue Vertex der gewählten Seite.
+    Die Statuszeile ist die der App (`Split`), das Lab überschreibt sie nicht; keine Warnzeile
+    (keine laufende Interaktion)."""
     app, lab = symmetric
     mesh = app.scene.mesh
     _plane, _lines, state_overlay = lab.overlays
     side_edge(app, lab)
     app.viewport.sync()
     assert state_overlay.points(UNPAIRED_LAYER) == []
-    vertices = len(mesh.all_vertex_ids())
+    vertices = set(mesh.all_vertex_ids())
     before = len(app.history)
 
     assert press(app, lab, C) is True
     assert app.status_message == "Split"
     assert len(app.history) == before + 1
-    assert len(mesh.all_vertex_ids()) == vertices + 1
+    created = set(mesh.all_vertex_ids()) - vertices
+    assert len(created) == 2  # beide Seiten
     (new_vid,) = app.selection.vertices
+    assert new_vid in created and mesh.vertex_position(new_vid)[0] > 0.0  # die gewählte Seite
     report = lab.report
-    assert report.state is SymmetryState.PARTIAL
-    assert new_vid in report.unpaired
+    assert report.state is SymmetryState.VALID
+    assert not report.unpaired
     app.viewport.sync()
-    assert mesh.vertex_position(new_vid) in state_overlay.points(UNPAIRED_LAYER)
+    assert state_overlay.points(UNPAIRED_LAYER) == []
     assert e5_warning_text(lab) == ""
     assert app.command_gate is ROW_MARK.gate
 
     assert press(app, lab, CTRL_Z)
-    assert len(mesh.all_vertex_ids()) == vertices
+    assert set(mesh.all_vertex_ids()) == vertices
     assert lab.report.state is SymmetryState.VALID
 
 
@@ -589,29 +591,38 @@ def test_knife_commit_under_mark_is_one_history_entry(symmetric):
 # -- C unter Symmetrie, BLOCK; C ohne Symmetrie ----------------------------------------------
 
 
-@pytest.mark.parametrize("with_selection", [True, False], ids=["selection", "empty"])
-def test_c_under_block_is_refused(symmetric, with_selection):
-    """BLOCK: `C` auf einem undeklarierten Kontext (eine Kante → Split, leere Auswahl → Knife) →
-    False, Status = benannter Text, `status_serial` + 1; kein History-Eintrag, keine
-    Knife-Session, Mesh unverändert."""
+def test_c_with_empty_selection_under_block_is_refused(symmetric):
+    """BLOCK: `C` auf dem undeklarierten Kontext Knife (leere Auswahl) → False, Status = benannter
+    Text, `status_serial` + 1; kein History-Eintrag, keine Knife-Session, Mesh unverändert."""
     app, lab = symmetric
     to_block(app, lab)
-    if with_selection:
-        side_edge(app, lab)
-    else:
-        app.pointer_motion(*MISS)
-        app.selection.clear()
+    app.pointer_motion(*MISS)
+    app.selection.clear()
     state = app.scene.mesh.export_state()
     before = len(app.history)
     serial = app.status_serial
     assert press(app, lab, C) is False
     assert app.status_serial == serial + 1
-    name = "Split" if with_selection else "Knife"
-    assert app.status_message == block_text(name)
-    assert app.status_message == f"Symmetrie aktiv — {name} spiegelt nicht (BLOCK: {name} nicht gestartet)"
+    assert app.status_message == block_text("Knife")
+    assert app.status_message == "Symmetrie aktiv — Knife spiegelt nicht (BLOCK: Knife nicht gestartet)"
     assert not app.knife_active
     assert len(app.history) == before
     assert app.scene.mesh.export_state() == state
+
+
+def test_c_with_one_edge_under_block_splits_both_sides(symmetric):
+    """BLOCK, Slice 4: `C` mit einer Kante geht durchs Gate (Split ist deklariert) und teilt die
+    Kante und ihre Spiegelkante koordiniert, ein History-Eintrag, `valid`."""
+    app, lab = symmetric
+    to_block(app, lab)
+    side_edge(app, lab)
+    vertices = set(app.scene.mesh.all_vertex_ids())
+    before = len(app.history)
+    assert press(app, lab, C) is True
+    assert app.status_message == "Split"
+    assert len(app.history) == before + 1
+    assert len(set(app.scene.mesh.all_vertex_ids()) - vertices) == 2
+    assert lab.report.state is SymmetryState.VALID
 
 
 @pytest.mark.parametrize("mode", [GateMode.MARK, GateMode.BLOCK], ids=["mark", "block"])
@@ -714,11 +725,6 @@ def _block_c_empty(app, lab):
     app.selection.clear()
 
 
-def _block_c_edge(app, lab):
-    to_block(app, lab)
-    side_edge(app, lab)
-
-
 def _block_rotate_unsupported(app, lab):
     to_block(app, lab)
     select(app, paired(app)[0])
@@ -726,7 +732,6 @@ def _block_rotate_unsupported(app, lab):
 
 BLOCK_REFUSALS = [
     ("C_empty", _block_c_empty, C, block_text("Knife"), False),
-    ("C_edge", _block_c_edge, C, block_text("Split"), False),
     ("E_unsupported", _block_rotate_unsupported, E, block_text("Rotate"), True),
     ("R_unsupported", _block_rotate_unsupported, R, block_text("Scale"), True),
 ]
@@ -777,6 +782,6 @@ def test_startup_listing_has_the_e5_rows_and_shift_b():
     assert ROW_SYMMETRY_OFF.describe() in text
     assert ROW_MARK.describe() in text
     assert block_row().describe() in text
-    assert block_text("Split") in block_row().describe()  # `C` geht durch, Split/Knife nicht
+    assert block_text("Knife") in block_row().describe()  # `C` geht durch, nur Knife nicht
     assert "Slice 1, vor E5" not in text
     assert "C spiegelt nicht'" not in text  # kein alter 1b-Text ohne BLOCK-Zusatz

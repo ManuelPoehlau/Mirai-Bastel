@@ -1,5 +1,5 @@
-"""Symmetric topology coordinators (AD-SYM-03 §3, slices 3b/3c): Edge Connect, Vertex Connect, and
-the removal commands Delete, Dissolve and Dissolve (no cleanup).
+"""Symmetric topology coordinators (AD-SYM-03 §3, slices 3b/3c/4): Edge Connect, Vertex Connect,
+Split, and the removal commands Delete, Dissolve and Dissolve (no cleanup).
 
 A coordinator is a pure mutation `coordinate_*(mesh, selection[, mode]) -> result` for the
 unchanged `apply_*` function of `mirai.topology`: expand the (already canonical, one-sided)
@@ -163,6 +163,36 @@ def coordinate_edge_connect(mesh: Mesh, edge_ids: Iterable[EdgeId]) -> EdgeConne
 
     _check_delta(before, mesh)
     return result
+
+
+def coordinate_split(mesh: Mesh, edge_ids: Iterable[EdgeId]) -> list[VertexId]:
+    """Split of `edge_ids` (canonical: one edge, a mirror pair counts once) and its partner at
+    t = 0.5, in one mutation. Returns the new vertices, source first (one, for a seam edge, which
+    is its own partner and is split once).
+
+    t = 0.5 is exact on an exact plane (`is_exact_plane`): the midpoints of mirrored edges are
+    bit-identical mirrors, so the new vertices pair without a tolerance. A split seam edge is
+    replaced by its two halves (seam rule S1) inside this mutation, so the new vertex on the
+    plane is a seam vertex and Undo restores the old seam with the mesh. `Mesh.split_edge`
+    invalidates only the edge it splits, so the partner id stays valid after the first split."""
+    definition = _require_definition(mesh)
+    index, expansion = _refuse_before(mesh, definition, edge_ids, mode="edge")
+    before = completeness_report(mesh, index)
+
+    # Source first (the canonical, normal's-side edge), then the partner, deterministically.
+    ordered = sorted(expansion.selected) + sorted(expansion.partners)
+    created: list[VertexId] = []
+    halves = {}
+    for edge_id in ordered:
+        new_vertex, half_a, half_b = mesh.split_edge(edge_id, 0.5)
+        created.append(new_vertex)
+        if edge_id in definition.seam_edges:
+            halves[edge_id] = (half_a, half_b)
+    if halves:
+        mesh.symmetry_definition = seam_after_split(definition, halves)
+
+    _check_delta(before, mesh)
+    return created
 
 
 def coordinate_vertex_connect(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> list:

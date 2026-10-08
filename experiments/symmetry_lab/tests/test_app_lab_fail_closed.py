@@ -458,35 +458,35 @@ def test_t_fc4_without_declarations_c_is_refused_by_identity_as_before(monkeypat
     assert not app.knife_active
 
 
-def test_t_fc4_a_mirror_edge_pair_is_one_intent_under_mark_and_named_under_block():
-    """Die angekündigte MARK-Folge der Kanonisierung (Amendment § Proposal 1, Review-Probe P5):
-    Kante plus Spiegelkante ist ein einseitiger Split der einen Kante (statt „Keine verbindbaren
-    Kanten"); unter BLOCK löst dieselbe Auswahl zum Kontext Split auf, der undeklariert ist (Slice 4)
-    und mit seinem Namen abgelehnt wird; die Auswahl bleibt zweiseitig."""
-    app, lab = symmetric_lab()
-    mesh = app.scene.mesh
-    a, b, _c, _d = _plus_x_quad(app)
-    edge = _edge_between(app, a, b)
+def test_t_fc4_a_mirror_edge_pair_is_one_intent_and_splits_both_sides_under_mark_and_block():
+    """Die MARK-Folge der Kanonisierung (Amendment § Proposal 1, Review-Probe P5) endet mit
+    Slice 4: Kante plus Spiegelkante ist ein Split-Kontext (statt „Keine verbindbaren Kanten“) und
+    läuft koordiniert, unter BLOCK wie unter MARK: zwei neue Vertices, kein doppeltes Teilen,
+    beide ausgewählt (A2 = A)."""
     from mirai.symmetry_coordination import build_index  # nur Test, nicht Lab-Code
 
-    partner = build_index(mesh).edge_partner(edge)
-    assert partner is not None and partner != edge
-    app.selection.clear()
-    app.selection.mode = SelectionMode.EDGE
-    app.selection.edges = {edge, partner}
+    for mark in (False, True):
+        app, lab = symmetric_lab()
+        mesh = app.scene.mesh
+        a, b, _c, _d = _plus_x_quad(app)
+        edge = _edge_between(app, a, b)
+        partner = build_index(mesh).edge_partner(edge)
+        assert partner is not None and partner != edge
+        app.selection.clear()
+        app.selection.mode = SelectionMode.EDGE
+        app.selection.edges = {edge, partner}
+        if mark:
+            assert press(app, lab, SHIFT_B)
 
-    before = snapshot(app)
-    assert press(app, lab, C) is False  # BLOCK, Split undeklariert: benannter Text
-    assert app.status_message == block_text("Split")
-    assert snapshot(app) == before
-
-    assert press(app, lab, SHIFT_B)  # MARK
-    vertices = len(mesh.all_vertex_ids())
-    assert press(app, lab, C) is True
-    assert app.status_message == "Split"
-    assert len(mesh.all_vertex_ids()) == vertices + 1  # eine Kante, einseitig
-    (new_vertex,) = app.selection.vertices
-    assert mesh.vertex_position(new_vertex)[0] > 0.0
+        before = set(mesh.all_vertex_ids())
+        history = len(app.history)
+        assert press(app, lab, C) is True
+        assert app.status_message == "Split"
+        assert len(app.history) == history + 1
+        created = set(mesh.all_vertex_ids()) - before
+        assert len(created) == 2
+        assert set(app.selection.vertices) == created
+        assert {mesh.vertex_position(v)[0] > 0.0 for v in created} == {True, False}
 
 
 # == T-FC5 =======================================================================================
@@ -524,11 +524,18 @@ def test_t_fc5_declared_knife_session_has_no_warning_line_in_mark(monkeypatch):
     assert app.command_gate is None
 
 
-def test_t_fc5_immediate_undeclared_operations_get_no_warning_line():
-    """Ein sofortiger undeklarierter Kontext (Split) ist keine laufende Interaktion."""
+def test_t_fc5_immediate_operations_get_no_warning_line(monkeypatch):
+    """Ein sofortiger kontextueller Befehl ist keine laufende Interaktion: weder der deklarierte
+    Split (Slice 4) noch, bei gepatchter Tabelle, ein undeklarierter bekommt eine Warnzeile."""
     app, lab = _mark_lab()
     select_context(app, CContext.SPLIT)
-    assert press(app, lab, C) is True
+    assert press(app, lab, C) is True  # deklariert: koordiniert
+    assert e5_warning_text(lab) == ""
+
+    declare(monkeypatch, contexts=[CContext.EDGE_CONNECT])  # Split undeklariert
+    app, lab = _mark_lab()
+    select_context(app, CContext.SPLIT)
+    assert press(app, lab, C) is True  # einseitig, ohne Gate
     assert e5_warning_text(lab) == ""
 
 
@@ -543,7 +550,6 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     for context, refusal in block_row().gate.refused_contexts.items():
         assert CONTEXT_NAMES[context] in block_row().describe()
         assert repr(refusal) in text
-    assert "C-Kontext Split abgelehnt" in text
     assert "C-Kontext Knife abgelehnt" in text
 
     non_operation = next(line for line in lines if line.startswith("NON_OPERATION"))
@@ -552,13 +558,15 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     assert cmd.EDGE_LOOP not in non_operation and cmd.EDGE_RING not in non_operation
     assert "INTERIM_ONE_SIDED" not in text  # Slice 3c: das Interim ist beendet
     declarations_line = next(line for line in lines if line.startswith("Deklarationen"))
-    assert "C-Kontexte Edge Connect, Vertex Connect" in declarations_line
+    assert "C-Kontexte Edge Connect, Split, Vertex Connect" in declarations_line
     assert "Removal Delete, Dissolve, DissolveNoCleanup" in declarations_line
+    assert "C-Kontext Split abgelehnt" not in text  # deklariert (Slice 4)
     assert "C-Kontext Edge Connect abgelehnt" not in text  # deklariert (3b)
     assert "C-Kontext Vertex Connect abgelehnt" not in text
 
     declare(monkeypatch)  # nichts deklariert: die Liste folgt den Deklarationen
     empty = "\n".join(startup_listing())
+    assert "C-Kontext Split abgelehnt" in empty
     assert "C-Kontext Edge Connect abgelehnt" in empty and "C-Kontext Vertex Connect abgelehnt" in empty
     assert "C-Kontexte keine" in empty and "Removal keine" in empty
 

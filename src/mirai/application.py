@@ -595,8 +595,10 @@ class Application:
         the selection untouched. Under symmetry Edge Connect selects the created
         edges on the side(s) where the live selection had elements (only the
         plane -> the normal's side; created edges on the plane stay;
-        `residue_sides`, Artist ITERATE 2026-10-08); Vertex Connect keeps the
-        live selection (AD-017 residue)."""
+        `residue_sides`, Artist ITERATE 2026-10-08), Split (slice 4) the same
+        for its new vertices (engineering default, judged in the practical
+        test; a seam edge's new vertex lies on the plane and stays); Vertex
+        Connect keeps the live selection (AD-017 residue)."""
         selection = self.selection
         effective = self._canonical_c_selection()
         ctx = resolve_c_context(effective)
@@ -604,15 +606,36 @@ class Application:
             return False
 
         if ctx is CContext.SPLIT:
-            (edge_id,) = effective.edges
-            def residue(split) -> None:
+            mesh = self.scene.mesh
+            # Taken from the live selection before the transaction (and before canonicalisation
+            # reaches the mesh): the sides the artist worked on.
+            sides = (
+                residue_sides(mesh, selection.edges, mesh.edge_vertices)
+                if self._connect_coordinator(ctx) is not None
+                else None
+            )
+
+            def split_plain(mesh: Mesh, edge_ids: set) -> list:
+                (edge_id,) = edge_ids
+                return [mesh.split_edge(edge_id)[0]]
+
+            def residue(created) -> None:
+                kept = set(created)
+                if sides is not None:
+                    kept = on_residue_sides(mesh, kept, sides, lambda v: (v,))
                 selection.mode = SelectionMode.VERTEX
                 selection.clear()
-                selection.add({split[0]})
+                selection.add(kept)
 
-            self._mesh_transaction(
-                "Split Edge", lambda mesh: mesh.split_edge(edge_id), on_applied=residue
-            )
+            try:
+                self._mesh_transaction(
+                    "Split Edge",
+                    lambda mesh: self._connect_op(ctx, split_plain)(mesh, set(effective.edges)),
+                    on_applied=residue,
+                )
+            except SymmetryRefusal as exc:
+                self._set_status(str(exc))
+                return False
             self._set_status("Split")
             return True
 
@@ -673,8 +696,8 @@ class Application:
         return False
 
     def _connect_op(self, context: CContext, plain: Callable) -> Callable:
-        """The mutation `_connect_command` runs for a Connect context: the coordinator
-        declared for `context` (`mirai.symmetry_declarations`, AD-SYM-03 slice 3b) whenever a
+        """The mutation `_connect_command` runs for a declared context: the coordinator
+        declared for `context` (`mirai.symmetry_declarations`, AD-SYM-03 slices 3b/4) whenever a
         symmetry definition is set — in MARK as in BLOCK, its refusals are part of a supported
         operation, not a gate (H2 amendment, "Runtime refusals are not G-3") — otherwise the
         unchanged `plain` function. Both run inside the caller's one `_mesh_transaction`."""

@@ -11,8 +11,9 @@ Headless, fixture as `tests/test_application_pointer.py`. The named tests of the
 - T-G2e  a Knife session is not touched by a gate that lists every context
 - T-G2f  `CommandGate()` defaults, `==`, read-only mapping
 - T-R5a+ a default gate changes nothing on any of the five contexts
-- T-G3a  no gate + definition: undeclared contexts (Split, Knife) behave as without a definition
-         (Edge/Vertex Connect are declared since slice 3b: `tests/test_symmetric_ops.py`)
+- T-G3a  no gate + definition: the undeclared context (Knife) behaves as without a definition
+         (Split, Edge/Vertex Connect are declared since slices 3b/4: `tests/test_symmetric_ops.py`,
+         `tests/test_symmetric_split.py`)
 - T-G3b  AST guard: `src/main.py` sets no symmetry definition and calls no symmetry code
 
 Deliberately not named `test_application_*` (that set is what T-R5c re-runs). T-R5c+ is in
@@ -34,6 +35,7 @@ import tests._bootstrap  # noqa: F401
 from tests._bootstrap import _SRC
 
 import mirai.application as application_module
+from mirai import symmetric_ops
 from core import EdgeId, SelectionMode, VertexId
 from core.mesh import SymmetryDefinition
 from mirai.application import Application, CommandGate
@@ -59,9 +61,9 @@ OPERATION_CONTEXTS = (
     CContext.KNIFE,
 )
 ALL_CONTEXTS = OPERATION_CONTEXTS + (CContext.NONE,)
-#: Contexts without a coordinator (`mirai.symmetry_declarations`, slice 3b): Split and Knife, plus
-#: `NONE`, which is no operation. T-G3a pins that a definition changes nothing for them.
-UNCOORDINATED_CONTEXTS = (CContext.SPLIT, CContext.KNIFE, CContext.NONE)
+#: Contexts without a coordinator (`mirai.symmetry_declarations`, slice 4): Knife, plus `NONE`,
+#: which is no operation. T-G3a pins that a definition changes nothing for them.
+UNCOORDINATED_CONTEXTS = (CContext.KNIFE, CContext.NONE)
 TEXTS = {ctx: f"refused {ctx.name}" for ctx in OPERATION_CONTEXTS}
 EXACT_X = SymmetryDefinition((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), frozenset())
 
@@ -378,9 +380,9 @@ def _without_symmetry(state: dict) -> dict:
 @pytest.mark.parametrize("ctx", UNCOORDINATED_CONTEXTS, ids=lambda c: c.name)
 def test_t_g3a_no_gate_a_definition_changes_nothing_for_one_sided_selections(ctx):
     """G-3 boundary from the Production side: no gate + an exact X definition. For a context
-    without a coordinator (Split, Knife) a selection without a mirror pair behaves as without a
-    definition (return value, status, mesh result); nothing refuses. Edge and Vertex Connect run
-    their coordinator whenever a definition is set, in MARK as in BLOCK (slice 3b)."""
+    without a coordinator (Knife) a selection without a mirror pair behaves as without a
+    definition (return value, status, mesh result); nothing refuses. Split, Edge and Vertex Connect
+    run their coordinator whenever a definition is set, in MARK as in BLOCK (slices 3b/4)."""
     runs = []
     for definition in (None, EXACT_X):
         app = make_app()
@@ -400,11 +402,26 @@ def test_t_g3a_no_gate_a_definition_changes_nothing_for_one_sided_selections(ctx
     assert runs[0] == runs[1]
 
 
+def test_t_g3a_split_runs_its_coordinator_whenever_a_definition_is_set(app):
+    """Slice 4: with a definition and no gate the Split context is no longer the plain one-sided
+    operation. The cube's edge 7-6 joins two mirror vertices (its own partner) in a face spanning
+    the plane, so the coordinator refuses visibly and changes nothing."""
+    app.scene.mesh.symmetry_definition = EXACT_X
+    select_for(app, CContext.SPLIT)
+    before = (mesh_state(app), len(app.history), selection_state(app))
+    assert app.key_press(C) is False
+    assert app.status_message == symmetric_ops.TEXT_BOTH_SIDES_FACE
+    assert (mesh_state(app), len(app.history), selection_state(app)) == before
+
+
 def test_t_g3a_mirror_pair_follows_the_canonicalisation_rule(app):
     """Probe P5 of the amendment review: a mirror edge pair is one intent. With a definition and
-    no gate it runs as a one-sided Split of the edge on the normal's side (x > 0); without a
-    definition the same selection is a literal Edge Connect (on the cube both edges lie in the
-    top face, so it connects across the plane)."""
+    no gate it resolves as Split of the edge on the normal's side (x > 0) and runs the Split
+    coordinator on it and its partner (slice 4; before, a one-sided Split of the one edge);
+    without a definition the same selection is a literal Edge Connect (on the cube both edges lie
+    in the top face, so it connects across the plane). Here the top face spans the plane, so the
+    coordinator refuses visibly and `selection` keeps both sides; the success path is in
+    `tests/test_symmetric_split.py`."""
     mesh = app.scene.mesh
     select_mirror_edge_pair(app)
     twin = make_app()
@@ -413,13 +430,11 @@ def test_t_g3a_mirror_pair_follows_the_canonicalisation_rule(app):
     assert twin.status_message == "Connect Edges"
 
     mesh.symmetry_definition = EXACT_X
-    vertices = len(mesh.all_vertex_ids())
-    assert app.key_press(C) is True
-    assert app.status_message == "Split"
-    assert len(mesh.all_vertex_ids()) == vertices + 1
-    assert len(app.history) == 1
-    (new_vertex,) = app.selection.vertices  # the split residue
-    assert mesh.vertex_position(new_vertex)[0] > 0.0
+    before = (mesh_state(app), len(app.history), selection_state(app))
+    assert app.key_press(C) is False
+    assert app.status_message == symmetric_ops.TEXT_BOTH_SIDES_FACE
+    assert (mesh_state(app), len(app.history), selection_state(app)) == before
+    assert len(app.selection.edges) == 2
 
 
 def test_t_g3a_mirror_vertex_pair_counts_once(app):

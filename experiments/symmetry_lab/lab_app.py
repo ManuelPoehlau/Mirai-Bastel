@@ -712,9 +712,9 @@ def e5_warning_text(lab: SymmetryAppLab) -> str:
     können beide nicht entstehen (das Gate startet sie nicht, Shift+S und
     Shift+B sind während einer Interaktion abgelehnt) — die Zeile hängt deshalb
     nur an der Symmetrie, nicht am Modus. Ein sofortiger kontextueller Befehl
-    ohne Deklaration (z. B. Split) ist keine laufende Interaktion und bekommt
-    keine Warnzeile; seine Degradation zeigen die Zustands-Marker (neuer Vertex
-    ohne Partner, magenta)."""
+    (z. B. Split, seit Slice 4 koordiniert) ist keine laufende Interaktion und
+    bekommt keine Warnzeile; was an einem undeklarierten sofortigen Befehl
+    degradiert, zeigen die Zustands-Marker (Vertex ohne Partner, magenta)."""
     if lab.axis is None:
         return ""
     app = lab.app

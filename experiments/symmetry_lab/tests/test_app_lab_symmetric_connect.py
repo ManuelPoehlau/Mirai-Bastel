@@ -1,11 +1,11 @@
 """Symmetrisches Edge Connect und Vertex Connect über den Lab-Pfad (AD-SYM-03 Slice 3b).
 
-Mit den **echten** Deklarationen (`mirai.symmetry_declarations`: Edge und Vertex Connect). Die
+Mit den **echten** Deklarationen (`mirai.symmetry_declarations`: Split, Edge und Vertex Connect). Die
 Koordinatoren selbst sind in `tests/test_symmetric_ops.py` getestet; hier: die abgeleitete BLOCK-Zeile,
 `lab_key_press` Ende-zu-Ende unter BLOCK und MARK (eine Undo-Stufe, symmetrisches Ergebnis, Undo/Redo),
 die Laufzeit-Ablehnungen sind in MARK wie in BLOCK dieselben (Amendment: „Runtime refusals are not
-G-3“), Split und Knife bleiben unter BLOCK mit ihrem Namen abgelehnt, die Knife-MARK-Warnzeile ist
-unverändert (Knife undeklariert).
+G-3“), nur Knife bleibt unter BLOCK mit seinem Namen abgelehnt (Split ist seit Slice 4 deklariert,
+`test_app_lab_symmetric_split.py`), die Knife-MARK-Warnzeile ist unverändert (Knife undeklariert).
 """
 
 from __future__ import annotations
@@ -105,19 +105,21 @@ def assert_clean(app) -> None:
 # -- die abgeleitete BLOCK-Zeile ---------------------------------------------------------------
 
 
-def test_the_real_declarations_are_edge_and_vertex_connect_and_the_three_removals():
-    assert declarations.declared_c_contexts() == {CContext.EDGE_CONNECT, CContext.VERTEX_CONNECT}
+def test_the_real_declarations_are_split_connect_and_the_three_removals():
+    assert declarations.declared_c_contexts() == {
+        CContext.SPLIT,
+        CContext.EDGE_CONNECT,
+        CContext.VERTEX_CONNECT,
+    }
     assert declarations.declared_removal_commands() == {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}
 
 
-def test_block_row_with_the_real_declarations_allows_connect_and_names_split_and_knife():
+def test_block_row_with_the_real_declarations_allows_connect_and_names_only_knife():
     gate = block_row().gate
     assert cmd.CONNECT in gate.allowed
     assert dict(gate.refused) == {}
-    assert dict(gate.refused_contexts) == {
-        CContext.SPLIT: block_text("Split"),
-        CContext.KNIFE: block_text("Knife"),
-    }
+    assert dict(gate.refused_contexts) == {CContext.KNIFE: block_text("Knife")}
+    assert CContext.SPLIT not in gate.refused_contexts
     assert CContext.EDGE_CONNECT not in gate.refused_contexts
     assert CContext.VERTEX_CONNECT not in gate.refused_contexts
     assert set(CONTEXT_NAMES) - set(gate.refused_contexts) == declarations.declared_c_contexts()
@@ -183,29 +185,24 @@ def test_residue_is_the_created_edges_on_the_side_worked_on_or_on_both_sides(mod
 
 
 @pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK], ids=["block", "mark"])
-def test_split_and_knife_contexts_stay_unsupported(mode):
-    """BLOCK: benannt abgelehnt. MARK: laufen weiter einseitig (hier: Split der einen Kante)."""
+def test_only_the_knife_context_stays_unsupported(mode):
+    """BLOCK: Knife benannt abgelehnt, keine Session. MARK: Knife läuft weiter einseitig (mit
+    Warnzeile). Split ist seit Slice 4 koordiniert und in beiden Modi erlaubt."""
     app, lab = lab_on(mode)
-    fid, _ = plus_x_quad(app)
-    edge = app.scene.mesh.face_edges(fid)[0]
     app.selection.clear()
-    app.selection.mode = SelectionMode.EDGE
-    app.selection.edges = {edge}
-    vertices = len(app.scene.mesh.all_vertex_ids())
     if mode is GateMode.BLOCK:
-        before = (topology_state(app), selection_state(app), len(app.history))
-        assert press(app, lab, C) is False
-        assert app.status_message == block_text("Split")
-        assert (topology_state(app), selection_state(app), len(app.history)) == before
-
-        app.selection.clear()
+        history = len(app.history)
+        before = (topology_state(app), selection_state(app))
         assert press(app, lab, C) is False
         assert app.status_message == block_text("Knife")
         assert not app.knife_active
+        assert (topology_state(app), selection_state(app)) == before
+        assert len(app.history) == history
     else:
         assert press(app, lab, C) is True
-        assert app.status_message == "Split"
-        assert len(app.scene.mesh.all_vertex_ids()) == vertices + 1
+        assert app.knife_active
+        assert e5_warning_text(lab) == KNIFE_ONE_SIDED_TEXT
+        assert press(app, lab, ESC) is True
 
 
 def test_knife_mark_warning_line_is_unchanged():

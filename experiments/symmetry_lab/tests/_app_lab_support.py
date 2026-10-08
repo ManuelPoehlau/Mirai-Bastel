@@ -86,7 +86,7 @@ def visible(app: Application) -> list:
 
 def declare(monkeypatch, contexts=(), removal=()) -> None:
     """Patcht die Deklarationstabellen; `declared_*` lesen bei jedem Aufruf. Ein Kontext mit echtem
-    Koordinator (Edge/Vertex Connect, Slice 3b) behält ihn, damit `Application` ihn aufrufen kann;
+    Koordinator (Split, Edge/Vertex Connect, Slice 3b/4) behält ihn, damit `Application` ihn aufrufen kann;
     für die übrigen steht ein Platzhalter (`Application` liest dafür keinen Koordinator).
     `declare(monkeypatch)` stellt den Zustand „nichts deklariert“ her (3a)."""
     real = dict(declarations.C_CONTEXT_COORDINATORS)

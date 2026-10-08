@@ -74,21 +74,21 @@ Ebene, oder die Aktion wird vor der ersten Bewegung abgelehnt (`Rotate: refused 
 
 Experiment E5 / INV-8, **Artist-Verdikt KEEP-BLOCK** (Manu, 2026-10-03, in AD-SYM-02 §4
 festgehalten): ein Tool, das unter Symmetrie nicht spiegelt, wird verweigert, statt
-einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve; Split und der Knife
-nicht — sie schneiden einseitig. Als „nicht unterstützt" zählt C (keine Operation, keine
+einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve, seit Slice 4 Split; nur der Knife
+nicht — er schneidet einseitig. Als „nicht unterstützt" zählt C (keine Operation, keine
 Erklärung) und jedes Transform-Command, dessen Operation `supports_symmetry` nicht erklärt —
 gelesen am Klassenattribut, keine Tool-Liste. Heute erklären es W/E/R, praktisch betrifft E5
-also nur Split und Knife (Kontexte von C). MARK bleibt über Shift+B zum Vergleich erreichbar.
+also nur den Knife (Kontext von C). MARK bleibt über Shift+B zum Vergleich erreichbar.
 
 **Fail-closed (seit AD-SYM-03 Slice 3a, AD-013 H2-Amendment vom 2026-10-08).** Die BLOCK-Zeile ist
 keine Sperrliste mehr, sondern eine Allow-List: durch geht, was in `NON_OPERATION` steht (Anzeige,
 Auswahl samt Klicks und Alt+A, Modi 1/2/3, Undo/Redo, Esc, Constraints, Navigation), was als
 Koordinator **deklariert** ist (`src/mirai/symmetry_declarations.py`, seit 3b Edge und Vertex Connect, seit 3c Delete,
-Dissolve und DissolveNoCleanup) und die Transforms mit `supports_symmetry`. Alles andere — auch ein
+Dissolve und DissolveNoCleanup, seit Slice 4 Split) und die Transforms mit `supports_symmetry`. Alles andere — auch ein
 künftig verdrahtetes Werkzeug, das niemand eingetragen hat — wird sichtbar abgelehnt
 (`Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)`), nie still einseitig. Ist
 ein C-Kontext deklariert, geht `C` durch, und jeder nicht deklarierte Kontext
-(Split, Edge Connect, Vertex Connect, Knife) wird mit seinem Namen abgelehnt (`refused_contexts`, vom
+(von Split, Edge Connect, Vertex Connect, Knife; heute nur Knife) wird mit seinem Namen abgelehnt (`refused_contexts`, vom
 Gate in `Application` nach der einen Kontext-Auflösung geprüft); solange keiner deklariert ist, wird
 `C` wie bisher per Identität abgelehnt. Die Zeile ändert sich nur mit dem Lab-Zustand, nie pro
 Tastendruck. Die Start-Liste zeigt jede Zeile mit `refused`, `allowed` und `refused_contexts`
@@ -100,24 +100,25 @@ deklariert und laufen koordiniert (Abschnitt „Slice 3c“ unten). Ohne Deklara
 nicht koordinierten Befehl sichtbar ablehnen.
 
 **MARK-Folge der Kanonisierung.** Sobald eine Symmetrie gesetzt ist, zählt `C` ein Spiegelpaar
-einmal (Verdikt A2 = A): eine Kante plus ihre Spiegelkante ist eine Absicht. Unter MARK läuft das
-bis Slice 4 als einseitiger Split der Kante auf der Seite der Ebenennormalen (früher: „Keine
-verbindbaren Kanten"); ein Vertex plus sein Spiegelvertex ergibt `C: nothing to do here`. Unter
-BLOCK wird dieses `C` (Kontext Split, undeklariert) mit seinem Namen abgelehnt, die Auswahl bleibt beidseitig. Die Knife-Warnzeile steht nur, solange der
+einmal (Verdikt A2 = A): eine Kante plus ihre Spiegelkante ist eine Absicht. Bis Slice 3c lief das
+unter MARK als einseitiger Split der Kante auf der Seite der Ebenennormalen (früher: „Keine
+verbindbaren Kanten"); **seit Slice 4 endet diese Folge**: das Paar ist ein Split-Kontext und läuft
+koordiniert (genau zwei neue Vertices, kein doppeltes Teilen), unter MARK wie unter BLOCK. Ein Vertex
+plus sein Spiegelvertex ergibt weiter `C: nothing to do here`. Die Knife-Warnzeile steht nur, solange der
 Kontext Knife keinen Koordinator hat.
 
 | Zustand | C | W/E/R | HUD |
 |---|---|---|---|
 | Symmetrie aus (Modus egal) | wie in der App | wie in der App | kein `E5:` |
-| Symmetrie an, **BLOCK** (Default) | Edge/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); Split und Knife (leere Auswahl) abgelehnt: `Symmetrie aktiv — Split spiegelt nicht (BLOCK: Split nicht gestartet)` bzw. `… Knife …`, nichts passiert, kein Undo-Schritt; ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
-| Symmetrie an, **MARK** | Edge/Vertex Connect und Delete/Dissolve laufen koordiniert (mit denselben Ablehnungen wie BLOCK); Split und Knife-Session laufen einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
+| Symmetrie an, **BLOCK** (Default) | Split/Edge Connect/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); nur Knife (leere Auswahl) abgelehnt: `Symmetrie aktiv — Knife spiegelt nicht (BLOCK: Knife nicht gestartet)`, nichts passiert, kein Undo-Schritt; ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
+| Symmetrie an, **MARK** | Split, Edge/Vertex Connect und Delete/Dissolve laufen koordiniert (mit denselben Ablehnungen wie BLOCK); die Knife-Session läuft einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
 
 Die orange Warnzeile (nur MARK): `Knife läuft einseitig — Symmetrie aktiv`, solange eine
 Knife-Session unter Symmetrie läuft; `Symmetrie aktiv — <Name> spiegelt nicht (läuft
 einseitig)`, solange ein nicht spiegelnder Transform scharf ist oder läuft (heute nur über
 einen Test erreichbar). Das Lab schreibt dafür keine Statusmeldung (AD-013 H2-R2). Ein
 sofortiges C unter MARK behält die Statuszeile der App; seine Degradation zeigen die
-Zustands-Marker (neuer Vertex ohne Partner, magenta; HUD `partial`). Esc (Cancel) lehnt das
+Zustands-Marker (Vertex ohne Partner, magenta; HUD `partial`). Esc (Cancel) lehnt das
 Gate außerhalb der Vorschau nie ab.
 
 ## Symmetrische Topologie, Slice 3b: Edge Connect und Vertex Connect
@@ -131,8 +132,8 @@ Symmetrie läuft `C` unverändert.
 
 - **Was koordiniert läuft:** Edge Connect (zwei oder mehr Kanten) und Vertex Connect (zwei oder mehr Vertices).
   Ein Spiegelpaar in der Auswahl zählt einmal (A2 = A). Liegt eine Seam-Kante in der Auswahl und wird geteilt, ersetzen
-  ihre zwei Hälften sie in der Seam (Regel S1); Undo stellt die alte Seam wieder her. Split und Knife
-  sind nicht Teil davon (Split Slice 4, Knife Slice 6); Delete und Dissolve siehe Slice 3c.
+  ihre zwei Hälften sie in der Seam (Regel S1); Undo stellt die alte Seam wieder her. Knife
+  ist nicht Teil davon (Slice 6); Split siehe Slice 4, Delete und Dissolve siehe Slice 3c.
 - **Ablehnungen** (Statuszeile, kein History-Eintrag, Mesh und Auswahl unverändert; Reihenfolge wie geprüft):
   | Fall | Text |
   |---|---|
@@ -150,7 +151,7 @@ Symmetrie läuft `C` unverändert.
   liegt sie nur auf der Ebene (Seam-Kanten), gilt die Seite der Normalen (+X). Erzeugte Kanten auf der Ebene (ihr
   eigenes Spiegelbild) bleiben ausgewählt. Beide Seiten werden immer geschnitten, nur die Auswahl folgt der Seite.
   Undo stellt die vorherige Auswahl wieder her; eine abgelehnte Taste lässt sie unberührt. Vertex Connect lässt die
-  Auswahl unverändert (AD-017). Nach Split (Slice 4) ist die Frage noch offen.
+  Auswahl unverändert (AD-017). Für Split (Slice 4) gilt dieselbe Regel als Engineering-Annahme, siehe Slice 4.
 - **Erfolgstexte** wie bisher: `Connect Edges`, `Vertex Connect` (kein Treffer: `Vertex Connect: nothing connectable`,
   kein History-Eintrag).
 - **Headless nachgemessen** (nicht Praxis): `tests/test_symmetric_ops.py` und
@@ -196,6 +197,35 @@ Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar
 - **Headless nachgemessen** (nicht Praxis): `tests/test_symmetric_removal.py`,
   `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`; Zahlen und die Durchläufe aller Elemente der Assets:
   [AD-SYM-03 §7, Implementation note 3c](../../docs/architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md).
+
+## Symmetrische Topologie, Slice 4: Split
+
+AD-SYM-03 Slice 4 (2026-10-08). **Praxis-Check durch Manu: offen** (B2c in `docs/ATELIER.md`). Mit gesetzter Symmetrie
+führt `C` mit **einer** gewählten Kante (Kontext Split) **eine** koordinierte Operation aus: die Kante und ihre
+Spiegelkante werden zusammen geteilt (ein Undo-Schritt), oder `C` lehnt sichtbar ab und ändert nichts. Das gilt in
+**MARK wie in BLOCK**. Ohne Symmetrie teilt `C` unverändert die eine Kante. Seit diesem Slice ist **nur der Knife**
+(leere Auswahl) unter BLOCK noch abgelehnt: `Symmetrie aktiv — Knife spiegelt nicht (BLOCK: Knife nicht gestartet)`;
+die BLOCK-Zeile und der Text leiten sich aus den Deklarationen ab (nichts von Hand eingetragen).
+
+- **Was geteilt wird:** immer in der Mitte der Kante (t = 0,5; auf einer achsparallelen Ebene durch den Ursprung sind die
+  Mittelpunkte der Spiegelkanten exakt gespiegelt). Kein Snap (der gehört zum Knife, Slice 6).
+- **Spiegelpaar gewählt (A2 = A):** Kante plus ihre Spiegelkante zählt als eine Absicht — genau **zwei** neue Vertices, kein
+  doppeltes Teilen.
+- **Seam-Kante:** sie ist ihr eigener Partner und wird **einmal** geteilt; der neue Vertex liegt exakt auf der Ebene und
+  ist ein Seam-Vertex (Regel S1: die zwei Hälften ersetzen die Kante in der Naht), die Naht bleibt durchgehend, der HUD
+  bleibt `valid`; Undo stellt die alte Naht wieder her.
+- **Ablehnungen:** dieselben Texte und dieselbe Reihenfolge wie bei Connect (Ebene nicht achsparallel; Kante ohne
+  Spiegelpartner; Face von beiden Seiten getroffen, z. B. eine Kante in einer Face über der Ebene; Ergebnis nicht
+  spiegelbildlich, D-strict). Kein History-Eintrag, Mesh, Naht und Auswahl bleiben unverändert. Auf
+  `man_with_shoes_basemesh` wird eine Kante an einem magentafarbenen Vertex abgelehnt, fern davon läuft Split symmetrisch.
+- **Auswahl danach (Engineering-Annahme, von Manu nicht bestätigt; er beurteilt sie im Praxis-Check):** Vertex-Modus, die
+  neuen Vertices auf der Seite, auf der die **live** Auswahl lag (derselbe Helfer wie bei Edge Connect): eine Kante auf
+  einer Seite → nur der neue Vertex dieser Seite; bewusst beide Seiten gewählt → beide neuen Vertices; nur Elemente auf
+  der Ebene (Seam-Kante) → der neue Vertex liegt auf der Ebene und bleibt ausgewählt. Ohne Symmetrie wie bisher ein
+  Vertex. Undo stellt die vorherige Auswahl wieder her; eine abgelehnte Taste lässt sie unberührt.
+- **Headless nachgemessen** (nicht Praxis): `tests/test_symmetric_split.py`,
+  `experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py`; ein Durchlauf aller Kanten von `subd_cube` (X, Z),
+  `head_basemesh` (X) und `man_with_shoes_basemesh`: [AD-SYM-03 §7, Implementation note 4](../../docs/architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md).
 
 ## Re-Symmetrize (M / M / Esc)
 
@@ -266,8 +296,8 @@ E5-Warnzeile und die blaue Vorschau-Zeile. Die Statusmeldungen stehen außerdem 
 
 ## Was das Lab nicht macht
 
-- **Kein gespiegelter Schnitt.** C und der Knife sind die der App und schneiden einseitig;
-  unter BLOCK werden sie bei aktiver Symmetrie verweigert. Der gespiegelte Knife des alten
+- **Kein gespiegelter Schnitt.** Der Knife ist der der App und schneidet einseitig;
+  unter BLOCK wird er bei aktiver Symmetrie verweigert (Split spiegelt seit Slice 4). Der gespiegelte Knife des alten
   Labs (Slice 6/7) ist nicht übernommen; seine Befunde bleiben als Forschung für einen
   künftigen symmetrischen One Knife (Historie, und `tests/test_lab_knife.py` für P1–P3).
 - **Keine Partner im Edge-/Face-Modus.**
@@ -471,7 +501,7 @@ Verdikt 2: **Pivot B entschieden, Nachprüfung KEEP** (Manu, 2026-10-03). Rückf
 **3. E5 mit C — MARK vs. BLOCK** (die Frage aus [„Manuelle Prüfung E5"](#manuelle-prüfung-e5-manu-windows--keep-block-2026-10-03-siehe-ad-sym-02-4),
 jetzt mit dem echten nicht spiegelnden Tool C). `run_app.py subd_cube`, **Shift+S** → X; die
 HUD-Zeile zeigt `E5: MARK`.
-- **MARK:** **2** (Edge-Modus), eine Edge auf **einer** Seite anklicken, **C** → Split: nur diese
+- **MARK:** *(Stand der Prüfung, 2026-10-03; seit Slice 4 teilt Split beide Seiten, HUD bleibt `valid`)* **2** (Edge-Modus), eine Edge auf **einer** Seite anklicken, **C** → Split: nur diese
   Seite bekommt einen Vertex, er ist **magenta** (ohne Partner), HUD `partial`, Statuszeile `Split`.
   **Ctrl+Z**. Dann **1**, Auswahl leeren (Klick ins Leere), **C** → Knife-Session: über der
   HUD-Zeile steht orange `Knife läuft einseitig — Symmetrie aktiv`; zwei gegenüberliegende
