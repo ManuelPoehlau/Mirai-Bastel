@@ -74,7 +74,7 @@ Ebene, oder die Aktion wird vor der ersten Bewegung abgelehnt (`Rotate: refused 
 
 Experiment E5 / INV-8, **Artist-Verdikt KEEP-BLOCK** (Manu, 2026-10-03, in AD-SYM-02 §4
 festgehalten): ein Tool, das unter Symmetrie nicht spiegelt, wird verweigert, statt
-einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren); Split und der Knife
+einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve; Split und der Knife
 nicht — sie schneiden einseitig. Als „nicht unterstützt" zählt C (keine Operation, keine
 Erklärung) und jedes Transform-Command, dessen Operation `supports_symmetry` nicht erklärt —
 gelesen am Klassenattribut, keine Tool-Liste. Heute erklären es W/E/R, praktisch betrifft E5
@@ -83,8 +83,8 @@ also nur Split und Knife (Kontexte von C). MARK bleibt über Shift+B zum Verglei
 **Fail-closed (seit AD-SYM-03 Slice 3a, AD-013 H2-Amendment vom 2026-10-08).** Die BLOCK-Zeile ist
 keine Sperrliste mehr, sondern eine Allow-List: durch geht, was in `NON_OPERATION` steht (Anzeige,
 Auswahl samt Klicks und Alt+A, Modi 1/2/3, Undo/Redo, Esc, Constraints, Navigation), was als
-Koordinator **deklariert** ist (`src/mirai/symmetry_declarations.py`, seit 3b Edge und Vertex Connect), die Transforms mit
-`supports_symmetry` und die benannte Übergangsmenge `INTERIM_ONE_SIDED`. Alles andere — auch ein
+Koordinator **deklariert** ist (`src/mirai/symmetry_declarations.py`, seit 3b Edge und Vertex Connect, seit 3c Delete,
+Dissolve und DissolveNoCleanup) und die Transforms mit `supports_symmetry`. Alles andere — auch ein
 künftig verdrahtetes Werkzeug, das niemand eingetragen hat — wird sichtbar abgelehnt
 (`Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)`), nie still einseitig. Ist
 ein C-Kontext deklariert, geht `C` durch, und jeder nicht deklarierte Kontext
@@ -92,11 +92,12 @@ ein C-Kontext deklariert, geht `C` durch, und jeder nicht deklarierte Kontext
 Gate in `Application` nach der einen Kontext-Auflösung geprüft); solange keiner deklariert ist, wird
 `C` wie bisher per Identität abgelehnt. Die Zeile ändert sich nur mit dem Lab-Zustand, nie pro
 Tastendruck. Die Start-Liste zeigt jede Zeile mit `refused`, `allowed` und `refused_contexts`
-sowie `NON_OPERATION`, `INTERIM_ONE_SIDED` und die aktuellen Deklarationen.
+sowie `NON_OPERATION` und die aktuellen Deklarationen.
 
-**Übergangsmenge (`INTERIM_ONE_SIDED`).** Delete, Dissolve und DissolveNoCleanup laufen unter
-Symmetrie + BLOCK weiter einseitig (akzeptiertes Interim, Manu, 2026-10-06), bis ihre Koordinatoren
-da sind. Die Menge ist weder Deklaration noch Auslassung und wird in Slice 3c entfernt.
+**Kein Interim mehr (seit Slice 3c).** Die Übergangsmenge `INTERIM_ONE_SIDED` (Delete, Dissolve und
+DissolveNoCleanup liefen unter Symmetrie + BLOCK einseitig, Manu, 2026-10-06) ist entfernt; die drei Befehle sind
+deklariert und laufen koordiniert (Abschnitt „Slice 3c“ unten). Ohne Deklaration würde BLOCK sie wie jeden anderen
+nicht koordinierten Befehl sichtbar ablehnen.
 
 **MARK-Folge der Kanonisierung.** Sobald eine Symmetrie gesetzt ist, zählt `C` ein Spiegelpaar
 einmal (Verdikt A2 = A): eine Kante plus ihre Spiegelkante ist eine Absicht. Unter MARK läuft das
@@ -108,8 +109,8 @@ Kontext Knife keinen Koordinator hat.
 | Zustand | C | W/E/R | HUD |
 |---|---|---|---|
 | Symmetrie aus (Modus egal) | wie in der App | wie in der App | kein `E5:` |
-| Symmetrie an, **BLOCK** (Default) | Edge/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt; Split und Knife (leere Auswahl) abgelehnt: `Symmetrie aktiv — Split spiegelt nicht (BLOCK: Split nicht gestartet)` bzw. `… Knife …`, nichts passiert, kein Undo-Schritt; ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
-| Symmetrie an, **MARK** | Edge/Vertex Connect laufen koordiniert (mit denselben Ablehnungen wie BLOCK); Split und Knife-Session laufen einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
+| Symmetrie an, **BLOCK** (Default) | Edge/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); Split und Knife (leere Auswahl) abgelehnt: `Symmetrie aktiv — Split spiegelt nicht (BLOCK: Split nicht gestartet)` bzw. `… Knife …`, nichts passiert, kein Undo-Schritt; ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
+| Symmetrie an, **MARK** | Edge/Vertex Connect und Delete/Dissolve laufen koordiniert (mit denselben Ablehnungen wie BLOCK); Split und Knife-Session laufen einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
 
 Die orange Warnzeile (nur MARK): `Knife läuft einseitig — Symmetrie aktiv`, solange eine
 Knife-Session unter Symmetrie läuft; `Symmetrie aktiv — <Name> spiegelt nicht (läuft
@@ -130,8 +131,8 @@ Symmetrie läuft `C` unverändert.
 
 - **Was koordiniert läuft:** Edge Connect (zwei oder mehr Kanten) und Vertex Connect (zwei oder mehr Vertices).
   Ein Spiegelpaar in der Auswahl zählt einmal (A2 = A). Liegt eine Seam-Kante in der Auswahl und wird geteilt, ersetzen
-  ihre zwei Hälften sie in der Seam (Regel S1); Undo stellt die alte Seam wieder her. Split, Knife, Delete und Dissolve
-  sind nicht Teil davon (Split Slice 4, Knife Slice 6, Delete/Dissolve Slice 3c).
+  ihre zwei Hälften sie in der Seam (Regel S1); Undo stellt die alte Seam wieder her. Split und Knife
+  sind nicht Teil davon (Split Slice 4, Knife Slice 6); Delete und Dissolve siehe Slice 3c.
 - **Ablehnungen** (Statuszeile, kein History-Eintrag, Mesh und Auswahl unverändert; Reihenfolge wie geprüft):
   | Fall | Text |
   |---|---|
@@ -156,6 +157,36 @@ Symmetrie läuft `C` unverändert.
   `experiments/symmetry_lab/tests/test_app_lab_symmetric_connect.py`; zusätzlich ein Durchlauf aller Kantenpaare und Vertexpaare jeder +X-Face von `subd_cube` und `head_basemesh`
   (je Erfolg: Befund sauber, eine Undo-Stufe, Undo stellt das Mesh her; keine Ausnahme). Zahlen:
   [AD-SYM-03 §7, Implementation note 3b](../../docs/architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md).
+
+## Symmetrische Topologie, Slice 3c: Delete und Dissolve
+
+AD-SYM-03 Slice 3c (2026-10-08). **Artist-Verdikt: steht aus** (Praxis-Check B2b in `docs/ATELIER.md`). Mit gesetzter
+Symmetrie führen **Entf** (Delete), **Rücktaste** (Dissolve) und **Ctrl+Rücktaste** (Dissolve ohne Cleanup) in jedem
+Komponenten-Modus (Vertex, Edge, Face) **eine** koordinierte Operation auf beiden Seiten aus (Auswahl plus Partner, ein
+Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar ab und ändern nichts. Das gilt in
+**MARK wie in BLOCK**. Ohne Symmetrie laufen sie einseitig wie früher. Das Interim `INTERIM_ONE_SIDED` ist entfernt.
+
+- **Ablehnungen** (Statuszeile, kein History-Eintrag, Mesh, Seam und Auswahl unverändert): dieselben vier Texte wie bei
+  Connect (Ebene nicht achsparallel; Element ohne Spiegelpartner; Face von beiden Seiten getroffen im Vertex-/Edge-Modus;
+  Ergebnis nicht spiegelbildlich, D-strict, u. a. neben ungepaarter Geometrie) und ein neuer:
+
+  | Fall | Text |
+  |---|---|
+  | Dissolve (alle Varianten), das eine Face über der Ebene erzeugen oder eine Seam-Kante verbrauchen würde | `Symmetrie: Auflösen an der Seam wird noch nicht unterstützt (Seam-Kante oder -Vertex würde aufgelöst) — nichts geändert; abseits der Seam arbeiten oder Symmetrie ausschalten (Shift+S)` |
+
+  Die bestehenden Texte „nichts ausgewählt“ und „kein Variant im Vertex-Modus“ (Ctrl+Rücktaste) bleiben.
+- **Naht bei Delete (A1 Fall 1 = M, Manu):** Die Naht verschwindet nur, wo die angrenzenden Faces weg sind. Seam-Kanten,
+  die nach dem Löschen nicht mehr existieren, werden in derselben Transaktion aus der Definition gestrichen; der HUD
+  bleibt `valid`, Undo stellt die alte Naht wieder her. Gilt in allen drei Modi, also auch, wenn du eine Seam-Kante oder
+  einen Seam-Vertex selbst löschst (Annahme über Fall 1 hinaus, von Manu nicht bestätigt); wäre das Ergebnis danach
+  unvollständig, lehnt die Delta-Prüfung ab.
+- **Naht bei Dissolve (A1 Fall 2 = UNKNOWN, Engineering-Interim R):** verweigert mit dem Text oben, bis Manu entscheidet.
+- **Auswahl danach:** Delete und Vertex-/Edge-Dissolve leeren die Auswahl (der Modus bleibt, wie bisher). Face Dissolve
+  wählt die verschmolzenen Faces auf der Seite, auf der die Auswahl lag, bei bewusst beidseitiger Auswahl beider Seiten
+  (derselbe Helfer wie bei Edge Connect; **Engineering-Standard**, von Manu nicht bestätigt).
+- **Headless nachgemessen** (nicht Praxis): `tests/test_symmetric_removal.py`,
+  `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`; Zahlen und die Durchläufe aller Elemente der Assets:
+  [AD-SYM-03 §7, Implementation note 3c](../../docs/architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md).
 
 ## Re-Symmetrize (M / M / Esc)
 

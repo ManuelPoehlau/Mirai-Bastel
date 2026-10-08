@@ -244,6 +244,20 @@ def seam_after_split(
     return SymmetryDefinition(definition.plane_point, definition.plane_normal, frozenset(seam))
 
 
+def seam_without_dead_ids(mesh: Mesh) -> SymmetryDefinition:
+    """Seam rule for Delete (AD-SYM-03 §6 A1 Case 1 = M): seam edge ids that no longer exist in
+    `mesh` are dropped, the seam disappears only where its faces are gone. Edge ids are never
+    reused (AD-001), so "no longer valid" is exact. Returns a new definition (the same one if
+    nothing died); the caller writes it inside the transaction that removed the edges."""
+    definition = mesh.symmetry_definition
+    if definition is None:
+        raise ValueError("seam_without_dead_ids needs mesh.symmetry_definition")
+    alive = frozenset(e for e in definition.seam_edges if mesh.is_valid_edge(e))
+    if alive == definition.seam_edges:
+        return definition
+    return SymmetryDefinition(definition.plane_point, definition.plane_normal, alive)
+
+
 # ---------------------------------------------------------------------------------------------
 # Completeness report and delta check
 # ---------------------------------------------------------------------------------------------

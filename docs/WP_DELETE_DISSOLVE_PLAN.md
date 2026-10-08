@@ -268,9 +268,14 @@ Tasten als pyglet-Events. Ergebnis:
   Face mehr hängt, werden entfernt; Kanten, die noch von anderen Faces gebraucht werden, nicht. "Eine Kante, die
   sinnlos in der Luft schwebt, kommt weg." Umgesetzt (Punkt 4, §0.2.3). Folge: Delete des Mittel-Vertex im 2×2-Grid
   entfernt alles, weil keine Kante mehr an einer Face hängt; im 3×3-Grid bleiben die Ring-Kanten zu den Nachbar-Faces.
-- **DD-2 — Symmetrie.** Laut Plan ausdrücklich nicht in scope. Delete/Dissolve spiegeln nicht. Das BLOCK-Gate des
-  Symmetry Labs (`unsupported_commands`) kennt die drei neuen Commands nicht. Unter Symmetrie wirken sie im Lab
-  deshalb einseitig. Gehört in die Symmetrie-Folgefrage (Entfernungs-Research §9); hier nicht angefasst.
+- **DD-2 — Symmetrie. Geschlossen (2026-10-08, AD-SYM-03 Slice 3c).** Laut Plan ausdrücklich nicht in scope; unter
+  Symmetrie wirkten die drei Commands im Lab deshalb einseitig (akzeptiertes Interim, Manu, 2026-10-06). Seit Slice 3c
+  laufen Delete, Dissolve und Dissolve ohne Cleanup unter gesetzter Symmetrie koordiniert (beide Seiten, ein
+  Undo-Schritt, in MARK wie in BLOCK): `src/mirai/symmetric_ops.py` (`coordinate_removal`), Deklarationen in
+  `src/mirai/symmetry_declarations.py`, `INTERIM_ONE_SIDED` ist aus dem Lab entfernt. Nahtfälle: Delete lässt die Naht
+  mit dem Mesh gehen (A1 Fall 1 = M, Manu), Dissolve an der Naht wird sichtbar verweigert (A1 Fall 2, Engineering-
+  Interim bis zu Manus Entscheidung). Ohne Symmetrie ändert sich nichts; `apply_removal` ist unverändert.
+  Siehe [AD-SYM-03 §7](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md).
 - **DD-3 — Vertex-Dissolve und Umbindung.** Wie im Plan hängt die Vertex-Dissolve-Operation am Command "mit
   Cleanup" (`Dissolve`); `DissolveNoCleanup` bewirkt im Vertex-Modus nichts. Werden die beiden Varianten per
   `keymap.json` getauscht, wandert Vertex-Dissolve mit auf Ctrl+Rücktaste. Alternative: Beide Commands lösen im

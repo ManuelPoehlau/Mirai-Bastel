@@ -29,7 +29,7 @@ unverändert durch `Application`. Das Lab ergänzt nur
   Vergleich erreichbar.
 
 - (AD-SYM-03 Slice 3a, H2-Amendment G-2 vom 2026-10-08) die BLOCK-Zeile als
-  fail-closed Allow-List, abgeleitet aus `NON_OPERATION`, `INTERIM_ONE_SIDED` und den
+  fail-closed Allow-List, abgeleitet aus `NON_OPERATION` und den
   Deklarationen (`mirai.symmetry_declarations`, H2-R4 (h)), samt
   `refused_contexts` je nicht deklariertem C-Kontext; `e5_warning_text` liest
   dieselben Deklarationen. Das Lab ruft weder `resolve_c_context` noch
@@ -163,12 +163,6 @@ NON_OPERATION = frozenset(
     }
 )
 
-#: Akzeptiertes Interim (Manu, 2026-10-06; entfernt in Slice 3c): Delete, Dissolve und
-#: DissolveNoCleanup laufen unter Symmetrie + BLOCK einseitig, bis ihre Koordinatoren
-#: existieren. Weder Deklaration noch Auslassung — sonst würde die Allow-List sie ohne
-#: Deklaration ablehnen und das Interim still beenden. Slice 3c löscht diese Konstante.
-INTERIM_ONE_SIDED = frozenset({cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP})
-
 
 class GateMode(Enum):
     """E5-Modus (Lab-Zustand). Default BLOCK seit Slice 5 (Artist-Verdikt KEEP-BLOCK,
@@ -281,7 +275,7 @@ ROW_SYMMETRY_OFF = GateRow("Symmetrie aus (E5-Modus egal)", None)
 #: Slice 4: ersetzt die Slice-1b-Zeile „C abgelehnt". C und W/E/R laufen; ein
 #: einseitiger Lauf wird im HUD markiert (`e5_warning_text`).
 ROW_MARK = GateRow("Symmetrie an, E5 MARK: C und W/E/R laufen, HUD warnt", None)
-_BLOCK_STATE = "Symmetrie an, E5 BLOCK (Default; fail-closed: nur NON_OPERATION, Deklarationen, INTERIM_ONE_SIDED)"
+_BLOCK_STATE = "Symmetrie an, E5 BLOCK (Default; fail-closed: nur NON_OPERATION und Deklarationen)"
 #: Slice 3: dominiert jede andere Zeile, solange die Vorschau offen ist (H2-R2, N2).
 ROW_PREVIEW = GateRow(
     "Re-Symmetrize-Vorschau offen (Slice 3)",
@@ -292,10 +286,10 @@ ROW_PREVIEW = GateRow(
 
 def block_row() -> GateRow:
     """Die BLOCK-Zeile, bei jedem Aufruf neu aus den Deklarationen abgeleitet (H2-Amendment
-    G-2, § Proposal 2) — fail-closed: was weder in `NON_OPERATION` noch deklariert noch im
-    Interim steht, wird sichtbar abgelehnt (`BLOCK_NOT_ALLOWED_TEXT`), nie still einseitig.
+    G-2, § Proposal 2) — fail-closed: was weder in `NON_OPERATION` noch deklariert ist, wird
+    sichtbar abgelehnt (`BLOCK_NOT_ALLOWED_TEXT`), nie still einseitig.
 
-    allowed          = NON_OPERATION ∪ INTERIM_ONE_SIDED
+    allowed          = NON_OPERATION
                        ∪ deklarierte Removal-Commands
                        ∪ {Connect}, wenn mindestens ein C-Kontext deklariert ist
                        ∪ Transform-Commands mit `supports_symmetry`
@@ -305,7 +299,7 @@ def block_row() -> GateRow:
     Nur eine Funktion der Deklarationen und der `supports_symmetry`-Flags; gleiche Eingaben →
     gleiche (`==`) Zeile, so vergleicht `sync_gate`."""
     declared_contexts = declarations.declared_c_contexts()
-    allowed = set(NON_OPERATION | INTERIM_ONE_SIDED | declarations.declared_removal_commands())
+    allowed = set(NON_OPERATION | declarations.declared_removal_commands())
     allowed.update(command for command in TRANSFORM_OPERATIONS if supports_symmetry(command))
     if declared_contexts:
         allowed.add(cmd.CONNECT)
@@ -384,10 +378,6 @@ def startup_listing() -> list[str]:
     lines.append(
         "NON_OPERATION (BLOCK lässt immer durch, AD-013 H2-Amendment 2026-10-08): "
         + ", ".join(sorted(NON_OPERATION))
-    )
-    lines.append(
-        "INTERIM_ONE_SIDED (accepted interim, Manu 2026-10-06; removed in slice 3c): "
-        + ", ".join(sorted(INTERIM_ONE_SIDED))
     )
     contexts = declarations.declared_c_contexts()
     removal = declarations.declared_removal_commands()

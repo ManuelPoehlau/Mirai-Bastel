@@ -2,24 +2,25 @@
 (AD-SYM-03 Slice 3a; AD-013, Addendum „2026-10-08, H2-Amendment G-2").
 
 Headless über `lab_key_press` und die öffentlichen Einstiege von `Application`. Die echte
-Deklarationstabelle (`mirai.symmetry_declarations`) trägt seit 3b Edge und Vertex Connect; wo ein
+Deklarationstabelle (`mirai.symmetry_declarations`) trägt seit 3b Edge und Vertex Connect, seit 3c
+Delete, Dissolve und DissolveNoCleanup; wo ein
 anderer Kontext oder Befehl gebraucht wird oder der Zustand „nichts deklariert“ (3a), patcht `declare`
 sie. Die Tests der echten Koordinatoren stehen in `test_app_lab_symmetric_connect.py`.
 
 Benannte Tests des Amendments (die IDs stehen in den Testnamen):
 
-- T-FC1  fail-closed: jeder Befehl außerhalb von `NON_OPERATION`, Deklarationen, Interim,
+- T-FC1  fail-closed: jeder Befehl außerhalb von `NON_OPERATION`, Deklarationen,
          Transform-Allow-List wird sichtbar abgelehnt (inkl. der sechs unverdrahteten)
 - T-FC2  jeder `NON_OPERATION`-Befehl verhält sich wie bei Symmetrie aus
 - T-FC3  die Zeile ist eine Funktion der Deklarationen (und der `supports_symmetry`-Flags)
 - T-FC4  `C` über das Lab: deklarierter Kontext läuft, undeklarierter wird benannt abgelehnt,
          dasselbe Gate-Objekt vor und nach jedem Druck (keine Zeile pro Taste)
 - T-FC5  MARK: die Knife-Warnzeile steht genau, solange KNIFE undeklariert ist
-- T-R1d+ die Start-Liste nennt `refused_contexts`, `NON_OPERATION`, `INTERIM_ONE_SIDED`
+- T-R1d+ die Start-Liste nennt `refused_contexts`, `NON_OPERATION`, die Deklarationen (kein Interim mehr)
 - T-R2h+ die installierte Zeile samt `refused_contexts` folgt Undo/Redo
 
-T-R4a+ steht in `test_app_lab_boundary.py`. Zusätzlich: das Interim (Delete/Dissolve laufen
-einseitig unter Symmetrie + BLOCK) und seine Sichtbarkeit.
+T-R4a+ steht in `test_app_lab_boundary.py`. Zusätzlich: das Interim ist beendet (Slice 3c) —
+Delete/Dissolve sind deklariert, ohne Deklaration lehnt BLOCK sie sichtbar ab.
 """
 
 from __future__ import annotations
@@ -35,7 +36,6 @@ from mirai.topology.contextual_c import CContext
 from symmetry_lab.lab_app import (
     BLOCK_NOT_ALLOWED_TEXT,
     CONTEXT_NAMES,
-    INTERIM_ONE_SIDED,
     KNIFE_ONE_SIDED_TEXT,
     NON_OPERATION,
     ROW_MARK,
@@ -152,7 +152,6 @@ def refused_by_the_row() -> list[str]:
     prüft den leeren Zustand)."""
     spared = (
         NON_OPERATION
-        | INTERIM_ONE_SIDED
         | declarations.declared_removal_commands()
         | frozenset(TRANSFORM_OPERATIONS)
         | ({cmd.CONNECT} if declarations.declared_c_contexts() else set())
@@ -174,13 +173,13 @@ def test_t_fc1_the_refused_set_contains_the_six_unwired_commands():
     assert {cmd.EDGE_LOOP, cmd.EDGE_RING} <= refused  # bewusst nicht in NON_OPERATION
     assert cmd.CONNECT not in refused  # seit 3b deklariert: pro Kontext, nicht per Identität
     assert not refused & NON_OPERATION
-    assert not refused & INTERIM_ONE_SIDED
+    assert not refused & {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}  # seit 3c deklariert
 
 
 @pytest.mark.parametrize("command", refused_by_the_row())
 def test_t_fc1_unlisted_commands_are_refused_visibly_under_block(command):
     """Symmetrie an, BLOCK: ein per User-Binding auf GLOBAL gelegter Befehl außerhalb von
-    NON_OPERATION/Deklarationen/Interim → `lab_key_press` False, Status gepostet
+    NON_OPERATION/Deklarationen → `lab_key_press` False, Status gepostet
     (`status_serial` + 1), Mesh, History und Auswahl unverändert, Gate dasselbe Objekt."""
     app, lab = symmetric_lab()
     assert app.bindings.command_for(USER_KEY) is None
@@ -275,26 +274,42 @@ def test_t_fc2_non_operation_commands_behave_as_with_symmetry_off():
 # == Interim =====================================================================================
 
 
-@pytest.mark.parametrize(
-    "key",
-    [Input("key", "delete"), Input("key", "backspace"), Input("key", "backspace", frozenset({"ctrl"}))],
-    ids=["delete", "dissolve", "dissolve_no_cleanup"],
-)
-def test_interim_removal_commands_still_run_one_sided_under_block(key):
-    """Akzeptiertes Interim (Manu, 2026-10-06): Delete/Dissolve/DissolveNoCleanup laufen unter
-    Symmetrie + BLOCK weiter, bis Slice 3c ihre Koordinatoren bringt — nicht abgelehnt."""
-    app, lab = symmetric_lab()
-    assert INTERIM_ONE_SIDED == {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}  # bis Slice 3c
+REMOVAL_KEYS = [
+    Input("key", "delete"),
+    Input("key", "backspace"),
+    Input("key", "backspace", frozenset({"ctrl"})),
+]
+
+
+def test_the_interim_is_gone_and_the_removal_commands_are_declared():
+    """Slice 3c: `INTERIM_ONE_SIDED` existiert nicht mehr; Delete, Dissolve und DissolveNoCleanup
+    stehen in den Deklarationen und damit in der Allow-List der BLOCK-Zeile."""
+    import symmetry_lab.lab_app as lab_app
+
+    assert not hasattr(lab_app, "INTERIM_ONE_SIDED")
+    removal = {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}
+    assert declarations.declared_removal_commands() == removal
     gate = block_row().gate
-    assert all(gate.refusal(command) is None for command in INTERIM_ONE_SIDED)
+    assert removal <= gate.allowed
+    assert all(gate.refusal(command) is None for command in removal)
+
+
+@pytest.mark.parametrize("key", REMOVAL_KEYS, ids=["delete", "dissolve", "dissolve_no_cleanup"])
+def test_removal_commands_without_a_declaration_are_refused_visibly_under_block(monkeypatch, key):
+    """Fail-closed (T-FC1) auch für die drei: ohne Deklaration lehnt BLOCK sie mit dem generischen
+    Text ab, nichts ändert sich — nie still einseitig."""
+    declare(monkeypatch, contexts=list(CONTEXT_NAMES))
+    app, lab = symmetric_lab()
     a, b, c, d = _plus_x_quad(app)
     app.selection.clear()
     app.selection.mode = SelectionMode.EDGE
     app.selection.edges = {_edge_between(app, a, b)}
+    before = snapshot(app)
     serial = app.status_serial
-    press(app, lab, key)
-    assert app.status_message not in (BLOCK_NOT_ALLOWED_TEXT, block_text("C"))
-    assert app.status_serial > serial  # die App hat geantwortet (Ergebnis oder eigener Hinweis)
+    assert press(app, lab, key) is False
+    assert app.status_message == BLOCK_NOT_ALLOWED_TEXT
+    assert app.status_serial == serial + 1
+    assert snapshot(app) == before
 
 
 # == T-FC3 =======================================================================================
@@ -304,7 +319,7 @@ def test_t_fc3_row_with_no_declarations(monkeypatch):
     declare(monkeypatch)
     gate = block_row().gate
     assert dict(gate.refused) == {cmd.CONNECT: block_text("C")}
-    assert gate.allowed == NON_OPERATION | INTERIM_ONE_SIDED | frozenset(TRANSFORM_OPERATIONS)
+    assert gate.allowed == NON_OPERATION | frozenset(TRANSFORM_OPERATIONS)
     assert cmd.CONNECT not in gate.allowed
     assert gate.not_allowed_text == BLOCK_NOT_ALLOWED_TEXT
     assert dict(gate.refused_contexts) == {
@@ -520,7 +535,7 @@ def test_t_fc5_immediate_undeclared_operations_get_no_warning_line():
 # == T-R1d+ ======================================================================================
 
 
-def test_t_r1d_plus_listing_has_contexts_non_operation_and_interim(monkeypatch):
+def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypatch):
     lines = startup_listing()
     text = "\n".join(lines)
     for row in gate_rows():
@@ -535,20 +550,17 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_interim(monkeypatch):
     for command in NON_OPERATION:
         assert command in non_operation
     assert cmd.EDGE_LOOP not in non_operation and cmd.EDGE_RING not in non_operation
-    interim = next(line for line in lines if line.startswith("INTERIM_ONE_SIDED"))
-    assert "accepted interim, Manu 2026-10-06; removed in slice 3c" in interim
-    for command in INTERIM_ONE_SIDED:
-        assert command in interim
+    assert "INTERIM_ONE_SIDED" not in text  # Slice 3c: das Interim ist beendet
     declarations_line = next(line for line in lines if line.startswith("Deklarationen"))
     assert "C-Kontexte Edge Connect, Vertex Connect" in declarations_line
-    assert "Removal keine" in declarations_line
+    assert "Removal Delete, Dissolve, DissolveNoCleanup" in declarations_line
     assert "C-Kontext Edge Connect abgelehnt" not in text  # deklariert (3b)
     assert "C-Kontext Vertex Connect abgelehnt" not in text
 
     declare(monkeypatch)  # nichts deklariert: die Liste folgt den Deklarationen
     empty = "\n".join(startup_listing())
     assert "C-Kontext Edge Connect abgelehnt" in empty and "C-Kontext Vertex Connect abgelehnt" in empty
-    assert "C-Kontexte keine" in empty
+    assert "C-Kontexte keine" in empty and "Removal keine" in empty
 
 
 # == T-R2h+ ======================================================================================

@@ -27,6 +27,7 @@ from core import SelectionMode
 from core.mesh import SymmetryDefinition
 from mirai import symmetric_ops, symmetry_declarations
 from mirai.application import Application
+from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.symmetric_ops import (
     TEXT_BOTH_SIDES_FACE,
@@ -154,14 +155,18 @@ def assert_clean(mesh) -> None:
 # -- declarations and layering -----------------------------------------------------------------
 
 
-def test_declarations_hold_exactly_the_two_connect_coordinators():
+def test_declarations_hold_exactly_the_connect_and_removal_coordinators():
     table = symmetry_declarations.C_CONTEXT_COORDINATORS
     assert dict(table) == {
         CContext.EDGE_CONNECT: coordinate_edge_connect,
         CContext.VERTEX_CONNECT: coordinate_vertex_connect,
     }
     assert CContext.SPLIT not in table and CContext.KNIFE not in table  # slices 4 and 6
-    assert dict(symmetry_declarations.REMOVAL_COORDINATORS) == {}  # slice 3c
+    assert dict(symmetry_declarations.REMOVAL_COORDINATORS) == {  # slice 3c
+        cmd.DELETE: symmetric_ops.coordinate_delete,
+        cmd.DISSOLVE: symmetric_ops.coordinate_dissolve,
+        cmd.DISSOLVE_NO_CLEANUP: symmetric_ops.coordinate_dissolve_no_cleanup,
+    }
     with pytest.raises(TypeError):
         table[CContext.SPLIT] = coordinate_edge_connect  # type: ignore[index]
 

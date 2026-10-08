@@ -810,7 +810,8 @@ follows in AD-SYM-03 slice 3; until it lands, nothing in `src` or the Lab has ch
 *Update 2026-10-08:* slice 3 is cut in two. **Slice 3a landed the gate side and the Lab side of this
 amendment** (§ Implementation note 2026-10-08 at the end of this addendum); the sentence "nothing in `src`
 or the Lab has changed" is obsolete from that date. **Slice 3b landed 2026-10-08** (Edge and Vertex Connect
-coordinators; § Implementation note 2026-10-08, slice 3b); slice 3c (Delete/Dissolve) follows.
+coordinators; § Implementation note 2026-10-08, slice 3b). **Slice 3c landed 2026-10-08** (Delete, Dissolve and
+DissolveNoCleanup coordinators; the accepted interim ended; § Implementation note 2026-10-08, slice 3c).
 **Basis:** [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) (DECIDED, Manu, 2026-10-08) §2.5,
 §3 item 7, §5 (row "AD-013 H2"), §7 slice 3. The direction is decided there: declaration per resolved
 operation (D-b), a fail-closed BLOCK row, and a context-keyed refusal for `C` with G-2 as the proposed
@@ -1174,7 +1175,7 @@ Slice 3b filled the first declarations. Nothing here changes the decision.
 
 - **Declarations are filled.** `symmetry_declarations.C_CONTEXT_COORDINATORS` maps `CContext.EDGE_CONNECT` and
   `CContext.VERTEX_CONNECT` to `coordinate_edge_connect` / `coordinate_vertex_connect`
-  (`src/mirai/symmetric_ops.py`); Split and Knife are undeclared; `REMOVAL_COORDINATORS` stays empty (slice 3c).
+  (`src/mirai/symmetric_ops.py`); Split and Knife are undeclared; `REMOVAL_COORDINATORS` stays empty (slice 3c; filled there, see the note below).
   The module now imports the coordinators, as the amendment foresaw ("the entry is the implementation"); the
   dependency direction is `symmetric_ops` → `symmetry_coordination`, `mirai.topology`, `core`, never `application`.
 - **Derived Lab row, no hand edit.** `block_row()` now has `Connect` in `allowed`, `refused` empty, and
@@ -1191,3 +1192,24 @@ Slice 3b filled the first declarations. Nothing here changes the decision.
   (`declare(monkeypatch)`, now in `_app_lab_support.py`, which keeps the real coordinator for a patched
   Edge/Vertex Connect so `Application` can call it) or expect the new named texts (`C` with an empty selection
   is the Knife context, `C` with one edge the Split context). New: `test_app_lab_symmetric_connect.py`.
+
+### Implementation note (2026-10-08, AD-SYM-03 slice 3c)
+
+Slice 3c filled the removal declarations and ended the accepted interim. Nothing here changes the decision.
+
+- **Removal declarations are filled, per command.** `symmetry_declarations.REMOVAL_COORDINATORS` maps `Delete`,
+  `Dissolve` and `DissolveNoCleanup` to `coordinate_delete` / `coordinate_dissolve` / `coordinate_dissolve_no_cleanup`
+  (`src/mirai/symmetric_ops.py`, all three over `coordinate_removal`). Each coordinates in every component mode
+  (vertex, edge, face), so the "Removal" assumption of this amendment held and no command stayed undeclared (G-9 not
+  used; the mode is a runtime argument of the coordinator, not part of the key). `Application._removal_command`
+  reads the table at call time and runs the coordinator inside its one `_mesh_transaction` whenever a definition is
+  set, in MARK as in BLOCK ("Runtime refusals are not G-3"); without a definition the unchanged `apply_removal` runs.
+- **The interim is ended.** `INTERIM_ONE_SIDED` is deleted from `lab_app.py` together with everything that printed or
+  tested it (start-up line, docstring, `block_row()` allow-list term). `allowed` is now `NON_OPERATION` ∪ declared
+  removal commands ∪ {`Connect`} (any C context declared) ∪ transforms with `supports_symmetry`. With no removal
+  declaration the three commands fall to `BLOCK_NOT_ALLOWED_TEXT` (fail-closed, tested by patching the table empty): the
+  deviation recorded in the slice 3a note is gone with the constant it was about.
+- **Test changes this legitimately caused.** `test_app_lab_fail_closed.py`: the interim test became "the interim is gone
+  and the three are declared" plus "undeclared → refused visibly under BLOCK"; T-FC3 with no declaration now expects
+  `NON_OPERATION | transforms`; the start-up listing test expects `Removal Delete, Dissolve, DissolveNoCleanup` and no
+  `INTERIM_ONE_SIDED`. New: `test_app_lab_symmetric_removal.py` (Lab end to end) and `tests/test_symmetric_removal.py`.

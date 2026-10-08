@@ -1,6 +1,7 @@
-"""Symmetric topology coordinators (AD-SYM-03 §3, slice 3b): Edge Connect and Vertex Connect.
+"""Symmetric topology coordinators (AD-SYM-03 §3, slices 3b/3c): Edge Connect, Vertex Connect, and
+the removal commands Delete, Dissolve and Dissolve (no cleanup).
 
-A coordinator is a pure mutation `coordinate_*(mesh, canonical_selection) -> result` for the
+A coordinator is a pure mutation `coordinate_*(mesh, selection[, mode]) -> result` for the
 unchanged `apply_*` function of `mirai.topology`: expand the (already canonical, one-sided)
 selection with its partners, refuse what cannot be mirrored, call `apply_*` **once** on the union
 (M-a style 1), maintain the seam (S1), and check the completeness delta (D-strict). It pushes
@@ -14,14 +15,14 @@ Order: plane first (the partner relation is meaningless off an exact plane), the
 selection, then both-sides faces, then — after the op — the delta.
 
 Dependency direction: `symmetric_ops` -> `mirai.symmetry_coordination`, `mirai.topology`, `core`;
-never `application`. `mirai.symmetry_declarations` maps `CContext` to these functions.
+never `application`. `mirai.symmetry_declarations` maps `CContext` and the removal commands to these functions.
 """
 
 from __future__ import annotations
 
 from typing import Callable, Iterable
 
-from core import EdgeId, VertexId
+from core import EdgeId, FaceId, SelectionMode, VertexId
 from core.mesh import Mesh, SymmetryDefinition
 
 from .symmetry_coordination import (
@@ -31,12 +32,15 @@ from .symmetry_coordination import (
     delta_check,
     element_side,
     expand_edges,
+    expand_faces,
     expand_vertices,
     is_exact_plane,
     seam_after_split,
+    seam_without_dead_ids,
 )
 from .topology.connect_per_face import EdgeConnectResult, apply_connect_edges
 from .topology.connect_vertices_per_face import apply_connect_vertices
+from .topology.delete_dissolve import apply_removal
 
 #: Refusal texts (visible status line, each says what to do). The Lab README lists them.
 TEXT_NON_EXACT_PLANE = (
@@ -54,6 +58,10 @@ TEXT_BOTH_SIDES_FACE = (
 TEXT_DELTA = (
     "Symmetrie: Ergebnis wäre nicht spiegelbildlich (neue Elemente ohne Partner) — nichts "
     "geändert; an einer Stelle mit Partner arbeiten oder Symmetrie ausschalten (Shift+S)"
+)
+TEXT_SEAM_DISSOLVE = (
+    "Symmetrie: Auflösen an der Seam wird noch nicht unterstützt (Seam-Kante oder -Vertex würde "
+    "aufgelöst) — nichts geändert; abseits der Seam arbeiten oder Symmetrie ausschalten (Shift+S)"
 )
 
 
@@ -170,3 +178,67 @@ def coordinate_vertex_connect(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> lis
 
     _check_delta(before, mesh)
     return created
+
+
+# ---------------------------------------------------------------------------------------------
+# Removal: Delete, Dissolve, Dissolve (no cleanup) — slice 3c
+# ---------------------------------------------------------------------------------------------
+
+_REMOVAL_EXPANSION = {
+    SelectionMode.VERTEX: ("vertex", expand_vertices),
+    SelectionMode.EDGE: ("edge", expand_edges),
+    SelectionMode.FACE: (None, expand_faces),
+}
+
+
+def coordinate_removal(
+    mesh: Mesh, mode: SelectionMode, ids: Iterable, *, dissolve: bool, cleanup: bool
+) -> list[FaceId]:
+    """Delete / Dissolve of `ids` (elements of `mode`) and their partners, in one `apply_removal`
+    call. `ids` may hold one side or both (a mirror pair counts once, "explicit wins"); no
+    canonicalisation is needed because the union is the same.
+
+    Seam (AD-SYM-03 §6 A1; assumption beyond Case 1, not confirmed by Manu): **Delete** drops the
+    seam edge ids that no longer exist from the definition inside this mutation (M), the delta check
+    stays the guard — it refuses if a surviving vertex lost its seam. **Dissolve** that would create
+    a face spanning the plane or consume a seam edge is refused with `TEXT_SEAM_DISSOLVE` (R,
+    Case 2 is UNKNOWN for the Artist). `RemovalRefused` from Core propagates unchanged."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        raise SymmetryRefusal(TEXT_NON_EXACT_PLANE)
+    index = SymmetryIndex(mesh)
+    both_sides_mode, expand = _REMOVAL_EXPANSION[mode]
+    expansion = expand(index, ids)
+    if expansion.unpaired:
+        raise SymmetryRefusal(TEXT_UNPAIRED)
+    # Face mode relies on the delta check: a face holds no sub-elements that could be hit twice.
+    if both_sides_mode is not None and both_sides_faces(index, expansion, mode=both_sides_mode):
+        raise SymmetryRefusal(TEXT_BOTH_SIDES_FACE)
+    before = completeness_report(mesh, index)
+
+    new_faces = apply_removal(mesh, mode, set(expansion.union), dissolve=dissolve, cleanup=cleanup)
+    if not dissolve:
+        mesh.symmetry_definition = seam_without_dead_ids(mesh)
+
+    after = completeness_report(mesh)
+    result = delta_check(before, after)
+    if dissolve and (
+        after.self_mirrored_faces - before.self_mirrored_faces
+        or after.dead_seam_ids - before.dead_seam_ids
+    ):
+        raise SymmetryRefusal(TEXT_SEAM_DISSOLVE, result.violations)
+    if not result.ok:
+        raise SymmetryRefusal(TEXT_DELTA, result.violations)
+    return new_faces
+
+
+def coordinate_delete(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[FaceId]:
+    return coordinate_removal(mesh, mode, ids, dissolve=False, cleanup=False)
+
+
+def coordinate_dissolve(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[FaceId]:
+    return coordinate_removal(mesh, mode, ids, dissolve=True, cleanup=True)
+
+
+def coordinate_dissolve_no_cleanup(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[FaceId]:
+    return coordinate_removal(mesh, mode, ids, dissolve=True, cleanup=False)

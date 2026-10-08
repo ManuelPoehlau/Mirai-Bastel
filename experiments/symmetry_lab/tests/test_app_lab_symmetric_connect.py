@@ -105,9 +105,9 @@ def assert_clean(app) -> None:
 # -- die abgeleitete BLOCK-Zeile ---------------------------------------------------------------
 
 
-def test_the_real_declarations_are_edge_and_vertex_connect_only():
+def test_the_real_declarations_are_edge_and_vertex_connect_and_the_three_removals():
     assert declarations.declared_c_contexts() == {CContext.EDGE_CONNECT, CContext.VERTEX_CONNECT}
-    assert declarations.declared_removal_commands() == frozenset()
+    assert declarations.declared_removal_commands() == {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}
 
 
 def test_block_row_with_the_real_declarations_allows_connect_and_names_split_and_knife():

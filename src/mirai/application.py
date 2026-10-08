@@ -728,7 +728,16 @@ class Application:
         `MeshStateCommand` per success, mesh and history untouched on refusal
         or no-op. Residue (first default, refinement is material for the
         practice check): Face Dissolve selects the merged faces, everything
-        else clears the selection; the mode stays."""
+        else clears the selection; the mode stays.
+
+        With a symmetry definition set and the command declared
+        (`symmetry_declarations.REMOVAL_COORDINATORS`, AD-SYM-03 slice 3c) the
+        coordinator runs the removal on the selection and its partners inside
+        the same single transaction, in MARK as in BLOCK; a `SymmetryRefusal`
+        posts its text, records no history entry and leaves mesh and selection
+        untouched. Under symmetry Face Dissolve selects the merged faces on the
+        side(s) where the live selection had faces (`residue_sides`, engineering
+        default). Without a definition the unchanged `apply_removal` runs."""
         selection = self.selection
         mode = selection.mode
         ids = {
@@ -747,21 +756,38 @@ class Application:
             self._set_status("Dissolve (no cleanup): no variant in Vertex mode")
             return False
 
+        mesh = self.scene.mesh
+        coordinator = (
+            symmetry_declarations.REMOVAL_COORDINATORS.get(command)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        sides = (
+            residue_sides(mesh, selection.faces, mesh.face_vertices)
+            if coordinator is not None and dissolve and mode is SelectionMode.FACE
+            else None
+        )
+
+        def mutate(mesh) -> list[FaceId]:
+            if coordinator is not None:
+                return coordinator(mesh, mode, set(ids))
+            return apply_removal(mesh, mode, set(ids), dissolve=dissolve, cleanup=cleanup)
+
         def residue(new_faces) -> None:
             selection.clear()
             if dissolve and mode is SelectionMode.FACE:
-                selection.add(set(new_faces))
+                kept = set(new_faces)
+                if sides is not None:
+                    kept = on_residue_sides(mesh, kept, sides, mesh.face_vertices)
+                selection.add(kept)
 
         try:
-            outcome = self._mesh_transaction(
-                label,
-                lambda mesh: apply_removal(
-                    mesh, mode, set(ids), dissolve=dissolve, cleanup=cleanup
-                ),
-                on_applied=residue,
-            )
+            outcome = self._mesh_transaction(label, mutate, on_applied=residue)
         except RemovalRefused as exc:
             self._set_status(f"{label}: {exc}")
+            return False
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
             return False
         if not outcome.changed:
             self._set_status(f"{label}: nothing to do")
