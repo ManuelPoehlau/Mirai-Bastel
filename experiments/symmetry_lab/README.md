@@ -161,7 +161,7 @@ Symmetrie läuft `C` unverändert.
 ## Symmetrische Topologie, Slice 3c: Delete und Dissolve
 
 AD-SYM-03 Slice 3c (2026-10-08). **Artist-Verdikte (2026-10-08):** Auswahl nach Face Dissolve **KEEP**; A1 Fall 2 verfeinert
-(unten); Praxis-Check zur Nahtregel S2 steht aus (B2b in `docs/ATELIER.md`). Mit gesetzter
+(unten); Praxis-Check zur Nahtregel S2 bestanden, der verschwindende grüne Punkt **KEEP** (B2b in `docs/ATELIER.md`). Mit gesetzter
 Symmetrie führen **Entf** (Delete), **Rücktaste** (Dissolve) und **Ctrl+Rücktaste** (Dissolve ohne Cleanup) in jedem
 Komponenten-Modus (Vertex, Edge, Face) **eine** koordinierte Operation auf beiden Seiten aus (Auswahl plus Partner, ein
 Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar ab und ändern nichts. Das gilt in
@@ -184,7 +184,7 @@ Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar
 - **Naht bei Dissolve (A1 Fall 2 verfeinert, Manu 2026-10-08):** Eine Kante **direkt auf der Naht** aufzulösen bleibt
   verweigert (Text oben), weil eine Face ohne Naht übrig bliebe. Eine Kante, die die Naht **kreuzt** (ein Ende auf ihr),
   wird aufgelöst: die Naht verschwindet nicht, die zwei Seam-Kanten am aufgeräumten Seam-Vertex werden zu **einer**
-  (Nahtregel S2, Engineering; in derselben Transaktion, der grüne Punkt verschwindet, der HUD bleibt `valid`, Undo
+  (Nahtregel S2, Engineering, im Praxis-Check KEEP; in derselben Transaktion, der grüne Punkt verschwindet, der HUD bleibt `valid`, Undo
   stellt Mesh, Naht und Auswahl wieder her). Gilt auch für einen Loop über die Naht (Kanten auf beiden Seiten
   ausgewählt, auch mehrere Naht-Übergänge). **Ctrl+Rücktaste** (ohne Cleanup) lässt die Naht unverändert. Jede andere
   verbrauchte Seam-Kante und jede neue Face über der Ebene bleibt verweigert. **Entf** auf einer Seam-Kante bleibt

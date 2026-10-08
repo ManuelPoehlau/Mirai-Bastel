@@ -579,6 +579,10 @@ kills a seam id by merging, so its behaviour is unchanged. Details and measureme
 Question to Manu (practical test, `docs/ATELIER.md` B2b): is the vanishing of the green seam point when a crossing
 edge is dissolved acceptable — KEEP / ITERATE / UNKNOWN?
 
+*Artist verdict (Manu, 2026-10-08, S2 practical test):* the practical test **passed**; step 1 (the green seam point
+vanishes when an edge crossing the seam is dissolved, two seam edges become one): **KEEP.** Seam rule S2 is therefore
+Artist-confirmed behaviour; the warning idea above stays not decided.
+
 ### A2 — `C` with a two-sided explicit selection (≤ 5 min) — observation runnable today, comparison after slice 4
 
 1. (`head_basemesh`) **Shift+B** → `E5-Modus: MARK` (under BLOCK `C` is refused). **2** (Edge mode). Click an edge
@@ -671,7 +675,7 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
 **Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
-after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c practical test answered in part, §6 second round; S2 awaits its practical test). Slice 4 follows
+after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c practical test answered, §6 second round; S2 practical test passed, step 1 KEEP, 2026-10-08). Slice 4 follows
 slice 3. Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
 
 The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
