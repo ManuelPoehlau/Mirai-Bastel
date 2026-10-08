@@ -9,7 +9,7 @@ marked *(reading)*, open points end up in §5.
 
 - `influence.py`, `weighted_ops.py`, `probe_cost.py`, `tests/` (96 tests) — see `README.md`.
 - Suite: `python -m pytest experiments/soft_selection/tests` → **96 passed** (Linux container,
-  Python 3.13 and Python 3.9). Windows not run here; paths use `pathlib`, probe output is ASCII.
+  Python 3.13 and Python 3.9). On Windows only the probe was run (reference PC, §2.1), not the suite.
 - Production regression: `pytest tests --ignore=tests/test_extrude_tool.py` → **1867 passed**,
   `pytest experiments/symmetry_lab/tests` → **363 passed** (container needed `pytest`, `pyglet`
   and `libegl1` installed to reproduce the baseline; no `src/` file changed).
@@ -57,6 +57,49 @@ Observations:
   all vertices once (O(V), with a seed-bounding-box reject).
 - N5. Not measured here: viewport sync, buffer upload, drawing, picking. The Symmetry Lab probe
   showed those dominate a drag on the app path; S1 numbers are only the operation's share.
+
+### 2.1 Reference PC run (Manu, 2026-10-08)
+
+Windows 10 (19045), Intel Core 2 Quad Q9550 @ 2.83 GHz (4 logical cores), Python 3.14.2.
+
+```
+Asset head_basemesh: 326 vertices, bounding radius 3.3717, seeds 5 (vertex 286 + one-ring), 60 update steps per gesture
+  radius          metric     influence_ms  influenced  move_ms  rotate_ms  scale_ms  core_move_ms
+    5%   0.1686  euclidean         0.591           9    0.013      0.058     0.038         0.017
+    5%   0.1686  geodesic          0.631           9    0.013      0.055     0.037         0.017
+   15%   0.5058  euclidean         2.246          36    0.048      0.216     0.189         0.062
+   15%   0.5058  geodesic          1.150          30    0.045      0.177     0.155         0.058
+   30%   1.0115  euclidean         4.659          68    0.093      0.431     0.370         0.118
+   30%   1.0115  geodesic          1.847          61    0.082      0.359     0.317         0.109
+
+Asset man_with_shoes_basemesh: 928 vertices, bounding radius 1.0005, seeds 4 (vertex 121 + one-ring), 60 update steps per gesture
+  radius          metric     influence_ms  influenced  move_ms  rotate_ms  scale_ms  core_move_ms
+    5%   0.0500  euclidean         1.131          18    0.025      0.110     0.088         0.032
+    5%   0.0500  geodesic          1.472          10    0.015      0.060     0.046         0.019
+   15%   0.1501  euclidean         4.289          76    0.110      0.458     0.403         0.130
+   15%   0.1501  geodesic          1.980          28    0.039      0.180     0.149         0.049
+   30%   0.3002  euclidean         5.476         112    0.156      0.673     0.608         0.195
+   30%   0.3002  geodesic          4.385         107    0.141      0.646     0.580         0.181
+```
+
+- R1. Per-update cost: at most 0.67 ms (Rotate, body, 30 %). The update columns are about 3–5x the
+  container. Weighted Move stays at or below the plain Core Move on the same vertex set, as in the container.
+- R2. Influence (once per gesture): at most 5.5 ms (euclidean, body, 30 %). This is 8–35x the container,
+  much more than the update columns. On the head, euclidean is *slower* than geodesic at 15/30 %;
+  in the container (also under Python 3.14.6) it is the other way round.
+- R3. The euclidean time grows linearly with the number of `math.dist` calls in `_euclidean_distances`
+  (vertices inside the seed bounding box × seeds, counted in the container on the same assets): head
+  55 / 225 / 455 calls → 0.59 / 2.25 / 4.66 ms, body 92 / 404 / 520 → 1.13 / 4.29 / 5.48 ms, i.e.
+  ~10 µs per call on the reference PC vs ~0.2 µs in the container. The geodesic column fits the same
+  per-call cost (one `math.dist` per edge relaxation) plus the one-off adjacency pass.
+  The update path calls no `math.dist`, and its columns scale normally.
+- R4. *(reading, unverified)* A candidate cause is `math.dist` on this CPU/Python build. The Q9550
+  has no FMA instructions, and a software-emulated `fma()` in the C runtime would cost microseconds per
+  call. Not confirmed: needs a micro-benchmark on the reference PC (`math.dist` vs
+  `math.sqrt(dx*dx + dy*dy + dz*dz)`).
+- R5. *(reading)* Against the Symmetry Lab threshold (whole mouse move p95 ≤ 8 ms, which includes viewport
+  work), the operation's share per update is ≤ 0.67 ms on the reference PC. The influence computation is a
+  one-off ≤ 5.5 ms at gesture start for these radii. The viewport share of a soft drag is still unmeasured (N5).
 
 ## 3. Observations — metrics, curves, scale formulas
 
@@ -207,8 +250,9 @@ Also: `Mesh.vertex_edges()` is avoided for cost reasons (N4), not for privacy.
 7. **Changing rotation axis** mid-gesture (L4): does any tool do it? If not, should the contract
    say constant axis?
 8. **Symmetry combination** (refused here, E9): mirrored influence, seam vertices with `w < 1`.
-9. **Cost on the reference PC** — the probe run from the README is outstanding; plus the viewport
-   share of a soft drag (N5) needs the app path.
+9. **Cost on the reference PC**: probe run recorded (§2.1). Open: confirm or refute the `math.dist`
+   cost (R3/R4) before choosing a metric on cost grounds; the viewport share of a soft drag (N5)
+   needs the app path.
 10. Is a tolerance-free radius-0 identity (L3) still required once the pivot comes from the tool
     (default-pivot summation order)?
 
