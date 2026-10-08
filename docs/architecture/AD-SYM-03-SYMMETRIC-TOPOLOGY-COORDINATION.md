@@ -472,7 +472,7 @@ face after A1 case 2.
 **Order:** this AD needs AD-SYM-01/02 as they are; the H2 amendment and the A1 observation (§6) are
 preconditions of slice 3.
 
-*Pointer 2026-10-08:* H2 amendment proposed, see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row), **PROPOSED** (awaiting independent review and Manu's decision).
+*Pointer 2026-10-08:* H2 amendment proposed, see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row), **PROPOSED**; independent review CLAUDE-001 archived (ACCEPT WITH CHANGES, no blockers), findings answered in the amendment; awaiting Manu's decision. The amendment also fixes the A2 canonicalisation rule for slice 3 (canonicalise always when a definition is set).
 
 ---
 
@@ -650,7 +650,7 @@ UNKNOWN), A2 = A and A3 = S ("for now"); all three are recorded in §6. Owner ch
 accepted, **as an assumption** (no separate explicit O1 confirmation). The AD-013 H2 amendment is **not** done and
 remains a precondition of slice 3 (§5). Items 5 and 9 keep their wording; D-strict is now Artist-confirmed.
 
-*Pointer 2026-10-08:* H2 amendment proposed, see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row), **PROPOSED** (awaiting independent review and Manu's decision).
+*Pointer 2026-10-08:* H2 amendment proposed, see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row), **PROPOSED**; independent review CLAUDE-001 archived (ACCEPT WITH CHANGES, no blockers), findings answered in the amendment; awaiting Manu's decision. The amendment also fixes the A2 canonicalisation rule for slice 3 (canonicalise always when a definition is set).
 
 *Status line of the 2026-10-07 revision, kept for history:* No decision beyond the review's own proposals was taken, except: the interim choice of D-strict (the safe default
 until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status then stayed
