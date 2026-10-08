@@ -50,6 +50,14 @@ CURVES: dict[str, Callable[[float], float]] = {
 
 # --- Metrics: seeds + radius -> {vertex: distance < radius} ------------------------
 
+# Hand-written instead of `math.dist`: on the reference PC (Core 2 Quad, Python 3.14,
+# Windows) `math.dist` measured 3.2 us per call vs 1.1 us for this form (FINDINGS R6).
+
+def _dist_sq(p: Position, q: Position) -> float:
+    dx, dy, dz = p[0] - q[0], p[1] - q[1], p[2] - q[2]
+    return dx * dx + dy * dy + dz * dz
+
+
 def _euclidean_distances(
     mesh: Mesh, seeds: set[VertexId], radius: float
 ) -> dict[VertexId, float]:
@@ -57,14 +65,15 @@ def _euclidean_distances(
     # Cheap reject before the per-seed loop: the seeds' bounding box grown by r.
     lo = [min(p[i] for p in seed_positions) - radius for i in range(3)]
     hi = [max(p[i] for p in seed_positions) + radius for i in range(3)]
+    radius_sq = radius * radius
     result: dict[VertexId, float] = {}
     for vid in mesh.all_vertex_ids():
         p = mesh.vertex_position(vid)
         if not (lo[0] <= p[0] <= hi[0] and lo[1] <= p[1] <= hi[1] and lo[2] <= p[2] <= hi[2]):
             continue
-        best = min(math.dist(p, s) for s in seed_positions)
-        if best < radius:
-            result[vid] = best
+        best_sq = min(_dist_sq(p, s) for s in seed_positions)
+        if best_sq < radius_sq:
+            result[vid] = math.sqrt(best_sq)
     return result
 
 
@@ -93,7 +102,7 @@ def _geodesic_distances(
         for other in neighbours.get(vid, ()):
             if other in done:
                 continue
-            nd = d + math.dist(p, mesh.vertex_position(other))
+            nd = d + math.sqrt(_dist_sq(p, mesh.vertex_position(other)))
             if nd >= radius:
                 continue  # pruned: w would be 0 there, and nothing behind it is closer
             if nd < dist.get(other, math.inf):

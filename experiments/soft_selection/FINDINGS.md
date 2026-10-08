@@ -93,13 +93,27 @@ Asset man_with_shoes_basemesh: 928 vertices, bounding radius 1.0005, seeds 4 (ve
   ~10 µs per call on the reference PC vs ~0.2 µs in the container. The geodesic column fits the same
   per-call cost (one `math.dist` per edge relaxation) plus the one-off adjacency pass.
   The update path calls no `math.dist`, and its columns scale normally.
-- R4. *(reading, unverified)* A candidate cause is `math.dist` on this CPU/Python build. The Q9550
-  has no FMA instructions, and a software-emulated `fma()` in the C runtime would cost microseconds per
-  call. Not confirmed: needs a micro-benchmark on the reference PC (`math.dist` vs
-  `math.sqrt(dx*dx + dy*dy + dz*dz)`).
+- R4. *(reading, unverified)* Candidate cause: the Q9550 has no FMA instructions, and a
+  software-emulated `fma()` in the C runtime would make `math.dist` expensive. R6 confirms that
+  `math.dist` is unusually slow on this machine; the FMA mechanism itself was not checked.
 - R5. *(reading)* Against the Symmetry Lab threshold (whole mouse move p95 ≤ 8 ms, which includes viewport
   work), the operation's share per update is ≤ 0.67 ms on the reference PC. The influence computation is a
   one-off ≤ 5.5 ms at gesture start for these radii. The viewport share of a soft drag is still unmeasured (N5).
+- R6. Micro-benchmark, µs per call, values `a = (1, 2, 3)`, `b = (4, 6, 8)`:
+
+  | Machine | `math.dist(a, b)` | `math.sqrt` of the summed squares |
+  |---|---|---|
+  | Reference PC | 3.22 | 1.08 |
+  | Container, Python 3.13 / 3.14 | 0.05 / 0.07 | 0.18 / 0.21 |
+
+  So `math.dist` is ~46x slower on the reference PC, while the hand-written form is ~5x slower,
+  in line with the update columns. Open point: at 3.2 µs, `math.dist` explains only about a third
+  of the ~10 µs per call fitted in R3. Not examined: whether real coordinates are slower than the
+  round benchmark values, and where the rest of the per-call cost goes.
+- R7. Consequence in this experiment: `influence.py` now uses `math.sqrt` of the summed squares
+  (euclidean compares squared distances and takes one root per vertex). Influenced counts are
+  unchanged, the suite passes (96), and container times are unchanged within noise. **The reference-PC
+  probe has not been re-run since this change**; the §2.1 table is the `math.dist` version.
 
 ## 3. Observations — metrics, curves, scale formulas
 
@@ -250,9 +264,9 @@ Also: `Mesh.vertex_edges()` is avoided for cost reasons (N4), not for privacy.
 7. **Changing rotation axis** mid-gesture (L4): does any tool do it? If not, should the contract
    say constant axis?
 8. **Symmetry combination** (refused here, E9): mirrored influence, seam vertices with `w < 1`.
-9. **Cost on the reference PC**: probe run recorded (§2.1). Open: confirm or refute the `math.dist`
-   cost (R3/R4) before choosing a metric on cost grounds; the viewport share of a soft drag (N5)
-   needs the app path.
+9. **Cost on the reference PC**: probe run recorded (§2.1). `math.dist` is slow there (R6) and has
+   been replaced (R7). Open: a reference-PC re-run after R7 before choosing a metric on cost grounds;
+   the viewport share of a soft drag (N5) needs the app path.
 10. Is a tolerance-free radius-0 identity (L3) still required once the pivot comes from the tool
     (default-pivot summation order)?
 
