@@ -589,6 +589,10 @@ session (the check sits after the Knife routing); a Lab reaction that must run *
 `Application` command with the original event (D1 is the one exception, and only for an idle
 `Application`). None is a stated need. Any of them reopens this addendum (H2-R6).
 
+*Note 2026-10-08:* AD-SYM-03 (DECIDED) states the first such need: refusing `C` by its resolved
+context. An amendment that lifts exactly that item is **PROPOSED**, not decided; see
+§ Addendum (2026-10-08) below. Until it is decided, this section stands unchanged.
+
 ### Rules
 
 - **H2-R1 — one binding authority (I4, I5, I6).** The Lab resolves its keys only through
@@ -792,3 +796,234 @@ reviewer's "outside H2" observation) and the restore-on-raise in `apply_mesh_cha
 | Q5 implementation notes (`set_status` as an alias, `hover_suspended` backing field) | note | **Taken over** in the Decision table |
 
 With N1–N3 answered, the addendum is DECIDED (status above).
+
+## Addendum (2026-10-08, AD-SYM-03 slice 3 — H2 amendment G-2: context-keyed refusal for `C`, fail-closed BLOCK row)
+
+**Status:** **PROPOSED** (2026-10-08). **Not binding.** It becomes binding only after an independent
+review (fresh session; archived verbatim as
+`docs/archive/symmetry_lab/reviews/AD-013_H2_AMENDMENT_REVIEW_CLAUDE_001.md`) and Manu's decision. Until
+then the H2 addendum above stands unchanged, including § Limits of G.
+**Basis:** [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) (DECIDED, Manu, 2026-10-08) §2.5,
+§3 item 7, §5 (row "AD-013 H2"), §7 slice 3. The direction is decided there: declaration per resolved
+operation (D-b), a fail-closed BLOCK row, and a context-keyed refusal for `C` with G-2 as the proposed
+route. This amendment only states how H2 changes to carry that. H2-R6 requires it, because it lifts a
+Limit of G.
+**Read at:** `main` @ `b1cedee`; line numbers below refer to that commit.
+**Engineering assumption (not confirmed by Manu):** the Lab-side change (the BLOCK row and the MARK
+warning derived from the declarations) is described here and implemented in slice 3, not by this
+amendment. No code changes with this text.
+
+### Problem
+
+G refuses by command identity only (§ Limits of G), but `C` is one command with four operations
+(Split, Edge Connect, Vertex Connect, Knife; `resolve_c_context`, `contextual_c.py:18`). "Support
+Connect before Knife" (AD-SYM-03) therefore needs a refusal that depends on part of the selection,
+which G cannot express, so slice 3 of AD-SYM-03 is blocked on this amendment.
+
+A second change uses G's existing mechanism and lifts no Limit, but it changes the H2 gate table: the
+BLOCK row is a block-list today (`block_row`, `experiments/symmetry_lab/lab_app.py:202-207`). A mutating
+command nobody adds to it runs one-sided under BLOCK (INV-8). AD-SYM-03 §2.5 turns it into an allow-list.
+
+### Verification (code facts this amendment rests on, read at `b1cedee`)
+
+| # | Question | Finding | Result |
+|---|---|---|---|
+| a | Do `_execute_click` and `key_press` consult the same gate? | `key_press` (`application.py:1145`) routes a Knife session first (`:1151-1152`), resolves GLOBAL (`:1153`), then calls `_gate_refuses(command)` (`:1154`) before every branch. `_execute_click` (`:1702`) calls `_gate_refuses(click.command)` (`:1704`) for `_SELECT_COMMANDS` (`:80-85`: `Select`, `SelectAdd`, `SelectRemove`, `SelectToggle`) before `select_at` (`:1706`). Both use the one `_gate_refuses` (`:1524-1534`), which reads the one `command_gate` (`:335`). During a Knife session a click never reaches `_execute_click` (`:1584-1589`). **Precision:** `ClearSelection` is not a click command. It is a key (Alt+A, `bindings.py:127`), gated in `key_press` (`:1154`), and `Application` has no branch for it yet, so it falls through to `return False` (`:1185`). AD-SYM-03 §2.5 groups it with the click commands; the gate path it takes is the same | **Confirmed** (same gate); grouping in AD-SYM-03 §2.5 imprecise, no consequence for G-2 |
+| b | Does `_connect_command` call `resolve_c_context` exactly once? | One call (`:565`); every branch tests that one value (`:567` SPLIT, `:580` EDGE_CONNECT, `:597` VERTEX_CONNECT, `:614` KNIFE → `_knife_begin` `:615`, NONE `:617-620`). No other call in `src/` or `experiments/symmetry_lab/` (the only other occurrence is a docstring, `:1502`). `_connect_command` has one caller, `dispatch_command` (`:527-528`), and `dispatch_command(CONNECT)` has one caller, `key_press` (`:1170-1175`), reached after the gate (`:1154`) and after the armed-transform check (`:1173-1174`). No test, Lab or Playground module calls `dispatch_command` with `Connect` (grep) | **Confirmed** |
+| c | Does `sync_gate` skip while a Knife session owns the keys? What does that mean for a row installed for a Knife-starting `C`? | `sync_gate` returns early while `interaction_owner is not None` (`lab_app.py:331`); `interaction_owner` is `"knife"` during a session (`application.py:1119-1120`). `lab_key_press` forwards to `Application` and only then calls `sync_gate` (`lab_app.py:507-508`). So a row installed *per key press* for a `C` that starts a Knife session (G-4) stays installed for the whole session and is re-derived only by the forwarded key that ends it (Enter/Esc, through `lab_key_press`). **Precision:** during the session that stale row changes no behaviour, because `Application` consults no gate inside a Knife session (keys `:1151-1152`, clicks `:1584-1589`). The cost is H2-R3: for the session's duration the installed gate is not the row the start-up listing names for the Lab state. Under G-2 rows change only with Lab state, so nothing is stale | **Confirmed** as AD-SYM-03 §2.5 states it, with the precision above |
+| d | Which mutating commands declared in `commands.py` does `Application` not handle yet? | `SplitEdge` (`commands.py:97`), `Collapse` (`:98`), `LoopInsert` (`:101`), `LoopSlide` (`:102`), `Extrude` (`:103`), `ArticulationRestore` (`:106`). `key_press` has no branch for them (`application.py:1153-1185`), and `tool_for_command` maps only `Move`/`Rotate`/`Scale` (`routing.py:25-29`). Of these, `Collapse` (K) and `Extrude` (Alt+E) are bound only in `TOPOLOGY_CONTEXT` (`bindings.py:168,172`), which `Application` never resolves; the other four are unbound. Unhandled but **not** mutating: `EdgeLoop` (`:99`), `EdgeRing` (`:100`), `ClearSelection` (`:51`). Today a user keymap that binds one of the six in GLOBAL gets a silent `False` (`:1185`), not a mutation | **Six**, as AD-SYM-03 §1.4/§2.5 list them |
+
+No finding contradicts AD-SYM-03 §2.5. The precision under (a) is recorded and changes nothing in the
+proposal.
+
+### Alternatives
+
+| | Alternative | Assessment |
+|---|---|---|
+| G-1 | Refuse `C` (by identity) until all four contexts are supported | **Not used because** it blocks the stated intent, "support Connect before Knife" (AD-SYM-03 §2.5) |
+| **G-2** | **A data-only field on `CommandGate` (`refused_contexts: Mapping[CContext, str]`), checked by `Application` in `_connect_command` right after its one `resolve_c_context`** | **Proposed** (§ Proposal) |
+| G-3 | `Application` itself refuses unsupported contexts whenever a symmetry definition is set | **Not used because** it writes the Lab verdict KEEP-BLOCK into Production behaviour without a promotion (M3; AD-SYM-02 §4 note "dieses Dokument entscheidet dadurch nichts für Production") and removes the Lab's MARK comparison (AD-SYM-03 §2.5) |
+| G-4 | The Lab resolves the context itself (`resolve_c_context` on `app.selection`, read-only) just before it forwards `C`, and installs the matching row | **Not used because** (AD-SYM-03 §2.5, review CLAUDE-001 of AD-SYM-03): it resolves the context twice and is correct only by event timing; it turns a gate row from a function of Lab state into one installed per key press (H2-R2/R3); and a row installed for a Knife-starting `C` stays installed for the session (verification c). **New evidence (2026-10-08):** after the A2 verdict (A, AD-SYM-03 §6), `_connect_command` canonicalises a two-sided selection to one side *before* its resolution. The Lab would have to repeat that canonicalisation to predict the context, which is app semantics in Lab code (H2-R4) and a capability fork (I1). G-4's one advantage, no `src` change, saves little, because slice 3 changes `_connect_command` anyway |
+| G-5 | The Lab keeps G as it is and rewrites the identity `refused` set per key press (refuse `Connect` exactly when the next `C` would resolve to an unsupported context) | **Not used because** it is G-4 in another shape: deciding whether to refuse `Connect` needs the same prediction of the context, with the same two resolutions, timing dependence and per-press rows |
+| G-6 | `Application` exposes the resolved context as a public read-only property (e.g. `c_context`), and the Lab reads it before forwarding `C` | **Not used because** it still decides before the press, from a second evaluation; it adds public surface whose only purpose is prediction; and it keeps the per-press row of G-4 |
+| G-7 | A predicate or callback on the gate (`refuse_if(context) -> str \| None`) | **Not used because** H2 rejected callbacks (§ Alternatives, "F is not used because", items 1–3), and "`Application` calls no experiment code" is a constraint of this amendment |
+| G-8 | Split `C` into context-specific commands (e.g. reuse `SplitEdge`) and refuse those by identity | **Not used because** it changes the Artist language (`topology.connect` is one contextual `C`, AD-017) and needs rebinding, which a Lab may not do (H2-R1: exactly three Lab entries) |
+| G-9 | Generalise G-2 to `(command, context)` keys, e.g. removal command × component mode | **Not used now:** no stated need. AD-SYM-03 declares removal per command (§ Proposal, "Removal"). Naming it keeps it visible; adopting it would be its own amendment (H2-R6) |
+
+### Proposal (G-2 and the fail-closed BLOCK row)
+
+**1. `refused_contexts` (`src`, data only).** `CommandGate` (`application.py:248`) gets one more field,
+inert by default (working name; the Python shape stays open, as in H2):
+
+| Addition | What | Where it acts |
+|---|---|---|
+| `refused_contexts: Mapping[CContext, str]` (default empty) | Resolved `C` context → status text. Immutable like `refused` (`MappingProxyType`, `:262-264`), so rows compare with `==` as `sync_gate` does today (`lab_app.py:335`). `CContext` is the public enum in `mirai.topology.contextual_c`. `CContext.NONE` is not an operation and may not be listed (construction raises): `Application`'s own text `C: nothing to do here` (`:619`) stays | In `_connect_command`, **right after its one `resolve_c_context`** (`:565`) and before any branch: if `command_gate` is set and lists `ctx`, post the text through `_set_status` (`status_serial` + 1) and return `False`. No branch runs: no mesh change, no history entry, no Knife session, no selection change |
+
+- **One resolution.** `_connect_command` keeps exactly one `resolve_c_context` (verification b). After
+  slice 3 the check keys on the value the branch uses. With a definition set, that value comes from the
+  canonicalised selection (A2 = A, AD-SYM-03 §6), still in one call. "Right after `resolve_c_context`"
+  means after that one call, not after a second, gate-only evaluation.
+- **Order with the identity gate.** The identity check in `key_press` (`:1154`) runs first. A row that
+  refuses `Connect` by identity, or whose allow-list lacks it, never reaches `_connect_command`.
+  `refused_contexts` therefore matters only in a row that lets `Connect` through. Then the armed-transform
+  check (`:1173-1174`) applies, and only then the context check. The check cannot act inside a Knife
+  session (keys never reach `_connect_command` there, `:1151-1152`) or while W/E/R is armed.
+- **No callback.** `Application` reads one mapping and calls no host code. The gate table stays a
+  static, printable function of Lab state (H2-R2/R3): a row lists its refused contexts the way it lists
+  its refused commands.
+- **Not in `dispatch_command`.** H2 puts no gate check in `dispatch_command`. The context check sits
+  below it, in `_connect_command`, so it also applies to a direct `dispatch_command(CONNECT)`. Today
+  nothing calls that except `key_press` after the gate (verification b), and the Lab may not call it
+  (H2-R4). The asymmetry is therefore theoretical. It is recorded here so the review can judge it.
+
+**2. Fail-closed Lab BLOCK row (experiment code; implemented in slice 3).** While symmetry is on and
+the E5 mode is BLOCK, the Lab installs one row **derived** at each derivation from the declarations, as
+`block_row()` does today (`lab_app.py:202`):
+
+```text
+allowed  = NON_OPERATION
+         ∪ { operation commands with a coordinator declaration (D-b) }          # e.g. Delete, Dissolve, DissolveNoCleanup
+         ∪ { Connect }  if at least one C operation context is declared
+         ∪ { transform commands whose Operation declares supports_symmetry }   # Move/Rotate/Scale today
+refused  = { command: block_text(name) } for every known operation command that is not declared  # named texts
+         ∪ { Connect: block_text("C") }  if no C operation context is declared                    # today's behaviour
+refused_contexts = { ctx: block_text(name of ctx) } for ctx in {SPLIT, EDGE_CONNECT, VERTEX_CONNECT, KNIFE}
+                                                    without a declaration
+not_allowed_text = a generic BLOCK text (e.g. "Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)")
+```
+
+`NON_OPERATION` is one Lab-side constant, printed at start-up. It contains exactly:
+
+| Group | Commands | Gate path |
+|---|---|---|
+| display | `CycleDisplayMode`, `ToggleWireframeOverlay`, `SetShaded`, `SetFlatShaded`, `SetWireframe` | `key_press` |
+| selection | `Select`, `SelectAdd`, `SelectRemove`, `SelectToggle` (click commands), `ClearSelection` (key, unhandled today) | `_execute_click` `:1704` / `key_press` `:1154` |
+| mode | `SetVertexMode`, `SetEdgeMode`, `SetFaceMode` | `key_press` |
+| history | `Undo`, `Redo` | `key_press` |
+| cancel | `Cancel` | `key_press` (H2-R2: never refused) |
+| constraints | `ConstrainAxisX`, `ConstrainAxisY`, `ConstrainAxisZ`, `ConstrainPlaneXY`, `ConstrainPlaneXZ`, `ConstrainPlaneYZ` | `key_press` |
+
+Not listed, because they never reach the gate: `Orbit`/`Pan`/`Zoom` (drags and the wheel are never gated,
+§ Decision above), `KnifeCommit`/`KnifeLift` (KNIFE context; no gate inside a session), and the three
+Lab commands (handled before `Application`, `lab_app.py:503-504`). **Deliberately not listed:**
+`EdgeLoop`, `EdgeRing`. They are unhandled Topology-Lab selection commands, and whether a loop
+selection should mirror under symmetry is itself a symmetry question. If they are wired, BLOCK refuses
+them visibly until someone decides.
+
+An omission from `NON_OPERATION` or from the declarations is **refused visibly**
+(`not_allowed_text`, `status_serial` + 1). It never runs silently one-sided (INV-8). The six unwired
+mutating commands (verification d) are refused under BLOCK from the day they are wired until a
+coordinator declares them. Named refusal texts stay where the operation is known (`refused` is checked
+before `allowed`, `CommandGate.refusal`, `:267-273`). The other rows are unchanged: symmetry off → `None`;
+MARK → `None`; preview → the display-only allow-list, which still dominates (H2-R2, N2).
+
+*Illustration, not a plan:* if slice 3 declares Edge Connect, Vertex Connect and the three removal
+commands, then under BLOCK `C` with two edges runs coordinated. `C` with one edge is refused with the
+Split text until slice 4, and `C` with an empty selection is refused with the Knife text until slice 6.
+No Knife session starts, and the row does not change across the press.
+
+**Removal.** D-b keys removal "by removal mode" (AD-SYM-03 §2.5). This amendment carries removal
+declarations **per command** (`Delete`, `Dissolve`, `DissolveNoCleanup`), which G already expresses.
+Assumption: slice 3 coordinates each declared removal command in every component mode. If a removal
+command can be coordinated in only some component modes, that is a mode-keyed refusal. This amendment
+does not lift it (G-9). Either that command stays undeclared, and so is refused in every mode under
+BLOCK, or H2 is reopened.
+
+**3. Runtime refusals are not G-3** (AD-SYM-03 §2.5, taken over). A coordinator that refuses a seam case,
+the both-sides face case (AD-SYM-03 §3 item 9), a non-exact plane or a D-strict delta acts in
+`Application` whenever a symmetry definition is set, in MARK as in BLOCK. That is not G-3. Such a refusal
+is part of the contract of a **supported** operation ("mirrors correctly or recognisably not at all",
+INV-5). G-3 would apply KEEP-BLOCK, the policy for **unsupported** operations, in Production. The gate
+(G and G-2) remains the only place that policy acts, and only the Lab writes it. Consequence after slice
+3: MARK runs declared operations coordinated, including their runtime refusals, and only undeclared ones
+one-sided. That is the same as transforms today, which mirror whenever a definition is set.
+
+**4. The MARK warning comes from the same declarations.** `e5_warning_text`
+(`lab_app.py:582-603`; today a running Knife session and undeclared transforms) is derived from the
+same declaration mapping as the BLOCK row. Example: the Knife line appears only while `KNIFE` has no
+declaration. There is no second list. An immediate undeclared operation (e.g. Split before slice 4) is
+no running interaction and keeps having no warning line; its degradation shows in the state markers,
+as the docstring of `e5_warning_text` says today.
+
+### Consequences for H2-R1 … H2-R6
+
+- **H2-R1 — unchanged.** No new Lab binding, no new context, no rebinding of `C`.
+- **H2-R2 — holds.** The context check can only stop `C` from *starting* an operation. It runs before
+  any branch and never inside an `Application` interaction (verification b, c). The gate stays constant
+  while `interaction_owner` is set: rows still change only on Lab state changes, never per key press.
+  `Cancel` is never refused (it is in `NON_OPERATION`; `refused_contexts` cannot name a command).
+- **H2-R3 — extended.** A context refusal is visible like any refusal: status text, `status_serial` + 1
+  (also for a repeated identical text), return `False`. The start-up listing prints each row's
+  `refused_contexts` next to its `refused` and `allowed` sets, and prints the `NON_OPERATION` constant.
+- **H2-R4 — extended by two read-only items, and one prohibition.** The Lab may (g) import the
+  `CContext` enum as a key and (h) read the D-b declaration mapping (a static `src/mirai` table, not an
+  `Application` member). The Lab may **not** call `resolve_c_context` (that would be G-4). T-R4a's
+  static scan covers it.
+- **H2-R5 — Production unchanged.** With the defaults (`command_gate is None`, or a gate with empty
+  `refused_contexts`) `_connect_command` behaves identically: the check is one `None` test, or one empty
+  lookup. `src/main.py` writes no gate data (T-R5b, unchanged). Needed guard tests: T-R5a and T-R5c
+  extended (below).
+- **H2-R6 — still one writer.** `refused_contexts` is a field of the one `command_gate` value. The
+  Symmetry Lab's window wiring stays its only writer (`SymmetryAppLab._install_row`,
+  `lab_app.py:340`). The amendment adds **no second writer and no registry**: the D-b declaration
+  mapping is a static Production table of coordinators, read by the one writer to derive its row and by
+  `Application` to dispatch coordinated operations. It holds no gate data and nobody installs anything
+  into it at runtime. A second gate user still needs its own review.
+
+### Required tests (named, not written)
+
+Headless, through `Application`'s public entry points, fixture as in
+`tests/test_application_pointer.py:34-40`. `src` tests go to `tests/` (not named `test_application_*`,
+because T-R5c re-runs that set); Lab tests go to `experiments/symmetry_lab/tests/` and drive
+`lab_key_press`.
+
+| ID | Rule | Test |
+|---|---|---|
+| T-G2a | G-2, R3 | Parametrised over the four operation contexts × (listed / not listed): `C` via `key_press` with a selection that resolves to the context. Listed → returns `False`, `status_serial` + 1, `status_message` = the row text, `mesh.export_state()` and history unchanged, `knife_active is False` for KNIFE. Not listed → identical to a run without a gate. Twice the same refusal → two increments |
+| T-G2b | G-2, verification b | `resolve_c_context` patched with a counter: exactly one call per `C` press, whether listed, unlisted or refused (after slice 3 also with a definition set, i.e. on the canonicalisation path) |
+| T-G2c | order | `Connect` in `refused` and its context listed → the identity text wins, counter 0; `Connect` outside `allowed` → `not_allowed_text`, counter 0; W armed + `C` → `False` from the armed check, no context status |
+| T-G2d | NONE | Constructing a gate that lists `CContext.NONE` raises. One vertex selected, every operation context listed → `C: nothing to do here` |
+| T-G2e | R2 | During a Knife session (started without a gate), a gate that lists every context changes nothing: Enter, Esc, E, Ctrl+Z and clicks behave as without it |
+| T-G2f | R5 | `CommandGate()` has empty `refused_contexts`; two gates from equal data are `==`; the mapping is read-only |
+| T-R5a+ | R5 | As T-R5a (`Application()` has `command_gate is None`), plus: with a default `CommandGate()` installed, `C` on each of the five contexts gives the same return value, status, mesh and history as with no gate |
+| T-R5c+ | R5 | The inert-but-active gate of `tests/_inert_gate_plugin.py` also gets `refused_contexts = {}` → identical results. New negative control: every operation context listed → the contextual-`C` and Knife tests fail |
+| T-FC1 | fail-closed | Lab, symmetry on, BLOCK: for every command constant in `mirai.interaction.commands` that is in neither `NON_OPERATION` nor the declarations nor the Lab commands, bound by a test user binding in GLOBAL → `lab_key_press` returns `False`, status posted, mesh and history unchanged (covers the six commands of verification d) |
+| T-FC2 | fail-closed | Lab, symmetry on, BLOCK: each `NON_OPERATION` command (four click commands, Alt+A, 1/2/3, Ctrl+Z/Y, Esc disarming W, X/Y/Z and Shift+X/Y/Z, D/Shift+D) behaves as with symmetry off |
+| T-FC3 | D-b | Declarations patched (add or remove a context or removal command) → `block_row()` changes accordingly and compares with `==`; the row is a function of the declarations and the transform `supports_symmetry` flags only |
+| T-FC4 | G-2 via Lab | Symmetry on, BLOCK: `C` on a declared context runs; on an undeclared one it is refused with its named text; empty selection → refused, `knife_active is False`. `app.command_gate` is the same object before and after each press (no per-press row) |
+| T-FC5 | MARK | Declarations patched: the Knife warning line appears iff KNIFE is undeclared; MARK row stays `None` |
+| T-R1d+ | R3 | The start-up listing contains every row's `refused_contexts` and the `NON_OPERATION` constant |
+| T-R2h+ | R2 | As T-R2h; after each Undo/Redo the installed row, including `refused_contexts`, equals the row derived for the restored definition |
+| T-R4a+ | R4 | The AST scan also fails on any call of `resolve_c_context` in Lab modules; importing `CContext` is allowed |
+
+### Consequences
+
+- **Positive:** `C` can be supported context by context, starting with Connect, with no callback and no
+  second resolution. Under BLOCK an operation without a coordinator is refused visibly; it can no
+  longer run silently one-sided. BLOCK row, MARK warning and coordinators share one source (the
+  declarations).
+- **Costs:** one field and one lookup in `src` (`CommandGate`, `_connect_command`); a `NON_OPERATION`
+  hand list in the Lab (its omissions fail visibly, which is the property that matters, AD-SYM-03
+  §2.5); the generic BLOCK text for commands that are neither listed nor named.
+- **Behaviour change in the Lab (slice 3, BLOCK only):** a GLOBAL user binding on one of the six unwired
+  mutating commands, or on `EdgeLoop`/`EdgeRing`, now posts a refusal instead of returning a silent
+  `False`. The end of the accepted interim (Delete/Dissolve one-sided under BLOCK) is owner check O1 in
+  AD-SYM-03 §4, not decided here.
+
+### Not decided here
+
+The Python shape and the final names (`refused_contexts`, `NON_OPERATION`, texts). Whether A2
+canonicalisation also applies, in MARK, to a context without a coordinator (e.g. a two-sided two-edge
+selection becoming a one-sided Split before slice 4): a slice 3 question for the review and Manu. Whether
+`EdgeLoop`/`EdgeRing` count as non-operations. Mode-keyed removal refusals (G-9). Everything else in
+§ Limits of G (click position, mirror side for other commands, refusals inside a Knife session,
+"instead of" reactions) stays a Limit. Nothing here promotes symmetry or KEEP-BLOCK to Production (M3).
+
+### Review
+
+**Pending.** An independent review in a fresh session (questions: does G-2 lift only the context item
+of § Limits of G; does `NON_OPERATION` name every click and non-operation command that must stay
+usable; can a runtime refusal in `Application` be mistaken for G-3; does anything break H2-R2/R3/R5/R6;
+what is missing), archived verbatim as
+`docs/archive/symmetry_lab/reviews/AD-013_H2_AMENDMENT_REVIEW_CLAUDE_001.md` and never edited. Then
+Manu decides. The archived H2 reviews CLAUDE-001/002 are not touched by this amendment.

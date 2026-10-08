@@ -57,7 +57,8 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | # | Was | Wo |
 |---|---|---|
 | D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung steht noch aus und kommt vor Slice 3 | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
-| D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
+| D2 | **H2-Amendment (Voraussetzung für Slice 3):** Vorschlag liegt vor, wartet auf unabhängiges Review und deine Entscheidung | [AD-013, Addendum 2026-10-08](architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row) |
+| D3 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
 ### E. Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
 
