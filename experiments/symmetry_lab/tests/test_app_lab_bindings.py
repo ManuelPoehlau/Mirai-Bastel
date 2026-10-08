@@ -143,7 +143,7 @@ def test_startup_listing_names_every_entry_and_every_gate_row():
     for row in gate_rows():
         assert row.describe() in text
     assert len(gate_rows()) == 4
-    assert lab_app.block_text("C") in text
+    assert lab_app.block_text("Knife") in text  # `C` selbst geht seit 3b durch, Kontexte nicht
     assert "SymmetryCycle" in text and "ReSymmetrize" in text and "SymmetryGateMode" in text
     # Seit Slice 4 tun alle drei Lab-Tasten etwas.
     assert not any("noch nicht verfügbar" in line for line in lines)

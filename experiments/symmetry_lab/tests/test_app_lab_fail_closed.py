@@ -2,8 +2,9 @@
 (AD-SYM-03 Slice 3a; AD-013, Addendum „2026-10-08, H2-Amendment G-2").
 
 Headless über `lab_key_press` und die öffentlichen Einstiege von `Application`. Die echte
-Deklarationstabelle (`mirai.symmetry_declarations`) ist in 3a leer; wo ein deklarierter
-Kontext oder Befehl gebraucht wird, patcht `declare` sie (Slice 3b trägt die ersten echten ein).
+Deklarationstabelle (`mirai.symmetry_declarations`) trägt seit 3b Edge und Vertex Connect; wo ein
+anderer Kontext oder Befehl gebraucht wird oder der Zustand „nichts deklariert“ (3a), patcht `declare`
+sie. Die Tests der echten Koordinatoren stehen in `test_app_lab_symmetric_connect.py`.
 
 Benannte Tests des Amendments (die IDs stehen in den Testnamen):
 
@@ -22,8 +23,6 @@ einseitig unter Symmetrie + BLOCK) und seine Sichtbarkeit.
 """
 
 from __future__ import annotations
-
-from types import MappingProxyType
 
 import pytest
 
@@ -53,6 +52,7 @@ from symmetry_lab.lab_symmetry import current_axis
 
 from ._app_lab_support import (  # noqa: F401
     C,
+    declare,
     CTRL_Y,
     CTRL_Z,
     ESC,
@@ -81,20 +81,6 @@ USER_KEY = Input("key", "f12")
 def command_constants() -> frozenset[str]:
     return frozenset(
         value for name, value in vars(cmd).items() if name.isupper() and isinstance(value, str)
-    )
-
-
-def declare(monkeypatch, contexts=(), removal=()) -> None:
-    """Patcht die (in 3a leere) Deklarationstabelle; `declared_*` lesen bei jedem Aufruf."""
-    monkeypatch.setattr(
-        declarations,
-        "C_CONTEXT_COORDINATORS",
-        MappingProxyType({ctx: object() for ctx in contexts}),
-    )
-    monkeypatch.setattr(
-        declarations,
-        "REMOVAL_COORDINATORS",
-        MappingProxyType({command: object() for command in removal}),
     )
 
 
@@ -161,12 +147,15 @@ def select_context(app, ctx: CContext) -> None:
 
 
 def refused_by_the_row() -> list[str]:
-    """Jeder Befehl, den die BLOCK-Zeile bei heutigen (leeren) Deklarationen ablehnen muss."""
+    """Jeder Befehl, den die BLOCK-Zeile bei den echten Deklarationen ablehnen muss (`Connect`
+    nur, solange kein C-Kontext deklariert ist: seit 3b geht er durch, `test_t_fc1_connect_…`
+    prüft den leeren Zustand)."""
     spared = (
         NON_OPERATION
         | INTERIM_ONE_SIDED
         | declarations.declared_removal_commands()
         | frozenset(TRANSFORM_OPERATIONS)
+        | ({cmd.CONNECT} if declarations.declared_c_contexts() else set())
     )
     return sorted(command_constants() - spared)
 
@@ -182,7 +171,8 @@ def test_t_fc1_the_refused_set_contains_the_six_unwired_commands():
         cmd.ARTICULATION_RESTORE,
     }
     assert six <= refused
-    assert {cmd.EDGE_LOOP, cmd.EDGE_RING, cmd.CONNECT} <= refused  # bewusst nicht in NON_OPERATION
+    assert {cmd.EDGE_LOOP, cmd.EDGE_RING} <= refused  # bewusst nicht in NON_OPERATION
+    assert cmd.CONNECT not in refused  # seit 3b deklariert: pro Kontext, nicht per Identität
     assert not refused & NON_OPERATION
     assert not refused & INTERIM_ONE_SIDED
 
@@ -198,13 +188,24 @@ def test_t_fc1_unlisted_commands_are_refused_visibly_under_block(command):
     before = snapshot(app)
     gate = app.command_gate
     serial = app.status_serial
-    expected = block_text("C") if command == cmd.CONNECT else BLOCK_NOT_ALLOWED_TEXT
     assert press(app, lab, USER_KEY) is False
     assert app.status_serial == serial + 1
-    assert app.status_message == expected
+    assert app.status_message == BLOCK_NOT_ALLOWED_TEXT
     assert snapshot(app) == before
     assert app.command_gate is gate
     assert app.interaction_owner is None
+
+
+def test_t_fc1_connect_is_refused_by_identity_without_declarations(monkeypatch):
+    """Nichts deklariert (Zustand von 3a): `Connect` steht nicht in der Allow-List und wird mit
+    dem benannten Text abgelehnt."""
+    declare(monkeypatch)
+    app, lab = symmetric_lab()
+    app.bindings.bind(USER_KEY, cmd.CONNECT)
+    before = snapshot(app)
+    assert press(app, lab, USER_KEY) is False
+    assert app.status_message == block_text("C")
+    assert snapshot(app) == before
 
 
 @pytest.mark.parametrize("command", refused_by_the_row())
@@ -281,9 +282,9 @@ def test_t_fc2_non_operation_commands_behave_as_with_symmetry_off():
 )
 def test_interim_removal_commands_still_run_one_sided_under_block(key):
     """Akzeptiertes Interim (Manu, 2026-10-06): Delete/Dissolve/DissolveNoCleanup laufen unter
-    Symmetrie + BLOCK weiter, bis Slice 3b ihre Koordinatoren bringt — nicht abgelehnt."""
+    Symmetrie + BLOCK weiter, bis Slice 3c ihre Koordinatoren bringt — nicht abgelehnt."""
     app, lab = symmetric_lab()
-    assert INTERIM_ONE_SIDED == {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}
+    assert INTERIM_ONE_SIDED == {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}  # bis Slice 3c
     gate = block_row().gate
     assert all(gate.refusal(command) is None for command in INTERIM_ONE_SIDED)
     a, b, c, d = _plus_x_quad(app)
@@ -299,7 +300,8 @@ def test_interim_removal_commands_still_run_one_sided_under_block(key):
 # == T-FC3 =======================================================================================
 
 
-def test_t_fc3_row_with_no_declarations():
+def test_t_fc3_row_with_no_declarations(monkeypatch):
+    declare(monkeypatch)
     gate = block_row().gate
     assert dict(gate.refused) == {cmd.CONNECT: block_text("C")}
     assert gate.allowed == NON_OPERATION | INTERIM_ONE_SIDED | frozenset(TRANSFORM_OPERATIONS)
@@ -316,6 +318,7 @@ def test_t_fc3_row_with_no_declarations():
 
 
 def test_t_fc3_row_follows_the_declarations(monkeypatch):
+    declare(monkeypatch)
     base = block_row()
     assert base == block_row()  # gleiche Deklarationen → gleiche (`==`) Zeile
 
@@ -377,8 +380,8 @@ def test_t_fc3_other_rows_do_not_depend_on_declarations(monkeypatch):
 
 
 def test_t_fc4_c_runs_on_a_declared_context_and_is_named_on_the_others(monkeypatch):
-    """Vertex Connect ist deklariert (Stellvertreter-Deklaration, 3a hat keinen Koordinator): `C`
-    geht durchs Gate und läuft wie bisher einseitig. Split, Edge Connect, Knife und die leere
+    """Nur Vertex Connect ist deklariert (gepatcht, mit dem echten Koordinator): `C` geht durchs
+    Gate und läuft koordiniert. Split, Edge Connect, Knife und die leere
     Auswahl werden mit ihrem Namen abgelehnt. Das Gate-Objekt bleibt vor und nach jedem Druck
     dasselbe (keine Zeile pro Taste)."""
     declare(monkeypatch, contexts=[CContext.VERTEX_CONNECT])
@@ -430,7 +433,8 @@ def test_t_fc4_declared_knife_starts_a_session_and_the_row_stays(monkeypatch):
     assert app.command_gate is gate
 
 
-def test_t_fc4_without_declarations_c_is_refused_by_identity_as_before():
+def test_t_fc4_without_declarations_c_is_refused_by_identity_as_before(monkeypatch):
+    declare(monkeypatch)
     app, lab = symmetric_lab()
     select_context(app, CContext.KNIFE)
     serial = app.status_serial
@@ -442,7 +446,8 @@ def test_t_fc4_without_declarations_c_is_refused_by_identity_as_before():
 def test_t_fc4_a_mirror_edge_pair_is_one_intent_under_mark_and_named_under_block():
     """Die angekündigte MARK-Folge der Kanonisierung (Amendment § Proposal 1, Review-Probe P5):
     Kante plus Spiegelkante ist ein einseitiger Split der einen Kante (statt „Keine verbindbaren
-    Kanten"); unter BLOCK ist dasselbe `C` per Identität abgelehnt, die Auswahl bleibt zweiseitig."""
+    Kanten"); unter BLOCK löst dieselbe Auswahl zum Kontext Split auf, der undeklariert ist (Slice 4)
+    und mit seinem Namen abgelehnt wird; die Auswahl bleibt zweiseitig."""
     app, lab = symmetric_lab()
     mesh = app.scene.mesh
     a, b, _c, _d = _plus_x_quad(app)
@@ -456,8 +461,8 @@ def test_t_fc4_a_mirror_edge_pair_is_one_intent_under_mark_and_named_under_block
     app.selection.edges = {edge, partner}
 
     before = snapshot(app)
-    assert press(app, lab, C) is False  # BLOCK, nichts deklariert: Identität
-    assert app.status_message == block_text("C")
+    assert press(app, lab, C) is False  # BLOCK, Split undeklariert: benannter Text
+    assert app.status_message == block_text("Split")
     assert snapshot(app) == before
 
     assert press(app, lab, SHIFT_B)  # MARK
@@ -531,16 +536,19 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_interim(monkeypatch):
         assert command in non_operation
     assert cmd.EDGE_LOOP not in non_operation and cmd.EDGE_RING not in non_operation
     interim = next(line for line in lines if line.startswith("INTERIM_ONE_SIDED"))
-    assert "accepted interim, Manu 2026-10-06; removed in slice 3b" in interim
+    assert "accepted interim, Manu 2026-10-06; removed in slice 3c" in interim
     for command in INTERIM_ONE_SIDED:
         assert command in interim
     declarations_line = next(line for line in lines if line.startswith("Deklarationen"))
-    assert "C-Kontexte keine" in declarations_line and "Removal keine" in declarations_line
+    assert "C-Kontexte Edge Connect, Vertex Connect" in declarations_line
+    assert "Removal keine" in declarations_line
+    assert "C-Kontext Edge Connect abgelehnt" not in text  # deklariert (3b)
+    assert "C-Kontext Vertex Connect abgelehnt" not in text
 
-    declare(monkeypatch, contexts=[CContext.EDGE_CONNECT])
-    patched = "\n".join(startup_listing())
-    assert "C-Kontext Edge Connect abgelehnt" not in patched  # die Liste folgt den Deklarationen
-    assert "C-Kontexte Edge Connect" in patched
+    declare(monkeypatch)  # nichts deklariert: die Liste folgt den Deklarationen
+    empty = "\n".join(startup_listing())
+    assert "C-Kontext Edge Connect abgelehnt" in empty and "C-Kontext Vertex Connect abgelehnt" in empty
+    assert "C-Kontexte keine" in empty
 
 
 # == T-R2h+ ======================================================================================

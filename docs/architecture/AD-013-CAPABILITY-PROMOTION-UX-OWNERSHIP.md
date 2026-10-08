@@ -809,7 +809,8 @@ MARK consequence, which was shown to Manu with the decision. No second review wa
 follows in AD-SYM-03 slice 3; until it lands, nothing in `src` or the Lab has changed.
 *Update 2026-10-08:* slice 3 is cut in two. **Slice 3a landed the gate side and the Lab side of this
 amendment** (§ Implementation note 2026-10-08 at the end of this addendum); the sentence "nothing in `src`
-or the Lab has changed" is obsolete from that date. Slice 3b (the coordinators) follows.
+or the Lab has changed" is obsolete from that date. **Slice 3b landed 2026-10-08** (Edge and Vertex Connect
+coordinators; § Implementation note 2026-10-08, slice 3b); slice 3c (Delete/Dissolve) follows.
 **Basis:** [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) (DECIDED, Manu, 2026-10-08) §2.5,
 §3 item 7, §5 (row "AD-013 H2"), §7 slice 3. The direction is decided there: declaration per resolved
 operation (D-b), a fail-closed BLOCK row, and a context-keyed refusal for `C` with G-2 as the proposed
@@ -1149,8 +1150,9 @@ changes the decision; what the code made concrete or had to add is listed so the
   pure fail-closed allow-list would refuse `Delete`, `Dissolve` and `DissolveNoCleanup` under BLOCK and so
   end the accepted interim (Manu, 2026-10-06) silently. `allowed` therefore also contains the named
   constant `INTERIM_ONE_SIDED = {Delete, Dissolve, DissolveNoCleanup}` (printed at start-up, "accepted
-  interim, Manu 2026-10-06; removed in slice 3b"). It is neither a declaration nor an omission. **Slice 3b
-  deletes it**, together with the interim.
+  interim, Manu 2026-10-06; removed in slice 3c"). It is neither a declaration nor an omission. **Slice 3c
+  deletes it**, together with the interim (the handoff of 3b moved this from 3b to 3c: Delete/Dissolve are
+  coordinated there).
 - **Test IDs.** `tests/test_command_gate_contexts.py`: T-G2a, T-G2b, T-G2c, T-G2d, T-G2e, T-G2f, T-R5a+,
   T-G3a, T-G3b. `tests/test_command_gate.py` and `tests/_inert_gate_plugin.py`: T-R5c+ (the inert gate
   carries `refused_contexts = {}` and the plugin counts `_context_refuses` consultations; negative control
@@ -1166,3 +1168,26 @@ changes the decision; what the code made concrete or had to add is listed so the
   amendment's MARK consequence names the edge pair (probe P5); the vertex pair follows from the same rule
   and from A2 as recorded.
 
+### Implementation note (2026-10-08, AD-SYM-03 slice 3b)
+
+Slice 3b filled the first declarations. Nothing here changes the decision.
+
+- **Declarations are filled.** `symmetry_declarations.C_CONTEXT_COORDINATORS` maps `CContext.EDGE_CONNECT` and
+  `CContext.VERTEX_CONNECT` to `coordinate_edge_connect` / `coordinate_vertex_connect`
+  (`src/mirai/symmetric_ops.py`); Split and Knife are undeclared; `REMOVAL_COORDINATORS` stays empty (slice 3c).
+  The module now imports the coordinators, as the amendment foresaw ("the entry is the implementation"); the
+  dependency direction is `symmetric_ops` → `symmetry_coordination`, `mirai.topology`, `core`, never `application`.
+- **Derived Lab row, no hand edit.** `block_row()` now has `Connect` in `allowed`, `refused` empty, and
+  `refused_contexts` = {Split, Knife} with their named texts; the Lab README table and the start-up listing follow
+  from the declarations. The MARK Knife warning is unchanged (Knife undeclared).
+- **`Application` reads the table live** (`symmetry_declarations.C_CONTEXT_COORDINATORS` at call time, so the
+  single source is the table, also for tests that patch it). With a definition set and a declared context
+  `_connect_command` runs the coordinator inside its one `_mesh_transaction`; a `SymmetryRefusal` is the
+  rollback signal (status text, `False`, no history entry, mesh and selection unchanged). No definition: the
+  unchanged `apply_*` function, as before. This acts in MARK as in BLOCK ("Runtime refusals are not G-3").
+- **Test changes this legitimately caused.** T-G3a now covers the contexts without a coordinator (Split, Knife,
+  and `NONE`, which is no operation); Edge/Vertex Connect under a definition are tested in
+  `tests/test_symmetric_ops.py`. Lab tests that assumed the empty table either patch it back to empty
+  (`declare(monkeypatch)`, now in `_app_lab_support.py`, which keeps the real coordinator for a patched
+  Edge/Vertex Connect so `Application` can call it) or expect the new named texts (`C` with an empty selection
+  is the Knife context, `C` with one edge the Split context). New: `test_app_lab_symmetric_connect.py`.

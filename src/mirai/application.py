@@ -66,6 +66,8 @@ from .symmetry_coordination import (
     canonical_faces,
     canonical_vertices,
 )
+from .symmetric_ops import SymmetryRefusal
+from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.face_geometry import GEO_EPS
@@ -585,7 +587,14 @@ class Application:
         `resolve_c_context` call and read by the branches. A host's
         `command_gate.refused_contexts` (H2 amendment G-2) is checked right
         after that call, before any branch: a listed context posts its text and
-        returns False with mesh, history and `self.selection` untouched."""
+        returns False with mesh, history and `self.selection` untouched.
+
+        A declared Connect context with a definition set runs its coordinator
+        (`_connect_op`) inside the same single transaction; a `SymmetryRefusal`
+        restores the mesh, posts its text, records no history entry and leaves
+        the selection untouched. Under symmetry Edge Connect selects the created
+        edges of both sides; Vertex Connect keeps the live selection (AD-017
+        residue; first default, Artist judges it)."""
         selection = self.selection
         effective = self._canonical_c_selection()
         ctx = resolve_c_context(effective)
@@ -613,10 +622,10 @@ class Application:
             try:
                 self._mesh_transaction(
                     EDGE_CONNECT_LABEL,
-                    lambda mesh: apply_connect_edges(mesh, set(effective.edges)),
+                    lambda mesh: self._connect_op(ctx, apply_connect_edges)(mesh, set(effective.edges)),
                     on_applied=residue,
                 )
-            except TopologyToolError as exc:
+            except (TopologyToolError, SymmetryRefusal) as exc:
                 self._set_status(str(exc))
                 return False
             self._set_status("Connect Edges")
@@ -628,9 +637,11 @@ class Application:
             try:
                 outcome = self._mesh_transaction(
                     VERTEX_CONNECT_LABEL,
-                    lambda mesh: apply_connect_vertices(mesh, set(effective.vertices)),
+                    lambda mesh: self._connect_op(ctx, apply_connect_vertices)(
+                        mesh, set(effective.vertices)
+                    ),
                 )
-            except VertexConnectError as exc:
+            except (VertexConnectError, SymmetryRefusal) as exc:
                 self._set_status(str(exc))
                 return False
             if not outcome.changed:
@@ -646,6 +657,18 @@ class Application:
         # C meaning (AD-017 §7).
         self._set_status("C: nothing to do here")
         return False
+
+    def _connect_op(self, context: CContext, plain: Callable) -> Callable:
+        """The mutation `_connect_command` runs for a Connect context: the coordinator
+        declared for `context` (`mirai.symmetry_declarations`, AD-SYM-03 slice 3b) whenever a
+        symmetry definition is set — in MARK as in BLOCK, its refusals are part of a supported
+        operation, not a gate (H2 amendment, "Runtime refusals are not G-3") — otherwise the
+        unchanged `plain` function. Both run inside the caller's one `_mesh_transaction`."""
+        if self.scene.mesh.symmetry_definition is not None:
+            coordinator = symmetry_declarations.C_CONTEXT_COORDINATORS.get(context)
+            if coordinator is not None:
+                return coordinator
+        return plain
 
     def _canonical_c_selection(self) -> Selection:
         """The selection `C` reads (AD-SYM-03 §6 A2 = A; AD-013 H2 amendment,

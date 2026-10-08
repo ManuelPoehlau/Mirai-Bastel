@@ -163,10 +163,10 @@ NON_OPERATION = frozenset(
     }
 )
 
-#: Akzeptiertes Interim (Manu, 2026-10-06; entfernt in Slice 3b): Delete, Dissolve und
+#: Akzeptiertes Interim (Manu, 2026-10-06; entfernt in Slice 3c): Delete, Dissolve und
 #: DissolveNoCleanup laufen unter Symmetrie + BLOCK einseitig, bis ihre Koordinatoren
 #: existieren. Weder Deklaration noch Auslassung — sonst würde die Allow-List sie ohne
-#: Deklaration ablehnen und das Interim still beenden. Slice 3b löscht diese Konstante.
+#: Deklaration ablehnen und das Interim still beenden. Slice 3c löscht diese Konstante.
 INTERIM_ONE_SIDED = frozenset({cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP})
 
 
@@ -386,7 +386,7 @@ def startup_listing() -> list[str]:
         + ", ".join(sorted(NON_OPERATION))
     )
     lines.append(
-        "INTERIM_ONE_SIDED (accepted interim, Manu 2026-10-06; removed in slice 3b): "
+        "INTERIM_ONE_SIDED (accepted interim, Manu 2026-10-06; removed in slice 3c): "
         + ", ".join(sorted(INTERIM_ONE_SIDED))
     )
     contexts = declarations.declared_c_contexts()

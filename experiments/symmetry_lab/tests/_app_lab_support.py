@@ -14,9 +14,11 @@ im Stack bleibt erlaubt.
 from __future__ import annotations
 
 import sys
+from types import MappingProxyType
 
 import pytest
 
+from mirai import symmetry_declarations as declarations
 from mirai.application import Application
 from mirai.interaction.input import Input
 from mirai.viewport.picking import pick_nearest_vertex
@@ -80,6 +82,24 @@ def visible(app: Application) -> list:
             hits.append(vid)
     assert len(hits) >= 2
     return hits
+
+
+def declare(monkeypatch, contexts=(), removal=()) -> None:
+    """Patcht die Deklarationstabellen; `declared_*` lesen bei jedem Aufruf. Ein Kontext mit echtem
+    Koordinator (Edge/Vertex Connect, Slice 3b) behält ihn, damit `Application` ihn aufrufen kann;
+    für die übrigen steht ein Platzhalter (`Application` liest dafür keinen Koordinator).
+    `declare(monkeypatch)` stellt den Zustand „nichts deklariert“ her (3a)."""
+    real = dict(declarations.C_CONTEXT_COORDINATORS)
+    monkeypatch.setattr(
+        declarations,
+        "C_CONTEXT_COORDINATORS",
+        MappingProxyType({ctx: real.get(ctx, object()) for ctx in contexts}),
+    )
+    monkeypatch.setattr(
+        declarations,
+        "REMOVAL_COORDINATORS",
+        MappingProxyType({command: object() for command in removal}),
+    )
 
 
 def click(app: Application, x: float, y: float, inp: Input = LMB) -> bool:
