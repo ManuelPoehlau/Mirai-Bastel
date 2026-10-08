@@ -51,6 +51,7 @@ from symmetry_lab.lab_app import (
 from symmetry_lab.lab_overlays import UNPAIRED_LAYER
 
 from ._app_lab_support import (  # noqa: F401
+    declare,
     C,
     CTRL_Y,
     CTRL_Z,
@@ -590,8 +591,9 @@ def test_knife_commit_under_mark_is_one_history_entry(symmetric):
 
 @pytest.mark.parametrize("with_selection", [True, False], ids=["selection", "empty"])
 def test_c_under_block_is_refused(symmetric, with_selection):
-    """BLOCK: C → False, Status = Text des alten Labs, `status_serial` + 1; kein
-    History-Eintrag, keine Knife-Session, Mesh unverändert."""
+    """BLOCK: `C` auf einem undeklarierten Kontext (eine Kante → Split, leere Auswahl → Knife) →
+    False, Status = benannter Text, `status_serial` + 1; kein History-Eintrag, keine
+    Knife-Session, Mesh unverändert."""
     app, lab = symmetric
     to_block(app, lab)
     if with_selection:
@@ -604,8 +606,9 @@ def test_c_under_block_is_refused(symmetric, with_selection):
     serial = app.status_serial
     assert press(app, lab, C) is False
     assert app.status_serial == serial + 1
-    assert app.status_message == block_text("C")
-    assert app.status_message == "Symmetrie aktiv — C spiegelt nicht (BLOCK: C nicht gestartet)"
+    name = "Split" if with_selection else "Knife"
+    assert app.status_message == block_text(name)
+    assert app.status_message == f"Symmetrie aktiv — {name} spiegelt nicht (BLOCK: {name} nicht gestartet)"
     assert not app.knife_active
     assert len(app.history) == before
     assert app.scene.mesh.export_state() == state
@@ -629,10 +632,12 @@ def test_c_with_symmetry_off_runs_in_both_modes(lab_app, mode):
 
 
 def test_block_row_is_derived_from_the_declarations(monkeypatch):
-    """Die BLOCK-Zeile = C + jedes Transform-Command ohne Erklärung, bei jeder
-    Ableitung neu gelesen: heute nur C."""
-    assert set(block_row().gate.refused) == {cmd.CONNECT}
+    """Die BLOCK-Zeile = C (solange kein C-Kontext deklariert ist) + jedes Transform-Command ohne
+    Erklärung, bei jeder Ableitung neu gelesen: seit 3b ist nichts per Identität abgelehnt."""
+    assert set(block_row().gate.refused) == set()
     monkeypatch.setattr(ScaleOperation, "supports_symmetry", False)
+    assert dict(block_row().gate.refused) == {cmd.SCALE: block_text("Scale")}
+    declare(monkeypatch)  # nichts deklariert: C wieder per Identität
     assert dict(block_row().gate.refused) == {
         cmd.CONNECT: block_text("C"),
         cmd.SCALE: block_text("Scale"),
@@ -720,8 +725,8 @@ def _block_rotate_unsupported(app, lab):
 
 
 BLOCK_REFUSALS = [
-    ("C_empty", _block_c_empty, C, block_text("C"), False),
-    ("C_edge", _block_c_edge, C, block_text("C"), False),
+    ("C_empty", _block_c_empty, C, block_text("Knife"), False),
+    ("C_edge", _block_c_edge, C, block_text("Split"), False),
     ("E_unsupported", _block_rotate_unsupported, E, block_text("Rotate"), True),
     ("R_unsupported", _block_rotate_unsupported, R, block_text("Scale"), True),
 ]
@@ -772,6 +777,6 @@ def test_startup_listing_has_the_e5_rows_and_shift_b():
     assert ROW_SYMMETRY_OFF.describe() in text
     assert ROW_MARK.describe() in text
     assert block_row().describe() in text
-    assert block_text("C") in block_row().describe()
+    assert block_text("Split") in block_row().describe()  # `C` geht durch, Split/Knife nicht
     assert "Slice 1, vor E5" not in text
     assert "C spiegelt nicht'" not in text  # kein alter 1b-Text ohne BLOCK-Zusatz

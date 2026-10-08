@@ -143,7 +143,8 @@ def test_esc_cancels_a_running_move_exactly(lab_app):
 
 
 def _c_refused_exactly_when_on(app, lab) -> None:
-    """BLOCK: C ist genau bei aktiver Symmetrie abgelehnt; MARK: nie (Slice 4)."""
+    """BLOCK: `C` mit leerer Auswahl (Knife, undeklariert) ist genau bei aktiver Symmetrie
+    abgelehnt; MARK: nie (Slice 4)."""
     on = lab.axis is not None and lab.gate_mode is GateMode.BLOCK
     app.pointer_motion(*MISS)
     app.selection.clear()
@@ -153,7 +154,7 @@ def _c_refused_exactly_when_on(app, lab) -> None:
     if on:
         assert result is False
         assert app.status_serial == serial + 1
-        assert app.status_message == block_text("C")
+        assert app.status_message == block_text("Knife")
         assert not app.knife_active
     else:
         assert result is True
@@ -251,7 +252,7 @@ def _idle(app, lab):
 
 REFUSALS = [
     # Seit Slice 4 nur in BLOCK (MARK lässt C laufen, `test_app_lab_gate.py`).
-    ("C_under_symmetry_block", _symmetry_on_block, C, block_text("C")),
+    ("C_under_symmetry_block", _symmetry_on_block, C, block_text("Knife")),
     ("ShiftS_transform_armed", _armed, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_transform_running", _running, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_knife", start_knife, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"),

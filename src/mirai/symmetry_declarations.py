@@ -9,13 +9,14 @@ and cannot drift from it. Two keys exist today:
 
 Transforms keep `Operation.supports_symmetry`; there the Operation itself mirrors.
 
-AD-SYM-03 slice 3a: both tables are empty, no coordinator exists yet (slice 3b adds the first
-ones). Readers are the Symmetry Lab, which derives its gate row and MARK warning from them
-(AD-013 H2 amendment of 2026-10-08, H2-R4 (h)), and later `Application`, which dispatches
-coordinated operations. Nobody installs anything at runtime and the tables hold no gate data
-(H2-R6): this module imports nothing but the `CContext` enum, so it carries no gate or mesh
-dependency. It lives apart from `symmetry_coordination` because that module depends only on
-`core` and `mirai.symmetry`, and a table keyed by `CContext` would pull `mirai.topology` in.
+AD-SYM-03 slice 3b: the `C` table holds the first coordinators (Edge Connect, Vertex Connect,
+`mirai.symmetric_ops`); the removal table is still empty (slice 3c). Readers are the Symmetry
+Lab, which derives its gate row and MARK warning from the keys (AD-013 H2 amendment of
+2026-10-08, H2-R4 (h)), and `Application`, which runs the coordinator of a declared context
+whenever a symmetry definition is set. Nobody installs anything at runtime and the tables hold
+no gate data (H2-R6). The module imports the coordinators, so it depends on `mirai.symmetric_ops`
+(and through it on `mirai.topology`), never on `application`. It lives apart from
+`symmetry_coordination` because that module depends only on `core` and `mirai.symmetry`.
 """
 
 from __future__ import annotations
@@ -23,12 +24,19 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from .symmetric_ops import coordinate_edge_connect, coordinate_vertex_connect
 from .topology.contextual_c import CContext
 
-#: Resolved `C` context -> coordinator. Empty until slice 3b.
-C_CONTEXT_COORDINATORS: Mapping[CContext, Any] = MappingProxyType({})
+#: Resolved `C` context -> coordinator `(mesh, canonical selection ids) -> result`. Split and
+#: Knife are undeclared (slices 4 and 6).
+C_CONTEXT_COORDINATORS: Mapping[CContext, Any] = MappingProxyType(
+    {
+        CContext.EDGE_CONNECT: coordinate_edge_connect,
+        CContext.VERTEX_CONNECT: coordinate_vertex_connect,
+    }
+)
 
-#: Removal command constant (`mirai.interaction.commands`) -> coordinator. Empty until slice 3b.
+#: Removal command constant (`mirai.interaction.commands`) -> coordinator. Empty until slice 3c.
 #: Keyed per command, not per component mode (AD-013 H2 amendment, "Removal"): a mode-keyed
 #: declaration would need a mode-keyed gate refusal, which is not decided (G-9).
 REMOVAL_COORDINATORS: Mapping[str, Any] = MappingProxyType({})

@@ -180,23 +180,33 @@ def both_sides_faces(index: SymmetryIndex, expansion: Expansion, *, mode: str) -
     A face is returned when it holds elements of the selection *and* of its image, or when it is
     self-mirrored and holds any element of the union. `mode` is "edge" or "vertex". A coordinator
     refuses visibly while this is non-empty.
+
+    A seam element is its own image, so on its own it never makes a union call differ from
+    "intent + mirrored intent" (probe F: seam edge + opposite edge, union call + seam rule S1 is
+    `valid`); it is left out of the selection-versus-image comparison. It still counts for the
+    self-mirrored-face test.
     """
     mesh = index.mesh
     if mode == "edge":
         faces_of = mesh.edge_faces
+        partner_of = index.edge_partner
     elif mode == "vertex":
         vertex_faces: dict[VertexId, list[FaceId]] = {}
         for fid in mesh.all_face_ids():
             for v in mesh.face_vertices(fid):
                 vertex_faces.setdefault(v, []).append(fid)
         faces_of = lambda v: vertex_faces.get(v, ())  # noqa: E731
+        partner_of = index.vertex_partner
     else:
         raise ValueError(f"mode must be 'edge' or 'vertex', got {mode!r}")
 
     from_selected = {f for element in expansion.selected for f in faces_of(element)}
     from_partners = {f for element in expansion.partners for f in faces_of(element)}
+    from_selected_mirrored = {
+        f for element in expansion.selected if partner_of(element) != element for f in faces_of(element)
+    }
 
-    conflicts = from_selected & from_partners
+    conflicts = from_selected_mirrored & from_partners
     for fid in from_selected | from_partners:
         if index.face_partner(fid) == fid:
             conflicts.add(fid)

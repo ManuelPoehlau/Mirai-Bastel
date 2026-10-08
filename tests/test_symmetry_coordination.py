@@ -155,9 +155,24 @@ class TestBothSides(unittest.TestCase):
         # vertices of the two quads at the seam: p(0,1) selected, its image p(0,-1) shares no face
         exp = expand_vertices(index, {p[(0, 1)]})
         self.assertEqual(both_sides_faces(index, exp, mode="vertex"), frozenset())
-        # the seam vertex p(1,0) and p(0,1)'s image p(0,-1) meet in the quad faces[(0,-1)]
+        # the seam vertex p(1,0) and p(0,1)'s image p(0,-1) meet in the quad faces[(0,-1)]: a seam
+        # vertex is its own image, so union call and "intent + mirrored intent" agree (3b, probe F)
         exp = expand_vertices(index, {p[(0, 1)], p[(1, 0)]})
-        self.assertEqual(both_sides_faces(index, exp, mode="vertex"), frozenset({faces[(0, -1)]}))
+        self.assertEqual(both_sides_faces(index, exp, mode="vertex"), frozenset())
+        # p(1,-1) is selected on the other side: it meets p(0,1)'s image p(0,-1) in faces[(0,-1)],
+        # and p(0,1) meets p(1,-1)'s image p(1,1) in faces[(0,0)]
+        exp = expand_vertices(index, {p[(0, 1)], p[(1, -1)]})
+        flagged = both_sides_faces(index, exp, mode="vertex")
+        self.assertLessEqual({faces[(0, -1)], faces[(0, 0)]}, flagged)
+
+    def test_seam_edge_with_opposite_edge_is_not_a_conflict(self) -> None:
+        mesh, p, faces = grid()
+        index = SymmetryIndex(mesh)
+        seam_edge = next(e for e in mesh.symmetry_definition.seam_edges if set(mesh.edge_vertices(e)) == {p[(0, 0)], p[(1, 0)]})
+        opposite = next(e for e in mesh.all_edge_ids() if set(mesh.edge_vertices(e)) == {p[(0, 1)], p[(1, 1)]})
+        exp = expand_edges(index, {seam_edge, opposite})
+        self.assertEqual(len(exp.union), 3)
+        self.assertEqual(both_sides_faces(index, exp, mode="edge"), frozenset())
 
     def test_bad_mode(self) -> None:
         mesh, _p, _f = grid()

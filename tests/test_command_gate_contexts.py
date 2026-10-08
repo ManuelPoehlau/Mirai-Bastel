@@ -11,7 +11,8 @@ Headless, fixture as `tests/test_application_pointer.py`. The named tests of the
 - T-G2e  a Knife session is not touched by a gate that lists every context
 - T-G2f  `CommandGate()` defaults, `==`, read-only mapping
 - T-R5a+ a default gate changes nothing on any of the five contexts
-- T-G3a  no gate + definition: undeclared contexts behave as without a definition
+- T-G3a  no gate + definition: undeclared contexts (Split, Knife) behave as without a definition
+         (Edge/Vertex Connect are declared since slice 3b: `tests/test_symmetric_ops.py`)
 - T-G3b  AST guard: `src/main.py` sets no symmetry definition and calls no symmetry code
 
 Deliberately not named `test_application_*` (that set is what T-R5c re-runs). T-R5c+ is in
@@ -58,6 +59,9 @@ OPERATION_CONTEXTS = (
     CContext.KNIFE,
 )
 ALL_CONTEXTS = OPERATION_CONTEXTS + (CContext.NONE,)
+#: Contexts without a coordinator (`mirai.symmetry_declarations`, slice 3b): Split and Knife, plus
+#: `NONE`, which is no operation. T-G3a pins that a definition changes nothing for them.
+UNCOORDINATED_CONTEXTS = (CContext.SPLIT, CContext.KNIFE, CContext.NONE)
 TEXTS = {ctx: f"refused {ctx.name}" for ctx in OPERATION_CONTEXTS}
 EXACT_X = SymmetryDefinition((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), frozenset())
 
@@ -371,11 +375,12 @@ def _without_symmetry(state: dict) -> dict:
     return {k: v for k, v in state.items() if k != "symmetry"}
 
 
-@pytest.mark.parametrize("ctx", ALL_CONTEXTS, ids=lambda c: c.name)
+@pytest.mark.parametrize("ctx", UNCOORDINATED_CONTEXTS, ids=lambda c: c.name)
 def test_t_g3a_no_gate_a_definition_changes_nothing_for_one_sided_selections(ctx):
-    """G-3 boundary from the Production side: no gate + an exact X definition. A selection
-    without a mirror pair behaves as without a definition (return value, status, mesh result);
-    nothing refuses."""
+    """G-3 boundary from the Production side: no gate + an exact X definition. For a context
+    without a coordinator (Split, Knife) a selection without a mirror pair behaves as without a
+    definition (return value, status, mesh result); nothing refuses. Edge and Vertex Connect run
+    their coordinator whenever a definition is set, in MARK as in BLOCK (slice 3b)."""
     runs = []
     for definition in (None, EXACT_X):
         app = make_app()
