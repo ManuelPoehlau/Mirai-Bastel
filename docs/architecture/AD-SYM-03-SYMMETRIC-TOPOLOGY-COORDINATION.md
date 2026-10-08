@@ -428,8 +428,10 @@ face after A1 case 2.
   vs. resolving the source and constructing its mirror vs. rejecting through the delta check. Decided in the Knife
   slice, after a wider probe than probe I (only `select_bridge` was exercised; note that `select_bridge` rounds
   distances to `_TIE_DIGITS`, which turns near-ties into ties).
-- **Residue under symmetry:** e.g. after a symmetric Split, only the source vertex or both new vertices selected
-  (AD-017 residue table is one-sided). Prepared with slice 4.
+- **Residue under symmetry:** *answered for Edge Connect 2026-10-08* (§6, "3b practical check": ITERATE; created
+  edges on the side(s) of the live selection, implemented as the engineering rule recorded there). Vertex Connect
+  keeps the live selection (AD-017). **Split stays open** until slice 4 (e.g. only the source vertex or both new
+  vertices selected; the AD-017 residue table is one-sided).
 - **General (non-exact) planes:** whether they ever get exact coordination (needs a correspondence decision: X-c or
   X-d). No host produces them today; a loaded `export_state` is the only route (the plane is serialised).
   **Asymmetry, out of scope here:** transforms are not refused on non-exact planes, topology coordinators would be.
@@ -574,6 +576,29 @@ become very imprecise.
 - *Consequence:* D-strict (§2.3, §3 item 5) is now Artist-confirmed behaviour, not only an interim rule.
   D-source stays recorded as an alternative should the verdict be revisited.
 
+### 3b practical check (Manu, 2026-10-08)
+
+*Artist statements (Manu, 2026-10-08), Symmetry Lab, `head_basemesh` / `man_with_shoes_basemesh`:* all steps of the
+slice 3b practical check were "as expected" on his machine:
+- Edge Connect and Vertex Connect run symmetric, one Undo step;
+- a seam edge in a Connect selection works;
+- refusal next to unpaired geometry, symmetric result far from it (`man_with_shoes_basemesh`);
+- Split and Knife contexts are refused under BLOCK with their texts;
+- Delete/Dissolve still run one-sided (accepted interim, ended by slice 3c).
+
+*Verdict, selection after a symmetric Edge Connect:* **ITERATE.** Wanted: the created edges on the side he worked
+on; if he deliberately selected both sides beforehand (his example: two edges on the left, their mirror partners on
+the right), the created edges of both sides, so he can continue with both (e.g. scale in X). Reason given: after a
+move the other side follows through transform symmetry anyway. The earlier default (created edges of both sides
+always) is superseded.
+
+*Engineering, set by the handoff 2026-10-08 (assumption, not confirmed by Manu):* the residue rule that implements
+the verdict. Created edges are selected on the side(s) where the **live** selection (before canonicalisation) has
+elements; a live selection on the plane only (seam edges) -> the normal's side (+X); a created edge that is its own
+mirror (on or spanning the plane) stays selected. Side of an element = sign of its vertices' summed signed distance
+to the plane (`element_side`, the rule `canonical_*` use), no tolerance. One shared helper
+(`symmetric_ops.residue_sides` / `on_residue_sides`) so the same rule serves the removal residue (slice 3c).
+
 ---
 
 ## 7. Proposed slice cut for the following Type-A package
@@ -615,8 +640,9 @@ from slice 5 to slice 3 (it is class B and was only waiting for the gate); the s
   one quad) was changed accordingly and a case with two non-seam vertices on opposite sides keeps the conflict. Also: for
   S1 the halves of a split seam edge are found as the edges from the midpoint vertex to the old endpoints, read before
   the op.
-- **Residue under symmetry (assumption, Manu judges it in the practical test):** Edge Connect selects the created
-  edges of both sides (one union call); Vertex Connect leaves the live selection untouched (AD-017 residue).
+- **Residue under symmetry (superseded 2026-10-08 by the Artist's ITERATE verdict, §6 "3b practical check"):** as
+  first built, Edge Connect selected the created edges of both sides (one union call); it now selects those on the
+  side(s) of the live selection. Vertex Connect leaves the live selection untouched (AD-017 residue).
 - **Fuzz (headless, not a committed test):** every edge pair, three-edge run and vertex pair of every +X face of
   `subd_cube` and `head_basemesh`: 108 + 1458 successes, each report clean, each one Undo step, Undo restores the
   topology; 48 + 648 Vertex Connect no-ops without a history entry; no exception, no refusal. On

@@ -38,7 +38,7 @@ from mirai.symmetric_ops import (
     coordinate_vertex_connect,
 )
 from mirai.symmetry import SymmetryState, symmetry_state
-from mirai.symmetry_coordination import SymmetryIndex, completeness_report
+from mirai.symmetry_coordination import SymmetryIndex, canonical_edges, completeness_report
 from mirai.topology.connect_per_face import apply_connect_edges
 from mirai.topology.contextual_c import CContext
 from mirai.topology.delete_dissolve import apply_removal
@@ -63,6 +63,7 @@ def make_app(asset: str, *, definition: bool = True) -> Application:
     app.init_scene("obj", obj_path=_EXAMPLES / "meshes" / ASSETS[asset])
     app.frame_scene()
     app.set_viewport_size(800, 600)
+    app.test_asset = asset  # lets a test rebuild an identical twin
     if definition:
         mesh = app.scene.mesh
         seam = frozenset(
@@ -127,6 +128,17 @@ def opposite_edges(mesh, face):
 def diagonal_vertices(mesh, face):
     vs = mesh.face_vertices(face)
     return {vs[0], vs[2]}
+
+
+def edge_side(mesh, edge) -> int:
+    total = sum(mesh.vertex_position(v)[0] for v in mesh.edge_vertices(edge))
+    return (total > 0) - (total < 0)
+
+
+def mirror_face(mesh, face):
+    partner = SymmetryIndex(mesh).face_partner(face)
+    assert partner is not None and partner != face
+    return partner
 
 
 def assert_clean(mesh) -> None:
@@ -207,11 +219,8 @@ def test_edge_connect_is_one_undo_step_and_symmetric(asset, touching_seam):
     assert len(mesh.all_face_ids()) > faces_before
     created = set(app.selection.edges)
     assert created and all(mesh.is_valid_edge(e) for e in created)
-    sides = {
-        (sum(mesh.vertex_position(v)[0] for v in mesh.edge_vertices(e)) > 0) - (sum(mesh.vertex_position(v)[0] for v in mesh.edge_vertices(e)) < 0)
-        for e in created
-    }
-    assert {1, -1} <= sides  # residue: the created edges of both sides
+    # Residue: the live selection was on the +X side only, so the created edges of +X.
+    assert 1 in {edge_side(mesh, e) for e in created} and -1 not in {edge_side(mesh, e) for e in created}
 
     assert app.key_press(CTRL_Z) is True
     assert everything(app) == (before[0], 0, selection_before, 0, 1)
@@ -270,6 +279,140 @@ def test_vertex_connect_with_nothing_connectable_makes_no_history_entry():
     assert app.key_press(C) is False
     assert app.status_message == "Vertex Connect: nothing connectable"
     assert everything(app) == before
+
+
+# -- residue: the created edges on the side(s) of the live selection ----------------------------
+
+
+def connect_and_created(app: Application) -> set:
+    """Presses C; returns the connecting edges the op created (`EdgeConnectResult.created`, read
+    from an identical twin: ids are deterministic) — the split halves are no residue."""
+    mesh = app.scene.mesh
+    twin = make_app(app.test_asset, definition=app.scene.mesh.symmetry_definition is not None)
+    twin_selection = set(app.selection.edges)
+    index = SymmetryIndex(twin.scene.mesh)
+    canonical = (
+        canonical_edges(index, twin_selection) if twin.scene.mesh.symmetry_definition else twin_selection
+    )
+    twin_mesh = twin.scene.mesh
+    if twin_mesh.symmetry_definition is not None:
+        created = coordinate_edge_connect(twin_mesh, canonical).created
+    else:
+        created = apply_connect_edges(twin_mesh, set(canonical)).created
+    assert app.key_press(C) is True
+    assert topology_state(app) == topology_state(twin)
+    return set(created)
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+@pytest.mark.parametrize("worked_on", [1, -1], ids=["plus_x", "minus_x"])
+def test_residue_is_the_created_edges_of_the_side_the_artist_worked_on(asset, worked_on):
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    face = plus_x_quad(mesh, touching_seam=False)
+    if worked_on < 0:
+        face = mirror_face(mesh, face)
+    select_edges(app, opposite_edges(mesh, face))
+    new_edges = connect_and_created(app)
+    selected = set(app.selection.edges)
+    on_side = {e for e in new_edges if edge_side(mesh, e) == worked_on}
+    mirrored = {e for e in new_edges if edge_side(mesh, e) == -worked_on}
+    assert on_side and mirrored  # both sides were cut
+    # The edge into the midpoint ring: only the worked-on side's created edges are selected.
+    assert selected and selected <= new_edges
+    assert {edge_side(mesh, e) for e in selected} == {worked_on}
+    assert app.selection.mode is SelectionMode.EDGE
+    assert not selected & mirrored
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_residue_of_a_deliberate_two_sided_selection_is_the_created_edges_of_both_sides(asset):
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    face = plus_x_quad(mesh, touching_seam=False)
+    edges = opposite_edges(mesh, face)
+    index = SymmetryIndex(mesh)
+    select_edges(app, edges | {index.edge_partner(e) for e in edges})
+    new_edges = connect_and_created(app)
+    selected = set(app.selection.edges)
+    assert {edge_side(mesh, e) for e in selected} == {1, -1}
+    assert selected == new_edges
+    assert_clean(mesh)
+
+
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_residue_with_a_seam_edge_in_the_selection_follows_the_non_seam_edges_side(asset):
+    """The seam edge has no side; the opposite edge decides (probe F case). Created edges that are
+    their own mirror stay selected."""
+    app = make_app(asset)
+    mesh = app.scene.mesh
+    for worked_on in (1, -1):
+        app = make_app(asset)
+        mesh = app.scene.mesh
+        face = plus_x_quad(mesh, touching_seam=True)
+        if worked_on < 0:
+            face = mirror_face(mesh, face)
+        edges = mesh.face_edges(face)
+        k = next(i for i, e in enumerate(edges) if e in mesh.symmetry_definition.seam_edges)
+        select_edges(app, {edges[k], edges[(k + 2) % 4]})
+        new_edges = connect_and_created(app)
+        selected = set(app.selection.edges)
+        assert selected and selected <= new_edges
+        assert {edge_side(mesh, e) for e in selected} <= {worked_on, 0}
+        assert worked_on in {edge_side(mesh, e) for e in selected}
+        assert not {e for e in new_edges if edge_side(mesh, e) == -worked_on} & selected
+
+
+def test_residue_sides_helper_rules():
+    app = make_app("subd_cube")
+    mesh = app.scene.mesh
+    seam = sorted(mesh.symmetry_definition.seam_edges)
+    face = plus_x_quad(mesh, touching_seam=False)
+    plus = opposite_edges(mesh, face)
+    minus = {SymmetryIndex(mesh).edge_partner(e) for e in plus}
+    sides = lambda live: symmetric_ops.residue_sides(mesh, live, mesh.edge_vertices)  # noqa: E731
+    assert sides(plus) == {1}
+    assert sides(minus) == {-1}
+    assert sides(plus | minus) == {1, -1}
+    assert sides(seam) == {1}  # only the plane: the normal's side
+    assert sides(set(seam) | minus) == {-1}  # the plane has no say
+    assert sides([]) == {1}
+    kept = symmetric_ops.on_residue_sides(mesh, set(seam) | plus | minus, frozenset({-1}), mesh.edge_vertices)
+    assert kept == set(seam) | minus  # an edge on the plane is its own mirror: it stays
+
+
+def test_residue_undo_restores_the_previous_selection_and_redo_the_residue():
+    app = make_app("subd_cube")
+    mesh = app.scene.mesh
+    face = plus_x_quad(mesh, touching_seam=False)
+    select_edges(app, opposite_edges(mesh, face))
+    selection_before = selection_state(app)
+    connect_and_created(app)
+    residue = selection_state(app)
+    assert residue != selection_before
+    assert len(app._selection_undo_stack) == 1  # one mirror entry per push, `before` pre-transaction
+    assert app.key_press(CTRL_Z) is True
+    assert selection_state(app) == selection_before
+    assert app.key_press(CTRL_Y) is True
+    assert selection_state(app) == residue
+
+
+def test_a_refused_press_leaves_the_selection_untouched():
+    app, face = displaced_cube()
+    mesh = app.scene.mesh
+    select_edges(app, opposite_edges(mesh, face))
+    selection_before = selection_state(app)
+    assert_refused(app, TEXT_UNPAIRED)
+    assert selection_state(app) == selection_before
+
+
+def test_without_a_definition_the_residue_is_all_created_edges():
+    app = make_app("subd_cube", definition=False)
+    mesh = app.scene.mesh
+    face = plus_x_quad_no_seam(app)
+    select_edges(app, opposite_edges(mesh, face))
+    created = connect_and_created(app)
+    assert created and set(app.selection.edges) == created  # unchanged behaviour, nothing filtered
 
 
 # -- the seam (S1) ---------------------------------------------------------------------------

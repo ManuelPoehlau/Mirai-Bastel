@@ -105,6 +105,14 @@ def _vertex_side(mesh: Mesh, definition: SymmetryDefinition, vertex_ids: Iterabl
     return sum(_signed_distance(mesh.vertex_position(v), definition) for v in vertex_ids)
 
 
+def element_side(mesh: Mesh, definition: SymmetryDefinition, vertex_ids: Iterable[VertexId]) -> int:
+    """+1 / -1 / 0: which side of the plane an element lies on, by the sign of its vertices'
+    summed signed distance (the side rule `canonical_*` use); 0 on or spanning the plane. No
+    tolerance."""
+    total = _vertex_side(mesh, definition, vertex_ids)
+    return (total > 0) - (total < 0)
+
+
 def canonical_vertices(index: SymmetryIndex, vertex_ids: Iterable[VertexId]) -> set[VertexId]:
     """Count mirror pairs once (A2 = A): of a vertex and its partner keep the normal's side."""
     return _canonical(index, vertex_ids, index.vertex_partner, lambda v: _vertex_side(index.mesh, index.definition, (v,)))

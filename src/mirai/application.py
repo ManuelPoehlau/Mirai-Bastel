@@ -66,7 +66,7 @@ from .symmetry_coordination import (
     canonical_faces,
     canonical_vertices,
 )
-from .symmetric_ops import SymmetryRefusal
+from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
@@ -593,8 +593,10 @@ class Application:
         (`_connect_op`) inside the same single transaction; a `SymmetryRefusal`
         restores the mesh, posts its text, records no history entry and leaves
         the selection untouched. Under symmetry Edge Connect selects the created
-        edges of both sides; Vertex Connect keeps the live selection (AD-017
-        residue; first default, Artist judges it)."""
+        edges on the side(s) where the live selection had elements (only the
+        plane -> the normal's side; created edges on the plane stay;
+        `residue_sides`, Artist ITERATE 2026-10-08); Vertex Connect keeps the
+        live selection (AD-017 residue)."""
         selection = self.selection
         effective = self._canonical_c_selection()
         ctx = resolve_c_context(effective)
@@ -615,9 +617,21 @@ class Application:
             return True
 
         if ctx is CContext.EDGE_CONNECT:
+            mesh = self.scene.mesh
+            # Taken from the live selection before the transaction (and before canonicalisation
+            # reaches the mesh): the sides the artist worked on.
+            sides = (
+                residue_sides(mesh, selection.edges, mesh.edge_vertices)
+                if self._connect_coordinator(ctx) is not None
+                else None
+            )
+
             def residue(result) -> None:
+                created = set(result.created)
+                if sides is not None:
+                    created = on_residue_sides(mesh, created, sides, mesh.edge_vertices)
                 selection.clear()
-                selection.add(set(result.created))
+                selection.add(created)
 
             try:
                 self._mesh_transaction(
@@ -664,11 +678,14 @@ class Application:
         symmetry definition is set — in MARK as in BLOCK, its refusals are part of a supported
         operation, not a gate (H2 amendment, "Runtime refusals are not G-3") — otherwise the
         unchanged `plain` function. Both run inside the caller's one `_mesh_transaction`."""
-        if self.scene.mesh.symmetry_definition is not None:
-            coordinator = symmetry_declarations.C_CONTEXT_COORDINATORS.get(context)
-            if coordinator is not None:
-                return coordinator
-        return plain
+        coordinator = self._connect_coordinator(context)
+        return plain if coordinator is None else coordinator
+
+    def _connect_coordinator(self, context: CContext) -> Callable | None:
+        """The coordinator that runs `context` now: declared and a definition set; else None."""
+        if self.scene.mesh.symmetry_definition is None:
+            return None
+        return symmetry_declarations.C_CONTEXT_COORDINATORS.get(context)
 
     def _canonical_c_selection(self) -> Selection:
         """The selection `C` reads (AD-SYM-03 §6 A2 = A; AD-013 H2 amendment,

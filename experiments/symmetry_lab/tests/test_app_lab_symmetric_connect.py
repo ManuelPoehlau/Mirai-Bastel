@@ -152,6 +152,36 @@ def test_connect_runs_symmetric_as_one_undo_step_in_block_and_mark(kind, mode):
     assert topology_state(app) == after
 
 
+def edge_sides(app, edges) -> set:
+    mesh = app.scene.mesh
+    out = set()
+    for e in edges:
+        total = sum(mesh.vertex_position(v)[0] for v in mesh.edge_vertices(e))
+        out.add((total > 0) - (total < 0))
+    return out
+
+
+@pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK], ids=["block", "mark"])
+def test_residue_is_the_created_edges_on_the_side_worked_on_or_on_both_sides(mode):
+    """Artist ITERATE 2026-10-08: one side selected -> that side's created edges; both sides
+    selected on purpose -> the created edges of both; Undo restores the selection."""
+    app, lab = lab_on(mode)
+    select_opposite_edges(app)
+    one_sided = set(app.selection.edges)
+    selection_before = selection_state(app)
+    assert press(app, lab, C) is True
+    assert edge_sides(app, app.selection.edges) == {1}
+    assert press(app, lab, CTRL_Z) is True
+    assert selection_state(app) == selection_before
+
+    from mirai.symmetry_coordination import SymmetryIndex
+
+    index = SymmetryIndex(app.scene.mesh)
+    app.selection.edges = one_sided | {index.edge_partner(e) for e in one_sided}
+    assert press(app, lab, C) is True
+    assert edge_sides(app, app.selection.edges) == {1, -1}
+
+
 @pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK], ids=["block", "mark"])
 def test_split_and_knife_contexts_stay_unsupported(mode):
     """BLOCK: benannt abgelehnt. MARK: laufen weiter einseitig (hier: Split der einen Kante)."""

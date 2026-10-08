@@ -19,7 +19,7 @@ never `application`. `mirai.symmetry_declarations` maps `CContext` to these func
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Callable, Iterable
 
 from core import EdgeId, VertexId
 from core.mesh import Mesh, SymmetryDefinition
@@ -29,6 +29,7 @@ from .symmetry_coordination import (
     both_sides_faces,
     completeness_report,
     delta_check,
+    element_side,
     expand_edges,
     expand_vertices,
     is_exact_plane,
@@ -97,6 +98,36 @@ def _edge_between(mesh: Mesh, a: VertexId, b: VertexId) -> EdgeId:
         if b in mesh.edge_vertices(edge_id):
             return edge_id
     raise LookupError(f"no edge between {a!r} and {b!r}")
+
+
+def residue_sides(
+    mesh: Mesh, live: Iterable, vertices_of: Callable[[object], Iterable[VertexId]]
+) -> frozenset[int]:
+    """The sides (+1 normal's side, -1 opposite) a symmetric operation's selection residue goes
+    to: those on which the **live** selection (before canonicalisation) has elements; only
+    elements on the plane or none at all -> the normal's side. `vertices_of` is
+    `mesh.edge_vertices` / `mesh.face_vertices`, so call this before the mutation. Engineering
+    default (AD-SYM-03 §4, "Residue under symmetry"), not an Artist decision."""
+    definition = _require_definition(mesh)
+    sides = {element_side(mesh, definition, vertices_of(e)) for e in live} - {0}
+    return frozenset(sides) or frozenset({1})
+
+
+def on_residue_sides(
+    mesh: Mesh,
+    created: Iterable,
+    sides: frozenset[int],
+    vertices_of: Callable[[object], Iterable[VertexId]],
+) -> set:
+    """The `created` elements that lie on one of `sides`; an element on or spanning the plane
+    (its own mirror) always stays."""
+    definition = _require_definition(mesh)
+    kept = set()
+    for element in created:
+        side = element_side(mesh, definition, vertices_of(element))
+        if side == 0 or side in sides:
+            kept.add(element)
+    return kept
 
 
 def coordinate_edge_connect(mesh: Mesh, edge_ids: Iterable[EdgeId]) -> EdgeConnectResult:

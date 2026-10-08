@@ -121,7 +121,7 @@ Gate außerhalb der Vorschau nie ab.
 
 ## Symmetrische Topologie, Slice 3b: Edge Connect und Vertex Connect
 
-AD-SYM-03 Slice 3b (2026-10-08). **Artist-Verdikt: steht aus** (Praxis-Check B2a in `docs/ATELIER.md`). Mit gesetzter
+AD-SYM-03 Slice 3b (2026-10-08). **Praxis-Check durch Manu am 2026-10-08: alle Schritte wie erwartet; Auswahl nach Edge Connect: ITERATE (umgesetzt, s. u.)** (B2a in `docs/ATELIER.md`). Mit gesetzter
 Symmetrie führt `C` mit einer Edge-Connect- oder Vertex-Connect-Auswahl **eine** koordinierte Operation auf beiden
 Seiten aus (Auswahl plus Partner, ein Aufruf der unveränderten `apply_*`-Funktion, ein Undo-Schritt) oder lehnt
 sichtbar ab und ändert nichts. Das gilt in **MARK wie in BLOCK**: die Ablehnungen gehören zum Vertrag einer
@@ -142,9 +142,14 @@ Symmetrie läuft `C` unverändert.
 
   Auf `man_with_shoes_basemesh` (`partial`) arbeitet man fern der magenta Vertices symmetrisch; direkt daneben (die
   neue Face enthielte einen ungepaarten Vertex) kommt der letzte Text.
-- **Auswahl nach dem Connect (Default, Annahme, nicht von Manu bestätigt):** Edge Connect wählt die erzeugten Kanten
-  **beider** Seiten, Vertex Connect lässt die Auswahl unverändert (AD-017). Nicht weiter verfeinert; Manu beurteilt es im
-  Praxis-Check.
+- **Auswahl nach dem Connect (Artist-Verdikt ITERATE, Manu, 2026-10-08):** Edge Connect wählt die erzeugten Kanten auf
+  der Seite, auf der du gearbeitet hast; hattest du bewusst beide Seiten gewählt (Kanten links, ihre Spiegelpartner
+  rechts), die erzeugten Kanten beider Seiten, damit du mit beiden weiterarbeiten kannst (z. B. Skalieren in X).
+  Regel (Engineering-Annahme, von Manu nicht bestätigt): maßgeblich ist die **live** Auswahl vor der Kanonisierung;
+  liegt sie nur auf der Ebene (Seam-Kanten), gilt die Seite der Normalen (+X). Erzeugte Kanten auf der Ebene (ihr
+  eigenes Spiegelbild) bleiben ausgewählt. Beide Seiten werden immer geschnitten, nur die Auswahl folgt der Seite.
+  Undo stellt die vorherige Auswahl wieder her; eine abgelehnte Taste lässt sie unberührt. Vertex Connect lässt die
+  Auswahl unverändert (AD-017). Nach Split (Slice 4) ist die Frage noch offen.
 - **Erfolgstexte** wie bisher: `Connect Edges`, `Vertex Connect` (kein Treffer: `Vertex Connect: nothing connectable`,
   kein History-Eintrag).
 - **Headless nachgemessen** (nicht Praxis): `tests/test_symmetric_ops.py` und
