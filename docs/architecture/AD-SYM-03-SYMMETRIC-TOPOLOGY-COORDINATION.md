@@ -1,7 +1,7 @@
 # AD-SYM-03 — Symmetric Topology Coordination
 
 **Status:** **DECIDED** (Manu, 2026-10-08), as revised after review CLAUDE-001 and with the Artist verdicts A1/A2/A3 (§6, §9).
-The AD-013 H2 amendment (G-2) is **still required before Slice 3** (§5, §7); it is not done.
+The AD-013 H2 amendment (G-2), required before Slice 3 (§5, §7), is **DECIDED** (Manu, 2026-10-08; [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row)).
 **Date:** 2026-10-06 · revised 2026-10-07 after the independent review CLAUDE-001 (answers in §9) · decided 2026-10-08
 **Mode (M5):** Discovery → decision preparation. No implementation, no code change.
 **Belongs to:** Symmetry Lab track (WP-SYM-LAB), follow-up of WP-SYM-LAB-03; working milestone
@@ -472,7 +472,7 @@ face after A1 case 2.
 **Order:** this AD needs AD-SYM-01/02 as they are; the H2 amendment and the A1 observation (§6) are
 preconditions of slice 3.
 
-*Pointer 2026-10-08:* H2 amendment proposed, see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row), **PROPOSED**; independent review CLAUDE-001 archived (ACCEPT WITH CHANGES, no blockers), findings answered in the amendment; awaiting Manu's decision. The amendment also fixes the A2 canonicalisation rule for slice 3 (canonicalise always when a definition is set).
+*Pointer 2026-10-08:* H2 amendment (G-2), see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row): **DECIDED** (Manu, 2026-10-08), after independent review CLAUDE-001 (ACCEPT WITH CHANGES, no blockers, findings answered). It also fixes the A2 canonicalisation rule for slice 3: canonicalise always when a definition is set, for declared and undeclared contexts (in MARK a mirror edge pair runs as a one-sided Split until slice 4).
 
 ---
 
@@ -593,7 +593,7 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
 **Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
-after the AD-013 H2 amendment (G-2) is written and reviewed — **that amendment is not done**. Slice 4 follows
+after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5). Slice 4 follows
 slice 3. Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
 
 The order of operations is unchanged from the Discovery except that the non-seam part of Delete/Dissolve moves
@@ -650,7 +650,7 @@ UNKNOWN), A2 = A and A3 = S ("for now"); all three are recorded in §6. Owner ch
 accepted, **as an assumption** (no separate explicit O1 confirmation). The AD-013 H2 amendment is **not** done and
 remains a precondition of slice 3 (§5). Items 5 and 9 keep their wording; D-strict is now Artist-confirmed.
 
-*Pointer 2026-10-08:* H2 amendment proposed, see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row), **PROPOSED**; independent review CLAUDE-001 archived (ACCEPT WITH CHANGES, no blockers), findings answered in the amendment; awaiting Manu's decision. The amendment also fixes the A2 canonicalisation rule for slice 3 (canonicalise always when a definition is set).
+*Pointer 2026-10-08:* H2 amendment (G-2), see [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row): **DECIDED** (Manu, 2026-10-08), after independent review CLAUDE-001 (ACCEPT WITH CHANGES, no blockers, findings answered). It also fixes the A2 canonicalisation rule for slice 3: canonicalise always when a definition is set, for declared and undeclared contexts (in MARK a mirror edge pair runs as a one-sided Split until slice 4).
 
 *Status line of the 2026-10-07 revision, kept for history:* No decision beyond the review's own proposals was taken, except: the interim choice of D-strict (the safe default
 until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status then stayed

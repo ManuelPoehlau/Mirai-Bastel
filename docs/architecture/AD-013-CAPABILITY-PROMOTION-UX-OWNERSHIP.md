@@ -590,8 +590,9 @@ session (the check sits after the Knife routing); a Lab reaction that must run *
 `Application`). None is a stated need. Any of them reopens this addendum (H2-R6).
 
 *Note 2026-10-08:* AD-SYM-03 (DECIDED) states the first such need: refusing `C` by its resolved
-context. An amendment that lifts exactly that item is **PROPOSED**, not decided; see
-§ Addendum (2026-10-08) below. Until it is decided, this section stands unchanged.
+context. An amendment that lifts exactly that item is **DECIDED** (Manu, 2026-10-08); see
+§ Addendum (2026-10-08) below. That item ("part of the selection", for `C` by its resolved context) is no
+longer a Limit; everything else in this section stands unchanged.
 
 ### Rules
 
@@ -799,11 +800,13 @@ With N1–N3 answered, the addendum is DECIDED (status above).
 
 ## Addendum (2026-10-08, AD-SYM-03 slice 3 — H2 amendment G-2: context-keyed refusal for `C`, fail-closed BLOCK row)
 
-**Status:** **PROPOSED** (2026-10-08), revised the same day after the independent review
+**Status:** **DECIDED ✓** (Manu, 2026-10-08, option A: accepted as revised). Proposed 2026-10-08 and
+revised the same day after the independent review
 [CLAUDE-001](../archive/symmetry_lab/reviews/AD-013_H2_AMENDMENT_REVIEW_CLAUDE_001.md) (fresh session,
 `claude/funny-curie-vhvi6a` @ `42aa4ea`, archived unedited; ACCEPT WITH CHANGES, no blockers; answers in
-§ Review below). **Not binding.** It becomes binding only with Manu's decision. Until then the H2
-addendum above stands unchanged, including § Limits of G.
+§ Review below). The decision includes the canonicalisation rule of review S1 (§ Proposal 1) with its
+MARK consequence, which was shown to Manu with the decision. No second review was asked for. Code
+follows in AD-SYM-03 slice 3; until it lands, nothing in `src` or the Lab has changed.
 **Basis:** [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) (DECIDED, Manu, 2026-10-08) §2.5,
 §3 item 7, §5 (row "AD-013 H2"), §7 slice 3. The direction is decided there: declaration per resolved
 operation (D-b), a fail-closed BLOCK row, and a context-keyed refusal for `C` with G-2 as the proposed
@@ -874,7 +877,7 @@ inert by default (working name; the Python shape stays open, as in H2):
   E5 mode. Consequence in MARK (review probe P5, `subd_cube`, X, mirror edge pair `{0, 10}`): before
   slice 4 the pair is read as one edge and runs as a one-sided Split of that edge (Split is not yet
   declared), where today it reports `Keine verbindbaren Kanten …`. Under BLOCK the same press is
-  refused with the Split text. Manu confirms this with the decision on this amendment.
+  refused with the Split text. Confirmed by Manu with the decision on this amendment (2026-10-08).
 - **Canonicalisation works on a value (review S4).** It builds a temporary selection (or id sets) for
   the resolver and the coordinator and never writes `app.selection` before the check. A refused `C`
   therefore leaves `selection` (mode and every id set) unchanged, the two-sided case included. Only a
@@ -1092,7 +1095,7 @@ CLAUDE-001/002 are not touched.
 
 | Finding | Severity | Answer |
 |---|---|---|
-| S1 — the A2/MARK canonicalisation question decides whether "one resolution" (T-G2b) holds and touches the G-3 boundary | SHOULD | **Decided in the text, reviewer's recommendation.** Canonicalise always when a definition is set, for declared and undeclared contexts (§ Proposal 1); one resolution holds; why it is not G-3 is stated in § Proposal 1 and item 3; the MARK consequence is listed under § Consequences. Removed from § Not decided here. **Manu confirms with the decision on this amendment** (it follows A2 = A as recorded, but the MARK consequence was not shown to him with A2) |
+| S1 — the A2/MARK canonicalisation question decides whether "one resolution" (T-G2b) holds and touches the G-3 boundary | SHOULD | **Decided in the text, reviewer's recommendation.** Canonicalise always when a definition is set, for declared and undeclared contexts (§ Proposal 1); one resolution holds; why it is not G-3 is stated in § Proposal 1 and item 3; the MARK consequence is listed under § Consequences. Removed from § Not decided here. **Confirmed by Manu with the decision (2026-10-08, option A)**; the MARK consequence was shown to him with it |
 | S2 — the H2-R2 bullet "refuses only commands that start an interaction or change the mesh" contradicts the fail-closed row | SHOULD | **Fixed, reviewer's wording.** § Consequences for H2-R1 … H2-R6 now replaces that bullet instead of saying "holds" |
 | S3 — no test for the G-3 boundary from the Production side | SHOULD | **Fixed.** New T-G3a (no gate + definition: undeclared contexts unchanged) and T-G3b (AST guard: `src/main.py` sets no definition and calls no symmetry code); H2-R5 consequence extended |
 | S4 — "no selection change" on refusal claimed, not tested | SHOULD | **Fixed.** § Proposal 1: canonicalisation works on a value, never on `app.selection` before the check; T-G2a asserts mode and id sets unchanged, including the two-sided case |
@@ -1105,4 +1108,9 @@ CLAUDE-001/002 are not touched.
 | P1 — mirror pairing via canonicalisation is part of the context item | NIT | **Fixed.** One bullet in § Proposal 1 |
 
 A second review is not required by the findings (no blocker, and every change is the reviewer's own
-proposal), but Manu may ask for one.
+proposal); Manu did not ask for one.
+
+**Decision note (2026-10-08).** Manu decided option A: the amendment as revised above, including the
+canonicalisation rule (S1) and its MARK consequence. Alternatives offered and not chosen: B (canonicalise
+under MARK only for declared contexts; needs two resolutions, a revision and a second review), C (a
+second review first), UNKNOWN.

@@ -56,9 +56,8 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 
 | # | Was | Wo |
 |---|---|---|
-| D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung steht noch aus und kommt vor Slice 3 | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
-| D2 | **H2-Amendment (Voraussetzung für Slice 3):** Vorschlag liegt vor, unabhängiges Review ist durch (annehmen mit Änderungen, keine Blocker), Änderungen eingearbeitet; wartet auf deine Entscheidung | [AD-013, Addendum 2026-10-08](architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row) |
-| D3 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
+| D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung (Voraussetzung für Slice 3) ist ebenfalls **entschieden** (2026-10-08) | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
 ### E. Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
 
@@ -72,7 +71,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie für Split/Connect/Knife/Delete/Dissolve im Lab | Modellieren mit Symmetrie ohne Blockaden | D1 ist entschieden; Slice 1–2 frei, Slice 3 nach der H2-Ergänzung (AD-SYM-03 §7) |
+| Symmetrie für Split/Connect/Knife/Delete/Dissolve im Lab | Modellieren mit Symmetrie ohne Blockaden | D1 und die H2-Ergänzung sind entschieden; Slice 1–2 erledigt, Slice 3 frei (AD-SYM-03 §7) |
 | Symmetrie in die Production-App | Symmetrie im echten Werkzeug | Lab-Ausbau, danach Promotionsprüfung |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-Optimierung auf dem Head | flüssigeres Arbeiten auf dichten Meshes | — |
