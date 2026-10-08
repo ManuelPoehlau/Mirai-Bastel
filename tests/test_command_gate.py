@@ -296,10 +296,16 @@ def _application_test_files() -> list[str]:
     return files
 
 
-def _run_application_tests(tmp_path: Path, mode: str) -> tuple[dict[str, str], int]:
+def _run_application_tests(tmp_path: Path, mode: str) -> tuple[dict[str, str], int, int]:
     report = tmp_path / f"{mode}.xml"
     count_file = tmp_path / f"{mode}.count"
-    env = dict(os.environ, MIRAI_GATE_MODE=mode, MIRAI_GATE_COUNT_FILE=str(count_file))
+    context_count_file = tmp_path / f"{mode}.context_count"
+    env = dict(
+        os.environ,
+        MIRAI_GATE_MODE=mode,
+        MIRAI_GATE_COUNT_FILE=str(count_file),
+        MIRAI_CONTEXT_COUNT_FILE=str(context_count_file),
+    )
     subprocess.run(
         [
             sys.executable,
@@ -329,26 +335,38 @@ def _run_application_tests(tmp_path: Path, mode: str) -> tuple[dict[str, str], i
         else:
             outcomes[key] = "passed"
     calls = int(count_file.read_text()) if count_file.exists() else 0
-    return outcomes, calls
+    context_calls = int(context_count_file.read_text()) if context_count_file.exists() else 0
+    return outcomes, calls, context_calls
 
 
 def test_pass_through_run_with_inert_active_gate(tmp_path):
-    """T-R5c (H2-R5, N7): every `tests/test_application_*` with an inert but
-    active gate (allow-list = every `mirai.interaction.commands` constant,
-    refused = {sentinel}) gives the same outcome per test as without a gate,
-    and the gate was consulted. Negative control: an empty allow-list makes
-    tests fail, so the gate really is installed on each `Application`."""
-    baseline, baseline_calls = _run_application_tests(tmp_path, "off")
-    inert, inert_calls = _run_application_tests(tmp_path, "inert")
-    empty, empty_calls = _run_application_tests(tmp_path, "empty")
+    """T-R5c / T-R5c+ (H2-R5, N7; H2 amendment N5): every `tests/test_application_*` with an
+    inert but active gate (allow-list = every `mirai.interaction.commands` constant,
+    refused = {sentinel}, `refused_contexts` = {}) gives the same outcome per test as without a
+    gate, and both the gate and the context check were consulted. Negative controls: an empty
+    allow-list makes tests fail, so the gate really is installed on each `Application`; a gate
+    listing every operation context makes the contextual-C and Knife tests fail, so the context
+    check really acts on that path."""
+    baseline, baseline_calls, baseline_context_calls = _run_application_tests(tmp_path, "off")
+    inert, inert_calls, inert_context_calls = _run_application_tests(tmp_path, "inert")
+    empty, empty_calls, _ = _run_application_tests(tmp_path, "empty")
+    contexts, _, listed_context_calls = _run_application_tests(tmp_path, "contexts")
 
     assert len(baseline) >= 300
     assert "failed" not in baseline.values()
     assert inert == baseline
-    assert baseline_calls == 0
+    assert baseline_calls == 0 and baseline_context_calls == 0
     assert inert_calls > 100
+    assert inert_context_calls > 100  # T-R5c+: the context path executed (165 when written)
 
     failed = [k for k, v in empty.items() if v == "failed"]
     assert len(failed) > 50, f"negative control: only {len(failed)} failures"
     assert set(empty) == set(baseline)
     assert empty_calls > 0
+
+    context_failed = [k for k, v in contexts.items() if v == "failed"]
+    assert set(contexts) == set(baseline)
+    assert listed_context_calls > 0
+    assert len(context_failed) > 50, f"context negative control: only {len(context_failed)} failures"
+    assert any("test_application_contextual_c" in k for k in context_failed)
+    assert any("test_application_knife" in k for k in context_failed)

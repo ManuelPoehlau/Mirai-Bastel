@@ -28,6 +28,13 @@ unverändert durch `Application`. Das Lab ergänzt nur
   (Artist-Verdikt KEEP-BLOCK, Manu, 2026-10-03); MARK bleibt über Shift+B zum
   Vergleich erreichbar.
 
+- (AD-SYM-03 Slice 3a, H2-Amendment G-2 vom 2026-10-08) die BLOCK-Zeile als
+  fail-closed Allow-List, abgeleitet aus `NON_OPERATION`, `INTERIM_ONE_SIDED` und den
+  Deklarationen (`mirai.symmetry_declarations`, H2-R4 (h)), samt
+  `refused_contexts` je nicht deklariertem C-Kontext; `e5_warning_text` liest
+  dieselben Deklarationen. Das Lab ruft weder `resolve_c_context` noch
+  `canonical_*` (H2-R4).
+
 Erlaubte `Application`-Zugriffe: nur die öffentliche Liste aus H2-R4 (geprüft von
 `tests/test_app_lab_boundary.py`, T-R4a/b).
 
@@ -42,9 +49,11 @@ from enum import Enum
 from typing import Optional
 
 from core import MoveOperation, RotateOperation, ScaleOperation
+from mirai import symmetry_declarations as declarations
 from mirai.application import Application, CommandGate
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import KNIFE_CONTEXT, BindingSet, Input
+from mirai.topology.contextual_c import CContext
 
 from .lab_bindings import (
     LAB_OVERRIDES,
@@ -84,12 +93,81 @@ TRANSFORM_OPERATIONS = {
     cmd.SCALE: ("Scale", ScaleOperation),
 }
 
-#: Kontextuelles C (Split/Connect, Knife) hat keine Operation und damit keine
-#: Erklärung — es zählt für E5 als nicht unterstützend (Plan Inventar #22).
+#: Kontextuelles C hat keine `Operation`. Ob ein C-Kontext (Split, Edge/Vertex Connect,
+#: Knife) unter Symmetrie koordiniert wird, steht allein in den Deklarationen
+#: (`mirai.symmetry_declarations`, D-b); solange keiner erklärt ist, lehnt BLOCK `C` per
+#: Identität ab (Text mit diesem Namen, wie bisher).
 CONNECT_LABEL = "C"
 
-#: Knife-Session unter Symmetrie (MARK): Warnzeile im HUD, solange sie läuft.
+#: Knife-Session unter Symmetrie (MARK): Warnzeile im HUD, solange sie läuft — nur solange
+#: der KNIFE-Kontext keine Deklaration hat.
 KNIFE_ONE_SIDED_TEXT = "Knife läuft einseitig — Symmetrie aktiv"
+
+#: Anzeigenamen der vier C-Operationskontexte für die Ablehnungstexte (H2-Amendment,
+#: § Proposal 2 „Texts"): eine kleine Lab-Tabelle, nie die Enum-Namen. `CContext.NONE`
+#: ist keine Operation und steht nicht darin.
+CONTEXT_NAMES: dict[CContext, str] = {
+    CContext.SPLIT: "Split",
+    CContext.EDGE_CONNECT: "Edge Connect",
+    CContext.VERTEX_CONNECT: "Vertex Connect",
+    CContext.KNIFE: "Knife",
+}
+
+#: Generischer Text für jeden Befehl außerhalb der Allow-List der BLOCK-Zeile (fail-closed,
+#: H2-Amendment § Proposal 2): benannte Texte gibt es nur dort, wo die Operation bekannt ist
+#: (Transform-Labels, `C`, die Kontextnamen).
+BLOCK_NOT_ALLOWED_TEXT = "Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)"
+
+#: Befehle, die keine Operation sind und deshalb unter BLOCK immer durchgehen (H2-Amendment,
+#: Tabelle `NON_OPERATION`). Eine Auslassung hier ist sichtbar (`BLOCK_NOT_ALLOWED_TEXT`),
+#: nie still einseitig (INV-8). `EdgeLoop`/`EdgeRing` stehen bewusst nicht darin: ob eine
+#: Loop-Auswahl unter Symmetrie spiegeln soll, ist selbst eine Symmetrie-Frage; werden sie
+#: verdrahtet, lehnt BLOCK sie sichtbar ab, bis das entschieden ist.
+NON_OPERATION = frozenset(
+    {
+        # display
+        cmd.CYCLE_DISPLAY_MODE,
+        cmd.TOGGLE_WIREFRAME_OVERLAY,
+        cmd.SET_SHADED,
+        cmd.SET_FLAT_SHADED,
+        cmd.SET_WIREFRAME,
+        # selection (Klick-Commands laufen über `_execute_click`, `ClearSelection` ist eine Taste)
+        cmd.SELECT,
+        cmd.SELECT_ADD,
+        cmd.SELECT_REMOVE,
+        cmd.SELECT_TOGGLE,
+        cmd.CLEAR_SELECTION,
+        # mode
+        cmd.SET_VERTEX_MODE,
+        cmd.SET_EDGE_MODE,
+        cmd.SET_FACE_MODE,
+        # history
+        cmd.UNDO,
+        cmd.REDO,
+        # cancel (H2-R2: nie abgelehnt)
+        cmd.CANCEL,
+        # constraints
+        cmd.CONSTRAIN_AXIS_X,
+        cmd.CONSTRAIN_AXIS_Y,
+        cmd.CONSTRAIN_AXIS_Z,
+        cmd.CONSTRAIN_PLANE_XY,
+        cmd.CONSTRAIN_PLANE_XZ,
+        cmd.CONSTRAIN_PLANE_YZ,
+        # Navigation und Knife-Session: nur über eine User-GLOBAL-Taste erreichbar (Review N2);
+        # `Application` gibt dafür ohnehin False zurück, die Auflistung hält die Taste still
+        cmd.ORBIT,
+        cmd.PAN,
+        cmd.ZOOM,
+        cmd.KNIFE_COMMIT,
+        cmd.KNIFE_LIFT,
+    }
+)
+
+#: Akzeptiertes Interim (Manu, 2026-10-06; entfernt in Slice 3b): Delete, Dissolve und
+#: DissolveNoCleanup laufen unter Symmetrie + BLOCK einseitig, bis ihre Koordinatoren
+#: existieren. Weder Deklaration noch Auslassung — sonst würde die Allow-List sie ohne
+#: Deklaration ablehnen und das Interim still beenden. Slice 3b löscht diese Konstante.
+INTERIM_ONE_SIDED = frozenset({cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP})
 
 
 class GateMode(Enum):
@@ -116,14 +194,18 @@ def supports_symmetry(command: str) -> bool:
 
 
 def unsupported_commands() -> dict[str, str]:
-    """Command → Anzeigename aller Commands, die unter Symmetrie nicht spiegeln:
-    C (keine Erklärung) und jedes Transform-Command, dessen Operation
-    `supports_symmetry` nicht erklärt (heute keines: W/E/R erklären es)."""
-    names = {cmd.CONNECT: CONNECT_LABEL}
+    """Command → Anzeigename aller Commands, die unter Symmetrie per Identität abgelehnt
+    werden: `C`, solange kein C-Operationskontext deklariert ist, und jedes
+    Transform-Command, dessen Operation `supports_symmetry` nicht erklärt (heute keines:
+    W/E/R erklären es). Live aus den Deklarationen gelesen."""
+    names = {}
+    if not declarations.declared_c_contexts():
+        names[cmd.CONNECT] = CONNECT_LABEL
     for command, (label, _operation) in TRANSFORM_OPERATIONS.items():
         if not supports_symmetry(command):
             names[command] = label
     return names
+
 
 #: Text der Vorschau-Zeile für jede Ablehnung (App-Gate und Lab), wie im alten Lab
 #: (`lab_dispatch.PREVIEW_HINT`; hier kopiert, das alte Modul ist seit Slice 5 gelöscht).
@@ -180,9 +262,18 @@ class GateRow:
                 parts.append(
                     f"nur {', '.join(sorted(self.gate.allowed))} erlaubt — {self.gate.not_allowed_text!r}"
                 )
-            text = f"{self.state}: " + "; ".join(parts)
+            parts.extend(
+                f"C-Kontext {CONTEXT_NAMES.get(context, context.name)} abgelehnt — {text!r}"
+                for context, text in sorted(
+                    self.gate.refused_contexts.items(), key=lambda item: item[0].value
+                )
+            )
+            # Eine Ablehnungsregel je Zeile: die BLOCK-Zeile (Allow-List, Kontexte) wäre sonst
+            # eine einzige unlesbare Zeile in der Start-Liste (H2-R3).
+            text = f"{self.state}:" + "".join(f"\n    {part}" for part in parts)
         if self.hover_suspended:
-            text += "; Hover pausiert (hover_suspended)"
+            separator = "\n    " if self.gate is not None else "; "
+            text += f"{separator}Hover pausiert (hover_suspended)"
         return text
 
 
@@ -190,7 +281,7 @@ ROW_SYMMETRY_OFF = GateRow("Symmetrie aus (E5-Modus egal)", None)
 #: Slice 4: ersetzt die Slice-1b-Zeile „C abgelehnt". C und W/E/R laufen; ein
 #: einseitiger Lauf wird im HUD markiert (`e5_warning_text`).
 ROW_MARK = GateRow("Symmetrie an, E5 MARK: C und W/E/R laufen, HUD warnt", None)
-_BLOCK_STATE = "Symmetrie an, E5 BLOCK (Default; C und jedes Transform ohne supports_symmetry)"
+_BLOCK_STATE = "Symmetrie an, E5 BLOCK (Default; fail-closed: nur NON_OPERATION, Deklarationen, INTERIM_ONE_SIDED)"
 #: Slice 3: dominiert jede andere Zeile, solange die Vorschau offen ist (H2-R2, N2).
 ROW_PREVIEW = GateRow(
     "Re-Symmetrize-Vorschau offen (Slice 3)",
@@ -200,11 +291,35 @@ ROW_PREVIEW = GateRow(
 
 
 def block_row() -> GateRow:
-    """Die BLOCK-Zeile, bei jedem Aufruf aus den Erklärungen abgeleitet
-    (`unsupported_commands`): C plus jedes nicht spiegelnde Transform-Command.
-    Gleiche Erklärungen → gleiche (`==`) Zeile; `sync_gate` vergleicht so."""
-    refused = {command: block_text(name) for command, name in unsupported_commands().items()}
-    return GateRow(_BLOCK_STATE, CommandGate(refused=refused))
+    """Die BLOCK-Zeile, bei jedem Aufruf neu aus den Deklarationen abgeleitet (H2-Amendment
+    G-2, § Proposal 2) — fail-closed: was weder in `NON_OPERATION` noch deklariert noch im
+    Interim steht, wird sichtbar abgelehnt (`BLOCK_NOT_ALLOWED_TEXT`), nie still einseitig.
+
+    allowed          = NON_OPERATION ∪ INTERIM_ONE_SIDED
+                       ∪ deklarierte Removal-Commands
+                       ∪ {Connect}, wenn mindestens ein C-Kontext deklariert ist
+                       ∪ Transform-Commands mit `supports_symmetry`
+    refused          = unsupported_commands() (benannter Text, vor der Allow-List geprüft)
+    refused_contexts = jeder C-Operationskontext ohne Deklaration, Anzeigename im Text
+
+    Nur eine Funktion der Deklarationen und der `supports_symmetry`-Flags; gleiche Eingaben →
+    gleiche (`==`) Zeile, so vergleicht `sync_gate`."""
+    declared_contexts = declarations.declared_c_contexts()
+    allowed = set(NON_OPERATION | INTERIM_ONE_SIDED | declarations.declared_removal_commands())
+    allowed.update(command for command in TRANSFORM_OPERATIONS if supports_symmetry(command))
+    if declared_contexts:
+        allowed.add(cmd.CONNECT)
+    gate = CommandGate(
+        refused={command: block_text(name) for command, name in unsupported_commands().items()},
+        allowed=frozenset(allowed),
+        not_allowed_text=BLOCK_NOT_ALLOWED_TEXT,
+        refused_contexts={
+            context: block_text(name)
+            for context, name in CONTEXT_NAMES.items()
+            if context not in declared_contexts
+        },
+    )
+    return GateRow(_BLOCK_STATE, gate)
 
 
 def gate_rows() -> tuple[GateRow, ...]:
@@ -266,6 +381,22 @@ def startup_listing() -> list[str]:
     )
     lines.append("Gate-Tabelle (AD-013 H2-R3, Ablehnungen je Lab-Zustand):")
     lines.extend(f"  {row.describe()}" for row in gate_rows())
+    lines.append(
+        "NON_OPERATION (BLOCK lässt immer durch, AD-013 H2-Amendment 2026-10-08): "
+        + ", ".join(sorted(NON_OPERATION))
+    )
+    lines.append(
+        "INTERIM_ONE_SIDED (accepted interim, Manu 2026-10-06; removed in slice 3b): "
+        + ", ".join(sorted(INTERIM_ONE_SIDED))
+    )
+    contexts = declarations.declared_c_contexts()
+    removal = declarations.declared_removal_commands()
+    lines.append(
+        "Deklarationen (mirai.symmetry_declarations): C-Kontexte "
+        + (", ".join(sorted(CONTEXT_NAMES.get(c, c.name) for c in contexts)) or "keine")
+        + "; Removal "
+        + (", ".join(sorted(removal)) or "keine")
+    )
     lines.append("Kontextuelle App-Taste (AD-013 D1):")
     lines.append(f"  {CANCEL_PREVIEW_LINE}")
     return lines
@@ -582,20 +713,22 @@ def hud_text(
 def e5_warning_text(lab: SymmetryAppLab) -> str:
     """E5-Warnzeile (Slice 4) über der HUD-Zeile; leer, wenn nichts einseitig läuft.
 
-    Bei aktiver Symmetrie: eine laufende Knife-Session (`knife_active`) →
-    `KNIFE_ONE_SIDED_TEXT`; ein scharfer oder laufender Transform, dessen
+    Bei aktiver Symmetrie: eine laufende Knife-Session (`knife_active`), solange der
+    KNIFE-Kontext keine Deklaration hat (dieselben Deklarationen wie die BLOCK-Zeile, keine
+    zweite Liste) → `KNIFE_ONE_SIDED_TEXT`; ein scharfer oder laufender Transform, dessen
     Operation `supports_symmetry` nicht erklärt → die „läuft einseitig"-Meldung
     des alten Labs. Beides nur im HUD, nie über `set_status`: während einer
     `Application`-Interaktion schreibt das Lab nichts (H2-R2). Unter BLOCK
     können beide nicht entstehen (das Gate startet sie nicht, Shift+S und
     Shift+B sind während einer Interaktion abgelehnt) — die Zeile hängt deshalb
-    nur an der Symmetrie, nicht am Modus. Ein sofortiges kontextuelles C
-    (Split/Connect) ist keine laufende Interaktion; seine Degradation zeigen die
-    Zustands-Marker (neuer Vertex ohne Partner, magenta)."""
+    nur an der Symmetrie, nicht am Modus. Ein sofortiger kontextueller Befehl
+    ohne Deklaration (z. B. Split) ist keine laufende Interaktion und bekommt
+    keine Warnzeile; seine Degradation zeigen die Zustands-Marker (neuer Vertex
+    ohne Partner, magenta)."""
     if lab.axis is None:
         return ""
     app = lab.app
-    if app.knife_active:
+    if app.knife_active and CContext.KNIFE not in declarations.declared_c_contexts():
         return KNIFE_ONE_SIDED_TEXT
     command = app.transform_command
     if command in TRANSFORM_OPERATIONS and not supports_symmetry(command):

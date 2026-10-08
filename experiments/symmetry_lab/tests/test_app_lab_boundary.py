@@ -15,6 +15,10 @@ Seit WP-SYM-LAB-03 Slice 5 decken T-R4a und T-R4b **jedes** Lab-Modul ab
   2026-10-03) nur im Einstieg `run.py` (bis Slice 5 `run_app.py`); zugewiesen wird nur das Gate ((b)
   `command_gate`, `hover_suspended`). Mit Negativkontrollen, damit der Scan nicht
   still nichts findet.
+- T-R4a+ (H2-Amendment 2026-10-08, review N3): der Scan schlägt zusätzlich bei jedem
+  Aufruf oder Import von `resolve_c_context` und `canonical_vertices`/`canonical_edges`/
+  `canonical_faces` in einem Lab-Modul an (sonst wäre es G-4 unter anderem Namen); der Import
+  der Enum `CContext` ist erlaubt.
 - T-R4b: die Wächter-Fixture aus `_app_lab_support` greift genau beim
   unmittelbaren Aufrufer (`sys._getframe(1)`).
 """
@@ -46,6 +50,14 @@ D = Input("key", "d")
 
 FORBIDDEN_CALLS = {"dispatch_command", "select_at", "select_vertex_at"}
 FORBIDDEN_IMPORTS = {"PointerGestures", "ToolManager", "pick_component"}
+#: T-R4a+ (H2-Amendment, H2-R4): das Lab löst den C-Kontext nie selbst auf und
+#: kanonisiert nie selbst — beides wäre G-4 unter anderem Namen.
+FORBIDDEN_CONTEXT_NAMES = {
+    "resolve_c_context",
+    "canonical_vertices",
+    "canonical_edges",
+    "canonical_faces",
+}
 
 #: H2-R4 (c), (d), (e): die öffentlichen `Application`-Methoden für Lab-Code.
 ALLOWED_APP_METHODS = {
@@ -122,12 +134,19 @@ def violations(source: str, module: str = "") -> list[str]:
             for alias in node.names:
                 if alias.name in FORBIDDEN_IMPORTS:
                     found.append(f"import {alias.name}")
+                if alias.name in FORBIDDEN_CONTEXT_NAMES:
+                    found.append(f"import {alias.name} (H2-R4: Kontext/Kanonisierung)")
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.rsplit(".", 1)[-1] in FORBIDDEN_IMPORTS:
                     found.append(f"import {alias.name}")
         elif isinstance(node, ast.Name) and node.id in FORBIDDEN_IMPORTS:
             found.append(f"{node.id} (Name)")
+        if isinstance(node, ast.Call):
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name in FORBIDDEN_CONTEXT_NAMES:
+                found.append(f"{name}() (H2-R4: Kontext/Kanonisierung)")
     return found
 
 
@@ -156,6 +175,35 @@ def f(app, lab, self):
 """
     found = violations(bad)
     assert len(found) == 10, found
+
+
+def test_scan_flags_context_resolution_and_canonicalisation():
+    """T-R4a+, Negativkontrolle: Aufruf und Import von `resolve_c_context` und der drei
+    `canonical_*` werden gefunden, der Import der Enum `CContext` nicht."""
+    bad = """
+from mirai.topology.contextual_c import resolve_c_context
+from mirai.symmetry_coordination import canonical_vertices, canonical_edges, canonical_faces
+import mirai.topology.contextual_c as cc
+def f(app, index, ids):
+    resolve_c_context(app.selection)
+    cc.resolve_c_context(app.selection)
+    canonical_vertices(index, ids)
+    canonical_edges(index, ids)
+    canonical_faces(index, ids)
+"""
+    found = violations(bad)
+    assert len(found) == 4 + 5, found
+    assert violations("from mirai.topology.contextual_c import CContext\nCContext.SPLIT\n") == []
+
+
+def test_lab_modules_neither_import_nor_call_the_context_functions():
+    """T-R4a+ gegen die echten Dateien: kein Lab-Modul trifft eine der vier Funktionen
+    (der Gesamt-Scan oben deckt das schon ab; hier die gezielte Aussage mit Text)."""
+    for module in LAB_MODULES:
+        path = LAB_DIR / (module.rsplit(".", 1)[-1] + ".py")
+        text = path.read_text(encoding="utf-8")
+        hits = [line for line in violations(text, module) if "Kontext/Kanonisierung" in line]
+        assert hits == [], (module, hits)
 
 
 def test_scan_flags_methods_outside_the_allow_list():

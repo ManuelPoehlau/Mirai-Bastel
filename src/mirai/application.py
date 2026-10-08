@@ -60,6 +60,12 @@ from .topology.connect_vertices_per_face import (
     VertexConnectError,
     apply_connect_vertices,
 )
+from .symmetry_coordination import (
+    SymmetryIndex,
+    canonical_edges,
+    canonical_faces,
+    canonical_vertices,
+)
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.face_geometry import GEO_EPS
@@ -250,17 +256,24 @@ class CommandGate:
 
     `refused`: command → status text (block-list). `allowed`: allow-list
     (None = no allow-list); a command outside it is refused with
-    `not_allowed_text`. Immutable: a host replaces `Application.command_gate`
-    as a whole, never edits it. `Application` checks it in `key_press` (after
-    the Knife routing) and for click commands before `select_at`; it calls no
-    host code."""
+    `not_allowed_text`. `refused_contexts` (H2 amendment G-2, 2026-10-08):
+    resolved `C` context → status text; it can only refuse `C` after a gate
+    that let `Connect` through (`CContext.NONE` is no operation and may not be
+    listed). Immutable: a host replaces `Application.command_gate` as a whole,
+    never edits it. `Application` checks it in `key_press` (after the Knife
+    routing), for click commands before `select_at`, and for the `C` context in
+    `_connect_command`; it calls no host code."""
 
     refused: Mapping[str, str] = dataclasses.field(default_factory=dict)
     allowed: frozenset[str] | None = None
     not_allowed_text: str = ""
+    refused_contexts: Mapping[CContext, str] = dataclasses.field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if CContext.NONE in self.refused_contexts:
+            raise ValueError("CommandGate.refused_contexts may not list CContext.NONE (no operation)")
         object.__setattr__(self, "refused", MappingProxyType(dict(self.refused)))
+        object.__setattr__(self, "refused_contexts", MappingProxyType(dict(self.refused_contexts)))
         if self.allowed is not None:
             object.__setattr__(self, "allowed", frozenset(self.allowed))
 
@@ -271,6 +284,10 @@ class CommandGate:
         if self.allowed is not None and command not in self.allowed:
             return self.not_allowed_text
         return None
+
+    def context_refusal(self, context: CContext) -> str | None:
+        """Status text if the resolved `C` context is refused, else None."""
+        return self.refused_contexts.get(context)
 
 
 class Application:
@@ -560,12 +577,23 @@ class Application:
         through `_notify_topology_changed()`, which also re-anchors the hover
         (the hovered edge/face handle can be gone after Split/Connect), and
         records the pre-mutation selection for Undo/Redo restore (WP-06 B6
-        follow-up, `_record_selection_history`)."""
+        follow-up, `_record_selection_history`).
+
+        Whenever a symmetry definition is set, the selection is first
+        canonicalised to one side (A2 = A, AD-SYM-03 §6) on a temporary value,
+        for every context; that one canonical value is resolved in the one
+        `resolve_c_context` call and read by the branches. A host's
+        `command_gate.refused_contexts` (H2 amendment G-2) is checked right
+        after that call, before any branch: a listed context posts its text and
+        returns False with mesh, history and `self.selection` untouched."""
         selection = self.selection
-        ctx = resolve_c_context(selection)
+        effective = self._canonical_c_selection()
+        ctx = resolve_c_context(effective)
+        if self._context_refuses(ctx):
+            return False
 
         if ctx is CContext.SPLIT:
-            (edge_id,) = selection.edges
+            (edge_id,) = effective.edges
             def residue(split) -> None:
                 selection.mode = SelectionMode.VERTEX
                 selection.clear()
@@ -585,7 +613,7 @@ class Application:
             try:
                 self._mesh_transaction(
                     EDGE_CONNECT_LABEL,
-                    lambda mesh: apply_connect_edges(mesh, set(selection.edges)),
+                    lambda mesh: apply_connect_edges(mesh, set(effective.edges)),
                     on_applied=residue,
                 )
             except TopologyToolError as exc:
@@ -600,7 +628,7 @@ class Application:
             try:
                 outcome = self._mesh_transaction(
                     VERTEX_CONNECT_LABEL,
-                    lambda mesh: apply_connect_vertices(mesh, set(selection.vertices)),
+                    lambda mesh: apply_connect_vertices(mesh, set(effective.vertices)),
                 )
             except VertexConnectError as exc:
                 self._set_status(str(exc))
@@ -618,6 +646,39 @@ class Application:
         # C meaning (AD-017 §7).
         self._set_status("C: nothing to do here")
         return False
+
+    def _canonical_c_selection(self) -> Selection:
+        """The selection `C` reads (AD-SYM-03 §6 A2 = A; AD-013 H2 amendment,
+        canonicalisation): without a symmetry definition the live selection;
+        with one, a temporary copy in which each mirror pair counts once
+        (`canonical_*` keep the normal's side). Never written back: a refused
+        or failed `C` leaves `self.selection` (mode and every id set) as it was.
+        This is the meaning of `C` under symmetry, not a support policy (G-3)."""
+        mesh = self.scene.mesh
+        selection = self.selection
+        if mesh.symmetry_definition is None:
+            return selection
+        index = SymmetryIndex(mesh)
+        effective = Selection()
+        effective.mode = selection.mode
+        effective.vertices = canonical_vertices(index, selection.vertices)
+        effective.edges = canonical_edges(index, selection.edges)
+        effective.faces = canonical_faces(index, selection.faces)
+        return effective
+
+    def _context_refuses(self, context: CContext) -> bool:
+        """H2 amendment G-2: True (and the refusal posted as status) if
+        `command_gate.refused_contexts` lists the resolved `C` context. The
+        third gate site, below `dispatch_command`; one `None` test or one
+        empty lookup with the defaults."""
+        gate = self.command_gate
+        if gate is None:
+            return False
+        text = gate.context_refusal(context)
+        if text is None:
+            return False
+        self._set_status(text)
+        return True
 
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 

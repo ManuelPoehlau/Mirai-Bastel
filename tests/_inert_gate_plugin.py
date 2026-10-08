@@ -8,10 +8,18 @@ never by the normal suite.
   refused = {an unused sentinel command} (review CLAUDE-002 N7) — the check
   runs on every key and click but must change nothing;
 - `empty`: an empty allow-list (negative control: everything is refused);
+- `contexts`: the inert gate plus every `C` operation context in
+  `refused_contexts` (negative control of the context check, H2 amendment
+  T-R5c+: the contextual-C and Knife tests must fail);
 - anything else: no gate (baseline).
+
+The `inert` gate also carries `refused_contexts = {}` (T-R5c+): the context check
+runs on every `C` that reaches `_connect_command` but must change nothing.
 
 `MIRAI_GATE_COUNT_FILE` (optional): receives how often the gate was consulted
 with a gate installed, to prove the check path actually ran.
+`MIRAI_CONTEXT_COUNT_FILE` (optional): the same for the context check
+(`_context_refuses`), to prove that path executed too.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ import os
 SENTINEL = "T-R5c-UnusedSentinelCommand"
 
 _calls = 0
+_context_calls = 0
 
 
 def command_constants() -> frozenset[str]:
@@ -35,6 +44,7 @@ def pytest_configure(config) -> None:
     import tests._bootstrap  # noqa: F401
 
     from mirai.application import Application, CommandGate
+    from mirai.topology.contextual_c import CContext
 
     mode = os.environ.get("MIRAI_GATE_MODE", "")
     if mode == "inert":
@@ -42,6 +52,22 @@ def pytest_configure(config) -> None:
             refused={SENTINEL: "sentinel refused"},
             allowed=command_constants(),
             not_allowed_text="not allowed",
+            refused_contexts={},
+        )
+    elif mode == "contexts":
+        gate = CommandGate(
+            refused={SENTINEL: "sentinel refused"},
+            allowed=command_constants(),
+            not_allowed_text="not allowed",
+            refused_contexts={
+                ctx: "context refused"
+                for ctx in (
+                    CContext.SPLIT,
+                    CContext.EDGE_CONNECT,
+                    CContext.VERTEX_CONNECT,
+                    CContext.KNIFE,
+                )
+            },
         )
     elif mode == "empty":
         gate = CommandGate(allowed=frozenset(), not_allowed_text="not allowed")
@@ -50,6 +76,7 @@ def pytest_configure(config) -> None:
 
     original_init = Application.__init__
     original_check = Application._gate_refuses
+    original_context_check = Application._context_refuses
 
     def init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
@@ -61,12 +88,23 @@ def pytest_configure(config) -> None:
             _calls += 1
         return original_check(self, command)
 
+    def context_check(self, context):
+        global _context_calls
+        if self.command_gate is not None:
+            _context_calls += 1
+        return original_context_check(self, context)
+
     Application.__init__ = init
     Application._gate_refuses = check
+    Application._context_refuses = context_check
 
 
 def pytest_unconfigure(config) -> None:
-    path = os.environ.get("MIRAI_GATE_COUNT_FILE")
-    if path:
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write(str(_calls))
+    for variable, value in (
+        ("MIRAI_GATE_COUNT_FILE", _calls),
+        ("MIRAI_CONTEXT_COUNT_FILE", _context_calls),
+    ):
+        path = os.environ.get(variable)
+        if path:
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(str(value))
