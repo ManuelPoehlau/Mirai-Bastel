@@ -579,8 +579,10 @@ kills a seam id by merging, so its behaviour is unchanged. Details and measureme
 Question to Manu (practical test, `docs/ATELIER.md` B2b): is the vanishing of the green seam point when a crossing
 edge is dissolved acceptable — KEEP / ITERATE / UNKNOWN?
 
-*Artist verdict (Manu, 2026-10-08, S2 practical test):* the practical test **passed**; step 1 (the green seam point
-vanishes when an edge crossing the seam is dissolved, two seam edges become one): **KEEP.** Seam rule S2 is therefore
+*Artist verdict (Manu, 2026-10-08, S2 practical test):* the practical test **passed**. Step 1 (the green seam point
+vanishes when an edge crossing the seam is dissolved, two seam edges become one): **KEEP.** Steps 2-4 passed as
+expected: a loop through the seam runs and the seam stays continuous; an edge with two seam endpoints is refused on
+Dissolve and deleted by Delete (hole); two faces at the seam deleted as before. Seam rule S2 is therefore
 Artist-confirmed behaviour; the warning idea above stays not decided.
 
 ### A2 — `C` with a two-sided explicit selection (≤ 5 min) — observation runnable today, comparison after slice 4
