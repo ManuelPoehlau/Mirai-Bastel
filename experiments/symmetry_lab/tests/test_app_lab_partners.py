@@ -309,6 +309,7 @@ def test_partner_layers_are_drawn_after_state_markers():
 def test_lab_overlays_are_drawn_before_the_app_point_overlay(lab_app, monkeypatch):
     """H1: Ebene, dann Lab-Punkte (Zustand + Partner), dann erst die Punkte der App
     (Hover/Auswahl gelb) — Hover und Auswahl liegen über den Lab-Markern."""
+    pytest.importorskip("pyglet", reason="Overlay.draw importiert pyglet.gl (requirements-dev.txt)")
     app, lab = lab_app
     plane, state = _overlays(lab)
     log = []

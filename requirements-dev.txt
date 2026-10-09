@@ -1,0 +1,9 @@
+# Entwicklungs-/Test-Abhängigkeiten (Python 3.9+).
+pytest
+
+# pyglet: Playground und Teile des Symmetry Lab. Schon `import pyglet.window`
+# öffnet ein Shadow-GL-Fenster und braucht ein Display. Headless (CI, Cloud):
+#   xvfb-run -a pytest playground/tests
+# Ohne pyglet oder ohne Display werden diese Tests übersprungen
+# (playground/tests/conftest.py), die Production-Suite `tests/` braucht beides nicht.
+pyglet

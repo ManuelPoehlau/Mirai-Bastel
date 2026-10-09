@@ -17,10 +17,10 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 - `experiments/` — Research, prototypes, practical validation at the repository level (OK to be
   messy). Not the same thing as `playground/experiments/` (variant families inside the Playground
   host) — see `docs/design/artist_playground/EXPERIMENT_HOST.md` for that distinction.
-- `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path; run via
-  `pytest tests --ignore=tests/test_extrude_tool.py` (bare `pytest` from the repo root currently
-  fails with 46 collection errors caused by a `viewport` package-name collision with
-  `experiments/mirai_bastel_viewport_V1/` — not a code defect, see
+- `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. `pytest.ini` at the
+  repo root sets `testpaths` (`tests`, `playground/tests`, `experiments/symmetry_lab/tests`), so bare
+  `pytest` collects cleanly (the old `viewport`/`test_core.py` name collisions with
+  `experiments/` came from collecting everything; see
   `docs/Repository_Wide Structural_Codebase_Health_Audit.md` D1).
 - `docs/` — Architecture, design, research decisions. Hierarchy: `README.md` → index → local docs → plans/specs
 - `references/` — External material (historical Mirai docs, etc.)
@@ -70,13 +70,13 @@ Move validated code to src/ (only if decision is explicit)
    ```bash
    pytest tests/test_<module>.py -q                    # one test file
    pytest tests/test_<module>.py::test_name -q         # one test
-   pytest tests -k "<pattern>" -q --ignore=tests/test_extrude_tool.py   # pattern match
+   pytest tests -k "<pattern>" -q   # pattern match
    pytest playground/tests/test_<module>.py -q         # playground/ changes
    ```
    Useful flags: `-x` (stop at first failure), `--lf` (re-run last failures only).
 2. **Final check: full suite exactly ONCE**, only after the implementation is complete and all targeted tests are green:
    ```bash
-   pytest tests --ignore=tests/test_extrude_tool.py -q
+   pytest tests -q
    pytest playground/tests -q                  # only if playground/ was touched
    pytest experiments/symmetry_lab/tests -q    # only if src/mirai/application.py or src/viewport/ was touched
    ```
@@ -86,12 +86,12 @@ Details:
 
 - Tests live in `tests/test_*.py` and use pytest conventions
 - Test bootstrap (`_bootstrap.py`) adds `src/` to path; tests import directly from `src.core` etc.
-- Before submitting, run: `pytest tests --ignore=tests/test_extrude_tool.py -v` (or a specific file).
-  Plain `pytest tests/ -v` currently fails on `tests/test_extrude_tool.py`, which imports an
-  experiment module that isn't on the path from the repo root — excluded from the documented run,
-  not a regression. (Production does have an Extrude since WP-06 B9: `src/mirai/topology/extrude.py`,
-  hold `T`; it is covered by `tests/test_extrude_tool_production.py` and
-  `tests/test_application_extrude.py`, not by the stale file.)
+- Setup: `pip install -r requirements-dev.txt` (pytest, pyglet). pyglet needs a display even on import;
+  headless (cloud/CI): prefix with `xvfb-run -a`. Without pyglet/display the repo-root `conftest.py`
+  turns exactly those failures into visible *skips* (any other error stays an error) — so
+  "N skipped" in playground/ can mean "environment", not "green"; run with xvfb for the real result.
+- `tests/_archive/` holds obsolete tests (e.g. the stale V1 `test_extrude_tool`); `pytest.ini`
+  excludes it. Don't re-add `--ignore` workarounds — fix the cause or archive with a date.
 - If touching `playground/`, also run `pytest playground/tests`
 - Changes to `src/mirai/application.py` or `src/viewport/`: also run
   `pytest experiments/symmetry_lab/tests` — the Symmetry Lab runs on the app path

@@ -21,16 +21,15 @@ python -m unittest tests.test_scene_serialization -v
 python -m tests.test_core
 
 # Vollständige aktuell ausführbare Production-Suite
-python -m pytest tests --ignore=tests/test_extrude_tool.py -q
+python -m pytest tests -q
 ```
 
-`tests/test_extrude_tool.py` ist ein historischer V1-Experimenttest mit einem
-veralteten Importpfad (`viewport.extrude_tool` existiert nicht mehr). Er ist
-nicht Teil der dokumentierten Production-Baseline; seine Einordnung wird
-separat entschieden. Das Production-Extrude (seit WP-06 B9,
-`mirai.topology.extrude`, Taste `T` gehalten) wird von
+`test_extrude_tool.py` (historischer V1-Experimenttest, veralteter Importpfad) ist seit
+2026-10-09 nach `tests/_archive/test_extrude_tool_v1_obsolete.py` archiviert und
+über `pytest.ini` (`norecursedirs`) von allen Läufen ausgenommen. Das
+Production-Extrude (seit WP-06 B9, `mirai.topology.extrude`, Taste `T` gehalten) wird von
 `test_extrude_tool_production.py` (Tool-Ebene) und `test_application_extrude.py`
-(über `Application`) geprüft — nicht von dieser Datei.
+(über `Application`) geprüft.
 
 ## Struktur
 
@@ -62,7 +61,8 @@ Standard-Runners** `run_core_suite` (sondern separat ausführbar
 (`python -m unittest tests.test_history_contract -v` usw.), damit die dokumentierte
 „29/29“-Standard-Baseline stabil bleibt. Die vollständige unittest-Discovery
 ist derzeit keine grüne Production-Baseline, weil der historische
-`test_extrude_tool.py`-Import fehlschlägt; siehe den Ausführungshinweis oben.
+`test_extrude_tool.py`-Import fehlschlug (Datei inzwischen archiviert, s.o.); sie ist daher
+keine Pytest-Baseline-Frage mehr, die unittest-Discovery wurde aber nicht neu bewertet.
 
 ### Phase A – Invarianten
 

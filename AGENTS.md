@@ -148,14 +148,14 @@ Prefer small, bounded implementation tasks over vague requests.
 
 ## 8a. Test strategy (token- and runtime-efficient)
 
-Test runner: **pytest** (no config file, no virtualenv; tests bootstrap `src/` onto the path themselves). Bare `pytest` from the repo root fails with collection errors (`viewport` package-name collision) — always pass an explicit path.
+Test runner: **pytest** (no config file, no virtualenv; tests bootstrap `src/` onto the path themselves). `pytest.ini` defines `testpaths`, so bare `pytest` works; for targeted runs still pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …` (without it, pyglet-dependent playground tests are *skipped*, not green).
 
 **While implementing — targeted tests only.** Never run the full suite during an ongoing implementation. Run only the tests that directly cover the changed files/functions:
 
 ```bash
 pytest tests/test_<module>.py -q                      # one test file
 pytest tests/test_<module>.py::test_name -q           # one test
-pytest tests -k "<pattern>" -q --ignore=tests/test_extrude_tool.py   # pattern match
+pytest tests -k "<pattern>" -q   # pattern match
 pytest playground/tests/test_<module>.py -q           # when touching playground/
 pytest experiments/symmetry_lab/tests/test_<x>.py -q  # when touching src/mirai/application.py or src/viewport/
 ```
@@ -165,7 +165,7 @@ Add `-x` to stop at the first failure and `--lf` to re-run only the last failure
 **Final check — full suite, exactly once.** Only when the implementation is complete and all targeted tests are green, run the full suite a single time to rule out regressions:
 
 ```bash
-pytest tests --ignore=tests/test_extrude_tool.py -q
+pytest tests -q
 pytest playground/tests -q                    # only if playground/ was touched
 pytest experiments/symmetry_lab/tests -q      # only if src/mirai/application.py or src/viewport/ was touched
 ```

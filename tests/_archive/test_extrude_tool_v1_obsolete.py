@@ -1,4 +1,8 @@
-"""Extrude-Tool Tests — Topology, Geometry, Selection, History, Cancel.
+"""OBSOLET (archiviert 2026-10-09, nicht Teil der Test-Läufe; siehe pytest.ini `norecursedirs`).
+Importiert das nicht mehr auf dem Pfad liegende `mirai_bastel_core`. Produktions-Extrude:
+`tests/test_extrude_tool_production.py`, `tests/test_application_extrude.py`.
+
+Extrude-Tool Tests — Topology, Geometry, Selection, History, Cancel.
 
 Verifiziert das Single-Face-Extrude-Experiment:
 - Topologie: neue Vertices, Side-Faces, Result-Face, Original bleibt
