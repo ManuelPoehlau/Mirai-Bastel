@@ -74,11 +74,12 @@ Ebene, oder die Aktion wird vor der ersten Bewegung abgelehnt (`Rotate: refused 
 
 Experiment E5 / INV-8, **Artist-Verdikt KEEP-BLOCK** (Manu, 2026-10-03, in AD-SYM-02 §4
 festgehalten): ein Tool, das unter Symmetrie nicht spiegelt, wird verweigert, statt
-einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve, seit Slice 4 Split; nur der Knife
-nicht — er schneidet einseitig. Als „nicht unterstützt" zählt C (keine Operation, keine
+einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve, seit Slice 4 Split und seit Slice 6c der Knife (Abschnitt „Symmetrischer Knife, Slice 6c“ unten). Als „nicht unterstützt" zählt C (keine Operation, keine
 Erklärung) und jedes Transform-Command, dessen Operation `supports_symmetry` nicht erklärt —
-gelesen am Klassenattribut, keine Tool-Liste. Heute erklären es W/E/R, praktisch betrifft E5
-also nur den Knife (Kontext von C). MARK bleibt über Shift+B zum Vergleich erreichbar.
+gelesen am Klassenattribut, keine Tool-Liste. Heute erklären es W/E/R und alle vier C-Kontexte
+sind deklariert; E5 hat also mit den echten Deklarationen nichts mehr zu verweigern oder zu
+markieren (der Mechanismus bleibt und ist mit einem undeklarierten Kontext getestet).
+MARK bleibt über Shift+B zum Vergleich erreichbar.
 
 **Fail-closed (seit AD-SYM-03 Slice 3a, AD-013 H2-Amendment vom 2026-10-08).** Die BLOCK-Zeile ist
 keine Sperrliste mehr, sondern eine Allow-List: durch geht, was in `NON_OPERATION` steht (Anzeige,
@@ -88,7 +89,7 @@ Dissolve und DissolveNoCleanup, seit Slice 4 Split) und die Transforms mit `supp
 künftig verdrahtetes Werkzeug, das niemand eingetragen hat — wird sichtbar abgelehnt
 (`Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)`), nie still einseitig. Ist
 ein C-Kontext deklariert, geht `C` durch, und jeder nicht deklarierte Kontext
-(von Split, Edge Connect, Vertex Connect, Knife; heute nur Knife) wird mit seinem Namen abgelehnt (`refused_contexts`, vom
+(von Split, Edge Connect, Vertex Connect, Knife; seit Slice 6c keiner mehr) wird mit seinem Namen abgelehnt (`refused_contexts`, vom
 Gate in `Application` nach der einen Kontext-Auflösung geprüft); solange keiner deklariert ist, wird
 `C` wie bisher per Identität abgelehnt. Die Zeile ändert sich nur mit dem Lab-Zustand, nie pro
 Tastendruck. Die Start-Liste zeigt jede Zeile mit `refused`, `allowed` und `refused_contexts`
@@ -105,16 +106,16 @@ unter MARK als einseitiger Split der Kante auf der Seite der Ebenennormalen (fr�
 verbindbaren Kanten"); **seit Slice 4 endet diese Folge**: das Paar ist ein Split-Kontext und läuft
 koordiniert (genau zwei neue Vertices, kein doppeltes Teilen), unter MARK wie unter BLOCK. Ein Vertex
 plus sein Spiegelvertex ergibt weiter `C: nothing to do here`. Die Knife-Warnzeile steht nur, solange der
-Kontext Knife keinen Koordinator hat.
+Kontext Knife keinen Koordinator hat (seit Slice 6c hat er einen).
 
 | Zustand | C | W/E/R | HUD |
 |---|---|---|---|
 | Symmetrie aus (Modus egal) | wie in der App | wie in der App | kein `E5:` |
-| Symmetrie an, **BLOCK** (Default) | Split/Edge Connect/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); nur Knife (leere Auswahl) abgelehnt: `Symmetrie aktiv — Knife spiegelt nicht (BLOCK: Knife nicht gestartet)`, nichts passiert, kein Undo-Schritt; ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
-| Symmetrie an, **MARK** | Split, Edge/Vertex Connect und Delete/Dissolve laufen koordiniert (mit denselben Ablehnungen wie BLOCK); die Knife-Session läuft einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
+| Symmetrie an, **BLOCK** (Default) | Split/Edge Connect/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); der Knife (leere Auswahl) startet seit Slice 6c eine koordinierte Session (Abschnitt unten); ein undeklarierter Kontext würde mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt, ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
+| Symmetrie an, **MARK** | Split, Edge/Vertex Connect, Delete/Dissolve und der Knife laufen koordiniert (mit denselben Ablehnungen wie BLOCK); ein undeklarierter Kontext läuft einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
 
 Die orange Warnzeile (nur MARK): `Knife läuft einseitig — Symmetrie aktiv`, solange eine
-Knife-Session unter Symmetrie läuft; `Symmetrie aktiv — <Name> spiegelt nicht (läuft
+Knife-Session unter Symmetrie läuft **und der Knife-Kontext undeklariert ist** (seit Slice 6c nie mit den echten Deklarationen); `Symmetrie aktiv — <Name> spiegelt nicht (läuft
 einseitig)`, solange ein nicht spiegelnder Transform scharf ist oder läuft (heute nur über
 einen Test erreichbar). Das Lab schreibt dafür keine Statusmeldung (AD-013 H2-R2). Ein
 sofortiges C unter MARK behält die Statuszeile der App; seine Degradation zeigen die
@@ -203,9 +204,9 @@ Aufruf der unveränderten Core-Operation, ein Undo-Schritt) oder lehnen sichtbar
 AD-SYM-03 Slice 4 (2026-10-08). **Praxis-Check durch Manu am 2026-10-08: alle Schritte bestanden, KEEP** (B2c in `docs/ATELIER.md`). Mit gesetzter Symmetrie
 führt `C` mit **einer** gewählten Kante (Kontext Split) **eine** koordinierte Operation aus: die Kante und ihre
 Spiegelkante werden zusammen geteilt (ein Undo-Schritt), oder `C` lehnt sichtbar ab und ändert nichts. Das gilt in
-**MARK wie in BLOCK**. Ohne Symmetrie teilt `C` unverändert die eine Kante. Seit diesem Slice ist **nur der Knife**
-(leere Auswahl) unter BLOCK noch abgelehnt: `Symmetrie aktiv — Knife spiegelt nicht (BLOCK: Knife nicht gestartet)`;
-die BLOCK-Zeile und der Text leiten sich aus den Deklarationen ab (nichts von Hand eingetragen).
+**MARK wie in BLOCK**. Ohne Symmetrie teilt `C` unverändert die eine Kante. Seit diesem Slice war **nur der Knife**
+(leere Auswahl) unter BLOCK noch abgelehnt (`Symmetrie aktiv — Knife spiegelt nicht (BLOCK: Knife nicht gestartet)`;
+seit Slice 6c ist er deklariert); die BLOCK-Zeile und der Text leiten sich aus den Deklarationen ab (nichts von Hand eingetragen).
 
 - **Was geteilt wird:** immer in der Mitte der Kante (t = 0,5; auf einer achsparallelen Ebene durch den Ursprung sind die
   Mittelpunkte der Spiegelkanten exakt gespiegelt). Kein Snap (der gehört zum Knife, Slice 6).
@@ -294,12 +295,91 @@ die Auswahl leer war und der Hover-Vertex das Ziel ist. Darüber, falls aktiv, d
 E5-Warnzeile und die blaue Vorschau-Zeile. Die Statusmeldungen stehen außerdem wie in
 `src/main.py` in der Konsole.
 
+## Symmetrischer Knife, Slice 6c
+
+AD-SYM-03 Slice 6c (2026-10-09; **Look, Texte, Varianten-Taste und das Verhalten nach einem abgelehnten Enter sind
+Engineering-Vorgaben — wartet auf dein Verdikt**, B2d in `docs/ATELIER.md`). `CContext.KNIFE` ist deklariert
+(`mirai.symmetry_declarations`, der Koordinator ist `mirai.symmetric_knife.coordinate_knife`): mit gesetzter Symmetrie
+startet `C` mit leerer Auswahl eine **koordinierte** Knife-Session, **in BLOCK wie in MARK** (die BLOCK-Zeile nennt keinen
+Kontext mehr, es gibt keine einseitige Warnzeile; beides leitet sich aus den Deklarationen ab, nichts Neues im Lab,
+**keine vierte Lab-Taste**, die Allow-List der BLOCK-Zeile ist unverändert). Ohne Symmetrie ist der Knife der alte.
+
+- **Was du siehst.** Die Seite, auf der du den Schnitt beginnst (erster Mesh-Punkt, nicht der Punkt im Leeren: F6 bleibt
+  offen), ist die Arbeitsseite. Die Spiegelung deiner Punkte, Pfadsegmente, des Startpunkts, der Hover-Linie und der
+  Kreuzungen erscheint auf der Gegenseite — sie wird aus **derselben Kappung** berechnet, die Enter benutzt, die
+  Vorschau zeigt also nie etwas anderes als der Commit. Der Teil deines Pfads, der **nicht geschnitten wird** (Punkte und
+  Segmente auf der anderen Seite, eine zweite Kette dort), ist **neutral grau**. Ein Hover-Ziel auf der Gegenseite mit
+  Partner wird nicht abgelehnt, sondern grau (gekappt) gezeigt.
+- **Drei Spiegel-Varianten, im Knife mit `V` durchschalten** (provisorisch; V war im Knife-Kontext und global frei und ist
+  keine der drei Lab-Tasten; außerhalb einer symmetrischen Session tut `V` nichts): **V-a** wie die eigene Vorschau
+  (Pfadlinien mit Tiefentest, Hover obenauf, Punkte durch das Mesh), **V-b** (Default) Spiegelseite immer sichtbar
+  und gedimmt, **V-c** nur Punkte, keine Linien. Die Statuszeile nennt die aktive Variante (`Spiegelvorschau V-b …, Taste V
+  wechselt V-a / V-b / V-c` beim Start und beim Wechsel, `[Spiegel V-b]` hinter jeder Knife-Meldung). Die Variante bleibt
+  über Sessions erhalten, bis die App neu startet.
+- **Sperre beim Hover und Klick (F3 = A).** Ein Ziel ohne Spiegelpartner, ein Schnitt durch eine Fläche ohne Partner, ein
+  Schnitt, der innerhalb einer Fläche über die Mitte läuft (kein Punkt auf der Mitte zum Kappen), ein Schnitt in einer
+  Fläche, die auf oder über der Mitte liegt, oder auf der Gegenseite der Arbeitsseite werden **in Sperrfarbe (magenta:
+  Punkt, Kante, Linie vom Start)** gezeigt, die Statuszeile sagt warum (einmal, nicht bei jeder Mausbewegung), und der
+  Klick wird **nicht gesetzt**. Texte: `Symmetrie: Dieser Punkt hat keinen Spiegelpartner — …`, `Symmetrie: Der Schnitt
+  läuft durch eine Fläche ohne Spiegelpartner — …`, `Symmetrie: Der Schnitt kreuzt die Mitte innerhalb einer Fläche …`,
+  `Symmetrie: Der Schnitt liegt in einer Fläche auf oder über der Mitte …`; jeweils mit dem Weg raus (anderswo schneiden
+  oder Symmetrie mit Shift+S aus). Es ist der vordere Teil des Commits (`SymmetricKnifeView.refusal`), nichts anderes;
+  was erst das Schneiden zeigt (Kollision, Spiegelung nicht eindeutig, Vollständigkeitsdelta) lehnt weiter Enter ab.
+  Eine Doppelklick-Schließung, die so abgelehnt würde, schließt nicht, sondern hebt nur den Stift (`… not closed: …`).
+- **Beginn.** Eine Ebene, die nicht achsparallel durch den Ursprung liegt, startet keine Session
+  (`Symmetrie: Ebene nicht achsparallel durch den Ursprung — …`).
+- **Enter.** Ein History-Eintrag für beide Seiten; Ctrl+Z nimmt beide Seiten und die Naht zurück, Ctrl+Y stellt sie wieder
+  her; ausgewählt sind nur die Schnittkanten **deiner** Seite (F4 = A, Edge-Modus). Ein abgelehnter Enter beendet die
+  Session wie bisher mit der Statuszeile `Knife: result taken back (…), nothing committed` und dem Mesh wie am Anfang —
+  ob die Session lieber offen bleiben soll, ist deine Frage im Praxistest.
+- **Kosten.** Die Session baut einen `SymmetryIndex` beim Start (das Mesh ändert sich währenddessen nicht); Hover und
+  Klick lösen nichts auf und bauen keinen Index neu. Zahlen: AD-SYM-03 §10.8, „Slice 6c as built“.
+
+### Praxistest für Manu (Slice 6c; B2d)
+
+Ca. 10 Minuten. Pro Punkt **KEEP / ITERATE / REJECT / UNKNOWN** und ein Satz, wenn etwas nicht passt. Jeder Schritt ist am
+gebauten Stand headless durchgespielt (Lab-Pfad, `head_basemesh` und `man_with_shoes_basemesh`, Vorder- und Seitenansicht);
+das Aussehen am Bildschirm kann nur du beurteilen.
+
+**Vorbereitung:** `git pull`, dann `python experiments/symmetry_lab/run.py head_basemesh`. **Shift+S** → `X`. Der E5-Modus
+bleibt auf **BLOCK** — der Knife ist dort jetzt freigeschaltet. **1**, Auswahl leeren, **C** → Knife. Die Statuszeile nennt
+die Spiegelvorschau und die Taste **V**.
+
+1. **Vorschau der Gegenseite.** Auf einer Seite drei, vier Punkte setzen (Kante, Punkt in einer Fläche, über zwei Flächen).
+   Die Gegenseite zeigt die Spiegelung mit (blau-violett). Kamera so drehen, dass die Gegenseite mal sichtbar, mal verdeckt ist.
+   Mit **V** durchschalten: **V-a** (wie die eigene Vorschau, verdeckt), **V-b** (immer sichtbar, gedimmt; Start), **V-c** (nur
+   Punkte). Die Statuszeile nennt die aktive Variante. → Welche fühlt sich am ehesten wie Silo an? Verdikt pro Variante.
+2. **Schnitt über die Mitte.** Einen Schnitt quer über die Nase auf die andere Seite ziehen (die Mitte kreuzt der Schnitt an
+   der Naht; Statuszeile `cut across 1 crossing(s)`). Der Teil hinter der Mitte erscheint **grau** („wird nicht
+   geschnitten“), die Spiegelung deiner Hälfte ersetzt ihn. **Enter.** → Ergebnis: Schnitt bis zur Mitte plus Spiegelbild,
+   durchgehend, HUD `valid`. Ist die graue Darstellung verständlich?
+3. **Aus der Seitenansicht.** Kamera auf die Seite, ein Schnitt über mehrere Flächen und ein Klick ins Leere. → Wird das, was
+   verdeckt über die andere Seite läuft, nachvollziehbar gekappt? (Die Statuszeile nennt verdeckte Kreuzungen: `hidden
+   crossing(s) not cut`.)
+4. **Zwei Schnitte.** Auf einer Seite schneiden, **E** (Stift abheben), auf der anderen Seite weiterschneiden. → Nur die Seite,
+   auf der du angefangen hast, wird geschnitten, die zweite Kette erscheint grau, das Spiegelbild entsteht. **Enter.**
+5. **Auswahl danach.** Nach Enter: nur die Schnittkanten deiner Seite ausgewählt (Edge-Modus)?
+6. **Undo.** **Ctrl+Z** nimmt beide Seiten in einem Schritt zurück, **Ctrl+Y** stellt beide wieder her.
+7. **Sperre beim Hover.** `python experiments/symmetry_lab/run.py man_with_shoes_basemesh`, **Shift+S** → `X`, Knife. Über eine
+   Stelle ohne Spiegelpartner hovern (die ungepaarten Vertices liegen auf der −X-Seite; der Lab-Marker zeigt sie magenta).
+   → Markierung in Sperrfarbe (magenta: Punkt, ggf. Kante und Linie vom Start), die Statuszeile sagt warum, ein Klick wird nicht
+   gesetzt. Ist das früh und klar genug?
+8. **Abgelehnter Enter (falls er dir begegnet).** Mit F3 = A ist das selten (die meisten Fälle sind schon beim Hover gesperrt).
+   Die Session endet, das Mesh ist wie vorher, die Statuszeile sagt warum. → Passt das, oder soll die Session offen bleiben,
+   damit du den letzten Schritt zurücknehmen kannst?
+9. **Optional F6.** Einen Schnitt im leeren Raum beginnen. Wenn du dabei eine Meinung zu F6 bekommst, notiere sie; sonst bleibt
+   F6 offen.
+
+Praxistest und Fragen: `docs/ATELIER.md` B2d. Tests: `tests/test_symmetric_knife_preview.py`,
+`test_app_lab_symmetric_knife.py` (BLOCK / MARK), und die Lab-Tests, die vorher den Knife-Verweis oder die
+Warnzeile festhielten, laufen jetzt mit `undeclare_knife` (der abgeleitete Mechanismus bleibt getestet).
+
 ## Was das Lab nicht macht
 
-- **Kein gespiegelter Schnitt.** Der Knife ist der der App und schneidet einseitig;
-  unter BLOCK wird er bei aktiver Symmetrie verweigert (Split spiegelt seit Slice 4). Der gespiegelte Knife des alten
-  Labs (Slice 6/7) ist nicht übernommen; seine Befunde bleiben als Forschung für einen
-  künftigen symmetrischen One Knife (Historie, und `tests/test_lab_knife.py` für P1–P3).
+- **Kein eigener gespiegelter Knife.** Der Knife ist der der App; unter Symmetrie spiegelt ihn seit Slice 6c der
+  Koordinator der App (Abschnitt „Symmetrischer Knife, Slice 6c“). Der gespiegelte Knife des alten
+  Labs (Slice 6/7) ist nicht übernommen; seine Befunde bleiben als Forschung (Historie, und
+  `tests/test_lab_knife.py` für P1–P3).
 - **Keine Partner im Edge-/Face-Modus.**
 - **`subd_cube` schattiert unter X asymmetrisch** — die App trianguliert Quads nach der
   Vertex-Reihenfolge; die lab-eigene „kürzere Diagonale" (E10) ist mit Q1 = (a) entfallen

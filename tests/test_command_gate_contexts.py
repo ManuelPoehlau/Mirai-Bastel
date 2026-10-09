@@ -61,9 +61,9 @@ OPERATION_CONTEXTS = (
     CContext.KNIFE,
 )
 ALL_CONTEXTS = OPERATION_CONTEXTS + (CContext.NONE,)
-#: Contexts without a coordinator (`mirai.symmetry_declarations`, slice 4): Knife, plus `NONE`,
-#: which is no operation. T-G3a pins that a definition changes nothing for them.
-UNCOORDINATED_CONTEXTS = (CContext.KNIFE, CContext.NONE)
+#: Contexts without a coordinator (`mirai.symmetry_declarations`): `NONE`, which is no operation (the Knife
+#: is declared since AD-SYM-03 slice 6c). T-G3a pins that a definition changes nothing for them.
+UNCOORDINATED_CONTEXTS = (CContext.NONE,)
 TEXTS = {ctx: f"refused {ctx.name}" for ctx in OPERATION_CONTEXTS}
 EXACT_X = SymmetryDefinition((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), frozenset())
 
@@ -380,7 +380,7 @@ def _without_symmetry(state: dict) -> dict:
 @pytest.mark.parametrize("ctx", UNCOORDINATED_CONTEXTS, ids=lambda c: c.name)
 def test_t_g3a_no_gate_a_definition_changes_nothing_for_one_sided_selections(ctx):
     """G-3 boundary from the Production side: no gate + an exact X definition. For a context
-    without a coordinator (Knife) a selection without a mirror pair behaves as without a
+    without a coordinator (`NONE`) a selection without a mirror pair behaves as without a
     definition (return value, status, mesh result); nothing refuses. Split, Edge and Vertex Connect
     run their coordinator whenever a definition is set, in MARK as in BLOCK (slices 3b/4)."""
     runs = []

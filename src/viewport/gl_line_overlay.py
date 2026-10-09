@@ -16,6 +16,10 @@ Layers (`LINE_LAYERS`):
 - `tool_preview`, `tool_active` (B7, Knife session, `overlay.TOOL_LAYERS`):
   the hovered/locked edge plus the start → prospective-point line preview
   (hover style), and the session's path edges so far (selected style).
+- the symmetric Knife's layers (slice 6c, `overlay.TOOL_SYMMETRY_LAYERS`): the
+  mirror (`tool_mirror` depth-tested like the path, `tool_mirror_preview` on top
+  like the preview, `tool_mirror_dim` on top and dimmed), the part that will not
+  be cut (`tool_clipped`, depth-tested) and the refused hover (`tool_refused`, on top).
 
 The viewport draws `wire` right after the mesh and `hover`/`selected` after
 the face highlight (`draw(..., layers=...)`); this class holds no mesh or
@@ -46,13 +50,26 @@ and setting data needs no GL context.
 
 from __future__ import annotations
 
-from .gl_point_overlay import HOVER_COLOR, SELECTED_COLOR
+from .gl_point_overlay import (
+    CLIPPED_COLOR,
+    HOVER_COLOR,
+    MIRROR_COLOR,
+    MIRROR_DIM_COLOR,
+    MIRROR_PREVIEW_COLOR,
+    REFUSED_COLOR,
+    SELECTED_COLOR,
+)
 from .overlay import (
     HOVER_LAYER,
     SELECTED_LAYER,
     TOOL_ACTIVE_LAYER,
+    TOOL_CLIPPED_LAYER,
     TOOL_LAYERS,
+    TOOL_MIRROR_DIM_LAYER,
+    TOOL_MIRROR_LAYER,
+    TOOL_MIRROR_PREVIEW_LAYER,
     TOOL_PREVIEW_LAYER,
+    TOOL_REFUSED_LAYER,
 )
 
 WIRE_LAYER = "wire"
@@ -231,8 +248,18 @@ class GLLineOverlay(FlatColorLayers):
         SELECTED_LAYER: (SELECTED_COLOR, SELECTED_EDGE_LINE_WIDTH),
         TOOL_PREVIEW_LAYER: (HOVER_COLOR, HOVER_EDGE_LINE_WIDTH),
         TOOL_ACTIVE_LAYER: (SELECTED_COLOR, SELECTED_EDGE_LINE_WIDTH),
+        TOOL_MIRROR_LAYER: (MIRROR_COLOR, SELECTED_EDGE_LINE_WIDTH),
+        TOOL_MIRROR_PREVIEW_LAYER: (MIRROR_PREVIEW_COLOR, HOVER_EDGE_LINE_WIDTH),
+        TOOL_MIRROR_DIM_LAYER: (MIRROR_DIM_COLOR, SELECTED_EDGE_LINE_WIDTH),
+        TOOL_CLIPPED_LAYER: (CLIPPED_COLOR, SELECTED_EDGE_LINE_WIDTH),
+        TOOL_REFUSED_LAYER: (REFUSED_COLOR, HOVER_EDGE_LINE_WIDTH),
     }
-    NO_DEPTH_LAYERS = frozenset({TOOL_PREVIEW_LAYER})
+    #: The preview lines run straight across a face and are drawn on top (B7); so are the symmetric
+    #: Knife's mirror-always-visible layer (V-b), the refused hover and the clipped hover line's layer
+    #: is depth-tested like the path (`tool_clipped`, `tool_mirror`: the path's own behaviour).
+    NO_DEPTH_LAYERS = frozenset(
+        {TOOL_PREVIEW_LAYER, TOOL_MIRROR_PREVIEW_LAYER, TOOL_MIRROR_DIM_LAYER, TOOL_REFUSED_LAYER}
+    )
     VERTS_PER_ITEM = 2
 
     @staticmethod

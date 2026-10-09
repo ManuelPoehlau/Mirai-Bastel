@@ -39,7 +39,7 @@ from core.ids import EdgeId, FaceId, VertexId  # noqa: E402
 from core.mesh import SymmetryDefinition  # noqa: E402
 from loaders.assets import asset_path  # noqa: E402
 from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
-from mirai.symmetric_knife import KnifeRefusal, clip_path, coordinate_knife  # noqa: E402
+from mirai.symmetric_knife import KnifeRefusal, SymmetricKnifeView, clip_path, coordinate_knife  # noqa: E402
 from mirai.symmetry import SymmetryState, mirror_position, symmetry_state  # noqa: E402
 from mirai.symmetry_coordination import completeness_report, delta_check  # noqa: E402
 from mirai.topology import knife_resolve as kr  # noqa: E402
@@ -333,15 +333,30 @@ class Outcome:
         return bool(self.ea and self.eb is False)
 
 
-def make_tool(mesh: Mesh, *, coordinator=coordinate_knife) -> tuple[KnifeTool, Scene]:
+def make_tool(mesh: Mesh, *, coordinator=coordinate_knife, view=None) -> tuple[KnifeTool, Scene]:
+    """The real `KnifeTool`; `view`: the session's `SymmetricKnifeView` (slice 6c; the click-time refusals)."""
     scene = Scene()
     scene.mesh = mesh
     knife = KnifeTool()
     with quiet():
         knife.activate()
         params = {"symmetric_commit": coordinator} if coordinator is not None else {}
+        if view is not None:
+            params["symmetric_view"] = view
         knife.begin(mesh=mesh, scene=scene, selection=scene.selection, **params)
     return knife, scene
+
+
+def make_session(mesh: Mesh) -> tuple[KnifeTool, Scene, SymmetricKnifeView]:
+    """A symmetric session as `Application` starts it: coordinator and view, on a mesh with a definition."""
+    view = SymmetricKnifeView(mesh)
+    knife, scene = make_tool(mesh, view=view)
+    return knife, scene, view
+
+
+def vertex_at(mesh: Mesh, position) -> VertexId:
+    """The vertex at exactly `position` (grid meshes)."""
+    return next(v for v in mesh.all_vertex_ids() if tuple(mesh.vertex_position(v)) == tuple(position))
 
 
 def commit_session(state: dict, path: list[dict], *, coordinator=coordinate_knife) -> Outcome:
@@ -490,7 +505,7 @@ def _random_target(rnd, mesh, f, *, seam_bias: bool, svs: set, seam: frozenset):
 
 
 def fuzz_paths(state: dict, rnd: random.Random, n: int, *, region: str = "normal side",
-               seam_bias: bool = False) -> list[list[dict]]:
+               seam_bias: bool = False, guarded: bool = False) -> list[list[dict]]:
     """`n` random camera-free sessions of 2–8 accepted clicks through the Production click rules (vertices,
     edge points — t = 0.5 in 30 % —, face points, closes, pen lifts, earlier points, in-session Undo),
     returned as the full session paths.
@@ -498,7 +513,9 @@ def fuzz_paths(state: dict, rnd: random.Random, n: int, *, region: str = "normal
     `region`: "normal side" = faces on the normal's side only (the probe's K10 / R7); "both sides" = every
     face off the plane, so a path can walk over the seam (through seam vertices and seam edge points) and
     start on either side — the clip's and the side rule's cases. `seam_bias`: the targets favour seam
-    vertices, seam edges and near-seam face points, and the start faces touch the seam (the review's R7)."""
+    vertices, seam edges and near-seam face points, and the start faces touch the seam (the review's R7).
+    `guarded` (slice 6c): the session runs with the symmetric view, so a click the commit's front part would
+    refuse (F3 = A) is refused here and the generator tries another."""
     mesh = Mesh.from_state(state)
     d = mesh.symmetry_definition
     cls = {f: face_class(d, [mesh.vertex_position(v) for v in mesh.face_vertices(f)]) for f in mesh.all_face_ids()}
@@ -508,7 +525,9 @@ def fuzz_paths(state: dict, rnd: random.Random, n: int, *, region: str = "normal
     starts = [f for f in sorted(allowed) if not seam_bias or set(mesh.face_vertices(f)) & svs]
     out = []
     for _ in range(n):
-        knife, _scene = make_tool(Mesh.from_state(state), coordinator=None)
+        fuzz_mesh = Mesh.from_state(state)
+        knife, _scene = make_tool(fuzz_mesh, coordinator=None,
+                                  view=SymmetricKnifeView(fuzz_mesh) if guarded else None)
         mesh = knife._mesh
         goal, clicks, tries = rnd.randint(2, 8), 0, 0
         while clicks < goal and tries < goal * 10:

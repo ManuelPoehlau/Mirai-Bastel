@@ -67,6 +67,7 @@ from ._app_lab_support import (  # noqa: F401
     make_lab,
     press,
     screen,
+    undeclare_knife,
     visible,
 )
 
@@ -500,6 +501,7 @@ def _mark_lab():
 
 
 def test_t_fc5_knife_warning_only_while_knife_is_undeclared(monkeypatch):
+    undeclare_knife(monkeypatch)    # seit Slice 6c ist der Knife-Kontext echt deklariert
     app, lab = _mark_lab()
     assert app.command_gate is ROW_MARK.gate is None  # MARK-Zeile bleibt None
     select_context(app, CContext.KNIFE)
@@ -550,7 +552,7 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     for context, refusal in block_row().gate.refused_contexts.items():
         assert CONTEXT_NAMES[context] in block_row().describe()
         assert repr(refusal) in text
-    assert "C-Kontext Knife abgelehnt" in text
+    assert "C-Kontext Knife abgelehnt" not in text  # deklariert (Slice 6c)
 
     non_operation = next(line for line in lines if line.startswith("NON_OPERATION"))
     for command in NON_OPERATION:
@@ -558,7 +560,7 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     assert cmd.EDGE_LOOP not in non_operation and cmd.EDGE_RING not in non_operation
     assert "INTERIM_ONE_SIDED" not in text  # Slice 3c: das Interim ist beendet
     declarations_line = next(line for line in lines if line.startswith("Deklarationen"))
-    assert "C-Kontexte Edge Connect, Split, Vertex Connect" in declarations_line
+    assert "C-Kontexte Edge Connect, Knife, Split, Vertex Connect" in declarations_line
     assert "Removal Delete, Dissolve, DissolveNoCleanup" in declarations_line
     assert "C-Kontext Split abgelehnt" not in text  # deklariert (Slice 4)
     assert "C-Kontext Edge Connect abgelehnt" not in text  # deklariert (3b)
@@ -568,6 +570,7 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     empty = "\n".join(startup_listing())
     assert "C-Kontext Split abgelehnt" in empty
     assert "C-Kontext Edge Connect abgelehnt" in empty and "C-Kontext Vertex Connect abgelehnt" in empty
+    assert "C-Kontext Knife abgelehnt" in empty
     assert "C-Kontexte keine" in empty and "Removal keine" in empty
 
 

@@ -102,6 +102,16 @@ def declare(monkeypatch, contexts=(), removal=()) -> None:
     )
 
 
+def undeclare_knife(monkeypatch) -> None:
+    """The state before AD-SYM-03 slice 6c: every real declaration but the Knife's. The Knife-specific
+    gate and warning mechanism (BLOCK row names an undeclared context, MARK warns about a one-sided
+    session) is derived from the declarations and still works for it - these tests pin that mechanism."""
+    from mirai.topology.contextual_c import CContext
+
+    real = {ctx: fn for ctx, fn in declarations.C_CONTEXT_COORDINATORS.items() if ctx is not CContext.KNIFE}
+    monkeypatch.setattr(declarations, "C_CONTEXT_COORDINATORS", MappingProxyType(real))
+
+
 def click(app: Application, x: float, y: float, inp: Input = LMB) -> bool:
     app.pointer_press(inp, x, y)
     return app.pointer_release(inp.value, x, y)

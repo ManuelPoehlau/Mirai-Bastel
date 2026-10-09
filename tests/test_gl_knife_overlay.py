@@ -148,3 +148,36 @@ def test_start_point_line_preview_and_path_are_drawn_and_cleared_on_cancel(gl_wi
     app.key_press(Input("key", "ESCAPE", frozenset()))
     app.pointer_motion(2, 2)
     assert _render(gl_window, app) == idle
+
+
+def test_the_symmetric_knife_layers_are_drawn_with_their_own_colours_and_cleared(gl_window, app):
+    """AD-SYM-03 slice 6c: the mirror, clipped and refused tool layers reach the real GL path (points through
+    the mesh like every point layer; a segment layer with the depth state of its class)."""
+    from viewport.gl_point_overlay import MIRROR_COLOR, REFUSED_COLOR
+    from viewport.overlay import (
+        TOOL_CLIPPED_LAYER,
+        TOOL_MIRROR_DIM_LAYER,
+        TOOL_MIRROR_LAYER,
+        TOOL_REFUSED_LAYER,
+    )
+
+    mesh = app.scene.mesh
+    idle = _render(gl_window, app)
+    p7, p6, p5 = (mesh.vertex_position(_v(app, i)) for i in (7, 6, 5))
+
+    def is_color(color):
+        return lambda rgb: all(abs(c - round(e * 255)) <= TOL for c, e in zip(rgb, color[:3]))
+
+    app.viewport.set_tool_overlay(
+        points={TOOL_REFUSED_LAYER: [p7], TOOL_MIRROR_LAYER: [p6], TOOL_CLIPPED_LAYER: [p5]},
+        segments={TOOL_MIRROR_DIM_LAYER: [(p7, p5)], TOOL_CLIPPED_LAYER: [(p6, p5)]},
+    )
+    drawn = _render(gl_window, app)
+    assert _near(drawn, _screen(app, p7), is_color(REFUSED_COLOR))
+    assert _near(drawn, _screen(app, p6), is_color(MIRROR_COLOR))
+    assert drawn != idle
+    mid = _screen(app, _lerp(p7, p5, 0.5))
+    assert _near(drawn, mid, lambda rgb: rgb != _pixel(idle, int(mid[0]), int(mid[1])))
+
+    app.viewport.set_tool_overlay()
+    assert _render(gl_window, app) == idle

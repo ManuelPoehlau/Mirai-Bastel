@@ -39,6 +39,7 @@ from ._app_lab_support import (  # noqa: F401
     press,
     screen,
     start_knife,
+    undeclare_knife,
     visible,
 )
 
@@ -165,12 +166,14 @@ def _c_refused_exactly_when_on(app, lab) -> None:
 
 
 @pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK], ids=["block", "mark"])
-def test_gate_row_follows_symmetry_definition_over_undo_redo(lab_app, mode):
-    """T-R2h (Slice 4 erweitert, BLOCK und MARK): Symmetrie an → Shift+S schaltet
+def test_gate_row_follows_symmetry_definition_over_undo_redo(lab_app, mode, monkeypatch):
+    """T-R2h (Slice 4 erweitert, BLOCK und MARK; der Knife-Kontext undeklariert, `undeclare_knife`,
+    weil nur ein undeklarierter Kontext eine abgeleitete Ablehnung hat): Symmetrie an → Shift+S schaltet
     durch, aus und wieder an → Ctrl+Z/Ctrl+Y über die Zyklus-Schritte → die
     Gate-Zeile passt nach jedem Schritt zu `mesh.symmetry_definition` und dem
     E5-Modus; in BLOCK ist C genau dann abgelehnt, wenn die Symmetrie an ist, in
     MARK nie. Undo/Redo ändert den Modus nicht."""
+    undeclare_knife(monkeypatch)
     app, lab = lab_app
     assert lab.gate_mode is GateMode.BLOCK  # Default seit Slice 5
     if mode is not GateMode.BLOCK:
@@ -252,7 +255,7 @@ def _idle(app, lab):
 
 REFUSALS = [
     # Seit Slice 4 nur in BLOCK (MARK lässt C laufen, `test_app_lab_gate.py`).
-    ("C_under_symmetry_block", _symmetry_on_block, C, block_text("Knife")),
+    ("C_under_symmetry_block", _symmetry_on_block, C, block_text("Knife")),   # Knife undeklariert (6c: s. u.)
     ("ShiftS_transform_armed", _armed, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_transform_running", _running, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
     ("ShiftS_knife", start_knife, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"),
@@ -267,10 +270,12 @@ REFUSALS = [
 @pytest.mark.parametrize(
     "setup,inp,text", [r[1:] for r in REFUSALS], ids=[r[0] for r in REFUSALS]
 )
-def test_refusals_are_visible_and_counted(lab_app, setup, inp, text):
+def test_refusals_are_visible_and_counted(lab_app, setup, inp, text, monkeypatch):
     """T-R3 (Zeilen von 1b und 4, Tasten — keine dieser Zeilen lehnt einen Klick ab): Rückgabe False,
     `status_serial` + 1, `status_message` = Text der Zeile; zweimal dieselbe
     Ablehnung → zwei Inkremente. Mesh, History, Gate und Owner bleiben."""
+    if setup is _symmetry_on_block:
+        undeclare_knife(monkeypatch)    # the Knife context's refusal exists while it is undeclared (before 6c)
     app, lab = lab_app
     setup(app, lab)
     state = app.scene.mesh.export_state()

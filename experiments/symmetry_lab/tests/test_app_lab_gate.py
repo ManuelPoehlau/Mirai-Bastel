@@ -70,6 +70,7 @@ from ._app_lab_support import (  # noqa: F401
     make_lab,
     press,
     screen,
+    undeclare_knife,
     visible,
 )
 
@@ -552,9 +553,11 @@ def test_c_with_a_selection_under_mark_splits_both_sides(symmetric):
     assert lab.report.state is SymmetryState.VALID
 
 
-def test_c_with_empty_selection_under_mark_starts_a_knife_with_the_warning_line(symmetric):
-    """MARK, leere Auswahl, C → Knife-Session; die HUD-Warnzeile steht, solange sie
-    läuft, und ist nach Esc weg. Das Lab schreibt keinen Status (H2-R2)."""
+def test_c_with_empty_selection_under_mark_starts_a_knife_with_the_warning_line(symmetric, monkeypatch):
+    """MARK, leere Auswahl, C → Knife-Session; solange der Knife-Kontext undeklariert ist (vor
+    Slice 6c; hier per `undeclare_knife`), steht die HUD-Warnzeile, solange sie läuft, und ist nach
+    Esc weg. Das Lab schreibt keinen Status (H2-R2)."""
+    undeclare_knife(monkeypatch)
     app, lab = symmetric
     assert e5_warning_text(lab) == ""
     begin_knife(app, lab)
@@ -568,10 +571,12 @@ def test_c_with_empty_selection_under_mark_starts_a_knife_with_the_warning_line(
     assert len(app.history) == 1  # nur das Shift+S
 
 
-def test_knife_commit_under_mark_is_one_history_entry(symmetric):
-    """MARK: einseitiger Knife-Schnitt (Diagonale einer +X-Face), Enter → genau ein
-    History-Eintrag und genau eine neue Edge (die gespiegelte Face bleibt ungeschnitten);
-    Warnzeile bis zum Commit, danach weg."""
+def test_knife_commit_under_mark_is_one_history_entry(symmetric, monkeypatch):
+    """MARK, Knife-Kontext undeklariert (`undeclare_knife`): einseitiger Knife-Schnitt (Diagonale
+    einer +X-Face), Enter → genau ein History-Eintrag und genau eine neue Edge (die gespiegelte Face
+    bleibt ungeschnitten); Warnzeile bis zum Commit, danach weg. Mit der Deklaration (seit 6c) schneidet
+    derselbe Schnitt beide Seiten: `test_app_lab_symmetric_knife.py`."""
+    undeclare_knife(monkeypatch)
     app, lab = symmetric
     a, b = one_side_diagonal(app)
     before = len(app.history)
@@ -591,9 +596,12 @@ def test_knife_commit_under_mark_is_one_history_entry(symmetric):
 # -- C unter Symmetrie, BLOCK; C ohne Symmetrie ----------------------------------------------
 
 
-def test_c_with_empty_selection_under_block_is_refused(symmetric):
-    """BLOCK: `C` auf dem undeklarierten Kontext Knife (leere Auswahl) → False, Status = benannter
-    Text, `status_serial` + 1; kein History-Eintrag, keine Knife-Session, Mesh unverändert."""
+def test_c_with_empty_selection_under_block_is_refused(symmetric, monkeypatch):
+    """BLOCK: `C` auf dem undeklarierten Kontext Knife (leere Auswahl; vor Slice 6c, hier per
+    `undeclare_knife`) → False, Status = benannter Text, `status_serial` + 1; kein History-Eintrag,
+    keine Knife-Session, Mesh unverändert. Seit 6c ist der Kontext deklariert: er startet eine
+    koordinierte Session (`test_app_lab_symmetric_knife.py`)."""
+    undeclare_knife(monkeypatch)
     app, lab = symmetric
     to_block(app, lab)
     app.pointer_motion(*MISS)
@@ -747,6 +755,8 @@ def test_t_r3_block_row_refusals_are_visible_and_counted(symmetric, monkeypatch,
     if patch:
         monkeypatch.setattr(RotateOperation, "supports_symmetry", False)
         monkeypatch.setattr(ScaleOperation, "supports_symmetry", False)
+    if setup is _block_c_empty:
+        undeclare_knife(monkeypatch)    # the Knife row exists only for an undeclared context (before 6c)
     app, lab = symmetric
     setup(app, lab)
     snapshot = (
@@ -772,7 +782,7 @@ def test_t_r3_block_row_refusals_are_visible_and_counted(symmetric, monkeypatch,
     assert app.interaction_owner is None
 
 
-def test_startup_listing_has_the_e5_rows_and_shift_b():
+def test_startup_listing_has_the_e5_rows_and_shift_b(monkeypatch):
     """H2-R3: die Start-Liste nennt Shift+B und die Zeilen MARK und BLOCK; die
     Slice-1b-Zeile „C abgelehnt" gibt es nicht mehr."""
     lines = startup_listing()
@@ -782,6 +792,8 @@ def test_startup_listing_has_the_e5_rows_and_shift_b():
     assert ROW_SYMMETRY_OFF.describe() in text
     assert ROW_MARK.describe() in text
     assert block_row().describe() in text
-    assert block_text("Knife") in block_row().describe()  # `C` geht durch, nur Knife nicht
+    assert block_text("Knife") not in block_row().describe()  # `C` geht durch, der Knife-Kontext seit 6c auch
+    undeclare_knife(monkeypatch)
+    assert block_text("Knife") in block_row().describe()      # ... die Zeile ist abgeleitet
     assert "Slice 1, vor E5" not in text
     assert "C spiegelt nicht'" not in text  # kein alter 1b-Text ohne BLOCK-Zusatz

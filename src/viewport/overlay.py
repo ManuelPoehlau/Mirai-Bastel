@@ -70,7 +70,30 @@ POINT_LAYERS = (HOVER_LAYER, SELECTED_LAYER)
 #: Aufrufer (`Viewport.set_tool_overlay`); diese Klasse berechnet sie nicht.
 TOOL_PREVIEW_LAYER = "tool_preview"
 TOOL_ACTIVE_LAYER = "tool_active"
-TOOL_LAYERS = (TOOL_PREVIEW_LAYER, TOOL_ACTIVE_LAYER)
+
+#: Zusatz-Layer des symmetrischen Knife (AD-SYM-03 §10, Slice 6c; PROVISIONAL bis zum Artist-Verdikt).
+#: Der Viewport kennt kein Knife und keine Symmetrie: er bekommt auch hier fertige Weltpositionen und
+#: zeichnet pro Layer nur Farbe und Tiefenverhalten (`gl_point_overlay` / `gl_line_overlay`).
+#: - `tool_mirror` / `tool_mirror_preview`: die Spiegelseite wie die Arbeitsseite gezeichnet (Pfad-Linien
+#:   mit Depth-Test, Preview ohne; Variante V-a, bei V-c nur die Punkte);
+#: - `tool_mirror_dim`: die Spiegelseite immer sichtbar (ohne Depth-Test) und gedimmt (Variante V-b);
+#: - `tool_clipped`: der Teil, der nicht geschnitten wird (neutrales Grau);
+#: - `tool_refused`: das Hover-Ziel, das ein Klick ablehnt (Sperrfarbe).
+#: Nur die Application füllt sie; ohne Symmetrie bleiben sie leer.
+TOOL_MIRROR_LAYER = "tool_mirror"
+TOOL_MIRROR_PREVIEW_LAYER = "tool_mirror_preview"
+TOOL_MIRROR_DIM_LAYER = "tool_mirror_dim"
+TOOL_CLIPPED_LAYER = "tool_clipped"
+TOOL_REFUSED_LAYER = "tool_refused"
+TOOL_SYMMETRY_LAYERS = (
+    TOOL_CLIPPED_LAYER,
+    TOOL_MIRROR_LAYER,
+    TOOL_MIRROR_DIM_LAYER,
+    TOOL_MIRROR_PREVIEW_LAYER,
+    TOOL_REFUSED_LAYER,
+)
+#: Zeichenreihenfolge der Tool-Layer (später = oben): der bisherige Preview-/Active-Stand zuerst.
+TOOL_LAYERS = (TOOL_PREVIEW_LAYER, TOOL_ACTIVE_LAYER) + TOOL_SYMMETRY_LAYERS
 
 
 class OverlayElementKind(Enum):

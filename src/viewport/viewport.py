@@ -44,7 +44,10 @@ nimmt fertige Weltpositionen für `overlay.TOOL_LAYERS` entgegen (der
 Viewport kennt kein Knife) und reicht sie sofort an Punkt- bzw. Linien-
 Overlay weiter; sichtbar headless in `tool_point_layers`/`tool_line_layers`.
 Gezeichnet werden sie nach den Selection-Layern (Linien: Pfad-Edges mit
-Depth-Test, Preview ohne; Punkte wie alle Punkte ohne Depth-Test).
+Depth-Test, Preview ohne; Punkte wie alle Punkte ohne Depth-Test). AD-SYM-03
+Slice 6c: `overlay.TOOL_SYMMETRY_LAYERS` (Spiegelseite, nicht geschnittener Teil,
+abgelehntes Hover-Ziel) laufen über denselben Weg; der Viewport kennt auch dafür
+weder Knife noch Symmetrie, nur Layer-Namen, Farben und Tiefenverhalten.
 
 Zusatz-Overlays (WP-SYM-LAB-03 H1): `add_overlay(o)` hängt ein Overlay eines
 Hosts an (z. B. die Marker des Symmetry Lab); der Viewport kennt weder seine
@@ -67,10 +70,30 @@ from .overlay import (
     HOVER_LAYER,
     SELECTED_LAYER,
     TOOL_ACTIVE_LAYER,
+    TOOL_CLIPPED_LAYER,
     TOOL_LAYERS,
+    TOOL_MIRROR_DIM_LAYER,
+    TOOL_MIRROR_LAYER,
+    TOOL_MIRROR_PREVIEW_LAYER,
     TOOL_PREVIEW_LAYER,
+    TOOL_REFUSED_LAYER,
     SelectionOverlay,
 )
+
+#: Zeichenreihenfolge der Tool-Linien (später = oben): das, was nicht geschnitten wird, unter allem;
+#: Pfad und Spiegelpfad (mit Depth-Test); dann alles ohne Depth-Test (Preview, Spiegel-Preview, gedimmte
+#: Spiegelseite) und zuletzt die abgelehnte Vorschau.
+_TOOL_LINE_DRAW_ORDER = (
+    TOOL_CLIPPED_LAYER,
+    TOOL_MIRROR_LAYER,
+    TOOL_ACTIVE_LAYER,
+    TOOL_MIRROR_DIM_LAYER,
+    TOOL_MIRROR_PREVIEW_LAYER,
+    TOOL_PREVIEW_LAYER,
+    TOOL_REFUSED_LAYER,
+)
+#: Tool-Layer, deren Linien auf den Faces liegen (Depth-Test) und deshalb den Polygon-Offset brauchen.
+_TOOL_DEPTH_TESTED_LINES = (TOOL_ACTIVE_LAYER, TOOL_MIRROR_LAYER, TOOL_CLIPPED_LAYER)
 from .render_mesh import RenderMesh
 from .resource_store import ResourceStore, TraceStore
 from .wireframe import edge_segments
@@ -162,8 +185,8 @@ class Viewport:
     def _update_edge_highlight(self) -> None:
         # Pfad-Edges liegen wie das Edge-Highlight auf den Faces (Polygon-
         # Offset nötig); die Preview-Linie zeichnet ohne Depth-Test.
-        edge_highlight = any(self.line_layers.values()) or bool(
-            self.tool_line_layers[TOOL_ACTIVE_LAYER]
+        edge_highlight = any(self.line_layers.values()) or any(
+            self.tool_line_layers[layer] for layer in _TOOL_DEPTH_TESTED_LINES
         )
         if edge_highlight != self._edge_highlight:
             self._edge_highlight = edge_highlight
@@ -292,7 +315,7 @@ class Viewport:
         if self.line_overlay is not None and any(self.line_layers.values()):
             self.line_overlay.draw(camera_uniforms, layers=(HOVER_LAYER, SELECTED_LAYER))
         if self.line_overlay is not None and any(self.tool_line_layers.values()):
-            self.line_overlay.draw(camera_uniforms, layers=(TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER))
+            self.line_overlay.draw(camera_uniforms, layers=_TOOL_LINE_DRAW_ORDER)
         for overlay in self.extra_overlays:
             overlay.draw(camera_uniforms)
         if self.point_overlay is not None:

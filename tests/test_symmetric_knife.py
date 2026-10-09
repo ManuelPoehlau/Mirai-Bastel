@@ -1,5 +1,6 @@
 """AD-SYM-03 slice 6b: the symmetric Knife's commit coordinator (`mirai.symmetric_knife.coordinate_knife`),
-headless and not wired (`Application` does not pass it; `CContext.KNIFE` stays undeclared).
+headless (slice 6c wired it: `CContext.KNIFE` is declared and `Application` passes it, see
+`tests/test_symmetric_knife_preview.py`).
 
 What is pinned (the handoff's §5 table):
 
@@ -911,16 +912,13 @@ def test_the_coordinator_imports_neither_application_nor_the_tool():
     assert ".topology.knife_resolve" in names and ".symmetric_ops" in names and ".symmetry_coordination" in names
 
 
-def test_the_knife_stays_undeclared_and_application_does_not_pass_the_coordinator():
-    assert CContext.KNIFE not in symmetry_declarations.declared_c_contexts()
-    assert CContext.KNIFE not in symmetry_declarations.C_CONTEXT_COORDINATORS
-    source = (_SRC / "application.py").read_text(encoding="utf-8")
-    assert "symmetric_knife" not in source and "symmetric_commit" not in source
-    decl = (_SRC / "symmetry_declarations.py").read_text(encoding="utf-8")
-    assert "symmetric_knife" not in decl and "KNIFE" not in decl.replace("Knife is undeclared", "")
+def test_the_knife_is_declared_with_this_coordinator_since_slice_6c():
+    """6b left the Knife undeclared and unwired; 6c declares it (the entry is the switch, D-b)."""
+    assert CContext.KNIFE in symmetry_declarations.declared_c_contexts()
+    assert symmetry_declarations.C_CONTEXT_COORDINATORS[CContext.KNIFE] is coordinate_knife
 
 
-def test_a_live_application_knife_session_has_no_coordinator():
+def test_a_live_application_knife_session_runs_the_coordinator_only_with_a_definition():
     from mirai.application import Application
     from mirai.interaction.input import Input
 
@@ -930,7 +928,13 @@ def test_a_live_application_knife_session_has_no_coordinator():
     app.set_viewport_size(800, 600)
     set_plane(app.scene.mesh)
     assert app.key_press(Input("key", "c", frozenset()))
-    assert app.knife_active and app._knife._symmetric_commit is None
+    assert app.knife_active and app._knife._symmetric_commit is coordinate_knife
+    assert app._knife._symmetric_view is not None
+    assert app.key_press(Input("key", "ESCAPE", frozenset()))
+
+    app.scene.mesh.symmetry_definition = None
+    assert app.key_press(Input("key", "c", frozenset()))
+    assert app.knife_active and app._knife._symmetric_commit is None and app._knife._symmetric_view is None
 
 
 def test_the_probe_is_not_imported_by_src_or_by_these_tests():

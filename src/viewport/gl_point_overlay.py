@@ -20,7 +20,10 @@ technical reference only: `playground/window.py` `_HOVER_COLOR`, selected
 
 Tool layers (WP-06 B7, `overlay.TOOL_LAYERS`, Knife session): no new look -
 `tool_preview` (prospective point) uses the hover style, `tool_active`
-(start vertex) the selected style. Drawn after the selection layers.
+(start vertex) the selected style. Drawn after the selection layers. The
+symmetric Knife's layers (slice 6c, `overlay.TOOL_SYMMETRY_LAYERS`) have colours
+of their own (mirror, dimmed mirror, clipped, refused); like every point layer
+they ignore depth.
 
 Points are round (fragment discards outside the unit circle of
 `gl_PointCoord`, 1-px smoothstep edge, blending on) and ignore depth, so
@@ -39,8 +42,13 @@ from .overlay import (
     POINT_LAYERS,
     SELECTED_LAYER,
     TOOL_ACTIVE_LAYER,
+    TOOL_CLIPPED_LAYER,
     TOOL_LAYERS,
+    TOOL_MIRROR_DIM_LAYER,
+    TOOL_MIRROR_LAYER,
+    TOOL_MIRROR_PREVIEW_LAYER,
     TOOL_PREVIEW_LAYER,
+    TOOL_REFUSED_LAYER,
 )
 
 SELECTED_COLOR = (1.0, 0.82, 0.15, 1.0)
@@ -48,11 +56,25 @@ SELECTED_POINT_SIZE = 8.0
 HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
 HOVER_POINT_SIZE = 10.0
 
+# Symmetric Knife (AD-SYM-03 slice 6c, PROVISIONAL colours - the Artist's call in the practical test):
+# the mirror in a blue-violet of its own (the Lab's markers are cyan / magenta), dimmed for V-b, the clipped
+# part neutral grey, the refused hover in the Production "blocked" magenta tone.
+MIRROR_COLOR = (0.55, 0.65, 1.0, 1.0)
+MIRROR_PREVIEW_COLOR = (0.65, 0.75, 1.0, 0.55)
+MIRROR_DIM_COLOR = (0.55, 0.65, 1.0, 0.45)
+CLIPPED_COLOR = (0.55, 0.55, 0.55, 0.9)
+REFUSED_COLOR = (0.95, 0.2, 0.85, 1.0)
+
 LAYER_STYLES: dict[str, tuple[tuple[float, float, float, float], float]] = {
     HOVER_LAYER: (HOVER_COLOR, HOVER_POINT_SIZE),
     SELECTED_LAYER: (SELECTED_COLOR, SELECTED_POINT_SIZE),
     TOOL_PREVIEW_LAYER: (HOVER_COLOR, HOVER_POINT_SIZE),
     TOOL_ACTIVE_LAYER: (SELECTED_COLOR, SELECTED_POINT_SIZE),
+    TOOL_MIRROR_LAYER: (MIRROR_COLOR, SELECTED_POINT_SIZE),
+    TOOL_MIRROR_PREVIEW_LAYER: (MIRROR_PREVIEW_COLOR, HOVER_POINT_SIZE),
+    TOOL_MIRROR_DIM_LAYER: (MIRROR_DIM_COLOR, SELECTED_POINT_SIZE),
+    TOOL_CLIPPED_LAYER: (CLIPPED_COLOR, SELECTED_POINT_SIZE),
+    TOOL_REFUSED_LAYER: (REFUSED_COLOR, HOVER_POINT_SIZE),
 }
 #: Draw order: selection layers, then the tool layers on top.
 DRAW_ORDER = POINT_LAYERS + TOOL_LAYERS

@@ -92,6 +92,14 @@ differential spec, `playground/tests/test_knife_q5_differential.py`):
   and the residue follow as above. A refusal (an exception with a true `commit_refusal`) takes the commit
   back: the mesh is the session start, no history, `last_problem` holds the status text. This module
   imports nothing from symmetry; without a coordinator nothing changes.
+- With a coordinator the caller also hands `begin` a **session view** (`symmetric_view`,
+  `mirai.symmetric_knife.SymmetricKnifeView`, slice 6c): `plan()` asks it whether the path with the click
+  added would be refused by the commit's front part (a cut across the plane inside a face, a lost seed, a
+  target or a cut face without a mirror partner, a cut on or across the plane or on the other side) and
+  then refuses the click with the view's status text (`KnifePlan.refused`), so a refused target never
+  enters the path and `accepts()`, `click()` and the hover share one answer (F3 = A). The tool keeps the
+  face each cut stretch lies in (`_stretch_faces`, found by the click-time `_link`) for that question.
+  Without a view nothing changes.
 """
 
 from __future__ import annotations
@@ -156,6 +164,9 @@ class KnifePlan:
     skipped: list = field(default_factory=list)        # reason per stretch not cut: "edge" / "gap" / "space"
     hidden: int = 0                                    # crossings hidden behind the surface: not cut
     method: str = ""                                   # "walk" / "plane" / "none"; "" without the planner
+    # AD-SYM-03 slice 6c — the symmetric session view's click-time refusal (F3 = A); `reason` is its status text:
+    refused: bool = False
+    stretches: list = field(default_factory=list)      # (record, record, face) per cut stretch the click adds
 
 
 class KnifeTool(Tool):
@@ -206,17 +217,23 @@ class KnifeTool(Tool):
         self.last_resolution: KnifeResolution | None = None
         self.last_problem: str | None = None
         self._symmetric_commit = None
+        self._symmetric_view = None
+        self._stretch_faces: dict = {}
 
     def set_view(self, camera, width: int = 1, height: int = 1, *, cache=None, occlusion: bool = True) -> None:
         """The camera the next plans across faces use (S4); `camera=None` = no view. Crossings are fixed
         by the click that stores them — a later view never changes what the path holds."""
         self._view = None if camera is None else View(camera, width, height, cache, occlusion)
 
-    def _on_begin(self, mesh=None, scene=None, selection=None, symmetric_commit=None, **_) -> None:
+    def _on_begin(self, mesh=None, scene=None, selection=None, symmetric_commit=None, symmetric_view=None,
+                  **_) -> None:
         """`symmetric_commit`: the optional commit coordinator `(mesh, session path, session_before) ->
-        KnifeResolution` (AD-SYM-03 §10); `None` = the Knife as it always was."""
+        KnifeResolution` (AD-SYM-03 §10); `symmetric_view`: the optional click-time view of the same
+        symmetry (`.refusal(path, cut_faces)`, slice 6c); `None` = the Knife as it always was."""
         self._mesh = mesh
         self._symmetric_commit = symmetric_commit
+        self._symmetric_view = symmetric_view
+        self._stretch_faces = {}
         self._scene = scene
         self._selection = selection
         self._session_before = mesh.export_state()
@@ -397,37 +414,48 @@ class KnifeTool(Tool):
 
     def _link(self, a: dict, b: dict) -> str | None:
         """"cut", "edge" (along an existing edge: skip) or None (refused) for the segment a -> b."""
+        return self._link_face(a, b)[0]
+
+    def _link_face(self, a: dict, b: dict) -> tuple[str | None, object]:
+        """`_link`'s answer and, for a "cut", the face it lies in: the first shared face (by id) that holds
+        it — the same face the answer was decided by (slice 6c: the symmetric view needs its partner)."""
         m = self._mesh
         shared = _faces_of(m, a) & _faces_of(m, b)
         if not shared:
-            return None
+            return None, None
         pa, pb = target_position(m, a), target_position(m, b)
         if a["kind"] == "face" or b["kind"] == "face":
             # Q5's rule for a segment with an interior end: the straight line has to lie in a shared face.
-            where = {segment_in_face(m, f, pa, pb) for f in shared}
-            if "inside" in where:
-                return "cut"
-            return "edge" if "boundary" in where else None
+            where = {f: segment_in_face(m, f, pa, pb) for f in sorted(shared, key=int)}
+            inside = next((f for f, w in where.items() if w == "inside"), None)
+            if inside is not None:
+                return "cut", inside
+            return ("edge" if "boundary" in where.values() else None), None
         if "pid" in a and "pid" in b and any(
             {x["pid"], y["pid"]} == {a["pid"], b["pid"]} for x, y in self.cut_segments
         ):
-            return "edge"  # retracing the session's own cut (AQ1 applied to the session's edges, S2-b)
+            return "edge", None  # retracing the session's own cut (AQ1 applied to the session's edges, S2-b)
         ka, kb = a["kind"], b["kind"]
         if ka == "vertex" and kb == "edge" and a["vertex_id"] in m.edge_vertices(b["edge_id"]):
-            return "edge"
+            return "edge", None
         if ka == "edge" and kb == "vertex" and b["vertex_id"] in m.edge_vertices(a["edge_id"]):
-            return "edge"
+            return "edge", None
         if ka == kb == "edge" and a["edge_id"] == b["edge_id"]:
-            return "edge"
-        if any(self._chord_valid(f, a, b) for f in sorted(shared, key=int)):
-            return "cut"
+            return "edge", None
+        cut = next((f for f in sorted(shared, key=int) if self._chord_valid(f, a, b)), None)
+        if cut is not None:
+            return "cut", cut
         # Neighbour vertices, or a straight run of boundary edges (R3): nothing to cut.
         if any(segment_in_face(m, f, pa, pb) == "boundary" for f in shared):
-            return "edge"
-        return None
+            return "edge", None
+        return None, None
 
     def plan(self, target: dict | None) -> KnifePlan:
-        """What `click(target)` would do (no change)."""
+        """What `click(target)` would do (no change). With a symmetric session view a click the commit's
+        front part would refuse is refused here (`KnifePlan.refused`, slice 6c)."""
+        return self._guarded(self._plan(target))
+
+    def _plan(self, target: dict | None) -> KnifePlan:
         bad = self._invalid(target)
         if bad is not None:
             return KnifePlan(False, bad)
@@ -463,7 +491,7 @@ class KnifeTool(Tool):
     def _plan_segment(self, a: dict, b: dict, *, closing: bool = False, earlier: bool = False) -> KnifePlan:
         m = self._mesh
         space = "space" in (a["kind"], b["kind"])
-        link = None if space else self._link(a, b)
+        link, link_face = (None, None) if space else self._link_face(a, b)
         crossings, hidden, method = [], 0, ""
         if link is None:
             # S4: no face holds the straight line (or an end lies in space) — the planner, with the view's
@@ -477,25 +505,33 @@ class KnifeTool(Tool):
         lines: list[tuple] = []
         skipped: list[str] = []
         dots: list = []
+        stretches: list[tuple] = []
+        left = a                      # the record the stretch starts at (the entry object, once it has one)
         for k in range(1, len(nodes)):
             p, q = nodes[k - 1], nodes[k]
             if "space" in (p["kind"], q["kind"]):
-                pair = "space"
+                pair, face = "space", None
             elif len(nodes) == 2:
-                pair = link or "gap"
+                pair, face = (link or "gap"), (link_face if link == "cut" else None)
             else:
-                pair = self._link(p, q) or "gap"
+                pair, face = self._link_face(p, q)
+                pair = pair or "gap"
             lines.append((target_position(m, p), target_position(m, q), "cut" if pair == "cut" else "skip"))
             if pair != "cut":
                 entries.append({"kind": "break", "reason": pair})
                 skipped.append(pair)
             if k == len(nodes) - 1:
+                right = b
                 entries.append(b)
             else:
                 crossing = dict(q, crossing=True)
                 crossing.pop("pid", None)   # a new point: its id comes with the click
+                right = crossing
                 entries.append(crossing)
                 dots.append(target_position(m, crossing))
+            if pair == "cut" and face is not None:
+                stretches.append((left, right, face))
+            left = right
         cyclic = False
         if closing:
             chain = self._path[self._chain_start():]
@@ -514,10 +550,21 @@ class KnifeTool(Tool):
             reason = "connects to an earlier point" if earlier else "cut"
         return KnifePlan(True, reason, entries=entries, skip=link == "edge", closing=closing,
                          cyclic=cyclic, earlier=earlier, crossings=dots, lines=lines, skipped=skipped,
-                         hidden=hidden, method=method)
+                         hidden=hidden, method=method, stretches=stretches)
 
     def plan_lift(self, close: bool = False) -> KnifePlan:
-        """What `lift()` (`close=False`) or `finish_chain()` (`close=True`) would do (no change)."""
+        """What `lift()` (`close=False`) or `finish_chain()` (`close=True`) would do (no change). A close
+        the symmetric session view refuses (the closing segment crosses the plane inside a face, ...) is
+        no close: the pen lifts without it, like any close that cannot be made."""
+        plan = self._plan_lift(close)
+        if plan.closing and plan.ok:
+            guarded = self._guarded(plan)
+            if guarded.refused:
+                return KnifePlan(True, f"{LIFTED} (not closed: {guarded.reason})",
+                                 entries=[{"kind": "break", "reason": "lift"}], lift=True)
+        return plan
+
+    def _plan_lift(self, close: bool = False) -> KnifePlan:
         path = self._path
         if not path or _is_lift(path[-1]):
             return KnifePlan(False, NOTHING_TO_LIFT, lift=True)
@@ -542,9 +589,35 @@ class KnifeTool(Tool):
                 return KnifePlan(True, f"{closing.reason}; {LIFTED}", entries=closing.entries[:-1] + [lift],
                                  skip=closing.skip, closing=True, cyclic=closing.cyclic, lift=True,
                                  crossings=closing.crossings, lines=closing.lines, skipped=closing.skipped,
-                                 hidden=closing.hidden, method=closing.method)
+                                 hidden=closing.hidden, method=closing.method, stretches=closing.stretches)
             why = closing.reason
         return KnifePlan(True, f"{LIFTED} (not closed: {why})", entries=[lift], lift=True)
+
+    def _guarded(self, plan: KnifePlan) -> KnifePlan:
+        """`plan`, or its refusal by the symmetric session view (slice 6c; the plan itself without one).
+        The view judges the session path with the click added: new records get provisional point ids
+        (the real ones come with `_apply`) and the stretches' faces are the recorded ones plus this
+        click's."""
+        view = self._symmetric_view
+        if view is None or not plan.ok:
+            return plan
+        fresh: dict = {}
+        entries = []
+        for p in plan.entries:
+            if not is_break(p) and "pid" not in p:
+                if id(p) not in fresh:
+                    fresh[id(p)] = dict(p, pid=("click", len(fresh)))
+                p = fresh[id(p)]
+            entries.append(p)
+        faces = dict(self._stretch_faces)
+        for a, b, face in plan.stretches:
+            a, b = fresh.get(id(a), a), fresh.get(id(b), b)
+            faces[frozenset((a["pid"], b["pid"]))] = face
+        kept = self._path[:len(self._path) - plan.replaces]
+        refusal = view.refusal(kept + entries, faces)
+        if refusal is None:
+            return plan
+        return KnifePlan(False, str(refusal), refused=True)
 
     def accepts(self, target: dict) -> bool:
         """Would `click(target)` be accepted? Same rules, no change (the preview gate)."""
@@ -589,6 +662,8 @@ class KnifeTool(Tool):
         for p in plan.entries:
             if not is_break(p) and "pid" not in p:
                 p["pid"] = next(self._pids)   # a new point: its id comes with this click
+        for a, b, face in plan.stretches:
+            self._stretch_faces[frozenset((a["pid"], b["pid"]))] = face
         removed = self._path[len(self._path) - plan.replaces:]
         del self._path[len(self._path) - plan.replaces:]
         self._path.extend(plan.entries)

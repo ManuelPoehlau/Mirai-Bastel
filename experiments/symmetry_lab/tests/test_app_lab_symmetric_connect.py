@@ -45,6 +45,7 @@ from ._app_lab_support import (  # noqa: F401
     forbid_lab_calls,
     make_lab,
     press,
+    undeclare_knife,
 )
 
 _COUNTERS = ("vertex_id_counter", "edge_id_counter", "face_id_counter")
@@ -105,20 +106,23 @@ def assert_clean(app) -> None:
 # -- die abgeleitete BLOCK-Zeile ---------------------------------------------------------------
 
 
-def test_the_real_declarations_are_split_connect_and_the_three_removals():
+def test_the_real_declarations_are_split_connect_knife_and_the_three_removals():
     assert declarations.declared_c_contexts() == {
         CContext.SPLIT,
         CContext.EDGE_CONNECT,
         CContext.VERTEX_CONNECT,
+        CContext.KNIFE,  # Slice 6c
     }
     assert declarations.declared_removal_commands() == {cmd.DELETE, cmd.DISSOLVE, cmd.DISSOLVE_NO_CLEANUP}
 
 
-def test_block_row_with_the_real_declarations_allows_connect_and_names_only_knife():
+def test_block_row_with_the_real_declarations_allows_connect_and_names_no_context():
+    """Seit Slice 6c sind alle vier C-Kontexte deklariert: die BLOCK-Zeile nennt keinen mehr."""
     gate = block_row().gate
     assert cmd.CONNECT in gate.allowed
     assert dict(gate.refused) == {}
-    assert dict(gate.refused_contexts) == {CContext.KNIFE: block_text("Knife")}
+    assert dict(gate.refused_contexts) == {}
+    assert CContext.KNIFE not in gate.refused_contexts
     assert CContext.SPLIT not in gate.refused_contexts
     assert CContext.EDGE_CONNECT not in gate.refused_contexts
     assert CContext.VERTEX_CONNECT not in gate.refused_contexts
@@ -185,9 +189,11 @@ def test_residue_is_the_created_edges_on_the_side_worked_on_or_on_both_sides(mod
 
 
 @pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK], ids=["block", "mark"])
-def test_only_the_knife_context_stays_unsupported(mode):
-    """BLOCK: Knife benannt abgelehnt, keine Session. MARK: Knife läuft weiter einseitig (mit
-    Warnzeile). Split ist seit Slice 4 koordiniert und in beiden Modi erlaubt."""
+def test_an_undeclared_knife_context_stays_unsupported(mode, monkeypatch):
+    """Die abgeleitete Ablehnung für einen undeklarierten Kontext (der Knife vor Slice 6c, hier per
+    `undeclare_knife`): BLOCK: Knife benannt abgelehnt, keine Session. MARK: Knife läuft einseitig
+    (mit Warnzeile). Split ist seit Slice 4 koordiniert und in beiden Modi erlaubt."""
+    undeclare_knife(monkeypatch)
     app, lab = lab_on(mode)
     app.selection.clear()
     if mode is GateMode.BLOCK:
@@ -205,9 +211,11 @@ def test_only_the_knife_context_stays_unsupported(mode):
         assert press(app, lab, ESC) is True
 
 
-def test_knife_mark_warning_line_is_unchanged():
-    """Knife ist undeklariert: die MARK-Session läuft einseitig und warnt wie vor 3b; Edge und
-    Vertex Connect (deklariert) geben keine Warnzeile."""
+def test_knife_mark_warning_line_follows_the_declaration(monkeypatch):
+    """Ein undeklarierter Knife (`undeclare_knife`): die MARK-Session läuft einseitig und warnt wie
+    vor 3b; Edge und Vertex Connect (deklariert) geben keine Warnzeile. Deklariert (seit 6c) warnt
+    auch die Knife-Session nicht (`test_app_lab_symmetric_knife.py`)."""
+    undeclare_knife(monkeypatch)
     app, lab = lab_on(GateMode.MARK)
     select_opposite_edges(app)
     assert press(app, lab, C) is True

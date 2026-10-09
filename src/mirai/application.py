@@ -44,7 +44,15 @@ from core.operations import MeshStateCommand
 from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
-from viewport.overlay import TOOL_ACTIVE_LAYER, TOOL_PREVIEW_LAYER
+from viewport.overlay import (
+    TOOL_ACTIVE_LAYER,
+    TOOL_CLIPPED_LAYER,
+    TOOL_MIRROR_DIM_LAYER,
+    TOOL_MIRROR_LAYER,
+    TOOL_MIRROR_PREVIEW_LAYER,
+    TOOL_PREVIEW_LAYER,
+    TOOL_REFUSED_LAYER,
+)
 from viewport.resource_store import ResourceStore, TraceStore
 
 from .interaction import BindingSet, Input, ToolManager, commands
@@ -74,6 +82,7 @@ from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point, space_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
+from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.picking import pick_component
 from .viewport.picking_cache import PickCache
@@ -210,6 +219,23 @@ _KNIFE_REFUSED = {
 # place (px) are a double-click.
 KNIFE_DOUBLE_CLICK_S = 0.35
 KNIFE_DOUBLE_CLICK_PX = 4.0
+
+# AD-SYM-03 slice 6c (PROVISIONAL, the Artist's call in the 6c practical test, removed or kept in 6d): the three
+# looks of the mirror side in a symmetric Knife session, switched inside the session by one provisional key.
+# V-a: drawn like the working side's own preview (path lines depth-tested, points through); V-b: always
+# visible (no depth test), dimmed; V-c: the mirror's points only. Default V-b: from a side camera every
+# mirror point is hidden (KD 2.7), so V-a can show nothing there.
+KNIFE_MIRROR_VARIANTS = ("V-a", "V-b", "V-c")
+KNIFE_MIRROR_VARIANT_DEFAULT = "V-b"
+KNIFE_MIRROR_VARIANT_LABELS = {
+    "V-a": "wie die eigene Vorschau, verdeckt",
+    "V-b": "immer sichtbar, gedimmt",
+    "V-c": "nur Punkte",
+}
+#: The provisional variant key. A key of the Knife context that no command uses: not bound in `KNIFE_CONTEXT`
+#: (nor in GLOBAL), none of the Lab's three keys, and none the Session Gate passes. It is checked here, not
+#: through a command, so the command tables (and with them the Lab's gate rows) stay as they are.
+KNIFE_MIRROR_VARIANT_KEY = "v"
 
 # The preview builder ends a chain at a "closed" break only; a pen lift is drawn the same way.
 _KNIFE_DRAWN_LIFT = {"kind": "break", "reason": "closed", "cyclic": False}
@@ -426,6 +452,13 @@ class Application:
         self._shift_held: bool = False
         # WP-KNIFE-01 S4: where the hovered segment crosses edges (the planner's dots).
         self._knife_hover_crossings: tuple = ()
+        # AD-SYM-03 slice 6c: the running session's symmetry view (None = no definition at begin: the Knife
+        # as it always was), the hovered target a click is refused for (and the text shown for it), and the
+        # provisional mirror preview variant (kept across sessions of this Application).
+        self._knife_view: SymmetricKnifeView | None = None
+        self._knife_refused: dict | None = None
+        self._knife_refused_text: str | None = None
+        self.knife_mirror_variant: str = KNIFE_MIRROR_VARIANT_DEFAULT
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
@@ -895,8 +928,11 @@ class Application:
             self._knife_target,
             self._knife_highlight_edge,
             self._knife_hover_crossings,
+            symmetry=self._knife_view,
+            refused=self._knife_refused,
+            pen_up=self._knife_view is not None and self._knife.last_point is None,
         )
-        if self._knife.last_point is None:
+        if self._knife_view is None and self._knife.last_point is None:
             # After a pen lift no point starts the next segment: no start marker, no rubber band.
             data = dataclasses.replace(data, start_point=None, line_preview=None)
         return data
@@ -904,11 +940,27 @@ class Application:
     def _knife_begin(self) -> bool:
         if self.viewport is None:
             return False
+        # AD-SYM-03 slice 6c: whenever a symmetry definition is set the session runs the declared
+        # coordinator (`mirai.symmetry_declarations`, D-b - the declaration is the only switch) and
+        # gets the session view that previews and refuses with the commit's own rules. A plane the
+        # coordinator cannot handle starts no session at all.
+        coordinator = self._connect_coordinator(CContext.KNIFE)
+        view = None
+        if coordinator is not None:
+            try:
+                view = SymmetricKnifeView(self.scene.mesh)
+            except KnifeRefusal as exc:
+                self._set_status(str(exc))
+                return False
         self._knife_selection_before = self._selection_snapshot()
         knife = KnifeTool()
         knife.activate()
-        knife.begin(mesh=self.scene.mesh, scene=self.scene, selection=self.selection)
+        knife.begin(mesh=self.scene.mesh, scene=self.scene, selection=self.selection,
+                    **({} if view is None else {"symmetric_commit": coordinator, "symmetric_view": view}))
         self._knife = knife
+        self._knife_view = view
+        self._knife_refused = None
+        self._knife_refused_text = None
         # R-SEL-2 (as in the Playground): the Knife draws its own preview, the
         # selection hover must not stay drawn underneath it.
         self._set_hovered(None)
@@ -917,7 +969,28 @@ class Application:
             "Knife: click on vertices, edges, inside faces or outside the mesh to cut - a far click cuts"
             " across faces, Shift+click = edge midpoint, E / right-click = new cut (pen lift),"
             " double-click = close + lift, Enter = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo"
+            + ("" if view is None else f" - {self._knife_mirror_text()}")
         )
+        return True
+
+    def _knife_mirror_text(self) -> str:
+        """The symmetric session's note in the status line: the active mirror preview variant and its key."""
+        variant = self.knife_mirror_variant
+        return (f"Spiegelvorschau {variant} ({KNIFE_MIRROR_VARIANT_LABELS[variant]}), "
+                f"Taste {KNIFE_MIRROR_VARIANT_KEY.upper()} wechselt V-a / V-b / V-c")
+
+    def _knife_say(self, message: str) -> None:
+        """A Knife status message; a symmetric session names its mirror preview variant in it."""
+        if self._knife_view is not None:
+            message += f" [Spiegel {self.knife_mirror_variant}]"
+        self._set_status(message)
+
+    def _knife_cycle_variant(self) -> bool:
+        """The provisional variant key: V-a -> V-b -> V-c -> V-a (symmetric session only)."""
+        order = KNIFE_MIRROR_VARIANTS
+        self.knife_mirror_variant = order[(order.index(self.knife_mirror_variant) + 1) % len(order)]
+        self._knife_sync_overlay()
+        self._set_status(f"Knife: {self._knife_mirror_text()}")
         return True
 
     def _knife_key(self, input: Input) -> bool:
@@ -926,6 +999,9 @@ class Application:
         is ignored."""
         command = self.bindings.command_for(input, KNIFE_CONTEXT)
         self._knife_last_click = None     # a key between two clicks is no double-click
+        if (command is None and self._knife_view is not None and input.kind == "key"
+                and input.value == KNIFE_MIRROR_VARIANT_KEY and not input.modifiers):
+            return self._knife_cycle_variant()
         if command == commands.CANCEL:
             return self._knife_end(commit=False)
         if command == commands.KNIFE_COMMIT:
@@ -992,7 +1068,10 @@ class Application:
         target = self._knife_pick(x, y, midpoint=self._knife_gesture_midpoint)
         self._knife_last_click = (now, x, y)
         if not self._knife.click(target):
-            self._set_status(_KNIFE_REFUSED.get(self._knife.last_plan.reason, "Knife: no valid cut target here"))
+            plan = self._knife.last_plan
+            # A symmetric refusal (F3 = A) carries its own status text; the click was ignored.
+            self._set_status(plan.reason if plan.refused
+                             else _KNIFE_REFUSED.get(plan.reason, "Knife: no valid cut target here"))
             self._refresh_hover()
             return False
         # WP-KNIFE-01 S2: a click only adds a point to the session's path - the
@@ -1014,7 +1093,7 @@ class Application:
             status = f"Knife: cut across {crossings} ({segments})"
         else:
             status = f"Knife: cut ({segments})"
-        self._set_status("; ".join([status] + _knife_plan_notes(plan)))
+        self._knife_say("; ".join([status] + _knife_plan_notes(plan)))
         self._refresh_hover()
         return True
 
@@ -1028,7 +1107,7 @@ class Application:
             return False
         plan = knife.last_plan
         what = "shape closed, pen lifted" if plan.closing or plan.replaces else plan.reason
-        self._set_status(f"Knife: {what} - the next click starts a new cut")
+        self._knife_say(f"Knife: {what} - the next click starts a new cut")
         self._refresh_hover()
         return True
 
@@ -1042,7 +1121,7 @@ class Application:
         if not done:
             self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
             return False
-        self._set_status("Knife: last cut undone" if undo else "Knife: cut redone")
+        self._knife_say("Knife: last cut undone" if undo else "Knife: cut redone")
         self._refresh_hover()
         return True
 
@@ -1066,6 +1145,9 @@ class Application:
         self._knife_target = None
         self._knife_highlight_edge = None
         self._knife_hover_crossings = ()
+        self._knife_view = None
+        self._knife_refused = None
+        self._knife_refused_text = None
         notes = _knife_notes(knife.last_resolution) if commit else []
         if command is not None:
             self._record_selection_history(before)
@@ -1149,19 +1231,33 @@ class Application:
         prospective = target if plan.ok else None
         highlight = target["edge_id"] if plan.ok and target.get("kind") == "edge" else None
         crossings = tuple(tuple(c) for c in plan.crossings) if plan.ok else ()
-        changed = (prospective, highlight, crossings) != (
-            self._knife_target, self._knife_highlight_edge, self._knife_hover_crossings)
+        refused = target if plan.refused else None
+        changed = (prospective, highlight, crossings, refused) != (
+            self._knife_target, self._knife_highlight_edge, self._knife_hover_crossings, self._knife_refused)
         self._knife_target = prospective
         self._knife_highlight_edge = highlight
         self._knife_hover_crossings = crossings
+        self._knife_refused = refused
+        self._knife_refusal_status(plan.reason if plan.refused else None)
         self._knife_sync_overlay()
         return changed
 
+    def _knife_refusal_status(self, text: str | None) -> None:
+        """Hover refusal (F3 = A): the refused target's reason is shown while it is hovered - once, not on
+        every mouse move - and the status returns to the session's note when the hover leaves it."""
+        if text == self._knife_refused_text:
+            return
+        self._knife_refused_text = text
+        self._set_status(text if text is not None else f"Knife: {self._knife_mirror_text()}")
+
     def _knife_clear_preview(self) -> bool:
-        changed = self._knife_target is not None or self._knife_highlight_edge is not None
+        changed = (self._knife_target is not None or self._knife_highlight_edge is not None
+                   or self._knife_refused is not None)
         self._knife_target = None
         self._knife_highlight_edge = None
         self._knife_hover_crossings = ()
+        self._knife_refused = None
+        self._knife_refusal_status(None)
         self._knife_sync_overlay()
         return changed
 
@@ -1170,23 +1266,47 @@ class Application:
         edge and line preview in the hover style, the placed points (the start
         among them) and the segments commit will cut in the selected style (no
         new look; WP-KNIFE-01 S2: drawn from the path, the mesh is not cut
-        before commit)."""
+        before commit).
+
+        A symmetric session (slice 6c) adds the layers of the mirror, of the part that will not be cut and
+        of the refused hover (`knife_render_data`'s fields; the mirror per variant, `KNIFE_MIRROR_VARIANTS`).
+        Without a symmetry view only the two layers above are passed, exactly as before."""
         data = self.knife_render_data
         if self.viewport is None or data is None:
             return
-        self.viewport.set_tool_overlay(
-            points={
-                TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None]
-                + list(data.prospective_crossings),
-                TOOL_ACTIVE_LAYER: list(data.placed_points),
-            },
-            segments={
-                TOOL_PREVIEW_LAYER: [
-                    s for s in (data.target_edge, data.line_preview) if s is not None
-                ],
-                TOOL_ACTIVE_LAYER: list(data.path_segments),
-            },
-        )
+        points = {
+            TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None]
+            + list(data.prospective_crossings),
+            TOOL_ACTIVE_LAYER: list(data.placed_points),
+        }
+        segments = {
+            TOOL_PREVIEW_LAYER: [
+                s for s in (data.target_edge, data.line_preview) if s is not None
+            ],
+            TOOL_ACTIVE_LAYER: list(data.path_segments),
+        }
+        if self._knife_view is not None:
+            mirror_points = list(data.mirror_placed_points)
+            mirror_hover_points = [p for p in (data.mirror_prospective_point,) if p is not None] + list(
+                data.mirror_prospective_crossings)
+            mirror_path = list(data.mirror_path_segments)
+            mirror_hover = [s for s in (data.mirror_target_edge, data.mirror_line_preview) if s is not None]
+            variant = self.knife_mirror_variant
+            if variant == "V-a":       # like the working side's own preview
+                points[TOOL_MIRROR_LAYER] = mirror_points
+                points[TOOL_MIRROR_PREVIEW_LAYER] = mirror_hover_points
+                segments[TOOL_MIRROR_LAYER] = mirror_path
+                segments[TOOL_MIRROR_PREVIEW_LAYER] = mirror_hover
+            elif variant == "V-b":     # always visible, dimmed
+                points[TOOL_MIRROR_DIM_LAYER] = mirror_points + mirror_hover_points
+                segments[TOOL_MIRROR_DIM_LAYER] = mirror_path + mirror_hover
+            else:                      # V-c: the mirror's points only
+                points[TOOL_MIRROR_LAYER] = mirror_points + mirror_hover_points
+            points[TOOL_CLIPPED_LAYER] = list(data.clipped_points) + list(data.clipped_hover_points)
+            segments[TOOL_CLIPPED_LAYER] = list(data.clipped_segments) + list(data.clipped_hover_segments)
+            points[TOOL_REFUSED_LAYER] = list(data.refused_points)
+            segments[TOOL_REFUSED_LAYER] = list(data.refused_segments)
+        self.viewport.set_tool_overlay(points=points, segments=segments)
 
     # -- Display (WP-06 B5a) ----------------------------------------------------
 

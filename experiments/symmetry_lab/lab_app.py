@@ -100,7 +100,9 @@ TRANSFORM_OPERATIONS = {
 CONNECT_LABEL = "C"
 
 #: Knife-Session unter Symmetrie (MARK): Warnzeile im HUD, solange sie läuft — nur solange
-#: der KNIFE-Kontext keine Deklaration hat.
+#: der KNIFE-Kontext keine Deklaration hat. Seit AD-SYM-03 Slice 6c ist er deklariert
+#: (`coordinate_knife`): mit den echten Deklarationen erscheint die Zeile nie; der Mechanismus
+#: (die Warnung folgt den Deklarationen) bleibt und ist mit einem undeklarierten Kontext getestet.
 KNIFE_ONE_SIDED_TEXT = "Knife läuft einseitig — Symmetrie aktiv"
 
 #: Anzeigenamen der vier C-Operationskontexte für die Ablehnungstexte (H2-Amendment,

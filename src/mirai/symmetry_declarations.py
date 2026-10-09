@@ -4,13 +4,14 @@ A declaration says "a coordinator exists for this resolved operation": one stati
 kind of key, in the module that will hold the coordinators, so the entry *is* the implementation
 and cannot drift from it. Two keys exist today:
 
-- the `C` operation contexts (`CContext`: Split, Edge Connect, Vertex Connect, Knife);
+- the `C` operation contexts (`CContext`: Split, Edge Connect, Vertex Connect, Knife - all four declared
+  since slice 6c);
 - the removal commands (`Delete`, `Dissolve`, `DissolveNoCleanup`).
 
 Transforms keep `Operation.supports_symmetry`; there the Operation itself mirrors.
 
-AD-SYM-03 slices 3b/3c/4: the `C` table holds the Connect and Split coordinators (Split, Edge
-Connect, Vertex Connect) and the removal table the three removal coordinators, all in `mirai.symmetric_ops`;
+AD-SYM-03 slices 3b/3c/4/6c: the `C` table holds the Connect and Split coordinators (Split, Edge
+Connect, Vertex Connect), the Knife's commit coordinator (`mirai.symmetric_knife`) and the removal table the three removal coordinators, all in `mirai.symmetric_ops`;
 each removal coordinator serves all three component modes. Readers are the Symmetry
 Lab, which derives its gate row and MARK warning from the keys (AD-013 H2 amendment of
 2026-10-08, H2-R4 (h)), and `Application`, which runs the coordinator of a declared context
@@ -27,6 +28,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from .interaction import commands
+from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
     coordinate_delete,
     coordinate_dissolve,
@@ -37,13 +39,16 @@ from .symmetric_ops import (
 )
 from .topology.contextual_c import CContext
 
-#: Resolved `C` context -> coordinator `(mesh, canonical selection ids) -> result`. Knife is
-#: undeclared (slice 6).
+#: Resolved `C` context -> coordinator. Split, Edge Connect and Vertex Connect take `(mesh, canonical
+#: selection ids) -> result` and run inside the caller's one transaction; the Knife (slice 6c) is a session:
+#: its coordinator is `(mesh, session path, session_before) -> KnifeResolution`, which `Application` hands
+#: the session at `begin` and the tool runs at commit - declared like the others, the entry is the switch.
 C_CONTEXT_COORDINATORS: Mapping[CContext, Any] = MappingProxyType(
     {
         CContext.SPLIT: coordinate_split,
         CContext.EDGE_CONNECT: coordinate_edge_connect,
         CContext.VERTEX_CONNECT: coordinate_vertex_connect,
+        CContext.KNIFE: coordinate_knife,
     }
 )
 

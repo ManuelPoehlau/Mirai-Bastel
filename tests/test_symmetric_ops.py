@@ -155,14 +155,16 @@ def assert_clean(mesh) -> None:
 # -- declarations and layering -----------------------------------------------------------------
 
 
-def test_declarations_hold_exactly_the_split_connect_and_removal_coordinators():
+def test_declarations_hold_exactly_the_split_connect_knife_and_removal_coordinators():
+    from mirai.symmetric_knife import coordinate_knife
+
     table = symmetry_declarations.C_CONTEXT_COORDINATORS
     assert dict(table) == {
         CContext.SPLIT: symmetric_ops.coordinate_split,  # slice 4
         CContext.EDGE_CONNECT: coordinate_edge_connect,
         CContext.VERTEX_CONNECT: coordinate_vertex_connect,
+        CContext.KNIFE: coordinate_knife,  # slice 6c
     }
-    assert CContext.KNIFE not in table  # slice 6
     assert dict(symmetry_declarations.REMOVAL_COORDINATORS) == {  # slice 3c
         cmd.DELETE: symmetric_ops.coordinate_delete,
         cmd.DISSOLVE: symmetric_ops.coordinate_dissolve,

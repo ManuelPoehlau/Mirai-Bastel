@@ -18,7 +18,7 @@ from mirai.symmetry_coordination import SymmetryIndex, completeness_report
 
 from symmetry_lab.lab_app import GateMode, block_row, block_text, e5_warning_text
 
-from ._app_lab_support import C, CTRL_Y, CTRL_Z, MISS, SHIFT_B, SHIFT_S, make_lab, press
+from ._app_lab_support import C, CTRL_Y, CTRL_Z, MISS, SHIFT_B, SHIFT_S, make_lab, press, undeclare_knife
 
 _COUNTERS = ("vertex_id_counter", "edge_id_counter", "face_id_counter")
 
@@ -144,7 +144,8 @@ def test_a_seam_edge_is_split_once_and_the_new_vertex_is_a_seam_vertex(mode):
     assert mesh.symmetry_definition.seam_edges == seam
 
 
-def test_the_empty_selection_under_block_is_still_refused_with_the_knife_text():
+def test_the_empty_selection_under_block_is_refused_with_the_knife_text_while_undeclared(monkeypatch):
+    undeclare_knife(monkeypatch)    # seit Slice 6c ist der Knife-Kontext deklariert
     app, lab = lab_on(GateMode.BLOCK)
     app.selection.clear()
     before = (topology_state(app), selection_state(app), len(app.history))

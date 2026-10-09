@@ -13,7 +13,7 @@ import pytest
 from symmetry_lab import lab_app_window, run
 from symmetry_lab.lab_app import KNIFE_ONE_SIDED_TEXT, GateMode, block_row
 
-from ._app_lab_support import MISS, forbid_lab_calls  # noqa: F401
+from ._app_lab_support import MISS, forbid_lab_calls, undeclare_knife  # noqa: F401
 from ._pyglet_headless import import_pyglet
 from .test_run import FakeWindow
 
@@ -48,9 +48,12 @@ def built():
     return window, app, lab, hud
 
 
-def test_shift_b_through_the_window_toggles_the_mode_and_the_hud(built):
-    """Default BLOCK (Slice 5): C abgelehnt; Shift+B → MARK im HUD, Gate-Zeile leer."""
+def test_shift_b_through_the_window_toggles_the_mode_and_the_hud(built, monkeypatch):
+    """Default BLOCK (Slice 5): C abgelehnt (der Knife-Kontext undeklariert, `undeclare_knife` - seit
+    Slice 6c ist er deklariert); Shift+B → MARK im HUD, Gate-Zeile leer."""
     window, app, lab, hud = built
+    undeclare_knife(monkeypatch)
+    lab.sync_gate()
     assert lab.gate_mode is GateMode.BLOCK
     assert app.command_gate == block_row().gate
     assert " | E5: BLOCK | " in hud.text()
@@ -63,7 +66,11 @@ def test_shift_b_through_the_window_toggles_the_mode_and_the_hud(built):
 
 
 def test_warning_line_is_drawn_above_the_hud_line_while_a_knife_runs(built, monkeypatch):
+    """Die Warnzeile folgt den Deklarationen: mit undeklariertem Knife-Kontext (`undeclare_knife`; seit
+    Slice 6c ist er deklariert und die Zeile erscheint nie) steht sie über der HUD-Zeile."""
     window, app, lab, hud = built
+    undeclare_knife(monkeypatch)
+    lab.sync_gate()
     monkeypatch.setattr(pyglet.text, "Label", _FakeLabel)
     _FakeLabel.drawn = []
     hud.draw()
@@ -91,3 +98,19 @@ def test_warning_line_is_drawn_above_the_hud_line_while_a_knife_runs(built, monk
     _FakeLabel.drawn = []
     hud.draw()
     assert [color for _t, _y, color in _FakeLabel.drawn] == [lab_app_window.HUD_COLOR]
+
+
+def test_no_warning_line_is_drawn_for_a_declared_knife_session(built, monkeypatch):
+    """Slice 6c: the Knife context is declared, so a symmetric session (MARK) draws the HUD line only."""
+    window, app, lab, hud = built
+    monkeypatch.setattr(pyglet.text, "Label", _FakeLabel)
+    assert window.dispatch("on_key_press", key.B, key.MOD_SHIFT) is HANDLED
+    assert lab.gate_mode is GateMode.MARK
+    app.pointer_motion(*MISS)
+    app.selection.clear()
+    assert window.dispatch("on_key_press", key.C, 0) is HANDLED
+    assert app.knife_active
+    _FakeLabel.drawn = []
+    hud.draw()
+    assert [color for _t, _y, color in _FakeLabel.drawn] == [lab_app_window.HUD_COLOR]
+    assert window.dispatch("on_key_press", key.ESCAPE, 0) is HANDLED

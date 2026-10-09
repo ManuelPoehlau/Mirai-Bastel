@@ -102,6 +102,18 @@ TEXT_KNIFE_MIRROR_FAILED = (
 )
 
 
+#: The click-time refusals' own wording (slice 6c, F3 = A; engineering defaults for the Artist test): the commit's
+#: `TEXT_UNPAIRED` speaks of a "selection", which a hovered Knife point is not. Same reasons, same rules.
+TEXT_KNIFE_TARGET_UNPAIRED = (
+    "Symmetrie: Dieser Punkt hat keinen Spiegelpartner — an einer Stelle mit Partner schneiden oder "
+    "Symmetrie ausschalten (Shift+S)"
+)
+TEXT_KNIFE_FACE_UNPAIRED = (
+    "Symmetrie: Der Schnitt läuft durch eine Fläche ohne Spiegelpartner — an einer Stelle mit Partner "
+    "schneiden oder Symmetrie ausschalten (Shift+S)"
+)
+
+
 class KnifeRefusal(SymmetryRefusal):
     """A `SymmetryRefusal` of the Knife's commit. `commit_refusal` is how `KnifeTool` (which imports
     nothing from symmetry) recognises a refusal of an injected coordinator: it takes the commit back,
@@ -253,6 +265,17 @@ def clip_path(mesh: Mesh, definition: SymmetryDefinition, path: list[dict]) -> C
 # The kept-call guard (§10.5): the net under the clip
 # ---------------------------------------------------------------------------------------------
 
+def _face_side(distances) -> int | None:
+    """+1 / -1: a face of the normal's / the opposite side (vertices on the plane allowed, one off);
+    None: in the plane or across it (item 9: nothing can be cut there)."""
+    lo, hi = min(distances), max(distances)
+    if lo >= 0.0 and hi > 0.0:
+        return 1
+    if hi <= 0.0 and lo < 0.0:
+        return -1
+    return None
+
+
 def _guard_kept(mesh: Mesh, definition: SymmetryDefinition, kept: tuple[KeptCall, ...], w: int) -> int:
     """Every kept `split_edge` must lie on the working side or on the plane, every kept `split_face` in a
     face of the working side; a face on or spanning the plane is refused (item 9), an unknown kind too
@@ -266,12 +289,8 @@ def _guard_kept(mesh: Mesh, definition: SymmetryDefinition, kept: tuple[KeptCall
                          for v in set(call.face_1_vertices) | set(call.face_2_vertices)]
             if not distances:
                 raise KnifeRefusal(TEXT_KNIFE_UNKNOWN_CALL, "kept split_face without halves (malformed report, fail-closed)")
-            lo, hi = min(distances), max(distances)
-            if lo >= 0.0 and hi > 0.0:
-                s = 1
-            elif hi <= 0.0 and lo < 0.0:
-                s = -1
-            else:
+            s = _face_side(distances)
+            if s is None:
                 raise KnifeRefusal(TEXT_KNIFE_ON_PLANE, "kept cut inside a face on or spanning the plane (item 9)")
         else:
             raise KnifeRefusal(TEXT_KNIFE_UNKNOWN_CALL, f"unknown kept call {getattr(call, 'op', call)!r} (fail-closed)")
@@ -431,6 +450,95 @@ def _refuse_unpaired_targets(index: SymmetryIndex, path: list[dict]) -> None:
                    else index.face_partner(p["face_id"]))
         if partner is None:
             raise KnifeRefusal(TEXT_UNPAIRED, f"{kind} target without partner")
+
+
+class SymmetricKnifeView:
+    """What a running symmetric Knife session reads from the symmetry, built once at `begin` (6c).
+
+    The mesh does not change during a session (the Knife cuts at commit), so one `SymmetryIndex` serves
+    every hover and click: no index rebuild and no resolve per frame. Everything here is the commit's own
+    logic — `clip` is `clip_path`, the unpaired rule is the one `coordinate_knife` applies to the clipped
+    path, the face rules are `_guard_kept`'s — so the preview and the click-time refusals (F3 = A) cannot
+    show or refuse something the commit does differently (INV-11). Raises `KnifeRefusal`
+    (`TEXT_NON_EXACT_PLANE`) when the plane is not exact: no session is started then.
+
+    `KnifeTool` and `knife_preview` take this object as an opaque duck-typed argument (they import
+    nothing from symmetry)."""
+
+    def __init__(self, mesh: Mesh) -> None:
+        self.mesh = mesh
+        self.definition = _require_definition(mesh)
+        if not is_exact_plane(self.definition):
+            raise KnifeRefusal(TEXT_NON_EXACT_PLANE, "non-exact plane")
+        self.index = SymmetryIndex(mesh)
+
+    def side(self, position) -> int:
+        """Exact sign of the plane coordinate (AR-1): +1, -1, 0 on the plane."""
+        return _sign(_signed_distance(self.definition, position))
+
+    def mirror(self, position) -> tuple:
+        return tuple(mirror_position(tuple(position), self.definition.plane_point, self.definition.plane_normal))
+
+    def clip(self, path: list[dict]) -> ClippedPath:
+        """The commit's own side rule and clip (`clip_path`); raises `KnifeRefusal`."""
+        return clip_path(self.mesh, self.definition, path)
+
+    def refusal(self, path: list[dict], cut_faces: dict) -> KnifeRefusal | None:
+        """The click-time refusal (F3 = A; P2) for the session path `path` (the path with the click
+        added), or None. It is the front part of the commit, nothing else: the clip (a cut across the
+        plane inside a face, a lost seed), the unpaired rule on the clipped path's mesh records, and for
+        every cut stretch that survives the clip the face it cuts — it needs a partner, must not lie on or
+        across the plane (item 9) and must lie on the working side. What only the resolve shows (collision,
+        mirror failure, the completeness delta) stays a refusal at Enter.
+
+        `cut_faces`: `frozenset({pid_a, pid_b}) -> FaceId`, the face a cut stretch lies in (the tool's
+        click-time `_link`); a stretch without an entry is not checked."""
+        try:
+            clip = self.clip(path)
+        except KnifeRefusal as exc:
+            return exc
+        points = [p for p in clip.path if p["kind"] != "space"]
+        try:
+            _refuse_unpaired_targets(self.index, points)
+        except KnifeRefusal as exc:
+            return KnifeRefusal(TEXT_KNIFE_TARGET_UNPAIRED, exc.reason)
+        w = clip.side
+        for a, b in _cut_pairs(clip.path):
+            face = cut_faces.get(frozenset((a["pid"], b["pid"])))
+            if face is None:
+                continue
+            if self.index.face_partner(face) is None:
+                return KnifeRefusal(TEXT_KNIFE_FACE_UNPAIRED, "cut face without partner")
+            s = _face_side([_signed_distance(self.definition, self.mesh.vertex_position(v))
+                            for v in self.mesh.face_vertices(face)])
+            if s is None:
+                return KnifeRefusal(TEXT_KNIFE_ON_PLANE, "cut inside a face on or spanning the plane (item 9)")
+            if not w:
+                w = s
+            elif s != w:
+                return KnifeRefusal(TEXT_KNIFE_OTHER_SIDE, "cut in a face of the other side (side rule)")
+        return None
+
+
+def _cut_pairs(path: list[dict]):
+    """The point pairs the resolver cuts between in `path`: consecutive points of a chain (not across a
+    break) and the closing segment of a loop closed as one (`KnifeTool.cut_segments`' rule). Points in space
+    take part like any other record; their stretches are breaks in a stored path, so no pair arises."""
+    prev = first = None
+    for p in path:
+        if is_chain_end(p):
+            if p.get("cyclic") and prev is not None and first is not None and prev is not first:
+                yield prev, first
+            prev = first = None
+            continue
+        if is_break(p):
+            prev = None
+            continue
+        if prev is not None and prev is not p:
+            yield prev, p
+        if first is None:
+            first = p
+        prev = p
 
 
 def coordinate_knife(mesh: Mesh, path: list[dict], session_before: dict) -> KnifeResolution:
