@@ -298,7 +298,7 @@ E5-Warnzeile und die blaue Vorschau-Zeile. Die Statusmeldungen stehen außerdem 
 ## Symmetrischer Knife, Slice 6c
 
 AD-SYM-03 Slice 6c (2026-10-09; **Look, Texte, Varianten-Taste und das Verhalten nach einem abgelehnten Enter sind
-Engineering-Vorgaben — wartet auf dein Verdikt**, B2d in `docs/ATELIER.md`). `CContext.KNIFE` ist deklariert
+Engineering-Vorgaben und bleiben „vorläufig“; Slice 6c wie gebaut: KEEP, Manu 2026-10-09**, B2d in `docs/ATELIER.md`). `CContext.KNIFE` ist deklariert
 (`mirai.symmetry_declarations`, der Koordinator ist `mirai.symmetric_knife.coordinate_knife`): mit gesetzter Symmetrie
 startet `C` mit leerer Auswahl eine **koordinierte** Knife-Session, **in BLOCK wie in MARK** (die BLOCK-Zeile nennt keinen
 Kontext mehr, es gibt keine einseitige Warnzeile; beides leitet sich aus den Deklarationen ab, nichts Neues im Lab,
@@ -336,6 +336,8 @@ Kontext mehr, es gibt keine einseitige Warnzeile; beides leitet sich aus den Dek
   Klick lösen nichts auf und bauen keinen Index neu. Zahlen: AD-SYM-03 §10.8, „Slice 6c as built“.
 
 ### Praxistest für Manu (Slice 6c; B2d)
+
+*Verdikt (Stand 2026-10-09): **Slice 6c wie gebaut: KEEP** (Manu, 2026-10-09). Du hast „alles Mögliche“ getestet; es funktioniert „überraschend gut“. Dabei wurde ein allgemeines (nicht symmetrisches) Knife-Problem gefunden und behoben. Slice 6d ist jetzt nicht nötig. **Offen, nicht entschieden:** die Wahl zwischen V-a / V-b / V-c (V-b bleibt Start, V-a und V-c bleiben schaltbar) und F6 („für jetzt irrelevant“). Als Nächstes in der Symmetrie-Spur: symmetrischer Extrude (Slice 7). Look, Texte und Varianten-Defaults behalten ihre „vorläufig“-Kennzeichnung; die Schritte unten sind der historische Testablauf.*
 
 Ca. 10 Minuten. Pro Punkt **KEEP / ITERATE / REJECT / UNKNOWN** und ein Satz, wenn etwas nicht passt. Jeder Schritt ist am
 gebauten Stand headless durchgespielt (Lab-Pfad, `head_basemesh` und `man_with_shoes_basemesh`, Vorder- und Seitenansicht);
