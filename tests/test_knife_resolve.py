@@ -441,3 +441,21 @@ def test_a_cut_that_makes_a_flip_is_still_taken_back():
     cut_in_face(mesh, mesh.all_face_ids()[1], b, f, [])      # touches the folded face
     check = check_commit(mesh, before)
     assert check.rolled_back and "flipped" in check.problem
+
+
+def test_cut_on_a_sharp_but_not_folded_edge_between_warped_faces_is_kept():
+    """Old dot of the two walls is sharp but short of the flip threshold: the cut's sub-faces measure
+    past -0.5, which the cut did not cause. Found by a fuzz over bowl-like rims (bug report 2026-10-09)."""
+    from mirai.topology.knife_resolve import cut_in_face
+    mesh = Mesh()
+    rim = [mesh.add_vertex((1, y, 1)) for y in (-1, 0, 1)]
+    outer = [mesh.add_vertex((1, y, -1)) for y in (-1, 0, 1)]
+    inner = [mesh.add_vertex(p) for p in ((-0.08, -0.88, 0.68), (-0.01, 0.1, 0.4), (0.79, 0.97, -0.29))]
+    mesh.add_face([outer[0], outer[1], rim[1], rim[0]])
+    mesh.add_face([rim[0], rim[1], inner[1], inner[0]])
+    mesh.add_face([rim[1], rim[2], inner[2], inner[1]])
+    before = mesh.export_state()
+    face = mesh.all_face_ids()[1]
+    a, _b, c, _d = mesh.face_vertices(face)
+    cut_in_face(mesh, face, a, c, [])
+    assert not check_commit(mesh, before).rolled_back

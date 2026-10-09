@@ -294,3 +294,12 @@ neighbour), nothing committed"*. Manu: cutting must be allowed in such cases too
   whole. All other checks (area, self-crossing, winding against the neighbour, > 2 faces per edge) are unchanged.
 - **Tests:** `tests/test_knife_resolve.py` — `test_cut_next_to_an_existing_fold_is_kept`,
   `test_a_cut_that_makes_a_flip_is_still_taken_back`.
+
+**Follow-up, same day (Manu: the error came back on a sharp rim — a cut set to the rim, the next one towards the inner wall was
+refused again, other places worked):** the first rule only excused edges whose *old* dot was already below -0.5. A sharp rim
+between warped faces can sit just above it (e.g. -0.45): the cut re-measures the normals of its sub-faces, they drift past -0.5,
+and the cut is refused for a fold it did not make. A fuzz over bowl-like rims (3000 cuts) found 18 such cases.
+- **Rule now:** the check compares with the old edge instead of only asking whether it was folded: a flip is reported when the new
+  dot is below -0.5 *and* more than 0.5 worse than the dot of the old edge under the segment (`_old_fold_dot`, `_FLIP_MARGIN`).
+  No old edge under the segment (the cut's own new edges) = no excuse, as before. The same fuzz now finds none.
+- **Test:** `test_cut_on_a_sharp_but_not_folded_edge_between_warped_faces_is_kept` (fails on the first fix, passes now).

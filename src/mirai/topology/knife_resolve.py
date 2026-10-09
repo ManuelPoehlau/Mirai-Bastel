@@ -483,21 +483,26 @@ def integrity_problem(mesh, before_state: dict) -> str | None:
                 if gb[(j + 1) % len(gb)] == y:
                     return "a face would be wound against its neighbour"
                 try:
-                    if v_dot(normal(f), normal(g)) < -0.5 and not _fold_existed(m, before_state, x, y):
+                    d = v_dot(normal(f), normal(g))
+                    if d < -0.5 and d < _old_fold_dot(m, before_state, x, y) - _FLIP_MARGIN:
                         return "a face would be flipped against its neighbour"
                 except MeshError:
                     return "a face would have no area"
     return None
 
 
-def _fold_existed(mesh, before_state: dict, x: VertexId, y: VertexId) -> bool:
-    """True when the segment x-y lay on an edge that already joined two faces facing opposite ways in
-    `before_state` (a mesh pushed in on itself, e.g. a bowl: the rim is a fold of ~180 degrees). The cut
-    did not make that fold, so it is no reason to take the cut back; a face the cut flipped has no such
-    old edge under it."""
+# How much worse than the old fold a cut has to make the dot of two neighbours' normals to count as a
+# flip. A sharp edge (old dot near -0.5, e.g. a bowl's rim) between warped faces moves by that much just
+# because the cut re-measures the normals of its sub-faces.
+_FLIP_MARGIN = 0.5
+
+
+def _old_fold_dot(mesh, before_state: dict, x: VertexId, y: VertexId) -> float:
+    """The dot of the two face normals that met along the old edge the segment x-y lay on in
+    `before_state` (a mesh pushed in on itself, e.g. a bowl: its rim is a fold the Artist built, not
+    one the cut made). +1.0 (flat: no excuse) when no old edge with two faces lies under x-y."""
     old = Mesh.from_state(before_state)
     px, py = mesh.vertex_position(x), mesh.vertex_position(y)
-    mid = tuple(0.5 * (a + b) for a, b in zip(px, py))
     tol = 1e-7 * max(1.0, math.dist(px, py))
     for e in old.all_edge_ids():
         faces = old.edge_faces(e)
@@ -505,16 +510,13 @@ def _fold_existed(mesh, before_state: dict, x: VertexId, y: VertexId) -> bool:
             continue
         a, b = (old.vertex_position(v) for v in old.edge_vertices(e))
         ab = math.dist(a, b)
-        if ab <= tol or math.dist(a, mid) + math.dist(mid, b) - ab > tol:
-            continue
-        # x-y must lie on the old edge's line, not just have its midpoint there
-        if math.dist(a, px) + math.dist(px, b) - ab > tol or math.dist(a, py) + math.dist(py, b) - ab > tol:
+        if ab <= tol or any(math.dist(a, p) + math.dist(p, b) - ab > tol for p in (px, py)):
             continue
         try:
-            return v_dot(FaceFrame(old, faces[0]).normal, FaceFrame(old, faces[1]).normal) < -0.5
+            return v_dot(FaceFrame(old, faces[0]).normal, FaceFrame(old, faces[1]).normal)
         except MeshError:
-            return False
-    return False
+            return 1.0
+    return 1.0
 
 
 @dataclass(frozen=True)
