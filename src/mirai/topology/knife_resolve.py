@@ -11,10 +11,15 @@ Contract:
 - **Camera-free and session-free.** No import of `viewport`, `playground`, `mirai.interaction`, Selection
   or History (`tests/test_knife_resolve.py` checks it). Input: the mesh, the session-start mesh state
   (`export_state()`) and the path as plain, serialisable records. Output: a `KnifeResolution`.
-- **Mutations** only through `Mesh.split_face` (AD-017 K1 / B2c), `split_edge`, `connect_vertices`
-  (`split_face(..., positions=())` is `connect_vertices`), and `export_state` / `load_state` for the
-  rollback of a dropped run or of a whole session (`check_commit`). No `remove_face` / `add_vertex` /
-  `add_face`.
+- **Mutations** only through `Mesh.split_face` (AD-017 K1 / B2c) and `Mesh.split_edge`, each through its
+  recording helper (`kept_split_face`, `kept_split_edge`), and `export_state` / `load_state` for the
+  rollback of a dropped bridge candidate, run or closed shape and of a whole session (`check_commit`),
+  through `checkpoint` / `rollback`. `connect_vertices` is not used (`split_face(..., positions=())` is
+  `connect_vertices`, AD-017 §13 item 1). No `remove_face` / `add_vertex` / `add_face`.
+- **Kept-call report** (AD-017 §13, AD-SYM-03 slice 6a): `KnifeResolution.kept_calls` lists every
+  `split_edge` / `split_face` call the resolution kept, in call order; calls taken back by a rollback are
+  gone from it, and a session rolled back by `check_commit` (given the resolution) leaves it empty. Additive:
+  nothing the Knife cuts, counts or says depends on it, and nothing outside the resolver's tests reads it yet.
 - **Deterministic.** Ties are broken by position, never by click order; nothing depends on object
   identity — every point carries an explicit id (`pid`).
 
@@ -54,7 +59,7 @@ import collections
 import itertools
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Union
 
 from core import EdgeId, FaceId, VertexId
 from core.mesh import MeshError
@@ -125,6 +130,114 @@ def _same(p: dict | None, q: dict | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# The kept-call report (AD-017 §13): two recording helpers, one checkpoint / rollback pair
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class KeptSplitEdge:
+    """One kept `Mesh.split_edge(edge_id, t)`: its arguments as passed and its results in Core's order
+    (the new vertex, the half at the edge's first end, the half at its second end), plus the position
+    of the new vertex (final: the resolver never moves a vertex after creating it)."""
+
+    edge_id: EdgeId
+    t: float
+    vertex: VertexId
+    half_1: EdgeId
+    half_2: EdgeId
+    position: Position
+    op: str = field(default="split_edge", init=False)
+
+
+@dataclass(frozen=True)
+class KeptSplitFace:
+    """One kept `Mesh.split_face(face_id, a, b, positions)`: its arguments as passed and its results in
+    Core's order (new vertices and new edges in path order, then `face_1`, `face_2` — Core's order, not
+    the caller's), the positions of the new vertices, and the vertex lists of both halves right after
+    the call (a reader matches mirror halves by inclusion)."""
+
+    face_id: FaceId
+    a: VertexId
+    b: VertexId
+    positions: tuple[Position, ...]
+    new_vertices: tuple[VertexId, ...]
+    new_edges: tuple[EdgeId, ...]
+    face_1: FaceId
+    face_2: FaceId
+    created_positions: tuple[Position, ...]
+    face_1_vertices: tuple[VertexId, ...]
+    face_2_vertices: tuple[VertexId, ...]
+    op: str = field(default="split_face", init=False)
+
+
+KeptCall = Union[KeptSplitEdge, KeptSplitFace]
+
+
+class RecordedMesh:
+    """The mesh as the resolver sees it: every read passes straight through to `raw`; `kept` is the
+    report of the resolution in progress. It is how the report reaches the construction functions
+    below without a new parameter (their signatures are patched by tests and probes). Mutations and
+    rollbacks go through `kept_split_edge`, `kept_split_face`, `checkpoint` and `rollback` only."""
+
+    def __init__(self, raw) -> None:
+        self.raw = raw
+        self.kept: list[KeptCall] = []
+
+    def __getattr__(self, name: str):
+        return getattr(self.raw, name)
+
+
+def _raw(mesh):
+    return mesh.raw if isinstance(mesh, RecordedMesh) else mesh
+
+
+def kept_split_edge(mesh, edge_id: EdgeId, t: float = 0.5):
+    """`Mesh.split_edge`, unchanged, plus one report entry when `mesh` is a `RecordedMesh`."""
+    raw = _raw(mesh)
+    result = raw.split_edge(edge_id, t)
+    if isinstance(mesh, RecordedMesh):
+        vertex, half_1, half_2 = result
+        mesh.kept.append(KeptSplitEdge(edge_id, t, vertex, half_1, half_2, tuple(raw.vertex_position(vertex))))
+    return result
+
+
+def kept_split_face(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions=()):
+    """`Mesh.split_face`, unchanged, plus one report entry when `mesh` is a `RecordedMesh`. A call that
+    raises changed nothing in Core (its preconditions are checked before the first mutation) and leaves
+    no entry."""
+    raw = _raw(mesh)
+    result = raw.split_face(face_id, a, b, positions)
+    if isinstance(mesh, RecordedMesh):
+        new_vs, new_edges, f1, f2 = result
+        mesh.kept.append(KeptSplitFace(
+            face_id, a, b, tuple(tuple(p) for p in positions), tuple(new_vs), tuple(new_edges), f1, f2,
+            tuple(tuple(raw.vertex_position(v)) for v in new_vs),
+            tuple(raw.face_vertices(f1)), tuple(raw.face_vertices(f2)),
+        ))
+    return result
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    """A mesh state to go back to and the length of the report at that moment."""
+
+    state: dict
+    mark: int
+
+
+def checkpoint(mesh) -> Checkpoint:
+    """`export_state()` and the report's length now; hand it to `rollback`."""
+    return Checkpoint(_raw(mesh).export_state(), len(mesh.kept) if isinstance(mesh, RecordedMesh) else 0)
+
+
+def rollback(mesh, cp: Checkpoint) -> None:
+    """`load_state(cp.state)` and the report cut back to the checkpoint's length: what the rolled-back
+    calls recorded is gone (last in, first out — bridge candidates inside a run, runs, closed shapes)."""
+    _raw(mesh).load_state(cp.state)
+    if isinstance(mesh, RecordedMesh):
+        del mesh.kept[cp.mark:]
+
+
+# ---------------------------------------------------------------------------
 # Face constructions — each a `Mesh.split_face` composition (AD-017 K1)
 # ---------------------------------------------------------------------------
 
@@ -152,7 +265,7 @@ def split_face_path(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions: 
     boundary = mesh.face_vertices(face_id)
     if a not in boundary or b not in boundary:
         raise MeshError("split_face_path: a, b must be boundary vertices of face_id")
-    new_vs, path_edges, f1, f2 = mesh.split_face(face_id, a, b, positions)
+    new_vs, path_edges, f1, f2 = kept_split_face(mesh, face_id, a, b, positions)
     if boundary.index(b) < boundary.index(a):
         f1, f2 = f2, f1  # split_face orders by boundary index, not by argument (AD-017 addendum K1)
     return new_vs, f1, f2, path_edges
@@ -225,10 +338,10 @@ def close_loop_with_bridges(
     # Call 1 takes the longer arc, so call 2 never joins two loop points call 1 made adjacent.
     first, second = (fwd, back) if len(fwd) >= len(back) else (back[::-1], fwd[::-1])
     along = (first == fwd) == loop_matches_winding(loop_positions, [mesh.vertex_position(v) for v in boundary])
-    vs1, _e1, g1, g2 = mesh.split_face(face_id, bv1, bv2, [loop_positions[i] for i in first])
+    vs1, _e1, g1, g2 = kept_split_face(mesh, face_id, bv1, bv2, [loop_positions[i] for i in first])
     host = g1 if _walks(mesh, g1, vs1[0], vs1[1]) == along else g2
     other = g2 if host == g1 else g1
-    vs2, _e2, h1, h2 = mesh.split_face(host, vs1[-1], vs1[0], [loop_positions[i] for i in second[1:-1]])
+    vs2, _e2, h1, h2 = kept_split_face(mesh, host, vs1[-1], vs1[0], [loop_positions[i] for i in second[1:-1]])
 
     loop_vs: list[VertexId | None] = [None] * k
     for idx, v in zip(first, vs1):
@@ -285,14 +398,14 @@ def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: lis
             first = 0 if outside is None or outer[bi] in outside else 1
             candidates.append((first, round(dist3(pc, pb), _TIE_DIGITS), tuple(pc), tuple(pb), j, bi))
     candidates.sort(key=lambda c: c[:4])
-    base = mesh.export_state()
+    base = checkpoint(mesh)
     for *_key, j, bi in candidates:
         jc = cj(j)                                               # the bridge's loop point, click index
         try:
-            vs1, _e1, g1, g2 = mesh.split_face(face_id, x, outer[bi], loop_positions[:jc + 1])
+            vs1, _e1, g1, g2 = kept_split_face(mesh, face_id, x, outer[bi], loop_positions[:jc + 1])
             host = g1 if _walks(mesh, g1, x, vs1[0]) == along else g2
             ring_1 = g2 if host == g1 else g1
-            vs2, _e2, h1, h2 = mesh.split_face(host, vs1[-1], x, loop_positions[jc + 1:])
+            vs2, _e2, h1, h2 = kept_split_face(mesh, host, vs1[-1], x, loop_positions[jc + 1:])
             loop_vs = vs1 + vs2
             loop_set = {x, *loop_vs}
             f_loop = h1 if set(mesh.face_vertices(h1)) == loop_set else h2
@@ -304,7 +417,7 @@ def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: lis
         if ok:
             chain = [x] + loop_vs + [x]
             return loop_vs, f_loop, ring, [find_edge(mesh, u, v) for u, v in zip(chain, chain[1:])]
-        mesh.load_state(base)
+        rollback(mesh, base)
     raise MeshError("close_loop_at_vertex: no bridge fits")
 
 
@@ -317,7 +430,7 @@ def cut_in_face(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions: list
         n = len(boundary)
         if (boundary.index(a) - boundary.index(b)) % n in (1, n - 1):
             return [], []
-        _vs, edges, f1, f2 = mesh.split_face(face_id, a, b)
+        _vs, edges, f1, f2 = kept_split_face(mesh, face_id, a, b)
         return edges, [f1, f2]
     _new_vs, f1, f2, path_edges = split_face_path(mesh, face_id, a, b, positions)
     return path_edges, [f1, f2]
@@ -390,16 +503,19 @@ class CommitCheck:
         return self.problem is not None
 
 
-def check_commit(mesh, before_state: dict) -> CommitCheck:
+def check_commit(mesh, before_state: dict, resolution: KnifeResolution | None = None) -> CommitCheck:
     """The safety net before History: a session that changed nothing commits nothing; a session
-    whose result is geometrically broken is taken back as a whole (`load_state(before_state)`) —
-    never half-broken geometry in History."""
-    current = mesh.export_state()
+    whose result is geometrically broken is taken back as a whole (to `before_state`) — never
+    half-broken geometry in History. Given the session's `resolution`, a session taken back leaves
+    its kept-call report empty (AD-017 §13 item 4): nothing was kept."""
+    current = checkpoint(mesh).state
     if mesh_content(current) == mesh_content(before_state):
         return CommitCheck(None)
     problem = integrity_problem(mesh, before_state)
     if problem is not None:
-        mesh.load_state(before_state)
+        rollback(mesh, Checkpoint(before_state, 0))
+        if resolution is not None:
+            resolution.kept_calls = ()
         return CommitCheck(None, problem)
     return CommitCheck(current)
 
@@ -442,6 +558,9 @@ class KnifeResolution:
     skipped_shapes: int = 0                 # Q5: closed shapes whose face another run had cut
     lost_continuation: bool = False         # Q5: a seeded chain whose interior start got no vertex
     gaps: int = 0                           # Q5: skipped stretches (gap / along-an-edge breaks)
+    # AD-017 §13: every `split_edge` / `split_face` call kept, in call order; empty when `check_commit`
+    # (given this resolution) took the session back.
+    kept_calls: tuple[KeptCall, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +583,7 @@ class KnifeResolver:
     included (Task B, 2026-09-30)."""
 
     def __init__(self, mesh, before_state: dict):
-        self.mesh = mesh
+        self.mesh = RecordedMesh(_raw(mesh))     # reads pass through; `mesh.kept` is this resolution's report
         self.before_state = before_state
         self.path_edges: list[EdgeId] = []
         self.face_root: dict[FaceId, FaceId] = {}
@@ -514,7 +633,7 @@ class KnifeResolver:
                     hi = min(((st, sv) for st, sv in splits if st > t), default=(1.0, ends[1]))
                     piece = find_edge(m, lo[1], hi[1])
                     u = (t - lo[0]) / (hi[0] - lo[0])
-                    v, _e1, _e2 = m.split_edge(piece, u if m.edge_vertices(piece)[0] == lo[1] else 1.0 - u)
+                    v, _e1, _e2 = kept_split_edge(m, piece, u if m.edge_vertices(piece)[0] == lo[1] else 1.0 - u)
                     splits.append((t, v))
         if v is not None:
             resolved[p["pid"]] = v
@@ -723,7 +842,7 @@ class KnifeResolver:
                     if not self._crossable(eid):
                         return None  # the run would leave its click-time face
                     t = lam if m.edge_vertices(eid)[0] == va else 1.0 - lam
-                    q, _e1, _e2 = m.split_edge(eid, t)
+                    q, _e1, _e2 = kept_split_edge(m, eid, t)
                 if s >= 1.0 - GEO_EPS * 10 and k < last:
                     k += 1  # the interior point itself lies on that boundary point
                 if q == p:
@@ -814,7 +933,7 @@ class KnifeResolver:
         # Every interior point of a run lies in one click-time face (the planner puts a crossing
         # at every face change; D accepts no other face) — the run may not leave it.
         root = interior[0]["face_id"] if interior else None
-        state, roots, built = self.mesh.export_state(), dict(self.face_root), self.loops_built
+        cp, roots, built = checkpoint(self.mesh), dict(self.face_root), self.loops_built
         saved_resolved = dict(resolved)
         saved_splits = {e: list(v) for e, v in self._edge_splits.items()}
         self._loop_at_point = None
@@ -832,7 +951,7 @@ class KnifeResolver:
             # None: dropped. []: the run only walks along existing edges (D, no planner) — it cuts
             # nothing, so it is not "applied" either, and its end splits go too.
             # A dropped run leaves nothing behind, its end splits included (Task B, 2026-09-30).
-            self.mesh.load_state(state)
+            rollback(self.mesh, cp)
             self.face_root = roots
             self.loops_built = built
             resolved.clear()
@@ -848,20 +967,20 @@ class KnifeResolver:
         fid = path[0]["face_id"]
         positions = [p["position"] for p in path]
         boundary = self.mesh.face_vertices(fid)
-        state = self.mesh.export_state()
+        cp = checkpoint(self.mesh)
         try:
             i1, bv1, i2, bv2 = select_bridge(self.mesh, boundary, positions)
             _loop_vs, f_inner, f_a, f_b, loop_edges = close_loop_with_bridges(
                 self.mesh, fid, positions, i1, bv1, i2, bv2,
             )
         except MeshError as exc:
-            self.mesh.load_state(state)  # the first split may already have happened
+            rollback(self.mesh, cp)  # the first split may already have happened
             return ClosedShape(len(positions), error=str(exc))
         problem = next((pr for pr in (face_problem(self.mesh, f) for f in (f_inner, f_a, f_b)) if pr), None)
         if problem is not None:
             # An outline that crosses itself, or a bridge through the loop (Task A observation):
             # only this shape is taken back, the rest of the commit stands.
-            self.mesh.load_state(state)
+            rollback(self.mesh, cp)
             return ClosedShape(len(positions), problem=problem)
         self._adopt(fid, (f_inner, f_a, f_b))
         self.path_edges.extend(loop_edges)
@@ -871,6 +990,7 @@ class KnifeResolver:
         res.path_edges = list(self.path_edges)
         res.loops_built = self.loops_built
         res.loops_dropped = collections.Counter(self.loops_dropped)
+        res.kept_calls = tuple(self.mesh.kept)
         return res
 
     def resolve(self, path: list[dict]) -> KnifeResolution:

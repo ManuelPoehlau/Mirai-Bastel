@@ -3,7 +3,7 @@
 *(File name kept for link stability; the original title "One Cut Engine" was retired by the Artist decision below.)*
 
 **Status:** IMPLEMENTED ✓ (2026-09-22) — decided and implemented; see WP-AP-CUT_PLAN.md · Addendum §13 (2026-10-09,
-the Knife's kept-call report for the symmetric Knife): **PROPOSED**
+the Knife's kept-call report for the symmetric Knife): **DECIDED** (Manu, 2026-10-09: ACCEPT), **implemented in slice 6a**
 **Date:** proposed 2026-09-21 · decided 2026-09-22
 **Owner:** Manu (Project Owner)
 **Decision input:** `AD-017_FINAL_DECISIONS_2026-09-22.md` (Artist statement, archived)
@@ -304,10 +304,17 @@ Status: **PROVISIONAL**, verdict pending. Record: `docs/architecture/ROADMAP.md`
 Verdict (2026-10-07): none of its own — B7.1 is absorbed into One Knife (Manu); see the ROADMAP intake log,
 "Verdict sync" note for B7.1.
 
-## 13. Addendum (2026-10-09, PROPOSED) — the Knife's kept-call report (AD-SYM-03 slice 6a)
+## 13. Addendum (2026-10-09, DECIDED) — the Knife's kept-call report (AD-SYM-03 slice 6a)
 
-**Status:** **PROPOSED** (2026-10-09). Not decided; Manu decides (ACCEPT / CHANGE / REJECT, § "Was Manu entscheidet"
-below). No code changes with this text. It sits in this file, like the engineering addenda §10–§12, and not in
+**Status:** **DECIDED** (Manu, 2026-10-09): **ACCEPT**, the contract as written (items 1–8). **Implemented in slice 6a**
+(AD-SYM-03 §10.8; commit `feat(mirai): the Knife's kept-call report (AD-SYM-03 slice 6a, AD-017 §13)`): the two recording
+helpers and the checkpoint / rollback pair in `src/mirai/topology/knife_resolve.py`, the report on
+`KnifeResolution.kept_calls`; tests `tests/test_knife_kept_calls.py` (static items 1–2, entry content item 3, nested
+rollback, session rollback item 4, identity replay item 5 on a fuzz, additive item 7) and
+`playground/tests/test_knife_kept_calls_golden.py` (item 5 over every golden-net session). The module docstring
+(`knife_resolve.py`, "Mutations") is narrowed to `split_edge` / `split_face` (item 1). Item 6 (the fail-closed reader)
+is slice 6b's, item 8 holds: nothing outside the resolver's tests reads the report. Item 4 is `check_commit(mesh, before_state, resolution)`: the resolution is an optional third argument, so the report is voided only when the caller passes it; `KnifeTool._on_commit` does not yet (out of scope for 6a, no reader exists) — slice 6b's coordinator passes it. Proposed 2026-10-09; it sits in
+this file, like the engineering addenda §10–§12, and not in
 `AD-017_FINAL_DECISIONS_2026-09-22.md`, which records Artist statements (archived input, append-only).
 **Basis:** [Knife Discovery](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (KD) §1.1, §1.3 K10, §1.4, §3, §7;
 [review CLAUDE-001](../archive/symmetry_lab/reviews/SYMMETRY_KNIFE_DISCOVERY_REVIEW_CLAUDE_001.md) (R) Q4, Q9, S2, N2,

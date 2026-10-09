@@ -883,7 +883,7 @@ Seite; das ist nicht dasselbe wie „alle Klicks auf einer Seite“ (eine Linie 
 **Antwort (Manu):** keine eigene Antwort. *Annahme (Lesart der Planung, Manu genannt, kein Widerspruch, nicht
 bestätigt):* **A** — live koordinierter Knife (wie Silo), keine eigene Knife-Symmetrie-Fähigkeit.
 
-### F6 — Wo beginnt der Schnitt, wenn du im leeren Raum anfängst? (neu 2026-10-09, offen, nicht beantwortet)
+### F6 — Wo beginnt der Schnitt, wenn du im leeren Raum anfängst? (neu 2026-10-09, **offen** — von Manu am 2026-10-09 bewusst offen gelassen)
 
 **Situation:** Die Arbeitsseite ist nach der Lesart oben die Seite des ersten Mesh-Punkts abseits der Mitte — das kann
 auch eine *Kreuzung* der geplanten Linie sein, nicht nur ein Punkt, den du angeklickt hast. Fängst du im leeren Raum
@@ -901,6 +901,11 @@ Lesarten sind gemessen exakt (E-a…E-d, 0 Vereinigungen); es ist keine Technik-
 | UNKNOWN | — |
 
 Bis zur Antwort läuft die Probe mit A. Keine Empfehlung: das entscheidet das Gefühl im Praxistest von Slice 6c.
+
+**Antwort (Manu, 2026-10-09):** „offen lassen (die Idee ist, später bei Start im leeren Raum ein Slice zu starten, ist
+jetzt aber erstmal irrelevant)“. *Status bleibt offen; die Antwort wird hier nicht ausgelegt.* Bis eine Antwort kommt,
+läuft die Regel mit „erster Mesh-Record“ (AD-SYM-03 §10.2). Die Idee steht in
+[`docs/future_ideas/MODELING.md`](../../future_ideas/MODELING.md).
 *Kein offener Fall dagegen:* liegt jeder Punkt des Pfads auf der Mitte, gibt es keine Arbeitsseite; geschnitten würde
 dann nur in einer Fläche, die über die Mitte reicht, und das bleibt verweigert (AD-SYM-03 Punkt 9; auf den Lab-Assets
 gibt es solche Flächen nicht).
