@@ -2,7 +2,8 @@
 
 *(File name kept for link stability; the original title "One Cut Engine" was retired by the Artist decision below.)*
 
-**Status:** IMPLEMENTED ✓ (2026-09-22) — decided and implemented; see WP-AP-CUT_PLAN.md
+**Status:** IMPLEMENTED ✓ (2026-09-22) — decided and implemented; see WP-AP-CUT_PLAN.md · Addendum §13 (2026-10-09,
+the Knife's kept-call report for the symmetric Knife): **PROPOSED**
 **Date:** proposed 2026-09-21 · decided 2026-09-22
 **Owner:** Manu (Project Owner)
 **Decision input:** `AD-017_FINAL_DECISIONS_2026-09-22.md` (Artist statement, archived)
@@ -302,3 +303,98 @@ Status: **PROVISIONAL**, verdict pending. Record: `docs/architecture/ROADMAP.md`
 
 Verdict (2026-10-07): none of its own — B7.1 is absorbed into One Knife (Manu); see the ROADMAP intake log,
 "Verdict sync" note for B7.1.
+
+## 13. Addendum (2026-10-09, PROPOSED) — the Knife's kept-call report (AD-SYM-03 slice 6a)
+
+**Status:** **PROPOSED** (2026-10-09). Not decided; Manu decides (ACCEPT / CHANGE / REJECT, § "Was Manu entscheidet"
+below). No code changes with this text. It sits in this file, like the engineering addenda §10–§12, and not in
+`AD-017_FINAL_DECISIONS_2026-09-22.md`, which records Artist statements (archived input, append-only).
+**Basis:** [Knife Discovery](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (KD) §1.1, §1.3 K10, §1.4, §3, §7;
+[review CLAUDE-001](../archive/symmetry_lab/reviews/SYMMETRY_KNIFE_DISCOVERY_REVIEW_CLAUDE_001.md) (R) Q4, Q9, S2, N2,
+N9 (archived, not edited); the companion addendum [AD-SYM-03 §10](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md), which
+is the only reader of the report. **Read at:** `main` @ `fe040f1`.
+
+### Problem
+
+The symmetric Knife proposed in AD-SYM-03 §10 (K-C) resolves the Artist's clipped path once and then replays the
+resolver's **kept** mutations mirrored. The resolver reports cut edges and counts (`KnifeResolution`,
+`knife_resolve.py:425-444`), not what it did to the mesh: there is no record of the primitive calls it kept (KD §1.1).
+The probe gets them by wrapping the `Mesh` instance (`KeptLog`), which is evidence, not a contract. Decision #1 (the
+resolver is Knife-owned) and the "One Knife S1" addendum (`AD-017_FINAL_DECISIONS_2026-09-22.md`: faces only through
+`Mesh.split_face`, `split_edge`, `connect_vertices`; rollback via `export_state` / `load_state`) say what the resolver
+may call. This addendum adds what it must report, so the replay cannot drift from the resolver silently.
+
+### Verification (code facts, read at `fe040f1`)
+
+| # | Fact | Where |
+|---|---|---|
+| a | Mutations: only `split_edge` (2 sites) and `split_face` (6 sites). `connect_vertices` is permitted by the S1 addendum and the module docstring but never called | `knife_resolve.py:517`, `:726`; `:155`, `:228`, `:231`, `:292`, `:295`, `:320`; docstring `:14-15` |
+| b | Rollbacks: `export_state` / `load_state` pairs per bridge candidate (`:288` / `:307`), per run (`:817` / `:835`), per closed shape (`:851` / `:858`, `:864`), and the whole session in `check_commit` (`:397` / `:402`) | `knife_resolve.py` |
+| c | Ids never come back after a rollback: `load_state` moves the allocator counters only forward, so "the id is no longer valid" is exact | `mesh.py` `load_state`, `ids.py` (R Q4) |
+| d | The resolver never moves a vertex after creating it (no `set_vertex_position` in the module): the positions a call creates are final | grep |
+| e | No test constructs or compares a `KnifeResolution`; the golden net signs HUD text, counts and position-canonical hashes, not resolution fields | grep for `KnifeResolution(`; `playground/tests/knife_golden_driver.py:10-19` |
+| f | The probe's instance log, replayed verbatim on a session-start copy, rebuilds the resolved mesh on 1176 / 1176 camera-free paths | R, R3 |
+
+### Proposal — the kept-call report contract (slice 6a)
+
+1. **Two primitives, two recording helpers.** The resolver mutates the mesh only through one recording helper per
+   primitive: `split_edge` and `split_face`. The S1 addendum's list is **narrowed to these two**: by the K1 contract
+   `split_face(..., positions=())` *is* `connect_vertices` (same faces, ids and `export_state`), so `connect_vertices`
+   adds nothing the resolver needs; it stays a Core primitive for its other callers. A static test, in the style of the
+   camera-free import check (`tests/test_knife_resolve.py:106-111`), fails on any other mutating `Mesh` call in
+   `knife_resolve.py`. Should the resolver ever need another primitive, it gets its own recording helper and its own
+   replay rule first (AD-SYM-03 §10), never a silent call.
+2. **Truncation on rollback.** Every `load_state` inside the resolver goes through one checkpoint / rollback helper
+   pair; a rollback truncates the report to the checkpoint's length (last in, first out; nested as today: bridge
+   candidates inside a run, runs, closed shapes). No bare `load_state` in the module (static test).
+3. **One entry per kept call:** the op kind; the arguments as passed (ids, `t`, positions); the results in Core's
+   order (`split_edge`: new vertex, the half at the edge's first end, the half at its second end; `split_face`: new
+   vertices and new edges in path order, `face_1`, `face_2`); the created positions; for `split_face` the vertex lists
+   of the two halves right after the call (the replay matches mirror halves by inclusion, KD §1.2 K-C).
+4. **Void on a session rollback.** When `check_commit` takes the whole session back, the report is empty.
+5. **Dynamic guard.** A test replays the report verbatim (created ids mapped through the call results) on a copy of
+   the session-start state and compares it with the resolved mesh, over the golden net's sessions and a fuzz. The
+   probe's version passes today (fact f).
+6. **Fail-closed reader.** The reader (AD-SYM-03 §10's commit coordinator) refuses any op kind it does not know,
+   instead of treating it as a known one (R S2: the probe's replay treats every non-`split_edge` call as `split_face`).
+7. **Additive for the Knife without symmetry.** The report is new output beside today's `KnifeResolution` fields
+   (shape is implementation). Recording changes neither the call order nor the id allocation. Acceptance criteria of
+   6a: the golden net is byte-identical and `tests/test_knife_parity.py` is unchanged. **No pid → vertex map:** KD §3
+   asked for one in 6a, but nothing uses it once the mirror is built by replay (R N2; AD-SYM-03 §3 item 4 changes
+   accordingly, §10).
+8. **Scope.** The report is read only by the Knife's own commit coordinator. It is not a general provenance layer
+   (ARCH-02 stays "hook only"), and no other mode routes through it (decision #1: no universal Cut Engine; AD-SYM-03
+   M-e; R N9).
+
+### Consequences
+
+- **Positive:** the exactness of the symmetric Knife rests on a written contract instead of an instance wrapper; a
+  new primitive cannot be missed silently (static test, fail-closed reader).
+- **Costs:** two recording helpers, one checkpoint helper, about three tests; one additive output of the resolver.
+- **Risk:** a truncation bug would let the replay mirror a call the source took back. Guarded by item 5 and, at
+  runtime, by the completeness delta check every coordinator keeps (AD-SYM-03 item 5).
+
+### Not decided here
+
+The report's Python shape and names; whether `connect_vertices` is ever recorded (only if the resolver needs it);
+any provenance layer; everything about symmetry itself (AD-SYM-03 §10).
+
+### Review
+
+The contract items come from R Q4 / S2 (SHOULD). The answer to every finding of R is KD §7. A second review of this
+addendum is Manu's call; the findings do not require one (no blocker concerns this AD).
+
+### Was Manu entscheidet (Deutsch)
+
+- **Was sich für dich sichtbar ändert:** nichts. Der Knife ohne Symmetrie schneidet genau wie heute (das Golden-Netz
+  und die Parity-Tests müssen bit-gleich bleiben). Neu ist nur, dass der Knife intern mitschreibt, welche Schnitte er
+  am Ende wirklich behalten hat. Das ist die Grundlage dafür, dass der symmetrische Knife genau diese Schnitte spiegeln
+  kann (AD-SYM-03 §10).
+- **Was du mit Ja annimmst:** Der Knife benutzt intern nur noch zwei Grundoperationen (Kante teilen, Fläche teilen)
+  und führt darüber Buch; ein Test schlägt Alarm, wenn jemand eine dritte einbaut, ohne sie mitzuschreiben.
+  `connect_vertices` fällt aus der Liste des Knife (es wurde nie benutzt; „Fläche teilen ohne Zwischenpunkte“ macht
+  genau dasselbe).
+- **Deine Antwort:** **ACCEPT** (so bauen) · **CHANGE** (was soll anders sein?) · **REJECT** (dann gibt es keinen
+  symmetrischen Knife nach K-C).
+- **Reihenfolge:** Das ist Bauschritt **6a**, der erste. Er ändert nichts Sichtbares und kommt vor 6b–6d (AD-SYM-03
+  §10).
