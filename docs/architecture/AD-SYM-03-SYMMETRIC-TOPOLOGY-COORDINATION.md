@@ -1,6 +1,7 @@
 # AD-SYM-03 — Symmetric Topology Coordination
 
 **Status:** **DECIDED** (Manu, 2026-10-08), as revised after review CLAUDE-001 and with the Artist verdicts A1/A2/A3 (§6, §9).
+**Addendum §10 (2026-10-09, symmetric Knife, slice 6): PROPOSED** — K-C with side rule and clip; not decided.
 The AD-013 H2 amendment (G-2), required before Slice 3 (§5, §7), is **DECIDED** (Manu, 2026-10-08; [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row)).
 **Date:** 2026-10-06 · revised 2026-10-07 after the independent review CLAUDE-001 (answers in §9) · decided 2026-10-08
 **Mode (M5):** Discovery → decision preparation. No implementation, no code change.
@@ -692,7 +693,7 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 3 | **Edge + Vertex Connect through `C`, non-seam Delete/Dissolve (Lab)** — cut in two (handoff 2026-10-08): **3a Done 2026-10-08** (infrastructure: `CommandGate.refused_contexts`, the one-resolution context check with canonicalisation in `_connect_command`, `src/mirai/symmetry_declarations.py` (empty), declaration-derived fail-closed BLOCK row with the named `INTERIM_ONE_SIDED`, MARK warning from the declarations, start-up listing; `tests` 1710 → 1780 passed / 8 skipped, Lab suite 311 → 350 passed / 4 skipped / 1 failed (the same pre-existing pyglet overlay-order test), playground unchanged 701 passed / 11 failed / 47 errors; no coordinator, Lab behaviour unchanged except the MARK canonicalisation consequence and the visible refusal of unlisted commands). **3b Done 2026-10-08** (Edge Connect and Vertex Connect: `src/mirai/symmetric_ops.py` with `coordinate_edge_connect` / `coordinate_vertex_connect`, entered in `symmetry_declarations.C_CONTEXT_COORDINATORS`; `Application._connect_command` runs the coordinator of a declared context inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK; refusals (non-exact plane, unpaired selection, both-sides face, D-strict delta) post their text, record no history entry and leave mesh and selection unchanged; seam rule S1 is applied inside the mutation; tests `tests/test_symmetric_ops.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_connect.py`; `tests` 1780 → 1806 passed / 8 skipped, Lab suite 350 → 363 passed / 4 skipped / 1 failed (the same pre-existing pyglet overlay-order test), playground unchanged 701 passed / 11 failed / 47 errors with `--continue-on-collection-errors` (pyglet missing in this container, same before and after; without that flag collection stops at 8 errors); Delete/Dissolve stay one-sided, `INTERIM_ONE_SIDED` stays until **3c**). **3b practical check by Manu 2026-10-08: all steps as expected (§6); 3a/3b verified.** **3c Done 2026-10-08** (Part A of the 3c handoff: Edge Connect residue on the side(s) of the live selection, `symmetric_ops.residue_sides` / `on_residue_sides`; Part B: `coordinate_removal` and the three per-command coordinators `coordinate_delete` / `coordinate_dissolve` / `coordinate_dissolve_no_cleanup` in `src/mirai/symmetric_ops.py`, entered in `symmetry_declarations.REMOVAL_COORDINATORS`; `Application._removal_command` runs the coordinator of a declared command inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK, `SymmetryRefusal` posts its text and changes nothing; Delete drops dead seam ids (M), Dissolve refuses seam cases with `TEXT_SEAM_DISSOLVE` (R); `INTERIM_ONE_SIDED` removed from the Lab; tests `tests/test_symmetric_removal.py`, `tests/test_symmetric_ops.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`; measured in this container after installing `pyglet` (no EGL, so `tests/test_pyglet_input.py` and the GL tests do not run): `tests` 1806 → 1818 (Part A) → 1907 passed / 33 → 39 skipped, Lab suite 365 → 367 → 418 passed / 3 → 7 skipped, playground (under `xvfb-run`) 1235 passed before and after) | Expansion after `resolve_c_context` / on the removal selection, seam edges in a Connect selection via S1, delta check with rollback, seam consumption and both-sides face case refused; G-2 context refusal; declaration-derived, fail-closed BLOCK row; MARK warning from the declarations. Exact planes only | Disc. steps 3 + 5 (non-seam part). **[Δ]** non-seam Delete/Dissolve moved here (review F4), seam edges in Connect here (F); preconditions: AD-013 H2 amendment reviewed, A1 observed; owner check O1 (seam cases only); A3 comparison becomes runnable |
 | 4 | **Split** — **Done 2026-10-08** (`coordinate_split` in `src/mirai/symmetric_ops.py`, entered in `symmetry_declarations.C_CONTEXT_COORDINATORS` as `CContext.SPLIT`; the Split branch of `Application._connect_command` runs it inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK; only `CContext.KNIFE` stays undeclared, so the Lab BLOCK row and the named refusals derive automatically (3a); tests `tests/test_symmetric_split.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py` plus the adapted 3a/3b gate and Lab fail-closed tests; measured in this container without `pyglet` (no EGL): `tests` 1941 → 1964 passed / 14 skipped, Lab suite 420 → 428 passed / 8 skipped / 1 failed (the same pre-existing pyglet overlay-order test), `playground/tests` not collectable here (pyglet display), `src/core`, `src/main.py` and `playground/` untouched). Slice 4 practical test by Manu 2026-10-08: **passed, KEEP** (§6) | Source + partner edge in one transaction (seam edge once + S1); t = 0.5 only, no snap; residue question prepared (engineering default, §4); A2 comparison becomes runnable | Disc. step 4 |
 | 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN) — *refined 2026-10-08 (§6): an edge directly on the seam stays refused, an edge crossing the seam is dissolved via seam rule S2 (see Implementation note S2)*. No longer fully blocked on A1 |
-| 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6). *Discovery 2026-10-08: see [SYMMETRY_KNIFE_DISCOVERY.md](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (no decision).* |
+| 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6). *Discovery 2026-10-08: see [SYMMETRY_KNIFE_DISCOVERY.md](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (no decision).* *Addendum 2026-10-09 (**PROPOSED**, §10): K-C with side rule and clip — "mirror the kept mutations at the commit" instead of "mirror records before resolution"; revised slices 6a–6d (§10.8); after the independent review [CLAUDE-001 of the Knife Discovery](../archive/symmetry_lab/reviews/SYMMETRY_KNIFE_DISCOVERY_REVIEW_CLAUDE_001.md) (answered in the Discovery's §7).* |
 | 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
 
 **Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
@@ -872,3 +873,222 @@ remains a precondition of slice 3 (§5). Items 5 and 9 keep their wording; D-str
 until A3), the visible refusal of the both-sides face case until A1/A2 (item 9), and A3 itself. Status then stayed
 **PROPOSED**; open before DECIDED were: the AD-013 H2 amendment for G-2 (its own review), and the owner's confirmation
 of this revision. A second review is not required by the findings (no blocker), but the owner may ask for one.
+
+---
+
+## 10. Addendum (2026-10-09, PROPOSED) — symmetric Knife (slice 6): K-C with side rule and clip
+
+**Status:** **PROPOSED** (2026-10-09). Not decided; Manu decides (ACCEPT / CHANGE / REJECT, § 10.10 "Was Manu
+entscheidet"). AD-SYM-03 §1–§9 stay as decided until then; no code changes with this text. Companion addendum:
+[AD-017 §13](AD-017-CUT-ENGINE-CONTEXTUAL-C.md) (the Knife's kept-call report, PROPOSED), which this one needs.
+**Basis:** [Knife Discovery](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (KD) §1.3, §1.4, §2, §3, §6, §7; the
+independent review [CLAUDE-001](../archive/symmetry_lab/reviews/SYMMETRY_KNIFE_DISCOVERY_REVIEW_CLAUDE_001.md) (R;
+ACCEPT WITH CHANGES, blocker B1; archived, not edited; answered in KD §7); Manu's answers of 2026-10-09 (KD §6).
+**Probe:** [`experiments/topology/symmetry_knife_probe.py`](../../experiments/topology/symmetry_knife_probe.py), section
+KC (K-C+clip). **Read at:** `main` @ `fe040f1`.
+
+### 10.1 Problem
+
+§3 item 1 says the Knife mirrors its "intent/path" in the session tool, applied at its existing commit; §7 row 6
+planned "mirror records before resolution, pid → vertex report, snap, tie-break equivariance". The Discovery measured
+that mirroring records before resolution (K-A) is not exact where the resolver decides by itself — ties broken by
+position, vertices the resolver computes in face frames, `t` on orientation-reversed edges (KD §1.3 K1, K3, K10) — and
+that **K-C** (resolve the path once, replay its kept mutations mirrored) is exact on every one-sided path measured
+(KD §1.3 K10: 1176 / 1176 on E-a…E-d). The review accepted K-C as the mechanism with one blocker (B1): K-C refused a
+path that reaches the other side only when a mirrored call met an element the source had killed; through a seam
+vertex, a gap or a second chain it committed a symmetric union that changes the Artist's side, which the delta check
+cannot see (R8: 60 / 60). Manu answered F1 = C (KD §6): the cut is clipped at the seam.
+
+### 10.2 Artist answers and assumptions (as recorded in KD §6)
+
+*Artist statements (Manu, 2026-10-09):*
+- **F1 = C:** „Der Schnitt soll an der Mitte kappen.“ The part beyond the seam is not cut; the mirror of the working
+  side's part replaces it.
+- **Two separate chains on both sides (R S1, "Fall 3"):** „wenn ich auf der linken Hälfte anfange zu schneiden, wird
+  nur dort geschnitten und gespiegelt.“ The side where the cut starts is the working side; only cuts there are
+  executed and mirrored.
+- **F3 = A:** a target without a mirror partner is shown and refused at hover / click time (Enter still checks, as a
+  safety net).
+- **F4 = A:** after the symmetric Knife only the cut edges of the working side are selected (as Split / Edge
+  Connect); seam edges created by the cut stay selected.
+- **Silo reference test:** not possible (trial expired); Silo stays the feel reference from experience. The preview
+  feel is tested in the app once the mirrored preview exists (slice 6c).
+
+*Assumptions (planner's readings, stated to Manu, not objected, not confirmed):*
+- F1 = C applies to the deliberate and to the accidental crossing (a line planned over the other side from a side
+  camera, or towards a point in space).
+- Working side = the side of the first record off the plane (exact sign of the plane coordinate; seam vertices and
+  seam edges belong to both sides).
+- F2 follows from F1: a hand-drawn "mirror" on the other side is clipped and replaced by the exact mirror; no snapping
+  tolerance.
+- F5 = A: a live coordinated Knife (Silo-like), no separate Knife symmetry capability.
+
+*Engineering refinements of this addendum (not Artist statements):* "record" means a point on the mesh (clicked or a
+planner crossing); a point in space does not choose the working side (it is not cut, and its plane coordinate is the
+arbitrary depth `space_point` gives it; KD §1.4: in 15 camera sessions a point in space would choose the other side,
+and 8 of them would then cut nothing). A crossing of the plane *inside* a face has no seam record to clip at and is
+refused (item 9).
+
+*Open (KD §6 F6, not answered):* a path that starts in space can cross the other side before the first click on the
+mesh; then "first record" and "first clicked record" give different working sides (28 of 371 camera sessions,
+both readings exact; under "first record" 3 of the 28 cut nothing at all, because the only −X record is one planner
+crossing). The rule runs with "first record" until Manu answers.
+
+### 10.3 Evidence (KD §1.3, §1.4)
+
+| Question | Result |
+|---|---|
+| Is K-C exact on one-sided paths? | Yes on every measured one: KD §1.3 K10 1176 / 1176 E-a…E-d (ties and resolver-made vertices included, K3); R R7 879 / 879 seam-biased paths; the kept log replayed verbatim rebuilds the resolved mesh 1176 / 1176 (R R3) |
+| Does K-C+clip close B1? | Yes. The review's union cases now give the clipped working-side cut plus its exact mirror: R8 60 / 60, R1 4 / 4 (both orders), R10 `E ++++`; the 90 sessions K-C refused (R9) 90 / 90; **0 unions** over every re-run table (KD §1.4) |
+| Does the clip change one-sided paths? | No: the clip is the identity there; under K-C+clip K10 1176 / 1176 and R7 879 / 879 `E ++++`, the same results as K-C |
+| Seam rows (K7)? | c and d / d′ / d″ (refused by K-C) are now `E ++++` on all three meshes, clipped at the seam; a, a′, b, b2, g, h unchanged `E ++++`; the plane-spanning rows e, e′, f, f′, f″ refused (item 9) |
+| Camera sessions (K4, K5)? | 371 sessions (K4 179, K5 192): 368 `E ++++`, 3 cut nothing (all three F6 cases, 10.2), 0 refused, 0 unions — K-C had 1 union and 90 refusals on the same sessions |
+| Do the nets fire after the clip? | The guard's other-side check and the "already cut by the source" collision check: never; the guard's item-9 check refused only the synthetic plane-spanning rows. Duplicate vertex pairs: 0 in every committed result (N4) |
+| Cost | Side rule + clip 0.05–0.20 ms (median per sample) per commit; the commit as a whole costs what K-C cost (KD §1.3 K10 times) |
+| Self-partner edge across the plane (N5) | 0 such edges on `subd_cube`, `head_basemesh`, `man_with_shoes_basemesh`, `tie_grid`; every resolver path through one also cuts a self-mirrored face (item 9). Refused (fail-closed) rather than mapped crossed |
+
+### 10.4 Proposal — changes to §3 (mechanism only; nothing decided by the Artist changes)
+
+1. **§3 item 1** — "intent/path mirroring … applied at the tool's existing commit" becomes **mirroring the resolved
+   intent**: at the Knife's own commit, its commit coordinator resolves the (clipped, 10.6) path once, unchanged, and
+   replays the resolver's kept mutations mirrored (K-C). Unchanged: the symmetry context reaches the tool at `begin`;
+   the Knife commits in `KnifeTool._on_commit`; no `SymmetricKnife`; one `MeshStateCommand` (INV-7).
+2. **§3 item 2** — the replay is **Knife-only**: it lives with the Knife's commit coordinator (beside
+   `symmetric_ops`), not among the shared services (M-e; R N9). It uses the shared services as they are:
+   `SymmetryIndex`, the exact-plane predicate, seam rule S1, the completeness report and delta check.
+3. **§3 item 4** — the Knife's created-element report is not "pid → created vertex" but the **kept-call report** of
+   AD-017 §13 (op, arguments, results, created positions, halves; truncated on rollbacks). No pid → vertex map (R N2).
+4. **§3 item 6** — for the Knife, the snap X-a becomes **placement at replay**: every mirror vertex is created by the
+   replayed call and placed at `mirror_position(source vertex)` there; no post-op snap. Exact planes only, as decided.
+5. **§7 row 6** — "symmetry context at `begin`, mirror records before resolution, pid → vertex report, snap, S1,
+   seam-chord rule, mirrored preview, tie-break equivariance" becomes the slices of 10.8. Tie-break equivariance needs
+   no resolver change: the mirror side is never resolved.
+
+### 10.5 Side rule (B1)
+
+- **Side of a record:** the exact sign of its plane coordinate on the session-start mesh (AR-1, no tolerance). Zero =
+  on the plane: a seam vertex, an edge point on a seam edge — it belongs to both sides.
+- **Working side:** the side of the first mesh record off the plane (clicked or a planner crossing; points in space
+  excluded, 10.2). It is derived from the current path and never stored: in-session Undo can change it.
+- **No mesh record off the plane:** the working side is taken from the first kept call off the plane; if there is
+  none, the cut lies only in faces on or spanning the plane, which item 9 refuses (KD §1.3 K7 e: unreachable on the
+  Lab assets).
+- **Kept-call guard (the net under the clip):** after the resolve, every kept `split_edge` must lie on the working side
+  or on the plane and every kept `split_face` in a face of the working side; a face on or spanning the plane is refused
+  (item 9). Its other-side check never fired after the clip; its item-9 check refused only the synthetic
+  plane-spanning rows (10.3). It stays because it makes "the result is the working-side cut plus its mirror" a checked
+  property instead of a consequence of the clip.
+
+### 10.6 Clip (F1 = C), in the commit coordinator, before the resolver
+
+- Every maximal stretch of records on the other side (mesh records and points in space) is replaced by one pen lift;
+  the breaks inside it go with it. A record on the plane (seam vertex, seam edge point) ends or starts a run there.
+- A cyclic (closed) chain holding such a stretch is first rotated to start right after its last other-side stretch,
+  so its closing segment stays a cut. (Probe only: a clipped loop whose interior start the next chain continues would
+  lose its seed; it is refused there and occurred 0 times — 6b refuses it with a text.)
+- A cut segment from a working-side record straight to an other-side record (no break, no seam record between) crosses
+  the plane inside a face: refused (item 9). 0 occurrences on the Lab assets; it occurs on the synthetic plane-spanning
+  fixtures (KD §1.3 K7 f / f′ / f″).
+- Deliberate and accidental crossings are clipped alike (assumption, 10.2); a second chain on the other side is dropped
+  (Manu, two chains); a hand-drawn mirror is dropped and replaced by the exact mirror (F2, assumption).
+- The resolver stays unchanged and camera-free (AD-017 #1); the clip needs no camera rule on the mirror side and no
+  resolver change — the handoff's stop condition did not trigger.
+- Until slice 6c the clip is decided at commit only; from 6c the preview shows the clipped part (INV-11). How it is
+  shown is the 6c Artist test, not decided here.
+
+### 10.7 Refusals, residue, contract
+
+**Refusals** (`SymmetryRefusal` with a status text; mesh restored, no history entry; in MARK as in BLOCK, §2.5):
+
+| Refusal | When | Basis |
+|---|---|---|
+| Non-exact plane | `begin` (no session) | item 6 |
+| Target without partner (vertex, edge, face) and cut face without partner (predictor P2) | hover / click — marked, click refused (F3 = A); checked again at Enter | A3 = S; KD §1.3 K8: with K-C, P2 predicted every D-strict refusal |
+| Plane crossed inside a face (no seam record to clip at) | click (from 6c) and commit | item 9 |
+| Kept cut in a face on / spanning the plane; self-partner edge across the plane (N5) | commit | item 9; R N5 |
+| Kept mutation on the other side (guard); unknown kept-call kind | commit | 10.5; AD-017 §13 item 6 |
+| Mirror element already cut by the source (collision) | commit | safety net only; never fired after the clip |
+| Completeness delta (D-strict) | commit | item 5, A3 = S |
+
+**Residue (F4 = A):** after the commit the cut edges of the working side are selected in Edge mode (the AD-017 Knife
+residue: the connecting edges, not split remnants); cut edges lying on the plane stay selected; the mirror side's cut
+edges are not selected. Without a definition the residue is unchanged. *Engineering reading (to be confirmed in the 6c
+practical test):* Manu's "seam edges created by the cut stay selected" is read as option A's own words ("Kanten auf der
+Mittellinie bleiben dabei") — a cut edge on the plane belongs to both sides; the halves of a split seam edge are
+remnants and stay unselected, as in the AD-017 residue.
+
+**Contract details (R N8):**
+- Partners come from the session-start state (index built before anything is cut); the path refers to session-start
+  ids anyway, because the mesh is untouched until commit.
+- On a refusal at commit the source's mutations are taken back to `session_before` (`load_state`), no history entry,
+  the status line names the reason. Probe: every refusal restored the session-start state (8 / 8).
+- After a refused Enter the session ends with that status line, as a taken-back commit does today
+  (`application.py:1080-1081`; engineering default, not decided). The alternative — the session stays open with its
+  path so the Artist can undo the offending step — is a question for the 6c practical test. With F3 = A most refusals
+  arrive at hover / click, before Enter.
+
+**Declaration (R S3):** `CContext.KNIFE` is declared only when the mirrored preview and the click-time refusals exist
+(slice 6c). Until then the Knife stays refused under BLOCK and one-sided with the warning under MARK; slice 6b's
+coordinator is not passed by `Application`. The entry is the Knife's commit coordinator
+`(mesh, session path, session_before) -> resolution` (raises `SymmetryRefusal`) — a second signature in
+`C_CONTEXT_COORDINATORS` beside `(mesh, canonical ids) -> result`; nothing calls it with selection ids, because
+`_connect_command` returns `_knife_begin()` before any lookup. D-b holds: the entry is the implementation.
+
+**The Knife without symmetry** is unchanged: no definition → no coordinator; the kept-call report is additive
+(AD-017 §13).
+
+### 10.8 Revised slice cut (replaces KD §3's table of 2026-10-08)
+
+Each slice keeps `pytest tests --ignore=tests/test_extrude_tool.py`, `pytest experiments/symmetry_lab/tests` and
+`pytest playground/tests` green, runs the Symmetry Lab tests for `application.py` / `src/viewport/` changes (CLAUDE.md),
+and touches no `src/core`.
+
+| # | Slice | Content | Tests | AD | Model |
+|---|---|---|---|---|---|
+| 6a | **Kept-call report** | `resolve_cross_face` records its kept `split_edge` / `split_face` calls through two recording helpers and one checkpoint / rollback helper (AD-017 §13); additive output; no pid → vertex map | static tests (no other mutating `Mesh` call, no bare `load_state` in `knife_resolve.py`); identity replay of the report on a session-start copy over the golden net and a fuzz; golden net byte-identical; `tests/test_knife_parity.py` unchanged | AD-017 §13 | Type A — Sonnet 5, effort high |
+| 6b | **Symmetric commit coordinator (headless, not wired)** | side rule + clip (10.5, 10.6) → resolve → guard → strict replay (partners at session start, placement at `mirror_position`, halves by inclusion, N5 and unknown kinds refused, collisions as net) → S1 → delta check; `SymmetryRefusal` texts; rollback to `session_before`; residue F4 = A; `KnifeTool.begin(symmetry=…)` and `_on_commit` call it; `Application` does **not** pass it yet; not declared | in the probe's shape: E-a…E-d over a camera-free fuzz and a seam-biased fuzz; **regression rows R1 (two chains, both orders), R8 (seam-vertex crossings), R10 (the K5 side-camera union session)**, K7 a–h and the plane-spanning rows, the clipped closed loop; no duplicate vertices; every refusal restores the session-start state; the Knife without a definition unchanged (golden net, parity) | this addendum | Type A — Sonnet 5, effort high |
+| 6c | **Mirrored preview, click-time refusals, wiring, declaration** | `knife_render_data` gains the mirrored fields and the clipped part; hover marker / status for a target or cut face without partner (P2) and for a crossing inside a face; `Application._knife_begin` passes the coordinator whenever a definition is set; `CContext.KNIFE` declared (BLOCK row and MARK warning follow, 3a); Lab tests that pin the Knife refusal and `KNIFE_ONE_SIDED_TEXT` change with the declaration. **Engineering default, Artist test before KEEP; the preview variant is the Artist's** (R N1) | render-data tests (mirror fields, clipped part, 0 cost without a definition); refusal-at-hover tests on `man_with_shoes_basemesh`; Lab BLOCK / MARK tests; practical test for Manu (preview feel incl. the clipped part, refusal at hover, residue, session after a refused Enter) | none expected (Production UX, provisional) | Type A — Sonnet 5, effort high |
+| 6d | **Answers after 6c (only if needed)** | F6 (working side for a path that starts in space) once answered; whatever the 6c practical test ITERATEs (preview variant, display of the clipped part, session after a refused Enter) | as the answers require | as answered | Type A — Sonnet 5, effort high |
+
+Order: 6a → 6b → 6c (practical test) → 6d. 6a and 6b change nothing the Artist sees.
+
+### 10.9 Not decided here
+
+- F6 (KD §6): "first record" (as run) or "first clicked record" for a path that starts in space.
+- How the mirrored preview and the clipped part look (6c Artist test; V-a / V-b / V-c of KD §2.7), and whether the
+  session stays open after a refused Enter.
+- Seam rows in faces on or spanning the plane (KD §1.3 K7 e, e′, f): stay refused (item 9); asked only when an asset
+  has such faces.
+- Non-exact planes; D-source; module names, texts, colours, keys.
+- Whether a second independent review is wanted before the decision (Manu's call; the review's blocker is closed by
+  measurement on the review's own cases, KD §1.4, §7).
+
+### 10.10 Was Manu entscheidet (Deutsch)
+
+**Was sich für dich sichtbar ändert** (ab Slice 6c im Symmetry Lab; 6a und 6b ändern nichts Sichtbares):
+- Der Knife läuft mit Symmetrie auf beiden Seiten als ein Undo-Schritt, auch unter BLOCK; die orange Warnung
+  „Knife läuft einseitig“ verschwindet.
+- Die Seite, auf der dein Schnitt beginnt, ist die **Arbeitsseite**. Nur dort wird geschnitten; die andere Seite bekommt
+  das exakte Spiegelbild.
+- Läuft dein Schnitt über die Mitte — bewusst oder weil die Linie aus der Seitenansicht drüben läuft —, wird er an der
+  Mitte **gekappt**; was dahinter liegt, ersetzt das Spiegelbild. Eine zweite Kette auf der anderen Seite fällt weg.
+  Zeichnest du die Gegenseite von Hand nach, wird auch das gekappt und durch das exakte Spiegelbild ersetzt.
+- Ziele ohne Spiegelpartner werden schon beim Darüberfahren markiert und der Klick abgelehnt; Enter prüft noch einmal.
+- Nach Enter sind nur deine Schnittkanten ausgewählt (die auf der Mitte bleiben dabei).
+- Eine Linie, die die Mitte *innerhalb* einer Fläche kreuzt, wird abgelehnt (auf deinen Assets gibt es das nicht).
+
+**Was du mit Ja annimmst:**
+- den Mechanismus: einmal schneiden, dann genau diese Schnitte gespiegelt wiederholen — statt den Pfad vorher zu
+  spiegeln (das war ungenau bei gleich weit entfernten Ecken und bei selbst berechneten Punkten);
+- die Annahmen aus 10.2 als Grundlage: Kappen auch beim versehentlichen Überqueren; Arbeitsseite = erster Punkt auf
+  dem Mesh abseits der Mitte; Handgezeichnetes drüben wird ersetzt; ein live koordinierter Knife statt einer eigenen
+  Fähigkeit. Wenn eine davon nicht stimmt: **CHANGE** und welche;
+- die Reihenfolge der Bauschritte: **6a** (Knife schreibt mit, was er schneidet; unsichtbar) → **6b** (die
+  symmetrische Übernahme, nur getestet, noch nicht im Lab) → **6c** (Vorschau der Gegenseite, Markierung beim Hover,
+  Knife im Lab freigeschaltet; dein Praxistest) → **6d** (nur falls nach dem Praxistest etwas nachzubessern ist).
+
+**Getrennt beantwortbar, nicht Teil des Ja:** F6 — wo beginnt der Schnitt, wenn du im leeren Raum anfängst (KD §6)?
+Bis zu deiner Antwort gilt „erster Punkt auf dem Mesh“; der Praxistest in 6c ist ein guter Moment dafür.
+
+**Deine Antwort zu diesem Addendum:** **ACCEPT** · **CHANGE** (was?) · **REJECT** (dann bleibt der Knife unter
+Symmetrie blockiert bzw. einseitig wie heute).

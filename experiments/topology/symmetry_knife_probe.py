@@ -33,11 +33,19 @@ needs something from the resolver (pid -> created vertex, the kept calls), the p
 (`KnifeResolver._run_end_vertex` for the pid report, Mesh instance methods for the call log) and the
 Discovery names it as a requirement. In-memory only; no file is written.
 
+Section KC (added 2026-10-09, Type C handoff after review CLAUDE-001; runs last, the K1-K11 / KD tables are
+unchanged): **K-C+clip** = the side rule and a path-level clip before K-C (Manu's F1 = C: the cut is clipped
+at the seam, only the working side - where the cut starts - is cut and mirrored), a side check on the kept
+calls, a strict replay; E-b against the clipped path resolved alone. Re-runs R1, R8, R10, R9 (the review's
+scratch probes), K4, K5, K7, K10 and the seam-biased fuzz R7; duplicate-vertex check (N4); the self-partner
+edge across the plane (N5). The exit code is 1 when its gate fails (a union, an E-b failure, a duplicate
+vertex, an exception, a committed result that is not E ++++), 0 otherwise.
+
 Run from the repo root (Windows and Linux alike; no window, no pyglet):
-    python experiments/topology/symmetry_knife_probe.py             # everything (~11 min in a Linux container)
+    python experiments/topology/symmetry_knife_probe.py             # everything (~15-20 min in a Linux container)
     python experiments/topology/symmetry_knife_probe.py --quick     # small fuzz, smoke run (~2 min)
 Options: --fuzz N (camera-free fuzz paths per asset, default 500), --seed S (default 20261008),
---only K1,K10,... (run only these sections).
+--only K1,K10,KC,... (run only these sections).
 """
 
 from __future__ import annotations
@@ -747,10 +755,16 @@ def tie_counters():
 # K-C: replay the kept mutations mirrored
 # =============================================================================================
 
-def replay_mirrored(mesh, calls, mir: Mirror) -> int:
+def replay_mirrored(mesh, calls, mir: Mirror, strict: bool = False, crossed_n5: bool = False) -> int:
     """Apply the mirror of every kept call. Original elements map through the session-start index,
     created ones through the call results (vertex lists in path order, faces by vertex sets). A seam edge
-    is its own partner and is not split again (S1 handles it). Returns the number of replayed calls."""
+    is its own partner and is not split again (S1 handles it). Returns the number of replayed calls.
+
+    `strict` (K-C+clip, review CLAUDE-001 N5 / Q4 item 6; off for the K-C rows of K1-K11, which stay as
+    run on 2026-10-08): a self-partner edge whose ends are not both on the plane (it crosses the plane, so
+    it lies only in self-mirrored faces) is refused instead of mapping its halves to themselves, and a
+    kept call of any kind other than `split_edge` / `split_face` is refused (fail-closed). `crossed_n5`
+    (the N5 measurement only): such an edge split on the plane maps its halves crossed instead."""
     vmap: dict = {}
     emap: dict = {}
     fmap: dict = {}
@@ -779,9 +793,14 @@ def replay_mirrored(mesh, calls, mir: Mirror) -> int:
             _op, eid, (a, b), _t, (v, ea, eb), p = c
             e2 = me(eid)
             if e2 == eid:
+                crosses = vpos(mesh, a)[0] != 0.0 or vpos(mesh, b)[0] != 0.0
+                if strict and crosses:
+                    raise Unmirrorable("self-mirrored edge crossing the plane (N5)")
                 if p[0] != 0.0:
                     raise Unmirrorable("self-mirrored edge split off the plane")
                 vmap[v], emap[ea], emap[eb] = v, ea, eb
+                if crossed_n5 and crosses:
+                    emap[ea], emap[eb] = eb, ea     # the half at `a` mirrors onto the half at `b` = partner(a)
                 continue
             a2 = mv(a)
             mv(b)                       # both ends need a partner (raises otherwise)
@@ -796,6 +815,8 @@ def replay_mirrored(mesh, calls, mir: Mirror) -> int:
             first_is_a = set(mesh.edge_vertices(x1)) == {a2, v2}
             emap[ea], emap[eb] = (x1, x2) if first_is_a else (x2, x1)
             n += 1
+        elif strict and c[0] != "split_face":
+            raise Unmirrorable(f"unknown kept call {c[0]!r} (fail-closed)")
         else:
             _op, fid, va, vb, positions, (nvs, nes, f1, f2), (vs1, vs2) = c
             g = mf(fid)
@@ -940,7 +961,13 @@ def run(method: str, s: Session, *, mirrored_path: list[dict] | None = None, pai
     return r
 
 
-def evaluate(r: Res, s: Session, mesh, after_state) -> None:
+_UNSET = object()
+
+
+def evaluate(r: Res, s: Session, mesh, after_state, *, ref=_UNSET, side_cls: str = "+") -> None:
+    """E-a..E-d. `ref` / `side_cls` (K-C+clip only): E-b compares the faces of class `side_cls` (the
+    working side) with `ref` (the clipped path resolved alone) instead of the "+" faces with
+    `s.ref_plus`."""
     t0 = time.perf_counter()
     after = completeness_report(mesh)
     delta = delta_check(s.base_report, after)
@@ -950,8 +977,9 @@ def evaluate(r: Res, s: Session, mesh, after_state) -> None:
     r.info["delta"] = delta.violations
     r.info["state"] = state.value
     faces = canon_faces(mesh)
-    if s.ref_plus is not None:
-        r.eb = sorted(c for cls, c in faces if cls == "+") == s.ref_plus
+    ref_faces = s.ref_plus if ref is _UNSET else ref
+    if ref_faces is not None:
+        r.eb = sorted(c for cls, c in faces if cls == side_cls) == ref_faces
     allc = sorted(c for _cls, c in faces)
     r.ec = allc == sorted(mirror_canon(c) for _cls, c in faces)
     if not r.ec:
@@ -1157,6 +1185,11 @@ def k3(args) -> None:
 # -- K4/K5: cameras -------------------------------------------------------------------------
 
 CAMERAS = {"front": (0.0, 10.0), "3/4 (+X)": (35.0, 10.0), "side (+X)": (90.0, 15.0)}
+K5_SAMPLES = (("hole_grid", "front"), ("hole_grid", "3/4 (+X)"),
+              ("head_basemesh", "front"), ("head_basemesh", "3/4 (+X)"), ("head_basemesh", "side (+X)"))
+# (section, mesh, camera, index, session) of every K4 / K5 session, in generation order, for the K-C+clip
+# section (it regenerates them with the same seeds when K4 / K5 did not run).
+CAMERA_SAMPLES: list[tuple] = []
 
 
 def make_view(mesh, cam_key: str, occlusion=True):
@@ -1317,6 +1350,7 @@ def k4(args) -> None:
         st = collections.Counter()
         for i in range(n):
             s = camera_session("head_basemesh", rnd, cam_key, rnd.randint(2, 6), p_space=0.0)
+            CAMERA_SAMPLES.append(("K4", "head_basemesh", cam_key, i, s))
             if not s.ref_ok:
                 st["source invalid"] += 1
                 continue
@@ -1389,6 +1423,7 @@ def k5(args) -> None:
         st = collections.Counter()
         for i in range(n):
             s = camera_session(name, rnd, cam_key, rnd.randint(2, 6), p_space=0.3)
+            CAMERA_SAMPLES.append(("K5", name, cam_key, i, s))
             if not s.ref_ok:
                 st["source invalid"] += 1
                 continue
@@ -1560,41 +1595,71 @@ def normal_form(path):
 
 # -- K7: seam --------------------------------------------------------------------------------
 
+def k7_cases(asset: str) -> dict:
+    """K7's seam recipes on one asset (label -> actions); also used by the K-C+clip section."""
+    m = fresh(asset)
+    f, se, opp = seam_face_and_edges(m)          # a +X quad with a seam edge, and its opposite edge
+    g = next(x for x in m.edge_faces(se) if x != f)  # the -X quad across the seam edge
+    g_opp = m.face_edges(g)[(m.face_edges(g).index(se) + 2) % 4]
+    sv = m.edge_vertices(se)
+    # an edge of f that touches the seam vertex sv[0] but is not the seam edge
+    side_edge = next(e for e in m.face_edges(f) if e not in (se, opp) and sv[0] in m.edge_vertices(e))
+    mir = Mirror(m)
+    mrec = mir.record({"pid": 0, "kind": "edge", "edge_id": opp, "t": 0.3}, {})
+    return {
+        "a. start on a seam vertex -> edge t=0.3": [("click", T_v(sv[0])), ("click", T_e(opp, 0.3))],
+        "a'. edge t=0.3 -> end on a seam vertex": [("click", T_e(opp, 0.3)), ("click", T_v(sv[1]))],
+        "b. seam edge point t=0.3 -> opposite edge t=0.6 (S1)": [("click", T_e(se, 0.3)), ("click", T_e(opp, 0.6))],
+        "b2. two points on one seam edge (0.3, 0.7), two chains": [
+            ("click", T_e(se, 0.3)), ("click", T_e(opp, 0.4)), ("lift",),
+            ("click", T_e(se, 0.7)), ("click", T_e(opp, 0.8))],
+        "c. path crossing the seam into the other side": [
+            ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(g_opp, 0.6))],
+        "d. drawn symmetric by the Artist (exact mirror)": [
+            ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(mrec["edge_id"], mrec["t"]))],
+        "d'. drawn symmetric, mirror t off by 1e-12": [
+            ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(mrec["edge_id"], mrec["t"] + 1e-12))],
+        "d''. drawn symmetric, mirror t off by 1e-6": [
+            ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(mrec["edge_id"], mrec["t"] + 1e-6))],
+        "g. along the seam (seam vertex -> seam vertex) then into the face": [
+            ("click", T_v(sv[0])), ("click", T_v(sv[1])), ("click", T_e(opp, 0.5))],
+        "h. seam vertex -> side edge point (one end on the seam)": [
+            ("click", T_v(sv[1])), ("click", T_e(side_edge, 0.4))],
+    }
+
+
+def k7_synthetic() -> dict:
+    """K7's plane-spanning rows ((fixture, label) -> actions); also used by the K-C+clip section."""
+    hx = fresh("hexagon_grid")
+    hexf = next(f for f in hx.all_face_ids() if len(hx.face_vertices(f)) == 6)
+    pos = {tuple(vpos(hx, v)): v for v in hx.all_vertex_ids()}
+    s1, s2 = pos[(0.0, 1.0, 0.0)], pos[(0.0, 2.0, 0.0)]
+    right = kr.find_edge(hx, pos[(1.0, 1.0, 0.0)], pos[(1.0, 2.0, 0.0)])
+    left = kr.find_edge(hx, pos[(-1.0, 1.0, 0.0)], pos[(-1.0, 2.0, 0.0)])
+    sp = fresh("span_grid")
+    sp_pos = {tuple(vpos(sp, v)): v for v in sp.all_vertex_ids()}
+    sp_r = kr.find_edge(sp, sp_pos[(0.5, 0.0, 0.0)], sp_pos[(0.5, 1.0, 0.0)])
+    sp_l = kr.find_edge(sp, sp_pos[(-0.5, 0.0, 0.0)], sp_pos[(-0.5, 1.0, 0.0)])
+    return {
+        ("hexagon_grid", "e. chord between two seam points in one face (in the plane)"):
+            [("click", T_v(s1)), ("click", T_v(s2))],
+        ("hexagon_grid", "e'. bent chord seam point -> inside (+X part) -> seam point"):
+            [("click", T_v(s1)), ("click", T_f(hexf, (0.4, 1.5, 0.0))), ("click", T_v(s2))],
+        ("hexagon_grid", "f. through the plane-spanning face, right edge 0.3 -> left edge 0.6"):
+            [("click", T_e(right, 0.3)), ("click", T_e(left, 0.6))],
+        ("hexagon_grid", "f'. through it, symmetric (right 0.5 -> left 0.5)"):
+            [("click", T_e(right, 0.5)), ("click", T_e(left, 0.5))],
+        ("span_grid", "f''. span grid (no seam): right edge 0.3 -> left edge 0.6"):
+            [("click", T_e(sp_r, 0.3)), ("click", T_e(sp_l, 0.6))],
+    }
+
+
 def k7(args) -> None:
     section("K7 - seam cases")
     rows = []
     detail = []
     for asset in ("subd_cube", "head_basemesh", "tie_grid"):
-        m = fresh(asset)
-        f, se, opp = seam_face_and_edges(m)          # a +X quad with a seam edge, and its opposite edge
-        g = next(x for x in m.edge_faces(se) if x != f)  # the -X quad across the seam edge
-        g_opp = m.face_edges(g)[(m.face_edges(g).index(se) + 2) % 4]
-        sv = m.edge_vertices(se)
-        # an edge of f that touches the seam vertex sv[0] but is not the seam edge
-        side_edge = next(e for e in m.face_edges(f) if e not in (se, opp) and sv[0] in m.edge_vertices(e))
-        mir = Mirror(m)
-        mrec = mir.record({"pid": 0, "kind": "edge", "edge_id": opp, "t": 0.3}, {})
-        cases = {
-            "a. start on a seam vertex -> edge t=0.3": [("click", T_v(sv[0])), ("click", T_e(opp, 0.3))],
-            "a'. edge t=0.3 -> end on a seam vertex": [("click", T_e(opp, 0.3)), ("click", T_v(sv[1]))],
-            "b. seam edge point t=0.3 -> opposite edge t=0.6 (S1)": [("click", T_e(se, 0.3)), ("click", T_e(opp, 0.6))],
-            "b2. two points on one seam edge (0.3, 0.7), two chains": [
-                ("click", T_e(se, 0.3)), ("click", T_e(opp, 0.4)), ("lift",),
-                ("click", T_e(se, 0.7)), ("click", T_e(opp, 0.8))],
-            "c. path crossing the seam into the other side": [
-                ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(g_opp, 0.6))],
-            "d. drawn symmetric by the Artist (exact mirror)": [
-                ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(mrec["edge_id"], mrec["t"]))],
-            "d'. drawn symmetric, mirror t off by 1e-12": [
-                ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(mrec["edge_id"], mrec["t"] + 1e-12))],
-            "d''. drawn symmetric, mirror t off by 1e-6": [
-                ("click", T_e(opp, 0.3)), ("click", T_e(se, 0.5)), ("click", T_e(mrec["edge_id"], mrec["t"] + 1e-6))],
-            "g. along the seam (seam vertex -> seam vertex) then into the face": [
-                ("click", T_v(sv[0])), ("click", T_v(sv[1])), ("click", T_e(opp, 0.5))],
-            "h. seam vertex -> side edge point (one end on the seam)": [
-                ("click", T_v(sv[1])), ("click", T_e(side_edge, 0.4))],
-        }
-        for label, actions in cases.items():
+        for label, actions in k7_cases(asset).items():
             s = session_from(asset, actions)
             row, res = case_rows(asset, label, s)
             rows.append(row)
@@ -1608,29 +1673,7 @@ def k7(args) -> None:
                                    f"{len(mm.all_vertex_ids())}/{len(mm.all_edge_ids())}/{len(mm.all_face_ids())}",
                                    "%d/%d" % duplicates(mm), f"{live}/{len(dd.seam_edges)}", rr.info.get("state")])
     # synthetic: plane-spanning faces
-    hx = fresh("hexagon_grid")
-    hexf = next(f for f in hx.all_face_ids() if len(hx.face_vertices(f)) == 6)
-    pos = {tuple(vpos(hx, v)): v for v in hx.all_vertex_ids()}
-    s1, s2 = pos[(0.0, 1.0, 0.0)], pos[(0.0, 2.0, 0.0)]
-    right = kr.find_edge(hx, pos[(1.0, 1.0, 0.0)], pos[(1.0, 2.0, 0.0)])
-    left = kr.find_edge(hx, pos[(-1.0, 1.0, 0.0)], pos[(-1.0, 2.0, 0.0)])
-    sp = fresh("span_grid")
-    sp_pos = {tuple(vpos(sp, v)): v for v in sp.all_vertex_ids()}
-    sp_r = kr.find_edge(sp, sp_pos[(0.5, 0.0, 0.0)], sp_pos[(0.5, 1.0, 0.0)])
-    sp_l = kr.find_edge(sp, sp_pos[(-0.5, 0.0, 0.0)], sp_pos[(-0.5, 1.0, 0.0)])
-    synthetic = {
-        ("hexagon_grid", "e. chord between two seam points in one face (in the plane)"):
-            [("click", T_v(s1)), ("click", T_v(s2))],
-        ("hexagon_grid", "e'. bent chord seam point -> inside (+X part) -> seam point"):
-            [("click", T_v(s1)), ("click", T_f(hexf, (0.4, 1.5, 0.0))), ("click", T_v(s2))],
-        ("hexagon_grid", "f. through the plane-spanning face, right edge 0.3 -> left edge 0.6"):
-            [("click", T_e(right, 0.3)), ("click", T_e(left, 0.6))],
-        ("hexagon_grid", "f'. through it, symmetric (right 0.5 -> left 0.5)"):
-            [("click", T_e(right, 0.5)), ("click", T_e(left, 0.5))],
-        ("span_grid", "f''. span grid (no seam): right edge 0.3 -> left edge 0.6"):
-            [("click", T_e(sp_r, 0.3)), ("click", T_e(sp_l, 0.6))],
-    }
-    for (name, label), actions in synthetic.items():
+    for (name, label), actions in k7_synthetic().items():
         s = session_from(name, actions)
         row, res = case_rows(name, label, s)
         rows.append(row)
@@ -2247,6 +2290,728 @@ def kd_golden(args) -> None:
 
 
 # =============================================================================================
+# KC - K-C + side rule + clip (Type C handoff 2026-10-09; review CLAUDE-001 B1 / Q6 / R9; Manu F1 = C)
+# =============================================================================================
+#
+# Throwaway probe code for the decision preparation (the review's scratch probes A-D reused where they
+# fit; nothing here is a proposal for a module layout). The clip acts on the session path *before* the
+# resolver - in production that is the Knife's commit coordinator; the resolver stays unchanged and
+# camera-free (AD-017 #1). Rules as run:
+#
+#   side of a record   exact sign of its plane coordinate on the session-start mesh (AR-1, no tolerance);
+#                      0 = on the plane (a seam vertex, an edge point on a seam edge): both sides
+#   working side       the side of the first *mesh* record (vertex / edge / face, clicked or a planner
+#                      crossing) off the plane. A point in space does not choose it: it is not cut, and
+#                      its plane coordinate is the arbitrary depth `space_point` gives it (refinement of
+#                      the planner's reading; how often it would matter is counted)
+#   refusal            a cut segment (no break between) from a working-side record straight to an
+#                      other-side record: the plane is crossed inside a face, there is no seam record to
+#                      clip at (AD-SYM-03 item 9 interim rule)
+#   clip               every maximal stretch of records on the other side (mesh records and points in
+#                      space) becomes one pen lift, the breaks inside it go with it; a record on the plane
+#                      (seam vertex, seam edge point) ends or starts a run there. A cyclic chain with such
+#                      a stretch is first rotated to start right after its last other-side stretch, so
+#                      its closing segment stays a cut
+#   kept-call guard    every kept `split_edge` lies on the working side or on the plane, every kept
+#                      `split_face` in a face of the working side; a face on / spanning the plane is
+#                      refused (item 9). The net under the clip (B1: the side rule checked before the
+#                      replay); it should never fire after the clip
+#   replay             `replay_mirrored(..., strict=True)`: partners from the session-start state, N5
+#                      refused, unknown call kinds refused; the "already cut by the source" collisions
+#                      stay as a safety net (they should never fire after the clip)
+#   E-b reference      the clipped path resolved alone, faces of the working side's class
+
+is_break, is_chain_end = kr.is_break, kr.is_chain_end
+LIFT_CLIP = {"kind": "break", "reason": "lift", "clip": True}
+TEXT_PLANE_IN_FACE = "the plane is crossed inside a face: no seam point to clip at (item 9)"
+TEXT_SEED_LOST = "a clipped closed chain whose interior start the next chain continues (not handled)"
+KC_GATE: collections.Counter = collections.Counter()   # unions, E-b failures, duplicates, exceptions
+KC_TOTALS: collections.Counter = collections.Counter()  # every K-C+clip run of the section (not a gate)
+
+
+def plane_sign(x: float) -> int:
+    return (x > 0.0) - (x < 0.0)
+
+
+def record_side(mesh, p: dict) -> int:
+    return plane_sign(target_world(mesh, p)[0])
+
+
+def is_mesh_record(p: dict) -> bool:
+    return p["kind"] in ("vertex", "edge", "face")
+
+
+@dataclass
+class SideRule:
+    side: int = 0                      # working side +1 / -1; 0 = no mesh record off the plane
+    path: list = field(default_factory=list)   # the clipped session path
+    refusal: str | None = None
+    stretches: int = 0                 # maximal other-side stretches replaced by one pen lift
+    dropped: int = 0                   # records dropped (mesh records and points in space)
+    dropped_space: int = 0
+    rotated: int = 0                   # cyclic chains rotated before the clip
+    side_with_space: int = 0           # what the side would be if points in space chose it too
+    side_first_click: int = 0          # the side of the first *clicked* mesh record off the plane
+
+    @property
+    def clipped(self) -> bool:
+        """Mesh records were dropped or a chain was rotated (a dropped point in space alone changes
+        nothing the resolver sees)."""
+        return self.dropped > self.dropped_space or self.rotated > 0
+
+
+SIDE_READINGS = ("first record", "first click", "with space")
+
+
+def side_rule(mesh, path: list[dict], reading: str = "first record") -> SideRule:
+    """Working side, the item-9 refusal, and the clipped session path (rules in the section comment).
+    `reading` (the open point of the working side, measured only where the readings disagree): "first
+    record" = the first mesh record off the plane (planner's reading, the rule as run); "first click" = the
+    first *clicked* mesh record off the plane (planner crossings do not choose; falls back to the first
+    record); "with space" = the first record off the plane, points in space included."""
+    rule = SideRule(path=list(path))
+    side = {id(p): record_side(mesh, p) for p in path if not is_break(p)}
+    sd_ = lambda p: side[id(p)]  # noqa: E731
+    rule.side = next((sd_(p) for p in path if is_mesh_record(p) and sd_(p)), 0)
+    rule.side_with_space = next((sd_(p) for p in path if not is_break(p) and sd_(p)), 0)
+    rule.side_first_click = next((sd_(p) for p in path if is_mesh_record(p) and not p.get("crossing") and sd_(p)), 0)
+    if reading == "first click" and rule.side_first_click:
+        rule.side = rule.side_first_click
+    elif reading == "with space":
+        rule.side = rule.side_with_space
+    w = rule.side
+    if not w:
+        return rule                    # every record on the plane: nothing to clip (the replay decides)
+    crossing = {w, -w}
+    prev = first = None
+    for p in path:                     # 1. a cut straight across the plane
+        if is_break(p):
+            if is_chain_end(p):
+                if p.get("cyclic") and prev is not None and first is not None and {sd_(prev), sd_(first)} == crossing:
+                    rule.refusal = TEXT_PLANE_IN_FACE
+                    return rule
+                first = None
+            prev = None
+            continue
+        if first is None:
+            first = p
+        if prev is not None and {sd_(prev), sd_(p)} == crossing:
+            rule.refusal = TEXT_PLANE_IN_FACE
+            return rule
+        prev = p
+    out, cur = [], []                  # 2. rotate cyclic chains that hold an other-side stretch
+    for i, p in enumerate(path):
+        if not is_chain_end(p):
+            cur.append(p)
+            continue
+        if p.get("cyclic") and any(sd_(q) == -w for q in cur if not is_break(q)):
+            j = max(k for k, q in enumerate(cur) if not is_break(q) and sd_(q) == -w)
+            start = cur[0]
+            nxt = path[i + 1] if i + 1 < len(path) else None
+            if start["kind"] == "face" and nxt is not None and not is_break(nxt) and nxt["pid"] == start["pid"]:
+                rule.refusal = TEXT_SEED_LOST
+                return rule
+            cur = cur[j + 1:] + cur[:j + 1]
+            rule.rotated += 1
+            p = dict(LIFT_CLIP)        # no closing segment any more: it is inside the rotated chain
+        out.extend(cur)
+        out.append(p)
+        cur = []
+    out.extend(cur)
+    clipped, off = [], False           # 3. clip
+    for p in out:
+        if is_break(p):
+            if not off:
+                clipped.append(p)
+            continue
+        if sd_(p) == -w:
+            if not off:
+                rule.stretches += 1
+                if clipped and not is_chain_end(clipped[-1]):
+                    clipped.append(dict(LIFT_CLIP))
+            off = True
+            rule.dropped += 1
+            rule.dropped_space += p["kind"] == "space"
+            continue
+        off = False
+        clipped.append(p)
+    rule.path = clipped
+    return rule
+
+
+def guard_kept(mesh, kept, w: int) -> int:
+    """The side rule on the kept mutations (raises `Unmirrorable`); returns the working side (taken from
+    the first off-plane kept call when no record chose it)."""
+    for c in kept:
+        if c[0] == "split_edge":
+            s = plane_sign(c[5][0])
+        elif c[0] == "split_face":
+            cls = face_class([vpos(mesh, v) for v in set(c[6][0]) | set(c[6][1])])
+            if cls in ("0", "span"):
+                raise Unmirrorable("kept cut inside a face on / spanning the plane (item 9)")
+            s = 1 if cls == "+" else -1
+        else:
+            raise Unmirrorable(f"unknown kept call {c[0]!r} (fail-closed)")
+        if s and not w:
+            w = s
+        if s and s != w:
+            raise Unmirrorable("kept mutation on the other side (side rule)")
+    return w
+
+
+def session_path(s) -> list[dict]:
+    """The full session path (points in space included) - what the commit coordinator would clip."""
+    knife = getattr(s, "knife", None)
+    return knife.path if knife is not None else list(s.path)
+
+
+def clipped_reference(state: dict, rpath: list[dict], cls: str):
+    ref = Mesh.from_state(state)
+    kr.resolve_cross_face(ref, rpath, state)
+    check = kr.check_commit(ref, state)
+    if check.after_state is None:
+        return None
+    return sorted(c for k, c in canon_faces(ref) if k == cls)
+
+
+def run_kc_clip(s: Session, reading: str = "first record") -> Res:
+    """K-C+clip: side rule -> clip -> resolve -> kept-call log -> guard -> mirrored replay -> S1 ->
+    `check_commit` -> E-a..E-d (E-b against the clipped path resolved alone) + duplicate vertices."""
+    r = Res("K-C+clip")
+    mesh = Mesh.from_state(s.state)
+    full = session_path(s)
+    t0 = time.perf_counter()
+    try:
+        mir = Mirror(mesh)                       # partners from the session-start state (N8)
+        t_rule = time.perf_counter()
+        rule = side_rule(mesh, full, reading)
+        r.info["rule"] = rule
+        r.info["clip_ms"] = 1000 * (time.perf_counter() - t_rule)
+        if rule.refusal:
+            raise Unmirrorable(rule.refusal)
+        rpath = [p for p in rule.path if p["kind"] != "space"]
+        with KeptLog(mesh) as log:
+            kr.CrossFaceResolver(mesh, s.state).resolve(rpath)
+        kept = list(log.calls)
+        w = guard_kept(mesh, kept, rule.side)
+        r.info["side"] = w
+        r.info["replayed"] = replay_mirrored(mesh, kept, mir, strict=True)
+        apply_s1(mesh, kept)
+        check = kr.check_commit(mesh, s.state)
+    except Unmirrorable as exc:
+        r.ms = 1000 * (time.perf_counter() - t0)
+        r.status = f"refused: {exc}"
+        Mesh.load_state(mesh, s.state)           # N8: the source mutations are taken back; no history entry
+        r.info["restored"] = kr.mesh_content(mesh.export_state()) == kr.mesh_content(s.state)
+        return r
+    except Exception as exc:  # noqa: BLE001 - counted, not hidden
+        r.ms = 1000 * (time.perf_counter() - t0)
+        r.status = f"exception: {type(exc).__name__}: {str(exc)[:60]}"
+        r.info["trace"] = traceback.format_exc()
+        return r
+    r.ms = 1000 * (time.perf_counter() - t0)
+    if check.rolled_back:
+        r.status = f"rolled back: {check.problem}"
+        return r
+    if check.after_state is None:
+        r.status = "nothing"
+        return r
+    r.mesh = mesh
+    cls = "-" if w < 0 else "+"
+    ref = s.ref_plus if (not rule.clipped and cls == "+") else clipped_reference(s.state, rpath, cls)
+    evaluate(r, s, mesh, check.after_state, ref=ref, side_cls=cls)
+    r.info["dup"] = duplicates(mesh)
+    return r
+
+
+def describe_clip(r: Res) -> str:
+    if not r.ok:
+        return r.status
+    same, near = r.info["dup"]
+    return f"E {r.flags()} dup {same}/{near}"
+
+
+def rule_cell(r: Res) -> str:
+    rule = r.info.get("rule")
+    if rule is None:
+        return "-"
+    w = {1: "+X", -1: "-X", 0: "?"}[rule.side]
+    if rule.refusal:
+        return f"{w}, refused by the rule"
+    if not rule.stretches and not rule.rotated:
+        return f"{w}, no clip"
+    return f"{w}, {rule.stretches} stretch(es) -> lift, {rule.dropped} rec dropped" + \
+        (f" ({rule.dropped_space} space)" if rule.dropped_space else "") + (f", {rule.rotated} rotated" if rule.rotated else "")
+
+
+class ClipTally:
+    """Counts per sample: rule, E-a..E-d, refusals by reason, unions, duplicates, timings; K-C before."""
+
+    def __init__(self, label: str):
+        self.label = label
+        self.c = collections.Counter()
+        self.reasons = collections.Counter()
+        self.ms, self.clip_ms, self.kc_ms = [], [], []
+        self.examples: list[str] = []
+
+    def add(self, r: Res, old: Res | None = None) -> None:
+        c = self.c
+        c["n"] += 1
+        KC_TOTALS["runs"] += 1
+        KC_TOTALS["committed, E ++++"] += bool(r.ok and r.ea and r.eb and r.ec and r.ed)
+        KC_TOTALS["refused"] += r.status.startswith("refused")
+        KC_TOTALS["refused, session-start state restored"] += bool(r.info.get("restored"))
+        KC_TOTALS["nothing cut"] += r.status == "nothing"
+        KC_TOTALS["kept mutation on the other side (guard)"] += r.status.endswith("(side rule)")
+        KC_TOTALS["collision (already cut by the source)"] += "already cut by the source" in r.status
+        rule = r.info.get("rule")
+        if rule is not None:
+            c[{1: "w+", -1: "w-", 0: "w?"}[rule.side]] += 1
+            c["clipped"] += rule.clipped
+            c["rotated"] += rule.rotated > 0
+            c["space only"] += (rule.dropped_space > 0 and not rule.clipped)
+            c["first click other side"] += bool(rule.side and rule.side_first_click and rule.side_first_click != rule.side)
+            c["space would choose other side"] += bool(rule.side and rule.side_with_space and rule.side_with_space != rule.side)
+        if r.ok:
+            c["committed"] += 1
+            for k in ("ea", "eb", "ec", "ed"):
+                c[k] += bool(getattr(r, k))
+            all4 = bool(r.ea and r.eb and r.ec and r.ed)
+            c["all4"] += all4
+            union = bool(r.ea and r.eb is False)
+            c["union"] += union
+            same, near = r.info["dup"]
+            c["dup"] += same + near
+            KC_GATE["union (E-a+, E-b-)"] += union
+            KC_GATE["E-b failure"] += r.eb is False
+            KC_GATE["duplicate vertices"] += same + near
+            KC_GATE["committed, not all four"] += not all4
+            if not all4 and len(self.examples) < 3:
+                self.examples.append(f"{describe_clip(r)}; {rule_cell(r)}")
+        elif r.status.startswith("refused"):
+            c["refused"] += 1
+            self.reasons[r.status[len("refused: "):]] += 1
+            c["restored"] += bool(r.info.get("restored"))
+        elif r.status.startswith("exception"):
+            c["exception"] += 1
+            KC_GATE["exception"] += 1
+            if len(self.examples) < 3:
+                self.examples.append(r.status)
+        elif r.status.startswith("rolled back"):
+            c["rolled back"] += 1
+        else:
+            c["nothing"] += 1
+        self.ms.append(r.ms)
+        self.clip_ms.append(r.info.get("clip_ms", 0.0))
+        if old is not None:
+            c["old n"] += 1
+            c["old all4"] += bool(old.ok and old.ea and old.eb and old.ec and old.ed)
+            c["old union"] += bool(old.ok and old.ea and old.eb is False)
+            c["old refused"] += old.status.startswith("refused")
+            self.kc_ms.append(old.ms)
+
+    def row(self) -> list:
+        c, n = self.c, self.c["n"]
+        k = c["committed"]
+        med = lambda xs: f"{statistics.median(xs):.2f}" if xs else "-"  # noqa: E731
+        p95 = lambda xs: f"{sorted(xs)[int(0.95 * (len(xs) - 1))]:.2f}" if xs else "-"  # noqa: E731
+        old = (f"{c['old all4']} / {c['old union']} / {c['old refused']}" if c["old n"] else "-")
+        return [self.label, n, f"{c['w+']}/{c['w-']}/{c['w?']}", f"{c['clipped']} ({c['rotated']})",
+                f"{c['first click other side']} / {c['space would choose other side']}",
+                f"{c['ea']}/{k}", f"{c['eb']}/{k}", f"{c['ec']}/{k}", f"{c['ed']}/{k}", pct(c["all4"], n),
+                c["refused"], f"{c['nothing']} / {c['rolled back']}", c["union"], c["dup"], c["exception"], old,
+                f"{med(self.ms)} / {p95(self.ms)}", med(self.clip_ms), med(self.kc_ms)]
+
+
+TALLY_HEADER = ["sample", "n", "side +/-/?", "clipped (rotated)", "1st click / space other side", "E-a", "E-b", "E-c",
+                "E-d", "all four", "refused", "nothing / rolled back", "union", "dup", "exc",
+                "K-C before: all four / union / refused", "K-C+clip ms med / p95", "rule+clip ms", "K-C ms med"]
+TALLY_NOTE = ("side = working side by the first mesh record off the plane (? = none); clipped = mesh records dropped "
+              "or a chain rotated; '1st click / space other side' = sessions whose first *clicked* record, resp. "
+              "whose first record including points in space, lies on the other side; E-x = passes / committed; "
+              "union = E-a passes, E-b fails (B1); dup = duplicate vertex pairs (identical + < 1e-9, N4); "
+              "K-C before = the K-C method of 2026-10-08 on the same session (E-b against the unclipped path).")
+
+
+def print_tallies(tallies: list[ClipTally], title: str) -> None:
+    print(f"\n{title}")
+    table(TALLY_HEADER, [t.row() for t in tallies], TALLY_NOTE)
+    rows = [[t.label, reason, n] for t in tallies for reason, n in sorted(t.reasons.items(), key=lambda kv: -kv[1])]
+    if rows:
+        print("refusals by reason (every refusal restored the session-start state: "
+              f"{sum(t.c['restored'] for t in tallies)}/{sum(t.c['refused'] for t in tallies)}):")
+        table(["sample", "reason", "n"], rows)
+    for t in tallies:
+        for ex in t.examples:
+            print(f"  {t.label}: {ex}")
+
+
+def records_string(mesh, path) -> str:
+    """One character per record: + / - / 0 by side, | for a break, s for a point in space."""
+    out = []
+    for p in path:
+        if is_break(p):
+            out.append("|")
+        else:
+            ch = {1: "+", -1: "-", 0: "0"}[record_side(mesh, p)]
+            out.append(ch if p["kind"] != "space" else "s")
+    return "".join(out)
+
+
+# -- samples (review CLAUDE-001 probes A-D, reused) ---------------------------------------------
+
+def _xy(m):
+    return {tuple(vpos(m, v)[:2]): v for v in m.all_vertex_ids()}
+
+
+def grid_edge(m, p, q):
+    pos = _xy(m)
+    return kr.find_edge(m, pos[p], pos[q])
+
+
+def grid_edge_point(m, p, q, at) -> dict:
+    """A click on the tie_grid edge p-q at the point `at` (t from the edge's stored orientation)."""
+    e = grid_edge(m, p, q)
+    a = vpos(m, m.edge_vertices(e)[0])
+    return T_e(e, math.dist(a[:2], at) / math.dist(p, q))
+
+
+def loop_cases() -> list[tuple[str, str, list]]:
+    """Closed chains across the seam on tie_grid (squares (0,1) on +X and (-1,1) on -X): the cyclic rotation
+    before the clip, and a loop whose interior start the next chain continues (refused by the probe clip)."""
+    m = fresh("tie_grid")
+    ge = lambda p, q, at: ("click", grid_edge_point(m, p, q, at))  # noqa: E731
+    loop = [ge((0.0, 1.0), (1.0, 1.0), (0.5, 1.0)), ge((0.0, 1.0), (0.0, 2.0), (0.0, 1.5)),
+            ge((-1.0, 1.0), (0.0, 1.0), (-0.5, 1.0)), ge((-1.0, 2.0), (0.0, 2.0), (-0.5, 2.0)),
+            ge((0.0, 2.0), (0.0, 3.0), (0.0, 2.5)), ge((0.0, 2.0), (1.0, 2.0), (0.5, 2.0)), ("click", T_p(0))]
+    f = next(x for x in plus_faces(m) if {tuple(vpos(m, v)[:2]) for v in m.face_vertices(x)}
+             == {(0.0, 1.0), (1.0, 1.0), (1.0, 2.0), (0.0, 2.0)})
+    seeded = [("click", T_f(f, (0.5, 1.5, 0.0))), ge((0.0, 1.0), (0.0, 2.0), (0.0, 1.75)),
+              ge((-1.0, 1.0), (0.0, 1.0), (-0.5, 1.0)), ge((-1.0, 2.0), (0.0, 2.0), (-0.5, 2.0)),
+              ge((0.0, 1.0), (0.0, 2.0), (0.0, 1.25)), ("click", T_p(0)), ge((1.0, 1.0), (1.0, 2.0), (1.0, 1.5))]
+    return [("tie_grid", "closed loop across the seam (cyclic chain, rotated before the clip)", loop),
+            ("tie_grid", "the same with an interior start the next chain continues from", seeded)]
+
+
+def r1_cases() -> list[tuple[str, str, list]]:
+    """R1 (probe A): a +X chain and a -X chain after a pen lift (Manu: 'Fall 3'), one chain entirely on -X,
+    the head two-chain path; plus the same two chains in the other order (the working side becomes -X)."""
+    m = fresh("tie_grid")
+    e1a, e1b = grid_edge(m, (1.0, 0.0), (1.0, 1.0)), grid_edge(m, (2.0, 0.0), (2.0, 1.0))
+    e2a, e2b = grid_edge(m, (-3.0, 2.0), (-3.0, 3.0)), grid_edge(m, (-2.0, 2.0), (-2.0, 3.0))
+    plus = [("click", T_e(e1a, 0.3)), ("click", T_e(e1b, 0.6))]
+    minus = [("click", T_e(e2a, 0.4)), ("click", T_e(e2b, 0.7))]
+    out = [("tie_grid", "R1 +X chain, lift, -X chain (non-partner face)", plus + [("lift",)] + minus),
+           ("tie_grid", "R1 one chain entirely on -X", minus),
+           ("tie_grid", "R1' -X chain, lift, +X chain (started on -X)", minus + [("lift",)] + plus)]
+    h = fresh("head_basemesh")
+    mir = Mirror(h)
+    pf = plus_faces(h, strict=True)
+    fa = pf[0]
+    fb = next(f for f in pf[40:] if not set(h.face_vertices(f)) & set(h.face_vertices(fa)))
+    gb = mir.fp[fb]
+    ea, eb = h.face_edges(fa)[0], h.face_edges(fa)[2]
+    ga, gbb = h.face_edges(gb)[0], h.face_edges(gb)[2]
+    out.append(("head_basemesh", f"R1 head: +X chain in f{int(fa)}, lift, -X chain in f{int(gb)}",
+                [("click", T_e(ea, 0.3)), ("click", T_e(eb, 0.6)), ("lift",),
+                 ("click", T_e(ga, 0.4)), ("click", T_e(gbb, 0.7))]))
+    return out
+
+
+def seam_vertex_crossings(asset: str, limit: int = 40) -> list[tuple]:
+    """R8 (probe C): edge point in F (+X) -> seam vertex s -> edge point in H (-X), H != partner(F), both
+    edges not touching s. One per (s, F, H) until `limit`."""
+    m = fresh(asset)
+    mir = Mirror(m)
+    svs = seam_vertices(m)
+    plus, minus = set(plus_faces(m)), set()
+    for f in m.all_face_ids():
+        xs = [vpos(m, v)[0] for v in m.face_vertices(f)]
+        if max(xs) <= 0.0 and min(xs) < 0.0:
+            minus.add(f)
+    out = []
+    for s in sorted(svs):
+        around = {f for e in m.vertex_edges(s) for f in m.edge_faces(e)}
+        for F in sorted(around & plus):
+            for H in sorted(around & minus):
+                if mir.fp.get(F) == H:
+                    continue
+                ef = next((e for e in m.face_edges(F) if s not in m.edge_vertices(e)), None)
+                eh = next((e for e in m.face_edges(H) if s not in m.edge_vertices(e)), None)
+                if ef is None or eh is None:
+                    continue
+                out.append((F, H, [("click", T_e(ef, 0.4)), ("click", T_v(s)), ("click", T_e(eh, 0.6))]))
+                if len(out) >= limit:
+                    return out
+    return out
+
+
+def seam_fuzz(name: str, rnd: random.Random, n: int) -> list[Session]:
+    """R7 (probe B): +X faces touching the seam only, targets biased to seam vertices / seam edges /
+    near-seam face points. Same RNG use as the review's probe (the session keeps its knife)."""
+    mesh0 = fresh(name)
+    svs = seam_vertices(mesh0)
+    seam = mesh0.symmetry_definition.seam_edges
+    faces = [f for f in plus_faces(mesh0) if set(mesh0.face_vertices(f)) & svs]
+    allowed = set(plus_faces(mesh0))
+    out = []
+
+    def target(mesh, f):
+        vs, es = mesh.face_vertices(f), mesh.face_edges(f)
+        r = rnd.random()
+        if r < 0.3:
+            sv = [v for v in vs if v in svs]
+            return T_v(rnd.choice(sv) if sv and rnd.random() < 0.7 else rnd.choice(vs))
+        if r < 0.75:
+            se = [e for e in es if e in seam]
+            e = rnd.choice(se) if se and rnd.random() < 0.6 else rnd.choice(es)
+            return T_e(e, 0.5 if rnd.random() < 0.3 else rnd.uniform(0.08, 0.92))
+        pts = [vpos(mesh, v) for v in vs]
+        w = [rnd.uniform(1.0, 3.0) if v in svs else rnd.uniform(0.2, 1.0) for v in vs]
+        tot = sum(w)
+        return T_f(f, tuple(sum(w[i] * pts[i][k] for i in range(len(pts))) / tot for k in range(3)))
+
+    for _ in range(n):
+        mesh = Mesh.from_state(start_state(name))
+        knife = new_knife(mesh)
+        acts, goal, clicks, tries = [], rnd.randint(2, 8), 0, 0
+        while clicks < goal and tries < goal * 10:
+            tries += 1
+            r = rnd.random()
+            act = None
+            chain = knife.chain_points
+            if chain and len([p for p in chain if not p.get("crossing")]) >= 3 and r < 0.12:
+                first = chain[0]
+                act = ("click", T_v(first["vertex_id"]) if first["kind"] == "vertex" else T_p(first["pid"]))
+            elif knife.last_point is not None and r < 0.18:
+                act = ("lift",)
+            elif r < 0.22 and knife.snap_points:
+                own = [p for p in knife.snap_points if p["kind"] in ("edge", "vertex")]
+                if own:
+                    p = rnd.choice(own)
+                    act = ("click", T_v(p["vertex_id"]) if p["kind"] == "vertex" else T_p(p["pid"]))
+            if act is None:
+                last = knife.last_point
+                cand = [f for f in point_faces(mesh, last) if f in allowed] if last is not None else []
+                f = rnd.choice(cand) if cand and rnd.random() < 0.8 else rnd.choice(faces)
+                act = ("click", target(mesh, f))
+            with quiet():
+                ok = knife.click(act[1]) if act[0] == "click" else knife.lift()
+            acts.append(act)
+            if ok and act[0] == "click":
+                clicks += 1
+        s = Session(name, resolver_path(knife))
+        s.knife = knife
+        out.append(s)
+    return out
+
+
+def camera_samples(args) -> list[tuple]:
+    """Every K4 / K5 session (section, mesh, camera, index, session): the stash of K4 / K5, or the same
+    sessions regenerated with the same seeds when those sections did not run."""
+    have = {x[0] for x in CAMERA_SAMPLES}
+    out = list(CAMERA_SAMPLES)
+    if "K4" not in have:
+        rnd, n = random.Random(args.seed + 4), (12 if args.quick else 60)
+        for cam_key in CAMERAS:
+            for i in range(n):
+                out.append(("K4", "head_basemesh", cam_key, i,
+                            camera_session("head_basemesh", rnd, cam_key, rnd.randint(2, 6), p_space=0.0)))
+    if "K5" not in have:
+        rnd, n = random.Random(args.seed + 5), (10 if args.quick else 40)
+        for name, cam_key in K5_SAMPLES:
+            for i in range(n):
+                out.append(("K5", name, cam_key, i, camera_session(name, rnd, cam_key, rnd.randint(2, 6), p_space=0.3)))
+    order = {"K4": 0, "K5": 1}
+    return sorted(out, key=lambda x: order[x[0]])
+
+
+def kc_case_rows(cases) -> list[list]:
+    rows = []
+    for name, label, actions in cases:
+        s = session_from(name, actions)
+        old, new = run("K-C", s), run_kc_clip(s)
+        tally = ClipTally(label)
+        tally.add(new, old)             # feeds KC_GATE
+        mesh = Mesh.from_state(s.state)
+        rows.append([name, label, "".join("y" if a else "n" for a in s.accepted),
+                     records_string(mesh, session_path(s)), rule_cell(new),
+                     "ok" if s.ref_ok else f"src: {s.ref_problem or 'nothing'}", describe(old), describe_clip(new)])
+    return rows
+
+
+CASE_CLIP_HEADER = ["mesh", "case", "accepted", "records", "working side, clip", "unclipped source alone", "K-C (2026-10-08)",
+                    "K-C+clip"]
+CASE_CLIP_NOTE = ("records: + / - / 0 per record by side, | a break, s a point in space. K-C+clip E flags: E-b against "
+                  "the clipped path resolved alone, on the working side; dup = duplicate vertex pairs identical / "
+                  "< 1e-9 (N4).")
+
+
+def kc_n5() -> None:
+    print("\nN5 - a self-partner edge that crosses the plane (both ends off the plane, mirror images of each other):")
+    counts = []
+    for asset in ("subd_cube", "head_basemesh", "man_with_shoes_basemesh", "tie_grid", "span_grid"):
+        m = fresh(asset)
+        idx = SymmetryIndex(m)
+        n = sum(1 for e in m.all_edge_ids() if idx.edge_partner(e) == e
+                and any(vpos(m, v)[0] != 0.0 for v in m.edge_vertices(e)))
+        counts.append(f"{asset} {n}")
+    print("  such edges at session start: " + ", ".join(counts))
+    sp = fresh("span_grid")
+    pos = {tuple(vpos(sp, v)): v for v in sp.all_vertex_ids()}
+    bottom = kr.find_edge(sp, pos[(-0.5, 0.0, 0.0)], pos[(0.5, 0.0, 0.0)])
+    top = kr.find_edge(sp, pos[(-0.5, 1.0, 0.0)], pos[(0.5, 1.0, 0.0)])
+    right = kr.find_edge(sp, pos[(0.5, 0.0, 0.0)], pos[(0.5, 1.0, 0.0)])
+    rows = kc_case_rows([
+        ("span_grid", "N5 path: crossing edge t=0.5 -> crossing edge t=0.5 (a chord in the plane)",
+         [("click", T_e(bottom, 0.5)), ("click", T_e(top, 0.5))]),
+        ("span_grid", "N5 path: crossing edge t=0.5 -> right edge t=0.5 (into +X, same face)",
+         [("click", T_e(bottom, 0.5)), ("click", T_e(right, 0.5))]),
+    ])
+    table(CASE_CLIP_HEADER, rows, CASE_CLIP_NOTE)
+    # The halves question in isolation: a hand-made kept log (the resolver never makes it without a
+    # split_face in the self-mirrored face): split the crossing edge at its midpoint (on the plane), then
+    # split its +X half at its midpoint (x = 0.25).
+    out = []
+    for mode in ("identity halves (K-C as run 2026-10-08)", "crossed halves", "strict: refuse (K-C+clip)"):
+        m = fresh("span_grid")
+        mir = Mirror(m)
+        with KeptLog(m) as log:
+            v, ha, hb = m.split_edge(bottom, 0.5)
+            plus_half = ha if any(vpos(m, x)[0] > 0 for x in m.edge_vertices(ha)) else hb
+            m.split_edge(plus_half, 0.5)
+        kept = list(log.calls)
+        try:
+            replay_mirrored(m, kept, mir, strict=mode.startswith("strict"), crossed_n5=mode == "crossed halves")
+            faces = [c for _k, c in canon_faces(m)]
+            sym = sorted(faces) == sorted(mirror_canon(c) for c in faces)
+            out.append([mode, "replayed", f"mirror-symmetric = {sym}, dup {'%d/%d' % duplicates(m)}"])
+        except Unmirrorable as exc:
+            out.append([mode, "refused", str(exc)])
+    table(["half mapping", "result", "detail"], out)
+
+
+def kc(args, fuzz) -> None:
+    section("KC - K-C + side rule + clip (Manu 2026-10-09: F1 = C, the working side is where the cut starts)")
+    KC_GATE.clear()
+    KC_TOTALS.clear()
+    print("Rules as run (section comment in the probe source): side = exact sign of the plane coordinate (0 = on the "
+          "plane, both sides); working side = side of the first mesh record off the plane (points in space do not "
+          "choose it); a cut straight across the plane (no seam record between) is refused (item 9); every maximal "
+          "other-side stretch -> one pen lift (cyclic chains rotated first); kept-call guard; strict replay; E-b "
+          "reference = the clipped path resolved alone.")
+    t_sec = time.perf_counter()
+
+    print("\nR1 / Fall 3 - two chains on both sides, one chain entirely on -X; closed chains across the seam:")
+    table(CASE_CLIP_HEADER, kc_case_rows(r1_cases() + loop_cases()), CASE_CLIP_NOTE)
+
+    print("\nR8 - one run through a seam VERTEX into a non-partner -X face (60 constructed paths):")
+    tallies, examples = [], []
+    for asset in ("tie_grid", "subd_cube", "head_basemesh"):
+        t = ClipTally(f"R8 {asset}")
+        example = None
+        for F, H, acts in seam_vertex_crossings(asset):
+            s = session_from(asset, acts)
+            if not s.ref_ok:
+                t.c["source invalid"] += 1
+                continue
+            old, new = run("K-C", s), run_kc_clip(s)
+            t.add(new, old)
+            if example is None:
+                example = [asset, f"f{int(F)} -> seam vertex -> f{int(H)}", records_string(fresh(asset), session_path(s)),
+                           rule_cell(new), describe(old), describe_clip(new)]
+        tallies.append(t)
+        if example is not None:
+            examples.append(example)
+    print_tallies(tallies, "R8 summary:")
+    table(["mesh", "path", "records", "working side, clip", "K-C (2026-10-08)", "K-C+clip"], examples)
+
+    print("\nK7 - every seam row (cube, head, tie grid; hexagon / span fixtures):")
+    cases = [(asset, label, acts) for asset in ("subd_cube", "head_basemesh", "tie_grid")
+             for label, acts in k7_cases(asset).items()]
+    cases += [(name, label, acts) for (name, label), acts in k7_synthetic().items()]
+    table(CASE_CLIP_HEADER, kc_case_rows(cases), CASE_CLIP_NOTE)
+
+    print("\nK4 / K5 - camera sessions (the Discovery's seeds; the same sessions as K4 / K5 and the review's R2 / R9 / R10):")
+    samples = camera_samples(args)
+    tallies, by_key, r9, excluded, r10 = [], {}, ClipTally("R9: sessions K-C refused"), \
+        ClipTally("K4/K5 sessions excluded there (unclipped source invalid)"), []
+    alt_click = ClipTally("reading 'first click' where it disagrees")
+    alt_space = ClipTally("reading 'with space' where it disagrees")
+    alt_rows: list[list] = []
+    for sec, name, cam_key, i, s in samples:
+        key = (sec, name, cam_key)
+        if key not in by_key:
+            by_key[key] = ClipTally(f"{sec} {name} {cam_key}")
+            tallies.append(by_key[key])
+        if not s.ref_ok:
+            excluded.add(run_kc_clip(s))
+            continue
+        old, new = run("K-C", s), run_kc_clip(s)
+        by_key[key].add(new, old)
+        if old.status.startswith("refused"):
+            r9.add(new, old)
+        rule = new.info.get("rule")
+        if rule is not None and rule.side:
+            if rule.side_first_click and rule.side_first_click != rule.side:
+                alt_click.add(run_kc_clip(s, "first click"), new)
+                kept_mesh = sum(1 for p in rule.path if is_mesh_record(p))
+                alt_click.c["more mesh records dropped than kept"] += rule.dropped - rule.dropped_space > kept_mesh
+                alt_click.c["started in space"] += next((p["kind"] for p in session_path(s) if not is_break(p)), "") == "space"
+                alt_click.c["rule as run: nothing cut"] += new.status == "nothing"
+                alt_rows.append([f"{sec} {name} {cam_key} #{i}", records_string(fresh(name), session_path(s)),
+                                 "first click", rule_cell(new), describe_clip(new)])
+            if rule.side_with_space and rule.side_with_space != rule.side:
+                alt_space.add(run_kc_clip(s, "with space"), new)
+        if sec == "K5" and name == "head_basemesh" and cam_key == "side (+X)" and i == 15:
+            r10.append([f"{sec} {name} {cam_key} #{i}", records_string(fresh(name), session_path(s)),
+                        rule_cell(new), describe(old), describe_clip(new)])
+    print_tallies(tallies + [r9, excluded], "K4 / K5 summary (n = sessions whose unclipped source is valid, as in K4 / K5; "
+                                           "the last row: the sessions K4 / K5 excluded):")
+    print("\nR10 - the K5 session the review found committed as a union (head, side camera, #15):")
+    table(["session", "records", "working side, clip", "K-C (2026-10-08)", "K-C+clip"], r10)
+    print("\nOpen point of the working side: sessions where the first *clicked* mesh record, or the first record "
+          "including points in space, lies on the other side than the first mesh record. Each is run again with "
+          "that reading ('K-C before' column = the rule as run on the same session):")
+    print_tallies([alt_click, alt_space], "Readings compared:")
+    print(f"  'first click' disagreements: {alt_click.c['n']}, of these started with a point in space "
+          f"{alt_click.c['started in space']}; the rule as run dropped more mesh records than it kept in "
+          f"{alt_click.c['more mesh records dropped than kept']} and cut nothing at all in "
+          f"{alt_click.c['rule as run: nothing cut']}")
+    table(["session", "records", "reading", "rule as run (first record)", "result as run"], alt_rows[:8])
+
+    print("\nK10 / R7 - camera-free fuzz on +X faces (K10, seed as K10) and the review's seam-biased fuzz (R7, seed + 77):")
+    if not fuzz:
+        rnd = random.Random(args.seed)
+        fuzz = {a: fuzz_sessions_for(a, rnd, args.fuzz) for a in ("subd_cube", "head_basemesh", "tie_grid")}
+    tallies = []
+    for asset, sessions in fuzz.items():
+        t = ClipTally(f"K10 {asset}")
+        for s in sessions:
+            if s.ref_ok:
+                t.add(run_kc_clip(s), run("K-C", s))
+        tallies.append(t)
+    rnd = random.Random(args.seed + 77)
+    for asset in ("subd_cube", "head_basemesh", "tie_grid"):
+        t = ClipTally(f"R7 {asset}")
+        for s in seam_fuzz(asset, rnd, 60 if args.quick else 400):
+            if s.ref_ok:
+                t.c["touches seam"] += touches_seam(fresh(asset), s.path)
+                t.add(run_kc_clip(s), run("K-C", s))
+        tallies.append(t)
+    print_tallies(tallies, "K10 / R7 summary:")
+    print("  R7 paths with a record on the seam: " + ", ".join(f"{t.label[3:]} {t.c['touches seam']}" for t in tallies[3:]))
+
+    kc_n5()
+
+    print("\nKC totals over every K-C+clip run of this section (case rows, tallies, the readings compared): "
+          + ", ".join(f"{k} {v}" for k, v in KC_TOTALS.items()))
+    print(f"\nKC gate (handoff 2026-10-09 §3.1 target: every K-C+clip result = the clipped working-side cut + its exact "
+          f"mirror, 0 unions): {dict(KC_GATE) if any(KC_GATE.values()) else 'all zero'} "
+          f"({'TARGET MET' if not any(KC_GATE.values()) else 'STOP - see handoff §9'}; section {time.perf_counter() - t_sec:.1f} s)")
+
+
+# =============================================================================================
 # main
 # =============================================================================================
 
@@ -2291,8 +3056,12 @@ def main(argv=None) -> int:
         k11(args, fuzz)
     if want("KD"):
         kd_golden(args)
+    if want("KC"):
+        kc(args, fuzz)
     print(f"\ndone in {time.perf_counter() - t_start:.1f} s")
-    return 0
+    # Exit 1 only when the K-C+clip gate fails (a union, an E-b failure, a duplicate vertex, an exception or a
+    # committed result that is not E ++++): the handoff's stop condition, made visible to the caller.
+    return 1 if any(KC_GATE.values()) else 0
 
 
 if __name__ == "__main__":
