@@ -694,7 +694,7 @@ Based on Disc. §5.4; changes marked **[Δ]** with their evidence. Each slice ke
 | 4 | **Split** — **Done 2026-10-08** (`coordinate_split` in `src/mirai/symmetric_ops.py`, entered in `symmetry_declarations.C_CONTEXT_COORDINATORS` as `CContext.SPLIT`; the Split branch of `Application._connect_command` runs it inside its one `_mesh_transaction` whenever a definition is set, in MARK as in BLOCK; only `CContext.KNIFE` stays undeclared, so the Lab BLOCK row and the named refusals derive automatically (3a); tests `tests/test_symmetric_split.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py` plus the adapted 3a/3b gate and Lab fail-closed tests; measured in this container without `pyglet` (no EGL): `tests` 1941 → 1964 passed / 14 skipped, Lab suite 420 → 428 passed / 8 skipped / 1 failed (the same pre-existing pyglet overlay-order test), `playground/tests` not collectable here (pyglet display), `src/core`, `src/main.py` and `playground/` untouched). Slice 4 practical test by Manu 2026-10-08: **passed, KEEP** (§6) | Source + partner edge in one transaction (seam edge once + S1); t = 0.5 only, no snap; residue question prepared (engineering default, §4); A2 comparison becomes runnable | Disc. step 4 |
 | 5 | **Seam cases** | Seam consumption per the A1 verdict (and the both-sides face case per A1/A2); D-source if A3 chooses it; DD-2 fully closed | Disc. step 5 (seam part). A1 answered 2026-10-08 (§6): Case 1 → M and Extrude → M are now Artist-decided inputs; Case 2 stays refused (Engineering interim rule, Artist UNKNOWN) — *refined 2026-10-08 (§6): an edge directly on the seam stays refused, an edge crossing the seam is dissolved via seam rule S2 (see Implementation note S2)*. No longer fully blocked on A1 |
 | 6 | **Knife** | Symmetry context at `begin`, mirror records before resolution, pid → vertex report, **snap**, S1, seam-chord rule, mirrored preview (INV-11), **tie-break equivariance** | Disc. step 6. **[Δ]** tie-break is a known defect now (probe I); the snap lives here (review F6). *Discovery 2026-10-08: see [SYMMETRY_KNIFE_DISCOVERY.md](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (no decision).* *Addendum 2026-10-09 (**DECIDED**, Manu 2026-10-09, §10; slice 6a built): K-C with side rule and clip — "mirror the kept mutations at the commit" instead of "mirror records before resolution"; revised slices 6a–6d (§10.8); after the independent review [CLAUDE-001 of the Knife Discovery](../archive/symmetry_lab/reviews/SYMMETRY_KNIFE_DISCOVERY_REVIEW_CLAUDE_001.md) (answered in the Discovery's §7).* |
-| 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7 |
+| 7 | **Extrude** | After a Production port (owner, Disc. Q6) | Disc. step 7. **Done 2026-10-09** (WP-SYM-EXTRUDE-01; `src/mirai/symmetric_extrude.py`, `tests/test_symmetric_extrude.py`, `experiments/symmetry_lab/tests/test_app_lab_symmetric_extrude.py`; `tests` 2145 → 2224 passed / 41 skipped, Lab suite 450 → 464 passed / 4 skipped, in this container with pyglet under xvfb). As built, probe and findings: §11. **Artist verdict pending**; the one Artist statement is the Case 4 refusal (§11.1). |
 
 **Unblocked after the 2026-10-08 decision:** slices 1 and 2 now (no gate change, no open verdict). Slice 3 only
 after the AD-013 H2 amendment (G-2) is written and reviewed — **done: DECIDED 2026-10-08** (pointer in §5); **3a, 3b and 3c implemented 2026-10-08** (3a/3b verified by Manu the same day; 3c practical test answered, §6 second round; S2 practical test passed, step 1 KEEP, 2026-10-08). **Slice 4 (Split) implemented 2026-10-08**, practical test passed (KEEP, §6). Slice 5 is no longer fully blocked on A1 (see its row); A2 = A and A3 = S are inputs to slices 3–4.
@@ -1123,3 +1123,101 @@ Bis zu deiner Antwort gilt „erster Punkt auf dem Mesh“; der Praxistest in 6c
 Symmetrie blockiert bzw. einseitig wie heute).
 
 **Antwort (Manu, 2026-10-09): ACCEPT.** F6: „offen lassen (die Idee ist, später bei Start im leeren Raum ein Slice zu starten, ist jetzt aber erstmal irrelevant)“.
+
+
+## 11. Addendum (2026-10-09) — Extrude (slice 7), as built
+
+**Status: implemented; every item below is Engineering / PROVISIONAL except the Artist statements in 11.1. Artist verdict on the
+symmetric Extrude: pending** (practical test in `experiments/symmetry_lab/README.md`, "Slice 7"). Nothing in §3, §6 or §10 changes;
+no decided item is touched. WP-SYM-EXTRUDE-01, `src/core/` unchanged, no promotion (`src/main.py` never sets a definition).
+
+### 11.1 What the Artist has said (as recorded) and what this addendum does not decide
+
+- **A1 Case 3 = M** (2026-10-08, §6): Extrude at the seam — the seam follows the mesh, the cap edge becomes the new seam.
+- **A3 = S, "for now"** (D-strict): a selection or result without a mirror partner is refused visibly.
+- 2026-10-09: Extrude (hold `T`, WP-06 B9) KEEP; Knife under symmetry KEEP; the symmetric Extrude comes next. Key `T` unchanged.
+- **2026-10-09 (Manu, "Case 4"): an Extrude that touches the seam only at a corner, and plane-spanning faces → refuse visibly,
+  for now.** *Scope of this statement: the refusal only.* Whether the proper fix (one cap vertex per component and old vertex) will be
+  built is **neither decided nor rejected here**; it stays a Discovery finding (11.5, F-1).
+
+Not an Artist decision, said so in the code and here: the selection after the commit (11.2, X8), all refusal texts, the working-side rule (X5).
+
+### 11.2 As built — X1 … X10 (handoff numbering)
+
+| # | As built | Label |
+|---|---|---|
+| X1 | Shape of the Knife's session coordinator. `mirai/symmetric_extrude.py` (imports `symmetric_ops`, `symmetry_coordination`, `symmetry`, `topology.extrude` for the Newell normal, `core`; never `application`). `plan_extrude(mesh, faces) -> SymmetricExtrudePlan` runs before any mutation; `Application._extrude_begin` hands the plan to the **unchanged** tool as `begin(..., symmetric_plan=plan)`. `topology/extrude.py` imports nothing from symmetry (a test pins it) and recognises a refusal by the marker `commit_refusal` on the exception (`ExtrudeRefusal`, a `SymmetryRefusal`), like `KnifeTool`. No `SymmetricExtrudeTool` copy. Without a plan the tool's code path is the B9 one (same arithmetic, same order). | Engineering, PROVISIONAL |
+| X2 | Declaration (D-b): a third table `EXTRUDE_COORDINATORS = {commands.EXTRUDE: plan_extrude}` and `declared_extrude_commands()` in `symmetry_declarations.py`, in the style of the other two. The Lab derives from it: the BLOCK row allows `Extrude`, `e5_warning_text` warns about an *undeclared* Extrude in MARK (a warning that did not exist before, because `Extrude` is no `TRANSFORM_OPERATIONS` entry; with the real table it never shows). `Application` runs the planner whenever a definition is set, in MARK as in BLOCK. No definition → no planner → the B9 Extrude (B9 suites untouched and green). | Engineering, PROVISIONAL |
+| X3 | Refusals before any mutation, in this order: non-exact plane (`TEXT_NON_EXACT_PLANE`), unpaired faces (`TEXT_UNPAIRED`), a face spanning the plane (`TEXT_EXTRUDE_SPANNING`), a plane vertex the extrusion cannot mirror cleanly (`TEXT_EXTRUDE_CORNER`). Union = selected ∪ partners (`expand_faces`), a mirror pair selected together counts once. The two new refusals are the **Artist's Case 4 statement** (11.1); the *texts* are Engineering defaults. "Spanning" = the face is its own mirror **or** has vertices strictly on both sides (a crossing face that is not its own mirror would break the working-side rule). The corner rule is stated at the **plane vertex**: the boundary of the extruded region (edges at the vertex with exactly one union face — the tool's own boundary rule) must pass it exactly twice (one arc through the seam: a pair across a seam edge, or that pair plus neighbours) or not at all (the whole star is extruded). Anything else (two separate seam contacts, or a face touching only at the vertex) gives a wall edge `S–S'` with four faces and a plane vertex without a seam edge. | Case 4 refusal: **Artist statement**; rule, texts: Engineering |
+| X4 | Exact by construction, no tolerance. Every update hands the tool's own cap positions to `plan.place`: working-side vertices keep them, a vertex on the plane gets the plane coordinate exactly (`plane_point[axis]`, 0.0 on an exact plane), the other side is `mirror_position` of the partner's. A vertex's side is the exact sign of its plane coordinate; its partner is `SymmetryIndex.vertex_partner`. The "one old vertex in two components, last write wins" corner case of the unchanged tool is covered by the same projection (and, for the plane, by the X3 corner rule). | Engineering, PROVISIONAL |
+| X5 | Distance scalar. Working side = the side holding more of the **live** faces (selection, or the hovered face when nothing is selected), tie → the plane normal's side. The reference normal is the sum of the **live faces on the working side** (union faces on that side if none), so mirrored faces no longer cancel. Dragging outward on the face you selected extrudes outward on both sides; the result is the same mirror image whichever side you work on (measured: worst deviation 4.4e-16 on `head_basemesh`, 5.6e-17 on `subd_cube`, three axes — float noise between two *different* gestures; within one result the mirrors are bit-identical). | Engineering, PROVISIONAL (the rule is the proposal, the two properties are the acceptance criteria) |
+| X6 | Seam rule S3, 11.3. | Case 3 = M **Artist**; the mechanism Engineering |
+| X7 | Delta check at the commit, not per update: `completeness_report` at `plan_extrude`, `delta_check` in `plan.finish` after S3. A violation → `ExtrudeRefusal(TEXT_DELTA)`: the tool restores the exact prior state (`load_state(before)`, selection restored), pushes no history, `tool.refusal` carries the text, `Application._extrude_release` shows it (the B9 abort path with a different status). Any other exception from `finish` also restores the mesh and then propagates. | Engineering, PROVISIONAL |
+| X8 | One `MeshStateCommand`, as before; the seam definition travels in the state, so Undo/Redo restore it with the mesh. Selection after the commit = the new cap faces **on the residue sides** (`residue_sides` of the live faces before, `on_residue_sides` after) — **the same Engineering default as Connect/Split (§4), explicitly not an Artist decision for Extrude**. Undo restores the previous selection (B9 mechanism unchanged). | Engineering default, **no Artist decision** |
+| X9 | `_gate_refuses` is unchanged and runs before arming. With the declaration Extrude is allowed under BLOCK and MARK; the X3/X7 refusals apply in both modes. | Engineering |
+| X10 | Nothing else changed: W/E/R, the Knife, `C`, Delete/Dissolve, the B9 lifecycle without symmetry, `src/main.py`. | — |
+
+### 11.3 Seam rule S3 (`symmetry_coordination.seam_after_extrude`)
+
+A seam edge the extrusion consumed (a face pair across the seam makes it an internal edge; the tool's prune removes it) is dropped, and the
+cap edge that joins the new vertices of that edge's two ends becomes a seam edge. Pure: ids and incidence only (`seam_ends_before`, the mesh
+after, the tool's old → new vertex map), no geometry, no tolerance; a consumed edge whose ends have no cap copy or whose cap edge is not found keeps
+its dead id, so the delta check (rule 2) refuses instead of S3 guessing. Written inside the same mutation (`mesh.symmetry_definition = …` before
+the history state is exported). Surviving seam edges stay. One seam edge in, one out per consumed edge (tested on both assets, three axes).
+
+### 11.4 Step 0 probe (before any wiring; throw-away scripts, now the tests)
+
+Mesh: `subd_cube`, `head_basemesh` (planes X, Y, Z), plus synthetic `span_grid`, `hexagon_grid` and a valence-5 seam pole (`tests/test_symmetric_extrude.py`).
+"Naive" = the unchanged tool on selection ∪ partners, no plan. "Proposed" = X4–X6.
+
+| # | Case | Naive | Proposed (X4–X6) |
+|---|---|---|---|
+| a | one face + partner | partners resolve; **delta fails** (head: 8 created vertices without partner; cube X/Y: 4; cube Z passes by float luck) | OK on all 24 / 324 faces × 3 axes |
+| b | face with an edge on the seam | delta fails; **1 dead seam id** ("seam edge consumed") on every asset and axis | OK, seam definition has no dead id, seam vertices exactly on the plane |
+| c | faces touching the plane only at a corner | no such face on either asset (0 faces with exactly one plane vertex). Synthetic pole: fails (1 created vertex without partner; wall edge `S–S'` with **4 faces**) | **cannot be handled by S3** → Artist: refuse visibly (11.1); the probe is why |
+| d | both sides selected | fails like (a) | OK, same result as selecting one side |
+| e | negative distance | fails on the head, passes on the cube | OK |
+| f | self-mirrored face | the assets have none. `span_grid`: delta refuses ("3 new face(s) spanning the plane"); `hexagon_grid`: same unpaired-plane-vertex failure as (c) | refused before any mutation (`TEXT_EXTRUDE_SPANNING`, Artist statement) |
+| g | non-X plane | Y and Z behave like X | OK |
+
+Created vertices: bit-identical mirrors, seam vertices exactly on the plane (no tolerance), checked on every committed result. Hypotheses of the
+handoff: (i) naive union breaks on (c) — **confirmed, and X4 does not repair it** (the contradiction that stopped the first pass); (ii) dead seam
+id on (b) — **confirmed**; (iii) distance scalar misbehaves for left/right faces — **confirmed** (a pure ±X wall pair: the unchanged tool falls back
+to Z and the distance of an outward drag is 0.0; with X5 it is the drag); (iv) partner matching fails through non-bit-identical normals —
+**confirmed in part** (the head always, the cube depending on the axis). A fuzz over every single face and 240 seeded random selections of 1–6 faces on the two assets found no refusal and no
+commit failure.
+
+### 11.5 Findings for Discovery (listed, not acted on)
+
+- **F-1 (the Case 4 root cause).** The unchanged tool creates one cap vertex per *old vertex*. At a plane vertex where the region's boundary passes more
+  than twice, that one cap vertex is shared by the caps of both mirror components: it lies on the plane without a seam edge (unpaired), and the edge
+  `S–S'` carries four wall faces (non-manifold). The candidate fixes are a cap vertex per component and old vertex, or a seam rule for the wall edge —
+  **neither is built, decided or rejected.** The same non-manifold edge exists in B9 without symmetry for two faces touching at an off-plane corner;
+  unchanged.
+- **F-2.** The shipped assets contain no corner-touching face and no self-mirrored face, so the Case 4 refusals cannot be seen on them; they are tested on
+  synthetic meshes. The practical test point 4 therefore cannot be performed on `head_basemesh`.
+- **F-3.** The corner rule also refuses two *separate* pairs across two different seam edges at one seam vertex (not only "a corner"); the text says
+  "nur an einer Ecke", which is approximate there.
+- **F-4.** Before this slice MARK showed no warning for a one-sided Extrude (`Extrude` is not in `TRANSFORM_OPERATIONS`); the derived warning exists now
+  but only appears with an undeclared table.
+- **F-5.** In the Lab `Shift+S` is an Undo step of its own, so "one Undo step" in Lab tests is counted relative to the history length at the start.
+- **F-6.** The delta text for a rejected commit ("neue Elemente ohne Partner") is generic; with the pre-checks it should now only appear for a bug or a
+  Core-level surprise.
+
+### 11.6 Tests and existing tests changed
+
+New: `tests/test_symmetric_extrude.py` (79: Step-0 cases × assets × axes, S3 pure, scalar and side properties, fuzz, refusals, delta refusal at the commit,
+Undo/Redo/cancel incl. the seam, layering, B9 equivalence without a plan) and `experiments/symmetry_lab/tests/test_app_lab_symmetric_extrude.py` (16: declaration,
+BLOCK row, MARK warning mechanism, `T` coordinated in BLOCK and MARK, residue sides, refusals, symmetry off).
+Changed because Extrude is now declared (each states the old pin): `test_app_lab_fail_closed.py` (`test_t_fc1_…six_unwired_commands` → five, and the helper
+`refused_by_the_row` spares the declared Extrude), `test_app_lab_symmetric_knife.py` (the BLOCK allow-list includes the declared Extrude), and `_app_lab_support.declare`
+(an `extrude=` argument; the "nothing declared" state empties the new table too). Two parametrised T-FC1 cases (`[Extrude]`) left the refused set, hence 450 + 16 − 2 = 464.
+Full runs, once, at the end: `tests` 2224 passed / 41 skipped / 68 subtests, Lab 464 passed / 4 skipped (baseline on the same container 2145 / 41 and 450 / 4).
+
+### 11.7 Not decided here / Was Manu entscheidet (Deutsch)
+
+- Verdikt über den symmetrischen Extrude (Praxistest im Lab-README, Slice 7): KEEP / ITERATE / REJECT / UNKNOWN. Ist die Mittelkante an der Naht so, wie du sie
+  erwartest (M)? Ist die Auswahl danach (Deckel auf der Seite, auf der du gearbeitet hast) so gewünscht? Beides ist eine Arbeitsregel, noch nicht dein Verdikt.
+- Case 4 (Ecke an der Mitte, Fläche über der Mitte): **abgelehnt, vorerst** (deine Aussage vom 2026-10-09). Offen bleibt, ob später der Deckel an so einer Ecke einen
+  eigenen Punkt pro Komponente bekommen soll (F-1) — nicht entschieden.
+- Texte der Ablehnungen, Arbeitsseiten-Regel (Auswahl-Mehrheit, Gleichstand → Seite der Ebenennormalen).

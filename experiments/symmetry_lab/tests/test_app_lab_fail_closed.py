@@ -154,23 +154,26 @@ def refused_by_the_row() -> list[str]:
     spared = (
         NON_OPERATION
         | declarations.declared_removal_commands()
+        | declarations.declared_extrude_commands()
         | frozenset(TRANSFORM_OPERATIONS)
         | ({cmd.CONNECT} if declarations.declared_c_contexts() else set())
     )
     return sorted(command_constants() - spared)
 
 
-def test_t_fc1_the_refused_set_contains_the_six_unwired_commands():
+def test_t_fc1_the_refused_set_contains_the_five_unwired_commands():
+    """Six until slice 7: `Extrude` is declared now (`symmetric_extrude`), like `Connect` and the removal
+    commands before it."""
     refused = set(refused_by_the_row())
-    six = {
+    five = {
         cmd.SPLIT_EDGE,
         cmd.COLLAPSE,
         cmd.LOOP_INSERT,
         cmd.LOOP_SLIDE,
-        cmd.EXTRUDE,
         cmd.ARTICULATION_RESTORE,
     }
-    assert six <= refused
+    assert five <= refused
+    assert cmd.EXTRUDE not in refused  # seit Slice 7 deklariert
     assert {cmd.EDGE_LOOP, cmd.EDGE_RING} <= refused  # bewusst nicht in NON_OPERATION
     assert cmd.CONNECT not in refused  # seit 3b deklariert: pro Kontext, nicht per Identität
     assert not refused & NON_OPERATION

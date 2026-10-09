@@ -105,6 +105,10 @@ CONNECT_LABEL = "C"
 #: (die Warnung folgt den Deklarationen) bleibt und ist mit einem undeklarierten Kontext getestet.
 KNIFE_ONE_SIDED_TEXT = "Knife läuft einseitig — Symmetrie aktiv"
 
+#: Dasselbe für Extrude (AD-SYM-03 Slice 7): seit der Deklaration (`symmetric_extrude`) erscheint die
+#: Zeile mit den echten Deklarationen nie; der Mechanismus ist mit einer undeklarierten Tabelle getestet.
+EXTRUDE_LABEL = "Extrude"
+
 #: Anzeigenamen der vier C-Operationskontexte für die Ablehnungstexte (H2-Amendment,
 #: § Proposal 2 „Texts"): eine kleine Lab-Tabelle, nie die Enum-Namen. `CContext.NONE`
 #: ist keine Operation und steht nicht darin.
@@ -293,6 +297,7 @@ def block_row() -> GateRow:
 
     allowed          = NON_OPERATION
                        ∪ deklarierte Removal-Commands
+                       ∪ deklarierte Extrude-Commands (Slice 7)
                        ∪ {Connect}, wenn mindestens ein C-Kontext deklariert ist
                        ∪ Transform-Commands mit `supports_symmetry`
     refused          = unsupported_commands() (benannter Text, vor der Allow-List geprüft)
@@ -301,7 +306,9 @@ def block_row() -> GateRow:
     Nur eine Funktion der Deklarationen und der `supports_symmetry`-Flags; gleiche Eingaben →
     gleiche (`==`) Zeile, so vergleicht `sync_gate`."""
     declared_contexts = declarations.declared_c_contexts()
-    allowed = set(NON_OPERATION | declarations.declared_removal_commands())
+    allowed = set(
+        NON_OPERATION | declarations.declared_removal_commands() | declarations.declared_extrude_commands()
+    )
     allowed.update(command for command in TRANSFORM_OPERATIONS if supports_symmetry(command))
     if declared_contexts:
         allowed.add(cmd.CONNECT)
@@ -383,11 +390,14 @@ def startup_listing() -> list[str]:
     )
     contexts = declarations.declared_c_contexts()
     removal = declarations.declared_removal_commands()
+    extrude = declarations.declared_extrude_commands()
     lines.append(
         "Deklarationen (mirai.symmetry_declarations): C-Kontexte "
         + (", ".join(sorted(CONTEXT_NAMES.get(c, c.name) for c in contexts)) or "keine")
         + "; Removal "
         + (", ".join(sorted(removal)) or "keine")
+        + "; Extrude "
+        + (", ".join(sorted(extrude)) or "keine")
     )
     lines.append("Kontextuelle App-Taste (AD-013 D1):")
     lines.append(f"  {CANCEL_PREVIEW_LINE}")
@@ -725,6 +735,9 @@ def e5_warning_text(lab: SymmetryAppLab) -> str:
     command = app.transform_command
     if command in TRANSFORM_OPERATIONS and not supports_symmetry(command):
         return one_sided_text(TRANSFORM_OPERATIONS[command][0])
+    if command == cmd.EXTRUDE and command not in declarations.declared_extrude_commands():
+        # Slice 7: Extrude is declared; the warning follows the declaration like the Knife's.
+        return one_sided_text(EXTRUDE_LABEL)
     return ""
 
 

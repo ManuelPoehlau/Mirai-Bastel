@@ -1669,16 +1669,35 @@ class Application:
         return True
 
     def _extrude_begin(self) -> bool:
-        """Start the Extrude (topology changes here). False = refused, tool disarmed."""
+        """Start the Extrude (topology changes here). False = refused, tool disarmed.
+
+        AD-SYM-03 slice 7: whenever a symmetry definition is set the declared planner
+        (`symmetry_declarations.EXTRUDE_COORDINATORS`, D-b - the declaration is the only switch) runs
+        first, in MARK as in BLOCK (H2 amendment, "Runtime refusals are not G-3"): it refuses before any
+        mutation (`SymmetryRefusal`: status text, mesh/history/selection untouched, tool disarmed) or
+        returns the plan - selection plus mirror partners as one intent - that the unchanged tool is handed.
+        Without a definition the tool runs exactly as in B9."""
         self._extrude_selection_before = self._selection_snapshot()
+        faces = set(self._extrude_faces)
+        context = {"scene": self.scene, "camera": self.camera}
+        planner = (
+            symmetry_declarations.EXTRUDE_COORDINATORS.get(commands.EXTRUDE)
+            if self.scene.mesh.symmetry_definition is not None
+            else None
+        )
+        if planner is not None:
+            try:
+                plan = planner(self.scene.mesh, faces)
+            except SymmetryRefusal as exc:
+                self._transform_end()
+                self._set_status(str(exc))
+                self._refresh_hover()
+                return False
+            faces = set(plan.face_ids)
+            context["symmetric_plan"] = plan
+        context["face_ids"] = faces
         try:
-            self.tool_manager.begin_current_interaction(
-                {
-                    "scene": self.scene,
-                    "camera": self.camera,
-                    "face_ids": set(self._extrude_faces),
-                }
-            )
+            self.tool_manager.begin_current_interaction(context)
         except TopologyToolError as exc:
             self._transform_end()
             self._set_status(f"Extrude: refused — {exc}")
@@ -1707,7 +1726,15 @@ class Application:
             self._extrude_abort()
             self._set_status("Extrude: no change")
             return
+        tool = self.tool_manager.active_tool
         self.tool_manager.commit()
+        if tool.refusal is not None:
+            # A symmetric commit the coordinator refused (delta): the tool has taken everything back, no
+            # history entry. Same exact prior state as an abort, with the refusal as the visible status.
+            self._restore_selection(self._extrude_selection_before)
+            self._extrude_topology_changed()
+            self._set_status(tool.refusal)
+            return
         self._record_selection_history(self._extrude_selection_before)
         self._extrude_topology_changed()
         self._set_status("Extrude committed")

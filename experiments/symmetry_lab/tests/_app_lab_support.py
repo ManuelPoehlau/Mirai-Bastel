@@ -84,11 +84,12 @@ def visible(app: Application) -> list:
     return hits
 
 
-def declare(monkeypatch, contexts=(), removal=()) -> None:
+def declare(monkeypatch, contexts=(), removal=(), extrude=False) -> None:
     """Patcht die Deklarationstabellen; `declared_*` lesen bei jedem Aufruf. Ein Kontext mit echtem
     Koordinator (Split, Edge/Vertex Connect, Slice 3b/4) behält ihn, damit `Application` ihn aufrufen kann;
     für die übrigen steht ein Platzhalter (`Application` liest dafür keinen Koordinator).
-    `declare(monkeypatch)` stellt den Zustand „nichts deklariert“ her (3a)."""
+    `declare(monkeypatch)` stellt den Zustand „nichts deklariert“ her (3a); der Extrude-Planer (Slice 7)
+    gehört dazu: `extrude=True` behält den echten, sonst ist die Tabelle leer."""
     real = dict(declarations.C_CONTEXT_COORDINATORS)
     monkeypatch.setattr(
         declarations,
@@ -99,6 +100,11 @@ def declare(monkeypatch, contexts=(), removal=()) -> None:
         declarations,
         "REMOVAL_COORDINATORS",
         MappingProxyType({command: object() for command in removal}),
+    )
+    monkeypatch.setattr(
+        declarations,
+        "EXTRUDE_COORDINATORS",
+        declarations.EXTRUDE_COORDINATORS if extrude else MappingProxyType({}),
     )
 
 

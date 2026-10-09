@@ -31,6 +31,14 @@ Lifecycle:
                                           returns frozenset[FaceId] (neue Caps)
     cancel()                            → mesh.load_state(before), Selection restore
     deactivate()
+
+Symmetrie (AD-SYM-03 Slice 7): `begin(symmetric_plan=...)` nimmt optional ein Plan-Objekt
+(`mirai.symmetric_extrude.SymmetricExtrudePlan`, duck-typed wie `KnifeTool`s `symmetric_commit`; dieses
+Modul importiert nichts aus der Symmetrie). Der Plan liefert die Referenz-Normale für die Distanz
+(`reference_normal`), platziert die Cap-Vertices spiegelbildlich (`place`), pflegt beim Commit Seam und
+Delta (`finish`) und wählt die Selection danach (`residue`). Eine Ablehnung beim Commit erkennt das Tool
+an `commit_refusal` auf der Exception: Commit zurückgenommen, keine History, `refusal` trägt den Text.
+Ohne Plan ist das Verhalten unverändert.
 """
 
 from __future__ import annotations
@@ -110,6 +118,14 @@ class ExtrudeTool(Tool):
         self._before_sel_mode: SelectionMode | None = None
         self._before_sel_faces: frozenset = frozenset()
         self._total_distance: float = 0.0
+        self._symmetric = None  # optionaler Plan (siehe Modul-Docstring)
+        self._refusal: str | None = None
+
+    @property
+    def refusal(self) -> str | None:
+        """Text der Symmetrie-Ablehnung des letzten `commit()` (None = kein Commit abgelehnt); in diesem
+        Fall wurde das Mesh exakt zurückgesetzt und kein History-Eintrag erzeugt."""
+        return self._refusal
 
     @property
     def new_face_ids(self) -> frozenset[FaceId]:
@@ -127,7 +143,7 @@ class ExtrudeTool(Tool):
 
     # -- Tool hooks ----------------------------------------------------------
 
-    def _on_begin(self, scene, camera, face_ids: set[FaceId], **_: Any) -> None:
+    def _on_begin(self, scene, camera, face_ids: set[FaceId], symmetric_plan=None, **_: Any) -> None:
         # Validation first: a refused begin must leave the mesh and the tool untouched.
         mesh = scene.mesh
         face_ids_frozen = frozenset(face_ids)
@@ -142,6 +158,8 @@ class ExtrudeTool(Tool):
 
         self._scene = scene
         self._camera = camera
+        self._symmetric = symmetric_plan
+        self._refusal = None
 
         # Snapshot vor jeder Mutation
         self._before_state = mesh.export_state()
@@ -171,6 +189,10 @@ class ExtrudeTool(Tool):
             nx += fn[0]; ny += fn[1]; nz += fn[2]
         length = (nx * nx + ny * ny + nz * nz) ** 0.5
         self._normal = (nx / length, ny / length, nz / length) if length >= 1e-12 else (0.0, 0.0, 1.0)
+        if self._symmetric is not None:
+            # Gespiegelte Faces heben sich in der Summe auf: unter Symmetrie misst die Seite, auf der
+            # gearbeitet wird (X5).
+            self._normal = self._symmetric.reference_normal
 
         # Komponenten-Normale pro zusammenhängender Gruppe.
         # Jeder Vertex bekommt die Normale seiner Komponente. Corner-Case: ein
@@ -258,17 +280,32 @@ class ExtrudeTool(Tool):
         gx, gy, gz = self._normal
         self._total_distance += world_delta[0] * gx + world_delta[1] * gy + world_delta[2] * gz
 
-        for old_vid, new_vid in self._old_to_new.items():
+        placed = {}
+        for old_vid in self._old_to_new:
             orig = self._original_positions[old_vid]
             vn = self._vertex_normal[old_vid]  # Komponenten-Normale dieses Vertex
-            mesh.set_vertex_position(new_vid, (
+            placed[old_vid] = (
                 orig[0] + vn[0] * self._total_distance,
                 orig[1] + vn[1] * self._total_distance,
                 orig[2] + vn[2] * self._total_distance,
-            ))
+            )
+        if self._symmetric is not None:
+            placed = self._symmetric.place(placed)  # exakt gespiegelt, Seam-Vertices auf der Ebene (X4)
+        for old_vid, new_vid in self._old_to_new.items():
+            mesh.set_vertex_position(new_vid, placed[old_vid])
 
-    def _on_commit(self) -> frozenset[FaceId]:
+    def _on_commit(self) -> frozenset[FaceId] | None:
         mesh = self._scene.mesh
+        if self._symmetric is not None:
+            # Seam und Delta vor dem Export: der Endzustand (samt Seam-Definition) ist der History-Zustand.
+            try:
+                self._symmetric.finish(mesh, self._old_to_new)
+            except Exception as exc:
+                self._on_cancel()  # was auch schiefging: exakter Vorzustand, keine History
+                if not getattr(exc, "commit_refusal", False):
+                    raise
+                self._refusal = str(exc)
+                return None
         after = mesh.export_state()
         self._scene.history.push(
             MeshStateCommand(
@@ -282,6 +319,8 @@ class ExtrudeTool(Tool):
         sel.clear()
         sel.mode = SelectionMode.FACE
         valid = {fid for fid in self._new_face_ids if mesh.is_valid_face(fid)}
+        if self._symmetric is not None:
+            valid = set(self._symmetric.residue(mesh, valid))  # Deckel auf den Arbeitsseiten (X8)
         if valid:
             sel.set(valid)
         return self._new_face_ids
@@ -312,6 +351,8 @@ class ExtrudeTool(Tool):
         self._before_sel_mode = None
         self._before_sel_faces = frozenset()
         self._total_distance = 0.0
+        self._symmetric = None
+        self._refusal = None
 
     # -- Intern --------------------------------------------------------------
 

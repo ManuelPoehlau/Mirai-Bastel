@@ -1234,3 +1234,17 @@ Slice 4 declared the Split context. Nothing here changes the decision.
   one-sided MARK Split now expect the coordinated result; the test helper `declare(monkeypatch)` keeps the real
   coordinator for Split too. New: `tests/test_symmetric_split.py`,
   `experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py`.
+
+### Implementation note (2026-10-09, AD-SYM-03 slice 7, cross-reference only)
+
+Slice 7 declared Extrude. Nothing here changes the decision or any H2 contract (`interaction_owner`, `CommandGate`, the
+gate rows).
+
+- **A third declaration table, same reader rules.** `symmetry_declarations.EXTRUDE_COORDINATORS` maps `commands.EXTRUDE`
+  to the planner `plan_extrude` (`src/mirai/symmetric_extrude.py`), read through `declared_extrude_commands()` at every
+  call. The table holds no gate data (H2-R6). The Lab reads it where it reads the others (H2-R4 (h)): `block_row()` adds
+  the declared Extrude commands to `allowed`; `e5_warning_text` warns about an *undeclared* Extrude in MARK (with the
+  real table it never shows). `Application._extrude_begin` runs the planner whenever a definition is set, in MARK as in
+  BLOCK ("Runtime refusals are not G-3"); `_gate_refuses` is unchanged and runs before arming.
+- **Test changes this legitimately caused:** `test_t_fc1_…` "six unwired commands" → five (`Extrude` joins `Connect` and
+  the removal commands); the `declare` helper gains an `extrude=` argument. Details: AD-SYM-03 §11.6.

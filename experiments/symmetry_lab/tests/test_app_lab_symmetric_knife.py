@@ -114,6 +114,7 @@ def test_the_block_row_names_no_context_and_its_allow_list_is_what_it_was():
         NON_OPERATION
         | frozenset(TRANSFORM_OPERATIONS)
         | declarations.declared_removal_commands()
+        | declarations.declared_extrude_commands()
         | {cmd.CONNECT}
     )
     assert cmd.KNIFE_COMMIT in gate.allowed and cmd.KNIFE_LIFT in gate.allowed

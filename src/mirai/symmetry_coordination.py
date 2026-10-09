@@ -330,6 +330,35 @@ def seam_without_dead_ids(mesh: Mesh) -> SymmetryDefinition:
     return SymmetryDefinition(definition.plane_point, definition.plane_normal, alive)
 
 
+def seam_after_extrude(
+    definition: SymmetryDefinition,
+    seam_ends_before: Mapping[EdgeId, tuple[VertexId, VertexId]],
+    mesh: Mesh,
+    old_to_new: Mapping[VertexId, VertexId],
+) -> SymmetryDefinition:
+    """Seam rule S3 (AD-SYM-03 §6 A1 Case 3 = M, Artist 2026-10-08: "the seam follows the mesh, the cap edge
+    becomes the new seam"): a seam edge that an Extrude consumed - a face pair across the seam makes it an
+    internal edge, it dies - is replaced by the cap edge that joins the new vertices of its two ends.
+
+    `seam_ends_before` holds the endpoints of every seam edge valid **before** the op, `mesh` is the mesh
+    **after** it, `old_to_new` the Extrude's old vertex -> cap vertex map. Ids and incidence only, no geometry
+    and no tolerance. A consumed seam edge whose ends have no cap copy, or for which the cap edge is not found,
+    keeps its dead id: the delta check (rule 2) then refuses. Seam edges that survived stay. Returns a new
+    definition; the caller writes it inside the same mutation, so Undo restores the old seam with the mesh."""
+    seam = set(definition.seam_edges)
+    for edge, (a, b) in seam_ends_before.items():
+        if edge not in seam or mesh.is_valid_edge(edge):
+            continue
+        new_a, new_b = old_to_new.get(a), old_to_new.get(b)
+        if new_a is None or new_b is None:
+            continue
+        cap = [e for e in mesh.vertex_edges(new_a) if new_b in mesh.edge_vertices(e)]
+        if len(cap) == 1:
+            seam.discard(edge)
+            seam.add(cap[0])
+    return SymmetryDefinition(definition.plane_point, definition.plane_normal, frozenset(seam))
+
+
 # ---------------------------------------------------------------------------------------------
 # Completeness report and delta check
 # ---------------------------------------------------------------------------------------------
