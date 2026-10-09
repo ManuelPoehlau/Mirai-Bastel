@@ -280,3 +280,17 @@ Commit entstehen werden (auch Blender Verhalten)"*.
 - This supersedes the UX2 rule "a click outside the mesh does nothing" (UX2 D6) and resolves UX2-b.
 
 Record, defaults and open points S4-a…c: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 S4".
+
+## Addendum 2026-10-09 (Manu: bug report on `run.py subd_cube`) — the commit check accepts folds that were already there
+
+**2026-10-09 (append-only — the text above is unchanged):** Report: with the top 4 faces of `subd_cube` pushed into the cube (a
+bowl), every Knife cut on the outer or inner walls ended in *"Knife: result taken back (a face would be flipped against its
+neighbour), nothing committed"*. Manu: cutting must be allowed in such cases too. Confirmed fixed in the app.
+- **Cause:** `integrity_problem` (`src/mirai/topology/knife_resolve.py`, the commit check) rejected a touched face whose
+  neighbour faces the opposite way (normals' dot < -0.5). The rim of a bowl is exactly such a fold (~180°) *before* the cut; the
+  cut's new faces inherit it along the old edge, so the check blamed the Knife for geometry the Artist had built.
+- **Rule now:** that finding is dropped when the same segment lay on an old edge that was already folded the same way in the
+  session-start state (`_fold_existed`). A fold the cut itself creates has no folded old edge under it and is still taken back
+  whole. All other checks (area, self-crossing, winding against the neighbour, > 2 faces per edge) are unchanged.
+- **Tests:** `tests/test_knife_resolve.py` — `test_cut_next_to_an_existing_fold_is_kept`,
+  `test_a_cut_that_makes_a_flip_is_still_taken_back`.
