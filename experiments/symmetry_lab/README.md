@@ -111,11 +111,11 @@ Kontext Knife keinen Koordinator hat (seit Slice 6c hat er einen).
 | Zustand | C | W/E/R | HUD |
 |---|---|---|---|
 | Symmetrie aus (Modus egal) | wie in der App | wie in der App | kein `E5:` |
-| Symmetrie an, **BLOCK** (Default) | Split/Edge Connect/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); der Knife (leere Auswahl) startet seit Slice 6c eine koordinierte Session (Abschnitt unten); ein undeklarierter Kontext würde mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt, ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
-| Symmetrie an, **MARK** | Split, Edge/Vertex Connect, Delete/Dissolve und der Knife laufen koordiniert (mit denselben Ablehnungen wie BLOCK); ein undeklarierter Kontext läuft einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
+| Symmetrie an, **BLOCK** (Default) | Extrude (`T` halten) läuft seit Slice 7 koordiniert (Abschnitt unten); Split/Edge Connect/Vertex Connect laufen koordiniert (eine Undo-Stufe) oder werden mit ihrem Text abgelehnt (Entf/Rücktaste/Ctrl+Rücktaste ebenso, siehe Slice 3c); der Knife (leere Auswahl) startet seit Slice 6c eine koordinierte Session (Abschnitt unten); ein undeklarierter Kontext würde mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt, ohne jede Deklaration wäre es `… C spiegelt nicht …` | laufen; ein nicht spiegelndes wird mit `Symmetrie aktiv — <Name> spiegelt nicht (BLOCK: <Name> nicht gestartet)` abgelehnt | `E5: BLOCK` |
+| Symmetrie an, **MARK** | Split, Edge/Vertex Connect, Delete/Dissolve, der Knife und Extrude laufen koordiniert (mit denselben Ablehnungen wie BLOCK); ein undeklarierter Kontext läuft einseitig | laufen; ein nicht spiegelndes läuft mit Warnzeile | `E5: MARK`; **orange Warnzeile** darüber, solange etwas einseitig läuft |
 
 Die orange Warnzeile (nur MARK): `Knife läuft einseitig — Symmetrie aktiv`, solange eine
-Knife-Session unter Symmetrie läuft **und der Knife-Kontext undeklariert ist** (seit Slice 6c nie mit den echten Deklarationen); `Symmetrie aktiv — <Name> spiegelt nicht (läuft
+Knife-Session unter Symmetrie läuft **und der Knife-Kontext undeklariert ist** (seit Slice 6c nie mit den echten Deklarationen); `Symmetrie aktiv — Extrude spiegelt nicht (läuft einseitig)`, solange Extrude (`T` gehalten) läuft **und undeklariert ist** (seit Slice 7 nie mit den echten Deklarationen); `Symmetrie aktiv — <Name> spiegelt nicht (läuft
 einseitig)`, solange ein nicht spiegelnder Transform scharf ist oder läuft (heute nur über
 einen Test erreichbar). Das Lab schreibt dafür keine Statusmeldung (AD-013 H2-R2). Ein
 sofortiges C unter MARK behält die Statuszeile der App; seine Degradation zeigen die
@@ -375,6 +375,49 @@ die Spiegelvorschau und die Taste **V**.
 Praxistest und Fragen: `docs/ATELIER.md` B2d. Tests: `tests/test_symmetric_knife_preview.py`,
 `test_app_lab_symmetric_knife.py` (BLOCK / MARK), und die Lab-Tests, die vorher den Knife-Verweis oder die
 Warnzeile festhielten, laufen jetzt mit `undeclare_knife` (der abgeleitete Mechanismus bleibt getestet).
+
+## Symmetrischer Extrude, Slice 7
+
+*Engineering-Vorgaben (PROVISIONAL), dein Verdikt steht aus — AD-SYM-03 §11.* Mit gesetzter Symmetrie (`Shift+S`) extrudiert `T` halten die gewählten
+Flächen **und ihre Spiegelpartner als eine Absicht**, als **ein** Undo-Schritt, in BLOCK wie in MARK (die Deklaration `EXTRUDE_COORDINATORS` in
+`mirai.symmetry_declarations` ist der Schalter; BLOCK-Zeile und MARK-Warnung folgen ihr). Ohne Symmetrie läuft `T` unverändert einseitig wie in B9.
+
+- **Gespiegelt, exakt:** die Deckel der Gegenseite liegen bit-genau auf dem Spiegelbild (kein Toleranzwert); Punkte auf der Mitte bleiben exakt auf ihr.
+- **Distanz:** gemessen an den Flächen der **Arbeitsseite** (bei beiden Seiten gewählt: die Seite mit mehr gewählten Flächen, Gleichstand → Seite der
+  Ebenennormalen). „Nach außen ziehen" heißt auf beiden Seiten außen; das Ergebnis ist dasselbe Spiegelbild, auf welcher Seite du arbeitest.
+- **Naht (A1 Fall 3 = M, dein Verdikt):** liegt eine Fläche mit einer Kante an der Naht, entsteht eine zusammenhängende Beule über die Mitte, **ohne Wand in der Mitte**;
+  die neue **Deckelkante ist die neue Naht** (Regel S3, im selben Undo-Schritt, Undo bringt die alte Naht zurück).
+- **Auswahl danach (Engineering-Vorgabe, kein Verdikt):** die neuen Deckel auf der Seite/den Seiten, auf denen du gearbeitet hast.
+- **Ablehnungen** (Statuszeile, nichts verändert, kein Undo-Eintrag; in BLOCK und MARK dieselben):
+
+| Grund | Text (Beginn) |
+|---|---|
+| Ebene nicht achsparallel durch den Ursprung | `Symmetrie: Ebene nicht achsparallel durch den Ursprung — Operation nicht koordinierbar; …` |
+| Fläche ohne Spiegelpartner | `Symmetrie: Auswahl enthält Elemente ohne Spiegelpartner — …` |
+| Fläche über der Mitte (**deine Aussage vom 2026-10-09: vorerst ablehnen**) | `Symmetrie: Eine Fläche liegt über der Mitte (ihr eigenes Spiegelbild) — Extrude wird dort noch nicht unterstützt, nichts geändert; …` |
+| Berührung der Mitte nur an einer Ecke (**dieselbe Aussage**) | `Symmetrie: Die Auswahl berührt die Mitte nur an einer Ecke — Extrude wird dort noch nicht unterstützt, nichts geändert; …` |
+| Ergebnis nicht spiegelbildlich (Netz beim Loslassen, Gegenprobe) | `Symmetrie: Ergebnis wäre nicht spiegelbildlich (neue Elemente ohne Partner) — nichts geändert; …` |
+
+Auf `subd_cube` und `head_basemesh` gibt es weder eine Fläche, die die Mitte nur mit einer Ecke berührt, noch eine Fläche über der Mitte: die beiden Ablehnungen
+sind dort nicht zu sehen (getestet an synthetischen Netzen, AD-SYM-03 §11.5 F-2).
+
+### Praxistest für Manu (Slice 7)
+
+> **Praxistest — symmetrischer Extrude im Lab (ca. 10 Minuten).** `git pull`, dann `python experiments/symmetry_lab/run.py` (Kopf-Asset).
+>
+> 1. `Shift+S` (Symmetrie an), `3` (Face-Modus). Eine Fläche **abseits der Mittellinie** wählen, `T` halten, nach außen ziehen → beide Seiten wachsen gleich. Loslassen. `Ctrl+Z` → beide Seiten weg, **ein** Schritt.
+> 2. Dasselbe auf der **anderen** Seite → das Ergebnis ist das Spiegelbild, „nach außen ziehen" heißt auf beiden Seiten außen.
+> 3. Eine Fläche **direkt an der Mittellinie** (Nasenrücken, Stirnmitte) → `T` → eine zusammenhängende Beule über die Mitte, **keine Wand in der Mitte**. Danach einen Punkt der **neuen** Mittelkante mit `W` verschieben: er bleibt auf der Mittellinie, beide Seiten bewegen sich gleich.
+> 4. *(Geändert nach deiner Aussage vom 2026-10-09: Ecke an der Mitte wird vorerst abgelehnt.)* Auf dem Kopf gibt es keine Fläche, die die Mittellinie nur mit einer Ecke berührt — dieser Punkt ist mit den mitgelieferten Netzen nicht auszuprobieren. Die Ablehnung („berührt die Mitte nur an einer Ecke", nichts verändert) ist an einem synthetischen Netz getestet.
+> 5. **Beide Seiten** wählen (Shift+Klick auf Fläche und Gegenfläche) → `T` → gleiches Verhalten wie bei einer Seite.
+> 6. Nach **innen** ziehen → Mulde mit Boden, auf beiden Seiten.
+> 7. Nach dem Extrudieren: Welche Flächen sind markiert? Erwartet: die neuen Deckel auf **der Seite, auf der du gearbeitet hast** (Arbeitsregel, noch nicht dein Verdikt).
+> 8. `python experiments/symmetry_lab/run.py man_with_shoes_basemesh`, `Shift+S` → `X`: eine Fläche **ohne Spiegelpartner** (die ungepaarten Punkte sind magenta) → `T` → verständliche Ablehnung, nichts verändert.
+> 9. `Shift+B` (MARK) → gleiches Verhalten (Extrude ist jetzt unterstützt, keine orange Warnzeile). `Shift+S` aus → `T` wirkt wie vorher einseitig.
+>
+> **Dein Verdikt (KEEP / ITERATE / REJECT / UNKNOWN):** Fühlt sich der Zug auf beiden Seiten richtig an? Ist die Mittelkante bei Punkt 3 so, wie du sie erwartest (M)? Ist die Auswahl danach so gewünscht?
+
+Tests: `tests/test_symmetric_extrude.py`, `test_app_lab_symmetric_extrude.py`.
 
 ## Was das Lab nicht macht
 
