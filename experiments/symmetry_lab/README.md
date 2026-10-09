@@ -384,7 +384,7 @@ Flächen **und ihre Spiegelpartner als eine Absicht**, als **ein** Undo-Schritt,
 - **Distanz:** gemessen an den Flächen der **Arbeitsseite** (bei beiden Seiten gewählt: die Seite mit mehr gewählten Flächen, Gleichstand → Seite der
   Ebenennormalen). „Nach außen ziehen" heißt auf beiden Seiten außen; das Ergebnis ist dasselbe Spiegelbild, auf welcher Seite du arbeitest.
 - **Naht (A1 Fall 3 = M, dein Verdikt):** liegt eine Fläche mit einer Kante an der Naht, entsteht eine zusammenhängende Beule über die Mitte, **ohne Wand in der Mitte**;
-  die neue **Deckelkante ist die neue Naht** (Regel S3, im selben Undo-Schritt, Undo bringt die alte Naht zurück).
+  die neue **Deckelkante ist die neue Naht**, samt den beiden Wandkanten an ihren Enden, die ebenfalls in der Mitte liegen (Regel S3, im selben Undo-Schritt, Undo bringt die alte Naht zurück). Die gewählten Deckel lassen sich sofort wieder extrudieren, beliebig oft.
 - **Auswahl danach (Engineering-Vorgabe, kein Verdikt):** die neuen Deckel auf der Seite/den Seiten, auf denen du gearbeitet hast.
 - **Ablehnungen** (Statuszeile, nichts verändert, kein Undo-Eintrag; in BLOCK und MARK dieselben):
 
@@ -405,7 +405,7 @@ sind dort nicht zu sehen (getestet an synthetischen Netzen, AD-SYM-03 §11.5 F-2
 >
 > 1. `Shift+S` (Symmetrie an), `3` (Face-Modus). Eine Fläche **abseits der Mittellinie** wählen, `T` halten, nach außen ziehen → beide Seiten wachsen gleich. Loslassen. `Ctrl+Z` → beide Seiten weg, **ein** Schritt.
 > 2. Dasselbe auf der **anderen** Seite → das Ergebnis ist das Spiegelbild, „nach außen ziehen" heißt auf beiden Seiten außen.
-> 3. Eine Fläche **direkt an der Mittellinie** (Nasenrücken, Stirnmitte) → `T` → eine zusammenhängende Beule über die Mitte, **keine Wand in der Mitte**. Danach einen Punkt der **neuen** Mittelkante mit `W` verschieben: er bleibt auf der Mittellinie, beide Seiten bewegen sich gleich.
+> 3. Eine Fläche **direkt an der Mittellinie** (Nasenrücken, Stirnmitte) → `T` → eine zusammenhängende Beule über die Mitte, **keine Wand in der Mitte**. Den gewählten neuen Deckel gleich noch einmal (und ein drittes Mal) mit `T` extrudieren: geht, die Naht-Punkte bleiben grün. Danach einen Punkt der **neuen** Mittelkante mit `W` verschieben: er bleibt auf der Mittellinie, beide Seiten bewegen sich gleich.
 > 4. *(Geändert nach deiner Aussage vom 2026-10-09: Ecke an der Mitte wird vorerst abgelehnt.)* Auf dem Kopf gibt es keine Fläche, die die Mittellinie nur mit einer Ecke berührt — dieser Punkt ist mit den mitgelieferten Netzen nicht auszuprobieren. Die Ablehnung („berührt die Mitte nur an einer Ecke", nichts verändert) ist an einem synthetischen Netz getestet.
 > 5. **Beide Seiten** wählen (Shift+Klick auf Fläche und Gegenfläche) → `T` → gleiches Verhalten wie bei einer Seite.
 > 6. Nach **innen** ziehen → Mulde mit Boden, auf beiden Seiten.
