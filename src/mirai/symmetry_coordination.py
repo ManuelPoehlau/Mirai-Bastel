@@ -338,7 +338,11 @@ def seam_after_extrude(
 ) -> SymmetryDefinition:
     """Seam rule S3 (AD-SYM-03 §6 A1 Case 3 = M, Artist 2026-10-08: "the seam follows the mesh, the cap edge
     becomes the new seam"): a seam edge that an Extrude consumed - a face pair across the seam makes it an
-    internal edge, it dies - is replaced by the cap edge that joins the new vertices of its two ends.
+    internal edge, it dies - is replaced by the cap edge that joins the new vertices of its two ends, **and by the
+    wall edges that join each surviving end to its cap copy**. Those wall edges lie in the plane too (both ends do)
+    and carry a mirrored pair of walls; without them the old end vertex would lose its last seam edge on the next
+    Extrude of the cap (it stays in the mesh, on the plane, as an unpaired vertex) and the seam path would be broken
+    between the old and the new vertex.
 
     `seam_ends_before` holds the endpoints of every seam edge valid **before** the op, `mesh` is the mesh
     **after** it, `old_to_new` the Extrude's old vertex -> cap vertex map. Ids and incidence only, no geometry
@@ -346,16 +350,23 @@ def seam_after_extrude(
     keeps its dead id: the delta check (rule 2) then refuses. Seam edges that survived stay. Returns a new
     definition; the caller writes it inside the same mutation, so Undo restores the old seam with the mesh."""
     seam = set(definition.seam_edges)
-    for edge, (a, b) in seam_ends_before.items():
+    for edge, ends in seam_ends_before.items():
         if edge not in seam or mesh.is_valid_edge(edge):
             continue
+        a, b = ends
         new_a, new_b = old_to_new.get(a), old_to_new.get(b)
         if new_a is None or new_b is None:
             continue
         cap = [e for e in mesh.vertex_edges(new_a) if new_b in mesh.edge_vertices(e)]
-        if len(cap) == 1:
-            seam.discard(edge)
-            seam.add(cap[0])
+        if len(cap) != 1:
+            continue
+        seam.discard(edge)
+        seam.add(cap[0])
+        for old, new in ((a, new_a), (b, new_b)):
+            if mesh.is_valid_vertex(old):
+                walls = [e for e in mesh.vertex_edges(old) if new in mesh.edge_vertices(e)]
+                if len(walls) == 1:
+                    seam.add(walls[0])
     return SymmetryDefinition(definition.plane_point, definition.plane_normal, frozenset(seam))
 
 

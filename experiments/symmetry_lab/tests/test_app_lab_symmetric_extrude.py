@@ -175,6 +175,27 @@ def test_t_is_coordinated_in_one_undo_step_and_selects_the_caps_on_the_working_s
 
 
 @pytest.mark.parametrize("mode", MODES, ids=MODE_IDS)
+def test_the_caps_of_a_seam_extrude_extrude_again(mode):
+    """Manu's report: extrude a face on the seam, then the newly selected cap again was refused ("neue Elemente ohne
+    Partner", the old seam vertices purple). Both extrudes and a third run, one Undo step each, HUD `valid`."""
+    app, lab = lab_on(mode)
+    mesh = app.scene.mesh
+    select_faces(app, plus_x_face(app, seam=True))
+    steps = len(app.history)
+    for n in (1, 2, 3):
+        assert drag_t(app, lab)
+        assert app.status_message == "Extrude committed", f"extrude #{n}: {app.status_message}"
+        assert len(app.history) == steps + n
+        assert_clean(app, lab)
+        assert app.selection.faces
+    for n in (2, 1, 0):
+        assert press(app, lab, CTRL_Z) is True
+        assert len(app.history) == steps + n
+        assert_clean(app, lab)
+    assert all(mesh.is_valid_edge(e) for e in mesh.symmetry_definition.seam_edges)
+
+
+@pytest.mark.parametrize("mode", MODES, ids=MODE_IDS)
 def test_both_sides_selected_extrude_as_one_intent_and_select_both_caps(mode):
     app, lab = lab_on(mode)
     mesh = app.scene.mesh

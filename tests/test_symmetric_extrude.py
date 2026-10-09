@@ -216,7 +216,7 @@ def test_a_planner_needs_a_definition():
 # -- S3 as a pure function --------------------------------------------------------------------
 
 
-def test_s3_replaces_a_consumed_seam_edge_by_its_cap_edge_and_changes_nothing_else():
+def test_s3_replaces_a_consumed_seam_edge_by_its_cap_edge_and_the_wall_edges_at_its_ends():
     mesh = fresh("subd_cube", 0, 1)
     scene = scene_of(mesh)
     face = pick_face(mesh, "b")
@@ -225,15 +225,19 @@ def test_s3_replaces_a_consumed_seam_edge_by_its_cap_edge_and_changes_nothing_el
     tool, plan, result = drive(scene, {face}, (0.0, 0.0, 0.1))
     assert result is not None
     new = mesh.symmetry_definition
-    assert len(new.seam_edges) == len(d.seam_edges)
     died = {e for e in d.seam_edges if not mesh.is_valid_edge(e)}
     assert len(died) == 1
     born = new.seam_edges - d.seam_edges
-    assert len(born) == 1
-    (old,), (cap,) = tuple(died), tuple(born)
+    assert len(born) == 3                                  # the cap edge and the two wall edges
+    assert new.seam_edges - born == d.seam_edges - died   # every surviving seam edge stays
+    (old,) = died
     a, b = seam_ends[old]
-    assert set(mesh.edge_vertices(cap)) == {tool._old_to_new[a], tool._old_to_new[b]}
-    assert new.seam_edges - born == d.seam_edges - died  # every surviving seam edge stays
+    o2n = tool._old_to_new
+    expected = {frozenset((o2n[a], o2n[b])), frozenset((a, o2n[a])), frozenset((b, o2n[b]))}
+    assert {frozenset(mesh.edge_vertices(e)) for e in born} == expected
+    # all of them lie in the plane, and each wall edge carries a mirrored pair of walls
+    for e in born:
+        assert all(sd(new, mesh.vertex_position(v)) == 0.0 for v in mesh.edge_vertices(e))
     # Pure: calling it again on the final mesh changes nothing.
     assert seam_after_extrude(new, seam_ends, mesh, tool._old_to_new) == new
 
@@ -378,6 +382,53 @@ def test_the_working_side_is_the_side_with_more_live_selected_faces_and_a_tie_th
     assert plan_extrude(mesh, {ap, bp, b}).working_side == -1
     neg = fresh("head_basemesh", 0, -1)                                 # normal -X: "+1" is the -X side
     assert plan_extrude(neg, {a, ap}).working_side == 1
+
+
+# -- extruding the result again --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("axis", AXES)
+@pytest.mark.parametrize("asset", PAIRED_ASSETS)
+def test_the_caps_of_a_seam_extrude_can_be_extruded_again_and_again(asset, axis):
+    """Reported by Manu in the Lab: extrude a face on the seam, then the new selected cap again -> refused
+    ("neue Elemente ohne Partner", the old seam vertices purple). The wall edges at the ends of the consumed seam
+    edge are in the plane and must stay in the seam, or the old end vertex loses its last seam edge."""
+    mesh = fresh(asset, axis, 1)
+    scene = scene_of(mesh)
+    face = pick_face(mesh, "b")
+    states = [state(scene)]
+    seams = [mesh.symmetry_definition.seam_edges]
+    for step in range(4):
+        n = face_normal(mesh, face)
+        tool, plan, result = drive(scene, {face}, tuple(0.08 * x for x in n))
+        assert result is not None, f"extrude #{step + 1} was refused: {tool.refusal}"
+        assert_exact_result(mesh, tool)
+        caps = plan.residue(mesh, tool.new_face_ids)
+        assert len(caps) == 1                     # the cap on the working side: what the user has selected
+        (face,) = caps
+        states.append(state(scene))
+        seams.append(mesh.symmetry_definition.seam_edges)
+    assert len(scene.history) == 4
+    for step in (3, 2, 1, 0):                      # Undo walks back through every state and every seam
+        scene.history.undo()
+        assert state(scene) == states[step]
+        assert mesh.symmetry_definition.seam_edges == seams[step]
+
+
+def test_a_vertex_on_the_plane_never_loses_its_last_seam_edge_by_an_extrude():
+    """The invariant behind the report: after every committed Extrude each vertex on the plane is the end of a
+    seam edge (else it would be an unpaired vertex)."""
+    mesh = fresh("head_basemesh", 0, 1)
+    scene = scene_of(mesh)
+    face = pick_face(mesh, "b")
+    for _ in range(3):
+        tool, plan, result = drive(scene, {face}, tuple(0.05 * x for x in face_normal(mesh, face)))
+        assert result is not None
+        d = mesh.symmetry_definition
+        seam_vertices = {v for e in d.seam_edges for v in mesh.edge_vertices(e)}
+        on_plane = {v for v in mesh.all_vertex_ids() if sd(d, mesh.vertex_position(v)) == 0.0}
+        assert on_plane <= seam_vertices
+        (face,) = plan.residue(mesh, tool.new_face_ids)
 
 
 # -- fuzz --------------------------------------------------------------------------------------
@@ -598,10 +649,29 @@ def test_a_seam_pair_extrude_moves_the_seam_with_the_mesh_and_undo_restores_it()
     select_faces(app, face)
     hold_t(app)
     seam_after = mesh.symmetry_definition.seam_edges
-    assert seam_after != seam_before and len(seam_after) == len(seam_before)
+    assert seam_after != seam_before and len(seam_after) == len(seam_before) + 2  # cap edge + 2 wall edges - 1
     assert all(mesh.is_valid_edge(e) for e in seam_after)
     app.key_press(CTRL_Z)
     assert mesh.symmetry_definition.seam_edges == seam_before
+
+
+def test_the_selected_caps_of_a_seam_extrude_extrude_again_with_t():
+    """The reported sequence, through `T`: extrude a seam face, then the selected cap again (twice more)."""
+    app, face = app_face_setup(kind="b")
+    mesh = app.scene.mesh
+    select_faces(app, face)
+    snapshots = [app_state(app)]
+    for _ in range(3):
+        assert hold_t(app)
+        assert app.status_message == "Extrude committed", app.status_message
+        report = completeness_report(mesh)
+        assert not report.unpaired_vertices and not report.dead_seam_ids and not report.faces_without_partner
+        assert app.selection.faces                    # the next Extrude starts from this selection
+        snapshots.append(app_state(app))
+    assert len(app.history) == 3
+    for step in (2, 1, 0):
+        app.key_press(CTRL_Z)
+        assert app_state(app) == snapshots[step]
 
 
 def test_the_selection_after_the_commit_is_the_caps_on_the_side_you_worked_on():
