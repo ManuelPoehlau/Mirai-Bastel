@@ -146,6 +146,32 @@ Before assigning or starting a large implementation task, establish:
 
 Prefer small, bounded implementation tasks over vague requests.
 
+## 8a. Test strategy (token- and runtime-efficient)
+
+Test runner: **pytest** (no config file, no virtualenv; tests bootstrap `src/` onto the path themselves). Bare `pytest` from the repo root fails with collection errors (`viewport` package-name collision) — always pass an explicit path.
+
+**While implementing — targeted tests only.** Never run the full suite during an ongoing implementation. Run only the tests that directly cover the changed files/functions:
+
+```bash
+pytest tests/test_<module>.py -q                      # one test file
+pytest tests/test_<module>.py::test_name -q           # one test
+pytest tests -k "<pattern>" -q --ignore=tests/test_extrude_tool.py   # pattern match
+pytest playground/tests/test_<module>.py -q           # when touching playground/
+pytest experiments/symmetry_lab/tests/test_<x>.py -q  # when touching src/mirai/application.py or src/viewport/
+```
+
+Add `-x` to stop at the first failure and `--lf` to re-run only the last failures.
+
+**Final check — full suite, exactly once.** Only when the implementation is complete and all targeted tests are green, run the full suite a single time to rule out regressions:
+
+```bash
+pytest tests --ignore=tests/test_extrude_tool.py -q
+pytest playground/tests -q                    # only if playground/ was touched
+pytest experiments/symmetry_lab/tests -q      # only if src/mirai/application.py or src/viewport/ was touched
+```
+
+Do not re-run the full suite after each fix; if it fails, fix with targeted tests, then repeat the full run once. Report only what was actually run and passed.
+
 ## 9. Development reality check
 
 Before implementing any non-trivial task, verify the plan against the actual repository state.

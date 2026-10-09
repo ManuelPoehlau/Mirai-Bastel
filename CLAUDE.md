@@ -64,6 +64,26 @@ Move validated code to src/ (only if decision is explicit)
 
 ## Testing
 
+**Test strategy (saves tokens and runtime) — runner: pytest.**
+
+1. **During implementation: NEVER run the full suite.** Run only targeted tests for the changed files/functions:
+   ```bash
+   pytest tests/test_<module>.py -q                    # one test file
+   pytest tests/test_<module>.py::test_name -q         # one test
+   pytest tests -k "<pattern>" -q --ignore=tests/test_extrude_tool.py   # pattern match
+   pytest playground/tests/test_<module>.py -q         # playground/ changes
+   ```
+   Useful flags: `-x` (stop at first failure), `--lf` (re-run last failures only).
+2. **Final check: full suite exactly ONCE**, only after the implementation is complete and all targeted tests are green:
+   ```bash
+   pytest tests --ignore=tests/test_extrude_tool.py -q
+   pytest playground/tests -q                  # only if playground/ was touched
+   pytest experiments/symmetry_lab/tests -q    # only if src/mirai/application.py or src/viewport/ was touched
+   ```
+   Don't repeat the full run after every fix: fix via targeted tests, then re-run the full suite once more.
+
+Details:
+
 - Tests live in `tests/test_*.py` and use pytest conventions
 - Test bootstrap (`_bootstrap.py`) adds `src/` to path; tests import directly from `src.core` etc.
 - Before submitting, run: `pytest tests --ignore=tests/test_extrude_tool.py -v` (or a specific file).
