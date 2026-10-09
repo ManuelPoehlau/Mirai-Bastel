@@ -85,6 +85,13 @@ differential spec, `playground/tests/test_knife_q5_differential.py`):
 - Commit: resolve, check (`check_commit`: a broken result is taken back as a
   whole), push exactly one `MeshStateCommand` ("Knife") if the mesh changed,
   select the cut edges in Edge mode. Nothing changed → no command.
+- Under a symmetry definition (AD-SYM-03 §10, slice 6b) the caller hands `begin` a **commit coordinator**
+  (`symmetric_commit`, `mirai.symmetric_knife.coordinate_knife`): commit then calls it with the full
+  session path, points in space included, instead of resolving itself. It resolves the clipped path once,
+  replays the cut mirrored and returns the `KnifeResolution`; `check_commit`, the one `MeshStateCommand`
+  and the residue follow as above. A refusal (an exception with a true `commit_refusal`) takes the commit
+  back: the mesh is the session start, no history, `last_problem` holds the status text. This module
+  imports nothing from symmetry; without a coordinator nothing changes.
 """
 
 from __future__ import annotations
@@ -198,14 +205,18 @@ class KnifeTool(Tool):
         self.last_plan: KnifePlan | None = None
         self.last_resolution: KnifeResolution | None = None
         self.last_problem: str | None = None
+        self._symmetric_commit = None
 
     def set_view(self, camera, width: int = 1, height: int = 1, *, cache=None, occlusion: bool = True) -> None:
         """The camera the next plans across faces use (S4); `camera=None` = no view. Crossings are fixed
         by the click that stores them — a later view never changes what the path holds."""
         self._view = None if camera is None else View(camera, width, height, cache, occlusion)
 
-    def _on_begin(self, mesh=None, scene=None, selection=None, **_) -> None:
+    def _on_begin(self, mesh=None, scene=None, selection=None, symmetric_commit=None, **_) -> None:
+        """`symmetric_commit`: the optional commit coordinator `(mesh, session path, session_before) ->
+        KnifeResolution` (AD-SYM-03 §10); `None` = the Knife as it always was."""
         self._mesh = mesh
+        self._symmetric_commit = symmetric_commit
         self._scene = scene
         self._selection = selection
         self._session_before = mesh.export_state()
@@ -620,10 +631,16 @@ class KnifeTool(Tool):
         the resolver did (counts and notes; `empty` for a path without points)."""
         self._redo.clear()
         self.last_problem = None
-        # Points in space are no mesh points: the resolver gets the path without them, the "space"
-        # breaks around them keep every run off the stretch outside the mesh (S4).
-        res = resolve_cross_face(self._mesh, [p for p in self._path if p["kind"] != "space"], self._session_before)
-        check = check_commit(self._mesh, self._session_before)
+        if self._symmetric_commit is None:
+            # Points in space are no mesh points: the resolver gets the path without them, the "space"
+            # breaks around them keep every run off the stretch outside the mesh (S4).
+            res = resolve_cross_face(self._mesh, [p for p in self._path if p["kind"] != "space"], self._session_before)
+            check = check_commit(self._mesh, self._session_before)
+        else:
+            res = self._commit_symmetric()
+            if res is None:
+                return None
+            check = check_commit(self._mesh, self._session_before, res)
         self.last_resolution = res
         self.last_problem = check.problem
         if check.after_state is None:
@@ -646,6 +663,21 @@ class KnifeTool(Tool):
         self._selection.clear()
         self._selection.add(set(self._path_edges))
         return cmd
+
+    def _commit_symmetric(self) -> KnifeResolution | None:
+        """The injected coordinator's resolution, or None when it refused. The coordinator takes its own
+        mutations back before it raises; the tool does not rely on that for a callable it did not write
+        (`load_state` of the session start is idempotent). Anything but a refusal is a bug and propagates."""
+        try:
+            return self._symmetric_commit(self._mesh, list(self._path), self._session_before)
+        except Exception as exc:
+            if not getattr(exc, "commit_refusal", False):
+                raise
+            self._mesh.load_state(self._session_before)
+            self.last_resolution = None
+            self.last_problem = str(exc)
+            print(f"[KNIFE] commit refused ({exc}) -> mesh restored, no history")
+            return None
 
     def _on_cancel(self) -> None:
         """Drop the path. The mesh was never changed; nothing pushed to history."""

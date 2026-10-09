@@ -188,11 +188,12 @@ def test_the_resolver_does_not_use_connect_vertices_and_the_docstring_says_so():
     assert "`connect_vertices` is not used" in mutations
 
 
-def test_nothing_in_src_outside_the_resolver_reads_the_report():
-    """AD-017 §13 item 8: not a provenance layer; the first reader is slice 6b's coordinator."""
+def test_only_the_symmetric_coordinator_reads_the_report():
+    """AD-017 §13 item 8: not a provenance layer; the one reader outside the resolver is slice 6b's coordinator
+    (`mirai.symmetric_knife`, the first reader since 6b; before it this test asserted no reader at all)."""
     readers = [p.relative_to(_ROOT).as_posix() for p in (_ROOT / "src").rglob("*.py")
                if "kept_calls" in p.read_text(encoding="utf-8") and p != _RESOLVE_PY]
-    assert readers == []
+    assert readers == ["src/mirai/symmetric_knife.py"]
 
 
 # -- item 7: additive output -------------------------------------------------------------------------
