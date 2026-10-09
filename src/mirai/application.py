@@ -102,14 +102,26 @@ _SELECT_COMMANDS = (
 )
 
 
-#: WP-06 B4 (E28): die drei Transform-Commands, die über denselben AD-016-
-#: hold-key-hover-Pfad scharf geschaltet werden. Werte: (Label, Verb, Partizip)
-#: für die Statuszeilen (E34, `PROVISIONAL`).
+#: WP-06 B4 (E28): die Commands, die über denselben AD-016-hold-key-hover-Pfad
+#: scharf geschaltet werden (Move/Rotate/Scale; seit WP-06 B9 auch Extrude, dessen
+#: Ziel Faces statt Vertices und dessen Begin-Payload `face_ids` statt `vertex_ids`
+#: ist - Zweige dafür in `_transform_arm/_step/key_release/_cancel`). Werte: (Label,
+#: Verb, Partizip) für die Statuszeilen (E34, `PROVISIONAL`).
 _TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
     commands.MOVE: ("Move", "move", "moved"),
     commands.ROTATE: ("Rotate", "rotate", "rotated"),
     commands.SCALE: ("Scale", "scale", "scaled"),
+    commands.EXTRUDE: ("Extrude", "extrude", "extruded"),
 }
+
+#: WP-06 B9 (E3, PROVISIONAL, agent-set): Extrude mutates the topology in `begin()`,
+#: so unlike Move/Rotate/Scale (AD-016: first motion begins) it needs the pointer's net
+#: displacement since the arm to reach this many logical pixels first; a tap or a hand
+#: tremble below it does nothing at all.
+EXTRUDE_BEGIN_PX = 4.0
+#: WP-06 B9 (E3, PROVISIONAL, agent-set): at release an Extrude whose |total distance|
+#: is below this (world units) counts as cancelled - exact prior state, no history.
+EXTRUDE_MIN_DISTANCE = 1e-6
 
 #: WP-06 B4 (E32): Constraint-Command → `space`-String nach AD-012
 #: (`transform._resolve_space`). Welche Taste welches Command auslöst
@@ -396,6 +408,13 @@ class Application:
         self._transform_target: frozenset[VertexId] = frozenset()
         self._transform_begun: bool = False
         self._transform_space: str | None = None
+        # WP-06 B9 (Extrude, hold T): the faces fixed at the arm, the pointer's net
+        # displacement since the arm (until `begin()`, see EXTRUDE_BEGIN_PX) and the
+        # selection snapshot taken BEFORE `begin()` - the tool remaps the selection to
+        # the caps during `begin()`, so the Undo mirror entry needs the earlier one.
+        self._extrude_faces: frozenset[FaceId] = frozenset()
+        self._extrude_travel: tuple[float, float] = (0.0, 0.0)
+        self._extrude_selection_before: tuple | None = None
         # WP-06 B4.1 (Artist-Entscheidung Manu 2026-09-27, Playground-Verhalten
         # WP-AP-INPUT-FIX-03 1:1): sticky Achsen-Constraint, unabhängig vom
         # scharfen Tool, überlebt Commit/Cancel/neues Scharfschalten und wird
@@ -461,11 +480,12 @@ class Application:
         self.knife_mirror_variant: str = KNIFE_MIRROR_VARIANT_DEFAULT
 
     def _setup_tools(self) -> None:
-        """Registriert die Default-Tools (Move/Rotate/Scale) im ToolManager."""
+        """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
         for command, tool_class in (
             (commands.MOVE, tool_for_command(commands.MOVE)),
             (commands.ROTATE, tool_for_command(commands.ROTATE)),
             (commands.SCALE, tool_for_command(commands.SCALE)),
+            (commands.EXTRUDE, tool_for_command(commands.EXTRUDE)),
         ):
             if tool_class:
                 self.tool_manager.register(command, tool_class)
@@ -1354,7 +1374,8 @@ class Application:
 
     @property
     def transform_command(self) -> str | None:
-        """Scharf geschalteter Transform (MOVE/ROTATE/SCALE, None = keiner)."""
+        """Scharf geschalteter Hold-Key-Transform (MOVE/ROTATE/SCALE, seit WP-06 B9
+        auch EXTRUDE; None = keiner)."""
         return self._transform_command
 
     @property
@@ -1381,8 +1402,9 @@ class Application:
     @property
     def interaction_owner(self) -> str | None:
         """Which of `Application`'s own interactions owns the keys right now
-        (AD-013 H2 addendum, H2-R2): `"transform"` while W/E/R is armed or
-        running, `"knife"` during a Knife session, else None. Camera gestures
+        (AD-013 H2 addendum, H2-R2): `"transform"` while W/E/R (and, WP-06 B9, T =
+        Extrude - the same hold-key family, no new value) is armed or running,
+        `"knife"` during a Knife session, else None. Camera gestures
         (orbit, pan, zoom) own no keys and are never an owner."""
         if self._transform_command is not None:
             return "transform"
@@ -1426,6 +1448,9 @@ class Application:
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
+            if self._transform_command == commands.EXTRUDE:
+                # Extrude is normal-only: neither the gesture nor the sticky state changes.
+                return False
             return self._constrain(_CONSTRAINT_SPACES[command])
         if command == commands.CANCEL:
             return self._cancel()
@@ -1462,7 +1487,9 @@ class Application:
         if self._transform_key is None or input.value != self._transform_key:
             return False
         label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
-        if self._transform_begun:
+        if self._transform_command == commands.EXTRUDE:
+            self._extrude_release()
+        elif self._transform_begun:
             before = self._selection_snapshot()
             command = self.tool_manager.commit()
             if command is not None:
@@ -1484,6 +1511,8 @@ class Application:
         eine Transform-Taste gehalten, wird abgelehnt."""
         if self._transform_key is not None or self.viewport is None:
             return False
+        if command == commands.EXTRUDE:
+            return self._extrude_arm(key)
         label, verb, _ = _TRANSFORM_COMMANDS[command]
         selection = self.selection
         target = resolve_selection_vertices(self.scene.mesh, selection, selection.mode)
@@ -1537,7 +1566,18 @@ class Application:
         mit unverändertem Mesh (das Tool bricht selbst exakt ab)."""
         if dx == 0 and dy == 0:
             return False
-        if not self._transform_begun:
+        if not self._transform_begun and self._transform_command == commands.EXTRUDE:
+            # Net displacement since the arm; the first update gets all of it, so the
+            # distance follows the pointer from where T went down.
+            px, py = self._extrude_travel
+            px, py = px + dx, py + dy
+            self._extrude_travel = (px, py)
+            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
+                return False
+            if not self._extrude_begin():
+                return False
+            dx, dy = px, py
+        elif not self._transform_begun:
             self._transform_space = self._axis_constraint
             try:
                 self.tool_manager.begin_current_interaction(
@@ -1579,6 +1619,104 @@ class Application:
         self._transform_target = frozenset()
         self._transform_begun = False
         self._transform_space = None
+        self._extrude_faces = frozenset()
+        self._extrude_travel = (0.0, 0.0)
+        self._extrude_selection_before = None
+
+    # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
+    #
+    # PROVISIONAL baseline. Key T = Artist Input Truth `topology.extrude` ("for now",
+    # Manu 2026-10-09). The hold-key-hover activation (E1) and the hover fallback (E2)
+    # are engineering proposals, NOT Artist decisions. Same lifecycle as W/E/R
+    # (`_transform_*`), with the differences the branches above mark: Face mode only,
+    # target = faces, `begin()` mutates the topology (hence EXTRUDE_BEGIN_PX), the
+    # viewport is told about a topology change, a zero extrusion is cancelled, and the
+    # selection-history `before` is the snapshot taken ahead of `begin()`.
+
+    def _extrude_arm(self, key: str) -> bool:
+        """Arm Extrude: Face mode with >= 1 selected face, else the hovered face, else
+        refuse with a status line. The tool is active, `begin()` waits for the pointer."""
+        selection = self.selection
+        mesh = self.scene.mesh
+        if selection.mode is not SelectionMode.FACE:
+            self._set_status("Extrude: face mode needed")
+            return False
+        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        hovered = selection.hovered
+        from_hover = not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered)
+        if from_hover:
+            faces = {hovered}
+        if not faces:
+            self._set_status("Extrude: select or hover a face")
+            return False
+        self.dispatch_command(commands.EXTRUDE)
+        self._transform_key = key
+        self._transform_command = commands.EXTRUDE
+        self._transform_target = frozenset(
+            vid for f in faces for vid in _element_vertices(mesh, f)
+        )
+        self._transform_begun = False
+        self._extrude_faces = frozenset(faces)
+        self._extrude_travel = (0.0, 0.0)
+        # Same clear-on-arm as the transforms: no hover highlight on what is extruded.
+        if from_hover or _active_selection_contains(selection, hovered):
+            self._set_hovered(None)
+        count = len(faces)
+        self._set_status(
+            f"Extrude: {count} {'face' if count == 1 else 'faces'}"
+            f" - move the mouse, release {key.upper()} to commit"
+        )
+        return True
+
+    def _extrude_begin(self) -> bool:
+        """Start the Extrude (topology changes here). False = refused, tool disarmed."""
+        self._extrude_selection_before = self._selection_snapshot()
+        try:
+            self.tool_manager.begin_current_interaction(
+                {
+                    "scene": self.scene,
+                    "camera": self.camera,
+                    "face_ids": set(self._extrude_faces),
+                }
+            )
+        except TopologyToolError as exc:
+            self._transform_end()
+            self._set_status(f"Extrude: refused — {exc}")
+            self._refresh_hover()
+            return False
+        self._transform_begun = True
+        self._extrude_topology_changed()
+        return True
+
+    def _extrude_topology_changed(self) -> None:
+        """After begin/commit/cancel: caches, viewport and a dead-ID sweep (B6 lesson:
+        a stale hovered/selected ID after a topology change crashed the draw loop)."""
+        self._pick_cache.invalidate()
+        self._prune_ghost_selection()
+        if self.viewport is not None:
+            self.viewport.on_topology_changed()
+            self.viewport.on_selection_changed()
+
+    def _extrude_release(self) -> None:
+        """Release of T: commit, or - tap, jitter below EXTRUDE_BEGIN_PX, or a total
+        distance below EXTRUDE_MIN_DISTANCE - leave everything exactly as it was."""
+        if not self._transform_begun:
+            self._set_status("Extrude: no change")
+            return
+        if abs(self.tool_manager.active_tool.total_distance) < EXTRUDE_MIN_DISTANCE:
+            self._extrude_abort()
+            self._set_status("Extrude: no change")
+            return
+        self.tool_manager.commit()
+        self._record_selection_history(self._extrude_selection_before)
+        self._extrude_topology_changed()
+        self._set_status("Extrude committed")
+
+    def _extrude_abort(self) -> None:
+        """Cancel a begun Extrude: exact prior mesh (tool), exact prior selection, no history."""
+        self.tool_manager.cancel()
+        self._restore_selection(self._extrude_selection_before)
+        self._extrude_topology_changed()
 
     def _cancel(self) -> bool:
         """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
@@ -1587,7 +1725,10 @@ class Application:
         if self._transform_key is None:
             return False
         label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
-        if self._transform_begun:
+        if self._transform_begun and self._transform_command == commands.EXTRUDE:
+            self._extrude_abort()
+            self._set_status(f"{label} cancelled")
+        elif self._transform_begun:
             moved = self._active_transform_vertex_ids()
             self.tool_manager.cancel()
             self._pick_cache.invalidate()

@@ -1,328 +1,35 @@
-"""AP-05 — Multi-Face-Extrude Tool (Playground).
+"""Compatibility shim: the ExtrudeTool now lives in `mirai.topology.extrude`.
 
-Multi-Face-Extrude via Boundary-Edge-Regel: Jede Edge, die zu genau einer
-selektierten Face gehört, ist eine Boundary-Edge und bekommt eine Seitenwand.
-Edges zwischen zwei selektierten Faces sind intern — keine Wand.
-
-Bei genau 1 selektierter Face ist jede ihrer Edges automatisch Boundary → das
-Single-Face-Verhalten ist identisch zum bisherigen Verhalten (echter Refaktor,
-keine Parallel-Implementierung).
-
-Normale: pro zusammenhängender Komponente (nicht global) — verhindert, dass
-entgegengesetzt orientierte Regionen eine Null-Summe erzeugen und in den
-Z-Fallback rutschen. Die Distanz-Referenzachse bleibt global (bekannte,
-akzeptierte Ungenauigkeit im entgegengesetzten Fall).
-
-Lifecycle:
-    activate()
-    begin(face_ids: set[FaceId], **_)   → Snapshot + Topologie aufgebaut,
-                                          Selection auf Result-Faces remapped
-                                          (INTERACTING)
-    update(dx, dy, w, h)*               → Extrusions-Distanz live
-    commit()                            → MeshStateCommand → history.push(),
-                                          returns frozenset[FaceId] (neue Caps)
-    cancel()                            → mesh.load_state(before), Selection restore
-    deactivate()
+Moved (not copied) in WP-06 Slice B9; Production and the Playground share that
+one implementation. This module only keeps the legacy `ExtrudeTool(scene,
+camera)` constructor for callers outside the Production Tool contract
+(`playground/command_handler.py`, the head-topology / symmetry probes under
+`experiments/`), which still pass the context at construction. New code uses
+`mirai.topology.extrude.ExtrudeTool` directly: parameterless `__init__`,
+`scene`/`camera`/`face_ids` through `begin()` (as `playground/window.py` does).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from core import FaceId, VertexId
-from core.operations.topology import MeshStateCommand
-from core.selection import SelectionMode
-from mirai.interaction.tool import Tool
+from mirai.topology.connect_per_face import TopologyToolError  # noqa: F401  (re-export)
+from mirai.topology.extrude import (  # noqa: F401  (re-export)
+    ExtrudeTool as _ProductionExtrudeTool,
+    _compute_face_normal,
+    _connected_components,
+)
 
 
-class TopologyToolError(ValueError):
-    pass
-
-
-def _compute_face_normal(
-    mesh, boundary: list[VertexId]
-) -> tuple[float, float, float]:
-    """Newell-Normale für eine beliebige planare Face."""
-    nx, ny, nz = 0.0, 0.0, 0.0
-    n = len(boundary)
-    for i in range(n):
-        curr = mesh.vertex_position(boundary[i])
-        nxt = mesh.vertex_position(boundary[(i + 1) % n])
-        nx += (curr[1] - nxt[1]) * (curr[2] + nxt[2])
-        ny += (curr[2] - nxt[2]) * (curr[0] + nxt[0])
-        nz += (curr[0] - nxt[0]) * (curr[1] + nxt[1])
-    length = (nx * nx + ny * ny + nz * nz) ** 0.5
-    if length < 1e-12:
-        return (0.0, 0.0, 1.0)
-    return (nx / length, ny / length, nz / length)
-
-
-def _connected_components(
-    face_ids: frozenset[FaceId], mesh
-) -> list[frozenset[FaceId]]:
-    """BFS über Adjazenz-Edges: liefert zusammenhängende Gruppen aus face_ids."""
-    remaining = set(face_ids)
-    components: list[frozenset[FaceId]] = []
-    while remaining:
-        start = next(iter(remaining))
-        component: set[FaceId] = set()
-        queue = [start]
-        while queue:
-            fid = queue.pop()
-            if fid in component:
-                continue
-            component.add(fid)
-            remaining.discard(fid)
-            for eid in mesh.face_edges(fid):
-                for neighbor in mesh.edge_faces(eid):
-                    if neighbor in face_ids and neighbor not in component:
-                        queue.append(neighbor)
-        components.append(frozenset(component))
-    return components
-
-
-class ExtrudeTool(Tool):
-    """Interaktives Multi-Face-Extrude-Tool für den Artist Playground.
-
-    Adaptiert aus experiments/mirai_bastel_viewport_V1/viewport/extrude_tool.py,
-    aber gegen src/core (nicht den V1-Fork) und mit MeshStateCommand statt
-    V1-eigenem _SnapshotCommand. Verallgemeinert auf beliebige Face-Mengen
-    via Boundary-Edge-Regel.
-    """
+class ExtrudeTool(_ProductionExtrudeTool):
+    """Legacy-signature adapter: context at construction, `begin(face_ids=...)`."""
 
     def __init__(self, scene, camera) -> None:
         super().__init__()
-        self._scene = scene
-        self._camera = camera
-        self._face_ids: frozenset[FaceId] = frozenset()
-        self._normal: tuple[float, float, float] | None = None  # globale Referenz für Distanz-Skalar
-        self._vertex_normal: dict[VertexId, tuple[float, float, float]] = {}  # pro Vertex: Komponenten-Normale
-        self._original_positions: dict[VertexId, tuple] = {}
-        self._old_to_new: dict[VertexId, VertexId] = {}
-        self._new_face_ids: frozenset[FaceId] = frozenset()
-        self._before_state: dict | None = None
-        self._before_sel_mode: SelectionMode | None = None
-        self._before_sel_faces: frozenset = frozenset()
-        self._total_distance: float = 0.0
+        self._legacy_scene = scene
+        self._legacy_camera = camera
 
-    @property
-    def new_face_ids(self) -> frozenset[FaceId]:
-        return self._new_face_ids
-
-    # -- Tool hooks ----------------------------------------------------------
-
-    def _on_begin(self, face_ids: set[FaceId], **_: Any) -> None:
-        mesh = self._scene.mesh
-        face_ids_frozen = frozenset(face_ids)
-
-        if not face_ids_frozen:
-            raise TopologyToolError("Mindestens eine Face erforderlich.")
-        for fid in face_ids_frozen:
-            if not mesh.is_valid_face(fid):
-                raise TopologyToolError(f"Ungültige Face: {fid!r}")
-            if len(mesh.face_vertices(fid)) < 3:
-                raise TopologyToolError("Face benötigt mindestens 3 Vertices.")
-
-        # Snapshot vor jeder Mutation
-        self._before_state = mesh.export_state()
-        sel = self._scene.selection
-        self._before_sel_mode = sel.mode
-        self._before_sel_faces = frozenset(sel.faces)
-
-        self._face_ids = face_ids_frozen
-
-        # Globale Referenz-Normale (für Drag-Distanz-Projektion).
-        # Bei entgegengesetzt orientierten Regionen kann die Summe ≈ 0 werden
-        # → Fallback Z. Das ist bekannte, akzeptierte Ungenauigkeit: die Geometrie
-        # bewegt sich trotzdem korrekt (via _vertex_normal), nur der Distanz-
-        # Skalar ist im entgegengesetzten Fall unpräzise.
-        nx, ny, nz = 0.0, 0.0, 0.0
-        for fid in face_ids_frozen:
-            fn = _compute_face_normal(mesh, mesh.face_vertices(fid))
-            nx += fn[0]; ny += fn[1]; nz += fn[2]
-        length = (nx * nx + ny * ny + nz * nz) ** 0.5
-        self._normal = (nx / length, ny / length, nz / length) if length >= 1e-12 else (0.0, 0.0, 1.0)
-
-        # Komponenten-Normale pro zusammenhängender Gruppe.
-        # Jeder Vertex bekommt die Normale seiner Komponente. Corner-Case: ein
-        # Vertex gehört zu zwei Komponenten über eine gemeinsame Ecke (keine Edge)
-        # → letzter Schreibzugriff gewinnt (deterministisch, kommt am Würfel nicht vor).
-        components = _connected_components(face_ids_frozen, mesh)
-        self._vertex_normal = {}
-        for comp in components:
-            cnx, cny, cnz = 0.0, 0.0, 0.0
-            for fid in comp:
-                fn = _compute_face_normal(mesh, mesh.face_vertices(fid))
-                cnx += fn[0]; cny += fn[1]; cnz += fn[2]
-            clen = (cnx * cnx + cny * cny + cnz * cnz) ** 0.5
-            cn = (cnx / clen, cny / clen, cnz / clen) if clen >= 1e-12 else (0.0, 0.0, 1.0)
-            for fid in comp:
-                for vid in mesh.face_vertices(fid):
-                    self._vertex_normal[vid] = cn
-
-        # Union aller Vertices aus allen selektierten Faces (keine Duplikate)
-        all_vids: set[VertexId] = set()
-        for fid in face_ids_frozen:
-            all_vids.update(mesh.face_vertices(fid))
-
-        self._original_positions = {vid: mesh.vertex_position(vid) for vid in all_vids}
-        self._total_distance = 0.0
-
-        # Ein neuer Vertex pro altem Vertex
-        self._old_to_new = {}
-        for vid in all_vids:
-            self._old_to_new[vid] = mesh.add_vertex(mesh.vertex_position(vid))
-
-        # Seitenwände: nur Boundary-Edges (genau 1 angrenzende Face in face_ids_frozen)
-        for fid in face_ids_frozen:
-            boundary = mesh.face_vertices(fid)
-            edges = mesh.face_edges(fid)
-            n = len(boundary)
-            for i, eid in enumerate(edges):
-                adj = mesh.edge_faces(eid)
-                in_sel = sum(1 for f in adj if f in face_ids_frozen)
-                if in_sel == 1:  # Boundary-Edge → Seitenwand
-                    v_curr = boundary[i]
-                    v_next = boundary[(i + 1) % n]
-                    mesh.add_face([v_curr, v_next, self._old_to_new[v_next], self._old_to_new[v_curr]])
-
-        # Cap-Faces: eine pro Original-Face, auf neue Vertices gemappt
-        new_face_ids: set[FaceId] = set()
-        for fid in face_ids_frozen:
-            new_boundary = [self._old_to_new[vid] for vid in mesh.face_vertices(fid)]
-            new_face_ids.add(mesh.add_face(new_boundary))
-
-        # Kanten der Original-Region merken, bevor die Faces verschwinden: nur
-        # diese dürfen anschließend als Rest-Geometrie bereinigt werden.
-        region_edges: set = set()
-        for fid in face_ids_frozen:
-            region_edges.update(mesh.face_edges(fid))
-
-        # Original-Faces entfernen
-        for fid in face_ids_frozen:
-            mesh.remove_face(fid)
-
-        self._prune_leftover_geometry(mesh, region_edges, all_vids)
-
-        self._new_face_ids = frozenset(new_face_ids)
-
-        # Selection-Sync: Alle entfernten Faces aus Selection rauswerfen und
-        # auf neue Cap-Faces remappen — verhindert tote FaceIds im VBO-Rebuild.
-        if sel.mode is SelectionMode.FACE:
-            dead = face_ids_frozen & frozenset(sel.faces)
-            if dead:
-                sel.remove(dead)
-                valid_new = {fid for fid in self._new_face_ids if mesh.is_valid_face(fid)}
-                if valid_new:
-                    sel.add(valid_new)
-
-    def _on_update(self, dx: float, dy: float, width: int, height: int) -> None:
-        if self._normal is None or not self._old_to_new:
-            return
-
-        mesh = self._scene.mesh
-        anchor = self._face_center_original()
-        world_delta = self._camera.screen_delta_to_world(
-            anchor, dx, dy, width, height
-        )
-        # Globale Referenz-Normale für den Distanz-Skalar (gemeinsam für alle Komponenten)
-        gx, gy, gz = self._normal
-        self._total_distance += world_delta[0] * gx + world_delta[1] * gy + world_delta[2] * gz
-
-        for old_vid, new_vid in self._old_to_new.items():
-            orig = self._original_positions[old_vid]
-            vn = self._vertex_normal[old_vid]  # Komponenten-Normale dieses Vertex
-            mesh.set_vertex_position(new_vid, (
-                orig[0] + vn[0] * self._total_distance,
-                orig[1] + vn[1] * self._total_distance,
-                orig[2] + vn[2] * self._total_distance,
-            ))
-
-    def _on_commit(self) -> frozenset[FaceId]:
-        mesh = self._scene.mesh
-        after = mesh.export_state()
-        self._scene.history.push(
-            MeshStateCommand(
-                mesh=mesh,
-                before_state=self._before_state,
-                after_state=after,
-                description="Extrude",
-            )
-        )
-        sel = self._scene.selection
-        sel.clear()
-        sel.mode = SelectionMode.FACE
-        valid = {fid for fid in self._new_face_ids if mesh.is_valid_face(fid)}
-        if valid:
-            sel.set(valid)
-        return self._new_face_ids
-
-    def _on_cancel(self) -> None:
-        if self._before_state is not None:
-            self._scene.mesh.load_state(self._before_state)
-        sel = self._scene.selection
-        sel.clear()
-        if self._before_sel_mode is not None:
-            sel.mode = self._before_sel_mode
-        # Nur gültige Face-IDs zurücksetzen (nach load_state sind alte IDs wieder valide)
-        mesh = self._scene.mesh
-        valid = {fid for fid in self._before_sel_faces if mesh.is_valid_face(fid)}
-        if valid:
-            sel.set(valid)
-
-    def _on_deactivate(self) -> None:
-        self._face_ids = frozenset()
-        self._normal = None
-        self._vertex_normal = {}
-        self._original_positions = {}
-        self._old_to_new = {}
-        self._new_face_ids = frozenset()
-        self._before_state = None
-        self._before_sel_mode = None
-        self._before_sel_faces = frozenset()
-        self._total_distance = 0.0
-
-    # -- Intern --------------------------------------------------------------
-
-    @staticmethod
-    def _prune_leftover_geometry(mesh, region_edges: set, region_vertices: set) -> None:
-        """Entfernt die Rest-Geometrie der ursprünglichen Region.
-
-        Mesh.remove_face() lässt freie Edges/Vertices bewusst stehen und der
-        Core (eingefroren) hat keine remove_edge/remove_vertex-Primitive. Ohne
-        Bereinigung blieben die *inneren* Edges (und innere Vertices) der Region
-        als Wireframe ohne Fläche an der Originalposition zurück.
-
-        Es werden ausschließlich Edges aus `region_edges` ohne Face und
-        anschließend Vertices aus `region_vertices` ohne Edge entfernt — fremde
-        freie Edges (Knife/Connect) bleiben unberührt. Umsetzung über den
-        öffentlichen export_state()/load_state()-Weg; IDs übriger Elemente
-        bleiben unverändert (AD-001), Allocator-Zähler laufen nur vorwärts.
-        """
-        orphan_edges = {e for e in region_edges if not mesh.edge_faces(e)}
-        if not orphan_edges:
-            return
-        state = mesh.export_state()
-        for eid in orphan_edges:
-            del state["edges"][int(eid)]
-        still_used = set()
-        for edata in state["edges"].values():
-            still_used.add(edata["v0"])
-            still_used.add(edata["v1"])
-        for boundary in state["faces"].values():
-            still_used.update(int(v) for v in boundary)
-        for vid in region_vertices:
-            if int(vid) not in still_used:
-                del state["vertices"][int(vid)]
-        mesh.load_state(state)
-
-    def _face_center_original(self) -> tuple[float, float, float]:
-        positions = list(self._original_positions.values())
-        n = len(positions)
-        if n == 0:
-            return (0.0, 0.0, 0.0)
-        return (
-            sum(p[0] for p in positions) / n,
-            sum(p[1] for p in positions) / n,
-            sum(p[2] for p in positions) / n,
-        )
+    def _on_begin(self, face_ids, **params: Any) -> None:
+        params.setdefault("scene", self._legacy_scene)
+        params.setdefault("camera", self._legacy_camera)
+        super()._on_begin(face_ids=face_ids, **params)

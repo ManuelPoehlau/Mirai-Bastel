@@ -69,7 +69,9 @@ Move validated code to src/ (only if decision is explicit)
 - Before submitting, run: `pytest tests --ignore=tests/test_extrude_tool.py -v` (or a specific file).
   Plain `pytest tests/ -v` currently fails on `tests/test_extrude_tool.py`, which imports an
   experiment module that isn't on the path from the repo root — excluded from the documented run,
-  not a regression.
+  not a regression. (Production does have an Extrude since WP-06 B9: `src/mirai/topology/extrude.py`,
+  hold `T`; it is covered by `tests/test_extrude_tool_production.py` and
+  `tests/test_application_extrude.py`, not by the stale file.)
 - If touching `playground/`, also run `pytest playground/tests`
 - Changes to `src/mirai/application.py` or `src/viewport/`: also run
   `pytest experiments/symmetry_lab/tests` — the Symmetry Lab runs on the app path

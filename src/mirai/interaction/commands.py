@@ -100,6 +100,9 @@ EDGE_LOOP = "EdgeLoop"
 EDGE_RING = "EdgeRing"
 LOOP_INSERT = "LoopInsert"
 LOOP_SLIDE = "LoopSlide"
+# EXTRUDE (WP-06 B9): global, hold-key-hover like Move/Rotate/Scale - routed via
+# tool_for_command() to `mirai.topology.extrude.ExtrudeTool`; the Topology-Lab
+# Alt+E binding is gone. Face mode only.
 EXTRUDE = "Extrude"
 
 # --- Articulation (EX-A / H02) -----------------------------------------------

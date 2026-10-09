@@ -25,9 +25,12 @@ python -m pytest tests --ignore=tests/test_extrude_tool.py -q
 ```
 
 `tests/test_extrude_tool.py` ist ein historischer V1-Experimenttest mit einem
-veralteten Importpfad und keiner Production-Extrude-Implementierung. Er ist
+veralteten Importpfad (`viewport.extrude_tool` existiert nicht mehr). Er ist
 nicht Teil der dokumentierten Production-Baseline; seine Einordnung wird
-separat entschieden.
+separat entschieden. Das Production-Extrude (seit WP-06 B9,
+`mirai.topology.extrude`, Taste `T` gehalten) wird von
+`test_extrude_tool_production.py` (Tool-Ebene) und `test_application_extrude.py`
+(über `Application`) geprüft — nicht von dieser Datei.
 
 ## Struktur
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Optional, Type
 
 from . import commands as cmd
+from ..topology.extrude import ExtrudeTool
 from .tool import Tool
 from .tools.move import MoveTool
 from .tools.rotate import RotateTool
@@ -26,6 +27,7 @@ _TOOL_MAPPING: dict[str, Type[Tool]] = {
     cmd.MOVE: MoveTool,
     cmd.ROTATE: RotateTool,
     cmd.SCALE: ScaleTool,
+    cmd.EXTRUDE: ExtrudeTool,
 }
 
 

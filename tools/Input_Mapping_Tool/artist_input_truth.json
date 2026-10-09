@@ -256,7 +256,7 @@
       "category": "Topology",
       "binding": "T",
       "runtime_ref": "Extrude",
-      "notes": "Changed from R — Manu 2026-09-26 (WP-06 B1, AD-013 addendum); implementation later"
+      "notes": "Changed from R — Manu 2026-09-26 (WP-06 B1, AD-013 addendum); implemented in Production (WP-06 B9, 2026-10-09), PROVISIONAL: T held + mouse = Extrude, release = commit (hold activation is an engineering proposal, not an Artist decision)"
     },
     {
       "id": "topology.connect",

@@ -185,7 +185,7 @@ Topology is **not missing**. The Playground currently contains topology experime
 
 ### Implemented topology capabilities
 
-- **Extrude** — baseline and multi-face/region behaviour.
+- **Extrude** — baseline and multi-face/region behaviour. (The `ExtrudeTool` now lives in `src/mirai/topology/extrude.py`, shared with the Production app since WP-06 B9; `playground/topology_tools/extrude.py` is only a legacy-signature shim.)
 - **Connect Edges** — including the current enablement port and free-connect case.
 - **Loop/Ring Select** — query/traversal based selection.
 - **Loop Insert** — topology mutation through the existing topology operation path.

@@ -83,7 +83,7 @@ from playground.topology_tools.loop_slide import (  # noqa: E402
     LoopSlideTool,
     LoopSlideError as _LoopSlideError,
 )
-from playground.topology_tools.extrude import ExtrudeTool  # noqa: E402
+from mirai.topology.extrude import ExtrudeTool  # noqa: E402
 from playground.experiments.topology.variant_extrude_baseline import ExtrudeBaselineVariant  # noqa: E402
 from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVariant  # noqa: E402
 from mirai.topology.contextual_c import CContext, resolve_c_context  # noqa: E402
@@ -2540,9 +2540,9 @@ class PlaygroundWindow(pyglet.window.Window):
                     if hit is None or sel.mode is not SelectionMode.FACE:
                         return pyglet.event.EVENT_HANDLED
                     face_ids = {hit}
-                tool = ExtrudeTool(self.app.scene, self.app.camera)
+                tool = ExtrudeTool()
                 tool.activate()
-                tool.begin(face_ids=face_ids)
+                tool.begin(scene=self.app.scene, camera=self.app.camera, face_ids=face_ids)
                 self._extrude_tool = tool
                 self._rebuild_vbo()
                 n = len(face_ids)

@@ -10,8 +10,10 @@ Lab's commit-time resolver here (`knife_resolve.py`, Knife-owned; faces only
 through `Mesh.split_face`) with the face geometry it shares with F2's
 `chord_validity` (`face_geometry.py`); the Production `KnifeTool` does not use
 it yet (slice S2).
+WP-06 Slice B9 moved the Multi-Face-Extrude tool here (`extrude.py`, hold `T`,
+PROVISIONAL); the Playground shares it.
 Not moved here: the rejected strip-semantics Connect (`connect_edges.py`),
-loop/extrude tools, articulation.
+the loop tools, articulation.
 """
 
 from __future__ import annotations

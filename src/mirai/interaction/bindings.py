@@ -43,6 +43,14 @@ B7). Ignoriert, solange W/E/R scharf ist (`Application.key_press`, wie die
 Modus-Tasten). Ersetzt die alten Topology-Lab-Tasten `s` (SplitEdge) und
 `c` (Connect); siehe `mirai.topology`.
 
+Extrude (WP-06 B9, Artist Input Truth `topology.extrude` = T, "for now" - Manu
+2026-10-09; PROVISIONAL, hold-key-hover like W/E/R - the "held" activation is an
+engineering proposal, not an Artist statement):
+- T (halten)      -> Extrude der ausgewaehlten bzw. gehoverten Faces (Face-Modus),
+                    Maus bewegen = Distanz, loslassen = Commit
+Wie `C` ignoriert, solange W/E/R/T scharf ist (Session Gate). Ersetzt das alte
+Topology-Lab-Binding Alt+E (entfernt).
+
 Delete / Dissolve (WP Delete/Dissolve, Artist Input Truth PROVISIONAL,
 docs/WP_DELETE_DISSOLVE_PLAN.md §0.2): zwei Tasten statt Menü (3ds Max),
 global, auf die Auswahl des aktiven Komponentenmodus:
@@ -116,6 +124,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("w"), cmd.MOVE)
     bs.set_default(_key("e"), cmd.ROTATE)
     bs.set_default(_key("r"), cmd.SCALE)
+    # WP-06 B9 (E10, AD-013 A5: a binding is not part of the capability): Extrude on
+    # `T`, PROVISIONAL baseline from the Artist Input Truth (`topology.extrude`).
+    bs.set_default(_key("t"), cmd.EXTRUDE)
     # WP-06 B4 (E33): Constraints; B4.1: sticky Toggle wie im Playground.
     bs.set_default(_key("x"), cmd.CONSTRAIN_AXIS_X)
     bs.set_default(_key("y"), cmd.CONSTRAIN_AXIS_Y)
@@ -163,13 +174,12 @@ def build_default_bindings() -> BindingSet:
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-
     # Zweiteilung) sind hier entfernt — beide durch das globale, kontextuelle
-    # `C` oben ersetzt (AD-017). `k`/`l`/`r`/`alt+e` bleiben unverändert
-    # (Legacy, außerhalb des B6-Scopes; siehe Handoff-Report).
+    # `C` oben ersetzt (AD-017). `k`/`l`/`r` bleiben unverändert (Legacy,
+    # außerhalb des B6-Scopes; siehe Handoff-Report). `alt+e` (Extrude) ist seit
+    # WP-06 B9 entfernt: ersetzt durch das globale `T` oben.
     bs.set_default(_key("k"), cmd.COLLAPSE, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("l"), cmd.EDGE_LOOP, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("r"), cmd.EDGE_RING, context=TOPOLOGY_CONTEXT)
-    # Alt+E: Single-Face-Extrude (Experiment, Topology-Lab)
-    bs.set_default(_key("e", "alt"), cmd.EXTRUDE, context=TOPOLOGY_CONTEXT)
 
     return bs
 

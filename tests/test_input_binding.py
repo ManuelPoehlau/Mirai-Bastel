@@ -199,6 +199,19 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("c"), GLOBAL_CONTEXT), cmd.CONNECT)
         self.assertEqual(bs.command_for(_key("c"), TOPOLOGY_CONTEXT), cmd.CONNECT)
 
+    def test_global_extrude_is_t_and_the_legacy_alt_e_is_gone(self):
+        # WP-06 B9 (E10): 't' is global (Artist Input Truth `topology.extrude`,
+        # PROVISIONAL); the Topology-Lab Alt+E default is superseded and removed,
+        # exactly like 's'/'c' in B6. 'k'/'l'/'r' stay in TOPOLOGY_CONTEXT.
+        bs = build_default_bindings()
+        self.assertEqual(bs.command_for(_key("t"), GLOBAL_CONTEXT), cmd.EXTRUDE)
+        self.assertEqual(bs.command_for(_key("t"), TOPOLOGY_CONTEXT), cmd.EXTRUDE)
+        self.assertIsNone(bs.command_for(_key("e", "alt"), GLOBAL_CONTEXT))
+        self.assertIsNone(bs.command_for(_key("e", "alt"), TOPOLOGY_CONTEXT))
+        # E (Rotate) is untouched by the removal of Alt+E.
+        self.assertEqual(bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.ROTATE)
+        self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
+
 
 class SerializationTests(unittest.TestCase):
     def test_dict_roundtrip_preserves_user_bindings(self):
