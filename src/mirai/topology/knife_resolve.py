@@ -61,7 +61,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Union
 
-from core import EdgeId, FaceId, VertexId
+from core import EdgeId, FaceId, Mesh, VertexId
 from core.mesh import MeshError
 
 from .face_geometry import (
@@ -483,11 +483,38 @@ def integrity_problem(mesh, before_state: dict) -> str | None:
                 if gb[(j + 1) % len(gb)] == y:
                     return "a face would be wound against its neighbour"
                 try:
-                    if v_dot(normal(f), normal(g)) < -0.5:
+                    if v_dot(normal(f), normal(g)) < -0.5 and not _fold_existed(m, before_state, x, y):
                         return "a face would be flipped against its neighbour"
                 except MeshError:
                     return "a face would have no area"
     return None
+
+
+def _fold_existed(mesh, before_state: dict, x: VertexId, y: VertexId) -> bool:
+    """True when the segment x-y lay on an edge that already joined two faces facing opposite ways in
+    `before_state` (a mesh pushed in on itself, e.g. a bowl: the rim is a fold of ~180 degrees). The cut
+    did not make that fold, so it is no reason to take the cut back; a face the cut flipped has no such
+    old edge under it."""
+    old = Mesh.from_state(before_state)
+    px, py = mesh.vertex_position(x), mesh.vertex_position(y)
+    mid = tuple(0.5 * (a + b) for a, b in zip(px, py))
+    tol = 1e-7 * max(1.0, math.dist(px, py))
+    for e in old.all_edge_ids():
+        faces = old.edge_faces(e)
+        if len(faces) != 2:
+            continue
+        a, b = (old.vertex_position(v) for v in old.edge_vertices(e))
+        ab = math.dist(a, b)
+        if ab <= tol or math.dist(a, mid) + math.dist(mid, b) - ab > tol:
+            continue
+        # x-y must lie on the old edge's line, not just have its midpoint there
+        if math.dist(a, px) + math.dist(px, b) - ab > tol or math.dist(a, py) + math.dist(py, b) - ab > tol:
+            continue
+        try:
+            return v_dot(FaceFrame(old, faces[0]).normal, FaceFrame(old, faces[1]).normal) < -0.5
+        except MeshError:
+            return False
+    return False
 
 
 @dataclass(frozen=True)

@@ -401,3 +401,43 @@ def test_cube_bow_tie_like_manus_play_test():
     assert (res.applied, res.runs, res.loops_built) == (1, 1, 2)
     _commit(mesh, before)
     assert (len(mesh.all_vertex_ids()), len(mesh.all_edge_ids()), len(mesh.all_face_ids())) == (13, 21, 10)
+
+
+# -- a fold that was already there is not the cut's fault ---------------------------------------------
+
+def _folded_pair() -> Mesh:
+    """Two quads sharing the edge b-c, the second folded back over the first (normals opposite, the rim
+    of a bowl pushed into itself)."""
+    mesh = Mesh()
+    a, b, c, d = (mesh.add_vertex(p) for p in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)))
+    e, f = mesh.add_vertex((0.5, 0, 0)), mesh.add_vertex((0.5, 1, 0))
+    mesh.add_face([a, b, c, d])
+    mesh.add_face([c, b, e, f])
+    return mesh
+
+
+def test_cut_next_to_an_existing_fold_is_kept():
+    from mirai.topology.knife_resolve import cut_in_face
+    mesh = _folded_pair()
+    before = mesh.export_state()
+    face = mesh.all_face_ids()[0]
+    a, _b, c, _d = mesh.face_vertices(face)
+    cut_in_face(mesh, face, a, c, [])
+    check = check_commit(mesh, before)
+    assert not check.rolled_back, check.problem
+    assert check.after_state is not None
+
+
+def test_a_cut_that_makes_a_flip_is_still_taken_back():
+    mesh = Mesh()
+    a, b, c, d = (mesh.add_vertex(p) for p in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)))
+    e, f = mesh.add_vertex((2, 0, 0)), mesh.add_vertex((2, 1, 0))
+    mesh.add_face([a, b, c, d])
+    mesh.add_face([b, e, f, c])                              # flat neighbour: no fold yet
+    before = mesh.export_state()
+    mesh.set_vertex_position(e, (0.5, 0, 0))                 # folds the neighbour back over the first
+    mesh.set_vertex_position(f, (0.5, 1, 0))
+    from mirai.topology.knife_resolve import cut_in_face
+    cut_in_face(mesh, mesh.all_face_ids()[1], b, f, [])      # touches the folded face
+    check = check_commit(mesh, before)
+    assert check.rolled_back and "flipped" in check.problem
