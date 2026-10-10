@@ -40,6 +40,10 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 - Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.
 - Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6).
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
+  Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
+  `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in
+  [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) (WP-VIEW-PATCH-01).
+  Werte vom Referenz-PC stehen hier erst nach Manus Lauf.
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 

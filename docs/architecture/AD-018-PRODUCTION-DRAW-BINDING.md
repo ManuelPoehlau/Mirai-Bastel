@@ -524,3 +524,15 @@ mechanics (`FlatColorLayers`), data is headless (`SelectionOverlay.
 line_layers()` / `face_layers()`), draw order mesh → wire → face highlight →
 edge highlight → points, depth `GL_LEQUAL`; faces keep the polygon offset
 also while an edge highlight is drawn. No new AD, `GLRenderStore` unchanged.
+
+*Addendum 2026-10-10 (WP-VIEW-PATCH-01, AD-020 review F1):* the partial path of
+`GLRenderStore` is now slice-only. `update(name, offset, data, ...)` hands
+`offset` and `len(data)` to `_patch_attribute`, which writes only
+`target[offset:offset + n]` into the persistent VertexList; before, every
+per-vertex `update()` re-copied the whole attribute buffer (O((moved + ring) x V)
+per drag move). The rebuild path (`begin_rebuild` / `end_rebuild`) still writes
+full buffers; the `target is None` early return and the public API are
+unchanged, and the GPU content equals the CPU copy `_cpu` after any sequence of
+partial updates (`tests/test_gl_render_store_patch.py`, GPU read-back).
+Container numbers (llvmpipe, not the reference PC): body 112 vertices, move step
++ `sync()` p50 24.6 -> 1.6 ms; table in `experiments/drag_cost/README.md`.
