@@ -38,6 +38,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-017](AD-017-CUT-ENGINE-CONTEXTUAL-C.md) | Contextual C (Split/Connect); archived Artist inputs and review sit next to it | IMPLEMENTED (2026-09-22) |
 | [AD-018](AD-018-PRODUCTION-DRAW-BINDING.md) | Production draw binding | DECIDED (Option B) |
 | [AD-019](AD-019-POINTER-CLICK-VS-DRAG-BINDINGS.md) | Pointer click vs. drag in the bindings | DECIDED (engineering, 2026-09-26) |
+| [AD-020](AD-020-SOFT-SELECTION-APP-PATH.md) | Soft Selection on the app path for the S2 Artist test (host, Core seam, influence state, visualization, keys, cost probe) | PROPOSED |
 | [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md) | Symmetry definition storage | DECIDED |
 | [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
 | [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife without `SymmetricX` copies) | PROPOSED |

@@ -288,31 +288,36 @@ Also: `Mesh.vertex_edges()` is avoided for cost reasons (N4), not for privacy.
 
 ## 5. Open questions for S2 (not decided here)
 
+*Pointers (2026-10-10):* the S2 gate
+[`docs/architecture/AD-020-SOFT-SELECTION-APP-PATH.md`](../../docs/architecture/AD-020-SOFT-SELECTION-APP-PATH.md)
+(PROPOSED) addresses the items marked "→ AD-020" below; its §11 lists what it proposes for each. The questions
+themselves stay recorded here unchanged.
+
 1. **Core seam.** Promote by changing the frozen Core (`_weights` blend → weighted parameters,
    possibly absolute Scale evaluation), or keep subclasses outside the Core with a public hook?
-   Either needs an Architecture Decision (CORE_V1_FREEZE).
+   Either needs an Architecture Decision (CORE_V1_FREEZE). → AD-020 §3
 2. **Influence channel.** `params["influence"]` (like `pivot`/`symmetry`) vs a typed field; who
    computes it on the app path (tool `begin()`), and is the transient-at-begin rule (E2) enough
-   once the viewport wants to *show* weights?
+   once the viewport wants to *show* weights? → AD-020 §4
 3. **Defaults** for metric, curve and scale formula: need an artist comparison in a window —
    S1 has only numbers (§3). Includes whether the finger/lip effect (M1/M2) matters in practice
-   and whether the geodesic diamond on regular grids (M4) is visible.
+   and whether the geodesic diamond on regular grids (M4) is visible. → AD-020 §6 (switches only)
 4. **Radius**: units (world vs % of bounding radius vs screen), how it is set, and whether it
-   lives per tool or globally.
+   lives per tool or globally. → AD-020 §4.3, §6
 5. **Identity gestures** create History entries in the Core already (L6) — accept, or compare
-   with a tolerance in `commit()`?
+   with a tolerance in `commit()`? → AD-020 §3.5
 6. **Basis contract** (L5): make "one basis per gesture" explicit in the Core interface, or keep
-   incremental Scale for `w == 1` and absolute only for `w < 1`?
+   incremental Scale for `w == 1` and absolute only for `w < 1`? → AD-020 §3.5
 7. **Changing rotation axis** mid-gesture (L4): does any tool do it? If not, should the contract
-   say constant axis?
-8. **Symmetry combination** (refused here, E9): mirrored influence, seam vertices with `w < 1`.
+   say constant axis? → AD-020 §3.5
+8. **Symmetry combination** (refused here, E9): mirrored influence, seam vertices with `w < 1`. → AD-020 §8
 9. **Cost on the reference PC**: recorded before and after the `math.dist` swap (§2.1, §2.2, R8–R10).
    Still open: the viewport share of a soft drag (N5) needs the app path. Also: should `math.dist`
    be avoided elsewhere, given R6? `src/` uses it in `mirai/mesh_geometry.py`,
    `mirai/topology/face_geometry.py`, `chord_validity.py`, `knife_resolve.py`; whether any of
-   these is on a hot path was not examined.
+   these is on a hot path was not examined. → AD-020 §7, §12
 10. Is a tolerance-free radius-0 identity (L3) still required once the pivot comes from the tool
-    (default-pivot summation order)?
+    (default-pivot summation order)? → AD-020 §3.5
 
 ## 6. Not done in this slice
 
