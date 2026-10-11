@@ -84,21 +84,43 @@ Scope (binding, see the handoffs):
   Face without that cleanup. Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
+- Scene loader (temporary, `PROVISIONAL`, `src/scene_menu.py`): `SPACE`
+  opens a small context menu at the cursor listing the available scenes
+  (`cube` + the registry assets from `examples/loaders/assets.py`); clicking
+  a row loads it through `Application.load_scene` (selection/history/pick
+  cache reset, camera re-framed), clicking elsewhere / `SPACE` / `Esc` closes
+  it. While open the menu is modal. The key is an engineering proposal
+  (INPUT_WIRING_MAP §10 "Load" = TBD) — `SPACE` stays unbound in the
+  BindingSet, and the menu only exists when `install_handlers(..., menu=...)`
+  is given one, so the Symmetry Lab's shared wiring is unchanged.
+- Scene loader (temporary, `PROVISIONAL`, `src/scene_menu.py`): `SPACE`
+  opens a small context menu at the cursor listing the available scenes
+  (`cube` + the registry assets from `examples/loaders/assets.py`); clicking
+  a row loads it through `Application.load_scene` (selection/history/pick
+  cache reset, camera re-framed), clicking elsewhere / `SPACE` / `Esc` closes
+  it. While open the menu is modal. The key is an engineering proposal
+  (INPUT_WIRING_MAP §10 "Load" = TBD) — `SPACE` stays unbound in the
+  BindingSet, and the menu only exists when `install_handlers(..., menu=...)`
+  is given one, so the Symmetry Lab's shared wiring is unchanged.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
 no business logic. WP-SYM-LAB-03 H6 (2026-10-03): the wiring is importable —
-`create_window()`, `install_handlers(window, app)` (all event translation,
-headless-testable with a stand-in window) and `run(window, app)` (frame tick
-+ event loop); `main()` composes them with the scene set-up, behaviour
-unchanged. Another host (the Symmetry Lab, `experiments/`) reuses them
-instead of copying the handlers; `main.py` itself knows no experiment. All state and execution live in `Application`/`Viewport`
+`create_window()`, `install_handlers(window, app, menu=None)` (all event
+translation, headless-testable with a stand-in window) and `run(window, app)`
+(frame tick + event loop); `main()` composes them with the scene set-up,
+behaviour unchanged. Another host (the Symmetry Lab, `experiments/`) reuses
+them instead of copying the handlers; `main.py` itself knows no experiment.
+The optional `menu` (temporary scene loader, see the list above) is the only
+addition and defaults to off, so that host keeps the old behaviour. All state
+and execution live in `Application`/`Viewport`
 (`src/mirai/application.py`, `src/viewport/viewport.py`), which stay
 window-free.
 
 Usage:
     python3 src/main.py                       # head basemesh (default)
     python3 src/main.py cube                   # cube
+    python3 src/main.py subd_cube              # registry name (same entries as the SPACE menu)
     python3 src/main.py path/to/mesh.obj       # a different .obj
 
 The window's X button closes it (WP-06 B1, Artist decision A3, 2026-09-26)
@@ -131,6 +153,7 @@ from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
+from scene_menu import SceneMenu, load_named_scene, scene_entries  # noqa: E402
 
 _DEFAULT_HEAD_OBJ = _ROOT / "examples" / "meshes" / "head_basemesh.obj"
 
@@ -168,10 +191,19 @@ def create_window(caption: str = "Mirai — Stage B"):
     return pyglet.window.Window(width=1024, height=768, resizable=True, caption=caption)
 
 
-def install_handlers(window, app: Application) -> None:
+def install_handlers(window, app: Application, menu: SceneMenu | None = None) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
-    `window.clear()` — headless-testable with a stand-in window."""
+    `window.clear()` — headless-testable with a stand-in window.
+
+    `menu` (temporary, `PROVISIONAL`, `src/scene_menu.py`): the scene loader.
+    `None` (default) keeps this wiring exactly as it was — the Symmetry Lab
+    shares it and therefore gets no menu. While the menu is open it is
+    modal: keys, mouse press/drag/release, motion and the wheel are swallowed
+    instead of being forwarded to `app`."""
+
+    # Temporary scene loader: last known cursor (None = centre of the window).
+    cursor: tuple[float, float] | None = None
 
     @window.event
     def on_resize(width: int, height: int):
@@ -192,8 +224,26 @@ def install_handlers(window, app: Application) -> None:
 
     @window.event
     def on_key_press(symbol: int, modifiers: int):
-        track_shift(symbol, True)
         inp = key_from_pyglet(symbol, modifiers)
+        if menu is not None and menu.is_open:
+            # Modal: the menu swallows every key; SPACE/Esc closes it.
+            menu.key(inp)
+            return pyglet.event.EVENT_HANDLED
+        if (
+            menu is not None
+            and inp is not None
+            and inp.kind == "key"
+            and inp.value == "space"
+            and not inp.modifiers
+            # No menu in the middle of a running gesture (W/E/R/T, Knife).
+            and app.interaction_owner is None
+            and not app.pointer.active
+        ):
+            fallback = (window.width / 2, window.height / 2)
+            cx, cy = cursor if cursor is not None else fallback
+            menu.open(cx, cy, window.width, window.height)
+            return pyglet.event.EVENT_HANDLED
+        track_shift(symbol, True)
         if inp is not None:
             app.key_press(inp)
         # Always handled: pyglet's default handler would close the window on
@@ -202,6 +252,8 @@ def install_handlers(window, app: Application) -> None:
 
     @window.event
     def on_key_release(symbol: int, modifiers: int):
+        if menu is not None and menu.is_open:
+            return pyglet.event.EVENT_HANDLED
         track_shift(symbol, False)
         inp = key_from_pyglet(symbol, modifiers)
         if inp is not None:
@@ -214,33 +266,53 @@ def install_handlers(window, app: Application) -> None:
         nonlocal shift_keys
         shift_keys = frozenset()
         app.set_shift_held(False)
+        # The menu must not outlive the focus (it would stay modal).
+        if menu is not None:
+            menu.close()
 
     @window.event
     def on_mouse_press(x: int, y: int, button: int, modifiers: int):
+        if menu is not None and menu.is_open:
+            # A hit loads the row, a miss closes the menu — never forwarded.
+            menu.press(x, y)
+            return pyglet.event.EVENT_HANDLED
         inp = mouse_from_pyglet(button, modifiers)
         if inp is not None:
             app.pointer_press(inp, x, y)
 
     @window.event
     def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
+        if menu is not None and menu.is_open:
+            return pyglet.event.EVENT_HANDLED
         app.pointer_drag(dx, dy, x, y)
 
     @window.event
     def on_mouse_release(x: int, y: int, button: int, modifiers: int):
+        if menu is not None and menu.is_open:
+            return pyglet.event.EVENT_HANDLED
         inp = mouse_from_pyglet(button, modifiers)
         if inp is not None:
             app.pointer_release(inp.value, x, y)
 
     @window.event
     def on_mouse_motion(x: int, y: int, dx: int, dy: int):
+        nonlocal cursor
+        cursor = (x, y)
+        if menu is not None and menu.is_open:
+            menu.motion(x, y)
+            return pyglet.event.EVENT_HANDLED
         app.pointer_motion(x, y, dx, dy)
 
     @window.event
     def on_mouse_leave(x: int, y: int):
+        if menu is not None and menu.is_open:
+            menu.motion(-1.0, -1.0)
         app.pointer_leave()
 
     @window.event
     def on_mouse_scroll(x: int, y: int, scroll_x: float, scroll_y: float):
+        if menu is not None and menu.is_open:
+            return pyglet.event.EVENT_HANDLED
         inp = wheel_input(scroll_x, scroll_y, bool(shift_keys))
         if inp is not None:
             app.pointer_scroll(inp)
@@ -253,6 +325,8 @@ def install_handlers(window, app: Application) -> None:
         window.clear()
         app.viewport.sync()
         app.viewport.render()
+        if menu is not None and menu.is_open:
+            menu.draw()
 
 
 def run(window, app: Application) -> None:
@@ -278,9 +352,15 @@ def main() -> None:
 
     app = Application()
 
+    entries = scene_entries()
     arg = sys.argv[1] if len(sys.argv) > 1 else None
     if arg == "cube":
         app.init_scene("cube", **GL_TYPES)
+    elif arg is not None and arg in entries:
+        # Registry name — the same entry list the SPACE menu shows.
+        if not load_named_scene(app, arg, GL_TYPES):
+            print(f"Failed to load scene '{arg}'", file=sys.stderr)
+            app.init_scene("cube", **GL_TYPES)
     else:
         obj_path = Path(arg) if arg is not None else _DEFAULT_HEAD_OBJ
         try:
@@ -295,7 +375,9 @@ def main() -> None:
     # resize or camera event has fired).
     app.set_viewport_size(window.width, window.height)
 
-    install_handlers(window, app)
+    # Temporary scene loader (PROVISIONAL): SPACE opens it at the cursor.
+    menu = SceneMenu(entries, load=lambda name: load_named_scene(app, name, GL_TYPES))
+    install_handlers(window, app, menu=menu)
     run(window, app)
 
 

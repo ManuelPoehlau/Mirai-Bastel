@@ -623,6 +623,51 @@ class Application:
         center, radius = mesh_center_and_radius(mesh)
         self.camera.frame_on_bounds(center, radius)
 
+    def load_scene(
+        self,
+        geometry_type: str = "cube",
+        store_type: type[ResourceStore] = TraceStore,
+        obj_path: str | Path | None = None,
+        point_overlay_type: type | None = None,
+        line_overlay_type: type | None = None,
+        face_overlay_type: type | None = None,
+    ) -> None:
+        """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
+        zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
+
+        `init_scene(...)` tauscht Mesh und Viewport, lässt aber Selection,
+        History und Hover der *alten* Szene stehen — deren IDs gehören zum
+        alten Mesh. Deshalb danach:
+        - Auswahl leeren (keine Geister-IDs im neuen Mesh);
+        - frische `HistoryStack` für `scene.history` UND `app.history`
+          (derselbe Alias wie in `__init__`, `core/history.py` bleibt
+          unangetastet) plus die Selection-Mirror-Stacks leeren, damit
+          Undo/Redo nach dem Wechsel keine Einträge der alten Szene sieht;
+        - Hover löschen und den Pick-Cache invalidieren (der Cache hängt an
+          der Application, nicht am Viewport, und die Kamera-Revision bleibt
+          nach dem Tausch gleich);
+        - Viewport-Größe/Aspect erneut melden (neuer Viewport) und die
+          Kamera neu ausrichten.
+        Kein History-Eintrag, keine Core-Änderung; der Aufrufer setzt bei
+        Bedarf selbst einen Namen-Status (`set_status`)."""
+        self.init_scene(
+            geometry_type,
+            store_type=store_type,
+            obj_path=obj_path,
+            point_overlay_type=point_overlay_type,
+            line_overlay_type=line_overlay_type,
+            face_overlay_type=face_overlay_type,
+        )
+        self.selection.clear()
+        self.history = HistoryStack()
+        self.scene.history = self.history
+        self._selection_undo_stack.clear()
+        self._selection_redo_stack.clear()
+        self._set_hovered(None)
+        self._pick_cache.invalidate()
+        self.set_viewport_size(self.viewport_width, self.viewport_height)
+        self.frame_scene()
+
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params
     ) -> bool:

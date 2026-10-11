@@ -1,7 +1,9 @@
 """`src/main.py` wiring, headless (WP-SYM-LAB-03 H6).
 
-`install_handlers(window, app)` is driven with a stand-in window (records the
-`@window.event` handlers, no GL) and a headless `Application` (TraceStore).
+`install_handlers(window, app, menu=None)` is driven with a stand-in window
+(records the `@window.event` handlers, no GL) and a headless `Application`
+(TraceStore). The last tests wire the temporary SPACE scene menu
+(`src/scene_menu.py`) through the same entry point.
 Proves the split wiring still translates every event as `main()` did, so a
 second host (the Symmetry Lab) can reuse it. pyglet's key/mouse constants
 need pyglet's window module; it is imported headless as in
@@ -16,11 +18,12 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 
-from tests._bootstrap import _SRC
+from tests._bootstrap import _REPO_ROOT, _SRC
 
 from mirai.application import Application
 from mirai.interaction import commands
 from mirai.viewport.picking import pick_nearest_vertex
+from scene_menu import HEADER_HEIGHT, ROW_HEIGHT, SceneMenu, load_named_scene, scene_entries
 
 pyglet = pytest.importorskip("pyglet")
 pyglet.options["headless"] = True
@@ -166,3 +169,102 @@ def test_drag_orbits_and_scroll_zooms(wired):
     assert app.camera.yaw != yaw
     h["on_mouse_scroll"](10, 10, 0, 1)
     assert app.camera.distance < distance
+
+
+# -- Temporary scene menu (src/scene_menu.py, PROVISIONAL) ------------------
+
+_HEAD_ASSET = _REPO_ROOT / "examples" / "meshes" / "head_basemesh.obj"
+
+
+@pytest.fixture
+def menu_wired():
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    loaded: list = []
+
+    def load(name: str) -> bool:
+        loaded.append(name)
+        return True
+
+    menu = SceneMenu(scene_entries(), load=load)
+    main_module.install_handlers(window, app, menu=menu)
+    return window, app, menu, loaded
+
+
+def test_space_opens_the_scene_menu_at_the_cursor_and_is_modal(menu_wired):
+    window, app, menu, _ = menu_wired
+    h = window.handlers
+    h["on_mouse_motion"](300, 200, 0, 0)
+
+    assert h["on_key_press"](key.SPACE, 0) == pyglet.event.EVENT_HANDLED
+
+    assert menu.is_open
+    assert menu.rect[0] == 300
+    assert menu.rect[1] == 200
+    # Modal: W erreicht die Application nicht mehr.
+    assert h["on_key_press"](key.W, 0) == pyglet.event.EVENT_HANDLED
+    assert app.transform_command is None
+
+
+def test_a_click_on_a_row_loads_that_scene(menu_wired):
+    window, app, menu, loaded = menu_wired
+    h = window.handlers
+    h["on_key_press"](key.SPACE, 0)
+    mx, my, _, _ = menu.rect
+
+    # Zeile 1 = head_basemesh (Reihenfolge: cube + Registry).
+    h["on_mouse_press"](mx + 10, my - HEADER_HEIGHT - ROW_HEIGHT - 5, mouse.LEFT, 0)
+
+    assert loaded == ["head_basemesh"]
+    assert not menu.is_open
+
+
+@pytest.mark.skipif(not _HEAD_ASSET.is_file(), reason="head_basemesh fehlt (examples/meshes/)")
+def test_a_loaded_scene_reaches_the_application():
+    # Echter Loader (kein Zähler-Stub): die Szene muss tatsächlich wechseln.
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    menu = SceneMenu(scene_entries(), load=lambda name: load_named_scene(app, name))
+    main_module.install_handlers(window, app, menu=menu)
+    h = window.handlers
+
+    h["on_key_press"](key.SPACE, 0)
+    mx, my, _, _ = menu.rect
+    h["on_mouse_press"](mx + 10, my - HEADER_HEIGHT - ROW_HEIGHT - 5, mouse.LEFT, 0)
+
+    assert len(app.scene.mesh.all_vertex_ids()) == 326
+    assert not app.selection.vertices
+    assert app.status_message == "Scene: head_basemesh"
+
+
+def test_escape_and_a_click_outside_close_the_menu(menu_wired):
+    window, app, menu, loaded = menu_wired
+    h = window.handlers
+    h["on_mouse_motion"](40, 40, 0, 0)
+
+    h["on_key_press"](key.SPACE, 0)
+    assert h["on_key_press"](key.ESCAPE, 0) == pyglet.event.EVENT_HANDLED
+    assert not menu.is_open
+
+    h["on_key_press"](key.SPACE, 0)
+    h["on_mouse_press"](5, 5, mouse.LEFT, 0)
+
+    assert not menu.is_open
+    assert loaded == []
+    assert len(app.scene.mesh.all_vertex_ids()) == 8
+
+
+def test_deactivate_closes_the_menu(menu_wired):
+    window, app, menu, _ = menu_wired
+    window.handlers["on_key_press"](key.SPACE, 0)
+    assert menu.is_open
+
+    window.handlers["on_deactivate"]()
+
+    assert not menu.is_open
