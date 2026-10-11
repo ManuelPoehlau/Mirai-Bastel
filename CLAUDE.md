@@ -74,13 +74,7 @@ Move validated code to src/ (only if decision is explicit)
    pytest playground/tests/test_<module>.py -q         # playground/ changes
    ```
    Useful flags: `-x` (stop at first failure), `--lf` (re-run last failures only).
-2. **Final check: full suite exactly ONCE**, only after the implementation is complete and all targeted tests are green:
-   ```bash
-   pytest tests -q
-   pytest playground/tests -q                  # only if playground/ was touched
-   pytest experiments/symmetry_lab/tests -q    # only if src/mirai/application.py or src/viewport/ was touched
-   ```
-   Don't repeat the full run after every fix: fix via targeted tests, then re-run the full suite once more.
+2. **Final check: once, scoped to what the change can affect** — not "everything". Which trees to run (Production `tests`, `playground/tests`, `experiments/symmetry_lab/tests`) depends on the real dependencies, e.g. Lab-only work needs only the Lab tree. The decision rules are in [AGENTS.md §8a](AGENTS.md); follow them rather than a fixed list. Don't repeat a tree after every fix: fix via targeted tests, then re-run only the failing tree once.
 
 Details:
 
@@ -92,11 +86,8 @@ Details:
   "N skipped" in playground/ can mean "environment", not "green"; run with xvfb for the real result.
 - `tests/_archive/` holds obsolete tests (e.g. the stale V1 `test_extrude_tool`); `pytest.ini`
   excludes it. Don't re-add `--ignore` workarounds — fix the cause or archive with a date.
-- If touching `playground/`, also run `pytest playground/tests`
-- Changes to `src/mirai/application.py` or `src/viewport/`: also run
-  `pytest experiments/symmetry_lab/tests` — the Symmetry Lab runs on the app path
-  (start: `python experiments/symmetry_lab/run.py [asset]`, WP-SYM-LAB-03) and catches
-  Production changes there instead of drifting
+- The Symmetry Lab runs on the `src/mirai/application.py` path (start: `python experiments/symmetry_lab/run.py [asset]`,
+  WP-SYM-LAB-03), so shared `src/` changes it can reach are checked against its tests (scope rules: AGENTS.md §8a)
 - `_measure_coverage.py` is a self-described *temporary* Gate-3 coverage script, not a general tool
 
 ## Documentation maintenance
