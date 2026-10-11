@@ -12,6 +12,7 @@ Beispielmodelle und kleine reproduzierbare Szenarien für Entwicklung und Tests.
   | `head_basemesh` | `head_basemesh.obj` (+ `.mtl`, `.blend`-Quelle) | 326 V / 324 Quads, geschlossen — Rigging-Kopf |
   | `man_with_shoes_basemesh` | `Man_With_Shoes_basemesh.obj` (+ `.mtl`) | 928 V / 926 Quads, geschlossen, ca. 1,88 Einheiten hoch — Charakter-Basemesh |
   | `subd_cube` | `SubD_Cube.obj` (+ `.mtl`) | 26 V / 24 Quads, geschlossen — Würfel mit je 4 Quads pro Fläche, Testasset für SubD-/Topologie-Arbeit |
+  | `gollum` | `gollum.obj` | 21 875 V / 21 875 Quads, ca. 1,2 Einheiten hoch — hochaufgelöstes Charakter-Mesh (ZBrush-Export), Stresstest für Viewport, Picking und Soft Selection auf großen Meshes; Laden dauert einige Sekunden |
 
 - **`loaders/`** — zwei Bausteine ohne Core-/Viewport-/pyglet-Abhängigkeit (headless testbar),
   geteilt aus demselben Grund wie die Assets, die sie laden (AD-007):

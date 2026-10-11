@@ -83,6 +83,15 @@ ASSETS: dict[str, ObjAsset] = {
             "Topologie-Arbeit."
         ),
     ),
+    "gollum": ObjAsset(
+        name="gollum",
+        path=ASSETS_DIR / "gollum.obj",
+        description=(
+            "Hochaufgelöstes Charakter-Mesh (ZBrush-Export, 21 875 V / "
+            "21 875 Quads, ca. 1,2 Einheiten hoch). Stresstest für Viewport, "
+            "Picking und Soft Selection auf großen Meshes."
+        ),
+    ),
 }
 
 
