@@ -21,8 +21,9 @@ reference PC.
 | File | What it is |
 |---|---|
 | `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one entry per scenario in `SCENARIOS` (`plain_w`; `soft_w` = the Soft Selection drag with the band overlay, WP-SOFT-01 S2b) |
+| `probe_navigation_gl.py` | CLI probe (WP-VIEW-PERF-01): orbit, pan, zoom, first hover after a camera change, hover move, selection click, orbit with wire, the real event loop, plain/soft W - per event + frame on head, body and `gollum.obj`; see "Navigation and picking" below |
 | `_paths.py` | sys.path bootstrap (pattern copied from `soft_selection/_paths.py`) |
-| `tests/` | headless tests: argument handling, statistics, soft variants and report format, import boundary (no pyglet, no window); one end-to-end smoke run of `soft_w`, skipped without a GL context |
+| `tests/` | headless tests: argument handling, statistics, soft variants and report format, import boundary (no pyglet, no window); one end-to-end smoke run of `soft_w`, skipped without a GL context; `test_probe_navigation_args.py` for the navigation probe (arguments, asset paths, row budget, report format, import boundary) |
 
 ## What it measures
 
@@ -186,8 +187,158 @@ radii are not in its default size list (5 / 15 / 30 / 50 %); `--sizes 100 200` m
 
 Noch kein Verdikt — der Vergleichstest S2c kommt danach, wenn die Zahlen passen.
 
+## Navigation and picking on a high-resolution mesh (WP-VIEW-PERF-01, 2026-10-11)
+
+Discovery, Type B, mode M5: measure and explain, propose fixes; **no change under `src/`**. Question (Manu, reference PC):
+with `examples/meshes/gollum.obj` (21 875 V / 21 875 quads) not only soft transforms but Orbit, Pan and Zoom lag
+strongly. Where does the time go per input event and per frame?
+
+### Method
+
+`probe_navigation_gl.py` drives the same chain as `probe_drag_gl.py` (`Application` → `Viewport` → `GLRenderStore` + the
+`GL_TYPES` overlays of `src/main.py`, hidden 1024×768 window) through the window's public entry points
+(`pointer_press` / `pointer_drag` / `pointer_release` / `pointer_scroll` / `pointer_motion` / `key_press`). One sample = one
+input event, then the frame `on_draw` would draw (`sync()` + `render()` + `glFinish()`). Instrumentation wraps from the
+outside, nothing under `src/` is touched (handoff §10: no hook was needed):
+
+| Column | Meaning |
+|---|---|
+| `event` | the `Application` handler for the event |
+| `pick` | part of `event` inside `pick_component` (`mirai.application` module attribute wrapped) |
+| `cache` | part of `pick` inside `PickCache.refresh` (instance attribute wrapped); `rebuilds/event` = refreshes whose signature changed |
+| `occl` | part of `pick` inside `vertex_occluded` / `edge_point_occluded` (`mirai.viewport.picking` module attributes); `tests/event` = calls |
+| `sync` | `Viewport.sync()` |
+| `draw` | `Viewport.render()` + `glFinish()`, CPU wall time |
+| `gpu` | `GL_TIME_ELAPSED` query around `Viewport.render()` (GL 3.3 core) - real GPU time on a real GPU, not meaningful on llvmpipe |
+| `upload` | bytes pyglet committed to GL buffers during the frame (`BackedBufferObject.commit` wrapped: dirty region) |
+| `frame` | `event` + `sync` + `draw` |
+
+Scenarios (handoff E2): `orbit` / `pan` (Alt+LMB / Alt+Shift+LMB drag steps of 4 px), `zoom` (wheel notches in/out with the
+cursor resting on the mesh), `first_hover` (a short orbit gesture, unmeasured, then the first plain mouse move), `hover_move`
+(plain moves of 3 px across the mesh, camera unchanged), `select_click` (LMB press + release alternating between two
+vertices), `orbit_wire` (orbit with the Shift+D wire overlay, H5), `loop` (H3: `src_main.install_handlers` on the window and
+`pyglet.app.run(1/60)` + the 1/60 s `update_viewport` tick as `src_main.run`, events injected through
+`window.dispatch_event`: orbit drags at 240/s, hover moves at 120/s, wheel notches at 20/s, 2 s each; counts on_draw vs
+events and the longest time without a frame), `plain_w` 36 / 112 / 500 V and `soft_w` 15 % / 50 % geodesic (the
+scenarios of `probe_drag_gl.py`, reused; their once-per-row extras with 3 instead of 15 repetitions). A cProfile top-N for
+orbit, zoom and first hover runs on the last asset. Rows have a time budget (`--row-seconds`, default 8 s; at least
+`--min-steps` samples), so `n` is smaller on gollum.
+
+Assets: head and body by registry name, gollum by path (`--assets` takes registry names or `.obj` paths). gollum is **not**
+registered in `examples/loaders/assets.py`: an entry there is a 7-line `ObjAsset(...)` block, not a one-line change, and the
+probe does not need it (E3). It is a small follow-up if the SPACE menu should list it.
+
+### Result: container (2026-10-11)
+
+**Container numbers, not the reference PC** (`REFERENCE_HARDWARE.md` §4): Intel Xeon @ 2.80 GHz, 4 logical cores, Python
+3.13.16, `GL_RENDERER` llvmpipe (Mesa 25.2.8, GL 4.5 core) - a software rasteriser, so `draw` is CPU rasterisation and
+`gpu` is not GPU time. `main` @ `fdef090`, default run (`python experiments/drag_cost/probe_navigation_gl.py`, 2 min). ms
+p50 (p95) per event + frame; one frame at 60 Hz = 16.7 ms.
+
+| Scenario | head (326 V) frame | body (928 V) frame | **gollum (21 875 V) frame** | gollum: where it goes |
+|---|---:|---:|---:|---|
+| orbit step | 0.89 (1.25) | 1.16 (1.97) | **6.85 (8.62)** | event 0.03, sync 0.07, draw 6.76 (llvmpipe), upload 0 |
+| pan step | 0.98 (1.43) | 0.99 (1.35) | **6.99 (11.46)** | event 0.05, sync 0.06, draw 6.89, upload 0 |
+| zoom notch | 6.04 (8.49) | 9.49 (14.17) | **813 (1535)** | pick 797 = cache rebuild 188 + **occlusion 596 (91 tests)** |
+| first hover after a camera change | 5.53 (8.79) | 12.25 (20.93) | **332 (545)** | pick 322 = cache rebuild 178 + occlusion 129 (16 tests) |
+| hover move (cache valid) | 1.76 (4.51) | 1.76 (3.91) | **183 (929)** | pick 173 = occlusion 166 (37 tests); scan ~7 |
+| selection click | 2.20 (3.81) | 4.88 (6.46) | **233 (327)** | pick 223 = occlusion 217 (30 tests) |
+| orbit, wire overlay on | 1.90 (3.34) | 2.18 (3.10) | **19.5 (27.0)** | draw 19.4 (llvmpipe, ~44k lines), sync 0.08, upload 0 |
+
+W drags (`move` = transform + sync, the AD-020 8 ms p95 bar; draw not included):
+
+| Drag | head move p50 / p95 | body | **gollum** | gollum: where it goes |
+|---|---:|---:|---:|---|
+| plain W 36 V | 1.51 / 2.06 | 2.05 / 2.53 | **10.76 / 16.77** | sync 10.6, of which `store.update` 0.4; rest = `recompute_bounds` over all V |
+| plain W 112 V | 2.30 / 3.91 | 2.50 / 4.00 | **13.30 / 24.16** | sync 13.0 (update 0.9) |
+| plain W 500 V | - (326 V) | 13.85 / 15.14 | **20.96 / 34.24** | sync 20.1 (update 3.1) |
+| soft W 15 % geodesic | 1.04 / 1.86 (30 V) | 1.80 / 2.22 (28 V) | **21.8 / 36.2 (508 V)** | sync 20.5 (update 3.8); commit frame **2045 ms** |
+| soft W 50 % geodesic | 2.70 / 3.95 (109 V) | 2.86 / 5.09 (135 V) | **73 / 129 (3339 V)** | sync 67 (update 19, 6888 calls/move); commit frame **2689 ms** |
+
+Event loop (`loop`, real wiring, gollum): orbit 245 events → 118 on_draw in 2 s (59/s), longest time without a frame
+**20 ms**; hover 3 events in 4.5 s (**1.5 s each**), 2 frames, longest time without a frame **2.8 s**; zoom 3 notches in
+4.4 s (**1.4 s each**), longest time without a frame **1.8 s**. Head and body: ~58 frames/s in all three phases, longest
+gap 18-53 ms.
+
+cProfile (gollum, profiler overhead ~3x, so read the shares, not the absolute ms): zoom and first hover are dominated by
+`PickCache.refresh` → `OrbitCamera.project_to_screen` per vertex, which recomputes `eye()` and `basis()` (trig, three
+normalisations) **for every vertex** (87 600 calls of each for 4 refreshes), and by the occlusion test: `point_occluded`
+loops over all 21 875 face bboxes in Python, and `_incident_faces_of_vertex` calls `core.Mesh.vertex_edges`, a linear scan
+over all 43 750 edges (`src/core/mesh.py`: "V1: einfacher Scan") - ~4.5 ms per call, about 40 % of one occlusion test.
+Orbit: 95 % of the frame is the llvmpipe draw (`draw_subset`); no Python work of note.
+
+Why so many occlusion tests: `pick_nearest_vertex` runs the occlusion test for **every** vertex within 14 px that is closer
+than the best visible one found so far, in mesh order. An occluded vertex never lowers that bound, so every hidden vertex
+within 14 px of the cursor (the back of the head behind the cursor) costs one full test: 16-91 tests per pick on gollum vs
+1-6 on head and body. With ~6.5 ms per test this is the largest single cost.
+
+### Hypotheses (handoff E1)
+
+| # | Hypothesis | Verdict | Evidence (container) |
+|---|---|---|---|
+| H1 | every zoom notch calls `_refresh_hover` → full `PickCache` rebuild | **Confirmed, and it is the smaller half** | 1.0 rebuild per notch, 188 ms on gollum; the occlusion tests of the same pick cost 596 ms (91 tests) - the notch is 813 ms p50, 1.5 s p95 |
+| H2 | plain mouse motion after any camera change rebuilds the pick cache on the first hover | **Confirmed** | `first_hover` 1.0 rebuild/event, 178 ms + 129 ms occlusion = 332 ms p50. **And** every later hover move without a camera change still costs 183 ms p50 / 929 ms p95 (occlusion, not the cache) |
+| H3 | `on_draw` runs per input event rather than once per frame | **Rejected as stated** | pyglet 2.1 `app.run(1/60)` dispatches `on_draw` only from the scheduled `_redraw_windows`; `loop` shows 59 on_draw/s with 122-189 orbit events/s. **But** the input work is not frame-bounded either: every hover move and wheel notch does its whole pick inside the event handler, so one event blocks the loop for 0.2-1.5 s on gollum (`loop` hover/zoom: < 1 frame/s). On Windows, mouse moves are coalesced by the OS, wheel notches are queued one by one (a fast scroll = one pick per notch, back to back) |
+| H4 | a camera-only frame uploads whole attribute buffers or re-syncs overlays/edges | **Rejected** | upload 0 KB in every orbit/pan/orbit_wire frame; sync 0.03-0.08 ms; wire edges are not rebuilt on a camera change. A hover/selection change uploads 85.5 KB = the whole `highlight_flags` buffer (21 875 floats; the attribute is kept on llvmpipe) and costs ~3 ms `sync` on gollum - a side cost, not the lag |
+| H5 | the draw itself is significant on the 9800 GTX | **Open (reference PC)** | indexed buffer (`vertex_list_indexed`, not de-indexed - that part is rejected from the code); 43 750 triangles. llvmpipe CPU raster: 6.8 ms mesh, 19.4 ms with wire. The `gpu` column on the reference PC decides; a 2008 GPU draws this triangle count in well under a frame (estimate, not measured) |
+| - | **found:** occlusion test cost (O(F) face loop + O(E) `vertex_edges` per hidden candidate) | **New, dominant** | see above; 30-91 tests per pick on gollum |
+| - | **found:** `RenderMesh._sync_geometry` recomputes the bounds over **all** vertices on every W move | **New** | gollum plain W 36 V: sync 10.6 ms, `store.update` 0.4 ms; profiled: `recompute_bounds` ~85 % of `sync`. Nothing in `src/` reads the bounds; `VIEWPORT_V02_ARCHITECTURE.md` §7 already asks for "affected vertices only" |
+| - | **found:** the commit frame of a W drag on gollum is 2-2.7 s | **New** | `key_release` → `_refresh_hover` → cache rebuild + occlusion (184 tests in one profiled commit) |
+
+**What this means for "Orbit and Pan lag":** in the container the orbit/pan step itself is cheap on gollum (event 0.03 ms,
+no pick, no upload, 59 frames/s in the real loop). The lag the Artist sees is most likely the picking **around** the
+gesture: every mouse move before pressing Alt+LMB is a 0.2-1 s pick, the press waits behind the pick that is running, and
+the first move after releasing (and after every zoom notch) rebuilds the cache and picks again (0.3 s). This is a reading
+from container numbers; the reference PC's `orbit` row (`gpu`, `draw`) confirms or rejects it. Rough scale to the
+reference PC: body plain W 112 V was 5.29 ms p50 there vs 1.64-2.50 ms in containers (2026-10-10/11), i.e. ~2-3x - so
+expect roughly 0.4-0.6 s per hover pick (p95 2-3 s) and ~2 s per zoom notch on gollum (estimate, not measured).
+
+### Fix options (ranked by gain / cost; none implemented)
+
+Gains are container estimates for gollum, to be confirmed by re-running this probe after a fix.
+
+| Rank | Option | Where | Expected gain (gollum, container) | Cost / risk |
+|---:|---|---|---|---|
+| 1 | **Fewer occlusion tests:** test candidates nearest-first and stop at the first visible one (sort the ≤ 14 px candidates by screen distance) instead of testing every closer hidden vertex in mesh order. Same result by construction (the nearest visible vertex) | `mirai/viewport/picking.py` (`pick_nearest_vertex`, same for edges) | 30-91 → ~1-5 tests per pick: hover move 183 → ~15-40 ms, click 233 → ~20-40 ms, zoom 813 → ~200-250 ms | small; identical picks (existing B8 tests + a "hidden vertex closer in mesh order" test) |
+| 2 | **Cheaper occlusion test:** vertex → incident-faces map built once per mesh state in `PickCache` (replaces `core.Mesh.vertex_edges`, an O(E) scan) | `picking_cache.py` / `picking.py` | ~40 % off each test (~2.5 of ~6.5 ms) | small; the cache already has the right invalidation points. Changing `vertex_edges` in `src/core` instead is frozen-core work (AD needed) and not recommended for this reason |
+| 3 | **Cheaper cache rebuild:** compute eye/basis/aspect once per refresh and project inline, instead of `camera.project_to_screen` per vertex (which recomputes them for every vertex) | `picking_cache.py` (maybe a `camera.projector()` helper) | rebuild 178-188 → ~90 ms (estimate ~2x: the per-vertex `eye`/`basis` calls are ~50 % of the profiled rebuild; same values) | small; numerically identical if the same formula is used |
+| 4 | **Coalesce picking to once per frame:** a zoom notch / camera change / motion marks hover stale; the tick picks once at the latest cursor | `application.py` (`pointer_scroll`, `_refresh_hover`, `update_viewport`), `src/main.py` untouched | a burst of N wheel notches costs 1 pick, not N; motion never blocks more than one pick per frame | small-medium; behaviour: hover appears one frame later (Artist-visible? probably not); needs care with the click path, which must stay synchronous |
+| 5 | **Lazy / affected-only bounds** in `RenderMesh._sync_geometry` | `src/viewport/render_mesh.py`, `derived.py` | ~9 ms less `sync` per W move on gollum (plain W 36 V: 10.8 → ~2 ms p50; 500 V stays over 8 ms because of the per-vertex `store.update` calls) | small; touches a documented counter (`bounds_recalculations`, `tests/test_render_mesh.py`); `VIEWPORT_V02_ARCHITECTURE.md` §7 already describes this |
+| 6 | Face screen-space grid in `PickCache` (bucket face bboxes) so the occlusion test visits only faces under the pixel | `picking_cache.py` / `picking.py` | the O(F) loop per test → O(faces in the cell); with 1-3 rows above, a further ~2x per test | medium (new structure, built per rebuild: adds to the rebuild cost) |
+| 7 | Drop the dead `highlight_flags` rebuild (B2b follow-up cleanup) | `render_mesh.py`, `overlay.py`, `gl_render_store.py` | ~3 ms sync + 85 KB upload per hover/selection change | small-medium; part of a documented cleanup, separate decision |
+| 8 | World-space spatial index (grid/BVH) for vertices and faces, camera-independent: no rebuild on orbit/zoom at all | new module in `mirai/viewport/` | cache rebuild → 0 per camera change; pick O(cells along the ray) | medium-high; invalidation on every mesh edit; only worth it if 1-4 are not enough |
+| 9 | GPU picking (ID buffer + `glReadPixels`, depth = occlusion for free) | Viewport + `mirai` | pick ~O(1) CPU at any mesh size | high: an extra render pass and a Viewport service for `mirai` (architecture change, AD-018 scope); not recommended before 1-4 are measured |
+| - | LOD / decimated display mesh | renderer | - | **not recommended** because the draw is not the measured cost (orbit event 0.03 ms, no upload) and H5 is open; it would add a second geometry path for no shown gain |
+| - | NumPy vectorisation of projection / occlusion | `mirai/viewport` | large (estimate) | **not recommended now** because it adds a new runtime dependency and a CPU-baseline risk on the Core 2 (no SSE4.2, `REFERENCE_HARDWARE.md` §4: newer instruction sets are a reported conflict); pure-Python 1-4 come first |
+
+Recommended first slice (engineering proposal): 1 + 2 + 3 together (all inside `mirai/viewport` picking, no behaviour
+change, no architecture change), then re-run this probe; 4 and 5 as the next slice if the reference PC still lags. Which
+mesh size must stay fluid is the Artist's Intent question (handoff §7) - the numbers above are what that answer costs.
+
+### Run (reference PC)
+
+From the repo root, Windows (opens no visible window; takes ~5-10 minutes on the reference PC, progress lines `... gollum:
+zoom` go to the console while it runs):
+
+```
+python experiments/drag_cost/probe_navigation_gl.py
+```
+
+Variants: `--assets examples/meshes/gollum.obj` (one asset), `--scenarios orbit pan zoom first_hover` (a subset),
+`--row-seconds 4` (shorter), `--profile-top 0` (no profile), `--list`. Linux headless: prefix `xvfb-run -a`.
+
+### Praktischer Test für Manu (Navigation, ca. 10 Minuten)
+
+1. `git pull`
+2. `python experiments/drag_cost/probe_navigation_gl.py` — läuft 5–10 Minuten (die Zeilen `... gollum: zoom` zeigen, wo er
+   steht). Die ganze Ausgabe (ab `Navigation and picking cost ...`) in den Chat kopieren.
+3. Danach entscheidest du, welche Mesh-Größe auf deinem PC flüssig bleiben muss (Kopf, Körper, gollum oder größer) —
+   die Tabelle zeigt, was das kostet.
+
 ## Next step
 
 The reference-PC numbers are in `REFERENCE_HARDWARE.md` §2 and above; the 8 ms bar holds and S2c ran (verdict: AD-020
-"S2c verdict"). Open: the same probe on higher-resolution meshes; a larger radius (S2d: up to 200 %) can be measured with
-`--scenarios soft_w --sizes 100 200`.
+"S2c verdict"). A larger radius (S2d: up to 200 %) can be measured with `--scenarios soft_w --sizes 100 200`.
+
+Navigation (WP-VIEW-PERF-01): Manu runs `probe_navigation_gl.py` on the reference PC (H5 and the scale factor), then
+answers which mesh size must stay fluid; the fix slice (options 1-3 above, then 4-5) follows that answer.

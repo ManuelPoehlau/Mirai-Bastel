@@ -107,7 +107,7 @@ def test_nav_report_lines():
 def test_loop_report_line():
     r = probe.LoopResult("gollum", "zoom", 2.0, 4, 30, 30, 500.0, 3.0, 1200.0)
     (line,) = probe.loop_lines(r)
-    assert "4 events" in line and "30 on_draw" in line and "1200.0 ms" in line
+    assert "4 events" in line and "30 on_draw" in line and "without a frame   1200.0 ms" in line
     assert not math.isnan(r.event_ms_mean)
 
 

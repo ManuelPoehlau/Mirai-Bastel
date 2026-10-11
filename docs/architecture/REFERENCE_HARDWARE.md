@@ -44,6 +44,10 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in
   [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) (WP-VIEW-PATCH-01).
   Werte vom Referenz-PC stehen hier erst nach Manus Lauf.
+  Navigation, Hover und Klick auf einem hochaufgelösten Mesh (`gollum.obj`, 21 875 V; WP-VIEW-PERF-01):
+  `python experiments/drag_cost/probe_navigation_gl.py` — Methode, Container-Zahlen, Hypothesen und Fix-Optionen in
+  [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Navigation and picking“. Gibt auch die
+  GPU-Zeit des Draws (`gpu`, GL-Timer-Query) aus. Werte vom Referenz-PC: offen.
 
 **Gemessen auf dem Referenz-PC (Manu, 2026-10-11)** — Core 2 Quad Q9550, GeForce 9800 GTX, Python 3.14.2,
 `python experiments/drag_cost/probe_drag_gl.py` (`plain_w` und `soft_w`, Soft Selection S2b, `main` @ S2b); die ganze

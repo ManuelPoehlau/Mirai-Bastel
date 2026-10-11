@@ -32,7 +32,7 @@ attribute, one pyglet class method); nothing under `src/` is changed.
 
 Extra scenarios: `orbit_wire` (orbit with the Shift+D wire overlay on, H5), `loop` (the real
 `install_handlers` wiring inside a running `pyglet.app` loop with injected events: on_draw count
-vs event count and the longest gap between two frames, H3), `plain_w` / `soft_w` (the drag
+vs event count and the longest time without a frame, H3), `plain_w` / `soft_w` (the drag
 scenarios of `probe_drag_gl.py`, reused, with this handoff's sizes). A cProfile top-N for orbit,
 zoom and first hover runs on the last asset (`--profile-top 0` switches it off).
 
@@ -85,6 +85,7 @@ DEFAULT_PROFILE_TOP = 8
 #: `loop`: seconds per phase and injected events per second.
 LOOP_SECONDS = 2.0
 LOOP_ORBIT_HZ = 240.0
+LOOP_HOVER_HZ = 120.0
 LOOP_ZOOM_HZ = 20.0
 WIDTH, HEIGHT = drag.WIDTH, drag.HEIGHT
 ORBIT_STEP_PX = 4.0
@@ -652,9 +653,10 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
     """`src_main.install_handlers` on the rig window, then `pyglet.app.run(1/60)` plus the
     1/60 s `update_viewport` tick, as `src_main.run` does (copied so both can be unscheduled
     again). Injected through `window.dispatch_event`, i.e. the handlers the window calls:
-    phase `orbit` = Alt+LMB drag events at `LOOP_ORBIT_HZ`, phase `zoom` = wheel notches at
-    `LOOP_ZOOM_HZ` with the cursor on the mesh. Counts on_draw vs events and the longest gap
-    between two frames."""
+    phase `orbit` = Alt+LMB drag events at `LOOP_ORBIT_HZ`, phase `hover` = plain mouse moves
+    across the mesh at `LOOP_HOVER_HZ`, phase `zoom` = wheel notches at `LOOP_ZOOM_HZ` with the
+    cursor on the mesh. Counts on_draw vs events and the longest time without a frame (phase
+    start and end count as frame boundaries)."""
     import pyglet
     from pyglet.window import key, mouse
 
@@ -663,9 +665,10 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
     cx, cy = cursor_on_mesh(rig)
     results: list[LoopResult] = []
 
-    for phase, hz in (("orbit", LOOP_ORBIT_HZ), ("zoom", LOOP_ZOOM_HZ)):
+    for phase, hz in (("orbit", LOOP_ORBIT_HZ), ("hover", LOOP_HOVER_HZ), ("zoom", LOOP_ZOOM_HZ)):
         state = {"events": 0, "event_ms": 0.0, "draws": 0, "draw_ms": 0.0, "syncs": 0,
-                 "draw_start": None, "last_draw": None, "max_gap": 0.0, "dir": 1.0}
+                 "draw_start": None, "last_draw": None, "max_gap": 0.0, "dir": 1.0,
+                 "x": cx}
 
         def on_draw():
             now = time.perf_counter()
@@ -698,6 +701,12 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
                     state["dir"] = -state["dir"]
                 window.dispatch_event("on_mouse_drag", int(cx), int(cy),
                                       int(ORBIT_STEP_PX * state["dir"]), 0, mouse.LEFT, key.MOD_ALT)
+            elif phase == "hover":
+                if abs(state["x"] + state["dir"] * HOVER_STEP_PX - cx) > HOVER_SPAN_PX:
+                    state["dir"] = -state["dir"]
+                step = state["dir"] * HOVER_STEP_PX
+                state["x"] += step
+                window.dispatch_event("on_mouse_motion", int(state["x"]), int(cy), int(step), 0)
             else:
                 window.dispatch_event("on_mouse_scroll", int(cx), int(cy), 0.0,
                                       1.0 if state["events"] % 2 == 0 else -1.0)
@@ -711,16 +720,21 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
             window.dispatch_event("on_mouse_press", int(cx), int(cy), mouse.LEFT, key.MOD_ALT)
             for _ in range(2):  # past the click threshold, unmeasured
                 window.dispatch_event("on_mouse_drag", int(cx), int(cy), 4, 0, mouse.LEFT, key.MOD_ALT)
+        elif phase == "hover":
+            pass  # the first injected move is a "first hover" after the orbit phase (cache rebuild)
         else:
             window.dispatch_event("on_mouse_motion", int(cx), int(cy), 0, 0)
         pyglet.clock.schedule_interval(tick, 1 / 60.0)
         pyglet.clock.schedule_interval(inject, 1.0 / hz)
         pyglet.clock.schedule_once(stop, LOOP_SECONDS)
         start = time.perf_counter()
+        state["last_draw"] = start  # a phase without any frame is one long gap
         try:
             pyglet.app.run(1 / 60.0)
         finally:
-            seconds = time.perf_counter() - start
+            end = time.perf_counter()
+            seconds = end - start
+            state["max_gap"] = max(state["max_gap"], (end - state["last_draw"]) * 1000.0)
             pyglet.clock.unschedule(tick)
             pyglet.clock.unschedule(inject)
             pyglet.clock.unschedule(pyglet.app.event_loop._redraw_windows)
@@ -728,7 +742,7 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
             window.flip = original_flip
         if phase == "orbit":
             window.dispatch_event("on_mouse_release", int(cx), int(cy), mouse.LEFT, key.MOD_ALT)
-        else:
+        elif phase == "zoom":
             if state["events"] % 2:
                 window.dispatch_event("on_mouse_scroll", int(cx), int(cy), 0.0, -1.0)
         rig.settle()
@@ -930,7 +944,7 @@ def loop_lines(r: LoopResult) -> list[str]:
     return [
         f"  loop {r.phase:5s} {r.seconds:4.1f} s: {r.events:4d} events ({r.events / r.seconds:5.1f}/s, "
         f"{r.event_ms_mean:8.2f} ms each), {r.draws:3d} on_draw ({r.draws / r.seconds:5.1f}/s, "
-        f"{r.draw_ms_mean:6.2f} ms each), longest gap between frames {r.max_gap_ms:8.1f} ms",
+        f"{r.draw_ms_mean:6.2f} ms each), longest time without a frame {r.max_gap_ms:8.1f} ms",
     ]
 
 
