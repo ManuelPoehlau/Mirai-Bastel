@@ -15,7 +15,14 @@ import tests._bootstrap  # noqa: F401
 
 from core import VertexId
 
-from mirai.soft_selection import CURVES, METRICS, compute_influence, primary_pivot
+from mirai.soft_selection import (
+    CURVES,
+    CUSTOM_SHAPE_STEPS,
+    METRICS,
+    compute_influence,
+    custom_curve,
+    primary_pivot,
+)
 
 from tests.soft_selection_fixtures import LIP_HALF_GAP, grid, head, lip
 
@@ -161,3 +168,93 @@ def test_primary_pivot_is_the_seed_centroid():
     assert primary_pivot(mesh, {ids[0][0], ids[0][2], VertexId(9999)}) == (1.0, 0.0, 0.0)
     with pytest.raises(ValueError):
         primary_pivot(mesh, {VertexId(9999)})
+
+
+# -- the S2d curve set (handoff E1/E2; formulas defined there) ------------------------------------
+
+FORMULAS = {
+    "smooth": lambda t: 3 * t * t - 2 * t**3,
+    "sphere": lambda t: math.sqrt(2 * t - t * t),
+    "root": lambda t: math.sqrt(t),
+    "sharp": lambda t: t * t,
+    "linear": lambda t: t,
+}
+T_SAMPLES = [i / 200 for i in range(201)]
+
+
+def test_curve_registry_order_is_the_cycle_order():
+    assert list(CURVES) == ["smooth", "sphere", "root", "sharp", "linear", "custom"]
+
+
+@pytest.mark.parametrize("name", sorted(FORMULAS))
+def test_named_curves_match_their_formula(name):
+    for t in T_SAMPLES:
+        assert CURVES[name](t) == pytest.approx(FORMULAS[name](t), abs=1e-12)
+
+
+def _check_curve_properties(f):
+    assert f(0.0) == 0.0
+    assert f(1.0) == pytest.approx(1.0, abs=1e-15)
+    values = [f(t) for t in T_SAMPLES]
+    assert all(0.0 <= v <= 1.0 for v in values)
+    assert all(a <= b for a, b in zip(values, values[1:]))  # monotone non-decreasing
+
+
+@pytest.mark.parametrize("name", sorted(CURVES))
+def test_every_curve_has_f0_0_f1_1_and_is_monotone(name):
+    _check_curve_properties(CURVES[name])
+
+
+@pytest.mark.parametrize("p", CUSTOM_SHAPE_STEPS)
+def test_every_custom_step_has_f0_0_f1_1_and_is_monotone(p):
+    _check_curve_properties(custom_curve(p))
+
+
+def test_custom_is_t_to_the_p_and_matches_root_sharp_linear():
+    for t in T_SAMPLES:
+        assert custom_curve(1.5)(t) == pytest.approx(t**1.5, abs=1e-15)
+        assert custom_curve(0.5)(t) == pytest.approx(CURVES["root"](t), abs=1e-15)
+        assert custom_curve(2.0)(t) == pytest.approx(CURVES["sharp"](t), abs=1e-15)
+        assert custom_curve(1.0)(t) == pytest.approx(t, abs=1e-15)
+
+
+def test_custom_steps_order_the_curves_from_round_to_sharp():
+    """Smaller p lies above larger p for every t in (0, 1): rounder = more influence."""
+    for t in (0.1, 0.3, 0.5, 0.7, 0.9):
+        values = [custom_curve(p)(t) for p in CUSTOM_SHAPE_STEPS]
+        assert all(a > b for a, b in zip(values, values[1:]))
+
+
+@pytest.mark.parametrize("bad", [0.0, -1.0, math.inf, math.nan])
+def test_custom_curve_rejects_a_non_positive_or_non_finite_power(bad):
+    with pytest.raises(ValueError):
+        custom_curve(bad)
+
+
+@pytest.mark.parametrize("metric", sorted(METRICS))
+@pytest.mark.parametrize("p", CUSTOM_SHAPE_STEPS)
+def test_compute_influence_custom_uses_curve_power(metric, p):
+    mesh, ids = grid()
+    seed, neighbour = ids[4][4], ids[4][5]  # d = 1 under both metrics
+    weights = compute_influence(
+        mesh, {seed}, 4.0, metric=metric, curve="custom", curve_power=p
+    )
+    assert weights[seed] == 1.0
+    assert weights[neighbour] == pytest.approx(0.75**p, abs=1e-15)
+    assert ids[4][8] not in weights  # d = 4 = r: zero
+
+
+def test_curve_power_is_ignored_by_the_other_curves():
+    mesh, ids = grid()
+    a = compute_influence(mesh, {ids[4][4]}, 4.0, curve="smooth", curve_power=3.0)
+    b = compute_influence(mesh, {ids[4][4]}, 4.0, curve="smooth")
+    assert a == b
+
+
+@pytest.mark.parametrize("name", sorted(CURVES))
+def test_every_curve_gives_seeds_one_and_zero_at_the_radius(name):
+    mesh, ids = grid()
+    weights = compute_influence(mesh, {ids[4][4]}, 2.0, metric="geodesic", curve=name)
+    assert weights[ids[4][4]] == 1.0
+    assert ids[4][6] not in weights  # d = r
+    assert all(0.0 < w <= 1.0 for w in weights.values())

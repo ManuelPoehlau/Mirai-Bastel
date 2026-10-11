@@ -6,7 +6,9 @@ never enters `Selection`; one gesture is one History entry. Off by default; the 
 (`Application`) owns the settings, the tools compute the influence at `begin()`.
 
 S2b adds the window look: `bands` (weights -> band -> positions, headless) and `gl_bands`
-(the `GLPointOverlay` subclass `Application` pushes the bands into).
+(the `GLPointOverlay` subclass `Application` pushes the bands into). S2d (S2c verdict):
+geodesic/smooth defaults, the curve set (+ a `custom` curve with an adjustable shape), radius
+steps up to 200 %, and a switch for the bands.
 
 This package imports nothing from `mirai.interaction` or `mirai.application` (the tools
 import it), and no Core private member (AD-020 §3, §9).
@@ -14,9 +16,11 @@ import it), and no Core private member (AD-020 §3, §9).
 
 from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands, band_index
 from .gl_bands import BAND_LAYERS, GLSoftBandOverlay
-from .influence import CURVES, METRICS, compute_influence, primary_pivot
+from .influence import CURVES, METRICS, compute_influence, custom_curve, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
 from .settings import (
+    CUSTOM_SHAPE_STEPS,
+    DEFAULT_CUSTOM_SHAPE_STEP,
     DEFAULT_RADIUS_STEP,
     RADIUS_STEPS_PERCENT,
     SoftSettings,
@@ -27,6 +31,8 @@ __all__ = [
     "BAND_COUNT",
     "BAND_LAYERS",
     "CURVES",
+    "CUSTOM_SHAPE_STEPS",
+    "DEFAULT_CUSTOM_SHAPE_STEP",
     "DEFAULT_RADIUS_STEP",
     "EMPTY_BANDS",
     "GLSoftBandOverlay",
@@ -39,6 +45,7 @@ __all__ = [
     "SoftSettings",
     "band_index",
     "compute_influence",
+    "custom_curve",
     "primary_pivot",
     "world_radius_for",
 ]

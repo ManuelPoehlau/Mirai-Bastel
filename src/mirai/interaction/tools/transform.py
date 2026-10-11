@@ -368,7 +368,8 @@ class TransformTool(Tool):
             # is computed here from the seeds, the pivot is the centroid of the seeds
             # (never of the influenced set), the affected set is the influenced set.
             influence = compute_influence(
-                scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve
+                scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power,
             )
             if not influence:
                 raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")

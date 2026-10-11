@@ -13,11 +13,14 @@ primary selection that feeds an operation:
   hands them in; this module never reads a `Selection`).
 - Metrics `euclidean` (min straight-line distance to any seed) and `geodesic`
   (multi-source Dijkstra over mesh edges, edge length as cost, pruned at `r`).
-- Curves `smooth` (smoothstep on `t = 1 - d/r`) and `linear` (`t`).
+- Curves on `t = 1 - d/r` in [0, 1] (S2d, handoff E1; formulas defined here, not copied
+  from any product): `smooth` 3t^2 - 2t^3, `sphere` sqrt(2t - t^2), `root` sqrt(t),
+  `sharp` t^2, `linear` t, `custom` t^p with `p` handed in (`curve_power`).
 
 The metric/curve registries (`METRICS`, `CURVES`) are the "replaceable strategy" seam
-V1_CORE §6 asks for - deliberately just dicts of functions, no class hierarchy.
-Defaults (metric, curve, radius unit) are Artist questions for S2c, not decided here.
+V1_CORE §6 asks for - deliberately just dicts of functions, no class hierarchy. Every
+curve has f(0) = 0, f(1) = 1 and is monotone non-decreasing. Which metric/curve is the
+default lives in `settings.py` (S2c verdict, AD-020), not here.
 """
 
 from __future__ import annotations
@@ -38,13 +41,45 @@ def _smooth(t: float) -> float:
     return t * t * (3.0 - 2.0 * t)
 
 
+def _sphere(t: float) -> float:
+    # Quarter circle through (0, 0) and (1, 1) with a vertical tangent at t = 0; the max()
+    # guards a rounding hair below zero, never changes a real value.
+    return math.sqrt(max(0.0, 2.0 * t - t * t))
+
+
+def _root(t: float) -> float:
+    return math.sqrt(t)
+
+
+def _sharp(t: float) -> float:
+    return t * t
+
+
 def _linear(t: float) -> float:
     return t
 
 
+def custom_curve(power: float) -> Callable[[float], float]:
+    """`t^p`: p < 1 is rounder than linear, p > 1 sharper (p = 0.5 is `root`, p = 2 `sharp`)."""
+    power = float(power)
+    if not math.isfinite(power) or power <= 0.0:
+        raise ValueError(f"curve power must be finite and > 0, got {power!r}.")
+
+    def _custom(t: float) -> float:
+        return t ** power
+
+    return _custom
+
+
+#: Insertion order is the Shift+O cycle order (handoff E3). `custom` here is the p = 1
+#: instance (so the name validates); the real `p` comes from `compute_influence(curve_power=)`.
 CURVES: dict[str, Callable[[float], float]] = {
     "smooth": _smooth,
+    "sphere": _sphere,
+    "root": _root,
+    "sharp": _sharp,
     "linear": _linear,
+    "custom": custom_curve(1.0),
 }
 
 
@@ -125,13 +160,15 @@ def compute_influence(
     radius: float,
     metric: str = "euclidean",
     curve: str = "smooth",
+    curve_power: float = 1.0,
 ) -> dict[VertexId, float]:
     """Influence weights for all vertices within `radius` (world units) of the seeds.
 
     Returns `{vertex: w}` with `0 < w <= 1`; seeds always carry exactly `1.0`,
     vertices at `d >= radius` are absent. Seeds the mesh no longer knows are skipped
     (same rule as `resolve_selection_vertices`); no valid seed -> `{}`.
-    `radius == 0` -> exactly the seeds, all `1.0`.
+    `radius == 0` -> exactly the seeds, all `1.0`. `curve_power` is the `p` of the `custom`
+    curve and is ignored by every other curve.
     """
     if metric not in METRICS:
         raise ValueError(f"Unknown metric {metric!r}; expected one of {sorted(METRICS)}.")
@@ -148,7 +185,7 @@ def compute_influence(
     if radius == 0.0:
         return weights
 
-    shape = CURVES[curve]
+    shape = custom_curve(curve_power) if curve == "custom" else CURVES[curve]
     for vid, d in METRICS[metric](mesh, valid_seeds, radius).items():
         if vid in weights:
             continue

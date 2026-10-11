@@ -46,6 +46,7 @@ O, SHIFT_O, CTRL_O = _key("o"), _key("o", "shift"), _key("o", "ctrl")
 ESC, CTRL_Z, CTRL_Y = _key("ESCAPE"), _key("z", "ctrl"), _key("y", "ctrl")
 SHIFT_WHEEL_UP = Input("wheel", "UP", frozenset({"shift"}))
 KEY_1, KEY_2 = _key("1"), _key("2")
+ALT_O = _key("o", "alt")
 
 
 @pytest.fixture
@@ -107,7 +108,9 @@ def _overlay(app) -> GLSoftBandOverlay:
 def _expected(app, seeds) -> SoftBands:
     soft = app.soft_settings
     return SoftBands.from_weights(
-        compute_influence(app.scene.mesh, seeds, soft.world_radius, soft.metric, soft.curve)
+        compute_influence(
+            app.scene.mesh, seeds, soft.world_radius, soft.metric, soft.curve, soft.curve_power
+        )
     )
 
 
@@ -215,12 +218,12 @@ def test_radius_curve_and_metric_each_recompute_once(app, influence_calls):
 
     assert app.key_press(SHIFT_O)
     assert len(_preview_calls(influence_calls)) == 2
-    assert app.soft_settings.curve == "linear"
+    assert app.soft_settings.curve == "sphere"
     assert app.soft_bands == _expected(app, {vid})
 
     assert app.key_press(CTRL_O)
     assert len(_preview_calls(influence_calls)) == 3
-    assert app.soft_settings.metric == "geodesic"
+    assert app.soft_settings.metric == "euclidean"
     assert app.soft_bands == _expected(app, {vid})
 
 
@@ -534,3 +537,120 @@ def test_no_preview_under_a_symmetry_definition(app):
     )
     assert app.key_press(SHIFT_O)  # any trigger
     assert app.soft_bands == EMPTY_BANDS
+
+
+# -- bands switch (S2d E7, S2c verdict: "needs an option to switch the bands off") --------------
+
+
+def test_bands_off_pushes_no_points_and_computes_nothing_for_display(app, influence_calls):
+    assert app.key_press(O)
+    vid = _front_vertices(app)[0]
+    _click_select(app, vid)
+    assert app.soft_bands.count > 0
+    influence_calls.clear()
+    pushes = _overlay(app).pushes
+    assert app.key_press(ALT_O)
+    assert app.soft_bands == EMPTY_BANDS  # the points are gone ...
+    assert _overlay(app).pushes == pushes + 1
+    assert influence_calls == []  # ... and nothing was computed for it
+    app.update_viewport(0.016)
+    assert _overlay_points(app) == [[], [], [], []]
+
+    # Every event that would refresh the preview stays silent while the bands are off.
+    assert app.pointer_scroll(SHIFT_WHEEL_UP)
+    assert app.key_press(SHIFT_O) and app.key_press(CTRL_O)
+    assert app.pointer_scroll(Input("wheel", "UP", frozenset({"ctrl"})))
+    _click_select(app, _front_vertices(app)[7])
+    assert app.key_press(KEY_2) and app.key_press(KEY_1)
+    assert influence_calls == [] and _overlay(app).pushes == pushes + 1
+    assert app.soft_bands == EMPTY_BANDS
+
+
+def test_bands_back_on_restores_the_preview(app, influence_calls):
+    assert app.key_press(O)
+    vid = _front_vertices(app)[0]
+    _click_select(app, vid)
+    shown = app.soft_bands
+    assert app.key_press(ALT_O)
+    influence_calls.clear()
+    assert app.key_press(ALT_O)
+    assert len(_preview_calls(influence_calls)) == 1  # one computation for the switch-on
+    assert app.soft_bands == shown == _expected(app, {vid})
+    app.update_viewport(0.016)
+    assert _overlay_points(app) == _band_vertex_positions(app)
+
+
+def test_bands_off_gesture_still_deforms_softly_but_shows_nothing(app, influence_calls):
+    assert app.key_press(O)
+    vid = _front_vertices(app)[0]
+    _click_select(app, vid)
+    assert app.key_press(ALT_O)
+    mesh = app.scene.mesh
+    before = {v: mesh.vertex_position(v) for v in mesh.all_vertex_ids()}
+    influence_calls.clear()
+    assert app.key_press(W)
+    _move(app)
+    # The operation still computes its own influence (once, at begin) - the display adds nothing.
+    assert [c[0] for c in influence_calls] == ["mirai.interaction.tools.move"]
+    influence = app.tool_manager.active_tool.operation.context.params["influence"]
+    assert len(influence) > 1  # a soft gesture: more than the seed
+    assert app.soft_bands == EMPTY_BANDS and _overlay_points(app) == [[], [], [], []]
+    assert app.key_release(W)
+    moved = [v for v in mesh.all_vertex_ids() if mesh.vertex_position(v) != before[v]]
+    assert set(moved) == set(influence)
+    assert app.soft_bands == EMPTY_BANDS
+
+
+def test_bands_off_hover_armed_gesture_shows_nothing(app, influence_calls):
+    assert app.key_press(O)
+    assert app.key_press(ALT_O)
+    vid = _front_vertices(app)[0]
+    x, y = _screen(app, vid)
+    app.pointer_motion(x, y, 0.0, 0.0)
+    assert app.selection.hovered is not None
+    influence_calls.clear()
+    assert app.key_press(W)
+    assert _preview_calls(influence_calls) == []
+    assert app.soft_bands == EMPTY_BANDS
+    assert app.key_press(ESC)
+
+
+def test_bands_toggled_on_mid_gesture_shows_when_the_gesture_ends(app):
+    assert app.key_press(O)
+    _click_select(app, _front_vertices(app)[0])
+    assert app.key_press(ALT_O)
+    assert app.key_press(W)
+    _move(app, ((6, 2),))
+    assert app.key_press(ALT_O)
+    assert app.soft_bands == EMPTY_BANDS  # a running gesture keeps its display
+    assert app.key_release(W)
+    assert app.soft_bands == _expected(app, app.selection.vertices)
+    assert app.soft_bands.count > 0
+
+
+def test_bands_toggled_off_mid_gesture_clears_when_the_gesture_ends(app):
+    assert app.key_press(O)
+    _click_select(app, _front_vertices(app)[0])
+    assert app.key_press(W)
+    _move(app, ((6, 2),))
+    shown = app.soft_bands
+    assert shown.count > 0
+    assert app.key_press(ALT_O)
+    assert app.soft_bands is shown
+    assert app.key_release(W)
+    assert app.soft_bands == EMPTY_BANDS
+
+
+def test_custom_curve_preview_equals_the_ops_weights(app):
+    assert app.key_press(O)
+    app.pointer_scroll(Input("wheel", "DOWN", frozenset({"ctrl"})))  # custom, p = 1.5
+    assert app.soft_settings.curve == "custom"
+    vid = _front_vertices(app)[0]
+    _click_select(app, vid)
+    preview = app.soft_bands
+    assert preview == _expected(app, {vid}) and preview.count > 0
+    assert app.key_press(W)
+    _move(app, ((4, 1),))
+    influence = app.tool_manager.active_tool.operation.context.params["influence"]
+    assert preview.weights == {v: w for v, w in influence.items() if 0.0 < w < 1.0}
+    assert app.key_release(W)

@@ -169,6 +169,9 @@ _SOFT_COMMANDS = (
     commands.SOFT_RADIUS_DOWN,
     commands.SOFT_CURVE_CYCLE,
     commands.SOFT_METRIC_CYCLE,
+    commands.SOFT_CURVE_SHAPE_ROUNDER,
+    commands.SOFT_CURVE_SHAPE_SHARPER,
+    commands.SOFT_BANDS_TOGGLE,
 )
 
 #: Visible refusal of Soft Selection under a symmetry definition (AD-020 §8, E3; status
@@ -1779,10 +1782,10 @@ class Application:
         self._soft = self._soft.with_bounding_radius(bounding_radius)
 
     def _soft_command(self, command: str) -> bool:
-        """O / Shift+wheel / Shift+O / Ctrl+O: change the sticky settings and post the full
-        state. Never touches mesh, selection or history. False only for a radius step that
-        is already at the end of the list (clamped, no wrap) - the status line is posted
-        anyway, so the end of the list is visible."""
+        """O / Shift+wheel / Shift+O / Ctrl+O / Ctrl+wheel / Alt+O: change the sticky settings
+        and post the full state. Never touches mesh, selection or history. False only for a
+        radius or shape step that is already at the end of the list (clamped, no wrap) and
+        changes nothing - the status line is posted anyway, so the end of the list is visible."""
         soft = self._soft
         changed = True
         if command == commands.SOFT_TOGGLE:
@@ -1799,6 +1802,13 @@ class Application:
             self._soft = soft.with_next_curve()
         elif command == commands.SOFT_METRIC_CYCLE:
             self._soft = soft.with_next_metric()
+        elif command in (commands.SOFT_CURVE_SHAPE_ROUNDER, commands.SOFT_CURVE_SHAPE_SHARPER):
+            # Rounder = smaller exponent = towards the front of the step list.
+            delta = -1 if command == commands.SOFT_CURVE_SHAPE_ROUNDER else 1
+            self._soft = soft.with_custom_shape_step(delta)
+            changed = self._soft != soft
+        elif command == commands.SOFT_BANDS_TOGGLE:
+            self._soft = soft.with_bands_toggled()
         if changed:
             self._soft_preview_refresh()
         self._set_status(self._soft.status_text())
@@ -1842,10 +1852,13 @@ class Application:
             return
         soft = self._soft
         mesh = self.scene.mesh
-        seeds = self._soft_seeds() if soft.enabled and mesh.symmetry_definition is None else None
+        # Bands off (S2d E7): no influence work for display, nothing shown.
+        shown = soft.enabled and soft.bands_visible and mesh.symmetry_definition is None
+        seeds = self._soft_seeds() if shown else None
         if seeds:
             weights = compute_influence(
-                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve
+                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power,
             )
             self._soft_push(SoftBands.from_weights(weights))
             self._soft_gesture_shown = self._soft_gesture_shown or shown_by_gesture
@@ -1857,9 +1870,14 @@ class Application:
         gesture cannot disagree; nothing is computed."""
         if self._soft_overlay is None:
             return
-        weights = self.tool_manager.active_tool.operation.context.params["influence"]
+        # Also with bands off: the gesture still owns the display (a bands toggle mid-gesture
+        # takes effect when it ends), it just has nothing to show (S2d E7).
         self._soft_op_running = True
         self._soft_gesture_shown = True
+        if not self._soft.bands_visible:
+            self._soft_push(EMPTY_BANDS)
+            return
+        weights = self.tool_manager.active_tool.operation.context.params["influence"]
         self._soft_push(SoftBands.from_weights(weights))
 
     # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
@@ -2271,8 +2289,9 @@ class Application:
 
     def pointer_scroll(self, input: Input) -> bool:
         """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings. Ein Wheel mit
-        gehaltener Shift-Taste trägt `{"shift"}` und ist (Default) die Soft-Radius-Stufe,
-        nie Zoom (WP-SOFT-01 S2a, AD-020); in einer Knife-Session tut es nichts."""
+        gehaltener Shift-Taste trägt `{"shift"}` und ist (Default) die Soft-Radius-Stufe, eines
+        mit Ctrl `{"ctrl"}` die Form der Soft-Kurve `custom` (S2d); beide zoomen nie
+        (WP-SOFT-01 S2a, AD-020). In einer Knife-Session tun sie nichts."""
         command = self.bindings.command_for(input)
         if command in _SOFT_COMMANDS:
             if self._knife is not None or self._gate_refuses(command):

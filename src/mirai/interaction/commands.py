@@ -114,6 +114,11 @@ SOFT_RADIUS_UP = "SoftRadiusUp"
 SOFT_RADIUS_DOWN = "SoftRadiusDown"
 SOFT_CURVE_CYCLE = "SoftCurveCycle"
 SOFT_METRIC_CYCLE = "SoftMetricCycle"
+# S2d (S2c verdict, Manu 2026-10-11): Ctrl+wheel shapes the `custom` curve (rounder = smaller
+# exponent, sharper = larger; selecting `custom` is part of it); the bands can be switched off.
+SOFT_CURVE_SHAPE_ROUNDER = "SoftCurveShapeRounder"
+SOFT_CURVE_SHAPE_SHARPER = "SoftCurveShapeSharper"
+SOFT_BANDS_TOGGLE = "SoftBandsToggle"
 
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"

@@ -105,7 +105,7 @@ Reading:
   region dirty whenever an attribute is accessed, so the buffer is still uploaded once per frame at draw
   time; the fix removes the per-update Python/ctypes copy, not that single upload.
 
-Reference PC: not measured yet — see "Praktischer Test für Manu".
+Reference PC: see "Result: reference PC (2026-10-11)" below.
 
 ## Result: `soft_w`, container (2026-10-11)
 
@@ -142,6 +142,30 @@ Reading (container only):
   into commit, preview and draw before drawing conclusions.
 - This does not claim the reference PC passes; AD-020 §7.3 makes Manu's run the gate before S2c.
 
+## Result: reference PC (Manu, 2026-10-11)
+
+**Reference PC** (`REFERENCE_HARDWARE.md`): Core 2 Quad Q9550, GeForce 9800 GTX, Python 3.14.2, `probe_drag_gl.py` without
+arguments (`plain_w` and `soft_w`), after S2b. Recorded from Manu's run; the full per-row table was in the chat and is not
+copied here, only the figures that were reported to the repo:
+
+| Figure | Value |
+|---|---|
+| all `move` rows (p95) | **≤ 8 ms** — the AD-020 §7.3 bar holds |
+| worst soft row: body, radius 15 %, euclidean | `move` p95 **7.73 ms** |
+| plain W, body, 112 V | `move` p50 **5.29 ms** / p95 **5.77 ms** |
+| commit frame (once per gesture, not gated) | body ~30 ms, head ~11–15 ms |
+| selection click, body | ~13 ms p50, picking-dominated; preview recompute inside it 0.35–1.9 ms |
+| single maxima | up to ~280 ms, outside p95 (not investigated; a GC pause or driver stall is a reading, not a finding) |
+
+Reading: the 8 ms bar holds, with a thin margin on the worst row (7.73 ms): the body, radius 15 %, euclidean soft drag.
+The container's worst row was a different one (head euclidean 50 %); the container is llvmpipe, so its ranking was never
+expected to carry over (reading, not a finding). Manu's practical result: "man_with_shoes läuft sehr flüssig" (S2c verdict, AD-020). Higher-resolution
+meshes are the next test; this probe does not cover them.
+
+S2d (2026-10-11) changed the soft defaults (geodesic metric, Smooth curve) and the radius list (now up to 200 %); the probe
+sets its own metric/curve/radius through the public entry points, so its scenario definitions are unchanged. The 150 / 200 %
+radii are not in its default size list (5 / 15 / 30 / 50 %); `--sizes 100 200` measures them.
+
 ## Praktischer Test für Manu (ca. 5 Minuten)
 
 1. `git pull`
@@ -164,6 +188,6 @@ Noch kein Verdikt — der Vergleichstest S2c kommt danach, wenn die Zahlen passe
 
 ## Next step
 
-Numbers from the reference PC go into the tables above and into `REFERENCE_HARDWARE.md` §2. If the `soft_w` rows
-hold the 8 ms bar there, S2c (the Artist comparison test, AD-020 §10) follows; if not, the fix is a viewport question
-decided separately (AD-020 §7.3), not a change of the soft semantics.
+The reference-PC numbers are in `REFERENCE_HARDWARE.md` §2 and above; the 8 ms bar holds and S2c ran (verdict: AD-020
+"S2c verdict"). Open: the same probe on higher-resolution meshes; a larger radius (S2d: up to 200 %) can be measured with
+`--scenarios soft_w --sizes 100 200`.

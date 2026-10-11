@@ -45,6 +45,22 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
   [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) (WP-VIEW-PATCH-01).
   Werte vom Referenz-PC stehen hier erst nach Manus Lauf.
 
+**Gemessen auf dem Referenz-PC (Manu, 2026-10-11)** — Core 2 Quad Q9550, GeForce 9800 GTX, Python 3.14.2,
+`python experiments/drag_cost/probe_drag_gl.py` (`plain_w` und `soft_w`, Soft Selection S2b, `main` @ S2b); die ganze
+Tabelle steht in [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md):
+
+- Alle `move`-Zeilen (Move-Schritt + `Viewport.sync()` pro Mausbewegung) liegen mit p95 ≤ 8 ms unter der 8-ms-Schwelle von AD-020 §7.
+  Schlechteste Soft-Zeile: Body, Radius 15 %, euclidean, p95 **7,73 ms**.
+- Normales W (ohne Soft), Body, 112 Vertices: p50 **5,29 ms** / p95 **5,77 ms**.
+- Einmal pro Geste (nicht in der Schwelle): Commit-Frame Body ~30 ms, Kopf ~11–15 ms; Auswahlklick Body ~13 ms p50
+  (vom Picking dominiert, die Soft-Vorschau darin 0,35–1,9 ms).
+- Einzelne Maxima bis ~280 ms liegen außerhalb des p95 (nicht untersucht).
+- Subjektiv (Manu): „man_with_shoes läuft sehr flüssig.“ Tests mit höher aufgelösten Meshes folgen.
+
+Damit ist die Zeile „Reale Frame- und Hover-Zeiten in den echten Fenstern“ für den Drag-Pfad beantwortet (Hover-Zeiten
+außerhalb eines Drags nicht). Die Strings `GL_VERSION` / `GL_RENDERER` kamen nicht mit der Rückmeldung ins Repository und
+bleiben unter „Offen“.
+
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
 ---

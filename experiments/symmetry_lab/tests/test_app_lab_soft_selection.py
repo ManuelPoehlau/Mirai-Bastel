@@ -1,6 +1,7 @@
-"""Soft Selection in the Symmetry Lab (WP-SOFT-01 S2a, AD-020 §8 / AD-013 G-2 note 2026-10-10).
+"""Soft Selection in the Symmetry Lab (WP-SOFT-01 S2a/S2d, AD-020 §8 / AD-013 G-2 note 2026-10-10, 2026-10-11).
 
-The soft setting commands are `NON_OPERATION` (state for the next gesture, like the constraints):
+The soft setting commands (S2d: custom-curve shape and the band switch included) are `NON_OPERATION`
+(state for the next gesture, like the constraints):
 O stays allowed under BLOCK, so soft can be switched off while symmetry is on. Soft + symmetry is
 refused by `Application`, authoritatively at `begin()`, in MARK and BLOCK alike.
 """
@@ -33,6 +34,9 @@ O = Input("key", "o")
 SHIFT_O = Input("key", "o", frozenset({"shift"}))
 CTRL_O = Input("key", "o", frozenset({"ctrl"}))
 SHIFT_WHEEL_UP = Input("wheel", "UP", frozenset({"shift"}))
+CTRL_WHEEL_UP = Input("wheel", "UP", frozenset({"ctrl"}))
+CTRL_WHEEL_DOWN = Input("wheel", "DOWN", frozenset({"ctrl"}))
+ALT_O = Input("key", "o", frozenset({"alt"}))
 LMB = Input("mouse", "LEFT")
 
 SOFT_COMMANDS = {
@@ -41,6 +45,9 @@ SOFT_COMMANDS = {
     cmd.SOFT_RADIUS_DOWN,
     cmd.SOFT_CURVE_CYCLE,
     cmd.SOFT_METRIC_CYCLE,
+    cmd.SOFT_CURVE_SHAPE_ROUNDER,
+    cmd.SOFT_CURVE_SHAPE_SHARPER,
+    cmd.SOFT_BANDS_TOGGLE,
 }
 
 
@@ -79,6 +86,21 @@ def test_o_is_allowed_under_block_and_never_refused_as_not_coordinated():
         assert app.status_message != BLOCK_NOT_ALLOWED_TEXT
     assert app.pointer_scroll(SHIFT_WHEEL_UP) is True  # the wheel path passes the same gate
     assert app.status_message.startswith("Soft: ")
+    assert _state(app) == before
+
+
+def test_curve_shape_and_band_switch_pass_block_and_change_nothing_else():
+    """S2d: Ctrl+wheel (custom-curve shape) and Alt+O (bands) are state commands like the others."""
+    app, lab = _symmetric_lab(GateMode.BLOCK)
+    before = _state(app)
+    assert app.pointer_scroll(CTRL_WHEEL_UP) is True  # the wheel path passes the same gate
+    assert app.pointer_scroll(CTRL_WHEEL_DOWN) is True
+    assert app.soft_settings.curve == "custom"
+    assert app.status_message.startswith("Soft: ") and app.status_message != BLOCK_NOT_ALLOWED_TEXT
+    assert press(app, lab, ALT_O) is True
+    assert app.soft_settings.bands_visible is False
+    assert app.status_message.endswith("bands off")
+    assert press(app, lab, ALT_O) is True and app.soft_settings.bands_visible
     assert _state(app) == before
 
 

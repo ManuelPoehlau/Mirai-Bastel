@@ -311,8 +311,15 @@ as the record. Still open for S2c (Artist): §5 items 3 and 4, and the sign of a
 3. **Defaults** for metric, curve and scale formula: need an artist comparison in a window —
    S1 has only numbers (§3). Includes whether the finger/lip effect (M1/M2) matters in practice
    and whether the geodesic diamond on regular grids (M4) is visible. → AD-020 §6 (switches only)
+   **Answered 2026-10-11 (S2c verdict, Manu, reference PC):** metric **geodesic** is the default, curve **Smooth** (the
+   standard bell curve; Sphere/Root/Sharp/Linear/Custom are offered as other falloff profiles), the scale formula was not
+   questioned (Soft Rotate/Scale "fühlt sich richtig an"). → AD-020 "S2c verdict". The finger/lip and diamond
+   questions were not raised as separate points.
 4. **Radius**: units (world vs % of bounding radius vs screen), how it is set, and whether it
    lives per tool or globally. → AD-020 §4.3, §6
+   **Answered 2026-10-11 (S2c verdict):** the steps are KEEP ("passt erstmal"), the maximum of 50 % was too small (the list
+   now ends at 200 %); the unit (percent of the bounding radius) was not questioned. Radius change live while dragging
+   stays a later idea. → AD-020 "S2c verdict", `docs/future_ideas/TRANSFORM.md`
 5. **Identity gestures** create History entries in the Core already (L6) — accept, or compare
    with a tolerance in `commit()`? → AD-020 §3.5
 6. **Basis contract** (L5): make "one basis per gesture" explicit in the Core interface, or keep

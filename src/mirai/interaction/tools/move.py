@@ -220,7 +220,8 @@ class MoveTool(Tool):
             # the current (= start) positions. Under a symmetry definition the op refuses
             # (params["symmetry"] is set above) - `Application` refuses earlier, visibly.
             influence = compute_influence(
-                mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve
+                mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power,
             )
             if not influence:
                 raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")

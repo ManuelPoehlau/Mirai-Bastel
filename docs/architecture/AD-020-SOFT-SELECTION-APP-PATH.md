@@ -1,8 +1,9 @@
 # AD-020 — Soft Selection on the Production App Path (S2 host, Core seam, controls)
 
 **Status:** **DECIDED** (2026-10-10; Artist decisions and engineering decisions in the Decision record below,
-review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a), S2b is built (2026-10-11: bands in the window + soft drag probe; Manu
-runs the probe on the reference PC before S2c).
+review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a), S2b is built (2026-10-11: bands in the window + soft drag probe), the S2c practical test ran on the
+reference PC (**verdict 2026-10-11, see "S2c verdict" below**) and S2d is built (2026-10-11: curve set, custom curve, geodesic
+default, radius up to 200 %, band switch).
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
@@ -50,20 +51,78 @@ decisions are kept apart on purpose.
 | E1 | Core seam Q2-D: the soft ops live in `src/mirai` on the Core's protected hooks, no Core change. *Assumption: recommended by this AD and by the review; Manu has not explicitly confirmed it.* |
 | E2 | Stale IDs in the influence map are filtered before `super()._on_begin` (S1 L10 kept; review F10). |
 | E3 | One sticky immutable `SoftSettings` in `Application` (enabled, radius step, **world radius**, metric, curve) with the axis-constraint semantics: a gesture armed but not begun takes the new value, a running one keeps its own (F2/F13). The world radius is computed when soft is switched on, when the step changes and on scene load; tool and later preview read the same value (F9). |
-| E4 | Radius steps, `PROVISIONAL` test setting, percent of the mesh bounding radius: 2, 5, 10, 15, 20, 30, 40, 50; start 15; clamped, no wrap; one wheel notch = one step. |
+| E4 | Radius steps, `PROVISIONAL` test setting, percent of the mesh bounding radius: 2, 5, 10, 15, 20, 30, 40, 50; start 15; clamped, no wrap; one wheel notch = one step. *(2026-10-11, S2d E5: the list now continues 75, 100, 150, 200; see "S2c verdict".)* |
 | E5 | Shift+wheel: `src/main.py` already tracks Shift; the wheel input carries `{"shift"}` when Shift is held. Bindings `Input("wheel","UP",{"shift"})` → `SoftRadiusUp`, DOWN → `SoftRadiusDown`; the plain wheel stays Zoom. Shift+wheel never zooms, also with soft off (only the stored step changes; the binding carries the meaning, AD-013 I2). If Shift is held and `scroll_y == 0` but `scroll_x != 0` (drivers that map Shift+wheel to a horizontal scroll), `scroll_x` is used; the sign is to be confirmed in Manu's test and recorded. |
-| E6 | Five commands: `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`, `SoftMetricCycle`. Defaults O / Shift+wheel / Shift+O / Ctrl+O. No scale-formula switch; Scale uses the linear `1 + w(F−1)` (S1 E6 assumption, unchanged). |
+| E6 | Five commands: `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`, `SoftMetricCycle` *(2026-10-11, S2d: three more, see "S2c verdict")*. Defaults O / Shift+wheel / Shift+O / Ctrl+O. No scale-formula switch; Scale uses the linear `1 + w(F−1)` (S1 E6 assumption, unchanged). |
 | E7 | Soft + Symmetry refusal is authoritative at `begin()` through the existing visible refusal path; the arm-time check is early feedback only. Soft ops keep the `params["symmetry"]` `ValueError` backstop. |
-| E8 | Status line on every soft key with the full state, e.g. `Soft: on · 15 % (0.51) · euclidean · smooth` (`PROVISIONAL` until a HUD exists). |
+| E8 | Status line on every soft key with the full state, e.g. `Soft: on · 15 % (0.51) · euclidean · smooth` (`PROVISIONAL` until a HUD exists). *(2026-10-11, S2d E8: now `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on`.)* |
 | E9 | The soft commands join the Lab's `NON_OPERATION` through a dated change of the AD-013 G-2 table. |
 
-Start values for metric (`euclidean`) and curve (`smooth`) are the S1 working values, needed so the test can start;
-they are **not** defaults. Defaults for metric, curve, radius unit and steps stay Artist questions for S2c.
+~~Start values for metric (`euclidean`) and curve (`smooth`) are the S1 working values, needed so the test can start;
+they are **not** defaults. Defaults for metric, curve, radius unit and steps stay Artist questions for S2c.~~
+*Superseded 2026-10-11 by the S2c verdict below: geodesic is the default metric, Smooth the default curve; the radius
+steps are KEEP ("passt erstmal"), the unit was not questioned and stays percent of the bounding radius.*
+
+---
+
+## S2c verdict (Manu, 2026-10-11) and S2d decisions
+
+The S2c practical test ran on the reference PC (Core 2 Quad Q9550, GeForce 9800 GTX, Python 3.14.2) after the `soft_w`
+probe numbers held the 8 ms bar (probe numbers: [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md),
+[`REFERENCE_HARDWARE.md`](REFERENCE_HARDWARE.md) §2). Artist verdicts and engineering decisions are kept apart as above.
+Mode of the S2d slice (M5): production of `PROVISIONAL` changes decided by this verdict; it claims no new insight.
+
+**Artist verdict (Manu, 2026-10-11, S2c practical test on the reference PC)** — as handed over, quotes unchanged:
+
+| # | Topic | Verdict | Words / basis |
+|---|---|---|---|
+| 1 | Basic feel (soft Move, head) | **KEEP** | "ja" |
+| 2 | Curve | **ITERATE** | "wir brauchen mehrere: Smooth: Standard bell curve (closest to default Soft Selection), Sphere / Root / Sharp / Linear: Different geometric falloff profiles, custom (Idee: ctrl+mausrad ändern Kurve von spitz <> rund), später, wenn GUI dazukommt evtl noch einen kleinen curve shape editor, aber noch nicht jetzt." Default curve: Smooth. |
+| 3 | Metric | **geodesic is the default** | "geodesic würde ich als Standard nehmen" |
+| 4 | Radius | steps **KEEP**; the maximum is too small | "passt erstmal"; live radius change while dragging stays an idea for later. Observation: "der Radius bis max 50% ist zu klein" |
+| 5 | Bands | look **KEEP**; **needs an option to switch the bands off** | "passt soweit erstmal" |
+| 6 | Soft Rotate/Scale | **KEEP** | "fühlt sich richtig an" |
+| 7 | Keys and performance | **KEEP** | "Passt auch, man_with_shoes läuft sehr flüssig." Tests with higher-res meshes follow. |
+
+Reference-PC probe numbers behind row 7 (2026-10-11, `probe_drag_gl.py`): all `move` rows p95 ≤ 8 ms; worst soft row
+(body, radius 15 %, euclidean) p95 7.73 ms; plain W body 112 V p50 5.29 / p95 5.77 ms; commit frame body ~30 ms,
+head ~11–15 ms; selection click body ~13 ms p50 (picking-dominated, preview 0.35–1.9 ms); single maxima up to ~280 ms
+outside p95. Details in the drag_cost README.
+
+**Engineering decisions of S2d (set in the S2d handoff — planning assumptions Manu may correct):**
+
+| # | Decision |
+|---|---|
+| E1 | Curve set on `t = 1 − d/r` in [0, 1]: `smooth` 3t²−2t³ (existing), `sphere` √(2t − t²), `root` √t, `sharp` t², `linear` t, `custom` t^p. Names follow the common DCC falloff set; the formulas are defined here, not claimed to copy any product. All curves: f(0) = 0, f(1) = 1, monotone non-decreasing. |
+| E2 | Custom shape `p` on a fixed `PROVISIONAL` step list 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2, 3, 4 (start 1). Ctrl+wheel up = rounder (smaller p), down = sharper; clamped. Any Ctrl+wheel switches the curve to `custom`. *(Assumption: Manu wants this now, not with the GUI; the direction is read from "spitz <> rund" and is to be confirmed in the test.)* |
+| E3 | Shift+O cycles smooth → sphere → root → sharp → linear → custom → smooth; `custom` keeps its last `p`. |
+| E4 | Defaults: metric `geodesic`, curve `smooth` (verdict rows 2 and 3). Soft stays off by default. |
+| E5 | Radius steps (% of the mesh bounding radius): 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200; start 15; clamped, no wrap. |
+| E6 | `src/main.py` tracks Ctrl like Shift; the wheel input carries `{"ctrl"}`; the bindings give it the meaning (`SoftCurveShapeRounder` / `SoftCurveShapeSharper`). Ctrl+wheel never zooms, also with soft off (then only the stored shape changes). Same horizontal-scroll fallback as Shift (sign unconfirmed). Ctrl+Shift+wheel is unbound and does nothing. |
+| E7 | Band switch: **Alt+O** (`SoftBandsToggle`), sticky, default on. Bands off = no band points at all (preview and gesture) and no influence work for display; the operation still computes its own influence. A switch during a running gesture takes effect when the gesture ends (the gesture owns the display). *(Proposal; Manu may change the key. Alt+O is free in GLOBAL, KNIFE, TOPOLOGY and the Symmetry Lab; Alt+A and Alt+LMB are other Alt inputs.)* |
+| E8 | Status line: `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on` (`p=` only while the curve is `custom`). |
+| E9 | The three new commands (`SoftCurveShapeRounder`, `SoftCurveShapeSharper`, `SoftBandsToggle`) join the Lab's `NON_OPERATION`: dated AD-013 G-2 line (2026-10-11). Same classification as the five of 2026-10-10 (state for the next gesture, no interaction, no mesh). |
+
+**Keys after S2d** (all `PROVISIONAL`, engineering keys, not Artist Input Truth): O on/off · Shift+wheel radius step ·
+Shift+O curve · Ctrl+O metric · **Ctrl+wheel custom-curve shape** · **Alt+O bands on/off**. Eight commands, eight distinct inputs.
+
+**Status of the FINDINGS §5 items this verdict answers:** §5.3 defaults — metric **geodesic**, curve **Smooth**
+(scale formula unchanged: `1 + w(F−1)` linear; the verdict did not question Soft Rotate/Scale, row 6); §5.4 radius —
+the **steps are KEEP**, the maximum was too small (now 200 %), the **unit** was not questioned (percent of the bounding
+radius stays the one unit on offer); live radius while dragging stays open (idea, `docs/future_ideas/TRANSFORM.md`).
+Still open: the sign of a horizontal Shift/Ctrl+wheel; a curve shape editor (with the GUI, `docs/future_ideas/UI_UX.md`);
+tests with higher-resolution meshes; the promotion decision (Core seam A vs D, §13 F4 — the trigger "S2c KEEP" is met for
+the basic feel, the decision is not part of S2d).
 
 ---
 
 ## Kurzfassung für Manu (Deutsch)
 
+> **Nachtrag 2026-10-11 (dein S2c-Verdikt, Abschnitt „S2c verdict“ oben):** Basisgefühl, Rotate/Scale, Tasten und Radius-Stufen
+> bleiben; **geodesic** ist jetzt Standard, **Smooth** die Standardkurve; es gibt mehrere Kurven (Smooth, Sphere, Root, Sharp,
+> Linear, Custom — `Shift+O` schaltet durch, `Ctrl`+Mausrad formt die Custom-Kurve von rund bis spitz); der Radius geht bis 200 %;
+> `Alt+O` schaltet die Farbpunkte (Bänder) an/aus. Die Tastenliste weiter unten ist der Stand vom 2026-10-10.
+>
 > **Nachtrag 2026-10-10:** entschieden (siehe „Decision record“). Radius: **Shift + Mausrad** statt Pfeiltasten;
 > die Messung in Abschnitt „Eine Messung vor deinem Praxistest“ ist durch die Review (§13 F1) überholt: das
 > Problem sitzt in `GLRenderStore.update` und wird in WP-VIEW-PATCH-01 behandelt, nicht in Soft Selection.
@@ -498,6 +557,8 @@ one thing to watch in S2c at large radii.
 | Curve smooth ↔ linear | **Shift+O** → `SoftCurveCycle` | Free everywhere. "muss ich testen" → `PROVISIONAL`. |
 | Metric euclidean ↔ geodesic | **Ctrl+O** → `SoftMetricCycle` | Free everywhere. Ctrl+O is the common "Open" convention; Artist Truth keeps `application.load` deliberately unbound (rule 4), so there is no conflict today (review F12; Alt+O would be the alternative). "muss ich testen" → `PROVISIONAL`. |
 
+*(2026-10-11, S2d: three more commands and inputs — Ctrl+wheel up/down = `SoftCurveShapeRounder` / `SoftCurveShapeSharper`, Alt+O = `SoftBandsToggle`; Shift+O now cycles six curves. See "S2c verdict". Alt+O is the key §6.1 named as the alternative to Ctrl+O; with Ctrl+O kept for the metric, it is now the bands switch.)*
+
 Five commands for five inputs (F12): a binding carries the meaning, so a `keymap.json` rebind never has to know a
 direction (AD-013 I2). Behaviour: sticky like X/Y/Z (F2); allowed while W/E/R/T is held (state only: it applies to
 the next gesture, **or to the current one if it is armed and has not begun** — F13); inside a Knife session the keys
@@ -666,8 +727,8 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
 |---|---|---|
 | 1 Core seam | §3 | proposed for S2 (D); promotion seam open |
 | 2 Influence channel | §4.1, §4.2, §4.4 | proposed |
-| 3 Defaults (metric, curve, scale formula) | §6 (the switches) | open — Artist, S2c |
-| 4 Radius (unit, setting, scope) | §4.3, §6 | setting and scope proposed; unit open — Artist, S2c |
+| 3 Defaults (metric, curve, scale formula) | §6 (the switches) | metric **geodesic**, curve **Smooth** (verdict 2026-10-11); scale formula unchanged |
+| 4 Radius (unit, setting, scope) | §4.3, §6 | setting and scope proposed; steps KEEP, max raised to 200 % (verdict 2026-10-11); unit not questioned (percent of the bounding radius) |
 | 5 Identity gestures | §3.5 | unchanged for S2; open for promotion |
 | 6 Basis contract | §1 F6, §3.5 | answered for the app path; Core wording only under A |
 | 7 Changing rotation axis | §1 F6, §3.5 | answered for the app path (no tool does it) |
@@ -679,11 +740,12 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
 
 ## 12. Not decided here / follow-ups
 
-- Defaults for metric, curve, scale formula, radius unit and steps — Artist questions for S2c.
+- ~~Defaults for metric, curve, scale formula, radius unit and steps — Artist questions for S2c.~~ Answered by the S2c verdict (2026-10-11), see "S2c verdict"; the radius *unit* was not questioned.
 - The promotion seam (Q2-A vs D) and the Core's `_weights` placeholder — own AD after the S2 verdict; owner, trigger,
   criteria and default: §13 F4.
 - Symmetric soft selection (FINDINGS §5.8).
-- Changing the radius during a running gesture (would need a re-evaluation from the start snapshot).
+- Changing the radius during a running gesture (would need a re-evaluation from the start snapshot) — an idea Manu keeps for later (S2c verdict, `docs/future_ideas/TRANSFORM.md`).
+- A curve shape editor with the GUI (verdict row 2; `docs/future_ideas/UI_UX.md`); soft-selection tests on higher-resolution meshes.
 - Tweak and other consumers V1_CORE §6 names.
 - **Separate follow-up (not part of S2):** a `math.dist` audit in `src` (FINDINGS §5.9, R6). New data point
   from this AD: `mesh_center_and_radius` (`mesh_geometry.py:44-46`) calls it once per vertex.

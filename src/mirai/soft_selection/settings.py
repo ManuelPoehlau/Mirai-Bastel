@@ -9,9 +9,11 @@ The radius is stored in **world units** (`world_radius`), computed by `Applicati
 soft is switched on, when the step changes and on scene load, and read unchanged by the
 tool (and, in S2b, the preview): "15 %" cannot drift between them (review F9).
 
-All look-and-feel values here are `PROVISIONAL` test settings for the Artist comparison
-test (S2c): the radius steps and their unit (percent of the mesh bounding radius), the
-start step, and the start metric/curve. None of them is a default decision.
+All look-and-feel values here are `PROVISIONAL`: the radius steps and their unit (percent
+of the mesh bounding radius), the start step, the custom-curve shape steps and the band
+display. S2c verdict (Manu, 2026-10-11, AD-020 §13): geodesic and smooth are the defaults,
+the curve set grew (smooth/sphere/root/sharp/linear/custom), the radius list goes up to
+200 %, and the influence bands can be switched off.
 """
 
 from __future__ import annotations
@@ -21,13 +23,20 @@ from dataclasses import dataclass
 
 from .influence import CURVES, METRICS
 
-#: PROVISIONAL (handoff E4): radius steps in percent of the mesh bounding radius.
-RADIUS_STEPS_PERCENT: tuple[int, ...] = (2, 5, 10, 15, 20, 30, 40, 50)
+#: PROVISIONAL (S2d E5): radius steps in percent of the mesh bounding radius. "Up to 50 %
+#: is too small" (Manu, S2c), hence the steps beyond it.
+RADIUS_STEPS_PERCENT: tuple[int, ...] = (2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200)
 #: PROVISIONAL: the start step is 15 %.
 DEFAULT_RADIUS_STEP = RADIUS_STEPS_PERCENT.index(15)
-#: PROVISIONAL start values for the comparison test, not defaults (Artist, S2c).
-DEFAULT_METRIC = "euclidean"
+#: S2c verdict (Manu, 2026-10-11): "geodesic würde ich als Standard nehmen"; the curve
+#: default is Smooth (the standard bell curve).
+DEFAULT_METRIC = "geodesic"
 DEFAULT_CURVE = "smooth"
+#: PROVISIONAL (S2d E2): the `p` of the `custom` curve `t^p`, rounder (small p) .. sharper
+#: (large p). Ctrl+wheel up = one step towards the front of the list.
+CUSTOM_SHAPE_STEPS: tuple[float, ...] = (0.25, 0.33, 0.5, 0.67, 1.0, 1.5, 2.0, 3.0, 4.0)
+#: PROVISIONAL: the custom curve starts linear (p = 1).
+DEFAULT_CUSTOM_SHAPE_STEP = CUSTOM_SHAPE_STEPS.index(1.0)
 
 
 def world_radius_for(bounding_radius: float, step: int) -> float:
@@ -47,10 +56,16 @@ class SoftSettings:
     world_radius: float = 0.0
     metric: str = DEFAULT_METRIC
     curve: str = DEFAULT_CURVE
+    #: Index into `CUSTOM_SHAPE_STEPS`; kept while another curve is active (E3).
+    custom_shape_step: int = DEFAULT_CUSTOM_SHAPE_STEP
+    #: Display only (S2d E7): False = no band points at all. Changes no weight.
+    bands_visible: bool = True
 
     def __post_init__(self) -> None:
         if not 0 <= self.radius_step < len(RADIUS_STEPS_PERCENT):
             raise ValueError(f"radius_step out of range: {self.radius_step!r}")
+        if not 0 <= self.custom_shape_step < len(CUSTOM_SHAPE_STEPS):
+            raise ValueError(f"custom_shape_step out of range: {self.custom_shape_step!r}")
         if self.metric not in METRICS:
             raise ValueError(f"Unknown metric {self.metric!r}; expected one of {sorted(METRICS)}.")
         if self.curve not in CURVES:
@@ -59,6 +74,11 @@ class SoftSettings:
     @property
     def radius_percent(self) -> int:
         return RADIUS_STEPS_PERCENT[self.radius_step]
+
+    @property
+    def curve_power(self) -> float:
+        """The `p` of the custom curve (used only while `curve == "custom"`)."""
+        return CUSTOM_SHAPE_STEPS[self.custom_shape_step]
 
     def toggled(self) -> "SoftSettings":
         return dataclasses.replace(self, enabled=not self.enabled)
@@ -79,13 +99,24 @@ class SoftSettings:
     def with_next_curve(self) -> "SoftSettings":
         return dataclasses.replace(self, curve=_next_in(CURVES, self.curve))
 
+    def with_custom_shape_step(self, delta: int) -> "SoftSettings":
+        """Ctrl+wheel: `delta` steps along `CUSTOM_SHAPE_STEPS` (clamped, no wrap) and the
+        curve becomes `custom` - any Ctrl+wheel, also at the end of the list (E2)."""
+        step = max(0, min(self.custom_shape_step + delta, len(CUSTOM_SHAPE_STEPS) - 1))
+        return dataclasses.replace(self, curve="custom", custom_shape_step=step)
+
+    def with_bands_toggled(self) -> "SoftSettings":
+        return dataclasses.replace(self, bands_visible=not self.bands_visible)
+
     def with_next_metric(self) -> "SoftSettings":
         return dataclasses.replace(self, metric=_next_in(METRICS, self.metric))
 
     def status_text(self) -> str:
         """Full state for the status line (`PROVISIONAL` until a HUD exists), e.g.
-        `Soft: on · 15 % (0.51) · euclidean · smooth`."""
+        `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on`."""
+        curve = f"custom p={self.curve_power:g}" if self.curve == "custom" else self.curve
         return (
             f"Soft: {'on' if self.enabled else 'off'} · {self.radius_percent} % "
-            f"({self.world_radius:.2f}) · {self.metric} · {self.curve}"
+            f"({self.world_radius:.2f}) · {self.metric} · {curve} · "
+            f"bands {'on' if self.bands_visible else 'off'}"
         )

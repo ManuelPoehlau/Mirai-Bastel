@@ -76,7 +76,11 @@ Alt+LMB-Drag/Alt+Shift+LMB-Drag/Wheel navigieren weiter.
 Soft Selection (WP-SOFT-01 S2a, AD-020, `PROVISIONAL`, aus per Default; Manu 2026-10-10):
 - O                → Soft an/aus (O war bis B5a die Anzeige-Taste, jetzt D)
 - Shift+Mausrad    → Radius eine Stufe größer (hoch) / kleiner (runter); zoomt nie
-- Shift+O          → Kurve wechseln, Ctrl+O → Metrik wechseln
+- Shift+O          → Kurve wechseln (smooth → sphere → root → sharp → linear → custom),
+                    Ctrl+O → Metrik wechseln
+- Ctrl+Mausrad     → Form der Kurve `custom` (hoch = runder, runter = spitzer); schaltet auf
+                    `custom`, zoomt nie. Ctrl+Shift+Mausrad ist ungebunden.
+- Alt+O            → Influence-Bänder (Farbpunkte) an/aus
 Sticky wie X/Y/Z, wirken ab der nächsten Geste; Engineering-Tasten, keine Artist Input Truth.
 
 Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
@@ -188,6 +192,12 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_wheel("DOWN", "shift"), cmd.SOFT_RADIUS_DOWN)
     bs.set_default(_key("o", "shift"), cmd.SOFT_CURVE_CYCLE)
     bs.set_default(_key("o", "ctrl"), cmd.SOFT_METRIC_CYCLE)
+    # S2d (S2c verdict, Manu 2026-10-11): Ctrl+wheel = shape of the `custom` curve (up =
+    # rounder, as agreed: "ctrl+mausrad ändern Kurve von spitz <> rund"; the direction is an
+    # engineering assumption to confirm). Alt+O = bands on/off (proposal; Manu may change it).
+    bs.set_default(_wheel("UP", "ctrl"), cmd.SOFT_CURVE_SHAPE_ROUNDER)
+    bs.set_default(_wheel("DOWN", "ctrl"), cmd.SOFT_CURVE_SHAPE_SHARPER)
+    bs.set_default(_key("o", "alt"), cmd.SOFT_BANDS_TOGGLE)
 
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-

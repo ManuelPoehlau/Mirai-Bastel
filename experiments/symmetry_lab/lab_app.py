@@ -167,6 +167,11 @@ NON_OPERATION = frozenset(
         cmd.SOFT_RADIUS_DOWN,
         cmd.SOFT_CURVE_CYCLE,
         cmd.SOFT_METRIC_CYCLE,
+        # S2d (S2c verdict 2026-10-11, AD-013 G-2 note 2026-10-11): custom-curve shape and the
+        # band display switch - the same kind of state command, no interaction, no mesh.
+        cmd.SOFT_CURVE_SHAPE_ROUNDER,
+        cmd.SOFT_CURVE_SHAPE_SHARPER,
+        cmd.SOFT_BANDS_TOGGLE,
         # Navigation und Knife-Session: nur über eine User-GLOBAL-Taste erreichbar (Review N2);
         # `Application` gibt dafür ohnehin False zurück, die Auflistung hält die Taste still
         cmd.ORBIT,

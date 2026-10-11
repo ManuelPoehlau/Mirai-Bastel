@@ -940,7 +940,7 @@ Lab-side table keyed by `CContext`, never the enum names.
 | history | `Undo`, `Redo` | `key_press` |
 | cancel | `Cancel` | `key_press` (H2-R2: never refused) |
 | constraints | `ConstrainAxisX`, `ConstrainAxisY`, `ConstrainAxisZ`, `ConstrainPlaneXY`, `ConstrainPlaneXZ`, `ConstrainPlaneYZ` | `key_press` |
-| soft settings *(added 2026-10-10, AD-020)* | `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`, `SoftMetricCycle` | `key_press`; `pointer_scroll` (Shift+wheel) |
+| soft settings *(added 2026-10-10, AD-020; extended 2026-10-11)* | `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`, `SoftMetricCycle`, `SoftCurveShapeRounder`, `SoftCurveShapeSharper`, `SoftBandsToggle` | `key_press`; `pointer_scroll` (Shift+wheel, Ctrl+wheel) |
 | navigation, Knife session (review N2) | `Orbit`, `Pan`, `Zoom`, `KnifeCommit`, `KnifeLift` | `key_press`, only through a user GLOBAL key binding |
 
 With the default keymap the last group never reaches the gate: drags and the wheel are never gated
@@ -1266,3 +1266,12 @@ Decided with AD-020 (review F6). The G-2 table above is **changed**, so "contain
   `begin()` in `Application._transform_step` (AD-020 §8.1, F2), in MARK and BLOCK alike — "Runtime refusals are not G-3".
 - **Tests.** The Lab's fail-closed tests derive their expectations from `NON_OPERATION` and the command constants and
   needed no edit; new: `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.
+
+
+### Amendment note (2026-10-11, AD-020 S2c verdict / WP-SOFT-01 S2d): three more soft settings commands
+
+Same classification as the note above, decided with the S2d handoff (AD-020 "S2c verdict", E9): the group **soft settings**
+of the G-2 table gains `SoftCurveShapeRounder`, `SoftCurveShapeSharper` (Ctrl+wheel, gate path `pointer_scroll`) and
+`SoftBandsToggle` (Alt+O, gate path `key_press`). They are state for the next gesture (the custom-curve shape) or display
+only (the bands): no interaction, no mesh, selection or history change. No Limit of G is lifted and no writer added, so no
+second H2 review. Test: `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.

@@ -50,3 +50,16 @@ The infrastructure is in place:
 - Requires clarification of what "constrained tangent movement" means (single axis within plane? Both? Free?)
 
 **Next step**: gather use cases during Playground experimentation; revisit after WP-04 hotkey wiring stabilizes and multi-element tangent research completes.
+
+## Soft Selection: Radius live während des Ziehens ändern (Idee, Manu S2c 2026-10-11)
+
+**Status**: Bewusst nicht umgesetzt. Im S2c-Verdikt (AD-020, „S2c verdict“) steht der Radius-Schritt per Shift+Mausrad auf
+KEEP („passt erstmal“); den Radius **während** einer laufenden Geste zu ändern bleibt eine Idee für später.
+
+Heute gilt: der Radius ist pro Geste fest — `SoftSettings` wird bei `begin()` gelesen, ein Wechsel mitten in der Geste
+gilt ab der nächsten (AD-020 §4.3). Live-Änderung hieße, die Gewichte aus dem Start-Snapshot der Geste neu auszuwerten,
+solange die Maus gezogen wird (Kosten pro Wheel-Schritt: neue Influence-Berechnung plus neue Bänder, vgl.
+`experiments/drag_cost/README.md`).
+
+**Next step**: erst nach weiteren Soft-Selection-Tests (auch mit höher aufgelösten Meshes) neu bewerten; Voraussetzung für
+eine Entscheidung ist ein konkreter Fall, in dem der feste Radius pro Geste stört.

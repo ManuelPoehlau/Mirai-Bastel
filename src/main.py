@@ -63,13 +63,19 @@ Scope (binding, see the handoffs):
   `Application.set_shift_held`; losing focus (`on_deactivate`) resets it.
   WP-SOFT-01 S2a (`PROVISIONAL`, Manu 2026-10-10, AD-020): Soft Selection, off by
   default. O switches it on/off (the status line shows the full state, e.g.
-  `Soft: on · 15 % (0.51) · euclidean · smooth`); with it on, W/E/R move/rotate/scale
+  `Soft: on · 15 % (0.51) · geodesic · smooth · bands on`); with it on, W/E/R move/rotate/scale
   the selection and a falloff region around it, one History entry per gesture. Shift +
-  mouse wheel up/down = radius one step larger/smaller (this never zooms; the window
-  reports "Shift held" with the wheel event — `wheel_input` — and a driver that maps
+  mouse wheel up/down = radius one step larger/smaller (2 % .. 200 %; this never zooms; the
+  window reports "Shift held" with the wheel event — `wheel_input` — and a driver that maps
   Shift+wheel to a horizontal scroll is read from `scroll_x`, direction to be confirmed
   in the S2 test); Shift+O cycles the curve, Ctrl+O the metric. The settings are sticky
-  like X/Y/Z and apply from the next gesture on. With a symmetry definition (only the
+  like X/Y/Z and apply from the next gesture on.
+  WP-SOFT-01 S2d (`PROVISIONAL`, S2c verdict Manu 2026-10-11, AD-020): geodesic and Smooth
+  are the defaults; Shift+O cycles smooth → sphere → root → sharp → linear → custom; Ctrl +
+  mouse wheel shapes the `custom` curve (up = rounder, down = sharper, always selects
+  `custom`, never zooms — the window tracks Ctrl like Shift, `ctrl_keys_after`, and
+  `wheel_input` carries `{"ctrl"}`; Ctrl+Shift+wheel does nothing); Alt+O switches the
+  influence bands on/off (no band points at all while off; the status line shows it). With a symmetry definition (only the
   Symmetry Lab sets one) Soft + symmetry is refused visibly.
   WP-SOFT-01 S2b (`PROVISIONAL`, AD-020 §5): with Soft on and a selection, the influence
   region is shown as banded points around the selection (`GLSoftBandOverlay`, an extra
@@ -167,18 +173,37 @@ GL_TYPES = {
 }
 
 
-def wheel_input(scroll_x: float, scroll_y: float, shift_held: bool) -> Input | None:
-    """The wheel event as an `Input` (WP-SOFT-01 S2a, AD-020 E5). pyglet's scroll event
-    carries no modifiers, so the window passes whether a Shift key is held (`shift_keys`
-    in `install_handlers`): the input then carries `{"shift"}` and the bindings give it
-    its meaning (Soft radius step) - a Shift+wheel never zooms. Some drivers report
-    Shift+wheel as a horizontal scroll (`scroll_y == 0`, `scroll_x != 0`): with Shift
+def ctrl_keys_after(held: frozenset[int], symbol: int, pressed: bool) -> frozenset[int] | None:
+    """The Ctrl keys held after a key event (WP-SOFT-01 S2d), like `shift_keys_after`: the new
+    set for `LCTRL`/`RCTRL` (press adds, release removes; key repeat and a release without a
+    press change nothing), `None` for any other symbol. Left and right count separately, so a
+    Ctrl still held is not read as released. Ctrl alone is no `Input` (no binding); the window
+    only needs "any Ctrl held" for the wheel."""
+    from pyglet.window import key as _key
+
+    if symbol not in (_key.LCTRL, _key.RCTRL):
+        return None
+    return held | {symbol} if pressed else held - {symbol}
+
+
+def wheel_input(
+    scroll_x: float, scroll_y: float, shift_held: bool, ctrl_held: bool = False
+) -> Input | None:
+    """The wheel event as an `Input` (WP-SOFT-01 S2a, AD-020 E5; S2d E6). pyglet's scroll
+    event carries no modifiers, so the window passes whether a Shift / Ctrl key is held
+    (`shift_keys` / `ctrl_keys` in `install_handlers`): the input then carries `{"shift"}`
+    and/or `{"ctrl"}` and the bindings give it its meaning (Shift: Soft radius step, Ctrl:
+    shape of the custom Soft curve) - a wheel with either never zooms. Some drivers report
+    Shift+wheel as a horizontal scroll (`scroll_y == 0`, `scroll_x != 0`): with a modifier
     held that axis is read instead (the sign is not confirmed yet - Artist test)."""
-    if shift_held and scroll_y == 0:
+    modifiers = frozenset(
+        name for name, held in (("shift", shift_held), ("ctrl", ctrl_held)) if held
+    )
+    if modifiers and scroll_y == 0:
         scroll_y = scroll_x
     inp = wheel_from_pyglet(scroll_y)
-    if inp is not None and shift_held:
-        inp = Input("wheel", inp.value, frozenset({"shift"}))
+    if inp is not None and modifiers:
+        inp = Input("wheel", inp.value, modifiers)
     return inp
 
 
@@ -222,6 +247,16 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
             shift_keys = held
             app.set_shift_held(bool(held))
 
+    # WP-SOFT-01 S2d: the Ctrl keys held right now, for the wheel only (Ctrl+wheel = shape
+    # of the custom Soft curve). `Application` never needs to know.
+    ctrl_keys: frozenset[int] = frozenset()
+
+    def track_ctrl(symbol: int, pressed: bool) -> None:
+        nonlocal ctrl_keys
+        held = ctrl_keys_after(ctrl_keys, symbol, pressed)
+        if held is not None:
+            ctrl_keys = held
+
     @window.event
     def on_key_press(symbol: int, modifiers: int):
         inp = key_from_pyglet(symbol, modifiers)
@@ -244,6 +279,7 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
             menu.open(cx, cy, window.width, window.height)
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
+        track_ctrl(symbol, True)
         if inp is not None:
             app.key_press(inp)
         # Always handled: pyglet's default handler would close the window on
@@ -252,6 +288,9 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
 
     @window.event
     def on_key_release(symbol: int, modifiers: int):
+        # A release only ever clears: tracked even under the modal menu, so a Ctrl let go
+        # there cannot stay "held" and turn the plain wheel into a curve-shape step.
+        track_ctrl(symbol, False)
         if menu is not None and menu.is_open:
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, False)
@@ -262,9 +301,10 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
 
     @window.event
     def on_deactivate():
-        # A Shift released while another window has focus sends no release here.
-        nonlocal shift_keys
+        # A Shift/Ctrl released while another window has focus sends no release here.
+        nonlocal shift_keys, ctrl_keys
         shift_keys = frozenset()
+        ctrl_keys = frozenset()
         app.set_shift_held(False)
         # The menu must not outlive the focus (it would stay modal).
         if menu is not None:
@@ -313,7 +353,7 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
     def on_mouse_scroll(x: int, y: int, scroll_x: float, scroll_y: float):
         if menu is not None and menu.is_open:
             return pyglet.event.EVENT_HANDLED
-        inp = wheel_input(scroll_x, scroll_y, bool(shift_keys))
+        inp = wheel_input(scroll_x, scroll_y, bool(shift_keys), bool(ctrl_keys))
         if inp is not None:
             app.pointer_scroll(inp)
 

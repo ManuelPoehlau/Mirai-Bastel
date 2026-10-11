@@ -27,6 +27,8 @@ from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.mesh_geometry import mesh_center_and_radius
 from mirai.soft_selection import (
+    CURVES,
+    CUSTOM_SHAPE_STEPS,
     DEFAULT_RADIUS_STEP,
     RADIUS_STEPS_PERCENT,
     SoftMoveOperation,
@@ -51,6 +53,8 @@ W, E, R = _key("w"), _key("e"), _key("r")
 O, SHIFT_O, CTRL_O = _key("o"), _key("o", "shift"), _key("o", "ctrl")
 ESC, CTRL_Z, CTRL_Y = _key("ESCAPE"), _key("z", "ctrl"), _key("y", "ctrl")
 SHIFT_WHEEL_UP, SHIFT_WHEEL_DOWN = _wheel("UP", "shift"), _wheel("DOWN", "shift")
+CTRL_WHEEL_UP, CTRL_WHEEL_DOWN = _wheel("UP", "ctrl"), _wheel("DOWN", "ctrl")
+ALT_O = _key("o", "alt")
 
 TRANSFORMS = [
     (W, cmd.MOVE, MoveOperation, SoftMoveOperation),
@@ -328,7 +332,7 @@ def test_settings_are_sticky_across_commit_cancel_and_undo(app):
     app.key_press(CTRL_O)
     app.pointer_scroll(SHIFT_WHEEL_UP)
     settings = app.soft_settings
-    assert (settings.metric, settings.curve) == ("geodesic", "linear")
+    assert (settings.metric, settings.curve) == ("euclidean", "sphere")
     assert settings.radius_percent == 20
     _gesture(app, W)  # commit
     assert app.soft_settings == settings
@@ -343,10 +347,10 @@ def test_armed_but_not_begun_takes_the_new_value(app, begins):
     _select_one(app)
     _soft_on(app)
     app.key_press(W)  # armed, no motion yet
-    app.key_press(_key("o", "shift"))  # curve → linear
+    app.key_press(_key("o", "shift"))  # curve → sphere
     app.pointer_scroll(SHIFT_WHEEL_UP)
     app.pointer_motion(300.0, 300.0, 6.0, 2.0)  # begin() reads the settings now
-    assert begins[0]["soft"].curve == "linear"
+    assert begins[0]["soft"].curve == "sphere"
     assert begins[0]["soft"].radius_percent == 20
     app.key_press(ESC)
 
@@ -442,20 +446,23 @@ def test_o_toggles_and_posts_the_full_state(app):
     assert app.key_press(O)
     assert app.status_serial == serial + 1
     assert app.status_message.startswith("Soft: on · 15 % (")
-    assert app.status_message.endswith(") · euclidean · smooth")
+    assert app.status_message.endswith(") · geodesic · smooth · bands on")
     assert app.key_press(O)
     assert app.status_message.startswith("Soft: off · 15 % (")
 
 
 def test_curve_and_metric_cycle_and_post_the_state(app):
     assert app.key_press(SHIFT_O)
-    assert app.soft_settings.curve == "linear" and app.status_message.endswith("· euclidean · linear")
-    assert app.key_press(SHIFT_O)
+    assert app.soft_settings.curve == "sphere"
+    assert app.status_message.endswith("· geodesic · sphere · bands on")
+    for _ in range(len(CURVES) - 1):  # the whole cycle comes back to smooth
+        assert app.key_press(SHIFT_O)
     assert app.soft_settings.curve == "smooth"
     assert app.key_press(CTRL_O)
-    assert app.soft_settings.metric == "geodesic" and app.status_message.endswith("· geodesic · smooth")
-    assert app.key_press(CTRL_O)
     assert app.soft_settings.metric == "euclidean"
+    assert app.status_message.endswith("· euclidean · smooth · bands on")
+    assert app.key_press(CTRL_O)
+    assert app.soft_settings.metric == "geodesic"
 
 
 def test_shift_wheel_steps_the_radius_clamped_without_wrap(app):
@@ -463,10 +470,10 @@ def test_shift_wheel_steps_the_radius_clamped_without_wrap(app):
     for _ in range(len(RADIUS_STEPS_PERCENT) + 3):  # more notches than steps
         app.pointer_scroll(SHIFT_WHEEL_UP)
         percents.append(app.soft_settings.radius_percent)
-    assert percents[-1] == RADIUS_STEPS_PERCENT[-1] == 50  # clamped at the top ...
-    assert percents[-4:] == [50, 50, 50, 50]  # ... and does not wrap around
+    assert percents[-1] == RADIUS_STEPS_PERCENT[-1] == 200  # clamped at the top ...
+    assert percents[-4:] == [200, 200, 200, 200]  # ... and does not wrap around
     assert app.pointer_scroll(SHIFT_WHEEL_UP) is False  # at the end nothing changes
-    assert app.status_message.startswith("Soft: off · 50 % (")  # but the state is still posted
+    assert app.status_message.startswith("Soft: off · 200 % (")  # but the state is still posted
     for _ in range(len(RADIUS_STEPS_PERCENT) + 3):
         app.pointer_scroll(SHIFT_WHEEL_DOWN)
     assert app.soft_settings.radius_percent == RADIUS_STEPS_PERCENT[0] == 2
@@ -535,3 +542,142 @@ def test_direct_dispatch_reaches_the_same_state(app):
     assert app.soft_settings.enabled
     assert app.dispatch_command(cmd.SOFT_RADIUS_UP)
     assert app.soft_settings.radius_percent == 20
+
+
+# -- S2d: defaults, curve set, custom shape, radius steps, band switch (S2c verdict 2026-10-11) -----
+
+
+def test_new_defaults_are_geodesic_smooth_and_bands_on(app):
+    soft = app.soft_settings
+    assert (soft.metric, soft.curve, soft.bands_visible) == ("geodesic", "smooth", True)
+    assert soft.radius_percent == 15 and not soft.enabled
+
+
+def test_shift_o_walks_the_curve_set_in_order_and_comes_back(app):
+    seen = [app.soft_settings.curve]
+    for _ in range(len(CURVES)):
+        assert app.key_press(SHIFT_O)
+        seen.append(app.soft_settings.curve)
+    assert seen == ["smooth", "sphere", "root", "sharp", "linear", "custom", "smooth"]
+
+
+def test_ctrl_wheel_shapes_the_custom_curve_and_selects_it(app):
+    assert app.soft_settings.curve == "smooth" and app.soft_settings.curve_power == 1.0
+    assert app.pointer_scroll(CTRL_WHEEL_UP)  # up = rounder = smaller p
+    assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 0.67
+    assert app.status_message.endswith("· custom p=0.67 · bands on")
+    assert app.pointer_scroll(CTRL_WHEEL_DOWN) and app.pointer_scroll(CTRL_WHEEL_DOWN)
+    assert app.soft_settings.curve_power == 1.5  # down = sharper
+    assert app.status_message.endswith("· geodesic · custom p=1.5 · bands on")
+
+
+def test_ctrl_wheel_clamps_at_both_ends_and_never_zooms(app):
+    distance = app.camera.distance
+    for _ in range(len(CUSTOM_SHAPE_STEPS) + 2):
+        app.pointer_scroll(CTRL_WHEEL_UP)
+    assert app.soft_settings.curve_power == CUSTOM_SHAPE_STEPS[0]
+    assert app.pointer_scroll(CTRL_WHEEL_UP) is False  # at the end: unchanged ...
+    assert app.status_message.endswith("· custom p=0.25 · bands on")  # ... but the state is posted
+    for _ in range(len(CUSTOM_SHAPE_STEPS) + 2):
+        app.pointer_scroll(CTRL_WHEEL_DOWN)
+    assert app.soft_settings.curve_power == CUSTOM_SHAPE_STEPS[-1]
+    assert app.camera.distance == distance
+
+
+def test_ctrl_wheel_at_the_end_still_switches_to_custom(app):
+    for _ in range(len(CUSTOM_SHAPE_STEPS) + 2):
+        app.pointer_scroll(CTRL_WHEEL_UP)
+    app.key_press(SHIFT_O)  # custom -> smooth
+    assert app.soft_settings.curve == "smooth"
+    assert app.pointer_scroll(CTRL_WHEEL_UP)  # p already at the end, but the curve changes
+    assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 0.25
+
+
+def test_ctrl_wheel_with_soft_off_changes_only_the_stored_shape(app):
+    before = app.soft_settings
+    assert not before.enabled
+    distance, selection = app.camera.distance, set(app.selection.vertices)
+    assert app.pointer_scroll(CTRL_WHEEL_UP)
+    after = app.soft_settings
+    assert after.enabled is False and after.curve == "custom" and after.curve_power == 0.67
+    assert (after.metric, after.radius_step, after.bands_visible) == (
+        before.metric, before.radius_step, before.bands_visible)
+    assert app.camera.distance == distance and set(app.selection.vertices) == selection
+    app.key_press(O)  # switched on later, the stored shape is used
+    assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 0.67
+
+
+def test_ctrl_shift_wheel_does_nothing(app):
+    distance, settings = app.camera.distance, app.soft_settings
+    assert app.pointer_scroll(_wheel("UP", "ctrl", "shift")) is False
+    assert app.pointer_scroll(_wheel("DOWN", "ctrl", "shift")) is False
+    assert app.camera.distance == distance and app.soft_settings == settings
+
+
+def test_custom_keeps_its_last_p_through_the_cycle(app):
+    app.pointer_scroll(CTRL_WHEEL_DOWN)
+    app.pointer_scroll(CTRL_WHEEL_DOWN)  # p = 2 (steps 1.0 -> 1.5 -> 2.0)
+    assert app.soft_settings.curve_power == 2.0
+    for _ in range(len(CURVES)):
+        app.key_press(SHIFT_O)
+    assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 2.0
+
+
+def test_the_gesture_uses_the_custom_curve_and_its_power(app, begins):
+    seed = _select_one(app)
+    _soft_on(app)
+    app.pointer_scroll(CTRL_WHEEL_DOWN)  # p = 1.5
+    soft = app.soft_settings
+    expected = compute_influence(
+        app.scene.mesh, {seed}, soft.world_radius,
+        metric=soft.metric, curve="custom", curve_power=1.5,
+    )  # at the start positions, before the gesture moves anything
+    _gesture(app, W, release=False)
+    assert begins[0]["soft"].curve == "custom" and begins[0]["soft"].curve_power == 1.5
+    assert app.tool_manager.active_tool.operation.context.params["influence"] == expected
+    assert len(expected) > 1
+    assert app.key_press(ESC)
+
+
+def test_radius_steps_reach_200_percent_and_the_world_radius_follows(app):
+    _, bounding = mesh_center_and_radius(app.scene.mesh)
+    for _ in range(len(RADIUS_STEPS_PERCENT)):
+        app.pointer_scroll(SHIFT_WHEEL_UP)
+    assert app.soft_settings.radius_percent == 200
+    assert app.soft_settings.world_radius == pytest.approx(bounding * 2.0)
+    assert app.status_message.startswith("Soft: off · 200 % (")
+
+
+def test_alt_o_toggles_the_bands_state_and_posts_it(app):
+    serial = app.status_serial
+    assert app.key_press(ALT_O)
+    assert app.soft_settings.bands_visible is False and app.status_serial == serial + 1
+    assert app.status_message.endswith("· bands off")
+    assert app.soft_settings.enabled is False  # Alt+O is not O
+    assert app.key_press(ALT_O)
+    assert app.soft_settings.bands_visible is True and app.status_message.endswith("· bands on")
+
+
+def test_bands_switch_is_sticky_and_allowed_while_armed(app):
+    _select_one(app)
+    _soft_on(app)
+    app.key_press(ALT_O)
+    _gesture(app, W)  # commit
+    assert app.soft_settings.bands_visible is False
+    app.key_press(W)  # armed
+    assert app.key_press(ALT_O)
+    assert app.soft_settings.bands_visible is True
+    app.key_press(ESC)
+
+
+def test_the_bands_switch_does_not_change_the_gesture_weights(app, begins):
+    """Display only: the influence the operation gets is the same with the bands on or off."""
+    _select_one(app)
+    _soft_on(app)
+    _gesture(app, W, release=False)
+    with_bands = dict(app.tool_manager.active_tool.operation.context.params["influence"])
+    app.key_press(ESC)
+    app.key_press(ALT_O)
+    _gesture(app, W, release=False)
+    assert app.tool_manager.active_tool.operation.context.params["influence"] == with_bands
+    app.key_press(ESC)
