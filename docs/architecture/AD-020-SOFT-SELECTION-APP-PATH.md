@@ -4,7 +4,8 @@
 review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a), S2b is built (2026-10-11: bands in the window + soft drag probe), the S2c practical test ran on the
 reference PC (**verdict 2026-10-11, see "S2c verdict" below**) and S2d is built (2026-10-11: curve set, custom curve, geodesic
 default, radius up to 200 %, band switch); the S2d practical test is **KEEP** (Artist, 2026-10-11, see "S2d verdict" below).
-Everything stays `PROVISIONAL`; no promotion is decided.
+**Promotion decision (Manu, 2026-10-11, see "Promotion decision" below): Soft Selection becomes a fixed capability; the
+Core seam moves with symmetric soft selection (Way 2), not now.** Keys and band look stay `PROVISIONAL`.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
@@ -130,8 +131,35 @@ no promotion is decided here. Still open: the sign of a horizontal Shift/Ctrl+wh
 
 ---
 
+## Promotion decision (Manu, 2026-10-11)
+
+Recorded from the WP-SOFT-01 promotion handoff. This is the explicit Artist decision AD-013 requires for a capability
+promotion (§13 F5 had limited A1 to "may run for S2, no promotion"). The original text above is unchanged.
+
+**Artist statements (verbatim):**
+- "Soft Selection wird eine feste Fähigkeit" — capability promotion (AD-013 I7: a capability, not UX).
+- Core seam: **Way 2** — the weighting moves into the Core **together with symmetric soft selection**, as one Core change,
+  with the consumer that needs the shared per-vertex loop (§8.3, §13 F4); **not now**. Until then Q2-D stays as built.
+
+**Form (AD-013):** AD-013 ("Capability Promotion Does Not Promote Binding") asks for no special form beyond the explicit
+decision; this record follows it: only the capability is promoted, binding and UX are not (next block). No difference to report.
+
+**Engineering assumptions — Manu has not explicitly confirmed these:**
+- The keys (O, Shift/Ctrl+wheel, Shift+O, Ctrl+O, Alt+O) and the band look stay `PROVISIONAL`; there are no Artist Input
+  Truth entries yet (AD-013: promotion does not promote bindings).
+- Soft stays off at start.
+
+**Consequences:** E1 (Q2-D, no Core change) holds until the symmetric-soft work package; the F3 tripwires stay until then.
+No code, test or key changes come with this record.
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
+> **Nachtrag 2026-10-11 (Promotion):** „Soft Selection wird eine feste Fähigkeit.“ Die Gewichtung wandert erst **zusammen mit
+> der symmetrischen Soft Selection** in den Core (Weg 2, eine Core-Änderung); bis dahin bleibt alles wie gebaut. Tasten und
+> Bänder-Look bleiben `PROVISIONAL`, Soft bleibt beim Start aus (diese beiden Punkte sind Engineering-Annahmen, von dir nicht bestätigt).
+>
 > **Nachtrag 2026-10-11 (dein S2c-Verdikt, Abschnitt „S2c verdict“ oben):** Basisgefühl, Rotate/Scale, Tasten und Radius-Stufen
 > bleiben; **geodesic** ist jetzt Standard, **Smooth** die Standardkurve; es gibt mehrere Kurven (Smooth, Sphere, Root, Sharp,
 > Linear, Custom — `Shift+O` schaltet durch, `Ctrl`+Mausrad formt die Custom-Kurve von rund bis spitz); der Radius geht bis 200 %;
@@ -755,9 +783,11 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
 ## 12. Not decided here / follow-ups
 
 - ~~Defaults for metric, curve, scale formula, radius unit and steps — Artist questions for S2c.~~ Answered by the S2c verdict (2026-10-11), see "S2c verdict"; the radius *unit* was not questioned.
-- The promotion seam (Q2-A vs D) and the Core's `_weights` placeholder — own AD after the S2 verdict; owner, trigger,
-  criteria and default: §13 F4.
-- Symmetric soft selection (FINDINGS §5.8).
+- ~~The promotion seam (Q2-A vs D) and the Core's `_weights` placeholder — own AD after the S2 verdict; owner, trigger,
+  criteria and default: §13 F4.~~ *Updated 2026-10-11 ("Promotion decision"): the capability is promoted; the Core seam
+  (weighting into the Core, Way 2) moves **together with symmetric soft selection**. Owner: the symmetric-soft work
+  package. The F3 tripwires stay until then; Q2-D stays as built.*
+- Symmetric soft selection (FINDINGS §5.8) — now also the vehicle for the Core move (see above).
 - Changing the radius during a running gesture (would need a re-evaluation from the start snapshot) — an idea Manu keeps for later (S2c verdict, `docs/future_ideas/TRANSFORM.md`).
 - A curve shape editor with the GUI (verdict row 2; `docs/future_ideas/UI_UX.md`); soft-selection tests on higher-resolution meshes.
 - Tweak and other consumers V1_CORE §6 names.
