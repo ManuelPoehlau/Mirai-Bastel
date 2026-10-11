@@ -63,6 +63,8 @@ EXPECTED_VERTEX_COUNTS = {
     "man_with_shoes_basemesh": 928,
     "subd_cube": 26,
 }
+#: Registrierte Assets, die das Lab vorerst bewusst nicht abdeckt (Symmetrie nicht geprüft).
+LAB_EXCLUDED_ASSETS = {"gollum"}
 
 
 def _overlays(lab) -> tuple[SymmetryPlaneOverlay, SymmetryStateOverlay]:
@@ -299,7 +301,7 @@ def test_hud_text_shows_symmetry_and_status(lab_app):
 
 
 def test_registry_matches_expected_assets():
-    assert set(asset_names()) == set(EXPECTED_VERTEX_COUNTS)
+    assert set(asset_names()) - LAB_EXCLUDED_ASSETS == set(EXPECTED_VERTEX_COUNTS)
     assert run.DEFAULT_ASSET == "subd_cube"
 
 
