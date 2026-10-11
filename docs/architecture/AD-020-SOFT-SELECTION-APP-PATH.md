@@ -3,7 +3,8 @@
 **Status:** **DECIDED** (2026-10-10; Artist decisions and engineering decisions in the Decision record below,
 review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a), S2b is built (2026-10-11: bands in the window + soft drag probe), the S2c practical test ran on the
 reference PC (**verdict 2026-10-11, see "S2c verdict" below**) and S2d is built (2026-10-11: curve set, custom curve, geodesic
-default, radius up to 200 %, band switch).
+default, radius up to 200 %, band switch); the S2d practical test is **KEEP** (Artist, 2026-10-11, see "S2d verdict" below).
+Everything stays `PROVISIONAL`; no promotion is decided.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
@@ -113,6 +114,19 @@ radius stays the one unit on offer); live radius while dragging stays open (idea
 Still open: the sign of a horizontal Shift/Ctrl+wheel; a curve shape editor (with the GUI, `docs/future_ideas/UI_UX.md`);
 tests with higher-resolution meshes; the promotion decision (Core seam A vs D, §13 F4 — the trigger "S2c KEEP" is met for
 the basic feel, the decision is not part of S2d).
+
+
+### S2d verdict (Manu, 2026-10-11)
+
+**Artist verdict (S2d practical test, ATELIER B2f steps 1–5: curve cycle smooth/sphere/root/sharp/linear/custom,
+Ctrl+wheel up = rounder / down = sharper without zoom, radius steps up to 200 %, Alt+O switches the bands off and on):**
+**KEEP** — "S2d getestet: KEEP" (quote unchanged).
+
+Engineering assumptions of S2d thereby **confirmed by the Artist test (2026-10-11)**; the original text above is unchanged:
+E2 (custom curve via Ctrl+wheel now, direction up = rounder / down = sharper), E5 (radius steps up to 200 %),
+E6 (Ctrl+wheel direction, no zoom) and E7 (Alt+O bands switch). Everything stays `PROVISIONAL` (capability and keys);
+no promotion is decided here. Still open: the sign of a horizontal Shift/Ctrl+wheel, live radius while dragging
+(future idea), a curve shape editor (future idea, with the GUI), tests with higher-resolution meshes, the promotion decision.
 
 ---
 

@@ -300,7 +300,7 @@ holds the settings (§5.4: percent-of-bounding-radius steps as a *test* setting,
 Symmetry at `begin()` (§5.8). Their tests: `tests/test_soft_selection_{influence,ops,input}.py`,
 `tests/test_application_soft_selection.py`, `tests/test_application_soft_symmetry.py`. This experiment and its suite stay
 as the record. Still open for S2c (Artist): §5 items 3 and 4, and the sign of a horizontal Shift+wheel (`src/main.py`
-`wheel_input`).
+`wheel_input`). *(2026-10-11: S2c verdict and S2d practical test KEEP are recorded in AD-020, "S2c verdict" / "S2d verdict".)*
 
 1. **Core seam.** Promote by changing the frozen Core (`_weights` blend → weighted parameters,
    possibly absolute Scale evaluation), or keep subclasses outside the Core with a public hook?
