@@ -5,10 +5,15 @@ operations (Move/Rotate/Scale). Soft Selection is not a selection mode: the infl
 never enters `Selection`; one gesture is one History entry. Off by default; the host
 (`Application`) owns the settings, the tools compute the influence at `begin()`.
 
+S2b adds the window look: `bands` (weights -> band -> positions, headless) and `gl_bands`
+(the `GLPointOverlay` subclass `Application` pushes the bands into).
+
 This package imports nothing from `mirai.interaction` or `mirai.application` (the tools
 import it), and no Core private member (AD-020 §3, §9).
 """
 
+from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands, band_index
+from .gl_bands import BAND_LAYERS, GLSoftBandOverlay
 from .influence import CURVES, METRICS, compute_influence, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
 from .settings import (
@@ -19,14 +24,20 @@ from .settings import (
 )
 
 __all__ = [
+    "BAND_COUNT",
+    "BAND_LAYERS",
     "CURVES",
     "DEFAULT_RADIUS_STEP",
+    "EMPTY_BANDS",
+    "GLSoftBandOverlay",
     "METRICS",
     "RADIUS_STEPS_PERCENT",
+    "SoftBands",
     "SoftMoveOperation",
     "SoftRotateOperation",
     "SoftScaleOperation",
     "SoftSettings",
+    "band_index",
     "compute_influence",
     "primary_pivot",
     "world_radius_for",

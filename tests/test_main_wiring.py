@@ -106,7 +106,9 @@ def test_main_composes_the_three_parts():
         "point_overlay_type",
         "line_overlay_type",
         "face_overlay_type",
+        "soft_overlay_type",  # WP-SOFT-01 S2b: the influence-band sink
     }
+    assert main_module.GL_TYPES["soft_overlay_type"].__name__ == "GLSoftBandOverlay"
 
 
 def test_resize_sets_viewport_size_from_window(wired):

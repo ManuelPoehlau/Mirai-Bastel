@@ -20,9 +20,9 @@ reference PC.
 
 | File | What it is |
 |---|---|
-| `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one function per scenario (`SCENARIOS`; S2b adds a soft drag as another entry) |
+| `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one entry per scenario in `SCENARIOS` (`plain_w`; `soft_w` = the Soft Selection drag with the band overlay, WP-SOFT-01 S2b) |
 | `_paths.py` | sys.path bootstrap (pattern copied from `soft_selection/_paths.py`) |
-| `tests/` | headless tests: argument handling, statistics, import boundary (no pyglet, no window) |
+| `tests/` | headless tests: argument handling, statistics, soft variants and report format, import boundary (no pyglet, no window); one end-to-end smoke run of `soft_w`, skipped without a GL context |
 
 ## What it measures
 
@@ -44,6 +44,23 @@ front-most vertex; N = the influenced-vertex counts of
 then W is armed, `--moves` moves run (direction reverses halfway), W is released, and the drag is undone
 so every row starts from the unmodified asset.
 
+### Scenario `soft_w` (WP-SOFT-01 S2b, AD-020 §7.3)
+
+Soft Selection on (switched on through the public entry points: `O`, `Shift`+wheel, `Ctrl+O`, `Shift+O`), the window's
+band overlay attached (`GLSoftBandOverlay` is part of `GL_TYPES`). Seed = the front-most vertex (max z) + its one-ring;
+radius 5 / 15 / 30 / 50 % of the bounding radius × both metrics (`--sizes` = radius percents, `--metrics` = a subset),
+head and body. The same per-move rows as above (the `move` bar applies), plus rows reported once per row, not gated:
+
+| Once-per-row | Meaning |
+|---|---|
+| `first move` | the first mouse move: `begin()` incl. the influence, and the first push of the op's weights into the overlay |
+| `commit frame` | `key_release` (commit) + `sync` (which recomputes the preview) + `render` + `glFinish` |
+| `preview recompute` | `compute_influence` + band mapping for the seed, standalone: the work `Application` does per triggering event |
+| `settings change` | Shift+O key press + `sync`, end to end (recomputes the preview for the measured selection) |
+| `selection click` | `select_at` on the front-most vertex: pick + preview of one vertex, end to end |
+
+`moving V` in the heading is the influenced set of the measured selection (seeds + band points).
+
 ## Run
 
 From the repo root (Windows command prompt / PowerShell and Linux alike; Linux headless: `xvfb-run -a`):
@@ -52,6 +69,7 @@ From the repo root (Windows command prompt / PowerShell and Linux alike; Linux h
 python experiments/drag_cost/probe_drag_gl.py
 python experiments/drag_cost/probe_drag_gl.py --assets head_basemesh --sizes 9 36
 python experiments/drag_cost/probe_drag_gl.py --moves 400
+python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w --metrics geodesic --sizes 15 30
 python experiments/drag_cost/probe_drag_gl.py --list
 python -m pytest experiments/drag_cost/tests
 ```
@@ -89,15 +107,63 @@ Reading:
 
 Reference PC: not measured yet — see "Praktischer Test für Manu".
 
+## Result: `soft_w`, container (2026-10-11)
+
+**Container numbers, not the reference PC** (`REFERENCE_HARDWARE.md` §4): same machine as above (Xeon @ 2.10 GHz, 4
+logical cores, Python 3.13.16, llvmpipe, hidden 1024×768 window), 200 moves per row, `main` @ `1ff91bf` + S2b. ms, p50
+(and p95 for `move`). Seed = front-most vertex + one-ring (4–5 vertices).
+
+| Asset | Metric | Radius | moving V | `move` p50 / p95 | first move | commit frame | preview recompute | selection click |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| head (326 V) | euclidean | 5 % | 9 | 0.41 / 0.58 | 0.68 | 3.27 | 0.06 | 0.61 |
+| head | euclidean | 15 % | 36 | 0.76 / 1.04 | 1.22 | 3.75 | 0.12 | 0.50 |
+| head | euclidean | 30 % | 68 | 1.13 / 2.14 | 1.61 | 3.45 | 0.24 | 0.56 |
+| head | euclidean | 50 % | 151 | 2.08 / 4.56 | 2.68 | 3.41 | 0.36 | 0.62 |
+| head | geodesic | 5 % | 9 | 0.43 / 0.53 | 0.67 | 3.21 | 0.14 | 0.61 |
+| head | geodesic | 15 % | 30 | 0.75 / 0.97 | 1.02 | 4.29 | 0.17 | 0.58 |
+| head | geodesic | 30 % | 61 | 1.06 / 1.35 | 1.42 | 3.12 | 0.24 | 0.67 |
+| head | geodesic | 50 % | 109 | 1.68 / 2.15 | 2.14 | 3.55 | 0.32 | 0.84 |
+| body (928 V) | euclidean | 5 % | 18 | 0.77 / 0.95 | 0.97 | 10.95 | 0.13 | 1.77 |
+| body | euclidean | 15 % | 76 | 1.36 / 1.76 | 2.36 | 7.23 | 0.32 | 2.58 |
+| body | euclidean | 30 % | 112 | 1.68 / 2.72 | 2.18 | 7.50 | 0.31 | 1.89 |
+| body | euclidean | 50 % | 142 | 1.99 / 3.01 | 2.57 | 8.78 | 0.33 | 1.84 |
+| body | geodesic | 5 % | 10 | 0.65 / 0.83 | 1.20 | 9.03 | 0.38 | 1.98 |
+| body | geodesic | 15 % | 28 | 1.03 / 1.33 | 1.48 | 7.20 | 0.39 | 1.99 |
+| body | geodesic | 30 % | 107 | 1.63 / 2.13 | 2.46 | 8.92 | 0.76 | 2.97 |
+| body | geodesic | 50 % | 135 | 2.12 / 4.03 | 2.91 | 10.56 | 0.58 | 2.30 |
+
+Reading (container only):
+
+- Every row is under the 8 ms p95 bar for `move` (worst: head euclidean 50 %, p95 4.56 ms). The band overlay
+  adds position lookups for the band vertices to `sync`'s `rest` and one `set_points` per band; no influence work.
+- The preview recompute is 0.06–0.8 ms, so it is not what a selection click costs (that is the pick, 0.5–3 ms).
+- The `commit frame` is 3–4 ms (head) and 7–11 ms (body) and includes `render` + `glFinish` on llvmpipe, which is not
+  GPU time; it is a once-per-gesture frame and not gated. If it feels like a hitch on the reference PC, split it
+  into commit, preview and draw before drawing conclusions.
+- This does not claim the reference PC passes; AD-020 §7.3 makes Manu's run the gate before S2c.
+
 ## Praktischer Test für Manu (ca. 5 Minuten)
 
 1. `git pull`
 2. `python src/main.py examples/meshes/Man_With_Shoes_basemesh.obj` — eine große Fläche auswählen
    (z. B. halber Oberkörper), W halten und ziehen. Soll sich flüssig anfühlen; Aussehen unverändert.
 3. Kopf (`python src/main.py`): kurz W/E/R und Undo — alles wie gewohnt.
-4. `python experiments/drag_cost/probe_drag_gl.py` ausführen und die Tabelle in den Chat kopieren.
+4. `python experiments/drag_cost/probe_drag_gl.py` ausführen und die Tabelle in den Chat kopieren
+   (ohne Argumente: `plain_w` und `soft_w`; das Ganze dauert etwa eine Minute).
+
+### Soft Selection, S2b (kein Verdikt)
+
+1. `git pull`, `python src/main.py`, `O` an.
+2. Vertex an der Wange wählen: farbige Punkte um die Auswahl, je wärmer desto stärker. `Shift`+Mausrad: Bereich
+   wächst/schrumpft.
+3. `W` ziehen: die Farbpunkte wandern mit; nach dem Loslassen bleiben sie um die Auswahl.
+4. `O` aus: keine Farbpunkte mehr.
+5. `python experiments/drag_cost/probe_drag_gl.py` ausführen, Tabelle in den Chat kopieren.
+
+Noch kein Verdikt — der Vergleichstest S2c kommt danach, wenn die Zahlen passen.
 
 ## Next step
 
-Numbers from the reference PC go into the table above and into `REFERENCE_HARDWARE.md` §2. S2b extends
-the probe with a soft-drag scenario (one more entry in `SCENARIOS`).
+Numbers from the reference PC go into the tables above and into `REFERENCE_HARDWARE.md` §2. If the `soft_w` rows
+hold the 8 ms bar there, S2c (the Artist comparison test, AD-020 §10) follows; if not, the fix is a viewport question
+decided separately (AD-020 §7.3), not a change of the soft semantics.

@@ -18,7 +18,8 @@ def test_defaults():
     args = probe.parse_args([])
     assert args.assets == list(probe.DEFAULT_ASSETS)
     assert args.sizes is None and args.moves == probe.DEFAULT_MOVES
-    assert args.scenarios == ["plain_w"]
+    assert args.scenarios == ["plain_w", "soft_w"]
+    assert args.metrics is None
 
 
 def test_default_sizes_are_the_findings_counts():
@@ -38,6 +39,9 @@ def test_default_sizes_are_the_findings_counts():
         ["--warmup", "-1"],
         ["--assets", "no_such_asset"],
         ["--scenarios", "no_such_scenario"],
+        ["--scenarios", "soft_w", "--sizes", "7"],          # not a radius step
+        ["--scenarios", "soft_w", "--metrics", "manhattan"],
+        ["--scenarios", "plain_w", "--metrics", "euclidean"],  # metrics are soft_w only
     ],
 )
 def test_invalid_arguments_exit_with_status_2(argv, capsys):
@@ -54,7 +58,7 @@ def test_zero_warmup_is_allowed():
 def test_list_prints_scenarios_and_assets_without_a_window(capsys):
     assert probe.main(["--list"]) == 0
     out = capsys.readouterr().out
-    assert "plain_w" in out and "head_basemesh" in out
+    assert "plain_w" in out and "soft_w" in out and "head_basemesh" in out
 
 
 def test_stats_nearest_rank():
