@@ -10,8 +10,10 @@ from __future__ import annotations
 import tests._bootstrap  # noqa: F401
 
 from mirai.application import Application
+from mirai.interaction import commands
 from mirai.mesh_geometry import mesh_center_and_radius
 from mirai.viewport import OrbitCamera
+from viewport.resource_store import TraceStore
 
 
 def _app() -> Application:
@@ -91,3 +93,67 @@ def test_load_scene_reframes_the_camera_on_the_new_bounds():
     reference.frame_on_bounds(center, radius)
     assert app.camera.target == center
     assert app.camera.distance == reference.distance
+
+
+# -- Soft Selection overlay through the scene loader (WP-SOFT-01 S2b) -----------------------
+
+
+def test_load_scene_accepts_every_backend_init_scene_accepts():
+    # The loader forwards the backend wiring to `init_scene`; a backend added to one
+    # signature and not the other is the bug this pins (`soft_overlay_type`, 2026-10-11).
+    import inspect
+
+    backends = {
+        name
+        for name in inspect.signature(Application.init_scene).parameters
+        if name.endswith("_type")
+    }
+    assert backends <= set(inspect.signature(Application.load_scene).parameters)
+
+
+def test_load_scene_takes_the_full_main_gl_types_set():
+    # Real keys of `src/main.py::GL_TYPES`, headless stand-ins (no GL context needed here).
+    from mirai.soft_selection import GLSoftBandOverlay
+
+    gl_types = {
+        "store_type": TraceStore,
+        "point_overlay_type": None,
+        "line_overlay_type": None,
+        "face_overlay_type": None,
+        "soft_overlay_type": GLSoftBandOverlay,
+    }
+    app = _app()
+
+    app.load_scene("cube", **gl_types)
+
+    assert isinstance(app._soft_overlay, GLSoftBandOverlay)
+    assert app._soft_overlay in app.viewport.extra_overlays
+
+
+def test_load_scene_with_soft_on_and_a_selection_shows_no_bands_of_the_old_scene():
+    # Head -> head: the old ids are valid in the new mesh, so `init_scene` alone would
+    # compute (and keep showing) bands for a selection the loader then clears.
+    import math
+
+    from tests.soft_selection_fixtures import HEAD_OBJ  # noqa: F401  (examples/ on sys.path)
+
+    from mirai.soft_selection import EMPTY_BANDS, GLSoftBandOverlay
+
+    app = Application()
+    app.init_scene("obj", obj_path=HEAD_OBJ, soft_overlay_type=GLSoftBandOverlay)
+    app.frame_scene()
+    app.set_viewport_size(800, 600)
+    app.dispatch_command(commands.SOFT_TOGGLE)
+    mesh, eye = app.scene.mesh, app.camera.eye()
+    vid = min(mesh.all_vertex_ids(), key=lambda v: math.dist(mesh.vertex_position(v), eye))
+    x, y = app.camera.project_to_screen(mesh.vertex_position(vid), 800, 600)
+    assert app.select_at(commands.SELECT, x, y)
+    assert app.soft_bands != EMPTY_BANDS
+    old_overlay = app._soft_overlay
+
+    app.load_scene("obj", obj_path=HEAD_OBJ, soft_overlay_type=GLSoftBandOverlay)
+
+    assert app.selection.vertices == set()
+    assert app._soft_overlay is not old_overlay  # bound to the new viewport
+    assert app.soft_bands == EMPTY_BANDS  # selection is cleared, so is the preview
+    assert app.soft_settings.enabled  # the sticky setting survives the scene change

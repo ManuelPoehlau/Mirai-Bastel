@@ -631,6 +631,7 @@ class Application:
         point_overlay_type: type | None = None,
         line_overlay_type: type | None = None,
         face_overlay_type: type | None = None,
+        soft_overlay_type: type | None = None,
     ) -> None:
         """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
         zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
@@ -647,7 +648,11 @@ class Application:
           der Application, nicht am Viewport, und die Kamera-Revision bleibt
           nach dem Tausch gleich);
         - Viewport-Größe/Aspect erneut melden (neuer Viewport) und die
-          Kamera neu ausrichten.
+          Kamera neu ausrichten;
+        - die Soft-Selection-Vorschau neu rechnen: `init_scene` hat sie noch mit
+          der *alten* Auswahl gerechnet, die jetzt geleert ist.
+        Alle GL-Backends (`*_type`, auch `soft_overlay_type`) gehen unverändert
+        an `init_scene` — dort ist das Wiring die einzige Stelle.
         Kein History-Eintrag, keine Core-Änderung; der Aufrufer setzt bei
         Bedarf selbst einen Namen-Status (`set_status`)."""
         self.init_scene(
@@ -657,6 +662,7 @@ class Application:
             point_overlay_type=point_overlay_type,
             line_overlay_type=line_overlay_type,
             face_overlay_type=face_overlay_type,
+            soft_overlay_type=soft_overlay_type,
         )
         self.selection.clear()
         self.history = HistoryStack()
@@ -665,6 +671,7 @@ class Application:
         self._selection_redo_stack.clear()
         self._set_hovered(None)
         self._pick_cache.invalidate()
+        self._soft_preview_refresh()
         self.set_viewport_size(self.viewport_width, self.viewport_height)
         self.frame_scene()
 
