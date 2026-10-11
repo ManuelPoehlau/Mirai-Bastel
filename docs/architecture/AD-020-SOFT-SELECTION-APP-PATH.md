@@ -1,7 +1,9 @@
 # AD-020 — Soft Selection on the Production App Path (S2 host, Core seam, controls)
 
-**Status:** **PROPOSED** (2026-10-10). Manu decides after an independent review (§13).
-**Mode (M5):** Discovery, decision preparation. No implementation, no code, test or binding change.
+**Status:** **DECIDED** (2026-10-10; Artist decisions and engineering decisions in the Decision record below,
+review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a).
+**Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
+capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
 Production window).
 **Read at:** `main` @ `f65d223`. The handoff's baseline is `eaf43a3`; the delta was checked and contradicts
@@ -26,7 +28,44 @@ is a proposal and says what it rests on.
 
 ---
 
+## Decision record (2026-10-10)
+
+Where a section below still reads "proposed", this record and §13 win. Artist decisions and engineering
+decisions are kept apart on purpose.
+
+**Artist decisions (Manu, 2026-10-10)** — recorded from the S2a handoff:
+
+| # | Decision | Words / basis |
+|---|---|---|
+| A1 | Host: in the app (`src/main.py`), `PROVISIONAL`, **off by default** (Q1-A). This is the explicit AD-013 decision (see §13 F5): Soft Selection may run in `src/main.py` for S2, off by default, with `PROVISIONAL` keys and look, as an unvalidated capability; no promotion. | Q1-A of this AD |
+| A2 | **O** = Soft on/off, although O was the old display key (moved to D in WP-06 B5a). | "O passt erstmal" |
+| A3 | **Shift + mouse wheel up/down** = radius one step larger / smaller. Replaces the Up/Down proposal of §6. | Manu, 2026-10-10 |
+| A4 | **Shift+O** = curve, **Ctrl+O** = metric. Both stay `PROVISIONAL`. | "muss ich testen" |
+
+**Engineering decisions (set in the S2a handoff, not Artist decisions):**
+
+| # | Decision |
+|---|---|
+| E1 | Core seam Q2-D: the soft ops live in `src/mirai` on the Core's protected hooks, no Core change. *Assumption: recommended by this AD and by the review; Manu has not explicitly confirmed it.* |
+| E2 | Stale IDs in the influence map are filtered before `super()._on_begin` (S1 L10 kept; review F10). |
+| E3 | One sticky immutable `SoftSettings` in `Application` (enabled, radius step, **world radius**, metric, curve) with the axis-constraint semantics: a gesture armed but not begun takes the new value, a running one keeps its own (F2/F13). The world radius is computed when soft is switched on, when the step changes and on scene load; tool and later preview read the same value (F9). |
+| E4 | Radius steps, `PROVISIONAL` test setting, percent of the mesh bounding radius: 2, 5, 10, 15, 20, 30, 40, 50; start 15; clamped, no wrap; one wheel notch = one step. |
+| E5 | Shift+wheel: `src/main.py` already tracks Shift; the wheel input carries `{"shift"}` when Shift is held. Bindings `Input("wheel","UP",{"shift"})` → `SoftRadiusUp`, DOWN → `SoftRadiusDown`; the plain wheel stays Zoom. Shift+wheel never zooms, also with soft off (only the stored step changes; the binding carries the meaning, AD-013 I2). If Shift is held and `scroll_y == 0` but `scroll_x != 0` (drivers that map Shift+wheel to a horizontal scroll), `scroll_x` is used; the sign is to be confirmed in Manu's test and recorded. |
+| E6 | Five commands: `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`, `SoftMetricCycle`. Defaults O / Shift+wheel / Shift+O / Ctrl+O. No scale-formula switch; Scale uses the linear `1 + w(F−1)` (S1 E6 assumption, unchanged). |
+| E7 | Soft + Symmetry refusal is authoritative at `begin()` through the existing visible refusal path; the arm-time check is early feedback only. Soft ops keep the `params["symmetry"]` `ValueError` backstop. |
+| E8 | Status line on every soft key with the full state, e.g. `Soft: on · 15 % (0.51) · euclidean · smooth` (`PROVISIONAL` until a HUD exists). |
+| E9 | The soft commands join the Lab's `NON_OPERATION` through a dated change of the AD-013 G-2 table. |
+
+Start values for metric (`euclidean`) and curve (`smooth`) are the S1 working values, needed so the test can start;
+they are **not** defaults. Defaults for metric, curve, radius unit and steps stay Artist questions for S2c.
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
+
+> **Nachtrag 2026-10-10:** entschieden (siehe „Decision record“). Radius: **Shift + Mausrad** statt Pfeiltasten;
+> die Messung in Abschnitt „Eine Messung vor deinem Praxistest“ ist durch die Review (§13 F1) überholt: das
+> Problem sitzt in `GLRenderStore.update` und wird in WP-VIEW-PATCH-01 behandelt, nicht in Soft Selection.
 
 **Worum es geht.** Soft Selection soll für einen ersten Test (S2) ins echte Programm (`src/main.py`), nicht in
 den Playground (deine Entscheidung vom 2026-10-08). Diese AD bereitet vier Entscheidungen vor; sie baut nichts.
@@ -44,7 +83,7 @@ den Playground (deine Entscheidung vom 2026-10-08). Diese AD bereitet vier Entsc
 3. **Was siehst du?** Punkte in wenigen Farbbändern um die Auswahl (je wärmer, desto stärker geht der Vertex
    mit), dazu eine Statuszeile. Kein Einfärben der Fläche — das hattest du für die Auswahl schon abgelehnt
    („sieht aus wie Vertex Paint"); ob es für Soft Selection anders wäre, ist eine Frage an dich im Test.
-4. **Tasten (Vorschlag, `PROVISIONAL`):** **O** = Soft an/aus · **Pfeil hoch/runter** = Radius eine Stufe
+4. **Tasten (`PROVISIONAL`, so entschieden):** **O** = Soft an/aus · **Shift + Mausrad hoch/runter** = Radius eine Stufe
    größer/kleiner · **Shift+O** = Kurve (smooth ↔ linear) · **Ctrl+O** = Metrik (euclidean ↔ geodesic).
    Alle sind heute frei — im Programm, im Knife, im Symmetry Lab und in der Artist Input Truth. Sie wirken
    wie X/Y/Z: jederzeit umschaltbar, gelten ab der nächsten Geste. W/E/R halten bleibt wie es ist.
@@ -253,6 +292,9 @@ session scratchpad instead and are reproduced in shape in Appendix A and B:
   second way to run `src/main.py` for no further protection, and the Symmetry Lab's only cost under A is one
   constant.
 - **C2 is not used because** the Artist decided validation in the Production viewport.
+- **B′ (review F8) is not used because** it adds a second Lab, an AD-013 addendum and an H2-R6-style review to reach
+  the same gesture. B′ = A's `src` code, no default bindings, settings written by a second app-path Lab through one
+  read-only data field that the tool reads at `begin()`; unlike B it follows the hover target.
 
 ### 2.3 What A means for "experiment first" (AD-013 § Default Lifecycle)
 
@@ -429,9 +471,13 @@ Viewport stays unaware of soft selection.
 ### 5.2 Rejected alternatives
 
 - **b is not used because** the tool layers have one writer (the Knife) and are replaced as a whole.
-- **c is not used because** it re-introduces the rejected face tint on a pipeline that is to be removed, and
-  needs a `src/viewport` layout and shader change. Whether a tint reads differently for *influence* than for
-  selection is a question for Manu in S2c, not an engineering default.
+- **c is not used because** of its cost: a `src/viewport` layout and shader change on a pipeline that is slated
+  for removal, whose attribute the driver currently drops (F14). The Artist's REJECT of the selection tint does
+  not cover influence; whether a tint would read differently there is a question for Manu in S2c.
+- *(Added with review F11, for S2b)* Two alternatives were missed: face bands via `GLTriangleOverlay` /
+  `FlatColorLayers` (depth-tested like the B5b face highlight, no `RenderMesh` change; ambiguous where a face spans
+  bands), and, for hover-armed gestures, showing the bands once at arm (≤ 2.2 ms on the reference PC by FINDINGS
+  R10) instead of per hover change.
 - **d is not used because** it depends on the edge display mode and is ambiguous between bands.
 
 Band count, colours and point size are `PROVISIONAL` look values for the S2 handoff. Points ignore depth
@@ -442,21 +488,21 @@ one thing to watch in S2c at large radii.
 
 ## 6. Q5 — Minimal S2 controls
 
-### 6.1 Proposal (`PROVISIONAL`, engineering, not Artist Input Truth)
+### 6.1 Keys (`PROVISIONAL`, decided 2026-10-10; engineering keys, not Artist Input Truth)
 
-| Function | Key | Conflict check (F16, F17) |
+| Function | Input → command | Conflict check (F16, F17) |
 |---|---|---|
-| Soft Selection on / off | **O** | Free in GLOBAL, KNIFE, TOPOLOGY, Symmetry Lab; no Artist Truth entry uses O. In the adapter map. Precedent *(recalled, not verified here)*: Blender's proportional editing toggle |
-| Radius one step larger / smaller | **Up / Down** (arrows) | Free everywhere; in the adapter map (`"up"`/`"down"`); layout-independent. Clamped at the ends, no wrap |
-| Curve smooth ↔ linear | **Shift+O** | Free everywhere. *(Recalled, not verified)*: Blender's Shift+O cycles the falloff type |
-| Metric euclidean ↔ geodesic | **Ctrl+O** | Free everywhere. Ctrl+O is the common "Open" convention; Artist Truth `application.load` is unbound today |
-| *(optional, only if Manu wants the scale formula switchable in S2)* linear ↔ power | Ctrl+Shift+O | Free everywhere |
+| Soft Selection on / off | **O** → `SoftToggle` | Free in GLOBAL, KNIFE, TOPOLOGY, Symmetry Lab; no Artist Truth entry uses O. In the adapter map. **History (review F7):** O was the default display key until WP-06 B5a moved it to D ("D statt O"); Manu chose O for Soft knowing that ("O passt erstmal"). Two Production tests pinned O unbound; they now say "O is not a display key" and keep their display-key assertions. |
+| Radius one step larger / smaller | **Shift + wheel up / down** → `SoftRadiusUp` / `SoftRadiusDown` | Replaces the earlier Up/Down proposal. `Input("wheel","UP",{"shift"})`; the window reports "Shift held" with the wheel event (`wheel_input` in `src/main.py`). One notch = one step, clamped at both ends, no wrap. Never zooms, also with soft off. Direction (up = larger) and the horizontal-scroll fallback are to be confirmed in Manu's test. |
+| Curve smooth ↔ linear | **Shift+O** → `SoftCurveCycle` | Free everywhere. "muss ich testen" → `PROVISIONAL`. |
+| Metric euclidean ↔ geodesic | **Ctrl+O** → `SoftMetricCycle` | Free everywhere. Ctrl+O is the common "Open" convention; Artist Truth keeps `application.load` deliberately unbound (rule 4), so there is no conflict today (review F12; Alt+O would be the alternative). "muss ich testen" → `PROVISIONAL`. |
 
-Behaviour: sticky like X/Y/Z (F2); allowed while W/E/R/T is held (state only, applies from the next gesture);
-inside a Knife session the keys go to the Knife context first and do nothing (`application.py:1443-1444`).
-Each press posts one status line with the full state (e.g. `Soft: on · 15 % (0.51) · euclidean · smooth`,
-`PROVISIONAL` until a HUD exists). Four new command constants in `mirai.interaction.commands`; four defaults
-in `build_default_bindings()`, re-bindable through `keymap.json` (I4/I5).
+Five commands for five inputs (F12): a binding carries the meaning, so a `keymap.json` rebind never has to know a
+direction (AD-013 I2). Behaviour: sticky like X/Y/Z (F2); allowed while W/E/R/T is held (state only: it applies to
+the next gesture, **or to the current one if it is armed and has not begun** — F13); inside a Knife session the keys
+go to the Knife context first and do nothing, and so does Shift+wheel. Holding a key does not repeat: one step per press.
+Each press posts one status line with the full state (E8). Five command constants in `mirai.interaction.commands`,
+five defaults in `build_default_bindings()`, re-bindable through `keymap.json` (I4/I5).
 
 Symmetry Lab check: none of the proposed inputs is Shift+S, M or Shift+B, so the Lab's start-up assert and
 T-R1a (GLOBAL/KNIFE equal `build_default_bindings()` after Lab start-up) hold unchanged.
@@ -465,9 +511,9 @@ T-R1a (GLOBAL/KNIFE equal `build_default_bindings()` after Lab start-up) hold un
 
 - **B (Maya's soft-select key) is not used because** Shift+B is the Symmetry Lab's E5 key; exact modifier
   matching keeps them apart, but one letter would carry two unrelated meanings in the Lab.
-- **The mouse wheel, plain or modified, is not used because** the wheel is Zoom (`bindings.py:171-172`) and
-  `on_mouse_scroll` carries no modifiers (F17); a modified wheel needs modifier tracking in the window, like
-  the Knife's Shift tracking (`main.py:146-156`).
+- **Up/Down are not used because** the Artist chose Shift+wheel (2026-10-10). (The wheel needed modifier tracking
+  in the window — `on_mouse_scroll` carries none (F17) — which `main.py` already has for the Knife's Shift,
+  `main.py:146-156`; the plain wheel stays Zoom.)
 - **`[`/`]` and `+`/`-` are not used because** the adapter does not translate them (F17), so S2 would change
   `pyglet_input`, and their position depends on the keyboard layout.
 - **Digits 4–9 are not used because** they sit next to 1/2/3, which switch the mode and clear the selection
@@ -546,9 +592,11 @@ timer is the follow-up.
 
 ## 8. E3 — Soft + Symmetry contact points (named, not designed)
 
-1. **`Application`, at arm (primary).** W/E/R with soft on while `mesh.symmetry_definition is not None` →
-   refused visibly at the key press (status line, nothing armed, no history), in MARK and BLOCK alike.
-   `src/main.py` never sets a definition (T-G3b), so Production never reaches it; the Symmetry Lab does.
+1. **`Application`, at `begin()` (authoritative; review F2).** Soft on while `mesh.symmetry_definition is not None`
+   → refused visibly where the settings are read, at the first motion: status line, `_transform_end`, no history,
+   mesh unchanged (the path of `SeamConstraintError`, `application.py:1591-1598`), in MARK and BLOCK alike. This
+   covers W armed → O → motion. **At arm** the same check gives early feedback at the key press (status line,
+   nothing armed). `src/main.py` never sets a definition (T-G3b), so Production never reaches it; the Symmetry Lab does.
 2. **The soft op (backstop).** `params["symmetry"]` present → `ValueError` at `begin()` before anything
    moves, as S1 E9; the soft ops declare no symmetry support (`supports_symmetry` stays `False`, the
    `Operation` default, `operation.py:88`). Under Q2-D they do not inherit the seam machinery of
@@ -621,7 +669,8 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
 ## 12. Not decided here / follow-ups
 
 - Defaults for metric, curve, scale formula, radius unit and steps — Artist questions for S2c.
-- The promotion seam (Q2-A vs D) and the Core's `_weights` placeholder — own AD after the S2 verdict.
+- The promotion seam (Q2-A vs D) and the Core's `_weights` placeholder — own AD after the S2 verdict; owner, trigger,
+  criteria and default: §13 F4.
 - Symmetric soft selection (FINDINGS §5.8).
 - Changing the radius during a running gesture (would need a re-evaluation from the start snapshot).
 - Tweak and other consumers V1_CORE §6 names.
@@ -633,10 +682,24 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
 
 ## 13. Review
 
-*(Empty until the independent review. Findings and answers go here; the status line changes only with
-Manu's decision.)*
+Independent review: [`docs/archive/soft_selection/reviews/AD-020_REVIEW_CLAUDE_001.md`](../archive/soft_selection/reviews/AD-020_REVIEW_CLAUDE_001.md)
+(archived, not edited). Verdict: ACCEPT WITH CHANGES, two blockers. One resolution per finding (S2a, 2026-10-10):
 
----
+| # | Resolution |
+|---|---|
+| **F1** (BLOCKER) cost proxy misses `GLRenderStore.update`'s O(moved × V) patch | **Handled by WP-VIEW-PATCH-01** (parallel, `src/viewport`; not touched here). It is a pre-existing Production defect independent of Soft Selection. Consequences taken into this AD: the 8–15 ms reading of §7.2 and the matching German sentence are superseded (the review measured p50 30.7 ms body/30 % with the GL store against 2.1 ms with `TraceStore`); the S2b probe must drive the window's GL backend and report `GLRenderStore.update` separately; the viewport patch is a precondition of S2c. |
+| **F2** (BLOCKER) refusal bypass: W → O → motion | **Resolved (E7).** `Application._transform_step` refuses Soft + symmetry just before `begin_current_interaction` (status line, `_transform_end`, no history, mesh unchanged), in MARK and BLOCK; the arm-time check stays as early feedback (§8.1). The soft ops keep the `ValueError` backstop for any other host. Tests: `tests/test_application_soft_symmetry.py` (incl. the tool-level backstop), `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py` (W/E/R armed → O → motion, MARK and BLOCK; O → W; O allowed under BLOCK). |
+| **F3** "documented extension points" overstates D | **Resolved.** D is *protected-hook subclassing (template method) of an unexported Core base class* (`VertexTransformOperation`): no private state, no private helper, but a de-facto contract on the hooks. The eleven dependencies and how each is pinned (all in `tests/test_soft_selection_ops.py` unless noted): (1) base keeps `_weights` inert → "base never blends" closed-form tripwire for all three ops; (2) base loop passes `vertex_id=` and the update kwargs → the whole ported suite; (3) copy of `ScaleOperation._apply` → radius-0 bitwise identity (also with a basis); (4) copy of Move's tuple sum → radius-0 identity; (5) base `_on_begin` reads target/selection.vertices/pivot only → lifecycle + stale-ID tests; (6) base `_on_update` iterates exactly the view → influence-covers-entry test; (7) `_on_commit` and `description` → description tripwire; (8) `supports_symmetry` False → symmetry-refusal test; (9) `pivot` property → pivot tripwire; (10) own attribute names carry the `_soft_` prefix → AST scan for Core privates; (11) importability of `VertexTransformOperation` from `core.operations.transform` → every import in the suite. Dated docs-only line in `CORE_V1_FREEZE.md` §7.1: no Core change, but `src/mirai/soft_selection` consumes these hooks. §7's "public APIs" wording read as "without a Core change" (CORE_V1_FREEZE §1). |
+| **F4** promotion AD has no owner, trigger, criteria | **Resolved** (taken from the review, §12): *Owner:* the WP-SOFT-01 slice after S2c. *Trigger:* S2c KEEP, or a second consumer named by V1_CORE §6 (Tweak), or symmetric soft (FINDINGS §5.8). *Criteria:* symmetric soft needs the shared Core loop (§8.3) → argues for Q2-A; a second consumer → A or a public hook; otherwise keep D. *Default if undecided:* D stays `PROVISIONAL` and the capability stays off by default. The tripwires of F3 keep the dead `_weights` placeholder from being revived unnoticed meanwhile. |
+| **F5** §2.3 overstated the 2026-10-08 statement | **Resolved.** The 2026-10-08 statement exists in the repo only as this AD's second-hand quote. Manu's answer to Q1 (A1, 2026-10-10) is the explicit AD-013 decision; it covers exactly: Soft Selection may run in `src/main.py` for S2, off by default, with `PROVISIONAL` keys and look, as an unvalidated capability; **no promotion** (capability and UX are promoted separately, I7, after the S2c verdict). Logged in ROADMAP §7 intake. |
+| **F6** `NON_OPERATION`: change the table, give the right reason | **Resolved (E9).** AD-013's G-2 table has a new group "soft settings" (the five commands, gate path `key_press`; the wheel path is gated the same way), dated 2026-10-10 and decided with this AD. Reason: classification — state for the next gesture like the constraints, no interaction, no mesh. No Limit of G is lifted and no writer added, so no second H2 review. Without the entry O would be refused under BLOCK ("Befehl nicht koordiniert"), escapable via Shift+B/Shift+S — a nuisance, not a trap. Interaction with F2 taken: membership opens the bypass under BLOCK unless the refusal is at `begin()`, which it is. |
+| **F7** O was vacated on purpose; two tests pin it unbound | **Resolved.** History named in §6.1; Manu chose O knowing it (A2). `tests/test_input_binding.py` and `tests/test_display_modes.py` were rewritten to "O is not a display key" (their D/Shift+D assertions kept; the O assertion kept as "not a display command" plus the new binding). |
+| **F8** Q1-B rejected against an influence hook only | **Resolved.** Row **B′** added to the record: A's `src` code, no default bindings, settings written by a second app-path Lab through one data field (follows the hover target). Not used because it adds a second Lab, an AD-013 addendum and an H2-R6-style review to reach the same gesture; A's off-by-default keys do the same job more cheaply, and the Artist asked for the Production viewport. A stays. |
+| **F9** one source for the world radius; overlay update contract | **Resolved (E3).** `SoftSettings` holds the radius in world units, computed on switch-on, on a step change and on scene load, and read unchanged by the tool (`tests/test_application_soft_selection.py`: tool influence == `compute_influence(settings.world_radius…)` bit for bit). For S2b: `Application` pushes the weights (selection preview, or the op's weights at `begin()`) into the overlay and sets `dirty`; the overlay never computes influence; test "preview weights == op weights at `begin()`". |
+| **F10** D changes S1's stale-ID contract | **Resolved (E2).** Stale IDs are filtered (map and view) before the key-set check and before `super()._on_begin`: L10 kept. The S1 op suite ported with all 59 tests (56 + the 3 stale-ID ones), plus the D-specific additions of F3. |
+| **F11** Q4 (NIT) | **Taken into S2b**: a headless band object (weights → bands → positions, testable without GL) with the `GLPointOverlay` subclass as its sink through `soft_overlay_type`; §5.2 c reworded to the cost reason; face bands and bands-at-arm recorded as alternatives (§5.2). |
+| **F12** Q5 details (NIT) | **Resolved.** Five commands (§6.1); Ctrl+O vs "Open" recorded, Alt+O named as the alternative (unverified); "one step per press"; the stronger reason against V (a GLOBAL V binding would break the symmetric Knife's variant key, `_knife_key` reads V only when `command is None`). |
+| **F13** smaller corrections (NIT) | **Resolved.** `"power"` Scale checked bitwise against S1 (ported suite); Move's tuple sum named as a second trivial copy (F3 row 4); `MoveTool` hands the op no `pivot` (Move is pivot-independent), only the influence — and `"symmetry"` when a definition is set; "armed but not begun takes the new value" corrected in §4.3/§6.1; environment note: use `python -m pytest`, and `libegl1` for the full counts (without it 35 environment skips); S2 can answer the *steps* of FINDINGS §5.4 only, not the *unit* (one unit is offered). |
 
 ## Appendix A — Probe P-D (shape)
 

@@ -73,6 +73,12 @@ Session-History. LMB und Shift+LMB (Mittelpunkt-Snap, UX2) gehören während
 der Session dem Knife (kein Binding — `Application.pointer_press`),
 Alt+LMB-Drag/Alt+Shift+LMB-Drag/Wheel navigieren weiter.
 
+Soft Selection (WP-SOFT-01 S2a, AD-020, `PROVISIONAL`, aus per Default; Manu 2026-10-10):
+- O                → Soft an/aus (O war bis B5a die Anzeige-Taste, jetzt D)
+- Shift+Mausrad    → Radius eine Stufe größer (hoch) / kleiner (runter); zoomt nie
+- Shift+O          → Kurve wechseln, Ctrl+O → Metrik wechseln
+Sticky wie X/Y/Z, wirken ab der nächsten Geste; Engineering-Tasten, keine Artist Input Truth.
+
 Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
 und gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
 
@@ -100,8 +106,8 @@ def _drag(value: str, *modifiers: str) -> Input:
     return Input("drag", value, frozenset(modifiers))
 
 
-def _wheel(direction: str) -> Input:
-    return Input("wheel", direction)
+def _wheel(direction: str, *modifiers: str) -> Input:
+    return Input("wheel", direction, frozenset(modifiers))
 
 
 def build_default_bindings() -> BindingSet:
@@ -170,6 +176,18 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_drag("LEFT", "alt", "shift"), cmd.PAN)
     bs.set_default(_wheel("UP"), cmd.ZOOM)
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
+
+    # --- Soft Selection (WP-SOFT-01 S2a, AD-020; PROVISIONAL) -----------------
+    # O = on/off ("O passt erstmal", Manu 2026-10-10; O was the old display key,
+    # moved to D in B5a). Shift+wheel = radius one step larger / smaller (a wheel
+    # notch is one step); Shift+O = curve, Ctrl+O = metric - both "muss ich testen".
+    # Engineering keys for the S2 test, not Artist Input Truth (I8): keymap.json can
+    # rebind them. The binding carries the direction, the command does not.
+    bs.set_default(_key("o"), cmd.SOFT_TOGGLE)
+    bs.set_default(_wheel("UP", "shift"), cmd.SOFT_RADIUS_UP)
+    bs.set_default(_wheel("DOWN", "shift"), cmd.SOFT_RADIUS_DOWN)
+    bs.set_default(_key("o", "shift"), cmd.SOFT_CURVE_CYCLE)
+    bs.set_default(_key("o", "ctrl"), cmd.SOFT_METRIC_CYCLE)
 
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-

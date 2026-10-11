@@ -105,5 +105,15 @@ LOOP_SLIDE = "LoopSlide"
 # Alt+E binding is gone. Face mode only.
 EXTRUDE = "Extrude"
 
+# --- Soft Selection (WP-SOFT-01 S2a, AD-020; PROVISIONAL) --------------------------
+# State commands like the constraints: they start no interaction and change no mesh;
+# they set the sticky soft settings that the next gesture reads at begin(). Which input
+# carries which command is the binding's business (the radius direction included).
+SOFT_TOGGLE = "SoftToggle"
+SOFT_RADIUS_UP = "SoftRadiusUp"
+SOFT_RADIUS_DOWN = "SoftRadiusDown"
+SOFT_CURVE_CYCLE = "SoftCurveCycle"
+SOFT_METRIC_CYCLE = "SoftMetricCycle"
+
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"

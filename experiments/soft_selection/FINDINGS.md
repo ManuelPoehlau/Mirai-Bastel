@@ -290,8 +290,17 @@ Also: `Mesh.vertex_edges()` is avoided for cost reasons (N4), not for privacy.
 
 *Pointers (2026-10-10):* the S2 gate
 [`docs/architecture/AD-020-SOFT-SELECTION-APP-PATH.md`](../../docs/architecture/AD-020-SOFT-SELECTION-APP-PATH.md)
-(PROPOSED) addresses the items marked "→ AD-020" below; its §11 lists what it proposes for each. The questions
-themselves stay recorded here unchanged.
+(**DECIDED** 2026-10-10) addresses the items marked "→ AD-020" below; its §11 lists what it proposes for each. The
+questions themselves stay recorded here unchanged.
+
+*The `src` home (WP-SOFT-01 S2a, 2026-10-10):* the influence map, the sticky settings and the three soft ops now also
+live in `src/mirai/soft_selection/` (`influence.py` = §3's `math.sqrt` form, `ops.py` = the Q2-D ops on the Core's
+protected hooks instead of §4.1's nine private rows, `settings.py`); the tools take `params["influence"]` (§5.2), the app
+holds the settings (§5.4: percent-of-bounding-radius steps as a *test* setting, the unit stays open) and refuses Soft +
+Symmetry at `begin()` (§5.8). Their tests: `tests/test_soft_selection_{influence,ops,input}.py`,
+`tests/test_application_soft_selection.py`, `tests/test_application_soft_symmetry.py`. This experiment and its suite stay
+as the record. Still open for S2c (Artist): §5 items 3 and 4, and the sign of a horizontal Shift+wheel (`src/main.py`
+`wheel_input`).
 
 1. **Core seam.** Promote by changing the frozen Core (`_weights` blend → weighted parameters,
    possibly absolute Scale evaluation), or keep subclasses outside the Core with a public hook?

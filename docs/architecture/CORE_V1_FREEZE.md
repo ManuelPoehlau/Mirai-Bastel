@@ -183,6 +183,16 @@ serialization change; Undo/Redo through the existing `MeshStateCommand`. Covered
 self-touching regions, bowtie, winding, MeshStateCommand Undo/Redo + serialization round trip, symmetry definition
 untouched) and `tests/test_application_delete_dissolve.py` (Production path).
 
+**Note (docs only, no Core change):** WP-SOFT-01 S2a (2026-10-10, AD-020 Q2-D, review F3). `src/mirai/soft_selection`
+(`SoftMoveOperation`, `SoftRotateOperation`, `SoftScaleOperation`) subclasses `VertexTransformOperation` from
+`core.operations.transform` — the first `src/mirai` class that subclasses a Core `Operation`. It uses the protected
+template-method hooks `_on_begin` / `_on_update` / `_transform_position` of that unexported class and the public
+`pivot`, `vertex_ids` and `rotate_around_axis`; **no Core private member and no private helper**. What it relies on is
+pinned by tripwire tests in `tests/test_soft_selection_ops.py` (AD-020 §13 F3), so a later Core edit — e.g. filling the
+inert `_weights` soft-selection placeholder — fails loudly instead of silently double-weighting. This is "solvable
+without a Core change" (§1), not "with the public API" (§7 step 2). Whether the weighting moves into the Core is the
+promotion decision of AD-020 §12/§13 F4, after the S2c verdict.
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten

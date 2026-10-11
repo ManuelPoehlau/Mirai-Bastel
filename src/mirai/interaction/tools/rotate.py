@@ -37,6 +37,7 @@ from typing import Any
 from core import OperationContext, RotateOperation
 from core.operations.transform import rotation_keeps_plane
 
+from ...soft_selection import SoftRotateOperation
 from .transform import TransformTool, _resolve_space
 
 VEC3 = tuple[float, float, float]
@@ -79,6 +80,9 @@ class RotateTool(TransformTool):
         return self._axis
 
     def _create_operation(self, context: OperationContext) -> RotateOperation:
+        # Soft Selection (WP-SOFT-01 S2a): the base tool put the influence into the params.
+        if "influence" in context.params:
+            return SoftRotateOperation(context)
         return RotateOperation(context)
 
     def _on_begin(

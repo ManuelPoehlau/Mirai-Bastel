@@ -61,6 +61,16 @@ Scope (binding, see the handoffs):
   the Knife's hover preview — the key handlers track the held Shift keys
   (`shift_keys_after`) and report "any Shift held" to
   `Application.set_shift_held`; losing focus (`on_deactivate`) resets it.
+  WP-SOFT-01 S2a (`PROVISIONAL`, Manu 2026-10-10, AD-020): Soft Selection, off by
+  default. O switches it on/off (the status line shows the full state, e.g.
+  `Soft: on · 15 % (0.51) · euclidean · smooth`); with it on, W/E/R move/rotate/scale
+  the selection and a falloff region around it, one History entry per gesture. Shift +
+  mouse wheel up/down = radius one step larger/smaller (this never zooms; the window
+  reports "Shift held" with the wheel event — `wheel_input` — and a driver that maps
+  Shift+wheel to a horizontal scroll is read from `scroll_x`, direction to be confirmed
+  in the S2 test); Shift+O cycles the curve, Ctrl+O the metric. The settings are sticky
+  like X/Y/Z and apply from the next gesture on. With a symmetry definition (only the
+  Symmetry Lab sets one) Soft + symmetry is refused visibly. No visualisation yet (S2b).
   WP Delete/Dissolve (PROVISIONAL): Delete removes the selection with a
   hole, Backspace dissolves it (Edge / Face: leftover 2-valent vertices
   removed; Vertex: the vertex dissolve), Ctrl+Backspace dissolves Edge /
@@ -102,6 +112,7 @@ for _p in (str(_SRC), str(_ROOT), str(_ROOT / "examples")):
 import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
+from mirai.interaction.input import Input  # noqa: E402
 from mirai.pyglet_input import (  # noqa: E402
     key_from_pyglet,
     mouse_from_pyglet,
@@ -122,6 +133,21 @@ GL_TYPES = {
     "line_overlay_type": GLLineOverlay,
     "face_overlay_type": GLTriangleOverlay,
 }
+
+
+def wheel_input(scroll_x: float, scroll_y: float, shift_held: bool) -> Input | None:
+    """The wheel event as an `Input` (WP-SOFT-01 S2a, AD-020 E5). pyglet's scroll event
+    carries no modifiers, so the window passes whether a Shift key is held (`shift_keys`
+    in `install_handlers`): the input then carries `{"shift"}` and the bindings give it
+    its meaning (Soft radius step) - a Shift+wheel never zooms. Some drivers report
+    Shift+wheel as a horizontal scroll (`scroll_y == 0`, `scroll_x != 0`): with Shift
+    held that axis is read instead (the sign is not confirmed yet - Artist test)."""
+    if shift_held and scroll_y == 0:
+        scroll_y = scroll_x
+    inp = wheel_from_pyglet(scroll_y)
+    if inp is not None and shift_held:
+        inp = Input("wheel", inp.value, frozenset({"shift"}))
+    return inp
 
 
 def create_window(caption: str = "Mirai — Stage B"):
@@ -206,7 +232,7 @@ def install_handlers(window, app: Application) -> None:
 
     @window.event
     def on_mouse_scroll(x: int, y: int, scroll_x: float, scroll_y: float):
-        inp = wheel_from_pyglet(scroll_y)
+        inp = wheel_input(scroll_x, scroll_y, bool(shift_keys))
         if inp is not None:
             app.pointer_scroll(inp)
 

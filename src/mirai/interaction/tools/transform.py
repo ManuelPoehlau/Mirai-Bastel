@@ -36,6 +36,7 @@ from typing import Any
 from core import Mesh, OperationContext, Selection, SelectionMode, VertexId
 from core.operations.transform import SeamConstraintError
 
+from ...soft_selection import compute_influence, primary_pivot
 from ..tool import Tool
 from .selection_helpers import (
     _VertexSelectionView,
@@ -293,7 +294,7 @@ class TransformTool(Tool):
 
         activate()  → Tool bereit (keine Interaktion)
         begin(scene=..., camera=..., vertex_ids=..., [space=...], [pivot=...],
-              [derived_geometry=...]) →
+              [derived_geometry=...], [soft=SoftSettings]) →
                     Operation.begin() mit fixem Pivot
         update(dx, dy, width, height)* → Operation.update(Schritt)
         commit()    → Operation.commit()  (genau eine History-Grenze)
@@ -359,9 +360,24 @@ class TransformTool(Tool):
         # Auswahl ∪ Partner bei einem Seam-Vertex). Ein gegebener Pivot gilt
         # unverändert - die Operation spiegelt ihn für die Partner.
         vertex_ids, symmetry = resolve_symmetry(scene.mesh, selected)
-        self._vertex_ids = vertex_ids
         pivot = params.get("pivot")
         op_params: dict[str, Any] = {"pivot": pivot}
+        soft = params.get("soft")
+        if soft is not None:
+            # Soft Selection (WP-SOFT-01 S2a, AD-020 §4.1, `PROVISIONAL`): the influence
+            # is computed here from the seeds, the pivot is the centroid of the seeds
+            # (never of the influenced set), the affected set is the influenced set.
+            influence = compute_influence(
+                scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve
+            )
+            if not influence:
+                raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
+            op_params["influence"] = influence
+            if pivot is None:
+                pivot = primary_pivot(scene.mesh, selected)
+            op_params["pivot"] = pivot
+            vertex_ids = set(influence)
+        self._vertex_ids = vertex_ids
         if symmetry is not None:
             if pivot is None:
                 op_params["pivot"] = symmetric_default_pivot(

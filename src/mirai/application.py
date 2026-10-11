@@ -62,6 +62,7 @@ from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGes
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
+from .soft_selection import RADIUS_STEPS_PERCENT, SoftSettings
 from .topology.connect_per_face import EDGE_CONNECT_LABEL, TopologyToolError, apply_connect_edges
 from .topology.connect_vertices_per_face import (
     VERTEX_CONNECT_LABEL,
@@ -151,6 +152,23 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
     commands.SET_FLAT_SHADED: DisplayMode.FLAT_SHADED,
     commands.SET_WIREFRAME: DisplayMode.WIREFRAME,
 }
+
+
+#: WP-SOFT-01 S2a (AD-020, `PROVISIONAL`): the state commands of Soft Selection. They start
+#: no interaction and change no mesh, like the constraints: they set the sticky
+#: `SoftSettings`, which the next gesture reads at `begin()`.
+_SOFT_COMMANDS = (
+    commands.SOFT_TOGGLE,
+    commands.SOFT_RADIUS_UP,
+    commands.SOFT_RADIUS_DOWN,
+    commands.SOFT_CURVE_CYCLE,
+    commands.SOFT_METRIC_CYCLE,
+)
+
+#: Visible refusal of Soft Selection under a symmetry definition (AD-020 §8, E3; status
+#: text `PROVISIONAL`). Shown at the key press (early feedback) and again at `begin()`,
+#: which is where the settings are actually read and therefore the authoritative check.
+SOFT_SYMMETRY_REFUSAL = "Soft Selection is not available with symmetry (O switches it off)"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -420,6 +438,13 @@ class Application:
         # scharfen Tool, überlebt Commit/Cancel/neues Scharfschalten und wird
         # bei jedem `begin()` gelesen. None = frei.
         self._axis_constraint: str | None = None
+        # WP-SOFT-01 S2a (AD-020, `PROVISIONAL`, off by default): sticky Soft Selection
+        # settings with the semantics of the axis constraint above - they survive commit,
+        # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
+        # that is armed but has not begun takes a new value; a running one keeps its own.
+        # The radius is held in world units (computed on switch-on, on a step change and
+        # on scene load) so that the tool and the later preview read one value.
+        self._soft: SoftSettings = SoftSettings()
 
         # WP-06 B6 Follow-up (Artist-Entscheidung Manu 2026-09-28): Undo/Redo
         # stellt jetzt auch die Selection wieder her, nicht nur das Mesh.
@@ -537,6 +562,7 @@ class Application:
             from .scene_factory import build_core_scene_from_obj
 
             self.scene.mesh = build_core_scene_from_obj(obj_path).mesh
+        self._soft_refresh_radius()  # a scene load is one of the three radius events
 
         # Gate 7: Produktionsintegration — verbindet Application.camera mit
         # dem V0.2-Viewport. Die dieselbe OrbitCamera-Instanz wird über
@@ -594,6 +620,8 @@ class Application:
             return True
         if command in _DISPLAY_COMMANDS:
             return self._display_command(command)
+        if command in _SOFT_COMMANDS:
+            return self._soft_command(command)
         if command in _MODE_COMMANDS:
             return self._set_selection_mode(_MODE_COMMANDS[command])
         if command == commands.CONNECT:
@@ -1400,6 +1428,11 @@ class Application:
         return self._axis_constraint
 
     @property
+    def soft_settings(self) -> SoftSettings:
+        """The sticky Soft Selection settings (immutable; `enabled` False = off)."""
+        return self._soft
+
+    @property
     def interaction_owner(self) -> str | None:
         """Which of `Application`'s own interactions owns the keys right now
         (AD-013 H2 addendum, H2-R2): `"transform"` while W/E/R (and, WP-06 B9, T =
@@ -1456,6 +1489,12 @@ class Application:
             return self._cancel()
         if command in _DISPLAY_COMMANDS:
             # Reine Darstellung: auch während eines Transforms erlaubt.
+            return self.dispatch_command(command)
+        if command in _SOFT_COMMANDS:
+            # State only, like the constraints: allowed while W/E/R/T is held. It applies
+            # to the next gesture - or to this one if it is armed and has not begun yet
+            # (the settings are read at `begin()`, which is also where Soft + symmetry is
+            # refused for good).
             return self.dispatch_command(command)
         if command in _MODE_COMMANDS:
             # Kein Moduswechsel mitten in einer Geste (Playground Session Gate).
@@ -1524,6 +1563,10 @@ class Application:
             noun = selection.mode.name.lower()
             self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
             return False
+        if self._soft.enabled and self.scene.mesh.symmetry_definition is not None:
+            # Early feedback only: the authoritative refusal sits at `begin()` (AD-020 F2).
+            self._set_status(f"{label}: refused — {SOFT_SYMMETRY_REFUSAL}")
+            return False
         self.dispatch_command(command)
         self._transform_key = key
         self._transform_command = command
@@ -1579,15 +1622,26 @@ class Application:
             dx, dy = px, py
         elif not self._transform_begun:
             self._transform_space = self._axis_constraint
+            soft = self._soft if self._soft.enabled else None
+            if soft is not None and self.scene.mesh.symmetry_definition is not None:
+                # WP-SOFT-01 S2a (AD-020 F2): the settings are read here, so this is where
+                # Soft + symmetry is refused for good (O pressed after W armed it, in MARK
+                # and BLOCK alike): status line, no history, mesh unchanged, tool disarmed.
+                label = _TRANSFORM_COMMANDS[self._transform_command][0]
+                self._transform_end()
+                self._set_status(f"{label}: refused — {SOFT_SYMMETRY_REFUSAL}")
+                self._refresh_hover()
+                return False
+            begin_context = {
+                "scene": self.scene,
+                "camera": self.camera,
+                "vertex_ids": set(self._transform_target),
+                "space": self._transform_space,
+            }
+            if soft is not None:
+                begin_context["soft"] = soft  # absent when off: today's payload, unchanged
             try:
-                self.tool_manager.begin_current_interaction(
-                    {
-                        "scene": self.scene,
-                        "camera": self.camera,
-                        "vertex_ids": set(self._transform_target),
-                        "space": self._transform_space,
-                    }
-                )
+                self.tool_manager.begin_current_interaction(begin_context)
             except SeamConstraintError as exc:
                 label = _TRANSFORM_COMMANDS[self._transform_command][0]
                 self._transform_end()
@@ -1622,6 +1676,38 @@ class Application:
         self._extrude_faces = frozenset()
         self._extrude_travel = (0.0, 0.0)
         self._extrude_selection_before = None
+
+    # -- Soft Selection settings (WP-SOFT-01 S2a, AD-020, PROVISIONAL) ------------------
+
+    def _soft_refresh_radius(self) -> None:
+        """Recompute the world radius from the mesh's bounding radius for the current step
+        (the one place that does it: switch-on, step change, scene load)."""
+        _, bounding_radius = mesh_center_and_radius(self.scene.mesh)
+        self._soft = self._soft.with_bounding_radius(bounding_radius)
+
+    def _soft_command(self, command: str) -> bool:
+        """O / Shift+wheel / Shift+O / Ctrl+O: change the sticky settings and post the full
+        state. Never touches mesh, selection or history. False only for a radius step that
+        is already at the end of the list (clamped, no wrap) - the status line is posted
+        anyway, so the end of the list is visible."""
+        soft = self._soft
+        changed = True
+        if command == commands.SOFT_TOGGLE:
+            self._soft = soft.toggled()
+            if self._soft.enabled:
+                self._soft_refresh_radius()
+        elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN):
+            step = soft.radius_step + (1 if command == commands.SOFT_RADIUS_UP else -1)
+            step = max(0, min(step, len(RADIUS_STEPS_PERCENT) - 1))
+            changed = step != soft.radius_step
+            _, bounding_radius = mesh_center_and_radius(self.scene.mesh)
+            self._soft = soft.with_radius_step(step, bounding_radius)
+        elif command == commands.SOFT_CURVE_CYCLE:
+            self._soft = soft.with_next_curve()
+        elif command == commands.SOFT_METRIC_CYCLE:
+            self._soft = soft.with_next_metric()
+        self._set_status(self._soft.status_text())
+        return changed
 
     # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
     #
@@ -2028,8 +2114,14 @@ class Application:
         return click is not None and self._execute_click(click)
 
     def pointer_scroll(self, input: Input) -> bool:
-        """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings."""
+        """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings. Ein Wheel mit
+        gehaltener Shift-Taste trägt `{"shift"}` und ist (Default) die Soft-Radius-Stufe,
+        nie Zoom (WP-SOFT-01 S2a, AD-020); in einer Knife-Session tut es nichts."""
         command = self.bindings.command_for(input)
+        if command in _SOFT_COMMANDS:
+            if self._knife is not None or self._gate_refuses(command):
+                return False
+            return self.dispatch_command(command)
         if command != commands.ZOOM:
             return False
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)

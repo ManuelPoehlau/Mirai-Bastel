@@ -327,11 +327,14 @@ def test_gl_line_overlay_constructs_without_gl_context():
 # -- Bindings (E42) -----------------------------------------------------------------
 
 
-def test_bare_d_cycles_and_o_is_unbound():
+def test_bare_d_cycles_and_o_is_not_a_display_key():
     bs = build_default_bindings()
     assert bs.command_for(D) == cmd.CYCLE_DISPLAY_MODE
     assert bs.command_for(SHIFT_D) == cmd.TOGGLE_WIREFRAME_OVERLAY
-    assert bs.command_for(_key("o")) is None
+    # O was the display key until B5a; it is Soft Selection's toggle now (WP-SOFT-01 S2a).
+    display = {cmd.CYCLE_DISPLAY_MODE, cmd.TOGGLE_WIREFRAME_OVERLAY, cmd.SET_SHADED,
+               cmd.SET_FLAT_SHADED, cmd.SET_WIREFRAME}
+    assert bs.command_for(_key("o")) not in display
     # Kein Topology-Binding auf D: auch dort greift der globale Fallback.
     assert bs.command_for(D, TOPOLOGY_CONTEXT) == cmd.CYCLE_DISPLAY_MODE
 
