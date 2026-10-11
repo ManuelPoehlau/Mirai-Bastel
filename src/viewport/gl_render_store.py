@@ -180,7 +180,7 @@ class GLRenderStore(ResourceStore):
             return  # declared uniform (or undeclared name) - pure CPU storage
         if group in self._rebuild_active:
             return  # buffered only; end_rebuild() assembles the VertexList
-        self._patch_attribute(group, name, buf)
+        self._patch_attribute(group, name, buf, offset, len(data))
 
     def destroy(self, name: str) -> None:
         res = self._resources.pop(name, None)
@@ -196,12 +196,19 @@ class GLRenderStore(ResourceStore):
                 return group
         return None
 
-    def _patch_attribute(self, group: str, name: str, data: list[float]) -> None:
+    def _patch_attribute(
+        self, group: str, name: str, data: list[float], offset: int, count: int
+    ) -> None:
         """Content-only patch into the existing, persistent VertexList - no
         reallocation (GPU Resource Persistence, VIEWPORT_V02_ARCHITECTURE.md §7).
         Called for every `update()` outside a `begin_rebuild()`/`end_rebuild()`
         bracket, i.e. exactly the partial-update paths in
-        `RenderMesh._sync_geometry()`/`_sync_selection()`."""
+        `RenderMesh._sync_geometry()`/`_sync_selection()`.
+
+        Only the changed slice `[offset, offset + count)` is written (AD-018
+        addendum 2026-10-10): the full-buffer copy this replaced cost
+        O((moved + ring) x V) per drag move. `data` is the whole CPU copy; the
+        slice is taken from it, so the GPU range equals `_cpu` exactly."""
         vlist = self._vertex_lists.get(group)
         if vlist is None:
             return
@@ -216,7 +223,8 @@ class GLRenderStore(ResourceStore):
             # AD-018 §7); pyglet then built the VertexList without it, so
             # there is nothing on the GPU to patch. CPU copy stays in `_cpu`.
             return
-        target[0:len(data)] = data
+        end = offset + count
+        target[offset:end] = data[offset:end]
 
     def _rebuild_vertex_list(self, group: str) -> None:
         import pyglet
