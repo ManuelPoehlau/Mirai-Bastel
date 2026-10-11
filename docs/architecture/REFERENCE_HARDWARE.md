@@ -37,7 +37,8 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 
 **Offen — nur durch Messung zu klären:**
 
-- Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.
+- ~~Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.~~ Gemessen 2026-10-11 (unten): `3.3.0` /
+  `GeForce 9800 GTX/9800 GTX+/PCIe/SSE2`.
 - Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6).
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
@@ -47,7 +48,7 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
   Navigation, Hover und Klick auf einem hochaufgelösten Mesh (`gollum.obj`, 21 875 V; WP-VIEW-PERF-01):
   `python experiments/drag_cost/probe_navigation_gl.py` — Methode, Container-Zahlen, Hypothesen und Fix-Optionen in
   [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Navigation and picking“. Gibt auch die
-  GPU-Zeit des Draws (`gpu`, GL-Timer-Query) aus. Werte vom Referenz-PC: offen.
+  GPU-Zeit des Draws (`gpu`, GL-Timer-Query) aus. Werte vom Referenz-PC: unten und im README.
 
 **Gemessen auf dem Referenz-PC (Manu, 2026-10-11)** — Core 2 Quad Q9550, GeForce 9800 GTX, Python 3.14.2,
 `python experiments/drag_cost/probe_drag_gl.py` (`plain_w` und `soft_w`, Soft Selection S2b, `main` @ S2b); die ganze
@@ -64,6 +65,21 @@ Tabelle steht in [`experiments/drag_cost/README.md`](../../experiments/drag_cost
 Damit ist die Zeile „Reale Frame- und Hover-Zeiten in den echten Fenstern“ für den Drag-Pfad beantwortet (Hover-Zeiten
 außerhalb eines Drags nicht). Die Strings `GL_VERSION` / `GL_RENDERER` kamen nicht mit der Rückmeldung ins Repository und
 bleiben unter „Offen“.
+
+**Gemessen auf dem Referenz-PC (Manu, 2026-10-11), Navigation** — Windows 10 (19045), Python 3.14.2, `GL_VERSION` **3.3.0**,
+`GL_RENDERER` **GeForce 9800 GTX/9800 GTX+/PCIe/SSE2**; `python experiments/drag_cost/probe_navigation_gl.py` (WP-VIEW-PERF-01),
+ganze Tabelle, Hypothesen und Fix-Optionen in [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md)
+„Navigation and picking“:
+
+- Orbit/Pan sind auch auf `gollum.obj` (21 875 V, 43 750 Dreiecke) flüssig: **1,2 ms** pro Schritt, GPU-Zeit des Draws
+  **0,56 ms** (mit Wire 1,15 ms). Der Draw ist auf diesem PC nicht der Engpass.
+- Teuer ist das Picking (Hover, Klick, Zoom): gollum Hover **~250 ms** p50 (p95 1,5 s), Klick ~570 ms, erster Hover nach
+  einer Kamerabewegung ~740 ms, Zoom-Raste **~1,7 s**. Body: Zoom 22 ms, erster Hover 26 ms (knapp über einem Frame);
+  Kopf: alles unter einem Frame.
+- Befund nur auf diesem PC: `math.hypot` kostet hier ~7,5 µs pro Aufruf (Container ~0,1 µs), vermutlich weil der Core 2
+  kein FMA hat (Lesart, nicht geprüft). Faustregel Referenz-PC / Container für den übrigen Python-Code: ~2x.
+
+Damit sind auch die Hover-Zeiten außerhalb eines Drags gemessen (Produktionspfad `src/main.py`; Playground nicht).
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
