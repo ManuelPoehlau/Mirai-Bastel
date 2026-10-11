@@ -148,29 +148,51 @@ Prefer small, bounded implementation tasks over vague requests.
 
 ## 8a. Test strategy (token- and runtime-efficient)
 
-Test runner: **pytest** (no config file, no virtualenv; tests bootstrap `src/` onto the path themselves). `pytest.ini` defines `testpaths`, so bare `pytest` works; for targeted runs still pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …` (without it, pyglet-dependent playground tests are *skipped*, not green).
+**Principle:** run the smallest test set that gives meaningful evidence for the current change; widen only when a shared dependency, an integration boundary or an observed failure justifies it. The agent selects the suites itself — the Artist is not asked which tests to run.
 
-**While implementing — targeted tests only.** Never run the full suite during an ongoing implementation. Run only the tests that directly cover the changed files/functions:
+Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). `pytest.ini` defines `testpaths`, so bare `pytest` collects all three trees, but for targeted runs always pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …`. Without it, pyglet-dependent tests are *skipped*, not green — report "N skipped" as skipped, never as a pass.
+
+**Test trees and what they cover**
+
+| Tree | Covers |
+|---|---|
+| `tests/` | Production: `src/core`, `src/mirai`, `src/viewport` |
+| `playground/tests/` | the Playground host (`playground/`) |
+| `experiments/symmetry_lab/tests/` | the Symmetry Lab (`experiments/symmetry_lab/`) running on the `src/mirai/application.py` path |
+
+**Dependency facts (verify with a quick `grep -rln "<module>" --include=*.py .` if the code may have changed since):** Playground and Symmetry Lab both consume `src/core`, `src/mirai` and `src/viewport`. Playground additionally uses helpers from `experiments/mirai_bastel_integration_lab` and `experiments/rigging-skinning-morphing`. The Lab imports nothing from `playground/`, and nothing imports the Lab; `experiments/symmetry_lab/tests/test_import_boundary.py` enforces the first direction. Playground and Lab therefore share no code with each other — only `src/`.
+
+**1. While implementing — targeted tests only.** Never run a whole tree after each small change. Run the tests that exercise the changed behavior:
 
 ```bash
 pytest tests/test_<module>.py -q                      # one test file
 pytest tests/test_<module>.py::test_name -q           # one test
-pytest tests -k "<pattern>" -q   # pattern match
-pytest playground/tests/test_<module>.py -q           # when touching playground/
-pytest experiments/symmetry_lab/tests/test_<x>.py -q  # when touching src/mirai/application.py or src/viewport/
+pytest tests -k "<pattern>" -q                        # pattern match
+pytest playground/tests/test_<module>.py -q           # playground/ behavior
+pytest experiments/symmetry_lab/tests/test_<x>.py -q  # Lab behavior
 ```
 
-Add `-x` to stop at the first failure and `--lf` to re-run only the last failures.
+Add `-x` to stop at the first failure and `--lf` to re-run only the last failures. To find the tests for a changed function, grep the test trees for its name or module (`grep -rln "<name>" tests playground/tests experiments/symmetry_lab/tests`) rather than guessing from filenames.
 
-**Final check — full suite, exactly once.** Only when the implementation is complete and all targeted tests are green, run the full suite a single time to rule out regressions:
+**2. Choose the scope by what the change can actually affect, not by which file changed:**
+
+- **Docs, comments, AGENTS/CLAUDE.md:** no tests. Check the edit itself (links, commands, diff).
+- **Confined to `experiments/symmetry_lab/` (incl. its tests):** Lab tests only — targeted while working; the whole Lab tree once at the end if shared Lab modules (`lab_app`, `lab_scene`, `lab_bindings`, `run`) changed. Playground and `tests/` have no dependency on Lab code, so they provide no evidence here. Exception: the Lab change was made to work around or alter a `src/` behavior — then it is a `src/` change (below).
+- **Confined to `playground/` (or the experiments helpers only Playground uses):** `playground/tests`, targeted first and the tree once at the end. Lab and `tests/` are unaffected unless the change also touched `src/`.
+- **`src/` (shared code):** first list the consumers of the changed module/function (grep imports across `tests/`, `playground/`, `experiments/symmetry_lab/`). Run `tests/` for the module, then the targeted consumer tests that exercise the changed behavior in each *affected* tree. Whole `playground/tests` or Lab tree only when the changed behavior is reached broadly (e.g. `src/core`, `Application`, command gate, `viewport` drawing/derived data, `scene_factory`); a change in a function only the Playground's knife tools call does not need the Lab tree.
+- **`src/core` (frozen V1 baseline) or a public contract of `src/mirai`/`src/viewport`:** `tests/` fully plus the affected consumer trees — such a change affects every consumer, so the broader run is expected.
+
+**3. Final verification — once, after targeted tests are green.** Run the whole tree(s) your scope selection named, a single time:
 
 ```bash
-pytest tests -q
-pytest playground/tests -q                    # only if playground/ was touched
-pytest experiments/symmetry_lab/tests -q      # only if src/mirai/application.py or src/viewport/ was touched
+pytest tests -q                               # when src/ changed
+pytest playground/tests -q                    # when playground/ or a Playground-reached src/ behavior changed
+pytest experiments/symmetry_lab/tests -q      # when Lab code or a Lab-reached src/ behavior changed
 ```
 
-Do not re-run the full suite after each fix; if it fails, fix with targeted tests, then repeat the full run once. Report only what was actually run and passed.
+Run all three trees only for integration/promotion milestones (an experiment enters `src/`, a shared production path changes, or several trees are demonstrably affected) — not merely because they exist. Widen the run whenever targeted tests fail somewhere outside the expected area.
+
+Do not re-run a tree after each fix; if the final run fails, fix with targeted tests, then repeat only the failing tree once. Report exactly what was run and its result (passed / failed / skipped), and name the suites deliberately not run with the reason.
 
 ## 9. Development reality check
 
