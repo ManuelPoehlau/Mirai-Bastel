@@ -940,6 +940,7 @@ Lab-side table keyed by `CContext`, never the enum names.
 | history | `Undo`, `Redo` | `key_press` |
 | cancel | `Cancel` | `key_press` (H2-R2: never refused) |
 | constraints | `ConstrainAxisX`, `ConstrainAxisY`, `ConstrainAxisZ`, `ConstrainPlaneXY`, `ConstrainPlaneXZ`, `ConstrainPlaneYZ` | `key_press` |
+| soft settings *(added 2026-10-10, AD-020)* | `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`, `SoftMetricCycle` | `key_press`; `pointer_scroll` (Shift+wheel) |
 | navigation, Knife session (review N2) | `Orbit`, `Pan`, `Zoom`, `KnifeCommit`, `KnifeLift` | `key_press`, only through a user GLOBAL key binding |
 
 With the default keymap the last group never reaches the gate: drags and the wheel are never gated
@@ -1248,3 +1249,20 @@ gate rows).
   BLOCK ("Runtime refusals are not G-3"); `_gate_refuses` is unchanged and runs before arming.
 - **Test changes this legitimately caused:** `test_t_fc1_…` "six unwired commands" → five (`Extrude` joins `Connect` and
   the removal commands); the `declare` helper gains an `extrude=` argument. Details: AD-SYM-03 §11.6.
+
+### Amendment note (2026-10-10, AD-020 / WP-SOFT-01 S2a): `NON_OPERATION` gains the soft settings
+
+Decided with AD-020 (review F6). The G-2 table above is **changed**, so "contains exactly" stays true: a new group
+**soft settings** with the five commands `SoftToggle`, `SoftRadiusUp`, `SoftRadiusDown`, `SoftCurveCycle`,
+`SoftMetricCycle` (gate path `key_press`, and `pointer_scroll` for the Shift+wheel binding).
+
+- **Reason: classification.** They are state for the next gesture, like the axis constraints: they start no interaction
+  and change no mesh, selection or history. Without the entry O would be refused under BLOCK with "Befehl nicht
+  koordiniert", and soft could not be switched off while symmetry is on (escapable via Shift+B or Shift+S — a
+  nuisance, not a trap).
+- **No second H2 review.** No Limit of G is lifted and no writer is added (H2-R6).
+- **Interaction with the refusal.** Membership means a soft key never reaches the "not coordinated" refusal, so under
+  BLOCK W armed → O → motion reaches `begin()` with soft on. The refusal of Soft + symmetry therefore sits at
+  `begin()` in `Application._transform_step` (AD-020 §8.1, F2), in MARK and BLOCK alike — "Runtime refusals are not G-3".
+- **Tests.** The Lab's fail-closed tests derive their expectations from `NON_OPERATION` and the command constants and
+  needed no edit; new: `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.

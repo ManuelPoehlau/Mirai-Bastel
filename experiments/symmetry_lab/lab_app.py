@@ -159,6 +159,14 @@ NON_OPERATION = frozenset(
         cmd.CONSTRAIN_PLANE_XY,
         cmd.CONSTRAIN_PLANE_XZ,
         cmd.CONSTRAIN_PLANE_YZ,
+        # soft settings (WP-SOFT-01 S2a, AD-020 / AD-013 G-2 note 2026-10-10): state for the next
+        # gesture like the constraints - no interaction, no mesh. The Soft + symmetry refusal is
+        # `Application`'s, at `begin()`; O must stay allowed so soft can be switched off here.
+        cmd.SOFT_TOGGLE,
+        cmd.SOFT_RADIUS_UP,
+        cmd.SOFT_RADIUS_DOWN,
+        cmd.SOFT_CURVE_CYCLE,
+        cmd.SOFT_METRIC_CYCLE,
         # Navigation und Knife-Session: nur über eine User-GLOBAL-Taste erreichbar (Review N2);
         # `Application` gibt dafür ohnehin False zurück, die Auflistung hält die Taste still
         cmd.ORBIT,

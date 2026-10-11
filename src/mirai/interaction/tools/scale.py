@@ -31,6 +31,7 @@ from typing import Any
 from core import OperationContext, ScaleOperation
 from core.operations.transform import scale_keeps_plane
 
+from ...soft_selection import SoftScaleOperation
 from .transform import TransformTool, _face_tangent_basis, _resolve_space
 
 
@@ -62,6 +63,9 @@ class ScaleTool(TransformTool):
         return self._axes_mask
 
     def _create_operation(self, context: OperationContext) -> ScaleOperation:
+        # Soft Selection (WP-SOFT-01 S2a): the base tool put the influence into the params.
+        if "influence" in context.params:
+            return SoftScaleOperation(context)
         return ScaleOperation(context)
 
     def _on_begin(

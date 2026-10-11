@@ -43,6 +43,13 @@ Bewusst pyglet-frei und ohne physische Key-/Button-Konstanten: Pointer-
 Bewegung wird als semantisches Pixel-Delta übergeben und erst hier mit der
 Kamera-Hilfsfunktion in ein Welt-Delta übersetzt.
 
+Soft Selection (WP-SOFT-01 S2a, AD-020, `PROVISIONAL`): `begin(soft=SoftSettings)` (nur wenn
+die Einstellung an ist - sonst fehlt der Parameter und nichts ändert sich) berechnet aus den
+Seeds (`vertex_ids`) die Influence-Map und startet statt der `MoveOperation` die
+`SoftMoveOperation` (`params["influence"]`). `.moves` berichtet dann die beeinflusste
+Menge; der Anchor bleibt ein Seed (`min(vertex_ids)`), die Bildebenen-Abbildung ist die
+des normalen Move.
+
 Symmetrisches Move (AD-SYM-02 §2.4, WP-SYM-01 Slice 2): Ist eine Symmetry
 Definition aktiv, löst `_on_begin()` die gespiegelten Partner-Vertices der
 Artist-Auswahl auf (`mirai.symmetry.mirrored_selection()`) - analog zu
@@ -65,6 +72,7 @@ from core import (
     VertexId,
 )
 
+from ...soft_selection import SoftMoveOperation, compute_influence
 from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 from ..tool import Tool
 from .selection_helpers import _VertexSelectionView
@@ -114,7 +122,8 @@ class MoveTool(Tool):
     # -- Hooks -----------------------------------------------------------------
 
     def _on_begin(
-        self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None, **params: Any
+        self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None,
+        soft=None, **params: Any
     ) -> None:
         vertex_ids = set(vertex_ids or ())
         if not vertex_ids:
@@ -206,8 +215,19 @@ class MoveTool(Tool):
                 "mirrored_vertex_ids": mirrored_vertex_ids,
                 "seam_vertex_ids": seam_vertex_ids,
             }
+        if soft is not None:
+            # AD-020 §4.1: the tool computes the influence at begin(), from the seeds and
+            # the current (= start) positions. Under a symmetry definition the op refuses
+            # (params["symmetry"] is set above) - `Application` refuses earlier, visibly.
+            influence = compute_influence(
+                mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve
+            )
+            if not influence:
+                raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")
+            operation_params["influence"] = influence
+            affected_vertex_ids = set(influence)
         # .moves (Beobachtbarkeit) berichtet die tatsächlich betroffene Menge,
-        # inklusive gespiegelter Partner — nicht nur die Artist-Auswahl.
+        # inklusive gespiegelter Partner bzw. der Soft-Influence — nicht nur die Artist-Auswahl.
         self._vertex_ids = affected_vertex_ids
 
         context = OperationContext(
@@ -216,7 +236,7 @@ class MoveTool(Tool):
             history=self._scene.history,
             params=operation_params,
         )
-        operation = MoveOperation(context)
+        operation = SoftMoveOperation(context) if soft is not None else MoveOperation(context)
         operation.begin()
         self._operation = operation
 

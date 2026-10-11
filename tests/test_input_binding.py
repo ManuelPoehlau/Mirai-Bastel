@@ -107,7 +107,12 @@ class DefaultBindingsTests(unittest.TestCase):
     def test_display_keys(self):
         # WP-06 B5a (E42): Artist Input Truth — D statt O.
         self.assertEqual(self.bs.command_for(_key("d")), cmd.CYCLE_DISPLAY_MODE)
-        self.assertIsNone(self.bs.command_for(_key("o")))
+        # O is not a display key (moved to D in B5a). Since WP-SOFT-01 S2a it is bound -
+        # to Soft Selection, never to anything display-related.
+        display = {cmd.CYCLE_DISPLAY_MODE, cmd.TOGGLE_WIREFRAME_OVERLAY, cmd.SET_SHADED,
+                   cmd.SET_FLAT_SHADED, cmd.SET_WIREFRAME}
+        self.assertNotIn(self.bs.command_for(_key("o")), display)
+        self.assertEqual(self.bs.command_for(_key("o")), cmd.SOFT_TOGGLE)
         self.assertEqual(
             self.bs.command_for(_key("d", "shift")), cmd.TOGGLE_WIREFRAME_OVERLAY
         )
