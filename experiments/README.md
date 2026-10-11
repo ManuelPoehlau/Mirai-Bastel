@@ -88,6 +88,8 @@ Soft Selection (WP-SOFT-01 S1, headless, Typ B): Influence-Map (euklidisch/geod�
 ### `drag_cost/`
 
 Drag-Kosten-Sonde mit dem echten GL-Backend (WP-VIEW-PATCH-01, Typ A): misst pro Mausbewegung eines W-Drags Transform-Schritt, `Viewport.sync()` und `GLRenderStore.update` getrennt (p50/p95) in einem unsichtbaren pyglet-Fenster; ein Szenario pro Funktion (S2b ergänzt den Soft-Drag). Vorher/Nachher des Slice-only-Patches (Container) im README — [`drag_cost/README.md`](drag_cost/README.md).
+Zweite Sonde `probe_navigation_gl.py` (WP-VIEW-PERF-01, Discovery): Orbit/Pan/Zoom, Hover, Klick und W-Drags pro
+Event + Frame auf Kopf, Körper und `gollum.obj` (21 875 V), mit Picking-Aufteilung, GPU-Timer und cProfile.
 
 ### `viewport_shading_lab/`
 
