@@ -70,7 +70,14 @@ Scope (binding, see the handoffs):
   Shift+wheel to a horizontal scroll is read from `scroll_x`, direction to be confirmed
   in the S2 test); Shift+O cycles the curve, Ctrl+O the metric. The settings are sticky
   like X/Y/Z and apply from the next gesture on. With a symmetry definition (only the
-  Symmetry Lab sets one) Soft + symmetry is refused visibly. No visualisation yet (S2b).
+  Symmetry Lab sets one) Soft + symmetry is refused visibly.
+  WP-SOFT-01 S2b (`PROVISIONAL`, AD-020 §5): with Soft on and a selection, the influence
+  region is shown as banded points around the selection (`GLSoftBandOverlay`, an extra
+  overlay; four bands over 0 < w < 1, warm = strong .. cold = weak, seeds keep the
+  selection look). It follows the selection, the mode, the settings, Undo/Redo and topology
+  changes (never the hover); a hover-armed W/E/R shows it once at arm. During a gesture the
+  points are the gesture's own weights at the live positions; afterwards the preview
+  resumes. Soft off: no band points.
   WP Delete/Dissolve (PROVISIONAL): Delete removes the selection with a
   hole, Backspace dissolves it (Edge / Face: leftover 2-valent vertices
   removed; Vertex: the vertex dissolve), Ctrl+Backspace dissolves Edge /
@@ -119,6 +126,7 @@ from mirai.pyglet_input import (  # noqa: E402
     shift_keys_after,
     wheel_from_pyglet,
 )
+from mirai.soft_selection import GLSoftBandOverlay  # noqa: E402
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
@@ -132,6 +140,7 @@ GL_TYPES = {
     "point_overlay_type": GLPointOverlay,
     "line_overlay_type": GLLineOverlay,
     "face_overlay_type": GLTriangleOverlay,
+    "soft_overlay_type": GLSoftBandOverlay,
 }
 
 

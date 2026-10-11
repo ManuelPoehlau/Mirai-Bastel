@@ -22,10 +22,17 @@ copies, AD-020 review F1). Per move, separately:
               rasteriser this is not the reference PC's GPU time)
 - move        transform + sync (the number the 8 ms bar of AD-020 §7 is about)
 
-Scenarios are one function each (`SCENARIOS`); S2b adds a soft drag as another entry.
+Scenarios are one entry each in `SCENARIOS` (a runner plus the variants it measures per asset).
 `plain_w`: the selection is the region of N vertices grown from the front-most vertex,
 then W + `--moves` mouse moves, W release. The default sizes are the influenced-vertex
 counts of FINDINGS.md §2.2 (head 9 / 36 / 68, body 18 / 76 / 112).
+`soft_w` (WP-SOFT-01 S2b): Soft Selection on, the window's band overlay attached (it is part of
+`GL_TYPES`), seed = the front-most vertex + its one-ring, radius 5 / 15 / 30 / 50 % x both metrics
+(`--sizes` = radius percents, `--metrics` = a subset), then the same W drag. Besides the
+per-move rows it prints, once per row: the first move (`begin()` incl. influence + the first band
+push), the commit frame (`key_release` + `sync`, which recomputes the preview), the preview
+recompute itself (`compute_influence` + bands for the seed, standalone), a settings change
+end to end (Shift+O key + `sync`) and a selection click (pick + preview, one vertex).
 
 Numbers from a container must be labelled as such
 (`docs/architecture/REFERENCE_HARDWARE.md` §4); the reference PC decides. Output is
@@ -61,6 +68,10 @@ DEFAULT_SIZES = {
     "man_with_shoes_basemesh": (18, 76, 112),
 }
 FALLBACK_SIZES = (9, 36, 112)
+#: `soft_w`: radius steps in percent of the bounding radius (all are `RADIUS_STEPS_PERCENT` steps).
+SOFT_RADIUS_PERCENTS = (5, 15, 30, 50)
+#: Repetitions of the once-per-row preview timings.
+PREVIEW_REPS = 15
 DEFAULT_MOVES = 200
 DEFAULT_WARMUP = 5
 WIDTH, HEIGHT = 1024, 768  # the real window (src/main.py `create_window`)
@@ -113,6 +124,12 @@ class ScenarioResult:
     selected: int
     moves: int
     samples: tuple[MoveSample, ...]
+    #: Short row label (e.g. `r 15 % euclidean`); empty for `plain_w`.
+    label: str = ""
+    #: Vertices that move (seeds + influenced); 0 = same as `selected`.
+    influenced: int = 0
+    #: Once-per-row timings in ms, in print order (`soft_w`: first move, commit frame, preview ...).
+    extras: tuple[tuple[str, Stats], ...] = ()
 
     def stats(self, field: str) -> Stats:
         return Stats.of([getattr(s, field) for s in self.samples])
@@ -158,13 +175,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--assets", nargs="+", default=list(DEFAULT_ASSETS),
                         help="registry names (default: head_basemesh man_with_shoes_basemesh)")
     parser.add_argument("--sizes", nargs="+", type=_positive_int, default=None,
-                        help="selection sizes in vertices (default: FINDINGS 2.2 sizes per asset)")
+                        help="plain_w: selection sizes in vertices (default: FINDINGS 2.2 sizes "
+                             "per asset); soft_w: radius percents "
+                             f"(default: {' '.join(map(str, SOFT_RADIUS_PERCENTS))})")
+    parser.add_argument("--metrics", nargs="+", default=None,
+                        help="soft_w: influence metrics (default: all)")
     parser.add_argument("--moves", type=_positive_int, default=DEFAULT_MOVES,
                         help=f"measured mouse moves per row (default: {DEFAULT_MOVES})")
     parser.add_argument("--warmup", type=_non_negative_int, default=DEFAULT_WARMUP,
                         help=f"unmeasured moves before each row (default: {DEFAULT_WARMUP})")
-    parser.add_argument("--scenarios", nargs="+", default=["plain_w"],
-                        help="scenario names (see --list; default: plain_w)")
+    parser.add_argument("--scenarios", nargs="+", default=["plain_w", "soft_w"],
+                        help="scenario names (see --list; default: plain_w soft_w)")
     parser.add_argument("--list", action="store_true",
                         help="print scenario and asset names and exit")
     return parser
@@ -183,7 +204,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     bad = [s for s in args.scenarios if s not in SCENARIOS]
     if bad:
         parser.error(f"unknown scenario {bad[0]!r}; known: {', '.join(SCENARIOS)}")
+    if "soft_w" in args.scenarios:
+        steps, metrics = soft_choices()
+        if args.sizes:
+            bad_sizes = [p for p in args.sizes if p not in steps]
+            if bad_sizes:
+                parser.error(
+                    f"soft_w: {bad_sizes[0]} is not a radius step in percent; known: "
+                    + ", ".join(map(str, steps))
+                )
+        bad_metrics = [m for m in args.metrics or () if m not in metrics]
+        if bad_metrics:
+            parser.error(f"unknown metric {bad_metrics[0]!r}; known: {', '.join(metrics)}")
+    elif args.metrics:
+        parser.error("--metrics only applies to the soft_w scenario")
     return args
+
+
+def soft_choices() -> tuple[tuple[int, ...], tuple[str, ...]]:
+    """The radius steps (percent) and metrics Soft Selection offers (from `src/`)."""
+    from mirai.soft_selection import METRICS, RADIUS_STEPS_PERCENT
+
+    return tuple(RADIUS_STEPS_PERCENT), tuple(METRICS)
 
 
 def sizes_for(asset: str, requested: list[int] | None) -> tuple[int, ...]:
@@ -376,9 +418,175 @@ def scenario_plain_w(rig: Rig, selection_size: int, moves: int, warmup: int) -> 
     )
 
 
-#: One function per scenario (S2b adds the soft drag here).
-SCENARIOS: dict[str, Callable[[Rig, int, int, int], ScenarioResult]] = {
-    "plain_w": scenario_plain_w,
+# -- soft_w (WP-SOFT-01 S2b) -------------------------------------------------
+
+
+def seed_with_ring(mesh):
+    """The front-most vertex (max z, as `grow_region`) and its one-ring neighbours."""
+    ids = mesh.all_vertex_ids()
+    seed = max(ids, key=lambda v: (mesh.vertex_position(v)[2], int(v)))
+    ring = {other for edge in mesh.vertex_edges(seed) for other in mesh.edge_vertices(edge)}
+    return seed, ring | {seed}
+
+
+def _time_ms(fn) -> float:
+    start = time.perf_counter()
+    fn()
+    return (time.perf_counter() - start) * 1000.0
+
+
+def configure_soft(app, radius_percent: int, metric: str) -> None:
+    """Soft on, `radius_percent`, `metric`, curve smooth - only through the public entry
+    points the window uses (O, Shift+wheel, Ctrl+O, Shift+O)."""
+    from mirai.interaction.input import Input
+
+    o, ctrl_o, shift_o = (
+        Input("key", "o"),
+        Input("key", "o", frozenset({"ctrl"})),
+        Input("key", "o", frozenset({"shift"})),
+    )
+    wheel_up = Input("wheel", "UP", frozenset({"shift"}))
+    wheel_down = Input("wheel", "DOWN", frozenset({"shift"}))
+    if not app.soft_settings.enabled:
+        app.key_press(o)
+    for _ in range(16):  # more than the steps: terminates at the wanted one
+        current = app.soft_settings.radius_percent
+        if current == radius_percent:
+            break
+        app.pointer_scroll(wheel_up if current < radius_percent else wheel_down)
+    for _ in range(4):
+        if app.soft_settings.metric == metric:
+            break
+        app.key_press(ctrl_o)
+    for _ in range(4):
+        if app.soft_settings.curve == "smooth":
+            break
+        app.key_press(shift_o)
+    soft = app.soft_settings
+    if (soft.radius_percent, soft.metric, soft.curve) != (radius_percent, metric, "smooth"):
+        raise RuntimeError(f"could not configure soft selection: {soft.status_text()}")
+
+
+def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int) -> ScenarioResult:
+    """Soft W drag: seed = front-most vertex + one-ring, `variant` = (radius percent, metric)."""
+    from pyglet import gl
+
+    from mirai.interaction import commands
+    from mirai.interaction.input import Input
+    from mirai.soft_selection import SoftBands, compute_influence
+
+    radius_percent, metric = variant
+    app = rig.app
+    mesh = app.scene.mesh
+    w, ctrl_z = _keys()
+    shift_o = Input("key", "o", frozenset({"shift"}))
+    extras: list[tuple[str, Stats]] = []
+
+    configure_soft(app, radius_percent, metric)
+    seed, seeds = seed_with_ring(mesh)
+
+    # Selection click (pick + preview of one vertex), only if the click lands on the seed.
+    sx, sy = app.camera.project_to_screen(mesh.vertex_position(seed), WIDTH, HEIGHT)
+    app.select_at(commands.SELECT, 1.0, 1.0)  # empty space: clears
+    rig.viewport.sync()
+    click_samples = []
+    for _ in range(PREVIEW_REPS):
+        click_ms = _time_ms(lambda: app.select_at(commands.SELECT, sx, sy))
+        if app.selection.vertices == {seed}:
+            click_samples.append(click_ms)
+        rig.viewport.sync()
+        app.select_at(commands.SELECT, 1.0, 1.0)
+        rig.viewport.sync()
+    if click_samples:
+        extras.append(("selection click (pick + preview)", Stats.of(click_samples)))
+
+    # The measured selection: seed + ring, set directly (as plain_w does).
+    app.selection.set(set(seeds))
+    rig.viewport.on_selection_changed()
+    soft = app.soft_settings
+
+    # Preview recompute alone, the work `Application` does per triggering event.
+    def preview():
+        SoftBands.from_weights(
+            compute_influence(mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve)
+        )
+
+    preview_samples = [_time_ms(preview) for _ in range(PREVIEW_REPS)]
+    extras.append(("preview recompute (influence + bands)", Stats.of(preview_samples)))
+
+    # Settings change end to end: Shift+O (curve) twice per rep, back at smooth; the second
+    # press also leaves the preview computed for the measured selection.
+    settings_samples = []
+    for _ in range(PREVIEW_REPS):
+        for _press in range(2):
+            settings_samples.append(
+                _time_ms(lambda: (app.key_press(shift_o), rig.viewport.sync()))
+            )
+    extras.append(("settings change (key + sync)", Stats.of(settings_samples)))
+    influenced_preview = app.soft_bands.count + len(seeds)
+
+    if not app.key_press(w) or app.transform_command is None:
+        raise RuntimeError(f"{rig.asset}: W did not arm ({app.status_message})")
+    x, y = WIDTH / 2.0, HEIGHT / 2.0
+    total = warmup + moves
+    samples: list[MoveSample] = []
+    first_move = 0.0
+    for i in range(total):
+        dx, dy = STEP if i < (total + 1) // 2 else (-STEP[0], -STEP[1])
+        x, y = x + dx, y + dy
+        sample = rig.timed_frame(x, y, dx, dy)
+        if i == 0:
+            first_move = sample.move  # begin() incl. influence + the first band push
+        if i >= warmup:
+            samples.append(sample)
+
+    def commit():
+        app.key_release(w)
+        rig.viewport.sync()
+        rig.viewport.render()
+        gl.glFinish()
+
+    commit_ms = _time_ms(commit)
+    extras.insert(0, ("commit frame (release + sync + draw)", Stats.of([commit_ms])))
+    extras.insert(0, ("first move (begin + influence)", Stats.of([first_move])))
+
+    app.key_press(ctrl_z)
+    rig.viewport.sync()
+    app.selection.clear()
+    rig.viewport.on_selection_changed()
+    app.key_press(Input("key", "o"))  # soft off again: the next row starts from today's state
+    rig.viewport.sync()
+    return ScenarioResult(
+        scenario="soft_w",
+        asset=rig.asset,
+        vertex_count=len(mesh.all_vertex_ids()),
+        selected=len(seeds),
+        moves=moves,
+        samples=tuple(samples),
+        label=f"r {radius_percent:2d} % {metric}",
+        influenced=influenced_preview,
+        extras=tuple(extras),
+    )
+
+
+@dataclass(frozen=True)
+class Scenario:
+    """A runner plus the variants it measures per asset (`plain_w`: selection sizes,
+    `soft_w`: (radius percent, metric))."""
+
+    run: Callable[[Rig, object, int, int], ScenarioResult]
+    variants: Callable[[str, list[int] | None, list[str] | None], list]
+
+
+def _soft_variants(asset: str, sizes: list[int] | None, metrics: list[str] | None) -> list:
+    percents = tuple(sizes) if sizes else SOFT_RADIUS_PERCENTS
+    names = tuple(metrics) if metrics else soft_choices()[1]
+    return [(percent, metric) for metric in names for percent in percents]
+
+
+SCENARIOS: dict[str, Scenario] = {
+    "plain_w": Scenario(scenario_plain_w, lambda asset, sizes, metrics: list(sizes_for(asset, sizes))),
+    "soft_w": Scenario(scenario_soft_w, _soft_variants),
 }
 
 
@@ -389,6 +597,7 @@ def run_probe(
     warmup: int,
     scenarios: list[str],
     src_main,
+    metrics: list[str] | None = None,
 ) -> tuple[list[ScenarioResult], tuple[str, str]]:
     results: list[ScenarioResult] = []
     gl_info = ("?", "?")
@@ -399,8 +608,9 @@ def run_probe(
 
             gl_info = (info.get_version_string(), info.get_renderer())
             for name in scenarios:
-                for size in sizes_for(asset, sizes):
-                    results.append(SCENARIOS[name](rig, size, moves, warmup))
+                scenario = SCENARIOS[name]
+                for variant in scenario.variants(asset, sizes, metrics):
+                    results.append(scenario.run(rig, variant, moves, warmup))
         finally:
             rig.window.close()
     return results, gl_info
@@ -410,7 +620,7 @@ def run_probe(
 
 
 def report_lines(results: list[ScenarioResult], gl_info: tuple[str, str], moves: int) -> list[str]:
-    lines = ["Drag cost with the GL backend (WP-VIEW-PATCH-01), ms per mouse move"]
+    lines = ["Drag cost with the GL backend (WP-VIEW-PATCH-01, soft rows WP-SOFT-01 S2b), ms per mouse move"]
     lines.extend(machine_info(*gl_info))
     lines.append(
         f"Run: {moves} measured moves per row, hidden {WIDTH}x{HEIGHT} window; "
@@ -423,13 +633,21 @@ def report_lines(results: list[ScenarioResult], gl_info: tuple[str, str], moves:
             lines.append("")
             lines.append(f"[{r.scenario}] {r.asset}: {r.vertex_count} vertices")
         verdict = "OK" if r.stats("move").p95 <= THRESHOLD_P95_MS else "OVER"
-        lines.append(f"  selection {r.selected:4d} V  ({r.updates_per_move.p50:.0f} store.update calls/move) {verdict}")
+        if r.scenario == "soft_w":
+            lines.append(
+                f"  {r.label}: seeds {r.selected:3d} V, moving {r.influenced:4d} V  "
+                f"({r.updates_per_move.p50:.0f} store.update calls/move) {verdict}"
+            )
+        else:
+            lines.append(f"  selection {r.selected:4d} V  ({r.updates_per_move.p50:.0f} store.update calls/move) {verdict}")
         lines.append(f"    move       {r.stats('move').text()}")
         lines.append(f"    transform  {r.stats('transform').text()}")
         lines.append(f"    sync       {r.stats('sync').text()}")
         lines.append(f"      update   {r.stats('update').text()}")
         lines.append(f"      rest     {r.stats('sync_rest').text()}")
         lines.append(f"    (draw      {r.stats('draw').text()}  not in 'move')")
+        for name, stats in r.extras:
+            lines.append(f"    once: {name:38s} {stats.text()}")
     return lines
 
 
@@ -448,7 +666,7 @@ def main(argv: list[str] | None = None) -> int:
     if Path(src_main.__file__).resolve() != (Path(__file__).resolve().parents[2] / "src" / "main.py"):
         raise ImportError(f"'main' is not src/main.py but {src_main.__file__}")
     results, gl_info = run_probe(
-        args.assets, args.sizes, args.moves, args.warmup, args.scenarios, src_main
+        args.assets, args.sizes, args.moves, args.warmup, args.scenarios, src_main, args.metrics
     )
     for line in report_lines(results, gl_info, args.moves):
         print(line)

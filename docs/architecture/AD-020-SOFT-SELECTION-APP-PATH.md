@@ -1,7 +1,8 @@
 # AD-020 — Soft Selection on the Production App Path (S2 host, Core seam, controls)
 
 **Status:** **DECIDED** (2026-10-10; Artist decisions and engineering decisions in the Decision record below,
-review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a).
+review findings F1–F13 answered in §13). The capability and its keys are `PROVISIONAL`; S2a is built (WP-SOFT-01 S2a), S2b is built (2026-10-11: bands in the window + soft drag probe; Manu
+runs the probe on the reference PC before S2c).
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
@@ -638,6 +639,16 @@ Mirrored influence, seam vertices with `w < 1` and every other part of a symmetr
   record; its suite stays green.
 - **S2b — window + measurement.** Band overlay and preview (§5), the `soft_overlay_type` pass-through,
   `src/main.py` passes the GL class; the probe of §7.3; Manu runs it on the reference PC. **Gate** before S2c.
+  *(2026-10-11, built, `PROVISIONAL`, no new insight claimed.)* As §5 Q4-a: headless `SoftBands`
+  (`src/mirai/soft_selection/bands.py`, four equal bands over `0 < w < 1`, seeds excluded) + `GLSoftBandOverlay`
+  (`gl_bands.py`, a `GLPointOverlay` subclass attached with `add_overlay`); `Application` pushes the weights and sets
+  `dirty`, once per triggering event (selection, mode, soft settings, scene load, Undo/Redo, topology / mesh change,
+  gesture end), never from hover or per move; during a gesture the overlay shows the op's own weights (fixed at
+  `begin()`) at the live positions; a hover-armed gesture computes its bands once at arm (F11); soft off / empty
+  selection / symmetry definition show nothing. No `src/viewport` or `src/core` change. The probe
+  (`experiments/drag_cost/probe_drag_gl.py`, scenario `soft_w`) reports the §7.3 rows on the GL backend; container
+  numbers in its README, all rows under the 8 ms bar there; the reference PC decides. Colours and point size are
+  `PROVISIONAL` look values (S2c).
 - **S2c — Artist practical test (Manu).** Head and body: soft on/off, the radius steps, euclidean vs geodesic
   (finger/lip effect M1/M2, grid diamond M4), smooth vs linear, W/E/R with constraints; the look of the bands;
   optionally the scale formula. Verdicts per item; the defaults (metric, curve, radius unit and steps, scale

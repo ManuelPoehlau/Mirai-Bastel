@@ -62,7 +62,13 @@ from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGes
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
-from .soft_selection import RADIUS_STEPS_PERCENT, SoftSettings
+from .soft_selection import (
+    EMPTY_BANDS,
+    RADIUS_STEPS_PERCENT,
+    SoftBands,
+    SoftSettings,
+    compute_influence,
+)
 from .topology.connect_per_face import EDGE_CONNECT_LABEL, TopologyToolError, apply_connect_edges
 from .topology.connect_vertices_per_face import (
     VERTEX_CONNECT_LABEL,
@@ -445,6 +451,16 @@ class Application:
         # The radius is held in world units (computed on switch-on, on a step change and
         # on scene load) so that the tool and the later preview read one value.
         self._soft: SoftSettings = SoftSettings()
+        # WP-SOFT-01 S2b (AD-020 §5, `PROVISIONAL`): the influence bands shown in the window.
+        # `_soft_overlay` is the host-supplied sink (None = headless: no overlay work at all),
+        # `_soft_bands` what it currently shows. `_soft_op_running`: the bands are the running
+        # op's weights (fixed at `begin()`), so no trigger recomputes them;
+        # `_soft_gesture_shown`: a gesture put the bands there (hover arm or op), so its end
+        # resumes the preview.
+        self._soft_overlay = None
+        self._soft_bands: SoftBands = EMPTY_BANDS
+        self._soft_op_running: bool = False
+        self._soft_gesture_shown: bool = False
 
         # WP-06 B6 Follow-up (Artist-Entscheidung Manu 2026-09-28): Undo/Redo
         # stellt jetzt auch die Selection wieder her, nicht nur das Mesh.
@@ -523,6 +539,7 @@ class Application:
         point_overlay_type: type | None = None,
         line_overlay_type: type | None = None,
         face_overlay_type: type | None = None,
+        soft_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
 
@@ -550,7 +567,12 @@ class Application:
         aktuelle `DisplayState` wird sofort an den neuen Viewport gegeben.
 
         `face_overlay_type` (WP-06 B5b, E45): dasselbe Muster für selektierte
-        bzw. gehoverte Faces; der Entry-Point übergibt `GLTriangleOverlay`."""
+        bzw. gehoverte Faces; der Entry-Point übergibt `GLTriangleOverlay`.
+
+        `soft_overlay_type` (WP-SOFT-01 S2b, AD-020 §5): dasselbe Muster für die Influence-
+        Bänder der Soft Selection; der Entry-Point übergibt `GLSoftBandOverlay`. Es hängt als
+        Zusatz-Overlay (`Viewport.add_overlay`, H1) am Viewport, den es nicht kennt. Default
+        `None` = keine Band-Arbeit (headless)."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
@@ -578,6 +600,12 @@ class Application:
             face_overlay_type=face_overlay_type,
         )
         self.viewport.bind_camera(self.camera)
+        self._soft_overlay = None
+        self._soft_bands = EMPTY_BANDS
+        if soft_overlay_type is not None:
+            self._soft_overlay = soft_overlay_type()
+            self.viewport.add_overlay(self._soft_overlay)
+            self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
         self._apply_display()
 
     def frame_scene(self) -> None:
@@ -643,6 +671,7 @@ class Application:
         self.selection.hovered = None
         if self.viewport is not None:
             self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
         self._set_status(f"Mode: {mode.name.capitalize()}")
         return True
 
@@ -918,6 +947,7 @@ class Application:
         self._pick_cache.invalidate()
         if self.viewport is not None:
             self.viewport.on_topology_changed()
+        self._soft_preview_refresh()
         self._refresh_hover()
 
     # -- Knife session (WP-06 B7 / B7.1, AD-017) ---------------------------------
@@ -1217,6 +1247,7 @@ class Application:
         self.viewport.set_tool_overlay()
         self.viewport.on_topology_changed()
         self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
         self._refresh_hover()
         return True
 
@@ -1576,6 +1607,9 @@ class Application:
         # (Playground WP-STAB-11 clear-on-arm).
         if from_hover or _active_selection_contains(selection, hovered):
             self._set_hovered(None)
+        if from_hover:
+            # F11: a hover-armed gesture shows its bands once, here (no preview from hover).
+            self._soft_preview_refresh(shown_by_gesture=True)
         count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
         self._set_status(
@@ -1650,6 +1684,8 @@ class Application:
                 self._refresh_hover()
                 return False
             self._transform_begun = True
+            if soft is not None:
+                self._soft_show_op_weights()
         self.tool_manager.update(
             dx=float(dx), dy=float(dy), width=self.viewport_width, height=self.viewport_height
         )
@@ -1667,6 +1703,9 @@ class Application:
 
     def _transform_end(self) -> None:
         """Transform-Tool deaktivieren und den Transform-Zustand löschen."""
+        resume_preview = self._soft_gesture_shown
+        self._soft_op_running = False
+        self._soft_gesture_shown = False
         self.tool_manager.deactivate()
         self._transform_key = None
         self._transform_command = None
@@ -1676,6 +1715,8 @@ class Application:
         self._extrude_faces = frozenset()
         self._extrude_travel = (0.0, 0.0)
         self._extrude_selection_before = None
+        if resume_preview:
+            self._soft_preview_refresh()
 
     # -- Soft Selection settings (WP-SOFT-01 S2a, AD-020, PROVISIONAL) ------------------
 
@@ -1706,8 +1747,68 @@ class Application:
             self._soft = soft.with_next_curve()
         elif command == commands.SOFT_METRIC_CYCLE:
             self._soft = soft.with_next_metric()
+        if changed:
+            self._soft_preview_refresh()
         self._set_status(self._soft.status_text())
         return changed
+
+    # -- Soft Selection bands (WP-SOFT-01 S2b, AD-020 §5, PROVISIONAL) -------------------
+    #
+    # The overlay only shows; `Application` computes. Influence is computed here at most
+    # once per triggering event (selection, mode, settings, scene load, Undo/Redo, topology
+    # change, gesture end) - never from hover, never per mouse move: during a gesture the
+    # bands are the op's own weights (fixed at `begin()`), and the overlay merely re-reads
+    # the live positions when the viewport syncs after `on_vertices_moved`.
+
+    @property
+    def soft_bands(self) -> SoftBands:
+        """The bands the window currently shows (`EMPTY_BANDS` = no band points)."""
+        return self._soft_bands
+
+    def _soft_push(self, bands: SoftBands) -> None:
+        if bands == self._soft_bands:
+            return
+        self._soft_bands = bands
+        self._soft_overlay.set_bands(bands)
+
+    def _soft_seeds(self) -> set[VertexId]:
+        """What the next W/E/R would use as the primary selection: the armed target while a
+        Move/Rotate/Scale is armed (a hover-armed one has no selection), else the selection."""
+        if (
+            self._transform_key is not None
+            and self._transform_command in (commands.MOVE, commands.ROTATE, commands.SCALE)
+        ):
+            return set(self._transform_target)
+        selection = self.selection
+        return set(resolve_selection_vertices(self.scene.mesh, selection, selection.mode))
+
+    def _soft_preview_refresh(self, shown_by_gesture: bool = False) -> None:
+        """Recompute the preview bands (E3). No-op without a sink, and while a running op
+        owns the bands. Soft off, an empty selection or a symmetry definition (Soft is refused
+        there) show nothing."""
+        if self._soft_overlay is None or self._soft_op_running:
+            return
+        soft = self._soft
+        mesh = self.scene.mesh
+        seeds = self._soft_seeds() if soft.enabled and mesh.symmetry_definition is None else None
+        if seeds:
+            weights = compute_influence(
+                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve
+            )
+            self._soft_push(SoftBands.from_weights(weights))
+            self._soft_gesture_shown = self._soft_gesture_shown or shown_by_gesture
+        else:
+            self._soft_push(EMPTY_BANDS)
+
+    def _soft_show_op_weights(self) -> None:
+        """At `begin()`: the bands become the op's own weights (E4), so the preview and the
+        gesture cannot disagree; nothing is computed."""
+        if self._soft_overlay is None:
+            return
+        weights = self.tool_manager.active_tool.operation.context.params["influence"]
+        self._soft_op_running = True
+        self._soft_gesture_shown = True
+        self._soft_push(SoftBands.from_weights(weights))
 
     # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
     #
@@ -1801,6 +1902,7 @@ class Application:
         if self.viewport is not None:
             self.viewport.on_topology_changed()
             self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
 
     def _extrude_release(self) -> None:
         """Release of T: commit, or - tap, jitter below EXTRUDE_BEGIN_PX, or a total
@@ -1910,6 +2012,7 @@ class Application:
         if restored is not None:
             self._restore_selection(restored)
         self._prune_ghost_selection()
+        self._soft_preview_refresh()
 
     def apply_mesh_change(
         self, description: str, mutate: Callable[[], set[VertexId] | None]
@@ -1980,6 +2083,7 @@ class Application:
             self._pick_cache.invalidate()
             if self.viewport is not None:
                 self.viewport.on_vertices_moved(set(moved))
+            self._soft_preview_refresh()
             self._refresh_hover()
         return _MeshTransaction(True, result)
 
@@ -2265,6 +2369,7 @@ class Application:
         if _selection_state(selection) == before:
             return False
         self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
         return True
 
     #: B2-Name, bleibt als Weiterleitung (E43).
