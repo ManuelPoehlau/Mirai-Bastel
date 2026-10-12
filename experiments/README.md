@@ -75,9 +75,11 @@ Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.m
 
 Symmetry Lab (WP-SYM-LAB-01): eigenständiges Fenster für die Symmetrie-Forschung, mit eigenem
 minimalem Draw-Pfad, Production-`OrbitCamera` und Bindings im Lab-Kontext `symmetry_lab`.
-Importiert bewusst nicht aus `playground/`. Stand Slice 7: Symmetrie-Definition und
-Korrespondenz, symmetrisches Move, Re-Symmetrize, gespiegelter Knife (Slice 7 noch nicht vom Artist
-geprüft) — Details in der lokalen README.
+Importiert bewusst nicht aus `playground/`. Seit WP-SYM-LAB-03 (abgeschlossen 2026-10-03) läuft das Lab
+auf dem Production-Pfad (`src/mirai/application.py`); der eigene Renderer und der alte gespiegelte Knife
+sind gelöscht. Danach kamen die symmetrischen Topologie-Werkzeuge (AD-SYM-03, Slices 3a–7: Connect,
+Delete/Dissolve, Split, Knife, Extrude). Offene Artist-Verdikte: `docs/ATELIER.md`; Details in der
+lokalen README.
 
 Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
 

@@ -2,7 +2,7 @@
 
 Hier entsteht die eigentliche Anwendung.
 
-## Aktueller Stand (2026-09-29)
+## Aktueller Stand (2026-10-12)
 
 Die aktuell implementierte Produktionsstruktur ist:
 
@@ -10,9 +10,10 @@ Die aktuell implementierte Produktionsstruktur ist:
 src/
 ├── core/      3D-Domain: Scene, Mesh, Selection, Operations (Move/Rotate/Scale, Topologie), History, Serialization
 ├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking (inkl. Pick-Cache),
-│              Display-State, Topologie-Capabilities (Split/Connect/Knife), Symmetry V1, Scene-Factory
+│              Display-State, Topologie-Capabilities (Split/Connect/Knife/Extrude/Delete/Dissolve), Soft Selection, Symmetry V1, Scene-Factory
 ├── viewport/  inkrementelle Renderdaten, Dirty-State, Overlays, Resource-Store, GL-Render-Store, Fassade
-└── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
+├── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
+└── scene_menu.py  temporäres Szenen-Menü (`SPACE`, `PROVISIONAL`)
 ```
 
 `src/core/` basiert auf dem abgeschlossenen und eingefrorenen Core-V1-
