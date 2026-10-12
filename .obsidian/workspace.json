@@ -181,11 +181,13 @@
       "daily-notes:Heutige Notiz öffnen": false,
       "templates:Vorlage einfügen": false,
       "command-palette:Befehlspalette öffnen": false,
-      "bases:Neue Base erstellen": false
+      "bases:Neue Base erstellen": false,
+      "github-sync:Sync with Remote": false
     }
   },
   "active": "ea434ba3b8b57477",
   "lastOpenFiles": [
+    "docs/DEVELOPMENT_PROMPTS.md",
     "My_Markdown.md",
     "experiments/subdivision_lab/README.md",
     "playground/experiments/knife_face/decision.md",
