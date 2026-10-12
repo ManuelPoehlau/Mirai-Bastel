@@ -13,6 +13,7 @@ This directory contains the durable project knowledge that should survive indivi
 | [Research](research/README.md) | Historical and technical investigation |
 | [Archive](archive/README.md) | Historical reviews and superseded working material |
 | [Viewport](viewport/VIEWPORT_V02_ARCHITECTURE.md) | Viewport v0.2 architecture and research (`viewport/`) |
+| [Reusable Development Prompts](DEVELOPMENT_PROMPTS.md) | General prompts for recurring software-development tasks across projects |
 
 ## Important distinction
 
