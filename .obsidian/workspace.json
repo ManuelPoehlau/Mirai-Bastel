@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "README.md",
+                "file": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
                 "mode": "preview",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM"
             }
           }
         ]
@@ -96,7 +96,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "README.md",
+                "file": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -115,12 +115,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "docs/Experiment_Genealogy_Follow_up_Report.md",
+                "file": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Ausgehende Links von Experiment_Genealogy_Follow_up_Report öffnen"
+              "title": "Ausgehende Links"
             }
           },
           {
@@ -167,7 +167,8 @@
               "title": "Gliederung von Experiment_Genealogy_Follow_up_Report"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -187,6 +188,7 @@
   },
   "active": "ea434ba3b8b57477",
   "lastOpenFiles": [
+    "README.md",
     "docs/DEVELOPMENT_PROMPTS.md",
     "My_Markdown.md",
     "experiments/subdivision_lab/README.md",
