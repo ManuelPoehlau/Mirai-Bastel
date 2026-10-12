@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "experiments/subdivision_lab/README.md",
+                "file": "README.md",
                 "mode": "preview",
                 "source": false
               },
@@ -96,7 +96,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "experiments/subdivision_lab/README.md",
+                "file": "README.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -186,6 +186,8 @@
   },
   "active": "ea434ba3b8b57477",
   "lastOpenFiles": [
+    "My_Markdown.md",
+    "experiments/subdivision_lab/README.md",
     "playground/experiments/knife_face/decision.md",
     "experiments/subdivision_lab/__pycache__/lab_window.cpython-312.pyc",
     "experiments/subdivision_lab/__pycache__/subd.cpython-312.pyc",
@@ -197,7 +199,6 @@
     "experiments/subdivision_lab/__pycache__/_paths.cpython-312.pyc",
     "experiments/subdivision_lab/__pycache__",
     "experiments/subdivision_lab/tests/test_run_cli.py",
-    "experiments/subdivision_lab/README.md",
     "docs/research/bay-raitt/README.md",
     "docs/research/MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md",
     "docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md",

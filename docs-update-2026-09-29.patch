@@ -1,0 +1,537 @@
+diff --git a/README.md b/README.md
+index 6ea716d..22bf1e8 100644
+--- a/README.md
++++ b/README.md
+@@ -113,9 +113,9 @@ It is deliberately read-only: no mutation, no tool activation, no modeling
+ workflow yet — that is Stage B, a later, separate package. This is still not
+ a claim that the final modeling/selection workflow already exists.
+ 
+-The interactive Viewport V1 experiment remains under `experiments/mirai_bastel_viewport_V1/`. It has validated the basic Core → Viewport path on real hardware and is now being used as an active research environment for Selection, Workflow and Topology behavior.
++The former interactive Viewport V1 experiment (`experiments/mirai_bastel_viewport_V1/`) validated the basic Core → Viewport path on real hardware and has since been retired ([AD-006](docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md), 2026-09-17). Selection, Workflow and Topology research now runs in the Artist Playground ([`playground/`](playground/README.md)).
+ 
+-The current Topology research is documented centrally in [`experiments/topology/`](experiments/topology/). Phase 1 — interactive use of the existing Core topology primitives — has been practically verified. The next focus is conservative Edge Loop / Edge Ring detection and selection, followed by Loop Insert/Remove and later Extrude experiments.
++The Topology research is documented in [`experiments/topology/`](experiments/topology/) and [`docs/research/topology/`](docs/research/topology/). Loop/Ring selection, Connect, Loop Insert/Slide, Extrude and the Knife family (including the Knife Face Cut Lab) have been explored in the Artist Playground; results reach the production app only one slice at a time and only after an Artist verdict (WP-06).
+ 
+ The Production Viewport, Application and Interaction foundations now exist under
+ `src/`, and the production draw call (AD-018) and the Stage A production
+@@ -209,8 +209,10 @@ The repository deliberately distinguishes between current canonical documents, d
+ ## Repository structure
+ 
+ ```text
+-src/          Production Core, Application/Interaction and Viewport foundations
++src/          Production Core, Application/Interaction and Viewport foundations, production entry point (`src/main.py`)
++playground/   Artist Playground: research host with variant families and Artist verdicts (the research application)
+ experiments/  Isolated milestones, prototypes and practical tests
++tools/        Small helper tools (e.g. Input Mapping Tool)
+ tests/        Repository-level tests
+ docs/         Architecture, design, research, workflow and future ideas
+ examples/     Small usage examples
+diff --git a/docs/README.md b/docs/README.md
+index dd38ef5..4e6116e 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -11,6 +11,7 @@ This directory contains the durable project knowledge that should survive indivi
+ | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |
+ | [Research](research/README.md) | Historical and technical investigation |
+ | [Archive](archive/README.md) | Historical reviews and superseded working material |
++| [Viewport](viewport/VIEWPORT_V02_ARCHITECTURE.md) | Viewport v0.2 architecture and research (`viewport/`) |
+ 
+ ## Important distinction
+ 
+@@ -24,16 +25,18 @@ Not every document is a current specification.
+ 
+ When documents overlap, the canonical document wins. Other documents should link to it rather than silently maintaining a second version.
+ 
+-## WP-04 working set (production foundation
++## WP-04 working set (production foundation)
+ 
+ | Document | Purpose |
+-|---|---|---|
++|---|---|
+ | [WP-04_GATE_PLANNING.md](WP-04_GATE_PLANNING.md) | Gate-Plan + Akzeptanzkriterien |
+ | [WP-04_OPEN_QUESTIONS.md](WP-04_OPEN_QUESTIONS.md) | Offene Entscheidungen Q1–Q4 |
+ | [WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md](WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md) | Repository-Analyse, Produktions-Boundaries, Extraktionspfade |
+ | [WP-04_AGENT_VERIFICATION_REPORT.md](WP-04_AGENT_VERIFICATION_REPORT.md) | Agent-Verifikation, Test-Inventar, Teststrategie, Aufgabenteilung Agent/Claude/Manuel |
+ | [WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md](WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md) | Gate-für-Gate-Konsistenz-Audit (12→2) gegen Repo-Stand, Amendment/ADRs und Viewport-V0.2-Architektur |
+ 
++Weitere WP-04-Dokumente (Gate-Berichte, Amendments) liegen im selben Ordner.
++
+ ## For AI collaborators
+ 
+ Start with this index when a task crosses repository areas, then follow the nearest local README. The repository root `AGENTS.md` defines the documentation and collaboration rules that apply to all agents.
+diff --git a/docs/architecture/README.md b/docs/architecture/README.md
+index 5e7a436..60280b6 100644
+--- a/docs/architecture/README.md
++++ b/docs/architecture/README.md
+@@ -15,6 +15,34 @@ This directory contains the current architectural contracts and accepted directi
+ | [AD-004 — System Vision Reevaluation](AD-004-SYSTEM-VISION-REEVALUATION.md) | Recorded architectural decision about the larger system direction |
+ | [V1 Specification](../V1_SPEC.md) | Functional and architectural scope of the V1 milestone |
+ 
++## Architecture decisions
++
++Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-001 bis AD-003 stehen in [V1_CORE.md](V1_CORE.md).
++
++| Decision | Topic | Status (per document) |
++|---|---|---|
++| [AD-004](AD-004-SYSTEM-VISION-REEVALUATION.md) | System vision re-evaluation | Accepted architectural guidance |
++| [AD-005](../../experiments/rigging-skinning-morphing/src/AD-005-RIGGING-INTEGRATION.md) | Rigging integration (lives in the rigging experiment) | see document |
++| [AD-006](AD-006-V1-VIEWPORT-RETIREMENT.md) | V1 viewport retirement | DECIDED |
++| [AD-007](AD-007-SHARED-ASSET-LOADER-OWNERSHIP.md) | Shared asset & loader ownership | DECIDED |
++| [AD-008](AD-008-IMPORT-FRAMING-PRODUCTION.md) | Import, mesh geometry queries, camera framing become production capabilities | DECIDED |
++| [AD-009](AD-009-AXIS-PLANE-CONSTRAINTS.md) | Axis/plane constraints for Move/Rotate/Scale | DECIDED |
++| [AD-010](AD-010-PLAYGROUND-SUPERSEDES-LAB-BINDING.md) | Playground supersedes the Lab's Core→Viewport binding role | DECIDED |
++| [AD-011](AD-011-PLAYGROUND-IDENTITY-STATUS-QUO.md) | Playground identity: status quo | DECIDED |
++| [AD-012](AD-012-TRANSFORM-SPACE.md) | Transform space unification | Accepted (amended 2026-09-19) |
++| [AD-013](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md) | Capability promotion ≠ UX promotion | DECIDED |
++| [AD-014](AD-014_Core-Change-Basis-Parameter-for-ScaleOperation.md) | ScaleOperation optional basis (Core-freeze exception) | Accepted |
++| [AD-015](AD-015-PLAYGROUND-INPUT-OWNERSHIP-TWEAK-TRANSFORM.md) | Playground input ownership: Tweak vs. Transform | PARTIAL (superseded by pending audit, per document) |
++| [AD-016](AD-016-TRANSFORM-OWNS-QWE-SINGLE-CURRENT-TOOL.md) | Transform owns Q/W/E, one current tool | DECIDED (ownership model) |
++| [AD-017](AD-017-CUT-ENGINE-CONTEXTUAL-C.md) | Contextual C (Split/Connect); archived Artist inputs and review sit next to it | IMPLEMENTED (2026-09-22) |
++| [AD-018](AD-018-PRODUCTION-DRAW-BINDING.md) | Production draw binding | DECIDED (Option B) |
++| [AD-019](AD-019-POINTER-CLICK-VS-DRAG-BINDINGS.md) | Pointer click vs. drag in the bindings | DECIDED (engineering, 2026-09-26) |
++| [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md) | Symmetry definition storage | DECIDED |
++| [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
++| [ADR-001](../ADR-001-core-v1-reassessment.md) | Core V1 reassessment | Accepted |
++
++Production entry point and integration: [Stage A](PRODUCTION_ENTRY_POINT_STAGE_A.md), [WP-06 Stage B kickoff](WP-06_STAGE_B_KICKOFF.md).
++
+ ## Responsibility boundaries
+ 
+ The high-level system is intentionally separated into conceptual responsibilities:
+diff --git a/docs/architecture/ROADMAP.md b/docs/architecture/ROADMAP.md
+index cecf575..91e6f34 100644
+--- a/docs/architecture/ROADMAP.md
++++ b/docs/architecture/ROADMAP.md
+@@ -1,7 +1,7 @@
+ # Mirai-Bastel — Architecture & Development Roadmap
+ 
+ **Status:** Roadmap V1.1 — updated to reflect actual repository state and to add the Integration Track (Stage B)
+-**Date:** 2026-09-26 (previously 2026-08-29, §14 last touched 2026-09-04)
++**Date:** 2026-09-29 (V1.1 written 2026-09-26; refreshed to the repository state of 2026-09-29: WP-06 B1–B8, Knife Face Cut Lab, Face Holes discovery)
+ **Branch:** `main`
+ 
+ This document records the architecture and dependency roadmap developed in Phases A–F. It is the canonical roadmap for the project. It is intentionally a dependency- and work-package-oriented plan, not a feature checklist.
+@@ -52,15 +52,18 @@ This roadmap is a current architectural plan, not a promise that every future su
+ - AD-017 Knife/Cut system, promoted Core exception `split_edge(edge_id, t)` (2026-09-22)
+ - WP-STAB stabilization pass on Playground selection/overlay/history edge cases (2026-09-23)
+ - WP-SYM-01 / WP-SYM-LAB-01 Symmetry Lab, Slices 1–7 (definition, correspondence, symmetric Move, mirrored Knife) — Core exceptions AD-SYM-01/02
+-- WP-SHADE-LAB-01 Viewport Shading Lab, Slice 1 (Key+Fill worklight) — **just started, 2026-09-26**
++- WP-SHADE-LAB-01 Viewport Shading Lab, Slice 1 (Key+Fill worklight, 2026-09-26) — no later slice committed as of 2026-09-29
++- **WP-06 Stage B, slices B1–B8** in `src/main.py` (head scene, vertex selection, Move/Rotate/Scale on W/E/R, display modes, component modes, contextual `C`, Knife click-only, pick cache + occlusion) — verdict state per slice in the WP-06 intake log; B6 selection-restore, B7.1 and B8 are **PROVISIONAL, verdict pending**
++- **Knife Face Cut Lab** (`playground/experiments/knife_face/`) — Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 (cross-face) KEEP. **Lab verdict only, not a promotion**; Face Holes set aside by the Artist (bridges for now). Authoritative record: `playground/experiments/knife_face/decision.md`
++- Concave n-gon triangulation fix (ear clipping) in `src/viewport/derived.py` and its consumers (2026-09-29, found through the Face Holes discovery)
+ 
+ `src/core/` is deliberately conserved/frozen, with the above exceptions each individually documented in `CORE_V1_FREEZE.md` §7.1. Experiments may reveal requirements for future Core changes, but experiment code does not become production architecture automatically.
+ 
+ ### Current development direction
+ 
+-The project has moved past the editor-boundary foundation: Stage A gives it a real, if read-only, production window. Three research tracks are now running in parallel in the Playground (Symmetry, Shading, and the older Topology/Tweak families), each producing candidates that are individually decided (KEEP/ITERATE/REJECT) but that have **no single place where decided candidates are actually assembled into the running app**.
++The project has moved past the editor-boundary foundation: Stage A gave it a real production window (read-only at first). Research tracks run in parallel in the Playground (Symmetry, Shading, Knife Face Cut, and the older Topology/Tweak families), each producing candidates that are individually decided (KEEP/ITERATE/REJECT) but that had **no single place where decided candidates are assembled into the running app**.
+ 
+-That gap is the current priority: an **Integration Track (Stage B, WP-06 below)** that pulls already-decided Playground/Lab results into `src/main.py` incrementally — one small, real capability at a time — rather than waiting for every open research question to close first. See §7a.
++That gap is why the **Integration Track (Stage B, WP-06 below)** exists, and it is now in progress: it pulls already-decided Playground/Lab results into `src/main.py` incrementally — one small, real capability at a time — rather than waiting for every open research question to close first. Slices B1–B8 are in `src/main.py` (see the WP-06 intake log for the verdict state of each). See §7a.
+ 
+ **WP-01A (Basic Viewport & Input Foundation)** ist im Viewport-V1-Experiment umgesetzt und praktisch validiert: konfigurierbare Keyboard-/Mouse-Bindings über eine Mapping-Schicht (Input → Context → Binding → Command), Display-Modi (Shaded / Flat Shaded / Wireframe + Wireframe Overlay), Pan sowie Nachführung der bestehenden Selection- und Topology-Interaction. `src/core/` blieb dabei unverändert (Core-Freeze). Die konkrete Produktionsstruktur unter `src/` wird als explizite Architekturentscheidung aus diesem Stand abgeleitet (siehe §5 WP-01 und SOURCE_ARCHITECTURE.md).
+ 
+@@ -499,6 +502,7 @@ Dated entries:
+ - 2026-09-28 — Slice B7 — Knife in Production: session engine **`PROMOTED`** (AD-017 DECIDED 2026-09-22: incremental path, in-session Undo/Redo with history isolation, Esc = discard, Enter / LMB outside the mesh = exactly one history entry, residue = the session's connecting edges selected + Edge mode); combined interaction (hover preview + press-slide-release + line preview) **`PROVISIONAL`** per Artist decision 2026-09-28 (Manu: one Knife, no variant switch); invalid-target display **`PROVISIONAL`**; Verdict: **pending**. `knife.py` and `knife_pick.py` were moved (not copied) from `playground/topology_tools/` to `src/mirai/topology/` (B6 pattern, logic unchanged); `_knife_project_locked_edge` (F1 edge lock) was extracted from `playground/window.py` into `mirai.topology.knife_pick.project_locked_edge`; the Playground re-imports both and its A/B variants are unchanged (AD-013 A2) — the only test change beyond import paths is that `playground/tests/test_wp_ap_cut_hover_followup.py` now imports the extracted function instead of its local replica (same cases). Additive engine API (Playground does not use it, so its behaviour is unchanged): `KnifeTool.start`, `KnifeTool.path_edges` (read-only) and `KnifeTool.accepts(target)` — the same acceptance rules as `click()` without mutating, used as the preview gate; `hover()` alone does not check the shared face / vertex adjacency. `Application` (`src/mirai/application.py`, section "Knife session"): `C` with an empty selection (any component mode) begins a session (replaces the B6 no-op status line `C: Knife not available yet`); while it runs, the unmodified LMB belongs to the Knife — pointer motion = hover preview (Variant A), LMB press on a valid edge locks it and the drag projects the cursor onto it however far it strays (F1), release cuts at that position or, near an endpoint, at that vertex (F2); a press+release without movement is a click at the hover position; an unlocked press that moved past the click threshold is not a click (Playground rule); a click outside the mesh commits. New in B7: a line preview from the current start to the prospective point (hover and slide). Keys: new binding context `knife` (`mirai.interaction.input.KNIFE_CONTEXT`, keymap.json-overridable) with `Enter` → new command `KnifeCommit` (Artist Input Truth `topology.knife_commit`) and `Ctrl+Shift+Z` → Redo; Esc/Ctrl+Z/Ctrl+Y come through the GLOBAL fallback and are routed to the session (also `dispatch_command(UNDO/REDO)`, so no path reaches the global history mid-session). Session Gate: every other key is ignored (W/E/R, 1/2/3, D/Shift+D, C, X/Y/Z …). Navigation (Alt+LMB orbit, Alt+Shift+LMB pan, wheel zoom) keeps working; modified LMB clicks during a session do nothing. `mirai.pyglet_input` now translates Enter / keypad Enter to `"enter"`; `src/main.py` passes the cursor position to `pointer_press`/`pointer_drag` (new optional `x`/`y`). Commit records the pre-session selection in the B6 follow-up mirror stack, so global Undo restores mesh + pre-session selection/mode and Redo restores the residue, like Split/Connect. Overlays: new tool layers (`viewport.overlay.TOOL_LAYERS`, `Viewport.set_tool_overlay`) in the existing point/line overlay classes — `tool_preview` (prospective point, hovered/locked edge, line preview) in the hover style, `tool_active` (start vertex F3, path edges) in the selected style; no new colours. The preview line layer is drawn without depth test (`PROVISIONAL`: a straight line across a non-planar quad would otherwise vanish behind the triangulated face). Render data is headless (`mirai.topology.knife_preview.KnifeRenderData`, `Application.knife_render_data`). Invalid targets (face, edge incident to the start, no shared face, vertex that is the start or adjacent to it, outside) show no preview point and no line; the locked edge stays highlighted during a slide. Status lines for begin/cut/start/reject/undo/redo/commit/cancel (console, `PROVISIONAL`). No `src/core` change. Tests: new `tests/test_application_knife.py` (46 cases: begin/no-begin, vertex → edge → edge path across three faces with mesh invariants after every cut, hover/line-preview render data, press-slide-release with the lock kept off the edge, endpoint snap → vertex connect, in-session Undo/Redo never touching a pre-existing global entry, Esc, Enter and click-outside commits, global Undo/Redo after commit, Session Gate keys, navigation during a session, invalid targets, `accepts` ≡ `click` on a screen grid), new `tests/test_gl_knife_overlay.py` (real GL: start point, line preview, path edge drawn; Esc leaves the frame pixel-identical to idle), `tests/test_application_contextual_c.py` (B6 no-op case → begins a session), `tests/test_pyglet_input.py` (Enter). `experiments/symmetry_lab/tests/test_lab_knife_window.py::test_enter_has_no_lab_input` now pins the Lab behaviour (Enter resolves to no Lab command) instead of the adapter's old non-translation. Full suite: `tests` 891 → 940 passed; `playground/tests` 844 passed (unchanged). Open questions (not decided here): behaviour of a modified LMB click during a session (the Playground counts Alt/Shift+click as a Knife click; Production ignores it); whether `Ctrl+Shift+Z` should also be a global Redo outside the session; whether invalid edges should still show a highlight; Undo/Redo is ignored while the Knife's LMB is held; the `[KNIFE]` diagnosis prints from the moved engine now also reach the Production console.
+ - 2026-09-28 — Slice B7.1 — Knife click-only (Variant A), Artist decision 2026-09-28, PROVISIONAL, verdict pending. After the B7 practical window test, Manu: press → slide → release (Playground Variant B, F1 edge lock) is redundant with the live hover preview, which already slides along the edge while hovering — Production Knife now uses Variant A only (hover preview + line preview, a click cuts at the previewed position); Blender-style drag cutting is a possible Knife V2 idea, not built, not prepared. Removed from `Application`: `_knife_locked_edge`, the `knife_locked_edge` property, the lock in `_knife_press`, the slide in `_knife_drag` (now only tracks distance for the click threshold), the locked branch in `_knife_release`, and `_knife_project`; the existing click rule (press+release under `CLICK_THRESHOLD_PX` = click at the cursor; a press that moved past the threshold is not a click) is unchanged. `project_locked_edge` stays in `mirai.topology.knife_pick` unchanged — the Playground's own Variant B still uses it (AD-013 A2); endpoint snap is unaffected (it lives in `knife_pick()` itself, not the removed slide). `tests/test_application_knife.py`: removed the press-slide-release cases, added a drag-over-a-formerly-lockable-edge-neither-locks-nor-cuts case and a line-preview-still-follows-hover-after-a-failed-drag regression case; the existing click-at-hover-position and unlocked-drag-is-not-a-click cases needed no change. `tests/test_application_knife.py`: 46 → 46 cases (2 removed, 2 added, net unchanged). No `src/core` change, no Playground change. Doc: AD-017 §12 addendum. Verdict: **pending** (Manu, practical window test).
+ - 2026-09-28 — Slice B8 — picking speed + occlusion: PROVISIONAL (occlusion rule and 5 ms target agent-set), measurements below, verdict pending. Cause (Manu, B5b/B7 practical tests): Knife hover on the head mesh was laggy and imprecise, and hidden geometry could be hovered/picked; per handoff read of the code, every pointer move ran a pure-Python full scan re-deriving the camera basis (`eye()`/`basis()`, several trig calls) and re-projecting every vertex from scratch, and no visibility test existed for vertices/edges (2D screen distance only). Technique chosen (agent, PROVISIONAL): a new `PickCache` (`src/mirai/viewport/picking_cache.py`) computes each vertex's screen position and each face's screen-space bounding box once per camera/mesh state (keyed on `camera.camera_revision` — bumped by `OrbitCamera` itself on every orbit/dolly/pan, so those invalidate automatically — plus mesh identity, viewport size and an explicit `invalidate()` for in-place mesh mutations) instead of once per element per pointer move; the pickers in `src/mirai/viewport/picking.py` (`pick_nearest_vertex`/`pick_nearest_edge`/`pick_face`/`pick_component`) and `mirai.topology.knife_pick.knife_pick` take new keyword-only `cache`/`occlusion` parameters, both opt-in and defaulting to the exact pre-B8 behaviour (`cache=None` reproduces the old exhaustive per-call scan bit-for-bit; the Playground's own call sites pass neither and are unaffected, per AD-013 A2 and the handoff's explicit Playground-unchanged scope). Face picking's own bbox cache also serves as the 2D pre-filter before the exact ray-triangle test, cutting most triangles from consideration on a typical hover. Occlusion rule (agent assumption, as the handoff asked to state for correction): applies only while faces are shown (`display.show_faces`, i.e. Shaded/Flat Shaded — Wireframe keeps everything pickable, unchanged); a vertex is occluded if some face other than its own incident faces lies strictly closer to the camera along the ray from the eye through it; an edge's visibility is judged at the point on it nearest the cursor (not the edge as a whole), excluding only that edge's own two incident faces; a `DEPTH_TOLERANCE` of `1e-3` world units (agent-set, PROVISIONAL, `picking.py`) keeps silhouette/grazing elements pickable against floating-point noise. Face picking needed no occlusion parameter — it already returns the nearest ray hit. `Application` (`src/mirai/application.py`) owns one `PickCache` (`self._pick_cache`), passes `occlusion=self.display.show_faces` from `_pick()` (Selection hover/click, all three component modes, and the W/E/R hover fallback via `selection.hovered`) and `_knife_pick()` (Knife hover/click), and calls `self._pick_cache.invalidate()` at Move/Rotate/Scale (`_transform_step`/`_cancel`'s `on_vertices_moved` calls), Undo/Redo (`_apply_undo_redo`), Split/Connect (`_notify_topology_changed`), all three Knife-cut mutation points (`_knife_release`/`_knife_history_step`/`_knife_end`), and every display-mode change (`_apply_display`, including the initial one from `init_scene()`) — orbit/zoom/pan need no explicit call (automatic via `camera_revision`). Measurements (headless, head basemesh `examples/meshes/head_basemesh.obj`, 326 V / 648 E / 324 F, 200 simulated pointer moves, `tests/test_picking_benchmark.py`, diagnostic only, not a performance claim — reference machine, will vary): vertex hover 0.98 ms → 0.04 ms, edge hover 3.81 ms → 0.39 ms, face hover 0.62 ms → 0.03 ms, `knife_pick` 4.46 ms → 0.57 ms; the PROVISIONAL ≤ 5 ms target was already met before B8 on this reference machine except `knife_pick` (4.46 ms, close to the ceiling) — after B8 every mode is roughly 10-25× faster and comfortably under 1 ms, so the cache's headroom matters most on slower machines or a higher-poly mesh, not just this one. New tests: `tests/test_picking_cache.py` (cache identity vs. the pre-B8 path on a cursor grid over the cube and, when the asset is present, the head mesh; occlusion on a hand-verifiable synthetic mesh plus the cube's one fully hidden corner; `PickCache` mechanics incl. camera-revision/viewport-resize auto-invalidation); `tests/test_application_picking_cache.py` (occlusion wiring for Selection hover and Knife on the cube in Shaded vs. Wireframe; cache invalidation end-to-end for every trigger the handoff lists); `tests/test_picking_benchmark.py` (the measurements above). Existing-test fallout (found running the full suite): five pre-existing helper functions across `tests/test_application_hover.py`, `test_application_keys.py`, `test_application_move.py`, `test_application_pointer.py` and `test_application_transform.py` picked "a pickable cube vertex" via the plain (non-occlusion) `pick_nearest_vertex` and happened to land on the cube's one occluded corner; updated to pick with `occlusion=True`, matching what `Application` itself now does — not a workaround, the tests' own intent ("a vertex a click/hover actually hits") now correctly includes occlusion. Full suite: `tests` 901 collected, 900 passed, 7 skipped (pre-existing, e.g. missing-OBJ-asset guards), 2 subtests passed (`--ignore=tests/test_extrude_tool.py`, per the documented run). `playground/tests`: this sandbox has no `pyglet` installed (pre-existing environment limitation, unrelated to B8) — every Playground test reachable without it passed (348 passed; the picking/Knife-relevant ones specifically: `test_ad017_knife_pick.py`, `test_ad017_knife.py`, `test_wp_ap_cut_hover_followup.py`, `test_topology_connect_edges_characterization.py`, 57 passed), confirming the Playground's own call sites (no `cache`/`occlusion` passed) are unaffected; the `pyglet`-importing modules could not be collected in this environment and were not otherwise touched. Not in scope, per the handoff: pick tolerances (`max_pixel_distance` unchanged, 14/9 px), GPU id/depth-buffer picking (pure-Python cache already met the target), box/paint/lasso select, Knife face cut, X-ray/select-through as a user option, any `src/core` change. Docs: `docs/future_ideas/SELECTION.md` addendum (X-ray/select-through toggle); B5b's "edge picking has no occlusion test" note addended above rather than rewritten. Open questions (not decided here): the `1e-3` depth tolerance and the edge-occlusion approximation (judged via the *screen-space* nearest point's interpolated 3D position along the edge, not a perspective-correct closest-point-to-ray computation like `knife_pick`'s own `_edge_t_3d` — chosen to avoid duplicating that ray-cast math into `picking.py`, which `knife_pick.py` otherwise only ever calls into, never the reverse) are both agent judgement calls, not validated against the practical window test yet. Verdict: **pending** (Manu, practical window test, `docs/design/artist_playground/WP-AP-CUT_PLAN.md` §8-style script — points 1-4 in the B8 handoff).
++- 2026-09-29 — Status note (documentation only, **not a slice**): B8's pick cache + occlusion is additionally wired into the Playground Knife and the Knife Face Cut Lab (commit `1f48404`). Open verdicts as of this date: B6 selection-restore on Undo/Redo, B7.1 Knife click-only, B8 picking speed + occlusion (all **PROVISIONAL**), plus B5a.1 Per-Polygon-Flat (deferred, touches AD-018 §5). The Knife Face Cut Lab's Q5 (Lab KEEP 2026-09-29) is a **candidate** for the one-Knife Production tool (Knife and Knife Face become one Production tool later); nothing of it is in `src/` and it is not promoted. Known: `connect_in_shared_face` used by the Production Knife has the R3/R5 defects recorded in `decision.md` ("Q5 integrity findings") — recorded, not fixed.
+ 
+ 
+ ---
+@@ -833,6 +837,8 @@ This policy is intentionally based on the Connect Edges experience: the experime
+ - AD-018 — Production Draw Binding (Option B, `GLRenderStore`)
+ - **Stage A — Production Entry Point** (`src/main.py`): window, camera, real rendering — **DONE 2026-09-25**, deliberately read-only
+ - AD-017 — Knife/Cut system (Core exception: `split_edge(t)`)
++- **WP-06 Stage B slices B1–B8** in `src/main.py` — see the intake log for each slice's verdict state (B6 restore, B7.1, B8 still PROVISIONAL)
++- **Knife Face Cut Lab** — Lab verdicts 2026-09-29 (B REJECT, D KEEP → superseded, Q5 KEEP); Lab only, not promoted
+ 
+ ## Artist Playground (active research initiative)
+ 
+@@ -844,27 +850,28 @@ Reference: `docs/design/artist_playground/ROADMAP.md` and `docs/design/artist_pl
+ 
+ Work packages: WP-AP-01 (Foundation) → WP-AP-02 (Experiment Host) → WP-AP-03 (Selection Lab) → WP-AP-04 (Tool Variants, open) → WP-AP-05 (Topology Lab)
+ 
+-**Currently active, in parallel** (as of 2026-09-26):
++**Currently active, in parallel** (as of 2026-09-29):
+ 
+ - **Symmetry Lab** (WP-SYM-LAB-01) — Slices 1–7 done: symmetry definition/correspondence, symmetric Move, mirrored Knife (lab-local)
+-- **Viewport Shading Lab** (WP-SHADE-LAB-01) — Slice 1 just started: Key+Fill worklight, background contrast presets still open
++- **Viewport Shading Lab** (WP-SHADE-LAB-01) — Slice 1 (Key+Fill worklight) committed 2026-09-26; background contrast presets still open; no later slice committed
++- **Knife Face Cut Lab** (`knife_face` family, variants B / D / Q5) — Q5 = Lab KEEP (2026-09-29); integrity fix for crossing cuts and a commit-time safety net done; open: earlier *interior* point click, a cut that closes a loop at a single point (Artist question prepared), Production Knife design. Face Holes discovery is archived without a decision (set aside). Record: `playground/experiments/knife_face/decision.md`, `docs/research/topology/`
+ - **Tweak Lab** — existing research family, Host integration still evolving
+ - WP-STAB — ongoing stabilization fixes on Playground selection/overlay/history behavior (not a Lab, but recurring maintenance across all of them)
+ 
+-Candidates proven in the Playground feed back into the production roadmap — but see **WP-06** below: that hand-off currently has no concrete destination yet.
++Candidates proven in the Playground feed back into the production roadmap through **WP-06** (see the intake log in §7).
+ 
+ ## Next production-oriented work
+ 
+-1. **WP-06 — Stage B: Incremental Integration** *(new top priority)*
+-   - One real, Lab-validated capability (starting candidate: Move) wired into `src/main.py` through the existing Stage A draw path
+-   - Purpose: stop candidates from accumulating across Labs with nowhere to land; pull in only what already has an Artist Verdict, one slice at a time
+-   - See the WP-06 entry in §7 above for scope/non-scope
++1. **WP-06 — Stage B: Incremental Integration** *(top priority, in progress — B1–B8 done)*
++   - Capabilities already wired into `src/main.py`: see the intake log in §7 (selection, Move/Rotate/Scale, display and component modes, contextual `C`, Knife click-only, pick cache + occlusion)
++   - Open items (the Artist sets the priority): verdicts for B6 restore / B7.1 / B8; one-Knife Production tool (candidate: Knife Face Cut Q5); B5a.1 Per-Polygon-Flat
++   - Purpose unchanged: pull in only what already has an Artist verdict, one slice at a time; see the WP-06 entry in §7 for scope/non-scope
+ 
+ 2. **WP-01 — Production Viewport Foundation** — superseded in practice by Stage A; no further separate work expected here beyond what WP-06 needs
+ 
+-3. **WP-03 — Transform Foundation** — Move/Rotate/Scale already exist as Core operations and Playground tools; the open part is exactly WP-06 (getting them into the app), not new Core work
++3. **WP-03 — Transform Foundation** — Move/Rotate/Scale exist as Core operations and are in the production app since WP-06 B3/B4 (`PROMOTED`, Transform Lab verdict); no new Core work expected
+ 
+-Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife) remains a parallel research track, feeding WP-06 the same way Symmetry and Shading do.
++Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Knife Face Cut) remains a parallel research track, feeding WP-06 the same way Symmetry and Shading do.
+ 
+ ## Strategic research / gates
+ 
+@@ -885,7 +892,7 @@ The exact next package is chosen deliberately after reviewing the current reposi
+ 
+ # 15. Change Policy for This Roadmap
+ 
+-This roadmap is V1.0, not immutable.
++This roadmap is V1.x, not immutable.
+ 
+ A new experiment, review or architectural discovery may justify a change. Such changes should be made deliberately and documented rather than silently drifting the roadmap.
+ 
+diff --git a/docs/archive/viewport_v1/README.md b/docs/archive/viewport_v1/README.md
+index 2a21c70..805ea2b 100644
+--- a/docs/archive/viewport_v1/README.md
++++ b/docs/archive/viewport_v1/README.md
+@@ -2,6 +2,6 @@
+ 
+ This area preserves completed Viewport V1 review material.
+ 
+-The viewport itself remains under `experiments/mirai_bastel_viewport_V1/`. The archived review records what the experiment demonstrated and which findings were deliberately not promoted directly into production architecture.
++The viewport itself (`experiments/mirai_bastel_viewport_V1/`) was retired by [AD-006](../../architecture/AD-006-V1-VIEWPORT-RETIREMENT.md) (2026-09-17) and is no longer in the repository. The archived review records what the experiment demonstrated and which findings were deliberately not promoted directly into production architecture.
+ 
+ For current experiment work, start with the local viewport README and the active experiment documentation.
+diff --git a/docs/design/README.md b/docs/design/README.md
+index 8497db7..4cf63d9 100644
+--- a/docs/design/README.md
++++ b/docs/design/README.md
+@@ -10,6 +10,12 @@ This directory contains interaction and workflow principles that guide how Mirai
+ 
+ - [Artist Playground — Architecture Map](artist_playground/ARCHITECTURE_MAP.md) — building block status analysis: what exists, what is missing, what must not be changed
+ - [Artist Playground — Roadmap](artist_playground/ROADMAP.md) — WP-AP work package sequence and development model (research-first, Playground → Candidate → Production)
++- [Experiment Host](artist_playground/EXPERIMENT_HOST.md) — canonical documentation of the Playground's experiment host (variant families)
++- [UX Research](artist_playground/UX_RESEARCH.md) — open research / idea space; shared knowledge store of the Three-Role UX system
++- [Research Map](artist_playground/RESEARCH_MAP.md) — discovery: conceptual map of the research space
++- [Experiment Host Audit](artist_playground/DEV_HOST_AUDIT.md) — technical assessment of the host against Research Map V2
++- [AP-03 Selection Lab plan](artist_playground/AP-03_PLAN.md)
++- [WP-AP-CUT plan](artist_playground/WP-AP-CUT_PLAN.md) — Contextual C implementation brief (IMPLEMENTED 2026-09-22)
+ - [Input Ownership Audit](artist_playground/INPUT_OWNERSHIP_AUDIT.md) — factual inventory of interaction state, dispatch order, and Gizmo preconditions; evidence base for the pending input-ownership architecture decision (2026-09-21)
+ 
+ ## Relationship to other documentation
+diff --git a/docs/design/artist_playground/ROADMAP.md b/docs/design/artist_playground/ROADMAP.md
+index e96c8ce..0ed1f1e 100644
+--- a/docs/design/artist_playground/ROADMAP.md
++++ b/docs/design/artist_playground/ROADMAP.md
+@@ -1,7 +1,7 @@
+ # Artist Playground — Roadmap
+ 
+ **Status:** Active research / implementation
+-**Date:** 2026-09-15
++**Date:** 2026-09-29 (snapshot of 2026-09-15 kept below; update section added)
+ **Source of truth:** current Playground code + experiment assets; this roadmap must not describe planned work as missing when it already exists in the repository.
+ 
+ ---
+@@ -46,6 +46,14 @@ The original 2026-09-10 roadmap is now substantially behind the implementation.
+ - A Tweak experiment family with multiple interaction variants and decision/handoff documentation.
+ - Headless tests for the above areas.
+ 
++### Update — 2026-09-29
++
++Since the snapshot above, the following exist in the repository (details live in each family's own record, not here):
++
++- **Knife Face Cut Lab** — `playground/experiments/knife_face/` (variants B / D / Q5). Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 KEEP. Record: `decision.md` in that folder; background in `docs/research/topology/` (`KNIFE_FACE_CUT_DISCOVERY.md`, `KNIFE_CROSS_FACE_DISCOVERY.md`, `FACE_HOLES_DISCOVERY.md` — Face Holes set aside, no decision). A Lab KEEP is not a promotion.
++- **Symmetry Lab** (WP-SYM-LAB-01, isolated from the Playground variant/slot system) and **Viewport Shading Lab** (WP-SHADE-LAB-01, Slice 1) — status in `docs/architecture/ROADMAP.md` §14.
++- The **Production App** (`src/main.py`, WP-06 Stage B) now receives decided Playground results slice by slice — see the intake log in `docs/architecture/ROADMAP.md` §7.
++
+ Therefore, **Topology Lab is not a future empty work package** and **Tweak is not an unimplemented idea**. They are existing Playground research assets whose runtime/Host integration and research status may still evolve.
+ 
+ This distinction is important: an experiment family existing in the repository does not mean that its UX verdict is final, nor that it belongs in Production.
+diff --git a/docs/research/README.md b/docs/research/README.md
+index efe6eb2..1c36cf2 100644
+--- a/docs/research/README.md
++++ b/docs/research/README.md
+@@ -14,6 +14,15 @@ This document is the canonical home for the artist-side Character Systems resear
+ 
+ - [symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md](symmetry/EDIT_MODE_SYMMETRY_RESEARCH.md) — Research zu Edit-Mode Mirror/Symmetry-Systemen über mehrere DCCs (3ds Max, Blender, Cinema 4D, Modo, Wings 3D, ZBrush, Houdini, Maya). Vergleicht technische Modelle (abgeleitete Hälfte, Positions-Korrespondenz, topologische Korrespondenz), Stressfälle und Naht-Schutz-Mechanismen. Status: Discovery, keine Architekturentscheidung, keine Empfehlung für Mirai-Bastel.
+ 
++## Modeling Workflow & Topologie
++
++- [MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md](MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md) — Modeling-Workflow, Topologie-Grammatik, lokale Topologiekontrolle (Discovery, keine Entscheidungen)
++- [topology/README.md](topology/README.md) — Connect-, Knife-, Face-Cut- und Face-Holes-Discoveries
++
++## Viewport Shading
++
++- [viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md](viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md) — Shading/Lighting für Formwahrnehmung (Research, keine Entscheidung)
++
+ ## Abgrenzung zu `references/`
+ 
+ - `references/` = **kuratierter Wegweiser** zu externen Projekten, Original-Repositories, Dokumentationen und relevanten Bereichen. Kurz: *Was ist interessant und warum?*
+diff --git a/experiments/README.md b/experiments/README.md
+index 2e320f3..5a73b1b 100644
+--- a/experiments/README.md
++++ b/experiments/README.md
+@@ -47,8 +47,8 @@ Research-Baseline: [`../docs/viewport/VIEWPORT_V02_RESEARCH.md`](../docs/viewpor
+ 
+ Zentrale Dokumentations- und Planstelle für die Topology-Forschung. Der aktive Topology-Code lebt
+ heute in `playground/topology_tools/` (1:1-Ports gegen die Production-Core, siehe
+-`TOPOLOGY_EXPERIMENT_PLAN.md`); `mirai_bastel_viewport_V1/viewport/` enthält die ursprüngliche,
+-inzwischen portierte Fassung als Referenz.
++`TOPOLOGY_EXPERIMENT_PLAN.md`). Die ursprüngliche Fassung im entfernten `mirai_bastel_viewport_V1/`
++ist nur noch Git-Historie (AD-006).
+ 
+ Lokaler Einstieg: [`topology/README.md`](topology/README.md)
+ 
+@@ -66,8 +66,9 @@ Lokaler Einstieg: [`rigging-skinning-morphing/rigging-skinning-morphing-README.m
+ 
+ Symmetry Lab (WP-SYM-LAB-01): eigenständiges Fenster für die Symmetrie-Forschung, mit eigenem
+ minimalem Draw-Pfad, Production-`OrbitCamera` und Bindings im Lab-Kontext `symmetry_lab`.
+-Importiert bewusst nicht aus `playground/`. Stand Slice 2: Mesh sehen, navigieren, Vertex
+-auswählen — noch keine Symmetrie-Funktion.
++Importiert bewusst nicht aus `playground/`. Stand Slice 7: Symmetrie-Definition und
++Korrespondenz, symmetrisches Move, Re-Symmetrize, gespiegelter Knife (Slice 7 noch nicht vom Artist
++geprüft) — Details in der lokalen README.
+ 
+ Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
+ 
+@@ -81,6 +82,25 @@ Buffer-Uploads. Nicht Artist-validiert.
+ 
+ Lokaler Einstieg: [`viewport_shading_lab/README.md`](viewport_shading_lab/README.md)
+ 
++### `viewport_draw_binding_spike/`
++
++Research-Paket (Typ B) zum Draw-Binding zwischen Production-Viewport und Rendering. Seine Ergebnisse
++fließen in [AD-018](../docs/architecture/AD-018-PRODUCTION-DRAW-BINDING.md) (entschieden 2026-09-25); das
++Experiment selbst ändert keine Architekturentscheidung.
++
++Lokaler Einstieg: [`viewport_draw_binding_spike/README.md`](viewport_draw_binding_spike/README.md)
++
++### `ad018_gl_render_store_verification/`
++
++Wegwerf-Evidenzskripte für die AD-018-Option-B-Implementierung (`GLRenderStore`). Kein Production-Entry-Point.
++
++Lokaler Einstieg: [`ad018_gl_render_store_verification/README.md`](ad018_gl_render_store_verification/README.md)
++
++### `stage_a_entry_point_verification/`
++
++Headless-Evidenzlauf (`run_headless_evidence.py`, Screenshot) zu Stage A (`src/main.py`). Keine lokale README;
++Kontext: [`../docs/architecture/PRODUCTION_ENTRY_POINT_STAGE_A.md`](../docs/architecture/PRODUCTION_ENTRY_POINT_STAGE_A.md).
++
+ ### `mirai_bastel_integration_lab/`
+ 
+ Removed — functionality graduated to src/mirai/ (AD-008). See git history.
+diff --git a/experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md b/experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md
+index 6c11b4f..85c6c3b 100644
+--- a/experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md
++++ b/experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md
+@@ -24,7 +24,7 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
+   - Phase A–E completed; Phase F (Production Freeze)
+   - Key finding: ID-management constraints affect skinning design (see Phase C findings)
+ 
+-- **Topology Experiment (Phase 2):** [experiments/mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md](../mirai_bastel_viewport_V1/TOPOLOGY_EXPERIMENT_PLAN.md)
++- **Topology Experiment (Phase 2):** [experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md](../topology/TOPOLOGY_EXPERIMENT_PLAN.md)
+   - Edge-loop selection, insertion, removal already working
+   - This experiment builds on that foundation
+ 
+@@ -33,38 +33,27 @@ This experiment investigates how skeletal rigging, skinning weights, and morph-t
+ - **AD-001 (ID Continuity):** Why Undo/Redo uses state snapshots, not semantic ops
+ - **Viewport:** Python + OpenGL (not web-based)
+ 
+-## Viewport V1 Integration — Living Mesh Research (current)
++## Viewport-Integration — Living Mesh Research (Stand 2026-09-29)
+ 
+-Das Experiment hat **keinen eigenen Viewport** und soll auch keinen bekommen.
+-Stattdessen nutzt es den vorhandenen Viewport V1 (All-Tools-Playground) aus
+-[`experiments/mirai_bastel_viewport_V1/`](../mirai_bastel_viewport_V1/README.md)
+-als gemeinsame Darstellungsschicht:
++> **Korrigiert:** Dieses Experiment nutzte früher den Viewport V1 (`experiments/mirai_bastel_viewport_V1/`, All-Tools-Playground) über `run_viewport.py`. Beides wurde per [AD-006](../../docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md) (2026-09-17) ausgemustert und existiert nicht mehr. OBJ-Loader und Head-Basemesh gehören seit [AD-007](../../docs/architecture/AD-007-SHARED-ASSET-LOADER-OWNERSHIP.md) den geteilten Beispielen (`examples/loaders/`, `examples/meshes/head_basemesh.obj`). Die Rolle der Darstellungsschicht übernimmt der Artist Playground.
++
++Das Experiment hat weiterhin **keinen eigenen Viewport** und soll auch keinen bekommen:
+ 
+ ```text
+-Viewport V1 (All-Tools-Playground)
++Artist Playground (playground/)
+         ↓
+-Rigging Experiment Scene  (OBJ Head Basemesh → Mesh)
++Head Basemesh (examples/meshes/head_basemesh.obj → Mesh)
+         ↓
+ Living Mesh / RigController  (später)
+ ```
+ 
+-Der Viewport sieht dabei **nur eine normale `Scene`/`Mesh`** — er weiß nicht,
+-dass es ein Rigging-Experiment ist. Kein Viewport-Fork, keine Änderung an
+-Viewport- oder Core-Dateien.
+-
+ ### Start
+ 
+ ```bash
+-cd experiments/rigging-skinning-morphing
+-python run_viewport.py
++python playground/run.py head
+ ```
+ 
+-Öffnet den All-Tools-Playground mit dem echten Head-Basemesh
+-(`meshes/head_basemesh.obj`) statt der Würfel-Testszene, inklusive
+-Start-Report (Vertices/Edges/Faces/Face-Typen/Bounds) auf der Konsole und
+-Window-Titel „Mirai-Bastel — Living Mesh Research". Alle vorhandenen
+-Werkzeuge laufen unverändert weiter: Selection (V/E/F), Topology (S/K/C/L/R),
+-Transform (M, Shift+R, Shift+S, X/Y/Z), Undo/Redo, Display-Modi (O/W).
++Die Unterabschnitte „Dateien dieser Integration“, „Architekturentscheidungen“ und „Bekannte Grenzen“ unten beschreiben den Stand **vor** AD-006/AD-007. `run_viewport.py` und `loaders/obj_loader.py` existieren nicht mehr.
+ 
+ ### Dateien dieser Integration
+ 
+diff --git a/experiments/symmetry_lab/README.md b/experiments/symmetry_lab/README.md
+index 53d0869..297d60b 100644
+--- a/experiments/symmetry_lab/README.md
++++ b/experiments/symmetry_lab/README.md
+@@ -481,7 +481,8 @@ Alle 54 `UNPAIRED`-Vertices von `man_with_shoes_basemesh` haben einen topologisc
+ `lab_knife.py`. **Lab-Experiment, keine Capability** — keine Änderung an `src/` oder am
+ Playground-Knife. Nur die Engine: kein Fenster, kein Edge-Hover, keine Pfad-Vorschau, keine
+ Taste (alles Slice 7). **Nicht vom Artist geprüft** — belegt ist nur das headless Verhalten
+-unten. Die Engine ist eine Kopie von `playground/topology_tools/knife.py` und
++unten. Die Engine ist eine Kopie (Stand Slice 6) von `playground/topology_tools/knife.py` (seit WP-06 B7 liegt der
++Knife unter `src/mirai/topology/knife.py`) und
+ `connect_in_shared_face` (Herkunftsvermerk im Docstring, Präzedenz AD-010, E16) und läuft nach
+ dem gleichen Session-Modell (AD-017 §6–§8): Klick = nächster Schnitt, In-Session-Undo/Redo =
+ letzter Schnitt, Cancel = alles verwerfen, Commit = genau ein `MeshStateCommand`. Kein
+diff --git a/experiments/topology/README.md b/experiments/topology/README.md
+index 141b8bd..6ac0d82 100644
+--- a/experiments/topology/README.md
++++ b/experiments/topology/README.md
+@@ -2,12 +2,12 @@
+ 
+ Dieser Bereich ist die **Dokumentations- und Planstelle für die Topologie-Forschung**.
+ 
+-Der aktive experimentelle Code liegt heute unter `playground/topology_tools/` (interaktiv über den Artist Playground); `experiments/mirai_bastel_viewport_V1/viewport/` enthält die ursprüngliche, inzwischen portierte Fassung als Referenz. Die Trennung zwischen Code und Dokumentation bleibt absichtlich: Dieser Ordner dokumentiert die Topology-Forschung als zusammenhängenden Arbeitsbereich, unabhängig davon, wo der Code gerade läuft.
++Der aktive experimentelle Code liegt heute unter `playground/topology_tools/` (interaktiv über den Artist Playground); die ursprüngliche Fassung im entfernten `mirai_bastel_viewport_V1/` ist nur noch Git-Historie (AD-006). Die Trennung zwischen Code und Dokumentation bleibt absichtlich: Dieser Ordner dokumentiert die Topology-Forschung als zusammenhängenden Arbeitsbereich, unabhängig davon, wo der Code gerade läuft.
+ 
+ ## Einstieg
+ 
+ - [Topology Experiment Plan](TOPOLOGY_EXPERIMENT_PLAN.md) — **aktiver Single Source of Truth für Richtung, Phasen und Prüfmatrix**
+-- [Viewport V1 Selection Experiment](../mirai_bastel_viewport_V1/SELECTION_MODES.md) — aktuelle Selection-/Workflow-Erkenntnisse aus dem interaktiven Viewport
++- [Selection Lab — Artist-Verdikte](../../playground/experiments/selection/decision.md) — aktuelle Selection-Erkenntnisse aus dem Artist Playground (der frühere V1-Viewport-Selection-Text ist mit dem V1-Viewport entfernt, AD-006)
+ - [Selection Future Ideas](../../docs/future_ideas/SELECTION.md) — längerfristige Selection-Ideen, die nicht nur dieses Experiment betreffen
+ - [Workflow Design](../../docs/design/WORKFLOW.md) — allgemeine Interaktionsprinzipien
+ - [Core V1 Architecture](../../docs/architecture/V1_CORE.md) — eingefrorene Core-Verträge
+@@ -70,7 +70,7 @@ Connect Edges wurde bewusst vor Loop Insert priorisiert. Die Operation ist eine
+ - deterministisch: Selection-Reihenfolge und numerische Edge-IDs beeinflussen weder Gruppierung noch Ergebnis
+ - genau ein History-Snapshot pro Operation
+ 
+-Praktisch verifiziert über `tests/test_connect_edges.py`: 2 kompatible Edges, 3+ Ketten, 4+ zusammenhängende Edges, kompletter Edge Ring, Edge Loop als Input, mehrere disjunkte Gruppen, ungültige Auswahl, mehrere Selection-Reihenfolgen, genau ein History-Snapshot mit Undo/Redo, atomare Fehlerfälle.
++Praktisch verifiziert über `playground/tests/test_topology_connect_edges.py`: 2 kompatible Edges, 3+ Ketten, 4+ zusammenhängende Edges, kompletter Edge Ring, Edge Loop als Input, mehrere disjunkte Gruppen, ungültige Auswahl, mehrere Selection-Reihenfolgen, genau ein History-Snapshot mit Undo/Redo, atomare Fehlerfälle.
+ 
+ Scope: reguläre kompatible Quad-Topologie (Ketten, Ringe). Boundary-, Non-Quad-, Mixed-Valence- und Non-Manifold-Fälle werden explizit abgelehnt und sind damit weiterhin offene Forschungsfragen.
+ 
+diff --git a/playground/README.md b/playground/README.md
+index 924b72d..aab1150 100644
+--- a/playground/README.md
++++ b/playground/README.md
+@@ -41,6 +41,13 @@ Aktuell verfügbar:
+ - **Modifier:** Shift=Add, Ctrl=Remove, Alt=Toggle
+ - **Toggle:** Jeder Click togglet (Max-ähnlich)
+ 
++### Weitere Familien (Stand 2026-09-29)
++
++`transform/`, `connect/`, `knife/`, `knife_face/`, `topology/`, `tweak/`, `articulation/` — jeweils unter
++`playground/experiments/<familie>/`. Verdikte stehen in der `decision.md` der Familie (vorhanden für
++`selection`, `transform`, `connect`, `knife_face`; Tweak: `tweak_decision.md`). Ein Lab-Verdikt ist keine Promotion;
++entschiedene Ergebnisse gelangen einzeln in die Production-App (WP-06, siehe `docs/architecture/ROADMAP.md` §7).
++
+ ## Für Anpassungen
+ 
+ **Bindings konfigurieren:**
+@@ -75,4 +82,4 @@ app.select_mode = SelectMode.MODIFIER  # oder REPLACE, TOGGLE
+ 
+ - [MANUAL.md](MANUAL.md) — Vollständige Bedienungsanleitung
+ - [docs/design/artist_playground/](../docs/design/artist_playground/) — Architektur & Plan
+-- [experiments/mirai_bastel_integration_lab/](../experiments/mirai_bastel_integration_lab/) — Referenz-Harness
++- Der frühere Referenz-Harness `experiments/mirai_bastel_integration_lab/` wurde entfernt; seine Funktionen sind nach `src/mirai/` übergegangen ([AD-008](../docs/architecture/AD-008-IMPORT-FRAMING-PRODUCTION.md))
+diff --git a/src/README.md b/src/README.md
+index 2735624..27e6653 100644
+--- a/src/README.md
++++ b/src/README.md
+@@ -2,30 +2,50 @@
+ 
+ Hier entsteht die eigentliche Anwendung.
+ 
+-## Aktueller Stand
++## Aktueller Stand (2026-09-29)
+ 
+ Die aktuell implementierte Produktionsstruktur ist:
+ 
+ ```text
+ src/
+-├── core/      3D-Domain: Scene, Mesh, Selection, Operations, History, Serialization
+-├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking, Display-State
+-└── viewport/  inkrementelle Renderdaten, Dirty-State, Overlay, Resource-Store, Fassade
++├── core/      3D-Domain: Scene, Mesh, Selection, Operations (Move/Rotate/Scale, Topologie), History, Serialization
++├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking (inkl. Pick-Cache),
++│              Display-State, Topologie-Capabilities (Split/Connect/Knife), Symmetry V1, Scene-Factory
++├── viewport/  inkrementelle Renderdaten, Dirty-State, Overlays, Resource-Store, GL-Render-Store, Fassade
++└── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
+ ```
+ 
+ `src/core/` basiert auf dem abgeschlossenen und eingefrorenen Core-V1-
+-Milestone. `src/mirai/` und `src/viewport/` sind die implementierte
+-Production-Foundation für Application/Interaction bzw. Viewport. Der
+-Viewport-V1-Code bleibt ein isolierter Praxistest unter
+-`experiments/mirai_bastel_viewport_V1/`.
+-
+-Nicht vorhanden sind weiterhin ein Production-Fenster/Entry-Point, ein
+-Production-Draw-Call sowie eine festgelegte Modeling- oder Selection-UX.
+-Diese Bereiche werden nicht durch leere Ordner oder Vorabarchitektur
+-vorweggenommen.
++Milestone. Jede dokumentierte Ausnahme steht in
++[`docs/architecture/CORE_V1_FREEZE.md`](../docs/architecture/CORE_V1_FREEZE.md) §7.1.
++`src/mirai/` und `src/viewport/` sind die Production-Foundation für
++Application/Interaction bzw. Viewport. Der frühere Viewport-V1-Code war ein
++ausgemusterter Praxistest ([AD-006](../docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md)); seine Rolle als Forschungsfenster übernimmt der Artist Playground (`playground/`).
++
++Ein Production-Fenster (`src/main.py`) und der Production-Draw-Pfad
++(`Application → Viewport → GLRenderStore`, AD-018) sind vorhanden
++(Stage A, siehe
++[`docs/architecture/PRODUCTION_ENTRY_POINT_STAGE_A.md`](../docs/architecture/PRODUCTION_ENTRY_POINT_STAGE_A.md)).
++Stage B (WP-06) verdrahtet entschiedene Playground-Ergebnisse Slice für
++Slice in dieses Fenster. Welche Capabilities schon drin sind und mit
++welchem Verdikt-Stand (`PROMOTED` / `PROVISIONAL`), steht im Intake-Log
++in [`docs/architecture/ROADMAP.md`](../docs/architecture/ROADMAP.md) §7
++(WP-06) — dort ist die einzige maßgebliche Liste, hier wird sie bewusst
++nicht wiederholt.
++
++Nicht vorhanden bzw. bewusst offen sind weiterhin eine festgelegte
++Gesamt-UX für Modeling und Selection, ein Application-UI außerhalb des
++Viewports sowie alles aus den „Später"-Abschnitten der Roadmap
++(Deformation, Rigging, Morph, Animation). Diese Bereiche werden nicht
++durch leere Ordner oder Vorabarchitektur vorweggenommen.
++
++Für die Verantwortungsgrenzen der Pakete siehe
++[`docs/architecture/SOURCE_ARCHITECTURE.md`](../docs/architecture/SOURCE_ARCHITECTURE.md).
+ 
+ ## Grundregel
+ 
+ Code wird erst nach einem validierten Experiment oder einer klaren
+ Architekturentscheidung in `src/` übernommen. Experimente bleiben in
+-`experiments/` nachvollziehbar erhalten.
++`experiments/` bzw. im `playground/` nachvollziehbar erhalten. Die
++Übernahme selbst ist eine dokumentierte Entscheidung (Promotion Boundary,
++`MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` M3), kein stiller Merge.
+diff --git a/tests/README.md b/tests/README.md
+index c704947..4a99052 100644
+--- a/tests/README.md
++++ b/tests/README.md
+@@ -40,6 +40,8 @@ separat entschieden.
+ | `test_topology_history.py` | D | commit → undo → redo, exakter Zustand inkl. IDs und Beziehungen |
+ | `test_scene_serialization.py` | E | Dict-/JSON-Roundtrip nach Mutationen, Allocator, Kollisionen, Versionsprüfung |
+ | `test_core.py` | — | Architekturverträge AD-001/002/003, Basis-Serialisierung |
++
++Die Tabelle zeigt nur die Core-Hardening-Module. Seitdem sind Tests für Application/Interaction (`test_application_*.py`, `test_tool_lifecycle.py`, `test_input_binding.py`), Kamera/Picking (`test_camera.py`, `test_application_picking_cache.py`), Mesh-Geometrie und die Topologie-Capabilities (Contextual C, Knife) dazugekommen — Stand 2026-09-29 insgesamt 61 `test_*.py`-Module in `tests/`. Der Artist Playground hat einen eigenen Testbaum: `playground/tests/` (Ausführung: `python -m pytest playground/tests`).
+ | `test_history_contract.py` | WP-04 | HistoryStack-Vertrag (No-op-undo/redo, Redo-Zweig-Verwerfen, LIFO) — separat ausführbar |
+ | `test_operation_lifecycle.py` | WP-04 | Operation-Lifecycle-Guards (AD-003: begin/update/commit/cancel-State-Machine, History-Grenzen, No-op/Boundary) — separat ausführbar |
+ 

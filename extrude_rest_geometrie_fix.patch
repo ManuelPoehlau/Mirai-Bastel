@@ -1,0 +1,151 @@
+diff --git a/experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md b/experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md
+index 7e709f6..62a3163 100644
+--- a/experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md
++++ b/experiments/topology/TOPOLOGY_EXPERIMENT_PLAN.md
+@@ -292,6 +292,8 @@ neue Vertices + Edges + Faces
+ - ESC → Cancel (Mesh-Restore + Multi-Selection-Restore, kein History-Eintrag)
+ - Undo/Redo funktioniert identisch zu Split Edge
+ - 12 Headless-Tests (8 Baseline-Regression + 4 Multi-Face), alle grün
++- **Fix 2026-09-30 (Artist-Fund, Screenshot):** Multi-Face-Extrude ließ die *inneren* Edges (und innere Vertices) der Originalregion als Wireframe ohne Fläche stehen. Ursache: `Mesh.remove_face()` löscht freie Edges/Vertices bewusst nicht (V1-Entscheidung), und der eingefrorene Core hat keine `remove_edge`/`remove_vertex`-Primitive. Behelf **nur im Playground**: `ExtrudeTool._prune_leftover_geometry()` entfernt ausschließlich Rest-Geometrie der eigenen Region über `export_state()`/`load_state()`; fremde freie Edges bleiben. +3 Regressionstests (16 gesamt). **Offene Core-Frage (keine Entscheidung):** Braucht Production eine echte Lösch-Primitive für freie Edges/Vertices? Wird relevant für Face-Delete, Dissolve und Production-Extrude → gehört in eine spätere Architekturprüfung, nicht in diesen Fix.
++- **Artist-Soll (Manu, 2026-09-30):** Vor der Mulde darf kein Wireframe stehen bleiben. Der Fix ist vom Artist noch **nicht getestet** — kein Verdikt.
+ 
+ Zu untersuchen sind insbesondere:
+ 
+diff --git a/playground/tests/test_topology_extrude_baseline.py b/playground/tests/test_topology_extrude_baseline.py
+index f71a086..69fa38b 100644
+--- a/playground/tests/test_topology_extrude_baseline.py
++++ b/playground/tests/test_topology_extrude_baseline.py
+@@ -402,3 +402,71 @@ def test_multiface_opposing_normals_each_moves_along_own_normal():
+                 f"Cap-Vertex bei {pos} entspricht nicht der erwarteten "
+                 f"Komponenten-Normale {n1} oder {n2}"
+             )
++
++
++# -- Regression: Multi-Face-Extrude darf keine Rest-Geometrie zurücklassen ----
++#
++# Befund (Artist-Screenshot 2026-09-30): Nach Multi-Face-Extrude blieben die
++# ursprünglichen *inneren* Edges (und ein innerer Vertex) der Region als
++# Wireframe ohne Fläche an der Originalposition stehen ("unsichtbare Faces").
++# Ursache: Mesh.remove_face() löscht bewusst keine freien Edges/Vertices, und
++# der Core hat keine remove_edge/remove_vertex-Primitive.
++
++def _make_grid_patch(app: PlaygroundApp, n: int = 2) -> list:
++    """n×n Quad-Patch als eigene Insel (z=0). Für n=2 gibt es einen inneren Vertex."""
++    mesh = app.scene.mesh
++    v = [[mesh.add_vertex((10.0 + x, float(y), 0.0)) for x in range(n + 1)] for y in range(n + 1)]
++    return [
++        mesh.add_face([v[y][x], v[y][x + 1], v[y + 1][x + 1], v[y + 1][x]])
++        for y in range(n) for x in range(n)
++    ]
++
++
++def _free_edges(mesh) -> set:
++    return {e for e in mesh.all_edge_ids() if not mesh.edge_faces(e)}
++
++
++def _unused_vertices(mesh) -> set:
++    used = {v for f in mesh.all_face_ids() for v in mesh.face_vertices(f)}
++    return {v for v in mesh.all_vertex_ids() if v not in used}
++
++
++def test_multi_face_extrude_leaves_no_orphan_edges_or_vertices():
++    for distance in (0.3, -0.3):  # nach außen UND nach innen
++        app = PlaygroundApp()
++        app.load_cube()
++        faces = _make_grid_patch(app)
++        mesh = app.scene.mesh
++        free_before, unused_before = _free_edges(mesh), _unused_vertices(mesh)
++        _do_extrude(app, set(faces), distance=distance)
++        assert _free_edges(mesh) == free_before
++        assert _unused_vertices(mesh) == unused_before
++
++
++def test_extrude_keeps_preexisting_free_edges():
++    """Nur Rest-Geometrie DIESER Extrusion wird entfernt, nicht fremde freie Edges."""
++    app = PlaygroundApp()
++    app.load_cube()
++    faces = _make_grid_patch(app)
++    mesh = app.scene.mesh
++    a = mesh.add_vertex((20.0, 0.0, 0.0))
++    b = mesh.add_vertex((21.0, 0.0, 0.0))
++    free = mesh.add_edge(a, b)
++    _do_extrude(app, set(faces))
++    assert mesh.is_valid_edge(free)
++    assert free in _free_edges(mesh)
++
++
++def test_multi_face_extrude_cleanup_survives_undo_redo_cancel():
++    app = PlaygroundApp()
++    app.load_cube()
++    faces = _make_grid_patch(app)
++    mesh = app.scene.mesh
++    before = _counts(app)
++    _do_extrude(app, set(faces))
++    after = _counts(app)
++    app.scene.history.undo()
++    assert _counts(app) == before
++    app.scene.history.redo()
++    assert _counts(app) == after
++    assert not _free_edges(mesh) and not _unused_vertices(mesh)
+diff --git a/playground/topology_tools/extrude.py b/playground/topology_tools/extrude.py
+index 5c3475d..8d86dc3 100644
+--- a/playground/topology_tools/extrude.py
++++ b/playground/topology_tools/extrude.py
+@@ -192,10 +192,18 @@ class ExtrudeTool(Tool):
+             new_boundary = [self._old_to_new[vid] for vid in mesh.face_vertices(fid)]
+             new_face_ids.add(mesh.add_face(new_boundary))
+ 
++        # Kanten der Original-Region merken, bevor die Faces verschwinden: nur
++        # diese dürfen anschließend als Rest-Geometrie bereinigt werden.
++        region_edges: set = set()
++        for fid in face_ids_frozen:
++            region_edges.update(mesh.face_edges(fid))
++
+         # Original-Faces entfernen
+         for fid in face_ids_frozen:
+             mesh.remove_face(fid)
+ 
++        self._prune_leftover_geometry(mesh, region_edges, all_vids)
++
+         self._new_face_ids = frozenset(new_face_ids)
+ 
+         # Selection-Sync: Alle entfernten Faces aus Selection rauswerfen und
+@@ -276,6 +284,38 @@ class ExtrudeTool(Tool):
+ 
+     # -- Intern --------------------------------------------------------------
+ 
++    @staticmethod
++    def _prune_leftover_geometry(mesh, region_edges: set, region_vertices: set) -> None:
++        """Entfernt die Rest-Geometrie der ursprünglichen Region.
++
++        Mesh.remove_face() lässt freie Edges/Vertices bewusst stehen und der
++        Core (eingefroren) hat keine remove_edge/remove_vertex-Primitive. Ohne
++        Bereinigung blieben die *inneren* Edges (und innere Vertices) der Region
++        als Wireframe ohne Fläche an der Originalposition zurück.
++
++        Es werden ausschließlich Edges aus `region_edges` ohne Face und
++        anschließend Vertices aus `region_vertices` ohne Edge entfernt — fremde
++        freie Edges (Knife/Connect) bleiben unberührt. Umsetzung über den
++        öffentlichen export_state()/load_state()-Weg; IDs übriger Elemente
++        bleiben unverändert (AD-001), Allocator-Zähler laufen nur vorwärts.
++        """
++        orphan_edges = {e for e in region_edges if not mesh.edge_faces(e)}
++        if not orphan_edges:
++            return
++        state = mesh.export_state()
++        for eid in orphan_edges:
++            del state["edges"][int(eid)]
++        still_used = set()
++        for edata in state["edges"].values():
++            still_used.add(edata["v0"])
++            still_used.add(edata["v1"])
++        for boundary in state["faces"].values():
++            still_used.update(int(v) for v in boundary)
++        for vid in region_vertices:
++            if int(vid) not in still_used:
++                del state["vertices"][int(vid)]
++        mesh.load_state(state)
++
+     def _face_center_original(self) -> tuple[float, float, float]:
+         positions = list(self._original_positions.values())
+         n = len(positions)
