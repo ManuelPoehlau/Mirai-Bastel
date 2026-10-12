@@ -1,0 +1,9 @@
+{
+  "remoteURL": "https://github.com/ManuelPoehlau/Mirai-Bastel",
+  "gitLocation": "",
+  "syncinterval": 0,
+  "isSyncOnLoad": false,
+  "checkStatusOnLoad": true,
+  "noticeLevel": "ALL",
+  "showSyncSuccessNotice": true
+}
