@@ -190,7 +190,7 @@
 | Cancel | `ESC` | | Immediate cancel | |
 | Confirm / Commit | `ENTER` / current | | Commit | |
 | Save | TBD | | | |
-| Load | TBD | | | |
+| Load | TBD | | | Temporary scene menu on `SPACE` (`PROVISIONAL`, engineering proposal, not Artist input truth): see ROADMAP 2026-10-11 "Scene loader" |
 | Quit | `Q` / current | | | |
 | Toggle HUD | TBD | | | |
 | Toggle Debug Information | TBD | | | |
