@@ -1,11 +1,12 @@
 # Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b + 3: Move, Rotate, Scale, Auswahl)
 
-**Status: Verdikte von Manu für Slice 1, Slice 2a und Slice 2b liegen vor (alle 2026-10-13)** — siehe die
-Verdikt-Tabellen in [Slice 1](#praxistest-für-manu-ca-10-minuten), [Slice 2a](#slice-2a-2026-10-13) und
-[Slice 2b](#slice-2b-2026-10-13). Offen aus 2a: (d2) ITERATE (Kurvenpunkte hinzufügen/wegnehmen, nicht eingeplant) und
+**Status: Verdikte von Manu für Slice 1, 2a, 2b und 3 liegen vor (alle 2026-10-13)** — siehe die
+Verdikt-Tabellen in [Slice 1](#praxistest-für-manu-ca-10-minuten), [Slice 2a](#slice-2a-2026-10-13),
+[Slice 2b](#slice-2b-2026-10-13) und [Slice 3](#slice-3-2026-10-13-komponenten-auswahl). Offen aus 2a: (d2) ITERATE (Kurvenpunkte hinzufügen/wegnehmen, nicht eingeplant) und
 die Frage „vorher erkennbar, was mitgeht — jetzt besser?“ (unbeantwortet).
-**Slice 3 (Komponenten-Auswahl) ist gebaut und automatisch getestet, nicht Artist-validiert** — Praxistest und
-Verdikt-Tabelle in [Slice 3](#slice-3-2026-10-13-komponenten-auswahl).
+Offen aus 3 (neue Wünsche, nicht eingeplant): (s2) ITERATE — Edge Loop per Doppelklick, Teilstück per Shift+Doppelklick;
+Face Loop per Shift+Doppelklick (O12); Komponenten-Hover als Standard, Loop/Ring-Hover nur in einem eigenen Modus
+(`L` an/aus, O13); Auswahl umrechnen per Shift+`1`/`2`/`3` (O15).
 Discovery (Typ B): Das Lab bereitet ein Artist-Verdikt vor, es entscheidet nichts und befördert nichts. KEEP heißt
 hier nicht Promotion — nichts verlässt `experiments/`.
 
@@ -588,7 +589,10 @@ Vorab-Audit des Planers (Handoff, nur gelesen), hier **gegen den Code** geprüft
 
 ## Slice 3 (2026-10-13, Komponenten-Auswahl)
 
-**Nicht Artist-validiert.** Manus Priorität 1 (2026-10-13): Komponenten-Auswahl mit Mehrfachauswahl. Die Auswahl ist eine
+**Verdikte von Manu (2026-10-13) liegen vor** — siehe [Tabelle unten](#praxistest-für-manu-ca-10-minuten-2): (s1), (s3),
+(s4) KEEP, (s2) KEEP + ITERATE (Doppelklick-Loop, Teilstück); Antworten zu O12–O16 unter „Offene Fragen“ (O13: Hover soll
+standardmäßig Komponenten zeigen, Loop/Ring nur in einem `L`-Modus — ändert den Hover-Weg aus Slice 1, noch nicht
+gebaut). Manus Priorität 1 (2026-10-13): Komponenten-Auswahl mit Mehrfachauswahl. Die Auswahl ist eine
 **zweite Quelle für die Seeds** derselben Vorzeichen-Gesten; ohne Auswahl bleibt der direkte Hover-Weg exakt wie in
 Slice 1–2b (Test: gleiche Ergebnisse bis aufs Bit). Nichts wird befördert.
 

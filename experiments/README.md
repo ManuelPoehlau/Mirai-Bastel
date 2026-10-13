@@ -95,7 +95,7 @@ skalieren (zwei Scale-Formeln). Seit Slice 3 alternativ eine Punkt-/Kanten-/Flä
 Shift/Ctrl/Alt, Shift+L/R), von der dieselben Gesten ausgehen; Klick ins Leere = zurück zum Hover. Mitbewegung über die
 Soft-Selection-Abstände aus `src` mit einer Bézier-Kurve, die unter null gehen darf (negative Gewichte bewegen
 entgegen), optionale Flächen-Vorschau. Importiert aus `playground/` nur `topology_tools.loop_ring`. Verdikte für
-Slices 1, 2a, 2b liegen vor (Manu, 2026-10-13); Slice 3 ist nicht Artist-validiert —
+Slices 1, 2a, 2b und 3 liegen vor (Manu, 2026-10-13) —
 [`mehlsack_lab/README.md`](mehlsack_lab/README.md).
 
 ### `drag_cost/`
