@@ -1,8 +1,9 @@
 # Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b: Move, Rotate, Scale)
 
-**Status: Slice 1 Verdikte von Manu (2026-10-13) liegen vor; Slice 2a und Slice 2b nicht Artist-validiert.** Beide sind
-gebaut und automatisch getestet (siehe [Slice 2a](#slice-2a-2026-10-13) und [Slice 2b](#slice-2b-2026-10-13)); ihre
-Praxistests stehen aus.
+**Status: Verdikte von Manu für Slice 1, Slice 2a und Slice 2b liegen vor (alle 2026-10-13)** — siehe die
+Verdikt-Tabellen in [Slice 1](#praxistest-für-manu-ca-10-minuten), [Slice 2a](#slice-2a-2026-10-13) und
+[Slice 2b](#slice-2b-2026-10-13). Offen aus 2a: (d2) ITERATE (Kurvenpunkte hinzufügen/wegnehmen, nicht eingeplant) und
+die Frage „vorher erkennbar, was mitgeht — jetzt besser?“ (unbeantwortet).
 Discovery (Typ B): Das Lab bereitet ein Artist-Verdikt vor, es entscheidet nichts und befördert nichts. KEEP heißt
 hier nicht Promotion — nichts verlässt `experiments/`.
 
@@ -279,7 +280,9 @@ Manus Antworten auf die offenen Fragen:
 
 ## Slice 2a (2026-10-13)
 
-**Nicht Artist-validiert.** Setzt Manus zwei ITERATE-Verdikte (a) und (d) und die Antworten zu O1 und O4 von oben um.
+**Verdikte von Manu (2026-10-13) liegen vor** — siehe [Tabelle unten](#praxistest-für-manu-ca-8-minuten): (a2), (p), (r)
+KEEP, (d2) ITERATE; die Frage „vorher erkennbar“ ist unbeantwortet. Setzt Manus zwei ITERATE-Verdikte (a) und (d) und
+die Antworten zu O1 und O4 von oben um.
 Move bleibt die einzige Transform; Rotate/Scale kommt in Slice 2b (eigener Auftrag, danach).
 
 ### Was sich geändert hat
@@ -404,7 +407,9 @@ Hinweis: Alle Tasten sind Vorschläge für dieses Lab, keine Entscheidung. Näch
 
 ## Slice 2b (2026-10-13)
 
-**Nicht Artist-validiert.** Der markierte Loop/Ring lässt sich jetzt auch **drehen** und **skalieren**, mit
+**Verdikte von Manu (2026-10-13) liegen vor** — siehe [Tabelle unten](#praxistest-für-manu-ca-10-minuten-1): (f), (g),
+(h), (i) KEEP; (i) „vorerst“ (generelle UX-Frage, weitere Playground-Tests nötig). Der markierte Loop/Ring lässt sich
+jetzt auch **drehen** und **skalieren**, mit
 Vorzeichen-Gewichten — für die Aufgabe „Taille mit Bauch daneben“ aus dem Brief und für Manus Antwort zu O5 („Muss man
 vergleichen in der Praxis“): beide Scale-Formeln sind gebaut und mit `M` umschaltbar. Nichts davon wird befördert.
 
