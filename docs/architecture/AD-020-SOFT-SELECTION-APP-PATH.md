@@ -794,6 +794,7 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
 - **Separate follow-up (not part of S2):** a `math.dist` audit in `src` (FINDINGS §5.9, R6). New data point
   from this AD: `mesh_center_and_radius` (`mesh_geometry.py:44-46`) calls it once per vertex.
 - Whether points through the mesh (depth off) stay readable at large radii — observe in S2c.
+- *2026-10-12:* signed (negative) weights explored in [`experiments/mehlsack_lab`](../../experiments/mehlsack_lab/README.md) (Discovery, not part of the capability; `src` unchanged).
 
 ---
 

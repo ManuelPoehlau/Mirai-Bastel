@@ -87,6 +87,13 @@ Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
 
 Soft Selection (WP-SOFT-01 S1, headless, Typ B): Influence-Map (euklidisch/geodätisch, smooth/linear) und gewichtete Move/Rotate/Scale als Unterklassen der Core-Ops, Kostenprobe auf Kopf und Ganzkörper; keine Defaults, kein Fenster — [`soft_selection/README.md`](soft_selection/README.md), Ergebnisse in [`soft_selection/FINDINGS.md`](soft_selection/FINDINGS.md).
 
+### `mehlsack_lab/`
+
+Mehlsack Lab (WP-MEHLSACK-LAB-01 Slice 1, Discovery Typ B): eigenes Fenster; Box per Mausrad bauen, dann Loop/Ring
+hovern und ohne Auswahl direkt ziehen (nur Move). Mitbewegung über die Soft-Selection-Abstände aus `src` mit einer
+editierbaren Kurve, die unter null gehen darf (negative Gewichte bewegen entgegen). Importiert aus `playground/` nur
+`topology_tools.loop_ring`. Nicht Artist-validiert — [`mehlsack_lab/README.md`](mehlsack_lab/README.md).
+
 ### `drag_cost/`
 
 Drag-Kosten-Sonde mit dem echten GL-Backend (WP-VIEW-PATCH-01, Typ A): misst pro Mausbewegung eines W-Drags Transform-Schritt, `Viewport.sync()` und `GLRenderStore.update` getrennt (p50/p95) in einem unsichtbaren pyglet-Fenster; ein Szenario pro Funktion (S2b ergänzt den Soft-Drag). Vorher/Nachher des Slice-only-Patches (Container) im README — [`drag_cost/README.md`](drag_cost/README.md).
