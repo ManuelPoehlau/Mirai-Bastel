@@ -792,9 +792,12 @@ in Richtung der Nachbarfläche. Nichts wird befördert.
 ### Offene Fragen (nicht im Code entschieden)
 
 - **O17** `L`-Modus im Flächenmodus: soll ein Klick dort den Face Loop quer zur gehoverten Kante nehmen (die Flächen
-  ihres Rings)?
+  ihres Rings)? Manu: Ja
 - **O18** Doppelklick im Punktmodus (Punkte eines Loops)? Teilstück auch für Face Loops?
+  Manu: Beides JA
 
+  Nachtrag für Slice 3c: Hatte ich vergessen, aufzuschreiben für 3b: Im Edge Mode - Klick auf eine Edge > SHIFT + Doppelklick auf eine benachtbarte Edge wählt Edge Ring. Ist ein Ring
+  oder mehrere bereits ausgewählt, kann man mit der gleichen Methode andere Rings zur Auswahl hinzufügen
 ### Praxistest für Manu (ca. 10 Minuten)
 
 Start: `python experiments/mehlsack_lab/run.py`, Box mit einigen Loops bauen, `Enter`.
@@ -807,13 +810,13 @@ Start: `python experiments/mehlsack_lab/run.py`, Box mit einigen Loops bauen, `E
 
 **Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
 
-| Punkt | Verdikt | Notiz |
-|---|---|---|
-| (t1) Hover zeigt einzelne Elemente; ohne Auswahl wirken die Gesten auf das gehoverte Element | | |
-| (t2) `L`-Modus für Loops/Ringe (Hover, Klick, Tab) | | |
-| (t3) Doppelklick = Edge Loop, Shift+Doppelklick = Teilstück | | |
-| (t4) Face Loop per Shift+Doppelklick | | |
-| (t5) Umrechnen per Shift+`1`/`2`/`3` | | |
+| Punkt                                                                                        | Verdikt        | Notiz                                                                                                                                                        |
+| -------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| (t1) Hover zeigt einzelne Elemente; ohne Auswahl wirken die Gesten auf das gehoverte Element | KEEP           |                                                                                                                                                              |
+| (t2) `L`-Modus für Loops/Ringe (Hover, Klick, Tab)                                           | KEEP           |                                                                                                                                                              |
+| (t3) Doppelklick = Edge Loop, Shift+Doppelklick = Teilstück                                  | KEEP + ITERATE | wenn ein loop oder mehrere bereits ausgewählt sind, fügt Shift+ Doppelklick auf eine noch nicht ausgewählte Edge(l-oop) einen weiteren Loop zu Auswahl hinzu |
+| (t4) Face Loop per Shift+Doppelklick                                                         | KEEP           |                                                                                                                                                              |
+| (t5) Umrechnen per Shift+`1`/`2`/`3`                                                         | KEEP           |                                                                                                                                                              |
 
 ## Tests
 
