@@ -67,7 +67,7 @@ def selected(win):
 
 
 def test_click_selects_in_each_mode_and_draws(window):
-    to_edit(window)
+    to_edit(window, loop_mode=False)
     for symbol, mode in ((key._1, SelectionMode.VERTEX), (key._2, SelectionMode.EDGE), (key._3, SelectionMode.FACE)):
         window.on_key_press(symbol, 0)
         assert window.state.selection.mode is mode and window.state.selection.is_empty()
@@ -87,9 +87,9 @@ def test_click_selects_in_each_mode_and_draws(window):
 
 
 def test_modifier_clicks_and_click_into_empty_space(window):
-    to_edit(window)
+    to_edit(window, loop_mode=False)
     window.on_key_press(key._2, 0)
-    a = find_hover(window)
+    a = find_hover(window, lambda t: True)  # the hovered edge itself (Slice 3b component hover)
     first = window.scene.hover.edge
     b = find_hover(window, lambda t: t.edge != first)
     click(window, *a)
@@ -110,7 +110,7 @@ def test_modifier_clicks_and_click_into_empty_space(window):
 
 
 def test_lmb_drag_moves_the_selection(window):
-    to_edit(window, h=6, n=3)
+    to_edit(window, h=6, n=3, loop_mode=False)
     window.on_key_press(key._2, 0)
     x, y = find_pick(window)
     click(window, x, y)
@@ -153,7 +153,7 @@ def test_drag_without_selection_is_bit_identical_to_the_press_drag(window):
 
 
 def test_press_in_empty_space_with_a_selection_drags_nothing(window):
-    to_edit(window)
+    to_edit(window, loop_mode=False)
     x, y = find_pick(window)
     click(window, x, y)
     before = set(window.state.selection.vertices)
@@ -163,7 +163,7 @@ def test_press_in_empty_space_with_a_selection_drags_nothing(window):
 
 
 def test_alt_click_toggles_and_alt_drag_orbits(window):
-    to_edit(window)
+    to_edit(window, loop_mode=False)
     x, y = find_pick(window)
     click(window, x, y, key.MOD_ALT)
     assert len(selected(window)) == 1

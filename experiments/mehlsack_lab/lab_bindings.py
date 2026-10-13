@@ -19,7 +19,9 @@ exclude-axis: Shift+X = YZ, Shift+Y = XZ, Shift+Z = XY), W/E/R = Move/Rotate/Sca
 is one, E26), Ctrl+Z / Ctrl+Y, and since Slice 3 the selection inputs: LMB click = replace,
 Shift / Ctrl / Alt + LMB click = add / remove / toggle (the click actions are the app's
 command names), `1`/`2`/`3` = Vertex/Edge/Face mode, Shift+L / Shift+R = Loop / Ring select
-(here: add, E27). Everything else is a lab-local engineering proposal (`PROVISIONAL`), not an
+(here: add, E27). Slice 3b adds Manu's lab inputs of 2026-10-13: `L` = Loop/Ring mode on/off
+(O13), Shift+`1`/`2`/`3` = convert the selection (O15), double click on an edge = its loop,
+Shift+double click = loop section / face loop (s2, O12). Everything else is a lab-local engineering proposal (`PROVISIONAL`), not an
 Artist decision. `Q` (AD-016) and `C` (AD-017) stay reserved and are never bound.
 
 pyglet-free: the window translates pyglet button/modifier/symbol values into the names
@@ -85,6 +87,13 @@ MODE_EDGE = "mode_edge"
 MODE_FACE = "mode_face"
 LOOP_SELECT = "loop_select"
 RING_SELECT = "ring_select"
+# Slice 3b
+LOOP_MODE = "loop_mode"
+CONVERT_VERTEX = "convert_vertex"
+CONVERT_EDGE = "convert_edge"
+CONVERT_FACE = "convert_face"
+DOUBLE_LOOP = "double_loop"
+DOUBLE_PART = "double_part"
 
 #: Keys reserved elsewhere (AD-016 Q, AD-017 C): the lab must never bind them. W/E/R are bound
 #: since Slice 2b with exactly their AD-016 meaning (hold = Move/Rotate/Scale).
@@ -103,7 +112,7 @@ class LabBinding:
     #: moves)
     kind: str
     #: drag/click/press: "LEFT"/"RIGHT"/"MIDDLE" ("PANEL" = LMB inside the curve panel);
-    #: double: "PANEL" (a double click on a curve knot);
+    #: double: "PANEL" (a double click on a curve knot) or "LEFT" (on the mesh, Slice 3b);
     #: key: pyglet key symbol name; wheel: "WHEEL"
     value: str
     #: exact modifier set required; `None` = modifiers ignored
@@ -125,7 +134,7 @@ class LabBinding:
         }
         base = names.get(self.value, self.value)
         if self.kind == "double":
-            base = "Doppelklick auf Kurvenpunkt"
+            base = "Doppelklick auf Kurvenpunkt" if self.value == "PANEL" else "Doppelklick"
         elif self.kind == "hold":
             base += " halten"
         elif self.kind == "drag":
@@ -150,7 +159,8 @@ _3 = "lab-lokal (Slice 3, Vorschlag, keine Artist-Entscheidung)"
 _HOLD = "Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL)"
 _SEL = "Artist Input Truth"
 _MODE = "Artist Input Truth; leert die Auswahl wie die App"
-_LOOPSEL = "Artist Input Truth; hinzufügen = Slice 3 E27 (PROVISIONAL)"
+_LOOPSEL = "Artist Input Truth; hinzufügen = Slice 3 E27, Manu O16"
+_3B = "Manu 2026-10-13 (Slice 3b), lab-lokal"
 _NONE = frozenset()
 
 LAB_OVERRIDES: tuple[LabBinding, ...] = (
@@ -175,10 +185,10 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
                "lab-lokal (Brief)"),
     # edit phase
     LabBinding("drag", "LEFT", _NONE, PHASE_EDIT, DRAG_TARGET,
-               "Auswahl ziehen (Move); ohne Auswahl Loop/Ring unter dem Cursor",
+               "Auswahl ziehen (Move); ohne Auswahl das Gehoverte (Element, im L-Modus Loop/Ring)",
                "lab-lokal; Ziel-Regel Slice 3 E26 (PROVISIONAL)"),
     LabBinding("click", "LEFT", _NONE, PHASE_EDIT, SELECT,
-               "Auswahl ersetzen (Klick ins Leere = Auswahl leeren)", _SEL),
+               "Auswahl ersetzen (L-Modus: ganzer Loop/Ring; ins Leere = leeren)", _SEL),
     LabBinding("click", "LEFT", frozenset({"shift"}), PHASE_EDIT, SELECT_ADD, "zur Auswahl hinzufügen", _SEL),
     LabBinding("click", "LEFT", frozenset({"ctrl"}), PHASE_EDIT, SELECT_REMOVE, "aus der Auswahl entfernen", _SEL),
     LabBinding("click", "LEFT", frozenset({"alt"}), PHASE_EDIT, SELECT_TOGGLE,
@@ -190,20 +200,33 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
     LabBinding("double", "PANEL", _NONE, PHASE_EDIT, CURVE_RESET,
                "Handles des Punkts wieder weich (automatisch)", _2A),
     LabBinding("hold", "W", _NONE, PHASE_EDIT, HOLD_MOVE,
-               "Move der Auswahl, sonst des gehoverten Loops/Rings (loslassen = fertig)", _HOLD),
+               "Move der Auswahl, sonst des Gehoverten (loslassen = fertig)", _HOLD),
     LabBinding("hold", "E", _NONE, PHASE_EDIT, HOLD_ROTATE,
-               "Rotate der Auswahl, sonst des Loops/Rings (waagrecht bewegen)", _HOLD),
+               "Rotate der Auswahl, sonst des Gehoverten (waagrecht bewegen)", _HOLD),
     LabBinding("hold", "R", _NONE, PHASE_EDIT, HOLD_SCALE,
-               "Scale der Auswahl, sonst des Loops/Rings (rechts/oben = größer)", _HOLD),
+               "Scale der Auswahl, sonst des Gehoverten (rechts/oben = größer)", _HOLD),
     LabBinding("key", "_1", _NONE, PHASE_EDIT, MODE_VERTEX, "Auswahlmodus Punkte", _MODE),
     LabBinding("key", "_2", _NONE, PHASE_EDIT, MODE_EDGE, "Auswahlmodus Kanten", _MODE),
     LabBinding("key", "_3", _NONE, PHASE_EDIT, MODE_FACE, "Auswahlmodus Flächen", _MODE),
+    LabBinding("key", "_1", frozenset({"shift"}), PHASE_EDIT, CONVERT_VERTEX,
+               "Auswahl in Punkte umrechnen (berührend)", _3B),
+    LabBinding("key", "_2", frozenset({"shift"}), PHASE_EDIT, CONVERT_EDGE,
+               "Auswahl in Kanten umrechnen (berührend)", _3B),
+    LabBinding("key", "_3", frozenset({"shift"}), PHASE_EDIT, CONVERT_FACE,
+               "Auswahl in Flächen umrechnen (berührend)", _3B),
+    LabBinding("key", "L", _NONE, PHASE_EDIT, LOOP_MODE,
+               "L-Modus an/aus: Hover und Klick auf ganze Loops/Ringe", _3B),
+    LabBinding("double", "LEFT", _NONE, PHASE_EDIT, DOUBLE_LOOP,
+               "Kantenmodus: ganzen Edge Loop auswählen (ersetzt)", _3B + "; ersetzen PROVISIONAL"),
+    LabBinding("double", "LEFT", frozenset({"shift"}), PHASE_EDIT, DOUBLE_PART,
+               "Kanten: Loop-Teilstück ab dem letzten Klick; Flächen: Face Loop zur Nachbarfläche (dazu)",
+               _3B),
     LabBinding("key", "L", frozenset({"shift"}), PHASE_EDIT, LOOP_SELECT,
                "Loop der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus)", _LOOPSEL),
     LabBinding("key", "R", frozenset({"shift"}), PHASE_EDIT, RING_SELECT,
                "Ring der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus)", _LOOPSEL),
     LabBinding("press", "RIGHT", None, PHASE_EDIT, CANCEL_PRESS, "Zug abbrechen (exakt zurück)", _LAB),
-    LabBinding("key", "TAB", _NONE, PHASE_EDIT, TOGGLE_MODE, "Loop ↔ Ring (bleibt)", _LAB),
+    LabBinding("key", "TAB", _NONE, PHASE_EDIT, TOGGLE_MODE, "Loop ↔ Ring im L-Modus (bleibt)", _LAB),
     LabBinding("key", "X", _NONE, PHASE_EDIT, AXIS_X, "Achse X an/aus (bleibt)", _TRUTH),
     LabBinding("key", "Y", _NONE, PHASE_EDIT, AXIS_Y, "Achse Y an/aus (bleibt)", _TRUTH),
     LabBinding("key", "Z", _NONE, PHASE_EDIT, AXIS_Z, "Achse Z an/aus (bleibt)", _TRUTH),
@@ -277,11 +300,10 @@ def resolve_hold_release(phase: str, symbol_name: str) -> Optional[str]:
 
 
 def resolve_double_click(phase: str, modifiers: frozenset, in_panel: bool) -> Optional[str]:
-    """Action for an LMB double click (only the curve panel knows one)."""
-    if not in_panel:
-        return None
+    """Action for an LMB double click: on a curve knot (panel) or on the mesh (Slice 3b)."""
+    value = "PANEL" if in_panel else "LEFT"
     for binding in LAB_OVERRIDES:
-        if (binding.kind == "double" and _phase_match(binding, phase)
+        if (binding.kind == "double" and binding.value == value and _phase_match(binding, phase)
                 and _modifiers_match(binding, modifiers)):
             return binding.action
     return None

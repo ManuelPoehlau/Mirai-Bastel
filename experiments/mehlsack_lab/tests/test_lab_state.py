@@ -291,7 +291,7 @@ def test_hud_and_status_text():
     assert "Breite 2 · Tiefe 1.75" in state.status_text() and "Höhe 2" in state.status_text()
     state.key("RETURN")
     text = state.status_text()
-    assert "Loop" in text and "15 %" in text and "geodesic" in text and "Nachführen an" in text
+    assert "Hover Punkte" in text and "15 %" in text and "geodesic" in text and "Nachführen an" in text
     assert "Vorschau aus" in text
     assert state.hud_lines(16.0)[0].style == "title"
 

@@ -15,6 +15,10 @@ production `SelectionOverlay` turns the lab's Core `Selection` into the `selecte
 faces, hover/selected lines, bands, points). The hover Loop/Ring line is the hover's even
 when the gesture target is the selection (`set_target(..., hover=)`).
 
+Component hover (Slice 3b): the lab sets `Selection.hovered` (the Core's UI-only hover field);
+a hovered edge is the hover line (its target's edge), a hovered vertex a hover point and a
+hovered face the production hover fill — the `hover` layers of the same production overlays.
+
 The viewport stays passive: the window pushes the target and its weights in
 (`set_target`), the overlays only turn them into positions at the mesh's current
 positions. Positions changed by a drag step are reported per vertex
@@ -142,13 +146,20 @@ class LabScene:
             [(position(a), position(b)) for a, b in (mesh.edge_vertices(e) for e in line.edges)],
             HOVER_LAYER,
         )
-        self.points.set_points(HOVER_LAYER, [] if target is None else [position(v) for v in sorted(target.seeds)])
-        key = (self.version, self.selection_version)
+        overlay = self.selection_overlay
+        self.points.set_points(
+            HOVER_LAYER,
+            ([] if target is None else [position(v) for v in sorted(target.seeds)])
+            + overlay.point_layers(mesh)[HOVER_LAYER],
+        )
+        hovered = self.selection.hovered
+        key = (self.version, self.selection_version, type(hovered), hovered)
         if key != self._selection_key:
-            overlay = self.selection_overlay
             self.points.set_points(SELECTED_LAYER, overlay.point_layers(mesh)[SELECTED_LAYER])
             self.lines.set_segments(overlay.line_layers(mesh)[SELECTED_LAYER], SELECTED_LAYER)
-            self.faces.set_triangles(SELECTED_LAYER, overlay.face_layers(mesh)[SELECTED_LAYER])
+            faces = overlay.face_layers(mesh)
+            self.faces.set_triangles(SELECTED_LAYER, faces[SELECTED_LAYER])
+            self.faces.set_triangles(HOVER_LAYER, faces[HOVER_LAYER])
             self._selection_key = key
         self.bands.sync(mesh)
         self.preview.sync(mesh, self.version)

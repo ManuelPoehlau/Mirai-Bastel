@@ -34,7 +34,7 @@ def test_panel_takes_lmb_and_never_reaches_the_mesh():
     assert lb.resolve_drag(EDIT, {"LEFT"}, {"shift"}, in_panel=True) is None
     assert lb.resolve_drag(CREATE, {"LEFT"}, NONE, in_panel=True) is None
     assert lb.resolve_double_click(EDIT, NONE, in_panel=True) == lb.CURVE_RESET
-    assert lb.resolve_double_click(EDIT, NONE, in_panel=False) is None
+    assert lb.resolve_double_click(EDIT, NONE, in_panel=False) == lb.DOUBLE_LOOP  # Slice 3b: on the mesh
     assert lb.resolve_double_click(EDIT, {"alt"}, in_panel=True) is None
     assert lb.resolve_double_click(CREATE, NONE, in_panel=True) is None
     assert lb.resolve_press_during_drag(EDIT, "RIGHT") == lb.CANCEL_PRESS

@@ -21,6 +21,8 @@ from typing import Optional
 
 from mirai.interaction.pointer import CLICK_THRESHOLD_PX
 
+from .curve_panel import DOUBLE_CLICK_PX, DOUBLE_CLICK_S
+
 
 class PointerPress:
     def __init__(self, click_action: Optional[str], drag_action: Optional[str],
@@ -52,3 +54,27 @@ class PointerPress:
         if self.dragging or self.click_action is None or self.moved >= self.threshold:
             return None
         return self.click_action
+
+
+class ClickSeries:
+    """Slice 3b: recognises a double click on the mesh — two clicks with the same command on the
+    same handle within the lab's double-click window (`curve_panel.DOUBLE_CLICK_S` /
+    `DOUBLE_CLICK_PX`, the one the curve panel uses; no second number). Time is passed in."""
+
+    def __init__(self) -> None:
+        self._last: Optional[tuple] = None
+
+    def click(self, command: str, hit, x: float, y: float, now: float) -> bool:
+        """Registers a click; True if it completes a double click (then the series restarts)."""
+        last = self._last
+        # Handles are int subclasses (VertexId(3) == EdgeId(3)): compare the type too.
+        key = (command, type(hit), hit)
+        if (hit is not None and last is not None and last[0] == key and now - last[1] <= DOUBLE_CLICK_S
+                and (x - last[2]) ** 2 + (y - last[3]) ** 2 <= DOUBLE_CLICK_PX ** 2):
+            self._last = None
+            return True
+        self._last = (key, now, x, y) if hit is not None else None
+        return False
+
+    def reset(self) -> None:
+        self._last = None

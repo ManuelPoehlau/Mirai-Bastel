@@ -1,4 +1,4 @@
-# Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b + 3: Move, Rotate, Scale, Auswahl)
+# Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b + 3 + 3b: Move, Rotate, Scale, Auswahl)
 
 **Status: Verdikte von Manu für Slice 1, 2a, 2b und 3 liegen vor (alle 2026-10-13)** — siehe die
 Verdikt-Tabellen in [Slice 1](#praxistest-für-manu-ca-10-minuten), [Slice 2a](#slice-2a-2026-10-13),
@@ -7,6 +7,8 @@ die Frage „vorher erkennbar, was mitgeht — jetzt besser?“ (unbeantwortet).
 Offen aus 3 (neue Wünsche, nicht eingeplant): (s2) ITERATE — Edge Loop per Doppelklick, Teilstück per Shift+Doppelklick;
 Face Loop per Shift+Doppelklick (O12); Komponenten-Hover als Standard, Loop/Ring-Hover nur in einem eigenen Modus
 (`L` an/aus, O13); Auswahl umrechnen per Shift+`1`/`2`/`3` (O15).
+**Slice 3b setzt diese Wünsche um — gebaut und automatisch getestet, nicht Artist-validiert**, Praxistest in
+[Slice 3b](#slice-3b-2026-10-13-hover-modi-doppelklick-umrechnen).
 Discovery (Typ B): Das Lab bereitet ein Artist-Verdikt vor, es entscheidet nichts und befördert nichts. KEEP heißt
 hier nicht Promotion — nichts verlässt `experiments/`.
 
@@ -35,7 +37,9 @@ Beim Start stehen die Tastentabelle, `GL_VERSION` und `GL_RENDERER` in der Konso
 1. **Box bauen** (Start): eine Box, schattiert mit Drahtgitter. Das Mausrad baut sie (Höhe, Breite, Tiefe, Loops,
    Unterteilung rundum); die Statuszeile zeigt Höhe, Breite, Tiefe, `h`, `n` und V/E/F. Die Kamera zoomt nur heraus, wenn die Box aus dem Bild
    wächst. `Enter` übernimmt die Box — auch ohne Unterteilung (dann ist es ein Würfel).
-2. **Bearbeiten:** Über eine Kante fahren → ihr **Loop** (oder mit `Tab` ihr **Ring**) leuchtet auf (blasse Hover-Linie),
+2. **Bearbeiten:** Seit Slice 3b leuchtet standardmäßig das **Element** unter dem Cursor (Punkt/Kante/Fläche, je nach
+   `1`/`2`/`3`); der Loop/Ring-Weg unten gilt im **`L`-Modus** (`L` an/aus).
+   Im `L`-Modus: Über eine Kante fahren → ihr **Loop** (oder mit `Tab` ihr **Ring**) leuchtet auf (blasse Hover-Linie),
    seine Vertices sind blasse gelbe Punkte (`w = 1`), die farbigen Punkte zeigen, **was mitgehen wird**:
    warm (rot/orange/rosa) = geht mit, **blau = geht entgegen**. Mit LMB ziehen = verschieben in der Bildebene.
    Eine Kante am oberen oder unteren Rand gibt den ganzen Rand-Loop rund um die Box (Slice 2a).
@@ -50,8 +54,8 @@ Beim Start stehen die Tastentabelle, `GL_VERSION` und `GL_RENDERER` in der Konso
 5. **Auswahl** (Slice 3): `1`/`2`/`3` = Punkte/Kanten/Flächen, Klick wählt (Shift/Ctrl/Alt = hinzu/weg/umschalten),
    Shift+L / Shift+R nehmen Loop/Ring der gehoverten Kante dazu. Gewähltes ist kräftig gelb (Production-Stil: Punkte,
    Kanten, gefüllte Flächen). **Mit Auswahl wirkt jede Geste auf die Auswahl** (LMB ziehen über dem Mesh, `W`/`E`/`R`
-   halten), die Einfluss-Punkte und die Vorschau gehen von ihr aus; die blasse Hover-Linie zeigt weiter den Loop/Ring
-   unter dem Cursor. Klick ins Leere leert die Auswahl — dann wieder direkt hovern und ziehen.
+   halten), die Einfluss-Punkte und die Vorschau gehen von ihr aus; der blasse Hover zeigt weiter, was unter dem Cursor
+   liegt (Element, im `L`-Modus Loop/Ring). Klick ins Leere leert die Auswahl — dann wieder direkt hovern und ziehen.
 
 ## Steuerung
 
@@ -74,24 +78,30 @@ gibt, sonst auf den gehoverten Loop/Ring (E26); LMB, `1`/`2`/`3`, Shift+L/Shift+
 | Shift+Mausrad | Box | horizontale Loops ±1 | lab-lokal (Brief) |
 | Ctrl+Mausrad | Box | Unterteilung rundum ±1 | lab-lokal (Brief) |
 | Enter | Box | Box übernehmen → Bearbeiten | lab-lokal (Brief) |
-| LMB ziehen | Bearbeiten | Auswahl ziehen (Move); ohne Auswahl Loop/Ring unter dem Cursor | lab-lokal; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
-| LMB Klick | Bearbeiten | Auswahl ersetzen (Klick ins Leere = Auswahl leeren) | Artist Input Truth |
+| LMB ziehen | Bearbeiten | Auswahl ziehen (Move); ohne Auswahl das Gehoverte (Element, im L-Modus Loop/Ring) | lab-lokal; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| LMB Klick | Bearbeiten | Auswahl ersetzen (L-Modus: ganzer Loop/Ring; ins Leere = leeren) | Artist Input Truth |
 | Shift+LMB Klick | Bearbeiten | zur Auswahl hinzufügen | Artist Input Truth |
 | Ctrl+LMB Klick | Bearbeiten | aus der Auswahl entfernen | Artist Input Truth |
 | Alt+LMB Klick | Bearbeiten | Auswahl umschalten (Alt+LMB ziehen = Orbit) | Artist Input Truth |
 | LMB im Kurvenfeld ziehen | Bearbeiten | Kurvenpunkt oder Handle ziehen (Handles bleiben in Linie) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | Alt+LMB im Kurvenfeld ziehen | Bearbeiten | Handle allein ziehen = Knick (Punkt wie ohne Alt) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | Doppelklick auf Kurvenpunkt | Bearbeiten | Handles des Punkts wieder weich (automatisch) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
-| W halten | Bearbeiten | Move der Auswahl, sonst des gehoverten Loops/Rings (loslassen = fertig) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
-| E halten | Bearbeiten | Rotate der Auswahl, sonst des Loops/Rings (waagrecht bewegen) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
-| R halten | Bearbeiten | Scale der Auswahl, sonst des Loops/Rings (rechts/oben = größer) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| W halten | Bearbeiten | Move der Auswahl, sonst des Gehoverten (loslassen = fertig) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| E halten | Bearbeiten | Rotate der Auswahl, sonst des Gehoverten (waagrecht bewegen) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| R halten | Bearbeiten | Scale der Auswahl, sonst des Gehoverten (rechts/oben = größer) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
 | 1 | Bearbeiten | Auswahlmodus Punkte | Artist Input Truth; leert die Auswahl wie die App |
 | 2 | Bearbeiten | Auswahlmodus Kanten | Artist Input Truth; leert die Auswahl wie die App |
 | 3 | Bearbeiten | Auswahlmodus Flächen | Artist Input Truth; leert die Auswahl wie die App |
-| Shift+L | Bearbeiten | Loop der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus) | Artist Input Truth; hinzufügen = Slice 3 E27 (PROVISIONAL) |
-| Shift+R | Bearbeiten | Ring der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus) | Artist Input Truth; hinzufügen = Slice 3 E27 (PROVISIONAL) |
+| Shift+1 | Bearbeiten | Auswahl in Punkte umrechnen (berührend) | Manu 2026-10-13 (Slice 3b), lab-lokal |
+| Shift+2 | Bearbeiten | Auswahl in Kanten umrechnen (berührend) | Manu 2026-10-13 (Slice 3b), lab-lokal |
+| Shift+3 | Bearbeiten | Auswahl in Flächen umrechnen (berührend) | Manu 2026-10-13 (Slice 3b), lab-lokal |
+| L | Bearbeiten | L-Modus an/aus: Hover und Klick auf ganze Loops/Ringe | Manu 2026-10-13 (Slice 3b), lab-lokal |
+| Doppelklick | Bearbeiten | Kantenmodus: ganzen Edge Loop auswählen (ersetzt) | Manu 2026-10-13 (Slice 3b), lab-lokal; ersetzen PROVISIONAL |
+| Shift+Doppelklick | Bearbeiten | Kanten: Loop-Teilstück ab dem letzten Klick; Flächen: Face Loop zur Nachbarfläche (dazu) | Manu 2026-10-13 (Slice 3b), lab-lokal |
+| Shift+L | Bearbeiten | Loop der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus) | Artist Input Truth; hinzufügen = Slice 3 E27, Manu O16 |
+| Shift+R | Bearbeiten | Ring der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus) | Artist Input Truth; hinzufügen = Slice 3 E27, Manu O16 |
 | RMB (während Zug) | Bearbeiten | Zug abbrechen (exakt zurück) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
-| Tab | Bearbeiten | Loop ↔ Ring (bleibt) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
+| Tab | Bearbeiten | Loop ↔ Ring im L-Modus (bleibt) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | X | Bearbeiten | Achse X an/aus (bleibt) | Artist Input Truth |
 | Y | Bearbeiten | Achse Y an/aus (bleibt) | Artist Input Truth |
 | Z | Bearbeiten | Achse Z an/aus (bleibt) | Artist Input Truth |
@@ -719,6 +729,92 @@ Die Kurven-Presets liegen jetzt auf anderen Tasten (siehe Tastenhilfe `H`). Alle
 
 Hinweis: Die Presets sind `K` = Smooth und `Shift+K` = Mexican Hat (mit Senke).
 
+## Slice 3b (2026-10-13, Hover-Modi, Doppelklick, Umrechnen)
+
+**Nicht Artist-validiert.** Setzt Manus Antworten zu Slice 3 um (2026-10-13): O13 (Komponenten-Hover als Standard,
+Loop/Ring nur im `L`-Modus), (s2) ITERATE (Doppelklick = Edge Loop, Shift+Doppelklick = Teilstück), O12 (Face Loop
+per Shift+Doppelklick), O15 (umrechnen per Shift+`1`/`2`/`3`, „berührend“), O16 (Shift+L/R fügen hinzu — so gebaut).
+Manus Festlegungen vom 2026-10-13 dazu: ohne Auswahl wirken Ziehen und `W`/`E`/`R` außerhalb des `L`-Modus auf das
+gehoverte Element; im `L`-Modus nimmt ein Klick den ganzen Loop/Ring (Shift/Ctrl/Alt wie sonst), `Tab` wechselt
+Loop/Ring, Ziehen ohne Auswahl wirkt auf den gehoverten Loop/Ring wie bisher; Face Loop = über gegenüberliegende Kanten
+in Richtung der Nachbarfläche. Nichts wird befördert.
+
+### Was gebaut ist
+
+- **Hover = Element unter dem Cursor** (Standard): im Punkt-/Kanten-/Flächenmodus der Punkt / die Kante / die Fläche
+  (Production-Hover-Stil: blasser Punkt, blasse Linie, blasse Flächenfüllung), mit Einfluss-Punkten und Vorschau. Ohne
+  Auswahl wirken LMB-Ziehen und `W`/`E`/`R` auf dessen Vertices (`w = 1`).
+- **`L`-Modus** (`L` an, `L` aus, bleibt): Hover und Klick nehmen ganze Loops/Ringe der Kante unter dem Cursor (`Tab` =
+  Loop ↔ Ring); Kantenmodus: die Kanten, Punktmodus: ihre Vertices. Das ist der direkte Weg aus Slice 1–2b.
+- **Doppelklick** auf eine Kante (Kantenmodus) = ganzer Edge Loop (ersetzt die Auswahl). **Shift+Doppelklick** auf eine
+  Kante desselben Loops = das Teilstück ab der zuvor geklickten Kante dazu. **Shift+Doppelklick** im Flächenmodus auf
+  eine Nachbarfläche der zuvor geklickten Fläche = der Face Loop in diese Richtung dazu.
+- **Shift+`1`/`2`/`3`** rechnen die Auswahl in Punkte / Kanten / Flächen um (alles, was sie berührt); `1`/`2`/`3` ohne
+  Shift leeren weiter.
+- Shift+L/R gehen auch über einem Punkt-/Flächen-Hover (die Kante unter dem Cursor wird beim Tastendruck einmal gepickt).
+
+### Engineering-Annahmen, so gebaut (alle `PROVISIONAL`)
+
+- **E32 Komponenten-Hover:** `pick_component` im aktiven Modus (gleicher `PickCache`, Occlusion an; Flächen: vorderste
+  Fläche); das Lab setzt `Selection.hovered` (das Core-Feld für reinen UI-Hover) und zeichnet mit den `hover`-Layern der
+  Production-Overlays. Ziel = `component_target` (Seeds = Vertices des Elements, Anker `min(seeds)` wie `MoveTool`).
+- **E33 `L`-Modus:** Start aus, bleibt über eine neue Box; Hover/Klick wie Slice 1–2b (`pick_nearest_edge`, Loop/Ring,
+  Rand-Loop E15). Klick-Semantik auf der Menge: ersetzen / dazu / weg; **Alt (umschalten): alles schon gewählt → weg,
+  sonst alles dazu**. Flächenmodus im `L`-Modus: abgelehnt mit Statuszeile (O17). Kein Doppelklick im `L`-Modus.
+- **E34 Doppelklick:** zwei Klicks mit demselben Command auf demselben Element innerhalb des Doppelklick-Fensters des
+  Kurvenfelds (`curve_panel.DOUBLE_CLICK_S` 0,4 s / `DOUBLE_CLICK_PX` 6 px, keine zweite Zahl). Der erste Klick wirkt
+  normal, der zweite ist die Doppelklick-Aktion. Wo sie nichts bedeutet (Punktmodus, Flächenmodus ohne Shift,
+  Ctrl/Alt), ist der zweite Klick ein gewöhnlicher Klick. Doppelklick ohne Shift **ersetzt** die Auswahl durch den Loop
+  (der erste Klick hat sie schon ersetzt).
+- **E35 Teilstück:** von der Kante des Klicks **vor** dem Doppelklick bis zur doppelt geklickten, beide eingeschlossen;
+  auf einem geschlossenen Loop der kürzere Weg (gleich lang: in Traversierrichtung). Liegt die Kante nicht im selben
+  Loop: nur die geklickten Kanten, Statuszeile.
+- **E36 Face Loop:** die Flächen, durch die der **Ring der gemeinsamen Kante** läuft (`loop_ring.edge_ring`, dessen
+  Regeln: nur Quads, Stopp an einer Nicht-Quad-Fläche) — der ganze Loop in beide Richtungen, keine neue Traversierregel.
+  Keine Nachbarfläche: nur die geklickten Flächen, Statuszeile.
+- **E37 Umrechnen (berührend):** Punkte → Kanten/Flächen mit mindestens einem gewählten Punkt; Kanten → ihre Punkte /
+  die angrenzenden Flächen; Flächen → ihre Punkte / ihre Kanten. Gleicher Modus: nichts. Leere Auswahl: nur Moduswechsel.
+- `1`/`2`/`3`, Shift+`1`/`2`/`3` und `L` setzen den Hover und den Klick-Anker zurück; alle Auswahl-Eingaben werden
+  ignoriert, solange eine Geste scharf ist oder läuft (E31).
+
+### Beobachtungen beim Bauen (keine Bewertung)
+
+- **W1** Die Slice-1–2b-Fenstertests laufen jetzt im `L`-Modus (ihr Hilfsschritt drückt `L`); das direkte Loop-Ziehen
+  (KEEP (b)) ist eine Taste entfernt. Bitgleichheit des Ziehens ist dort weiter getestet.
+- **W2** Hover-Kosten: Punkt- und Flächen-Pick statt Kanten-Pick pro Mausbewegung — nicht neu gemessen (O2).
+- **W3** Shift+`1`/`2`/`3`: pyglet meldet im Container die Taste `1` mit Shift; ob das auf dem Referenz-PC (deutsches
+  Layout, Shift+1 = „!“) genauso ankommt, ist ungeprüft.
+- **W4** Zwischen den zwei Klicks eines Doppelklicks ist kurz nur die geklickte Kante gewählt (erster Klick); bei
+  Shift+Doppelklick bleibt die geklickte Kante/Fläche auch dann gewählt, wenn kein Teilstück/Face Loop entsteht.
+- **W5** Im Screenshot (Xvfb): gehoverte Fläche blassgelb, gewählte Fläche kräftig gelb — gut unterscheidbar; ein
+  gehoverter Punkt ist ein blasser großer Punkt zwischen den Einfluss-Punkten.
+
+### Offene Fragen (nicht im Code entschieden)
+
+- **O17** `L`-Modus im Flächenmodus: soll ein Klick dort den Face Loop quer zur gehoverten Kante nehmen (die Flächen
+  ihres Rings)?
+- **O18** Doppelklick im Punktmodus (Punkte eines Loops)? Teilstück auch für Face Loops?
+
+### Praxistest für Manu (ca. 10 Minuten)
+
+Start: `python experiments/mehlsack_lab/run.py`, Box mit einigen Loops bauen, `Enter`.
+
+1. **Hover:** Im Punktmodus (`1`) über die Box fahren — der Punkt unter dem Cursor leuchtet, die Einfluss-Punkte gehen von ihm aus. Ziehen oder `W`/`E`/`R` halten bewegt ihn. Dasselbe mit `2` (Kante) und `3` (Fläche).
+2. **`L`-Modus:** `L` drücken — jetzt leuchtet wieder der ganze Loop (`Tab` = Ring). Ziehen wie in Slice 1–2b; ein Klick wählt den ganzen Loop (Shift dazu, Ctrl weg). `L` wieder aus.
+3. **Edge Loop per Doppelklick:** Kantenmodus (`2`), Doppelklick auf eine Kante = ganzer Loop. Dann eine Kante anklicken und mit Shift auf eine andere Kante desselben Loops doppelklicken = nur das Teilstück dazwischen.
+4. **Face Loop:** Flächenmodus (`3`), eine Fläche anklicken, dann mit Shift auf die Nachbarfläche doppelklicken — der Face Loop in diese Richtung kommt dazu.
+5. **Umrechnen:** Ein paar Punkte wählen, Shift+`3` = alle Flächen daran; Shift+`1` = zurück zu deren Punkten.
+
+**Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
+
+| Punkt | Verdikt | Notiz |
+|---|---|---|
+| (t1) Hover zeigt einzelne Elemente; ohne Auswahl wirken die Gesten auf das gehoverte Element | | |
+| (t2) `L`-Modus für Loops/Ringe (Hover, Klick, Tab) | | |
+| (t3) Doppelklick = Edge Loop, Shift+Doppelklick = Teilstück | | |
+| (t4) Face Loop per Shift+Doppelklick | | |
+| (t5) Umrechnen per Shift+`1`/`2`/`3` | | |
+
 ## Tests
 
 ```
@@ -749,3 +845,10 @@ Auswahl-Seeds nach Auswahlwechsel, Undo/Redo behalten / `B` leert, Eingaben igno
 offenen Drucks, HUD-Zeile; Fenster: Klick wählt und zeichnet je Modus, Modifier-Klicks, Ziehen bewegt die Auswahl,
 **Ziehen ohne Auswahl bitgleich zum Slice-1–2b-Pfad** (mit Achsen-Sperre), Druck ins Leere zieht nichts, Alt-Klick /
 Alt-Orbit, `Esc` verwirft einen offenen Druck, Shift+L/R im Fenster.
+Slice 3b (`test_selection_3b.py`, `test_selection_3b_gl.py`): Komponenten-Ziel je Modus, Gesten ohne Auswahl auf dem
+gehoverten Element (= gleiche Seeds als Ziel), `L` an/aus (ignoriert während einer Geste), `L`-Klicks auf ganze
+Loops/Ringe (inkl. Umschalten, Flächenmodus abgelehnt), Doppelklick = Loop (ersetzt) und wo er nichts bedeutet ein
+gewöhnlicher Klick, Teilstück (offen/geschlossen kürzerer Weg, anderer Loop), Face Loop (Band rundum, Richtung,
+keine Nachbarfläche), Umrechnen berührend in alle Richtungen, Doppelklick-Erkennung, Tasten nicht in der Artist Truth;
+Fenster: Komponenten-Hover (Punkt, Flächenfüllung) und `L`, Ziehen der gehoverten Kante, Doppelklick/Shift+Doppelklick,
+`L`-Klick, Shift+L über einem Punkt-Hover. Die Slice-1–2b-Fenstertests laufen im `L`-Modus.

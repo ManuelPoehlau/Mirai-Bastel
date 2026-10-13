@@ -74,11 +74,15 @@ def wheel(window, steps, modifier_key=None):
         window.on_key_release(modifier_key, 0)
 
 
-def to_edit(window, h=6, n=3):
+def to_edit(window, h=6, n=3, loop_mode=True):
+    """Builds the box and enters the edit phase; `loop_mode` (default for the Slice 1–2b tests:
+    the Loop/Ring hover they exercise) switches the Slice 3b `L` mode on."""
     wheel(window, h - window.state.box.h, key.LSHIFT)
     wheel(window, n - window.state.box.n, key.LCTRL)
     window.on_key_press(key.RETURN, 0)
     assert window.state.phase == lb.PHASE_EDIT
+    if loop_mode != window.state.loop_mode:
+        window.on_key_press(key.L, 0)
     window.on_draw()
 
 

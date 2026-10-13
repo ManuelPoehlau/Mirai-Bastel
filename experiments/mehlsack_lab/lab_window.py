@@ -21,6 +21,14 @@ events seen so far are replayed one by one. The drag's target is fixed at the pr
 (hovered edge or a face under the cursor), else the hover target (E26). While a press is
 undecided, Esc / RMB / focus loss drop it (no click, no drag).
 
+Hover (Slice 3b, Manu O13): by default `pick_component` in the active selection mode (the
+component under the cursor, production hover look); in the `L` mode `pick_nearest_edge` and
+its Loop/Ring as before. A click in the `L` mode selects the Loop/Ring of the edge under the
+release; outside it, two clicks on the same handle within the lab's double-click window make
+a double click (`lab_pointer.ClickSeries`), whose second click goes to
+`LabState.double_click`. For Shift+L/R over a vertex/face hover the edge under the cursor is
+picked once, on the key press.
+
 Drag: LMB on a hovered target begins the signed soft Move; each motion event turns
 `(dx, dy)` into a world delta on the image plane through the anchor seed with
 `OrbitCamera.screen_delta_to_world` (as `MoveTool._on_update`), the state applies the
@@ -63,7 +71,8 @@ from . import lab_bindings as lb
 from . import lab_state as ls
 from .box import build_box_mesh
 from .curve_panel import KNOT, CurvePanel, DoubleClick, Element, element_position, move_element
-from .lab_pointer import PointerPress
+from .lab_pointer import ClickSeries, PointerPress
+from .lab_selection import component_target
 from .lab_scene import LabScene, gl_info_strings
 from .signed_curve import DEFAULT_KNOTS_X, FIRST, LAST
 
@@ -141,10 +150,15 @@ class MehlsackLabWindow(pyglet.window.Window):
         self._held: dict[int, str] = {}
         self._cursor: Optional[tuple[float, float]] = None
         self._pick_cache = PickCache()
-        self._hover_edge = None
+        #: What the hover pick hit (an edge in the L mode, else a handle of the active mode) and
+        #: the (L mode, selection mode) it was picked for.
+        self._hover_hit = None
+        self._hover_key = None
+        self._clicks = ClickSeries()
         self._drag_mode: Optional[str] = None
         self._press: Optional[PointerPress] = None
         self._press_target = None
+        self._press_mods = frozenset()
         self._panel_element: Optional[Element] = None
         #: Panel drag: the curve at the press, the element's grab offset, Alt held.
         self._panel_start = None
@@ -191,14 +205,22 @@ class MehlsackLabWindow(pyglet.window.Window):
         if not self.editing or self.state.dragging or self.state.armed:
             return
         started = time.perf_counter()
-        session = self.state.session
-        edge = pick_nearest_edge(
-            self.scene.camera, session.mesh, x, y, self.width, self.height, PICK_RADIUS_PX,
-            cache=self._pick_cache, occlusion=True,
-        )
-        if edge == self._hover_edge and not force:
+        state = self.state
+        session = state.session
+        if state.loop_mode:
+            hit = pick_nearest_edge(
+                self.scene.camera, session.mesh, x, y, self.width, self.height, PICK_RADIUS_PX,
+                cache=self._pick_cache, occlusion=True,
+            )
+        else:
+            hit = pick_component(
+                self.scene.camera, session.mesh, state.selection.mode, x, y, self.width, self.height,
+                cache=self._pick_cache, occlusion=True,
+            )
+        key = (state.loop_mode, state.selection.mode, type(hit), hit)
+        if key == self._hover_key and not force:
             return
-        self._hover_edge = edge
+        self._hover_hit, self._hover_key = hit, key
         self.refresh_target()
         self.state.hover_ms = (time.perf_counter() - started) * 1000.0
         self.state.revision += 1
@@ -213,8 +235,17 @@ class MehlsackLabWindow(pyglet.window.Window):
             self.state.hover_target = None
             self.scene.set_target(None, {})
             return
-        hover = None if self._hover_edge is None else session.target(self._hover_edge, self.state.mode)
-        self.state.hover_target = hover
+        state = self.state
+        hit = self._hover_hit
+        if self._hover_key is None or self._hover_key[:2] != (state.loop_mode, state.selection.mode):
+            hit = None  # picked for another mode: wait for the re-pick
+        if state.loop_mode:
+            hover = None if hit is None else session.target(hit, state.mode)
+            state.selection.hovered = None
+        else:
+            hover = component_target(session.mesh, state.selection.mode, hit)
+            state.selection.hovered = hit if hover is not None else None
+        state.hover_target = hover
         target = self.state.active_target
         self.scene.set_target(target, self.state.preview_weights(target), hover=hover)
 
@@ -240,7 +271,8 @@ class MehlsackLabWindow(pyglet.window.Window):
         if ls.SELECTION_CHANGED in out:
             self.scene.selection_changed()
         if ls.PHASE_CHANGED in out:
-            self._hover_edge = None
+            self._hover_hit = self._hover_key = None
+            self._clicks.reset()
             self._pick_cache = PickCache()
             if self.editing:
                 self.scene.show_mesh(state.session.mesh, frame="none")
@@ -323,6 +355,7 @@ class MehlsackLabWindow(pyglet.window.Window):
         click = None if in_panel or len(name) != 1 else lb.resolve_click(state.phase, next(iter(name)), mods)
         if click is not None:
             self._press = PointerPress(click, action)
+            self._press_mods = mods
             over_mesh = state.selection_target is not None and self._over_mesh(x, y)
             self._press_target = state.gesture_target(over_mesh) if action == lb.DRAG_TARGET else None
             self._drag_mode = DRAG_PENDING
@@ -344,8 +377,8 @@ class MehlsackLabWindow(pyglet.window.Window):
                 self._panel_offset = (ex - cx, ey - cy)
 
     def _over_mesh(self, x: float, y: float) -> bool:
-        """E26 "pressed over the mesh": a hovered edge or a face under the cursor."""
-        if self._hover_edge is not None:
+        """E26 "pressed over the mesh": a hovered component/edge or a face under the cursor."""
+        if self._hover_hit is not None:
             return True
         return pick_face(self.scene.camera, self.state.session.mesh, x, y, self.width, self.height,
                          cache=self._pick_cache) is not None
@@ -385,14 +418,27 @@ class MehlsackLabWindow(pyglet.window.Window):
             self.scene.camera.orbit(-dx * ORBIT_RADIANS_PER_PIXEL, -dy * ORBIT_RADIANS_PER_PIXEL)
             self._camera_changed()
 
-    def select_at(self, command: str, x: float, y: float) -> None:
-        """A selection click at (x, y): the handle under the cursor in the active mode (E23)."""
+    def select_at(self, command: str, x: float, y: float, modifiers=frozenset()) -> None:
+        """A selection click at (x, y): the handle under the cursor in the active mode (E23), in
+        the L mode the Loop/Ring of the edge under it (Slice 3b); a double click goes to
+        `LabState.double_click`."""
         state = self.state
+        mesh = state.session.mesh
+        if state.loop_mode:
+            edge = pick_nearest_edge(self.scene.camera, mesh, x, y, self.width, self.height, PICK_RADIUS_PX,
+                                     cache=self._pick_cache, occlusion=True)
+            self._clicks.reset()
+            self.handle(state.click_loop(command, None if edge is None else state.session.target(edge, state.mode)))
+            return
         hit = pick_component(
-            self.scene.camera, state.session.mesh, state.selection.mode, x, y, self.width, self.height,
+            self.scene.camera, mesh, state.selection.mode, x, y, self.width, self.height,
             cache=self._pick_cache, occlusion=True,
         )
-        self.handle(state.click(command, hit))
+        if self._clicks.click(command, hit, x, y, time.perf_counter()):
+            action = lb.resolve_double_click(state.phase, modifiers, in_panel=False)
+            self.handle(state.double_click(action, command, hit))
+        else:
+            self.handle(state.click(command, hit))
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         self._cursor = (x, y)
@@ -434,7 +480,7 @@ class MehlsackLabWindow(pyglet.window.Window):
             self.state.pointer_pending = False
             click = press.release()
             if click is not None and self.state.session is not None:
-                self.select_at(click, x, y)
+                self.select_at(click, x, y, self._press_mods)
         elif mode == DRAG_MESH:
             self.handle(self.state.end_drag())
         elif mode == DRAG_CANCELLED:
@@ -477,7 +523,18 @@ class MehlsackLabWindow(pyglet.window.Window):
             self._drop_press()  # Esc drops an undecided press (it would quit otherwise)
             self.repick()
             return pyglet.event.EVENT_HANDLED
-        self.handle(self.state.key(_key.symbol_string(symbol), modifier_names(modifiers)))
+        name, mods = _key.symbol_string(symbol), modifier_names(modifiers)
+        state = self.state
+        if (self.editing and self._cursor is not None
+                and lb.resolve_key(state.phase, name, mods) in (lb.LOOP_SELECT, lb.RING_SELECT)
+                and (state.hover_target is None or state.hover_target.edge is None)):
+            # Vertex/Face hover: Shift+L/R need the edge under the cursor (picked once, here).
+            state.edge_under_cursor = pick_nearest_edge(
+                self.scene.camera, state.session.mesh, *self._cursor, self.width, self.height, PICK_RADIUS_PX,
+                cache=self._pick_cache, occlusion=True,
+            )
+        self.handle(state.key(name, mods))
+        state.edge_under_cursor = None
         # Always handled: pyglet's default handler would close the window on Esc, but Esc
         # cancels a running drag first.
         return pyglet.event.EVENT_HANDLED

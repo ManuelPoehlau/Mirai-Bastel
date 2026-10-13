@@ -33,6 +33,13 @@ never ends Nachführen (E30: it changes no geometry); Undo/Redo keep the selecti
 clears it; while a gesture is armed, running or an LMB press is undecided (`busy`), selection
 input is ignored (E31).
 
+Slice 3b (Manu 2026-10-13): the hover is the component under the cursor (`hover_target` is
+then a `component_target`); `L` switches the Loop/Ring mode on/off, where hover and clicks
+take whole Loops/Rings (`click_loop`). A double click on the mesh (`double_click`, detected by
+the window) selects an edge's loop, Shift+double click a loop section from the previous
+click's edge or the face loop towards the neighbouring face (`_prev_anchor` = the handle of
+the click before the double click). Shift+`1`/`2`/`3` convert the selection (touching).
+
 Phases: `create` (wheel builds the box, `Enter` commits) → `edit` (Loop/Ring drag).
 Settings are sticky and survive gestures, Undo and a new box: Loop/Ring mode, axis,
 radius step, metric, curve, bands, preview, Nachführen. Defaults: geodesic, Smooth, 15 %
@@ -59,7 +66,17 @@ from mirai.soft_selection.settings import (
 from . import lab_bindings as lb
 from .box import BoxParams, box_rims, build_box_mesh
 from .edit_session import KIND_LABELS, MOVE, ROTATE, SCALE, EditSession
-from .lab_selection import MODE_NAMES, add_loop_ring, apply_click, selection_target
+from .lab_selection import (
+    MODE_NAMES,
+    add_loop_ring,
+    apply_click,
+    apply_click_elements,
+    convert_selection,
+    face_loop,
+    loop_elements,
+    loop_segment,
+    selection_target,
+)
 from .signed_curve import DEFAULT_CURVE, PRESET_HAT, PRESET_SMOOTH, SignedCurve
 from .signed_ops import SCALE_FORMULAS, collapsed_count
 from .targets import MODE_LABELS, MODE_LOOP, MODE_RING, Target
@@ -84,7 +101,8 @@ _SPACE_LABELS = {None: "frei", "x": "X", "y": "Y", "z": "Z",
                  "yz": "Ebene YZ", "xz": "Ebene XZ", "xy": "Ebene XY"}
 _PRESETS = {lb.PRESET_1: PRESET_SMOOTH, lb.PRESET_2: PRESET_HAT}
 _SELECTION_MODES = {lb.MODE_VERTEX: SelectionMode.VERTEX, lb.MODE_EDGE: SelectionMode.EDGE,
-                    lb.MODE_FACE: SelectionMode.FACE}
+                    lb.MODE_FACE: SelectionMode.FACE, lb.CONVERT_VERTEX: SelectionMode.VERTEX,
+                    lb.CONVERT_EDGE: SelectionMode.EDGE, lb.CONVERT_FACE: SelectionMode.FACE}
 #: PROVISIONAL default Scale formula: the app's (`SoftScaleOperation` default).
 DEFAULT_SCALE_FORMULA = "linear"
 
@@ -146,6 +164,13 @@ class LabState:
         self.selection = Selection()
         #: The window sets this while an LMB press is still undecided (click or drag, E24).
         self.pointer_pending = False
+        #: Slice 3b: Loop/Ring mode (`L`, O13) — off: the hover is the component under the cursor.
+        self.loop_mode = False
+        #: The window may set the edge under the cursor for one Shift+L/R (Vertex/Face hover).
+        self.edge_under_cursor = None
+        #: Handles of the last and the previous click (Shift+double click, Slice 3b).
+        self._anchor = None
+        self._prev_anchor = None
         #: Linear Scale: vertices with g <= 0 in the running / last Scale gesture (E20).
         self.collapsed: Optional[int] = None
         self.radius_step = DEFAULT_RADIUS_STEP
@@ -370,6 +395,57 @@ class LabState:
         if apply_click(self.selection, command, hit):
             self.note = None
             out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
+        self._prev_anchor, self._anchor = self._anchor, hit
+        self._touch()
+        return out
+
+    def click_loop(self, command: str, target: Optional[Target]) -> Outcome:
+        """A click in the `L` mode: the whole hovered Loop/Ring (`target`, None = empty space)."""
+        out = Outcome(action=command)
+        if self.phase != lb.PHASE_EDIT or self.busy:
+            return out
+        self.confirm_new_box = False
+        elements = None if target is None else loop_elements(self.selection, target)
+        if target is not None and elements is None:
+            self.note = "L-Modus: im Flächenmodus gibt es keinen Loop/Ring einer Kante (offene Frage)"
+            out.effects.add(DISPLAY_CHANGED)
+        elif apply_click_elements(self.selection, command, elements):
+            self.note = None
+            out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
+        self._prev_anchor = self._anchor = None
+        self._touch()
+        return out
+
+    def double_click(self, action: Optional[str], command: str, hit) -> Outcome:
+        """The second click of a double click on the mesh (Slice 3b). Where the double click
+        means nothing (other modes, other modifiers, the L mode) it is an ordinary click."""
+        mode = self.selection.mode
+        session = self.session
+        applies = (not self.loop_mode and session is not None and hit is not None and not self.busy
+                   and ((action == lb.DOUBLE_LOOP and mode is SelectionMode.EDGE)
+                        or (action == lb.DOUBLE_PART and mode in (SelectionMode.EDGE, SelectionMode.FACE))))
+        if not applies:
+            return self.click(command, hit)
+        out = Outcome(action=action)
+        if action == lb.DOUBLE_LOOP:
+            loop = session.target(hit, MODE_LOOP)
+            self.selection.set(set(loop.edges))
+            self.note = f"Edge Loop: {len(loop.edges)} Kanten" + (", geschlossen" if loop.closed else "")
+        elif mode is SelectionMode.EDGE:
+            part = loop_segment(session.finder, self._prev_anchor, hit)
+            if part is None:
+                self.note = "Teilstück: die zuletzt geklickte Kante liegt nicht im selben Loop"
+            else:
+                self.selection.add(set(part))
+                self.note = f"Loop-Teilstück: {len(part)} Kanten dazu"
+        else:
+            faces = face_loop(session.finder, self._prev_anchor, hit)
+            if faces is None:
+                self.note = "Face Loop: die zuletzt geklickte Fläche ist keine Nachbarfläche"
+            else:
+                self.selection.add(set(faces))
+                self.note = f"Face Loop: {len(faces)} Flächen dazu"
+        out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED, DISPLAY_CHANGED})
         self._touch()
         return out
 
@@ -452,7 +528,8 @@ class LabState:
             return (f"Box: Höhe {b.height:g} · Breite {b.width:g} · Tiefe {b.depth:g} · Loops {b.loops} (h={b.h}) · "
                     f"rundum n={b.n} · V {v} / E {e} / F {f}")
         axis = _SPACE_LABELS[self.axis]
-        return (f"{MODE_LABELS[self.mode]} · Auswahl {MODE_NAMES[self.selection.mode]} · Achse {axis} · "
+        hover = f"L-Modus {MODE_LABELS[self.mode]}" if self.loop_mode else f"Hover {MODE_NAMES[self.selection.mode]}"
+        return (f"{hover} · Auswahl {MODE_NAMES[self.selection.mode]} · Achse {axis} · "
                 f"Scale {self.scale_formula} · "
                 f"Radius {self.radius_percent} % "
                 f"({self.world_radius:.2f}) · {self.metric} · Kurve {self.curve.label} · "
@@ -461,14 +538,14 @@ class LabState:
                 f"Vorschau {'an' if self.preview_visible else 'aus'}")
 
     def hud_lines(self, frame_ms: Optional[float]) -> list[HudLine]:
-        lines = [HudLine("Mehlsack Lab — Slice 3 (Auswahl) · nicht Artist-validiert", "title")]
+        lines = [HudLine("Mehlsack Lab — Slice 3b (Hover, L-Modus, Doppelklick) · nicht Artist-validiert", "title")]
         if self.phase == lb.PHASE_CREATE:
             lines.append(HudLine("BOX BAUEN: Mausrad Höhe · Alt+Rad Breite · Alt+Shift+Rad Tiefe · "
                                  "Shift+Rad Loops · Ctrl+Rad rundum · Enter = Bearbeiten", "active"))
             lines.append(HudLine("(Mausrad zoomt hier nicht — es gehört der Box)", "inactive"))
         else:
             lines.append(HudLine("BEARBEITEN: LMB ziehen oder W/E/R halten · Klick = Auswahl (Shift/Ctrl/Alt) · "
-                                 "1/2/3 Modus · Tab Loop/Ring · X/Y/Z, Shift = Ebene · H Hilfe", "active"))
+                                 "1/2/3 Modus · L Loop/Ring-Modus · X/Y/Z, Shift = Ebene · H Hilfe", "active"))
             lines.append(self._selection_line())
             hold = self.hold
             if hold is not None:
@@ -509,8 +586,8 @@ class LabState:
                      SelectionMode.FACE: sel.faces}[sel.mode])
         target = self.selection_target
         if target is None:
-            return HudLine(f"Auswahl ({MODE_NAMES[sel.mode]}): leer → Gesten wirken auf den gehoverten "
-                           f"{MODE_LABELS[self.mode]}", "inactive")
+            hovered = f"den gehoverten {MODE_LABELS[self.mode]}" if self.loop_mode else "das gehoverte Element"
+            return HudLine(f"Auswahl ({MODE_NAMES[sel.mode]}): leer → Gesten wirken auf {hovered}", "inactive")
         return HudLine(f"Auswahl ({MODE_NAMES[sel.mode]}): {count} gewählt, {len(target.seeds)} Vertices → "
                        "alle Gesten wirken auf die Auswahl · Klick ins Leere = zurück zum Hover", "active")
 
@@ -669,7 +746,36 @@ def _h_selection_mode(state: LabState, out: Outcome, steps: int) -> None:
     mode = _SELECTION_MODES[out.action]
     state.selection.mode = mode
     state.selection.clear()
+    state.selection.hovered = None
+    state._prev_anchor = state._anchor = None
     state.note = f"Auswahlmodus: {MODE_NAMES[mode]}"
+    out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
+
+
+def _h_convert(state: LabState, out: Outcome, steps: int) -> None:
+    """Shift+`1`/`2`/`3` (Manu O15): convert the selection to the touching components of that
+    mode (an empty selection just switches the mode). Ignored while busy."""
+    if state.busy or state.session is None:
+        return
+    mode = _SELECTION_MODES[out.action]
+    convert_selection(state.session.mesh, state.session.finder.index, state.selection, mode)
+    state.selection.hovered = None
+    state._prev_anchor = state._anchor = None
+    count = len({SelectionMode.VERTEX: state.selection.vertices, SelectionMode.EDGE: state.selection.edges,
+                 SelectionMode.FACE: state.selection.faces}[mode])
+    state.note = f"Auswahl umgerechnet: {count} {MODE_NAMES[mode]}"
+    out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
+
+
+def _h_loop_mode(state: LabState, out: Outcome, steps: int) -> None:
+    """`L` (Manu O13): Loop/Ring mode on/off (sticky). Ignored while busy."""
+    if state.busy:
+        return
+    state.loop_mode = not state.loop_mode
+    state.selection.hovered = None
+    state._prev_anchor = state._anchor = None
+    state.note = ("L-Modus an: Hover und Klick nehmen ganze Loops/Ringe (Tab = Loop/Ring)" if state.loop_mode
+                  else "L-Modus aus: Hover zeigt einzelne Elemente")
     out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
 
 
@@ -678,7 +784,9 @@ def _h_loop_ring_select(state: LabState, out: Outcome, steps: int) -> None:
     if state.busy or state.session is None:
         return
     kind = MODE_LOOP if out.action == lb.LOOP_SELECT else MODE_RING
-    edge = state.hover_target.edge if state.hover_target is not None else None
+    edge, state.edge_under_cursor = state.edge_under_cursor, None
+    if edge is None and state.hover_target is not None:
+        edge = state.hover_target.edge
     changed, state.note = add_loop_ring(state.selection, state.session.finder, edge, kind)
     out.effects.add(DISPLAY_CHANGED)
     if changed:
@@ -731,6 +839,10 @@ _HANDLERS = {
     lb.MODE_VERTEX: _h_selection_mode,
     lb.MODE_EDGE: _h_selection_mode,
     lb.MODE_FACE: _h_selection_mode,
+    lb.CONVERT_VERTEX: _h_convert,
+    lb.CONVERT_EDGE: _h_convert,
+    lb.CONVERT_FACE: _h_convert,
+    lb.LOOP_MODE: _h_loop_mode,
     lb.LOOP_SELECT: _h_loop_ring_select,
     lb.RING_SELECT: _h_loop_ring_select,
     lb.HELP: _h_help,
