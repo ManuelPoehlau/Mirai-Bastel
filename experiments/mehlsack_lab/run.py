@@ -37,7 +37,7 @@ def _tolerate_unencodable_output() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Mirai-Bastel Mehlsack Lab (Slice 2b: Move/Rotate/Scale)")
+    parser = argparse.ArgumentParser(description="Mirai-Bastel Mehlsack Lab (Slice 3: component selection)")
     _tolerate_unencodable_output()
     parser.parse_args(argv)
 

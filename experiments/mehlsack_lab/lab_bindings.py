@@ -8,12 +8,18 @@ cannot drift.
 Two phases: `create` (the box is built with the wheel) and `edit` (Loop/Ring drag). A
 binding with `phase=None` applies in both.
 
+LMB in the edit phase carries two bindings (Slice 3 E24, AD-019): a click (`kind="click"`,
+below `CLICK_THRESHOLD_PX`) selects, a drag moves; `lab_pointer.PointerPress` decides.
+
 Fixed by the Artist Input Truth (`tools/Input_Mapping_Tool/artist_input_truth.json`):
 Alt+LMB orbit, Alt+Shift+LMB pan, wheel zoom (edit phase only — in the creation phase
 the wheel belongs to the box), X/Y/Z sticky axis, Shift+X/Y/Z sticky plane (Blender
 exclude-axis: Shift+X = YZ, Shift+Y = XZ, Shift+Z = XY), W/E/R = Move/Rotate/Scale held
-over the hover target (AD-016 hold-key-hover; Slice 2b E16 — kind "hold"), Ctrl+Z /
-Ctrl+Y. Everything else is a lab-local engineering proposal (`PROVISIONAL`), not an
+(AD-016 hold-key-hover; Slice 2b E16 — kind "hold"; since Slice 3 on the selection when there
+is one, E26), Ctrl+Z / Ctrl+Y, and since Slice 3 the selection inputs: LMB click = replace,
+Shift / Ctrl / Alt + LMB click = add / remove / toggle (the click actions are the app's
+command names), `1`/`2`/`3` = Vertex/Edge/Face mode, Shift+L / Shift+R = Loop / Ring select
+(here: add, E27). Everything else is a lab-local engineering proposal (`PROVISIONAL`), not an
 Artist decision. `Q` (AD-016) and `C` (AD-017) stay reserved and are never bound.
 
 pyglet-free: the window translates pyglet button/modifier/symbol values into the names
@@ -24,6 +30,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
+from mirai.interaction import commands as _commands
 
 PHASE_CREATE = "create"
 PHASE_EDIT = "edit"
@@ -67,6 +75,16 @@ REDO = "redo"
 NEW_BOX = "new_box"
 HELP = "help"
 ESCAPE = "escape"
+# Slice 3: selection (click actions = the app's command names, E25)
+SELECT = _commands.SELECT
+SELECT_ADD = _commands.SELECT_ADD
+SELECT_REMOVE = _commands.SELECT_REMOVE
+SELECT_TOGGLE = _commands.SELECT_TOGGLE
+MODE_VERTEX = "mode_vertex"
+MODE_EDGE = "mode_edge"
+MODE_FACE = "mode_face"
+LOOP_SELECT = "loop_select"
+RING_SELECT = "ring_select"
 
 #: Keys reserved elsewhere (AD-016 Q, AD-017 C): the lab must never bind them. W/E/R are bound
 #: since Slice 2b with exactly their AD-016 meaning (hold = Move/Rotate/Scale).
@@ -81,9 +99,10 @@ KEY_ALIASES = {"ENTER": "RETURN", "NUM_ENTER": "RETURN"}
 
 @dataclass(frozen=True)
 class LabBinding:
-    #: "drag", "press", "double", "wheel", "key" or "hold" (a key held while the mouse moves)
+    #: "drag", "click", "press", "double", "wheel", "key" or "hold" (a key held while the mouse
+    #: moves)
     kind: str
-    #: drag/press: "LEFT"/"RIGHT"/"MIDDLE" ("PANEL" = LMB inside the curve panel);
+    #: drag/click/press: "LEFT"/"RIGHT"/"MIDDLE" ("PANEL" = LMB inside the curve panel);
     #: double: "PANEL" (a double click on a curve knot);
     #: key: pyglet key symbol name; wheel: "WHEEL"
     value: str
@@ -102,7 +121,7 @@ class LabBinding:
         names = {
             "LEFT": "LMB", "RIGHT": "RMB", "MIDDLE": "MMB", "PANEL": "LMB im Kurvenfeld",
             "WHEEL": "Mausrad", "ESCAPE": "Esc", "RETURN": "Enter", "TAB": "Tab",
-            "_1": "1", "_2": "2",
+            "_1": "1", "_2": "2", "_3": "3",
         }
         base = names.get(self.value, self.value)
         if self.kind == "double":
@@ -111,6 +130,8 @@ class LabBinding:
             base += " halten"
         elif self.kind == "drag":
             base += " ziehen"
+        elif self.kind == "click":
+            base += " Klick"
         elif self.kind == "press":
             base += " (während Zug)"
         if self.modifiers:
@@ -125,7 +146,11 @@ _APP = "wie App (AD-020), PROVISIONAL"
 _LAB = "lab-lokal (Vorschlag, keine Artist-Entscheidung)"
 _2A = "lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung)"
 _2B = "lab-lokal (Slice 2b, Vorschlag, keine Artist-Entscheidung)"
-_HOLD = "Artist Input Truth (W/E/R); halten über dem Hover wie AD-016"
+_3 = "lab-lokal (Slice 3, Vorschlag, keine Artist-Entscheidung)"
+_HOLD = "Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL)"
+_SEL = "Artist Input Truth"
+_MODE = "Artist Input Truth; leert die Auswahl wie die App"
+_LOOPSEL = "Artist Input Truth; hinzufügen = Slice 3 E27 (PROVISIONAL)"
 _NONE = frozenset()
 
 LAB_OVERRIDES: tuple[LabBinding, ...] = (
@@ -150,7 +175,14 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
                "lab-lokal (Brief)"),
     # edit phase
     LabBinding("drag", "LEFT", _NONE, PHASE_EDIT, DRAG_TARGET,
-               "Loop/Ring unter dem Cursor direkt ziehen (Move)", "lab-lokal; ohne Auswahl"),
+               "Auswahl ziehen (Move); ohne Auswahl Loop/Ring unter dem Cursor",
+               "lab-lokal; Ziel-Regel Slice 3 E26 (PROVISIONAL)"),
+    LabBinding("click", "LEFT", _NONE, PHASE_EDIT, SELECT,
+               "Auswahl ersetzen (Klick ins Leere = Auswahl leeren)", _SEL),
+    LabBinding("click", "LEFT", frozenset({"shift"}), PHASE_EDIT, SELECT_ADD, "zur Auswahl hinzufügen", _SEL),
+    LabBinding("click", "LEFT", frozenset({"ctrl"}), PHASE_EDIT, SELECT_REMOVE, "aus der Auswahl entfernen", _SEL),
+    LabBinding("click", "LEFT", frozenset({"alt"}), PHASE_EDIT, SELECT_TOGGLE,
+               "Auswahl umschalten (Alt+LMB ziehen = Orbit)", _SEL),
     LabBinding("drag", "PANEL", _NONE, PHASE_EDIT, CURVE_POINT,
                "Kurvenpunkt oder Handle ziehen (Handles bleiben in Linie)", _2A),
     LabBinding("drag", "PANEL", frozenset({"alt"}), PHASE_EDIT, CURVE_BREAK,
@@ -158,11 +190,18 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
     LabBinding("double", "PANEL", _NONE, PHASE_EDIT, CURVE_RESET,
                "Handles des Punkts wieder weich (automatisch)", _2A),
     LabBinding("hold", "W", _NONE, PHASE_EDIT, HOLD_MOVE,
-               "Move des gehoverten Loops/Rings (Maus bewegen, loslassen = fertig)", _HOLD),
+               "Move der Auswahl, sonst des gehoverten Loops/Rings (loslassen = fertig)", _HOLD),
     LabBinding("hold", "E", _NONE, PHASE_EDIT, HOLD_ROTATE,
-               "Rotate des gehoverten Loops/Rings (waagrecht bewegen)", _HOLD),
+               "Rotate der Auswahl, sonst des Loops/Rings (waagrecht bewegen)", _HOLD),
     LabBinding("hold", "R", _NONE, PHASE_EDIT, HOLD_SCALE,
-               "Scale des gehoverten Loops/Rings (rechts/oben = größer)", _HOLD),
+               "Scale der Auswahl, sonst des Loops/Rings (rechts/oben = größer)", _HOLD),
+    LabBinding("key", "_1", _NONE, PHASE_EDIT, MODE_VERTEX, "Auswahlmodus Punkte", _MODE),
+    LabBinding("key", "_2", _NONE, PHASE_EDIT, MODE_EDGE, "Auswahlmodus Kanten", _MODE),
+    LabBinding("key", "_3", _NONE, PHASE_EDIT, MODE_FACE, "Auswahlmodus Flächen", _MODE),
+    LabBinding("key", "L", frozenset({"shift"}), PHASE_EDIT, LOOP_SELECT,
+               "Loop der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus)", _LOOPSEL),
+    LabBinding("key", "R", frozenset({"shift"}), PHASE_EDIT, RING_SELECT,
+               "Ring der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus)", _LOOPSEL),
     LabBinding("press", "RIGHT", None, PHASE_EDIT, CANCEL_PRESS, "Zug abbrechen (exakt zurück)", _LAB),
     LabBinding("key", "TAB", _NONE, PHASE_EDIT, TOGGLE_MODE, "Loop ↔ Ring (bleibt)", _LAB),
     LabBinding("key", "X", _NONE, PHASE_EDIT, AXIS_X, "Achse X an/aus (bleibt)", _TRUTH),
@@ -181,8 +220,8 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
     LabBinding("key", "N", _NONE, PHASE_EDIT, NACHFUEHREN, "Nachführen an/aus", _LAB),
     LabBinding("key", "M", _NONE, PHASE_EDIT, SCALE_FORMULA,
                "Scale-Formel linear ↔ power (bleibt; Nachführen)", _2B),
-    LabBinding("key", "_1", _NONE, PHASE_EDIT, PRESET_1, "Kurve: Smooth", _LAB),
-    LabBinding("key", "_2", _NONE, PHASE_EDIT, PRESET_2, "Kurve: Mexican Hat (mit Senke)", _LAB),
+    LabBinding("key", "K", _NONE, PHASE_EDIT, PRESET_1, "Kurve: Smooth", _3),
+    LabBinding("key", "K", frozenset({"shift"}), PHASE_EDIT, PRESET_2, "Kurve: Mexican Hat (mit Senke)", _3),
     LabBinding("key", "Z", frozenset({"ctrl"}), PHASE_EDIT, UNDO, "Undo", _TRUTH),
     LabBinding("key", "Y", frozenset({"ctrl"}), PHASE_EDIT, REDO, "Redo", _TRUTH),
     LabBinding("key", "B", _NONE, PHASE_EDIT, NEW_BOX, "neue Box (2× B; löscht die History)", _LAB),
@@ -215,6 +254,15 @@ def resolve_drag(phase: str, buttons: frozenset, modifiers: frozenset, in_panel:
             buttons = buttons - {"LEFT"} | {"PANEL"}
     for binding in LAB_OVERRIDES:
         if (binding.kind == "drag" and binding.value in buttons and _phase_match(binding, phase)
+                and _modifiers_match(binding, modifiers)):
+            return binding.action
+    return None
+
+
+def resolve_click(phase: str, button: str, modifiers: frozenset) -> Optional[str]:
+    """Click action of a press of `button` ("LEFT", never inside the curve panel), or None."""
+    for binding in LAB_OVERRIDES:
+        if (binding.kind == "click" and binding.value == button and _phase_match(binding, phase)
                 and _modifiers_match(binding, modifiers)):
             return binding.action
     return None

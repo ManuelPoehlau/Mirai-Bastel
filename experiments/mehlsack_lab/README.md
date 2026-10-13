@@ -1,15 +1,19 @@
-# Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b: Move, Rotate, Scale)
+# Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b + 3: Move, Rotate, Scale, Auswahl)
 
 **Status: Verdikte von Manu für Slice 1, Slice 2a und Slice 2b liegen vor (alle 2026-10-13)** — siehe die
 Verdikt-Tabellen in [Slice 1](#praxistest-für-manu-ca-10-minuten), [Slice 2a](#slice-2a-2026-10-13) und
 [Slice 2b](#slice-2b-2026-10-13). Offen aus 2a: (d2) ITERATE (Kurvenpunkte hinzufügen/wegnehmen, nicht eingeplant) und
 die Frage „vorher erkennbar, was mitgeht — jetzt besser?“ (unbeantwortet).
+**Slice 3 (Komponenten-Auswahl) ist gebaut und automatisch getestet, nicht Artist-validiert** — Praxistest und
+Verdikt-Tabelle in [Slice 3](#slice-3-2026-10-13-komponenten-auswahl).
 Discovery (Typ B): Das Lab bereitet ein Artist-Verdikt vor, es entscheidet nichts und befördert nichts. KEEP heißt
 hier nicht Promotion — nichts verlässt `experiments/`.
 
 Frage des Labs: **Ist „das Mesh ist die Oberfläche“ (Loop/Ring hovern und direkt ziehen, ohne Auswahl) plus eine
 Einflusskurve, die unter null gehen darf, eine vielversprechende Richtung?** Slice 1 und 2a können nur **Move**, seit
-Slice 2b gibt es auch **Rotate** und **Scale** (zwei Scale-Formeln zum Vergleich).
+Slice 2b gibt es auch **Rotate** und **Scale** (zwei Scale-Formeln zum Vergleich). Seit Slice 3 lässt sich alternativ
+eine **Auswahl** (Punkte/Kanten/Flächen) treffen, von der dieselben Vorzeichen-Gesten ausgehen; ohne Auswahl bleibt alles
+wie bisher.
 
 Forschungs-Lab unter `experiments/` — nichts in `src/`, `playground/`, `tests/` oder `examples/` wurde geändert.
 `src` wird nur gelesen; aus `playground/` wird genau ein Modul importiert (`playground.topology_tools.loop_ring`,
@@ -42,13 +46,19 @@ Beim Start stehen die Tastentabelle, `GL_VERSION` und `GL_RENDERER` in der Konso
    Loop, 0 am Radius), ihr einzelnes Handle lässt sich ziehen.
 4. **Flächen-Vorschau** (`P`, Slice 2a, standardmäßig aus): die betroffenen Flächen orange (geht mit) oder blau (geht
    entgegen), je kräftiger, desto stärker.
+5. **Auswahl** (Slice 3): `1`/`2`/`3` = Punkte/Kanten/Flächen, Klick wählt (Shift/Ctrl/Alt = hinzu/weg/umschalten),
+   Shift+L / Shift+R nehmen Loop/Ring der gehoverten Kante dazu. Gewähltes ist kräftig gelb (Production-Stil: Punkte,
+   Kanten, gefüllte Flächen). **Mit Auswahl wirkt jede Geste auf die Auswahl** (LMB ziehen über dem Mesh, `W`/`E`/`R`
+   halten), die Einfluss-Punkte und die Vorschau gehen von ihr aus; die blasse Hover-Linie zeigt weiter den Loop/Ring
+   unter dem Cursor. Klick ins Leere leert die Auswahl — dann wieder direkt hovern und ziehen.
 
 ## Steuerung
 
 Die Tabelle ist `LAB_OVERRIDES` in `lab_bindings.py` (wird beim Start gedruckt; ein Test prüft Gleichheit 1:1).
 **Alle lab-lokalen Tasten sind ein Vorschlag für dieses Lab, keine Artist-Entscheidung.** `Q` (AD-016) und `C` (AD-017)
 sind reserviert und nicht belegt. Seit Slice 2b sind `W` `E` `R` mit ihrer AD-016-Bedeutung belegt (halten = Move /
-Rotate / Scale, hier auf dem gehoverten Loop/Ring statt der Auswahl) und Shift+X/Y/Z sind Ebenen (wie die App, B4.1).
+Rotate / Scale) und Shift+X/Y/Z sind Ebenen (wie die App, B4.1). Seit Slice 3 wirken sie auf die Auswahl, wenn es eine
+gibt, sonst auf den gehoverten Loop/Ring (E26); LMB, `1`/`2`/`3`, Shift+L/Shift+R haben ihre Artist-Truth-Bedeutung.
 
 | Eingabe | Phase | Funktion | Quelle / Hinweis |
 |---|---|---|---|
@@ -63,13 +73,22 @@ Rotate / Scale, hier auf dem gehoverten Loop/Ring statt der Auswahl) und Shift+X
 | Shift+Mausrad | Box | horizontale Loops ±1 | lab-lokal (Brief) |
 | Ctrl+Mausrad | Box | Unterteilung rundum ±1 | lab-lokal (Brief) |
 | Enter | Box | Box übernehmen → Bearbeiten | lab-lokal (Brief) |
-| LMB ziehen | Bearbeiten | Loop/Ring unter dem Cursor direkt ziehen (Move) | lab-lokal; ohne Auswahl |
+| LMB ziehen | Bearbeiten | Auswahl ziehen (Move); ohne Auswahl Loop/Ring unter dem Cursor | lab-lokal; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| LMB Klick | Bearbeiten | Auswahl ersetzen (Klick ins Leere = Auswahl leeren) | Artist Input Truth |
+| Shift+LMB Klick | Bearbeiten | zur Auswahl hinzufügen | Artist Input Truth |
+| Ctrl+LMB Klick | Bearbeiten | aus der Auswahl entfernen | Artist Input Truth |
+| Alt+LMB Klick | Bearbeiten | Auswahl umschalten (Alt+LMB ziehen = Orbit) | Artist Input Truth |
 | LMB im Kurvenfeld ziehen | Bearbeiten | Kurvenpunkt oder Handle ziehen (Handles bleiben in Linie) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | Alt+LMB im Kurvenfeld ziehen | Bearbeiten | Handle allein ziehen = Knick (Punkt wie ohne Alt) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | Doppelklick auf Kurvenpunkt | Bearbeiten | Handles des Punkts wieder weich (automatisch) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
-| W halten | Bearbeiten | Move des gehoverten Loops/Rings (Maus bewegen, loslassen = fertig) | Artist Input Truth (W/E/R); halten über dem Hover wie AD-016 |
-| E halten | Bearbeiten | Rotate des gehoverten Loops/Rings (waagrecht bewegen) | Artist Input Truth (W/E/R); halten über dem Hover wie AD-016 |
-| R halten | Bearbeiten | Scale des gehoverten Loops/Rings (rechts/oben = größer) | Artist Input Truth (W/E/R); halten über dem Hover wie AD-016 |
+| W halten | Bearbeiten | Move der Auswahl, sonst des gehoverten Loops/Rings (loslassen = fertig) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| E halten | Bearbeiten | Rotate der Auswahl, sonst des Loops/Rings (waagrecht bewegen) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| R halten | Bearbeiten | Scale der Auswahl, sonst des Loops/Rings (rechts/oben = größer) | Artist Input Truth (W/E/R); halten wie AD-016; Ziel-Regel Slice 3 E26 (PROVISIONAL) |
+| 1 | Bearbeiten | Auswahlmodus Punkte | Artist Input Truth; leert die Auswahl wie die App |
+| 2 | Bearbeiten | Auswahlmodus Kanten | Artist Input Truth; leert die Auswahl wie die App |
+| 3 | Bearbeiten | Auswahlmodus Flächen | Artist Input Truth; leert die Auswahl wie die App |
+| Shift+L | Bearbeiten | Loop der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus) | Artist Input Truth; hinzufügen = Slice 3 E27 (PROVISIONAL) |
+| Shift+R | Bearbeiten | Ring der gehoverten Kante zur Auswahl (Punkt-/Kantenmodus) | Artist Input Truth; hinzufügen = Slice 3 E27 (PROVISIONAL) |
 | RMB (während Zug) | Bearbeiten | Zug abbrechen (exakt zurück) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | Tab | Bearbeiten | Loop ↔ Ring (bleibt) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | X | Bearbeiten | Achse X an/aus (bleibt) | Artist Input Truth |
@@ -84,16 +103,18 @@ Rotate / Scale, hier auf dem gehoverten Loop/Ring statt der Auswahl) und Shift+X
 | P | Bearbeiten | Flächen-Vorschau an/aus (orange = mit, blau = entgegen) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | N | Bearbeiten | Nachführen an/aus | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | M | Bearbeiten | Scale-Formel linear ↔ power (bleibt; Nachführen) | lab-lokal (Slice 2b, Vorschlag, keine Artist-Entscheidung) |
-| 1 | Bearbeiten | Kurve: Smooth | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
-| 2 | Bearbeiten | Kurve: Mexican Hat (mit Senke) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
+| K | Bearbeiten | Kurve: Smooth | lab-lokal (Slice 3, Vorschlag, keine Artist-Entscheidung) |
+| Shift+K | Bearbeiten | Kurve: Mexican Hat (mit Senke) | lab-lokal (Slice 3, Vorschlag, keine Artist-Entscheidung) |
 | Ctrl+Z | Bearbeiten | Undo | Artist Input Truth |
 | Ctrl+Y | Bearbeiten | Redo | Artist Input Truth |
 | B | Bearbeiten | neue Box (2× B; löscht die History) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | H | beide | Tastenhilfe an/aus | lab-lokal; Artist Truth: H = HUD |
 | Esc | beide | Zug/Rückfrage abbrechen, sonst Beenden | lab-lokal; Q bewusst nicht belegt |
 
-Hinweise: In der Artist Input Truth sind `1`/`2` die Auswahlmodi und `H` der HUD-Schalter — dieses Lab hat keine
-Auswahl und zeigt das HUD immer, deshalb sind die Tasten hier anders belegt (Handoff §4). Shift-, Ctrl-, Alt- und
+Hinweise: Seit Slice 3 sind `1`/`2`/`3` die Auswahlmodi wie in der Artist Input Truth; die Kurven-Presets liegen
+deshalb auf `K` / `Shift+K` (vorher `1` / `2` — die Praxistests von Slice 1–2b unten nennen noch die alten Tasten).
+`H` ist hier weiter die Tastenhilfe (Artist Truth: HUD-Schalter), das Lab zeigt das HUD immer. LMB trägt im
+Bearbeiten-Modus zwei Bindungen (AD-019): unter 5 px Bewegung ein Klick (Auswahl), darüber ein Ziehen. Shift-, Ctrl-, Alt- und
 Alt+Shift+Mausrad: Manche Windows-Treiber melden das als horizontales Scrollen; dann liest das Lab `scroll_x` (Regel aus
 `src/main.py`, Richtung auf dem Referenz-PC unbestätigt). Im Kurvenfeld orbitet Alt+LMB nicht (Slice 2a: Alt+Ziehen an
 einem Handle = Knick); Alt+Shift+LMB pannt dort weiter.
@@ -531,6 +552,159 @@ Einziehen (Taille) nicht. Bei *power* wird dafür der Bauch beim sehr tiefen Ein
 | (h) Formel für negative Gewichte: linear, power oder „beide als Option“ | KEEP                                        | beide erstmal behalten                                                                                          |
 | (i) E/R/W halten über dem gehoverten Loop                               | KEEP                                        | vorerst, das ist eine generelle noch nicht 100%ig entschiedene UX Entscheidung (weiter Playground Tests nötig ) |
 
+## Audit für Slices 3–6 (2026-10-13)
+
+Vorab-Audit des Planers (Handoff, nur gelesen), hier **gegen den Code** geprüft. „bestätigt“ = so im Code gefunden,
+**fett** = korrigiert oder präzisiert.
+
+| Thema | Gefunden (im Code geprüft) | Im Lab wiederverwenden? |
+|---|---|---|
+| Auswahl-Modell | bestätigt: `src/core/selection.py` (`Selection`, `SelectionMode`; nicht in der History); App-Commands `Select`/`SelectAdd`/`SelectRemove`/`SelectToggle`/`ClearSelection` (`mirai/interaction/commands.py`). **Die Klick-Regel selbst steckt in `Application.select_at`** (an Fenster/Viewport gebunden, keine freie Funktion) | ja, nur lesend (Slice 3); Klick-Regel im Lab neu formuliert, Command-Namen importiert, Test pinnt sie |
+| Komponenten-Picking | bestätigt: `mirai.viewport.picking.pick_component` (+ `PickCache`, `occlusion`); **der Flächen-Pick nimmt die vorderste Fläche und kennt kein `occlusion`** | ja (Slice 3) |
+| Klick vs. Ziehen | bestätigt: `mirai.interaction.pointer.CLICK_THRESHOLD_PX = 5.0` (Manhattan-Summe), Resolver `PointerGestures` | Konstante ja; **Resolver-Regel lab-lokal** (`lab_pointer.py`), weil das Lab die gepufferten Bewegungen einzeln nachreicht (`PointerGestures`: eine Summe) — sonst wäre das LMB-Ziehen nicht mehr bitgleich |
+| Seeds aus der Auswahl | bestätigt: `mirai.interaction.tools.selection_helpers.resolve_selection_vertices` | ja (Slice 3) |
+| Auswahl-Anzeige | **präzisiert:** `src/viewport/overlay.py` `SelectionOverlay` (`point_layers`/`line_layers`/`face_layers`) + `GLPointOverlay`/`GLLineOverlay`/`GLTriangleOverlay`, Layer `selected`, Farbe `(1.0, 0.82, 0.15)`. Die `highlight_flags` des `RenderMesh` liest der Shader nicht mehr (Artist REJECT) | ja (Slice 3, nur lesend) |
+| Weltachsen/-ebenen, Screen | bestätigt: X/Y/Z und Shift+X/Y/Z über `_resolve_space`. **Präzisiert:** „Screen“ ist in AD-012 kein eigener Raum (Screen-Space ist dort mit Local/Gimbal auf ARCH-01 verschoben); im Lab heißt „keine Sperre“: Bildebene (Move, wie `MoveTool`) bzw. Blickachse (Rotate, wie `RotateTool`) | schon da |
+| Normal-Raum | **korrigiert:** nicht nur für eine Fläche. `selection_normal()` mittelt die Normalen einer Punkt-, Kanten- oder Flächen-Auswahl zu **einer** Richtung (`_resolve_space("normal")`, braucht `derived_geometry`); nur die Tangentenbasis (`normal_x`/`normal_y`) ist auf eine einzelne Fläche beschränkt (WP-03C). Für einen geschlossenen Loop heben sich die Normalen auf → `(0, 0, 0)` (degeneriert). Verschieben **pro Vertex entlang seiner eigenen Normale** („aufblasen“): nirgends als Transform; die Daten gibt es (`derived_geometry.vertex_normals`) | später (Slice 4) |
+| Local | bestätigt: bewusst nicht gebaut (AD-012 ARCH-01, braucht Objekt-Rotation) | Slice-4-Frage, siehe Vorschlag unten |
+| Gizmo | bestätigt: nur `playground/gizmo.py` (importiert nur `math` und `core.selection` — GL-frei: Modus, Handle-Geometrie, Pick/Hover) + Zeichnen in `playground/window.py`; nichts in `src` | Slice-4-Entscheidung (Import-Grenze) |
+| Pinning / Masking | bestätigt: nichts in `src/mirai/soft_selection` oder AD-020 | fehlt wirklich |
+| Raster / Achsenanzeige | bestätigt: nichts in `src/viewport`, `src/mirai`, `playground` („grid“ dort nur als Mesh-Asset, `load_grid`); in `experiments/` nur Grid-Meshes in Topologie-Sonden und ein Achsenrahmen für Lichtrichtungen (`viewport_shading_lab/lab_rig.py`, keine Anzeige) | fehlt wirklich |
+| Pivot | **präzisiert:** Lab `primary_pivot(seeds)` und App `selection_pivot` sind dieselbe Rechnung (Schwerpunkt, gleiche Summenreihenfolge, `soft_selection/influence.py`); unter Symmetrie hat die App `symmetric_default_pivot`. Eine Pivot-Steuerung gibt es nirgends | fehlt wirklich |
+
+**Vorschlag für Slice 4 (Räume + Gizmo) — nicht gebaut, nicht entschieden:**
+
+- *Räume:* Welt und „Screen“ (= keine Sperre) bleiben. Neu als Kandidaten für Manus „Local“: **(L1) jeder Vertex
+  entlang seiner eigenen Normale** (mit Vorzeichen-Gewicht: `w · d · n_v`, Normalen beim Start eingefroren — „aufblasen /
+  einschnüren“, eindeutig auch für geschlossene Loops) und **(L2) ein Rahmen der Auswahl/des Loops** (gemittelte Normale
+  aus `src`, für geschlossene Loops die Ebenen-Normale des Loops statt des degenerierten Mittels, Tangente entlang des
+  Loops). „Local“ im Sinn von Objektachsen ergibt im Lab nichts Neues: die Box ist nie gedreht, Objekt-Achsen = Weltachsen
+  (ARCH-01). Empfehlung: Manu nennt, was er mit „Local“ meint; zuerst L1 bauen, weil es die Mehlsack-Geste (Bauch) direkt
+  trifft und keine Mehrdeutigkeit hat.
+- *Gizmo:* `playground/gizmo.py` ist GL-frei. Drei Wege: (a) als **zweiten** Playground-Import lesend nutzen (wie
+  `loop_ring`; Import-Grenzen-Test auf genau zwei Module erweitern), (b) Lab-Kopie (widerspricht „keine Kopien“),
+  (c) nach `src` befördern (braucht eigene Doku/AD). Empfehlung für Discovery: (a), als ausdrückliche Grenz-Entscheidung
+  vor dem Bau.
+
+## Slice 3 (2026-10-13, Komponenten-Auswahl)
+
+**Nicht Artist-validiert.** Manus Priorität 1 (2026-10-13): Komponenten-Auswahl mit Mehrfachauswahl. Die Auswahl ist eine
+**zweite Quelle für die Seeds** derselben Vorzeichen-Gesten; ohne Auswahl bleibt der direkte Hover-Weg exakt wie in
+Slice 1–2b (Test: gleiche Ergebnisse bis aufs Bit). Nichts wird befördert.
+
+### Was gebaut ist
+
+- **Auswahl** im Punkt-, Kanten- und Flächenmodus (`1`/`2`/`3`), Klick ersetzt, Shift+Klick fügt hinzu, Ctrl+Klick
+  entfernt, Alt+Klick schaltet um; Klick ins Leere leert (nur ohne Modifier). Eine Core-`Selection`, nicht in der
+  History.
+- **Loop/Ring auswählen:** Shift+L / Shift+R nehmen Loop / Ring der gehoverten Kante **dazu** (Kantenmodus: die Kanten,
+  Punktmodus: ihre Vertices), mit dem Rand-Loop um die Ecken (E15). Flächenmodus: abgelehnt (Statuszeile).
+- **Ziel-Regel:** mit Auswahl wirkt **jede** Geste auf die Auswahl — LMB ziehen (über dem Mesh gedrückt) und
+  `W`/`E`/`R` halten; Einfluss-Punkte, Vorschau (`P`), Kurve, Radius, Metrik, Formel und Nachführen wie bisher, nur von
+  den Auswahl-Vertices aus (`w = 1`). Ohne Auswahl: der gehoverte Loop/Ring wie bisher.
+- **Anzeige:** Auswahl im Production-Stil (kräftig gelbe Punkte / Kanten / gefüllte Flächen); Einfluss bleibt Punkte und
+  Vorschau (warm / blau); die blasse Hover-Linie zeigt weiter den Loop/Ring unter dem Cursor; Achsen-Sperre in Status
+  und HUD. Eine HUD-Zeile sagt, worauf die Gesten gerade wirken.
+- Kurven-Presets auf `K` (Smooth) / `Shift+K` (Mexican Hat), weil `1`/`2` jetzt Auswahlmodi sind.
+
+### Engineering-Annahmen, so gebaut (alle `PROVISIONAL`, keine Artist-Entscheidung)
+
+- **E23 Auswahl-Modell:** `LabState.selection` ist eine Core-`Selection` (Start: Punktmodus, Core-Default wie die App);
+  Picking mit `pick_component` und dem `PickCache` des Labs, Occlusion an wie beim Kanten-Hover.
+- **E24 Klick vs. Ziehen:** Schwelle `CLICK_THRESHOLD_PX` aus `mirai.interaction.pointer` (AD-019, nicht kopiert):
+  darunter Klick beim Loslassen, darüber Ziehen. Die Bewegungen bis zur Schwelle werden gepuffert und dann **einzeln**
+  nachgereicht (`lab_pointer.PointerPress`), damit das LMB-Ziehen bitgleich zu Slice 1–2b bleibt (Test mit Achsen-Sperre).
+- **E25 Klick-Semantik = App-Commands:** `Select` ersetzt, ins Leere leert; `SelectAdd`/`SelectRemove`/`SelectToggle`
+  ändern nur das getroffene Element, ins Leere nichts (`lab_selection.apply_click`).
+- **E26 Ziel-Regel:** Auswahl leer → heutiges Verhalten; Auswahl nicht leer → Seeds =
+  `resolve_selection_vertices(mesh, selection, mode)`, `w = 1`, sonst alles wie bisher. Gleiche Regel wie die App
+  (`_transform_arm`: erst Auswahl, sonst Hover). *Annahme, nicht Manus Aussage* — Manu testet sie (s3).
+- **E27 Loop/Ring auswählen:** fügt hinzu (nicht ersetzen), gleiche Ziele wie der Hover; `Tab` bleibt der Hover-Schalter;
+  Shift+R schärft nie das R-Halten (Test).
+- **E28 Tasten:** `1`/`2`/`3` = Auswahlmodi (Artist Truth); Presets auf `K` / `Shift+K` (nicht in der Artist Truth, im
+  Lab frei; Vorschlag). Tabelle = `LAB_OVERRIDES`, Test erzwingt Gleichheit.
+- **E29 Anzeige:** Production-`SelectionOverlay` + `GLPointOverlay`/`GLLineOverlay`/`GLTriangleOverlay`, nur lesend,
+  keine neue Palette (Beobachtungen V1–V3).
+- **E30 Nachführen:** ein Auswahlwechsel beendet es nicht (ändert keine Geometrie); der letzte Zug behält seine
+  eingefrorenen Seeds (Test).
+- **E31 Lebenslauf:** Auswahl nur im Bearbeiten-Modus; Undo/Redo behalten sie; `B` (neue Box) leert sie; während eine
+  Geste scharf ist oder läuft, werden Auswahl-Klicks ignoriert.
+
+Zusätzlich vom Agenten gesetzt (beim Bauen nötig geworden, alle `PROVISIONAL`):
+
+- **Moduswechsel leert die Auswahl**, auch bei der Taste des aktiven Modus — wie die App (`_set_selection_mode`) und der
+  Playground. Der Modus selbst bleibt über eine neue Box erhalten (wie die anderen Einstellungen).
+- **Klick-Position:** der Ort des Loslassens (wie die App). „Über dem Mesh gedrückt“ (E26) = eine Kante ist gehovert
+  oder unter dem Cursor liegt eine Fläche (`pick_face`). Mit Auswahl und Druck ins Leere bewegt Ziehen nichts.
+- **Unentschiedener Druck** (LMB unten, noch unter 5 px): `Esc`, RMB und Fokusverlust verwerfen ihn (kein Klick, kein
+  Zug — `Esc` beendet in diesem Moment nicht das Lab); `W`/`E`/`R`, `B` und Auswahl-Tasten werden ignoriert.
+- **Auswahl-Tasten** (`1`/`2`/`3`, Shift+L/R) werden wie Klicks ignoriert, solange eine Geste scharf ist oder läuft.
+- **Alt+LMB-Orbit** beginnt jetzt wie in der App erst nach 5 px (Alt+Klick = umschalten); vorher sofort. Das gepufferte
+  Stück wird nachgeholt.
+- **Anker eines Auswahl-Zugs** (Bild → Welt): `min(seeds)` wie `MoveTool`; beim Hover weiter das erste Ende der gehoverten
+  Kante. Pivot unverändert `primary_pivot(seeds)`.
+- **Während einer Geste auf der Auswahl** zeigt das Lab keine Hover-Linie (wie die App beim Scharfschalten).
+- **Shift+L/R** nehmen die gehoverte Kante, unabhängig von `Tab` (Shift+L immer Loop, Shift+R immer Ring). Der
+  Playground ersetzt die Auswahl und startet an der ersten gewählten Kante — das Lab fügt hinzu (E27) und braucht keine
+  Kante in der Auswahl.
+- **HUD-Zeile** „Auswahl (Modus): leer → Gesten wirken auf den gehoverten Loop“ bzw. „n gewählt … → alle Gesten wirken
+  auf die Auswahl · Klick ins Leere = zurück zum Hover“.
+
+### Beobachtungen beim Bauen (keine Bewertung)
+
+Im Fenster unter Xvfb durchgespielt und per Screenshot geprüft (nicht Referenz-PC): Klick/Shift/Ctrl/Alt in allen drei
+Modi, Shift+L um einen geschlossenen Loop, Flächen auswählen und ziehen, Vorschau `P` mit Auswahl.
+
+- **V1 Gewählte Kanten vs. Hover-Linie:** beide 1 px gelb (Production: gewählt `(1.0, 0.82, 0.15)` deckend, Hover
+  `(0.95, 0.90, 0.35)` halbtransparent). Im Screenshot unterscheiden sie sich nur in Sättigung/Helligkeit — ein gewählter
+  und ein gehoverter Loop sind schwer auseinanderzuhalten. Die blassgelben Seed-Punkte (Production-Hover-Stil) liegen
+  genau auf der Auswahl.
+- **V2 Farb-Nachbarschaft:** das Auswahl-Gelb liegt neben den warmen Einflussfarben (Rot/Orange/Rosa) und der orangen
+  Vorschau; mit `P` grenzt die gelbe Flächenfüllung direkt an Orange. Im Screenshot unterscheidbar, aber benachbart.
+  Laut Handoff gemeldet, keine neue Palette.
+- **V3 Gefüllte Flächen:** gewählte Flächen sind deckend gefüllt und verdecken die Vorschau-Tönung dieser Flächen (sie
+  sind Seeds, `w = 1`); das Drahtgitter darüber erscheint gestrichelt (gleiche Tiefe; Zeichenreihenfolge wie in der App).
+- **V4 Punktmodus:** ein Klick trifft nur nahe an einem Vertex (Production-Pick-Radius); die Hover-Anzeige zeigt aber den
+  Loop, nicht den Punkt, den ein Klick treffen würde. Das Lab zeigt keinen Komponenten-Hover (die App schon,
+  `Selection.hovered`) — nicht im Auftrag.
+- **V5 Klick ohne Bewegung:** mit leerer Auswahl wählt ein Klick auf dem Mesh jetzt etwas aus; danach wirken alle Gesten
+  auf diese Auswahl, bis ein Klick ins Leere sie leert. Vor Slice 3 war ein Klick ohne Bewegung ein leerer Zug.
+- **V6 Ziehen unter 5 px** bewegt nichts mehr (es wird ein Klick); vorher bewegte es den Loop um diese Pixel.
+- **V7 Nachführen nach Auswahlwechsel:** die Punkte/Vorschau zeigen dann die *neue* Auswahl, das Nachführen wirkt aber
+  auf den letzten Zug mit den *alten* Seeds (E30) — beides ist gleichzeitig sichtbar.
+
+### Offene Fragen (nicht im Code entschieden)
+
+- **O12** Shift+L/R im Flächenmodus: weder `src` noch `playground` hat eine Flächen-Loop/-Ring-Regel.
+- **O13** Komponenten-Hover (welcher Punkt / welche Kante / Fläche ein Klick trifft) zusätzlich zur Loop-Linie? (V4)
+- **O14** Reicht der Production-Stil, um Auswahl und Hover-Linie zu trennen? (V1, V2 — Teil von s4)
+- **O15** Moduswechsel leert die Auswahl (wie die App) — oder soll sie umgerechnet werden (z. B. Kanten → ihre Punkte)?
+- **O16** Shift+L/R: hinzufügen (Lab, E27) oder ersetzen (Playground)?
+
+### Praxistest für Manu (ca. 10 Minuten)
+
+Start im Repo-Ordner: `python experiments/mehlsack_lab/run.py`, Box mit einigen Loops bauen, `Enter`.
+
+1. **Ohne Auswahl wie bisher:** Über einen Loop fahren und mit LMB ziehen, dann `R` halten — alles wie in Slice 2b.
+2. **Einzelauswahl:** `1` = Punkte, `2` = Kanten, `3` = Flächen. Klick auf ein Element = Auswahl. `Shift`+Klick = hinzufügen, `Ctrl`+Klick = wegnehmen, `Alt`+Klick = umschalten.
+3. **Loop/Ring auswählen:** Im Kantenmodus über eine Kante fahren, `Shift+L` = ganzen Loop dazu, `Shift+R` = Ring dazu.
+4. **Auswahl bewegen:** Mit Auswahl wirkt **jede** Geste auf die Auswahl — LMB ziehen, `W`/`E`/`R` halten. Der weiche Einfluss (Punkte, `P`) geht jetzt von der Auswahl aus. Probier eine unregelmäßige Auswahl (z. B. ein paar Flächen auf einer Seite) mit Senke in der Kurve.
+5. **Zurück zum direkten Arbeiten:** Klick ins Leere leert die Auswahl — danach wieder Loop hovern und ziehen.
+6. **Lesbarkeit:** Kannst du Auswahl (was du gewählt hast), Einfluss (was mitgeht) und Achsen-Sperre auseinanderhalten?
+
+Die Kurven-Presets liegen jetzt auf anderen Tasten (siehe Tastenhilfe `H`). Alle Tasten außer denen aus deiner Input Truth sind Vorschläge.
+
+**Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
+
+| Punkt | Verdikt | Notiz |
+|---|---|---|
+| (s1) Auswahl per Klick mit Shift/Ctrl/Alt in Punkt-/Kanten-/Flächenmodus | | |
+| (s2) Loop/Ring per Shift+L / Shift+R auswählen | | |
+| (s3) Regel „mit Auswahl wirkt alles auf die Auswahl, Klick ins Leere = zurück zum Hover-Ziehen“ | | |
+| (s4) Auswahl, Einfluss und Achsen-Sperre unterscheidbar | | |
+
+Hinweis: Die Presets sind `K` = Smooth und `Shift+K` = Mexican Hat (mit Senke).
+
 ## Tests
 
 ```
@@ -552,3 +726,12 @@ Formeln, drei Masken), negative Gewichte (`w · θ`, README-Tabelle linear/power
 Commit/Cancel/Undo/Redo, Nachführen für Rotate/Scale inkl. Formelwechsel, W/E/R halten (scharf, Tippen = nichts, Ziel
 eingefroren, Abbildung aus den Tool-Klassen, Stückelung egal, Ebenen, MIN_SCALE, Abbruchwege, Undo), `M`, HUD-Zähler,
 Fenster-Pfad (R halten → ein Eintrag, RMB-Abbruch, Fokusverlust), Kurven-Rundungsschutz (Regression).
+Slice 3 (`test_selection.py`, `test_selection_gl.py`): Klick ersetzen/hinzu/weg/umschalten je Modus, Klick ins Leere,
+Schwelle aus `mirai.interaction.pointer` (Klick darunter, Ziehen ab der Schwelle, gepufferte Schritte einzeln),
+`1`/`2`/`3`, Presets auf `K`/`Shift+K` (nicht in der Artist Truth), Shift+L/Shift+R (hinzufügen, Rand-Loop, Punktmodus,
+Flächenmodus abgelehnt, Shift+R schärft kein Scale), Ziel-Regel E26 (Seeds = Auswahl-Vertices; W/E/R auf der Auswahl =
+gleiche Seeds als Ziel; leere Auswahl = Ergebnisse wie vorher), LMB-Ziehen auf der Auswahl, Nachführen mit
+Auswahl-Seeds nach Auswahlwechsel, Undo/Redo behalten / `B` leert, Eingaben ignoriert während einer Geste oder eines
+offenen Drucks, HUD-Zeile; Fenster: Klick wählt und zeichnet je Modus, Modifier-Klicks, Ziehen bewegt die Auswahl,
+**Ziehen ohne Auswahl bitgleich zum Slice-1–2b-Pfad** (mit Achsen-Sperre), Druck ins Leere zieht nichts, Alt-Klick /
+Alt-Orbit, `Esc` verwirft einen offenen Druck, Shift+L/R im Fenster.

@@ -58,7 +58,7 @@ def test_keys():
         ("TAB", NONE): lb.TOGGLE_MODE, ("X", NONE): lb.AXIS_X, ("Y", NONE): lb.AXIS_Y,
         ("Z", NONE): lb.AXIS_Z, ("O", frozenset({"ctrl"})): lb.METRIC,
         ("O", frozenset({"alt"})): lb.BANDS, ("P", NONE): lb.PREVIEW, ("N", NONE): lb.NACHFUEHREN,
-        ("_1", NONE): lb.PRESET_1, ("_2", NONE): lb.PRESET_2,
+        ("K", NONE): lb.PRESET_1, ("K", frozenset({"shift"})): lb.PRESET_2,
         ("Z", frozenset({"ctrl"})): lb.UNDO, ("Y", frozenset({"ctrl"})): lb.REDO,
         ("B", NONE): lb.NEW_BOX, ("H", NONE): lb.HELP, ("ESCAPE", NONE): lb.ESCAPE,
         # Slice 2b: hold W/E/R, exclude-axis planes (B4.1, Artist Input Truth), formula
@@ -73,7 +73,7 @@ def test_keys():
     assert lb.resolve_key(EDIT, "RETURN", NONE) is None
     assert lb.resolve_key(CREATE, "H", NONE) == lb.HELP
     assert lb.resolve_key(CREATE, "P", NONE) is None
-    assert lb.resolve_key(CREATE, "R", NONE) is None and lb.resolve_key(EDIT, "R", frozenset({"shift"})) is None
+    assert lb.resolve_key(CREATE, "R", NONE) is None
     # a release ends the hold whatever modifiers are held by then
     assert lb.resolve_hold_release(EDIT, "R") == lb.HOLD_SCALE and lb.resolve_hold_release(EDIT, "X") is None
     assert {b.gesture() for b in lb.LAB_OVERRIDES if b.kind == "hold"} == {"W halten", "E halten", "R halten"}

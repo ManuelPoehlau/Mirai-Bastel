@@ -102,7 +102,7 @@ def test_enter_commits_also_without_divisions():
 
 def test_edit_keys_do_nothing_in_creation_phase():
     state = ls.LabState()
-    for name in ("TAB", "X", "_1", "_2", "N", "B"):
+    for name in ("TAB", "X", "_1", "_2", "_3", "K", "N", "B"):
         assert state.key(name).effects == set(), name
     assert state.key("Z", {"ctrl"}).effects == set()
     assert state.mode == MODE_LOOP and state.axis is None
@@ -159,11 +159,11 @@ def test_axis_mask_applies_to_the_drag():
 def test_presets():
     state = edit_state()
     assert state.curve.preset == PRESET_SMOOTH
-    assert ls.PREVIEW_CHANGED in state.key("_2")
+    assert ls.PREVIEW_CHANGED in state.key("K", {"shift"})
     assert state.curve.preset == PRESET_HAT
-    state.key("_1")
+    state.key("K")
     assert state.curve.preset == PRESET_SMOOTH
-    assert state.key("_1").effects == set()  # already Smooth
+    assert state.key("K").effects == set()  # already Smooth
 
 
 def test_edit_wheel_zoom_and_radius():
@@ -275,7 +275,7 @@ def test_settings_survive_a_new_box():
     state = edit_state()
     state.key("TAB")
     state.key("X")
-    state.key("_2")
+    state.key("K", {"shift"})
     state.key("N")
     state.key("B")
     state.key("B")
@@ -350,7 +350,7 @@ W, H = 800, 600
 def hold_state(params=BoxParams(h=6, n=3), curve_key=None):
     state = edit_state(params)
     if curve_key:
-        state.key(curve_key)
+        state.key(*curve_key)
     state.hover_target = state.session.target(horizontal_edge(state.session.mesh, 0.0), MODE_LOOP)
     camera = OrbitCamera()
     return state, camera
@@ -398,7 +398,7 @@ def test_no_hover_no_arm_and_second_hold_key_ignored():
     target = state.hover_target
     state.hover_target = None
     state.key("R")
-    assert not state.armed and "nichts gehovert" in state.note
+    assert not state.armed and "nichts ausgewählt oder gehovert" in state.note
     state.hover_target = target
     state.key("R")
     state.key("E")  # a second hold key while one is held: ignored
@@ -498,7 +498,7 @@ def test_cancel_paths_and_undo_during_hold():
 
 
 def test_m_toggles_formula_and_retunes_the_last_scale():
-    state, cam = hold_state(BoxParams(h=10, n=4), curve_key="_2")
+    state, cam = hold_state(BoxParams(h=10, n=4), curve_key=("K", {"shift"}))
     for _ in range(6):
         state.wheel(0, 1, {"shift"})  # bigger radius: the negative lobe reaches vertices
     assert state.scale_formula == "linear" and "Scale linear" in state.status_text()

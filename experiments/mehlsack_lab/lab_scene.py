@@ -8,6 +8,13 @@ the lab's `GLSignedBandOverlay` for the signed influence bands and (Slice 2a E14
 `GLInfluencePreviewOverlay` for the optional surface preview, drawn right after the mesh so
 wire, Loop/Ring line and points stay on top.
 
+Selection (Slice 3 E29): drawn with the production selection style, read only — the
+production `SelectionOverlay` turns the lab's Core `Selection` into the `selected` layers
+(points in Vertex mode, segments in Edge mode, triangles in Face mode) of the production
+`GLPointOverlay`, `GLLineOverlay` and `GLTriangleOverlay` (App draw order: wire, selected
+faces, hover/selected lines, bands, points). The hover Loop/Ring line is the hover's even
+when the gesture target is the selection (`set_target(..., hover=)`).
+
 The viewport stays passive: the window pushes the target and its weights in
 (`set_target`), the overlays only turn them into positions at the mesh's current
 positions. Positions changed by a drag step are reported per vertex
@@ -27,7 +34,8 @@ from mirai.viewport.camera import OrbitCamera
 from viewport.gl_line_overlay import WIRE_LAYER, GLLineOverlay
 from viewport.gl_point_overlay import GLPointOverlay
 from viewport.gl_render_store import GLRenderStore
-from viewport.overlay import HOVER_LAYER, SelectionOverlay
+from viewport.gl_triangle_overlay import GLTriangleOverlay
+from viewport.overlay import HOVER_LAYER, SELECTED_LAYER, SelectionOverlay
 from viewport.render_mesh import RenderMesh
 
 from .lab_bands import EMPTY_SIGNED_BANDS, GLSignedBandOverlay, SignedBands
@@ -39,7 +47,8 @@ CLEAR_COLOR = (0.05, 0.05, 0.08)
 
 
 class LabScene:
-    def __init__(self, aspect: float, camera: Optional[OrbitCamera] = None) -> None:
+    def __init__(self, aspect: float, camera: Optional[OrbitCamera] = None,
+                 selection: Optional[Selection] = None) -> None:
         self.aspect = aspect
         self.camera = camera if camera is not None else OrbitCamera()
         self.mesh: Optional[Mesh] = None
@@ -48,10 +57,18 @@ class LabScene:
         self.points = GLPointOverlay()
         self.bands = GLSignedBandOverlay()
         self.preview = GLInfluencePreviewOverlay()
+        self.faces = GLTriangleOverlay()
+        #: The lab's selection (read by the production `SelectionOverlay`, never changed here).
+        self.selection = selection if selection is not None else Selection()
+        self.selection_overlay = SelectionOverlay(self.selection)
+        #: What a gesture acts on (seed points + bands) and the hovered Loop/Ring (line).
         self.target: Optional[Target] = None
+        self.hover: Optional[Target] = None
         #: Radius the camera was last framed on (the creation phase only zooms out).
         self.framed_radius = 0.0
         self._wire_version = -1
+        self._selection_key = None
+        self.selection_version = 0
         self.version = 0
 
     # -- mesh ---------------------------------------------------------------------------------
@@ -61,7 +78,7 @@ class LabScene:
         (only zoom out when the mesh outgrew the framed sphere) or "none"."""
         self.release()
         self.mesh = mesh
-        rm = RenderMesh(mesh, overlay=SelectionOverlay(Selection()), store_type=GLRenderStore)
+        rm = RenderMesh(mesh, overlay=self.selection_overlay, store_type=GLRenderStore)
         # Lines are drawn over the faces: push the faces back (production behaviour, E40).
         rm.store.set_draw_style(False, True)
         rm.bind_camera(self.camera)
@@ -95,9 +112,16 @@ class LabScene:
 
     # -- hover target + bands ------------------------------------------------------------------
 
-    def set_target(self, target: Optional[Target], weights: dict) -> None:
-        """The hovered (or dragged) target and the weights bands and preview show."""
+    def selection_changed(self) -> None:
+        """The selection changed: rebuild its layers on the next draw."""
+        self.selection_version += 1
+
+    def set_target(self, target: Optional[Target], weights: dict, hover: Optional[Target] = None) -> None:
+        """The target a gesture acts on (or the running one) with the weights bands and preview
+        show, and the hovered Loop/Ring whose line is drawn (None: the target's own edges — the
+        hover target itself before Slice 3)."""
         self.target = target
+        self.hover = hover
         weights = weights if target is not None else {}
         self.bands.set_bands(SignedBands.from_weights(weights) if target is not None else EMPTY_SIGNED_BANDS)
         self.preview.set_weights(weights)
@@ -112,22 +136,28 @@ class LabScene:
             )
             self._wire_version = self.version
         target = self.target
-        if target is None:
-            self.lines.set_segments([], HOVER_LAYER)
-            self.points.set_points(HOVER_LAYER, [])
-        else:
-            self.lines.set_segments(
-                [(position(a), position(b)) for a, b in (mesh.edge_vertices(e) for e in target.edges)],
-                HOVER_LAYER,
-            )
-            self.points.set_points(HOVER_LAYER, [position(v) for v in sorted(target.seeds)])
+        line = self.hover if self.hover is not None else target
+        self.lines.set_segments(
+            [] if line is None else
+            [(position(a), position(b)) for a, b in (mesh.edge_vertices(e) for e in line.edges)],
+            HOVER_LAYER,
+        )
+        self.points.set_points(HOVER_LAYER, [] if target is None else [position(v) for v in sorted(target.seeds)])
+        key = (self.version, self.selection_version)
+        if key != self._selection_key:
+            overlay = self.selection_overlay
+            self.points.set_points(SELECTED_LAYER, overlay.point_layers(mesh)[SELECTED_LAYER])
+            self.lines.set_segments(overlay.line_layers(mesh)[SELECTED_LAYER], SELECTED_LAYER)
+            self.faces.set_triangles(SELECTED_LAYER, overlay.face_layers(mesh)[SELECTED_LAYER])
+            self._selection_key = key
         self.bands.sync(mesh)
         self.preview.sync(mesh, self.version)
 
     # -- draw -------------------------------------------------------------------------------------
 
     def draw(self) -> None:
-        """Clears and draws mesh, preview, wire, hovered Loop/Ring, bands and seeds (no 2D)."""
+        """Clears and draws mesh, preview, wire, selected faces, hovered Loop/Ring + selected
+        edges, bands, seeds + selected points (no 2D)."""
         from pyglet import gl
 
         gl.glClearColor(*CLEAR_COLOR, 1.0)
@@ -139,7 +169,9 @@ class LabScene:
         self._refresh_overlays()
         uniforms = self.camera_uniforms()
         self.preview.draw(uniforms)
-        self.lines.draw(uniforms, layers=(WIRE_LAYER, HOVER_LAYER))
+        self.lines.draw(uniforms, layers=(WIRE_LAYER,))
+        self.faces.draw(uniforms)
+        self.lines.draw(uniforms, layers=(HOVER_LAYER, SELECTED_LAYER))
         self.bands.draw(uniforms)
         self.points.draw(uniforms)
 
@@ -151,6 +183,7 @@ class LabScene:
                 vlist.delete()
         self.render_mesh = None
         self.mesh = None
+        self._selection_key = None
 
 
 def gl_info_strings() -> tuple[str, str]:

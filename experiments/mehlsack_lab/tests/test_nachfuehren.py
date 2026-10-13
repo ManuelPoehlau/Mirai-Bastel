@@ -122,7 +122,7 @@ def _state_after_gesture():
 def test_state_with_n_on_retunes_on_preset_radius_and_curve_point():
     state, target = _state_after_gesture()
     assert state.nachfuehren
-    out = state.key("_2")
+    out = state.key("K", {"shift"})
     assert MESH_CHANGED in out and out.changed
     out = state.wheel(0, 1, {"shift"})
     assert MESH_CHANGED in out
@@ -136,12 +136,12 @@ def test_state_with_n_off_keeps_the_gesture_weights_from_begin():
     state.key("N")
     assert not state.nachfuehren
     before = positions(state.session.mesh)
-    out = state.key("_2")
+    out = state.key("K", {"shift"})
     assert MESH_CHANGED not in out
     assert positions(state.session.mesh) == before
     # switching N on again does not re-arm the old gesture
     state.key("N")
-    assert MESH_CHANGED not in state.key("_1")
+    assert MESH_CHANGED not in state.key("K")
     assert positions(state.session.mesh) == before
 
 
@@ -151,7 +151,7 @@ def test_curve_change_during_a_drag_keeps_the_running_weights():
     state.key("RETURN")
     target = state.session.target(horizontal_edge(state.session.mesh, 0.0), "loop")
     began = state.begin_drag(target)
-    state.key("_2")
+    state.key("K", {"shift"})
     assert state.session.drag.operation.weights == began
     state.drag_step((0.0, 0.1, 0.0))
     state.end_drag()

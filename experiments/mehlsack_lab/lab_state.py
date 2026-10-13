@@ -24,6 +24,15 @@ axis at `begin()` or `_resolve_space(space, for_rotation=True)`; Scale
 Constraint (E18, B4.1): one sticky state for X/Y/Z and Shift+X/Y/Z (Shift+X = "yz" …);
 same key again = off, another replaces; read at `begin()`, fixed for the gesture.
 
+Selection (Slice 3, E23–E31): a Core `Selection` (never in the History), changed by
+`click()` (the window picks the hit with `pick_component`), `1`/`2`/`3` (mode; clears it like
+the app) and Shift+L / Shift+R (add the hovered edge's Loop / Ring, `lab_selection`). Target
+rule E26: `active_target` is the selection's target when it resolves to vertices, else the
+hover target — W/E/R arm on it, the LMB drag takes it (`gesture_target`). A selection change
+never ends Nachführen (E30: it changes no geometry); Undo/Redo keep the selection, a new box
+clears it; while a gesture is armed, running or an LMB press is undecided (`busy`), selection
+input is ignored (E31).
+
 Phases: `create` (wheel builds the box, `Enter` commits) → `edit` (Loop/Ring drag).
 Settings are sticky and survive gestures, Undo and a new box: Loop/Ring mode, axis,
 radius step, metric, curve, bands, preview, Nachführen. Defaults: geodesic, Smooth, 15 %
@@ -36,6 +45,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from core import Selection, SelectionMode
 from mirai.interaction.tools.rotate import RotateTool
 from mirai.interaction.tools.scale import ScaleTool
 from mirai.interaction.tools.transform import _resolve_space
@@ -49,6 +59,7 @@ from mirai.soft_selection.settings import (
 from . import lab_bindings as lb
 from .box import BoxParams, box_rims, build_box_mesh
 from .edit_session import KIND_LABELS, MOVE, ROTATE, SCALE, EditSession
+from .lab_selection import MODE_NAMES, add_loop_ring, apply_click, selection_target
 from .signed_curve import DEFAULT_CURVE, PRESET_HAT, PRESET_SMOOTH, SignedCurve
 from .signed_ops import SCALE_FORMULAS, collapsed_count
 from .targets import MODE_LABELS, MODE_LOOP, MODE_RING, Target
@@ -61,6 +72,7 @@ REPICK = "repick"                    # positions may differ from the last pick (
 GESTURE_BEGAN = "gesture_began"      # a hold gesture began: show its weights
 PREVIEW_CHANGED = "preview_changed"  # mode/radius/metric/curve: recompute hover target + bands
 DISPLAY_CHANGED = "display_changed"  # bands/preview visibility, help, HUD text only
+SELECTION_CHANGED = "selection_changed"  # the selection overlay must be rebuilt
 QUIT = "quit"
 
 FRAME_EMA = 0.1
@@ -71,6 +83,8 @@ _SPACES = {lb.AXIS_X: "x", lb.AXIS_Y: "y", lb.AXIS_Z: "z",
 _SPACE_LABELS = {None: "frei", "x": "X", "y": "Y", "z": "Z",
                  "yz": "Ebene YZ", "xz": "Ebene XZ", "xy": "Ebene XY"}
 _PRESETS = {lb.PRESET_1: PRESET_SMOOTH, lb.PRESET_2: PRESET_HAT}
+_SELECTION_MODES = {lb.MODE_VERTEX: SelectionMode.VERTEX, lb.MODE_EDGE: SelectionMode.EDGE,
+                    lb.MODE_FACE: SelectionMode.FACE}
 #: PROVISIONAL default Scale formula: the app's (`SoftScaleOperation` default).
 DEFAULT_SCALE_FORMULA = "linear"
 
@@ -128,6 +142,10 @@ class LabState:
         #: The window keeps this current (the hover target W/E/R arm on).
         self.hover_target: Optional[Target] = None
         self.hold: Optional[Hold] = None
+        #: Slice 3: the Core selection (E23; mode sticky like the other settings, Core default).
+        self.selection = Selection()
+        #: The window sets this while an LMB press is still undecided (click or drag, E24).
+        self.pointer_pending = False
         #: Linear Scale: vertices with g <= 0 in the running / last Scale gesture (E20).
         self.collapsed: Optional[int] = None
         self.radius_step = DEFAULT_RADIUS_STEP
@@ -168,6 +186,31 @@ class LabState:
     @property
     def armed(self) -> bool:
         return self.hold is not None
+
+    @property
+    def busy(self) -> bool:
+        """A gesture is armed or running, or an LMB press is undecided (E31)."""
+        return self.dragging or self.hold is not None or self.pointer_pending
+
+    @property
+    def selection_target(self) -> Optional[Target]:
+        if self.session is None:
+            return None
+        return selection_target(self.session.mesh, self.selection)
+
+    @property
+    def active_target(self) -> Optional[Target]:
+        """E26: the selection's target when it resolves to vertices, else the hover target."""
+        target = self.selection_target
+        return target if target is not None else self.hover_target
+
+    def gesture_target(self, over_mesh: bool) -> Optional[Target]:
+        """The target of an LMB drag pressed now: with a selection only when pressed over the
+        mesh (E26), without one the hover target exactly as before."""
+        target = self.selection_target
+        if target is not None:
+            return target if over_mesh else None
+        return self.hover_target
 
     @property
     def axis_mask(self) -> tuple[float, float, float]:
@@ -312,6 +355,24 @@ class LabState:
         self.note = None
         return self.session
 
+    # -- edit phase: selection (Slice 3) ------------------------------------------------------
+
+    def click(self, command: str, hit) -> Outcome:
+        """A selection click (E25) with the handle the window picked in the active mode
+        (None = empty space). Ignored while `busy` (E31) and outside the edit phase."""
+        out = Outcome(action=command)
+        if self.phase != lb.PHASE_EDIT or self.busy:
+            return out
+        if self.confirm_new_box:
+            self.confirm_new_box = False
+            self.note = None
+            out.effects.add(DISPLAY_CHANGED)
+        if apply_click(self.selection, command, hit):
+            self.note = None
+            out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
+        self._touch()
+        return out
+
     # -- edit phase: gesture ----------------------------------------------------------------
 
     def begin_drag(self, target: Target) -> dict:
@@ -391,7 +452,8 @@ class LabState:
             return (f"Box: Höhe {b.height:g} · Breite {b.width:g} · Tiefe {b.depth:g} · Loops {b.loops} (h={b.h}) · "
                     f"rundum n={b.n} · V {v} / E {e} / F {f}")
         axis = _SPACE_LABELS[self.axis]
-        return (f"{MODE_LABELS[self.mode]} · Achse {axis} · Scale {self.scale_formula} · "
+        return (f"{MODE_LABELS[self.mode]} · Auswahl {MODE_NAMES[self.selection.mode]} · Achse {axis} · "
+                f"Scale {self.scale_formula} · "
                 f"Radius {self.radius_percent} % "
                 f"({self.world_radius:.2f}) · {self.metric} · Kurve {self.curve.label} · "
                 f"Nachführen {'an' if self.nachfuehren else 'aus'} · "
@@ -399,14 +461,15 @@ class LabState:
                 f"Vorschau {'an' if self.preview_visible else 'aus'}")
 
     def hud_lines(self, frame_ms: Optional[float]) -> list[HudLine]:
-        lines = [HudLine("Mehlsack Lab — Slice 2b (Move/Rotate/Scale) · nicht Artist-validiert", "title")]
+        lines = [HudLine("Mehlsack Lab — Slice 3 (Auswahl) · nicht Artist-validiert", "title")]
         if self.phase == lb.PHASE_CREATE:
             lines.append(HudLine("BOX BAUEN: Mausrad Höhe · Alt+Rad Breite · Alt+Shift+Rad Tiefe · "
                                  "Shift+Rad Loops · Ctrl+Rad rundum · Enter = Bearbeiten", "active"))
             lines.append(HudLine("(Mausrad zoomt hier nicht — es gehört der Box)", "inactive"))
         else:
-            lines.append(HudLine("BEARBEITEN: hovern, dann LMB ziehen oder W/E/R halten · Tab Loop/Ring · "
-                                 "X/Y/Z, Shift = Ebene · M Formel · H Hilfe", "active"))
+            lines.append(HudLine("BEARBEITEN: LMB ziehen oder W/E/R halten · Klick = Auswahl (Shift/Ctrl/Alt) · "
+                                 "1/2/3 Modus · Tab Loop/Ring · X/Y/Z, Shift = Ebene · H Hilfe", "active"))
+            lines.append(self._selection_line())
             hold = self.hold
             if hold is not None:
                 state = "läuft" if hold.begun else "scharf — Maus bewegen"
@@ -439,6 +502,17 @@ class LabState:
         elif self.note:
             lines.append(HudLine(self.note, "warning"))
         return lines
+
+    def _selection_line(self) -> HudLine:
+        sel = self.selection
+        count = len({SelectionMode.VERTEX: sel.vertices, SelectionMode.EDGE: sel.edges,
+                     SelectionMode.FACE: sel.faces}[sel.mode])
+        target = self.selection_target
+        if target is None:
+            return HudLine(f"Auswahl ({MODE_NAMES[sel.mode]}): leer → Gesten wirken auf den gehoverten "
+                           f"{MODE_LABELS[self.mode]}", "inactive")
+        return HudLine(f"Auswahl ({MODE_NAMES[sel.mode]}): {count} gewählt, {len(target.seeds)} Vertices → "
+                       "alle Gesten wirken auf die Auswahl · Klick ins Leere = zurück zum Hover", "active")
 
     def help_lines(self) -> list[str]:
         return ["Tasten (alle lab-lokal PROVISIONAL, außer Artist Input Truth):"] + lb.overrides_table(self.phase)
@@ -495,14 +569,14 @@ def _h_axis(state: LabState, out: Outcome, steps: int) -> None:
 
 
 def _h_hold(state: LabState, out: Outcome, steps: int) -> None:
-    """W/E/R down: arm on the current hover target (E16); ignored without a target, while
-    another hold or an LMB drag runs."""
-    if state.hold is not None or state.dragging or state.session is None:
+    """W/E/R down: arm on the active target (E16, E26: the selection, else the hover target);
+    ignored without a target, while another hold, an LMB drag or an undecided LMB press runs."""
+    if state.busy or state.session is None:
         return
-    target = state.hover_target
+    target = state.active_target
     kind = lb.HOLD_KINDS[out.action]
     if target is None:
-        state.note = f"{KIND_LABELS[kind]}: nichts gehovert"
+        state.note = f"{KIND_LABELS[kind]}: nichts ausgewählt oder gehovert"
         out.effects.add(DISPLAY_CHANGED)
         return
     key = next(b.value for b in lb.LAB_OVERRIDES if b.action == out.action)
@@ -571,7 +645,7 @@ def _h_redo(state: LabState, out: Outcome, steps: int) -> None:
 
 
 def _h_new_box(state: LabState, out: Outcome, steps: int) -> None:
-    if state.dragging or state.hold is not None:
+    if state.busy:
         return
     if not state.confirm_new_box:
         state.confirm_new_box = True
@@ -580,10 +654,35 @@ def _h_new_box(state: LabState, out: Outcome, steps: int) -> None:
     state.confirm_new_box = False
     state.session = None  # History goes with the session
     state.hover_target = None
+    state.selection.clear()  # E31: a new box starts without a selection (the mode stays)
     state.collapsed = None
     state.phase = lb.PHASE_CREATE
     state.note = None
-    out.effects.update({PHASE_CHANGED, BOX_CHANGED})
+    out.effects.update({PHASE_CHANGED, BOX_CHANGED, SELECTION_CHANGED})
+
+
+def _h_selection_mode(state: LabState, out: Outcome, steps: int) -> None:
+    """`1`/`2`/`3` (Artist Input Truth): set the mode and clear the selection, also for the
+    active mode — as the app's `_set_selection_mode` (Playground behaviour). Ignored while busy."""
+    if state.busy:
+        return
+    mode = _SELECTION_MODES[out.action]
+    state.selection.mode = mode
+    state.selection.clear()
+    state.note = f"Auswahlmodus: {MODE_NAMES[mode]}"
+    out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
+
+
+def _h_loop_ring_select(state: LabState, out: Outcome, steps: int) -> None:
+    """Shift+L / Shift+R (E27): add the Loop / Ring of the hovered edge. Ignored while busy."""
+    if state.busy or state.session is None:
+        return
+    kind = MODE_LOOP if out.action == lb.LOOP_SELECT else MODE_RING
+    edge = state.hover_target.edge if state.hover_target is not None else None
+    changed, state.note = add_loop_ring(state.selection, state.session.finder, edge, kind)
+    out.effects.add(DISPLAY_CHANGED)
+    if changed:
+        out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
 
 
 def _h_help(state: LabState, out: Outcome, steps: int) -> None:
@@ -629,6 +728,11 @@ _HANDLERS = {
     lb.UNDO: _h_undo,
     lb.REDO: _h_redo,
     lb.NEW_BOX: _h_new_box,
+    lb.MODE_VERTEX: _h_selection_mode,
+    lb.MODE_EDGE: _h_selection_mode,
+    lb.MODE_FACE: _h_selection_mode,
+    lb.LOOP_SELECT: _h_loop_ring_select,
+    lb.RING_SELECT: _h_loop_ring_select,
     lb.HELP: _h_help,
     lb.ESCAPE: _h_escape,
 }

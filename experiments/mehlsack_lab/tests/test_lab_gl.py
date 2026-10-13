@@ -17,6 +17,7 @@ from pyglet.window import key, mouse  # noqa: E402
 
 from mehlsack_lab import lab_bindings as lb  # noqa: E402
 from mehlsack_lab.box import BoxParams  # noqa: E402
+from mirai.interaction.pointer import CLICK_THRESHOLD_PX  # noqa: E402
 
 WIDTH, HEIGHT = 640, 480
 
@@ -138,9 +139,10 @@ def test_hover_drag_commit_undo_without_structural_rebuild(window):
     before_topology = rm.benchmark_counters.get("topology_updates", 0)
     start = {v: window.scene.mesh.vertex_position(v) for v in window.scene.mesh.all_vertex_ids()}
     window.on_mouse_press(x, y, mouse.LEFT, 0)
-    assert window.state.dragging
+    assert not window.state.dragging  # Slice 3 E24: click or drag is open until the threshold
     for i in range(12):
         window.on_mouse_drag(x, y + i, 0, 2, mouse.LEFT, 0)
+        assert window.state.dragging == (2 * (i + 1) >= CLICK_THRESHOLD_PX)
         window.on_draw()
     window.on_mouse_release(x, y + 12, mouse.LEFT, 0)
     assert not window.state.dragging and len(window.state.session.history) == 1
