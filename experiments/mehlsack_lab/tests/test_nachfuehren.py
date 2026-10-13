@@ -1,16 +1,25 @@
-"""§7.6 Nachführen (E7 b) on `EditSession`: unchanged curve → no change; new curve → equals a
-fresh gesture with that curve from the same start; History length unchanged; one Undo restores
-the pre-gesture mesh; N off → weights fixed since `begin()` (state level)."""
+"""§7.6 Nachführen (E7 b; Slice 2b E21: Rotate/Scale incl. the formula switch) on `EditSession`:
+unchanged curve → no change; new curve → equals a fresh gesture with that curve from the same
+start; History length unchanged; one Undo restores the pre-gesture mesh; N off → weights fixed
+since `begin()` (state level)."""
 
 from __future__ import annotations
 
+import pytest
+
 from core import HistoryStack, OperationContext
-from mehlsack_lab.edit_session import EditSession
+from mehlsack_lab.edit_session import ROTATE, SCALE, EditSession
 from mehlsack_lab.lab_state import LabState, MESH_CHANGED
 from mehlsack_lab.box import BoxParams, build_box_mesh
 from mehlsack_lab.signed_curve import DEFAULT_CURVE, PRESET_HAT, SignedCurve
 from mehlsack_lab.signed_influence import signed_influence
-from mehlsack_lab.signed_ops import SignedSoftMoveOperation, VertexView
+from mehlsack_lab.signed_ops import (
+    SignedSoftMoveOperation,
+    SignedSoftRotateOperation,
+    SignedSoftScaleOperation,
+    VertexView,
+)
+from mirai.soft_selection import primary_pivot
 
 from .helpers import horizontal_edge, positions
 
@@ -147,3 +156,78 @@ def test_curve_change_during_a_drag_keeps_the_running_weights():
     state.drag_step((0.0, 0.1, 0.0))
     state.end_drag()
     assert state.session.last.weights == began
+
+
+# -- Slice 2b E21: Nachführen for Rotate and Scale (incl. the formula switch) -----------------
+
+AXIS = (0.0, 1.0, 0.0)
+ANGLES = [0.1, 0.07, -0.02, 0.2]
+FACTORS = [(1.1, 1.0, 1.1), (1.2, 1.0, 1.2), (0.95, 1.0, 0.95)]
+
+
+def _session_after(kind, curve=DEFAULT_CURVE, formula="linear", radius_step=7):
+    session = EditSession(build_box_mesh(PARAMS))
+    start = positions(session.mesh)
+    target = session.target(horizontal_edge(session.mesh, 0.0), "loop")
+    radius = session.world_radius(radius_step)
+    session.begin_gesture(kind, target, radius, "geodesic", curve, axis=AXIS, formula=formula)
+    for step in (ANGLES if kind == ROTATE else FACTORS):
+        session.step(step)
+    assert session.commit() is not None
+    return session, target, start, radius
+
+
+def _fresh_signed(kind, seeds, total, radius, curve, formula):
+    mesh = build_box_mesh(PARAMS)
+    weights = signed_influence(mesh, seeds, radius, "geodesic", curve)
+    params = {"influence": weights, "pivot": primary_pivot(mesh, seeds)}
+    if kind == SCALE:
+        params["scale_formula"] = formula
+    cls = SignedSoftRotateOperation if kind == ROTATE else SignedSoftScaleOperation
+    op = cls(OperationContext(target=mesh, selection=VertexView(set(weights)), history=HistoryStack(),
+                              params=params))
+    op.begin()
+    op.update(axis=AXIS, angle=total) if kind == ROTATE else op.update(factor=total)
+    op.commit()
+    return mesh
+
+
+@pytest.mark.parametrize("kind", [ROTATE, SCALE])
+def test_rotate_scale_retune_equals_a_fresh_gesture_from_the_same_start(kind):
+    session, target, start, radius = _session_after(kind)
+    assert session.last.kind == kind and session.last.pivot == primary_pivot(build_box_mesh(PARAMS), target.seeds)
+    assert session.retune(radius, "geodesic", HAT, "linear") is True
+    fresh = _fresh_signed(kind, target.seeds, session.last.total, radius, HAT, "linear")
+    assert positions(session.mesh) == positions(fresh)
+    assert len(session.history) == 1 and session.last.retunes == 1
+    session.history.undo()
+    assert positions(session.mesh) == start
+
+
+def test_scale_formula_switch_retunes_the_last_scale():
+    session, target, start, radius = _session_after(SCALE, curve=HAT)
+    linear = positions(session.mesh)
+    assert session.retune(radius, "geodesic", HAT, "power") is True
+    fresh = _fresh_signed(SCALE, target.seeds, session.last.total, radius, HAT, "power")
+    assert positions(session.mesh) == positions(fresh) != linear
+    assert session.last.formula == "power" and len(session.history) == 1
+    assert session.retune(radius, "geodesic", HAT, "power") is False  # unchanged → no change
+    assert session.retune(radius, "geodesic", HAT, "linear") is True
+    back = _fresh_signed(SCALE, target.seeds, session.last.total, radius, HAT, "linear")
+    assert positions(session.mesh) == positions(back)
+    session.history.undo()
+    assert positions(session.mesh) == start
+
+
+def test_formula_does_not_touch_a_rotate_or_move_gesture():
+    session, _, _, radius = _session_after(ROTATE, curve=HAT)
+    before = positions(session.mesh)
+    assert session.retune(radius, "geodesic", HAT, "power") is False
+    assert positions(session.mesh) == before and session.last.formula is None
+
+
+def test_total_is_what_the_steps_accumulated():
+    session, _, _, _ = _session_after(ROTATE)
+    assert session.last.total == pytest.approx(sum(ANGLES)) and session.last.axis == AXIS
+    session, _, _, _ = _session_after(SCALE)
+    assert session.last.total == pytest.approx((1.1 * 1.2 * 0.95, 1.0, 1.1 * 1.2 * 0.95))

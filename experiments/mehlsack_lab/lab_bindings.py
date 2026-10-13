@@ -10,9 +10,11 @@ binding with `phase=None` applies in both.
 
 Fixed by the Artist Input Truth (`tools/Input_Mapping_Tool/artist_input_truth.json`):
 Alt+LMB orbit, Alt+Shift+LMB pan, wheel zoom (edit phase only — in the creation phase
-the wheel belongs to the box), X/Y/Z sticky axis, Ctrl+Z / Ctrl+Y. Everything else is a
-lab-local engineering proposal (`PROVISIONAL`), not an Artist decision. `Q W E R`
-(AD-016) and `C` (AD-017) are reserved and never bound.
+the wheel belongs to the box), X/Y/Z sticky axis, Shift+X/Y/Z sticky plane (Blender
+exclude-axis: Shift+X = YZ, Shift+Y = XZ, Shift+Z = XY), W/E/R = Move/Rotate/Scale held
+over the hover target (AD-016 hold-key-hover; Slice 2b E16 — kind "hold"), Ctrl+Z /
+Ctrl+Y. Everything else is a lab-local engineering proposal (`PROVISIONAL`), not an
+Artist decision. `Q` (AD-016) and `C` (AD-017) stay reserved and are never bound.
 
 pyglet-free: the window translates pyglet button/modifier/symbol values into the names
 used here.
@@ -39,6 +41,13 @@ CANCEL_PRESS = "cancel_press"
 BOX_HEIGHT = "box_height"
 BOX_WIDTH = "box_width"
 BOX_DEPTH = "box_depth"
+HOLD_MOVE = "hold_move"
+HOLD_ROTATE = "hold_rotate"
+HOLD_SCALE = "hold_scale"
+PLANE_YZ = "plane_yz"
+PLANE_XZ = "plane_xz"
+PLANE_XY = "plane_xy"
+SCALE_FORMULA = "scale_formula"
 BOX_LOOPS = "box_loops"
 BOX_AROUND = "box_around"
 COMMIT_BOX = "commit_box"
@@ -59,8 +68,11 @@ NEW_BOX = "new_box"
 HELP = "help"
 ESCAPE = "escape"
 
-#: Keys reserved elsewhere (AD-016 QWER, AD-017 C): the lab must never bind them.
-RESERVED_KEYS = frozenset({"Q", "W", "E", "R", "C"})
+#: Keys reserved elsewhere (AD-016 Q, AD-017 C): the lab must never bind them. W/E/R are bound
+#: since Slice 2b with exactly their AD-016 meaning (hold = Move/Rotate/Scale).
+RESERVED_KEYS = frozenset({"Q", "C"})
+#: Hold keys and the gesture each arms (E16).
+HOLD_KINDS = {HOLD_MOVE: "move", HOLD_ROTATE: "rotate", HOLD_SCALE: "scale"}
 #: Modifiers the lab distinguishes; others (Caps/Num Lock, ...) are ignored.
 KNOWN_MODIFIERS = frozenset({"shift", "ctrl", "alt"})
 #: pyglet symbol names treated as the same key.
@@ -69,7 +81,7 @@ KEY_ALIASES = {"ENTER": "RETURN", "NUM_ENTER": "RETURN"}
 
 @dataclass(frozen=True)
 class LabBinding:
-    #: "drag", "press", "double", "wheel" or "key"
+    #: "drag", "press", "double", "wheel", "key" or "hold" (a key held while the mouse moves)
     kind: str
     #: drag/press: "LEFT"/"RIGHT"/"MIDDLE" ("PANEL" = LMB inside the curve panel);
     #: double: "PANEL" (a double click on a curve knot);
@@ -95,6 +107,8 @@ class LabBinding:
         base = names.get(self.value, self.value)
         if self.kind == "double":
             base = "Doppelklick auf Kurvenpunkt"
+        elif self.kind == "hold":
+            base += " halten"
         elif self.kind == "drag":
             base += " ziehen"
         elif self.kind == "press":
@@ -110,6 +124,8 @@ _PROD = "Production-Default wie src/main.py"
 _APP = "wie App (AD-020), PROVISIONAL"
 _LAB = "lab-lokal (Vorschlag, keine Artist-Entscheidung)"
 _2A = "lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung)"
+_2B = "lab-lokal (Slice 2b, Vorschlag, keine Artist-Entscheidung)"
+_HOLD = "Artist Input Truth (W/E/R); halten über dem Hover wie AD-016"
 _NONE = frozenset()
 
 LAB_OVERRIDES: tuple[LabBinding, ...] = (
@@ -141,11 +157,21 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
                "Handle allein ziehen = Knick (Punkt wie ohne Alt)", _2A),
     LabBinding("double", "PANEL", _NONE, PHASE_EDIT, CURVE_RESET,
                "Handles des Punkts wieder weich (automatisch)", _2A),
+    LabBinding("hold", "W", _NONE, PHASE_EDIT, HOLD_MOVE,
+               "Move des gehoverten Loops/Rings (Maus bewegen, loslassen = fertig)", _HOLD),
+    LabBinding("hold", "E", _NONE, PHASE_EDIT, HOLD_ROTATE,
+               "Rotate des gehoverten Loops/Rings (waagrecht bewegen)", _HOLD),
+    LabBinding("hold", "R", _NONE, PHASE_EDIT, HOLD_SCALE,
+               "Scale des gehoverten Loops/Rings (rechts/oben = größer)", _HOLD),
     LabBinding("press", "RIGHT", None, PHASE_EDIT, CANCEL_PRESS, "Zug abbrechen (exakt zurück)", _LAB),
     LabBinding("key", "TAB", _NONE, PHASE_EDIT, TOGGLE_MODE, "Loop ↔ Ring (bleibt)", _LAB),
     LabBinding("key", "X", _NONE, PHASE_EDIT, AXIS_X, "Achse X an/aus (bleibt)", _TRUTH),
     LabBinding("key", "Y", _NONE, PHASE_EDIT, AXIS_Y, "Achse Y an/aus (bleibt)", _TRUTH),
     LabBinding("key", "Z", _NONE, PHASE_EDIT, AXIS_Z, "Achse Z an/aus (bleibt)", _TRUTH),
+    LabBinding("key", "X", frozenset({"shift"}), PHASE_EDIT, PLANE_YZ, "Ebene YZ (ohne X) an/aus (bleibt)", _TRUTH),
+    LabBinding("key", "Y", frozenset({"shift"}), PHASE_EDIT, PLANE_XZ,
+               "Ebene XZ (ohne Y, z. B. Taille) an/aus (bleibt)", _TRUTH),
+    LabBinding("key", "Z", frozenset({"shift"}), PHASE_EDIT, PLANE_XY, "Ebene XY (ohne Z) an/aus (bleibt)", _TRUTH),
     LabBinding("wheel", "WHEEL", frozenset({"shift"}), PHASE_EDIT, RADIUS,
                "Einflussradius ±1 Stufe", _APP),
     LabBinding("key", "O", frozenset({"ctrl"}), PHASE_EDIT, METRIC, "Metrik geodesic ↔ euclidean", _APP),
@@ -153,6 +179,8 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
     LabBinding("key", "P", _NONE, PHASE_EDIT, PREVIEW,
                "Flächen-Vorschau an/aus (orange = mit, blau = entgegen)", _2A),
     LabBinding("key", "N", _NONE, PHASE_EDIT, NACHFUEHREN, "Nachführen an/aus", _LAB),
+    LabBinding("key", "M", _NONE, PHASE_EDIT, SCALE_FORMULA,
+               "Scale-Formel linear ↔ power (bleibt; Nachführen)", _2B),
     LabBinding("key", "_1", _NONE, PHASE_EDIT, PRESET_1, "Kurve: Smooth", _LAB),
     LabBinding("key", "_2", _NONE, PHASE_EDIT, PRESET_2, "Kurve: Mexican Hat (mit Senke)", _LAB),
     LabBinding("key", "Z", frozenset({"ctrl"}), PHASE_EDIT, UNDO, "Undo", _TRUTH),
@@ -192,6 +220,14 @@ def resolve_drag(phase: str, buttons: frozenset, modifiers: frozenset, in_panel:
     return None
 
 
+def resolve_hold_release(phase: str, symbol_name: str) -> Optional[str]:
+    """The hold action a released key ends (modifiers ignored: Shift may have been added)."""
+    for binding in LAB_OVERRIDES:
+        if binding.kind == "hold" and binding.value == symbol_name and _phase_match(binding, phase):
+            return binding.action
+    return None
+
+
 def resolve_double_click(phase: str, modifiers: frozenset, in_panel: bool) -> Optional[str]:
     """Action for an LMB double click (only the curve panel knows one)."""
     if not in_panel:
@@ -213,7 +249,7 @@ def resolve_press_during_drag(phase: str, button: str) -> Optional[str]:
 def resolve_key(phase: str, symbol_name: str, modifiers: frozenset) -> Optional[str]:
     symbol_name = KEY_ALIASES.get(symbol_name, symbol_name)
     for binding in LAB_OVERRIDES:
-        if (binding.kind == "key" and binding.value == symbol_name and _phase_match(binding, phase)
+        if (binding.kind in ("key", "hold") and binding.value == symbol_name and _phase_match(binding, phase)
                 and _modifiers_match(binding, modifiers)):
             return binding.action
     return None

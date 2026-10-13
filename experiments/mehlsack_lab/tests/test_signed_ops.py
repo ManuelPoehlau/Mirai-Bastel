@@ -11,10 +11,12 @@ from pathlib import Path
 import pytest
 
 from core import HistoryStack, OperationContext, VertexId
+from mehlsack_lab.edit_session import EditSession
 from mehlsack_lab.signed_curve import PRESET_HAT, SignedCurve
 from mehlsack_lab.signed_influence import signed_influence
 from mehlsack_lab.signed_ops import SignedSoftMoveOperation, VertexView
 from mirai.soft_selection import SoftMoveOperation, compute_influence
+from mirai.soft_selection.settings import RADIUS_STEPS_PERCENT
 
 from .helpers import box, mid_target, positions
 
@@ -177,11 +179,27 @@ def test_no_core_private_member_in_the_lab():
 
 
 def test_own_state_uses_the_mehlsack_prefix():
+    """Every attribute the signed ops set on `self` (Move, Rotate, Scale and their base)."""
     tree = ast.parse((_LAB_DIR / "signed_ops.py").read_text(encoding="utf-8"))
-    op_class = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "SignedSoftMoveOperation")
+    classes = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name != "VertexView"]
+    assert {c.name for c in classes} >= {
+        "SignedSoftMoveOperation", "SignedSoftRotateOperation", "SignedSoftScaleOperation"}
     assigned = {
-        t.attr for node in ast.walk(op_class) if isinstance(node, ast.Assign)
-        for t in node.targets if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
-        and t.value.id == "self"
+        t.attr for cls in classes for node in ast.walk(cls) if isinstance(node, (ast.Assign, ast.AnnAssign))
+        for t in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id == "self"
     }
-    assert assigned == {"_mehlsack_weights"}
+    assert assigned and all(a.startswith("_mehlsack_") for a in assigned), assigned
+    assert {"_mehlsack_weights", "_mehlsack_start", "_mehlsack_total", "_mehlsack_formula"} <= assigned
+
+
+def test_deep_curve_weights_are_accepted_by_the_op():
+    """Regression (Slice 2b): a curve with knots at -1 must not produce |w| > 1."""
+    session = EditSession(box(h=12, n=6, height=3.0))  # the case that raised: 2 × 3 × 2, 50 %
+    mesh = session.mesh
+    _, target = mid_target(mesh)
+    deep = SignedCurve.from_knots((0.3, -1.0, -1.0, -0.5))
+    radius = session.world_radius(RADIUS_STEPS_PERCENT.index(50))
+    weights = signed_influence(mesh, target.seeds, radius, "geodesic", deep)
+    assert min(weights.values()) == -1.0
+    _run(SignedSoftMoveOperation(_ctx(mesh, weights)), [(0.0, 0.1, 0.0)])

@@ -242,3 +242,17 @@ def test_invalid_curves_refused():
     with pytest.raises(ValueError):
         SignedCurve.from_knots((0.1, 0.2, 0.3, 1.5))
     assert Element("knot", 1) in pickable_elements(good)
+
+
+def test_knots_at_minus_one_give_weights_the_ops_accept():
+    """Regression (found in Slice 2b): the Bernstein sum rounded past -1 (w = -1.0000000000000002)
+    and the signed ops refused the weight. The evaluation now rounds back to [-1, 1]."""
+    deep = SignedCurve.from_knots((0.3, -1.0, -1.0, -0.5))
+    values = [deep(x) for x in GRID]
+    assert min(values) == -1.0 and all(-1.0 <= v <= 1.0 for v in values)
+    rng = random.Random(11)
+    curve = deep
+    for _ in range(300):
+        element = rng.choice(pickable_elements(curve))
+        curve = move_element(curve, element, rng.uniform(-0.5, 1.5), rng.choice([-1.0, 1.0, -3.0, 3.0]))
+        assert all(-1.0 <= curve(x) <= 1.0 for x in GRID[::25])

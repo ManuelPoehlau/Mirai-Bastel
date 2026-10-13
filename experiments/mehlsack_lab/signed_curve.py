@@ -11,8 +11,11 @@ in and an out handle. Segment `k` has the control points
 Guarantees, kept by construction (every edit clamps, `_validate()` checks):
 
 - every control point has y ∈ [-1, 1] — a Bézier stays in the convex hull of its control
-  points, so the curve stays in [-1, 1] without an output clamp (in floating point the
-  Bernstein sum may round past ±1 by a few ulps; the seeded fuzz test measured ≤ 4.4e-16);
+  points, so the curve stays in [-1, 1] without clipping its shape. In floating point the
+  Bernstein sum can round past ±1 by a few ulps (measured ≤ 4.4e-16); `__call__` rounds such
+  a value back to ±1 (a rounding guard, never a shape change), because the signed ops refuse
+  `|w| > 1` (found in Slice 2b: a knot at -1 gave w = -1.0000000000000002 and the gesture
+  raised);
 - within each segment the control x values are non-decreasing
   (`knot.x ≤ out.x ≤ next in.x ≤ next knot.x`) — then x'(t) ≥ 0, and since the knots differ
   in x it is zero only at isolated t: x(t) is strictly increasing, the curve is a function
@@ -348,7 +351,8 @@ class SignedCurve:
         if x >= 1.0:
             return 0.0
         seg, t = self._locate(x)
-        return _bezier(seg[4], seg[5], seg[6], seg[7], t)
+        # Rounding guard only (module docstring): the exact value lies in [-1, 1].
+        return _clamp(_bezier(seg[4], seg[5], seg[6], seg[7], t), Y_MIN, Y_MAX)
 
     def slope(self, x: float) -> float:
         """dw/dx at x (one-sided at the ends; ±inf where a handle is vertical)."""

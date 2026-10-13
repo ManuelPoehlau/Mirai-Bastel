@@ -1,12 +1,14 @@
-# Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a: Move)
+# Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b: Move, Rotate, Scale)
 
-**Status: Slice 1 Verdikte von Manu (2026-10-13) liegen vor; Slice 2a nicht Artist-validiert.** Slice 2a ist gebaut
-und automatisch getestet (siehe [Slice 2a](#slice-2a-2026-10-13)); sein Praxistest steht aus.
+**Status: Slice 1 Verdikte von Manu (2026-10-13) liegen vor; Slice 2a und Slice 2b nicht Artist-validiert.** Beide sind
+gebaut und automatisch getestet (siehe [Slice 2a](#slice-2a-2026-10-13) und [Slice 2b](#slice-2b-2026-10-13)); ihre
+Praxistests stehen aus.
 Discovery (Typ B): Das Lab bereitet ein Artist-Verdikt vor, es entscheidet nichts und befördert nichts. KEEP heißt
 hier nicht Promotion — nichts verlässt `experiments/`.
 
 Frage des Labs: **Ist „das Mesh ist die Oberfläche“ (Loop/Ring hovern und direkt ziehen, ohne Auswahl) plus eine
-Einflusskurve, die unter null gehen darf, eine vielversprechende Richtung?** Slice 1 kann nur **Move**.
+Einflusskurve, die unter null gehen darf, eine vielversprechende Richtung?** Slice 1 und 2a können nur **Move**, seit
+Slice 2b gibt es auch **Rotate** und **Scale** (zwei Scale-Formeln zum Vergleich).
 
 Forschungs-Lab unter `experiments/` — nichts in `src/`, `playground/`, `tests/` oder `examples/` wurde geändert.
 `src` wird nur gelesen; aus `playground/` wird genau ein Modul importiert (`playground.topology_tools.loop_ring`,
@@ -31,6 +33,8 @@ Beim Start stehen die Tastentabelle, `GL_VERSION` und `GL_RENDERER` in der Konso
    seine Vertices sind blasse gelbe Punkte (`w = 1`), die farbigen Punkte zeigen, **was mitgehen wird**:
    warm (rot/orange/rosa) = geht mit, **blau = geht entgegen**. Mit LMB ziehen = verschieben in der Bildebene.
    Eine Kante am oberen oder unteren Rand gibt den ganzen Rand-Loop rund um die Box (Slice 2a).
+   Seit Slice 2b: `W` / `E` / `R` **halten** über dem gehoverten Loop/Ring = Move / Rotate / Scale mit der Maus,
+   loslassen = fertig; `M` schaltet die Scale-Formel (linear ↔ power).
 3. **Kurvenfeld** unten links: x = Abstand vom Loop (links 0, rechts der Radius), y = Gewicht. Oberhalb der weißen
    Null-Linie warm getönt, darunter kühl. Seit Slice 2a eine Bézier-Kurve: vier Punkte (weiße Kreise, als Raute nach
    einem Knick) lassen sich frei verschieben, jeder hat zwei Handles (blaue Quadrate); die Enden sind fest (1 am
@@ -41,8 +45,9 @@ Beim Start stehen die Tastentabelle, `GL_VERSION` und `GL_RENDERER` in der Konso
 ## Steuerung
 
 Die Tabelle ist `LAB_OVERRIDES` in `lab_bindings.py` (wird beim Start gedruckt; ein Test prüft Gleichheit 1:1).
-**Alle lab-lokalen Tasten sind ein Vorschlag für dieses Lab, keine Artist-Entscheidung.** `Q` `W` `E` `R` (AD-016) und
-`C` (AD-017) sind reserviert und nicht belegt. Shift+X/Y/Z (Ebenen) gibt es hier nicht.
+**Alle lab-lokalen Tasten sind ein Vorschlag für dieses Lab, keine Artist-Entscheidung.** `Q` (AD-016) und `C` (AD-017)
+sind reserviert und nicht belegt. Seit Slice 2b sind `W` `E` `R` mit ihrer AD-016-Bedeutung belegt (halten = Move /
+Rotate / Scale, hier auf dem gehoverten Loop/Ring statt der Auswahl) und Shift+X/Y/Z sind Ebenen (wie die App, B4.1).
 
 | Eingabe | Phase | Funktion | Quelle / Hinweis |
 |---|---|---|---|
@@ -61,16 +66,23 @@ Die Tabelle ist `LAB_OVERRIDES` in `lab_bindings.py` (wird beim Start gedruckt; 
 | LMB im Kurvenfeld ziehen | Bearbeiten | Kurvenpunkt oder Handle ziehen (Handles bleiben in Linie) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | Alt+LMB im Kurvenfeld ziehen | Bearbeiten | Handle allein ziehen = Knick (Punkt wie ohne Alt) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | Doppelklick auf Kurvenpunkt | Bearbeiten | Handles des Punkts wieder weich (automatisch) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
+| W halten | Bearbeiten | Move des gehoverten Loops/Rings (Maus bewegen, loslassen = fertig) | Artist Input Truth (W/E/R); halten über dem Hover wie AD-016 |
+| E halten | Bearbeiten | Rotate des gehoverten Loops/Rings (waagrecht bewegen) | Artist Input Truth (W/E/R); halten über dem Hover wie AD-016 |
+| R halten | Bearbeiten | Scale des gehoverten Loops/Rings (rechts/oben = größer) | Artist Input Truth (W/E/R); halten über dem Hover wie AD-016 |
 | RMB (während Zug) | Bearbeiten | Zug abbrechen (exakt zurück) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | Tab | Bearbeiten | Loop ↔ Ring (bleibt) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | X | Bearbeiten | Achse X an/aus (bleibt) | Artist Input Truth |
 | Y | Bearbeiten | Achse Y an/aus (bleibt) | Artist Input Truth |
 | Z | Bearbeiten | Achse Z an/aus (bleibt) | Artist Input Truth |
+| Shift+X | Bearbeiten | Ebene YZ (ohne X) an/aus (bleibt) | Artist Input Truth |
+| Shift+Y | Bearbeiten | Ebene XZ (ohne Y, z. B. Taille) an/aus (bleibt) | Artist Input Truth |
+| Shift+Z | Bearbeiten | Ebene XY (ohne Z) an/aus (bleibt) | Artist Input Truth |
 | Shift+Mausrad | Bearbeiten | Einflussradius ±1 Stufe | wie App (AD-020), PROVISIONAL |
 | Ctrl+O | Bearbeiten | Metrik geodesic ↔ euclidean | wie App (AD-020), PROVISIONAL |
 | Alt+O | Bearbeiten | Einfluss-Punkte an/aus | wie App (AD-020), PROVISIONAL |
 | P | Bearbeiten | Flächen-Vorschau an/aus (orange = mit, blau = entgegen) | lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung) |
 | N | Bearbeiten | Nachführen an/aus | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
+| M | Bearbeiten | Scale-Formel linear ↔ power (bleibt; Nachführen) | lab-lokal (Slice 2b, Vorschlag, keine Artist-Entscheidung) |
 | 1 | Bearbeiten | Kurve: Smooth | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | 2 | Bearbeiten | Kurve: Mexican Hat (mit Senke) | lab-lokal (Vorschlag, keine Artist-Entscheidung) |
 | Ctrl+Z | Bearbeiten | Undo | Artist Input Truth |
@@ -163,7 +175,10 @@ Zusätzlich vom Agenten gesetzt (beim Bauen nötig geworden, alle `PROVISIONAL`)
   sichtbar bleiben. Die Box steht mittig im Ursprung.
 - **HUD-Hintergrund:** dunkel, halbtransparent — graue Schrift war über der hellen Box-Oberseite unlesbar.
 
-## Rotate / Scale mit Vorzeichen-Gewichten (nur Analyse, kein Code — bereitet Slice 2 vor)
+## Rotate / Scale mit Vorzeichen-Gewichten (Analyse aus Slice 1 — gebaut in Slice 2b)
+
+*2026-10-13: gebaut in [Slice 2b](#slice-2b-2026-10-13), beide Formeln umschaltbar (`M`). Die Analyse bleibt hier als
+Grundlage stehen; die Tabelle unten ist durch einen Test gegen den Code gepinnt.*
 
 **Rotate:** Winkel `w · θ` um dieselbe Achse und denselben Pivot. Negative Gewichte drehen entgegen; Rotationen um eine
 Achse addieren sich, also bleibt die Geste pfadunabhängig wie heute. Keine Singularität. Ein Vertex mit `w < 0` weit vom
@@ -348,6 +363,10 @@ Zusätzlich vom Agenten gesetzt (beim Bauen nötig geworden, alle `PROVISIONAL`)
   Screenshot (Xvfb, Mexican Hat, Radius 75 %) schwächer ab als die orange. Ob das reicht, ist Manus Frage.
 - **R3 Rundung:** Mathematisch bleibt die Kurve in [−1, 1]; die Gleitkomma-Auswertung kann ±1 um wenige ulp
   überschreiten (Fuzz-Test, 2000 zufällige Züge: höchstens 4,4·10⁻¹⁶). Es gibt bewusst keinen Clamp.
+  *Korrektur 2026-10-13 (Slice 2b):* Das war nicht harmlos — ein Kurvenpunkt bei −1 ergab `w = −1.0000000000000002`,
+  und die Vorzeichen-Ops lehnen `|w| > 1` ab (der Zug hätte im Fenster einen Fehler geworfen; auch Move in 2a). Die
+  Auswertung rundet einen solchen Wert jetzt auf ±1 zurück (reiner Rundungsschutz, die Form wird nie beschnitten);
+  zwei Regressionstests.
 - **R4 Eingeklapptes Handle:** Liegt ein Punkt bei y = ±1, kann das gegenüberliegende Handle beim Drehen auf Länge 0
   gekürzt werden (es würde sonst die Box verlassen). Doppelklick holt es zurück.
 - **R5 Vorschau-Kosten** nicht gemessen (O2: nicht Frage dieses Labs). Mit `P` an wird die Tönung bei jedem Zugschritt
@@ -381,7 +400,131 @@ Start: `python experiments/mehlsack_lab/run.py`
 Vorher erkennbar, was mitgeht — jetzt besser? Manu:
 
 Hinweis: Alle Tasten sind Vorschläge für dieses Lab, keine Entscheidung. Nächster Schritt nach deinem Verdikt: Slice 2b
-(Rotate/Scale, O5).
+(Rotate/Scale, O5) — inzwischen gebaut, siehe unten.
+
+## Slice 2b (2026-10-13)
+
+**Nicht Artist-validiert.** Der markierte Loop/Ring lässt sich jetzt auch **drehen** und **skalieren**, mit
+Vorzeichen-Gewichten — für die Aufgabe „Taille mit Bauch daneben“ aus dem Brief und für Manus Antwort zu O5 („Muss man
+vergleichen in der Praxis“): beide Scale-Formeln sind gebaut und mit `M` umschaltbar. Nichts davon wird befördert.
+
+### Was gebaut ist
+
+- **Halten über dem Hover:** `W` / `E` / `R` gedrückt halten = Move / Rotate / Scale des Loops/Rings, der beim
+  Drücken gehovert war; Maus bewegen = Betrag; loslassen = fertig (ein History-Eintrag); `Esc`/RMB = exakt zurück;
+  Antippen ohne Bewegung = nichts. LMB-Ziehen bleibt wie es ist (KEEP (b)).
+- **Ebenen:** `Shift+X/Y/Z` (Blender: diese Achse ausgeschlossen; Shift+Y = XZ = nur waagrecht) neben `X/Y/Z`, ein
+  gemeinsamer, bleibender Zustand wie in der App (B4.1). Für Move, Rotate und Scale.
+- **Rotate:** Winkel `w · θ`; negative Gewichte drehen zurück (S-Kurve). Achse: Blickachse beim Start, mit Achse/Ebene
+  die Weltachse (`Y` und `Shift+Y` drehen beide um die Hochachse).
+- **Scale:** zwei Formeln für `w ≠ 1`: **linear** `g = 1 + w (F − 1)` (App-Standard, Start) und **power** `g = F ** w`.
+  `M` schaltet um (bleibt; gilt ab dem nächsten Zug und per Nachführen für den letzten). Kein Begrenzen von `g`: linear
+  mit `w < 0` erreicht `g = 0` bei `F = 1 + 1/|w|` und klappt darüber durch — das HUD zählt während eines linearen
+  Scale (und nach dem Nachführen des letzten), wie viele Vertices `g ≤ 0` haben.
+- **Nachführen** gilt jetzt auch für Rotate und Scale: Kurve, Radius, Metrik oder Formel ändern rechnet den letzten
+  Zug vom Startzustand mit derselben Summe (Winkel bzw. Faktor), Achse und Pivot neu und ersetzt seinen History-Eintrag.
+- Vorschau (`P`) und Punkte zeigen weiter die Gewichte, nicht die Richtung (E22).
+
+### Engineering-Annahmen (alle `PROVISIONAL`)
+
+- **E16 Aktivierung:** `E` halten = Rotate, `R` halten = Scale, `W` halten = Move auf dem beim Drücken gehoverten
+  Loop/Ring (Ziel eingefroren); Maus = Betrag, loslassen = fertig, `Esc`/RMB = abbrechen, Antippen = nichts.
+  AD-016 Halten-über-Hover mit dem Hover-Ziel, Tasten aus der Artist Input Truth.
+- **E17 Abbildung:** `RotateTool.RADIANS_PER_PIXEL`, `ScaleTool.SCALE_PER_PIXEL`, `ScaleTool.MIN_SCALE` werden aus den
+  Klassen gelesen (keine kopierten Zahlen); Pixel werden wie in den Tools aufsummiert (unabhängig davon, wie das
+  Fenster die Bewegung stückelt). Pivot = `primary_pivot(mesh, seeds)`. Rotate-Achse: Blickachse beim `begin()`, sonst
+  `_resolve_space(..., for_rotation=True)`. Scale: uniform, sonst die Weltachsen-Maske. Keine Tangentenbasis, kein
+  Normal-Raum.
+- **E18 Ebenen:** `Shift+X/Y/Z` bleibend (B4.1-Semantik) für Move, Rotate, Scale.
+- **E19 Ops:** `SignedSoftRotateOperation` (Winkel `w · θ`, inkrementell) und `SignedSoftScaleOperation` (absolut vom
+  Start-Schnappschuss mit dem seit `begin()` aufgelaufenen `F` — die dokumentierte Abweichung vom inkrementellen
+  Op-Vertrag, wie in `src`), beide auf den geschützten Core-Hooks wie Slice 1 (Präfix `_mehlsack_`, AST-Scan). Beide
+  Formeln, kein Clamp von `g`.
+- **E20 Formel:** `M` linear ↔ power, bleibend; Statuszeile zeigt die Formel; HUD-Zähler `g ≤ 0` bei linear.
+- **E21 Nachführen** für Rotate und Scale (Summe, Achse/Maske, Pivot, Formel gespeichert).
+- **E22** Vorschau und Punkte unverändert.
+
+Zusätzlich vom Agenten gesetzt (beim Bauen nötig geworden, alle `PROVISIONAL`):
+
+- **Wann was gelesen wird:** Das Ziel friert beim Drücken ein; Achse/Ebene, Gewichte (Kurve, Radius, Metrik) und Formel
+  werden bei der **ersten Bewegung** gelesen — wie die App beim `begin()` (`Application._transform_step`). Eine
+  Achsen-/Formel-Taste während eines laufenden Zugs ändert den Zustand, gilt aber erst ab dem nächsten Zug.
+- **Während gehalten:** eine zweite Halte-Taste wird ignoriert; LMB tut nichts; RMB bricht ab; `B` wird ignoriert;
+  Undo/Redo während ein Zug läuft wird ignoriert, nur scharf (noch keine Bewegung) wird erst entschärft, dann
+  rückgängig gemacht (wie die App). Verliert das Fenster den Fokus, wird ein gehaltener Zug abgebrochen (das Loslassen
+  käme nie an). Der Hover ist eingefroren.
+- **Move per `W`:** dieselbe Abbildung wie das LMB-Ziehen (Bildebenen-Delta am Anker-Seed, maskiert); der Anker ist das
+  erste Ende der gehoverten Kante, nicht `min(vertex_ids)` wie im `MoveTool`.
+- **`_resolve_space`** ist eine (mit Unterstrich) modulinterne Funktion in `src/mirai/interaction/tools/transform.py`;
+  das Lab ruft sie nur lesend auf, damit die Achsen-/Ebenen-Abbildung nicht von der App abweichen kann.
+- **Formel-Wechsel nach einem Rotate/Move** ändert nichts (die Formel gehört nur zu Scale).
+- **HUD-Zähler:** zählt Vertices mit `g ≤ 0` auf einer skalierten Achse (`F ≠ 1`); bei power immer 0. Er gilt für den
+  laufenden bzw. letzten Scale und verschwindet mit dem nächsten Zug oder Undo/Redo.
+- **Nachführen eines Scale** spielt `F` in **einem** Schritt ab; die `w = 1`-Vertices unterscheiden sich dadurch vom
+  schrittweisen Zug nur in der Rundung (≤ 1e-12, Test).
+- **Kurven-Rundungsschutz** (Korrektur an Slice 2a, siehe R3): Die Kurve rundet Werte knapp jenseits ±1 auf ±1 zurück;
+  ohne das warf ein Zug mit einem Kurvenpunkt bei −1 einen Fehler.
+
+### Beobachtungen beim Bauen (keine Bewertung)
+
+Gemessen headless (Container), Box 2 × 3 × 2, `h = 12`, `n = 6`, mittlerer Loop, Radius 50 %, geodesic, Scale mit
+`Shift+Y` (nur X/Z). Je Zelle: Vertices mit `g ≤ 0` / umgeklappte Flächen (Normale gegenüber dem Start ≤ 0).
+„Tiefe Senke“ = Punkte 0,3 / −1 / −1 / −0,5 mit automatischen Handles.
+
+| Kurve | Formel | F = 0,5 | F = 1,5 | F = 2 | F = 3 | F = 5 |
+|---|---|---:|---:|---:|---:|---:|
+| Smooth | linear | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| Smooth | power | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| Mexican Hat | linear | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 48 / 0 |
+| Mexican Hat | power | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| tiefe Senke | linear | 0 / 0 | 0 / 0 | 48 / 0 | 96 / 48 | 96 / 144 |
+| tiefe Senke | power | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+- **S1 Taille ist sicher, Auswölben nicht:** Beim Einziehen (`F < 1`, die Taille) erreicht keine Formel `g ≤ 0` —
+  negative Gewichte werden dort größer (Bauch). Zusammenfallen und Durchklappen gibt es nur beim **Aufweiten** (`F > 1`)
+  mit linear und `w < 0`, genau ab `F = 1 + 1/|w|` (Mexican Hat, tiefster Wert −0,35: ab `F ≈ 3,9`).
+- **S2 Power wächst in der Taillen-Richtung stark:** `g = F ** w` mit `w < 0` und `F < 1` ist `1 / F^|w|`. Am
+  Tool-Minimum `F = 0,01`: `w = −1` → linear 1,99, power **100**; `w = −0,35` → linear 1,35, power 5,0; bei `F = 0,1`:
+  1,9 gegen 10 bzw. 1,3 gegen 2,2. Power klappt nie durch, kann aber beim tiefen Einziehen einen sehr großen Bauch machen.
+- **S3 Umgeklappte Flächen zählen nicht alles:** Bei Mexican Hat linear `F = 5` haben 48 Vertices `g < 0`, aber keine
+  Fläche klappt um — ein ganzer Ring mit `g < 0` auf X und Z wird am Pivot gespiegelt, das ist eine halbe Drehung und
+  behält die Orientierung; die Fläche läuft dennoch durch sich selbst. Der HUD-Zähler (`g ≤ 0`) zeigt das, die
+  Flächenzählung nicht.
+- **S4 Rotate faltet bei großen Winkeln mit jeder Kurve:** um Y, umgeklappte Flächen bei θ = 0,5 / 1 / 2 / 3 rad:
+  Smooth 0 / 0 / 48 / 96, Mexican Hat 0 / 0 / 48 / 48, tiefe Senke 0 / 0 / 48 / 48. Das ist Verdrillen, nicht das
+  Vorzeichen; mit Senke dreht der Bereich daneben sichtbar zurück (S-Kurve, im Fenster geprüft).
+- **S5 Im Fenster** (Xvfb-Screenshots, nicht Referenz-PC): Taille + Bauch mit `Shift+Y`, `R` und Mexican Hat; `M` nach
+  dem Zug ändert die Form sofort (Nachführen); lineares Aufweiten bis `F = 5` zeigt im HUD „96 Vertices mit g ≤ 0“;
+  `E` mit Senke ergibt die S-Kurve.
+
+### Offene Fragen (nicht im Code entschieden)
+
+- **O9** Soll das Lab `g ≤ 0` bei linear verhindern oder nur anzeigen (jetzt: nur anzeigen; Handoff: beobachten,
+  nichts reparieren)?
+- **O10** Power in der Taillen-Richtung (S2): ist ein Bauch von ×5 bis ×100 am Tool-Minimum gewollt?
+- **O11** Pivot, Tangentenbasis, Normal-Raum, Zahleneingabe: bewusst nicht in diesem Slice.
+
+### Praxistest für Manu (ca. 10 Minuten)
+
+Start: `python experiments/mehlsack_lab/run.py`, Box mit einigen Loops bauen, `Enter`.
+
+1. **Taille:** Über einen mittleren Loop fahren, `Shift+Y` (nur waagerecht), dann **`R` halten** und die Maus nach innen bewegen — Taille. Loslassen = fertig.
+2. **Bauch daneben:** Kurve mit Senke (`2` oder selbst formen), noch einmal `R` am selben Loop — die Ringe daneben wölben sich nach außen.
+3. **Formel vergleichen:** `M` schaltet zwischen *linear* und *power*. Mit Nachführen siehst du den Unterschied am letzten Zug sofort. Bei *linear* und starker Senke können Bereiche auf den Mittelpunkt zusammenfallen oder durchklappen (das HUD zählt sie) — bei *power* nicht.
+4. **Drehen:** **`E` halten** über einem Loop = verdrehen; mit Senke dreht der Bereich daneben gegen (S-Kurve). `Y` = um die Hochachse.
+5. **`W` halten** = Verschieben wie mit der Maustaste — nur zum Vergleich.
+
+Hinweis zu 3: Zusammenfallen/Durchklappen passiert bei *linear* beim **Aufweiten** (Maus nach außen) mit Senke; beim
+Einziehen (Taille) nicht. Bei *power* wird dafür der Bauch beim sehr tiefen Einziehen sehr groß (siehe S2).
+
+**Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
+
+| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
+|---|---|---|
+| (f) Rotate mit Vorzeichen-Gewichten | | |
+| (g) Scale mit Vorzeichen-Gewichten (Taille/Bauch) | | |
+| (h) Formel für negative Gewichte: linear, power oder „beide als Option“ | | |
+| (i) E/R/W halten über dem gehoverten Loop | | |
 
 ## Tests
 
@@ -399,3 +542,8 @@ dem Smooth-Preset selbst bis 1e-12), Op (bitgleich zu `SoftMoveOperation` für (
 Commit/Cancel/Undo/Redo, AST-Scan), Nachführen, Vorschau-Farbdaten (Vorzeichen → Farbton, `|w|` → Stärke, `w = 0` →
 Alpha 0), Zustandsmaschine (inkl. Alt+Shift+Rad und Fallback), Tastentabelle = README, Import-Grenze, GL-Smoke- und
 Event-Pfad (Handles, Knick, Doppelklick, Rand-Loop-Hover, `P` an zeichnet / `P` aus = gleiches Bild), Bench-Lauf.
+Slice 2b: Rotate/Scale bitgleich zu `SoftRotateOperation` / `SoftScaleOperation` für Gewichte in (0, 1] (Scale mit beiden
+Formeln, drei Masken), negative Gewichte (`w · θ`, README-Tabelle linear/power, kein Clamp), N Schritte = 1 Schritt,
+Commit/Cancel/Undo/Redo, Nachführen für Rotate/Scale inkl. Formelwechsel, W/E/R halten (scharf, Tippen = nichts, Ziel
+eingefroren, Abbildung aus den Tool-Klassen, Stückelung egal, Ebenen, MIN_SCALE, Abbruchwege, Undo), `M`, HUD-Zähler,
+Fenster-Pfad (R halten → ein Eintrag, RMB-Abbruch, Fokusverlust), Kurven-Rundungsschutz (Regression).

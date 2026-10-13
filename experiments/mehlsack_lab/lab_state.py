@@ -2,9 +2,27 @@
 
 Everything a key or wheel event changes and everything the HUD shows lives here, so the
 whole interaction is testable without a window. The window resolves nothing itself: it
-hands raw names (`"X"`, `{"ctrl"}`, scroll values) to `key()` / `wheel()`, the hover
-target and world deltas to `begin_drag()` / `drag_step()`, and reacts to the returned
-`Outcome` (rebuild the box, resync the mesh, re-pick the hover, zoom, quit).
+hands raw names (`"X"`, `{"ctrl"}`, scroll values) to `key()` / `key_release()` / `wheel()`,
+keeps `hover_target` current, hands the LMB drag's target and world deltas to
+`begin_drag()` / `drag_step()` and the mouse motion of a held W/E/R to `hold_motion()`, and
+reacts to the returned `Outcome` (rebuild the box, resync the mesh, re-pick the hover,
+zoom, quit).
+
+Hold gestures (Slice 2b E16, AD-016 hold-key-hover with the hover target): `W`/`E`/`R`
+down arms Move/Rotate/Scale on the target hovered at that moment (frozen); the first
+non-zero mouse motion begins the gesture — constraint, weights and formula are read
+there, as `Application._transform_step` reads them at `begin()`; release commits;
+`Esc`/RMB cancels; a tap without motion does nothing. A second hold key while one is held
+is ignored. Undo/Redo while a gesture runs is ignored; while only armed it disarms first.
+
+Mapping (E17): read from `RotateTool` / `ScaleTool` (no copied numbers), pixels accumulated
+like the tools (chunking-independent): Rotate `θ = RADIANS_PER_PIXEL · Σdx` about the view
+axis at `begin()` or `_resolve_space(space, for_rotation=True)`; Scale
+`F = max(MIN_SCALE, 1 + SCALE_PER_PIXEL · Σ(dx + dy))`, uniform or masked by
+`_resolve_space(space)`; Move as the LMB drag (image-plane delta at the anchor seed, masked).
+
+Constraint (E18, B4.1): one sticky state for X/Y/Z and Shift+X/Y/Z (Shift+X = "yz" …);
+same key again = off, another replaces; read at `begin()`, fixed for the gesture.
 
 Phases: `create` (wheel builds the box, `Enter` commits) → `edit` (Loop/Ring drag).
 Settings are sticky and survive gestures, Undo and a new box: Loop/Ring mode, axis,
@@ -18,6 +36,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from mirai.interaction.tools.rotate import RotateTool
+from mirai.interaction.tools.scale import ScaleTool
+from mirai.interaction.tools.transform import _resolve_space
 from mirai.soft_selection import METRICS
 from mirai.soft_selection.settings import (
     DEFAULT_METRIC,
@@ -27,8 +48,9 @@ from mirai.soft_selection.settings import (
 
 from . import lab_bindings as lb
 from .box import BoxParams, box_rims, build_box_mesh
-from .edit_session import EditSession
+from .edit_session import KIND_LABELS, MOVE, ROTATE, SCALE, EditSession
 from .signed_curve import DEFAULT_CURVE, PRESET_HAT, PRESET_SMOOTH, SignedCurve
+from .signed_ops import SCALE_FORMULAS, collapsed_count
 from .targets import MODE_LABELS, MODE_LOOP, MODE_RING, Target
 
 # Outcome effects (what the window has to do after an event)
@@ -36,15 +58,42 @@ BOX_CHANGED = "box_changed"          # creation phase: rebuild the preview mesh
 PHASE_CHANGED = "phase_changed"      # new mesh / new phase: rebuild scene objects
 MESH_CHANGED = "mesh_changed"        # positions changed (`Outcome.changed`): resync, re-pick hover
 REPICK = "repick"                    # positions may differ from the last pick (drag release)
+GESTURE_BEGAN = "gesture_began"      # a hold gesture began: show its weights
 PREVIEW_CHANGED = "preview_changed"  # mode/radius/metric/curve: recompute hover target + bands
 DISPLAY_CHANGED = "display_changed"  # bands/preview visibility, help, HUD text only
 QUIT = "quit"
 
 FRAME_EMA = 0.1
 
-_AXES = {lb.AXIS_X: "x", lb.AXIS_Y: "y", lb.AXIS_Z: "z"}
-_MASKS = {None: (1.0, 1.0, 1.0), "x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
+#: Constraint keys → `space` strings of `_resolve_space` (Shift+axis excludes that axis, B4.1).
+_SPACES = {lb.AXIS_X: "x", lb.AXIS_Y: "y", lb.AXIS_Z: "z",
+           lb.PLANE_YZ: "yz", lb.PLANE_XZ: "xz", lb.PLANE_XY: "xy"}
+_SPACE_LABELS = {None: "frei", "x": "X", "y": "Y", "z": "Z",
+                 "yz": "Ebene YZ", "xz": "Ebene XZ", "xy": "Ebene XY"}
 _PRESETS = {lb.PRESET_1: PRESET_SMOOTH, lb.PRESET_2: PRESET_HAT}
+#: PROVISIONAL default Scale formula: the app's (`SoftScaleOperation` default).
+DEFAULT_SCALE_FORMULA = "linear"
+
+
+def space_mask(space: Optional[str]) -> tuple[float, float, float]:
+    """Move/Scale mask of a constraint space: all axes free, or `_resolve_space(space)`."""
+    return (1.0, 1.0, 1.0) if space is None else _resolve_space(space, for_rotation=False)
+
+
+@dataclass
+class Hold:
+    """An armed W/E/R (E16): the target frozen at the key press; `begun` after the first
+    motion; the tool-like pixel accumulation."""
+
+    key: str
+    kind: str
+    target: Target
+    begun: bool = False
+    space: Optional[str] = None
+    axis: Optional[tuple] = None
+    mask: tuple = (1.0, 1.0, 1.0)
+    pixels: float = 0.0
+    applied: float = 0.0
 
 
 @dataclass
@@ -73,7 +122,14 @@ class LabState:
         self.box = box if box is not None else BoxParams()
         self.session: Optional[EditSession] = None
         self.mode = MODE_LOOP
+        #: Sticky constraint space: None, "x"/"y"/"z" or a plane "yz"/"xz"/"xy" (E18).
         self.axis: Optional[str] = None
+        self.scale_formula = DEFAULT_SCALE_FORMULA
+        #: The window keeps this current (the hover target W/E/R arm on).
+        self.hover_target: Optional[Target] = None
+        self.hold: Optional[Hold] = None
+        #: Linear Scale: vertices with g <= 0 in the running / last Scale gesture (E20).
+        self.collapsed: Optional[int] = None
         self.radius_step = DEFAULT_RADIUS_STEP
         self.metric = DEFAULT_METRIC
         self.curve: SignedCurve = DEFAULT_CURVE
@@ -110,14 +166,19 @@ class LabState:
         return 0.0 if self.session is None else self.session.world_radius(self.radius_step)
 
     @property
-    def axis_mask(self) -> tuple[float, float, float]:
-        return _MASKS[self.axis]
+    def armed(self) -> bool:
+        return self.hold is not None
 
-    def masked(self, delta) -> tuple[float, float, float]:
+    @property
+    def axis_mask(self) -> tuple[float, float, float]:
+        return space_mask(self.axis)
+
+    def masked(self, delta, mask=None) -> tuple[float, float, float]:
         """AD-009 component mask on the image-plane delta (as `MoveTool._on_update`)."""
-        if self.axis is None:
-            return (float(delta[0]), float(delta[1]), float(delta[2]))
-        mask = self.axis_mask
+        if mask is None:
+            if self.axis is None:
+                return (float(delta[0]), float(delta[1]), float(delta[2]))
+            mask = self.axis_mask
         return (delta[0] * mask[0], delta[1] * mask[1], delta[2] * mask[2])
 
     def preview_weights(self, target: Optional[Target]) -> dict:
@@ -143,6 +204,82 @@ class LabState:
         if action is None:
             return Outcome()
         return self.apply(action, steps)
+
+    def key_release(self, symbol_name: str) -> Outcome:
+        """A released key: ends a hold gesture if it is the held key (commit / tap = no-op)."""
+        hold = self.hold
+        if hold is None or symbol_name != hold.key:
+            return Outcome()
+        out = Outcome(action=lb.resolve_hold_release(self.phase, symbol_name))
+        self.hold = None
+        if hold.begun and self.dragging:
+            committed = self.end_drag()
+            out.effects.update(committed.effects)
+            self.note = f"{KIND_LABELS[hold.kind]} fertig" if self.session.last is not None else \
+                f"{KIND_LABELS[hold.kind]}: keine Änderung"
+        else:
+            self.note = f"{KIND_LABELS[hold.kind]}: keine Bewegung, nichts geändert"
+        out.effects.update({REPICK, PREVIEW_CHANGED})
+        self._touch()
+        return out
+
+    def hold_motion(self, dx: float, dy: float, width: int, height: int, camera) -> Outcome:
+        """Mouse motion while W/E/R is held (module docstring). Returns MESH_CHANGED with the
+        moved vertices; GESTURE_BEGAN on the first motion."""
+        hold = self.hold
+        out = Outcome()
+        if hold is None or self.session is None:
+            return out
+        if not hold.begun:
+            if dx == 0 and dy == 0:
+                return out  # a zero step is no motion (AD-016)
+            self._begin_hold(hold, camera)
+            out.effects.add(GESTURE_BEGAN)
+        session = self.session
+        started = time.perf_counter()
+        if hold.kind == MOVE:
+            anchor = session.mesh.vertex_position(hold.target.anchor)
+            delta = camera.screen_delta_to_world(anchor, dx, dy, width, height)
+            session.step(self.masked(delta, hold.mask))
+        elif hold.kind == ROTATE:
+            hold.pixels += dx
+            target_angle = RotateTool.RADIANS_PER_PIXEL * hold.pixels
+            step = target_angle - hold.applied
+            if step == 0.0:
+                return out
+            session.step(step)
+            hold.applied = target_angle
+        else:
+            hold.pixels += dx + dy
+            target_scale = max(ScaleTool.MIN_SCALE, 1.0 + ScaleTool.SCALE_PER_PIXEL * hold.pixels)
+            step = target_scale / hold.applied
+            if step == 1.0:
+                return out
+            session.step(tuple(step if m else 1.0 for m in hold.mask))
+            hold.applied = target_scale
+            operation = session.drag.operation
+            self.collapsed = collapsed_count(operation.weights, operation.total_factor,
+                                             operation.scale_formula)
+        self.drag_ms = (time.perf_counter() - started) * 1000.0
+        out.effects.add(MESH_CHANGED)
+        out.changed = set(session.drag.weights)
+        self._touch()
+        return out
+
+    def _begin_hold(self, hold: Hold, camera) -> None:
+        """First motion: constraint, weights, axis/formula are read now (as the app's `begin()`)."""
+        hold.space = self.axis
+        hold.mask = space_mask(self.axis)
+        if hold.kind == ROTATE:
+            hold.axis = (tuple(camera.basis()[0]) if self.axis is None
+                         else _resolve_space(self.axis, for_rotation=True))
+        hold.applied = 1.0 if hold.kind == SCALE else 0.0
+        self.collapsed = None
+        self.session.begin_gesture(hold.kind, hold.target, self.world_radius, self.metric, self.curve,
+                                   axis=hold.axis, formula=self.scale_formula)
+        hold.begun = True
+        self.confirm_new_box = False
+        self.note = None
 
     def apply(self, action: str, steps: int = 0) -> Outcome:
         out = Outcome(action=action)
@@ -182,6 +319,7 @@ class LabState:
             raise RuntimeError("no edit session")
         self.confirm_new_box = False
         self.note = None
+        self.collapsed = None
         self._touch()
         return self.session.begin_drag(target, self.world_radius, self.metric, self.curve)
 
@@ -197,7 +335,16 @@ class LabState:
         return out
 
     def cancel_drag(self) -> Outcome:
+        """Esc / RMB: cancels the running gesture (LMB drag or hold) exactly; an armed hold
+        without motion is only disarmed."""
         out = Outcome()
+        if self.hold is not None and not self.dragging:
+            self.hold = None
+            self.note = "abgebrochen"
+            out.effects.update({REPICK, PREVIEW_CHANGED})
+            self._touch()
+            return out
+        self.hold = None
         if self.dragging:
             self.session.cancel()
             self.note = "Zug abgebrochen"
@@ -227,9 +374,12 @@ class LabState:
         if session is None or not self.nachfuehren or not session.can_retune:
             return
         started = time.perf_counter()
-        if session.retune(self.world_radius, self.metric, self.curve):
+        if session.retune(self.world_radius, self.metric, self.curve, self.scale_formula):
             out.effects.add(MESH_CHANGED)
             out.changed = session.last_changed
+            last = session.last
+            if last is not None and last.kind == SCALE:
+                self.collapsed = collapsed_count(last.weights, last.total, last.formula)
         self.retune_ms = (time.perf_counter() - started) * 1000.0
 
     # -- HUD -------------------------------------------------------------------------------------
@@ -240,22 +390,32 @@ class LabState:
             v, e, f = b.counts()
             return (f"Box: Höhe {b.height:g} · Breite {b.width:g} · Tiefe {b.depth:g} · Loops {b.loops} (h={b.h}) · "
                     f"rundum n={b.n} · V {v} / E {e} / F {f}")
-        axis = self.axis.upper() if self.axis else "frei"
-        return (f"{MODE_LABELS[self.mode]} · Achse {axis} · Radius {self.radius_percent} % "
+        axis = _SPACE_LABELS[self.axis]
+        return (f"{MODE_LABELS[self.mode]} · Achse {axis} · Scale {self.scale_formula} · "
+                f"Radius {self.radius_percent} % "
                 f"({self.world_radius:.2f}) · {self.metric} · Kurve {self.curve.label} · "
                 f"Nachführen {'an' if self.nachfuehren else 'aus'} · "
                 f"Punkte {'an' if self.bands_visible else 'aus'} · "
                 f"Vorschau {'an' if self.preview_visible else 'aus'}")
 
     def hud_lines(self, frame_ms: Optional[float]) -> list[HudLine]:
-        lines = [HudLine("Mehlsack Lab — Slice 2a (Move) · nicht Artist-validiert", "title")]
+        lines = [HudLine("Mehlsack Lab — Slice 2b (Move/Rotate/Scale) · nicht Artist-validiert", "title")]
         if self.phase == lb.PHASE_CREATE:
             lines.append(HudLine("BOX BAUEN: Mausrad Höhe · Alt+Rad Breite · Alt+Shift+Rad Tiefe · "
                                  "Shift+Rad Loops · Ctrl+Rad rundum · Enter = Bearbeiten", "active"))
             lines.append(HudLine("(Mausrad zoomt hier nicht — es gehört der Box)", "inactive"))
         else:
-            lines.append(HudLine("BEARBEITEN: Kante hovern, LMB ziehen · Tab Loop/Ring · X/Y/Z · "
-                                 "Shift+Rad Radius · P Vorschau · H Hilfe", "active"))
+            lines.append(HudLine("BEARBEITEN: hovern, dann LMB ziehen oder W/E/R halten · Tab Loop/Ring · "
+                                 "X/Y/Z, Shift = Ebene · M Formel · H Hilfe", "active"))
+            hold = self.hold
+            if hold is not None:
+                state = "läuft" if hold.begun else "scharf — Maus bewegen"
+                lines.append(HudLine(f"{KIND_LABELS[hold.kind]} ({hold.key} gehalten): {state} · "
+                                     f"loslassen = fertig, Esc/RMB = abbrechen", "warning"))
+            if self.collapsed is not None:
+                lines.append(HudLine(f"Scale linear: {self.collapsed} Vertices mit g ≤ 0 "
+                                     "(auf den Mittelpunkt gefallen oder durchgeklappt)",
+                                     "warning" if self.collapsed else "inactive"))
         lines.append(HudLine(self.status_text(), "normal"))
         if self.session is not None:
             s = self.session
@@ -329,9 +489,32 @@ def _h_toggle_mode(state: LabState, out: Outcome, steps: int) -> None:
 
 
 def _h_axis(state: LabState, out: Outcome, steps: int) -> None:
-    axis = _AXES[out.action]
-    state.axis = None if state.axis == axis else axis  # same key again = off (app B4.1)
+    space = _SPACES[out.action]
+    state.axis = None if state.axis == space else space  # same key again = off (app B4.1)
     out.effects.add(DISPLAY_CHANGED)
+
+
+def _h_hold(state: LabState, out: Outcome, steps: int) -> None:
+    """W/E/R down: arm on the current hover target (E16); ignored without a target, while
+    another hold or an LMB drag runs."""
+    if state.hold is not None or state.dragging or state.session is None:
+        return
+    target = state.hover_target
+    kind = lb.HOLD_KINDS[out.action]
+    if target is None:
+        state.note = f"{KIND_LABELS[kind]}: nichts gehovert"
+        out.effects.add(DISPLAY_CHANGED)
+        return
+    key = next(b.value for b in lb.LAB_OVERRIDES if b.action == out.action)
+    state.hold = Hold(key=key, kind=kind, target=target)
+    state.confirm_new_box = False
+    state.note = None
+    out.effects.add(DISPLAY_CHANGED)
+
+
+def _h_formula(state: LabState, out: Outcome, steps: int) -> None:
+    state.scale_formula = SCALE_FORMULAS[(SCALE_FORMULAS.index(state.scale_formula) + 1) % len(SCALE_FORMULAS)]
+    state._settings_changed(out)
 
 
 def _h_metric(state: LabState, out: Outcome, steps: int) -> None:
@@ -364,18 +547,31 @@ def _h_preset(state: LabState, out: Outcome, steps: int) -> None:
         state._settings_changed(out)
 
 
+def _disarm_unbegun(state: LabState) -> None:
+    """Undo/Redo while W/E/R is only armed: disarm first (as the app); a running gesture
+    makes the session refuse Undo/Redo anyway."""
+    if state.hold is not None and not state.hold.begun:
+        state.hold = None
+
+
 def _h_undo(state: LabState, out: Outcome, steps: int) -> None:
+    _disarm_unbegun(state)
+    if not state.dragging:
+        state.collapsed = None  # the counted Scale is no longer the last gesture
     if state.session is not None and state.session.undo():
         out.effects.update({MESH_CHANGED, PREVIEW_CHANGED})
 
 
 def _h_redo(state: LabState, out: Outcome, steps: int) -> None:
+    _disarm_unbegun(state)
+    if not state.dragging:
+        state.collapsed = None  # the counted Scale is no longer the last gesture
     if state.session is not None and state.session.redo():
         out.effects.update({MESH_CHANGED, PREVIEW_CHANGED})
 
 
 def _h_new_box(state: LabState, out: Outcome, steps: int) -> None:
-    if state.dragging:
+    if state.dragging or state.hold is not None:
         return
     if not state.confirm_new_box:
         state.confirm_new_box = True
@@ -383,6 +579,8 @@ def _h_new_box(state: LabState, out: Outcome, steps: int) -> None:
         return
     state.confirm_new_box = False
     state.session = None  # History goes with the session
+    state.hover_target = None
+    state.collapsed = None
     state.phase = lb.PHASE_CREATE
     state.note = None
     out.effects.update({PHASE_CHANGED, BOX_CHANGED})
@@ -394,7 +592,7 @@ def _h_help(state: LabState, out: Outcome, steps: int) -> None:
 
 
 def _h_escape(state: LabState, out: Outcome, steps: int) -> None:
-    if state.dragging:
+    if state.dragging or state.hold is not None:
         cancelled = state.cancel_drag()
         out.effects.update(cancelled.effects)
         out.changed = cancelled.changed
@@ -415,6 +613,13 @@ _HANDLERS = {
     lb.AXIS_X: _h_axis,
     lb.AXIS_Y: _h_axis,
     lb.AXIS_Z: _h_axis,
+    lb.PLANE_YZ: _h_axis,
+    lb.PLANE_XZ: _h_axis,
+    lb.PLANE_XY: _h_axis,
+    lb.HOLD_MOVE: _h_hold,
+    lb.HOLD_ROTATE: _h_hold,
+    lb.HOLD_SCALE: _h_hold,
+    lb.SCALE_FORMULA: _h_formula,
     lb.METRIC: _h_metric,
     lb.BANDS: _h_bands,
     lb.PREVIEW: _h_preview,

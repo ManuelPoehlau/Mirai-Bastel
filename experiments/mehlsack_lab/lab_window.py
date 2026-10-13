@@ -17,6 +17,12 @@ Drag: LMB on a hovered target begins the signed soft Move; each motion event tur
 X/Y/Z mask. Release = commit, Esc / RMB = cancel. During the drag bands and preview show
 the gesture's own weights.
 
+Hold gestures (Slice 2b E16): the window keeps `LabState.hover_target` current, forwards
+W/E/R presses and releases, and while a key is held turns every mouse motion into
+`LabState.hold_motion()` (which maps pixels like `RotateTool`/`ScaleTool`/`MoveTool`). The
+hover is frozen while armed. Losing focus cancels an armed hold (its release would never
+arrive).
+
 Curve panel (Slice 2a E11/E12): LMB picks a knot or handle (`CurvePanel.pick`, handles
 first) and drags it by the cursor's motion; every motion re-applies the edit to the curve
 as it was at the press, so a handle shrunk to fit grows back when the cursor returns.
@@ -108,7 +114,7 @@ class MehlsackLabWindow(pyglet.window.Window):
         # Window before GL resources: stores compile their shader and build their
         # VertexLists inside this window's context (see `src/main.py`).
         super().__init__(width=width, height=height, resizable=True, visible=visible,
-                         caption="Mirai — Mehlsack Lab (Slice 2a: Move)")
+                         caption="Mirai — Mehlsack Lab (Slice 2b: Move/Rotate/Scale)")
         self.state = ls.LabState(box)
         self.scene = LabScene(self._aspect())
         self.scene.show_mesh(build_box_mesh(self.state.box), frame="always")
@@ -167,7 +173,7 @@ class MehlsackLabWindow(pyglet.window.Window):
 
     def update_hover(self, x: float, y: float, force: bool = False) -> None:
         """Picks the edge under (x, y) and pushes its Loop/Ring + bands into the scene."""
-        if not self.editing or self.state.dragging:
+        if not self.editing or self.state.dragging or self.state.armed:
             return
         started = time.perf_counter()
         session = self.state.session
@@ -185,10 +191,14 @@ class MehlsackLabWindow(pyglet.window.Window):
     def refresh_target(self) -> None:
         """Recomputes the target of the hovered edge (mode may have changed) and its bands."""
         session = self.state.session
+        if self.state.armed:
+            return  # the held key's target is frozen
         if not self.editing or session is None or self._hover_edge is None:
+            self.state.hover_target = None
             self.scene.set_target(None, {})
             return
         target = session.target(self._hover_edge, self.state.mode)
+        self.state.hover_target = target
         self.scene.set_target(target, self.state.preview_weights(target))
 
     def repick(self) -> None:
@@ -243,13 +253,28 @@ class MehlsackLabWindow(pyglet.window.Window):
         self._help_key = None
 
     def on_deactivate(self):
-        # A modifier released while another window has focus sends no release here.
+        # A modifier (or a held W/E/R) released while another window has focus sends no
+        # release here.
         self._held.clear()
+        if self.state.armed:
+            self.handle(self.state.cancel_drag())
 
     def on_mouse_motion(self, x, y, dx, dy):
         self._cursor = (x, y)
+        if self.state.armed:
+            self.hold_motion(dx, dy)
+            return
         if self.editing and not self.panel.contains(x, y):
             self.update_hover(x, y)
+
+    def hold_motion(self, dx: float, dy: float) -> None:
+        state = self.state
+        out = state.hold_motion(dx, dy, self.width, self.height, self.scene.camera)
+        if ls.GESTURE_BEGAN in out:
+            self.scene.set_target(state.hold.target, state.session.drag.weights)
+        if ls.MESH_CHANGED in out:
+            self.scene.positions_changed(out.changed)
+            self._pick_cache.invalidate()
 
     def on_mouse_leave(self, x, y):
         self._cursor = None
@@ -258,6 +283,11 @@ class MehlsackLabWindow(pyglet.window.Window):
         self._cursor = (x, y)
         name = button_names(button)
         state = self.state
+        if state.armed:
+            # While W/E/R is held only RMB means something: cancel.
+            if len(name) == 1 and lb.resolve_press_during_drag(state.phase, next(iter(name))) == lb.CANCEL_PRESS:
+                self.handle(state.cancel_drag())
+            return
         if self._drag_mode == DRAG_MESH:
             if len(name) == 1 and lb.resolve_press_during_drag(state.phase, next(iter(name))) == lb.CANCEL_PRESS:
                 self.handle(state.cancel_drag())
@@ -362,6 +392,7 @@ class MehlsackLabWindow(pyglet.window.Window):
 
     def on_key_release(self, symbol, modifiers):
         self._held.pop(symbol, None)
+        self.handle(self.state.key_release(_key.symbol_string(symbol)))
         return pyglet.event.EVENT_HANDLED
 
     # -- draw ------------------------------------------------------------------------------------------

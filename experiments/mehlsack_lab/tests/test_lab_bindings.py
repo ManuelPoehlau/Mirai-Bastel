@@ -61,6 +61,10 @@ def test_keys():
         ("_1", NONE): lb.PRESET_1, ("_2", NONE): lb.PRESET_2,
         ("Z", frozenset({"ctrl"})): lb.UNDO, ("Y", frozenset({"ctrl"})): lb.REDO,
         ("B", NONE): lb.NEW_BOX, ("H", NONE): lb.HELP, ("ESCAPE", NONE): lb.ESCAPE,
+        # Slice 2b: hold W/E/R, exclude-axis planes (B4.1, Artist Input Truth), formula
+        ("W", NONE): lb.HOLD_MOVE, ("E", NONE): lb.HOLD_ROTATE, ("R", NONE): lb.HOLD_SCALE,
+        ("X", frozenset({"shift"})): lb.PLANE_YZ, ("Y", frozenset({"shift"})): lb.PLANE_XZ,
+        ("Z", frozenset({"shift"})): lb.PLANE_XY, ("M", NONE): lb.SCALE_FORMULA,
     }
     for (name, mods), action in edit.items():
         assert lb.resolve_key(EDIT, name, mods) == action, name
@@ -69,17 +73,22 @@ def test_keys():
     assert lb.resolve_key(EDIT, "RETURN", NONE) is None
     assert lb.resolve_key(CREATE, "H", NONE) == lb.HELP
     assert lb.resolve_key(CREATE, "P", NONE) is None
+    assert lb.resolve_key(CREATE, "R", NONE) is None and lb.resolve_key(EDIT, "R", frozenset({"shift"})) is None
+    # a release ends the hold whatever modifiers are held by then
+    assert lb.resolve_hold_release(EDIT, "R") == lb.HOLD_SCALE and lb.resolve_hold_release(EDIT, "X") is None
+    assert {b.gesture() for b in lb.LAB_OVERRIDES if b.kind == "hold"} == {"W halten", "E halten", "R halten"}
 
 
 def test_artist_truth_inputs_present():
     rows = {(b.gesture(), b.note) for b in lb.LAB_OVERRIDES}
-    for gesture in ("Alt+LMB ziehen", "Alt+Shift+LMB ziehen", "Mausrad", "X", "Y", "Z", "Ctrl+Z", "Ctrl+Y"):
+    for gesture in ("Alt+LMB ziehen", "Alt+Shift+LMB ziehen", "Mausrad", "X", "Y", "Z", "Ctrl+Z", "Ctrl+Y",
+                    "Shift+X", "Shift+Y", "Shift+Z"):
         assert (gesture, "Artist Input Truth") in rows, gesture
 
 
 def test_reserved_keys_are_never_bound():
-    assert lb.RESERVED_KEYS == {"Q", "W", "E", "R", "C"}
-    bound = {b.value for b in lb.LAB_OVERRIDES if b.kind == "key"}
+    assert lb.RESERVED_KEYS == {"Q", "C"}  # W/E/R bound since Slice 2b, with their AD-016 meaning
+    bound = {b.value for b in lb.LAB_OVERRIDES if b.kind in ("key", "hold")}
     assert not (bound & lb.RESERVED_KEYS)
     for phase in (CREATE, EDIT):
         for name in lb.RESERVED_KEYS:

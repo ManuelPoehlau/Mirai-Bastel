@@ -31,7 +31,7 @@
 |---|---|---|---|
 | Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Lab-Stand, nicht Production. Offen sind Extrude-Verdikt und Promotion-Prüfung. | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | Subdivision Lab | Wie glatt ist glatt genug, Käfig oder Fläche, Kosten auf dem Referenz-PC | `python experiments/subdivision_lab/run.py` | [README](../experiments/subdivision_lab/README.md) |
-| Mehlsack Lab | Box per Mausrad bauen (jetzt mit Tiefe), Loop/Ring ohne Auswahl direkt ziehen (Rand-Loop um die Ecken), Einflusskurve mit Bézier-Handles auch unter null, Flächen-Vorschau `P` (nur Move; Slice 1 verdiktet, Slice 2a wartet auf dich) | `python experiments/mehlsack_lab/run.py` | [README](../experiments/mehlsack_lab/README.md) |
+| Mehlsack Lab | Box per Mausrad bauen (mit Tiefe), Loop/Ring ohne Auswahl direkt ziehen oder mit `W`/`E`/`R` halten verschieben, drehen, skalieren (Taille/Bauch, zwei Scale-Formeln per `M`), Einflusskurve mit Bézier-Handles auch unter null, Flächen-Vorschau `P` (Slice 1 verdiktet; Slice 2a und 2b warten auf dich) | `python experiments/mehlsack_lab/run.py` | [README](../experiments/mehlsack_lab/README.md) |
 | Shading Lab | Licht/Shading für bessere Formwahrnehmung beim Modellieren | `python experiments/viewport_shading_lab/run.py` | [README](../experiments/viewport_shading_lab/README.md) |
 | Playground | Varianten-Familien: Selection, Transform, Tweak, Connect, Knife, Knife Face, Topology, Articulation | `python playground/run.py head` | [README](../playground/README.md) |
 
@@ -51,6 +51,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | B3 | **Shading Lab**: Verdikte F1/F8/F9 | [Shading Lab README](../experiments/viewport_shading_lab/README.md) |
 | B4 | **Subdivision Lab**: Tests T-SUBD-1 und T-SUBD-2 | [Subdivision Lab README](../experiments/subdivision_lab/README.md) |
 | B5 | **Mehlsack Lab Slice 2a**: Praxistest, Verdikte (a2) Tiefe, (d2) Bézier-Kurvenfeld, (p) Flächen-Vorschau, (r) Rand-Loop, plus „vorher erkennbar, was mitgeht?“ | [Mehlsack Lab README, „Slice 2a“](../experiments/mehlsack_lab/README.md#slice-2a-2026-10-13) |
+| B5b | **Mehlsack Lab Slice 2b**: Praxistest Rotate/Scale mit Vorzeichen-Gewichten, Verdikte (f) Rotate, (g) Scale (Taille/Bauch), (h) Formel linear / power / beide, (i) `E`/`R`/`W` halten | [Mehlsack Lab README, „Slice 2b“](../experiments/mehlsack_lab/README.md#slice-2b-2026-10-13) |
 
 ### C. Lesen und einordnen (ohne Fenster)
 

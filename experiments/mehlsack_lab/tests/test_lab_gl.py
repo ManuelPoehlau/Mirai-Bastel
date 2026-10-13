@@ -289,3 +289,42 @@ def test_surface_preview_draws_with_p_and_leaves_the_frame_identical_without(win
     hud_rows = HEIGHT - 12 * 18  # the HUD status line changes ("Vorschau an/aus"): compare below it
     stride = WIDTH * 4
     assert without[:hud_rows * stride] == base[:hud_rows * stride]
+
+
+def test_hold_r_e_over_the_hover_through_the_window(window):
+    """Slice 2b E16: hover → R down → mouse motion → R up = one Scale entry; E with RMB cancels
+    exactly; focus loss cancels an armed hold; the hover is frozen while armed."""
+    to_edit(window, h=6, n=3)
+    x, y = find_hover(window)
+    target = window.scene.target
+    assert window.state.hover_target is target
+    start = {v: window.scene.mesh.vertex_position(v) for v in window.scene.mesh.all_vertex_ids()}
+    window.on_key_press(key.R, 0)
+    assert window.state.armed
+    window.on_mouse_motion(x + 200, y + 200, 200, 200)  # far away: the hover must stay frozen
+    assert window.scene.target is target and window.state.dragging
+    for i in range(5):
+        window.on_mouse_motion(x + 200 + i, y + 200, 6, 0)
+        window.on_draw()
+    window.on_key_release(key.R, 0)
+    assert not window.state.armed and len(window.state.session.history) == 1
+    assert window.state.session.last.kind == "scale"
+    assert any(window.scene.mesh.vertex_position(v) != start[v] for v in target.seeds)
+    assert gl_error() == 0
+    after = {v: window.scene.mesh.vertex_position(v) for v in start}
+    window.on_mouse_motion(x, y, 0, 0)
+    window.on_key_press(key.E, 0)
+    for _ in range(4):
+        window.on_mouse_motion(x, y, 8, 0)
+    window.on_mouse_press(x, y, mouse.RIGHT, 0)  # RMB cancels the running rotate
+    assert not window.state.armed and not window.state.dragging
+    window.on_key_release(key.E, 0)
+    assert {v: window.scene.mesh.vertex_position(v) for v in start} == after
+    assert len(window.state.session.history) == 1
+    window.on_key_press(key.W, 0)
+    window.on_mouse_motion(x, y, 0, 5)
+    window.on_deactivate()  # focus lost while W is held: cancelled, nothing moved
+    assert not window.state.armed
+    assert {v: window.scene.mesh.vertex_position(v) for v in start} == after
+    window.on_draw()
+    assert gl_error() == 0
