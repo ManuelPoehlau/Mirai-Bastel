@@ -676,10 +676,20 @@ Modi, Shift+L um einen geschlossenen Loop, Flächen auswählen und ziehen, Vorsc
 ### Offene Fragen (nicht im Code entschieden)
 
 - **O12** Shift+L/R im Flächenmodus: weder `src` noch `playground` hat eine Flächen-Loop/-Ring-Regel.
+  **Manu**: Face Loop (neu)
+  Vorgehen: Wechseln in den Face Mode
+  Auswahl: Klicken Sie auf eine Fläche, halten Sie **Shift** gedrückt und machen Sie einen Doppelklick auf die benachbarte Fläche in der Richtung, in die der Loop verlaufen soll.
+
 - **O13** Komponenten-Hover (welcher Punkt / welche Kante / Fläche ein Klick trifft) zusätzlich zur Loop-Linie? (V4)
-- **O14** Reicht der Production-Stil, um Auswahl und Hover-Linie zu trennen? (V1, V2 — Teil von s4)
+  **Manu**: Hier brauchen wir eine Änderung. Hover sollte Standardmäßig die einzelnen Komponenten highlighten. Hover Loop und Ring nur, wenn wir in den Loop/Ring Modus wechseln(neu). L Taste wechselt in diesen Modus. L verlässt ihn wieder. Dort kann man nur Loops und Rings auswählen bearbeiten, keine einzelne Komponenten. Loop/Ring weiterhin über Tab wechselbar
+
+- **O14** Reicht der Production-Stil, um Auswahl und Hover-Linie zu trennen? (V1, V2 — Teil von s4) **Manu**: Ja
+
 - **O15** Moduswechsel leert die Auswahl (wie die App) — oder soll sie umgerechnet werden (z. B. Kanten → ihre Punkte)?
+  **Manu**: Leert (umrechnen über shift+jeweiligen Komponenten Modus Taste 1, 2 oder 3)
+
 - **O16** Shift+L/R: hinzufügen (Lab, E27) oder ersetzen (Playground)?
+  **Manu**: Hinzufügen
 
 ### Praxistest für Manu (ca. 10 Minuten)
 
@@ -696,12 +706,12 @@ Die Kurven-Presets liegen jetzt auf anderen Tasten (siehe Tastenhilfe `H`). Alle
 
 **Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
 
-| Punkt | Verdikt | Notiz |
-|---|---|---|
-| (s1) Auswahl per Klick mit Shift/Ctrl/Alt in Punkt-/Kanten-/Flächenmodus | | |
-| (s2) Loop/Ring per Shift+L / Shift+R auswählen | | |
-| (s3) Regel „mit Auswahl wirkt alles auf die Auswahl, Klick ins Leere = zurück zum Hover-Ziehen“ | | |
-| (s4) Auswahl, Einfluss und Achsen-Sperre unterscheidbar | | |
+| Punkt                                                                                           | Verdikt      | Notiz                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (s1) Auswahl per Klick mit Shift/Ctrl/Alt in Punkt-/Kanten-/Flächenmodus                        | KEEP         |                                                                                                                                                                                                                                                                                                                                                     |
+| (s2) Loop/Ring per Shift+L / Shift+R auswählen                                                  | KEEP+ITERATE | Optional noch: Wechseln in den Edge Mode<br>    <br>Möglichkeit A (Doppelklick): Doppelklick auf eine Kante.  Wählt automatisch den gesamten Edge Loop aus.<br>    <br>Möglichkeit B (Shift + Doppelklick): Klicken auf eine Kante, dann Shift + Doppelklick  auf eine parallele Kante im selben Loop, um nur ein bestimmtes Teilstück auszuwählen. |
+| (s3) Regel „mit Auswahl wirkt alles auf die Auswahl, Klick ins Leere = zurück zum Hover-Ziehen“ | KEEP         |                                                                                                                                                                                                                                                                                                                                                     |
+| (s4) Auswahl, Einfluss und Achsen-Sperre unterscheidbar                                         | KEEP         |                                                                                                                                                                                                                                                                                                                                                     |
 
 Hinweis: Die Presets sind `K` = Smooth und `Shift+K` = Mexican Hat (mit Senke).
 
