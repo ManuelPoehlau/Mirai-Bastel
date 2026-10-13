@@ -25,7 +25,7 @@ def test_bench_runs_on_a_small_box():
 
     try:
         report = bench.run_bench("test", runs=1, width=480, height=360,
-                                 box=dict(height=2.0, width=1.5, h=4, n=3))
+                                 box=dict(height=2.0, width=1.5, depth=1.5, h=4, n=3))
     except Exception as exc:  # no GL / no display in this environment
         if "display" in str(exc).lower() or "EGL" in str(exc):
             pytest.skip(f"no GL context available: {exc}")

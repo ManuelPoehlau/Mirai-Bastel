@@ -61,7 +61,8 @@ def test_only_src_and_loop_ring():
     report = json.loads(result.stdout.strip().splitlines()[-1])
     assert {
         "box", "targets", "signed_curve", "signed_influence", "signed_ops", "edit_session",
-        "lab_bands", "curve_panel", "lab_bindings", "lab_state", "lab_scene", "lab_window", "run",
+        "lab_bands", "lab_preview", "curve_panel", "lab_bindings", "lab_state", "lab_scene", "lab_window",
+        "run",
     } <= set(report["lab_modules"])
     assert set(report["playground_loaded"]) == ALLOWED_PLAYGROUND
     assert report["foreign_experiment_modules"] == []

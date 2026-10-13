@@ -6,15 +6,22 @@ to `OrbitCamera`); every key/wheel event goes through `LabState` (which resolves
 
 Hover (edit phase): `mirai.viewport.picking.pick_nearest_edge` (+ `PickCache`, occlusion
 on — the box is drawn shaded) → `EditSession.target(edge, mode)` → signed influence →
-bands. While the cursor is over the curve panel the last mesh hover is kept, so the
-bands show what a curve edit does. After every position change (drag release, Undo/Redo,
-Nachführen, cancel) the pick cache is invalidated and the hover re-picked (no stale
-hover, B6 crash class).
+bands and the optional surface preview (`P`, Slice 2a E14). While the cursor is over the
+curve panel the last mesh hover is kept, so bands and preview show what a curve edit does.
+After every position change (drag release, Undo/Redo, Nachführen, cancel) the pick cache
+is invalidated and the hover re-picked (no stale hover, B6 crash class).
 
 Drag: LMB on a hovered target begins the signed soft Move; each motion event turns
 `(dx, dy)` into a world delta on the image plane through the anchor seed with
 `OrbitCamera.screen_delta_to_world` (as `MoveTool._on_update`), the state applies the
-X/Y/Z mask. Release = commit, Esc / RMB = cancel.
+X/Y/Z mask. Release = commit, Esc / RMB = cancel. During the drag bands and preview show
+the gesture's own weights.
+
+Curve panel (Slice 2a E11/E12): LMB picks a knot or handle (`CurvePanel.pick`, handles
+first) and drags it by the cursor's motion; every motion re-applies the edit to the curve
+as it was at the press, so a handle shrunk to fit grows back when the cursor returns.
+Alt+LMB on a handle breaks the knot's alignment; a double click on a knot (or one of its
+handles) restores aligned automatic handles.
 
 pyglet's scroll event carries no modifiers, so the window tracks held Shift/Ctrl/Alt keys
 itself (as `src/main.py` does for Shift/Ctrl) and clears them when it loses focus.
@@ -39,9 +46,9 @@ from pyglet.window import mouse as _mouse
 from . import lab_bindings as lb
 from . import lab_state as ls
 from .box import build_box_mesh
-from .curve_panel import CurvePanel
+from .curve_panel import KNOT, CurvePanel, DoubleClick, Element, element_position, move_element
 from .lab_scene import LabScene, gl_info_strings
-from .signed_curve import INTERIOR_X
+from .signed_curve import DEFAULT_KNOTS_X, FIRST, LAST
 
 HUD_FONT = ("Consolas", "DejaVu Sans Mono", "Courier New", "monospace")
 HUD_FONT_SIZE = 11
@@ -72,6 +79,8 @@ PANEL_CURVE = (255, 214, 90, 255)
 PANEL_POINT = (255, 255, 255, 255)
 PANEL_POINT_ACTIVE = (255, 120, 80, 255)
 PANEL_FIXED = (140, 142, 150, 255)
+PANEL_HANDLE = (120, 200, 255, 255)
+PANEL_HANDLE_LINE = (120, 160, 200, 200)
 
 _BUTTON_NAMES = ((_mouse.LEFT, "LEFT"), (_mouse.RIGHT, "RIGHT"), (_mouse.MIDDLE, "MIDDLE"))
 _MODIFIER_NAMES = ((_key.MOD_SHIFT, "shift"), (_key.MOD_CTRL, "ctrl"), (_key.MOD_ALT, "alt"))
@@ -99,7 +108,7 @@ class MehlsackLabWindow(pyglet.window.Window):
         # Window before GL resources: stores compile their shader and build their
         # VertexLists inside this window's context (see `src/main.py`).
         super().__init__(width=width, height=height, resizable=True, visible=visible,
-                         caption="Mirai — Mehlsack Lab (Slice 1: Move)")
+                         caption="Mirai — Mehlsack Lab (Slice 2a: Move)")
         self.state = ls.LabState(box)
         self.scene = LabScene(self._aspect())
         self.scene.show_mesh(build_box_mesh(self.state.box), frame="always")
@@ -115,7 +124,12 @@ class MehlsackLabWindow(pyglet.window.Window):
         self._pick_cache = PickCache()
         self._hover_edge = None
         self._drag_mode: Optional[str] = None
-        self._panel_point: Optional[int] = None
+        self._panel_element: Optional[Element] = None
+        #: Panel drag: the curve at the press, the element's grab offset, Alt held.
+        self._panel_start = None
+        self._panel_offset = (0.0, 0.0)
+        self._panel_break = False
+        self._double_click = DoubleClick()
 
         self._hud_batch = pyglet.graphics.Batch()
         self._hud_labels: list[pyglet.text.Label] = []
@@ -206,6 +220,7 @@ class MehlsackLabWindow(pyglet.window.Window):
         elif ls.BOX_CHANGED in out:
             self.scene.show_mesh(build_box_mesh(state.box), frame="grow")
         self.scene.bands.visible = state.bands_visible
+        self.scene.preview.visible = state.preview_visible
         if ls.MESH_CHANGED in out:
             self.scene.positions_changed(out.changed)
             self.repick()
@@ -248,16 +263,30 @@ class MehlsackLabWindow(pyglet.window.Window):
                 self.handle(state.cancel_drag())
                 self._drag_mode = DRAG_CANCELLED
             return
-        action = lb.resolve_drag(state.phase, name, modifier_names(modifiers), self._in_panel(x, y))
+        mods = modifier_names(modifiers)
+        in_panel = self._in_panel(x, y)
+        action = lb.resolve_drag(state.phase, name, mods, in_panel)
         if action == lb.DRAG_TARGET:
             target = self.scene.target
             if target is not None and state.session is not None:
-                state.begin_drag(target)
+                weights = state.begin_drag(target)
+                self.scene.set_target(target, weights)
                 self._drag_mode = DRAG_MESH
-        elif action == lb.CURVE_POINT:
-            self._panel_point = self.panel.nearest_point(x, y, state.curve)
+        elif action in (lb.CURVE_POINT, lb.CURVE_BREAK):
+            element = self.panel.pick(x, y, state.curve)
+            knot = self._double_click.press(element, x, y, time.perf_counter())
+            if knot is not None and lb.resolve_double_click(state.phase, mods, in_panel) == lb.CURVE_RESET:
+                self.handle(state.set_curve(state.curve.with_auto_handles(knot)))
+                self._drag_mode = DRAG_CANCELLED  # the rest of this press does nothing
+                return
             self._drag_mode = DRAG_PANEL
-            self._set_panel_point(y)
+            self._panel_element = element
+            self._panel_start = state.curve
+            self._panel_break = action == lb.CURVE_BREAK
+            if element is not None:
+                cx, cy = self.panel.to_curve(x, y)
+                ex, ey = element_position(state.curve, element)
+                self._panel_offset = (ex - cx, ey - cy)
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         self._cursor = (x, y)
@@ -267,7 +296,7 @@ class MehlsackLabWindow(pyglet.window.Window):
                 self.drag_by(dx, dy)
             return
         if mode == DRAG_PANEL:
-            self._set_panel_point(y)
+            self._drag_panel(x, y)
             return
         if mode == DRAG_CANCELLED:
             return
@@ -286,7 +315,8 @@ class MehlsackLabWindow(pyglet.window.Window):
         if not button & _mouse.LEFT:
             return
         mode, self._drag_mode = self._drag_mode, None
-        self._panel_point = None
+        self._panel_element = None
+        self._panel_start = None
         if mode == DRAG_MESH:
             self.handle(self.state.end_drag())
         elif mode == DRAG_CANCELLED:
@@ -308,11 +338,15 @@ class MehlsackLabWindow(pyglet.window.Window):
         state.revision += 1
         return ms
 
-    def _set_panel_point(self, y: float) -> None:
-        index = self._panel_point
-        if index is None:
+    def _drag_panel(self, x: float, y: float) -> None:
+        element = self._panel_element
+        if element is None or self._panel_start is None:
             return
-        curve = self.state.curve.with_point(index, self.panel.value_at(y))
+        cx, cy = self.panel.to_curve(x, y)
+        ox, oy = self._panel_offset
+        curve = move_element(self._panel_start, element, cx + ox, cy + oy, self._panel_break)
+        if curve.shape == self._panel_start.shape and not self._panel_break:
+            curve = self._panel_start  # back where it started: keep the preset name
         self.handle(self.state.set_curve(curve))
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
@@ -397,7 +431,7 @@ class MehlsackLabWindow(pyglet.window.Window):
 
     def _update_panel(self) -> None:
         curve = self.state.curve
-        key = (curve.interior, self._panel_point)
+        key = (curve.key, curve.preset, self._panel_element)
         if key == self._panel_key:
             return
         self._panel_key = key
@@ -415,18 +449,27 @@ class MehlsackLabWindow(pyglet.window.Window):
         for a, b in (((p.x, p.y), (p.x + p.width, p.y)), ((p.x + p.width, p.y), (p.x + p.width, p.y + p.height)),
                      ((p.x + p.width, p.y + p.height), (p.x, p.y + p.height)), ((p.x, p.y + p.height), (p.x, p.y))):
             items.append(shapes.Line(*a, *b, thickness=1, color=PANEL_BORDER, batch=batch))
-        for cx in INTERIOR_X:
+        for cx in DEFAULT_KNOTS_X[1:-1]:
             sx = p.to_screen(cx, 0.0)[0]
             items.append(shapes.Line(sx, y0, sx, y1, thickness=1, color=PANEL_GRID, batch=batch))
         items.append(shapes.Line(x0, zero, x1, zero, thickness=2, color=PANEL_ZERO, batch=batch))
         poly = p.polyline(curve)
         for a, b in zip(poly, poly[1:]):
             items.append(shapes.Line(*a, *b, thickness=2, color=PANEL_CURVE, batch=batch))
-        for index, (sx, sy) in enumerate(p.control_points(curve)):
-            fixed = index in (0, len(INTERIOR_X) + 1)
-            active = (not fixed) and self._panel_point == index - 1
-            color = PANEL_FIXED if fixed else (PANEL_POINT_ACTIVE if active else PANEL_POINT)
-            items.append(shapes.Circle(sx, sy, 3 if fixed else 5, color=color, batch=batch))
+        active = self._panel_element
+        for element, (kx, ky), (hx, hy) in p.handle_lines(curve):
+            items.append(shapes.Line(kx, ky, hx, hy, thickness=1, color=PANEL_HANDLE_LINE, batch=batch))
+            color = PANEL_POINT_ACTIVE if element == active else PANEL_HANDLE
+            items.append(shapes.Rectangle(hx - 3, hy - 3, 6, 6, color=color, batch=batch))
+        for index, (sx, sy) in enumerate(p.knot_points(curve)):
+            fixed = index in (FIRST, LAST)
+            is_active = active is not None and active.kind == KNOT and active.index == index
+            color = PANEL_FIXED if fixed else (PANEL_POINT_ACTIVE if is_active else PANEL_POINT)
+            if fixed or curve.aligned[index]:
+                items.append(shapes.Circle(sx, sy, 3 if fixed else 5, color=color, batch=batch))
+            else:  # corner (broken handles): a diamond
+                items.append(shapes.Polygon((sx, sy - 6), (sx + 6, sy), (sx, sy + 6), (sx - 6, sy),
+                                            color=color, batch=batch))
         for text, ty in (("+1", y1), ("0", zero), ("−1", y0)):
             items.append(pyglet.text.Label(text, font_name=HUD_FONT, font_size=8, x=p.x + 3, y=ty,
                                            anchor_x="left", anchor_y="center", color=(200, 200, 210, 255),

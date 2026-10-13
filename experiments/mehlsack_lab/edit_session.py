@@ -72,10 +72,11 @@ class LastGesture:
 
 
 class EditSession:
-    def __init__(self, mesh: Mesh) -> None:
+    def __init__(self, mesh: Mesh, rims=()) -> None:
         self.mesh = mesh
         self.history = HistoryStack()
-        self.finder = TargetFinder(mesh)
+        #: `rims`: the box's rim cycles (`box.box_rims`) for the rim-loop override (E15).
+        self.finder = TargetFinder(mesh, rims)
         _center, self.bounding_radius = mesh_center_and_radius(mesh)
         self.cache = DistanceCache()
         self.token = 0

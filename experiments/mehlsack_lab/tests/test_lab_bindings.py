@@ -27,8 +27,16 @@ def test_drags():
 
 def test_panel_takes_lmb_and_never_reaches_the_mesh():
     assert lb.resolve_drag(EDIT, {"LEFT"}, NONE, in_panel=True) == lb.CURVE_POINT
-    assert lb.resolve_drag(EDIT, {"LEFT"}, {"alt"}, in_panel=True) == lb.ORBIT
+    # Slice 2a E12: Alt+LMB in the panel breaks a handle (no orbit there); Alt+Shift still pans
+    assert lb.resolve_drag(EDIT, {"LEFT"}, {"alt"}, in_panel=True) == lb.CURVE_BREAK
+    assert lb.resolve_drag(EDIT, {"LEFT"}, {"alt"}, in_panel=False) == lb.ORBIT
+    assert lb.resolve_drag(EDIT, {"LEFT"}, {"alt", "shift"}, in_panel=True) == lb.PAN
+    assert lb.resolve_drag(EDIT, {"LEFT"}, {"shift"}, in_panel=True) is None
     assert lb.resolve_drag(CREATE, {"LEFT"}, NONE, in_panel=True) is None
+    assert lb.resolve_double_click(EDIT, NONE, in_panel=True) == lb.CURVE_RESET
+    assert lb.resolve_double_click(EDIT, NONE, in_panel=False) is None
+    assert lb.resolve_double_click(EDIT, {"alt"}, in_panel=True) is None
+    assert lb.resolve_double_click(CREATE, NONE, in_panel=True) is None
     assert lb.resolve_press_during_drag(EDIT, "RIGHT") == lb.CANCEL_PRESS
     assert lb.resolve_press_during_drag(EDIT, "MIDDLE") is None
 
@@ -36,6 +44,8 @@ def test_panel_takes_lmb_and_never_reaches_the_mesh():
 def test_wheel_per_phase():
     assert lb.resolve_wheel(CREATE, NONE) == lb.BOX_HEIGHT
     assert lb.resolve_wheel(CREATE, {"alt"}) == lb.BOX_WIDTH
+    assert lb.resolve_wheel(CREATE, {"alt", "shift"}) == lb.BOX_DEPTH  # Slice 2a A5
+    assert lb.resolve_wheel(EDIT, {"alt", "shift"}) is None
     assert lb.resolve_wheel(CREATE, {"shift"}) == lb.BOX_LOOPS
     assert lb.resolve_wheel(CREATE, {"ctrl"}) == lb.BOX_AROUND
     assert lb.resolve_wheel(EDIT, NONE) == lb.ZOOM
@@ -47,7 +57,7 @@ def test_keys():
     edit = {
         ("TAB", NONE): lb.TOGGLE_MODE, ("X", NONE): lb.AXIS_X, ("Y", NONE): lb.AXIS_Y,
         ("Z", NONE): lb.AXIS_Z, ("O", frozenset({"ctrl"})): lb.METRIC,
-        ("O", frozenset({"alt"})): lb.BANDS, ("N", NONE): lb.NACHFUEHREN,
+        ("O", frozenset({"alt"})): lb.BANDS, ("P", NONE): lb.PREVIEW, ("N", NONE): lb.NACHFUEHREN,
         ("_1", NONE): lb.PRESET_1, ("_2", NONE): lb.PRESET_2,
         ("Z", frozenset({"ctrl"})): lb.UNDO, ("Y", frozenset({"ctrl"})): lb.REDO,
         ("B", NONE): lb.NEW_BOX, ("H", NONE): lb.HELP, ("ESCAPE", NONE): lb.ESCAPE,
@@ -58,6 +68,7 @@ def test_keys():
     assert lb.resolve_key(CREATE, "ENTER", NONE) == lb.COMMIT_BOX
     assert lb.resolve_key(EDIT, "RETURN", NONE) is None
     assert lb.resolve_key(CREATE, "H", NONE) == lb.HELP
+    assert lb.resolve_key(CREATE, "P", NONE) is None
 
 
 def test_artist_truth_inputs_present():

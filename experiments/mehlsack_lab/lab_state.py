@@ -8,8 +8,8 @@ target and world deltas to `begin_drag()` / `drag_step()`, and reacts to the ret
 
 Phases: `create` (wheel builds the box, `Enter` commits) → `edit` (Loop/Ring drag).
 Settings are sticky and survive gestures, Undo and a new box: Loop/Ring mode, axis,
-radius step, metric, curve, bands, Nachführen. Defaults: geodesic, Smooth, 15 %
-(Artist 2026-10-11, AD-020 E5); Nachführen on (handoff E7).
+radius step, metric, curve, bands, preview, Nachführen. Defaults: geodesic, Smooth, 15 %
+(Artist 2026-10-11, AD-020 E5); Nachführen on (handoff E7); surface preview off (Slice 2a A9).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from mirai.soft_selection.settings import (
 )
 
 from . import lab_bindings as lb
-from .box import BoxParams, build_box_mesh
+from .box import BoxParams, box_rims, build_box_mesh
 from .edit_session import EditSession
 from .signed_curve import DEFAULT_CURVE, PRESET_HAT, PRESET_SMOOTH, SignedCurve
 from .targets import MODE_LABELS, MODE_LOOP, MODE_RING, Target
@@ -37,7 +37,7 @@ PHASE_CHANGED = "phase_changed"      # new mesh / new phase: rebuild scene objec
 MESH_CHANGED = "mesh_changed"        # positions changed (`Outcome.changed`): resync, re-pick hover
 REPICK = "repick"                    # positions may differ from the last pick (drag release)
 PREVIEW_CHANGED = "preview_changed"  # mode/radius/metric/curve: recompute hover target + bands
-DISPLAY_CHANGED = "display_changed"  # bands visibility, help, HUD text only
+DISPLAY_CHANGED = "display_changed"  # bands/preview visibility, help, HUD text only
 QUIT = "quit"
 
 FRAME_EMA = 0.1
@@ -78,6 +78,7 @@ class LabState:
         self.metric = DEFAULT_METRIC
         self.curve: SignedCurve = DEFAULT_CURVE
         self.bands_visible = True
+        self.preview_visible = False
         self.nachfuehren = True
         self.help_visible = False
         self.confirm_new_box = False
@@ -166,8 +167,10 @@ class LabState:
             out.effects.add(BOX_CHANGED)
 
     def commit_box(self) -> EditSession:
-        """`Enter`: the box becomes the edit mesh (also without extra divisions)."""
-        self.session = EditSession(build_box_mesh(self.box))
+        """`Enter`: the box becomes the edit mesh (also without extra divisions); its rims go
+        along for the rim-loop override (E15)."""
+        mesh = build_box_mesh(self.box)
+        self.session = EditSession(mesh, box_rims(mesh, self.box))
         self.phase = lb.PHASE_EDIT
         self.note = None
         return self.session
@@ -208,8 +211,12 @@ class LabState:
     def set_curve(self, curve: SignedCurve) -> Outcome:
         out = Outcome()
         if curve != self.curve or curve.preset != self.curve.preset:
+            shape_changed = curve.shape != self.curve.shape
             self.curve = curve
-            self._settings_changed(out)
+            if shape_changed:
+                self._settings_changed(out)
+            else:
+                out.effects.add(DISPLAY_CHANGED)  # only a handle mode (aligned/corner) changed
             self._touch()
         return out
 
@@ -231,23 +238,24 @@ class LabState:
         if self.phase == lb.PHASE_CREATE:
             b = self.box
             v, e, f = b.counts()
-            return (f"Box: Höhe {b.height:g} · Breite {b.width:g} · Loops {b.loops} (h={b.h}) · "
+            return (f"Box: Höhe {b.height:g} · Breite {b.width:g} · Tiefe {b.depth:g} · Loops {b.loops} (h={b.h}) · "
                     f"rundum n={b.n} · V {v} / E {e} / F {f}")
         axis = self.axis.upper() if self.axis else "frei"
         return (f"{MODE_LABELS[self.mode]} · Achse {axis} · Radius {self.radius_percent} % "
                 f"({self.world_radius:.2f}) · {self.metric} · Kurve {self.curve.label} · "
                 f"Nachführen {'an' if self.nachfuehren else 'aus'} · "
-                f"Punkte {'an' if self.bands_visible else 'aus'}")
+                f"Punkte {'an' if self.bands_visible else 'aus'} · "
+                f"Vorschau {'an' if self.preview_visible else 'aus'}")
 
     def hud_lines(self, frame_ms: Optional[float]) -> list[HudLine]:
-        lines = [HudLine("Mehlsack Lab — Slice 1 (Move) · nicht Artist-validiert", "title")]
+        lines = [HudLine("Mehlsack Lab — Slice 2a (Move) · nicht Artist-validiert", "title")]
         if self.phase == lb.PHASE_CREATE:
-            lines.append(HudLine("BOX BAUEN: Mausrad Höhe · Alt+Rad Breite · Shift+Rad Loops · "
-                                 "Ctrl+Rad rundum · Enter = Bearbeiten", "active"))
+            lines.append(HudLine("BOX BAUEN: Mausrad Höhe · Alt+Rad Breite · Alt+Shift+Rad Tiefe · "
+                                 "Shift+Rad Loops · Ctrl+Rad rundum · Enter = Bearbeiten", "active"))
             lines.append(HudLine("(Mausrad zoomt hier nicht — es gehört der Box)", "inactive"))
         else:
             lines.append(HudLine("BEARBEITEN: Kante hovern, LMB ziehen · Tab Loop/Ring · X/Y/Z · "
-                                 "Shift+Rad Radius · H Hilfe", "active"))
+                                 "Shift+Rad Radius · P Vorschau · H Hilfe", "active"))
         lines.append(HudLine(self.status_text(), "normal"))
         if self.session is not None:
             s = self.session
@@ -285,6 +293,10 @@ def _h_box_height(state: LabState, out: Outcome, steps: int) -> None:
 
 def _h_box_width(state: LabState, out: Outcome, steps: int) -> None:
     state._box(out, state.box.with_width_steps(steps))
+
+
+def _h_box_depth(state: LabState, out: Outcome, steps: int) -> None:
+    state._box(out, state.box.with_depth_steps(steps))
 
 
 def _h_box_loops(state: LabState, out: Outcome, steps: int) -> None:
@@ -330,6 +342,11 @@ def _h_metric(state: LabState, out: Outcome, steps: int) -> None:
 
 def _h_bands(state: LabState, out: Outcome, steps: int) -> None:
     state.bands_visible = not state.bands_visible
+    out.effects.add(DISPLAY_CHANGED)
+
+
+def _h_preview(state: LabState, out: Outcome, steps: int) -> None:
+    state.preview_visible = not state.preview_visible
     out.effects.add(DISPLAY_CHANGED)
 
 
@@ -388,6 +405,7 @@ def _h_escape(state: LabState, out: Outcome, steps: int) -> None:
 _HANDLERS = {
     lb.BOX_HEIGHT: _h_box_height,
     lb.BOX_WIDTH: _h_box_width,
+    lb.BOX_DEPTH: _h_box_depth,
     lb.BOX_LOOPS: _h_box_loops,
     lb.BOX_AROUND: _h_box_around,
     lb.COMMIT_BOX: _h_commit_box,
@@ -399,6 +417,7 @@ _HANDLERS = {
     lb.AXIS_Z: _h_axis,
     lb.METRIC: _h_metric,
     lb.BANDS: _h_bands,
+    lb.PREVIEW: _h_preview,
     lb.NACHFUEHREN: _h_nachfuehren,
     lb.PRESET_1: _h_preset,
     lb.PRESET_2: _h_preset,

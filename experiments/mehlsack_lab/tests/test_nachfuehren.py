@@ -47,7 +47,7 @@ def test_unchanged_settings_change_nothing():
     session, target, _, radius = _session_after_gesture()
     before = positions(session.mesh)
     assert session.retune(radius, "geodesic", DEFAULT_CURVE) is False
-    assert session.retune(radius, "geodesic", SignedCurve(DEFAULT_CURVE.interior)) is False
+    assert session.retune(radius, "geodesic", SignedCurve(DEFAULT_CURVE.knots, DEFAULT_CURVE.handles_in, DEFAULT_CURVE.handles_out)) is False
     assert positions(session.mesh) == before and len(session.history) == 1
 
 
@@ -117,7 +117,7 @@ def test_state_with_n_on_retunes_on_preset_radius_and_curve_point():
     assert MESH_CHANGED in out and out.changed
     out = state.wheel(0, 1, {"shift"})
     assert MESH_CHANGED in out
-    out = state.set_curve(state.curve.with_point(3, -0.8))
+    out = state.set_curve(state.curve.with_knot(4, 0.8, -0.8))
     assert MESH_CHANGED in out
     assert len(state.session.history) == 1
 

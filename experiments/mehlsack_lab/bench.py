@@ -32,7 +32,7 @@ from mehlsack_lab._paths import ensure_paths  # noqa: E402
 
 ensure_paths()
 
-BOX = dict(height=2.0, width=1.5, h=32, n=32)
+BOX = dict(height=2.0, width=1.5, depth=1.5, h=32, n=32)
 RADIUS_PERCENTS = (15, 50, 200)
 DEFAULT_RUNS = 20
 

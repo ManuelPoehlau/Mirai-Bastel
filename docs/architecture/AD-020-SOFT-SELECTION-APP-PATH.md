@@ -795,6 +795,7 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
   from this AD: `mesh_center_and_radius` (`mesh_geometry.py:44-46`) calls it once per vertex.
 - Whether points through the mesh (depth off) stay readable at large radii — observe in S2c.
 - *2026-10-12:* signed (negative) weights explored in [`experiments/mehlsack_lab`](../../experiments/mehlsack_lab/README.md) (Discovery, not part of the capability; `src` unchanged).
+- *2026-10-13:* Mehlsack Lab Slice 1: signed weights **KEEP in the lab** (Manu's verdict; Discovery, no promotion). Slice 2a tries a per-vertex surface tint for the *influence* lab-locally (lab overlay, no `RenderMesh`/shader change) — relates to §5.1 c and F14, which rejected the tint for the *selection*; whether it reads differently for influence is the lab's open question.
 
 ---
 

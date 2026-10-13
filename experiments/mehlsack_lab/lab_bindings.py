@@ -33,9 +33,12 @@ PAN = "pan"
 ZOOM = "zoom"
 DRAG_TARGET = "drag_target"
 CURVE_POINT = "curve_point"
+CURVE_BREAK = "curve_break"
+CURVE_RESET = "curve_reset"
 CANCEL_PRESS = "cancel_press"
 BOX_HEIGHT = "box_height"
 BOX_WIDTH = "box_width"
+BOX_DEPTH = "box_depth"
 BOX_LOOPS = "box_loops"
 BOX_AROUND = "box_around"
 COMMIT_BOX = "commit_box"
@@ -46,6 +49,7 @@ AXIS_Y = "axis_y"
 AXIS_Z = "axis_z"
 METRIC = "metric"
 BANDS = "bands"
+PREVIEW = "preview"
 NACHFUEHREN = "nachfuehren"
 PRESET_1 = "preset_1"
 PRESET_2 = "preset_2"
@@ -65,9 +69,10 @@ KEY_ALIASES = {"ENTER": "RETURN", "NUM_ENTER": "RETURN"}
 
 @dataclass(frozen=True)
 class LabBinding:
-    #: "drag", "press", "wheel" or "key"
+    #: "drag", "press", "double", "wheel" or "key"
     kind: str
     #: drag/press: "LEFT"/"RIGHT"/"MIDDLE" ("PANEL" = LMB inside the curve panel);
+    #: double: "PANEL" (a double click on a curve knot);
     #: key: pyglet key symbol name; wheel: "WHEEL"
     value: str
     #: exact modifier set required; `None` = modifiers ignored
@@ -88,7 +93,9 @@ class LabBinding:
             "_1": "1", "_2": "2",
         }
         base = names.get(self.value, self.value)
-        if self.kind == "drag":
+        if self.kind == "double":
+            base = "Doppelklick auf Kurvenpunkt"
+        elif self.kind == "drag":
             base += " ziehen"
         elif self.kind == "press":
             base += " (während Zug)"
@@ -102,6 +109,7 @@ _TRUTH = "Artist Input Truth"
 _PROD = "Production-Default wie src/main.py"
 _APP = "wie App (AD-020), PROVISIONAL"
 _LAB = "lab-lokal (Vorschlag, keine Artist-Entscheidung)"
+_2A = "lab-lokal (Slice 2a, Vorschlag, keine Artist-Entscheidung)"
 _NONE = frozenset()
 
 LAB_OVERRIDES: tuple[LabBinding, ...] = (
@@ -115,7 +123,9 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
     LabBinding("wheel", "WHEEL", _NONE, PHASE_CREATE, BOX_HEIGHT, "Höhe ±1 Schritt",
                "lab-lokal (Brief); Mausrad zoomt hier nicht"),
     LabBinding("wheel", "WHEEL", frozenset({"alt"}), PHASE_CREATE, BOX_WIDTH,
-               "Breite (= Tiefe) ±1 Schritt", "lab-lokal (Brief)"),
+               "Breite ±1 Schritt", "lab-lokal (Brief)"),
+    LabBinding("wheel", "WHEEL", frozenset({"alt", "shift"}), PHASE_CREATE, BOX_DEPTH,
+               "Tiefe ±1 Schritt", "lab-lokal (Slice 2a, Annahme A5)"),
     LabBinding("wheel", "WHEEL", frozenset({"shift"}), PHASE_CREATE, BOX_LOOPS,
                "horizontale Loops ±1", "lab-lokal (Brief)"),
     LabBinding("wheel", "WHEEL", frozenset({"ctrl"}), PHASE_CREATE, BOX_AROUND,
@@ -125,8 +135,12 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
     # edit phase
     LabBinding("drag", "LEFT", _NONE, PHASE_EDIT, DRAG_TARGET,
                "Loop/Ring unter dem Cursor direkt ziehen (Move)", "lab-lokal; ohne Auswahl"),
-    LabBinding("drag", "PANEL", None, PHASE_EDIT, CURVE_POINT,
-               "nächsten Kurvenpunkt senkrecht ziehen", _LAB),
+    LabBinding("drag", "PANEL", _NONE, PHASE_EDIT, CURVE_POINT,
+               "Kurvenpunkt oder Handle ziehen (Handles bleiben in Linie)", _2A),
+    LabBinding("drag", "PANEL", frozenset({"alt"}), PHASE_EDIT, CURVE_BREAK,
+               "Handle allein ziehen = Knick (Punkt wie ohne Alt)", _2A),
+    LabBinding("double", "PANEL", _NONE, PHASE_EDIT, CURVE_RESET,
+               "Handles des Punkts wieder weich (automatisch)", _2A),
     LabBinding("press", "RIGHT", None, PHASE_EDIT, CANCEL_PRESS, "Zug abbrechen (exakt zurück)", _LAB),
     LabBinding("key", "TAB", _NONE, PHASE_EDIT, TOGGLE_MODE, "Loop ↔ Ring (bleibt)", _LAB),
     LabBinding("key", "X", _NONE, PHASE_EDIT, AXIS_X, "Achse X an/aus (bleibt)", _TRUTH),
@@ -136,6 +150,8 @@ LAB_OVERRIDES: tuple[LabBinding, ...] = (
                "Einflussradius ±1 Stufe", _APP),
     LabBinding("key", "O", frozenset({"ctrl"}), PHASE_EDIT, METRIC, "Metrik geodesic ↔ euclidean", _APP),
     LabBinding("key", "O", frozenset({"alt"}), PHASE_EDIT, BANDS, "Einfluss-Punkte an/aus", _APP),
+    LabBinding("key", "P", _NONE, PHASE_EDIT, PREVIEW,
+               "Flächen-Vorschau an/aus (orange = mit, blau = entgegen)", _2A),
     LabBinding("key", "N", _NONE, PHASE_EDIT, NACHFUEHREN, "Nachführen an/aus", _LAB),
     LabBinding("key", "_1", _NONE, PHASE_EDIT, PRESET_1, "Kurve: Smooth", _LAB),
     LabBinding("key", "_2", _NONE, PHASE_EDIT, PRESET_2, "Kurve: Mexican Hat (mit Senke)", _LAB),
@@ -161,15 +177,27 @@ def _phase_match(binding: LabBinding, phase: str) -> bool:
 
 
 def resolve_drag(phase: str, buttons: frozenset, modifiers: frozenset, in_panel: bool = False) -> Optional[str]:
-    """Action for a mouse drag/press with `buttons` held ("LEFT"/"RIGHT"/"MIDDLE"). A plain
-    LMB inside the curve panel in the edit phase is the panel ("PANEL"), never the mesh."""
+    """Action for a mouse drag/press with `buttons` held ("LEFT"/"RIGHT"/"MIDDLE"). A plain or
+    Alt-held LMB inside the curve panel in the edit phase is the panel ("PANEL"), never the
+    mesh and never an orbit (Alt+drag on a handle breaks it, E12); Alt+Shift+LMB still pans."""
     buttons = frozenset(buttons)
     if in_panel and phase == PHASE_EDIT and "LEFT" in buttons:
         mods = frozenset(modifiers) & KNOWN_MODIFIERS
-        if not mods:
+        if mods in (frozenset(), frozenset({"alt"})):
             buttons = buttons - {"LEFT"} | {"PANEL"}
     for binding in LAB_OVERRIDES:
         if (binding.kind == "drag" and binding.value in buttons and _phase_match(binding, phase)
+                and _modifiers_match(binding, modifiers)):
+            return binding.action
+    return None
+
+
+def resolve_double_click(phase: str, modifiers: frozenset, in_panel: bool) -> Optional[str]:
+    """Action for an LMB double click (only the curve panel knows one)."""
+    if not in_panel:
+        return None
+    for binding in LAB_OVERRIDES:
+        if (binding.kind == "double" and _phase_match(binding, phase)
                 and _modifiers_match(binding, modifiers)):
             return binding.action
     return None

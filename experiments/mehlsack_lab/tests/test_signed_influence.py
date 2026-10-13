@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from mehlsack_lab.lab_bands import SignedBands, negative_band_index
-from mehlsack_lab.signed_curve import PRESET_HAT, SignedCurve
+from mehlsack_lab.signed_curve import DEFAULT_CURVE, PRESET_HAT, SignedCurve
 from mehlsack_lab.signed_influence import DistanceCache, signed_influence
 from mirai.soft_selection import BAND_COUNT, CURVES, METRICS, band_index, compute_influence
 
@@ -32,6 +32,20 @@ def test_smooth_equals_compute_influence_bit_for_bit(metric, radius, mode):
 
 
 @pytest.mark.parametrize("metric", sorted(METRICS))
+@pytest.mark.parametrize("radius", [0.0, 0.4, 1.0, 2.5, 10.0])
+@pytest.mark.parametrize("mode", ["loop", "ring"])
+def test_smooth_preset_equals_compute_influence(metric, radius, mode):
+    """Slice 2a E13: the Smooth preset *is* smoothstep, so the lab influence with the preset
+    itself (not a stand-in lambda) equals the app's within 1e-12 — same vertices."""
+    mesh = box(h=6, n=4)
+    _, target = mid_target(mesh, mode)
+    lab = signed_influence(mesh, target.seeds, radius, metric, DEFAULT_CURVE)
+    app = compute_influence(mesh, target.seeds, radius, metric=metric, curve="smooth")
+    assert set(lab) == set(app)
+    assert max((abs(lab[v] - app[v]) for v in app), default=0.0) <= 1e-12
+
+
+@pytest.mark.parametrize("metric", sorted(METRICS))
 def test_signed_curve_gives_negative_weights_and_no_zeros(metric):
     mesh = box(h=10, n=5)
     _, target = mid_target(mesh)
@@ -43,7 +57,7 @@ def test_signed_curve_gives_negative_weights_and_no_zeros(metric):
     assert all(weights[s] == 1.0 for s in target.seeds)
     # `w == 0` vertices are absent: a curve that is 0 at x = 0.4 drops exactly those vertices
     distances = METRICS[metric](mesh, set(target.seeds), 1.5)
-    zero_at = SignedCurve((0.5, 0.0, 0.0, 0.0))
+    zero_at = SignedCurve.from_knots((0.5, 0.0, 0.0, 0.0))
     weights0 = signed_influence(mesh, target.seeds, 1.5, metric, zero_at)
     for vid, d in distances.items():
         if vid in target.seeds:

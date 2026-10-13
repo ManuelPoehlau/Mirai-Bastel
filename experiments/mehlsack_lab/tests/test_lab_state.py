@@ -1,6 +1,7 @@
 """§7.7 State machine (pyglet-free): creation keys incl. clamps and the horizontal-scroll
 fallback, Enter, Tab, X/Y/Z, presets, B, Esc during a drag vs idle, plus the edit-phase wheel
-and keys."""
+and keys. Slice 2a: Alt+Shift+wheel = depth (incl. the fallback), `P` = surface preview,
+rims go into the session at Enter, a handle-mode-only curve change is display only."""
 
 from __future__ import annotations
 
@@ -32,7 +33,8 @@ def test_starts_in_creation_phase_with_a_plain_cube():
 
 
 @pytest.mark.parametrize("mods,field,delta", [
-    (set(), "height", 0.25), ({"alt"}, "width", 0.25), ({"shift"}, "h", 1), ({"ctrl"}, "n", 1),
+    (set(), "height", 0.25), ({"alt"}, "width", 0.25), ({"alt", "shift"}, "depth", 0.25),
+    ({"shift"}, "h", 1), ({"ctrl"}, "n", 1),
 ])
 def test_creation_wheel(mods, field, delta):
     state = ls.LabState()
@@ -65,6 +67,10 @@ def test_horizontal_scroll_fallback():
     assert state.box.h == 1
     state.wheel(1, 0, {"ctrl"})
     assert state.box.n == 2
+    state.wheel(1, 0, {"alt", "shift"})  # depth, also as a horizontal scroll
+    assert state.box.depth == 2.25 and state.box.width == 2.0
+    state.wheel(-1, 0, {"alt", "shift"})
+    assert state.box.depth == 2.0
     height = state.box.height
     assert state.wheel(1, 0, set()).effects == set()  # no modifier: no fallback
     assert state.box.height == height
@@ -266,7 +272,56 @@ def test_settings_survive_a_new_box():
 def test_hud_and_status_text():
     state = ls.LabState()
     assert "Loops 0" in state.status_text() and "V 8 / E 12 / F 6" in state.status_text()
+    state.wheel(0, -1, {"alt", "shift"})
+    assert "Breite 2 · Tiefe 1.75" in state.status_text() and "Höhe 2" in state.status_text()
     state.key("RETURN")
     text = state.status_text()
     assert "Loop" in text and "15 %" in text and "geodesic" in text and "Nachführen an" in text
+    assert "Vorschau aus" in text
     assert state.hud_lines(16.0)[0].style == "title"
+
+
+def test_depth_is_independent_of_width():
+    state = ls.LabState()
+    for _ in range(3):
+        state.wheel(0, -1, {"alt", "shift"})
+    state.wheel(0, 2, {"alt"})
+    assert (state.box.width, state.box.depth, state.box.height) == (2.25, 1.25, 2.0)
+    state.key("RETURN")
+    xs = [p[0] for p in positions(state.session.mesh).values()]
+    zs = [p[2] for p in positions(state.session.mesh).values()]
+    assert (max(xs) - min(xs), max(zs) - min(zs)) == (2.25, 1.25)
+
+
+def test_p_toggles_the_surface_preview_default_off():
+    state = edit_state()
+    assert state.preview_visible is False  # A9: optional, off at start
+    out = state.key("P")
+    assert ls.DISPLAY_CHANGED in out and state.preview_visible
+    state.key("P")
+    assert not state.preview_visible
+    state.key("P")
+    state.key("B")
+    state.key("B")
+    state.key("RETURN")
+    assert state.preview_visible  # sticky like the other display settings
+
+
+def test_enter_passes_the_rims_to_the_session():
+    state = edit_state(BoxParams(h=3, n=2))
+    finder = state.session.finder
+    assert len(finder.rim_of_edge) == 16
+    top = horizontal_edge(state.session.mesh, 1.0)
+    target = state.session.target(top, MODE_LOOP)
+    assert target.closed and len(target.edges) == 8
+
+
+def test_handle_mode_only_change_is_display_only():
+    state = edit_state()
+    curve = state.curve
+    broken = curve.with_handle(2, "out", *curve.handles_out[2], break_alignment=True)
+    assert broken.shape == curve.shape and broken != curve
+    out = state.set_curve(broken)
+    assert out.effects == {ls.DISPLAY_CHANGED} and state.curve.aligned[2] is False
+    out = state.set_curve(state.curve.with_knot(2, 0.45, 0.3))
+    assert ls.PREVIEW_CHANGED in out

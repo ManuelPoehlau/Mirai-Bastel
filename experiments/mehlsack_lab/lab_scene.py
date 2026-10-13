@@ -3,8 +3,10 @@
 Rebuilt after `subdivision_lab/lab_scene.py` (not imported): the mesh in a production
 `RenderMesh` on the unmodified `GLRenderStore`, one `OrbitCamera`, a production
 `GLLineOverlay` for the wire (`wire` layer) and the hovered Loop/Ring (`hover` layer, the
-hover line style), a production `GLPointOverlay` for the seeds (`hover` point style) and
-the lab's `GLSignedBandOverlay` for the signed influence bands.
+hover line style), a production `GLPointOverlay` for the seeds (`hover` point style),
+the lab's `GLSignedBandOverlay` for the signed influence bands and (Slice 2a E14) the lab's
+`GLInfluencePreviewOverlay` for the optional surface preview, drawn right after the mesh so
+wire, Loop/Ring line and points stay on top.
 
 The viewport stays passive: the window pushes the target and its weights in
 (`set_target`), the overlays only turn them into positions at the mesh's current
@@ -29,6 +31,7 @@ from viewport.overlay import HOVER_LAYER, SelectionOverlay
 from viewport.render_mesh import RenderMesh
 
 from .lab_bands import EMPTY_SIGNED_BANDS, GLSignedBandOverlay, SignedBands
+from .lab_preview import GLInfluencePreviewOverlay
 from .targets import Target
 
 #: Production clear color (`src/main.py`).
@@ -44,6 +47,7 @@ class LabScene:
         self.lines = GLLineOverlay()
         self.points = GLPointOverlay()
         self.bands = GLSignedBandOverlay()
+        self.preview = GLInfluencePreviewOverlay()
         self.target: Optional[Target] = None
         #: Radius the camera was last framed on (the creation phase only zooms out).
         self.framed_radius = 0.0
@@ -92,8 +96,11 @@ class LabScene:
     # -- hover target + bands ------------------------------------------------------------------
 
     def set_target(self, target: Optional[Target], weights: dict) -> None:
+        """The hovered (or dragged) target and the weights bands and preview show."""
         self.target = target
+        weights = weights if target is not None else {}
         self.bands.set_bands(SignedBands.from_weights(weights) if target is not None else EMPTY_SIGNED_BANDS)
+        self.preview.set_weights(weights)
 
     def _refresh_overlays(self) -> None:
         mesh = self.mesh
@@ -115,11 +122,12 @@ class LabScene:
             )
             self.points.set_points(HOVER_LAYER, [position(v) for v in sorted(target.seeds)])
         self.bands.sync(mesh)
+        self.preview.sync(mesh, self.version)
 
     # -- draw -------------------------------------------------------------------------------------
 
     def draw(self) -> None:
-        """Clears and draws mesh, wire, hovered Loop/Ring, bands and seeds (no 2D)."""
+        """Clears and draws mesh, preview, wire, hovered Loop/Ring, bands and seeds (no 2D)."""
         from pyglet import gl
 
         gl.glClearColor(*CLEAR_COLOR, 1.0)
@@ -130,6 +138,7 @@ class LabScene:
         self.render_mesh.render(self.camera)
         self._refresh_overlays()
         uniforms = self.camera_uniforms()
+        self.preview.draw(uniforms)
         self.lines.draw(uniforms, layers=(WIRE_LAYER, HOVER_LAYER))
         self.bands.draw(uniforms)
         self.points.draw(uniforms)

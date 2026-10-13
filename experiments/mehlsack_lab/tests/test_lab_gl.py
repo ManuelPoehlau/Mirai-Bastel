@@ -1,7 +1,9 @@
 """§7.8 GL smoke test under `xvfb-run -a` (hidden 640x480 window): the window opens, a frame
 draws, the curve panel draws; plus the event path a mouse would take (wheel → box, Enter,
 hover → target + bands, LMB drag → one History entry without a structural rebuild, panel drag
-→ Nachführen, RMB cancel, Undo → re-pick). GL tests skip cleanly when no GL is available."""
+→ Nachführen, RMB cancel, Undo → re-pick). Slice 2a: Alt+Shift+wheel depth, panel handle drag
+(aligned / Alt = corner), double-click reset, rim loop hover, surface preview (`P` on draws,
+`P` off leaves the frame identical). GL tests skip cleanly when no GL is available."""
 
 from __future__ import annotations
 
@@ -115,8 +117,11 @@ def test_creation_wheel_rebuilds_the_box(window):
     wheel(window, 1, key.LCTRL)
     wheel(window, 1, key.LALT)
     wheel(window, -1)
+    window.on_key_press(key.LALT, 0)
+    wheel(window, -2, key.LSHIFT)  # Alt+Shift+wheel = depth
+    window.on_key_release(key.LALT, 0)
     box = window.state.box
-    assert (box.h, box.n, box.width, box.height) == (3, 2, 1.75, 2.25)
+    assert (box.h, box.n, box.width, box.height, box.depth) == (3, 2, 1.75, 2.25, 1.5)
     assert len(window.scene.mesh.all_face_ids()) == box.counts()[2]
     frame(window)
     assert gl_error() == 0
@@ -159,13 +164,14 @@ def test_panel_drag_retunes_the_last_gesture(window):
     window.on_mouse_release(x, y + 10, mouse.LEFT, 0)
     end = {v: window.scene.mesh.vertex_position(v) for v in window.scene.mesh.all_vertex_ids()}
     p = window.panel
-    px, py = p.to_screen(0.6, window.state.curve.interior[2])
-    window.on_mouse_press(int(px), int(py), mouse.LEFT, 0)
+    px, py = (round(c) for c in p.to_screen(*window.state.curve.knots[3]))
+    window.on_mouse_press(px, py, mouse.LEFT, 0)
     assert window.state.dragging is False  # the press went to the panel, not the mesh
+    assert window.state.curve.preset == "smooth"  # a press alone changes nothing
     low = int(p.to_screen(0.6, -0.8)[1])
-    window.on_mouse_drag(int(px), low, 0, low - int(py), mouse.LEFT, 0)
-    window.on_mouse_release(int(px), low, mouse.LEFT, 0)
-    assert window.state.curve.interior[2] < 0.0
+    window.on_mouse_drag(px, low, 0, low - py, mouse.LEFT, 0)
+    window.on_mouse_release(px, low, mouse.LEFT, 0)
+    assert window.state.curve.knots[3][1] < 0.0
     assert len(window.state.session.history) == 1
     assert window.state.session.last.retunes >= 1
     after = {v: window.scene.mesh.vertex_position(v) for v in end}
@@ -195,3 +201,91 @@ def test_help_overlay_and_esc(window):
     assert window.state.help_visible and gl_error() == 0
     window.on_key_press(key.H, 0)
     assert pixel(frame(window), WIDTH // 2, HEIGHT // 2) != pixel(data, WIDTH // 2, HEIGHT // 2)
+
+
+def _press_drag_release(window, start, end, modifiers=0):
+    (x0, y0), (x1, y1) = start, end
+    window.on_mouse_press(x0, y0, mouse.LEFT, modifiers)
+    window.on_mouse_drag(x1, y1, x1 - x0, y1 - y0, mouse.LEFT, modifiers)
+    window.on_mouse_release(x1, y1, mouse.LEFT, modifiers)
+
+
+def test_panel_handles_aligned_alt_corner_and_double_click_reset(window, monkeypatch):
+    to_edit(window)
+    p = window.panel
+    curve = window.state.curve
+    i = 2
+    handle = tuple(round(c) for c in p.to_screen(*curve.handles_out[i]))
+    target = (handle[0] + 6, handle[1] + 20)
+    _press_drag_release(window, handle, target)
+    moved = window.state.curve
+    assert moved.handles_out[i] != curve.handles_out[i] and moved.aligned[i]
+    (kx, ky), (ax, ay), (bx, by) = moved.knots[i], moved.handles_in[i], moved.handles_out[i]
+    assert abs((ax - kx) * (by - ky) - (ay - ky) * (bx - kx)) < 1e-9  # in handle followed
+    # Alt+drag on the in handle: corner, the out handle stays
+    handle_in = tuple(round(c) for c in p.to_screen(*moved.handles_in[i]))
+    window.on_key_press(key.LALT, key.MOD_ALT)
+    _press_drag_release(window, handle_in, (handle_in[0], handle_in[1] - 25), key.MOD_ALT)
+    window.on_key_release(key.LALT, 0)
+    broken = window.state.curve
+    assert not broken.aligned[i] and broken.handles_out[i] == moved.handles_out[i]
+    assert broken.handles_in[i] != moved.handles_in[i]
+    window.on_draw()
+    assert gl_error() == 0
+    # double click on the knot: aligned automatic handles again
+    knot = tuple(round(c) for c in p.to_screen(*broken.knots[i]))
+    window.on_mouse_press(*knot, mouse.LEFT, 0)
+    window.on_mouse_release(*knot, mouse.LEFT, 0)
+    window.on_mouse_press(*knot, mouse.LEFT, 0)
+    window.on_mouse_release(*knot, mouse.LEFT, 0)
+    reset = window.state.curve
+    assert reset.aligned[i] and reset.knots == broken.knots
+    assert reset == broken.with_auto_handles(i)
+    assert window.state.dragging is False
+
+
+def test_rim_loop_hover_runs_around_the_box(window):
+    to_edit(window, h=3, n=2)
+    session = window.state.session
+    mesh, cam = session.mesh, window.scene.camera
+    found = None
+    for eid in session.finder.rim_of_edge:  # hover the screen point of each rim edge's middle
+        a, b = (mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
+        mid = tuple((a[k] + b[k]) / 2 for k in range(3))
+        sx, sy = cam.project_to_screen(mid, WIDTH, HEIGHT)
+        window.on_mouse_motion(sx, sy, 0, 0)
+        target = window.scene.target
+        if target is not None and target.edge in session.finder.rim_of_edge:
+            found = target
+            break
+    assert found is not None
+    assert found.closed and len(found.edges) == 8 and len(found.seeds) == 8
+    window.on_draw()
+    assert window.scene.lines.segment_count("hover") == 8
+    assert len(window.scene.points.points("hover")) == 8
+
+
+def test_surface_preview_draws_with_p_and_leaves_the_frame_identical_without(window):
+    to_edit(window, h=8, n=4)
+    wheel(window, 5, key.LSHIFT)  # radius up: more faces in the influence
+    find_hover(window)
+    window._hud_revision = window.state.revision  # keep the HUD text out of the comparison
+    base = frame(window)
+    assert window.scene.preview.triangle_count("influence_preview") == 0
+    window.on_key_press(key.P, 0)
+    assert window.state.preview_visible
+    with_preview = frame(window)
+    assert gl_error() == 0
+    assert window.scene.preview.triangle_count("influence_preview") > 0
+    changed = sum(1 for i in range(0, len(base), 4) if base[i:i + 3] != with_preview[i:i + 3])
+    assert changed > 500  # the influenced faces are tinted
+    # orange where the seeds are (the strongest tint): some pixel became redder than it was
+    assert any(with_preview[i] > base[i] + 40 and with_preview[i + 2] < base[i + 2]
+               for i in range(0, len(base), 4))
+    window.on_key_press(key.P, 0)
+    assert not window.state.preview_visible
+    window._hud_revision = window.state.revision
+    without = frame(window)
+    hud_rows = HEIGHT - 12 * 18  # the HUD status line changes ("Vorschau an/aus"): compare below it
+    stride = WIDTH * 4
+    assert without[:hud_rows * stride] == base[:hud_rows * stride]
