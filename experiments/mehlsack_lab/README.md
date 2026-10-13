@@ -96,15 +96,15 @@ Start im Repo-Ordner: `python experiments/mehlsack_lab/run.py`
 
 Hinweise: Im Box-Modus zoomt das Mausrad nicht (es gehört der Box). Taille/Bauch geht in diesem Schritt noch nicht — dafür braucht es Scale (nächster Schritt). Alle Tasten sind Vorschläge für dieses Lab, keine Entscheidung.
 
-| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
-|---|---|---|
-| (a) Box per Mausrad |  |  |
-| (b) Loop/Ring hovern und direkt ziehen |  |  |
-| (c) Negative Gewichte |  |  |
-| (d) Kurvenfeld |  |  |
-| (e) Nachführen |  |  |
+| Punkt                                  | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz                              |
+| -------------------------------------- | ------------------------------------------- | ---------------------------------- |
+| (a) Box per Mausrad                    | Iterate                                     | Alt+Scroll für Tiefe hinzufügen    |
+| (b) Loop/Ring hovern und direkt ziehen | KEEP                                        |                                    |
+| (c) Negative Gewichte                  | KEEP                                        |                                    |
+| (d) Kurvenfeld                         | Iterate                                     | Kurven über Bezier Handles formbar |
+| (e) Nachführen                         | KEEP                                        |                                    |
 
-Vor dem Ziehen erkennbar, was mitgeht? _(leer)_
+Vor dem Ziehen erkennbar, was mitgeht? Manu: Wird sich mit dem optionalem Preview Modus evtl. besser erkennen lassen. Muss getestet werden.
 
 ## Engineering-Annahmen (nicht Artist-entschieden)
 
@@ -236,6 +236,20 @@ Offene Fragen (nicht im Code entschieden):
 - **O5** Scale/Rotate mit Vorzeichen-Gewichten: Formelwahl für `w < 0` (siehe Analyse oben) — Slice 2.
 
 Nächster Schritt: Manus Praxistest (oben). Danach Slice 2 (Scale/Rotate) nur nach Verdikt.
+
+Manus Antworten auf die offenen Fragen:
+
+- **O1**: Optionaler Preview Modus (Screenshot aus C4D): The soft selection is displayed with an orange preview, which makes it much easier to select correctly. The Strength parameter is symbolized by the saturation of the orange color. This preview can be switched on and off here.[[2026-1_soft_selection_02_.jpg]]
+
+- **O2**: Läuft soweit ok. Es werden eh noch noch Viewport Perfomance Verbesserungen später
+  nötig sein (gollum mesh). Nicht Frage dieses Labs
+
+- **O3**: Artist Truth
+
+- **O4**: Ja, macht in diesem Experiment Sinn
+
+- **O5**: Muss man vergleichen in der Praxis
+
 
 ## Tests
 
