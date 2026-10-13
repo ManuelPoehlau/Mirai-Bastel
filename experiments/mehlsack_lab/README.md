@@ -390,12 +390,12 @@ Start: `python experiments/mehlsack_lab/run.py`
 
 **Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
 
-| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
-|---|---|---|
-| (a2) Tiefe per Alt+Shift+Mausrad | | |
-| (d2) Kurvenfeld mit Bézier-Handles | | |
-| (p) Flächen-Vorschau | | |
-| (r) Rand-Loop um die Ecken | | |
+| Punkt                              | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz                                     |
+| ---------------------------------- | ------------------------------------------- | ----------------------------------------- |
+| (a2) Tiefe per Alt+Shift+Mausrad   | KEEP                                        |                                           |
+| (d2) Kurvenfeld mit Bézier-Handles | Iterate                                     | Kurvenpunkte hinzufügen/wegnehmen können. |
+| (p) Flächen-Vorschau               | KEEP                                        |                                           |
+| (r) Rand-Loop um die Ecken         | KEEP                                        |                                           |
 
 Vorher erkennbar, was mitgeht — jetzt besser? Manu:
 
@@ -500,9 +500,9 @@ Gemessen headless (Container), Box 2 × 3 × 2, `h = 12`, `n = 6`, mittlerer Loo
 ### Offene Fragen (nicht im Code entschieden)
 
 - **O9** Soll das Lab `g ≤ 0` bei linear verhindern oder nur anzeigen (jetzt: nur anzeigen; Handoff: beobachten,
-  nichts reparieren)?
-- **O10** Power in der Taillen-Richtung (S2): ist ein Bauch von ×5 bis ×100 am Tool-Minimum gewollt?
-- **O11** Pivot, Tangentenbasis, Normal-Raum, Zahleneingabe: bewusst nicht in diesem Slice.
+  nichts reparieren)? Manu: Erstmal so lassen
+- **O10** Power in der Taillen-Richtung (S2): ist ein Bauch von ×5 bis ×100 am Tool-Minimum gewollt? Manu: Bleibt auch erstmal, weitere Tests nötig
+- **O11** Pivot, Tangentenbasis, Normal-Raum, Zahleneingabe: bewusst nicht in diesem Slice. Manu: ja, kommt in späteren Slices
 
 ### Praxistest für Manu (ca. 10 Minuten)
 
@@ -519,12 +519,12 @@ Einziehen (Taille) nicht. Bei *power* wird dafür der Bauch beim sehr tiefen Ein
 
 **Deine Verdikte** (je KEEP / ITERATE / REJECT / UNKNOWN):
 
-| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
-|---|---|---|
-| (f) Rotate mit Vorzeichen-Gewichten | | |
-| (g) Scale mit Vorzeichen-Gewichten (Taille/Bauch) | | |
-| (h) Formel für negative Gewichte: linear, power oder „beide als Option“ | | |
-| (i) E/R/W halten über dem gehoverten Loop | | |
+| Punkt                                                                   | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz                                                                                                           |
+| ----------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| (f) Rotate mit Vorzeichen-Gewichten                                     | KEEP                                        |                                                                                                                 |
+| (g) Scale mit Vorzeichen-Gewichten (Taille/Bauch)                       | KEEP                                        |                                                                                                                 |
+| (h) Formel für negative Gewichte: linear, power oder „beide als Option“ | KEEP                                        | beide erstmal behalten                                                                                          |
+| (i) E/R/W halten über dem gehoverten Loop                               | KEEP                                        | vorerst, das ist eine generelle noch nicht 100%ig entschiedene UX Entscheidung (weiter Playground Tests nötig ) |
 
 ## Tests
 
