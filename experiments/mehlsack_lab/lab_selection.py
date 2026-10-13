@@ -32,6 +32,11 @@ Slice 3b (Manu's answers 2026-10-13, O12/O13/O15, s2 ITERATE):
   (the Ring's rules: quads only, stops at a non-quad face), no new traversal rule.
 - `convert_selection` (O15, "touching"): Shift+`1`/`2`/`3` turn the selection into the
   vertices / edges / faces that touch it.
+
+Slice 3c (Manu 2026-10-13: O17, O18, t3 ITERATE, edge-ring note): `ring_faces` (the faces a
+Ring passes through, ordered) also serves the `L`-mode click in Face mode;
+`face_loop_section` is the face counterpart of `loop_segment`; `ring_neighbours` tells
+whether two edges are opposite edges of one quad (Shift+double click = their Ring).
 """
 
 from __future__ import annotations
@@ -182,18 +187,37 @@ def loop_segment(finder: TargetFinder, anchor, edge) -> Optional[tuple]:
     """The edges of `edge`'s loop from `anchor` to `edge` (both included), the shorter way on a
     closed loop (ties: the traversal direction); None if `anchor` is not on that loop."""
     loop = finder.target(edge, MODE_LOOP)
-    edges = loop.edges
-    if anchor not in edges:
+    if anchor not in loop.edges:
         return None
-    i, j = edges.index(anchor), edges.index(edge)
-    if not loop.closed:
+    return _section(loop.edges, loop.closed, anchor, edge)
+
+
+def _section(items: tuple, closed: bool, start, end) -> tuple:
+    """`items` from `start` to `end`, both included; on a closed cycle the shorter way (ties:
+    forward)."""
+    i, j = items.index(start), items.index(end)
+    if not closed:
         lo, hi = min(i, j), max(i, j)
-        return tuple(edges[lo:hi + 1])
-    n = len(edges)
+        return tuple(items[lo:hi + 1])
+    n = len(items)
     forward = (j - i) % n
     if forward <= n - forward:
-        return tuple(edges[(i + k) % n] for k in range(forward + 1))
-    return tuple(edges[(i - k) % n] for k in range(n - forward + 1))
+        return tuple(items[(i + k) % n] for k in range(forward + 1))
+    return tuple(items[(i - k) % n] for k in range(n - forward + 1))
+
+
+def ring_faces(finder: TargetFinder, edge) -> tuple[tuple, bool]:
+    """The faces the Ring of `edge` passes through, in traversal order, and whether the Ring is
+    closed (`loop_ring` rules: quads only)."""
+    index = finder.index
+    ring = finder.target(edge, MODE_RING)
+    edges = ring.edges
+    pairs = list(zip(edges, edges[1:])) + ([(edges[-1], edges[0])] if ring.closed and len(edges) > 2 else [])
+    faces: list = []
+    for e1, e2 in pairs:
+        common = set(index.faces_of_edge[e1]) & set(index.faces_of_edge[e2])
+        faces.extend(f for f in sorted(common) if f not in faces)
+    return tuple(faces), ring.closed
 
 
 def face_loop(finder: TargetFinder, face_a, face_b) -> Optional[tuple]:
@@ -203,14 +227,31 @@ def face_loop(finder: TargetFinder, face_a, face_b) -> Optional[tuple]:
     shared = set(index.edges_of_face.get(face_a, ())) & set(index.edges_of_face.get(face_b, ()))
     if face_a == face_b or len(shared) != 1:
         return None
-    ring = finder.target(next(iter(shared)), MODE_RING)
-    edges = ring.edges
-    pairs = list(zip(edges, edges[1:])) + ([(edges[-1], edges[0])] if ring.closed and len(edges) > 2 else [])
-    faces = []
-    for e1, e2 in pairs:
-        common = set(index.faces_of_edge[e1]) & set(index.faces_of_edge[e2])
-        faces.extend(f for f in common if f not in faces)
-    return tuple(faces) if face_a in faces and face_b in faces else None
+    faces, _closed = ring_faces(finder, next(iter(shared)))
+    return faces if face_a in faces and face_b in faces else None
+
+
+def face_loop_section(finder: TargetFinder, face_a, face_c) -> Optional[tuple]:
+    """O18: the faces from `face_a` to `face_c` along the face loop through both (the shorter way
+    on a closed loop), None if no face loop through `face_a` contains `face_c`."""
+    if face_a == face_c:
+        return None
+    for edge in finder.index.edges_of_face.get(face_a, ()):
+        faces, closed = ring_faces(finder, edge)
+        if face_a in faces and face_c in faces:
+            return _section(faces, closed, face_a, face_c)
+    return None
+
+
+def ring_neighbours(finder: TargetFinder, edge_a, edge_b) -> bool:
+    """True if the two edges are opposite edges of one quad (neighbours in an Edge Ring)."""
+    index = finder.index
+    if edge_a == edge_b or not (index.is_valid_edge(edge_a) and index.is_valid_edge(edge_b)):
+        return False
+    if set(index.edge_ends[edge_a]) & set(index.edge_ends[edge_b]):
+        return False
+    shared = set(index.faces_of_edge[edge_a]) & set(index.faces_of_edge[edge_b])
+    return any(len(index.edges_of_face[f]) == 4 for f in shared)
 
 
 def convert_selection(mesh: Mesh, index, selection: Selection, mode: SelectionMode) -> None:

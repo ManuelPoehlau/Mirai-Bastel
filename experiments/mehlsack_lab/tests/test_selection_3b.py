@@ -144,9 +144,11 @@ def test_l_mode_clicks_take_whole_loops_and_rings():
     state.key("_1")
     state.click_loop(SELECT, loop)
     assert state.selection.vertices == set(loop.seeds)
-    state.key("_3")
-    out = state.click_loop(SELECT, loop)
-    assert state.selection.is_empty() and "Flächenmodus" in state.note and ls.SELECTION_CHANGED not in out
+    state.key("_3")  # Slice 3c (O17): Face mode takes the faces of the hovered edge's Ring
+    ring = state.session.target(loop.edge, MODE_RING)
+    state.click_loop(SELECT, ring)
+    assert state.selection.faces and all(
+        set(state.session.finder.index.edges_of_face[f]) & set(ring.edges) for f in state.selection.faces)
 
 
 # -- double clicks (s2 ITERATE, O12) ---------------------------------------------------------------------
@@ -202,12 +204,12 @@ def test_shift_double_click_adds_the_loop_section_from_the_previous_click():
     state.click(SELECT_ADD, edges[11])
     state.double_click(lb.DOUBLE_PART, SELECT_ADD, edges[11])
     assert state.selection.edges == {edges[1], edges[0], edges[11]}
-    # not on the same loop: only the clicked edges, a note
+    # not on the same loop (and no Ring neighbour): Slice 3c (t3) adds that whole loop
     state.click(SELECT, edges[1])
-    far = _loop_edges(state, -0.5)[0]
-    state.click(SELECT_ADD, far)
-    state.double_click(lb.DOUBLE_PART, SELECT_ADD, far)
-    assert state.selection.edges == {edges[1], far} and "nicht im selben Loop" in state.note
+    far_loop = _loop_edges(state, -0.5)
+    state.click(SELECT_ADD, far_loop[0])
+    state.double_click(lb.DOUBLE_PART, SELECT_ADD, far_loop[0])
+    assert state.selection.edges == {edges[1]} | set(far_loop) and "Edge Loop dazu" in state.note
 
 
 def test_loop_segment_on_an_open_loop():
@@ -241,12 +243,18 @@ def test_shift_double_click_in_face_mode_adds_the_face_loop():
         ys = {round(mesh.vertex_position(v)[1], 9) for v in mesh.face_vertices(f)}
         assert ys == {0.0, 0.5}
     assert face_loop(finder, a, b) == face_loop(finder, a, b) and set(face_loop(finder, a, b)) == faces
-    # not a neighbour: only the clicked faces
+    # on no face loop through `a` (another row and column): only the clicked faces (Slice 3c
+    # turns a non-neighbour on a shared face loop into a section, see test_selection_3c)
     state.click(SELECT, a)
-    far = wall_face(mesh, -1.0, -0.5)
+    xs_a = {round(mesh.vertex_position(v)[0], 9) for v in mesh.face_vertices(a)}
+    far = next(f for f in mesh.all_face_ids() if f != a and not set(finder.index.edges_of_face[f])
+               & set(finder.index.edges_of_face[a])
+               and min(mesh.vertex_position(v)[1] for v in mesh.face_vertices(f)) < -0.4
+               and not ({round(mesh.vertex_position(v)[0], 9) for v in mesh.face_vertices(f)} & xs_a)
+               and len({round(mesh.vertex_position(v)[1], 9) for v in mesh.face_vertices(f)}) == 2)
     state.click(SELECT_ADD, far)
     state.double_click(lb.DOUBLE_PART, SELECT_ADD, far)
-    assert state.selection.faces == {a, far} and "keine Nachbarfläche" in state.note
+    assert state.selection.faces == {a, far} and "keinem Face Loop" in state.note
     assert face_loop(finder, a, a) is None
 
 

@@ -14,7 +14,7 @@ from pyglet.window import key, mouse  # noqa: E402
 
 from core import EdgeId, FaceId, SelectionMode, VertexId  # noqa: E402
 from mehlsack_lab.lab_selection import MODE_COMPONENT  # noqa: E402
-from mehlsack_lab.targets import MODE_LOOP  # noqa: E402
+from mehlsack_lab.targets import MODE_LOOP, MODE_RING  # noqa: E402
 
 from .test_lab_gl import find_hover, gl_error, to_edit, window  # noqa: E402,F401
 from .test_selection_gl import click, drag, find_pick, mesh_positions  # noqa: E402
@@ -33,10 +33,16 @@ def test_component_hover_by_default_and_l_switches(window):
     assert isinstance(state.selection.hovered, FaceId) and scene.faces.triangle_count("hover") == 2
     window.on_key_press(key.L, 0)
     assert state.loop_mode and state.selection.hovered is None
+    find_hover(window)  # Slice 3c (O17): the L mode in Face mode hovers the Ring and fills its faces
+    assert scene.hover.mode == MODE_RING and scene.hover.closed
+    window.on_draw()
+    assert scene.faces.triangle_count("hover") >= 4 and gl_error() == 0
+    window.on_key_press(key._2, 0)
     find_hover(window)
     assert scene.hover.mode == MODE_LOOP and scene.hover.closed
     window.on_draw()
     assert scene.faces.triangle_count("hover") == 0 and gl_error() == 0
+    window.on_key_press(key._3, 0)
     window.on_key_press(key.L, 0)
     find_pick(window)
     assert isinstance(state.selection.hovered, FaceId)

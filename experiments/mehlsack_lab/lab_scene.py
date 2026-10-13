@@ -18,6 +18,9 @@ when the gesture target is the selection (`set_target(..., hover=)`).
 Component hover (Slice 3b): the lab sets `Selection.hovered` (the Core's UI-only hover field);
 a hovered edge is the hover line (its target's edge), a hovered vertex a hover point and a
 hovered face the production hover fill — the `hover` layers of the same production overlays.
+Slice 3c: in the `L` mode's Face mode the hover fill shows the hovered Ring's faces
+(`hover_faces`, triangulated by a second production `SelectionOverlay` over a scratch
+selection — read-only reuse, no own triangulation).
 
 The viewport stays passive: the window pushes the target and its weights in
 (`set_target`), the overlays only turn them into positions at the mesh's current
@@ -32,7 +35,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
-from core import Mesh, Selection
+from core import Mesh, Selection, SelectionMode
 from mirai.mesh_geometry import mesh_center_and_radius
 from mirai.viewport.camera import OrbitCamera
 from viewport.gl_line_overlay import WIRE_LAYER, GLLineOverlay
@@ -65,6 +68,9 @@ class LabScene:
         #: The lab's selection (read by the production `SelectionOverlay`, never changed here).
         self.selection = selection if selection is not None else Selection()
         self.selection_overlay = SelectionOverlay(self.selection)
+        self._hover_faces_selection = Selection()
+        self._hover_faces_selection.mode = SelectionMode.FACE
+        self._hover_faces_overlay = SelectionOverlay(self._hover_faces_selection)
         #: What a gesture acts on (seed points + bands) and the hovered Loop/Ring (line).
         self.target: Optional[Target] = None
         self.hover: Optional[Target] = None
@@ -120,12 +126,16 @@ class LabScene:
         """The selection changed: rebuild its layers on the next draw."""
         self.selection_version += 1
 
-    def set_target(self, target: Optional[Target], weights: dict, hover: Optional[Target] = None) -> None:
+    def set_target(self, target: Optional[Target], weights: dict, hover: Optional[Target] = None,
+                   hover_faces=()) -> None:
         """The target a gesture acts on (or the running one) with the weights bands and preview
         show, and the hovered Loop/Ring whose line is drawn (None: the target's own edges — the
         hover target itself before Slice 3)."""
         self.target = target
         self.hover = hover
+        if set(hover_faces) != self._hover_faces_selection.faces:
+            self._hover_faces_selection.faces = set(hover_faces)
+            self._selection_key = None
         weights = weights if target is not None else {}
         self.bands.set_bands(SignedBands.from_weights(weights) if target is not None else EMPTY_SIGNED_BANDS)
         self.preview.set_weights(weights)
@@ -159,7 +169,8 @@ class LabScene:
             self.lines.set_segments(overlay.line_layers(mesh)[SELECTED_LAYER], SELECTED_LAYER)
             faces = overlay.face_layers(mesh)
             self.faces.set_triangles(SELECTED_LAYER, faces[SELECTED_LAYER])
-            self.faces.set_triangles(HOVER_LAYER, faces[HOVER_LAYER])
+            self.faces.set_triangles(HOVER_LAYER, faces[HOVER_LAYER]
+                                     + self._hover_faces_overlay.face_layers(mesh)[SELECTED_LAYER])
             self._selection_key = key
         self.bands.sync(mesh)
         self.preview.sync(mesh, self.version)

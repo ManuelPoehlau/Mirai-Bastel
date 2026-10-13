@@ -89,14 +89,14 @@ Soft Selection (WP-SOFT-01 S1, headless, Typ B): Influence-Map (euklidisch/geod�
 
 ### `mehlsack_lab/`
 
-Mehlsack Lab (WP-MEHLSACK-LAB-01 Slices 1, 2a, 2b, 3, 3b, Discovery Typ B): eigenes Fenster; Box per Mausrad bauen
+Mehlsack Lab (WP-MEHLSACK-LAB-01 Slices 1, 2a, 2b, 3, 3b, 3c, Discovery Typ B): eigenes Fenster; Box per Mausrad bauen
 (Höhe, Breite, Tiefe), dann das gehoverte Element (oder im `L`-Modus den Loop/Ring) ohne Auswahl direkt ziehen oder mit
 `W`/`E`/`R` halten verschieben, drehen, skalieren (zwei Scale-Formeln). Seit Slice 3 alternativ eine
 Punkt-/Kanten-/Flächen-Auswahl (Klick mit Shift/Ctrl/Alt, Shift+L/R, Doppelklick-Loops, Umrechnen per
 Shift+`1`/`2`/`3`), von der dieselben Gesten ausgehen; Klick ins Leere = zurück zum Hover. Mitbewegung über die
 Soft-Selection-Abstände aus `src` mit einer Bézier-Kurve, die unter null gehen darf (negative Gewichte bewegen
 entgegen), optionale Flächen-Vorschau. Importiert aus `playground/` nur `topology_tools.loop_ring`. Verdikte für
-Slices 1, 2a, 2b und 3 liegen vor (Manu, 2026-10-13); Slice 3b ist nicht Artist-validiert —
+Slices 1, 2a, 2b, 3 und 3b liegen vor (Manu, 2026-10-13); Slice 3c ist nicht Artist-validiert —
 [`mehlsack_lab/README.md`](mehlsack_lab/README.md).
 
 ### `drag_cost/`

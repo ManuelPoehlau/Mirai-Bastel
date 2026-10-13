@@ -40,6 +40,14 @@ the window) selects an edge's loop, Shift+double click a loop section from the p
 click's edge or the face loop towards the neighbouring face (`_prev_anchor` = the handle of
 the click before the double click). Shift+`1`/`2`/`3` convert the selection (touching).
 
+Slice 3c (Manu 2026-10-13): the `L`-mode click in Face mode takes the faces of the hovered
+edge's Ring (O17); a double click in Vertex mode selects the loop of the edge under the cursor
+at that vertex (O18); Shift+double click on an edge: a Ring neighbour of the previous click →
+its Ring, on the previous click's loop → the section, otherwise → the whole loop (t3); in Face
+mode a non-neighbour on a face loop through the previous face → the section (O18). After a
+double-click action the click anchors are cleared, so the next Shift+double click without a
+fresh single click adds a whole loop.
+
 Phases: `create` (wheel builds the box, `Enter` commits) → `edit` (Loop/Ring drag).
 Settings are sticky and survive gestures, Undo and a new box: Loop/Ring mode, axis,
 radius step, metric, curve, bands, preview, Nachführen. Defaults: geodesic, Smooth, 15 %
@@ -52,7 +60,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from core import Selection, SelectionMode
+from core import EdgeId, FaceId, Selection, SelectionMode
 from mirai.interaction.tools.rotate import RotateTool
 from mirai.interaction.tools.scale import ScaleTool
 from mirai.interaction.tools.transform import _resolve_space
@@ -73,8 +81,11 @@ from .lab_selection import (
     apply_click_elements,
     convert_selection,
     face_loop,
+    face_loop_section,
     loop_elements,
     loop_segment,
+    ring_faces,
+    ring_neighbours,
     selection_target,
 )
 from .signed_curve import DEFAULT_CURVE, PRESET_HAT, PRESET_SMOOTH, SignedCurve
@@ -406,10 +417,9 @@ class LabState:
             return out
         self.confirm_new_box = False
         elements = None if target is None else loop_elements(self.selection, target)
-        if target is not None and elements is None:
-            self.note = "L-Modus: im Flächenmodus gibt es keinen Loop/Ring einer Kante (offene Frage)"
-            out.effects.add(DISPLAY_CHANGED)
-        elif apply_click_elements(self.selection, command, elements):
+        if target is not None and elements is None:  # Face mode (O17): the faces of the Ring
+            elements = set(ring_faces(self.session.finder, target.edge)[0])
+        if apply_click_elements(self.selection, command, elements):
             self.note = None
             out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED})
         self._prev_anchor = self._anchor = None
@@ -421,30 +431,54 @@ class LabState:
         means nothing (other modes, other modifiers, the L mode) it is an ordinary click."""
         mode = self.selection.mode
         session = self.session
+        edge_at_cursor, self.edge_under_cursor = self.edge_under_cursor, None
         applies = (not self.loop_mode and session is not None and hit is not None and not self.busy
-                   and ((action == lb.DOUBLE_LOOP and mode is SelectionMode.EDGE)
+                   and ((action == lb.DOUBLE_LOOP and mode in (SelectionMode.EDGE, SelectionMode.VERTEX))
                         or (action == lb.DOUBLE_PART and mode in (SelectionMode.EDGE, SelectionMode.FACE))))
+        if applies and action == lb.DOUBLE_LOOP and mode is SelectionMode.VERTEX:
+            # O18: the loop of the edge under the cursor at that vertex (the cursor's side picks it)
+            if edge_at_cursor is None or hit not in session.mesh.edge_vertices(edge_at_cursor):
+                out = self.click(command, hit)
+                self.note = "Punkt-Loop: Doppelklick etwas neben dem Punkt, in Richtung des Loops"
+                return out
         if not applies:
             return self.click(command, hit)
         out = Outcome(action=action)
+        finder, prev = session.finder, self._prev_anchor
         if action == lb.DOUBLE_LOOP:
-            loop = session.target(hit, MODE_LOOP)
-            self.selection.set(set(loop.edges))
-            self.note = f"Edge Loop: {len(loop.edges)} Kanten" + (", geschlossen" if loop.closed else "")
+            loop = session.target(hit if mode is SelectionMode.EDGE else edge_at_cursor, MODE_LOOP)
+            closed = ", geschlossen" if loop.closed else ""
+            if mode is SelectionMode.EDGE:
+                self.selection.set(set(loop.edges))
+                self.note = f"Edge Loop: {len(loop.edges)} Kanten{closed}"
+            else:
+                self.selection.set(set(loop.seeds))
+                self.note = f"Punkt-Loop: {len(loop.seeds)} Punkte{closed}"
         elif mode is SelectionMode.EDGE:
-            part = loop_segment(session.finder, self._prev_anchor, hit)
-            if part is None:
-                self.note = "Teilstück: die zuletzt geklickte Kante liegt nicht im selben Loop"
+            if isinstance(prev, EdgeId) and ring_neighbours(finder, prev, hit):
+                ring = session.target(hit, MODE_RING)
+                self.selection.add(set(ring.edges))
+                self.note = f"Edge Ring: {len(ring.edges)} Kanten dazu"
             else:
-                self.selection.add(set(part))
-                self.note = f"Loop-Teilstück: {len(part)} Kanten dazu"
+                part = loop_segment(finder, prev, hit) if isinstance(prev, EdgeId) else None
+                if part is not None:
+                    self.selection.add(set(part))
+                    self.note = f"Loop-Teilstück: {len(part)} Kanten dazu"
+                else:  # t3 ITERATE: another whole loop
+                    loop = session.target(hit, MODE_LOOP)
+                    self.selection.add(set(loop.edges))
+                    self.note = f"Edge Loop dazu: {len(loop.edges)} Kanten"
         else:
-            faces = face_loop(session.finder, self._prev_anchor, hit)
-            if faces is None:
-                self.note = "Face Loop: die zuletzt geklickte Fläche ist keine Nachbarfläche"
-            else:
-                self.selection.add(set(faces))
+            faces = face_loop(finder, prev, hit) if isinstance(prev, FaceId) else None
+            if faces is not None:
                 self.note = f"Face Loop: {len(faces)} Flächen dazu"
+            else:
+                faces = face_loop_section(finder, prev, hit) if isinstance(prev, FaceId) else None
+                self.note = (f"Face-Loop-Teilstück: {len(faces)} Flächen dazu" if faces is not None
+                             else "Face Loop: die zuletzt geklickte Fläche liegt auf keinem Face Loop hierher")
+            if faces is not None:
+                self.selection.add(set(faces))
+        self._prev_anchor = self._anchor = None  # a fresh single click starts the next series
         out.effects.update({SELECTION_CHANGED, PREVIEW_CHANGED, DISPLAY_CHANGED})
         self._touch()
         return out
@@ -538,7 +572,7 @@ class LabState:
                 f"Vorschau {'an' if self.preview_visible else 'aus'}")
 
     def hud_lines(self, frame_ms: Optional[float]) -> list[HudLine]:
-        lines = [HudLine("Mehlsack Lab — Slice 3b (Hover, L-Modus, Doppelklick) · nicht Artist-validiert", "title")]
+        lines = [HudLine("Mehlsack Lab — Slice 3c (Ringe, Punkt-Loops, Teilstücke) · nicht Artist-validiert", "title")]
         if self.phase == lb.PHASE_CREATE:
             lines.append(HudLine("BOX BAUEN: Mausrad Höhe · Alt+Rad Breite · Alt+Shift+Rad Tiefe · "
                                  "Shift+Rad Loops · Ctrl+Rad rundum · Enter = Bearbeiten", "active"))

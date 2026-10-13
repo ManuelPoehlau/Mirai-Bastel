@@ -61,6 +61,7 @@ import time
 from typing import Optional
 
 import pyglet
+from core import SelectionMode
 from mirai.viewport.picking import pick_component, pick_face, pick_nearest_edge
 from mirai.viewport.picking_cache import PickCache
 from pyglet import shapes
@@ -72,7 +73,8 @@ from . import lab_state as ls
 from .box import build_box_mesh
 from .curve_panel import KNOT, CurvePanel, DoubleClick, Element, element_position, move_element
 from .lab_pointer import ClickSeries, PointerPress
-from .lab_selection import component_target
+from .lab_selection import component_target, ring_faces
+from .targets import MODE_RING
 from .lab_scene import LabScene, gl_info_strings
 from .signed_curve import DEFAULT_KNOTS_X, FIRST, LAST
 
@@ -239,15 +241,20 @@ class MehlsackLabWindow(pyglet.window.Window):
         hit = self._hover_hit
         if self._hover_key is None or self._hover_key[:2] != (state.loop_mode, state.selection.mode):
             hit = None  # picked for another mode: wait for the re-pick
+        hover_faces = ()
         if state.loop_mode:
-            hover = None if hit is None else session.target(hit, state.mode)
+            # Slice 3c (O17): in Face mode the L mode hovers the Ring and shows its faces
+            face_mode = state.selection.mode is SelectionMode.FACE
+            hover = None if hit is None else session.target(hit, MODE_RING if face_mode else state.mode)
+            if face_mode and hover is not None:
+                hover_faces = ring_faces(session.finder, hit)[0]
             state.selection.hovered = None
         else:
             hover = component_target(session.mesh, state.selection.mode, hit)
             state.selection.hovered = hit if hover is not None else None
         state.hover_target = hover
         target = self.state.active_target
-        self.scene.set_target(target, self.state.preview_weights(target), hover=hover)
+        self.scene.set_target(target, self.state.preview_weights(target), hover=hover, hover_faces=hover_faces)
 
     def repick(self) -> None:
         """After a position change: no stale pick data, no stale hover."""
@@ -428,7 +435,8 @@ class MehlsackLabWindow(pyglet.window.Window):
             edge = pick_nearest_edge(self.scene.camera, mesh, x, y, self.width, self.height, PICK_RADIUS_PX,
                                      cache=self._pick_cache, occlusion=True)
             self._clicks.reset()
-            self.handle(state.click_loop(command, None if edge is None else state.session.target(edge, state.mode)))
+            mode = MODE_RING if state.selection.mode is SelectionMode.FACE else state.mode
+            self.handle(state.click_loop(command, None if edge is None else state.session.target(edge, mode)))
             return
         hit = pick_component(
             self.scene.camera, mesh, state.selection.mode, x, y, self.width, self.height,
@@ -436,6 +444,10 @@ class MehlsackLabWindow(pyglet.window.Window):
         )
         if self._clicks.click(command, hit, x, y, time.perf_counter()):
             action = lb.resolve_double_click(state.phase, modifiers, in_panel=False)
+            if state.selection.mode is SelectionMode.VERTEX:  # O18: the edge on the cursor's side
+                state.edge_under_cursor = pick_nearest_edge(
+                    self.scene.camera, mesh, x, y, self.width, self.height, PICK_RADIUS_PX,
+                    cache=self._pick_cache, occlusion=True)
             self.handle(state.double_click(action, command, hit))
         else:
             self.handle(state.click(command, hit))
