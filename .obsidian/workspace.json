@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
+                "file": "experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md",
                 "mode": "preview",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM"
+              "title": "rigging-skinning-morphing-README"
             }
           }
         ]
@@ -80,7 +80,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 230.5
+    "width": 386.5
   },
   "right": {
     "id": "2f0ecdc97945841c",
@@ -96,7 +96,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
+                "file": "experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -115,7 +115,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
+                "file": "experiments/rigging-skinning-morphing/rigging-skinning-morphing-README.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
@@ -186,8 +186,9 @@
       "github-sync:Sync with Remote": false
     }
   },
-  "active": "ea434ba3b8b57477",
+  "active": "b30703becbfc852c",
   "lastOpenFiles": [
+    "MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md",
     "README.md",
     "docs/DEVELOPMENT_PROMPTS.md",
     "My_Markdown.md",
