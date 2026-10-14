@@ -11,8 +11,9 @@ gespiegelte Knife des alten Labs sind in Slice 5 gelöscht (Abschnitt „Histori
 
 *Nach dem Abschluss von WP-SYM-LAB-03 kamen die symmetrischen Topologie-Werkzeuge (AD-SYM-03, Slices 3b–7, 2026-10-08/09) hinzu; sie stehen in den Abschnitten „Symmetrische Topologie …" und „Symmetrischer Knife, Slice 6c" unten. Offene Artist-Verdikte: `docs/ATELIER.md`.*
 
-Symmetrie ist **nicht** nach Production übernommen (zurückgestellt, `docs/architecture/ROADMAP.md`
-§7, Eintrag 2026-10-02); `src/main.py` kennt kein Experiment. Vertrag zwischen Lab und App:
+Symmetrie ist **noch nicht** in Production (`src/main.py` kennt kein Experiment). Die Zurückstellung vom 2026-10-02 ist
+überholt: Manu, 2026-10-14 — Symmetrie kommt in die App, danach die symmetrische Soft Selection auf dem App-Pfad;
+Vorschlag und Slices: [AD-SYM-04](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) (noch nicht entschieden). Vertrag zwischen Lab und App:
 [AD-013, Addendum H2](../../docs/architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-03-wp-sym-lab-03-h2--experiment-input-hook-in-application).
 Plan und Abschluss: [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md)
 (§5, A2-Tabelle).
@@ -380,7 +381,7 @@ Warnzeile festhielten, laufen jetzt mit `undeclare_knife` (der abgeleitete Mecha
 
 ## Symmetrischer Extrude, Slice 7
 
-*Engineering-Vorgaben (PROVISIONAL), dein Verdikt steht aus — AD-SYM-03 §11.* Mit gesetzter Symmetrie (`Shift+S`) extrudiert `T` halten die gewählten
+*Slice 7 wie gebaut: **KEEP** (Manu, 2026-10-14; Verdikt unten beim Praxistest). Die Arbeitsregeln bleiben Engineering-Vorgaben (PROVISIONAL) — AD-SYM-03 §11.* Mit gesetzter Symmetrie (`Shift+S`) extrudiert `T` halten die gewählten
 Flächen **und ihre Spiegelpartner als eine Absicht**, als **ein** Undo-Schritt, in BLOCK wie in MARK (die Deklaration `EXTRUDE_COORDINATORS` in
 `mirai.symmetry_declarations` ist der Schalter; BLOCK-Zeile und MARK-Warnung folgen ihr). Ohne Symmetrie läuft `T` unverändert einseitig wie in B9.
 
@@ -404,6 +405,8 @@ Auf `subd_cube` und `head_basemesh` gibt es weder eine Fläche, die die Mitte nu
 sind dort nicht zu sehen (getestet an synthetischen Netzen, AD-SYM-03 §11.5 F-2).
 
 ### Praxistest für Manu (Slice 7)
+
+*Verdikt (Stand 2026-10-14): **Symmetrischer Extrude (Slice 7) wie gebaut: KEEP** (Manu, 2026-10-14; mit dem Auftrag WP-SYM-APP-01 übergeben, „symmetric Extrude counts as KEEP“, für den Slice als Ganzes, ohne Aufschlüsselung pro Schritt). Die drei Fragen unten (Zug auf beiden Seiten, Mittelkante M, Auswahl danach) sind damit nur als erlebtes Verhalten abgedeckt, nicht einzeln beantwortet: Auswahl danach, Arbeitsseiten-Regel und Texte bleiben Engineering-Vorgaben (PROVISIONAL). **Weiter offen, nicht entschieden:** ob eine Ecke an der Mitte später einen eigenen Deckelpunkt pro Komponente bekommt (AD-SYM-03 §11.5 F-1; bis dahin bleibt die Ablehnung, deine Aussage vom 2026-10-09). KEEP ist keine Promotion. Die Schritte unten sind der historische Testablauf.*
 
 > **Praxistest — symmetrischer Extrude im Lab (ca. 10 Minuten).** `git pull`, dann `python experiments/symmetry_lab/run.py` (Kopf-Asset).
 >
