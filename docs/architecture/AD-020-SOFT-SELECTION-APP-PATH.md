@@ -756,7 +756,7 @@ Mirrored influence, seam vertices with `w < 1` and every other part of a symmetr
   (finger/lip effect M1/M2, grid diamond M4), smooth vs linear, W/E/R with constraints; the look of the bands;
   optionally the scale formula. Verdicts per item; the defaults (metric, curve, radius unit and steps, scale
   formula) are decided by Manu there.
-- **Docs per slice:** `src/main.py` docstring, ROADMAP §7 intake, FINDINGS/README pointers, this AD's status.
+- **Docs per slice:** `src/main.py` docstring, FINDINGS/README pointers, this AD's status. (ROADMAP §7 intake entries were dropped 2026-10-14: log frozen in `WP-06_INTAKE_LOG.md`, AGENTS.md §4b.)
 
 After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus the fate of the Core's
 `_weights` placeholder), Artist Input Truth entries for the keys if they are kept.
