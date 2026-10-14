@@ -83,11 +83,13 @@ class _SoftMixin:
                 raise ValueError(f"Influence weight for {vid!r} must be in (0, 1], got {w!r}.")
             if mesh.is_valid_vertex(vid):
                 weights[vid] = w
+        # Without "influence" (AD-SYM-05 §5.2): since SS1 the Core reads that key and would
+        # weight a second time and refuse stale IDs; this record keeps its own arithmetic.
         inner = OperationContext(
             target=mesh,
             selection=_InfluenceView(set(weights)),
             history=context.history,
-            params=params,
+            params={k: v for k, v in params.items() if k != "influence"},
         )
         super()._on_begin(inner)  # type: ignore[misc]
         self._weights = weights

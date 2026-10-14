@@ -11,7 +11,9 @@ ops:
   with `vertex_id=`); no Core private member and no Core private helper — checked by the
   AST scan in `tests/test_signed_ops.py`, same list as `tests/test_soft_selection_ops.py`;
 - own state under the `_mehlsack_` prefix;
-- the base keeps its `_weights` placeholder at 1.0, so the base loop never blends
+- the Core never weights here: since AD-SYM-05 SS1 the Core reads `params["influence"]`
+  (and would refuse negative weights), so the inner context handed to the Core carries no
+  `"influence"`; the Core then runs its unweighted loop and the ops weight on their own
   (tripwire test: one update on a `w < 1` vertex equals the closed form);
 - one gesture = one History entry (`commit()` of the base, `VertexTransformCommand`).
 
@@ -32,8 +34,9 @@ Per-vertex rule:
           Manu compares). The basis is fixed for the whole gesture (AD-020 F6).
 
 `w == 1` vertices take the plain Core arithmetic on the live position. For weights in
-(0, 1] all three ops do the arithmetic of the `src` soft ops (same operations, same order)
-— pinned bit for bit by the tests. Rotate and Scale need `params["pivot"]` (the caller
+(0, 1] all three ops do the arithmetic of the `src` soft ops (same operations, same order;
+since SS1 that arithmetic sits in the Core loop) — pinned bit for bit by the tests for the
+linear formula; `"power"` is pinned against its closed form `F ** w`. Rotate and Scale need `params["pivot"]` (the caller
 passes `primary_pivot(mesh, seeds)`; the Core default would be the centroid of the
 influenced set).
 """
@@ -45,10 +48,12 @@ from typing import Any, Iterable
 
 from core import Mesh, OperationContext, VertexId
 from core.operations.transform import VertexTransformOperation, rotate_around_axis
-from mirai.soft_selection.ops import SCALE_FORMULAS  # ("linear", "power"), E19
 
 Position = tuple[float, float, float]
 Basis = tuple[Position, Position, Position]
+
+#: E19. Lab-only since AD-SYM-05 SS1 (`src` keeps the linear formula only, S2c / IN-5).
+SCALE_FORMULAS = ("linear", "power")
 
 
 class VertexView:
@@ -89,8 +94,11 @@ class _SignedSoftOperation(VertexTransformOperation):
                 "The selection view must be exactly the influenced vertex set "
                 f"({len(viewed)} viewed, {len(weights)} weighted)."
             )
+        # Without "influence": the Core must not weight (and would refuse w < 0), AD-SYM-05 §5.2.
+        inner_params = {k: v for k, v in params.items() if k != "influence"}
         inner = OperationContext(
-            target=mesh, selection=VertexView(set(weights)), history=context.history, params=params,
+            target=mesh, selection=VertexView(set(weights)), history=context.history,
+            params=inner_params,
         )
         super()._on_begin(inner)  # Core snapshot + pivot
         self._mehlsack_weights = weights
@@ -212,7 +220,7 @@ def collapsed_count(weights: dict, total: Position, formula: str) -> int:
 
 
 def _triple(factor: "float | Iterable[float]") -> Position:
-    """As `mirai.soft_selection.ops._triple`."""
+    """As the pre-SS1 `mirai.soft_selection.ops._triple` (now the weighted Core Scale's check)."""
     if isinstance(factor, (int, float)):
         f = float(factor)
         return (f, f, f)
@@ -225,9 +233,9 @@ def _triple(factor: "float | Iterable[float]") -> Position:
 
 
 def _scale_about(pivot: Position, pos: Position, f: Position, basis: "Basis | None") -> Position:
-    """Scale `pos` about `pivot` per axis — a copy of `mirai.soft_selection.ops._scale_about`
-    (itself the arithmetic of the Core's `ScaleOperation`), pinned by the bit-identity tests
-    against `SoftScaleOperation`: if either changes, those tests fail loudly."""
+    """Scale `pos` about `pivot` per axis — a copy of the arithmetic of the Core's
+    `ScaleOperation` (before SS1 also copied in `mirai.soft_selection.ops._scale_about`), pinned
+    by the bit-identity tests against `SoftScaleOperation`: if either changes, they fail loudly."""
     q = (pos[0] - pivot[0], pos[1] - pivot[1], pos[2] - pivot[2])
     if basis is None:
         return (pivot[0] + f[0] * q[0], pivot[1] + f[1] * q[1], pivot[2] + f[2] * q[2])

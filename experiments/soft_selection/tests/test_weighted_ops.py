@@ -177,19 +177,20 @@ def test_rotate_weighted_angle_exact_and_path_independent():
 
 def test_core_placeholder_blend_is_not_path_independent():
     """Characterization (why `_on_update` is replaced): the Core per-step blend
-    `pos + w (T(pos) - pos)` pulls a rotating vertex towards the pivot."""
+    `pos + w (T(pos) - pos)` pulls a rotating vertex towards the pivot.
+
+    The Core placeholder was deleted in AD-SYM-05 SS1 (2026-10-14); before that this test set
+    `RotateOperation._weights` and ran the Core loop. The blend is now replayed here, the same
+    formula, so the record keeps its evidence (FINDINGS E8) without a Core private."""
     mesh, _, influence, pivot = _head_case()
-    start = _positions(mesh)
-    op = RotateOperation(OperationContext(
-        target=mesh, selection=_InfluenceView(set(influence)), history=HistoryStack(),
-        params={"pivot": pivot}))
-    op.begin()
-    op._weights = dict(influence)
-    for _ in range(20):
-        op.update(axis=(0.0, 1.0, 0.0), angle=0.05)
     vid = min(influence, key=influence.get)
-    assert math.dist(mesh.vertex_position(vid), pivot) < math.dist(start[vid], pivot) - 1e-6
-    op.cancel()
+    w = influence[vid]
+    start = mesh.vertex_position(vid)
+    pos = start
+    for _ in range(20):
+        new = rotate_around_axis(pos, pivot, (0.0, 1.0, 0.0), 0.05)
+        pos = tuple(p + w * (n - p) for p, n in zip(pos, new))
+    assert math.dist(pos, pivot) < math.dist(start, pivot) - 1e-6
 
 
 # -- pivot and constraints ---------------------------------------------------------

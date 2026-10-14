@@ -21,16 +21,34 @@ Architekturvertrag (siehe operation.py):
 - Der History-Eintrag speichert Start- und Endpositionen (kein Delta) und ist
   damit unabhängig von akkumulierten Rundungsfehlern exakt reversibel.
 - cancel() stellt die exakten Ausgangspositionen wieder her (kein History).
-- Soft-Selection-Platzhalter wie in MoveOperation: alle Gewichte sind V1 auf
-  1.0 gesetzt; die Struktur (`self._weights`) hält die Stelle für ein
-  späteres Influence-Map-System frei, ohne den Lifecycle zu ändern.
+- Gewichte (Soft Selection, AD-SYM-05 SS1): `params["influence"]` ist eine
+  Abbildung VertexId -> Gewicht in (0, 1], Schlüssel = genau die Vertex-Menge der
+  Operation. Ohne den Schlüssel läuft byte-identisch der ungewichtete Pfad. Mit ihm
+  gewichtet jede Operation ihren eigenen Parameter (Move `w·Δ`, Rotate `w·θ`, Scale
+  `1 + w(F − 1)`), danach greift die Symmetrie-Kategorie; `w == 1.0` nimmt die
+  ungewichtete Arithmetik auf der Live-Position. Rotate/Scale brauchen mit Gewichten
+  `params["pivot"]` (der Default wäre der Zentroid der *beeinflussten* Menge).
+- **Sichtbare Abweichung vom inkrementellen Vertrag (operation.py, AD-SYM-05 §4.4):**
+  mit `params["influence"]` werden Scale-Vertices mit `w < 1` und die
+  Falloff-Seam-Vertices von Rotate/Scale ABSOLUT aus dem begin()-Snapshot
+  (`_start_positions`) mit dem seit begin() akkumulierten Faktor `F` bzw. Winkel `Θ`
+  ausgewertet: `1 + w(F − 1)` ist nicht multiplikativ, und Drehen-dann-Projizieren
+  hängt von der Zerlegung des Drags in Schritte ab. Alles andere bleibt inkrementell.
+  Dafür fixiert ein gewichtetes Scale die Basis für die ganze Geste, ein gewichtetes
+  Rotate mit Falloff-Seam-Vertices die Achse; ungewichtet wird nichts akkumuliert und
+  nichts fixiert.
 - Symmetrie (AD-SYM-02 §2.4): `_on_update()` reicht die gerade verarbeitete
   `VertexId` als `vertex_id=` an `_transform_position()` durch (WP-SYM-01
   Slice 2, für Move). Rotate/Scale (WP-SYM-LAB-02 S2) lesen den Symmetriekontext
   aus `OperationContext.params["symmetry"]` (derselbe Kanal und dieselbe Form wie
   bei Move: `plane_normal`, `mirrored_vertex_ids`, `seam_vertex_ids`; zusätzlich
   `plane_point`, weil ein Pivot eine *Position* ist und sich nur mit Ebenenpunkt
-  spiegeln lässt). Siehe `_PivotTransformOperation`.
+  spiegeln lässt). Siehe `_PivotTransformOperation`. Nur mit Gewichten kommt eine
+  vierte Kategorie dazu, `falloff_seam_vertex_ids` (AD-SYM-05 §4.3, P-a): Seam-Vertices,
+  die nur der Falloff erreicht - gewichteter Schritt, exakt auf die Ebene projiziert,
+  von BEIDEN Seam-Prüfungen ausgenommen (die gelten weiter nur für `seam_vertex_ids`).
+  Dass die beiden Partner eines Paars dasselbe Gewicht und entgegengesetzte Kategorien
+  tragen, ist Vorbedingung des Aufrufers; der Core leitet keine Correspondence ab.
 """
 
 from __future__ import annotations
@@ -211,20 +229,36 @@ class VertexTransformCommand:
 class VertexTransformOperation(Operation):
     """Gemeinsame Snapshot-/Commit-/Cancel-Maschinerie für Vertex-Transforms.
 
-    Konkrete Transformationen implementieren ausschließlich
-    `_transform_position()`: Abbildung einer AKTUELLEN Vertex-Position auf
-    die nächste Position für einen inkrementellen update()-Schritt. Der
-    update-Vertrag der Basisklasse (operation.py) bleibt erhalten:
-    inkrementell relativ zum aktuellen Live-Zustand, nie History in update().
+    Konkrete Transformationen implementieren `_transform_position()`: Abbildung
+    einer AKTUELLEN Vertex-Position auf die nächste Position für einen
+    inkrementellen update()-Schritt. Der update-Vertrag der Basisklasse
+    (operation.py) bleibt erhalten: inkrementell relativ zum aktuellen
+    Live-Zustand, nie History in update().
+
+    Gewichtet (`params["influence"]`, Modul-Docstring) ruft die Schleife statt
+    dessen `_weighted_position()` mit dem Gewicht des Vertex; eine Operation ohne
+    diesen Haken lehnt `params["influence"]` in begin() ab.
     """
 
     description = "Transform Vertices"
+    #: Mit Gewichten ist `params["pivot"]` Pflicht (AD-SYM-05 §4.1, AD-020 E7).
+    _weighted_needs_pivot = False
 
     def _on_begin(self, context: OperationContext) -> None:
         mesh: Mesh = context.target
+        vertex_ids = set(context.selection.vertices)
+        influence = context.params.get("influence")
+        # Erst prüfen, dann speichern (AD-SYM-05 §4.1); ohne Schlüssel der heutige Pfad.
+        weights = (
+            None if influence is None
+            else self._validated_influence(context.params, influence, vertex_ids)
+        )
         self._mesh = mesh
-        self._vertex_ids = set(context.selection.vertices)
-        self._weights: dict[VertexId, float] = {vid: 1.0 for vid in self._vertex_ids}
+        self._vertex_ids = vertex_ids
+        self._weighted = weights is not None
+        self._weights: dict[VertexId, float] = (
+            weights if weights is not None else {vid: 1.0 for vid in self._vertex_ids}
+        )
         self._start_positions: dict[VertexId, Position] = {
             vid: mesh.vertex_position(vid) for vid in self._vertex_ids
         }
@@ -235,6 +269,57 @@ class VertexTransformOperation(Operation):
             self._pivot: Position = (float(pivot[0]), float(pivot[1]), float(pivot[2]))
         else:
             self._pivot = self._selection_center()
+
+    def _validated_influence(
+        self, params: dict, influence, vertex_ids: set[VertexId]
+    ) -> dict[VertexId, float]:
+        name = type(self).__name__
+        if type(self)._weighted_position is VertexTransformOperation._weighted_position:
+            raise ValueError(f"{name} does not support params['influence'].")
+        if self._weighted_needs_pivot and params.get("pivot") is None:
+            raise ValueError(
+                f"{name} needs params['pivot'] with params['influence']; the default "
+                "would be the centroid of the influenced set."
+            )
+        weights: dict[VertexId, float] = {}
+        for vid, w in influence.items():
+            w = float(w)
+            if not (0.0 < w <= 1.0):  # NaN fails the comparison as well
+                raise ValueError(f"Influence weight for {vid!r} must be in (0, 1], got {w!r}.")
+            weights[vid] = w
+        if set(weights) != vertex_ids:
+            raise ValueError(
+                "The selection must be exactly the influenced vertex set "
+                f"({len(vertex_ids)} selected, {len(weights)} weighted)."
+            )
+        return weights
+
+    def _read_falloff_seam(
+        self,
+        symmetry: dict,
+        seam_vertex_ids: frozenset[VertexId],
+        mirrored_vertex_ids: frozenset[VertexId],
+    ) -> frozenset[VertexId]:
+        """`falloff_seam_vertex_ids` (AD-SYM-05 §4.3) prüfen und zurückgeben.
+
+        Ein gewählter Seam-Vertex ist ein Seed, der nach heutigen Regeln läuft: mit
+        Gewichten muss er genau 1.0 tragen (review R-7)."""
+        falloff = frozenset(symmetry.get("falloff_seam_vertex_ids", ()))
+        if falloff and not self._weighted:
+            raise ValueError("falloff_seam_vertex_ids needs params['influence'].")
+        if falloff & seam_vertex_ids or falloff & mirrored_vertex_ids:
+            raise ValueError(
+                "falloff_seam_vertex_ids must be disjoint from seam_vertex_ids and "
+                "mirrored_vertex_ids."
+            )
+        if self._weighted:
+            for vid in seam_vertex_ids:
+                w = self._weights.get(vid)
+                if w is not None and w != 1.0:
+                    raise ValueError(
+                        f"Selected seam vertex {vid!r} needs weight 1.0, got {w!r}."
+                    )
+        return falloff
 
     def _selection_center(self) -> Position:
         """Zentroid der Startpositionen (Selection Pivot / Center)."""
@@ -259,14 +344,16 @@ class VertexTransformOperation(Operation):
         return set(self._vertex_ids)
 
     def _on_update(self, **kwargs) -> None:
+        if self._weighted:
+            weights = self._weights
+            for vid in self._vertex_ids:
+                pos = self._mesh.vertex_position(vid)
+                new = self._weighted_position(pos, weights[vid], vertex_id=vid, **kwargs)
+                self._mesh.set_vertex_position(vid, new)
+            return
         for vid in self._vertex_ids:
             pos = self._mesh.vertex_position(vid)
             new = self._transform_position(pos, vertex_id=vid, **kwargs)
-            weight = self._weights[vid]
-            if weight != 1.0:
-                # Soft-Selection-Platzhalter: Interpolation zwischen aktueller
-                # Position und transformierter Position (Gewicht 1.0 = voll).
-                new = _add(pos, _scale(_sub(new, pos), weight))
             self._mesh.set_vertex_position(vid, new)
 
     def _on_commit(self) -> VertexTransformCommand | None:
@@ -294,6 +381,10 @@ class VertexTransformOperation(Operation):
         """Abbildung einer aktuellen Position für einen update()-Schritt."""
         raise NotImplementedError
 
+    def _weighted_position(self, pos: Position, weight: float, **kwargs) -> Position:
+        """Gewichteter Schritt (nur mit `params["influence"]`, AD-SYM-05 §4.2)."""
+        raise NotImplementedError
+
 
 class _PivotTransformOperation(VertexTransformOperation):
     """Rotate/Scale unter Symmetrie (AD-SYM-02 §2.4, WP-SYM-LAB-02 S2).
@@ -315,18 +406,26 @@ class _PivotTransformOperation(VertexTransformOperation):
       erhält (siehe `rotation_keeps_plane`/`scale_keeps_plane`); sonst `SeamConstraintError`
       (Pivot-Prüfung in begin(), Achse/Faktor vor dem ersten Schritt eines update()).
 
+    Mit Gewichten zusätzlich `falloff_seam_vertex_ids` (P-a, AD-SYM-05 §4.3): absolut aus
+    dem Start ausgewertet, dann projiziert; keine der beiden Seam-Prüfungen. Reihenfolge
+    eines gewichteten update(): prüfen (Basis/Achse fix, Faktor/Winkel endlich, Seam-Schritt
+    für `seam_vertex_ids`) → akkumulieren → Schleife; eine Ablehnung lässt Positionen und
+    Summen unverändert.
+
     Der Pivot ist EINMAL gesetzt (Default oder `params["pivot"]`) und wird für Partner
     gespiegelt - kein fest verdrahteter Zentroid in der Operation. Auswahl
     UND Partner liefert der Aufrufer (Tool) in `context.selection`.
     """
 
     supports_symmetry = True
+    _weighted_needs_pivot = True
 
     def _on_begin(self, context: OperationContext) -> None:
         super()._on_begin(context)
         symmetry = context.params.get("symmetry")
         self._mirrored_vertex_ids: frozenset[VertexId] = frozenset()
         self._seam_vertex_ids: frozenset[VertexId] = frozenset()
+        self._falloff_seam_vertex_ids: frozenset[VertexId] = frozenset()
         self._plane_normal: Position | None = None
         self._plane_point: Position = (0.0, 0.0, 0.0)
         if symmetry is None:
@@ -335,14 +434,21 @@ class _PivotTransformOperation(VertexTransformOperation):
         self._seam_vertex_ids = frozenset(symmetry.get("seam_vertex_ids", ()))
         self._plane_normal = symmetry["plane_normal"]
         self._plane_point = tuple(symmetry.get("plane_point", (0.0, 0.0, 0.0)))
+        self._falloff_seam_vertex_ids = self._read_falloff_seam(
+            symmetry, self._seam_vertex_ids, self._mirrored_vertex_ids
+        )
         if self._seam_vertex_ids and not pivot_on_plane(
             self._pivot, self._plane_point, self._plane_normal
         ):
             raise SeamConstraintError("Pivot liegt nicht auf der Symmetrieebene")
 
     def _on_update(self, **kwargs) -> None:
+        if self._weighted:
+            self._check_weighted_step(**kwargs)
         if self._seam_vertex_ids:
             self._check_seam_step(**kwargs)
+        if self._weighted:
+            self._accumulate(**kwargs)
         super()._on_update(**kwargs)
 
     def _transform_position(
@@ -364,6 +470,12 @@ class _PivotTransformOperation(VertexTransformOperation):
     def _check_seam_step(self, **kwargs) -> None:
         raise NotImplementedError
 
+    def _check_weighted_step(self, **kwargs) -> None:
+        raise NotImplementedError
+
+    def _accumulate(self, **kwargs) -> None:
+        raise NotImplementedError
+
 
 class RotateOperation(_PivotTransformOperation):
     """Rotiert die betroffenen Vertices inkrementell um eine feste Achse.
@@ -372,9 +484,19 @@ class RotateOperation(_PivotTransformOperation):
     Rotationsachse durch den fixen Pivot (wird normalisiert; Nullvektor
     ungültig), `angle` der inkrementelle Winkel in Radiant. Winkel mehrerer
     update()-Aufrufe akkumulieren sich (inkrementeller Core-Vertrag).
+
+    Gewichtet: Rotation um `w·angle`, inkrementell (Drehungen um eine Achse addieren
+    sich). Nur mit Falloff-Seam-Vertices wird `Θ` akkumuliert, die Achse für die Geste
+    fixiert und ein nicht-endlicher Winkel abgelehnt (AD-SYM-05 §4.4, review R-1): ohne
+    sie nimmt ein gewichtetes Rotate wie bisher je update() eine neue Achse an.
     """
 
     description = "Rotate Vertices"
+
+    def _on_begin(self, context: OperationContext) -> None:
+        super()._on_begin(context)
+        self._total_angle = 0.0
+        self._fixed_axis: Position | None = None
 
     def _apply(self, pos: Position, axis: Position, angle: float, **_) -> Position:
         return rotate_around_axis(pos, self._pivot, axis, angle)
@@ -385,6 +507,43 @@ class RotateOperation(_PivotTransformOperation):
                 "Rotation um diese Achse würde den Seam-Vertex von der Ebene lösen "
                 "(nur Achse parallel zur Ebenennormale)"
             )
+
+    def _check_weighted_step(self, axis: Position, angle: float, **_) -> None:
+        if not self._falloff_seam_vertex_ids:
+            return
+        a = (float(axis[0]), float(axis[1]), float(axis[2]))
+        if self._fixed_axis is not None and a != self._fixed_axis:
+            raise ValueError(
+                "RotateOperation with falloff seam vertices needs the same axis for the "
+                "whole gesture."
+            )
+        if _length(a) < 1e-12:
+            raise ValueError("Rotationsachse darf nicht der Nullvektor sein.")
+        if not math.isfinite(angle):
+            raise ValueError(f"Rotation angle must be finite, got {angle!r}.")
+
+    def _accumulate(self, axis: Position, angle: float, **_) -> None:
+        if not self._falloff_seam_vertex_ids:
+            return
+        if self._fixed_axis is None:
+            self._fixed_axis = (float(axis[0]), float(axis[1]), float(axis[2]))
+        self._total_angle += angle
+
+    def _weighted_position(
+        self, pos: Position, weight: float, vertex_id: VertexId | None = None, *,
+        axis: Position, angle: float, **kwargs,
+    ) -> Position:
+        if vertex_id in self._falloff_seam_vertex_ids:
+            # Absolut: Drehen-dann-Projizieren hängt sonst von der Zerlegung des Drags ab.
+            new = rotate_around_axis(
+                self._start_positions[vertex_id], self._pivot, self._fixed_axis,
+                weight * self._total_angle,
+            )
+            return _project_to_plane(new, self._plane_point, self._plane_normal)
+        return self._transform_position(
+            pos, vertex_id=vertex_id, axis=axis,
+            angle=angle if weight == 1.0 else weight * angle, **kwargs,
+        )
 
 
 class ScaleOperation(_PivotTransformOperation):
@@ -404,9 +563,20 @@ class ScaleOperation(_PivotTransformOperation):
 
     `basis=None` (Standard) erhält das exakte heutige Verhalten — die
     Weltachsen-Diagonalformel. Inkrementeller Vertrag gilt für beide Pfade.
+
+    Gewichtet: je Basisachse `1 + w(F − 1)` mit `F` dem seit begin() akkumulierten
+    Faktor, für `w < 1` absolut aus dem Start (der Ausdruck ist nicht multiplikativ, kein
+    inkrementeller Weg ist pfadunabhängig); `w == 1` inkrementell wie ungewichtet. Die
+    Basis gilt dann für die ganze Geste, ein Faktor muss endlich sein (AD-SYM-05 §4.4).
     """
 
     description = "Scale Vertices"
+
+    def _on_begin(self, context: OperationContext) -> None:
+        super()._on_begin(context)
+        self._total_factor: Position = (1.0, 1.0, 1.0)
+        self._basis_fixed = False
+        self._fixed_basis: "tuple[Position, Position, Position] | None" = None
 
     def _check_seam_step(self, factor, basis=None, **_) -> None:
         if not scale_keeps_plane(factor, basis, self._plane_normal):
@@ -414,6 +584,47 @@ class ScaleOperation(_PivotTransformOperation):
                 "Skalierung würde den Seam-Vertex von der Ebene lösen "
                 "(nur uniform oder an der Ebenennormale ausgerichtet)"
             )
+
+    def _check_weighted_step(self, factor, basis=None, **_) -> None:
+        f = _as_triple(factor)
+        if not all(math.isfinite(v) for v in f):
+            raise ValueError(f"Scale factor must be finite, got {f!r}.")
+        if self._basis_fixed and basis != self._fixed_basis:
+            raise ValueError(
+                f"{type(self).__name__} needs the same basis for the whole gesture."
+            )
+
+    def _accumulate(self, factor, basis=None, **_) -> None:
+        f = _as_triple(factor)
+        t = self._total_factor
+        self._total_factor = (t[0] * f[0], t[1] * f[1], t[2] * f[2])
+        self._basis_fixed = True
+        self._fixed_basis = basis
+
+    def _weighted_factor(self, weight: float) -> Position:
+        t = self._total_factor
+        return (1.0 + weight * (t[0] - 1.0), 1.0 + weight * (t[1] - 1.0), 1.0 + weight * (t[2] - 1.0))
+
+    def _weighted_position(
+        self, pos: Position, weight: float, vertex_id: VertexId | None = None, *,
+        factor: "float | Iterable[float]",
+        basis: "tuple[Position, Position, Position] | None" = None, **kwargs,
+    ) -> Position:
+        if vertex_id in self._falloff_seam_vertex_ids:
+            # Absolut auch bei w == 1: gedrehte Basis und Projektion kommutieren nicht.
+            new = self._apply(
+                self._start_positions[vertex_id], factor=self._weighted_factor(weight),
+                basis=basis,
+            )
+            return _project_to_plane(new, self._plane_point, self._plane_normal)
+        if weight == 1.0:
+            return self._transform_position(
+                pos, vertex_id=vertex_id, factor=factor, basis=basis, **kwargs
+            )
+        return self._transform_position(
+            self._start_positions[vertex_id], vertex_id=vertex_id,
+            factor=self._weighted_factor(weight), basis=basis, **kwargs,
+        )
 
     def _apply(
         self,

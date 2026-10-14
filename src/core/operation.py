@@ -23,6 +23,14 @@ Architekturvertrag:
   Operation, die stattdessen eine absolute, gegen den begin()-Snapshot
   gemessene Semantik braucht, muss das explizit und sichtbar abweichend
   dokumentieren - sonst gilt implizit inkrementell.
+  **Eine solche dokumentierte Abweichung (AD-SYM-05, SS1, 2026-10-14):** mit
+  `params["influence"]` (Soft-Gewichte) werten `ScaleOperation` die Vertices
+  mit Gewicht `w < 1` und `RotateOperation`/`ScaleOperation` die
+  Falloff-Seam-Vertices (`params["symmetry"]["falloff_seam_vertex_ids"]`)
+  ABSOLUT aus dem begin()-Snapshot mit dem seit begin() akkumulierten Faktor
+  bzw. Winkel aus; alle übrigen Vertices und jede Geste ohne
+  `params["influence"]` bleiben inkrementell (Details:
+  `operations/transform.py`).
 - Ein History-Eintrag entsteht ausschließlich in commit(), nie in
   update(). Das verhindert strukturell, dass ein Drag mit vielen
   update()-Aufrufen viele History-Einträge erzeugt.

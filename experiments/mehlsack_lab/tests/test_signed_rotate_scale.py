@@ -1,7 +1,8 @@
 """Slice 2b E19: signed soft Rotate and Scale.
 
 For weights in (0, 1] the lab ops are bit-identical to `SoftRotateOperation` /
-`SoftScaleOperation` (both `scale_formula` values; same pivot, same factors, N steps).
+`SoftScaleOperation` (same pivot, same factors, N steps). Since AD-SYM-05 SS1 `src` keeps the
+linear formula only, so the `"power"` half is checked against its closed form `F ** w`.
 Negative weights: rotation by `w·θ`; Scale `g` = the README table (linear and power), no
 clamp (collapse at `F = 1 + 1/|w|`, inversion beyond); N steps == 1 step; commit / cancel /
 Undo / Redo exact; one History entry."""
@@ -82,20 +83,39 @@ def test_rotate_bit_identical_to_soft_rotate(radius, axis):
     assert cmd_a.start_positions == cmd_b.start_positions and cmd_a.end_positions == cmd_b.end_positions
 
 
-@pytest.mark.parametrize("formula", ["linear", "power"])
 @pytest.mark.parametrize("mask", MASKS)
 @pytest.mark.parametrize("radius", [0.0, 0.6, 1.2, 3.0])
-def test_scale_bit_identical_to_soft_scale_for_both_formulas(radius, mask, formula):
+def test_scale_linear_bit_identical_to_soft_scale(radius, mask):
+    """Linear half (AD-SYM-05 §5.2): against the thin `SoftScaleOperation`, whose arithmetic sits
+    in the Core loop since SS1 — positions and commands only (no `total_factor` in `src`)."""
     mesh_a, _, weights, pivot = _case(radius=radius)
     mesh_b = box(h=8, n=4)
-    op_a = SignedSoftScaleOperation(_ctx(mesh_a, weights, pivot, scale_formula=formula))
-    op_b = SoftScaleOperation(_ctx(mesh_b, weights, pivot, scale_formula=formula))
+    op_a = SignedSoftScaleOperation(_ctx(mesh_a, weights, pivot, scale_formula="linear"))
+    op_b = SoftScaleOperation(_ctx(mesh_b, weights, pivot))
     cmd_a, cmd_b = _scale(op_a, FACTORS, mask), _scale(op_b, FACTORS, mask)
     assert positions(mesh_a) == positions(mesh_b)
     # (radius 0 + Y-only mask on the flat mid loop moves nothing: both commit None)
     assert (cmd_a is None) == (cmd_b is None)
     assert cmd_a is None or cmd_a.end_positions == cmd_b.end_positions
-    assert op_a.total_factor == op_b.total_factor and op_a.scale_formula == formula
+    assert op_a.scale_formula == "linear"
+
+
+@pytest.mark.parametrize("mask", MASKS)
+@pytest.mark.parametrize("radius", [0.6, 1.2, 3.0])
+def test_scale_power_equals_the_closed_form(radius, mask):
+    """`"power"` half (AD-SYM-05 §5.2): `src` no longer has it, so the closed form is the oracle:
+    `w == 1` vertices scale by `F`, the others by `F ** w` from the start, per axis."""
+    mesh, _, weights, pivot = _case(radius=radius)
+    start = positions(mesh)
+    op = SignedSoftScaleOperation(_ctx(mesh, weights, pivot, scale_formula="power"))
+    _scale(op, FACTORS, mask)
+    total = tuple(math.prod(FACTORS) if m else 1.0 for m in mask)
+    assert op.total_factor == pytest.approx(total, abs=1e-15) and op.scale_formula == "power"
+    assert any(w < 1.0 for w in weights.values())
+    for vid, w in weights.items():
+        g = [t if w == 1.0 else t ** w for t in total]
+        expected = tuple(pivot[i] + g[i] * (start[vid][i] - pivot[i]) for i in range(3))
+        assert mesh.vertex_position(vid) == pytest.approx(expected, abs=1e-12)
 
 
 # -- negative weights -------------------------------------------------------------------------------

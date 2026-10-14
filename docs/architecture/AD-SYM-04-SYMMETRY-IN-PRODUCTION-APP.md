@@ -7,6 +7,7 @@ Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation not
 **Slice A2 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a2)).** Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
 **Slice SS0 (headless probe, no `src` change) is done (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss0)):** D-1 holds bit for bit on every exactly symmetric asset case; one open point for SS1's design (R-6, below).
 **SS1 design note written (2026-10-14, PROPOSED): [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)** — the one Core change; independent review CLAUDE-001 ACCEPT WITH CHANGES, all findings worked in (AD-SYM-05 §10); **go for SS1 (Manu, 2026-10-14)**.
+**Slice SS1 is built (2026-10-14, [implementation note in AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)):** the weighting is in the Core loop; no visible change (the app still refuses Soft + symmetry until SS2).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -368,7 +369,8 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
   to the pair midpoint. Under Soft "a seam vertex is affected" depends on the radius, so the pivot would jump when the
   radius grows across the middle. A second check applies as well (C-4, review R-1): with a seam vertex in the set, Rotate
   is refused unless its axis is the mirror axis, and Scale unless it is uniform or aligned with it. Options:
-  **P-a** keep the own-side pivot; seam vertices reached only by the falloff (`w < 1`) are exempt from **both** checks and
+  **P-a** keep the own-side pivot; seam vertices reached only by the falloff (their own category,
+  `falloff_seam_vertex_ids`, set by the caller — not decided by `w < 1`, AD-SYM-05 §4.3) are exempt from **both** checks and
   slide in the plane (projected; exactly symmetric, because a seam vertex is its own mirror and the projections of R(p) and
   mirror(R(p)) coincide); a seam vertex among the *selected* vertices keeps today's rules (KEEP 2026-10-03, R-4). P-a is a
   **Core seam-rule change** inside SS1. **P-b** the pivot jumps to the pair midpoint as today **and** every soft Rotate about
@@ -389,7 +391,7 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 | # | Slice | Content | Gate / tests |
 |---|---|---|---|
 | SS0 | Probe (no `src` change) — **done 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss0)) | Headless probe in `experiments/` reading `src` only: D-1 field symmetric bit-for-bit on `subd_cube`, head, body (both metrics, X/Y/Z); how often D-3 occurs per radius step; correspondence + influence cost per gesture start (container). | Report only; stops if D-1's claim fails. |
-| SS1 | **The one Core change** (M-5) — design: [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) (reviewed; go 2026-10-14) | Weighting into the Core loop per §4 (design in its own AD/addendum + independent review **before code**, R-5); `src/mirai/soft_selection/ops.py` migrated in the same commit (R-2). Non-symmetric Soft must stay bitwise identical. | Core contract tests; radius-0 identity; the AD-020 suites green; `tests` + Lab tree once. |
+| SS1 | **The one Core change** (M-5) — design: [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) (reviewed; go 2026-10-14) — **built 2026-10-14** ([note](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)) | Weighting into the Core loop per §4 (design in its own AD/addendum + independent review **before code**, R-5); `src/mirai/soft_selection/ops.py` migrated in the same commit (R-2). Non-symmetric Soft must stay bitwise identical. | Core contract tests; radius-0 identity; the AD-020 suites green; `tests` + Lab tree once. |
 | SS2 | Symmetric influence and gesture | D-1 field, per-side step (plain / conjugate / projected), D-2 refusals, D-3 per Manu's answer; `Application` lifts the Soft + symmetry refusal (I-8) only for supported cases; Lab: no row change (soft commands are already `NON_OPERATION`). | One Undo step per gesture; exact mirror (completeness unchanged); cancel exact; MARK and BLOCK alike in the Lab. |
 | SS3 | Bands on both sides + probe | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC. |
 

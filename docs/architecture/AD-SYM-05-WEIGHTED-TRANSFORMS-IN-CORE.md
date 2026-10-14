@@ -5,6 +5,7 @@ change of symmetric Soft ([AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) �
 [CORE_V1_FREEZE](CORE_V1_FREEZE.md) §7). Review CLAUDE-001: **ACCEPT WITH CHANGES**, no blocker; every finding is answered
 in §10 and worked into the text. A Core change is a Haltepunkt (Development System §5); Manu's go is given, so **SS1 is built per this note** (§4–§6).
 Where a section still says "proposed" or "Manu's go", this status wins.
+**SS1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-ss1)).**
 **Mode (M5):** Type C (Architecture Gate). Documents only: no change under `src/`, `tests/`, `experiments/` or `playground/`.
 **Read at:** `c2bc3e3` (branch `claude/festive-allen-pyajvv`, SS0 committed). Line numbers refer to that commit.
 **Basis (binding, only linked):** AD-SYM-04 (Decision record: Q-4 = **P-a**; §4 C-1…C-7 and R-1…R-5; §5.1 D-1…D-5; the
@@ -389,6 +390,59 @@ consequence of it). Manu may ask for one.
 
 ---
 
+## Implementation note (2026-10-14, slice SS1)
+
+**Built** (one commit, Core + migration, RQ-6), per §4–§6:
+
+- `core/operations/transform.py`, `move.py`: `params["influence"]` read and validated in
+  `VertexTransformOperation._on_begin` (§4.1); absent → the old loop, byte-identical. Present → the loop calls a new
+  protected hook `_weighted_position(pos, w, vertex_id=…, **kwargs)` per op, implementing the §4.2 table; `w == 1.0`
+  delegates to the unweighted `_transform_position`. The placeholder blend is deleted. `falloff_seam_vertex_ids` in
+  `params["symmetry"]` (§4.3) with the three begin-time rules (only with weights, disjoint, `seam_vertex_ids` at `w = 1`).
+  §4.4 order validate → accumulate → loop in `_PivotTransformOperation._on_update` (`_check_weighted_step`,
+  `_accumulate`); Scale accumulates `F` and fixes the basis for every weighted gesture, Rotate accumulates `Θ` and fixes the
+  axis only with falloff seam vertices. The deviation is written in `core/operation.py` and the `transform.py` docstring.
+- `src/mirai/soft_selection/ops.py` (M-b): a `_SoftBegin` mixin in front of the Core op in each class's MRO — label,
+  symmetry backstop, `influence` required, stale-ID filter into `_soft_weights`, `weights`; new params dict with the
+  filtered map and a filtered view. No arithmetic, no other state.
+- Consumers (§5.2): Mehlsack `signed_ops.py` and the S1 record `weighted_ops.py` hand the Core an inner params dict without
+  `"influence"`; `SCALE_FORMULAS` moved into the Lab; the Mehlsack Scale comparison split into linear (against the thin
+  class, positions and commands) and `"power"` (against `F ** w`). `probe_cost.py` runs.
+- Tests: `tests/test_weighted_transforms.py` (T-2, T-5, T-6, T-7, T-8, tripwire (5) restated as "the Core reads
+  `influence`, `pivot`, `symmetry` from params"), `tests/test_soft_selection_replay.py` + `tests/soft_replay.py` (T-3: the
+  replay function was run green against the pre-SS1 ops, 42/42, before the Core was touched, then again after),
+  `tests/test_soft_selection_ops.py` ported (T-4; flipped tripwire and dropped `"power"` tests named in its docstring).
+
+**Ran** (container, `xvfb-run -a`, once at the end): `tests` 3017 passed, 51 skipped (GL tests without `libEGL` in the
+container, plus the existing intentional skips of `test_symmetric_removal.py`), 0 failed; `experiments/symmetry_lab/tests`
+454 passed, 4 skipped; `playground/tests` 1241 passed; `experiments/soft_selection/tests` 102 passed;
+`experiments/mehlsack_lab/tests` 351 passed. The new gate files: `test_weighted_transforms.py` 76, `test_soft_selection_replay.py`
+42, the ported `test_soft_selection_ops.py` 67. The GL rows still need a machine with EGL for a full count.
+
+**Deviations and agent choices (`PROVISIONAL`):**
+
+- The S1 record's suite had its own copy of the placeholder characterization
+  (`experiments/soft_selection/tests/test_weighted_ops.py::test_core_placeholder_blend_is_not_path_independent`, it set
+  `RotateOperation._weights`); §5.2 named only the `tests/` copy. The placeholder is gone, so the record's test now replays
+  the blend formula locally (same evidence, no Core private).
+- A weighted Rotate with falloff seam vertices also refuses a zero axis before accumulating (§4.4 lists axis change and
+  non-finite angle): otherwise the refusal would come from the loop after `Θ` was already accumulated.
+- The thin classes no longer range-check weights of *stale* IDs (they are dropped before the Core validates). Weights of
+  valid IDs are refused exactly as before.
+- Refusal order when several inputs are wrong: missing `influence` now wins over a missing pivot (the pivot check moved
+  into the Core). Texts keep the matched words (`pivot`, `basis`, `weight`, `influenced vertex set`, `symmetry`); the
+  pivot and key-set sentences were reworded for the Core.
+- `params["influence"] = None` counts as absent (the same `get(...) is None` test the soft ops used).
+- Names: `falloff_seam_vertex_ids`, `_weighted_position`, `_SoftBegin` stay `PROVISIONAL`. An op class without
+  `_weighted_position` refuses `params["influence"]` at `begin()`.
+- `tests/test_soft_selection_ops.py`'s AST scan list of Core privates gained the SS1 names, so tripwire (10) also covers
+  the new state.
+
+**Not done (as ordered):** SS2 (field function, O-1, R6-A/R6-C, D-2/D-3 tool side, lifting I-8, removing the backstop),
+SS3, any tool, `Application`, binding or Lab gate change.
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Das ist der Bauplan für die eine Core-Änderung der symmetrischen Soft Selection (SS1). Gebaut wird
@@ -413,3 +467,11 @@ wirken und die Abweichung auf der gespiegelten Seite liegen — oder umgekehrt? 
 Daraus wird in SS2 vielleicht eine Frage an dich.
 
 **Fragen an dich jetzt:** keine — nur das Go für SS1.
+
+**SS1 gebaut (2026-10-14).** Die Gewichtung sitzt jetzt im Core, an derselben Stelle wie die Spiegelung. Für dich ändert
+sich nichts Sichtbares: W/E/R ohne Soft sind byte-genau wie vorher, Soft ohne Symmetrie bitgenau wie vorher (das prüft
+ein eigener Test gegen eine Kopie der alten Rechnung), Soft mit Symmetrie bleibt in der App abgelehnt bis SS2. Neu und
+getestet, aber noch von keinem Werkzeug benutzt: gewichtete Schritte für beide Seiten zugleich, exakt gespiegelt, auch
+auf den beiden Sonder-Meshes aus deinem R-6-Punkt; Mittelpunkte, die nur der Falloff erreicht, gleiten in der Ebene und
+hängen beim Drehen nicht davon ab, wie schnell du die Maus bewegst. Kleine Abweichungen vom Plan stehen in der
+Implementierungsnotiz; keine Frage an dich. Als Nächstes: SS2 (symmetrisches Feld und Geste in der App).

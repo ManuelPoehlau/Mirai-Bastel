@@ -43,6 +43,12 @@ individually selected vertex, "the Artist's intent" IS to move exactly that
 vertex by exactly that delta - inferring a mirrored role for it would
 silently override a choice the Artist visibly made. Covered by
 `tests/test_symmetric_move.py`.
+
+Weights (AD-SYM-05 SS1, `params["influence"]`, see `transform.py`): every vertex
+steps by `w * delta`, then its category applies - mirrored `mirror_vec(w * delta)`,
+selected seam `proj(delta)` (weight 1.0 is checked), and the fourth category
+`falloff_seam_vertex_ids` (seam vertices reached only by the falloff, P-a)
+`proj(w * delta)`. All incremental: projection and reflection are linear.
 """
 
 from __future__ import annotations
@@ -77,10 +83,9 @@ class MoveOperation(VertexTransformOperation):
     """Moves selected vertices by a delta passed to update().
 
     Inherits from VertexTransformOperation to share snapshot/commit/cancel
-    machinery. Soft-selection falloff simplified to weight 1.0 per vertex
-    for V1 (soft selection is independent behavior, not a mode) — structure
-    holds the place for a future influence-map system without changing
-    the lifecycle.
+    machinery. With `params["influence"]` each vertex moves by `w * delta`
+    (module docstring); without it every weight is 1.0 and the step is the
+    plain one.
 
     Move is pivot-independent: _transform_position ignores self._pivot.
     """
@@ -94,11 +99,15 @@ class MoveOperation(VertexTransformOperation):
         if symmetry is None:
             self._mirrored_vertex_ids: frozenset[VertexId] = frozenset()
             self._seam_vertex_ids: frozenset[VertexId] = frozenset()
+            self._falloff_seam_vertex_ids: frozenset[VertexId] = frozenset()
             self._plane_normal: Position | None = None
         else:
             self._mirrored_vertex_ids = frozenset(symmetry.get("mirrored_vertex_ids", ()))
             self._seam_vertex_ids = frozenset(symmetry.get("seam_vertex_ids", ()))
             self._plane_normal = symmetry.get("plane_normal")
+            self._falloff_seam_vertex_ids = self._read_falloff_seam(
+                symmetry, self._seam_vertex_ids, self._mirrored_vertex_ids
+            )
 
     def _transform_position(
         self, pos: Position, delta: Position, vertex_id: VertexId | None = None, **_
@@ -108,3 +117,14 @@ class MoveOperation(VertexTransformOperation):
         elif vertex_id in self._mirrored_vertex_ids:
             delta = _mirror_vector(delta, self._plane_normal)
         return (pos[0] + delta[0], pos[1] + delta[1], pos[2] + delta[2])
+
+    def _weighted_position(
+        self, pos: Position, weight: float, vertex_id: VertexId | None = None, *,
+        delta: Position, **_,
+    ) -> Position:
+        if weight != 1.0:
+            delta = (weight * delta[0], weight * delta[1], weight * delta[2])
+        if vertex_id in self._falloff_seam_vertex_ids:
+            delta = _project_onto_plane(delta, self._plane_normal)
+            return (pos[0] + delta[0], pos[1] + delta[1], pos[2] + delta[2])
+        return self._transform_position(pos, delta, vertex_id=vertex_id)

@@ -6,6 +6,9 @@ reference PC (**verdict 2026-10-11, see "S2c verdict" below**) and S2d is built 
 default, radius up to 200 %, band switch); the S2d practical test is **KEEP** (Artist, 2026-10-11, see "S2d verdict" below).
 **Promotion decision (Manu, 2026-10-11, see "Promotion decision" below): Soft Selection becomes a fixed capability; the
 Core seam moves with symmetric soft selection (Way 2), not now.** Keys and band look stay `PROVISIONAL`.
+**Core seam moved (2026-10-14, AD-SYM-04 slice SS1, [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)):** the weighting now
+runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses of the Core ops (M-b); the F3 tripwires
+flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
@@ -150,6 +153,7 @@ decision; this record follows it: only the capability is promoted, binding and U
 - Soft stays off at start.
 
 **Consequences:** E1 (Q2-D, no Core change) holds until the symmetric-soft work package; the F3 tripwires stay until then.
+*(Reached 2026-10-14: SS1 moved the weighting into the Core, see the status line.)*
 No code, test or key changes come with this record.
 
 ---

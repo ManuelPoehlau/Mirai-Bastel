@@ -1,15 +1,23 @@
-"""Soft Move/Rotate/Scale on the app path (WP-SOFT-01 S2a, AD-020 Q2-D).
+"""Soft Move/Rotate/Scale on the app path (WP-SOFT-01 S2a, AD-020; AD-SYM-05 SS1).
 
 Port of the S1 suite `experiments/soft_selection/tests/test_weighted_ops.py` against the
-`mirai.soft_selection` ops (protected-hook subclasses of the Core's `VertexTransformOperation`,
-no Core change), plus what D adds (AD-020 §3.3, review F3/F10):
+`mirai.soft_selection` ops. Since SS1 these are thin subclasses of the Core ops and the
+weighting runs in the Core loop (`params["influence"]`, AD-SYM-05 §4, M-b §5.1). The AD-020 F3
+tripwires were flipped on purpose in the SS1 commit (AD-SYM-05 §5.3):
 
-- the radius-0 identity against the Core ops with an explicit pivot, bit for bit (this is also
-  the tripwire for the copied Scale arithmetic);
-- tripwires for the hooks D relies on: the base never blends (one `update` on a `w < 1` vertex
-  equals the closed form), the History entry carries the soft description;
-- the stale-ID filter (S1 L10 kept) and the key-set check;
-- a source scan: no Core private member in `src/mirai/soft_selection` or in the tool wiring.
+- (1) "the base never blends" became "the Core's weighted step equals the closed form", for the
+  thin ops and for the Core ops with `params["influence"]`; the placeholder-blend
+  characterization went with the placeholder;
+- (3)/(4) the copied Scale arithmetic and Move tuple sum are gone; bit identity with Q2-D is held
+  by the replay oracle in `test_soft_selection_replay.py` (T-3); the radius-0 identity stays;
+- `scale_formula` / `"power"` left `src` (S2c kept linear): dropped here are
+  `test_scale_path_independent[power-*]`, `test_scale_weighted_factor_formula[power]`,
+  `test_scale_power_refuses_negative_factor`, `test_unknown_scale_formula_refused` (the
+  comparison lives on in the Mehlsack Lab, against the closed form `F ** w`);
+- `total_factor` is gone; the basis-refusal test checks positions instead.
+
+Still here: the stale-ID filter (S1 L10) and the key-set check; the History label; the symmetry
+backstop; a source scan: no Core private member in `src/mirai/soft_selection`.
 """
 
 from __future__ import annotations
@@ -143,30 +151,26 @@ def test_move_path_independent():
     assert _close(a[vid], tuple(s + w * t for s, t in zip(start, total)))
 
 
-@pytest.mark.parametrize("formula", ["linear", "power"])
 @pytest.mark.parametrize("total,basis", [((1.8, 1.8, 1.8), None), ((0.6, 1.0, 1.5), None),
                                           ((1.7, 1.0, 1.0), TILTED)])
-def test_scale_path_independent(formula, total, basis):
+def test_scale_path_independent(total, basis):
     mesh_a, _, influence, pivot = _head_case()
     mesh_b = head()
     n = 23
-    _run(SoftScaleOperation(_ctx(mesh_a, influence, pivot, scale_formula=formula)),
-         [{"factor": total, "basis": basis}])
-    _run(SoftScaleOperation(_ctx(mesh_b, influence, pivot, scale_formula=formula)),
+    _run(SoftScaleOperation(_ctx(mesh_a, influence, pivot)), [{"factor": total, "basis": basis}])
+    _run(SoftScaleOperation(_ctx(mesh_b, influence, pivot)),
          [{"factor": tuple(f ** (1.0 / n) for f in total), "basis": basis}] * n)
     a, b = _positions(mesh_a), _positions(mesh_b)
     assert all(_close(a[v], b[v], 1e-11) for v in a)
 
 
-@pytest.mark.parametrize("formula", ["linear", "power"])
-def test_scale_weighted_factor_formula(formula):
+def test_scale_weighted_factor_formula():
     mesh, _, influence, pivot = _head_case()
     start = _positions(mesh)
     factor = 2.0
-    _run(SoftScaleOperation(_ctx(mesh, influence, pivot, scale_formula=formula)),
-         [{"factor": factor}])
+    _run(SoftScaleOperation(_ctx(mesh, influence, pivot)), [{"factor": factor}])
     for vid, w in influence.items():
-        g = 1.0 + w * (factor - 1.0) if formula == "linear" else factor ** w
+        g = 1.0 + w * (factor - 1.0)
         expected = tuple(p + g * (s - p) for s, p in zip(start[vid], pivot))
         assert _close(mesh.vertex_position(vid), expected)
 
@@ -187,23 +191,6 @@ def test_rotate_weighted_angle_exact_and_path_independent():
         # An arc, not a chord: distance to the pivot is preserved.
         assert math.dist(mesh_b.vertex_position(vid), pivot) == pytest.approx(
             math.dist(start[vid], pivot), abs=TOL)
-
-
-def test_core_placeholder_blend_is_not_path_independent():
-    """Characterization (why `_on_update` is replaced): the Core per-step blend
-    `pos + w (T(pos) - pos)` pulls a rotating vertex towards the pivot."""
-    mesh, _, influence, pivot = _head_case()
-    start = _positions(mesh)
-    op = RotateOperation(OperationContext(
-        target=mesh, selection=_InfluenceView(set(influence)), history=HistoryStack(),
-        params={"pivot": pivot}))
-    op.begin()
-    op._weights = dict(influence)
-    for _ in range(20):
-        op.update(axis=(0.0, 1.0, 0.0), angle=0.05)
-    vid = min(influence, key=influence.get)
-    assert math.dist(mesh.vertex_position(vid), pivot) < math.dist(start[vid], pivot) - 1e-6
-    op.cancel()
 
 
 # -- pivot and constraints ---------------------------------------------------------
@@ -279,23 +266,6 @@ def test_scale_basis_change_mid_gesture_refused_before_anything_moves():
         op.update(factor=(1.2, 1.0, 1.0), basis=None)
     assert _positions(mesh) == before
     op.cancel()
-
-
-def test_scale_power_refuses_negative_factor():
-    mesh, _, influence, pivot = _head_case()
-    op = SoftScaleOperation(_ctx(mesh, influence, pivot, scale_formula="power"))
-    op.begin()
-    before = _positions(mesh)
-    with pytest.raises(ValueError, match="negative"):
-        op.update(factor=(-1.0, 1.0, 1.0))
-    assert _positions(mesh) == before
-    op.cancel()
-
-
-def test_unknown_scale_formula_refused():
-    mesh, _, influence, pivot = _head_case()
-    with pytest.raises(ValueError, match="scale_formula"):
-        SoftScaleOperation(_ctx(mesh, influence, pivot, scale_formula="cubic")).begin()
 
 
 # -- lifecycle: cancel, commit, undo/redo, Selection --------------------------------
@@ -476,11 +446,15 @@ def test_view_must_be_exactly_the_influenced_set():
 
 @pytest.mark.parametrize("cls,steps", [(SoftMoveOperation, MOVE_STEPS[:1]),
                                        (SoftRotateOperation, ROTATE_STEPS[:1]),
-                                       (SoftScaleOperation, SCALE_STEPS[:1])])
-def test_base_never_blends_one_update_equals_the_closed_form(cls, steps):
-    """Tripwire (F3 row 1, F4): the Core base keeps its `_weights` placeholder inert, so the
-    soft ops weight on their own. If the Core ever blended (or filled the placeholder), a single
-    `update` on a `w < 1` vertex would stop matching the closed form and double-weight."""
+                                       (SoftScaleOperation, SCALE_STEPS[:1]),
+                                       (MoveOperation, MOVE_STEPS[:1]),
+                                       (RotateOperation, ROTATE_STEPS[:1]),
+                                       (ScaleOperation, SCALE_STEPS[:1])])
+def test_core_weighted_step_equals_the_closed_form(cls, steps):
+    """Tripwire (F3 row 1), flipped on purpose in SS1 (AD-SYM-05 §5.3): it used to pin "the
+    Core base never blends". Now the Core weights, once: one `update` on a `w < 1` vertex equals
+    the closed form, for the thin soft ops and for the Core ops given `params["influence"]`.
+    Double weighting (a soft layer weighting again on top of the Core) would break it."""
     mesh, _, influence, pivot = _head_case()
     start = _positions(mesh)
     kwargs = steps[0]
@@ -490,9 +464,9 @@ def test_base_never_blends_one_update_equals_the_closed_form(cls, steps):
     for vid in lows:
         w = influence[vid]
         s = start[vid]
-        if cls is SoftMoveOperation:
+        if issubclass(cls, MoveOperation):
             expected = tuple(c + w * d for c, d in zip(s, kwargs["delta"]))
-        elif cls is SoftRotateOperation:
+        elif issubclass(cls, RotateOperation):
             expected = rotate_around_axis(s, pivot, kwargs["axis"], w * kwargs["angle"])
         else:
             g = 1.0 + w * (kwargs["factor"] - 1.0)
@@ -520,17 +494,27 @@ def test_pivot_is_the_given_pivot(cls):
     op.cancel()
 
 
-def test_scale_basis_change_keeps_the_total_at_its_pre_refusal_value():
+def test_scale_refusals_keep_the_total_at_its_pre_refusal_value():
+    """Refused updates (basis change, malformed or non-finite factor) do not accumulate: the
+    next valid update lands exactly where it lands without them. (Read `total_factor` before
+    SS1; that property went with M-b, AD-SYM-05 §5.1 — behaviour is checked instead.)"""
     mesh, _, influence, pivot = _head_case()
+    reference = head()
     op = SoftScaleOperation(_ctx(mesh, influence, pivot))
     op.begin()
     op.update(factor=(1.2, 1.0, 1.0), basis=TILTED)
-    total = op.total_factor
+    before = _positions(mesh)
     with pytest.raises(ValueError, match="basis"):
         op.update(factor=(1.5, 1.0, 1.0), basis=None)
     with pytest.raises(ValueError):
         op.update(factor=(1.0, 1.0), basis=TILTED)  # malformed: refused before accumulation
-    assert op.total_factor == total
+    with pytest.raises(ValueError, match="finite"):
+        op.update(factor=(math.inf, 1.0, 1.0), basis=TILTED)
+    assert _positions(mesh) == before
+    op.update(factor=(1.1, 1.0, 1.0), basis=TILTED)
+    _run(SoftScaleOperation(_ctx(reference, influence, pivot)),
+         [{"factor": (1.2, 1.0, 1.0), "basis": TILTED}, {"factor": (1.1, 1.0, 1.0), "basis": TILTED}])
+    assert _positions(mesh) == _positions(reference)
     op.cancel()
 
 
@@ -541,6 +525,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _CORE_PRIVATES = {
     "_weights", "_start_positions", "_vertex_ids", "_pivot", "_mesh", "_apply", "_as_triple",
     "_add", "_sub", "_scale", "_dot", "_cross", "_length", "_mirror_vector", "_project_onto_plane",
+    # added with SS1 (AD-SYM-05): the Core's weighted path
+    "_weighted", "_weighted_position", "_validated_influence", "_read_falloff_seam",
+    "_falloff_seam_vertex_ids", "_total_angle", "_fixed_axis", "_total_factor", "_basis_fixed",
+    "_fixed_basis", "_weighted_factor", "_check_weighted_step", "_accumulate",
 }
 
 

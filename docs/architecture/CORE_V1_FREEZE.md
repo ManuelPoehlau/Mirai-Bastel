@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -183,7 +183,8 @@ serialization change; Undo/Redo through the existing `MeshStateCommand`. Covered
 self-touching regions, bowtie, winding, MeshStateCommand Undo/Redo + serialization round trip, symmetry definition
 untouched) and `tests/test_application_delete_dissolve.py` (Production path).
 
-**Note (docs only, no Core change):** WP-SOFT-01 S2a (2026-10-10, AD-020 Q2-D, review F3). `src/mirai/soft_selection`
+**Note (docs only, no Core change):** *Superseded 2026-10-14 by the AD-SYM-05 entry below (the weighting moved into the
+Core, the soft ops became thin subclasses of the Core ops, the F3 tripwires flipped); kept as the record.* WP-SOFT-01 S2a (2026-10-10, AD-020 Q2-D, review F3). `src/mirai/soft_selection`
 (`SoftMoveOperation`, `SoftRotateOperation`, `SoftScaleOperation`) subclasses `VertexTransformOperation` from
 `core.operations.transform` — the first `src/mirai` class that subclasses a Core `Operation`. It uses the protected
 template-method hooks `_on_begin` / `_on_update` / `_transform_position` of that unexported class and the public
@@ -192,6 +193,32 @@ pinned by tripwire tests in `tests/test_soft_selection_ops.py` (AD-020 §13 F3),
 inert `_weights` soft-selection placeholder — fails loudly instead of silently double-weighting. This is "solvable
 without a Core change" (§1), not "with the public API" (§7 step 2). Whether the weighting moves into the Core is the
 promotion decision of AD-020 §12/§13 F4, after the S2c verdict.
+
+**Decision:** AD-SYM-05 (2026-10-14, AD-SYM-04 slice SS1; Manu's go 2026-10-14 after review CLAUDE-001)
+
+`VertexTransformOperation`, `MoveOperation`, `RotateOperation`, `ScaleOperation` (`src/core/operations/transform.py`,
+`move.py`) read **`params["influence"]`**, the soft weights (`VertexId -> w`, `w` in (0, 1], keys exactly the op's vertex
+set; `ValueError` otherwise, before anything is stored). Freeze rule (§7): (1) requirement — symmetric Soft Selection with
+P-a (AD-SYM-04 Q-4, M-5 "Core opened once"); (2) not solvable without a Core change: the mirror logic of the transform
+family and both seam checks live in the Core (AD-SYM-02 §1 "genau eine Stelle"), soft ops outside it would need a second
+copy; (3) documented in AD-SYM-04 §4 and [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md); (4) smallest extension: one
+`params` key already in use, one new category key `falloff_seam_vertex_ids` inside the existing `params["symmetry"]`, the
+inert placeholder blend `pos + w·(T(pos) − pos)` deleted, accumulated totals only where an absolute path needs them, **no
+new public API** (`Mesh`, `Operation` lifecycle, `OperationContext`, History, `VertexTransformCommand`, topology untouched).
+**Without the key every gesture is byte-identical to before** (the old loop; asserted by the existing Core suites and
+`tests/test_weighted_transforms.py` T-2). With it each op weights its own parameter (Move `w·Δ`, Rotate `w·θ`, Scale
+`1 + w(F − 1)`), then the category applies (plain / conjugate / selected seam / falloff seam); `w == 1` takes the unweighted
+arithmetic. Rotate/Scale need `params["pivot"]`; a selected seam vertex must carry `w = 1`. **Documented deviation from
+the incremental contract** (`core/operation.py`): Scale evaluates `w < 1` vertices, and Rotate/Scale evaluate falloff seam
+vertices, absolutely from the `begin()` snapshot; a weighted Scale fixes the basis for the gesture, a weighted Rotate with
+falloff seam vertices fixes the axis and refuses a non-finite angle — without weights nothing is accumulated or fixed. P-a:
+falloff seam vertices slide in the plane and are exempt from both seam checks, which keep their scope (`seam_vertex_ids`).
+Pair consistency (one weight per pair, opposite categories) is a caller precondition; the Core derives no correspondence.
+`src/mirai/soft_selection/ops.py` migrated in the same commit (thin subclasses, M-b: label, symmetry backstop until SS2,
+stale-ID filter, `weights`; no arithmetic); `scale_formula`/`"power"` left `src`. No visible behaviour change: the app still
+refuses Soft + symmetry (AD-SYM-04 I-8) until SS2. Covered by `tests/test_weighted_transforms.py` (T-2, T-5–T-8 incl. the R-6
+straddling fixtures), `tests/test_soft_selection_replay.py` (T-3: non-symmetric Soft bit-identical to Q2-D via a pure replay
+function), the ported `tests/test_soft_selection_ops.py` (T-4, flipped tripwires) and the Mehlsack/S1 suites (T-9).
 
 ## 2. Was vor dem Freeze validiert wurde
 
