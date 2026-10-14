@@ -52,7 +52,6 @@ LAB_MODULES = (
     "symmetry_lab.lab_overlays",
     "symmetry_lab.lab_resymmetrize",
     "symmetry_lab.lab_scene",
-    "symmetry_lab.lab_symmetry",
     "symmetry_lab.lab_topology",
     "symmetry_lab.probe_drag_cost",
     "symmetry_lab.run",

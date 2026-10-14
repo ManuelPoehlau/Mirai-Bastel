@@ -43,7 +43,7 @@ from symmetry_lab.lab_app import (
     preview_text,
 )
 from symmetry_lab.lab_resymmetrize import plan_summary
-from symmetry_lab.lab_symmetry import symmetry_report
+from mirai.symmetry_display import symmetry_report
 from symmetry_lab.lab_topology import topology_report
 
 from ._app_lab_preview_support import (

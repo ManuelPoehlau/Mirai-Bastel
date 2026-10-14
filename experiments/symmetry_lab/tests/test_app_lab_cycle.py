@@ -9,9 +9,9 @@ die Originale in `test_lab_symmetry.py` sind seit Slice 5 gelöscht, Plan A2-Tab
 - die Auswahl bleibt
 - die Seam ist gespeicherte Deklaration (E3), keine laufende Prüfung
 
-Dazu: Ebenen-Umriss und Zustands-Marker als Viewport-Overlays (H1), Neuaufbau nach
-Shift+S und nach Undo (beides Viewport-Meldungen, K-3), Assets per Registry-Name
-und der Einstieg `run` (Exit-Code 2, `--help`).
+Dazu: das Symmetrie-Overlay der App im Lab (seit AD-SYM-04 A2 zeichnet die App Ebene und
+Zustands-Marker; deren Sync-Tests stehen in `tests/test_application_symmetry_display.py`),
+Assets per Registry-Name und der Einstieg `run` (Exit-Code 2, `--help`).
 """
 
 from __future__ import annotations
@@ -23,21 +23,16 @@ import pytest
 
 from loaders.assets import asset_names
 from mirai.application import symmetry_status_text
-from mirai.mesh_geometry import mesh_bounds, mesh_center_and_radius
+from mirai.mesh_geometry import mesh_center_and_radius
 from mirai.symmetry import SymmetryState
-from mirai.symmetry_axis import AXIS_INDEX, AXIS_NORMALS, ORIGIN, current_axis
+from mirai.symmetry_axis import AXIS_NORMALS, ORIGIN, current_axis
+from mirai.symmetry_display import SymmetryDisplay, symmetry_report
+from viewport.gl_symmetry_overlay import SEAM_LAYER, GLSymmetryOverlay
 
 from symmetry_lab import run
 from symmetry_lab._paths import LAB_DIR
 from symmetry_lab.lab_app import hud_text
-from symmetry_lab.lab_overlays import (
-    AMBIGUOUS_LAYER,
-    SEAM_LAYER,
-    UNPAIRED_LAYER,
-    SymmetryPlaneOverlay,
-    SymmetryStateOverlay,
-)
-from symmetry_lab.lab_symmetry import symmetry_report
+from symmetry_lab.lab_overlays import LabPointOverlay, ResymPreviewLineOverlay
 
 from ._app_lab_support import (  # noqa: F401
     CTRL_Y,
@@ -61,22 +56,6 @@ EXPECTED_VERTEX_COUNTS = {
 }
 #: Registrierte Assets, die das Lab vorerst bewusst nicht abdeckt (Symmetrie nicht geprüft).
 LAB_EXCLUDED_ASSETS = {"gollum"}
-
-
-def _overlays(lab) -> tuple[SymmetryPlaneOverlay, SymmetryStateOverlay]:
-    # Seit Slice 3 hängt dazwischen das Linien-Overlay der Re-Symmetrize-Vorschau.
-    plane, _preview_lines, state = lab.overlays
-    assert isinstance(plane, SymmetryPlaneOverlay)
-    assert isinstance(state, SymmetryStateOverlay)
-    return plane, state
-
-
-def _cycle_to(app, lab, axis):
-    for _ in range(4):
-        if lab.axis == axis:
-            return
-        assert press(app, lab, SHIFT_S)
-    raise AssertionError(axis)
 
 
 # -- Zyklus (portiert) ------------------------------------------------------------
@@ -172,114 +151,37 @@ def test_symmetric_move_runs_through_src(lab_app):
 
 
 # -- Overlays (H1) ----------------------------------------------------------------
+#
+# Ebenen-Umriss und Zustands-Marker zeichnet seit AD-SYM-04 A2 die App (`mirai.symmetry_display`,
+# Senke `GLSymmetryOverlay` über `GL_TYPES`). Ihre Sync-Tests (Umriss in der Ebene, Marker =
+# Befund, Neuaufbau nach Shift+S, Undo/Redo und Move-Commit, Aufschub während des Drags) sind mit
+# dem Code nach `tests/test_application_symmetry_display.py` gezogen. Hier bleibt, was das Lab
+# betrifft: es bekommt das Overlay der App genau einmal und zeichnet nichts davon selbst (L-9).
 
 
-def test_overlays_are_attached_in_draw_order(lab_app):
+def test_the_app_draws_plane_and_markers_once_the_lab_adds_only_its_own(lab_app):
     app, lab = lab_app
-    assert app.viewport.extra_overlays == list(lab.overlays)
-    plane, state = _overlays(lab)
-    assert app.viewport.extra_overlays[0] is plane and app.viewport.extra_overlays[-1] is state
+    display = app.symmetry_display
+    assert isinstance(display, SymmetryDisplay)
+    assert app.viewport.extra_overlays == [display, *lab.overlays]
+    assert [type(o) for o in lab.overlays] == [ResymPreviewLineOverlay, LabPointOverlay]
+    lab_layers = {layer for o in lab.overlays for layer in o.LAYERS}
+    assert not lab_layers & set(GLSymmetryOverlay.LAYER_STYLES)
 
 
-def test_overlays_empty_while_symmetry_off(lab_app):
+def test_app_markers_follow_the_shift_s_the_lab_forwards(lab_app):
+    """Shift+S über den Lab-Pfad (`lab_key_press` → `Application`): das Overlay der App folgt (K-3),
+    Ctrl+Z ebenso; das Lab setzt dafür kein `dirty`."""
     app, lab = lab_app
-    app.viewport.sync()
-    plane, state = _overlays(lab)
-    assert plane.segments() == []
-    for layer in (SEAM_LAYER, UNPAIRED_LAYER, AMBIGUOUS_LAYER):
-        assert state.points(layer) == []
-
-
-@pytest.mark.parametrize("axis", ["X", "Y", "Z"])
-def test_plane_outline_lies_in_plane_and_encloses_bounds(axis):
-    """Portierter Umriss-Test, jetzt über das Viewport-Overlay (head_basemesh)."""
-    app, lab = make_lab("head_basemesh")
-    _cycle_to(app, lab, axis)
-    app.viewport.sync()
-    plane, _state = _overlays(lab)
-    segments = plane.segments()
-    assert len(segments) == 4
-    points = [p for seg in segments for p in seg]
-    i = AXIS_INDEX[axis]
-    assert all(p[i] == 0.0 for p in points)
-    lo, hi = mesh_bounds(app.scene.mesh)
-    for j in (j for j in range(3) if j != i):
-        assert min(p[j] for p in points) < lo[j]
-        assert max(p[j] for p in points) > hi[j]
-
-
-@pytest.mark.parametrize(
-    "asset,axis,seam,unpaired",
-    [
-        ("subd_cube", "X", 8, 0),  # 8 Seam-Edges = ein Ring aus 8 Vertices
-        ("subd_cube", "Y", 0, 26),
-        ("man_with_shoes_basemesh", "X", None, 54),
-    ],
-)
-def test_state_markers_match_the_report(asset, axis, seam, unpaired):
-    """Zustands-Marker = `symmetry_report` (README-Charakterisierung, E4: 54 ohne Partner)."""
-    app, lab = make_lab(asset)
-    _cycle_to(app, lab, axis)
-    app.viewport.sync()
-    _plane, state = _overlays(lab)
-    mesh = app.scene.mesh
-    report = symmetry_report(mesh)
-    for layer, ids in (
-        (SEAM_LAYER, report.seam),
-        (UNPAIRED_LAYER, report.unpaired),
-        (AMBIGUOUS_LAYER, report.ambiguous),
-    ):
-        assert state.points(layer) == [mesh.vertex_position(v) for v in sorted(ids)]
-    assert len(state.points(UNPAIRED_LAYER)) == unpaired
-    if seam is not None:
-        assert len(state.points(SEAM_LAYER)) == seam
-
-
-def test_overlays_resync_after_shift_s_via_viewport_notification(lab_app):
-    """K-3 (AD-SYM-04 A1): der Shift+S der App meldet dem Viewport eine Topologie-Änderung,
-    wie sein Undo; das Lab setzt kein `dirty` mehr selbst, die Overlays folgen trotzdem."""
-    app, lab = lab_app
-    app.viewport.sync()
-    plane, state = _overlays(lab)
-    assert press(app, lab, SHIFT_S)
-    assert not plane.dirty and not state.dirty
-    app.viewport.sync()
-    assert not plane.dirty and not state.dirty
-    assert len(plane.segments()) == 4
-    assert len(state.points(SEAM_LAYER)) == 8
-
-
-def test_overlays_resync_after_undo_redo_via_viewport_notification(lab_app):
-    """Undo/Redo der Definition läuft durch `Application` (Viewport-Meldung), ohne
-    dass das Lab `dirty` setzt — die Overlays folgen trotzdem."""
-    app, lab = lab_app
+    sink = app.symmetry_display.sink
     assert press(app, lab, SHIFT_S)
     app.viewport.sync()
-    plane, state = _overlays(lab)
+    assert len(sink.segments()) == 4
+    assert len(sink.points(SEAM_LAYER)) == 8
     assert press(app, lab, CTRL_Z)
-    assert not plane.dirty and not state.dirty
     app.viewport.sync()
-    assert plane.segments() == []
-    assert state.points(SEAM_LAYER) == []
-    assert press(app, lab, CTRL_Y)
-    app.viewport.sync()
-    assert len(plane.segments()) == 4
-    assert len(state.points(SEAM_LAYER)) == 8
-
-
-def test_overlays_follow_a_committed_move(lab_app):
-    """Ein W-Commit meldet bewegte Vertices; die Marker zeigen die neuen Positionen."""
-    app, lab = lab_app
-    assert press(app, lab, SHIFT_S)
-    app.viewport.sync()
-    _plane, state = _overlays(lab)
-    mesh = app.scene.mesh
-    vid = next(v for v in visible(app) if v in symmetry_report(mesh).seam)
-    click(app, *screen(app, vid))
-    arm_and_move(app, lab)
-    assert app.key_release(W)
-    app.viewport.sync()
-    assert mesh.vertex_position(vid) in state.points(SEAM_LAYER)
+    assert sink.segments() == []
+    assert sink.points(SEAM_LAYER) == []
 
 
 def test_hud_text_shows_symmetry_and_status(lab_app):

@@ -7,7 +7,9 @@ Verwendung (vom Repo-Root, Windows und Linux gleich):
 
 Baut denselben Pfad wie `src/main.py` (`Application` → `Viewport` V02 →
 `GLRenderStore`) über dessen `create_window` / `install_handlers` / `run` (H6)
-und ergänzt nur die Lab-Teile (`lab_app`, `lab_overlays`, `lab_app_window`).
+und ergänzt nur die Lab-Teile (`lab_app`, `lab_overlays`, `lab_app_window`). Ebene und
+Zustands-Marker zeichnet seit AD-SYM-04 A2 die App selbst (`symmetry_overlay_type` in
+`src_main.GL_TYPES`, L-9); das Lab hängt nur Partner und Re-Symmetrize-Vorschau dazu.
 Der fensterlose Teil (`build_app_lab`) ist auch die Grundlage von
 `probe_drag_cost.py` (Plan A3).
 Gültige Namen = `loaders.assets.asset_names()`; ein unbekannter Name bricht mit
@@ -36,6 +38,7 @@ ensure_paths()
 
 from loaders.assets import asset_path  # noqa: E402
 from mirai.application import Application  # noqa: E402
+from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 
 from symmetry_lab.lab_app import SymmetryAppLab, start_lab, startup_listing  # noqa: E402
 from symmetry_lab.lab_overlays import build_lab_overlays  # noqa: E402
@@ -46,6 +49,10 @@ from symmetry_lab.lab_scene import (  # noqa: E402
 )
 
 CAPTION = "Mirai — Symmetry Lab (App-Pfad)"
+
+#: Headless (Tests, Probe): kein GL-Store, aber das Symmetrie-Overlay der App wie im Fenster
+#: (`src_main.GL_TYPES`, AD-SYM-04 A2) — seine Daten brauchen kein GL, erst das Zeichnen.
+HEADLESS_GL_TYPES = {"symmetry_overlay_type": GLSymmetryOverlay}
 
 
 def load_src_main():
@@ -66,23 +73,36 @@ def build_app_lab(
     (`init_scene`, `frame_scene`, `set_viewport_size`; AD-013 H2-R4 (f))."""
     app = Application()
     lab: SymmetryAppLab = start_lab(app)
-    app.init_scene("obj", obj_path=asset_path(asset_name), **(gl_types or {}))
+    types = HEADLESS_GL_TYPES if gl_types is None else gl_types
+    app.init_scene("obj", obj_path=asset_path(asset_name), **types)
     app.frame_scene()
     # Erste Größe/Aspect wie main.py, damit der erste Frame nicht verzerrt ist.
     app.set_viewport_size(width, height)
     lab.attach_overlays(
         app.viewport,
-        build_lab_overlays(lab.reports, lab.transform_running, lambda: lab.preview),
+        build_lab_overlays(lab.reports, lambda: lab.preview),
     )
     return app, lab
+
+
+def build_app_only(asset_name: str, width: int, height: int) -> Application:
+    """Nur die App, wie `src/main.py` sie aufbaut (kein Lab, kein Gate), headless mit dem
+    Symmetrie-Overlay der App — der Host `app` der Drag-Kosten-Probe (AD-SYM-04 A2: was die
+    Anzeige in der App allein kostet). Hier, weil die einmalige Einrichtung nur in `run.py`
+    steht (AD-013 H2-R4 (f), T-R4a)."""
+    app = Application()
+    app.init_scene("obj", obj_path=asset_path(asset_name), **HEADLESS_GL_TYPES)
+    app.frame_scene()
+    app.set_viewport_size(width, height)
+    return app
 
 
 def build_lab(window, asset_name: str, src_main, gl_types: dict | None = None):
     """Application + Lab + Szene + Overlays + Handler an `window`.
 
     `gl_types` = `src_main.GL_TYPES` im echten Fenster; `None` = headless
-    (TraceStore, keine GL-Overlays des Viewports), für Tests mit einem
-    Stellvertreter-Fenster."""
+    (TraceStore, keine GL-Overlays des Viewports, nur das Symmetrie-Overlay der App,
+    `HEADLESS_GL_TYPES`), für Tests mit einem Stellvertreter-Fenster."""
     from symmetry_lab.lab_app_window import install_lab_window
 
     app, lab = build_app_lab(asset_name, window.width, window.height, gl_types)

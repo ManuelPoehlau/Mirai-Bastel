@@ -4,7 +4,8 @@
 (Exit-Code 2 vor dem Fenster); geladen wird dort über `Application.init_scene`
 (H2-R4 (f)). `load_asset_into` setzt `app.scene.mesh` direkt, ohne Viewport — seit
 WP-SYM-LAB-03 Slice 5 nur noch für die Forschungs-Tests (`test_lab_topology`,
-`test_lab_knife`, `test_lab_resymmetrize`, `test_lab_symmetry`, `test_lab_scene`),
+`test_lab_knife`, `test_lab_resymmetrize`, `test_lab_scene`; `test_lab_symmetry` ist seit
+AD-SYM-04 A2 als `tests/test_symmetry_display.py` in `tests/`),
 nicht für den Lab-Pfad. Muster aus `PlaygroundApp.load_asset` / `_frame_camera`
 (Stand `47f821b`).
 """

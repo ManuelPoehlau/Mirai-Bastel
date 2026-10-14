@@ -15,9 +15,9 @@ import pytest
 from core import VertexId
 from mirai.interaction.input import Input
 from mirai.symmetry import CorrespondenceState, SymmetryState, vertex_correspondence
+from mirai.symmetry_display import SymmetryReport
 
 from symmetry_lab.lab_app import TRANSFORM_IDLE, constraint_label, hud_text
-from symmetry_lab.lab_symmetry import SymmetryReport
 
 from ._app_lab_support import (  # noqa: F401
     E,

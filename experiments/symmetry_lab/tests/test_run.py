@@ -74,7 +74,8 @@ def test_window_wiring_reuses_main_handlers_and_pushes_two(built):
     assert {"on_key_press", "on_key_release", "on_mouse_press", "on_mouse_motion",
             "on_draw", "on_deactivate", "on_resize"} <= set(window.handlers)
     assert set(window.pushed) == {"on_key_press", "on_draw"}
-    assert app.viewport.extra_overlays == lab.overlays
+    # AD-SYM-04 A2: das Symmetrie-Overlay der App zuerst (Ebene, Zustands-Marker), dann das Lab.
+    assert app.viewport.extra_overlays == [app.symmetry_display, *lab.overlays]
     assert app.viewport_width == WIDTH and app.viewport_height == HEIGHT
 
 

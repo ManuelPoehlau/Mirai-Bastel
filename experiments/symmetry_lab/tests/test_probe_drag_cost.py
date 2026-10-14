@@ -27,7 +27,7 @@ def test_probe_runs_on_subd_cube_and_returns_numbers():
     for stats in (
         result.total,
         result.transform,
-        result.lab_overlays,
+        result.overlays,
         result.viewport_rest,
         result.commit_sync,
         result.hover,

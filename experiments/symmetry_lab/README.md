@@ -14,7 +14,10 @@ gespiegelte Knife des alten Labs sind in Slice 5 gelöscht (Abschnitt „Histori
 Symmetrie ist seit AD-SYM-04 **Slice A1 (2026-10-14) in Production**: Shift+S ist ein Befehl der App
 (`commands.SYMMETRY_CYCLE`, `Application`), das E1/E3-Setup liegt in `src/mirai/symmetry_axis.py` (verschoben aus
 `lab_symmetry.py`, nicht kopiert). Das Lab nutzt die App-Taste und behält M und Shift+B (AD-SYM-04 §10 ist noch
-nicht entschieden). `src/main.py` kennt weiterhin kein Experiment. Ebene und Problem-Marker in der App folgen in A2.
+nicht entschieden). `src/main.py` kennt weiterhin kein Experiment. Seit **Slice A2 (2026-10-14)** zeichnet die App
+Ebenen-Umriss und Zustands-Marker selbst (`src/mirai/symmetry_display.py` + GL-Senke
+`src/viewport/gl_symmetry_overlay.py`, aus `lab_symmetry.py`/`lab_overlays.py` verschoben, nicht kopiert); das Lab
+bekommt sie über `src_main.GL_TYPES` und zeichnet nur noch Partner und Re-Symmetrize-Vorschau dazu.
 Entscheidung und Slices: [AD-SYM-04](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) (AD-013 Addendum 2026-10-14). Vertrag zwischen Lab und App:
 [AD-013, Addendum H2](../../docs/architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-03-wp-sym-lab-03-h2--experiment-input-hook-in-application).
 Plan und Abschluss: [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md)
@@ -257,15 +260,18 @@ topologischen Paarung ab der Seam (Abschnitt unten). KEEP seit Slice 5 des alten
 
 ## Overlays und Farblegende
 
-Über `Viewport.add_overlay` (Lab-Klassen in `lab_overlays.py`; `src` kennt weder die Layer
-noch die Farben). Auswahl und Hover sind die der App (gelb, 8 px, Hover blass gelb).
+Ebenen-Umriss und Zustands-Marker (die ersten vier Zeilen) sind seit AD-SYM-04 A2 **die der App**
+(`mirai.symmetry_display.SymmetryDisplay`, GL-Senke `viewport.gl_symmetry_overlay.GLSymmetryOverlay`, über
+`src_main.GL_TYPES`; Werte unverändert, in der App `PROVISIONAL`). Die übrigen hängt das Lab über `Viewport.add_overlay`
+an (Lab-Klassen in `lab_overlays.py`; `src` kennt weder diese Layer noch ihre Farben). Auswahl und Hover sind die der App
+(gelb, 8 px, Hover blass gelb).
 
 | Overlay | Farbe | Inhalt |
 |---|---|---|
-| Ebenen-Umriss | hellblau, Linien (mit Depth-Test) | Symmetrie-Ebene durch den Ursprung, Bounds + 10 % |
-| Seam | grün, Punkt | Seam-Vertex (Endpunkt einer deklarierten Seam-Edge) |
-| ohne Partner | magenta, Punkt | `UNPAIRED` (INV-10) |
-| mehrdeutig | weiß, Punkt | `AMBIGUOUS` |
+| Ebenen-Umriss (App) | hellblau, Linien (mit Depth-Test) | Symmetrie-Ebene durch den Ursprung, Bounds + 10 % |
+| Seam (App) | grün, Punkt (7 px) | Seam-Vertex (Endpunkt einer deklarierten Seam-Edge) |
+| ohne Partner (App) | magenta, Punkt (7 px) | `UNPAIRED` (INV-10) |
+| mehrdeutig (App) | weiß, Punkt (7 px) | `AMBIGUOUS` |
 | Partner des Hover | türkis, Punkt (8 px) | gespiegelter Partner des Vertex unter dem Cursor, ohne auszuwählen |
 | Partner der Auswahl | türkis, Punkt (8 px) | gespiegelte Partner der ausgewählten Vertices |
 | Vorschau: bewegt | blau, Punkt (8 px) + Linie | Zielseiten-Vertex, der auf die Spiegelposition seines Partners gesetzt wird; Linie zur neuen Position |
@@ -279,15 +285,22 @@ Die Partner kommen aus `mirai.symmetry.mirrored_selection` (keine eigene Paarung
 hat keinen — beide bekommen keinen türkisen Punkt; sind beide Seiten eines Paars ausgewählt,
 wird keiner als Partner gezeigt.
 
-**Zeichenreihenfolge:** Ebene → Vorschau-Linien → Zustands-Marker → Vorschau-Punkte →
-Hover-Partner → Auswahl-Partner, alles vor den Punkten der App — Hover und Auswahl (gelb)
-liegen obenauf. Punkte und Vorschau-Linien ohne Depth-Test. Die Vorschau-Linien liegen unter
-den Zustands-Markern (altes Lab: darüber; Artist-Verdikt KEEP, 2026-10-03).
+**Zeichenreihenfolge:** Ebene → Zustands-Marker (beide App) → Vorschau-Linien → Vorschau-Punkte →
+Hover-Partner → Auswahl-Partner (Lab), alles vor den Punkten der App — Hover und Auswahl (gelb)
+liegen obenauf. Punkte und Vorschau-Linien ohne Depth-Test. Seit AD-SYM-04 A2 liegen die
+Vorschau-Linien wieder **über** den Zustands-Markern wie im alten Lab (das Overlay der App hängt
+`init_scene` vor den Lab-Overlays an; `PROVISIONAL`). Von Slice 3 bis A2 lagen sie darunter;
+Verdikt 5 vom 2026-10-03 („stört das, oder ist es egal?") war KEEP, also keine Regel für eine der
+beiden Reihenfolgen.
 
 **Neu berechnet** wird nur, was sich geändert hat: Ebene und Zustands-Marker nur bei
 geänderter Geometrie oder Definition, die Partner bei Auswahl- bzw. Hover-Wechsel. Während
 eines laufenden W/E/R bleiben Befund, Ebene und Partner-IDs die vom Drag-Start, nur die Marker
-wandern mit; der erste Frame nach dem Commit leitet alles neu ab (Plan A3).
+wandern mit; der erste Frame nach dem Commit leitet alles neu ab (Plan A3; für Ebene und Marker
+seit A2 in der App, `mirai.symmetry_display`). Das Lab hält für HUD-Zeile und Partner eine eigene
+`ReportCache` (Klasse der App): es liest keinen `Application`-Zustand außerhalb der H2-R4-Liste.
+Nach einem Commit, Undo oder Shift+S wird der Befund im Lab deshalb zweimal abgeleitet (App und
+Lab), in der App einmal (AD-SYM-04, Implementierungsnotiz A2).
 
 ## HUD
 
@@ -459,8 +472,9 @@ Tests: `tests/test_symmetric_extrude.py`, `test_app_lab_symmetric_extrude.py`.
   topologische Paarung des Labs (nächster Abschnitt). W/E/R und die Markierungen
   (grün/magenta/weiß/türkis) bleiben positionsbasiert und exakt.
 
-Charakterisierung der heutigen Assets (Tests in `tests/test_lab_symmetry.py`,
-`tests/test_app_lab_cycle.py`; die Seam-Zahlen seit AD-SYM-04 A1 in `tests/test_symmetry_axis.py` des Repos):
+Charakterisierung der heutigen Assets (Tests seit AD-SYM-04 A1/A2 im `tests/` des Repos:
+Seam-Zahlen in `test_symmetry_axis.py`, Zustände und ohne-Partner-Zahlen in `test_symmetry_display.py`
+und `test_application_symmetry_display.py`; bis dahin `tests/test_lab_symmetry.py`/`tests/test_app_lab_cycle.py` hier):
 
 | Asset | X | Y | Z |
 |---|---|---|---|
@@ -527,17 +541,17 @@ Alle 54 `UNPAIRED`-Vertices von `man_with_shoes_basemesh` haben einen topologisc
 ```
 pyglet-Event → Handler aus src/main.py (install_handlers) ─┬→ Application (alles der App)
                Lab-on_key_press (lab_key_press) ───────────┘   Lab-Taste → SymmetryAppLab
-Application → Viewport V02 → GLRenderStore; Lab-Overlays über Viewport.add_overlay (H1)
+Application → Viewport V02 → GLRenderStore; Symmetrie-Overlay der App über GL_TYPES (seit AD-SYM-04 A2),
+Lab-Overlays über Viewport.add_overlay (H1)
 ```
 
 | Datei | Inhalt | GL nötig |
 |---|---|---|
-| `run.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`, fensterlos `build_app_lab`), Event-Loop | – |
+| `run.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`, fensterlos `build_app_lab` mit `HEADLESS_GL_TYPES` = dem Symmetrie-Overlay der App; `build_app_only` = die App allein für die Probe), Event-Loop | – |
 | `lab_app.py` | Lab-Kontext (zwei Tasten, Start-Prüfung), Gate-Tabelle (BLOCK lässt den Shift+S der App benannt durch, K-6), Start-Liste, `lab_key_press`, Re-Symmetrize-Vorschau (M/M/Esc), E5-Modus (Shift+B, `block_row` fail-closed aus `NON_OPERATION`, Deklarationen und `supports_symmetry`), Befund-Cache, HUD-Zeile `hud_text`, E5-Warnzeile, Vorschau-Zeile | nein |
-| `lab_overlays.py` | Ebenen-Umriss, Zustands-, Vorschau- und Partner-Marker, Vorschau-Linien als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Änderungs-Signatur, Aufschub während eines Transforms | erst beim Zeichnen |
+| `lab_overlays.py` | Vorschau-Linien (`ResymPreviewLineOverlay`), Vorschau- und Partner-Marker (`LabPointOverlay`) als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Aufschub der Partner während eines Transforms (Signatur und `ReportCache` aus `mirai.symmetry_display`) | erst beim Zeichnen |
 | `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-, Warn- und Vorschau-Label | ja |
 | `lab_bindings.py` | `SYMMETRY_LAB_CONTEXT`, die zwei Lab-Commands, `LAB_OVERRIDES` (einzige Quelle der Lab-Tasten) | nein |
-| `lab_symmetry.py` | Befund `SymmetryReport`, Ebenen-Umriss `plane_outline_data` (Ebene E1 und Seam-Ableitung E3 seit AD-SYM-04 A1 in `src/mirai/symmetry_axis.py`) | nein |
 | `lab_topology.py` | Topologische Paarung (E11) und Seiten (E12) — Lab-Experiment | nein |
 | `lab_resymmetrize.py` | Re-Symmetrize-Plan (E12/E13), `set_plan_positions`, Vorschau-Text und -Daten | nein |
 | `lab_scene.py` | Asset-Namen prüfen; `load_asset_into` (ohne Viewport, nur für die Forschungs-Tests) | nein |
@@ -561,11 +575,15 @@ Display `pyglet.options["headless"] = True` (`tests/_pyglet_headless.py`). Ände
 - App-Pfad: `test_app_lab_*.py` (AD-013 H2 T-R1–T-R4, Zyklus, Overlays, Partner, HUD,
   W/E/R unter Symmetrie, Hover-Ziel, Re-Symmetrize, Vorschau inkl. Fuzz, E5, fail-closed BLOCK-Zeile in `test_app_lab_fail_closed.py`), `test_run.py`
   (Fenster-Smoke-Test), `test_probe_drag_cost.py`.
-- Forschung, rein: `test_lab_topology.py`, `test_lab_resymmetrize.py`, `test_lab_symmetry.py`,
+- Forschung, rein: `test_lab_topology.py`, `test_lab_resymmetrize.py`,
   `test_lab_scene.py`, `test_lab_knife.py` (P1–P3), `test_display_characterization.py` (E10/Q1).
 - `test_import_boundary.py`: genau diese Lab-Module, keines aus `playground/`.
 
 Welche Tests des alten Labs in Slice 5 gelöscht wurden und was sie ersetzt: Plan, A2-Tabelle.
+Mit AD-SYM-04 A1/A2 (2026-10-14) sind `test_lab_symmetry.py` und die Overlay-Sync-Tests für Ebene und
+Zustands-Marker mit ihrem Code nach `tests/` gezogen (`test_symmetry_axis.py`, `test_symmetry_display.py`,
+`test_application_symmetry_display.py`); hier bleiben Partner, Vorschau und die Prüfung, dass das Lab das
+Overlay der App genau einmal hat und nichts davon selbst zeichnet.
 
 ## Drag-Kosten-Probe (Plan A3)
 
@@ -575,11 +593,15 @@ Ohne Fenster, Windows und Linux gleich, Ausgabe zum Einfügen in den Chat:
 python experiments/symmetry_lab/probe_drag_cost.py
 ```
 
-Baut App + Lab wie `run.py` (ohne Fenster), Symmetrie X, wählt per Klick 6 gepaarte Vertices,
-zieht W über 200 Mausbewegungen und misst je Bewegung Transform-Schritt + Lab-Overlays
-(p50/p95/max; Schwelle p95 ≤ 8 ms) auf `head_basemesh` und `man_with_shoes_basemesh`, dazu den
-Commit-Frame und Hover-Wechsel. Optionen: `--moves N`, `--assets <Name …>`. Zahlen (Container
-und Referenz-PC): [Plan A3](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md#review-amendments-2026-10-03).
+Zwei Hosts (seit AD-SYM-04 A2): `[lab]` baut App + Lab wie `run.py` und misst das Symmetrie-Overlay
+der App (Ebene, Zustands-Marker) plus die Lab-Overlays (Partner, Vorschau) — dieselbe Menge wie vor A2,
+vergleichbar mit L-8; `[app]` baut nur die App wie `src/main.py` und misst ihr Overlay allein. Je
+Host: Symmetrie X, per Klick 6 gepaarte Vertices, W über 200 Mausbewegungen; je Bewegung
+Transform-Schritt + Overlays (p50/p95/max; Schwelle p95 ≤ 8 ms) auf `head_basemesh` und
+`man_with_shoes_basemesh`, dazu Commit-Frame und Hover-Wechsel. Optionen: `--moves N`,
+`--assets <Name …>`, `--hosts lab|app`. Zahlen bis 2026-10-03 (Container und Referenz-PC):
+[Plan A3](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md#review-amendments-2026-10-03); Container-Lauf
+zu A2 und Messlatte für den Referenz-PC: [AD-SYM-04, Implementierungsnotiz A2](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-a2).
 
 ## Historie (bis 2026-10-03)
 

@@ -114,6 +114,8 @@ def test_load_scene_accepts_every_backend_init_scene_accepts():
 def test_load_scene_takes_the_full_main_gl_types_set():
     # Real keys of `src/main.py::GL_TYPES`, headless stand-ins (no GL context needed here).
     from mirai.soft_selection import GLSoftBandOverlay
+    from mirai.symmetry_display import SymmetryDisplay
+    from viewport.gl_symmetry_overlay import GLSymmetryOverlay
 
     gl_types = {
         "store_type": TraceStore,
@@ -121,6 +123,7 @@ def test_load_scene_takes_the_full_main_gl_types_set():
         "line_overlay_type": None,
         "face_overlay_type": None,
         "soft_overlay_type": GLSoftBandOverlay,
+        "symmetry_overlay_type": GLSymmetryOverlay,
     }
     app = _app()
 
@@ -128,6 +131,8 @@ def test_load_scene_takes_the_full_main_gl_types_set():
 
     assert isinstance(app._soft_overlay, GLSoftBandOverlay)
     assert app._soft_overlay in app.viewport.extra_overlays
+    assert isinstance(app.symmetry_display, SymmetryDisplay)
+    assert app.symmetry_display in app.viewport.extra_overlays
 
 
 def test_load_scene_with_soft_on_and_a_selection_shows_no_bands_of_the_old_scene():

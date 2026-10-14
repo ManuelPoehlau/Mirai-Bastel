@@ -1,28 +1,35 @@
-"""Drag-Kosten-Probe des Labs auf dem App-Pfad (WP-SYM-LAB-03 Slice 2, Plan A3).
+"""Drag-Kosten-Probe auf dem App-Pfad: Lab und App (WP-SYM-LAB-03 Slice 2, Plan A3; AD-SYM-04 A2).
 
 Verwendung (vom Repo-Root, Windows und Linux gleich; kein Fenster, kein GL):
     python experiments/symmetry_lab/probe_drag_cost.py
     python experiments/symmetry_lab/probe_drag_cost.py --moves 400
     python experiments/symmetry_lab/probe_drag_cost.py --assets subd_cube
+    python experiments/symmetry_lab/probe_drag_cost.py --hosts app
 
 Misst, was ein symmetrischer W-Drag pro Mausbewegung auf der CPU kostet: den
 Transform-Schritt (`app.pointer_motion` → `MoveTool`) plus die Neuberechnung der
-Lab-Overlays (`sync` von Ebene und Markern). Aufbau wie im Fenster
-(`run.build_app_lab`: `Application` + Lab + Szene + Overlays, nur ohne Fenster
-und mit `TraceStore` statt GL — gemessen wird die CPU-Seite der Overlays, nicht
-das Zeichnen). Ablauf je Asset: Symmetrie X über die Lab-Taste Shift+S, eine
-Auswahl per Klick und Shift+Klick (gepaarte, sichtbare Vertices auf einer Seite
-nahe der Bildmitte), dann W drücken, `--moves` Mausbewegungen, W loslassen — alles
-über die öffentlichen Eingänge `key_press`/`pointer_*`/`key_release`, wie der
+Symmetrie-Overlays (`sync`). Zwei Hosts (`--hosts`, Default beide):
+
+- `lab`: wie `run.py` (`run.build_app_lab`: `Application` + Lab + Szene + Overlays), gemessen
+  werden das Symmetrie-Overlay der App (Ebene, Zustands-Marker, seit AD-SYM-04 A2) **und** die
+  Lab-Overlays (Partner, Vorschau) — dieselbe Menge wie vor A2, die Zahlen sind also mit L-8
+  (Referenz-PC p95 0,40 / 0,86 ms für head / body) vergleichbar.
+- `app`: wie `src/main.py` (`Application` mit `symmetry_overlay_type`, ohne Lab), gemessen wird
+  nur das Symmetrie-Overlay der App (S-2: Ebene und Problem-Marker, keine Partner).
+
+Beides ohne Fenster und mit `TraceStore` statt GL — gemessen wird die CPU-Seite der Overlays,
+nicht das Zeichnen. Ablauf je Asset: Symmetrie X über Shift+S (die Taste der App), eine
+Auswahl per Klick und Shift+Klick (gepaarte, sichtbare Vertices auf einer Seite nahe der
+Bildmitte), dann W drücken, `--moves` Mausbewegungen, W loslassen — alles über die öffentlichen
+Eingänge `key_press`/`pointer_*`/`key_release` (im Lab über `lab_key_press`), wie der
 Fenster-Adapter. Nach jeder Bewegung läuft `viewport.sync()` wie im nächsten Frame.
 
-Ausgabe: Klartext zum Einfügen in den Chat — Maschine, je Asset p50/p95/max in ms
-für Bewegung gesamt (die Schwelle aus Plan A3: p95 ≤ 8 ms), Transform-Schritt,
-Lab-Overlays und den übrigen `viewport.sync()` (App-eigene Puffer, zur Einordnung),
-dazu einmal den ersten `sync()` nach dem Commit (dort rechnen die Overlays den
-während des Drags aufgeschobenen Befund nach, `lab_overlays`).
-Zahlen aus einem Container sind als solche zu kennzeichnen
-(`docs/architecture/REFERENCE_HARDWARE.md` §4); maßgeblich ist der Referenz-PC.
+Ausgabe: Klartext zum Einfügen in den Chat — Maschine, je Host und Asset p50/p95/max in ms
+für Bewegung gesamt (die Schwelle aus Plan A3: p95 ≤ 8 ms), Transform-Schritt, Overlays und
+den übrigen `viewport.sync()` (App-eigene Puffer, zur Einordnung), dazu den ersten `sync()`
+nach dem Commit (dort rechnen die Overlays den während des Drags aufgeschobenen Befund nach,
+`mirai.symmetry_display`) und den Hover-Wechsel. Zahlen aus einem Container sind als solche zu
+kennzeichnen (`docs/architecture/REFERENCE_HARDWARE.md` §4); maßgeblich ist der Referenz-PC.
 """
 
 from __future__ import annotations
@@ -55,10 +62,12 @@ from mirai.symmetry import (  # noqa: E402
 from mirai.viewport.picking import pick_nearest_vertex  # noqa: E402
 
 from symmetry_lab.lab_app import lab_key_press  # noqa: E402
-from symmetry_lab.run import build_app_lab  # noqa: E402
+from symmetry_lab.run import build_app_lab, build_app_only  # noqa: E402
 
 THRESHOLD_P95_MS = 8.0
 DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh")
+#: `lab` = `run.py` (App-Overlay + Lab-Overlays, vergleichbar mit L-8), `app` = `src/main.py`.
+HOSTS = ("lab", "app")
 DEFAULT_MOVES = 200
 DEFAULT_SELECTION = 6
 WIDTH, HEIGHT = 1280, 800
@@ -93,20 +102,22 @@ class Stats:
 @dataclass(frozen=True)
 class ProbeResult:
     asset: str
+    host: str
     vertex_count: int
     selected: int
     moved: int
     moves: int
     total: Stats
     transform: Stats
-    lab_overlays: Stats
+    #: Symmetrie-Overlay der App, im Host `lab` plus die Lab-Overlays.
+    overlays: Stats
     viewport_rest: Stats
     #: Der erste `viewport.sync()` nach dem Loslassen von W: hier holen die
     #: Overlays den aufgeschobenen Befund nach (einmal je Drag, nicht je Bewegung).
     #: Der lange Drag plus `COMMIT_SAMPLES - 1` kurze Drags.
     commit_sync: Stats
     #: Hover-Wechsel ohne Transform (Cursor über wechselnde Vertices): Pick +
-    #: Lab-Overlays, zur Einordnung (Slice 1b maß hier 5,1 ms Median, Container).
+    #: Overlays, zur Einordnung (Slice 1b maß hier 5,1 ms Median, Container).
     hover: Stats
 
     @property
@@ -207,17 +218,33 @@ def _click(app, vid, inp: Input) -> None:
     app.pointer_release(inp.value, x, y)
 
 
+def _build(asset: str, host: str):
+    """`(app, press)`: die Kette wie im Fenster des Hosts, ohne Fenster. Gemessen werden danach
+    alle Zusatz-Overlays des Viewports (H1): das Symmetrie-Overlay der App und im Lab dessen
+    eigene — headless hängt sonst keines (keine Soft-Bänder)."""
+    if host == "lab":
+        app, lab = build_app_lab(asset, WIDTH, HEIGHT)
+        return app, (lambda inp: lab_key_press(app, lab, inp))
+    if host == "app":
+        app = build_app_only(asset, WIDTH, HEIGHT)
+        return app, app.key_press
+    raise ValueError(f"host: {host!r} (erwartet: {', '.join(HOSTS)})")
+
+
 def run_probe(
-    asset: str, moves: int = DEFAULT_MOVES, selection_size: int = DEFAULT_SELECTION
+    asset: str,
+    moves: int = DEFAULT_MOVES,
+    selection_size: int = DEFAULT_SELECTION,
+    host: str = "lab",
 ) -> ProbeResult:
-    """Ein symmetrischer W-Drag über `moves` Mausbewegungen auf `asset`."""
+    """Ein symmetrischer W-Drag über `moves` Mausbewegungen auf `asset` im Host `host`."""
     if moves < 1:
         raise ValueError("moves >= 1")
-    app, lab = build_app_lab(asset, WIDTH, HEIGHT)
+    app, press = _build(asset, host)
     viewport = app.viewport
-    timers = [_TimedOverlay(overlay) for overlay in lab.overlays]
+    timers = [_TimedOverlay(overlay) for overlay in viewport.extra_overlays]
 
-    if not lab_key_press(app, lab, SHIFT_S) or lab.axis != "X":
+    if not press(SHIFT_S) or app.scene.mesh.symmetry_definition is None:
         raise RuntimeError(f"{asset}: Symmetrie X ließ sich nicht setzen")
     targets = _pick_selection(app, selection_size)
     if not targets:
@@ -229,7 +256,7 @@ def run_probe(
         raise RuntimeError(f"{asset}: Auswahl per Klick fehlgeschlagen")
     viewport.sync()
 
-    if not lab_key_press(app, lab, W) or app.transform_command is None:
+    if not press(W) or app.transform_command is None:
         raise RuntimeError(f"{asset}: W ließ sich nicht scharf schalten ({app.status_message})")
     x, y = _screen(app, targets[0])
     totals, transforms, overlays, rests = [], [], [], []
@@ -253,17 +280,18 @@ def run_probe(
     app.key_release(W)
     commits = [_timed_sync(viewport)]
     for i in range(COMMIT_SAMPLES - 1):
-        commits.append(_short_drag(app, lab, x, y, -1.0 if i % 2 else 1.0))
+        commits.append(_short_drag(app, press, x, y, -1.0 if i % 2 else 1.0))
     hover = _hover_samples(app, timers)
     return ProbeResult(
         asset=asset,
+        host=host,
         vertex_count=len(app.scene.mesh.all_vertex_ids()),
         selected=selected,
         moved=moved,
         moves=moves,
         total=Stats.of(totals),
         transform=Stats.of(transforms),
-        lab_overlays=Stats.of(overlays),
+        overlays=Stats.of(overlays),
         viewport_rest=Stats.of(rests),
         commit_sync=Stats.of(commits),
         hover=Stats.of(hover),
@@ -276,10 +304,10 @@ def _timed_sync(viewport) -> float:
     return (time.perf_counter() - start) * 1000.0
 
 
-def _short_drag(app, lab, x: float, y: float, sign: float) -> float:
+def _short_drag(app, press, x: float, y: float, sign: float) -> float:
     """W, zwei Bewegungen in Richtung `sign`, Loslassen; Dauer des ersten `sync()`
     danach. Die Richtung wechselt von Drag zu Drag, damit die Auswahl im Bild bleibt."""
-    if not lab_key_press(app, lab, W):
+    if not press(W):
         raise RuntimeError(f"W ließ sich nicht scharf schalten ({app.status_message})")
     dx, dy = sign * STEP[0], sign * STEP[1]
     for _ in range(2):
@@ -291,7 +319,7 @@ def _short_drag(app, lab, x: float, y: float, sign: float) -> float:
 
 def _hover_samples(app, timers: list, count: int = 40) -> list[float]:
     """Cursor springt über sichtbare Vertices (beide Seiten, nächst der Bildmitte);
-    je Sprung, der den Hover ändert: `pointer_motion` (Pick) + Lab-Overlay-Syncs in ms."""
+    je Sprung, der den Hover ändert: `pointer_motion` (Pick) + Overlay-Syncs in ms."""
     viewport = app.viewport
     samples = []
     for vid in _by_distance_to_center(app, app.scene.mesh.all_vertex_ids()):
@@ -313,38 +341,43 @@ def _hover_samples(app, timers: list, count: int = 40) -> list[float]:
 
 
 def report_lines(results: list[ProbeResult], moves: int) -> list[str]:
-    lines = ["Symmetry Lab — Drag-Kosten (WP-SYM-LAB-03 Slice 2, Plan A3)"]
+    lines = ["Symmetrie — Drag-Kosten (WP-SYM-LAB-03 Plan A3; AD-SYM-04 A2: Lab und App)"]
     lines.extend(machine_info())
     lines.append(
         f"Ablauf: Symmetrie X, Auswahl per Klick, W + {moves} Mausbewegungen; "
-        f"Schwelle p95 <= {THRESHOLD_P95_MS:.0f} ms je Bewegung (Transform + Lab-Overlays)"
+        f"Schwelle p95 <= {THRESHOLD_P95_MS:.0f} ms je Bewegung (Transform + Overlays); "
+        "Host lab = App-Overlay + Lab-Overlays (wie L-8), app = nur das App-Overlay"
     )
     for r in results:
         verdict = "OK" if r.within_threshold else "UEBERSCHRITTEN"
         lines.append("")
         lines.append(
-            f"{r.asset}: {r.vertex_count} V, Auswahl {r.selected} V, bewegt {r.moved} V "
+            f"[{r.host}] {r.asset}: {r.vertex_count} V, Auswahl {r.selected} V, bewegt {r.moved} V "
             f"(mit Partnern) — {verdict}"
         )
         lines.append(f"  Bewegung gesamt  {r.total.text()}  ms")
         lines.append(f"  Transform-Schritt {r.transform.text()}  ms")
-        lines.append(f"  Lab-Overlays     {r.lab_overlays.text()}  ms")
+        lines.append(f"  Overlays         {r.overlays.text()}  ms")
         lines.append(f"  (übriger sync    {r.viewport_rest.text()}  ms, App-Puffer, nicht in der Schwelle)")
         lines.append(f"  (Commit-Frame    {r.commit_sync.text()}  ms, erster sync danach, einmal je Drag)")
-        lines.append(f"  (Hover-Wechsel   {r.hover.text()}  ms, Pick + Lab-Overlays, ohne Transform)")
+        lines.append(f"  (Hover-Wechsel   {r.hover.text()}  ms, Pick + Overlays, ohne Transform)")
     return lines
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Drag-Kosten des Symmetry Lab auf dem App-Pfad (WP-SYM-LAB-03 A3)"
+        description="Drag-Kosten der Symmetrie-Overlays, Lab und App (WP-SYM-LAB-03 A3, AD-SYM-04 A2)"
     )
     parser.add_argument("--assets", nargs="+", default=list(DEFAULT_ASSETS),
                         help="Registry-Namen (Default: head_basemesh man_with_shoes_basemesh)")
     parser.add_argument("--moves", type=int, default=DEFAULT_MOVES,
                         help=f"Mausbewegungen je Asset (Default: {DEFAULT_MOVES})")
+    parser.add_argument("--hosts", nargs="+", choices=HOSTS, default=list(HOSTS),
+                        help="lab = run.py (vergleichbar mit L-8), app = src/main.py (Default: beide)")
     args = parser.parse_args(argv)
-    results = [run_probe(asset, args.moves) for asset in args.assets]
+    results = [
+        run_probe(asset, args.moves, host=host) for host in args.hosts for asset in args.assets
+    ]
     for line in report_lines(results, args.moves):
         print(line)
     return 0

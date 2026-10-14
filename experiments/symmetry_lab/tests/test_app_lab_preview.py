@@ -44,19 +44,15 @@ from symmetry_lab.lab_app import (
     startup_listing,
 )
 from symmetry_lab.lab_overlays import (
-    AMBIGUOUS_LAYER,
     HOVER_PARTNER_LAYER,
     RESYM_KEEP_LAYER,
     RESYM_MOVE_LAYER,
     RESYM_MOVE_LINE_LAYER,
     RESYM_SEAM_LAYER,
     RESYM_SEAM_LINE_LAYER,
-    SEAM_LAYER,
     SELECTION_PARTNER_LAYER,
-    UNPAIRED_LAYER,
+    LabPointOverlay,
     ResymPreviewLineOverlay,
-    SymmetryPlaneOverlay,
-    SymmetryStateOverlay,
 )
 from symmetry_lab.run import run_lab
 
@@ -409,11 +405,10 @@ def test_t_h_face_mode_before_the_preview():
 # -- Overlay (H1) ----------------------------------------------------------------------------
 
 
-def _preview_overlays(lab) -> tuple[ResymPreviewLineOverlay, SymmetryStateOverlay]:
-    plane, lines, state = lab.overlays
-    assert isinstance(plane, SymmetryPlaneOverlay)
+def _preview_overlays(lab) -> tuple[ResymPreviewLineOverlay, LabPointOverlay]:
+    lines, state = lab.overlays
     assert isinstance(lines, ResymPreviewLineOverlay)
-    assert isinstance(state, SymmetryStateOverlay)
+    assert isinstance(state, LabPointOverlay)
     return lines, state
 
 
@@ -474,11 +469,10 @@ def test_seam_and_keep_layers_follow_the_plan():
 
 def test_preview_point_layers_sit_between_state_and_partner_markers():
     """Reihenfolge des alten Renderers: Zustand → Vorschau → Hover-Partner →
-    Auswahl-Partner (README „Zeichenreihenfolge")."""
-    assert SymmetryStateOverlay.LAYERS == (
-        SEAM_LAYER,
-        UNPAIRED_LAYER,
-        AMBIGUOUS_LAYER,
+    Auswahl-Partner (README „Zeichenreihenfolge"). Seit AD-SYM-04 A2 zeichnet die App den
+    Zustand (ihr Overlay hängt vor den Lab-Overlays, `test_preview_overlays_are_drawn_before_the_app_points`);
+    im Lab beginnen die Punkte mit der Vorschau."""
+    assert LabPointOverlay.LAYERS == (
         RESYM_MOVE_LAYER,
         RESYM_SEAM_LAYER,
         RESYM_KEEP_LAYER,
@@ -489,8 +483,13 @@ def test_preview_point_layers_sit_between_state_and_partner_markers():
 
 
 def test_preview_overlays_are_drawn_before_the_app_points(previewing, monkeypatch):
+    """AD-SYM-04 A2: Ebene und Zustands-Marker zeichnet die App (ihr Overlay hängt `init_scene` vor
+    den Lab-Overlays an), dann die Vorschau-Linien und -Punkte des Labs, dann Hover und Auswahl der
+    App. Die Vorschau-Linien liegen damit wieder über den Zustands-Markern wie im alten Renderer
+    (Verdikt 5, 2026-10-03: die umgekehrte Reihenfolge war „egal")."""
     app, lab, _source = previewing
-    plane, lines, state = lab.overlays
+    lines, state = lab.overlays
+    app_display = app.symmetry_display
     log = []
 
     class AppPoints:
@@ -501,12 +500,12 @@ def test_preview_overlays_are_drawn_before_the_app_points(previewing, monkeypatc
             log.append("app points")
 
     app.viewport.point_overlay = AppPoints()
-    monkeypatch.setattr(plane, "draw", lambda uniforms: log.append("lab plane"))
+    monkeypatch.setattr(app_display, "draw", lambda uniforms: log.append("app plane + state"))
     monkeypatch.setattr(lines, "draw", lambda uniforms: log.append("lab preview lines"))
     monkeypatch.setattr(state, "draw", lambda uniforms: log.append("lab points"))
     app.viewport.sync()
     app.viewport.render()
-    assert log == ["lab plane", "lab preview lines", "lab points", "app points"]
+    assert log == ["app plane + state", "lab preview lines", "lab points", "app points"]
 
 
 #: Die Farbwerte des alten Renderers (`lab_render.py`, gelöscht in WP-SYM-LAB-03 Slice 5;
@@ -521,7 +520,7 @@ OLD_RENDERER_COLOURS = {
 def test_preview_colours_are_the_old_renderers():
     """README-Legende: blau / hellgrün / hellrot — Werte des alten `lab_render.py`."""
     colours = OLD_RENDERER_COLOURS
-    styles = SymmetryStateOverlay.LAYER_STYLES
+    styles = LabPointOverlay.LAYER_STYLES
     assert styles[RESYM_MOVE_LAYER][0] == colours["RESYM_MOVE_COLOR"]
     assert styles[RESYM_SEAM_LAYER][0] == colours["RESYM_SEAM_COLOR"]
     assert styles[RESYM_KEEP_LAYER][0] == colours["RESYM_KEEP_COLOR"]

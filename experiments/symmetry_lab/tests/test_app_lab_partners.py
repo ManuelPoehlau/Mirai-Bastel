@@ -1,6 +1,10 @@
 """Gespiegelte Partner von Auswahl und Hover, Zeichenreihenfolge und Overlay-Kosten
 auf dem App-Pfad (WP-SYM-LAB-03 Slice 2, Inventar #13/#15, Plan A3).
 
+Seit AD-SYM-04 A2 zeichnet die App Ebene und Zustands-Marker (`mirai.symmetry_display`); deren
+Kosten- und Aufschub-Tests stehen in `tests/test_application_symmetry_display.py`. Hier bleiben
+die Partner-Marker des Labs (`LabPointOverlay`) und der Befund-Cache des Labs (HUD + Partner).
+
 Headless wie `_app_lab_support` (TraceStore, `run.build_app_lab`). Auswahl und
 Hover entstehen über die öffentlichen Eingänge von `Application` (Klick,
 `pointer_motion`), wie im Fenster. Die Partner kommen aus
@@ -17,15 +21,15 @@ from mirai.interaction.input import Input
 from mirai.symmetry import CorrespondenceState, vertex_correspondence
 from mirai.viewport.picking import pick_nearest_vertex
 
+from viewport.gl_symmetry_overlay import SEAM_LAYER, UNPAIRED_LAYER
+
 from symmetry_lab.lab_overlays import (
-    AMBIGUOUS_LAYER,
     HOVER_PARTNER_LAYER,
     MIRRORED_VERTEX_COLOR,
-    SEAM_LAYER,
+    RESYM_MOVE_LAYER,
     SELECTION_PARTNER_LAYER,
-    UNPAIRED_LAYER,
-    SymmetryPlaneOverlay,
-    SymmetryStateOverlay,
+    LabPointOverlay,
+    ResymPreviewLineOverlay,
 )
 
 from ._app_lab_support import (  # noqa: F401
@@ -51,10 +55,10 @@ KEY_VERTEX_MODE = Input("key", "1")
 SHIFT_LMB = Input("mouse", "LEFT", frozenset({"shift"}))
 
 
-def _overlays(lab) -> tuple[SymmetryPlaneOverlay, SymmetryStateOverlay]:
-    # Seit Slice 3 hängt dazwischen das Linien-Overlay der Re-Symmetrize-Vorschau.
-    plane, _preview_lines, state = lab.overlays
-    return plane, state
+def _overlays(lab) -> LabPointOverlay:
+    # Vorschau-Linien, dann die Punkte (Vorschau + Partner); Ebene und Zustand zeichnet die App.
+    _preview_lines, state = lab.overlays
+    return state
 
 
 def _in_state(app, state) -> list:
@@ -98,7 +102,7 @@ def _symmetric(asset: str = "subd_cube"):
 
 def test_selection_partner_is_shown_turquoise():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
     partner = _partner(app, vid)
     click(app, *screen(app, vid))
@@ -111,7 +115,7 @@ def test_selection_partner_is_shown_turquoise():
 
 def test_hover_partner_is_shown_without_selecting():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     app.pointer_motion(*MISS)
     app.viewport.sync()
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
@@ -126,7 +130,7 @@ def test_hover_partner_is_shown_without_selecting():
 
 def test_seam_vertex_is_its_own_partner_and_gets_no_marker():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     seam = _in_state(app, CorrespondenceState.SEAM)[0]
     _hover(app, seam)
     click(app, *screen(app, seam))
@@ -139,7 +143,7 @@ def test_seam_vertex_is_its_own_partner_and_gets_no_marker():
 
 def test_unpaired_vertex_has_no_partner_marker():
     app, lab = _symmetric("man_with_shoes_basemesh")
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     unpaired = _first_visible(app, lab.report.unpaired)
     _hover(app, unpaired)
     app.viewport.sync()
@@ -148,14 +152,14 @@ def test_unpaired_vertex_has_no_partner_marker():
     app.viewport.sync()
     assert app.selection.vertices == {unpaired}
     assert state.points(SELECTION_PARTNER_LAYER) == []
-    # Sichtbar bleibt er als „ohne Partner" (magenta), nicht als Partner.
-    assert _pos(app, unpaired) in state.points(UNPAIRED_LAYER)
+    # Sichtbar bleibt er als „ohne Partner" (magenta, Marker der App), nicht als Partner.
+    assert _pos(app, unpaired) in app.symmetry_display.sink.points(UNPAIRED_LAYER)
 
 
 def test_selected_partner_is_not_shown_again_as_partner():
     """Beide Seiten ausgewählt: kein Partner-Marker (Auflösung in `mirrored_selection`)."""
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = next(
         v for v in _in_state(app, CorrespondenceState.PAIRED) if _partner(app, v) in visible(app)
     )
@@ -169,7 +173,7 @@ def test_selected_partner_is_not_shown_again_as_partner():
 
 def test_partners_follow_selection_and_hover_changes():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     first, second = _in_state(app, CorrespondenceState.PAIRED)[:2]
     click(app, *screen(app, first))
     app.viewport.sync()
@@ -188,7 +192,7 @@ def test_partners_follow_selection_and_hover_changes():
 
 def test_partner_follows_w_commit_and_undo_redo():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
     partner = _partner(app, vid)
     click(app, *screen(app, vid))
@@ -215,7 +219,7 @@ def test_partner_follows_w_commit_and_undo_redo():
 def test_partner_follows_shift_s():
     """X → Y: anderer Partner (bzw. keiner); weiter bis aus: keine Marker."""
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
     click(app, *screen(app, vid))
     _hover(app, vid)
@@ -239,7 +243,7 @@ def test_partner_follows_shift_s():
 def test_partner_follows_undo_of_shift_s(lab_app):
     """Auswahl vor Shift+S (Undo stellt die Auswahl von vor dem Schritt her)."""
     app, lab = lab_app
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = next(v for v in visible(app) if app.scene.mesh.vertex_position(v)[0] > 0.0)
     click(app, *screen(app, vid))
     assert press(app, lab, SHIFT_S) and lab.axis == "X"
@@ -255,7 +259,7 @@ def test_partner_follows_undo_of_shift_s(lab_app):
 
 def test_no_partner_markers_with_symmetry_off(lab_app):
     app, lab = lab_app
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = visible(app)[0]
     _hover(app, vid)
     click(app, *screen(app, vid))
@@ -270,7 +274,7 @@ def test_no_partner_markers_in_edge_or_face_mode(mode_key):
     """Plan „Not in any slice": Partner nur im Vertex-Modus. Hover und Auswahl
     sind dort Edge-/Face-IDs (auch ints) — es entsteht kein Marker."""
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
     click(app, *screen(app, vid))
     app.viewport.sync()
@@ -298,20 +302,21 @@ def test_no_partner_markers_in_edge_or_face_mode(mode_key):
 # -- Zeichenreihenfolge ---------------------------------------------------------------
 
 
-def test_partner_layers_are_drawn_after_state_markers():
-    # Seit Slice 3 liegen die Vorschau-Punkte zwischen Zustand und Partnern
-    # (Reihenfolge des alten Renderers, `test_app_lab_preview.py`).
-    layers = SymmetryStateOverlay.LAYERS
-    assert layers[:3] == (SEAM_LAYER, UNPAIRED_LAYER, AMBIGUOUS_LAYER)
+def test_partner_layers_are_drawn_after_the_preview_points():
+    # Die Zustands-Marker zeichnet seit AD-SYM-04 A2 die App, davor (eigenes Overlay).
+    layers = LabPointOverlay.LAYERS
+    assert layers[0] == RESYM_MOVE_LAYER
     assert layers[-2:] == (HOVER_PARTNER_LAYER, SELECTION_PARTNER_LAYER)
 
 
-def test_lab_overlays_are_drawn_before_the_app_point_overlay(lab_app, monkeypatch):
-    """H1: Ebene, dann Lab-Punkte (Zustand + Partner), dann erst die Punkte der App
-    (Hover/Auswahl gelb) — Hover und Auswahl liegen über den Lab-Markern."""
+def test_lab_overlays_are_drawn_between_the_app_display_and_the_app_points(lab_app, monkeypatch):
+    """H1: Ebene und Zustands-Marker der App, dann die Lab-Overlays (Vorschau-Linien, Lab-Punkte),
+    dann erst die Punkte der App (Hover/Auswahl gelb) — Hover und Auswahl liegen über allem.
+    Bis AD-SYM-04 A2: „lab plane", „lab points", „app points"."""
     pytest.importorskip("pyglet", reason="Overlay.draw importiert pyglet.gl (requirements-dev.txt)")
     app, lab = lab_app
-    plane, state = _overlays(lab)
+    lines, state = lab.overlays
+    assert isinstance(lines, ResymPreviewLineOverlay)
     log = []
 
     class AppPoints:
@@ -322,24 +327,25 @@ def test_lab_overlays_are_drawn_before_the_app_point_overlay(lab_app, monkeypatc
             log.append("app points")
 
     app.viewport.point_overlay = AppPoints()
-    monkeypatch.setattr(plane, "draw", lambda uniforms: log.append("lab plane"))
+    monkeypatch.setattr(app.symmetry_display, "draw", lambda uniforms: log.append("app plane + state"))
+    monkeypatch.setattr(lines, "draw", lambda uniforms: log.append("lab lines"))
     monkeypatch.setattr(state, "draw", lambda uniforms: log.append("lab points"))
     app.viewport.sync()
     app.viewport.render()
-    assert log == ["lab plane", "lab points", "app points"]
+    assert log == ["app plane + state", "lab lines", "lab points", "app points"]
 
 
 # -- Overlay-Kosten (Plan A3) --------------------------------------------------------
 
 
-def _counts(lab) -> tuple[int, int]:
-    plane, state = _overlays(lab)
-    return plane.recomputes, state.recomputes
+def _counts(lab) -> int:
+    """Läufe des Befund-Caches des Labs (HUD + Partner)."""
+    return lab.reports.recomputes
 
 
-def test_hover_only_change_does_not_recompute_plane_or_state():
+def test_hover_only_change_does_not_recompute_the_lab_report():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     before = _counts(lab)
     partner_runs = state.partner_recomputes
     for vid in visible(app)[:4]:
@@ -355,10 +361,10 @@ def test_hover_and_selection_changes_derive_no_correspondence(monkeypatch):
     des gecachten Befunds, ein Hover- oder Auswahl-Wechsel ordnet das Mesh nicht
     neu zu. Die Partner bleiben dieselben wie bei frischer Ableitung."""
     import mirai.symmetry as symmetry
-    import symmetry_lab.lab_symmetry as lab_symmetry
+    import mirai.symmetry_display as symmetry_display
 
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     fresh = vertex_correspondence(app.scene.mesh)
     paired = [v for v in visible(app) if fresh[v].state is CorrespondenceState.PAIRED][:4]
     assert paired
@@ -370,7 +376,7 @@ def test_hover_and_selection_changes_derive_no_correspondence(monkeypatch):
         return original(mesh)
 
     monkeypatch.setattr(symmetry, "vertex_correspondence", counting)
-    monkeypatch.setattr(lab_symmetry, "vertex_correspondence", counting)
+    monkeypatch.setattr(symmetry_display, "vertex_correspondence", counting)
     for vid in paired:
         _hover(app, vid)
         app.viewport.sync()
@@ -381,7 +387,7 @@ def test_hover_and_selection_changes_derive_no_correspondence(monkeypatch):
     assert calls == []
 
 
-def test_selection_only_change_does_not_recompute_plane_or_state():
+def test_selection_only_change_does_not_recompute_the_lab_report():
     app, lab = _symmetric()
     before = _counts(lab)
     for vid in visible(app)[:3]:
@@ -395,18 +401,19 @@ def test_selection_only_change_does_not_recompute_plane_or_state():
 
 def test_hud_reads_the_cached_report_without_recomputing():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     report = lab.report
-    runs = state.recomputes
+    runs = _counts(lab)
     for _ in range(5):
         assert lab.report is report
-    assert state.recomputes == runs
+    assert _counts(lab) == runs
+    assert state.reports is lab.reports  # HUD und Partner teilen einen Lauf
 
 
 @pytest.mark.parametrize("step", ["w_commit", "ctrl_z", "shift_s"])
-def test_plane_and_state_recompute_after_mesh_changes(step):
+def test_lab_report_recomputes_once_after_mesh_changes(step):
     app, lab = _symmetric()
-    plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
     click(app, *screen(app, vid))
     if step == "ctrl_z":
@@ -424,22 +431,24 @@ def test_plane_and_state_recompute_after_mesh_changes(step):
     else:
         assert press(app, lab, SHIFT_S)
     app.viewport.sync()
-    after = _counts(lab)
-    assert after[0] == before[0] + 1 and after[1] == before[1] + 1
+    assert _counts(lab) == before + 1
     assert lab.report is state.reports.get(app.scene.mesh)
-    assert sorted(state.points(SEAM_LAYER)) == sorted(
+    assert lab.report == app.symmetry_display.report  # derselbe Befund wie die Marker der App
+    assert sorted(app.symmetry_display.sink.points(SEAM_LAYER)) == sorted(
         _pos(app, v) for v in lab.report.seam
     )
 
 
-def test_drag_defers_the_report_and_moves_the_markers():
+def test_drag_defers_the_report_and_moves_the_partners():
     """Plan A3: während des Drags kein Befund-Lauf und keine Partner-Ableitung je
-    Bewegung — die Marker wandern trotzdem mit; der Frame nach dem Commit holt nach,
-    obwohl der Commit dem Viewport nichts meldet (`dirty` bleibt gesetzt)."""
+    Bewegung — die Partner wandern trotzdem mit; der Frame nach dem Commit holt nach,
+    obwohl der Commit dem Viewport nichts meldet (`dirty` bleibt gesetzt). Dasselbe für die
+    Zustands-Marker der App: `tests/test_application_symmetry_display.py`."""
     app, lab = _symmetric()
-    plane, state = _overlays(lab)
-    seam = _in_state(app, CorrespondenceState.SEAM)[0]
-    click(app, *screen(app, seam))
+    state = _overlays(lab)
+    vid = _in_state(app, CorrespondenceState.PAIRED)[0]
+    partner = _partner(app, vid)
+    click(app, *screen(app, vid))
     app.viewport.sync()
     before = _counts(lab)
     partner_runs = state.partner_recomputes
@@ -449,12 +458,12 @@ def test_drag_defers_the_report_and_moves_the_markers():
         app.viewport.sync()
         assert _counts(lab) == before
         assert state.partner_recomputes == partner_runs
-        assert _pos(app, seam) in state.points(SEAM_LAYER)
-        assert plane.dirty and state.dirty
+        assert state.points(SELECTION_PARTNER_LAYER) == [_pos(app, partner)]
+        assert state.dirty
     assert app.key_release(W)
     app.viewport.sync()
-    assert _counts(lab) == (before[0] + 1, before[1] + 1)
-    assert not plane.dirty and not state.dirty
+    assert _counts(lab) == before + 1
+    assert not state.dirty
     assert lab.report.seam == frozenset(
         v for v, c in vertex_correspondence(app.scene.mesh).items()
         if c.state is CorrespondenceState.SEAM
@@ -463,7 +472,7 @@ def test_drag_defers_the_report_and_moves_the_markers():
 
 def test_esc_during_drag_restores_markers_without_a_report_run():
     app, lab = _symmetric()
-    _plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = _in_state(app, CorrespondenceState.PAIRED)[0]
     click(app, *screen(app, vid))
     app.viewport.sync()
@@ -483,9 +492,10 @@ def test_esc_during_drag_restores_markers_without_a_report_run():
 def test_definition_change_right_before_arming_is_never_deferred(lab_app):
     """Nur eine reine Positionsänderung wird während eines Transforms aufgeschoben:
     Shift+S und gleich danach W, ohne Frame dazwischen → der nächste `sync()` zeigt
-    trotzdem die neue Symmetrie (Befund, Ebene, Partner)."""
+    trotzdem die neue Symmetrie (Befund, Partner; Ebene und Marker der App: dieselbe Probe in
+    `tests/test_application_symmetry_display.py`)."""
     app, lab = lab_app
-    plane, state = _overlays(lab)
+    state = _overlays(lab)
     vid = next(v for v in visible(app) if app.scene.mesh.vertex_position(v)[0] > 0.0)
     click(app, *screen(app, vid))
     app.viewport.sync()
@@ -493,7 +503,5 @@ def test_definition_change_right_before_arming_is_never_deferred(lab_app):
     assert press(app, lab, W) and app.interaction_owner == "transform"
     app.viewport.sync()
     assert lab.report.axis == "X"
-    assert len(plane.segments()) == 4
-    assert len(state.points(SEAM_LAYER)) == 8
     assert state.selection_partners == {_partner(app, vid)}
-    assert not plane.dirty and not state.dirty
+    assert not state.dirty

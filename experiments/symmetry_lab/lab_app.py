@@ -65,7 +65,6 @@ from .lab_bindings import (
     SYMMETRY_LAB_CONTEXT,
     LabOverride,
 )
-from .lab_overlays import ReportCache
 from .lab_resymmetrize import (
     ResymmetrizeRejected,
     ResymPlan,
@@ -75,8 +74,7 @@ from .lab_resymmetrize import (
     set_plan_positions,
 )
 from mirai.symmetry_axis import current_axis
-
-from .lab_symmetry import SymmetryReport
+from mirai.symmetry_display import ReportCache, SymmetryReport
 
 #: Die zwei Lab-Commands (H2-R1, seit 2026-10-14 ohne Shift+S). Alles andere geht an `Application`.
 LAB_COMMANDS = frozenset({RESYMMETRIZE, SYMMETRY_GATE_MODE})
@@ -444,8 +442,10 @@ class SymmetryAppLab:
         self.app = app
         #: Overlays mit eigenem `dirty`-Flag (`lab_overlays`); leer = headless ohne Viewport.
         self.overlays: list = []
-        #: Befund-Cache, geteilt mit dem Zustands-Overlay (`build_lab_overlays(lab.reports)`);
-        #: während eines laufenden Transforms aufgeschoben (Plan A3, `lab_overlays`).
+        #: Befund-Cache (Klasse der App, `mirai.symmetry_display`), geteilt von HUD-Zeile und
+        #: Partner-Overlay (`build_lab_overlays(lab.reports)`); während eines laufenden Transforms
+        #: aufgeschoben (Plan A3). Eine eigene Instanz neben der des App-Overlays: das Lab liest
+        #: keinen `Application`-Zustand außerhalb der H2-R4-Liste (AD-SYM-04 A2, Implementierungsnotiz).
         self.reports = ReportCache(defer=self.transform_running)
         #: Re-Symmetrize-Vorschau (Slice 3): der beim Öffnen einmal gerechnete Plan,
         #: `None` = keine Vorschau. Lab-Zustand, keine Symmetrie-Kopie: während sie

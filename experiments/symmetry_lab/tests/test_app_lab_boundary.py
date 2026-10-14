@@ -250,11 +250,12 @@ def test_method_allow_list_names_real_application_methods():
 
 
 def test_run_uses_exactly_the_setup_exception():
-    """`run.py` braucht die Ausnahme (f) wirklich — ohne sie wäre es ein Verstoß."""
+    """`run.py` braucht die Ausnahme (f) wirklich — ohne sie wäre es ein Verstoß. Seit AD-SYM-04
+    A2 zweimal: `build_app_lab` und `build_app_only` (Host `app` der Drag-Kosten-Probe)."""
     source = (LAB_DIR / "run.py").read_text(encoding="utf-8")
     assert violations(source, SETUP_MODULE) == []
     assert sorted(violations(source)) == sorted(
-        f"app.{name} (nicht auf der H2-R4-Liste)" for name in SETUP_METHODS
+        f"app.{name} (nicht auf der H2-R4-Liste)" for name in SETUP_METHODS for _ in range(2)
     )
 
 

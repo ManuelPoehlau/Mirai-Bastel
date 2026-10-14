@@ -16,7 +16,8 @@ Headless, fixture as `tests/test_application_pointer.py`. The named tests of the
          `tests/test_symmetric_split.py`)
 - T-G3b  AST guard, narrowed 2026-10-14 (AD-013 Addendum 2026-10-14, AD-SYM-04 A1): `src/main.py`
          never assigns `symmetry_definition` and calls no correspondence, coordination or
-         definition function; importing one GL overlay type for `GL_TYPES` is allowed
+         definition function; importing one GL overlay type for `GL_TYPES` is allowed - and used since
+         A2 (`GLSymmetryOverlay`, the real import is pinned)
 
 Deliberately not named `test_application_*` (that set is what T-R5c re-runs). T-R5c+ is in
 `tests/test_command_gate.py`.
@@ -532,6 +533,21 @@ def test_t_g3b_main_py_sets_no_definition_and_calls_no_symmetry_function():
     command and calls no correspondence or coordination code."""
     source = (_SRC / "main.py").read_text(encoding="utf-8")
     assert _main_symmetry_violations(source) == []
+
+
+def test_t_g3b_main_py_imports_exactly_the_one_gl_overlay_type():
+    """AD-SYM-04 A2: the allowance is used - `src/main.py` imports the app's symmetry GL sink from a
+    `viewport` module (for `GL_TYPES`) and nothing else symmetry-related, so the guard above is
+    green with the real import, not because the import is missing."""
+    source = (_SRC / "main.py").read_text(encoding="utf-8")
+    imports = [
+        f"{node.module}.{alias.name}"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if "symmetry" in (node.module or "") or "symmetry" in alias.name.lower()
+    ]
+    assert imports == ["viewport.gl_symmetry_overlay.GLSymmetryOverlay"]
 
 
 def test_t_g3b_guard_detects_violations():

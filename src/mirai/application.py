@@ -84,6 +84,7 @@ from .symmetry_coordination import (
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
 from .symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
 from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
+from .symmetry_display import SymmetryDisplay
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
@@ -484,6 +485,9 @@ class Application:
         self._soft_bands: SoftBands = EMPTY_BANDS
         self._soft_op_running: bool = False
         self._soft_gesture_shown: bool = False
+        # AD-SYM-04 A2 (Q-2 = S-2): plane outline and problem markers; None = headless (no
+        # `symmetry_overlay_type`, no display work at all).
+        self._symmetry_display: SymmetryDisplay | None = None
 
         # WP-06 B6 Follow-up (Artist-Entscheidung Manu 2026-09-28): Undo/Redo
         # stellt jetzt auch die Selection wieder her, nicht nur das Mesh.
@@ -563,6 +567,7 @@ class Application:
         line_overlay_type: type | None = None,
         face_overlay_type: type | None = None,
         soft_overlay_type: type | None = None,
+        symmetry_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
 
@@ -595,7 +600,13 @@ class Application:
         `soft_overlay_type` (WP-SOFT-01 S2b, AD-020 §5): dasselbe Muster für die Influence-
         Bänder der Soft Selection; der Entry-Point übergibt `GLSoftBandOverlay`. Es hängt als
         Zusatz-Overlay (`Viewport.add_overlay`, H1) am Viewport, den es nicht kennt. Default
-        `None` = keine Band-Arbeit (headless)."""
+        `None` = keine Band-Arbeit (headless).
+
+        `symmetry_overlay_type` (AD-SYM-04 A2, Q-2 = S-2): die GL-Senke für Ebenen-Umriss und
+        Problem-Marker; der Entry-Point übergibt `GLSymmetryOverlay`. `Application` hängt sie
+        in ihr eigenes `SymmetryDisplay` (`mirai.symmetry_display`), das als Zusatz-Overlay nach
+        den Bändern am Viewport hängt und während eines Transforms aufschiebt. Default `None` =
+        keine Symmetrie-Anzeige (headless)."""
         if geometry_type == "cube":
             from .scene_factory import create_cube
 
@@ -629,6 +640,12 @@ class Application:
             self._soft_overlay = soft_overlay_type()
             self.viewport.add_overlay(self._soft_overlay)
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
+        self._symmetry_display = None
+        if symmetry_overlay_type is not None:
+            self._symmetry_display = SymmetryDisplay(
+                symmetry_overlay_type(), defer=self._symmetry_display_deferred
+            )
+            self.viewport.add_overlay(self._symmetry_display)
         self._apply_display()
 
     def frame_scene(self) -> None:
@@ -655,6 +672,7 @@ class Application:
         line_overlay_type: type | None = None,
         face_overlay_type: type | None = None,
         soft_overlay_type: type | None = None,
+        symmetry_overlay_type: type | None = None,
     ) -> None:
         """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
         zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
@@ -674,7 +692,7 @@ class Application:
           Kamera neu ausrichten;
         - die Soft-Selection-Vorschau neu rechnen: `init_scene` hat sie noch mit
           der *alten* Auswahl gerechnet, die jetzt geleert ist.
-        Alle GL-Backends (`*_type`, auch `soft_overlay_type`) gehen unverändert
+        Alle GL-Backends (`*_type`, auch `soft_overlay_type` und `symmetry_overlay_type`) gehen unverändert
         an `init_scene` — dort ist das Wiring die einzige Stelle.
         Kein History-Eintrag, keine Core-Änderung; der Aufrufer setzt bei
         Bedarf selbst einen Namen-Status (`set_status`)."""
@@ -686,6 +704,7 @@ class Application:
             line_overlay_type=line_overlay_type,
             face_overlay_type=face_overlay_type,
             soft_overlay_type=soft_overlay_type,
+            symmetry_overlay_type=symmetry_overlay_type,
         )
         self.selection.clear()
         self.history = HistoryStack()
@@ -755,6 +774,17 @@ class Application:
         ).changed
         self._set_status(symmetry_status_text(self.scene.mesh))
         return changed
+
+    @property
+    def symmetry_display(self) -> SymmetryDisplay | None:
+        """Plane outline and problem markers (AD-SYM-04 A2), None without a
+        `symmetry_overlay_type` (headless)."""
+        return self._symmetry_display
+
+    def _symmetry_display_deferred(self) -> bool:
+        # Plan A3 of WP-SYM-LAB-03 (`mirai.symmetry_display`): while W/E/R/T is armed or running
+        # a pure position change is not re-derived; the markers still follow the moved vertices.
+        return self.interaction_owner == "transform"
 
     # -- Component-Modi (WP-06 B5b) ---------------------------------------------
 

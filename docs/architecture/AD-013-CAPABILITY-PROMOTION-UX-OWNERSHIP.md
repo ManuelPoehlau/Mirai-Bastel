@@ -1331,3 +1331,13 @@ only. Under the open preview Shift+S is refused visibly by the preview row itsel
 T-R2e unchanged in effect); while an `Application` interaction owns the keys it is ignored silently by `Application`,
 like `C` (AD-SYM-04 §9 R-4). T-R2b now expects that silence. H2-R3's "nothing is swallowed silently" concerns the
 gate's and the Lab's own refusals; `Application`'s session gates were silent before and stay so.
+
+### Implementation note (2026-10-14, AD-SYM-04 slice A2, cross-reference only)
+
+Built as the table above says; details in [AD-SYM-04, implementation note A2](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-a2).
+The overlay reaches the app as a GL type handed to `init_scene` (`symmetry_overlay_type`, the `soft_overlay_type`
+pattern): `src/main.py` imports exactly one `…Overlay` type from a `viewport` module (`GLSymmetryOverlay`, for `GL_TYPES`)
+and calls neither `add_overlay` nor `apply_mesh_change` nor `set_status` (H2-R5 first half and T-R5b unchanged; T-G3b green
+with the real import, now pinned by a test). No rule text changes: the Lab still writes the gate alone (H2-R6), uses only
+the H2-R4 list (it keeps its own report cache instance for HUD and partners rather than reading `Application`'s), and draws
+none of the moved layers; its preview overlays stay until A3.

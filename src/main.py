@@ -83,7 +83,13 @@ Scope (binding, see the handoffs):
   Partner)` / `Symmetrie aus`. With symmetry on, W/E/R, C (Split / Edge Connect / Vertex Connect /
   Knife), Delete / Dissolve and T mirror by themselves (`Application`; this file adds no symmetry
   code and installs no gate, AD-013 H2-R5 as amended 2026-10-14). Ignored while W/E/R/T is held
-  or a Knife session runs. Plane and problem markers follow in slice A2.
+  or a Knife session runs. Display (AD-SYM-04 slice A2, Q-2 = S-2, look `PROVISIONAL`): with
+  symmetry on, the plane is drawn as a light-blue outline through the origin (mesh bounds + 10 %),
+  and the problem markers as points - seam vertices green, vertices without a mirror partner
+  magenta, ambiguous ones white; no partner markers. The only symmetry import here is that GL
+  sink, `GLSymmetryOverlay` in `GL_TYPES` (T-G3b as narrowed); `Application` owns what it shows
+  (`mirai.symmetry_display`) and keeps the outline and markers from the drag start while W/E/R/T
+  runs (the markers follow the moved vertices).
   WP-SOFT-01 S2b (`PROVISIONAL`, AD-020 §5): with Soft on and a selection, the influence
   region is shown as banded points around the selection (`GLSoftBandOverlay`, an extra
   overlay; four bands over 0 < w < 1, warm = strong .. cold = weak, seeds keep the
@@ -165,6 +171,7 @@ from mirai.soft_selection import GLSoftBandOverlay  # noqa: E402
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
+from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
 from scene_menu import SceneMenu, load_named_scene, scene_entries  # noqa: E402
 
@@ -177,6 +184,7 @@ GL_TYPES = {
     "line_overlay_type": GLLineOverlay,
     "face_overlay_type": GLTriangleOverlay,
     "soft_overlay_type": GLSoftBandOverlay,
+    "symmetry_overlay_type": GLSymmetryOverlay,
 }
 
 

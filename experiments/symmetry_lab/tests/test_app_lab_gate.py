@@ -48,7 +48,7 @@ from symmetry_lab.lab_app import (
     one_sided_text,
     startup_listing,
 )
-from symmetry_lab.lab_overlays import UNPAIRED_LAYER
+from viewport.gl_symmetry_overlay import UNPAIRED_LAYER
 
 from ._app_lab_support import (  # noqa: F401
     declare,
@@ -526,7 +526,7 @@ def test_c_with_a_selection_under_mark_splits_both_sides(symmetric):
     (keine laufende Interaktion)."""
     app, lab = symmetric
     mesh = app.scene.mesh
-    _plane, _lines, state_overlay = lab.overlays
+    state_overlay = app.symmetry_display.sink  # Zustands-Marker der App (AD-SYM-04 A2)
     side_edge(app, lab)
     app.viewport.sync()
     assert state_overlay.points(UNPAIRED_LAYER) == []

@@ -110,8 +110,10 @@ def test_main_composes_the_three_parts():
         "line_overlay_type",
         "face_overlay_type",
         "soft_overlay_type",  # WP-SOFT-01 S2b: the influence-band sink
+        "symmetry_overlay_type",  # AD-SYM-04 A2: plane outline + problem markers
     }
     assert main_module.GL_TYPES["soft_overlay_type"].__name__ == "GLSoftBandOverlay"
+    assert main_module.GL_TYPES["symmetry_overlay_type"].__name__ == "GLSymmetryOverlay"
 
 
 def test_resize_sets_viewport_size_from_window(wired):

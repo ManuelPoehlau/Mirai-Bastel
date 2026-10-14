@@ -3,7 +3,8 @@
 **Status:** **DECIDED** (Manu, 2026-10-14): Q-1…Q-4 answered with the recommendations (commit `fa6e017`; Decision record
 below). Proposed and revised the same day after the independent review CLAUDE-001 (ACCEPT WITH CHANGES, answered in §9).
 The AD-013 amendment of §2.3 is written ([AD-013, Addendum 2026-10-14](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)).
-Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a1)).** Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
+Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a1)).**
+**Slice A2 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a2)).** Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -403,7 +404,7 @@ The verdict is recorded (M-2, Lab README "Slice 7", commit `0f8fb04`). Nothing E
 |---|---|---|---|
 | A0 | Decisions (docs) | Manu answers Q-1…Q-4 after the review; the AD-013 note of §2.3 is written; AD-SYM-04 → DECIDED. **Done 2026-10-14** (Decision record). | No code. |
 | A1 | Definition entry — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-a1)) | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); the command's interaction gates (review R-4): ignored while W/E/R/T is armed or running (same gate as `C` and the mode keys, `application.py:1587-1603`, so the partner sets an armed tool resolves at `begin()` cannot change underneath it), ignored inside a Knife session (`_knife_key`, pinned by a test), and Soft armed → toggle → motion refused at `begin()` (`:1715`); Lab: K-6 named row entry, T-FC1 and T-R1a adjusted; T-R5b unchanged, T-G3b re-labelled or narrowed (§2.3); `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
-| A2 | Display | Per Q-2: the Lab's plane/state overlays **moved** to `src` as an `Application`-owned overlay handed in through `GL_TYPES` (soft-band precedent), A3 deferral kept; the Lab drops its copies (no double draw, L-9). | Overlay sync tests ported from the Lab; Lab draw-order test adapted; drag-cost probe re-run on the reference PC (L-8 numbers as the bar). |
+| A2 | Display — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-a2)) | Per Q-2: the Lab's plane/state overlays **moved** to `src` as an `Application`-owned overlay handed in through `GL_TYPES` (soft-band precedent), A3 deferral kept; the Lab drops its copies (no double draw, L-9). | Overlay sync tests ported from the Lab; Lab draw-order test adapted; drag-cost probe re-run on the reference PC (L-8 numbers as the bar). |
 | A3 | Re-Symmetrize (§10) | Only after the §10 review and Manu's decision: topological pairing and plan **moved** to `src/mirai`; the preview as an `Application`-owned interaction (R-a); Lab drops its preview machinery. | See §10.4. |
 | J | Joint Artist test (M-3) | In `python src/main.py`: the Slice 7 steps 1–8 (step 9, MARK, stays Lab-only under UA-2), the Re-Symmetrize steps of the Lab README ("Re-Symmetrize (M / M / Esc)", incl. `man_with_shoes_basemesh`), plus the symmetric Soft test of §5. | Manu's verdict, one session. |
 
@@ -568,6 +569,71 @@ console `Symmetrie X (valid)`; select a vertex off the middle, hold **W** and mo
 Shift+S three more times → `Symmetrie Y (partial, …)`, `Symmetrie Z …`, `Symmetrie aus`. Nothing is drawn for the
 plane yet (A2).
 
+## Implementation note (2026-10-14, slice A2)
+
+Production order (Manu, 2026-10-14: "Slice A2 … umsetzen"), rules AD-013 Addendum 2026-10-14 (H2-R5 first half
+unchanged, T-G3b as narrowed) and K-2. No change under `src/core`, no decided rule changed, no Artist-felt behaviour
+beyond Q-2 = S-2 had to be set, so no Haltepunkt was reached. The promotion is the one Q-2 decided (S-2: "the Lab's plane
+and state overlays, moved to `src`").
+
+**What was built**
+
+| Piece | Where | Note |
+|---|---|---|
+| Report, outline, deferral, **moved** (K-2) | `src/mirai/symmetry_display.py` | `SymmetryReport`, `symmetry_report`, `plane_outline_data` (from `lab_symmetry.py`, which is deleted: nothing was left in it), `geometry_signature`, `only_positions_differ`, `ReportCache` and the plane/state logic of the former `SymmetryPlaneOverlay`/`SymmetryStateOverlay` (from `lab_overlays.py`) — the plan-A3 deferral included. GL-free. |
+| The app's overlay | `SymmetryDisplay` (same module) | The `Application`-owned extra overlay (H1 contract `sync`/`dirty`/`draw`): one `ReportCache` with `defer = interaction_owner == "transform"`; the outline is rebuilt exactly when a new report is derived (same signature, same deferral rule), the markers follow the current positions. With symmetry off and nothing shown it returns before the O(V) signature, so a drag without symmetry costs nothing extra. |
+| GL sink | `src/viewport/gl_symmetry_overlay.py`, `GLSymmetryOverlay` | Plane outline (`FlatColorLayers`, `GL_LINES`, depth-tested) then the three marker layers (`GLPointOverlay`, no depth test): seam green, without partner magenta, ambiguous white, 7 px, outline light blue — the Lab README legend values, `PROVISIONAL`. Knows no symmetry; `viewport` imports nothing from `mirai` (the sink takes positions, `set_segments`/`set_markers`). No partner layer (S-2). |
+| Wiring | `Application.init_scene`/`load_scene(symmetry_overlay_type=…)`, `Application.symmetry_display` | Soft-band precedent: the host passes the type, `Application` builds the sink, wraps it in its `SymmetryDisplay` and attaches it after the bands. `None` (headless default) = no display, no derivation. K-3 from A1 (the cycle reports a topology change) is what re-syncs it after Shift+S; Undo/Redo and commits are viewport notifications as before. |
+| `src/main.py` | `GL_TYPES["symmetry_overlay_type"] = GLSymmetryOverlay`, docstring | The one `…Overlay` import from a `viewport` module that T-G3b as narrowed allows (module named for what it is; G-4). No `add_overlay`, `apply_mesh_change` or `set_status` call (H2-R5 first half, T-R5b unchanged). The A1 status line stays. |
+| Lab (L-9, no double draw) | `lab_overlays.py`, `lab_app.py`, `run.py` | The Lab gets the app's overlay through `src_main.GL_TYPES` in the window and `run.HEADLESS_GL_TYPES` headless. It keeps the partner markers and the Re-Symmetrize preview (lines `ResymPreviewLineOverlay`, points + partners `LabPointOverlay`, formerly `SymmetryStateOverlay`); the preview belongs to A3 (§10 undecided), M stays a Lab key. `build_lab_overlays(reports, preview)` drops the plane overlay and its `defer`. |
+
+**Draw order in the Lab (derived, `PROVISIONAL`).** The app's overlay is attached in `init_scene`, the Lab's after it, and the
+Lab can only append (H1). So: plane → state markers (app) → preview lines → preview points → hover partner → selection
+partner (Lab) → the app's hover/selection. The preview lines now lie **over** the state markers again, as in the old
+renderer; Verdict 5 (Lab README, 2026-10-03) accepted the other order as not disturbing ("stört das, oder ist es egal?"
+→ KEEP), so neither order is an Artist rule. Visible only with the preview open.
+
+**Known cost, Lab only.** H2-R4 (a) gives the Lab no read access to `Application`'s report, so the Lab keeps its own
+`ReportCache` instance (the app's class) for its HUD line and partner markers: after a commit, Undo or Shift+S the report is
+derived twice in the Lab (app overlay + Lab), once in the app. A3 reworks H2 anyway (§10.3: the Lab reads the app's preview
+state for its HUD); a read-only report accessor can be named there if the Lab's commit frame matters. No rule was bent
+for it here.
+
+**Tests.** `tests/test_application_symmetry_display.py` — ported from the Lab (`test_app_lab_cycle.py`,
+`test_app_lab_partners.py`): outline in the plane and around the bounds (X/Y/Z), markers = report (subd_cube X/Y,
+`man_with_shoes` 54), rebuild after Shift+S, Undo/Redo and a Move commit (+ its Undo/Redo), hover/selection cost nothing,
+one recompute per mesh change, deferral during the drag with catch-up on the commit frame, Esc without a run, a
+definition change right before arming never deferred; new: no display without the type, `load_scene` rebinds it, draw
+order (outline → markers → app points), the legend values, no partner markers in the app, no signature per move with
+symmetry off. `tests/test_symmetry_display.py` — the report tests moved from `test_lab_symmetry.py` (deleted) plus the
+outline margin and the signature rule. T-G3b: a new test pins the real import (`viewport.gl_symmetry_overlay.GLSymmetryOverlay`,
+exactly one). `test_main_wiring` / `test_application_load_scene`: the `GL_TYPES` key. Lab: the draw-order tests
+(`test_app_lab_partners`, `test_app_lab_preview`) expect "app plane + state, lab lines, lab points, app points"; the
+partner, HUD and gate tests read the app's sink for the state layers; `test_run`/`test_app_lab_cycle` check the app
+overlay is in the Lab's viewport exactly once and the Lab draws none of its layers; T-R4a counts `run.build_app_only`.
+
+**Cost (container, labelled as such, REFERENCE_HARDWARE §4).** `python experiments/symmetry_lab/probe_drag_cost.py`
+(now `--hosts lab app`; `lab` measures the app overlay + the Lab overlays, the same set as L-8; `app` the app overlay
+alone). Three runs each, HEAD before A2 vs. A2, W drag over 200 moves, 6 selected vertices, ms:
+
+| | per move p95, head | per move p95, body | commit frame p50, head | commit frame p50, body |
+|---|---|---|---|---|
+| Lab before A2 | 0.18–0.20 | 0.32–0.55 | 2.0–2.1 | 6.0–11.7 |
+| Lab after A2 | 0.21–0.32 | 0.31–0.54 | 3.7–3.9 | 10.6–13.1 |
+| App after A2 | 0.12–0.20 | 0.20–0.21 | 2.0–3.6 | 5.8–9.6 |
+
+Per move: unchanged within the container's noise, far below the 8 ms bar. The commit frame grows in the Lab by the second
+report derivation (above), once per drag; the app's equals the Lab's before A2. **Reference PC (for Manu):** from the repo
+root, `python experiments/symmetry_lab/probe_drag_cost.py` (both hosts, both assets, ≈ 1 min, no window), paste the
+output. Bar: the `[lab]` rows' "Bewegung gesamt" p95 against L-8 (0.40 / 0.86 ms head / body), and ≤ 8 ms.
+
+**Smoke check for Manu (optional, not a verdict session — the verdict is J):** `python src/main.py`, **Shift+S** → a
+light-blue rectangle through the middle of the head, the middle vertices green; W on a middle vertex → it slides in the
+plane, the green point follows. SPACE → `man_with_shoes_basemesh`, Shift+S → 54 magenta points. Shift+S until
+`Symmetrie aus` → nothing drawn.
+
+---
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -606,6 +672,14 @@ App. Zu sehen ist die Ebene noch nicht (kommt mit A2). Im Lab ist `Shift+S` jetz
 Änderung dort: während W/E/R gehalten wird oder der Knife läuft, wird `Shift+S` still ignoriert (wie `C`) statt mit einer
 Meldung abgelehnt. Ein optionaler Kurzcheck steht in der Implementierungsnotiz oben; das Verdikt bleibt beim gemeinsamen
 Praxistest J.
+
+**Slice A2 gebaut (2026-10-14):** In `python src/main.py` siehst du die Symmetrie jetzt: ein hellblauer Rahmen zeigt
+die Ebene, grüne Punkte die Mitte (Seam), magenta Punkte Vertices ohne Spiegelpartner, weiße mehrdeutige — wie im Lab,
+nur ohne die türkisen Partner-Punkte (deine Wahl S-2). Das Lab zeichnet Ebene und Punkte nicht mehr selbst, sondern
+nutzt die der App; Partner und Re-Symmetrize-Vorschau bleiben im Lab. Einzige sichtbare Änderung im Lab: bei offener
+Vorschau liegen deren Linien wieder über den Symmetrie-Punkten (wie im alten Lab; du hattest beide Reihenfolgen als egal
+bewertet). Kosten: im Container je Mausbewegung unverändert weit unter 8 ms; die Messung auf deinem PC ist vorbereitet
+(Befehl in der Implementierungsnotiz A2).
 
 **Nachtrag (2026-10-14): Re-Symmetrize kommt mit in die App** (deine Aussage). Im Lab ist die Vorschau (M / M / Esc) über die
 Lab-Sperre gebaut, die die App nicht schreiben darf. Vorschlag (§10): die Vorschau wird ein eigener Modus der App, wie die
