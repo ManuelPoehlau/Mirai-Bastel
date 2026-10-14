@@ -1310,3 +1310,8 @@ für Production") stays true: Q-3 chose F-a, not G-3, so KEEP-BLOCK is not a run
 **Required tests (named, written in A1/A2):** T-G3b narrowed (and its negative control: an assignment of
 `symmetry_definition` or a coordination call in `src/main.py` still fails); T-R1a/T-R1b for two Lab entries; T-FC1 with the
 symmetry command allowed under BLOCK and refused under the preview row; the F-a guard (AD-SYM-04 §3.3).
+
+*Pending extension (2026-10-14, PROPOSED, not decided):* Manu decided that Re-Symmetrize comes into the app too.
+[AD-SYM-04 §10](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#10-re-symmetrize-in-the-app-proposed-2026-10-14) proposes making
+the preview an `Application`-owned interaction; that would reduce H2-R1 to one Lab entry (Shift+B), retire D1, the Lab's
+preview bullets of H2-R2 and the preview row. Until it is reviewed and decided, the table above stands.

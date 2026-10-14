@@ -80,7 +80,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie-Spur: Symmetrie in die App, dann symmetrische Soft Selection, gemeinsamer Praxistest | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | AD-SYM-04 entschieden (2026-10-14); als Nächstes Slice A1 (Shift+S in der App); B2d (Knife-Varianten) bleibt offen. |
+| Symmetrie-Spur: Symmetrie in die App, dann symmetrische Soft Selection, gemeinsamer Praxistest | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | AD-SYM-04 entschieden (2026-10-14); Re-Symmetrize kommt mit (Weg dahin: Vorschlag §10, erst Review); als Nächstes Slice A1 (Shift+S in der App); B2d (Knife-Varianten) bleibt offen. |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | deine Antwort zu D1c; Messung liegt vor |
 | Flat Shading pro Polygon (B5a.1) | Flat-Ansicht ohne sichtbare Dreiecke | berührt AD-018 |

@@ -4,6 +4,8 @@
 below). Proposed and revised the same day after the independent review CLAUDE-001 (ACCEPT WITH CHANGES, answered in §9).
 The AD-013 amendment of §2.3 is written ([AD-013, Addendum 2026-10-14](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)).
 Slice A0 is done with this; code follows in A1. Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
+**Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
+AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
 **Work package:** WP-SYM-APP-01 (decision package).
 **Read at:** `main` @ `54de6ee`. Line numbers refer to that commit.
@@ -37,8 +39,12 @@ Where a section below still reads "proposed", "recommendation" or "assumption", 
 keeps M and Shift+B), T-G3b is narrowed (S-2), K-6 applies, AD-SYM-02 §4 needs no pointer (F-c not chosen). All written
 into AD-013, Addendum 2026-10-14.
 
-**Not answered, still assumptions (Manu did not correct them, which is not a confirmation):** §0.2 (order A1/A2 → SS → one
-joint test J) and UA-3 (Re-Symmetrize stays in the Lab).
+**Re-Symmetrize (Manu, 2026-10-14, in the chat: "Re Symmtrizes kommt mit in die App"):** UA-3 is corrected. Re-Symmetrize
+(M / M / Esc, Lab KEEP since 2026-09-25, confirmed on the app path 2026-10-03) and the topological pairing it rests on become
+part of the app. This is the explicit promotion decision for that research code (M3). The mechanism is proposed in §10.
+
+**Not answered, still an assumption (Manu did not correct it, which is not a confirmation):** §0.2 (order A1/A2 → SS → one
+joint test J; A3 now joins the A-slices, §7).
 
 **Engineering, unchanged by the decision:** the key, the overlay look and every text stay `PROVISIONAL`; no Artist Input
 Truth entry is created (AD-013 A5).
@@ -398,7 +404,8 @@ The verdict is recorded (M-2, Lab README "Slice 7", commit `0f8fb04`). Nothing E
 | A0 | Decisions (docs) | Manu answers Q-1…Q-4 after the review; the AD-013 note of §2.3 is written; AD-SYM-04 → DECIDED. **Done 2026-10-14** (Decision record). | No code. |
 | A1 | Definition entry | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); the command's interaction gates (review R-4): ignored while W/E/R/T is armed or running (same gate as `C` and the mode keys, `application.py:1587-1603`, so the partner sets an armed tool resolves at `begin()` cannot change underneath it), ignored inside a Knife session (`_knife_key`, pinned by a test), and Soft armed → toggle → motion refused at `begin()` (`:1715`); Lab: K-6 named row entry, T-FC1 and T-R1a adjusted; T-R5b unchanged, T-G3b re-labelled or narrowed (§2.3); `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
 | A2 | Display | Per Q-2: the Lab's plane/state overlays **moved** to `src` as an `Application`-owned overlay handed in through `GL_TYPES` (soft-band precedent), A3 deferral kept; the Lab drops its copies (no double draw, L-9). | Overlay sync tests ported from the Lab; Lab draw-order test adapted; drag-cost probe re-run on the reference PC (L-8 numbers as the bar). |
-| J | Joint Artist test (M-3) | In `python src/main.py`: the Slice 7 steps 1–8 (step 9, MARK, stays Lab-only under UA-2), plus the symmetric Soft test of §5. | Manu's verdict, one session. |
+| A3 | Re-Symmetrize (§10) | Only after the §10 review and Manu's decision: topological pairing and plan **moved** to `src/mirai`; the preview as an `Application`-owned interaction (R-a); Lab drops its preview machinery. | See §10.4. |
+| J | Joint Artist test (M-3) | In `python src/main.py`: the Slice 7 steps 1–8 (step 9, MARK, stays Lab-only under UA-2), the Re-Symmetrize steps of the Lab README ("Re-Symmetrize (M / M / Esc)", incl. `man_with_shoes_basemesh`), plus the symmetric Soft test of §5. | Manu's verdict, one session. |
 
 **Practical-test sketch for Extrude in the app** (prepared, not run): `python src/main.py`, symmetry on (per Q-1), `3`,
 a face off the middle, hold `T` and drag → both sides; `Ctrl+Z` one step; a face at the middle → one bump, no wall;
@@ -409,7 +416,7 @@ extrude the cap again; both sides selected → same result; drag inward → pock
 
 ## 7. Combined order (Way B)
 
-A0 → A1 → A2 → SS0 → SS1 → SS2 → SS3 → **J**. Playground tools come after J (M-3). SS0 may run in parallel with A1/A2 (it
+A0 → A1 → A2 → A3 (after the §10 review) → SS0 → SS1 → SS2 → SS3 → **J**. Playground tools come after J (M-3). SS0 may run in parallel with A1/A2 (it
 reads `src` only). Stop points on the way: SS1 (Core change, own review), any slice that would need a decided AD changed
 beyond §2.3.
 
@@ -418,8 +425,8 @@ beyond §2.3.
 ## 8. Not decided here
 
 ~~The answers to Q-1…Q-4~~ (answered 2026-10-14, Decision record). The shape and names of the `Application` symmetry
-command, the moved functions and the overlay type. The Core change itself (SS1, own document). Re-Symmetrize in the app
-(UA-3, still an assumption). The
+command, the moved functions and the overlay type. The Core change itself (SS1, own document). The Re-Symmetrize mechanism
+(§10, PROPOSED). The
 choice between the Knife mirror variants V-a/V-b/V-c and F6 (still open, AD-SYM-03 §10.9). F-1 of the Extrude (corner at
 the seam). Artist Input Truth entries for any symmetry key. Gizmo, Tweak, Loop Insert/Slide, Collapse, Loop/Ring selection
 (later packages); the Lab test stage (separate task); Playground UX.
@@ -452,6 +459,67 @@ consequence of it). Manu may ask for one.
 
 ---
 
+## 10. Re-Symmetrize in the app (PROPOSED, 2026-10-14)
+
+**Status:** PROPOSED. The decision *that* it comes is Manu's (Decision record); *how* is proposed here and needs an
+independent review in a fresh session before A3, because it changes decided AD-013 H2 rules (Development System §5,
+Haltepunkt "Änderung an einer entschiedenen Architekturentscheidung").
+
+### 10.1 What exists (facts, read at `f8f77fc`)
+
+| # | Fact |
+|---|---|
+| RS-1 | `lab_topology.py` (topological pairing E11 and sides E12; breadth-first over face pairs from the seam; conflicts unpaired, `partners` an involution) and `lab_resymmetrize.py` (`plan_resymmetrize`, `set_plan_positions`, `plan_summary`, `resym_preview_data`) are pure, GL-free, and import only `core`, `mirai.symmetry` and `lab_symmetry` (E1 axis). They call themselves "Lab-Experiment, keine Capability". |
+| RS-2 | The Lab runs Re-Symmetrize as a **modal preview it owns**: M (one selected vertex) computes the plan once and opens it; M executes through `apply_mesh_change` (one Undo step, empty plan → no step); Esc closes it (`lab_app.py:_open_preview`, `_execute_preview`, `cancel_preview`). |
+| RS-3 | The modality is enforced **through the gate**: while the preview is open the Lab installs the preview row (allow-list: display commands only) and `hover_suspended = True`; Esc reaches the Lab at window level (D1); Shift+S/Shift+B are refused by the Lab; any other row asserts (AD-013 H2-R2, N2; tests T-R2c, T-R2e, T-R2g, T-H). |
+| RS-4 | `src/main.py` may write no gate data (H2-R5, unchanged by the 2026-10-14 addendum), and a second gate writer needs its own review (H2-R6). The Lab's mechanism therefore cannot be reused by the app as it is. |
+| RS-5 | `Application` already owns one modal, key-owning interaction: the Knife session. `key_press` routes every key to `_knife_key` before resolution and gate (`application.py:1562-1563`); `interaction_owner` reports it; Esc/Enter/Undo are handled inside. |
+| RS-6 | M is free in GLOBAL and KNIFE (the Lab's start-up assert) and in Artist Input Truth; the Lab binding is "Artist A7 (2026-09-25)". The Playground handles M / Shift+M itself in `on_key_press` (`playground/window.py:2571`, `:2584`), not through the BindingSet, and its `SAFE_COMMANDS` would drop a new command (K-7) — to be verified in A3 by the Playground's own M tests (`playground/tests/test_session_gate.py`, `input_characterization.py`). |
+
+### 10.2 Alternatives for the preview in the app
+
+| | Alternative | Assessment |
+|---|---|---|
+| **R-a** | **The preview becomes an `Application`-owned interaction**, shaped like the Knife session: `key_press` routes keys to it first (M executes, Esc cancels, display commands and navigation pass, everything else ignored with the existing hint text); `interaction_owner` gets a third value; `Application` pauses hover itself; the plan and its overlay data come from the moved modules. | **Proposed.** One interaction authority owns start and end (I3); no gate writer in Production (H2-R5/H2-R6 untouched); the Lab and the app share one implementation (I1). Cost: a new `Application` section (the Knife precedent) and an H2 amendment that removes the Lab's preview machinery (§10.3). |
+| R-b | `src/main.py` (or `Application` on its behalf) installs the Lab's preview row | **Not proposed:** a second gate writer (H2-R6 review), H2-R5 rewritten, and the preview's own rules (N2, D1) would have to live in two hosts. |
+| R-c | No preview in the app: M executes at once (one Undo step) | **Not proposed:** changes Artist-verdicted behaviour (M / M / Esc, KEEP); would need Manu's verdict first. |
+
+### 10.3 What R-a changes in AD-013 H2 (proposed wording, to be reviewed)
+
+- **H2-R1:** the Lab context holds **one** entry, Shift+B → `SymmetryGateMode`; M becomes the app's GLOBAL `ReSymmetrize`.
+  (Supersedes the "two entries" of the 2026-10-14 addendum for this point.)
+- **D1** (Esc closes the preview at window level) **is retired**: Esc reaches `Application`, which ends its own preview
+  like a Knife session. T-R2f stays (Esc without a preview still disarms W and ends a Knife session).
+- **H2-R2:** the preview leaves the list of the Lab's key-owning interactions; it is an `Application` interaction
+  (`interaction_owner` set), so the existing bullet "while `interaction_owner` is not `None`, the Lab executes none of its
+  commands and writes neither the gate nor the hover flag" covers it. The preview bullets (Lab opens/ends it, N2, "installing
+  another row asserts") are retired with it.
+- **Gate table:** the **preview row is removed**. The BLOCK row's named entries (K-6) gain `ReSymmetrize` next to the symmetry
+  command (it changes mesh positions); MARK and symmetry-off rows unchanged.
+- **H2-R3:** the start-up listing loses the preview row and the D1 line.
+- **`hover_suspended`:** keeps its contract; its only external writer (the Lab's preview) goes away. Whether `Application`
+  uses the same flag internally or the hook is retired is an A3 implementation choice, recorded in the addendum.
+- **Unchanged:** H2-R4, H2-R5, H2-R6, G-2, the Limits of G.
+
+### 10.4 Slice A3 (after review and Manu's decision)
+
+Move (not copy) `lab_topology` and `lab_resymmetrize` into `src/mirai` (the E1 axis dependency comes with A1's moved
+setup); `ReSymmetrize` command, default binding M (`PROVISIONAL`); the preview interaction (R-a) with hover pause, the
+status line carrying the Lab's blue preview text (the app has no HUD), and the preview overlays moved with A2's overlay;
+the Lab drops `_open_preview`/`_execute_preview`/`cancel_preview`, the preview row and D1, and reads the app's preview state
+for its HUD line. Tests: the Lab's Re-Symmetrize tests ported to `tests/` against `Application` (rejections, one Undo step,
+empty plan, selection kept and restored), the preview fuzz (old T-R2g) and hover test (old T-H) as `Application` tests;
+`interaction_owner` covers the preview (old T-R2d extended); Lab: T-R1a/b for one entry, T-FC1 with `ReSymmetrize` named
+under BLOCK; Playground: its own M / Shift+M handling unchanged. Cost check: the topological pairing runs once per M; its time on
+`gollum.obj` (21 875 V) on the reference PC is unmeasured — A3 measures it in the container and names the reference-PC run.
+
+### 10.5 Artist question
+
+None. The behaviour (M / M / Esc, rejections, colours) is the Lab's KEEP; the only visible difference is that the blue
+preview line becomes the status line, because the app has no HUD (`PROVISIONAL`, seen in J).
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Du hast entschieden: Symmetrie kommt in die App (`src/main.py`), danach baut man dort die symmetrische
@@ -480,7 +548,13 @@ umgedreht. Das Lab läuft weiter auf demselben Weg.
 
 **Entschieden (2026-10-14):** alle vier wie empfohlen — Shift+S, Ebene + Problem-Punkte, Verweigern ohne Laufzeit-Gate
 (MARK/BLOCK bleibt im Lab), Mittelpunkte gleiten bei Soft in der Ebene. Nächster Schritt: Slice A1 (Einschalten in der App).
-Die Reihenfolge und „Re-Symmetrize bleibt im Lab“ hast du nicht korrigiert; sie bleiben Annahmen.
+Die Reihenfolge hast du nicht korrigiert; sie bleibt eine Annahme.
+
+**Nachtrag (2026-10-14): Re-Symmetrize kommt mit in die App** (deine Aussage). Im Lab ist die Vorschau (M / M / Esc) über die
+Lab-Sperre gebaut, die die App nicht schreiben darf. Vorschlag (§10): die Vorschau wird ein eigener Modus der App, wie die
+Knife-Session; Taste M wandert vom Lab in die App, das Lab behält nur Shift+B. Weil das entschiedene AD-013-Regeln
+ändert, kommt vor dem Bauen eine unabhängige Review; eine Frage an dich gibt es dazu nicht — das Verhalten bleibt wie im
+Lab (KEEP), nur die blaue Vorschau-Zeile wird zur Statuszeile.
 
 **Nach der unabhängigen Review (2026-10-14, §9):** Frage 4 war unvollständig und ist oben ergänzt. Außerdem: Die
 Lab-Sperre (BLOCK) muss den neuen Symmetrie-Schalter der App durchlassen, sonst ließe sich die Symmetrie im Lab nicht mehr
