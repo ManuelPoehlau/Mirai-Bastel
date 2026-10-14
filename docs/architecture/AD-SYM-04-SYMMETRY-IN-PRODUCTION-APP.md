@@ -44,8 +44,9 @@ into AD-013, Addendum 2026-10-14.
 (M / M / Esc, Lab KEEP since 2026-09-25, confirmed on the app path 2026-10-03) and the topological pairing it rests on become
 part of the app. This is the explicit promotion decision for that research code (M3). The mechanism is proposed in §10.
 
-**Not answered, still an assumption (Manu did not correct it, which is not a confirmation):** §0.2 (order A1/A2 → SS → one
-joint test J; A3 now joins the A-slices, §7).
+**Order (Manu, 2026-10-14, after A2, in the chat: "ich würde symmetrische Soft Selection vor Re-Symmetrize angehen"):**
+symmetric Soft (SS0–SS3) comes **before** A3 (Re-Symmetrize); §7 follows. One joint Artist test J at the end (§0.2) is
+still only an assumption — not corrected, which is not a confirmation.
 
 **Engineering, unchanged by the decision:** the key, the overlay look and every text stay `PROVISIONAL`; no Artist Input
 Truth entry is created (AD-013 A5).
@@ -417,8 +418,9 @@ extrude the cap again; both sides selected → same result; drag inward → pock
 
 ## 7. Combined order (Way B)
 
-A0 → A1 → A2 → A3 (after the §10 review) → SS0 → SS1 → SS2 → SS3 → **J**. Playground tools come after J (M-3). SS0 may run in parallel with A1/A2 (it
-reads `src` only). Stop points on the way: SS1 (Core change, own review), any slice that would need a decided AD changed
+A0 → A1 → A2 → SS0 → SS1 → SS2 → SS3 → A3 (after the §10 review) → **J**. *Reordered 2026-10-14 (Manu, Decision record):
+symmetric Soft before Re-Symmetrize; until then A3 stood before SS0.* Playground tools come after J (M-3). The §10 review
+needs no SS slice and may run in parallel with them (a document review); A3 is built after SS3. SS0 reads `src` only. Stop points on the way: SS1 (Core change, own review), any slice that would need a decided AD changed
 beyond §2.3.
 
 ---
