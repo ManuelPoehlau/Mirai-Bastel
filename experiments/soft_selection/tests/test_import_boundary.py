@@ -11,7 +11,7 @@ import textwrap
 
 from soft_selection._paths import EXPERIMENTS_DIR
 
-MODULES = ("_paths", "influence", "weighted_ops", "probe_cost")
+MODULES = ("_paths", "influence", "weighted_ops", "probe_cost", "probe_symmetric_field")
 
 
 def test_no_playground_or_foreign_experiment_imports():

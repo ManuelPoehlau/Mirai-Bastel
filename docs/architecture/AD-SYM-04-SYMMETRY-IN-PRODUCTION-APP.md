@@ -5,6 +5,7 @@ below). Proposed and revised the same day after the independent review CLAUDE-00
 The AD-013 amendment of §2.3 is written ([AD-013, Addendum 2026-10-14](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)).
 Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a1)).**
 **Slice A2 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a2)).** Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
+**Slice SS0 (headless probe, no `src` change) is done (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss0)):** D-1 holds bit for bit on every exactly symmetric asset case; one open point for SS1's design (R-6, below).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -340,7 +341,7 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 - **D-1 Seam weights.** *Proposal (`PROVISIONAL`):* one field over seeds ∪ mirrored seeds, weight from the nearest seed
   (`min` distance), not a sum; and **one weight per mirror pair**, never two independently computed ones (a pair takes the
   larger of its two field values), so the partner's step is the exact conjugate (INV-6: the other side comes from the
-  intent, not from a second search). *(Reading, to be checked by probe SS0:)* on an exactly symmetric mesh, a vertex is
+  intent, not from a second search). *(Reading; checked by probe SS0, see the [note](#implementation-note-2026-10-14-slice-ss0): holds on every `valid` asset case, fails for geodesic's "own side" half on a hand-built `valid` mesh with a straddling edge, the pair half holds there too:)* on an exactly symmetric mesh, a vertex is
   never nearer to a seed on the other side than to that seed's mirror on its own side (Euclidean: same-side points are
   closer to the mirrored point; geodesic: reflect the part of a path beyond the plane, which is never longer). So the field
   equals each side's own field, mirrored, both members of a pair already agree, and a seam vertex gets the same weight from
@@ -381,7 +382,7 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 
 | # | Slice | Content | Gate / tests |
 |---|---|---|---|
-| SS0 | Probe (no `src` change) | Headless probe in `experiments/` reading `src` only: D-1 field symmetric bit-for-bit on `subd_cube`, head, body (both metrics, X/Y/Z); how often D-3 occurs per radius step; correspondence + influence cost per gesture start (container). | Report only; stops if D-1's claim fails. |
+| SS0 | Probe (no `src` change) — **done 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss0)) | Headless probe in `experiments/` reading `src` only: D-1 field symmetric bit-for-bit on `subd_cube`, head, body (both metrics, X/Y/Z); how often D-3 occurs per radius step; correspondence + influence cost per gesture start (container). | Report only; stops if D-1's claim fails. |
 | SS1 | **The one Core change** (M-5) | Weighting into the Core loop per §4 (design in its own AD/addendum + independent review **before code**, R-5); `src/mirai/soft_selection/ops.py` migrated in the same commit (R-2). Non-symmetric Soft must stay bitwise identical. | Core contract tests; radius-0 identity; the AD-020 suites green; `tests` + Lab tree once. |
 | SS2 | Symmetric influence and gesture | D-1 field, per-side step (plain / conjugate / projected), D-2 refusals, D-3 per Manu's answer; `Application` lifts the Soft + symmetry refusal (I-8) only for supported cases; Lab: no row change (soft commands are already `NON_OPERATION`). | One Undo step per gesture; exact mirror (completeness unchanged); cancel exact; MARK and BLOCK alike in the Lab. |
 | SS3 | Bands on both sides + probe | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC. |
@@ -635,6 +636,96 @@ light-blue rectangle through the middle of the head, the middle vertices green; 
 plane, the green point follows. SPACE → `man_with_shoes_basemesh`, Shift+S → 54 magenta points. Shift+S until
 `Symmetrie aus` → nothing drawn.
 
+## Implementation note (2026-10-14, slice SS0)
+
+Production order (Manu, 2026-10-14), pure measurement: **no change under `src/`**, `tests/`, Lab or Playground (AGENTS §8a: only
+`experiments/soft_selection/tests` run, 102 passed). Built on the branch that carries A1/A2. No Haltepunkt was reached; the
+one open point below goes into SS1's design note, which is the next Haltepunkt anyway.
+
+**What was built.** `experiments/soft_selection/probe_symmetric_field.py` (file name `PROVISIONAL`; plain ASCII output like the
+other probes; reads `mirai.soft_selection.influence`, `mirai.symmetry`, `mirai.symmetry_axis` only) and
+`tests/test_probe_symmetric_field.py` (smoke on `subd_cube` with three radii, the R-6 counterexample, exactness of the
+comparison). `test_import_boundary` lists the new module. Every comparison is exact (`==`), no tolerance anywhere; a difference
+is counted and sized (absolute, ulp when both are non-zero). Setup: for each asset and axis X/Y/Z, the union field
+`compute_influence(seeds ∪ mirrored seeds)` against its pairs, against `compute_influence(seeds)` / `(mirrored seeds)` on the
+respective side, and against the seam seen from both sides, on weights (curve `smooth`) and on the raw distances; both
+metrics; the app's 12 radius steps (`RADIUS_STEPS_PERCENT`); four seed sets per case, all paired and off the plane on the
+positive side: `near` (smallest distance to the plane), `mid` (median), `far`, `ring` (mid + its paired same-side one-ring).
+That is 48 cases per asset/axis/metric. One command: `python experiments/soft_selection/probe_symmetric_field.py`
+(≈ 1 s, `--skip-cost`, `--assets`, `--radii` narrow it).
+
+**1. D-1 — result.**
+
+| Asset, axis | State | Pairs | Result (both metrics, 48 cases each) |
+|---|---|---|---|
+| `subd_cube` X, Z | valid | 9 | pair 0 of 432 differ, own side 0 of 1632, seam 0 of 768, union never nearer than own side: **holds, bit for bit** (weights and distances, geodesic too: no ulp difference) |
+| `head_basemesh` X | valid | 145 | pair 0 of 6960, own side 0 of 17376, seam 0 of 3456: **holds, bit for bit** |
+| `man_with_shoes_basemesh` X | partial (54 unpaired) | 415 | euclidean: pairs 0 of 19920 differ. **geodesic: 2250 of 19920 pair values differ (11 %), largest weight difference 6.5e-06 (distance 1.9e-06)**; the union is nearer than the own side at 164 vertices; 164 of 4224 seam comparisons differ |
+| every Y and Z case, all three assets | partial | **0** | no vertex has a partner (the assets do not straddle those planes about the origin); symmetric Soft would refuse every seed (D-2), nothing to compare |
+
+So the claim "the union field is the own field of each side, mirrored; both members of a pair and a seam vertex from both
+sides agree" is true wherever the mesh is exactly symmetric **and** can be tested here: three of the nine asset/axis
+combinations. `man_with_shoes` X is `partial`, as the task said; there the pairs agree for Euclidean and **do not** for
+geodesic (*Reading:* the 54 unpaired vertices make the edge graph non-mirror-symmetric, 216 edges touch one; the Dijkstra field
+inherits that). That is the case D-2's one weight per pair covers; the size (≤ 7e-06 in weight) is what that rule would level.
+Inside the falloff of `man_with_shoes` X the seed sets reached 918 (Euclidean) / 656 (geodesic) unpaired vertex visits summed
+over the 48 cases. Geodesic on the valid meshes deviates by **0 ulp**, so there is nothing to report about summation order.
+The mirror of every testable edge is an edge on all assets (0 asymmetric edges); edges with an unpaired end point are not
+testable (`man_with_shoes` X 216, all Y/Z cases).
+
+**2. R-6 — the precondition.** *On the assets:* edges that cross the plane with neither end on it exist only where there is
+no pair at all: `head_basemesh` Z 54, `man_with_shoes_basemesh` Z 146; every `valid` case (`subd_cube` X/Z, `head` X) has 0, as
+does `man_with_shoes` X. *In general:* E3 does **not** guarantee a seam loop (a mesh with no vertex on the plane has an empty
+seam and is still `valid` if its vertices pair). The probe builds the smallest such mesh (`straddling_quad`: one quad
+`s(+0.5,0,0) → v'(−0.1,1,0) → v(+0.1,1,0) → a(−0.5,0,0)`, X axis, state `valid`, 4 straddling edges, mirror-symmetric edge set).
+Seed `s`, radius 2: **pairs agree for both metrics (also on raw distances); Euclidean's own side holds; geodesic's own-side
+half fails** (vertex `v`: the union gives 1.166 through the mirrored seed `a`, the own side 1.366; 2 of 4 vertices).
+*Reading, and the point that needs a decision:* D-1 as written states the "equals each side's own field" half **with** the
+R-6 precondition, so I did not treat this as a stop (the stop condition was "claim fails on a valid mesh"; on every asset that
+meets the precondition it holds, and the claim that the implementation needs — one weight per pair, partner step = exact
+conjugate — holds on the counterexample too, because the union field is invariant under the mirror automorphism of a
+symmetric edge graph). If you read the task's stop rule more strictly (any `valid` mesh), this *is* the smallest
+counterexample (4 vertices, 1 face); say so and SS1's design gets it as a requirement. **For the SS1/SS2 design note:**
+formulate D-1 at pair level (what is true on every mirror-symmetric edge graph) and drop "equals the own side's field" as a
+promise, or keep it and add a visible check for straddling edges. The probe's tests pin the counterexample.
+
+**3. D-3 — how often the falloff reaches the seam (basis for P-a in SS1).** Seam vertices with `w > 0` in the union field.
+Number of the (axis, metric, seed set) rows that reach at least one seam vertex, per radius step (valid and partial cases with
+pairs; `subd_cube` 16 rows = X and Z, head and body 8 rows = X):
+
+| Radius step % | 2 | 5 | 10 | 15 | 20 | 30 | 40 | 50 | 75 | 100 | 150 | 200 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `subd_cube` (of 16) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12 | 12 | 16 | 16 |
+| `head_basemesh` (of 8) | 0 | 2 | 2 | 4 | 4 | 6 | 6 | 6 | 6 | 8 | 8 | 8 |
+| `man_with_shoes_basemesh` (of 8) | 2 | 2 | 2 | 2 | 2 | 2 | 3 | 5 | 7 | 8 | 8 | 8 |
+
+So on the head the falloff reaches the middle already at the app's **default step 15 %** in half of the rows (a seed close to
+the plane: 5 of its 36 seam vertices; a mid-distance seed from 30 %), and on the body a seed near the plane reaches it from
+2 %. The seam is reached at ordinary working radii, not only at the extremes: D-3 and P-a are not an edge case. Overall 167 of
+384 cases touch the seam. Full per-step counts: the probe's D-3 table.
+
+**4. Cost (container, labelled as such — REFERENCE_HARDWARE §4; the reference PC decides).** Gesture start, X axis, `ring`
+seeds (4–5 + as many mirrored), median of 5; range over three runs; ms:
+
+| | `vertex_correspondence` | `mirrored_selection` | influence today | influence symmetric | start today | start symmetric |
+|---|---|---|---|---|---|---|
+| head (326 V) | 0.8–1.4 | 0.002 | 0.05–0.33 | 0.08–0.33 | 0.05–0.33 | **0.9–1.7** |
+| body (928 V) | 2.2–2.3 | 0.002 | 0.13–0.55 | 0.22–0.68 | 0.13–0.55 | **2.4–3.0** |
+
+The influence work roughly doubles with the moved set (e.g. body, 15 %: 34 → 68 vertices Euclidean, 24 → 48 geodesic), but
+**the pairing dominates**: it is O(V) over all vertices and independent of the radius, 2–30× the influence itself in these rows. It would
+be paid at every gesture start and every preview refresh (D-4). Against the 8 ms bar this is ≈ 0.4 of it on the body in the
+container; the reference PC (Core 2 Quad, REFERENCE_HARDWARE) is slower, so the 3 ms may not stay small there. *(Reading, for the
+design note, not decided:)* the pairing does not depend on the seeds or the radius, only on the mesh and the definition, so
+a per-gesture or per-mesh-version reuse would remove it from the preview refresh; AR-1/INV-3 say "no cache", which is
+the design question. **Reference PC (for Manu):** from the repo root, one command, no window, ≈ 1 s plus the cost table:
+`python experiments/soft_selection/probe_symmetric_field.py --assets head_basemesh man_with_shoes_basemesh --axes X --radii 15`
+and paste the whole output (the section `== Cost per gesture start ==` is the number, the rest repeats the container check on
+your Python).
+
+**Not done here (as ordered):** SS1 (the Core change; own design note + independent review before code), any change under
+`src/`, bands (SS3), Re-Symmetrize (A3).
+
 ---
 
 ---
@@ -683,6 +774,19 @@ nutzt die der App; Partner und Re-Symmetrize-Vorschau bleiben im Lab. Einzige si
 Vorschau liegen deren Linien wieder über den Symmetrie-Punkten (wie im alten Lab; du hattest beide Reihenfolgen als egal
 bewertet). Kosten: im Container je Mausbewegung unverändert weit unter 8 ms; die Messung auf deinem PC ist vorbereitet
 (Befehl in der Implementierungsnotiz A2).
+
+**SS0 gemessen (2026-10-14):** Messprobe ohne Änderung in `src`. Auf allen Meshes, die wirklich exakt symmetrisch sind (Würfel X/Z,
+Kopf X), ist das Soft-Feld über Auswahl + gespiegelte Auswahl **bitgenau** gespiegelt, euclidean wie geodesic; Partner und
+Mittelpunkte bekommen dasselbe Gewicht. Der Mann (X) ist nur `partial`: euclidean gleich, geodesic weichen 11 % der Paare ab
+(bis 7e-06 im Gewicht) — das gleicht die Regel „ein Gewicht pro Paar“ aus. In Y und Z hat keines der drei Assets ein einziges Paar,
+dort lehnt symmetrisches Soft ohnehin ab. **Offener Punkt für die SS1-Design-Notiz:** ein exakt symmetrisches Mesh, bei dem
+eine Kante die Ebene kreuzt, ohne dass ein Endpunkt auf ihr liegt (kleinstes Beispiel: ein Quad mit 4 Vertices, im Probe-Test
+festgehalten), verletzt bei geodesic nur die Teilbehauptung „gleich dem eigenen Feld jeder Seite“; dass Partner gleich viel
+bekommen, gilt auch dort. Auf keinem Asset kommt das vor. Ich habe das nicht als Stopp gewertet, weil D-1 diese Vorbedingung
+selbst nennt (R-6) — wenn du es strenger siehst, sag es, dann wird es eine Anforderung an SS1. Der Einfluss erreicht die Mitte
+schon bei üblichen Radien (Kopf: bei der Standardstufe 15 % in der Hälfte der Fälle). Kosten im Container: Paarbildung 1–2 ms
+am Kopf, 2–3 ms am Mann pro Gestenstart und deutlich größer als die Einflussberechnung selbst; die Messung auf deinem PC ist
+vorbereitet (Befehl in der Notiz zu SS0).
 
 **Nachtrag (2026-10-14): Re-Symmetrize kommt mit in die App** (deine Aussage). Im Lab ist die Vorschau (M / M / Esc) über die
 Lab-Sperre gebaut, die die App nicht schreiben darf. Vorschlag (§10): die Vorschau wird ein eigener Modus der App, wie die

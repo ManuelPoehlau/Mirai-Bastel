@@ -23,6 +23,7 @@ no defaults chosen, no window/viewport.**
 | `influence.py` | `compute_influence(mesh, seeds, radius, metric, curve) -> {VertexId: w}`; metrics `euclidean` / `geodesic` (Dijkstra over edges, pruned at `r`), curves `smooth` / `linear`; `seeds_from_selection()` (= `resolve_selection_vertices`, V/E/F), `primary_pivot()` |
 | `weighted_ops.py` | `SoftMoveOperation`, `SoftRotateOperation`, `SoftScaleOperation` — subclasses of the Core ops, taking `params["influence"]` (+ `params["pivot"]`, required for Rotate/Scale; `params["scale_formula"]` = `"linear"` / `"power"`); `soft_context()` builds the context from a `Selection` |
 | `probe_cost.py` | CLI cost probe: two assets × radii 5/15/30 % of the bounding radius × both metrics |
+| `probe_symmetric_field.py` | CLI probe SS0 for symmetric Soft Selection (AD-SYM-04 §5.2; name `PROVISIONAL`): exact (`==`) check that the field over seeds + mirrored seeds is mirrored bit for bit (pairs, own side, seam), straddling edges (R-6), how often the falloff reaches the seam per radius step (D-3), and the per-gesture-start cost symmetric vs today. Reads `src/` only |
 | `_paths.py` | sys.path bootstrap (pattern copied from `symmetry_lab/_paths.py`) |
 | `tests/` | experiment suite |
 
@@ -40,10 +41,22 @@ python experiments/soft_selection/probe_cost.py
 python experiments/soft_selection/probe_cost.py --steps 200
 python experiments/soft_selection/probe_cost.py --assets head_basemesh
 python experiments/soft_selection/probe_cost.py --help
+python experiments/soft_selection/probe_symmetric_field.py
+python experiments/soft_selection/probe_symmetric_field.py --assets subd_cube --radii 5 15 50 --skip-cost
 ```
 
 The probe needs no window and no `pyglet`. It prints machine information and one table per
 asset (times in milliseconds, CPU side only — no viewport sync, no drawing).
+
+### Symmetric field probe (AD-SYM-04 SS0, 2026-10-14)
+
+`probe_symmetric_field.py` measures, it builds nothing (no `src` change, no tolerance, exit code 1 plus a `STOP` block if D-1
+fails on a `valid` mesh whose precondition holds). Four sections: geometry per asset/axis (state, pairs, straddling edges,
+edge symmetry), D-1 (pair / own side / seam, weights and raw distances, counts and sizes of every difference), a hand-built
+`valid` mesh with an edge across the plane (R-6), D-3 (seam vertices reached per radius step), then the cost per gesture start
+(container numbers are labelled as such). Results: AD-SYM-04, "Implementation note (2026-10-14, slice SS0)".
+Reference PC: `python experiments/soft_selection/probe_symmetric_field.py --assets head_basemesh man_with_shoes_basemesh --axes X --radii 15`,
+paste the output.
 
 ## Praktischer Test für Manu (ca. 5 Minuten)
 
