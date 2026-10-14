@@ -1,7 +1,7 @@
 # Mirai-Bastel — Architecture & Development Roadmap
 
 **Status:** Roadmap V1.1 — updated to reflect actual repository state and to add the Integration Track (Stage B)
-**Date:** 2026-10-12 (V1.1 written 2026-09-26; the summary sections §2, "Current development direction" and §14 were re-reconciled against the intake log on 2026-10-12; the intake log in §7 is the authoritative per-slice record)
+**Date:** 2026-10-12 (V1.1 written 2026-09-26; the summary sections §2, "Current development direction" and §14 were re-reconciled against the intake log on 2026-10-12; the intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md)) is the authoritative per-slice record)
 **Branch:** `main`
 
 This document records the architecture and dependency roadmap developed in Phases A–F. It is the canonical roadmap for the project. It is intentionally a dependency- and work-package-oriented plan, not a feature checklist.
@@ -51,9 +51,9 @@ This roadmap is a current architectural plan, not a promise that every future su
 - **Stage A Production Entry Point** (`src/main.py`): real window, camera navigation, real Core→Viewport→GLRenderStore draw path — read-only *at that date* (2026-09-25); mutation arrived with WP-06 Stage B (below)
 - AD-017 Knife/Cut system, promoted Core exception `split_edge(edge_id, t)` (2026-09-22)
 - WP-STAB stabilization pass on Playground selection/overlay/history edge cases (2026-09-23)
-- WP-SYM-01 / WP-SYM-LAB-01 Symmetry Lab, Slices 1–7 (definition, correspondence, symmetric Move, mirrored Knife) — Core exceptions AD-SYM-01/02. **Since superseded in structure:** WP-SYM-LAB-03 (closed 2026-10-03) rebuilt the Lab on the Production app path and deleted the old renderer/mirrored Knife; AD-SYM-03 slices 3a–7 (symmetric Connect, Delete/Dissolve, Split, Knife, Extrude) followed in the Lab (2026-10-08/09). Symmetry is **not** in `src/main.py` (decision 2026-10-02); status per slice in the intake log and `docs/ATELIER.md`
+- WP-SYM-01 / WP-SYM-LAB-01 Symmetry Lab, Slices 1–7 (definition, correspondence, symmetric Move, mirrored Knife) — Core exceptions AD-SYM-01/02. **Since superseded in structure:** WP-SYM-LAB-03 (closed 2026-10-03) rebuilt the Lab on the Production app path and deleted the old renderer/mirrored Knife; AD-SYM-03 slices 3a–7 (symmetric Connect, Delete/Dissolve, Split, Knife, Extrude) followed in the Lab (2026-10-08/09). Symmetry is **not** in `src/main.py` (decision 2026-10-02); status per slice in the intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md)) and `docs/ATELIER.md`
 - WP-SHADE-LAB-01 Viewport Shading Lab, Slice 1 (Key+Fill worklight, 2026-09-26) — no later slice committed as of 2026-09-29
-- **WP-06 Stage B** in `src/main.py`: slices B1–B8 (head scene, vertex selection, Move/Rotate/Scale on W/E/R, display modes, component modes, contextual `C`, Knife, pick cache + occlusion), then B9 Face Extrude, WP-KNIFE-01 (One Knife S1–S4, UX2), WP Delete/Dissolve, WP-SOFT-01 Soft Selection (capability promoted 2026-10-11, keys/look `PROVISIONAL`) and a temporary scene loader (`PROVISIONAL`, 2026-10-11). Verdict state per slice is **only** in the WP-06 intake log (e.g. B6 selection-restore, B8, B9, WP-KNIFE-01 S2–S4/UX2 KEEP; Delete/Dissolve and the scene loader without an Artist verdict; B5a.1 open)
+- **WP-06 Stage B** in `src/main.py`: slices B1–B8 (head scene, vertex selection, Move/Rotate/Scale on W/E/R, display modes, component modes, contextual `C`, Knife, pick cache + occlusion), then B9 Face Extrude, WP-KNIFE-01 (One Knife S1–S4, UX2), WP Delete/Dissolve, WP-SOFT-01 Soft Selection (capability promoted 2026-10-11, keys/look `PROVISIONAL`) and a temporary scene loader (`PROVISIONAL`, 2026-10-11). Verdict state per slice is **only** in the WP-06 intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md)) (e.g. B6 selection-restore, B8, B9, WP-KNIFE-01 S2–S4/UX2 KEEP; Delete/Dissolve and the scene loader without an Artist verdict; B5a.1 open)
 - **Knife Face Cut Lab** (`playground/experiments/knife_face/`) — Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 (cross-face) KEEP. **Lab verdict only, not a promotion**; Face Holes set aside by the Artist (bridges for now). Authoritative record: `playground/experiments/knife_face/decision.md`
 - Concave n-gon triangulation fix (ear clipping) in `src/viewport/derived.py` and its consumers (2026-09-29, found through the Face Holes discovery)
 
@@ -63,7 +63,7 @@ This roadmap is a current architectural plan, not a promise that every future su
 
 The project has moved past the editor-boundary foundation: Stage A gave it a real production window (read-only at first; editing followed with Stage B). Research tracks run in parallel in the Playground (Symmetry, Shading, Knife Face Cut, and the older Topology/Tweak families), each producing candidates that are individually decided (KEEP/ITERATE/REJECT) but that had **no single place where decided candidates are assembled into the running app**.
 
-That gap is why the **Integration Track (Stage B, WP-06 below)** exists, and it is now in progress: it pulls already-decided Playground/Lab results into `src/main.py` incrementally — one small, real capability at a time — rather than waiting for every open research question to close first. Slices B1–B9 and the follow-on packages listed under "Completed / established" are in `src/main.py` (see the WP-06 intake log for the verdict state of each). See §7a.
+That gap is why the **Integration Track (Stage B, WP-06 below)** exists, and it is now in progress: it pulls already-decided Playground/Lab results into `src/main.py` incrementally — one small, real capability at a time — rather than waiting for every open research question to close first. Slices B1–B9 and the follow-on packages listed under "Completed / established" are in `src/main.py` (see the WP-06 intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md)) for the verdict state of each). See §7a.
 
 **WP-01A (Basic Viewport & Input Foundation)** ist im Viewport-V1-Experiment umgesetzt und praktisch validiert: konfigurierbare Keyboard-/Mouse-Bindings über eine Mapping-Schicht (Input → Context → Binding → Command), Display-Modi (Shaded / Flat Shaded / Wireframe + Wireframe Overlay), Pan sowie Nachführung der bestehenden Selection- und Topology-Interaction. `src/core/` blieb dabei unverändert (Core-Freeze). Die konkrete Produktionsstruktur unter `src/` wird als explizite Architekturentscheidung aus diesem Stand abgeleitet (siehe §5 WP-01 und SOURCE_ARCHITECTURE.md).
 
@@ -825,7 +825,7 @@ This policy is intentionally based on the Connect Edges experience: the experime
 - AD-018 — Production Draw Binding (Option B, `GLRenderStore`)
 - **Stage A — Production Entry Point** (`src/main.py`): window, camera, real rendering — **DONE 2026-09-25**; read-only by scope at that time (editing is WP-06 Stage B)
 - AD-017 — Knife/Cut system (Core exception: `split_edge(t)`)
-- **WP-06 Stage B** in `src/main.py` — B1–B9, One Knife (WP-KNIFE-01), Delete/Dissolve, Soft Selection (WP-SOFT-01) and the temporary scene loader; see the intake log for each item's verdict state
+- **WP-06 Stage B** in `src/main.py` — B1–B9, One Knife (WP-KNIFE-01), Delete/Dissolve, Soft Selection (WP-SOFT-01) and the temporary scene loader; see the intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md)) for each item's verdict state
 - **Knife Face Cut Lab** — Lab verdicts 2026-09-29 (B REJECT, D KEEP → superseded, Q5 KEEP); Lab only, not promoted
 
 ## Artist Playground (active research initiative)
@@ -842,16 +842,16 @@ Work packages: WP-AP-01 (Foundation) → WP-AP-02 (Experiment Host) → WP-AP-03
 
 - **Symmetry Lab** (WP-SYM-LAB-01, rebuilt on the app path in WP-SYM-LAB-03, closed 2026-10-03) — AD-SYM-03 slices 3a–7 built in the Lab (symmetric Move/Rotate/Scale, Connect, Delete/Dissolve, Split, Knife, Extrude); not promoted to `src/main.py`; open Artist items in `docs/ATELIER.md`
 - **Viewport Shading Lab** (WP-SHADE-LAB-01) — Slice 1 (Key+Fill worklight) committed 2026-09-26; background contrast presets still open; no later slice committed
-- **Knife Face Cut Lab** (`knife_face` family, variants B / D / Q5) — Q5 = Lab KEEP (2026-09-29); integrity fix for crossing cuts and a commit-time safety net done; the cross-face Knife has since been built in Production as WP-KNIFE-01 (S1–S4, UX2; intake log); remaining Lab-side items (UX2-k earlier interior point, see `decision.md`). Face Holes discovery is archived without a decision (set aside). Record: `playground/experiments/knife_face/decision.md`, `docs/research/topology/`
+- **Knife Face Cut Lab** (`knife_face` family, variants B / D / Q5) — Q5 = Lab KEEP (2026-09-29); integrity fix for crossing cuts and a commit-time safety net done; the cross-face Knife has since been built in Production as WP-KNIFE-01 (S1–S4, UX2; intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md))); remaining Lab-side items (UX2-k earlier interior point, see `decision.md`). Face Holes discovery is archived without a decision (set aside). Record: `playground/experiments/knife_face/decision.md`, `docs/research/topology/`
 - **Tweak Lab** — existing research family, Host integration still evolving
 - WP-STAB — ongoing stabilization fixes on Playground selection/overlay/history behavior (not a Lab, but recurring maintenance across all of them)
 
-Candidates proven in the Playground feed back into the production roadmap through **WP-06** (see the intake log in §7).
+Candidates proven in the Playground feed back into the production roadmap through **WP-06** (see the intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md))).
 
 ## Next production-oriented work
 
 1. **WP-06 — Stage B: Incremental Integration** *(top priority, in progress — B1–B9 and the follow-on packages done as listed above)*
-   - Capabilities already wired into `src/main.py`: see the intake log in §7 (selection, Move/Rotate/Scale, display and component modes, contextual `C`, One Knife, pick cache + occlusion, Face Extrude, Delete/Dissolve, Soft Selection, scene loader)
+   - Capabilities already wired into `src/main.py`: see the intake log ([WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md)) (selection, Move/Rotate/Scale, display and component modes, contextual `C`, One Knife, pick cache + occlusion, Face Extrude, Delete/Dissolve, Soft Selection, scene loader)
    - Open items (the Artist sets the priority): B5a.1 Per-Polygon-Flat; Delete/Dissolve practice check; symmetric Soft Selection incl. Core seam (AD-020); Viewport performance on large meshes (WP-VIEW-PERF-01, awaiting Manu's Intent answer); Symmetry promotion check (after the Lab track). The One Knife (formerly "candidate: Knife Face Cut Q5") is built — see WP-KNIFE-01
    - Purpose unchanged: pull in only what already has an Artist verdict, one slice at a time; see the WP-06 entry in §7 for scope/non-scope
 
