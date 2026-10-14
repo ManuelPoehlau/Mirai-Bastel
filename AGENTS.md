@@ -156,6 +156,8 @@ An assignment may arrive as Manu's verdicts and notes in plain words, without a 
 
 For large Production packages and Architecture Gates, establish before starting: the relevant decision documents, scope and not-in-scope, acceptance criteria, expected tests and open questions.
 
+At the end of every finished slice, say in one or two lines whether the next step is better done in the same session or in a fresh one (and why), and name the suggested Claude model and reasoning effort for it (Manu, 2026-10-14). An independent review always goes to a fresh session (Erzeuger ≠ Bewerter, Development System §6).
+
 ## 8a. Test strategy (token- and runtime-efficient)
 
 **Principle:** run the smallest test set that gives meaningful evidence for the current change; widen only when a shared dependency, an integration boundary or an observed failure justifies it. The agent selects the suites itself — the Artist is not asked which tests to run.
