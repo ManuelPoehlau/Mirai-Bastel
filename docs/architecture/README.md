@@ -43,7 +43,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
 | [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife/Extrude without `SymmetricX` copies) | DECIDED (2026-10-08) |
 | [AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) | Symmetry in `src/main.py` (entry, display, AD-013 H2 text), Core basis and slices for symmetric Soft Selection | DECIDED (2026-10-14); slices A1, A2 built (2026-10-14) |
-| [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) | Weighted transforms in the Core: the one Core change of symmetric Soft Selection (slice SS1), P-a seam category, R-6 at pair level | PROPOSED (2026-10-14); reviewed (ACCEPT WITH CHANGES, worked in); awaiting Manu's go |
+| [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) | Weighted transforms in the Core: the one Core change of symmetric Soft Selection (slice SS1), P-a seam category, R-6 at pair level | DECIDED (2026-10-14): reviewed, go for SS1 |
 | [ADR-001](../ADR-001-core-v1-reassessment.md) | Core V1 reassessment | Accepted |
 
 Production entry point and integration: [Stage A](PRODUCTION_ENTRY_POINT_STAGE_A.md), [WP-06 Stage B kickoff](WP-06_STAGE_B_KICKOFF.md).

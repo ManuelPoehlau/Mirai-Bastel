@@ -1,10 +1,10 @@
 # AD-SYM-05 — Weighted transforms in the Core (symmetric Soft Selection, slice SS1)
 
-**Status:** **PROPOSED, revised after the independent review** (2026-10-14). Design note before code for the one Core
+**Status:** **DECIDED — go for SS1 (Manu, 2026-10-14, in the chat: "Go für SS1")**, after the independent review (2026-10-14). Design note before code for the one Core
 change of symmetric Soft ([AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) §5.2 SS1, review item R-5;
 [CORE_V1_FREEZE](CORE_V1_FREEZE.md) §7). Review CLAUDE-001: **ACCEPT WITH CHANGES**, no blocker; every finding is answered
-in §10 and worked into the text. A Core change is a Haltepunkt (Development System §5): **next is Manu's go for the code.**
-Nothing here is built.
+in §10 and worked into the text. A Core change is a Haltepunkt (Development System §5); Manu's go is given, so **SS1 is built per this note** (§4–§6).
+Where a section still says "proposed" or "Manu's go", this status wins.
 **Mode (M5):** Type C (Architecture Gate). Documents only: no change under `src/`, `tests/`, `experiments/` or `playground/`.
 **Read at:** `c2bc3e3` (branch `claude/festive-allen-pyajvv`, SS0 committed). Line numbers refer to that commit.
 **Basis (binding, only linked):** AD-SYM-04 (Decision record: Q-4 = **P-a**; §4 C-1…C-7 and R-1…R-5; §5.1 D-1…D-5; the
