@@ -433,7 +433,8 @@ deviations D1–D3; ACCEPT WITH CHANGES, no blockers; N1–N3 answered by adopti
 changes). Implementation follows the plan's Slice 1 and Slice 3.
 **Basis:** Artist decision (Manu, 2026-10-03): the Symmetry Lab must use the Production tools
 instead of its own renderer and input layer; Symmetry itself is not promoted (`src/main.py`
-gets no symmetry UX). Plan: `WP-SYM-LAB-03_REBASE_PLAN.md`, hook H2.
+gets no symmetry UX). *Note 2026-10-14: superseded for `src/main.py` by Manu's decision to bring Symmetry into the app
+(AD-SYM-04); see [Addendum 2026-10-14](#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified).* Plan: `WP-SYM-LAB-03_REBASE_PLAN.md`, hook H2.
 
 ### Problem
 
@@ -604,7 +605,9 @@ longer a Limit; everything else in this section stands unchanged.
   `pointer.py:94-95`), so pointer overrides are impossible under H2 (the current Lab's `C`,
   Alt+LMB, Shift+LMB, RMB and MMB entries are dropped, F6). At start-up the Lab asserts that each
   of the three inputs resolves to `None` in GLOBAL and in KNIFE (user and default layers) and
-  fails loudly otherwise (F15, D2). The three entries are printed at start-up. The only app
+  fails loudly otherwise (F15, D2). The three entries are printed at start-up.
+  *Amended 2026-10-14 ([Addendum 2026-10-14](#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)): two entries, M and Shift+B; Shift+S is the app's GLOBAL symmetry
+  command.* The only app
   command the Lab interprets is `Cancel`, and only while the preview is open (D1).
 - **H2-R2 — start and end stay with their owner (I3, AD-015 runtime-state rule).**
   *Key-owning interactions* are: `Application`'s armed or running transform and its Knife
@@ -670,11 +673,13 @@ longer a Limit; everything else in this section stands unchanged.
 - **H2-R5 — Production is unchanged.** With the defaults (`command_gate is None`,
   `hover_suspended is False`) behaviour is identical; `interaction_owner`, `set_status` and
   `apply_mesh_change` are additive. `src/main.py` writes no gate data and calls neither
-  `apply_mesh_change` nor `set_status` (guard test).
+  `apply_mesh_change` nor `set_status` (guard test). *Note 2026-10-14: unchanged; the second half of the G-2
+  consequence for this rule is amended, [Addendum 2026-10-14](#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified).*
 - **H2-R6 — one writer (governance, not a test, F14).** The gate has one writer: the Symmetry
   Lab's window wiring. There is no list, stack or registry of gates. A second user (another Lab,
   the Playground) needs its own review of this addendum; it does not get to extend the gate
   silently. Code review enforces this; a test could only assert a type, which proves nothing.
+  *Clarified 2026-10-14 ([Addendum 2026-10-14](#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)): setting a symmetry definition is not writing the gate.*
 
 ### Required tests
 
@@ -1026,6 +1031,7 @@ as the docstring of `e5_warning_text` says today.
   a symmetry definition is set (canonicalisation, coordinators, runtime refusals). That is Production
   code, but no Production host sets a definition today: `src/main.py` contains no symmetry code. A guard
   test keeps it so (T-G3b), and T-G3a pins the G-3 boundary from the Production side.
+  *Amended 2026-10-14 ([Addendum 2026-10-14](#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)): the Production host now sets definitions; T-G3b is narrowed.*
 - **H2-R6 — still one writer.** `refused_contexts` is a field of the one `command_gate` value. The
   Symmetry Lab's window wiring stays its only writer (`SymmetryAppLab._install_row`,
   `lab_app.py:340`). The amendment adds **no second writer and no registry**: the D-b declaration
@@ -1275,3 +1281,32 @@ of the G-2 table gains `SoftCurveShapeRounder`, `SoftCurveShapeSharper` (Ctrl+wh
 `SoftBandsToggle` (Alt+O, gate path `key_press`). They are state for the next gesture (the custom-curve shape) or display
 only (the bands): no interaction, no mesh, selection or history change. No Limit of G is lifted and no writer added, so no
 second H2 review. Test: `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.
+
+## Addendum (2026-10-14, AD-SYM-04 — Symmetry in the Production app: H2-R5 and H2-R1 amended, H2-R6 clarified)
+
+**Status:** **DECIDED ✓** (Manu, 2026-10-14). Basis: [AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) (M-1: Symmetry must
+be available in `src/main.py`; Q-1 = E-1 Shift+S, Q-2 = S-2 plane + problem markers, Q-3 = F-a no runtime gate, answered
+with commit `fa6e017`). The wording below is AD-SYM-04 §2.3 as revised after its independent review
+[CLAUDE-001](../archive/symmetry_lab/reviews/AD-SYM-04_REVIEW_CLAUDE_001.md) (R-2, R-3). No new mechanism, no second gate
+writer. Code follows in AD-SYM-04 slices A1/A2; until then nothing in `src` or the Lab has changed.
+
+**Why an amendment at all.** H2-R6 concerns `command_gate` (with `hover_suspended`, the gate data of H2-R5). A symmetry
+definition is mesh state (AD-SYM-01), so a Production host that sets definitions but writes no gate is H2-R5's default case
+and no second writer (AD-SYM-04 G-1…G-3). What the decision does reverse is the premise of the G-2 consequence for H2-R5
+("no Production host sets a definition today") and, with Shift+S as the app key, H2-R1's entry set.
+
+| Rule | Change |
+|---|---|
+| **H2-R5, first half** | **Unchanged.** `src/main.py` writes no gate data and calls neither `apply_mesh_change` nor `set_status` nor `add_overlay` (T-R5b unchanged). The symmetry command lives in `Application`; the overlay reaches the app as a GL type handed to `init_scene`, like `soft_overlay_type`. |
+| **H2-R5, G-2 half** | The sentence "but no Production host sets a definition today: `src/main.py` contains no symmetry code. A guard test keeps it so (T-G3b)" now reads: "From 2026-10-14 the Production host sets definitions through `Application`'s own symmetry command, recorded in history like any mesh change. `src/main.py` itself writes no gate data; T-G3b is narrowed to: `src/main.py` never assigns `symmetry_definition` and calls no correspondence or coordination function; importing one GL overlay type for `GL_TYPES` is allowed. With `command_gate is None` an undeclared operation runs as without a definition, and T-G3a keeps pinning that boundary." Renaming a module to avoid the guard's word match is not a way to satisfy it. |
+| **H2-R6** | **Unchanged**, one clarifying sentence: setting a symmetry definition is not writing the gate. The Symmetry Lab's window wiring stays the only writer of `command_gate`/`hover_suspended`. |
+| **H2-R1** | The Lab context holds **exactly two entries, both keys: M → `ReSymmetrize`, Shift+B → `SymmetryGateMode`**. Shift+S is the app's GLOBAL symmetry command; the Lab uses it like any app command (forwarded to `Application`, H2-R2 re-derivation unchanged). The start-up assert covers the two remaining inputs. T-R1a/T-R1b follow in A1. |
+| **Gate table (G-2 BLOCK row)** | The BLOCK row's `allowed` set gains the app's symmetry command **as a named entry** (not via `NON_OPERATION`, because it changes mesh state); otherwise Shift+S could not cycle or switch symmetry off under BLOCK. The MARK row installs no gate (unchanged), the symmetry-off row is `None` (unchanged), the Re-Symmetrize preview row keeps refusing it (display-only allow-list, H2-R2). T-FC1 is adjusted in A1. |
+| **H2 Basis line, Alternative D** | Dated history: "Symmetry itself is not promoted (`src/main.py` gets no symmetry UX)" and D's reason "promotion … was deferred (ROADMAP §7, 2026-10-02)" are superseded by M-1. D as written (the *Lab's* symmetry UX behind a flag) is still not used: the app gets its own `PROVISIONAL` entry (AD-SYM-04 §3), the Lab UX is not promoted (A5). |
+
+**Unchanged:** H2-R2, H2-R3, H2-R4, the Limits of G, G-2 itself. AD-SYM-02 §4 ("Lab-Verdikt … entscheidet dadurch nichts
+für Production") stays true: Q-3 chose F-a, not G-3, so KEEP-BLOCK is not a runtime rule in Production and E5 stays Lab-only.
+
+**Required tests (named, written in A1/A2):** T-G3b narrowed (and its negative control: an assignment of
+`symmetry_definition` or a coordination call in `src/main.py` still fails); T-R1a/T-R1b for two Lab entries; T-FC1 with the
+symmetry command allowed under BLOCK and refused under the preview row; the F-a guard (AD-SYM-04 §3.3).

@@ -1,8 +1,9 @@
 # AD-SYM-04 — Symmetry in the Production app (`src/main.py`), then symmetric Soft Selection
 
-**Status:** **PROPOSED** (2026-10-14), **revised the same day after the independent review CLAUDE-001** (ACCEPT WITH CHANGES;
-every finding answered in §9). A decision proposal plus slice plans, nothing more; Manu decides next (Q-1…Q-4). Nothing
-here is decided except what §0 quotes as already decided.
+**Status:** **DECIDED** (Manu, 2026-10-14): Q-1…Q-4 answered with the recommendations (commit `fa6e017`; Decision record
+below). Proposed and revised the same day after the independent review CLAUDE-001 (ACCEPT WITH CHANGES, answered in §9).
+The AD-013 amendment of §2.3 is written ([AD-013, Addendum 2026-10-14](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)).
+Slice A0 is done with this; code follows in A1. Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
 **Work package:** WP-SYM-APP-01 (decision package).
 **Read at:** `main` @ `54de6ee`. Line numbers refer to that commit.
@@ -16,6 +17,31 @@ G-2 amendment of 2026-10-08), [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.
 
 **Evidence tags.** **[Code]** read at `54de6ee` (file:line). **[Doc]** quoted from a repo document. **(Assumption)** not
 confirmed by Manu. **(Reading)** an interpretation or derivation, not a measurement. `PROVISIONAL` marks every agent-set choice.
+
+---
+
+## Decision record (2026-10-14)
+
+Where a section below still reads "proposed", "recommendation" or "assumption", this record wins.
+
+**Artist decisions (Manu, 2026-10-14, answers written into the Kurzfassung, commit `fa6e017`):**
+
+| Q | Decision | Words |
+|---|---|---|
+| Q-1 | **E-1:** Shift+S cycles off → X → Y → Z → off in the app, one Undo step each, E1 plane, E3 seam (§3.1) | "Ich nehme deine Empfehlung" |
+| Q-2 | **S-2:** status line plus plane outline and problem markers (unpaired, ambiguous, seam); no partner markers (§3.2) | "ich nehme deine Empfehlung" |
+| Q-3 | **F-a:** tools that cannot mirror are refused in the app, secured by the build-time guard test, no runtime gate; the MARK/BLOCK switch (E5, Shift+B) stays Lab-only (§3.3) — UA-2 is thereby confirmed | "ich nehme deine Empfehlung" |
+| Q-4 | **P-a:** under symmetric Soft, seam vertices reached only by the falloff slide in the plane; the pivot stays the own-side selection centre; selected seam vertices keep today's rules (§5.1 D-3). A Core seam-rule change inside SS1 | "Ich nehme deine Empfehlung" |
+
+**Consequences fixed by these answers (no further decision):** H2-R1 changes (Shift+S becomes the app's command; the Lab
+keeps M and Shift+B), T-G3b is narrowed (S-2), K-6 applies, AD-SYM-02 §4 needs no pointer (F-c not chosen). All written
+into AD-013, Addendum 2026-10-14.
+
+**Not answered, still assumptions (Manu did not correct them, which is not a confirmation):** §0.2 (order A1/A2 → SS → one
+joint test J) and UA-3 (Re-Symmetrize stays in the Lab).
+
+**Engineering, unchanged by the decision:** the key, the overlay look and every text stay `PROVISIONAL`; no Artist Input
+Truth entry is created (AD-013 A5).
 
 ---
 
@@ -194,8 +220,9 @@ No new mechanism. To be written into AD-013 as a dated note **after** Manu decid
 - **K-6** The Lab's gate rows must let the app's symmetry command through (review R-3). As a `mirai.interaction.commands`
   constant dispatched by `Application.key_press`, it is in none of the sets `block_row()` allows (`lab_app.py:306-336`),
   so under BLOCK — the Lab default while symmetry is on — it would get `BLOCK_NOT_ALLOWED_TEXT`: Shift+S could switch
-  symmetry on but never cycle it or switch it off. The BLOCK and MARK rows therefore allow it **by a named entry** in the
-  row (not silently via `NON_OPERATION`, because it changes mesh state); the preview row keeps refusing it (H2-R2). T-FC1
+  symmetry on but never cycle it or switch it off. The BLOCK row therefore allows it **by a named entry** (the MARK row
+  installs no gate, `ROW_MARK`, so nothing changes there; *corrected 2026-10-14, the first wording said "BLOCK and MARK
+  rows"*) in the row (not silently via `NON_OPERATION`, because it changes mesh state); the preview row keeps refusing it (H2-R2). T-FC1
   (which expects every unlisted constant refused) and T-R1a are adjusted in A1. This is a Lab-side change under H2's
   existing rules, no new writer.
 - **K-7** The Playground stays out (review R-8). A new constant with a default binding also reaches the Playground's
@@ -368,7 +395,7 @@ The verdict is recorded (M-2, Lab README "Slice 7", commit `0f8fb04`). Nothing E
 
 | # | Slice | Content | Gate / tests |
 |---|---|---|---|
-| A0 | Decisions (docs) | Manu answers Q-1…Q-3 after the review; the AD-013 note of §2.3 is written; AD-SYM-04 → DECIDED. | No code. |
+| A0 | Decisions (docs) | Manu answers Q-1…Q-4 after the review; the AD-013 note of §2.3 is written; AD-SYM-04 → DECIDED. **Done 2026-10-14** (Decision record). | No code. |
 | A1 | Definition entry | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); the command's interaction gates (review R-4): ignored while W/E/R/T is armed or running (same gate as `C` and the mode keys, `application.py:1587-1603`, so the partner sets an armed tool resolves at `begin()` cannot change underneath it), ignored inside a Knife session (`_knife_key`, pinned by a test), and Soft armed → toggle → motion refused at `begin()` (`:1715`); Lab: K-6 named row entry, T-FC1 and T-R1a adjusted; T-R5b unchanged, T-G3b re-labelled or narrowed (§2.3); `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
 | A2 | Display | Per Q-2: the Lab's plane/state overlays **moved** to `src` as an `Application`-owned overlay handed in through `GL_TYPES` (soft-band precedent), A3 deferral kept; the Lab drops its copies (no double draw, L-9). | Overlay sync tests ported from the Lab; Lab draw-order test adapted; drag-cost probe re-run on the reference PC (L-8 numbers as the bar). |
 | J | Joint Artist test (M-3) | In `python src/main.py`: the Slice 7 steps 1–8 (step 9, MARK, stays Lab-only under UA-2), plus the symmetric Soft test of §5. | Manu's verdict, one session. |
@@ -390,8 +417,9 @@ beyond §2.3.
 
 ## 8. Not decided here
 
-The answers to Q-1…Q-4. The shape and names of the `Application` symmetry command, the moved functions and the overlay type.
-The Core change itself (SS1, own document). Whether E5 ever leaves the Lab (Q-3). Re-Symmetrize in the app (UA-3). The
+~~The answers to Q-1…Q-4~~ (answered 2026-10-14, Decision record). The shape and names of the `Application` symmetry
+command, the moved functions and the overlay type. The Core change itself (SS1, own document). Re-Symmetrize in the app
+(UA-3, still an assumption). The
 choice between the Knife mirror variants V-a/V-b/V-c and F6 (still open, AD-SYM-03 §10.9). F-1 of the Extrude (corner at
 the seam). Artist Input Truth entries for any symmetry key. Gizmo, Tweak, Loop Insert/Slide, Collapse, Loop/Ring selection
 (later packages); the Lab test stage (separate task); Playground UX.
@@ -449,6 +477,10 @@ umgedreht. Das Lab läuft weiter auf demselben Weg.
    sollen die Mittelpunkte in der Ebene mitgleiten (Empfehlung; jede Drehachse geht), soll der Drehpunkt auf die Mitte
    springen wie heute ohne Soft (dann geht Drehen nur noch um die Spiegelachse und Skalieren nur gleichmäßig, sonst
    abgelehnt), oder soll es ganz abgelehnt werden? Manu: Ich nehme deine Empfehlung
+
+**Entschieden (2026-10-14):** alle vier wie empfohlen — Shift+S, Ebene + Problem-Punkte, Verweigern ohne Laufzeit-Gate
+(MARK/BLOCK bleibt im Lab), Mittelpunkte gleiten bei Soft in der Ebene. Nächster Schritt: Slice A1 (Einschalten in der App).
+Die Reihenfolge und „Re-Symmetrize bleibt im Lab“ hast du nicht korrigiert; sie bleiben Annahmen.
 
 **Nach der unabhängigen Review (2026-10-14, §9):** Frage 4 war unvollständig und ist oben ergänzt. Außerdem: Die
 Lab-Sperre (BLOCK) muss den neuen Symmetrie-Schalter der App durchlassen, sonst ließe sich die Symmetrie im Lab nicht mehr
