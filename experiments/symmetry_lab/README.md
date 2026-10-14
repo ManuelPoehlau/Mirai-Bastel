@@ -380,7 +380,7 @@ Warnzeile festhielten, laufen jetzt mit `undeclare_knife` (der abgeleitete Mecha
 
 ## Symmetrischer Extrude, Slice 7
 
-*Engineering-Vorgaben (PROVISIONAL), dein Verdikt steht aus — AD-SYM-03 §11.* Mit gesetzter Symmetrie (`Shift+S`) extrudiert `T` halten die gewählten
+*Slice 7 wie gebaut: **KEEP** (Manu, 2026-10-14; Verdikt unten beim Praxistest). Die Arbeitsregeln bleiben Engineering-Vorgaben (PROVISIONAL) — AD-SYM-03 §11.* Mit gesetzter Symmetrie (`Shift+S`) extrudiert `T` halten die gewählten
 Flächen **und ihre Spiegelpartner als eine Absicht**, als **ein** Undo-Schritt, in BLOCK wie in MARK (die Deklaration `EXTRUDE_COORDINATORS` in
 `mirai.symmetry_declarations` ist der Schalter; BLOCK-Zeile und MARK-Warnung folgen ihr). Ohne Symmetrie läuft `T` unverändert einseitig wie in B9.
 
@@ -404,6 +404,8 @@ Auf `subd_cube` und `head_basemesh` gibt es weder eine Fläche, die die Mitte nu
 sind dort nicht zu sehen (getestet an synthetischen Netzen, AD-SYM-03 §11.5 F-2).
 
 ### Praxistest für Manu (Slice 7)
+
+*Verdikt (Stand 2026-10-14): **Symmetrischer Extrude (Slice 7) wie gebaut: KEEP** (Manu, 2026-10-14; mit dem Auftrag WP-SYM-APP-01 übergeben, „symmetric Extrude counts as KEEP“, für den Slice als Ganzes, ohne Aufschlüsselung pro Schritt). Die drei Fragen unten (Zug auf beiden Seiten, Mittelkante M, Auswahl danach) sind damit nur als erlebtes Verhalten abgedeckt, nicht einzeln beantwortet: Auswahl danach, Arbeitsseiten-Regel und Texte bleiben Engineering-Vorgaben (PROVISIONAL). **Weiter offen, nicht entschieden:** ob eine Ecke an der Mitte später einen eigenen Deckelpunkt pro Komponente bekommt (AD-SYM-03 §11.5 F-1; bis dahin bleibt die Ablehnung, deine Aussage vom 2026-10-09). KEEP ist keine Promotion. Die Schritte unten sind der historische Testablauf.*
 
 > **Praxistest — symmetrischer Extrude im Lab (ca. 10 Minuten).** `git pull`, dann `python experiments/symmetry_lab/run.py` (Kopf-Asset).
 >

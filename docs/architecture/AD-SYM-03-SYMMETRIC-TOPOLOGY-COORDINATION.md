@@ -1130,7 +1130,7 @@ Symmetrie blockiert bzw. einseitig wie heute).
 ## 11. Addendum (2026-10-09) — Extrude (slice 7), as built
 
 **Status: implemented; every item below is Engineering / PROVISIONAL except the Artist statements in 11.1. Artist verdict on the
-symmetric Extrude: pending** (practical test in `experiments/symmetry_lab/README.md`, "Slice 7"). Nothing in §3, §6 or §10 changes;
+symmetric Extrude: KEEP** (Manu, 2026-10-14, for slice 7 as built, no per-step breakdown; recorded in `experiments/symmetry_lab/README.md`, "Slice 7"; the Engineering items X5, X8 and the texts stay PROVISIONAL, F-1 stays open). Nothing in §3, §6 or §10 changes;
 no decided item is touched. WP-SYM-EXTRUDE-01, `src/core/` unchanged, no promotion (`src/main.py` never sets a definition).
 
 ### 11.1 What the Artist has said (as recorded) and what this addendum does not decide
@@ -1228,7 +1228,8 @@ Full runs, once, at the end: `tests` 2232 passed / 41 skipped / 68 subtests, Lab
 
 ### 11.7 Not decided here / Was Manu entscheidet (Deutsch)
 
-- Verdikt über den symmetrischen Extrude (Praxistest im Lab-README, Slice 7): KEEP / ITERATE / REJECT / UNKNOWN. Ist die Mittelkante an der Naht so, wie du sie
+- *2026-10-14: **KEEP** (Manu), recorded in the Lab README, "Slice 7"; the questions below were not answered one by one.*
+  Verdikt über den symmetrischen Extrude (Praxistest im Lab-README, Slice 7): KEEP / ITERATE / REJECT / UNKNOWN. Ist die Mittelkante an der Naht so, wie du sie
   erwartest (M)? Ist die Auswahl danach (Deckel auf der Seite, auf der du gearbeitet hast) so gewünscht? Beides ist eine Arbeitsregel, noch nicht dein Verdikt.
 - Case 4 (Ecke an der Mitte, Fläche über der Mitte): **abgelehnt, vorerst** (deine Aussage vom 2026-10-09). Offen bleibt, ob später der Deckel an so einer Ecke einen
   eigenen Punkt pro Komponente bekommen soll (F-1) — nicht entschieden.

@@ -29,7 +29,7 @@
 
 | Lab | Was man dort ausprobiert | Start | Doku |
 |---|---|---|---|
-| Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Lab-Stand, nicht Production. Offen sind Extrude-Verdikt und Promotion-Prüfung. | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Lab-Stand, nicht Production. Symmetrischer Extrude **KEEP** (2026-10-14). | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | Subdivision Lab | Wie glatt ist glatt genug, Käfig oder Fläche, Kosten auf dem Referenz-PC | `python experiments/subdivision_lab/run.py` | [README](../experiments/subdivision_lab/README.md) |
 | Mehlsack Lab | Box per Mausrad bauen (mit Tiefe), Loop/Ring ohne Auswahl direkt ziehen oder mit `W`/`E`/`R` halten verschieben, drehen, skalieren (Taille/Bauch, zwei Scale-Formeln per `M`), Einflusskurve mit Bézier-Handles auch unter null, Flächen-Vorschau `P`; seit Slice 3 auch Punkt-/Kanten-/Flächen-Auswahl als Ausgangspunkt derselben Gesten; seit Slice 3b Element-Hover als Standard, Loop/Ring im `L`-Modus, Doppelklick-Loops, Umrechnen (Slices 1–3b verdiktet, 2026-10-13; Slice 3c wartet auf dich) | `python experiments/mehlsack_lab/run.py` | [README](../experiments/mehlsack_lab/README.md) |
 | Shading Lab | Licht/Shading für bessere Formwahrnehmung beim Modellieren | `python experiments/viewport_shading_lab/run.py` | [README](../experiments/viewport_shading_lab/README.md) |
@@ -47,7 +47,6 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 |---|---|---|
 | B1 | **Delete/Dissolve**: einziger Praxis-Check des Pakets, Verdikt UNKNOWN; DD-3 und DD-4 sind Material für den Check | [WP Delete/Dissolve, „Status“](WP_DELETE_DISSOLVE_PLAN.md) |
 | B2d | **Symmetrischer Knife** (Slice 6c): Praxistest **KEEP** (Manu, 2026-10-09). **Weiter offen:** die Wahl zwischen den Spiegel-Varianten V-a / V-b / V-c (V-b bleibt Start, nichts wird entfernt) und F6 (Start des Schnitts im leeren Raum, auf deinen Wunsch offen gelassen) | [Symmetry Lab README, Slice 6c](../experiments/symmetry_lab/README.md#symmetrischer-knife-slice-6c) · [AD-SYM-03 §10.8](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
-| B2e | **Symmetrischer Extrude** (AD-SYM-03 Slice 7, Symmetry Lab, `Shift+S` → `X`, `T` halten): **gebaut 2026-10-09, dein Verdikt steht aus** (KEEP / ITERATE / REJECT / UNKNOWN; Praxistest ca. 10 Minuten). Ecke an der Mitte und Fläche über der Mitte werden vorerst abgelehnt (deine Aussage vom 2026-10-09); Arbeitsregeln (Distanz, Auswahl danach) sind Engineering-Annahmen | [Symmetry Lab README, Slice 7](../experiments/symmetry_lab/README.md) · [AD-SYM-03 §11](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | B3 | **Shading Lab**: Verdikte F1/F8/F9 | [Shading Lab README](../experiments/viewport_shading_lab/README.md) |
 | B4 | **Subdivision Lab**: Tests T-SUBD-1 und T-SUBD-2 | [Subdivision Lab README](../experiments/subdivision_lab/README.md) |
 | B5c | **Mehlsack Lab Slice 3c** (deine 3b-Antworten umgesetzt, ca. 5 Minuten): Verdikte (u1) Ring per Shift+Doppelklick auf die Nachbarkante, (u2) weiterer Loop per Shift+Doppelklick, (u3) Punkt-Loop per Doppelklick, (u4) Face-Loop-Teilstück, (u5) `L`-Modus im Flächenmodus | [Mehlsack Lab README, „Slice 3c“](../experiments/mehlsack_lab/README.md#slice-3c-2026-10-13-ringe-punkt-loops-teilstücke) |
@@ -81,7 +80,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie-Spur: Extrude bewerten, offene Knife-Varianten bei Bedarf entscheiden, dann Promotion prüfen | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | B2e: dein Extrude-Verdikt; B2d: offene Variantenentscheidung; danach separater Promotion-Check. Der Lab-Stand ist noch keine Production-Integration. |
+| Symmetrie-Spur: offene Knife-Varianten bei Bedarf entscheiden, dann Promotion prüfen | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | B2d: offene Variantenentscheidung; danach separater Promotion-Check. Der Lab-Stand ist noch keine Production-Integration. |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | deine Antwort zu D1c; Messung liegt vor |
 | Flat Shading pro Polygon (B5a.1) | Flat-Ansicht ohne sichtbare Dreiecke | berührt AD-018 |
