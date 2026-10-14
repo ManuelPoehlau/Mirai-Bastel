@@ -440,15 +440,15 @@ umgedreht. Das Lab läuft weiter auf demselben Weg.
 
 **Deine Fragen (je Thema eine):**
 1. **Einschalten:** `Shift+S` wie im Lab (aus → X → Y → Z → aus) — Empfehlung, die Meldungen in der App nennen schon
-   `Shift+S` — oder nur X an/aus, oder anders?
+   `Shift+S` — oder nur X an/aus, oder anders? Manu: Ich nehme deine Empfehlung
 2. **Anzeige:** nur Statuszeile, oder zusätzlich Ebene und Problem-Punkte (magenta = ohne Partner) — Empfehlung — oder alles
-   aus dem Lab inklusive türkiser Partner-Punkte?
+   aus dem Lab inklusive türkiser Partner-Punkte? Manu: ich nehme deine Empfehlung
 3. **Werkzeuge, die (später) nicht spiegeln können:** in der App verweigern wie BLOCK im Lab (Empfehlung; abgesichert durch
-   einen Test beim Bauen), und der MARK/BLOCK-Schalter bleibt reines Lab-Werkzeug?
+   einen Test beim Bauen), und der MARK/BLOCK-Schalter bleibt reines Lab-Werkzeug? Manu: ich nehme deine Empfehlung
 4. **Soft an der Mitte:** wenn du mit Soft abseits der Mitte drehst/skalierst und der Einfluss über die Mitte reicht —
    sollen die Mittelpunkte in der Ebene mitgleiten (Empfehlung; jede Drehachse geht), soll der Drehpunkt auf die Mitte
    springen wie heute ohne Soft (dann geht Drehen nur noch um die Spiegelachse und Skalieren nur gleichmäßig, sonst
-   abgelehnt), oder soll es ganz abgelehnt werden?
+   abgelehnt), oder soll es ganz abgelehnt werden? Manu: Ich nehme deine Empfehlung
 
 **Nach der unabhängigen Review (2026-10-14, §9):** Frage 4 war unvollständig und ist oben ergänzt. Außerdem: Die
 Lab-Sperre (BLOCK) muss den neuen Symmetrie-Schalter der App durchlassen, sonst ließe sich die Symmetrie im Lab nicht mehr
