@@ -47,3 +47,6 @@ Desktop.ini
 # Playground session state (user-local, playground/session_state.py)
 playground/.session_state.json
 playground/.session_state.json.tmp
+
+# Claude Code agent worktrees (ephemeral, never tracked)
+.claude/worktrees/
