@@ -181,6 +181,19 @@ Agenten entscheiden selbstständig in ihrer Evidenzdomäne und fragen dort nicht
 
 Zwei Dinge darf ein Agent nie: **promovieren** und **Artist-Validierung behaupten**.
 
+### Haltepunkte (2026-10-14)
+
+Innerhalb eines Auftrags arbeitet ein Agent autonom: analysieren, planen, bauen, testen, korrigieren. Er unterbricht nur, wenn
+
+- eine Änderung an `src/core` oder an einer entschiedenen Architekturentscheidung nötig wäre;
+- etwas von `experiments/` oder `playground/` nach `src/` soll (Promotion, M3);
+- ein Verhalten festgelegt werden muss, das der Artist spüren muss und das sich nicht aus vorhandenen Verdikten ableiten lässt;
+- ein Lab eine Fähigkeit der App (Auswahl, Hover, Gizmo, Raster …) bräuchte, die es nur durch Nachbauen bekäme;
+- Auftrag und Repository sich widersprechen;
+- die Arbeit über den genannten Bereich hinausginge.
+
+Alles andere entscheidet der Agent selbst und markiert es knapp als `PROVISIONAL`.
+
 ---
 
 ## 6. Das Three-Role UX System
@@ -208,7 +221,7 @@ M1   Was existiert? Was wurde probiert? Was wurde verworfen?
       ↓
 M5   Discovery oder Production?
       ↓
-      Discovery:  kleinstes sinnvolles Experiment
+      Discovery:  ein Auftrag = eine Testsitzung (20–40 Min., mehrere Punkte)
       ↓
       technische Evidenz: Tests, Performance, Architektur
       ↓
@@ -224,6 +237,13 @@ M3   Promotion durch Artist
 ```
 
 Und falls beim Bauen etwas Neues auftaucht: zurück zu Discovery (M5).
+
+### Wer macht was (Manu, 2026-10-14)
+
+- **Ein Discovery-Auftrag ist so groß wie eine Testsitzung von 20–40 Minuten** mit mehreren Punkten. Intern darf er beliebig viele technische Schritte und Testläufe umfassen; zurück kommt ein gesammelter Praxistest. Bei unklarer Richtung baut der Agent umschaltbare Varianten statt mehrerer Runden nacheinander.
+- **Nach seinen Verdikten geht der Artist direkt zu Claude Code**, in eigenen Worten, ohne Handoff. Claude Code wendet M1 selbst an und schreibt seine Deutung der Verdikte als Annahmen in den neuen Praxistest.
+- **Der Chat kommt dazu**, wenn der Artist unsicher ist, was er will, und als zweite Meinung bei Architekturentscheidungen und Promotion (Erzeuger ≠ Bewerter, §6).
+- **Production-Aufträge** laufen autonom bis zur Definition of Done; Unterbrechung nur an den Haltepunkten (§5).
 
 ---
 
@@ -268,6 +288,7 @@ Regel für alles Weitere:
 **Könnte das System ändern:**
 
 - Retro-Test: drei bis fünf echte Driftfälle rekonstruieren und prüfen, woran es jeweils lag. Falls sich zeigt, dass die Information meist vorhanden, aber nicht angesehen wurde, ist das Problem Auffindbarkeit und nicht Kontext — dann wäre M2 der falsche Mechanismus und es bräuchte stattdessen einen Index. Einmalig, etwa eine Stunde. Erste Evidenz 2026-10-07: drei Driftfälle mit vorhandener, aber nicht übertragener Information → Index (`docs/ATELIER.md`) statt mehr Kontext.
+- Audit Entwicklungs-Overhead (2026-10-14): Die Kosten entstanden nicht innerhalb der Aufträge, sondern zwischen ihnen (Handoff pro Runde, eigene Verdikt-Commits, Status an mehreren Stellen) und durch Labs, die App-Fähigkeiten nachbauen. Folge: §5 Haltepunkte, §7 Wer macht was, AGENTS.md §4a/§4b/§7/§8.
 
 **Ehrliche Unsicherheit:** Mirai-Bastel hat viel Dokumentation relativ zu ausgelieferten Features. Fünf Mechanismen sind für ein Ein-Personen-Projekt an der Obergrenze. Wenn dieses Dokument jemals überarbeitet werden muss, dann durch Streichen.
 

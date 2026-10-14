@@ -81,12 +81,21 @@ For completed experiments, record the final result and point readers to the next
 
 `docs/ATELIER.md` is Manu's German index of the current state, open verdicts and next candidates.
 When a change alters something artist-relevant (a new verdict, a new open Artist question, a new capability
-in `src/main.py`), update `docs/ATELIER.md` in the same commit: one sentence plus a link, never canonical content.
+in `src/main.py`), update `docs/ATELIER.md` with the next commit that touches that area: one sentence plus a link,
+never canonical content. Manu records verdicts himself where the practical test asks for them; his commit is the
+record. Do not make a separate docs-only commit just to propagate verdicts or status.
 A verdict counts only once it is recorded in its authoritative document, not when it appears in a chat or only here.
 
 An **Atelier-Brief** (from the separate Mirai Atelier context, see Development System §8) carries Manu's intent,
 references and open questions. It is Discovery input, not a decision and not a spec: apply M1 before acting on it,
 and do not read an architecture or a solution into it that the brief does not state.
+
+## 4b. Documentation by reader
+
+- **Manu (German):** how to start, the current practical test, his verdict table — one block per test session.
+- **Agents (English, terse):** only assumptions and findings a later agent needs. Prefer code comments and tests for implementation detail; do not enumerate every small engineering choice.
+- **Canonical documents (ROADMAP, ADs, SOURCE_ARCHITECTURE) are not logs.** No per-slice or per-fix entries; Git history is the log. Add to an AD only when a decision is made or changes.
+- A status fact lives in one place (the area README). Indexes (`docs/ATELIER.md`, `experiments/README.md`) hold one line plus a link.
 
 ## 5. Never silently change architecture
 
@@ -132,19 +141,20 @@ Implementation
 
 Do not build future systems merely because the vision mentions them. Known future requirements should influence boundaries, but implementation should be driven by real use cases and experiments.
 
+A Lab tests new ideas; it does not rebuild application capabilities (selection, hover, input handling, gizmo, grid, pivot …). If a Lab would need one, stop and report (Development System §5, Haltepunkte) instead of rebuilding it.
+
 ## 8. Agent task discipline
 
-Before assigning or starting a large implementation task, establish:
+An assignment is defined by its outcome, not by its steps:
 
-- relevant architecture/design document;
-- explicit scope;
-- acceptance criteria;
-- allowed files/components;
-- expected tests;
-- known constraints;
-- unresolved questions.
+- **Discovery:** one Artist test session (20–40 min, several points). Build, test and fix internally as often as needed; return with one consolidated practical test. When the direction is unclear, build switchable variants instead of sequential rounds.
+- **Production:** run autonomously until the Definition of Done.
 
-Prefer small, bounded implementation tasks over vague requests.
+Within an assignment, decide in your evidence domain and continue; stop only at the Haltepunkte in Development System §5. Mark agent-set choices `PROVISIONAL`.
+
+An assignment may arrive as Manu's verdicts and notes in plain words, without a handoff. Then apply M1 yourself and state your reading of his notes as assumptions in the new practical test, so he can correct it in one sentence.
+
+For large Production packages and Architecture Gates, establish before starting: the relevant decision documents, scope and not-in-scope, acceptance criteria, expected tests and open questions.
 
 ## 8a. Test strategy (token- and runtime-efficient)
 

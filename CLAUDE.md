@@ -9,11 +9,12 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 **Structure**:
 - `src/core/` — Production: V1 Core baseline, frozen (don't change without explicit reason)
 - `src/viewport/`, `src/mirai/` — In-progress production areas
-- `playground/` — **The only runnable application.** Artist research host (selection, tweak,
+- `src/main.py` — the production app (own window). `playground/` — Artist research host (selection, tweak,
   topology, articulation experiments live inside it as variant families); depends on `src/` plus a
   small number of helpers from `experiments/mirai_bastel_integration_lab` and
   `experiments/rigging-skinning-morphing` (OBJ→Scene loading, camera framing, the head asset).
   Own test tree: `playground/tests/` (run via `pytest playground/tests`).
+- Labs under `experiments/<lab>/run.py` start their own windows; see `experiments/README.md`.
 - `experiments/` — Research, prototypes, practical validation at the repository level (OK to be
   messy). Not the same thing as `playground/experiments/` (variant families inside the Playground
   host) — see `docs/design/artist_playground/EXPERIMENT_HOST.md` for that distinction.
@@ -27,21 +28,8 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 
 ## Project workflow
 
-```
-Research question / Feature idea
-    ↓
-Create experiment in experiments/
-    ↓
-Validate with tests/ (if applicable)
-    ↓
-Document findings in docs/ (research/ or reviews/)
-    ↓
-Architecture decision (if needed)
-    ↓
-Move validated code to src/ (only if decision is explicit)
-```
-
-**Key rule**: Never graduate an experiment to `src/` without documenting *why* and *what* in `docs/`. Small does not mean unreviewed.
+See `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` (§5 Haltepunkte, §7 Wer macht was) and AGENTS.md §7–§8.
+Key rule: never move experiment code to `src/` without an explicit, documented decision.
 
 ## Before changing or rebuilding code
 
@@ -51,7 +39,7 @@ Move validated code to src/ (only if decision is explicit)
 3. If touching `src/core/`, read any relevant Architecture Decision in `docs/`
 4. If working in `experiments/`, you have more freedom, but results still need docs
 5. Check git history (`git log --oneline -20 src/`) to understand recent decisions
-6. Run relevant tests to verify current state: `pytest tests/test_core.py` (etc.)
+6. Run tests only as AGENTS.md §8a describes (targeted, scoped).
 
 **Golden rule**: If a solution exists, is documented, tested and working — use it or adapt it. Don't rebuild it. Rebuilding creates technical debt, orphaned solutions, and regressions on already-solved problems.
 
@@ -64,9 +52,8 @@ Move validated code to src/ (only if decision is explicit)
 
 ## Testing
 
-**Test strategy (saves tokens and runtime) — runner: pytest.**
+**Test strategy and scope rules: AGENTS.md §8a (single source).** Targeted commands:
 
-1. **During implementation: NEVER run the full suite.** Run only targeted tests for the changed files/functions:
    ```bash
    pytest tests/test_<module>.py -q                    # one test file
    pytest tests/test_<module>.py::test_name -q         # one test
@@ -74,7 +61,6 @@ Move validated code to src/ (only if decision is explicit)
    pytest playground/tests/test_<module>.py -q         # playground/ changes
    ```
    Useful flags: `-x` (stop at first failure), `--lf` (re-run last failures only).
-2. **Final check: once, scoped to what the change can affect** — not "everything". Which trees to run (Production `tests`, `playground/tests`, `experiments/symmetry_lab/tests`) depends on the real dependencies, e.g. Lab-only work needs only the Lab tree. The decision rules are in [AGENTS.md §8a](AGENTS.md); follow them rather than a fixed list. Don't repeat a tree after every fix: fix via targeted tests, then re-run only the failing tree once.
 
 Details:
 
@@ -113,5 +99,5 @@ Details:
 
 ---
 
-**Authored**: 2026-09-10  
+**Last revised**: 2026-10-14  
 See [AGENTS.md](AGENTS.md) for full collaboration model.

@@ -125,7 +125,7 @@ The Production Viewport, Application and Interaction foundations now exist under
 window/entry point (`src/main.py`, camera + rendering, above) are now real.
 Stage B — incrementally wiring the final modeling/selection workflow into
 that window, capability by capability — is in progress (WP-06); see
-`docs/architecture/ROADMAP.md` §"WP-06" for the intake log (the single
+`docs/architecture/WP-06_INTAKE_LOG.md` for the intake log (the single
 authoritative list of what is wired in) and
 [`docs/ATELIER.md`](docs/ATELIER.md) for the artist-level overview. Experiments continue to derive later requirements; they are not
 promoted automatically.

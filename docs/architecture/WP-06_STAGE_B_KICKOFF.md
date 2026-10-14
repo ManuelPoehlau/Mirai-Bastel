@@ -142,3 +142,4 @@ Head mesh as default scene + camera framing") entschieden:
 - **Q3** — beantwortet: Slice-Reihenfolge B1 (Kopf-Mesh + Framing) → B2 (Picking + Highlight) → B3 (Move + Undo/Redo) → B4 (Rotate/Scale + Constraints) → B5+ (Promotions) — Kopf-Mesh vorgezogen.
 - **Q4** — beantwortet: Playground bleibt unverändert parallel bestehen (Artist-Verdikt KEEP, 2026-09-25).
 - **Q5** — beantwortet: laufende, datierte Liste in ROADMAP §7 ("Intake log"); eigenes AD nur, wenn eine Promotion Architektur berührt. Kein neues `APP_INTEGRATION_LOG.md`.
+  *Superseded 2026-10-14 (workflow audit, Manu): list frozen and moved to [WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md); no new per-slice entries.*

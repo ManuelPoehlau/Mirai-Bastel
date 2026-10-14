@@ -243,7 +243,7 @@ from `playground/topology_tools/` to `src/mirai/topology/` (`contextual_c.py`, `
 Playground share one implementation instead of Playground importing its own copy. This is the promotion
 this AD's §5/§9 anticipated ("Promotion to `src/` is a separate Artist decision (M3)"), recorded here per
 `AGENTS.md` §5/§6 (promotion is a documented decision, not a silent merge) and dated in
-`docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B6, 2026-09-28).
+`docs/architecture/WP-06_INTAKE_LOG.md` (Slice B6, 2026-09-28).
 
 Not part of this promotion (unchanged, still Playground-only): Knife (`knife.py`, `knife_pick.py` — no Lab
 verdict yet, §7 open questions), the rejected strip-semantics baseline (`playground/topology_tools/
@@ -270,7 +270,7 @@ The engine is **PROMOTED** (this AD, DECIDED). The Production *interaction* — 
 preview, press → slide → release with edge lock, and a line preview from the start to the prospective point
 (Artist decision Manu 2026-09-28) — is **PROVISIONAL**, verdict pending. §7's open questions stay open
 except that the preview/mouse UX now has a provisional Production answer; face-interior cutting remains a
-separate Discovery. Record: `docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B7, 2026-09-28).
+separate Discovery. Record: `docs/architecture/WP-06_INTAKE_LOG.md` (Slice B7, 2026-09-28).
 
 ## 12. Addendum (2026-09-28) — Knife click-only (Variant A), WP-06 Slice B7.1
 
@@ -298,10 +298,10 @@ after such a failed drag-release (regression check that removing the slide left 
 existing click-at-hover-position and unlocked-drag-is-not-a-click cases needed no change — they already
 exercised the kept click rule, not the removed lock.
 
-Status: **PROVISIONAL**, verdict pending. Record: `docs/architecture/ROADMAP.md` §WP-06 intake log
+Status: **PROVISIONAL**, verdict pending. Record: `docs/architecture/WP-06_INTAKE_LOG.md`
 (Slice B7.1, 2026-09-28).
 
-Verdict (2026-10-07): none of its own — B7.1 is absorbed into One Knife (Manu); see the ROADMAP intake log,
+Verdict (2026-10-07): none of its own — B7.1 is absorbed into One Knife (Manu); see the WP-06 intake log (`WP-06_INTAKE_LOG.md`),
 "Verdict sync" note for B7.1.
 
 ## 13. Addendum (2026-10-09, DECIDED) — the Knife's kept-call report (AD-SYM-03 slice 6a)

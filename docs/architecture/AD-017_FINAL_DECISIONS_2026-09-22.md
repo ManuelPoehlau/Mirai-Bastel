@@ -190,7 +190,7 @@ resolver stays Knife-owned (AD-017 #1).
 
 Manu's statement (2026-10-01): "K1 zuerst" — M1 (promote the KEEP'd Q5 model in slices) with K1 (`Mesh.split_face`,
 addendum above) first. Work package: WP-KNIFE-01 S1, draft spec in `docs/research/topology/ONE_KNIFE_PROMOTION_DISCOVERY.md`
-§6.3; intake line in `docs/architecture/ROADMAP.md` (WP-06 intake log).
+§6.3; intake line in `docs/architecture/WP-06_INTAKE_LOG.md`.
 
 ---
 

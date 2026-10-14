@@ -14,14 +14,14 @@ moved, not copied — to `src/mirai/topology/` (`contextual_c.py`, `topology_poi
 `connect_vertices_per_face.py`, `split.py`); `playground/topology_ops.py::split_selected_edge` now forwards
 to `mirai.topology.split.split_selected_edge`. The file paths below (§1.2–§1.6, §"Files touched") describe
 where this brief originally built them, not their current location; see `docs/architecture/
-AD-017-CUT-ENGINE-CONTEXTUAL-C.md` §10 and `docs/architecture/ROADMAP.md` §WP-06 intake log (Slice B6) for
+AD-017-CUT-ENGINE-CONTEXTUAL-C.md` §10 and `docs/architecture/WP-06_INTAKE_LOG.md` (Slice B6) for
 the promotion record. Knife (not built in B6) and the rejected strip-semantics `connect_edges.py` stay in
 `playground/topology_tools/` as this brief left them.
 
 **Addendum (2026-09-28, WP-06 Slice B7):** the Knife (§1.7 `knife.py`, §1.8 `knife_pick.py`) was moved —
 not copied — to `src/mirai/topology/` as well, together with the F1 locked-edge projection from
 `playground/window.py` (now `mirai.topology.knife_pick.project_locked_edge`). The §1.7/§1.8 paths below are
-where this brief built them. See AD-017 §11 and the ROADMAP intake log (Slice B7).
+where this brief built them. See AD-017 §11 and the WP-06 intake log (`WP-06_INTAKE_LOG.md`) (Slice B7).
 
 ---
 

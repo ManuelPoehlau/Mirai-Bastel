@@ -440,7 +440,7 @@ notification stay open.
 `GLRenderStore.FRAGMENT_SRC`) reads like vertex paint. Selected vertices are
 to be shown as small round points in the production yellow; vertex hover
 comes in as a slightly larger, translucent pale-yellow point
-(`PROVISIONAL`, see ROADMAP §7 intake log).
+(`PROVISIONAL`, see `WP-06_INTAKE_LOG.md`).
 
 **Decision (E15).** Overlay representation = `VIEWPORT_V02_ARCHITECTURE.md`
 §4.7 Option A — separate small overlay geometry drawn after the mesh —
