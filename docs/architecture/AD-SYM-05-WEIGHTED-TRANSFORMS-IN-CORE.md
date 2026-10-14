@@ -326,7 +326,7 @@ superseded (dated).
 
 ## 8. Carried to SS2/SS3 (not decided here)
 
-*SS2 built (2026-10-14, [AD-SYM-04 note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):* field = union + pair minimum of distances (R6-A), O-1 = K-side (`PROVISIONAL`; seeds on both sides / only on the seam refused, one Artist question), D-2, D-3 tool side, I-8 and the backstop removed, one correspondence per gesture start (no cache). Open here: SS3 only.
+*SS2 built (2026-10-14, [AD-SYM-04 note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):* field = union + pair minimum of distances (R6-A, kept by Manu 2026-10-14), O-1 = K-side for one side, K-near with "explicit selection wins" for both sides, in-plane for seam-only seeds (Manu 2026-10-14; the §4.3 precondition's "both plain" then also covers falloff pairs nearest explicit seeds), D-2, D-3 tool side, I-8 and the backstop removed, one correspondence per gesture start (no cache). Open here: SS3 only.
 
 - **O-1 Step category** of falloff vertices (§3.3): K-near (follows connectivity, needs a tie rule) or K-side (tie-free,
   undefined for seeds on both sides), and a rule for explicit seeds on both sides. Together with **R6-A vs R6-C** (§3.2):

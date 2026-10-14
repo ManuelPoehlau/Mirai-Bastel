@@ -4,8 +4,10 @@
   over both members), one weight per pair; on the exactly symmetric assets the pair minimum is a
   no-op and the seeds' side equals plain Soft bit for bit; on `partial` meshes it is what keeps
   the pairs equal; the Euclidean bounding-box prefilter is pair-consistent.
-- Categories (O-1 = K-side, `PROVISIONAL`) and the refusals (D-2; seeds on both sides / only on
-  the seam, fail-closed until Manu answers).
+- Categories (O-1, Manu 2026-10-14): K-side for seeds on one side; seeds on both sides — the
+  explicit selection wins, falloff by the nearest source (K-near, ties plain); seeds only on the
+  seam — every step in the plane (Move delta projected, Rotate/Scale under today's seam rules);
+  the refusal that stays (D-2).
 - Gestures through `Application` (W/E/R) on `subd_cube` X/Z and `head_basemesh` X: every pair a
   bitwise mirror, seam exactly on the plane, `symmetry_state` unchanged, one Undo step,
   Undo/Redo/Cancel exact; P-a (falloff seam vertices slide, a selected seam vertex keeps today's
@@ -43,11 +45,7 @@ from mirai.soft_selection import (  # noqa: E402
     symmetric_influence,
 )
 from mirai.soft_selection.influence import curve_shape  # noqa: E402
-from mirai.soft_selection.symmetric import (  # noqa: E402
-    BOTH_SIDES_TEXT,
-    NO_PARTNER_TEXT,
-    SEAM_ONLY_TEXT,
-)
+from mirai.soft_selection.symmetric import NO_PARTNER_TEXT  # noqa: E402
 from mirai.symmetry import CorrespondenceState, SymmetryState, symmetry_state, vertex_correspondence  # noqa: E402
 from mirai.symmetry_axis import AXIS_INDEX, AXIS_NORMALS, ORIGIN, set_symmetry_axis  # noqa: E402
 
@@ -293,16 +291,60 @@ def test_refusal_ambiguous_seed_has_no_partner_either():
         symmetric_influence(mesh, {p0}, 1.0)
 
 
-def test_refusal_seeds_on_both_sides_and_only_on_the_seam():
+def test_both_sides_symmetric_selection_explicit_wins_everything_plain():
+    """A seed and its partner, both selected: nothing is added, nothing is conjugate (as plain W)."""
     mesh = _mesh("head_basemesh", "X")
     corr = vertex_correspondence(mesh)
-    seed = next(iter(_seeds(mesh, "X", "near")))
-    with pytest.raises(SoftSymmetryRefusal) as info:
-        symmetric_influence(mesh, {seed, corr[seed].partner}, 1.0)
-    assert str(info.value) == BOTH_SIDES_TEXT
-    with pytest.raises(SoftSymmetryRefusal) as info:
-        symmetric_influence(mesh, set(_seam_vertices(mesh)[:2]), 1.0)
-    assert str(info.value) == SEAM_ONLY_TEXT
+    seeds = _seeds(mesh, "X", "ring")
+    selection = seeds | {corr[s].partner for s in seeds}
+    radius = 0.3 * mesh_center_and_radius(mesh)[1]
+    field = symmetric_influence(mesh, selection, radius, metric="geodesic")
+    assert not field.partners and not field.mirrored_vertex_ids and not field.in_plane_only
+    assert field.falloff_seam_vertex_ids
+    _assert_pairs_equal(field.weights, corr)
+    plain = compute_influence(mesh, selection, radius, metric="geodesic")
+    assert field.weights == plain  # the union is the selection itself: plain Soft's weights
+
+
+@pytest.mark.parametrize("metric", METRIC_NAMES)
+def test_both_sides_mixed_selection_falloff_follows_the_nearest_source(metric):
+    """Seeds on both sides, partners not selected: a falloff vertex is conjugate exactly when an
+    added partner is strictly nearer than every explicit seed (K-near, a tie stays plain)."""
+    mesh = _mesh("head_basemesh", "X")
+    corr = vertex_correspondence(mesh)
+    near = _seeds(mesh, "X", "ring")
+    far = _seeds(mesh, "X", "far", sign=-1)
+    seeds = near | far
+    radius = 0.4 * mesh_center_and_radius(mesh)[1]
+    field = symmetric_influence(mesh, seeds, radius, metric=metric)
+    assert field.partners == {corr[s].partner for s in seeds}
+    d_seeds = METRICS[metric](mesh, set(seeds), radius)
+    d_partners = METRICS[metric](mesh, set(field.partners), radius)
+    _assert_pairs_equal(field.weights, corr)
+    conjugate = 0
+    for vid in field.weights:
+        if vid in seeds or vid in field.partners or corr[vid].state is CorrespondenceState.SEAM:
+            continue
+        expected = d_partners.get(vid, math.inf) < d_seeds.get(vid, math.inf)
+        assert (vid in field.mirrored_vertex_ids) is expected, vid
+        conjugate += expected
+        # On this symmetric graph the rule is pair-consistent: partners take opposite steps.
+        partner = corr[vid].partner
+        if partner in field.weights and d_seeds.get(vid) != d_partners.get(vid):
+            assert (partner in field.mirrored_vertex_ids) is not expected, vid
+    assert conjugate
+
+
+def test_seam_only_selection_moves_in_the_plane():
+    mesh = _mesh("head_basemesh", "X")
+    corr = vertex_correspondence(mesh)
+    seam = set(_seam_vertices(mesh)[:2])
+    field = symmetric_influence(mesh, seam, 0.3 * mesh_center_and_radius(mesh)[1])
+    assert field.in_plane_only and field.seam_vertex_ids == seam and not field.partners
+    _assert_pairs_equal(field.weights, corr)
+    for vid in field.weights:
+        if corr[vid].state is CorrespondenceState.PAIRED:
+            assert (vid in field.mirrored_vertex_ids) is (_side(mesh, vid, "X") == -1)
 
 
 # == Gestures through Application ===============================================================
@@ -503,47 +545,139 @@ def test_r6_1_straddling_fixtures_stay_exact(fixture, op_name):
     assert app.key_press(CTRL_Y) and _positions(mesh) == end
 
 
-# -- refusals through Application: visible, before anything moves ---------------------------
-
-
-def _refusal_case(app, case):
-    mesh = app.scene.mesh
-    corr = vertex_correspondence(mesh)
-    if case == "no-partner":
-        return {next(v for v, c in corr.items() if c.state is CorrespondenceState.UNPAIRED)}
-    seed = next(iter(_seeds(mesh, "X", "near")))
-    if case == "both-sides":
-        return {seed, corr[seed].partner}
-    return set(_seam_vertices(mesh)[:1])
+# -- the refusal through Application (D-2): visible, before anything moves -------------------
 
 
 @pytest.mark.parametrize("op_name", sorted(KEYS))
-@pytest.mark.parametrize("case,asset,text", [
-    ("no-partner", "man_with_shoes_basemesh", NO_PARTNER_TEXT.format(count=1)),
-    ("both-sides", "head_basemesh", BOTH_SIDES_TEXT),
-    ("seam-only", "head_basemesh", SEAM_ONLY_TEXT),
-])
-def test_refusals_are_visible_and_change_nothing(case, asset, text, op_name):
-    app = _app(asset, "X")
+def test_seed_without_partner_is_refused_visibly_and_changes_nothing(op_name):
+    app = _app("man_with_shoes_basemesh", "X")
     mesh = app.scene.mesh
-    _select(app, _refusal_case(app, case))
+    corr = vertex_correspondence(mesh)
+    _select(app, {next(v for v, c in corr.items() if c.state is CorrespondenceState.UNPAIRED)})
     _soft_on(app)
     before = (mesh.export_state(), len(app.history))
     assert app.key_press(KEYS[op_name])
     serial = app.status_serial
     assert app.pointer_motion(400.0, 300.0, 12.0, 7.0) is False
-    assert app.status_message == f"{LABELS[op_name]}: refused — {text}"
+    assert app.status_message == f"{LABELS[op_name]}: refused — {NO_PARTNER_TEXT.format(count=1)}"
     assert app.status_serial > serial
     assert app.interaction_owner is None and app.tool_manager.active_tool is None
     assert (mesh.export_state(), len(app.history)) == before
-    # Soft off: today's symmetric transform for the same selection (a lone seam vertex keeps
-    # today's seam refusal for Rotate about the view axis).
+    # Soft off: today's symmetric transform runs for the same selection (one-sided).
     assert app.key_press(O)
     assert app.key_press(KEYS[op_name])
     app.pointer_motion(400.0, 300.0, 12.0, 7.0)
-    assert app.transform_interacting or "Seam-Vertex" in app.status_message
+    assert app.transform_interacting
     app.key_press(ESC)
     assert (mesh.export_state(), len(app.history)) == before
+
+
+# -- seeds only on the seam (Manu 2026-10-14): every step in the plane -----------------------
+
+
+def _gesture_round_trip(app, key, corr, axis="X"):
+    mesh = app.scene.mesh
+    state = symmetry_state(mesh)
+    start = _positions(mesh)
+    history = len(app.history)
+    op = _drag(app, key)
+    _assert_exact_mirror(mesh, corr, axis)
+    app.key_release(key)
+    end = _positions(mesh)
+    assert end != start and len(app.history) == history + 1
+    _assert_exact_mirror(mesh, corr, axis)
+    assert symmetry_state(mesh) is state
+    assert app.key_press(CTRL_Z) and _positions(mesh) == start
+    assert app.key_press(CTRL_Y) and _positions(mesh) == end
+    assert app.key_press(CTRL_Z) and _positions(mesh) == start
+    return op, start, end
+
+
+def _seam_vertex_with_paired_ring(mesh):
+    corr = vertex_correspondence(mesh)
+    return next(v for v in _seam_vertices(mesh)
+                if sum(corr[w].state is CorrespondenceState.PAIRED
+                       for e in mesh.vertex_edges(v) for w in mesh.edge_vertices(e)) >= 2)
+
+
+def test_seam_only_move_slides_in_the_plane_and_mirrors_exactly():
+    app = _app("head_basemesh", "X")
+    mesh = app.scene.mesh
+    corr = vertex_correspondence(mesh)
+    seam = _seam_vertex_with_paired_ring(mesh)
+    _select(app, {seam})
+    _soft_on(app)
+    op, start, end = _gesture_round_trip(app, W, corr)
+    assert end[seam][0] == 0.0 and end[seam] != start[seam]
+    for vid in op.weights:  # the whole falloff moved parallel to the plane
+        assert end[vid][0] == start[vid][0] or corr[vid].state is not CorrespondenceState.PAIRED
+
+
+@pytest.mark.parametrize("op_name,constraint", [("rotate", X_KEY), ("scale", None)])
+def test_seam_only_rotate_scale_under_todays_seam_rules_mirror_exactly(op_name, constraint):
+    app = _app("head_basemesh", "X")
+    mesh = app.scene.mesh
+    corr = vertex_correspondence(mesh)
+    seam = _seam_vertex_with_paired_ring(mesh)
+    ring = {w for e in mesh.vertex_edges(seam) for w in mesh.edge_vertices(e)
+            if corr[w].state is CorrespondenceState.SEAM}
+    _select(app, ring)  # two or more seam vertices: Rotate/Scale about their centre move them
+    _soft_on(app)
+    if constraint is not None:
+        app.key_press(constraint)  # Rotate about the mirror axis (today's seam rule)
+    op, _start, _end = _gesture_round_trip(app, KEYS[op_name], corr)
+    assert op.context.params["symmetry"]["seam_vertex_ids"] == ring
+
+
+def test_seam_only_rotate_about_the_view_axis_keeps_todays_refusal_text():
+    results = []
+    for soft in (False, True):
+        app = _app("head_basemesh", "X")
+        _select(app, {_seam_vertex_with_paired_ring(app.scene.mesh)})
+        if soft:
+            _soft_on(app)
+        before = app.scene.mesh.export_state()
+        assert app.key_press(E)
+        assert app.pointer_motion(400.0, 300.0, 12.0, 3.0) is False
+        results.append(app.status_message)
+        assert app.scene.mesh.export_state() == before
+    assert results[0] == results[1] and "Seam-Vertex" in results[1]
+
+
+# -- seeds on both sides (Manu 2026-10-14): the explicit selection wins ----------------------
+
+Y_KEY = Input("key", "y")
+
+
+def test_both_sides_symmetric_selection_in_plane_move_mirrors_exactly():
+    app = _app("head_basemesh", "X")
+    mesh = app.scene.mesh
+    corr = vertex_correspondence(mesh)
+    seeds = _seeds(mesh, "X", "ring")
+    _select(app, seeds | {corr[s].partner for s in seeds})
+    _soft_on(app)
+    app.key_press(Y_KEY)  # a delta in the plane: plain on both sides is the mirror too
+    op, _start, _end = _gesture_round_trip(app, W, corr)
+    assert not op.context.params["symmetry"]["mirrored_vertex_ids"]
+
+
+@pytest.mark.parametrize("op_name", sorted(KEYS))
+def test_both_sides_selections_run_with_one_undo_step(op_name):
+    app = _app("head_basemesh", "X")
+    mesh = app.scene.mesh
+    corr = vertex_correspondence(mesh)
+    seeds = _seeds(mesh, "X", "ring") | _seeds(mesh, "X", "far", sign=-1)
+    _select(app, seeds)
+    _soft_on(app)
+    start = _positions(mesh)
+    op = _drag(app, KEYS[op_name])
+    assert op.context.params["symmetry"]["mirrored_vertex_ids"] >= {corr[s].partner for s in seeds}
+    _assert_exact_mirror(mesh, corr, "X")  # partners not selected: every pair still mirrored
+    app.key_release(KEYS[op_name])
+    assert len(app.history) == 1 and _positions(mesh) != start
+    assert app.key_press(CTRL_Z) and _positions(mesh) == start
+    _drag(app, KEYS[op_name])
+    assert app.key_press(ESC) and _positions(mesh) == start
 
 
 # -- bands stay hidden under symmetry (D-5 is SS3) ------------------------------------------

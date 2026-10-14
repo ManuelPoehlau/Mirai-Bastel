@@ -2,7 +2,8 @@
 
 The caller side of the Core's weighted transforms (AD-SYM-05 §4.3, R6-3): the Core gets weights
 and categories and trusts that the two members of a mirror pair carry the same weight and
-opposite categories. This module is where that precondition is made true.
+opposite categories (or both plain where the explicit selection wins). This module is where that
+precondition is made true.
 
 - **Field (D-1, R6-A).** One distance per mirror pair: the minimum over seeds ∪ mirrored seeds
   (the union field, `METRICS` over seeds ∪ partners) and over both members of the pair, never a
@@ -13,16 +14,26 @@ opposite categories. This module is where that precondition is made true.
   differ). It takes the minimum of *distances*, never the maximum of two weights: `smooth` is not
   monotone in float. The union (not the seeds' plain field plus a partner lookup) so that an
   unpaired vertex on the mirrored side gets its own value from the mirrored seeds (D-2).
-- **Categories (O-1 = K-side, `PROVISIONAL`).** By side of the plane relative to the seeds: a
-  falloff vertex on the seeds' side (or on the plane, off the seam) takes the plain step, one on
-  the other side the conjugate step — paired or not (D-2: an unpaired vertex takes its side's step
-  with its own weight) — a declared seam vertex reached only by the falloff slides in the plane
+- **Categories (O-1).** A declared seam vertex reached only by the falloff slides in the plane
   (`falloff_seam_vertex_ids`, P-a), a selected seam vertex keeps today's rules (`seam_vertex_ids`,
-  weight 1.0). Pair-consistent without a tie rule: partners lie on opposite sides.
-- **Refusals (`SoftSymmetryRefusal`, before anything moves).** D-2: a seed without a unique
-  partner (unpaired or ambiguous; a seam seed is its own partner). K-side undefined, fail-closed
-  until Manu answers (the one Artist question of SS2): seeds on both sides of the plane, or only on
-  it (seam vertices do not count as a side).
+  weight 1.0), the seeds' own partners take the conjugate step. Every other falloff vertex, by the
+  selection (Manu, 2026-10-14, AD-SYM-04 Decision record):
+  - *seeds on one side* — **K-side**: the seeds' side (and off-seam vertices exactly on the plane)
+    plain, the other side conjugate, paired or not (D-2: an unpaired vertex takes its side's step
+    with its own weight). Pair-consistent without a tie rule.
+  - *seeds on both sides* — **"the explicit selection wins"**, as plain W/E/R today
+    (`mirrored_selection`): only partners of seeds whose partner is not selected are added; a
+    falloff vertex takes the step of its nearest source (**K-near**: an explicit seed → plain, an
+    added partner → conjugate), a tie goes to the explicit seed (plain). Pairs whose nearest
+    sources are both explicit move alike, as two explicitly selected partners do today.
+  - *seeds only on the seam* (seam vertices are no side) — **in the plane**: the side is
+    irrelevant because every allowed step commutes with the mirror (Rotate/Scale keep today's
+    seam rules through `seam_vertex_ids`: pivot on the plane, axis along the normal, scale keeping
+    the plane); Move must keep its delta parallel to the plane, which the caller does
+    (`in_plane_only`, `MoveTool`). The categories then use the positive side, which no step can
+    tell from the other.
+- **Refusal (`SoftSymmetryRefusal`, before anything moves).** D-2: a seed without a unique
+  partner (unpaired or ambiguous; a seam seed is its own partner).
 
 No cache (AR-1/INV-3, as `mirai.symmetry`): the correspondence is derived once per call, i.e.
 once per gesture start; a caller that already holds it for the current geometry may hand it in.
@@ -47,9 +58,6 @@ class SoftSymmetryRefusal(ValueError):
 
 #: D-2 (AD-SYM-04 §5.1): a seed without a partner refuses the gesture.
 NO_PARTNER_TEXT = "Soft + Symmetrie: {count} gewählte Vertices ohne Spiegelpartner"
-#: O-1 open (Artist question): K-side is undefined for these selections; fail-closed until then.
-BOTH_SIDES_TEXT = "Soft + Symmetrie: Auswahl auf beiden Seiten der Ebene (noch nicht festgelegt)"
-SEAM_ONLY_TEXT = "Soft + Symmetrie: Auswahl nur auf der Mitte (noch nicht festgelegt)"
 
 
 @dataclass(frozen=True)
@@ -58,11 +66,14 @@ class SymmetricInfluence:
 
     weights: dict[VertexId, float]
     seeds: frozenset[VertexId]
-    #: Partners of the seeds (weight 1.0): the D-3 fallback set is seeds ∪ partners.
+    #: Partners the selection adds (weight 1.0; a selected partner is a seed): the D-3 fallback
+    #: set is seeds ∪ partners.
     partners: frozenset[VertexId]
     mirrored_vertex_ids: frozenset[VertexId]
     seam_vertex_ids: frozenset[VertexId]
     falloff_seam_vertex_ids: frozenset[VertexId]
+    #: Seeds only on the seam: a Move must keep its delta parallel to the plane.
+    in_plane_only: bool = False
 
     def symmetry_params(self, mesh: Mesh) -> dict[str, Any]:
         """`params["symmetry"]` for the Core op (the shape `resolve_symmetry` builds, plus the
@@ -94,8 +105,8 @@ def symmetric_influence(
     """Weights and categories for symmetric Soft from the explicit seeds (module docstring).
 
     Needs a symmetry definition on `mesh`. Seeds the mesh no longer knows are skipped (as in
-    `compute_influence`); none left -> empty weights. Raises `SoftSymmetryRefusal` for the
-    selections symmetric Soft does not define."""
+    `compute_influence`); none left -> empty weights. Raises `SoftSymmetryRefusal` for a seed
+    without a partner (D-2)."""
     radius = checked_radius(metric, curve, radius)
     definition = mesh.symmetry_definition
     if definition is None:
@@ -116,18 +127,29 @@ def symmetric_influence(
     if no_partner:
         raise SoftSymmetryRefusal(NO_PARTNER_TEXT.format(count=len(no_partner)))
     sides = {_side(mesh.vertex_position(s), plane_point, plane_normal) for s in paired} - {0}
-    if len(sides) > 1:
-        raise SoftSymmetryRefusal(BOTH_SIDES_TEXT)
-    if not sides:
-        raise SoftSymmetryRefusal(SEAM_ONLY_TEXT)
-    (seed_side,) = sides
-    partners = frozenset(corr[s].partner for s in paired)
+    both_sides = len(sides) > 1
+    in_plane_only = not sides
+    # Seam only: any side will do (module docstring); one side: K-side; both: K-near below.
+    seed_side = 1 if len(sides) != 1 else next(iter(sides))
+    # The explicit selection wins: a selected partner is a seed, not a partner.
+    partners = frozenset(corr[s].partner for s in paired) - valid_seeds
 
     # D-1: seeds and their partners carry 1.0; every other pair one weight from its minimum.
     weights: dict[VertexId, float] = {v: 1.0 for v in valid_seeds | partners}
+    from_seeds: dict[VertexId, float] = {}
+    from_partners: dict[VertexId, float] = {}
     if radius > 0.0:
         shape = curve_shape(curve, curve_power)
-        distances = METRICS[metric](mesh, set(valid_seeds | partners), radius)
+        if both_sides:
+            # K-near needs to know which source is nearest: the union as two fields.
+            from_seeds = METRICS[metric](mesh, set(valid_seeds), radius)
+            from_partners = METRICS[metric](mesh, set(partners), radius) if partners else {}
+            distances = dict(from_seeds)
+            for vid, d in from_partners.items():
+                if d < distances.get(vid, math.inf):
+                    distances[vid] = d
+        else:
+            distances = METRICS[metric](mesh, set(valid_seeds | partners), radius)
         for vid, d in distances.items():
             if vid in weights:
                 continue  # a seed, a partner, or the second member of a pair already done
@@ -150,6 +172,9 @@ def symmetric_influence(
             mirrored.add(vid)  # the seeds' own partners: as `mirrored_selection` today
         elif state(vid) is CorrespondenceState.SEAM:
             falloff_seam.add(vid)
+        elif both_sides:
+            if from_partners.get(vid, math.inf) < from_seeds.get(vid, math.inf):
+                mirrored.add(vid)  # nearest source an added partner; a tie stays plain
         elif _side(mesh.vertex_position(vid), plane_point, plane_normal) == -seed_side:
             mirrored.add(vid)
     return SymmetricInfluence(
@@ -159,4 +184,5 @@ def symmetric_influence(
         mirrored_vertex_ids=frozenset(mirrored),
         seam_vertex_ids=selected_seam,
         falloff_seam_vertex_ids=frozenset(falloff_seam),
+        in_plane_only=in_plane_only,
     )

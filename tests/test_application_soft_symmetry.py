@@ -3,7 +3,7 @@
 Since SS2 the combination runs: symmetric Soft (weights and categories from
 `soft_selection.symmetric_influence`; the asset acceptance is `test_symmetric_soft_selection.py`).
 The settings are still read at `begin()` (review F2), so W armed → O → motion runs symmetric Soft
-too, and the refusals that remain (D-2, seeds on both sides / only on the seam) come from there.
+too, and the refusal that remains (D-2, a seed without partner) comes from there.
 The soft ops have no symmetry backstop any more (`supports_symmetry` is the Core op's `True`).
 The Symmetry Lab's MARK/BLOCK variants are in
 `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.
@@ -22,7 +22,6 @@ from mirai.application import Application
 from mirai.interaction.input import Input
 from mirai.interaction.tools import MoveTool, RotateTool, ScaleTool
 from mirai.soft_selection import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation, SoftSettings
-from mirai.soft_selection.symmetric import BOTH_SIDES_TEXT
 
 WIDTH, HEIGHT = 800, 600
 W, E, R = Input("key", "w"), Input("key", "e"), Input("key", "r")
@@ -106,16 +105,22 @@ def test_soft_on_then_arm_runs_and_cancel_is_exact(setup, key):
     assert _state(app) == before
 
 
-def test_soft_on_seeds_on_both_sides_refused_at_begin(setup):
+def test_soft_on_seeds_on_both_sides_explicit_selection_wins(setup):
+    """Manu 2026-10-14: a selection on both sides runs like plain W today - both selected
+    partners take the same, unmirrored step."""
     app, ids = setup
     app.selection.set({ids["l0"], ids["r0"]})
     app.key_press(O)
-    before = _state(app)
+    mesh = app.scene.mesh
+    l0, r0 = mesh.vertex_position(ids["l0"]), mesh.vertex_position(ids["r0"])
     assert app.key_press(W)
-    assert app.pointer_motion(300.0, 300.0, 12.0, 7.0) is False
-    assert app.status_message == f"Move: refused — {BOTH_SIDES_TEXT}"
-    assert app.interaction_owner is None and app.tool_manager.active_tool is None
-    assert _state(app) == before
+    assert app.pointer_motion(300.0, 300.0, 12.0, 7.0)
+    assert not app.tool_manager.active_tool.operation.context.params["symmetry"]["mirrored_vertex_ids"]
+    app.key_release(W)
+    assert len(app.history) == 1
+    dl = [a - b for a, b in zip(mesh.vertex_position(ids["l0"]), l0)]
+    dr = [a - b for a, b in zip(mesh.vertex_position(ids["r0"]), r0)]
+    assert dl == dr and any(dl)
 
 
 def test_soft_off_under_symmetry_is_todays_symmetric_move(setup):

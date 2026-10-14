@@ -103,6 +103,9 @@ class MoveTool(Tool):
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
         self._normal: tuple[float, float, float] | None = None  # Für space="normal" single-axis
         self._plane_exclude: tuple[float, float, float] | None = None  # Für space="normal" plane (WP-03D)
+        # Symmetric Soft with seeds only on the seam (AD-SYM-04 SS2): the step stays parallel to
+        # the mirror plane, so both sides move alike (`SymmetricInfluence.in_plane_only`).
+        self._in_plane_normal: tuple[float, float, float] | None = None
 
     # -- Beobachtbarkeit für Tests/Integration ------------------------------
 
@@ -135,6 +138,7 @@ class MoveTool(Tool):
         self._anchor_vertex = min(vertex_ids)
         self._normal = None
         self._plane_exclude = None
+        self._in_plane_normal = None
 
         # WP-03C: axis is now an explicit parameter (separate from space)
         # Backward compatibility: if old API passes axis as space parameter
@@ -214,6 +218,8 @@ class MoveTool(Tool):
             operation_params["symmetry"] = field.symmetry_params(mesh)
             operation_params["influence"] = field.weights
             affected_vertex_ids = set(field.weights)
+            if field.in_plane_only:
+                self._in_plane_normal = definition.plane_normal
         elif definition is not None:
             mirrored_vertex_ids = mirrored_selection(mesh, vertex_ids)
             correspondence = vertex_correspondence(mesh)
@@ -293,6 +299,16 @@ class MoveTool(Tool):
                 for component, mask in zip(world_delta, self._axes_mask)
             )
 
+        if self._in_plane_normal is not None:
+            # Same projection as the Core's seam step (`_project_onto_plane`): exact for E1 axes.
+            n = self._in_plane_normal
+            dot = world_delta[0] * n[0] + world_delta[1] * n[1] + world_delta[2] * n[2]
+            world_delta = (
+                world_delta[0] - dot * n[0],
+                world_delta[1] - dot * n[1],
+                world_delta[2] - dot * n[2],
+            )
+
         self._operation.update(delta=world_delta)
 
     def _on_commit(self) -> Any:
@@ -310,4 +326,5 @@ class MoveTool(Tool):
         self._camera = None
         self._axes_mask = (1.0, 1.0, 1.0)
         self._normal = None
+        self._in_plane_normal = None
         self._plane_exclude = None

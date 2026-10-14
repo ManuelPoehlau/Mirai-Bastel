@@ -8,7 +8,7 @@ Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation not
 **Slice SS0 (headless probe, no `src` change) is done (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss0)):** D-1 holds bit for bit on every exactly symmetric asset case; one open point for SS1's design (R-6, below).
 **SS1 design note written (2026-10-14, PROPOSED): [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)** — the one Core change; independent review CLAUDE-001 ACCEPT WITH CHANGES, all findings worked in (AD-SYM-05 §10); **go for SS1 (Manu, 2026-10-14)**.
 **Slice SS1 is built (2026-10-14, [implementation note in AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)):** the weighting is in the Core loop; no visible change (the app still refuses Soft + symmetry until SS2).
-**Slice SS2 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss2)):** symmetric Soft runs in the app (W/E/R, both metrics); I-8 is lifted; two `PROVISIONAL` refusals stay open as one Artist question (seeds on both sides / only on the seam, with R6-A vs R6-C).
+**Slice SS2 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss2)):** symmetric Soft runs in the app (W/E/R, both metrics); I-8 is lifted. **The SS2 Artist question is answered (Manu, 2026-10-14, Decision record) and built the same day ([addendum](#addendum-2026-10-14-manus-answer-to-the-ss2-question)):** seeds on both sides → the explicit selection wins; only on the seam → every step in the plane; R6-A stays.
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -56,6 +56,12 @@ still only an assumption — not corrected, which is not a confirmation.
 becomes a requirement on the design (taken up in [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) §3).
 
 **SS1 (Manu, 2026-10-14, in the chat: "Go für SS1"):** build the Core change as designed in AD-SYM-05 (reviewed, CLAUDE-001).
+
+**SS2 Artist question (Manu, 2026-10-14, in the chat: "Ok, ich stimme zu", to the engineering recommendation):** symmetric Soft
+with a selection on **both sides** runs like plain W/E/R today — the explicit selection wins (only partners of one-sided seeds
+are added and mirrored), every falloff vertex takes the step of its nearest source (K-near; a tie goes to the explicit
+seed); a selection **only on the seam** moves in the plane (Move parallel to the plane, Rotate/Scale under today's seam
+rules). **R6-A stays** (union field). One side keeps K-side. The SS2 refusals for these two cases are lifted; D-2 stays.
 
 **Engineering, unchanged by the decision:** the key, the overlay look and every text stay `PROVISIONAL`; no Artist Input
 Truth entry is created (AD-013 A5).
@@ -817,6 +823,28 @@ refusal texts German like the seam refusals.
 **Not done (as ordered):** SS3 (bands on both sides, symmetric `soft_w` probe rows, reference-PC run), Re-Symmetrize (A3), keys,
 Lab gate rows, any `src/core` change.
 
+### Addendum (2026-10-14): Manu's answer to the SS2 question
+
+Built the same day after the answer (Decision record); still no `src/core` change. Supersedes the two K-side refusals above.
+
+- `soft_selection/symmetric.py`: **seeds on both sides** — partners only for seeds whose partner is not selected (as
+  `mirrored_selection`); the union as two fields (explicit seeds, added partners) so the nearest source is known; a falloff
+  vertex is conjugate exactly when an added partner is strictly nearer (K-near, tie → plain); weights unchanged (union +
+  pair minimum). **Seeds only on the seam** — `SymmetricInfluence.in_plane_only`; categories on the positive side, which no
+  allowed step can tell apart: Rotate/Scale run under today's seam rules (the seeds are `seam_vertex_ids`: pivot on the
+  plane, axis along the normal, scale keeping the plane — all commute with the mirror); `MoveTool` projects the delta onto the
+  plane (the Core's seam arithmetic, exact for E1), so plain and conjugate steps coincide.
+- *Core precondition (AD-SYM-05 §4.3):* "both plain when both are explicit seeds" now also covers falloff pairs whose nearest
+  sources are both explicit — the same meaning ("the explicit selection wins"); the Core checks nothing new.
+- Tests: `tests/test_symmetric_soft_selection.py` now 64 (K-near rule against the two fields, pair-consistent on the head;
+  symmetric selection = plain Soft's weights, nothing conjugate; seam-only field; through `Application`: seam-only W exact
+  mirror and in the plane, seam-only E with X constraint / R uniform exact, E about the view axis keeps today's text; both
+  sides W in the plane exact, mixed both sides W/E/R one Undo step, Esc exact); App and Lab tests switched from refusal to
+  "runs, MARK = BLOCK". Ran once (container, `xvfb-run -a`): `tests` 3082 passed, 51 skipped (same skips as above);
+  `experiments/symmetry_lab/tests` 454 passed, 4 skipped; `playground/tests` 1241 passed.
+- *What Manu can feel:* a symmetric selection dragged sideways (along the mirror axis) shifts sideways and leaves the mirror,
+  exactly as plain W does today; along the plane it stays symmetric.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -898,9 +926,9 @@ Praxistest von Extrude und Soft in der App.
 
 **SS2 gebaut (2026-10-14): symmetrische Soft Selection in der App.** Mit Symmetrie an (Shift+S) und Soft an (O) wirken
 W/E/R jetzt auf beiden Seiten: deine Seite wie gewohnt, die andere Seite exakt gespiegelt, die Punkte in der Mitte gleiten in
-der Ebene (deine Entscheidung P-a). Die Bänder bleiben unter Symmetrie noch unsichtbar (kommt mit SS3). Drei Fälle lehnt die
-App sichtbar ab, bevor sich etwas bewegt: ein gewählter Punkt ohne Spiegelpartner, eine Auswahl auf beiden Seiten, eine
-Auswahl nur auf der Mitte. Die beiden letzten sind vorläufig — dazu die Frage unten.
+der Ebene (deine Entscheidung P-a). Die Bänder bleiben unter Symmetrie noch unsichtbar (kommt mit SS3). Abgelehnt wird nur noch
+ein gewählter Punkt ohne Spiegelpartner (sichtbar, bevor sich etwas bewegt). Auswahl auf beiden Seiten und nur auf der Mitte
+laufen seit deiner Antwort (unten).
 
 **Praxistest SS2 (optional vor J, ca. 10 Minuten).** Start: `python src/main.py` (Kopf ist geladen).
 
@@ -909,7 +937,8 @@ Auswahl nur auf der Mitte. Die beiden letzten sind vorläufig — dazu die Frage
 3. Dasselbe mit E (drehen) und R (skalieren); Shift+Mausrad hoch, bis der Einfluss deutlich über die Mitte reicht, und nochmal W/E/R.
 4. Strg+Z / Strg+Y einmal je Geste; einmal während des Ziehens Esc.
 5. Einen Punkt auf der Mitte **zusätzlich** zur Auswahl nehmen und E drücken.
-6. Einen Punkt und seinen Spiegelpunkt wählen (beide Seiten) und W ziehen.
+6. Einen Punkt und seinen Spiegelpunkt wählen (beide Seiten) und W ziehen, einmal nach vorn, einmal seitlich.
+7. Nur einen Punkt auf der Mitte wählen (z. B. Nasenspitze), W ziehen; dann zwei Mittelpunkte, R ziehen.
 
 | # | Was du prüfst | Erwartet | Verdikt |
 |---|---|---|---|
@@ -917,12 +946,16 @@ Auswahl nur auf der Mitte. Die beiden letzten sind vorläufig — dazu die Frage
 | 2 | Radius über die Mitte | Mittelpunkte gleiten in der Ebene mit, kein Knick an der Mitte; dein Seiten-Drehpunkt bleibt | |
 | 3 | Strg+Z / Strg+Y / Esc | ein Schritt je Geste, alles exakt zurück | |
 | 4 | Mittelpunkt mitgewählt + E | dieselbe Ablehnung wie heute ohne Soft (Achse nur parallel zur Spiegelachse, z. B. mit X-Constraint) | |
-| 5 | Auswahl auf beiden Seiten / nur Mitte | Statuszeile „refused — Soft + Symmetrie: …“, nichts bewegt sich | |
+| 5 | Auswahl auf beiden Seiten | wie heute ohne Soft: deine Auswahl gewinnt — nach vorn bleibt es symmetrisch, seitlich wandert alles zur Seite | |
+| 6 | Auswahl nur auf der Mitte | W: alles gleitet parallel zur Ebene, beidseitig gleich; R: gleichmäßig, symmetrisch | |
 
-**Die eine Frage an dich (Soft + Symmetrie, bisher vorläufig abgelehnt):** Wenn deine Auswahl auf **beiden** Seiten liegt
+**Die eine Frage an dich (Soft + Symmetrie) — beantwortet:** Wenn deine Auswahl auf **beiden** Seiten liegt
 (z. B. eine Kantenschleife quer über die Mitte) oder **nur auf der Mitte** (z. B. die Nasenspitze), weiß die App nicht, welche
 Seite „deine“ ist. Soll sie (a) weiter ablehnen, (b) jede Seite so bewegen, wie die gewählten Punkte auf *dieser* Seite es tun
 (für die Mitte allein: Bewegung nur entlang der Ebene), oder (c) etwas anderes? Damit zusammen hängt nur ein Sonderfall, den
 kein heutiges Asset zeigt (Kante, die die Mitte ohne Punkt darauf kreuzt): dort bekommt heute deine Seite in Mittennähe etwas
 mehr Einfluss als ohne Symmetrie (R6-A); die Alternative wäre, deine Seite exakt wie normales Soft zu halten (R6-C). Wenn du
 dazu nichts sagst, bleibt R6-A.
+Manu: Ok, ich stimme zu (2026-10-14, zur Empfehlung: beide Seiten → deine Auswahl gewinnt wie heute ohne Soft, jeder
+Einflusspunkt folgt dem nächsten gewählten Punkt; nur Mitte → alles in der Ebene; R6-A bleibt). **Gebaut am selben Tag**
+(Nachtrag in der SS2-Notiz); Praxistest oben um die Zeilen 5 und 6 ergänzt.

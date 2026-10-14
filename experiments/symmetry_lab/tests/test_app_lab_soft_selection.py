@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pytest
 
-from mirai.soft_selection.symmetric import BOTH_SIDES_TEXT
 from mirai.symmetry import CorrespondenceState, vertex_correspondence
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
@@ -161,15 +160,24 @@ def test_symmetric_soft_runs_alike_in_mark_and_block(key, armed_first):
     assert results[GateMode.BLOCK] == results[GateMode.MARK]
 
 
-@pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK])
-def test_seeds_on_both_sides_are_refused_alike_in_mark_and_block(mode):
-    def both_sides(app):
-        seeds, corr = _ring_on_plus_x(app)
-        seed = min(seeds)
-        return {seed, corr[seed].partner}, corr
+def _both_sides(app):
+    seeds, corr = _ring_on_plus_x(app)
+    seed = min(seeds)
+    return {seed, corr[seed].partner}, corr
 
-    app, lab, _corr, before, moved = _soft_gesture(mode, W, seeds_of=both_sides)
-    assert moved is False
-    assert app.status_message == f"Move: refused — {BOTH_SIDES_TEXT}"
-    assert app.interaction_owner is None and not app.transform_interacting
-    assert _state(app) == before
+
+def _seam_only(app):
+    _seeds, corr = _ring_on_plus_x(app)
+    return {min(v for v, c in corr.items() if c.state is CorrespondenceState.SEAM)}, corr
+
+
+@pytest.mark.parametrize("seeds_of", [_both_sides, _seam_only], ids=["both-sides", "seam-only"])
+def test_both_sides_and_seam_only_selections_run_alike_in_mark_and_block(seeds_of):
+    """Manu 2026-10-14: no refusal any more (explicit selection wins / in the plane)."""
+    results = {}
+    for mode in (GateMode.BLOCK, GateMode.MARK):
+        app, lab, _corr, before, moved = _soft_gesture(mode, W, seeds_of=seeds_of)
+        assert moved, app.status_message
+        assert len(app.history) == before[1] + 1
+        results[mode] = app.scene.mesh.export_state()
+    assert results[GateMode.BLOCK] == results[GateMode.MARK]
