@@ -451,7 +451,8 @@ class ProductionUnchangedTests(unittest.TestCase):
     def test_production_app_switches_symmetry_only_through_its_command(self):
         """Until 2026-10-14 this pinned "no way to switch symmetry on". AD-SYM-04 M-1 / slice A1
         reversed that: the app starts without a definition and has exactly one way to set one,
-        the Shift+S command (`SYMMETRY_CYCLE` → `_symmetry_cycle`)."""
+        the Shift+S command (`SYMMETRY_CYCLE` → `_symmetry_cycle`). Slice A2 adds the display, which
+        only reads the definition (`symmetry_display`, its backing field and the deferral predicate)."""
         from mirai.application import Application
 
         app = Application()
@@ -460,7 +461,7 @@ class ProductionUnchangedTests(unittest.TestCase):
         self.assertEqual([n for n in names if "symmetr" in n.lower()], ["SYMMETRY_CYCLE"])
         self.assertEqual(
             [m for m in dir(app) if "symmetr" in m.lower() and not m.startswith("__")],
-            ["_symmetry_cycle"],
+            ["_symmetry_cycle", "_symmetry_display", "_symmetry_display_deferred", "symmetry_display"],
         )
 
     def test_rotate_scale_without_symmetry_match_plain_math(self):

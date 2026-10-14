@@ -607,7 +607,8 @@ definition change right before arming never deferred; new: no display without th
 order (outline → markers → app points), the legend values, no partner markers in the app, no signature per move with
 symmetry off. `tests/test_symmetry_display.py` — the report tests moved from `test_lab_symmetry.py` (deleted) plus the
 outline margin and the signature rule. T-G3b: a new test pins the real import (`viewport.gl_symmetry_overlay.GLSymmetryOverlay`,
-exactly one). `test_main_wiring` / `test_application_load_scene`: the `GL_TYPES` key. Lab: the draw-order tests
+exactly one). `test_main_wiring` / `test_application_load_scene`: the `GL_TYPES` key. `test_symmetric_transform`'s Production guard
+(one way to set a definition) names the three read-only display members next to `_symmetry_cycle`. Lab: the draw-order tests
 (`test_app_lab_partners`, `test_app_lab_preview`) expect "app plane + state, lab lines, lab points, app points"; the
 partner, HUD and gate tests read the app's sink for the state layers; `test_run`/`test_app_lab_cycle` check the app
 overlay is in the Lab's viewport exactly once and the Lab draws none of its layers; T-R4a counts `run.build_app_only`.
