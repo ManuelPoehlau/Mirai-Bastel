@@ -1,7 +1,8 @@
 # AD-SYM-04 — Symmetry in the Production app (`src/main.py`), then symmetric Soft Selection
 
-**Status:** **PROPOSED** (2026-10-14). A decision proposal plus slice plans, nothing more. An independent review in a fresh
-session comes first (§9), then Manu decides. Nothing here is decided except what §0 quotes as already decided.
+**Status:** **PROPOSED** (2026-10-14), **revised the same day after the independent review CLAUDE-001** (ACCEPT WITH CHANGES;
+every finding answered in §9). A decision proposal plus slice plans, nothing more; Manu decides next (Q-1…Q-4). Nothing
+here is decided except what §0 quotes as already decided.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
 **Work package:** WP-SYM-APP-01 (decision package).
 **Read at:** `main` @ `54de6ee`. Line numbers refer to that commit.
@@ -65,7 +66,7 @@ Facts only, two lines per item.
 | # | Item | Fact |
 |---|---|---|
 | I-1 | Definition storage | `Mesh.symmetry_definition: SymmetryDefinition \| None` (plane point, unit normal, seam edge ids; `core/mesh.py:74`, `:121`). Part of `export_state()`/`load_state()` (`:1098`, `:1163`), so Undo/Redo restore it (AD-SYM-01). |
-| I-2 | Scene change drops it | `init_scene`/`load_scene` replace the mesh and reset history (`application.py:629-680`), so a definition never survives into another scene (AD-SYM-01 condition 3). |
+| I-2 | Scene change drops it | `init_scene` replaces the mesh (`application.py:537`), `load_scene` also resets history (`:629-680`), so a definition never survives into another scene (AD-SYM-01 condition 3). |
 | I-3 | Correspondence and state | `mirai.symmetry`: `vertex_correspondence` (exact positions, no tolerance, whole mesh per call, `symmetry.py:118`), `symmetry_state`, `mirrored_selection`. |
 | I-4 | Coordination | `symmetry_coordination` (`SymmetryIndex`, canonical/expand, seam rules S1–S3, completeness/delta) and the coordinators in `symmetric_ops`, `symmetric_knife`, `symmetric_extrude`. |
 | I-5 | Declarations (D-b) | `symmetry_declarations`: all four `C` contexts, the three removal commands, `Extrude` (`symmetry_declarations.py:55-93`). Static tables, read at every call, no gate data. |
@@ -161,7 +162,13 @@ No new mechanism. To be written into AD-013 as a dated note **after** Manu decid
   AD-SYM-04 M-1) the Production host sets definitions through `Application`'s own symmetry command, recorded in history like any mesh change. `src/main.py` itself still writes
   no gate data and contains no symmetry code; T-G3b keeps guarding `src/main.py` and is re-labelled accordingly. With
   `command_gate is None` an undeclared operation runs as without a definition, and T-G3a keeps pinning that boundary (it
-  flips only if Manu chooses F-c, §3.3)."
+  flips only if Manu chooses F-c, §3.3)." **Under S-2/S-3 this wording is not enough** (review R-2): the moved overlay is a
+  GL type that `src/main.py` must import for `GL_TYPES`, and T-G3b flags every import whose module or name contains
+  "symmetry". T-G3b is then **narrowed, not re-labelled**, and the quoted sentence ends instead: "…T-G3b is narrowed to:
+  `src/main.py` never assigns `symmetry_definition` and calls no correspondence or coordination function; importing one
+  GL overlay type for `GL_TYPES` is allowed." The phrase "contains no symmetry code" is dropped. Renaming the module to
+  avoid the word would pass the guard without keeping the rule (G-4) and is not an option. Under S-1 the wording above
+  stands.
 - **H2-R5, first half — unchanged** if the writer is an `Application` command (recommended, §3.1): `src/main.py` then calls
   neither `apply_mesh_change` nor `set_status` and T-R5b stays as it is. Overlays reach the app as a GL type handed to
   `init_scene` (the `soft_overlay_type` precedent), not through an `add_overlay` call in `src/main.py`.
@@ -184,6 +191,18 @@ No new mechanism. To be written into AD-013 as a dated note **after** Manu decid
 - **K-4** The Lab's gate re-derivation (H2-R2: after every forwarded key) already covers a definition changed by an app
   command, because it reads `mesh.symmetry_definition` and never caches it.
 - **K-5** `experiments/symmetry_lab/tests` stays green on every slice (AGENTS.md §8a: `Application` changes reach the Lab).
+- **K-6** The Lab's gate rows must let the app's symmetry command through (review R-3). As a `mirai.interaction.commands`
+  constant dispatched by `Application.key_press`, it is in none of the sets `block_row()` allows (`lab_app.py:306-336`),
+  so under BLOCK — the Lab default while symmetry is on — it would get `BLOCK_NOT_ALLOWED_TEXT`: Shift+S could switch
+  symmetry on but never cycle it or switch it off. The BLOCK and MARK rows therefore allow it **by a named entry** in the
+  row (not silently via `NON_OPERATION`, because it changes mesh state); the preview row keeps refusing it (H2-R2). T-FC1
+  (which expects every unlisted constant refused) and T-R1a are adjusted in A1. This is a Lab-side change under H2's
+  existing rules, no new writer.
+- **K-7** The Playground stays out (review R-8). A new constant with a default binding also reaches the Playground's
+  resolver (`playground/input_adapter.py:107`), and its `SAFE_COMMANDS` whitelist (`playground/command_handler.py:62-68`)
+  drops it, so the Playground cannot set a definition. That is intended: its topology tools mutate outside the
+  coordinators and would run one-sided. Adding the command there would make the Playground a second symmetry host and
+  needs its own review (the "second user" of H2-R6).
 
 ---
 
@@ -221,7 +240,7 @@ question is only about tools wired **later** (Loop Insert, Collapse, Tweak, Gizm
 
 | | Option | Cost |
 |---|---|---|
-| **F-a** | **No runtime gate; a build-time guard instead.** A test in `tests/` runs every command constant through `Application` on a symmetric fixture with a definition set and asserts: completeness unchanged, or nothing changed and a refusal status posted. A newly wired tool fails it until it is declared or refuses. E5 (MARK/BLOCK, Shift+B) stays Lab-only. | No governance change (G-3). Catches only what the test's fixture/selection exercises; a tool reachable only through an unusual selection could slip. |
+| **F-a** | **No runtime gate; a build-time guard instead.** A test in `tests/` binds every command constant to a test GLOBAL key and presses it through `Application` on a symmetric fixture with a definition set. Oracle, with no command list (review R-5): **if the mesh changed, completeness is unchanged**; if the command was handled and refused, a status was posted. Unhandled constants (`return False`, no change) pass trivially. A newly wired one-sided tool fails it until it is declared or refuses. E5 (MARK/BLOCK, Shift+B) stays Lab-only. | No governance change (G-3), no second command list and no import of the Lab's `NON_OPERATION`. Known gaps, stated: it sees only the key path (a host's `dispatch_command(…, context=…)` and `apply_mesh_change` are outside it), and it catches only what the fixture's selection exercises. |
 | F-b | `src/main.py` installs a Production BLOCK row | A second gate writer: H2-R6 review (G-3), H2-R5 rewritten, `NON_OPERATION` must move to `src`. Largest. |
 | F-c | G-3: `Application` itself refuses undeclared operations whenever a definition is set | Puts KEEP-BLOCK into Production (needs Manu's promotion of that verdict); the Lab's MARK comparison loses its subject (MARK has nothing to compare with today's declarations anyway, README "E5"); T-G3a flips. |
 
@@ -247,8 +266,8 @@ before proposing the change.
 |---|---|---|
 | C-1 | **Weights and falloff across the mirror plane.** One influence value per vertex, symmetric by construction. | **No.** The influence system is outside the Core (CORE_V1_FREEZE §4, V1_CORE §6); `compute_influence` lives in `src/mirai/soft_selection/influence.py:157` and uses only public `Mesh` queries. Partner ids come from `mirai.symmetry`/`SymmetryIndex`. |
 | C-2 | **Geodesic metric across the plane.** | **No.** Multi-source Dijkstra over the edge graph (`influence.py:115`); seeds ∪ mirrored seeds is a caller-side input. |
-| C-3 | **Category × weight in one per-vertex step.** A mirrored partner needs the conjugate step *scaled by its weight*; a seam vertex needs the weighted step *then* the projection. | **Yes — this is the need.** The category logic lives in the Core ops (`MoveOperation._transform_position`: reflect/project the delta, `core/operations/move.py`; `_PivotTransformOperation`: conjugate step, projection, plane checks, `core/operations/transform.py:298-366`). The weight logic lives in `src/mirai/soft_selection/ops.py` (`w·Δ`, `w·θ`, `1 + w(F−1)`), which refuses `params["symmetry"]` (`ops.py:63-75`). Neither side does both. Doing both outside the Core means a second copy of the mirror logic per tool (against INV-9/AR-10 and AD-SYM-02 §1 "genau eine Stelle"). The place where both meet is the one loop `VertexTransformOperation._on_update` with its dead `_weights` placeholder (`transform.py:227`, `:261-270`; AD-020 §8.3). |
-| C-4 | **Seam vertices with `w < 1`.** | **Partly.** For a fixed axis/basis, the weight does not change whether a step keeps the plane (`_check_seam_step` stays valid). But `_PivotTransformOperation._on_begin` refuses whenever **any** seam vertex is in the op's vertex set and the pivot is off the plane (`transform.py:338-341`). Under Soft the vertex set grows with the radius, so this begin-time scope decides when a soft Rotate/Scale is refused (§5.1 D-3). |
+| C-3 | **Category × weight in one per-vertex step.** A mirrored partner needs the conjugate step *scaled by its weight*; a seam vertex needs the weighted step *then* the projection. | **Yes — the weighting semantics.** The Core loop already *composes* both: `VertexTransformOperation._on_update` calls `_transform_position` (conjugate step, projection; `MoveOperation`, `_PivotTransformOperation`, `core/operations/transform.py:298-366`) and then blends with `_weights` (`transform.py:227`, `:261-270`). Mirroring is affine, so the blend of a partner's conjugate step is the conjugate of the blended step, and the blend of two on-plane points stays on the plane (review R-7). What is missing is the semantics: the placeholder blends **positions** linearly, while the soft ops of `src/mirai/soft_selection/ops.py` use `w·Δ`, `w·θ` and an absolute `1 + w(F−1)` for Scale, and refuse `params["symmetry"]` (`ops.py:63-75`). Doing this outside the Core would mean a second copy of the mirror logic per tool (INV-9/AR-10, AD-SYM-02 §1 "genau eine Stelle"). So SS1 **replaces the placeholder's blend** with the weighted semantics; it does not have to invent the meeting point (AD-020 §8.3). |
+| C-4 | **Seam vertices with `w < 1`.** | **Yes, depending on D-3.** `_PivotTransformOperation` refuses in **two** places whenever any seam vertex is in the op's vertex set: at `begin()` if the pivot is off the plane (`transform.py:338-341`), and on **every step** in `_check_seam_step` — Rotate unless the axis is parallel to the plane normal (`rotation_keeps_plane`, `:160-166`, `:382-387`), Scale unless it is uniform or aligned with the normal (`scale_keeps_plane`, `:169-185`, `:411-416`). Under Soft the vertex set grows with the radius, so both checks start to apply as soon as the falloff reaches the middle (review R-1). The weight itself does not change whether a step keeps the plane, so under P-b/P-c (§5.1 D-3) the checks stay as they are. **Under P-a, seam vertices reached only by the falloff are exempt from both checks** (they are projected instead): that is a change of the Core's seam rule, not only of its weighting, and belongs to SS1's scope and review. |
 | C-5 | **Scale evaluated absolutely for `w < 1`** (accumulated factor since `begin()` plus the start snapshot, `ops.py:150-215`). | **Yes, if weighting moves in.** It is a visible deviation from the incremental update contract (`core/operation.py:15-25`, AD-020 F9) and would then live in the Core. |
 | C-6 | **One basis per gesture** when weights are present (FINDINGS L5). | Contract wording only; the app's tools already fix the basis per gesture (AD-020 §1 F6). |
 | C-7 | **`supports_symmetry`** on the weighted operations (AD-SYM-02 §2.3). | Class attribute; today `False` on all soft classes. |
@@ -256,7 +275,8 @@ before proposing the change.
 ### 4.2 The smallest opening (location, not design)
 
 The per-vertex step of `VertexTransformOperation` (`_on_update`, the `_weights` placeholder) and, for Rotate/Scale, the
-begin-time seam scope of `_PivotTransformOperation._on_begin`; plus Scale's absolute path (C-5). **Not touched:** `Mesh`,
+scope of both seam checks of `_PivotTransformOperation` — the begin-time pivot check and the per-step axis/factor check
+`_check_seam_step` (C-4; changes only under P-a); plus Scale's absolute path (C-5). **Not touched:** `Mesh`,
 the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD-SYM-02 §2.2), `HistoryStack`,
 `VertexTransformCommand`, every topology operation.
 
@@ -271,8 +291,8 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
   is weighted twice. The AD-020 F3 tripwire ("base never blends") guards this today; Core change and soft-op change must go
   in one commit, and the tripwire flips on purpose.
 - **R-3 Contract deviation enters the Core** (C-5); `operation.py` requires it to be documented visibly.
-- **R-4 Artist-verdicted behaviour at `w == 1`.** The per-side pivot and its fallback (KEEP 2026-10-03) and the seam
-  refusal texts must not change for plain symmetric Rotate/Scale.
+- **R-4 Artist-verdicted behaviour at `w == 1`.** The per-side pivot and its fallback (KEEP 2026-10-03), both seam checks
+  for selected seam vertices, and the seam refusal texts must not change for plain symmetric Rotate/Scale.
 - **R-5 Process.** CORE_V1_FREEZE §7 (six steps) and a §7.1 entry; a Haltepunkt (Development System §5) — the change gets its
   own review before code.
 
@@ -289,7 +309,11 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
   never nearer to a seed on the other side than to that seed's mirror on its own side (Euclidean: same-side points are
   closer to the mirrored point; geodesic: reflect the part of a path beyond the plane, which is never longer). So the field
   equals each side's own field, mirrored, both members of a pair already agree, and a seam vertex gets the same weight from
-  both sides; a sum would double the pull at the middle. A seam vertex then takes the weighted step and is projected onto
+  both sides; a sum would double the pull at the middle. **Precondition of the geodesic half** (review R-6): every edge path
+  across the plane passes through a vertex *on* the plane. An edge that straddles the plane with neither end on it breaks
+  the reflection argument (`a'–b` need not be an edge); the one-weight-per-pair rule keeps the result symmetric anyway, but
+  "each side's own field" can then fail. SS0 checks a mesh with straddling edges, or records that E3 meshes always have a
+  seam loop. A seam vertex then takes the weighted step and is projected onto
   the plane — for Move the same rule as symmetric Move today (KEEP). **No Artist question** (derived from INV-6).
 - **D-2 Geodesic distance across the plane.** With D-1 the cross-plane path never wins on an exact mesh, so geodesic needs
   nothing special. On a `partial` mesh (unpaired vertices, e.g. `man_with_shoes` 1e-6 off) the edge graph is no longer
@@ -300,11 +324,15 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 - **D-3 Per-side pivot (Artist B, 2026-10-03) when the falloff reaches the seam.** Rotate/Scale use the centroid of the
   explicit selection, mirrored for the partners; with a seam vertex affected and that centroid off the plane, they fall back
   to the pair midpoint. Under Soft "a seam vertex is affected" depends on the radius, so the pivot would jump when the
-  radius grows across the middle. Options: **P-a** keep the own-side pivot; seam vertices reached only by the falloff (`w < 1`) slide in
-  the plane (projected; symmetric by construction, because a seam vertex is its own mirror); a seam vertex among the
-  *selected* vertices keeps today's fallback (KEEP 2026-10-03, R-4); **P-b** fall back to the pair midpoint as
-  today (pivot jumps with the radius); **P-c** refuse visibly. *Engineering lean: P-a* (soft steps are not rigid anyway).
-  **Artist question Q-4** (one).
+  radius grows across the middle. A second check applies as well (C-4, review R-1): with a seam vertex in the set, Rotate
+  is refused unless its axis is the mirror axis, and Scale unless it is uniform or aligned with it. Options:
+  **P-a** keep the own-side pivot; seam vertices reached only by the falloff (`w < 1`) are exempt from **both** checks and
+  slide in the plane (projected; exactly symmetric, because a seam vertex is its own mirror and the projections of R(p) and
+  mirror(R(p)) coincide); a seam vertex among the *selected* vertices keeps today's rules (KEEP 2026-10-03, R-4). P-a is a
+  **Core seam-rule change** inside SS1. **P-b** the pivot jumps to the pair midpoint as today **and** every soft Rotate about
+  an axis other than the mirror axis, and every non-uniform soft Scale not along it, is refused once the radius crosses the
+  middle — i.e. most soft rotations there. **P-c** refuse visibly whenever the falloff reaches the middle.
+  *Engineering lean: P-a* (soft steps are not rigid anyway). **Artist question Q-4** (one).
 - **D-4 Performance on the reference PC.** Symmetric Soft roughly doubles the moved set and the influence work, and adds a
   correspondence per gesture start and per preview refresh. Known: worst soft row body 15 % euclidean p95 **7.73 ms**
   (bar 8 ms), plain W body 112 V p50 5.29 ms (REFERENCE_HARDWARE §2). *(Reading:)* the symmetric worst rows may cross the
@@ -325,9 +353,11 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 
 ### 5.3 Artist question (Soft)
 
-- **Q-4 (Pivot an der Mitte):** Wenn du mit Soft an eine Stelle abseits der Mitte drehst/skalierst und der Einflussbereich
-  über die Mitte reicht: sollen die Mittelpunkte in der Ebene mitgleiten (P-a, Drehpunkt bleibt deine Auswahlmitte), soll
-  der Drehpunkt auf die Mitte zwischen beiden Seiten springen (P-b, wie heute ohne Soft), oder soll es abgelehnt werden (P-c)?
+- **Q-4 (Soft an der Mitte):** Wenn du mit Soft an einer Stelle abseits der Mitte drehst/skalierst und der Einflussbereich
+  über die Mitte reicht: sollen die Mittelpunkte in der Ebene mitgleiten (P-a, Drehpunkt bleibt deine Auswahlmitte, jede
+  Drehachse geht), soll der Drehpunkt auf die Mitte zwischen beiden Seiten springen — dann geht Drehen nur noch um die
+  Spiegelachse und Skalieren nur gleichmäßig, alles andere wird abgelehnt (P-b, die heutige Regel ohne Soft) —, oder soll
+  es ganz abgelehnt werden (P-c)?
 
 ---
 
@@ -339,7 +369,7 @@ The verdict is recorded (M-2, Lab README "Slice 7", commit `0f8fb04`). Nothing E
 | # | Slice | Content | Gate / tests |
 |---|---|---|---|
 | A0 | Decisions (docs) | Manu answers Q-1…Q-3 after the review; the AD-013 note of §2.3 is written; AD-SYM-04 → DECIDED. | No code. |
-| A1 | Definition entry | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); T-R5b unchanged, T-G3b re-labelled; `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
+| A1 | Definition entry | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); the command's interaction gates (review R-4): ignored while W/E/R/T is armed or running (same gate as `C` and the mode keys, `application.py:1587-1603`, so the partner sets an armed tool resolves at `begin()` cannot change underneath it), ignored inside a Knife session (`_knife_key`, pinned by a test), and Soft armed → toggle → motion refused at `begin()` (`:1715`); Lab: K-6 named row entry, T-FC1 and T-R1a adjusted; T-R5b unchanged, T-G3b re-labelled or narrowed (§2.3); `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
 | A2 | Display | Per Q-2: the Lab's plane/state overlays **moved** to `src` as an `Application`-owned overlay handed in through `GL_TYPES` (soft-band precedent), A3 deferral kept; the Lab drops its copies (no double draw, L-9). | Overlay sync tests ported from the Lab; Lab draw-order test adapted; drag-cost probe re-run on the reference PC (L-8 numbers as the bar). |
 | J | Joint Artist test (M-3) | In `python src/main.py`: the Slice 7 steps 1–8 (step 9, MARK, stays Lab-only under UA-2), plus the symmetric Soft test of §5. | Manu's verdict, one session. |
 
@@ -370,10 +400,27 @@ the seam). Artist Input Truth entries for any symmetry key. Gizmo, Tweak, Loop I
 
 ## 9. Review
 
-**Review CLAUDE-001 archived (2026-10-14):** [AD-SYM-04_REVIEW_CLAUDE_001](../archive/symmetry_lab/reviews/AD-SYM-04_REVIEW_CLAUDE_001.md) — ACCEPT WITH CHANGES; R-1…R-3 before Manu answers Q-1…Q-4. Answers to its findings: open.
+**Independent review:** [AD-SYM-04_REVIEW_CLAUDE_001](../archive/symmetry_lab/reviews/AD-SYM-04_REVIEW_CLAUDE_001.md)
+(fresh session, `claude/sweet-ritchie-tfv9xq` @ `2da6d11`, archived unedited). Verdict: **ACCEPT WITH CHANGES**, no
+blocker; R-1…R-3 to be fixed before Manu answers Q-1…Q-4. Confirmed without change: the §1.1 consequence, I-1, I-11, G-1…G-6
+(with the two additions below), the A5/I7 citation, and that §4 stops before a design. Every finding was re-checked against
+the code before it was taken over (`transform.py:160-185`, `:382-416`; `application.py:537`, `:1587-1603`;
+`playground/command_handler.py:62-68`). Nothing beyond the reviewer's own proposals was decided.
 
-*Original request:* An independent review in a fresh session is to check in particular: G-1…G-6 against the AD-013 text; whether F-a is
-"a new governance mechanism" (it is meant as a test only); the D-1 reading; whether §4 stops before a design.
+| Finding | Severity | Answer |
+|---|---|---|
+| R-1 — Q-4/C-4 omit the per-step seam axis/factor check; P-a is a Core rule change | major | **Fixed, as proposed.** C-4 names both checks; §4.2 adds the step-check scope; D-3 says P-a exempts falloff-reached seam vertices from both checks (a Core seam-rule change in SS1) and that P-b refuses most soft rotations once the radius crosses the middle; Q-4 reworded accordingly (§5.3, Kurzfassung) |
+| R-2 — T-G3b cannot just be re-labelled under S-2/S-3 | major | **Fixed, reviewer's wording.** §2.3: under S-2/S-3 T-G3b is narrowed (no `symmetry_definition` assignment, no correspondence/coordination call; one GL overlay import allowed); "contains no symmetry code" dropped; renaming to dodge the guard ruled out (G-4). Under S-1 the original wording stands |
+| R-3 — the Lab's BLOCK row would refuse the app's symmetry command | major | **Fixed.** New K-6: BLOCK and MARK rows allow the command by a named entry (not via `NON_OPERATION`), the preview row keeps refusing it; T-FC1 and T-R1a adjusted in A1 |
+| R-4 — A1's tests miss the new command's interaction gates | medium | **Taken into A1:** ignored while W/E/R/T is armed or running (same gate as `C`/mode keys), ignored in a Knife session (test), Soft armed → toggle → refused at `begin()` (test). Whether the armed-time refusal posts a status follows the existing gate for `C` and the mode keys, which is silent today; A1 does not change that convention |
+| R-5 — F-a's oracle needs a classification and fails on unhandled commands | medium | **Fixed, reviewer's oracle.** "If the mesh changed, completeness is unchanged; if handled and refused, a status was posted" — no command list, no Lab import; the key-path-only limit is stated as a known gap (§3.3) |
+| R-6 — the geodesic half of D-1 needs a precondition | minor | **Fixed.** D-1 states it (no edge straddles the plane without a vertex on it); SS0 checks a mesh with straddling edges or records that E3 meshes have a seam loop |
+| R-7 — the Core loop already combines category and weight | minor | **Fixed.** C-3 now says the loop composes both and that mirroring is affine; what is missing is the weighting semantics, so SS1 replaces the placeholder's blend |
+| R-8 — the Playground is out of reach; say so | minor | **Fixed.** New K-7 |
+| R-9 — `init_scene` line reference | nit | **Fixed** (I-2: `:537` and `:629-680`) |
+
+A second review is not required by the findings (no blocker; every change is the reviewer's own proposal or a direct
+consequence of it). Manu may ask for one.
 
 ---
 
@@ -399,8 +446,14 @@ umgedreht. Das Lab läuft weiter auf demselben Weg.
 3. **Werkzeuge, die (später) nicht spiegeln können:** in der App verweigern wie BLOCK im Lab (Empfehlung; abgesichert durch
    einen Test beim Bauen), und der MARK/BLOCK-Schalter bleibt reines Lab-Werkzeug?
 4. **Soft an der Mitte:** wenn du mit Soft abseits der Mitte drehst/skalierst und der Einfluss über die Mitte reicht —
-   sollen die Mittelpunkte in der Ebene mitgleiten (Empfehlung), soll der Drehpunkt auf die Mitte springen (wie heute ohne
-   Soft), oder soll es abgelehnt werden?
+   sollen die Mittelpunkte in der Ebene mitgleiten (Empfehlung; jede Drehachse geht), soll der Drehpunkt auf die Mitte
+   springen wie heute ohne Soft (dann geht Drehen nur noch um die Spiegelachse und Skalieren nur gleichmäßig, sonst
+   abgelehnt), oder soll es ganz abgelehnt werden?
+
+**Nach der unabhängigen Review (2026-10-14, §9):** Frage 4 war unvollständig und ist oben ergänzt. Außerdem: Die
+Lab-Sperre (BLOCK) muss den neuen Symmetrie-Schalter der App durchlassen, sonst ließe sich die Symmetrie im Lab nicht mehr
+ausschalten; und mit der Anzeige S-2/S-3 braucht ein Schutztest eine engere Formulierung. Beides ist eingearbeitet, an
+deinen Fragen 1–3 ändert es nichts.
 
 **Annahmen, die du mit einem Satz korrigieren kannst:** Re-Symmetrize (M) bleibt im Lab. Die Reihenfolge ist: erst
 Einschalten und Anzeige in der App, dann die symmetrische Soft Selection (mit der einen Core-Änderung), dann ein gemeinsamer
