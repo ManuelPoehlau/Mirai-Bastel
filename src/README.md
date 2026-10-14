@@ -30,7 +30,7 @@ Ein Production-Fenster (`src/main.py`) und der Production-Draw-Pfad
 Stage B (WP-06) verdrahtet entschiedene Playground-Ergebnisse Slice für
 Slice in dieses Fenster. Welche Capabilities schon drin sind und mit
 welchem Verdikt-Stand (`PROMOTED` / `PROVISIONAL`), steht im Intake-Log
-in [`docs/architecture/ROADMAP.md`](../docs/architecture/ROADMAP.md) §7
+in [`docs/architecture/WP-06_INTAKE_LOG.md`](../docs/architecture/WP-06_INTAKE_LOG.md)
 (WP-06) — dort ist die einzige maßgebliche Liste, hier wird sie bewusst
 nicht wiederholt.
 
