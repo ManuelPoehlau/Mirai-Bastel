@@ -29,7 +29,7 @@
 
 | Lab | Was man dort ausprobiert | Start | Doku |
 |---|---|---|---|
-| Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Lab-Stand, nicht Production. Symmetrischer Extrude **KEEP** (2026-10-14). | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Lab-Stand, nicht Production. Symmetrischer Extrude **KEEP** (2026-10-14); Symmetrie kommt in die App (deine Entscheidung 2026-10-14, Vorschlag AD-SYM-04). | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | Subdivision Lab | Wie glatt ist glatt genug, Käfig oder Fläche, Kosten auf dem Referenz-PC | `python experiments/subdivision_lab/run.py` | [README](../experiments/subdivision_lab/README.md) |
 | Mehlsack Lab | Box per Mausrad bauen (mit Tiefe), Loop/Ring ohne Auswahl direkt ziehen oder mit `W`/`E`/`R` halten verschieben, drehen, skalieren (Taille/Bauch, zwei Scale-Formeln per `M`), Einflusskurve mit Bézier-Handles auch unter null, Flächen-Vorschau `P`; seit Slice 3 auch Punkt-/Kanten-/Flächen-Auswahl als Ausgangspunkt derselben Gesten; seit Slice 3b Element-Hover als Standard, Loop/Ring im `L`-Modus, Doppelklick-Loops, Umrechnen (Slices 1–3b verdiktet, 2026-10-13; Slice 3c wartet auf dich) | `python experiments/mehlsack_lab/run.py` | [README](../experiments/mehlsack_lab/README.md) |
 | Shading Lab | Licht/Shading für bessere Formwahrnehmung beim Modellieren | `python experiments/viewport_shading_lab/run.py` | [README](../experiments/viewport_shading_lab/README.md) |
@@ -65,6 +65,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | D1 | **AD-SYM-03** (wie Symmetrie die Topologie-Werkzeuge koordiniert, statt sie zu blockieren): **entschieden** (Manu, 2026-10-08); die AD-013-H2-Ergänzung (Voraussetzung für Slice 3) ist ebenfalls **entschieden** (2026-10-08); Slice 3a und 3b sind umgesetzt (2026-10-08) | [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | D1a | **Extrude-Erweiterungen**: Einzel-Face-Verhalten, Edge-/Vertex-Extrude, numerische Eingabe und Durchdringungs-Check sind spätere offene Fragen. | [ROADMAP, WP-06 B9](architecture/ROADMAP.md) |
 | D1b | **Soft Selection – offene Arbeit**: symmetrische Gewichtung samt gemeinsamem Core-Umzug und Tests auf höher aufgelösten Meshes; Bedienung und spätere Ideen sind in AD-020 vermerkt. | [AD-020](architecture/AD-020-SOFT-SELECTION-APP-PATH.md) |
+| D1d | **Symmetrie in die App** (AD-SYM-04, Vorschlag; erst die unabhängige Review): deine vier Fragen — Einschalten (Shift+S wie im Lab?), Anzeige, Werkzeuge ohne Spiegelung in der App verweigern?, Soft an der Mitte (Drehpunkt) | [AD-SYM-04, „Kurzfassung für Manu“](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) |
 | D1c | **Viewport-Performance**: auf großen Meshes sind Navigation und Hover zu langsam; die Zielgröße für flüssiges Arbeiten ist noch festzulegen. | [drag_cost README, „Next step“](../experiments/drag_cost/README.md) |
 | D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
@@ -80,7 +81,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie-Spur: offene Knife-Varianten bei Bedarf entscheiden, dann Promotion prüfen | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | B2d: offene Variantenentscheidung; danach separater Promotion-Check. Der Lab-Stand ist noch keine Production-Integration. |
+| Symmetrie-Spur: Symmetrie in die App, dann symmetrische Soft Selection, gemeinsamer Praxistest | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | D1d: deine Antworten nach der Review von AD-SYM-04; B2d (Knife-Varianten) bleibt offen. |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | deine Antwort zu D1c; Messung liegt vor |
 | Flat Shading pro Polygon (B5a.1) | Flat-Ansicht ohne sichtbare Dreiecke | berührt AD-018 |

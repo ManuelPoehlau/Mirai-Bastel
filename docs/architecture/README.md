@@ -41,7 +41,8 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-020](AD-020-SOFT-SELECTION-APP-PATH.md) | Soft Selection on the app path for the S2 Artist test (host, Core seam, influence state, visualization, keys, cost probe) | DECIDED (2026-10-10; capability `PROVISIONAL`) |
 | [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md) | Symmetry definition storage | DECIDED |
 | [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
-| [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife without `SymmetricX` copies) | PROPOSED |
+| [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife/Extrude without `SymmetricX` copies) | DECIDED (2026-10-08) |
+| [AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) | Symmetry in `src/main.py` (entry, display, AD-013 H2 text), Core basis and slices for symmetric Soft Selection | PROPOSED (2026-10-14) |
 | [ADR-001](../ADR-001-core-v1-reassessment.md) | Core V1 reassessment | Accepted |
 
 Production entry point and integration: [Stage A](PRODUCTION_ENTRY_POINT_STAGE_A.md), [WP-06 Stage B kickoff](WP-06_STAGE_B_KICKOFF.md).
