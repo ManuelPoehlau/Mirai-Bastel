@@ -448,15 +448,19 @@ class SeamTests(unittest.TestCase):
 
 
 class ProductionUnchangedTests(unittest.TestCase):
-    def test_production_app_has_no_way_to_switch_symmetry_on(self):
+    def test_production_app_switches_symmetry_only_through_its_command(self):
+        """Until 2026-10-14 this pinned "no way to switch symmetry on". AD-SYM-04 M-1 / slice A1
+        reversed that: the app starts without a definition and has exactly one way to set one,
+        the Shift+S command (`SYMMETRY_CYCLE` → `_symmetry_cycle`)."""
         from mirai.application import Application
 
         app = Application()
         self.assertIsNone(app.scene.mesh.symmetry_definition)
         names = [n for n in dir(cmd) if not n.startswith("_")]
-        self.assertFalse([n for n in names if "symmetr" in n.lower()])
-        self.assertFalse(
-            [m for m in dir(app) if "symmetr" in m.lower() and not m.startswith("__")]
+        self.assertEqual([n for n in names if "symmetr" in n.lower()], ["SYMMETRY_CYCLE"])
+        self.assertEqual(
+            [m for m in dir(app) if "symmetr" in m.lower() and not m.startswith("__")],
+            ["_symmetry_cycle"],
         )
 
     def test_rotate_scale_without_symmetry_match_plain_math(self):
