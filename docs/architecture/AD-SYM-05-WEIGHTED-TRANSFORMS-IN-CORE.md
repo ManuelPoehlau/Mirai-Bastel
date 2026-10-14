@@ -1,9 +1,10 @@
 # AD-SYM-05 — Weighted transforms in the Core (symmetric Soft Selection, slice SS1)
 
-**Status:** **PROPOSED** (2026-10-14). Design note before code for the one Core change of symmetric Soft
-([AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) §5.2 SS1, review item R-5; [CORE_V1_FREEZE](CORE_V1_FREEZE.md) §7).
-A Core change is a Haltepunkt (Development System §5): **independent review in a fresh session next, then Manu's go
-for the code.** Nothing here is built.
+**Status:** **PROPOSED, revised after the independent review** (2026-10-14). Design note before code for the one Core
+change of symmetric Soft ([AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) §5.2 SS1, review item R-5;
+[CORE_V1_FREEZE](CORE_V1_FREEZE.md) §7). Review CLAUDE-001: **ACCEPT WITH CHANGES**, no blocker; every finding is answered
+in §10 and worked into the text. A Core change is a Haltepunkt (Development System §5): **next is Manu's go for the code.**
+Nothing here is built.
 **Mode (M5):** Type C (Architecture Gate). Documents only: no change under `src/`, `tests/`, `experiments/` or `playground/`.
 **Read at:** `c2bc3e3` (branch `claude/festive-allen-pyajvv`, SS0 committed). Line numbers refer to that commit.
 **Basis (binding, only linked):** AD-SYM-04 (Decision record: Q-4 = **P-a**; §4 C-1…C-7 and R-1…R-5; §5.1 D-1…D-5; the
@@ -12,8 +13,9 @@ for the code.** Nothing here is built.
 [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md), [AD-014](AD-014_Core-Change-Basis-Parameter-for-ScaleOperation.md)
 (precedent: Core change with a byte-identical old path), `src/core/operation.py` (AD-003 incremental contract).
 
-**Evidence tags** as in AD-SYM-04: **[Code]** read at `c2bc3e3` (file:line), **[Doc]**, **[Probe]** (SS0 or a scratch
-computation named in place), **(Reading)** a derivation, `PROVISIONAL` for every agent-set choice.
+**Evidence tags** as in AD-SYM-04: **[Code]** read at `c2bc3e3` (file:line), **[Doc]**, **[Probe]** (SS0, the review's
+scratch scripts, or a scratch computation named in place), **(Reading)** a derivation, `PROVISIONAL` for every agent-set
+choice.
 
 ---
 
@@ -33,9 +35,9 @@ computation named in place), **(Reading)** a derivation, `PROVISIONAL` for every
 
 | # | Requirement |
 |---|---|
-| RQ-1 | The per-vertex weighting lives in the Core loop with today's soft semantics: Move `w·Δ`, Rotate `w·θ`, Scale `1 + w(F − 1)` evaluated absolutely for `w < 1`. **Non-symmetric Soft stays bitwise identical** to the Q2-D ops of today. |
+| RQ-1 | The per-vertex weighting lives in the Core loop with today's soft semantics: Move `w·Δ`, Rotate `w·θ`, Scale `1 + w(F − 1)` evaluated absolutely for `w < 1`. **Non-symmetric Soft stays bitwise identical** to the Q2-D ops of today, **including what they accept** (e.g. a new rotation axis per update). |
 | RQ-2 | **Without weights, every gesture is byte-identical to today** — plain and symmetric Move/Rotate/Scale, incl. both seam checks, the per-side pivot and the refusal texts (AD-SYM-04 R-1, R-4). |
-| RQ-3 | **Weights and symmetry in one operation instance** (AD-SYM-02 §3.1): plain step, conjugate step, projected step, each scaled by the vertex's weight; for pair-consistent input the result is an exact mirror (bitwise under E1). |
+| RQ-3 | **Weights and symmetry in one operation instance** (AD-SYM-02 §3, point 1): plain step, conjugate step, projected step, each scaled by the vertex's weight; for pair-consistent input the result is an exact mirror (bitwise under E1). |
 | RQ-4 | **P-a:** seam vertices reached only by the falloff take the weighted step, are projected onto the plane and are exempt from **both** seam checks; a selected seam vertex keeps today's rules. |
 | RQ-5 | **R-6** (IN-3): no guarantee of SS1 or SS2 may depend on the mesh having a seam loop or no straddling edges (§3). |
 | RQ-6 | `src/mirai/soft_selection/ops.py` is migrated **in the same commit** (no double weighting, AD-SYM-04 R-2); the AD-020 F3 tripwires flip on purpose. |
@@ -54,10 +56,11 @@ computation named in place), **(Reading)** a derivation, `PROVISIONAL` for every
    `:411-416`). *(c)* M-5 decided Way 2. [Code, Doc]
 3. **Problem documented.** AD-SYM-04 §4 (C-1…C-7), the SS0 note, this note.
 4. **Smallest extension.** §4: one channel already in use (`params["influence"]`), one new category key inside the
-   existing `params["symmetry"]`, the placeholder blend replaced, two accumulated totals. No change to `Mesh`, the
-   `Operation` lifecycle, `OperationContext`, `HistoryStack`, `VertexTransformCommand`, any topology operation.
+   existing `params["symmetry"]`, the placeholder blend replaced, accumulated totals only where an absolute path needs
+   them. **No new public Core API** (§5.1). No change to `Mesh`, the `Operation` lifecycle, `OperationContext`,
+   `HistoryStack`, `VertexTransformCommand`, any topology operation.
 5. **Tests/contract.** §6.
-6. **Change only after** the independent review of this note and Manu's go.
+6. **Change only after** Manu's go (the independent review is done, §10).
 
 ---
 
@@ -67,65 +70,74 @@ computation named in place), **(Reading)** a derivation, `PROVISIONAL` for every
 
 The SS0 quad `s(+0.5,0,0) → v'(−0.1,1,0) → v(+0.1,1,0) → a(−0.5,0,0)`, X axis, `valid`, four straddling edges, seed `s`
 (partner `a`), geodesic. Plain field from `s`: `d(v') = |s − v'| = 1.166`, `d(v) = 1.166 + 0.2 = 1.366`. Union field over
-`{s, a}`: `d(v) = |a − v| = 1.166`. [Probe, SS0 `probe_straddling_quad`]
+`{s, a}`: `d(v) = |a − v| = 1.166`. [Probe, SS0 `probe_straddling_quad`] The quad is already self-intersecting at rest
+(edge `s–v'` crosses `v–a`; review R-5) — it is a test fixture for exactness, not a shape anyone models.
 
-*(Reading, general form.)* Let `M` be the mirror map on vertices and `f_S` the plain field of the seeds `S`. On every
-mirror-symmetric edge graph `M` is an automorphism that preserves edge lengths bit for bit (mirrored coordinate
-differences only change sign), so `f_{M(S)}(v) = f_S(M v)` and
+*(Reading, general form, on distances.)* Let `M` be the mirror map on vertices and `d_S` the plain distance field of the
+seeds `S`. On every mirror-symmetric edge graph under E1, `M` is an automorphism that preserves edge lengths and point
+distances bit for bit (mirrored coordinate differences only change sign), and Dijkstra's value is the minimum over paths of
+left-fold float sums, so `d_{M(S)}(v) = d_S(M v)` bit for bit and
 
-> **union field `f_U(v) = max(f_S(v), f_S(M v))` — the symmetric weight of a pair is the larger plain weight of its two members.**
+> **union distance `d_U(v) = min(d_S(v), d_S(M v))`; the pair weight is `curve(d_U)`, the same value for both members.**
 
-That holds with and without straddling edges (it explains why SS0 found the pairs equal on the quad too) and is the
-pair-level statement D-1 needs. The SS0 half "equals each side's own field" means `f_S(M v) ≤ f_S(v)` for every own-side
-`v`; reflecting a path at a vertex on the plane proves it when every crossing passes through such a vertex, and on the quad
-it fails because `s` reaches `v'` across the plane faster than `v`.
+This is stated on distances on purpose: the `smooth` curve is not monotone in floating point (2688 of 200 000 sampled
+adjacent-float pairs give `f(t⁺) < f(t)`; the other five curves 0 [Probe, review `ss1_check.py` (b), re-run here]), so the
+"larger weight of the pair" form can differ in the last bit where `d_S(v) ≠ d_S(M v)`. It holds with and without
+straddling edges (it explains why SS0 found the pairs equal on the quad too). The SS0 half "equals each side's own field"
+means `d_S(M v) ≥ d_S(v)` for every own-side `v`; reflecting a path at a vertex on the plane proves it when every crossing
+passes through such a vertex, and on the quad it fails because `s` reaches `v'` across the plane faster than `v`.
 
-**Consequence.** Where `f_S(v) ≠ f_S(M v)`, the plain field itself is not mirror-symmetric, so **any** exactly symmetric
-weighting must differ from plain Soft at `v` or at `M v`. "Own side equals plain Soft" and "exact mirror" cannot both hold
-on such a mesh; no better field fixes it, only a refusal would.
+**Consequence.** Where `d_S(v) ≠ d_S(M v)`, the plain field is not mirror-symmetric, so an exactly symmetric weighting must
+differ from plain Soft at `v` **or** at `M v`. *Which* member deviates is a choice: the union field lets the own-side member
+`v` deviate; R6-C below keeps the own side exactly plain and lets the mirrored member deviate (where the step is the
+conjugate anyway).
 
-### 3.2 Options
+### 3.2 Options (an SS2 choice; SS1 is unaffected)
+
+The Core receives weights only (R6-3), so this choice does not change SS1's code. It belongs to SS2's field function.
 
 | | Option | Cost |
 |---|---|---|
-| **R6-A** | **Pair-level contract, promise dropped.** D-1 = the union field (one weight per pair by construction); "equals the own side's plain field" becomes an observed property of meshes without straddling edges (all current assets with pairs, SS0), pinned as a regression check there, not promised. | On a straddling mesh a few own-side vertices near the plane get a larger weight than plain Soft would give (the quad: `v` from 1.366 to 1.166 distance). Visible in the bands (D-5, SS3). |
-| R6-B | Keep the promise, check visibly: refuse geodesic symmetric Soft when the falloff contains a straddling edge. | Refuses `valid` meshes for a property the Artist cannot see; an O(E) check per gesture start and per preview; Euclidean never needs it, so the two metrics behave differently under symmetry. |
-| R6-C | Force each pair to the own-side value (`min` instead of `max`). | Undefined when seeds lie on both sides; on the quad `v'`, which `s` reaches directly, would move less than plain Soft moves it — the deviation only moves to the other member. |
+| R6-A | **Union field** (one weight per pair by construction): "equals the own side's plain field" is an observed property of meshes without straddling edges (all current assets with pairs, SS0), not a promise. | On a straddling mesh a few own-side vertices near the plane get a larger weight than plain Soft (the quad: `v` from distance 1.366 to 1.166). Defined for seeds on both sides and for unpaired vertices (they get a value directly). |
+| R6-B | Keep the promise, check visibly: refuse geodesic symmetric Soft when the falloff contains a straddling edge. | Refuses `valid` meshes for a property the Artist cannot see; an O(E) check per gesture start and preview; Euclidean never needs it, so the metrics behave differently under symmetry. |
+| R6-C | **Own side exactly plain:** the pair weight is the plain weight of the member on the seeds' side. (Equal to R6-A wherever there are no straddling edges, because there the own-side value is the larger one.) | Undefined when explicit seeds lie on both sides (the same domain where O-1 is open, §3.3); needs a side classification; unpaired vertices on the other side need a rule (D-2). |
 
-**Proposal (`PROVISIONAL`): R6-A.** It is the only option that keeps every guarantee on every mirror-symmetric mesh and refuses
-nothing that is `valid`. Binding consequences:
+*(Reading, `PROVISIONAL` lean for SS2:)* R6-A — it is defined everywhere and needs no side rule. R6-C is a fair alternative
+when seeds lie on one side; whether the Artist should feel the difference is one SS2 question together with O-1 (§8), on a
+case no current asset shows.
 
-- **R6-1** Every guarantee of SS1 and SS2 (exact mirror, bitwise under E1; seam vertices exactly on the plane; completeness
-  unchanged; one Undo step; cancel exact) holds on the straddling quad. The quad becomes a fixture of the SS1 Core
-  contract tests (§6 T-8) and of the SS2 gesture tests.
-- **R6-2** D-1 is restated at pair level (wording below, to be written into AD-SYM-04 §5.1 when this note is accepted).
+**Binding for SS1:**
+
+- **R6-1** Every SS1 guarantee (exact mirror, bitwise under E1; seam vertices exactly on the plane; completeness unchanged;
+  one Undo step; cancel exact) holds on straddling meshes: the SS0 quad **and** a straddling fixture with a seam vertex
+  inside the falloff (§6 T-8), so R-6 and P-a are tested together. SS2's gesture tests take the same fixtures.
 - **R6-3** The Core never relies on graph symmetry. It receives weights and categories; **pair consistency is a caller
-  precondition** (§4.3), and SS2 builds it by construction.
-- **R6-4** The step category of a falloff vertex (plain or conjugate) must not come from "which seed is nearest" (§3.3).
+  precondition** (§4.3).
 
-**D-1 at pair level (proposed wording):** *"The symmetric field is the union field over seeds ∪ mirrored seeds (nearest
-seed, `min` distance, never a sum). Each mirror pair carries one weight, the larger of its two field values; a seam vertex
-carries one weight. On a mirror-symmetric edge graph this equals, for every pair, the larger plain-Soft weight of its two
-members. It equals each side's own plain field only where no edge path from a seed crosses the plane between two vertices
-off it (every current asset case with pairs, SS0); that is an observation, not a promise."*
+**Moved to SS2:** the D-1 rewording in AD-SYM-04 §5.1 (formerly R6-2) is written with the field function; *draft:* "The
+symmetric field gives each mirror pair one distance, the minimum over seeds ∪ mirrored seeds (never a sum), and one weight
+from it; a seam vertex carries one weight. That the own side equals its plain field holds only where no edge path from a
+seed crosses the plane between two vertices off it (every current asset case with pairs, SS0) — an observation, not a
+promise." The former R6-4 (category not from the nearest seed) is **withdrawn** (§3.3).
 
-### 3.3 Finding: R-6 reaches the step category, not only the weight
+### 3.3 Finding: R-6 also reaches the step category — open for SS2 (O-1)
 
 The union field also tells which seed is nearest. On the quad `v'` (negative side) is nearest to the explicit seed `s`, and
-`v` (positive side) to the mirrored seed `a`. Two pair-consistent ways to give falloff vertices their step:
+`v` (positive side) to the mirrored seed `a`. Two pair-consistent ways to give falloff vertices their step, measured with
+Move `+x 0.5`, `w = 0.6` [Probe, review `quad_shape.py`, re-run here]:
 
-| | Rule | Quad, Move with `Δ = +x` | Elsewhere |
+| | Rule | Quad after the step | Elsewhere |
 |---|---|---|---|
-| K-near | category of the nearest seed (explicit → plain, mirrored → conjugate) | `v'` moves +x, `v` moves −x: the two cross the plane, the quad folds into a bow tie | Matches "explicit selection wins" for a selection that covers both sides (everything plain). Pair-consistent only on symmetric graphs and with a tie rule. |
-| K-side | category by side of the plane relative to the seeds | `v` moves +x, `v'` −x: the quad stretches | Always pair-consistent (partners lie on opposite sides). Undefined when explicit seeds lie on both sides. |
+| K-near | category of the nearest seed (explicit → plain, mirrored → conjugate) | `v'` +0.2, `v` −0.2: **the crossing disappears** (each vertex moves with the seed it is connected to) | Follows connectivity on straddling meshes; matches "explicit selection wins" for a selection covering both sides. Pair-consistent only on symmetric graphs and **needs a tie rule** (ties `d_S(v) = d_S(M v)` occur whenever the shortest path runs through the seam). |
+| K-side | category by side of the plane relative to the seeds | `v` +0.4, `v'` −0.4: the crossing stays and grows | Always pair-consistent without a tie rule (partners lie on opposite sides). Undefined when explicit seeds lie on both sides. |
 
-On every mesh without straddling edges and with seeds on one side the two rules agree (the reflection argument, ties
-aside). **Not decided here (SS2, O-1 in §8);** recorded because R6-4 forbids K-near alone. *(Reading:)* K-side for seeds on
-one side; seeds on both sides need their own rule, possibly an Artist question in SS2 (it is felt behaviour).
+*Corrected after review R-5:* the first version said the opposite (K-near folds, K-side stretches) because it overlooked
+that the quad crosses itself at rest. On every mesh without straddling edges and with seeds on one side the two rules agree
+(the reflection argument, ties aside). **Not decided here; O-1 stays fully open for SS2** (§8).
 
 ---
 
-## 4. Design of the Core change (`PROVISIONAL` in names, binding in rules once reviewed)
+## 4. Design of the Core change (`PROVISIONAL` in names, binding in rules once accepted)
 
 ### 4.1 Channel
 
@@ -134,10 +146,13 @@ AD-SYM-02 §2.2). Read by `VertexTransformOperation._on_begin` (`transform.py:22
 
 - **absent → today:** `_weights = {vid: 1.0}` and nothing else changes (RQ-2);
 - **present →** validated before anything is stored: keys exactly the op's vertex set, every value finite and in `(0, 1]`
-  (else `ValueError`); `_weights` becomes that map. Stale IDs stay the caller's job (L10, §5.1), as the Core already raises
-  for an unknown vertex today.
+  (else `ValueError`); `_weights` becomes that map. Stale IDs stay the caller's job (L10): a caller filters its map and
+  hands the Core a **new** params dict with the filtered `influence` (§5.1); the Core already raises for an unknown vertex
+  today.
 - `RotateOperation`/`ScaleOperation` with weights need `params["pivot"]` (else `ValueError`): the Core default would be the
   centroid of the *influenced* set (AD-020 E7).
+- With weights, every `seam_vertex_ids` member must carry exactly `1.0` (else `ValueError`): a selected seam vertex is a
+  seed, and §4.2 relies on it (review R-7). Cheap, needs no pairing.
 
 ### 4.2 The per-vertex step
 
@@ -145,26 +160,30 @@ The placeholder blend `pos + w·(T(pos) − pos)` (`transform.py:265-269`) is **
 Rotate and Scale (AD-020 F7, S1 FINDINGS) and has no caller. Instead each concrete op weights its own parameter, then the
 category applies. `w == 1.0` always takes today's arithmetic on the live position, operation for operation (RQ-1/RQ-2).
 
-| Op | plain | conjugate (`mirrored_vertex_ids`) | selected seam (`seam_vertex_ids`) | **falloff seam (new, §4.3)** |
+| Op | plain | conjugate (`mirrored_vertex_ids`) | selected seam (`seam_vertex_ids`, `w = 1` checked) | **falloff seam (new, §4.3)** |
 |---|---|---|---|---|
-| Move | `pos + w·Δ` | `pos + mirror_vec(w·Δ)` | `pos + proj(Δ)` (today; seeds have `w = 1`) | `pos + proj(w·Δ)`, incremental (projection is linear) |
+| Move | `pos + w·Δ` | `pos + mirror_vec(w·Δ)` | `pos + proj(Δ)` (today) | `pos + proj(w·Δ)`, incremental (projection is linear) |
 | Rotate | `R(pos, P, a, w·θ)` incremental | `M(R(M pos, P, a, w·θ))` incremental | today (both checks) | **`proj(R(start, P, a, w·Θ))`, absolute** |
-| Scale | `w = 1`: `S(pos, F_step)`; `w < 1`: `S(start, 1 + w(F − 1))` absolute | `M(S(M ·, …))` of the same | today (both checks) | **`proj(S(start, 1 + w(F − 1)))`, absolute** |
+| Scale | `w = 1`: `S(pos, F_step)`; `w < 1`: `S(start, 1 + w(F − 1))` absolute | `M(S(M ·, …))` of the same | today (both checks) | **`proj(S(start, 1 + w(F − 1)))`, absolute, also at `w = 1`** |
 
-`P` the fixed pivot, `a` the fixed axis, `Θ` and `F` the angle and the per-axis factor accumulated since `begin()`, `M` the
-mirror (`mirror_point`, `transform.py:141-146`), `proj` the projection onto the plane.
+`P` the fixed pivot, `a` the axis of the step (fixed only when the absolute Rotate path is in use, §4.4), `Θ` and `F` the
+angle and the per-axis factor accumulated since `begin()`, `M` the mirror (`mirror_point`, `transform.py:141-146`), `proj`
+the projection onto the plane.
 
 - **Why falloff-seam Rotate is absolute.** Rotating and then projecting depends on how the drag is chunked into steps.
   Scratch computation (plane `x = 0`, pivot `(0.5, 0, 0)`, axis `y`, seam vertex `(0, 0, 1)`, `w = 0.5`, total 90°):
-  one step gives `z = 1.061`, two steps `1.222`, sixty steps `1.387`. [Probe, scratch, not committed] The Rotate tool
-  explicitly wants chunk independence (`rotate.py:131`, "unabhängig vom Event-Chunking"). Today the problem cannot occur:
-  a seam vertex is only rotated about the normal through a pivot on the plane, where the projection removes rounding only.
-- **Why the projected result is the symmetric one** *(Reading):* a seam vertex is its own mirror, and
-  `proj(M x) = proj(x)`, so `proj(R(p))` equals the projection of the conjugate side's result — the vertex takes the
-  average of both sides' intents and stays exactly on the plane (`x − x·1.0 = 0.0` for an axis normal).
+  one step gives `z = 1.061`, two steps `1.222`, sixty steps `1.387`; the absolute form gives 1.061 for any chunking
+  [Probe, scratch; reproduced by the review]. The Rotate tool explicitly wants chunk independence (`rotate.py:131`).
+  Today the problem cannot occur: a seam vertex is only rotated about the normal through a pivot on the plane, where the
+  projection removes rounding only. Falloff-seam Scale is absolute even at `w = 1`, because a rotated basis and the
+  projection do not commute.
+- **Why the projected result is the symmetric one** *(Reading, confirmed by the review):* for a seam vertex `M p = p`, so
+  the conjugate intent is `M(R(p))`, and `proj(R(p))` is the midpoint of `R(p)` and `M(R(p))`; under E1 it lands on
+  `x == 0.0` exactly.
 - **Exactness of pairs.** For equal weights the partner's step is computed with the same inputs as its source's (today's
   `M ∘ T ∘ M` construction), so a pair stays a bitwise mirror under E1; Scale's absolute path uses the partner's start
-  position, which is the exact mirror of its source's.
+  position, which is the exact mirror of its source's. [Probe: review `ss1_check.py` (c) — 60 updates per op, both metrics,
+  on the quad, `subd_cube` X, `head_basemesh` X: pairs bitwise mirrored, falloff seam at `x == 0.0`.]
 
 ### 4.3 Categories: P-a as a new category, not as an edited check
 
@@ -182,23 +201,25 @@ that are not explicit seeds. Rules:
 
 **Caller preconditions, not checked by the Core (R6-3):** the two members of a pair carry the same weight and opposite
 categories (or both plain when both are explicit seeds, today's "explicit selection wins", `move.py:35-45`). The Core has no
-pairing and gets none (AD-SYM-01: correspondence is derived in `mirai`; AD-SYM-02 §3.3: no mirror-result structure); a
-violation gives a non-mirrored result, which the completeness oracle of SS2 and of the F-a guard catches. *Rejected:* a Core
-check by mirrored positions — it would re-derive correspondence inside the Core.
+pairing and gets none (AD-SYM-01: correspondence is derived in `mirai`; AD-SYM-02 §3, point 3: no mirror-result
+structure); it already trusts `mirrored_vertex_ids`/`seam_vertex_ids` unchecked today (`move.py:99-100`,
+`transform.py:334-335`). A violation gives a non-mirrored result, which the completeness oracle of SS2 and of the F-a guard
+catches. *Rejected:* a Core check by mirrored positions — it would re-derive correspondence inside the Core.
 
 *Rejected alternative for P-a:* exempt seam vertices by weight (`w < 1`). A non-seed very close to a seed can round to
 `w = 1.0`, so the seam rule would depend on a float, and a radius-0 gesture would have to be special-cased.
 
 ### 4.4 Accumulated state and the contract deviation (RQ-7)
 
-Only when weights are present:
-
-- **Scale** accumulates `F` per axis and fixes the basis for the gesture (as `SoftScaleOperation` does today,
-  `ops.py:185-201`; AD-020 F6/L5). **Rotate** accumulates `Θ` and fixes the axis (no Production tool changes either
-  mid-gesture, F6; needed now for the absolute seam path).
-- **Order:** validate (basis/axis unchanged, factor finite, seam step check for `seam_vertex_ids`) → accumulate → loop.
-  A refusal leaves positions and totals as they were (today's soft test
-  `test_scale_basis_change_keeps_the_total_at_its_pre_refusal_value`).
+- **Scale, with weights:** accumulates `F` per axis and fixes the basis for the gesture — exactly today's `SoftScaleOperation`
+  (`ops.py:185-201`; AD-020 F6/L5), so non-symmetric Soft does not change.
+- **Rotate, only when `falloff_seam_vertex_ids` is non-empty:** accumulates `Θ`, fixes the axis, and refuses a non-finite
+  `angle` before accumulating (one NaN step would poison every later absolute evaluation). Without falloff seam vertices a
+  weighted Rotate accepts a new axis per update, as `SoftRotateOperation` does today (`ops.py:138-147`; the existing
+  `ROTATE_STEPS`, `tests/test_soft_selection_ops.py:91-92`, change the axis at step 3). *Corrected after review R-1:* the
+  first version fixed the axis for every weighted Rotate, which would have changed non-symmetric Soft.
+- **Order:** validate (basis/axis unchanged where fixed, factor/angle finite, seam step check for `seam_vertex_ids`) →
+  accumulate → loop. A refusal leaves positions and totals as they were.
 - **Visible deviation:** `core/operation.py` and `transform.py` state that with `params["influence"]`, Scale evaluates
   `w < 1` vertices and Rotate/Scale evaluate falloff-seam vertices **absolutely from the `begin()` snapshot**; everything
   else stays incremental. The snapshot exists already (`_start_positions`, `transform.py:228-230`).
@@ -209,7 +230,8 @@ Only when weights are present:
 
 `Mesh`, `Operation`, `OperationContext`, `HistoryStack`, `VertexTransformCommand`, `_on_commit`/`_on_cancel`, the
 `description` mechanism, `rotation_keeps_plane`/`scale_keeps_plane`/`pivot_on_plane`, `SEAM_TOLERANCE`, every topology
-operation. `supports_symmetry` stays `True` on the three Core ops (C-7 is met by the Core classes).
+operation. `supports_symmetry` stays `True` on the three Core ops (C-7 is met by the Core classes). No public accessor is
+added (no `total_factor` on `ScaleOperation`, §5.1).
 
 ---
 
@@ -219,32 +241,52 @@ operation. `supports_symmetry` stays `True` on the three Core ops (C-7 is met by
 
 | | Option | Cost |
 |---|---|---|
-| M-a | Delete the soft op classes; tools build the Core ops with `params["influence"]`. | Smallest code; every importer changes (tools, `__init__`, tests, the Mehlsack bit-identity tests); the op-level symmetry backstop (AD-020 §8.2) loses its home before SS2. |
-| **M-b** | **Keep `SoftMove/Rotate/ScaleOperation` as thin subclasses of the Core `MoveOperation`/`RotateOperation`/`ScaleOperation`:** `description`, require `params["influence"]`, filter stale IDs (L10), and — until SS2 — refuse `params["symmetry"]` (`supports_symmetry = False`). **No arithmetic, no copy** (`_scale_about`, the tuple sum and the `_soft_` state go). | One extra thin layer; names, tools, Application and importers unchanged; SS2 then removes exactly the backstop. |
+| M-a | Delete the soft op classes; tools build the Core ops with `params["influence"]`. | Smallest code; every importer changes (tools, `__init__`, tests incl. the `type(op) is Soft…Operation` assertions, the Mehlsack bit-identity tests); the op-level symmetry backstop (AD-020 §8.2) loses its home before SS2. |
+| **M-b** | **Keep `SoftMove/Rotate/ScaleOperation` as thin subclasses of the Core `MoveOperation`/`RotateOperation`/`ScaleOperation`.** | One extra thin layer; names, tools, Application and importers unchanged; SS2 then removes exactly the backstop. |
 
-**Proposal (`PROVISIONAL`): M-b.** `scale_formula` and `"power"` leave `src` (only tests use them; S2c kept linear, IN-5);
-the S1 record (`experiments/soft_selection/weighted_ops.py`) keeps `"power"`. Tools and `Application` do not change in SS1
-(`_soft_show_op_weights` keeps reading `params["influence"]`, `application.py:1953`).
+**Proposal (`PROVISIONAL`): M-b**, confirmed by the review. What the thin classes hold — and nothing else (review R-3):
 
-### 5.2 Consumers outside `src/` that the change reaches [Code]
+- `description` ("Soft Move/Rotate/Scale Vertices");
+- `_on_begin`: refuse `params["symmetry"]` until SS2 (`supports_symmetry = False`); require `params["influence"]`; filter
+  stale IDs (L10) into **`_soft_weights`** (own `_soft_` attribute, so tripwire (10) keeps holding) and call the Core
+  `_on_begin` with a **new** params dict carrying the filtered `influence` and a view of the filtered set (today's
+  `ops.py:99-104` forwards the caller's params unchanged, which would trip the Core's key-set check);
+- `weights` property → `dict(self._soft_weights)` (read at nine sites in `tests/test_application_soft_selection.py`);
+- **no arithmetic and no other state:** `_scale_about`, the tuple sum, `_soft_start`, `_soft_total`, `_soft_basis*`,
+  `_weighted_factor`, `scale_formula` and `total_factor` go. The two tests that read `total_factor`
+  (`tests/test_soft_selection_ops.py:523-533`, the Mehlsack comparison below) check behaviour instead (positions after the
+  refused and the next update) — no Core API is added for them.
+
+`scale_formula` and `"power"` leave `src` (only tests use them; S2c kept linear, IN-5; the Core should not carry a formula
+switch). Tools and `Application` do not change in SS1 (`_soft_show_op_weights` keeps reading `params["influence"]`,
+`application.py:1953`).
+
+### 5.2 Consumers outside `src/` that the change reaches [Code; review R-2]
 
 | Consumer | What happens | Done in the SS1 commit |
 |---|---|---|
-| Mehlsack Lab, `signed_ops.py:92-95` | passes its own `params` — incl. `"influence"` with **negative** weights — into the Core `_on_begin`; the new validation would refuse them | its inner context drops `"influence"` (the Core then sees no weights and never blends: the Lab's own tripwire `test_base_never_blends_one_update_equals_the_closed_form` keeps holding) |
+| Mehlsack Lab, `signed_ops.py:92-95` | passes its own `params` — incl. `"influence"` with **negative** weights — into the Core `_on_begin`; the new validation would refuse them | its inner context drops `"influence"` (the Core then sees no weights and never blends: the Lab's tripwire `test_base_never_blends_one_update_equals_the_closed_form` keeps holding) |
 | Mehlsack Lab, `signed_ops.py:48` | imports `SCALE_FORMULAS` from `mirai.soft_selection.ops` | the constant moves into the Lab (signed weights are Lab-only, no promotion, M3) |
-| Mehlsack Lab tests | compare against `SoftMoveOperation` bit for bit | unchanged under M-b |
-| S1 record `weighted_ops.py` | subclasses the Core ops through private members and overrides `_on_update` wholesale; passes `(0, 1]` weights | run `experiments/soft_selection/tests`; if a private it uses moved, the record gets a dated "superseded by AD-SYM-05" note instead of a repair (`PROVISIONAL`) |
-| Playground, Symmetry Lab | reach the Core loop through the tools | no change; suites run (§6) |
+| Mehlsack tests, `test_signed_rotate_scale.py:80`, `:85-98` | Rotate compared with `SoftRotateOperation` (unchanged under M-b); Scale compared bit for bit with `SoftScaleOperation` for `"linear"` **and** `"power"`, reading `total_factor`/`scale_formula` | linear half: compared against the thin `SoftScaleOperation` on positions and commands only; `"power"` half: against the closed form `F ** w` the file already tests (`:142-144`) |
+| S1 record `weighted_ops.py:86-92` and `probe_cost.py:50-55` | forwards the caller's `params` with stale IDs in `influence` into the Core `_on_begin` → the new key-set check fires (`test_weighted_ops.py:399-404`) | the same one-line change as Mehlsack: its inner context drops `"influence"`; its arithmetic stays as recorded |
+| `tests/test_soft_selection_ops.py` | `"power"` parametrisations (`:146-170`, `:284-298`) | **dropped** with `scale_formula` (named, not "ported"); the rest ported (§6 T-4) |
+| Symmetry Lab, Playground, `head_topology_walkthrough/wt.py` | reach the Core loop through the tools, or plain `MoveOperation` without weights | no change; suites run (§6) |
+
+`VertexTransformOperation` stays importable from `core.operations.transform`: Mehlsack (`signed_ops.py:47`) and the S1
+record rely on it.
 
 ### 5.3 AD-020 F3 tripwires (§13, eleven items)
 
 (1) "base never blends" → **flips** into "the Core's weighted step equals the closed form" (and the placeholder test
 `test_core_placeholder_blend_is_not_path_independent` goes with the placeholder); (2) `vertex_id=` and kwargs passed →
-stays, now inside the Core; (3)/(4) the Scale and Move copies → **gone** (no copies), replaced by the reference oracle (§6
-T-3); (5)/(6) base `_on_begin`/`_on_update` reads → stay as Core contract tests; (7) description → stays (M-b);
-(8) `supports_symmetry` False → stays on the thin classes until SS2; (9) `pivot` → stays; (10) AST scan "no Core private" →
-stays for the thin classes; (11) importability of `VertexTransformOperation` from `mirai` → no longer needed.
-CORE_V1_FREEZE §7.1 gets its entry in the SS1 commit; the 2026-10-10 docs-only note there is marked superseded (dated).
+stays, now inside the Core; (3)/(4) the Scale and Move copies → **gone** (no copies), replaced by the replay oracle (§6
+T-3); (5) "base `_on_begin` reads target/selection.vertices/pivot only" → **restated** as the new Core contract test (it now
+also reads and validates `params["influence"]`); (6) base `_on_update` iterates exactly the view → stays; (7) description →
+stays (M-b); (8) `supports_symmetry` False → stays on the thin classes until SS2; (9) `pivot` → stays; (10) own attributes
+carry the `_soft_` prefix, AST scan "no Core private" → stays, held by §5.1 (`_soft_weights` only); (11) importability of
+`VertexTransformOperation` from `core.operations.transform` → no longer needed by `src/mirai`, still relied on by Mehlsack
+and the S1 record. CORE_V1_FREEZE §7.1 gets its entry in the SS1 commit; the 2026-10-10 docs-only note there is marked
+superseded (dated).
 
 ---
 
@@ -253,14 +295,14 @@ CORE_V1_FREEZE §7.1 gets its entry in the SS1 commit; the 2026-10-10 docs-only 
 | # | Test | Oracle |
 |---|---|---|
 | T-1 | No weights → today | Every existing Core transform suite unchanged and green: `tests/test_transform_operations.py`, `test_symmetric_move.py`, `test_symmetric_transform.py`, `test_core.py` (AD-003 incremental) |
-| T-2 | All weights `1.0` ≡ no weights | Bitwise, Move/Rotate/Scale, with and without `params["symmetry"]`, with and without a basis |
-| T-3 | **Non-symmetric Soft bitwise identical to Q2-D** | A frozen copy of today's `ops.py` as a test-only reference oracle (same platform, so libm cannot differ; golden numbers would): the AD-020 P-D set — 3 ops × 2 metrics × radii {0, the 15 % step, 1.0} × 60 updates, with a tilted basis — positions after every update and the History command's maps |
-| T-4 | Weighted semantics | The ported closed-form and path-independence tests of `tests/test_soft_selection_ops.py` against the Core ops |
-| T-5 | Refusals before anything moves | Weights outside `(0, 1]`, non-finite, keys ≠ vertex set; weighted Rotate/Scale without pivot; basis or axis change mid-gesture (totals unchanged); `falloff_seam_vertex_ids` without weights or overlapping another category |
+| T-2 | All weights `1.0` ≡ no weights | Bitwise, Move/Rotate/Scale, with and without `params["symmetry"]`, with and without a basis, **with an axis change for Rotate** |
+| T-3 | **Non-symmetric Soft bitwise identical to Q2-D** | A **pure replay function** in `tests/` (start positions, weights, pivot, step list → positions after every step, plus the start/end maps): a copy of today's arithmetic (`_scale_about`, `_triple`, the tuple sum, `rotate_around_axis(pos, pivot, axis, angle if w == 1.0 else w * angle)`), **no Core base class**, so it cannot follow the change (review R-4). Run on the AD-020 P-D set **and** the existing `MOVE_STEPS`, `ROTATE_STEPS`, `SCALE_STEPS`, `SCALE_BASIS_STEPS`, radii {0, the 15 % step, 1.0}. Same platform, so libm cannot differ (golden numbers could) |
+| T-4 | Weighted semantics | The closed-form and path-independence tests of `tests/test_soft_selection_ops.py` against the Core ops; the `"power"` ones dropped (§5.2); refusal texts of weighted refusals keep the words the ported tests match (`pivot`, `basis`, `weight`, `influenced vertex set`), or the test changes are listed in the SS1 commit |
+| T-5 | Refusals before anything moves | Weights outside `(0, 1]`, non-finite, keys ≠ vertex set; weighted Rotate/Scale without pivot; a `seam_vertex_ids` member with `w ≠ 1`; basis change mid-gesture with weights (totals unchanged); with falloff seam vertices: axis change and non-finite angle (Rotate); `falloff_seam_vertex_ids` without weights or overlapping another category |
 | T-6 | Symmetric + weighted exactness | `subd_cube` X and `head_basemesh` X, hand-built pair-consistent weights (no SS2 field code in SS1): after N updates every pair is a bitwise mirror, seam coordinates exactly `0.0`, `symmetry_state` still `valid`, one History entry, Undo/Redo and cancel exact |
-| T-7 | P-a | Falloff seam only: Rotate about an axis not parallel to the normal with the pivot off the plane and non-uniform Scale run, stay on the plane, and 1 step vs 60 steps agree to rounding (absolute path). One selected seam vertex added: today's refusals, both checks, unchanged texts (R-4) |
-| T-8 | **R-6 fixture** | The SS0 straddling quad with pair-consistent weights: T-6's oracle holds (R6-1) |
-| T-9 | Mehlsack | Its tripwire and bit-identity tests green after the `"influence"` strip |
+| T-7 | P-a | Falloff seam only: Rotate about an axis not parallel to the normal with the pivot off the plane and non-uniform Scale in a tilted basis run, stay on the plane, and 1 step vs 60 steps agree to rounding (absolute path). One selected seam vertex added: today's refusals, both checks, unchanged texts (R-4) |
+| T-8 | **R-6 fixtures** | T-6's oracle on the SS0 straddling quad **and** on a straddling fixture with a seam vertex inside the falloff (e.g. the quad plus one vertex on the plane connected to `v` and `v'`; review R-11) |
+| T-9 | Consumers | Mehlsack tripwire and comparison tests (§5.2), the S1 record's suite and `probe_cost.py` green after the `"influence"` strip |
 
 **Suites** (AGENTS §8a, a `src/core` change): `tests` fully; `experiments/symmetry_lab/tests` and `playground/tests`
 (both reach the Core loop through the tools); `experiments/soft_selection/tests` and `experiments/mehlsack_lab/tests`
@@ -272,53 +314,86 @@ CORE_V1_FREEZE §7.1 gets its entry in the SS1 commit; the 2026-10-10 docs-only 
 
 | # | Risk | Mitigation |
 |---|---|---|
-| R-1 | Regression in every Move/Rotate/Scale gesture | The no-weights path is the old code path (§4.1); T-1, T-2; the per-vertex cost for `w = 1` is today's (one dict read and one compare already run, `transform.py:265-266`) |
-| R-2 | Double weighting | One commit; M-b removes all soft arithmetic; Mehlsack strips the key (§5.2); tripwire (1) flips on purpose |
+| R-1 | Regression in every Move/Rotate/Scale gesture | The no-weights path is the old code path (§4.1); T-1, T-2. Per-vertex cost: plain gestures pay today's dict read and compare (`transform.py:265-266`); soft gestures under M-b now run through the category tests (two or three `frozenset` lookups per vertex per update) and symmetric gestures gain the new category test — negligible against the 8 ms bar; the `soft_w` drag row (AD-SYM-04 D-4) measures it if needed |
+| R-2 | Double weighting | One commit; M-b removes all soft arithmetic; Mehlsack and the S1 record strip the key (§5.2); tripwire (1) flips on purpose |
 | R-3 | Contract deviation in the Core | §4.4, written into `operation.py` |
 | R-4 | Artist-verdicted `w = 1` behaviour | Seam checks keep their scope (§4.3); the per-side pivot is a tool function, untouched |
-| R-5 | Process | This note → fresh-session review → Manu's go → SS1 |
+| R-5 | Process | This note → review (done, §10) → Manu's go → SS1 |
 | R-6′ | The absolute Rotate path is new behaviour | Reachable only with `falloff_seam_vertex_ids`, i.e. only after SS2 |
 
 ---
 
 ## 8. Carried to SS2/SS3 (not decided here)
 
-- **O-1 Step category** of falloff vertices (§3.3): K-side for seeds on one side; a rule for explicit seeds on both
-  sides (possibly an Artist question).
-- **The field function:** union field or "pair max of the plain field" (§3.1, equal on symmetric graphs, the second needs one
-  field instead of one over doubled seeds); one weight per pair by construction; ambiguous vertices inside the falloff.
+- **O-1 Step category** of falloff vertices (§3.3): K-near (follows connectivity, needs a tie rule) or K-side (tie-free,
+  undefined for seeds on both sides), and a rule for explicit seeds on both sides. Together with **R6-A vs R6-C** (§3.2):
+  possibly one Artist question in SS2, on a case no current asset shows.
+- **The field function:** the union field, or the plain field once plus the pair minimum of the two **distances**
+  (`curve(min(d_S(v), d_S(M v)))`, equal on symmetric graphs; not the maximum of two weights, §3.1); one weight per pair by
+  construction; ambiguous vertices inside the falloff; the D-1 rewording (§3.2 draft). Edge case: the Euclidean
+  bounding-box prefilter (`influence.py:100-108`) is per seed set, so the two variants can differ by rounding for a vertex
+  at `d ≈ r`; pair consistency of each is not affected.
 - **D-2** refusals (seed without partner).
 - **D-3, tool side:** classify falloff seam vertices into the new key. With a *selected* seam vertex, the soft path must use
-  `symmetric_default_pivot` (`selection_helpers.py:90-115`) like plain symmetric R/S: today the soft branch sets
-  `primary_pivot` first and skips it (`tools/transform.py:363-385`), which would turn the per-side fallback (R-4, KEEP)
-  into a refusal.
+  `symmetric_default_pivot` (`selection_helpers.py:90-115`) like plain symmetric R/S — today the soft branch sets
+  `primary_pivot` first and skips it (`tools/transform.py:363-385`), which would turn the per-side fallback (R-4, KEEP) into
+  a refusal — **and pass seeds ∪ their partners as the fallback set**, not the influenced set (`tools/transform.py:380`):
+  otherwise the fallback pivot moves with the radius (review R-10).
 - **Cost:** the pairing dominates the gesture start (SS0 §4) and would repeat on every preview refresh; reuse per mesh
   version versus AR-1/INV-3 is SS2's design question; the reference-PC run of the SS0 probe is still open.
 - Lifting I-8 (`application.py:1725-1728`, `:1787-1797`) and the M-b backstop together; bands on both sides (SS3, D-5).
+- AD-SYM-04 §5.1 D-3 still describes P-a's exemption as "(`w < 1`)"; aligned with §4.3 (category, not weight) in the SS1
+  commit.
 
 ---
 
 ## 9. Questions
 
-**Artist:** none for SS1 (no visible change, RQ-8; P-a and R-6 are decided). O-1 may become one in SS2.
+**Artist:** none for SS1 (no visible change, RQ-8; P-a and R-6 are decided). O-1 and R6-A/R6-C may become one question in
+SS2.
 
-**For the independent review (fresh session):** (1) Is §3.1's pair-level statement right, and does R6-A keep every
-guarantee? (2) Is a new category (§4.3) the smallest correct form of P-a, or should the checks change instead? (3) Is
-the absolute falloff-seam Rotate needed and correctly specified (§4.2)? (4) Is the no-weights path really byte-identical
-(§4.1, T-1/T-2)? (5) M-a or M-b? (6) Is any consumer of the Core loop missing from §5.2?
+**To the review (answered in §10):** (1) §3.1 pair level and R6-A; (2) the new category for P-a; (3) the absolute
+falloff-seam Rotate; (4) byte identity of the no-weights path; (5) M-a or M-b; (6) missing consumers.
 
 ---
 
 ## 10. Review
 
-Pending (fresh session, archived unedited under `docs/archive/symmetry_lab/reviews/`).
+**Independent review:** [AD-SYM-05_REVIEW_CLAUDE_001](../archive/symmetry_lab/reviews/AD-SYM-05_REVIEW_CLAUDE_001.md)
+(fresh session, `claude/festive-allen-pyajvv` @ `4550327`, archived unedited). Verdict: **ACCEPT WITH CHANGES**, no
+blocker; R-1 and R-2 to be fixed before code. Confirmed without change: §2, §4.1, the §4.2 table (with R-1/R-7), §4.3, §4.4's
+deviation note, the Mehlsack strip, §6's suite scope, §7 R-2/R-4/R-5, every cited line number; the six §9 questions are
+answered (pair level holds bitwise on distances, the new category is the smallest correct form, the absolute path is needed,
+the no-weights path is byte-identical, M-b, the missing consumers). Every finding was re-checked against the code or
+re-run before it was taken over (`tests/test_soft_selection_ops.py:91-92`; `test_signed_rotate_scale.py:80-98`;
+`weighted_ops.py:84-93` with `test_weighted_ops.py:399-404`; the quad crossings before/after K-near and K-side; the `smooth`
+monotonicity count, 2688 of 200 000). Nothing beyond the reviewer's own proposals was decided.
+
+| Finding | Severity | Answer |
+|---|---|---|
+| R-1 — fixing the axis for every weighted Rotate changes non-symmetric Soft | major | **Fixed, as proposed.** §4.4: `Θ` and the fixed axis only with falloff seam vertices, non-finite angle refused there; RQ-1 names "what they accept"; T-2 with an axis change; T-5 tests the scoped refusal |
+| R-2 — §5.2 misses consumers | major | **Fixed.** §5.2: Mehlsack Scale comparison (linear against the thin class, `"power"` against its closed form), the S1 record and `probe_cost.py` get the same `"influence"` strip as Mehlsack, the dropped `"power"` tests named |
+| R-3 — M-b's surface unspecified | medium | **Fixed, smallest variant.** §5.1: `_soft_weights` + `weights`, a new filtered params dict, no other state; `total_factor` goes and its two readers test behaviour instead — no Core API added (§2 step 4, §4.5) |
+| R-4 — T-3's oracle is not independent | medium | **Fixed, reviewer's form.** T-3 is a pure replay function without a Core base class, on P-D and the existing step lists |
+| R-5 — §3.3 inverted | medium | **Fixed.** Table corrected (K-near untangles the quad, K-side keeps the crossing; the quad crosses itself at rest); the trade-off restated (tie rule vs domain); R6-4 withdrawn; O-1 fully open |
+| R-6 — §3.1 "Consequence" and R6-C row inaccurate | medium | **Fixed.** The consequence now says *one* member must deviate and which one is a choice; R6-C described as "own side exactly plain" with its real costs; R6-A is a lean for SS2, not binding; R6-1/R6-3 stay binding for SS1, the D-1 rewording moves to SS2 |
+| R-7 — weight on `seam_vertex_ids` assumed | minor | **Taken.** §4.1/§4.2: `w ≠ 1` on a selected seam vertex → `ValueError`; T-5 |
+| R-8 — bitwise identity holds on distances | minor | **Fixed.** §3.1 stated on distances, pair weight `curve(min distance)`; §8 "pair minimum of the distances" |
+| R-9 — tripwire mapping (5), (10), (11) | minor | **Fixed** in §5.3 |
+| R-10 — D-3 fallback set for SS2 | minor | **Taken into §8:** seeds ∪ partners, not the influenced set |
+| R-11 — the R-6 fixture does not exercise P-a | minor | **Taken.** T-8 adds a straddling fixture with a seam vertex inside the falloff |
+| R-12 — texts and references | nit | **Fixed:** T-4 names the matched words; AD-SYM-02 citations now "§3, point 1/3"; the AD-SYM-04 D-3 wording is aligned in the SS1 commit (§8); §7 R-1 states the extra lookups |
+
+A second review is not required by the findings (no blocker; every change is the reviewer's own proposal or a direct
+consequence of it). Manu may ask for one.
 
 ---
 
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Das ist der Bauplan für die eine Core-Änderung der symmetrischen Soft Selection (SS1). Gebaut wird
-noch nichts: Erst prüft eine frische Session den Plan unabhängig, dann gibst du das Bauen frei.
+noch nichts. Die unabhängige Review hat ihn mit Änderungen angenommen; alle Änderungen sind eingearbeitet. **Als Nächstes
+brauchst du nur noch zu sagen, ob SS1 gebaut werden soll.**
 
 **Was sich ändert (für dich unsichtbar).** Die Gewichtung (Soft) zieht in den Core, an dieselbe Stelle, an der heute schon
 die Spiegelung sitzt. Soft ohne Symmetrie bleibt bitgenau wie heute, normales W/E/R auch; Soft mit Symmetrie bleibt in der
@@ -326,11 +401,15 @@ App bis SS2 abgelehnt. Deine Entscheidung P-a (Mittelpunkte gleiten bei Soft in 
 gebaut, damit die heutigen Regeln für *ausgewählte* Mittelpunkte unverändert bleiben. Beim Drehen müssen diese gleitenden
 Mittelpunkte vom Startzustand aus gerechnet werden, sonst hinge das Ergebnis davon ab, wie schnell du die Maus bewegst.
 
-**Dein R-6-Punkt als Anforderung.** Auf einem Mesh, bei dem eine Kante die Mitte kreuzt, ohne dass ein Punkt darauf liegt,
-kann symmetrisches Soft nicht gleichzeitig exakt spiegeln *und* auf deiner Seite genau wie normales Soft wirken — das schließt
-sich dort mathematisch aus. Vorschlag: exakt spiegeln hat Vorrang; nahe der Mitte kann der Einfluss dort etwas weiter reichen
-als ohne Symmetrie. Auf keinem heutigen Asset kommt das vor; das kleine Beispiel-Mesh wird Pflichttest. Nebenbefund für SS2:
-Welche Seite welche Bewegung bekommt, muss nach der Seite der Mitte gehen, nicht nach dem nächsten Auswahlpunkt — sonst
-klappt das Beispiel-Mesh zu einer Schleife. Ob es dazu eine Frage an dich gibt, zeigt SS2.
+**Was die Review korrigiert hat.** Der erste Plan hätte beim weichen Drehen ohne Symmetrie einen Achsenwechsel neu
+verboten (heutiges Verhalten geändert) — jetzt nur noch, wenn gleitende Mittelpunkte beteiligt sind. Zwei Lab-Stellen, die
+sonst rot geworden wären, sind jetzt eingeplant. Und meine Aussage zum Beispiel-Mesh war verdreht: Das Mesh überkreuzt sich
+schon vorher, und gerade die Regel „nach dem nächsten Auswahlpunkt" entwirrt es.
 
-**Fragen an dich:** keine.
+**Dein R-6-Punkt.** Für SS1 ändert er nichts am Code (der Core bekommt nur fertige Gewichte); verbindlich ist, dass alles
+auch auf solchen Meshes exakt spiegelt — zwei Beispiel-Meshes werden Pflichttests. Offen für SS2, auf einem Fall, den kein
+heutiges Asset hat: Soll bei einer Kante, die die Mitte ohne Punkt darauf kreuzt, deine Seite genau wie normales Soft
+wirken und die Abweichung auf der gespiegelten Seite liegen — oder umgekehrt? Und welche Seite welche Bewegung bekommt.
+Daraus wird in SS2 vielleicht eine Frage an dich.
+
+**Fragen an dich jetzt:** keine — nur das Go für SS1.
