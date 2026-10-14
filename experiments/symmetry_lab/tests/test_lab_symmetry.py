@@ -1,10 +1,11 @@
-"""Seam-Ableitung, Definition und States (Handoff Slice 3 §2 E1–E4, §7) — reine Tests
-von `lab_symmetry`.
+"""Symmetrie-Befund (Handoff Slice 3 §2 E4, §7) — reine Tests von `lab_symmetry`.
 
 Die Zahlen sind Charakterisierung der heutigen Assets (exakter Vergleich,
 keine Toleranz — E4), keine Capability-Regel. Der Zyklus (Shift+S), die
 Seam-als-Deklaration-Probe und der Ebenen-Umriss laufen seit WP-SYM-LAB-03 auf dem
-App-Pfad: `test_app_lab_cycle.py` (Plan A2-Tabelle, Slice 5).
+App-Pfad: `test_app_lab_cycle.py` (Plan A2-Tabelle, Slice 5). Die Tests von Seam-Ableitung,
+Definition und `current_axis` (E1/E3) sind mit den Funktionen nach `tests/test_symmetry_axis.py`
+gezogen (AD-SYM-04 A1, 2026-10-14).
 """
 
 from __future__ import annotations
@@ -13,15 +14,10 @@ import pytest
 
 from mirai.application import Application
 from mirai.symmetry import SymmetryState
+from mirai.symmetry_axis import definition_for_axis
 
 from symmetry_lab.lab_scene import load_asset_into
-from symmetry_lab.lab_symmetry import (
-    AXIS_NORMALS,
-    current_axis,
-    definition_for_axis,
-    derive_seam_edges,
-    symmetry_report,
-)
+from symmetry_lab.lab_symmetry import symmetry_report
 
 
 def make_app(asset: str) -> Application:
@@ -32,33 +28,6 @@ def make_app(asset: str) -> Application:
 
 def set_axis(app: Application, axis: str) -> None:
     app.scene.mesh.symmetry_definition = definition_for_axis(app.scene.mesh, axis)
-
-
-# -- Seam-Ableitung (E3) --------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "asset,axis,expected",
-    [("subd_cube", "X", 8), ("subd_cube", "Z", 8), ("head_basemesh", "X", 36)],
-)
-def test_seam_edge_counts(asset, axis, expected):
-    assert len(derive_seam_edges(make_app(asset).scene.mesh, axis)) == expected
-
-
-def test_seam_edges_lie_exactly_on_the_plane():
-    mesh = make_app("head_basemesh").scene.mesh
-    for eid in derive_seam_edges(mesh, "X"):
-        for vid in mesh.edge_vertices(eid):
-            assert mesh.vertex_position(vid)[0] == 0.0
-
-
-def test_definition_uses_origin_and_exact_unit_normal():
-    mesh = make_app("subd_cube").scene.mesh
-    for axis, normal in AXIS_NORMALS.items():
-        definition = definition_for_axis(mesh, axis)
-        assert definition.plane_point == (0.0, 0.0, 0.0)
-        assert definition.plane_normal == normal
-    assert definition_for_axis(mesh, None) is None
 
 
 # -- States (Charakterisierung, E4) ----------------------------------------------
@@ -101,12 +70,3 @@ def test_report_seam_vertices_match_seam_edges():
         v for e in mesh.symmetry_definition.seam_edges for v in mesh.edge_vertices(e)
     }
     assert symmetry_report(mesh).seam == endpoints
-
-
-def test_current_axis_rejects_foreign_definition():
-    from core import SymmetryDefinition
-
-    mesh = make_app("subd_cube").scene.mesh
-    mesh.symmetry_definition = SymmetryDefinition((1.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-    with pytest.raises(ValueError):
-        current_axis(mesh)

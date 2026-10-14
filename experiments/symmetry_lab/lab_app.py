@@ -5,12 +5,15 @@ WP-SYM-LAB-03 Slice 1b–4. Vertrag: AD-013, Addendum „2026-10-03, WP-SYM-LAB-
 zweite Eingabeschicht: Navigation, Auswahl, W/E/R, C, Knife und Undo laufen
 unverändert durch `Application`. Das Lab ergänzt nur
 
-- drei eigene Tasten im Kontext `symmetry_lab` (H2-R1): Shift+S → `SymmetryCycle`,
+- zwei eigene Tasten im Kontext `symmetry_lab` (H2-R1, geändert 2026-10-14):
   M → `ReSymmetrize`, Shift+B → `SymmetryGateMode` — aufgelöst über das eine
-  `app.bindings`, vor `Application` (`lab_key_press`);
+  `app.bindings`, vor `Application` (`lab_key_press`). Shift+S ist seit AD-SYM-04
+  Slice A1 die GLOBAL-Taste der App (`commands.SYMMETRY_CYCLE`): das Lab reicht sie
+  wie jede App-Taste an `Application` weiter;
 - eine Zeile der Gate-Tabelle in `app.command_gate`, abgeleitet aus
-  `mesh.symmetry_definition` (H2-R2, nie gecacht);
-- Symmetrie-Wechsel über `app.apply_mesh_change` (H3), Meldungen über
+  `mesh.symmetry_definition` (H2-R2, nie gecacht) — auch nach einem Shift+S der App
+  (K-4: die Ableitung nach jeder weitergereichten Taste deckt ihn ab);
+- Re-Symmetrize über `app.apply_mesh_change` (H3), Meldungen über
   `app.set_status` (H4);
 - (Slice 2) die HUD-Zeile `hud_text`, gebaut nur aus öffentlichem Zustand
   (`selection`, `transform_command`/`transform_interacting`/`transform_target`,
@@ -58,7 +61,6 @@ from mirai.topology.contextual_c import CContext
 from .lab_bindings import (
     LAB_OVERRIDES,
     RESYMMETRIZE,
-    SYMMETRY_CYCLE,
     SYMMETRY_GATE_MODE,
     SYMMETRY_LAB_CONTEXT,
     LabOverride,
@@ -72,13 +74,14 @@ from .lab_resymmetrize import (
     plan_summary,
     set_plan_positions,
 )
-from .lab_symmetry import SymmetryReport, current_axis, next_axis, set_symmetry_axis
+from mirai.symmetry_axis import current_axis
 
-#: Die drei Lab-Commands (H2-R1). Alles andere geht an `Application`.
-LAB_COMMANDS = frozenset({SYMMETRY_CYCLE, RESYMMETRIZE, SYMMETRY_GATE_MODE})
+from .lab_symmetry import SymmetryReport
 
-#: Die Lab-Kontext-Einträge: genau die drei Tasten aus `LAB_OVERRIDES` (eine Quelle;
-#: seit Slice 5 enthält sie nur noch diese drei, H2-R1).
+#: Die zwei Lab-Commands (H2-R1, seit 2026-10-14 ohne Shift+S). Alles andere geht an `Application`.
+LAB_COMMANDS = frozenset({RESYMMETRIZE, SYMMETRY_GATE_MODE})
+
+#: Die Lab-Kontext-Einträge: genau die zwei Tasten aus `LAB_OVERRIDES` (eine Quelle, H2-R1).
 LAB_KEY_ENTRIES: tuple[LabOverride, ...] = tuple(
     o for o in LAB_OVERRIDES if o.command in LAB_COMMANDS
 )
@@ -123,6 +126,13 @@ CONTEXT_NAMES: dict[CContext, str] = {
 #: H2-Amendment § Proposal 2): benannte Texte gibt es nur dort, wo die Operation bekannt ist
 #: (Transform-Labels, `C`, die Kontextnamen).
 BLOCK_NOT_ALLOWED_TEXT = "Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: nicht gestartet)"
+
+#: Benannte Einträge der BLOCK-Zeile (AD-SYM-04 K-6, AD-013 Addendum 2026-10-14, Gate-Tabelle):
+#: der Symmetrie-Zyklus der App (Shift+S). Er ändert Mesh-Zustand (die Definition) und steht
+#: deshalb nicht in `NON_OPERATION`; ohne diesen Eintrag ließe sich Symmetrie unter BLOCK
+#: einschalten, aber nie weiterschalten oder ausschalten. Die Vorschau-Zeile lehnt ihn ab
+#: (nur Anzeige-Commands, H2-R2).
+APP_SYMMETRY_COMMANDS = frozenset({cmd.SYMMETRY_CYCLE})
 
 #: Befehle, die keine Operation sind und deshalb unter BLOCK immer durchgehen (H2-Amendment,
 #: Tabelle `NON_OPERATION`). Eine Auslassung hier ist sichtbar (`BLOCK_NOT_ALLOWED_TEXT`),
@@ -241,7 +251,6 @@ DISPLAY_COMMANDS = frozenset(
 CANCEL_PREVIEW_LINE = "Cancel (Esc): closes the Re-Symmetrize preview while it is open"
 
 _COMMAND_LABELS = {
-    SYMMETRY_CYCLE: "Symmetrie (Shift+S)",
     RESYMMETRIZE: "Re-Symmetrize (M)",
     SYMMETRY_GATE_MODE: "E5-Modus (Shift+B)",
 }
@@ -309,6 +318,7 @@ def block_row() -> GateRow:
     sichtbar abgelehnt (`BLOCK_NOT_ALLOWED_TEXT`), nie still einseitig.
 
     allowed          = NON_OPERATION
+                       ∪ APP_SYMMETRY_COMMANDS (benannt, K-6)
                        ∪ deklarierte Removal-Commands
                        ∪ deklarierte Extrude-Commands (Slice 7)
                        ∪ {Connect}, wenn mindestens ein C-Kontext deklariert ist
@@ -320,7 +330,10 @@ def block_row() -> GateRow:
     gleiche (`==`) Zeile, so vergleicht `sync_gate`."""
     declared_contexts = declarations.declared_c_contexts()
     allowed = set(
-        NON_OPERATION | declarations.declared_removal_commands() | declarations.declared_extrude_commands()
+        NON_OPERATION
+        | APP_SYMMETRY_COMMANDS
+        | declarations.declared_removal_commands()
+        | declarations.declared_extrude_commands()
     )
     allowed.update(command for command in TRANSFORM_OPERATIONS if supports_symmetry(command))
     if declared_contexts:
@@ -382,7 +395,7 @@ def assert_lab_keys_free(bindings: BindingSet) -> None:
 
 
 def install_lab_bindings(bindings: BindingSet) -> None:
-    """Prüft (H2-R1) und trägt genau die drei Lab-Tasten im Lab-Kontext ein."""
+    """Prüft (H2-R1) und trägt genau die zwei Lab-Tasten im Lab-Kontext ein."""
     assert_lab_keys_free(bindings)
     for entry in LAB_KEY_ENTRIES:
         bindings.set_default(entry.input, entry.command, context=SYMMETRY_LAB_CONTEXT)
@@ -390,8 +403,11 @@ def install_lab_bindings(bindings: BindingSet) -> None:
 
 def startup_listing() -> list[str]:
     """Konsolen-Liste beim Start (H2-R1, H2-R3, AD-013 I6): Lab-Einträge + Gate-Zeilen."""
-    lines = [f"Lab-Kontext {SYMMETRY_LAB_CONTEXT!r} (AD-013 H2-R1, genau drei Tasten):"]
+    lines = [f"Lab-Kontext {SYMMETRY_LAB_CONTEXT!r} (AD-013 H2-R1, genau zwei Tasten):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEY_ENTRIES)
+    lines.append(
+        f"App-Taste Shift+S -> {cmd.SYMMETRY_CYCLE} (GLOBAL, AD-SYM-04; unter BLOCK benannt erlaubt)"
+    )
     lines.append(
         "E5-Modus (Shift+B: BLOCK <-> MARK, Default BLOCK; nur Lab-Zustand, kein Undo-Schritt)"
     )
@@ -499,15 +515,18 @@ class SymmetryAppLab:
             app.hover_suspended = row.hover_suspended
 
     def mark_overlays_dirty(self) -> None:
-        # Eine reine Definitions-Änderung meldet dem Viewport nichts (mutate gibt
-        # eine leere Menge zurück, Plan §5 1a) — die Overlays bauen sich selbst neu.
+        # Öffnen und Schließen der Vorschau ändern kein Mesh und melden dem Viewport
+        # nichts — die Overlays bauen sich selbst neu. (Ein Shift+S der App meldet seit
+        # AD-SYM-04 A1 eine Topologie-Änderung, K-3; dafür braucht es das hier nicht mehr.)
         for overlay in self.overlays:
             overlay.dirty = True
 
     def run_command(self, command: str) -> bool:
         """Führt ein Lab-Command aus. Abgelehnt (False + Status) während einer
         `Application`-Interaktion (H2-R2) und bei offener Vorschau jedes außer M
-        (H2-R2, N2: die Vorschau-Zeile bleibt)."""
+        (H2-R2, N2: die Vorschau-Zeile bleibt). Shift+S ist kein Lab-Command mehr
+        (AD-SYM-04 A1): `lab_key_press` reicht ihn an `Application` weiter, wo das Gate
+        der Vorschau-Zeile und die Interaktions-Sperren der App gelten."""
         app = self.app
         owner = app.interaction_owner
         if owner is not None:
@@ -518,8 +537,6 @@ class SymmetryAppLab:
         if self.preview_open:
             app.set_status(PREVIEW_HINT)
             return False
-        if command == SYMMETRY_CYCLE:
-            return self._cycle()
         return self._toggle_gate_mode()
 
     def _toggle_gate_mode(self) -> bool:
@@ -597,22 +614,6 @@ class SymmetryAppLab:
         self.mark_overlays_dirty()
         self.sync_gate()
 
-    def _cycle(self) -> bool:
-        """Shift+S: aus → X → Y → Z → aus, genau ein Undo-Schritt über H3."""
-        app = self.app
-        mesh = app.scene.mesh
-        axis = next_axis(current_axis(mesh))
-
-        def mutate() -> set:
-            set_symmetry_axis(mesh, axis)
-            return set()  # keine Position bewegt, keine Topologie geändert
-
-        changed = app.apply_mesh_change(f"Symmetry {axis or 'off'}", mutate)
-        self.sync_gate()
-        self.mark_overlays_dirty()
-        app.set_status(f"Shift+S: Symmetrie {axis or 'aus'}")
-        return changed
-
 
 def start_lab(app: Application) -> SymmetryAppLab:
     """Lab-Start auf einer `Application`: Tasten prüfen und eintragen, Gate-Zeile
@@ -639,9 +640,10 @@ def lab_key_press(
     oder lehnt sichtbar ab (bei offener Vorschau alles außer M). Esc (`Cancel`)
     bei offener Vorschau → das Lab schließt sie (D1, True); ohne Vorschau geht Esc
     unverändert an `Application` (T-R2f). Sonst → `Application` (`forward`,
-    Default `app.key_press`), danach leitet das Lab Symmetrie-Zustand und
-    Gate-Zeile neu ab (H2-R2: Ctrl+Z über einen Zyklus-Schritt stellt die
-    Definition wieder her). `forward` existiert nur für den pyglet-Adapter, der
+    Default `app.key_press`; dazu gehört seit AD-SYM-04 A1 auch Shift+S, der
+    Symmetrie-Zyklus der App), danach leitet das Lab Symmetrie-Zustand und
+    Gate-Zeile neu ab (H2-R2, K-4: Shift+S schaltet die Definition, Ctrl+Z über einen
+    Zyklus-Schritt stellt sie wieder her). `forward` existiert nur für den pyglet-Adapter, der
     stattdessen den Handler aus `src/main.py` aufruft (mit dessen Seiteneffekten,
     z. B. Shift-Tracking).
     """

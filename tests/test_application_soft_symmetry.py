@@ -1,7 +1,8 @@
 """Soft Selection + Symmetry on the app path: refused visibly, fail-closed (AD-020 §8, E3, F2).
 
-`src/main.py` never sets a symmetry definition, so Production never reaches this; the Symmetry
-Lab does (its MARK/BLOCK variants are in `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`).
+Production reaches this since AD-SYM-04 A1 (Shift+S sets the definition, the A1 case is in
+`test_application_symmetry_cycle.py`); the Symmetry Lab too (its MARK/BLOCK variants are in
+`experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`).
 The refusal is authoritative at `begin()` - that is where the sticky settings are read, so
 W armed → O → motion cannot slip through (review F2) - and an early feedback at the key press.
 The soft ops keep the `params["symmetry"]` `ValueError` backstop for any other host.

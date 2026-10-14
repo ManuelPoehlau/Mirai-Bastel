@@ -76,6 +76,7 @@ from core.history import HistoryStack  # noqa: E402
 from core.mesh import MeshError, SymmetryDefinition  # noqa: E402
 from core.operations.topology import MeshStateCommand  # noqa: E402
 from mirai.symmetry import SymmetryState, mirror_position, symmetry_state  # noqa: E402
+from mirai.symmetry_axis import derive_seam_edges  # noqa: E402
 from mirai.symmetry_coordination import (  # noqa: E402
     SymmetryIndex,
     completeness_report,
@@ -97,7 +98,6 @@ from mirai.topology.knife_planner import VERTEX_TOL_PX  # noqa: E402
 from mirai.topology.knife_preview import build_knife_render_data  # noqa: E402
 from mirai.viewport.picking import DEPTH_TOLERANCE, face_edge_distance_px, point_occluded  # noqa: E402
 from mirai.viewport.picking_cache import PickCache  # noqa: E402
-from symmetry_lab.lab_symmetry import derive_seam_edges  # noqa: E402
 from topology.knife_integrity_probe import camera_for  # noqa: E402  (fixture reuse: camera framing)
 from topology.symmetry_coordination_probe import seam_face_and_edges  # noqa: E402
 from topology.symmetry_ops_probe import load  # noqa: E402  (asset + Lab E1/E3 X definition)

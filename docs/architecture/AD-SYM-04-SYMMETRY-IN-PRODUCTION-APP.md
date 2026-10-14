@@ -3,7 +3,7 @@
 **Status:** **DECIDED** (Manu, 2026-10-14): Q-1…Q-4 answered with the recommendations (commit `fa6e017`; Decision record
 below). Proposed and revised the same day after the independent review CLAUDE-001 (ACCEPT WITH CHANGES, answered in §9).
 The AD-013 amendment of §2.3 is written ([AD-013, Addendum 2026-10-14](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)).
-Slice A0 is done with this; code follows in A1. Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
+Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-a1)).** Keys, look and texts stay `PROVISIONAL` (AD-013 A5).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -402,7 +402,7 @@ The verdict is recorded (M-2, Lab README "Slice 7", commit `0f8fb04`). Nothing E
 | # | Slice | Content | Gate / tests |
 |---|---|---|---|
 | A0 | Decisions (docs) | Manu answers Q-1…Q-4 after the review; the AD-013 note of §2.3 is written; AD-SYM-04 → DECIDED. **Done 2026-10-14** (Decision record). | No code. |
-| A1 | Definition entry | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); the command's interaction gates (review R-4): ignored while W/E/R/T is armed or running (same gate as `C` and the mode keys, `application.py:1587-1603`, so the partner sets an armed tool resolves at `begin()` cannot change underneath it), ignored inside a Knife session (`_knife_key`, pinned by a test), and Soft armed → toggle → motion refused at `begin()` (`:1715`); Lab: K-6 named row entry, T-FC1 and T-R1a adjusted; T-R5b unchanged, T-G3b re-labelled or narrowed (§2.3); `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
+| A1 | Definition entry — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-a1)) | E1/E3 setup **moved** from `lab_symmetry` to `src/mirai` (K-2); an `Application` symmetry command per Q-1 (history-recorded like `apply_mesh_change`, viewport notified, K-3); default binding `PROVISIONAL`; status line per S-1; the F-a guard test (if Q-3 = F-a). Lab uses the moved functions and, under E-1, the app's command (H2-R1 note). | New app tests: toggle = one Undo step, Undo/Redo restore the definition, `load_scene` drops it; a smoke per coordinated tool through `src/main.py`'s `Application` (W/E/R, `C` ×4, Knife, Delete/Dissolve, `T`); the command's interaction gates (review R-4): ignored while W/E/R/T is armed or running (same gate as `C` and the mode keys, `application.py:1587-1603`, so the partner sets an armed tool resolves at `begin()` cannot change underneath it), ignored inside a Knife session (`_knife_key`, pinned by a test), and Soft armed → toggle → motion refused at `begin()` (`:1715`); Lab: K-6 named row entry, T-FC1 and T-R1a adjusted; T-R5b unchanged, T-G3b re-labelled or narrowed (§2.3); `tests` + `experiments/symmetry_lab/tests` + `playground/tests` once (shared `Application` path). |
 | A2 | Display | Per Q-2: the Lab's plane/state overlays **moved** to `src` as an `Application`-owned overlay handed in through `GL_TYPES` (soft-band precedent), A3 deferral kept; the Lab drops its copies (no double draw, L-9). | Overlay sync tests ported from the Lab; Lab draw-order test adapted; drag-cost probe re-run on the reference PC (L-8 numbers as the bar). |
 | A3 | Re-Symmetrize (§10) | Only after the §10 review and Manu's decision: topological pairing and plan **moved** to `src/mirai`; the preview as an `Application`-owned interaction (R-a); Lab drops its preview machinery. | See §10.4. |
 | J | Joint Artist test (M-3) | In `python src/main.py`: the Slice 7 steps 1–8 (step 9, MARK, stays Lab-only under UA-2), the Re-Symmetrize steps of the Lab README ("Re-Symmetrize (M / M / Esc)", incl. `man_with_shoes_basemesh`), plus the symmetric Soft test of §5. | Manu's verdict, one session. |
@@ -520,6 +520,56 @@ preview line becomes the status line, because the app has no HUD (`PROVISIONAL`,
 
 ---
 
+## Implementation note (2026-10-14, slice A1)
+
+Production order (Manu, 2026-10-14: "Slice A1 … umsetzen"), rules AD-013 Addendum 2026-10-14 and K-1…K-7. No
+change under `src/core`; no decided rule changed beyond the addendum, so no Haltepunkt was reached. The promotion of the
+E1/E3 setup is the one M-1/Q-1 decided (E-1 names it: "the E1/E3 functions move from `lab_symmetry` to `src/mirai`").
+
+**What was built**
+
+| Piece | Where | Note |
+|---|---|---|
+| E1/E3 setup, **moved** (K-2) | `src/mirai/symmetry_axis.py` | `ORIGIN`, `AXIS_INDEX`, `AXIS_NORMALS`, `SYMMETRY_CYCLE`, `derive_seam_edges`, `definition_for_axis`, `current_axis` (K-1: still raises outside E1), `next_axis`, `set_symmetry_axis`. Removed from `lab_symmetry.py`; every importer (Lab, Lab tests, `experiments/topology` probes) now imports from `mirai.symmetry_axis`. What stays in the Lab is display (`SymmetryReport`, `symmetry_report`, `plane_outline_data`) — slice A2 material. |
+| The command | `commands.SYMMETRY_CYCLE = "SymmetryCycle"`, default binding Shift+S in GLOBAL (`PROVISIONAL`) | `Application.dispatch_command` → `_symmetry_cycle`: off → X → Y → Z → off through `_mesh_transaction` (one `MeshStateCommand` `Symmetry <axis>`, selection-mirror entry, so Undo/Redo restore definition and selection). |
+| K-3 | `_symmetry_cycle` | The step is reported as a topology change (`moved_of` omitted): pick cache, `viewport.on_topology_changed()`, soft-band refresh (bands are hidden under a definition), hover re-pick — the same notification its Undo already got. Extra overlays re-sync without a host flag; the Lab's `_cycle` and its own `dirty` marking for Shift+S are gone. Cost: one render-mesh rebuild per key press, as for every Undo. |
+| Interaction gates (R-4) | `key_press` + `_symmetry_cycle` | Ignored while W/E/R/T is armed or running (same branch as `C`, Delete, Dissolve: silent, `False`); inside a Knife session the session gate ignores it (Shift+S resolves through the KNIFE→GLOBAL fallback, `_knife_key` drops it); `_symmetry_cycle` also returns `False` while `interaction_owner` is set, so the direct `dispatch_command` path cannot slide a definition under a running interaction. |
+| Status line (S-1 part of S-2) | `application.symmetry_status_text` | `Symmetrie X (valid)`, `Symmetrie X (partial, 54 ohne Partner)`, `Symmetrie aus` (`… N mehrdeutig` when ambiguous). Text `PROVISIONAL`. |
+| Lab (H2-R1, K-6) | `lab_bindings.py`, `lab_app.py` | Context `symmetry_lab` holds two entries (M, Shift+B); the start-up assert covers those two. Shift+S reaches `Application` through `lab_key_press`'s forward path, then `sync_gate` re-derives the row (K-4). BLOCK row: `APP_SYMMETRY_COMMANDS = {SymmetryCycle}` as a named entry; MARK and off rows unchanged; the preview row refuses it with its own text. The start-up listing names the app key. |
+| T-G3b narrowed | `tests/test_command_gate_contexts.py` | `src/main.py` never assigns `symmetry_definition` and calls no correspondence / coordination / definition function (the moved writers added to the list); exactly one `…Overlay` import from a `viewport` module is allowed (for A2). Negative controls: assignment, writer and coordination calls, a second overlay import, an overlay import from outside `viewport`. T-R5b unchanged. |
+| `src/main.py` | docstring only | No code change: it builds `Application()` and installs no gate; Shift+S reaches the command through `install_handlers` (test). |
+
+**Tests** (named by the A1 row): `tests/test_application_symmetry_cycle.py` — cycle and one Undo step each, Undo/Redo
+restore, only the definition changes and the selection stays, the four S-1 texts, `load_scene` drops the definition,
+K-3 (extra overlay re-syncs, soft bands follow), the R-4 gates (W/E/R armed and running, T armed and running, Knife
+session, direct `dispatch_command`), Soft on → Shift+S → W refused at arm and Soft after the arm refused at `begin()`, one
+smoke per coordinated tool (W, E, R, `C` as Split / Edge Connect / Vertex Connect / Knife, Delete, Dissolve,
+DissolveNoCleanup, `T`; oracle: one Undo step, the other side changed, AD-SYM-03 delta rule holds, state stays `valid`),
+and `src/main.py`'s key handler reaching the command. `tests/test_symmetry_fail_closed_guard.py` — the F-a guard (§3.3):
+every command constant × five fixture selections on subd_cube X, oracle "mesh changed ⇒ one Undo step, plane unchanged
+unless `SymmetryCycle`, delta rule holds"; a coverage test that the fixtures really exercise the coordinated tools; a
+negative control (Delete with its declaration removed runs one-sided and is reported). `tests/test_symmetry_axis.py` —
+the E1/E3 tests moved from the Lab. Lab: T-R1a/T-R1b for two entries (plus: a user binding on Shift+S no longer stops the
+Lab), T-FC1 with the named entry (allowed under BLOCK and cycling to off, refused under the preview row), the Shift+S
+expectations of the cycle/HUD/keys/Knife tests.
+
+**Behaviour change in the Lab (derived, `PROVISIONAL`):** Shift+S while W/E/R is held or a Knife session runs used to be
+refused by the Lab with a status line (`Symmetrie (Shift+S) abgelehnt — …`). It is now the app's key and silent there,
+like `C` — the convention §9 R-4 fixed for A1. Shift+S under the open preview is still refused visibly (the gate's
+`Vorschau aktiv — Befehl ignoriert`). The status text after a step changed from `Shift+S: Symmetrie X` to the app's S-1
+text.
+
+**Not in A1:** the plane outline and problem markers in the app (A2); Re-Symmetrize (A3, after the §10 review; M stays a
+Lab key). The F-a guard's known gaps stand as stated in §3.3.
+
+**Smoke check for Manu (optional, not a verdict session — the verdict is J):** `python src/main.py`, **Shift+S** →
+console `Symmetrie X (valid)`; select a vertex off the middle, hold **W** and move → the mirror vertex follows;
+**Ctrl+Z** twice → move and symmetry undone (`Symmetrie aus` is not printed for Undo; the console says `Undo`).
+Shift+S three more times → `Symmetrie Y (partial, …)`, `Symmetrie Z …`, `Symmetrie aus`. Nothing is drawn for the
+plane yet (A2).
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Du hast entschieden: Symmetrie kommt in die App (`src/main.py`), danach baut man dort die symmetrische
@@ -549,6 +599,13 @@ umgedreht. Das Lab läuft weiter auf demselben Weg.
 **Entschieden (2026-10-14):** alle vier wie empfohlen — Shift+S, Ebene + Problem-Punkte, Verweigern ohne Laufzeit-Gate
 (MARK/BLOCK bleibt im Lab), Mittelpunkte gleiten bei Soft in der Ebene. Nächster Schritt: Slice A1 (Einschalten in der App).
 Die Reihenfolge hast du nicht korrigiert; sie bleibt eine Annahme.
+
+**Slice A1 gebaut (2026-10-14):** `Shift+S` schaltet die Symmetrie jetzt in `python src/main.py` (aus → X → Y → Z → aus, je
+ein Undo-Schritt, Meldung in der Konsole, z. B. `Symmetrie X (valid)`). Alle gespiegelten Werkzeuge laufen damit in der
+App. Zu sehen ist die Ebene noch nicht (kommt mit A2). Im Lab ist `Shift+S` jetzt die App-Taste; einzige spürbare
+Änderung dort: während W/E/R gehalten wird oder der Knife läuft, wird `Shift+S` still ignoriert (wie `C`) statt mit einer
+Meldung abgelehnt. Ein optionaler Kurzcheck steht in der Implementierungsnotiz oben; das Verdikt bleibt beim gemeinsamen
+Praxistest J.
 
 **Nachtrag (2026-10-14): Re-Symmetrize kommt mit in die App** (deine Aussage). Im Lab ist die Vorschau (M / M / Esc) über die
 Lab-Sperre gebaut, die die App nicht schreiben darf. Vorschlag (§10): die Vorschau wird ein eigener Modus der App, wie die

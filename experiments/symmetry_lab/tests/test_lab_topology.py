@@ -10,9 +10,9 @@ import pytest
 
 from mirai.application import Application
 from mirai.symmetry import CorrespondenceState, vertex_correspondence
+from mirai.symmetry_axis import definition_for_axis
 
 from symmetry_lab.lab_scene import load_asset_into
-from symmetry_lab.lab_symmetry import definition_for_axis
 from symmetry_lab.lab_topology import topological_pairing, topological_sides, topology_report
 
 ASSETS = [

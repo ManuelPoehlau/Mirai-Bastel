@@ -29,7 +29,7 @@
 
 | Lab | Was man dort ausprobiert | Start | Doku |
 |---|---|---|---|
-| Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Lab-Stand, nicht Production. Symmetrischer Extrude **KEEP** (2026-10-14); Symmetrie kommt in die App (deine Entscheidung 2026-10-14, [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) entschieden). | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
+| Symmetry Lab | Live-Symmetrie mit Transform- und Topologie-Werkzeugen bis einschließlich Slice 7; Symmetrischer Extrude **KEEP** (2026-10-14); Symmetrie kommt in die App (deine Entscheidung 2026-10-14, [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) entschieden). **Seit Slice A1 (2026-10-14) schaltet `Shift+S` die Symmetrie auch in `python src/main.py`**; im Lab ist `Shift+S` jetzt die App-Taste. | `python experiments/symmetry_lab/run.py` | [README](../experiments/symmetry_lab/README.md) · [AD-SYM-03](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | Subdivision Lab | Wie glatt ist glatt genug, Käfig oder Fläche, Kosten auf dem Referenz-PC | `python experiments/subdivision_lab/run.py` | [README](../experiments/subdivision_lab/README.md) |
 | Mehlsack Lab | Box per Mausrad bauen (mit Tiefe), Loop/Ring ohne Auswahl direkt ziehen oder mit `W`/`E`/`R` halten verschieben, drehen, skalieren (Taille/Bauch, zwei Scale-Formeln per `M`), Einflusskurve mit Bézier-Handles auch unter null, Flächen-Vorschau `P`; seit Slice 3 auch Punkt-/Kanten-/Flächen-Auswahl als Ausgangspunkt derselben Gesten; seit Slice 3b Element-Hover als Standard, Loop/Ring im `L`-Modus, Doppelklick-Loops, Umrechnen (Slices 1–3b verdiktet, 2026-10-13; Slice 3c wartet auf dich) | `python experiments/mehlsack_lab/run.py` | [README](../experiments/mehlsack_lab/README.md) |
 | Shading Lab | Licht/Shading für bessere Formwahrnehmung beim Modellieren | `python experiments/viewport_shading_lab/run.py` | [README](../experiments/viewport_shading_lab/README.md) |
@@ -80,7 +80,7 @@ Details: [ROADMAP, WP-06](architecture/ROADMAP.md) und [Knife-Entscheidungen](..
 
 | Kandidat | Was es dir bringt | Hängt ab von |
 |---|---|---|
-| Symmetrie-Spur: Symmetrie in die App, dann symmetrische Soft Selection, gemeinsamer Praxistest | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | AD-SYM-04 entschieden (2026-10-14); Re-Symmetrize kommt mit (Weg dahin: Vorschlag §10, erst Review); als Nächstes Slice A1 (Shift+S in der App); B2d (Knife-Varianten) bleibt offen. |
+| Symmetrie-Spur: Symmetrie in die App, dann symmetrische Soft Selection, gemeinsamer Praxistest | Symmetrie als Teil des Production-Werkzeugflusses nutzbar machen | AD-SYM-04 entschieden (2026-10-14); Re-Symmetrize kommt mit (Weg dahin: Vorschlag §10, erst Review); Slice A1 (Shift+S in der App) gebaut 2026-10-14, optionaler Kurzcheck in AD-SYM-04 (Implementierungsnotiz A1); als Nächstes A2 (Ebene und Problem-Punkte in der App); B2d (Knife-Varianten) bleibt offen. |
 | Knife-Familien im Playground zusammenführen (S5) | ein Knife statt zwei Varianten auch im Playground | — |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | deine Antwort zu D1c; Messung liegt vor |
 | Flat Shading pro Polygon (B5a.1) | Flat-Ansicht ohne sichtbare Dreiecke | berührt AD-018 |

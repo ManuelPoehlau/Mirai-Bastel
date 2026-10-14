@@ -60,6 +60,12 @@ global, auf die Auswahl des aktiven Komponentenmodus:
 Wie `C` ignoriert, solange W/E/R scharf ist; während einer Knife-Session
 ungebunden (Session Gate).
 
+Symmetrie (AD-SYM-04 Slice A1, Q-1 = E-1, Taste `PROVISIONAL`, AD-013 A5):
+- Shift+S          → Symmetrie aus → X → Y → Z → aus, je ein Undo-Schritt
+Wie `C` ignoriert, solange W/E/R/T scharf ist; in der Knife-Session ignoriert
+(Session Gate, über den GLOBAL-Fallback aufgelöst). Bis 2026-10-14 eine Taste des Symmetry Lab (H2-R1); das Lab nutzt
+jetzt diese.
+
 Knife-Session (WP-06 B7, AD-017; Kontext "knife", nur während einer
 Session aufgelöst, sonst ungebunden):
 - Enter           → KnifeCommit (genau ein History-Eintrag)
@@ -156,6 +162,11 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("delete"), cmd.DELETE)
     bs.set_default(_key("backspace"), cmd.DISSOLVE)
     bs.set_default(_key("backspace", "ctrl"), cmd.DISSOLVE_NO_CLEANUP)
+
+    # AD-SYM-04 Slice A1 (Q-1 = E-1): Shift+S cycles the symmetry definition. The key is
+    # PROVISIONAL (AD-013 A5: the Lab's key is not promoted with the capability); it is the
+    # key the refusal texts of `symmetric_ops`/`symmetric_knife`/`symmetric_extrude` name.
+    bs.set_default(_key("s", "shift"), cmd.SYMMETRY_CYCLE)
 
     # --- Knife session (WP-06 B7, AD-017; context "knife") ------------------
     # Artist Input Truth `topology.knife_commit` (Enter); Ctrl+Shift+Z is the

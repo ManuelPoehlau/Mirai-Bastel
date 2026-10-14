@@ -13,6 +13,7 @@ import pytest
 
 from mirai.application import Application
 from mirai.symmetry import SymmetryState, mirror_position, symmetry_state
+from mirai.symmetry_axis import definition_for_axis
 
 from symmetry_lab.lab_resymmetrize import (
     ResymmetrizeRejected,
@@ -22,7 +23,6 @@ from symmetry_lab.lab_resymmetrize import (
     set_plan_positions,
 )
 from symmetry_lab.lab_scene import load_asset_into
-from symmetry_lab.lab_symmetry import definition_for_axis
 from symmetry_lab.lab_topology import topology_report
 
 PLANE = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))

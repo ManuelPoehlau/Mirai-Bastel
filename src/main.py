@@ -75,8 +75,15 @@ Scope (binding, see the handoffs):
   mouse wheel shapes the `custom` curve (up = rounder, down = sharper, always selects
   `custom`, never zooms — the window tracks Ctrl like Shift, `ctrl_keys_after`, and
   `wheel_input` carries `{"ctrl"}`; Ctrl+Shift+wheel does nothing); Alt+O switches the
-  influence bands on/off (no band points at all while off; the status line shows it). With a symmetry definition (only the
-  Symmetry Lab sets one) Soft + symmetry is refused visibly.
+  influence bands on/off (no band points at all while off; the status line shows it). With a symmetry definition
+  (Shift+S, below) Soft + symmetry is refused visibly.
+  Symmetry (AD-SYM-04 slice A1, Q-1 = E-1, key `PROVISIONAL`): Shift+S cycles the mesh's symmetry
+  off → X → Y → Z → off (plane through the origin, seam = the edges at exactly 0 on that axis), one
+  Undo step each; the status line says `Symmetrie X (valid)` / `Symmetrie X (partial, 54 ohne
+  Partner)` / `Symmetrie aus`. With symmetry on, W/E/R, C (Split / Edge Connect / Vertex Connect /
+  Knife), Delete / Dissolve and T mirror by themselves (`Application`; this file adds no symmetry
+  code and installs no gate, AD-013 H2-R5 as amended 2026-10-14). Ignored while W/E/R/T is held
+  or a Knife session runs. Plane and problem markers follow in slice A2.
   WP-SOFT-01 S2b (`PROVISIONAL`, AD-020 §5): with Soft on and a selection, the influence
   region is shown as banded points around the selection (`GLSoftBandOverlay`, an extra
   overlay; four bands over 0 < w < 1, warm = strong .. cold = weak, seeds keep the

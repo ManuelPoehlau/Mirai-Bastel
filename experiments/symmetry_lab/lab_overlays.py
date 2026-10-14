@@ -65,11 +65,12 @@ from typing import Optional
 from core import Mesh, Selection, VertexId
 from core.selection import SelectionMode
 from mirai.symmetry import mirrored_selection
+from mirai.symmetry_axis import current_axis
 from viewport.gl_line_overlay import FlatColorLayers
 from viewport.gl_point_overlay import SELECTED_POINT_SIZE, GLPointOverlay
 
 from .lab_resymmetrize import ResymPlan, resym_preview_data
-from .lab_symmetry import SymmetryReport, current_axis, plane_outline_data, symmetry_report
+from .lab_symmetry import SymmetryReport, plane_outline_data, symmetry_report
 
 PLANE_LAYER = "symmetry_plane"
 SEAM_LAYER = "symmetry_seam"

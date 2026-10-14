@@ -13,13 +13,13 @@ import pytest
 from mirai.application import CommandGate
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
+from mirai.symmetry_axis import current_axis
 
 from symmetry_lab.lab_app import (
     GateMode,
     block_text,
     gate_row_for,
 )
-from symmetry_lab.lab_symmetry import current_axis
 
 from ._app_lab_support import (  # noqa: F401
     C,
@@ -85,7 +85,9 @@ def test_m_during_armed_and_running_move_is_refused(lab_app):
 def test_shift_s_during_knife_is_refused_and_the_session_keeps_running(lab_app):
     """T-R2b: Symmetrie **aus** (die 1b-Zeile lehnte C ab, BLOCK tut es): C mit leerer
     Auswahl startet den Knife; Shift+S → abgelehnt, `knife_active` bleibt True;
-    danach E → Stift angehoben."""
+    danach E → Stift angehoben. Seit AD-SYM-04 A1 ist Shift+S die App-Taste: die
+    Knife-Session ignoriert sie still (Session Gate wie für C, review R-4), statt dass
+    das Lab sie mit Status ablehnt."""
     app, lab = lab_app
     assert lab.axis is None
     start_knife(app, lab)
@@ -95,8 +97,7 @@ def test_shift_s_during_knife_is_refused_and_the_session_keeps_running(lab_app):
 
     serial = app.status_serial
     assert press(app, lab, SHIFT_S) is False
-    assert app.status_serial == serial + 1
-    assert app.status_message == "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"
+    assert app.status_serial == serial
     assert app.knife_active
     assert lab.axis is None
     assert app.command_gate is None
@@ -256,9 +257,8 @@ def _idle(app, lab):
 REFUSALS = [
     # Seit Slice 4 nur in BLOCK (MARK lässt C laufen, `test_app_lab_gate.py`).
     ("C_under_symmetry_block", _symmetry_on_block, C, block_text("Knife")),   # Knife undeklariert (6c: s. u.)
-    ("ShiftS_transform_armed", _armed, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
-    ("ShiftS_transform_running", _running, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Transform läuft"),
-    ("ShiftS_knife", start_knife, SHIFT_S, "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"),
+    # Shift+S unter einer Interaktion: seit AD-SYM-04 A1 die App-Taste, still ignoriert wie C
+    # (review R-4) — `test_shift_s_is_ignored_silently_under_an_interaction` unten.
     # Seit Slice 3 die Ablehnungen des alten Labs (README Slice 5, Schritt 12).
     ("M_idle", _idle, M, "Re-Symmetrize: Symmetrie aus"),
     ("M_symmetry_on", _symmetry_on, M, "Re-Symmetrize: keine Auswahl"),
@@ -291,6 +291,22 @@ def test_refusals_are_visible_and_counted(lab_app, setup, inp, text, monkeypatch
     assert len(app.history) == history
     assert app.command_gate is gate
     assert app.interaction_owner == owner
+
+
+@pytest.mark.parametrize("setup", [_armed, _running, start_knife], ids=["armed", "running", "knife"])
+def test_shift_s_is_ignored_silently_under_an_interaction(lab_app, setup):
+    """AD-SYM-04 A1 (review R-4): Shift+S ist die App-Taste; solange W/E/R scharf ist oder läuft
+    oder eine Knife-Session läuft, ignoriert `Application` sie wie C — Rückgabe False, kein
+    Status, Definition, Mesh, History, Gate und Owner unverändert."""
+    app, lab = lab_app
+    setup(app, lab)
+    state = app.scene.mesh.export_state()
+    history, gate, owner = len(app.history), app.command_gate, app.interaction_owner
+    serial = app.status_serial
+    assert press(app, lab, SHIFT_S) is False
+    assert app.status_serial == serial
+    assert app.scene.mesh.export_state() == state
+    assert (len(app.history), app.command_gate, app.interaction_owner) == (history, gate, owner)
 
 
 # -- T-R4c ------------------------------------------------------------------------

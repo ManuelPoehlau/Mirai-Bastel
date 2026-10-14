@@ -1315,3 +1315,19 @@ symmetry command allowed under BLOCK and refused under the preview row; the F-a 
 [AD-SYM-04 §10](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#10-re-symmetrize-in-the-app-proposed-2026-10-14) proposes making
 the preview an `Application`-owned interaction; that would reduce H2-R1 to one Lab entry (Shift+B), retire D1, the Lab's
 preview bullets of H2-R2 and the preview row. Until it is reviewed and decided, the table above stands.
+
+### Implementation note (2026-10-14, AD-SYM-04 slice A1)
+
+Built as the table above says; details in [AD-SYM-04, implementation note A1](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-a1).
+`commands.SYMMETRY_CYCLE` (Shift+S, GLOBAL, `PROVISIONAL`) is handled by `Application._symmetry_cycle`; the E1/E3 setup
+moved to `src/mirai/symmetry_axis.py`. `src/main.py` gained no code (T-R5b unchanged, T-G3b narrowed as worded, with
+negative controls). Lab: two context entries (T-R1a/T-R1b), `APP_SYMMETRY_COMMANDS` as the BLOCK row's named entry
+(T-FC1: allowed under BLOCK, refused under the preview row). The F-a guard is `tests/test_symmetry_fail_closed_guard.py`.
+
+Two consequences for H2-R2/H2-R3 as written, both following from Shift+S no longer being a Lab command (no rule text
+changes): the bullets "Shift+S and Shift+B are refused visibly (`set_status`)" (preview open) and "while
+`interaction_owner` is not `None`, the Lab executes none of its commands (refused visibly)" now cover **Shift+B and M**
+only. Under the open preview Shift+S is refused visibly by the preview row itself (`Vorschau aktiv — Befehl ignoriert`,
+T-R2e unchanged in effect); while an `Application` interaction owns the keys it is ignored silently by `Application`,
+like `C` (AD-SYM-04 §9 R-4). T-R2b now expects that silence. H2-R3's "nothing is swallowed silently" concerns the
+gate's and the Lab's own refusals; `Application`'s session gates were silent before and stay so.

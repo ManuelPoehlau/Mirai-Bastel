@@ -33,8 +33,8 @@ from typing import Optional
 
 from core import Mesh, VertexId
 from mirai.symmetry import mirror_position
+from mirai.symmetry_axis import AXIS_INDEX, current_axis
 
-from .lab_symmetry import AXIS_INDEX, current_axis
 from .lab_topology import TopologyReport, topology_report
 
 Vec3 = tuple[float, float, float]

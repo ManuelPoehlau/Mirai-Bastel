@@ -10,7 +10,9 @@ sie. Die Tests der echten Koordinatoren stehen in `test_app_lab_symmetric_connec
 Benannte Tests des Amendments (die IDs stehen in den Testnamen):
 
 - T-FC1  fail-closed: jeder Befehl außerhalb von `NON_OPERATION`, Deklarationen,
-         Transform-Allow-List wird sichtbar abgelehnt (inkl. der sechs unverdrahteten)
+         Transform-Allow-List und den benannten App-Symmetrie-Befehlen wird sichtbar abgelehnt
+         (inkl. der sechs unverdrahteten); der Symmetrie-Zyklus der App (Shift+S) ist unter BLOCK
+         benannt erlaubt und unter der Vorschau-Zeile abgelehnt (AD-SYM-04 K-6, Addendum 2026-10-14)
 - T-FC2  jeder `NON_OPERATION`-Befehl verhält sich wie bei Symmetrie aus
 - T-FC3  die Zeile ist eine Funktion der Deklarationen (und der `supports_symmetry`-Flags)
 - T-FC4  `C` über das Lab: deklarierter Kontext läuft, undeklarierter wird benannt abgelehnt,
@@ -31,10 +33,14 @@ from core import RotateOperation, SelectionMode
 from mirai import symmetry_declarations as declarations
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
+from mirai.symmetry_axis import current_axis
 from mirai.topology.contextual_c import CContext
 
 from symmetry_lab.lab_app import (
+    APP_SYMMETRY_COMMANDS,
     BLOCK_NOT_ALLOWED_TEXT,
+    PREVIEW_HINT,
+    ROW_PREVIEW,
     CONTEXT_NAMES,
     KNIFE_ONE_SIDED_TEXT,
     NON_OPERATION,
@@ -48,7 +54,6 @@ from symmetry_lab.lab_app import (
     gate_rows,
     startup_listing,
 )
-from symmetry_lab.lab_symmetry import current_axis
 
 from ._app_lab_support import (  # noqa: F401
     C,
@@ -153,6 +158,7 @@ def refused_by_the_row() -> list[str]:
     prüft den leeren Zustand)."""
     spared = (
         NON_OPERATION
+        | APP_SYMMETRY_COMMANDS
         | declarations.declared_removal_commands()
         | declarations.declared_extrude_commands()
         | frozenset(TRANSFORM_OPERATIONS)
@@ -209,6 +215,39 @@ def test_t_fc1_connect_is_refused_by_identity_without_declarations(monkeypatch):
     assert press(app, lab, USER_KEY) is False
     assert app.status_message == block_text("C")
     assert snapshot(app) == before
+
+
+def test_t_fc1_the_app_symmetry_command_is_a_named_entry_of_the_block_row():
+    """K-6: unter BLOCK (Default bei Symmetrie an) schaltet Shift+S weiter und aus — benannt in der
+    Allow-List, nicht über `NON_OPERATION` (es ändert Mesh-Zustand); die Zeile folgt jedem Schritt."""
+    assert APP_SYMMETRY_COMMANDS == {cmd.SYMMETRY_CYCLE}
+    assert cmd.SYMMETRY_CYCLE not in NON_OPERATION
+    assert cmd.SYMMETRY_CYCLE in block_row().gate.allowed
+    assert block_row().gate.refusal(cmd.SYMMETRY_CYCLE) is None
+    app, lab = symmetric_lab()
+    for axis in ("Y", "Z", None):
+        history = len(app.history)
+        assert press(app, lab, SHIFT_S) is True
+        assert lab.axis == axis
+        assert len(app.history) == history + 1
+        assert app.command_gate == gate_row_for(axis, GateMode.BLOCK).gate
+    assert app.command_gate is None
+
+
+def test_t_fc1_the_preview_row_refuses_the_app_symmetry_command():
+    """Die Vorschau-Zeile lässt nur Anzeige-Commands durch (H2-R2): Shift+S wird mit ihrem Text
+    abgelehnt, Definition und Gate bleiben."""
+    from ._app_lab_preview_support import open_preview
+
+    app, lab, _vid = open_preview()
+    definition = app.scene.mesh.symmetry_definition
+    serial = app.status_serial
+    assert ROW_PREVIEW.gate.refusal(cmd.SYMMETRY_CYCLE) == PREVIEW_HINT
+    assert press(app, lab, SHIFT_S) is False
+    assert app.status_serial == serial + 1
+    assert app.status_message == PREVIEW_HINT
+    assert app.scene.mesh.symmetry_definition is definition
+    assert app.command_gate is ROW_PREVIEW.gate
 
 
 @pytest.mark.parametrize("command", refused_by_the_row())
@@ -323,7 +362,7 @@ def test_t_fc3_row_with_no_declarations(monkeypatch):
     declare(monkeypatch)
     gate = block_row().gate
     assert dict(gate.refused) == {cmd.CONNECT: block_text("C")}
-    assert gate.allowed == NON_OPERATION | frozenset(TRANSFORM_OPERATIONS)
+    assert gate.allowed == NON_OPERATION | APP_SYMMETRY_COMMANDS | frozenset(TRANSFORM_OPERATIONS)
     assert cmd.CONNECT not in gate.allowed
     assert gate.not_allowed_text == BLOCK_NOT_ALLOWED_TEXT
     assert dict(gate.refused_contexts) == {

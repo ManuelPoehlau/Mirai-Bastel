@@ -15,7 +15,7 @@ import pytest
 from mirai.interaction.tools.move import MoveTool
 from mirai.symmetry import CorrespondenceState, mirror_position, vertex_correspondence
 
-from symmetry_lab.lab_symmetry import AXIS_NORMALS, ORIGIN
+from mirai.symmetry_axis import AXIS_NORMALS, ORIGIN
 
 from ._app_lab_support import (  # noqa: F401
     ESC,

@@ -1,7 +1,7 @@
 """Symmetrie-Zyklus, Overlays und Assets auf dem App-Pfad (WP-SYM-LAB-03 S1b).
 
 Portiert nach Plan §4.4 (`test_lab_symmetry`: die Zyklus-Tests laufen jetzt über
-`lab_key_press` → `Application.apply_mesh_change` statt über `LabDispatcher`;
+`lab_key_press` → `Application`, seit AD-SYM-04 A1 deren Shift+S-Befehl, statt über `LabDispatcher`;
 die Originale in `test_lab_symmetry.py` sind seit Slice 5 gelöscht, Plan A2-Tabelle):
 
 - off → X → Y → Z → off, je genau ein History-Eintrag, Undo stellt jede Definition her
@@ -10,7 +10,7 @@ die Originale in `test_lab_symmetry.py` sind seit Slice 5 gelöscht, Plan A2-Tab
 - die Seam ist gespeicherte Deklaration (E3), keine laufende Prüfung
 
 Dazu: Ebenen-Umriss und Zustands-Marker als Viewport-Overlays (H1), Neuaufbau nach
-Shift+S (eigenes `dirty`) und nach Undo (Viewport-Meldung), Assets per Registry-Name
+Shift+S und nach Undo (beides Viewport-Meldungen, K-3), Assets per Registry-Name
 und der Einstieg `run` (Exit-Code 2, `--help`).
 """
 
@@ -22,8 +22,10 @@ import sys
 import pytest
 
 from loaders.assets import asset_names
+from mirai.application import symmetry_status_text
 from mirai.mesh_geometry import mesh_bounds, mesh_center_and_radius
 from mirai.symmetry import SymmetryState
+from mirai.symmetry_axis import AXIS_INDEX, AXIS_NORMALS, ORIGIN, current_axis
 
 from symmetry_lab import run
 from symmetry_lab._paths import LAB_DIR
@@ -35,13 +37,7 @@ from symmetry_lab.lab_overlays import (
     SymmetryPlaneOverlay,
     SymmetryStateOverlay,
 )
-from symmetry_lab.lab_symmetry import (
-    AXIS_INDEX,
-    AXIS_NORMALS,
-    ORIGIN,
-    current_axis,
-    symmetry_report,
-)
+from symmetry_lab.lab_symmetry import symmetry_report
 
 from ._app_lab_support import (  # noqa: F401
     CTRL_Y,
@@ -102,7 +98,7 @@ def test_cycle_off_x_y_z_off_one_history_entry_each(lab_app):
             assert mesh.symmetry_definition.plane_point == ORIGIN
         assert len(app.history) == step
         assert app.history._undo_stack[-1].description == f"Symmetry {expected or 'off'}"
-        assert app.status_message == f"Shift+S: Symmetrie {expected or 'aus'}"
+        assert app.status_message == symmetry_status_text(mesh)  # die Statuszeile der App (S-1)
         seen.append(mesh.symmetry_definition)
 
     for step in range(4, 0, -1):
@@ -239,14 +235,14 @@ def test_state_markers_match_the_report(asset, axis, seam, unpaired):
         assert len(state.points(SEAM_LAYER)) == seam
 
 
-def test_overlays_resync_after_shift_s_via_own_dirty_flag(lab_app):
-    """Ein reiner Definitionswechsel meldet dem Viewport nichts; das Lab setzt
-    `dirty` selbst, der nächste `sync()` baut neu und setzt es zurück."""
+def test_overlays_resync_after_shift_s_via_viewport_notification(lab_app):
+    """K-3 (AD-SYM-04 A1): der Shift+S der App meldet dem Viewport eine Topologie-Änderung,
+    wie sein Undo; das Lab setzt kein `dirty` mehr selbst, die Overlays folgen trotzdem."""
     app, lab = lab_app
     app.viewport.sync()
     plane, state = _overlays(lab)
     assert press(app, lab, SHIFT_S)
-    assert plane.dirty and state.dirty
+    assert not plane.dirty and not state.dirty
     app.viewport.sync()
     assert not plane.dirty and not state.dirty
     assert len(plane.segments()) == 4
@@ -294,7 +290,7 @@ def test_hud_text_shows_symmetry_and_status(lab_app):
     assert press(app, lab, SHIFT_S)
     text = hud_text(app, "subd_cube", lab.report)
     assert "Symmetrie: X (valid)" in text
-    assert text.endswith(" | Shift+S: Symmetrie X")
+    assert text.endswith(" | Symmetrie X (valid)")
 
 
 # -- Assets / Einstieg ----------------------------------------------------------------

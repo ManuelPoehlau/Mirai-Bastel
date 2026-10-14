@@ -701,6 +701,8 @@ timer is the follow-up.
    mesh unchanged (the path of `SeamConstraintError`, `application.py:1591-1598`), in MARK and BLOCK alike. This
    covers W armed → O → motion. **At arm** the same check gives early feedback at the key press (status line,
    nothing armed). `src/main.py` never sets a definition (T-G3b), so Production never reaches it; the Symmetry Lab does.
+   *Note 2026-10-14 (AD-SYM-04 slice A1): the app now sets definitions with its own Shift+S command, so Production
+   reaches this refusal too; the rule itself is unchanged (pinned for the app in `tests/test_application_symmetry_cycle.py`).*
 2. **The soft op (backstop).** `params["symmetry"]` present → `ValueError` at `begin()` before anything
    moves, as S1 E9; the soft ops declare no symmetry support (`supports_symmetry` stays `False`, the
    `Operation` default, `operation.py:88`). Under Q2-D they do not inherit the seam machinery of

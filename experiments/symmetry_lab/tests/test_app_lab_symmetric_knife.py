@@ -4,8 +4,9 @@
   the session runs coordinated: Enter cuts both sides in one history entry, Undo / Redo restore both sides and
   the seam, the residue is the working side's cut edge;
 - MARK: the same, and no one-sided warning line (`e5_warning_text` is derived from the same declarations);
-- the provisional mirror-preview variant key is not a Lab key (H2-R1 stays three keys), the BLOCK allow-list is
-  what it was, and the key works through the Lab path inside the session only.
+- the provisional mirror-preview variant key is not a Lab key (H2-R1: two keys since 2026-10-14), the BLOCK
+  allow-list is what it was (plus the app's symmetry command, K-6), and the key works through the Lab path inside
+  the session only.
 
 The undeclared-Knife behaviour (the derived refusal and warning mechanism) is still pinned, with the Knife
 undeclared by `undeclare_knife`, in `test_app_lab_gate.py`, `test_app_lab_fail_closed.py` and the other files.
@@ -25,6 +26,7 @@ from mirai.topology.contextual_c import CContext
 from mirai.topology.knife_pick import knife_pick
 
 from symmetry_lab.lab_app import (
+    APP_SYMMETRY_COMMANDS,
     LAB_KEY_ENTRIES,
     NON_OPERATION,
     TRANSFORM_OPERATIONS,
@@ -115,13 +117,14 @@ def test_the_block_row_names_no_context_and_its_allow_list_is_what_it_was():
         | frozenset(TRANSFORM_OPERATIONS)
         | declarations.declared_removal_commands()
         | declarations.declared_extrude_commands()
+        | APP_SYMMETRY_COMMANDS
         | {cmd.CONNECT}
     )
     assert cmd.KNIFE_COMMIT in gate.allowed and cmd.KNIFE_LIFT in gate.allowed
 
 
-def test_the_variant_key_is_no_fourth_lab_key():
-    assert len(LAB_KEY_ENTRIES) == 3
+def test_the_variant_key_is_no_third_lab_key():
+    assert len(LAB_KEY_ENTRIES) == 2
     assert V not in {entry.input for entry in LAB_KEY_ENTRIES}
     assert V.value not in {entry.input.value for entry in LAB_KEY_ENTRIES if not entry.input.modifiers}
 
@@ -178,13 +181,14 @@ def test_the_variant_key_works_through_the_lab_path_inside_the_session_only(mode
 
 def test_a_pending_session_follows_the_definition_it_started_with():
     """The session view is built at begin: a session started under a definition stays coordinated (the mesh and
-    its definition do not change while the Knife runs - Shift+S is refused during a session)."""
+    its definition do not change while the Knife runs - the session gate ignores Shift+S, the app's key since
+    AD-SYM-04 A1)."""
     app, lab = lab_on(GateMode.BLOCK)
     begin_knife(app, lab)
     assert app._knife._symmetric_view is not None and app._knife._symmetric_commit is not None
-    serial = app.status_serial
-    assert press(app, lab, SHIFT_S) is False         # "Symmetrie (Shift+S) abgelehnt — Knife-Session läuft"
-    assert app.status_serial == serial + 1
+    definition = app.scene.mesh.symmetry_definition
+    assert press(app, lab, SHIFT_S) is False         # ignored by the session gate (review R-4)
+    assert app.scene.mesh.symmetry_definition is definition
     assert press(app, lab, ESC) is True
 
 

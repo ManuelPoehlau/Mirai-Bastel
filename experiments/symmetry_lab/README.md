@@ -4,16 +4,18 @@ Forschungsfenster für die Symmetrie-Arbeit — **auf dem Production-Pfad**. **S
 2026-10-03: WP-SYM-LAB-03 abgeschlossen.** Das Lab baut genau den Pfad von
 `src/main.py` (`Application` → Viewport V02 → `GLRenderStore`, dieselben
 Fenster-Handler über `create_window`/`install_handlers`/`run`) und ergänzt nur die
-Symmetrie: drei Lab-Tasten, eine Gate-Zeile, Overlays und eine HUD-Zeile. Navigation,
-Auswahl, Hover, W/E/R, Constraints, Anzeige-Modi, V/E/F, kontextuelles C, Knife und
-Undo/Redo sind **die der App**. Eigener Renderer, eigener Dispatcher und der
+Symmetrie: zwei Lab-Tasten (bis AD-SYM-04 A1, 2026-10-14: drei), eine Gate-Zeile, Overlays und eine HUD-Zeile. Navigation,
+Auswahl, Hover, W/E/R, Constraints, Anzeige-Modi, V/E/F, kontextuelles C, Knife,
+Undo/Redo und seit A1 das Ein-/Umschalten der Symmetrie (Shift+S) sind **die der App**. Eigener Renderer, eigener Dispatcher und der
 gespiegelte Knife des alten Labs sind in Slice 5 gelöscht (Abschnitt „Historie" unten).
 
 *Nach dem Abschluss von WP-SYM-LAB-03 kamen die symmetrischen Topologie-Werkzeuge (AD-SYM-03, Slices 3b–7, 2026-10-08/09) hinzu; sie stehen in den Abschnitten „Symmetrische Topologie …" und „Symmetrischer Knife, Slice 6c" unten. Offene Artist-Verdikte: `docs/ATELIER.md`.*
 
-Symmetrie ist **noch nicht** in Production (`src/main.py` kennt kein Experiment). Die Zurückstellung vom 2026-10-02 ist
-überholt: Manu, 2026-10-14 — Symmetrie kommt in die App, danach die symmetrische Soft Selection auf dem App-Pfad;
-Entscheidung und Slices: [AD-SYM-04](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) (entschieden 2026-10-14: Shift+S wird die Taste der App, das Lab behält M und Shift+B, AD-013 Addendum 2026-10-14; Code folgt in Slice A1). Vertrag zwischen Lab und App:
+Symmetrie ist seit AD-SYM-04 **Slice A1 (2026-10-14) in Production**: Shift+S ist ein Befehl der App
+(`commands.SYMMETRY_CYCLE`, `Application`), das E1/E3-Setup liegt in `src/mirai/symmetry_axis.py` (verschoben aus
+`lab_symmetry.py`, nicht kopiert). Das Lab nutzt die App-Taste und behält M und Shift+B (AD-SYM-04 §10 ist noch
+nicht entschieden). `src/main.py` kennt weiterhin kein Experiment. Ebene und Problem-Marker in der App folgen in A2.
+Entscheidung und Slices: [AD-SYM-04](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) (AD-013 Addendum 2026-10-14). Vertrag zwischen Lab und App:
 [AD-013, Addendum H2](../../docs/architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-03-wp-sym-lab-03-h2--experiment-input-hook-in-application).
 Plan und Abschluss: [WP-SYM-LAB-03 Rebase-Plan](../../docs/architecture/WP-SYM-LAB-03_REBASE_PLAN.md)
 (§5, A2-Tabelle).
@@ -35,15 +37,15 @@ python experiments/symmetry_lab/run.py --help
 Gültige Namen sind die Registry-Namen aus `examples/loaders/assets.py` (`asset_names()`).
 Ein unbekannter Name bricht **vor** dem Öffnen des Fensters mit der Liste der gültigen Namen
 ab (Exit-Code 2). Voraussetzung wie bei `src/main.py`: `pyglet` ist installiert. Beim Start
-listet die Konsole die drei Lab-Tasten, die Gate-Tabelle (AD-013 H2-R1/R3) und die
+listet die Konsole die zwei Lab-Tasten, die App-Taste Shift+S, die Gate-Tabelle (AD-013 H2-R1/R3) und die
 kontextuelle Bedeutung von Esc (`Cancel (Esc): closes the Re-Symmetrize preview while it is
-open`). Liegt eine der drei Tasten in der App schon auf einem Command (global oder im
+open`). Liegt eine der zwei Lab-Tasten in der App schon auf einem Command (global oder im
 Knife-Kontext), bricht der Start mit `LabBindingConflict` ab, statt sie still zu überdecken.
 Schließen: Fenster-X (Esc ist wie in der App nur Abbrechen).
 
 ## Steuerung
 
-**Alles außer den drei Lab-Tasten ist die Bedienung von `src/main.py`** (Docstring dort):
+**Alles außer den zwei Lab-Tasten ist die Bedienung von `src/main.py`** (Docstring dort), seit AD-SYM-04 A1 auch Shift+S:
 Orbit = Alt+LMB ziehen, Pan = Alt+Shift+LMB ziehen, Zoom = Mausrad; LMB-Klick wählt
 (Shift hinzufügen, Ctrl entfernen, Alt umschalten), Klick ins Leere leert; RMB/MMB
 ungebunden. **W / E / R halten** + Maus bewegen = Move / Rotate / Scale (Ziel: die Auswahl,
@@ -53,13 +55,13 @@ Vertex/Edge/Face, **D** / **Shift+D** = Anzeige-Modus / Draht-Overlay, **C** = k
 C (Split/Connect bzw. Knife bei leerer Auswahl), **Ctrl+Z / Ctrl+Y** = Undo/Redo (stellt die
 Auswahl wieder her), **Esc** = Abbrechen.
 
-| Taste | Lab-Command | Was passiert |
+| Taste | Command | Was passiert |
 |---|---|---|
-| Shift+S | `SymmetryCycle` | Symmetrie aus → X → Y → Z → aus, genau ein Undo-Schritt (über `Application.apply_mesh_change`); Ctrl+Z/Ctrl+Y gehen die Schritte zurück/vor. Abgelehnt (Statuszeile), solange W/E/R scharf ist oder läuft, eine Knife-Session aktiv ist oder die Re-Symmetrize-Vorschau offen ist |
-| M | `ReSymmetrize` | öffnet die Re-Symmetrize-Vorschau; M bei offener Vorschau führt aus (ein Undo-Schritt), Esc schließt sie — siehe „Re-Symmetrize" unten |
-| Shift+B | `SymmetryGateMode` | E5-Modus **BLOCK (Default)** ↔ MARK, Statuszeile `E5-Modus: <BLOCK\|MARK>`. Nur Lab-Zustand — kein Mesh, keine History, kein Undo-Schritt. Auch bei Symmetrie aus erlaubt (gilt ab dem nächsten Shift+S). Abgelehnt wie Shift+S |
+| Shift+S | `SymmetryCycle` (**App**, GLOBAL, seit AD-SYM-04 A1) | Symmetrie aus → X → Y → Z → aus, genau ein Undo-Schritt (`Application._symmetry_cycle`); Ctrl+Z/Ctrl+Y gehen die Schritte zurück/vor. Statuszeile der App: `Symmetrie X (valid)`, `Symmetrie X (partial, 54 ohne Partner)`, `Symmetrie aus`. **Still ignoriert** (wie C, review R-4), solange W/E/R/T scharf ist oder läuft oder eine Knife-Session aktiv ist — bis 2026-10-14 lehnte das Lab das mit Statuszeile ab. Bei offener Re-Symmetrize-Vorschau abgelehnt (`Vorschau aktiv — Befehl ignoriert`, Vorschau-Zeile des Gates). Unter BLOCK benannt erlaubt (K-6) |
+| M | `ReSymmetrize` (Lab) | öffnet die Re-Symmetrize-Vorschau; M bei offener Vorschau führt aus (ein Undo-Schritt), Esc schließt sie — siehe „Re-Symmetrize" unten |
+| Shift+B | `SymmetryGateMode` (Lab) | E5-Modus **BLOCK (Default)** ↔ MARK, Statuszeile `E5-Modus: <BLOCK\|MARK>`. Nur Lab-Zustand — kein Mesh, keine History, kein Undo-Schritt. Auch bei Symmetrie aus erlaubt (gilt ab dem nächsten Shift+S). Abgelehnt (Statuszeile), solange W/E/R scharf ist oder läuft, eine Knife-Session aktiv ist oder die Re-Symmetrize-Vorschau offen ist |
 
-Die drei Commands sind Lab-lokal (`lab_bindings.py`), nicht in `mirai.interaction.commands`,
+Die zwei Lab-Commands sind Lab-lokal (`lab_bindings.py`), nicht in `mirai.interaction.commands`,
 und liegen im Kontext `symmetry_lab`; alles andere fällt auf die Bindungen der App zurück.
 
 ## Symmetrie unter W/E/R (Pivot pro Seite)
@@ -314,7 +316,7 @@ Kontext mehr, es gibt keine einseitige Warnzeile; beides leitet sich aus den Dek
   Segmente auf der anderen Seite, eine zweite Kette dort), ist **neutral grau**. Ein Hover-Ziel auf der Gegenseite mit
   Partner wird nicht abgelehnt, sondern grau (gekappt) gezeigt.
 - **Drei Spiegel-Varianten, im Knife mit `V` durchschalten** (provisorisch; V war im Knife-Kontext und global frei und ist
-  keine der drei Lab-Tasten; außerhalb einer symmetrischen Session tut `V` nichts): **V-a** wie die eigene Vorschau
+  keine der Lab-Tasten; außerhalb einer symmetrischen Session tut `V` nichts): **V-a** wie die eigene Vorschau
   (Pfadlinien mit Tiefentest, Hover obenauf, Punkte durch das Mesh), **V-b** (Default) Spiegelseite immer sichtbar
   und gedimmt, **V-c** nur Punkte, keine Linien. Die Statuszeile nennt die aktive Variante (`Spiegelvorschau V-b …, Taste V
   wechselt V-a / V-b / V-c` beim Start und beim Wechsel, `[Spiegel V-b]` hinter jeder Knife-Meldung). Die Variante bleibt
@@ -442,7 +444,7 @@ Tests: `tests/test_symmetric_extrude.py`, `test_app_lab_symmetric_extrude.py`.
   oder `(0,0,1)`. Kein Mesh-Zentrum, keine freie Ebene.
 - **Speicherort:** die Definition lebt im Mesh (`mesh.symmetry_definition`, AD-SYM-01), nicht im
   Lab; das Lab liest sie bei jedem Zugriff neu (AD-013 H2-R2). Jeder Shift+S-Schritt ist genau
-  ein Undo-Schritt (E2), geschrieben von `Application.apply_mesh_change` (H3).
+  ein Undo-Schritt (E2), seit AD-SYM-04 A1 geschrieben vom Shift+S-Befehl der App.
 - **Lab-Annahme E3 (keine Capability-Regel):** Beim Wechsel auf eine Ebene wird die Seam
   **einmal** festgelegt als alle Edges, deren beide Endpunkte auf der Achse exakt `0.0` haben.
   Danach ist sie gespeicherte Deklaration (INV-1) und wird nicht laufend neu geprüft. Verlässt
@@ -458,7 +460,7 @@ Tests: `tests/test_symmetric_extrude.py`, `test_app_lab_symmetric_extrude.py`.
   (grün/magenta/weiß/türkis) bleiben positionsbasiert und exakt.
 
 Charakterisierung der heutigen Assets (Tests in `tests/test_lab_symmetry.py`,
-`tests/test_app_lab_cycle.py`):
+`tests/test_app_lab_cycle.py`; die Seam-Zahlen seit AD-SYM-04 A1 in `tests/test_symmetry_axis.py` des Repos):
 
 | Asset | X | Y | Z |
 |---|---|---|---|
@@ -531,11 +533,11 @@ Application → Viewport V02 → GLRenderStore; Lab-Overlays über Viewport.add_
 | Datei | Inhalt | GL nötig |
 |---|---|---|
 | `run.py` | Einstieg: Asset prüfen, Start-Liste, `src/main.py`-Fenster + Lab bauen (`build_lab`, fensterlos `build_app_lab`), Event-Loop | – |
-| `lab_app.py` | Lab-Kontext (drei Tasten, Start-Prüfung), Gate-Tabelle, Start-Liste, `lab_key_press`, Shift+S, Re-Symmetrize-Vorschau (M/M/Esc), E5-Modus (Shift+B, `block_row` fail-closed aus `NON_OPERATION`, Deklarationen und `supports_symmetry`), Befund-Cache, HUD-Zeile `hud_text`, E5-Warnzeile, Vorschau-Zeile | nein |
+| `lab_app.py` | Lab-Kontext (zwei Tasten, Start-Prüfung), Gate-Tabelle (BLOCK lässt den Shift+S der App benannt durch, K-6), Start-Liste, `lab_key_press`, Re-Symmetrize-Vorschau (M/M/Esc), E5-Modus (Shift+B, `block_row` fail-closed aus `NON_OPERATION`, Deklarationen und `supports_symmetry`), Befund-Cache, HUD-Zeile `hud_text`, E5-Warnzeile, Vorschau-Zeile | nein |
 | `lab_overlays.py` | Ebenen-Umriss, Zustands-, Vorschau- und Partner-Marker, Vorschau-Linien als Unterklassen von `FlatColorLayers`/`GLPointOverlay`; Änderungs-Signatur, Aufschub während eines Transforms | erst beim Zeichnen |
 | `lab_app_window.py` | pyglet: Handler aus `src/main.py` + Lab-`on_key_press`/`on_draw` darüber, HUD-, Warn- und Vorschau-Label | ja |
-| `lab_bindings.py` | `SYMMETRY_LAB_CONTEXT`, die drei Lab-Commands, `LAB_OVERRIDES` (einzige Quelle der Lab-Tasten) | nein |
-| `lab_symmetry.py` | Ebene (E1), Seam-Ableitung (E3), `set_symmetry_axis`, Befund `SymmetryReport`, Ebenen-Umriss `plane_outline_data` | nein |
+| `lab_bindings.py` | `SYMMETRY_LAB_CONTEXT`, die zwei Lab-Commands, `LAB_OVERRIDES` (einzige Quelle der Lab-Tasten) | nein |
+| `lab_symmetry.py` | Befund `SymmetryReport`, Ebenen-Umriss `plane_outline_data` (Ebene E1 und Seam-Ableitung E3 seit AD-SYM-04 A1 in `src/mirai/symmetry_axis.py`) | nein |
 | `lab_topology.py` | Topologische Paarung (E11) und Seiten (E12) — Lab-Experiment | nein |
 | `lab_resymmetrize.py` | Re-Symmetrize-Plan (E12/E13), `set_plan_positions`, Vorschau-Text und -Daten | nein |
 | `lab_scene.py` | Asset-Namen prüfen; `load_asset_into` (ohne Viewport, nur für die Forschungs-Tests) | nein |

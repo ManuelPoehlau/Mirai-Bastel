@@ -151,7 +151,7 @@ def test_status_message_comes_last(lab_app):
     assert app.status_message == ""
     assert not _hud(app, lab).endswith(" | ")
     assert press(app, lab, SHIFT_S)
-    assert _parts(_hud(app, lab))[-1] == "Shift+S: Symmetrie X"
+    assert _parts(_hud(app, lab))[-1] == "Symmetrie X (valid)"  # die Statuszeile der App (S-1)
     assert press(app, lab, KEY_X)
     assert _parts(_hud(app, lab))[-1] == app.status_message
 

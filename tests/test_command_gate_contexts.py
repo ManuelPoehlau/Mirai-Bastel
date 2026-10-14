@@ -14,7 +14,9 @@ Headless, fixture as `tests/test_application_pointer.py`. The named tests of the
 - T-G3a  no gate + definition: the undeclared context (Knife) behaves as without a definition
          (Split, Edge/Vertex Connect are declared since slices 3b/4: `tests/test_symmetric_ops.py`,
          `tests/test_symmetric_split.py`)
-- T-G3b  AST guard: `src/main.py` sets no symmetry definition and calls no symmetry code
+- T-G3b  AST guard, narrowed 2026-10-14 (AD-013 Addendum 2026-10-14, AD-SYM-04 A1): `src/main.py`
+         never assigns `symmetry_definition` and calls no correspondence, coordination or
+         definition function; importing one GL overlay type for `GL_TYPES` is allowed
 
 Deliberately not named `test_application_*` (that set is what T-R5c re-runs). T-R5c+ is in
 `tests/test_command_gate.py`.
@@ -449,11 +451,26 @@ def test_t_g3a_mirror_vertex_pair_counts_once(app):
 
 
 # -- T-G3b -----------------------------------------------------------------------------------
+#
+# Narrowed 2026-10-14 (AD-013 Addendum 2026-10-14, H2-R5 G-2 half; AD-SYM-04 §2.3 / review R-2):
+# the Production host now sets definitions - through `Application`'s own command (Shift+S), not
+# through `src/main.py`. What stays guarded in `src/main.py`: no assignment of
+# `symmetry_definition`, no correspondence / coordination / definition call. "Contains no
+# symmetry code" is dropped: with Q-2 = S-2 the app's symmetry overlay (slice A2) is a GL type
+# that `src/main.py` imports for `GL_TYPES`, so exactly one such import is allowed - an
+# `...Overlay` name from a `viewport` module. Renaming a module to dodge the word match is not a
+# way to satisfy this guard (G-4).
 
 _SYMMETRY_CALLS = {
+    # definition writers (`mirai.symmetry_axis`, AD-SYM-04 A1)
     "set_symmetry_axis",
+    "definition_for_axis",
+    "derive_seam_edges",
+    # correspondence (`mirai.symmetry`)
     "vertex_correspondence",
     "symmetry_state",
+    "mirrored_selection",
+    # coordination (`mirai.symmetry_coordination`)
     "build_index",
     "SymmetryIndex",
     "canonical_vertices",
@@ -468,8 +485,13 @@ _SYMMETRY_CALLS = {
 }
 
 
+def _is_overlay_type_import(module: str, name: str) -> bool:
+    return module.split(".")[0] == "viewport" and name.endswith("Overlay")
+
+
 def _main_symmetry_violations(source: str) -> list[str]:
     found = []
+    overlay_imports = []
     for node in ast.walk(ast.parse(source)):
         targets = []
         if isinstance(node, ast.Assign):
@@ -491,29 +513,51 @@ def _main_symmetry_violations(source: str) -> list[str]:
                     found.append("setattr symmetry_definition")
         if isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            if "symmetry" in module:
-                found.append(f"imports {module}")
-            found.extend(f"imports {a.name}" for a in node.names if "symmetry" in a.name)
+            for alias in node.names:
+                if "symmetry" not in module and "symmetry" not in alias.name.lower():
+                    continue
+                if _is_overlay_type_import(module, alias.name):
+                    overlay_imports.append(f"{module}.{alias.name}")
+                else:
+                    found.append(f"imports {module}.{alias.name}")
         if isinstance(node, ast.Import):
             found.extend(f"imports {a.name}" for a in node.names if "symmetry" in a.name)
+    if len(overlay_imports) > 1:
+        found.append(f"imports {len(overlay_imports)} symmetry overlay types: {overlay_imports}")
     return found
 
 
-def test_t_g3b_main_py_sets_no_definition_and_calls_no_symmetry_code():
-    """H2-R5, S3: after slice 3 `_connect_command` changes when a definition is set; this keeps
-    "no Production host sets one" true."""
+def test_t_g3b_main_py_sets_no_definition_and_calls_no_symmetry_function():
+    """H2-R5, G-2 half as amended 2026-10-14: `src/main.py` leaves definitions to `Application`'s
+    command and calls no correspondence or coordination code."""
     source = (_SRC / "main.py").read_text(encoding="utf-8")
     assert _main_symmetry_violations(source) == []
 
 
 def test_t_g3b_guard_detects_violations():
+    """Negative control: an assignment, a definition writer, a correspondence or coordination
+    call and a non-overlay symmetry import still fail."""
     bad = (
         "mesh.symmetry_definition = d\n"
         "setattr(mesh, 'symmetry_definition', d)\n"
         "from mirai.symmetry import vertex_correspondence\n"
         "from mirai.symmetry_coordination import canonical_edges\n"
+        "from mirai.symmetry_axis import set_symmetry_axis\n"
         "import mirai.symmetry_declarations\n"
         "vertex_correspondence(mesh)\n"
         "canonical_edges(index, ids)\n"
+        "set_symmetry_axis(mesh, 'X')\n"
+        "definition_for_axis(mesh, 'X')\n"
     )
-    assert len(_main_symmetry_violations(bad)) >= 7
+    assert len(_main_symmetry_violations(bad)) >= 10
+
+
+def test_t_g3b_allows_exactly_one_gl_overlay_type_import():
+    """The S-2 overlay (slice A2) reaches `GL_TYPES` as one imported GL type; a second one, or
+    one from outside `viewport`, is flagged."""
+    one = "from viewport.gl_symmetry_overlay import GLSymmetryOverlay\n"
+    assert _main_symmetry_violations(one) == []
+    two = one + "from viewport.gl_symmetry_marker import GLSymmetryMarkerOverlay\n"
+    assert _main_symmetry_violations(two) != []
+    elsewhere = "from mirai.symmetry_overlay import SymmetryOverlay\n"
+    assert _main_symmetry_violations(elsewhere) != []

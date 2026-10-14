@@ -1,8 +1,8 @@
 """Application under a Symmetry Definition (WP-SYM-LAB-03 H5 + plan §4.4).
 
-Headless (TraceStore). `src/main.py` never sets a definition; any host that
-does (the Symmetry Lab) reaches these paths through `Application`'s normal
-input:
+Headless (TraceStore). The definition is set on the mesh directly; a host
+reaches these paths through `Application`'s normal input once a definition is
+set (the app with Shift+S since AD-SYM-04 A1, the Symmetry Lab the same way):
 
 - H5: E (Rotate) on a seam vertex about an axis that would lift it off the
   plane → `SeamConstraintError` is caught in `_transform_step`: the transform

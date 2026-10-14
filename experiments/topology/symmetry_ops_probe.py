@@ -26,12 +26,12 @@ from loaders.assets import asset_path  # noqa: E402
 from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
 from mirai.symmetry import CorrespondenceState as C  # noqa: E402
 from mirai.symmetry import symmetry_state, vertex_correspondence  # noqa: E402
+from mirai.symmetry_axis import definition_for_axis  # noqa: E402
 from mirai.topology.connect_per_face import connect_selected_edges_per_face  # noqa: E402
 from mirai.topology.connect_vertices_per_face import connect_vertices_per_face  # noqa: E402
 from mirai.topology.delete_dissolve import RemovalRefused, remove_selected  # noqa: E402
 from mirai.topology.knife_resolve import check_commit, resolve_cross_face  # noqa: E402
 from mirai.topology.split import split_selected_edge  # noqa: E402
-from symmetry_lab.lab_symmetry import definition_for_axis  # noqa: E402
 from symmetry_lab.lab_topology import topological_pairing  # noqa: E402
 
 ASSETS = ("subd_cube", "head_basemesh")

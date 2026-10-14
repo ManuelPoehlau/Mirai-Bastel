@@ -82,6 +82,8 @@ from .symmetry_coordination import (
     canonical_vertices,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
+from .symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
+from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
@@ -178,6 +180,24 @@ _SOFT_COMMANDS = (
 #: text `PROVISIONAL`). Shown at the key press (early feedback) and again at `begin()`,
 #: which is where the settings are actually read and therefore the authoritative check.
 SOFT_SYMMETRY_REFUSAL = "Soft Selection is not available with symmetry (O switches it off)"
+
+
+def symmetry_status_text(mesh: Mesh) -> str:
+    """Status line after a symmetry cycle step (AD-SYM-04 Q-2 = S-2, its status part S-1; text
+    `PROVISIONAL`): `Symmetrie X (valid)`, `Symmetrie X (partial, 54 ohne Partner)`,
+    `Symmetrie aus`."""
+    axis = current_axis(mesh)
+    if axis is None:
+        return "Symmetrie aus"
+    states = [c.state for c in vertex_correspondence(mesh).values()]
+    details = [symmetry_state(mesh).value]
+    unpaired = states.count(CorrespondenceState.UNPAIRED)
+    ambiguous = states.count(CorrespondenceState.AMBIGUOUS)
+    if unpaired:
+        details.append(f"{unpaired} ohne Partner")
+    if ambiguous:
+        details.append(f"{ambiguous} mehrdeutig")
+    return f"Symmetrie {axis} ({', '.join(details)})"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -688,6 +708,7 @@ class Application:
         Undo/Redo → History.
         Display-Commands → `DisplayState` + Viewport (WP-06 B5a, E42).
         Modus-Commands → `Selection.mode` (WP-06 B5b, E43).
+        Symmetrie-Zyklus → Definition des Meshs (AD-SYM-04 A1, `_symmetry_cycle`).
         Alles andere → False (bewusst minimal gehalten).
         """
         tool_class = tool_for_command(command)
@@ -711,8 +732,29 @@ class Application:
             return self._connect_command()
         if command in _REMOVAL_COMMANDS:
             return self._removal_command(command)
+        if command == commands.SYMMETRY_CYCLE:
+            return self._symmetry_cycle()
 
         return False
+
+    # -- Symmetry definition (AD-SYM-04 Slice A1) ---------------------------------
+
+    def _symmetry_cycle(self) -> bool:
+        """Shift+S (Q-1 = E-1): off → X → Y → Z → off, one Undo step per press (E2), E1 plane
+        and E3 seam from `mirai.symmetry_axis`. Not while an interaction owns the keys (R-4): an
+        armed W/E/R/T has resolved its partner set at arm/`begin()`, a Knife session its
+        symmetry view at begin, and a changed definition must not slide in underneath them.
+        The change is reported to the viewport as a topology change (K-3): a definition-only
+        change moves nothing, but every overlay that reads the definition must re-derive, the
+        soft bands too (hidden under a definition) - the same notification Undo of it gets."""
+        if self.interaction_owner is not None:
+            return False
+        axis = next_axis(current_axis(self.scene.mesh))
+        changed = self._mesh_transaction(
+            f"Symmetry {axis or 'off'}", lambda mesh: set_symmetry_axis(mesh, axis)
+        ).changed
+        self._set_status(symmetry_status_text(self.scene.mesh))
+        return changed
 
     # -- Component-Modi (WP-06 B5b) ---------------------------------------------
 
@@ -1587,9 +1629,10 @@ class Application:
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
-        if command == commands.CONNECT or command in _REMOVAL_COMMANDS:
-            # Wie die Modus-Tasten (B5b): C, Entf und Rücktaste werden
-            # ignoriert, solange W/E/R scharf ist (Playground Session Gate).
+        if command in (commands.CONNECT, commands.SYMMETRY_CYCLE) or command in _REMOVAL_COMMANDS:
+            # Wie die Modus-Tasten (B5b): C, Entf, Rücktaste und Shift+S werden
+            # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
+            # Shift+S: AD-SYM-04 R-4, still wie C).
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
