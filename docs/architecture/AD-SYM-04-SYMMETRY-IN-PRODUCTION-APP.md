@@ -370,7 +370,9 @@ the seam). Artist Input Truth entries for any symmetry key. Gizmo, Tweak, Loop I
 
 ## 9. Review
 
-*Open.* An independent review in a fresh session is to check in particular: G-1…G-6 against the AD-013 text; whether F-a is
+**Review CLAUDE-001 archived (2026-10-14):** [AD-SYM-04_REVIEW_CLAUDE_001](../archive/symmetry_lab/reviews/AD-SYM-04_REVIEW_CLAUDE_001.md) — ACCEPT WITH CHANGES; R-1…R-3 before Manu answers Q-1…Q-4. Answers to its findings: open.
+
+*Original request:* An independent review in a fresh session is to check in particular: G-1…G-6 against the AD-013 text; whether F-a is
 "a new governance mechanism" (it is meant as a test only); the D-1 reading; whether §4 stops before a design.
 
 ---
