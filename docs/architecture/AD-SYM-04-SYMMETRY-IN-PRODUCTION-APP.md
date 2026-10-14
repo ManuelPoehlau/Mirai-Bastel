@@ -8,6 +8,7 @@ Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation not
 **Slice SS0 (headless probe, no `src` change) is done (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss0)):** D-1 holds bit for bit on every exactly symmetric asset case; one open point for SS1's design (R-6, below).
 **SS1 design note written (2026-10-14, PROPOSED): [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)** — the one Core change; independent review CLAUDE-001 ACCEPT WITH CHANGES, all findings worked in (AD-SYM-05 §10); **go for SS1 (Manu, 2026-10-14)**.
 **Slice SS1 is built (2026-10-14, [implementation note in AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)):** the weighting is in the Core loop; no visible change (the app still refuses Soft + symmetry until SS2).
+**Slice SS2 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss2)):** symmetric Soft runs in the app (W/E/R, both metrics); I-8 is lifted; two `PROVISIONAL` refusals stay open as one Artist question (seeds on both sides / only on the seam, with R6-A vs R6-C).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -345,26 +346,21 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 
 ### 5.1 Design questions
 
-- **D-1 Seam weights.** *Proposal (`PROVISIONAL`):* one field over seeds ∪ mirrored seeds, weight from the nearest seed
-  (`min` distance), not a sum; and **one weight per mirror pair**, never two independently computed ones (a pair takes the
-  larger of its two field values), so the partner's step is the exact conjugate (INV-6: the other side comes from the
-  intent, not from a second search). *(Reading; checked by probe SS0, see the [note](#implementation-note-2026-10-14-slice-ss0): holds on every `valid` asset case, fails for geodesic's "own side" half on a hand-built `valid` mesh with a straddling edge, the pair half holds there too:)* on an exactly symmetric mesh, a vertex is
-  never nearer to a seed on the other side than to that seed's mirror on its own side (Euclidean: same-side points are
-  closer to the mirrored point; geodesic: reflect the part of a path beyond the plane, which is never longer). So the field
-  equals each side's own field, mirrored, both members of a pair already agree, and a seam vertex gets the same weight from
-  both sides; a sum would double the pull at the middle. **Precondition of the geodesic half** (review R-6): every edge path
-  across the plane passes through a vertex *on* the plane. An edge that straddles the plane with neither end on it breaks
-  the reflection argument (`a'–b` need not be an edge); the one-weight-per-pair rule keeps the result symmetric anyway, but
-  "each side's own field" can then fail. SS0 checks a mesh with straddling edges, or records that E3 meshes always have a
-  seam loop. A seam vertex then takes the weighted step and is projected onto
-  the plane — for Move the same rule as symmetric Move today (KEEP). **No Artist question** (derived from INV-6).
-- **D-2 Geodesic distance across the plane.** With D-1 the cross-plane path never wins on an exact mesh, so geodesic needs
+- **D-1 Seam weights.** **Built in SS2 (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss2)); wording from
+  AD-SYM-05 §3.2, replacing the earlier proposal:** the symmetric field gives each mirror pair one distance, the minimum over
+  seeds ∪ mirrored seeds (never a sum), and one weight from it; a seam vertex carries one weight. That the own side equals its
+  plain field holds only where no edge path from a seed crosses the plane between two vertices off it (every current asset
+  case with pairs, SS0) — an observation, not a promise. *(Built as the union field plus the pair minimum of the two
+  distances, `curve(min(d_U(v), d_U(M v)))`; never the larger of two weights, `smooth` is not monotone in float. Pair
+  consistency is the caller's precondition of the Core, AD-SYM-05 §4.3, R6-3.)* A seam vertex reached only by the falloff
+  takes the weighted step and is projected onto the plane (P-a, D-3). **No Artist question** (derived from INV-6).
+- **D-2 Geodesic distance across the plane.** *(Built as proposed in SS2, 2026-10-14; an ambiguous seed counts as "without a partner".)* With D-1 the cross-plane path never wins on an exact mesh, so geodesic needs
   nothing special. On a `partial` mesh (unpaired vertices, e.g. `man_with_shoes` 1e-6 off) the edge graph is no longer
   exactly symmetric and the two members of a pair can get different field values; the one-weight-per-pair rule of D-1 keeps
   them mirrored. *Proposal (`PROVISIONAL`):* a seed without a partner refuses the gesture visibly (A3 = S, "for now"); an
   unpaired vertex inside the falloff takes its side's step with its own weight (it stays unpaired, as under plain W/E/R).
   **No Artist question** (A3 = S exists).
-- **D-3 Per-side pivot (Artist B, 2026-10-03) when the falloff reaches the seam.** Rotate/Scale use the centroid of the
+- **D-3 Per-side pivot (Artist B, 2026-10-03) when the falloff reaches the seam.** *(P-a built: Core side in SS1, tool side in SS2, 2026-10-14 — falloff seam vertices in their own category, a selected seam vertex uses `symmetric_default_pivot` with seeds ∪ partners as fallback set.)* Rotate/Scale use the centroid of the
   explicit selection, mirrored for the partners; with a seam vertex affected and that centroid off the plane, they fall back
   to the pair midpoint. Under Soft "a seam vertex is affected" depends on the radius, so the pivot would jump when the
   radius grows across the middle. A second check applies as well (C-4, review R-1): with a seam vertex in the set, Rotate
@@ -392,7 +388,7 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 |---|---|---|---|
 | SS0 | Probe (no `src` change) — **done 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss0)) | Headless probe in `experiments/` reading `src` only: D-1 field symmetric bit-for-bit on `subd_cube`, head, body (both metrics, X/Y/Z); how often D-3 occurs per radius step; correspondence + influence cost per gesture start (container). | Report only; stops if D-1's claim fails. |
 | SS1 | **The one Core change** (M-5) — design: [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) (reviewed; go 2026-10-14) — **built 2026-10-14** ([note](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)) | Weighting into the Core loop per §4 (design in its own AD/addendum + independent review **before code**, R-5); `src/mirai/soft_selection/ops.py` migrated in the same commit (R-2). Non-symmetric Soft must stay bitwise identical. | Core contract tests; radius-0 identity; the AD-020 suites green; `tests` + Lab tree once. |
-| SS2 | Symmetric influence and gesture | D-1 field, per-side step (plain / conjugate / projected), D-2 refusals, D-3 per Manu's answer; `Application` lifts the Soft + symmetry refusal (I-8) only for supported cases; Lab: no row change (soft commands are already `NON_OPERATION`). | One Undo step per gesture; exact mirror (completeness unchanged); cancel exact; MARK and BLOCK alike in the Lab. |
+| SS2 | Symmetric influence and gesture — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss2)) | D-1 field, per-side step (plain / conjugate / projected), D-2 refusals, D-3 per Manu's answer; `Application` lifts the Soft + symmetry refusal (I-8) only for supported cases; Lab: no row change (soft commands are already `NON_OPERATION`). | One Undo step per gesture; exact mirror (completeness unchanged); cancel exact; MARK and BLOCK alike in the Lab. |
 | SS3 | Bands on both sides + probe | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC. |
 
 ### 5.3 Artist question (Soft)
@@ -736,6 +732,91 @@ your Python).
 
 ---
 
+## Implementation note (2026-10-14, slice SS2)
+
+Production order (Manu, 2026-10-14): symmetric Soft on the app path. **No change under `src/core`** (the Core weights since SS1
+and trusts pair consistency as the caller's precondition, AD-SYM-05 §4.3). No Haltepunkt reached: no AD proved wrong, no
+byte identity lost; the two cases K-side does not define are refused (fail-closed) and asked as one question below.
+
+**Built.**
+
+- `src/mirai/soft_selection/symmetric.py` (new): `symmetric_influence(...)` → `SymmetricInfluence` (weights, seeds, partners,
+  the three symmetry sets), `SoftSymmetryRefusal`. `influence.py` only gained the two shared helpers `checked_radius` and
+  `curve_shape` (plain `compute_influence` unchanged in behaviour; T-3 replay green).
+- **Field (D-1, R6-A).** The union field (`METRICS` over seeds ∪ partners) **plus** the pair minimum of the two distances,
+  one weight `curve(d)` assigned to both members. *Why this and not "plain field once + pair minimum" (AD-SYM-05 §8):* the
+  plain field has no value for an unpaired vertex on the mirrored side (it lies far from the seeds, near their mirror), so D-2's
+  "own weight" would be zero there and the mirrored falloff would have holes on a `partial` mesh; the union gives it a value
+  directly (AD-SYM-05 §3.2, R6-A row). *Why the pair minimum on top:* on a mirror-symmetric edge graph it is a bitwise no-op
+  (tested on `subd_cube` X/Z and `head_basemesh` X, both metrics); on `partial` meshes the union alone is not pair-consistent
+  (`man_with_shoes` X geodesic, pinned by a test) and the minimum makes it so. Minimum of distances, never the maximum of two
+  weights. **Euclidean bounding-box prefilter:** the box over seeds ∪ partners is symmetric along the normal
+  (`fl(−a − r) = −fl(a + r)`), so a vertex passes iff its mirror passes; the union's raw Euclidean distances are pair-equal bit
+  for bit on the valid assets (test), and the pair minimum covers every other case anyway — no change needed.
+- **Categories (O-1 = K-side, `PROVISIONAL`).** Side of the plane relative to the non-seam seeds: falloff vertices on the
+  seeds' side (and off-seam vertices exactly on the plane) plain; on the other side conjugate, paired or not (D-2); declared
+  seam vertices reached only by the falloff → `falloff_seam_vertex_ids` (P-a); selected seam vertices → `seam_vertex_ids`
+  (weight 1.0, today's rules); the seeds' own partners always conjugate (as `mirrored_selection` today).
+- **Refusals (`SoftSymmetryRefusal`, before `begin()`, visible as `<Tool>: refused — <text>`, texts `PROVISIONAL`):**
+  D-2 — a seed without a unique partner (unpaired **or ambiguous**: today's `mirrored_selection` gives neither a partner);
+  K-side undefined — non-seam seeds on both sides, or seeds only on the seam (no side at all; the same open domain, so it is
+  part of the one Artist question instead of a silent side choice).
+- **Tools (D-3, review R-10).** `TransformTool` (R/S) and `MoveTool` take the symmetric branch when Soft is on and a
+  definition is set; otherwise their code paths are the old ones. R/S without a given pivot use `symmetric_default_pivot`
+  like plain symmetric R/S: own centroid per side (KEEP 2026-10-03), fallback with a *selected* seam vertex over
+  seeds ∪ partners (the pivot no longer moves with the radius; test over four radius steps). Falloff seam vertices are in
+  neither seam check (Core, SS1); the arm refusal `_refuse_if_seam_unsafe` still reads `seam_vertex_ids`, so a selected seam
+  vertex refuses with today's text (test: same status line with Soft on and off).
+- **`Application`.** I-8 is gone (`SOFT_SYMMETRY_REFUSAL`, the arm check and the `begin()` check removed); the remaining refusals
+  come from the tool at `begin()` and are caught on the `SeamConstraintError` path (status line, no history, mesh unchanged,
+  tool disarmed). Bands stay hidden under a definition, also during the gesture (`_soft_show_op_weights`; D-5 is SS3).
+- **Soft ops.** The SS1 backstop (`supports_symmetry = False`, the `params["symmetry"]` `ValueError`) is removed; the thin
+  classes inherit the Core ops' `supports_symmetry = True`. Tripwire (8) flipped in `tests/test_soft_selection_ops.py`
+  (thin op with symmetry = Core op, bit for bit).
+- **Symmetry Lab.** No gate row changed (W/E/R are the Core ops, soft commands stay `NON_OPERATION`); its soft tests now pin
+  that MARK and BLOCK give the same mesh for the same gesture and the same refusal.
+
+**Cost (item 6; container, REFERENCE_HARDWARE §4 — the reference PC decides).** *Decision (`PROVISIONAL`): no reuse, one
+correspondence per gesture start* (AR-1/INV-3 stay: `mirai.symmetry` remains cache-free). Reasons: under symmetry the bands are
+hidden, so no preview refresh computes anything; the gesture start computes the correspondence **once** (plain symmetric
+W/E/R computes it twice today, in `resolve_symmetry`), so symmetric Soft starts cheaper than plain symmetric W/E/R does already.
+Median of 15, ring seeds, X axis, ms:
+
+| | correspondence | plain Soft start | symmetric Soft start | of it: field only | plain symmetric W/E/R (`resolve_symmetry`) |
+|---|---|---|---|---|---|
+| head (326 V), 15 % | 0.75–1.4 | 0.11–0.20 | 0.98–1.11 | 0.19–0.25 | 1.5 |
+| head, 100 % | 0.75–0.83 | 0.51–0.54 | 1.65–1.80 | 0.91–1.01 | 1.5 |
+| body (928 V), 15 % | 2.3–2.5 | 0.19–0.49 | 2.6–3.0 | 0.29–0.52 | 4.7–4.9 |
+| body, 100 % | 2.3–4.1 | 1.5–2.5 | 4.9–5.5 | 2.3–5.1 | 4.7–7.8 |
+
+Per mouse move nothing new is computed (the Core loop's cost is SS1's). The reuse question comes back with SS3 (bands on both
+sides need the pairing per preview refresh); the reference-PC run stays open (SS3/D-4).
+
+**Tests.** `tests/test_symmetric_soft_selection.py` (new, 59): field (D-1 on the three valid asset/axis cases × both metrics
+× seeds near/far, own side = plain Soft bit for bit, union pair-equal, partial mesh, seam one weight, R6-A on the quad), K-side
+categories for seeds on either side, radius 0, the three refusals headless; gestures through `Application`
+(W/E/R on `subd_cube` X/Z, `head_basemesh` X: every pair a bitwise mirror after the gesture, seam at exactly `0.0`,
+`symmetry_state` and the whole correspondence unchanged, one Undo step, Undo/Redo/Esc exact, falloff seam vertices moved);
+P-a/D-3 (selected seam: refusal text equals plain symmetric R, pivot = plain symmetric pivot at every radius, Move projects);
+R6-1 on the quad and quad+seam fixtures through `Application`; refusals visible with nothing moved (×W/E/R); bands hidden.
+Rewritten for the new behaviour: `test_application_soft_symmetry.py`, `test_application_symmetry_cycle.py` (one test),
+`test_soft_selection_ops.py` (tripwire 8), Lab `test_app_lab_soft_selection.py`.
+
+**Ran** (container, `xvfb-run -a`, once at the end, the `Application` path): `tests` **3077 passed, 51 skipped, 0 failed**
+(the same 51 skips as at SS1: GL tests without `libEGL` in the container plus the intentional skips of
+`test_symmetric_removal.py`); `experiments/symmetry_lab/tests` **454 passed, 4 skipped**; `playground/tests` **1241 passed**.
+Also once: `experiments/soft_selection/tests` + `experiments/mehlsack_lab/tests` **453 passed** (direct consumers of
+`mirai.soft_selection`). While working only targeted runs.
+
+**Deviations and agent choices (`PROVISIONAL`):** K-side (O-1); R6-A (union) — both inside the one Artist question; seeds only
+on the seam refused like seeds on both sides (not named in the order, same undefined domain); an ambiguous seed counts as
+"without partner"; an off-seam vertex exactly on the plane takes the plain step; refusals only at `begin()` (the first
+motion), no early check at the key press (it would need the correspondence at arm time) — the same place as the seam refusals;
+refusal texts German like the seam refusals.
+
+**Not done (as ordered):** SS3 (bands on both sides, symmetric `soft_w` probe rows, reference-PC run), Re-Symmetrize (A3), keys,
+Lab gate rows, any `src/core` change.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -814,3 +895,34 @@ deinen Fragen 1–3 ändert es nichts.
 **Annahmen, die du mit einem Satz korrigieren kannst:** Re-Symmetrize (M) bleibt im Lab. Die Reihenfolge ist: erst
 Einschalten und Anzeige in der App, dann die symmetrische Soft Selection (mit der einen Core-Änderung), dann ein gemeinsamer
 Praxistest von Extrude und Soft in der App.
+
+**SS2 gebaut (2026-10-14): symmetrische Soft Selection in der App.** Mit Symmetrie an (Shift+S) und Soft an (O) wirken
+W/E/R jetzt auf beiden Seiten: deine Seite wie gewohnt, die andere Seite exakt gespiegelt, die Punkte in der Mitte gleiten in
+der Ebene (deine Entscheidung P-a). Die Bänder bleiben unter Symmetrie noch unsichtbar (kommt mit SS3). Drei Fälle lehnt die
+App sichtbar ab, bevor sich etwas bewegt: ein gewählter Punkt ohne Spiegelpartner, eine Auswahl auf beiden Seiten, eine
+Auswahl nur auf der Mitte. Die beiden letzten sind vorläufig — dazu die Frage unten.
+
+**Praxistest SS2 (optional vor J, ca. 10 Minuten).** Start: `python src/main.py` (Kopf ist geladen).
+
+1. Shift+S → `Symmetrie X (valid)`. O → Soft an (Standard 15 %).
+2. Einen Punkt seitlich neben der Mitte wählen (z. B. am Nasenflügel), W ziehen, loslassen.
+3. Dasselbe mit E (drehen) und R (skalieren); Shift+Mausrad hoch, bis der Einfluss deutlich über die Mitte reicht, und nochmal W/E/R.
+4. Strg+Z / Strg+Y einmal je Geste; einmal während des Ziehens Esc.
+5. Einen Punkt auf der Mitte **zusätzlich** zur Auswahl nehmen und E drücken.
+6. Einen Punkt und seinen Spiegelpunkt wählen (beide Seiten) und W ziehen.
+
+| # | Was du prüfst | Erwartet | Verdikt |
+|---|---|---|---|
+| 1 | W/E/R mit Soft unter Symmetrie | beide Seiten bewegen sich spiegelbildlich, die Mitte bleibt glatt, keine Kante reißt auf | |
+| 2 | Radius über die Mitte | Mittelpunkte gleiten in der Ebene mit, kein Knick an der Mitte; dein Seiten-Drehpunkt bleibt | |
+| 3 | Strg+Z / Strg+Y / Esc | ein Schritt je Geste, alles exakt zurück | |
+| 4 | Mittelpunkt mitgewählt + E | dieselbe Ablehnung wie heute ohne Soft (Achse nur parallel zur Spiegelachse, z. B. mit X-Constraint) | |
+| 5 | Auswahl auf beiden Seiten / nur Mitte | Statuszeile „refused — Soft + Symmetrie: …“, nichts bewegt sich | |
+
+**Die eine Frage an dich (Soft + Symmetrie, bisher vorläufig abgelehnt):** Wenn deine Auswahl auf **beiden** Seiten liegt
+(z. B. eine Kantenschleife quer über die Mitte) oder **nur auf der Mitte** (z. B. die Nasenspitze), weiß die App nicht, welche
+Seite „deine“ ist. Soll sie (a) weiter ablehnen, (b) jede Seite so bewegen, wie die gewählten Punkte auf *dieser* Seite es tun
+(für die Mitte allein: Bewegung nur entlang der Ebene), oder (c) etwas anderes? Damit zusammen hängt nur ein Sonderfall, den
+kein heutiges Asset zeigt (Kante, die die Mitte ohne Punkt darauf kreuzt): dort bekommt heute deine Seite in Mittennähe etwas
+mehr Einfluss als ohne Symmetrie (R6-A); die Alternative wäre, deine Seite exakt wie normales Soft zu halten (R6-C). Wenn du
+dazu nichts sagst, bleibt R6-A.

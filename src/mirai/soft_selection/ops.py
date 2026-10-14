@@ -6,15 +6,17 @@ incremental contract in `core/operations/transform.py`). These classes are thin 
 of the Core ops and hold only what the app path needs on top (AD-SYM-05 §5.1):
 
 - the History label (`description`);
-- the symmetry backstop: `params["symmetry"]` present (even `None`) -> `ValueError` before
-  anything moves (`Application` refuses the combination visibly, AD-SYM-04 I-8); it stays
-  until SS2 lifts both;
 - `params["influence"]` is required;
 - the stale-ID filter (S1 L10): IDs no longer in the mesh are dropped from the map and from
   the selection view before the Core sees them; the Core gets a *new* params dict with the
   filtered map and checks the rest (weights in (0, 1], keys == vertex set, pivot for
   Rotate/Scale);
 - `weights`: the influence the gesture runs on.
+
+Symmetry passes through to the Core (`supports_symmetry` is the Core op's `True`): since
+AD-SYM-04 SS2 the caller hands pair-consistent weights and categories
+(`soft_selection.symmetric`); the SS1 backstop that refused `params["symmetry"]` is gone with
+the I-8 refusal in `Application`.
 
 No arithmetic and no other state here. `Selection` is never written: the Core sees a private
 vertex view, not the caller's `Selection`.
@@ -33,18 +35,11 @@ class _VertexView:
 
 
 class _SoftBegin:
-    """Shared `begin()` of the three soft ops: refuse symmetry, filter stale IDs, then the
-    Core op validates the weights and takes its snapshot of the influenced vertex set."""
-
-    supports_symmetry = False
+    """Shared `begin()` of the three soft ops: filter stale IDs, then the Core op validates
+    the weights (and the symmetry categories) and takes its snapshot of the influenced set."""
 
     def _on_begin(self, context: OperationContext) -> None:
         params = context.params
-        if "symmetry" in params:
-            raise ValueError(
-                "Soft Selection with symmetry is not supported yet (AD-020 §8, until "
-                "AD-SYM-04 SS2): params['symmetry'] must not be set."
-            )
         influence = params.get("influence")
         if influence is None:
             raise ValueError(f"{type(self).__name__} needs params['influence'].")

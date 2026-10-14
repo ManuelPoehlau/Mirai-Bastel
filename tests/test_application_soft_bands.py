@@ -523,7 +523,7 @@ def test_hover_armed_with_soft_off_shows_nothing(app, influence_calls):
     assert app.key_press(ESC)
 
 
-# -- symmetry (refused for good elsewhere): nothing to preview ---------------------------------
+# -- symmetry: no preview (bands on both sides are AD-SYM-04 D-5, slice SS3) -------------------
 
 
 def test_no_preview_under_a_symmetry_definition(app):

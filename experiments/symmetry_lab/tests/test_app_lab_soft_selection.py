@@ -2,19 +2,22 @@
 
 The soft setting commands (S2d: custom-curve shape and the band switch included) are `NON_OPERATION`
 (state for the next gesture, like the constraints):
-O stays allowed under BLOCK, so soft can be switched off while symmetry is on. Soft + symmetry is
-refused by `Application`, authoritatively at `begin()`, in MARK and BLOCK alike.
+O stays allowed under BLOCK, so soft can be switched off while symmetry is on. Since AD-SYM-04 SS2
+Soft + symmetry runs as symmetric Soft (no gate row changed: W/E/R are Core ops that declare
+`supports_symmetry`, the soft commands stay `NON_OPERATION`); MARK and BLOCK behave the same, for
+the gesture and for the refusals that remain (`soft_selection.symmetric`).
 """
 
 from __future__ import annotations
 
 import pytest
 
-from mirai.application import SOFT_SYMMETRY_REFUSAL
+from mirai.soft_selection.symmetric import BOTH_SIDES_TEXT
+from mirai.symmetry import CorrespondenceState, vertex_correspondence
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 
-from symmetry_lab.lab_app import BLOCK_NOT_ALLOWED_TEXT, NON_OPERATION, GateMode, block_row
+from symmetry_lab.lab_app import BLOCK_NOT_ALLOWED_TEXT, NON_OPERATION, GateMode, block_row, e5_warning_text
 
 from ._app_lab_support import (  # noqa: F401
     ESC,
@@ -104,33 +107,69 @@ def test_curve_shape_and_band_switch_pass_block_and_change_nothing_else():
     assert _state(app) == before
 
 
-@pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK])
+def _ring_on_plus_x(app):
+    """The paired +X vertex nearest the plane and its paired +X one-ring (subd_cube)."""
+    mesh = app.scene.mesh
+    corr = vertex_correspondence(mesh)
+    side = sorted((mesh.vertex_position(v)[0], int(v), v) for v, c in corr.items()
+                  if c.state is CorrespondenceState.PAIRED and mesh.vertex_position(v)[0] > 0.0)
+    seeds = {side[0][2]}
+    for eid in mesh.vertex_edges(side[0][2]):
+        seeds.update(w for w in mesh.edge_vertices(eid)
+                     if corr[w].state is CorrespondenceState.PAIRED and mesh.vertex_position(w)[0] > 0.0)
+    return seeds, corr
+
+
+def _soft_gesture(mode, key, seeds_of=_ring_on_plus_x, armed_first=False):
+    app, lab = _symmetric_lab(mode)
+    seeds, corr = seeds_of(app)
+    app.selection.set(seeds)
+    app.viewport.on_selection_changed()
+    if armed_first:
+        assert press(app, lab, key)  # armed (soft off), O after the arm: read at begin()
+        assert press(app, lab, O)
+    else:
+        assert press(app, lab, O)
+        for _ in range(6):  # 15 % -> 100 %: the falloff crosses the plane on subd_cube
+            assert app.pointer_scroll(SHIFT_WHEEL_UP) is True
+        assert press(app, lab, key)
+    before = _state(app)
+    moved = app.pointer_motion(400, 300, 12.0, 7.0)
+    if moved:
+        assert e5_warning_text(lab) == ""  # W/E/R declare `supports_symmetry`: no one-sided warning
+        app.pointer_motion(410, 300, 20.0, -6.0)
+        app.key_release(key)
+    return app, lab, corr, before, moved
+
+
+@pytest.mark.parametrize("armed_first", [False, True], ids=["o-then-key", "key-then-o"])
 @pytest.mark.parametrize("key", [W, E, R], ids=["move", "rotate", "scale"])
-def test_armed_then_o_then_motion_is_refused_visibly(mode, key):
-    app, lab = _symmetric_lab(mode)
-    before = _state(app)
-    assert press(app, lab, key)  # armed (soft is off)
-    assert press(app, lab, O)  # soft on while armed: the arm-time check is already past
-    assert app.soft_settings.enabled
-    assert app.pointer_motion(400, 300, 12.0, 7.0) is False
-    assert SOFT_SYMMETRY_REFUSAL in app.status_message and "refused" in app.status_message
-    assert app.interaction_owner is None and not app.transform_interacting
-    assert _state(app) == before  # no history, mesh unchanged
-    # O is the way out: soft off, then the symmetric transform runs as before.
-    assert press(app, lab, O) and not app.soft_settings.enabled
-    assert press(app, lab, key)
-    app.pointer_motion(400, 300, 12.0, 7.0)
-    assert app.transform_interacting
-    assert press(app, lab, ESC)
-    assert _state(app) == before
+def test_symmetric_soft_runs_alike_in_mark_and_block(key, armed_first):
+    results = {}
+    for mode in (GateMode.BLOCK, GateMode.MARK):
+        app, lab, corr, before, moved = _soft_gesture(mode, key, armed_first=armed_first)
+        assert moved, app.status_message
+        mesh = app.scene.mesh
+        assert len(app.history) == before[1] + 1
+        for vid, c in corr.items():
+            p = mesh.vertex_position(vid)
+            if c.state is CorrespondenceState.PAIRED:
+                assert mesh.vertex_position(c.partner) == (-p[0], p[1], p[2])
+            elif c.state is CorrespondenceState.SEAM:
+                assert p[0] == 0.0
+        results[mode] = mesh.export_state()
+    assert results[GateMode.BLOCK] == results[GateMode.MARK]
 
 
 @pytest.mark.parametrize("mode", [GateMode.BLOCK, GateMode.MARK])
-def test_o_then_w_is_refused_at_the_key_press(mode):
-    app, lab = _symmetric_lab(mode)
-    before = _state(app)
-    assert press(app, lab, O)
-    assert press(app, lab, W) is False
-    assert SOFT_SYMMETRY_REFUSAL in app.status_message
-    assert app.interaction_owner is None
+def test_seeds_on_both_sides_are_refused_alike_in_mark_and_block(mode):
+    def both_sides(app):
+        seeds, corr = _ring_on_plus_x(app)
+        seed = min(seeds)
+        return {seed, corr[seed].partner}, corr
+
+    app, lab, _corr, before, moved = _soft_gesture(mode, W, seeds_of=both_sides)
+    assert moved is False
+    assert app.status_message == f"Move: refused — {BOTH_SIDES_TEXT}"
+    assert app.interaction_owner is None and not app.transform_interacting
     assert _state(app) == before

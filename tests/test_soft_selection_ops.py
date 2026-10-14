@@ -16,8 +16,9 @@ tripwires were flipped on purpose in the SS1 commit (AD-SYM-05 §5.3):
   comparison lives on in the Mehlsack Lab, against the closed form `F ** w`);
 - `total_factor` is gone; the basis-refusal test checks positions instead.
 
-Still here: the stale-ID filter (S1 L10) and the key-set check; the History label; the symmetry
-backstop; a source scan: no Core private member in `src/mirai/soft_selection`.
+Still here: the stale-ID filter (S1 L10) and the key-set check; the History label; a source scan:
+no Core private member in `src/mirai/soft_selection`. Tripwire (8), the symmetry backstop, flipped
+in AD-SYM-04 SS2: `params["symmetry"]` passes through to the Core.
 """
 
 from __future__ import annotations
@@ -366,17 +367,23 @@ def test_selection_unchanged_by_the_whole_gesture(cls, steps, mode):
 # -- refusals and stale ids -------------------------------------------------------
 
 
+_SYMMETRY_STEPS = {SoftMoveOperation: (MoveOperation, MOVE_STEPS),
+                   SoftRotateOperation: (RotateOperation, ROTATE_STEPS),
+                   SoftScaleOperation: (ScaleOperation, SCALE_STEPS)}
+
+
 @pytest.mark.parametrize("cls", SOFT_OPS)
 @pytest.mark.parametrize("symmetry", [None, {"plane_normal": (1.0, 0.0, 0.0)}])
-def test_symmetry_param_refused(cls, symmetry):
+def test_symmetry_passes_through_to_the_core(cls, symmetry):
+    """Tripwire (8), flipped in AD-SYM-04 SS2: the backstop is gone, `supports_symmetry` is the
+    Core op's `True`, and the thin op with `params["symmetry"]` is the Core op bit for bit."""
+    assert cls.supports_symmetry is True
+    core_cls, steps = _SYMMETRY_STEPS[cls]
     mesh, _, influence, pivot = _head_case()
-    start = _positions(mesh)
-    op = cls(_ctx(mesh, influence, pivot, symmetry=symmetry))
-    with pytest.raises(ValueError, match="symmetry"):
-        op.begin()
-    assert not op.is_active
-    assert _positions(mesh) == start
-    assert cls.supports_symmetry is False
+    reference = head()
+    _run(cls(_ctx(mesh, influence, pivot, symmetry=symmetry)), steps)
+    _run(core_cls(_ctx(reference, influence, pivot, symmetry=symmetry)), steps)
+    assert _positions(mesh) == _positions(reference)
 
 
 @pytest.mark.parametrize("cls", SOFT_OPS)

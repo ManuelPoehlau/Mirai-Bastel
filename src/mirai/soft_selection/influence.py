@@ -154,6 +154,23 @@ METRICS: dict[str, Callable[[Mesh, set[VertexId], float], dict[VertexId, float]]
 
 # --- Public API ---------------------------------------------------------------
 
+def checked_radius(metric: str, curve: str, radius: float) -> float:
+    """Validate the settings `compute_influence` (and the symmetric field) take; the radius as float."""
+    if metric not in METRICS:
+        raise ValueError(f"Unknown metric {metric!r}; expected one of {sorted(METRICS)}.")
+    if curve not in CURVES:
+        raise ValueError(f"Unknown curve {curve!r}; expected one of {sorted(CURVES)}.")
+    radius = float(radius)
+    if not math.isfinite(radius) or radius < 0.0:
+        raise ValueError(f"radius must be finite and >= 0, got {radius!r}.")
+    return radius
+
+
+def curve_shape(curve: str, curve_power: float = 1.0) -> Callable[[float], float]:
+    """The curve function for `curve` (`custom` with its `p`)."""
+    return custom_curve(curve_power) if curve == "custom" else CURVES[curve]
+
+
 def compute_influence(
     mesh: Mesh,
     seeds: Iterable[VertexId],
@@ -170,13 +187,7 @@ def compute_influence(
     `radius == 0` -> exactly the seeds, all `1.0`. `curve_power` is the `p` of the `custom`
     curve and is ignored by every other curve.
     """
-    if metric not in METRICS:
-        raise ValueError(f"Unknown metric {metric!r}; expected one of {sorted(METRICS)}.")
-    if curve not in CURVES:
-        raise ValueError(f"Unknown curve {curve!r}; expected one of {sorted(CURVES)}.")
-    radius = float(radius)
-    if not math.isfinite(radius) or radius < 0.0:
-        raise ValueError(f"radius must be finite and >= 0, got {radius!r}.")
+    radius = checked_radius(metric, curve, radius)
 
     valid_seeds = {s for s in seeds if mesh.is_valid_vertex(s)}
     if not valid_seeds:
@@ -185,7 +196,7 @@ def compute_influence(
     if radius == 0.0:
         return weights
 
-    shape = custom_curve(curve_power) if curve == "custom" else CURVES[curve]
+    shape = curve_shape(curve, curve_power)
     for vid, d in METRICS[metric](mesh, valid_seeds, radius).items():
         if vid in weights:
             continue

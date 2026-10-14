@@ -5,6 +5,9 @@ operations (Move/Rotate/Scale). Soft Selection is not a selection mode: the infl
 never enters `Selection`; one gesture is one History entry. Off by default; the host
 (`Application`) owns the settings, the tools compute the influence at `begin()`.
 
+SS2 (AD-SYM-04) adds `symmetric`: the field and step categories of symmetric Soft, the caller
+side of the Core's weighted transforms (it reads `mirai.symmetry` for the correspondence).
+
 S2b adds the window look: `bands` (weights -> band -> positions, headless) and `gl_bands`
 (the `GLPointOverlay` subclass `Application` pushes the bands into). S2d (S2c verdict):
 geodesic/smooth defaults, the curve set (+ a `custom` curve with an adjustable shape), radius
@@ -18,6 +21,7 @@ from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands, band_index
 from .gl_bands import BAND_LAYERS, GLSoftBandOverlay
 from .influence import CURVES, METRICS, compute_influence, custom_curve, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
+from .symmetric import SoftSymmetryRefusal, SymmetricInfluence, symmetric_influence
 from .settings import (
     CUSTOM_SHAPE_STEPS,
     DEFAULT_CUSTOM_SHAPE_STEP,
@@ -43,9 +47,12 @@ __all__ = [
     "SoftRotateOperation",
     "SoftScaleOperation",
     "SoftSettings",
+    "SoftSymmetryRefusal",
+    "SymmetricInfluence",
     "band_index",
     "compute_influence",
     "custom_curve",
     "primary_pivot",
+    "symmetric_influence",
     "world_radius_for",
 ]

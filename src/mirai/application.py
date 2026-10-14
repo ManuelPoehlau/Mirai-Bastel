@@ -67,6 +67,7 @@ from .soft_selection import (
     RADIUS_STEPS_PERCENT,
     SoftBands,
     SoftSettings,
+    SoftSymmetryRefusal,
     compute_influence,
 )
 from .topology.connect_per_face import EDGE_CONNECT_LABEL, TopologyToolError, apply_connect_edges
@@ -176,12 +177,6 @@ _SOFT_COMMANDS = (
     commands.SOFT_CURVE_SHAPE_SHARPER,
     commands.SOFT_BANDS_TOGGLE,
 )
-
-#: Visible refusal of Soft Selection under a symmetry definition (AD-020 §8, E3; status
-#: text `PROVISIONAL`). Shown at the key press (early feedback) and again at `begin()`,
-#: which is where the settings are actually read and therefore the authoritative check.
-SOFT_SYMMETRY_REFUSAL = "Soft Selection is not available with symmetry (O switches it off)"
-
 
 def symmetry_status_text(mesh: Mesh) -> str:
     """Status line after a symmetry cycle step (AD-SYM-04 Q-2 = S-2, its status part S-1; text
@@ -1651,8 +1646,8 @@ class Application:
         if command in _SOFT_COMMANDS:
             # State only, like the constraints: allowed while W/E/R/T is held. It applies
             # to the next gesture - or to this one if it is armed and has not begun yet
-            # (the settings are read at `begin()`, which is also where Soft + symmetry is
-            # refused for good).
+            # (the settings are read at `begin()`, which is also where symmetric Soft
+            # refuses the selections it does not define, AD-SYM-04 SS2).
             return self.dispatch_command(command)
         if command in _MODE_COMMANDS:
             # Kein Moduswechsel mitten in einer Geste (Playground Session Gate).
@@ -1722,10 +1717,6 @@ class Application:
             noun = selection.mode.name.lower()
             self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
             return False
-        if self._soft.enabled and self.scene.mesh.symmetry_definition is not None:
-            # Early feedback only: the authoritative refusal sits at `begin()` (AD-020 F2).
-            self._set_status(f"{label}: refused — {SOFT_SYMMETRY_REFUSAL}")
-            return False
         self.dispatch_command(command)
         self._transform_key = key
         self._transform_command = command
@@ -1785,15 +1776,6 @@ class Application:
         elif not self._transform_begun:
             self._transform_space = self._axis_constraint
             soft = self._soft if self._soft.enabled else None
-            if soft is not None and self.scene.mesh.symmetry_definition is not None:
-                # WP-SOFT-01 S2a (AD-020 F2): the settings are read here, so this is where
-                # Soft + symmetry is refused for good (O pressed after W armed it, in MARK
-                # and BLOCK alike): status line, no history, mesh unchanged, tool disarmed.
-                label = _TRANSFORM_COMMANDS[self._transform_command][0]
-                self._transform_end()
-                self._set_status(f"{label}: refused — {SOFT_SYMMETRY_REFUSAL}")
-                self._refresh_hover()
-                return False
             begin_context = {
                 "scene": self.scene,
                 "camera": self.camera,
@@ -1804,7 +1786,9 @@ class Application:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
             try:
                 self.tool_manager.begin_current_interaction(begin_context)
-            except SeamConstraintError as exc:
+            except (SeamConstraintError, SoftSymmetryRefusal) as exc:
+                # Symmetric Soft (AD-SYM-04 SS2): D-2 and the open O-1 cases refuse here, where
+                # the settings are read, before anything moves - like a seam refusal.
                 label = _TRANSFORM_COMMANDS[self._transform_command][0]
                 self._transform_end()
                 # Status text PROVISIONAL, like the other transform status lines.
@@ -1919,8 +1903,8 @@ class Application:
 
     def _soft_preview_refresh(self, shown_by_gesture: bool = False) -> None:
         """Recompute the preview bands (E3). No-op without a sink, and while a running op
-        owns the bands. Soft off, an empty selection or a symmetry definition (Soft is refused
-        there) show nothing."""
+        owns the bands. Soft off, an empty selection or a symmetry definition show nothing
+        (bands on both sides are AD-SYM-04 D-5, slice SS3)."""
         if self._soft_overlay is None or self._soft_op_running:
             return
         soft = self._soft
@@ -1947,7 +1931,8 @@ class Application:
         # takes effect when it ends), it just has nothing to show (S2d E7).
         self._soft_op_running = True
         self._soft_gesture_shown = True
-        if not self._soft.bands_visible:
+        if not self._soft.bands_visible or self.scene.mesh.symmetry_definition is not None:
+            # Under symmetry the bands stay hidden during the gesture too (AD-SYM-04 D-5 is SS3).
             self._soft_push(EMPTY_BANDS)
             return
         weights = self.tool_manager.active_tool.operation.context.params["influence"]

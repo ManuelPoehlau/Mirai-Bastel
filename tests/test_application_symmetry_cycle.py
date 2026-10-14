@@ -9,7 +9,7 @@ exactly what `src/main.py` builds. Named by the A1 row of AD-SYM-04 §6:
 - `load_scene` drops the definition;
 - the viewport is notified (K-3): extra overlays re-sync, the soft bands follow;
 - the interaction gates (review R-4): ignored while W/E/R/T is armed or running, ignored inside a
-  Knife session, Soft on → Shift+S → W refused (at arm; at `begin()` when Soft comes after the arm);
+  Knife session; Soft on → Shift+S → W runs symmetric Soft (AD-SYM-04 SS2; at arm and with O after the arm);
 - one smoke per coordinated tool once Shift+S has set the definition: W/E/R, `C` in its four
   contexts (Split, Edge Connect, Vertex Connect, Knife), Delete/Dissolve/DissolveNoCleanup, `T`;
 - `src/main.py`'s own key handler reaches the command (pyglet-dependent, skipped without it).
@@ -33,7 +33,7 @@ if str(_EXAMPLES) not in sys.path:
 
 from core import SelectionMode  # noqa: E402
 from loaders.assets import asset_path  # noqa: E402
-from mirai.application import SOFT_SYMMETRY_REFUSAL, Application  # noqa: E402
+from mirai.application import Application  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
 from mirai.interaction.bindings import build_default_bindings  # noqa: E402
 from mirai.interaction.input import KNIFE_CONTEXT, Input  # noqa: E402
@@ -270,26 +270,34 @@ def test_ignored_inside_a_knife_session():
     assert app.key_press(SHIFT_S) and current_axis(app.scene.mesh) == "X"
 
 
-def test_soft_on_then_shift_s_refuses_the_transform():
-    """Soft on → Shift+S → W is refused visibly at the arm; and the authoritative refusal at
-    `begin()` still holds when the order is symmetry → W armed → O → motion."""
+def test_soft_on_then_shift_s_runs_symmetric_soft():
+    """Soft on → Shift+S → W runs symmetric Soft (AD-SYM-04 SS2; until SS2 refused, I-8): the
+    partners of the +X quad move as its mirror; the same with O after the arm (read at begin())."""
     app = make_app()
     _fid, vids = _plus_x_quad(app)
     app.selection.set(set(vids))
     assert app.key_press(O)
     assert app.key_press(SHIFT_S)
-    assert app.key_press(W) is False
-    assert app.status_message == f"Move: refused — {SOFT_SYMMETRY_REFUSAL}"
-    assert app.key_press(O)  # Soft off
-    assert app.key_press(W)
-    assert app.key_press(O)  # Soft on again, after the arm
-    before = app.scene.mesh.export_state()
-    history = len(app.history)
-    assert app.pointer_motion(400, 300, 12.0, 7.0) is False
-    assert app.status_message == f"Move: refused — {SOFT_SYMMETRY_REFUSAL}"
-    assert app.transform_command is None
-    assert app.scene.mesh.export_state() == before
-    assert len(app.history) == history
+    mesh = app.scene.mesh
+    for armed_first in (False, True):
+        if armed_first:
+            assert app.key_press(O)  # Soft off
+            assert app.key_press(W)
+            assert app.key_press(O)  # Soft on again, after the arm
+        else:
+            assert app.key_press(W)
+        history = len(app.history)
+        assert app.pointer_motion(400, 300, 12.0, 7.0)
+        op = app.tool_manager.active_tool.operation
+        mirrored = op.context.params["symmetry"]["mirrored_vertex_ids"]
+        assert mirrored and "influence" in op.context.params
+        assert app.key_release(W)
+        assert len(app.history) == history + 1
+        assert symmetry_state(mesh) is SymmetryState.VALID
+        for vid in vids:
+            p = mesh.vertex_position(vid)
+            partner = next(m for m in mirrored if mesh.vertex_position(m) == (-p[0], p[1], p[2]))
+            assert partner is not None
 
 
 # == One smoke per coordinated tool (A1 row) ======================================================

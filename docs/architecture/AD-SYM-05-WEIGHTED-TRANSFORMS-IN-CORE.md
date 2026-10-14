@@ -5,7 +5,7 @@ change of symmetric Soft ([AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) �
 [CORE_V1_FREEZE](CORE_V1_FREEZE.md) §7). Review CLAUDE-001: **ACCEPT WITH CHANGES**, no blocker; every finding is answered
 in §10 and worked into the text. A Core change is a Haltepunkt (Development System §5); Manu's go is given, so **SS1 is built per this note** (§4–§6).
 Where a section still says "proposed" or "Manu's go", this status wins.
-**SS1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-ss1)).**
+**SS1 is built (2026-10-14, [implementation note](#implementation-note-2026-10-14-slice-ss1)).** **SS2 (the caller side) is built (2026-10-14, [AD-SYM-04 note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)).**
 **Mode (M5):** Type C (Architecture Gate). Documents only: no change under `src/`, `tests/`, `experiments/` or `playground/`.
 **Read at:** `c2bc3e3` (branch `claude/festive-allen-pyajvv`, SS0 committed). Line numbers refer to that commit.
 **Basis (binding, only linked):** AD-SYM-04 (Decision record: Q-4 = **P-a**; §4 C-1…C-7 and R-1…R-5; §5.1 D-1…D-5; the
@@ -325,6 +325,8 @@ superseded (dated).
 ---
 
 ## 8. Carried to SS2/SS3 (not decided here)
+
+*SS2 built (2026-10-14, [AD-SYM-04 note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):* field = union + pair minimum of distances (R6-A), O-1 = K-side (`PROVISIONAL`; seeds on both sides / only on the seam refused, one Artist question), D-2, D-3 tool side, I-8 and the backstop removed, one correspondence per gesture start (no cache). Open here: SS3 only.
 
 - **O-1 Step category** of falloff vertices (§3.3): K-near (follows connectivity, needs a tie rule) or K-side (tie-free,
   undefined for seeds on both sides), and a rule for explicit seeds on both sides. Together with **R6-A vs R6-C** (§3.2):

@@ -48,7 +48,8 @@ die Einstellung an ist - sonst fehlt der Parameter und nichts ändert sich) bere
 Seeds (`vertex_ids`) die Influence-Map und startet statt der `MoveOperation` die
 `SoftMoveOperation` (`params["influence"]`). `.moves` berichtet dann die beeinflusste
 Menge; der Anchor bleibt ein Seed (`min(vertex_ids)`), die Bildebenen-Abbildung ist die
-des normalen Move.
+des normalen Move. Unter Symmetrie (AD-SYM-04 SS2) kommen Gewichte und Kategorien aus
+`soft_selection.symmetric_influence` (ein Gewicht pro Spiegelpaar).
 
 Symmetrisches Move (AD-SYM-02 §2.4, WP-SYM-01 Slice 2): Ist eine Symmetry
 Definition aktiv, löst `_on_begin()` die gespiegelten Partner-Vertices der
@@ -72,7 +73,7 @@ from core import (
     VertexId,
 )
 
-from ...soft_selection import SoftMoveOperation, compute_influence
+from ...soft_selection import SoftMoveOperation, compute_influence, symmetric_influence
 from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 from ..tool import Tool
 from .selection_helpers import _VertexSelectionView
@@ -200,7 +201,20 @@ class MoveTool(Tool):
         affected_vertex_ids = set(vertex_ids)
         operation_params: dict[str, Any] = {}
         definition = mesh.symmetry_definition
-        if definition is not None:
+        if definition is not None and soft is not None:
+            # Symmetric Soft (AD-SYM-04 SS2, `PROVISIONAL`): weights and the four step
+            # categories from `symmetric_influence`, which refuses (`SoftSymmetryRefusal`)
+            # before anything moves; falloff seam vertices slide in the plane (P-a).
+            field = symmetric_influence(
+                mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power,
+            )
+            if not field.weights:
+                raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")
+            operation_params["symmetry"] = field.symmetry_params(mesh)
+            operation_params["influence"] = field.weights
+            affected_vertex_ids = set(field.weights)
+        elif definition is not None:
             mirrored_vertex_ids = mirrored_selection(mesh, vertex_ids)
             correspondence = vertex_correspondence(mesh)
             seam_vertex_ids = {
@@ -215,10 +229,9 @@ class MoveTool(Tool):
                 "mirrored_vertex_ids": mirrored_vertex_ids,
                 "seam_vertex_ids": seam_vertex_ids,
             }
-        if soft is not None:
+        if soft is not None and definition is None:
             # AD-020 §4.1: the tool computes the influence at begin(), from the seeds and
-            # the current (= start) positions. Under a symmetry definition the op refuses
-            # (params["symmetry"] is set above) - `Application` refuses earlier, visibly.
+            # the current (= start) positions.
             influence = compute_influence(
                 mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
                 curve_power=soft.curve_power,

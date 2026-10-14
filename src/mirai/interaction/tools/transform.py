@@ -36,7 +36,7 @@ from typing import Any
 from core import Mesh, OperationContext, Selection, SelectionMode, VertexId
 from core.operations.transform import SeamConstraintError
 
-from ...soft_selection import compute_influence, primary_pivot
+from ...soft_selection import compute_influence, primary_pivot, symmetric_influence
 from ..tool import Tool
 from .selection_helpers import (
     _VertexSelectionView,
@@ -359,10 +359,13 @@ class TransformTool(Tool):
         # Seite (Artist-Verdikt 2026-10-03, `symmetric_default_pivot`; Rückfall auf
         # Auswahl ∪ Partner bei einem Seam-Vertex). Ein gegebener Pivot gilt
         # unverändert - die Operation spiegelt ihn für die Partner.
-        vertex_ids, symmetry = resolve_symmetry(scene.mesh, selected)
         pivot = params.get("pivot")
         op_params: dict[str, Any] = {"pivot": pivot}
         soft = params.get("soft")
+        if soft is not None and scene.mesh.symmetry_definition is not None:
+            self._begin_symmetric_soft(scene, selected, soft, pivot, op_params)
+            return
+        vertex_ids, symmetry = resolve_symmetry(scene.mesh, selected)
         if soft is not None:
             # Soft Selection (WP-SOFT-01 S2a, AD-020 §4.1, `PROVISIONAL`): the influence
             # is computed here from the seeds, the pivot is the centroid of the seeds
@@ -378,13 +381,41 @@ class TransformTool(Tool):
                 pivot = primary_pivot(scene.mesh, selected)
             op_params["pivot"] = pivot
             vertex_ids = set(influence)
-        self._vertex_ids = vertex_ids
         if symmetry is not None:
             if pivot is None:
                 op_params["pivot"] = symmetric_default_pivot(
                     scene.mesh, selected, vertex_ids, symmetry
                 )
             op_params["symmetry"] = symmetry
+        self._begin_operation(scene, vertex_ids, op_params)
+
+    def _begin_symmetric_soft(self, scene, selected, soft, pivot, op_params) -> None:
+        """Symmetric Soft (AD-SYM-04 SS2, `PROVISIONAL`): weights and categories from
+        `symmetric_influence` (refuses with `SoftSymmetryRefusal` before anything moves).
+
+        D-3 (AD-SYM-05 §8, review R-10): the pivot is the plain symmetric R/S default — the
+        centroid of the own selection, mirrored for the partners (KEEP 2026-10-03); only a
+        *selected* seam vertex triggers the fallback, and its set is seeds ∪ partners, never the
+        influenced set (else the fallback pivot would move with the radius). Falloff seam
+        vertices slide in the plane (P-a) and take no part in either seam check."""
+        field = symmetric_influence(
+            scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
+            curve_power=soft.curve_power,
+        )
+        if not field.weights:
+            raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
+        symmetry = field.symmetry_params(scene.mesh)
+        if pivot is None:
+            pivot = symmetric_default_pivot(
+                scene.mesh, set(field.seeds), set(field.seeds | field.partners), symmetry
+            )
+        op_params["pivot"] = pivot
+        op_params["influence"] = field.weights
+        op_params["symmetry"] = symmetry
+        self._begin_operation(scene, set(field.weights), op_params)
+
+    def _begin_operation(self, scene, vertex_ids: set[VertexId], op_params: dict[str, Any]) -> None:
+        self._vertex_ids = vertex_ids
         context = OperationContext(
             target=scene.mesh,
             selection=_VertexSelectionView(vertex_ids),

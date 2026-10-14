@@ -9,6 +9,7 @@ Core seam moves with symmetric soft selection (Way 2), not now.** Keys and band 
 **Core seam moved (2026-10-14, AD-SYM-04 slice SS1, [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)):** the weighting now
 runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses of the Core ops (M-b); the F3 tripwires
 flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
+**Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
 **Work package:** WP-SOFT-01 gate between S1 (headless experiment, done) and S2 (first Artist test in the
@@ -699,6 +700,10 @@ timer is the follow-up.
 ---
 
 ## 8. E3 — Soft + Symmetry contact points (named, not designed)
+
+*Superseded 2026-10-14 (AD-SYM-04 slice SS2):* items 1 and 2 are gone — symmetric Soft runs; `Application` refuses only what
+`soft_selection.symmetric` refuses at `begin()` (a seed without partner; seeds on both sides or only on the seam, `PROVISIONAL`).
+Item 3 is designed (AD-SYM-05), item 4 unchanged. The text below is kept as written.
 
 1. **`Application`, at `begin()` (authoritative; review F2).** Soft on while `mesh.symmetry_definition is not None`
    → refused visibly where the settings are read, at the first motion: status line, `_transform_end`, no history,
