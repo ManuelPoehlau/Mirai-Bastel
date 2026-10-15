@@ -116,6 +116,15 @@ Scope (binding, see the handoffs):
   is given one, so the Symmetry Lab's shared wiring is unchanged.
   AD-021 M1 (Q-10): Shift+click on a row adds it to the scene as a Reference
   instead (`Application.add_reference`, one Undo step, the camera stays, Q-9).
+- Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
+  SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
+  speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest
+  first); clicking a file row loads it (all objects, the edit object,
+  symmetry; selection/history reset, camera re-framed). Ctrl+S overwrites the
+  current scene file (the one last loaded or saved), else writes a new
+  `scenes/<edit object>_<date-time>.mirai.json`; refused while W/E/R/T or a
+  Knife session runs. Like SPACE it is window-level (`install_handlers(...,
+  save=...)`), not in the BindingSet.
 - Objects (AD-021 M1, `PROVISIONAL` look and click): `4` = Object mode. A
   Reference is drawn in a muted blue (no selection overlays, never pickable in
   `1`/`2`/`3`, picking goes through it); in `4` a plain click on an object
@@ -144,6 +153,7 @@ Usage:
     python3 src/main.py cube                   # cube
     python3 src/main.py subd_cube              # registry name (same entries as the SPACE menu)
     python3 src/main.py path/to/mesh.obj       # a different .obj
+    python3 src/main.py scenes/x.mirai.json    # a saved scene file
 
 The window's X button closes it (WP-06 B1, Artist decision A3, 2026-09-26)
 — there is no quit hotkey.
@@ -153,6 +163,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Callable
 
 _SRC = Path(__file__).resolve().parent
 _ROOT = _SRC.parent
@@ -176,6 +187,7 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
+from scene_files import SceneFiles, is_scene_file  # noqa: E402
 from scene_menu import (  # noqa: E402
     SceneMenu,
     add_named_reference,
@@ -239,7 +251,22 @@ def create_window(caption: str = "Mirai — Stage B"):
     return pyglet.window.Window(width=1024, height=768, resizable=True, caption=caption)
 
 
-def install_handlers(window, app: Application, menu: SceneMenu | None = None) -> None:
+def is_save_key(inp: Input | None) -> bool:
+    """Ctrl+S (scene files, `PROVISIONAL`): exactly Ctrl, no other modifier."""
+    return (
+        inp is not None
+        and inp.kind == "key"
+        and inp.value == "s"
+        and inp.modifiers == frozenset({"ctrl"})
+    )
+
+
+def install_handlers(
+    window,
+    app: Application,
+    menu: SceneMenu | None = None,
+    save: Callable[[], object] | None = None,
+) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
     `window.clear()` — headless-testable with a stand-in window.
@@ -248,7 +275,11 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
     `None` (default) keeps this wiring exactly as it was — the Symmetry Lab
     shares it and therefore gets no menu. While the menu is open it is
     modal: keys, mouse press/drag/release, motion and the wheel are swallowed
-    instead of being forwarded to `app`."""
+    instead of being forwarded to `app`.
+
+    `save` (scene files, `PROVISIONAL`, `src/scene_files.py`): called on Ctrl+S
+    instead of forwarding that key to `app`. `None` (default) keeps the wiring
+    as it was. `Application.save_scene_file` refuses during a gesture itself."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
@@ -300,6 +331,9 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
             fallback = (window.width / 2, window.height / 2)
             cx, cy = cursor if cursor is not None else fallback
             menu.open(cx, cy, window.width, window.height)
+            return pyglet.event.EVENT_HANDLED
+        if save is not None and is_save_key(inp):
+            save()
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
         track_ctrl(symbol, True)
@@ -415,10 +449,15 @@ def main() -> None:
     window = create_window()
 
     app = Application()
+    files = SceneFiles(app, gl_types=GL_TYPES)
 
     entries = scene_entries()
     arg = sys.argv[1] if len(sys.argv) > 1 else None
-    if arg == "cube":
+    if arg is not None and is_scene_file(arg):
+        app.init_scene("cube", **GL_TYPES)
+        if not files.load(arg):
+            print(app.status_message, file=sys.stderr)
+    elif arg == "cube":
         app.init_scene("cube", **GL_TYPES)
     elif arg is not None and arg in entries:
         # Registry name — the same entry list the SPACE menu shows.
@@ -439,13 +478,28 @@ def main() -> None:
     # resize or camera event has fired).
     app.set_viewport_size(window.width, window.height)
 
-    # Temporary scene loader (PROVISIONAL): SPACE opens it at the cursor.
+    # Temporary scene loader (PROVISIONAL): SPACE opens it at the cursor; the
+    # scene-file rows come first and are re-read on every open.
+    def load(name: str) -> bool:
+        if files.handles(name):
+            return files.activate(name)
+        loaded = load_named_scene(app, name, GL_TYPES)
+        if loaded:
+            files.forget()
+        return loaded
+
+    def add(name: str) -> bool:
+        if files.handles(name):
+            return files.refuse_add(name)
+        return add_named_reference(app, name)
+
     menu = SceneMenu(
-        entries,
-        load=lambda name: load_named_scene(app, name, GL_TYPES),
-        add=lambda name: add_named_reference(app, name),
+        files.entries() + entries,
+        load=load,
+        add=add,
+        refresh=lambda: files.entries() + scene_entries(),
     )
-    install_handlers(window, app, menu=menu)
+    install_handlers(window, app, menu=menu, save=files.save)
     run(window, app)
 
 

@@ -19,6 +19,9 @@ seiner Begründung wieder entfernt werden.
 
 Einträge kommen aus der Asset-Registry (`examples/loaders/assets.py`,
 AD-007) plus dem selbst gebauten `cube`: `("cube",) + asset_names()`.
+Szenen speichern/laden (Manu 2026-10-15): mit `refresh` holt das Menü seine Zeilen bei
+jedem Öffnen neu - der Entry-Point stellt so die Speicher-Zeilen und die gespeicherten
+Szenendateien (`src/scene_files.py`) vor `cube` + Assets.
 
 Kein pyglet-Import auf Modulebene: Zeichnung und Textbreite bauen lazy
 (Muster `playground/hud.py`), damit der Menüzustand headless testbar ist.
@@ -92,17 +95,20 @@ class SceneMenu:
     `load` bekommt den getroffenen Eintrags-Namen; `load_named_scene` fängt
     Ladefehler selbst ab, ein werfender Callback darf hier durchmarschieren
     (er ist dann ein Programmierfehler, kein Erwartungsfall). `add` (optional,
-    AD-021 M1) bekommt den Namen bei Shift+Klick; ohne ihn lädt auch Shift+Klick."""
+    AD-021 M1) bekommt den Namen bei Shift+Klick; ohne ihn lädt auch Shift+Klick.
+    `refresh` (optional) liefert die Einträge bei jedem `open` neu."""
 
     def __init__(
         self,
         entries: Sequence[str],
         load: Callable[[str], bool],
         add: Callable[[str], bool] | None = None,
+        refresh: Callable[[], Sequence[str]] | None = None,
     ) -> None:
         self.entries = tuple(entries)
         self._load = load
         self._add = add
+        self._refresh = refresh
         self._open = False
         self._x = 0.0
         self._y = 0.0  # obere Kante
@@ -134,6 +140,11 @@ class SceneMenu:
     def open(self, x: float, y: float, window_width: int, window_height: int) -> None:
         """Am Cursor öffnen, innerhalb des Fensters geklemmt (nicht genug Platz
         unten → klappt über dem Cursor auf)."""
+        if self._refresh is not None:
+            entries = tuple(self._refresh())
+            if entries != self.entries:
+                self.entries = entries
+                self._labels = None  # neu bauen: die Zeilen haben sich geändert
         self._build_drawables()
         self._width = self._measure_width()
         self._height = self._total_height()

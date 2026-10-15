@@ -204,3 +204,19 @@ def test_add_named_reference_reports_a_failure_as_status():
     assert add_named_reference(app, "no_such_asset") is False
     assert app.status_message.startswith("Add 'no_such_asset' failed")
     assert len(app.scene.objects) == 1
+
+
+def test_refresh_replaces_the_entries_on_every_open():
+    """Szenen speichern/laden (2026-10-15): `refresh` liefert die Zeilen bei jedem Öffnen neu
+    (neu gespeicherte Dateien erscheinen ohne Neustart)."""
+    current = [("a", "b")]
+    loaded: list = []
+    menu = SceneMenu(("a", "b"), load=loaded.append, refresh=lambda: current[0])
+
+    current[0] = ("new", "a", "b")
+    menu.open(100.0, 500.0, 800, 600)
+
+    assert menu.entries == ("new", "a", "b")
+    assert menu.rect[3] == HEADER_HEIGHT + 3 * ROW_HEIGHT
+    menu.press(110.0, 500.0 - HEADER_HEIGHT - 5)
+    assert loaded == ["new"]
