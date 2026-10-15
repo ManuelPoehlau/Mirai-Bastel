@@ -265,7 +265,7 @@ Nothing here is decided (AD-013 A5: the Lab's keys and HUD are not promoted with
 
 | | Option | Cost |
 |---|---|---|
-| **E-1** | **Shift+S as in the Lab**: off → X → Y → Z → off, one Undo step each, plane through the origin (E1), seam derived at exactly 0.0 (E3). An `Application` command; the E1/E3 functions move from `lab_symmetry` to `src/mirai`. | The 17 refusal texts already name Shift+S (I-11) — they become true in the app. H2-R1 amendment + small Lab change (G-6): the Lab drops its Shift+S entry and uses the app's. E3's exact-zero rule means a mesh that is only nearly symmetric comes up `partial` (`man_with_shoes`: 54 vertices without partner), and Re-Symmetrize to repair it stays in the Lab (UA-3). |
+| **E-1** | **Shift+S as in the Lab**: off → X → Y → Z → off, one Undo step each, plane through the origin (E1; since AD-021 Q-7 the *object's* origin and axes, [addendum 2026-10-15](#addendum-2026-10-15-e1-reads-the-objects-origin--an-object-axis-ad-021-q-7)), seam derived at exactly 0.0 (E3). An `Application` command; the E1/E3 functions move from `lab_symmetry` to `src/mirai`. | The 17 refusal texts already name Shift+S (I-11) — they become true in the app. H2-R1 amendment + small Lab change (G-6): the Lab drops its Shift+S entry and uses the app's. E3's exact-zero rule means a mesh that is only nearly symmetric comes up `partial` (`man_with_shoes`: 54 vertices without partner), and Re-Symmetrize to repair it stays in the Lab (UA-3). |
 | E-2 | **One key, X only** (on/off) | Simplest to learn; Y/Z symmetry not reachable in the app. Same Shift+S/H2-R1 trade-off if the key is Shift+S; with another key the 17 texts must change. |
 | E-3 | **Another key with the Lab's cycle** | H2-R1 untouched, no Lab change. Two keys for one meaning across hosts (AD-013 A1, shared language) and the 17 texts must be reworded or made key-neutral. |
 | E-4 | **Start option only** (`python src/main.py head_basemesh --symmetry X`) | No key, no binding question; cannot be switched off while working. |
@@ -973,6 +973,18 @@ reference PC"; summary in REFERENCE_HARDWARE §2). No code changed with this add
   call; the practical feel is row 7 of the SS3 test (Kurzfassung).
 
 ---
+
+### Addendum (2026-10-15): E1 reads "the object's origin / an object axis" (AD-021 Q-7)
+
+Manu answered [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) **Q-7 = yes** (2026-10-15): the symmetry plane turns with the object.
+E1 (Q-1 = E-1) therefore reads: **the plane runs through the object's origin, its normal is exactly one of the object's
+axes** — the origin and axes of the mesh's own coordinates (object space, AD-021 §4.8). While an object is not placed
+(identity transform) this is the world origin and a world axis, as before. Nothing in the definition, its storage
+(AD-SYM-01) or E3/E4 changes: the definition always lived in mesh coordinates; since AD-021 M2-1 every tool computes in
+them, and since M2-2 an object can be placed, so the difference becomes visible. Reason: in world space a turned, exactly
+symmetric head would read `partial` (AD-021 Probe P-2). Wording changed in `src/mirai/symmetry_axis.py` (module docstring)
+in the same commit; tests: `tests/test_object_transform.py` (a symmetric Move on a head turned by the M2-2 gesture stays
+bit-exact) and `tests/test_object_space.py::test_p2_…`.
 
 ## Kurzfassung für Manu (Deutsch)
 

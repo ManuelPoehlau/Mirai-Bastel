@@ -177,3 +177,47 @@ class ObjectSpaceCamera:
 
     def delta_to_object(self, d: Vec3) -> Vec3:
         return delta_to_object(self.obj, d)
+
+
+# -- AD-021 M2-2 (E-11): Rotationen der Objekt-Geste ----------------------------------------
+
+
+def axis_angle_rotation(axis: Vec3, angle: float):
+    """Rotationsmatrix (Zeilen) um die normierte `axis` um `angle` (Rechte-Hand-Regel wie
+    `core.operations.transform`: q' = q·cos + (k×q)·sin + k·(k·q)·(1−cos)). `angle == 0` ist
+    exakt die Identität."""
+    x, y, z = axis
+    c, s = math.cos(angle), math.sin(angle)
+    t = 1.0 - c
+    return (
+        (c + t * x * x, t * x * y - s * z, t * x * z + s * y),
+        (t * x * y + s * z, c + t * y * y, t * y * z - s * x),
+        (t * x * z - s * y, t * y * z + s * x, c + t * z * z),
+    )
+
+
+def matmul3(a, b):
+    """a·b für 3×3-Matrizen in Zeilen."""
+    return tuple(
+        tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3)
+    )
+
+
+def orthonormalize(rotation):
+    """Gram-Schmidt über die Zeilen, dritte Zeile als Kreuzprodukt (det +1): ein Produkt vieler
+    Rotationen bleibt so innerhalb von `ROTATION_TOLERANCE` und `ObjectTransform` scheitert nie
+    an Rundungsdrift (E-11)."""
+
+    def unit(v):
+        n = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+        return (v[0] / n, v[1] / n, v[2] / n)
+
+    r0 = unit(rotation[0])
+    d = sum(rotation[1][i] * r0[i] for i in range(3))
+    r1 = unit(tuple(rotation[1][i] - d * r0[i] for i in range(3)))
+    r2 = (
+        r0[1] * r1[2] - r0[2] * r1[1],
+        r0[2] * r1[0] - r0[0] * r1[2],
+        r0[0] * r1[1] - r0[1] * r1[0],
+    )
+    return (r0, r1, r2)

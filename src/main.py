@@ -120,10 +120,13 @@ Scope (binding, see the handoffs):
   Reference is drawn in a muted blue (no selection overlays, never pickable in
   `1`/`2`/`3`, picking goes through it); in `4` a plain click on an object
   that is not the one being edited switches it Reference <-> Normal (one Undo
-  step), Shift/Ctrl/Alt+click only change the object selection. W/E/R/T, C,
+  step), Shift/Ctrl/Alt+click only change the object selection. T, C,
   Delete/Dissolve and Shift+S are refused in `4` (status line). AD-021 M2-0
   (`PROVISIONAL` key and alpha): Alt+D draws every Reference as a translucent
-  Ghost / shaded again; References stay drawn in Wireframe.
+  Ghost / shaded again; References stay drawn in Wireframe. AD-021 M2-2: in
+  `4`, hold W/E/R on the selected objects = move / rotate / scale them
+  (object level, one Undo step; X/Y/Z are world axes, Scale always uniform;
+  a Reference is locked and stays), Esc cancels exactly.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,

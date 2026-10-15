@@ -5,12 +5,13 @@ von `HistoryStack` (Core unverändert, M0 liefert alles). Jeder hält seine Ziel
 selbst, so dass Objekt- und Mesh-Schritte auf dem einen Stack der Scene korrekt
 ineinandergreifen (AD-021 F-4, Probe P-1). Namen und Texte sind `PROVISIONAL`.
 
-Nichts aus M2: kein Transform, keine Model-Matrix, kein Wechsel des Edit-Objekts.
+AD-021 M2-2 (E-12): `ObjectTransformCommand` - die Platzierung als ein Undo-Schritt; schreibt
+nur `transform`, nie ein Mesh (L-1).
 """
 
 from __future__ import annotations
 
-from core import Mesh, ObjectState, Scene, SceneObject
+from core import Mesh, ObjectState, ObjectTransform, Scene, SceneObject
 
 #: AD-021 Q-11 (Manu 2026-10-15: "Das gedämpfte Blau ist gut"): eine Referenz ist schattiert wie
 #: jedes Mesh, ohne Selection-Overlays, in diesem gedämpften Blau, deutlich dunkler als das Grau
@@ -73,3 +74,27 @@ class ObjectStateCommand:
 
     def redo(self) -> None:
         self.obj.state = self.after
+
+
+class ObjectTransformCommand:
+    """Objekt verschieben/drehen/skalieren als ein Undo-Schritt (AD-021 M2-2, E-12, §4.6).
+
+    `changes` = `(obj, before, after)` je Objekt einer Geste; Undo/Redo setzt nur die
+    Transforms (L-1: kein Mesh). Die Ansicht frischt der Aufrufer auf
+    (`Application._placement_changed`), wie bei den anderen Objekt-Commands."""
+
+    def __init__(
+        self,
+        changes: list[tuple[SceneObject, ObjectTransform, ObjectTransform]],
+        description: str,
+    ) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in reversed(self.changes):
+            obj.transform = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.transform = after

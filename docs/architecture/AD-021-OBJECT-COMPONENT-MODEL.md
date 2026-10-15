@@ -8,8 +8,9 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 **M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); Manu tried it
 (his Q-11 answer describes the behaviour); no KEEP/ITERATE verdict recorded, M1 stays `PROVISIONAL`. **M2:**
 [handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
-implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); M2-2…M2-4
-next, [handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md) rewritten as the start of a new session. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); **M2-2
+implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); M2-3, M2-4 follow
+([handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -42,6 +43,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | Manu (chat) | **Q-5, Q-6, Q-7, Q-8 = as recommended** (Q-5: select in `4`, then `1`/`2`/`3`; Q-6: status line first; Q-7: the symmetry plane turns with the object — amends AD-SYM-04 E1; Q-8: Undo switches back to the object of the step) · **Q-11 proposal §7.3 confirmed** ("passt so") · **Q-13 deferred:** moving the pivot is not needed for now, the topic comes later — the pivot stays the object origin (M0 default) · **go for M2-0 and M2-1** |
 | 2026-10-15 | Manu (chat) | **M2-0:** "Ghost ist hell genug" (alpha 0.3 stays) · a `NORMAL` non-edit object disappearing in Wireframe like the edit object: "passt so" · next: handoff for the rest of M2 (new session) |
 | 2026-10-15 | agent | **M2-0 implemented** (Reference display, §6.2) and **M2-1 implemented** (placement in the draw and component paths, no UI, §6.3); no Core change; E-2, E-6…E-10 as in the handoff |
+| 2026-10-15 | agent | **M2-2 implemented** (object gesture W/E/R in mode `4`, `ObjectTransformCommand`, level status line, §6.4); no Core change; E-11, E-12 as in the handoff; Q-7 wording changed in AD-SYM-04 (E1 addendum) and `symmetry_axis.py`; Manu's practical test pending |
 
 ---
 
@@ -591,6 +593,40 @@ Scale along world X, Extrude, Knife, soft weights equal placed or not, P-2). A m
 conversion switched off) fails 9 resp. 3 of them. GL smoke: a head turned 40°, scaled 0.6 and moved draws, lights,
 shows its selected point on the nose and moves it with W.
 
+### 6.4 M2-2 implementation note — moving, rotating, scaling objects in mode `4` (2026-10-15)
+
+E-11 and E-12 as in the handoff, no Core change, nothing from M2-3/M2-4. Texts and the mixed-selection rule `PROVISIONAL`.
+
+| Rule | Where | What |
+|---|---|---|
+| E-11 gesture | `Application._object_arm` / `_object_step` / `_object_release` / `_object_cancel`, `_ObjectGesture`; branches in `_transform_arm`, `_transform_step`, `key_release`, `_cancel`, `_transform_end` | in `4`, holding W/E/R arms the gesture on `Selection.objects` without References; the first motion begins, the release commits, `Esc` puts every target's **start instance** back. It shares `_transform_key`/`_command`/`_begun`/`_space` with the component gestures, so `interaction_owner == "transform"` and every existing key gate (mode keys, `C`, Undo while running, add object) holds unchanged; a click in `4` under a held W/E/R is ignored (the targets are fixed) |
+| Move | `_object_step` | world delta = `OrbitCamera.screen_delta_to_world(pivot_world of the first target, dx, dy)` (the anchor moves with the gesture, like `MoveTool`); X/Y/Z and the planes are world masks; `t' = t_start + Σdelta`, the same delta for every target |
+| Rotate | `_object_step`, `object_space.axis_angle_rotation` / `matmul3` / `orthonormalize` | angle = `RotateTool.RADIANS_PER_PIXEL · Σdx`; axis = the camera's view direction at the first motion, or the world axis / plane normal of the constraint; `R' = orthonormalize(Q(axis, angle) · R_start)` — always from the start, so nothing drifts inside a gesture; each object turns about its own pivot, `t` is untouched (the pivot's world position `t + c` does not depend on `R`, `s`); same right-hand rule as the Core's `RotateOperation` |
+| Scale | `_object_step` | `s' = s_start · max(MIN_SCALE, 1 + SCALE_PER_PIXEL · Σ(dx + dy))` (`ScaleTool`'s factors), always uniform (Q-4): a sticky X/Y/Z is ignored and the arm line says `uniform - X/Y/Z do not apply` |
+| E-12 / Q-3 | `scene_objects.ObjectTransformCommand` | one command per gesture, `(obj, before, after)` for every object that changed; Undo/Redo set the transforms only (L-1); mirror entry `mesh_step=False`; after commit, every step, Undo and Redo: `_placement_changed()` (matrices, pick caches, hover). A tap or a gesture that ends where it began records nothing |
+| L-1 | — | the gesture writes `transform` only; every mesh's `export_state()` is unchanged (test) |
+| RF-4 / Q-1 | `_object_arm` | nothing selected → refused, text points at `1`/`2`/`3`; only References → refused, `'gollum' is a Reference - locked`; **mixed selection (`PROVISIONAL`)**: the References stay where they are and the arm and commit lines say `Reference 'x' stays (locked)` |
+| L-1 for T, C, Delete, Shift+S | `_object_mode_refuses` | still refused in `4` (`… work on points/edges/faces - press 1/2/3`) |
+| Q-6 / L-4 | `_object_release`, `_set_selection_mode` | after a commit `Object 'gollum': moved|rotated|scaled (object level)` (`Objects 'a', 'b': …` for several); switching to `1`/`2`/`3` while the edit object is placed: `Mode: Vertex · object 'head_basemesh' is placed (object level)` |
+| Q-7 | AD-SYM-04 (E1 addendum), `symmetry_axis.py` docstring | the plane is the object's origin plane with an object axis as normal — the code was already so since M2-1 |
+
+**Observed (GL smoke under xvfb, container):** head scene + gollum added; gollum switched to Normal, scaled, moved out of the
+head and turned — drawn and lit correctly; the head turned and moved, `1`, a vertex at the chin selected by a click at its
+placed screen position and moved with W. **Found for the practical test:** gollum lies inside the head bust and is then
+not clickable in `4` (the head's front faces are hit first; object picking goes through nothing, RF-3/RD-4) — moving the head
+aside first exposes it. Whether a Reference inside another object needs another way to be selected is material for Manu.
+
+**Tests:** `tests/test_object_transform.py` (27: Move free / X / XZ plane, several motions in one step, Rotate free about the
+view axis and about world Z, 150 gestures stay orthonormal, Scale uniform with a constraint and clamped, `Esc` exact for
+W/E/R, tap, Undo/Redo with matrices and picking, a non-edit entry's matrix, interleaving with a mesh step, the three
+refusals, the key gates during the gesture, two objects at once, the mode-switch marker, component Move and Knife on the
+placed edit object, P-2 through the gesture (symmetric Move on a turned head bit-exact), serialization roundtrip, the
+helpers). One M1 test got a comment only (W in `4` with nothing selected still refuses and names 1/2/3). **Mutation check:**
+no commit → 5 fail; no world mask → 1; References moved → 2; `Esc` without restore → 3. Two mutations are equivalent and
+survive by design: `_sync_object_views` instead of `_placement_changed` after an object Undo (the pick caches key on the
+object's transform already, `ObjectSpaceCamera.camera_revision`), and no `orthonormalize` (drift after 150 gestures stays
+~1e-15, far below `ROTATION_TOLERANCE`; the helper has its own test with a drifted matrix).
+
 ## 7. Questions
 
 ### 7.1 For Manu (Artist)
@@ -618,6 +654,8 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | E-2 | Pivot composition formula and whether changing the pivot compensates the translation (object must not jump) |
 | E-3 | `ObjectId` as an `ElementId` subclass or a separate base (`ElementId` is documented as "element"; nothing tests `isinstance(…, ElementId)`, review Q4). **M0:** subclass, only to reuse `IdAllocator` and `__repr__`; Scene methods take only an `ObjectId` (`TypeError` otherwise), so an object is never inferred from an element ID (N-3) |
 | E-5 | Undo refresh by object: is the mirror entry enough, or does a `Command` need to name its object? **M1:** the mirror entry is enough — it carries `mesh_step`, and an object step's Undo/Redo reconciles the object entries with `scene.objects` (§6.1); no `Command` names its object. Revisit with A-4 |
+| E-11 | The object gesture. **M2-2:** its own small path in `Application` (not the component tools), sharing the hold-key state; Move/Rotate/Scale rules in §6.4; `PROVISIONAL` |
+| E-12 | The object transform command. **M2-2:** `ObjectTransformCommand` with `(obj, before, after)` per object, mirror entry `mesh_step=False`; `PROVISIONAL` |
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)
 
@@ -770,6 +808,27 @@ Manu (2026-10-15): Ghost ist hell genug; das Wireframe-Verhalten passt so.
 
 M2-1 (Platzierung im Zeichnen und in allen Werkzeugen) ist ebenfalls gebaut, aber für dich noch unsichtbar — verschieben,
 drehen und skalieren kannst du ein Objekt erst mit M2-2.
+
+**M2-2 ist gebaut (2026-10-15) — Praxistest (ca. 5 Minuten), `python src/main.py`:**
+
+1. `Leertaste`, **Shift+Klick** auf `gollum`: gollum kommt als blaue Referenz dazu — er steckt im Kopf und ist dort in `4`
+   nicht anklickbar (der Kopf liegt davor). Deshalb zuerst den Kopf beiseiteschieben:
+2. `4`, auf den Kopf klicken (er wird ausgewählt; die Statuszeile sagt, dass er bearbeitet wird), **`W` halten** und die
+   Maus nach rechts ziehen, loslassen: der Kopf rückt zur Seite, gollum wird sichtbar. Konsole:
+   `Object 'head_basemesh': moved (object level)`. (Ein Klick in `4` braucht mit gollum knapp eine Sekunde.)
+3. gollum anklicken: er wird normal (grau) und ist ausgewählt. **`W`** halten = verschieben, **`E`** = drehen (um die
+   Blickrichtung), **`R`** = skalieren (immer gleichmäßig). Vorher `X` (bzw. `Y`/`Z`, Shift+Achse = Ebene) = nur entlang der
+   **Welt**achse; bei `R` sagt die Statuszeile, dass X/Y/Z dort nicht wirken. **`Esc`** während der Geste: alles exakt zurück.
+4. `Ctrl+Z` nimmt jede Geste als einen Schritt zurück, `Ctrl+Y` wiederholt.
+5. gollum noch einmal anklicken: wieder Referenz; jetzt `W` → abgelehnt (`… is a Reference - locked`). Kopf und gollum
+   zusammen auswählen (Shift+Klick) und `W`: nur der Kopf bewegt sich, die Statuszeile sagt `Reference 'gollum' stays
+   (locked)`.
+6. `1`: die Statuszeile sagt `Mode: Vertex · object 'head_basemesh' is placed (object level)`; Punkte, `C`, Knife am
+   verschobenen/gedrehten Kopf funktionieren wie gewohnt. Mit `Shift+S` Symmetrie an: die Ebene dreht mit dem Kopf (Q-7).
+
+**Fragen dabei:** Fühlen sich `W`/`E`/`R` auf Objektebene wie auf Punktebene an? Ist es richtig, dass eine Referenz in einer
+gemischten Auswahl stehen bleibt (statt die ganze Geste abzulehnen)? Reicht die Statuszeile als Ebenen-Anzeige (Q-6)?
+Stört es, dass ein Objekt *im* anderen in `4` nicht anklickbar ist?
 
 **Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
 Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·

@@ -349,7 +349,7 @@ A modeling group is complete only when its topology behavior, history behavior a
 
 This is an architecture decision, not a feature ticket.
 
-**Decision document:** [AD-021 — Object / Component Model](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15: go for slice M0; slices M0–M2 in its §6). M0 (Core) implemented 2026-10-15; M1 (App: second object as Reference, mode `4`) implemented 2026-10-15 ([§6.1](AD-021-OBJECT-COMPONENT-MODEL.md#61-m1-implementation-note-2026-10-15)); Q-11/Q-12 answered. M2 handoff: [AD-021_M2_CLAUDE_CODE_HANDOFF](AD-021_M2_CLAUDE_CODE_HANDOFF.md); M2-0 (Reference Ghost) and M2-1 (placement in draw/component paths) implemented 2026-10-15, M2-2 next.
+**Decision document:** [AD-021 — Object / Component Model](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15: go for slice M0; slices M0–M2 in its §6). M0 (Core) implemented 2026-10-15; M1 (App: second object as Reference, mode `4`) implemented 2026-10-15 ([§6.1](AD-021-OBJECT-COMPONENT-MODEL.md#61-m1-implementation-note-2026-10-15)); Q-11/Q-12 answered. M2 handoff: [AD-021_M2_CLAUDE_CODE_HANDOFF](AD-021_M2_CLAUDE_CODE_HANDOFF.md); M2-0 (Reference Ghost) and M2-1 (placement in draw/component paths) implemented 2026-10-15; M2-2 (object move/rotate/scale in mode `4`, [§6.4](AD-021-OBJECT-COMPONENT-MODEL.md#64-m2-2-implementation-note--moving-rotating-scaling-objects-in-mode-4-2026-10-15)) implemented 2026-10-15, M2-3 next.
 
 ### Question
 
@@ -865,7 +865,7 @@ Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Kn
 
 ## Strategic research / gates
 
-- **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15; M0, M1, M2-0, M2-1 implemented 2026-10-15; M2-2 next)
+- **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15; M0, M1, M2-0, M2-1, M2-2 implemented 2026-10-15; M2-3 next)
 - **ARCH-02 — Topology Identity / Provenance / Remapping**
 
 ## Later (after WP-06 / production foundation stabilizes)

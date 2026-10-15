@@ -313,6 +313,8 @@ def test_a_reference_never_lights_up_selected_or_hovered_ids():
 # -- Mode 4 refuses component work (L-1, RF-4, Q-1) ---------------------------------------
 
 
+# M2-2: W/E/R in `4` are the object gesture now (`tests/test_object_transform.py`); with nothing
+# selected they still refuse and point at 1/2/3, so W stays in this list.
 @pytest.mark.parametrize("key", [W, T, C, DELETE, SHIFT_S], ids=["w", "t", "c", "delete", "shift_s"])
 def test_component_work_is_refused_in_object_mode(key):
     app = _app()

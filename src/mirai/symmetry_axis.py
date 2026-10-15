@@ -6,8 +6,11 @@ Symmetry Lab Slice 3 (Handoff §2 E1–E3); das Lab importiert sie jetzt von hie
 Symmetrie-*Semantik* (Correspondence, State) bleibt in `mirai.symmetry`; hier liegt nur,
 wie eine Definition entsteht:
 
-- **E1:** Ebene immer durch den Welt-Ursprung, Normale exakt eine Weltachse. Eine andere
-  Definition liest `current_axis` als Fehler (K-1), nie still als eine der Achsen (INV-5).
+- **E1:** Ebene immer durch den Ursprung des Objekts, Normale exakt eine Achse des Objekts —
+  Ursprung und Achsen der Mesh-Koordinaten (Objektraum). AD-021 Q-7 (Manu 2026-10-15): die
+  Ebene dreht mit dem Objekt; ohne Platzierung ist das der Welt-Ursprung und eine Weltachse
+  (AD-SYM-04, Addendum 2026-10-15). Eine andere Definition liest `current_axis` als Fehler
+  (K-1), nie still als eine der Achsen (INV-5).
 - **E3:** Die Seam wird einmal beim Wechsel auf eine Ebene abgeleitet — alle Edges, deren
   beide Endpunkte auf der Achse exakt `0.0` haben — und ist danach gespeicherte
   Deklaration (INV-1), keine laufende Positionsprüfung. Keine Toleranz (E4): ein nur fast
