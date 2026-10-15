@@ -373,7 +373,7 @@ def test_ad001_serialization_roundtrip() -> None:
 
     data = scene_to_dict(scene)
     check("Serialisiertes Format enthält reservierte Subsystem-Plätze",
-          set(("mesh", "morph_targets", "rig", "animation")).issubset(data.keys()))
+          set(("objects", "morph_targets", "rig", "animation")).issubset(data.keys()))
     check("morph_targets/rig/animation sind für V1 null", data["morph_targets"] is None and data["rig"] is None and data["animation"] is None)
 
     restored = scene_from_dict(data)

@@ -3,7 +3,8 @@
 **Status:** **DECIDED — go for M0 (Manu, 2026-10-15, in the chat: "Go for M0")**, after the independent review CLAUDE-001
 (ACCEPT WITH CHANGES, no blocker; every finding answered in §9 and worked into the text). Option B with the Core change of
 §5 (CORE_V1_FREEZE §7 step 6 given); A′ is not taken. Q-1…Q-4, Q-9, Q-10 answered (Decision record); Q-5…Q-8 stay open for
-M2. Where a section still says "proposed" or "proposal only", this status wins.
+M2. Where a section still says "proposed" or "proposal only", this status wins. **M0 implemented 2026-10-15**
+(Core only, no app behaviour; record in [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md), tests in `tests/test_scene_objects.py`).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
 **Answers:** [ROADMAP §6 ARCH-01](ROADMAP.md#arch-01--object--component-model) ("Must answer" list) plus two questions from
 the handoff: where the Reference state lives, and in which space symmetry and soft selection compute.
@@ -27,6 +28,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 |---|---|---|
 | 2026-10-15 | Manu (chat) | **Q-1 = locked** (a Reference cannot be moved/rotated/scaled; only selected and its state changed) · **Q-2 = yes** (a Reference never blocks component picking of the edit object) · **Q-3 = yes** (state change and add object are each one Undo step) · **Q-4 = yes** (object scale uniform only) |
 | 2026-10-15 | Manu (chat) | **Go for M0** (Option B, Core change per §5; not A′) · **Q-9 = yes** (adding an object leaves the camera where it is) · **Q-10 = yes** (`Space` menu: Shift+click adds the entry as Reference, a plain click loads as today) |
+| 2026-10-15 | agent | **M0 implemented** per §5.1–§5.3 (names as proposed; E-1 and E-3 decided for M0, §7.2); M1 is next |
 | — | Manu | open for M2: Q-5…Q-8 |
 
 ---
@@ -509,9 +511,9 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 
 | # | Question |
 |---|---|
-| E-1 | Rotation representation (3×3 matrix vs. quaternion) and float exactness of `transform ∘ inverse` for picking |
+| E-1 | Rotation representation (3×3 matrix vs. quaternion) and float exactness of `transform ∘ inverse` for picking. **M0:** a 3×3 rotation matrix (rows), validated orthonormal with det +1 (`ROTATION_TOLERANCE = 1e-9`, `PROVISIONAL`) — axis-aligned turns stay exact and the inverse is the transpose; exactness for picking stays M2 |
 | E-2 | Pivot composition formula and whether changing the pivot compensates the translation (object must not jump) |
-| E-3 | `ObjectId` as an `ElementId` subclass or a separate base (`ElementId` is documented as "element"; nothing tests `isinstance(…, ElementId)`, review Q4) |
+| E-3 | `ObjectId` as an `ElementId` subclass or a separate base (`ElementId` is documented as "element"; nothing tests `isinstance(…, ElementId)`, review Q4). **M0:** subclass, only to reuse `IdAllocator` and `__repr__`; Scene methods take only an `ObjectId` (`TypeError` otherwise), so an object is never inferred from an element ID (N-3) |
 | E-5 | Undo refresh by object: is the mirror entry enough, or does a `Command` need to name its object? |
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)

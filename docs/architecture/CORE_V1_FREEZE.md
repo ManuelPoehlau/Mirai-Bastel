@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -219,6 +219,37 @@ stale-ID filter, `weights`; no arithmetic); `scale_formula`/`"power"` left `src`
 refuses Soft + symmetry (AD-SYM-04 I-8) until SS2. Covered by `tests/test_weighted_transforms.py` (T-2, T-5–T-8 incl. the R-6
 straddling fixtures), `tests/test_soft_selection_replay.py` (T-3: non-symmetric Soft bit-identical to Q2-D via a pure replay
 function), the ported `tests/test_soft_selection_ops.py` (T-4, flipped tripwires) and the Mehlsack/S1 suites (T-9).
+
+**Decision:** AD-021 M0 (2026-10-15, ARCH-01; Manu's go for M0 2026-10-15 after review CLAUDE-001)
+
+The Scene holds objects. Freeze rule (§7): (1) requirement — a second object in the scene with a Reference state, later
+per-object transform/pivot and multi-object editing (Artist decisions A-1…A-5); (2) solvable short-term in the App only
+(A′), rejected because it builds a second scene model that the first save or multi-object editing must replace; (3)
+documented in [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md); (4) smallest extension per its §5.1–§5.3; (6) Manu's go.
+`src/core/ids.py` gains `ObjectId` (an `ElementId` subclass so it reuses `IdAllocator`, AD-021 E-3; same contract:
+monotonic, never reused, serialized with its counter). `src/core/scene.py` gains `SceneObject` (`id`, `name`, `mesh`,
+`transform`, `pivot`, `state`), `ObjectState` (`NORMAL`/`REFERENCE`) and `ObjectTransform` (translation, rotation as a
+3×3 matrix, one uniform `scale > 0`; only similarities are representable — Q-4; the rotation representation is the
+agent's choice for E-1, `PROVISIONAL`, `ROTATION_TOLERANCE = 1e-9`); `Scene.objects` is a read-only view ordered by ID,
+changed only through `add_object` / `remove_object` (returns the instance; the edit object is refused) /
+`restore_object` (re-inserts the same instance and ID, only an ID this scene allocated); `Scene.edit_object_id` lives on
+the Scene, validated, persisted (review R-3); `Scene.from_objects(...)` for loading. `Scene()` still starts with one
+empty, editable object that is the edit object. **`Scene.mesh` becomes a compatibility property:** get = the edit
+object's Mesh (fails loudly if it is missing), set = swap the edit object's Mesh, keeping ID, name, transform, pivot and
+state (AD-SYM-01's swap semantics unchanged); today's assignment sites mean "load a new scene", which coincides with
+one object (review R-4; M1 routes the app's scene load through an explicit scene reset). `src/core/selection.py` gains
+`objects: set[ObjectId]` and `clear_objects()`; `_active_set()` maps `OBJECT` to `objects` (mode `4` was a silent
+no-op); **`clear()` and `is_empty()` stay component-only** (review R-2). `src/core/serialization.py` writes format
+**version 2** (`object_id_counter`, `edit_object`, `objects[]` with the unchanged `Mesh.export_state()` under `"mesh"`)
+and still reads version 1 as one Normal identity object that is the edit object — the first migration, one read branch,
+no engine (review R-15; V1_SPEC §12 and the module docstring updated in the same commit). Not touched: `Mesh`,
+`Operation`, `OperationContext`, `HistoryStack`, `MeshStateCommand`, `VertexTransformCommand`, every operation; no app
+behaviour (M1). Existing tests unchanged except the two that asserted a top-level `"mesh"` key
+(`test_scene_serialization.py::…::test_reserved_subsystem_slots_present_and_null_in_v1`,
+`test_core.py::test_ad001_serialization_roundtrip`). Covered by `tests/test_scene_objects.py` (default scene, `ObjectId`
+never reused and typed, add/remove/restore keeps instance and order, edit object cannot be removed, accessor follows the
+edit object, Mesh swap keeps state and placement, transform validation, `Selection.objects` with `clear()`/`is_empty()`
+unchanged, P-1 as a Core test — one stack, two objects —, v2 round trip incl. dead IDs, v1 load, inconsistent v2 refused).
 
 ## 2. Was vor dem Freeze validiert wurde
 

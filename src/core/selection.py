@@ -13,13 +13,19 @@ Architekturvertrag:
   kennt. Ein späteres BoneSelection- oder KeyframeSelection-System kann
   strukturell demselben Muster folgen, ohne dass diese Klasse geändert
   werden muss.
+- AD-021 M0: `objects` ist die aktive Menge in `SelectionMode.OBJECT`
+  (Taste `4`). Die Komponenten-Sets sind nackte IDs und gelten immer für
+  das Edit-Objekt der Scene (`Scene.edit_object_id`) - eine ID ohne ihr
+  Mesh ist bedeutungslos. `clear()` und `is_empty()` bleiben bewusst
+  komponentenbezogen (C -> Knife behält seine Bedeutung, review R-2);
+  Objekte werden ausdrücklich mit `clear_objects()` geleert.
 """
 
 from __future__ import annotations
 
 from enum import Enum, auto
 
-from .ids import VertexId, EdgeId, FaceId
+from .ids import VertexId, EdgeId, FaceId, ObjectId
 
 
 class SelectionMode(Enum):
@@ -35,16 +41,19 @@ class Selection:
         self.vertices: set[VertexId] = set()
         self.edges: set[EdgeId] = set()
         self.faces: set[FaceId] = set()
+        self.objects: set[ObjectId] = set()
         # Hover ist explizit getrennt von "Selektion" - reiner
-        # UI-Zustand, nicht Teil der eigentlichen Auswahl (§3).
-        self.hovered: VertexId | EdgeId | FaceId | None = None
+        # UI-Zustand, nicht Teil der eigentlichen Auswahl (§3). In Modus 4
+        # eine ObjectId (eigener Typ; Konsumenten prüfen den Typ).
+        self.hovered: VertexId | EdgeId | FaceId | ObjectId | None = None
 
     def _active_set(self) -> set:
         return {
             SelectionMode.VERTEX: self.vertices,
             SelectionMode.EDGE: self.edges,
             SelectionMode.FACE: self.faces,
-        }.get(self.mode, set())
+            SelectionMode.OBJECT: self.objects,
+        }[self.mode]
 
     def set(self, ids: set) -> None:
         """Ersetzt die aktuelle Auswahl im aktiven Selection Mode (Single/Multi Select)."""
@@ -65,9 +74,14 @@ class Selection:
             target.add(id_)
 
     def clear(self) -> None:
+        """Leert nur die Komponenten-Sets; `objects` bleibt (AD-021 §4.4)."""
         self.vertices.clear()
         self.edges.clear()
         self.faces.clear()
 
+    def clear_objects(self) -> None:
+        self.objects.clear()
+
     def is_empty(self) -> bool:
+        """Keine Komponente ausgewählt; ausgewählte Objekte zählen nicht."""
         return not (self.vertices or self.edges or self.faces)

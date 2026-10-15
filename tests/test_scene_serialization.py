@@ -151,7 +151,9 @@ class TestSceneSerializationRoundtrip(unittest.TestCase):
     def test_reserved_subsystem_slots_present_and_null_in_v1(self) -> None:
         scene, _ids = build_mutated_scene()
         data = scene_to_dict(scene)
-        self.assertTrue({"mesh", "morph_targets", "rig", "animation", "version"}.issubset(data.keys()))
+        # Format-Version 2 (AD-021 §5.3): Geometrie pro Objekt unter "objects", kein "mesh" mehr.
+        self.assertTrue({"objects", "morph_targets", "rig", "animation", "version"}.issubset(data.keys()))
+        self.assertNotIn("mesh", data)
         self.assertIsNone(data["morph_targets"])
         self.assertIsNone(data["rig"])
         self.assertIsNone(data["animation"])
