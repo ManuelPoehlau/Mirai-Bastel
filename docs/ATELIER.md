@@ -66,7 +66,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | D1a | **Extrude-Erweiterungen**: Einzel-Face-Verhalten, Edge-/Vertex-Extrude, numerische Eingabe und Durchdringungs-Check sind spätere offene Fragen. | [ROADMAP, WP-06 B9](architecture/ROADMAP.md) |
 | D1b | **Soft Selection – offene Arbeit**: symmetrische Gewichtung samt gemeinsamem Core-Umzug und Tests auf höher aufgelösten Meshes; Bedienung und spätere Ideen sind in AD-020 vermerkt. | [AD-020](architecture/AD-020-SOFT-SELECTION-APP-PATH.md) |
 | D1c | **Viewport-Performance**: auf großen Meshes sind Navigation und Hover zu langsam; die Zielgröße für flüssiges Arbeiten ist noch festzulegen. | [drag_cost README, „Next step“](../experiments/drag_cost/README.md) |
-| D1d | **Objekte (ARCH-01)**: zweites Objekt in der Szene, Zustand *Referenz*, später eigener Transform/Pivot. Review eingearbeitet, deine Antworten Q-1–Q-4 eingetragen (2026-10-15). Offen: dein Go für M0 (oder Variante A′), dazu Q-9/Q-10 für den ersten Praxistest. | [AD-021, Kurzfassung](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
+| D1d | **Objekte (ARCH-01)**: zweites Objekt in der Szene, Zustand *Referenz*, später eigener Transform/Pivot. **Entschieden** (2026-10-15: Go für M0, Q-1–Q-4, Q-9, Q-10 beantwortet). Als Nächstes M0 (Core, für dich unsichtbar), dann M1 mit Praxistest; Q-5–Q-8 kommen mit M2. | [AD-021, Kurzfassung](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
 | D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
 ### E. Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)

@@ -1,9 +1,9 @@
 # AD-021 — Object / Component Model (ARCH-01)
 
-**Status:** **PROPOSED** (2026-10-15). Independent review CLAUDE-001 done (ACCEPT WITH CHANGES, no blocker), every finding
-answered in §9 and worked into the text. Q-1…Q-4 answered by Manu (Decision record below); Q-5…Q-10 open (Q-9/Q-10 needed for M1). Manu decides on
-the whole proposal; until then nothing under `src/` changes. Every proposed change to `src/core/` below is a proposal only
-(CORE_V1_FREEZE §7 steps 1–4; a Core change is a Haltepunkt, Development System §5).
+**Status:** **DECIDED — go for M0 (Manu, 2026-10-15, in the chat: "Go for M0")**, after the independent review CLAUDE-001
+(ACCEPT WITH CHANGES, no blocker; every finding answered in §9 and worked into the text). Option B with the Core change of
+§5 (CORE_V1_FREEZE §7 step 6 given); A′ is not taken. Q-1…Q-4, Q-9, Q-10 answered (Decision record); Q-5…Q-8 stay open for
+M2. Where a section still says "proposed" or "proposal only", this status wins.
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
 **Answers:** [ROADMAP §6 ARCH-01](ROADMAP.md#arch-01--object--component-model) ("Must answer" list) plus two questions from
 the handoff: where the Reference state lives, and in which space symmetry and soft selection compute.
@@ -26,7 +26,8 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | Date | Who | What |
 |---|---|---|
 | 2026-10-15 | Manu (chat) | **Q-1 = locked** (a Reference cannot be moved/rotated/scaled; only selected and its state changed) · **Q-2 = yes** (a Reference never blocks component picking of the edit object) · **Q-3 = yes** (state change and add object are each one Undo step) · **Q-4 = yes** (object scale uniform only) |
-| — | Manu | open: the proposal as a whole (go for M0, or A′ first), Q-5…Q-10 |
+| 2026-10-15 | Manu (chat) | **Go for M0** (Option B, Core change per §5; not A′) · **Q-9 = yes** (adding an object leaves the camera where it is) · **Q-10 = yes** (`Space` menu: Shift+click adds the entry as Reference, a plain click loads as today) |
+| — | Manu | open for M2: Q-5…Q-8 |
 
 ---
 
@@ -597,7 +598,7 @@ wie bisher) · Q-9 *Bleibt die Kamera beim Hinzufügen stehen?* (Vorschlag: ja).
 E1-Entscheidung) · Q-8 Undo springt zum Objekt zurück, an dem der Schritt gemacht wurde · Q-5/Q-6 Objekt zum Bearbeiten
 wählen, Markierung eines transformierten Objekts.
 
-**Deine Entscheidung:** Go für den Core-Schritt M0 (für dich unsichtbar, die Review hat ihn auf einer Kopie mit allen Tests
+**Entschieden (2026-10-15):** Go für M0, Q-9 ja, Q-10 ja. — *Die Frage lautete:* Go für den Core-Schritt M0 (für dich unsichtbar, die Review hat ihn auf einer Kopie mit allen Tests
 geprüft) — oder erst M1 nur in der App ohne Core-Änderung (Variante A′; ich rate ab, weil sie später ersetzt werden muss).
 
 **Annahme, die du mit einem Satz korrigieren kannst:** Das letzte bearbeitbare Objekt kann nicht auf Referenz gestellt werden
