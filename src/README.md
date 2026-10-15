@@ -14,7 +14,8 @@ src/
 │              Objekt-Ebene (AD-021 M1: Referenz-Objekte, Modus `4`, `scene_objects.py`)
 ├── viewport/  inkrementelle Renderdaten, Dirty-State, Overlays, Resource-Store, GL-Render-Store, Fassade
 ├── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
-└── scene_menu.py  temporäres Szenen-Menü (`SPACE`; Shift+Klick = als Referenz hinzufügen, AD-021 M1; `PROVISIONAL`)
+├── scene_menu.py  temporäres Szenen-Menü (`SPACE`; Shift+Klick = als Referenz hinzufügen, AD-021 M1; `PROVISIONAL`)
+└── scene_files.py Szenen speichern/laden (`Strg+S`, Datei-Zeilen im `SPACE`-Menü, Ordner `scenes/`; `PROVISIONAL`)
 ```
 
 `src/core/` basiert auf dem abgeschlossenen und eingefrorenen Core-V1-

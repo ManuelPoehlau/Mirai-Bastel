@@ -51,3 +51,6 @@ playground/.session_state.json.tmp
 
 # Claude Code agent worktrees (ephemeral, never tracked)
 .claude/worktrees/
+
+# User scene files (src/scene_files.py, Ctrl+S)
+scenes/

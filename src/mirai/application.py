@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import os
 import time
 from pathlib import Path
 from types import MappingProxyType
@@ -55,6 +56,7 @@ from core import (
 )
 from core.operations import MeshStateCommand
 from core.scene import IDENTITY_TRANSFORM
+from core.serialization import scene_from_json, scene_to_json
 from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
@@ -92,6 +94,7 @@ from .scene_objects import (
     applied_symmetry_axis,
     apply_placement,
     object_base_color,
+    replace_scene,
     reset_scene,
 )
 from .soft_selection import (
@@ -667,8 +670,9 @@ class Application:
         face_overlay_type: type | None = None,
         soft_overlay_type: type | None = None,
         symmetry_overlay_type: type | None = None,
+        scene_path: str | Path | None = None,
     ) -> None:
-        """Initialisiert die Default-Szene (Würfel oder OBJ-Import).
+        """Initialisiert die Default-Szene (Würfel, OBJ-Import oder Szenendatei).
 
         `store_type` (Stage A, AD-018 §5/§6): additiv durchgereicht an
         `Viewport(...)`. Default bleibt `TraceStore` (headless, kein GL-
@@ -689,6 +693,11 @@ class Application:
         genau ein neues, bearbeitbares Objekt ersetzt (Name: `cube` bzw. der Dateistamm), das
         Edit-Objekt wird (`scene_objects.reset_scene`); der `scene.mesh`-Setter bedeutet nur
         noch "Mesh dieses Objekts tauschen".
+
+        `geometry_type="file"` (Szenen speichern/laden, Manu 2026-10-15): lädt die Szenendatei
+        `scene_path` (`core.serialization`, alle Objekte samt Edit-Objekt) über
+        `scene_objects.replace_scene`. Gelesen und geparst wird vor jeder Änderung, ein
+        Fehler lässt die Szene also unverändert.
 
         `point_overlay_type` (WP-06 B2b, E17): gleiches Durchreich-Muster wie
         `store_type`. Default `None` = kein GL-Punkt-Overlay (headless); der
@@ -713,6 +722,11 @@ class Application:
         keine Symmetrie-Anzeige (headless)."""
         if geometry_type in ("cube", "obj"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
+        elif geometry_type == "file":
+            if scene_path is None:
+                raise ValueError('geometry_type="file" requires scene_path')
+            loaded = scene_from_json(Path(scene_path).read_text(encoding="utf-8"))
+            replace_scene(self.scene, loaded)
         self._soft_refresh_radius()  # a scene load is one of the three radius events
 
         # Gate 7: Produktionsintegration — verbindet Application.camera mit
@@ -1234,6 +1248,7 @@ class Application:
         face_overlay_type: type | None = None,
         soft_overlay_type: type | None = None,
         symmetry_overlay_type: type | None = None,
+        scene_path: str | Path | None = None,
     ) -> None:
         """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
         zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
@@ -1266,6 +1281,7 @@ class Application:
             face_overlay_type=face_overlay_type,
             soft_overlay_type=soft_overlay_type,
             symmetry_overlay_type=symmetry_overlay_type,
+            scene_path=scene_path,
         )
         self.selection.clear()
         self.selection.clear_objects()
@@ -1278,6 +1294,27 @@ class Application:
         self._soft_preview_refresh()
         self.set_viewport_size(self.viewport_width, self.viewport_height)
         self.frame_scene()
+
+    def save_scene_file(self, path: str | Path) -> bool:
+        """Schreibt die Szene als Szenendatei (`core.serialization`, Manu 2026-10-15; Strg+S
+        und das SPACE-Menü, `src/scene_files.py`). True = geschrieben.
+
+        Abgelehnt (Statuszeile, False), solange eine Interaktion die Tasten hält: mitten in
+        W/E/R/T oder einer Knife-Session stünde ein halber Zustand im Mesh. Atomar über eine
+        Nachbardatei, damit ein Fehler die alte Datei nicht zerstört. Kein History-Eintrag;
+        Selection, History und Kamera werden nicht gespeichert (Format, V1_SPEC §12)."""
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"Save scene: not while the {owner} interaction runs")
+            return False
+        path = Path(path)
+        text = scene_to_json(self.scene)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+        self._set_status(f"Saved scene: {path}")
+        return True
 
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params

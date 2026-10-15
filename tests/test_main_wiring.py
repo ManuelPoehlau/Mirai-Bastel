@@ -307,3 +307,60 @@ def test_shift_click_on_a_row_adds_it_as_a_reference():
     assert app.scene.edit_object_id == edit
     assert app.camera.eye() == eye
     assert app.status_message == "Added 'cube' as Reference"
+
+
+# -- Scene files: Ctrl+S (src/scene_files.py, PROVISIONAL) -------------------
+
+
+@pytest.fixture
+def save_wired():
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    saved: list = []
+    menu = SceneMenu(scene_entries(), load=lambda name: True)
+    main_module.install_handlers(window, app, menu=menu, save=lambda: saved.append(True))
+    return window, app, menu, saved
+
+
+def test_ctrl_s_calls_save_and_is_not_forwarded(save_wired, monkeypatch):
+    window, app, _, saved = save_wired
+    forwarded: list = []
+    monkeypatch.setattr(app, "key_press", forwarded.append)
+
+    assert window.handlers["on_key_press"](key.S, key.MOD_CTRL) == pyglet.event.EVENT_HANDLED
+
+    assert saved == [True]
+    assert forwarded == []
+
+
+def test_ctrl_s_does_nothing_while_the_menu_is_open(save_wired):
+    window, _, menu, saved = save_wired
+    h = window.handlers
+    h["on_key_press"](key.SPACE, 0)
+
+    h["on_key_press"](key.S, key.MOD_CTRL)
+
+    assert saved == []
+    assert menu.is_open
+
+
+def test_shift_s_and_ctrl_shift_s_are_not_save(save_wired):
+    window, app, _, saved = save_wired
+    window.handlers["on_key_press"](key.S, key.MOD_SHIFT)  # Symmetrie-Zyklus wie bisher
+    window.handlers["on_key_press"](key.S, key.MOD_CTRL | key.MOD_SHIFT)
+
+    assert saved == []
+    assert app.status_message.startswith("Symmetrie")
+
+
+def test_without_save_ctrl_s_reaches_the_application(wired, monkeypatch):
+    window, app = wired
+    forwarded: list = []
+    monkeypatch.setattr(app, "key_press", forwarded.append)
+
+    window.handlers["on_key_press"](key.S, key.MOD_CTRL)
+
+    assert [(i.value, i.modifiers) for i in forwarded] == [("s", frozenset({"ctrl"}))]

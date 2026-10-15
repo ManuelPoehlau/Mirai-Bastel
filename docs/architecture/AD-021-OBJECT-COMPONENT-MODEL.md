@@ -128,7 +128,10 @@ differences only change sign"). The soft radius is stored "in world units", comp
 **F-8 — Serialization is one-mesh, version 1.** `scene_to_dict` writes `"mesh"` plus the three reserved slots,
 `FORMAT_VERSION = 1` (`src/core/serialization.py:22-33`). Its only callers are tests (`tests/test_scene_serialization.py`,
 `tests/test_core.py`); the production app neither saves nor loads scene files. No scene file exists in the repository.
-[Code, grep]
+[Code, grep] *(Superseded 2026-10-15: the app saves and loads version-2 scene files - `Ctrl+S` and the `SPACE` menu,
+`src/scene_files.py`, `Application.save_scene_file` / `load_scene("file")`; loading goes through
+`scene_objects.replace_scene`, which keeps the App's Scene instance and therefore re-allocates the ObjectIds. User files live in
+`scenes/`, which is git-ignored. Core unchanged.)*
 
 **F-9 — `scene.mesh` call sites** (measured: `grep -rn 'scene\.mesh\b' --include=*.py`, i.e. **lines**; `tests/` includes
 `tests/_archive`). [Code]

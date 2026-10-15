@@ -1,5 +1,7 @@
 """Objekt-Ebene der Application (AD-021 M1): Scene-Reset, Objekt-Commands, Referenz-Look.
 
+Seit 2026-10-15 auch der Scene-Reset aus einer Szenendatei (`replace_scene`).
+
 AD-021 §4.6 / §5.4: die Objekt-Commands sind einfache `Command`-Implementierungen außerhalb
 von `HistoryStack` (Core unverändert, M0 liefert alles). Jeder hält seine Ziel-Instanz
 selbst, so dass Objekt- und Mesh-Schritte auf dem einen Stack der Scene korrekt
@@ -45,6 +47,33 @@ def reset_scene(scene: Scene, mesh: Mesh, name: str) -> SceneObject:
     for object_id in [oid for oid in scene.objects if oid != obj.id]:
         scene.remove_object(object_id)
     return obj
+
+
+def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
+    """Scene-Reset aus einer Szenendatei: alle Objekte werden durch die Objekte von `loaded`
+    ersetzt (Name, Zustand, Transform, Pivot, Mesh samt Symmetrie), das Pendant von dessen
+    Edit-Objekt wird Edit-Objekt. Gibt es zurück.
+
+    Wie `reset_scene` bleibt die Scene-Instanz dieselbe (Selection/History hängen daran),
+    deshalb bekommen die Objekte hier neue ObjectIds - die IDs der Datei sind sitzungslokal,
+    Selection und History werden ohnehin nicht gespeichert. Nur über die M0-API."""
+    kept: set = set()
+    edit = None
+    for source in loaded.objects.values():
+        obj = scene.add_object(source.mesh, name=source.name, state=source.state)
+        obj.transform = source.transform
+        obj.pivot = source.pivot
+        kept.add(obj.id)
+        if source.id == loaded.edit_object_id:
+            edit = obj
+    assert edit is not None  # Scene garantiert ein Edit-Objekt unter den Objekten
+    scene.edit_object_id = edit.id
+    for object_id in [oid for oid in scene.objects if oid not in kept]:
+        scene.remove_object(object_id)
+    scene.morph_targets = loaded.morph_targets
+    scene.rig = loaded.rig
+    scene.animation = loaded.animation
+    return edit
 
 
 class AddObjectCommand:
