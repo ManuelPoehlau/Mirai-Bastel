@@ -158,6 +158,8 @@ def test_f_a_the_guard_sees_real_mutations():
         (commands.DISSOLVE_NO_CLEANUP, "one_edge"),
         (commands.EXTRUDE, "face"),
         (commands.SYMMETRY_CYCLE, "nothing"),
+        (commands.LOOP_INSERT, "one_edge"),
+        (commands.LOOP_SLIDE, "one_edge"),
     }
     for command, selection in exercised:
         app = symmetric_fixture(selection)

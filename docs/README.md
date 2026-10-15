@@ -44,6 +44,7 @@ Weitere WP-04-Dokumente (Gate-Berichte, Amendments) liegen im selben Ordner.
 | Document | Purpose |
 |---|---|
 | [WP_DELETE_DISSOLVE_PLAN.md](WP_DELETE_DISSOLVE_PLAN.md) | Delete (destruktiv) / Dissolve (bewahrend) auf Vertex-/Edge-/Face-Ebene, Production-first ohne Lab; Status, offene Fragen und Praxis-Check am Ende |
+| [WP_PLAYGROUND_TOOLS_PROMOTION.md](WP_PLAYGROUND_TOOLS_PROMOTION.md) | Box/Paint Select, Tweak und Loop-Werkzeuge aus dem Playground in die App (2026-10-15): Manus Entscheidungen, Annahmen, Praxistest |
 
 ## For AI collaborators
 

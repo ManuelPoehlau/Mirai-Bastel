@@ -249,7 +249,16 @@ Press nachträglich zu Tweak wird. Siehe Beobachtungspunkte bei Variante 1.
 
 ## Production Migration Notes
 
-*(Bewusst leer bis ein Verdict vorliegt — built ≠ decided.)*
+**2026-10-15 — in der App** (Manus Promotion „die Playground-Werkzeuge in Production einbauen“, im
+Chat): Variante 2 (Silo, KEEP oben) mit Manus Wahl „Ctrl+LMB, Auswahl weicht“ — Ctrl+LMB-**Ziehen**
+= Tweak, Ctrl+LMB-**Klick** bleibt „aus Auswahl entfernen“; Box/Paint entfernen deshalb nicht per
+Ziehen. Der „aktuell gewählte Transform-Modus“ ist in der App das zuletzt gedrückte W/E/R (ein
+Antippen setzt ihn, Start: Move) — Engineering-Annahme `PROVISIONAL`, weil die App W/E/R als
+Halte-Tasten hat (AD-016) und keinen persistenten Modus. Zielregel wie oben (Auswahl, sonst das
+Element unter dem Press-Punkt); die Auswahl selbst wird dabei nicht verändert. Praxistest steht aus
+([WP Playground-Werkzeuge](../../../docs/WP_PLAYGROUND_TOOLS_PROMOTION.md)). Code: `Application._tweak_step` (`src/mirai/application.py`).
+
+*(Text unten: Stand vor der Promotion.)*
 
 *Playground-Code für dieses Experiment darf quick-and-dirty sein; die folgenden
 Punkte werden erst relevant, sobald eine Variante ein KEEP-Verdict hat und der

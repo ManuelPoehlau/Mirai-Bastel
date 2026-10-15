@@ -12,8 +12,12 @@ through `Mesh.split_face`) with the face geometry it shares with F2's
 it yet (slice S2).
 WP-06 Slice B9 moved the Multi-Face-Extrude tool here (`extrude.py`, hold `T`,
 PROVISIONAL); the Playground shares it.
+2026-10-15 (Manu: Playground tools into the app): the loop/ring traversal
+(`loop_ring.py`, moved; the Playground forwards) and Loop Slide (`loop_slide.py`,
+rebuilt: open pieces, several loops, symmetry). Loop Insert is the ring through
+the shared Edge Connect (`Application._loop_insert`).
 Not moved here: the rejected strip-semantics Connect (`connect_edges.py`),
-the loop tools, articulation.
+articulation.
 """
 
 from __future__ import annotations
