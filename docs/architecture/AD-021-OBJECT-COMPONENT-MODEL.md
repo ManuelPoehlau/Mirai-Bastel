@@ -8,7 +8,8 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 **M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); Manu tried it
 (his Q-11 answer describes the behaviour); no KEEP/ITERATE verdict recorded, M1 stays `PROVISIONAL`. **M2:**
 [handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
-implemented 2026-10-15** (§6.2, §6.3), M2-0 waiting for Manu's practical test; M2-2 next. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); M2-2…M2-4
+next, [handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md) rewritten as the start of a new session. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -39,6 +40,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | Manu (in this file, Kurzfassung) | **Q-11:** the muted blue is good; problem both ways — the editable geometry *inside* a Reference cannot be seen (proposal: a switchable shaded/ghost mode for the Reference), and a Reference *inside* the editable object disappears in Wireframe (proposal: the Reference stays shaded in Wireframe); counter-proposals welcome · **Q-12:** "Das passt erstmal so" (the click in `4` stays) |
 | 2026-10-15 | agent | Q-11 counter-proposal §7.3 (takes both of Manu's proposals; Ghost global, `Alt+D`, `PROVISIONAL`); M2 handoff written; new Artist question **Q-13** (how the pivot is set) |
 | 2026-10-15 | Manu (chat) | **Q-5, Q-6, Q-7, Q-8 = as recommended** (Q-5: select in `4`, then `1`/`2`/`3`; Q-6: status line first; Q-7: the symmetry plane turns with the object — amends AD-SYM-04 E1; Q-8: Undo switches back to the object of the step) · **Q-11 proposal §7.3 confirmed** ("passt so") · **Q-13 deferred:** moving the pivot is not needed for now, the topic comes later — the pivot stays the object origin (M0 default) · **go for M2-0 and M2-1** |
+| 2026-10-15 | Manu (chat) | **M2-0:** "Ghost ist hell genug" (alpha 0.3 stays) · a `NORMAL` non-edit object disappearing in Wireframe like the edit object: "passt so" · next: handoff for the rest of M2 (new session) |
 | 2026-10-15 | agent | **M2-0 implemented** (Reference display, §6.2) and **M2-1 implemented** (placement in the draw and component paths, no UI, §6.3); no Core change; E-2, E-6…E-10 as in the handoff |
 
 ---
@@ -763,6 +765,8 @@ Verworfen für jetzt: X-Ray des bearbeiteten Objekts (zeigt es durch alles, auch
    Draht, gollum bleibt sichtbar — schattiert, mit `Alt+D` als Ghost.
 3. Frage dabei: Ist der Ghost hell genug (jetzt 30 % Deckkraft)? Sieht es richtig aus, dass ein *normales* zweites Objekt
    (in `4` umgeschaltet) im Wireframe verschwindet wie der Kopf selbst?
+
+Manu (2026-10-15): Ghost ist hell genug; das Wireframe-Verhalten passt so.
 
 M2-1 (Platzierung im Zeichnen und in allen Werkzeugen) ist ebenfalls gebaut, aber für dich noch unsichtbar — verschieben,
 drehen und skalieren kannst du ein Objekt erst mit M2-2.
