@@ -349,6 +349,8 @@ A modeling group is complete only when its topology behavior, history behavior a
 
 This is an architecture decision, not a feature ticket.
 
+**Decision document:** [AD-021 — Object / Component Model](AD-021-OBJECT-COMPONENT-MODEL.md) (PROPOSED 2026-10-15; Manu decides).
+
 ### Question
 
 Should the production scene remain approximately:
@@ -863,7 +865,7 @@ Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Kn
 
 ## Strategic research / gates
 
-- **ARCH-01 — Object / Component Model**
+- **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (PROPOSED 2026-10-15)
 - **ARCH-02 — Topology Identity / Provenance / Remapping**
 
 ## Later (after WP-06 / production foundation stabilizes)
