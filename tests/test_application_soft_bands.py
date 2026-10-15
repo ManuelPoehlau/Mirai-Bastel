@@ -523,20 +523,28 @@ def test_hover_armed_with_soft_off_shows_nothing(app, influence_calls):
     assert app.key_press(ESC)
 
 
-# -- symmetry: no preview (bands on both sides are AD-SYM-04 D-5, slice SS3) -------------------
+# -- symmetry: the preview is the symmetric field (AD-SYM-04 D-5, slice SS3; details in
+#    test_application_soft_bands_symmetric.py) -----------------------------------------------
 
 
-def test_no_preview_under_a_symmetry_definition(app):
+def test_under_a_symmetry_definition_the_preview_is_the_symmetric_field(app):
     from core.mesh import SymmetryDefinition
+    from mirai.soft_selection import symmetric_influence
 
     assert app.key_press(O)
-    _click_select(app, _front_vertices(app)[0])
-    assert app.soft_bands.count > 0
+    vid = _front_vertices(app)[0]
+    _click_select(app, vid)
+    plain = app.soft_bands
+    assert plain.count > 0
     app.scene.mesh.symmetry_definition = SymmetryDefinition(
         plane_point=(0.0, 0.0, 0.0), plane_normal=(1.0, 0.0, 0.0), seam_edges=frozenset()
     )
     assert app.key_press(SHIFT_O)  # any trigger
-    assert app.soft_bands == EMPTY_BANDS
+    soft = app.soft_settings
+    field = symmetric_influence(
+        app.scene.mesh, {vid}, soft.world_radius, soft.metric, soft.curve, soft.curve_power
+    )
+    assert app.soft_bands == SoftBands.from_weights(field.weights) != plain
 
 
 # -- bands switch (S2d E7, S2c verdict: "needs an option to switch the bands off") --------------

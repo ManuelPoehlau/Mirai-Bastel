@@ -9,6 +9,7 @@ Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation not
 **SS1 design note written (2026-10-14, PROPOSED): [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)** — the one Core change; independent review CLAUDE-001 ACCEPT WITH CHANGES, all findings worked in (AD-SYM-05 §10); **go for SS1 (Manu, 2026-10-14)**.
 **Slice SS1 is built (2026-10-14, [implementation note in AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)):** the weighting is in the Core loop; no visible change (the app still refuses Soft + symmetry until SS2).
 **Slice SS2 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss2)):** symmetric Soft runs in the app (W/E/R, both metrics); I-8 is lifted. **The SS2 Artist question is answered (Manu, 2026-10-14, Decision record) and built the same day ([addendum](#addendum-2026-10-14-manus-answer-to-the-ss2-question)):** seeds on both sides → the explicit selection wins; only on the seam → every step in the plane; R6-A stays.
+**Slice SS3 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss3)):** the bands show both sides under symmetry (D-5); the symmetric probe rows `soft_w_sym` are ready (D-4) — **the reference-PC run is open**. Left before J: A3 (after the §10 review).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -385,8 +386,11 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
   bar. Gate: the `soft_w` scenario of `experiments/drag_cost/probe_drag_gl.py` gains a symmetric variant (seed off the
   plane, radius steps that cross it); Manu runs it before the joint test. A missed bar is a viewport question (AD-020 §7.3
   rule), not a reason to change the semantics. **No Artist question** (measurement; the mesh-size Intent is already open as
-  D1c, WP-VIEW-PERF-01).
-- **D-5 Bands.** Today hidden under a definition (I-8). *Proposal:* show both sides (the mirrored field). Practical-test item, no question.
+  D1c, WP-VIEW-PERF-01). *(SS3, 2026-10-14: probe ready — scenario `soft_w_sym` of `probe_drag_gl.py`
+  ([note](#implementation-note-2026-10-14-slice-ss3)); the run on the reference PC is open.)*
+- **D-5 Bands.** *(Built in SS3, 2026-10-14, [note](#implementation-note-2026-10-14-slice-ss3): preview and gesture show the
+  symmetric field, both sides; a selection symmetric Soft refuses shows none, `PROVISIONAL`.)* Was hidden under a definition
+  (I-8). *Proposal:* show both sides (the mirrored field). Practical-test item, no question.
 
 ### 5.2 Slices (proposal; built on the app path, M-4)
 
@@ -395,7 +399,7 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 | SS0 | Probe (no `src` change) — **done 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss0)) | Headless probe in `experiments/` reading `src` only: D-1 field symmetric bit-for-bit on `subd_cube`, head, body (both metrics, X/Y/Z); how often D-3 occurs per radius step; correspondence + influence cost per gesture start (container). | Report only; stops if D-1's claim fails. |
 | SS1 | **The one Core change** (M-5) — design: [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) (reviewed; go 2026-10-14) — **built 2026-10-14** ([note](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)) | Weighting into the Core loop per §4 (design in its own AD/addendum + independent review **before code**, R-5); `src/mirai/soft_selection/ops.py` migrated in the same commit (R-2). Non-symmetric Soft must stay bitwise identical. | Core contract tests; radius-0 identity; the AD-020 suites green; `tests` + Lab tree once. |
 | SS2 | Symmetric influence and gesture — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss2)) | D-1 field, per-side step (plain / conjugate / projected), D-2 refusals, D-3 per Manu's answer; `Application` lifts the Soft + symmetry refusal (I-8) only for supported cases; Lab: no row change (soft commands are already `NON_OPERATION`). | One Undo step per gesture; exact mirror (completeness unchanged); cancel exact; MARK and BLOCK alike in the Lab. |
-| SS3 | Bands on both sides + probe | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC. |
+| SS3 | Bands on both sides + probe — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss3)) | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC (open). |
 
 ### 5.3 Artist question (Soft)
 
@@ -847,6 +851,108 @@ Built the same day after the answer (Decision record); still no `src/core` chang
 
 ---
 
+## Implementation note (2026-10-14, slice SS3)
+
+Production order (Manu, 2026-10-14): bands on both sides under symmetry (D-5) and the symmetric `soft_w` probe rows (D-4).
+**No change under `src/core`, none to the SS2 field or categories** (`soft_selection/symmetric.py` is untouched). No
+Haltepunkt reached: no AD proved wrong, no bit identity lost, nothing Manu feels on today's assets that the order did not
+sketch (the D-2 preview is the order's proposal). One contradiction inside the order, resolved by its intent (below).
+
+**Built.**
+
+- **Preview (D-5).** `Application._soft_preview_refresh` no longer hides the bands under a definition; the weights come from
+  `_soft_preview_weights`: without a definition `compute_influence` exactly as before (same call, same arguments); with one
+  `symmetric_influence` with the arguments the tool's `begin()` uses, so **preview == the op's weights** holds as for plain
+  Soft (bit for bit, tested W/E/R on `subd_cube` X/Z and `head_basemesh` X). Same triggers as before (selection, mode,
+  settings, Undo/Redo, scene, topology incl. Shift+S, gesture end, the one hover-arm refresh); never per pointer move, never
+  from hover.
+- **Gesture.** `_soft_show_op_weights` shows the op's own `params["influence"]` under symmetry too (the symmetric field, both
+  sides); nothing is computed — neither the field nor the pairing (tested with spies on both).
+- **D-2 in the preview (`PROVISIONAL`):** a selection `symmetric_influence` refuses shows **no bands**, never plain Soft's
+  field; the refusal text still appears at the first motion, as in SS2 (also for a hover-armed gesture).
+- **Bands off (Alt+O)** under symmetry: no field and no pairing for display (tested).
+- `src/main.py` docstring (it still said "Soft + symmetry is refused") and the `EMPTY_BANDS` comment updated.
+
+**Cost decision (`PROVISIONAL`): reuse, through the report A2 already keeps — not a new cache.** The app's symmetry display
+(A2) holds a `ReportCache` (`mirai.symmetry_display`) whose `SymmetryReport` carries the correspondence of the current geometry,
+keyed by `geometry_signature` (definition, vertex ids, positions, seam-edge end points). `Application` now owns that cache
+(`_symmetry_reports`, fresh per `init_scene`) and hands it to the display (`SymmetryDisplay(reports=...)`); the preview reads
+it with the new `ReportCache.current()` (never deferred, so the preview always matches the geometry it is computed on).
+
+- *Why reuse at all:* the pairing does not depend on seeds or settings, but the most frequent preview triggers are
+  selection clicks and Shift+wheel radius steps. Per such trigger the reuse costs the signature (0.03 ms head / 0.08 ms body)
+  instead of a pairing (0.75 / 2.2 ms). At a geometry change (commit, Undo/Redo, Shift+S, topology) the display re-derives
+  its report anyway since A2 — the preview then shares it and adds no pairing; "pair per trigger" would add one there too.
+- *Why it is safe (AR-1/INV-3):* `mirai.symmetry` is unchanged and stays cache-free. The signature covers every input of
+  `vertex_correspondence` (definition with plane and seam-edge ids, ids, positions, seam end points / validity, read at
+  `symmetry.py`), so Undo/Redo, topology, Shift+S and a scene load make the report stale by construction, not by an
+  invalidation call someone can forget; the cache is also new per scene. The **op path is unchanged**: the tools still
+  pair once at `begin()` (SS2), so a display-side value can never reach the mesh — the worst a stale value could do is a
+  wrong preview, and the equality tests pin that it is not.
+- *Alternatives:* (a) pair per trigger — simplest, +0.75 / 2.2 ms per selection or settings trigger and at every geometry
+  change on top of the display's report; (b) a mesh version counter — the Core has none (a Core change); (c) hand the
+  preview's correspondence into `begin()` — would save one pairing at the first move (≈ 2.2 ms body) but makes the op depend
+  on a display cache; not done, an option if the reference PC shows the first move as a hitch.
+- *Noticed, not changed:* `symmetry_report` pairs twice (`symmetry_state` re-derives the correspondence), so one report costs
+  1.6 ms head / 4.7 ms body in the container. Halving it would touch `mirai.symmetry` (`symmetry_state` taking a given
+  correspondence) — outside this slice; a candidate for the viewport cost work.
+
+**Probe (D-4).** `experiments/drag_cost/probe_drag_gl.py` has the scenario **`soft_w_sym`**: the `soft_w` rows under symmetry X
+(Shift+S, undone after each row), seed = a paired +X vertex next to the front-most seam vertex plus its paired +X one-ring
+(off the plane; every radius step 5 / 15 / 30 / 50 % crosses the middle — the label counts the seam vertices reached), both
+metrics, head and body. Same row kinds as `soft_w` (first move, commit frame, preview, settings change, selection click,
+move p50/p95), plus `symmetry report (per geometry change)`. **Container** (Xeon @ 2.8 GHz, llvmpipe, 200 moves; not the
+reference PC, REFERENCE_HARDWARE §4), ms, p50 (move p50 / p95):
+
+| Asset | Rows | moving V | `move` p50 / p95 | first move | commit frame | preview | report | selection click |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| head, plain `soft_w` | 8 | 9–151 | 0.38–2.26 / 0.50–3.59 | 0.7–2.8 | 3.2–3.8 | 0.07–0.38 | — | 0.5–0.9 |
+| head, `soft_w_sym` | 8 | 15–176 | 0.60–2.72 / 0.95–4.16 | 1.7–5.5 | 6.4–10.3 | 0.12–0.72 | 1.7 | 1.2–2.9 |
+| body, plain `soft_w` | 8 | 10–142 | 0.61–2.19 / 0.91–3.94 | 1.3–3.4 | 8.4–13.4 | 0.14–0.91 | — | 2.0–2.7 |
+| body, `soft_w_sym` | 8 | 32–342 | 1.22–5.05 / 1.92–**7.35** | 4.3–9.8 | 15.5–18.9 | 0.29–1.45 | 4.9–8.4 | 6.7–9.8 |
+
+Every row is under the 8 ms bar **in the container**; the worst symmetric rows are the body, euclidean 30 % and geodesic 50 %
+(p95 7.18 / 7.35 ms; plain worst 3.94). *(Reading, not measured:)* the reference PC's worst plain row was 7.73 ms (body 15 % euclidean), so several
+symmetric body rows will likely be over the bar there; by AD-020 §7 that is a viewport question (the cost-fix slice of
+WP-VIEW-PERF-01), not a reason to change the semantics. The moved set roughly doubles (both sides); the first move adds the
+tool's pairing, the commit frame the report (shared with the display). The body's selection click is picking-dominated
+(the seed sits on the chest: occlusion test ≈ 6 of 7 ms in a profile; the preview inside it ≈ 1 ms, no pairing).
+**Reference PC (for Manu):** `python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` (both assets by
+default, ≈ 30 s in the container), paste the whole output.
+
+**Lab.** No gate row changed. The bands come from `Application`; a new Lab test pins that MARK and BLOCK show the same bands
+(preview, gesture, after commit) on `subd_cube` X.
+
+**Tests.** New `tests/test_application_soft_bands_symmetric.py` (32): both sides, partners in one band, seam with its one
+weight, not plain Soft's field (3 valid cases × 2 metrics); preview == op weights (W/E/R × 3 cases); nothing computed during
+the gesture; settings mid-gesture; commit / Undo / Redo / Esc; Shift+S cycle on `subd_cube` (X, Y = no pair → no bands, Z,
+off, Undo); scene load; D-2 (selection and hover-armed); no pairing per selection/settings trigger; one report per geometry
+change for preview and display together; Alt+O. Rewritten for the new behaviour: `test_symmetric_soft_selection.py` (the
+"bands stay hidden" test → "the gesture shows its own weights"), `test_application_symmetry_cycle.py` (one assertion), the A2 tripwire in `test_symmetric_transform.py` (member list), and
+**one test in `test_application_soft_bands.py`**: `test_no_preview_under_a_symmetry_definition` pinned exactly the
+behaviour D-5 replaces ("bands on both sides are … SS3"), so "that file unchanged" and D-5 cannot both hold. Read by the
+order's intent ("ohne Symmetrie bitgenau wie heute"), it is replaced in place by
+`test_under_a_symmetry_definition_the_preview_is_the_symmetric_field`; every other test in the file is byte-identical and
+green. Probe: `experiments/drag_cost/tests/test_probe_soft.py` +6 (variants, arguments, seeds, report, an end-to-end run).
+
+**Ran** (container, `xvfb-run -a`, once at the end): `tests` first run 3113 passed, **1 failed**, 51 skipped —
+the A2 tripwire `test_symmetric_transform.py::test_production_app_switches_symmetry_only_through_its_command`, which lists
+every `symmetry` member of `Application`, now also sees the read-only `_symmetry_reports`; the list is extended (no new way to
+set a definition); `tests` re-run once: **3114 passed, 51 skipped, 0 failed** (the same 51 skips as SS1/SS2: GL tests without
+`libEGL` in the container — environment, not green — plus the intentional skips of `test_symmetric_removal.py`);
+`experiments/symmetry_lab/tests` **455 passed, 4 skipped**; `playground/tests` **1241 passed**;
+`experiments/drag_cost/tests` **54 passed** (the two end-to-end probe runs ran under xvfb, not skipped). While working only
+targeted runs.
+
+**Agent choices (`PROVISIONAL`):** D-2 → no bands; reuse through the A2 report (above); the probe's seed rule
+(next to the front-most seam vertex); `soft_w_sym` not in the probe's default scenarios (the default output stays the one
+already recorded).
+
+**Not done (as ordered):** Re-Symmetrize (A3), J, any `src/core` or SS2 semantic change, the band look, viewport
+optimisation; the reference-PC run (Manu).
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Du hast entschieden: Symmetrie kommt in die App (`src/main.py`), danach baut man dort die symmetrische
@@ -959,3 +1065,39 @@ dazu nichts sagst, bleibt R6-A.
 Manu: Ok, ich stimme zu (2026-10-14, zur Empfehlung: beide Seiten → deine Auswahl gewinnt wie heute ohne Soft, jeder
 Einflusspunkt folgt dem nächsten gewählten Punkt; nur Mitte → alles in der Ebene; R6-A bleibt). **Gebaut am selben Tag**
 (Nachtrag in der SS2-Notiz); Praxistest oben um die Zeilen 5 und 6 ergänzt.
+
+**SS3 gebaut (2026-10-14): die Bänder zeigen unter Symmetrie beide Seiten.** Mit Symmetrie an (Shift+S) und Soft an (O)
+siehst du die farbigen Einflusspunkte jetzt auf deiner Seite **und** gespiegelt auf der anderen; ein Punkt und sein
+Spiegelpunkt haben immer dieselbe Farbe, Punkte auf der Mitte genau eine. Die Vorschau ist genau das, was W/E/R danach
+bewegen; während des Ziehens wandern die Punkte mit, ohne neu gerechnet zu werden. Ist die Auswahl eine, die Soft + Symmetrie
+ablehnt (ein gewählter Punkt ohne Spiegelpartner, magenta), zeigt die App **keine** Bänder (Vorschlag, `PROVISIONAL`) — die
+Ablehnung steht wie bisher in der Statuszeile, sobald du ziehst. Am Aussehen der Bänder ändert sich nichts. Damit fehlt vor
+dem gemeinsamen Praxistest J nur noch Re-Symmetrize (A3, nach der Review von §10).
+
+**Praxistest SS3 (Bänder beidseitig, ca. 10 Minuten; optional vor J).** Start: `git pull`, dann `python src/main.py` (Kopf).
+
+1. Shift+S → `Symmetrie X (valid)`. O → Soft an.
+2. Einen Punkt seitlich neben der Mitte wählen (z. B. am Nasenflügel).
+3. Shift+Mausrad hoch, bis die Farbpunkte über die Mitte reichen; dann wieder runter.
+4. W ziehen (einmal auch E und R), loslassen; danach Strg+Z und Strg+Y.
+5. Alt+O (Bänder aus), Shift+Mausrad, Alt+O (Bänder an).
+6. Shift+S weiter: Y, Z, aus.
+7. Den Mann laden: `python src/main.py examples/meshes/Man_With_Shoes_basemesh.obj`, Shift+S (`partial`), O; einen magenta
+   Punkt (ohne Partner) wählen, dann W ziehen; danach einen normalen Punkt neben der Mitte (z. B. an der Brust) wählen.
+
+| # | Was du prüfst | Erwartet | Verdikt |
+|---|---|---|---|
+| 1 | Bänder nach Auswahl (Schritt 2) | Farbpunkte auf beiden Seiten, spiegelbildlich, gleiche Farben links und rechts | |
+| 2 | Radius über die Mitte (Schritt 3) | die Bänder wachsen auf beiden Seiten gleich; an der Mitte kein Sprung, Mittelpunkte in einer Farbe | |
+| 3 | Ziehen (Schritt 4) | die Punkte wandern beidseitig mit; was gefärbt war, bewegt sich; nach dem Loslassen und nach Strg+Z/Strg+Y passen die Bänder zur Form | |
+| 4 | Bänder aus/an (Schritt 5) | aus: keine Farbpunkte, Soft wirkt weiter; an: wieder beidseitig | |
+| 5 | Shift+S weiter (Schritt 6) | Y und Z: keine Bänder (der Kopf hat dort keine Spiegelpaare, jede Auswahl wäre „ohne Partner“); aus: Bänder wieder nur um deine Auswahl | |
+| 6 | Mann (Schritt 7) | magenta Punkt: keine Bänder, W → Ablehnung in der Statuszeile, nichts bewegt sich; normaler Punkt: Bänder beidseitig | |
+| 7 | Gefühl | Auswahl, Radius-Rad und Loslassen fühlen sich so flüssig an wie ohne Symmetrie | |
+
+**Messung auf deinem PC (bitte vor J):** aus dem Repo-Ordner
+`python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` (öffnet ein unsichtbares Fenster, misst Kopf
+und Mann, im Container ≈ 30 s) und die ganze Ausgabe in den Chat kopieren. `soft_w` ist Soft ohne Symmetrie zum Vergleich,
+`soft_w_sym` dasselbe unter Symmetrie X, mit Radien, die über die Mitte reichen. Im Container liegt alles unter der
+8-ms-Grenze, der schlechteste symmetrische Wert am Mann aber knapp (7,35 ms); auf deinem PC lag schon Soft ohne Symmetrie bei
+7,73 ms — ein Überschreiten wäre eine Viewport-Frage, keine Änderung am Verhalten.

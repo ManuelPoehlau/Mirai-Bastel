@@ -12,7 +12,8 @@
   bitwise mirror, seam exactly on the plane, `symmetry_state` unchanged, one Undo step,
   Undo/Redo/Cancel exact; P-a (falloff seam vertices slide, a selected seam vertex keeps today's
   refusals, texts and pivot, D-3); R6-1 on the straddling fixtures of `test_weighted_transforms`;
-  refusals visible before anything moves; bands stay hidden under symmetry (D-5 is SS3).
+  refusals visible before anything moves; the gesture shows the op's own weights as bands
+  (D-5, SS3; the preview side is `test_application_soft_bands_symmetric.py`).
 """
 
 from __future__ import annotations
@@ -680,17 +681,18 @@ def test_both_sides_selections_run_with_one_undo_step(op_name):
     assert app.key_press(ESC) and _positions(mesh) == start
 
 
-# -- bands stay hidden under symmetry (D-5 is SS3) ------------------------------------------
+# -- bands: the gesture shows the op's own weights, both sides (D-5, SS3) -------------------
 
 
-def test_bands_stay_hidden_during_a_symmetric_soft_gesture():
-    from mirai.soft_selection import GLSoftBandOverlay
+def test_a_symmetric_soft_gesture_shows_its_own_weights_as_bands():
+    from mirai.soft_selection import GLSoftBandOverlay, SoftBands
 
     app = _app("head_basemesh", "X", overlay=GLSoftBandOverlay)
     _select(app, _seeds(app.scene.mesh, "X", "ring"))
     _soft_on(app)
-    assert app.soft_bands == EMPTY_BANDS
-    _drag(app, W)
-    assert app.soft_bands == EMPTY_BANDS
+    preview = app.soft_bands
+    assert preview.count > 0
+    op = _drag(app, W)
+    assert app.soft_bands == SoftBands.from_weights(op.context.params["influence"]) == preview
     app.key_release(W)
-    assert app.soft_bands == EMPTY_BANDS
+    assert app.soft_bands != EMPTY_BANDS

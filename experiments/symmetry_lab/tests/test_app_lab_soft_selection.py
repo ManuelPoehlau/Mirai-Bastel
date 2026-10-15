@@ -181,3 +181,48 @@ def test_both_sides_and_seam_only_selections_run_alike_in_mark_and_block(seeds_o
         assert len(app.history) == before[1] + 1
         results[mode] = app.scene.mesh.export_state()
     assert results[GateMode.BLOCK] == results[GateMode.MARK]
+
+
+# -- bands (AD-SYM-04 D-5, SS3): they come from `Application`; MARK and BLOCK show the same -----
+
+
+def _band_lab(mode: GateMode):
+    from mirai.soft_selection import GLSoftBandOverlay
+    from symmetry_lab.run import HEADLESS_GL_TYPES, build_app_lab
+
+    from ._app_lab_support import HEIGHT, WIDTH
+
+    app, lab = build_app_lab(
+        "subd_cube", WIDTH, HEIGHT,
+        gl_types={**HEADLESS_GL_TYPES, "soft_overlay_type": GLSoftBandOverlay},
+    )
+    assert press(app, lab, SHIFT_S) and lab.axis == "X"
+    if lab.gate_mode is not mode:
+        assert press(app, lab, SHIFT_B)
+    return app, lab
+
+
+def test_symmetric_bands_are_the_apps_and_alike_in_mark_and_block():
+    from mirai.soft_selection import SoftBands, symmetric_influence
+
+    shown = {}
+    for mode in (GateMode.BLOCK, GateMode.MARK):
+        app, lab = _band_lab(mode)
+        seeds, corr = _ring_on_plus_x(app)
+        app.selection.set(seeds)
+        app.viewport.on_selection_changed()
+        assert press(app, lab, O)
+        for _ in range(6):  # 15 % -> 100 %: the falloff crosses the plane on subd_cube
+            assert app.pointer_scroll(SHIFT_WHEEL_UP) is True
+        soft = app.soft_settings
+        field = symmetric_influence(
+            app.scene.mesh, seeds, soft.world_radius, soft.metric, soft.curve, soft.curve_power
+        )
+        preview = app.soft_bands
+        assert preview == SoftBands.from_weights(field.weights) and preview.count > 0
+        assert press(app, lab, W) and app.pointer_motion(400, 300, 12.0, 7.0)
+        during = app.soft_bands
+        assert during == preview  # the op's own weights (fixed at begin())
+        app.key_release(W)
+        shown[mode] = (preview, during, app.soft_bands)
+    assert shown[GateMode.BLOCK] == shown[GateMode.MARK]

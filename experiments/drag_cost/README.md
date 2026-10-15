@@ -20,7 +20,7 @@ reference PC.
 
 | File | What it is |
 |---|---|
-| `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one entry per scenario in `SCENARIOS` (`plain_w`; `soft_w` = the Soft Selection drag with the band overlay, WP-SOFT-01 S2b) |
+| `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one entry per scenario in `SCENARIOS` (`plain_w`; `soft_w` = the Soft Selection drag with the band overlay, WP-SOFT-01 S2b; `soft_w_sym` = the same under symmetry X, AD-SYM-04 SS3) |
 | `probe_navigation_gl.py` | CLI probe (WP-VIEW-PERF-01): orbit, pan, zoom, first hover after a camera change, hover move, selection click, orbit with wire, the real event loop, plain/soft W - per event + frame on head, body and `gollum.obj`; see "Navigation and picking" below |
 | `_paths.py` | sys.path bootstrap (pattern copied from `soft_selection/_paths.py`) |
 | `tests/` | headless tests: argument handling, statistics, soft variants and report format, import boundary (no pyglet, no window); one end-to-end smoke run of `soft_w`, skipped without a GL context; `test_probe_navigation_args.py` for the navigation probe (arguments, asset paths, row budget, report format, import boundary) |
@@ -62,6 +62,17 @@ head and body. The same per-move rows as above (the `move` bar applies), plus ro
 
 `moving V` in the heading is the influenced set of the measured selection (seeds + band points).
 
+### Scenario `soft_w_sym` (AD-SYM-04 SS3, D-4)
+
+`soft_w` under symmetry X: Shift+S (one Undo step, undone after each row), seed = a paired +X vertex next to the
+front-most seam vertex + its paired +X one-ring (off the plane; at every default radius the falloff crosses the middle,
+the row label counts the seam vertices it reaches). Same rows; `preview recompute` is the symmetric field with the pairing
+reused (what the app does per selection or settings trigger), plus `symmetry report` (what a geometry change adds once,
+shared with the symmetry display). Not in the default scenarios. Container result and reading:
+[AD-SYM-04, implementation note SS3](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss3)
+(all rows under the bar in the container, worst body p95 7.35 ms); **the reference-PC run is open**:
+`python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym`.
+
 ## Run
 
 From the repo root (Windows command prompt / PowerShell and Linux alike; Linux headless: `xvfb-run -a`):
@@ -71,6 +82,7 @@ python experiments/drag_cost/probe_drag_gl.py
 python experiments/drag_cost/probe_drag_gl.py --assets head_basemesh --sizes 9 36
 python experiments/drag_cost/probe_drag_gl.py --moves 400
 python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w --metrics geodesic --sizes 15 30
+python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym
 python experiments/drag_cost/probe_drag_gl.py --list
 python -m pytest experiments/drag_cost/tests
 ```

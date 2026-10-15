@@ -76,7 +76,9 @@ Scope (binding, see the handoffs):
   `custom`, never zooms — the window tracks Ctrl like Shift, `ctrl_keys_after`, and
   `wheel_input` carries `{"ctrl"}`; Ctrl+Shift+wheel does nothing); Alt+O switches the
   influence bands on/off (no band points at all while off; the status line shows it). With a symmetry definition
-  (Shift+S, below) Soft + symmetry is refused visibly.
+  (Shift+S, below) W/E/R act on both sides (AD-SYM-04 SS2) and the bands show both sides, the
+  symmetric field (SS3); a selected vertex without a mirror partner shows no bands and is refused
+  visibly at the first motion.
   Symmetry (AD-SYM-04 slice A1, Q-1 = E-1, key `PROVISIONAL`): Shift+S cycles the mesh's symmetry
   off → X → Y → Z → off (plane through the origin, seam = the edges at exactly 0 on that axis), one
   Undo step each; the status line says `Symmetrie X (valid)` / `Symmetrie X (partial, 54 ohne

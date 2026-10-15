@@ -591,6 +591,12 @@ Band count, colours and point size are `PROVISIONAL` look values for the S2 hand
 (F12), so influenced vertices on the far side stay visible through the mesh, as selected points do today —
 one thing to watch in S2c at large radii.
 
+*Note 2026-10-14 (AD-SYM-04 slice SS3, D-5, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss3)):*
+under a symmetry definition the bands show the symmetric field, both sides, with the same triggers and the same
+"preview == the op's weights at `begin()`" rule; a selection symmetric Soft refuses shows none. The look is unchanged
+(`PROVISIONAL`). Cost per §7: the preview reuses the app's symmetry report (keyed by the geometry); the reference-PC run of
+the symmetric `soft_w_sym` rows is open.
+
 ---
 
 ## 6. Q5 — Minimal S2 controls
@@ -702,7 +708,8 @@ timer is the follow-up.
 ## 8. E3 — Soft + Symmetry contact points (named, not designed)
 
 *Superseded 2026-10-14 (AD-SYM-04 slice SS2):* items 1 and 2 are gone — symmetric Soft runs; `Application` refuses only what
-`soft_selection.symmetric` refuses at `begin()` (a seed without partner; seeds on both sides or only on the seam, `PROVISIONAL`).
+`soft_selection.symmetric` refuses at `begin()` (a seed without partner; seeds on both sides or only on the seam, `PROVISIONAL` —
+these two lifted the same day by Manu's answer, AD-SYM-04 SS2 addendum).
 Item 3 is designed (AD-SYM-05), item 4 unchanged. The text below is kept as written.
 
 1. **`Application`, at `begin()` (authoritative; review F2).** Soft on while `mesh.symmetry_definition is not None`

@@ -72,5 +72,5 @@ class SoftBands:
         return tuple([position(v) for v in band if valid(v)] for band in self.bands)
 
 
-#: The no-influence state (soft off, empty selection, symmetry).
+#: The no-influence state (soft off, bands off, empty selection, a selection symmetric Soft refuses).
 EMPTY_BANDS = SoftBands()

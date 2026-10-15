@@ -171,6 +171,18 @@ class ReportCache:
         """Weicht der gelieferte Befund von der Geometrie `signature` ab?"""
         return self._report is None or signature != self._signature
 
+    def current(self, mesh: Mesh, signature: Optional[tuple] = None) -> SymmetryReport:
+        """Der Befund genau zur Geometrie `signature`, nie aufgeschoben: für einen Leser, dessen
+        Ergebnis zur jetzigen Geometrie passen muss (die Soft-Vorschau der App, AD-SYM-04 SS3,
+        deren Gewichte denen des folgenden `begin()` gleichen müssen)."""
+        if signature is None:
+            signature = geometry_signature(mesh)
+        if self.stale(signature):
+            self._report = symmetry_report(mesh)
+            self._signature = signature
+            self.recomputes += 1
+        return self._report
+
     def get(self, mesh: Mesh, signature: Optional[tuple] = None) -> SymmetryReport:
         if signature is None:
             signature = geometry_signature(mesh)
@@ -200,11 +212,18 @@ class SymmetryDisplay:
 
     `sink` = die GL-Senke (`set_segments(segments)`, `set_markers(seam, unpaired, ambiguous)`
     mit Weltpositionen, `draw(camera_uniforms)`; Layer, Farben und Größen kennt nur sie);
-    `defer` = „läuft gerade ein Transform?" (Modul-Docstring)."""
+    `defer` = „läuft gerade ein Transform?" (Modul-Docstring); `reports` = ein Befund-Cache, den
+    der Besitzer mit anderen Lesern teilt (die App: mit der Soft-Vorschau, AD-SYM-04 SS3) —
+    dann gilt dessen `defer`, nicht das übergebene."""
 
-    def __init__(self, sink, defer: Optional[Callable[[], bool]] = None) -> None:
+    def __init__(
+        self,
+        sink,
+        defer: Optional[Callable[[], bool]] = None,
+        reports: Optional[ReportCache] = None,
+    ) -> None:
         self.sink = sink
-        self.reports = ReportCache(defer)
+        self.reports = reports if reports is not None else ReportCache(defer)
         #: Viewport-Vertrag H1: True = beim nächsten Frame `sync()` aufrufen, auch ohne Meldung.
         self.dirty = False
         self._outlined: Optional[SymmetryReport] = None

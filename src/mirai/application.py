@@ -69,6 +69,7 @@ from .soft_selection import (
     SoftSettings,
     SoftSymmetryRefusal,
     compute_influence,
+    symmetric_influence,
 )
 from .topology.connect_per_face import EDGE_CONNECT_LABEL, TopologyToolError, apply_connect_edges
 from .topology.connect_vertices_per_face import (
@@ -85,7 +86,7 @@ from .symmetry_coordination import (
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
 from .symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
 from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
-from .symmetry_display import SymmetryDisplay
+from .symmetry_display import ReportCache, SymmetryDisplay
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
@@ -483,6 +484,13 @@ class Application:
         # AD-SYM-04 A2 (Q-2 = S-2): plane outline and problem markers; None = headless (no
         # `symmetry_overlay_type`, no display work at all).
         self._symmetry_display: SymmetryDisplay | None = None
+        # AD-SYM-04 SS3 (`PROVISIONAL`): one symmetry report per geometry, shared by the display
+        # and the soft preview, so the preview takes its correspondence from it instead of
+        # pairing the mesh per trigger. Keyed by `geometry_signature` (definition, ids,
+        # positions, seam), so Undo/Redo, topology, Shift+S and a scene load make it stale by
+        # construction; `mirai.symmetry` stays cache-free (AR-1/INV-3) and the tools still pair
+        # once per gesture start for the op itself. Fresh per scene (`init_scene`).
+        self._symmetry_reports = ReportCache(defer=self._symmetry_display_deferred)
 
         # WP-06 B6 Follow-up (Artist-Entscheidung Manu 2026-09-28): Undo/Redo
         # stellt jetzt auch die Selection wieder her, nicht nur das Mesh.
@@ -631,6 +639,7 @@ class Application:
         self.viewport.bind_camera(self.camera)
         self._soft_overlay = None
         self._soft_bands = EMPTY_BANDS
+        self._symmetry_reports = ReportCache(defer=self._symmetry_display_deferred)
         if soft_overlay_type is not None:
             self._soft_overlay = soft_overlay_type()
             self.viewport.add_overlay(self._soft_overlay)
@@ -638,7 +647,7 @@ class Application:
         self._symmetry_display = None
         if symmetry_overlay_type is not None:
             self._symmetry_display = SymmetryDisplay(
-                symmetry_overlay_type(), defer=self._symmetry_display_deferred
+                symmetry_overlay_type(), reports=self._symmetry_reports
             )
             self.viewport.add_overlay(self._symmetry_display)
         self._apply_display()
@@ -760,7 +769,8 @@ class Application:
         symmetry view at begin, and a changed definition must not slide in underneath them.
         The change is reported to the viewport as a topology change (K-3): a definition-only
         change moves nothing, but every overlay that reads the definition must re-derive, the
-        soft bands too (hidden under a definition) - the same notification Undo of it gets."""
+        soft bands too (the symmetric field under a definition, AD-SYM-04 D-5) - the same
+        notification Undo of it gets."""
         if self.interaction_owner is not None:
             return False
         axis = next_axis(current_axis(self.scene.mesh))
@@ -1903,36 +1913,56 @@ class Application:
 
     def _soft_preview_refresh(self, shown_by_gesture: bool = False) -> None:
         """Recompute the preview bands (E3). No-op without a sink, and while a running op
-        owns the bands. Soft off, an empty selection or a symmetry definition show nothing
-        (bands on both sides are AD-SYM-04 D-5, slice SS3)."""
+        owns the bands. Soft off or an empty selection show nothing; under a symmetry
+        definition the bands are the symmetric field (AD-SYM-04 D-5, slice SS3)."""
         if self._soft_overlay is None or self._soft_op_running:
             return
         soft = self._soft
-        mesh = self.scene.mesh
         # Bands off (S2d E7): no influence work for display, nothing shown.
-        shown = soft.enabled and soft.bands_visible and mesh.symmetry_definition is None
+        shown = soft.enabled and soft.bands_visible
         seeds = self._soft_seeds() if shown else None
-        if seeds:
-            weights = compute_influence(
-                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power,
-            )
+        weights = self._soft_preview_weights(seeds) if seeds else None
+        if weights is not None:
             self._soft_push(SoftBands.from_weights(weights))
             self._soft_gesture_shown = self._soft_gesture_shown or shown_by_gesture
         else:
             self._soft_push(EMPTY_BANDS)
 
+    def _soft_preview_weights(self, seeds: set[VertexId]) -> dict[VertexId, float] | None:
+        """The weights the next gesture's `begin()` computes for `seeds`, by the same function
+        with the same arguments (preview == op weights, F9). Under a definition: the symmetric
+        field, its correspondence from the shared report of the current geometry (the tool
+        derives its own, equal one at `begin()`). None = no bands: a selection symmetric Soft
+        refuses (D-2) shows none (`PROVISIONAL`), never plain Soft's field; the refusal itself
+        is shown by the gesture, at `begin()`, as before."""
+        soft = self._soft
+        mesh = self.scene.mesh
+        if mesh.symmetry_definition is None:
+            return compute_influence(
+                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power,
+            )
+        correspondence = self._symmetry_reports.current(mesh).correspondence
+        try:
+            field = symmetric_influence(
+                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power, correspondence=correspondence,
+            )
+        except SoftSymmetryRefusal:
+            return None
+        return field.weights
+
     def _soft_show_op_weights(self) -> None:
         """At `begin()`: the bands become the op's own weights (E4), so the preview and the
-        gesture cannot disagree; nothing is computed."""
+        gesture cannot disagree; nothing is computed. Under symmetry the op's weights are the
+        symmetric field, both sides (AD-SYM-04 D-5)."""
         if self._soft_overlay is None:
             return
         # Also with bands off: the gesture still owns the display (a bands toggle mid-gesture
         # takes effect when it ends), it just has nothing to show (S2d E7).
         self._soft_op_running = True
         self._soft_gesture_shown = True
-        if not self._soft.bands_visible or self.scene.mesh.symmetry_definition is not None:
-            # Under symmetry the bands stay hidden during the gesture too (AD-SYM-04 D-5 is SS3).
+        if not self._soft.bands_visible:
             self._soft_push(EMPTY_BANDS)
             return
         weights = self.tool_manager.active_tool.operation.context.params["influence"]

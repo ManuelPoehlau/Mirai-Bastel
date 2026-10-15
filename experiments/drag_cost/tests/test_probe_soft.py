@@ -84,3 +84,71 @@ def test_soft_scenario_runs_end_to_end_with_the_window_chain():
     assert any(n.startswith("preview recompute") for n in names)
     assert any(n.startswith("settings change") for n in names)
     assert len(result.samples) == 4 and result.influenced >= result.selected
+
+
+# -- soft_w_sym (AD-SYM-04 SS3, D-4) ----------------------------------------------------------
+
+
+def test_symmetric_soft_variants_are_the_soft_variants():
+    sym = probe.SCENARIOS["soft_w_sym"]
+    assert sym.variants("head_basemesh", None, None) == probe.SCENARIOS["soft_w"].variants(
+        "head_basemesh", None, None
+    )
+    assert probe.SOFT_SCENARIOS == ("soft_w", "soft_w_sym")
+    args = probe.parse_args(["--scenarios", "soft_w_sym", "--sizes", "15", "--metrics", "geodesic"])
+    assert args.scenarios == ["soft_w_sym"] and args.sizes == [15]
+    assert probe.parse_args([]).scenarios == ["plain_w", "soft_w"]  # default unchanged
+
+
+@pytest.mark.parametrize("bad", [["--sizes", "7"], ["--metrics", "manhattan"]])
+def test_symmetric_soft_arguments_are_checked_like_soft_w(bad):
+    with pytest.raises(SystemExit):
+        probe.parse_args(["--scenarios", "soft_w_sym", *bad])
+
+
+@pytest.mark.parametrize("asset", ["head_basemesh", "man_with_shoes_basemesh"])
+def test_symmetric_seeds_are_paired_on_plus_x_next_to_the_seam(asset):
+    from loaders.assets import asset_path
+    from mirai.scene_factory import build_core_scene_from_obj
+    from mirai.symmetry import CorrespondenceState, vertex_correspondence
+    from mirai.symmetry_axis import set_symmetry_axis
+
+    mesh = build_core_scene_from_obj(asset_path(asset)).mesh
+    set_symmetry_axis(mesh, "X")
+    corr = vertex_correspondence(mesh)
+    seed, seeds = probe.seed_off_plane_with_ring(mesh)
+    assert seed in seeds and len(seeds) >= 2
+    for vid in seeds:
+        assert corr[vid].state is CorrespondenceState.PAIRED and mesh.vertex_position(vid)[0] > 0.0
+    neighbours = {o for e in mesh.vertex_edges(seed) for o in mesh.edge_vertices(e)}
+    assert any(corr[o].state is CorrespondenceState.SEAM for o in neighbours)
+
+
+def test_report_prints_symmetric_soft_rows():
+    result = _fake_result(scenario="soft_w_sym")
+    text = "\n".join(probe.report_lines([result], ("GL 3.3", "test"), 1))
+    assert "[soft_w_sym] head_basemesh: 326 vertices" in text
+    assert "r  5 % euclidean: seeds   5 V, moving    9 V" in text
+
+
+def test_symmetric_soft_scenario_runs_end_to_end_with_the_window_chain():
+    pytest.importorskip("pyglet")
+    import importlib
+
+    try:
+        src_main = importlib.import_module("main")
+        results, _ = probe.run_probe(
+            ["head_basemesh"], [15], moves=4, warmup=1, scenarios=["soft_w_sym"],
+            src_main=src_main, metrics=["geodesic"],
+        )
+    except Exception as exc:  # no display / GL context in this environment
+        if type(exc).__name__ in {"NoSuchDisplayException", "ImportError"} or "display" in str(exc).lower():
+            pytest.skip(f"no GL context available: {exc}")
+        raise
+    (result,) = results
+    names = [name for name, _ in result.extras]
+    assert names[0].startswith("first move") and names[1].startswith("commit frame")
+    assert "preview recompute (sym field + bands)" in names
+    assert "symmetry report (per geometry change)" in names
+    assert " X, seam " in result.label and not result.label.endswith("seam  0 V")
+    assert len(result.samples) == 4 and result.influenced > result.selected

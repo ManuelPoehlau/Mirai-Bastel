@@ -37,6 +37,7 @@ from mirai.application import Application  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
 from mirai.interaction.bindings import build_default_bindings  # noqa: E402
 from mirai.interaction.input import KNIFE_CONTEXT, Input  # noqa: E402
+from mirai.soft_selection import SoftBands, symmetric_influence  # noqa: E402
 from mirai.symmetry import SymmetryState, symmetry_state  # noqa: E402
 from mirai.symmetry_axis import AXIS_NORMALS, ORIGIN, current_axis  # noqa: E402
 from mirai.symmetry_coordination import completeness_report, delta_check  # noqa: E402
@@ -193,7 +194,8 @@ def test_a_cycle_step_re_syncs_extra_overlays():
 
 
 def test_the_soft_bands_follow_the_cycle():
-    """Bands are hidden under a definition (AD-020 §8); a cycle step refreshes them both ways."""
+    """Under a definition the bands are the symmetric field (AD-SYM-04 D-5, SS3); a cycle step
+    refreshes them both ways."""
     app = make_app(soft_overlay_type=_BandSink)
     vid = sorted(app.scene.mesh.all_vertex_ids(), key=int)[0]
     app.selection.set({vid})
@@ -203,7 +205,11 @@ def test_the_soft_bands_follow_the_cycle():
     shown = app.soft_bands
     assert shown.count > 0
     assert app.key_press(SHIFT_S)
-    assert app.soft_bands.count == 0
+    soft = app.soft_settings
+    field = symmetric_influence(
+        app.scene.mesh, {vid}, soft.world_radius, soft.metric, soft.curve, soft.curve_power
+    )
+    assert app.soft_bands == SoftBands.from_weights(field.weights) != shown
     for _ in range(3):
         assert app.key_press(SHIFT_S)
     assert app.scene.mesh.symmetry_definition is None

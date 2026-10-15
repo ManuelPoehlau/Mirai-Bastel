@@ -33,6 +33,12 @@ per-move rows it prints, once per row: the first move (`begin()` incl. influence
 push), the commit frame (`key_release` + `sync`, which recomputes the preview), the preview
 recompute itself (`compute_influence` + bands for the seed, standalone), a settings change
 end to end (Shift+O key + `sync`) and a selection click (pick + preview, one vertex).
+`soft_w_sym` (AD-SYM-04 SS3, D-4): the same rows under symmetry X (Shift+S, one Undo step, undone
+after the row), seed = the front-most *paired* vertex on +X + its paired +X one-ring (off the
+plane, so a radius step can cross it; the label counts the seam vertices the falloff reaches).
+The preview is the symmetric field; its standalone row reuses the pairing as the app does for a
+selection or settings trigger, and a separate row times the symmetry report a geometry change
+(commit, Undo, Shift+S) adds once, shared with the symmetry display.
 
 Numbers from a container must be labelled as such
 (`docs/architecture/REFERENCE_HARDWARE.md` §4); the reference PC decides. Output is
@@ -185,7 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--warmup", type=_non_negative_int, default=DEFAULT_WARMUP,
                         help=f"unmeasured moves before each row (default: {DEFAULT_WARMUP})")
     parser.add_argument("--scenarios", nargs="+", default=["plain_w", "soft_w"],
-                        help="scenario names (see --list; default: plain_w soft_w)")
+                        help="scenario names (see --list; default: plain_w soft_w; "
+                             "soft_w_sym = soft_w under symmetry X)")
     parser.add_argument("--list", action="store_true",
                         help="print scenario and asset names and exit")
     return parser
@@ -204,7 +211,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     bad = [s for s in args.scenarios if s not in SCENARIOS]
     if bad:
         parser.error(f"unknown scenario {bad[0]!r}; known: {', '.join(SCENARIOS)}")
-    if "soft_w" in args.scenarios:
+    if any(s in SOFT_SCENARIOS for s in args.scenarios):
         steps, metrics = soft_choices()
         if args.sizes:
             bad_sizes = [p for p in args.sizes if p not in steps]
@@ -217,7 +224,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         if bad_metrics:
             parser.error(f"unknown metric {bad_metrics[0]!r}; known: {', '.join(metrics)}")
     elif args.metrics:
-        parser.error("--metrics only applies to the soft_w scenario")
+        parser.error("--metrics only applies to the soft_w scenarios")
     return args
 
 
@@ -467,13 +474,51 @@ def configure_soft(app, radius_percent: int, metric: str) -> None:
         raise RuntimeError(f"could not configure soft selection: {soft.status_text()}")
 
 
+def seed_off_plane_with_ring(mesh):
+    """`soft_w_sym`: a paired +X vertex next to the front-most seam vertex (off the plane but
+    close to it, so the radius steps cross the middle) and its paired +X one-ring - the side
+    the app's K-side rule calls plain. Without a seam: the front-most paired +X vertex."""
+    from mirai.symmetry import CorrespondenceState, vertex_correspondence
+
+    corr = vertex_correspondence(mesh)
+
+    def front(vid):
+        return (mesh.vertex_position(vid)[2], int(vid))
+
+    def eligible(vid) -> bool:
+        return corr[vid].state is CorrespondenceState.PAIRED and mesh.vertex_position(vid)[0] > 0.0
+
+    def ring(vid):
+        return {o for edge in mesh.vertex_edges(vid) for o in mesh.edge_vertices(edge) if eligible(o)}
+
+    seam = [v for v, c in corr.items() if c.state is CorrespondenceState.SEAM]
+    near = ring(max(seam, key=front)) if seam else set()
+    candidates = near or {v for v in mesh.all_vertex_ids() if eligible(v)}
+    if not candidates:
+        raise RuntimeError("soft_w_sym: no paired vertex on +X")
+    seed = max(candidates, key=front)
+    return seed, ring(seed) | {seed}
+
+
 def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int) -> ScenarioResult:
     """Soft W drag: seed = front-most vertex + one-ring, `variant` = (radius percent, metric)."""
+    return _soft_row(rig, variant, moves, warmup, symmetric=False)
+
+
+def scenario_soft_w_sym(rig: Rig, variant: tuple[int, str], moves: int, warmup: int) -> ScenarioResult:
+    """`soft_w` under symmetry X (AD-SYM-04 D-4): seeds off the plane (`seed_off_plane_with_ring`)."""
+    return _soft_row(rig, variant, moves, warmup, symmetric=True)
+
+
+def _soft_row(rig: Rig, variant: tuple[int, str], moves: int, warmup: int, symmetric: bool) -> ScenarioResult:
     from pyglet import gl
 
     from mirai.interaction import commands
     from mirai.interaction.input import Input
-    from mirai.soft_selection import SoftBands, compute_influence
+    from mirai.soft_selection import SoftBands, compute_influence, symmetric_influence
+    from mirai.symmetry import CorrespondenceState
+    from mirai.symmetry_axis import current_axis
+    from mirai.symmetry_display import symmetry_report
 
     radius_percent, metric = variant
     app = rig.app
@@ -482,8 +527,14 @@ def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int)
     shift_o = Input("key", "o", frozenset({"shift"}))
     extras: list[tuple[str, Stats]] = []
 
+    if symmetric:
+        # Shift+S: off -> X, one Undo step (undone at the end of the row).
+        app.key_press(Input("key", "s", frozenset({"shift"})))
+        rig.viewport.sync()
+        if current_axis(mesh) != "X":
+            raise RuntimeError(f"{rig.asset}: Shift+S did not set symmetry X ({app.status_message})")
     configure_soft(app, radius_percent, metric)
-    seed, seeds = seed_with_ring(mesh)
+    seed, seeds = seed_off_plane_with_ring(mesh) if symmetric else seed_with_ring(mesh)
 
     # Selection click (pick + preview of one vertex), only if the click lands on the seed.
     sx, sy = app.camera.project_to_screen(mesh.vertex_position(seed), WIDTH, HEIGHT)
@@ -504,15 +555,38 @@ def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int)
     app.selection.set(set(seeds))
     rig.viewport.on_selection_changed()
     soft = app.soft_settings
+    label = f"r {radius_percent:2d} % {metric}"
 
-    # Preview recompute alone, the work `Application` does per triggering event.
-    def preview():
-        SoftBands.from_weights(
-            compute_influence(mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve)
-        )
+    if symmetric:
+        report = symmetry_report(mesh)
+        corr = report.correspondence
 
-    preview_samples = [_time_ms(preview) for _ in range(PREVIEW_REPS)]
-    extras.append(("preview recompute (influence + bands)", Stats.of(preview_samples)))
+        def field():
+            return symmetric_influence(
+                mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
+                correspondence=corr,
+            )
+
+        # Preview recompute as the app does it for a selection or settings trigger: the
+        # pairing comes from the shared report of the unchanged geometry.
+        preview_samples = [_time_ms(lambda: SoftBands.from_weights(field().weights))
+                           for _ in range(PREVIEW_REPS)]
+        extras.append(("preview recompute (sym field + bands)", Stats.of(preview_samples)))
+        # What a geometry change (commit, Undo, Shift+S) adds once, shared with the display.
+        report_samples = [_time_ms(lambda: symmetry_report(mesh)) for _ in range(PREVIEW_REPS)]
+        extras.append(("symmetry report (per geometry change)", Stats.of(report_samples)))
+        weights = field().weights
+        seam = sum(1 for v in weights if corr[v].state is CorrespondenceState.SEAM)
+        label += f" X, seam {seam:2d} V"
+    else:
+        # Preview recompute alone, the work `Application` does per triggering event.
+        def preview():
+            SoftBands.from_weights(
+                compute_influence(mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve)
+            )
+
+        preview_samples = [_time_ms(preview) for _ in range(PREVIEW_REPS)]
+        extras.append(("preview recompute (influence + bands)", Stats.of(preview_samples)))
 
     # Settings change end to end: Shift+O (curve) twice per rep, back at smooth; the second
     # press also leaves the preview computed for the measured selection.
@@ -523,7 +597,10 @@ def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int)
                 _time_ms(lambda: (app.key_press(shift_o), rig.viewport.sync()))
             )
     extras.append(("settings change (key + sync)", Stats.of(settings_samples)))
-    influenced_preview = app.soft_bands.count + len(seeds)
+    if symmetric:
+        influenced_preview = len(weights)  # seeds, partners and both sides' falloff
+    else:
+        influenced_preview = app.soft_bands.count + len(seeds)
 
     if not app.key_press(w) or app.transform_command is None:
         raise RuntimeError(f"{rig.asset}: W did not arm ({app.status_message})")
@@ -537,6 +614,8 @@ def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int)
         sample = rig.timed_frame(x, y, dx, dy)
         if i == 0:
             first_move = sample.move  # begin() incl. influence + the first band push
+            if not app.transform_interacting:
+                raise RuntimeError(f"{rig.asset}: the drag did not begin ({app.status_message})")
         if i >= warmup:
             samples.append(sample)
 
@@ -556,14 +635,19 @@ def scenario_soft_w(rig: Rig, variant: tuple[int, str], moves: int, warmup: int)
     rig.viewport.on_selection_changed()
     app.key_press(Input("key", "o"))  # soft off again: the next row starts from today's state
     rig.viewport.sync()
+    if symmetric:
+        app.key_press(ctrl_z)  # the Shift+S step: symmetry off again
+        rig.viewport.sync()
+        if mesh.symmetry_definition is not None:
+            raise RuntimeError(f"{rig.asset}: symmetry still on after the row")
     return ScenarioResult(
-        scenario="soft_w",
+        scenario="soft_w_sym" if symmetric else "soft_w",
         asset=rig.asset,
         vertex_count=len(mesh.all_vertex_ids()),
         selected=len(seeds),
         moves=moves,
         samples=tuple(samples),
-        label=f"r {radius_percent:2d} % {metric}",
+        label=label,
         influenced=influenced_preview,
         extras=tuple(extras),
     )
@@ -587,7 +671,10 @@ def _soft_variants(asset: str, sizes: list[int] | None, metrics: list[str] | Non
 SCENARIOS: dict[str, Scenario] = {
     "plain_w": Scenario(scenario_plain_w, lambda asset, sizes, metrics: list(sizes_for(asset, sizes))),
     "soft_w": Scenario(scenario_soft_w, _soft_variants),
+    "soft_w_sym": Scenario(scenario_soft_w_sym, _soft_variants),
 }
+#: Scenarios whose variants are (radius percent, metric).
+SOFT_SCENARIOS = ("soft_w", "soft_w_sym")
 
 
 def run_probe(
@@ -633,7 +720,7 @@ def report_lines(results: list[ScenarioResult], gl_info: tuple[str, str], moves:
             lines.append("")
             lines.append(f"[{r.scenario}] {r.asset}: {r.vertex_count} vertices")
         verdict = "OK" if r.stats("move").p95 <= THRESHOLD_P95_MS else "OVER"
-        if r.scenario == "soft_w":
+        if r.scenario in SOFT_SCENARIOS:
             lines.append(
                 f"  {r.label}: seeds {r.selected:3d} V, moving {r.influenced:4d} V  "
                 f"({r.updates_per_move.p50:.0f} store.update calls/move) {verdict}"
