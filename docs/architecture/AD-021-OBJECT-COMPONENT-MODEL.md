@@ -10,7 +10,8 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 [handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
 implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); **M2-2
 implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); **M2-3 implemented 2026-10-15** (Apply / Clear
-transform, §6.5; new Artist questions Q-14…Q-16); M2-4 follows ([handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+transform, §6.5; new Artist questions Q-14…Q-16); **M2-4 implemented 2026-10-15** (switching the edit object, Q-5/Q-8,
+§6.6) — **M2 is built**; Manu's practical tests (Kurzfassung, `docs/ATELIER.md` B6–B8) pending, nothing promoted. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -45,6 +46,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | agent | **M2-0 implemented** (Reference display, §6.2) and **M2-1 implemented** (placement in the draw and component paths, no UI, §6.3); no Core change; E-2, E-6…E-10 as in the handoff |
 | 2026-10-15 | agent | **M2-2 implemented** (object gesture W/E/R in mode `4`, `ObjectTransformCommand`, level status line, §6.4); no Core change; E-11, E-12 as in the handoff; Q-7 wording changed in AD-SYM-04 (E1 addendum) and `symmetry_axis.py`; Manu's practical test pending |
 | 2026-10-15 | agent | **M2-3 implemented** (Apply / Clear transform, first `CompositeCommand`, §6.5); no Core change; E-13 as in the handoff; pivot after Apply, the symmetric refusal and the keys are `PROVISIONAL` and asked as **Q-14…Q-16** |
+| 2026-10-15 | agent | **M2-4 implemented** (Q-5 gesture, E-14 `_set_edit_object` as the one place, `Viewport.set_edit_mesh`, Q-8 Undo through E-14, §6.6); no Core change; the M1 gap in `_restore_selection` is closed |
 
 ---
 
@@ -311,7 +313,8 @@ component edits.
 - **Picking.** Component picking only ever looks at the edit object's Mesh. Object picking (mode `4`) looks at every object
   that is not hidden — **including References** (A-2).
 - **Switching the edit object** (which gesture makes an object the edit object) is Artist UX for slice M2 (**Q-5**); slice M1
-  has exactly one editable object, so it needs no gesture.
+  has exactly one editable object, so it needs no gesture. *M2-4 (2026-10-15):* Q-5 built — select one Normal object in `4`, then
+  `1`/`2`/`3` (§6.6).
 - **Selection stays out of the modeling History** (V1_SPEC §3). The app's selection mirror snapshot (F-5) gains
   `objects` and the edit object. Whether Undo therefore switches back to the object a step was made in is Artist UX
   (**Q-8**, slice M2; M1 has one editable object).
@@ -658,6 +661,38 @@ exactly symmetric for an allowed bake and for an exact quarter turn X → Z, the
 bake → 2 fail; pivot not moved → 2; no symmetry check → 2; no entry rebuild → 1; no axis remap → 1; Clear without effect →
 2; composite order reversed survives the app tests (its parts are independent) and fails the direct composite test.
 
+### 6.6 M2-4 implementation note — switching the edit object (2026-10-15)
+
+Q-5 and Q-8 as answered, E-14 as in the handoff, no Core change. The handoff's gap is closed: `_restore_selection` no longer
+sets `scene.edit_object_id` itself.
+
+| Rule | Where | What |
+|---|---|---|
+| **E-14** — the one place | `Application._set_edit_object` | sets `scene.edit_object_id` and moves what hangs on the edit object's mesh: the viewport's overlay entry (`Viewport.set_edit_mesh`), the object entries (the previous edit object becomes one, the new one loses its entry — `_sync_object_views`), the pick cache, the hover, the soft radius (**the fourth radius event**, §4.8; `SoftSettings.world_radius` keeps its name, it holds object units). The symmetry report cache is keyed by the mesh's geometry and needs nothing; the soft and symmetry overlays get the new mesh through `Viewport.mesh` at the next sync. The callers own the component sets and the refusals. grep: no other writer of `edit_object_id` in `src/mirai` (`reset_scene` sets it on load, before the viewport exists) |
+| viewport API | `Viewport.set_edit_mesh(mesh, model_matrix)` | the smallest clean form: the entry with `SelectionOverlay` and all overlays is **rebuilt** for the new mesh (the old GPU geometry released), camera / aspect / material / draw style carried over, tool layers cleared, selection, edge and extra overlays marked dirty. The old mesh comes back as an ordinary object entry (a second rebuild) |
+| **Q-5** gesture | `_set_selection_mode` → `_edit_object_from_selection` | from `4` to `1`/`2`/`3` with **exactly one Normal** object selected: it becomes the edit object, then the mode is set and the components are cleared (order §4.4). Status `Mode: Vertex · editing 'gollum'` (plus the placed marker of M2-2). Nothing selected → a plain mode switch. Several objects → `… 2 objects selected - still editing 'head_basemesh'`; a Reference → `… 'gollum' is a Reference - still editing …` (RF-5); while an interaction owns the keys → no switch (the key gate already holds; the function says so for a direct dispatch). No Undo step; the next step's mirror snapshot carries the edit object |
+| **Q-8** | `_restore_selection` → E-14 | Undo/Redo restore the snapshot's edit object through E-14, so an Undo of a step made on another object makes that object the edit object again and draws it with its overlays; its component selection comes back with it. RF-5: a snapshot naming an object that is a Reference now does not switch |
+
+**Timing (container, not the reference PC; measured, not optimised, handoff §4):** switching to gollum 2.6 s, back to the
+head 3.0 s (each time both entries are rebuilt; gollum's is the cost). A click in `1` on gollum as the edit object 1.7 s
+(its pick cache is built at the first pick — WP-VIEW-PERF-01 territory).
+
+**Observed (GL smoke, xvfb):** head scene + gollum (placed); `4`, gollum selected, `1` → gollum is the edit object, a click
+picks a point on its head, `W` pulls it — the point and its overlay sit on gollum, the head is drawn as a plain entry; back
+to the head with `4` / `1`; `Ctrl+Z` makes gollum the edit object again and undoes the pull.
+
+**Tests:** `tests/test_edit_object_switch.py` (15: switch and back with viewport mesh, matrix and entries, no Undo step,
+several / Reference / nothing selected, during a gesture, component Move on the new placed edit object while the old mesh
+stays, overlays only on the edit object with colliding IDs, hover and pick at a shifted second mesh, Knife on the new edit
+object, soft radius recomputed, Q-8 Undo/Redo across a switch, the component selection of that object restored, Undo of
+state + add after a switch, RF-5 in `_restore_selection`, a dispatched mode command). **Mutation check:** no viewport swap →
+2 fail; `_restore_selection` with the old direct setter → 2; no gesture → 8; no soft radius → 1; no RF-5 guard → 1;
+Reference allowed in the gesture → 1. The explicit pick-cache invalidation in E-14 is belt-and-braces and survives (the
+cache's signature already holds `id(mesh)`). Two earlier tests follow Q-5 on purpose: `test_application_objects.py::
+test_a_mesh_step_after_an_object_step_still_undoes_in_order` (M1) clears the object selection before `1`, because it is about
+the edit cube; `test_object_transform.py::test_mode_switch_names_the_placed_edit_object` (M2-2) expects the new
+`· editing 'cube'` note.
+
 ## 7. Questions
 
 ### 7.1 For Manu (Artist)
@@ -881,6 +916,19 @@ Stört es, dass ein Objekt *im* anderen in `4` nicht anklickbar ist?
 **Fragen (Q-14…Q-16):** Tasten `Ctrl+A` / `Alt+Shift+A` gut? Pivot nach dem Übernehmen dort, wo er in der Welt war (wie Max),
 oder im neuen Ursprung? Ein gedrehtes symmetrisches Objekt lässt sich nicht übernehmen (eine freie Drehung ist nie genau
 90°) — ok so, oder brauchst du Einrasten beim Drehen?
+
+**M2-4 ist gebaut (2026-10-15) — Praxistest (ca. 5 Minuten), weiter in derselben Szene:**
+
+1. `4`, gollum anklicken (normal, grau), dann **`1`**: gollum ist jetzt das bearbeitete Objekt (Statuszeile
+   `Mode: Vertex · editing 'gollum'`). Punkte anklicken und mit `W` ziehen, `C`/Knife — alles an gollum; der Kopf leuchtet
+   nie mit auf. Der Wechsel dauert bei gollum ein paar Sekunden, der erste Klick auf gollum auch.
+2. `4`, Kopf anklicken, `2`: zurück am Kopf (Kanten-Modus).
+3. **`Ctrl+Z`**: die letzte Änderung war an gollum — Undo springt zu gollum zurück und nimmt sie zurück (Q-8). `Ctrl+Y`
+   wiederholt.
+4. Gegenproben: in `4` Kopf *und* gollum auswählen, `1` → kein Wechsel (Statuszeile sagt warum); gollum auf Referenz klicken,
+   auswählen, `1` → kein Wechsel (eine Referenz wird nie bearbeitet).
+
+**Frage:** Ist „auswählen, dann `1`/`2`/`3`" im Arbeitsfluss richtig, und stört die Wartezeit beim Wechsel auf gollum?
 
 **Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
 Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·

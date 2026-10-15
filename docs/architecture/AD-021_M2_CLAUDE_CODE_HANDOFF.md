@@ -6,6 +6,8 @@
 alle Artist-Gates für diese Slices sind beantwortet. **BUILD darf keine neue Erkenntnis behaupten.** Sieht beim Bauen
 etwas anders aus als hier beschrieben: anhalten und melden („Bei Widerspruch", §9).
 
+**Erledigt (2026-10-15):** M2-2, M2-3, M2-4 umgesetzt — AD-021 §6.4–§6.6; neue Fragen Q-14…Q-16. Dieses Dokument bleibt als Auftrag stehen.
+
 **Stand:** `main` @ `27f1c8a` — M0 (Core), M1 (Referenz-Objekte, Modus `4`), M2-0 (Referenz-Ghost) und M2-1 (Platzierung
 im Zeichnen und in allen Komponentenpfaden, noch ohne Bedienung) sind gemergt. Neuer Branch von `main`.
 

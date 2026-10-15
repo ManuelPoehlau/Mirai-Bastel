@@ -129,6 +129,8 @@ Scope (binding, see the handoffs):
   a Reference is locked and stays), Esc cancels exactly. AD-021 M2-3
   (`PROVISIONAL` keys): in `4`, Ctrl+A = Apply transform (bake the placement
   into the mesh), Alt+Shift+A = Clear transform (placement back to identity).
+  AD-021 M2-4: in `4` select one Normal object, then 1/2/3 = edit that object;
+  Undo/Redo switch back to the object a step was made on.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,

@@ -367,6 +367,9 @@ def test_a_mesh_step_after_an_object_step_still_undoes_in_order(tmp_path):
     app.key_press(FOUR)
     _click(app, WIDTH / 2, HEIGHT / 2)
     assert ref.state is ObjectState.NORMAL
+    # M2-4 (Q-5): `1` with the plate selected would make it the edit object; this test is about
+    # the edit cube, so the object selection is cleared first.
+    app.selection.clear_objects()
     app.key_press(ONE)
     mesh = app.scene.mesh
     vid = sorted(mesh.all_vertex_ids())[0]

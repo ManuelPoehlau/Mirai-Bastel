@@ -73,6 +73,9 @@ Objekts (Punkte, Linien, Flächen, Tool-Layer, Zusatz-Overlays) zeichnen mit `vi
 `view` - ihre Positionen bleiben Objektraum wie das Mesh, keine Overlay-Shader-Änderung. Jeder
 Objekt-Eintrag hat seine eigene Matrix (`set_object_entry(..., model_matrix=)`).
 
+Edit-Objekt wechseln (AD-021 M2-4, E-14): `set_edit_mesh(mesh, model_matrix)` baut den Eintrag
+mit den Overlays für ein anderes Mesh neu auf; `self.mesh` ist danach dieses Mesh.
+
 Referenz-Anzeige (AD-021 M2-0, §7.3): ein Eintrag mit `ignores_wireframe=True` wird auch im
 Wireframe gezeichnet (RD-3); `alpha < 1` zeichnet ihn als Ghost (RD-1) - nach allen opaken
 Einträgen, geblendet, ohne Depth-Write, damit das Edit-Objekt darin sichtbar bleibt.
@@ -277,6 +280,34 @@ class Viewport:
         return opaque + ghosts
 
     # -- Platzierung des Edit-Objekts (AD-021 M2-1) ------------------------------
+
+    def set_edit_mesh(self, mesh: Mesh, model_matrix: list[float] | None = None) -> None:
+        """Ein anderes Mesh wird das bearbeitete (AD-021 M2-4, E-14): der Eintrag mit
+        `SelectionOverlay` und allen Overlays wird für `mesh` neu aufgebaut (ein Rebuild - die
+        alte GPU-Geometrie wird freigegeben), Kamera, Aspect, Material und Anzeige gehen mit;
+        Auswahl-, Kanten- und Zusatz-Overlays lesen beim nächsten `sync()` `self.mesh`, die Tool-
+        Layer werden geleert. Das bisherige Mesh zeichnet der Aufrufer, wenn er will, als
+        Objekt-Eintrag (`set_object_entry`) - der Viewport weiß nichts von Objekten."""
+        old = self.render_mesh
+        release = getattr(old.store, "release", None)
+        if release is not None:
+            release()
+        self.mesh = mesh
+        self.render_mesh = RenderMesh(mesh, overlay=self.overlay, store_type=self._store_type)
+        if old.material is not None:
+            self.render_mesh.bind_material(old.material)
+            self.render_mesh.mark_material_dirty()
+        if old.camera is not None:
+            self.render_mesh.bind_camera(old.camera)
+            self.render_mesh.mark_camera_dirty(aspect=old.aspect)
+        self.model_matrix = None
+        self.set_model_matrix(model_matrix)
+        self._edge_highlight = False
+        self._apply_draw_style()
+        self.set_tool_overlay()
+        self._selection_overlays_dirty = True
+        self._edges_dirty = True
+        self._extra_overlays_dirty = True
 
     def set_model_matrix(self, matrix: list[float] | None) -> None:
         """Objekt -> Welt des Edit-Objekts (None = Identität): Mesh-Uniform und `view·model`

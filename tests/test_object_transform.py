@@ -412,10 +412,11 @@ def test_mode_switch_names_the_placed_edit_object():
     _object_mode(app, app.scene.edit_object)
     _gesture(app, R)
     app.key_press(ONE)
-    assert app.status_message == "Mode: Vertex · object 'cube' is placed (object level)"
+    # M2-4 (Q-5) names the edit object when the selected one already is it.
+    assert app.status_message == "Mode: Vertex · editing 'cube' · object 'cube' is placed (object level)"
     app.key_press(CTRL_Z)
     app.key_press(_key("2"))
-    assert app.status_message == "Mode: Edge"
+    assert app.status_message == "Mode: Edge · editing 'cube'"  # no "placed" after the Undo
 
 
 def _visible_vertex(app: Application) -> tuple[VertexId, tuple[float, float]]:

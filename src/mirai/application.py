@@ -603,6 +603,9 @@ class Application:
         # (Apply transform on a non-edit object), so their render entries rebuild on Undo/Redo.
         self._selection_undo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
         self._selection_redo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
+        # AD-021 M2-4: how long the last Q-5 switch of the edit object took (s, `time.perf_counter`;
+        # measured, not optimised - the viewport rebuilds the entries of both objects).
+        self.last_edit_switch_seconds: float = 0.0
         # Whether the last Undo/Redo touched the edit object's mesh (`_apply_undo_redo`).
         self._last_undo_redo_mesh_step: bool = True
 
@@ -836,6 +839,28 @@ class Application:
             cache.invalidate()
         self._sync_object_views()
         self._refresh_hover()
+
+    def _set_edit_object(self, object_id: ObjectId) -> None:
+        """AD-021 M2-4 (E-14): **the one place** that changes the edit object. Sets
+        `scene.edit_object_id` and moves everything that hangs on the edit object's mesh with
+        it: the viewport's overlay entry (`Viewport.set_edit_mesh`; the previous edit object
+        becomes an object entry in `_sync_object_views`), the pick caches, the hover and the
+        soft radius (the fourth radius event, §4.8). The symmetry report cache is keyed by the
+        mesh's geometry and needs nothing. The caller owns the component sets (§4.4: the Q-5
+        gesture clears them, Undo/Redo restores the ones of the step), the soft preview that
+        follows from them, and the refusals (a running interaction, a Reference - RF-5)."""
+        scene = self.scene
+        if object_id == scene.edit_object_id:
+            return
+        scene.edit_object_id = object_id
+        obj = scene.edit_object
+        self._pick_cache.invalidate()
+        self.selection.hovered = None
+        if self.viewport is not None:
+            self.viewport.remove_object_entry(object_id)
+            self.viewport.set_edit_mesh(obj.mesh, object_space.model_matrix(obj))
+        self._soft_refresh_radius()
+        self._sync_object_views()
 
     def _object_camera(self, obj: SceneObject):
         """The camera as the object's own space sees it (AD-021 M2-1, E-7): the `OrbitCamera`
@@ -1335,20 +1360,51 @@ class Application:
         löschen (R-SEL-2). Auch der bereits aktive Modus leert die Auswahl
         (Playground-Verhalten). Kein History-Eintrag; der Hover kommt mit der
         nächsten Mausbewegung im neuen Modus zurück. `4` (AD-021 M1) genauso; `clear()`
-        leert nur die Komponenten, die Objekt-Auswahl bleibt (§4.4)."""
+        leert nur die Komponenten, die Objekt-Auswahl bleibt (§4.4).
+
+        AD-021 M2-4 (Q-5): from `4` to `1`/`2`/`3` with exactly one Normal object selected, that
+        object becomes the edit object first (E-14; order §4.4: read `objects`, set the edit
+        object, clear the components). No Undo step; the next step's mirror snapshot carries it.
+        Several objects or a Reference selected: no switch, the status line says why."""
+        note = ""
+        if mode is not SelectionMode.OBJECT and self.selection.mode is SelectionMode.OBJECT:
+            note = self._edit_object_from_selection()
         self.selection.mode = mode
         self.selection.clear()
         self.selection.hovered = None
         if self.viewport is not None:
             self.viewport.on_selection_changed()
         self._soft_preview_refresh()
-        text = f"Mode: {mode.name.capitalize()}"
+        text = f"Mode: {mode.name.capitalize()}{note}"
         edit = self.scene.edit_object
         if mode is not SelectionMode.OBJECT and not object_space.is_identity(edit.transform):
             # AD-021 Q-6 (status line first, L-4): the edit object carries a placement.
             text += f" · object {edit.name!r} is placed (object level)"
         self._set_status(text)
         return True
+
+    def _edit_object_from_selection(self) -> str:
+        """Q-5: switch the edit object to the one Normal object selected in `4` (E-14). Returns
+        the status-line note: whom `1`/`2`/`3` now edit, or why the edit object stayed."""
+        scene = self.scene
+        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
+        edit = scene.edit_object
+        if not selected:
+            return ""
+        if len(selected) > 1:
+            return f" · {len(selected)} objects selected - still editing {edit.name!r}"
+        (obj,) = selected
+        if obj.state is ObjectState.REFERENCE:
+            return f" · {obj.name!r} is a Reference - still editing {edit.name!r}"
+        if obj.id == edit.id:
+            return f" · editing {edit.name!r}"
+        owner = self.interaction_owner
+        if owner is not None:
+            return f" · not while the {owner} interaction runs - still editing {edit.name!r}"
+        started = time.perf_counter()
+        self._set_edit_object(obj.id)
+        self.last_edit_switch_seconds = time.perf_counter() - started
+        return f" · editing {obj.name!r}"
 
     # -- Contextual C: Split / Edge Connect / Vertex Connect (WP-06 B6, AD-017) --
 
@@ -2847,10 +2903,16 @@ class Application:
     def _restore_selection(self, snapshot: tuple) -> None:
         mode, vertices, edges, faces, objects, edit_object_id = snapshot
         scene = self.scene
-        # An Undo that removed an object drops it from the object selection (§4.6, R-9); the
-        # edit object comes back with the entry (M1 never changes it - M2, Q-8).
-        if edit_object_id in scene.objects and edit_object_id != scene.edit_object_id:
-            scene.edit_object_id = edit_object_id
+        # An Undo that removed an object drops it from the object selection (§4.6, R-9). Q-8
+        # (M2-4): the edit object of the step comes back with the entry, through E-14 so the
+        # viewport and the caches follow; RF-5: a Reference never becomes the edit object.
+        target = scene.objects.get(edit_object_id)
+        if (
+            target is not None
+            and edit_object_id != scene.edit_object_id
+            and target.state is not ObjectState.REFERENCE
+        ):
+            self._set_edit_object(edit_object_id)
         selection = self.selection
         selection.mode = mode
         selection.vertices = set(vertices)
