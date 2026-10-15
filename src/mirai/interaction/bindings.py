@@ -20,6 +20,9 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
 Display (Artist Input Truth, WP-06 B5a E42: vorher O):
 - D              → Display-Modus wechseln (Shaded → Flat Shaded → Wireframe)
 - Shift+D        → Wireframe Overlay AN/AUS
+- Ctrl+D         → Licht-Preset wechseln (Raitt 2:1 → Softbox → Warm/Kalt → Heute),
+                   Ctrl+Shift+D → Licht folgt der Kamera / steht in der Welt
+                   (Engineering-Tasten `PROVISIONAL`, keine Artist Input Truth)
 SetShaded/SetFlatShaded/SetWireframe bleiben ohne Taste.
 
 Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
@@ -188,6 +191,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("d", "shift"), cmd.TOGGLE_WIREFRAME_OVERLAY)
     # AD-021 M2-0 (§7.3 RD-2, Q-11; Taste `PROVISIONAL`, Display-Familie D/Shift+D).
     bs.set_default(_key("d", "alt"), cmd.TOGGLE_REFERENCE_GHOST)
+    # Worklight (2026-10-15, Tasten `PROVISIONAL`, Display-Familie D).
+    bs.set_default(_key("d", "ctrl"), cmd.CYCLE_LIGHT_PRESET)
+    bs.set_default(_key("d", "ctrl", "shift"), cmd.TOGGLE_LIGHT_SPACE)
 
     # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)

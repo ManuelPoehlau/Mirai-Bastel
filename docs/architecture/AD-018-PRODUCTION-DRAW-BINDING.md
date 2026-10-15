@@ -549,3 +549,31 @@ change rebuilds nothing. The edit object's overlays draw with `view·model` inst
 alpha=)`, `u_alpha` in the fragment shader; `alpha < 1` draws blended with depth test on and depth write off,
 after every opaque entry (AD-021 §7.3). (3) `GLRenderStore.release()` frees a removed entry's VertexList.
 Tests: `tests/test_object_space.py`, `tests/test_reference_display.py`, `tests/test_viewport_object_entries.py`.
+
+*Addendum 2026-10-15 (B5a.1 per-polygon Flat, Smooth without the diagonal, worklight — Manu's request
+"Dreiecke sollen nicht sichtbar sein; Lighting/Shading aus dem Lab in die App"):* the vertex group (§5) is
+unchanged; `RenderMesh` adds two **face-data resources** next to it, named to the store by a fifth optional
+contract method `declare_face_data(data, triangle_map, row_texels)` (no-op default): `triangle_faces` (per
+triangle in index-buffer order: its face row; structural only) and `face_shading` (per face one row of 9 vec4:
+Newell normal + corner count, four corner positions, four corner vertex normals; a move patches the rows of
+every face around a vertex whose normal changed, counter `face_data_uploads`). `GLRenderStore` keeps them as
+two buffer textures (`GL_RGBA32F` / `GL_R32F`, units 1 and 2 so pyglet's unit 0 stays free), uploads one
+`glBufferSubData` over the dirty range per draw, and the fragment shader finds its row through
+`gl_PrimitiveID` (one VertexList = one `glDrawElements`, so the count starts at 0). Flat uses the face's Newell
+normal: one normal per polygon, which is what the 2026-09-27 REJECT of per-triangle Flat asked for. Smooth on a
+quad blends the four corner normals bilinearly at the (u, v) where the pixel's view ray meets the quad's
+bilinear patch (Reshetov, "Cool Patches"). The patch does not depend on the triangulation, and its edges are
+the mesh edges, so neighbouring quads agree along shared edges. Two simpler mappings were tried and dropped:
+projecting the fragment onto the quad plane depends on the diagonal for bent quads, and intersecting the ray
+with one plane per quad leaves seams. Triangles and n-gons keep the interpolated vertex normal; with no face
+data (a store that never drew) the old paths remain. pyglet 2.1 has no setter for `samplerBuffer` uniforms;
+`_register_sampler_buffer_uniform()` reuses the `sampler2D` entry. **Worklight:** `light_rig` (promoted
+unchanged from the Shading Lab) resolves a Key + Fill rig to seven uniforms. `Viewport.render()` resolves it
+per frame with the bound camera and hands it to every store (`set_light_uniforms`). It is draw state only, not
+a resource and not an upload, the lab's T2 measurement carried over. Preset "Heute" reproduces the old
+`mix(base·0.35, base, N·L)` and stays the default of a bare store. The app starts with "Raitt 2:1". Open, only
+on the reference PC: does the GeForce 9800 GTX driver deliver `gl_PrimitiveID` and buffer textures reliably
+(`REFERENCE_HARDWARE.md` §2)? Tests: `tests/test_gl_shading.py` (the same bent quads triangulated along either
+diagonal give the same image, with the old per-triangle path as the failing control; no seams; "Heute" equals
+the old formula; zero uploads for light changes), `tests/test_render_mesh_face_data.py`,
+`tests/test_viewport_light.py`, `tests/test_light_rig.py`.

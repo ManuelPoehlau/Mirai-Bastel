@@ -39,7 +39,7 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 
 - ~~Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.~~ Gemessen 2026-10-11 (unten): `3.3.0` /
   `GeForce 9800 GTX/9800 GTX+/PCIe/SSE2`.
-- Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6).
+- Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6). Seit 2026-10-15 benutzt der Production-Shader beides, dazu Buffer-Texturen (AD-018 Nachtrag 2026-10-15): Sieht Flat auf diesem PC nicht pro Polygon aus oder Smooth fleckig, ist das der Befund.
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in

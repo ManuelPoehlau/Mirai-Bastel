@@ -66,6 +66,10 @@ SET_FLAT_SHADED = "SetFlatShaded"
 SET_WIREFRAME = "SetWireframe"
 # AD-021 M2-0 (§7.3 RD-2, `PROVISIONAL`): alle Referenzen schattiert <-> Ghost.
 TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
+# Worklight (Shading Lab promoted 2026-10-15; Tasten `PROVISIONAL`): Preset wechseln,
+# Bezugsraum Kamera <-> Welt.
+CYCLE_LIGHT_PRESET = "CycleLightPreset"
+TOGGLE_LIGHT_SPACE = "ToggleLightSpace"
 
 # --- Objekt-Platzierung (AD-021 M2-3, L-3; Namen und Tasten `PROVISIONAL`) ----
 # Apply = Platzierung ins Mesh übernehmen (Max "Reset XForm"); Clear = Platzierung auf

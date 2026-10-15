@@ -19,6 +19,18 @@ from __future__ import annotations
 
 from enum import Enum, auto
 
+from viewport.light_rig import (
+    APP_PRESET_ORDER,
+    DEFAULT_PRESET,
+    PRESETS,
+    SPACE_CAMERA,
+    SPACE_WORLD,
+    LightRig,
+)
+
+#: Anzeige-Namen der Bezugsräume in der Statuszeile.
+_SPACE_LABELS = {SPACE_CAMERA: "Kamera", SPACE_WORLD: "Welt"}
+
 # Bevorzugte Anzeige-Reihenfolge für die Cycle-Aktion.
 _MODE_CYCLE: tuple["DisplayMode", ...]
 
@@ -40,6 +52,10 @@ class DisplayState:
     ) -> None:
         self.mode = DisplayMode(mode)
         self.wireframe_overlay = bool(wireframe_overlay)
+        # Worklight (2026-10-15): Preset-Name und ein Bezugsraum, den der Artist umgeschaltet
+        # hat (None = der des Presets). Der Umschalter bleibt beim Preset-Wechsel stehen.
+        self.light_preset = DEFAULT_PRESET
+        self.light_space: str | None = None
 
     # -- Übergänge ----------------------------------------------------------
 
@@ -57,6 +73,24 @@ class DisplayState:
 
     def set_wireframe_overlay(self, on: bool) -> None:
         self.wireframe_overlay = bool(on)
+
+    def cycle_light_preset(self) -> None:
+        """Raitt 2:1 → Softbox → Warm/Kalt → Heute → ..."""
+        index = APP_PRESET_ORDER.index(self.light_preset)
+        self.light_preset = APP_PRESET_ORDER[(index + 1) % len(APP_PRESET_ORDER)]
+
+    def toggle_light_space(self) -> None:
+        """Licht folgt der Kamera <-> steht in der Welt."""
+        self.light_space = SPACE_WORLD if self.light_rig.space == SPACE_CAMERA else SPACE_CAMERA
+
+    @property
+    def light_rig(self) -> LightRig:
+        rig = PRESETS[self.light_preset]
+        return rig if self.light_space is None else rig.with_(space=self.light_space)
+
+    @property
+    def light_label(self) -> str:
+        return f"{self.light_preset} · {_SPACE_LABELS[self.light_rig.space]}"
 
     # -- Ableitungen für die Darstellung ------------------------------------
 

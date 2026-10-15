@@ -1,11 +1,14 @@
 # Viewport Shading Lab (WP-SHADE-LAB-01)
 
 **Status: Nicht Artist-validiert.**
-Stand: Slice 1 — Zwei-Licht-Rig (Key + Fill), gebaut 2026-09-26.
+Stand: Slice 1 — Zwei-Licht-Rig (Key + Fill), gebaut 2026-09-26. **Seit 2026-10-15 in der App** (Manu:
+Standard „Raitt 2:1“, Kamera/Welt umschaltbar, „Warm/Kalt“ als Preset): das Rig liegt jetzt in
+`src/viewport/light_rig.py` (`lab_rig.py` re-exportiert es), die Formel im Production-Shader
+(`src/viewport/gl_render_store.py`), Bedienung in der App: `Ctrl+D` / `Ctrl+Shift+D`
+([WP-06 Intake Log](../../docs/architecture/WP-06_INTAKE_LOG.md), [AD-018 Nachtrag 2026-10-15](../../docs/architecture/AD-018-PRODUCTION-DRAW-BINDING.md)).
 
 Eigenständiges Forschungsfenster für die Frage, welches Worklight die **Form** beim Modellieren am
-besten lesbar macht. Das Lab ist ein Experiment, keine Production-Beleuchtung. Production
-(`src/viewport/gl_render_store.py`, `LIGHT_DIR`, `FRAGMENT_SRC`) bleibt unverändert.
+besten lesbar macht. Das Lab bleibt der Ort für die Regler (HUD), Aufnahmen und spätere Slices.
 
 Spezifikation und Hintergrund:
 
@@ -97,12 +100,12 @@ Verhalten im Detail:
 ## Das Rig
 
 Pro Bild rechnet Python aus den Reglern sieben Uniforms (`lab_rig.resolve()`). Der Shader
-(`lab_store.FRAGMENT_SRC`) rechnet dann:
+(seit 2026-10-15 der Production-Shader `gl_render_store.FRAGMENT_SRC`) rechnet dann:
 
 ```
 Licht = Grundhelligkeit + KeyFarbe · wrap(N·L_key, w_key) + FillFarbe · wrap(N·L_fill, w_fill)
 wrap(x, w) = max((x + w) / (1 + w), 0)
-Farbe = Grundfarbe · Licht        (Selection-Highlight danach wie in Production)
+Farbe = Grundfarbe · Licht
 ```
 
 - **Richtung:** Azimut/Höhe → `(cos H · sin A, sin H, cos H · cos A)`. Bezugsraum „Welt“ = Weltachsen.
@@ -114,10 +117,12 @@ Farbe = Grundfarbe · Licht        (Selection-Highlight danach wie in Production
   ändert also nur den Farbton, nie die Helligkeit. Details im Docstring von `lab_rig.kelvin_to_rgb()`.
 - **Weichheit:** Wrap-Lighting. 0 = harte Lambert-Grenze wie heute.
 
-Technik: `ShadingLabStore` ist eine Unterklasse des Production-`GLRenderStore`. Sie übernimmt den
-Vertex-Shader per Import und alle Buffer-Pfade unverändert. Eigen sind nur der Fragment-Shader und die
-Licht-Uniforms in `draw()`. Das Rig ist keine Ressource im `ResourceStore`. Es wird nur beim Zeichnen als
-Uniform gesetzt.
+Technik: `ShadingLabStore` ist eine Unterklasse des Production-`GLRenderStore`. Bis 2026-10-15 hatte sie
+einen eigenen Fragment-Shader und eine eigene `draw()`. Seit der Übernahme in die App zeichnet sie mit dem
+Production-Programm und gibt nur das Rig als Licht-Uniforms weiter (`set_light_uniforms`). Damit zeigt das Lab
+auch die neue Schattierung (Flat pro Polygon, Smooth ohne Diagonale). Nebenbei behoben: Die alte Lab-`draw()`
+setzte `u_model` nicht (seit AD-021 M2-1 nötig) und zeichnete deshalb kein Mesh mehr. Das Rig ist keine
+Ressource im `ResourceStore`. Es wird nur beim Zeichnen als Uniform gesetzt.
 
 ## Presets (F1–F4)
 
@@ -134,7 +139,7 @@ Das sind **Startpunkte des Agents, keine Empfehlungen.** Es gibt keine Artist-En
 - F2–F4 wurden gegenüber dem Handoff nicht verändert. Keines ist ausgebrannt (siehe `evidence/`).
 - „Heute“ reproduziert die Production-Formel `mix(base·0.35, base, N·L)` = `base · (0.35 + 0.65 · N·L)` (T1).
 
-Die Bilder in `evidence/` stammen aus `evidence.py` (480×360, Software-GL, Kopf, Standardkamera):
+Die Bilder in `evidence/` stammen aus `evidence.py` (480×360, Software-GL, Kopf, Standardkamera; neu erzeugt 2026-10-15 mit dem Production-Shader):
 `production_glrenderstore.png`, `f1_heute.png`, `f2_raitt_2_1.png`, `f3_softbox.png`, `f4_warm_kalt.png`.
 
 ## Was die automatischen Tests beweisen — und was nicht
@@ -147,7 +152,7 @@ Die Bilder in `evidence/` stammen aus `evidence.py` (480×360, Software-GL, Kopf
 | T4 `test_rig_math.py` | Richtungsmathematik: weltfest ist kamera-unabhängig, kamerafest bleibt im Kamerarahmen konstant, die Kopplungsformel stimmt, „Heute“ = `normalize(0.4, 0.6, 0.7)`. |
 | T5 `test_rig_math.py` | Temperatur: Luminanz = 1 von 2500 bis 10000 K, 6500 K neutral, warm/kalt in die richtige Richtung. |
 | T6 `test_rig_math.py` | Die Python-Referenz `shade()` ist Lambert bei Wrap 0, hellt mit Wrap hinter der Schattengrenze auf, und ein ausgeschalteter Fill trägt nichts bei. |
-| T7 `test_lab_gl.py` | Der Lab-Store benutzt nie versehentlich den Production-Shader, auch wenn dieser zuerst kompiliert wurde. |
+| T7 `test_lab_gl.py` | Seit 2026-10-15: Der Lab-Store zeichnet mit dem Production-Programm und reicht das Rig als dessen Licht-Uniforms weiter (bis dahin: Programm-Isolation vom Production-Shader). |
 | T8 `test_lab_gl.py`, `test_import_boundary.py` | `glGetError() == 0` über alle Presets mit HUD. Keine Importe aus `playground/` oder anderen Experimenten. |
 | weitere | Das HUD verändert den nächsten Mesh-Frame nicht. Die Aufnahme ist exakt das HUD-lose Bild. Ein unbekannter Mesh-Name ergibt Exit-Code 2. Die Steuerungstabelle ist gleich der README. |
 
@@ -191,5 +196,6 @@ Bemerkt, aber bewusst nicht gebaut:
   rufen deshalb die Handler direkt auf. Ein Test, der `dispatch_event` benutzt, prüft sonst still gar nichts.
 - **Licht ziehen und Orbit teilen sich die linke Maustaste** (mit/ohne Alt). Ob das im Alltag kollidiert, ist eine UX-Frage (AD-013).
 
-Nächster Schritt: Artist-Verdikte zu F1/F8/F9. Danach entscheidet sich, ob Slice 2 (Screen-Cavity) oder
-Slice 3 (Hintergrund) kommt (Research §7).
+Nächster Schritt: Artist-Verdikte zu F1/F8/F9, jetzt im Praxistest in der App (`python src/main.py`,
+`Ctrl+D` / `Ctrl+Shift+D`). Danach entscheidet sich, ob Slice 2 (Screen-Cavity) oder Slice 3 (Hintergrund)
+kommt (Research §7).

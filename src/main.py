@@ -40,7 +40,12 @@ Scope (binding, see the handoffs):
   across gestures and applies from the next gesture on (B4.1, same as the
   Playground). Display (B5a, `PROVISIONAL`): D cycles Shaded → Flat
   Shaded → Wireframe, Shift+D toggles the wire overlay; edges are drawn
-  by `GLLineOverlay` after the mesh. Component modes (B5b, `PROMOTED`):
+  by `GLLineOverlay` after the mesh. Flat shades one normal per polygon and
+  Smooth blends the normals bilinearly over each quad, so no triangulation
+  diagonal shows (B5a.1, 2026-10-15). Worklight (Shading Lab promoted
+  2026-10-15, keys `PROVISIONAL`): Key + Fill, start "Raitt 2:1" following the
+  camera; Ctrl+D cycles Raitt 2:1 → Softbox → Warm/Kalt → Heute, Ctrl+Shift+D
+  toggles camera / world. Component modes (B5b, `PROMOTED`):
   1 / 2 / 3 switch to Vertex / Edge / Face (clears selection and hover);
   click selection, hover and W/E/R then work on edges / faces. Selected
   faces are a yellow fill (`GLTriangleOverlay`), selected edges yellow

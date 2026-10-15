@@ -28,8 +28,10 @@ class BenchmarkScenario1InitialBuild(unittest.TestCase):
     def test_initial_build_allocates_all_resources(self):
         vp = Viewport(create_cube())
         ids = vp.resource_ids()
+        # + Face-Daten (AD-018 Nachtrag 2026-10-15: Flat pro Polygon, bilineare Quad-Normalen).
         self.assertEqual(
-            set(ids.keys()), {"positions", "normals", "indices", "highlight_flags"}
+            set(ids.keys()),
+            {"positions", "normals", "indices", "highlight_flags", "face_shading", "triangle_faces"},
         )
         self.assertEqual(vp.benchmark_counters["structural_rebuilds"], 1)
 
@@ -136,7 +138,7 @@ class BenchmarkScenario6Stress(unittest.TestCase):
         )
         self.assertEqual(vp.benchmark_counters["vertex_updates"], 1000)
         # Resource-IDs (Identität) müssen über 1000 Moves stabil bleiben.
-        self.assertEqual(len(vp.resource_ids()), 4)
+        self.assertEqual(len(vp.resource_ids()), 6)
 
 
 if __name__ == "__main__":

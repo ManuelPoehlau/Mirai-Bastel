@@ -192,6 +192,8 @@ _DISPLAY_COMMANDS = (
     commands.SET_FLAT_SHADED,
     commands.SET_WIREFRAME,
     commands.TOGGLE_REFERENCE_GHOST,
+    commands.CYCLE_LIGHT_PRESET,
+    commands.TOGGLE_LIGHT_SPACE,
 )
 
 _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
@@ -2163,6 +2165,14 @@ class Application:
             self._sync_object_views()
             self._set_status(f"References: {'ghost' if self.reference_ghost else 'shaded'}")
             return True
+        if command in (commands.CYCLE_LIGHT_PRESET, commands.TOGGLE_LIGHT_SPACE):
+            if command == commands.CYCLE_LIGHT_PRESET:
+                self.display.cycle_light_preset()
+            else:
+                self.display.toggle_light_space()
+            self._apply_display()
+            self._set_status(f"Light: {self.display.light_label}")
+            return True
         if command == commands.CYCLE_DISPLAY_MODE:
             self.display.cycle()
         elif command == commands.TOGGLE_WIREFRAME_OVERLAY:
@@ -2186,6 +2196,7 @@ class Application:
             show_edges=self.display.show_edges,
             flat=self.display.mode is DisplayMode.FLAT_SHADED,
         )
+        self.viewport.set_light(self.display.light_rig)
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
 

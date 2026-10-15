@@ -21,6 +21,7 @@ from mirai.viewport import vecmath as v  # noqa: E402
 from viewport.gl_line_overlay import EDGE_COLOR, GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
+from viewport.light_rig import PRESET_HEUTE  # noqa: E402
 
 SIZE = 128
 BACKGROUND = (0.05, 0.05, 0.08)
@@ -47,6 +48,11 @@ def _app(gl_window) -> Application:
     )
     app.frame_scene()
     app.set_viewport_size(gl_window.width, gl_window.height)
+    # These tests are about the edge overlay. Under the app's start light ("Raitt 2:1",
+    # ambient 0.1) a cube face turned away from both lights is nearly the background colour, which
+    # the colour classifiers below cannot tell apart; "Heute" is the light they were written for.
+    app.display.light_preset = PRESET_HEUTE
+    app.viewport.set_light(app.display.light_rig)
     return app
 
 

@@ -1,6 +1,7 @@
 """GL tests on `head_basemesh` at a fixed 480x360 hidden window.
 
-T1 baseline identity, T2 zero upload, T3 controls act, T7 program isolation,
+T1 baseline identity, T2 zero upload, T3 controls act, T7 lab = production program (since the
+promotion 2026-10-15; until then: program isolation),
 T8 GL health, plus HUD state isolation and capture (E14/E15).
 Run headless (EGL) or under Xvfb, pattern `experiments/symmetry_lab/tests/`.
 """
@@ -8,20 +9,16 @@ Run headless (EGL) or under Xvfb, pattern `experiments/symmetry_lab/tests/`.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
-import textwrap
 
 import pytest
 
-from ._pyglet_headless import import_pyglet, needs_headless
+from ._pyglet_headless import import_pyglet
 
 pyglet = import_pyglet()
 
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 
 from viewport_shading_lab import evidence as ev  # noqa: E402
-from viewport_shading_lab._paths import EXPERIMENTS_DIR  # noqa: E402
 from viewport_shading_lab.lab_controls import ROW_IDS, LabState  # noqa: E402
 from viewport_shading_lab.lab_rig import PRESET_HEUTE, PRESET_ORDER, PRESET_RAITT, resolve  # noqa: E402
 from viewport_shading_lab.lab_store import ShadingLabStore  # noqa: E402
@@ -147,47 +144,17 @@ def test_camera_mode_light_follows_orbit_world_mode_does_not(window):
 # -- T7 ---------------------------------------------------------------------------------
 
 
-def test_t7_program_isolation_in_process(window):
+def test_t7_lab_draws_with_the_production_program(window):
+    """Since the promotion (2026-10-15) the lab has no shader of its own: it draws production's
+    program and hands its rig over as production's light uniforms."""
     window.switch_to()
-    production = GLRenderStore.program()
-    lab = ShadingLabStore.program()
-    assert lab is not production
-    assert "_program" in ShadingLabStore.__dict__
-    assert "u_key_dir" in lab.uniforms and "u_light_dir" not in lab.uniforms
-    assert "u_light_dir" in production.uniforms
-
-
-_ISOLATION_SCRIPT = textwrap.dedent(
-    """
-    import json, sys
-    sys.path.insert(0, {experiments!r})
-    from viewport_shading_lab._paths import ensure_paths
-    ensure_paths()
-    import pyglet
-    if {headless!r}:
-        pyglet.options["headless"] = True
-    window = pyglet.window.Window(32, 32, visible=False)
-    from viewport.gl_render_store import GLRenderStore
-    production = GLRenderStore.program()          # production compiled FIRST
-    from viewport_shading_lab.lab_store import ShadingLabStore
-    lab = ShadingLabStore.program()
-    print(json.dumps({{
-        "same": lab is production,
-        "lab_uniforms": sorted(lab.uniforms),
-        "parent_cache_untouched": GLRenderStore._program is production,
-    }}))
-    """
-)
-
-
-def test_t7_program_isolation_production_compiled_first():
-    script = _ISOLATION_SCRIPT.format(experiments=str(EXPERIMENTS_DIR), headless=needs_headless())
-    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
-    report = json.loads(result.stdout.strip().splitlines()[-1])
-    assert report["same"] is False
-    assert report["parent_cache_untouched"] is True
-    assert "u_key_dir" in report["lab_uniforms"]
+    # The class-level lazy cache compiles once per class; the source is production's.
+    assert "program" not in ShadingLabStore.__dict__ and "draw" not in ShadingLabStore.__dict__
+    assert sorted(ShadingLabStore.program().uniforms) == sorted(GLRenderStore.program().uniforms)
+    store = window.scene.store
+    rig = resolve(LabState(PRESET_RAITT).displayed_rig(), window.scene.camera)
+    store.set_rig_uniforms(rig)
+    assert store.light_uniforms() == rig
 
 
 # -- T8 ---------------------------------------------------------------------------------

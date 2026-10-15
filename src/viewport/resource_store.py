@@ -33,6 +33,9 @@ Zwei Backends:
 Die Entscheidungslogik (welche Update-Kategorie welche Ressource verändern
 darf, partial vs. rebuild) liegt in `RenderMesh`, NICHT hier.
 
+AD-018 Nachtrag 2026-10-15: eine fünfte optionale Methode, `declare_face_data`, benennt die
+Face-Daten, die `RenderMesh` neben der Vertex-Gruppe anlegt (siehe dort); Default No-Op.
+
 AD-018 §5 (Option B, additiv): Vier optionale Layout-/Bracket-Methoden
 (`declare_group`, `declare_uniform`, `begin_rebuild`, `end_rebuild`) ergänzen
 den Vertrag. Sie ersetzen die *inferierte* Aufrufreihenfolge, auf der der
@@ -132,6 +135,12 @@ class ResourceStore(ABC):
         """Deklariert, dass die Ressource `name` reine CPU-seitige
         Uniform-Daten ist (z. B. `camera_uniforms`, `material_uniforms`),
         kein Buffer/Attribut einer Drawable-Gruppe."""
+
+    def declare_face_data(self, data: str, triangle_map: str, row_texels: int) -> None:
+        """Deklariert die Face-Daten (AD-018 Nachtrag 2026-10-15): `data` hält je Face eine
+        Zeile aus `row_texels` vec4, `triangle_map` je Dreieck des Indexbuffers die Zeile seiner
+        Face. Beides sind keine Vertex-Attribute; ein drawbarer Store liest sie im Shader über die
+        Dreiecksnummer. Default: No-Op (die Daten bleiben gewöhnliche Ressourcen)."""
 
     def begin_rebuild(self, group: str) -> None:
         """Markiert den Beginn eines zusammengehörigen Rebuild-Zyklus für

@@ -12,6 +12,7 @@
 **Artist-Aussage 2026-09-26:** MatCap ist raus — siehe §2.4. Blenders Studio-Lösung (gebackenes Licht, A9) ist ein Kandidat für einen späteren Vergleichstest
 **Artist-Aussage 2026-09-26:** Hintergrundfarbe soll einstellbar sein, mit Presets für Kontrast und hell/dunkel — siehe §4.1b
 **Artist-Entscheidung 2026-09-26 (Priorität):** Die offenen Fragen sind nur noch durch Testen beantwortbar — **das Lab wird gebaut, beginnend mit Slice 1** (§7)
+**Artist-Entscheidung 2026-10-15 (Promotion):** Licht aus dem Lab in die App, **Standard „Raitt 2:1“**, Bezugsraum Kamera/Welt **umschaltbar**, „Warm/Kalt“ **als Preset**. Dazu: Dreiecke sollen weder in Flat noch in Smooth sichtbar sein. Umgesetzt in `src/viewport/light_rig.py` und `gl_render_store.py` (AD-018 Nachtrag 2026-10-15). Die Praxis-Verdikte zu F1/F8/F9 in der App stehen noch aus (§8)
 
 Kennzeichnung wie in `MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md`:
 **FAKT** (belegt im Repo oder in Quelle), **EINSCHÄTZUNG** (begründet, aber nicht gemessen), **OFFEN**.
@@ -333,7 +334,7 @@ Vorbild für die Form des Labs: `experiments/ad018_gl_render_store_verification/
    - Preset „Heute" ist exakt die jetzige Formel — Vergleichsbasis ohne Extra-Aufwand.
    - Schalter „folgt Kamera / weltfest" (F1).
    - Automatische Tests: Ressourcen-IDs bleiben beim Verstellen jedes Reglers gleich (prüft die K0-Einschätzung, statt sie nur zu behaupten); `glGetError() == 0`; Pixel-Unterschied zwischen „Heute" und jeder Variante > 0 (Regler wirkt wirklich).
-   - Umgesetzt in experiments/viewport_shading_lab/ (Commit 6167480). Artist-Verdikte zu F1/F8/F9 ausstehend.
+   - Umgesetzt in experiments/viewport_shading_lab/ (Commit 6167480). Am 2026-10-15 in die App übernommen (Artist-Entscheidung oben); Praxis-Verdikte zu F1/F8/F9 in der App ausstehend.
 2. **Slice 2 — Screen-Cavity (B3)** als unabhängig schaltbare Schicht. Getrennt von Slice 1, damit ein Verdikt immer nur eine Veränderung bewertet.
 3. **Slice 3 — Hintergrund und Kontrast** nach §4.1b (Vorschlag Manu, 2026-09-26): Einzelfarbe und Verlauf, Presets über Polarität × Kontraststufe, Preset „Heute" als Vergleichsbasis. Automatischer Tageszeit-Wechsel ist nicht Teil davon.
 4. **Slice 4 — Rim:** drittes echtes Licht gegen Fresnel-Term (F7). Bewusst *nach* dem Hintergrund, weil Slice 3 zeigen kann, dass Rim gar nicht mehr gebraucht wird (§4.1b).

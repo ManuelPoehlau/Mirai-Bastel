@@ -367,3 +367,60 @@ def test_display_key_during_armed_transform_keeps_transform(app):
     assert app.key_press(D) is True
     assert app.transform_command == cmd.MOVE
     assert app.display.mode is DisplayMode.FLAT_SHADED
+
+
+# -- Worklight (Shading Lab promoted 2026-10-15) ---------------------------------------------
+
+CTRL_D = _key("d", "ctrl")
+CTRL_SHIFT_D = _key("d", "ctrl", "shift")
+
+
+def test_light_starts_as_raitt_following_the_camera(app):
+    from viewport.light_rig import PRESET_RAITT, PRESETS
+
+    assert app.display.light_preset == PRESET_RAITT
+    assert app.viewport.light_rig == PRESETS[PRESET_RAITT]
+    assert app.display.light_label == "Raitt 2:1 · Kamera"
+
+
+def test_ctrl_d_cycles_the_light_presets(app):
+    seen = []
+    for _ in range(4):
+        assert app.key_press(CTRL_D) is True
+        seen.append(app.status_message)
+        assert app.viewport.light_rig == app.display.light_rig
+    assert seen == [
+        "Light: Softbox · Kamera",
+        "Light: Warm/Kalt · Kamera",
+        "Light: Heute · Welt",
+        "Light: Raitt 2:1 · Kamera",
+    ]
+
+
+def test_ctrl_shift_d_toggles_camera_and_world_and_sticks_across_presets(app):
+    app.key_press(CTRL_SHIFT_D)
+    assert app.status_message == "Light: Raitt 2:1 · Welt"
+    assert app.viewport.light_rig.space == "world"
+    app.key_press(CTRL_D)
+    assert app.status_message == "Light: Softbox · Welt"
+    app.key_press(CTRL_SHIFT_D)
+    assert app.status_message == "Light: Softbox · Kamera"
+
+
+def test_light_keys_do_not_change_the_display_mode(app, set_display_calls):
+    app.key_press(CTRL_D)
+    app.key_press(CTRL_SHIFT_D)
+    assert app.display.mode is DisplayMode.SHADED
+    assert all(call == (True, False, False) for call in set_display_calls)
+
+
+def test_camera_light_follows_the_orbit_world_light_does_not(app):
+    camera = app.viewport.render_mesh.camera
+    before = app.viewport.light_uniforms()["u_key_dir"]
+    camera.orbit(0.8, 0.2)
+    after = app.viewport.light_uniforms()["u_key_dir"]
+    assert max(abs(a - b) for a, b in zip(before, after)) > 0.1
+    app.key_press(CTRL_SHIFT_D)  # world
+    before = app.viewport.light_uniforms()["u_key_dir"]
+    camera.orbit(0.8, 0.2)
+    assert app.viewport.light_uniforms()["u_key_dir"] == before

@@ -80,6 +80,11 @@ Referenz-Anzeige (AD-021 M2-0, §7.3): ein Eintrag mit `ignores_wireframe=True` 
 Wireframe gezeichnet (RD-3); `alpha < 1` zeichnet ihn als Ghost (RD-1) - nach allen opaken
 Einträgen, geblendet, ohne Depth-Write, damit das Edit-Objekt darin sichtbar bleibt.
 
+Worklight (Shading Lab, in die App übernommen 2026-10-15): `set_light(rig)` setzt ein
+`light_rig.LightRig`; `render()` löst es pro Frame mit der gebundenen Kamera auf
+(`light_uniforms()`) und reicht die Uniforms per Duck-Typing (`set_light_uniforms`, nur
+`GLRenderStore`) an das Edit-Mesh und alle Objekt-Einträge. Start: "Raitt 2:1", Kamera.
+
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
 
@@ -126,6 +131,7 @@ def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
         for row in range(4):
             out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
     return out
+from .light_rig import DEFAULT_PRESET, PRESETS, SPACE_WORLD, LightRig, resolve
 from .render_mesh import RenderMesh
 from .resource_store import ResourceStore, TraceStore
 from .wireframe import edge_segments
@@ -195,6 +201,8 @@ class Viewport:
         self.show_faces = True
         self.show_edges = False
         self.flat = False
+        # Worklight (light_rig): pro Frame in `render()` aufgelöst und an alle Stores gegeben.
+        self.light_rig: LightRig = PRESETS[DEFAULT_PRESET]
 
     # -- Display (WP-06 B5a, E36) ----------------------------------------------
 
@@ -205,6 +213,20 @@ class Viewport:
         self.show_edges = bool(show_edges)
         self.flat = bool(flat)
         self._apply_draw_style()
+
+    def set_light(self, rig: LightRig) -> None:
+        """Setzt das Worklight (`light_rig.LightRig`). Reiner Draw-Zustand: keine Ressource,
+        kein Upload; im Bezugsraum Kamera folgt es der Kamera bei jedem `render()`."""
+        self.light_rig = rig
+
+    def light_uniforms(self) -> dict:
+        """Die Licht-Uniforms für die gebundene Kamera (headless beobachtbar). Eine Kamera ohne
+        `basis()` kann kein Kamera-Licht tragen; dann steht das Licht in der Welt."""
+        rig = self.light_rig
+        camera = self.render_mesh.camera
+        if getattr(camera, "basis", None) is None:
+            rig = rig.with_(space=SPACE_WORLD)
+        return resolve(rig, camera)
 
     # -- Objekt-Einträge (AD-021 M1) -------------------------------------------
 
@@ -467,6 +489,11 @@ class Viewport:
         (Duck-Typing-Bindung, siehe Paket-Docstring)."""
         if self.render_mesh.camera is None:
             return None
+        light = self.light_uniforms()
+        for render_mesh in (self.render_mesh, *self.object_entries.values()):
+            set_light_uniforms = getattr(render_mesh.store, "set_light_uniforms", None)
+            if set_light_uniforms is not None:
+                set_light_uniforms(light)
         # Reihenfolge (E40, E45, B7, H1): Mesh, Wire, Face-Highlight,
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.show_faces:

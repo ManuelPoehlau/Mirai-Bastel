@@ -107,8 +107,8 @@ Event + Frame auf Kopf, Körper und `gollum.obj` (21 875 V), mit Picking-Aufteil
 
 ### `viewport_shading_lab/`
 
-Viewport Shading Lab (WP-SHADE-LAB-01): eigenständiges Fenster für die Worklight-Forschung. Der
-Lab-Store ist eine Unterklasse des Production-`GLRenderStore` mit eigenem Fragment-Shader. Importiert
+Viewport Shading Lab (WP-SHADE-LAB-01): eigenständiges Fenster für die Worklight-Forschung. Seit
+2026-10-15 ist das Rig in der App; der Lab-Store zeichnet mit dem Production-Shader und liefert nur das Rig. Importiert
 nicht aus `playground/` oder anderen Experimenten. Stand Slice 1: Zwei-Licht-Rig (Key + Fill) mit
 Presets, A/B-Vergleich gegen „Heute“ und Aufnahme. Jede Rig-Änderung kostet nachweislich null
 Buffer-Uploads. Nicht Artist-validiert.

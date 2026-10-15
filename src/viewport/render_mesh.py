@@ -47,6 +47,16 @@ beginnt/endet, statt das aus "alle Trio-Mitglieder frisch alloziert" zu
 folgern. WAS berechnet wird und WANN `sync()` dispatcht, ist dadurch
 unverändert - nur wie der Store über die Ressourcen-Struktur informiert
 wird, ist neu.
+
+Face-Daten (AD-018 Nachtrag 2026-10-15, B5a.1 + Smooth ohne Dreiecks-Diagonale): neben der
+Gruppe legt `RenderMesh` zwei Daten-Ressourcen an, die der Fragment-Shader über die
+Dreiecksnummer (`gl_PrimitiveID`) liest - `triangle_faces` (je Dreieck in Indexbuffer-
+Reihenfolge die Zeile seiner Face) und `face_shading` (je Face eine Zeile, `FACE_ROW_FLOATS`:
+Newell-Normale + Eckenzahl, vier Eck-Positionen, vier Eck-Normalen). Damit schattiert Flat eine
+Normale pro Polygon statt pro Dreieck, und Smooth interpoliert die Normalen über ein Quad
+bilinear statt pro Dreieck linear. Die Vertex-Gruppe bleibt unverändert. `triangle_faces` ändert
+sich nur strukturell; `face_shading` wird beim Verschieben zeilenweise gepatcht (die Faces um
+alle Vertices, deren Normale sich geändert hat).
 """
 
 from __future__ import annotations
@@ -74,6 +84,14 @@ MESH_GROUP_ATTRIBUTES: dict[str, tuple[str, int]] = {
     "highlight_flags": ("highlight_flag", 1),
 }
 MESH_GROUP_INDEX = "indices"
+
+FACE_DATA = "face_shading"
+TRIANGLE_FACES = "triangle_faces"
+#: Texel (vec4) je Face-Zeile: (Normale, Eckenzahl), 4 Eck-Positionen, 4 Eck-Normalen.
+FACE_ROW_TEXELS = 9
+FACE_ROW_FLOATS = FACE_ROW_TEXELS * 4
+#: Ecken, für die der Shader bilinear interpoliert (nur Quads; Dreiecke sind schon linear exakt).
+_FACE_ROW_CORNERS = 4
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -109,6 +127,7 @@ class RenderMesh:
         # AD-021 M2-1 (E-9): Objekt -> Welt. Erst beim ersten `set_model_matrix` geschrieben, so
         # dass ein nie platziertes Objekt genau die bisherigen Ressourcen hat.
         self.store.declare_uniform("model_uniforms")
+        self.store.declare_face_data(FACE_DATA, TRIANGLE_FACES, FACE_ROW_TEXELS)
         self.derived = DerivedGeometry(mesh)
         self.dirty = DirtyState()
         self.overlay = overlay
@@ -126,6 +145,9 @@ class RenderMesh:
         # NICHT ändern, sonst wären Partial-Updates falsch adressiert.
         self._vertex_index: dict[VertexId, int] = {}
         self._triangle_indices: list[tuple[VertexId, VertexId, VertexId]] = []
+        # Face-Daten: FaceId -> Zeile, und je Dreieck (Indexbuffer-Reihenfolge) die Zeile.
+        self._face_row: dict[FaceId, int] = {}
+        self._triangle_face_rows: list[int] = []
 
         self.build()
 
@@ -156,9 +178,16 @@ class RenderMesh:
             vertex_id: i for i, vertex_id in enumerate(self.mesh.all_vertex_ids())
         }
         triangles: list[tuple[VertexId, VertexId, VertexId]] = []
+        face_row: dict[FaceId, int] = {}
+        triangle_face_rows: list[int] = []
         for face_id in self.mesh.all_face_ids():
-            triangles.extend(triangulate_mesh_face(self.mesh, face_id))
+            row = face_row[face_id] = len(face_row)
+            face_triangles = triangulate_mesh_face(self.mesh, face_id)
+            triangles.extend(face_triangles)
+            triangle_face_rows.extend([row] * len(face_triangles))
         self._triangle_indices = triangles
+        self._face_row = face_row
+        self._triangle_face_rows = triangle_face_rows
 
     def _positions_flat(self) -> list[float]:
         ordered = sorted(self._vertex_index.items(), key=lambda kv: kv[1])
@@ -172,6 +201,31 @@ class RenderMesh:
         flat: list[float] = []
         for tri in self._triangle_indices:
             flat.extend(float(self._vertex_index[v]) for v in tri)
+        return flat
+
+    def _face_row_data(self, face_id: FaceId) -> list[float]:
+        boundary = self.mesh.face_vertices(face_id)
+        corners = boundary[:_FACE_ROW_CORNERS]
+        padding = [0.0] * (4 * (_FACE_ROW_CORNERS - len(corners)))
+        position = self.mesh.vertex_position
+        normals = self.derived.vertex_normals
+        nx, ny, nz = self.derived.face_normals[face_id]
+        row = [nx, ny, nz, float(len(boundary))]
+        for v in corners:
+            x, y, z = position(v)
+            row += (x, y, z, 0.0)
+        row += padding
+        for v in corners:
+            x, y, z = normals[v]
+            row += (x, y, z, 0.0)
+        row += padding
+        return row
+
+    def _face_data_flat(self) -> list[float]:
+        # `_face_row` was filled in row order (`_rebuild_index_mapping`).
+        flat: list[float] = []
+        for face_id in self._face_row:
+            flat += self._face_row_data(face_id)
         return flat
 
     def _rebuild_resources(self) -> None:
@@ -194,6 +248,9 @@ class RenderMesh:
         if self.overlay is not None:
             put("highlight_flags", self.overlay.build_highlight_flags(self.mesh))
         self.store.end_rebuild(MESH_GROUP)
+
+        put(TRIANGLE_FACES, [float(row) for row in self._triangle_face_rows])
+        put(FACE_DATA, self._face_data_flat())
 
         if self.material is not None:
             put("material_uniforms", self.material.uniform_packet())
@@ -331,6 +388,17 @@ class RenderMesh:
             )
             self.stats.count("geometry_uploads")
             self.stats.count("partial_updates")
+
+        # Face-Daten: jede Face, die einen Vertex mit neuer Position oder neuer Normale hat.
+        faces: set[FaceId] = set()
+        for vertex_id in affected_vertices:
+            faces.update(self.derived.vertex_to_faces.get(vertex_id, ()))
+        for face_id in faces:
+            self.store.update(
+                FACE_DATA, self._face_row[face_id] * FACE_ROW_FLOATS,
+                self._face_row_data(face_id), FACE_ROW_FLOATS * FLOAT_BYTES,
+            )
+            self.stats.count("face_data_uploads")
 
     def _sync_selection(self) -> None:
         if self.overlay is None:
