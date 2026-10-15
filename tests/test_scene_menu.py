@@ -22,6 +22,7 @@ from scene_menu import (
     HEADER_HEIGHT,
     ROW_HEIGHT,
     SceneMenu,
+    add_named_reference,
     load_named_scene,
     scene_entries,
 )
@@ -142,3 +143,64 @@ def test_load_named_scene_swaps_the_mesh_and_reports_failures_as_status():
 
     assert load_named_scene(app, "no_such_scene") is False
     assert "failed" in app.status_message
+
+
+# -- AD-021 M1 (Q-10): Shift+click adds the row as a Reference ----------------------------
+
+
+def _row1_y() -> float:
+    return 500.0 - HEADER_HEIGHT - ROW_HEIGHT - 5
+
+
+def test_shift_click_on_a_row_adds_it_instead_of_loading():
+    loaded: list = []
+    added: list = []
+    menu = SceneMenu(scene_entries(), load=loaded.append, add=added.append)
+    menu.open(100.0, 500.0, 800, 600)
+
+    assert menu.press(110.0, _row1_y(), add=True) is True
+
+    assert added == [scene_entries()[1]]
+    assert loaded == []
+    assert not menu.is_open
+    menu.open(100.0, 500.0, 800, 600)
+    menu.press(110.0, _row1_y())  # a plain click still loads
+    assert loaded == [scene_entries()[1]]
+
+
+def test_shift_click_without_an_add_callback_loads_as_before():
+    loaded: list = []
+    menu = _menu(loaded)
+    menu.open(100.0, 500.0, 800, 600)
+    menu.press(110.0, _row1_y(), add=True)
+    assert loaded == [scene_entries()[1]]
+
+
+def test_add_named_reference_adds_the_cube_as_a_reference():
+    app = Application()
+    app.init_scene("cube")
+    edit = app.scene.edit_object_id
+
+    assert add_named_reference(app, "cube") is True
+
+    assert len(app.scene.objects) == 2
+    assert app.scene.edit_object_id == edit
+    assert app.status_message == "Added 'cube' as Reference"
+
+
+@pytest.mark.skipif(not _HEAD_ASSET.is_file(), reason="head_basemesh fehlt (examples/meshes/)")
+def test_add_named_reference_adds_a_registry_asset_under_its_name():
+    app = Application()
+    app.init_scene("cube")
+    assert add_named_reference(app, "head_basemesh") is True
+    (ref,) = [o for o in app.scene.objects.values() if o.id != app.scene.edit_object_id]
+    assert ref.name == "head_basemesh"
+    assert len(ref.mesh.all_vertex_ids()) == 326
+
+
+def test_add_named_reference_reports_a_failure_as_status():
+    app = Application()
+    app.init_scene("cube")
+    assert add_named_reference(app, "no_such_asset") is False
+    assert app.status_message.startswith("Add 'no_such_asset' failed")
+    assert len(app.scene.objects) == 1

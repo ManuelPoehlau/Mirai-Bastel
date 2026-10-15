@@ -370,3 +370,37 @@ def pick_component(
             cache=cache, occlusion=occlusion, depth_tolerance=depth_tolerance,
         )
     return pick_face(camera, mesh, sx, sy, width, height, cache=cache)
+
+
+# -- AD-021 M1: object picking (mode `4`) --------------------------------------
+
+
+def front_face_hit_t(camera, mesh, sx, sy, width, height, *, cache: PickCache | None = None):
+    """Ray parameter `t` of the front-most face hit under the cursor (None = no hit). The
+    same ray and triangles as `pick_face`, so `t` of two meshes is comparable along one ray."""
+    origin, direction = camera.screen_to_ray(sx, sy, width, height)
+    if cache is not None:
+        cache.refresh(camera, mesh, width, height)
+    best_t = None
+    for fid in _face_boundaries_within_bbox(mesh, cache, sx, sy):
+        for tri in triangulate_mesh_face(mesh, fid):
+            p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
+            t = _ray_triangle_intersection(origin, direction, p0, p1, p2)
+            if t is not None and (best_t is None or t < best_t):
+                best_t = t
+    return best_t
+
+
+def pick_object(camera, candidates, sx, sy, width, height):
+    """AD-021 M1: the key of the object whose surface is front-most under the cursor (or
+    None). `candidates` are `(key, mesh, cache)` triples - every object that is not hidden,
+    References included (RF-3); the key is opaque here. Mesh coordinates are world
+    coordinates while every transform is identity (M1; the ray -> object-space step is M2).
+    A tie keeps the earlier candidate."""
+    best_key = None
+    best_t = None
+    for key, mesh, cache in candidates:
+        t = front_face_hit_t(camera, mesh, sx, sy, width, height, cache=cache)
+        if t is not None and (best_t is None or t < best_t):
+            best_key, best_t = key, t
+    return best_key

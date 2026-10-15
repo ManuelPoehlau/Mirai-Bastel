@@ -23,7 +23,14 @@ from tests._bootstrap import _REPO_ROOT, _SRC
 from mirai.application import Application
 from mirai.interaction import commands
 from mirai.viewport.picking import pick_nearest_vertex
-from scene_menu import HEADER_HEIGHT, ROW_HEIGHT, SceneMenu, load_named_scene, scene_entries
+from scene_menu import (
+    HEADER_HEIGHT,
+    ROW_HEIGHT,
+    SceneMenu,
+    add_named_reference,
+    load_named_scene,
+    scene_entries,
+)
 
 pyglet = pytest.importorskip("pyglet")
 pyglet.options["headless"] = True
@@ -270,3 +277,33 @@ def test_deactivate_closes_the_menu(menu_wired):
     window.handlers["on_deactivate"]()
 
     assert not menu.is_open
+
+
+def test_shift_click_on_a_row_adds_it_as_a_reference():
+    """AD-021 M1 (Q-10, Q-9): Shift+click in the open menu adds instead of loading; the scene,
+    its edit object and the camera stay."""
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    loaded: list = []
+    menu = SceneMenu(
+        scene_entries(),
+        load=loaded.append,
+        add=lambda name: add_named_reference(app, name),
+    )
+    main_module.install_handlers(window, app, menu=menu)
+    h = window.handlers
+    edit, eye = app.scene.edit_object_id, app.camera.eye()
+
+    h["on_key_press"](key.SPACE, 0)
+    mx, my, _, _ = menu.rect
+    # Row 0 = cube.
+    h["on_mouse_press"](mx + 10, my - HEADER_HEIGHT - 5, mouse.LEFT, key.MOD_SHIFT)
+
+    assert loaded == []
+    assert len(app.scene.objects) == 2
+    assert app.scene.edit_object_id == edit
+    assert app.camera.eye() == eye
+    assert app.status_message == "Added 'cube' as Reference"

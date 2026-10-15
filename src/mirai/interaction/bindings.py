@@ -124,11 +124,13 @@ def build_default_bindings() -> BindingSet:
     """Erzeugt die Default-Belegung für den Viewport (und das Topology Lab)."""
     bs = BindingSet()
 
-    # --- Selection-Modi (Artist Input Truth: nur 1/2/3; WP-06 B5b E47 hat die
+    # --- Selection-Modi (Artist Input Truth: 1/2/3; WP-06 B5b E47 hat die
     # V1-Legacy-Tasten V und F entfernt - F ist für frame_selection reserviert).
+    # `4` = Objekt-Modus (V1_SPEC §2, AD-021 M1).
     bs.set_default(_key("1"), cmd.SET_VERTEX_MODE)
     bs.set_default(_key("2"), cmd.SET_EDGE_MODE)
     bs.set_default(_key("3"), cmd.SET_FACE_MODE)
+    bs.set_default(_key("4"), cmd.SET_OBJECT_MODE)
 
     # --- History / Interaktion ---------------------------------------------
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)

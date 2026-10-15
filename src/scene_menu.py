@@ -5,6 +5,10 @@ Szenen; ein Klick auf eine Zeile lädt sie, ein Klick daneben, `SPACE` oder
 `Esc` schließt. Der Wechsel selbst läuft über `Application.load_scene`
 (Auswahl/History/Pick-Cache zurückgesetzt, Kamera neu ausgerichtet).
 
+AD-021 M1 (Q-10, Manu 2026-10-15): Shift+Klick auf eine Zeile fügt sie als Referenz
+hinzu, statt die Szene zu ersetzen (`Application.add_reference`, ein Undo-Schritt, die
+Kamera bleibt stehen, Q-9). Nur wenn das Menü einen `add`-Callback bekommt.
+
 Bewusst Fenster-Ebene wie die Lab-Tasten (AD-013 H2, Variante G): keine
 Neuerung im Binding-System — `SPACE` bleibt in `mirai.interaction.bindings`
 unbelegt, und `install_handlers` bekommt das Menü nur auf Anforderung
@@ -64,16 +68,41 @@ def load_named_scene(app, name: str, gl_types: dict | None = None) -> bool:
     return True
 
 
+def add_named_reference(app, name: str) -> bool:
+    """Eintrag per Menü-/Registry-Name als Referenz hinzufügen (AD-021 M1, Q-10).
+
+    True = hinzugefügt; ein Ladefehler wird als Statuszeile gemeldet. Den Status bei Erfolg
+    (bzw. die Ablehnung während einer Interaktion) setzt `Application.add_reference`."""
+    try:
+        if name == "cube":
+            obj = app.add_reference("cube", name=name)
+        else:
+            from loaders.assets import asset_path  # lazy — Muster scene_factory
+
+            obj = app.add_reference("obj", obj_path=asset_path(name), name=name)
+    except Exception as exc:
+        app.set_status(f"Add {name!r} failed: {exc}")
+        return False
+    return obj is not None
+
+
 class SceneMenu:
     """Das Kontextmenü: offener Zustand, Geometrie, Hover, Zeichnung.
 
     `load` bekommt den getroffenen Eintrags-Namen; `load_named_scene` fängt
     Ladefehler selbst ab, ein werfender Callback darf hier durchmarschieren
-    (er ist dann ein Programmierfehler, kein Erwartungsfall)."""
+    (er ist dann ein Programmierfehler, kein Erwartungsfall). `add` (optional,
+    AD-021 M1) bekommt den Namen bei Shift+Klick; ohne ihn lädt auch Shift+Klick."""
 
-    def __init__(self, entries: Sequence[str], load: Callable[[str], bool]) -> None:
+    def __init__(
+        self,
+        entries: Sequence[str],
+        load: Callable[[str], bool],
+        add: Callable[[str], bool] | None = None,
+    ) -> None:
         self.entries = tuple(entries)
         self._load = load
+        self._add = add
         self._open = False
         self._x = 0.0
         self._y = 0.0  # obere Kante
@@ -143,15 +172,19 @@ class SceneMenu:
         self._hover = self._row_at(x, y)
         self._update_hover_rect()
 
-    def press(self, x: float, y: float) -> bool:
-        """Klick verarbeiten: Treffer lädt die Zeile, außerhalb schließt das
-        Menü. Immer modal — der Klick geht nie an die Application.
+    def press(self, x: float, y: float, add: bool = False) -> bool:
+        """Klick verarbeiten: Treffer lädt die Zeile (`add` = Shift gehalten: fügt sie als
+        Referenz hinzu, wenn es einen `add`-Callback gibt), außerhalb schließt das Menü.
+        Immer modal — der Klick geht nie an die Application.
         True = eine Zeile wurde ausgelöst."""
         index = self._row_at(x, y)
         self.close()
         if index < 0:
             return False
-        self._load(self.entries[index])
+        if add and self._add is not None:
+            self._add(self.entries[index])
+        else:
+            self._load(self.entries[index])
         return True
 
     # -- Zeichnung ------------------------------------------------------------
@@ -209,7 +242,10 @@ class SceneMenu:
             from pyglet import shapes, text
 
             title = text.Label(
-                "Szene laden (SPACE)",
+                # AD-021 M1: Shift+Klick = als Referenz hinzufügen (Text `PROVISIONAL`).
+                "Szene laden (SPACE) · Shift+Klick: als Referenz"
+                if self._add is not None
+                else "Szene laden (SPACE)",
                 x=0,
                 y=0,
                 anchor_x="left",

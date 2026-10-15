@@ -15,6 +15,8 @@ from __future__ import annotations
 SET_VERTEX_MODE = "SetVertexMode"
 SET_EDGE_MODE = "SetEdgeMode"
 SET_FACE_MODE = "SetFaceMode"
+# AD-021 M1: Objekt-Modus (V1_SPEC §2, Taste `4`).
+SET_OBJECT_MODE = "SetObjectMode"
 
 # --- History --------------------------------------------------------------
 UNDO = "Undo"

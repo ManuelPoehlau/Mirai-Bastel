@@ -257,6 +257,13 @@ class GLRenderStore(ResourceStore):
         if old_vlist is not None:
             old_vlist.delete()
 
+    def release(self) -> None:
+        """Deletes the VertexLists (AD-021 M1: a removed object entry, e.g. Undo of "Add
+        object", frees its GPU geometry at once instead of at garbage collection)."""
+        for vlist in self._vertex_lists.values():
+            vlist.delete()
+        self._vertex_lists.clear()
+
     # -- draw style (WP-06 B5a) -------------------------------------------------
 
     def set_draw_style(self, flat: bool, polygon_offset: bool) -> None:

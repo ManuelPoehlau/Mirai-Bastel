@@ -114,15 +114,14 @@ Scope (binding, see the handoffs):
   (INPUT_WIRING_MAP §10 "Load" = TBD) — `SPACE` stays unbound in the
   BindingSet, and the menu only exists when `install_handlers(..., menu=...)`
   is given one, so the Symmetry Lab's shared wiring is unchanged.
-- Scene loader (temporary, `PROVISIONAL`, `src/scene_menu.py`): `SPACE`
-  opens a small context menu at the cursor listing the available scenes
-  (`cube` + the registry assets from `examples/loaders/assets.py`); clicking
-  a row loads it through `Application.load_scene` (selection/history/pick
-  cache reset, camera re-framed), clicking elsewhere / `SPACE` / `Esc` closes
-  it. While open the menu is modal. The key is an engineering proposal
-  (INPUT_WIRING_MAP §10 "Load" = TBD) — `SPACE` stays unbound in the
-  BindingSet, and the menu only exists when `install_handlers(..., menu=...)`
-  is given one, so the Symmetry Lab's shared wiring is unchanged.
+  AD-021 M1 (Q-10): Shift+click on a row adds it to the scene as a Reference
+  instead (`Application.add_reference`, one Undo step, the camera stays, Q-9).
+- Objects (AD-021 M1, `PROVISIONAL` look and click): `4` = Object mode. A
+  Reference is drawn in a muted blue (no selection overlays, never pickable in
+  `1`/`2`/`3`, picking goes through it); in `4` a plain click on an object
+  that is not the one being edited switches it Reference <-> Normal (one Undo
+  step), Shift/Ctrl/Alt+click only change the object selection. W/E/R/T, C,
+  Delete/Dissolve and Shift+S are refused in `4` (status line).
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -175,7 +174,12 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
-from scene_menu import SceneMenu, load_named_scene, scene_entries  # noqa: E402
+from scene_menu import (  # noqa: E402
+    SceneMenu,
+    add_named_reference,
+    load_named_scene,
+    scene_entries,
+)
 
 _DEFAULT_HEAD_OBJ = _ROOT / "examples" / "meshes" / "head_basemesh.obj"
 
@@ -329,11 +333,12 @@ def install_handlers(window, app: Application, menu: SceneMenu | None = None) ->
 
     @window.event
     def on_mouse_press(x: int, y: int, button: int, modifiers: int):
-        if menu is not None and menu.is_open:
-            # A hit loads the row, a miss closes the menu — never forwarded.
-            menu.press(x, y)
-            return pyglet.event.EVENT_HANDLED
         inp = mouse_from_pyglet(button, modifiers)
+        if menu is not None and menu.is_open:
+            # A hit loads the row (Shift: adds it as a Reference, AD-021 Q-10), a miss
+            # closes the menu — never forwarded.
+            menu.press(x, y, add=inp is not None and "shift" in inp.modifiers)
+            return pyglet.event.EVENT_HANDLED
         if inp is not None:
             app.pointer_press(inp, x, y)
 
@@ -433,7 +438,11 @@ def main() -> None:
     app.set_viewport_size(window.width, window.height)
 
     # Temporary scene loader (PROVISIONAL): SPACE opens it at the cursor.
-    menu = SceneMenu(entries, load=lambda name: load_named_scene(app, name, GL_TYPES))
+    menu = SceneMenu(
+        entries,
+        load=lambda name: load_named_scene(app, name, GL_TYPES),
+        add=lambda name: add_named_reference(app, name),
+    )
     install_handlers(window, app, menu=menu)
     run(window, app)
 

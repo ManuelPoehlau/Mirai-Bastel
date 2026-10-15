@@ -5,6 +5,9 @@
 §5 (CORE_V1_FREEZE §7 step 6 given); A′ is not taken. Q-1…Q-4, Q-9, Q-10 answered (Decision record); Q-5…Q-8 stay open for
 M2. Where a section still says "proposed" or "proposal only", this status wins. **M0 implemented 2026-10-15**
 (Core only, no app behaviour; record in [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md), tests in `tests/test_scene_objects.py`).
+**M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); **waiting for
+Manu's practical test**. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+state).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
 **Answers:** [ROADMAP §6 ARCH-01](ROADMAP.md#arch-01--object--component-model) ("Must answer" list) plus two questions from
 the handoff: where the Reference state lives, and in which space symmetry and soft selection compute.
@@ -29,6 +32,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | Manu (chat) | **Q-1 = locked** (a Reference cannot be moved/rotated/scaled; only selected and its state changed) · **Q-2 = yes** (a Reference never blocks component picking of the edit object) · **Q-3 = yes** (state change and add object are each one Undo step) · **Q-4 = yes** (object scale uniform only) |
 | 2026-10-15 | Manu (chat) | **Go for M0** (Option B, Core change per §5; not A′) · **Q-9 = yes** (adding an object leaves the camera where it is) · **Q-10 = yes** (`Space` menu: Shift+click adds the entry as Reference, a plain click loads as today) |
 | 2026-10-15 | agent | **M0 implemented** per §5.1–§5.3 (names as proposed; E-1 and E-3 decided for M0, §7.2); M1 is next |
+| 2026-10-15 | agent | **M1 implemented** per §5.4 "M1" (§6.1); no Core change, nothing from M2; E-5 decided for M1 (§7.2); the Reference look and the switch click are `PROVISIONAL` and asked as **Q-11**, **Q-12**; Manu's practical test pending |
 | — | Manu | open for M2: Q-5…Q-8 |
 
 ---
@@ -489,6 +493,53 @@ object as soft-radius event (§4.8), the E1 wording (Q-7).
 **Alternative staging (A′, §3):** M1 in the App only, M0 deferred to M2 or the first save. Recommended against (§3.4), but
 it is Manu's call because the Core change is a Haltepunkt.
 
+### 6.1 M1 implementation note (2026-10-15)
+
+Built on `main` after #45 (M0). **No file under `src/core/` changed**; the App uses only the M0 API (`add_object`,
+`remove_object`, `restore_object`, `edit_object_id`, `Selection.objects`). Nothing from M2: no transform, no model matrix,
+no edit-object change, no object hover, no soft-radius event. Names and texts `PROVISIONAL`.
+
+| Rule | Where | What it does |
+|---|---|---|
+| §5.2 / R-4 scene reset | `mirai/scene_objects.py` `reset_scene`; `Application.init_scene` | a load replaces **all** objects by one new editable object (name `cube` / file stem) that becomes the edit object; the `scene.mesh` setter is no longer used by the App's load. `load_scene` also clears `Selection.objects`. Playground and Lab keep their one-object setter assignments (§5.2) |
+| Q-10 / Q-9 / Q-3 add | `Application.add_reference`; `scene_menu.py` (`add_named_reference`, `SceneMenu(add=…)`, `press(…, add=)`); `main.py` | Shift+click on a `Space` menu row adds the entry as a `REFERENCE` object; one Undo step (`AddObjectCommand`: Undo removes, Redo re-inserts the **same** instance and id); the camera, the edit object, its mesh and the selection stay. Refused with a status line while W/E/R/T or the Knife owns the keys |
+| §4.4 Drawing / RF-1 / RF-2 | `Viewport.set_object_entry` / `remove_object_entry` / `object_entries` | every object except the edit object is its own `RenderMesh` **without** `SelectionOverlay` and without point/line/face overlays; only the edit object's entry (the old single `RenderMesh`) carries them. Identity transform, so no model matrix; one store per entry (AD-018's "one group per store" unchanged). `GLRenderStore.release()` frees a removed entry's VertexList |
+| mode `4` (F-3) | `commands.SET_OBJECT_MODE`, key `4` (V1_SPEC §2); `_MODE_COMMANDS`; `_active_selection_contains` | `4` sets `SelectionMode.OBJECT`; like `1`/`2`/`3` it clears the components and the hover; `Selection.objects` stays (§4.4) |
+| RF-3 object picking | `picking.pick_object` / `front_face_hit_t`; `Application._pick_object` | the front-most face hit along the cursor ray over **every** object, References included; the edit object reuses the App's pick cache, the others get their own |
+| A-2 / §6 "a click toggles" | `Application._select_object_at`, `_switch_object_state` | in `4` a plain click selects the object and, if it is not the edit object, switches Normal ↔ Reference (one Undo step, `ObjectStateCommand`); Shift/Ctrl/Alt+click change only `Selection.objects`; a click into empty space clears it. A click on the edit object selects it and says it cannot become a Reference (RF-5) — **Q-12** |
+| RF-6 / Q-2 | unchanged component picking | `1`/`2`/`3` hover, click, Knife and tools look at the edit object's mesh only, so a Reference in front never blocks them (test with a plate between camera and cube) |
+| L-1 / RF-4 / Q-1 | `_COMPONENT_COMMANDS`, `Application._object_mode_refuses` | in `4`, W/E/R/T, C, Delete/Dissolve and Shift+S are refused with a status line (key path and `dispatch_command`); with a Reference selected the transform keys name the lock. Undo/Redo, display, Soft settings and constraints stay allowed |
+| §4.6 App consequences / R-9 / E-5 | mirror stack | the snapshot gains `objects` and `edit_object_id`; every push, object steps included, records one mirror entry; an entry is `(before, after, mesh_step)` — an object step's Undo/Redo refreshes only the object entries (`_sync_object_views`, a reconcile against `scene.objects`), not the edit object's render mesh; pruning drops dead `ObjectId`s from `objects` and the hover |
+| RF-5 | `_switch_object_state` | the edit object never becomes a Reference (in M1 it is the only editable object; switching the edit object is M2) |
+
+**Agent choices (`PROVISIONAL`), for Manu to correct:**
+
+- **Look of a Reference (Q-11):** drawn like any mesh (shaded, depth-tested, back-face culled, follows Flat Shading) in a
+  muted blue `REFERENCE_BASE_COLOR = (0.38, 0.47, 0.62)` instead of the edit object's grey; a Normal object that is not
+  the edit object is drawn grey. Faces only: in pure Wireframe (`D` cycle) a Reference is not drawn (the wire is the edit
+  object's overlay). No transparency, no wire, no ghost.
+- **No object hover in `4`:** nothing would show it, and an object pick per mouse move costs the full picking of every
+  object (gollum ~250 ms, REFERENCE_HARDWARE §2). Only the click picks.
+- **Status texts** in English like the other tool texts (`Added 'gollum' as Reference`, `Object 'gollum': Normal`, …);
+  the menu title reads "Szene laden (SPACE) · Shift+Klick: als Referenz".
+- **Symmetry Lab:** its BLOCK row is an allow-list, so `4` (`SetObjectMode`) is refused there visibly
+  (`BLOCK_NOT_ALLOWED_TEXT`); the Lab has no menu and no second object. Not added to `NON_OPERATION` (Lab change, not
+  needed for M1).
+
+**Observed (GL smoke run under xvfb, container, 2026-10-15):** a Reference renders in its colour, the switch click
+recolours it without a rebuild, Undo/Redo removes and restores its entry. Every object sits where its file puts it (no
+placement until M2), and the assets differ in scale: `gollum` (y −0.72…0.48) and `man_with_shoes_basemesh` lie almost
+entirely **inside** the head bust (y 0…4.78), so with the default head scene an added gollum is hardly visible. Visible
+pairing for the practical test: `man_with_shoes_basemesh` as scene, `gollum` added (it lies at the man's feet). Container
+timings (not the reference PC): adding gollum 6.8 s (OBJ parse + first render build), one mode-`4` click on a scene with
+gollum 0.8 s (object pick over 21 875 faces; WP-VIEW-PERF-01 territory).
+
+**Tests:** `tests/test_application_objects.py` (scene reset, add/Undo/Redo, camera stays, mode `4`, switch click, no
+switch on the edit object, modifier clicks, no hover, pick through a Reference in front, no overlay on a Reference with
+colliding IDs, refusals, mirror entries, interleaved object and mesh steps on one stack),
+`tests/test_viewport_object_entries.py` (entries, colour change without rebuild, camera, overlays only on the edit mesh,
+`pick_object`), `tests/test_scene_menu.py` and `tests/test_main_wiring.py` (Shift+click adds).
+
 ---
 
 ## 7. Questions
@@ -506,6 +557,8 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | Q-6 | M2 | How should a moved/rotated/scaled object be marked, so the level is always visible? | status line text first; a better marker after the practical test |
 | Q-7 | M2 | Symmetry (`Shift+S`) uses the **object's** axes: the plane rotates with the object. Today it is "world axis" (your E1 decision, AD-SYM-04). | yes — otherwise a rotated object is no longer exactly symmetric (§4.8, Probe P-2) |
 | Q-8 | M2 | After editing two objects, does Undo switch back to the object the step was made in? | yes |
+| Q-11 | M1 test | How should a **Reference look**? M1 draws it shaded in a muted blue (not in pure Wireframe), no transparency (§6.1). | keep for now; decide after the practical test (ghost / wire / transparent are the known alternatives, §0.3) |
+| Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | keep the click (§6 wording) until the test shows otherwise |
 
 ### 7.2 Engineering (agent domain, decided at implementation)
 
@@ -514,7 +567,7 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | E-1 | Rotation representation (3×3 matrix vs. quaternion) and float exactness of `transform ∘ inverse` for picking. **M0:** a 3×3 rotation matrix (rows), validated orthonormal with det +1 (`ROTATION_TOLERANCE = 1e-9`, `PROVISIONAL`) — axis-aligned turns stay exact and the inverse is the transpose; exactness for picking stays M2 |
 | E-2 | Pivot composition formula and whether changing the pivot compensates the translation (object must not jump) |
 | E-3 | `ObjectId` as an `ElementId` subclass or a separate base (`ElementId` is documented as "element"; nothing tests `isinstance(…, ElementId)`, review Q4). **M0:** subclass, only to reuse `IdAllocator` and `__repr__`; Scene methods take only an `ObjectId` (`TypeError` otherwise), so an object is never inferred from an element ID (N-3) |
-| E-5 | Undo refresh by object: is the mirror entry enough, or does a `Command` need to name its object? |
+| E-5 | Undo refresh by object: is the mirror entry enough, or does a `Command` need to name its object? **M1:** the mirror entry is enough — it carries `mesh_step`, and an object step's Undo/Redo reconciles the object entries with `scene.objects` (§6.1); no `Command` names its object. Revisit with A-4 |
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)
 
@@ -605,5 +658,22 @@ geprüft) — oder erst M1 nur in der App ohne Core-Änderung (Variante A′; ic
 
 **Annahme, die du mit einem Satz korrigieren kannst:** Das letzte bearbeitbare Objekt kann nicht auf Referenz gestellt werden
 (sonst gäbe es nichts mehr zu bearbeiten).
+
+**M1 ist gebaut (2026-10-15) — Praxistest (ca. 5 Minuten), `python src/main.py man_with_shoes_basemesh`:**
+
+1. `Leertaste`, dann **Shift+Klick** auf `gollum`: gollum kommt *zusätzlich* in die Szene, in gedämpftem Blau, zu Füßen
+   des Mannes (Hinzufügen dauert ein paar Sekunden); der Mann bleibt, die Kamera bleibt stehen. Ein normaler Klick lädt wie
+   bisher. *Warum nicht der Kopf?* Jedes Objekt steht dort, wo seine Datei es hinlegt — verschieben kommt erst mit M2 —, und
+   gollum liegt fast ganz **im** Kopf-Basemesh versteckt.
+2. In `1`/`2`/`3` am Mann arbeiten wie gewohnt (Auswahl, `W`/`E`/`R`, `C`, Knife): gollum leuchtet nie mit auf, und wo er vor
+   den Füßen liegt, pickst du durch ihn hindurch.
+3. `4` drücken, gollum anklicken: er wird normal (grau); noch ein Klick: wieder Referenz. Ein Klick auf den Mann sagt nur,
+   dass er gerade bearbeitet wird. `W`/`C`/`Entf` werden in `4` mit einer Statuszeile abgelehnt. (Ein Klick in `4` braucht
+   mit gollum knapp eine Sekunde.)
+4. `Ctrl+Z` nimmt Umschalten und Hinzufügen Schritt für Schritt zurück, `Ctrl+Y` wiederholt.
+
+**Neue Fragen an dich aus M1** (beide `PROVISIONAL` gebaut, bitte im Praxistest beurteilen):
+Q-11 *Wie soll eine Referenz aussehen?* (jetzt: gedämpftes Blau, schattiert; im reinen Wireframe unsichtbar) ·
+Q-12 *Ist „Klick in `4` schaltet um" richtig, oder lieber eine Taste?* (jetzt: Klick; Shift/Ctrl/Alt+Klick wählt nur aus).
 
 Keine praktischen Tests — das ist ein Entscheidungsdokument.

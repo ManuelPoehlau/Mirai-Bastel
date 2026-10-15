@@ -10,10 +10,11 @@ Die aktuell implementierte Produktionsstruktur ist:
 src/
 ├── core/      3D-Domain: Scene, Mesh, Selection, Operations (Move/Rotate/Scale, Topologie), History, Serialization
 ├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking (inkl. Pick-Cache),
-│              Display-State, Topologie-Capabilities (Split/Connect/Knife/Extrude/Delete/Dissolve), Soft Selection, Symmetry V1, Scene-Factory
+│              Display-State, Topologie-Capabilities (Split/Connect/Knife/Extrude/Delete/Dissolve), Soft Selection, Symmetry V1, Scene-Factory,
+│              Objekt-Ebene (AD-021 M1: Referenz-Objekte, Modus `4`, `scene_objects.py`)
 ├── viewport/  inkrementelle Renderdaten, Dirty-State, Overlays, Resource-Store, GL-Render-Store, Fassade
 ├── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
-└── scene_menu.py  temporäres Szenen-Menü (`SPACE`, `PROVISIONAL`)
+└── scene_menu.py  temporäres Szenen-Menü (`SPACE`; Shift+Klick = als Referenz hinzufügen, AD-021 M1; `PROVISIONAL`)
 ```
 
 `src/core/` basiert auf dem abgeschlossenen und eingefrorenen Core-V1-

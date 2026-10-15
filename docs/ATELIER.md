@@ -24,6 +24,7 @@
 | Soft Selection (**Fähigkeit festgelegt**, Bedienung `PROVISIONAL`, standardmäßig aus) | Weiche Transform-Einflüsse auf Nachbarpunkte; Bedienung, Kurven, Radius und offene Grenzen sind in AD-020 dokumentiert. | [AD-020](architecture/AD-020-SOFT-SELECTION-APP-PATH.md) |
 | Undo/Redo | `Ctrl+Z` / `Ctrl+Y` | [ROADMAP, WP-06 B3](architecture/ROADMAP.md) |
 | Szene laden (`PROVISIONAL`, temporär) | `Leertaste` öffnet am Cursor ein Menü mit `cube` und den Registry-Assets (u. a. dem großen `gollum`); Klick auf eine Zeile lädt die Szene, Klick daneben/`Esc`/`Leertaste` schließt. Die Taste ist ein Engineering-Vorschlag, noch kein Verdikt | [ROADMAP, Scene loader](architecture/ROADMAP.md) |
+| Zweites Objekt als Referenz (`PROVISIONAL`, M1, noch ohne Verdikt) | Im `Leertaste`-Menü **Shift+Klick** = Eintrag als Referenz *dazu* (gedämpftes Blau, Kamera bleibt); die Referenz leuchtet nie mit auf, man pickt durch sie hindurch; `4` = Objekt-Modus, Klick auf ein Objekt schaltet Referenz ↔ normal; je ein Undo-Schritt | [AD-021 §6.1](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#61-m1-implementation-note-2026-10-15) |
 
 ### Nur in Labs und im Playground (Testszenen, nicht Produkt)
 
@@ -51,6 +52,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | B4 | **Subdivision Lab**: Tests T-SUBD-1 und T-SUBD-2 | [Subdivision Lab README](../experiments/subdivision_lab/README.md) |
 | B5c | **Mehlsack Lab Slice 3c** (deine 3b-Antworten umgesetzt, ca. 5 Minuten): Verdikte (u1) Ring per Shift+Doppelklick auf die Nachbarkante, (u2) weiterer Loop per Shift+Doppelklick, (u3) Punkt-Loop per Doppelklick, (u4) Face-Loop-Teilstück, (u5) `L`-Modus im Flächenmodus | [Mehlsack Lab README, „Slice 3c“](../experiments/mehlsack_lab/README.md#slice-3c-2026-10-13-ringe-punkt-loops-teilstücke) |
 | B5 | **Mehlsack Lab, offen aus Slice 2a**: (d2) Kurvenfeld ITERATE — Kurvenpunkte hinzufügen/wegnehmen (noch nicht eingeplant); deine Frage „vorher erkennbar, was mitgeht — jetzt besser?“ ist noch unbeantwortet | [Mehlsack Lab README, „Slice 2a“](../experiments/mehlsack_lab/README.md#slice-2a-2026-10-13) |
+| B6 | **Objekte M1** (ca. 5 Minuten, Start `python src/main.py man_with_shoes_basemesh`): gollum per Shift+Klick als Referenz dazu, durch ihn hindurch am Mann arbeiten, in `4` umschalten, Undo; dazu die Fragen Q-11 (Look der Referenz) und Q-12 (Klick oder Taste) | [AD-021, Kurzfassung](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
 
 ### C. Lesen und einordnen (ohne Fenster)
 
@@ -66,7 +68,7 @@ Sortiert nach Aufwand. Bei jedem Punkt steht, wo die Testschritte liegen.
 | D1a | **Extrude-Erweiterungen**: Einzel-Face-Verhalten, Edge-/Vertex-Extrude, numerische Eingabe und Durchdringungs-Check sind spätere offene Fragen. | [ROADMAP, WP-06 B9](architecture/ROADMAP.md) |
 | D1b | **Soft Selection – offene Arbeit**: symmetrische Gewichtung samt gemeinsamem Core-Umzug und Tests auf höher aufgelösten Meshes; Bedienung und spätere Ideen sind in AD-020 vermerkt. | [AD-020](architecture/AD-020-SOFT-SELECTION-APP-PATH.md) |
 | D1c | **Viewport-Performance**: auf großen Meshes sind Navigation und Hover zu langsam; die Zielgröße für flüssiges Arbeiten ist noch festzulegen. | [drag_cost README, „Next step“](../experiments/drag_cost/README.md) |
-| D1d | **Objekte (ARCH-01)**: zweites Objekt in der Szene, Zustand *Referenz*, später eigener Transform/Pivot. **Entschieden** (2026-10-15: Go für M0, Q-1–Q-4, Q-9, Q-10 beantwortet). M0 (Core, für dich unsichtbar) ist umgesetzt (2026-10-15); als Nächstes M1 mit Praxistest; Q-5–Q-8 kommen mit M2. | [AD-021, Kurzfassung](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
+| D1d | **Objekte (ARCH-01)**: zweites Objekt in der Szene, Zustand *Referenz*, später eigener Transform/Pivot. **Entschieden** (2026-10-15: Go für M0, Q-1–Q-4, Q-9, Q-10 beantwortet). M0 (Core, für dich unsichtbar) ist umgesetzt (2026-10-15); M1 ist gebaut (2026-10-15) und wartet auf deinen Praxistest (B6, mit Q-11/Q-12); Q-5–Q-8 kommen mit M2. | [AD-021, Kurzfassung](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
 | D2 | **Priorität**: was als Nächstes (siehe Abschnitt 3) | — |
 
 ### E. Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)

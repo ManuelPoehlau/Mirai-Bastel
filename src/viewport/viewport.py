@@ -58,6 +58,15 @@ wenn `o.dirty` gesetzt ist (das Overlay setzt `dirty` selbst zurück);
 `o.draw(camera_uniforms)` läuft in `render()` nach den Tool-Linien und vor dem
 Punkt-Overlay. Ohne Zusatz-Overlay ändert sich nichts.
 
+Objekt-Einträge (AD-021 M1, §4.4 "Drawing"): `set_object_entry(key, mesh, base_color)`
+zeichnet ein weiteres Mesh (ein anderes Objekt der Scene) als eigenen `RenderMesh` - ohne
+`SelectionOverlay` und ohne Punkt-/Linien-/Flächen-Overlays, denn die Selection hält nackte
+IDs des Edit-Objekts, die in einem anderen Mesh gleichlautende Elemente aufleuchten ließen
+(AD-021 F-2, review R-5). `self.mesh` bleibt das Mesh des Edit-Objekts; nur dessen Eintrag
+trägt die Overlays. Der Schlüssel ist für den Viewport opak (die App nimmt die ObjectId);
+`base_color` (None = Standardfarbe) ist der einzige Look-Parameter. Identitäts-Transform:
+noch keine Model-Matrix (M2). Gezeichnet nach dem Edit-Mesh, mit `show_faces` wie dieses.
+
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
 
@@ -94,9 +103,20 @@ _TOOL_LINE_DRAW_ORDER = (
 )
 #: Tool-Layer, deren Linien auf den Faces liegen (Depth-Test) und deshalb den Polygon-Offset brauchen.
 _TOOL_DEPTH_TESTED_LINES = (TOOL_ACTIVE_LAYER, TOOL_MIRROR_LAYER, TOOL_CLIPPED_LAYER)
+from .gl_render_store import DEFAULT_BASE_COLOR
 from .render_mesh import RenderMesh
 from .resource_store import ResourceStore, TraceStore
 from .wireframe import edge_segments
+
+
+class _SolidColor:
+    """Material eines Objekt-Eintrags (Duck-Typing `uniform_packet()`, RenderMesh)."""
+
+    def __init__(self, color: tuple[float, float, float]) -> None:
+        self.color = tuple(float(c) for c in color)
+
+    def uniform_packet(self) -> list[float]:
+        return list(self.color)
 
 
 class Viewport:
@@ -114,9 +134,12 @@ class Viewport:
         self.mesh = mesh
         self.selection = selection if selection is not None else Selection()
         self.overlay = SelectionOverlay(self.selection)
+        self._store_type = store_type
         self.render_mesh = RenderMesh(
             mesh, overlay=self.overlay, store_type=store_type
         )
+        # AD-021 M1: Render-Einträge der anderen Objekte (Schlüssel -> RenderMesh), ohne Overlay.
+        self.object_entries: dict = {}
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -156,6 +179,49 @@ class Viewport:
         self.show_edges = bool(show_edges)
         self.flat = bool(flat)
         self._apply_draw_style()
+
+    # -- Objekt-Einträge (AD-021 M1) -------------------------------------------
+
+    def set_object_entry(
+        self, key, mesh: Mesh, base_color: tuple[float, float, float] | None = None
+    ) -> bool:
+        """Legt den Eintrag `key` für `mesh` an oder aktualisiert seine Farbe. Ein anderes
+        Mesh unter demselben Schlüssel ersetzt den Eintrag. True = etwas hat sich geändert.
+        Nie mit `SelectionOverlay` (Modul-Docstring)."""
+        color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
+        entry = self.object_entries.get(key)
+        if entry is not None and entry.mesh is not mesh:
+            self.remove_object_entry(key)
+            entry = None
+        if entry is None:
+            entry = RenderMesh(mesh, overlay=None, store_type=self._store_type)
+            camera = self.render_mesh.camera
+            if camera is not None:
+                entry.bind_camera(camera)
+                entry.mark_camera_dirty(aspect=self.render_mesh.aspect)
+            self.object_entries[key] = entry
+            self._apply_entry_style(entry)
+        elif entry.material is not None and entry.material.color == color:
+            return False
+        entry.bind_material(_SolidColor(color))
+        entry.mark_material_dirty()
+        return True
+
+    def remove_object_entry(self, key) -> bool:
+        """Entfernt den Eintrag `key` und gibt seine GPU-Objekte frei. True = es gab ihn."""
+        entry = self.object_entries.pop(key, None)
+        if entry is None:
+            return False
+        release = getattr(entry.store, "release", None)
+        if release is not None:
+            release()
+        return True
+
+    def _apply_entry_style(self, entry: RenderMesh) -> None:
+        set_draw_style = getattr(entry.store, "set_draw_style", None)
+        if set_draw_style is not None:
+            # Auf Objekt-Einträgen liegen keine Linien: kein Polygon-Offset.
+            set_draw_style(flat=self.flat, polygon_offset=False)
 
     # -- Zusatz-Overlays (WP-SYM-LAB-03 H1) ------------------------------------
 
@@ -203,6 +269,8 @@ class Viewport:
                 polygon_offset=self.show_faces
                 and (self.show_edges or self._edge_highlight),
             )
+        for entry in self.object_entries.values():
+            self._apply_entry_style(entry)
 
     # -- Kamera-Bindung (duck-typed, siehe Paket-Docstring) ------------------
 
@@ -211,6 +279,9 @@ class Viewport:
         # Initiale Kamera-Uniforms sofort bereitstellen (nicht erst nach
         # dem ersten on_camera_changed()).
         self.render_mesh.mark_camera_dirty()
+        for entry in self.object_entries.values():
+            entry.bind_camera(camera)
+            entry.mark_camera_dirty()
 
     def bind_material(self, material) -> None:
         self.render_mesh.bind_material(material)
@@ -238,6 +309,8 @@ class Viewport:
 
     def on_camera_changed(self, aspect: float | None = None) -> None:
         self.render_mesh.mark_camera_dirty(aspect=aspect)
+        for entry in self.object_entries.values():
+            entry.mark_camera_dirty(aspect=aspect)
 
     # -- Frame-Lifecycle -----------------------------------------------------
 
@@ -245,6 +318,8 @@ class Viewport:
         """Verarbeitet alle seit dem letzten `sync()` markierten Änderungen.
         Muss vor `render()` aufgerufen werden (typischerweise 1x pro Frame)."""
         self.render_mesh.sync()
+        for entry in self.object_entries.values():
+            entry.sync()
         # Selektion/Hover, Vertex-Move und Topologie setzen alle dieses Flag.
         changed = self._selection_overlays_dirty or self._extra_overlays_dirty
         if self._selection_overlays_dirty:
@@ -297,6 +372,8 @@ class Viewport:
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.show_faces:
             self.render_mesh.render(self.render_mesh.camera)
+            for entry in self.object_entries.values():
+                entry.render(self.render_mesh.camera)
         if (
             self.line_overlay is None
             and self.face_overlay is None

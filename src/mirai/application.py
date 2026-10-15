@@ -39,7 +39,19 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, Optional
 
-from core import EdgeId, FaceId, HistoryStack, Mesh, Scene, Selection, SelectionMode, VertexId
+from core import (
+    EdgeId,
+    FaceId,
+    HistoryStack,
+    Mesh,
+    ObjectId,
+    ObjectState,
+    Scene,
+    SceneObject,
+    Selection,
+    SelectionMode,
+    VertexId,
+)
 from core.operations import MeshStateCommand
 from core.operations.transform import SeamConstraintError
 
@@ -62,6 +74,7 @@ from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGes
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
+from .scene_objects import AddObjectCommand, ObjectStateCommand, object_base_color, reset_scene
 from .soft_selection import (
     EMPTY_BANDS,
     RADIUS_STEPS_PERCENT,
@@ -96,7 +109,7 @@ from .topology.knife_pick import knife_pick, snap_own_point, space_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .viewport import DisplayMode, DisplayState, OrbitCamera
-from .viewport.picking import pick_component
+from .viewport.picking import pick_component, pick_object
 from .viewport.picking_cache import PickCache
 
 
@@ -213,12 +226,22 @@ _REMOVAL_COMMANDS: dict[str, tuple[bool, bool]] = {
     commands.DISSOLVE_NO_CLEANUP: (True, False),
 }
 
-#: WP-06 B5b (E43): Component-Modi 1/2/3 (Selection Lab KEEP, `PROMOTED`).
+#: WP-06 B5b (E43): Component-Modi 1/2/3 (Selection Lab KEEP, `PROMOTED`); AD-021 M1: `4` =
+#: Objekt-Modus (V1_SPEC §2).
 _MODE_COMMANDS: dict[str, SelectionMode] = {
     commands.SET_VERTEX_MODE: SelectionMode.VERTEX,
     commands.SET_EDGE_MODE: SelectionMode.EDGE,
     commands.SET_FACE_MODE: SelectionMode.FACE,
+    commands.SET_OBJECT_MODE: SelectionMode.OBJECT,
 }
+
+#: AD-021 M1 (L-1: one gesture writes one level): commands that work on the edit object's
+#: components. In mode `4` they are refused with a status line - object tools are M2, and a
+#: Reference is locked (RF-4, Q-1). Undo/Redo, display, Soft settings and constraints are
+#: state or history, not component work, and stay allowed.
+_COMPONENT_COMMANDS = frozenset(
+    {*_TRANSFORM_COMMANDS, commands.CONNECT, *_REMOVAL_COMMANDS, commands.SYMMETRY_CYCLE}
+)
 
 
 def _element_vertices(mesh, element) -> set[VertexId]:
@@ -243,6 +266,7 @@ def _active_selection_contains(selection: Selection, element) -> bool:
         SelectionMode.VERTEX: (VertexId, selection.vertices),
         SelectionMode.EDGE: (EdgeId, selection.edges),
         SelectionMode.FACE: (FaceId, selection.faces),
+        SelectionMode.OBJECT: (ObjectId, selection.objects),
     }[selection.mode]
     return isinstance(element, kind) and element in members
 
@@ -254,11 +278,12 @@ def _constraint_label(space: str | None) -> str:
     return space.upper() if len(space) == 1 else f"{space.upper()} plane"
 
 
-def _selection_state(selection: Selection) -> tuple[frozenset, frozenset, frozenset]:
+def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
     return (
         frozenset(selection.vertices),
         frozenset(selection.edges),
         frozenset(selection.faces),
+        frozenset(selection.objects),
     )
 
 
@@ -395,6 +420,9 @@ class Application:
         # display-mode change) calls `self._pick_cache.invalidate()`
         # explicitly at its existing mutation/notification call site.
         self._pick_cache: PickCache = PickCache()
+        # AD-021 M1: pick caches of the objects other than the edit object (mode `4` picking;
+        # the edit object shares `_pick_cache`). Pruned with the render entries.
+        self._object_pick_caches: dict[ObjectId, PickCache] = {}
 
         # Gate 7: V0.2 Viewport wird in init_scene() mit dem Mesh gebunden.
         # Bliebt None, bis init_scene() aufgerufen wurde (kein Mesh verfügbar).
@@ -510,8 +538,13 @@ class Application:
         # Undo/Redo erlaubt (z. B. künftiger Push-Pfad, der hier noch nicht
         # verdrahtet ist), fällt `_apply_undo_redo()` auf reines Pruning
         # zurück statt zu crashen.
-        self._selection_undo_stack: list[tuple[tuple, tuple]] = []
-        self._selection_redo_stack: list[tuple[tuple, tuple]] = []
+        # AD-021 M1 (§4.6, E-5): an entry is (before, after, mesh_step); `mesh_step` False marks
+        # an object step (add object, state change), whose Undo/Redo refreshes the object
+        # entries only, not the edit object's render mesh.
+        self._selection_undo_stack: list[tuple[tuple, tuple, bool]] = []
+        self._selection_redo_stack: list[tuple[tuple, tuple, bool]] = []
+        # Whether the last Undo/Redo touched the edit object's mesh (`_apply_undo_redo`).
+        self._last_undo_redo_mesh_step: bool = True
 
         # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
         # after the B7 window test: press-slide-release was redundant with the
@@ -589,6 +622,11 @@ class Application:
         an derselben Scene hängen bleiben wie vor `init_scene()`.
         `obj_path` ist bei `geometry_type="obj"` erforderlich.
 
+        AD-021 M1 (§5.2, review R-4): das Laden ist ein Scene-Reset - alle Objekte werden durch
+        genau ein neues, bearbeitbares Objekt ersetzt (Name: `cube` bzw. der Dateistamm), das
+        Edit-Objekt wird (`scene_objects.reset_scene`); der `scene.mesh`-Setter bedeutet nur
+        noch "Mesh dieses Objekts tauschen".
+
         `point_overlay_type` (WP-06 B2b, E17): gleiches Durchreich-Muster wie
         `store_type`. Default `None` = kein GL-Punkt-Overlay (headless); der
         Entry-Point übergibt `GLPointOverlay`.
@@ -610,17 +648,8 @@ class Application:
         in ihr eigenes `SymmetryDisplay` (`mirai.symmetry_display`), das als Zusatz-Overlay nach
         den Bändern am Viewport hängt und während eines Transforms aufschiebt. Default `None` =
         keine Symmetrie-Anzeige (headless)."""
-        if geometry_type == "cube":
-            from .scene_factory import create_cube
-
-            self.scene.mesh = create_cube()
-        elif geometry_type == "obj":
-            if obj_path is None:
-                raise ValueError('geometry_type="obj" requires obj_path')
-
-            from .scene_factory import build_core_scene_from_obj
-
-            self.scene.mesh = build_core_scene_from_obj(obj_path).mesh
+        if geometry_type in ("cube", "obj"):
+            reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
         self._soft_refresh_radius()  # a scene load is one of the three radius events
 
         # Gate 7: Produktionsintegration — verbindet Application.camera mit
@@ -650,7 +679,156 @@ class Application:
                 symmetry_overlay_type(), reports=self._symmetry_reports
             )
             self.viewport.add_overlay(self._symmetry_display)
+        self._object_pick_caches = {}
+        self._sync_object_views()
         self._apply_display()
+
+    @staticmethod
+    def _build_mesh(geometry_type: str, obj_path: str | Path | None) -> tuple[Mesh, str]:
+        """Das Mesh einer Szene bzw. eines hinzugefügten Objekts und sein Objektname."""
+        if geometry_type == "cube":
+            from .scene_factory import create_cube
+
+            return create_cube(), "cube"
+        if geometry_type == "obj":
+            if obj_path is None:
+                raise ValueError('geometry_type="obj" requires obj_path')
+
+            from .scene_factory import build_core_scene_from_obj
+
+            return build_core_scene_from_obj(obj_path).mesh, Path(obj_path).stem
+        raise ValueError(f"unknown geometry_type {geometry_type!r}")
+
+    # -- Objekte (AD-021 M1) ----------------------------------------------------
+
+    def add_reference(
+        self,
+        geometry_type: str = "cube",
+        obj_path: str | Path | None = None,
+        name: str | None = None,
+    ) -> SceneObject | None:
+        """Fügt ein Objekt als Referenz hinzu, statt die Szene zu ersetzen (AD-021 M1, A-1;
+        Q-10: Shift+Klick im `SPACE`-Menü).
+
+        Ein Undo-Schritt (Q-3); die Kamera bleibt stehen (Q-9); Edit-Objekt, Auswahl und das
+        Mesh des Edit-Objekts bleiben unberührt. Abgelehnt (Statuszeile, None), solange eine
+        Interaktion die Tasten hält. Ein Ladefehler fliegt wie bei `init_scene` (der Aufrufer
+        meldet ihn). Gibt das neue Objekt zurück."""
+        if self.viewport is None:
+            raise RuntimeError("add_reference() before init_scene()")
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"Add object: not while the {owner} interaction runs")
+            return None
+        mesh, default_name = self._build_mesh(geometry_type, obj_path)
+        before = self._selection_snapshot()
+        obj = self.scene.add_object(
+            mesh, name=name or default_name, state=ObjectState.REFERENCE
+        )
+        self.history.push(AddObjectCommand(self.scene, obj))
+        self._record_selection_history(before, mesh_step=False)
+        self._sync_object_views()
+        self._set_status(f"Added {obj.name!r} as Reference")
+        return obj
+
+    def _sync_object_views(self) -> None:
+        """Gleicht die Render-Einträge und Pick-Caches der Nicht-Edit-Objekte mit
+        `scene.objects` ab (AD-021 §4.6 "App consequences"): ein entferntes Objekt verliert
+        seinen Eintrag, ein neues bekommt einen, ein Zustandswechsel ändert nur die Farbe.
+        Läuft nach jedem Objekt-Schritt, nach Undo/Redo und beim Laden. Das Edit-Objekt
+        zeichnet der Viewport selbst, mit den Selection-Overlays (§4.4 "Drawing")."""
+        scene = self.scene
+        others = {
+            oid: obj for oid, obj in scene.objects.items() if oid != scene.edit_object_id
+        }
+        for oid in [oid for oid in self._object_pick_caches if oid not in others]:
+            del self._object_pick_caches[oid]
+        if self.viewport is None:
+            return
+        for key in [key for key in self.viewport.object_entries if key not in others]:
+            self.viewport.remove_object_entry(key)
+        for oid, obj in others.items():
+            self.viewport.set_object_entry(oid, obj.mesh, object_base_color(obj))
+
+    def _pick_object(self, x: float, y: float) -> ObjectId | None:
+        """Mode `4`: the object whose surface is front-most under the cursor - every object,
+        References included (RF-3); none is hidden in M1."""
+        candidates = []
+        for oid, obj in self.scene.objects.items():
+            if oid == self.scene.edit_object_id:
+                cache = self._pick_cache
+            else:
+                cache = self._object_pick_caches.setdefault(oid, PickCache())
+            candidates.append((oid, obj.mesh, cache))
+        return pick_object(
+            self.camera, candidates, x, y, self.viewport_width, self.viewport_height
+        )
+
+    def _select_object_at(self, command: str, x: float, y: float) -> bool:
+        """Klick in Modus `4` (AD-021 M1). Die Modifier-Commands ändern nur die Objekt-
+        Auswahl (`selection.objects`); ein einfacher Klick wählt das Objekt und schaltet,
+        wenn es nicht das Edit-Objekt ist, seinen Zustand Normal <-> Referenz um (§6 M1:
+        "a click on the Reference toggles its state"; Belegung `PROVISIONAL`). True = Auswahl
+        oder Zustand hat sich geändert."""
+        selection = self.selection
+        before = self._selection_snapshot()
+        before_state = _selection_state(selection)
+        hit = self._pick_object(x, y)
+        if hit is None:
+            if command == commands.SELECT:
+                selection.clear_objects()
+        elif command == commands.SELECT:
+            selection.set({hit})
+        elif command == commands.SELECT_ADD:
+            selection.add({hit})
+        elif command == commands.SELECT_REMOVE:
+            selection.remove({hit})
+        elif command == commands.SELECT_TOGGLE:
+            selection.toggle(hit)
+        changed = _selection_state(selection) != before_state
+        if hit is not None and command == commands.SELECT:
+            return self._switch_object_state(hit, before) or changed
+        return changed
+
+    def _switch_object_state(self, object_id: ObjectId, selection_before: tuple) -> bool:
+        """Normal <-> Referenz als ein Undo-Schritt (Q-3). Das Edit-Objekt wird nie Referenz
+        (RF-2; RF-5 `PROVISIONAL`: in M1 ist es das einzige bearbeitbare Objekt, einen
+        Wechsel des Edit-Objekts gibt es erst in M2)."""
+        obj = self.scene.objects[object_id]
+        if object_id == self.scene.edit_object_id:
+            self._set_status(
+                f"Object {obj.name!r} is being edited - it cannot become a Reference"
+            )
+            return False
+        before = obj.state
+        after = ObjectState.NORMAL if before is ObjectState.REFERENCE else ObjectState.REFERENCE
+        obj.state = after
+        self.history.push(ObjectStateCommand(obj, before, after))
+        self._record_selection_history(selection_before, mesh_step=False)
+        self._sync_object_views()
+        self._set_status(f"Object {obj.name!r}: {after.name.capitalize()}")
+        return True
+
+    def _object_mode_refuses(self, command: str | None) -> bool:
+        """AD-021 M1 (L-1, RF-4): True (and the refusal posted) for component work in mode `4`."""
+        if self.selection.mode is not SelectionMode.OBJECT or command not in _COMPONENT_COMMANDS:
+            return False
+        references = [
+            self.scene.objects[oid].name
+            for oid in sorted(self.selection.objects)
+            if oid in self.scene.objects
+            and self.scene.objects[oid].state is ObjectState.REFERENCE
+        ]
+        if references and command in _TRANSFORM_COMMANDS:
+            self._set_status(
+                f"Object mode: {references[0]!r} is a Reference - locked (select or switch only)"
+            )
+        else:
+            self._set_status(
+                "Object mode: W/E/R/T, C, Delete/Dissolve and Shift+S work on points/edges/faces"
+                " - press 1/2/3"
+            )
+        return True
 
     def frame_scene(self) -> None:
         """Richtet die Kamera auf die Bounds des aktuellen Meshs aus (WP-06 B1).
@@ -711,6 +889,7 @@ class Application:
             symmetry_overlay_type=symmetry_overlay_type,
         )
         self.selection.clear()
+        self.selection.clear_objects()
         self.history = HistoryStack()
         self.scene.history = self.history
         self._selection_undo_stack.clear()
@@ -751,6 +930,8 @@ class Application:
             return self._soft_command(command)
         if command in _MODE_COMMANDS:
             return self._set_selection_mode(_MODE_COMMANDS[command])
+        if self._object_mode_refuses(command):
+            return False
         if command == commands.CONNECT:
             return self._connect_command()
         if command in _REMOVAL_COMMANDS:
@@ -797,7 +978,8 @@ class Application:
         """1/2/3 wie Playground `window.py`: Modus setzen, Auswahl leeren, Hover
         löschen (R-SEL-2). Auch der bereits aktive Modus leert die Auswahl
         (Playground-Verhalten). Kein History-Eintrag; der Hover kommt mit der
-        nächsten Mausbewegung im neuen Modus zurück."""
+        nächsten Mausbewegung im neuen Modus zurück. `4` (AD-021 M1) genauso; `clear()`
+        leert nur die Komponenten, die Objekt-Auswahl bleibt (§4.4)."""
         self.selection.mode = mode
         self.selection.clear()
         self.selection.hovered = None
@@ -1641,6 +1823,8 @@ class Application:
         command = self.bindings.command_for(input)
         if self._gate_refuses(command):
             return False
+        if self._object_mode_refuses(command):
+            return False
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
@@ -2126,9 +2310,10 @@ class Application:
         # laufen bereits in `dispatch_command` (`_apply_undo_redo`), auch für
         # Aufrufer, die `dispatch_command(UNDO/REDO)` direkt statt über
         # `key_press` erreichen.
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_topology_changed()
+        if self._last_undo_redo_mesh_step:
+            self._pick_cache.invalidate()
+            if self.viewport is not None:
+                self.viewport.on_topology_changed()
         self._set_status(command)
         self._refresh_hover()
         return True
@@ -2153,14 +2338,19 @@ class Application:
         Sicherheitsnetz, auch nach einem erfolgreichen Restore (dort ein
         No-op, weil der restaurierte Snapshot per Konstruktion gültig ist)."""
         restored = None
+        # Without a mirror entry (desync fallback) the step is treated as a mesh step: the
+        # full rebuild is correct for every command.
+        self._last_undo_redo_mesh_step = True
         if command == commands.UNDO and self._selection_undo_stack:
             entry = self._selection_undo_stack.pop()
             self._selection_redo_stack.append(entry)
             restored = entry[0]
+            self._last_undo_redo_mesh_step = entry[2]
         elif command == commands.REDO and self._selection_redo_stack:
             entry = self._selection_redo_stack.pop()
             self._selection_undo_stack.append(entry)
             restored = entry[1]
+            self._last_undo_redo_mesh_step = entry[2]
 
         if command == commands.UNDO:
             self.history.undo()
@@ -2170,6 +2360,8 @@ class Application:
         if restored is not None:
             self._restore_selection(restored)
         self._prune_ghost_selection()
+        # AD-021 §4.6: refresh the view of the objects an object step touched.
+        self._sync_object_views()
         self._soft_preview_refresh()
 
     def apply_mesh_change(
@@ -2248,31 +2440,41 @@ class Application:
     def _selection_snapshot(self) -> tuple:
         """Momentaufnahme von Modus + Auswahl (kein Hover - der wird nach
         Undo/Redo ohnehin über `_refresh_hover()` neu am Cursor gepickt,
-        nicht wiederhergestellt)."""
+        nicht wiederhergestellt). AD-021 §4.4/§4.6: dazu die Objekt-Auswahl und das
+        Edit-Objekt - die Komponenten-IDs gelten nur zusammen mit ihm."""
         selection = self.selection
         return (
             selection.mode,
             frozenset(selection.vertices),
             frozenset(selection.edges),
             frozenset(selection.faces),
+            frozenset(selection.objects),
+            self.scene.edit_object_id,
         )
 
     def _restore_selection(self, snapshot: tuple) -> None:
-        mode, vertices, edges, faces = snapshot
+        mode, vertices, edges, faces, objects, edit_object_id = snapshot
+        scene = self.scene
+        # An Undo that removed an object drops it from the object selection (§4.6, R-9); the
+        # edit object comes back with the entry (M1 never changes it - M2, Q-8).
+        if edit_object_id in scene.objects and edit_object_id != scene.edit_object_id:
+            scene.edit_object_id = edit_object_id
         selection = self.selection
         selection.mode = mode
         selection.vertices = set(vertices)
         selection.edges = set(edges)
         selection.faces = set(faces)
+        selection.objects = {oid for oid in objects if oid in scene.objects}
 
-    def _record_selection_history(self, before: tuple) -> None:
+    def _record_selection_history(self, before: tuple, mesh_step: bool = True) -> None:
         """Von jedem Aufrufer, der gerade `history.push()` ausgelöst hat (bzw.
         gleich auslösen wird - siehe Aufrufstellen), mit dem VOR der Mutation
         genommenen `_selection_snapshot()` aufzurufen. Spiegelt `HistoryStack.
         push()`: ein neuer Eintrag verwirft den Mirror-Redo-Zweig genau wie
-        dort den echten."""
+        dort den echten. `mesh_step` False = ein Objekt-Schritt (AD-021 M1), dessen
+        Undo/Redo das Mesh des Edit-Objekts nicht neu aufbaut."""
         after = self._selection_snapshot()
-        self._selection_undo_stack.append((before, after))
+        self._selection_undo_stack.append((before, after, mesh_step))
         self._selection_redo_stack.clear()
 
     def _prune_ghost_selection(self) -> None:
@@ -2295,12 +2497,15 @@ class Application:
         selection.vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
         selection.edges = {e for e in selection.edges if mesh.is_valid_edge(e)}
         selection.faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        selection.objects = {oid for oid in selection.objects if oid in self.scene.objects}
         hovered = selection.hovered
         if isinstance(hovered, VertexId) and not mesh.is_valid_vertex(hovered):
             selection.hovered = None
         elif isinstance(hovered, EdgeId) and not mesh.is_valid_edge(hovered):
             selection.hovered = None
         elif isinstance(hovered, FaceId) and not mesh.is_valid_face(hovered):
+            selection.hovered = None
+        elif isinstance(hovered, ObjectId) and hovered not in self.scene.objects:
             selection.hovered = None
 
     def _set_status(self, message: str) -> None:
@@ -2444,13 +2649,22 @@ class Application:
             return False
         if self._hover_suspended:
             return self._set_hovered(None)
+        if self.selection.mode is SelectionMode.OBJECT:
+            # AD-021 M1 (`PROVISIONAL`): no object hover yet - it would have no look, and an
+            # object pick per motion costs the full picking of every object (gollum,
+            # REFERENCE_HARDWARE §2). Only a click picks in mode `4`.
+            return self._set_hovered(None)
         return self._set_hovered(self._pick(x, y))
 
     def _pick(self, x: float, y: float):
         """E43: Element unter dem Cursor im aktiven Selection-Modus (oder None).
         WP-06 B8: cached (`self._pick_cache`) and occlusion-aware - only
         visible vertices/edges are pickable while faces are shown (Shaded/
-        Flat Shaded); Wireframe leaves everything pickable, as before B8."""
+        Flat Shaded); Wireframe leaves everything pickable, as before B8.
+        AD-021 M1: in mode `4` the ObjectId under the cursor; every other mode looks at the
+        edit object's mesh only, so a Reference never blocks it (RF-6)."""
+        if self.selection.mode is SelectionMode.OBJECT:
+            return self._pick_object(x, y)
         return pick_component(
             self.camera,
             self.scene.mesh,
@@ -2511,6 +2725,8 @@ class Application:
         sich tatsächlich geändert (nur dann wird der Viewport benachrichtigt)."""
         if self.viewport is None:
             return False
+        if self.selection.mode is SelectionMode.OBJECT:
+            return self._select_object_at(command, x, y)
         selection = self.selection
         before = _selection_state(selection)
         hit = self._pick(x, y)
