@@ -673,7 +673,12 @@ geprüft) — oder erst M1 nur in der App ohne Core-Änderung (Variante A′; ic
 4. `Ctrl+Z` nimmt Umschalten und Hinzufügen Schritt für Schritt zurück, `Ctrl+Y` wiederholt.
 
 **Neue Fragen an dich aus M1** (beide `PROVISIONAL` gebaut, bitte im Praxistest beurteilen):
-Q-11 *Wie soll eine Referenz aussehen?* (jetzt: gedämpftes Blau, schattiert; im reinen Wireframe unsichtbar) ·
+Q-11 *Wie soll eine Referenz aussehen?* (jetzt: gedämpftes Blau, schattiert; im reinen Wireframe unsichtbar) · 
+
+Manu: Das gedämpfte Blau ist gut. Problem: Man kann zwar durch das Referenzmesh hindurchklicken, aber nicht hindurchsehen, wenn die editierbare Geometrie im inneren vom Ref Model liegt(Lösung: switchbarer Shaded - Ghost Mode für das Ref Model?). Das gleiche Problem andersrum: Liegt das Ref Model im inneren des editierbaren Models, sieht man das Ref Model nicht (Lösung: Ref bleibt sichtbar schattiert, auch wenn man in den Wireframe Modus schaltet) (Gegen-)Vorschläge erwünscht.
+
 Q-12 *Ist „Klick in `4` schaltet um" richtig, oder lieber eine Taste?* (jetzt: Klick; Shift/Ctrl/Alt+Klick wählt nur aus).
+
+Manu: Das passt erstmal so.
 
 Keine praktischen Tests — das ist ein Entscheidungsdokument.
