@@ -36,8 +36,8 @@ CORE_V1_FREEZE §7, CORE_V1_REVIEW §12, ROADMAP ARCH-01, the `6a1669c` doc diff
   `playground` 292/298/13, `experiments` 275/282/10, Symmetry Lab 196/197/1; per-file split matches the table.
 - **Prototype of §5.1/§5.2 in a scratch copy** (not in the repo): `ObjectId`, `SceneObject`, `Scene.objects`,
   `Scene()` creating one object that is `selection.edit_object`, `Scene.mesh` as get/set property, `Selection.objects`
-  + `edit_object`, `clear()` clearing `objects`. Baseline (unmodified copy, `xvfb-run -a pytest tests playground/tests
-  experiments/symmetry_lab/tests`): 4266 passed, 114 skipped. Prototype: see the result line under Q6.
+  + `edit_object`, `clear()` clearing `objects`; `serialization.py` left at v1. Each tree run separately with
+  `xvfb-run -a pytest <tree>` on an unmodified copy and on the prototype; result under Q6.
 - A v2 `serialization.py` prototype per §5.3 (with the v1 read branch): exactly two tests fail —
   `test_scene_serialization.py::…::test_reserved_subsystem_slots_present_and_null_in_v1` and
   `test_core.py::test_ad001_serialization_roundtrip` (both assert a `"mesh"` key); the other 27 pass.
@@ -165,10 +165,15 @@ Smallest that works: yes, given B — no `Mesh`, `Operation`, `OperationContext`
 needed (prototype confirms). It is under-specified in `selection.py` (R-2) and in where `edit_object` lives (R-3).
 M0 acceptance "no existing test edited except the two serialization files": **realistic** — see the prototype result:
 
-**Prototype result:** PROTOTYPE_RESULT_PLACEHOLDER
+**Prototype result (scratch copy, per tree, baseline → prototype):** `tests` 3114 passed / 51 skipped → 3114 / 51;
+`playground/tests` 1241 → 1241; `experiments/symmetry_lab/tests` 455 / 4 skipped → 455 / 4. Zero failures, zero
+edits. With the v2 serializer added, exactly the two tests named above fail. The claim holds, with the caveat that the
+prototype fixes choices the AD leaves open (R-2, R-3); a `clear()` that also resets `edit_object` or an `is_empty()`
+that counts `objects` would not be free.
 
 Construction patterns checked: 33 `Scene()` constructions and the 41 `scene.mesh = …` assignment lines (F-9; those
-in the three test trees and `src/` all pass through the setter in the prototype), no `scene.selection` re-assignment outside `tests/_archive`, no subclassing/`vars()`/`deepcopy` of `Scene`; tests that use
+in the three test trees and `src/` all pass through the setter in the prototype), no `scene.selection` re-assignment
+outside `tests/_archive`, no subclassing/`vars()`/`deepcopy` of `Scene`; tests that use
 the app's selection mirror compare snapshots by equality (`test_application_delete_dissolve.py:110-114,369-383`) or
 by length, so M1's wider snapshot tuple is also low-risk. M1/M2 have no test budget stated; M1 will touch the mode-4
 wiring (`_MODE_COMMANDS`, `_active_selection_contains`) and the 7 test files that inspect the mirror stack only if
