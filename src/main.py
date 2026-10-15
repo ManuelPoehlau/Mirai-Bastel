@@ -126,7 +126,9 @@ Scope (binding, see the handoffs):
   Ghost / shaded again; References stay drawn in Wireframe. AD-021 M2-2: in
   `4`, hold W/E/R on the selected objects = move / rotate / scale them
   (object level, one Undo step; X/Y/Z are world axes, Scale always uniform;
-  a Reference is locked and stays), Esc cancels exactly.
+  a Reference is locked and stays), Esc cancels exactly. AD-021 M2-3
+  (`PROVISIONAL` keys): in `4`, Ctrl+A = Apply transform (bake the placement
+  into the mesh), Alt+Shift+A = Clear transform (placement back to identity).
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,

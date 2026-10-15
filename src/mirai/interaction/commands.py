@@ -67,6 +67,12 @@ SET_WIREFRAME = "SetWireframe"
 # AD-021 M2-0 (§7.3 RD-2, `PROVISIONAL`): alle Referenzen schattiert <-> Ghost.
 TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
 
+# --- Objekt-Platzierung (AD-021 M2-3, L-3; Namen und Tasten `PROVISIONAL`) ----
+# Apply = Platzierung ins Mesh übernehmen (Max "Reset XForm"); Clear = Platzierung auf
+# Identität, das Mesh bleibt, das Objekt springt. Nur in Modus `4`.
+APPLY_TRANSFORM = "ApplyTransform"
+CLEAR_TRANSFORM = "ClearTransform"
+
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
 # → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).

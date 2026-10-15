@@ -54,6 +54,7 @@ from core import (
     VertexId,
 )
 from core.operations import MeshStateCommand
+from core.scene import IDENTITY_TRANSFORM
 from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
@@ -83,8 +84,13 @@ from .object_space import ObjectSpaceCamera
 from .scene_objects import (
     REFERENCE_GHOST_ALPHA,
     AddObjectCommand,
+    ApplyRefused,
+    CompositeCommand,
+    ObjectPivotCommand,
     ObjectStateCommand,
     ObjectTransformCommand,
+    applied_symmetry_axis,
+    apply_placement,
     object_base_color,
     reset_scene,
 )
@@ -260,6 +266,13 @@ _COMPONENT_COMMANDS = frozenset(
 #: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture (`_object_arm`) instead of a
 #: component tool; T (Extrude) stays component work.
 _OBJECT_TRANSFORM_COMMANDS = frozenset({commands.MOVE, commands.ROTATE, commands.SCALE})
+
+#: AD-021 M2-3 (L-3): the two explicit level conversions, mode `4` only. Labels for the status
+#: line (`PROVISIONAL`).
+_PLACEMENT_COMMANDS: dict[str, str] = {
+    commands.APPLY_TRANSFORM: "Apply transform",
+    commands.CLEAR_TRANSFORM: "Clear transform",
+}
 
 
 @dataclasses.dataclass
@@ -586,8 +599,10 @@ class Application:
         # AD-021 M1 (§4.6, E-5): an entry is (before, after, mesh_step); `mesh_step` False marks
         # an object step (add object, state change), whose Undo/Redo refreshes the object
         # entries only, not the edit object's render mesh.
-        self._selection_undo_stack: list[tuple[tuple, tuple, bool]] = []
-        self._selection_redo_stack: list[tuple[tuple, tuple, bool]] = []
+        # AD-021 M2-3: a fourth element names the *other* objects whose mesh the step changed
+        # (Apply transform on a non-edit object), so their render entries rebuild on Undo/Redo.
+        self._selection_undo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
+        self._selection_redo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
         # Whether the last Undo/Redo touched the edit object's mesh (`_apply_undo_redo`).
         self._last_undo_redo_mesh_step: bool = True
 
@@ -923,21 +938,12 @@ class Application:
         status line says so, `PROVISIONAL`). Refused with a status line when nothing or only
         References are selected. Nothing moves before the first motion (AD-016, as W/E/R)."""
         label, verb, _ = _TRANSFORM_COMMANDS[command]
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        targets = [obj for obj in selected if obj.state is not ObjectState.REFERENCE]
-        references = tuple(obj.name for obj in selected if obj.state is ObjectState.REFERENCE)
-        if not selected:
-            self._set_status(
-                f"Object {label}: no object selected - click one first"
-                f" (to {verb} points/edges/faces press 1/2/3)"
-            )
+        picked = self._object_targets(
+            f"Object {label}", f"to {verb} points/edges/faces press 1/2/3"
+        )
+        if picked is None:
             return False
-        if not targets:
-            self._set_status(
-                f"Object mode: {references[0]!r} is a Reference - locked (select or switch only)"
-            )
-            return False
+        targets, references = picked
         self._transform_key = key
         self._transform_command = command
         self._transform_target = frozenset()
@@ -955,6 +961,121 @@ class Application:
             f" - move the mouse, release {key.upper()} to commit"
         )
         return True
+
+    def _object_targets(
+        self, label: str, hint: str
+    ) -> tuple[list[SceneObject], tuple[str, ...]] | None:
+        """The selected objects an object command works on, and the names of the selected
+        References it leaves alone (RF-4, Q-1). None (refusal posted) when nothing or only
+        References are selected."""
+        scene = self.scene
+        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
+        targets = [obj for obj in selected if obj.state is not ObjectState.REFERENCE]
+        references = tuple(obj.name for obj in selected if obj.state is ObjectState.REFERENCE)
+        if not selected:
+            self._set_status(f"{label}: no object selected - click one first ({hint})")
+            return None
+        if not targets:
+            self._set_status(
+                f"Object mode: {references[0]!r} is a Reference - locked (select or switch only)"
+            )
+            return None
+        return targets, references
+
+    def _placement_command(self, command: str) -> bool:
+        """Apply / Clear transform (AD-021 M2-3, L-3) on the selected non-Reference objects, mode
+        `4` only. Objects without a placement are left alone; one Undo step for all of them."""
+        label = _PLACEMENT_COMMANDS[command]
+        if self.interaction_owner is not None:
+            return False
+        if self.selection.mode is not SelectionMode.OBJECT:
+            self._set_status(f"{label}: works on objects - press 4 and select them")
+            return False
+        picked = self._object_targets(label, "press 4 and click the object")
+        if picked is None:
+            return False
+        targets, references = picked
+        placed = [obj for obj in targets if not object_space.is_identity(obj.transform)]
+        if not placed:
+            self._set_status(f"{label}: nothing to do - {self._objects_text(targets)} not placed")
+            return False
+        if command == commands.CLEAR_TRANSFORM:
+            return self._clear_transform(placed, references)
+        return self._apply_transform(placed, references)
+
+    def _clear_transform(self, placed: list[SceneObject], references: tuple[str, ...]) -> bool:
+        """Clear (L-3): placement back to identity, the mesh stays, the object jumps; the pivot
+        stays. One `ObjectTransformCommand` (an object step, `mesh_step=False`)."""
+        before = self._selection_snapshot()
+        changes = [(obj, obj.transform, IDENTITY_TRANSFORM) for obj in placed]
+        for obj, _, after in changes:
+            obj.transform = after
+        self.history.push(ObjectTransformCommand(changes, "Clear transform"))
+        self._record_selection_history(before, mesh_step=False)
+        self._placement_changed()
+        self._set_status(
+            f"{self._objects_text(placed)}: transform cleared (object level, mesh unchanged)"
+            f"{self._object_references_note(references)}"
+        )
+        return True
+
+    def _apply_transform(self, placed: list[SceneObject], references: tuple[str, ...]) -> bool:
+        """Apply (L-3, Max "Reset XForm"): every mesh position becomes its world position, the
+        placement becomes identity, and the pivot moves to its old world position `t + c`
+        (`PROVISIONAL`: a later Rotate/Scale turns about the same place as before; the
+        alternative, pivot = origin, is a question for Manu). One `CompositeCommand` per press
+        (E-13): a `MeshStateCommand` per object, then the transforms, then the pivots. Refused
+        as a whole, before anything changes, when one object's symmetry definition would not
+        survive the bake (`applied_symmetry_axis`)."""
+        try:
+            axes = [applied_symmetry_axis(obj) for obj in placed]
+        except ApplyRefused as exc:
+            self._set_status(f"Apply transform: refused - {exc}")
+            return False
+        before = self._selection_snapshot()
+        parts: list = []
+        transforms, pivots = [], []
+        for obj, axis in zip(placed, axes):
+            mesh = obj.mesh
+            mesh_before = mesh.export_state()
+            apply_placement(obj, axis)
+            parts.append(
+                MeshStateCommand(
+                    mesh=mesh, before_state=mesh_before, after_state=mesh.export_state(),
+                    description=f"Apply transform {obj.name!r}",
+                )
+            )
+            pivots.append((obj, obj.pivot, object_space.to_world(obj, obj.pivot)))
+            transforms.append((obj, obj.transform, IDENTITY_TRANSFORM))
+        for obj, _, after in transforms:
+            obj.transform = after
+        for obj, _, after in pivots:
+            obj.pivot = after
+        parts += [ObjectTransformCommand(transforms, "Apply transform"), ObjectPivotCommand(pivots)]
+        self.history.push(CompositeCommand(parts, "Apply transform"))
+        edit_id = self.scene.edit_object_id
+        others = frozenset(obj.id for obj in placed if obj.id != edit_id)
+        edit_changed = len(others) < len(placed)
+        self._record_selection_history(before, mesh_step=edit_changed, object_meshes=others)
+        self._object_meshes_changed(others)
+        if edit_changed:
+            self._notify_topology_changed()
+        self._placement_changed()
+        self._set_status(
+            f"{self._objects_text(placed)}: transform applied (object level -> mesh;"
+            f" placement is identity now){self._object_references_note(references)}"
+        )
+        return True
+
+    def _object_meshes_changed(self, object_ids) -> None:
+        """The mesh of these non-edit objects changed (Apply transform, its Undo/Redo): their
+        render entries rebuild and their pick caches re-project."""
+        for oid in object_ids:
+            cache = self._object_pick_caches.get(oid)
+            if cache is not None:
+                cache.invalidate()
+            if self.viewport is not None and oid in self.viewport.object_entries:
+                self.viewport.object_entries[oid].mark_topology_dirty()
 
     @staticmethod
     def _object_references_note(references: tuple[str, ...]) -> str:
@@ -1165,6 +1286,8 @@ class Application:
             return self._set_selection_mode(_MODE_COMMANDS[command])
         if self._object_mode_refuses(command):
             return False
+        if command in _PLACEMENT_COMMANDS:
+            return self._placement_command(command)
         if command == commands.CONNECT:
             return self._connect_command()
         if command in _REMOVAL_COMMANDS:
@@ -2091,6 +2214,11 @@ class Application:
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
+        if command in _PLACEMENT_COMMANDS:
+            # AD-021 M2-3: not underneath a held W/E/R/T (same gate as C and the mode keys).
+            if self._transform_key is not None:
+                return False
+            return self.dispatch_command(command)
         if command in (commands.CONNECT, commands.SYMMETRY_CYCLE) or command in _REMOVAL_COMMANDS:
             # Wie die Modus-Tasten (B5b): C, Entf, Rücktaste und Shift+S werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
@@ -2597,16 +2725,19 @@ class Application:
         # Without a mirror entry (desync fallback) the step is treated as a mesh step: the
         # full rebuild is correct for every command.
         self._last_undo_redo_mesh_step = True
+        object_meshes: frozenset = frozenset()
         if command == commands.UNDO and self._selection_undo_stack:
             entry = self._selection_undo_stack.pop()
             self._selection_redo_stack.append(entry)
             restored = entry[0]
             self._last_undo_redo_mesh_step = entry[2]
+            object_meshes = entry[3]
         elif command == commands.REDO and self._selection_redo_stack:
             entry = self._selection_redo_stack.pop()
             self._selection_undo_stack.append(entry)
             restored = entry[1]
             self._last_undo_redo_mesh_step = entry[2]
+            object_meshes = entry[3]
 
         if command == commands.UNDO:
             self.history.undo()
@@ -2618,7 +2749,8 @@ class Application:
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
         # may be a placement (M2-2), so the pick caches re-project too (`_placement_changed`).
-        if self._last_undo_redo_mesh_step:
+        self._object_meshes_changed(object_meshes)
+        if self._last_undo_redo_mesh_step and not object_meshes:
             self._sync_object_views()
         else:
             self._placement_changed()
@@ -2726,15 +2858,18 @@ class Application:
         selection.faces = set(faces)
         selection.objects = {oid for oid in objects if oid in scene.objects}
 
-    def _record_selection_history(self, before: tuple, mesh_step: bool = True) -> None:
+    def _record_selection_history(
+        self, before: tuple, mesh_step: bool = True, object_meshes: frozenset = frozenset()
+    ) -> None:
         """Von jedem Aufrufer, der gerade `history.push()` ausgelöst hat (bzw.
         gleich auslösen wird - siehe Aufrufstellen), mit dem VOR der Mutation
         genommenen `_selection_snapshot()` aufzurufen. Spiegelt `HistoryStack.
         push()`: ein neuer Eintrag verwirft den Mirror-Redo-Zweig genau wie
         dort den echten. `mesh_step` False = ein Objekt-Schritt (AD-021 M1), dessen
-        Undo/Redo das Mesh des Edit-Objekts nicht neu aufbaut."""
+        Undo/Redo das Mesh des Edit-Objekts nicht neu aufbaut. `object_meshes` (M2-3): die
+        Nicht-Edit-Objekte, deren Mesh der Schritt geändert hat."""
         after = self._selection_snapshot()
-        self._selection_undo_stack.append((before, after, mesh_step))
+        self._selection_undo_stack.append((before, after, mesh_step, frozenset(object_meshes)))
         self._selection_redo_stack.clear()
 
     def _prune_ghost_selection(self) -> None:

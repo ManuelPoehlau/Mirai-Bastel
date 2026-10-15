@@ -131,6 +131,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("2"), cmd.SET_EDGE_MODE)
     bs.set_default(_key("3"), cmd.SET_FACE_MODE)
     bs.set_default(_key("4"), cmd.SET_OBJECT_MODE)
+    # AD-021 M2-3 (L-3, `PROVISIONAL`, Frage an Manu): Alt+A ist schon "Auswahl leeren".
+    bs.set_default(_key("a", "ctrl"), cmd.APPLY_TRANSFORM)
+    bs.set_default(_key("a", "alt", "shift"), cmd.CLEAR_TRANSFORM)
 
     # --- History / Interaktion ---------------------------------------------
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)

@@ -9,8 +9,8 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 (his Q-11 answer describes the behaviour); no KEEP/ITERATE verdict recorded, M1 stays `PROVISIONAL`. **M2:**
 [handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
 implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); **M2-2
-implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); M2-3, M2-4 follow
-([handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); **M2-3 implemented 2026-10-15** (Apply / Clear
+transform, §6.5; new Artist questions Q-14…Q-16); M2-4 follows ([handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -44,6 +44,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | Manu (chat) | **M2-0:** "Ghost ist hell genug" (alpha 0.3 stays) · a `NORMAL` non-edit object disappearing in Wireframe like the edit object: "passt so" · next: handoff for the rest of M2 (new session) |
 | 2026-10-15 | agent | **M2-0 implemented** (Reference display, §6.2) and **M2-1 implemented** (placement in the draw and component paths, no UI, §6.3); no Core change; E-2, E-6…E-10 as in the handoff |
 | 2026-10-15 | agent | **M2-2 implemented** (object gesture W/E/R in mode `4`, `ObjectTransformCommand`, level status line, §6.4); no Core change; E-11, E-12 as in the handoff; Q-7 wording changed in AD-SYM-04 (E1 addendum) and `symmetry_axis.py`; Manu's practical test pending |
+| 2026-10-15 | agent | **M2-3 implemented** (Apply / Clear transform, first `CompositeCommand`, §6.5); no Core change; E-13 as in the handoff; pivot after Apply, the symmetric refusal and the keys are `PROVISIONAL` and asked as **Q-14…Q-16** |
 
 ---
 
@@ -627,6 +628,36 @@ survive by design: `_sync_object_views` instead of `_placement_changed` after an
 object's transform already, `ObjectSpaceCamera.camera_revision`), and no `orthonormalize` (drift after 150 gestures stays
 ~1e-15, far below `ROTATION_TOLERANCE`; the helper has its own test with a drifted matrix).
 
+### 6.5 M2-3 implementation note — Apply / Clear transform (2026-10-15)
+
+L-3 as decided, E-13 as in the handoff, no Core change, no pivot tool (Q-13). Mode `4` only, on the selected
+non-Reference objects (the same target rule as M2-2: nothing / only References selected → refused, References in a mixed
+selection stay and the status line says so); objects without a placement are left alone; one Undo step per press.
+
+| Rule | Where | What |
+|---|---|---|
+| **Apply transform** (L-3, Max "Reset XForm") | `Application._apply_transform`; `scene_objects.apply_placement` | every mesh position becomes `object_space.to_world(p)` — **bit-identical** to what picking and the tools computed as world before (the renderer's model-matrix path agrees within 1e-12, test); placement → identity; **pivot → its old world position `t + c` (`PROVISIONAL`, Q-15)**, so a later Rotate/Scale in `4` turns about the same place as before. Status `Object 'x': transform applied (object level -> mesh; placement is identity now)` |
+| E-13 composite | `scene_objects.CompositeCommand`, `ObjectPivotCommand` | the project's first composite: one `MeshStateCommand` per baked object, then one `ObjectTransformCommand`, then one `ObjectPivotCommand`; Undo in reverse, Redo in order; `HistoryStack` unchanged |
+| mirror / views | `_record_selection_history(…, object_meshes=)`, `_object_meshes_changed`, `_apply_undo_redo` | a mirror entry gains a fourth element: the *non-edit* objects whose mesh the step changed. Their render entries rebuild (`mark_topology_dirty`) and their pick caches re-project after Apply, Undo and Redo; the edit object's mesh goes the usual way (`mesh_step`, `_notify_topology_changed`). The component selection stays valid (only positions change) |
+| **Clear transform** (L-3) | `Application._clear_transform` | placement → identity, mesh and pivot unchanged, the object jumps; one `ObjectTransformCommand` (object step). Status `… transform cleared (object level, mesh unchanged)` |
+| **Symmetry (`PROVISIONAL`, Q-16)** | `scene_objects.applied_symmetry_axis` | Apply on a mesh with a definition only when the plane lands **exactly** on an axis plane through the origin: rotation entries exactly 0/±1 (a multiple of 90°), the pivot on the plane, no translation along the normal (`t + c` exactly 0 there); `s` free. Then pairs and seam stay bit-exact mirrored and the definition follows the axis (X turned 90° about Y → Z, same seam edges). Otherwise refused as a whole before anything changes, with the reason. **Consequence:** a free `E` turn is never an exact multiple of 90°, so a *turned* symmetric object cannot be applied today (Clear, or Shift+S off, first) — a snap would be needed |
+| keys (`PROVISIONAL`, Q-14) | `commands.APPLY_TRANSFORM` / `CLEAR_TRANSFORM`, `bindings.py` | `Ctrl+A` = Apply, `Alt+Shift+A` = Clear (`Alt+A` stays "clear selection"); not underneath a held W/E/R/T; outside `4` refused (`… works on objects - press 4 and select them`). The Symmetry Lab's BLOCK allow-list refuses both like every new command |
+
+Not done: the soft radius is not recomputed after Apply (Apply is no radius event, like a component Scale of the whole mesh;
+the next switch-on, step change or load picks the new bounds up).
+
+**Observed (GL smoke, xvfb, container):** gollum placed (scaled, moved, turned), Apply — the picture does not change, the
+placement is identity; the head moved and cleared — it jumps back; three Undos bring the placed gollum back. Apply on gollum
+(21 875 faces) took 3.0 s in the container (positions, two snapshots, entry rebuild; not optimised, §4 of the handoff).
+
+**Tests:** `tests/test_object_apply.py` (18: bindings, bake bit-exact and against the model matrix, Undo/Redo of mesh +
+transform + pivot, Rotate after Apply at the same place, the component selection after Apply, a non-edit object's entry
+and pick cache, several objects in one step, unplaced objects untouched, Clear, refusals outside `4` / on a Reference / with
+nothing selected / mixed / during a gesture, symmetric head refused for a free turn and for a move along the normal, kept
+exactly symmetric for an allowed bake and for an exact quarter turn X → Z, the composite's order). **Mutation check:** no
+bake → 2 fail; pivot not moved → 2; no symmetry check → 2; no entry rebuild → 1; no axis remap → 1; Clear without effect →
+2; composite order reversed survives the app tests (its parts are independent) and fails the direct composite test.
+
 ## 7. Questions
 
 ### 7.1 For Manu (Artist)
@@ -645,6 +676,9 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | Q-11 | M1 test | How should a **Reference look**? M1 draws it shaded in a muted blue (not in pure Wireframe), no transparency (§6.1). | **Answered (Manu 2026-10-15):** blue stays; see-through needed both ways → §7.3 |
 | Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | **Answered (Manu 2026-10-15):** the click stays ("passt erstmal so") |
 | Q-13 | later | How is an object's **pivot** set (eyes, jaw: A-3)? It must never move geometry (L-2). | **Deferred (Manu 2026-10-15):** not needed for now, comes later; until then the pivot is the object origin (M0 default) |
+| Q-14 | M2-3 test | Keys for **Apply** / **Clear transform** in `4`? | `Ctrl+A` / `Alt+Shift+A` (built, `PROVISIONAL`; `Alt+A` is "clear selection") |
+| Q-15 | M2-3 test | Where is the **pivot after Apply**? | where it was in the world (`t + c`), so turning afterwards happens at the same place — like Max Reset XForm (built); the alternative is the new origin = world origin |
+| Q-16 | M2-3 test | Apply on a **symmetric** object only when the plane lands exactly on an axis plane — a free turn never does, so a turned symmetric object cannot be applied. OK, or should turns snap (e.g. 15°/90° with a modifier)? | keep the refusal for now; a snap is its own small slice if you want it |
 
 ### 7.2 Engineering (agent domain, decided at implementation)
 
@@ -656,6 +690,7 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | E-5 | Undo refresh by object: is the mirror entry enough, or does a `Command` need to name its object? **M1:** the mirror entry is enough — it carries `mesh_step`, and an object step's Undo/Redo reconciles the object entries with `scene.objects` (§6.1); no `Command` names its object. Revisit with A-4 |
 | E-11 | The object gesture. **M2-2:** its own small path in `Application` (not the component tools), sharing the hold-key state; Move/Rotate/Scale rules in §6.4; `PROVISIONAL` |
 | E-12 | The object transform command. **M2-2:** `ObjectTransformCommand` with `(obj, before, after)` per object, mirror entry `mesh_step=False`; `PROVISIONAL` |
+| E-13 | The composite. **M2-3:** `CompositeCommand(list)`, Undo in reverse; plus `ObjectPivotCommand`; the mirror entry names the non-edit objects whose mesh changed; `PROVISIONAL` |
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)
 
@@ -829,6 +864,23 @@ drehen und skalieren kannst du ein Objekt erst mit M2-2.
 **Fragen dabei:** Fühlen sich `W`/`E`/`R` auf Objektebene wie auf Punktebene an? Ist es richtig, dass eine Referenz in einer
 gemischten Auswahl stehen bleibt (statt die ganze Geste abzulehnen)? Reicht die Statuszeile als Ebenen-Anzeige (Q-6)?
 Stört es, dass ein Objekt *im* anderen in `4` nicht anklickbar ist?
+
+**M2-3 ist gebaut (2026-10-15) — Praxistest (ca. 5 Minuten), weiter in derselben Szene:**
+
+1. In `4` gollum (normal, verschoben/gedreht/skaliert) anklicken, **`Ctrl+A`** = *Transform übernehmen*: das Bild ändert sich
+   nicht, aber die Platzierung steckt jetzt in der Form (Konsole: `… transform applied (object level -> mesh; placement is
+   identity now)`). Bei gollum dauert das ein paar Sekunden.
+2. Danach `E`: gollum dreht sich um dieselbe Stelle wie vorher (der Pivot ist mitgewandert, Q-15).
+3. Kopf anklicken, mit `W` verschieben, dann **`Alt+Shift+A`** = *Transform löschen*: der Kopf springt zurück an seinen
+   Ursprung, die Form bleibt.
+4. `Ctrl+Z`: jeder Befehl ist ein Schritt (Übernehmen nimmt Form *und* Platzierung zusammen zurück).
+5. Symmetrie: in `1` am Kopf `Shift+S` (Symmetrie X), in `4` den Kopf mit `E` drehen, `Ctrl+A` → abgelehnt mit Grund
+   (`not a multiple of 90 degrees`). `Alt+Shift+A`, dann mit `Shift+X` (Ebene YZ) und `W` verschieben und `R` skalieren,
+   `Ctrl+A` → geht, die Symmetrie bleibt `valid`.
+
+**Fragen (Q-14…Q-16):** Tasten `Ctrl+A` / `Alt+Shift+A` gut? Pivot nach dem Übernehmen dort, wo er in der Welt war (wie Max),
+oder im neuen Ursprung? Ein gedrehtes symmetrisches Objekt lässt sich nicht übernehmen (eine freie Drehung ist nie genau
+90°) — ok so, oder brauchst du Einrasten beim Drehen?
 
 **Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
 Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·
