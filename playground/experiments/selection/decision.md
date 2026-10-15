@@ -80,6 +80,14 @@ Lasso Select
 ---
 
 ## Kandidaten für Production (nach Verdict)
+
+**In der App seit 2026-10-15** (Manus Promotion „die Playground-Werkzeuge in Production einbauen“,
+im Chat 2026-10-15): Box-Select und Paint Select, Gesten-Regel von Manu „Startpunkt entscheidet“ —
+LMB-Ziehen im leeren Raum = Box, auf dem Mesh = Malen; ohne Taste neu, Shift dazu. Ctrl+Ziehen ist
+Tweak („Auswahl weicht“), Entfernen geht nur per Ctrl-Klick. Der Wings-Zusatz oben (Box mit Modifier
+auch im Mesh) entfällt damit. Tasten und Optik `PROVISIONAL`, Praxistest steht aus
+([WP Playground-Werkzeuge](../../../docs/WP_PLAYGROUND_TOOLS_PROMOTION.md)). Lasso bleibt offen.
+
 [Modifier]` → Shift+LMB addiert, Ctrl+LMB entfernt, Alt+LMB togglet
 Component Mode (1 / 2 / 3)
 Box-Select (siehe Beschreibung oben)

@@ -51,9 +51,9 @@
 | Replace Selection         | `M` variant            | keep          | Experiment variant   |       |
 | Toggle Selection          | `M` variant            | keep          | Experiment variant   |       |
 | Modifier Selection        | `M` variant            | keep          | Experiment variant   |       |
-| Box Select                | `Q` variant            |               | Experiment variant   |       |
+| Box Select                | `Q` variant            |               | Experiment variant   | App (`src/main.py`, 2026-10-15, `PROVISIONAL`): LMB drag from empty space; Shift adds |
 | Lasso Select              | `Q` variant            |               | Experiment variant   |       |
-| Paint Select              | `Q` variant            |               | Experiment variant   |       |
+| Paint Select              | `Q` variant            |               | Experiment variant   | App (2026-10-15, `PROVISIONAL`): LMB drag from the mesh; Shift adds (Manu: "Startpunkt entscheidet") |
 | Face Picking              | Current picking        |               | Click                |       |
 | Hover / Preview Selection | Current implementation |               | Mouse hover          |       |
 | Add to Selection          | TBD                    |               |                      |       |
@@ -109,7 +109,7 @@
 | Transform — Press Mode | X / R / S | | Press-to-toggle | |
 | Transform — Press-Drag-Click | X / R / S + LMB | | Press / drag / click | |
 | Tweak — Hold Key | X / R / S | | Existing Tweak variant | |
-| Tweak — Silo | Ctrl + LMB | | Existing Tweak variant | |
+| Tweak — Silo | Ctrl + LMB | | Existing Tweak variant | App (2026-10-15, `PROVISIONAL`): Ctrl+LMB drag, last W/E/R; Ctrl+LMB click still removes |
 | Tweak — Hold Click | X / R / S + LMB | | Existing Tweak variant | |
 | Tweak — Hold Ctrl | Ctrl + mouse motion | | Existing Tweak variant | |
 
@@ -121,10 +121,10 @@
 |---|---|---|---|---|
 | Extrude | TBD / current | | | |
 | Connect Edges | TBD / current | | | |
-| Loop Select | TBD / current | | | |
-| Ring Select | TBD / current | | | |
-| Loop Insert | TBD / current | | | |
-| Loop Slide | TBD / current | | | |
+| Loop Select | TBD / current | | | App (2026-10-15, `PROVISIONAL`): Shift+L, edge mode |
+| Ring Select | TBD / current | | | App (2026-10-15, `PROVISIONAL`): Shift+R, edge mode |
+| Loop Insert | TBD / current | | | App (2026-10-15, `PROVISIONAL`): I, edge mode |
+| Loop Slide | TBD / current | | | App (2026-10-15, `PROVISIONAL`): hold G, edge mode |
 | Edge / Topology Select | TBD / current | | | |
 | Topology Operation Restore / Cancel | `F` / current | | | |
 | Restore Articulation | `F` / current | | | |

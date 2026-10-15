@@ -145,6 +145,13 @@ Scope (binding, see the handoffs):
   into the mesh), Alt+Shift+A = Clear transform (placement back to identity).
   AD-021 M2-4: in `4` select one Normal object, then 1/2/3 = edit that object;
   Undo/Redo switch back to the object a step was made on.
+- Playground tools promoted 2026-10-15 (Manu; keys and look `PROVISIONAL`): LMB drag
+  from empty space = Box Select (rubber band drawn here, `draw_selection_box`), from the mesh
+  = Paint Select; no modifier replaces, Shift adds; Esc discards. Ctrl+LMB drag = Tweak with
+  the last W/E/R (Move until one is pressed; a tap sets it) on the selection, else on the
+  element under the press point; Ctrl+LMB click still removes. Edge mode: Shift+L / Shift+R
+  add the edge loop / ring, I inserts a loop through the ring, hold G slides the selected
+  loop(s); under symmetry Loop Insert and Loop Slide mirror. All in `Application`.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -435,8 +442,24 @@ def install_handlers(
         window.clear()
         app.viewport.sync()
         app.viewport.render()
+        box = app.selection_box
+        if box is not None:
+            draw_selection_box(box)
         if menu is not None and menu.is_open:
             menu.draw()
+
+
+def draw_selection_box(box: tuple[float, float, float, float]) -> None:
+    """The Box Select rubber band (window pixels; look `PROVISIONAL`): a thin pale outline
+    over the viewport, drawn like the menu (depth off, blending on)."""
+    from pyglet import gl, shapes
+
+    x0, y0, x1, y1 = box
+    gl.glDisable(gl.GL_DEPTH_TEST)
+    gl.glEnable(gl.GL_BLEND)
+    gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+    shapes.Rectangle(x0, y0, x1 - x0, y1 - y0, color=(255, 236, 160, 28)).draw()
+    shapes.Box(x0, y0, x1 - x0, y1 - y0, thickness=1, color=(255, 236, 160, 200)).draw()
 
 
 def run(window, app: Application) -> None:

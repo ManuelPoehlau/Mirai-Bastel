@@ -31,6 +31,15 @@ SELECT = "Select"
 SELECT_ADD = "SelectAdd"
 SELECT_REMOVE = "SelectRemove"
 SELECT_TOGGLE = "SelectToggle"
+# SELECT_DRAG* sind Drag-Commands (2026-10-15, Box KEEP + Paint, Manu: "Startpunkt
+# entscheidet"): der Press-Punkt entscheidet - im leeren Raum Box, auf dem Mesh Paint.
+# SELECT_DRAG ersetzt die Auswahl, SELECT_DRAG_ADD fügt hinzu (Entfernen per Drag gibt es
+# nicht: Ctrl+Drag ist Tweak, Manu 2026-10-15 "Auswahl weicht").
+SELECT_DRAG = "SelectDrag"
+SELECT_DRAG_ADD = "SelectDragAdd"
+# TWEAK (2026-10-15, Tweak Lab V2 "Silo" KEEP): Ctrl+LMB-Drag transformiert mit dem zuletzt
+# gewählten W/E/R (Start: Move) die Auswahl, ohne Auswahl das Element unter dem Press-Punkt.
+TWEAK = "Tweak"
 # MOVE ist das explizite modale Move-Command (WP-02): Es wird über die
 # Mapping-Schicht auf das MoveTool geroutet — Bindings (z. B. M oder G)
 # verändern das Tool nicht.

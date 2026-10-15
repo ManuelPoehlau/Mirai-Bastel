@@ -14,6 +14,12 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
 - Shift+LMB-Klick → SelectAdd, Ctrl+LMB-Klick → SelectRemove
 - Alt+LMB-Klick   → SelectToggle
 - Alt+LMB-Drag    → Orbit, Alt+Shift+LMB-Drag → Pan
+- LMB-Drag        → SelectDrag: Start im leeren Raum = Box, auf dem Mesh = Paint
+                    (ersetzt die Auswahl); Shift+LMB-Drag → SelectDragAdd (fügt hinzu)
+- Ctrl+LMB-Drag   → Tweak (zuletzt gewähltes W/E/R, Start Move); Ctrl+LMB-Klick bleibt
+                    SelectRemove. Alles `PROVISIONAL`, Manu 2026-10-15 (Promotion der
+                    Playground-Werkzeuge: Box/Paint "Startpunkt entscheidet", Tweak
+                    "Ctrl+LMB, Auswahl weicht")
 - RMB/MMB         → bewusst ungebunden (eine Primärbindung pro Funktion,
                     AD-013 Truth-Regel 2)
 
@@ -91,6 +97,13 @@ Soft Selection (WP-SOFT-01 S2a, AD-020, `PROVISIONAL`, aus per Default; Manu 202
                     `custom`, zoomt nie. Ctrl+Shift+Mausrad ist ungebunden.
 - Alt+O            → Influence-Bänder (Farbpunkte) an/aus
 Sticky wie X/Y/Z, wirken ab der nächsten Geste; Engineering-Tasten, keine Artist Input Truth.
+
+Loop-Werkzeuge (2026-10-15, Tasten aus der Artist Input Truth, `PROVISIONAL`):
+- Shift+L          → Edge Loop zur Auswahl (Edge-Modus; ausgewählte Edges, sonst die gehoverte)
+- Shift+R          → Edge Ring zur Auswahl (wie Shift+L)
+- I                → Loop Insert: neuer Loop durch den Ring der ausgewählten/gehoverten Edge
+- G (halten)       → Loop Slide der ausgewählten Edges, Maus bewegen, loslassen = Commit
+Wie `C` ignoriert, solange W/E/R/T/G scharf ist; in der Knife-Session ungebunden.
 
 Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
 und gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
@@ -176,6 +189,13 @@ def build_default_bindings() -> BindingSet:
     # key the refusal texts of `symmetric_ops`/`symmetric_knife`/`symmetric_extrude` name.
     bs.set_default(_key("s", "shift"), cmd.SYMMETRY_CYCLE)
 
+    # Loop tools (2026-10-15, promoted from the Playground; keys = Artist Input Truth
+    # `topology.edge_loop_select` / `edge_ring_select` / `loop_insert` / `loop_slide`).
+    bs.set_default(_key("l", "shift"), cmd.EDGE_LOOP)
+    bs.set_default(_key("r", "shift"), cmd.EDGE_RING)
+    bs.set_default(_key("i"), cmd.LOOP_INSERT)
+    bs.set_default(_key("g"), cmd.LOOP_SLIDE)
+
     # --- Knife session (WP-06 B7, AD-017; context "knife") ------------------
     # Artist Input Truth `topology.knife_commit` (Enter); Ctrl+Shift+Z is the
     # alternative in-session Redo gesture (AD-017 DECIDED 2026-09-22). Bound
@@ -202,6 +222,10 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_mouse("LEFT", "alt"), cmd.SELECT_TOGGLE)
     bs.set_default(_drag("LEFT", "alt"), cmd.ORBIT)
     bs.set_default(_drag("LEFT", "alt", "shift"), cmd.PAN)
+    # 2026-10-15 (Manu): Box/Paint und Tweak - siehe Moduldocstring.
+    bs.set_default(_drag("LEFT"), cmd.SELECT_DRAG)
+    bs.set_default(_drag("LEFT", "shift"), cmd.SELECT_DRAG_ADD)
+    bs.set_default(_drag("LEFT", "ctrl"), cmd.TWEAK)
     bs.set_default(_wheel("UP"), cmd.ZOOM)
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
 

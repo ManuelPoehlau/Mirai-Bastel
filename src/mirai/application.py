@@ -129,9 +129,18 @@ from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point, space_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
+from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
+from .topology.loop_slide import (
+    LOOP_SLIDE_LABEL,
+    LoopSlideRefused,
+    SlidePlan,
+    plan_loop_slide,
+    slide_positions,
+)
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .viewport import DisplayMode, DisplayState, OrbitCamera
-from .viewport.picking import pick_component, pick_object
+from .viewport.box_select import elements_in_rect, normalized_rect, stroke_samples
+from .viewport.picking import pick_component, pick_face, pick_object
 from .viewport.picking_cache import PickCache
 
 
@@ -159,7 +168,19 @@ _TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
     commands.ROTATE: ("Rotate", "rotate", "rotated"),
     commands.SCALE: ("Scale", "scale", "scaled"),
     commands.EXTRUDE: ("Extrude", "extrude", "extruded"),
+    # 2026-10-15 (loop tools promoted): hold G, the same hold-key family as T.
+    commands.LOOP_SLIDE: ("Loop Slide", "slide", "slid"),
 }
+
+#: The pseudo key a Tweak gesture (Ctrl+LMB drag) arms the transform with; no key has this
+#: value, so `key_release` never ends a Tweak - the LMB release does (`pointer_release`).
+TWEAK_KEY = "LMB-tweak"
+
+#: 2026-10-15: the loop commands that run once on a key press (Shift+L, Shift+R, I).
+_LOOP_COMMANDS = (commands.EDGE_LOOP, commands.EDGE_RING, commands.LOOP_INSERT)
+
+#: The transforms a Tweak can use (`tweak_command`).
+_TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
 
 #: WP-06 B9 (E3, PROVISIONAL, agent-set): Extrude mutates the topology in `begin()`,
 #: so unlike Move/Rotate/Scale (AD-016: first motion begins) it needs the pointer's net
@@ -265,7 +286,13 @@ _MODE_COMMANDS: dict[str, SelectionMode] = {
 #: below; a Reference is locked (RF-4, Q-1). Undo/Redo, display, Soft settings and constraints
 #: are state or history, not component work, and stay allowed.
 _COMPONENT_COMMANDS = frozenset(
-    {*_TRANSFORM_COMMANDS, commands.CONNECT, *_REMOVAL_COMMANDS, commands.SYMMETRY_CYCLE}
+    {
+        *_TRANSFORM_COMMANDS,
+        commands.CONNECT,
+        *_REMOVAL_COMMANDS,
+        commands.SYMMETRY_CYCLE,
+        *_LOOP_COMMANDS,
+    }
 )
 
 #: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture (`_object_arm`) instead of a
@@ -294,6 +321,21 @@ class _ObjectGesture:
     mask: tuple[float, float, float] | None = None
     move: tuple[float, float, float] = (0.0, 0.0, 0.0)
     pixels: float = 0.0
+
+
+@dataclasses.dataclass
+class _DragSelect:
+    """A running LMB drag selection (2026-10-15, Manu: "Startpunkt entscheidet"): `box` when
+    the press was in empty space, else `paint`. `add` = Shift (adds) instead of replacing.
+    `before` is the selection at the start (Esc restores it); `last` the last painted point."""
+
+    kind: str
+    add: bool
+    start: tuple[float, float]
+    end: tuple[float, float]
+    before: tuple
+    last: tuple[float, float]
+    cancelled: bool = False
 
 
 def _element_vertices(mesh, element) -> set[VertexId]:
@@ -651,6 +693,24 @@ class Application:
         self._knife_refused_text: str | None = None
         self.knife_mirror_variant: str = KNIFE_MIRROR_VARIANT_DEFAULT
 
+        # 2026-10-15 (Playground tools promoted, Manu): the press point of the current LMB
+        # gesture (Box/Paint/Tweak decide by it), the running drag selection, the transform a
+        # Tweak uses (the last W/E/R pressed; Move until then) and whether the current LMB drag
+        # gesture (Box/Paint or Tweak) was refused (its further drag steps do nothing until the
+        # release).
+        self._press_point: tuple[float, float] | None = None
+        self._drag_select: _DragSelect | None = None
+        self.tweak_command: str = commands.MOVE
+        self._gesture_refused: bool = False
+        # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
+        # direction of side A (px per unit t; None = fall back to horizontal), and the mesh
+        # state at the first motion (Esc and the History entry use it).
+        self._slide_plan: SlidePlan | None = None
+        self._slide_t: float = 0.0
+        self._slide_direction: tuple[float, float] | None = None
+        self._slide_before: dict | None = None
+        self._slide_selection_before: tuple | None = None
+
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
         for command, tool_class in (
@@ -966,7 +1026,8 @@ class Application:
         if command in _OBJECT_TRANSFORM_COMMANDS:
             return False
         self._set_status(
-            "Object mode: T, C, Delete/Dissolve and Shift+S work on points/edges/faces"
+            "Object mode: T, G, I, C, Delete/Dissolve, Shift+L/R and Shift+S work on"
+            " points/edges/faces"
             " - press 1/2/3"
         )
         return True
@@ -1358,6 +1419,10 @@ class Application:
             return self._removal_command(command)
         if command == commands.SYMMETRY_CYCLE:
             return self._symmetry_cycle()
+        if command in (commands.EDGE_LOOP, commands.EDGE_RING):
+            return self._loop_select(command)
+        if command == commands.LOOP_INSERT:
+            return self._loop_insert()
 
         return False
 
@@ -1520,33 +1585,9 @@ class Application:
             return True
 
         if ctx is CContext.EDGE_CONNECT:
-            mesh = self.scene.mesh
-            # Taken from the live selection before the transaction (and before canonicalisation
-            # reaches the mesh): the sides the artist worked on.
-            sides = (
-                residue_sides(mesh, selection.edges, mesh.edge_vertices)
-                if self._connect_coordinator(ctx) is not None
-                else None
+            return self._edge_connect(
+                selection.edges, effective.edges, EDGE_CONNECT_LABEL, "Connect Edges"
             )
-
-            def residue(result) -> None:
-                created = set(result.created)
-                if sides is not None:
-                    created = on_residue_sides(mesh, created, sides, mesh.edge_vertices)
-                selection.clear()
-                selection.add(created)
-
-            try:
-                self._mesh_transaction(
-                    EDGE_CONNECT_LABEL,
-                    lambda mesh: self._connect_op(ctx, apply_connect_edges)(mesh, set(effective.edges)),
-                    on_applied=residue,
-                )
-            except (TopologyToolError, SymmetryRefusal) as exc:
-                self._set_status(str(exc))
-                return False
-            self._set_status("Connect Edges")
-            return True
 
         if ctx is CContext.VERTEX_CONNECT:
             # Residue (AD-017): the original vertices stay selected, Vertex
@@ -1574,6 +1615,40 @@ class Application:
         # C meaning (AD-017 §7).
         self._set_status("C: nothing to do here")
         return False
+
+    def _edge_connect(self, live_edges, effective_edges, description: str, status: str) -> bool:
+        """Edge Connect of `effective_edges` (canonical under symmetry) as one transaction; the
+        created edges become the selection, under symmetry on the sides `live_edges` had
+        (`residue_sides`). Shared by `C` (2+ edges) and Loop Insert (`I`, the ring's edges)."""
+        ctx = CContext.EDGE_CONNECT
+        selection = self.selection
+        mesh = self.scene.mesh
+        # Taken from the live edges before the transaction (and before canonicalisation
+        # reaches the mesh): the sides the artist worked on.
+        sides = (
+            residue_sides(mesh, set(live_edges), mesh.edge_vertices)
+            if self._connect_coordinator(ctx) is not None
+            else None
+        )
+
+        def residue(result) -> None:
+            created = set(result.created)
+            if sides is not None:
+                created = on_residue_sides(mesh, created, sides, mesh.edge_vertices)
+            selection.clear()
+            selection.add(created)
+
+        try:
+            self._mesh_transaction(
+                description,
+                lambda mesh: self._connect_op(ctx, apply_connect_edges)(mesh, set(effective_edges)),
+                on_applied=residue,
+            )
+        except (TopologyToolError, SymmetryRefusal) as exc:
+            self._set_status(str(exc))
+            return False
+        self._set_status(status)
+        return True
 
     def _connect_op(self, context: CContext, plain: Callable) -> Callable:
         """The mutation `_connect_command` runs for a declared context: the coordinator
@@ -1622,6 +1697,170 @@ class Application:
             return False
         self._set_status(text)
         return True
+
+    # -- Loop tools (2026-10-15, promoted from the Playground, Manu) ----------------------
+    #
+    # Shift+L / Shift+R add the edge loops / rings of the selected edges (else of the hovered
+    # edge) to the selection; I inserts a loop through the ring of each such edge (the ring's
+    # edges through the shared Edge Connect, so the symmetric coordinator of `C` covers it);
+    # hold G slides the selected loop(s) (`mirai.topology.loop_slide`). Edge mode only;
+    # `PROVISIONAL` (no Artist verdict for the loop tools yet).
+
+    def _loop_seed_edges(self, label: str) -> set[EdgeId] | None:
+        """The selected edges, else the hovered edge; None (status posted) outside edge mode
+        or without either."""
+        selection = self.selection
+        mesh = self.scene.mesh
+        if selection.mode is not SelectionMode.EDGE:
+            self._set_status(f"{label}: edge mode needed (2)")
+            return None
+        edges = {e for e in selection.edges if mesh.is_valid_edge(e)}
+        hovered = selection.hovered
+        if not edges and isinstance(hovered, EdgeId) and mesh.is_valid_edge(hovered):
+            edges = {hovered}
+        if not edges:
+            self._set_status(f"{label}: select or hover an edge")
+            return None
+        return edges
+
+    def _loop_select(self, command: str) -> bool:
+        label = "Edge Loop" if command == commands.EDGE_LOOP else "Edge Ring"
+        seeds = self._loop_seed_edges(label)
+        if seeds is None:
+            return False
+        walk = edge_loop if command == commands.EDGE_LOOP else edge_ring
+        mesh = self.scene.mesh
+        found: set[EdgeId] = set()
+        for edge in sorted(seeds):
+            if edge in found:
+                continue
+            try:
+                found.update(walk(mesh, edge).edges)
+            except LoopRingError as exc:
+                self._set_status(f"{label}: {exc}")
+                return False
+        selection = self.selection
+        before = len(selection.edges)
+        selection.add(found)
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        added = len(selection.edges) - before
+        self._set_status(f"{label}: {len(selection.edges)} edges selected (+{added})")
+        return True
+
+    def _loop_insert(self) -> bool:
+        seeds = self._loop_seed_edges("Loop Insert")
+        if seeds is None:
+            return False
+        mesh = self.scene.mesh
+        ring: set[EdgeId] = set()
+        for edge in sorted(seeds):
+            if edge not in ring:
+                ring.update(edge_ring(mesh, edge).edges)
+        if len(ring) < 2:
+            self._set_status("Loop Insert: no edge ring through this edge (needs quads)")
+            return False
+        effective = ring
+        if mesh.symmetry_definition is not None:
+            effective = canonical_edges(SymmetryIndex(mesh), ring)
+        return self._edge_connect(ring, effective, "Loop Insert", "Loop Insert")
+
+    def _slide_arm(self, key: str) -> bool:
+        """Hold G: plan the slide of the selected (else the hovered) edges now; refusals are
+        posted at the press, before anything moves. Nothing moves before the first motion."""
+        edges = self._loop_seed_edges(LOOP_SLIDE_LABEL)
+        if edges is None:
+            return False
+        mesh = self.scene.mesh
+        try:
+            plan = plan_loop_slide(mesh, edges)
+        except LoopSlideRefused as exc:
+            self._set_status(str(exc))
+            return False
+        self._transform_key = key
+        self._transform_command = commands.LOOP_SLIDE
+        self._transform_target = frozenset(plan.vertex_ids)
+        self._transform_begun = False
+        self._slide_plan = plan
+        self._slide_t = 0.0
+        self._slide_direction = self._slide_screen_direction(plan)
+        self._set_hovered(None)
+        count = len(plan.vertex_ids)
+        self._set_status(
+            f"{LOOP_SLIDE_LABEL}: {count} vertices - move the mouse, release {key.upper()} to commit"
+        )
+        return True
+
+    def _slide_screen_direction(self, plan: SlidePlan) -> tuple[float, float] | None:
+        """Mean screen vector from each driven vertex to its side-A target (px for t = 1)."""
+        camera = self._edit_camera
+        sx = sy = 0.0
+        n = 0
+        for orig, side_a, _ in plan.slides.values():
+            a = camera.project_to_screen(orig, self.viewport_width, self.viewport_height)
+            b = camera.project_to_screen(side_a, self.viewport_width, self.viewport_height)
+            if a is None or b is None:
+                continue
+            sx += b[0] - a[0]
+            sy += b[1] - a[1]
+            n += 1
+        if n == 0 or math.hypot(sx / n, sy / n) < 1.0:
+            return None
+        return (sx / n, sy / n)
+
+    def _slide_step(self, dx: float, dy: float) -> bool:
+        plan = self._slide_plan
+        if plan is None:
+            return False
+        mesh = self.scene.mesh
+        if not self._transform_begun:
+            self._slide_before = mesh.export_state()
+            self._slide_selection_before = self._selection_snapshot()
+            self._transform_begun = True
+        direction = self._slide_direction
+        if direction is None:
+            # Edges seen end-on: the Playground's mapping (horizontal motion).
+            self._slide_t += dx / self.viewport_width * 2.0
+        else:
+            self._slide_t += (dx * direction[0] + dy * direction[1]) / (
+                direction[0] ** 2 + direction[1] ** 2
+            )
+        self._slide_t = max(-1.0, min(1.0, self._slide_t))
+        positions = slide_positions(plan, self._slide_t)
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        self._pick_cache.invalidate()
+        self.viewport.on_vertices_moved(set(positions))
+        return True
+
+    def _slide_release(self) -> None:
+        mesh = self.scene.mesh
+        before = self._slide_before
+        if not self._transform_begun or before is None:
+            self._set_status(f"{LOOP_SLIDE_LABEL}: no change")
+            return
+        after = mesh.export_state()
+        if after == before:
+            self._set_status(f"{LOOP_SLIDE_LABEL}: no change")
+            return
+        self.history.push(
+            MeshStateCommand(
+                mesh=mesh, before_state=before, after_state=after, description=LOOP_SLIDE_LABEL
+            )
+        )
+        self._record_selection_history(self._slide_selection_before)
+        self._soft_preview_refresh()
+        self._set_status(f"{LOOP_SLIDE_LABEL} committed")
+
+    def _slide_abort(self) -> None:
+        before = self._slide_before
+        if before is None or self._slide_plan is None:
+            return
+        self.scene.mesh.load_state(before)
+        self._pick_cache.invalidate()
+        if self.viewport is not None:
+            self.viewport.on_vertices_moved(set(self._slide_plan.vertex_ids))
 
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 
@@ -2295,11 +2534,18 @@ class Application:
             return False
         if self._object_mode_refuses(command):
             return False
+        if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS):
+            # A Box/Paint drag owns the selection until the LMB release (like a gesture).
+            return False
+        if command in _TWEAK_TRANSFORMS:
+            # Tweak (Ctrl+LMB drag) uses the last W/E/R pressed - a tap sets it ("tool set").
+            self.tweak_command = command
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
-            if self._transform_command == commands.EXTRUDE:
-                # Extrude is normal-only: neither the gesture nor the sticky state changes.
+            if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE):
+                # Extrude is normal-only, Loop Slide runs along its edges: neither the gesture
+                # nor the sticky state changes.
                 return False
             return self._constrain(_CONSTRAINT_SPACES[command])
         if command == commands.CANCEL:
@@ -2323,7 +2569,11 @@ class Application:
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
-        if command in (commands.CONNECT, commands.SYMMETRY_CYCLE) or command in _REMOVAL_COMMANDS:
+        if (
+            command in (commands.CONNECT, commands.SYMMETRY_CYCLE)
+            or command in _REMOVAL_COMMANDS
+            or command in _LOOP_COMMANDS
+        ):
             # Wie die Modus-Tasten (B5b): C, Entf, Rücktaste und Shift+S werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
             # Shift+S: AD-SYM-04 R-4, still wie C).
@@ -2348,11 +2598,19 @@ class Application:
         eine Mausbewegung kam; ein bloßes Antippen entschärft nur (E21)."""
         if self._transform_key is None or input.value != self._transform_key:
             return False
+        self._transform_finish()
+        return True
+
+    def _transform_finish(self) -> None:
+        """End the armed/running hold gesture: commit after motion, else just disarm. The
+        release of its key (`key_release`) or, for a Tweak, of the LMB (`pointer_release`)."""
         label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
         if self._object_gesture is not None:
             self._object_release()
         elif self._transform_command == commands.EXTRUDE:
             self._extrude_release()
+        elif self._transform_command == commands.LOOP_SLIDE:
+            self._slide_release()
         elif self._transform_begun:
             before = self._selection_snapshot()
             command = self.tool_manager.commit()
@@ -2366,7 +2624,6 @@ class Application:
             self._set_status(f"{label}: tool set (no motion, nothing {participle})")
         self._transform_end()
         self._refresh_hover()
-        return True
 
     def _transform_arm(self, command: str, key: str) -> bool:
         """Transform scharf schalten (E21/E28): Ziel = aufgelöste Selection,
@@ -2377,6 +2634,8 @@ class Application:
             return False
         if command == commands.EXTRUDE:
             return self._extrude_arm(key)
+        if command == commands.LOOP_SLIDE:
+            return self._slide_arm(key)
         if self.selection.mode is SelectionMode.OBJECT:
             return self._object_arm(command, key)
         label, verb, _ = _TRANSFORM_COMMANDS[command]
@@ -2404,9 +2663,10 @@ class Application:
             self._soft_preview_refresh(shown_by_gesture=True)
         count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
+        release = "the mouse button" if key == TWEAK_KEY else key.upper()
         self._set_status(
             f"{label}: {count} {noun}{self._constraint_suffix(self._axis_constraint)}"
-            f" - move the mouse, release {key.upper()} to commit"
+            f" - move the mouse, release {release} to commit"
         )
         return True
 
@@ -2437,6 +2697,8 @@ class Application:
             return False
         if self._object_gesture is not None:
             return self._object_step(dx, dy)
+        if self._transform_command == commands.LOOP_SLIDE:
+            return self._slide_step(dx, dy)
         if not self._transform_begun and self._transform_command == commands.EXTRUDE:
             # Net displacement since the arm; the first update gets all of it, so the
             # distance follows the pointer from where T went down.
@@ -2503,6 +2765,11 @@ class Application:
         self._extrude_travel = (0.0, 0.0)
         self._extrude_selection_before = None
         self._object_gesture = None
+        self._slide_plan = None
+        self._slide_t = 0.0
+        self._slide_direction = None
+        self._slide_before = None
+        self._slide_selection_before = None
         if resume_preview:
             self._soft_preview_refresh()
 
@@ -2760,9 +3027,14 @@ class Application:
     def _cancel(self) -> bool:
         """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
         exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
-        nichts."""
+        nichts. Eine Box/Paint-Geste wird verworfen (Auswahl wie vor der Geste)."""
+        if self._drag_select is not None:
+            return self._drag_select_cancel()
         if self._transform_key is None:
             return False
+        if self._transform_key == TWEAK_KEY:
+            # The LMB is still down: the rest of this drag must not arm a new Tweak.
+            self._gesture_refused = True
         label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
         if self._object_gesture is not None:
             if self._transform_begun:
@@ -2772,6 +3044,9 @@ class Application:
                 self._set_status(f"Object {label} disarmed")
         elif self._transform_begun and self._transform_command == commands.EXTRUDE:
             self._extrude_abort()
+            self._set_status(f"{label} cancelled")
+        elif self._transform_begun and self._transform_command == commands.LOOP_SLIDE:
+            self._slide_abort()
             self._set_status(f"{label} cancelled")
         elif self._transform_begun:
             moved = self._active_transform_vertex_ids()
@@ -3055,6 +3330,8 @@ class Application:
         if self._knife is not None and self._knife_owns_press(input):
             self._knife_press(input)
             return
+        if not self.pointer.active:
+            self._press_point = self._cursor
         self.pointer.press(input)
 
     def pointer_drag(
@@ -3077,6 +3354,13 @@ class Application:
         if self._knife_gesture and button == self._knife_gesture_button:
             return self._knife_release(x, y)
         click = self.pointer.release(button, x, y)
+        if button == "LEFT" and self._drag_select is not None:
+            return self._drag_select_finish()
+        if button == "LEFT" and self._transform_key == TWEAK_KEY:
+            self._transform_finish()
+            return True
+        if button == "LEFT":
+            self._gesture_refused = False
         if self._knife is not None:
             # Session Gate (B7): Navigation ist vorbei bzw. ein modifizierter
             # Klick fiel - der Klick selbst tut während der Session nichts
@@ -3195,6 +3479,10 @@ class Application:
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:
+        if step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
+            return self._drag_select_step(step.command)
+        if step.command == commands.TWEAK:
+            return self._tweak_step(step.dx, step.dy)
         if step.command == commands.ORBIT:
             self.camera.orbit(-step.dx * ORBIT_RADIANS_PER_PX, -step.dy * ORBIT_RADIANS_PER_PX)
         elif step.command == commands.PAN:
@@ -3254,6 +3542,175 @@ class Application:
 
     #: B2-Name, bleibt als Weiterleitung (E43).
     select_vertex_at = select_at
+
+    # -- Box / Paint Select (2026-10-15, Playground tools promoted, Manu) ------------------
+    #
+    # Box: Selection Lab KEEP (`playground/experiments/selection/decision.md`). Paint: planned
+    # there ("Paint Select"), first built here. Manu 2026-10-15: the press point decides - in
+    # empty space a box, on the mesh a paint stroke; no modifier replaces, Shift adds. Ctrl+drag
+    # is Tweak ("Auswahl weicht"), so removing works by click only. Like a click, neither is a
+    # History step. Not in mode `4` (`PROVISIONAL`).
+
+    @property
+    def selection_box(self) -> tuple[float, float, float, float] | None:
+        """The rubber band of a running Box Select (min x, min y, max x, max y in window
+        pixels), for the window to draw; None otherwise."""
+        drag = self._drag_select
+        if drag is None or drag.kind != "box" or drag.cancelled:
+            return None
+        return normalized_rect(drag.start, drag.end)
+
+    def _drag_select_refusal(self) -> str | None:
+        """Why a drag selection cannot start now (None = it can). Silent cases return ""."""
+        if self.viewport is None or self._knife is not None or self._transform_key is not None:
+            return ""
+        if self.selection.mode is SelectionMode.OBJECT:
+            return "Box/Paint: points, edges and faces only - press 1/2/3"
+        return None
+
+    def _drag_select_step(self, command: str) -> bool:
+        cursor = self._cursor
+        if cursor is None:
+            return False
+        drag = self._drag_select
+        if drag is None:
+            if self._gesture_refused:
+                return False
+            refusal = self._drag_select_refusal()
+            if refusal is None and self._gate_refuses(command):
+                refusal = ""
+            if refusal is not None:
+                if refusal:
+                    self._set_status(refusal)
+                self._gesture_refused = True  # silence the rest of this gesture
+                return False
+            start = self._press_point if self._press_point is not None else cursor
+            on_mesh = (
+                pick_face(
+                    self._edit_camera,
+                    self.scene.mesh,
+                    start[0],
+                    start[1],
+                    self.viewport_width,
+                    self.viewport_height,
+                    cache=self._pick_cache,
+                )
+                is not None
+            )
+            drag = _DragSelect(
+                kind="paint" if on_mesh else "box",
+                add=command == commands.SELECT_DRAG_ADD,
+                start=start,
+                end=cursor,
+                before=self._selection_snapshot(),
+                last=start,
+            )
+            self._drag_select = drag
+            self._set_hovered(None)
+            if drag.kind == "paint":
+                if not drag.add:
+                    self.selection.clear()
+                    self.viewport.on_selection_changed()
+                self._paint_at([start])
+        if drag.cancelled:
+            return False
+        drag.end = cursor
+        if drag.kind == "paint":
+            self._paint_at(stroke_samples(drag.last, cursor))
+            drag.last = cursor
+        return True
+
+    def _paint_at(self, points) -> None:
+        hits = {hit for hit in (self._pick(x, y) for x, y in points) if hit is not None}
+        before = len(self._active_selection_ids())
+        self.selection.add(hits)
+        if len(self._active_selection_ids()) != before:
+            self.viewport.on_selection_changed()
+
+    def _active_selection_ids(self) -> set:
+        selection = self.selection
+        if selection.mode is SelectionMode.VERTEX:
+            return selection.vertices
+        if selection.mode is SelectionMode.EDGE:
+            return selection.edges
+        return selection.faces
+
+    def _drag_select_finish(self) -> bool:
+        drag = self._drag_select
+        self._drag_select = None
+        self._gesture_refused = False
+        if drag is None or drag.cancelled:
+            self._refresh_hover()
+            return False
+        selection = self.selection
+        if drag.kind == "box":
+            found = elements_in_rect(
+                self._edit_camera,
+                self.scene.mesh,
+                selection.mode,
+                normalized_rect(drag.start, drag.end),
+                self.viewport_width,
+                self.viewport_height,
+                cache=self._pick_cache,
+                occlusion=self.display.show_faces,
+            )
+            if drag.add:
+                selection.add(found)
+            else:
+                selection.set(found)
+            label = "Box"
+        else:
+            label = "Paint"
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        count = len(self._active_selection_ids())
+        noun = selection.mode.name.lower()
+        if count != 1:
+            noun = "vertices" if noun == "vertex" else noun + "s"
+        self._set_status(f"{label}: {count} {noun} selected")
+        self._refresh_hover()
+        return True
+
+    def _drag_select_cancel(self) -> bool:
+        drag = self._drag_select
+        if drag is None or drag.cancelled:
+            return False
+        drag.cancelled = True
+        if drag.kind == "paint":
+            self._restore_selection(drag.before)
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+        self._set_status(f"{'Box' if drag.kind == 'box' else 'Paint'} cancelled")
+        return True
+
+    # -- Tweak (2026-10-15, Tweak Lab V2 "Silo" KEEP, Manu: "Ctrl+LMB, Auswahl weicht") ------
+
+    def _tweak_step(self, dx: float, dy: float) -> bool:
+        """Ctrl+LMB drag: the first step arms `tweak_command` (the last W/E/R, Move by default)
+        like holding its key - target = the selection, else the element under the press point
+        (Tweak Lab rule; the selection is not changed) - and every step drives it. Ctrl may be
+        let go during the drag; the LMB release commits, Esc cancels (`_cancel`)."""
+        if self._gesture_refused:
+            return False
+        if self._transform_key is None:
+            if self.viewport is None or self._knife is not None or self._gate_refuses(commands.TWEAK):
+                self._gesture_refused = True
+                return False
+            if self.selection.mode is not SelectionMode.OBJECT:
+                press = self._press_point if self._press_point is not None else self._cursor
+                if not self._active_selection_ids() and press is not None:
+                    self._set_hovered(self._pick(*press))
+            if not self._transform_arm(self.tweak_command, TWEAK_KEY):
+                self._gesture_refused = True
+                return False
+        elif self._transform_key != TWEAK_KEY:
+            return False
+        stepped = self._transform_step(dx, dy)
+        if self._transform_key is None:
+            # Refused at begin (seam, symmetric Soft): no re-arm until the release.
+            self._gesture_refused = True
+        return stepped
 
     def _camera_changed(self) -> None:
         if self.viewport is not None:

@@ -132,8 +132,10 @@ class DefaultBindingsTests(unittest.TestCase):
         # WP-06 B2 (A6, AD-019): Navigation per Artist Truth.
         self.assertEqual(self.bs.command_for(_drag("LEFT", "alt")), cmd.ORBIT)
         self.assertEqual(self.bs.command_for(_drag("LEFT", "alt", "shift")), cmd.PAN)
-        self.assertIsNone(self.bs.command_for(_drag("LEFT")))
-        self.assertIsNone(self.bs.command_for(_drag("LEFT", "shift")))
+        # 2026-10-15 (Playground tools promoted, Manu): Box/Paint and Tweak.
+        self.assertEqual(self.bs.command_for(_drag("LEFT")), cmd.SELECT_DRAG)
+        self.assertEqual(self.bs.command_for(_drag("LEFT", "shift")), cmd.SELECT_DRAG_ADD)
+        self.assertEqual(self.bs.command_for(_drag("LEFT", "ctrl")), cmd.TWEAK)
         self.assertIsNone(self.bs.command_for(_drag("RIGHT")))
         self.assertIsNone(self.bs.command_for(_drag("MIDDLE")))
 
@@ -156,7 +158,8 @@ class BindingOverrideTests(unittest.TestCase):
         bs = build_default_bindings()
         bs.bind(_key("g"), cmd.MOVE)
         self.assertTrue(bs.unbind(_key("g")))
-        self.assertIsNone(bs.command_for(_key("g")))
+        # The default comes back (G = Loop Slide since 2026-10-15).
+        self.assertEqual(bs.command_for(_key("g")), cmd.LOOP_SLIDE)
 
     def test_multiple_bindings_for_same_command(self):
         bs = BindingSet()
