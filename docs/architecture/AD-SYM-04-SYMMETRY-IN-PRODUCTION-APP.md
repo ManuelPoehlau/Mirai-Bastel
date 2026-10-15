@@ -9,7 +9,7 @@ Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation not
 **SS1 design note written (2026-10-14, PROPOSED): [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)** — the one Core change; independent review CLAUDE-001 ACCEPT WITH CHANGES, all findings worked in (AD-SYM-05 §10); **go for SS1 (Manu, 2026-10-14)**.
 **Slice SS1 is built (2026-10-14, [implementation note in AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)):** the weighting is in the Core loop; no visible change (the app still refuses Soft + symmetry until SS2).
 **Slice SS2 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss2)):** symmetric Soft runs in the app (W/E/R, both metrics); I-8 is lifted. **The SS2 Artist question is answered (Manu, 2026-10-14, Decision record) and built the same day ([addendum](#addendum-2026-10-14-manus-answer-to-the-ss2-question)):** seeds on both sides → the explicit selection wins; only on the seam → every step in the plane; R6-A stays.
-**Slice SS3 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss3)):** the bands show both sides under symmetry (D-5); the symmetric probe rows `soft_w_sym` are ready (D-4) — **the reference-PC run is open**. Left before J: A3 (after the §10 review).
+**Slice SS3 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss3)):** the bands show both sides under symmetry (D-5); the symmetric probe rows `soft_w_sym` are ready (D-4). **Reference-PC run done (Manu, 2026-10-15, [addendum](#addendum-2026-10-15-reference-pc-run-d-4)): over the 8 ms bar on the body from radius 15 % and on the head at 50 % euclidean** — a viewport question (AD-020 §7), semantics unchanged. Left before J: A3 (after the §10 review).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
@@ -387,7 +387,9 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
   plane, radius steps that cross it); Manu runs it before the joint test. A missed bar is a viewport question (AD-020 §7.3
   rule), not a reason to change the semantics. **No Artist question** (measurement; the mesh-size Intent is already open as
   D1c, WP-VIEW-PERF-01). *(SS3, 2026-10-14: probe ready — scenario `soft_w_sym` of `probe_drag_gl.py`
-  ([note](#implementation-note-2026-10-14-slice-ss3)); the run on the reference PC is open.)*
+  ([note](#implementation-note-2026-10-14-slice-ss3)). Reference PC, 2026-10-15
+  ([addendum](#addendum-2026-10-15-reference-pc-run-d-4)): the reading holds — symmetric body rows from 15 % and the head at
+  50 % euclidean are over the bar; by this rule a viewport question.)*
 - **D-5 Bands.** *(Built in SS3, 2026-10-14, [note](#implementation-note-2026-10-14-slice-ss3): preview and gesture show the
   symmetric field, both sides; a selection symmetric Soft refuses shows none, `PROVISIONAL`.)* Was hidden under a definition
   (I-8). *Proposal:* show both sides (the mirrored field). Practical-test item, no question.
@@ -399,7 +401,7 @@ the `Operation` lifecycle, `OperationContext` (the `params` channel suffices, AD
 | SS0 | Probe (no `src` change) — **done 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss0)) | Headless probe in `experiments/` reading `src` only: D-1 field symmetric bit-for-bit on `subd_cube`, head, body (both metrics, X/Y/Z); how often D-3 occurs per radius step; correspondence + influence cost per gesture start (container). | Report only; stops if D-1's claim fails. |
 | SS1 | **The one Core change** (M-5) — design: [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) (reviewed; go 2026-10-14) — **built 2026-10-14** ([note](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md#implementation-note-2026-10-14-slice-ss1)) | Weighting into the Core loop per §4 (design in its own AD/addendum + independent review **before code**, R-5); `src/mirai/soft_selection/ops.py` migrated in the same commit (R-2). Non-symmetric Soft must stay bitwise identical. | Core contract tests; radius-0 identity; the AD-020 suites green; `tests` + Lab tree once. |
 | SS2 | Symmetric influence and gesture — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss2)) | D-1 field, per-side step (plain / conjugate / projected), D-2 refusals, D-3 per Manu's answer; `Application` lifts the Soft + symmetry refusal (I-8) only for supported cases; Lab: no row change (soft commands are already `NON_OPERATION`). | One Undo step per gesture; exact mirror (completeness unchanged); cancel exact; MARK and BLOCK alike in the Lab. |
-| SS3 | Bands on both sides + probe — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss3)) | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC (open). |
+| SS3 | Bands on both sides + probe — **built 2026-10-14** ([note](#implementation-note-2026-10-14-slice-ss3)) | D-5; the symmetric `soft_w` probe rows (D-4). | Manu runs the probe on the reference PC — **done 2026-10-15** (over the bar on the body, [addendum](#addendum-2026-10-15-reference-pc-run-d-4)). |
 
 ### 5.3 Artist question (Soft)
 
@@ -951,6 +953,25 @@ already recorded).
 **Not done (as ordered):** Re-Symmetrize (A3), J, any `src/core` or SS2 semantic change, the band look, viewport
 optimisation; the reference-PC run (Manu).
 
+### Addendum (2026-10-15): reference-PC run (D-4)
+
+Manu ran `python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` on the reference PC at `63bcf65`
+(table and reading: [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) "Result: `soft_w_sym`,
+reference PC"; summary in REFERENCE_HARDWARE §2). No code changed with this addendum.
+
+- **`move` p95:** plain `soft_w` all under 8 ms (worst 6.96 head / 6.70 body). `soft_w_sym` **over** on the body at every
+  radius from 15 % (8.61–15.89 ms, both metrics) and on the head at 50 % euclidean (8.80 ms); every other row under it.
+- **Why (reading):** the cost follows the moved set, ≈ 0.045 ms per moved vertex on the body in both scenarios; symmetric
+  Soft moves both sides (2–2.5× the vertices at the same radius), so the bar falls at ≈ 160 moved vertices on the body. The
+  bands' overlay and the field are not the cost (bands 0.05–0.08 ms, the symmetry display 0.16 ms per move, container).
+- **Once per gesture:** commit frame body 48–64 ms (plain 27–30), the symmetry report 17 ms in it; first move up to 27 ms
+  (the tool's pairing); selection click 20–24 ms, picker-dominated.
+- **Consequence (AD-020 §7, this AD D-4):** a viewport question, no semantic change, nothing reverted. The options for the
+  WP-VIEW-PERF-01 fix slice (V-1 per-moved-vertex sync cost / affected-only bounds — the only lever for the `move` rows;
+  V-2 no `geometry_signature` per move while deferred; V-3 one pairing per symmetry report; V-4 `begin()` reuses the
+  preview's correspondence) are listed in the drag_cost README; none is built. Whether that slice comes before J is Manu's
+  call; the practical feel is row 7 of the SS3 test (Kurzfassung).
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -1101,3 +1122,13 @@ und Mann, im Container ≈ 30 s) und die ganze Ausgabe in den Chat kopieren. `so
 `soft_w_sym` dasselbe unter Symmetrie X, mit Radien, die über die Mitte reichen. Im Container liegt alles unter der
 8-ms-Grenze, der schlechteste symmetrische Wert am Mann aber knapp (7,35 ms); auf deinem PC lag schon Soft ohne Symmetrie bei
 7,73 ms — ein Überschreiten wäre eine Viewport-Frage, keine Änderung am Verhalten.
+
+**Messung auf deinem PC (2026-10-15, dein Lauf):** Soft **ohne** Symmetrie bleibt überall unter 8 ms. **Mit** Symmetrie
+liegt der Mann ab Radius 15 % darüber (8,6–15,9 ms pro Mausbewegung), der Kopf nur bei 50 % euclidean (8,8 ms). Grund: unter
+Symmetrie bewegen sich beide Seiten, also etwa doppelt so viele Punkte, und der Viewport kostet pro bewegtem Punkt gleich viel
+wie ohne Symmetrie — die Bänder und die Berechnung selbst sind nicht der Engpass. Einmal pro Geste wird es spürbarer: das
+Loslassen am Mann dauert 48–64 ms (ohne Symmetrie ~30). Nach unserer Regel ist das eine Viewport-Aufgabe, am Verhalten ändert
+sich nichts. Die Optionen dafür stehen in `experiments/drag_cost/README.md` (V-1 bis V-4), gebaut ist noch keine.
+**Deine Entscheidung:** soll diese Viewport-Arbeit **vor** dem gemeinsamen Praxistest J kommen, oder reicht dir das Gefühl
+(Zeile 7 im SS3-Test oben) für J, und sie kommt danach? Empfehlung: erst das Gefühl prüfen — wenn der Mann bei 15–30 % ruckelt,
+vorher.

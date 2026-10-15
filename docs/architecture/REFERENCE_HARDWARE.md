@@ -81,6 +81,16 @@ ganze Tabelle, Hypothesen und Fix-Optionen in [`experiments/drag_cost/README.md`
 
 Damit sind auch die Hover-Zeiten außerhalb eines Drags gemessen (Produktionspfad `src/main.py`; Playground nicht).
 
+**Gemessen auf dem Referenz-PC (Manu, 2026-10-15), symmetrische Soft Selection** — gleiche Maschine, `GL_VERSION` 3.3.0,
+`python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` (AD-SYM-04 SS3, D-4); Tabelle und Lesart in
+[`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Result: `soft_w_sym`, reference PC“:
+
+- Soft ohne Symmetrie: alle `move`-Zeilen unter 8 ms (schlechteste p95 6,96 ms Kopf / 6,70 ms Body).
+- Soft unter Symmetrie X: **über 8 ms** am Body ab Radius 15 % (p95 8,61–15,89 ms) und am Kopf bei 50 % euclidean (8,80 ms);
+  der Rest liegt darunter. Die Kosten wachsen mit der Zahl bewegter Vertices (≈ 0,045 ms pro Vertex am Body), und unter
+  Symmetrie bewegen sich beide Seiten.
+- Einmal pro Geste: Commit-Frame Body 48–64 ms (ohne Symmetrie 27–30), erste Bewegung bis 27 ms, Symmetrie-Befund 17 ms.
+
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
 ---

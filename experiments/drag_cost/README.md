@@ -70,7 +70,8 @@ the row label counts the seam vertices it reaches). Same rows; `preview recomput
 reused (what the app does per selection or settings trigger), plus `symmetry report` (what a geometry change adds once,
 shared with the symmetry display). Not in the default scenarios. Container result and reading:
 [AD-SYM-04, implementation note SS3](../../docs/architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss3)
-(all rows under the bar in the container, worst body p95 7.35 ms); **the reference-PC run is open**:
+(all rows under the bar in the container, worst body p95 7.35 ms). **Reference PC (2026-10-15): over the bar on the body
+from 15 % and on the head at 50 % euclidean** — "Result: `soft_w_sym`, reference PC" below.
 `python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym`.
 
 ## Run
@@ -178,6 +179,58 @@ meshes are the next test; this probe does not cover them.
 S2d (2026-10-11) changed the soft defaults (geodesic metric, Smooth curve) and the radius list (now up to 200 %); the probe
 sets its own metric/curve/radius through the public entry points, so its scenario definitions are unchanged. The 150 / 200 %
 radii are not in its default size list (5 / 15 / 30 / 50 %); `--sizes 100 200` measures them.
+
+## Result: `soft_w_sym`, reference PC (Manu, 2026-10-15)
+
+**Reference PC** (Core 2 Quad Q9550, GeForce 9800 GTX, `GL_VERSION` 3.3.0, Windows 10 19045, Python 3.14.2),
+`python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` at `63bcf65` (AD-SYM-04 SS3), 200 moves per row.
+The full output was in the chat; recorded here: `move` p50 / p95 and the once-per-row figures that changed, ms.
+
+| Asset | Metric | Radius | `soft_w` moving V | `soft_w` move | `soft_w_sym` moving V (seam V) | `soft_w_sym` move | verdict |
+|---|---|---:|---:|---:|---:|---:|---|
+| head | euclidean | 5 % | 9 | 0.95 / 1.23 | 15 (3) | 1.40 / 1.61 | OK |
+| head | euclidean | 15 % | 36 | 2.15 / 2.42 | 40 (8) | 2.65 / 4.52 | OK |
+| head | euclidean | 30 % | 68 | 3.30 / 3.60 | 77 (11) | 4.50 / 5.79 | OK |
+| head | euclidean | 50 % | 151 | 6.57 / 6.96 | 176 (16) | 8.00 / **8.80** | **OVER** |
+| head | geodesic | 5 / 15 / 30 / 50 % | 9–109 | ≤ 5.11 / 5.43 | 15–143 | ≤ 6.79 / 7.21 | OK |
+| body | euclidean | 5 % | 18 | 1.64 / 1.99 | 37 (5) | 3.31 / 3.74 | OK |
+| body | euclidean | 15 % | 76 | 3.85 / 4.23 | 175 (13) | 8.73 / **9.25** | **OVER** |
+| body | euclidean | 30 % | 112 | 5.13 / 5.54 | 251 (27) | 11.49 / **12.20** | **OVER** |
+| body | euclidean | 50 % | 142 | 6.18 / 6.70 | 342 (34) | 15.25 / **15.89** | **OVER** |
+| body | geodesic | 5 % | 10 | 1.29 / 1.65 | 32 (4) | 3.10 / 3.53 | OK |
+| body | geodesic | 15 % | 28 | 2.34 / 2.75 | 157 (11) | 8.07 / **8.61** | **OVER** |
+| body | geodesic | 30 % | 107 | 4.97 / 5.34 | 235 (23) | 10.88 / **11.50** | **OVER** |
+| body | geodesic | 50 % | 135 | 6.05 / 6.55 | 281 (31) | 13.05 / **13.75** | **OVER** |
+
+| Once per row (not gated) | `soft_w` head / body | `soft_w_sym` head / body |
+|---|---|---|
+| first move | 1.6–8.0 / 2.3–8.8 | 4.5–13.1 / 11.9–27.4 |
+| commit frame | 10–12 / 27–30 | 17–21 (one 78.5) / 48–64 |
+| selection click | 3.6–4.3 / 11–13 | 5.1–8.8 / 20–24 |
+| preview recompute | 0.2–1.1 / 0.3–1.9 | 0.3–2.1 / 0.7–4.1 |
+| symmetry report (per geometry change) | — | 5.6–5.7 / 16.9–17.5 |
+| settings change | 0.2–1.2 / 0.4–2.0 | 0.5–2.3 / 1.1–4.6 |
+
+Reading (agent, 2026-10-15):
+
+- **The bar is missed by the moved set, not by the bands or the field.** `move` grows with the vertices that move at
+  ≈ 0.045 ms per moved vertex on the body in both scenarios (plain 142 V → p95 6.70; symmetric 175 V → 9.25, 342 V → 15.89);
+  symmetric Soft moves both sides, so at the same radius it moves 2–2.5× as many vertices. `transform` stays ≤ 1.3 ms; the
+  rest is `sync` (`update` + `rest`). On the body the bar sits at ≈ 160 moved vertices, so every symmetric body row from
+  15 % on is over; on the head only euclidean 50 % (176 V).
+- Container decomposition of `sync` in a symmetric body drag (scratch probe, not committed): the soft bands' overlay sync
+  0.05–0.08 ms, the symmetry display's sync 0.16 ms per move (its O(V) `geometry_signature` + the markers; deferred, so no
+  re-pairing), the remainder grows with the moved set (derived data and bounds, `store.update` per vertex).
+- **Once per gesture:** the symmetry report costs **17 ms** on the body here (it pairs twice, `symmetry_state` re-derives
+  the correspondence) and sits in every commit frame (48–64 ms); the first move pays the tool's own pairing (11.9–27.4 ms).
+  The selection click (20–24 ms) is the picker (the symmetric seed sits on the chest, the plain one on the hand); the preview
+  inside it is ≤ 4.1 ms and does no pairing.
+- By AD-020 §7 a missed bar is a viewport question, not a reason to change the semantics. Options (none built, for the
+  WP-VIEW-PERF-01 fix slice): **V-1** affected-only bounds (Fix option 6 above) and fewer per-vertex `store.update` calls —
+  the per-moved-vertex cost, the only lever for the `move` rows; **V-2** the symmetry display skips `geometry_signature`
+  while it defers (−0.16 ms container per move); **V-3** `symmetry_report` pairs once (`symmetry_state` taking the given
+  correspondence: ≈ −8 ms per commit frame on the body); **V-4** `begin()` takes the preview's correspondence (≈ −8 ms on
+  the first move); Fix options 1–3 above for the click.
 
 ## Praktischer Test für Manu (ca. 5 Minuten)
 
