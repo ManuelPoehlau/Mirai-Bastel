@@ -38,7 +38,7 @@ from core import OperationContext, RotateOperation
 from core.operations.transform import rotation_keeps_plane
 
 from ...soft_selection import SoftRotateOperation
-from .transform import TransformTool, _resolve_space
+from .transform import TransformTool, _resolve_space, object_axis
 
 VEC3 = tuple[float, float, float]
 
@@ -115,6 +115,9 @@ class RotateTool(TransformTool):
                 axis=axis,  # Pass through new axis parameter (WP-03C)
                 for_rotation=True,
             )
+            if space.lower() in ("x", "y", "z", "xy", "yz", "xz", "world"):
+                # AD-021 M2-1 (E-8): eine Weltachse, im Objektraum eines platzierten Objekts.
+                self._axis = object_axis(self._camera, self._axis)
         else:
             # space als Vektor übergeben
             self._axis = tuple(space)

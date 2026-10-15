@@ -77,7 +77,7 @@ from ...soft_selection import SoftMoveOperation, compute_influence, symmetric_in
 from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 from ..tool import Tool
 from .selection_helpers import _VertexSelectionView
-from .transform import _resolve_space
+from .transform import _resolve_space, world_masked_delta
 
 
 class MoveTool(Tool):
@@ -293,11 +293,9 @@ class MoveTool(Tool):
             )
         elif self._axes_mask != (1.0, 1.0, 1.0):
             # AD-009: Achsen-/Ebenen-Constraint — komponentenweise Maske auf das
-            # ohnehin berechnete Bildebenen-Delta (kein zweiter Mechanismus).
-            world_delta = tuple(
-                component * mask
-                for component, mask in zip(world_delta, self._axes_mask)
-            )
+            # ohnehin berechnete Bildebenen-Delta (kein zweiter Mechanismus). AD-021 M2-1:
+            # die Maske meint Weltachsen; bei einem platzierten Objekt in Welt angewendet.
+            world_delta = world_masked_delta(self._camera, world_delta, self._axes_mask)
 
         if self._in_plane_normal is not None:
             # Same projection as the Core's seam step (`_project_onto_plane`): exact for E1 axes.

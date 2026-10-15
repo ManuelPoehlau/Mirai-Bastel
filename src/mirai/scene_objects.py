@@ -12,11 +12,13 @@ from __future__ import annotations
 
 from core import Mesh, ObjectState, Scene, SceneObject
 
-#: `PROVISIONAL` - offene Artist-Frage (AD-021 §8 "the look of a Reference" ist nicht
-#: entschieden): eine Referenz wird minimal anders eingefärbt, sonst wie jedes Mesh gezeichnet
-#: (schattiert, tiefengetestet, keine Selection-Overlays). Ein gedämpftes Blau, deutlich
-#: dunkler als das Grau des Edit-Objekts (`gl_render_store.DEFAULT_BASE_COLOR`).
+#: AD-021 Q-11 (Manu 2026-10-15: "Das gedämpfte Blau ist gut"): eine Referenz ist schattiert wie
+#: jedes Mesh, ohne Selection-Overlays, in diesem gedämpften Blau, deutlich dunkler als das Grau
+#: des Edit-Objekts (`gl_render_store.DEFAULT_BASE_COLOR`). Ghost und Wireframe: §7.3, M2-0.
 REFERENCE_BASE_COLOR = (0.38, 0.47, 0.62)
+
+#: AD-021 M2-0 (§7.3 RD-1, Q-11 bestätigt; Wert `PROVISIONAL`): Deckkraft einer Referenz im Ghost.
+REFERENCE_GHOST_ALPHA = 0.3
 
 
 def object_base_color(obj: SceneObject) -> tuple[float, float, float] | None:

@@ -30,7 +30,7 @@ This fragmentation meant:
 
 - **Core operations unchanged** (per AD-003): The tool layer translates `space` into operation deltas; core Rotate/Move/Scale operations are unchanged.
 - **World-space behavior identical** (regression safety): Existing constraints ("x", "y", "z", "xy", "yz", "xz") must produce bit-identical output before and after refactoring.
-- **Local/Gimbal space deferred** (ARCH-01 dependent): `space="local"` and gimbal rotation are out of scope; only world and normal are implemented.
+- **Local/Gimbal space deferred** (ARCH-01 dependent): `space="local"` and gimbal rotation are out of scope; only world and normal are implemented. *(2026-10-15, AD-021 M2-1:* on a placed object the tools work in its object space; the world constraints `x`…`xz` still mean **world** axes and are turned into the object's space in the tool layer — `object_axis`, `world_masked_delta`, `world_axes_basis` in `mirai/interaction/tools/transform.py`; unchanged and bit-identical for an unplaced object. `space="local"` = the object's axes, still not wired.)*
 - **Screen-space constraints deferred**: `space="screen"` with axis constraints (e.g., "x" on screen) is future work (requires camera basis integration at tool level).
 
 ## Solution: The `space` Parameter

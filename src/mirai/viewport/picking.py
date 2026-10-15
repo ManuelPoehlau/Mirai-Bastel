@@ -391,16 +391,20 @@ def front_face_hit_t(camera, mesh, sx, sy, width, height, *, cache: PickCache | 
     return best_t
 
 
-def pick_object(camera, candidates, sx, sy, width, height):
-    """AD-021 M1: the key of the object whose surface is front-most under the cursor (or
-    None). `candidates` are `(key, mesh, cache)` triples - every object that is not hidden,
-    References included (RF-3); the key is opaque here. Mesh coordinates are world
-    coordinates while every transform is identity (M1; the ray -> object-space step is M2).
-    A tie keeps the earlier candidate."""
+def pick_object(candidates, sx, sy, width, height):
+    """AD-021 M1/M2-1: the key of the object whose surface is front-most under the cursor (or
+    None). `candidates` are `(key, mesh, cache, camera, scale)` - every object that is not
+    hidden, References included (RF-3); the key is opaque here. `camera` is the camera in
+    that object's space (the `OrbitCamera` itself for an unplaced object, else its
+    `ObjectSpaceCamera`), whose normalized ray gives `t` in object units; `t · scale` is the
+    world distance that is compared across objects (E-10). A tie keeps the earlier candidate."""
     best_key = None
     best_t = None
-    for key, mesh, cache in candidates:
+    for key, mesh, cache, camera, scale in candidates:
         t = front_face_hit_t(camera, mesh, sx, sy, width, height, cache=cache)
-        if t is not None and (best_t is None or t < best_t):
+        if t is None:
+            continue
+        t *= scale
+        if best_t is None or t < best_t:
             best_key, best_t = key, t
     return best_key

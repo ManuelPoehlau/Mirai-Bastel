@@ -64,6 +64,8 @@ TOGGLE_WIREFRAME_OVERLAY = "ToggleWireframeOverlay"
 SET_SHADED = "SetShaded"
 SET_FLAT_SHADED = "SetFlatShaded"
 SET_WIREFRAME = "SetWireframe"
+# AD-021 M2-0 (§7.3 RD-2, `PROVISIONAL`): alle Referenzen schattiert <-> Ghost.
+TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
 
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices

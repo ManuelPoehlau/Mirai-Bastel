@@ -7,7 +7,8 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 (Core only, no app behaviour; record in [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md), tests in `tests/test_scene_objects.py`).
 **M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); Manu tried it
 (his Q-11 answer describes the behaviour); no KEEP/ITERATE verdict recorded, M1 stays `PROVISIONAL`. **M2:**
-[handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md), gated on Q-5–Q-8 and Q-13. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+[handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
+implemented 2026-10-15** (§6.2, §6.3), M2-0 waiting for Manu's practical test; M2-2 next. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -37,7 +38,8 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | agent | **M1 implemented** per §5.4 "M1" (§6.1); no Core change, nothing from M2; E-5 decided for M1 (§7.2); the Reference look and the switch click are `PROVISIONAL` and asked as **Q-11**, **Q-12**; Manu's practical test pending |
 | 2026-10-15 | Manu (in this file, Kurzfassung) | **Q-11:** the muted blue is good; problem both ways — the editable geometry *inside* a Reference cannot be seen (proposal: a switchable shaded/ghost mode for the Reference), and a Reference *inside* the editable object disappears in Wireframe (proposal: the Reference stays shaded in Wireframe); counter-proposals welcome · **Q-12:** "Das passt erstmal so" (the click in `4` stays) |
 | 2026-10-15 | agent | Q-11 counter-proposal §7.3 (takes both of Manu's proposals; Ghost global, `Alt+D`, `PROVISIONAL`); M2 handoff written; new Artist question **Q-13** (how the pivot is set) |
-| — | Manu | open for M2: Q-5…Q-8, Q-13; confirm §7.3 |
+| 2026-10-15 | Manu (chat) | **Q-5, Q-6, Q-7, Q-8 = as recommended** (Q-5: select in `4`, then `1`/`2`/`3`; Q-6: status line first; Q-7: the symmetry plane turns with the object — amends AD-SYM-04 E1; Q-8: Undo switches back to the object of the step) · **Q-11 proposal §7.3 confirmed** ("passt so") · **Q-13 deferred:** moving the pivot is not needed for now, the topic comes later — the pivot stays the object origin (M0 default) · **go for M2-0 and M2-1** |
+| 2026-10-15 | agent | **M2-0 implemented** (Reference display, §6.2) and **M2-1 implemented** (placement in the draw and component paths, no UI, §6.3); no Core change; E-2, E-6…E-10 as in the handoff |
 
 ---
 
@@ -546,6 +548,47 @@ colliding IDs, refusals, mirror entries, interleaved object and mesh steps on on
 
 ---
 
+### 6.2 M2-0 implementation note — Reference display (2026-10-15)
+
+§7.3 as confirmed, no Core change. `Alt+D` (`commands.TOGGLE_REFERENCE_GHOST`, `PROVISIONAL`, rebindable) toggles
+`Application.reference_ghost`; every Reference entry gets alpha `REFERENCE_GHOST_ALPHA = 0.3` (`PROVISIONAL`) — RD-1/RD-2;
+status `References: ghost` / `References: shaded`; display state like `DisplayState` (no Undo step, survives a scene
+load, reaches References added later). Ghosts are drawn after every opaque entry, blended, depth write off, back faces
+culled (AD-018 addendum 2026-10-15). RD-3: a Reference entry is drawn in Wireframe too (`ignores_wireframe`); a `NORMAL`
+non-edit object follows the display mode like the edit object (a derivation, see the handoff's "Bei Widerspruch").
+RD-4: picking untouched. Symmetry Lab: its BLOCK allow-list refuses `Alt+D` visibly, as it does `4`.
+Tests: `tests/test_reference_display.py`; one existing test changed: `tests/test_point_overlay.py::
+test_fragment_shader_output_no_longer_uses_highlight` pinned the string `vec4(shaded, 1.0)`, now `vec4(shaded, u_alpha)`
+(its point — the output does not use the highlight flag — is unchanged). GL smoke (xvfb, container): gollum as scene + head as Reference — with Ghost
+on, gollum is visible inside the head; head as scene + gollum as Reference in Wireframe — gollum stays shaded inside the
+wire head.
+
+### 6.3 M2-1 implementation note — placement in the draw and component paths (2026-10-15)
+
+No UI to place an object yet (that is M2-2); the tests set `SceneObject.transform`/`pivot` directly and call
+`Application._placement_changed()`, the hook the M2-2 tools will use. No Core change.
+
+| Piece | Where | What |
+|---|---|---|
+| E-2/E-6 math | `src/mirai/object_space.py` | `world(p) = t + c + s·R·(p − c)` and its inverse, deltas, axes, the 4×4 model matrix; an identity placement is an exact pass-through whatever the pivot |
+| E-7 Objektraum-Kamera | `object_space.ObjectSpaceCamera`; `Application._edit_camera` / `_object_camera` | the seven camera members the component paths read (grep: `project_to_screen`, `screen_to_ray`, `eye`, `basis`, `screen_delta_to_world`, `camera_revision`, `target`), in the object's space; used by component picking, the pick cache, the Knife (pick, snap, space point, planner view), W/E/R begin and Extrude. While the placement is identity the `OrbitCamera` itself is used, so an unplaced object is bit-identical to M1 |
+| E-8 world constraints | `tools/transform.py` (`object_axis`, `world_masked_delta`, `world_axes_basis`); Move, Rotate, Scale | X/Y/Z and the planes stay **world** axes: Move masks in world, Rotate turns about `Rᵀ·axis`, Scale uses the turned axes as AD-014 `basis`; AD-012 note |
+| E-9 drawing | `RenderMesh.set_model_matrix`, `GLRenderStore` (`u_model`), `Viewport.set_model_matrix` / `overlay_camera_uniforms`, object entries `model_matrix=` | AD-018 addendum 2026-10-15; the edit object's overlays (points, lines, faces, Knife layers, soft bands, symmetry display) use `view·model` |
+| E-10 object picking | `picking.pick_object(candidates…)` with `(key, mesh, cache, camera, scale)` | each object hit in its own space, compared by world distance `t·s` |
+| framing | `Application.frame_scene` | frames the edit object's world bounds |
+| §4.8 | unchanged code | symmetry and soft compute in mesh = object coordinates; the soft radius is in object units (`SoftSettings.world_radius` keeps its name until a rename is worth it) |
+
+**Probe P-2 as a test** (`test_p2_…`): `head_basemesh` with symmetry X, the object turned 30° about Y — the state stays
+`valid` and a symmetric Move through the app keeps the pair exactly mirrored (bitwise) in object space. **Q-7** is
+therefore already true in the code for any placed object; its wording change (AD-SYM-04 E1, `symmetry_axis.py`) comes
+with M2-2, when a placement can be made.
+
+Tests: `tests/test_object_space.py` (math, adapter, unplaced = bit-identical, matrices, framing, hover/click in
+`1`/`2`/`3`, a placed Reference in front never blocks and wins in `4`, free and constrained Move, Rotate about world Z,
+Scale along world X, Extrude, Knife, soft weights equal placed or not, P-2). A mutation check (adapter or constraint
+conversion switched off) fails 9 resp. 3 of them. GL smoke: a head turned 40°, scaled 0.6 and moved draws, lights,
+shows its selected point on the nose and moves it with W.
+
 ## 7. Questions
 
 ### 7.1 For Manu (Artist)
@@ -563,7 +606,7 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | Q-8 | M2 | After editing two objects, does Undo switch back to the object the step was made in? | yes |
 | Q-11 | M1 test | How should a **Reference look**? M1 draws it shaded in a muted blue (not in pure Wireframe), no transparency (§6.1). | **Answered (Manu 2026-10-15):** blue stays; see-through needed both ways → §7.3 |
 | Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | **Answered (Manu 2026-10-15):** the click stays ("passt erstmal so") |
-| Q-13 | M2 | How is an object's **pivot** set (eyes, jaw: A-3)? It must never move geometry (L-2). | in `4`, hold `W` with an extra modifier moves only the pivot (Maya: `Insert`/`D`, Blender: "affect only origins"); a first default: pivot = object origin, as M0 stores it |
+| Q-13 | later | How is an object's **pivot** set (eyes, jaw: A-3)? It must never move geometry (L-2). | **Deferred (Manu 2026-10-15):** not needed for now, comes later; until then the pivot is the object origin (M0 default) |
 
 ### 7.2 Engineering (agent domain, decided at implementation)
 
@@ -576,7 +619,7 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)
 
-### 7.3 Reference display — answer to Q-11 (proposal, `PROVISIONAL`, 2026-10-15)
+### 7.3 Reference display — answer to Q-11 (proposal confirmed by Manu 2026-10-15, key and look values `PROVISIONAL`)
 
 Manu's two problems are both "something is hidden behind or inside something else". The proposal takes **both** of his
 proposals and adds one rule each, so that the two cases combine:
@@ -710,6 +753,19 @@ Ghost; nur das bearbeitete Objekt wird zum Draht. Ein Schalter für alle statt p
 sehen" willst, nicht „durch diese, aber nicht durch jene" — pro Objekt geht später, wenn eine Szene es braucht.
 Verworfen für jetzt: X-Ray des bearbeiteten Objekts (zeigt es durch alles, auch durch sich selbst) und Referenz als Draht
 (verliert das Volumen, an dem du modellierst).
+
+**M2-0 ist gebaut (2026-10-15) — Praxistest (ca. 3 Minuten):**
+
+1. `python src/main.py gollum`, dann `Leertaste` und **Shift+Klick** auf `head_basemesh`: der Kopf kommt als blaue
+   Referenz dazu, gollum steckt darin. `Alt+D`: der Kopf wird durchscheinend (Ghost), gollum ist darin zu sehen; du kannst
+   gollum weiter bearbeiten. Noch einmal `Alt+D`: wieder schattiert.
+2. `python src/main.py` (Kopf), `Leertaste`, **Shift+Klick** auf `gollum`, dann zweimal `D` (Wireframe): der Kopf wird
+   Draht, gollum bleibt sichtbar — schattiert, mit `Alt+D` als Ghost.
+3. Frage dabei: Ist der Ghost hell genug (jetzt 30 % Deckkraft)? Sieht es richtig aus, dass ein *normales* zweites Objekt
+   (in `4` umgeschaltet) im Wireframe verschwindet wie der Kopf selbst?
+
+M2-1 (Platzierung im Zeichnen und in allen Werkzeugen) ist ebenfalls gebaut, aber für dich noch unsichtbar — verschieben,
+drehen und skalieren kannst du ein Objekt erst mit M2-2.
 
 **Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
 Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·

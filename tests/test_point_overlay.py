@@ -251,4 +251,5 @@ def test_application_passes_point_overlay_type_through():
 def test_fragment_shader_output_no_longer_uses_highlight():
     body = FRAGMENT_SRC.split("void main()", 1)[1]
     assert "v_highlight" not in body
-    assert "out_color = vec4(shaded, 1.0);" in body
+    # AD-021 M2-0: the alpha is the Ghost uniform (1.0 = opaque, the old output).
+    assert "out_color = vec4(shaded, u_alpha);" in body

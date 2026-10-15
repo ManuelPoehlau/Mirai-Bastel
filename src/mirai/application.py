@@ -74,7 +74,15 @@ from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGes
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .mesh_geometry import mesh_center_and_radius
-from .scene_objects import AddObjectCommand, ObjectStateCommand, object_base_color, reset_scene
+from . import object_space
+from .object_space import ObjectSpaceCamera
+from .scene_objects import (
+    REFERENCE_GHOST_ALPHA,
+    AddObjectCommand,
+    ObjectStateCommand,
+    object_base_color,
+    reset_scene,
+)
 from .soft_selection import (
     EMPTY_BANDS,
     RADIUS_STEPS_PERCENT,
@@ -169,6 +177,7 @@ _DISPLAY_COMMANDS = (
     commands.SET_SHADED,
     commands.SET_FLAT_SHADED,
     commands.SET_WIREFRAME,
+    commands.TOGGLE_REFERENCE_GHOST,
 )
 
 _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
@@ -423,6 +432,12 @@ class Application:
         # AD-021 M1: pick caches of the objects other than the edit object (mode `4` picking;
         # the edit object shares `_pick_cache`). Pruned with the render entries.
         self._object_pick_caches: dict[ObjectId, PickCache] = {}
+        # AD-021 M2-1 (E-7): one Objektraum-Kamera per placed object, stable so that a
+        # `PickCache` keyed on `id(camera)` keeps working; read live, pruned with the entries.
+        self._object_cameras: dict[ObjectId, ObjectSpaceCamera] = {}
+        # AD-021 M2-0 (§7.3 RD-2): all References drawn as Ghost (`Alt+D`); display state,
+        # not an Undo step, kept across scene loads like `DisplayState`.
+        self.reference_ghost: bool = False
 
         # Gate 7: V0.2 Viewport wird in init_scene() mit dem Mesh gebunden.
         # Bliebt None, bis init_scene() aufgerufen wurde (kein Mesh verfügbar).
@@ -743,12 +758,56 @@ class Application:
         }
         for oid in [oid for oid in self._object_pick_caches if oid not in others]:
             del self._object_pick_caches[oid]
+        for oid in [oid for oid in self._object_cameras if oid not in scene.objects]:
+            del self._object_cameras[oid]
         if self.viewport is None:
             return
+        # M2-1: the edit object's placement (mesh uniform + `view·model` for its overlays).
+        self.viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
         for key in [key for key in self.viewport.object_entries if key not in others]:
             self.viewport.remove_object_entry(key)
         for oid, obj in others.items():
-            self.viewport.set_object_entry(oid, obj.mesh, object_base_color(obj))
+            reference = obj.state is ObjectState.REFERENCE
+            self.viewport.set_object_entry(
+                oid,
+                obj.mesh,
+                object_base_color(obj),
+                model_matrix=object_space.model_matrix(obj),
+                # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is
+                # drawn in Wireframe too - a Normal object follows the display mode.
+                alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
+                ignores_wireframe=reference,
+            )
+
+    def _placement_changed(self) -> None:
+        """An object's `transform`/`pivot` changed (AD-021 M2-1; the M2-2 object tools and their
+        Undo call this). Positions in object space are unchanged, so nothing is rebuilt: the
+        matrices go to the viewport, every pick cache re-projects (the edit object's camera
+        revision already carries its transform; the explicit invalidation also covers the
+        switch between `OrbitCamera` and its adapter), the hover is re-picked. Soft weights and
+        symmetry live in object space and stay as they are (§4.8)."""
+        self._pick_cache.invalidate()
+        for cache in self._object_pick_caches.values():
+            cache.invalidate()
+        self._sync_object_views()
+        self._refresh_hover()
+
+    def _object_camera(self, obj: SceneObject):
+        """The camera as the object's own space sees it (AD-021 M2-1, E-7): the `OrbitCamera`
+        itself while the placement is identity (bit-exact as before), else its stable
+        `ObjectSpaceCamera`."""
+        if object_space.is_identity(obj.transform):
+            return self.camera
+        adapter = self._object_cameras.get(obj.id)
+        if adapter is None or adapter.camera is not self.camera:
+            adapter = self._object_cameras[obj.id] = ObjectSpaceCamera(self.camera, obj)
+        return adapter
+
+    @property
+    def _edit_camera(self):
+        """The camera every component path uses (picking, Knife, W/E/R/T): in the edit object's
+        space (L-5)."""
+        return self._object_camera(self.scene.edit_object)
 
     def _pick_object(self, x: float, y: float) -> ObjectId | None:
         """Mode `4`: the object whose surface is front-most under the cursor - every object,
@@ -759,10 +818,10 @@ class Application:
                 cache = self._pick_cache
             else:
                 cache = self._object_pick_caches.setdefault(oid, PickCache())
-            candidates.append((oid, obj.mesh, cache))
-        return pick_object(
-            self.camera, candidates, x, y, self.viewport_width, self.viewport_height
-        )
+            candidates.append(
+                (oid, obj.mesh, cache, self._object_camera(obj), obj.transform.scale)
+            )
+        return pick_object(candidates, x, y, self.viewport_width, self.viewport_height)
 
     def _select_object_at(self, command: str, x: float, y: float) -> bool:
         """Klick in Modus `4` (AD-021 M1). Die Modifier-Commands ändern nur die Objekt-
@@ -843,6 +902,10 @@ class Application:
         if not mesh.all_vertex_ids():
             return
         center, radius = mesh_center_and_radius(mesh)
+        # AD-021 M2-1: the edit object's bounds in world.
+        center, radius = object_space.world_center_and_radius(
+            self.scene.edit_object, center, radius
+        )
         self.camera.frame_on_bounds(center, radius)
 
     def load_scene(
@@ -1592,17 +1655,17 @@ class Application:
         of this hover / click); outside the mesh the target is a point in space."""
         kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
         size = (self.viewport_width, self.viewport_height)
-        target = knife_pick(self.camera, self.scene.mesh, x, y, *size, **kwargs)
+        target = knife_pick(self._edit_camera, self.scene.mesh, x, y, *size, **kwargs)
         if self._knife is None:
             return target
         self._knife_set_view()
         # Also over "outside": the real-cut Knife's split vertex was caught by the
         # 14 px vertex pick just off the silhouette too.
         target = snap_own_point(
-            self.camera, self.scene.mesh, x, y, *size, self._knife.snap_points, target, **kwargs
+            self._edit_camera, self.scene.mesh, x, y, *size, self._knife.snap_points, target, **kwargs
         )
         if target.get("kind") == "outside":
-            return {"kind": "space", "position": space_point(self.camera, x, y, *size)}
+            return {"kind": "space", "position": space_point(self._edit_camera, x, y, *size)}
         if not midpoint or target.get("kind") != "edge":
             return target
         eid = target["edge_id"]
@@ -1612,7 +1675,7 @@ class Application:
 
     def _knife_set_view(self) -> None:
         """The live camera for the planner (S4) - set before every hover / click plan."""
-        self._knife.set_view(self.camera, self.viewport_width, self.viewport_height,
+        self._knife.set_view(self._edit_camera, self.viewport_width, self.viewport_height,
                              cache=self._pick_cache, occlusion=self.display.show_faces)
 
     def _knife_set_preview(self, target: dict) -> bool:
@@ -1704,6 +1767,11 @@ class Application:
     # -- Display (WP-06 B5a) ----------------------------------------------------
 
     def _display_command(self, command: str) -> bool:
+        if command == commands.TOGGLE_REFERENCE_GHOST:
+            self.reference_ghost = not self.reference_ghost
+            self._sync_object_views()
+            self._set_status(f"References: {'ghost' if self.reference_ghost else 'shaded'}")
+            return True
         if command == commands.CYCLE_DISPLAY_MODE:
             self.display.cycle()
         elif command == commands.TOGGLE_WIREFRAME_OVERLAY:
@@ -1972,7 +2040,7 @@ class Application:
             soft = self._soft if self._soft.enabled else None
             begin_context = {
                 "scene": self.scene,
-                "camera": self.camera,
+                "camera": self._edit_camera,
                 "vertex_ids": set(self._transform_target),
                 "space": self._transform_space,
             }
@@ -2208,7 +2276,7 @@ class Application:
         Without a definition the tool runs exactly as in B9."""
         self._extrude_selection_before = self._selection_snapshot()
         faces = set(self._extrude_faces)
-        context = {"scene": self.scene, "camera": self.camera}
+        context = {"scene": self.scene, "camera": self._edit_camera}
         planner = (
             symmetry_declarations.EXTRUDE_COORDINATORS.get(commands.EXTRUDE)
             if self.scene.mesh.symmetry_definition is not None
@@ -2666,7 +2734,7 @@ class Application:
         if self.selection.mode is SelectionMode.OBJECT:
             return self._pick_object(x, y)
         return pick_component(
-            self.camera,
+            self._edit_camera,
             self.scene.mesh,
             self.selection.mode,
             x,

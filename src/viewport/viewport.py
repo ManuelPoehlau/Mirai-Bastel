@@ -64,8 +64,18 @@ zeichnet ein weiteres Mesh (ein anderes Objekt der Scene) als eigenen `RenderMes
 IDs des Edit-Objekts, die in einem anderen Mesh gleichlautende Elemente aufleuchten ließen
 (AD-021 F-2, review R-5). `self.mesh` bleibt das Mesh des Edit-Objekts; nur dessen Eintrag
 trägt die Overlays. Der Schlüssel ist für den Viewport opak (die App nimmt die ObjectId);
-`base_color` (None = Standardfarbe) ist der einzige Look-Parameter. Identitäts-Transform:
-noch keine Model-Matrix (M2). Gezeichnet nach dem Edit-Mesh, mit `show_faces` wie dieses.
+`base_color` (None = Standardfarbe) ist der einzige Look-Parameter. Gezeichnet nach dem Edit-Mesh,
+mit `show_faces` wie dieses.
+
+Platzierung (AD-021 M2-1, E-9): `set_model_matrix(m)` setzt die Objekt -> Welt-Matrix des
+Edit-Objekts (None = Identität). Das Mesh bekommt sie als Uniform; alle Overlays des Edit-
+Objekts (Punkte, Linien, Flächen, Tool-Layer, Zusatz-Overlays) zeichnen mit `view·model` statt
+`view` - ihre Positionen bleiben Objektraum wie das Mesh, keine Overlay-Shader-Änderung. Jeder
+Objekt-Eintrag hat seine eigene Matrix (`set_object_entry(..., model_matrix=)`).
+
+Referenz-Anzeige (AD-021 M2-0, §7.3): ein Eintrag mit `ignores_wireframe=True` wird auch im
+Wireframe gezeichnet (RD-3); `alpha < 1` zeichnet ihn als Ghost (RD-1) - nach allen opaken
+Einträgen, geblendet, ohne Depth-Write, damit das Edit-Objekt darin sichtbar bleibt.
 
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
@@ -104,6 +114,15 @@ _TOOL_LINE_DRAW_ORDER = (
 #: Tool-Layer, deren Linien auf den Faces liegen (Depth-Test) und deshalb den Polygon-Offset brauchen.
 _TOOL_DEPTH_TESTED_LINES = (TOOL_ACTIVE_LAYER, TOOL_MIRROR_LAYER, TOOL_CLIPPED_LAYER)
 from .gl_render_store import DEFAULT_BASE_COLOR
+
+
+def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
+    """a·b für spaltenweise 4x4-Matrizen (GL-Konvention wie die Kamera-Matrizen)."""
+    out = [0.0] * 16
+    for col in range(4):
+        for row in range(4):
+            out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
+    return out
 from .render_mesh import RenderMesh
 from .resource_store import ResourceStore, TraceStore
 from .wireframe import edge_segments
@@ -140,6 +159,10 @@ class Viewport:
         )
         # AD-021 M1: Render-Einträge der anderen Objekte (Schlüssel -> RenderMesh), ohne Overlay.
         self.object_entries: dict = {}
+        # AD-021 M2-0: je Eintrag (alpha, ignores_wireframe).
+        self._entry_display: dict = {}
+        # AD-021 M2-1: Objekt -> Welt des Edit-Objekts (None = Identität).
+        self.model_matrix: list[float] | None = None
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -183,16 +206,25 @@ class Viewport:
     # -- Objekt-Einträge (AD-021 M1) -------------------------------------------
 
     def set_object_entry(
-        self, key, mesh: Mesh, base_color: tuple[float, float, float] | None = None
+        self,
+        key,
+        mesh: Mesh,
+        base_color: tuple[float, float, float] | None = None,
+        *,
+        model_matrix: list[float] | None = None,
+        alpha: float = 1.0,
+        ignores_wireframe: bool = False,
     ) -> bool:
-        """Legt den Eintrag `key` für `mesh` an oder aktualisiert seine Farbe. Ein anderes
-        Mesh unter demselben Schlüssel ersetzt den Eintrag. True = etwas hat sich geändert.
-        Nie mit `SelectionOverlay` (Modul-Docstring)."""
+        """Legt den Eintrag `key` für `mesh` an oder aktualisiert Farbe, Matrix und Anzeige. Ein
+        anderes Mesh unter demselben Schlüssel ersetzt den Eintrag. True = etwas hat sich
+        geändert. Nie mit `SelectionOverlay` (Modul-Docstring)."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
+        display = (float(alpha), bool(ignores_wireframe))
         entry = self.object_entries.get(key)
         if entry is not None and entry.mesh is not mesh:
             self.remove_object_entry(key)
             entry = None
+        changed = False
         if entry is None:
             entry = RenderMesh(mesh, overlay=None, store_type=self._store_type)
             camera = self.render_mesh.camera
@@ -200,16 +232,24 @@ class Viewport:
                 entry.bind_camera(camera)
                 entry.mark_camera_dirty(aspect=self.render_mesh.aspect)
             self.object_entries[key] = entry
-            self._apply_entry_style(entry)
-        elif entry.material is not None and entry.material.color == color:
-            return False
-        entry.bind_material(_SolidColor(color))
-        entry.mark_material_dirty()
-        return True
+            changed = True
+        if self._entry_display.get(key) != display:
+            self._entry_display[key] = display
+            self._apply_entry_style(key, entry)
+            changed = True
+        if entry.model_matrix != (list(model_matrix) if model_matrix is not None else None):
+            entry.set_model_matrix(model_matrix)
+            changed = True
+        if entry.material is None or entry.material.color != color:
+            entry.bind_material(_SolidColor(color))
+            entry.mark_material_dirty()
+            changed = True
+        return changed
 
     def remove_object_entry(self, key) -> bool:
         """Entfernt den Eintrag `key` und gibt seine GPU-Objekte frei. True = es gab ihn."""
         entry = self.object_entries.pop(key, None)
+        self._entry_display.pop(key, None)
         if entry is None:
             return False
         release = getattr(entry.store, "release", None)
@@ -217,11 +257,39 @@ class Viewport:
             release()
         return True
 
-    def _apply_entry_style(self, entry: RenderMesh) -> None:
+    def _apply_entry_style(self, key, entry: RenderMesh) -> None:
         set_draw_style = getattr(entry.store, "set_draw_style", None)
         if set_draw_style is not None:
+            alpha, _ = self._entry_display.get(key, (1.0, False))
             # Auf Objekt-Einträgen liegen keine Linien: kein Polygon-Offset.
-            set_draw_style(flat=self.flat, polygon_offset=False)
+            set_draw_style(flat=self.flat, polygon_offset=False, alpha=alpha)
+
+    def entry_drawn(self, key) -> bool:
+        """Wird der Eintrag im aktuellen Display-Modus gezeichnet (AD-021 M2-0, RD-3)?"""
+        _, ignores_wireframe = self._entry_display.get(key, (1.0, False))
+        return self.show_faces or ignores_wireframe
+
+    def _entry_draw_order(self) -> list:
+        """Opake Einträge zuerst, Ghosts danach (RD-1); innerhalb in Anhänge-Reihenfolge."""
+        drawn = [key for key in self.object_entries if self.entry_drawn(key)]
+        opaque = [k for k in drawn if self._entry_display.get(k, (1.0, False))[0] >= 1.0]
+        ghosts = [k for k in drawn if self._entry_display.get(k, (1.0, False))[0] < 1.0]
+        return opaque + ghosts
+
+    # -- Platzierung des Edit-Objekts (AD-021 M2-1) ------------------------------
+
+    def set_model_matrix(self, matrix: list[float] | None) -> None:
+        """Objekt -> Welt des Edit-Objekts (None = Identität): Mesh-Uniform und `view·model`
+        für alle Overlays (Modul-Docstring)."""
+        self.model_matrix = list(matrix) if matrix is not None else None
+        self.render_mesh.set_model_matrix(self.model_matrix)
+
+    def overlay_camera_uniforms(self) -> list[float]:
+        """Die Kamera-Uniforms der Overlays des Edit-Objekts: `view·model` + `proj`."""
+        uniforms = self.render_mesh._camera_uniforms()
+        if self.model_matrix is None:
+            return uniforms
+        return _mat4_mul(uniforms[:16], self.model_matrix) + list(uniforms[16:])
 
     # -- Zusatz-Overlays (WP-SYM-LAB-03 H1) ------------------------------------
 
@@ -269,8 +337,8 @@ class Viewport:
                 polygon_offset=self.show_faces
                 and (self.show_edges or self._edge_highlight),
             )
-        for entry in self.object_entries.values():
-            self._apply_entry_style(entry)
+        for key, entry in self.object_entries.items():
+            self._apply_entry_style(key, entry)
 
     # -- Kamera-Bindung (duck-typed, siehe Paket-Docstring) ------------------
 
@@ -372,8 +440,8 @@ class Viewport:
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.show_faces:
             self.render_mesh.render(self.render_mesh.camera)
-            for entry in self.object_entries.values():
-                entry.render(self.render_mesh.camera)
+        for key in self._entry_draw_order():
+            self.object_entries[key].render(self.render_mesh.camera)
         if (
             self.line_overlay is None
             and self.face_overlay is None
@@ -384,7 +452,7 @@ class Viewport:
         # Dieselbe Matrix-Quelle wie die `camera_uniforms` des Mesh
         # (gebundene Kamera + synchronisierter Aspect) - kein zweiter
         # Kamera-Matrix-Pfad (WP-06 B2b, E17).
-        camera_uniforms = self.render_mesh._camera_uniforms()
+        camera_uniforms = self.overlay_camera_uniforms()
         if self.line_overlay is not None and self.show_edges:
             self.line_overlay.draw(camera_uniforms, layers=(WIRE_LAYER,))
         if self.face_overlay is not None and any(self.face_layers.values()):

@@ -47,16 +47,20 @@ in float highlight_flag;
 
 uniform mat4 u_view;
 uniform mat4 u_proj;
+uniform mat4 u_model;
 
 out vec3 v_normal;
 out float v_highlight;
 out vec3 v_world_pos;
 
 void main() {
-    gl_Position = u_proj * u_view * vec4(position, 1.0);
-    v_normal = normal;
+    vec4 world = u_model * vec4(position, 1.0);
+    gl_Position = u_proj * u_view * world;
+    // AD-021 M2-1: rotation + uniform scale only (Q-4), so mat3(u_model) is a valid normal
+    // matrix up to length; the fragment shader normalizes.
+    v_normal = mat3(u_model) * normal;
     v_highlight = highlight_flag;
-    v_world_pos = position;
+    v_world_pos = world.xyz;
 }
 """
 
@@ -82,6 +86,7 @@ in vec3 v_world_pos;
 uniform vec3 u_light_dir;
 uniform vec3 u_base_color;
 uniform int u_flat;
+uniform float u_alpha;
 
 out vec4 out_color;
 
@@ -90,12 +95,13 @@ void main() {
     vec3 n = u_flat != 0 ? flat_n : normalize(v_normal);
     float ndl = max(dot(n, normalize(u_light_dir)), 0.0);
     vec3 shaded = mix(u_base_color * 0.35, u_base_color, ndl);
-    out_color = vec4(shaded, 1.0);
+    out_color = vec4(shaded, u_alpha);
 }
 """
 
 LIGHT_DIR = (0.4, 0.6, 0.7)
 DEFAULT_BASE_COLOR = (0.72, 0.75, 0.82)
+_IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
 
 def _build_program():
@@ -125,6 +131,8 @@ class GLRenderStore(ResourceStore):
         # WP-06 B5a (E36/E40): vom Viewport gesetzt, wirkt nur in `draw()`.
         self.flat = False
         self.polygon_offset = False
+        # AD-021 M2-0 (Ghost, §7.3 RD-1): < 1.0 = durchscheinend, ohne Depth-Write.
+        self.alpha = 1.0
 
     @classmethod
     def program(cls):
@@ -266,12 +274,14 @@ class GLRenderStore(ResourceStore):
 
     # -- draw style (WP-06 B5a) -------------------------------------------------
 
-    def set_draw_style(self, flat: bool, polygon_offset: bool) -> None:
+    def set_draw_style(self, flat: bool, polygon_offset: bool, alpha: float = 1.0) -> None:
         """Flat Shading (E37) und Polygon-Offset der Faces (E40: nur wenn
         zusätzlich Edges gezeichnet werden). Reiner Draw-Zustand - keine
-        Ressource, kein Rebuild."""
+        Ressource, kein Rebuild. `alpha` < 1 (AD-021 M2-0, Ghost): geblendet, Depth-Test
+        an, Depth-Write aus."""
         self.flat = bool(flat)
         self.polygon_offset = bool(polygon_offset)
+        self.alpha = float(alpha)
 
     # -- draw-time access -------------------------------------------------------
 
@@ -315,6 +325,10 @@ class GLRenderStore(ResourceStore):
         program["u_light_dir"] = LIGHT_DIR
         program["u_base_color"] = self._base_color()
         program["u_flat"] = 1 if self.flat else 0
+        model = self.uniform_data("model_uniforms")
+        program["u_model"] = tuple(model) if len(model) == 16 else _IDENTITY_4
+        program["u_alpha"] = self.alpha
+        ghost = self.alpha < 1.0
 
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_CULL_FACE)
@@ -324,7 +338,16 @@ class GLRenderStore(ResourceStore):
             # nicht mit ihnen z-fightet (Playground-Verhalten, E40).
             gl.glEnable(gl.GL_POLYGON_OFFSET_FILL)
             gl.glPolygonOffset(1.0, 1.0)
+        if ghost:
+            blend_was_enabled = gl.glIsEnabled(gl.GL_BLEND)
+            gl.glEnable(gl.GL_BLEND)
+            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+            gl.glDepthMask(gl.GL_FALSE)
         vlist.draw(gl.GL_TRIANGLES)
+        if ghost:
+            gl.glDepthMask(gl.GL_TRUE)
+            if not blend_was_enabled:
+                gl.glDisable(gl.GL_BLEND)
         if self.polygon_offset:
             gl.glDisable(gl.GL_POLYGON_OFFSET_FILL)
         gl.glDisable(gl.GL_CULL_FACE)

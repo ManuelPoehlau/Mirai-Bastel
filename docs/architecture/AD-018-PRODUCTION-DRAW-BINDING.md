@@ -536,3 +536,16 @@ unchanged, and the GPU content equals the CPU copy `_cpu` after any sequence of
 partial updates (`tests/test_gl_render_store_patch.py`, GPU read-back).
 Container numbers (llvmpipe, not the reference PC): body 112 vertices, move step
 + `sync()` p50 24.6 -> 1.6 ms; table in `experiments/drag_cost/README.md`.
+
+*Addendum 2026-10-15 (AD-021 M1, M2-0, M2-1 — objects):* a `Viewport` now draws more than one
+`RenderMesh`: the edit object's (with the Selection overlays, as before) plus one **object entry** per other
+scene object (`Viewport.set_object_entry`, no overlay). Each entry has its own store, so "one declared group
+per store, `draw()` draws exactly that group" (§5) is unchanged. Three additions: (1) **`model_uniforms`** —
+a declared uniform per `RenderMesh` (`RenderMesh.set_model_matrix`, written only once an object is placed;
+an unplaced object has exactly the old resources), applied as `u_model` in the vertex shader, normals via
+`mat3(u_model)` (rotation + uniform scale only, AD-021 Q-4); buffer positions stay object space, a placement
+change rebuilds nothing. The edit object's overlays draw with `view·model` instead of `view`
+(`Viewport.overlay_camera_uniforms`), so no overlay shader changed. (2) **Ghost** — `set_draw_style(...,
+alpha=)`, `u_alpha` in the fragment shader; `alpha < 1` draws blended with depth test on and depth write off,
+after every opaque entry (AD-021 §7.3). (3) `GLRenderStore.release()` frees a removed entry's VertexList.
+Tests: `tests/test_object_space.py`, `tests/test_reference_display.py`, `tests/test_viewport_object_entries.py`.

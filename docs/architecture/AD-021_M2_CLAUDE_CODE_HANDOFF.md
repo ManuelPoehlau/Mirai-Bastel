@@ -6,6 +6,10 @@
 jetzt wird zuverlässig umgesetzt. **BUILD darf keine neue Erkenntnis behaupten.** Sieht beim Bauen etwas anders aus
 als hier beschrieben: anhalten und melden („Bei Widerspruch", §9).
 
+**Fortschritt:** M2-0 und M2-1 **gebaut 2026-10-15** (AD-021 §6.2, §6.3; Branch `claude/relaxed-maxwell-2hoj0u`).
+M2-2 ist der nächste Slice; seine Gates Q-6 und Q-7 sind beantwortet. M2-2 ruft nach jedem Objekt-Transform und dessen
+Undo `Application._placement_changed()` auf.
+
 **Stand:** `main` @ `1c3fd99` (M1 gemergt, Manus Antworten zu Q-11/Q-12). Baseline, gemessen auf dem M1-Stand
 (`xvfb-run -a python -m pytest`, mit `libegl1` im Container — ohne EGL werden `tests/test_main_wiring.py` und die
 Fenster-Proben übersprungen statt ausgeführt):
@@ -62,6 +66,11 @@ der offene Schmerzpunkt aus dem M1-Test ist.
 
 Ohne Antwort im Decision Record von AD-021 wird der betroffene Slice **nicht** gebaut (Haltepunkt: Verhalten, das der
 Artist spürt). Empfehlungen stehen in AD-021 §7.1.
+
+**Stand 2026-10-15 (Manu):** Q-5, Q-6, Q-7, Q-8 wie empfohlen beantwortet; §7.3 (Q-11) bestätigt; **Q-13 zurückgestellt**
+— Pivot verschieben kommt später, bis dahin ist der Pivot der Objekt-Ursprung. M2-3 schrumpft damit auf Apply/Clear
+Transform und den Ebenen-Marker; der E-2-Kompensationsfall (Pivot verschieben) wird nicht gebaut, die Formel gilt aber
+mit `pivot` aus dem Objekt.
 
 | # | Frage | Gate für | Empfehlung |
 |---|---|---|---|

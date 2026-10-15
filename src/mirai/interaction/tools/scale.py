@@ -32,7 +32,7 @@ from core import OperationContext, ScaleOperation
 from core.operations.transform import scale_keeps_plane
 
 from ...soft_selection import SoftScaleOperation
-from .transform import TransformTool, _face_tangent_basis, _resolve_space
+from .transform import TransformTool, _face_tangent_basis, _resolve_space, world_axes_basis
 
 
 class ScaleTool(TransformTool):
@@ -56,6 +56,8 @@ class ScaleTool(TransformTool):
         # _active_axes[i] = True means basis vector i gets the step factor.
         self._tangent_basis: tuple | None = None
         self._active_axes: tuple[bool, bool, bool] | None = None
+        # AD-021 M2-1 (E-8): Weltachsen im Objektraum eines platzierten Objekts (None = Welt).
+        self._world_basis: tuple | None = None
 
     @property
     def axes_mask(self) -> tuple[float, float, float]:
@@ -74,6 +76,7 @@ class ScaleTool(TransformTool):
         super()._on_begin(scene=scene, camera=camera, vertex_ids=vertex_ids, **params)
         self._normal = None
         self._plane_exclude = None
+        self._world_basis = None
 
         # WP-03C: axis is now an explicit parameter (separate from space)
         # Backward compatibility: axes → space (old parameter name)
@@ -107,6 +110,9 @@ class ScaleTool(TransformTool):
                 # Konvertiere Achse zu Maske: axis (1,0,0) → mask (1,0,0)
                 # (für Scale verwendet man die Achse direkt als Maske)
                 self._axes_mask = axis_or_mask
+                # AD-021 M2-1 (E-8): die Maske meint Weltachsen; bei einem platzierten Objekt
+                # sind das im Objektraum gedrehte Achsen -> als AD-014-`basis`.
+                self._world_basis = world_axes_basis(self._camera)
             elif space_lower == "normal":
                 axis_lower_check = axis.lower() if isinstance(axis, str) else None
                 if derived_geometry is None:
@@ -160,7 +166,9 @@ class ScaleTool(TransformTool):
         if self._tangent_basis is not None:
             factor = tuple(2.0 if active else 1.0 for active in self._active_axes)
             return scale_keeps_plane(factor, self._tangent_basis, normal)
-        return scale_keeps_plane(tuple(2.0 if mask else 1.0 for mask in self._axes_mask), None, normal)
+        return scale_keeps_plane(
+            tuple(2.0 if mask else 1.0 for mask in self._axes_mask), self._world_basis, normal
+        )
 
     def _on_update(self, dx: float, dy: float, width: int, height: int) -> None:
         # Zielfaktor aus kumulierter Pixel-Distanz → Multiplikator-Schritt
@@ -178,9 +186,13 @@ class ScaleTool(TransformTool):
             factor = tuple(step if active else 1.0 for active in self._active_axes)
             self._operation.update(factor=factor, basis=self._tangent_basis)
         else:
-            # Weltachsenmaske (uniform oder x/y/z/xy/yz/xz): diagonal exakt.
+            # Weltachsenmaske (uniform oder x/y/z/xy/yz/xz): diagonal exakt. Bei einem
+            # platzierten Objekt (AD-021 M2-1) in der gedrehten Weltachsen-Basis.
             factor = tuple(step if mask else 1.0 for mask in self._axes_mask)
-            self._operation.update(factor=factor)
+            if self._world_basis is not None:
+                self._operation.update(factor=factor, basis=self._world_basis)
+            else:
+                self._operation.update(factor=factor)
         self._applied_scale = target_scale
 
     def _on_deactivate(self) -> None:
@@ -190,5 +202,6 @@ class ScaleTool(TransformTool):
         self._plane_exclude = None
         self._tangent_basis = None
         self._active_axes = None
+        self._world_basis = None
         self._drag_pixels = 0.0
         self._applied_scale = 1.0

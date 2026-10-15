@@ -121,7 +121,9 @@ Scope (binding, see the handoffs):
   `1`/`2`/`3`, picking goes through it); in `4` a plain click on an object
   that is not the one being edited switches it Reference <-> Normal (one Undo
   step), Shift/Ctrl/Alt+click only change the object selection. W/E/R/T, C,
-  Delete/Dissolve and Shift+S are refused in `4` (status line).
+  Delete/Dissolve and Shift+S are refused in `4` (status line). AD-021 M2-0
+  (`PROVISIONAL` key and alpha): Alt+D draws every Reference as a translucent
+  Ghost / shaded again; References stay drawn in Wireframe.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,

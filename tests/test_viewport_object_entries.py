@@ -96,8 +96,11 @@ def test_pick_object_returns_the_front_most_mesh_under_the_cursor():
     camera.frame_on_bounds((0.0, 0.0, 0.0), 3.0)
     small, large = create_cube(1.0), create_cube(4.0)
     centre = (WIDTH / 2, HEIGHT / 2)
-    candidates = [("small", small, PickCache()), ("large", large, PickCache())]
+    candidates = [
+        ("small", small, PickCache(), camera, 1.0),
+        ("large", large, PickCache(), camera, 1.0),
+    ]
     # The large cube encloses the small one: its front face is hit first.
-    assert pick_object(camera, candidates, *centre, WIDTH, HEIGHT) == "large"
-    assert pick_object(camera, candidates[:1], *centre, WIDTH, HEIGHT) == "small"
-    assert pick_object(camera, candidates, 1.0, 1.0, WIDTH, HEIGHT) is None
+    assert pick_object(candidates, *centre, WIDTH, HEIGHT) == "large"
+    assert pick_object(candidates[:1], *centre, WIDTH, HEIGHT) == "small"
+    assert pick_object(candidates, 1.0, 1.0, WIDTH, HEIGHT) is None

@@ -100,6 +100,37 @@ _PLANE_ROTATION_AXES: dict[str, tuple[float, float, float]] = {
 }
 
 
+# -- AD-021 M2-1 (E-8, L-5): Weltachsen-Constraints für ein platziertes Objekt -------------
+#
+# Die Tools rechnen in Mesh-Koordinaten (= Objektraum). Bekommen sie eine `ObjectSpaceCamera`
+# (`mirai.object_space`), sind Deltas und Blickachsen schon Objektraum; nur die *Weltachsen*
+# der Constraints X/Y/Z (AD-012 Default `world`) müssen noch herübergedreht werden. Eine
+# `OrbitCamera` hat diese Methoden nicht: dann bleibt alles exakt wie bisher.
+
+
+def object_axis(camera, axis: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Eine Weltachse als Objektraum-Achse (Rᵀ·a); ohne Objekt-Kamera unverändert."""
+    convert = getattr(camera, "axis_to_object", None)
+    return tuple(axis) if convert is None else convert(axis)  # type: ignore[return-value]
+
+
+def world_masked_delta(camera, delta, mask) -> tuple[float, float, float]:
+    """Achsen-/Ebenenmaske (AD-009) auf ein Delta, in **Welt** angewendet: Objektraum-Delta nach
+    Welt, Maske, zurück. Ohne Objekt-Kamera die bisherige komponentenweise Maske."""
+    to_world = getattr(camera, "delta_to_world", None)
+    if to_world is None:
+        return tuple(component * m for component, m in zip(delta, mask))  # type: ignore[return-value]
+    world = to_world(delta)
+    return camera.delta_to_object(tuple(component * m for component, m in zip(world, mask)))
+
+
+def world_axes_basis(camera):
+    """Die drei Weltachsen im Objektraum (orthonormal, AD-014-`basis`) oder None ohne Objekt-Kamera."""
+    if getattr(camera, "axis_to_object", None) is None:
+        return None
+    return tuple(camera.axis_to_object(e) for e in ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)))
+
+
 def _normalize(v: tuple[float, float, float]) -> tuple[float, float, float]:
     """Normalize a vector."""
     x, y, z = v

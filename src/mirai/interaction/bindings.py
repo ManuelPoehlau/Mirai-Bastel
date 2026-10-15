@@ -183,6 +183,8 @@ def build_default_bindings() -> BindingSet:
     # --- Display ------------------------------------------------------------
     bs.set_default(_key("d"), cmd.CYCLE_DISPLAY_MODE)
     bs.set_default(_key("d", "shift"), cmd.TOGGLE_WIREFRAME_OVERLAY)
+    # AD-021 M2-0 (§7.3 RD-2, Q-11; Taste `PROVISIONAL`, Display-Familie D/Shift+D).
+    bs.set_default(_key("d", "alt"), cmd.TOGGLE_REFERENCE_GHOST)
 
     # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)

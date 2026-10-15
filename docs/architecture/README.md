@@ -39,7 +39,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-018](AD-018-PRODUCTION-DRAW-BINDING.md) | Production draw binding | DECIDED (Option B) |
 | [AD-019](AD-019-POINTER-CLICK-VS-DRAG-BINDINGS.md) | Pointer click vs. drag in the bindings | DECIDED (engineering, 2026-09-26) |
 | [AD-020](AD-020-SOFT-SELECTION-APP-PATH.md) | Soft Selection on the app path for the S2 Artist test (host, Core seam, influence state, visualization, keys, cost probe) | DECIDED (2026-10-10; capability `PROVISIONAL`) |
-| [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) | Object / Component model (ARCH-01): thin Object owning one Mesh, Reference state, object space for symmetry/soft | DECIDED (2026-10-15): reviewed, go for M0; M0 and M1 implemented (2026-10-15), M1 practical test pending |
+| [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) | Object / Component model (ARCH-01): thin Object owning one Mesh, Reference state, object space for symmetry/soft | DECIDED (2026-10-15): reviewed, go for M0; M0, M1, M2-0, M2-1 implemented (2026-10-15); M2-2 next |
 | [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md) | Symmetry definition storage | DECIDED |
 | [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
 | [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife/Extrude without `SymmetricX` copies) | DECIDED (2026-10-08) |

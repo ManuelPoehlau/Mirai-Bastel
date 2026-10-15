@@ -75,6 +75,8 @@ MESH_GROUP_ATTRIBUTES: dict[str, tuple[str, int]] = {
 }
 MESH_GROUP_INDEX = "indices"
 
+_IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+
 
 def _flatten_vec3(values) -> list[float]:
     out: list[float] = []
@@ -104,6 +106,9 @@ class RenderMesh:
         self.store.declare_group(MESH_GROUP, MESH_GROUP_ATTRIBUTES, MESH_GROUP_INDEX)
         self.store.declare_uniform("camera_uniforms")
         self.store.declare_uniform("material_uniforms")
+        # AD-021 M2-1 (E-9): Objekt -> Welt. Erst beim ersten `set_model_matrix` geschrieben, so
+        # dass ein nie platziertes Objekt genau die bisherigen Ressourcen hat.
+        self.store.declare_uniform("model_uniforms")
         self.derived = DerivedGeometry(mesh)
         self.dirty = DirtyState()
         self.overlay = overlay
@@ -111,6 +116,9 @@ class RenderMesh:
         self.camera = None  # duck-typed: build_view_matrix()/build_projection_matrix(aspect)
         self.material = None  # duck-typed: uniform_packet()
         self.aspect = 1.0
+        # AD-021 M2-1: 4x4 spaltenweise (None = Identität) und ob der Store sie noch braucht.
+        self.model_matrix: list[float] | None = None
+        self._model_dirty = False
 
         # Stabile Buffer-Reihenfolge für diese Session: VertexId -> flacher
         # Index. Wird nur bei Topology-Änderung neu aufgebaut (siehe
@@ -229,6 +237,15 @@ class RenderMesh:
         self.dirty.material = True
         self.dirty.material_rev += 1
 
+    def set_model_matrix(self, matrix: list[float] | None) -> None:
+        """Objekt -> Welt (AD-021 M2-1, E-9). Die Positionen im Buffer bleiben Objektraum; der
+        Shader wendet die Matrix an. None = Identität. Kein Rebuild, nur eine Uniform."""
+        matrix = list(matrix) if matrix is not None else None
+        if matrix == self.model_matrix:
+            return
+        self.model_matrix = matrix
+        self._model_dirty = True
+
     def mark_camera_dirty(self, aspect: float | None = None) -> None:
         if aspect is not None:
             self.aspect = aspect
@@ -261,6 +278,8 @@ class RenderMesh:
             self._sync_material()
         if self.dirty.camera:
             self._sync_camera()
+        if self._model_dirty:
+            self._sync_model()
         self.dirty.reset()
         self.stats.stop("sync")
 
@@ -343,6 +362,13 @@ class RenderMesh:
             "camera_uniforms", 0, uniforms, len(uniforms) * FLOAT_BYTES
         )
         self.stats.count("partial_updates")
+
+    def _sync_model(self) -> None:
+        data = self.model_matrix if self.model_matrix is not None else list(_IDENTITY_4)
+        if not self.store.has("model_uniforms"):
+            self.store.allocate("model_uniforms", len(data) * FLOAT_BYTES)
+        self.store.update("model_uniforms", 0, data, len(data) * FLOAT_BYTES)
+        self._model_dirty = False
 
     # -- Draw (VIEWPORT_V02_ARCHITECTURE.md §4.2, AD-018 §5 Punkt 3) ---------
 
