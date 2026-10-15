@@ -5,9 +5,11 @@
 §5 (CORE_V1_FREEZE §7 step 6 given); A′ is not taken. Q-1…Q-4, Q-9, Q-10 answered (Decision record); Q-5…Q-8 stay open for
 M2. Where a section still says "proposed" or "proposal only", this status wins. **M0 implemented 2026-10-15**
 (Core only, no app behaviour; record in [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md), tests in `tests/test_scene_objects.py`).
-**M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); **waiting for
-Manu's practical test**. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
-state).
+**M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); Manu tried it
+(his Q-11 answer describes the behaviour); no KEEP/ITERATE verdict recorded, M1 stays `PROVISIONAL`. **M2:**
+[handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md), gated on Q-5–Q-8 and Q-13. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
+M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
 **Answers:** [ROADMAP §6 ARCH-01](ROADMAP.md#arch-01--object--component-model) ("Must answer" list) plus two questions from
 the handoff: where the Reference state lives, and in which space symmetry and soft selection compute.
@@ -33,7 +35,9 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | Manu (chat) | **Go for M0** (Option B, Core change per §5; not A′) · **Q-9 = yes** (adding an object leaves the camera where it is) · **Q-10 = yes** (`Space` menu: Shift+click adds the entry as Reference, a plain click loads as today) |
 | 2026-10-15 | agent | **M0 implemented** per §5.1–§5.3 (names as proposed; E-1 and E-3 decided for M0, §7.2); M1 is next |
 | 2026-10-15 | agent | **M1 implemented** per §5.4 "M1" (§6.1); no Core change, nothing from M2; E-5 decided for M1 (§7.2); the Reference look and the switch click are `PROVISIONAL` and asked as **Q-11**, **Q-12**; Manu's practical test pending |
-| — | Manu | open for M2: Q-5…Q-8 |
+| 2026-10-15 | Manu (in this file, Kurzfassung) | **Q-11:** the muted blue is good; problem both ways — the editable geometry *inside* a Reference cannot be seen (proposal: a switchable shaded/ghost mode for the Reference), and a Reference *inside* the editable object disappears in Wireframe (proposal: the Reference stays shaded in Wireframe); counter-proposals welcome · **Q-12:** "Das passt erstmal so" (the click in `4` stays) |
+| 2026-10-15 | agent | Q-11 counter-proposal §7.3 (takes both of Manu's proposals; Ghost global, `Alt+D`, `PROVISIONAL`); M2 handoff written; new Artist question **Q-13** (how the pivot is set) |
+| — | Manu | open for M2: Q-5…Q-8, Q-13; confirm §7.3 |
 
 ---
 
@@ -557,8 +561,9 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | Q-6 | M2 | How should a moved/rotated/scaled object be marked, so the level is always visible? | status line text first; a better marker after the practical test |
 | Q-7 | M2 | Symmetry (`Shift+S`) uses the **object's** axes: the plane rotates with the object. Today it is "world axis" (your E1 decision, AD-SYM-04). | yes — otherwise a rotated object is no longer exactly symmetric (§4.8, Probe P-2) |
 | Q-8 | M2 | After editing two objects, does Undo switch back to the object the step was made in? | yes |
-| Q-11 | M1 test | How should a **Reference look**? M1 draws it shaded in a muted blue (not in pure Wireframe), no transparency (§6.1). | keep for now; decide after the practical test (ghost / wire / transparent are the known alternatives, §0.3) |
-| Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | keep the click (§6 wording) until the test shows otherwise |
+| Q-11 | M1 test | How should a **Reference look**? M1 draws it shaded in a muted blue (not in pure Wireframe), no transparency (§6.1). | **Answered (Manu 2026-10-15):** blue stays; see-through needed both ways → §7.3 |
+| Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | **Answered (Manu 2026-10-15):** the click stays ("passt erstmal so") |
+| Q-13 | M2 | How is an object's **pivot** set (eyes, jaw: A-3)? It must never move geometry (L-2). | in `4`, hold `W` with an extra modifier moves only the pivot (Maya: `Insert`/`D`, Blender: "affect only origins"); a first default: pivot = object origin, as M0 stores it |
 
 ### 7.2 Engineering (agent domain, decided at implementation)
 
@@ -570,6 +575,23 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | E-5 | Undo refresh by object: is the mirror entry enough, or does a `Command` need to name its object? **M1:** the mirror entry is enough — it carries `mesh_step`, and an object step's Undo/Redo reconciles the object entries with `scene.objects` (§6.1); no `Command` names its object. Revisit with A-4 |
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)
+
+### 7.3 Reference display — answer to Q-11 (proposal, `PROVISIONAL`, 2026-10-15)
+
+Manu's two problems are both "something is hidden behind or inside something else". The proposal takes **both** of his
+proposals and adds one rule each, so that the two cases combine:
+
+| # | Proposal | Why this form |
+|---|---|---|
+| RD-1 | **Ghost**: every Reference can be drawn translucent — the same blue, alpha about 0.3, depth-tested against opaque geometry but writing no depth, front faces only, drawn after all opaque objects. The editable object inside it is then visible and its selection overlays stay on top as today. | Manu's proposal. Front faces only and no depth write keep a dense mesh (gollum) from turning into a dark smear of overlapping back faces |
+| RD-2 | **One switch for all References**, not per object: `Alt+D` toggles *Shaded ↔ Ghost* (the display family `D` / `Shift+D`; key `PROVISIONAL`, rebindable). Status line `References: ghost` / `References: shaded`. Not an Undo step (display, like `D`) | the need is "see through the reference(s)", not "this one but not that one"; a per-object switch can follow if a scene with several References asks for it (it would be a field on the Object, §2 table: role/display, not Mesh) |
+| RD-3 | **References ignore Wireframe**: in Wireframe (`D` cycle) a Reference is still drawn — shaded or ghost, as RD-2 says; only the editable object turns into wire. | Manu's proposal. The edit object's wire behind an opaque Reference is then hidden by depth — correct occlusion; RD-2 Ghost shows it |
+| RD-4 | **Picking unchanged**: component picking already goes through a Reference (RF-6); object picking in `4` hits a ghost like an opaque Reference | what you can click must not depend on how it is drawn |
+
+*Considered, not proposed now:* X-ray of the editable object (Blender "In Front", Maya X-Ray of the active object) —
+shows the edit object through *everything*, also through itself, which hides its own shape; a wire look for References
+(Maya "Template") — loses the volume Manu wants to model against. Both stay possible later. Placement (M2) removes part
+of the problem anyway: an object that sits inside another because of its file coordinates can then be moved out.
 
 ---
 
@@ -680,5 +702,21 @@ Manu: Das gedämpfte Blau ist gut. Problem: Man kann zwar durch das Referenzmesh
 Q-12 *Ist „Klick in `4` schaltet um" richtig, oder lieber eine Taste?* (jetzt: Klick; Shift/Ctrl/Alt+Klick wählt nur aus).
 
 Manu: Das passt erstmal so.
+
+**Mein Vorschlag zu Q-11 (§7.3, wird als Erstes in M2 gebaut, `PROVISIONAL`):** Ich übernehme beide Vorschläge.
+(1) `Alt+D` schaltet **alle** Referenzen zwischen *schattiert* und *Ghost* um (dasselbe Blau, durchscheinend, nur
+Vorderseiten — so wird auch gollum kein dunkler Brei). (2) Im Wireframe bleiben Referenzen sichtbar, schattiert oder als
+Ghost; nur das bearbeitete Objekt wird zum Draht. Ein Schalter für alle statt pro Objekt, weil du „durch die Referenz
+sehen" willst, nicht „durch diese, aber nicht durch jene" — pro Objekt geht später, wenn eine Szene es braucht.
+Verworfen für jetzt: X-Ray des bearbeiteten Objekts (zeigt es durch alles, auch durch sich selbst) und Referenz als Draht
+(verliert das Volumen, an dem du modellierst).
+
+**Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
+Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·
+Q-6 *Wie sieht man, dass ein Objekt verschoben/gedreht/skaliert ist?* (erst Statuszeile, besserer Marker nach dem Test) ·
+Q-7 *Symmetrie-Ebene dreht sich mit dem Objekt mit* (ja — ändert deine E1-Entscheidung „Weltachse") ·
+Q-8 *Springt Undo zum Objekt zurück, an dem der Schritt gemacht wurde?* (ja) ·
+Q-13 *Wie setzt man den Pivot (Augen, Kiefer)?* (in `4` `W` mit einem Zusatz-Modifier verschiebt nur den Pivot; Start: Pivot
+= Ursprung der Datei).
 
 Keine praktischen Tests — das ist ein Entscheidungsdokument.
