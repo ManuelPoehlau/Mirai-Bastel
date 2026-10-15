@@ -349,7 +349,7 @@ A modeling group is complete only when its topology behavior, history behavior a
 
 This is an architecture decision, not a feature ticket.
 
-**Decision document:** [AD-021 — Object / Component Model](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15: go for slice M0; slices M0–M2 in its §6).
+**Decision document:** [AD-021 — Object / Component Model](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15: go for slice M0; slices M0–M2 in its §6). M0 (Core) implemented 2026-10-15; M1 next.
 
 ### Question
 
@@ -865,7 +865,7 @@ Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Kn
 
 ## Strategic research / gates
 
-- **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15, go for M0)
+- **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15; M0 implemented 2026-10-15, M1 next)
 - **ARCH-02 — Topology Identity / Provenance / Remapping**
 
 ## Later (after WP-06 / production foundation stabilizes)

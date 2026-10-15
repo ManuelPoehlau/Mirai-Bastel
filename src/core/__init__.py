@@ -9,12 +9,12 @@ festgelegten Architekturgrenzen tatsächlich haltbar sind - nicht eine
 vollständige Modeling-Feature-Menge.
 """
 
-from .ids import VertexId, EdgeId, FaceId
+from .ids import VertexId, EdgeId, FaceId, ObjectId
 from .mesh import Mesh, SymmetryDefinition
 from .selection import Selection, SelectionMode
 from .history import HistoryStack, Command
 from .operation import Operation, OperationContext
-from .scene import Scene
+from .scene import Scene, SceneObject, ObjectState, ObjectTransform
 from .serialization import scene_to_dict, scene_from_dict, scene_to_json, scene_from_json
 from .operations.move import MoveOperation
 from .operations.transform import RotateOperation, ScaleOperation, VertexTransformCommand
@@ -23,6 +23,7 @@ __all__ = [
     "VertexId",
     "EdgeId",
     "FaceId",
+    "ObjectId",
     "Mesh",
     "SymmetryDefinition",
     "Selection",
@@ -32,6 +33,9 @@ __all__ = [
     "Operation",
     "OperationContext",
     "Scene",
+    "SceneObject",
+    "ObjectState",
+    "ObjectTransform",
     "scene_to_dict",
     "scene_from_dict",
     "scene_to_json",

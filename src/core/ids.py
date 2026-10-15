@@ -13,6 +13,11 @@ Architekturvertrag (bewusst klein gehalten):
   selbst.
 - IDs werden 1:1 serialisiert (siehe serialization.py).
 
+`ObjectId` (AD-021 M0) folgt demselben Vertrag für Scene-Objekte: von der
+Scene aus einem eigenen monotonen Counter vergeben, nie wiederverwendet, mit
+dem Counter serialisiert. Ein Element wird erst zusammen mit seinem Objekt
+eindeutig (`(ObjectId, ElementId)`), weil jede Mesh ihre IDs bei 0 beginnt.
+
 Diese Datei bewusst NICHT enthalten: Generational Slotmap, Recycling-Pool,
 Arena-Allocator. Das wären mögliche spätere Performance-Optimierungen,
 keine V1-Anforderung.
@@ -43,6 +48,16 @@ class EdgeId(ElementId):
 
 
 class FaceId(ElementId):
+    __slots__ = ()
+
+
+class ObjectId(ElementId):
+    """ID eines Scene-Objekts (AD-021 §4.5), kein Mesh-Element.
+
+    Erbt von ElementId nur, um `IdAllocator` und `__repr__` wiederzuverwenden
+    (AD-021 E-3); Gültigkeit prüft `Scene.objects`, nicht eine Mesh-Tabelle.
+    """
+
     __slots__ = ()
 
 

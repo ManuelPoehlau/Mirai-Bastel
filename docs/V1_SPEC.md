@@ -298,17 +298,29 @@ Die abgeleitete Oberfläche ersetzt niemals das editierbare Control Mesh.
 
 Auch wenn V1 im Wesentlichen einen Modeler speichert, soll die Dateiarchitektur **nicht so tun, als wäre das Mesh das endgültige Gesamtsystem**.
 
-Konzeptionell:
+Konzeptionell (Format-Version 2 seit [AD-021](architecture/AD-021-OBJECT-COMPONENT-MODEL.md) M0, 2026-10-15):
 
 ```json
 {
-  "version": 1,
-  "mesh": { },
+  "version": 2,
+  "object_id_counter": 2,
+  "edit_object": 0,
+  "objects": [
+    { "id": 0, "name": "head", "state": "normal",
+      "transform": { "translation": [0, 0, 0], "rotation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "scale": 1 },
+      "pivot": [0, 0, 0],
+      "mesh": { } }
+  ],
   "morph_targets": null,
   "rig": null,
   "animation": null
 }
 ```
+
+Eine Scene hält Objekte; jedes Objekt besitzt genau ein Mesh (unverändertes Mesh-Format) und trägt Platzierung, Zustand
+und Name. Version 1 (`"mesh": { }` statt `"objects"`) wird weiter gelesen, als ein normales Objekt ohne Transform, das
+Edit-Objekt ist; geschrieben wird nur Version 2. Dieser eine Lese-Zweig ist die einzige Migration — es gibt weiterhin keine
+Migrations-Engine.
 
 Die konkrete Serialisierung darf für V1 einfach bleiben. Keine vorgezogene Migrations-Engine, kein Plugin-Serialisierungsframework.
 
