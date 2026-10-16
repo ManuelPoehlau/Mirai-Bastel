@@ -94,7 +94,8 @@ Zusatz-Overlays (H1) und gibt die bewegten Vertices von `p.surface_mesh` zurück
 beim letzten `sync()` heißt neu aufbauen. Der Viewport besitzt dafür einen `RenderMesh` ohne
 `SelectionOverlay` mit Kamera, Material, Licht, Flat/Smooth und Matrix des Edit-Mesh und zeichnet
 ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
-Edit-Mesh (dem Käfig), Picking ist nicht betroffen. Ohne Provider ändert sich nichts.
+Edit-Mesh (dem Käfig), Picking ist nicht betroffen. Kamera-Änderungen erreichen die Fläche in
+jedem `sync()` wie die Objekt-Einträge, ohne den Provider zu fragen. Ohne Provider ändert sich nichts.
 
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
@@ -525,6 +526,9 @@ class Viewport:
         provider = self.surface_provider
         if provider is not None and (changed or getattr(provider, "dirty", False)):
             self._sync_surface()
+        elif self.surface_render_mesh is not None:
+            # Kamera/Aspect (kein Provider-Auslöser) kommen wie bei den Objekt-Einträgen jeden Frame an.
+            self.surface_render_mesh.sync()
         if self.show_edges and self._edges_dirty:
             self._sync_edges()
         for overlay in self.extra_overlays:

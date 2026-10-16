@@ -166,3 +166,18 @@ def test_flat_and_model_matrix_follow_the_edit_mesh():
     assert "style:surface:True" in LOG
     vp.set_model_matrix(None)
     assert rm.model_matrix is None
+
+
+def test_camera_changes_reach_the_surface_without_asking_the_provider():
+    # Manu, 2026-10-16: orbiting moved only the cage; the surface followed after the next hover.
+    vp = _viewport()
+    provider = _Provider(create_cube())
+    vp.set_surface_provider(provider)
+    vp.sync()
+    rm = vp.surface_render_mesh
+    vp.render_mesh.camera.orbit(30.0, 10.0)
+    vp.on_camera_changed(aspect=1.7)
+    vp.sync()
+    assert len(provider.syncs) == 1  # a camera change is not a provider trigger
+    assert rm.store.data("camera_uniforms") == vp.render_mesh.store.data("camera_uniforms")
+    assert rm.aspect == 1.7

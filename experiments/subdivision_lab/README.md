@@ -65,6 +65,11 @@ HUD (oben): Ansicht, Stufe, Käfig V/F, Fläche V/F, Tiefentest, **Aufbau** (let
 Nachrechnen nach einer Änderung, ms; ohne GPU-Upload), Frame (gleitender Mittelwert), ggf. `SubD aus: …`.
 Messen bleibt Sache von `bench.py` / `run_standalone.py` (F9); das HUD zeigt nur, wie es sich beim Modellieren anfühlt.
 
+**Erster Praxistest (Manu, 2026-10-16):** Die Tasten und die drei Stufen passen erstmal. Auf dem Kopf laufen Stufe 1 und 2
+sehr flüssig, Stufe 3 etwas langsamer, aber akzeptabel; das gehört zur allgemeinen Viewport-Performance. Beobachtung
+„beim Navigieren bewegt sich erst nur der Käfig, die Fläche zieht erst nach einem Hover nach“: **behoben** am selben Tag
+(AD-013 H7, Fix). Die Verdikte zu T-SUBD-1/2 (Testbogen unten) stehen noch aus.
+
 ## Standalone-Fenster (WP-SUBD-LAB-01 Slice 1, `run_standalone.py`)
 
 Die folgenden Abschnitte beschreiben das alte Fenster. Es wird nach Manus Verdikt gelöscht.

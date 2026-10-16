@@ -1403,3 +1403,9 @@ scene menu).
 `src/viewport/viewport.py` (`set_surface_provider`, `_sync_surface`; camera, material, style, matrix and light forwarded),
 `tests/test_viewport_surface_provider.py`. Host: `experiments/subdivision_lab/` (`lab_surface.py`, `lab_app.py`,
 `lab_app_window.py`, `run.py`; README).
+
+*Fix (2026-10-16, after Manu's first practical test):* orbit/pan/zoom moved only the cage; the surface followed after the
+next hover, because its `RenderMesh` synced only on provider triggers and a camera change is none. `Viewport.sync()` now
+syncs the surface's `RenderMesh` every frame like the object entries (camera and aspect), still without calling the
+provider. Test: `test_camera_changes_reach_the_surface_without_asking_the_provider`. Manu's verdict on the rest: keys
+and the three levels fit for now; level 3 on the head is slower but acceptable (Viewport performance is its own topic).
