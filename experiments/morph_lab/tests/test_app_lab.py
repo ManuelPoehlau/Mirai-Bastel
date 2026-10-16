@@ -22,6 +22,8 @@ from morph_lab.lab_app import (
     assert_lab_keys_free,
     hud_text,
     lab_key_press,
+    object_line,
+    role_name,
 )
 from morph_lab.lab_scene import LabSceneError, backup_path, scene_path, target_name
 from morph_lab.morph import MESSAGE_OFFSET, MESSAGE_TOPOLOGY, evaluate
@@ -40,7 +42,7 @@ UP, DOWN, SHIFT_UP, CTRL_UP, CTRL_DOWN, M = (
 )
 ONE, FOUR, W = _key("1"), _key("4"), _key("w")
 CTRL_Z, CTRL_Y, CTRL_A, SHIFT_S = _key("z", "ctrl"), _key("y", "ctrl"), _key("a", "ctrl"), _key("s", "shift")
-LMB, SHIFT_LMB = Input("mouse", "LEFT", frozenset()), Input("mouse", "LEFT", frozenset({"shift"}))
+LMB = Input("mouse", "LEFT", frozenset())
 
 
 @pytest.fixture
@@ -86,16 +88,18 @@ def screen_of(app, obj) -> tuple[float, float]:
 
 
 def switch_to(app, lab, obj) -> None:
-    """The artist's gesture (README): 4 · click into empty space · Shift+click the object · 1."""
+    """The artist's gesture (README): 4 · click the object · 1 (a plain click selects only,
+    Q-12 revised 2026-10-16)."""
     app.key_press(FOUR)
-    click(app, 3, 3)
     for _ in range(12):  # zoom out until the object is on screen (it starts beside the frame)
         x, y = screen_of(app, obj)
         if 20 < x < WIDTH - 20 and 20 < y < HEIGHT - 20:
             break
         app.pointer_scroll(Input("wheel", "DOWN", frozenset()))
-    click(app, x, y, SHIFT_LMB)
+    click(app, x, y)
     assert app.selection.objects == {obj.id}
+    assert obj.state.name == "NORMAL"  # selecting never switches it to Reference
+    assert role_name(lab, obj.id) in object_line(lab)
     app.key_press(ONE)
     assert app.scene.edit_object_id == obj.id
 
@@ -271,9 +275,8 @@ def test_apply_transform_on_the_target_warns_and_undo_restores(lab_app):
     press(app, lab, CTRL_UP)
     frame(app)
     app.key_press(FOUR)
-    click(app, 3, 3)
     x, y = screen_of(app, target)
-    click(app, x, y, SHIFT_LMB)
+    click(app, x, y)
     app.key_press(CTRL_A)  # bakes the placement into the target's positions (review F-2)
     assert target.transform.translation == (0.0, 0.0, 0.0)
     for _ in range(2):
@@ -314,6 +317,20 @@ def test_lab_keys_are_free_in_the_app_and_conflicts_abort(lab_app):
     app.bindings.set_default(LAB_KEYS[0].input, "Something")
     with pytest.raises(LabBindingConflict):
         assert_lab_keys_free(app.bindings)
+
+
+def test_hud_names_the_edited_and_selected_object_and_the_app_status(lab_app):
+    app, lab, _ = lab_app
+    base, target = objects(app, lab)
+    assert "Bearbeitet: Basis" in object_line(lab)
+    switch_to(app, lab, target)
+    assert "Bearbeitet: Ziel 1" in object_line(lab)
+    app.key_press(FOUR)
+    x, y = screen_of(app, base)
+    click(app, x, y)
+    text = hud_text(lab, ASSET)
+    assert "Ausgewählt: Basis" in text and "Modus: Objekte (4)" in text
+    assert "App: Object 'head_basemesh' selected - 1/2/3 edits it" in text
 
 
 def test_hud_names_weight_and_the_rest_shape_hint(lab_app):

@@ -150,6 +150,9 @@ def build_default_bindings() -> BindingSet:
     # AD-021 M2-3 (L-3, `PROVISIONAL`, Frage an Manu): Alt+A ist schon "Auswahl leeren".
     bs.set_default(_key("a", "ctrl"), cmd.APPLY_TRANSFORM)
     bs.set_default(_key("a", "alt", "shift"), cmd.CLEAR_TRANSFORM)
+    # Q-12 revidiert (Manu 2026-10-16, `PROVISIONAL`): Referenz an/aus der ausgewählten Objekte in `4`;
+    # Alt wie `Alt+D` (Referenzen als Ghost).
+    bs.set_default(_key("r", "alt"), cmd.TOGGLE_REFERENCE)
 
     # --- History / Interaktion ---------------------------------------------
     bs.set_default(_key("z", "ctrl"), cmd.UNDO)

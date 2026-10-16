@@ -47,6 +47,8 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | agent | **M2-2 implemented** (object gesture W/E/R in mode `4`, `ObjectTransformCommand`, level status line, §6.4); no Core change; E-11, E-12 as in the handoff; Q-7 wording changed in AD-SYM-04 (E1 addendum) and `symmetry_axis.py`; Manu's practical test pending |
 | 2026-10-15 | agent | **M2-3 implemented** (Apply / Clear transform, first `CompositeCommand`, §6.5); no Core change; E-13 as in the handoff; pivot after Apply, the symmetric refusal and the keys are `PROVISIONAL` and asked as **Q-14…Q-16** |
 | 2026-10-15 | agent | **M2-4 implemented** (Q-5 gesture, E-14 `_set_edit_object` as the one place, `Viewport.set_edit_mesh`, Q-8 Undo through E-14, §6.6); no Core change; the M1 gap in `_restore_selection` is closed |
+| 2026-10-16 | Manu (chat, Morph Lab test) | **Q-12 revised:** a plain click in `4` that also switches the object to Reference is confusing ("klick aufs mesh wandelt es als referenz um??"), and "man kann nicht wirklich sehen, welches Objekt ausgewählt ist" |
+| 2026-10-16 | agent | Built from that note (`PROVISIONAL`): a click in `4` only selects; **`Alt+R`** switches the selected objects Normal ↔ Reference (one Undo step; the edit object stays Normal, RF-5); selected objects are drawn tinted towards the selection yellow in `4` (`scene_objects.selected_color`, `Viewport.set_edit_base_color` for the edit object); no Core change |
 
 ---
 
@@ -523,7 +525,7 @@ no edit-object change, no object hover, no soft-radius event. Names and texts `P
 | §4.4 Drawing / RF-1 / RF-2 | `Viewport.set_object_entry` / `remove_object_entry` / `object_entries` | every object except the edit object is its own `RenderMesh` **without** `SelectionOverlay` and without point/line/face overlays; only the edit object's entry (the old single `RenderMesh`) carries them. Identity transform, so no model matrix; one store per entry (AD-018's "one group per store" unchanged). `GLRenderStore.release()` frees a removed entry's VertexList |
 | mode `4` (F-3) | `commands.SET_OBJECT_MODE`, key `4` (V1_SPEC §2); `_MODE_COMMANDS`; `_active_selection_contains` | `4` sets `SelectionMode.OBJECT`; like `1`/`2`/`3` it clears the components and the hover; `Selection.objects` stays (§4.4) |
 | RF-3 object picking | `picking.pick_object` / `front_face_hit_t`; `Application._pick_object` | the front-most face hit along the cursor ray over **every** object, References included; the edit object reuses the App's pick cache, the others get their own |
-| A-2 / §6 "a click toggles" | `Application._select_object_at`, `_switch_object_state` | in `4` a plain click selects the object and, if it is not the edit object, switches Normal ↔ Reference (one Undo step, `ObjectStateCommand`); Shift/Ctrl/Alt+click change only `Selection.objects`; a click into empty space clears it. A click on the edit object selects it and says it cannot become a Reference (RF-5) — **Q-12** |
+| A-2 / §6 "a click toggles" | `Application._select_object_at`, `_switch_object_state` | in `4` a plain click selects the object and, if it is not the edit object, switches Normal ↔ Reference (one Undo step, `ObjectStateCommand`); Shift/Ctrl/Alt+click change only `Selection.objects`; a click into empty space clears it. A click on the edit object selects it and says it cannot become a Reference (RF-5) — **Q-12**. *Superseded 2026-10-16 (Q-12 revised): the click only selects; `Alt+R` switches the selected objects* |
 | RF-6 / Q-2 | unchanged component picking | `1`/`2`/`3` hover, click, Knife and tools look at the edit object's mesh only, so a Reference in front never blocks them (test with a plate between camera and cube) |
 | L-1 / RF-4 / Q-1 | `_COMPONENT_COMMANDS`, `Application._object_mode_refuses` | in `4`, W/E/R/T, C, Delete/Dissolve and Shift+S are refused with a status line (key path and `dispatch_command`); with a Reference selected the transform keys name the lock. Undo/Redo, display, Soft settings and constraints stay allowed |
 | §4.6 App consequences / R-9 / E-5 | mirror stack | the snapshot gains `objects` and `edit_object_id`; every push, object steps included, records one mirror entry; an entry is `(before, after, mesh_step)` — an object step's Undo/Redo refreshes only the object entries (`_sync_object_views`, a reconcile against `scene.objects`), not the edit object's render mesh; pruning drops dead `ObjectId`s from `objects` and the hover |
@@ -712,7 +714,7 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | Q-7 | M2 | Symmetry (`Shift+S`) uses the **object's** axes: the plane rotates with the object. Today it is "world axis" (your E1 decision, AD-SYM-04). | yes — otherwise a rotated object is no longer exactly symmetric (§4.8, Probe P-2) |
 | Q-8 | M2 | After editing two objects, does Undo switch back to the object the step was made in? | yes |
 | Q-11 | M1 test | How should a **Reference look**? M1 draws it shaded in a muted blue (not in pure Wireframe), no transparency (§6.1). | **Answered (Manu 2026-10-15):** blue stays; see-through needed both ways → §7.3 |
-| Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | **Answered (Manu 2026-10-15):** the click stays ("passt erstmal so") |
+| Q-12 | M1 test | In `4`, a plain **click** on an object switches it Reference ↔ Normal (and selects it); Shift/Ctrl/Alt+click only select. Is the click right, or should a key switch the selected objects? | **Answered (Manu 2026-10-15):** the click stays ("passt erstmal so"). **Revised (Manu 2026-10-16):** confusing — the click only selects, `Alt+R` switches (`PROVISIONAL`, Decision record) |
 | Q-13 | later | How is an object's **pivot** set (eyes, jaw: A-3)? It must never move geometry (L-2). | **Deferred (Manu 2026-10-15):** not needed for now, comes later; until then the pivot is the object origin (M0 default) |
 | Q-14 | M2-3 test | Keys for **Apply** / **Clear transform** in `4`? | `Ctrl+A` / `Alt+Shift+A` (built, `PROVISIONAL`; `Alt+A` is "clear selection") |
 | Q-15 | M2-3 test | Where is the **pivot after Apply**? | where it was in the world (`t + c`), so turning afterwards happens at the same place — like Max Reset XForm (built); the alternative is the new origin = world origin |
@@ -882,6 +884,10 @@ Manu (2026-10-15): Ghost ist hell genug; das Wireframe-Verhalten passt so.
 
 M2-1 (Platzierung im Zeichnen und in allen Werkzeugen) ist ebenfalls gebaut, aber für dich noch unsichtbar — verschieben,
 drehen und skalieren kannst du ein Objekt erst mit M2-2.
+
+> **Seit 2026-10-16 (deine Rückmeldung aus dem Morph Lab):** Ein Klick in `4` wählt nur noch aus (das ausgewählte Objekt
+> ist gelblich getönt); **`Alt+R`** schaltet die ausgewählten Objekte Normal ↔ Referenz. Wo die Praxistests unten „anklicken:
+> er wird normal/Referenz“ sagen, gilt jetzt: anklicken, dann `Alt+R`.
 
 **M2-2 ist gebaut (2026-10-15) — Praxistest (ca. 5 Minuten), `python src/main.py`:**
 

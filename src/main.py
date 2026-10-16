@@ -132,9 +132,11 @@ Scope (binding, see the handoffs):
   save=...)`), not in the BindingSet.
 - Objects (AD-021 M1, `PROVISIONAL` look and click): `4` = Object mode. A
   Reference is drawn in a muted blue (no selection overlays, never pickable in
-  `1`/`2`/`3`, picking goes through it); in `4` a plain click on an object
-  that is not the one being edited switches it Reference <-> Normal (one Undo
-  step), Shift/Ctrl/Alt+click only change the object selection. T, C,
+  `1`/`2`/`3`, picking goes through it); in `4` a click selects (Shift/Ctrl/Alt
+  add, remove, toggle) and the selected objects are drawn tinted yellow;
+  Alt+R switches the selected objects Reference <-> Normal (one Undo step; the
+  edited object stays Normal) - Q-12 revised 2026-10-16, a plain click no
+  longer switches. T, C,
   Delete/Dissolve and Shift+S are refused in `4` (status line). AD-021 M2-0
   (`PROVISIONAL` key and alpha): Alt+D draws every Reference as a translucent
   Ghost / shaded again; References stay drawn in Wireframe. AD-021 M2-2: in

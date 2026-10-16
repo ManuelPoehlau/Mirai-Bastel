@@ -181,8 +181,8 @@ def startup_listing() -> list[str]:
     lines = [f"Lab-Kontext {MORPH_LAB_CONTEXT!r} (Vorschlag, keine Artist-Entscheidung):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEYS)
     lines.append("Alles andere ist die Bedienung von src/main.py (W/E/R, Tweak, Soft, Shift+S, Undo, 4, D, ...).")
-    lines.append("Ziel bearbeiten: 4 · Klick ins Leere · Shift+Klick aufs Ziel · 1  (ein normaler Klick in 4")
-    lines.append("schaltet das Objekt auf Referenz um). Zurück zur Basis genauso.")
+    lines.append("Ziel bearbeiten: 4 · Klick aufs Ziel · 1. Zurück zur Basis: 4 · Klick auf die Basis · 1.")
+    lines.append("In 4 ist das ausgewählte Objekt gelblich; Alt+R schaltet es auf Referenz und zurück.")
     return lines
 
 
@@ -204,7 +204,41 @@ def hints(lab: MorphAppLab) -> list[str]:
     return out
 
 
+#: What the HUD calls each selection mode (the app's keys in brackets).
+MODE_LABELS = {
+    SelectionMode.VERTEX: "Punkte (1)",
+    SelectionMode.EDGE: "Kanten (2)",
+    SelectionMode.FACE: "Flächen (3)",
+    SelectionMode.OBJECT: "Objekte (4)",
+}
+
+
+def role_name(lab: MorphAppLab, object_id) -> str:
+    provider = lab.provider
+    if object_id == provider.base_id:
+        return "Basis"
+    if object_id == provider.target_id:
+        return "Ziel 1"
+    obj = lab.app.scene.objects.get(object_id)
+    return repr(obj.name) if obj is not None else "?"
+
+
+def object_line(lab: MorphAppLab) -> str:
+    """Which object `1`/`2`/`3` edit and, in `4`, which are selected (Manu 2026-10-16: "man kann
+    nicht wirklich sehen, welches Objekt ausgewählt ist")."""
+    app = lab.app
+    parts = [f"Bearbeitet: {role_name(lab, app.scene.edit_object_id)}",
+             f"Modus: {MODE_LABELS.get(app.selection.mode, app.selection.mode.name)}"]
+    if app.selection.mode is SelectionMode.OBJECT:
+        selected = sorted(oid for oid in app.selection.objects if oid in app.scene.objects)
+        names = ", ".join(role_name(lab, oid) for oid in selected) or "nichts"
+        parts.append(f"Ausgewählt: {names}")
+    return " · ".join(parts)
+
+
 def hud_text(lab: MorphAppLab, asset_name: str, frame_ms: Optional[float] = None) -> str:
+    """Line 1: lab and weight; line 2: objects; line 3: the app's last status message (in
+    `src/main.py` it goes only to the console)."""
     provider = lab.provider
     parts = [f"Morph Lab · {asset_name}", f"Ziel 1 · Gewicht {lab.weight} %"]
     if provider.editing == EDITING_BASE and lab.weight > MIN_WEIGHT:
@@ -214,4 +248,7 @@ def hud_text(lab: MorphAppLab, asset_name: str, frame_ms: Optional[float] = None
     parts.extend(hints(lab))
     if provider.message and lab.weight > MIN_WEIGHT:
         parts.append(provider.message)
-    return " · ".join(parts)
+    lines = [" · ".join(parts), object_line(lab)]
+    if lab.app.status_message:
+        lines.append(f"App: {lab.app.status_message}")
+    return "\n".join(lines)

@@ -41,13 +41,17 @@ Das Gewicht ist reine Ansicht: kein Undo-Schritt, wird nicht gespeichert, änder
 | `Shift+Pfeil hoch` / `Shift+Pfeil runter` | Gewicht +1 % / −1 % |
 | `Strg+Pfeil hoch` / `Strg+Pfeil runter` | Gewicht 100 % / 0 % |
 | `M` | A/B: 0 % ↔ zuletzt eingestelltes Gewicht |
-| **Ziel bearbeiten** | `4` · Klick ins Leere · **Shift+Klick** aufs Ziel · `1` |
-| **Zurück zur Basis** | `4` · Klick ins Leere · **Shift+Klick** auf die Basis · `1` |
+| **Ziel bearbeiten** | `4` · Klick aufs Ziel · `1` |
+| **Zurück zur Basis** | `4` · Klick auf die Basis · `1` |
 | alles andere | die App |
 
-Achtung: Ein **normaler** Klick in `4` auf ein Objekt schaltet es auf *Referenz* um (App-Verhalten, Q-12) — dann `Strg+Z`.
-Die Lab-Tasten werden beim Start gegen die App-Tasten geprüft und ausgegeben; solange W/E/R/T oder der Knife läuft,
-lehnt das Lab sie sichtbar ab. Oben im Fenster steht eine HUD-Zeile mit Gewicht, Kosten eines Schritts und Hinweisen.
+Seit 2026-10-16 (deine Rückmeldung): Ein Klick in `4` **wählt nur aus**, das ausgewählte Objekt ist gelblich getönt;
+`Alt+R` schaltet es auf Referenz und zurück (App-Verhalten, AD-021 Q-12 revidiert). Die Lab-Tasten werden beim Start gegen
+die App-Tasten geprüft und ausgegeben; solange W/E/R/T oder der Knife läuft, lehnt das Lab sie sichtbar ab.
+
+Oben im Fenster stehen drei HUD-Zeilen: (1) Gewicht, Kosten eines Schritts, Hinweise; (2) **welches Objekt bearbeitet
+wird** (Basis oder Ziel 1), der Modus und in `4` die Auswahl; (3) die letzte Meldung der App (in `src/main.py` steht sie nur
+in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 
 ## Praxistest für Manu (ca. 20–30 Minuten)
 
@@ -55,10 +59,10 @@ lehnt das Lab sie sichtbar ab. Oben im Fenster steht eine HUD-Zeile mit Gewicht,
 
 1. **Ziel finden.** Das Ziel steht rechts neben dem Kopf, die Kamera zeigt aber nur den Kopf: mit dem **Mausrad ein paar
    Rasten zurück**, bis beide zu sehen sind.
-2. **Ziel formen.** `4`, ins Leere klicken, **Shift+Klick** aufs Ziel, `1`. Dann ein Lächeln oder einen offenen Kiefer
+2. **Ziel formen.** `4`, aufs Ziel klicken (es wird gelblich), `1` (HUD: `Bearbeitet: Ziel 1`). Dann ein Lächeln oder einen offenen Kiefer
    modellieren — mit allem, was die App hat: W/E/R, Tweak (Strg+LMB ziehen), Soft Selection (`O`), Symmetrie (`Shift+S`),
    Undo. Die HUD sagt `Ziel wird bearbeitet`.
-3. **Zurück zur Basis** (`4`, ins Leere, Shift+Klick auf den Kopf, `1` — oder in `4` bleiben) und mit den Pfeiltasten das
+3. **Zurück zur Basis** (`4`, auf den Kopf klicken, `1` — oder in `4` bleiben) und mit den Pfeiltasten das
    Gewicht hochfahren. Bei 0 % ist es exakt die Basis, bei 100 % exakt das Ziel; jedes Gewicht sieht gleich aus, egal auf
    welchem Weg du es erreichst. `M` vergleicht 0 % mit dem letzten Gewicht.
 4. **Weiterformen und vergleichen.** Am Ziel nachbessern, zurück, wieder schieben. `Strg+Z` springt zum Objekt des
@@ -67,12 +71,12 @@ lehnt das Lab sie sichtbar ab. Oben im Fenster steht eine HUD-Zeile mit Gewicht,
 6. **Gegenproben.** (a) In `1` bei 50 % an der Basis arbeiten: Auswahl, Hover und Picking liegen auf der *Ruheform* der
    Basis, nicht auf der sichtbaren Fläche (HUD: `Auswahl/Picking = Basis-Ruhelage`). (b) Ein `C`-Schnitt an Basis oder
    Ziel: die Mischung geht aus (`Morph aus: Topologie …`), `Strg+Z` bringt sie zurück. (c) Optional: in `4` das Ziel
-   (Shift+Klick) mit `Strg+A` übernehmen — die Mischung verrutscht um den Abstand, das Lab warnt; `Strg+Z`.
+   (Klick) mit `Strg+A` übernehmen — die Mischung verrutscht um den Abstand, das Lab warnt; `Strg+Z`.
 
 **Fragen** (je eine Zeile reicht):
 
-- J-2: Reicht das Wechseln Basis ↔ Ziel über `4` · Klick ins Leere · Shift+Klick · `1`, oder braucht es eine eigene Taste?
-  (Eine schnellere Taste wäre eine App-Fähigkeit → eigener Schritt.)
+- J-2: Reicht das Wechseln Basis ↔ Ziel über `4` · Klick · `1`, oder braucht es eine eigene Taste? Ist die gelbliche
+  Tönung der Auswahl in `4` gut erkennbar? (Eine schnellere Taste wäre eine App-Fähigkeit → eigener Schritt.)
 - J-3: Wenn du nach dem Ziel noch die **Basis** änderst: Soll das Ziel die Änderung mitnehmen (relativ) oder seine Form
   behalten (absolut, so ist es gebaut)?
 - J-4: Reichen Pfeiltasten fürs Gewicht, oder brauchst du einen Schieberegler zum Ziehen?
@@ -155,7 +159,7 @@ ends, exact where `b == t`, exactly mirrored (review F-8/R-7; `(1−w)·b + w·t
 | F-4 note wording | AD-013 H7 "Second user (Morph Lab)" |
 | F-5 attach order / load errors | `run.build_app_lab` attaches after the load; `LabSceneError` → exit 1 naming `--neu`; tests |
 | F-6 names / folder | `scenes/morph_lab/`; `lab_scene.resolve_pair` exactly one per name; `test_ambiguous_names_refuse_the_start` |
-| F-7 switch gesture | README, start-up listing |
+| F-7 switch gesture | README, start-up listing; since 2026-10-16 the app's click in `4` selects only (AD-021 Q-12 revised, `Alt+R` switches Reference), so the gesture is `4` · click · `1`; HUD line 2 names the edited/selected object, line 3 the app's status |
 | F-8 numerics | `morph.blend`; `test_morph.py` |
 | F-9 cost | HUD timing; table above; signature of the target cached, re-read only after editing it or a new status |
 | F-10 serial heuristic | `MorphSurfaceProvider.dirty` property; pinned by `test_a_foreign_status_wakes…` and the Ctrl+A test |

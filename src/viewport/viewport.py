@@ -482,6 +482,18 @@ class Viewport:
             self.surface_render_mesh.bind_material(material)
             self.surface_render_mesh.mark_material_dirty()
 
+    def set_edit_base_color(self, base_color: tuple[float, float, float] | None) -> bool:
+        """Grundfarbe des Edit-Mesh (und einer H7-Ersatzfläche); None = Standardfarbe. Für die
+        sichtbare Objekt-Auswahl in Modus `4` (2026-10-16). Kein Rebuild; True = geändert."""
+        color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
+        current = self.render_mesh.material
+        if current is not None and tuple(current.uniform_packet()) == color:
+            return False
+        if current is None and color == DEFAULT_BASE_COLOR:
+            return False
+        self.bind_material(_SolidColor(color))
+        return True
+
     # -- Notifikations-API (aufgerufen von src.mirai nach Core-Mutationen) --
 
     def on_vertices_moved(self, vertex_ids: set[VertexId]) -> None:

@@ -69,6 +69,7 @@ from viewport.overlay import (
     TOOL_PREVIEW_LAYER,
     TOOL_REFUSED_LAYER,
 )
+from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
 from .interaction import BindingSet, Input, ToolManager, commands
@@ -95,6 +96,7 @@ from .scene_objects import (
     apply_placement,
     object_base_color,
     replace_scene,
+    selected_color,
     reset_scene,
 )
 from .soft_selection import (
@@ -517,6 +519,8 @@ class Application:
         # AD-021 M1: pick caches of the objects other than the edit object (mode `4` picking;
         # the edit object shares `_pick_cache`). Pruned with the render entries.
         self._object_pick_caches: dict[ObjectId, PickCache] = {}
+        # 2026-10-16: what the selection highlight in mode `4` was last drawn for.
+        self._object_highlight_key: tuple | None = None
         # AD-021 M2-1 (E-7): one Objektraum-Kamera per placed object, stable so that a
         # `PickCache` keyed on `id(camera)` keeps working; read live, pruned with the entries.
         self._object_cameras: dict[ObjectId, ObjectSpaceCamera] = {}
@@ -890,18 +894,46 @@ class Application:
         self.viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
         for key in [key for key in self.viewport.object_entries if key not in others]:
             self.viewport.remove_object_entry(key)
+        highlighted = self._highlighted_objects()
         for oid, obj in others.items():
             reference = obj.state is ObjectState.REFERENCE
             self.viewport.set_object_entry(
                 oid,
                 obj.mesh,
-                object_base_color(obj),
+                selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj),
                 model_matrix=object_space.model_matrix(obj),
                 # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is
                 # drawn in Wireframe too - a Normal object follows the display mode.
                 alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
                 ignores_wireframe=reference,
             )
+        edit = scene.edit_object
+        self.viewport.set_edit_base_color(
+            selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else None
+        )
+        self._object_highlight_key = self._object_highlight_signature()
+
+    def _highlighted_objects(self) -> frozenset:
+        """The objects drawn as selected: the object selection, in mode `4` only (2026-10-16, Manu:
+        "man kann nicht wirklich sehen, welches Objekt ausgewählt ist"; look `PROVISIONAL`)."""
+        if self.selection.mode is not SelectionMode.OBJECT:
+            return frozenset()
+        return frozenset(oid for oid in self.selection.objects if oid in self.scene.objects)
+
+    def _object_highlight_signature(self) -> tuple:
+        scene = self.scene
+        return (
+            self._highlighted_objects(),
+            scene.edit_object_id,
+            tuple((oid, obj.state) for oid, obj in scene.objects.items()),
+        )
+
+    def _sync_object_highlight(self) -> None:
+        """Redraws the selection highlight when the object selection, the mode, the edit object or
+        a state changed since it was last drawn - every path that changes them (click, box, Undo,
+        key `4`, ...) is covered by the per-frame call in `update_viewport`."""
+        if self.viewport is not None and self._object_highlight_signature() != self._object_highlight_key:
+            self._sync_object_views()
 
     def _placement_changed(self) -> None:
         """An object's `transform`/`pivot` changed (AD-021 M2-1; the M2-2 object tools and their
@@ -970,11 +1002,11 @@ class Application:
         return pick_object(candidates, x, y, self.viewport_width, self.viewport_height)
 
     def _select_object_at(self, command: str, x: float, y: float) -> bool:
-        """Klick in Modus `4` (AD-021 M1). Die Modifier-Commands ändern nur die Objekt-
-        Auswahl (`selection.objects`); ein einfacher Klick wählt das Objekt und schaltet,
-        wenn es nicht das Edit-Objekt ist, seinen Zustand Normal <-> Referenz um (§6 M1:
-        "a click on the Reference toggles its state"; Belegung `PROVISIONAL`). True = Auswahl
-        oder Zustand hat sich geändert."""
+        """Klick in Modus `4` (AD-021 M1): ändert nur die Objekt-Auswahl (`selection.objects`).
+        Ein einfacher Klick wählt genau dieses Objekt (ins Leere: Auswahl leer), Shift/Ctrl/Alt
+        wie bei Komponenten. Q-12 revidiert (Manu 2026-10-16: ein Klick, der zugleich auf Referenz
+        umschaltet, ist verwirrend): Referenz an/aus ist `Alt+R` (`_reference_command`). True =
+        die Auswahl hat sich geändert."""
         if self._transform_key is not None:
             # M2-2: no selection or state change underneath a held W/E/R (its targets are fixed).
             return False
@@ -995,8 +1027,53 @@ class Application:
             selection.toggle(hit)
         changed = _selection_state(selection) != before_state
         if hit is not None and command == commands.SELECT:
-            return self._switch_object_state(hit, before) or changed
+            obj = self.scene.objects[hit]
+            if hit == self.scene.edit_object_id:
+                self._set_status(f"Object {obj.name!r} selected (being edited)")
+            elif obj.state is ObjectState.REFERENCE:
+                self._set_status(f"Object {obj.name!r} selected (Reference - Alt+R makes it Normal)")
+            else:
+                self._set_status(f"Object {obj.name!r} selected - 1/2/3 edits it")
+        self._sync_object_highlight()
         return changed
+
+    def _reference_command(self) -> bool:
+        """`Alt+R` in mode `4`: switch every selected object except the edit object Normal <->
+        Reference, one Undo step (Q-3; Q-12 revised 2026-10-16, key `PROVISIONAL`). The edit object
+        never becomes a Reference (RF-2/RF-5)."""
+        label = "Reference on/off"
+        if self.interaction_owner is not None:
+            return False
+        if self.selection.mode is not SelectionMode.OBJECT:
+            self._set_status(f"{label}: works on objects - press 4 and select them")
+            return False
+        scene = self.scene
+        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
+        if not selected:
+            self._set_status(f"{label}: no object selected - click one first")
+            return False
+        edit = scene.edit_object
+        targets = [obj for obj in selected if obj.id != edit.id]
+        if not targets:
+            self._set_status(f"Object {edit.name!r} is being edited - it cannot become a Reference")
+            return False
+        before = self._selection_snapshot()
+        if len(targets) == len(selected) == 1:
+            return self._switch_object_state(targets[0].id, before)
+        steps = []
+        for obj in targets:
+            old = obj.state
+            new = ObjectState.NORMAL if old is ObjectState.REFERENCE else ObjectState.REFERENCE
+            obj.state = new
+            steps.append(ObjectStateCommand(obj, old, new))
+        self.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, label))
+        self._record_selection_history(before, mesh_step=False)
+        self._sync_object_views()
+        text = ", ".join(f"{obj.name!r}: {obj.state.name.capitalize()}" for obj in targets)
+        if len(targets) < len(selected):
+            text += f" ({edit.name!r} is being edited - stays Normal)"
+        self._set_status(f"Object {text}")
+        return True
 
     def _switch_object_state(self, object_id: ObjectId, selection_before: tuple) -> bool:
         """Normal <-> Referenz als ein Undo-Schritt (Q-3). Das Edit-Objekt wird nie Referenz
@@ -1413,6 +1490,8 @@ class Application:
             return False
         if command in _PLACEMENT_COMMANDS:
             return self._placement_command(command)
+        if command == commands.TOGGLE_REFERENCE:
+            return self._reference_command()
         if command == commands.CONNECT:
             return self._connect_command()
         if command in _REMOVAL_COMMANDS:
@@ -1485,6 +1564,7 @@ class Application:
             # AD-021 Q-6 (status line first, L-4): the edit object carries a placement.
             text += f" · object {edit.name!r} is placed (object level)"
         self._set_status(text)
+        self._sync_object_highlight()
         return True
 
     def _edit_object_from_selection(self) -> str:
@@ -2564,7 +2644,7 @@ class Application:
             if self._transform_key is not None:
                 return False
             return self.dispatch_command(command)
-        if command in _PLACEMENT_COMMANDS:
+        if command in _PLACEMENT_COMMANDS or command == commands.TOGGLE_REFERENCE:
             # AD-021 M2-3: not underneath a held W/E/R/T (same gate as C and the mode keys).
             if self._transform_key is not None:
                 return False
@@ -3727,6 +3807,7 @@ class Application:
         (z. B. vor `init_scene()`) bleibt es ein No-Op.
         """
         if self.viewport is not None:
+            self._sync_object_highlight()
             self.viewport.sync()
 
     def shutdown(self) -> None:

@@ -29,9 +29,25 @@ REFERENCE_BASE_COLOR = (0.38, 0.47, 0.62)
 REFERENCE_GHOST_ALPHA = 0.3
 
 
+#: Auswahl in Modus `4` sichtbar (Manu 2026-10-16: "man kann nicht wirklich sehen, welches Objekt
+#: ausgewählt ist"; Werte `PROVISIONAL`): die Grundfarbe eines ausgewählten Objekts geht zu diesem
+#: Anteil in Richtung des Gelbs der Komponenten-Auswahl (`gl_point_overlay.SELECTED_COLOR`). Eine
+#: Referenz bleibt dabei erkennbar blau.
+SELECTED_TINT = (1.0, 0.82, 0.15)
+SELECTED_TINT_SHARE = 0.45
+SELECTED_REFERENCE_TINT_SHARE = 0.3
+
+
 def object_base_color(obj: SceneObject) -> tuple[float, float, float] | None:
     """Grundfarbe des Render-Eintrags eines Nicht-Edit-Objekts (None = Standardfarbe)."""
     return REFERENCE_BASE_COLOR if obj.state is ObjectState.REFERENCE else None
+
+
+def selected_color(obj: SceneObject, default: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Die Farbe eines in Modus `4` ausgewählten Objekts (`default` = Standardfarbe des Viewports)."""
+    base = object_base_color(obj) or default
+    share = SELECTED_REFERENCE_TINT_SHARE if obj.state is ObjectState.REFERENCE else SELECTED_TINT_SHARE
+    return tuple(b + share * (t - b) for b, t in zip(base, SELECTED_TINT))
 
 
 def reset_scene(scene: Scene, mesh: Mesh, name: str) -> SceneObject:

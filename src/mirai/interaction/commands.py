@@ -85,6 +85,9 @@ TOGGLE_LIGHT_SPACE = "ToggleLightSpace"
 # Identität, das Mesh bleibt, das Objekt springt. Nur in Modus `4`.
 APPLY_TRANSFORM = "ApplyTransform"
 CLEAR_TRANSFORM = "ClearTransform"
+# Referenz an/aus für die in Modus `4` ausgewählten Objekte (Manu 2026-10-16: ein einfacher Klick,
+# der umschaltet, ist verwirrend - Q-12 revidiert; Taste `PROVISIONAL`).
+TOGGLE_REFERENCE = "ToggleReference"
 
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices

@@ -27,7 +27,7 @@ from core import ObjectId, ObjectState, SelectionMode, VertexId
 from mirai.application import Application
 from mirai.interaction import commands
 from mirai.interaction.input import Input
-from mirai.scene_objects import REFERENCE_BASE_COLOR
+from mirai.scene_objects import REFERENCE_BASE_COLOR, selected_color
 from mirai.viewport.picking import pick_nearest_vertex
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 
@@ -42,6 +42,7 @@ ONE, FOUR = _key("1"), _key("4")
 W, C, T = _key("w"), _key("c"), _key("t")
 DELETE = _key("delete")
 SHIFT_S = _key("s", "shift")
+ALT_R = _key("r", "alt")
 CTRL_Z, CTRL_Y = _key("z", "ctrl"), _key("y", "ctrl")
 
 
@@ -214,22 +215,29 @@ def test_key_4_switches_to_object_mode_and_clears_components_only():
     assert app.status_message == "Mode: Object"
 
 
-def test_a_click_on_a_reference_switches_its_state_as_one_undo_step(tmp_path):
+def test_a_click_only_selects_and_alt_r_switches_the_state_as_one_undo_step(tmp_path):
+    """Q-12 revised (Manu 2026-10-16): a plain click in `4` selects only; Alt+R switches the
+    selected objects Normal <-> Reference, one Undo step. The selection is drawn tinted in `4`."""
     app = _app()
     ref = app.add_reference("obj", obj_path=_plate_obj(app, tmp_path), name="plate")
     app.key_press(FOUR)
     x, y = WIDTH / 2, HEIGHT / 2  # the plate covers the centre of the view
     _click(app, x, y)
+    _click(app, x, y)  # clicking again changes nothing
     assert app.selection.objects == {ref.id}
+    assert ref.state is ObjectState.REFERENCE
+    assert len(app.history) == 1
+    assert "Alt+R" in app.status_message
+    entry = app.viewport.object_entries[ref.id]
+    assert entry.material.uniform_packet() == list(selected_color(ref, DEFAULT_BASE_COLOR))
+
+    assert app.key_press(ALT_R)
     assert ref.state is ObjectState.NORMAL
     assert app.status_message == "Object 'plate': Normal"
-    entry = app.viewport.object_entries[ref.id]
-    assert entry.material.uniform_packet() == list(DEFAULT_BASE_COLOR)
+    assert entry.material.uniform_packet() == list(selected_color(ref, DEFAULT_BASE_COLOR))
     assert len(app.history) == 2
-
-    _click(app, x, y)
+    app.key_press(ALT_R)
     assert ref.state is ObjectState.REFERENCE
-    assert entry.material.uniform_packet() == list(REFERENCE_BASE_COLOR)
 
     app.key_press(CTRL_Z)
     assert ref.state is ObjectState.NORMAL
@@ -238,6 +246,36 @@ def test_a_click_on_a_reference_switches_its_state_as_one_undo_step(tmp_path):
     assert app.viewport.object_entries[ref.id] is entry  # a colour change, no rebuild
     app.key_press(CTRL_Y)
     assert ref.state is ObjectState.NORMAL
+    app.selection.clear_objects()  # any path that changes the selection: the next frame redraws
+    app.update_viewport(1 / 60)
+    assert entry.material.uniform_packet() == list(DEFAULT_BASE_COLOR)
+
+
+def test_alt_r_refusals_and_the_edit_object_stays_normal(tmp_path):
+    app = _app()
+    ref = app.add_reference("obj", obj_path=_plate_obj(app, tmp_path), name="plate")
+    assert not app.key_press(ALT_R)  # not in `4`
+    assert "press 4" in app.status_message
+    app.key_press(FOUR)
+    assert not app.key_press(ALT_R)
+    assert "no object selected" in app.status_message
+    app.selection.objects = {app.scene.edit_object_id}
+    assert not app.key_press(ALT_R)
+    assert "being edited" in app.status_message
+    app.selection.objects = {app.scene.edit_object_id, ref.id}
+    assert app.key_press(ALT_R)
+    assert ref.state is ObjectState.NORMAL and app.scene.edit_object.state is ObjectState.NORMAL
+    assert "stays Normal" in app.status_message
+
+
+def test_the_selected_edit_object_is_tinted_in_mode_4_only():
+    app = _app()
+    app.key_press(FOUR)
+    _click(app, WIDTH / 2, HEIGHT / 2)
+    edit = app.scene.edit_object
+    assert app.viewport.render_mesh.material.uniform_packet() == list(selected_color(edit, DEFAULT_BASE_COLOR))
+    app.key_press(ONE)  # the edit object stays selected, but `1` shows components, not objects
+    assert app.viewport.render_mesh.material.uniform_packet() == list(DEFAULT_BASE_COLOR)
 
 
 def test_a_click_on_the_edit_object_in_mode_4_never_makes_it_a_reference():
@@ -366,6 +404,7 @@ def test_a_mesh_step_after_an_object_step_still_undoes_in_order(tmp_path):
     ref = app.add_reference("obj", obj_path=_plate_obj(app, tmp_path), name="plate")
     app.key_press(FOUR)
     _click(app, WIDTH / 2, HEIGHT / 2)
+    app.key_press(ALT_R)
     assert ref.state is ObjectState.NORMAL
     # M2-4 (Q-5): `1` with the plate selected would make it the edit object; this test is about
     # the edit cube, so the object selection is cleared first.
