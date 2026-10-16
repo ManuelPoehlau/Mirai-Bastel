@@ -1341,3 +1341,65 @@ and calls neither `add_overlay` nor `apply_mesh_change` nor `set_status` (H2-R5 
 with the real import, now pinned by a test). No rule text changes: the Lab still writes the gate alone (H2-R6), uses only
 the H2-R4 list (it keeps its own report cache instance for HUD and partners rather than reading `Application`'s), and draws
 none of the moved layers; its preview overlays stay until A3.
+
+## Addendum (2026-10-16, WP-SUBD-LAB-02 H7 — replacement surface of the edit mesh in `Viewport`)
+
+**Status:** **DECIDED ✓** (Manu, 2026-10-16: the SubD Lab connects to the Production app through a small, generic Viewport
+hook, not through a zero-change workaround). No independent review yet; one is welcome before a second host uses the hook.
+**Basis:** Manu's question "how do we connect the SubD Lab to the production app without building SubD into Production and
+without rebuilding every modelling tool, lighting and shading in the Lab?". Subdivision itself is **not** promoted:
+`src/` gains no subdivision code, `src/main.py` is unchanged (I7).
+
+### Problem
+
+The Subdivision Lab (WP-SUBD-LAB-01) has its own window, renderer, camera and input; the only edit is dragging one control
+vertex. Moving it onto the app path the way the Symmetry Lab did (H6 window wiring, H1 overlays, H2 lab keys) brings every
+app tool, Undo, symmetry, worklight and Flat/Smooth for free. One thing is missing: the smooth surface must be drawn **in place
+of** the control mesh's faces, with the app's light, Flat/Smooth and placement, while the cage keeps its wire, selection,
+hover and tool overlays and stays the only pickable, authoritative mesh (V1_SPEC §11). H1 overlays are drawn *after* the mesh
+and cannot hide it.
+
+### Alternatives
+
+| | Alternative | Assessment |
+|---|---|---|
+| 0 | Zero `src` change: the Lab draws the surface as an H1 overlay with its own `RenderMesh` and forces the app into Wireframe while SubD is on | Not used (Manu, 2026-10-16): fragile — D, loading and Undo reset the display and the Lab would have to re-impose it every frame; light, Flat/Smooth and the model matrix would be copied by hand |
+| A | An object entry (`set_object_entry`) for the surface | Not used: `Application._sync_object_views` owns the entries and removes unknown keys; the control mesh's faces would still be drawn |
+| B | Subdivision in `Viewport`/`RenderMesh` | Not used: that is promotion (I7), and OF-3 (is the level document state?) is open |
+| **H7** | **A replacement-surface slot in `Viewport`, inert by default, with no knowledge of how the surface is made** | **Chosen** |
+
+### Decision
+
+`Viewport.set_surface_provider(provider | None)` (`src/viewport/viewport.py`, module docstring). Duck-typed contract:
+
+- `provider.sync(mesh, selection) -> set[VertexId]` runs inside `Viewport.sync()` on exactly the H1 triggers (selection or
+  hover, vertex moves, topology, `set_edit_mesh`, the first sync after attaching) or when `provider.dirty` is set, **before**
+  the extra overlays; it returns the moved vertices of `provider.surface_mesh`.
+- `provider.surface_mesh` is a `core.Mesh` or `None` (off). A different object than at the last sync means: rebuild.
+- The viewport owns the surface's `RenderMesh` (no `SelectionOverlay`), gives it the edit mesh's camera, aspect, material,
+  light uniforms, Flat/Smooth, polygon offset and model matrix, and with `show_faces` draws it instead of the edit mesh.
+  Wire, selection, tool and extra overlays stay on the edit mesh; picking and `Application` are unaffected.
+
+### Rules
+
+- **H7-R1 — inert by default.** Without a provider nothing changes (test: `tests/test_viewport_surface_provider.py`).
+  `src/main.py` and `Application` never set a provider.
+- **H7-R2 — display only.** The surface is derived and never written back; no picking, no History, no document state.
+- **H7-R3 — the host follows H2-R4.** The SubD Lab uses only the public allow-list of H2-R4: read-only state (`bindings` with
+  `set_default` for its own context `subd_lab` at start-up, `interaction_owner`, the edit mesh), `set_status`, `key_press`
+  from the window adapter, the one-time setup in its `run.py`, the H1 overlay hook and now H7. It writes no gate data and
+  calls no `apply_mesh_change` (its keys change view state only), so H2-R6 is untouched.
+- **H7-R4 — one provider.** There is no list or registry of providers. A second user needs a review of this addendum.
+
+### Limits
+
+Only the edit mesh can be replaced; Reference/other objects are drawn as they are. The hook does not tell the provider
+*which* control vertices moved (`sync` gets the mesh, as in H1), so a provider compares positions itself — cheap for a cage,
+measured in the Lab's HUD. Loading a scene through `init_scene` builds a new viewport; a host re-attaches (the SubD Lab has no
+scene menu).
+
+### Implementation note (2026-10-16)
+
+`src/viewport/viewport.py` (`set_surface_provider`, `_sync_surface`; camera, material, style, matrix and light forwarded),
+`tests/test_viewport_surface_provider.py`. Host: `experiments/subdivision_lab/` (`lab_surface.py`, `lab_app.py`,
+`lab_app_window.py`, `run.py`; README).

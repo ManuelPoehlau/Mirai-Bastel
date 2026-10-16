@@ -31,7 +31,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-010](AD-010-PLAYGROUND-SUPERSEDES-LAB-BINDING.md) | Playground supersedes the Lab's Core→Viewport binding role | DECIDED |
 | [AD-011](AD-011-PLAYGROUND-IDENTITY-STATUS-QUO.md) | Playground identity: status quo | DECIDED |
 | [AD-012](AD-012-TRANSFORM-SPACE.md) | Transform space unification | Accepted (amended 2026-09-19) |
-| [AD-013](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md) | Capability promotion ≠ UX promotion | DECIDED |
+| [AD-013](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md) | Capability promotion ≠ UX promotion; lab hooks H1/H2/H6 and (2026-10-16) H7, the Viewport's replacement surface for the SubD Lab | DECIDED |
 | [AD-014](AD-014_Core-Change-Basis-Parameter-for-ScaleOperation.md) | ScaleOperation optional basis (Core-freeze exception) | Accepted |
 | [AD-015](AD-015-PLAYGROUND-INPUT-OWNERSHIP-TWEAK-TRANSFORM.md) | Playground input ownership: Tweak vs. Transform | PARTIAL (superseded by pending audit, per document) |
 | [AD-016](AD-016-TRANSFORM-OWNS-QWE-SINGLE-CURRENT-TOOL.md) | Transform owns Q/W/E, one current tool | DECIDED (ownership model) |

@@ -236,7 +236,10 @@ def test_line_overlay_subclass_leaves_production_alone():
     from viewport.gl_line_overlay import GLLineOverlay
 
     assert GLLineOverlay.LAYERS != LabLineOverlay.LAYERS
-    assert GLLineOverlay.NO_DEPTH_LAYERS == frozenset({"tool_preview"})
+    # Production's own no-depth layers (they grew with the symmetric Knife, AD-SYM-03 6c) stay
+    # untouched by the lab's per-instance switch.
+    assert "tool_preview" in GLLineOverlay.NO_DEPTH_LAYERS
+    assert "cage" not in GLLineOverlay.NO_DEPTH_LAYERS
     overlay = LabLineOverlay()
     assert overlay.NO_DEPTH_LAYERS == frozenset()
     overlay.cage_depth_test = False

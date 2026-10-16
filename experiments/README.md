@@ -83,6 +83,15 @@ lokalen README.
 
 Lokaler Einstieg: [`symmetry_lab/README.md`](symmetry_lab/README.md)
 
+### `subdivision_lab/`
+
+Subdivision Lab (WP-SUBD-LAB-01 Slice 1, WP-SUBD-LAB-02): uniformes Catmull-Clark als Stencils (reines Python), Testbogen
+T-SUBD-1/T-SUBD-2 und Bench. Seit WP-SUBD-LAB-02 (2026-10-16) läuft es auf dem App-Pfad wie das Symmetry Lab: alle
+Werkzeuge, Licht und Shading sind die der App; die glatte Fläche zeichnet der Viewport über den generischen Haken
+AD-013 H7 (`set_surface_provider`) statt der Flächen des Käfigs. Subdivision selbst ist nicht in `src/`. Das alte
+eigene Fenster: `run_standalone.py`. Nicht Artist-validiert —
+[`subdivision_lab/README.md`](subdivision_lab/README.md).
+
 ### `soft_selection/`
 
 Soft Selection (WP-SOFT-01 S1, headless, Typ B): Influence-Map (euklidisch/geodätisch, smooth/linear) und gewichtete Move/Rotate/Scale als Unterklassen der Core-Ops, Kostenprobe auf Kopf und Ganzkörper; keine Defaults, kein Fenster — [`soft_selection/README.md`](soft_selection/README.md), Ergebnisse in [`soft_selection/FINDINGS.md`](soft_selection/FINDINGS.md).

@@ -171,6 +171,7 @@ Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). `pyte
 | `tests/` | Production: `src/core`, `src/mirai`, `src/viewport` |
 | `playground/tests/` | the Playground host (`playground/`) |
 | `experiments/symmetry_lab/tests/` | the Symmetry Lab (`experiments/symmetry_lab/`) running on the `src/mirai/application.py` path |
+| `experiments/subdivision_lab/tests/` | the SubD Lab (`experiments/subdivision_lab/`): the GL-free Catmull-Clark core and, since WP-SUBD-LAB-02, the lab on the `Application` path through the Viewport hook H7 (`set_surface_provider`) |
 
 **Dependency facts (verify with a quick `grep -rln "<module>" --include=*.py .` if the code may have changed since):** Playground and Symmetry Lab both consume `src/core`, `src/mirai` and `src/viewport`. Playground additionally uses helpers from `experiments/mirai_bastel_integration_lab` and `experiments/rigging-skinning-morphing`. The Lab imports nothing from `playground/`, and nothing imports the Lab; `experiments/symmetry_lab/tests/test_import_boundary.py` enforces the first direction. Playground and Lab therefore share no code with each other — only `src/`.
 
@@ -200,6 +201,7 @@ Add `-x` to stop at the first failure and `--lf` to re-run only the last failure
 pytest tests -q                               # when src/ changed
 pytest playground/tests -q                    # when playground/ or a Playground-reached src/ behavior changed
 pytest experiments/symmetry_lab/tests -q      # when Lab code or a Lab-reached src/ behavior changed
+pytest experiments/subdivision_lab/tests -q   # when SubD Lab code, `viewport` drawing or `Application` keys changed
 ```
 
 Run all three trees only for integration/promotion milestones (an experiment enters `src/`, a shared production path changes, or several trees are demonstrably affected) — not merely because they exist. Widen the run whenever targeted tests fail somewhere outside the expected area.

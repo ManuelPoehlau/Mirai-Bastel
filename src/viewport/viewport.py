@@ -85,6 +85,17 @@ Worklight (Shading Lab, in die App übernommen 2026-10-15): `set_light(rig)` set
 (`light_uniforms()`) und reicht die Uniforms per Duck-Typing (`set_light_uniforms`, nur
 `GLRenderStore`) an das Edit-Mesh und alle Objekt-Einträge. Start: "Raitt 2:1", Kamera.
 
+Ersatzfläche (AD-013 Addendum H7, 2026-10-16): `set_surface_provider(p)` lässt einen Host
+die Flächen des Edit-Mesh durch ein eigenes, daraus abgeleitetes Mesh ersetzen (z. B. die
+Subdivision-Vorschau des SubD Lab); der Viewport kennt kein Verfahren. Vertrag (Duck-Typing):
+`p.sync(mesh, selection) -> set[VertexId]` läuft in `sync()` bei denselben Auslösern wie die
+Zusatz-Overlays (H1) und gibt die bewegten Vertices von `p.surface_mesh` zurück; `p.surface_mesh`
+(ein `core.Mesh` oder None = aus) ist danach das zu zeichnende Mesh - ein anderes Objekt als
+beim letzten `sync()` heißt neu aufbauen. Der Viewport besitzt dafür einen `RenderMesh` ohne
+`SelectionOverlay` mit Kamera, Material, Licht, Flat/Smooth und Matrix des Edit-Mesh und zeichnet
+ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
+Edit-Mesh (dem Käfig), Picking ist nicht betroffen. Ohne Provider ändert sich nichts.
+
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
 
@@ -197,6 +208,9 @@ class Viewport:
         # nächsten `sync()` in jedem Fall.
         self.extra_overlays: list = []
         self._extra_overlays_dirty = False
+        # H7: Ersatzfläche eines Hosts und ihr RenderMesh (None = das Edit-Mesh wird gezeichnet).
+        self.surface_provider = None
+        self.surface_render_mesh: RenderMesh | None = None
         # Startzustand = DisplayState-Default (Shaded, kein Overlay).
         self.show_faces = True
         self.show_edges = False
@@ -336,6 +350,8 @@ class Viewport:
         für alle Overlays (Modul-Docstring)."""
         self.model_matrix = list(matrix) if matrix is not None else None
         self.render_mesh.set_model_matrix(self.model_matrix)
+        if self.surface_render_mesh is not None:
+            self.surface_render_mesh.set_model_matrix(self.model_matrix)
 
     def overlay_camera_uniforms(self) -> list[float]:
         """Die Kamera-Uniforms der Overlays des Edit-Objekts: `view·model` + `proj`."""
@@ -351,6 +367,47 @@ class Viewport:
         wird in Anhänge-Reihenfolge."""
         self.extra_overlays.append(overlay)
         self._extra_overlays_dirty = True
+
+    # -- Ersatzfläche (AD-013 H7) ---------------------------------------------
+
+    def set_surface_provider(self, provider) -> None:
+        """Setzt den Provider der Ersatzfläche (Vertrag: Modul-Docstring) oder entfernt ihn
+        (None, gibt den RenderMesh frei). Er synct beim nächsten `sync()` in jedem Fall."""
+        self.surface_provider = provider
+        self._extra_overlays_dirty = True
+        if provider is None:
+            self._release_surface()
+
+    def _release_surface(self) -> None:
+        rm = self.surface_render_mesh
+        self.surface_render_mesh = None
+        if rm is not None:
+            release = getattr(rm.store, "release", None)
+            if release is not None:
+                release()
+
+    def _sync_surface(self) -> None:
+        moved = self.surface_provider.sync(self.mesh, self.selection)
+        mesh = self.surface_provider.surface_mesh
+        rm = self.surface_render_mesh
+        if mesh is None:
+            self._release_surface()
+            return
+        if rm is None or rm.mesh is not mesh:
+            self._release_surface()
+            rm = RenderMesh(mesh, overlay=None, store_type=self._store_type)
+            self.surface_render_mesh = rm
+            if self.render_mesh.camera is not None:
+                rm.bind_camera(self.render_mesh.camera)
+            rm.mark_camera_dirty(aspect=self.render_mesh.aspect)
+            if self.render_mesh.material is not None:
+                rm.bind_material(self.render_mesh.material)
+                rm.mark_material_dirty()
+            rm.set_model_matrix(self.model_matrix)
+            self._apply_draw_style()
+        elif moved:
+            rm.mark_vertices_dirty(set(moved))
+        rm.sync()
 
     # -- Tool-Layer (WP-06 B7) -------------------------------------------------
 
@@ -390,6 +447,16 @@ class Viewport:
                 polygon_offset=self.show_faces
                 and (self.show_edges or self._edge_highlight),
             )
+        if self.surface_render_mesh is not None:
+            set_draw_style = getattr(self.surface_render_mesh.store, "set_draw_style", None)
+            if set_draw_style is not None:
+                # Der Käfig-Wire liegt meist außerhalb dieser Fläche; wo er sie berührt (Ränder,
+                # flache Stellen), hält derselbe Offset wie beim Edit-Mesh die Linien vorn.
+                set_draw_style(
+                    flat=self.flat,
+                    polygon_offset=self.show_faces
+                    and (self.show_edges or self._edge_highlight),
+                )
         for key, entry in self.object_entries.items():
             self._apply_entry_style(key, entry)
 
@@ -403,10 +470,16 @@ class Viewport:
         for entry in self.object_entries.values():
             entry.bind_camera(camera)
             entry.mark_camera_dirty()
+        if self.surface_render_mesh is not None:
+            self.surface_render_mesh.bind_camera(camera)
+            self.surface_render_mesh.mark_camera_dirty()
 
     def bind_material(self, material) -> None:
         self.render_mesh.bind_material(material)
         self.render_mesh.mark_material_dirty()
+        if self.surface_render_mesh is not None:
+            self.surface_render_mesh.bind_material(material)
+            self.surface_render_mesh.mark_material_dirty()
 
     # -- Notifikations-API (aufgerufen von src.mirai nach Core-Mutationen) --
 
@@ -427,11 +500,15 @@ class Viewport:
 
     def on_material_changed(self) -> None:
         self.render_mesh.mark_material_dirty()
+        if self.surface_render_mesh is not None:
+            self.surface_render_mesh.mark_material_dirty()
 
     def on_camera_changed(self, aspect: float | None = None) -> None:
         self.render_mesh.mark_camera_dirty(aspect=aspect)
         for entry in self.object_entries.values():
             entry.mark_camera_dirty(aspect=aspect)
+        if self.surface_render_mesh is not None:
+            self.surface_render_mesh.mark_camera_dirty(aspect=aspect)
 
     # -- Frame-Lifecycle -----------------------------------------------------
 
@@ -445,6 +522,9 @@ class Viewport:
         changed = self._selection_overlays_dirty or self._extra_overlays_dirty
         if self._selection_overlays_dirty:
             self._sync_selection_overlays()
+        provider = self.surface_provider
+        if provider is not None and (changed or getattr(provider, "dirty", False)):
+            self._sync_surface()
         if self.show_edges and self._edges_dirty:
             self._sync_edges()
         for overlay in self.extra_overlays:
@@ -490,14 +570,16 @@ class Viewport:
         if self.render_mesh.camera is None:
             return None
         light = self.light_uniforms()
-        for render_mesh in (self.render_mesh, *self.object_entries.values()):
+        surface = self.surface_render_mesh
+        drawn = self.render_mesh if surface is None else surface
+        for render_mesh in (drawn, *self.object_entries.values()):
             set_light_uniforms = getattr(render_mesh.store, "set_light_uniforms", None)
             if set_light_uniforms is not None:
                 set_light_uniforms(light)
         # Reihenfolge (E40, E45, B7, H1): Mesh, Wire, Face-Highlight,
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.show_faces:
-            self.render_mesh.render(self.render_mesh.camera)
+            drawn.render(self.render_mesh.camera)
         for key in self._entry_draw_order():
             self.object_entries[key].render(self.render_mesh.camera)
         if (
