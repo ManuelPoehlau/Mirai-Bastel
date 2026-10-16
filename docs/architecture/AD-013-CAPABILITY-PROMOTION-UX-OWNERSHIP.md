@@ -1409,3 +1409,16 @@ next hover, because its `RenderMesh` synced only on provider triggers and a came
 syncs the surface's `RenderMesh` every frame like the object entries (camera and aspect), still without calling the
 provider. Test: `test_camera_changes_reach_the_surface_without_asking_the_provider`. Manu's verdict on the rest: keys
 and the three levels fit for now; level 3 on the head is slower but acceptable (Viewport performance is its own topic).
+
+### Second user (Morph Lab, 2026-10-16)
+
+Review [AD-013_H7_MORPH_LAB_REVIEW_CLAUDE_001](../archive/morph_lab/reviews/AD-013_H7_MORPH_LAB_REVIEW_CLAUDE_001.md)
+(H7-R4; fresh session): **ACCEPT WITH CHANGES**, no Haltepunkt, on condition that this stays a dated second-user note.
+`experiments/morph_lab/` uses H7 under H7-R1…R4 unchanged: one provider per app instance, display only. The provider
+reads the base's and the target's meshes read-only (H2-R4 (a)) and pairs their vertices by equal IDs — a lab convention,
+not a morph-target format; AD-021 §4.9 decides that home. One-time set-up in `run.py`: `init_scene` + `SceneFiles.load`
+(→ `load_scene`), as `src/main.py` opens a scene file, provider attached after the load; Ctrl+S through
+`install_handlers(..., save=)` (H6 → `save_scene_file`). Both are named here for this host; H2-R4's text is unchanged.
+Limit: H7 reports no change of a non-edit object's mesh; the lab wakes on `status_serial` (pinned by its tests) and posts
+its own messages only when their text changes. Nothing in `src/` changes. The review's other findings are handled in the
+lab (README, "Review CLAUDE-001").

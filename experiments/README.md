@@ -92,6 +92,13 @@ AD-013 H7 (`set_surface_provider`) statt der Flächen des Käfigs. Subdivision s
 eigene Fenster: `run_standalone.py`. Nicht Artist-validiert —
 [`subdivision_lab/README.md`](subdivision_lab/README.md).
 
+### `morph_lab/`
+
+Morph Lab (WP-MORPH-LAB-01, 2026-10-16): eine Basis, ein Morph-Ziel daneben (eigenes Objekt mit denselben Punkt-Nummern),
+Gewicht per Tasten. Läuft auf dem App-Pfad wie das SubD Lab; das Ziel wird mit den Werkzeugen der App geformt, die Mischung
+zeichnet der Viewport über AD-013 H7 (zweiter Nutzer, Review CLAUDE-001). Morph ist nicht in `src/`. Nicht Artist-validiert —
+[`morph_lab/README.md`](morph_lab/README.md).
+
 ### `soft_selection/`
 
 Soft Selection (WP-SOFT-01 S1, headless, Typ B): Influence-Map (euklidisch/geodätisch, smooth/linear) und gewichtete Move/Rotate/Scale als Unterklassen der Core-Ops, Kostenprobe auf Kopf und Ganzkörper; keine Defaults, kein Fenster — [`soft_selection/README.md`](soft_selection/README.md), Ergebnisse in [`soft_selection/FINDINGS.md`](soft_selection/FINDINGS.md).

@@ -729,6 +729,7 @@ blocks component picking · **Q-3** state change and add object are Undo steps �
 | E-11 | The object gesture. **M2-2:** its own small path in `Application` (not the component tools), sharing the hold-key state; Move/Rotate/Scale rules in §6.4; `PROVISIONAL` |
 | E-12 | The object transform command. **M2-2:** `ObjectTransformCommand` with `(obj, before, after)` per object, mirror entry `mesh_step=False`; `PROVISIONAL` |
 | E-13 | The composite. **M2-3:** `CompositeCommand(list)`, Undo in reverse; plus `ObjectPivotCommand`; the mirror entry names the non-edit objects whose mesh changed; `PROVISIONAL` |
+| E-15 | **Open defect, not reachable today** (found 2026-10-16, [review F-12](../archive/morph_lab/reviews/AD-013_H7_MORPH_LAB_REVIEW_CLAUDE_001.md)): Undo of an `AddObjectCommand` whose object is the edit object raises `ValueError` — `_apply_undo_redo` runs `history.undo()` before `_restore_selection`, and `Scene.remove_object` refuses the edit object; the step is then lost from both stacks while the selection mirror keeps an entry. `add_reference` adds a REFERENCE, whose `ObjectStateCommand` (stacked above the Add) switches the edit object back first, so the app cannot reach it. Fix before any host adds NORMAL objects (e.g. restore the step's edit object before `history.undo()` for object steps) |
 
 (E-4, framing, became the Artist question Q-9 — review R-8.)
 

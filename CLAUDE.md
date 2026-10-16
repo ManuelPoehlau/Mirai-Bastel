@@ -20,7 +20,7 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
   host) — see `docs/design/artist_playground/EXPERIMENT_HOST.md` for that distinction.
 - `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. `pytest.ini` at the
   repo root sets `testpaths` (`tests`, `playground/tests`, `experiments/symmetry_lab/tests`,
-  `experiments/subdivision_lab/tests`), so bare
+  `experiments/subdivision_lab/tests`, `experiments/morph_lab/tests`), so bare
   `pytest` collects cleanly (the old `viewport`/`test_core.py` name collisions with
   `experiments/` came from collecting everything; see
   `docs/Repository_Wide Structural_Codebase_Health_Audit.md` D1).
