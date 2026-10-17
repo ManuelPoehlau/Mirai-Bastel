@@ -121,6 +121,10 @@ Drag-Kosten-Sonde mit dem echten GL-Backend (WP-VIEW-PATCH-01, Typ A): misst pro
 Zweite Sonde `probe_navigation_gl.py` (WP-VIEW-PERF-01, Discovery): Orbit/Pan/Zoom, Hover, Klick und W-Drags pro
 Event + Frame auf Kopf, Körper und `gollum.obj` (21 875 V), mit Picking-Aufteilung, GPU-Timer und cProfile.
 
+### `gpu_picking_spike/`
+
+GPU-ID-Buffer-Picking (WP-VIEW-PERF-02, Discovery-Spike, ändert nichts unter `src/`): Faces/Kanten/Vertices als ID-Farben in einen Offscreen-Framebuffer, Vergleich mit dem Production-CPU-Picker (Übereinstimmung + Kosten). Grundlage für [AD-022](../docs/architecture/AD-022-GPU-PICKING.md) (PROPOSED) — [`gpu_picking_spike/README.md`](gpu_picking_spike/README.md).
+
 ### `viewport_shading_lab/`
 
 Viewport Shading Lab (WP-SHADE-LAB-01): eigenständiges Fenster für die Worklight-Forschung. Seit
