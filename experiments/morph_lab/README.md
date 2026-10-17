@@ -1,6 +1,7 @@
 # Morph Lab (WP-MORPH-LAB-01)
 
-**Status: Nicht Artist-validiert.** Gebaut und automatisch getestet (2026-10-16); kein Verdikt von Manu liegt vor.
+**Status: Praxistest beantwortet (2026-10-17), Iteration offen.** Gebaut und automatisch getestet (2026-10-16); Manus Antworten
+und Verdikte stehen unter „Praxistest“ (Folgearbeit: `←`/`→`, Schieberegler, relatives Ziel).
 Discovery-Lab unter `experiments/`. **Morph Targets sind nicht in Production**: `src/` ist unverändert, `src/main.py` kennt
 kein Morph. Das Lab läuft **auf dem App-Pfad** wie das SubD Lab: alle Modellier-Werkzeuge, Undo, Symmetrie, Soft Selection,
 Licht und Shading sind die der App. Die gemischte Form zeichnet der Viewport über den Haken AD-013 H7
@@ -92,7 +93,18 @@ in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 | Vergleichen und Nachbessern (4) | KEEP                                        |       |
 | Speichern / neu öffnen (5)      | KEEP                                        |       |
 
-Antworten J-2…J-5: _(leer)_
+**Antworten J-2…J-5 (Manu, 2026-10-17) und was daraus folgt** — noch nicht umgesetzt, jeder Punkt ist ein eigener Schritt:
+
+| Frage | Antwort | Folge (offen) |
+|---|---|---|
+| J-2 Wechsel Basis ↔ Ziel | `←` / `→` zum Wechseln (`PROVISIONAL`; bei mehreren Targets später neu entscheiden) | Neue Taste = App-Fähigkeit im Sinne von AD-013, also Review/Entscheidung vor dem Bau; Tönung nicht beanstandet |
+| J-3 Basis nachträglich ändern | **relativ**: das Ziel nimmt die Änderung mit | Ändert die Darstellung (heute absolut, siehe „Annahmen“): Ziel = Delta zur Basis; Speicherformat und Undo-Verhalten klären |
+| J-4 Gewicht | **Schieberegler** (Pfeiltasten reichen nicht) | Bisher „nicht im Umfang“; braucht UI im Fenster und Performance beim Ziehen (siehe „Messung“) |
+| J-5 Ziel formen | **daneben** (wie gebaut) | keine Änderung |
+| Gewicht als Undo-Schritt / gespeichert? | **Nein** | keine Änderung (wie gebaut) |
+| 6a Auswahl/Picking auf der Ruhelage | **hilft** (zeigt die Abweichung von der Basis) | keine Änderung; bewusst behalten |
+
+Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE bei Schieberegler, relativem Ziel und `←`/`→`.
 
 ## Annahmen (`PROVISIONAL`, in einem Satz korrigierbar)
 
