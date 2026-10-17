@@ -30,7 +30,7 @@ from mirai.application import Application
 from mirai.interaction.input import KNIFE_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
 from mirai.viewport.display import DisplayMode
 
-from .morph import EDITING_BASE, EDITING_TARGET, MAX_WEIGHT, MIN_WEIGHT, MorphSurfaceProvider
+from .morph import EDITING_BASE, EDITING_OTHER, EDITING_TARGET, MAX_WEIGHT, MIN_WEIGHT, MorphSurfaceProvider
 
 MORPH_LAB_CONTEXT = "morph_lab"
 
@@ -41,6 +41,7 @@ WEIGHT_DOWN_FINE = "MorphWeightDownFine"
 WEIGHT_FULL = "MorphWeightFull"
 WEIGHT_ZERO = "MorphWeightZero"
 TOGGLE_AB = "MorphToggleAB"
+TOGGLE_RELATIVE = "MorphToggleRelative"
 EDIT_BASE = "MorphEditBase"
 EDIT_TARGET = "MorphEditTarget"
 
@@ -79,6 +80,7 @@ LAB_KEYS: tuple[LabKey, ...] = (
     LabKey(_key("up", "ctrl"), WEIGHT_FULL, "Gewicht 100 %"),
     LabKey(_key("down", "ctrl"), WEIGHT_ZERO, "Gewicht 0 %"),
     LabKey(_key("m"), TOGGLE_AB, "A/B: 0 % <-> zuletzt eingestelltes Gewicht"),
+    LabKey(_key("b"), TOGGLE_RELATIVE, "Ziel relativ <-> absolut"),
     LabKey(_key("left"), EDIT_BASE, "Basis bearbeiten"),
     LabKey(_key("right"), EDIT_TARGET, "Ziel 1 bearbeiten"),
 )
@@ -165,6 +167,10 @@ class MorphAppLab:
         if owner is not None:
             self.app.set_status(f"Morph: {command} ignoriert - {owner} läuft")
             return False
+        if command == TOGGLE_RELATIVE:
+            relative = self.provider.set_relative(not self.provider.relative)
+            self.app.set_status(f"Morph: Ziel {'relativ' if relative else 'absolut'}")
+            return True
         if command == EDIT_BASE:
             return self.switch_edit_object(self.provider.base_id)
         if command == EDIT_TARGET:
@@ -224,7 +230,10 @@ def hints(lab: MorphAppLab) -> list[str]:
     app, provider = lab.app, lab.provider
     out = []
     if provider.editing == EDITING_TARGET:
-        out.append("Ziel wird bearbeitet - Vorschau nur auf der Basis")
+        out.append(
+            "Ziel wird bearbeitet - Basis zeigt die Mischung" if lab.weight > MIN_WEIGHT
+            else "Ziel wird bearbeitet - Pfeil hoch zeigt die Mischung an der Basis"
+        )
     elif provider.editing == EDITING_BASE and lab.weight > MIN_WEIGHT:
         if app.display.mode is DisplayMode.WIREFRAME:
             out.append("Wireframe: Morph nicht sichtbar")
@@ -269,8 +278,11 @@ def hud_text(lab: MorphAppLab, asset_name: str, frame_ms: Optional[float] = None
     """Line 1: lab and weight; line 2: objects; line 3: the app's last status message (in
     `src/main.py` it goes only to the console)."""
     provider = lab.provider
-    parts = [f"Morph Lab · {asset_name}", f"Ziel 1 · Gewicht {lab.weight} %"]
-    if provider.editing == EDITING_BASE and lab.weight > MIN_WEIGHT:
+    parts = [
+        f"Morph Lab · {asset_name}",
+        f"Ziel 1 ({'relativ' if provider.relative else 'absolut'}) · Gewicht {lab.weight} %",
+    ]
+    if provider.editing != EDITING_OTHER and lab.weight > MIN_WEIGHT:
         parts.append(f"Schritt {_ms(provider.last_update_ms)} ({provider.last_changed} V)")
     if frame_ms is not None:
         parts.append(f"Frame {frame_ms:.1f} ms")

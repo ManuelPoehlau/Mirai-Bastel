@@ -443,3 +443,52 @@ def test_editing_the_base_after_the_target_moves_the_target_along(lab_app):
         got = lab.provider.surface_mesh.vertex_position(vid)
         assert got == pytest.approx(want, abs=1e-9)
     assert got != pytest.approx(target.mesh.vertex_position(vid), abs=1e-6)  # not the old absolute shape
+
+
+# -- Absolute/relative, base preview while the target is edited -----------------------------------
+
+B_KEY = _key("b")
+
+
+def entry_surface(app, lab):
+    rm = app.viewport.entry_surface_render_meshes.get(lab.provider.base_id)
+    return None if rm is None else {v: rm.mesh.vertex_position(v) for v in rm.mesh.all_vertex_ids()}
+
+
+def test_base_shows_the_mixture_while_the_target_is_edited_and_up_down_morph_there(lab_app):
+    app, lab, _files = lab_app
+    base, target = objects(app, lab)
+    press(app, lab, RIGHT)
+    sculpt(app, lab)
+    frame(app)
+    assert entry_surface(app, lab) is None  # 0 %: the base is drawn as itself
+    press(app, lab, UP, UP, UP, UP, UP)  # 50 % while sculpting the target
+    frame(app)
+    assert lab.weight == 50 and app.scene.edit_object_id == target.id
+    assert entry_surface(app, lab) == evaluate(base.mesh, target.mesh, 50)
+    sculpt(app, lab, delta=(0.0, 0.2, 0.0))  # the mixture follows each target step
+    frame(app)
+    assert entry_surface(app, lab) == evaluate(base.mesh, target.mesh, 50)
+    assert app.viewport.surface_render_mesh is None  # the target itself is drawn as itself
+    press(app, lab, LEFT)
+    frame(app)
+    assert entry_surface(app, lab) is None and lab.provider.surface_mesh is not None
+    assert_surface_is_the_morph(app, lab)
+
+
+def test_b_switches_relative_and_absolute(lab_app):
+    app, lab, _files = lab_app
+    base, target = sculpted_lab(app, lab)
+    sculpt(app, lab, delta=(0.3, 0.0, 0.0))  # base edited after the target
+    press(app, lab, CTRL_UP)
+    frame(app)
+    vid = sorted(base.mesh.all_vertex_ids())[0]
+    relative_shape = shown(lab)[vid]
+    press(app, lab, B_KEY)
+    frame(app)
+    assert lab.provider.relative is False and "absolut" in hud_text(lab, ASSET)
+    assert shown(lab) == evaluate(base.mesh, target.mesh, 100)  # absolute: exactly the target
+    assert shown(lab)[vid] == target.mesh.vertex_position(vid) != relative_shape
+    press(app, lab, B_KEY)
+    frame(app)
+    assert lab.provider.relative is True and shown(lab)[vid] == pytest.approx(relative_shape, abs=1e-12)

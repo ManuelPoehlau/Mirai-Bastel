@@ -97,6 +97,13 @@ ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays 
 Edit-Mesh (dem Käfig), Picking ist nicht betroffen. Kamera-Änderungen erreichen die Fläche in
 jedem `sync()` wie die Objekt-Einträge, ohne den Provider zu fragen. Ohne Provider ändert sich nichts.
 
+H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Optional liest der Viewport nach
+`p.sync(...)` `p.entry_surfaces` (`dict[key, Mesh]`, `key` wie bei `set_object_entry`) und `p.entry_moved`
+(`dict[key, set[VertexId]]`, bewegte Vertices je Mesh; fehlt ein Key, gilt "neu aufgebaut/unverändert"). Für jeden
+Key mit vorhandenem Eintrag zeichnet der Viewport an dessen Stelle einen eigenen `RenderMesh` des Ersatz-Meshes mit
+Kamera, Material, Matrix, Alpha und Flat/Smooth des Eintrags (jeden Frame nachgeführt); ein Key ohne Eintrag oder ein
+Eintrag ohne Ersatz wird wie bisher gezeichnet. Fehlt das Attribut, ändert sich nichts.
+
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
 
@@ -212,6 +219,8 @@ class Viewport:
         # H7: Ersatzfläche eines Hosts und ihr RenderMesh (None = das Edit-Mesh wird gezeichnet).
         self.surface_provider = None
         self.surface_render_mesh: RenderMesh | None = None
+        # H7-E: Ersatzflächen für Objekt-Einträge (Schlüssel wie `object_entries`).
+        self.entry_surface_render_meshes: dict = {}
         # Startzustand = DisplayState-Default (Shaded, kein Overlay).
         self.show_faces = True
         self.show_edges = False
@@ -290,6 +299,7 @@ class Viewport:
         """Entfernt den Eintrag `key` und gibt seine GPU-Objekte frei. True = es gab ihn."""
         entry = self.object_entries.pop(key, None)
         self._entry_display.pop(key, None)
+        self._release_entry_surface(key)
         if entry is None:
             return False
         release = getattr(entry.store, "release", None)
@@ -302,6 +312,11 @@ class Viewport:
         if set_draw_style is not None:
             alpha, _ = self._entry_display.get(key, (1.0, False))
             # Auf Objekt-Einträgen liegen keine Linien: kein Polygon-Offset.
+            set_draw_style(flat=self.flat, polygon_offset=False, alpha=alpha)
+        rm = self.entry_surface_render_meshes.get(key)
+        set_draw_style = getattr(rm.store, "set_draw_style", None) if rm is not None else None
+        if set_draw_style is not None:
+            alpha, _ = self._entry_display.get(key, (1.0, False))
             set_draw_style(flat=self.flat, polygon_offset=False, alpha=alpha)
 
     def entry_drawn(self, key) -> bool:
@@ -387,8 +402,52 @@ class Viewport:
             if release is not None:
                 release()
 
+    def _release_entry_surface(self, key) -> None:
+        rm = self.entry_surface_render_meshes.pop(key, None)
+        if rm is not None:
+            release = getattr(rm.store, "release", None)
+            if release is not None:
+                release()
+
+    def _sync_entry_surfaces(self, *, apply_moved: bool = True) -> None:
+        """H7-E: legt die Ersatzflächen der Objekt-Einträge an, baut sie bei einem anderen Mesh neu
+        auf und gibt sie frei, wo der Provider keine mehr nennt."""
+        provider = self.surface_provider
+        wanted = getattr(provider, "entry_surfaces", None) or {}
+        moved = getattr(provider, "entry_moved", None) or {}
+        for key in list(self.entry_surface_render_meshes):
+            if key not in wanted or key not in self.object_entries:
+                self._release_entry_surface(key)
+        for key, mesh in wanted.items():
+            entry = self.object_entries.get(key)
+            if entry is None or mesh is None:
+                continue
+            rm = self.entry_surface_render_meshes.get(key)
+            if rm is None or rm.mesh is not mesh:
+                self._release_entry_surface(key)
+                rm = RenderMesh(mesh, overlay=None, store_type=self._store_type)
+                self.entry_surface_render_meshes[key] = rm
+                self._follow_entry(key, entry, rm, rebuilt=True)
+            elif apply_moved and moved.get(key):
+                rm.mark_vertices_dirty(set(moved[key]))
+
+    def _follow_entry(self, key, entry: RenderMesh, rm: RenderMesh, *, rebuilt: bool = False) -> None:
+        """Hält die Ersatzfläche eines Eintrags mit dessen Kamera, Material, Matrix und Stil gleich."""
+        if rebuilt or rm.camera is not entry.camera:
+            if entry.camera is not None:
+                rm.bind_camera(entry.camera)
+            rm.mark_camera_dirty(aspect=entry.aspect)
+        if entry.material is not None and rm.material is not entry.material:
+            rm.bind_material(entry.material)
+            rm.mark_material_dirty()
+        if rm.model_matrix != entry.model_matrix:
+            rm.set_model_matrix(entry.model_matrix)
+        if rebuilt:
+            self._apply_entry_style(key, entry)
+
     def _sync_surface(self) -> None:
         moved = self.surface_provider.sync(self.mesh, self.selection)
+        self._sync_entry_surfaces()
         mesh = self.surface_provider.surface_mesh
         rm = self.surface_render_mesh
         if mesh is None:
@@ -471,6 +530,9 @@ class Viewport:
         for entry in self.object_entries.values():
             entry.bind_camera(camera)
             entry.mark_camera_dirty()
+        for rm in self.entry_surface_render_meshes.values():
+            rm.bind_camera(camera)
+            rm.mark_camera_dirty()
         if self.surface_render_mesh is not None:
             self.surface_render_mesh.bind_camera(camera)
             self.surface_render_mesh.mark_camera_dirty()
@@ -520,6 +582,8 @@ class Viewport:
         self.render_mesh.mark_camera_dirty(aspect=aspect)
         for entry in self.object_entries.values():
             entry.mark_camera_dirty(aspect=aspect)
+        for rm in self.entry_surface_render_meshes.values():
+            rm.mark_camera_dirty(aspect=aspect)
         if self.surface_render_mesh is not None:
             self.surface_render_mesh.mark_camera_dirty(aspect=aspect)
 
@@ -541,6 +605,12 @@ class Viewport:
         elif self.surface_render_mesh is not None:
             # Kamera/Aspect (kein Provider-Auslöser) kommen wie bei den Objekt-Einträgen jeden Frame an.
             self.surface_render_mesh.sync()
+        if provider is not None and getattr(provider, "entry_surfaces", None):
+            # Ein Eintrag, der erst nach dem Provider-Sync entstand, bekommt seine Fläche ohne Auslöser.
+            self._sync_entry_surfaces(apply_moved=False)
+        for key, rm in self.entry_surface_render_meshes.items():
+            self._follow_entry(key, self.object_entries[key], rm)
+            rm.sync()
         if self.show_edges and self._edges_dirty:
             self._sync_edges()
         for overlay in self.extra_overlays:
@@ -588,7 +658,7 @@ class Viewport:
         light = self.light_uniforms()
         surface = self.surface_render_mesh
         drawn = self.render_mesh if surface is None else surface
-        for render_mesh in (drawn, *self.object_entries.values()):
+        for render_mesh in (drawn, *self.object_entries.values(), *self.entry_surface_render_meshes.values()):
             set_light_uniforms = getattr(render_mesh.store, "set_light_uniforms", None)
             if set_light_uniforms is not None:
                 set_light_uniforms(light)
@@ -597,7 +667,8 @@ class Viewport:
         if self.show_faces:
             drawn.render(self.render_mesh.camera)
         for key in self._entry_draw_order():
-            self.object_entries[key].render(self.render_mesh.camera)
+            # H7-E: die Ersatzfläche des Eintrags, wenn der Provider eine nennt.
+            self.entry_surface_render_meshes.get(key, self.object_entries[key]).render(self.render_mesh.camera)
         if (
             self.line_overlay is None
             and self.face_overlay is None

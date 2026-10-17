@@ -181,3 +181,65 @@ def test_camera_changes_reach_the_surface_without_asking_the_provider():
     assert len(provider.syncs) == 1  # a camera change is not a provider trigger
     assert rm.store.data("camera_uniforms") == vp.render_mesh.store.data("camera_uniforms")
     assert rm.aspect == 1.7
+
+
+# -- H7-E: replacement surface of an object entry -------------------------------------------------
+
+
+def test_entry_surface_is_drawn_instead_of_the_entry_with_its_matrix_and_follows_it():
+    vp = _viewport()
+    other, replacement = create_cube(), create_cube()
+    vp.set_object_entry("a", other, model_matrix=[1.0] * 16)
+    provider = _Provider()
+    provider.entry_surfaces = {"a": replacement}
+    provider.entry_moved = {}
+    vp.set_surface_provider(provider)
+    vp.sync()
+    rm = vp.entry_surface_render_meshes["a"]
+    assert rm.mesh is replacement and rm.camera is vp.object_entries["a"].camera
+    assert rm.model_matrix == [1.0] * 16
+    _instrument(vp.object_entries["a"], "entry")
+    _instrument(rm, "entry-surface")
+    LOG.clear()
+    vp.render()
+    assert "entry-surface" in LOG and "entry" not in LOG
+
+    vp.set_object_entry("a", other, model_matrix=[2.0] * 16)  # the app moved the object
+    vp.sync()
+    assert vp.entry_surface_render_meshes["a"].model_matrix == [2.0] * 16
+
+    moved = next(iter(replacement.all_vertex_ids()))
+    replacement.set_vertex_position(moved, (7.0, 7.0, 7.0))
+    provider.entry_moved = {"a": {moved}}
+    provider.dirty = True
+    vp.sync()
+    assert vp.entry_surface_render_meshes["a"] is rm
+    index = rm.vertex_index_of(moved)
+    assert rm.store.data("positions")[index * 3:index * 3 + 3] == [7.0, 7.0, 7.0]
+
+
+def test_entry_surface_is_released_when_the_provider_drops_it_or_the_entry_goes():
+    vp = _viewport()
+    vp.set_object_entry("a", create_cube())
+    provider = _Provider()
+    provider.entry_surfaces = {"a": create_cube()}
+    vp.set_surface_provider(provider)
+    vp.sync()
+    assert "a" in vp.entry_surface_render_meshes
+    provider.entry_surfaces = {}
+    provider.dirty = True
+    vp.sync()
+    assert vp.entry_surface_render_meshes == {}
+    provider.entry_surfaces = {"a": create_cube()}
+    provider.dirty = True
+    vp.sync()
+    vp.remove_object_entry("a")
+    assert vp.entry_surface_render_meshes == {}
+
+
+def test_provider_without_entry_surfaces_changes_nothing_for_entries():
+    vp = _viewport()
+    vp.set_object_entry("a", create_cube())
+    vp.set_surface_provider(_Provider(create_cube()))
+    vp.sync()
+    assert vp.entry_surface_render_meshes == {}

@@ -1422,3 +1422,17 @@ not a morph-target format; AD-021 §4.9 decides that home. One-time set-up in `r
 Limit: H7 reports no change of a non-edit object's mesh; the lab wakes on `status_serial` (pinned by its tests) and posts
 its own messages only when their text changes. Nothing in `src/` changes. The review's other findings are handled in the
 lab (README, "Review CLAUDE-001").
+
+### H7-E: replacement surface for object entries (Morph Lab, 2026-10-17)
+
+Manu's request: while the Morph target is the edit object, the base — then an *object entry* of the viewport, not the edit
+mesh — must keep showing the mixture at the current weight, so morphing and sculpting happen together (and, later, several
+targets combined on the base). H7 replaced only the edit mesh, so the hook is extended **additively and inertly**:
+after `p.sync(...)` the viewport optionally reads `p.entry_surfaces` (`{entry key: Mesh}`) and `p.entry_moved`
+(`{key: set of moved vertices}`) and draws, in place of that entry, a viewport-owned `RenderMesh` of the replacement mesh
+with the entry's camera, material, matrix, alpha and Flat/Smooth (followed every frame); a surface whose key is no longer
+named or whose entry is removed is released. Without the attributes nothing changes (H7-R1); display only (H7-R2); still one
+provider (H7-R4); picking, selection and `Application` untouched. Code: `src/viewport/viewport.py`
+(`_sync_entry_surfaces`, `_follow_entry`, `entry_surface_render_meshes`); tests in `tests/test_viewport_surface_provider.py`.
+Not reviewed independently (H7-R4 asks for a review when a *second user* is added; this is the same second user using
+more of the hook) — an independent look before this is promoted beyond the lab is advisable.

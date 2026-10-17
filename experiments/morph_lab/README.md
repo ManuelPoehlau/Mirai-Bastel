@@ -32,6 +32,10 @@ Extrude, Loops, Delete, Undo/Redo, Objekt-Modus `4`, das bearbeitete Objekt wech
 
 **Das Lab** ergänzt nur das **Gewicht** und die Anzeige der Mischung: Ist die Basis das bearbeitete Objekt und das
 Gewicht über 0 %, zeigt der Viewport statt der Basis die Mischung Basis → Ziel, mit Licht und Flat/Smooth der App.
+**Auch beim Arbeiten am Ziel** zeigt die Basis die Mischung beim eingestellten Gewicht (Manu 2026-10-17): mit `Pfeil hoch/runter`
+morpht man, während man das Ziel formt, und jeder Schritt am Ziel ist an der Basis sofort sichtbar. Das Ziel selbst wird wie
+es ist gezeichnet. (Viewport-Erweiterung H7-E, siehe unten.)
+
 Das Gewicht ist reine Ansicht: kein Undo-Schritt, wird nicht gespeichert, ändert weder Basis noch Ziel.
 
 ## Steuerung (Vorschlag, `PROVISIONAL`)
@@ -42,6 +46,7 @@ Das Gewicht ist reine Ansicht: kein Undo-Schritt, wird nicht gespeichert, änder
 | `Shift+Pfeil hoch` / `Shift+Pfeil runter` | Gewicht +1 % / −1 % |
 | `Strg+Pfeil hoch` / `Strg+Pfeil runter` | Gewicht 100 % / 0 % |
 | `M` | A/B: 0 % ↔ zuletzt eingestelltes Gewicht |
+| `B` | Ziel **relativ ↔ absolut** (`PROVISIONAL`; später eine Checkbox in der UI) |
 | `Pfeil rechts` | **Ziel bearbeiten** (`PROVISIONAL`, J-2) |
 | `Pfeil links` | **Zurück zur Basis** |
 | alternativ | `4` · Klick aufs Objekt · `1` (wie die App) |
@@ -117,7 +122,8 @@ Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE: `←`/`→` und relative
   im laufenden Lab gibt es kein „neues Ziel“.
 - Bei 0 % zeigt der Viewport die Basis selbst (keine Ersatzfläche), darüber die Mischung.
 - Das Gewicht ist reine Ansicht (kein Undo, nicht gespeichert); Schritte 10 % / 1 %.
-- Das Ziel ist **relativ** (J-3, 2026-10-17): gespeichert ist seine Form, gelesen wird sie als Abstand zur Basis, wie sie war,
+- Das Ziel ist **relativ oder absolut**, umschaltbar mit `B` (Standard relativ; reine Ansicht wie das Gewicht, nicht
+  gespeichert). **Absolut:** die Form des Ziels, wie sie ist. **Relativ** (J-3, 2026-10-17): gespeichert ist seine Form, gelesen wird sie als Abstand zur Basis, wie sie war,
   als das Ziel zuletzt geformt wurde. Ändert man danach die Basis, geht das Ziel mit (100 % = Basis jetzt + Abstand). Ändert
   man das Ziel (oder macht es rückgängig), gilt wieder die Basis von jetzt als Bezug. Der Bezug lebt nur in der Sitzung:
   nach `Strg+S` und Neustart ist die geladene Basis der Bezug, Basisänderungen vor dem Speichern sind dann „eingebacken“.
@@ -128,6 +134,8 @@ Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE: `←`/`→` und relative
 
 - Die Kamera rahmt nur das bearbeitete Objekt; das Ziel liegt beim Start außerhalb (Mausrad zurück). Ein „alles rahmen“
   hat die App nicht.
+- Während das Ziel bearbeitet wird, liegen Auswahl/Hover/Picking am Ziel selbst (es ist das bearbeitete Objekt); die Basis zeigt
+  nur die Mischung. Mit mehreren Targets (später) soll jedes seinen Anteil beitragen — heute gibt es genau eines.
 - Bei Gewicht > 0 % liegen Drahtgitter (`Shift+D`), Auswahl, Hover, Soft-Bänder und Picking auf der Ruheform der Basis
   (H7: der Käfig bleibt maßgeblich). Ein W-Zug an der Basis bewegt die sichtbare Fläche nur um (1 − Gewicht) · Weg.
 - Im Wireframe-Modus ist die Mischung nicht sichtbar (HUD-Hinweis).
@@ -193,6 +201,11 @@ ends, exact where `b == t`, exactly mirrored (review F-8/R-7; `(1−w)·b + w·t
 and runs under `xvfb-run -a` in headless containers). `test_morph.py` (evaluation, provider), `test_app_lab.py` (app
 path: start scene, weights, W + symmetry on the target, Undo Q-8, topology refusal, Ctrl+A, save/reopen, `--neu`,
 refusals, HUD), `test_run_cli.py`, `test_import_boundary.py`.
+
+**H7-E (2026-10-17):** the base is an object entry while the target is the edit object, so the lab needed the hook for entries.
+`Viewport` reads the optional `provider.entry_surfaces` / `entry_moved` (additive, duck-typed; AD-013 "H7-E"); the provider fills
+`entry_surfaces = {base_id: surface}` while the target is edited and the weight is above 0. `B` = `MorphSurfaceProvider.relative`.
+Tests: `tests/test_viewport_surface_provider.py` (three H7-E tests), `test_app_lab.py` (base preview, `B`).
 
 **Left/Right:** `lab_app.MorphAppLab.switch_edit_object` presses `4`, sets `selection.objects`, presses the mode key through `app.key_press` — the app's Q-5 switch, no private call, no History entry.
 
