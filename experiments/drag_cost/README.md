@@ -636,6 +636,9 @@ Knife-Punkt anders verhält als vorher, ist das ein Fehler (bitte melden, mit As
    d. **Knife**: eine Knife-Linie über Kanten und eine Fläche ziehen - die Punkte rasten an denselben Stellen ein.
 5. Verdikt in einem Satz: „fühlt sich gleich an, nur schneller“ - oder was anders ist.
 
+Manu: Fühlt sich gleich an, nur schneller.Im Vergleich zu Blender auf meinem PC aber noch wesentlich langsamer.
+Dort lässt sich 20k Gollum sehr flüssig zoomen, Komponenten picken oder Topologie Operationen ausführen. 
+
 ## Next step
 
 The reference-PC numbers are in `REFERENCE_HARDWARE.md` §2 and above; the 8 ms bar holds and S2c ran (verdict: AD-020
