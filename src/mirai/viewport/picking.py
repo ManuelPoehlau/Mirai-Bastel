@@ -41,6 +41,12 @@ only for the few candidates in range; occlusion is tested nearest-first and
 stops at the first visible candidate (`_nearest_visible`); with a cache, a
 vertex's incident faces come from `PickCache.vertex_faces` instead of the
 O(E) `core.Mesh.vertex_edges` scan.
+
+WP-VIEW-PERF-01 Slice 2 (no behaviour change, same tests): the occlusion test visits only
+the faces of the point's cell in the cache's screen grid of face bboxes
+(`PickCache.face_grid`, the "simple CPU spatial grid" of `VIEWPORT_V02` §4.6, camera-dependent,
+no world index); `point_occlusion_test` runs many tests under one camera state (Box Select).
+The vertex / edge scans stay linear.
 """
 
 from __future__ import annotations
@@ -332,16 +338,55 @@ def point_occluded(camera, mesh, cache, point, width, height, exclude_faces, dep
     """True if some face other than `exclude_faces` lies strictly closer to
     the camera than `point` along the ray from the eye through it (a small
     `depth_tolerance` keeps silhouette elements pickable, per the handoff's
-    occlusion rule)."""
+    occlusion rule).
+
+    WP-VIEW-PERF-01 Slice 2: with a cache refreshed for `mesh` and its `face_grid` built
+    (after a few full scans in one camera state), only the faces of the point's grid cell are
+    visited - every face whose bbox contains the point is among them, the others were skipped
+    by the bbox check anyway - so the answer is the same as testing every face."""
+    return _occluded(
+        mesh, cache, camera.eye(), point, camera.project_to_screen(point, width, height),
+        exclude_faces, depth_tolerance, False,
+    )
+
+
+def point_occlusion_test(camera, mesh, cache, width, height, depth_tolerance=DEPTH_TOLERANCE):
+    """`occluded(point, exclude_faces, screen=None)` = `point_occluded(camera, mesh, cache, point,
+    width, height, exclude_faces, depth_tolerance)` for many points under one camera state
+    (Box Select): eye and projection are set up once. `screen` may pass the point's projection
+    when the caller has it (it must equal `camera.project_to_screen(point, width, height)`, as
+    `PickCache.vertex_screen` does)."""
     eye = camera.eye()
+    projector = getattr(camera, "screen_projector", None)
+    if projector is not None:
+        project = projector(width, height)
+    else:
+        def project(point):
+            return camera.project_to_screen(point, width, height)
+
+    def occluded(point, exclude_faces, screen=None):
+        if screen is None:
+            screen = project(point)
+        return _occluded(mesh, cache, eye, point, screen, exclude_faces, depth_tolerance, True)
+
+    return occluded
+
+
+def _occluded(mesh, cache, eye, point, screen, exclude_faces, depth_tolerance, batch):
     to_point = vecmath.sub(point, eye)
     dist = vecmath.length(to_point)
     if dist <= 1e-9:
         return False
     direction = vecmath.scale(to_point, 1.0 / dist)
-    screen = camera.project_to_screen(point, width, height)
 
-    for fid in mesh.all_face_ids():
+    faces = None
+    if cache is not None and screen is not None:
+        grid = cache.face_grid(mesh, batch=batch)
+        if grid is not None:
+            faces = grid.faces_at(screen[0], screen[1])
+    if faces is None:
+        faces = mesh.all_face_ids()
+    for fid in faces:
         if fid in exclude_faces:
             continue
         bbox = cache.face_bbox.get(fid) if cache is not None else None

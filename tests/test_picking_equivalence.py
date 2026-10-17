@@ -1,17 +1,21 @@
-"""WP-VIEW-PERF-01 Slice 1: the faster pickers pick exactly what the pre-PERF ones picked.
+"""WP-VIEW-PERF-01 Slices 1 + 2: the faster pickers pick exactly what the pre-PERF ones picked.
 
 Headless, no pyglet/GL. `_Old*` / `_old_*` below are the pre-PERF implementation, copied
 verbatim from `mirai/viewport/picking.py` / `picking_cache.py` at 65e30ae (mesh-order scan with
 `math.hypot`, an occlusion test for every closer candidate, incident faces through
-`core.Mesh.vertex_edges`, `project_to_screen` per vertex). Both sides use the same unchanged
-`point_occluded`, so the comparison isolates the four Slice-1 changes:
+`core.Mesh.vertex_edges`, `project_to_screen` per vertex, `point_occluded` over every face) and
+`box_select.elements_in_rect` at aa1f10b (one full occlusion test per element). The comparison
+covers the Slice-1 changes:
 
 1. nearest-first occlusion + squared-distance scan (`pick_nearest_vertex`, `pick_nearest_edge`),
 2. `PickCache.refresh` through `screen_projector` (bit-identical screen positions),
 3. the cache's vertex -> incident-faces map (rebuilt per mesh state, not per camera),
-compared on head and body over a grid of cursor positions plus points on and next to the
-projected vertices, in Shaded (occlusion on) and Wireframe (off), from the front and the back,
-and on a seeded sample of `gollum_20k.obj`. Item 4 (lazy bounds) is in `test_render_mesh.py`.
+
+and Slice 2 (`PickCache.face_grid`: the occlusion test visits the faces of the point's screen
+cell; Box Select sets eye and projection up once per box), compared on head and body over a
+grid of cursor positions plus points on and next to the projected vertices, in Shaded
+(occlusion on) and Wireframe (off), from the front and the back, and on a seeded sample of
+`gollum_20k.obj`. Item 4 (lazy bounds) is in `test_render_mesh.py`.
 """
 
 from __future__ import annotations
@@ -28,16 +32,20 @@ import tests._bootstrap  # noqa: F401
 from core import Mesh
 from mirai.mesh_geometry import mesh_center_and_radius
 from mirai.object_space import ObjectSpaceCamera
-from mirai.viewport import picking
+from core import EdgeId, FaceId, SelectionMode, VertexId
+from mirai.viewport import box_select, picking, picking_cache
+from mirai.viewport import vecmath
 from mirai.viewport.camera import OrbitCamera
 from mirai.viewport.picking import (
     DEPTH_TOLERANCE,
     _point_segment_distance_t,
+    _ray_triangle_intersection,
     pick_nearest_edge,
     pick_nearest_vertex,
     point_occluded,
 )
-from mirai.viewport.picking_cache import PickCache
+from mirai.viewport.picking_cache import FaceGrid, PickCache
+from viewport.derived import triangulate_mesh_face
 
 WIDTH, HEIGHT = 800, 600
 
@@ -77,6 +85,31 @@ class _OldPickCache(PickCache):
         self.face_bbox = face_bbox
 
 
+def _old_point_occluded(camera, mesh, cache, point, width, height, exclude_faces, depth_tolerance=DEPTH_TOLERANCE):
+    eye = camera.eye()
+    to_point = vecmath.sub(point, eye)
+    dist = vecmath.length(to_point)
+    if dist <= 1e-9:
+        return False
+    direction = vecmath.scale(to_point, 1.0 / dist)
+    screen = camera.project_to_screen(point, width, height)
+
+    for fid in mesh.all_face_ids():
+        if fid in exclude_faces:
+            continue
+        bbox = cache.face_bbox.get(fid) if cache is not None else None
+        if bbox is not None and screen is not None:
+            minx, miny, maxx, maxy = bbox
+            if screen[0] < minx or screen[0] > maxx or screen[1] < miny or screen[1] > maxy:
+                continue
+        for tri in triangulate_mesh_face(mesh, fid):
+            p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
+            t = _ray_triangle_intersection(eye, direction, p0, p1, p2)
+            if t is not None and t < dist - depth_tolerance:
+                return True
+    return False
+
+
 def _old_incident_faces_of_vertex(mesh, vid):
     faces = set()
     for eid in mesh.vertex_edges(vid):
@@ -87,7 +120,7 @@ def _old_incident_faces_of_vertex(mesh, vid):
 def _old_vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance=DEPTH_TOLERANCE):
     point = mesh.vertex_position(vid)
     exclude = _old_incident_faces_of_vertex(mesh, vid)
-    return point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
+    return _old_point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
 
 
 def _old_edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_tolerance=DEPTH_TOLERANCE):
@@ -99,7 +132,7 @@ def _old_edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_t
         pa[2] + (pb[2] - pa[2]) * t,
     )
     exclude = set(mesh.edge_faces(eid))
-    return point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
+    return _old_point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
 
 
 def _old_pick_nearest_vertex(camera, mesh, sx, sy, width, height, max_pixel_distance=14.0, *,
@@ -150,6 +183,45 @@ def _old_pick_nearest_edge(camera, mesh, sx, sy, width, height, max_pixel_distan
         best_dist = dist
         best_id = eid
     return best_id
+
+
+def _old_elements_in_rect(camera, mesh, mode, rect, width, height, *, cache, occlusion):
+    """`box_select.elements_in_rect` at aa1f10b, on the pre-PERF occlusion helpers."""
+    _inside = box_select._inside
+    cache.refresh(camera, mesh, width, height)
+    screen = cache.vertex_screen
+    inside_vertices = {vid for vid, point in screen.items() if _inside(point, rect)}
+
+    if mode is SelectionMode.VERTEX:
+        found: set = set(inside_vertices)
+        if occlusion:
+            found = {
+                vid for vid in found if not _old_vertex_occluded(camera, mesh, cache, vid, width, height)
+            }
+        return {VertexId(v) for v in found}
+
+    if mode is SelectionMode.EDGE:
+        edges = set()
+        for eid in mesh.all_edge_ids():
+            a, b = mesh.edge_vertices(eid)
+            if a in inside_vertices and b in inside_vertices:
+                if occlusion and _old_edge_point_occluded(camera, mesh, cache, eid, 0.5, width, height):
+                    continue
+                edges.add(EdgeId(eid))
+        return edges
+
+    faces = set()
+    for fid in mesh.all_face_ids():
+        corners = mesh.face_vertices(fid)
+        if not all(v in inside_vertices for v in corners):
+            continue
+        if occlusion:
+            positions = [mesh.vertex_position(v) for v in corners]
+            centroid = tuple(sum(p[i] for p in positions) / len(positions) for i in range(3))
+            if _old_point_occluded(camera, mesh, cache, centroid, width, height, {fid}):
+                continue
+        faces.add(FaceId(fid))
+    return faces
 
 
 # -- fixtures ---------------------------------------------------------------------------
@@ -386,23 +458,180 @@ def test_same_picks_on_a_seeded_gollum_20k_sample():
         assert hits > 0
 
 
-# -- 5. Box Select reaches the same occlusion helpers: same selection --------------------
+# -- 5. Slice 2: Box Select and the face grid -------------------------------------------
+
+
+def _rects(camera, mesh):
+    """A 150 px box on the mesh centre, a 60 px one on a projected vertex, one over the whole
+    view and one that sticks out of the window (the grid covers only the viewport)."""
+    center, _radius = mesh_center_and_radius(mesh)
+    cx, cy = camera.project_to_screen(center, WIDTH, HEIGHT)
+    vid = mesh.all_vertex_ids()[len(mesh.all_vertex_ids()) // 3]
+    vx, vy = camera.project_to_screen(mesh.vertex_position(vid), WIDTH, HEIGHT)
+    return [
+        (cx - 75.0, cy - 75.0, cx + 75.0, cy + 75.0),
+        (vx - 30.0, vy - 30.0, vx + 30.0, vy + 30.0),
+        (0.0, 0.0, float(WIDTH), float(HEIGHT)),
+        (cx - 40.0, -50.0, cx + 60.0, cy),
+    ]
+
+
+def _assert_box_equivalent(mesh, camera, rects, modes=(SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE),
+                           occlusions=(True, False)):
+    hidden = 0
+    for mode in modes:
+        for rect in rects:
+            for occlusion in occlusions:
+                new = box_select.elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
+                                                  cache=PickCache(), occlusion=occlusion)
+                old = _old_elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
+                                            cache=_OldPickCache(), occlusion=occlusion)
+                assert new == old, (mode, rect, occlusion)
+                if occlusion:
+                    unoccluded = _old_elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
+                                                       cache=_OldPickCache(), occlusion=False)
+                    hidden += len(unoccluded) - len(old)
+    return hidden
+
+
+@pytest.mark.parametrize("path", [_HEAD, _BODY], ids=["head", "body"])
+def test_box_select_same_elements_as_the_old_box_in_every_mode(path):
+    """Shaded (occlusion) and Wireframe, vertex / edge / face, front and back camera; the
+    occlusion must hide something (not vacuous)."""
+    if not path.is_file():
+        pytest.skip(f"asset {path.name} not found")
+    mesh = _load(path)
+    hidden = 0
+    for camera in _framed_cameras(mesh):
+        hidden += _assert_box_equivalent(mesh, camera, _rects(camera, mesh))
+    assert hidden > 100
+
+
+@pytest.mark.skipif(not _GOLLUM_20K.is_file(), reason="gollum_20k.obj not found")
+def test_box_select_same_elements_on_a_gollum_20k_sample():
+    """One 60 px box on a seeded vertex of the front view, all three modes, Shaded (the old
+    box costs ~1-2 s per mode here)."""
+    mesh = _load(_GOLLUM_20K)
+    camera = _framed_cameras(mesh)[0]
+    vid = random.Random(5).choice(mesh.all_vertex_ids())
+    vx, vy = camera.project_to_screen(mesh.vertex_position(vid), WIDTH, HEIGHT)
+    rect = (vx - 30.0, vy - 30.0, vx + 30.0, vy + 30.0)
+    for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
+        new = box_select.elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
+                                          cache=PickCache(), occlusion=True)
+        old = _old_elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
+                                    cache=_OldPickCache(), occlusion=True)
+        assert new == old and new, mode
+
+
+@pytest.mark.parametrize("path", [_HEAD, _BODY], ids=["head", "body"])
+def test_point_occluded_through_the_grid_matches_the_full_scan(path):
+    """Every vertex, edge midpoint and face centroid (the points hover, click and Box test),
+    with the grid built, against the old full scan - from the front and the back."""
+    if not path.is_file():
+        pytest.skip(f"asset {path.name} not found")
+    mesh = _load(path)
+    for camera in _framed_cameras(mesh):
+        cache, old_cache = PickCache(), _OldPickCache()
+        cache.refresh(camera, mesh, WIDTH, HEIGHT)
+        old_cache.refresh(camera, mesh, WIDTH, HEIGHT)
+        assert cache.face_grid(mesh) is not None  # a batch request builds it at once
+        hidden = 0
+        for vid in mesh.all_vertex_ids():
+            new = picking.vertex_occluded(camera, mesh, cache, vid, WIDTH, HEIGHT)
+            assert new == _old_vertex_occluded(camera, mesh, old_cache, vid, WIDTH, HEIGHT), vid
+            hidden += new
+        for eid in mesh.all_edge_ids()[::3]:
+            assert picking.edge_point_occluded(camera, mesh, cache, eid, 0.5, WIDTH, HEIGHT) == \
+                _old_edge_point_occluded(camera, mesh, old_cache, eid, 0.5, WIDTH, HEIGHT), eid
+        for fid in mesh.all_face_ids()[::3]:
+            positions = [mesh.vertex_position(v) for v in mesh.face_vertices(fid)]
+            centroid = tuple(sum(p[i] for p in positions) / len(positions) for i in range(3))
+            assert point_occluded(camera, mesh, cache, centroid, WIDTH, HEIGHT, {fid}) == \
+                _old_point_occluded(camera, mesh, old_cache, centroid, WIDTH, HEIGHT, {fid}), fid
+        assert hidden > 20
+
+
+def _occluder_far_from_its_first_cell():
+    """A big occluder quad (z = 2) in front of a hidden vertex `h` (z = 0) that projects far
+    from the quad's bbox corner - into a grid cell other than the one holding that corner -
+    plus a strip of small decoy faces elsewhere, so a cell does not simply hold every face."""
+    mesh = Mesh()
+    corners = [mesh.add_vertex(p) for p in ((-1.5, -1.5, 2.0), (1.5, -1.5, 2.0), (1.5, 1.5, 2.0), (-1.5, 1.5, 2.0))]
+    occluder = mesh.add_face(corners)
+    h = mesh.add_vertex((0.5, 0.6, 0.0))
+    for i in range(12):
+        x = -3.0 + 0.5 * i
+        quad = [mesh.add_vertex(p) for p in ((x, -3.0, 0.0), (x + 0.4, -3.0, 0.0), (x + 0.4, -2.6, 0.0), (x, -2.6, 0.0))]
+        mesh.add_face(quad)
+    return mesh, occluder, h
+
+
+def test_hidden_vertex_behind_a_face_whose_corner_lies_in_another_cell():
+    """A grid that listed a face only in the cell of its bbox corner (or of its first vertex)
+    would let the occlusion test skip the occluder here and pick a hidden vertex."""
+    mesh, occluder, h = _occluder_far_from_its_first_cell()
+    camera = _straight_on_camera()
+    cache = PickCache()
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+    grid = cache.face_grid(mesh)
+    hx, hy = camera.project_to_screen(mesh.vertex_position(h), WIDTH, HEIGHT)
+    minx, miny, _maxx, _maxy = cache.face_bbox[occluder]
+    cell = picking_cache.FACE_GRID_CELL_PX
+    assert (math.floor(hx / cell), math.floor(hy / cell)) != (math.floor(minx / cell), math.floor(miny / cell))
+    faces = grid.faces_at(hx, hy)
+    assert occluder in faces and len(faces) < len(mesh.all_face_ids())
+    assert picking.vertex_occluded(camera, mesh, cache, h, WIDTH, HEIGHT)
+    assert _old_vertex_occluded(camera, mesh, _OldPickCache(), h, WIDTH, HEIGHT)
+    assert pick_nearest_vertex(camera, mesh, hx, hy, WIDTH, HEIGHT, cache=cache, occlusion=True) != h
+    assert box_select.elements_in_rect(camera, mesh, SelectionMode.VERTEX, (hx - 3, hy - 3, hx + 3, hy + 3),
+                                       WIDTH, HEIGHT, cache=cache, occlusion=True) == set()
+    assert box_select.elements_in_rect(camera, mesh, SelectionMode.VERTEX, (hx - 3, hy - 3, hx + 3, hy + 3),
+                                       WIDTH, HEIGHT, cache=cache, occlusion=False) == {h}
+
+
+def test_face_grid_cells_bounds_and_unbounded_faces():
+    grid = FaceGrid({1: (10.0, 10.0, 32.0, 20.0), 2: (-500.0, -500.0, 900.0, 900.0), 3: None,
+                     4: (2000.0, 10.0, 2100.0, 20.0)}, 100, 100, 16.0)
+    assert 1 in grid.faces_at(32.0, 15.0)  # on a cell border: the bbox reaches into that cell
+    assert 1 in grid.faces_at(10.0, 10.0) and 1 not in grid.faces_at(48.0, 15.0)
+    assert all(2 in grid.faces_at(x, y) for x in (0.0, 50.0, 99.9) for y in (0.0, 99.9))  # clamped
+    assert all(3 in grid.faces_at(x, y) for x in (0.0, 70.0) for y in (5.0, 90.0))  # no bbox: always
+    assert not any(4 in grid.faces_at(x, 15.0) for x in (0.0, 50.0, 99.0))  # off the viewport
+    assert grid.faces_at(-0.1, 5.0) is None and grid.faces_at(5.0, 112.0) is None  # outside: scan all
+
+
+def test_face_grid_is_built_lazily_per_camera_state():
+    mesh, _occluder, h = _occluder_far_from_its_first_cell()
+    camera = _straight_on_camera()
+    cache = PickCache()
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+    for _ in range(picking_cache.GRID_AFTER_SCANS):
+        assert cache.face_grid(mesh, batch=False) is None  # single tests scan first
+    grid = cache.face_grid(mesh, batch=False)
+    assert grid is not None and cache.face_grid(mesh) is grid
+    camera.orbit(0.2, 0.0)
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+    assert cache.face_grid(mesh, batch=False) is None  # a new camera state counts again
+    assert cache.face_grid(mesh) is not grid  # a batch builds it at once
+    assert cache.face_grid(Mesh()) is None  # the bboxes are not this mesh's
+    cache.invalidate()
+    assert cache.face_grid(mesh) is not None  # stale signature: still the last refresh's grid
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+    assert cache.face_grid(mesh, batch=False) is None
 
 
 @pytest.mark.skipif(not _BODY.is_file(), reason="body asset not found")
-def test_box_select_same_elements_as_with_the_old_helpers(monkeypatch):
-    from core import SelectionMode
-    from mirai.viewport import box_select
-
+def test_pickers_with_the_grid_built_pick_as_before():
+    """The Slice-1 cursor sweep with the grid built up front (the sweep itself builds it after
+    `GRID_AFTER_SCANS` scans; here every test goes through it)."""
     mesh = _load(_BODY)
-    for camera in _framed_cameras(mesh):
-        rects = [(cx - 75.0, cy - 75.0, cx + 75.0, cy + 75.0) for cx, cy in ((400.0, 300.0), (380.0, 150.0))]
-        for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
-            for rect in rects:
-                new = box_select.elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
-                                                  cache=PickCache(), occlusion=True)
-                with monkeypatch.context() as m:
-                    m.setattr(box_select, "vertex_occluded", _old_vertex_occluded)
-                    old = box_select.elements_in_rect(camera, mesh, mode, rect, WIDTH, HEIGHT,
-                                                      cache=_OldPickCache(), occlusion=True)
-                assert new == old and new, (mode, rect)
+    camera = _framed_cameras(mesh)[0]
+    cache, old_cache = PickCache(), _OldPickCache()
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+    cache.face_grid(mesh)
+    for sx, sy in _cursors(camera, mesh, 53, 40, seed=11):
+        assert pick_nearest_vertex(camera, mesh, sx, sy, WIDTH, HEIGHT, cache=cache, occlusion=True) == \
+            _old_pick_nearest_vertex(camera, mesh, sx, sy, WIDTH, HEIGHT, cache=old_cache, occlusion=True)
+        assert pick_nearest_edge(camera, mesh, sx, sy, WIDTH, HEIGHT, cache=cache, occlusion=True) == \
+            _old_pick_nearest_edge(camera, mesh, sx, sy, WIDTH, HEIGHT, cache=old_cache, occlusion=True)

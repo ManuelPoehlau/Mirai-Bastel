@@ -639,12 +639,181 @@ Knife-Punkt anders verhält als vorher, ist das ein Fehler (bitte melden, mit As
 Manu: Fühlt sich gleich an, nur schneller.Im Vergleich zu Blender auf meinem PC aber noch wesentlich langsamer.
 Dort lässt sich 20k Gollum sehr flüssig zoomen, Komponenten picken oder Topologie Operationen ausführen. 
 
+## Result: fix slice 2, container, before → after (WP-VIEW-PERF-01, 2026-10-17)
+
+Production, behaviour-neutral except one Artist check (hover may appear one frame later). Built: (1) **Box Select
+batched visibility**: `PickCache.face_grid` buckets the cached face screen bboxes into 16 px cells over the
+viewport; the occlusion test (`picking._occluded`, behind `point_occluded` / `vertex_occluded` /
+`edge_point_occluded`) visits only the faces of its point's cell, and `elements_in_rect` runs all its tests through
+one `point_occlusion_test` (eye + projection once). The grid is camera-dependent like the bboxes (the "simple CPU
+spatial grid" of `VIEWPORT_V02` §4.6, updated there), built at most once per camera state: at once for a Box, after
+`GRID_AFTER_SCANS` = 8 full scans for single tests (hover, click, Knife, Paint), so the first pick after a camera
+change does not pay for it. Build cost (container, framed, 1024x768): head 0.6 / body 0.8 / gollum_20k **10.9** /
+87.5k 30 ms, i.e. +19 % on top of the 58.6 / 154 ms rebuild, only when a Box or a 9th test needs it.
+(2) **Hover coalescing** (option 5): `Application.coalesce_hover` (switched on by `src/main.py run`, off for headless
+callers): a plain mouse move or a wheel notch marks the hover stale, the frame tick (`update_viewport` →
+`flush_hover`) picks once at the latest cursor; `key_press`, `pointer_press` and `dispatch_command` flush first, so a
+key or click that reads the hover sees the current one. Click, Box, Paint samples and the Knife hover are not
+coalesced (picked synchronously as before).
+
+**Same results.** `tests/test_picking_equivalence.py` now also keeps `point_occluded` (65e30ae) and
+`elements_in_rect` (aa1f10b) verbatim: Box vertex/edge/face on head and body, front and back camera, four boxes
+(incl. the whole view and one sticking out of the window), Shaded and Wireframe; a seeded `gollum_20k` 60 px box in
+all three modes; every vertex, every third edge midpoint and face centroid of head/body through the grid against the
+full scan; the Slice-1 cursor sweeps with the grid built; a hidden vertex behind an occluder whose bbox corner lies in
+another cell (a corner-only grid would pick it); grid borders, clamping, faces without a bbox. The probe's Box rows
+select the same counts before and after (180 / 860 / 1 900 vertices, 324 / 1 627 / 3 683 edges, 145 / 774 / 1 793
+faces on gollum_20k). `tests/test_application_hover_coalescing.py` drives two apps (coalescing / not) with the same
+input and compares hover, selection and Knife preview after every tick: moves and zoom bursts in all three modes, a
+click and a W arm right after a move (no tick between), Paint and Box, orbit, leaving the window, a Knife session.
+
+**Container numbers, not the reference PC** (`REFERENCE_HARDWARE.md` §4): Intel Xeon @ 2.10 GHz, 4 cores, Python
+3.13.16, llvmpipe (`draw` = CPU raster) - another container than Slice 1's (2.80 GHz), so compare within this table
+only. Same probe, same container, one after the other, nothing else running: before = `fc97db5` (Slice 1) + this
+probe, after = this commit. `python experiments/drag_cost/probe_navigation_gl.py --scenarios zoom first_hover
+hover_move select_click direct topology loop --profile-top 0`, then `--scenarios zoom_burst loop` on body /
+gollum_20k / 87.5k and the 87.5k subset `--assets examples/meshes/gollum.obj --scenarios zoom first_hover hover_move
+select_click loop`. ms p50 (p95); one 60 Hz frame = 16.7 ms.
+
+| Row (`gollum_20k`, 21 875 V) | before | after | what moved |
+|---|---:|---:|---|
+| Box 60 / 150 / 300 px, vertex | 1 470 / 6 132 / 19 006 | **43 / 134 / 312** | 724 / 2 709 / 6 977 tests, each ~0.05 instead of ~2 ms |
+| Box 60 / 150 / 300 px, edge | 2 485 / 11 888 / 35 579 | **93 / 282 / 623** | 1 358 / 5 309 / 13 803 tests |
+| Box 60 / 150 / 300 px, face | 1 300 / 5 868 / 17 490 | **64 / 166 / 367** | 634 / 2 599 / 6 825 tests |
+| Paint, one 30 px step (5 picks) | 32.6 | **14.2** | the 5 tests go through the grid (built after 8 scans) |
+| hover move, frame (event) | 13.6 (6.1) | 14.0 (**3.9**) | occlusion 3.5 → 0.12 ms; the frame is llvmpipe draw + sync |
+| selection click, frame (event) | 15.3 (6.6) | 11.5 (**3.1**) | occlusion 3.6 → 0.05 ms |
+| direct: hover vertex / edge / Knife hover | 5.1 / 14.1 / 7.1 | 4.8 / 10.2 / 3.4 | what is left is the O(V) / O(E) scan |
+| zoom notch, frame | 61.7 (82.9) | 69.6 (107) | unchanged by design: rebuild 44-52 ms + 2.5 tests, no grid for 2-3 tests |
+| first hover after an orbit, frame | 68.9 (124) | 67.3 (98) | unchanged by design: rebuild ~48-51 ms + 1 test |
+| zoom burst, 4 notches then 1 frame | 238 (331) | **68 (97)** | 4 picks + 4 rebuilds → 1 + 1 (coalescing) |
+| event loop, hover (real wiring) | 38 events/s handled, 38 frames/s, longest gap 156 ms | 54/s, 54 frames/s, 121 ms | the pick moved from the events (11.7 ms each) into the tick |
+| event loop, zoom | 12.3 notches/s, 12 frames/s, gap 137 | 9.9 notches/s, **17.4 frames/s**, gap 140 | see note |
+| cache rebuild (`refresh`) | 45 | 38 | unchanged code; noise |
+
+Event-loop note: the probe's injector fires at most once per loop iteration, so it never delivers a burst; a real
+wheel or touchpad queues several events per frame, which is what `zoom_burst` shows. A second after-run of the loop
+gave hover 45 frames/s / gap 68 ms and zoom 23 frames/s / gap 110 ms - one 2 s sample per phase, read as a direction.
+
+Head and body (everything was under a frame before; selected): body Box 300 px vertex / edge / face 34.9 / 66.1 /
+34.4 → 3.7 / 9.8 / 5.5, Paint 1.3 → 0.6, zoom burst 8.7 → 4.3; head Box 300 px 14 / 31 / 14 → 4.0 / 8.1 / 5.7; zoom,
+first hover, hover and click unchanged (< 4 ms).
+
+`gollum.obj` (87 500 V, Reference-mesh stress case): hover move event 26.6 → **11.3** (occlusion 15.5 → 0.15 ms),
+click event 25.5 → **10.8**, zoom burst (4 notches) 832 → **249**, zoom notch 259 → 227 and first hover 230 → 239
+(the 154-190 ms rebuild, unchanged), loop hover 13 → 17 frames/s; loop zoom 3.6-3.9 → 3.9-4.8 frames/s with the
+longest gap 343-367 → 429-557 ms (one 2 s sample each, dominated by the per-frame rebuild; no improvement claimed).
+
+### Topology ops on the current architecture (Slice 2 step 0, measurement only)
+
+`--scenarios topology`: one op as the Artist triggers it (keys + pointer through `Application`), camera framed close
+on the front-most vertex, undone after each sample. Container, after = before within noise (no topology code
+changed), so one set of numbers (after run), ms p50:
+
+| Op (`gollum_20k`) | frame(s) total | op | history | hover re-pick | viewport sync | undo frame | dominant |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Extrude 1 face (T, 2 moves, release) | 1 273 | 0.6 | 388 | 51 | 864 (3 syncs) | 956 | sync, then history |
+| Extrude 20 faces | 1 834 | 22 | 889 | 49 | 917 (3 syncs) | 1 008 | history ≈ sync |
+| Knife commit (1 cut, 3 edges) | 1 188 | 74 | 627 | 99 | 376 | 1 184 | history |
+| Dissolve 1 edge (Backspace) | 781 | 11 | 313 | 85 | 361 | 1 000 | sync ≈ history |
+| Delete 1 face (Delete) | 792 | 13 | 336 | 50 | 381 | 927 | sync ≈ history |
+
+Body (928 V): every op 26-57 ms (history 6-15, sync 15-32 ms); head 10-25 ms. What the columns are: `history` = the
+two whole-mesh `Mesh.export_state()` snapshots of `MeshStateCommand` (before / after, `src/core/operations/
+topology.py`: full snapshots by design, AD-001 ID continuity) plus `history.push`; `viewport sync` = `RenderMesh.
+_sync_topology` (re-triangulating every face 0.36 s in the profile, all normals 0.23 s, all GPU buffers 0.28 s -
+`VIEWPORT_V02` §5.4 "structural rebuild"); `hover re-pick` = the `PickCache` rebuild (~48 ms) plus an O(E) edge scan
+where the residue is in Edge mode; undo = `load_state` + the same full rebuild. The operation itself is 1-74 ms.
+**Picking is not what makes a topology op slow on 21.9k: it is 5-10 % of it.** (`vertex_faces` is 0 here: the
+close-up has no vertex within 14 px of the cursor, so no occlusion test ran.)
+
+### Haltepunkt: what Blender-level fluidity on 20k would need (decision note for Manu + review, 2026-10-17)
+
+Manu's verdict on Slice 1: "Fühlt sich gleich an, nur schneller. Im Vergleich zu Blender auf meinem PC aber noch
+wesentlich langsamer. Dort lässt sich 20k Gollum sehr flüssig zoomen, Komponenten picken oder Topologie-Operationen
+ausführen." After Slice 2 (container, gollum_20k; reference PC ~2x slower for this Python code, `README` above) the
+remaining cost per interaction is one of three things, none of which another local picking fix removes:
+
+| Interaction | container now | what it is | grows with |
+|---|---|---|---|
+| zoom notch, first hover after orbit/pan | ~60-70 ms per frame | `PickCache.refresh`: project all V + all F bboxes, per camera state | V + F, every camera change |
+| hover move, click | ~3-4 ms event | O(V) / O(E) scan + 1 grid test | V, E |
+| Box 300 px | 0.3-0.6 s | one grid test per element | elements in the box |
+| topology op | 0.8-1.8 s + ~1 s per undo | 2 whole-mesh snapshots + full viewport rebuild | V + F, every op |
+
+Options (cost / risk / what they touch; numbers are container estimates from the measurements above and the
+2026-10-17 audit):
+
+1. **Camera-independent world index** (option 9: BVH or uniform grid over triangles in object space, built once per
+   mesh state). Face pick / occlusion become ray queries (~0.06 ms measured for a pure-Python BVH query, audit), so
+   the per-camera O(F) bbox work disappears; vertex/edge "nearest within 14 px" needs a cone/frustum query over node
+   bounds (not built yet, not measured). Cost: build 0.65 s on 21.9k / 3.2 s on 87.5k in pure Python (audit) after
+   **every topology op** and a refit after every W drag - unless kept incremental, it moves the cost from zoom to
+   editing. Risk: medium (two picking paths until the screen-space one goes; equivalence is testable on the CPU,
+   headless). Touches: `VIEWPORT_V02` §1 non-goals ("BVH / Octree / KD-tree") and §4.6 "Do NOT build", §11; also
+   serves the retopology snapping case (audit). No AD-018 change.
+2. **GPU ID-buffer picking** (option 10: render face / edge / vertex IDs into an offscreen buffer, `glReadPixels` a
+   small window under the cursor or the Box rectangle). Per pick one extra draw (the 9800 GTX draws 44k triangles in
+   0.56 ms) plus a read-back stall, independent of V in Python; occlusion comes from the depth buffer, so hover after
+   zoom and Box would be near frame-free. Cost: a second program and an FBO in `GLRenderStore`, ID encoding, a CPU
+   fallback for the headless tests (TraceStore has no GL) - so two pickers. Risk: high - the depth-buffer answer is
+   not `DEPTH_TOLERANCE` (silhouette / coplanar cases change: an Artist check, no bit-equivalence), sub-pixel
+   elements vanish from a Box, and `gl_PrimitiveID` reliability on the reference driver is open (`REFERENCE_HARDWARE`
+   §2; the Flat shading since 2026-10-15 uses it, so Manu's window is evidence). Touches: `VIEWPORT_V02` §1 non-goals
+   ("GPU ID-buffer picking / glReadPixels") and §4.6, **AD-018** (the draw binding / `ResourceStore` contract gets a
+   pass that is not the mesh draw), `REFERENCE_HARDWARE` §4 (GL 3.3 is enough; driver behaviour is the risk).
+3. **Incremental topology sync and history** (new, from the topology rows). The 0.8-1.8 s per op is snapshots +
+   full rebuild, not picking: a delta history entry (only the touched elements, plus ID-counter state) instead of two
+   `export_state` copies, and an `update_topology` that re-triangulates / re-normals / re-uploads only the touched
+   faces (index buffer patch when the count fits, full rebuild otherwise). Expected: ops and undo from ~1 s to tens of
+   ms on 21.9k (estimate, not measured). Risk: high for history (ID continuity, AD-001; the symmetric history contract,
+   AD-SYM-02; a wrong delta corrupts undo), medium for the viewport (equivalence against the full rebuild is testable
+   headless). Touches: `src/core` (`MeshStateCommand` / `HistoryStack` are frozen, `CORE_V1_FREEZE.md`) or a
+   `mirai`-level delta command with the core contract unchanged - to be decided; `VIEWPORT_V02` §5.4 ("structural
+   rebuild is appropriate") and §4.5 (adjacency rebuilt per topology change); AD-018 only if buffers are patched
+   rather than re-created.
+
+Engineering reading (`PROVISIONAL`, not a decision): the three are independent and answer different parts of the
+verdict - zoom/first-hover fluidity needs 1 or 2 (the rebuild is camera-dependent by construction), topology-op
+fluidity needs 3 whatever picking does. 3 has the largest measured cost (about a second per op and per undo, ~15x a zoom frame), 2 the
+largest picking gain at the highest compatibility risk on the reference PC. Evidence that would sharpen the choice:
+the reference-PC run of this slice (below), and whether `gl_PrimitiveID` flat shading looks right on Manu's PC. Which
+of the three, in what order, and which document clauses change is Manu's decision plus a review (AGENTS.md §5); no
+code until then.
+
+### Praktischer Test für Manu (Slice 2, ca. 15 Minuten)
+
+Annahme: Box-Auswahl, Hover, Klick, Paint und Knife wählen **dieselben** Elemente wie bisher - nur schneller; einzige
+gewollte Änderung: der Hover nach einer Mausbewegung oder einer Mausrad-Raste kann **einen Frame später** erscheinen
+(er wird einmal pro Frame statt pro Ereignis berechnet). Weicht irgendwo eine Auswahl ab, ist das ein Fehler (bitte mit
+Asset und Modus melden).
+
+1. `git pull`
+2. Messung (öffnet kein Fenster, ~10 Minuten): `python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum_20k.obj --scenarios zoom zoom_burst first_hover hover_move select_click direct topology loop --profile-top 0` -
+   **bitte die ganze Ausgabe** (ab `Navigation and picking cost ...`) in den Chat kopieren.
+3. Kurzvariante 87.5k: `python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum.obj --scenarios zoom_burst first_hover hover_move select_click loop --profile-top 0` - Ausgabe ebenfalls kopieren.
+4. Im Fenster: `python src/main.py examples/meshes/gollum_20k.obj`
+   a. **Box** (LMB-Ziehen im Leeren) in Vertex-, Edge- und Face-Modus (`1`/`2`/`3`), klein und groß, auch über die
+      Silhouette - dieselbe Auswahl wie gewohnt, Rückseiten in Shaded nicht mit ausgewählt; sollte jetzt in
+      Sekundenbruchteilen statt Sekunden kommen.
+   b. **Hover nach Zoom**: Maus ruhig auf dem Gesicht lassen, schnell mehrere Rasten zoomen - der Hover springt danach
+      auf das Element unter dem Cursor (ggf. einen Frame später); fühlt sich das Zoomen weniger zäh an?
+   c. **Paint** (LMB-Ziehen auf dem Mesh) übers Gesicht - keine Lücken, gleiche Auswahl wie gewohnt.
+   d. **Knife** (`C` ohne Auswahl): Linie über Kanten und eine Fläche - die Punkte rasten an denselben Stellen ein.
+   e. Einmal Extrude (`T`), Delete und Undo auf gollum_20k: das ist weiterhin langsam (~1 s) - die Messung oben zeigt,
+      warum (Snapshots + kompletter Viewport-Neuaufbau, nicht das Picking).
+5. Verdikt in einem Satz („gleich, nur schneller“ - oder was anders ist), und zur Architekturfrage oben
+   („Haltepunkt“): welche der drei Richtungen (Welt-Index / GPU-Picking / inkrementelle Topologie) dir am wichtigsten
+   ist - Zoomen, Picken oder Topologie-Operationen.
+
 ## Next step
 
 The reference-PC numbers are in `REFERENCE_HARDWARE.md` §2 and above; the 8 ms bar holds and S2c ran (verdict: AD-020
 "S2c verdict"). A larger radius (S2d: up to 200 %) can be measured with `--scenarios soft_w --sizes 100 200`.
 
 Navigation (WP-VIEW-PERF-01): reference-PC run 2026-10-11 (on `gollum_20k.obj`, see the audit above) and the audit at HEAD
-2026-10-17 are in; fix slice 1 is built (container before/after above). Next: Manu's reference-PC run and window check
-("Praktischer Test ... Slice 1"), then Slice 2 (Box batched visibility, coalescing). Manu's target size for editing
-decides only options 5 and beyond.
+2026-10-17 are in; fix slices 1 and 2 are built (container before/after above; Manu's Slice-1 verdict: same, faster,
+still far slower than Blender). Next: Manu's reference-PC run and window check ("Praktischer Test ... Slice 2"), then
+the architecture decision in "Haltepunkt: what Blender-level fluidity on 20k would need" (world index / GPU picking /
+incremental topology sync) - Manu + review, no code before it. Left inside the current architecture: option 8 (dead
+`highlight_flags`) and batched `store.update` for large Soft drags.

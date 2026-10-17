@@ -488,6 +488,9 @@ def draw_selection_box(box: tuple[float, float, float, float]) -> None:
 def run(window, app: Application) -> None:
     """Frame tick + pyglet event loop; returns when the window closes."""
     status_seen = app.status_serial
+    # WP-VIEW-PERF-01 Slice 2: mouse moves and wheel notches between two ticks pick the hover
+    # once, in `_tick` (`Application.flush_hover`) - not once per event.
+    app.coalesce_hover = True
 
     def _tick(dt: float) -> None:
         nonlocal status_seen

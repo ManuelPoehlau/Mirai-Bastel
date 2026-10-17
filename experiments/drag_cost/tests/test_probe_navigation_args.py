@@ -119,6 +119,18 @@ def test_direct_report_line():
     assert line.isascii()
 
 
+def test_topology_report_lines_split_the_event():
+    s = probe.TopoSample(event=100.0, history=60.0, notify=1.0, pick=20.0, cache=15.0, vertex_faces=3.0,
+                         sync=40.0, draw=5.0, first_hover=7.0, undo=90.0)
+    assert s.op == pytest.approx(19.0) and s.frame == pytest.approx(145.0)
+    lines = probe.topo_lines(probe.TopoResult("delete 1 face", "gollum_20k", (s, s), note="x"))
+    text = "\n".join(lines)
+    assert "delete 1 face" in lines[0] and "n=  2" in lines[0] and "(x)" in lines[0]
+    assert "op    19.00" in text and "history    60.00" in text and "vertex_faces    3.00" in text
+    assert "undo frame    90.00" in text and all(line.isascii() for line in lines)
+    assert "topology" in probe.parse_args(["--scenarios", "topology"]).scenarios
+
+
 def test_loop_report_line():
     r = probe.LoopResult("gollum", "zoom", 2.0, 4, 30, 30, 500.0, 3.0, 1200.0)
     (line,) = probe.loop_lines(r)

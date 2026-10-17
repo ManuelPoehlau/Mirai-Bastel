@@ -231,6 +231,15 @@ reads the bounds per frame today, so a vertex drag no longer pays O(V) per move 
 
 **Future acceleration:** A simple CPU spatial grid may reduce candidate counts if picking becomes a measured bottleneck on larger meshes. **Not mandatory for v0.2; defer unless benchmarks show need.**
 
+**Implemented (WP-VIEW-PERF-01 Slice 2, 2026-10-17): a screen grid for the occlusion test.** Benchmarks showed
+the need (Box Select 1-38 s on 21.9k V, one full O(F) occlusion test per element). `PickCache.face_grid` buckets
+the cached face screen bboxes into 16 px cells over the viewport; the occlusion test visits only the faces of its
+point's cell (a superset of the faces whose bbox contains the point, so the answer is unchanged). It is
+camera-dependent like the bboxes - built lazily at most once per camera state (at once for a Box, after a few full
+scans for single hover/click tests) and dropped on the next camera change. The vertex / edge / face scans stay
+linear; no world-space index (BVH, octree) and no GPU picking - those remain an architecture decision
+(`experiments/drag_cost/README.md`, "Haltepunkt: Blender-level fluidity on 20k").
+
 **Do NOT build:** GPU ID-buffer, `glReadPixels`, BVH, Octree, KD-tree for v0.2.
 
 ### 4.7 Overlay Layer
@@ -513,7 +522,7 @@ Before implementation, clarify:
 - Persistent GPU geometry management
 - Dirty-state tracking and update dispatch
 - Local normal computation and patching
-- CPU picking (linear scan)
+- CPU picking (linear scan; occlusion through a per-camera screen grid, §4.6)
 - Overlay rendering (hover/selection)
 - Camera and view/projection management
 - Performance measurement and benchmarking

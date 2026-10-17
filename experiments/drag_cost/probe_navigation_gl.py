@@ -4,6 +4,7 @@ Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window
     python experiments/drag_cost/probe_navigation_gl.py
     python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum.obj
     python experiments/drag_cost/probe_navigation_gl.py --scenarios direct
+    python experiments/drag_cost/probe_navigation_gl.py --scenarios topology
     python experiments/drag_cost/probe_navigation_gl.py --scenarios orbit zoom first_hover
     python experiments/drag_cost/probe_navigation_gl.py --list
 
@@ -40,10 +41,26 @@ zoom and first hover runs on the last asset (`--profile-top 0` switches it off).
 Scenario `direct` (WP-VIEW-PERF-01 Slice 1, step 0): the rows the 2026-10-17 audit measured in a
 scratch probe, on the same rig, with the picking functions called directly (no frame): hover in
 vertex / edge / face mode and the Knife hover (`knife_pick`) along the hover line, one Paint step
-(30 px = 5 picks, `Application._paint_at`), Box Select 60 / 150 / 300 px in vertex and face mode
-(`elements_in_rect`), the retopology snap query (`pick_face` + `face_hit_position`) with a valid
+(30 px = 5 picks, `Application._paint_at`), Box Select 60 / 150 / 300 px in vertex, edge and face
+mode (`elements_in_rect`; edge rows since Slice 2), the retopology snap query (`pick_face` + `face_hit_position`) with a valid
 cache and after an orbit, a pick-cache rebuild and one `recompute_bounds` over all vertices.
 The camera is framed again first (`frame_scene`), so the rows are comparable between runs.
+
+Scenario `zoom_burst` (Slice 2): 4 wheel notches, then one frame - with hover coalescing on (as in
+the window) the hover is picked once per frame instead of once per notch.
+
+Scenario `topology` (Slice 2, step 0): one representative topology op per sample, triggered
+through the `Application` keys / pointer as the Artist does - Extrude (T + 2 moves + release) of 1
+and 20 faces, a Knife cut (2 clicks across 3 edges, Enter measured), Dissolve of 1 edge
+(Backspace), Delete of 1 face - with the camera framed close on the front-most vertex, then undone
+(Ctrl+Z, also reported). Split: `op` (the tool / mesh operation), `history` (`export_state` /
+`load_state` snapshots + `history.push`), `notify` (`viewport.on_topology_changed`), `hover pick`
+(the re-pick at the cursor, incl. the pick-cache rebuild and the `vertex_faces` map), then the
+frame's `sync` (the viewport's topology rebuild) and the next hover frame.
+
+Occlusion tests (`occl`) count `picking._occluded` calls where it exists (Slice 2: one per test,
+pickers, Knife and Box alike), else the older helpers. The `loop` scenario switches
+`Application.coalesce_hover` on, as `src/main.py run` does (Slice 2).
 
 Rows have a time budget (`--row-seconds`): on a mesh where one event costs a second, a row stops
 after the budget with at least `--min-steps` samples; `n` says how many were taken.
@@ -82,8 +99,9 @@ GOLLUM = "examples/meshes/gollum.obj"
 #: The 21 875 V mesh of every reference-PC number so far (README "Audit at HEAD"): the default.
 GOLLUM_20K = "examples/meshes/gollum_20k.obj"
 DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh", GOLLUM_20K)
-NAV_SCENARIOS = ("orbit", "pan", "zoom", "first_hover", "hover_move", "select_click", "orbit_wire")
-SCENARIO_NAMES = NAV_SCENARIOS + ("direct", "loop", "plain_w", "soft_w")
+NAV_SCENARIOS = ("orbit", "pan", "zoom", "zoom_burst", "first_hover", "hover_move", "select_click",
+                 "orbit_wire")
+SCENARIO_NAMES = NAV_SCENARIOS + ("direct", "topology", "loop", "plain_w", "soft_w")
 DEFAULT_SCENARIOS = SCENARIO_NAMES
 #: Handoff E2: plain W selection sizes (vertices) and soft W variants (radius %, metric).
 PLAIN_SIZES = (36, 112, 500)
@@ -234,6 +252,42 @@ class DirectResult:
 
 
 @dataclass(frozen=True)
+class TopoSample:
+    """`topology`: ms of one topology op as the Artist triggers it, split by phase."""
+
+    event: float  # the triggering input event(s), e.g. T press + motion + T release
+    history: float  # `mesh.export_state` / `load_state` + `history.push` inside `event`
+    notify: float  # `viewport.on_topology_changed` inside `event`
+    pick: float  # the hover re-pick inside `event` (`pick_component`, incl. its cache work)
+    cache: float  # of `pick`: `PickCache.refresh` (the rebuild after `invalidate()`)
+    vertex_faces: float  # of `pick`: the `PickCache.vertex_faces` map rebuild
+    sync: float  # `Viewport.sync()` of the frame(s) after the event(s): the topology rebuild
+    draw: float
+    first_hover: float  # the next plain mouse move + its frame
+    undo: float  # Ctrl+Z + its frame (restores the asset for the next sample)
+
+    @property
+    def op(self) -> float:
+        """The rest of the event: the tool / mesh operation itself (plus selection upkeep)."""
+        return self.event - self.history - self.notify - self.pick
+
+    @property
+    def frame(self) -> float:
+        return self.event + self.sync + self.draw
+
+
+@dataclass(frozen=True)
+class TopoResult:
+    name: str
+    asset: str
+    samples: tuple[TopoSample, ...]
+    note: str = ""
+
+    def p50(self, name: str) -> float:
+        return drag.Stats.of([float(getattr(s, name)) for s in self.samples]).p50
+
+
+@dataclass(frozen=True)
 class LoopResult:
     """`loop`: one phase of the real event loop with injected events (H3)."""
 
@@ -263,6 +317,7 @@ class AssetReport:
     info: AssetInfo
     nav: list[NavResult] = field(default_factory=list)
     direct: list[DirectResult] = field(default_factory=list)
+    topology: list[TopoResult] = field(default_factory=list)
     loops: list[LoopResult] = field(default_factory=list)
     drags: list[drag.ScenarioResult] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
@@ -337,11 +392,15 @@ class Instruments:
         # `Application._pick` looks `pick_component` up in its module at call time; the
         # pickers look the occlusion helpers up in theirs.
         application.pick_component = cls.pick.wrap(application.pick_component)
-        picking.vertex_occluded = cls.occl.wrap(picking.vertex_occluded)
-        picking.edge_point_occluded = cls.occl.wrap(picking.edge_point_occluded)
-        # Box Select bound its own names at import (before the lines above): wrap those too.
-        for name in ("vertex_occluded", "edge_point_occluded", "point_occluded"):
-            setattr(box_select, name, cls.occl.wrap(getattr(box_select, name)))
+        if hasattr(picking, "_occluded"):
+            # Slice 2: every occlusion test (pickers, Knife, Box) is one `_occluded` call.
+            picking._occluded = cls.occl.wrap(picking._occluded)
+        else:
+            picking.vertex_occluded = cls.occl.wrap(picking.vertex_occluded)
+            picking.edge_point_occluded = cls.occl.wrap(picking.edge_point_occluded)
+            # Box Select bound its own names at import (before the lines above): wrap those too.
+            for name in ("vertex_occluded", "edge_point_occluded", "point_occluded"):
+                setattr(box_select, name, cls.occl.wrap(getattr(box_select, name)))
 
         commit = BackedBufferObject.commit
 
@@ -590,6 +649,46 @@ def scenario_zoom(rig: NavRig, cfg) -> NavResult:
     return NavResult("zoom", rig.info.label, tuple(samples))
 
 
+#: `zoom_burst`: wheel notches per frame (a fast scroll delivers several between two frames).
+BURST_NOTCHES = 4
+
+
+def scenario_zoom_burst(rig: NavRig, cfg) -> NavResult:
+    """`BURST_NOTCHES` wheel notches (in, in, out, out) and then one frame, with
+    `Application.coalesce_hover` on as in the window (`src/main.py run`; Slice 2): the hover
+    pick runs once in the frame's tick (`flush_hover`, counted in `event`) instead of once per
+    notch. Code without the flag picks per notch."""
+    app = rig.app
+    keys = _keys()
+    x, y = cursor_on_mesh(rig)
+    app.pointer_motion(x, y)
+    rig.settle()
+    coalesce_before = getattr(app, "coalesce_hover", None)
+    if coalesce_before is not None:
+        app.coalesce_hover = True
+    half = BURST_NOTCHES // 2
+    wheels = [keys["wheel_up"]] * half + [keys["wheel_down"]] * (BURST_NOTCHES - half)
+
+    def burst() -> None:
+        for wheel in wheels:
+            app.pointer_scroll(wheel)
+        flush = getattr(app, "flush_hover", None)
+        if flush is not None:
+            flush()
+
+    samples: list[NavSample] = []
+    budget = _Budget(cfg.steps, cfg.min_steps, cfg.row_seconds)
+    try:
+        while budget.more(len(samples)):
+            samples.append(rig.frame(burst))
+    finally:
+        if coalesce_before is not None:
+            app.coalesce_hover = coalesce_before
+    rig.settle()
+    return NavResult("zoom_burst", rig.info.label, tuple(samples),
+                     note=f"{BURST_NOTCHES} notches per frame")
+
+
 def _orbit_once(rig: NavRig, direction: float) -> None:
     """A short orbit gesture (unmeasured): press, one step past the click threshold, release."""
     app = rig.app
@@ -676,6 +775,7 @@ NAV_RUNNERS: dict[str, Callable[[NavRig, argparse.Namespace], NavResult]] = {
     "orbit": scenario_orbit,
     "pan": scenario_pan,
     "zoom": scenario_zoom,
+    "zoom_burst": scenario_zoom_burst,
     "first_hover": scenario_first_hover,
     "hover_move": scenario_hover_move,
     "select_click": scenario_select_click,
@@ -754,7 +854,8 @@ def run_direct(rig: NavRig, cfg) -> list[DirectResult]:
     rig.viewport.on_selection_changed()
     rig.settle()
 
-    for label, mode in (("vertex", SelectionMode.VERTEX), ("face", SelectionMode.FACE)):
+    for label, mode in (("vertex", SelectionMode.VERTEX), ("edge", SelectionMode.EDGE),
+                        ("face", SelectionMode.FACE)):
         for size in BOX_SIZES:
             rect = (cx - size / 2.0, cy - size / 2.0, cx + size / 2.0, cy + size / 2.0)
             found: list[int] = []
@@ -764,8 +865,9 @@ def run_direct(rig: NavRig, cfg) -> list[DirectResult]:
                                                   cache=cache, occlusion=occlusion)))
 
             row = _direct_row(rig, cfg, f"box {size} px {label}", box, min_steps=1)
+            noun = "vertices" if label == "vertex" else label + "s"
             out.append(DirectResult(row.name, row.asset, row.samples_ms, row.occl_tests,
-                                    f"{found[0]} {'vertices' if label == 'vertex' else 'faces'} selected"))
+                                    f"{found[0]} {noun} selected"))
 
     def snap(i: int) -> None:
         x, y = line[i % len(line)]
@@ -795,6 +897,209 @@ def run_direct(rig: NavRig, cfg) -> list[DirectResult]:
     return out
 
 
+# -- topology (Slice 2 step 0): one topology op per sample, split by phase ----
+
+
+class _TopoTimers:
+    """Instance-level wrappers for one `topology` row (removed again by `remove()`):
+    snapshot + history push, the viewport's topology notification, the `vertex_faces` map."""
+
+    def __init__(self, rig: NavRig) -> None:
+        app = rig.app
+        self.history, self.notify, self.vertex_faces = _Timer(), _Timer(), _Timer()
+        self._targets = []
+        mesh = app.scene.mesh
+        for obj, name, timer in (
+            (mesh, "export_state", self.history),
+            (mesh, "load_state", self.history),
+            (app.history, "push", self.history),
+            (app.viewport, "on_topology_changed", self.notify),
+            (app._pick_cache, "vertex_faces", self.vertex_faces),
+        ):
+            setattr(obj, name, timer.wrap(getattr(obj, name)))
+            self._targets.append((obj, name))
+
+    def reset(self) -> None:
+        for timer in (self.history, self.notify, self.vertex_faces):
+            timer.reset()
+
+    def remove(self) -> None:
+        for obj, name in self._targets:
+            delattr(obj, name)
+
+
+def _face_patch(mesh, seed, count: int) -> list[int]:
+    """`count` faces around `seed`: breadth-first over shared edges from one incident face."""
+    start = next(f for e in mesh.vertex_edges(seed) for f in mesh.edge_faces(e))
+    patch, queue, seen = [start], [start], {start}
+    while queue and len(patch) < count:
+        fid = queue.pop(0)
+        for eid in mesh.face_edges(fid):
+            for other in mesh.edge_faces(eid):
+                if other not in seen and len(patch) < count:
+                    seen.add(other)
+                    patch.append(other)
+                    queue.append(other)
+    return patch
+
+
+def _screen_centroid(app, mesh, fid) -> tuple[float, float]:
+    points = [app.camera.project_to_screen(mesh.vertex_position(v), WIDTH, HEIGHT)
+              for v in mesh.face_vertices(fid)]
+    return (sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points))
+
+
+def run_topology(rig: NavRig, cfg) -> list[TopoResult]:
+    """One representative topology op per sample, triggered through the `Application` key /
+    pointer entry points like the Artist does, then undone (Ctrl+Z) so every sample starts
+    from the asset. The camera is framed on the front-most vertex first (a close-up, as for
+    topology work), so a face is tens of pixels wide."""
+    from core import EdgeId, FaceId
+    from mirai.interaction.input import Input
+
+    app, mesh = rig.app, rig.app.scene.mesh
+    key = {name: Input("key", name) for name in ("1", "2", "3", "t", "c", "enter", "delete",
+                                                  "backspace", "ESCAPE")}
+    ctrl_z = Input("key", "z", frozenset({"ctrl"}))
+    lmb = Input("mouse", "LEFT", frozenset())
+    seed, ring = drag.seed_with_ring(mesh)
+    center = mesh.vertex_position(seed)
+    radius = max(
+        math.dist(center, mesh.vertex_position(v)) for v in ring
+    ) * 6.0
+    app.camera.frame_on_bounds(center, radius)
+    app._camera_changed()
+    app.selection.clear()
+    rig.viewport.on_selection_changed()
+    rig.settle()
+    if not hasattr(app, "knife_clock"):
+        raise RuntimeError("Application has no knife_clock")
+    clock = iter(range(0, 10**9, 10))
+    app.knife_clock = lambda: float(next(clock))  # no two knife clicks are a double-click
+    timers = _TopoTimers(rig)
+    inst = rig.instruments
+    v_before = len(mesh.all_vertex_ids())
+    patch20 = _face_patch(mesh, seed, 20)
+    edge = next(iter(mesh.vertex_edges(seed)))
+    cx, cy = _screen_centroid(app, mesh, patch20[0])
+    out: list[TopoResult] = []
+
+    def hover_at(x: float, y: float) -> None:
+        app.pointer_motion(x, y)
+        rig.settle()
+
+    def sample(prepare: Callable[[], None], steps: list[Callable[[], object]]) -> TopoSample:
+        prepare()
+        rig.settle()
+        event = history = notify = pick = cache = vfaces = sync = draw = 0.0
+        for step in steps:
+            inst.reset()
+            timers.reset()
+            s = rig.frame(step)
+            event += s.event
+            sync += s.sync
+            draw += s.draw
+            pick += s.pick
+            cache += s.cache
+            history += timers.history.ms
+            notify += timers.notify.ms
+            vfaces += timers.vertex_faces.ms
+        first = rig.frame(lambda: app.pointer_motion(cx + 1.0, cy, 1.0, 0.0)).frame
+        undo = rig.frame(lambda: app.key_press(ctrl_z)).frame
+        app.selection.clear()
+        rig.viewport.on_selection_changed()
+        rig.settle()
+        if len(mesh.all_vertex_ids()) != v_before:
+            raise RuntimeError(f"topology row did not undo cleanly ({app.status_message})")
+        return TopoSample(event, history, notify, pick, cache, vfaces, sync, draw, first, undo)
+
+    def row(name: str, prepare, steps, note: str = "") -> None:
+        samples: list[TopoSample] = []
+        budget = _Budget(cfg.steps, min(3, cfg.steps), cfg.row_seconds)
+        while budget.more(len(samples)):
+            samples.append(sample(prepare, steps()))
+        out.append(TopoResult(name, rig.info.label, tuple(samples), note))
+
+    def extrude(faces: list[int]):
+        def prepare() -> None:
+            app.key_press(key["3"])
+            app.selection.set({FaceId(f) for f in faces})
+            rig.viewport.on_selection_changed()
+            hover_at(cx, cy)
+
+        def steps():
+            def arm_and_begin() -> None:
+                app.key_press(key["t"])
+                app.pointer_motion(cx, cy + 8.0, 0.0, 8.0)  # past EXTRUDE_BEGIN_PX: begin()
+
+            return [arm_and_begin,
+                    lambda: app.pointer_motion(cx, cy + 16.0, 0.0, 8.0),
+                    lambda: app.key_release(key["t"])]
+        return prepare, steps
+
+    for count in (1, 20):
+        prepare, steps = extrude(patch20[:count])
+        row(f"extrude {count} face{'s' if count > 1 else ''}", prepare, steps,
+            "T + 2 moves + release; sync = 3 frames")
+
+    # Knife: a cut across 3 edges - two clicks on one screen line, the second one moved out
+    # until the line crosses 3 edges (setup, unmeasured), then Enter (measured).
+    def knife_line() -> tuple[tuple[float, float], tuple[float, float], int]:
+        for k in range(1, 40):
+            end = (cx + 6.0 * k, cy + 2.0 * k)
+            app.key_press(key["1"])
+            hover_at(cx, cy)
+            app.key_press(key["c"])
+            for x, y in ((cx, cy), end):
+                app.pointer_motion(x, y)
+                app.pointer_press(lmb, x, y)
+                app.pointer_release("LEFT", x, y)
+            plan = app._knife.last_plan if app._knife is not None else None
+            crossings = len(plan.crossings) if plan is not None and plan.crossings else 0
+            app.key_press(key["ESCAPE"])
+            rig.settle()
+            if crossings >= 3:
+                return (cx, cy), end, crossings
+        raise RuntimeError("no knife line across 3 edges found")
+
+    start, end, crossings = knife_line()
+
+    def knife_prepare() -> None:
+        app.key_press(key["1"])
+        hover_at(*start)
+        app.key_press(key["c"])
+        for x, y in (start, end):
+            app.pointer_motion(x, y)
+            app.pointer_press(lmb, x, y)
+            app.pointer_release("LEFT", x, y)
+
+    row("knife commit, 1 cut", knife_prepare, lambda: [lambda: app.key_press(key["enter"])],
+        f"2 clicks, line crosses {crossings} edges; Enter measured")
+
+    def dissolve_prepare() -> None:
+        app.key_press(key["2"])
+        app.selection.set({EdgeId(edge)})
+        rig.viewport.on_selection_changed()
+        hover_at(cx, cy)
+
+    row("dissolve 1 edge", dissolve_prepare, lambda: [lambda: app.key_press(key["backspace"])])
+
+    def delete_prepare() -> None:
+        app.key_press(key["3"])
+        app.selection.set({FaceId(patch20[0])})
+        rig.viewport.on_selection_changed()
+        hover_at(cx, cy)
+
+    row("delete 1 face", delete_prepare, lambda: [lambda: app.key_press(key["delete"])])
+
+    timers.remove()
+    app.key_press(key["1"])
+    app.frame_scene()
+    app._camera_changed()
+    rig.settle()
+    return out
+
+
 # -- loop (H3): the real wiring in a running event loop ---------------------
 
 
@@ -811,6 +1116,10 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
 
     window, app = rig.drag_rig.window, rig.app
     src_main.install_handlers(window, app)
+    # As `src_main.run` (Slice 2): hover picks coalesced into the tick. Older code has no flag.
+    coalesce_before = getattr(app, "coalesce_hover", None)
+    if coalesce_before is not None:
+        app.coalesce_hover = True
     cx, cy = cursor_on_mesh(rig)
     results: list[LoopResult] = []
 
@@ -906,6 +1215,8 @@ def scenario_loop(rig: NavRig, src_main) -> list[LoopResult]:
             draw_ms_mean=state["draw_ms"] / max(state["draws"], 1),
             max_gap_ms=state["max_gap"],
         ))
+    if coalesce_before is not None:
+        app.coalesce_hover = coalesce_before
     return results
 
 
@@ -1027,6 +1338,9 @@ def run_probe(args, src_main) -> tuple[list[AssetReport], tuple[str, str]]:
             if "direct" in args.scenarios:
                 progress(f"{label}: direct")
                 report.direct.extend(run_direct(rig, args))
+            if "topology" in args.scenarios:
+                progress(f"{label}: topology")
+                report.topology.extend(run_topology(rig, args))
             if "plain_w" in args.scenarios or "soft_w" in args.scenarios:
                 progress(f"{label}: plain_w / soft_w")
             drags, skipped = run_drags(rig, args, args.scenarios)
@@ -1102,6 +1416,19 @@ def direct_lines(r: DirectResult) -> list[str]:
     ]
 
 
+def topo_lines(r: TopoResult) -> list[str]:
+    frame = drag.Stats.of([s.frame for s in r.samples])
+    note = f"  ({r.note})" if r.note else ""
+    return [
+        f"  topology {r.name:22s} n={len(r.samples):3d}  frame p50 {frame.p50:9.2f}  max {frame.max:9.2f}{note}",
+        f"    event {r.p50('event'):8.2f} = op {r.p50('op'):8.2f} + history {r.p50('history'):8.2f}"
+        f" + notify {r.p50('notify'):6.2f} + hover pick {r.p50('pick'):8.2f}"
+        f" [cache {r.p50('cache'):7.2f}, vertex_faces {r.p50('vertex_faces'):7.2f}]",
+        f"    sync {r.p50('sync'):8.2f}  draw {r.p50('draw'):7.2f}   next hover frame {r.p50('first_hover'):8.2f}"
+        f"   undo frame {r.p50('undo'):8.2f}",
+    ]
+
+
 def loop_lines(r: LoopResult) -> list[str]:
     return [
         f"  loop {r.phase:5s} {r.seconds:4.1f} s: {r.events:4d} events ({r.events / r.seconds:5.1f}/s, "
@@ -1131,6 +1458,8 @@ def report_lines(reports: list[AssetReport], gl_info: tuple[str, str], args) -> 
             lines.extend(nav_lines(result))
         for result in report.direct:
             lines.extend(direct_lines(result))
+        for result in report.topology:
+            lines.extend(topo_lines(result))
         for result in report.drags:
             lines.extend(drag_lines(result))
         for note in report.skipped:

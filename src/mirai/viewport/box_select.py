@@ -6,7 +6,11 @@ Pure screen-space queries over `PickCache`; `Application` owns the gesture and t
 - Box: an element is inside when all its corners project into the rectangle (Playground
   `selector.pick_faces_in_rect`: "alle Vertices der Face müssen im Rechteck sein"), extended to
   vertices and edges. With `occlusion` (faces shown) hidden elements are skipped, with the same
-  occlusion test the click picking uses (WP-06 B8) - a box selects what you see.
+  occlusion test the click picking uses (WP-06 B8) - a box selects what you see. WP-VIEW-PERF-01
+  Slice 2: one `point_occlusion_test` per box (eye and projection once), and each test visits
+  only the faces of its point's `PickCache.face_grid` cell - the same elements as one full
+  `vertex_occluded` / `edge_point_occluded` / `point_occluded` per element
+  (`tests/test_picking_equivalence.py`).
 - Paint: `stroke_samples` spaces the pick points along one pointer step, so a fast stroke does not
   skip the thin targets between two motion events (the open performance point in the Selection
   decision: one pick per sample, cached projections).
@@ -18,7 +22,7 @@ import math
 
 from core import EdgeId, FaceId, Mesh, SelectionMode, VertexId
 
-from .picking import edge_point_occluded, point_occluded, vertex_occluded
+from .picking import _incident_faces_of_vertex, point_occlusion_test
 from .picking_cache import PickCache
 
 #: Pixels between two paint pick samples (`PROVISIONAL`, engineering default).
@@ -53,12 +57,15 @@ def elements_in_rect(
     cache.refresh(camera, mesh, width, height)
     screen = cache.vertex_screen
     inside_vertices = {vid for vid, point in screen.items() if _inside(point, rect)}
+    occluded = point_occlusion_test(camera, mesh, cache, width, height) if occlusion else None
 
     if mode is SelectionMode.VERTEX:
         found: set = set(inside_vertices)
-        if occlusion:
+        if occluded is not None:
+            position = mesh.vertex_position
             found = {
-                vid for vid in found if not vertex_occluded(camera, mesh, cache, vid, width, height)
+                vid for vid in found
+                if not occluded(position(vid), _incident_faces_of_vertex(mesh, vid, cache), screen[vid])
             }
         return {VertexId(v) for v in found}
 
@@ -67,8 +74,16 @@ def elements_in_rect(
         for eid in mesh.all_edge_ids():
             a, b = mesh.edge_vertices(eid)
             if a in inside_vertices and b in inside_vertices:
-                if occlusion and edge_point_occluded(camera, mesh, cache, eid, 0.5, width, height):
-                    continue
+                if occluded is not None:
+                    # The point `edge_point_occluded(..., t=0.5)` tests, computed the same way.
+                    pa, pb = mesh.vertex_position(a), mesh.vertex_position(b)
+                    midpoint = (
+                        pa[0] + (pb[0] - pa[0]) * 0.5,
+                        pa[1] + (pb[1] - pa[1]) * 0.5,
+                        pa[2] + (pb[2] - pa[2]) * 0.5,
+                    )
+                    if occluded(midpoint, set(mesh.edge_faces(eid))):
+                        continue
                 edges.add(EdgeId(eid))
         return edges
 
@@ -77,10 +92,10 @@ def elements_in_rect(
         corners = mesh.face_vertices(fid)
         if not all(v in inside_vertices for v in corners):
             continue
-        if occlusion:
+        if occluded is not None:
             positions = [mesh.vertex_position(v) for v in corners]
             centroid = tuple(sum(p[i] for p in positions) / len(positions) for i in range(3))
-            if point_occluded(camera, mesh, cache, centroid, width, height, {fid}):
+            if occluded(centroid, {fid}):
                 continue
         faces.add(FaceId(fid))
     return faces

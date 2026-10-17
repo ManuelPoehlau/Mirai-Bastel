@@ -554,6 +554,14 @@ class Application:
         # WP-06 B2b (E20): letzte bekannte Cursor-Position (None = unbekannt
         # bzw. Cursor außerhalb des Fensters) - für das Hover-Re-Pick nach Zoom.
         self._cursor: tuple[float, float] | None = None
+        # WP-VIEW-PERF-01 Slice 2 (option 5, coalescing): with `coalesce_hover` a plain mouse
+        # move or a zoom notch only marks the hover stale; the frame tick (`update_viewport`)
+        # picks once at the latest cursor, and every input that may read the hover first
+        # (`key_press`, `pointer_press`, `dispatch_command`) picks it before (`flush_hover`).
+        # The window loop (`src/main.py run`) switches it on; off (default) every move picks
+        # at once, as before - the headless tests and hosts without a tick rely on that.
+        self.coalesce_hover: bool = False
+        self._hover_stale: bool = False
 
         # WP-06 B3 (E26, `PROVISIONAL` bis ein HUD existiert): letzte
         # Statusmeldung für den Nutzer. `status_serial` zählt jede Meldung,
@@ -1469,6 +1477,7 @@ class Application:
         Symmetrie-Zyklus → Definition des Meshs (AD-SYM-04 A1, `_symmetry_cycle`).
         Alles andere → False (bewusst minimal gehalten).
         """
+        self.flush_hover()
         tool_class = tool_for_command(command)
         if tool_class:
             return self.tool_manager.activate(command, context=context)
@@ -2607,6 +2616,7 @@ class Application:
         Druck hat etwas bewirkt. Ein von `command_gate` abgelehntes Command
         (H2) postet den Ablehnungstext und gibt False zurück; die Knife-Session
         liegt davor und wird nie gegatet."""
+        self.flush_hover()
         if self._knife is not None:
             return self._knife_key(input)
         command = self.bindings.command_for(input)
@@ -3405,6 +3415,7 @@ class Application:
         """Maustaste gedrückt (`input.kind == "mouse"`, Modifier beim Press).
         `x`/`y` (optional, B7): Cursor beim Press - ohne Angabe gilt die
         letzte bekannte Cursor-Position."""
+        self.flush_hover()
         if x is not None and y is not None:
             self._cursor = (x, y)
         if self._knife is not None and self._knife_owns_press(input):
@@ -3464,7 +3475,10 @@ class Application:
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
         self._camera_changed()
         # Unter dem ruhenden Cursor liegt nach dem Zoom ggf. ein anderer Vertex.
-        self._refresh_hover()
+        if self.coalesce_hover and self._knife is None:
+            self._hover_stale = True  # a burst of notches picks once, at the next tick
+        else:
+            self._refresh_hover()
         return True
 
     # -- Hover (WP-06 B2b, E20) -------------------------------------------------
@@ -3486,7 +3500,23 @@ class Application:
             return self._knife_hover(x, y)
         if self._transform_key is not None:
             return self._transform_step(dx, dy)
+        if self.coalesce_hover:
+            self._hover_stale = True
+            return False
         return self._update_hover(x, y)
+
+    def flush_hover(self) -> bool:
+        """Picks a hover that `coalesce_hover` left stale (a mouse move or zoom notch since the
+        last pick), at the current cursor - the pick the move would have made, for the state
+        that is current now. The frame tick calls it, and every input that may read the hover
+        first. True = `selection.hovered` changed."""
+        if not self._hover_stale:
+            return False
+        self._hover_stale = False
+        before = self.selection.hovered
+        self._refresh_hover()
+        after = self.selection.hovered
+        return not (type(before) is type(after) and before == after)
 
     def _refresh_hover(self) -> None:
         """Hover an der letzten Cursor-Position neu picken (nach Zoom bzw.
@@ -3506,6 +3536,7 @@ class Application:
     def pointer_leave(self) -> bool:
         """Cursor hat das Fenster verlassen: Hover (bzw. Knife-Vorschau) löschen."""
         self._cursor = None
+        self._hover_stale = False
         if self._knife is not None:
             if self._knife_gesture:
                 return False
@@ -3805,8 +3836,11 @@ class Application:
         (nach `init_scene()`). Dadurch fließen Kamera-/Geometry-/Selection-
         Dirty-States in die GPU-Ressourcen. Ohne gebundenen Viewport
         (z. B. vor `init_scene()`) bleibt es ein No-Op.
+        WP-VIEW-PERF-01 Slice 2: picks a hover left stale by `coalesce_hover` first
+        (`flush_hover`), once per tick.
         """
         if self.viewport is not None:
+            self.flush_hover()
             self._sync_object_highlight()
             self.viewport.sync()
 
