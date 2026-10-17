@@ -4,6 +4,7 @@ Usage (from the repo root, same on Windows and Linux):
     python experiments/morph_lab/run.py                          # head_basemesh (default)
     python experiments/morph_lab/run.py man_with_shoes_basemesh
     python experiments/morph_lab/run.py head_basemesh --neu      # start over (old file -> .bak)
+    python experiments/morph_lab/run.py --von scene.mirai.json   # object sent from src/main.py (key M)
 
 First start per asset: writes `scenes/morph_lab/<asset>.mirai.json` (base + an ID-identical target
 beside it, `lab_scene`) and opens it. Later starts reopen that file, so Ctrl+S keeps the sculpted
@@ -40,9 +41,12 @@ from morph_lab.lab_scene import (  # noqa: E402
     DEFAULT_SCENE_DIR,
     LabSceneError,
     UnknownAssetError,
+    read_sent_object,
     resolve_asset_name,
     resolve_pair,
+    safe_file_stem,
     scene_path,
+    write_pair_scene,
     write_start_scene,
 )
 
@@ -64,13 +68,18 @@ def build_app_lab(
     gl_types: dict | None = None,
     scene_dir: str | Path = DEFAULT_SCENE_DIR,
     new: bool = False,
+    sent: tuple | None = None,
 ) -> tuple[Application, MorphAppLab, SceneFiles]:
     """Application + lab from the lab's scene file, without a window (headless: `gl_types=None`,
     TraceStore). One-time set-up before the event loop as `src/main.py` opens a scene file
     (`init_scene` + `SceneFiles.load` → `load_scene`, then `frame_scene`, `set_viewport_size`);
     the provider is attached after the load, which builds a new viewport (review F-5)."""
-    path = scene_path(asset_name, scene_dir)
-    if new or not path.exists():
+    path = scene_path(safe_file_stem(asset_name) if sent else asset_name, scene_dir)
+    if sent is not None:
+        # The bridge always starts over: the sent object is the new base (old file -> .bak).
+        backup = write_pair_scene(asset_name, sent[1], path)
+        print(f"Morph-Szene aus main.py: {path}" + (f" (alte Datei: {backup.name})" if backup else ""))
+    elif new or not path.exists():
         backup = write_start_scene(asset_name, path)
         print(f"Neue Morph-Szene: {path}" + (f" (alte Datei: {backup.name})" if backup else ""))
     app = Application()
@@ -105,13 +114,25 @@ def main(argv: list[str] | None = None) -> int:
                         help=f"Registry-Name des Basis-Assets (Default: {DEFAULT_ASSET})")
     parser.add_argument("--neu", action="store_true",
                         help="Szene neu anlegen (Basis + unverändertes Ziel); die alte Datei wird .bak")
+    parser.add_argument("--von", metavar="DATEI", default=None,
+                        help="Szenendatei aus src/main.py (Taste M, src/morph_bridge.py): ihr Edit-Objekt "
+                             "wird die Basis, das Ziel entsteht daneben")
     _tolerate_unencodable_output()
     args = parser.parse_args(argv)
-    try:
-        asset_name = resolve_asset_name(args.asset)
-    except UnknownAssetError as exc:
-        print(exc, file=sys.stderr)
-        return 2
+    sent = None
+    if args.von is not None:
+        try:
+            sent = read_sent_object(args.von)
+        except LabSceneError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        asset_name = sent[0]
+    else:
+        try:
+            asset_name = resolve_asset_name(args.asset)
+        except UnknownAssetError as exc:
+            print(exc, file=sys.stderr)
+            return 2
 
     for line in startup_listing():
         print(line)
@@ -123,7 +144,8 @@ def main(argv: list[str] | None = None) -> int:
     window = src_main.create_window(caption=CAPTION)
     try:
         app, lab, files = build_app_lab(
-            asset_name, window.width, window.height, gl_types=src_main.GL_TYPES, new=args.neu
+            asset_name, window.width, window.height, gl_types=src_main.GL_TYPES, new=args.neu,
+            sent=sent,
         )
     except LabSceneError as exc:
         print(exc, file=sys.stderr)

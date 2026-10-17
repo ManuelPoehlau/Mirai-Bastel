@@ -16,12 +16,13 @@ Names and placement are `PROVISIONAL`.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from core.ids import ObjectId
 from core.mesh import Mesh
 from core.scene import ObjectTransform, Scene, SceneObject
-from core.serialization import scene_to_json
+from core.serialization import scene_from_json, scene_to_json
 from loaders.assets import asset_names, asset_path
 from mirai.scene_factory import build_core_scene_from_obj
 
@@ -68,19 +69,51 @@ def build_start_scene(asset_name: str) -> Scene:
     """Base + ID-identical target, as described in the module docstring."""
     resolve_asset_name(asset_name)
     base_mesh = build_core_scene_from_obj(str(asset_path(asset_name))).mesh
+    return build_pair_scene(asset_name, base_mesh)
+
+
+def build_pair_scene(name: str, base_mesh: Mesh) -> Scene:
+    """Base (named `name`, a copy of `base_mesh`) + ID-identical target. Shared by the asset start
+    and the bridge from `src/main.py` (`--von`)."""
+    base_mesh = Mesh.from_state(base_mesh.export_state())
     target_mesh = Mesh.from_state(base_mesh.export_state())
     xs = [base_mesh.vertex_position(v)[0] for v in base_mesh.all_vertex_ids()]
     width = (max(xs) - min(xs)) if xs else 1.0
     placement = ObjectTransform(translation=(TARGET_SPACING * (width or 1.0), 0.0, 0.0))
-    base = SceneObject(ObjectId(0), base_mesh, name=asset_name)
-    target = SceneObject(ObjectId(1), target_mesh, name=target_name(asset_name), transform=placement)
+    base = SceneObject(ObjectId(0), base_mesh, name=name)
+    target = SceneObject(ObjectId(1), target_mesh, name=target_name(name), transform=placement)
     return Scene.from_objects([base, target], edit_object_id=base.id, object_id_counter=2)
 
 
 def write_start_scene(asset_name: str, path: Path) -> Path | None:
     """Writes a fresh start scene to `path`. An existing file is kept as `<name>.bak` (one backup,
     review F-13); returns the backup path or None."""
-    text = scene_to_json(build_start_scene(asset_name))
+    return _write_scene(build_start_scene(asset_name), path)
+
+
+def write_pair_scene(name: str, mesh: Mesh, path: Path) -> Path | None:
+    """Same as `write_start_scene`, for a mesh sent from `src/main.py` instead of an asset."""
+    return _write_scene(build_pair_scene(name, mesh), path)
+
+
+def read_sent_object(path: str | Path) -> tuple[str, Mesh]:
+    """Name and mesh of the object `src/morph_bridge.py` wrote (the file's edit object). Its
+    placement is dropped: the lab's base always sits at the identity."""
+    try:
+        scene = scene_from_json(Path(path).read_text(encoding="utf-8"))
+    except Exception as exc:  # unreadable or malformed file: one visible line
+        raise LabSceneError(f"Gesendete Szene {str(path)!r} nicht lesbar: {exc}") from exc
+    obj = scene.edit_object
+    return obj.name, obj.mesh
+
+
+def safe_file_stem(name: str) -> str:
+    """A file name part from an object name (`scene_path` takes it as the asset name)."""
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "objekt"
+
+
+def _write_scene(scene: Scene, path: Path) -> Path | None:
+    text = scene_to_json(scene)
     path.parent.mkdir(parents=True, exist_ok=True)
     backup = None
     if path.exists():

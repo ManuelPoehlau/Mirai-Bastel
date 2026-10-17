@@ -25,6 +25,16 @@ rechts daneben das **Ziel** (`<asset> · Ziel 1`), eine exakte Kopie mit denselb
 diese Datei wieder; `Strg+S` speichert hinein. Der Ordner `scenes/` ist nicht im Git, und das `Leertaste`-Menü der App
 zeigt den Unterordner `morph_lab/` nicht.
 
+### Aus `main.py` schicken (Brücke, `PROVISIONAL`)
+
+Im Production-Fenster (`python src/main.py`) schickt die Taste **M** das ausgewählte Objekt ins Morph Lab: in Modus `4` das
+eine ausgewählte Objekt (kein oder mehrere: Statuszeile, nichts passiert), sonst das Edit-Objekt. Das Lab öffnet sich in
+einem eigenen Fenster, Basis und Ziel stehen sofort (`run.py --von <Datei>`). Das Objekt geht als Mesh-Kopie über
+`scenes/morph_lab/von_main/<name>.mirai.json`; die Platzierung des Objekts geht nicht mit (Basis = Identität). Die Lab-Szene
+heißt `scenes/morph_lab/<name>.mirai.json` und wird bei jedem Senden neu angelegt (die alte Datei wird einmal `.bak`) — ein
+schon gesculptetes Ziel gleichen Namens ist damit weg, außer in der `.bak`. Das Production-Fenster bleibt unverändert (kein
+History-Eintrag); abgelehnt, solange W/E/R/T oder das Knife läuft. Code: `src/morph_bridge.py`.
+
 ## Was die App macht, was das Lab macht
 
 **Die App** (`src/main.py`): Navigation, Auswahl, W/E/R, Tweak, Soft Selection (`O`), Symmetrie (`Shift+S`), C/Knife,

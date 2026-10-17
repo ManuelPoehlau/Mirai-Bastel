@@ -130,6 +130,11 @@ Scope (binding, see the handoffs):
   `scenes/<edit object>_<date-time>.mirai.json`; refused while W/E/R/T or a
   Knife session runs. Like SPACE it is window-level (`install_handlers(...,
   save=...)`), not in the BindingSet.
+- Morph Lab bridge (`PROVISIONAL`, Manu 2026-10-17, `src/morph_bridge.py`): `M` sends the
+  selected object (mode `4`: the one selected; otherwise the edit object) to the Morph Lab, which
+  opens in its own window with base and target already built. Window-level like Ctrl+S
+  (`install_handlers(..., morph=...)`), not in the BindingSet; refused while W/E/R/T or a Knife
+  session runs. This file only calls the bridge and knows no experiment.
 - Objects (AD-021 M1, `PROVISIONAL` look and click): `4` = Object mode. A
   Reference is drawn in a muted blue (no selection overlays, never pickable in
   `1`/`2`/`3`, picking goes through it); in `4` a click selects (Shift/Ctrl/Alt
@@ -208,6 +213,7 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
+from morph_bridge import send_to_morph_lab  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
 from scene_menu import (  # noqa: E402
     SceneMenu,
@@ -282,11 +288,19 @@ def is_save_key(inp: Input | None) -> bool:
     )
 
 
+def is_morph_key(inp: Input | None) -> bool:
+    """M (bridge to the Morph Lab, `PROVISIONAL`): exactly M, no modifier."""
+    return (
+        inp is not None and inp.kind == "key" and inp.value == "m" and not inp.modifiers
+    )
+
+
 def install_handlers(
     window,
     app: Application,
     menu: SceneMenu | None = None,
     save: Callable[[], object] | None = None,
+    morph: Callable[[], object] | None = None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
@@ -300,7 +314,11 @@ def install_handlers(
 
     `save` (scene files, `PROVISIONAL`, `src/scene_files.py`): called on Ctrl+S
     instead of forwarding that key to `app`. `None` (default) keeps the wiring
-    as it was. `Application.save_scene_file` refuses during a gesture itself."""
+    as it was. `Application.save_scene_file` refuses during a gesture itself.
+
+    `morph` (bridge to the Morph Lab, `PROVISIONAL`, `src/morph_bridge.py`): called on M instead
+    of forwarding that key to `app`. `None` (default) keeps the wiring as it was, so the labs
+    that share it get no M (the Morph Lab's own M is its A/B key)."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
@@ -355,6 +373,9 @@ def install_handlers(
             return pyglet.event.EVENT_HANDLED
         if save is not None and is_save_key(inp):
             save()
+            return pyglet.event.EVENT_HANDLED
+        if morph is not None and is_morph_key(inp):
+            morph()
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
         track_ctrl(symbol, True)
@@ -536,7 +557,9 @@ def main() -> None:
         add=add,
         refresh=lambda: files.entries() + scene_entries(),
     )
-    install_handlers(window, app, menu=menu, save=files.save)
+    install_handlers(
+        window, app, menu=menu, save=files.save, morph=lambda: send_to_morph_lab(app)
+    )
     run(window, app)
 
 

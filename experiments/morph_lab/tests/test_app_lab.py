@@ -492,3 +492,41 @@ def test_b_switches_relative_and_absolute(lab_app):
     press(app, lab, B_KEY)
     frame(app)
     assert lab.provider.relative is True and shown(lab)[vid] == pytest.approx(relative_shape, abs=1e-12)
+
+
+def test_sent_object_becomes_base_with_an_id_identical_target(tmp_path):
+    # Bridge from src/main.py (run.py --von): the sent object, not an asset, is the base.
+    from core.mesh import Mesh
+    from core.scene import ObjectTransform, Scene, SceneObject
+    from core.ids import ObjectId
+    from core.serialization import scene_to_json
+    from morph_lab.lab_scene import read_sent_object, safe_file_stem
+
+    asset = build_app_lab(ASSET, WIDTH, HEIGHT, scene_dir=tmp_path / "a")[0].scene.edit_object
+    sent_obj = SceneObject(ObjectId(0), Mesh.from_state(asset.mesh.export_state()), name="Mein Kopf!",
+                           transform=ObjectTransform(translation=(5.0, 0.0, 0.0)))
+    sent_file = tmp_path / "sent.mirai.json"
+    sent_file.write_text(scene_to_json(Scene.from_objects([sent_obj], edit_object_id=sent_obj.id,
+                                                          object_id_counter=1)), encoding="utf-8")
+    sent = read_sent_object(sent_file)
+
+    app, lab, files = build_app_lab(sent[0], WIDTH, HEIGHT, scene_dir=tmp_path / "lab", sent=sent)
+
+    base, target = objects(app, lab)
+    assert base.name == "Mein Kopf!" and target.name == target_name("Mein Kopf!")
+    assert base.transform.translation == (0.0, 0.0, 0.0)  # placement dropped
+    assert target.mesh.export_state() == base.mesh.export_state() == asset.mesh.export_state()
+    assert files.current == scene_path(safe_file_stem("Mein Kopf!"), tmp_path / "lab")
+
+    # sending again starts over, the old file is kept once as .bak
+    build_app_lab(sent[0], WIDTH, HEIGHT, scene_dir=tmp_path / "lab", sent=sent)
+    assert backup_path(files.current).exists()
+
+
+def test_unreadable_sent_file_is_a_lab_scene_error(tmp_path):
+    from morph_lab.lab_scene import read_sent_object
+
+    bad = tmp_path / "bad.mirai.json"
+    bad.write_text("{nope", encoding="utf-8")
+    with pytest.raises(LabSceneError):
+        read_sent_object(bad)

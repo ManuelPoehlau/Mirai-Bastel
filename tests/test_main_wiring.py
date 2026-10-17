@@ -364,3 +364,20 @@ def test_without_save_ctrl_s_reaches_the_application(wired, monkeypatch):
     window.handlers["on_key_press"](key.S, key.MOD_CTRL)
 
     assert [(i.value, i.modifiers) for i in forwarded] == [("s", frozenset({"ctrl"}))]
+
+
+def test_m_calls_the_morph_bridge_only_when_wired():
+    # Bridge to the Morph Lab: window-level M, like Ctrl+S; off by default (labs keep their M).
+    app = Application()
+    app.init_scene("cube")
+    calls = []
+    wired_window, plain_window = FakeWindow(), FakeWindow()
+    main_module.install_handlers(wired_window, app, morph=lambda: calls.append("m"))
+    main_module.install_handlers(plain_window, app)
+
+    assert wired_window.handlers["on_key_press"](key.M, 0) == pyglet.event.EVENT_HANDLED
+    assert calls == ["m"]
+    plain_window.handlers["on_key_press"](key.M, 0)
+    assert calls == ["m"]
+    wired_window.handlers["on_key_press"](key.M, key.MOD_SHIFT)  # Shift+M is not the bridge
+    assert calls == ["m"]
