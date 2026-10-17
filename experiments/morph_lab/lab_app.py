@@ -12,7 +12,8 @@ unchanged through `Application`. The lab only adds
   "Second user (Morph Lab)" and review CLAUDE-001);
 - one HUD line built from public state only.
 
-The lab keys change the weight only (view state: no mesh change, no History, not saved), so the lab
+The weight keys change view state only (no mesh change, no History, not saved); Left/Right switch the
+edit object by running the app's own `4` · select · `1` gesture. So the lab
 needs neither `command_gate` nor `apply_mesh_change`. While an `Application` interaction owns the
 keys (`interaction_owner`, H2-R2) a lab key is refused visibly. The keys are a proposal
 (`PROVISIONAL`), not an Artist decision.
@@ -40,6 +41,8 @@ WEIGHT_DOWN_FINE = "MorphWeightDownFine"
 WEIGHT_FULL = "MorphWeightFull"
 WEIGHT_ZERO = "MorphWeightZero"
 TOGGLE_AB = "MorphToggleAB"
+EDIT_BASE = "MorphEditBase"
+EDIT_TARGET = "MorphEditTarget"
 
 #: Weight steps in whole percent (`PROVISIONAL`).
 STEP, FINE_STEP = 10, 1
@@ -57,7 +60,7 @@ class LabKey:
 
 
 def key_label(input: Input) -> str:
-    names = {"up": "Pfeil hoch", "down": "Pfeil runter"}
+    names = {"up": "Pfeil hoch", "down": "Pfeil runter", "left": "Pfeil links", "right": "Pfeil rechts"}
     mods = "+".join(m.capitalize() for m in sorted(input.modifiers))
     value = names.get(input.value, input.value.upper())
     return f"{mods}+{value}" if mods else value
@@ -76,8 +79,13 @@ LAB_KEYS: tuple[LabKey, ...] = (
     LabKey(_key("up", "ctrl"), WEIGHT_FULL, "Gewicht 100 %"),
     LabKey(_key("down", "ctrl"), WEIGHT_ZERO, "Gewicht 0 %"),
     LabKey(_key("m"), TOGGLE_AB, "A/B: 0 % <-> zuletzt eingestelltes Gewicht"),
+    LabKey(_key("left"), EDIT_BASE, "Basis bearbeiten"),
+    LabKey(_key("right"), EDIT_TARGET, "Ziel 1 bearbeiten"),
 )
 LAB_COMMANDS = frozenset(entry.command for entry in LAB_KEYS)
+
+#: The key that returns to a component mode after the switch gesture.
+COMPONENT_MODE_KEYS = {SelectionMode.VERTEX: "1", SelectionMode.EDGE: "2", SelectionMode.FACE: "3"}
 
 #: Contexts `Application` resolves keys in; a lab key bound in any of them would shadow it.
 APP_CONTEXTS = (None, KNIFE_CONTEXT, TOPOLOGY_CONTEXT)
@@ -135,11 +143,32 @@ class MorphAppLab:
             self.ab_weight = weight
         return weight
 
+    def switch_edit_object(self, object_id) -> bool:
+        """Left/Right: the gesture `4` · select the object · `1`, run through the app's own keys,
+        so the switch is the app's (Q-5, E-14: no Undo step, its refusals and status line). The
+        lab never calls `_set_edit_object`. Ends in the component mode the artist was in
+        (`1` when coming from `4`); the object selection afterwards is the one object."""
+        app = self.app
+        if app.scene.edit_object_id == object_id:
+            app.set_status(f"Morph: {role_name(self, object_id)} wird schon bearbeitet")
+            return False
+        mode = app.selection.mode
+        back = COMPONENT_MODE_KEYS.get(mode, "1")
+        app.key_press(Input("key", "4", frozenset()))
+        app.selection.objects.clear()
+        app.selection.objects.add(object_id)
+        app.key_press(Input("key", back, frozenset()))
+        return app.scene.edit_object_id == object_id
+
     def run_command(self, command: str) -> bool:
         owner = self.app.interaction_owner
         if owner is not None:
             self.app.set_status(f"Morph: {command} ignoriert - {owner} läuft")
             return False
+        if command == EDIT_BASE:
+            return self.switch_edit_object(self.provider.base_id)
+        if command == EDIT_TARGET:
+            return self.switch_edit_object(self.provider.target_id)
         before = self.weight
         if command in STEPS:
             self.set_weight(before + STEPS[command])
@@ -181,7 +210,7 @@ def startup_listing() -> list[str]:
     lines = [f"Lab-Kontext {MORPH_LAB_CONTEXT!r} (Vorschlag, keine Artist-Entscheidung):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEYS)
     lines.append("Alles andere ist die Bedienung von src/main.py (W/E/R, Tweak, Soft, Shift+S, Undo, 4, D, ...).")
-    lines.append("Ziel bearbeiten: 4 · Klick aufs Ziel · 1. Zurück zur Basis: 4 · Klick auf die Basis · 1.")
+    lines.append("Ziel bearbeiten: Pfeil rechts (oder 4 · Klick aufs Ziel · 1). Zurück zur Basis: Pfeil links.")
     lines.append("In 4 ist das ausgewählte Objekt gelblich; Alt+R schaltet es auf Referenz und zurück.")
     return lines
 

@@ -392,3 +392,54 @@ def test_broken_file_refuses_the_start(tmp_path):
     path.write_text("{ kein json", encoding="utf-8")
     with pytest.raises(LabSceneError, match="--neu"):
         build_app_lab(ASSET, WIDTH, HEIGHT, scene_dir=tmp_path)
+
+
+# -- Left/Right switch, relative target -----------------------------------------------------------
+
+LEFT, RIGHT = _key("left"), _key("right")
+
+
+def test_left_right_switch_the_edit_object_through_the_apps_own_gesture(lab_app):
+    app, lab, _files = lab_app
+    base, target = objects(app, lab)
+    history = len(app.history)
+    press(app, lab, RIGHT)
+    assert app.scene.edit_object_id == target.id and app.selection.mode is SelectionMode.VERTEX
+    assert "Ziel 1" in object_line(lab)
+    press(app, lab, LEFT)
+    assert app.scene.edit_object_id == base.id
+    app.key_press(_key("2"))
+    press(app, lab, RIGHT)
+    assert app.scene.edit_object_id == target.id and app.selection.mode is SelectionMode.EDGE
+    press(app, lab, RIGHT)  # already there: refused visibly, nothing changes
+    assert app.scene.edit_object_id == target.id and "schon" in app.status_message
+    assert len(app.history) == history  # no Undo step (Q-5)
+
+
+def test_left_right_are_refused_while_an_interaction_runs(lab_app):
+    app, lab, _files = lab_app
+    vid = sorted(app.scene.mesh.all_vertex_ids())[0]
+    app.key_press(ONE)
+    app.selection.vertices = {vid}
+    app.key_press(W)
+    assert app.interaction_owner is not None
+    assert lab_key_press(app, lab, RIGHT) is False
+    assert app.scene.edit_object_id == lab.provider.base_id
+    app.key_release(W)
+
+
+def test_editing_the_base_after_the_target_moves_the_target_along(lab_app):
+    app, lab, _files = lab_app
+    base, target = sculpted_lab(app, lab)
+    original = {v: base.mesh.vertex_position(v) for v in base.mesh.all_vertex_ids()}
+    sculpt(app, lab, delta=(0.3, 0.0, 0.0))  # the edit object is the base again
+    assert app.scene.edit_object_id == base.id
+    press(app, lab, CTRL_UP)
+    frame(app)
+    sculpted = sorted(base.mesh.all_vertex_ids())[:40]
+    for vid in sculpted:
+        b, t, o = base.mesh.vertex_position(vid), target.mesh.vertex_position(vid), original[vid]
+        want = tuple(bi + (ti - oi) for bi, ti, oi in zip(b, t, o))
+        got = lab.provider.surface_mesh.vertex_position(vid)
+        assert got == pytest.approx(want, abs=1e-9)
+    assert got != pytest.approx(target.mesh.vertex_position(vid), abs=1e-6)  # not the old absolute shape

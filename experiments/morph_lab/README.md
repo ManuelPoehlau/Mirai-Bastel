@@ -1,7 +1,7 @@
 # Morph Lab (WP-MORPH-LAB-01)
 
 **Status: Praxistest beantwortet (2026-10-17), Iteration offen.** Gebaut und automatisch getestet (2026-10-16); Manus Antworten
-und Verdikte stehen unter „Praxistest“ (Folgearbeit: `←`/`→`, Schieberegler, relatives Ziel).
+und Verdikte stehen unter „Praxistest“ (`←`/`→` und relatives Ziel umgesetzt, 2026-10-17, noch nicht artist-geprüft; Schieberegler offen).
 Discovery-Lab unter `experiments/`. **Morph Targets sind nicht in Production**: `src/` ist unverändert, `src/main.py` kennt
 kein Morph. Das Lab läuft **auf dem App-Pfad** wie das SubD Lab: alle Modellier-Werkzeuge, Undo, Symmetrie, Soft Selection,
 Licht und Shading sind die der App. Die gemischte Form zeichnet der Viewport über den Haken AD-013 H7
@@ -42,9 +42,14 @@ Das Gewicht ist reine Ansicht: kein Undo-Schritt, wird nicht gespeichert, änder
 | `Shift+Pfeil hoch` / `Shift+Pfeil runter` | Gewicht +1 % / −1 % |
 | `Strg+Pfeil hoch` / `Strg+Pfeil runter` | Gewicht 100 % / 0 % |
 | `M` | A/B: 0 % ↔ zuletzt eingestelltes Gewicht |
-| **Ziel bearbeiten** | `4` · Klick aufs Ziel · `1` |
-| **Zurück zur Basis** | `4` · Klick auf die Basis · `1` |
+| `Pfeil rechts` | **Ziel bearbeiten** (`PROVISIONAL`, J-2) |
+| `Pfeil links` | **Zurück zur Basis** |
+| alternativ | `4` · Klick aufs Objekt · `1` (wie die App) |
 | alles andere | die App |
+
+`Pfeil links/rechts` führen genau die App-Geste `4` · Objekt auswählen · `1` aus (kein eigener Pfad, kein Undo-Schritt, mit
+den Ablehnungen der App); danach bist du im Komponenten-Modus, in dem du warst (aus `4` in `1`). Bei mehreren Targets wird die
+Lösung neu entschieden.
 
 Seit 2026-10-16 (deine Rückmeldung): Ein Klick in `4` **wählt nur aus**, das ausgewählte Objekt ist gelblich getönt;
 `Alt+R` schaltet es auf Referenz und zurück (App-Verhalten, AD-021 Q-12 revidiert). Die Lab-Tasten werden beim Start gegen
@@ -60,10 +65,10 @@ in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 
 1. **Ziel finden.** Das Ziel steht rechts neben dem Kopf, die Kamera zeigt aber nur den Kopf: mit dem **Mausrad ein paar
    Rasten zurück**, bis beide zu sehen sind.
-2. **Ziel formen.** `4`, aufs Ziel klicken (es wird gelblich), `1` (HUD: `Bearbeitet: Ziel 1`). Dann ein Lächeln oder einen offenen Kiefer
+2. **Ziel formen.** `Pfeil rechts` (HUD: `Bearbeitet: Ziel 1`; oder `4`, aufs Ziel klicken, `1`). Dann ein Lächeln oder einen offenen Kiefer
    modellieren — mit allem, was die App hat: W/E/R, Tweak (Strg+LMB ziehen), Soft Selection (`O`), Symmetrie (`Shift+S`),
    Undo. Die HUD sagt `Ziel wird bearbeitet`.
-3. **Zurück zur Basis** (`4`, auf den Kopf klicken, `1` — oder in `4` bleiben) und mit den Pfeiltasten das
+3. **Zurück zur Basis** (`Pfeil links`) und mit den Pfeiltasten das
    Gewicht hochfahren. Bei 0 % ist es exakt die Basis, bei 100 % exakt das Ziel; jedes Gewicht sieht gleich aus, egal auf
    welchem Weg du es erreichst. `M` vergleicht 0 % mit dem letzten Gewicht.
 4. **Weiterformen und vergleichen.** Am Ziel nachbessern, zurück, wieder schieben. `Strg+Z` springt zum Objekt des
@@ -97,14 +102,14 @@ in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 
 | Frage | Antwort | Folge (offen) |
 |---|---|---|
-| J-2 Wechsel Basis ↔ Ziel | `←` / `→` zum Wechseln (`PROVISIONAL`; bei mehreren Targets später neu entscheiden) | Neue Taste = App-Fähigkeit im Sinne von AD-013, also Review/Entscheidung vor dem Bau; Tönung nicht beanstandet |
-| J-3 Basis nachträglich ändern | **relativ**: das Ziel nimmt die Änderung mit | Ändert die Darstellung (heute absolut, siehe „Annahmen“): Ziel = Delta zur Basis; Speicherformat und Undo-Verhalten klären |
-| J-4 Gewicht | **Schieberegler** (Pfeiltasten reichen nicht) | Bisher „nicht im Umfang“; braucht UI im Fenster und Performance beim Ziehen (siehe „Messung“) |
+| J-2 Wechsel Basis ↔ Ziel | `←` / `→` zum Wechseln (`PROVISIONAL`; bei mehreren Targets später neu entscheiden) | **Umgesetzt 2026-10-17** als Lab-Taste über die App-Geste (kein Eingriff in `src/`); Tönung nicht beanstandet |
+| J-3 Basis nachträglich ändern | **relativ**: das Ziel nimmt die Änderung mit | **Umgesetzt 2026-10-17** (siehe „Annahmen“); Bezug nur in der Sitzung, gespeichert wird er erst mit dem Produktionsformat (AD-021 §4.9) |
+| J-4 Gewicht | **Schieberegler** (Pfeiltasten reichen nicht) | **Offen, andere Session**; braucht UI im Fenster und Performance beim Ziehen (siehe „Messung“) |
 | J-5 Ziel formen | **daneben** (wie gebaut) | keine Änderung |
 | Gewicht als Undo-Schritt / gespeichert? | **Nein** | keine Änderung (wie gebaut) |
 | 6a Auswahl/Picking auf der Ruhelage | **hilft** (zeigt die Abweichung von der Basis) | keine Änderung; bewusst behalten |
 
-Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE bei Schieberegler, relativem Ziel und `←`/`→`.
+Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE: `←`/`→` und relatives Ziel sind umgesetzt (noch nicht von Manu geprüft), der Schieberegler steht aus.
 
 ## Annahmen (`PROVISIONAL`, in einem Satz korrigierbar)
 
@@ -112,7 +117,10 @@ Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE bei Schieberegler, relati
   im laufenden Lab gibt es kein „neues Ziel“.
 - Bei 0 % zeigt der Viewport die Basis selbst (keine Ersatzfläche), darüber die Mischung.
 - Das Gewicht ist reine Ansicht (kein Undo, nicht gespeichert); Schritte 10 % / 1 %.
-- Das Ziel speichert seine **absolute** Form; eine spätere Änderung der Basis ändert also die Mischung.
+- Das Ziel ist **relativ** (J-3, 2026-10-17): gespeichert ist seine Form, gelesen wird sie als Abstand zur Basis, wie sie war,
+  als das Ziel zuletzt geformt wurde. Ändert man danach die Basis, geht das Ziel mit (100 % = Basis jetzt + Abstand). Ändert
+  man das Ziel (oder macht es rückgängig), gilt wieder die Basis von jetzt als Bezug. Der Bezug lebt nur in der Sitzung:
+  nach `Strg+S` und Neustart ist die geladene Basis der Bezug, Basisänderungen vor dem Speichern sind dann „eingebacken“.
 - Basis und Ziel werden über die Namen gefunden, die das Lab schreibt; je Name genau ein Objekt, sonst startet das Lab
   nicht (Hinweis auf `--neu`). `--neu` hebt die alte Datei als `.bak` auf (eine Sicherung).
 
@@ -155,7 +163,7 @@ target must be sculptable with the app's own tools, and an object is what those 
 In-place sculpting was not built: lab-held morph data outside the Mesh would drift on Undo, and H2-R4 forbids lab
 History entries.
 
-**Evaluation** (`morph.blend`): `k == 0` → no surface; `k == 100` → `t`; otherwise `b + (k/100)·(t − b)` — exact at both
+**Evaluation** (`morph.blend`; the target is relative since 2026-10-17: `t` below is `t` itself while base == reference, else `b + (t − r)` with `r` the session-local reference taken when the target was last changed — `morph.py` docstring): `k == 0` → no surface; `k == 100` → `t`; otherwise `b + (k/100)·(t − b)` — exact at both
 ends, exact where `b == t`, exactly mirrored (review F-8/R-7; `(1−w)·b + w·t` drifts unchanged regions by an ulp).
 
 **Files:** `morph.py` (GL-free evaluation + `MorphSurfaceProvider`), `lab_scene.py` (start scene file, pairing by name),
@@ -185,6 +193,8 @@ ends, exact where `b == t`, exactly mirrored (review F-8/R-7; `(1−w)·b + w·t
 and runs under `xvfb-run -a` in headless containers). `test_morph.py` (evaluation, provider), `test_app_lab.py` (app
 path: start scene, weights, W + symmetry on the target, Undo Q-8, topology refusal, Ctrl+A, save/reopen, `--neu`,
 refusals, HUD), `test_run_cli.py`, `test_import_boundary.py`.
+
+**Left/Right:** `lab_app.MorphAppLab.switch_edit_object` presses `4`, sets `selection.objects`, presses the mode key through `app.key_press` — the app's Q-5 switch, no private call, no History entry.
 
 **Not in scope:** several targets or a runtime "new target" (needs a reviewed host entry; AD-021 E-15 first), a weight
 slider, weights as document state, morph + SubD together, topology changes with morphs (ARCH-02), production storage.

@@ -6,11 +6,18 @@ of the base's Mesh (`Mesh.from_state(base.export_state())`). The artist sculpts 
 own tools; a vertex of the base and the vertex with the same ID in the target form one pair, as long
 as both meshes still have the same topology (`topology_signature`).
 
-Evaluation per vertex, weight `k` in whole percent (review CLAUDE-001 F-8, R-7):
+The target is *relative* (Manu 2026-10-17, J-3): what it stores is read as the offset `d = t − r`
+from a reference `r`, the base as it was when the target was last changed. Editing the base later
+moves the target along: the shape shown at 100 % is `b + d`, with `b` the base now. While `b == r`
+that is exactly `t`. The reference is lab state of one session (not saved): after a reopen it is
+the base as loaded (`PROVISIONAL`; the stored home is AD-021 §4.9).
+
+Evaluation per vertex, weight `k` in whole percent (review CLAUDE-001 F-8, R-7), with `t'` = `t`
+while `b == r`, else `b + (t − r)`:
 
 - `k == 0`   no surface at all: the viewport draws the base itself (F-3);
-- `k == 100` exactly the target position;
-- otherwise  `b + w·(t − b)` with `w = k / 100` — exact where base and target agree and exactly
+- `k == 100` exactly `t'`;
+- otherwise  `b + w·(t' − b)` with `w = k / 100` — exact where base and target agree and exactly
   mirrored for mirrored inputs. (`(1 − w)·b + w·t` moves unchanged regions by one rounding step.)
 
 The provider never writes base or target (H7-R2: display only). It wakes on the H7 triggers, on a
@@ -134,6 +141,8 @@ class MorphSurfaceProvider:
         self._target_valid = False
         self._target_signature: Optional[tuple] = None
         self._target_positions: dict = {}
+        #: the reference of the relative target (module docstring); None until the first read
+        self._reference: Optional[dict] = None
         self._target_offset = False
 
     # -- weight (view state: no History, not saved) ---------------------------------------
@@ -185,14 +194,19 @@ class MorphSurfaceProvider:
             self.surface_mesh = None
             return set()
         self.editing = EDITING_BASE
-        if self._weight == MIN_WEIGHT:
+        if self._weight == MIN_WEIGHT and self._target_valid:
             self.surface_mesh = None
             return set()
 
         started = time.perf_counter()
         base_signature = topology_signature(mesh)
         if not self._target_valid:
+            # Also at 0 %: the reference of the relative target must be taken before the base
+            # is edited, not when the weight is first raised.
             self._read_target(target.mesh, mesh, base_signature)
+        if self._weight == MIN_WEIGHT:
+            self.surface_mesh = None
+            return set()
         if base_signature != self._target_signature:
             self.surface_mesh = None
             self._set_message(MESSAGE_TOPOLOGY)
@@ -205,9 +219,13 @@ class MorphSurfaceProvider:
             self._surface_signature = base_signature
             self._shown = {}
         surface, shown, target_positions, weight = self._surface, self._shown, self._target_positions, self._weight
+        reference = self._reference
         changed = set()
         for vid in mesh.all_vertex_ids():
-            position = blend(mesh.vertex_position(vid), target_positions[vid], weight)
+            b, t, r = tuple(mesh.vertex_position(vid)), target_positions[vid], reference[vid]
+            if b != r:
+                t = tuple(bi + (ti - ri) for bi, ti, ri in zip(b, t, r))
+            position = blend(b, t, weight)
             if shown.get(vid) != position:
                 shown[vid] = position
                 surface.set_vertex_position(vid, position)
@@ -219,25 +237,32 @@ class MorphSurfaceProvider:
         return set() if rebuilt else changed
 
     def _read_target(self, target_mesh, base_mesh, base_signature: tuple) -> None:
-        self._target_signature = topology_signature(target_mesh)
-        self._target_positions = {
-            vid: tuple(target_mesh.vertex_position(vid)) for vid in target_mesh.all_vertex_ids()
-        }
+        signature = topology_signature(target_mesh)
+        positions = {vid: tuple(target_mesh.vertex_position(vid)) for vid in target_mesh.all_vertex_ids()}
         self._target_valid = True
-        self._target_offset = False
-        if self._target_signature != base_signature:
+        if signature != base_signature:
+            # No pairing: keep the reference, so that Undo back to equal topology resumes it.
+            self._target_signature = signature
+            self._target_positions = positions
             return
-        base_positions = [base_mesh.vertex_position(v) for v in base_mesh.all_vertex_ids()]
-        count = len(base_positions)
-        if not count:
-            return
+        if self._reference is None or self._target_signature != signature or positions != self._target_positions:
+            # The target was shaped (or undone) against the base as it is now.
+            self._reference = {vid: tuple(base_mesh.vertex_position(vid)) for vid in base_mesh.all_vertex_ids()}
+        self._target_signature = signature
+        self._target_positions = positions
+        self._target_offset = self._offset_is_large(base_mesh)
+
+    def _offset_is_large(self, base_mesh) -> bool:
+        ids = list(base_mesh.all_vertex_ids())
+        if not ids:
+            return False
         mean = [0.0, 0.0, 0.0]
-        for vid in base_mesh.all_vertex_ids():
-            b, t = base_mesh.vertex_position(vid), self._target_positions[vid]
+        for vid in ids:
+            r, t = self._reference[vid], self._target_positions[vid]
             for i in range(3):
-                mean[i] += t[i] - b[i]
-        shift = math.hypot(*(m / count for m in mean))
-        self._target_offset = shift > OFFSET_WARNING_SHARE * _bbox_diagonal(base_positions)
+                mean[i] += t[i] - r[i]
+        shift = math.hypot(*(m / len(ids) for m in mean))
+        return shift > OFFSET_WARNING_SHARE * _bbox_diagonal([base_mesh.vertex_position(v) for v in ids])
 
     def _set_message(self, message: Optional[str]) -> None:
         if message == self.message:

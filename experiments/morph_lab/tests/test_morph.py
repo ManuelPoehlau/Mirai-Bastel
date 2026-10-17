@@ -165,3 +165,38 @@ def test_editing_the_target_shows_it_as_itself():
     provider.set_weight(50)
     provider.sync(target, None)
     assert provider.surface_mesh is None and provider.editing == "target"
+
+
+def test_target_is_relative_to_the_base_it_was_shaped_against():
+    scene, base, target = _pair()
+    vids = sorted(base.all_vertex_ids())
+    for vid in vids[:4]:  # the target: a smile on top of the original base
+        x, y, z = target.vertex_position(vid)
+        target.set_vertex_position(vid, (x, y + 0.5, z))
+    provider, _status = _provider(scene)
+    provider.sync(base, None)  # 0 %: the reference is taken here, before the base changes
+    original = {v: base.vertex_position(v) for v in vids}
+    for vid in vids[2:6]:  # the base is edited afterwards
+        x, y, z = base.vertex_position(vid)
+        base.set_vertex_position(vid, (x + 0.25, y, z))
+    provider.set_weight(100)
+    provider.sync(base, None)
+    surface = provider.surface_mesh
+    for vid in vids:
+        b, t, o = base.vertex_position(vid), target.vertex_position(vid), original[vid]
+        want = t if b == o else tuple(bi + (ti - oi) for bi, ti, oi in zip(b, t, o))
+        assert surface.vertex_position(vid) == want
+
+
+def test_reshaping_the_target_takes_a_new_reference():
+    scene, base, target = _pair()
+    provider, _status = _provider(scene)
+    provider.set_weight(100)
+    provider.sync(base, None)
+    vid = sorted(base.all_vertex_ids())[0]
+    x, y, z = base.vertex_position(vid)
+    base.set_vertex_position(vid, (x + 1.0, y, z))
+    provider.sync(target, None)  # the artist now edits the target ...
+    target.set_vertex_position(vid, (x + 1.0, y + 0.5, z))  # ... against the base as it is now
+    provider.sync(base, None)
+    assert provider.surface_mesh.vertex_position(vid) == target.vertex_position(vid)
