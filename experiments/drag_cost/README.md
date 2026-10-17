@@ -815,5 +815,8 @@ Navigation (WP-VIEW-PERF-01): reference-PC run 2026-10-11 (on `gollum_20k.obj`, 
 2026-10-17 are in; fix slices 1 and 2 are built (container before/after above; Manu's Slice-1 verdict: same, faster,
 still far slower than Blender). Next: Manu's reference-PC run and window check ("Praktischer Test ... Slice 2"), then
 the architecture decision in "Haltepunkt: what Blender-level fluidity on 20k would need" (world index / GPU picking /
-incremental topology sync) - Manu + review, no code before it. Left inside the current architecture: option 8 (dead
+incremental topology sync) - Manu + review, no code before it. Manu (2026-10-17): GPU picking "bringt wohl den größten
+Gewinn", incremental topology "gleich wichtig" - drafted as [AD-022](../../docs/architecture/AD-022-GPU-PICKING.md)
+(spike: [`experiments/gpu_picking_spike/`](../gpu_picking_spike/README.md)) and
+[AD-023](../../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md), both PROPOSED. Left inside the current architecture: option 8 (dead
 `highlight_flags`) and batched `store.update` for large Soft drags.

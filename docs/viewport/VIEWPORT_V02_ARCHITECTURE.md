@@ -238,7 +238,9 @@ point's cell (a superset of the faces whose bbox contains the point, so the answ
 camera-dependent like the bboxes - built lazily at most once per camera state (at once for a Box, after a few full
 scans for single hover/click tests) and dropped on the next camera change. The vertex / edge / face scans stay
 linear; no world-space index (BVH, octree) and no GPU picking - those remain an architecture decision
-(`experiments/drag_cost/README.md`, "Haltepunkt: Blender-level fluidity on 20k").
+(`experiments/drag_cost/README.md`, "Haltepunkt: Blender-level fluidity on 20k"). GPU ID-buffer picking is
+proposed in [AD-022](../architecture/AD-022-GPU-PICKING.md) (PROPOSED, 2026-10-17); this section and §1 change only
+if it is decided.
 
 **Do NOT build:** GPU ID-buffer, `glReadPixels`, BVH, Octree, KD-tree for v0.2.
 
