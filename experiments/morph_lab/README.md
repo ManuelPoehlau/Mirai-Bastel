@@ -76,20 +76,21 @@ in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 **Fragen** (je eine Zeile reicht):
 
 - J-2: Reicht das Wechseln Basis ↔ Ziel über `4` · Klick · `1`, oder braucht es eine eigene Taste? Ist die gelbliche
-  Tönung der Auswahl in `4` gut erkennbar? (Eine schnellere Taste wäre eine App-Fähigkeit → eigener Schritt.)
+  Tönung der Auswahl in `4` gut erkennbar? (Eine schnellere Taste wäre eine App-Fähigkeit → eigener Schritt.) Manu: Links Rechts Pfeiltasten um zwischen Basis und Ziel zuwechseln (provisional, später,wenn mehrere Targets existieren, überlegen wir uns eine andere Lösung)
 - J-3: Wenn du nach dem Ziel noch die **Basis** änderst: Soll das Ziel die Änderung mitnehmen (relativ) oder seine Form
-  behalten (absolut, so ist es gebaut)?
-- J-4: Reichen Pfeiltasten fürs Gewicht, oder brauchst du einen Schieberegler zum Ziehen?
-- J-5: Ziel **daneben** formen (so ist es gebaut) oder **an Ort und Stelle** über einer durchscheinenden Basis?
+  behalten (absolut, so ist es gebaut)? Manu: relativ
+- J-4: Reichen Pfeiltasten fürs Gewicht, oder brauchst du einen Schieberegler zum Ziehen? Manu: Schieberegler
+- J-5: Ziel **daneben** formen (so ist es gebaut) oder **an Ort und Stelle** über einer durchscheinenden Basis? Manu: Daneben
   Und: Soll ein Gewicht ein Undo-Schritt sein bzw. mitgespeichert werden?
-- Wie stört es (6a), dass Auswahl und Picking bei Gewicht > 0 % auf der Ruheform liegen?
+- Manu: Nein
+- Wie stört es (6a), dass Auswahl und Picking bei Gewicht > 0 % auf der Ruheform liegen? Manu: Hilft eher, da man so sehen kann, wie weit etwas von der Basis abweicht
 
-| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
-|---|---|---|
-| Ziel neben der Basis formen (2) |  |  |
-| Gewicht über Pfeiltasten (3) |  |  |
-| Vergleichen und Nachbessern (4) |  |  |
-| Speichern / neu öffnen (5) |  |  |
+| Punkt                           | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
+| ------------------------------- | ------------------------------------------- | ----- |
+| Ziel neben der Basis formen (2) | KEEP                                        |       |
+| Gewicht über Pfeiltasten (3)    | KEEP                                        |       |
+| Vergleichen und Nachbessern (4) | KEEP                                        |       |
+| Speichern / neu öffnen (5)      | KEEP                                        |       |
 
 Antworten J-2…J-5: _(leer)_
 
