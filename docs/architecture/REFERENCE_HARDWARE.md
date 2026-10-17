@@ -63,8 +63,7 @@ Tabelle steht in [`experiments/drag_cost/README.md`](../../experiments/drag_cost
 - Subjektiv (Manu): „man_with_shoes läuft sehr flüssig.“ Tests mit höher aufgelösten Meshes folgen.
 
 Damit ist die Zeile „Reale Frame- und Hover-Zeiten in den echten Fenstern“ für den Drag-Pfad beantwortet (Hover-Zeiten
-außerhalb eines Drags nicht). Die Strings `GL_VERSION` / `GL_RENDERER` kamen nicht mit der Rückmeldung ins Repository und
-bleiben unter „Offen“.
+außerhalb eines Drags nicht). Die Strings `GL_VERSION` / `GL_RENDERER` kamen erst mit dem Navigationslauf (unten) ins Repository.
 
 **Gemessen auf dem Referenz-PC (Manu, 2026-10-11), Navigation** — Windows 10 (19045), Python 3.14.2, `GL_VERSION` **3.3.0**,
 `GL_RENDERER` **GeForce 9800 GTX/9800 GTX+/PCIe/SSE2**; `python experiments/drag_cost/probe_navigation_gl.py` (WP-VIEW-PERF-01),
@@ -80,6 +79,14 @@ ganze Tabelle, Hypothesen und Fix-Optionen in [`experiments/drag_cost/README.md`
   kein FMA hat (Lesart, nicht geprüft). Faustregel Referenz-PC / Container für den übrigen Python-Code: ~2x.
 
 Damit sind auch die Hover-Zeiten außerhalb eines Drags gemessen (Produktionspfad `src/main.py`; Playground nicht).
+
+**Hinweis zum Asset (2026-10-17):** Diese gollum-Zahlen gelten für die Datei mit 21 875 V, die heute
+`examples/meshes/gollum_20k.obj` heißt. `examples/meshes/gollum.obj` hat seit `5a90685` (2026-10-13) 87 500 V.
+
+**Praxisbefund auf dem Referenz-PC (Manu, 2026-10-17), gollum mit 87 500 V:** als Referenz-Mesh weiterhin flüssig
+navigierbar (Orbit/Pan/Zoom ohne Bearbeitung; subjektiv, keine Sondenzahlen). Der Draw bleibt also auch bei 175 000 Dreiecken
+nicht der Engpass. Die Interaktionskosten (Hover, Klick, Box/Paint, W-Drag) bei dieser Größe stehen als Containerzahlen in
+[`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Audit at HEAD (2026-10-17)“; Referenz-PC-Zahlen dazu fehlen noch.
 
 **Gemessen auf dem Referenz-PC (Manu, 2026-10-15), symmetrische Soft Selection** — gleiche Maschine, `GL_VERSION` 3.3.0,
 `python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` (AD-SYM-04 SS3, D-4); Tabelle und Lesart in

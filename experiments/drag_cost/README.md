@@ -289,9 +289,9 @@ scenarios of `probe_drag_gl.py`, reused; their once-per-row extras with 3 instea
 orbit, zoom and first hover runs on the last asset. Rows have a time budget (`--row-seconds`, default 8 s; at least
 `--min-steps` samples), so `n` is smaller on gollum.
 
-Assets: head and body by registry name, gollum by path (`--assets` takes registry names or `.obj` paths). gollum is **not**
-registered in `examples/loaders/assets.py`: an entry there is a 7-line `ObjAsset(...)` block, not a one-line change, and the
-probe does not need it (E3). It is a small follow-up if the SPACE menu should list it.
+Assets: head and body by registry name, gollum by path (`--assets` takes registry names or `.obj` paths). (2026-10-11 the
+21 875 V gollum was not registered; since then `gollum` is registered and points at the 87.5k file, the 21 875 V one is
+`gollum_20k.obj` - see "Audit at HEAD" below.)
 
 ### Result: container (2026-10-11)
 
@@ -464,11 +464,99 @@ Variants: `--assets examples/meshes/gollum.obj` (one asset), `--scenarios orbit 
 3. Danach entscheidest du, welche Mesh-Größe auf deinem PC flüssig bleiben muss (Kopf, Körper, gollum oder größer) —
    die Tabelle zeigt, was das kostet.
 
+## Audit at HEAD (WP-VIEW-PERF-01, 2026-10-17)
+
+Discovery, no change under `src/`. Question: does the 2026-10-11 picture still hold after AD-021 (objects), Box/Paint
+Select, Tweak and the per-polygon shading (FACE_DATA rows), and what do the never-measured paths and future retopology
+snapping cost? **Container numbers only** (Xeon @ 2.10 GHz, 4 cores, Python 3.13.16, llvmpipe: `draw` is CPU raster, not
+GPU time), `main` @ `45a0bd1`.
+
+**Asset fact.** `5a90685` (2026-10-13) replaced `examples/meshes/gollum.obj` (21 875 V) with an 87 500 V / 87 500 quad
+version; the 21 875 V file is back, byte-identical, as `examples/meshes/gollum_20k.obj` (`8897f78`). **Every gollum number
+above (2026-10-11, container and reference PC) is `gollum_20k.obj`.** Manu (2026-10-17): the 87.5k mesh was a test of
+whether it still navigates fluidly *as a Reference mesh* on the reference PC - **it does** (practical result, no probe
+numbers). That matches H5 (the draw is not the bottleneck); everything below is interaction cost, not rendering.
+
+Picking code (`mirai/viewport/picking.py`, `picking_cache.py`) is unchanged since 2026-10-11: none of the fix options
+above is built. Like-for-like on `gollum_20k` today vs the 2026-10-11 container table: zoom 457 (813), first hover 175
+(332), hover 162 (173), click 118 (233) ms p50, occlusion tests per event 90 / 8 / 37 / 23 (91 / 16 / 37 / 30) - no
+regression (the 10-11 run was a 2.8 GHz Xeon; a direction, not a delta). Per-move `store.update` calls grew with the
+FACE_DATA rows (plain W, same selections: head 36 V 100 → 179, body 112 V 239 → 372), so the reference-PC margin of the
+Soft bar (7.73 ms, 2026-10-11) is unknown until re-measured.
+
+Sizes: `body_L1/L2/L3` = the body after 1/2/3 Catmull-Clark levels of `experiments/subdivision_lab/subd.py` (3 706 /
+14 818 / 59 266 V), generated for the run and not committed. Rows marked † come from a scratch probe (same rig as
+`probe_navigation_gl.py`, functions called directly; not committed, step 0 of the fix slice adds them here). ms p50 (max).
+
+| Workload | head 326 | body 928 | body_L1 3.7k | body_L2 14.8k | gollum_20k 21.9k | gollum 87.5k |
+|---|---:|---:|---:|---:|---:|---:|
+| orbit frame (llvmpipe draw) | 0.8 | 0.8 | - | 4.3 | 8.4 | 21.8 |
+| cache rebuild † | 2.5 | 4.7 | 17 | 71 | 117 | 469 |
+| zoom notch, frame | 3.2 | 5.9 | - | 99 | 457 | 1 869 (p95 3 419) |
+| first hover after orbit, frame | 3.1 | 7.4 | - | 129 | 175 | 983 |
+| hover vertex mode † | 0.7 | 0.8 | 5.2 | 24 (63) | 182 (936) | 957 (3 846) |
+| hover edge mode † | 1.0 | 1.5 | 6.3 | 20 (138) | 79 (461) | 630 (5 914; 277 occl. tests) |
+| hover face mode † | 0.1 | 0.1 | 0.4 | 1.5 | 2.0 | 8.1 |
+| Knife hover (`knife_pick`) † | 0.4 | 1.5 | 6.1 | 24 | 35 | 158 |
+| selection click, frame | 1.5 | 3.1 | - | 61 | 118 | 807 |
+| Paint, one 30 px step (5 picks) † | 3.0 | 7.9 | 42 | 180 | 1 940 | 8 314 |
+| Box 60 px, vertex † | 2.9 | 11 | 216 | 2 997 | 3 673 | 60 224 |
+| Box 300 px, vertex † | 28 | 74 | 1 247 | 17 782 | 43 669 | 705 934 |
+| plain W 36 V, `move` p50 / p95 | 1.3 / 1.5 | 1.7 / 2.4 | - | 6.4 / 9.4 | 8.2 / 8.5 | 30 / 35 |
+| soft W 15 % geodesic, `move` p50 | 1.0 | 1.3 | - | 14.3 (450 V) | 15.8 (508 V) | 65 (1 897 V) |
+| soft drag commit frame | 3.0 | 7.7 | - | 212 | 899 | 5 322 |
+| `recompute_bounds` (every W move) † | 0.1 | 0.5 | 1.1 | 4.6 | 6.8 | 35 |
+| event loop, hover | 59 fps | 59 fps | - | - | - | 1 event / 3.0 s |
+
+What-if rows † (the candidate fix re-implemented in the scratch probe, compared with the production function):
+
+| What-if | gollum_20k | gollum 87.5k | Same result |
+|---|---|---|---|
+| W2 vertex hover nearest-first (option 2) | 242 → **9.3** ms (52 → 1.0 tests) | 995 → **40** ms (55 → 1.6 tests) | 11/11 picks on every size |
+| W4 eye/basis once per rebuild (option 4) | projection 86 → **15** ms | 455 → **82** ms | ≤ 2e-13 px (the "~2x" estimate above was low) |
+| W3 incident faces via `vertex_edges`, per occlusion test (option 3) | 3.0 ms | 17.5 ms | - |
+| W1 squared distance (option 1), container | scan 3.1 → 2.4 ms | 18 → 12 ms | identical |
+| Ray → surface: BVH (median split, 4 tris/leaf, pure Python) vs `pick_face` with a valid cache | 0.06 vs 2.5 ms; build 648 ms | 0.07 vs 10 ms; build 3.2 s | 40/40 same face (also body, body_L2, body_L3) |
+
+**Confirmed root causes** (beyond 2026-10-11): (a) **Box Select** runs one full O(F + E) occlusion test per element inside
+the box (`box_select.elements_in_rect`) - the worst interaction measured, unusable from ~15k V; (b) **Paint** runs one full
+`_pick` per 6 px sample; (c) **edge hover** tests up to 277 hidden candidates per pick (mesh order, as for vertices);
+(d) the cache rebuild cost is the per-vertex `eye()`/`basis()` (W4: 5.6-7x, not 2x). Face mode, the snap query and the
+camera-only frame are cheap per call; their cost is the O(V) rebuild after every camera change.
+
+**Retopology snapping on the current architecture** (ray from the cursor / a vertex's screen position → front face of
+the Reference → hit point = `pick_face` + `face_hit_position` with the Reference's own `PickCache`): one query 2 ms on
+21.9k, 8 ms on 87.5k with a valid cache; **+107 / 526 ms after every camera change** (rebuild); a drag that snaps k
+vertices pays k queries per move (k = 20 on 87.5k ≈ 160 ms). Snapping to the *closest* surface point (not along the view
+ray) has no path today. A Reference does not change during retopology, so a camera-independent world BVH built once per
+Reference is the one place an index measurably pays (query flat at ~0.07 ms, no rebuild on orbit) -
+`VIEWPORT_V02_ARCHITECTURE.md` §4 excludes BVH / GPU ID-buffer for v0.2, so this needs an architecture decision when
+retopology becomes a work package; not before.
+
+**Ranking now** (options above, updated by these numbers): Slice 1 = options **2 + 1** (nearest-first for vertex *and*
+edge, squared distances), **4** (projection, incl. `ObjectSpaceCamera`), **3** (incident-face map in `PickCache`, per mesh
+change not per camera) and **6** (bounds) - all local, no behaviour change. Slice 2 = **Box Select batched visibility**
+(screen grid of face bboxes per box; the "simple CPU spatial grid" `VIEWPORT_V02` §4 allows when benchmarks show need)
+and option **5** (coalescing; hover one frame later = one Artist check). Then option 8 (dead `highlight_flags`: 3.7 ms +
+342 KB per hover change on 87.5k) and batched per-vertex `store.update` for large Soft drags. BVH (retopo) and GPU picking:
+architecture decisions, not fix-slice items.
+
+**Benchmark matrix for the fix slices:** sizes head, body, body_L1, body_L2, `gollum_20k` (comparison with the reference
+PC history), body_L3 / gollum 87.5k (Reference-mesh role); per size orbit/pan (+ `gpu` on the reference PC), hover vertex /
+edge / face, Knife hover, first hover after orbit, zoom notch, click, Box 60/150/300 px, Paint step, plain W 36/112/500,
+soft W 15/50 % geodesic, `soft_w_sym` (body), commit frame; retopo: edit mesh head/body over a Reference of 21.9k / 59k /
+87.5k - one snap with a valid cache, one after an orbit, 1/20/100 snapped vertices per move.
+
+**Open evidence:** a reference-PC run on gollum 87.5k with numbers (Manu's verdict covers navigation only); reference-PC
+Box / Paint / edge / face / Knife rows; the `math.hypot` timeit line above on the reference PC; the `soft_w` margin after
+FACE_DATA; Manu's target size for *editing* (ATELIER D1c) - only options 5 and beyond depend on it.
+
 ## Next step
 
 The reference-PC numbers are in `REFERENCE_HARDWARE.md` §2 and above; the 8 ms bar holds and S2c ran (verdict: AD-020
 "S2c verdict"). A larger radius (S2d: up to 200 %) can be measured with `--scenarios soft_w --sizes 100 200`.
 
-Navigation (WP-VIEW-PERF-01): the reference-PC run is in (above; H5 rejected, `math.hypot` found). Open: Manu's Intent
-answer - which mesh size must stay fluid (head and body: options 1-4 suffice by estimate; gollum-class meshes also need
-option 5 plus 9 or 10). The fix slice (options 1-4, then 5-6) follows that answer.
+Navigation (WP-VIEW-PERF-01): reference-PC run 2026-10-11 (on `gollum_20k.obj`, see the audit above) and the audit at HEAD
+2026-10-17 are in. Next: the fix slice 1 from "Ranking now" (step 0: the † rows into `probe_navigation_gl.py`, default
+dense asset `gollum_20k.obj`), before/after in the container, then Manu's reference-PC run. Manu's target size for editing
+decides only options 5 and beyond.
