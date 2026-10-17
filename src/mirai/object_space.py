@@ -121,7 +121,8 @@ class ObjectSpaceCamera:
     """Die Kamera, wie sie im Objektraum von `obj` aussieht (AD-021 M2-1, E-7).
 
     Genau die Schnittstelle, die die Komponentenpfade lesen (grep 2026-10-15: `project_to_screen`,
-    `screen_to_ray`, `eye`, `basis`, `screen_delta_to_world`, `camera_revision`, `target`);
+    `screen_to_ray`, `eye`, `basis`, `screen_delta_to_world`, `camera_revision`, `target`;
+    WP-VIEW-PERF-01: `screen_projector` für `PickCache.refresh`);
     alles andere fehlt absichtlich, damit ein neuer Konsument laut scheitert statt still in
     Welt zu rechnen. Liest Kamera und Transform live: ein Transform-Wechsel braucht keinen
     neuen Adapter. `camera_revision` ändert sich mit beiden, damit ein `PickCache` nach einem
@@ -155,6 +156,19 @@ class ObjectSpaceCamera:
 
     def project_to_screen(self, point: Vec3, width: int, height: int):
         return self.camera.project_to_screen(to_world(self.obj, point), width, height)
+
+    def screen_projector(self, width: int, height: int):
+        """`project_to_screen` als Funktion des Punkts allein (Kamerabasis einmal, bitgleich)."""
+        inner = getattr(self.camera, "screen_projector", None)
+        if inner is not None:
+            project = inner(width, height)
+        else:
+            def project(point):
+                return self.camera.project_to_screen(point, width, height)
+        obj = self.obj
+        if is_identity(obj.transform):
+            return project  # to_world ist dann ein exakter Durchgang
+        return lambda point: project(to_world(obj, point))
 
     def screen_to_ray(self, sx: float, sy: float, width: int, height: int) -> tuple[Vec3, Vec3]:
         origin, direction = self.camera.screen_to_ray(sx, sy, width, height)

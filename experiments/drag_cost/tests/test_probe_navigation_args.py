@@ -25,6 +25,14 @@ def test_defaults():
     assert args.profile_top == probe.DEFAULT_PROFILE_TOP
 
 
+def test_default_dense_asset_is_gollum_20k_and_gollum_stays_selectable():
+    assert probe.DEFAULT_ASSETS[-1] == probe.GOLLUM_20K
+    label, path = probe.resolve_asset(probe.GOLLUM_20K)
+    assert label == "gollum_20k" and path == (REPO_ROOT / probe.GOLLUM_20K).resolve()
+    assert probe.parse_args(["--assets", probe.GOLLUM]).assets == [probe.GOLLUM]
+    assert "direct" in probe.parse_args(["--scenarios", "direct"]).scenarios
+
+
 def test_registry_name_and_obj_path_both_resolve():
     label, path = probe.resolve_asset("head_basemesh")
     assert label == "head_basemesh" and path.name == "head_basemesh.obj"
@@ -102,6 +110,13 @@ def test_nav_report_lines():
     assert "gpu    n/a" in text and "2.0 KB/frame" in text
     assert lines[-1].strip() == "x"
     assert all(line.isascii() for line in lines)
+
+
+def test_direct_report_line():
+    r = probe.DirectResult("box 60 px vertex", "gollum_20k", (4.0, 2.0), (3, 1), note="12 vertices selected")
+    (line,) = probe.direct_lines(r)
+    assert "box 60 px vertex" in line and "n=  2" in line and "2.0 occl tests/call" in line
+    assert line.isascii()
 
 
 def test_loop_report_line():

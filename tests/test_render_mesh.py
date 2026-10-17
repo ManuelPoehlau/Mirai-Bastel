@@ -16,6 +16,7 @@ import tests._bootstrap  # noqa: F401
 from core import Selection, SelectionMode
 from mirai.scene_factory import create_cube
 from mirai.viewport.camera import OrbitCamera
+from viewport.derived import DerivedGeometry
 from viewport.overlay import SelectionOverlay
 from viewport.render_mesh import RenderMesh
 
@@ -214,8 +215,29 @@ class VertexMoveTests(unittest.TestCase):
         rm.mark_vertices_dirty({vid})
         rm.sync()
 
-        self.assertEqual(rm.benchmark_counters["bounds_recalculations"], 1)
+        # WP-VIEW-PERF-01: a move only invalidates the bounds; the O(V) recalculation runs
+        # once, on the next read, and is correct then.
+        self.assertEqual(rm.benchmark_counters["bounds_invalidations"], 1)
+        self.assertEqual(rm.benchmark_counters.get("bounds_recalculations", 0), 0)
         self.assertGreaterEqual(rm.derived.bounds_max[0], old[0] + 10.0 - 1e-6)
+        self.assertEqual(rm.benchmark_counters["bounds_recalculations"], 1)
+        rm.derived.bounds_min
+        self.assertEqual(rm.benchmark_counters["bounds_recalculations"], 1)
+
+    def test_bounds_after_moves_equal_a_full_recompute(self):
+        mesh, _sel, _overlay, rm = _build()
+        for step, vid in enumerate(mesh.all_vertex_ids()[:3]):
+            old = mesh.vertex_position(vid)
+            # The last move goes inward: a lazily kept AABB must shrink, not only grow.
+            delta = -0.5 if step == 2 else 5.0
+            mesh.set_vertex_position(vid, (old[0] + delta, old[1] - delta, old[2]))
+            rm.mark_vertices_dirty({vid})
+            rm.sync()
+        reference = DerivedGeometry(mesh)
+        self.assertEqual(
+            (rm.derived.bounds_min, rm.derived.bounds_max),
+            (reference.bounds_min, reference.bounds_max),
+        )
 
     def test_multiple_vertices_moved_together_counted_once_per_vertex(self):
         mesh, _sel, _overlay, rm = _build()

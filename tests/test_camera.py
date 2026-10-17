@@ -142,6 +142,23 @@ class FrameOnBoundsTests(unittest.TestCase):
         cam.frame_on_bounds(center=(1.0, 0.0, 0.0), radius=1.0)
         self.assertEqual(cam.camera_revision, before + 1)
 
+    def test_screen_projector_is_bit_identical_to_project_to_screen(self):
+        # WP-VIEW-PERF-01: PickCache projects through screen_projector; it must not change a
+        # single screen position (incl. None in front of the near plane).
+        import random
+
+        rng = random.Random(5)
+        for cam in (
+            OrbitCamera(),
+            OrbitCamera(target=(0.3, 1.7, -0.4), distance=2.5, yaw=3.9, pitch=-0.6, fov_degrees=35.0),
+        ):
+            for w, h in ((800, 600), (1024, 768), (333, 911)):
+                project = cam.screen_projector(w, h)
+                for _ in range(300):
+                    p = tuple(rng.uniform(-8.0, 8.0) for _ in range(3))
+                    self.assertEqual(project(p), cam.project_to_screen(p, w, h))
+                self.assertIsNone(project(cam.eye()))
+
 
 if __name__ == "__main__":
     unittest.main()

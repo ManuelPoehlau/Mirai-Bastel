@@ -128,7 +128,9 @@ class RenderMesh:
         # dass ein nie platziertes Objekt genau die bisherigen Ressourcen hat.
         self.store.declare_uniform("model_uniforms")
         self.store.declare_face_data(FACE_DATA, TRIANGLE_FACES, FACE_ROW_TEXELS)
-        self.derived = DerivedGeometry(mesh)
+        self.derived = DerivedGeometry(
+            mesh, on_bounds_recomputed=lambda: self.stats.count("bounds_recalculations")
+        )
         self.dirty = DirtyState()
         self.overlay = overlay
 
@@ -362,9 +364,10 @@ class RenderMesh:
         self.derived.update_face_normals(self.mesh, affected_faces)
         self.derived.update_vertex_normals(self.mesh, affected_vertices)
 
-        # Bounds sind Derived Data -> kein Structural-Rebuild, nur Recalc.
-        self.derived.recompute_bounds(self.mesh)
-        self.stats.count("bounds_recalculations")
+        # Bounds sind Derived Data -> kein Structural-Rebuild. WP-VIEW-PERF-01: nur
+        # invalidieren; das O(V)-Recalc (`bounds_recalculations`) läuft beim nächsten Lesen.
+        self.derived.invalidate_bounds(self.mesh)
+        self.stats.count("bounds_invalidations")
         self.stats.count("normal_recomputations")
 
         # Positions-Partial-Upload: NUR die verschobenen Vertices.

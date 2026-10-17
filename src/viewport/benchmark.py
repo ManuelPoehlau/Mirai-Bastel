@@ -11,7 +11,8 @@ Von VIEWPORT_V02_ARCHITECTURE.md §8 / Appendix A geforderte Zähler:
     camera_updates, selection_updates, material_updates, vertex_updates
     (aka position_updates), topology_updates, structural_rebuilds,
     mesh_rebuilds, geometry_uploads, partial_updates,
-    bounds_recalculations, normal_recomputations,
+    bounds_recalculations (lazy since WP-VIEW-PERF-01; `bounds_invalidations` per move),
+    normal_recomputations,
     gpu_resource_creations, gpu_resource_destroys, bytes_uploaded
 
 Diese Zähler beweisen NICHT automatisch "gut" — sie sind Rohmaterial für

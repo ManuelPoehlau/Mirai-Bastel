@@ -3,6 +3,7 @@
 Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window):
     python experiments/drag_cost/probe_navigation_gl.py
     python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum.obj
+    python experiments/drag_cost/probe_navigation_gl.py --scenarios direct
     python experiments/drag_cost/probe_navigation_gl.py --scenarios orbit zoom first_hover
     python experiments/drag_cost/probe_navigation_gl.py --list
 
@@ -36,6 +37,14 @@ vs event count and the longest time without a frame, H3), `plain_w` / `soft_w` (
 scenarios of `probe_drag_gl.py`, reused, with this handoff's sizes). A cProfile top-N for orbit,
 zoom and first hover runs on the last asset (`--profile-top 0` switches it off).
 
+Scenario `direct` (WP-VIEW-PERF-01 Slice 1, step 0): the rows the 2026-10-17 audit measured in a
+scratch probe, on the same rig, with the picking functions called directly (no frame): hover in
+vertex / edge / face mode and the Knife hover (`knife_pick`) along the hover line, one Paint step
+(30 px = 5 picks, `Application._paint_at`), Box Select 60 / 150 / 300 px in vertex and face mode
+(`elements_in_rect`), the retopology snap query (`pick_face` + `face_hit_position`) with a valid
+cache and after an orbit, a pick-cache rebuild and one `recompute_bounds` over all vertices.
+The camera is framed again first (`frame_scene`), so the rows are comparable between runs.
+
 Rows have a time budget (`--row-seconds`): on a mesh where one event costs a second, a row stops
 after the budget with at least `--min-steps` samples; `n` says how many were taken.
 
@@ -68,10 +77,13 @@ ensure_paths()
 
 from drag_cost import probe_drag_gl as drag  # noqa: E402
 
+#: The 87 500 V Reference-mesh stress case (since 2026-10-13; selectable with --assets).
 GOLLUM = "examples/meshes/gollum.obj"
-DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh", GOLLUM)
+#: The 21 875 V mesh of every reference-PC number so far (README "Audit at HEAD"): the default.
+GOLLUM_20K = "examples/meshes/gollum_20k.obj"
+DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh", GOLLUM_20K)
 NAV_SCENARIOS = ("orbit", "pan", "zoom", "first_hover", "hover_move", "select_click", "orbit_wire")
-SCENARIO_NAMES = NAV_SCENARIOS + ("loop", "plain_w", "soft_w")
+SCENARIO_NAMES = NAV_SCENARIOS + ("direct", "loop", "plain_w", "soft_w")
 DEFAULT_SCENARIOS = SCENARIO_NAMES
 #: Handoff E2: plain W selection sizes (vertices) and soft W variants (radius %, metric).
 PLAIN_SIZES = (36, 112, 500)
@@ -91,6 +103,11 @@ WIDTH, HEIGHT = drag.WIDTH, drag.HEIGHT
 ORBIT_STEP_PX = 4.0
 HOVER_STEP_PX = 3.0
 HOVER_SPAN_PX = 60.0
+#: `direct`: Box Select square sizes (px) and the Paint step length (px).
+BOX_SIZES = (60, 150, 300)
+PAINT_STEP_PX = 30.0
+#: `direct`: orbit step (radians) before each "snap after an orbit" query.
+SNAP_ORBIT_RAD = 0.01
 #: One frame at 60 Hz - the budget the per-frame rows are read against (not a gate).
 FRAME_BUDGET_MS = 1000.0 / 60.0
 
@@ -121,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--assets", nargs="+", default=list(DEFAULT_ASSETS),
                         help="registry names or .obj paths (default: head_basemesh "
-                             f"man_with_shoes_basemesh {GOLLUM})")
+                             f"man_with_shoes_basemesh {GOLLUM_20K}; the 87.5k stress case: {GOLLUM})")
     parser.add_argument("--scenarios", nargs="+", default=list(DEFAULT_SCENARIOS),
                         help="scenario names (see --list; default: all)")
     parser.add_argument("--steps", type=drag._positive_int, default=DEFAULT_STEPS,
@@ -202,6 +219,21 @@ class NavResult:
 
 
 @dataclass(frozen=True)
+class DirectResult:
+    """`direct`: one row of direct function calls (no frame) - ms per call, occlusion tests."""
+
+    name: str
+    asset: str
+    samples_ms: tuple[float, ...]
+    occl_tests: tuple[int, ...]
+    note: str = ""
+
+    @property
+    def stats(self) -> drag.Stats:
+        return drag.Stats.of(list(self.samples_ms))
+
+
+@dataclass(frozen=True)
 class LoopResult:
     """`loop`: one phase of the real event loop with injected events (H3)."""
 
@@ -230,6 +262,7 @@ class AssetInfo:
 class AssetReport:
     info: AssetInfo
     nav: list[NavResult] = field(default_factory=list)
+    direct: list[DirectResult] = field(default_factory=list)
     loops: list[LoopResult] = field(default_factory=list)
     drags: list[drag.ScenarioResult] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
@@ -297,6 +330,7 @@ class Instruments:
         if cls._installed:
             return
         import mirai.application as application
+        import mirai.viewport.box_select as box_select
         import mirai.viewport.picking as picking
         from pyglet.graphics.vertexbuffer import BackedBufferObject
 
@@ -305,6 +339,9 @@ class Instruments:
         application.pick_component = cls.pick.wrap(application.pick_component)
         picking.vertex_occluded = cls.occl.wrap(picking.vertex_occluded)
         picking.edge_point_occluded = cls.occl.wrap(picking.edge_point_occluded)
+        # Box Select bound its own names at import (before the lines above): wrap those too.
+        for name in ("vertex_occluded", "edge_point_occluded", "point_occluded"):
+            setattr(box_select, name, cls.occl.wrap(getattr(box_select, name)))
 
         commit = BackedBufferObject.commit
 
@@ -646,6 +683,118 @@ NAV_RUNNERS: dict[str, Callable[[NavRig, argparse.Namespace], NavResult]] = {
 }
 
 
+# -- direct rows (Slice 1 step 0: the audit's scratch-probe rows) -----------
+
+
+def _hover_line(rig: NavRig) -> list[tuple[float, float]]:
+    """The hover line of `hover_move`: +-HOVER_SPAN_PX around the cursor, HOVER_STEP_PX apart."""
+    cx, cy = cursor_on_mesh(rig)
+    n = int(HOVER_SPAN_PX / HOVER_STEP_PX)
+    return [(cx + i * HOVER_STEP_PX, cy) for i in range(-n, n + 1)]
+
+
+def _direct_row(rig: NavRig, cfg, name: str, call: Callable[[int], object], *,
+                min_steps: int | None = None, note: str = "") -> DirectResult:
+    """`call(i)` timed once per sample (i = sample index) until the row budget is spent."""
+    inst = rig.instruments
+    budget = _Budget(cfg.steps, min(cfg.min_steps, cfg.steps) if min_steps is None else min_steps,
+                     cfg.row_seconds)
+    times: list[float] = []
+    tests: list[int] = []
+    while budget.more(len(times)):
+        inst.reset()
+        start = time.perf_counter()
+        call(len(times))
+        times.append((time.perf_counter() - start) * 1000.0)
+        tests.append(Instruments.occl.calls)
+    return DirectResult(name, rig.info.label, tuple(times), tuple(tests), note)
+
+
+def run_direct(rig: NavRig, cfg) -> list[DirectResult]:
+    from core import SelectionMode
+    from mirai.topology.knife_pick import knife_pick
+    from mirai.viewport.box_select import elements_in_rect, stroke_samples
+    from mirai.viewport.picking import face_hit_position, pick_component, pick_face
+
+    app = rig.app
+    # The rows before leave the camera where their (time-budgeted) gestures ended: frame it
+    # again, so the cursor line and the boxes cover the same mesh part in every run.
+    app.frame_scene()
+    rig.settle()
+    mesh = app.scene.mesh
+    cache = app._pick_cache
+    occlusion = app.display.show_faces
+    line = _hover_line(rig)
+    cx, cy = cursor_on_mesh(rig)
+    out: list[DirectResult] = []
+
+    def camera():
+        return app._edit_camera
+
+    # Warm the cache (camera unchanged since the last frame): the hover rows read a valid cache.
+    cache.refresh(camera(), mesh, WIDTH, HEIGHT)
+    for label, mode in (("vertex", SelectionMode.VERTEX), ("edge", SelectionMode.EDGE),
+                        ("face", SelectionMode.FACE)):
+        out.append(_direct_row(rig, cfg, f"hover {label}", lambda i, mode=mode: pick_component(
+            camera(), mesh, mode, *line[i % len(line)], WIDTH, HEIGHT,
+            cache=cache, occlusion=occlusion)))
+    out.append(_direct_row(rig, cfg, "knife hover", lambda i: knife_pick(
+        camera(), mesh, *line[i % len(line)], WIDTH, HEIGHT, cache=cache, occlusion=occlusion)))
+
+    def paint(i: int) -> None:
+        direction = 1.0 if i % 2 == 0 else -1.0
+        start = (cx - direction * PAINT_STEP_PX / 2.0, cy)
+        end = (cx + direction * PAINT_STEP_PX / 2.0, cy)
+        app._paint_at(stroke_samples(start, end))
+
+    app.selection.clear()
+    out.append(_direct_row(rig, cfg, f"paint {PAINT_STEP_PX:.0f} px step", paint, min_steps=1,
+                           note=f"{len(stroke_samples((0.0, 0.0), (PAINT_STEP_PX, 0.0)))} picks"))
+    app.selection.clear()
+    rig.viewport.on_selection_changed()
+    rig.settle()
+
+    for label, mode in (("vertex", SelectionMode.VERTEX), ("face", SelectionMode.FACE)):
+        for size in BOX_SIZES:
+            rect = (cx - size / 2.0, cy - size / 2.0, cx + size / 2.0, cy + size / 2.0)
+            found: list[int] = []
+
+            def box(i: int, mode=mode, rect=rect, found=found) -> None:
+                found.append(len(elements_in_rect(camera(), mesh, mode, rect, WIDTH, HEIGHT,
+                                                  cache=cache, occlusion=occlusion)))
+
+            row = _direct_row(rig, cfg, f"box {size} px {label}", box, min_steps=1)
+            out.append(DirectResult(row.name, row.asset, row.samples_ms, row.occl_tests,
+                                    f"{found[0]} {'vertices' if label == 'vertex' else 'faces'} selected"))
+
+    def snap(i: int) -> None:
+        x, y = line[i % len(line)]
+        fid = pick_face(camera(), mesh, x, y, WIDTH, HEIGHT, cache=cache)
+        if fid is not None:
+            face_hit_position(camera(), mesh, fid, x, y, WIDTH, HEIGHT)
+
+    cache.refresh(camera(), mesh, WIDTH, HEIGHT)
+    out.append(_direct_row(rig, cfg, "snap, valid cache", snap))
+
+    def snap_after_orbit(i: int) -> None:
+        app.camera.orbit(SNAP_ORBIT_RAD if i % 2 == 0 else -SNAP_ORBIT_RAD, 0.0)
+        snap(i)
+
+    out.append(_direct_row(rig, cfg, "snap after an orbit", snap_after_orbit, min_steps=2,
+                           note="incl. the pick-cache rebuild"))
+
+    def rebuild(i: int) -> None:
+        cache.invalidate()
+        cache.refresh(camera(), mesh, WIDTH, HEIGHT)
+
+    out.append(_direct_row(rig, cfg, "cache rebuild", rebuild, min_steps=2))
+    derived = rig.viewport.render_mesh.derived
+    out.append(_direct_row(rig, cfg, "recompute_bounds (all V)",
+                           lambda i: derived.recompute_bounds(mesh)))
+    rig.settle()
+    return out
+
+
 # -- loop (H3): the real wiring in a running event loop ---------------------
 
 
@@ -875,6 +1024,9 @@ def run_probe(args, src_main) -> tuple[list[AssetReport], tuple[str, str]]:
             for name in nav:
                 progress(f"{label}: {name}")
                 report.nav.append(NAV_RUNNERS[name](rig, args))
+            if "direct" in args.scenarios:
+                progress(f"{label}: direct")
+                report.direct.extend(run_direct(rig, args))
             if "plain_w" in args.scenarios or "soft_w" in args.scenarios:
                 progress(f"{label}: plain_w / soft_w")
             drags, skipped = run_drags(rig, args, args.scenarios)
@@ -940,6 +1092,16 @@ def drag_lines(r: drag.ScenarioResult) -> list[str]:
     return lines
 
 
+def direct_lines(r: DirectResult) -> list[str]:
+    stats = r.stats
+    tests = sum(r.occl_tests) / len(r.occl_tests)
+    note = f"  ({r.note})" if r.note else ""
+    return [
+        f"  direct {r.name:26s} n={len(r.samples_ms):3d}  p50 {stats.p50:9.2f}  p95 {stats.p95:9.2f}"
+        f"  max {stats.max:9.2f}  [{tests:.1f} occl tests/call]{note}",
+    ]
+
+
 def loop_lines(r: LoopResult) -> list[str]:
     return [
         f"  loop {r.phase:5s} {r.seconds:4.1f} s: {r.events:4d} events ({r.events / r.seconds:5.1f}/s, "
@@ -967,6 +1129,8 @@ def report_lines(reports: list[AssetReport], gl_info: tuple[str, str], args) -> 
         )
         for result in report.nav:
             lines.extend(nav_lines(result))
+        for result in report.direct:
+            lines.extend(direct_lines(result))
         for result in report.drags:
             lines.extend(drag_lines(result))
         for note in report.skipped:
@@ -985,7 +1149,7 @@ def main(argv: list[str] | None = None) -> int:
         from loaders.assets import asset_names
 
         print("scenarios: " + ", ".join(SCENARIO_NAMES))
-        print("assets: " + ", ".join(asset_names()) + f" (or any .obj path, e.g. {GOLLUM})")
+        print("assets: " + ", ".join(asset_names()) + f" (or any .obj path, e.g. {GOLLUM_20K}, {GOLLUM})")
         return 0
 
     import importlib

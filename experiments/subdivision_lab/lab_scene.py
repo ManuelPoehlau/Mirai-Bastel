@@ -23,7 +23,8 @@ and refreshed in full when they are shown again.
 
 Known hotspots, measured by `bench.py` and deliberately NOT optimized here
 (handoff §5): `RenderMesh._sync_geometry` issues one `store.update` per moved
-vertex and runs `derived.recompute_bounds` over all vertices on every sync.
+vertex (the all-vertex `derived.recompute_bounds` per sync is lazy since WP-VIEW-PERF-01
+Slice 1, 2026-10-17).
 
 GL needs an active context at the first `allocate()`: build `LabScene` after
 the window exists. `resolve_asset_name()` is GL-free so `run.py` can reject a

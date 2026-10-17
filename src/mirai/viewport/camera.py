@@ -200,6 +200,34 @@ class OrbitCamera:
         ndc_y = cam_y / (cam_z * half_h)
         return (ndc_x + 1.0) * 0.5 * width, (ndc_y + 1.0) * 0.5 * height
 
+    def screen_projector(self, width: int, height: int):
+        """`project_to_screen` as a function of the point alone, with eye, basis and
+        frustum computed once (WP-VIEW-PERF-01: `PickCache.refresh` projects every vertex;
+        per call they cost ~5x the projection itself). The same operations in the same
+        order, so every result is bit-identical to `project_to_screen` - keep the two in
+        step (tests/test_camera.py)."""
+        ex, ey, ez = self.eye()
+        (fx, fy, fz), (rx, ry, rz), (ux, uy, uz) = self.basis()
+        near = self.near
+        aspect = width / height
+        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_w = half_h * aspect
+
+        def project(point: Vec3) -> tuple[float, float] | None:
+            px = point[0] - ex
+            py = point[1] - ey
+            pz = point[2] - ez
+            cam_z = px * fx + py * fy + pz * fz
+            if cam_z <= near:
+                return None
+            cam_x = px * rx + py * ry + pz * rz
+            cam_y = px * ux + py * uy + pz * uz
+            ndc_x = cam_x / (cam_z * half_w)
+            ndc_y = cam_y / (cam_z * half_h)
+            return (ndc_x + 1.0) * 0.5 * width, (ndc_y + 1.0) * 0.5 * height
+
+        return project
+
     def pan(self, dx_px: float, dy_px: float, width: int, height: int) -> None:
         """Verschiebt das Orbit-Ziel entlang der Kamera-Bildebene (Pan/Track).
 

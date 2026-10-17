@@ -195,6 +195,13 @@ if core.topology_revision != last_render_topology_revision:
 - Recompute bounds from affected vertices only (or whole mesh if sparse modification).
 - Cache result; use for frustum culling in next frame.
 
+**Implemented (WP-VIEW-PERF-01 Slice 1, 2026-10-17): lazy.** A position change only invalidates the AABB
+(`DerivedGeometry.invalidate_bounds`, counter `bounds_invalidations`); the whole-mesh recompute runs once on
+the next read of `bounds_min`/`bounds_max` (counter `bounds_recalculations`). Exact, never stale, and nothing
+reads the bounds per frame today, so a vertex drag no longer pays O(V) per move (measured: 8 ms per move on
+21.9k V in the container, `experiments/drag_cost/README.md`). This answers the "Bounds strategy" question in
+§12 for now; affected-only/out-of-AABB tests are only worth it once a per-frame reader (culling) exists.
+
 **GPU Impact:** None (bounds stay on CPU, used for application-level culling, not shaders).
 
 ### 4.5 Adjacency Data: vertex_to_faces

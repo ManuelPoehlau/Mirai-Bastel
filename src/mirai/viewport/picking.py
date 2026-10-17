@@ -33,6 +33,14 @@ same distance/`t`) — the cache only changes *how* a screen position is
 obtained (via a cached dict instead of a fresh `project_to_screen` call),
 never *what* value it is, and `occlusion=False` never runs the extra
 visibility test.
+
+WP-VIEW-PERF-01 Slice 1 (no behaviour change, `tests/test_picking_equivalence.py`
+compares against the pre-PERF code): the vertex/edge scans compare squared
+distances (and screen bboxes for edges) and compute the exact `hypot` distance
+only for the few candidates in range; occlusion is tested nearest-first and
+stops at the first visible candidate (`_nearest_visible`); with a cache, a
+vertex's incident faces come from `PickCache.vertex_faces` instead of the
+O(E) `core.Mesh.vertex_edges` scan.
 """
 
 from __future__ import annotations
@@ -70,24 +78,51 @@ def pick_nearest_vertex(
 ):
     if cache is not None:
         cache.refresh(camera, mesh, width, height)
-    best_id = None
-    best_dist = max_pixel_distance
+        get = cache.vertex_screen.get
+    else:
+        def get(vid):
+            return camera.project_to_screen(mesh.vertex_position(vid), width, height)
+    # WP-VIEW-PERF-01: squared distances in the scan (`math.hypot` costs ~7.5 us per call on
+    # the reference PC), with a relative slack so no vertex the exact `hypot` test below keeps
+    # is dropped by rounding.
+    limit_sq = max_pixel_distance * max_pixel_distance * (1.0 + 1e-9)
+    in_range = []
     for vid in mesh.all_vertex_ids():
-        if cache is not None:
-            projected = cache.vertex_screen.get(vid)
-        else:
-            projected = camera.project_to_screen(mesh.vertex_position(vid), width, height)
+        projected = get(vid)
         if projected is None:
             continue
-        px, py = projected
-        dist = math.hypot(px - sx, py - sy)
-        if dist >= best_dist:
-            continue
-        if occlusion and vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance):
-            continue
-        best_dist = dist
-        best_id = vid
-    return best_id
+        dx = projected[0] - sx
+        dy = projected[1] - sy
+        if dx * dx + dy * dy <= limit_sq:
+            in_range.append((math.hypot(dx, dy), vid))
+    return _nearest_visible(
+        in_range,
+        max_pixel_distance,
+        (lambda vid: vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance))
+        if occlusion else None,
+    )
+
+
+def _nearest_visible(candidates, max_pixel_distance, occluded):
+    """The element of the nearest visible `(dist, element, ...)` candidate under
+    `max_pixel_distance` (None if there is none), ties in mesh order.
+
+    WP-VIEW-PERF-01: the pre-PERF scan tested occlusion in mesh order for every candidate
+    closer than the best visible one so far, so every hidden element under the cursor cost
+    one full test (16-277 per pick on a 20k-vertex mesh). Testing nearest-first and stopping
+    at the first visible one returns the same element - the nearest visible one, the earliest
+    in mesh order on a tie (the sort is stable) - with ~1 test. `occluded(element[, extra])`
+    is called with the candidate's remaining fields; None = no occlusion test."""
+    candidates = [c for c in candidates if c[0] < max_pixel_distance]
+    candidates.sort(key=_by_distance)
+    for candidate in candidates:
+        if occluded is None or not occluded(*candidate[1:]):
+            return candidate[1]
+    return None
+
+
+def _by_distance(candidate):
+    return candidate[0]
 
 
 def _point_segment_distance(px, py, ax, ay, bx, by):
@@ -128,28 +163,41 @@ def pick_nearest_edge(
 ):
     if cache is not None:
         cache.refresh(camera, mesh, width, height)
-    best_id = None
-    best_dist = max_pixel_distance
+        get = cache.vertex_screen.get
+    else:
+        def get(vid):
+            return camera.project_to_screen(mesh.vertex_position(vid), width, height)
+    # A segment whose screen bbox is farther than `reach` from the cursor on one axis is out
+    # of range (its distance is at least that axis gap); the margin covers rounding, the exact
+    # distance below decides.
+    reach = max_pixel_distance + 1e-6
+    in_range = []
     for eid in mesh.all_edge_ids():
         va, vb = mesh.edge_vertices(eid)
-        if cache is not None:
-            a = cache.vertex_screen.get(va)
-            b = cache.vertex_screen.get(vb)
-        else:
-            a = camera.project_to_screen(mesh.vertex_position(va), width, height)
-            b = camera.project_to_screen(mesh.vertex_position(vb), width, height)
+        a = get(va)
+        b = get(vb)
         if a is None or b is None:
             continue
-        dist, t = _point_segment_distance_t(sx, sy, a[0], a[1], b[0], b[1])
-        if dist >= best_dist:
+        ax, ay = a
+        bx, by = b
+        if ax < bx:
+            if sx < ax - reach or sx > bx + reach:
+                continue
+        elif sx < bx - reach or sx > ax + reach:
             continue
-        if occlusion and edge_point_occluded(
-            camera, mesh, cache, eid, t, width, height, depth_tolerance
-        ):
+        if ay < by:
+            if sy < ay - reach or sy > by + reach:
+                continue
+        elif sy < by - reach or sy > ay + reach:
             continue
-        best_dist = dist
-        best_id = eid
-    return best_id
+        dist, t = _point_segment_distance_t(sx, sy, ax, ay, bx, by)
+        in_range.append((dist, eid, t))
+    return _nearest_visible(
+        in_range,
+        max_pixel_distance,
+        (lambda eid, t: edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_tolerance))
+        if occlusion else None,
+    )
 
 
 def _ray_triangle_intersection(origin, direction, a, b, c, debug=False):
@@ -309,7 +357,14 @@ def point_occluded(camera, mesh, cache, point, width, height, exclude_faces, dep
     return False
 
 
-def _incident_faces_of_vertex(mesh, vid):
+def _incident_faces_of_vertex(mesh, vid, cache=None):
+    """Faces on the edges of `vid`. From the cache's vertex -> faces map when there is a
+    cache (WP-VIEW-PERF-01: `core.Mesh.vertex_edges` is an O(E) scan, the frozen core keeps
+    it); a vertex the map does not know falls back to the scan."""
+    if cache is not None:
+        faces = cache.vertex_faces(mesh).get(vid)
+        if faces is not None:
+            return faces
     faces = set()
     for eid in mesh.vertex_edges(vid):
         faces.update(mesh.edge_faces(eid))
@@ -319,7 +374,7 @@ def _incident_faces_of_vertex(mesh, vid):
 def vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance=DEPTH_TOLERANCE):
     """True if vertex `vid` is hidden behind a face not incident to it."""
     point = mesh.vertex_position(vid)
-    exclude = _incident_faces_of_vertex(mesh, vid)
+    exclude = _incident_faces_of_vertex(mesh, vid, cache)
     return point_occluded(camera, mesh, cache, point, width, height, exclude, depth_tolerance)
 
 

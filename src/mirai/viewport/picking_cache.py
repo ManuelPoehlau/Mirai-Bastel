@@ -22,6 +22,14 @@ positions) or the occlusion-relevant display state changes (show_faces).
 Camera changes need no explicit call: the cache signature already keys on
 `camera.camera_revision`, which `OrbitCamera` bumps on every orbit/dolly/pan
 itself, so an orbit/zoom/pan invalidates the cache automatically.
+
+WP-VIEW-PERF-01 (Slice 1): `refresh()` projects through the camera's
+`screen_projector(width, height)` when it has one (`OrbitCamera`,
+`ObjectSpaceCamera`): the camera basis is computed once per refresh instead of
+once per vertex, with values bit-identical to `project_to_screen`. And the
+cache owns a vertex -> incident-faces map for the occlusion test
+(`vertex_faces`), keyed on the mesh state only - rebuilt after `invalidate()`
+or for another mesh, never because the camera moved.
 """
 
 from __future__ import annotations
@@ -37,6 +45,8 @@ class PickCache:
         self._generation: int = 0
         self.vertex_screen: dict = {}
         self.face_bbox: dict = {}
+        self._faces_key: tuple | None = None
+        self._vertex_faces: dict = {}
 
     def invalidate(self) -> None:
         """Forces a refresh on the next `refresh()` call. Call this whenever
@@ -60,10 +70,14 @@ class PickCache:
             return
         self._signature = signature
 
-        vertex_screen = {
-            vid: camera.project_to_screen(mesh.vertex_position(vid), width, height)
-            for vid in mesh.all_vertex_ids()
-        }
+        projector = getattr(camera, "screen_projector", None)
+        if projector is not None:
+            project = projector(width, height)
+        else:
+            def project(point):
+                return camera.project_to_screen(point, width, height)
+        position = mesh.vertex_position
+        vertex_screen = {vid: project(position(vid)) for vid in mesh.all_vertex_ids()}
         self.vertex_screen = vertex_screen
 
         face_bbox = {}
@@ -79,3 +93,21 @@ class PickCache:
             ys = [p[1] for p in points]
             face_bbox[fid] = (min(xs), min(ys), max(xs), max(ys))
         self.face_bbox = face_bbox
+
+    def vertex_faces(self, mesh) -> dict:
+        """vertex -> set of the faces on its edges (the faces the occlusion test excludes for
+        that vertex: the union of `edge_faces` over `vertex_edges`, as the uncached test
+        builds it). Built lazily once per mesh state (`id(mesh)` + `invalidate()`
+        generation), independent of the camera. Read-only for callers."""
+        key = (id(mesh), self._generation)
+        if key != self._faces_key:
+            faces: dict = {vid: set() for vid in mesh.all_vertex_ids()}
+            for eid in mesh.all_edge_ids():
+                edge_faces = mesh.edge_faces(eid)
+                if not edge_faces:
+                    continue
+                for vid in mesh.edge_vertices(eid):
+                    faces[vid].update(edge_faces)
+            self._vertex_faces = faces
+            self._faces_key = key
+        return self._vertex_faces

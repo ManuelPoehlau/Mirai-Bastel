@@ -21,7 +21,7 @@ reference PC.
 | File | What it is |
 |---|---|
 | `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one entry per scenario in `SCENARIOS` (`plain_w`; `soft_w` = the Soft Selection drag with the band overlay, WP-SOFT-01 S2b; `soft_w_sym` = the same under symmetry X, AD-SYM-04 SS3) |
-| `probe_navigation_gl.py` | CLI probe (WP-VIEW-PERF-01): orbit, pan, zoom, first hover after a camera change, hover move, selection click, orbit with wire, the real event loop, plain/soft W - per event + frame on head, body and `gollum.obj`; see "Navigation and picking" below |
+| `probe_navigation_gl.py` | CLI probe (WP-VIEW-PERF-01): orbit, pan, zoom, first hover after a camera change, hover move, selection click, orbit with wire, the `direct` rows (hover vertex/edge/face, Knife hover, Paint step, Box 60/150/300 px, snap query, cache rebuild, `recompute_bounds`; since Slice 1), the real event loop, plain/soft W - per event + frame on head, body and `gollum_20k.obj` (default; `gollum.obj` = 87.5k via `--assets`); see "Navigation and picking" below |
 | `_paths.py` | sys.path bootstrap (pattern copied from `soft_selection/_paths.py`) |
 | `tests/` | headless tests: argument handling, statistics, soft variants and report format, import boundary (no pyglet, no window); one end-to-end smoke run of `soft_w`, skipped without a GL context; `test_probe_navigation_args.py` for the navigation probe (arguments, asset paths, row budget, report format, import boundary) |
 
@@ -551,12 +551,97 @@ soft W 15/50 % geodesic, `soft_w_sym` (body), commit frame; retopo: edit mesh he
 Box / Paint / edge / face / Knife rows; the `math.hypot` timeit line above on the reference PC; the `soft_w` margin after
 FACE_DATA; Manu's target size for *editing* (ATELIER D1c) - only options 5 and beyond depend on it.
 
+## Result: fix slice 1, container, before → after (WP-VIEW-PERF-01, 2026-10-17)
+
+Production, behaviour-neutral. Built: (1) nearest-first occlusion in `pick_nearest_vertex` / `pick_nearest_edge`
+(candidates in range sorted by screen distance, stop at the first visible one; squared distances / screen bboxes in
+the scans, exact `hypot` only for the candidates), (2) `PickCache.refresh` projects through
+`camera.screen_projector(w, h)` (eye/basis once per refresh; `OrbitCamera` and `ObjectSpaceCamera`; bit-identical to
+`project_to_screen`), (3) a vertex → incident-faces map in `PickCache` (`vertex_faces`, rebuilt per mesh state after
+`invalidate()`, not per camera) instead of `core.Mesh.vertex_edges` in the occlusion test (`src/core` untouched),
+(4) lazy bounds: a W move only invalidates the AABB (`bounds_invalidations`), the O(V) recompute runs on the next read
+(`bounds_recalculations`; `VIEWPORT_V02` §4.4 updated). Not built (Slice 2+): Box batched visibility, hover/zoom
+coalescing, `highlight_flags`, `store.update` batching.
+
+**Same picks.** `tests/test_picking_equivalence.py` keeps the pre-PERF pickers verbatim and compares: head and body
+over a cursor grid plus points on/next to 60 projected vertices, front and back camera, Shaded and Wireframe (body:
+~170 hits per camera, occlusion changes the pick on ~70 of them); without a cache; through a placed
+`ObjectSpaceCamera`; a seeded `gollum_20k` sample (12/13 cursors hit, occlusion changes 6-8); a hidden vertex and edge
+earlier in mesh order than the visible nearest one (now 2 tests instead of a mesh-order sweep); an equal-distance tie
+(mesh order kept); Box Select vertex/edge/face on body (and once by hand on `gollum_20k`, 60 px: 440 / 820 / 382
+elements, identical). The probe's Box rows select the same counts before and after.
+
+**Container numbers, not the reference PC** (`REFERENCE_HARDWARE.md` §4): Intel Xeon @ 2.80 GHz, 4 cores, Python
+3.13.16, llvmpipe (`draw` = CPU raster). Same probe, same container, one after the other: before = `65e30ae` + the step-0
+probe (`src/` unchanged), after = this commit. Default run (`python experiments/drag_cost/probe_navigation_gl.py`)
+plus `--scenarios direct` (camera framed first) and, for 87.5k, `--assets examples/meshes/gollum.obj --scenarios zoom
+first_hover hover_move select_click --profile-top 0`. ms p50 (p95); one 60 Hz frame = 16.7 ms.
+
+| Row (`gollum_20k`, 21 875 V) | before | after | what moved |
+|---|---:|---:|---|
+| zoom notch, frame | 685 (1 273) | **86 (141)** | occlusion tests 85.5 → 2.0 per notch; cache rebuild 135 → 63 |
+| first hover after an orbit, frame | 255 (325) | **86 (122)** | rebuild 130 → 63; tests 15.4 → 1.0 |
+| hover move, frame | 211 (836) | **20 (30)** | tests 37.6 → 1.7 |
+| selection click, frame | 198 (272) | **25 (28)** | tests 29 → 1.0 |
+| orbit / pan step, frame | 8.2 / 8.5 | 7.7 / 8.4 | unchanged (llvmpipe draw; no pick) |
+| direct: hover vertex | 83 (882) | **6.7 (19)** | tests 41 → 1.5 |
+| direct: hover edge | 69 (397) | **20 (31)** | tests 50 → 1.0 |
+| direct: hover face | 3.4 | 3.7 | unchanged (no occlusion test) |
+| direct: Knife hover (`knife_pick`) | 58 (925) | **13 (30)** | its vertex + edge picks |
+| direct: Paint, one 30 px step (5 picks) | 2 100 | **38** | tests 325 → 7 |
+| direct: Box 60 / 150 / 300 px, vertex | 4 075 / 17 398 / 47 370 | **1 429 / 6 920 / 19 901** | same tests (673 / 2 684 / 6 985), each cheaper (map instead of `vertex_edges`) |
+| direct: Box 60 / 150 / 300 px, face | 1 189 / 6 269 / 18 552 | 1 183 / 5 957 / 19 276 | unchanged: `point_occluded` per face is Slice 2 |
+| direct: snap query, valid cache / after an orbit | 2.3 / 135 | 2.2 / **63** | the rebuild |
+| direct: cache rebuild | 137 | **58** | projector |
+| plain W 36 / 112 / 500 V, `move` p50 / p95 | 13.8/14.8 · 16.6/18.3 · 22.4/31.6 | **2.8/3.0 · 4.0/6.6** · 11.9/19.8 | no `recompute_bounds` per move (8.6 ms on its own); 500 V stays over 8 ms (`store.update`) |
+| soft W 15 % / 50 % geodesic, `move` p50 / p95 | 28.7/40.8 · 93/129 | 12.3/19.1 · 77/122 | bounds; the rest is per-vertex `store.update` |
+| soft drag commit frame 15 % / 50 % | 1 734 / 1 375 | **233 / 353** | the re-pick after release |
+| event loop, hover (real wiring) | 2.4 events/s, longest gap 819 ms | **19 events/s, 118 ms** | |
+| event loop, zoom | 2.0 notches/s, 472 ms each, gap 615 | **9.5/s, 85 ms each, gap 138** | |
+
+Head and body (all rows were under a frame before; selected): body zoom 9.3 → 3.9, first hover 10.7 → 4.5, click 4.6
+→ 1.9, Paint step 6.5 → 1.5, plain W 500 V 18.9/21.3 → 9.8/15.4; head zoom 4.9 → 3.0, Paint 2.5 → 0.8. Box face rows
+unchanged, Box vertex rows ~1.6-1.8x faster.
+
+`gollum.obj` (87 500 V, Reference-mesh stress case): zoom 2 505 (4 829) → **354 (565)**, first hover 1 086 → **333**,
+click 874 → **84**, hover move p95 3 614 → **103** (p50 45 → 72 is not like-for-like: the before row's cursor sat over
+an unchanged hover on most moves, `hover changed 6/19` vs `27/40` after, so the after p50 includes the hover's sync +
+draw; the rows before it ran a different number of budgeted orbit gestures).
+
+**Reading.** On `gollum_20k` hover, click, Knife hover and Paint are now one or two occlusion tests instead of
+16-325; what is left of a pick is the O(F) face loop of that test (~5 ms) and the O(V) scan. The camera-dependent
+rebuild halved (not 5x as in the W4 what-if: the projection itself is now small, the unchanged O(F) face bboxes are most of the rebuild in the profile). So after an orbit or
+a zoom notch the first pick still costs ~60-85 ms on 21.9k and ~300 ms on 87.5k - that is option 5 (coalescing) plus
+a camera-independent index, as predicted. Box Select stays unusable from ~15k V (1.4-20 s): it still runs one full
+occlusion test per element (Slice 2: batched visibility). W drags of small selections are under the 8 ms bar on 21.9k
+now; large ones are bounded by the per-vertex `store.update` (Slice 2+). Reference-PC numbers decide (Manu's run
+below); the `math.hypot` effect (option 1) is invisible here by construction.
+
+### Praktischer Test für Manu (Slice 1, ca. 15 Minuten)
+
+Annahme: Es soll sich **nichts anders anfühlen** - nur schneller. Wenn sich irgendwo eine Auswahl, ein Hover oder ein
+Knife-Punkt anders verhält als vorher, ist das ein Fehler (bitte melden, mit Asset und Modus).
+
+1. `git pull`
+2. Messung (öffnet kein Fenster, 5-10 Minuten): `python experiments/drag_cost/probe_navigation_gl.py` - die ganze Ausgabe
+   (ab `Navigation and picking cost ...`) in den Chat kopieren.
+3. Dann die 87.5k-Variante (kurz): `python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum.obj --scenarios zoom first_hover hover_move select_click --profile-top 0` - Ausgabe ebenfalls kopieren.
+4. Im Fenster: `python src/main.py examples/meshes/gollum_20k.obj` (danach dasselbe kurz mit `examples/meshes/gollum.obj`):
+   a. **Hover**: Vertex-, Edge- und Face-Modus, mit der Maus über das Gesicht fahren, auch an der Silhouette - der
+      Hover springt auf dieselben Elemente wie vorher, verdeckte Rückseiten-Vertices werden in Shaded nicht gehovert.
+   b. **Klick + Zoom**: ein paar Vertices anklicken, dann mit dem Mausrad zoomen und direkt wieder hovern - fühlt es
+      sich flüssiger an? (Erwartung Container: Hover/Klick deutlich; Zoom besser, aber noch nicht frei.)
+   c. **Box/Paint**: Box-Auswahl über eine kleine Fläche und Paint-Auswahl über das Gesicht - gleiche Auswahl wie
+      gewohnt (Box ist auf gollum weiterhin langsam, das ist der nächste Slice).
+   d. **Knife**: eine Knife-Linie über Kanten und eine Fläche ziehen - die Punkte rasten an denselben Stellen ein.
+5. Verdikt in einem Satz: „fühlt sich gleich an, nur schneller“ - oder was anders ist.
+
 ## Next step
 
 The reference-PC numbers are in `REFERENCE_HARDWARE.md` §2 and above; the 8 ms bar holds and S2c ran (verdict: AD-020
 "S2c verdict"). A larger radius (S2d: up to 200 %) can be measured with `--scenarios soft_w --sizes 100 200`.
 
 Navigation (WP-VIEW-PERF-01): reference-PC run 2026-10-11 (on `gollum_20k.obj`, see the audit above) and the audit at HEAD
-2026-10-17 are in. Next: the fix slice 1 from "Ranking now" (step 0: the † rows into `probe_navigation_gl.py`, default
-dense asset `gollum_20k.obj`), before/after in the container, then Manu's reference-PC run. Manu's target size for editing
+2026-10-17 are in; fix slice 1 is built (container before/after above). Next: Manu's reference-PC run and window check
+("Praktischer Test ... Slice 1"), then Slice 2 (Box batched visibility, coalescing). Manu's target size for editing
 decides only options 5 and beyond.

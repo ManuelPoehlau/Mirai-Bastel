@@ -226,13 +226,36 @@ class DerivedGeometry:
     Core-Spezifikation - Topologie-Grenze).
     """
 
-    def __init__(self, mesh: Mesh) -> None:
+    def __init__(self, mesh: Mesh, on_bounds_recomputed=None) -> None:
         self.vertex_to_faces: dict[VertexId, set[FaceId]] = {}
         self.face_normals: dict[FaceId, Vec3] = {}
         self.vertex_normals: dict[VertexId, Vec3] = {}
-        self.bounds_min: Vec3 = (0.0, 0.0, 0.0)
-        self.bounds_max: Vec3 = (0.0, 0.0, 0.0)
+        self._bounds: tuple[Vec3, Vec3] = ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+        # The mesh whose positions changed since `_bounds` was computed (None = current).
+        self._stale_bounds_mesh: Mesh | None = None
+        self._on_bounds_recomputed = on_bounds_recomputed
         self.full_recompute(mesh)
+
+    # -- Bounds (lazy, WP-VIEW-PERF-01) --------------------------------------
+
+    @property
+    def bounds_min(self) -> Vec3:
+        return self._current_bounds()[0]
+
+    @property
+    def bounds_max(self) -> Vec3:
+        return self._current_bounds()[1]
+
+    def invalidate_bounds(self, mesh: Mesh) -> None:
+        """Positions of `mesh` changed: the AABB is recomputed over all vertices on its next
+        read, not now (VIEWPORT_V02 §4.4 "cached; invalidated with position changes").
+        Nothing reads it per frame, so a W drag no longer pays O(V) per move."""
+        self._stale_bounds_mesh = mesh
+
+    def _current_bounds(self) -> tuple[Vec3, Vec3]:
+        if self._stale_bounds_mesh is not None:
+            self.recompute_bounds(self._stale_bounds_mesh)
+        return self._bounds
 
     # -- Adjazenz ----------------------------------------------------------
 
@@ -264,7 +287,8 @@ class DerivedGeometry:
             sums[vertex_id] = acc
         self.vertex_normals = {v: _normalize(s) for v, s in sums.items()}
 
-        self.bounds_min, self.bounds_max = compute_bounds(list(positions.values()))
+        self._bounds = compute_bounds(list(positions.values()))
+        self._stale_bounds_mesh = None
 
     # -- Inkrementelle Updates (Position-Change, keine Topology) -------------
 
@@ -304,4 +328,7 @@ class DerivedGeometry:
 
     def recompute_bounds(self, mesh: Mesh) -> None:
         positions = [mesh.vertex_position(v) for v in mesh.all_vertex_ids()]
-        self.bounds_min, self.bounds_max = compute_bounds(positions)
+        self._bounds = compute_bounds(positions)
+        self._stale_bounds_mesh = None
+        if self._on_bounds_recomputed is not None:
+            self._on_bounds_recomputed()
