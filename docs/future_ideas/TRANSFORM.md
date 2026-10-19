@@ -63,3 +63,5 @@ solange die Maus gezogen wird (Kosten pro Wheel-Schritt: neue Influence-Berechnu
 
 **Next step**: erst nach weiteren Soft-Selection-Tests (auch mit höher aufgelösten Meshes) neu bewerten; Voraussetzung für
 eine Entscheidung ist ein konkreter Fall, in dem der feste Radius pro Geste stört.
+
+Pivot System: Blender genauer anschauen, für flexibles Pivot System und dann überlegen, wie wir es in Mirai einsetzen.
