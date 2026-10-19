@@ -2,66 +2,50 @@
 
 Ideen und Beobachtungen rund um Transform, die bewusst noch nicht umgesetzt werden.
 
-> Im Hinterkopf behalten und später erneut bewerten.
+> Im Hinterkopf behalten und später erneut bewerten. Pivot-Ausbau ist für den Character-Workflow sinnvoll, steht aber hinter kontrollierter Formgebung, Maskierung und Topologie-Navigation.
 
-## Multi-Element Tangent-Basis Derivation (Deferred per AD-012 Amendment, WP-03C)
+## Pivot-System: später gezielt erweitern
 
-**Status**: Deliberately not implemented in WP-03C; single-face only.
+Mirai hat bereits einen Auswahlmittelpunkt als Komponenten-Pivot und einen Objektursprung für Objekttransformationen. Der Pivot bleibt während einer laufenden Geste fest. Ein frei platzierbares Pivot-System ist eine spätere Erweiterung, keine fehlende Voraussetzung für die nächsten Character-Shaping-Schritte.
 
-WP-03C (commit a12f457) implements tangent basis derivation for **single-face 
-selections only** — `space="normal", axis="x"/"y"` works for exactly one 
-selected face, raises `ValueError` for multi-face or non-face selections.
+Für die spätere Untersuchung sind diese Möglichkeiten relevant:
+
+- **Pivot Mode:** Selection/Median, Bounding-Box-Zentrum, aktives Element, Objektursprung und individuelle Origins.
+- **Custom Pivot:** Pivot an einer frei gewählten Position platzieren und optional an einer gewünschten Orientierung ausrichten.
+- **Pivot sichtbar machen:** klare Anzeige von Position und Achsen, damit der Artist weiß, worum die Auswahl rotiert oder skaliert.
+- **Per-Object Pivot:** bei getrennten Character-Objekten wie Augen, Kiefer, Zähnen oder Zubehör soll ein eigener Pivot möglich sein, ohne den Mesh-Inhalt versehentlich zu verschieben.
+
+Ein einfacher erster Praxistest sollte beantworten, welche zwei oder drei Pivot-Modi im täglichen Modellieren tatsächlich gebraucht werden. Nicht alle Blender-Modi automatisch übernehmen.
+
+## Soft Selection: Radius live während des Ziehens ändern
+
+**Status:** Bewusst zurückgestellt. Im S2c-Verdikt (AD-020, „S2c verdict“) steht der Radius-Schritt per Shift+Mausrad auf KEEP („passt erstmal“); den Radius während einer laufenden Geste zu ändern bleibt eine Idee für später.
+
+Heute ist der Radius pro Geste fest: `SoftSettings` wird bei `begin()` gelesen, ein Wechsel mitten in der Geste gilt ab der nächsten Geste (AD-020 §4.3). Live-Änderung würde die Einflussgewichte neu berechnen, während der Artist zieht. Das muss gegen die Kosten der Influence-Berechnung und die Viewport-Aktualisierung getestet werden; siehe `experiments/drag_cost/README.md`.
+
+**Wieder aufgreifen, wenn** ein konkreter Character-Shaping-Fall zeigt, dass der feste Radius eine Geste unnötig unterbricht – nicht allein, weil ein anderes DCC Live-Änderung anbietet.
+
+## Multi-Element Tangent-Basis Derivation (deferred per AD-012 Amendment, WP-03C)
+
+WP-03C implements tangent basis derivation for **single-face selections only**: `space="normal", axis="x"/"y"` works for exactly one selected face and raises `ValueError` for multi-face or non-face selections.
 
 Multi-element selections fall back to `selection_normal()`'s existing averaging:
 - `space="normal", axis="z"` / `None`: works (returns averaged normal)
 - `space="normal", axis="x"` / `"y"`: raises (no stable tangent for multiple faces)
 
-**Why deferred**:
-- Blender's own multi-element Normal orientation is a long-standing, unresolved 
-  UX complaint (reference: https://developer.blender.org/T62124)
-- No reference precedent for "correct" multi-face tangent behavior (row-vs-column 
-  winding? averaged? principal axes? something else?)
-- Requires real Playground research to settle on a convention, not hypothetical 
-  design
+**Why deferred:**
+- Blender's own multi-element Normal orientation has a long-standing UX complaint (reference: https://developer.blender.org/T62124).
+- There is no settled convention for a multi-face tangent basis.
+- A stable rule should come from practical Playground research, not hypothetical design.
 
-**Next step**: Gather use cases and artist feedback during Playground 
-experimentation with single-face basis (WP-03C validates the infrastructure 
-works). Revisit only after concrete patterns emerge.
+**Next step:** gather use cases during experimentation with single-face basis. Revisit after concrete patterns emerge.
 
-## Tangent-Plane Movement (Deferred per AD-012)
+## Tangent-Plane Movement (deferred per AD-012)
 
-**Status**: Deliberately not implemented in WP-03B/WP-03C.
-
-Move perpendicular to the selection normal (i.e., within the tangent plane):
+Move perpendicular to the selection normal (within the tangent plane):
 
 ```python
-space="tangent"  # Move in plane perpendicular to selection normal
+space="tangent"
 ```
 
-The infrastructure is in place:
-- Normal resolution via `selection_normal()` is available
-- Tangent basis via `_face_tangent_basis()` is now available (WP-03C)
-- Projection math is straightforward (delta - projection onto normal)
-- Tool layer can accept the parameter
-
-**Deferred because**:
-- No clear use case yet (existing `space="normal"` covers the opposite direction)
-- Semantics: does "tangent" mean any tangent direction (freiform in plane), or constrained to a specific tangent axis?
-- Requires clarification of what "constrained tangent movement" means (single axis within plane? Both? Free?)
-
-**Next step**: gather use cases during Playground experimentation; revisit after WP-04 hotkey wiring stabilizes and multi-element tangent research completes.
-
-## Soft Selection: Radius live während des Ziehens ändern (Idee, Manu S2c 2026-10-11)
-
-**Status**: Bewusst nicht umgesetzt. Im S2c-Verdikt (AD-020, „S2c verdict“) steht der Radius-Schritt per Shift+Mausrad auf
-KEEP („passt erstmal“); den Radius **während** einer laufenden Geste zu ändern bleibt eine Idee für später.
-
-Heute gilt: der Radius ist pro Geste fest — `SoftSettings` wird bei `begin()` gelesen, ein Wechsel mitten in der Geste
-gilt ab der nächsten (AD-020 §4.3). Live-Änderung hieße, die Gewichte aus dem Start-Snapshot der Geste neu auszuwerten,
-solange die Maus gezogen wird (Kosten pro Wheel-Schritt: neue Influence-Berechnung plus neue Bänder, vgl.
-`experiments/drag_cost/README.md`).
-
-**Next step**: erst nach weiteren Soft-Selection-Tests (auch mit höher aufgelösten Meshes) neu bewerten; Voraussetzung für
-eine Entscheidung ist ein konkreter Fall, in dem der feste Radius pro Geste stört.
-
-Pivot System: Blender genauer anschauen, für flexibles Pivot System und dann überlegen, wie wir es in Mirai einsetzen.
+The normal resolution and single-face tangent-basis infrastructure exist, but the meaning of constrained tangent movement remains ambiguous: one tangent axis, both axes, or free movement in the plane? No clear use case is settled yet. Revisit after practical use cases emerge.
