@@ -128,7 +128,7 @@ p95 and outliers (p50 of 8-15 samples only); the interaction with H7 surfaces (S
 
 **`gl_PrimitiveID` (step 4 of the practical test), Manu 2026-10-20, in chat:** "Das Flat Shading sieht auch gut aus
 (keine Flecken)." Recorded by the agent on Manu's instruction. It answers the check asked for in step 4 for **Flat**;
-Smooth and the other B3 verdicts (triangles, light, performance) were not part of the answer and stay as they are in the
+Later the same day Manu added: no triangles visible in Smooth or Flat, also under different lights, and it runs fluidly (asset not named). Only the start-light verdict (b) is still pending in the
 [Intake Log](../../docs/architecture/WP-06_INTAKE_LOG.md). Evidence for AD-022 option B2, not a decision.
 
 ## What this does not answer

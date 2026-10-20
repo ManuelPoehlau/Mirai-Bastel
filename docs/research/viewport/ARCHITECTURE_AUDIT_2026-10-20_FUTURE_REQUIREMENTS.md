@@ -1,5 +1,5 @@
 > **Status (2026-10-20):** Detailbericht zu Audit 2 (Zukunftsanforderungen). Discovery, keine Entscheidung. Kurzfassung für Manu: [ARCHITECTURE_AUDIT_2026-10-20.md](ARCHITECTURE_AUDIT_2026-10-20.md).
-> Die in §1 ausgewerteten Referenz-PC-Messungen stehen inzwischen in den Mess-Dokumenten (Spike-README „Result: reference PC“, drag_cost-README „Result: topology operations, reference PC“, REFERENCE_HARDWARE §2); die Rohausgaben liegen in `RESULTS_*_2026-10-20.md` neben diesen READMEs. Das Flat-Verdikt steht im Intake Log (2026-10-20) und gilt **nur für Flat**.
+> Die in §1 ausgewerteten Referenz-PC-Messungen stehen inzwischen in den Mess-Dokumenten (Spike-README „Result: reference PC“, drag_cost-README „Result: topology operations, reference PC“, REFERENCE_HARDWARE §2); die Rohausgaben liegen in `RESULTS_*_2026-10-20.md` neben diesen READMEs. Die Verdikte stehen im Intake Log (2026-10-20): Flat ohne Flecken, keine Dreiecke in Smooth und Flat, flüssig; nur (b) Startlicht ist offen. Der Text unten spricht noch vom Stand „nur Flat“.
 
 # Mirai-Bastel — Future Requirements Architecture Audit
 

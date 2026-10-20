@@ -39,7 +39,7 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 
 - ~~Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.~~ Gemessen 2026-10-11 (unten): `3.3.0` /
   `GeForce 9800 GTX/9800 GTX+/PCIe/SSE2`.
-- Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6). Seit 2026-10-15 benutzt der Production-Shader beides, dazu Buffer-Texturen (AD-018 Nachtrag 2026-10-15): Sieht Flat auf diesem PC nicht pro Polygon aus oder Smooth fleckig, ist das der Befund. **Teilweise beantwortet (Manu, 2026-10-20, Chat): Flat sieht gut aus, keine Flecken; Smooth wurde nicht berichtet (Eintrag unten).**
+- Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6). Seit 2026-10-15 benutzt der Production-Shader beides, dazu Buffer-Texturen (AD-018 Nachtrag 2026-10-15): Sieht Flat auf diesem PC nicht pro Polygon aus oder Smooth fleckig, ist das der Befund. **Beantwortet für Flat (Manu, 2026-10-20, Chat): keine Flecken; keine Dreiecke mehr in Smooth und Flat, läuft flüssig (Eintrag unten).**
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in
@@ -108,7 +108,7 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   `gollum` (87 500 V): 662 → 14 ms; 85 → 3,3 ms; 14 522 → 295 ms. ID-Render (GL-Timer): 1,14 ms bzw. 10,3 ms GPU-Zeit.
   FBO, `glReadPixels` und die GL-Timer-Query laufen auf dem Treiber ohne Fehler.
 - Flat Shading ohne Flecken (Manu, Chat): spricht dafür, dass `gl_PrimitiveID` und die Buffer-Texturen (`texelFetch`) auf diesem Treiber
-  funktionieren. Smooth, Dreiecks-Sichtbarkeit und die Frame-Zeiten (ATELIER B3) sind damit nicht beantwortet.
+  funktionieren. Dazu Manu (Chat, 2026-10-20, später): keine Dreiecke mehr in Smooth oder Flat, auch bei verschiedenen Lichtverhältnissen, und es läuft flüssig (Asset nicht genannt; Intake Log 2026-10-20). Ob Smooth „fleckig“ aussieht, wurde nicht ausdrücklich gesagt.
 - Topologie-Operation auf `gollum_20k` (je n = 3, kein p95): Delete 1,9 s, Dissolve 2,0 s, Knife-Commit 2,4 s, Extrude 3,1–3,6 s; Undo 1,7–2,0 s.
   Davon Viewport-Sync 55–85 % (ein Strukturneubau ≈ 1,26 s), History 8–26 %, Hover-Neupick 4–13 %. Der Sync läuft hier 2,7–3,5× langsamer als im
   Container, die Gesamt-Frames 2,0–2,5×; die Faustregel „≈ 2×“ gilt für den GL-/Sync-Anteil nicht.
