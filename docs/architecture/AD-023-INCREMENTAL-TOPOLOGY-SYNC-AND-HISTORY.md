@@ -7,6 +7,10 @@ document lists alternatives, it does not select one.
 **Work package:** WP-TOPO-PERF-01 (proposed name).
 **Artist input:** Manu, 2026-10-17: Blender on the reference PC runs "Topologie-Operationen" on 20k gollum
 fluidly; incremental topology is "gleich wichtig" as GPU picking ([AD-022](AD-022-GPU-PICKING.md)).
+**Artist input (2026-10-20, in chat, recorded by the agent on his instruction):** "flüssig" = "ohne sichtbare Verzögerung"; in Blender he notices no delay on
+20k gollum for Extrude, Split or Knife and estimates "nur wenige ms" (a feeling, not a measurement). He will not give a millisecond value per operation; he judges
+by feel in the practical test. Undo depth: 32 steps "würde erstmal passen". Operations that matter: Knife, Extrude, Connect, Soft Selection, "letztendlich alle".
+Engineering proxies for gating (agent, `PROVISIONAL`, not Manu's numbers): pointer update <= 16.7 ms, a discrete operation including Undo <= 100 ms.
 **Basis (only linked):** [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) ("Topology ops on
 the current architecture", "Haltepunkt"); [CORE_V1_FREEZE](CORE_V1_FREEZE.md) (§7.1 exceptions);
 [V1_CORE](V1_CORE.md) §11 and AD-001 (ID continuity, in `src/core/ids.py`); `src/core/operations/topology.py`

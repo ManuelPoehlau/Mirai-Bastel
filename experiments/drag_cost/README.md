@@ -790,8 +790,34 @@ run; the extrude sync of ~2 500 ms is two structural rebuilds, not three, see th
 Other rows: `export_state` 145 ms and `load_state` 415 ms per call, `PickCache.refresh` 29 ms averaged over 174 calls. Reading
 (`PROVISIONAL`): about 88 % of one rebuild is whole-mesh Python work (normals, triangulation, flattening); only ~12 % is the GL store.
 A local patch of the triangulation/normals (AD-023 V0/V1) addresses ~60-65 % of the sync, flattening another ~22 %; GL buffer upload
-is not the main cost. Not yet measured on the reference PC: the effect of the cyclic GC and of the history depth (AD-023 review B-1),
-n >= 10 (see the options `--gc` and `--history-depth` of the probe).
+is not the main cost. The effect of the cyclic GC and of the history depth (AD-023 review B-1) is measured in the next subsection.
+
+### GC and history depth, reference PC (Manu, 2026-10-20)
+
+`probe_topology_sync_split.py --steps 12 --row-seconds 120 --history-depth 20` with `--gc on`, `--gc off` and `--gc freeze` (20 real
+undo entries of two whole-mesh snapshots each stay on the stack), `gollum_20k`, Python 3.14.2, **n = 12 per row**; the report prints p50 and
+max, no p95. Raw:
+[`RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md`](../architecture_audit_probes/RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md).
+ms; frame p50 (max) / history p50 / undo frame p50:
+
+| Op | GC on | GC off | GC frozen |
+|---|---|---|---|
+| Extrude 1 face | 2 770 (**12 950**) / 208 / 1 607 | 2 908 (3 450) / 224 / 1 673 | 3 041 (3 097) / 349 / 1 928 |
+| Extrude 20 faces | 3 331 (4 894) / 588 / 1 650 | 3 283 (3 596) / 564 / 1 680 | 3 872 (4 058) / 1 108 / 1 956 |
+| Knife commit | 2 193 (4 140) / 471 / 1 733 | 2 127 (2 257) / 446 / 1 736 | 2 603 (2 614) / 874 / 2 125 |
+| Dissolve 1 edge | 1 685 (2 614) / 204 / 1 700 | 1 695 (1 709) / 200 / 1 711 | 1 910 (2 011) / 342 / 2 118 |
+| Delete 1 face | 1 602 (1 927) / 206 / 1 626 | 1 604 (1 635) / 202 / 1 645 | 1 826 (1 932) / 375 / 2 057 |
+
+Reading (agent, `PROVISIONAL`): (1) On the reference PC with Python 3.14 the **typical** values do not depend on the GC (on vs off within
+~3 %), also with 20 live undo entries; the history of a Delete is two `export_state` calls (~200 ms) with or without it. The review's
+container finding (GC as the main cost of `export_state` / `load_state`) does not carry over to the median here. (2) The GC does cost **tail
+latency**: with it on, single samples stall (worst 12.9 s at Extrude 1 face, typically +1-2 s elsewhere); with it off the maximum stays within
+~10 % of the median. (3) `gc.freeze()` removes the stalls but makes the median 10-20 % slower and the history up to twice as slow; the
+cause is not known and the option is not worth following. (4) `Mesh.export_state` averaged 158 ms (on) vs 98 ms (off) and `load_state` 484 vs
+264 ms over the whole run including the 20-entry padding phase and the stalls, so the GC effect sits in the accumulation phase and the tails,
+not in the steady-state history column. (5) For a Delete at the median: operation 25 + history 202 + hover re-pick 150 + viewport sync 1 212 +
+draw 10 ms; the sync is ~75 %, so a perfect delta history (H1) can save at most ~12 %, GPU picking ~9 %. Open: p95 (n = 12 is too small), Python
+version dependence (the container with 3.13 behaves differently).
 
 ### Haltepunkt: what Blender-level fluidity on 20k would need (decision note for Manu + review, 2026-10-17)
 

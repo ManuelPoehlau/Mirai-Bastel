@@ -40,6 +40,8 @@ Options `--gc on|off|freeze` and `--history-depth N` (added after the AD-023 rev
 `export_state` / `load_state`, and the cost grows with the number of live snapshots). Container check (Xeon, Python 3.13, llvmpipe,
 `gollum_20k`, history depth 10, `--steps 5 --row-seconds 1`, n = 3): history part of an Extrude 1 face 915 ms with the GC on, 284 ms off,
 436 ms frozen; Delete 1 face 868 ms on, 80 ms off, 345 ms frozen. That supports the review's reading in the container; **the reference PC
-(Python 3.14) is not measured**, and n = 3 only shows the size of the effect. Reference-PC run for a decision: `--steps 12 --row-seconds 120
---history-depth 20` with `--gc on`, `--gc off` and `--gc freeze` (depth 20 holds roughly 20 x 61 MB of snapshots in RAM).
+(Python 3.14) is not measured**, and n = 3 only shows the size of the effect. **Reference-PC run (Manu, 2026-10-20, `--steps 12 --row-seconds 120 --history-depth 20`, all three modes): the median is
+independent of the GC (on vs off within ~3 %), the GC adds tail stalls (worst 12.9 s), `freeze` is slower; see the drag_cost README, "GC and history
+depth, reference PC", and [the raw output](RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md).** The container result above does not carry
+over to the median on the reference PC.
 
