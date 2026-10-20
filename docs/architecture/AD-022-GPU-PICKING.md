@@ -134,6 +134,11 @@ the problem. Not recommended; listed because it is the smallest change.
 
 ## 8. Evidence still needed before a decision
 
+**Stand 2026-10-20 (Evidenz, keine Entscheidung):** der erste Punkt ist beantwortet - der Spike lief auf dem Referenz-PC (20k und
+87,5k, [`RESULTS_REFERENCE_PC_2026-10-20.md`](../../experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md)); Manu meldet für den
+zweiten Punkt Flat ohne Flecken (nur Flat, Smooth nicht berichtet; Intake Log 2026-10-20). Offen: die unabhängige Review, Smooth,
+Knife/Paint/Objekt-Pick, die Wechselwirkung mit H7-Flächen (SubD, Morph) und die Entscheidung.
+
 - The spike probe on the reference PC (README "Praktischer Test"): ID render + read-back cost on the 9800 GTX.
 - Flat shading on the reference PC per polygon (evidence for `gl_PrimitiveID`, decides B1 vs B2).
 - The independent review of this draft.

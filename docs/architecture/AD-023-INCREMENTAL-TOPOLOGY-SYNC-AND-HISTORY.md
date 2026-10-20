@@ -44,6 +44,11 @@ The operation is 1-74 ms; the rest is whole-mesh work done once or several times
 Extrude pays the viewport rebuild three times (begin, a move, release). Picking is 5-10 % of an op; AD-022 does
 not change this table.
 
+**Referenz-PC (Manu, 2026-10-20, `gollum_20k`, je n = 3):** Delete 1 945, Dissolve 1 951, Knife 2 360, Extrude 3 065-3 599 ms; Undo-Frame
+1 717-1 992 ms. Anteile: Viewport-Sync 55-85 %, History 8-26 %, Hover-Neupick 4-13 %; ein Strukturneubau ≈ 1,26 s. Die Reihenfolge
+der Posten bleibt wie hier, der Viewport-Teil (V) wiegt auf dem Referenz-PC schwerer als der History-Teil (H). Tabelle und Rohausgabe:
+[`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Result: topology operations, reference PC“.
+
 ## 2. Options
 
 ### H - history

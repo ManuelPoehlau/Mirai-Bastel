@@ -39,7 +39,7 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 
 - ~~Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.~~ Gemessen 2026-10-11 (unten): `3.3.0` /
   `GeForce 9800 GTX/9800 GTX+/PCIe/SSE2`.
-- Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6). Seit 2026-10-15 benutzt der Production-Shader beides, dazu Buffer-Texturen (AD-018 Nachtrag 2026-10-15): Sieht Flat auf diesem PC nicht pro Polygon aus oder Smooth fleckig, ist das der Befund.
+- Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6). Seit 2026-10-15 benutzt der Production-Shader beides, dazu Buffer-Texturen (AD-018 Nachtrag 2026-10-15): Sieht Flat auf diesem PC nicht pro Polygon aus oder Smooth fleckig, ist das der Befund. **Teilweise beantwortet (Manu, 2026-10-20, Chat): Flat sieht gut aus, keine Flecken; Smooth wurde nicht berichtet (Eintrag unten).**
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in
@@ -86,7 +86,7 @@ Damit sind auch die Hover-Zeiten außerhalb eines Drags gemessen (Produktionspfa
 **Praxisbefund auf dem Referenz-PC (Manu, 2026-10-17), gollum mit 87 500 V:** als Referenz-Mesh weiterhin flüssig
 navigierbar (Orbit/Pan/Zoom ohne Bearbeitung; subjektiv, keine Sondenzahlen). Der Draw bleibt also auch bei 175 000 Dreiecken
 nicht der Engpass. Die Interaktionskosten (Hover, Klick, Box/Paint, W-Drag) bei dieser Größe stehen als Containerzahlen in
-[`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Audit at HEAD (2026-10-17)“; Referenz-PC-Zahlen dazu fehlen noch.
+[`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) „Audit at HEAD (2026-10-17)“; Referenz-PC-Zahlen dazu fehlen noch (nur die Picking-Zeilen des Spikes seit 2026-10-20, siehe unten).
 
 **Gemessen auf dem Referenz-PC (Manu, 2026-10-15), symmetrische Soft Selection** — gleiche Maschine, `GL_VERSION` 3.3.0,
 `python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym` (AD-SYM-04 SS3, D-4); Tabelle und Lesart in
@@ -97,6 +97,21 @@ nicht der Engpass. Die Interaktionskosten (Hover, Klick, Box/Paint, W-Drag) bei 
   der Rest liegt darunter. Die Kosten wachsen mit der Zahl bewegter Vertices (≈ 0,045 ms pro Vertex am Body), und unter
   Symmetrie bewegen sich beide Seiten.
 - Einmal pro Geste: Commit-Frame Body 48–64 ms (ohne Symmetrie 27–30), erste Bewegung bis 27 ms, Symmetrie-Befund 17 ms.
+
+**Gemessen auf dem Referenz-PC (Manu, 2026-10-20), GPU-ID-Picking-Spike und Topologie-Operationen** — gleiche Maschine, Python 3.14.2,
+`GL_VERSION` 3.3.0; Rohausgaben in
+[`experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md`](../../experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md) und
+[`experiments/drag_cost/RESULTS_TOPOLOGY_REFERENCE_PC_2026-10-20.md`](../../experiments/drag_cost/RESULTS_TOPOLOGY_REFERENCE_PC_2026-10-20.md),
+Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference PC“, `drag_cost` „Result: topology operations, reference PC“):
+
+- `gollum_20k` (21 875 V): Pick nach Orbit CPU 161 ms → GPU-ID-Buffer 3,3 ms; Hover (gültiger Zustand) 18,6 → 1,65 ms; Box 300 px 2 384 → 89 ms.
+  `gollum` (87 500 V): 662 → 14 ms; 85 → 3,3 ms; 14 522 → 295 ms. ID-Render (GL-Timer): 1,14 ms bzw. 10,3 ms GPU-Zeit.
+  FBO, `glReadPixels` und die GL-Timer-Query laufen auf dem Treiber ohne Fehler.
+- Flat Shading ohne Flecken (Manu, Chat): spricht dafür, dass `gl_PrimitiveID` und die Buffer-Texturen (`texelFetch`) auf diesem Treiber
+  funktionieren. Smooth, Dreiecks-Sichtbarkeit und die Frame-Zeiten (ATELIER B3) sind damit nicht beantwortet.
+- Topologie-Operation auf `gollum_20k` (je n = 3, kein p95): Delete 1,9 s, Dissolve 2,0 s, Knife-Commit 2,4 s, Extrude 3,1–3,6 s; Undo 1,7–2,0 s.
+  Davon Viewport-Sync 55–85 % (ein Strukturneubau ≈ 1,26 s), History 8–26 %, Hover-Neupick 4–13 %. Der Sync läuft hier 2,7–3,5× langsamer als im
+  Container, die Gesamt-Frames 2,0–2,5×; die Faustregel „≈ 2×“ gilt für den GL-/Sync-Anteil nicht.
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 

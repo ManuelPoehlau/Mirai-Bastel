@@ -98,6 +98,39 @@ pixel corner, the GPU its centre - a convention to choose, not an error). Box: o
 variant is acceptable; it is not bit-identical (0-4 % at the edges of visibility), so an Artist
 check is needed. Neither variant can be proven equivalent the way Slices 1 and 2 were.
 
+## Result: reference PC (Manu, 2026-10-20)
+
+Core 2 Quad Q9550, GeForce 9800 GTX, Windows 10, Python 3.14.2, `GL_VERSION` 3.3.0, hidden 1024x768 window.
+Raw output: [`RESULTS_REFERENCE_PC_2026-10-20.md`](RESULTS_REFERENCE_PC_2026-10-20.md). ms p50 (the `cpu` column is the
+production picker after WP-VIEW-PERF-01 slices 1 and 2). **[RPC]** numbers; the container table above stays valid as the
+llvmpipe comparison.
+
+| | gollum_20k CPU | gollum_20k GPU | 87.5k CPU | 87.5k GPU |
+|---|---:|---:|---:|---:|
+| pick after an orbit, vertex / edge / face | 160.9 / 187.7 / 150.2 | **3.3 / 3.75 / 2.4** | 661.9 / 774.5 / 618.7 | **14.0 / 15.5 / 11.8** |
+| hover pick, valid state, vertex / edge / face | 18.6 / 43.4 / 8.0 | **1.65 / 1.96 / 0.71** | 85.2 / 197.4 / 35.2 | **3.3 / 4.1 / 0.65** |
+| Box 300 px vertex | 2 384 | **89** (depth variant 85) | 14 522 | **295** (depth variant 332) |
+| ID render, GL timer (GPU time) / wall | - | 1.14 / 1.43 | - | 10.3 / 10.8 |
+| build of the spike's own buffers per mesh state (option B1, Python) | - | 795 | - | 3 087 |
+
+Head and body: every GPU pick row of the `ids` variant is under 4 ms (the depth variant up to 6.3 ms); the GPU hover is not faster than the CPU hover there (head vertex 0.85 vs
+0.21 ms), after an orbit the body is 1.6 vs 6.6 ms.
+
+Agreement with the CPU picker (Shaded): vertex 97.7 % (depth oracle 98.7 %) on gollum_20k and 90.7 % (96.7 %) on 87.5k;
+edge 96.3 % / 89.0 %; face 86.7 % + 13.2 % half-pixel / 78.7 % + 21.3 % half-pixel (no "real" face difference on 87.5k).
+Box 300 px edge, front camera: variant `ids` 11 315 vs CPU 12 455 (gollum_20k) and 33 693 vs 49 720 (87.5k); depth variant
+-91 / +373 and -303 / +1 713. The container pattern of the table above repeats.
+
+**What this answers from "What this does not answer":** the reference-PC cost (an ID render of 1.14 ms GPU time on
+gollum_20k, 10.3 ms on 87.5k; FBO, `glReadPixels` and the GL timer query ran without error on the GL 3.3.0 driver), and
+the Box/hover behaviour at 87.5k. **Still open:** Knife, Paint, object picking, snapping, placed objects, resize, W drags;
+p95 and outliers (p50 of 8-15 samples only); the interaction with H7 surfaces (SubD, Morph) shown instead of the cage.
+
+**`gl_PrimitiveID` (step 4 of the practical test), Manu 2026-10-20, in chat:** "Das Flat Shading sieht auch gut aus
+(keine Flecken)." Recorded by the agent on Manu's instruction. It answers the check asked for in step 4 for **Flat**;
+Smooth and the other B3 verdicts (triangles, light, performance) were not part of the answer and stay as they are in the
+[Intake Log](../../docs/architecture/WP-06_INTAKE_LOG.md). Evidence for AD-022 option B2, not a decision.
+
 ## What this does not answer
 
 - Reference-PC cost: the ID render + `glReadPixels` stall on the 9800 GTX / its driver (Manu's run).

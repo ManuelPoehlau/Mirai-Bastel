@@ -727,6 +727,29 @@ where the residue is in Edge mode; undo = `load_state` + the same full rebuild. 
 **Picking is not what makes a topology op slow on 21.9k: it is 5-10 % of it.** (`vertex_faces` is 0 here: the
 close-up has no vertex within 14 px of the cursor, so no occlusion test ran.)
 
+### Result: topology operations, reference PC (Manu, 2026-10-20)
+
+Same probe and scenario as the container table above, on the reference PC (Core 2 Quad Q9550, GeForce 9800 GTX,
+Python 3.14.2, `GL_VERSION` 3.3.0), `gollum_20k`. Raw output:
+[`RESULTS_TOPOLOGY_REFERENCE_PC_2026-10-20.md`](RESULTS_TOPOLOGY_REFERENCE_PC_2026-10-20.md). ms p50, **n = 3 per row**
+(no p95), run with `--profile-top 0` (no cProfile split).
+
+| Op (`gollum_20k`) | frame(s) total | op | history | hover re-pick | viewport sync | undo frame | container frame total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Extrude 1 face | 3 065 | 0.9 | 244 | 144 | 2 604 (3 syncs) | 1 814 | 1 273 |
+| Extrude 20 faces | 3 599 | 64 | 910 | 148 | 2 455 (3 syncs) | 1 731 | 1 834 |
+| Knife commit (1 cut) | 2 360 | 205 | 525 | 245 | 1 287 | 1 992 | 1 188 |
+| Dissolve 1 edge | 1 951 | 32 | 498 | 254 | 1 274 | 1 877 | 781 |
+| Delete 1 face | 1 945 | 24 | 465 | 148 | 1 265 | 1 717 | 792 |
+
+Reading (agent, `PROVISIONAL`): the reference PC is 2.0-2.5x slower than the container for the whole frame, but 2.7-3.5x
+for the viewport sync and ~3x for the hover re-pick; the history is not slower (244-910 vs 313-889 ms; Python 3.14 vs
+3.13, n = 3 does not decide it). Shares of the frame: viewport sync 55-85 %, history 8-26 %, hover re-pick 4-13 %
+(141-146 ms of it the `PickCache` rebuild), the operation itself 0-9 %. One structural viewport rebuild costs about
+1.26 s on 21.9k V. Undo costs 1.7-2.0 s. This confirms the AD-023 §1 reading ("picking is 5-10 % of an op") on the
+reference PC and ranks the viewport part (V0-V2) ahead of the history part (H0-H2) by share. Open: the split of the sync
+into triangulation / normals / buffer upload on the reference PC (rerun with `--profile-top 15`).
+
 ### Haltepunkt: what Blender-level fluidity on 20k would need (decision note for Manu + review, 2026-10-17)
 
 Manu's verdict on Slice 1: "Fühlt sich gleich an, nur schneller. Im Vergleich zu Blender auf meinem PC aber noch
@@ -820,3 +843,8 @@ Gewinn", incremental topology "gleich wichtig" - drafted as [AD-022](../../docs/
 (spike: [`experiments/gpu_picking_spike/`](../gpu_picking_spike/README.md)) and
 [AD-023](../../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md), both PROPOSED. Left inside the current architecture: option 8 (dead
 `highlight_flags`) and batched `store.update` for large Soft drags.
+
+Update 2026-10-20: the reference-PC runs of the GPU spike (20k and 87.5k) and of the topology scenario are in (spike
+README "Result: reference PC"; "Result: topology operations, reference PC" above). Open: Manu's window check of Slice 2,
+the AD-022 / AD-023 reviews and decision, and a rerun of the topology scenario with `--profile-top 15` for the split of
+the viewport sync.
