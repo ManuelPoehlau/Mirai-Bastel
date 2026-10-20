@@ -113,6 +113,7 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   Davon Viewport-Sync 55–85 % (ein Strukturneubau ≈ 1,26 s), History 8–26 %, Hover-Neupick 4–13 %. Ein Strukturneubau (1 224 ms im Mittel) besteht zu ~88 % aus Ganz-Mesh-Python-Arbeit (Normalen 24 %, Triangulierung ~37 %, Flatten ~22 %) und nur zu ~12 % aus dem GL-Store.
   Extrude baut zweimal neu auf, nicht dreimal. Gleicher Tag, gleiche Sonde: Referenz-PC gegen Container ≈ 1,6–2,2× (Frame), 2,0–2,8× (Sync); die frühere Angabe „2,7–3,5×“ verglich zwei verschiedene Container (Korrektur, siehe drag_cost-README).
 
+- **Python-Umgebungen (Manu, 2026-10-20):** In PowerShell ist `python` 3.14.2 (alle Messungen hier und in den READMEs, soweit nicht anders vermerkt, liefen damit); in PyCharm nutzt Manu Python 3.12.10. Welche Version er für die tägliche Arbeit mit Mirai benutzt, ist offen; Zeiten und Garbage-Collector-Verhalten können sich zwischen den Versionen unterscheiden und sind unter 3.12 **nicht gemessen**.
 - **NumPy (Manu, 2026-10-20, venv, Python 3.14.2):** `import numpy` mit NumPy 2.5.4 (`cp314-cp314-win_amd64`, per `pip install numpy` in einer neuen venv) bricht auf dem Referenz-PC ab:
 `RuntimeError: NumPy was built with baseline optimizations: (X86_V2) but your machine doesn't support: (X86_V2).` Der Prozessor (Penryn, SSE4.1) erfüllt die x86-64-v2-Basis nicht
   (Lesart, nicht geprüft: SSE4.2/POPCNT fehlen). Ältere NumPy-Versionen wurden **nicht** getestet. Folge nach §4 dieses Dokuments: Code, der NumPy voraussetzt, ist ein
@@ -127,6 +128,7 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
 - `docs/viewport/VIEWPORT_V02_ARCHITECTURE.md` nennt als „Target Platform“ einen Intel i5 der 4. Generation mit 4 GB RAM und als Ziel 30+ FPS auf einem 7 Jahre alten PC. Dieser Test-PC ist älter und beim Prozessor deutlich schwächer als das dort genannte Ziel.
 - `experiments/viewport_draw_binding_spike/README.md` vermerkt, dass damals keine repräsentative Hardware verfügbar war. Der PC hier ist die Messbasis für solche Aussagen.
 - **Dieses Dokument ändert die Zielplattform nicht.** Ob dieser PC die Untergrenze des Produkts sein soll oder nur das Testgerät ist, entscheidet der Artist (Priorität/Intent).
+  **Manu, 2026-10-20 (Chat, vom Agenten eingetragen):** Mirai wird derzeit nur auf diesem PC getestet und direkt benutzt. Ein moderner PC wird voraussichtlich in den nächsten Monaten gekauft; bis dahin soll es auf diesem PC „halbwegs gut“ laufen. Dass er bei sehr vielen Morph-Targets auf sehr dichten Meshes „etwas in die Knie geht“, ist ausdrücklich in Ordnung; der neue PC soll damit kein Problem haben. *(Lesart des Agenten, `PROVISIONAL`, keine Aussage von Manu: Kernfunktionen brauchen einen Weg, der auf diesem PC läuft; eine optionale Beschleunigung, die nur auf dem neuen PC geht, wäre damit nicht ausgeschlossen. Noch nicht entschieden.)*
 
 ---
 

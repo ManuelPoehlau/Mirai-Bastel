@@ -15,6 +15,7 @@ Für eine belastbare Character-Pipeline später untersuchen:
 3. **Gezieltes Target-Shaping:** Basis und Ziel mit denselben Modeling-Werkzeugen bearbeiten können, dabei klar zeigen, welches Objekt bearbeitet wird und welche Form gerade angezeigt wird.
 4. **Mehrere Targets:** erst nach dem robusten Einzel-Target untersuchen, wie mehrere Gewichte kombiniert werden, wie sie normiert werden und wie die Artist-Absicht sichtbar bleibt. Nicht als erstes ein komplexes Blendshape-Framework bauen.
 5. **Topologie-Abhängigkeiten:** Topologieänderungen an Basis oder Ziel müssen erkannt werden. Später ist zu entscheiden, ob Mirai Änderungen übertragen, ein Target als inkompatibel markieren oder eine gezielte Reparatur/Remap-Funktion anbieten soll. Nie stillschweigend falsche Korrespondenzen verwenden.
+   **Manu, 2026-10-20 (Chat, vom Agenten eingetragen):** Die Topologie nach dem Erstellen von Morph-Targets weiter ändern zu können soll später eine der Stärken von Mirai werden und ist einzuplanen; für den Moment darf es **gesperrt** bleiben (muss jetzt noch nicht funktionieren). Das ist Intent, keine Implementierungszusage; das Sperren darf die spätere Übertragung nicht verbauen (Herkunftsinformation der Topologie-Operationen, ARCH-02).
 6. **Ausdrucks-Bibliothek:** benannte, wiederverwendbare Gesichtsaktionen als gestaltbare Formen vergleichen und kombinieren können. FACS-/Action-Unit-orientierte Namen könnten als optionale Organisationshilfe dienen, ohne die Anatomie oder künstlerische Interpretation durch ein starres Schema vorzuschreiben.
 
 ## Reihenfolge

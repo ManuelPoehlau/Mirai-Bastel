@@ -72,6 +72,10 @@ Schneller Weg zu einem posebaren, editierbaren Mannequin: eine einfache humanoid
 - **Start im leeren Raum:** von Manu am 2026-10-09 bewusst offen gelassen; später separat untersuchen. Siehe [Symmetry Knife Discovery §6, F6](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md).
 - **Winkelbeschränkung:** in WP-KNIFE-01 UX2 zunächst ausgelassen. Referenz Blender 2.79: Bildschirmraum-Snap auf 45°-Schritte mit Führungslinie. Offene Fragen sind Raumbezug und die Interaktion mit vorhandenen Snap-/Midpoint-Regeln. Siehe `playground/experiments/knife_face/decision.md`, „WP-KNIFE-01 UX2“.
 
+### UVs, Baking und Split Normals (Retopo-Raum)
+
+**Manu, 2026-10-20 (Chat, vom Agenten eingetragen):** UVs: ja. Split Normals: unsicher, ob nötig. Falls später im Retopo-Raum Displacements oder Normal Maps gebacken werden sollen, könnten sie nötig werden. Offene Fragen: ob harte Kanten als Kantenmarkierung genügen oder echte pro-Ecke-Normalen gebraucht werden, wo UV-Daten am Mesh wohnen (Ecken-Domäne, siehe [Audit 2](../research/viewport/ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) K2) und wie ein Bake auf dem Referenz-PC läuft (Strahlen auf die Quellfläche, Zielbild). Keine Implementierungszusage.
+
 ## Grundsatz
 
 Die Reihenfolge ist bewusst auf den tatsächlichen Artist-Workflow ausgerichtet: zuerst die bestehende Form kontrolliert bearbeiten, dann typische Topologie-Lücken schließen und erst danach seltenere Spezialwerkzeuge ausbauen. Änderungen am Core oder an Architekturgrenzen brauchen weiterhin ihre eigenen Reviews und Entscheidungen.
