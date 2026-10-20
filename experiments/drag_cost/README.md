@@ -748,7 +748,26 @@ for the viewport sync and ~3x for the hover re-pick; the history is not slower (
 (141-146 ms of it the `PickCache` rebuild), the operation itself 0-9 %. One structural viewport rebuild costs about
 1.26 s on 21.9k V. Undo costs 1.7-2.0 s. This confirms the AD-023 §1 reading ("picking is 5-10 % of an op") on the
 reference PC and ranks the viewport part (V0-V2) ahead of the history part (H0-H2) by share. Open: the split of the sync
-into triangulation / normals / buffer upload on the reference PC (rerun with `--profile-top 15`).
+into triangulation / normals / buffer upload on the reference PC. **Correction (2026-10-20, later):** `--profile-top` profiles
+only `orbit`, `zoom` and `first_hover`, not `topology`, so a `--profile-top 15` run does not give that split; use
+[`probe_topology_sync_split.py`](../architecture_audit_probes/probe_topology_sync_split.py) instead.
+
+**Second run (same day, `--profile-top 15`, raw:
+[`RESULTS_TOPOLOGY_PROFILE_REFERENCE_PC_2026-10-20.md`](RESULTS_TOPOLOGY_PROFILE_REFERENCE_PC_2026-10-20.md)), n = 3 again:**
+
+| Op (`gollum_20k`) | frame run 1 / 2 | history 1 / 2 | viewport sync 1 / 2 | undo frame 1 / 2 |
+|---|---:|---:|---:|---:|
+| Extrude 1 face | 3 065 / 2 860 | 244 / 210 | 2 604 / 2 486 | 1 814 / 1 795 |
+| Extrude 20 faces | 3 599 / 3 459 | 910 / 887 | 2 455 / 2 344 | 1 731 / 1 777 |
+| Knife commit | 2 360 / 2 468 | 525 / 739 | 1 287 / 1 262 | 1 992 / 2 344 |
+| Dissolve 1 edge | 1 951 / 1 966 | 498 / 427 | 1 274 / 1 240 | 1 877 / 2 069 |
+| Delete 1 face | 1 945 / 1 899 | 465 / 505 | 1 265 / 1 250 | 1 717 / 1 937 |
+
+The two runs agree within about 10 % for the frame and 5 % for the sync (history and undo differ up to 40 % / 18 % with n = 3,
+so those are still not p95 material). Over both runs the viewport sync is **51-87 %** of the frame. The CPU-picker profiles of
+the same run (cProfile inflates Python time, roughly 2.5x against the unprofiled spike row): `PickCache.refresh` is 1 541 of
+2 173 ms in `zoom` (4 notches, ~385 ms per refresh on 21.9k V under the profiler) and 1 586 of 1 803 ms in `first_hover`; the rest
+is the occlusion test. That is the per-camera cost AD-022 removes.
 
 ### Haltepunkt: what Blender-level fluidity on 20k would need (decision note for Manu + review, 2026-10-17)
 
@@ -846,5 +865,5 @@ Gewinn", incremental topology "gleich wichtig" - drafted as [AD-022](../../docs/
 
 Update 2026-10-20: the reference-PC runs of the GPU spike (20k and 87.5k) and of the topology scenario are in (spike
 README "Result: reference PC"; "Result: topology operations, reference PC" above). Open: Manu's window check of Slice 2,
-the AD-022 / AD-023 reviews and decision, and a rerun of the topology scenario with `--profile-top 15` for the split of
-the viewport sync.
+the AD-022 / AD-023 reviews and decision, and a run of `architecture_audit_probes/probe_topology_sync_split.py` on the reference PC for the split of
+the viewport sync (a `--profile-top` run does not profile `topology`, see above).
