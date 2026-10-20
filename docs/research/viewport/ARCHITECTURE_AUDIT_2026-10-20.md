@@ -22,6 +22,7 @@ Bei 87 500 V: Pick nach Orbit 662 → 14 ms, Box 14,5 s → 295 ms; ID-Render 10
 
 ## Wichtigste Befunde
 
+0. **AD-022 und AD-023 sind nach den Reviews überarbeitet (2026-10-20); jede Review-Anmerkung hat im AD eine Disposition (Abschnitt „Review disposition“). Nicht entschieden.**
 0. **Stand 2026-10-20 später:** Beide ADs sind unabhängig reviewt (ACCEPT WITH CHANGES, [AD-022](../../archive/viewport_v02/reviews/AD-022_REVIEW_CLAUDE_001.md), [AD-023](../../archive/viewport_v02/reviews/AD-023_REVIEW_CLAUDE_001.md)). Dein Zerlegungslauf auf dem Referenz-PC: ein Viewport-Neuaufbau (1 224 ms) besteht zu ~88 % aus Python-Arbeit am ganzen Mesh (Normalen 24 %, Triangulierung ~37 %, Flatten ~22 %), nur ~12 % GL. Extrude baut zweimal neu auf, nicht dreimal (Korrektur). Die AD-023-Review nennt den zyklischen Garbage Collector als wahrscheinlich größten Posten der Snapshot-Zeit im Container. Auf deinem PC (gemessen, n = 12, Tiefe 20) ist der Median davon **unabhängig**; der GC verursacht nur einzelne Hänger (bis 12,9 s), `gc.freeze()` macht es langsamer. Bei Delete sind 75 % der Zeit Viewport-Neuaufbau, eine perfekte Delta-History spart höchstens ~12 %.
 1. **Der Draw ist nicht der Engpass**, Picking nach Kamerawechsel ist mit GPU-Picking auf deinem PC gelöst (im Spike). Offen ist die Topologie-Operation samt Undo (AD-023): erst der Viewport-Teil, dann die History.
 2. **Half-Edge/BMesh löst das nicht.** Es löst nur eine konkrete Schwäche: keine geordnete Ecken-Navigation. Die Ganz-Mesh-Arbeit in reinem Python bleibt.
