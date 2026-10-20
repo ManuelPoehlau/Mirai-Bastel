@@ -30,6 +30,10 @@ This document is the canonical home for the artist-side Character Systems resear
 
 - [subdivision/README.md](subdivision/README.md) — Einstieg; [subdivision/SUBDIVISION_SURFACES_RESEARCH.md](subdivision/SUBDIVISION_SURFACES_RESEARCH.md) — Research V1 zu SubD (Intent-Modelle, Catmull-Clark, Creases, OpenSubdiv vs. eigene Implementierung, Performance auf der Referenz-Hardware, Käfig/Picking, DCC-Vergleich). Discovery, keine Entscheidung.
 
+## Viewport, Mesh & Workspaces
+
+- [viewport/ARCHITECTURE_AUDIT_2026-10-20.md](viewport/ARCHITECTURE_AUDIT_2026-10-20.md) — Kurzfassung (Deutsch, eine Seite) des Architektur-Audits zu Viewport, Mesh-Repräsentation und künftigen Workspaces inkl. Referenz-PC-Messungen von GPU-Picking und Topologie-Operationen; Discovery, keine Entscheidung. Enthält Manus nächste Schritte.
+
 ## Viewport Shading
 
 - [viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md](viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md) — Shading/Lighting für Formwahrnehmung (Research, keine Entscheidung)
