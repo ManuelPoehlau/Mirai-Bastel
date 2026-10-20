@@ -31,7 +31,7 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 **Einschätzung (soweit bekannt):**
 
 - **Grafik:** Die GeForce 9800 GTX (Baujahr 2008) unterstützt höchstens OpenGL 3.3. Das Projekt sitzt damit genau an der Obergrenze dieses PCs. Alles, was OpenGL 4.x braucht (Compute Shader, Tessellation u. Ä.), ist auf diesem PC nicht testbar. Der Treiber ist vermutlich ein älterer „Legacy“-Zweig.
-- **Prozessor:** Der Core 2 Quad Q9550 (Baujahr 2008) hat kein Hyper-Threading und vermutlich SSE4.1, aber weder SSE4.2 noch AVX. Die Leistung pro Kern liegt deutlich unter aktuellen Prozessoren. Vorkompilierte Bibliotheken könnten bei Versionssprüngen neuere CPU-Befehlssätze voraussetzen. Das ist bei Upgrades zu prüfen.
+- **Prozessor:** Der Core 2 Quad Q9550 (Baujahr 2008) hat kein Hyper-Threading und vermutlich SSE4.1, aber weder SSE4.2 noch AVX. Die Leistung pro Kern liegt deutlich unter aktuellen Prozessoren. Vorkompilierte Bibliotheken könnten bei Versionssprüngen neuere CPU-Befehlssätze voraussetzen. Das ist bei Upgrades zu prüfen. **Gemessen 2026-10-20 (Manu): aktuelles NumPy läuft hier nicht, siehe Abschnitt „Gemessen … 2026-10-20“ unten.**
 - **Speicher:** Der Referenzkopf (326 Vertices) ist unkritisch. Zuerst an Grenzen stoßen dürften hochauflösende Meshes und große Zusatz-Puffer (Shadow Maps, Extra-Pässe) im knappen Grafikspeicher.
 - **Eingabe:** Ohne Stift oder Touch sind druckempfindliche oder gestenbasierte Bedienideen auf diesem PC nicht prüfbar.
 
@@ -112,6 +112,11 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
 - Topologie-Operation auf `gollum_20k` (je n = 3, kein p95): Delete 1,9 s, Dissolve 2,0 s, Knife-Commit 2,4 s, Extrude 3,1–3,6 s; Undo 1,7–2,0 s.
   Davon Viewport-Sync 55–85 % (ein Strukturneubau ≈ 1,26 s), History 8–26 %, Hover-Neupick 4–13 %. Ein Strukturneubau (1 224 ms im Mittel) besteht zu ~88 % aus Ganz-Mesh-Python-Arbeit (Normalen 24 %, Triangulierung ~37 %, Flatten ~22 %) und nur zu ~12 % aus dem GL-Store.
   Extrude baut zweimal neu auf, nicht dreimal. Gleicher Tag, gleiche Sonde: Referenz-PC gegen Container ≈ 1,6–2,2× (Frame), 2,0–2,8× (Sync); die frühere Angabe „2,7–3,5×“ verglich zwei verschiedene Container (Korrektur, siehe drag_cost-README).
+
+- **NumPy (Manu, 2026-10-20, venv, Python 3.14.2):** `import numpy` mit NumPy 2.5.4 (`cp314-cp314-win_amd64`, per `pip install numpy` in einer neuen venv) bricht auf dem Referenz-PC ab:
+`RuntimeError: NumPy was built with baseline optimizations: (X86_V2) but your machine doesn't support: (X86_V2).` Der Prozessor (Penryn, SSE4.1) erfüllt die x86-64-v2-Basis nicht
+  (Lesart, nicht geprüft: SSE4.2/POPCNT fehlen). Ältere NumPy-Versionen wurden **nicht** getestet. Folge nach §4 dieses Dokuments: Code, der NumPy voraussetzt, ist ein
+  Konflikt mit dem Referenz-PC und wird nicht still eingebaut.
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 

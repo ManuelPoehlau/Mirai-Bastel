@@ -22,8 +22,10 @@ Xeon @ 2.10 GHz, CPython 3.13, NumPy 2.5.3. Python-heavy code is about 2x slower
   NumPy fully populated: 0.05 / 0.15 / 0.37. Attribute layer for 21 875 V: scalar as `dict` 2.5 MB, as `array('f')` 0.09 MB; skin
   weights with 4 influences as nested dicts 9 MB, copied into every full snapshot.
 
-Open on the reference PC: whether NumPy imports on the Q9550 (SSE4.1, no SSE4.2/AVX) and what these rows cost there
-([audit 2](../../docs/research/viewport/ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md), plan step P0).
+**NumPy on the reference PC (Manu, 2026-10-20): does not import.** `pip install numpy` in a fresh venv fetched NumPy 2.5.4 (`cp314-cp314-win_amd64`);
+`import numpy` fails with `RuntimeError: NumPy was built with baseline optimizations: (X86_V2) but your machine doesn't support: (X86_V2).`
+So the NumPy rows of `probe_morph_blend.py` cannot be measured there, and a design that needs a current NumPy conflicts with the reference PC
+(`REFERENCE_HARDWARE.md` §4). Older NumPy releases were not tried ([audit 2](../../docs/research/viewport/ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md), plan step P0).
 
 Rebuild split (`probe_topology_sync_split.py`, container with Xvfb/llvmpipe, `gollum_20k`, whole `topology` run incl. warm-up and undo
 frames; wall clock, nested, so the three children add up to roughly the parent; the per-face triangulation timer inflates its
