@@ -32,7 +32,7 @@ This document is the canonical home for the artist-side Character Systems resear
 
 ## Viewport, Mesh & Workspaces
 
-- [viewport/ARCHITECTURE_AUDIT_2026-10-20.md](viewport/ARCHITECTURE_AUDIT_2026-10-20.md) — Kurzfassung (Deutsch, eine Seite) des Architektur-Audits zu Viewport, Mesh-Repräsentation und künftigen Workspaces inkl. Referenz-PC-Messungen von GPU-Picking und Topologie-Operationen; Discovery, keine Entscheidung. Enthält Manus nächste Schritte.
+- [viewport/ARCHITECTURE_AUDIT_2026-10-20.md](viewport/ARCHITECTURE_AUDIT_2026-10-20.md) — Kurzfassung (Deutsch, eine Seite) des Architektur-Audits zu Viewport, Mesh-Repräsentation und künftigen Workspaces inkl. Referenz-PC-Messungen von GPU-Picking und Topologie-Operationen; Discovery, keine Entscheidung. Enthält Manus nächste Schritte. Details: [Audit 1](viewport/ARCHITECTURE_AUDIT_2026-10-20_VIEWPORT_MESH_WORKSPACES.md) (Ist-Architektur, Mesh-Alternativen, Optionen A/B/C), [Audit 2](viewport/ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) (Retopo, Morph, Attribute, Live-Tools; Anforderungsmatrix, Prototypen-Plan).
 
 ## Viewport Shading
 

@@ -22,6 +22,10 @@ ist kein Eintrag hier, weil es kein Experiment im Sinne dieses Ordners ist — s
 
 ## Aktuelle Experimente
 
+### `architecture_audit_probes/`
+
+Zwei lesende Mess-Skripte (Mesh-Kosten und Speicher, Morph-Blend-Arithmetik) für das Architektur-Audit 2026-10-20; keine Fenster, kein GL. Siehe [README](architecture_audit_probes/README.md) und die [Audit-Kurzfassung](../docs/research/viewport/ARCHITECTURE_AUDIT_2026-10-20.md).
+
 ### `mirai_bastel_core_V1/`
 
 Abgeschlossener und eingefrorener Core-V1-Milestone. Enthält den Referenzstand des Core-Experiments einschließlich Tests und Review-Material.

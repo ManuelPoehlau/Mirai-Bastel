@@ -1,8 +1,8 @@
 # Architektur-Audit Viewport, Mesh & Workspaces — Kurzfassung für Manu
 
 **Status:** Discovery-Ergebnis eines Agenten (2026-10-20, `main` @ `435ac7e`). Keine Entscheidung, nicht Artist-validiert.
-**Ausführlich:** zwei Detailberichte (Audit 1: Viewport/Mesh/Workspaces; Audit 2: Zukunftsanforderungen) liegen **nicht** im Repo, nur in der Agenten-Sitzung. Diese Seite ist die einzige Fassung im Repo.
-**Zahlen:** **[RPC]** = Referenz-PC (Manu, 2026-10-20, im Chat eingefügt, noch **nicht** in `REFERENCE_HARDWARE.md` / Spike-README eingetragen). **[C]** = Container, nicht übertragbar. **[H]** = Hypothese.
+**Ausführlich:** [Audit 1: Viewport, Mesh, Workspaces](ARCHITECTURE_AUDIT_2026-10-20_VIEWPORT_MESH_WORKSPACES.md) und [Audit 2: Zukunftsanforderungen](ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) (inkl. Anforderungsmatrix und Prototypen-Plan P0–P9). Die Container-Messungen daraus: [`experiments/architecture_audit_probes/`](../../../experiments/architecture_audit_probes/README.md).
+**Zahlen:** **[RPC]** = Referenz-PC (Manu, 2026-10-20; eingetragen in [`REFERENCE_HARDWARE.md`](../../architecture/REFERENCE_HARDWARE.md) §2, [Spike-README](../../../experiments/gpu_picking_spike/README.md) und [drag_cost-README](../../../experiments/drag_cost/README.md)). **[C]** = Container, nicht übertragbar. **[H]** = Hypothese.
 
 ## Ergebnis
 
@@ -16,7 +16,7 @@ Ein großer Neuentwurf ist durch die Evidenz **nicht** gerechtfertigt. Die stär
 | Hover, gültiger Zustand (Vertex) | 18,6 ms | 1,65 ms |
 | Box 300 px (Vertex) | 2 384 ms | 89 ms |
 
-Bei 87 500 V: Pick nach Orbit 662 → 14 ms, Box 14,5 s → 295 ms; ID-Render 10,3 ms GPU-Zeit (knapp unter einem Frame). Die GPU-Treffer decken sich mit dem CPU-Picker wie im Container (Vertex 91 %, mit Tiefen-Oracle 97 %; Box-Variante „ids“ verliert 33 % der Kanten, die Tiefen-Variante nicht). Flat Shading ohne Flecken (dein Satz) spricht dafür, dass `gl_PrimitiveID` auf deinem Treiber geht; im Repo steht das noch als offen.
+Bei 87 500 V: Pick nach Orbit 662 → 14 ms, Box 14,5 s → 295 ms; ID-Render 10,3 ms GPU-Zeit (knapp unter einem Frame). Die GPU-Treffer decken sich mit dem CPU-Picker wie im Container (Vertex 91 %, mit Tiefen-Oracle 97 %; Box-Variante „ids“ verliert 33 % der Kanten, die Tiefen-Variante nicht). Flat Shading ohne Flecken (dein Satz, eingetragen im Intake Log 2026-10-20) spricht dafür, dass `gl_PrimitiveID` auf deinem Treiber geht. Es gilt nur für Flat.
 
 **Topologie-Operation auf gollum_20k (RPC, je nur 3 Stichproben):** Delete 1,9 s, Dissolve 2,0 s, Knife 2,4 s, Extrude 3,1–3,6 s; Undo 1,7–2,0 s. Davon sind **55–85 % Viewport-Neuaufbau** (ein Neuaufbau ≈ 1,26 s), 8–26 % History-Snapshots, nur 4–13 % Picking. GPU-Picking (AD-022) macht Topologie-Operationen **nicht** schneller.
 
@@ -33,7 +33,7 @@ Bei 87 500 V: Pick nach Orbit 662 → 14 ms, Box 14,5 s → 295 ms; ID-Render 10
 ## Wartet auf dich
 
 1. **Messen (ca. 30 Minuten, kein Code im Repo):** (a) NumPy in einer eigenen venv auf deinem PC testen: `python -m venv .venv_np`, `.venv_np\Scripts\pip install numpy`, `.venv_np\Scripts\python -c "import numpy; print(numpy.__version__)"`; bei Fehlern die Meldung kopieren. (b) `python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum_20k.obj --scenarios topology --profile-top 15`, ganze Ausgabe kopieren (zerlegt den Viewport-Aufbau in Triangulierung, Normalen, Puffer).
-2. **Verdikt eintragen:** Flat/Smooth ohne Flecken auf deinem PC, im Intake-Log (Eintrag 2026-10-15, B5a.1) und in `REFERENCE_HARDWARE.md` §2 (`gl_PrimitiveID`). Nach AGENTS.md §4a zählt es erst dort.
+2. **Restliche Verdikte (ATELIER B3):** Das Flat-Verdikt ist eingetragen. Offen bleiben Smooth, „keine Dreiecke sichtbar“, Licht und Frame-Zeiten (B5a.1 a–c im Intake Log).
 3. **Vier Antworten:** (A1) Was heißt „flüssig wie Blender“ (Pointer-Update, Klick-Aktion, Undo) und bei welcher **Bearbeitungsgröße** (20k oder 87,5k)? (A2) Wie viele Morph-Targets gleichzeitig (10 / 50 / 100)? (A3) Darf die Basis-Topologie gesperrt werden, solange Targets existieren? (A4) Sind UVs, Hard-Edges oder Split-Normalen geplant?
 4. **Review und Entscheidung:** AD-022 und AD-023 brauchen je eine unabhängige Review in einer frischen Sitzung (AGENTS.md §6) und danach deine Entscheidung. Empfehlung des Agenten: beide gemeinsam entscheiden, weil sie sich bei der Zeilentabelle des Viewports berühren; erst danach der Prototyp (AD-023 §6).
 
