@@ -26,6 +26,10 @@ ist kein Eintrag hier, weil es kein Experiment im Sinne dieses Ordners ist — s
 
 Drei lesende Mess-Skripte (Mesh-Kosten und Speicher, Morph-Blend-Arithmetik, Zerlegung des Viewport-Neuaufbaus bei Topologie-Operationen) für das Architektur-Audit 2026-10-20; das dritte öffnet ein verstecktes pyglet-Fenster. Siehe [README](architecture_audit_probes/README.md) und die [Audit-Kurzfassung](../docs/research/viewport/ARCHITECTURE_AUDIT_2026-10-20.md).
 
+### `topology_sync_stage1/`
+
+AD-023 Stufe 1 (V0, V2, V3, H0) als Experiment: von außen eingesetzt, `src/` unverändert, mit Gleichheitstests, einer Messsonde mit p95 und einem Starter für die App. Siehe [README](topology_sync_stage1/README.md).
+
 ### `mirai_bastel_core_V1/`
 
 Abgeschlossener und eingefrorener Core-V1-Milestone. Enthält den Referenzstand des Core-Experiments einschließlich Tests und Review-Material.

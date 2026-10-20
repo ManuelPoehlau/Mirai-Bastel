@@ -248,9 +248,11 @@ Answered 2026-10-20 (see the header): what "flüssig" means (feel, no ms per ope
 that matter (Knife, Extrude, Connect, Soft Selection, all), the reference-PC role.
 
 1. Should Undo on 20k be as fast as the operation itself? (Today ~1.7 s on your PC, also after a simple W move; H1 alone does
-   not change that, V0 / V1 on the undo path do.)
-2. A quick partial win first (a cheap stage 1: V2, V3, V0, H0), or wait for the full solution?
-3. Order with AD-022: decided together, in parallel slices, or one after the other?
+   not change that, V0 / V1 on the undo path do.) **Manu, 2026-10-20: yes, Undo as fast as the operation** (chosen in the
+   agent session, recorded by the agent on his instruction).
+2. A quick partial win first (a cheap stage 1: V2, V3, V0, H0), or wait for the full solution? **Manu, 2026-10-20: stage 1
+   first** (same session, same instruction).
+3. Order with AD-022: decided together, in parallel slices, or one after the other? (Open.)
 
 ## 7. Proposed next step (staged, if the direction is accepted)
 
@@ -260,6 +262,9 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
 - **Stage 1 (no Core change, cheap):** V2 + V3 + V0 + H0 (G only if the tails matter), measured on the reference PC with
   n >= 10 and p95 (the probe prints p50 and max today: extend it), history depth 1 and ~20, GC on / off, under the Python
   the Artist actually uses. Decision point: if op and Undo on `gollum_20k` feel "sofort" to Manu, stop; H1 / V1 are not needed.
+  Prototype (experiment, `src/` unchanged): [`experiments/topology_sync_stage1/`](../../experiments/topology_sync_stage1/README.md),
+  every switch separately, equivalence tests, a probe with p95, `run.py` for the practical test. H0 shifts one `export_state`
+  from the op into the Undo, which runs against answer 1 of §6; it is measured as a switch, not assumed.
 - **Stage 2 (only if stage 1 misses):** a touched-set prototype for Delete, Extrude **and** Knife (or Dissolve with
   cleanup) plus one symmetric op (the hard ones: Knife's resolver checkpoints and `integrity_problem`, region merges,
   symmetric coordinators with rollback to `session_before`), with the capture mechanism stated and the exactness contract
