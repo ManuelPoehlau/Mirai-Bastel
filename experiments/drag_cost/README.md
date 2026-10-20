@@ -742,9 +742,12 @@ Python 3.14.2, `GL_VERSION` 3.3.0), `gollum_20k`. Raw output:
 | Dissolve 1 edge | 1 951 | 32 | 498 | 254 | 1 274 | 1 877 | 781 |
 | Delete 1 face | 1 945 | 24 | 465 | 148 | 1 265 | 1 717 | 792 |
 
-Reading (agent, `PROVISIONAL`): the reference PC is 2.0-2.5x slower than the container for the whole frame, but 2.7-3.5x
+Reading (agent, `PROVISIONAL`): against the container table above the reference PC is 2.0-2.5x slower for the whole frame, but 2.7-3.5x
 for the viewport sync and ~3x for the hover re-pick; the history is not slower (244-910 vs 313-889 ms; Python 3.14 vs
-3.13, n = 3 does not decide it). Shares of the frame: viewport sync 55-85 %, history 8-26 %, hover re-pick 4-13 %
+3.13, n = 3 does not decide it). **Correction (later the same day):** that comparison crosses two different containers (the AD-023
+numbers of 2026-10-17 against the container of 2026-10-20 the split probe ran in, whose sync is 1.1-1.6x slower for the same code), so
+the 2.7-3.5x is largely a container difference. Same-day, same-probe container against the reference PC: frame 1.6-2.2x, sync
+2.0-2.8x, i.e. the "about 2x" rule of `REFERENCE_HARDWARE.md` holds roughly for the sync as well. Shares of the frame: viewport sync 55-85 %, history 8-26 %, hover re-pick 4-13 %
 (141-146 ms of it the `PickCache` rebuild), the operation itself 0-9 %. One structural viewport rebuild costs about
 1.26 s on 21.9k V. Undo costs 1.7-2.0 s. This confirms the AD-023 §1 reading ("picking is 5-10 % of an op") on the
 reference PC and ranks the viewport part (V0-V2) ahead of the history part (H0-H2) by share. Open: the split of the sync
@@ -768,6 +771,27 @@ so those are still not p95 material). Over both runs the viewport sync is **51-8
 the same run (cProfile inflates Python time, roughly 2.5x against the unprofiled spike row): `PickCache.refresh` is 1 541 of
 2 173 ms in `zoom` (4 notches, ~385 ms per refresh on 21.9k V under the profiler) and 1 586 of 1 803 ms in `first_hover`; the rest
 is the occlusion test. That is the per-camera cost AD-022 removes.
+
+**Rebuild split, reference PC (third run, raw:
+[`RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md`](../architecture_audit_probes/RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)),
+`probe_topology_sync_split.py`, n = 3, default GC, history depth ~1.** Frames 2 923 / 3 540 / 2 320 / 1 846 / 1 823 ms (extrude 1, extrude 20,
+knife, dissolve, delete), within ~10 % of the earlier runs. One `_sync_topology` costs **1 224 ms** on average (42 calls over the
+run; the extrude sync of ~2 500 ms is two structural rebuilds, not three, see the AD-023 review B-1), split (wall clock, nested):
+
+| Part | avg per rebuild | share |
+|---|---:|---:|
+| `DerivedGeometry.full_recompute` (adjacency + all normals) | 298 ms | 24 % |
+| `_rebuild_index_mapping` (index map + triangulation) | 512 ms | 42 % |
+| of which `triangulate_mesh_face` (940 799 calls; the per-call timer inflates this by an estimated 8-15 %) | ~449 ms | ~37 % |
+| `_rebuild_resources` (flatten + upload) | 413 ms | 34 % |
+| of which GL store: `update` 65 + `end_rebuild` (VertexList) 73 + `allocate` 7 | ~145 ms | ~12 % |
+| of which Python flattening of positions, normals, indices, face rows (remainder) | ~269 ms | ~22 % |
+
+Other rows: `export_state` 145 ms and `load_state` 415 ms per call, `PickCache.refresh` 29 ms averaged over 174 calls. Reading
+(`PROVISIONAL`): about 88 % of one rebuild is whole-mesh Python work (normals, triangulation, flattening); only ~12 % is the GL store.
+A local patch of the triangulation/normals (AD-023 V0/V1) addresses ~60-65 % of the sync, flattening another ~22 %; GL buffer upload
+is not the main cost. Not yet measured on the reference PC: the effect of the cyclic GC and of the history depth (AD-023 review B-1),
+n >= 10 (see the options `--gc` and `--history-depth` of the probe).
 
 ### Haltepunkt: what Blender-level fluidity on 20k would need (decision note for Manu + review, 2026-10-17)
 

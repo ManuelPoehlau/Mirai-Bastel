@@ -24,15 +24,15 @@ n = 3 je Zeile (Median aus 3 Stichproben, **keine p95-Aussage möglich**). ms.
 | Dissolve 1 Edge | 1 951 | 32 | 498 | 1 274 | 254 | 1 877 |
 | Delete 1 Face | 1 945 | 24 | 465 | 1 265 | 148 | 1 717 |
 
-Vergleich mit den Container-Zahlen aus AD-023 §1 (Frame gesamt 1 273 / 1 834 / 1 188 / 781 / 792 ms): RPC ist **2,0–2,5× langsamer** beim Gesamtframe, beim **Sync 2,7–3,5×**, beim Hover-Neupick ~3×, beim Undo-Frame 1,7–1,9×. Die History ist auf dem RPC **nicht** langsamer als im Container (244–910 vs. 313–889 ms; vermutlich Python 3.14 vs. 3.13, bei n = 3 nicht belastbar). Die Faustregel "RPC ≈ 2× Container" gilt also **nicht** für den GL-/Sync-Anteil.
+Vergleich mit den Container-Zahlen aus AD-023 §1 (Frame gesamt 1 273 / 1 834 / 1 188 / 781 / 792 ms): RPC ist **2,0–2,5× langsamer** beim Gesamtframe, beim **Sync 2,7–3,5×**, beim Hover-Neupick ~3×, beim Undo-Frame 1,7–1,9×. Die History ist auf dem RPC **nicht** langsamer als im Container (244–910 vs. 313–889 ms; vermutlich Python 3.14 vs. 3.13, bei n = 3 nicht belastbar). ~~Die Faustregel "RPC ≈ 2× Container" gilt also **nicht** für den GL-/Sync-Anteil.~~ **Korrektur (2026-10-20, später):** Dieser Vergleich kreuzt zwei verschiedene Container (AD-023 vom 2026-10-17 gegen den Container vom 2026-10-20, dessen Sync für denselben Code 1,1–1,6× langsamer ist). Gleicher Tag, gleiche Sonde: RPC/Container ≈ 1,6–2,2× (Frame), 2,0–2,8× (Sync). Die Faustregel gilt grob auch für den Sync.
 
-**Aufschlüsselung am Beispiel Delete (RPC):** Sync 65 % (1 265 von 1 945 ms), History 24 %, Hover-Neupick 8 % (davon 141 ms PickCache-Neuaufbau), Operation 1 %. Ein einzelner Viewport-Strukturneubau kostet auf 21,9k Vertices **~1,26 s**. Extrude zahlt ihn dreimal (begin, erste Bewegung, release: `application.py:3039-3108`).
+**Aufschlüsselung am Beispiel Delete (RPC):** Sync 65 % (1 265 von 1 945 ms), History 24 %, Hover-Neupick 8 % (davon 141 ms PickCache-Neuaufbau), Operation 1 %. Ein einzelner Viewport-Strukturneubau kostet auf 21,9k Vertices **~1,26 s**. ~~Extrude zahlt ihn dreimal (begin, erste Bewegung, release).~~ **Korrektur (AD-023-Review B-1, durch den dritten RPC-Lauf bestätigt):** Extrude baut zweimal strukturell neu auf (begin, release) und patcht dazwischen nur Vertices (2 555 ms ≈ 2 × 1 224 ms); die „3 Syncs“ sind drei Frames (`application.py:3039-3108`).
 
 Folgerungen:
 1. AD-023 hat den Viewport-Teil (V0/V1/V2) bisher nicht höher bewertet als die History (H0/H1). Auf dem RPC ist **der Viewport-Sync der größte Einzelposten** (55–85 % je Operation), die History der zweitgrößte (8–26 %, bei Dissolve und Extrude 20 Faces ~25 %).
 2. Das Picking ist auch hier nur **4–13 %** (Hover-Neupick). AD-022 allein ändert die Topologie-Operation nicht (bestätigt AD-023 §1).
 3. Ein Undo kostet ~1,7–2,0 s, fast so viel wie die Operation. "Undo so schnell wie die Operation" (AD-023 Frage 1) ist ohne lokalen Viewport-Patch nicht erreichbar, auch nicht mit Delta-History allein, weil der Neuaufbau des Viewports danach bleibt.
-4. Offen bleibt die Aufteilung des Syncs *auf dem RPC* in Triangulierung / Normalen / Puffer-Upload. Das Probe wurde mit `--profile-top 0` gestartet, also ohne Profil (§8, P0).
+4. ~~Offen bleibt die Aufteilung des Syncs auf dem RPC.~~ **Beantwortet (2026-10-20, dritter Lauf, [Rohausgabe](../../../experiments/architecture_audit_probes/RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)):** ein Strukturneubau 1 224 ms = Normalen/Adjazenz 24 %, Index-Karte mit Triangulierung 42 %, Flatten und Upload 34 % (GL-Store nur ~12 %). Offen: Einfluss des zyklischen GC und der History-Tiefe (AD-023-Review B-1).
 
 ### 1.2 GPU-Picking-Spike auf `gollum` 87 500 V [RPC] (neu; vorher nur 20k)
 

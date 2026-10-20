@@ -147,7 +147,7 @@ Tool/Op -> Application._mesh_transaction (:3253): export_state x2 + Dict-Verglei
 | Hover/Klick gültiger Cache | O(V)/O(E)-Scan | V,E | ja (18,6 → 1,65 ms RPC) | nein |
 | Box/Paint | ein Test je Element | Elemente in Box | ja (2 384 → 89 ms RPC); die Variante "ids" verliert ~9 % bei 300 px Edge (11 315 vs 12 455), die Tiefen-Variante liegt bei +3 % / −0,7 % | nein |
 | **Topologie-Op + Undo** | 3 Ganz-Mesh-Pässe (S4) + Neu-Triangulierung + Normalen + Puffer | V+F, jede Op | **nein** (5–10 % Picking) | **ja** |
-| Extrude: 3 Strukturneubauten je Geste | begin, erste Bewegung, release | V+F | nein | ja (V2) |
+| Extrude: 2 Strukturneubauten je Geste (**Korrektur**: der Bericht nannte 3; AD-023-Review B-1) | begin, release; dazwischen nur Vertex-Patch | V+F | nein | ja (V2) |
 | Große Soft-/Symmetrie-Drags | `store.update` je Vertex | bewegte V | nein | teilweise |
 | Edit-Objekt-Wechsel (2,6–3,0 s), Objekt hinzufügen (6,8 s), Objekt-Pick (0,8 s) auf 20k **[C]** | `Viewport.set_edit_mesh` baut neuen `RenderMesh` (`viewport.py:336`) | V+F | nein | ja (Eintragscache) |
 | SubD-Level 2 Drag-Schritt 148 ms, Level 3 2 845 ms (Head) **[C]** | 1,64 von 1,80 s in `GLRenderStore._patch_attribute` (schreibt ganzen Puffer) | abgeleitete V | nein | betrifft V1-Patch-Vertrag |

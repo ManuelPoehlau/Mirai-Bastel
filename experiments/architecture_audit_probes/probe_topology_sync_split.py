@@ -12,15 +12,26 @@ contains the store calls), so they do not add up to 100 %; the nesting is shown 
 The per-face triangulation wrapper adds timer overhead on ~1 million calls, so that row (and its parent) is slightly
 overstated; `_rebuild_resources` minus its store rows is the Python flattening of positions, normals, indices and face rows.
 
+Options of this script (everything else is passed on to `probe_navigation_gl.py`, e.g. `--steps`, `--row-seconds`):
+    --gc on|off|freeze   cyclic garbage collector during the topology run: `on` (default, as the app), `off`
+                         (`gc.disable()`), `freeze` (`gc.collect()` + `gc.freeze()` after the set-up: the live mesh and the
+                         history snapshots are no longer scanned). AD-023 review CLAUDE-001 B-1 names the GC as the likely
+                         main cost of `export_state` / `load_state`.
+    --history-depth N    before measuring, push N real `MeshStateCommand` entries (a 1e-6 vertex move through
+                         `Application.apply_mesh_change`, so each holds two whole-mesh snapshots) that stay on the undo
+                         stack; the probe's own undo pops only its operation. Default 0 (the probe's usual depth ~1).
+
 Run (repo root, Windows and Linux; headless: prefix with `xvfb-run -a`):
     python experiments/architecture_audit_probes/probe_topology_sync_split.py
     python experiments/architecture_audit_probes/probe_topology_sync_split.py --assets examples/meshes/gollum.obj
+    python experiments/architecture_audit_probes/probe_topology_sync_split.py --steps 12 --row-seconds 90 --gc off --history-depth 20
 Copy the whole output. Container numbers (llvmpipe) are not reference-PC numbers.
 """
 
 from __future__ import annotations
 
 import contextlib
+import gc
 import io
 import sys
 import time
@@ -75,10 +86,59 @@ def install(stats: dict) -> None:
         setattr(owner, name, wrapper)
 
 
+def pad_history(rig, depth: int) -> None:
+    """`depth` real undo entries (each with two whole-mesh snapshots) that stay on the stack."""
+    app = rig.app
+    mesh = app.scene.mesh
+    vertex = mesh.all_vertex_ids()[-1]
+    for i in range(depth):
+        x, y, z = mesh.vertex_position(vertex)
+
+        def mutate(_v=vertex, _p=(x + 1e-6, y, z)):
+            mesh.set_vertex_position(_v, _p)
+            return {_v}
+
+        if not app.apply_mesh_change("history pad", mutate):
+            raise RuntimeError("history pad did not record an entry")
+    rig.settle()
+
+
+def parse_own(argv: list[str]) -> tuple[list[str], str, int]:
+    rest: list[str] = []
+    mode, depth = "on", 0
+    it = iter(argv)
+    for arg in it:
+        if arg == "--gc":
+            mode = next(it)
+            if mode not in ("on", "off", "freeze"):
+                raise SystemExit("--gc takes on, off or freeze")
+        elif arg == "--history-depth":
+            depth = int(next(it))
+        else:
+            rest.append(arg)
+    return rest, mode, depth
+
+
 def main(argv: list[str]) -> int:
+    args, gc_mode, depth = parse_own(list(argv))
     stats: dict = {}
     install(stats)
-    args = list(argv) or ["--assets", probe.GOLLUM_20K]
+
+    original_run_topology = probe.run_topology
+
+    def run_topology(rig, cfg):
+        if depth:
+            pad_history(rig, depth)
+        if gc_mode == "off":
+            gc.disable()
+        elif gc_mode == "freeze":
+            gc.collect()
+            gc.freeze()
+        return original_run_topology(rig, cfg)
+
+    probe.run_topology = run_topology
+    if "--assets" not in args:
+        args += ["--assets", probe.GOLLUM_20K]
     if "--scenarios" not in args:
         args += ["--scenarios", "topology"]
     if "--profile-top" not in args:
@@ -86,6 +146,7 @@ def main(argv: list[str]) -> int:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         code = probe.main(args)
+    print(f"Split probe options: --gc {gc_mode} --history-depth {depth} (GC threshold {gc.get_threshold()})")
     print(out.getvalue(), end="")
     print()
     print("Rebuild split (wall clock, nested; calls over the whole run incl. warm-up and undo frames)")

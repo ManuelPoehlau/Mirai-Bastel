@@ -31,6 +31,15 @@ row slightly): one `_sync_topology` ≈ 539 ms = adjacency + all normals 160 ms 
 of which `triangulate_mesh_face` ≈ 193 ms) + flatten and upload 178 ms (33 %: store `update` calls ≈ 31 ms, VertexList creation
 ≈ 31 ms, the rest ≈ 115 ms is Python flattening of positions, normals, indices and face rows). `export_state` ≈ 147 ms and
 `load_state` ≈ 498 ms per call in that run. The container GL is llvmpipe; the GL-dependent rows (`update`, VertexList creation)
-are the ones most likely to differ on the reference PC, where the sync ran 2.7-3.5x slower than in the container. **Reference-PC
-run: open** (Manu).
+are the ones most likely to differ on the reference PC. **Reference-PC run (Manu, third topology run, default GC, depth ~1):** one `_sync_topology`
+1 224 ms = adjacency + normals 298 ms (24 %) + index map incl. triangulation 512 ms (42 %; `triangulate_mesh_face` ~449 ms) + flatten and
+upload 413 ms (34 %: GL store ~145 ms, Python flattening ~269 ms); `export_state` 145 ms, `load_state` 415 ms
+([raw](RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)). The container is ~2x faster on every row, not only on the GL ones.
+
+Options `--gc on|off|freeze` and `--history-depth N` (added after the AD-023 review CLAUDE-001, finding B-1: the cyclic GC may dominate
+`export_state` / `load_state`, and the cost grows with the number of live snapshots). Container check (Xeon, Python 3.13, llvmpipe,
+`gollum_20k`, history depth 10, `--steps 5 --row-seconds 1`, n = 3): history part of an Extrude 1 face 915 ms with the GC on, 284 ms off,
+436 ms frozen; Delete 1 face 868 ms on, 80 ms off, 345 ms frozen. That supports the review's reading in the container; **the reference PC
+(Python 3.14) is not measured**, and n = 3 only shows the size of the effect. Reference-PC run for a decision: `--steps 12 --row-seconds 120
+--history-depth 20` with `--gc on`, `--gc off` and `--gc freeze` (depth 20 holds roughly 20 x 61 MB of snapshots in RAM).
 

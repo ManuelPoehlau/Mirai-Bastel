@@ -110,8 +110,8 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
 - Flat Shading ohne Flecken (Manu, Chat): spricht dafür, dass `gl_PrimitiveID` und die Buffer-Texturen (`texelFetch`) auf diesem Treiber
   funktionieren. Dazu Manu (Chat, 2026-10-20, später): keine Dreiecke mehr in Smooth oder Flat, auch bei verschiedenen Lichtverhältnissen, und es läuft flüssig (Asset nicht genannt; Intake Log 2026-10-20). Ob Smooth „fleckig“ aussieht, wurde nicht ausdrücklich gesagt.
 - Topologie-Operation auf `gollum_20k` (je n = 3, kein p95): Delete 1,9 s, Dissolve 2,0 s, Knife-Commit 2,4 s, Extrude 3,1–3,6 s; Undo 1,7–2,0 s.
-  Davon Viewport-Sync 55–85 % (ein Strukturneubau ≈ 1,26 s), History 8–26 %, Hover-Neupick 4–13 %. Der Sync läuft hier 2,7–3,5× langsamer als im
-  Container, die Gesamt-Frames 2,0–2,5×; die Faustregel „≈ 2×“ gilt für den GL-/Sync-Anteil nicht.
+  Davon Viewport-Sync 55–85 % (ein Strukturneubau ≈ 1,26 s), History 8–26 %, Hover-Neupick 4–13 %. Ein Strukturneubau (1 224 ms im Mittel) besteht zu ~88 % aus Ganz-Mesh-Python-Arbeit (Normalen 24 %, Triangulierung ~37 %, Flatten ~22 %) und nur zu ~12 % aus dem GL-Store.
+  Extrude baut zweimal neu auf, nicht dreimal. Gleicher Tag, gleiche Sonde: Referenz-PC gegen Container ≈ 1,6–2,2× (Frame), 2,0–2,8× (Sync); die frühere Angabe „2,7–3,5×“ verglich zwei verschiedene Container (Korrektur, siehe drag_cost-README).
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
