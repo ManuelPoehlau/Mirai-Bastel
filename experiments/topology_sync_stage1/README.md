@@ -66,9 +66,37 @@ drag_cost "Correction") stage 1 would bring a Delete from ~1.6 s to roughly 0.6-
 re-pick (`PickCache` rebuild, AD-022), the whole-buffer upload (V1); per Undo: `load_state` (H1) + the upload. That is
 stage 2 of AD-023 §7 plus AD-022; whether it is needed is Manu's feel test below and the reference-PC run.
 
-## Result: reference PC
+## Result: reference PC (Manu, 2026-10-21)
 
-Not run yet (see below).
+Core 2 Quad Q9550, GeForce 9800 GTX, GL 3.3.0; `gollum_20k`, `--steps 20 --row-seconds 240`, GC on, **n = 20 per row**.
+Raw: [`RESULTS_REFERENCE_PC_2026-10-21.md`](RESULTS_REFERENCE_PC_2026-10-21.md). ms, p50 (p95):
+
+| Op | frame `none` 3.14 | frame `all` 3.14 | undo `none` | undo `all` | op + undo `none` → `all` (3.14) | op + undo `all` 3.12 |
+|---|---:|---:|---:|---:|---:|---:|
+| Extrude 1 face | 2 990 (3 083) | 1 017 (1 039) | 1 795 | 983 | 4 793 → 1 885 | 2 994 |
+| Extrude 20 faces | 3 702 (3 767) | 1 586 (1 735) | 1 804 | 1 019 | 5 500 → 2 610 | 4 720 |
+| Knife commit | 2 335 (2 448) | 1 526 (1 765) | 2 006 | 1 125 | 4 371 → 2 645 | 4 321 |
+| Dissolve 1 edge | 1 930 (2 018) | 766 (928) | 1 926 | 1 245 | 3 829 → 2 063 | 3 279 |
+| Delete 1 face | 1 835 (1 942) | 667 (919) | 1 857 | 1 248 | 3 666 → 1 950 | 3 058 |
+
+Reading (agent, `PROVISIONAL`):
+
+1. **One structural sync: 1 249 → 295 ms (4.2x)**, the same factor as in the container. Of the remaining ~295 ms:
+   ~140 ms `GLRenderStore` (VertexList creation 72, whole-buffer `update`), ~120 ms Python flattening, the rest the V0
+   detection pass. The next cut there is V1 (patch buffers instead of recreating them).
+2. **Op + Undo roughly halves** (Delete 3.7 → 2.0 s, Extrude 1 face 4.8 → 1.9 s); p95 stays close to p50. Still far
+   from "ohne sichtbare Verzögerung": op frame 0.7-1.6 s, Undo 1.0-1.25 s.
+3. **What is left now**, Delete: op frame = history 126 + hover re-pick 153 + sync 345 (+ op 30); Undo ≈ `load_state` ~450
+   + H0's after-export ~150 + sync ~300 + re-pick ~150. Extrude 20 and Knife keep both full snapshots (history 690-920 ms,
+   not covered by H0). The largest single items: `load_state` (H1), the snapshots (H0 / H1), the whole-buffer upload (V1),
+   the `PickCache` rebuild (AD-022 / P). That is stage 2 plus AD-022.
+4. **H0 on the reference PC:** the history of Delete / Dissolve drops 434 → ~125 ms (one export and the `after == before`
+   comparison gone); the Undo of Delete / Dissolve (1 245 ms) is ~260 ms slower than the Extrude Undo (983 ms, no H0), which
+   fits the one export H0 moves there. A run `--stage1 V0,V2,V3` would isolate it; not needed to read the direction.
+5. **Python 3.12.10 is much slower for the history**: `export_state` 350 vs 147 ms, `load_state` 1 276 vs 481 ms per call
+   (its GC threshold is 700 vs 2 000 under 3.14; same pattern as the container), the viewport sync is the same (~288 ms).
+   Op + Undo under 3.12 is 1.2-1.8x the 3.14 value. So a move to 3.12 (e.g. for a pinned NumPy) costs undo/redo time unless
+   the GC is tuned (AD-023 G) or the history no longer takes whole snapshots (H1).
 
 ## Praktischer Test für Manu (ca. 15 Minuten + 3 Messläufe)
 
