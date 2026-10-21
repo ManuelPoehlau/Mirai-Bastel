@@ -307,10 +307,24 @@ class DerivedGeometry:
 
     def update_face_normals(self, mesh: Mesh, face_ids: set[FaceId]) -> None:
         """Berechnet die Normale jeder betroffenen Face neu (aus aktueller Position)."""
+        face_vertices, position = mesh.face_vertices, mesh.vertex_position
+        normals = self.face_normals
+        sqrt = math.sqrt
         for face_id in face_ids:
-            boundary = mesh.face_vertices(face_id)
-            positions = {v: mesh.vertex_position(v) for v in boundary}
-            self.face_normals[face_id] = face_normal(positions, boundary)
+            boundary = face_vertices(face_id)
+            if len(boundary) < 3:
+                normals[face_id] = (0.0, 0.0, 0.0)
+                continue
+            # `face_normal` inlined (Newell + normalize, same arithmetic in the same order): this runs
+            # for thousands of faces per W-drag move on a dense mesh.
+            pts = [position(v) for v in boundary]
+            nx = ny = nz = 0.0
+            for (ax, ay, az), (bx, by, bz) in zip(pts, pts[1:] + pts[:1]):
+                nx += (ay - by) * (az + bz)
+                ny += (az - bz) * (ax + bx)
+                nz += (ax - bx) * (ay + by)
+            length = sqrt(nx * nx + ny * ny + nz * nz)
+            normals[face_id] = (0.0, 0.0, 0.0) if length < 1e-12 else (nx / length, ny / length, nz / length)
 
     def update_vertex_normals(self, mesh: Mesh, vertex_ids: set[VertexId]) -> None:
         """Berechnet die Vertex-Normale für die gegebenen Vertices neu.

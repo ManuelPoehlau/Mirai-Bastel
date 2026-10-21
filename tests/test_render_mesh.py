@@ -166,9 +166,15 @@ class VertexMoveTests(unittest.TestCase):
 
         # Genau ein Vertex-Update wurde gezählt.
         self.assertEqual(rm.benchmark_counters["vertex_updates"], 1)
-        # Partial-Updates: 1 Position + len(betroffene Normalen).
-        expected_partial = 1 + len(expected_affected_vertices)
-        self.assertEqual(rm.benchmark_counters["partial_updates"], expected_partial)
+        # Uploads (2026-10-21, zusammengefasste Bereiche aus dem CPU-Spiegel): genau eine Position
+        # und die Normalen der betroffenen Vertices, auf dem Würfel (8 Slots) ein Bereich.
+        self.assertEqual(rm.benchmark_counters["geometry_uploads"], 1 + len(expected_affected_vertices))
+        self.assertEqual(rm.benchmark_counters["partial_updates"], 2)
+        normals = rm.store.data("normals")
+        for v in expected_affected_vertices:
+            i = rm.vertex_index_of(v) * 3
+            for a, b in zip(normals[i:i + 3], rm.derived.vertex_normals[v]):
+                self.assertAlmostEqual(a, b, places=6)
 
     def test_moved_vertex_position_reflected_in_buffer(self):
         mesh, _sel, _overlay, rm = _build()

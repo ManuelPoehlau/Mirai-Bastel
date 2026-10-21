@@ -130,6 +130,21 @@ def _flatten_vec3(values) -> list[float]:
     return out
 
 
+#: Slots closer than this are uploaded as one range from the CPU mirror (`PROVISIONAL`).
+_UPLOAD_GAP = 32
+
+
+def _ranges(slots, gap: int) -> list[tuple[int, int]]:
+    """[lo, hi) slot ranges covering `slots`, joined across gaps of fewer than `gap` slots."""
+    ranges: list[list[int]] = []
+    for slot in sorted(slots):
+        if ranges and slot < ranges[-1][1] + gap:
+            ranges[-1][1] = slot + 1
+        else:
+            ranges.append([slot, slot + 1])
+    return [(lo, hi) for lo, hi in ranges]
+
+
 def _runs(slots) -> list[list[int]]:
     """Aufsteigende Slots in Läufe aufeinanderfolgender Werte (ein Upload je Lauf)."""
     runs: list[list[int]] = []
@@ -169,6 +184,7 @@ class RenderMesh:
         self.store.declare_face_data(FACE_DATA, TRIANGLE_FACES, FACE_ROW_TEXELS)
         # Änderungs-Journal der Mesh (AD-023 V1): was sich seit dem letzten Sync geändert hat.
         self._watch = mesh.watch()
+        self._mirror: dict[str, array] = {}
         self.derived = DerivedGeometry(
             mesh, on_bounds_recomputed=lambda: self.stats.count("bounds_recalculations")
         )
@@ -345,22 +361,46 @@ class RenderMesh:
         ]
 
     def _face_row_data(self, face_id: FaceId) -> list[float]:
-        boundary = self.mesh.face_vertices(face_id)
-        corners = boundary[:_FACE_ROW_CORNERS]
-        padding = [0.0] * (4 * (_FACE_ROW_CORNERS - len(corners)))
+        return self._face_rows_data((face_id,))
+
+    def _face_rows_data(self, face_ids) -> list[float]:
+        """The face-data rows of `face_ids`, concatenated in that order (one call per batch: this
+        runs for thousands of faces per W-drag move on a dense mesh)."""
+        face_vertices = self.mesh.face_vertices
         position = self.mesh.vertex_position
         normals = self.derived.vertex_normals
-        nx, ny, nz = self.derived.face_normals[face_id]
-        row = [nx, ny, nz, float(len(boundary))]
-        for v in corners:
-            x, y, z = position(v)
-            row += (x, y, z, 0.0)
-        row += padding
-        for v in corners:
-            x, y, z = normals[v]
-            row += (x, y, z, 0.0)
-        row += padding
-        return row
+        face_normals = self.derived.face_normals
+        out: list[float] = []
+        append_row = out.extend
+        for face_id in face_ids:
+            boundary = face_vertices(face_id)
+            n = len(boundary)
+            nx, ny, nz = face_normals[face_id]
+            if n == 4:
+                a, b, c, d = boundary
+                pa, pb, pc, pd = position(a), position(b), position(c), position(d)
+                na, nb, nc, nd = normals[a], normals[b], normals[c], normals[d]
+                append_row((
+                    nx, ny, nz, 4.0,
+                    pa[0], pa[1], pa[2], 0.0, pb[0], pb[1], pb[2], 0.0,
+                    pc[0], pc[1], pc[2], 0.0, pd[0], pd[1], pd[2], 0.0,
+                    na[0], na[1], na[2], 0.0, nb[0], nb[1], nb[2], 0.0,
+                    nc[0], nc[1], nc[2], 0.0, nd[0], nd[1], nd[2], 0.0,
+                ))
+                continue
+            corners = boundary[:_FACE_ROW_CORNERS]
+            padding = [0.0] * (4 * (_FACE_ROW_CORNERS - len(corners)))
+            row = [nx, ny, nz, float(n)]
+            for v in corners:
+                x, y, z = position(v)
+                row += (x, y, z, 0.0)
+            row += padding
+            for v in corners:
+                x, y, z = normals[v]
+                row += (x, y, z, 0.0)
+            row += padding
+            append_row(row)
+        return out
 
     def _face_data_flat(self) -> list[float]:
         dead = [0.0] * FACE_ROW_FLOATS
@@ -390,8 +430,12 @@ class RenderMesh:
                 self.stats.count("structural_rebuilds")
 
         self.store.begin_rebuild(MESH_GROUP)
-        put("positions", self._positions_flat())
-        put("normals", self._normals_flat())
+        positions, normals = self._positions_flat(), self._normals_flat()
+        # CPU-Spiegel (2026-10-21): ein Patch schreibt hierhin und lädt wenige zusammengefasste
+        # Bereiche hoch statt eines `store.update` je Vertex (W-Drag großer Auswahlen).
+        self._mirror = {"positions": array("f", positions), "normals": array("f", normals)}
+        put("positions", positions)
+        put("normals", normals)
         put("indices", self._indices_flat())
 
         if self.overlay is not None:
@@ -721,15 +765,7 @@ class RenderMesh:
         for run in _runs(tri_slots):
             data = [float(self._triangle_face_rows[t]) for t in run]
             self.store.update(TRIANGLE_FACES, run[0], data, len(data) * FLOAT_BYTES)
-        row_face = self._row_face
-        dead_row = [0.0] * FACE_ROW_FLOATS
-        for run in _runs(row_slots):
-            data: list[float] = []
-            for row in run:
-                face_id = row_face[row]
-                data += dead_row if face_id is None else self._face_row_data(face_id)
-            self.store.update(FACE_DATA, run[0] * FACE_ROW_FLOATS, data, len(data) * FLOAT_BYTES)
-            self.stats.count("face_data_uploads", len(run))
+        self._upload_rows(row_slots)
         if self.overlay is not None:
             # Wie der volle Rebuild: die Flags passen zu den (neuen) Slots und zur Auswahl.
             flags = self._highlight_flags()
@@ -738,10 +774,37 @@ class RenderMesh:
         return True
 
     def _upload_vec3(self, name: str, slot_values: dict[int, tuple]) -> None:
-        for run in _runs(slot_values):
-            data = [c for slot in run for c in slot_values[slot]]
-            self.store.update(name, run[0] * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
+        mirror = self._mirror.get(name)
+        if mirror is None:
+            for run in _runs(slot_values):
+                data = [c for slot in run for c in slot_values[slot]]
+                self.store.update(name, run[0] * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
+                self.stats.count("partial_updates")
+            return
+        for slot, value in slot_values.items():
+            i = slot * COMPONENTS_PER_VERTEX
+            mirror[i:i + COMPONENTS_PER_VERTEX] = array("f", value)
+        # Slots closer than `_UPLOAD_GAP` share one upload: the unchanged values in between come from
+        # the mirror, so one call replaces many (the per-call cost dominates, not the bytes).
+        for lo, hi in _ranges(slot_values, _UPLOAD_GAP):
+            data = mirror[lo * COMPONENTS_PER_VERTEX:hi * COMPONENTS_PER_VERTEX].tolist()
+            self.store.update(name, lo * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
             self.stats.count("partial_updates")
+
+    def _upload_rows(self, rows) -> None:
+        """Face-data rows, one upload per run of consecutive rows."""
+        row_face = self._row_face
+        dead_row = [0.0] * FACE_ROW_FLOATS
+        for run in _runs(rows):
+            faces = [row_face[row] for row in run]
+            if None in faces:
+                data: list[float] = []
+                for face_id in faces:
+                    data += dead_row if face_id is None else self._face_row_data(face_id)
+            else:
+                data = self._face_rows_data(faces)
+            self.store.update(FACE_DATA, run[0] * FACE_ROW_FLOATS, data, len(data) * FLOAT_BYTES)
+            self.stats.count("face_data_uploads", len(run))
 
     def _sync_geometry(self) -> None:
         moved = self.dirty.modified_vertices
@@ -763,38 +826,22 @@ class RenderMesh:
         self.stats.count("bounds_invalidations")
         self.stats.count("normal_recomputations")
 
-        # Positions-Partial-Upload: NUR die verschobenen Vertices.
-        for vertex_id in moved:
-            idx = self._vertex_index[vertex_id]
-            data = list(self.mesh.vertex_position(vertex_id))
-            self.store.update(
-                "positions", idx * COMPONENTS_PER_VERTEX, data,
-                COMPONENTS_PER_VERTEX * FLOAT_BYTES,
-            )
-            self.stats.count("geometry_uploads")
-            self.stats.count("partial_updates")
-
-        # Normalen-Partial-Upload: NUR die betroffenen Vertices (1-Ring).
-        for vertex_id in affected_vertices:
-            idx = self._vertex_index[vertex_id]
-            data = list(self.derived.vertex_normals[vertex_id])
-            self.store.update(
-                "normals", idx * COMPONENTS_PER_VERTEX, data,
-                COMPONENTS_PER_VERTEX * FLOAT_BYTES,
-            )
-            self.stats.count("geometry_uploads")
-            self.stats.count("partial_updates")
+        # Positions / Normalen: nur die verschobenen Vertices bzw. ihr 1-Ring, über den CPU-Spiegel in
+        # wenigen zusammengefassten Bereichen hochgeladen.
+        index = self._vertex_index
+        position = self.mesh.vertex_position
+        normals = self.derived.vertex_normals
+        self._upload_vec3("positions", {index[v]: position(v) for v in moved})
+        self._upload_vec3("normals", {index[v]: normals[v] for v in affected_vertices})
+        self.stats.count("geometry_uploads", len(moved) + len(affected_vertices))
 
         # Face-Daten: jede Face, die einen Vertex mit neuer Position oder neuer Normale hat.
         faces: set[FaceId] = set()
+        v2f = self.derived.vertex_to_faces
         for vertex_id in affected_vertices:
-            faces.update(self.derived.vertex_to_faces.get(vertex_id, ()))
-        for face_id in faces:
-            self.store.update(
-                FACE_DATA, self._face_row[face_id] * FACE_ROW_FLOATS,
-                self._face_row_data(face_id), FACE_ROW_FLOATS * FLOAT_BYTES,
-            )
-            self.stats.count("face_data_uploads")
+            faces.update(v2f.get(vertex_id, ()))
+        face_row = self._face_row
+        self._upload_rows({face_row[face_id] for face_id in faces})
 
     def _sync_selection(self) -> None:
         if self.overlay is None:
