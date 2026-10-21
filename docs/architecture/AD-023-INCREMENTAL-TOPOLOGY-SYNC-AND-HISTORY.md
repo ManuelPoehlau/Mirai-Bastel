@@ -254,6 +254,14 @@ that matter (Knife, Extrude, Connect, Soft Selection, all), the reference-PC rol
    first** (same session, same instruction).
 3. Order with AD-022: decided together, in parallel slices, or one after the other? (Open.)
 
+Stage 1 result (2026-10-21): measured on the reference PC (op + Undo roughly halved, e.g. Delete 3.7 → 2.0 s;
+[experiment README](../../experiments/topology_sync_stage1/README.md)). **Manu, 2026-10-21 (chat, recorded on his
+instruction):** "vielleicht minimal schneller, das zeigen auch die Messungen. Trotzdem viel zu langsam um vernünftig
+arbeiten zu können." → the §7 decision point is missed; stage 2 is indicated. **On Core changes (same message):** "core
+freeze bedeutet nicht, dass er nicht verändert werden darf. Bringen uns Veränderungen am Core einen deutlichen Gewinn,
+sind Core-Änderungen ein Muss." The CORE_V1_FREEZE §7 steps (requirement, contract tests) still apply; whether a Core
+change is wanted is no longer the open question.
+
 ## 7. Proposed next step (staged, if the direction is accepted)
 
 Success lines are Manu's feel in the practical test; the proxies of the header (16.7 ms pointer update, 100 ms discrete

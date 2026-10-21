@@ -114,8 +114,11 @@ Connect, Delete, Dissolve, mehrmals Undo/Redo, auch nach einem W-Move. Zum Vergl
 
 | Frage | Dein Verdikt |
 |---|---|
-| Fühlen sich Operation und Undo auf gollum_20k mit Stufe 1 „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied) | |
-| Ist irgendetwas anders als mit `--stage1 none` (Aussehen, Auswahl, Undo-Ergebnis)? | |
+| Fühlen sich Operation und Undo auf gollum_20k mit Stufe 1 „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied) | **Manu, 2026-10-21:** „vielleicht minimal schneller, das zeigen auch die Messungen. Trotzdem viel zu langsam um vernünftig arbeiten zu können.“ (im Chat, auf seine Anweisung eingetragen) |
+| Ist irgendetwas anders als mit `--stage1 none` (Aussehen, Auswahl, Undo-Ergebnis)? | nicht beantwortet |
 
 Wenn „ja“: Stufe 2 (Core-Änderung) ist nicht nötig (AD-023 §7). Wenn „besser, aber noch sichtbar“: nächster Schritt ist
 die Entscheidung über Stufe 2 und AD-022.
+
+**Ergebnis (2026-10-21):** Stufe 1 reicht nicht (Verdikt oben). Nächster Schritt: Entscheidung über Stufe 2 von AD-023
+(Core-Änderung erlaubt, siehe AD-023 §6) zusammen mit AD-022, in einer frischen Sitzung.
