@@ -1,7 +1,7 @@
 """WP-KNIFE-01 S3 — the same click sequences through the Lab's Q5 and the Production `KnifeTool`.
 
 Not a test module itself (no `test_` prefix): `test_knife_q5_differential.py` asserts what this driver
-records. Q5 (`playground/experiments/knife_face/engine_q5.py`, KEEP 2026-09-30) is the oracle for
+records. Q5 (`experiments/knife_oracle/engine_q5.py`, KEEP 2026-09-30) is the oracle for
 everything S3 promotes: what Q5 does *inside one face* the Production Knife must do too — same path
 records, same accepted clicks, same mesh, same counts and notes at commit, same History and residue.
 
@@ -34,7 +34,7 @@ method, hidden crossings, the stored crossings by position) and compared too.
 Ids are never compared: positions, rounded (9 digits), and point identity as "first seen as the k-th
 distinct point". Run directly to print the recorded cases:
 
-    python playground/tests/knife_q5_differential_driver.py
+    python experiments/knife_oracle/knife_q5_differential_driver.py
 """
 
 from __future__ import annotations
@@ -58,10 +58,10 @@ from mirai.topology import knife_resolve  # noqa: E402
 from mirai.topology.knife import KnifeTool  # noqa: E402
 from viewport.derived import triangulate_face  # noqa: E402
 
-from playground.experiments.knife_face import engine_q5  # noqa: E402
-from playground.experiments.knife_face.engine_q5 import KnifeFaceCrossFace  # noqa: E402
-from playground.experiments.knife_face.planner import point_faces, point_position  # noqa: E402
-from playground.tests.knife_golden_driver import H, W, build_scene, camera  # noqa: E402
+from knife_oracle import engine_q5  # noqa: E402
+from knife_oracle.engine_q5 import KnifeFaceCrossFace  # noqa: E402
+from knife_oracle.planner import point_faces, point_position  # noqa: E402
+from knife_oracle.knife_golden_driver import H, W, build_scene, camera  # noqa: E402
 
 EPS = 1e-9
 FACE_CLEARANCE_PX = 20.0
@@ -508,7 +508,7 @@ MANU_FRONT_EDGE = ((-1, 1, 1), (1, 1, 1))
 
 def q5_crossing_t() -> float:
     """t of the planner's crossing on the top/front edge in Manu's tail-join sequence (play-test camera)."""
-    from playground.tests.knife_golden_driver import begin, spec_target
+    from knife_oracle.knife_golden_driver import begin, spec_target
     mesh = build_scene("cube")
     knife, _scene = begin(KnifeFaceCrossFace, mesh, camera(mesh, 35.0, 30.0))
     specs = [("e", MANU_TOP[0][1], MANU_TOP[0][2], MANU_TOP[0][3]), ("f", MANU_TOP[1][1]), ("f", MANU_TOP[2][1]),

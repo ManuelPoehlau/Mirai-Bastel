@@ -111,7 +111,7 @@ refusal more: a chord that is already an edge of another face). The accepted con
 in `docs/architecture/AD-017_FINAL_DECISIONS_2026-09-22.md`, Addendum 2026-10-01. Covered by the `test_split_face_*`
 contract tests in `tests/test_core.py` (ID continuity, `connect_vertices` twin, notch, unchanged mesh incl. allocator
 counters on every error, winding, both argument orders, serialization and `MeshStateCommand` Undo/Redo round trips,
-symmetry definition untouched) and by `playground/tests/test_split_face_equivalence.py` (same faces as the Lab
+symmetry definition untouched) and by `experiments/knife_oracle/tests/test_split_face_equivalence.py` (same faces as the Lab
 stand-ins on grid, cube and head). `connect_vertices` and `split_edge` unchanged; no new `Operation`, no
 serialization change.
 

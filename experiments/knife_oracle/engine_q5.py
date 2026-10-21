@@ -61,7 +61,7 @@ from mirai.topology.knife_resolve import (
     resolve_cross_face,
     split_chains,
 )
-from playground.experiments.knife_face.engine import (
+from knife_oracle.engine import (
     EDGE_MARGIN_PX,
     KnifeFaceCollected,
     _shares_nonadjacent_face,

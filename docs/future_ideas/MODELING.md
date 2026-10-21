@@ -72,6 +72,12 @@ Schneller Weg zu einem posebaren, editierbaren Mannequin: eine einfache humanoid
 - **Start im leeren Raum:** von Manu am 2026-10-09 bewusst offen gelassen; später separat untersuchen. Siehe [Symmetry Knife Discovery §6, F6](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md).
 - **Winkelbeschränkung:** in WP-KNIFE-01 UX2 zunächst ausgelassen. Referenz Blender 2.79: Bildschirmraum-Snap auf 45°-Schritte mit Führungslinie. Offene Fragen sind Raumbezug und die Interaktion mit vorhandenen Snap-/Midpoint-Regeln. Siehe `docs/research/topology/KNIFE_FACE_DECISIONS.md`, „WP-KNIFE-01 UX2“.
 
+### Deformer / Modifier (Bend, Twist, Lattice o. ä.)
+
+**Manu, 2026-10-21 (Chat, vom Agenten eingetragen):** ein Thema für später. Bis dahin bleibt die Articulation-Probe (EX-A) im Playground
+(`playground/experiments/articulation/`, [Research Map](../design/artist_playground/ROADMAP.md) „EX-A — Bend Probe"); sie ist die einzige vorhandene
+Vorarbeit und nicht für die App vorgesehen.
+
 ### UVs, Baking und Split Normals (Retopo-Raum)
 
 **Manu, 2026-10-20 (Chat, vom Agenten eingetragen):** UVs: ja. Split Normals: unsicher, ob nötig. Falls später im Retopo-Raum Displacements oder Normal Maps gebacken werden sollen, könnten sie nötig werden. Offene Fragen: ob harte Kanten als Kantenmarkierung genügen oder echte pro-Ecke-Normalen gebraucht werden, wo UV-Daten am Mesh wohnen (Ecken-Domäne, siehe [Audit 2](../research/viewport/ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) K2) und wie ein Bake auf dem Referenz-PC läuft (Strahlen auf die Quellfläche, Zielbild). Keine Implementierungszusage.

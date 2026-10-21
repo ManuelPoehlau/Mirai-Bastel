@@ -20,16 +20,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import pytest  # noqa: E402
 
-from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
-from playground.tests.knife_cross_face_golden_driver import load as load_cross_face  # noqa: E402
-from playground.tests.knife_cross_face_golden_driver import from_json, scene  # noqa: E402
-from playground.tests.knife_q5_differential_driver import (  # noqa: E402
+from knife_oracle._paths import DEFAULT_HEAD_ASSET  # noqa: E402
+from knife_oracle.knife_cross_face_golden_driver import load as load_cross_face  # noqa: E402
+from knife_oracle.knife_cross_face_golden_driver import from_json, scene  # noqa: E402
+from knife_oracle.knife_q5_differential_driver import (  # noqa: E402
     DIFFERENCES,
     MULTI_FACE,
     RANDOM_RUNS,

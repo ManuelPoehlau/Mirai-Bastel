@@ -84,8 +84,8 @@ class PlaygroundApp:
 
     @property
     def pick_cache(self):
-        """WP-06 B8: the wrapped Application's single `PickCache` - Playground
-        Knife picking shares it instead of owning a second one."""
+        """WP-06 B8: the wrapped Application's single `PickCache` - the Playground
+        pickers share it instead of owning a second one."""
         return self._app._pick_cache
 
     @property

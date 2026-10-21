@@ -8,7 +8,7 @@ unerwartet anders aussieht als hier beschrieben, nicht still weiterbauen — anh
 und melden (siehe „Bei Widerspruch" am Ende).
 
 **Stand:** `main` @ `649fff5` (Slice 6 gemergt). Baseline: Lab-Tests +
-`playground/tests/test_ad017_knife*.py` → 228 passed; Produktions-Suite 546 passed.
+`tests/test_ad017_knife*.py` → 228 passed; Produktions-Suite 546 passed.
 
 **Ziel:** Manu kann `lab_knife.py` (Slice 6) im Fenster spielen: C startet Knife, der
 gespiegelte Pfad ist beim Zeichnen sichtbar, eine nicht auflösbare Spiegelseite zeigt

@@ -72,15 +72,25 @@ def gpu_elements_in_rect(picker, render_mesh, camera, mesh: Mesh, mode, rect, wi
                          *, cache: PickCache, occlusion: bool) -> set:
     """Box Select: elements of `mode` whose corners all project into `rect` (as `box_select.elements_in_rect`)
     and, with `occlusion`, whose vertex / edge midpoint / face centroid is not behind the face depth."""
+    x0, y0, x1, y1 = rect
+    return gpu_elements_in_region(
+        picker, render_mesh, camera, mesh, mode, lambda p: x0 <= p[0] <= x1 and y0 <= p[1] <= y1, rect,
+        width, height, cache=cache, occlusion=occlusion,
+    )
+
+
+def gpu_elements_in_region(picker, render_mesh, camera, mesh: Mesh, mode, contains, bounds, width: int,
+                           height: int, *, cache: PickCache, occlusion: bool) -> set:
+    """Box / Lasso Select: elements of `mode` whose corners all project to points with `contains(point)`
+    (`bounds` = the region's bounding rectangle, the area the ID buffers are read for), as
+    `box_select.elements_in_region`, and, with `occlusion`, whose vertex / edge midpoint / face centroid
+    is not behind the face depth."""
     from viewport.gpu_picker import FACES
 
     cache.refresh(camera, mesh, width, height)
     screen = cache.vertex_screen
-    x0, y0, x1, y1 = rect
-    inside = {
-        vid for vid, p in screen.items()
-        if p is not None and x0 <= p[0] <= x1 and y0 <= p[1] <= y1
-    }
+    x0, y0, x1, y1 = bounds
+    inside = {vid for vid, p in screen.items() if p is not None and contains(p)}
     visible = face_under = None
     if occlusion:
         picker.prepare(render_mesh, width, height, occlusion=True, target=FACES)

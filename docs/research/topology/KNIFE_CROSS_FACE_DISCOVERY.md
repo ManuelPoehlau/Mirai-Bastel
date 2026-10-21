@@ -479,5 +479,5 @@ face on the line (§1.1).
   https://github.com/blender/blender/blob/v2.79/source/blender/editors/mesh/editmesh_knife.c
 - Wings 3D `wpc_connect_tool.erl`, master @ `8ae2bfd` —
   https://github.com/dgud/wings/blob/master/plugins_src/commands/wpc_connect_tool.erl
-- Mirai: `playground/experiments/knife_face/engine.py`, `playground/window.py`, `src/mirai/topology/knife_pick.py`,
+- Mirai: `experiments/knife_oracle/engine.py`, `playground/window.py`, `src/mirai/topology/knife_pick.py`,
   `src/mirai/viewport/picking.py`, `src/mirai/topology/topology_points.py` @ `52d52b8`

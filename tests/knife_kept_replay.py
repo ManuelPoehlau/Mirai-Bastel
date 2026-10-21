@@ -1,5 +1,5 @@
 """Replay of the Knife resolver's kept-call report (AD-017 §13 item 5) — shared by
-`tests/test_knife_kept_calls.py` and `playground/tests/test_knife_kept_calls_golden.py`.
+`tests/test_knife_kept_calls.py` and `experiments/knife_oracle/tests/test_knife_kept_calls_golden.py`.
 
 Not a test module (no `test_` prefix). A reader of the report works like this: a copy of the session-start
 state, each entry's call made verbatim with the ids it names mapped through the results of the calls

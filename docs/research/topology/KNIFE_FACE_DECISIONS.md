@@ -1062,11 +1062,11 @@ a point: two calls each, the host chosen by winding as in WP-KNIFE-00). Every pa
 planner, snap, hover, preview, path / chains / undo / redo, `accepts` / `click`, the HUD text (worded from the resolver's
 `KnifeResolution`, same strings).
 
-**Evidence `[TEST]`:** golden net `playground/tests/test_knife_resolver_golden.py` (recorded before the move: 345 seeded
+**Evidence `[TEST]`:** golden net `experiments/knife_oracle/tests/test_knife_resolver_golden.py` (recorded before the move: 345 seeded
 runs on grid / cube / head × B / D / Q5 plus Manu's recorded sequences — cube bow-tie `V:13 E:21 F:10`, tail join
 `V:14 E:22 F:10` — compared position-canonically) is **byte-identical** after the move; the Lab suites pass unchanged in
 meaning (import paths and monkeypatch targets moved; one assertion now ignores the new `"pid"` key); the B2b stand-ins are
-frozen as `playground/tests/knife_b2b_oracle.py` and the new constructions equal them on grid, cube and head
+frozen as `experiments/knife_oracle/knife_b2b_oracle.py` and the new constructions equal them on grid, cube and head
 (`test_split_face_equivalence.py`). `[PROBE]` integrity fuzz Q5 / D still 0/400 failures, 0 rollbacks, 0 leftover splits;
 head fuzz (D + Q5, 230 sessions) 0 failures before and after.
 
@@ -1075,7 +1075,7 @@ head fuzz (D + Q5, 230 sessions) 0 failures before and after.
 | # | Observation | Pinned by / numbers |
 |---|---|---|
 | S1-a | **Two simplicity tests.** `face_geometry.polygon_is_simple` (Knife: a crossing counts when both ends lie more than `eps` off the other line; a corner touching = within `eps` of the line *and* the bounding box) and `chord_validity._is_simple` (F2: sign-change crossing; touching = within `eps` *distance*). Same frame, same `eps`; they can differ only inside the `eps` band. Kept both (handoff Task 3.2) until a visible result is shown identical. | `tests/test_chord_validity.py` (F2), the Lab suites + golden net (Knife). F2's predicate itself is unchanged (200 000 random polygons, 0 differences). |
-| S1-b | **Boundary start of two-call faces.** With `split_face` every new face starts its boundary list at an end of its call's path, so the inner face / the wing from call 2 (closed shape) and the loop face / one ring piece (loop at a point) start at another vertex than the Lab's 3-way split did — provably unavoidable with two calls. Same faces, same winding; but the render triangulation (fan / ear clipping from the first vertex, `viewport.derived.triangulate_face`) of such a quad can take the other diagonal: identical in flat display, the smooth-shading gradient *inside that face* can differ. On Manu's cube bow-tie and tail join: one quad each. Options (not decided): accept; a triangulation that does not depend on the boundary start (viewport); a primitive that keeps the start (Core). | `knife_integrity_probe.py --shading` P4: dark face-VBO corners 17/54 → 19/54 (`playground/tests/golden/probe_baseline.txt`); all other boundaries keep their start (golden random runs 0/345 differ with the start kept). |
+| S1-b | **Boundary start of two-call faces.** With `split_face` every new face starts its boundary list at an end of its call's path, so the inner face / the wing from call 2 (closed shape) and the loop face / one ring piece (loop at a point) start at another vertex than the Lab's 3-way split did — provably unavoidable with two calls. Same faces, same winding; but the render triangulation (fan / ear clipping from the first vertex, `viewport.derived.triangulate_face`) of such a quad can take the other diagonal: identical in flat display, the smooth-shading gradient *inside that face* can differ. On Manu's cube bow-tie and tail join: one quad each. Options (not decided): accept; a triangulation that does not depend on the boundary start (viewport); a primitive that keeps the start (Core). | `knife_integrity_probe.py --shading` P4: dark face-VBO corners 17/54 → 19/54 (`experiments/knife_oracle/golden/probe_baseline.txt`); all other boundaries keep their start (golden random runs 0/345 differ with the start kept). |
 | S1-c | **`split_face(k = 0)` refuses a chord that already borders another face**, where `connect_vertices` went on (the commit check would then have rolled the whole session back; now that run would be dropped, the rest kept). | Never reached: 0 of ~3 000 straight cuts in the golden net + integrity fuzz. |
 | S1-d | Error text: a `MeshError` raised inside `split_face` (German) could appear after "closed shape rejected:" where the Lab named a "degenerate" face — only for a face whose boundary repeats a vertex (no tool builds one). | — |
 | S1-e | The integrity probe's fuzz (and the Lab's own random tests) draw clicks by id order (`rnd.choice(mesh.all_face_ids())`); id values legitimately change with `split_face`, so their later sessions differ (verdicts unchanged). The golden net draws by position. | `golden/probe_baseline.txt` vs. today's `--variants` / default output. |
@@ -1149,7 +1149,7 @@ a click outside the mesh keeps committing (AD-017 #8); the point marker at `t` w
   0; S4 History 1 (empty entry) → 0; S5 "mesh mutated during the session" True → False; R3 (HD2) `+-`, History 1 → `++`,
   History 0; R5 L1 V29/E45 → V28/E44 (no lone split); everything else unchanged and equal to Q5.
   `knife_integrity_probe.py --production`: HD2 `KnifeTool 1/2 → 2/2 clean`, L1 `1/2 clean` unchanged.
-- Golden net `playground/tests/test_knife_resolver_golden.py` unchanged and green. Suites: `tests` 1034 → 1080 passed
+- Golden net `experiments/knife_oracle/tests/test_knife_resolver_golden.py` unchanged and green. Suites: `tests` 1034 → 1080 passed
   (GL via EGL), `playground/tests` (xvfb) 1038 + 1 red → 1042 passed.
 
 ### One Knife S2 — open points (recorded, not decided)
@@ -1200,7 +1200,7 @@ exactly half-way between two 6-digit values and the driver's `round(c, 6)` went 
 fail on Python 3.12 / 3.13, pass on 3.11. Fix: `knife_parity_driver._r` rounds to 9 digits first, then to 6 (float noise
 cannot flip a digit any more). Grid / cube / L literals unchanged; the nine head literals re-recorded from the pre-S2
 real-cut tool (`d323be6`) with the new rounding — identical on 3.11 / 3.12 / 3.13 and equal to today's tool. Before: 3.11
-39/39, 3.12 35/39; after: 39/39 on both. The golden driver (`playground/tests/knife_golden_driver.py`) rounds to 9 digits
+39/39, 3.12 35/39; after: 39/39 on both. The golden driver (`experiments/knife_oracle/knife_golden_driver.py`) rounds to 9 digits
 and is identical on 3.12 — not changed. No production change.
 
 ---
@@ -1245,7 +1245,7 @@ applies nothing leaves mesh and History untouched.
 
 **Evidence `[TEST]` / `[PROBE]`:**
 
-- **Differential spec** `playground/tests/test_knife_q5_differential.py` (driver `knife_q5_differential_driver.py`, written
+- **Differential spec** `experiments/knife_oracle/tests/test_knife_q5_differential.py` (driver `knife_q5_differential_driver.py`, written
   first: 44 strict xfails on the S2 tool, all flipped): the same world-position clicks through Q5 (no camera, so it refuses
   exactly the segments that need the planner) and the Production tool; compared: accepted clicks and refusal reasons,
   `accepts() == click()`, path records after every step (undo / redo included), mesh untouched in the session, the
@@ -1924,7 +1924,7 @@ Build record, evidence and the practical test: below, after the build.
 **What changed** (commits "Move the Q5 segment planner to src …", "S4: KnifeTool plans …", "S4: Application …";
 PROVISIONAL until Manu's verdict):
 
-- **Planner moved, not copied:** `playground/experiments/knife_face/planner.py` → `src/mirai/topology/knife_planner.py`
+- **Planner moved, not copied:** `experiments/knife_oracle/planner.py` → `src/mirai/topology/knife_planner.py`
   (the old path is a one-line re-export shim; `engine_q5.py` imports from `src`); `knife_pick.edge_t_3d` is a public alias,
   so the planner needs no private import. Gate (before any behaviour change): `playground/tests` identical, the S1 golden
   net byte-identical, the new cross-face golden (Lab Q5) identical, the integrity probe identical.
@@ -1958,7 +1958,7 @@ PROVISIONAL until Manu's verdict):
 
 **Evidence `[TEST]`:**
 
-- **Golden oracle** `playground/tests/golden/knife_cross_face.json` + `knife_cross_face_golden_driver.py` (recorded from the
+- **Golden oracle** `experiments/knife_oracle/golden/knife_cross_face.json` + `knife_cross_face_golden_driver.py` (recorded from the
   Lab's Q5 *before* the move): 48 sequences with fixed cameras — grid (task 1–3, 6 quads, vertex pass-through / no
   over-snap, hole, occluder with occlusion on / off / switched, along an edge, loops over 4 quads from an interior / a
   boundary / a vertex start, continue from the seed, earlier edge / vertex points, retrace, k-crossing undo / redo, the
@@ -2030,7 +2030,7 @@ in space), `test_a_face_the_last_point_does_not_touch_is_planned_across_faces` a
 names outside clicks again, as cut points), the far-edge hover in `test_two_chains_with_a_lift_…` (planned across now);
 `test_application_knife_shift_preview.py` — the UX2b sweep also counts space targets (the A2 invariant holds for them);
 `test_knife_parity.py::test_p10_…` — docstring only (headless without a view it still refuses);
-`playground/tests/test_knife_q5_differential.py` / the driver — the no-view refusal text.
+`experiments/knife_oracle/tests/test_knife_q5_differential.py` / the driver — the no-view refusal text.
 
 ### WP-KNIFE-01 S4 — open points from the build (recorded, not decided)
 

@@ -1,6 +1,6 @@
 """WP-KNIFE-01 S3 — face points in the Production `KnifeTool` (headless, Production only).
 
-The full comparison with the Lab's Q5 is `playground/tests/test_knife_q5_differential.py`; this module pins the
+The full comparison with the Lab's Q5 is `experiments/knife_oracle/tests/test_knife_q5_differential.py`; this module pins the
 Production rules on their own: face records, the 9 px margin, close ≠ commit and the seed, earlier points,
 refusals with their reasons, one History entry, the mesh untouched during the session, and seeded random
 sessions with interior points that stay clean (grid / cube / head).

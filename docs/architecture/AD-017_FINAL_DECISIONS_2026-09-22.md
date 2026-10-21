@@ -120,7 +120,7 @@ The Knife, the Lab and the resolver are the next package (WP-KNIFE-01 S1, which 
 | 2 Solvable with the public API? | Yes, via `remove_face` + `add_vertex` + `add_face` (B2b) — but that contradicts AD-017 B5 and the mutation-layer principle (`ONE_KNIFE_PROMOTION_DISCOVERY.md` §3). |
 | 3 Problem documented | `ONE_KNIFE_PROMOTION_DISCOVERY.md` §3 and `docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` §3 (both archived). |
 | 4 Smallest extension | One additive primitive, `Mesh.split_face`. `connect_vertices`, `split_edge`, `add_face`, `add_edge` unchanged. |
-| 5 Tests / contract | Contract below; contract tests `tests/test_core.py` (`test_split_face_*`); equivalence against the Lab stand-ins `playground/tests/test_split_face_equivalence.py`. |
+| 5 Tests / contract | Contract below; contract tests `tests/test_core.py` (`test_split_face_*`); equivalence against the Lab stand-ins `experiments/knife_oracle/tests/test_split_face_equivalence.py`. |
 | 6 Change | After 1–5: commit "Core: Mesh.split_face (WP-KNIFE-00 K1)". |
 
 **Accepted contract** (the B2c sketch of `KNIFE_FACE_CUT_DISCOVERY.md` §3, refined only where marked *pinned*;
@@ -169,7 +169,7 @@ Mesh.split_face(face_id, v_a, v_b, positions: Sequence[Position] = ())
 - the two-call constructions (closed shape, loop at a point) burn one intermediate FaceId compared to the Lab's
   3-way split — expected, not "fixed"; S1's golden net compares position-canonical results.
 
-**Sufficiency result (WP-KNIFE-00, 2026-10-01, agent-recorded):** `playground/tests/test_split_face_equivalence.py`
+**Sufficiency result (WP-KNIFE-00, 2026-10-01, agent-recorded):** `experiments/knife_oracle/tests/test_split_face_equivalence.py`
 compares `Mesh.split_face` against the Lab stand-ins as an oracle (position-canonical faces, winding kept) on the
 grid, the cube (folds) and the head (non-planar quads: the 6 least planar plus every 40th, 15 in all). FC1–FC4
 (incl. reversed arguments) are one call each and allocate exactly the Lab's ids; the closed shape (FC6, 2 bridges;

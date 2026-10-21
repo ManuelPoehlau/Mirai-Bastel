@@ -177,14 +177,15 @@ At the end of every finished slice, say in one or two lines whether the next ste
 
 **Principle:** run the smallest test set that gives meaningful evidence for the current change; widen only when a shared dependency, an integration boundary or an observed failure justifies it. The agent selects the suites itself — the Artist is not asked which tests to run.
 
-Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). `pytest.ini` defines `testpaths` (`tests` and the three Lab trees — **not** `playground/tests`, which only runs when named explicitly, see below), but for targeted runs always pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …`. Without it, pyglet-dependent tests are *skipped*, not green — report "N skipped" as skipped, never as a pass.
+Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). `pytest.ini` defines `testpaths` (`tests` and the three Lab trees — **not** `playground/tests` and **not** `experiments/knife_oracle/tests`, which run only when named explicitly, see below), but for targeted runs always pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …`. Without it, pyglet-dependent tests are *skipped*, not green — report "N skipped" as skipped, never as a pass.
 
 **Test trees and what they cover**
 
 | Tree | Covers |
 |---|---|
 | `tests/` | Production: `src/core`, `src/mirai`, `src/viewport` |
-| `playground/tests/` | the Playground host (`playground/`, optional research tool) **and** the frozen Knife / `split_face` reference oracles that Production is checked against. Not in the default `testpaths` |
+| `playground/tests/` | the Playground host (`playground/`, optional research tool; no Knife since 2026-10-21). Not in the default `testpaths` |
+| `experiments/knife_oracle/tests/` | the frozen Knife Face Lab engines and the golden / differential / `split_face` equivalence tests that hold the Production Knife (`src/mirai/topology/knife*.py`) and `Mesh.split_face` against them. Not in the default `testpaths` (run on the trigger list below) |
 | `experiments/symmetry_lab/tests/` | the Symmetry Lab (`experiments/symmetry_lab/`) running on the `src/mirai/application.py` path |
 | `experiments/subdivision_lab/tests/` | the SubD Lab (`experiments/subdivision_lab/`): the GL-free Catmull-Clark core and, since WP-SUBD-LAB-02, the lab on the `Application` path through the Viewport hook H7 (`set_surface_provider`) |
 | `experiments/morph_lab/tests/` | the Morph Lab (`experiments/morph_lab/`): the GL-free morph evaluation and provider, and the lab on the `Application` path through H7 (second user) with its own scene file |
@@ -208,7 +209,7 @@ Add `-x` to stop at the first failure and `--lf` to re-run only the last failure
 - **Docs, comments, AGENTS/CLAUDE.md:** no tests. Check the edit itself (links, commands, diff).
 - **Confined to `experiments/symmetry_lab/` (incl. its tests):** Lab tests only — targeted while working; the whole Lab tree once at the end if shared Lab modules (`lab_app`, `lab_scene`, `lab_bindings`, `run`) changed. Playground and `tests/` have no dependency on Lab code, so they provide no evidence here. Exception: the Lab change was made to work around or alter a `src/` behavior — then it is a `src/` change (below).
 - **Confined to `playground/` (or the experiments helpers only Playground uses):** `playground/tests`, targeted first and the tree once at the end. Lab and `tests/` are unaffected unless the change also touched `src/`.
-- **`src/` (shared code):** first list the consumers of the changed module/function (grep imports across `tests/`, `playground/`, `experiments/symmetry_lab/`). Run `tests/` for the module, then the targeted consumer tests that exercise the changed behavior in each *affected* tree. Whole Lab tree only when the changed behavior is reached broadly (e.g. `src/core`, `Application`, command gate, `viewport` drawing/derived data, `scene_factory`). `playground/tests` is **not** widened for such changes: run the Knife oracle set (below) when the change is in its trigger list, nothing else from the Playground.
+- **`src/` (shared code):** first list the consumers of the changed module/function (grep imports across `tests/`, `playground/`, `experiments/symmetry_lab/`). Run `tests/` for the module, then the targeted consumer tests that exercise the changed behavior in each *affected* tree. Whole Lab tree only when the changed behavior is reached broadly (e.g. `src/core`, `Application`, command gate, `viewport` drawing/derived data, `scene_factory`). `playground/tests` is **not** widened for such changes: run the Knife oracle (below) when the change is in its trigger list, nothing else from the Playground.
 - **`src/core` (frozen V1 baseline) or a public contract of `src/mirai`/`src/viewport`:** `tests/` fully plus the affected consumer trees — such a change affects every consumer, so the broader run is expected.
 
 **3. Final verification — once, after targeted tests are green.** Run the whole tree(s) your scope selection named, a single time:
@@ -216,21 +217,19 @@ Add `-x` to stop at the first failure and `--lf` to re-run only the last failure
 ```bash
 pytest tests -q                               # when src/ changed
 pytest playground/tests -q                    # only when playground/ itself changed (host, experiments, its tests)
+pytest experiments/knife_oracle/tests -q      # Knife trigger list below
 pytest experiments/symmetry_lab/tests -q      # when Lab code or a Lab-reached src/ behavior changed
 pytest experiments/subdivision_lab/tests -q   # when SubD Lab code, `viewport` drawing or `Application` keys changed
 pytest experiments/morph_lab/tests -q         # when Morph Lab code, `viewport` drawing, `Application` keys or scene files changed
 ```
 
-**Knife oracle set** (`playground/tests`, ≈ 68 s measured 2026-10-21): golden / differential / equivalence tests that hold the Production Knife and `Mesh.split_face` against the frozen Lab engines and recorded sessions. Run it once at the end when a change touches `src/mirai/topology/knife*.py`, `face_geometry.py`, `topology_points.py`, `connect_per_face.py`, `connect_vertices_per_face.py`, or the `src/core` topology mutators and change journal (`split_face`, `add_face`, `remove_face`, `begin_change`…):
+**Knife oracle** (`experiments/knife_oracle/tests`, 351 tests, ≈ 64 s measured 2026-10-21): the golden / differential / equivalence tests that hold the Production Knife and `Mesh.split_face` against the frozen Lab engines and recorded sessions. Run it once at the end when a change touches `src/mirai/topology/knife*.py`, `face_geometry.py`, `topology_points.py`, `connect_per_face.py`, `connect_vertices_per_face.py`, or the `src/core` topology mutators and change journal (`split_face`, `add_face`, `remove_face`, `begin_change`…):
 
 ```bash
-pytest playground/tests/test_knife_resolver_golden.py playground/tests/test_knife_cross_face_golden.py \
-       playground/tests/test_knife_q5_differential.py playground/tests/test_knife_kept_calls_golden.py \
-       playground/tests/test_split_face_equivalence.py playground/tests/test_knife_face_q5.py \
-       playground/tests/test_knife_face_lab.py -q
+xvfb-run -a pytest experiments/knife_oracle/tests -q
 ```
 
-The rest of `playground/tests` (host, window, input, family wiring) protects only the Playground and is not a Production gate. Under bare `pytest` several of its modules were silently skipped (pyglet state), so it never gave a full result there anyway.
+The engines are frozen on purpose (change one only to keep it running, never to follow Production). `playground/tests` (host, window, input, family wiring) protects only the Playground and is not a Production gate.
 
 Run all trees only for integration/promotion milestones (an experiment enters `src/`, a shared production path changes, or several trees are demonstrably affected) — not merely because they exist. Widen the run whenever targeted tests fail somewhere outside the expected area.
 

@@ -49,7 +49,7 @@ Grundfunktion je Achse (`variant_move.py`, `variant_rotate.py`, `variant_scale.p
 ## Kandidaten für Production
 
 - **Press-Mode / Hold-Key-Hover (B/D)** — PROMOTED-Ziel für WP-06 Slice B3 (Move auf `W`, noch nicht gebaut)
-- Gizmo-Klick-Verdrahtung (Achsen-Constraint unabhängig vom Tool-Status) — architektonisch entschieden (AD-016)
+- Gizmo-Klick-Verdrahtung (Achsen-Constraint unabhängig vom Tool-Status) — architektonisch entschieden (AD-016); **in der App seit 2026-10-21** (`mirai.viewport.gizmo`, `PROVISIONAL`, [WP Playground-Werkzeuge, Nachtrag](../../../docs/WP_PLAYGROUND_TOOLS_PROMOTION.md#nachtrag-2026-10-21-lasso-und-gizmo-in-die-app-manu))
 - Gizmo-Formen (Dreibein/Rotate/Scale) — bereits umgesetzt (WP-AP-GIZMO-04), Artist-Verdict zu den Formen selbst separat in `transform-gizmo.md`
 
 ---

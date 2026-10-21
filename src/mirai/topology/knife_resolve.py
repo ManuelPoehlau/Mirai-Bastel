@@ -2,7 +2,7 @@
 
 Knife-owned (AD-017 decision #1: no universal Cut Engine — Split, Edge Connect and Vertex Connect do
 not route through this module). Moved, not copied, from the Knife Face Lab
-(`playground/experiments/knife_face/engine.py` / `engine_q5.py`, Variants D and Q5 — the Q5 model is the
+(`experiments/knife_oracle/engine.py` / `engine_q5.py`, Variants D and Q5 — the Q5 model is the
 Lab's KEEP of 2026-09-30); the Lab sessions keep the click-time part (path, chains, undo/redo snapshots,
 accepts/hover/click, planner, picking, HUD text) and call this at commit.
 
@@ -51,7 +51,7 @@ Behaviour (what is cut, what is dropped and why, every HUD count) is exactly the
 the record of each rule lives in `docs/research/topology/KNIFE_FACE_DECISIONS.md`. Face constructions now
 go through `Mesh.split_face`; a closed shape and a loop at a point are two calls each and burn one
 intermediate FaceId (AD-001) — id *values* differ from the Lab's B2b stand-ins, the faces do not
-(`playground/tests/test_split_face_equivalence.py`, `playground/tests/test_knife_resolver_golden.py`).
+(`experiments/knife_oracle/tests/test_split_face_equivalence.py`, `experiments/knife_oracle/tests/test_knife_resolver_golden.py`).
 """
 
 from __future__ import annotations

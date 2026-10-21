@@ -112,7 +112,7 @@ def test_p07_cube_ring_over_four_sides_closed():
 def test_p10_edge_to_edge_across_faces_that_share_nothing_is_refused_until_s4():
     """Q5 plans across (2 cuts). This driver plays headless, without a camera view: Production refuses the
     second click (`CROSS_FACE`, "no camera view"). With a view it plans across since S4 — the intended P10
-    flip (`tests/test_knife_cross_face.py`, `playground/tests/test_knife_cross_face_golden.py`)."""
+    flip (`tests/test_knife_cross_face.py`, `experiments/knife_oracle/tests/test_knife_cross_face_golden.py`)."""
     r = run(*ROWS["P10"])
     assert r.accepted == "+-" and r.consistent
     assert r.broken == []

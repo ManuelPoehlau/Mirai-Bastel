@@ -37,6 +37,10 @@ SELECT_TOGGLE = "SelectToggle"
 # nicht: Ctrl+Drag ist Tweak, Manu 2026-10-15 "Auswahl weicht").
 SELECT_DRAG = "SelectDrag"
 SELECT_DRAG_ADD = "SelectDragAdd"
+# LASSO_ARM (2026-10-21, Manu: "Lasso kommt auch in die Production"; Taste `PROVISIONAL`): solange die
+# Taste gehalten wird, wird aus dem LMB-Drag (SELECT_DRAG / SELECT_DRAG_ADD) ein Lasso-Polygon statt
+# Box/Paint. Wie W/E/R eine Halte-Taste; Shift fügt hinzu, kein Modifier ersetzt.
+LASSO_ARM = "LassoArm"
 # TWEAK (2026-10-15, Tweak Lab V2 "Silo" KEEP): Ctrl+LMB-Drag transformiert mit dem zuletzt
 # gewählten W/E/R (Start: Move) die Auswahl, ohne Auswahl das Element unter dem Press-Punkt.
 TWEAK = "Tweak"

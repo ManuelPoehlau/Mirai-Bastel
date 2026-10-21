@@ -5,7 +5,8 @@ Experimentier-Host für UX-Fragen (Viewport-Display, Selection-Philosophie, Inte
 > **Status seit 2026-10-21:** optionales Forschungswerkzeug auf dem älteren Viewport-/Renderer-Pfad, kein tägliches Entwicklungsumfeld mehr
 > (Produktions-App: `python src/main.py`; [AD-011-Addendum](../docs/architecture/AD-011-PLAYGROUND-IDENTITY-STATUS-QUO.md)). Die entschiedenen
 > Ergebnisse stecken in `src/`. Nur hier vorhanden: Gizmo, Articulation (EX-A). `playground/tests` läuft nicht im Standard-`pytest`
-> (Knife-Oracle-Set: AGENTS.md §8a). Das Knife-Entscheidungsprotokoll liegt jetzt in
+> (AGENTS.md §8a). Das Knife gehört nicht mehr zum Playground (es ist in der App); die eingefrorenen Lab-Engines samt
+> Gleichwertigkeitstests liegen in [`experiments/knife_oracle/`](../experiments/knife_oracle/), das Entscheidungsprotokoll in
 > [`docs/research/topology/KNIFE_FACE_DECISIONS.md`](../docs/research/topology/KNIFE_FACE_DECISIONS.md).
 
 ## Start
@@ -58,9 +59,9 @@ Aktuell verfügbar:
 
 ### Weitere Familien (Stand 2026-09-29)
 
-`transform/`, `connect/`, `knife/`, `knife_face/`, `topology/`, `tweak/`, `articulation/` — jeweils unter
+`transform/`, `connect/`, `topology/`, `tweak/`, `articulation/` — jeweils unter
 `playground/experiments/<familie>/`. Verdikte stehen in der `decision.md` der Familie (vorhanden für
-`selection`, `transform`, `connect`; `knife_face`: `docs/research/topology/KNIFE_FACE_DECISIONS.md`; Tweak: `tweak_decision.md`). Ein Lab-Verdikt ist keine Promotion;
+`selection`, `transform`, `connect`; Tweak: `tweak_decision.md`). Ein Lab-Verdikt ist keine Promotion;
 entschiedene Ergebnisse gelangen einzeln in die Production-App (WP-06, siehe `docs/architecture/ROADMAP.md` §7).
 
 ## Für Anpassungen

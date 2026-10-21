@@ -6,7 +6,7 @@ lädt die Szene selbst (`window._load_initial_scene`, AD-010). Frage hier: Kommt
 ein Registry-Name der geteilten OBJ-Assets (AD-007, `examples/loaders/assets.py`)
 wirklich als Startszene an — z. B. `subd_cube` statt Default-Würfel?
 
-Muster wie test_gizmo.py / test_ad017_knife_keys.py: echtes (headless) Fenster.
+Muster wie test_gizmo.py: echtes (headless) Fenster.
 """
 
 from __future__ import annotations

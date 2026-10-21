@@ -1,7 +1,7 @@
 """WP-STAB-01 (R-SEL-1): selection overlay lifecycle across mesh rebuilds.
 
 Uses a real, GL-backed `PlaygroundWindow` (same pattern as
-`test_ad017_knife_keys.py`) and drives it through the actual key dispatch
+`test_gizmo.py`) and drives it through the actual key dispatch
 (`on_key_press`/`on_key_release`) that the UI itself uses — this is the
 "headless equivalent" of a live manual check: same production code path,
 just driven from pytest instead of a mouse/keyboard.

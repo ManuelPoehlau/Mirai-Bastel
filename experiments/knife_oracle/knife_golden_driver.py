@@ -4,8 +4,8 @@ Not a test module itself (no `test_` prefix): `test_knife_resolver_golden.py` co
 records against the committed golden file `golden/knife_resolver.json`; run this file directly to
 (re)write that file:
 
-    python playground/tests/knife_golden_driver.py           # write golden/knife_resolver.json
-    python playground/tests/knife_golden_driver.py --check   # compare only, print the first differences
+    python experiments/knife_oracle/knife_golden_driver.py           # write golden/knife_resolver.json
+    python experiments/knife_oracle/knife_golden_driver.py --check   # compare only, print the first differences
 
 Recorded per session (ids are never part of a signature — WP-KNIFE-01 Task 3.6: `Mesh.split_face`
 may allocate other id *values* than the Lab's B2b stand-ins did):
@@ -18,7 +18,7 @@ may allocate other id *values* than the Lab's B2b stand-ins did):
   position pairs) and the selection mode; the recorded sequences also keep their new faces in full;
 - whether History Undo restores the session-start mesh and Redo the committed one (position-canonical).
 
-Sessions are driven the way `playground/window.py` drives them (screen position -> `knife_face_pick`
+Sessions are driven the way the Playground window (removed 2026-10-21) drives them (screen position -> `knife_face_pick`
 with occlusion -> Q5 only: `set_view` + `snap_target` -> `click`), like the seeded fuzz in
 `test_knife_face_q5.py` and `experiments/topology/knife_integrity_probe.py`.
 """
@@ -44,15 +44,15 @@ from mirai.scene_factory import build_core_scene_from_obj, create_cube  # noqa: 
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from viewport.derived import triangulate_face  # noqa: E402
 
-from playground._paths import DEFAULT_HEAD_ASSET, ensure_paths  # noqa: E402
+from knife_oracle._paths import DEFAULT_HEAD_ASSET, ensure_paths  # noqa: E402
 
 ensure_paths()  # examples/ (the OBJ loader for the head, AD-007)
-from playground.experiments.knife_face.engine import (  # noqa: E402
+from knife_oracle.engine import (  # noqa: E402
     KnifeFaceCollected,
     KnifeFaceImmediate,
     knife_face_pick,
 )
-from playground.experiments.knife_face.engine_q5 import KnifeFaceCrossFace  # noqa: E402
+from knife_oracle.engine_q5 import KnifeFaceCrossFace  # noqa: E402
 
 GOLDEN_PATH = Path(__file__).resolve().parent / "golden" / "knife_resolver.json"
 W, H = 1280, 800

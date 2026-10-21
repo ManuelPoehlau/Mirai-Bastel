@@ -70,7 +70,7 @@ EPS = 1e-9
 # -- scenes ------------------------------------------------------------------------------
 
 def build_grid(n: int = 4) -> Mesh:
-    """n x n unit quads in z = 0 (same fixture as `playground/tests/test_knife_face_q5.py`)."""
+    """n x n unit quads in z = 0 (same fixture as `experiments/knife_oracle/tests/test_knife_face_q5.py`)."""
     mesh, p = Mesh(), {}
     for r in range(n + 1):
         for c in range(n + 1):

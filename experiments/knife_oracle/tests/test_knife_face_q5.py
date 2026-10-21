@@ -2,7 +2,8 @@
 
 Engine level (no GL, no window): planner, gaps, snap, close-and-continue, undo,
 camera fix, A5 lock. D's own behaviour is covered by `test_knife_face_lab.py`
-(unchanged); the last block here checks the family registration.
+(unchanged). (The Playground family registration and window wiring blocks that used to end this file left with
+the Playground's Knife, 2026-10-21.)
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import random
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"),
            str(_REPO_ROOT / "experiments" / "rigging-skinning-morphing")):
     if _p not in sys.path:
@@ -29,27 +30,20 @@ from mirai.scene_factory import build_core_scene_from_obj, create_cube  # noqa: 
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from mirai.viewport.picking_cache import PickCache  # noqa: E402
 
-from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
-from playground.app import PlaygroundApp  # noqa: E402
-from playground.experiments.knife_face import (  # noqa: E402
-    KnifeFaceVariantB,
-    KnifeFaceVariantD,
-    KnifeFaceVariantQ5,
-)
+from knife_oracle._paths import DEFAULT_HEAD_ASSET  # noqa: E402
 from mirai.topology.face_geometry import FaceFrame, face_problem, segment_in_face  # noqa: E402
 from mirai.topology.knife_resolve import KnifeResolver, split_face_path  # noqa: E402
-from playground.experiments.knife_face.engine import (  # noqa: E402
+from knife_oracle.engine import (  # noqa: E402
     KnifeFaceCollected,
     KnifeFaceImmediate,
     knife_face_pick,
 )
-from playground.experiments.knife_face.engine_q5 import (  # noqa: E402
+from knife_oracle.engine_q5 import (  # noqa: E402
     EARLIER_INTERIOR_NOTE,
     SNAP_PX,
     KnifeFaceCrossFace,
 )
-from playground.experiments.knife_face.planner import View, plan_crossings, point_position  # noqa: E402
-from playground.slot import ExperimentSlot, VariantEntry  # noqa: E402
+from knife_oracle.planner import View, plan_crossings, point_position  # noqa: E402
 from viewport.derived import triangulate_mesh_face  # noqa: E402
 
 W, H = 1280, 800
@@ -1756,7 +1750,7 @@ def test_commit_rolls_back_broken_geometry_and_names_the_reason(monkeypatch):
     that helper had no geometric check and HB1's 4th click left a face crossing itself. Since F2, B
     refuses that click (second test below), so the broken geometry is *injected*: the helper is
     replaced by its pre-F2 rule (lowest shared face id, topology only)."""
-    import playground.experiments.knife_face.engine as b_engine
+    import knife_oracle.engine as b_engine
 
     def connect_unchecked(mesh_, a, b):
         shared = {f for e in mesh_.vertex_edges(a) for f in mesh_.edge_faces(e)} & \
@@ -1922,203 +1916,3 @@ def test_planner_with_pick_cache_gives_the_same_crossings_as_without():
     plain = plan_crossings(View(cam2, W, H, None, True), mesh0, pa, pb)
     cached = plan_crossings(View(cam2, W, H, PickCache(), True), mesh0, pa, pb)
     assert plain.crossings == cached.crossings and plain.method == cached.method
-
-
-# ---------------------------------------------------------------------------
-# Family registration: M cycles B -> D -> Q5
-# ---------------------------------------------------------------------------
-
-def test_m_cycles_b_d_q5_and_q5_uses_the_cross_face_session():
-    app = PlaygroundApp()
-    app.register_slot(ExperimentSlot(
-        VariantEntry(KnifeFaceVariantB(app)),
-        VariantEntry(KnifeFaceVariantD(app)),
-        VariantEntry(KnifeFaceVariantQ5(app)),
-    ), "knife_face")
-    app.focused_family = "knife_face"
-    slot = app.slots["knife_face"]
-    seen = [slot.active_experiment.variant]
-    for _ in range(3):
-        app.activate_variant("knife_face", (slot.active_index + 1) % slot.variant_count)
-        seen.append(slot.active_experiment.variant)
-    assert [v.split(" ")[0] for v in seen] == ["B", "D", "Q5", "B"]
-    assert slot.variants[2].experiment.session_cls is KnifeFaceCrossFace
-    assert slot.variants[1].experiment.session_cls is KnifeFaceCollected
-
-
-# ---------------------------------------------------------------------------
-# Window wiring (real PlaygroundWindow, headless): view, snap, overlay, close
-# ---------------------------------------------------------------------------
-
-@pytest.fixture
-def q5_window():
-    from playground.window import PlaygroundWindow
-    app = PlaygroundApp()
-    win = PlaygroundWindow(app, initial_mesh="grid")
-    app.focused_family = "knife_face"
-    app.activate_variant("knife_face", 2)  # M: B -> D -> Q5
-    yield win, app
-    win.close()
-
-
-def _start_q5(win):
-    from pyglet.window import key as _key
-    win.on_key_press(_key.C, 0)
-    assert isinstance(win._knife_face_tool, KnifeFaceCrossFace)
-    return win._knife_face_tool
-
-
-def _screen(win, world):
-    s = win.app.camera.project_to_screen(world, win.width, win.height)
-    return s[0], s[1]
-
-
-def _click(win, x, y):
-    from pyglet.window import mouse as _mouse
-    win.on_mouse_motion(x, y, 0, 0)
-    win._drag_moved = 0.0
-    win.on_mouse_release(x, y, _mouse.LEFT, 0)
-
-
-def _edge_mid(mesh, a, b):
-    pa, pb = mesh.vertex_position(a), mesh.vertex_position(b)
-    return tuple((u + v) / 2 for u, v in zip(pa, pb))
-
-
-def test_window_q5_cross_face_click_stores_crossings_and_draws_overlay(q5_window):
-    from pyglet.window import key as _key
-    win, app = q5_window
-    mesh = app.scene.mesh
-    knife = _start_q5(win)
-    xs = sorted({round(mesh.vertex_position(v)[0], 6) for v in mesh.all_vertex_ids()})
-    ys = sorted({round(mesh.vertex_position(v)[1], 6) for v in mesh.all_vertex_ids()})
-    y0, y1 = ys[3], ys[4]                       # one row of quads
-    edge_at = lambda x: _edge(mesh, *[v for v in mesh.all_vertex_ids()
-                                       if abs(mesh.vertex_position(v)[0] - x) < 1e-6 and y0 - 1e-6 <= mesh.vertex_position(v)[1] <= y1 + 1e-6])
-    ea, eb = edge_at(xs[1]), edge_at(xs[5])     # four quads apart
-    ax, ay = _screen(win, _edge_mid(mesh, *mesh.edge_vertices(ea)))
-    bx, by = _screen(win, _edge_mid(mesh, *mesh.edge_vertices(eb)))
-
-    _click(win, ax, ay)
-    assert len(knife.path) == 1
-    win.on_mouse_motion(bx, by, 0, 0)            # hover: pending segment planned with this frame's camera
-    kf = win._kfq5_vlists
-    assert "hover_cross" in kf and "hover_cut" in kf and "stored_cross" not in kf
-    _click(win, bx, by)
-    assert len(_crossings(knife)) == 3 and win._knife_face_tool is knife
-    assert "stored_cross" in win._kfq5_vlists and "stored_cut" in win._kfq5_vlists
-    assert len(app.scene.history) == 0           # nothing applied before commit (D model)
-
-    win.on_key_press(_key.ENTER, 0)
-    assert win._knife_face_tool is None and len(app.scene.history) == 1
-    assert not win._kfq5_vlists                  # overlay cleaned up with the session
-    assert_mesh_invariants(app.scene.mesh, context="window Q5")
-
-
-def test_window_q5_snap_close_continue_undo_and_commit(q5_window):
-    from pyglet.window import key as _key
-    win, app = q5_window
-    mesh = app.scene.mesh
-    knife = _start_q5(win)
-    xs = sorted({round(mesh.vertex_position(v)[0], 6) for v in mesh.all_vertex_ids()})
-    ys = sorted({round(mesh.vertex_position(v)[1], 6) for v in mesh.all_vertex_ids()})
-    cx, cy = xs[4], ys[4]                         # loop around this vertex
-    worlds = [(cx - 0.4, cy - 0.4, 0.0), (cx + 0.4, cy - 0.4, 0.0), (cx + 0.4, cy + 0.4, 0.0), (cx - 0.4, cy + 0.4, 0.0)]
-    for w in worlds:
-        _click(win, *_screen(win, w))
-    assert len([p for p in knife.path if not p.get("crossing")]) == 4
-
-    sx, sy = _screen(win, worlds[0])
-    win.on_mouse_motion(sx + 6, sy + 4, 0, 0)     # near the start: snap highlight, closing preview
-    assert "hover_snap" in win._kfq5_vlists
-    _click(win, sx + 6, sy + 4)
-    assert knife.path[-2]["reason"] == "closed" and knife.path[-2]["cyclic"]
-    assert win._knife_face_tool is knife and len(app.scene.history) == 0   # closing does not commit
-
-    win.on_mouse_motion(sx + 6, sy + 4, 0, 0)     # the closed chain's start still snaps, but the click is rejected
-    n = len(knife.path)
-    _click(win, sx + 6, sy + 4)
-    assert len(knife.path) == n and "already the last point" in knife.last_message
-
-    win.on_key_press(_key.Z, _key.MOD_CTRL)       # undo = the whole closing click
-    assert knife.path[-1]["kind"] != "break"
-    win.on_key_press(_key.Y, _key.MOD_CTRL)
-    assert knife.path[-2]["reason"] == "closed"
-
-    win.on_key_press(_key.ENTER, 0)               # only commit ends the session
-    assert win._knife_face_tool is None and len(app.scene.history) == 1
-    assert_mesh_invariants(app.scene.mesh, context="window Q5 loop")
-
-
-def test_window_q5_click_on_an_earlier_edge_point_connects_and_continues(q5_window):
-    from pyglet.window import key as _key
-    win, app = q5_window
-    mesh = app.scene.mesh
-    knife = _start_q5(win)
-    xs = sorted({round(mesh.vertex_position(v)[0], 6) for v in mesh.all_vertex_ids()})
-    ys = sorted({round(mesh.vertex_position(v)[1], 6) for v in mesh.all_vertex_ids()})
-    at = {tuple(round(c, 6) for c in mesh.vertex_position(v)[:2]): v for v in mesh.all_vertex_ids()}
-
-    def mid(c0, r0, c1, r1):
-        return _edge_mid(mesh, at[(xs[c0], ys[r0])], at[(xs[c1], ys[r1])])
-
-    a, b = mid(1, 3, 1, 4), mid(3, 3, 3, 4)
-    c, d, e = mid(3, 5, 4, 5), mid(3, 3, 4, 3), mid(3, 1, 4, 1)
-    for w in (a, b, c, d):
-        _click(win, *_screen(win, w))
-    assert len([q for q in knife.path if not q.get("crossing")]) == 4
-    b_entry = next(q for q in knife.path if q["kind"] == "edge" and not q.get("crossing")
-                   and math.dist(point_position(mesh, q), b) < 1e-6)
-
-    bx, by = _screen(win, b)
-    win.on_mouse_motion(bx + 4, by + 3, 0, 0)               # near an earlier point: the snap shows
-    assert "hover_snap" in win._kfq5_vlists
-    n = len(knife.path)
-    _click(win, bx + 4, by + 3)
-    assert len(knife.path) > n and knife.chain[-1] is b_entry   # accepted; the chain continues from B
-    assert "earlier cut point" in knife.last_message and "rejected" not in knife.last_message
-
-    _click(win, *_screen(win, e))                              # the next segment starts at B
-    assert point_position(mesh, knife.path[-1]) != point_position(mesh, b_entry)
-    win.on_key_press(_key.Z, _key.MOD_CTRL)                    # undo: just the last click
-    assert knife.chain[-1] is b_entry
-    win.on_key_press(_key.Z, _key.MOD_CTRL)                    # undo: the earlier-point click, crossings included
-    assert len(knife.path) == n
-    win.on_key_press(_key.Y, _key.MOD_CTRL)
-    win.on_key_press(_key.Y, _key.MOD_CTRL)
-    win.on_key_press(_key.ENTER, 0)
-    assert win._knife_face_tool is None and len(app.scene.history) == 1
-    assert len([v for v in app.scene.mesh.all_vertex_ids()
-                if math.dist(app.scene.mesh.vertex_position(v), b) < 1e-6]) == 1
-    assert_mesh_invariants(app.scene.mesh, context="window Q5 earlier point")
-
-
-def test_window_q5_after_close_the_preview_and_the_click_start_at_the_closing_vertex(q5_window):
-    from pyglet.window import key as _key
-    win, app = q5_window
-    mesh = app.scene.mesh
-    knife = _start_q5(win)
-    xs = sorted({round(mesh.vertex_position(v)[0], 6) for v in mesh.all_vertex_ids()})
-    ys = sorted({round(mesh.vertex_position(v)[1], 6) for v in mesh.all_vertex_ids()})
-    cx, cy = xs[4], ys[4]
-    worlds = [(cx - 0.4, cy - 0.4, 0.0), (cx + 0.4, cy - 0.4, 0.0), (cx + 0.4, cy + 0.4, 0.0), (cx - 0.4, cy + 0.4, 0.0)]
-    for w in worlds:
-        _click(win, *_screen(win, w))
-    sx, sy = _screen(win, worlds[0])
-    _click(win, sx + 6, sy + 4)                     # snap onto the start: closes, seeds
-    assert knife.path[-2]["reason"] == "closed" and knife.path[-1] is knife.path[0]
-    assert len(win.app.scene.history) == 0 and win._knife_face_tool is knife
-
-    a, b = (v for v in mesh.all_vertex_ids() if mesh.vertex_position(v) in ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0)))
-    tx, ty = _screen(win, _edge_mid(mesh, a, b))
-    win.on_mouse_motion(tx, ty, 0, 0)               # hover: the pending segment runs from the closing vertex
-    plan = knife.last_plan
-    assert plan.ok and plan.lines[0][0] == pytest.approx(worlds[0])
-    assert "hover_cut" in win._kfq5_vlists
-    n = len(knife.path)
-    _click(win, tx, ty)
-    assert len(knife.path) > n and knife.path[n] is not knife.path[0]
-
-    win.on_key_press(_key.ENTER, 0)
-    assert win._knife_face_tool is None and len(app.scene.history) == 1
-    assert_mesh_invariants(app.scene.mesh, context="window Q5 close then continue")

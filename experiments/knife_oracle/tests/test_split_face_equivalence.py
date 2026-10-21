@@ -2,7 +2,7 @@
 
 The Core contract tests live in `tests/test_core.py` (`test_split_face_*`) and do not import
 `playground`; this file only checks that the new primitive builds the **same faces** as the Lab
-functions it is meant to replace (the Lab's `playground/experiments/knife_face/engine.py` at bb07f52,
+functions it is meant to replace (the Lab's `experiments/knife_oracle/engine.py` at bb07f52,
 frozen since WP-KNIFE-01 S1 as `knife_b2b_oracle.py`):
 
 - FC1–FC4 (`docs/research/topology/KNIFE_FACE_CUT_DISCOVERY.md` §2): one `split_face` call vs one
@@ -36,7 +36,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"), str(_REPO_ROOT / "examples"),
            str(_REPO_ROOT / "experiments" / "rigging-skinning-morphing")):
     if _p not in sys.path:
@@ -48,12 +48,12 @@ from core import Mesh  # noqa: E402
 from core.mesh import MeshError  # noqa: E402
 from mesh_invariants import assert_mesh_invariants  # noqa: E402
 from mirai.scene_factory import build_core_scene_from_obj, create_cube  # noqa: E402
-from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
+from knife_oracle._paths import DEFAULT_HEAD_ASSET  # noqa: E402
 from mirai.topology import knife_resolve  # noqa: E402
 from mirai.topology.face_geometry import loop_matches_winding  # noqa: E402
 from mirai.topology.knife_resolve import select_bridge  # noqa: E402
 # The Lab's B2b stand-ins as they were before WP-KNIFE-01 S1 moved the resolver (frozen oracle).
-from playground.tests.knife_b2b_oracle import (  # noqa: E402
+from knife_oracle.knife_b2b_oracle import (  # noqa: E402
     close_loop_at_vertex,
     close_loop_with_bridges,
     split_face_path,

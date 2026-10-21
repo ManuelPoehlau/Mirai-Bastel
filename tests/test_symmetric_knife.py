@@ -13,7 +13,7 @@ What is pinned (the handoff's §5 table):
   F4 = A, no duplicate vertices, the cost, the module boundaries, and that the Knife without a coordinator is
   unchanged.
 
-The tests do not import the probe. The golden net (`playground/tests/test_knife_kept_calls_golden.py`),
+The tests do not import the probe. The golden net (`experiments/knife_oracle/tests/test_knife_kept_calls_golden.py`),
 `tests/test_knife_parity.py` and the 6a tests are separate files and unchanged.
 """
 

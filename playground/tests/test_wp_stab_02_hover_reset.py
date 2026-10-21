@@ -1,17 +1,15 @@
-"""WP-STAB-02 (R-SEL-2, minimal): hover reset on mode change / Knife-begin.
+"""WP-STAB-02 (R-SEL-2, minimal): hover reset on mode change.
 
 Uses a real, GL-backed `PlaygroundWindow` (same pattern as
-`test_ad017_knife_keys.py`), driven through the real `on_key_press`
+`test_gizmo.py`), driven through the real `on_key_press`
 dispatch that the UI itself uses. This is the "headless equivalent" of a
-live manual check across all three component modes plus Knife-start,
+live manual check across all three component modes,
 documented in place of an interactive check that isn't possible in this
 environment.
 
     S1  Pressing "2" (Edge mode) while a Vertex is hovered clears the hover
         (sel.hovered, the window-local hover key, and the hover overlay VBO).
     S2  Pressing "1" (Vertex mode) while an Edge is hovered clears the hover.
-        Also covers Knife-begin: entering Knife (contextual C, empty
-        selection) clears a leftover regular-selection hover.
     S10 An id collision across component kinds (vertex id 5 vs. edge id 5)
         does not suppress a hover update it should have produced. Before the
         fix, on_mouse_motion compared `hit != sel.hovered` as bare ids; a
@@ -94,7 +92,7 @@ def test_s1_mode_switch_to_edge_clears_vertex_hover(cube_win):
 
 
 # ---------------------------------------------------------------------------
-# S2 — mode switch (1/2/3) clears hover: Edge -> Vertex; Knife-begin clears hover
+# S2 — mode switch (1/2/3) clears hover: Edge -> Vertex
 # ---------------------------------------------------------------------------
 
 def test_s2_mode_switch_to_vertex_clears_edge_hover(cube_win):
@@ -107,22 +105,6 @@ def test_s2_mode_switch_to_vertex_clears_edge_hover(cube_win):
     win.on_key_press(_key._1, 0)  # 1: Vertex mode
 
     assert app.scene.selection.mode is SelectionMode.VERTEX
-    assert app.scene.selection.hovered is None
-    assert win._hover_key is None
-    assert win._vlist_hover is None
-
-
-def test_s2_knife_begin_clears_leftover_hover(cube_win):
-    from pyglet.window import key as _key
-    win, app = cube_win
-    fid = next(iter(app.scene.mesh.all_face_ids()))
-    _seed_hover(win, app, SelectionMode.FACE, fid)
-    assert win._vlist_hover is not None
-    app.scene.selection.clear()  # empty selection -> contextual C resolves to KNIFE
-
-    win.on_key_press(_key.C, 0)
-
-    assert win._knife_tool is not None
     assert app.scene.selection.hovered is None
     assert win._hover_key is None
     assert win._vlist_hover is None

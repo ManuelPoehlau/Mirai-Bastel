@@ -344,7 +344,7 @@ only if A1 = REJECT or A3 says holes stay in finished models; consider H2 only i
 triangle (1.3, 1.3)–(1.7, 1.3)–(1.5, 1.7) inside the centre quad. Constructions:
 
 - `lab-ccw` / `lab-cw` — the Lab D stand-in (`select_bridge` + `close_loop_with_bridges`, imported unchanged
-  from `playground/experiments/knife_face/engine.py`), loop clicked counter-clockwise (the order the Lab's own
+  from `experiments/knife_oracle/engine.py`), loop clicked counter-clockwise (the order the Lab's own
   test uses) / clockwise;
 - `fc6` — Knife discovery FC6 "2 bridges": two `split_face_path` calls from the quad's corners;
 - `outer` — outer quad unchanged + inner triangle face = what any current consumer would see of a holed face
@@ -427,7 +427,7 @@ when modelling, it was an observation (→ close the topic at H0) · UNKNOWN.
 ## 6. Observations outside the question
 
 - **Lab closed-shape stand-in has a winding defect** `[CODE]` `[PROBE]`. `close_loop_with_bridges` builds the
-  inner face in click order and walks both loop arcs forward (`playground/experiments/knife_face/engine.py:345-350`),
+  inner face in click order and walks both loop arcs forward (`experiments/knife_oracle/engine.py:345-350`),
   so the inner face and the ring faces always traverse the loop edges in the same direction. Counter-clockwise
   clicks (the order in `test_d_three_interior_points_then_commit_is_closed_shape`): the ring faces overlap the
   triangle (area 1.16 of 1.0). Clockwise clicks: a clean partition, but the inner face's normal is flipped. Both
