@@ -377,7 +377,7 @@ was dein PC und dein Gefühl zeigen:
 - Nicht Teil dieses Tests: Hover direkt nach einer Kameradrehung und Box-Auswahl (das ist GPU-Picking, AD-022, der
   nächste Schritt).
 
-| Frage | Dein Verdikt |
-|---|---|
-| Operationen + Undo auf gollum_20k ohne sichtbare Verzögerung? | offen |
-| Etwas anders als vorher (Aussehen, Auswahl nach Undo)? | offen |
+| Frage | Dein Verdikt                                                                                                                                                                                                  |
+|---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Operationen + Undo auf gollum_20k ohne sichtbare Verzögerung? | ja,was noch etwas langsam wirkt sind : Move, Rotate; Scale auf eine sehr große Auswahl an Vertices, Faces oder Edges, vor allem in Kombination mit Soft Selection. Knife tool wirkt noch langsam im Vergleich |
+| Etwas anders als vorher (Aussehen, Auswahl nach Undo)? | nein                                                                                                                                                                                                          |

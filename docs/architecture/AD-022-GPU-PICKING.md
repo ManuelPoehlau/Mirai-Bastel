@@ -387,9 +387,9 @@ weniger Prozent). Offen ist, was nur dein PC und dein Gefühl zeigen:
   Vertex (`1`), Edge (`2`), Face (`3`); Box-Auswahl über viele Faces; Malen. Zum Vergleich einmal mit
   `$env:MIRAI_CPU_PICKING=1; python src\main.py` (alter CPU-Picker).
 
-| Frage | Dein Verdikt |
-|---|---|
-| Hover/Klick direkt nach dem Drehen ohne sichtbare Verzögerung? | offen |
-| Box über viele Faces: schnell genug? | offen |
-| Wählt Box an der Silhouette sinnvoll (eher ein paar zu viele als zu wenige, §7 Frage 3)? | offen |
-| Irgendwo ein anderes Element gegriffen als erwartet? | offen |
+| Frage | Dein Verdikt                                                                     |
+|---|----------------------------------------------------------------------------------|
+| Hover/Klick direkt nach dem Drehen ohne sichtbare Verzögerung? | Ja                                                                               |
+| Box über viele Faces: schnell genug? | schon sehr viel besser, kann man evtl noch etwas optimieren, aber vorerst gut so |
+| Wählt Box an der Silhouette sinnvoll (eher ein paar zu viele als zu wenige, §7 Frage 3)? | vorerst gut so. Dokumentieren, dass das evtl. später nochmal begutachtet wird    |
+| Irgendwo ein anderes Element gegriffen als erwartet? | Nein                                                                             |
