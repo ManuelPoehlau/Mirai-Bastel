@@ -281,7 +281,11 @@ Priority and feel, no technical choice (the technical choice stays with engineer
   (B2-out, built 2026-10-21 for the AD-023 stage-2 Delete prototype; also after a patched Delete with degenerate
   triangles and its Undo, plus the point pass, CPU agreement and pick cost). Container [C]: exact on every pixel;
   the ID vertex shader must use the production expression `u_proj * u_view * (u_model * p)` (another association
-  differed on 2 px). Reference-PC run pending (it runs at the end of `probe_stage2.py`).
+  differed on 2 px). **Reference PC (2026-10-21) [RPC]: exact** on every pixel, fresh and after a patched Delete
+  and its Undo, point pass (`gl_VertexID`) too; `position` at location 0 in the store's and both ID programs; one
+  pick after a camera change 2.8 ms (face) / 5.6 ms (vertex, max 24 ms in 20). This settles the `gl_PrimitiveID`
+  question for B2 on the 9800 GTX; the AD-018 placement (B2-in vs B2-out) is still a decision - the prototype is
+  B2-out.
 - **After the direction is decided, inside slice 1, with the abort criteria of §9:** the in-loop read-back with p95 / max
   (the `loop` scenario of `probe_navigation_gl.py` on the reference PC), the ordering fix, the call-site inventory,
   a playable switch for Manu, the tests of §5.

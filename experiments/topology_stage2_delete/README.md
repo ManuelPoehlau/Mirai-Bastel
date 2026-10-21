@@ -123,6 +123,47 @@ Reading (agent, `PROVISIONAL`):
    instead of ~8). That puts Delete and its Undo each somewhere around 40-80 ms - near or under the 100 ms proxy,
    but whether that is "ohne sichtbare Verzögerung" is the practical test.
 
+## Result: reference PC (Manu, 2026-10-21)
+
+Core 2 Quad Q9550, GeForce 9800 GTX, GL 3.3, Windows 10, Python 3.14.2; `gollum_20k`, probe defaults (GC on,
+n = 20 per row; `none` n = 15-17 within the row budget). Raw: [`RESULTS_REFERENCE_PC_2026-10-21.md`](RESULTS_REFERENCE_PC_2026-10-21.md).
+ms, p50 (p95):
+
+| Row | `none` frame / undo | `stage1` frame / undo | `H1,V1` frame / undo | `all` frame / undo / redo | `all` op + undo |
+|---|---:|---:|---:|---:|---:|
+| Delete 1 face | 1 687 / 1 781 | 667 / 1 116 | 171 / 160 | **35 (37) / 19 (25) / 9** | **54 (60)** |
+| Delete 20 faces | 1 709 / 1 891 | 787 / 1 120 | 176 / 193 | **42 (43) / 55 (135) / 15** | **97 (175)** |
+| Delete 1 vertex | 1 897 / 2 043 | 774 / 1 349 | 278 / 274 | **54 (56) / 50 (133) / 15** | **104 (184)** |
+
+Where a Delete-1-face frame goes with `all`: Core op 19.0, history 5.1, re-pick 5.6 (of which 3.4 the V1 patch
+synced before the pick), viewport sync 2.2, draw 2.0. Its Undo: delta apply 8.7, re-pick 5.6, sync 2.0.
+**B2 check on the reference driver:** `gl_PrimitiveID` → face is **exact** on every pixel (two cameras; fresh, after a
+patched Delete of 20 faces, after its Undo), the point pass (`gl_VertexID`) too; `position` at location 0 in all three
+programs; CPU agreement identical to the container (face: 0 real differences, the rest half-pixel; vertex: 11
+neighbouring-vertex differences in 389 non-trivial cursors, no "GPU none"). One pick after a camera change: face
+2.8 ms (max 3.5), vertex 5.6 ms (max 24.0, one sample), against 150-190 ms for the CPU `PickCache` rebuild (AD-022 §1).
+
+Reading (agent, `PROVISIONAL`):
+
+1. **Delete and its Undo are 30-90x faster than today and 20-60x faster than stage 1** (p50). Every p50 frame is
+   under the 100 ms proxy, Delete 1 face with its Undo even together (54 ms). The container estimate (40-80 ms each)
+   was pessimistic: the GPU parts on the 9800 GTX are ~2-6 ms, the Python parts ~2x the container.
+2. **Both parts are needed, as in the container:** `H1,V1` alone leaves ~150 ms, almost all of it the CPU
+   `PickCache` rebuild (re-pick 140-230 ms). The coupling AD-023 §5 named ("one contract") holds on the reference
+   driver: the slot rule with degenerate triangles and B2's `gl_PrimitiveID` mapping give exact IDs.
+3. **What is left, in order of size:** (a) the **exact-order Undo** when vertices and edges come back: history
+   38-40 ms p50 with p95 120-122 ms (Delete 20 faces, Delete 1 vertex) - the container rebuild of `_vertices` /
+   `_edges` plus a GC pass it triggers; Delete 1 face only rebuilds the face dict (8.7 ms). This is the one place where
+   the p95 crosses the proxy. (b) the **Core op** itself, 19-25 ms (the edge scan in `_delete_region`; for a vertex
+   also `vertex_edges`). (c) everything else is 2-10 ms. Both (a) and (b) are Core questions: an order rule (keep
+   ascending ID order without rebuilding, or declare dict order not part of "exact" and make consumers order-free,
+   AD-023 §2 H1 point 4) and a vertex → edge index.
+4. **Not shown by this prototype:** ops that create elements (Extrude, Knife, Connect: new IDs, spare buffer
+   capacity, the Knife resolver's checkpoints), symmetric ops, edge-mode / Box / Knife picking on the GPU, 87.5k.
+
+**Manu, 2026-10-21 (chat, with the raw output; recorded by the agent):** „Die Messungen zeigen deutlich, UNDO und
+Delete fühlen sich sehr viel schneller an“.
+
 ## Praktischer Test für Manu (ca. 10 Minuten + ein Messlauf)
 
 **Fühlen (das entscheidet):** `python experiments/topology_stage2_delete/run.py` öffnet die normale App mit
@@ -142,8 +183,8 @@ B2-Check (ob `gl_PrimitiveID` auf deiner Grafikkarte exakt ist; AD-022 §8). Am 
 
 | Frage | Dein Verdikt |
 |---|---|
-| Fühlen sich Delete und sein Undo/Redo auf gollum_20k „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied zu Stufe 1) | offen |
-| Ist irgendetwas anders als mit `--config stage1` (Aussehen nach Delete/Undo, Hover, Auswahl nach Undo)? | offen |
+| Fühlen sich Delete und sein Undo/Redo auf gollum_20k „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied zu Stufe 1) | **Manu, 2026-10-21:** „Die Messungen zeigen deutlich, UNDO und Delete fühlen sich sehr viel schneller an“ (ob das „ohne sichtbare Verzögerung“ heißt, ist offen) |
+| Ist irgendetwas anders als mit `--config stage1` (Aussehen nach Delete/Undo, Hover, Auswahl nach Undo)? | nicht beantwortet |
 
 Wenn „ja“: Stufe 2 + AD-022 sind als Richtung belegt, nächster Schritt ist die Entscheidung über die Richtung
 (AD-023 §7) und der Prototyp der schweren Operationen (Extrude, Knife), bevor `src/` umgebaut wird. Wenn „noch

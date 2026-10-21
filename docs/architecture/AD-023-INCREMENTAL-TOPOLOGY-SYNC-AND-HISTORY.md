@@ -255,7 +255,7 @@ that matter (Knife, Extrude, Connect, Soft Selection, all), the reference-PC rol
 3. Order with AD-022: decided together, in parallel slices, or one after the other? (Open.)
 
 Stage 1 result (2026-10-21): measured on the reference PC (op + Undo roughly halved, e.g. Delete 3.7 → 2.0 s;
-[experiment README](../../experiments/topology_sync_stage1/README.md)). **Manu, 2026-10-21 (chat, recorded on his
+[experiment README](../../experiments/topology_sync_stage1/README.md)). **Manu, 2026-10-21 (chat, with the raw output,
 instruction):** "vielleicht minimal schneller, das zeigen auch die Messungen. Trotzdem viel zu langsam um vernünftig
 arbeiten zu können." → the §7 decision point is missed; stage 2 is indicated. **On Core changes (same message):** "core
 freeze bedeutet nicht, dass er nicht verändert werden darf. Bringen uns Veränderungen am Core einen deutlichen Gewinn,
@@ -283,8 +283,13 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
   exactness contract met incl. container order; V1 slot rule (dead triangles degenerate, revived on Undo) shared with
   B2's `gl_PrimitiveID` mapping; pick synced before it reads. Container [C], Delete 1 face frame / Undo: `stage1`
   333 / 1 167 ms, `H1,V1` 103 / 89 ms, with GPU picking 41 / 32 ms; B2 face mapping exact per pixel (llvmpipe).
-  Reference-PC run and Manu's feel test pending (README "Praktischer Test"). Left whole-mesh: the Core delete's own
-  edge scan, vertex Delete's `vertex_edges` (no vertex → edge index), the exact-order Undo rebuild per container.
+  **Reference PC (2026-10-21) [RPC]**, p50 frame / Undo: Delete 1 face `none` 1 687 / 1 781, `stage1` 667 / 1 116,
+  `H1,V1` 171 / 160, with GPU picking **35 / 19 ms** (op + Undo 54 ms); Delete 20 faces 42 / 55, Delete 1 vertex
+  54 / 50 (their Undo p95 ~135 ms: the exact-order rebuild of `_vertices` / `_edges` plus a GC pass). B2 face mapping
+  exact on the reference driver. Left whole-mesh: the exact-order Undo rebuild, the Core delete's own edge scan
+  (19-25 ms), vertex Delete's `vertex_edges` (no vertex → edge index). **Manu, 2026-10-21 (chat, with the raw output,
+  recorded by the agent):** „Die Messungen zeigen deutlich, UNDO und Delete fühlen sich sehr viel schneller an.“ Not shown:
+  ops that create elements (Extrude, Knife, Connect), symmetric ops.
 - **Abort rule:** stop H1 if any op needs whole-mesh work to compute its touched set, or if the debug compare finds a
   mismatch that is a contract gap rather than a prototype bug.
 
