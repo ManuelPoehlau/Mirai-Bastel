@@ -56,6 +56,29 @@ class View:
         self._memo = {}
         if self.cache is not None:
             self.cache.refresh(self.camera, mesh, self.width, self.height)
+            # A plan runs many occlusion tests and a rectangle query: the grid pays off at once.
+            self.cache.face_grid(mesh, batch=True)
+
+    def candidates(self, mesh, x0: float, y0: float, x1: float, y1: float):
+        """(vertices, edges) that can project into the screen rectangle, in mesh order (ascending
+        IDs) - from the cache's face grid plus the elements no face lists; None = every element
+        (no cache, no grid, or the rectangle leaves the viewport)."""
+        cache = self.cache
+        if cache is None:
+            return None
+        grid = cache.face_grid(mesh, batch=True)
+        faces = grid.faces_in_rect(x0, y0, x1, y1) if grid is not None else None
+        if faces is None:
+            return None
+        loose_edges, loose_vertices = cache.loose(mesh)
+        vertices, edges = set(loose_vertices), set(loose_edges)
+        for e in loose_edges:
+            vertices.update(mesh.edge_vertices(e))
+        for f in faces:
+            if mesh.is_valid_face(f):
+                vertices.update(mesh.face_vertices(f))
+                edges.update(mesh.face_edges(f))
+        return sorted(vertices), sorted(edges)
 
     def p2(self, world: Position):
         s = self.camera.project_to_screen(world, self.width, self.height)
@@ -323,8 +346,12 @@ def plane_hits(view: View, mesh, a: dict, b: dict, *, vertex_tol_px=VERTEX_TOL_P
     lo_x, hi_x = min(A2[0], B2[0]) - 1.0, max(A2[0], B2[0]) + 1.0
     lo_y, hi_y = min(A2[1], B2[1]) - 1.0, max(A2[1], B2[1]) + 1.0
 
+    # Only elements whose screen footprint can reach the segment's bbox (2026-10-21: the scan over the
+    # whole mesh per segment made a Knife click on a dense mesh cost 0.1-0.2 s); same order as before.
+    found = view.candidates(mesh, lo_x, lo_y, hi_x, hi_y)
+    vertex_ids, edge_ids = found if found is not None else (mesh.all_vertex_ids(), mesh.all_edge_ids())
     hits, hidden, vhit = [], 0, set()
-    for v in mesh.all_vertex_ids():
+    for v in vertex_ids:
         if v in skip_verts:
             continue
         v2 = view.v2(mesh, v)
@@ -338,7 +365,7 @@ def plane_hits(view: View, mesh, a: dict, b: dict, *, vertex_tol_px=VERTEX_TOL_P
             continue
         vhit.add(v)
         hits.append((s, {"kind": "vertex", "vertex_id": v}))
-    for e in mesh.all_edge_ids():
+    for e in edge_ids:
         if e in skip_edges:
             continue
         va, vb = mesh.edge_vertices(e)

@@ -280,3 +280,53 @@ def test_viewport_resize_invalidates_without_an_explicit_call():
     cache.refresh(camera, mesh, WIDTH * 2, HEIGHT * 2)
 
     assert cache.vertex_screen[vid] != at_800
+
+
+def _grid_mesh(n: int = 12) -> Mesh:
+    mesh = Mesh()
+    ids = [[mesh.add_vertex((x / n * 2 - 1, y / n * 2 - 1, 0.1 * ((x * y) % 3))) for x in range(n + 1)]
+           for y in range(n + 1)]
+    for y in range(n):
+        for x in range(n):
+            mesh.add_face([ids[y][x], ids[y][x + 1], ids[y + 1][x + 1], ids[y + 1][x]])
+    return mesh
+
+
+def test_a_patched_cache_equals_a_fresh_one_after_mesh_changes():
+    """2026-10-21: after topology changes, moves and an Undo-like re-insert, the journal patch leaves
+    projections, bboxes, the screen grid (per cell, as sets), `vertex_faces` and `loose` as a fresh
+    cache builds them - same camera, no full re-projection."""
+    import random
+
+    from core.operations import record_mesh_change
+
+    mesh = _grid_mesh()
+    camera = _default_camera()
+    cache = PickCache()
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+    cache.face_grid(mesh, batch=True)
+    cache.vertex_faces(mesh)
+    cache.loose(mesh)
+    rng = random.Random(4)
+    faces = mesh.all_face_ids()
+    delta, _ = record_mesh_change(mesh, lambda: mesh.delete_faces(faces[20:26]))
+    mesh.split_edge(mesh.all_edge_ids()[40], 0.3)
+    for v in rng.sample(mesh.all_vertex_ids(), 10):
+        x, y, z = mesh.vertex_position(v)
+        mesh.set_vertex_position(v, (x + 0.05, y - 0.03, z + 0.2))
+    mesh.apply_delta(delta, reverse=True)
+    mesh.add_edge(mesh.all_vertex_ids()[0], mesh.all_vertex_ids()[50])  # a loose edge
+    cache.invalidate()
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)
+
+    fresh = PickCache()
+    fresh.refresh(camera, mesh, WIDTH, HEIGHT)
+    assert cache.vertex_screen == fresh.vertex_screen
+    assert cache.face_bbox == fresh.face_bbox
+    assert cache.vertex_faces(mesh) == fresh.vertex_faces(mesh)
+    assert cache.loose(mesh) == fresh.loose(mesh)
+    mine, theirs = cache.face_grid(mesh, batch=True), fresh.face_grid(mesh, batch=True)
+    assert set(mine.unbounded) == set(theirs.unbounded)
+    for x in range(0, WIDTH, 7):
+        for y in range(0, HEIGHT, 7):
+            assert set(mine.faces_at(x, y) or ()) == set(theirs.faces_at(x, y) or ()), (x, y)

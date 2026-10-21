@@ -123,9 +123,10 @@ class PickCache:
         if signature == self._signature and watch.peek().is_empty():
             return
         change = watch.take()
-        same_view = self._signature is not None and signature[:5] == self._signature[:5]
+        old_signature = self._signature
+        same_view = old_signature is not None and signature[:5] == old_signature[:5]
         self._signature = signature
-        if same_view and self._patch(mesh, change):
+        if same_view and self._patch(mesh, change, old_signature):
             return
 
         projector = getattr(camera, "screen_projector", None)
@@ -142,10 +143,12 @@ class PickCache:
         face_vertices = mesh.face_vertices
         self.face_bbox = {fid: _bbox(vertex_screen, face_vertices(fid)) for fid in mesh.all_face_ids()}
 
-    def _patch(self, mesh, change) -> bool:
-        """Re-projects what `change` touched (same camera, size and mesh). False = do it all."""
+    def _patch(self, mesh, change, old_signature) -> bool:
+        """Re-projects what `change` touched (same camera, size and mesh), and moves the touched
+        faces in the screen grid instead of dropping it. False = do it all."""
+        grid = self._grid if self._grid_key == old_signature else None
         if change.is_empty():
-            self._keep_derived(mesh)
+            self._keep_grid(grid, old_signature)
             return True
         if len(change.vertices) + len(change.faces) > PATCH_MAX_FRACTION * (
             len(self.vertex_screen) + len(self.face_bbox)
@@ -169,18 +172,53 @@ class PickCache:
             else:
                 face_bbox.pop(fid, None)
         face_vertices = mesh.face_vertices
+        for fid in change.faces:
+            if not is_valid_face(fid) and grid is not None:
+                grid.move(fid, None, alive=False)
         for fid in faces:
-            face_bbox[fid] = _bbox(vertex_screen, face_vertices(fid))
-        self._patch_vertex_faces(mesh, change)
+            box = face_bbox[fid] = _bbox(vertex_screen, face_vertices(fid))
+            if grid is not None:
+                grid.move(fid, box)
+        self._keep_grid(grid, old_signature)
         return True
 
-    def _keep_derived(self, mesh) -> None:
-        """The mesh did not change: the camera-independent map stays valid under the new key."""
-        if self._faces_key is not None and self._faces_key[0] == id(mesh):
-            self._faces_key = (id(mesh), self._generation)
+    def _keep_grid(self, grid, old_signature) -> None:
+        if grid is not None:
+            self._grid_key = self._signature
+            if self._scans_key == old_signature:
+                self._scans_key = self._signature
+
+    def loose(self, mesh) -> tuple[set, set]:
+        """(edges without a face, vertices without an edge) of `mesh` - the elements no face grid
+        cell lists. One scan per mesh, then kept up to date from the journal."""
+        self._sync_maps(mesh)
+        if getattr(self, "_loose_mesh", None) is not mesh:
+            self._loose_edges = {e for e in mesh.all_edge_ids() if not mesh.edge_faces(e)}
+            self._loose_vertices = {v for v in mesh.all_vertex_ids() if not mesh.vertex_edges(v)}
+            self._loose_mesh = mesh
+        return self._loose_edges, self._loose_vertices
+
+    def _patch_loose(self, mesh, change) -> None:
+        if getattr(self, "_loose_mesh", None) is not mesh:
+            return
+        edges, vertices = self._loose_edges, self._loose_vertices
+        touched_vertices = set(change.vertices)
+        for eid, before in change.edges.items():
+            if before is not None:
+                touched_vertices.update(before[:2])
+            if mesh.is_valid_edge(eid) and not mesh.edge_faces(eid):
+                edges.add(eid)
+                touched_vertices.update(mesh.edge_vertices(eid))
+            else:
+                edges.discard(eid)
+        for vid in touched_vertices:
+            if mesh.is_valid_vertex(vid) and not mesh.vertex_edges(vid):
+                vertices.add(vid)
+            else:
+                vertices.discard(vid)
 
     def _patch_vertex_faces(self, mesh, change) -> None:
-        if self._faces_key is None or self._faces_key[0] != id(mesh):
+        if self._faces_key != id(mesh):
             return
         faces_of = self._vertex_faces
         vertices = set(change.vertices)
@@ -197,15 +235,14 @@ class PickCache:
             for eid in mesh.vertex_edges(vid):
                 found.update(mesh.edge_faces(eid))
             faces_of[vid] = found
-        self._faces_key = (id(mesh), self._generation)
 
     def vertex_faces(self, mesh) -> dict:
         """vertex -> set of the faces on its edges (the faces the occlusion test excludes for
         that vertex: the union of `edge_faces` over `vertex_edges`, as the uncached test
-        builds it). Built lazily once per mesh state (`id(mesh)` + `invalidate()`
-        generation), independent of the camera. Read-only for callers."""
-        key = (id(mesh), self._generation)
-        if key != self._faces_key:
+        builds it). Independent of the camera: built once per mesh, then kept current from the
+        mesh's change journal (2026-10-21; before, every `invalidate()` rebuilt it). Read-only
+        for callers."""
+        if self._sync_maps(mesh):
             faces: dict = {vid: set() for vid in mesh.all_vertex_ids()}
             for eid in mesh.all_edge_ids():
                 edge_faces = mesh.edge_faces(eid)
@@ -214,8 +251,25 @@ class PickCache:
                 for vid in mesh.edge_vertices(eid):
                     faces[vid].update(edge_faces)
             self._vertex_faces = faces
-            self._faces_key = key
+            self._faces_key = id(mesh)
         return self._vertex_faces
+
+    def _sync_maps(self, mesh) -> bool:
+        """Brings the camera-independent maps (`vertex_faces`, `loose`) up to date with `mesh`'s
+        journal; True = `vertex_faces` must be built from scratch."""
+        watch = getattr(self, "_maps_watch", None)
+        if watch is None or watch.mesh is not mesh:
+            if watch is not None:
+                watch.close()
+            self._maps_watch = mesh.watch()
+            self._faces_key = None
+            self._loose_mesh = None
+            return True
+        change = watch.take()
+        if not change.is_empty():
+            self._patch_vertex_faces(mesh, change)
+            self._patch_loose(mesh, change)
+        return self._faces_key != id(mesh)
 
     def face_grid(self, mesh, *, batch: bool = True) -> "FaceGrid | None":
         """The face bboxes of the last `refresh()` bucketed into screen cells, built once per
@@ -251,6 +305,7 @@ class FaceGrid:
         rows = max(1, int(math.ceil(height * inv)))
         cells: list[list] = [[] for _ in range(cols * rows)]
         unbounded = []
+        where: dict = {}
         floor = math.floor
         last_col, last_row = cols - 1, rows - 1
         for fid, bbox in face_bbox.items():
@@ -268,15 +323,69 @@ class FaceGrid:
             y0, y1 = max(y0, 0), min(y1, last_row)
             if x0 == x1 and y0 == y1:
                 cells[y0 * cols + x0].append(fid)
+                where[fid] = [y0 * cols + x0]
                 continue
+            placed = []
             for row in range(y0, y1 + 1):
                 base = row * cols
                 for col in range(x0, x1 + 1):
                     cells[base + col].append(fid)
+                    placed.append(base + col)
+            where[fid] = placed
         self._inv = inv
         self._cols, self._rows = cols, rows
         self._cells = cells
         self.unbounded = unbounded
+        self._unbounded_set = set(unbounded)
+        self._where = where  # face -> the cells it is listed in (for `move`)
+
+    def _cells_of(self, bbox):
+        inv = self._inv
+        minx, miny, maxx, maxy = bbox
+        x0, x1 = math.floor(minx * inv), math.floor(maxx * inv)
+        y0, y1 = math.floor(miny * inv), math.floor(maxy * inv)
+        if x1 < 0 or y1 < 0 or x0 >= self._cols or y0 >= self._rows:
+            return []
+        x0, x1 = max(x0, 0), min(x1, self._cols - 1)
+        y0, y1 = max(y0, 0), min(y1, self._rows - 1)
+        return [row * self._cols + col for row in range(y0, y1 + 1) for col in range(x0, x1 + 1)]
+
+    def move(self, fid, bbox, alive: bool = True) -> None:
+        """Puts face `fid` into the cells of `bbox` (None = a face without a bbox: `unbounded`), or
+        takes it out (`alive` False, a dead face). Keeps the grid valid across a mesh change instead
+        of rebuilding it (2026-10-21)."""
+        where = self._where.pop(fid, None)
+        if where is not None:
+            for cell in where:
+                self._cells[cell].remove(fid)
+        elif fid in self._unbounded_set:
+            self._unbounded_set.discard(fid)
+            self.unbounded.remove(fid)
+        if not alive:
+            return
+        if bbox is None:
+            self.unbounded.append(fid)
+            self._unbounded_set.add(fid)
+            return
+        cells = self._cells_of(bbox)
+        for cell in cells:
+            self._cells[cell].append(fid)
+        self._where[fid] = cells
+
+    def faces_in_rect(self, x0: float, y0: float, x1: float, y1: float) -> set | None:
+        """Every face whose bbox may overlap the rectangle (its cells' faces plus `unbounded`), or
+        None if the rectangle is not inside the grid."""
+        inv = self._inv
+        c0, c1 = math.floor(x0 * inv), math.floor(x1 * inv)
+        r0, r1 = math.floor(y0 * inv), math.floor(y1 * inv)
+        if c0 < 0 or r0 < 0 or c1 >= self._cols or r1 >= self._rows:
+            return None
+        found = set(self.unbounded)
+        cells, cols = self._cells, self._cols
+        for row in range(r0, r1 + 1):
+            for col in range(c0, c1 + 1):
+                found.update(cells[row * cols + col])
+        return found
 
     def faces_at(self, x: float, y: float) -> list | None:
         """The faces to test for screen point `(x, y)`: its cell's faces plus `unbounded`, or

@@ -79,6 +79,9 @@ Details:
   headless (cloud/CI): prefix with `xvfb-run -a`. Without pyglet/display the repo-root `conftest.py`
   turns exactly those failures into visible *skips* (any other error stays an error) — so
   "N skipped" in playground/ can mean "environment", not "green"; run with xvfb for the real result.
+- GL tests (`tests/test_gl_*.py`) are *skipped* inside a combined run when another module has already switched pyglet
+  to headless/EGL first (`test_main_wiring.py` and others set `pyglet.options["headless"]`); in a container without
+  EGL run them in their own process: `xvfb-run -a python -m pytest tests/test_gl_*.py -q` (observed 2026-10-21).
 - `tests/_archive/` holds obsolete tests (e.g. the stale V1 `test_extrude_tool`); `pytest.ini`
   excludes it. Don't re-add `--ignore` workarounds — fix the cause or archive with a date.
 - The Symmetry Lab runs on the `src/mirai/application.py` path (start: `python experiments/symmetry_lab/run.py [asset]`,

@@ -412,8 +412,9 @@ def test_vertex_faces_map_matches_vertex_edges_and_survives_a_camera_change():
     assert cache.vertex_faces(mesh) is faces  # a camera change keeps the map
 
     cache.invalidate()
-    rebuilt = cache.vertex_faces(mesh)
-    assert rebuilt is not faces and rebuilt == faces  # a mesh change rebuilds it
+    # 2026-10-21: the map follows the mesh's change journal; an `invalidate()` without a mesh change
+    # keeps it (a real change patches it, see the next test).
+    assert cache.vertex_faces(mesh) is faces
 
 
 def test_vertex_faces_map_follows_a_topology_change_after_invalidate():
@@ -618,7 +619,8 @@ def test_face_grid_is_built_lazily_per_camera_state():
     cache.invalidate()
     assert cache.face_grid(mesh) is not None  # stale signature: still the last refresh's grid
     cache.refresh(camera, mesh, WIDTH, HEIGHT)
-    assert cache.face_grid(mesh, batch=False) is None
+    # 2026-10-21: the journal shows the mesh unchanged, so the grid of this camera state is kept.
+    assert cache.face_grid(mesh, batch=False) is not None
 
 
 @pytest.mark.skipif(not _BODY.is_file(), reason="body asset not found")

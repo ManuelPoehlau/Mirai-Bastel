@@ -2379,6 +2379,11 @@ class Application:
         of this hover / click); outside the mesh the target is a point in space."""
         kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
         size = (self.viewport_width, self.viewport_height)
+        if self.display.show_faces:
+            # One Knife pick runs several occlusion tests (vertex, edge, face, own points): build the
+            # screen grid at once instead of after `GRID_AFTER_SCANS` whole-mesh scans.
+            self._pick_cache.refresh(self._edit_camera, self.scene.mesh, *size)
+            self._pick_cache.face_grid(self.scene.mesh, batch=True)
         target = knife_pick(self._edit_camera, self.scene.mesh, x, y, *size, **kwargs)
         if self._knife is None:
             return target

@@ -368,6 +368,21 @@ of per-operation touched sets (this removes the main H1 risk of §4, "every futu
   the **Knife** compared with the rest — the next targets (the transform drag path and the Knife's per-camera
   projection, AD-022 §11 "Open").
 
+- **Follow-up 2026-10-21 (after that verdict), measured [C]** (container, gollum_20k):
+  - *Transforms of large selections:* `Viewport.sync` did one `store.update` per vertex, normal and face row (10 542
+    calls per move for a 3 339-vertex Soft region). `RenderMesh` now keeps CPU mirrors of positions / normals and uploads
+    merged ranges, face rows in runs, face normals and rows in tight loops (bit-identical). `probe_navigation_gl.py
+    --scenarios plain_w soft_w`, move p50: plain 500 V 12.1 → **5.5 ms**; Soft 15 % (508 V) 10.3 → **7.8 ms**; Soft 50 %
+    (3 339 V) 71 → **38-40 ms** (the rest is per-face normal / row work in Python, ~3.4k faces per move).
+  - *Knife:* a pick ran ~13 occlusion tests as whole-mesh scans before the screen grid existed, the CPU cache rebuilt its
+    vertex → faces map after every `invalidate()`, and the planner (`plane_hits`) walked every vertex and edge per
+    segment. Now: the grid is built up front for Knife picks and plans and is **patched** (not dropped) on mesh changes;
+    `vertex_faces` / loose elements follow the journal; `plane_hits` takes its candidates from the grid cells under the
+    segment (same hits, same order; all Knife suites incl. parity / golden green). `C` press 155 → **91 ms**, first click
+    34 → **15 ms**, second click 201 → **60 ms**, worst hover with the cut line 76 → **35 ms**; hover 3-5 ms, commit 44 ms,
+    Undo 29 ms. **Left:** the first Knife hover after a camera change still projects the whole mesh on the CPU (~58 ms
+    [C]; the planner needs every vertex's screen position) - moving the Knife onto the ID buffers is AD-022 slice 3.
+
 ### Praxistest für Manu (ca. 10 Minuten + ein Messlauf)
 
 Die technische Korrektheit ist durch Tests belegt (Undo/Redo exakt, Bild gleich einem vollen Neuaufbau). Offen ist nur,
@@ -386,3 +401,14 @@ was dein PC und dein Gefühl zeigen:
 |---|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Operationen + Undo auf gollum_20k ohne sichtbare Verzögerung? | ja,was noch etwas langsam wirkt sind : Move, Rotate; Scale auf eine sehr große Auswahl an Vertices, Faces oder Edges, vor allem in Kombination mit Soft Selection. Knife tool wirkt noch langsam im Vergleich |
 | Etwas anders als vorher (Aussehen, Auswahl nach Undo)? | nein                                                                                                                                                                                                          |
+
+### Praxistest 2 (2026-10-21, nach deinem Verdikt: große Auswahlen, Soft, Knife)
+
+- `python src\main.py`, `gollum_20k`: W/E/R auf eine sehr große Auswahl, mit und ohne Soft Selection (großer Radius);
+  Knife: `C`, mehrere Klicks über viele Flächen, `Enter`, Undo.
+- Messen: `python experiments\drag_cost\probe_navigation_gl.py --scenarios plain_w soft_w --assets examples\meshes\gollum_20k.obj`
+
+| Frage | Dein Verdikt |
+|---|---|
+| W/E/R mit großer Auswahl / Soft: flüssig genug? | offen |
+| Knife: Klicks und Vorschau jetzt ohne sichtbare Verzögerung? (Der erste Hover direkt nach dem Drehen ist noch nicht optimiert.) | offen |
