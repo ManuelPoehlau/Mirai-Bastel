@@ -288,7 +288,7 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
   54 / 50 (their Undo p95 ~135 ms: the exact-order rebuild of `_vertices` / `_edges` plus a GC pass). B2 face mapping
   exact on the reference driver. Left whole-mesh: the exact-order Undo rebuild, the Core delete's own edge scan
   (19-25 ms), vertex Delete's `vertex_edges` (no vertex → edge index). **Manu, 2026-10-21 (chat, with the raw output,
-  recorded by the agent):** „Die Messungen zeigen deutlich, UNDO und Delete fühlen sich sehr viel schneller an.“ Not shown:
+  recorded by the agent):** „Die Messungen zeigen deutlich, UNDO und Delete fühlen sich sehr viel schneller an.“ After the practical test (same day): „Eine leichte Verzögerung ist noch spürbar, wenn ich das jetzt mal mit Blender vergleiche … die Verzögerung in Mirai beim 20k gollum fühlt sich so an, wie die Verzögerung beim 80k gollum in blender“ (his case: Box-select several thousand faces, Delete, Undo) - the success line is not yet reached. Follow-up row Box + Delete 6 464 faces [C]: Box 1 602 ms (CPU, AD-022 slice 2), Delete 256, Undo 476 ms - per-element Python work in the Core op, the delta, the V1 patch and the overlays grows with the selection (experiment README). Not shown:
   ops that create elements (Extrude, Knife, Connect), symmetric ops.
 - **Abort rule:** stop H1 if any op needs whole-mesh work to compute its touched set, or if the debug compare finds a
   mismatch that is a contract gap rather than a prototype bug.

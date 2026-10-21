@@ -164,6 +164,34 @@ Reading (agent, `PROVISIONAL`):
 **Manu, 2026-10-21 (chat, with the raw output; recorded by the agent):** „Die Messungen zeigen deutlich, UNDO und
 Delete fühlen sich sehr viel schneller an“.
 
+**Manu, 2026-10-21 (chat, the practical test; recorded by the agent):** „Eine leichte Verzögerung ist noch spürbar, wenn
+ich das jetzt mal mit Blender vergleiche. Wenn ich dort mehrere tausend faces beim 20k gollum mit boxselect auswähle,
+lösche, undo betätige, spüre ich bei keinem dieser Schritte eine spürbare oder sichtbare Verzögerung auf meinem PC. Ich
+würde sagen, die Verzögerung in Mirai beim 20k gollum fühlt sich so an, wie die Verzögerung beim 80k gollum in
+blender.“ → the line "ohne sichtbare Verzögerung" is **not yet reached**; the gap to Blender is about a factor of 4 in
+mesh size at equal feel (his estimate).
+
+### Follow-up: Box + Delete of thousands of faces (Manu's Blender case), container [C], 2026-10-21
+
+Probe row added (`box + delete N faces`: mesh framed whole, box over the middle 40 % of the window, face mode; 6 464
+faces on gollum_20k). `--config all --steps 5` and `--config stage1 --steps 3`, ms p50:
+
+| Step | `stage1` | `all` | where the time goes with `all` |
+|---|---:|---:|---|
+| Box select frame | 1 946 | 1 602 | `elements_in_rect` 1 401 (CPU `PickCache` rebuild + occlusion tests per face; not in this prototype), overlays 73 |
+| Delete frame | 402 | 256 | Core op 95, delta capture 49, V1 patch 84 (synced before the pick), pick ~10 |
+| Undo frame | 1 453 | 476 | delta apply incl. exact-order rebuild 127, V1 revival 6 464 faces ~240, overlays of the restored selection 70 |
+| Redo frame | 657 | 129 | |
+
+Reading (agent, `PROVISIONAL`): for one face the prototype is at 20-55 ms on the reference PC; for thousands of
+faces every part that is **per touched element in Python** grows with the selection - the Core delete, the delta
+records, the V1 patch (one `store.update` per face / vertex / row, re-triangulation on revival), the selection
+overlays - and Box Select itself is still the CPU path (1.4 s here; AD-022 slice 2, the depth oracle, is its GPU
+answer). Blender does the same per-element work in C. What would cut it, by expected size: Box on the GPU (AD-022
+slice 2); batched V1 patches (contiguous ranges / one upload above a threshold, as stage 1's `V2_PATCH_LIMIT`) and
+keeping a dead face's triangulation for its revival; a Core delete without the per-face Python work plus the vertex →
+edge index; an order rule that avoids the container rebuild. Not measured on the reference PC yet.
+
 ## Praktischer Test für Manu (ca. 10 Minuten + ein Messlauf)
 
 **Fühlen (das entscheidet):** `python experiments/topology_stage2_delete/run.py` öffnet die normale App mit
@@ -180,10 +208,12 @@ gehört nicht zum Test.
 
 Er misst nacheinander `none` (heutiger Code), `stage1`, `H1,V1` (Stufe 2 ohne GPU-Picking) und `all`, danach den
 B2-Check (ob `gl_PrimitiveID` auf deiner Grafikkarte exakt ist; AD-022 §8). Am Ende steht eine Zusammenfassung.
+Seit dem 2026-10-21 (nach deinem ersten Lauf) misst er zusätzlich deinen Blender-Fall: Box-Auswahl von ~6 500 Faces
+auf dem ganzen gollum_20k, Delete, Undo, Redo (Zeile `box + delete N faces`; `--no-box` lässt sie weg).
 
 | Frage | Dein Verdikt |
 |---|---|
-| Fühlen sich Delete und sein Undo/Redo auf gollum_20k „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied zu Stufe 1) | **Manu, 2026-10-21:** „Die Messungen zeigen deutlich, UNDO und Delete fühlen sich sehr viel schneller an“ (ob das „ohne sichtbare Verzögerung“ heißt, ist offen) |
+| Fühlen sich Delete und sein Undo/Redo auf gollum_20k „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied zu Stufe 1) | **Manu, 2026-10-21:** „Die Messungen zeigen deutlich, UNDO und Delete fühlen sich sehr viel schneller an“ ; nach dem Praxistest: „Eine leichte Verzögerung ist noch spürbar, wenn ich das jetzt mal mit Blender vergleiche … die Verzögerung in Mirai beim 20k gollum fühlt sich so an, wie die Verzögerung beim 80k gollum in blender“ (Box-Auswahl mehrerer tausend Faces, Delete, Undo) → **besser, aber noch sichtbar** |
 | Ist irgendetwas anders als mit `--config stage1` (Aussehen nach Delete/Undo, Hover, Auswahl nach Undo)? | nicht beantwortet |
 
 Wenn „ja“: Stufe 2 + AD-022 sind als Richtung belegt, nächster Schritt ist die Entscheidung über die Richtung

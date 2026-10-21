@@ -12,7 +12,9 @@ Configurations (`stage2.py`): `none` = today's code; `stage1` = V0,V2,V3,H0 (the
 
 Rows (camera framed close on the front-most vertex, as the drag_cost `topology` scenario; the cursor rests on
 the first face of the patch): Delete 1 face (face mode, the drag_cost row), Delete 20 faces, Delete 1 vertex
-(vertex mode). Per sample: the Delete as the Artist triggers it (Entf) + its frame, one plain mouse move + frame,
+(vertex mode), and - Manu's Blender comparison (2026-10-21) - **Box + Delete**: the mesh framed whole, a box over the
+middle 40 % of the window in face mode (~6 500 faces on gollum_20k; Box Select is the unchanged CPU path in every
+configuration), then Delete, Undo, Redo of that selection (`--no-box` skips this row). Per sample: the Delete as the Artist triggers it (Entf) + its frame, one plain mouse move + frame,
 Ctrl+Z + frame, Ctrl+Y + frame, then an unmeasured Ctrl+Z so the next sample starts from the asset.
 
 Columns (ms): `frame` = event + sync + draw. Inside the event: `op` (`apply_removal`, the Core op),
@@ -47,6 +49,8 @@ from topology_stage2_delete._paths import REPO_ROOT, ensure_paths  # noqa: E402
 ensure_paths()
 
 DEFAULT_CONFIGS = ("none", "stage1", "H1,V1", "all")
+#: Box row: the box covers this fraction of the window's width and height, centred (mesh framed whole).
+BOX_FRACTION = 0.4
 GOLLUM_20K = "examples/meshes/gollum_20k.obj"
 
 
@@ -71,7 +75,7 @@ class Timer:
         return timed
 
 
-TIMERS = {name: Timer() for name in ("op", "export", "load", "push", "capture", "apply", "pick", "pick_sync")}
+TIMERS = {name: Timer() for name in ("op", "export", "load", "push", "capture", "apply", "pick", "pick_sync", "box")}
 _in_pick = [False]
 
 
@@ -85,6 +89,7 @@ def install_timers() -> None:
     from topology_stage2_delete import delta as delta_mod
 
     application.apply_removal = TIMERS["op"].wrap(application.apply_removal)
+    application.elements_in_rect = TIMERS["box"].wrap(application.elements_in_rect)
     Mesh.export_state = TIMERS["export"].wrap(Mesh.export_state)
     Mesh.load_state = TIMERS["load"].wrap(Mesh.load_state)
     HistoryStack.push = TIMERS["push"].wrap(HistoryStack.push)
@@ -133,6 +138,7 @@ def phase() -> dict:
         "history": t["export"] + t["load"] + t["push"] + capture_only + t["apply"],
         "pick": t["pick"],
         "pick_sync": t["pick_sync"],
+        "box": t["box"],
     }
 
 
@@ -148,6 +154,7 @@ class Frame:
     pick_sync: float
     sync: float
     draw: float
+    box: float = 0.0
 
     @property
     def total(self) -> float:
@@ -164,6 +171,7 @@ class Sample:
     hover: Frame
     undo: Frame
     redo: Frame
+    box: Frame | None = None
 
 
 @dataclass
@@ -186,7 +194,7 @@ def measured_frame(rig, event) -> Frame:
     gl.glFinish()
     end = time.perf_counter()
     return Frame((after_event - start) * 1000.0, p["op"], p["history"], p["pick"], p["pick_sync"],
-                 (after_sync - after_event) * 1000.0, (end - after_sync) * 1000.0)
+                 (after_sync - after_event) * 1000.0, (end - after_sync) * 1000.0, p["box"])
 
 
 def stats(values):
@@ -215,9 +223,17 @@ COLUMNS = (
 )
 
 
+BOX_COLUMNS = (
+    ("box select frame (CPU, as today)", lambda s: s.box.total),
+    ("  elements_in_rect", lambda s: s.box.box),
+    ("  viewport sync (overlays)", lambda s: s.box.sync),
+)
+
+
 def row_lines(row: Row) -> list[str]:
     lines = [f"  {row.name:24s} n={len(row.samples):3d}"]
-    for label, get in COLUMNS:
+    columns = (BOX_COLUMNS + COLUMNS) if row.samples and row.samples[0].box is not None else COLUMNS
+    for label, get in columns:
         st = stats(get(s) for s in row.samples)
         lines.append(f"    {label:32s} p50 {st.p50:9.2f}  p95 {st.p95:9.2f}  max {st.max:9.2f}")
     return lines
@@ -269,15 +285,25 @@ def run_config(spec: str, args) -> int:
     if args.gc == "off":
         gc.disable()
 
+    cursor = [cx, cy]
+
     def prepare(mode_key: str, ids) -> None:
         app.key_press(key[mode_key])
         app.selection.set(set(ids))
         rig.viewport.on_selection_changed()
-        app.pointer_motion(cx, cy)
+        app.pointer_motion(*cursor)
         rig.settle()
 
-    def sample(mode_key: str, ids) -> Sample:
-        prepare(mode_key, ids)
+    def sample(mode_key: str, ids, box=None) -> Sample:
+        cx, cy = cursor
+        box_frame = None
+        if box is None:
+            prepare(mode_key, ids)
+        else:
+            prepare(mode_key, ())
+            box_frame = measured_frame(rig, box)
+            if len(app.selection.faces) != len(ids):
+                raise RuntimeError(f"box selected {len(app.selection.faces)} faces, expected {len(ids)}")
         deleted = measured_frame(rig, lambda: app.key_press(key["delete"]))
         if len(mesh.all_vertex_ids()) == v_before and mode_key == "1":
             raise RuntimeError(f"delete did nothing ({app.status_message})")
@@ -290,17 +316,50 @@ def run_config(spec: str, args) -> int:
         rig.settle()
         if len(mesh.all_vertex_ids()) != v_before:
             raise RuntimeError(f"row did not undo cleanly ({app.status_message})")
-        return Sample(deleted, hover, undo, redo)
+        return Sample(deleted, hover, undo, redo, box_frame)
+
+    def box_row():
+        """Manu's Blender comparison (2026-10-21): Box-select thousands of faces on the whole mesh, delete, undo.
+        The mesh is framed whole; the box is the middle of the window (`BOX_FRACTION` of each side); the pick
+        cache is invalidated first, as after a camera move. Box Select is the unchanged CPU path in every
+        configuration (AD-022 slice 2 is not in this prototype)."""
+        from mirai.application import elements_in_rect
+        from mirai.viewport.picking_cache import PickCache
+
+        app.frame_scene()
+        app._camera_changed()
+        rig.settle()
+        w, h = app.viewport_width, app.viewport_height
+        fx = (1.0 - BOX_FRACTION) / 2.0
+        rect = (w * fx, h * fx, w * (1.0 - fx), h * (1.0 - fx))
+        app.key_press(key["3"])
+        found = elements_in_rect(app._edit_camera, mesh, app.selection.mode, rect, w, h, cache=PickCache(),
+                                 occlusion=app.display.show_faces)
+        cursor[:] = [(rect[0] + rect[2]) / 2.0, (rect[1] + rect[3]) / 2.0]
+
+        def box() -> None:
+            # What `_drag_select_finish` does for a box (selection.set, notify, soft refresh, status, re-pick).
+            app._pick_cache.invalidate()
+            hit = elements_in_rect(app._edit_camera, mesh, app.selection.mode, rect, w, h, cache=app._pick_cache,
+                                   occlusion=app.display.show_faces)
+            app.selection.set(hit)
+            app.viewport.on_selection_changed()
+            app._soft_preview_refresh()
+            app._refresh_hover()
+
+        return f"box + delete {len(found)} faces", "3", sorted(found), box
 
     rows = []
-    for name, mode_key, ids in (("delete 1 face", "3", [FaceId(patch20[0])]),
-                                ("delete 20 faces", "3", [FaceId(f) for f in patch20]),
-                                ("delete 1 vertex", "1", [VertexId(seed)])):
+    plans = [("delete 1 face", "3", [FaceId(patch20[0])], None),
+             ("delete 20 faces", "3", [FaceId(f) for f in patch20], None),
+             ("delete 1 vertex", "1", [VertexId(seed)], None)]
+    for index in range(len(plans) + (0 if args.no_box else 1)):
+        name, mode_key, ids, box = plans[index] if index < len(plans) else box_row()
         row = Row(name)
         deadline = time.perf_counter() + args.row_seconds
-        sample(mode_key, ids)  # warm-up (first ID render, first patch), not counted
+        sample(mode_key, ids, box)  # warm-up (first ID render, first patch), not counted
         while len(row.samples) < args.steps and (len(row.samples) < 3 or time.perf_counter() < deadline):
-            row.samples.append(sample(mode_key, ids))
+            row.samples.append(sample(mode_key, ids, box))
         rows.append(row)
         for line in row_lines(row):
             print(line)
@@ -329,12 +388,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--assets")
     parser.add_argument("--gc", choices=("on", "off"), default="on")
     parser.add_argument("--no-check", action="store_true")
+    parser.add_argument("--no-box", action="store_true", help="skip the Box + Delete row")
     args = parser.parse_args(argv)
     if args.config:
         return run_config(args.config, args)
 
     here = Path(__file__).resolve()
     passed = [a for a in ("--steps", str(args.steps), "--row-seconds", str(args.row_seconds), "--gc", args.gc)]
+    if args.no_box:
+        passed.append("--no-box")
     if args.assets:
         passed += ["--assets", args.assets]
     summary = []
