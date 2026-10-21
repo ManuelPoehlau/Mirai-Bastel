@@ -215,6 +215,9 @@ class Viewport:
         # H1: Zusatz-Overlays eines Hosts; frisch angehängte syncen beim
         # nächsten `sync()` in jedem Fall.
         self.extra_overlays: list = []
+        #: Counts the vertex-move / topology notifications (and edit-mesh switches): a host that caches
+        #: something derived from the vertex positions (the gizmo pivot) re-derives when it changes.
+        self.geometry_revision = 0
         self._extra_overlays_dirty = False
         # H7: Ersatzfläche eines Hosts und ihr RenderMesh (None = das Edit-Mesh wird gezeichnet).
         self.surface_provider = None
@@ -345,6 +348,7 @@ class Viewport:
         if release is not None:
             release()
         self.mesh = mesh
+        self.geometry_revision += 1
         self.render_mesh = RenderMesh(mesh, overlay=self.overlay, store_type=self._store_type)
         if old.material is not None:
             self.render_mesh.bind_material(old.material)
@@ -561,10 +565,12 @@ class Viewport:
     def on_vertices_moved(self, vertex_ids: set[VertexId]) -> None:
         self.render_mesh.mark_vertices_dirty(vertex_ids)
         if vertex_ids:
+            self.geometry_revision += 1
             self._selection_overlays_dirty = True
             self._edges_dirty = True
 
     def on_topology_changed(self) -> None:
+        self.geometry_revision += 1
         self.render_mesh.mark_topology_dirty()
         self._selection_overlays_dirty = True
         self._edges_dirty = True

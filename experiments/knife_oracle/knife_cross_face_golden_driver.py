@@ -5,8 +5,8 @@ recorded in `golden/knife_cross_face.json` through the Lab's Q5 (must stay ident
 `src`, behaviour unchanged, S5 of the S4 handoff) and through the Production `KnifeTool` (must reproduce it
 once it plans across faces — the intended P10 flip). Run directly to (re)write or check the file:
 
-    python playground/tests/knife_cross_face_golden_driver.py           # write golden/knife_cross_face.json
-    python playground/tests/knife_cross_face_golden_driver.py --check   # compare only, print differences
+    python experiments/knife_oracle/knife_cross_face_golden_driver.py           # write golden/knife_cross_face.json
+    python experiments/knife_oracle/knife_cross_face_golden_driver.py --check   # compare only, print differences
 
 Sequences are click specs in world positions (`knife_q5_differential_driver`'s format — `v` / `e` / `f`,
 `"undo"` / `"redo"`, `("cam", yaw, pitch)` = orbit, `("occl", bool)` = occlusion on / off, `"commit"` = commit
@@ -37,9 +37,9 @@ for _p in (str(_ROOT / "src"), str(_ROOT), str(_ROOT / "tests"),
 
 from core import Mesh  # noqa: E402
 
-from playground.experiments.knife_face.engine import knife_face_pick  # noqa: E402
-from playground.tests.knife_golden_driver import H, W, build_grid, build_scene, camera  # noqa: E402
-from playground.tests.knife_q5_differential_driver import (  # noqa: E402
+from knife_oracle.engine import knife_face_pick  # noqa: E402
+from knife_oracle.knife_golden_driver import H, W, build_grid, build_scene, camera  # noqa: E402
+from knife_oracle.knife_q5_differential_driver import (  # noqa: E402
     FACE_CLEARANCE_PX,
     Side,
     e,

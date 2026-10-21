@@ -98,7 +98,7 @@ def win_app():
 
 def test_roundtrip(tmp_path, win_app):
     win, app = win_app
-    _select_variant(win, "knife_face", "KnifeFaceVariantD")
+    _select_variant(win, "topology", "ExtrudeLmbVariant")
     _press(win, _key.D, _key.MOD_SHIFT)
     path = tmp_path / "state.json"
 
@@ -107,8 +107,8 @@ def test_roundtrip(tmp_path, win_app):
 
     assert state == session_state.capture(app)
     assert state["version"] == session_state.STATE_VERSION
-    assert state["focused_family"] == "knife_face"
-    assert state["variants"]["knife_face"] == "KnifeFaceVariantD"
+    assert state["focused_family"] == "topology"
+    assert state["variants"]["topology"] == "ExtrudeLmbVariant"
     assert state["display"]["wireframe_overlay"] is True
 
 
@@ -169,9 +169,9 @@ def test_unknown_variant_only_that_entry_falls_back(win_app):
     _win, app = win_app
     state = {
         "version": 1,
-        "focused_family": "knife_face",
+        "focused_family": "topology",
         "variants": {
-            "knife_face": "KnifeFaceVariantQ5",
+            "topology": "ExtrudeLmbVariant",
             "tweak": "TweakV999DoesNotExist",   # unbekannte Variante
             "ghost_family": "Whatever",          # unbekannte Family
             "transform": "PressModeVariant",
@@ -183,10 +183,10 @@ def test_unknown_variant_only_that_entry_falls_back(win_app):
     skipped = session_state.apply(app, state)
 
     assert len(skipped) == 3
-    assert session_state.variant_key(app.slots["knife_face"].active) == "KnifeFaceVariantQ5"
+    assert session_state.variant_key(app.slots["topology"].active) == "ExtrudeLmbVariant"
     assert session_state.variant_key(app.slots["transform"].active) == "PressModeVariant"
     assert session_state.variant_key(app.slots["tweak"].active) == tweak_before
-    assert app.focused_family == "knife_face"
+    assert app.focused_family == "topology"
     assert app.display_state.wireframe_overlay is True  # gültiger Teil bleibt
 
 
@@ -225,7 +225,7 @@ def test_selection_default_is_modifier_without_any_state():
 
 
 def test_restart_restores_state_like_manual_switching(tmp_path):
-    """Akzeptanz 1/4/6: Knife Face + Variante + Nicht-Default-Selection +
+    """Akzeptanz 1/4/6: Topology + Variante + Nicht-Default-Selection +
     Wireframe Overlay → schließen → Start: identischer Zustand ohne Tastendruck."""
     path = tmp_path / "state.json"
 
@@ -234,7 +234,7 @@ def test_restart_restores_state_like_manual_switching(tmp_path):
         _select_variant(win1, "selection", "FaceSelectToggleExperiment")
         _select_variant(win1, "presentation", "FlatVariant")
         _press(win1, _key.D, _key.MOD_SHIFT)              # Wireframe Overlay an
-        _select_variant(win1, "knife_face", "KnifeFaceVariantQ5")  # Fokus endet hier
+        _select_variant(win1, "topology", "ExtrudeLmbVariant")  # Fokus endet hier
         manual = _observable(win1, app1)
     finally:
         win1.close()                                       # speichert
@@ -244,8 +244,8 @@ def test_restart_restores_state_like_manual_switching(tmp_path):
     try:
         restored = _observable(win2, app2)
         assert restored == manual
-        assert restored["focused"] == "knife_face"
-        assert restored["variants"]["knife_face"] == "KnifeFaceVariantQ5"
+        assert restored["focused"] == "topology"
+        assert restored["variants"]["topology"] == "ExtrudeLmbVariant"
         assert restored["variants"]["selection"] == "FaceSelectToggleExperiment"
         assert restored["select_mode"] is SelectMode.TOGGLE
         assert restored["display"] == (DisplayMode.FLAT_SHADED, True)
@@ -293,9 +293,9 @@ def test_unknown_variant_in_file_restores_the_rest(tmp_path):
     path = tmp_path / "state.json"
     path.write_text(json.dumps({
         "version": 1,
-        "focused_family": "knife_face",
+        "focused_family": "topology",
         "variants": {
-            "knife_face": "KnifeFaceVariantD",
+            "topology": "ExtrudeLmbVariant",
             "tweak": "RemovedVariant",
             "selection": "FaceSelectToggleExperiment",
         },
@@ -304,10 +304,10 @@ def test_unknown_variant_in_file_restores_the_rest(tmp_path):
     win, app = _window(path)
     try:
         v = _family_variants(app)
-        assert v["knife_face"] == "KnifeFaceVariantD"
+        assert v["topology"] == "ExtrudeLmbVariant"
         assert v["selection"] == "FaceSelectToggleExperiment"
         assert v["tweak"] == "TweakV2Silo"        # Registry-Default
-        assert app.focused_family == "knife_face"
+        assert app.focused_family == "topology"
         assert app.display_state.mode is DisplayMode.WIREFRAME
     finally:
         win.close()
@@ -331,20 +331,20 @@ def test_reset_starts_with_defaults_and_overwrites_file_on_close(tmp_path):
     path = tmp_path / "state.json"
     win1, app1 = _window(path)
     try:
-        _select_variant(win1, "knife_face", "KnifeFaceVariantQ5")
+        _select_variant(win1, "topology", "ExtrudeLmbVariant")
     finally:
         win1.close()
 
     win2, app2 = _window(path, restore=False)
     try:
         assert app2.focused_family == "selection"
-        assert session_state.variant_key(app2.slots["knife_face"].active) == "KnifeFaceVariantB"
-        assert json.loads(path.read_text())["focused_family"] == "knife_face"  # noch nicht überschrieben
+        assert session_state.variant_key(app2.slots["topology"].active) == "ExtrudeBaselineVariant"
+        assert json.loads(path.read_text())["focused_family"] == "topology"  # noch nicht überschrieben
     finally:
         win2.close()
     stored = json.loads(path.read_text())
     assert stored["focused_family"] == "selection"
-    assert stored["variants"]["knife_face"] == "KnifeFaceVariantB"
+    assert stored["variants"]["topology"] == "ExtrudeBaselineVariant"
 
 
 def test_window_without_path_never_touches_disk(tmp_path, monkeypatch):

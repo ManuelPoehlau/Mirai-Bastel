@@ -180,7 +180,9 @@ def test_transform_and_constraint_bindings(app, inp, command):
     assert app.bindings.command_for(inp) == command
 
 
-def test_q_is_unbound(app):
-    assert app.bindings.command_for(_key("q")) is None
-    assert not app.key_press(_key("q"))
+def test_q_is_the_lasso_hold_key_and_arms_no_tool(app):
+    # Q was unbound until 2026-10-21; it is now the Lasso Select hold key (tests/test_application_lasso.py).
+    assert app.bindings.command_for(_key("q")) == cmd.LASSO_ARM
+    assert app.key_press(_key("q"))
     assert app.tool_manager.active_tool is None
+    assert app.key_release(_key("q"))

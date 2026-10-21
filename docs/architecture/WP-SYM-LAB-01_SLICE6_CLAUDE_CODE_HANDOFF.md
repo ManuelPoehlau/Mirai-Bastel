@@ -8,7 +8,7 @@ unerwartet anders aussieht als hier beschrieben, nicht still weiterbauen — anh
 und melden (siehe „Bei Widerspruch" am Ende).
 
 **Stand:** `main` @ `1825b44` (Slice 5 KEEP, 2026-09-25). Baseline: Lab-Tests +
-`playground/tests/test_ad017_knife.py` + `test_ad017_knife_pick.py` → 192 passed.
+`tests/test_ad017_knife.py` + `test_ad017_knife_pick.py` → 192 passed.
 
 **Schnitt:** Slice 6 ist **nur die headless Engine** plus Charakterisierung. Fenster,
 Edge-Hover, Pfad-Vorschau und Tastenbindung folgen in Slice 7. Slice 6 ist deshalb

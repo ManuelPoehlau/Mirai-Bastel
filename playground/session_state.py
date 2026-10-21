@@ -12,7 +12,7 @@ Undo-History, Kamera, Fenster.
 Format (eine JSON-Datei, Version 1):
 
     {"version": 1,
-     "focused_family": "knife_face",
+     "focused_family": "tweak",
      "variants": {"selection": "FaceSelectModifierExperiment", ...},
      "display": {"mode": "WIREFRAME", "wireframe_overlay": false}}
 

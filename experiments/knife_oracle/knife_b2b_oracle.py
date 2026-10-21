@@ -1,7 +1,7 @@
 """FROZEN ORACLE — the Knife Face Lab's B2b face constructions as they were before WP-KNIFE-01 S1.
 
 Verbatim copy (only the imports adapted) of `split_face_path`, `close_loop_with_bridges` and
-`close_loop_at_vertex` from `playground/experiments/knife_face/engine.py` at bb07f52 — the
+`close_loop_at_vertex` from `experiments/knife_oracle/engine.py` at bb07f52 — the
 `remove_face` + `add_vertex` + `add_face` stand-ins WP-KNIFE-00 compared `Mesh.split_face` against.
 Since S1 the real constructions live in `mirai.topology.knife_resolve` and are built from
 `Mesh.split_face`; this file is test data, the reference both are compared with

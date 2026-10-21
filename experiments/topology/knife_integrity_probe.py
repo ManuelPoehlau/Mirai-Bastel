@@ -71,7 +71,7 @@ W, H = 1280, 800
 # -- scenes ------------------------------------------------------------------------------
 
 def build_grid(n: int = 4) -> Mesh:
-    """n x n unit quads in z = 0 (same as `playground/tests/test_knife_face_q5.py::_grid`)."""
+    """n x n unit quads in z = 0 (same as `experiments/knife_oracle/tests/test_knife_face_q5.py::_grid`)."""
     mesh, p = Mesh(), {}
     for r in range(n + 1):
         for c in range(n + 1):

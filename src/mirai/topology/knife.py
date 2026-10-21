@@ -47,7 +47,7 @@ a hidden part) and `{"kind": "break", "reason": "space"}` (the stretch from or t
 point in space).
 
 Rules (parity rows P01–P15 / S1–S5, `tests/test_knife_parity.py`; the Q5
-differential spec, `playground/tests/test_knife_q5_differential.py`):
+differential spec, `experiments/knife_oracle/tests/test_knife_q5_differential.py`):
 - The first click places the start point (an interior point too). Every further
   click must share a face with the last point; the segment between them is
   - a **cut** when it lies inside a shared face — for two boundary points the

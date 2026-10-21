@@ -1,6 +1,6 @@
 """WP-STAB-03: Session Gate.
 
-While a modal session (Knife, Extrude, Loop Slide, Articulation drag, Tweak,
+While a modal session (Extrude, Loop Slide, Articulation drag, Tweak,
 Gizmo drag, Transform) owns input, nothing outside that session's own inputs,
 camera navigation (orbit/pan/zoom) and Esc/commit may create or mutate state
 (Artist decision Q4, 2026-09-23).
@@ -28,11 +28,12 @@ a session's own inputs away.
         second tool, 1/2/3 cleared the selection, Ctrl+Z undid globally, M/Tab
         switched variants/focus, X/Y/Z/K rewrote constraint/space, F restored
         a bent pose — all mid-session.
-    R1  (B1) Q during Knife: no phantom Transform / temp target; Esc ends only
-        the Knife, and no leftover session absorbs or cascades further Escs.
+    R1  (B1) Q during Extrude-hold: no phantom Transform / temp target; Esc ends only
+        the Extrude, and no leftover session absorbs or cascades further Escs.
+        (The Playground's Knife sessions left with the Knife itself, 2026-10-21.)
     R2  1/2/3 during Extrude: no mode switch, no selection loss.
     R3  Ctrl+Z during Extrude: no global undo.
-    R4  (B11) M during a running Extrude-hold / Knife: no variant switch; the
+    R4  (B11) M during a running Extrude-hold: no variant switch; the
         session's own commit still works afterwards.
     R5  Transform: a *different* Q/W/E key mid-transform cannot swap
         `app.active_tool`; the same key still commits in the press models.
@@ -139,7 +140,7 @@ def _snapshot(win, app) -> dict:
         "counts": (len(list(mesh.all_vertex_ids())), len(list(mesh.all_edge_ids())),
                    len(list(mesh.all_face_ids()))),
         "session": win._active_session(),
-        "tools": (id(win._knife_tool), id(win._extrude_tool), id(win._loop_slide_tool),
+        "tools": (id(win._extrude_tool), id(win._loop_slide_tool),
                   id(win._tweak_tool), id(win._gizmo_drag_tool), id(app.active_tool)),
         "transform": (win._transform_key_down, win._transform_mode_on,
                       win._transform_started, win._transform_temp_target),
@@ -166,12 +167,6 @@ def _camera(app) -> tuple:
 
 
 # -- session starters (real key/mouse paths) ---------------------------------
-
-def _start_knife(win, app, monkeypatch):
-    _select(app, SelectionMode.VERTEX, ())
-    win.on_key_press(_key.C, 0)
-    assert win._active_session() == "knife"
-
 
 def _start_extrude(win, app, monkeypatch, variant=_EXTRUDE_HOLD):
     app.activate_variant("topology", variant)
@@ -242,7 +237,6 @@ def _start_articulation(win, app, monkeypatch):
 
 
 _STARTERS = {
-    "knife": _start_knife,
     "extrude_hold": _start_extrude,
     "extrude_lmb": _start_extrude_lmb,
     "loop_slide": _start_loop_slide,
@@ -280,7 +274,6 @@ _KEYS = [
 # The owning session's own keys (per the ownership matrix) — excluded here,
 # covered by the dedicated tests further down.
 _OWN = {
-    "knife": {"Enter", "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z"},
     "transform_pdc": {"Q", "X", "Y", "Z", "Shift+X", "K"},
     "articulation": {"F"},
     # Hold models: the held key is physically down, so it cannot be pressed
@@ -314,10 +307,11 @@ def test_foreign_key_is_blocked_during_session(win_app, monkeypatch, session, la
 # R* — spec repro set
 # ---------------------------------------------------------------------------
 
-def test_r1_q_during_knife_no_phantom_transform_esc_ends_only_knife(win_app, monkeypatch):
+def test_r1_q_during_extrude_hold_no_phantom_transform_esc_ends_only_extrude(win_app, monkeypatch):
     import playground.window as window_mod
     win, app = win_app
-    _start_knife(win, app, monkeypatch)
+    _start_extrude(win, app, monkeypatch)
+    faces_before = set(app.scene.selection.faces)
     vid = _first(app.scene.mesh.all_vertex_ids())
     # Something under the cursor: pre-gate, Q added it as a Transform temp target.
     monkeypatch.setattr(window_mod, "pick_component", lambda *a, **k: vid)
@@ -326,12 +320,12 @@ def test_r1_q_during_knife_no_phantom_transform_esc_ends_only_knife(win_app, mon
     assert app.active_tool is None
     assert win._transform_mode_on is False and win._transform_key_down is None
     assert win._transform_temp_target is False
-    assert app.scene.selection.is_empty()
+    assert set(app.scene.selection.faces) == faces_before
 
     win.on_key_press(_key.ESCAPE, 0)
-    assert win._knife_tool is None
+    assert win._extrude_tool is None
     assert win._active_session() is None
-    assert win.close_calls == 0, "Esc must end only the Knife"
+    assert win.close_calls == 0, "Esc must end only the Extrude"
     # Nothing left over to absorb a further Esc: the next Esc is the plain
     # "nothing active" Esc, exactly once.
     win.on_key_press(_key.ESCAPE, 0)
@@ -380,18 +374,6 @@ def test_r4_m_during_extrude_hold_no_variant_switch(win_app, monkeypatch):
     assert len(list(app.scene.mesh.all_face_ids())) == n_faces
 
 
-def test_r4_m_during_knife_does_not_cancel_or_switch(win_app, monkeypatch):
-    win, app = win_app
-    app.focused_family = "knife"
-    _start_knife(win, app, monkeypatch)
-    knife = win._knife_tool
-    win.on_key_press(_key.M, 0)
-    win.on_key_press(_key.TAB, 0)
-    assert win._knife_tool is knife
-    assert app.slots["knife"].active_index == 0
-    assert app.focused_family == "knife"
-
-
 def test_r5_hold_transform_other_key_cannot_swap_tool(win_app, monkeypatch):
     win, app = win_app
     _start_transform_hold(win, app, monkeypatch)
@@ -433,20 +415,6 @@ def test_transform_axis_and_space_keys_pass_through(win_app, monkeypatch):
     assert win._active_session() == "transform"
 
 
-def test_knife_own_keys_pass_through(win_app, monkeypatch):
-    win, app = win_app
-    _start_knife(win, app, monkeypatch)
-    calls = []
-    monkeypatch.setattr(win._knife_tool, "undo_step", lambda: calls.append("undo"))
-    monkeypatch.setattr(win._knife_tool, "redo_step", lambda: calls.append("redo"))
-    win.on_key_press(_key.Z, _key.MOD_CTRL)
-    win.on_key_press(_key.Y, _key.MOD_CTRL)
-    win.on_key_press(_key.Z, _key.MOD_CTRL | _key.MOD_SHIFT)
-    assert calls == ["undo", "redo", "redo"]
-    win.on_key_press(_key.ENTER, 0)
-    assert win._knife_tool is None and win.close_calls == 0
-
-
 def test_articulation_f_passes_through(win_app, monkeypatch):
     win, app = win_app
     _start_articulation(win, app, monkeypatch)
@@ -459,18 +427,18 @@ def test_articulation_f_passes_through(win_app, monkeypatch):
 # M* — mouse gate
 # ---------------------------------------------------------------------------
 
-def test_articulation_press_blocked_during_knife(win_app, monkeypatch):
+def test_articulation_press_blocked_during_extrude_hold(win_app, monkeypatch):
     import playground.window as window_mod
     win, app = win_app
     vid = _first(app.scene.mesh.all_vertex_ids())
     monkeypatch.setattr(window_mod, "pick_nearest_vertex", lambda *a, **k: vid)
     app.focused_family = "articulation"
-    _start_knife(win, app, monkeypatch)
+    _start_extrude(win, app, monkeypatch)
     win.on_mouse_press(_CX, _CY, _mouse.LEFT, 0)
     assert win._articulation_state is None
-    assert win._active_session() == "knife"
+    assert win._active_session() == "extrude"
     win.on_mouse_release(_CX, _CY, _mouse.LEFT, 0)
-    assert win._knife_tool is not None
+    assert win._extrude_tool is not None
 
 
 def test_gizmo_press_during_extrude_lmb_does_not_arm_and_release_commits(win_app, monkeypatch):
@@ -501,16 +469,12 @@ def test_gizmo_click_during_transform_sets_constraint_only(win_app, monkeypatch)
     assert win._active_session() is None
 
 
-@pytest.mark.parametrize("session", ["knife", "extrude_hold", "loop_slide",
+@pytest.mark.parametrize("session", ["extrude_hold", "loop_slide",
                                      "transform_hold", "tweak_v4"])
 def test_selection_click_blocked_during_session(win_app, monkeypatch, spy_selection, session):
     win, app = win_app
     _STARTERS[session](win, app, monkeypatch)
-    if session == "knife":
-        # Knife's LMB is its own; a plain RMB click is foreign.
-        button = _mouse.RIGHT
-    else:
-        button = _mouse.LEFT
+    button = _mouse.LEFT
     before = _snapshot(win, app)
     win.on_mouse_press(_FAR_X, _FAR_Y, button, 0)
     win.on_mouse_release(_FAR_X, _FAR_Y, button, 0)
@@ -641,9 +605,7 @@ def test_esc_ends_every_session(win_app, monkeypatch, session):
 
 
 def _commit(win, app, session):
-    if session == "knife":
-        win.on_key_press(_key.ENTER, 0)
-    elif session == "extrude_hold":
+    if session == "extrude_hold":
         win.on_key_release(_key.R, 0)
     elif session in ("extrude_lmb",):
         win.on_mouse_press(_CX, _CY, _mouse.LEFT, 0)

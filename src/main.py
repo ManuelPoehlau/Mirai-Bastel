@@ -153,12 +153,17 @@ Scope (binding, see the handoffs):
   AD-021 M2-4: in `4` select one Normal object, then 1/2/3 = edit that object;
   Undo/Redo switch back to the object a step was made on.
 - Playground tools promoted 2026-10-15 (Manu; keys and look `PROVISIONAL`): LMB drag
-  from empty space = Box Select (rubber band drawn here, `draw_selection_box`), from the mesh
+  from empty space = Box Select (rubber band drawn here, `draw_selection_box`; with the Lasso key `Q` held a
+  Lasso outline, `draw_selection_lasso`), from the mesh
   = Paint Select; no modifier replaces, Shift adds; Esc discards. Ctrl+LMB drag = Tweak with
   the last W/E/R (Move until one is pressed; a tap sets it) on the selection, else on the
   element under the press point; Ctrl+LMB click still removes. Edge mode: Shift+L / Shift+R
   add the edge loop / ring, I inserts a loop through the ring, hold G slides the selected
   loop(s); under symmetry Loop Insert and Loop Slide mirror. All in `Application`.
+- Transform gizmo (2026-10-21, promoted from the Playground, AD-016 D3; look `PROVISIONAL`): with a point / edge / face
+  selection a world-axis gizmo is drawn at its centroid (`draw_gizmo`), shaped for the current tool (the last W/E/R).
+  LMB on a handle sets the constraint, LMB drag runs the tool along it, release commits, Esc cancels. All in
+  `Application` (`gizmo_enabled` is set here only).
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -208,6 +213,7 @@ from mirai.pyglet_input import (  # noqa: E402
     wheel_from_pyglet,
 )
 from mirai.soft_selection import GLSoftBandOverlay  # noqa: E402
+from viewport.gl_gizmo_overlay import draw_gizmo  # noqa: E402
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
@@ -465,9 +471,15 @@ def install_handlers(
         window.clear()
         app.viewport.sync()
         app.viewport.render()
+        gizmo = app.gizmo_items()
+        if gizmo:
+            draw_gizmo(gizmo, app.viewport.overlay_camera_uniforms())
         box = app.selection_box
         if box is not None:
             draw_selection_box(box)
+        lasso = app.selection_lasso
+        if lasso is not None:
+            draw_selection_lasso(lasso)
         if menu is not None and menu.is_open:
             menu.draw()
 
@@ -483,6 +495,33 @@ def draw_selection_box(box: tuple[float, float, float, float]) -> None:
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
     shapes.Rectangle(x0, y0, x1 - x0, y1 - y0, color=(255, 236, 160, 28)).draw()
     shapes.Box(x0, y0, x1 - x0, y1 - y0, thickness=1, color=(255, 236, 160, 200)).draw()
+
+
+_LASSO_DRAW: dict = {"points": None, "batch": None, "shapes": None}
+
+
+def draw_selection_lasso(points: list[tuple[float, float]]) -> None:
+    """The Lasso Select outline (window pixels; look `PROVISIONAL`, same colours as the Box band): the path
+    drawn so far plus a fainter closing line back to the first point. The line batch is rebuilt only when
+    the outline grew, not every frame."""
+    from pyglet import gl, graphics, shapes
+
+    if len(points) < 2:
+        return
+    cache = _LASSO_DRAW
+    if cache["points"] != points:
+        batch = graphics.Batch()
+        lines = [
+            shapes.Line(a[0], a[1], b[0], b[1], thickness=1, color=(255, 236, 160, 220), batch=batch)
+            for a, b in zip(points, points[1:])
+        ]
+        lines.append(shapes.Line(points[-1][0], points[-1][1], points[0][0], points[0][1], thickness=1,
+                                 color=(255, 236, 160, 90), batch=batch))
+        cache["points"], cache["batch"], cache["shapes"] = list(points), batch, lines
+    gl.glDisable(gl.GL_DEPTH_TEST)
+    gl.glEnable(gl.GL_BLEND)
+    gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+    cache["batch"].draw()
 
 
 def run(window, app: Application) -> None:
@@ -510,6 +549,7 @@ def main() -> None:
     window = create_window()
 
     app = Application()
+    app.gizmo_enabled = True  # this window draws the gizmo (`draw_gizmo`); Labs on Application do not
     files = SceneFiles(app, gl_types=GL_TYPES)
 
     entries = scene_entries()

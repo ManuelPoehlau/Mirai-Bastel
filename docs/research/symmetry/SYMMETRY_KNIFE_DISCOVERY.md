@@ -375,7 +375,7 @@ source camera planned them). Mirroring all fields costs **0.036 / 0.18 / 0.70** 
 and the preview drawn from mirrored records differ by at most 8.9e-16 (P3 on reversed edges) — invisible, but the
 same reason why only a K-C commit matches the mirrored preview exactly.
 
-**K-D with no plane** (the non-symmetric Knife): the golden net (`playground/tests/knife_golden_driver.py`, 345 seeded
+**K-D with no plane** (the non-symmetric Knife): the golden net (`experiments/knife_oracle/knife_golden_driver.py`, 345 seeded
 sessions + Manu's recorded sequences) is **byte-identical** with the K-D keys installed and `plane=None`, and
 `tests/test_knife_parity.py` passes (pytest exit 0). By construction the key is then `tuple(p)`, the original key.
 

@@ -8,7 +8,7 @@ Headless, no camera. Item numbers are AD-017 §13's:
 - items 2, 3: nested rollbacks (a dropped bridge candidate, run and closed shape leave no entry);
 - item 4: a session `check_commit` takes back leaves an empty report;
 - item 5: the report replayed verbatim on a session-start copy rebuilds the resolved mesh, over a seeded fuzz
-  (the golden net's sessions: `playground/tests/test_knife_kept_calls_golden.py`);
+  (the golden net's sessions: `experiments/knife_oracle/tests/test_knife_kept_calls_golden.py`);
 - item 7: the report is the only new field of `KnifeResolution` and nothing in `src/` outside the resolver reads it
   (item 8). The golden net and `tests/test_knife_parity.py` are the proof that nothing else changed.
 """

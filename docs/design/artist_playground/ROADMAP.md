@@ -50,7 +50,7 @@ The original 2026-09-10 roadmap is now substantially behind the implementation. 
 
 Since the snapshot above, the following exist in the repository (details live in each family's own record, not here):
 
-- **Knife Face Cut Lab** — `playground/experiments/knife_face/` (variants B / D / Q5). Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 KEEP. Record: `decision.md` in that folder; background in `docs/research/topology/` (`KNIFE_FACE_CUT_DISCOVERY.md`, `KNIFE_CROSS_FACE_DISCOVERY.md`, `FACE_HOLES_DISCOVERY.md` — Face Holes set aside, no decision). A Lab KEEP is not a promotion.
+- **Knife Face Cut Lab** — `experiments/knife_oracle/` (engines B / D / Q5, moved out of the Playground 2026-10-21). Lab verdicts 2026-09-29: B REJECT, D KEEP (superseded by Q5), Q5 KEEP. Record: `decision.md` in that folder; background in `docs/research/topology/` (`KNIFE_FACE_CUT_DISCOVERY.md`, `KNIFE_CROSS_FACE_DISCOVERY.md`, `FACE_HOLES_DISCOVERY.md` — Face Holes set aside, no decision). A Lab KEEP is not a promotion.
 - **Symmetry Lab** (WP-SYM-LAB-01, isolated from the Playground variant/slot system) and **Viewport Shading Lab** (WP-SHADE-LAB-01, Slice 1) — status in `docs/architecture/ROADMAP.md` §14.
 - The **Production App** (`src/main.py`, WP-06 Stage B) now receives decided Playground results slice by slice — see the intake log in `docs/architecture/WP-06_INTAKE_LOG.md`.
 

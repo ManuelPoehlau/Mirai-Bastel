@@ -17,16 +17,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import pytest  # noqa: E402
 
-from playground.tests import knife_cross_face_golden_driver as cross_face  # noqa: E402  (puts src/ on sys.path)
-from playground.tests import knife_golden_driver as net  # noqa: E402
-from playground.experiments.knife_face import engine as lab_d  # noqa: E402
-from playground.experiments.knife_face import engine_q5 as lab_q5  # noqa: E402
+from knife_oracle import knife_cross_face_golden_driver as cross_face  # noqa: E402  (puts src/ on sys.path)
+from knife_oracle import knife_golden_driver as net  # noqa: E402
+from knife_oracle import engine as lab_d  # noqa: E402
+from knife_oracle import engine_q5 as lab_q5  # noqa: E402
 from mirai.topology import knife as production_knife  # noqa: E402
 from mirai.topology.knife_resolve import SessionStart, mesh_content  # noqa: E402
 from tests.knife_kept_replay import assert_report_replays  # noqa: E402

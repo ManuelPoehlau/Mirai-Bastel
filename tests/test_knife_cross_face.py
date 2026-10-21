@@ -1,6 +1,6 @@
 """`KnifeTool` across faces and points in space (WP-KNIFE-01 S4, PROVISIONAL) — headless, with a camera view.
 
-Production counterparts of the Lab's Q5 cross-face tests (`playground/tests/test_knife_face_q5.py`, the
+Production counterparts of the Lab's Q5 cross-face tests (`experiments/knife_oracle/tests/test_knife_face_q5.py`, the
 spec: the planner moves to `src`, *what* is cut stays Q5's) and the absolute spec of the points in space
 (Manu, 2026-10-02: a click outside the mesh inside a session is a point and cuts — Blender; there is no Lab
 oracle for them). The tool gets its camera through `set_view` (Application: the live camera at hover and

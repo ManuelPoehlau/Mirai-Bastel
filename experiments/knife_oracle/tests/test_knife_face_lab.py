@@ -15,7 +15,7 @@ import math
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"), str(_REPO_ROOT / "examples"),
            str(_REPO_ROOT / "experiments" / "rigging-skinning-morphing")):
     if _p not in sys.path:
@@ -30,7 +30,7 @@ from mirai.viewport.camera import OrbitCamera  # noqa: E402
 
 from mirai.topology.face_geometry import loop_matches_winding  # noqa: E402
 from mirai.topology.knife_resolve import close_loop_with_bridges, select_bridge  # noqa: E402
-from playground.experiments.knife_face.engine import (  # noqa: E402
+from knife_oracle.engine import (  # noqa: E402
     EDGE_MARGIN_PX,
     KnifeFaceCollected,
     KnifeFaceImmediate,
@@ -926,7 +926,7 @@ def test_closed_shape_clockwise_parent_face_is_independent_too():
 
 def test_closed_shape_nonplanar_head_quads_are_independent_of_click_order_and_direction():
     from mirai.scene_factory import build_core_scene_from_obj
-    from playground._paths import DEFAULT_HEAD_ASSET
+    from knife_oracle._paths import DEFAULT_HEAD_ASSET
 
     head = build_core_scene_from_obj(DEFAULT_HEAD_ASSET).mesh
     quads = [f for f in sorted(head.all_face_ids(), key=int) if len(head.face_vertices(f)) == 4]

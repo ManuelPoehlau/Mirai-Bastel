@@ -5,7 +5,7 @@ identically (the move must not change it, S5 of the S4 handoff); the Production 
 results once it plans across faces (the intended P10 flip) — strict xfail until then (the S4 build removed
 the marks). What is recorded and
 why ids are not: `knife_cross_face_golden_driver.py` (module docstring). To inspect a difference:
-`python playground/tests/knife_cross_face_golden_driver.py --check`.
+`python experiments/knife_oracle/knife_cross_face_golden_driver.py --check`.
 """
 
 from __future__ import annotations
@@ -13,14 +13,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import pytest  # noqa: E402
 
-from playground._paths import DEFAULT_HEAD_ASSET  # noqa: E402
-from playground.tests.knife_cross_face_golden_driver import load, replay  # noqa: E402
+from knife_oracle._paths import DEFAULT_HEAD_ASSET  # noqa: E402
+from knife_oracle.knife_cross_face_golden_driver import load, replay  # noqa: E402
 
 GOLDEN = load()
 NAMES = list(GOLDEN)

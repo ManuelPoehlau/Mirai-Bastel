@@ -16,9 +16,10 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 - `src/main.py` — the production app (own window). `playground/` — optional Artist research tool on an older
   viewport/renderer path (not a daily dev environment; most of its UX questions are answered and in `src/`).
   It depends on `src/`, `examples/` (OBJ loader, head asset) and `experiments/rigging-skinning-morphing`
-  (Articulation). Unique there: Gizmo, Articulation (EX-A). Own test tree `playground/tests/` — **not** in the
-  default `pytest` run; it also holds the frozen Knife / `split_face` oracles Production is checked against
-  (AGENTS.md §8a, "Knife oracle set").
+  (Articulation). Unique there: Articulation (EX-A) and the gizmo's normal-space frames (the gizmo itself is in
+  `src/`, `mirai.viewport.gizmo`); no Knife (Knife = Production). Own test tree `playground/tests/` — **not** in the
+  default `pytest` run. The frozen Knife Face Lab engines and the Knife / `split_face` oracle tests are
+  `experiments/knife_oracle/` (AGENTS.md §8a, "Knife oracle").
 - Labs under `experiments/<lab>/run.py` start their own windows; see `experiments/README.md`.
 - `experiments/` — Research, prototypes, practical validation at the repository level (OK to be
   messy). Not the same thing as `playground/experiments/` (variant families inside the Playground

@@ -52,20 +52,8 @@ bewusst ohne eigene Hotkeys — neue Tasten kollidieren mit den Kontext-Belegung
 | Edge-Modus, 1 Edge | **Split** — teilt die Edge am Mittelpunkt; wechselt zu Vertex-Modus, neuer Vertex selektiert |
 | Edge-Modus, 2+ Edges | **Edge Connect** — Wings-artige Pro-Face-Verbindung; neue Kanten selektiert |
 | Vertex-Modus, 2+ Vertices | **Vertex Connect** — Wings-artige Pro-Face-Verbindung; Selektion bleibt |
-| Leer (beliebiger Modus) | **Knife** — modales Schnitt-Werkzeug (interaktiver Pfad) |
+| Leer (beliebiger Modus) | *(Knife: nicht mehr im Playground — in der App, `python src/main.py`)* |
 | Sonstige | No-op |
-
-**Knife-Modus** (während aktiv):
-
-| Taste / Aktion | Effekt |
-|---|---|
-| LMB auf Vertex | Start setzen / nächsten Schnittpunkt setzen |
-| LMB auf Edge | Edge an t splitten, Verbindung zum Start |
-| LMB außerhalb Mesh | Session committen |
-| Enter | Session committen (eine History-Operation) |
-| Ctrl+Z | Letzten Schnitt rückgängig |
-| Ctrl+Y / Ctrl+Shift+Z | Letzten rückgängig gemachten Schnitt wiederherstellen (Ctrl+Y ist die kanonische Bindung) |
-| Esc | Session abbrechen (Mesh wiederhergestellt) |
 
 | Taste | Aktion |
 |---|---|

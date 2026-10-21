@@ -3,7 +3,7 @@
 Written *before* the resolver moved to `src/mirai/topology/` (commit "Tests: golden regression net …"),
 green on the Lab engines as they were; after the move the regenerated file must be byte-identical.
 What is compared and why ids are not: `knife_golden_driver.py` (module docstring). To inspect a
-difference: `python playground/tests/knife_golden_driver.py --check`.
+difference: `python experiments/knife_oracle/knife_golden_driver.py --check`.
 """
 
 from __future__ import annotations
@@ -12,11 +12,11 @@ import json
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from playground.tests.knife_golden_driver import (  # noqa: E402
+from knife_oracle.knife_golden_driver import (  # noqa: E402
     GOLDEN_PATH,
     RECORDED,
     dumps,
@@ -27,7 +27,7 @@ from playground.tests.knife_golden_driver import (  # noqa: E402
 
 def test_sessions_match_the_golden_file_byte_for_byte():
     assert dumps(record_all()) == GOLDEN_PATH.read_text(encoding="utf-8"), (
-        "Knife Face results changed - run `python playground/tests/knife_golden_driver.py --check`"
+        "Knife Face results changed - run `python experiments/knife_oracle/knife_golden_driver.py --check`"
     )
 
 

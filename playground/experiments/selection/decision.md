@@ -72,10 +72,10 @@ LMB mouse down + drag um auswahl zu malen. Modifier keys Shit für hinzufügen u
 
 ---
 
-Lasso Select 
+Lasso Select
 
-
-*wird später entschieden*
+**Entschieden 2026-10-21 (Manu):** kommt in die Production, wie Box und Paint — in der App seit 2026-10-21 (`Q` halten + LMB ziehen, `PROVISIONAL`,
+[WP Playground-Werkzeuge, Nachtrag](../../../docs/WP_PLAYGROUND_TOOLS_PROMOTION.md#nachtrag-2026-10-21-lasso-und-gizmo-in-die-app-manu)).
 
 ---
 

@@ -89,19 +89,6 @@ from playground.experiments.topology.variant_extrude_lmb import ExtrudeLmbVarian
 from mirai.topology.contextual_c import CContext, resolve_c_context  # noqa: E402
 from mirai.topology.connect_per_face import connect_selected_edges_per_face  # noqa: E402
 from mirai.topology.connect_vertices_per_face import connect_vertices_per_face, VertexConnectError as _VertexConnectError  # noqa: E402
-from mirai.topology.knife import KnifeTool  # noqa: E402
-from mirai.topology.knife_pick import (  # noqa: E402
-    knife_pick,
-    project_locked_edge as _knife_project_locked_edge,
-    snap_own_point,
-)
-from mirai.topology.knife_preview import build_knife_render_data  # noqa: E402
-from playground.experiments.knife.variant_a import KnifeVariantA  # noqa: E402
-from playground.experiments.knife.variant_b import KnifeVariantB  # noqa: E402
-from playground.experiments.knife_face.engine import knife_face_pick  # noqa: E402
-from playground.experiments.knife_face.variant_b import KnifeFaceVariantB  # noqa: E402
-from playground.experiments.knife_face.variant_d import KnifeFaceVariantD  # noqa: E402
-from playground.experiments.knife_face.variant_q5 import KnifeFaceVariantQ5  # noqa: E402
 from playground.experiments.articulation.articulation import ArticulationState  # noqa: E402
 from playground.experiments.articulation.variant_articulation import ArticulationVariant  # noqa: E402
 from playground.experiments.tweak._target import (  # noqa: E402
@@ -122,9 +109,6 @@ from playground.transformer import create_tool_for_type  # noqa: E402
 from playground.vbo_builder import (  # noqa: E402
     build_edge_data,
     build_face_data,
-    build_knife_preview_point_data,
-    build_point_list_data,
-    build_polyline_data,
     build_selection_data,
     build_selection_edge_data,
     build_selection_vertex_data,
@@ -213,11 +197,6 @@ _VERTEX_COLOR = (1.0, 0.75, 0.1, 1.0)
 _SELECTION_COLOR = (0.95, 0.45, 0.1, 1.0)
 _HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
 _VERTEX_POINT_SIZE = 4.0
-# Knife Face Q5 overlay (cross-face lab): skipped "no cut" stretch, crossing
-# dots, one consistent snap highlight (mesh vertex or session point).
-_KFQ5_SKIP_COLOR = (0.55, 0.60, 0.70, 0.85)
-_KFQ5_CROSSING_COLOR = (0.95, 0.90, 0.35, 1.0)
-_KFQ5_SNAP_COLOR = (0.30, 0.90, 0.95, 1.0)
 _LIGHT_DIR_INV = 1.0 / math.sqrt(3.0)
 
 # Gizmo constants (WP-AP-GIZMO-01) — widths/colors are tunable once on screen
@@ -274,39 +253,6 @@ def _sel_contains_hovered(sel) -> bool:
     if sel.mode is SelectionMode.EDGE:
         return h in sel.edges
     return h in sel.faces
-
-
-def _knife_face_target_position(mesh, target: dict) -> tuple[float, float, float]:
-    """World position of a knife_face_pick() target, whatever its kind."""
-    kind = target.get("kind")
-    if kind == "vertex":
-        return mesh.vertex_position(target["vertex_id"])
-    if kind == "face":
-        return target["position"]
-    va, vb = mesh.edge_vertices(target["edge_id"])
-    p0, p1 = mesh.vertex_position(va), mesh.vertex_position(vb)
-    t = target["t"]
-    return (
-        p0[0] + t * (p1[0] - p0[0]),
-        p0[1] + t * (p1[1] - p0[1]),
-        p0[2] + t * (p1[2] - p0[2]),
-    )
-
-
-def _knife_face_path_positions(tool, mesh) -> list[tuple[float, float, float]]:
-    """World positions of everything the active knife_face session has
-    already placed, in order — the anchor for the pending-path preview line.
-
-    B (Immediate): the current start vertex, then its pending interior
-    positions. D (Collected): every point of the virtual path so far.
-    """
-    if hasattr(tool, "path"):  # Variant D
-        return [_knife_face_target_position(mesh, p) for p in tool.path]
-    # Variant B
-    start = getattr(tool, "start", None)
-    if start is None:
-        return []
-    return [mesh.vertex_position(start)] + list(getattr(tool, "pending_positions", []))
 
 
 class PlaygroundWindow(pyglet.window.Window):
@@ -374,27 +320,12 @@ class PlaygroundWindow(pyglet.window.Window):
         artic_slot = ExperimentSlot(
             VariantEntry(ArticulationVariant(app)),
         )
-        knife_slot = ExperimentSlot(
-            VariantEntry(KnifeVariantA(app)),
-            VariantEntry(KnifeVariantB(app)),
-        )
-        # Knife Face Cut Lab (Discovery, docs/research/topology/
-        # KNIFE_FACE_CUT_DISCOVERY.md) — a separate family/session from
-        # "knife" above: B/D/Q5 have their own interaction model (interior
-        # points), not a hover-presentation variant of Production Knife.
-        knife_face_slot = ExperimentSlot(
-            VariantEntry(KnifeFaceVariantB(app)),
-            VariantEntry(KnifeFaceVariantD(app)),
-            VariantEntry(KnifeFaceVariantQ5(app)),
-        )
         app.register_slot(sel_slot, "selection")
         app.register_slot(pres_slot, "presentation")
         app.register_slot(trans_slot, "transform")
         app.register_slot(tweak_slot, "tweak")
         app.register_slot(topo_slot, "topology")
         app.register_slot(artic_slot, "articulation")
-        app.register_slot(knife_slot, "knife")
-        app.register_slot(knife_face_slot, "knife_face")
         # AD-017 §1.10: connect slot unregistered — C now uses contextual dispatch.
         # Initialzustand anwenden und _active_experiment auf selection setzen,
         # damit M beim ersten Druck die Selection-Family cyclt (nicht id="none").
@@ -492,35 +423,6 @@ class PlaygroundWindow(pyglet.window.Window):
         self._extrude_tool: ExtrudeTool | None = None
         # Loop-Slide-State (AP-05)
         self._loop_slide_tool: LoopSlideTool | None = None
-        # Knife-State (AD-017)
-        self._knife_tool: KnifeTool | None = None
-        # Knife hover VBOs — separate from sel.hovered/_rebuild_hover_vbo (WP-AP-CUT)
-        self._vlist_knife_hover_edge = None      # GL_LINES — edge highlight
-        self._vlist_knife_hover_vertex = None    # GL_POINTS — vertex hover point
-        self._vlist_knife_preview_point = None   # GL_POINTS — split-point preview
-        self._vlist_knife_start = None           # GL_POINTS — the session's placed points
-        self._vlist_knife_path = None            # GL_LINES — the segments commit will cut
-        self._knife_hover_last_target: dict | None = None
-        self._knife_last_start = None            # point id of the last drawn start point
-        # Variant B slide state
-        self._knife_slide_armed: bool = False
-        self._knife_slide_edge_id = None         # locked edge id during slide
-
-        # Knife Face Cut Lab state (Discovery — playground/experiments/knife_face/)
-        self._knife_face_tool = None
-        self._vlist_knife_face_hover_edge = None      # GL_LINES — edge highlight
-        self._vlist_knife_face_hover_vertex = None    # GL_POINTS — vertex hover point
-        self._vlist_knife_face_preview_point = None   # GL_POINTS — face-interior hover point
-        self._vlist_knife_face_pending_points = None  # GL_POINTS — already-clicked interior points
-        self._vlist_knife_face_pending_line = None    # GL_LINES — path-so-far, incl. hover
-        self._vlist_knife_face_start = None           # GL_POINTS — persistent start vertex (B only)
-        self._knife_face_hover_last_target: dict | None = None
-        self._knife_face_last_start = None            # last drawn start vertex id (B only)
-        # Q5 overlay VBOs by name: "stored_*" persist across hover (rebuilt on
-        # click/undo/redo), "hover_*" are per-motion-frame.
-        self._kfq5_vlists: dict = {}
-        self._kfq5_hud_note: str = ""
-
         # Articulation state (EX-A / H02)
         self._articulation_state: ArticulationState | None = None
         self._articulation_dragging: bool = False  # True only during the LMB drag that produces the angle
@@ -572,7 +474,7 @@ class PlaygroundWindow(pyglet.window.Window):
 
     def _clear_hover(self) -> None:
         """Reset hover state (sel.hovered, the window-local hover key, and the
-        hover overlay VBO). Call on any component-mode change and on Knife-begin
+        hover overlay VBO). Call on any component-mode change
         (WP-STAB-02 / R-SEL-2) so a stale or wrong-kind hover from before the
         switch never carries into the new mode/session.
         """
@@ -772,7 +674,7 @@ class PlaygroundWindow(pyglet.window.Window):
     # -- Transform-Sync -------------------------------------------------------
 
     def _pick_kwargs(self) -> dict:
-        """WP-06 B8: shared cache + occlusion for Knife pickers (hidden
+        """WP-06 B8: shared cache + occlusion for the pickers (hidden
         vertices/edges are not targets while faces are shown; Wireframe keeps
         everything pickable)."""
         return {
@@ -943,10 +845,6 @@ class PlaygroundWindow(pyglet.window.Window):
         pose is designed to coexist with other tools (topology handlers
         auto-restore it, the mouse is explicitly "free for camera" afterwards).
         """
-        if self._knife_tool is not None:
-            return "knife"
-        if self._knife_face_tool is not None:
-            return "knife_face"
         if self._articulation_dragging:
             return "articulation"
         if self._loop_slide_tool is not None:
@@ -969,17 +867,6 @@ class PlaygroundWindow(pyglet.window.Window):
         """
         if symbol == _key.ESCAPE:
             return True
-        if session == "knife":
-            if symbol in (_key.ENTER, _key.NUM_ENTER):
-                return True
-            # In-session undo/redo (AD-017): Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y.
-            return bool(modifiers & _key.MOD_CTRL) and symbol in (_key.Z, _key.Y)
-        if session == "knife_face":
-            if symbol in (_key.ENTER, _key.NUM_ENTER):
-                return True
-            # Same in-session undo/redo shape as "knife" (AD-017 §1.8, reused
-            # here — this lab does not invent its own session-key model).
-            return bool(modifiers & _key.MOD_CTRL) and symbol in (_key.Z, _key.Y)
         if session == "articulation":
             return symbol == _key.F
         if session == "tweak":
@@ -1014,10 +901,6 @@ class PlaygroundWindow(pyglet.window.Window):
         """Mouse buttons that are part of a running session's own gesture."""
         if button != _mouse.LEFT:
             return False
-        if session == "knife":
-            return True
-        if session == "knife_face":
-            return True
         if session == "extrude":
             return self._active_extrude_model() == "lmb"
         if session == "transform":
@@ -1089,207 +972,6 @@ class PlaygroundWindow(pyglet.window.Window):
         if slot is None:
             return None
         return getattr(slot.active_experiment, "tweak_variant", None)
-
-    def _active_knife_model(self) -> str:
-        """Aktivierungsmodell des aktiven Knife-Slots lesen."""
-        slot = self.app.slots.get("knife")
-        if slot is None:
-            return "live_preview"
-        return getattr(slot.active_experiment, "activation", "live_preview")
-
-    def _knife_face_session_cls(self):
-        """Session engine class of the active knife_face variant (B, D or Q5)."""
-        slot = self.app.slots.get("knife_face")
-        if slot is None:
-            return None
-        return getattr(slot.active_experiment, "session_cls", None)
-
-    def _clear_knife_face_hover_vbos(self) -> None:
-        """Ephemeral Knife Face Lab hover VBOs (per-motion-frame state)."""
-        if self._vlist_knife_face_hover_edge is not None:
-            self._vlist_knife_face_hover_edge.delete()
-            self._vlist_knife_face_hover_edge = None
-        if self._vlist_knife_face_hover_vertex is not None:
-            self._vlist_knife_face_hover_vertex.delete()
-            self._vlist_knife_face_hover_vertex = None
-        if self._vlist_knife_face_preview_point is not None:
-            self._vlist_knife_face_preview_point.delete()
-            self._vlist_knife_face_preview_point = None
-        if self._vlist_knife_face_pending_line is not None:
-            self._vlist_knife_face_pending_line.delete()
-            self._vlist_knife_face_pending_line = None
-        self._kfq5_clear("hover_")
-        self._knife_face_hover_last_target = None
-
-    def _clear_knife_face_pending_vbo(self) -> None:
-        if self._vlist_knife_face_pending_points is not None:
-            self._vlist_knife_face_pending_points.delete()
-            self._vlist_knife_face_pending_points = None
-        self._kfq5_clear("stored_")
-
-    # -- Knife Face Q5 (cross-face lab): view, overlay ---------------------------
-
-    def _knife_face_apply_view(self) -> None:
-        """Give a camera-aware session (Q5) the view of the coming hover/click."""
-        tool = self._knife_face_tool
-        if tool is not None and hasattr(tool, "set_view"):
-            tool.set_view(
-                self.app.camera, self.width, self.height,
-                cache=self.app.pick_cache, occlusion=self.app.display_state.show_faces,
-            )
-
-    def _kfq5_clear(self, group: str) -> None:
-        for name in [n for n in self._kfq5_vlists if n.startswith(group)]:
-            self._kfq5_vlists.pop(name).delete()
-
-    def _kfq5_put(self, name: str, mode, data) -> None:
-        old = self._kfq5_vlists.pop(name, None)
-        if old is not None:
-            old.delete()
-        if data:
-            self._kfq5_vlists[name] = self._overlay_program.vertex_list(
-                len(data) // 3, mode, position=("f", data),
-            )
-
-    @staticmethod
-    def _kfq5_segments(pairs) -> list[float]:
-        out: list[float] = []
-        for a, b in pairs:
-            out.extend(a)
-            out.extend(b)
-        return out
-
-    def _kfq5_rebuild_stored(self) -> None:
-        """Stored part of the Q5 overlay: cut lines, skipped lines, crossing dots
-        of the path so far (the clicked points go into the pending-points VBO)."""
-        self._kfq5_clear("stored_")
-        tool = self._knife_face_tool
-        if tool is None or not hasattr(tool, "preview_stored"):
-            return
-        pv = tool.preview_stored()
-        self._kfq5_put("stored_cut", gl.GL_LINES, self._kfq5_segments(pv["cut"]))
-        self._kfq5_put("stored_skip", gl.GL_LINES, self._kfq5_segments(pv["skip"]))
-        self._kfq5_put("stored_cross", gl.GL_POINTS, build_point_list_data(pv["crossings"]))
-
-    def _kfq5_rebuild_hover(self, plan) -> None:
-        """Pending segment: cut line through its planned crossings, skipped
-        stretches in the "no cut" style, crossing dots, snap highlight. A
-        rejected plan still shows its snap (Manu: snap shown, click rejected)."""
-        self._kfq5_clear("hover_")
-        if plan.ok:
-            cut = [(a, b) for a, b, style in plan.lines if style == "cut"]
-            skip = [(a, b) for a, b, style in plan.lines if style != "cut"]
-            self._kfq5_put("hover_cut", gl.GL_LINES, self._kfq5_segments(cut))
-            self._kfq5_put("hover_skip", gl.GL_LINES, self._kfq5_segments(skip))
-            self._kfq5_put("hover_cross", gl.GL_POINTS, build_point_list_data(plan.crossings))
-        if plan.snap_position is not None:
-            self._kfq5_put("hover_snap", gl.GL_POINTS, list(plan.snap_position))
-
-    def _clear_knife_face_start_vbo(self) -> None:
-        if self._vlist_knife_face_start is not None:
-            self._vlist_knife_face_start.delete()
-            self._vlist_knife_face_start = None
-        self._knife_face_last_start = None
-
-    def _rebuild_knife_face_pending_vbo(self) -> None:
-        """Rebuild the "already clicked" interior-point marker VBO from the
-        active session's own state (B: `pending_positions`; D: the `face`-
-        kind entries of `path`) — called after every accepted click/undo."""
-        self._clear_knife_face_pending_vbo()
-        tool = self._knife_face_tool
-        if tool is None:
-            return
-        if hasattr(tool, "preview_stored"):  # Q5: every clicked point (the start must stay visible to close on it)
-            self._kfq5_rebuild_stored()
-            positions = tool.preview_stored()["points"]
-        elif hasattr(tool, "pending_positions"):
-            positions = tool.pending_positions
-        else:
-            positions = [pt["position"] for pt in tool.path if pt["kind"] == "face"]
-        if not positions:
-            return
-        data = build_point_list_data(positions)
-        self._vlist_knife_face_pending_points = self._overlay_program.vertex_list(
-            len(data) // 3, gl.GL_POINTS,
-            position=("f", data),
-        )
-
-    def _knife_face_teardown(self) -> None:
-        """VBO/state cleanup shared by commit and cancel."""
-        self._knife_face_tool.deactivate()
-        self._knife_face_tool = None
-        self._clear_knife_face_hover_vbos()
-        self._clear_knife_face_pending_vbo()
-        self._clear_knife_face_start_vbo()
-        self._kfq5_hud_note = ""
-        self._recompute_derived()
-        self._rebuild_vbo()
-
-    def _knife_face_commit(self) -> None:
-        cmd = self._knife_face_tool.commit()
-        msg = self._knife_face_tool.last_message
-        self._knife_face_teardown()
-        prefix = "Knife Face committed" if cmd is not None else "Knife Face"
-        self._hud.update_action(f"{prefix} — {msg}" if msg else prefix)
-        self._update_hud()
-
-    def _knife_face_cancel(self) -> None:
-        self._knife_face_tool.cancel()
-        self._knife_face_teardown()
-        self._hud.update_action("Knife Face cancelled")
-        self._update_hud()
-
-    def _clear_knife_hover_vbos(self) -> None:
-        """Ephemeral Knife hover VBOs freigeben (per-motion-frame state)."""
-        if self._vlist_knife_hover_edge is not None:
-            self._vlist_knife_hover_edge.delete()
-            self._vlist_knife_hover_edge = None
-        if self._vlist_knife_hover_vertex is not None:
-            self._vlist_knife_hover_vertex.delete()
-            self._vlist_knife_hover_vertex = None
-        if self._vlist_knife_preview_point is not None:
-            self._vlist_knife_preview_point.delete()
-            self._vlist_knife_preview_point = None
-        self._knife_hover_last_target = None
-
-    def _clear_knife_start_vbo(self) -> None:
-        """Persistent path VBOs (placed points, cut segments) freigeben."""
-        if self._vlist_knife_start is not None:
-            self._vlist_knife_start.delete()
-            self._vlist_knife_start = None
-        if self._vlist_knife_path is not None:
-            self._vlist_knife_path.delete()
-            self._vlist_knife_path = None
-        self._knife_last_start = None
-
-    def _knife_snap(self, mesh, x: float, y: float, target: dict) -> dict:
-        """WP-KNIFE-01 S2: the session's own edge points are not mesh vertices before
-        commit — within the vertex pick radius the target becomes that point, as the
-        vertex the Knife used to split there was (`knife_pick.snap_own_point`)."""
-        return snap_own_point(self.app.camera, mesh, x, y, self.width, self.height,
-                              self._knife_tool.points, target, **self._pick_kwargs())
-
-    def _rebuild_knife_path_vbo(self) -> None:
-        """The session's virtual path (WP-KNIFE-01 S2: `KnifeTool` cuts the mesh at
-        commit, not per click): placed points and the segments commit will cut, in
-        the start-vertex style — the same render data Production draws."""
-        self._clear_knife_start_vbo()
-        tool = self._knife_tool
-        if tool is None or self.app.viewport is None:
-            return
-        data = build_knife_render_data(self.app.viewport.render_mesh.mesh, tool.path, None, None)
-        last = tool.last_point
-        self._knife_last_start = None if last is None else last["pid"]
-        if data.placed_points:
-            pts = build_point_list_data(data.placed_points)
-            self._vlist_knife_start = self._overlay_program.vertex_list(
-                len(pts) // 3, gl.GL_POINTS, position=("f", pts),
-            )
-        if data.path_segments:
-            seg = self._kfq5_segments(data.path_segments)
-            self._vlist_knife_path = self._overlay_program.vertex_list(
-                len(seg) // 3, gl.GL_LINES, position=("f", seg),
-            )
 
     def _tweak_begin(self, tool_type: str, x: int, y: int) -> bool:
         """Selection-Fallback auflösen, Tool erstellen und begin_transform() aufrufen.
@@ -1468,45 +1150,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 self.activate()
                 return pyglet.event.EVENT_HANDLED
 
-        # Knife Variant B: LMB press on valid edge = arm slide (WP-AP-CUT)
-        if (
-            button == _mouse.LEFT
-            and self._knife_tool is not None
-            and self.app.viewport is not None
-            and self._active_knife_model() == "press_slide_release"
-        ):
-            mesh = self.app.viewport.render_mesh.mesh
-            target = self._knife_snap(mesh, x, y, knife_pick(
-                self.app.camera, mesh, x, y, self.width, self.height, **self._pick_kwargs()))
-            hover_result = self._knife_tool.hover(target)
-            if target.get("kind") == "edge" and hover_result.get("valid", False):
-                self._knife_slide_armed = True
-                eid = target["edge_id"]
-                self._knife_slide_edge_id = eid
-                self._clear_knife_hover_vbos()
-                self._knife_hover_last_target = target
-                edge_positions = build_selection_edge_data(mesh, {eid})
-                if edge_positions:
-                    self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
-                        len(edge_positions) // 3, gl.GL_LINES,
-                        position=("f", edge_positions),
-                    )
-                t = target["t"]
-                va, vb = mesh.edge_vertices(eid)
-                p0 = mesh.vertex_position(va)
-                p1 = mesh.vertex_position(vb)
-                world_pos = (
-                    p0[0] + t * (p1[0] - p0[0]),
-                    p0[1] + t * (p1[1] - p0[1]),
-                    p0[2] + t * (p1[2] - p0[2]),
-                )
-                pt_positions = build_knife_preview_point_data(world_pos)
-                self._vlist_knife_preview_point = self._overlay_program.vertex_list(
-                    1, gl.GL_POINTS,
-                    position=("f", pt_positions),
-                )
-                return pyglet.event.EVENT_HANDLED
-
         if (
             session is None
             and self.app.select_method is SelectMethod.BOX
@@ -1528,52 +1171,6 @@ class PlaygroundWindow(pyglet.window.Window):
         # Tweak, Transform) consume every drag regardless of modifiers.
         if self._gated_buttons.get(self._drag_button) == "camera":
             self._camera_navigate(dx, dy, modifiers)
-            return pyglet.event.EVENT_HANDLED
-
-        # Knife Variant B: LMB drag while slide armed = update preview (WP-AP-CUT)
-        if self._knife_slide_armed and self._knife_tool is not None and self.app.viewport is not None:
-            if buttons & _mouse.LEFT and self._knife_slide_edge_id is not None:
-                mesh = self.app.viewport.render_mesh.mesh
-                # Project onto locked edge — cursor may be anywhere on screen
-                target = _knife_project_locked_edge(
-                    self.app.camera, mesh, x, y, self.width, self.height,
-                    self._knife_slide_edge_id,
-                )
-                hover_result = self._knife_tool.hover(target)
-                self._clear_knife_hover_vbos()
-                self._knife_hover_last_target = target
-                kind = target.get("kind")
-                if kind == "edge":
-                    eid = target["edge_id"]
-                    edge_positions = build_selection_edge_data(mesh, {eid})
-                    if edge_positions:
-                        self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
-                            len(edge_positions) // 3, gl.GL_LINES,
-                            position=("f", edge_positions),
-                        )
-                    t = target["t"]
-                    va, vb = mesh.edge_vertices(eid)
-                    p0 = mesh.vertex_position(va)
-                    p1 = mesh.vertex_position(vb)
-                    world_pos = (
-                        p0[0] + t * (p1[0] - p0[0]),
-                        p0[1] + t * (p1[1] - p0[1]),
-                        p0[2] + t * (p1[2] - p0[2]),
-                    )
-                    pt_positions = build_knife_preview_point_data(world_pos)
-                    self._vlist_knife_preview_point = self._overlay_program.vertex_list(
-                        1, gl.GL_POINTS,
-                        position=("f", pt_positions),
-                    )
-                elif kind == "vertex":
-                    # Endpoint snap — show vertex highlight instead of mid-edge point
-                    vid = target["vertex_id"]
-                    positions = build_selection_vertex_data(mesh, {vid})
-                    if positions:
-                        self._vlist_knife_hover_vertex = self._overlay_program.vertex_list(
-                            len(positions) // 3, gl.GL_POINTS,
-                            position=("f", positions),
-                        )
             return pyglet.event.EVENT_HANDLED
 
         # Articulation: consume the drag while the gesture is active (EX-A / H02).
@@ -1708,7 +1305,7 @@ class PlaygroundWindow(pyglet.window.Window):
         # WP-STAB-03: the release of a gated press never reaches a session's
         # commit branch (an Alt-orbit during Extrude-LMB must not commit it).
         # Exception: a camera-modified *click* on the session's own button is
-        # still the session's click (e.g. Shift/Alt+click during Knife), as
+        # still the session's click (e.g. Shift/Alt+click during Extrude), as
         # before the gate.
         gate = self._gated_buttons.pop(button, None)
         if gate is not None:
@@ -1747,112 +1344,6 @@ class PlaygroundWindow(pyglet.window.Window):
                 else:
                     self._clear_tweak_gesture()
                 return pyglet.event.EVENT_HANDLED
-
-        # Knife Variant B: LMB release = commit or cancel slide (WP-AP-CUT)
-        if (
-            button == _mouse.LEFT
-            and self._knife_slide_armed
-            and self._knife_tool is not None
-            and self.app.viewport is not None
-        ):
-            self._knife_slide_armed = False
-            locked_eid = self._knife_slide_edge_id
-            self._knife_slide_edge_id = None
-            mesh = self.app.viewport.render_mesh.mesh
-            if locked_eid is not None:
-                target = _knife_project_locked_edge(
-                    self.app.camera, mesh, x, y, self.width, self.height, locked_eid,
-                )
-            else:
-                target = {"kind": "outside"}
-            hover_result = self._knife_tool.hover(target)
-            if target.get("kind") in ("edge", "vertex") and hover_result.get("valid", False):
-                accepted = self._knife_tool.click(target)
-                if accepted:
-                    self._clear_knife_hover_vbos()
-                    self._rebuild_knife_path_vbo()
-                    self._update_hud()
-            else:
-                self._clear_knife_hover_vbos()
-            return pyglet.event.EVENT_HANDLED
-
-        # Knife: LMB click = add cut point (AD-017)
-        if (
-            button == _mouse.LEFT
-            and was_click
-            and self._knife_tool is not None
-            and self.app.viewport is not None
-        ):
-            mesh = self.app.viewport.render_mesh.mesh
-            # Temporary [KNIFE] diagnosis logging (AD-017 edge targeting)
-            print(f"[KNIFE] click at ({x},{y})")
-            target = knife_pick(self.app.camera, mesh, x, y, self.width, self.height, debug=True,
-                                 **self._pick_kwargs())
-            target = self._knife_snap(mesh, x, y, target)
-            kind = target.get("kind")
-            if kind == "vertex":
-                print(f"[KNIFE] hit=VERTEX id={int(target['vertex_id'])}")
-            elif kind == "edge":
-                t_hit = target.get("t")
-                print(f"[KNIFE] hit=EDGE id={int(target['edge_id'])} t={t_hit:.6f}")
-            else:
-                print(f"[KNIFE] hit=NONE ({kind})")
-            accepted = self._knife_tool.click(target)
-            print(f"[KNIFE] click accepted={accepted}")
-            if accepted:
-                self._clear_knife_hover_vbos()
-                self._rebuild_knife_path_vbo()
-                self._update_hud()
-            return pyglet.event.EVENT_HANDLED
-
-        # Knife Face Lab: LMB click = add point (vertex/edge/face-interior)
-        if (
-            button == _mouse.LEFT
-            and was_click
-            and self._knife_face_tool is not None
-            and self.app.viewport is not None
-        ):
-            mesh = self.app.viewport.render_mesh.mesh
-            target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
-                **self._pick_kwargs())
-            # Q5: the click uses the camera *of this click* (crossings are fixed
-            # now, stored in the path) and the snap rule (mesh vertex or one of
-            # the session's own points within 14 px). Closing is a click on the
-            # snapped start point handled inside the session — it does not commit.
-            is_q5 = hasattr(self._knife_face_tool, "snap_target")
-            if is_q5:
-                self._knife_face_apply_view()
-                target = self._knife_face_tool.snap_target(target, x, y)
-
-            # D: clicking back on the first (interior) point closes the loop
-            # and commits immediately (spec §2/§1: "clicking on the first
-            # point = close + commit"), in addition to the tested Enter path
-            # (acceptance criterion 4). Screen-space snap, mirroring the
-            # vertex pick radius (H3).
-            path = None if is_q5 else getattr(self._knife_face_tool, "path", None)
-            if (
-                target.get("kind") == "face"
-                and path
-                and len(path) >= 3
-                and path[0]["kind"] == "face"
-                and path[0]["face_id"] == target.get("face_id")
-            ):
-                first_screen = self.app.camera.project_to_screen(path[0]["position"], self.width, self.height)
-                if first_screen is not None and math.hypot(first_screen[0] - x, first_screen[1] - y) <= 14.0:
-                    self._knife_face_commit()
-                    return pyglet.event.EVENT_HANDLED
-
-            accepted = self._knife_face_tool.click(target)
-            self._kfq5_hud_note = ""
-            if accepted:
-                self._clear_knife_face_hover_vbos()
-                self._rebuild_knife_face_pending_vbo()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._knife_face_refresh_hover(x, y)
-            self._hud.update_action(f"Knife Face — {self._knife_face_tool.last_message}")
-            self._update_hud()
-            return pyglet.event.EVENT_HANDLED
 
         # Extrude LMB-Modell: LMB release = Commit (AP-05 Variante 2)
         if (
@@ -1933,206 +1424,10 @@ class PlaygroundWindow(pyglet.window.Window):
         self._push_camera()
         return pyglet.event.EVENT_HANDLED
 
-    def _knife_face_refresh_hover(self, x: float, y: float) -> None:
-        """Rebuild the Knife Face Lab hover preview at cursor (x, y).
-
-        Called from on_mouse_motion and right after an accepted click, so the
-        preview line does not stay empty until the next motion event (the click
-        handler clears the hover VBOs and resets the last-target guard).
-        """
-        mesh = self.app.viewport.render_mesh.mesh
-        target = knife_face_pick(self.app.camera, mesh, x, y, self.width, self.height,
-            **self._pick_kwargs())
-        if hasattr(self._knife_face_tool, "snap_target"):
-            self._knife_face_refresh_hover_q5(mesh, target, x, y)
-            return
-        hover_result = self._knife_face_tool.hover(target)
-        kind = target.get("kind")
-        valid = hover_result.get("valid", False)
-
-        target_changed = (target != self._knife_face_hover_last_target)
-        if target_changed or kind in ("edge", "face"):
-            self._knife_face_hover_last_target = target
-            self._clear_knife_face_hover_vbos()
-
-            if kind == "vertex":
-                positions = build_selection_vertex_data(mesh, {target["vertex_id"]})
-                if positions:
-                    self._vlist_knife_face_hover_vertex = self._overlay_program.vertex_list(
-                        len(positions) // 3, gl.GL_POINTS,
-                        position=("f", positions),
-                    )
-            elif kind == "edge":
-                edge_positions = build_selection_edge_data(mesh, {target["edge_id"]})
-                if edge_positions:
-                    self._vlist_knife_face_hover_edge = self._overlay_program.vertex_list(
-                        len(edge_positions) // 3, gl.GL_LINES,
-                        position=("f", edge_positions),
-                    )
-            elif kind == "face" and valid:
-                pt_positions = build_knife_preview_point_data(target["position"])
-                self._vlist_knife_face_preview_point = self._overlay_program.vertex_list(
-                    1, gl.GL_POINTS,
-                    position=("f", pt_positions),
-                )
-            # "outside", or an invalid face (too close to an edge / wrong
-            # face / B's no-interior-start) → no highlight — acceptance
-            # criterion 6: faces elsewhere stay invalid, no line.
-
-            if valid:
-                anchor = _knife_face_path_positions(self._knife_face_tool, mesh)
-                if anchor:
-                    line_positions = anchor + [_knife_face_target_position(mesh, target)]
-                    line_data = build_polyline_data(line_positions)
-                    if line_data:
-                        self._vlist_knife_face_pending_line = self._overlay_program.vertex_list(
-                            len(line_data) // 3, gl.GL_LINES,
-                            position=("f", line_data),
-                        )
-
-        # Persistent start-vertex highlight (B only — D's "start" may be
-        # a face-interior point, already covered by the pending-points
-        # marker rebuilt on click, see _rebuild_knife_face_pending_vbo).
-        start_vid = getattr(self._knife_face_tool, "start", None)
-        if start_vid != self._knife_face_last_start:
-            self._knife_face_last_start = start_vid
-            if self._vlist_knife_face_start is not None:
-                self._vlist_knife_face_start.delete()
-                self._vlist_knife_face_start = None
-            if start_vid is not None:
-                start_positions = build_selection_vertex_data(mesh, {start_vid})
-                if start_positions:
-                    self._vlist_knife_face_start = self._overlay_program.vertex_list(
-                        len(start_positions) // 3, gl.GL_POINTS,
-                        position=("f", start_positions),
-                    )
-
-    def _knife_face_refresh_hover_q5(self, mesh, target: dict, x: float, y: float) -> None:
-        """Q5 hover: snap, plan the pending segment (crossings under *this*
-        camera), draw line / crossing dots / skipped stretch / snap highlight."""
-        tool = self._knife_face_tool
-        self._knife_face_apply_view()
-        target = tool.snap_target(target, x, y)
-        plan = tool.hover(target)["plan"]
-        kind = target.get("kind")
-        self._clear_knife_face_hover_vbos()
-        self._knife_face_hover_last_target = target
-
-        if plan.ok and kind == "edge":
-            edge_positions = build_selection_edge_data(mesh, {target["edge_id"]})
-            if edge_positions:
-                self._vlist_knife_face_hover_edge = self._overlay_program.vertex_list(
-                    len(edge_positions) // 3, gl.GL_LINES, position=("f", edge_positions),
-                )
-        elif plan.ok and kind == "face":
-            self._vlist_knife_face_preview_point = self._overlay_program.vertex_list(
-                1, gl.GL_POINTS, position=("f", build_knife_preview_point_data(target["position"])),
-            )
-        self._kfq5_rebuild_hover(plan)
-
-        # HUD: what the pending click would do / why it is rejected / what it skips.
-        if plan.ok and (plan.skipped or plan.closing):
-            note = f"Knife Face Q5 — {plan.message}"
-        elif not plan.ok and plan.snap_position is not None:
-            note = f"Knife Face Q5 — {plan.reason}"
-        else:
-            note = ""
-        if note != self._kfq5_hud_note:
-            self._kfq5_hud_note = note
-            if note:
-                self._hud.update_action(note)
-                self._update_hud()
-
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         """Handle mouse motion (Mausbewegung ohne Klick) für AP-04 Transform."""
         self._last_mouse_x = x
         self._last_mouse_y = y
-
-        # Knife: hover preview (WP-AP-CUT)
-        if self._knife_tool is not None and self.app.viewport is not None:
-            mesh = self.app.viewport.render_mesh.mesh
-            target = self._knife_snap(mesh, x, y, knife_pick(
-                self.app.camera, mesh, x, y, self.width, self.height, **self._pick_kwargs()))
-            hover_result = self._knife_tool.hover(target)
-            kind = target.get("kind")
-
-            # Guard: skip VBO rebuild when target hasn't changed, except for
-            # "edge" in live_preview mode (preview point moves continuously).
-            live = self._active_knife_model() == "live_preview"
-            target_changed = (target != self._knife_hover_last_target)
-            if target_changed or (kind == "edge" and live):
-                self._knife_hover_last_target = target
-                self._clear_knife_hover_vbos()
-
-                if kind == "vertex":
-                    vid = target["vertex_id"]
-                    positions = build_selection_vertex_data(mesh, {vid})
-                    if positions:
-                        self._vlist_knife_hover_vertex = self._overlay_program.vertex_list(
-                            len(positions) // 3, gl.GL_POINTS,
-                            position=("f", positions),
-                        )
-
-                elif kind == "point":
-                    # One of the session's own edge points (S2 own-point snap): shown like
-                    # the vertex it becomes at commit.
-                    pos = self._knife_tool.point_position(target)
-                    if pos is not None:
-                        self._vlist_knife_hover_vertex = self._overlay_program.vertex_list(
-                            1, gl.GL_POINTS, position=("f", build_knife_preview_point_data(pos)),
-                        )
-
-                elif kind == "edge":
-                    eid = target["edge_id"]
-                    edge_positions = build_selection_edge_data(mesh, {eid})
-                    if edge_positions:
-                        self._vlist_knife_hover_edge = self._overlay_program.vertex_list(
-                            len(edge_positions) // 3, gl.GL_LINES,
-                            position=("f", edge_positions),
-                        )
-                    # Variant A: live split-point preview at current t
-                    if live and hover_result.get("valid", False):
-                        t = target["t"]
-                        va, vb = mesh.edge_vertices(eid)
-                        p0 = mesh.vertex_position(va)
-                        p1 = mesh.vertex_position(vb)
-                        world_pos = (
-                            p0[0] + t * (p1[0] - p0[0]),
-                            p0[1] + t * (p1[1] - p0[1]),
-                            p0[2] + t * (p1[2] - p0[2]),
-                        )
-                        pt_positions = build_knife_preview_point_data(world_pos)
-                        self._vlist_knife_preview_point = self._overlay_program.vertex_list(
-                            1, gl.GL_POINTS,
-                            position=("f", pt_positions),
-                        )
-
-                elif kind == "face" and self._knife_tool.accepts(target):
-                    # WP-KNIFE-01 S3: a point inside a face (as the Knife Face Lab shows it).
-                    self._vlist_knife_preview_point = self._overlay_program.vertex_list(
-                        1, gl.GL_POINTS, position=("f", build_knife_preview_point_data(target["position"])),
-                    )
-
-                # "outside" (or a refused face point) → no highlight
-
-            # Persistent path highlight (placed points + cut segments): rebuild
-            # when the start point changes (S2: `start` is the last path record).
-            start = hover_result.get("start")
-            if (None if start is None else start["pid"]) != self._knife_last_start:
-                self._rebuild_knife_path_vbo()
-
-            return pyglet.event.EVENT_HANDLED
-
-        # Knife Face Lab: hover preview (Discovery — playground/experiments/
-        # knife_face/). Kind-based dispatch mirrors the Knife hover block
-        # above (same shape, `_HOVER_COLOR`/`_SELECTION_COLOR` reused), plus
-        # a "face" arm (interior point + pending-path preview line) that the
-        # Knife block above left as a no-op until WP-KNIFE-01 S3 (now it shows
-        # the face point's marker too).
-        if self._knife_face_tool is not None and self.app.viewport is not None:
-            self._knife_face_refresh_hover(x, y)
-
-            return pyglet.event.EVENT_HANDLED
 
         # Loop Slide: Motion-Update im Hold-Modell (AP-05)
         if self._loop_slide_tool is not None:
@@ -2211,7 +1506,7 @@ class PlaygroundWindow(pyglet.window.Window):
             # switch if _clear_hover() were ever skipped, silently keeping a
             # stale/wrong-kind hover. TODO: this system only ever hovers one
             # kind at a time; full kind-based hover dispatch for arbitrary
-            # (mode, id) pairs (matching Knife's per-kind hover) is a separate,
+            # (mode, id) pairs is a separate,
             # larger follow-up — not implemented here.
             hover_key = (sel.mode, hit) if hit is not None else None
             if hover_key != self._hover_key:
@@ -2265,79 +1560,33 @@ class PlaygroundWindow(pyglet.window.Window):
             self._save_session_state()
             self._update_hud()
         elif symbol == _key.Z and modifiers & _key.MOD_CTRL and not (modifiers & _key.MOD_SHIFT):
-            # Ctrl+Z: in-session undo for knife, else global undo (AD-017 / WP-AP-Enablement-01).
+            # Ctrl+Z: global undo (WP-AP-Enablement-01).
             # Shift is excluded so Ctrl+Shift+Z can reach the redo branch below
             # (same guard pattern as the bare-D branch above).
-            if self._knife_tool is not None:
-                self._knife_tool.undo_step()
-                self._rebuild_knife_path_vbo()
-                self._hud.update_action("Knife — undo last cut")
-                self._update_hud()
-            elif self._knife_face_tool is not None:
-                self._knife_face_tool.undo_step()
-                self._clear_knife_face_hover_vbos()
-                self._rebuild_knife_face_pending_vbo()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Knife Face — undo last step")
-                self._update_hud()
-            else:
-                self.app.undo()
-                self.app.scene.selection.clear()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Undo")
-                self._update_hud()
+            self.app.undo()
+            self.app.scene.selection.clear()
+            self._recompute_derived()
+            self._rebuild_vbo()
+            self._hud.update_action("Undo")
+            self._update_hud()
         elif symbol == _key.Z and modifiers & _key.MOD_CTRL and modifiers & _key.MOD_SHIFT:
             # Ctrl+Shift+Z: alternative redo gesture (DECIDED 2026-09-22); the
             # Ctrl+Z undo branch above excludes Shift, so this is unambiguous.
             # (Ctrl+Y without Shift is the canonical redo gesture below.)
-            if self._knife_tool is not None:
-                self._knife_tool.redo_step()
-                self._rebuild_knife_path_vbo()
-                self._hud.update_action("Knife — redo last cut")
-                self._update_hud()
-            elif self._knife_face_tool is not None:
-                self._knife_face_tool.redo_step()
-                self._clear_knife_face_hover_vbos()
-                self._rebuild_knife_face_pending_vbo()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Knife Face — redo last step")
-                self._update_hud()
-            else:
-                self.app.redo()
-                self.app.scene.selection.clear()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Redo")
-                self._update_hud()
+            self.app.redo()
+            self.app.scene.selection.clear()
+            self._recompute_derived()
+            self._rebuild_vbo()
+            self._hud.update_action("Redo")
+            self._update_hud()
         elif symbol == _key.Y and modifiers & _key.MOD_CTRL:
-            # Ctrl+Y: canonical Redo. While a Knife session is active, undo and
-            # redo operate exclusively on the session's own step history — the
-            # global stacks are neither mutated nor replayed (AD-017, DECIDED
-            # 2026-09-22; otherwise a pre-session global state could destroy the
-            # in-session cuts and stale the session baseline).
-            if self._knife_tool is not None:
-                self._knife_tool.redo_step()
-                self._rebuild_knife_path_vbo()
-                self._hud.update_action("Knife — redo last cut")
-                self._update_hud()
-            elif self._knife_face_tool is not None:
-                self._knife_face_tool.redo_step()
-                self._clear_knife_face_hover_vbos()
-                self._rebuild_knife_face_pending_vbo()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Knife Face — redo last step")
-                self._update_hud()
-            else:
-                self.app.redo()
-                self.app.scene.selection.clear()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Redo")
-                self._update_hud()
+            # Ctrl+Y: canonical Redo.
+            self.app.redo()
+            self.app.scene.selection.clear()
+            self._recompute_derived()
+            self._rebuild_vbo()
+            self._hud.update_action("Redo")
+            self._update_hud()
         elif symbol == _key.I:
             # I: Loop Insert (AP-05). Scope: Edge-Modus, genau 1 Edge selektiert.
             sel = self.app.scene.selection
@@ -2453,50 +1702,10 @@ class PlaygroundWindow(pyglet.window.Window):
                     self._hud.update_action(str(exc))
                 self._update_hud()
             elif ctx is CContext.KNIFE:
-                # Empty selection — enter Knife mode. AD-013 (Playground input
-                # ownership): when the "knife_face" family is focused, C
-                # starts the Lab's own session instead of Production Knife —
-                # a Playground-local dispatch choice, not a change to
-                # Production's C binding (Production always resolves to
-                # KnifeTool; this branch only runs inside the Playground
-                # window's own key handling).
-                if (
-                    self._knife_tool is None
-                    and self._knife_face_tool is None
-                    and self.app.viewport is not None
-                ):
-                    mesh = self.app.viewport.render_mesh.mesh
-                    if self.app.focused_family == "knife_face":
-                        session_cls = self._knife_face_session_cls()
-                        if session_cls is not None:
-                            self._knife_face_tool = session_cls()
-                            self._knife_face_tool.activate()
-                            self._knife_face_tool.begin(
-                                mesh=mesh,
-                                scene=self.app.scene,
-                                selection=self.app.scene.selection,
-                            )
-                            self._clear_hover()
-                            self._hud.update_action(
-                                "Knife Face — click vertices/edges/faces; "
-                                "Enter=commit, Esc=cancel"
-                            )
-                            self._update_hud()
-                    else:
-                        self._knife_tool = KnifeTool()
-                        self._knife_tool.activate()
-                        self._knife_tool.begin(
-                            mesh=mesh,
-                            scene=self.app.scene,
-                            selection=self.app.scene.selection,
-                        )
-                        # R-SEL-2: Knife has its own hover overlay (see the
-                        # "Knife hover VBOs" note above) — clear any leftover
-                        # regular selection hover so it doesn't stay drawn
-                        # underneath it.
-                        self._clear_hover()
-                        self._hud.update_action("Knife — click vertices/edges; Enter=commit, Esc=cancel")
-                        self._update_hud()
+                # Empty selection: the Knife is in the app (`python src/main.py`), not in the Playground
+                # (removed 2026-10-21, "Knife ist kein Playground-Thema mehr").
+                self._hud.update_action("Knife: use the app (python src/main.py)")
+                self._update_hud()
             elif ctx is CContext.NONE:
                 # Nothing applicable — no-op
                 pass
@@ -2729,46 +1938,12 @@ class PlaygroundWindow(pyglet.window.Window):
                 self._rebuild_vbo()
                 self._hud.update_action("Articulation restored")
                 self._update_hud()
-        elif symbol in (_key.ENTER, _key.NUM_ENTER):
-            if self._knife_tool is not None:
-                cmd = self._knife_tool.commit()
-                self._knife_tool.deactivate()
-                self._knife_tool = None
-                self._knife_slide_armed = False
-                self._knife_slide_edge_id = None
-                self._clear_knife_hover_vbos()
-                self._clear_knife_start_vbo()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                if cmd is not None:
-                    self._hud.update_action("Knife committed")
-                    print("[KNIFE] session result: committed (1 history entry, residue = connecting-edge path)")
-                else:
-                    self._hud.update_action("Knife — no cuts made")
-                    print("[KNIFE] session result: no cuts made (mesh state unchanged since session begin)")
-                self._update_hud()
-            elif self._knife_face_tool is not None:
-                self._knife_face_commit()
         elif symbol == _key.ESCAPE:
             # WP-STAB-03: Esc goes to the owning session, not to whichever flag
             # comes first in this chain — a bent-idle Articulation must not
             # absorb the Esc meant for a running Transform, and an armed-but-not-
             # dragged Gizmo / Tweak-V2 must not fall through to close().
-            if session == "knife":
-                self._knife_tool.cancel()
-                self._knife_tool.deactivate()
-                self._knife_tool = None
-                self._knife_slide_armed = False
-                self._knife_slide_edge_id = None
-                self._clear_knife_hover_vbos()
-                self._clear_knife_start_vbo()
-                self._recompute_derived()
-                self._rebuild_vbo()
-                self._hud.update_action("Knife cancelled")
-                self._update_hud()
-            elif session == "knife_face":
-                self._knife_face_cancel()
-            elif session == "articulation" or (session is None and self._articulation_state is not None):
+            if session == "articulation" or (session is None and self._articulation_state is not None):
                 self._articulation_state.restore()
                 self._articulation_state = None
                 self._articulation_dragging = False
@@ -2812,7 +1987,7 @@ class PlaygroundWindow(pyglet.window.Window):
                 self.close()
             if session is not None and self._drag_button is not None:
                 # A button still held for the cancelled gesture (Gizmo, Tweak V2,
-                # Articulation, Knife slide) must not turn into a selection click.
+                # Articulation) must not turn into a selection click.
                 self._gated_buttons.setdefault(self._drag_button, "blocked")
         return pyglet.event.EVENT_HANDLED
 
@@ -3099,148 +2274,6 @@ class PlaygroundWindow(pyglet.window.Window):
             else:
                 self._vlist_hover.draw(gl.GL_TRIANGLES)
             gl.glDepthFunc(gl.GL_LESS)
-            self._overlay_program.stop()
-
-        # -- Knife Hover (edge highlight + vertex hover + split-point preview) --
-        if self._knife_tool is not None and (
-            self._vlist_knife_hover_edge is not None
-            or self._vlist_knife_hover_vertex is not None
-            or self._vlist_knife_preview_point is not None
-        ):
-            self._overlay_program.use()
-            self._overlay_program["u_view"] = view
-            self._overlay_program["u_proj"] = proj
-            self._overlay_program["u_color"] = list(_HOVER_COLOR)
-            gl.glEnable(gl.GL_BLEND)
-            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-            gl.glEnable(gl.GL_DEPTH_TEST)
-            gl.glDepthFunc(gl.GL_LEQUAL)
-            if self._vlist_knife_hover_edge is not None:
-                self._vlist_knife_hover_edge.draw(gl.GL_LINES)
-            if self._vlist_knife_hover_vertex is not None:
-                gl.glDisable(gl.GL_DEPTH_TEST)
-                gl.glPointSize(10.0)
-                self._vlist_knife_hover_vertex.draw(gl.GL_POINTS)
-                gl.glPointSize(_VERTEX_POINT_SIZE)
-                gl.glEnable(gl.GL_DEPTH_TEST)
-            if self._vlist_knife_preview_point is not None:
-                gl.glDisable(gl.GL_DEPTH_TEST)
-                gl.glPointSize(10.0)
-                self._vlist_knife_preview_point.draw(gl.GL_POINTS)
-                gl.glPointSize(_VERTEX_POINT_SIZE)
-                gl.glEnable(gl.GL_DEPTH_TEST)
-            gl.glDepthFunc(gl.GL_LESS)
-            self._overlay_program.stop()
-
-        # -- Knife path (persistent selection-style indicator: placed points and
-        #    the segments commit will cut — WP-KNIFE-01 S2, the mesh is cut at commit)
-        if self._knife_tool is not None and (
-            self._vlist_knife_start is not None or self._vlist_knife_path is not None
-        ):
-            self._overlay_program.use()
-            self._overlay_program["u_view"] = view
-            self._overlay_program["u_proj"] = proj
-            self._overlay_program["u_color"] = list(_SELECTION_COLOR)
-            gl.glEnable(gl.GL_BLEND)
-            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-            gl.glDisable(gl.GL_DEPTH_TEST)
-            if self._vlist_knife_path is not None:
-                self._vlist_knife_path.draw(gl.GL_LINES)
-            if self._vlist_knife_start is not None:
-                gl.glPointSize(_VERTEX_POINT_SIZE)
-                self._vlist_knife_start.draw(gl.GL_POINTS)
-            gl.glEnable(gl.GL_DEPTH_TEST)
-            self._overlay_program.stop()
-
-        # -- Knife Face Hover (edge/vertex highlight + interior preview point,
-        #    pending-path preview line) ------------------------------------
-        if self._knife_face_tool is not None and (
-            self._vlist_knife_face_hover_edge is not None
-            or self._vlist_knife_face_hover_vertex is not None
-            or self._vlist_knife_face_preview_point is not None
-            or self._vlist_knife_face_pending_line is not None
-        ):
-            self._overlay_program.use()
-            self._overlay_program["u_view"] = view
-            self._overlay_program["u_proj"] = proj
-            self._overlay_program["u_color"] = list(_HOVER_COLOR)
-            gl.glEnable(gl.GL_BLEND)
-            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-            gl.glEnable(gl.GL_DEPTH_TEST)
-            gl.glDepthFunc(gl.GL_LEQUAL)
-            if self._vlist_knife_face_hover_edge is not None:
-                self._vlist_knife_face_hover_edge.draw(gl.GL_LINES)
-            if self._vlist_knife_face_pending_line is not None:
-                self._vlist_knife_face_pending_line.draw(gl.GL_LINES)
-            if self._vlist_knife_face_hover_vertex is not None:
-                gl.glDisable(gl.GL_DEPTH_TEST)
-                gl.glPointSize(10.0)
-                self._vlist_knife_face_hover_vertex.draw(gl.GL_POINTS)
-                gl.glPointSize(_VERTEX_POINT_SIZE)
-                gl.glEnable(gl.GL_DEPTH_TEST)
-            if self._vlist_knife_face_preview_point is not None:
-                gl.glDisable(gl.GL_DEPTH_TEST)
-                gl.glPointSize(10.0)
-                self._vlist_knife_face_preview_point.draw(gl.GL_POINTS)
-                gl.glPointSize(_VERTEX_POINT_SIZE)
-                gl.glEnable(gl.GL_DEPTH_TEST)
-            gl.glDepthFunc(gl.GL_LESS)
-            self._overlay_program.stop()
-
-        # -- Knife Face Q5: stored + pending cut lines, skipped ("no cut")
-        #    stretches, crossing dots, snap highlight --------------------------
-        if self._knife_face_tool is not None and self._kfq5_vlists:
-            vl = self._kfq5_vlists
-            self._overlay_program.use()
-            self._overlay_program["u_view"] = view
-            self._overlay_program["u_proj"] = proj
-            gl.glEnable(gl.GL_BLEND)
-            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-            gl.glEnable(gl.GL_DEPTH_TEST)
-            gl.glDepthFunc(gl.GL_LEQUAL)
-            self._overlay_program["u_color"] = list(_HOVER_COLOR)
-            for name in ("stored_cut", "hover_cut"):
-                if name in vl:
-                    vl[name].draw(gl.GL_LINES)
-            gl.glDisable(gl.GL_DEPTH_TEST)
-            self._overlay_program["u_color"] = list(_KFQ5_SKIP_COLOR)
-            for name in ("stored_skip", "hover_skip"):
-                if name in vl:
-                    vl[name].draw(gl.GL_LINES)
-            self._overlay_program["u_color"] = list(_KFQ5_CROSSING_COLOR)
-            gl.glPointSize(7.0)
-            for name in ("stored_cross", "hover_cross"):
-                if name in vl:
-                    vl[name].draw(gl.GL_POINTS)
-            if "hover_snap" in vl:
-                self._overlay_program["u_color"] = list(_KFQ5_SNAP_COLOR)
-                gl.glPointSize(14.0)
-                vl["hover_snap"].draw(gl.GL_POINTS)
-            gl.glPointSize(_VERTEX_POINT_SIZE)
-            gl.glEnable(gl.GL_DEPTH_TEST)
-            gl.glDepthFunc(gl.GL_LESS)
-            self._overlay_program.stop()
-
-        # -- Knife Face Start-Vertex / pending interior points (persistent,
-        #    selection-style indicator — B's start vertex, both variants'
-        #    already-clicked interior points) ---------------------------------
-        if self._knife_face_tool is not None and (
-            self._vlist_knife_face_start is not None
-            or self._vlist_knife_face_pending_points is not None
-        ):
-            self._overlay_program.use()
-            self._overlay_program["u_view"] = view
-            self._overlay_program["u_proj"] = proj
-            self._overlay_program["u_color"] = list(_SELECTION_COLOR)
-            gl.glEnable(gl.GL_BLEND)
-            gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-            gl.glDisable(gl.GL_DEPTH_TEST)
-            gl.glPointSize(_VERTEX_POINT_SIZE)
-            if self._vlist_knife_face_start is not None:
-                self._vlist_knife_face_start.draw(gl.GL_POINTS)
-            if self._vlist_knife_face_pending_points is not None:
-                self._vlist_knife_face_pending_points.draw(gl.GL_POINTS)
-            gl.glEnable(gl.GL_DEPTH_TEST)
             self._overlay_program.stop()
 
         # -- Selected Edges ---------------------------------------------------

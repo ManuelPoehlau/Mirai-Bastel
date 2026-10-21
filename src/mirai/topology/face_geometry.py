@@ -1,6 +1,6 @@
 """Geometry of one face in its own plane — small, mode-agnostic helpers (AD-017 §11 shape).
 
-Moved here from the Knife Face Lab (`playground/experiments/knife_face/engine.py`, WP-KNIFE-01 S1) so
+Moved here from the Knife Face Lab (`experiments/knife_oracle/engine.py`, WP-KNIFE-01 S1) so
 there is one implementation of the face frame: the Knife's commit-time resolver (`knife_resolve`) and
 F2's chord predicate (`chord_validity`) both project a face through `FaceFrame` — the Newell plane
 `viewport.derived.triangulate_face` projects into, the boundary counter-clockwise (u x v = normal).

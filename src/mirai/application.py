@@ -79,6 +79,7 @@ from .interaction.input import KNIFE_CONTEXT
 from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
+from .interaction.tools.selection_helpers import selection_pivot
 from .interaction.tools.rotate import RotateTool
 from .interaction.tools.scale import ScaleTool
 from .interaction.tools.transform import _resolve_space
@@ -142,8 +143,16 @@ from .topology.loop_slide import (
 )
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .viewport import DisplayMode, DisplayState, OrbitCamera
-from .viewport.box_select import elements_in_rect, normalized_rect, stroke_samples
-from .viewport.gpu_picking import gpu_elements_in_rect, gpu_pick_component
+from .viewport.box_select import (
+    elements_in_polygon,
+    elements_in_rect,
+    normalized_rect,
+    point_in_polygon,
+    polygon_bounds,
+    stroke_samples,
+)
+from .viewport import gizmo as _gizmo
+from .viewport.gpu_picking import gpu_elements_in_rect, gpu_elements_in_region, gpu_pick_component
 from .viewport.picking import pick_component, pick_face, pick_object
 from .viewport.picking_cache import PickCache
 
@@ -191,6 +200,12 @@ _TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
 #: displacement since the arm to reach this many logical pixels first; a tap or a hand
 #: tremble below it does nothing at all.
 EXTRUDE_BEGIN_PX = 4.0
+
+#: The gizmo's name for the tool a handle drag runs (`Application.tweak_command`, the last W/E/R).
+_GIZMO_TOOLS = {commands.MOVE: "move", commands.ROTATE: "rotate", commands.SCALE: "scale"}
+
+#: Pixels the pointer must move before the next Lasso outline point is added (`PROVISIONAL`).
+LASSO_POINT_SPACING_PX = 3.0
 #: WP-06 B9 (E3, PROVISIONAL, agent-set): at release an Extrude whose |total distance|
 #: is below this (world units) counts as cancelled - exact prior state, no history.
 EXTRUDE_MIN_DISTANCE = 1e-6
@@ -334,8 +349,10 @@ class _ObjectGesture:
 @dataclasses.dataclass
 class _DragSelect:
     """A running LMB drag selection (2026-10-15, Manu: "Startpunkt entscheidet"): `box` when
-    the press was in empty space, else `paint`. `add` = Shift (adds) instead of replacing.
-    `before` is the selection at the start (Esc restores it); `last` the last painted point."""
+    the press was in empty space, else `paint`; with the Lasso key held (2026-10-21) `lasso`
+    whatever the press point. `add` = Shift (adds) instead of replacing.
+    `before` is the selection at the start (Esc restores it); `last` the last painted point;
+    `points` the lasso outline so far (window pixels)."""
 
     kind: str
     add: bool
@@ -344,6 +361,7 @@ class _DragSelect:
     before: tuple
     last: tuple[float, float]
     cancelled: bool = False
+    points: list = dataclasses.field(default_factory=list)
 
 
 def _element_vertices(mesh, element) -> set[VertexId]:
@@ -723,6 +741,14 @@ class Application:
         # release).
         self._press_point: tuple[float, float] | None = None
         self._drag_select: _DragSelect | None = None
+        # The key that holds the Lasso mode (None = not held); see `commands.LASSO_ARM`.
+        self._lasso_held: str | None = None
+        # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
+        # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
+        # `_gizmo_gesture` = the handle pressed by the running LMB gesture; `_gizmo_cache` = (key, pivot).
+        self.gizmo_enabled: bool = False
+        self._gizmo_gesture: str | None = None
+        self._gizmo_cache: tuple | None = None
         self.tweak_command: str = commands.MOVE
         self._gesture_refused: bool = False
         # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
@@ -2635,6 +2661,8 @@ class Application:
         if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS):
             # A Box/Paint drag owns the selection until the LMB release (like a gesture).
             return False
+        if command == commands.LASSO_ARM:
+            return self._lasso_arm(input.value)
         if command in _TWEAK_TRANSFORMS:
             # Tweak (Ctrl+LMB drag) uses the last W/E/R pressed - a tap sets it ("tool set").
             self.tweak_command = command
@@ -2693,7 +2721,12 @@ class Application:
         """Taste losgelassen. True = das Loslassen hat etwas bewirkt.
 
         Loslassen der Transform-Taste committet, wenn seit dem Scharfschalten
-        eine Mausbewegung kam; ein bloßes Antippen entschärft nur (E21)."""
+        eine Mausbewegung kam; ein bloßes Antippen entschärft nur (E21). Loslassen der
+        Lasso-Taste beendet den Lasso-Modus (ein laufender Lasso-Drag läuft bis zum LMB-Release)."""
+        if self._lasso_held is not None and input.value == self._lasso_held:
+            self._lasso_held = None
+            self._set_status("Lasso off")
+            return True
         if self._transform_key is None or input.value != self._transform_key:
             return False
         self._transform_finish()
@@ -3426,6 +3459,7 @@ class Application:
             return
         if not self.pointer.active:
             self._press_point = self._cursor
+            self._gizmo_press(input)
         self.pointer.press(input)
 
     def pointer_drag(
@@ -3448,6 +3482,8 @@ class Application:
         if self._knife_gesture and button == self._knife_gesture_button:
             return self._knife_release(x, y)
         click = self.pointer.release(button, x, y)
+        if button == "LEFT" and self._gizmo_gesture is not None:
+            return self._gizmo_release(click is not None)
         if button == "LEFT" and self._drag_select is not None:
             return self._drag_select_finish()
         if button == "LEFT" and self._transform_key == TWEAK_KEY:
@@ -3624,6 +3660,8 @@ class Application:
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:
+        if self._gizmo_gesture is not None and step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
+            return self._gizmo_step(step.dx, step.dy)
         if step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
             return self._drag_select_step(step.command)
         if step.command == commands.TWEAK:
@@ -3705,12 +3743,32 @@ class Application:
             return None
         return normalized_rect(drag.start, drag.end)
 
+    @property
+    def selection_lasso(self) -> list[tuple[float, float]] | None:
+        """The outline of a running Lasso Select (window pixels, in drawing order; the window
+        closes it back to the first point), for the window to draw; None otherwise."""
+        drag = self._drag_select
+        if drag is None or drag.kind != "lasso" or drag.cancelled:
+            return None
+        return list(drag.points)
+
+    def _lasso_arm(self, key: str) -> bool:
+        """The Lasso key went down: LMB drags make a lasso until it is let go. Not underneath a
+        held W/E/R/T/G (the same gate as the mode keys) and not in a Knife session (which has its
+        own key map and never gets here)."""
+        if self.viewport is None or self._transform_key is not None:
+            return False
+        if self._lasso_held is None:
+            self._set_status("Lasso: drag with LMB (Shift adds, Esc cancels)")
+        self._lasso_held = key
+        return True
+
     def _drag_select_refusal(self) -> str | None:
         """Why a drag selection cannot start now (None = it can). Silent cases return ""."""
         if self.viewport is None or self._knife is not None or self._transform_key is not None:
             return ""
         if self.selection.mode is SelectionMode.OBJECT:
-            return "Box/Paint: points, edges and faces only - press 1/2/3"
+            return "Box/Paint/Lasso: points, edges and faces only - press 1/2/3"
         return None
 
     def _drag_select_step(self, command: str) -> bool:
@@ -3730,8 +3788,9 @@ class Application:
                 self._gesture_refused = True  # silence the rest of this gesture
                 return False
             start = self._press_point if self._press_point is not None else cursor
-            gpu_face = self._gpu_pick(SelectionMode.FACE, start[0], start[1])
-            on_mesh = gpu_face is not None if gpu_face is not _CPU else (
+            lasso = self._lasso_held is not None
+            gpu_face = None if lasso else self._gpu_pick(SelectionMode.FACE, start[0], start[1])
+            on_mesh = False if lasso else gpu_face is not None if gpu_face is not _CPU else (
                 pick_face(
                     self._edit_camera,
                     self.scene.mesh,
@@ -3744,12 +3803,13 @@ class Application:
                 is not None
             )
             drag = _DragSelect(
-                kind="paint" if on_mesh else "box",
+                kind="lasso" if lasso else "paint" if on_mesh else "box",
                 add=command == commands.SELECT_DRAG_ADD,
                 start=start,
                 end=cursor,
                 before=self._selection_snapshot(),
                 last=start,
+                points=[start] if lasso else [],
             )
             self._drag_select = drag
             self._set_hovered(None)
@@ -3764,6 +3824,10 @@ class Application:
         if drag.kind == "paint":
             self._paint_at(stroke_samples(drag.last, cursor))
             drag.last = cursor
+        elif drag.kind == "lasso":
+            last = drag.points[-1]
+            if math.hypot(cursor[0] - last[0], cursor[1] - last[1]) >= LASSO_POINT_SPACING_PX:
+                drag.points.append(cursor)
         return True
 
     def _paint_at(self, points) -> None:
@@ -3789,6 +3853,8 @@ class Application:
             self._refresh_hover()
             return False
         selection = self.selection
+        if drag.kind == "lasso":
+            return self._lasso_finish(drag)
         rm = self._gpu_pick_mesh() if drag.kind == "box" else None
         if rm is not None:
             try:
@@ -3835,6 +3901,47 @@ class Application:
         self._refresh_hover()
         return True
 
+    def _lasso_finish(self, drag: _DragSelect) -> bool:
+        """Apply a finished Lasso: the elements whose corners all lie inside the outline (as Box, with
+        the same occlusion rule); fewer than three outline points select nothing and change nothing."""
+        selection = self.selection
+        polygon = drag.points
+        if len(polygon) < 3:
+            self._set_status("Lasso: draw a closed outline")
+            self._refresh_hover()
+            return True
+        width, height = int(self.viewport_width), int(self.viewport_height)
+        found = None
+        rm = self._gpu_pick_mesh()
+        if rm is not None:
+            try:
+                found = gpu_elements_in_region(
+                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, selection.mode,
+                    lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
+                    cache=self._pick_cache, occlusion=self.display.show_faces,
+                )
+            except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
+                self._gpu_failed(exc)
+        if found is None:
+            found = elements_in_polygon(
+                self._edit_camera, self.scene.mesh, selection.mode, polygon, width, height,
+                cache=self._pick_cache, occlusion=self.display.show_faces,
+            )
+        if drag.add:
+            selection.add(found)
+        else:
+            selection.set(found)
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        count = len(self._active_selection_ids())
+        noun = selection.mode.name.lower()
+        if count != 1:
+            noun = "vertices" if noun == "vertex" else noun + "s"
+        self._set_status(f"Lasso: {count} {noun} selected")
+        self._refresh_hover()
+        return True
+
     def _drag_select_cancel(self) -> bool:
         drag = self._drag_select
         if drag is None or drag.cancelled:
@@ -3844,8 +3951,125 @@ class Application:
             self._restore_selection(drag.before)
             if self.viewport is not None:
                 self.viewport.on_selection_changed()
-        self._set_status(f"{'Box' if drag.kind == 'box' else 'Paint'} cancelled")
+        self._set_status(f"{drag.kind.capitalize()} cancelled")
         return True
+
+    # -- Transform gizmo (2026-10-21, promoted from the Playground, Manu "Gizmo nach src/") -----
+    #
+    # AD-016 D3 (Artist verdict 2026-09-21): the gizmo is an entry point. An LMB press on a handle (no
+    # modifier) takes priority over the selection click: a click only sets the axis constraint (like X/Y/Z),
+    # click + drag also runs the current tool - the last W/E/R, Move until one is pressed, the same state
+    # Tweak reads (D2) - along it, the release commits, Esc cancels. A miss falls through unchanged. The
+    # drag is the Tweak machinery (`_transform_arm` / `_transform_step` with the selection as the target), so
+    # it is one History step, honours Soft Selection and Symmetry, and is refused where W/E/R is.
+    # World frame only (normal space is not in the app); shown for point / edge / face selections of an
+    # unplaced edit object, hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
+
+    def _gizmo_pivot(self):
+        """The selection's centroid (world), cached until the selection or the vertex positions change;
+        None when the gizmo is not shown: off, no viewport, Knife session, mode `4`, placed edit
+        object, nothing selected."""
+        viewport = self.viewport
+        if (
+            not self.gizmo_enabled
+            or viewport is None
+            or self._knife is not None
+            or self.selection.mode is SelectionMode.OBJECT
+            or viewport.model_matrix is not None
+        ):
+            return None
+        ids = self._active_selection_ids()
+        if not ids:
+            return None
+        key = (viewport.geometry_revision, id(self.scene.mesh), self.selection.mode, len(ids), hash(frozenset(ids)))
+        cache = self._gizmo_cache
+        if cache is not None and cache[0] == key:
+            return cache[1]
+        mesh = self.scene.mesh
+        vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
+        pivot = selection_pivot(mesh, vertex_ids) if vertex_ids else None
+        self._gizmo_cache = (key, pivot)
+        return pivot
+
+    def _gizmo_pivot_if_shown(self):
+        """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down or any drag gesture runs."""
+        if self._transform_key is not None or self._drag_select is not None:
+            return None
+        return self._gizmo_pivot()
+
+    @property
+    def gizmo_tool(self) -> str:
+        """The tool the gizmo shows and a handle drag runs (`move` / `rotate` / `scale`)."""
+        return _GIZMO_TOOLS.get(self.tweak_command, "move")
+
+    @property
+    def gizmo_constraint(self) -> str | None:
+        return self._axis_constraint
+
+    def gizmo_items(self) -> list:
+        """What the window draws for the gizmo (`viewport.gizmo.draw_items`), [] while it is not shown.
+        The handle under the cursor is highlighted (hover feedback; it never arms anything)."""
+        pivot = self._gizmo_pivot_if_shown()
+        if pivot is None:
+            return []
+        camera = self._edit_camera
+        hover = None
+        if self._cursor is not None and not self.pointer.active:
+            hover = self._gizmo_handle_at(*self._cursor, pivot=pivot)
+        return _gizmo.draw_items(camera, pivot, self.gizmo_tool, self._axis_constraint, hover)
+
+    def _gizmo_handle_at(self, x: float, y: float, pivot=None) -> str | None:
+        pivot = self._gizmo_pivot_if_shown() if pivot is None else pivot
+        if pivot is None:
+            return None
+        return _gizmo.pick_handle(
+            self._edit_camera, pivot, _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES, self.gizmo_tool, x, y,
+            int(self.viewport_width), int(self.viewport_height),
+        )
+
+    def _gizmo_press(self, input: Input) -> None:
+        """LMB press without a modifier on a handle: it owns the gesture and sets the constraint now."""
+        if not self.gizmo_enabled or input.value != "LEFT" or input.modifiers or self._cursor is None:
+            return
+        if self._gesture_refused:
+            return
+        handle = self._gizmo_handle_at(*self._cursor)
+        if handle is None:
+            return
+        self._gizmo_gesture = handle
+        # `center` (Scale) is the uniform handle: no constraint.
+        self._axis_constraint = None if handle == "center" else handle
+        self._set_hovered(None)
+        self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
+
+    def _gizmo_step(self, dx: float, dy: float) -> bool:
+        """A drag step of a gesture that started on a handle: the first one arms the current tool on the
+        selection (a Tweak with the selection as target), every step drives it."""
+        if self._gesture_refused:
+            return False
+        if self._transform_key is None:
+            if self.viewport is None or self._knife is not None or self._gate_refuses(commands.TWEAK):
+                self._gesture_refused = True
+                return False
+            if not self._transform_arm(self.tweak_command, TWEAK_KEY):
+                self._gesture_refused = True
+                return False
+        elif self._transform_key != TWEAK_KEY:
+            return False
+        stepped = self._transform_step(dx, dy)
+        if self._transform_key is None:
+            self._gesture_refused = True  # refused at begin (seam, symmetric Soft)
+        return stepped
+
+    def _gizmo_release(self, clicked: bool) -> bool:
+        """LMB released: commit a running handle drag; a plain click on a handle leaves just the constraint."""
+        self._gizmo_gesture = None
+        self._gesture_refused = False
+        if self._transform_key == TWEAK_KEY:
+            self._transform_finish()
+            return True
+        self._refresh_hover()
+        return clicked
 
     # -- Tweak (2026-10-15, Tweak Lab V2 "Silo" KEEP, Manu: "Ctrl+LMB, Auswahl weicht") ------
 

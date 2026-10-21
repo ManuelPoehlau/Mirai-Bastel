@@ -229,6 +229,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_drag("LEFT"), cmd.SELECT_DRAG)
     bs.set_default(_drag("LEFT", "shift"), cmd.SELECT_DRAG_ADD)
     bs.set_default(_drag("LEFT", "ctrl"), cmd.TWEAK)
+    # 2026-10-21 (Manu): Lasso kommt in die App. Halte-Taste Q (Artist Input Truth
+    # `selection.lasso_select` ist leer, Q ist frei; `PROVISIONAL`, keymap.json kann umbinden).
+    bs.set_default(_key("q"), cmd.LASSO_ARM)
     bs.set_default(_wheel("UP"), cmd.ZOOM)
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
 

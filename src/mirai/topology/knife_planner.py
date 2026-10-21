@@ -1,6 +1,6 @@
 """The Knife's segment planner: one screen segment -> its visible crossings (WP-KNIFE-01 S4).
 
-Moved (not copied) from the Knife Face Lab (`playground/experiments/knife_face/planner.py`, Variant Q5,
+Moved (not copied) from the Knife Face Lab (`experiments/knife_oracle/planner.py`, Variant Q5,
 KEEP 2026-09-30) in WP-KNIFE-01 S4; logic unchanged by the move. The Lab's Q5 engine and the Production
 `KnifeTool` both import it from here (the old path is a re-export shim). Since S4 a path point may also
 be a point in empty space (`{"kind": "space", "position"}`, Production only): it lies in no face, so a

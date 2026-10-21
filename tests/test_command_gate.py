@@ -196,7 +196,7 @@ def test_unbound_input_is_never_refused(app):
     under an empty allow-list."""
     app.command_gate = CommandGate(allowed=frozenset(), not_allowed_text="refused")
     serial = app.status_serial
-    assert app.key_press(Input("key", "q")) is False
+    assert app.key_press(Input("key", "F11")) is False
     assert app.key_press(Input("key", "F12")) is False
     app.pointer_press(Input("mouse", "MIDDLE"), 10, 10)
     app.pointer_release("MIDDLE", 10, 10)

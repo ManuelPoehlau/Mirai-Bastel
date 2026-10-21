@@ -311,7 +311,7 @@ Verdict (2026-10-07): none of its own — B7.1 is absorbed into One Knife (Manu)
 helpers and the checkpoint / rollback pair in `src/mirai/topology/knife_resolve.py`, the report on
 `KnifeResolution.kept_calls`; tests `tests/test_knife_kept_calls.py` (static items 1–2, entry content item 3, nested
 rollback, session rollback item 4, identity replay item 5 on a fuzz, additive item 7) and
-`playground/tests/test_knife_kept_calls_golden.py` (item 5 over every golden-net session). The module docstring
+`experiments/knife_oracle/tests/test_knife_kept_calls_golden.py` (item 5 over every golden-net session). The module docstring
 (`knife_resolve.py`, "Mutations") is narrowed to `split_edge` / `split_face` (item 1). Item 6 (the fail-closed reader)
 is slice 6b's, item 8 holds: nothing outside the resolver's tests reads the report. Item 4 is `check_commit(mesh, before_state, resolution)`: the resolution is an optional third argument, so the report is voided only when the caller passes it; `KnifeTool._on_commit` does not yet (out of scope for 6a, no reader exists) — slice 6b's coordinator passes it. Proposed 2026-10-09; it sits in
 this file, like the engineering addenda §10–§12, and not in
@@ -339,7 +339,7 @@ may call. This addendum adds what it must report, so the replay cannot drift fro
 | b | Rollbacks: `export_state` / `load_state` pairs per bridge candidate (`:288` / `:307`), per run (`:817` / `:835`), per closed shape (`:851` / `:858`, `:864`), and the whole session in `check_commit` (`:397` / `:402`) | `knife_resolve.py` |
 | c | Ids never come back after a rollback: `load_state` moves the allocator counters only forward, so "the id is no longer valid" is exact | `mesh.py` `load_state`, `ids.py` (R Q4) |
 | d | The resolver never moves a vertex after creating it (no `set_vertex_position` in the module): the positions a call creates are final | grep |
-| e | No test constructs or compares a `KnifeResolution`; the golden net signs HUD text, counts and position-canonical hashes, not resolution fields | grep for `KnifeResolution(`; `playground/tests/knife_golden_driver.py:10-19` |
+| e | No test constructs or compares a `KnifeResolution`; the golden net signs HUD text, counts and position-canonical hashes, not resolution fields | grep for `KnifeResolution(`; `experiments/knife_oracle/knife_golden_driver.py:10-19` |
 | f | The probe's instance log, replayed verbatim on a session-start copy, rebuilds the resolved mesh on 1176 / 1176 camera-free paths | R, R3 |
 
 ### Proposal — the kept-call report contract (slice 6a)

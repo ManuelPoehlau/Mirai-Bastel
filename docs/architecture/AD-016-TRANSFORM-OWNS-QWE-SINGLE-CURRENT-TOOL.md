@@ -44,6 +44,8 @@ See `docs/design/artist_playground/INPUT_OWNERSHIP_AUDIT.md` (Addendum 2026-09-2
 
 This lifts the WP-AP-GIZMO Phase-1 boundary ("a Gizmo click does not choose/start a tool") by explicit Artist decision.
 
+*Addendum 2026-10-21 (Manu: "Gizmo nach `src/` heben"):* D3 is implemented in the production app — `mirai.viewport.gizmo`, `Application` (press / drag / release as the Tweak machinery on the selection, world frame only; hidden while a gesture runs; no modifier), drawn by `src/main.py`. `PROVISIONAL`; see [WP Playground-Werkzeuge, Nachtrag](../WP_PLAYGROUND_TOOLS_PROMOTION.md#nachtrag-2026-10-21-lasso-und-gizmo-in-die-app-manu). The Playground keeps its own wiring and the normal-space frames.
+
 ### D4 — New Transform activation variant: "Hold-Key Hover" (Playground experiment)
 Artist proposal (2026-09-21), implemented as an additional variant in the `transform` slot, selectable alongside the existing ones:
 - **Tap Q/W/E (movement below `CLICK_THRESHOLD`):** sets the current tool. No execution.
