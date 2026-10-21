@@ -92,6 +92,22 @@ def assert_equivalent(rm: RenderMesh) -> None:
             assert indices[3 * t:3 * t + 3] == [0.0, 0.0, 0.0]
             assert rm._triangle_indices[t] is None
     assert len(rows) == len(rm._triangle_indices)
+    # Edge slots (AD-022 B2): every live edge's slot holds its two vertex slots, every free slot (0, 0).
+    assert set(rm._edge_slot) == set(mesh.all_edge_ids())
+    edge_live = set()
+    for e, slot in rm._edge_slot.items():
+        edge_live.add(slot)
+        a, b = mesh.edge_vertices(e)
+        assert tuple(rm.edge_indices[2 * slot:2 * slot + 2]) == (rm.vertex_index_of(a), rm.vertex_index_of(b))
+        assert rm.edge_of_slot(slot) == e
+    for slot in range(len(rm.edge_indices) // 2):
+        if slot not in edge_live:
+            assert tuple(rm.edge_indices[2 * slot:2 * slot + 2]) == (0, 0)
+    for t, tri in enumerate(rm._triangle_indices):
+        face = rm.face_of_triangle(t)
+        assert (face is None) == (tri is None)
+        if face is not None:
+            assert t in rm._face_triangles[face]
     flags, ref_flags = data("highlight_flags"), ref("highlight_flags")
     for v in live if rm.overlay is not None else ():
         assert flags[rm.vertex_index_of(v)] == ref_flags[fresh.vertex_index_of(v)]

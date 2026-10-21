@@ -86,6 +86,7 @@ python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w --metrics geode
 python experiments/drag_cost/probe_drag_gl.py --scenarios soft_w soft_w_sym
 python experiments/drag_cost/probe_drag_gl.py --list
 python -m pytest experiments/drag_cost/tests
+python experiments/drag_cost/probe_picking_app.py   # GPU vs CPU picking through Application (AD-022 §11)
 ```
 
 The output names `GL_VERSION` / `GL_RENDERER` of the window, which closes one of the open items of

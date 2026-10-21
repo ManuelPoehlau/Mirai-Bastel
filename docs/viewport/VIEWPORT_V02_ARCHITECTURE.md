@@ -27,7 +27,8 @@ This addresses the structural root cause: V1 spends ~95% of interaction time on 
 
 **Do not build in v0.2:**
 
-- GPU ID-buffer picking / `glReadPixels` selection
+- GPU ID-buffer picking / `glReadPixels` selection *(superseded 2026-10-21: implemented as AD-022 B2-out,
+  `src/viewport/gpu_picker.py`; the CPU picker stays the headless reference)*
 - BVH / Octree / KD-tree
 - ECS or Render Graph
 - Custom GPU resource manager
@@ -242,7 +243,8 @@ linear; no world-space index (BVH, octree) and no GPU picking - those remain an 
 proposed in [AD-022](../architecture/AD-022-GPU-PICKING.md) (PROPOSED, 2026-10-17); this section and §1 change only
 if it is decided.
 
-**Do NOT build:** GPU ID-buffer, `glReadPixels`, BVH, Octree, KD-tree for v0.2.
+**Do NOT build:** GPU ID-buffer, `glReadPixels`, BVH, Octree, KD-tree for v0.2. *(2026-10-21: the GPU ID-buffer is
+built, [AD-022 §11](../architecture/AD-022-GPU-PICKING.md); BVH / Octree / KD-tree still not.)*
 
 ### 4.7 Overlay Layer
 

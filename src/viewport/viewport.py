@@ -693,6 +693,30 @@ class Viewport:
         if self.point_overlay is not None:
             self.point_overlay.draw(camera_uniforms)
 
+    # -- GPU-Picking (AD-022 B2-out) --------------------------------------------
+
+    def gpu_pick_mesh(self):
+        """Der `RenderMesh` der Edit-Mesh, synchronisiert, wenn seine Buffer für ein GPU-Picking taugen
+        (GL-Store, VertexList, Kamera) - sonst None (headless: CPU-Picker). Synchronisiert vorher alles
+        Ausstehende, damit ein Pick direkt nach einer Operation oder einem Undo nie die Buffer des
+        vorigen Mesh-Zustands liest (AD-022 §5, Hover-Reihenfolge)."""
+        from .gpu_picker import GpuPicker
+
+        rm = self.render_mesh
+        dirty = rm.dirty
+        if dirty.topology or dirty.geometry or dirty.camera or rm._model_dirty:
+            rm.sync()
+        return rm if GpuPicker.can_pick(rm) else None
+
+    @property
+    def gpu_picker(self):
+        picker = getattr(self, "_gpu_picker", None)
+        if picker is None:
+            from .gpu_picker import GpuPicker
+
+            picker = self._gpu_picker = GpuPicker()
+        return picker
+
     # -- Zugriff für Tests/Diagnose -------------------------------------------
 
     @property

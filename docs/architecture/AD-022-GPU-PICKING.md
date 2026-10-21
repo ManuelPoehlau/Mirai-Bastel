@@ -1,5 +1,10 @@
 # AD-022 — GPU ID-Buffer Picking
 
+> **IMPLEMENTED (B2-out) in production, 2026-10-21** — see §11. Basis: `gl_PrimitiveID` and `gl_VertexID` exact on
+> the reference driver (§8), the slot layout of AD-023 §9 as the shared buffer contract (§6 "Coupling"), Manu's
+> instruction of 2026-10-21 ("Mach mit GPU-Picking weiter") and AGENTS.md §7a. The sections below are the decision
+> history; §11 is the current state.
+
 **Status:** PROPOSED (2026-10-17), **revised 2026-10-20** after the independent review
 [`AD-022_REVIEW_CLAUDE_001`](../archive/viewport_v02/reviews/AD-022_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES; the
 disposition of every finding is in §10). Draft for Manu's decision. Not decided; no production code exists. Per
@@ -328,3 +333,63 @@ Priority and feel, no technical choice (the technical choice stays with engineer
 | F11 tails, in-loop | Accepted. §2 "Not covered", §6, §8. |
 | F12 minor corrections | Accepted: "233" dropped; edge agreement 96.3 % / 92.3 %; the "Manu's preferred direction" header quoted as a priority statement; Paint noted; the Reference pass for snapping; small meshes; one-target pass; pyglet pinning. |
 | F13 least-tested path | Accepted. §5 Tests. |
+
+## 11. Implementation (2026-10-21, production)
+
+**Direction taken: B2-out**, `ids` for hover / click (slice 1), the depth oracle for Box (slice 2); the Knife, object
+mode and every headless path keep the CPU picker (slice 3 not done). Engineering choices, `PROVISIONAL` where marked.
+
+- **`src/viewport/gpu_picker.py` (`GpuPicker`)**, outside `GLRenderStore` (AD-018 §5/§7 untouched): one FBO, three
+  RGBA8 targets + depth. Faces = the `RenderMesh` VertexList with `gl_PrimitiveID + 1` → triangle slot → face
+  (`RenderMesh.face_of_triangle`); edges = `GL_LINES` from an own element buffer over the same vertex buffer
+  (`glDrawElementsBaseVertex`), `gl_PrimitiveID + 1` → edge slot; points = `glDrawArrays(GL_POINTS)`, `gl_VertexID` →
+  vertex slot. `position` bound at the store program's location; the ID vertex shader uses the production expression.
+  Passes render on demand and are cached per (buffer content revision, layout, camera, model matrix, size, occlusion).
+- **Buffer contract with AD-023 V1:** `RenderMesh` gains an **edge slot layout** (`edge_indices`, spare capacity,
+  free slots = zero-length lines, patched from the journal like the triangles; `take_edge_changes()` lets the picker
+  upload only changed ranges) and `layout_revision` / `content_revision`. Dead triangles are degenerate (no fragment),
+  dead vertices sit at `DEAD_POSITION` and are clipped in the ID vertex shader.
+- **`src/mirai/viewport/gpu_picking.py`:** the decision among the GPU candidates is the CPU rule: nearest vertex within
+  14 px / edge within 9 px by exact screen distance (ties by ID), face = the pixel under the cursor (pixel-centre
+  convention). Box = the CPU candidate rule (all corners inside, `PickCache` projections, one O(V) pass per Box) with
+  the face depth as the visibility test; a face whose centroid is hidden only by itself counts (its own ID at the
+  centroid's pixel).
+- **`Application`:** `_pick` (hover, click, Paint, Tweak press), the Box/Paint start decision and Box use the GPU path
+  when the window has a GL store (`Viewport.gpu_pick_mesh`), else the CPU picker. **Ordering fix (§5):** the pick
+  syncs the edit `RenderMesh` first when anything is pending, so a pick right after an op or an Undo reads the new
+  buffers. **Fallback (§9 abort 4):** any exception in the ID pass switches the session to the CPU picker with a status
+  line; `MIRAI_CPU_PICKING=1` forces the CPU picker; `Application.gpu_picking` is the switch for comparison runs.
+- **Tests (GL, `xvfb-run -a python -m pytest tests/test_gl_gpu_picking.py`)**, each on the compact layout and the slot
+  layout: face IDs at pixel centres equal the CPU ray (only face-border neighbours may differ, ≤ 2 %); vertex / edge
+  hover agree with the CPU picker on ≥ 88 % of non-trivial cursors and never name a dead element; a pick right after a
+  Delete and its Undo (no frame in between) equals the CPU pick; Box within 8 % of the CPU rule per mode; a GL failure
+  falls back. Mutation checks: an off-by-one slot mapping and a missing sync before the pick each fail.
+  `tests/test_render_mesh_incremental.py` also checks the edge slots after every patch.
+- **Measured [C]** (container, llvmpipe = software GL, `probe_picking_app.py`, gollum_20k, p50 ms CPU → GPU; raw:
+  [`RESULTS_PICKING_APP_CONTAINER_2026-10-21.md`](../../experiments/drag_cost/RESULTS_PICKING_APP_CONTAINER_2026-10-21.md)):
+  first pick after an orbit vertex / edge / face 77 / 68 / 47 → **16 / 21 / 11**; hover 2.7 / 12.8 / 2.4 →
+  **0.3 / 0.5 / 0.02**; Box 300 px 1 020 / 1 997 / 1 122 → **85 / 113 / 152**; Delete + re-pick 2.8 → 14 (llvmpipe
+  re-renders the ID pass in software; the reference PC rendered it in 1-3 ms, §2). **Reference PC not measured.**
+- **Open:** the edge pass relies on `gl_PrimitiveID` for `GL_LINES` and on `glDrawElementsBaseVertex`, **not yet
+  checked on the 9800 GTX** (the GL test file is that check); §4 differences are for Manu's practical check; the Knife
+  (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
+  still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage (contract unchanged).
+
+### Praxistest für Manu (ca. 10 Minuten + zwei Befehle)
+
+Technisch belegt durch die GL-Tests (gleiche Faces wie der CPU-Picker, keine toten IDs nach Delete/Undo, Box innerhalb
+weniger Prozent). Offen ist, was nur dein PC und dein Gefühl zeigen:
+
+- **Treiber-Check (PowerShell im Repo-Ordner, ganze Ausgabe kopieren):**
+  `python -m pytest tests\test_gl_gpu_picking.py -q` — prüft u. a. die Edge-IDs auf deiner Karte (noch nie dort gelaufen).
+- **Messen:** `python experiments\drag_cost\probe_picking_app.py`
+- **Fühlen:** `python src\main.py`, `Leertaste` → `gollum_20k`. Drehen/Zoomen, dann sofort hovern und klicken in
+  Vertex (`1`), Edge (`2`), Face (`3`); Box-Auswahl über viele Faces; Malen. Zum Vergleich einmal mit
+  `$env:MIRAI_CPU_PICKING=1; python src\main.py` (alter CPU-Picker).
+
+| Frage | Dein Verdikt |
+|---|---|
+| Hover/Klick direkt nach dem Drehen ohne sichtbare Verzögerung? | offen |
+| Box über viele Faces: schnell genug? | offen |
+| Wählt Box an der Silhouette sinnvoll (eher ein paar zu viele als zu wenige, §7 Frage 3)? | offen |
+| Irgendwo ein anderes Element gegriffen als erwartet? | offen |

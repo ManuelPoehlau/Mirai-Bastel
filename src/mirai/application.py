@@ -143,6 +143,7 @@ from .topology.loop_slide import (
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.box_select import elements_in_rect, normalized_rect, stroke_samples
+from .viewport.gpu_picking import gpu_elements_in_rect, gpu_pick_component
 from .viewport.picking import pick_component, pick_face, pick_object
 from .viewport.picking_cache import PickCache
 
@@ -240,6 +241,10 @@ _SOFT_COMMANDS = (
     commands.SOFT_CURVE_SHAPE_SHARPER,
     commands.SOFT_BANDS_TOGGLE,
 )
+
+#: `Application._gpu_pick`: the window cannot serve this pick, ask the CPU picker.
+_CPU = object()
+
 
 def symmetry_status_text(mesh: Mesh) -> str:
     """Status line after a symmetry cycle step (AD-SYM-04 Q-2 = S-2, its status part S-1; text
@@ -517,6 +522,11 @@ class Application:
         # display-mode change) calls `self._pick_cache.invalidate()`
         # explicitly at its existing mutation/notification call site.
         self._pick_cache: PickCache = PickCache()
+        # AD-022 B2-out (2026-10-21): hover / click / Paint and Box of vertices, edges and faces pick
+        # from the viewport's ID buffers when the window has a GL store; False = always the CPU picker
+        # (comparison runs, the probes; `MIRAI_CPU_PICKING=1` in the environment as the escape hatch
+        # if a driver draws wrong IDs).
+        self.gpu_picking: bool = os.environ.get("MIRAI_CPU_PICKING") != "1"
         # AD-021 M1: pick caches of the objects other than the edit object (mode `4` picking;
         # the edit object shares `_pick_cache`). Pruned with the render entries.
         self._object_pick_caches: dict[ObjectId, PickCache] = {}
@@ -3553,6 +3563,9 @@ class Application:
         edit object's mesh only, so a Reference never blocks it (RF-6)."""
         if self.selection.mode is SelectionMode.OBJECT:
             return self._pick_object(x, y)
+        hit = self._gpu_pick(self.selection.mode, x, y)
+        if hit is not _CPU:
+            return hit
         return pick_component(
             self._edit_camera,
             self.scene.mesh,
@@ -3564,6 +3577,34 @@ class Application:
             cache=self._pick_cache,
             occlusion=self.display.show_faces,
         )
+
+    def _gpu_pick_mesh(self):
+        """The edit `RenderMesh` when the window can pick from its ID buffers (AD-022 B2-out), else None
+        (headless, `TraceStore`, `gpu_picking` off): the CPU picker then answers."""
+        if not self.gpu_picking or self.viewport is None:
+            return None
+        return self.viewport.gpu_pick_mesh()
+
+    def _gpu_failed(self, exc: BaseException) -> None:
+        """A GL error in the ID pass (driver, FBO at resize): the CPU picker takes over for the rest of
+        the session (AD-022 §9 abort criterion 4) and the status line says so."""
+        self.gpu_picking = False
+        self._set_status(f"GPU picking off ({type(exc).__name__}: {exc}) - CPU picker")
+
+    def _gpu_pick(self, mode, x: float, y: float):
+        """The GPU pick of `mode` at (x, y), or `_CPU` when the window cannot serve it."""
+        rm = self._gpu_pick_mesh()
+        if rm is None:
+            return _CPU
+        try:
+            return gpu_pick_component(
+                self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                x, y, int(self.viewport_width), int(self.viewport_height),
+                occlusion=self.display.show_faces,
+            )
+        except Exception as exc:  # noqa: BLE001 - any GL failure falls back, never breaks picking
+            self._gpu_failed(exc)
+            return _CPU
 
     def _set_hovered(self, hovered) -> bool:
         """Setzt `selection.hovered` (reiner UI-State, kein History-Eintrag) und
@@ -3684,7 +3725,8 @@ class Application:
                 self._gesture_refused = True  # silence the rest of this gesture
                 return False
             start = self._press_point if self._press_point is not None else cursor
-            on_mesh = (
+            gpu_face = self._gpu_pick(SelectionMode.FACE, start[0], start[1])
+            on_mesh = gpu_face is not None if gpu_face is not _CPU else (
                 pick_face(
                     self._edit_camera,
                     self.scene.mesh,
@@ -3742,7 +3784,24 @@ class Application:
             self._refresh_hover()
             return False
         selection = self.selection
-        if drag.kind == "box":
+        rm = self._gpu_pick_mesh() if drag.kind == "box" else None
+        if rm is not None:
+            try:
+                found = gpu_elements_in_rect(
+                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, selection.mode,
+                    normalized_rect(drag.start, drag.end), int(self.viewport_width), int(self.viewport_height),
+                    cache=self._pick_cache, occlusion=self.display.show_faces,
+                )
+            except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
+                self._gpu_failed(exc)
+                rm = None
+        if rm is not None:
+            if drag.add:
+                selection.add(found)
+            else:
+                selection.set(found)
+            label = "Box"
+        elif drag.kind == "box":
             found = elements_in_rect(
                 self._edit_camera,
                 self.scene.mesh,

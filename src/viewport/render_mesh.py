@@ -73,7 +73,9 @@ alle Vertices, deren Normale sich geändert hat).
 
 from __future__ import annotations
 
-from core import FaceId, Mesh, VertexId
+from array import array
+
+from core import EdgeId, FaceId, Mesh, VertexId
 
 from .benchmark import BenchmarkCounters
 from .category import DirtyState
@@ -200,6 +202,19 @@ class RenderMesh:
         # Vertices, die ein Geometry-Sync seit ihrer letzten Triangulierung bewegt hat: ihre
         # Faces werden beim nächsten Topology-Sync neu trianguliert (ein W-Drag trianguliert nicht).
         self._retriangulate: set[VertexId] = set()
+        # Edge-Slots (AD-022 B2, 2026-10-21): je Slot die beiden Vertex-Slots (frei = (0, 0), eine
+        # Linie ohne Länge, die nichts rasterisiert). Kein Store-Inhalt: der GPU-Picker
+        # (`gpu_picker.py`) lädt sie als eigenen Index-Buffer über die `positions` dieser Mesh;
+        # `take_edge_changes()` sagt ihm, welche Slots sich seitdem geändert haben.
+        self._edge_slot: dict[EdgeId, int] = {}
+        self._slot_edge: list[EdgeId | None] = []
+        self._free_edge_slots: list[int] = []
+        self.edge_indices = array("I")
+        self._edge_dirty: set[int] | None = None
+        #: +1 je vollem Rebuild (alle Slots neu vergeben) und je Änderung irgendeines Buffer-Inhalts
+        #: (Topology-Patch, Geometry-Sync): Cache-Schlüssel für Konsumenten wie den GPU-Picker.
+        self.layout_revision = 0
+        self.content_revision = 0
 
         self.build()
 
@@ -229,6 +244,46 @@ class RenderMesh:
         self.derived.full_recompute(self.mesh)
         self._rebuild_index_mapping()
         self._rebuild_resources()
+        self.layout_revision += 1
+        self.content_revision += 1
+
+    def _rebuild_edge_slots(self, spare: bool) -> None:
+        eids = self.mesh.all_edge_ids()
+        edge_vertices = self.mesh.edge_vertices
+        index = self._vertex_index
+        n = len(eids)
+        spare_e = int(n * SPARE_FRACTION) if spare else 0
+        self._edge_slot = {eid: i for i, eid in enumerate(eids)}
+        self._slot_edge = list(eids) + [None] * spare_e
+        self._free_edge_slots = list(range(n + spare_e - 1, n - 1, -1))
+        flat = array("I", bytes(4 * 2 * (n + spare_e)))
+        i = 0
+        for eid in eids:
+            a, b = edge_vertices(eid)
+            flat[i] = index[a]
+            flat[i + 1] = index[b]
+            i += 2
+        self.edge_indices = flat
+        self._edge_dirty = None
+
+    def take_edge_changes(self) -> set[int] | None:
+        """Edge-Slots, deren Indizes sich seit dem letzten Aufruf geändert haben; None = alle (neues
+        Layout). Genau ein Konsument (der GPU-Picker der Viewport)."""
+        dirty, self._edge_dirty = self._edge_dirty, set()
+        return dirty
+
+    def edge_of_slot(self, slot: int) -> EdgeId | None:
+        return self._slot_edge[slot] if 0 <= slot < len(self._slot_edge) else None
+
+    def vertex_of_slot(self, slot: int) -> VertexId | None:
+        return self._slot_vertex[slot] if 0 <= slot < len(self._slot_vertex) else None
+
+    def face_of_triangle(self, triangle: int) -> FaceId | None:
+        """Die Face des Dreiecks-Slots `triangle` (= `gl_PrimitiveID` im Draw des Index-Buffers);
+        None für einen freien Slot."""
+        if not 0 <= triangle < len(self._triangle_indices) or self._triangle_indices[triangle] is None:
+            return None
+        return self._row_face[self._triangle_face_rows[triangle]]
 
     def _rebuild_index_mapping(self) -> None:
         """Baut das Slot-Layout neu auf: kompakt in Mesh-Reihenfolge, dahinter die Reserve
@@ -272,6 +327,7 @@ class RenderMesh:
         self._face_triangles = face_triangles
         self._face_boundary = face_boundary
         self._retriangulate = set()
+        self._rebuild_edge_slots(spare)
 
     def _positions_flat(self) -> list[float]:
         position = self.mesh.vertex_position
@@ -494,8 +550,22 @@ class RenderMesh:
             elif alive:
                 moved_v.append(v)
 
+        edge_slot = self._edge_slot
+        is_valid_edge = mesh.is_valid_edge
+        removed_e, added_e, changed_e = [], [], []
+        for e in change.edges:
+            alive, known = is_valid_edge(e), e in edge_slot
+            if known and not alive:
+                removed_e.append(e)
+            elif alive and not known:
+                added_e.append(e)
+            elif alive:
+                changed_e.append(e)
+
         total = len(index) + len(face_row)
         if len(change.faces) + len(change.vertices) > PATCH_MAX_FRACTION * total:
+            return False
+        if len(added_e) > len(self._free_edge_slots) + len(removed_e):
             return False
         if len(added_v) > len(self._free_vertex_slots) + len(removed_v):
             return False
@@ -567,6 +637,27 @@ class RenderMesh:
             pos_slots[slot] = position(v)
         for v in moved_v:
             pos_slots[index[v]] = position(v)
+
+        edge_indices = self.edge_indices
+        edge_dirty = self._edge_dirty
+        for e in removed_e:
+            slot = edge_slot.pop(e)
+            self._slot_edge[slot] = None
+            self._free_edge_slots.append(slot)
+            edge_indices[2 * slot] = edge_indices[2 * slot + 1] = 0
+            if edge_dirty is not None:
+                edge_dirty.add(slot)
+        edge_vertices = mesh.edge_vertices
+        for e in (*added_e, *changed_e):
+            slot = edge_slot.get(e)
+            if slot is None:
+                slot = edge_slot[e] = self._free_edge_slots.pop()
+                self._slot_edge[slot] = e
+            a, b = edge_vertices(e)
+            edge_indices[2 * slot] = index[a]
+            edge_indices[2 * slot + 1] = index[b]
+            if edge_dirty is not None:
+                edge_dirty.add(slot)
 
         # Neu triangulieren: neue / geänderte Faces und alle Faces um bewegte Vertices.
         retri: set[FaceId] = set(new_boundary)
@@ -643,6 +734,7 @@ class RenderMesh:
             # Wie der volle Rebuild: die Flags passen zu den (neuen) Slots und zur Auswahl.
             flags = self._highlight_flags()
             self.store.update("highlight_flags", 0, flags, len(flags) * FLOAT_BYTES)
+        self.content_revision += 1
         return True
 
     def _upload_vec3(self, name: str, slot_values: dict[int, tuple]) -> None:
@@ -655,6 +747,7 @@ class RenderMesh:
         moved = self.dirty.modified_vertices
         if not moved:
             return
+        self.content_revision += 1
         self.stats.count("vertex_updates", len(moved))
         self._retriangulate.update(moved)
 
