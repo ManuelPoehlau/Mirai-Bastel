@@ -7,7 +7,7 @@ implementiert und über `experiments/mirai_bastel_integration_lab/tests/
 test_obj_to_core.py` gegen das echte Head-Basemesh verifiziert. Diese Datei
 verändert an der Logik nichts, nur den Ort (Playground und Rigging hatten
 sie zuvor unabhängig voneinander dupliziert — siehe
-`docs/FINAL_AUDIT _shared_Infrastructure.md` F-3/F-4).
+`docs/archive/audits_2026-09/FINAL_AUDIT _shared_Infrastructure.md` F-3/F-4).
 
 Reine Queries: Nichts hier verändert ein `Mesh`.
 """

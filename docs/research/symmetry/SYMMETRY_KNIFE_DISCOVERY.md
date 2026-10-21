@@ -8,7 +8,7 @@ as such; the Artist decides Intent, Product Truth, Priority and Promotion (§6).
 **Binding inputs (not renegotiated):** [AD-SYM-03](../../architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md)
 (DECIDED; §3 items 1, 2, 4–9, §4 "Knife tie-break equivariance", §7 row 6), [AD-017](../../architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md)
 and its addenda in [`AD-017_FINAL_DECISIONS_2026-09-22.md`](../../architecture/AD-017_FINAL_DECISIONS_2026-09-22.md),
-the Knife record [`knife_face/decision.md`](../../../playground/experiments/knife_face/decision.md),
+the Knife record [`knife_face/decision.md`](../topology/KNIFE_FACE_DECISIONS.md),
 [AD-013 addendum H2 + amendment 2026-10-08](../../architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md),
 [`SYMMETRY_DESIGN_BRIEF.md`](SYMMETRY_DESIGN_BRIEF.md) (INV-1…13),
 [`SYMMETRY_PRODUCTION_OPERATIONS_DISCOVERY.md`](SYMMETRY_PRODUCTION_OPERATIONS_DISCOVERY.md) (cited as **Disc.**, not edited),

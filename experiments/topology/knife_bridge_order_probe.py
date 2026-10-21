@@ -1,6 +1,6 @@
 """PROBE — Knife closed shape: does the bridge result depend on click order / direction?
 
-Evidence for `playground/experiments/knife_face/decision.md` (Task A, 2026-09-29).
+Evidence for `docs/research/topology/KNIFE_FACE_DECISIONS.md` (Task A, 2026-09-29).
 Not a tool, not wired anywhere, no Core change. Drives the Knife Face Lab engine
 (`KnifeFaceCollected`, D — Q5 subclasses its resolver unchanged) through the public click/commit
 interface only: k interior clicks inside ONE face, `commit()` (D's implicit close).

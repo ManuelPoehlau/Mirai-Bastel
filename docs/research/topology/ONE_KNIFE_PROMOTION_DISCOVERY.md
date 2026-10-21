@@ -5,7 +5,7 @@ unchanged before discussion (AGENTS.md §6). Manu decides (M3); nothing here is 
 **Date:** 2026-09-30
 **Mode (M5):** Discovery / Architecture Gate
 **Belongs to:** `docs/architecture/AD-017-CUT-ENGINE-CONTEXTUAL-C.md` (+ `AD-017_FINAL_DECISIONS_2026-09-22.md`) ·
-`playground/experiments/knife_face/decision.md` (Q5 = KEEP for the Lab state at `f2d34e8`, Artist 2026-09-30) ·
+`docs/research/topology/KNIFE_FACE_DECISIONS.md` (Q5 = KEEP for the Lab state at `f2d34e8`, Artist 2026-09-30) ·
 AD-013 · AD-SYM-02 · `docs/architecture/ROADMAP.md` §9/§13 · `REFERENCE_HARDWARE.md`
 **Code examined:** `6cbe522` (= `f2d34e8` + `5a00d45` Playground session-state persistence + the Q5 verdict line; the
 knife engines are unchanged since `f2d34e8`)
@@ -99,7 +99,7 @@ Code-only rows (preview, bindings, HUD) are marked `[CODE]` and were **not rende
 camera view the Production `KnifeTool` now plans the segment across faces like Q5 (the Lab's planner moved to
 `src/mirai/topology/knife_planner.py`); headless without a view it still refuses (`CROSS_FACE`, "no camera view"). P14's
 "click outside" is a point in space in Production since S4 (Manu, 2026-10-02; AD-017 addendum "S4"). Evidence and open
-points: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 S4".
+points: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "WP-KNIFE-01 S4".
 
 `accepts() == click()` held for every click of both engines. Production `KnifeTool.hover()` is looser than `accepts()`
 in P08/P10/P13 — documented in `knife.py`; `Application` previews through `accepts()`, the Playground `knife` family

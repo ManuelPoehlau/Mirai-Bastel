@@ -5,7 +5,7 @@ unchanged before discussion (AGENTS.md §6).
 **Date:** 2026-09-29
 **Mode (M5):** Discovery
 **Belongs to:** [`KNIFE_FACE_CUT_DISCOVERY.md`](KNIFE_FACE_CUT_DISCOVERY.md) §6 (Q5 assessment — the starting
-point; not repeated here) · `playground/experiments/knife_face/decision.md` (Variant D = KEEP, 2026-09-29) ·
+point; not repeated here) · `docs/research/topology/KNIFE_FACE_DECISIONS.md` (Variant D = KEEP, 2026-09-29) ·
 Artist intent A5 (2026-09-28) · ARCH-02 (`docs/architecture/ROADMAP.md`)
 **Code examined:** `main` @ `52d52b8` (Knife Face Cut Lab, Variants B/D)
 **Probe:** [`experiments/topology/knife_cross_face_probe.py`](../../../experiments/topology/knife_cross_face_probe.py)

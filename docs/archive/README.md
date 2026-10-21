@@ -20,3 +20,12 @@ Current archive areas:
 - [Viewport V1](viewport_v1/README.md)
 - [Viewport V02](viewport_v02/README.md)
 - [Symmetry Lab](symmetry_lab/README.md)
+- [Early work packages](early_work_packages/) — WP-01A, WP-02, WP-04 (Gates, reports, amendments), moved from the docs root 2026-10-21 (repository slimming)
+- [Audits 2026-09](audits_2026-09/) — Ownership/Lifecycle, Repository-wide health, shared-infrastructure, genealogy, WP-03 and Core-reassessment audits, moved from the docs root 2026-10-21
+
+**Moved 2026-10-21:** the `docs/WP-04_*`, `docs/Cline - Work Package *`, `docs/Mirai-Bastel — Work Package *` and audit files of the
+docs root now live in the two folders above (same file names). Independent reviews under `*/reviews/` were left untouched, so
+paths they cite may point at the old docs-root location; look the file name up in the two folders. A duplicate copy of the
+Core Architecture Reassessment (`Mirai-Bastel — Core Architecture Reassessment.md`, identical content) was removed; the kept copy is
+`audits_2026-09/CORE_ARCHITECTURE_REASSESSMENT.md`. Playground-specific input documents moved to `docs/design/artist_playground/`
+(`INPUT_WIRING_MAP.md`, `WP-AP_INPUT_WIRING_REPORT.md`); `sym_praxistests.md` is now `symmetry_lab/sym_praxistests.md`.

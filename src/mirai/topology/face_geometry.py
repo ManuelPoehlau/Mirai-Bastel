@@ -8,7 +8,7 @@ F2's chord predicate (`chord_validity`) both project a face through `FaceFrame` 
 Knows nothing about modes, selection, history or a camera. Pure functions of positions / a mesh read.
 
 Two simplicity tests exist on purpose (WP-KNIFE-01 S1, recorded in
-`playground/experiments/knife_face/decision.md`, "One Knife S1 — open points"): `polygon_is_simple`
+`docs/research/topology/KNIFE_FACE_DECISIONS.md`, "One Knife S1 — open points"): `polygon_is_simple`
 here (the Knife resolver's: a crossing counts only when both ends lie more than `eps` off the other
 segment's line; a corner within `eps` of another edge's line *and* bounding box touches it) and
 `chord_validity._is_simple` (F2's: any sign-change crossing, or a corner within `eps` *distance* of

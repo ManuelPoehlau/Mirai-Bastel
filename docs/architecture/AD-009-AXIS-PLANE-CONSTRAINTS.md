@@ -13,7 +13,7 @@
 `MoveTool` does not (verified — no `axis` parameter anywhere in
 `src/mirai/interaction/tools/move.py`). V1's `AxisConstrainedMoveTool` was a V1-local experiment,
 never promoted. Was leaving Move without axis constraints a deliberate scope decision, or an
-unfinished promotion? (`docs/Repository_Wide Structural_Codebase_Health_Audit.md` D7.)
+unfinished promotion? (`docs/archive/audits_2026-09/Repository_Wide Structural_Codebase_Health_Audit.md` D7.)
 
 ## Decision
 

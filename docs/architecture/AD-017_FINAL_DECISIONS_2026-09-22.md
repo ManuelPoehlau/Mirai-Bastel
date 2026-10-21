@@ -205,7 +205,7 @@ the neighbour vertex, or a second point on the same edge — is accepted, cuts n
 Assumptions stated there and not contradicted: click outside the mesh keeps committing (#8 above); the point marker at `t`
 on edge hover stays. Unchanged: one History entry per session, in-session Undo/Redo behaviour (#6), Esc = discard,
 residue = the session's cut edges selected + Edge mode, cross-face segments refused (planner = slice S4). Work package:
-WP-KNIFE-01 S2; record and open points: `playground/experiments/knife_face/decision.md`, "One Knife S2".
+WP-KNIFE-01 S2; record and open points: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "One Knife S2".
 
 2026-10-01 S2 KEEP (Artist): Manu, after S2 — *"macht für mich als User keinen Unterschied, ob der echte Schnitt erst nach
 Enter passiert — ob die Linie eine Vorschau oder der echte Schnitt ist, ändert weder visuell noch den Workflow."* The virtual
@@ -222,7 +222,7 @@ closing point), earlier-point connect, loops at a point, crossing cuts, the last
 commit — through the S1 resolver; a segment across several faces stays refused (planner = S4). Where the S2 rules already
 decided a vertex/edge-only case differently from Q5, S2 is kept and recorded (S3-a/b). Unchanged: one History entry per
 session, in-session Undo/Redo, Esc = discard, residue. PROVISIONAL until Manu's verdict. Work package: WP-KNIFE-01 S3;
-record, evidence and open points: `playground/experiments/knife_face/decision.md`, "One Knife S3".
+record, evidence and open points: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "One Knife S3".
 
 ---
 
@@ -232,7 +232,7 @@ record, evidence and open points: `playground/experiments/knife_face/decision.md
 size height gate assumed planar faces; the face is a piece of the run's click-time face by construction) — the bow-tie now
 builds on 307 of 324 `head` quads; flat-face results unchanged. A loop that no longer fits one face because another loop's
 bridge splits it says so ("the loop does not lie inside one face"). PROVISIONAL until Manu's verdict; S3 itself is KEEP
-(KEEP ≠ promotion). Record and open points S3b-a…c: `playground/experiments/knife_face/decision.md`, "One Knife S3b".
+(KEEP ≠ promotion). Record and open points S3b-a…c: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "One Knife S3b".
 
 ---
 
@@ -243,7 +243,7 @@ session at once. While that re-armed session is untouched (no accepted click, no
 last commit through the global History and `Ctrl+Y` redoes it (default A4), and the Knife stays active. In every other
 session state the in-session rule above stands unchanged ("only the session's own steps, never the global history"); "after
 commit one Undo removes the whole session" stays true and is reached through this narrow rule. `Esc` leaves the tool.
-Record and defaults A1–A6: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX1".
+Record and defaults A1–A6: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "WP-KNIFE-01 UX1".
 
 ---
 
@@ -262,7 +262,7 @@ Record and defaults A1–A6: `playground/experiments/knife_face/decision.md`, "W
   double-click closes the chain (when it can) and lifts the pen. The lift is an in-session step (in-session Undo / Redo).
 - The UX1 withdrawal (addendum above) stands: a commit ends the Knife session.
 
-Record, defaults D1–D13 and open points UX2-b…f: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 UX2".
+Record, defaults D1–D13 and open points UX2-b…f: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "WP-KNIFE-01 UX2".
 
 ---
 
@@ -279,7 +279,7 @@ Commit entstehen werden (auch Blender Verhalten)"*.
 - `Enter` still commits; a click outside never commits.
 - This supersedes the UX2 rule "a click outside the mesh does nothing" (UX2 D6) and resolves UX2-b.
 
-Record, defaults and open points S4-a…c: `playground/experiments/knife_face/decision.md`, "WP-KNIFE-01 S4".
+Record, defaults and open points S4-a…c: `docs/research/topology/KNIFE_FACE_DECISIONS.md`, "WP-KNIFE-01 S4".
 
 ## Addendum 2026-10-09 (Manu: bug report on `run.py subd_cube`) — the commit check accepts folds that were already there
 

@@ -1,6 +1,6 @@
 """WP-KNIFE-01 S3b — loops at a single point (the bow-tie) on non-planar faces (Production only, headless).
 
-Open point S3-j (`playground/experiments/knife_face/decision.md`, "One Knife S3" / "One Knife S3b"): the
+Open point S3-j (`docs/research/topology/KNIFE_FACE_DECISIONS.md`, "One Knife S3" / "One Knife S3b"): the
 bow-tie committed on flat faces (grid, cube) but on none of the 324 `head` quads. Q5 imports the same
 resolver (`mirai.topology.knife_resolve`), so the Q5-vs-Production differential tests cannot see this —
 the spec here is absolute: counts, invariants, History, undo / redo.

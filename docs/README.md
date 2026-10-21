@@ -27,17 +27,11 @@ Not every document is a current specification.
 
 When documents overlap, the canonical document wins. Other documents should link to it rather than silently maintaining a second version.
 
-## WP-04 working set (production foundation)
+## Archived work packages and audits (2026-10-21)
 
-| Document | Purpose |
-|---|---|
-| [WP-04_GATE_PLANNING.md](WP-04_GATE_PLANNING.md) | Gate-Plan + Akzeptanzkriterien |
-| [WP-04_OPEN_QUESTIONS.md](WP-04_OPEN_QUESTIONS.md) | Offene Entscheidungen Q1–Q4 |
-| [WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md](WP-04_PRODUCTION_FOUNDATION_DISCOVERY_REPORT.md) | Repository-Analyse, Produktions-Boundaries, Extraktionspfade |
-| [WP-04_AGENT_VERIFICATION_REPORT.md](WP-04_AGENT_VERIFICATION_REPORT.md) | Agent-Verifikation, Test-Inventar, Teststrategie, Aufgabenteilung Agent/Claude/Manuel |
-| [WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md](WP-04_PRE_IMPLEMENTATION_CONSISTENCY_AUDIT.md) | Gate-für-Gate-Konsistenz-Audit (12→2) gegen Repo-Stand, Amendment/ADRs und Viewport-V0.2-Architektur |
-
-Weitere WP-04-Dokumente (Gate-Berichte, Amendments) liegen im selben Ordner.
+WP-04 (Production foundation, Gates 1–7 — done, see [ROADMAP](architecture/ROADMAP.md)), the early WP-01/WP-02 packages
+and the September audits were moved out of the docs root into [archive/early_work_packages/](archive/early_work_packages/)
+and [archive/audits_2026-09/](archive/audits_2026-09/). They are project memory, not current guidance.
 
 ## Work Package Delete/Dissolve
 

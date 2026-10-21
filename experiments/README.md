@@ -16,7 +16,7 @@ teils eigener Core-Fork). `playground/experiments/` ist etwas anderes: Varianten
 *innerhalb* des Artist-Playground-Hosts (`<family>/variant_*.py` + `decision.md`), mit eigenem
 Verdikt-Mechanismus (KEEP/ITERATE/REJECT). Siehe
 [`../docs/design/artist_playground/EXPERIMENT_HOST.md`](../docs/design/artist_playground/EXPERIMENT_HOST.md)
-für die Playground-Seite. `playground/` selbst ist die einzige lauffähige Anwendung des Repos und
+für die Playground-Seite. `playground/` selbst ist ein optionales Forschungswerkzeug (die Produktions-App ist `src/main.py`, siehe AD-011-Addendum 2026-10-21) und
 ist kein Eintrag hier, weil es kein Experiment im Sinne dieses Ordners ist — siehe
 [`../playground/README.md`](../playground/README.md).
 
