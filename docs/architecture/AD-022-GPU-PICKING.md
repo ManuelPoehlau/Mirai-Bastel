@@ -369,9 +369,19 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   [`RESULTS_PICKING_APP_CONTAINER_2026-10-21.md`](../../experiments/drag_cost/RESULTS_PICKING_APP_CONTAINER_2026-10-21.md)):
   first pick after an orbit vertex / edge / face 77 / 68 / 47 → **16 / 21 / 11**; hover 2.7 / 12.8 / 2.4 →
   **0.3 / 0.5 / 0.02**; Box 300 px 1 020 / 1 997 / 1 122 → **85 / 113 / 152**; Delete + re-pick 2.8 → 14 (llvmpipe
-  re-renders the ID pass in software; the reference PC rendered it in 1-3 ms, §2). **Reference PC not measured.**
-- **Open:** the edge pass relies on `gl_PrimitiveID` for `GL_LINES` and on `glDrawElementsBaseVertex`, **not yet
-  checked on the 9800 GTX** (the GL test file is that check); §4 differences are for Manu's practical check; the Knife
+  re-renders the ID pass in software; the reference PC rendered it in 1-3 ms, §2).
+- **Measured [RPC] (2026-10-21, Manu;** raw: [`RESULTS_PICKING_APP_REFERENCE_PC_2026-10-21.md`](../../experiments/drag_cost/RESULTS_PICKING_APP_REFERENCE_PC_2026-10-21.md)**),
+  p50 ms CPU → GPU:** first pick after an orbit vertex / edge / face 157 / 187 / 143 → **6.9 / 8.2 / 3.8**; hover
+  10 / 33 / 7 → **2.2 / 2.7 / 0.5**; Box 300 px 2 313 / 4 640 / 2 738 → **203 / 307 / 405**; Delete + re-pick 7.2 → 4.9.
+  The GL test file passes on the 9800 GTX (18/18): the edge pass (`gl_PrimitiveID` on `GL_LINES`,
+  `glDrawElementsBaseVertex`) is exact there too. Every abort criterion of §9 is clear for hover / click (p50 < 16.7 ms,
+  no stale ID, no GL error). Box is the remaining whole-mesh cost (one projection of every vertex per gesture plus the
+  scan of all edges / faces): 0.2-0.4 s.
+- **Manu, 2026-10-21 (verdicts in the practical-test table below):** hover / click right after rotating "ohne sichtbare
+  Verzögerung"; Box "schon sehr viel besser, evtl. noch etwas optimieren, aber vorerst gut so"; the Box behaviour at the
+  silhouette (§4.1, §7 question 3: a few too many rather than too few) "vorerst gut so" — **to be looked at again
+  later** (open item, not a decided rule); no unexpected element picked.
+- **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
   still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage (contract unchanged).
 

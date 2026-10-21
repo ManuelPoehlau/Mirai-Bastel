@@ -363,6 +363,11 @@ of per-operation touched sets (this removes the main H1 risk of §4, "every futu
   (`Shift+D`) is rebuilt whole per dirty frame (E39), also during a W drag; symmetric ops still run whole-mesh symmetry
   reports (`SymmetryIndex`, `completeness_report`); Soft preview refresh per topology change not profiled.
 
+- **Manu, 2026-10-21 (verdict table below):** operations + Undo on gollum_20k "ohne sichtbare Verzögerung", nothing
+  looks different. Still slow: **Move / Rotate / Scale on a very large selection, above all with Soft Selection**, and
+  the **Knife** compared with the rest — the next targets (the transform drag path and the Knife's per-camera
+  projection, AD-022 §11 "Open").
+
 ### Praxistest für Manu (ca. 10 Minuten + ein Messlauf)
 
 Die technische Korrektheit ist durch Tests belegt (Undo/Redo exakt, Bild gleich einem vollen Neuaufbau). Offen ist nur,
