@@ -13,7 +13,7 @@ Is `experiments/mirai_bastel_viewport_V1/` still needed as an interactive workbe
 by `experiments/rigging-skinning-morphing/run_viewport.py`, which was the last remaining runtime
 consumer of the V1 `viewport` package anywhere in the repository?
 
-(Full evidence base: `docs/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10, Q-A/Q-B.)
+(Full evidence base: `docs/archive/audits_2026-09/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10, Q-A/Q-B.)
 
 ## Decision
 

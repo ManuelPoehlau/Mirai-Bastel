@@ -15,7 +15,7 @@ whether `tests/test_playground_transformer.py` belongs in `tests/`, and whether 
 production Input→Command→Tool contract (`src/mirai/interaction/*`) should be reconciled with the
 Playground's own ad-hoc key wiring.
 
-(Q from `docs/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10, Q-G analog for the
+(Q from `docs/archive/audits_2026-09/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10, Q-G analog for the
 Playground itself; raised initially by the artist as: "was wäre App, was wäre Lab/Playground jetzt,
 braucht man die App schon, obwohl eh erstmal noch monatelang experimentiert wird?")
 
@@ -51,3 +51,26 @@ actually requires it).
    (naming the Playground as the repo's only runnable application in `CLAUDE.md`, without implying
    it is formally "production"). That distinction — *is* the running application today vs. *is
    declared* production-stable — is the one this decision deliberately keeps open.
+
+---
+
+## Addendum — 2026-10-21: Playground becomes an optional research tool (Manu)
+
+The premise of this decision ("the Playground is the repo's only runnable application") no longer holds: `src/main.py`
+is the production application, and the decided Playground results (selection, transform, tweak, connect, knife,
+topology/extrude, display modes) have been promoted into it. Manu's statement (2026-10-21, repository slimming
+audit): the Playground is **not a primary daily development environment any more**; it stays as an *optional* research
+tool for new UX questions and multi-operation workflows, on its older viewport/renderer path.
+
+Consequences (all implemented in the same change):
+- `playground/tests` is no longer part of the default `pytest` run (`pytest.ini`); AGENTS.md §8a defines the *Knife
+  oracle set* as the only part of it that is a Production gate. `tests/` imports nothing from `playground/` any more
+  (the six `src/`-owned test modules that lived in `playground/tests/` moved to `tests/`; `test_playground_transformer.py`
+  moved the other way, which settles item 3 above).
+- Unique capabilities that exist only in the Playground and are **not** retired by this addendum: the Gizmo (AD-016 D3)
+  and the Articulation / EX-A probe. Their fate (promote, keep, drop) is an open Artist decision.
+- The variant families themselves (presentation, selection, transform, tweak, connect, knife, topology) are *candidates*
+  for archiving; that is a separate, later step.
+- The Knife record `knife_face/decision.md` moved to `docs/research/topology/KNIFE_FACE_DECISIONS.md` because it is the
+  authoritative record of the Production One Knife.
+

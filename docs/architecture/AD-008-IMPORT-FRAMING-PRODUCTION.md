@@ -15,7 +15,7 @@ Are OBJ→Scene construction, mesh geometry queries (`bounds`/`center`/`radius`)
 research conveniences that should stay where they are (currently duplicated identically in two
 experiment adapters)?
 
-(Full evidence base: `docs/FINAL_AUDIT _shared_Infrastructure.md` §1 Q3, D-1/D-2/D-3, F-2/F-3/F-4/F-5.)
+(Full evidence base: `docs/archive/audits_2026-09/FINAL_AUDIT _shared_Infrastructure.md` §1 Q3, D-1/D-2/D-3, F-2/F-3/F-4/F-5.)
 
 ## Decision
 

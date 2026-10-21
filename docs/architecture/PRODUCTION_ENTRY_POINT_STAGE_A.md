@@ -9,7 +9,7 @@ Mirai App, Stage A (Window + Camera + Rendering)" — a Type A implementation
 package, not a redecision of either.
 
 Doc placement: a new, plainly-named file rather than forcing this into a
-"Gate N" shape (`docs/WP-04_GATE_PLANNING.md` claims Gates 8–12 are
+"Gate N" shape (`docs/archive/early_work_packages/WP-04_GATE_PLANNING.md` claims Gates 8–12 are
 pre-planned but they are not actually defined) or appending to
 `SOURCE_ARCHITECTURE.md` (this is a completion record for one bounded
 package, not a change to the source-tree map itself).

@@ -13,21 +13,22 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
   (`begin_change` / `end_change` / `rollback_change`, `MeshDeltaCommand`, `Mesh.watch()`): use it for history,
   rollback and derived data instead of `export_state()` / `load_state()` snapshots.
 - `src/viewport/`, `src/mirai/` — In-progress production areas
-- `src/main.py` — the production app (own window). `playground/` — Artist research host (selection, tweak,
-  topology, articulation experiments live inside it as variant families); depends on `src/` plus a
-  small number of helpers from `experiments/mirai_bastel_integration_lab` and
-  `experiments/rigging-skinning-morphing` (OBJ→Scene loading, camera framing, the head asset).
-  Own test tree: `playground/tests/` (run via `pytest playground/tests`).
+- `src/main.py` — the production app (own window). `playground/` — optional Artist research tool on an older
+  viewport/renderer path (not a daily dev environment; most of its UX questions are answered and in `src/`).
+  It depends on `src/`, `examples/` (OBJ loader, head asset) and `experiments/rigging-skinning-morphing`
+  (Articulation). Unique there: Gizmo, Articulation (EX-A). Own test tree `playground/tests/` — **not** in the
+  default `pytest` run; it also holds the frozen Knife / `split_face` oracles Production is checked against
+  (AGENTS.md §8a, "Knife oracle set").
 - Labs under `experiments/<lab>/run.py` start their own windows; see `experiments/README.md`.
 - `experiments/` — Research, prototypes, practical validation at the repository level (OK to be
   messy). Not the same thing as `playground/experiments/` (variant families inside the Playground
   host) — see `docs/design/artist_playground/EXPERIMENT_HOST.md` for that distinction.
 - `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. `pytest.ini` at the
-  repo root sets `testpaths` (`tests`, `playground/tests`, `experiments/symmetry_lab/tests`,
+  repo root sets `testpaths` (`tests`, `experiments/symmetry_lab/tests`,
   `experiments/subdivision_lab/tests`, `experiments/morph_lab/tests`), so bare
   `pytest` collects cleanly (the old `viewport`/`test_core.py` name collisions with
   `experiments/` came from collecting everything; see
-  `docs/Repository_Wide Structural_Codebase_Health_Audit.md` D1).
+  `docs/archive/audits_2026-09/Repository_Wide Structural_Codebase_Health_Audit.md` D1).
 - `docs/` — Architecture, design, research decisions. Hierarchy: `README.md` → index → local docs → plans/specs
 - `references/` — External material (historical Mirai docs, etc.)
 
@@ -67,7 +68,7 @@ verification is the agent's job, shared bottlenecks first, larger coherent steps
    pytest tests/test_<module>.py -q                    # one test file
    pytest tests/test_<module>.py::test_name -q         # one test
    pytest tests -k "<pattern>" -q   # pattern match
-   pytest playground/tests/test_<module>.py -q         # playground/ changes
+   pytest playground/tests/test_<module>.py -q         # playground/ changes (explicit; not in default testpaths)
    ```
    Useful flags: `-x` (stop at first failure), `--lf` (re-run last failures only).
 
@@ -78,7 +79,7 @@ Details:
 - Setup: `pip install -r requirements-dev.txt` (pytest, pyglet). pyglet needs a display even on import;
   headless (cloud/CI): prefix with `xvfb-run -a`. Without pyglet/display the repo-root `conftest.py`
   turns exactly those failures into visible *skips* (any other error stays an error) — so
-  "N skipped" in playground/ can mean "environment", not "green"; run with xvfb for the real result.
+  "N skipped" in a GL/pyglet test can mean "environment", not "green"; run with xvfb for the real result.
 - GL tests (`tests/test_gl_*.py`) are *skipped* inside a combined run when another module has already switched pyglet
   to headless/EGL first (`test_main_wiring.py` and others set `pyglet.options["headless"]`); in a container without
   EGL run them in their own process: `xvfb-run -a python -m pytest tests/test_gl_*.py -q` (observed 2026-10-21).
@@ -86,7 +87,6 @@ Details:
   excludes it. Don't re-add `--ignore` workarounds — fix the cause or archive with a date.
 - The Symmetry Lab runs on the `src/mirai/application.py` path (start: `python experiments/symmetry_lab/run.py [asset]`,
   WP-SYM-LAB-03), so shared `src/` changes it can reach are checked against its tests (scope rules: AGENTS.md §8a)
-- `_measure_coverage.py` is a self-described *temporary* Gate-3 coverage script, not a general tool
 
 ## Documentation maintenance
 

@@ -70,7 +70,7 @@ Schneller Weg zu einem posebaren, editierbaren Mannequin: eine einfache humanoid
 
 - **Cut Through:** optional auch verdeckte Flächen schneiden, analog zu Blenders Cut Through. Manu, 2026-09-29: eventuell später als zusätzlicher Modus. Siehe [KNIFE_CROSS_FACE_DISCOVERY.md §1.1](../research/topology/KNIFE_CROSS_FACE_DISCOVERY.md).
 - **Start im leeren Raum:** von Manu am 2026-10-09 bewusst offen gelassen; später separat untersuchen. Siehe [Symmetry Knife Discovery §6, F6](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md).
-- **Winkelbeschränkung:** in WP-KNIFE-01 UX2 zunächst ausgelassen. Referenz Blender 2.79: Bildschirmraum-Snap auf 45°-Schritte mit Führungslinie. Offene Fragen sind Raumbezug und die Interaktion mit vorhandenen Snap-/Midpoint-Regeln. Siehe `playground/experiments/knife_face/decision.md`, „WP-KNIFE-01 UX2“.
+- **Winkelbeschränkung:** in WP-KNIFE-01 UX2 zunächst ausgelassen. Referenz Blender 2.79: Bildschirmraum-Snap auf 45°-Schritte mit Führungslinie. Offene Fragen sind Raumbezug und die Interaktion mit vorhandenen Snap-/Midpoint-Regeln. Siehe `docs/research/topology/KNIFE_FACE_DECISIONS.md`, „WP-KNIFE-01 UX2“.
 
 ### UVs, Baking und Split Normals (Retopo-Raum)
 

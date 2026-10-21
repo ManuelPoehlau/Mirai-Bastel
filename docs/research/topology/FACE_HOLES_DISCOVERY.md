@@ -5,7 +5,7 @@ unchanged before discussion (AGENTS.md §6). Possible later Type C gate (archite
 **Date:** 2026-09-29
 **Mode (M5):** Discovery
 **Belongs to:** [`KNIFE_FACE_CUT_DISCOVERY.md`](KNIFE_FACE_CUT_DISCOVERY.md) §2 FC6 (closed loop inside a face) ·
-`playground/experiments/knife_face/decision.md` (task 5, closed-shape stand-in) · ARCH-02
+`docs/research/topology/KNIFE_FACE_DECISIONS.md` (task 5, closed-shape stand-in) · ARCH-02
 (`docs/architecture/ROADMAP.md`) · `docs/architecture/CORE_V1_FREEZE.md` §7
 **Code examined:** `ccr-d8697d4f-6z4f4f` @ `3a7576e` (= Knife Face Cut Lab)
 **Probe:** [`experiments/topology/face_holes_probe.py`](../../../experiments/topology/face_holes_probe.py)
@@ -56,7 +56,7 @@ Additional finds (my grep):
 |---|---|---|---|
 | M1-1 | `src/core/mesh.py:24-27` (Core docstring; copies in `tests/mesh.py:24-27` and `experiments/mirai_bastel_core_V1/mirai_bastel_core/mesh.py`, README line 43) | "Bewusst NICHT enthalten: volle Winged-/Half-Edge-Struktur, Non-Manifold-Multi-Shell-Support, Genus-Tracking." | The exclusion lives in the frozen Core's own contract text, not only in reviews. |
 | M1-2 | `V1_CORE_REVIEW_CLAUDE_003.md` AD-002 | "Explicitly not V1: full Winged-/Half-Edge topology, twin-pointer/radial structures, …, non-manifold multi-shell support." | Holes are not named; the decision is "ordered boundaries + query API". |
-| M1-3 | `KNIFE_FACE_CUT_DISCOVERY.md` §2, §3 ("holes (not representable)"); `playground/experiments/knife_face/decision.md` ("a ring-with-hole, which Mirai's Core cannot represent") | Statements of the current fact, not decisions. | Consistent with this document. |
+| M1-3 | `KNIFE_FACE_CUT_DISCOVERY.md` §2, §3 ("holes (not representable)"); `docs/research/topology/KNIFE_FACE_DECISIONS.md` ("a ring-with-hole, which Mirai's Core cannot represent") | Statements of the current fact, not decisions. | Consistent with this document. |
 | M1-4 | `src/viewport/derived.py:72-74` | Fan triangulation "für allgemeine konkave n-Gons eine bewusste Vereinfachung (siehe VIEWPORT_V02_ARCHITECTURE.md Non-Goals: kein allgemeiner Polygon-Trianguliator)". | The cited non-goal is **not** in the non-goals list of `docs/viewport/VIEWPORT_V02_ARCHITECTURE.md` §1 (checked). The simplification is real; its cited source is not. Matters for Q2/Q4. |
 
 **Interpretation.** In the Euler-operator literature that the Claude 002 review refers to, "genus tracking"

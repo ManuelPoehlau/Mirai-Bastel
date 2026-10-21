@@ -21,7 +21,7 @@ Normalen-Definition (wie im Experiment gewählt und im Proof verifiziert):
   (`face_normal`). Bis 2026-09-30: Normale des ersten Dreiecks der
   Triangulierung — (0,0,0), sobald die ersten drei Boundary-Vertices auf
   einer Linie lagen (Split-Vertex auf einer Kante); siehe
-  docs/WP-04_GATE_5_COMPLETION.md §7.2 (Nachtrag).
+  docs/archive/early_work_packages/WP-04_GATE_5_COMPLETION.md §7.2 (Nachtrag).
 - Vertex-Normale: flächengewichteter Durchschnitt der Normalen aller
   incident Faces.
 

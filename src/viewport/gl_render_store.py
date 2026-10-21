@@ -2,7 +2,7 @@
 
 Ships the real draw path `VIEWPORT_V02_ARCHITECTURE.md` §4.2 specifies
 (`RenderMesh.render(camera)` "issue draw call") and Gate 5 deferred as a
-scoping choice (`docs/WP-04_GATE_5_COMPLETION.md`): one real, persistent,
+scoping choice (`docs/archive/early_work_packages/WP-04_GATE_5_COMPLETION.md`): one real, persistent,
 indexed `ShaderProgram.vertex_list_indexed(...)` per `RenderMesh` instance,
 built from `RenderMesh`'s declared "mesh" attribute group
 (`positions`/`normals`/`highlight_flags` + `indices`, see

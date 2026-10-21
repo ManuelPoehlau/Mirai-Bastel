@@ -48,7 +48,7 @@ Two resolutions, one per Lab variant, because their rules differ (D is supersede
   nearest corner of its face (Artist decision 2026-09-30).
 
 Behaviour (what is cut, what is dropped and why, every HUD count) is exactly the Lab's at the KEEP state;
-the record of each rule lives in `playground/experiments/knife_face/decision.md`. Face constructions now
+the record of each rule lives in `docs/research/topology/KNIFE_FACE_DECISIONS.md`. Face constructions now
 go through `Mesh.split_face`; a closed shape and a loop at a point are two calls each and burn one
 intermediate FaceId (AD-001) — id *values* differ from the Lab's B2b stand-ins, the faces do not
 (`playground/tests/test_split_face_equivalence.py`, `playground/tests/test_knife_resolver_golden.py`).

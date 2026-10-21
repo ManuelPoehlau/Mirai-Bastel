@@ -68,7 +68,7 @@ def _face_diagonal(app):
 
 
 def _topo(app):
-    from playground.tests.test_ad017_knife import _topo_snapshot
+    from tests.test_ad017_knife import _topo_snapshot
     return _topo_snapshot(app.scene.mesh)
 
 
@@ -151,7 +151,7 @@ def test_ctrl_shift_z_never_enters_the_undo_branch(win_app):
 def _seed_global_split_then_undo(app):
     """One real global history entry (edge split) + global undo -> the global
     redo branch is non-empty, the global undo branch holds the entry."""
-    from playground.tests.test_ad017_knife import _push_history_split_then_undo
+    from tests.test_ad017_knife import _push_history_split_then_undo
     mesh = app.scene.mesh
     fid = sorted(mesh.all_face_ids())[0]
     verts = mesh.face_vertices(fid)

@@ -113,20 +113,6 @@ def test_command_routes_to_the_production_tool_with_a_parameterless_constructor(
     assert tool.state is ToolState.IDLE
 
 
-def test_playground_shim_is_the_same_algorithm_with_the_legacy_signature():
-    from playground.topology_tools.extrude import ExtrudeTool as LegacyExtrudeTool
-
-    assert issubclass(LegacyExtrudeTool, ExtrudeTool)
-    scene = _cube_scene()
-    face = scene.mesh.all_face_ids()[0]
-    tool = LegacyExtrudeTool(scene, _Camera())
-    tool.activate()
-    tool.begin(face_ids={face})
-    tool.update(dx=1.0, dy=0.0, width=100, height=100)
-    tool.commit()
-    assert _counts(scene.mesh) == (12, 20, 10)
-
-
 # -- Geometry ------------------------------------------------------------------------
 
 

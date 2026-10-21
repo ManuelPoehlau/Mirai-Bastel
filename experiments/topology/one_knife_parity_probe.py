@@ -15,7 +15,7 @@ Sections:
   --parity    same edge/vertex-only click lists on both engines: accepted clicks, resulting mesh
               (position-canonical), selection residue, mode, History entries, Undo/Redo after commit
   --session   in-session Undo/Redo (A->B->C, Undo, Redo), cancel, undo-everything-then-commit
-  --defects   R3 / R5 (`playground/experiments/knife_face/decision.md`, "Q5 integrity findings") on
+  --defects   R3 / R5 (`docs/research/topology/KNIFE_FACE_DECISIONS.md`, "Q5 integrity findings") on
               Production-only sessions, the same clicks on Q5, and what a click-time geometric gate
               would say; R3 through Vertex Connect (the shared helper)
   --core      which public Core mutators each engine calls (outermost calls only), incl. face-interior cases

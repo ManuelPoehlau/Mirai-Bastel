@@ -16,7 +16,7 @@ incremental-update path on real hardware) and the Playground's `renderer.py` + `
 passthrough, deliberately configured with `store_type=TraceStore` — headless only, own hand-rolled
 VBO rebuild on every interaction instead of `PygletStore`'s in-place patching).
 
-(Q-I, `docs/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10; confirmed by direct
+(Q-I, `docs/archive/audits_2026-09/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10; confirmed by direct
 code inspection in this conversation: `playground/app.py` uses `store_type=TraceStore`;
 `experiments/mirai_bastel_integration_lab/adapters/core_to_render.py` defines `LabPygletStore(PygletStore)`,
 used live by `lab_viewport.py`.)

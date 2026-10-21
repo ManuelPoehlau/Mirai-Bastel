@@ -15,8 +15,8 @@ physically live today), the Playground (which is the only thing that loads them 
 neutral shared location? Both are referenced by three independent path constants
 (`rigging/viewport_adapter.py`, `lab/_paths.py`, `playground/_paths.py`) pointing at the same file.
 
-(Full evidence base: `docs/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10, Q-C/Q-D;
-`docs/FINAL_AUDIT _shared_Infrastructure.md` F-1, F-6.)
+(Full evidence base: `docs/archive/audits_2026-09/Ownershi_Lifecycle_Audit_V1_Integration_Lab_Playground.md` §10, Q-C/Q-D;
+`docs/archive/audits_2026-09/FINAL_AUDIT _shared_Infrastructure.md` F-1, F-6.)
 
 ## Decision
 
