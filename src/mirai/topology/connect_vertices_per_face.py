@@ -14,7 +14,7 @@ Residue: selection and mode unchanged.
 from __future__ import annotations
 
 from core import VertexId
-from core.operations.topology import MeshStateCommand
+from core.operations.topology import MeshDeltaCommand
 
 from .topology_points import connect_in_shared_face
 
@@ -84,20 +84,19 @@ def connect_vertices_per_face(scene, vertex_ids: set[VertexId]) -> list:
     Raises VertexConnectError on invalid input.
     """
     mesh = scene.mesh
-    before = mesh.export_state()
-    created = apply_connect_vertices(mesh, vertex_ids)
+    change = mesh.begin_change()
+    try:
+        created = apply_connect_vertices(mesh, vertex_ids)
+    except BaseException:
+        mesh.rollback_change(change)
+        raise
 
     if not created:
         # No geometry created — idempotent no-op, no history entry
-        mesh.load_state(before)
+        mesh.rollback_change(change)
         return []
 
     scene.history.push(
-        MeshStateCommand(
-            mesh=mesh,
-            before_state=before,
-            after_state=mesh.export_state(),
-            description=VERTEX_CONNECT_LABEL,
-        )
+        MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(change), description=VERTEX_CONNECT_LABEL)
     )
     return created

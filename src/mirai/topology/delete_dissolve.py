@@ -3,10 +3,10 @@
 Production-first, no Lab (plan header, M5). Caller-side composition of the
 Core primitives `Mesh.delete_vertices/delete_edges/delete_faces` and
 `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces`, with the same
-snapshot-before / mutate / snapshot-after / push-one-`MeshStateCommand` shape
+record (change journal) / mutate / push-one-`MeshDeltaCommand` shape
 as `split.py`.
 
-Contract: exactly one `MeshStateCommand` per change; a refusal (`MeshError`
+Contract: exactly one `MeshDeltaCommand` per change; a refusal (`MeshError`
 from Core) or a no-op leaves mesh and history untouched. Vertex Dissolve is
 the only multi-step case (one `dissolve_vertex` per selected vertex, in ID
 order); a refusal in a later step restores the snapshot (ID counters stay
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from core import FaceId, SelectionMode
 from core.mesh import MeshError
-from core.operations.topology import MeshStateCommand
+from core.operations.topology import MeshDeltaCommand, record_mesh_change
 
 _NOUNS = {
     SelectionMode.VERTEX: "Vertices",
@@ -73,7 +73,7 @@ def remove_selected(
     scene, mode: SelectionMode, ids, *, dissolve: bool, cleanup: bool
 ) -> list[FaceId] | None:
     """Deletes or dissolves `ids` (elements of `mode`) and pushes one
-    `MeshStateCommand`.
+    `MeshDeltaCommand`.
 
     `cleanup` only matters for Edge/Face Dissolve (§0.2.2); Vertex Dissolve has
     no variant and ignores it. Returns the new faces (Dissolve; empty for
@@ -81,21 +81,14 @@ def remove_selected(
     (no history entry). Raises `RemovalRefused` with the Core message.
     """
     mesh = scene.mesh
-    before = mesh.export_state()
-    try:
-        new_faces = apply_removal(mesh, mode, ids, dissolve=dissolve, cleanup=cleanup)
-    except RemovalRefused:
-        mesh.load_state(before)
-        raise
-    after = mesh.export_state()
-    if after == before:
+    delta, new_faces = record_mesh_change(
+        mesh, lambda: apply_removal(mesh, mode, ids, dissolve=dissolve, cleanup=cleanup)
+    )
+    if delta.empty:
         return None
     scene.history.push(
-        MeshStateCommand(
-            mesh=mesh,
-            before_state=before,
-            after_state=after,
-            description=removal_label(mode, dissolve=dissolve, cleanup=cleanup),
+        MeshDeltaCommand(
+            mesh=mesh, delta=delta, description=removal_label(mode, dissolve=dissolve, cleanup=cleanup)
         )
     )
     return new_faces

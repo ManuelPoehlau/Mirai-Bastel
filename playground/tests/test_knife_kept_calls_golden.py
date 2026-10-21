@@ -28,7 +28,7 @@ from playground.tests import knife_golden_driver as net  # noqa: E402
 from playground.experiments.knife_face import engine as lab_d  # noqa: E402
 from playground.experiments.knife_face import engine_q5 as lab_q5  # noqa: E402
 from mirai.topology import knife as production_knife  # noqa: E402
-from mirai.topology.knife_resolve import mesh_content  # noqa: E402
+from mirai.topology.knife_resolve import SessionStart, mesh_content  # noqa: E402
 from tests.knife_kept_replay import assert_report_replays  # noqa: E402
 
 
@@ -41,8 +41,10 @@ def captured():
     def wrap(site: str, real):
         def wrapped(mesh, path, before_state):
             start = mesh.export_state()
+            # The production Knife hands a `SessionStart` (change journal, 2026-10-21): its dict form now.
+            given = before_state.state() if isinstance(before_state, SessionStart) else before_state
             res = real(mesh, path, before_state)
-            sessions[site].append((start, res, mesh.export_state(), before_state))
+            sessions[site].append((start, res, mesh.export_state(), given))
             return res
         return wrapped
 

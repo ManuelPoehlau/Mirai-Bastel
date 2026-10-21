@@ -36,12 +36,20 @@ Symmetrie-*Logik* (Correspondence, State) lebt in `mirai.symmetry`.
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from .ids import VertexId, EdgeId, FaceId, IdAllocator
 
 Position = tuple[float, float, float]
+
+#: Element records of the change journal (AD-023 H1). None = the element does not exist.
+VertexRecord = Position
+EdgeRecord = tuple  # (v0, v1, tuple of FaceIds) - endpoint order and face order as stored
+FaceRecord = tuple  # boundary, as stored
+
+_UNSET = object()
 
 
 @dataclass
@@ -98,6 +106,95 @@ class SymmetryDefinition:
     seam_edges: frozenset[EdgeId] = field(default_factory=frozenset)
 
 
+# ----------------------------------------------------------------------
+# Change journal (AD-023 H1, CORE_V1_FREEZE §7.1 2026-10-21)
+#
+# Every mutation below records, on first touch, the before-record of each element it changes in
+# every active `MeshChange`. That gives three consumers one exact source of "what changed" without
+# per-operation declarations: the history (`MeshDelta` / `MeshDeltaCommand` instead of two
+# whole-mesh snapshots), rollback (`rollback_change` instead of `load_state(before)`) and derived
+# data (the viewport and the pick cache patch only what a `MeshWatch` reports). A new mutation
+# method must call the `_touch_*` helpers before it writes, like the existing ones.
+# ----------------------------------------------------------------------
+
+
+class MeshChange:
+    """Before-records of every element touched since recording started (`Mesh.begin_change`,
+    `MeshWatch`). An element that did not exist is recorded as None. Touched is not changed: an
+    element may be back to its record (`Mesh.end_change` drops those)."""
+
+    __slots__ = ("vertices", "edges", "faces", "symmetry")
+
+    def __init__(self) -> None:
+        self.vertices: dict[VertexId, VertexRecord | None] = {}
+        self.edges: dict[EdgeId, EdgeRecord | None] = {}
+        self.faces: dict[FaceId, FaceRecord | None] = {}
+        self.symmetry = _UNSET
+
+    @property
+    def symmetry_touched(self) -> bool:
+        return self.symmetry is not _UNSET
+
+    def is_empty(self) -> bool:
+        return not (self.vertices or self.edges or self.faces) and self.symmetry is _UNSET
+
+
+@dataclass(frozen=True)
+class MeshDelta:
+    """Net change of one recorded mutation: per changed element `(before, after)` records, and
+    the symmetry definition if it changed. Exact by construction (AD-023 H1 exactness contract):
+    ID counters are never part of it (they only move forward, AD-001), records keep boundary
+    rotation and `edge.faces` order, and `Mesh.apply_delta` keeps the containers in ascending ID
+    order - the order `export_state()` / `load_state()` round trips produce."""
+
+    vertices: dict
+    edges: dict
+    faces: dict
+    symmetry: tuple | None = None
+
+    @property
+    def empty(self) -> bool:
+        return not (self.vertices or self.edges or self.faces) and self.symmetry is None
+
+
+class MeshWatch:
+    """A persistent journal for a consumer of derived data (viewport, pick cache): it records
+    every change of the mesh until `take()` hands the accumulated `MeshChange` over and starts a
+    new one. Stops recording on `close()` or when the watch is garbage-collected, so a consumer
+    that is dropped does not leave a journal behind."""
+
+    def __init__(self, mesh: "Mesh") -> None:
+        self.mesh = mesh
+        self._box = [MeshChange()]
+        mesh._logs.append(self._box[0])
+        self._finalizer = weakref.finalize(self, _detach_log, mesh._logs, self._box)
+
+    def take(self) -> MeshChange:
+        box, logs = self._box, self.mesh._logs
+        old, new = box[0], MeshChange()
+        for i, log in enumerate(logs):
+            if log is old:
+                logs[i] = new
+                break
+        else:
+            return old  # closed
+        box[0] = new
+        return old
+
+    def peek(self) -> MeshChange:
+        return self._box[0]
+
+    def close(self) -> None:
+        self._finalizer()
+
+
+def _detach_log(logs: list, box: list) -> None:
+    for i, log in enumerate(logs):
+        if log is box[0]:
+            del logs[i]
+            return
+
+
 class Mesh:
     def __init__(self) -> None:
         self._vertex_alloc = IdAllocator(VertexId)
@@ -111,14 +208,84 @@ class Mesh:
         # Interner Lookup-Index (Implementierungsdetail, kein öffentlicher
         # Vertrag): ungeordnetes Vertex-Paar -> existierende EdgeId.
         self._edge_lookup: dict[frozenset[VertexId], EdgeId] = {}
+        # Interner Index (2026-10-21): Vertex -> anliegende Edges. Ersetzt den O(E)-Scan in
+        # vertex_edges() und in Delete/Dissolve; die Reihenfolge der Rückgabe bleibt die der
+        # Edge-Tabelle, weil diese aufsteigend nach ID geordnet ist (Invariante, s. u.).
+        self._vertex_edges: dict[VertexId, set[EdgeId]] = {}
+        # Aktive Änderungs-Journale (MeshChange), siehe begin_change() / MeshWatch.
+        self._logs: list[MeshChange] = []
+
+        # Invariante (2026-10-21): alle drei Element-Tabellen iterieren in aufsteigender ID-
+        # Reihenfolge. IDs werden monoton vergeben und neu immer hinten angefügt; load_state()
+        # und apply_delta() stellen die Reihenfolge her. Damit ist die Reihenfolge von
+        # all_*_ids() unabhängig davon, ob ein Zustand über Snapshot oder Delta entstand.
 
         # Symmetry Definition (AD-SYM-01): bewusst ein PUBLIC-Attribut statt
         # Getter/Setter-Paar - analog zu Scene.morph_targets/rig/animation
         # (reservierter Subsystem-Platz, direkt settbar), nicht analog zur
         # Topologie-Query-API (AD-002 §15 Punkt 1), die ausschließlich für
         # die Vertex-/Edge-/Face-Container gilt. Default: keine Definition
-        # (Symmetrie "aus").
-        self.symmetry_definition: SymmetryDefinition | None = None
+        # (Symmetrie "aus"). Seit 2026-10-21 eine Property, damit das Journal das Setzen sieht;
+        # Lesen und Setzen bleiben unverändert `mesh.symmetry_definition`.
+        self._symmetry_definition: SymmetryDefinition | None = None
+
+    @property
+    def symmetry_definition(self) -> SymmetryDefinition | None:
+        return self._symmetry_definition
+
+    @symmetry_definition.setter
+    def symmetry_definition(self, definition: SymmetryDefinition | None) -> None:
+        for log in self._logs:
+            if log.symmetry is _UNSET:
+                log.symmetry = self._symmetry_definition
+        self._symmetry_definition = definition
+
+    # ------------------------------------------------------------------
+    # Journal-Helfer: vor jedem Schreibzugriff aufzurufen (siehe MeshChange)
+    # ------------------------------------------------------------------
+
+    def _touch_v(self, vid: VertexId) -> None:
+        for log in self._logs:
+            if vid not in log.vertices:
+                data = self._vertices.get(vid)
+                log.vertices[vid] = None if data is None else data.position
+
+    def _touch_e(self, eid: EdgeId) -> None:
+        for log in self._logs:
+            if eid not in log.edges:
+                data = self._edges.get(eid)
+                log.edges[eid] = None if data is None else (data.v0, data.v1, tuple(data.faces))
+
+    def _touch_f(self, fid: FaceId) -> None:
+        for log in self._logs:
+            if fid not in log.faces:
+                data = self._faces.get(fid)
+                log.faces[fid] = None if data is None else tuple(data.boundary)
+
+    def _index_edge(self, eid: EdgeId, v0: VertexId, v1: VertexId) -> None:
+        index = self._vertex_edges
+        for v in (v0, v1):
+            edges = index.get(v)
+            if edges is None:
+                index[v] = {eid}
+            else:
+                edges.add(eid)
+
+    def _unindex_edge(self, eid: EdgeId, v0: VertexId, v1: VertexId) -> None:
+        index = self._vertex_edges
+        for v in (v0, v1):
+            edges = index.get(v)
+            if edges is not None:
+                edges.discard(eid)
+                if not edges:
+                    del index[v]
+
+    def _pop_edge(self, eid: EdgeId) -> _EdgeData:
+        """Entfernt eine Edge samt Lookup- und Index-Eintrag (Journal: Aufrufer hat sie berührt)."""
+        edge = self._edges.pop(eid)
+        del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+        self._unindex_edge(eid, edge.v0, edge.v1)
+        return edge
 
     # ------------------------------------------------------------------
     # Gültigkeitsprüfung (AD-001)
@@ -148,7 +315,10 @@ class Mesh:
         solange sie ebenfalls über eine Query-Funktion statt eines rohen
         Attributs gehen.
         """
-        self._vertices[vertex_id].position = position
+        data = self._vertices[vertex_id]
+        if self._logs:
+            self._touch_v(vertex_id)
+        data.position = position
 
     # ------------------------------------------------------------------
     # Topologie-Query-API (AD-002) - einziger erlaubter Lesezugriff
@@ -177,9 +347,10 @@ class Mesh:
         return (e.v0, e.v1)
 
     def vertex_edges(self, vertex_id: VertexId) -> list[EdgeId]:
-        # V1: einfacher Scan. Query-API bleibt stabil, falls dies später
-        # durch eine O(1)-Half-Edge-Navigation ersetzt wird.
-        return [eid for eid, e in self._edges.items() if vertex_id in (e.v0, e.v1)]
+        # Aufsteigend nach ID = Reihenfolge der Edge-Tabelle (Invariante, siehe __init__) -
+        # dieselbe Liste wie der frühere O(E)-Scan.
+        edges = self._vertex_edges.get(vertex_id)
+        return sorted(edges) if edges else []
 
     def all_vertex_ids(self) -> list[VertexId]:
         return list(self._vertices.keys())
@@ -199,6 +370,8 @@ class Mesh:
     def add_vertex(self, position: Position) -> VertexId:
         """ID-Kontinuität: erzeugt genau eine neue VertexId."""
         vid = self._vertex_alloc.allocate()
+        if self._logs:
+            self._touch_v(vid)
         self._vertices[vid] = _VertexData(position=position)
         return vid
 
@@ -208,8 +381,11 @@ class Mesh:
         if existing is not None:
             return existing
         eid = self._edge_alloc.allocate()
+        if self._logs:
+            self._touch_e(eid)
         self._edges[eid] = _EdgeData(v0=v_a, v1=v_b)
         self._edge_lookup[key] = eid
+        self._index_edge(eid, v_a, v_b)
         return eid
 
     def add_face(self, vertex_ids: list[VertexId]) -> FaceId:
@@ -229,10 +405,15 @@ class Mesh:
                 raise MeshError(f"Unbekanntes Vertex: {v!r}")
 
         fid = self._face_alloc.allocate()
+        logged = bool(self._logs)
+        if logged:
+            self._touch_f(fid)
         n = len(vertex_ids)
         for i in range(n):
             v_a, v_b = vertex_ids[i], vertex_ids[(i + 1) % n]
             eid = self._get_or_create_edge(v_a, v_b)
+            if logged:
+                self._touch_e(eid)
             self._edges[eid].faces.append(fid)
 
         self._faces[fid] = _FaceData(boundary=list(vertex_ids))
@@ -271,11 +452,16 @@ class Mesh:
           explizites Edge-Löschen ist Aufgabe des Aufrufers/einer
           Higher-Level-Operation, nicht dieser Primitive.
         """
+        logged = bool(self._logs)
+        if logged and face_id in self._faces:
+            self._touch_f(face_id)
         face = self._faces.pop(face_id)
         n = len(face.boundary)
         for i in range(n):
             v_a, v_b = face.boundary[i], face.boundary[(i + 1) % n]
             eid = self._edge_lookup[frozenset((v_a, v_b))]
+            if logged:
+                self._touch_e(eid)
             self._edges[eid].faces.remove(face_id)
 
     def split_edge(self, edge_id: EdgeId, t: float = 0.5) -> tuple[VertexId, EdgeId, EdgeId]:
@@ -301,8 +487,11 @@ class Mesh:
         if t <= 0.0 or t >= 1.0:
             raise MeshError("split_edge: t must be in (0.0, 1.0)")
 
-        edge = self._edges.pop(edge_id)
-        del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+        logged = bool(self._logs)
+        if logged and edge_id in self._edges:
+            self._touch_e(edge_id)
+        edge = self._edges[edge_id]
+        self._pop_edge(edge_id)
 
         p0 = self.vertex_position(edge.v0)
         p1 = self.vertex_position(edge.v1)
@@ -311,12 +500,19 @@ class Mesh:
 
         eid_a = self._edge_alloc.allocate()
         eid_b = self._edge_alloc.allocate()
+        if logged:
+            self._touch_e(eid_a)
+            self._touch_e(eid_b)
         self._edges[eid_a] = _EdgeData(v0=edge.v0, v1=mid, faces=[])
         self._edges[eid_b] = _EdgeData(v0=mid, v1=edge.v1, faces=[])
         self._edge_lookup[frozenset((edge.v0, mid))] = eid_a
         self._edge_lookup[frozenset((mid, edge.v1))] = eid_b
+        self._index_edge(eid_a, edge.v0, mid)
+        self._index_edge(eid_b, mid, edge.v1)
 
         for fid in edge.faces:
+            if logged:
+                self._touch_f(fid)
             boundary = self._faces[fid].boundary
             new_boundary = []
             n = len(boundary)
@@ -356,8 +552,11 @@ class Mesh:
 
         Bekannte V1-Einschränkung: keine allgemeine Non-Manifold-Prüfung.
         """
-        edge = self._edges.pop(edge_id)
-        del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+        logged = bool(self._logs)
+        if logged and edge_id in self._edges:
+            self._touch_e(edge_id)
+        edge = self._edges[edge_id]
+        self._pop_edge(edge_id)
         survivor, removed = edge.v0, edge.v1
 
         p0 = self.vertex_position(survivor)
@@ -371,12 +570,15 @@ class Mesh:
         # survivor<->other-Edge werden beide zusammengeführt (Face-Referenzen
         # vereinigt, redundante EdgeId verworfen), statt wie zuvor eine neue,
         # doppelte Edge anzulegen und die alte (stale) Edge stehen zu lassen.
-        for eid, e in list(self._edges.items()):
-            if e.v0 != removed and e.v1 != removed:
-                continue
+        # Aufsteigend nach ID = Reihenfolge des früheren Scans über die Edge-Tabelle.
+        for eid in self.vertex_edges(removed):
+            e = self._edges[eid]
+            if logged:
+                self._touch_e(eid)
             old_key = frozenset((e.v0, e.v1))
             other = e.v1 if e.v0 == removed else e.v0
             del self._edge_lookup[old_key]
+            self._unindex_edge(eid, e.v0, e.v1)
             if other == survivor:
                 # Parallele Duplikat-Edge zur bereits kollabierten Kante - verwerfen.
                 del self._edges[eid]
@@ -385,6 +587,8 @@ class Mesh:
             existing_eid = self._edge_lookup.get(new_key)
             if existing_eid is not None and existing_eid != eid:
                 existing = self._edges[existing_eid]
+                if logged:
+                    self._touch_e(existing_eid)
                 for fid in e.faces:
                     if fid not in existing.faces:
                         existing.faces.append(fid)
@@ -395,6 +599,7 @@ class Mesh:
                 else:
                     e.v1 = survivor
                 self._edge_lookup[new_key] = eid
+                self._index_edge(eid, e.v0, e.v1)
 
         affected_faces = list(edge.faces)
         for fid in list(self._faces.keys()):
@@ -408,6 +613,8 @@ class Mesh:
             face = self._faces.get(fid)
             if face is None:
                 continue
+            if logged:
+                self._touch_f(fid)
             new_boundary = [survivor if v == removed else v for v in face.boundary]
             # Doppelte, direkt aufeinanderfolgende Vertices entfernen
             # (entsteht z. B. wenn survivor und removed direkt benachbart waren).
@@ -419,24 +626,40 @@ class Mesh:
                 deduped.pop()
 
             if len(deduped) < 3:
-                self._remove_face_edges_only(fid)
-                del self._faces[fid]
+                self._delete_face(fid)
                 continue
 
             self._faces[fid].boundary = deduped
 
-        del self._vertices[removed]
+        self._delete_vertex(removed)
         return survivor
 
     def _remove_face_edges_only(self, face_id: FaceId) -> None:
         face = self._faces[face_id]
+        logged = bool(self._logs)
         n = len(face.boundary)
         for i in range(n):
             v_a, v_b = face.boundary[i], face.boundary[(i + 1) % n]
             key = frozenset((v_a, v_b))
             eid = self._edge_lookup.get(key)
             if eid is not None and face_id in self._edges[eid].faces:
+                if logged:
+                    self._touch_e(eid)
                 self._edges[eid].faces.remove(face_id)
+
+    def _delete_face(self, face_id: FaceId) -> None:
+        """Entfernt eine Face und ihre Einträge in den Edge-Face-Listen; Edges bleiben."""
+        if self._logs:
+            self._touch_f(face_id)
+        self._remove_face_edges_only(face_id)
+        del self._faces[face_id]
+
+    def _delete_vertex(self, vertex_id: VertexId) -> None:
+        """Entfernt einen Vertex, an dem keine Edge mehr hängt."""
+        if self._logs:
+            self._touch_v(vertex_id)
+        del self._vertices[vertex_id]
+        self._vertex_edges.pop(vertex_id, None)
 
     def connect_vertices(self, face_id: FaceId, v_a: VertexId, v_b: VertexId) -> tuple[EdgeId, FaceId, FaceId]:
         """Teilt eine Face entlang zweier ihrer Boundary-Vertices.
@@ -466,8 +689,7 @@ class Mesh:
             raise MeshError("connect_vertices würde eine degenerierte Face erzeugen.")
 
         # alte Face-Referenzen der bestehenden Edges entfernen
-        self._remove_face_edges_only(face_id)
-        del self._faces[face_id]
+        self._delete_face(face_id)
 
         new_face_1 = self.add_face(loop_1)
         new_face_2 = self.add_face(loop_2)
@@ -564,8 +786,7 @@ class Mesh:
             if existing is not None and self._edges[existing].faces:
                 raise MeshError("split_face: v_a-v_b ist bereits Edge einer anderen Face.")
 
-        self._remove_face_edges_only(face_id)
-        del self._faces[face_id]
+        self._delete_face(face_id)
 
         new_vertices = [self.add_vertex(p) for p in positions]
         chain = [v_a, *new_vertices, v_b]
@@ -1008,15 +1229,18 @@ class Mesh:
     def _apply_dissolve(self, plan: dict) -> list[FaceId]:
         """Wendet einen `_plan_dissolve`-Plan an (keine Prüfungen mehr)."""
         for fid in plan["removed_faces"]:
-            self._remove_face_edges_only(fid)
-            del self._faces[fid]
+            self._delete_face(fid)
+        logged = bool(self._logs)
         for fid, boundary in plan["updated"].items():
+            if logged:
+                self._touch_f(fid)
             self._faces[fid].boundary = boundary
         for eid in plan["removed_edges"]:
-            edge = self._edges.pop(eid)
-            del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+            if logged:
+                self._touch_e(eid)
+            self._pop_edge(eid)
         for vid in plan["removed_vertices"]:
-            del self._vertices[vid]
+            self._delete_vertex(vid)
         new_faces = [self.add_face(boundary) for boundary in plan["merged"]]
         for fid in sorted(plan["updated"], key=int):
             boundary = self._faces[fid].boundary
@@ -1024,6 +1248,8 @@ class Mesh:
             for i in range(n):
                 eid = self._get_or_create_edge(boundary[i], boundary[(i + 1) % n])
                 if fid not in self._edges[eid].faces:
+                    if logged:
+                        self._touch_e(eid)
                     self._edges[eid].faces.append(fid)
         for v_a, v_b in plan["wire_edges"]:
             self._get_or_create_edge(v_a, v_b)
@@ -1041,21 +1267,21 @@ class Mesh:
             for eid in self.face_edges(fid):
                 if all(f in faces for f in self._edges[eid].faces):
                     removed_edges.add(eid)
-        # Ein Durchlauf statt vertex_edges() je Endpunkt (O(E) pro Aufruf).
         touched = {v for e in removed_edges for v in self.edge_vertices(e)}
+        index = self._vertex_edges
         keeps_edge = {
-            v for eid, e in self._edges.items() if eid not in removed_edges
-            for v in (e.v0, e.v1) if v in touched
+            v for v in touched if not removed_edges.issuperset(index.get(v, ()))
         }
         removed_vertices = set(vertices) | (touched - keeps_edge)
         for fid in faces:
-            self._remove_face_edges_only(fid)
-            del self._faces[fid]
+            self._delete_face(fid)
+        logged = bool(self._logs)
         for eid in removed_edges:
-            edge = self._edges.pop(eid)
-            del self._edge_lookup[frozenset((edge.v0, edge.v1))]
+            if logged:
+                self._touch_e(eid)
+            self._pop_edge(eid)
         for vid in removed_vertices:
-            del self._vertices[vid]
+            self._delete_vertex(vid)
 
     # ------------------------------------------------------------------
     # Serialisierung (§8, §12) - bewusst hier statt in serialization.py,
@@ -1136,23 +1362,43 @@ class Mesh:
         (additiv, siehe export_state()) ebenfalls ladbar bleibt, statt mit
         KeyError abzubrechen.
         """
-        self._vertices.clear()
-        self._edges.clear()
-        self._faces.clear()
-        self._edge_lookup.clear()
-
-        for vid_raw, pos in state["vertices"].items():
-            self._vertices[VertexId(int(vid_raw))] = _VertexData(position=tuple(pos))
-        for eid_raw, edata in state["edges"].items():
-            eid = EdgeId(int(eid_raw))
-            v0, v1 = VertexId(edata["v0"]), VertexId(edata["v1"])
-            self._edges[eid] = _EdgeData(
-                v0=v0, v1=v1, faces=[FaceId(f) for f in edata["faces"]]
+        vertex_records = {
+            VertexId(int(vid_raw)): tuple(pos) for vid_raw, pos in state["vertices"].items()
+        }
+        edge_records = {
+            EdgeId(int(eid_raw)): (
+                VertexId(edata["v0"]), VertexId(edata["v1"]), tuple(FaceId(f) for f in edata["faces"])
             )
-            self._edge_lookup[frozenset((v0, v1))] = eid
-        for fid_raw, boundary in state["faces"].items():
-            fid = FaceId(int(fid_raw))
-            self._faces[fid] = _FaceData(boundary=[VertexId(v) for v in boundary])
+            for eid_raw, edata in state["edges"].items()
+        }
+        face_records = {
+            FaceId(int(fid_raw)): tuple(VertexId(v) for v in boundary)
+            for fid_raw, boundary in state["faces"].items()
+        }
+        if self._logs:
+            # Ein Journal läuft (Rollback eines Checkpoints, Undo, ein Viewport beobachtet):
+            # nur die Elemente schreiben, die sich unterscheiden, damit es genau diese sieht.
+            self._apply_records(
+                self._differing(self._vertices, vertex_records, self._vertex_record),
+                self._differing(self._edges, edge_records, self._edge_record),
+                self._differing(self._faces, face_records, self._face_record),
+            )
+        else:
+            self._vertices.clear()
+            self._edges.clear()
+            self._faces.clear()
+            self._edge_lookup.clear()
+            self._vertex_edges.clear()
+            # Aufsteigend nach ID (Invariante, siehe __init__).
+            for vid in sorted(vertex_records):
+                self._vertices[vid] = _VertexData(position=vertex_records[vid])
+            for eid in sorted(edge_records):
+                v0, v1, faces = edge_records[eid]
+                self._edges[eid] = _EdgeData(v0=v0, v1=v1, faces=list(faces))
+                self._edge_lookup[frozenset((v0, v1))] = eid
+                self._index_edge(eid, v0, v1)
+            for fid in sorted(face_records):
+                self._faces[fid] = _FaceData(boundary=list(face_records[fid]))
 
         self._vertex_alloc.restore_counter(state["vertex_id_counter"])
         self._edge_alloc.restore_counter(state["edge_id_counter"])
@@ -1160,13 +1406,188 @@ class Mesh:
 
         symmetry_raw = state.get("symmetry")
         if symmetry_raw is None:
-            self.symmetry_definition = None
+            definition = None
         else:
-            self.symmetry_definition = SymmetryDefinition(
+            definition = SymmetryDefinition(
                 plane_point=tuple(symmetry_raw["plane_point"]),
                 plane_normal=tuple(symmetry_raw["plane_normal"]),
                 seam_edges=frozenset(EdgeId(eid) for eid in symmetry_raw["seam_edges"]),
             )
+        if definition != self._symmetry_definition:
+            self.symmetry_definition = definition
+
+    # ------------------------------------------------------------------
+    # Änderungs-Journal (AD-023 H1, CORE_V1_FREEZE §7.1 2026-10-21): Delta statt Snapshot
+    # ------------------------------------------------------------------
+
+    def begin_change(self) -> MeshChange:
+        """Startet die Aufzeichnung einer Mutation. Abschluss mit genau einem von
+        `end_change(change)` (-> MeshDelta) oder `rollback_change(change)`. Aufzeichnungen
+        dürfen sich verschachteln (z. B. ein Knife-Checkpoint innerhalb der Knife-Session)."""
+        change = MeshChange()
+        self._logs.append(change)
+        return change
+
+    def end_change(self, change: MeshChange) -> MeshDelta:
+        """Beendet die Aufzeichnung und liefert die Netto-Änderung: jedes berührte Element,
+        dessen Record sich unterscheidet, als (vorher, nachher). Leer = nichts geändert."""
+        self._stop(change)
+        vertices = {}
+        for vid, before in change.vertices.items():
+            after = self._vertex_record(vid)
+            if after != before:
+                vertices[vid] = (before, after)
+        edges = {}
+        for eid, before in change.edges.items():
+            after = self._edge_record(eid)
+            if after != before:
+                edges[eid] = (before, after)
+        faces = {}
+        for fid, before in change.faces.items():
+            after = self._face_record(fid)
+            if after != before:
+                faces[fid] = (before, after)
+        symmetry = None
+        if change.symmetry is not _UNSET and change.symmetry != self._symmetry_definition:
+            symmetry = (change.symmetry, self._symmetry_definition)
+        return MeshDelta(vertices, edges, faces, symmetry)
+
+    def rollback_change(self, change: MeshChange) -> None:
+        """Stellt den Zustand bei `begin_change()` exakt wieder her (Element-Records,
+        Reihenfolge, Symmetry Definition) und beendet die Aufzeichnung. ID-Zähler bleiben
+        vorwärts (AD-001), wie bei load_state()."""
+        self._stop(change)
+        self._apply_records(change.vertices, change.edges, change.faces)
+        if change.symmetry is not _UNSET:
+            self.symmetry_definition = change.symmetry
+
+    def revert_change(self, change: MeshChange) -> None:
+        """Wie `rollback_change`, aber die Aufzeichnung läuft weiter (leer, ab dem wieder
+        hergestellten Zustand): für einen Checkpoint, zu dem mehrfach zurückgekehrt wird."""
+        for log in self._logs:
+            if log is change:
+                break
+        else:
+            raise MeshError("Änderungs-Aufzeichnung ist nicht aktiv.")
+        self._apply_records(change.vertices, change.edges, change.faces)
+        if change.symmetry is not _UNSET:
+            self.symmetry_definition = change.symmetry
+        change.vertices, change.edges, change.faces = {}, {}, {}
+        change.symmetry = _UNSET
+
+    def release_change(self, change: MeshChange) -> None:
+        """Beendet eine Aufzeichnung ohne Delta: die Änderungen bleiben (ein Checkpoint, zu dem
+        nicht zurückgekehrt wurde)."""
+        self._stop(change)
+
+    def apply_delta(self, delta: MeshDelta, *, reverse: bool = False) -> None:
+        """Wendet ein `MeshDelta` an: vorwärts (Redo, der Mesh steht im Vorher-Zustand) oder
+        rückwärts (Undo, der Mesh steht im Nachher-Zustand)."""
+        side = 0 if reverse else 1
+        self._apply_records(
+            {vid: pair[side] for vid, pair in delta.vertices.items()},
+            {eid: pair[side] for eid, pair in delta.edges.items()},
+            {fid: pair[side] for fid, pair in delta.faces.items()},
+        )
+        if delta.symmetry is not None:
+            self.symmetry_definition = delta.symmetry[side]
+
+    def watch(self) -> MeshWatch:
+        """Dauerhaftes Journal für abgeleitete Daten (Viewport, Pick-Cache), siehe MeshWatch."""
+        return MeshWatch(self)
+
+    def _stop(self, change: MeshChange) -> None:
+        for i, log in enumerate(self._logs):
+            if log is change:
+                del self._logs[i]
+                return
+        raise MeshError("Änderungs-Aufzeichnung ist nicht aktiv.")
+
+    def _vertex_record(self, vid: VertexId) -> VertexRecord | None:
+        data = self._vertices.get(vid)
+        return None if data is None else data.position
+
+    def _edge_record(self, eid: EdgeId) -> EdgeRecord | None:
+        data = self._edges.get(eid)
+        return None if data is None else (data.v0, data.v1, tuple(data.faces))
+
+    def _face_record(self, fid: FaceId) -> FaceRecord | None:
+        data = self._faces.get(fid)
+        return None if data is None else tuple(data.boundary)
+
+    @staticmethod
+    def _differing(container: dict, records: dict, record_of) -> dict:
+        out = {key: rec for key, rec in records.items() if record_of(key) != rec}
+        for key in container:
+            if key not in records:
+                out[key] = None
+        return out
+
+    def _apply_records(self, vertices: dict, edges: dict, faces: dict) -> None:
+        """Setzt jedes genannte Element auf seinen Record (None = entfernen) - der eine
+        Schreibpfad für Rollback, Undo/Redo eines Deltas und load_state() unter einem Journal.
+        Die Records müssen zusammen mit den nicht genannten Elementen einen gültigen Mesh
+        ergeben (das garantieren Journal und Delta). Neu eingefügte IDs landen am Ende ihrer
+        Tabelle; liegt eine davon unter der größten vorhandenen, wird die Tabelle neu sortiert
+        (Invariante: aufsteigende Reihenfolge)."""
+        logged = bool(self._logs)
+        resort_v = resort_e = resort_f = False
+        for fid, rec in faces.items():
+            if logged:
+                self._touch_f(fid)
+            data = self._faces.get(fid)
+            if rec is None:
+                if data is not None:
+                    del self._faces[fid]
+            elif data is not None:
+                data.boundary = list(rec)
+            else:
+                resort_f = resort_f or (bool(self._faces) and fid < next(reversed(self._faces)))
+                self._faces[fid] = _FaceData(boundary=list(rec))
+        lookup = self._edge_lookup
+        for eid in edges:
+            data = self._edges.get(eid)
+            if data is not None:
+                key = frozenset((data.v0, data.v1))
+                if lookup.get(key) == eid:
+                    del lookup[key]
+                self._unindex_edge(eid, data.v0, data.v1)
+        for eid, rec in edges.items():
+            if logged:
+                self._touch_e(eid)
+            data = self._edges.get(eid)
+            if rec is None:
+                if data is not None:
+                    del self._edges[eid]
+                continue
+            v0, v1, face_ids = rec
+            if data is not None:
+                data.v0, data.v1, data.faces = v0, v1, list(face_ids)
+            else:
+                resort_e = resort_e or (bool(self._edges) and eid < next(reversed(self._edges)))
+                self._edges[eid] = _EdgeData(v0=v0, v1=v1, faces=list(face_ids))
+            lookup[frozenset((v0, v1))] = eid
+            self._index_edge(eid, v0, v1)
+        for vid, rec in vertices.items():
+            if logged:
+                self._touch_v(vid)
+            data = self._vertices.get(vid)
+            if rec is None:
+                if data is not None:
+                    del self._vertices[vid]
+            elif data is not None:
+                data.position = rec
+            else:
+                resort_v = resort_v or (bool(self._vertices) and vid < next(reversed(self._vertices)))
+                self._vertices[vid] = _VertexData(position=rec)
+        for resort, container in (
+            (resort_v, self._vertices), (resort_e, self._edges), (resort_f, self._faces)
+        ):
+            if resort:
+                # Ohne Tupel pro Eintrag (kein Anlass für einen GC-Lauf über den ganzen Mesh).
+                ordered = {key: container[key] for key in sorted(container)}
+                container.clear()
+                container.update(ordered)
 
     @classmethod
     def from_state(cls, state: dict) -> "Mesh":

@@ -131,6 +131,17 @@ class SelectionOverlay:
         Topologie-Änderung), werden übersprungen — dieselbe Regel wie in
         `selected_vertex_positions()`/`line_layers()`/`face_layers()`.
         """
+        highlighted = self.highlighted_vertices(mesh)
+        flags = [
+            1.0 if vertex_id in highlighted else 0.0
+            for vertex_id in mesh.all_vertex_ids()
+        ]
+        self._last_highlight_flags = flags
+        return flags
+
+    def highlighted_vertices(self, mesh) -> set[VertexId]:
+        """Die Vertices, die `build_highlight_flags` mit 1.0 markiert (Regeln dort); `RenderMesh`
+        legt die Flags damit in Slot-Reihenfolge ab."""
         highlighted: set[VertexId] = set()
 
         mode = self.selection.mode
@@ -156,13 +167,7 @@ class SelectionOverlay:
         hovered = self.selection.hovered
         if hovered is not None:
             highlighted.update(self._hovered_to_vertices(mesh, hovered))
-
-        flags = [
-            1.0 if vertex_id in highlighted else 0.0
-            for vertex_id in mesh.all_vertex_ids()
-        ]
-        self._last_highlight_flags = flags
-        return flags
+        return highlighted
 
     def _hovered_to_vertices(self, mesh, hovered) -> set[VertexId]:
         """Vertices, die der gehoverte Hover-Treffer markiert. Ungültige IDs

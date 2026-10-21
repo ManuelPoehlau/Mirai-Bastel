@@ -222,18 +222,22 @@ def test_refresh_is_a_no_op_until_the_signature_changes():
     assert cache.vertex_screen  # populated
 
 
-def test_stale_cache_without_invalidate_returns_the_old_position():
+def test_a_mesh_change_without_invalidate_is_picked_up_from_the_journal():
+    """Until 2026-10-21 the cache stayed stale here on purpose (no cheap mesh revision in the
+    frozen Core). The Core change journal (AD-023 §9) now tells it what moved: only that is
+    re-projected, the rest is kept."""
     mesh = create_cube()
     camera = _default_camera()
     cache = PickCache()
-    vid = next(iter(mesh.all_vertex_ids()))
+    vid, other = mesh.all_vertex_ids()[:2]
     cache.refresh(camera, mesh, WIDTH, HEIGHT)
-    old_screen = cache.vertex_screen[vid]
+    other_screen = cache.vertex_screen[other]
 
-    mesh.set_vertex_position(vid, (old_screen[0] + 500.0, 0.0, 0.0))  # nonsense but harmless move
-    cache.refresh(camera, mesh, WIDTH, HEIGHT)  # same signature - stays stale on purpose
+    mesh.set_vertex_position(vid, (0.2, 0.1, 0.3))
+    cache.refresh(camera, mesh, WIDTH, HEIGHT)  # same signature, no invalidate()
 
-    assert cache.vertex_screen[vid] == old_screen
+    assert cache.vertex_screen[vid] == camera.project_to_screen((0.2, 0.1, 0.3), WIDTH, HEIGHT)
+    assert cache.vertex_screen[other] is other_screen
 
 
 def test_invalidate_forces_a_fresh_projection():

@@ -163,19 +163,27 @@ def test_the_mutating_mesh_methods_are_derived_from_core_and_cover_the_primitive
 
 
 def test_no_mutating_mesh_call_in_the_resolver_outside_the_recording_helpers():
-    """AD-017 §13 item 1. `split_edge` / `split_face` only inside their recording helper, `load_state` only
-    inside `rollback`; any other mutating `Mesh` method nowhere in `knife_resolve.py`."""
+    """AD-017 §13 item 1. `split_edge` / `split_face` only inside their recording helper; the rollback
+    machinery (`load_state` for a state dict, the change-journal calls since 2026-10-21) only inside the
+    checkpoint / `SessionStart` functions; any other mutating `Mesh` method nowhere in `knife_resolve.py`."""
     mutating = _mutating_mesh_methods()
-    allowed = {"split_edge": {"kept_split_edge"}, "split_face": {"kept_split_face"}, "load_state": {"rollback"}}
+    allowed = {
+        "split_edge": {"kept_split_edge"}, "split_face": {"kept_split_face"}, "load_state": {"rollback"},
+        "begin_change": {"checkpoint", "__init__"}, "revert_change": {"rollback", "revert"},
+        "release_change": {"release"}, "end_change": {"finish"}, "rollback_change": {"abandon"},
+        "symmetry_definition": {"unchanged"},  # read only: compares with the recorded definition
+    }
     bad = [(name, line, fn) for name, line, fn in _uses_of(mutating) if fn not in allowed.get(name, set())]
     assert bad == [], f"mutating Mesh call outside a recording helper: {bad}"
     inside = {(name, fn) for name, _line, fn in _uses_of(mutating)}
-    assert inside == {("split_edge", "kept_split_edge"), ("split_face", "kept_split_face"), ("load_state", "rollback")}
+    assert {("split_edge", "kept_split_edge"), ("split_face", "kept_split_face"), ("load_state", "rollback")} <= inside
 
 
 def test_no_bare_export_state_or_load_state_in_the_resolver():
-    """AD-017 §13 item 2: every rollback pair goes through `checkpoint` / `rollback`."""
-    allowed = {"export_state": {"checkpoint"}, "load_state": {"rollback"}}
+    """AD-017 §13 item 2: every rollback goes through `checkpoint` / `rollback` (a `load_state` only there).
+    `export_state` reads the mesh only where a state dict is the input (`check_commit` given a dict) or the
+    rare old-fold lookup needs the session start as a dict (`SessionStart.state`)."""
+    allowed = {"export_state": {"check_commit", "state"}, "load_state": {"rollback"}}
     bad = [(name, line, fn) for name, line, fn in _uses_of({"export_state", "load_state"})
            if fn not in allowed[name]]
     assert bad == [], f"bare export_state / load_state: {bad}"
@@ -317,20 +325,22 @@ def test_rollback_restores_the_mesh_and_cuts_the_report_back_last_in_first_out()
     edge = _edge_between(rec, (1.0, 1.0, 0.0), (1.0, 2.0, 0.0))
     kept_split_edge(rec, edge, 0.5)
     outer = checkpoint(rec)
+    at_outer = rec.raw.export_state()
     assert outer.mark == 1
     face = rec.all_face_ids()[7]
     a, b = rec.face_vertices(face)[:3:2]
     kept_split_face(rec, face, a, b)
     inner = checkpoint(rec)
+    at_inner = rec.raw.export_state()
     assert inner.mark == 2
     kept_split_edge(rec, rec.all_edge_ids()[0], 0.5)
     assert len(rec.kept) == 3
     rollback(rec, inner)
     assert [e.op for e in rec.kept] == ["split_edge", "split_face"]
-    assert knife_resolve.mesh_content(rec.raw.export_state()) == knife_resolve.mesh_content(inner.state)
+    assert knife_resolve.mesh_content(rec.raw.export_state()) == knife_resolve.mesh_content(at_inner)
     rollback(rec, outer)
     assert [e.op for e in rec.kept] == ["split_edge"]
-    assert knife_resolve.mesh_content(rec.raw.export_state()) == knife_resolve.mesh_content(outer.state)
+    assert knife_resolve.mesh_content(rec.raw.export_state()) == knife_resolve.mesh_content(at_outer)
 
 
 # -- item 3 through the resolver ---------------------------------------------------------------------

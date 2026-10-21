@@ -1,5 +1,10 @@
 # AD-023 — Incremental Topology Sync and History
 
+> **IMPLEMENTED in production (2026-10-21)** — see §9. The sections below are the decision history; §9 is the
+> current state. Basis for going straight to production: the stage-2 Delete prototype (H1 + V1, measured on the
+> reference PC) and Manu's statements of 2026-10-21 (Core changes are a must when they bring a clear gain; engineering
+> velocity, AGENTS.md §7a).
+
 **Status:** PROPOSED (2026-10-17), **revised 2026-10-20** after the independent review
 [`AD-023_REVIEW_CLAUDE_001`](../archive/viewport_v02/reviews/AD-023_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES; the
 disposition of every finding is in §8). Draft for Manu's decision. Not decided; no production code exists. Per
@@ -317,3 +322,62 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
 
 The reviewer's request for a reference-PC rerun with `--profile-top 15` and a GC-off variant: `--profile-top` does not
 profile the `topology` scenario; the equivalent is `probe_topology_sync_split.py` (`--gc`, `--history-depth`), run 2026-10-20.
+
+## 9. Implementation (2026-10-21, production)
+
+**Direction taken: H1 + V1 + incremental pick cache, for every operation at once**, through one Core mechanism instead
+of per-operation touched sets (this removes the main H1 risk of §4, "every future op must report a correct touched set").
+
+- **Capture mechanism: a Core change journal** (`src/core/mesh.py`). Every `Mesh` mutation records, on first touch, the
+  before-record of each element it changes in every active `MeshChange`: `begin_change()` → `end_change()` (net
+  `MeshDelta`, only elements whose record differs) or `rollback_change()` / `revert_change()`; `MeshWatch` (`Mesh.watch()`)
+  is a persistent journal for derived data. `load_state()` under a journal writes only the differing elements.
+  A Core vertex → edge index replaces the O(E) scans (`vertex_edges`, `_delete_region`, `collapse_edge`, Dissolve planning).
+- **Exactness contract (§2 H1)**, as met: (1) counters never part of a delta (forward only); (2) the symmetry definition
+  is a journaled property and rides in the delta; (3) records keep boundary rotation and `edge.faces` order; (4) the three
+  containers are kept in **ascending ID order** as a Core invariant (IDs are appended monotonically; `load_state` and
+  `apply_delta` restore the order, resorting without per-entry tuples); `vertex_edges` returns ascending IDs = the old scan
+  order; (5) rollback is the journal (no `before` snapshot anywhere in `src/`); (6) "changed?" = non-empty delta.
+- **History:** `MeshDeltaCommand` replaces `MeshStateCommand` at every `src/` site (`Application._mesh_transaction`, Apply
+  transform, Loop Slide, Extrude tool, Knife commit, the scene-level helpers). The Knife records its session start at commit
+  (`SessionStart`, no snapshot at `C`); resolver checkpoints are journal recordings. `MeshStateCommand` stays for other users.
+- **Viewport (V1 + V0 + V2 + U):** `RenderMesh` watches its mesh; a topology sync patches the slots the journal reports
+  (slot rule as in the prototype: dead triangles degenerate, dead vertices `DEAD_POSITION`; spare capacity
+  `SPARE_FRACTION` for growth; triangulation re-done for new / changed faces and faces around moved vertices). Full rebuild
+  only on first build, exhausted capacity, changes above `PATCH_MAX_FRACTION`, and meshes below `INCREMENTAL_MIN_ELEMENTS`
+  (compact layout). `GLRenderStore` patches index ranges. Undo/Redo take the same path (no `HistoryStack` accessor needed).
+- **Pick cache (P):** `PickCache` watches its mesh and re-projects only touched vertices / faces and patches `vertex_faces`.
+- **Tests:** `tests/test_mesh_change_journal.py` (randomised sequences over every mutation, undo/redo to the start and back
+  against the snapshot oracle incl. order, nested rollback, watch), `tests/test_render_mesh_incremental.py` (patched buffers
+  == fresh build per element, random ops with undo/redo), `tests/test_gl_render_mesh_incremental.py` (same image as a fresh
+  build in GL). Mutation checks by hand: a missing touch, no resort, no re-triangulation around moved vertices, no GL index
+  patch — each fails its test.
+- **Measured [C]** (container, `probe_navigation_gl.py --scenarios topology`, gollum_20k, p50 frame / undo frame, ms;
+  raw: [`RESULTS_TOPOLOGY_JOURNAL_CONTAINER_2026-10-21.md`](../../experiments/drag_cost/RESULTS_TOPOLOGY_JOURNAL_CONTAINER_2026-10-21.md)):
+  Extrude 1 face 1 610 / 1 068 → **36 / 16**; Extrude 20 faces 2 046 / 952 → **41 / 26**; Knife commit 1 397 / 1 431 →
+  **67 / 29**; Dissolve 1 edge 973 / 1 224 → **54 / 44**; Delete 1 face 970 / 1 219 → **18 / 17**. **Not measured on the
+  reference PC yet**; the stage-2 Delete prototype ran ~2x the container's Python time there, which would put these rows
+  roughly at 35-140 ms (estimate, not measured).
+- **Left (whole-mesh or open):** first hover / click after a camera change and Box select still use the CPU `PickCache`
+  re-projection and occlusion scans (AD-022's part, next step); edge-mode hover is a linear scan; the wire overlay
+  (`Shift+D`) is rebuilt whole per dirty frame (E39), also during a W drag; symmetric ops still run whole-mesh symmetry
+  reports (`SymmetryIndex`, `completeness_report`); Soft preview refresh per topology change not profiled.
+
+### Praxistest für Manu (ca. 10 Minuten + ein Messlauf)
+
+Die technische Korrektheit ist durch Tests belegt (Undo/Redo exakt, Bild gleich einem vollen Neuaufbau). Offen ist nur,
+was dein PC und dein Gefühl zeigen:
+
+- **Fühlen:** `python src/main.py`, `Leertaste` → `gollum_20k` laden. Extrude (`T`), Knife (`C`, Klicks, `Enter`),
+  Connect/Split (`C` mit Auswahl), Delete/Dissolve (`Entf`/Rücktaste), Loop einfügen/gleiten (`I`/`G`), jeweils mit
+  mehrfachem `Strg+Z`/`Strg+Y`. Frage: **ohne sichtbare Verzögerung?** Sieht nach einer Operation oder einem Undo
+  irgendetwas anders aus als erwartet (Schattierung, Löcher, Auswahl)?
+- **Messen (PowerShell im Repo-Ordner, ganze Ausgabe kopieren):**
+  `python experiments\drag_cost\probe_navigation_gl.py --scenarios topology --assets examples\meshes\gollum_20k.obj`
+- Nicht Teil dieses Tests: Hover direkt nach einer Kameradrehung und Box-Auswahl (das ist GPU-Picking, AD-022, der
+  nächste Schritt).
+
+| Frage | Dein Verdikt |
+|---|---|
+| Operationen + Undo auf gollum_20k ohne sichtbare Verzögerung? | offen |
+| Etwas anders als vorher (Aussehen, Auswahl nach Undo)? | offen |

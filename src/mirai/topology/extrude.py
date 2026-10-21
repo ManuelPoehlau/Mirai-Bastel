@@ -27,9 +27,9 @@ Lifecycle:
                                           Selection auf Result-Faces remapped
                                           (INTERACTING)
     update(dx, dy, w, h)*               → Extrusions-Distanz live
-    commit()                            → MeshStateCommand → history.push(),
+    commit()                            → MeshDeltaCommand → history.push(),
                                           returns frozenset[FaceId] (neue Caps)
-    cancel()                            → mesh.load_state(before), Selection restore
+    cancel()                            → mesh.rollback_change(before), Selection restore
     deactivate()
 
 Symmetrie (AD-SYM-03 Slice 7): `begin(symmetric_plan=...)` nimmt optional ein Plan-Objekt
@@ -46,7 +46,7 @@ from __future__ import annotations
 from typing import Any
 
 from core import FaceId, VertexId
-from core.operations.topology import MeshStateCommand
+from core.operations.topology import MeshDeltaCommand
 from core.selection import SelectionMode
 
 from ..interaction.tool import Tool
@@ -99,7 +99,7 @@ class ExtrudeTool(Tool):
     """Interaktives Multi-Face-Extrude-Tool (Production und Artist Playground).
 
     Adaptiert aus experiments/mirai_bastel_viewport_V1/viewport/extrude_tool.py,
-    aber gegen src/core (nicht den V1-Fork) und mit MeshStateCommand statt
+    aber gegen src/core (nicht den V1-Fork) und mit einem Mesh-History-Command (seit 2026-10-21 MeshDeltaCommand) statt
     V1-eigenem _SnapshotCommand. Verallgemeinert auf beliebige Face-Mengen
     via Boundary-Edge-Regel.
     """
@@ -114,7 +114,7 @@ class ExtrudeTool(Tool):
         self._original_positions: dict[VertexId, tuple] = {}
         self._old_to_new: dict[VertexId, VertexId] = {}
         self._new_face_ids: frozenset[FaceId] = frozenset()
-        self._before_state: dict | None = None
+        self._before_state = None  # MeshChange (Journal) zwischen begin() und commit()/cancel()
         self._before_sel_mode: SelectionMode | None = None
         self._before_sel_faces: frozenset = frozenset()
         self._total_distance: float = 0.0
@@ -161,8 +161,8 @@ class ExtrudeTool(Tool):
         self._symmetric = symmetric_plan
         self._refusal = None
 
-        # Snapshot vor jeder Mutation
-        self._before_state = mesh.export_state()
+        # Änderungs-Journal vor jeder Mutation (AD-023 H1): Commit -> MeshDelta, Cancel -> Rollback
+        self._before_state = mesh.begin_change()
         sel = self._scene.selection
         self._before_sel_mode = sel.mode
         self._before_sel_faces = frozenset(sel.faces)
@@ -306,14 +306,9 @@ class ExtrudeTool(Tool):
                     raise
                 self._refusal = str(exc)
                 return None
-        after = mesh.export_state()
+        change, self._before_state = self._before_state, None
         self._scene.history.push(
-            MeshStateCommand(
-                mesh=mesh,
-                before_state=self._before_state,
-                after_state=after,
-                description="Extrude",
-            )
+            MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(change), description="Extrude")
         )
         sel = self._scene.selection
         sel.clear()
@@ -327,12 +322,13 @@ class ExtrudeTool(Tool):
 
     def _on_cancel(self) -> None:
         if self._before_state is not None:
-            self._scene.mesh.load_state(self._before_state)
+            change, self._before_state = self._before_state, None
+            self._scene.mesh.rollback_change(change)
         sel = self._scene.selection
         sel.clear()
         if self._before_sel_mode is not None:
             sel.mode = self._before_sel_mode
-        # Nur gültige Face-IDs zurücksetzen (nach load_state sind alte IDs wieder valide)
+        # Nur gültige Face-IDs zurücksetzen (nach dem Rollback sind alte IDs wieder valide)
         mesh = self._scene.mesh
         valid = {fid for fid in self._before_sel_faces if mesh.is_valid_face(fid)}
         if valid:
@@ -347,6 +343,8 @@ class ExtrudeTool(Tool):
         self._original_positions = {}
         self._old_to_new = {}
         self._new_face_ids = frozenset()
+        if self._before_state is not None and self._scene is not None:
+            self._scene.mesh.release_change(self._before_state)
         self._before_state = None
         self._before_sel_mode = None
         self._before_sel_faces = frozenset()
@@ -367,26 +365,17 @@ class ExtrudeTool(Tool):
 
         Es werden ausschließlich Edges aus `region_edges` ohne Face und
         anschließend Vertices aus `region_vertices` ohne Edge entfernt — fremde
-        freie Edges (Knife/Connect) bleiben unberührt. Umsetzung über den
-        öffentlichen export_state()/load_state()-Weg; IDs übriger Elemente
-        bleiben unverändert (AD-001), Allocator-Zähler laufen nur vorwärts.
+        freie Edges (Knife/Connect) bleiben unberührt. Umsetzung über
+        `Mesh.delete_edges` (seit 2026-10-21; vorher ein Umweg über
+        export_state()/load_state() des ganzen Mesh); IDs übriger Elemente
+        bleiben unverändert (AD-001).
         """
-        orphan_edges = {e for e in region_edges if not mesh.edge_faces(e)}
+        orphan_edges = [e for e in region_edges if not mesh.edge_faces(e)]
         if not orphan_edges:
             return
-        state = mesh.export_state()
-        for eid in orphan_edges:
-            del state["edges"][int(eid)]
-        still_used = set()
-        for edata in state["edges"].values():
-            still_used.add(edata["v0"])
-            still_used.add(edata["v1"])
-        for boundary in state["faces"].values():
-            still_used.update(int(v) for v in boundary)
-        for vid in region_vertices:
-            if int(vid) not in still_used:
-                del state["vertices"][int(vid)]
-        mesh.load_state(state)
+        # delete_edges entfernt genau diese face-losen Edges und danach kantenlose Endpunkte -
+        # das sind Vertices der Region (jede Edge der Region endet in ihr).
+        mesh.delete_edges(orphan_edges)
 
     def _face_center_original(self) -> tuple[float, float, float]:
         positions = list(self._original_positions.values())

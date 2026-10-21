@@ -27,9 +27,13 @@ Bewusst NICHT enthalten (Hardening-Plan §17 Phase D, Absprache im Chat):
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TypeVar
 
-from ..mesh import Mesh
+from ..mesh import Mesh, MeshDelta
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -51,3 +55,36 @@ class MeshStateCommand:
 
     def redo(self) -> None:
         self.mesh.load_state(self.after_state)
+
+
+@dataclass
+class MeshDeltaCommand:
+    """Reversibler History-Eintrag aus dem Änderungs-Journal (AD-023 H1, 2026-10-21).
+
+    Speichert nur die Records der Elemente, die die Mutation geändert hat (`Mesh.end_change`),
+    nicht zwei vollständige Snapshots. Gleiche Garantie wie `MeshStateCommand`: Undo/Redo
+    stellen IDs, Records, Reihenfolge und Symmetry Definition exakt her, ID-Zähler bleiben
+    vorwärts (AD-001); Undo/Redo kosten O(geänderte Elemente) statt O(Mesh).
+    """
+
+    mesh: Mesh
+    delta: MeshDelta
+    description: str = "Topology Edit"
+
+    def undo(self) -> None:
+        self.mesh.apply_delta(self.delta, reverse=True)
+
+    def redo(self) -> None:
+        self.mesh.apply_delta(self.delta)
+
+
+def record_mesh_change(mesh: Mesh, mutate: Callable[[], T]) -> tuple[MeshDelta, T]:
+    """`mutate()` unter einer Journal-Aufzeichnung: (Netto-Delta, Ergebnis). Wirft `mutate`,
+    wird der Mesh exakt zurückgesetzt (`rollback_change`) und die Ausnahme weitergereicht."""
+    change = mesh.begin_change()
+    try:
+        result = mutate()
+    except BaseException:
+        mesh.rollback_change(change)
+        raise
+    return mesh.end_change(change), result

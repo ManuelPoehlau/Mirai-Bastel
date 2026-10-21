@@ -7,7 +7,11 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 **Repo**: Python 3.9+, pytest, no virtual env required (direct PYTHONPATH injection in tests).
 
 **Structure**:
-- `src/core/` — Production: V1 Core baseline, frozen (don't change without explicit reason)
+- `src/core/` — Production: V1 Core baseline, contract-frozen: interfaces, IDs and data integrity are protected
+  by contract tests; internals may change when profiling or established techniques justify it
+  (CORE_V1_FREEZE §7, Manu 2026-10-21). Since 2026-10-21 every `Mesh` mutation records into a change journal
+  (`begin_change` / `end_change` / `rollback_change`, `MeshDeltaCommand`, `Mesh.watch()`): use it for history,
+  rollback and derived data instead of `export_state()` / `load_state()` snapshots.
 - `src/viewport/`, `src/mirai/` — In-progress production areas
 - `src/main.py` — the production app (own window). `playground/` — Artist research host (selection, tweak,
   topology, articulation experiments live inside it as variant families); depends on `src/` plus a
@@ -30,10 +34,14 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 ## Project workflow
 
 See `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` (§5 Haltepunkte, §7 Wer macht was) and AGENTS.md §7–§8.
-Key rule: never move experiment code to `src/` without an explicit, documented decision.
+Key rule: never move experiment code to `src/` without an explicit, documented decision. Working philosophy
+(Manu, 2026-10-21): solve rather than re-study, experiments only for material uncertainties, technical
+verification is the agent's job, shared bottlenecks first, larger coherent steps — AGENTS.md §7a.
 
 ## Before changing or rebuilding code
 
+0. If the task is technical (performance, correctness), the default outcome is an implemented, tested,
+   measured change — not a plan or another probe (AGENTS.md §7a)
 1. Read the nearest `docs/README.md` or design document
 2. **Check the Architecture Map**: Is there an existing, validated solution already documented?
    - Example: Camera was validated in Integration Lab, adapted for Viewport, documented in Architecture. Don't rebuild it without reason.
@@ -100,5 +108,5 @@ Details:
 
 ---
 
-**Last revised**: 2026-10-14  
+**Last revised**: 2026-10-21  
 See [AGENTS.md](AGENTS.md) for full collaboration model.

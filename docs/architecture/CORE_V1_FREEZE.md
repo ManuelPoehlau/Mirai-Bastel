@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -250,6 +250,19 @@ behaviour (M1). Existing tests unchanged except the two that asserted a top-leve
 never reused and typed, add/remove/restore keeps instance and order, edit object cannot be removed, accessor follows the
 edit object, Mesh swap keeps state and placement, transform validation, `Selection.objects` with `clear()`/`is_empty()`
 unchanged, P-1 as a Core test — one stack, two objects —, v2 round trip incl. dead IDs, v1 load, inconsistent v2 refused).
+
+**Decision:** AD-023 §9 (2026-10-21; Manu 2026-10-21: "core freeze bedeutet nicht, dass er nicht verändert werden
+darf. Bringen uns Veränderungen am Core einen deutlichen Gewinn, sind Core-Änderungen ein Muss.")
+
+`Mesh` gains a **change journal**: `begin_change` / `end_change` (→ `MeshDelta`) / `rollback_change` / `revert_change` /
+`release_change` / `apply_delta` / `watch` (`MeshWatch`), and `core.operations.MeshDeltaCommand` / `record_mesh_change`.
+Freeze rule (§7): (1) requirement — a topology op and its Undo on 20k took 1-2 s (AD-023 §1); (2) not solvable outside the
+Core without per-op touched-set declarations (AD-023 §4 risk) or whole-mesh snapshots; (3) documented in AD-023 §9;
+(4) smallest extension: first-touch `_touch_*` hooks in the existing mutation methods, one apply path, a vertex → edge
+index (internal), `symmetry_definition` becomes a property with the same get/set; (5) contract tests
+`tests/test_mesh_change_journal.py`. **Public behaviour unchanged**: every query returns what it did (`vertex_edges` in
+ascending ID order = the old scan's order under the new ascending-order invariant, which `load_state` now establishes);
+`export_state` / `load_state` / `MeshStateCommand` unchanged in result. Whole existing Core suite green.
 
 ## 2. Was vor dem Freeze validiert wurde
 

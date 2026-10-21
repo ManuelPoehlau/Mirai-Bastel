@@ -1,7 +1,7 @@
 """Symmetric Face Extrude (AD-SYM-03 slice 7, WP-SYM-EXTRUDE-01; headless).
 
 Extrude is a live gesture: the topology changes at `begin()`, the caps move on every update and one
-`MeshStateCommand` is pushed at commit. So, like the Knife (`mirai.symmetric_knife`), the coordinator is a
+`MeshDeltaCommand` is pushed at commit. So, like the Knife (`mirai.symmetric_knife`), the coordinator is a
 *session* object the tool is handed at `begin` and the tool imports nothing from symmetry:
 
 - `plan_extrude(mesh, faces) -> SymmetricExtrudePlan` runs **before any mutation** and raises

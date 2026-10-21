@@ -181,11 +181,13 @@ Agenten entscheiden selbstständig in ihrer Evidenzdomäne und fragen dort nicht
 
 Zwei Dinge darf ein Agent nie: **promovieren** und **Artist-Validierung behaupten**.
 
-### Haltepunkte (2026-10-14)
+### Haltepunkte (2026-10-14, revidiert 2026-10-21)
 
 Innerhalb eines Auftrags arbeitet ein Agent autonom: analysieren, planen, bauen, testen, korrigieren. Er unterbricht nur, wenn
 
-- eine Änderung an `src/core` oder an einer entschiedenen Architekturentscheidung nötig wäre;
+- eine entschiedene Architekturentscheidung oder ein Produktverhalten geändert werden müsste (eine Core-Änderung
+  allein ist kein Haltepunkt mehr: Manu, 2026-10-21 — „Core Freeze ist ein Vertragsschutz, keine Leistungssperre";
+  Verträge, IDs, Datenintegrität bleiben durch Kontrakt- und Regressionstests geschützt, siehe CORE_V1_FREEZE §7);
 - etwas von `experiments/` oder `playground/` nach `src/` soll (Promotion, M3);
 - ein Verhalten festgelegt werden muss, das der Artist spüren muss und das sich nicht aus vorhandenen Verdikten ableiten lässt;
 - ein Lab eine Fähigkeit der App (Auswahl, Hover, Gizmo, Raster …) bräuchte, die es nur durch Nachbauen bekäme;
@@ -193,6 +195,15 @@ Innerhalb eines Auftrags arbeitet ein Agent autonom: analysieren, planen, bauen,
 - die Arbeit über den genannten Bereich hinausginge.
 
 Alles andere entscheidet der Agent selbst und markiert es knapp als `PROVISIONAL`.
+
+### Ingenieurs-Tempo (Manu, 2026-10-21)
+
+Technische Korrektheit belegt der Agent selbst — mit Tests, Invarianten, Äquivalenz gegen ein Orakel und
+reproduzierbaren Messungen —, nicht der Artist als Testläufer. Experimente sind ein Werkzeug für eine konkrete,
+wesentliche Unsicherheit, keine Pflichtstufe; eine bereits belegte Technik (eigenes Experiment, Benchmark,
+Blender oder andere etablierte Software) geht direkt in den Produktionspfad. Gemeinsame Ursachen werden zuerst
+und in einem zusammenhängenden Schritt behoben. Der Artist wird gefragt nach Gefühl, Bedienung, Bild,
+Workflow und dem, was nur sein Referenz-PC zeigt. Details: AGENTS.md §7a.
 
 ---
 
@@ -240,6 +251,9 @@ Und falls beim Bauen etwas Neues auftaucht: zurück zu Discovery (M5).
 
 ### Wer macht was (Manu, 2026-10-14)
 
+- **Technische Arbeit (Performance, Korrektheit, Infrastruktur) ist Production**, auch ohne vorherige
+  Discovery-Runde: Engpass verstehen, etablierte Lösung wählen, im Produktionspfad umsetzen, automatisch prüfen,
+  messen. Ein Praxistest folgt nur für das, was der Artist spüren oder sehen muss.
 - **Ein Discovery-Auftrag ist so groß wie eine Testsitzung von 20–40 Minuten** mit mehreren Punkten. Intern darf er beliebig viele technische Schritte und Testläufe umfassen; zurück kommt ein gesammelter Praxistest. Bei unklarer Richtung baut der Agent umschaltbare Varianten statt mehrerer Runden nacheinander.
 - **Nach seinen Verdikten geht der Artist direkt zu Claude Code**, in eigenen Worten, ohne Handoff. Claude Code wendet M1 selbst an und schreibt seine Deutung der Verdikte als Annahmen in den neuen Praxistest.
 - **Der Chat kommt dazu**, wenn der Artist unsicher ist, was er will, und als zweite Meinung bei Architekturentscheidungen und Promotion (Erzeuger ≠ Bewerter, §6).

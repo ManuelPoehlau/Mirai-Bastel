@@ -29,9 +29,21 @@ Paket-Docstring in `__init__.py`).
 
 Face-Boundaries in der Core-Mesh sind n-gonal (i. d. R. Quads, siehe
 `scene_factory.create_cube`), das GPU-Indexbuffer-Format braucht aber
-Dreiecke -> Triangulierung über `derived.triangulate_mesh_face()`, ausgeführt
-bei jedem (Re-)Aufbau des Indexbuffers (nur bei Topology-Changes, siehe
-`_rebuild_index_buffer`).
+Dreiecke -> Triangulierung über `derived.triangulate_face()`.
+
+Inkrementelle Topologie (AD-023 V1, 2026-10-21): `RenderMesh` beobachtet seine Mesh über
+`Mesh.watch()` (Änderungs-Journal). Ein Topology-Sync patcht nur, was das Journal meldet:
+neue/entfernte/geänderte Faces und Vertices, dazu die Faces um bewegte Vertices (neu
+trianguliert, weil die Triangulierung von den Positionen abhängt). Layout-Regel ("Slots"):
+zwischen zwei vollen Rebuilds behält jeder Vertex seinen Buffer-Index, jede Face ihre
+Face-Daten-Zeile und ihre Dreiecks-Slots; ein entfernter Vertex bekommt `DEAD_POSITION`, ein
+freier Dreiecks-Slot wird degeneriert (`(0, 0, 0)`: kein Fragment, `gl_PrimitiveID` und
+`triangle_faces` bleiben für jedes lebende Dreieck gültig). Neue Elemente nehmen freie Slots;
+ein voller Rebuild legt `SPARE_FRACTION` Reserve an. Voll neu aufgebaut wird nur beim ersten
+Aufbau, wenn die Reserve nicht reicht, bei sehr großen Änderungen (`PATCH_MAX_FRACTION`) und
+bei kleinen Meshes (`INCREMENTAL_MIN_ELEMENTS`: dort kostet der Rebuild Mikrosekunden und das
+kompakte Layout bleibt, wie es Tests und Werkzeuge lesen). Gleichwertigkeit "Patch == voller
+Rebuild" pro Element: `tests/test_render_mesh_incremental.py`.
 
 AD-018 §5 (Option B, additiv): `_rebuild_resources()` deklariert einmalig
 (im Konstruktor) über `ResourceStore.declare_group()`/`declare_uniform()`,
@@ -65,7 +77,7 @@ from core import FaceId, Mesh, VertexId
 
 from .benchmark import BenchmarkCounters
 from .category import DirtyState
-from .derived import DerivedGeometry, triangulate_mesh_face
+from .derived import DerivedGeometry, _normalize, face_normal, triangulate_face
 from .overlay import SelectionOverlay
 from .resource_store import ResourceStore, TraceStore
 
@@ -95,6 +107,19 @@ _FACE_ROW_CORNERS = 4
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
+#: Inkrementeller Topology-Sync erst ab so vielen Vertices + Faces (`PROVISIONAL`); darunter ist der
+#: volle Rebuild billiger als jede Buchführung und das Layout bleibt kompakt.
+INCREMENTAL_MIN_ELEMENTS = 2048
+#: Reserve-Slots je vollem Rebuild (Vertices, Face-Zeilen, Dreiecke) als Anteil der lebenden Anzahl.
+SPARE_FRACTION = 0.125
+#: Eine Änderung, die mehr als diesen Anteil der Elemente berührt, wird voll neu aufgebaut.
+PATCH_MAX_FRACTION = 0.25
+#: Position eines freien Vertex-Slots (kein lebendes Dreieck referenziert ihn); endlich in float32.
+DEAD_COORD = 1.0e19
+DEAD_POSITION = (DEAD_COORD, DEAD_COORD, DEAD_COORD)
+_ZERO3 = (0.0, 0.0, 0.0)
+_DEAD_TRIANGLE = (0.0, 0.0, 0.0)
+
 
 def _flatten_vec3(values) -> list[float]:
     out: list[float] = []
@@ -103,13 +128,25 @@ def _flatten_vec3(values) -> list[float]:
     return out
 
 
+def _runs(slots) -> list[list[int]]:
+    """Aufsteigende Slots in Läufe aufeinanderfolgender Werte (ein Upload je Lauf)."""
+    runs: list[list[int]] = []
+    for slot in sorted(slots):
+        if runs and slot == runs[-1][-1] + 1:
+            runs[-1].append(slot)
+        else:
+            runs.append([slot])
+    return runs
+
+
 class RenderMesh:
     """Persistente GPU-Geometrie + Dirty-State-gesteuertes Sync.
 
     Grundprinzip (VIEWPORT_V02_ARCHITECTURE.md §2): GPU-Ressourcen einmal
-    anlegen, Inhalt patchen. Ressourcen werden NUR bei einer Topology-
-    Änderung strukturell neu angelegt (`_rebuild_resources`), niemals bei
-    Camera-, Selection-, Material- oder reinen Positions-Updates.
+    anlegen, Inhalt patchen. Ressourcen werden nur beim ersten Aufbau und wenn
+    ein Topology-Patch nicht möglich ist strukturell neu angelegt
+    (`_rebuild_resources`), niemals bei Camera-, Selection-, Material- oder
+    reinen Positions-Updates.
     """
 
     def __init__(
@@ -128,6 +165,8 @@ class RenderMesh:
         # dass ein nie platziertes Objekt genau die bisherigen Ressourcen hat.
         self.store.declare_uniform("model_uniforms")
         self.store.declare_face_data(FACE_DATA, TRIANGLE_FACES, FACE_ROW_TEXELS)
+        # Änderungs-Journal der Mesh (AD-023 V1): was sich seit dem letzten Sync geändert hat.
+        self._watch = mesh.watch()
         self.derived = DerivedGeometry(
             mesh, on_bounds_recomputed=lambda: self.stats.count("bounds_recalculations")
         )
@@ -141,15 +180,26 @@ class RenderMesh:
         self.model_matrix: list[float] | None = None
         self._model_dirty = False
 
-        # Stabile Buffer-Reihenfolge für diese Session: VertexId -> flacher
-        # Index. Wird nur bei Topology-Änderung neu aufgebaut (siehe
-        # `_rebuild_resources`) — Positions-Updates dürfen diese Reihenfolge
-        # NICHT ändern, sonst wären Partial-Updates falsch adressiert.
+        # Slot-Layout (Modul-Docstring): VertexId -> Buffer-Index und zurück, freie Slots.
+        # Positions-Updates dürfen diese Zuordnung NICHT ändern, sonst wären Partial-Updates
+        # falsch adressiert.
         self._vertex_index: dict[VertexId, int] = {}
-        self._triangle_indices: list[tuple[VertexId, VertexId, VertexId]] = []
-        # Face-Daten: FaceId -> Zeile, und je Dreieck (Indexbuffer-Reihenfolge) die Zeile.
-        self._face_row: dict[FaceId, int] = {}
+        self._slot_vertex: list[VertexId | None] = []
+        self._free_vertex_slots: list[int] = []
+        # Je Dreiecks-Slot die drei Vertices (None = frei) und die Face-Zeile.
+        self._triangle_indices: list[tuple[VertexId, VertexId, VertexId] | None] = []
         self._triangle_face_rows: list[int] = []
+        self._free_triangles: list[int] = []
+        # Face-Daten: FaceId -> Zeile (und zurück), Dreiecks-Slots je Face, Boundary bei der
+        # letzten Triangulierung.
+        self._face_row: dict[FaceId, int] = {}
+        self._row_face: list[FaceId | None] = []
+        self._free_rows: list[int] = []
+        self._face_triangles: dict[FaceId, list[int]] = {}
+        self._face_boundary: dict[FaceId, tuple] = {}
+        # Vertices, die ein Geometry-Sync seit ihrer letzten Triangulierung bewegt hat: ihre
+        # Faces werden beim nächsten Topology-Sync neu trianguliert (ein W-Drag trianguliert nicht).
+        self._retriangulate: set[VertexId] = set()
 
         self.build()
 
@@ -167,43 +217,76 @@ class RenderMesh:
 
     def build(self) -> None:
         """Voller initialer Resource-Aufbau + Derived-Data-Recompute."""
-        self.derived.full_recompute(self.mesh)
-        self._rebuild_index_mapping()
-        self._rebuild_resources()
+        self._watch.take()
+        self._full_rebuild()
         self.stats.count("mesh_rebuilds")
         self.stats.count("structural_rebuilds")
 
+    def _incremental(self) -> bool:
+        return len(self._vertex_index) + len(self._face_row) >= INCREMENTAL_MIN_ELEMENTS
+
+    def _full_rebuild(self) -> None:
+        self.derived.full_recompute(self.mesh)
+        self._rebuild_index_mapping()
+        self._rebuild_resources()
+
     def _rebuild_index_mapping(self) -> None:
-        """Baut die stabile VertexId -> Flat-Index-Zuordnung + triangulierten
-        Indexbuffer neu auf (nur bei Topology-Change/Initial nötig)."""
-        self._vertex_index = {
-            vertex_id: i for i, vertex_id in enumerate(self.mesh.all_vertex_ids())
-        }
-        triangles: list[tuple[VertexId, VertexId, VertexId]] = []
+        """Baut das Slot-Layout neu auf: kompakt in Mesh-Reihenfolge, dahinter die Reserve
+        (nur für Meshes, die inkrementell synchronisiert werden)."""
+        mesh = self.mesh
+        vids = mesh.all_vertex_ids()
+        fids = mesh.all_face_ids()
+        position = mesh.vertex_position
+        face_vertices = mesh.face_vertices
+        positions = {v: position(v) for v in vids}
+        spare = len(vids) + len(fids) >= INCREMENTAL_MIN_ELEMENTS
+
+        self._vertex_index = {vertex_id: i for i, vertex_id in enumerate(vids)}
+        triangles: list = []
+        triangle_rows: list[int] = []
         face_row: dict[FaceId, int] = {}
-        triangle_face_rows: list[int] = []
-        for face_id in self.mesh.all_face_ids():
-            row = face_row[face_id] = len(face_row)
-            face_triangles = triangulate_mesh_face(self.mesh, face_id)
-            triangles.extend(face_triangles)
-            triangle_face_rows.extend([row] * len(face_triangles))
-        self._triangle_indices = triangles
+        face_triangles: dict[FaceId, list[int]] = {}
+        face_boundary: dict[FaceId, tuple] = {}
+        for row, face_id in enumerate(fids):
+            face_row[face_id] = row
+            boundary = face_vertices(face_id)
+            face_boundary[face_id] = tuple(boundary)
+            tris = triangulate_face(boundary, positions)
+            first = len(triangles)
+            triangles.extend(tris)
+            triangle_rows.extend([row] * len(tris))
+            face_triangles[face_id] = list(range(first, len(triangles)))
+
+        n_v, n_f, n_t = len(vids), len(fids), len(triangles)
+        spare_v = int(n_v * SPARE_FRACTION) if spare else 0
+        spare_f = int(n_f * SPARE_FRACTION) if spare else 0
+        spare_t = int(n_t * SPARE_FRACTION) if spare else 0
+        self._slot_vertex = list(vids) + [None] * spare_v
+        self._free_vertex_slots = list(range(n_v + spare_v - 1, n_v - 1, -1))
+        self._triangle_indices = triangles + [None] * spare_t
+        self._triangle_face_rows = triangle_rows + [0] * spare_t
+        self._free_triangles = list(range(n_t + spare_t - 1, n_t - 1, -1))
         self._face_row = face_row
-        self._triangle_face_rows = triangle_face_rows
+        self._row_face = list(fids) + [None] * spare_f
+        self._free_rows = list(range(n_f + spare_f - 1, n_f - 1, -1))
+        self._face_triangles = face_triangles
+        self._face_boundary = face_boundary
+        self._retriangulate = set()
 
     def _positions_flat(self) -> list[float]:
-        ordered = sorted(self._vertex_index.items(), key=lambda kv: kv[1])
-        return _flatten_vec3(self.mesh.vertex_position(v) for v, _ in ordered)
+        position = self.mesh.vertex_position
+        return [c for v in self._slot_vertex for c in (DEAD_POSITION if v is None else position(v))]
 
     def _normals_flat(self) -> list[float]:
-        ordered = sorted(self._vertex_index.items(), key=lambda kv: kv[1])
-        return _flatten_vec3(self.derived.vertex_normals[v] for v, _ in ordered)
+        normals = self.derived.vertex_normals
+        return [c for v in self._slot_vertex for c in (_ZERO3 if v is None else normals[v])]
 
     def _indices_flat(self) -> list[float]:
-        flat: list[float] = []
-        for tri in self._triangle_indices:
-            flat.extend(float(self._vertex_index[v]) for v in tri)
-        return flat
+        index = self._vertex_index
+        return [
+            c for tri in self._triangle_indices
+            for c in (_DEAD_TRIANGLE if tri is None else (float(index[tri[0]]), float(index[tri[1]]), float(index[tri[2]])))
+        ]
 
     def _face_row_data(self, face_id: FaceId) -> list[float]:
         boundary = self.mesh.face_vertices(face_id)
@@ -224,15 +307,23 @@ class RenderMesh:
         return row
 
     def _face_data_flat(self) -> list[float]:
-        # `_face_row` was filled in row order (`_rebuild_index_mapping`).
+        dead = [0.0] * FACE_ROW_FLOATS
         flat: list[float] = []
-        for face_id in self._face_row:
-            flat += self._face_row_data(face_id)
+        for face_id in self._row_face:
+            flat += dead if face_id is None else self._face_row_data(face_id)
         return flat
 
-    def _rebuild_resources(self) -> None:
-        n_verts = len(self._vertex_index)
+    def _highlight_flags(self) -> list[float]:
+        """Highlight-Flags in Slot-Reihenfolge (die Buffer-Position jedes Vertex)."""
+        flags = [0.0] * len(self._slot_vertex)
+        index = self._vertex_index
+        for vertex_id in self.overlay.highlighted_vertices(self.mesh):
+            slot = index.get(vertex_id)
+            if slot is not None:
+                flags[slot] = 1.0
+        return flags
 
+    def _rebuild_resources(self) -> None:
         def put(name: str, data: list[float]) -> None:
             had = self.store.has(name)
             nbytes = len(data) * FLOAT_BYTES
@@ -248,7 +339,7 @@ class RenderMesh:
         put("indices", self._indices_flat())
 
         if self.overlay is not None:
-            put("highlight_flags", self.overlay.build_highlight_flags(self.mesh))
+            put("highlight_flags", self._highlight_flags())
         self.store.end_rebuild(MESH_GROUP)
 
         put(TRIANGLE_FACES, [float(row) for row in self._triangle_face_rows])
@@ -258,9 +349,6 @@ class RenderMesh:
             put("material_uniforms", self.material.uniform_packet())
         if self.camera is not None:
             put("camera_uniforms", self._camera_uniforms())
-
-        # Nur echte Neuanlage zählt hier als "n_verts" gebraucht:
-        _ = n_verts  # (nur zur Lesbarkeit belassen; kein weiterer Zweck hier)
 
     def _camera_uniforms(self) -> list[float]:
         view = self.camera.build_view_matrix()
@@ -282,8 +370,9 @@ class RenderMesh:
 
     def mark_topology_dirty(self) -> None:
         """Informiert RenderMesh, dass sich die Topologie geändert hat
-        (Face/Edge-Mutation über Core-Operationen). Erzwingt beim nächsten
-        `sync()` einen strukturellen Rebuild aller Kern-Ressourcen."""
+        (Face/Edge-Mutation über Core-Operationen). Der nächste `sync()` patcht,
+        was das Änderungs-Journal meldet, oder baut alle Kern-Ressourcen neu auf
+        (kleine Mesh, Reserve erschöpft, sehr große Änderung)."""
         self.dirty.topology = True
         self.dirty.topology_rev += 1
         self.dirty.modified_vertices.clear()
@@ -317,18 +406,28 @@ class RenderMesh:
         """Verarbeitet alle seit dem letzten `sync()` markierten Kategorien.
 
         Reihenfolge ist bewusst: Topology zuerst (macht Geometry-Dirty-State
-        für denselben Frame obsolet, da `build()`/`_rebuild_resources` schon
-        alles aktuelle schreibt), danach Geometry/Selection/Material/Camera
-        unabhängig voneinander (Interleaving, siehe `DirtyState`).
+        für denselben Frame obsolet, da der Topology-Sync alle vom Journal
+        gemeldeten Positionen mitschreibt), danach Geometry/Selection/Material/
+        Camera unabhängig voneinander (Interleaving, siehe `DirtyState`).
         """
         self.stats.start("sync")
-        if self.dirty.topology:
-            self._sync_topology()
-            # Eine Topology-Änderung invalidiert etwaige separat markierte
-            # Positions-Deltas desselben Frames (sie sind im Full-Rebuild
-            # bereits enthalten) - nicht doppelt verarbeiten.
-            self.dirty.geometry = False
-            self.dirty.modified_vertices.clear()
+        if self.dirty.topology or self.dirty.geometry:
+            change = self._watch.take()
+            if self.dirty.topology:
+                self._sync_topology(change)
+                # Eine Topology-Änderung invalidiert etwaige separat markierte
+                # Positions-Deltas desselben Frames (sie sind im Topology-Sync
+                # bereits enthalten) - nicht doppelt verarbeiten.
+                self.dirty.geometry = False
+                self.dirty.modified_vertices.clear()
+            elif self._structural(change):
+                # Gemeldet als reine Positionsänderung, das Journal zeigt aber neue oder
+                # entfernte Elemente: als Topology-Änderung behandeln (nie ein falscher Buffer).
+                self._sync_topology(change)
+                self.dirty.geometry = False
+                self.dirty.modified_vertices.clear()
+            else:
+                self._retriangulate.update(change.vertices)
         if self.dirty.geometry:
             self._sync_geometry()
         if self.dirty.selection:
@@ -342,21 +441,222 @@ class RenderMesh:
         self.dirty.reset()
         self.stats.stop("sync")
 
+    def _structural(self, change) -> bool:
+        mesh = self.mesh
+        if change.faces:
+            return True
+        index = self._vertex_index
+        return any((v in index) != mesh.is_valid_vertex(v) for v in change.vertices)
+
     # -- Kategorie-Syncs ------------------------------------------------------
 
-    def _sync_topology(self) -> None:
+    def _sync_topology(self, change=None) -> None:
         self.stats.count("topology_updates")
-        self.derived.full_recompute(self.mesh)
-        self._rebuild_index_mapping()
-        self._rebuild_resources()
+        if change is not None and self._incremental() and self._patch_topology(change):
+            self.stats.count("topology_patches")
+            return
+        self._full_rebuild()
         self.stats.count("structural_rebuilds")
         self.stats.count("mesh_rebuilds")
+
+    def _patch_topology(self, change) -> bool:
+        """Patcht Slot-Layout, Derived Data und Buffer für die vom Journal gemeldete Änderung
+        (Modul-Docstring). False = nichts verändert, der Aufrufer baut voll neu auf."""
+        mesh = self.mesh
+        index = self._vertex_index
+        face_row = self._face_row
+        face_boundary = self._face_boundary
+        face_triangles = self._face_triangles
+        is_valid_face, is_valid_vertex = mesh.is_valid_face, mesh.is_valid_vertex
+        face_vertices = mesh.face_vertices
+
+        removed_f, added_f, changed_f = [], [], []
+        new_boundary: dict[FaceId, list[VertexId]] = {}
+        for f in change.faces:
+            alive, known = is_valid_face(f), f in face_row
+            if known and not alive:
+                removed_f.append(f)
+            elif alive:
+                b = face_vertices(f)
+                if not known:
+                    added_f.append(f)
+                    new_boundary[f] = b
+                elif tuple(b) != face_boundary[f]:
+                    changed_f.append(f)
+                    new_boundary[f] = b
+        removed_v, added_v, moved_v = [], [], []
+        for v in change.vertices:
+            alive, known = is_valid_vertex(v), v in index
+            if known and not alive:
+                removed_v.append(v)
+            elif alive and not known:
+                added_v.append(v)
+            elif alive:
+                moved_v.append(v)
+
+        total = len(index) + len(face_row)
+        if len(change.faces) + len(change.vertices) > PATCH_MAX_FRACTION * total:
+            return False
+        if len(added_v) > len(self._free_vertex_slots) + len(removed_v):
+            return False
+        if len(added_f) > len(self._free_rows) + len(removed_f):
+            return False
+        needed = sum(len(b) - 2 for b in new_boundary.values())
+        freed = sum(len(face_triangles[f]) for f in removed_f) + sum(len(face_triangles[f]) for f in changed_f)
+        if needed > len(self._free_triangles) + freed:
+            return False
+        if any(len(b) < 3 for b in new_boundary.values()):
+            return False
+
+        derived = self.derived
+        v2f, fnormals, vnormals = derived.vertex_to_faces, derived.face_normals, derived.vertex_normals
+        position = mesh.vertex_position
+        dirty_vertices: set[VertexId] = set()
+        pos_slots: dict[int, tuple] = {}
+        normal_slots: dict[int, tuple] = {}
+        tri_slots: dict[int, tuple] = {}
+        row_slots: set[int] = set()
+
+        # Adjazenz: alte Boundaries austragen, neue eintragen.
+        for f in (*removed_f, *changed_f):
+            old = face_boundary[f]
+            for v in old:
+                faces_of = v2f.get(v)
+                if faces_of is not None:
+                    faces_of.discard(f)
+            dirty_vertices.update(old)
+        for f, b in new_boundary.items():
+            for v in b:
+                faces_of = v2f.get(v)
+                if faces_of is None:
+                    v2f[v] = {f}
+                else:
+                    faces_of.add(f)
+
+        def free_triangles(f: FaceId) -> None:
+            for t in face_triangles.pop(f):
+                self._triangle_indices[t] = None
+                self._triangle_face_rows[t] = 0
+                self._free_triangles.append(t)
+                tri_slots[t] = _DEAD_TRIANGLE
+
+        for f in removed_f:
+            free_triangles(f)
+            row = face_row.pop(f)
+            self._row_face[row] = None
+            self._free_rows.append(row)
+            row_slots.add(row)
+            del face_boundary[f]
+            fnormals.pop(f, None)
+        for f in changed_f:
+            free_triangles(f)
+        for v in removed_v:
+            slot = index.pop(v)
+            self._slot_vertex[slot] = None
+            self._free_vertex_slots.append(slot)
+            pos_slots[slot] = DEAD_POSITION
+            normal_slots[slot] = _ZERO3
+            vnormals.pop(v, None)
+            if not v2f.get(v, True):
+                del v2f[v]
+            self._retriangulate.discard(v)
+        for v in added_v:
+            slot = self._free_vertex_slots.pop()
+            index[v] = slot
+            self._slot_vertex[slot] = v
+            pos_slots[slot] = position(v)
+        for v in moved_v:
+            pos_slots[index[v]] = position(v)
+
+        # Neu triangulieren: neue / geänderte Faces und alle Faces um bewegte Vertices.
+        retri: set[FaceId] = set(new_boundary)
+        for v in (*moved_v, *self._retriangulate):
+            faces_of = v2f.get(v)
+            if faces_of:
+                retri.update(faces_of)
+        self._retriangulate = set()
+        for f in retri:
+            b = new_boundary.get(f) or face_vertices(f)
+            positions = {v: position(v) for v in b}
+            tris = triangulate_face(b, positions)
+            fnormals[f] = face_normal(positions, b)
+            face_boundary[f] = tuple(b)
+            row = face_row.get(f)
+            if row is None:
+                row = face_row[f] = self._free_rows.pop()
+                self._row_face[row] = f
+            slots = face_triangles.get(f)
+            if slots is None or len(slots) != len(tris):
+                if slots is not None:
+                    free_triangles(f)
+                slots = [self._free_triangles.pop() for _ in tris]
+                face_triangles[f] = slots
+            for t, tri in zip(slots, tris):
+                self._triangle_indices[t] = tri
+                self._triangle_face_rows[t] = row
+                tri_slots[t] = (float(index[tri[0]]), float(index[tri[1]]), float(index[tri[2]]))
+            row_slots.add(row)
+            dirty_vertices.update(b)
+
+        # Vertex-Normalen um alles, was sich geändert hat (wie `full_recompute`: ein Vertex ohne
+        # Faces bekommt (0, 0, 0) und keinen Adjazenz-Eintrag); die Face-Zeilen um diese Vertices.
+        for v in dirty_vertices:
+            slot = index.get(v)
+            if slot is None:
+                continue
+            faces_of = v2f.get(v)
+            sx = sy = sz = 0.0
+            if faces_of:
+                for f in faces_of:
+                    n = fnormals[f]
+                    sx += n[0]
+                    sy += n[1]
+                    sz += n[2]
+                for f in faces_of:
+                    row_slots.add(face_row[f])
+            elif faces_of is not None:
+                del v2f[v]
+            normal = vnormals[v] = _normalize((sx, sy, sz))
+            normal_slots[slot] = normal
+        for v in added_v:
+            if v not in vnormals:
+                vnormals[v] = _ZERO3
+                normal_slots[index[v]] = _ZERO3
+        derived.invalidate_bounds(mesh)
+
+        self._upload_vec3("positions", pos_slots)
+        self._upload_vec3("normals", normal_slots)
+        self._upload_vec3("indices", tri_slots)
+        for run in _runs(tri_slots):
+            data = [float(self._triangle_face_rows[t]) for t in run]
+            self.store.update(TRIANGLE_FACES, run[0], data, len(data) * FLOAT_BYTES)
+        row_face = self._row_face
+        dead_row = [0.0] * FACE_ROW_FLOATS
+        for run in _runs(row_slots):
+            data: list[float] = []
+            for row in run:
+                face_id = row_face[row]
+                data += dead_row if face_id is None else self._face_row_data(face_id)
+            self.store.update(FACE_DATA, run[0] * FACE_ROW_FLOATS, data, len(data) * FLOAT_BYTES)
+            self.stats.count("face_data_uploads", len(run))
+        if self.overlay is not None:
+            # Wie der volle Rebuild: die Flags passen zu den (neuen) Slots und zur Auswahl.
+            flags = self._highlight_flags()
+            self.store.update("highlight_flags", 0, flags, len(flags) * FLOAT_BYTES)
+        return True
+
+    def _upload_vec3(self, name: str, slot_values: dict[int, tuple]) -> None:
+        for run in _runs(slot_values):
+            data = [c for slot in run for c in slot_values[slot]]
+            self.store.update(name, run[0] * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
+            self.stats.count("partial_updates")
 
     def _sync_geometry(self) -> None:
         moved = self.dirty.modified_vertices
         if not moved:
             return
         self.stats.count("vertex_updates", len(moved))
+        self._retriangulate.update(moved)
 
         affected_faces, affected_vertices = self.derived.affected_neighborhood(
             self.mesh, moved
@@ -407,7 +707,7 @@ class RenderMesh:
         if self.overlay is None:
             return
         self.stats.count("selection_updates")
-        flags = self.overlay.build_highlight_flags(self.mesh)
+        flags = self._highlight_flags()
         # Nur die Overlay-Ressource - KEIN Base-Mesh-Buffer wird angefasst.
         self.store.update("highlight_flags", 0, flags, len(flags) * FLOAT_BYTES)
         self.stats.count("partial_updates")

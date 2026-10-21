@@ -15,10 +15,10 @@ called without a `cache`. `Application` is the only owner of a `PickCache`
 instance; the Playground's Knife call sites (window + Knife Face Cut Lab) share
 it via `PlaygroundApp.pick_cache` (B8 wiring, 2026-09-29).
 
-Invalidation is explicit, not automatic mesh-content hashing — `core.Mesh`
-is frozen (AD-001/ADR-001) and exposes no revision counter to read cheaply.
-The owner calls `invalidate()` whenever the mesh changes (topology or vertex
-positions) or the occlusion-relevant display state changes (show_faces).
+Invalidation: the owner calls `invalidate()` whenever the mesh changes (topology or vertex
+positions) or the occlusion-relevant display state changes (show_faces). Since 2026-10-21 the
+cache also watches the mesh's change journal (`core.Mesh.watch()`, AD-023) and patches only what
+changed; see `PickCache`.
 Camera changes need no explicit call: the cache signature already keys on
 `camera.camera_revision`, which `OrbitCamera` bumps on every orbit/dolly/pan
 itself, so an orbit/zoom/pan invalidates the cache automatically.
@@ -54,10 +54,31 @@ FACE_GRID_CELL_PX = 16.0
 GRID_AFTER_SCANS = 8
 
 
+#: A mesh change touching more than this share of the elements re-projects everything (`PROVISIONAL`).
+PATCH_MAX_FRACTION = 0.25
+
+
+def _bbox(vertex_screen: dict, boundary) -> tuple | None:
+    points = [vertex_screen.get(vid) for vid in boundary]
+    if not points or any(p is None for p in points):
+        # A boundary vertex isn't projectable (behind the near
+        # plane) - no cheap bbox; the occlusion test falls back to
+        # testing this face exactly instead of pre-filtering it.
+        return None
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 class PickCache:
     """Per (camera, mesh, viewport size) cache of projected screen positions
     and face screen-space bounding boxes. Refreshed lazily: `refresh()` is a
-    cheap signature check when nothing changed since the last call."""
+    cheap signature check when nothing changed since the last call.
+
+    Mesh changes (2026-10-21, AD-023): the cache watches its mesh's change journal
+    (`Mesh.watch()`); a refresh after a topology or position change re-projects only the
+    touched vertices and the faces around them and patches `vertex_faces`, instead of the
+    whole mesh. A camera / size / mesh switch still re-projects everything."""
 
     def __init__(self) -> None:
         self._signature: tuple | None = None
@@ -70,17 +91,21 @@ class PickCache:
         self._grid: FaceGrid | None = None
         self._scans_key: tuple | None = None
         self._scans = 0
+        self._watch = None
+        self._project = None
 
     def invalidate(self) -> None:
-        """Forces a refresh on the next `refresh()` call. Call this whenever
+        """Marks the cache for a check on the next `refresh()` call. Call this whenever
         the mesh (topology or vertex positions) or the occlusion-relevant
-        display state (show_faces) changed since the last pick."""
+        display state (show_faces) changed since the last pick. What the mesh changed is
+        read from its change journal and patched; a camera / size / mesh switch is in the
+        signature and re-projects everything."""
         self._generation += 1
 
     def refresh(self, camera, mesh, width: int, height: int) -> None:
         """Recomputes the cached projections/bboxes if the camera, mesh,
         viewport size or an explicit `invalidate()` changed the signature
-        since the last call; otherwise a no-op."""
+        since the last call, or the mesh changed (journal); otherwise a no-op."""
         signature = (
             id(mesh),
             id(camera),
@@ -89,9 +114,19 @@ class PickCache:
             height,
             self._generation,
         )
-        if signature == self._signature:
+        watch = self._watch
+        if watch is None or watch.mesh is not mesh:
+            if watch is not None:
+                watch.close()
+            watch = self._watch = mesh.watch()
+            self._signature = None
+        if signature == self._signature and watch.peek().is_empty():
             return
+        change = watch.take()
+        same_view = self._signature is not None and signature[:5] == self._signature[:5]
         self._signature = signature
+        if same_view and self._patch(mesh, change):
+            return
 
         projector = getattr(camera, "screen_projector", None)
         if projector is not None:
@@ -99,23 +134,70 @@ class PickCache:
         else:
             def project(point):
                 return camera.project_to_screen(point, width, height)
+        self._project = project
         position = mesh.vertex_position
         vertex_screen = {vid: project(position(vid)) for vid in mesh.all_vertex_ids()}
         self.vertex_screen = vertex_screen
 
-        face_bbox = {}
-        for fid in mesh.all_face_ids():
-            points = [vertex_screen.get(vid) for vid in mesh.face_vertices(fid)]
-            if not points or any(p is None for p in points):
-                # A boundary vertex isn't projectable (behind the near
-                # plane) - no cheap bbox; the occlusion test falls back to
-                # testing this face exactly instead of pre-filtering it.
-                face_bbox[fid] = None
+        face_vertices = mesh.face_vertices
+        self.face_bbox = {fid: _bbox(vertex_screen, face_vertices(fid)) for fid in mesh.all_face_ids()}
+
+    def _patch(self, mesh, change) -> bool:
+        """Re-projects what `change` touched (same camera, size and mesh). False = do it all."""
+        if change.is_empty():
+            self._keep_derived(mesh)
+            return True
+        if len(change.vertices) + len(change.faces) > PATCH_MAX_FRACTION * (
+            len(self.vertex_screen) + len(self.face_bbox)
+        ):
+            return False
+        project = self._project
+        vertex_screen, face_bbox = self.vertex_screen, self.face_bbox
+        position = mesh.vertex_position
+        is_valid_vertex, is_valid_face = mesh.is_valid_vertex, mesh.is_valid_face
+        faces: set = set()
+        for vid in change.vertices:
+            if is_valid_vertex(vid):
+                vertex_screen[vid] = project(position(vid))
+                for eid in mesh.vertex_edges(vid):
+                    faces.update(mesh.edge_faces(eid))
+            else:
+                vertex_screen.pop(vid, None)
+        for fid in change.faces:
+            if is_valid_face(fid):
+                faces.add(fid)
+            else:
+                face_bbox.pop(fid, None)
+        face_vertices = mesh.face_vertices
+        for fid in faces:
+            face_bbox[fid] = _bbox(vertex_screen, face_vertices(fid))
+        self._patch_vertex_faces(mesh, change)
+        return True
+
+    def _keep_derived(self, mesh) -> None:
+        """The mesh did not change: the camera-independent map stays valid under the new key."""
+        if self._faces_key is not None and self._faces_key[0] == id(mesh):
+            self._faces_key = (id(mesh), self._generation)
+
+    def _patch_vertex_faces(self, mesh, change) -> None:
+        if self._faces_key is None or self._faces_key[0] != id(mesh):
+            return
+        faces_of = self._vertex_faces
+        vertices = set(change.vertices)
+        for eid, before in change.edges.items():
+            if before is not None:
+                vertices.update(before[:2])
+            if mesh.is_valid_edge(eid):
+                vertices.update(mesh.edge_vertices(eid))
+        for vid in vertices:
+            if not mesh.is_valid_vertex(vid):
+                faces_of.pop(vid, None)
                 continue
-            xs = [p[0] for p in points]
-            ys = [p[1] for p in points]
-            face_bbox[fid] = (min(xs), min(ys), max(xs), max(ys))
-        self.face_bbox = face_bbox
+            found: set = set()
+            for eid in mesh.vertex_edges(vid):
+                found.update(mesh.edge_faces(eid))
+            faces_of[vid] = found
+        self._faces_key = (id(mesh), self._generation)
 
     def vertex_faces(self, mesh) -> dict:
         """vertex -> set of the faces on its edges (the faces the occlusion test excludes for

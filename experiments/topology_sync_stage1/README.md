@@ -1,3 +1,7 @@
+> **Superseded 2026-10-21:** Stage 1 is now production code in a general form (Core change journal, incremental
+> `RenderMesh` and `PickCache`), see [AD-023 §9](../../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md).
+> This prototype patches methods that have changed since and is kept as project memory; it no longer runs against `src/`.
+
 # AD-023 stage 1 as an experiment (V0 + V2 + V3 + H0)
 
 > Prototype of stage 1 of [AD-023](../../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) §7 after Manu's

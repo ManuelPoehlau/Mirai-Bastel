@@ -54,7 +54,8 @@ from core import (
     SelectionMode,
     VertexId,
 )
-from core.operations import MeshStateCommand
+from core.mesh import MeshChange
+from core.operations import MeshDeltaCommand, record_mesh_change
 from core.scene import IDENTITY_TRANSFORM
 from core.serialization import scene_from_json, scene_to_json
 from core.operations.transform import SeamConstraintError
@@ -720,7 +721,7 @@ class Application:
         self._slide_plan: SlidePlan | None = None
         self._slide_t: float = 0.0
         self._slide_direction: tuple[float, float] | None = None
-        self._slide_before: dict | None = None
+        self._slide_before: MeshChange | None = None
         self._slide_selection_before: tuple | None = None
 
     def _setup_tools(self) -> None:
@@ -1211,7 +1212,7 @@ class Application:
         placement becomes identity, and the pivot moves to its old world position `t + c`
         (`PROVISIONAL`: a later Rotate/Scale turns about the same place as before; the
         alternative, pivot = origin, is a question for Manu). One `CompositeCommand` per press
-        (E-13): a `MeshStateCommand` per object, then the transforms, then the pivots. Refused
+        (E-13): a `MeshDeltaCommand` per object, then the transforms, then the pivots. Refused
         as a whole, before anything changes, when one object's symmetry definition would not
         survive the bake (`applied_symmetry_axis`)."""
         try:
@@ -1224,14 +1225,8 @@ class Application:
         transforms, pivots = [], []
         for obj, axis in zip(placed, axes):
             mesh = obj.mesh
-            mesh_before = mesh.export_state()
-            apply_placement(obj, axis)
-            parts.append(
-                MeshStateCommand(
-                    mesh=mesh, before_state=mesh_before, after_state=mesh.export_state(),
-                    description=f"Apply transform {obj.name!r}",
-                )
-            )
+            delta, _ = record_mesh_change(mesh, lambda obj=obj, axis=axis: apply_placement(obj, axis))
+            parts.append(MeshDeltaCommand(mesh=mesh, delta=delta, description=f"Apply transform {obj.name!r}"))
             pivots.append((obj, obj.pivot, object_space.to_world(obj, obj.pivot)))
             transforms.append((obj, obj.transform, IDENTITY_TRANSFORM))
         for obj, _, after in transforms:
@@ -1608,7 +1603,7 @@ class Application:
         implementation; an empty selection begins a Knife session (WP-06
         B7, `_knife_begin`). Mutates only through
         `Mesh.split_edge`/`Mesh.connect_vertices` (ARCH-02); exactly one
-        `MeshStateCommand` per success, mesh and history untouched on
+        `MeshDeltaCommand` per success, mesh and history untouched on
         rejection or no-op. Each success branch reports the topology change
         through `_notify_topology_changed()`, which also re-anchors the hover
         (the hovered edge/face handle can be gone after Split/Connect), and
@@ -1904,7 +1899,7 @@ class Application:
             return False
         mesh = self.scene.mesh
         if not self._transform_begun:
-            self._slide_before = mesh.export_state()
+            self._slide_before = mesh.begin_change()
             self._slide_selection_before = self._selection_snapshot()
             self._transform_begun = True
         direction = self._slide_direction
@@ -1929,15 +1924,12 @@ class Application:
         if not self._transform_begun or before is None:
             self._set_status(f"{LOOP_SLIDE_LABEL}: no change")
             return
-        after = mesh.export_state()
-        if after == before:
+        self._slide_before = None
+        delta = mesh.end_change(before)
+        if delta.empty:
             self._set_status(f"{LOOP_SLIDE_LABEL}: no change")
             return
-        self.history.push(
-            MeshStateCommand(
-                mesh=mesh, before_state=before, after_state=after, description=LOOP_SLIDE_LABEL
-            )
-        )
+        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=LOOP_SLIDE_LABEL))
         self._record_selection_history(self._slide_selection_before)
         self._soft_preview_refresh()
         self._set_status(f"{LOOP_SLIDE_LABEL} committed")
@@ -1946,7 +1938,8 @@ class Application:
         before = self._slide_before
         if before is None or self._slide_plan is None:
             return
-        self.scene.mesh.load_state(before)
+        self._slide_before = None
+        self.scene.mesh.rollback_change(before)
         self._pick_cache.invalidate()
         if self.viewport is not None:
             self.viewport.on_vertices_moved(set(self._slide_plan.vertex_ids))
@@ -1956,7 +1949,7 @@ class Application:
     def _removal_command(self, command: str) -> bool:
         """Entf / Rücktaste / Ctrl+Rücktaste on the selection of the active
         component mode (`mirai.topology.delete_dissolve`). Exactly one
-        `MeshStateCommand` per success, mesh and history untouched on refusal
+        `MeshDeltaCommand` per success, mesh and history untouched on refusal
         or no-op. Residue (first default, refinement is material for the
         practice check): Face Dissolve selects the merged faces, everything
         else clears the selection; the mode stays.
@@ -2858,6 +2851,9 @@ class Application:
         self._slide_plan = None
         self._slide_t = 0.0
         self._slide_direction = None
+        if self._slide_before is not None:
+            # A slide that ended without release / abort: stop its recording, keep the mesh.
+            self.scene.mesh.release_change(self._slide_before)
         self._slide_before = None
         self._slide_selection_before = None
         if resume_preview:
@@ -3235,9 +3231,9 @@ class Application:
         the moved vertex IDs (positions only) or None (topology changed).
         Raises `RuntimeError` before anything changes while
         `interaction_owner` is set (D3). If `mutate` raises, the mesh is
-        restored from the snapshot and the exception propagates (ID counters
-        stay forward, AD-001). An unchanged `export_state()` records nothing
-        and returns False. Otherwise: one `MeshStateCommand(description)`, the
+        restored exactly and the exception propagates (ID counters
+        stay forward, AD-001). An unchanged mesh records nothing
+        and returns False. Otherwise: one `MeshDeltaCommand(description)`, the
         selection-mirror entry (so Undo/Redo restores the selection, B6
         follow-up), pick cache invalidated, viewport notified, hover
         re-picked; returns True."""
@@ -3262,28 +3258,20 @@ class Application:
         `apply_mesh_change` is its external-host entry.
 
         `mutate(mesh)` changes the mesh and returns a result. If it raises, the mesh is restored
-        from the snapshot and the exception propagates. An unchanged `export_state()` records
-        nothing (`changed` False). Otherwise: one `MeshStateCommand(description)`,
+        exactly (change journal) and the exception propagates. An unchanged mesh records
+        nothing (`changed` False). Otherwise: one `MeshDeltaCommand(description)`,
         `on_applied(result)` (sets the selection residue), then the selection-mirror entry
         taken from the snapshot made before the mutation, pick cache invalidated, viewport
         notified (`moved_of(result)` = moved vertex IDs for a positions-only change, None or no
         `moved_of` = topology changed), hover re-picked."""
         mesh = self.scene.mesh
         selection_before = self._selection_snapshot()
-        before = mesh.export_state()
-        try:
-            result = mutate(mesh)
-        except BaseException:
-            mesh.load_state(before)
-            raise
-        after = mesh.export_state()
-        if after == before:
+        # Change journal (AD-023 H1): the entry holds only what `mutate` changed; a raising
+        # `mutate` is rolled back exactly, an unchanged mesh records nothing.
+        delta, result = record_mesh_change(mesh, lambda: mutate(mesh))
+        if delta.empty:
             return _MeshTransaction(False, result)
-        self.history.push(
-            MeshStateCommand(
-                mesh=mesh, before_state=before, after_state=after, description=description
-            )
-        )
+        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=description))
         if on_applied is not None:
             on_applied(result)
         self._record_selection_history(selection_before)
@@ -3351,7 +3339,7 @@ class Application:
         """Entfernt jedes Handle, das `mesh` nicht mehr kennt ("ghost
         selection") - Sicherheitsnetz nach `_apply_undo_redo()`.
 
-        `MeshStateCommand` stellt das Mesh wieder her; ohne den Selection-
+        Das Mesh-Command stellt das Mesh wieder her; ohne den Selection-
         Restore oben blieben Handles von Elementen, die die Mutation entfernt
         hatte, als tote IDs in `selection` liegen. Der B6-Crash-Fix
         (`_notify_topology_changed`, `_element_vertices`, `resolve_selection_

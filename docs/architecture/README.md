@@ -41,7 +41,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-020](AD-020-SOFT-SELECTION-APP-PATH.md) | Soft Selection on the app path for the S2 Artist test (host, Core seam, influence state, visualization, keys, cost probe) | DECIDED (2026-10-10; capability `PROVISIONAL`) |
 | [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) | Object / Component model (ARCH-01): thin Object owning one Mesh, Reference state, object space for symmetry/soft | DECIDED (2026-10-15): reviewed, go for M0; M0, M1, M2-0, M2-0…M2-4 implemented (2026-10-15); Manu's practical tests pending |
 | [AD-022](AD-022-GPU-PICKING.md) | GPU ID-buffer picking (WP-VIEW-PERF-02; spike in `experiments/gpu_picking_spike/`) | PROPOSED (2026-10-17) |
-| [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) | Incremental topology sync and history (delta history, partial viewport rebuild) | PROPOSED (2026-10-17) |
+| [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) | Incremental topology sync and history (delta history, partial viewport rebuild) | IMPLEMENTED (2026-10-21, §9: Core change journal) |
 | [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md) | Symmetry definition storage | DECIDED |
 | [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
 | [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife/Extrude without `SymmetricX` copies) | DECIDED (2026-10-08) |

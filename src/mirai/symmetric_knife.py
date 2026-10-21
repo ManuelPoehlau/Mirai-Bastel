@@ -19,9 +19,9 @@ Contract:
   returned `KnifeResolution` is the resolver's report of the **clipped working-side cut** (residue F4 = A:
   `path_edges` are the working side's connecting cut edges, plus cut edges on the plane; mirror edges and
   seam halves are not in it; `kept_calls` are the source's calls, not the replayed ones). The caller still
-  owes the integrity net (`check_commit`) and the single `MeshStateCommand`.
+  owes the integrity net (`check_commit`) and the single `MeshDeltaCommand`.
 - Refusal: `SymmetryRefusal` (a `KnifeRefusal`) with a status text; **the coordinator itself has taken
-  every mutation back** (`load_state(session_before)`), so the mesh is the session start whatever the
+  every mutation back** (`session_before.revert()`, or `load_state` of a state dict), so the mesh is the session start whatever the
   caller does next. Any other exception also leaves the mesh restored before it propagates.
 - Exactness (AR-1, INV-5): sides are exact signs of the plane coordinate, no tolerance; an exact plane
   only (`is_exact_plane`), any of ±X, ±Y, ±Z through the origin.
@@ -54,6 +54,7 @@ from .symmetry_coordination import (
     seam_after_split,
 )
 from .topology.knife_resolve import (
+    SessionStart,
     KeptCall,
     KeptSplitEdge,
     KeptSplitFace,
@@ -572,5 +573,8 @@ def coordinate_knife(mesh: Mesh, path: list[dict], session_before: dict) -> Knif
         return res
     except BaseException:
         # Whatever went wrong, the source's cut and the replay's mutations are taken back as a whole.
-        mesh.load_state(session_before)
+        if isinstance(session_before, SessionStart):
+            session_before.revert()
+        else:
+            mesh.load_state(session_before)
         raise

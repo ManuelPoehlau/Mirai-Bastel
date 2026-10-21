@@ -28,7 +28,7 @@ Deliberate choices (open questions D3/D4, not decisions):
     mesh is restored (Wings would dissolve it instead; that needs a
     vertex-dissolve primitive we do not have).
 
-Contract: exactly one MeshStateCommand on success, mesh byte-identical on
+Contract: exactly one MeshDeltaCommand on success, mesh byte-identical on
 any rejection. Only existing Core primitives are used (split_edge,
 connect_vertices).
 """
@@ -38,7 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from core import EdgeId, VertexId
-from core.operations.topology import MeshStateCommand
+from core.operations.topology import MeshDeltaCommand, record_mesh_change
 
 from .topology_points import connect_in_shared_face
 
@@ -138,19 +138,6 @@ def apply_connect_edges(mesh, edge_ids: set[EdgeId]) -> EdgeConnectResult:
 
 def connect_selected_edges_per_face(scene, edge_ids: set[EdgeId]) -> list[EdgeId]:
     mesh = scene.mesh
-    before = mesh.export_state()
-    try:
-        created = apply_connect_edges(mesh, edge_ids).created
-    except BaseException:
-        mesh.load_state(before)
-        raise
-
-    scene.history.push(
-        MeshStateCommand(
-            mesh=mesh,
-            before_state=before,
-            after_state=mesh.export_state(),
-            description=EDGE_CONNECT_LABEL,
-        )
-    )
+    delta, created = record_mesh_change(mesh, lambda: apply_connect_edges(mesh, edge_ids).created)
+    scene.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=EDGE_CONNECT_LABEL))
     return created

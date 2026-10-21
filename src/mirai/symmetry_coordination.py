@@ -234,7 +234,7 @@ def seam_after_split(
 
     `split_seam_edges` maps each split seam edge to the halves the op reported (`Mesh.split_edge`
     returns them). Edges that are not in the seam are ignored. Returns a new definition; the
-    caller writes it inside the same transaction, so Undo restores it through `MeshStateCommand`.
+    caller writes it inside the same transaction, so Undo restores it through the mesh history entry (`MeshDeltaCommand`).
     """
     seam = set(definition.seam_edges)
     for old, (half_a, half_b) in split_seam_edges.items():

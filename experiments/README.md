@@ -28,9 +28,11 @@ Drei lesende Mess-Skripte (Mesh-Kosten und Speicher, Morph-Blend-Arithmetik, Zer
 
 ### `topology_sync_stage1/`
 
-AD-023 Stufe 1 (V0, V2, V3, H0) als Experiment: von außen eingesetzt, `src/` unverändert, mit Gleichheitstests, einer Messsonde mit p95 und einem Starter für die App. Siehe [README](topology_sync_stage1/README.md).
+**Abgelöst 2026-10-21** durch die Produktionsumsetzung ([AD-023 §9](../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md)). AD-023 Stufe 1 (V0, V2, V3, H0) als Experiment: von außen eingesetzt, `src/` unverändert, mit Gleichheitstests, einer Messsonde mit p95 und einem Starter für die App. Siehe [README](topology_sync_stage1/README.md).
 
 ### `topology_stage2_delete/`
+
+**Abgelöst 2026-10-21** durch die Produktionsumsetzung ([AD-023 §9](../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md)).
 
 AD-023 Stufe 2 (Delta-History H1, stellenweise gepatchte Buffer V1) zusammen mit AD-022 (GPU-Picking B2-out) als Prototyp, nur für Delete samt Undo/Redo: auf Stufe 1 aufgesetzt, `src/` unverändert, mit Gleichheitstests, einer Messsonde für alle Konfigurationen in einem Befehl, dem B2-Exaktheitscheck (`gl_PrimitiveID`) und einem Starter für die App. Siehe [README](topology_stage2_delete/README.md).
 

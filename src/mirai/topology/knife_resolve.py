@@ -9,12 +9,13 @@ accepts/hover/click, planner, picking, HUD text) and call this at commit.
 Contract:
 
 - **Camera-free and session-free.** No import of `viewport`, `playground`, `mirai.interaction`, Selection
-  or History (`tests/test_knife_resolve.py` checks it). Input: the mesh, the session-start mesh state
-  (`export_state()`) and the path as plain, serialisable records. Output: a `KnifeResolution`.
+  or History (`tests/test_knife_resolve.py` checks it). Input: the mesh, the session start (a
+  `SessionStart` change-journal recording, or an `export_state()` dict) and the path as plain,
+  serialisable records. Output: a `KnifeResolution`.
 - **Mutations** only through `Mesh.split_face` (AD-017 K1 / B2c) and `Mesh.split_edge`, each through its
-  recording helper (`kept_split_face`, `kept_split_edge`), and `export_state` / `load_state` for the
-  rollback of a dropped bridge candidate, run or closed shape and of a whole session (`check_commit`),
-  through `checkpoint` / `rollback`. `connect_vertices` is not used (`split_face(..., positions=())` is
+  recording helper (`kept_split_face`, `kept_split_edge`); the rollback of a dropped bridge candidate,
+  run or closed shape and of a whole session (`check_commit`) goes through `checkpoint` / `rollback`
+  (change-journal recordings since 2026-10-21, AD-023 H1: O(what changed), no whole-mesh snapshot). `connect_vertices` is not used (`split_face(..., positions=())` is
   `connect_vertices`, AD-017 §13 item 1). No `remove_face` / `add_vertex` / `add_face`.
 - **Kept-call report** (AD-017 §13, AD-SYM-03 slice 6a): `KnifeResolution.kept_calls` lists every
   `split_edge` / `split_face` call the resolution kept, in call order; calls taken back by a rollback are
@@ -216,25 +217,120 @@ def kept_split_face(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions=(
     return result
 
 
-@dataclass(frozen=True)
 class Checkpoint:
-    """A mesh state to go back to and the length of the report at that moment."""
+    """A mesh state to go back to and the length of the report at that moment.
 
-    state: dict
-    mark: int
+    Since 2026-10-21 a checkpoint of a live mesh is a change-journal recording
+    (`Mesh.begin_change`, AD-023 H1) instead of an `export_state()` dict: taking it is O(1) and
+    going back is O(what changed since). `state` (a dict) is still accepted, for a checkpoint
+    built from a saved state; `rollback` then loads it."""
+
+    def __init__(self, state: dict | None, mark: int, change=None) -> None:
+        self.state = state
+        self.mark = mark
+        self.change = change
 
 
 def checkpoint(mesh) -> Checkpoint:
-    """`export_state()` and the report's length now; hand it to `rollback`."""
-    return Checkpoint(_raw(mesh).export_state(), len(mesh.kept) if isinstance(mesh, RecordedMesh) else 0)
+    """A journal checkpoint and the report's length now; hand it to `rollback` (any number of
+    times) and, when the work it guards is kept, to `release`."""
+    raw = _raw(mesh)
+    return Checkpoint(None, len(mesh.kept) if isinstance(mesh, RecordedMesh) else 0, raw.begin_change())
 
 
 def rollback(mesh, cp: Checkpoint) -> None:
-    """`load_state(cp.state)` and the report cut back to the checkpoint's length: what the rolled-back
-    calls recorded is gone (last in, first out — bridge candidates inside a run, runs, closed shapes)."""
-    _raw(mesh).load_state(cp.state)
+    """The mesh back to the checkpoint and the report cut back to the checkpoint's length: what the
+    rolled-back calls recorded is gone (last in, first out — bridge candidates inside a run, runs,
+    closed shapes). A journal checkpoint stays valid (it keeps recording from the restored state)."""
+    raw = _raw(mesh)
+    if cp.change is not None:
+        raw.revert_change(cp.change)
+    else:
+        raw.load_state(cp.state)
     if isinstance(mesh, RecordedMesh):
         del mesh.kept[cp.mark:]
+
+
+def release(mesh, cp: Checkpoint) -> None:
+    """Keep what happened since the checkpoint and stop its recording (no-op for a dict state)."""
+    if cp.change is not None:
+        _raw(mesh).release_change(cp.change)
+        cp.change = None
+
+
+class SessionStart:
+    """The mesh as it was when a Knife commit began, kept as a change-journal recording instead of
+    an `export_state()` dict (AD-023 H1, 2026-10-21): what the resolver and the commit check ask of
+    "before" is answered from the records of the elements the commit touched, everything else is
+    unchanged. Accepted wherever a `before_state` dict is (`resolve_cross_face`, `check_commit`,
+    `integrity_problem`). Ends with `finish()` (-> `MeshDelta`) or `abandon()` (exact rollback)."""
+
+    def __init__(self, mesh) -> None:
+        self.mesh = _raw(mesh)
+        self.change = self.mesh.begin_change()
+        self._done = False
+
+    def had_vertex(self, vid: VertexId) -> bool:
+        rec = self.change.vertices.get(vid, _MISSING)
+        return self.mesh.is_valid_vertex(vid) if rec is _MISSING else rec is not None
+
+    def changed_faces(self) -> list[FaceId]:
+        """Faces that exist now and are new or have another boundary, in mesh order."""
+        m = self.mesh
+        return sorted(
+            f for f, rec in self.change.faces.items()
+            if m.is_valid_face(f) and rec != tuple(m.face_vertices(f))
+        )
+
+    def unchanged(self) -> bool:
+        m = self.mesh
+        ch = self.change
+        return (
+            all(m._vertex_record(v) == r for v, r in ch.vertices.items())
+            and all(m._edge_record(e) == r for e, r in ch.edges.items())
+            and all(m._face_record(f) == r for f, r in ch.faces.items())
+            and (not ch.symmetry_touched or ch.symmetry == m.symmetry_definition)
+        )
+
+    def state(self) -> dict:
+        """The start as an `export_state()` dict (O(mesh); only for the rare old-fold lookup)."""
+        m = self.mesh
+        state = m.export_state()
+        ch = self.change
+        for v, rec in ch.vertices.items():
+            state["vertices"].pop(int(v), None)
+            if rec is not None:
+                state["vertices"][int(v)] = list(rec)
+        for e, rec in ch.edges.items():
+            state["edges"].pop(int(e), None)
+            if rec is not None:
+                state["edges"][int(e)] = {"v0": int(rec[0]), "v1": int(rec[1]), "faces": [int(f) for f in rec[2]]}
+        for f, rec in ch.faces.items():
+            state["faces"].pop(int(f), None)
+            if rec is not None:
+                state["faces"][int(f)] = [int(v) for v in rec]
+        return state
+
+    def revert(self) -> None:
+        self.mesh.revert_change(self.change)
+
+    def finish(self):
+        self._done = True
+        return self.mesh.end_change(self.change)
+
+    def abandon(self) -> None:
+        if not self._done:
+            self._done = True
+            self.mesh.rollback_change(self.change)
+
+
+_MISSING = object()
+
+
+def _existed_before(before, vid: VertexId) -> bool:
+    if isinstance(before, SessionStart):
+        return before.had_vertex(vid)
+    return int(vid) in before["vertices"]
 
 
 # ---------------------------------------------------------------------------
@@ -416,8 +512,10 @@ def close_loop_at_vertex(mesh, face_id: FaceId, x: VertexId, loop_positions: lis
             ok = False
         if ok:
             chain = [x] + loop_vs + [x]
+            release(mesh, base)
             return loop_vs, f_loop, ring, [find_edge(mesh, u, v) for u, v in zip(chain, chain[1:])]
         rollback(mesh, base)
+    release(mesh, base)
     raise MeshError("close_loop_at_vertex: no bridge fits")
 
 
@@ -453,9 +551,12 @@ def integrity_problem(mesh, before_state: dict) -> str | None:
     the neighbour: at most two faces per edge, walked in opposite directions, and not facing the
     other way where the two lie (nearly) in one plane."""
     m = mesh
-    before = before_state["faces"]
-    touched = [f for f in m.all_face_ids()
-               if before.get(int(f)) != [int(v) for v in m.face_vertices(f)]]
+    if isinstance(before_state, SessionStart):
+        touched = before_state.changed_faces()
+    else:
+        before = before_state["faces"]
+        touched = [f for f in m.all_face_ids()
+                   if before.get(int(f)) != [int(v) for v in m.face_vertices(f)]]
     normals: dict[FaceId, Position] = {}
 
     def normal(f):
@@ -501,7 +602,7 @@ def _old_fold_dot(mesh, before_state: dict, x: VertexId, y: VertexId) -> float:
     """The dot of the two face normals that met along the old edge the segment x-y lay on in
     `before_state` (a mesh pushed in on itself, e.g. a bowl: its rim is a fold the Artist built, not
     one the cut made). +1.0 (flat: no excuse) when no old edge with two faces lies under x-y."""
-    old = Mesh.from_state(before_state)
+    old = Mesh.from_state(before_state.state() if isinstance(before_state, SessionStart) else before_state)
     px, py = mesh.vertex_position(x), mesh.vertex_position(y)
     tol = 1e-7 * max(1.0, math.dist(px, py))
     for e in old.all_edge_ids():
@@ -526,10 +627,16 @@ class CommitCheck:
 
     after_state: dict | None
     problem: str | None = None
+    #: The session's net change when `check_commit` got a `SessionStart` (None: nothing to commit).
+    delta: object = None
 
     @property
     def rolled_back(self) -> bool:
         return self.problem is not None
+
+    @property
+    def changed(self) -> bool:
+        return self.after_state is not None or self.delta is not None
 
 
 def check_commit(mesh, before_state: dict, resolution: KnifeResolution | None = None) -> CommitCheck:
@@ -537,7 +644,21 @@ def check_commit(mesh, before_state: dict, resolution: KnifeResolution | None = 
     whose result is geometrically broken is taken back as a whole (to `before_state`) — never
     half-broken geometry in History. Given the session's `resolution`, a session taken back leaves
     its kept-call report empty (AD-017 §13 item 4): nothing was kept."""
-    current = checkpoint(mesh).state
+    if isinstance(before_state, SessionStart):
+        # Journal path: "unchanged" and the rollback come from the records, the result is the
+        # session's MeshDelta; the recording ends here in every case.
+        if before_state.unchanged():
+            before_state.abandon()
+            return CommitCheck(None)
+        problem = integrity_problem(mesh, before_state)
+        if problem is not None:
+            before_state.abandon()
+            if resolution is not None:
+                resolution.kept_calls = ()
+            return CommitCheck(None, problem)
+        delta = before_state.finish()
+        return CommitCheck(None, delta=None if delta.empty else delta)
+    current = _raw(mesh).export_state()
     if mesh_content(current) == mesh_content(before_state):
         return CommitCheck(None)
     problem = integrity_problem(mesh, before_state)
@@ -930,7 +1051,7 @@ class KnifeResolver:
                 return None
             try:
                 # Bridges go to vertices that existed before this commit (outside corners) first.
-                outside = {v for v in m.all_vertex_ids() if int(v) in self.before_state["vertices"]}
+                outside = {v for v in m.all_vertex_ids() if _existed_before(self.before_state, v)}
                 _vs, f_loop, ring, loop_edges = close_loop_at_vertex(m, face, x, pts, outside)
             except MeshError:
                 self._loop_at_point = LOOP_NO_BRIDGE
@@ -981,6 +1102,7 @@ class KnifeResolver:
             # nothing, so it is not "applied" either, and its end splits go too.
             # A dropped run leaves nothing behind, its end splits included (Task B, 2026-09-30).
             rollback(self.mesh, cp)
+            release(self.mesh, cp)
             self.face_root = roots
             self.loops_built = built
             resolved.clear()
@@ -989,6 +1111,7 @@ class KnifeResolver:
             if self._loop_at_point:
                 self.loops_dropped[self._loop_at_point] += 1
             return False
+        release(self.mesh, cp)
         self.path_edges.extend(edges)
         return True
 
@@ -1004,13 +1127,16 @@ class KnifeResolver:
             )
         except MeshError as exc:
             rollback(self.mesh, cp)  # the first split may already have happened
+            release(self.mesh, cp)
             return ClosedShape(len(positions), error=str(exc))
         problem = next((pr for pr in (face_problem(self.mesh, f) for f in (f_inner, f_a, f_b)) if pr), None)
         if problem is not None:
             # An outline that crosses itself, or a bridge through the loop (Task A observation):
             # only this shape is taken back, the rest of the commit stands.
             rollback(self.mesh, cp)
+            release(self.mesh, cp)
             return ClosedShape(len(positions), problem=problem)
+        release(self.mesh, cp)
         self._adopt(fid, (f_inner, f_a, f_b))
         self.path_edges.extend(loop_edges)
         return ClosedShape(len(positions))

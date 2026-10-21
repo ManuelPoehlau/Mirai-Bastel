@@ -99,39 +99,23 @@ and do not read an architecture or a solution into it that the brief does not st
 
 ## 5. Never silently change architecture
 
-If implementation reveals that a documented architectural decision is wrong:
-
-1. document the problem;
-2. propose alternatives;
-3. review the alternatives;
-4. update the architectural decision;
-5. then implement the new direction.
+If implementation reveals that a documented architectural decision is wrong, record the problem and the chosen
+direction in the decision document **in the same change** that implements it. Proposing alternatives and an
+independent review are for genuinely open, consequential choices (competing architectures, a changed product
+behaviour, an unknown risk) — not for every adaptation of a documented direction.
 
 Small implementation details do not require formal architecture decisions. Fundamental boundaries do.
+"Silently" is the failure: an undocumented change. A documented, tested change in one step is not.
 
 ## 6. Preserve independent reviews
 
-Fresh AI reviews can contain information that disappears during later discussion. Important first-pass reviews should therefore be preserved before prolonged discussion whenever practical.
+Fresh AI reviews can contain information that disappears during later discussion. When a review is made, archive
+the first-pass response before prolonged discussion. Do not edit an archived independent review to make it agree
+with the final decision.
 
-Do not edit an archived independent review to make it agree with the final decision.
-
-The preferred flow is:
-
-```text
-Research / Question
-      ↓
-Independent review(s)
-      ↓
-Archive fresh responses
-      ↓
-Discussion / assessment
-      ↓
-Architecture decision
-      ↓
-Update canonical documentation
-      ↓
-Implementation
-```
+A review is a tool for a consequential open decision, not a mandatory stage: request one when the choice is hard
+to reverse, changes product behaviour, or the evidence is contested. Do not order a review merely to reconfirm a
+direction that measurements, tests and established implementations already support.
 
 ## 7. Scope discipline
 
@@ -143,6 +127,37 @@ Do not build future systems merely because the vision mentions them. Known futur
 
 A Lab tests new ideas; it does not rebuild application capabilities (selection, hover, input handling, gizmo, grid, pivot …). If a Lab would need one, stop and report (Development System §5, Haltepunkte) instead of rebuilding it.
 
+## 7a. Engineering velocity (Manu, 2026-10-21)
+
+Own the engineering. Use the available evidence. Learn from established software. Automate technical verification.
+Ask the Artist to judge the things that genuinely require an Artist.
+
+- **Solve, don't re-study.** Read the instructions, the existing code, tests, measurements and decisions; establish
+  what is known and what is genuinely uncertain; then implement when the evidence is sufficient. Do not repeat
+  audits, probes or experiments that only reconfirm established findings, and do not deliver another plan when
+  the next useful step is implementation and no material decision is blocked.
+- **Experiments are optional tools, not stages.** Build a separate experiment only for a concrete, material
+  uncertainty (competing architectures, an unknown API constraint, a risk the codebase cannot assess). A technique
+  already validated in an experiment, a benchmark, an upstream project (Blender, other mature open-source tools) or
+  a related subsystem goes straight into the production path: known bottleneck → established solution →
+  production implementation → automated verification → measurement.
+- **Established software is the reference.** Look at how Blender and other mature tools solve mesh operations,
+  picking, selection, spatial acceleration, topology updates, undo and drawing; adapt the algorithm and data
+  structure to Mirai's architecture rather than reinventing it. Respect licenses; do not copy GPL code into the
+  repository.
+- **Technical validation is the agent's job.** Correctness is established by tests (contract, regression,
+  equivalence against an oracle, randomised sequences), invariant checks and reproducible benchmarks — not by
+  Manu acting as a test runner. Ask for his practical check only for feel, usability, visual quality, workflow,
+  or behaviour that depends on his reference PC. Always say which result is test-verified, which is measured on
+  which hardware, and which still needs the reference PC; never claim an unmeasured speed-up.
+- **Shared causes first.** When several operations are slow, find the common bottleneck (history, derived data,
+  buffers, picking, selection) and fix it once for all of them. Consider the whole user-visible operation
+  (input, pick, mesh update, buffers, history, frame). Do not rewrite working subsystems for neatness alone.
+- **Larger coherent steps.** Group changes that share a bottleneck into one reviewable, verified unit. Do not stop
+  after an audit or a plan unless the task is discovery-only, a real blocker exists, or an open decision prevents
+  implementation. Keep docs in sync with meaningful changes; documentation does not replace implementation.
+- **Report** what changed, what was verified (and how), what the measurements actually show, and what remains open.
+
 ## 8. Agent task discipline
 
 An assignment is defined by its outcome, not by its steps:
@@ -150,11 +165,11 @@ An assignment is defined by its outcome, not by its steps:
 - **Discovery:** one Artist test session (20–40 min, several points). Build, test and fix internally as often as needed; return with one consolidated practical test. When the direction is unclear, build switchable variants instead of sequential rounds.
 - **Production:** run autonomously until the Definition of Done.
 
-Within an assignment, decide in your evidence domain and continue; stop only at the Haltepunkte in Development System §5. Mark agent-set choices `PROVISIONAL`.
+Within an assignment, decide in your evidence domain and continue; stop only at the Haltepunkte in Development System §5. Mark agent-set choices `PROVISIONAL`. Do not ask Manu to choose between technical approaches when evidence and engineering judgement suffice; choose a sound default and state the trade-off.
 
 An assignment may arrive as Manu's verdicts and notes in plain words, without a handoff. Then apply M1 yourself and state your reading of his notes as assumptions in the new practical test, so he can correct it in one sentence.
 
-For large Production packages and Architecture Gates, establish before starting: the relevant decision documents, scope and not-in-scope, acceptance criteria, expected tests and open questions.
+For large Production packages, establish before starting: the relevant decision documents, scope and not-in-scope, acceptance criteria and expected tests — briefly, as working notes, not as a separate deliverable.
 
 At the end of every finished slice, say in one or two lines whether the next step is better done in the same session or in a fresh one (and why), and name the suggested Claude model and reasoning effort for it (Manu, 2026-10-14). An independent review always goes to a fresh session (Erzeuger ≠ Bewerter, Development System §6).
 
@@ -246,10 +261,8 @@ Do not introduce additional process mechanisms, documentation systems or managem
 
 ## 11. Project principle
 
-> **Capture first. Discuss second. Decide third. Implement fourth.**
+> **Capture first. Decide on evidence. Implement. Verify automatically. Ask the Artist about what only an Artist can judge.**
 
-And:
-
-> **Implement little. Assume much.**
-
-The goal is not to predict the entire final system. The goal is to keep today's implementation small while preventing known future goals from being accidentally made unnecessarily expensive.
+The goal is not to predict the entire final system. The goal is to deliver useful capability now while preventing
+known future goals from being made unnecessarily expensive. Discussion is for genuinely open decisions; where the
+evidence suffices, the next step is implementation (§7a).

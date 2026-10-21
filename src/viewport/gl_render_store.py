@@ -515,7 +515,7 @@ class GLRenderStore(ResourceStore):
         reallocation (GPU Resource Persistence, VIEWPORT_V02_ARCHITECTURE.md §7).
         Called for every `update()` outside a `begin_rebuild()`/`end_rebuild()`
         bracket, i.e. exactly the partial-update paths in
-        `RenderMesh._sync_geometry()`/`_sync_selection()`.
+        `RenderMesh._sync_geometry()`/`_sync_selection()`/`_patch_topology()`.
 
         Only the changed slice `[offset, offset + count)` is written (AD-018
         addendum 2026-10-10): the full-buffer copy this replaced cost
@@ -526,7 +526,13 @@ class GLRenderStore(ResourceStore):
             return
         attributes, index_name = self._groups[group]
         if name == index_name:
-            return  # index buffer only ever changes via a structural rebuild
+            # Index data patch (AD-023 V1, 2026-10-21): `RenderMesh` rewrites the triangle slots a
+            # topology patch touched; pyglet stores indices offset by the VertexList's start.
+            start = vlist.start
+            vlist.domain.index_buffer.set_region(
+                vlist.index_start + offset, count, [int(x) + start for x in data[offset:offset + count]]
+            )
+            return
         attr_name, _components = attributes[name]
         target = getattr(vlist, attr_name, None)
         if target is None:
