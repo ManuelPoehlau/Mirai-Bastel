@@ -410,5 +410,5 @@ was dein PC und dein Gefühl zeigen:
 
 | Frage | Dein Verdikt |
 |---|---|
-| W/E/R mit großer Auswahl / Soft: flüssig genug? | offen |
+| W/E/R mit großer Auswahl / Soft: flüssig genug? | **Manu, 2026-10-21:** „fühlt sich noch langsam an. Wir lassen es aber vorerst so.“ Gemessen: 500 V 14,6 ms, Soft 3 339 V 91 ms pro Bewegung ([Rohdaten](../../experiments/drag_cost/RESULTS_DRAG_BATCHED_REFERENCE_PC_2026-10-21.md)). Nächster Schritt (frische Sitzung): wie Blender große Auswahlen auf 20k ohne spürbare Verzögerung transformiert — vermutlich auch wichtig fürs Morphen dichter Meshes. |
 | Knife: Klicks und Vorschau jetzt ohne sichtbare Verzögerung? (Der erste Hover direkt nach dem Drehen ist noch nicht optimiert.) | offen |
