@@ -1,0 +1,110 @@
+# AD-023 stage 2 + AD-022 as one prototype: Delete with Undo / Redo only
+
+> Prototype for the decision "stage 2 of [AD-023](../../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md)
+> together with [AD-022](../../docs/architecture/AD-022-GPU-PICKING.md)" (AD-023 §6 question 3, §7 stage 2). **Not
+> production code, not a decision, not Artist-validated.** Nothing under `src/` is changed: `stage2.py` installs
+> stage 1 ([`topology_sync_stage1`](../topology_sync_stage1/README.md), all four switches) and the stage-2 switches
+> from the outside. Where the prototype stands in for a **Core change** (the delta apply in `delta.py` reaches into
+> `Mesh._vertices / _edges / _faces / _edge_lookup`), it is marked; in production that is a CORE_V1_FREEZE §7
+> exception with contract tests (Manu, 2026-10-21: Core changes are a must when they bring a clear gain).
+> Basis: stage-1 result on the reference PC ([README](../topology_sync_stage1/README.md), "Result: reference PC"),
+> the GPU spike ([README](../gpu_picking_spike/README.md)), review probe P2
+> ([AD-022 review](../../docs/archive/viewport_v02/reviews/AD-022_REVIEW_CLAUDE_001.md)).
+
+## Question
+
+Stage 1 halved op + Undo on `gollum_20k` (Delete 3.7 → 2.0 s on the reference PC) and was "viel zu langsam" (Manu,
+2026-10-21). Does stage 2 (delta history H1 + patched buffers V1) **together with** GPU picking (AD-022 B2) get one
+operation and its Undo to "ohne sichtbare Verzögerung" - before the real rebuild is started? Delete is the smallest
+op that exercises all three parts (history, buffers, re-pick); the engineering proxy is a discrete operation incl.
+Undo ≤ 100 ms (`PROVISIONAL`, AD-023 header); the success line is Manu's feel.
+
+## What is built
+
+| Switch | Option | What it does |
+|---|---|---|
+| `H1` | AD-023 H1 | Delete (Entf in vertex, edge, face mode; no symmetry definition) pushes a `DeltaCommand` instead of `MeshStateCommand`'s two whole-mesh snapshots. **Capture mechanism: declared neighbourhood + local diff** - before the unchanged Core op runs, the closure it can touch is read (faces, their edges, those edges' endpoints); after it, whatever of that closure is gone is "removed", every surviving edge with a changed face list is "changed". No full snapshot, no Core hook, no recording proxy; the price is a per-op contract "mutates nothing outside its declared neighbourhood" (true for `Mesh._delete_region` by construction, tested). Undo / Redo re-insert / remove the records. |
+| `V1` | AD-023 V1 (+ U) | The viewport patches its buffers from the delta instead of a full topology sync, also on Undo / Redo. **Slot rule:** between two full rebuilds every vertex keeps its buffer index and every face its triangle range and face row; a dead face's triangles become degenerate `(a, a, a)` (no fragment, but `gl_PrimitiveID` and `triangle_faces` stay valid for every live triangle), a dead vertex slot gets a sentinel position. Undo revives the same slots. Index data is patched in place (the AD-018 "patch contract for index data" V1 needs). No spare capacity (nothing grows in a Delete); an element without a slot falls back to the stage-1 full sync, which compacts. Undo learns that the entry was a delta from the command itself (no `HistoryStack` accessor). |
+| `GPU` | AD-022 B2-out | Hover and click in **face and vertex mode** pick from an ID render of the `RenderMesh` buffers, drawn **outside** `GLRenderStore` with a second program over the store's public VertexList: face = `gl_PrimitiveID` → `_triangle_face_rows` → FaceId, vertex = `glDrawArrays(GL_POINTS)` with `gl_VertexID` → slot (dead slots clipped). `position` bound with `layout(location = …)` to the store program's location. **Ordering fix** (AD-022 §5): the picker syncs the edit `RenderMesh` first if anything is pending, so a pick right after a Delete or an Undo never reads the old buffers. ID render cached per buffer content / camera / size / occlusion / mode. Edge mode, Box/Paint, Knife, object mode, headless: CPU picker unchanged. |
+
+Configurations of the probe: `none` (today's code), `stage1` (V0,V2,V3,H0 - the previous measurement), `H1,V1`
+(stage 1 + stage 2, CPU picker), `all` (stage 1 + H1,V1,GPU).
+
+**Exactness contract (AD-023 §2 H1), as met here:** (1) Delete allocates no IDs, the entry never touches the
+counters; (2) the symmetry definition is untouched (a Delete under symmetry takes the old path); (3) boundaries and
+`edge.faces` lists are restored as stored; (4) the iteration order of all three containers is restored exactly -
+the mesh dicts are in ascending ID order (IDs are only ever appended; `load_state` keeps the snapshot's order), the
+capture checks that and the Undo re-inserts by bisection, else it records the positions; (5) Delete validates every
+ID before it mutates, so no rollback snapshot is needed; (6) "changed?" is the op's own result.
+
+**Where whole-mesh work is left** (AD-023 §7 abort rule asks for it): the Core op itself scans every edge once
+(`_delete_region`'s `keeps_edge`); a vertex Delete's neighbourhood needs `vertex_edges` (an O(E) scan; the Core
+has no vertex → edge index, the op does the same scan); the exact-order Undo rebuilds each container that gets
+elements back (C-level `list` / `dict.update`, no Python loop); the highlight flags are rebuilt over all vertices
+per selection change (unchanged code; the shader no longer reads them). None of these is needed to compute the
+touched set of a face / edge Delete. A Core vertex → edge index would remove the first two.
+
+**Not covered:** every other op (Extrude, Knife, Connect, Dissolve: stage-1 path; they create elements, i.e. new
+IDs and spare buffer capacity - the hard part of stage 2 still to prototype); symmetric Delete; edge-mode, Box,
+Paint and Knife picking on the GPU; H7 surfaces and placed objects beyond the model matrix; the wire overlay
+(rebuilt whole per dirty frame when shown, E39), Soft preview and symmetry reports (off in the probe); 87.5k.
+
+## Tests (`tests/`)
+
+- `test_delta_equivalence.py` (headless): randomised Delete sequences in all three modes, five deep, undone to the
+  start and redone to the end; after every step `export_state()` **and** the key order of every container and the
+  `edge.faces` order equal the whole-snapshot oracle; counters stay forward; selection restore; a non-ascending
+  container (recorded positions); symmetry and invalid IDs take the old path / change nothing.
+- `test_v1_equivalence.py` (headless): after every step the patched `RenderMesh` holds per element what a fresh one
+  built with the original code holds (triangles per face, face rows, positions, normals within 1e-9, adjacency,
+  index buffer: live triangles exact, everything else degenerate, `triangle_faces`, highlight flags by slot, the
+  stage-1 V0 cache); also two steps without a frame in between, a W move between Deletes, and a Dissolve (full sync,
+  compaction) with Undo through the whole stack (the revival falls back).
+- `test_gl.py` (GL, `xvfb-run -a`): the same steps draw the same image with `none` and `all`; B2 face and point pass
+  equal the spike's B1 per pixel, fresh, after a Delete and after its Undo; a pick right after a Delete and right
+  after an Undo (no frame in between) names no dead element and agrees with the CPU picker at the pixel centre.
+
+Mutation checks done once by hand: no order restore (`ORDER_MODE = "append"`) fails 14 delta tests; not writing the
+degenerate triangles fails 9 tests (incl. the image); no sync before the pick fails the stale-ID and B2 tests.
+Found while building: the ID vertex shader must use the production expression `u_proj * u_view * (u_model * p)`;
+`u_proj * u_view * u_model * p` differed from B1 on 2 of 786 432 pixels (llvmpipe).
+
+## Run
+
+```bash
+python experiments/topology_stage2_delete/probe_stage2.py      # all four configurations + B2 check, one command
+python experiments/topology_stage2_delete/run.py                # the app, all (stage 1 + H1,V1,GPU)
+python experiments/topology_stage2_delete/run.py --config stage1
+python experiments/topology_stage2_delete/check_b2.py           # the B2 check alone (~1 min)
+xvfb-run -a python -m pytest experiments/topology_stage2_delete/tests -q
+```
+
+## Result: container, 2026-10-21 [C] (not the reference PC)
+
+Pending: the container run of `probe_stage2.py` is in progress; its numbers follow in the next commit.
+
+## Praktischer Test für Manu (ca. 10 Minuten + ein Messlauf)
+
+**Fühlen (das entscheidet):** `python experiments/topology_stage2_delete/run.py` öffnet die normale App mit
+gollum_20k (Fenstertitel: „Stufe 2 Delete: stage1+H1,V1,GPU“). Probier dort **nur Delete** (Entf) aus, in allen
+drei Modi (`1` Vertex, `2` Edge, `3` Face), einzeln und mit größeren Auswahlen, dazu mehrmals Undo (Strg+Z) und
+Redo (Strg+Y) hintereinander. Fahr nach dem Löschen mit der Maus über die Stelle (Hover im Vertex- und Face-Modus
+kommt jetzt von der GPU). Zum Vergleich einmal `python experiments/topology_stage2_delete/run.py --config stage1`
+(Stufe 1, wie zuletzt). Alles andere (Extrude, Knife, Dissolve, Edge-Hover …) ist in beiden Fenstern Stufe 1 und
+gehört nicht zum Test.
+
+**Messen (PowerShell im Repo-Ordner, ein Befehl, ca. 10-15 Minuten, die ganze Ausgabe kopieren):**
+
+`python experiments\topology_stage2_delete\probe_stage2.py`
+
+Er misst nacheinander `none` (heutiger Code), `stage1`, `H1,V1` (Stufe 2 ohne GPU-Picking) und `all`, danach den
+B2-Check (ob `gl_PrimitiveID` auf deiner Grafikkarte exakt ist; AD-022 §8). Am Ende steht eine Zusammenfassung.
+
+| Frage | Dein Verdikt |
+|---|---|
+| Fühlen sich Delete und sein Undo/Redo auf gollum_20k „ohne sichtbare Verzögerung“ an? (ja / besser, aber noch sichtbar / kein Unterschied zu Stufe 1) | offen |
+| Ist irgendetwas anders als mit `--config stage1` (Aussehen nach Delete/Undo, Hover, Auswahl nach Undo)? | offen |
+
+Wenn „ja“: Stufe 2 + AD-022 sind als Richtung belegt, nächster Schritt ist die Entscheidung über die Richtung
+(AD-023 §7) und der Prototyp der schweren Operationen (Extrude, Knife), bevor `src/` umgebaut wird. Wenn „noch
+sichtbar“: die Messung zeigt, welcher Teil fehlt.
