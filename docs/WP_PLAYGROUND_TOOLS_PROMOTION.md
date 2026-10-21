@@ -43,15 +43,16 @@ F-a-Wächter `tests/test_symmetry_fail_closed_guard.py`.
 
 Start: `python src/main.py` (Head).
 
-| # | Was tun | Worauf achten | Verdikt |
-|---|---|---|---|
-| T1 | `1`, im leeren Raum LMB ziehen (über den Kopf), loslassen; dann Shift+Ziehen woanders | Gummiband sichtbar; nur sichtbare Punkte gewählt; Shift fügt hinzu | |
-| T2 | `3`, auf dem Kopf LMB ziehen (malen); mit Shift weitermalen; einmal mitten im Strich `Esc` | Strich wählt Flächen unter dem Cursor; schnelle Bewegung lässt nichts aus; Esc = wie vorher | |
-| T3 | `1`, nichts gewählt: Ctrl+LMB auf einem Punkt ziehen. Dann `E` antippen, Auswahl treffen, Ctrl+Ziehen irgendwo | Tweak verschiebt den Punkt, ein Undo-Schritt; nach `E` dreht Tweak die Auswahl | |
-| T4 | Ctrl+Klick auf einen gewählten Punkt | entfernt ihn weiterhin | |
-| T5 | `2`, Kante hovern, `Shift+L`, dann `Shift+R` | Loop bzw. Ring kommt zur Auswahl | |
-| T6 | `2`, Kante hovern, `I`; dann `G` halten und Maus bewegen, loslassen | neuer Loop, danach gleitet er entlang der Kanten; je ein Undo-Schritt | |
-| T7 | `Shift+S` (Symmetrie X), dann T6 auf einer Seite | Gegenseite macht mit | |
+| # | Was tun | Worauf achten | Verdikt                                                                             |
+|---|---|---|-------------------------------------------------------------------------------------|
+| T1 | `1`, im leeren Raum LMB ziehen (über den Kopf), loslassen; dann Shift+Ziehen woanders | Gummiband sichtbar; nur sichtbare Punkte gewählt; Shift fügt hinzu | KEEP                                                                                |
+| T2 | `3`, auf dem Kopf LMB ziehen (malen); mit Shift weitermalen; einmal mitten im Strich `Esc` | Strich wählt Flächen unter dem Cursor; schnelle Bewegung lässt nichts aus; Esc = wie vorher | KEEP                                                                                |
+| T3 | `1`, nichts gewählt: Ctrl+LMB auf einem Punkt ziehen. Dann `E` antippen, Auswahl treffen, Ctrl+Ziehen irgendwo | Tweak verschiebt den Punkt, ein Undo-Schritt; nach `E` dreht Tweak die Auswahl | KEEP                                                                                |
+| T4 | Ctrl+Klick auf einen gewählten Punkt | entfernt ihn weiterhin | KEEP                                                                                |
+| T5 | `2`, Kante hovern, `Shift+L`, dann `Shift+R` | Loop bzw. Ring kommt zur Auswahl | Iterate                                                                             |
+| T6 | `2`, Kante hovern, `I`; dann `G` halten und Maus bewegen, loslassen | neuer Loop, danach gleitet er entlang der Kanten; je ein Undo-Schritt | ITERATE - Hält man I gedrückt, wird der loop eingefügt und lässt sich direkt sliden |
+| T7 | `Shift+S` (Symmetrie X), dann T6 auf einer Seite | Gegenseite macht mit | KEEP                                                                                |
 
-Offene Fragen an dich (nur falls es sich falsch anfühlt): Ist „zuletzt gedrücktes W/E/R“ für Tweak richtig?
-Soll `Shift+L` die Auswahl ersetzen statt erweitern?
+Offene Fragen an dich (nur falls es sich falsch anfühlt):
+1. Ist „zuletzt gedrücktes W/E/R“ für Tweak richtig? Manu: Ja
+2. Soll `Shift+L` die Auswahl ersetzen statt erweitern? Manu: Erweitern 
