@@ -277,6 +277,14 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
   cleanup) plus one symmetric op (the hard ones: Knife's resolver checkpoints and `integrity_problem`, region merges,
   symmetric coordinators with rollback to `session_before`), with the capture mechanism stated and the exactness contract
   as the test oracle on every sample (randomised op sequences with undo/redo).
+  Prototype for Delete only, **together with AD-022 B2-out** (2026-10-21, experiment, `src/` unchanged):
+  [`experiments/topology_stage2_delete/`](../../experiments/topology_stage2_delete/README.md). Capture mechanism:
+  declared neighbourhood + local diff (no full snapshot, no Core hook; a per-op "mutates nothing outside" contract),
+  exactness contract met incl. container order; V1 slot rule (dead triangles degenerate, revived on Undo) shared with
+  B2's `gl_PrimitiveID` mapping; pick synced before it reads. Container [C], Delete 1 face frame / Undo: `stage1`
+  333 / 1 167 ms, `H1,V1` 103 / 89 ms, with GPU picking 41 / 32 ms; B2 face mapping exact per pixel (llvmpipe).
+  Reference-PC run and Manu's feel test pending (README "Praktischer Test"). Left whole-mesh: the Core delete's own
+  edge scan, vertex Delete's `vertex_edges` (no vertex → edge index), the exact-order Undo rebuild per container.
 - **Abort rule:** stop H1 if any op needs whole-mesh work to compute its touched set, or if the debug compare finds a
   mismatch that is a contract gap rather than a prototype bug.
 

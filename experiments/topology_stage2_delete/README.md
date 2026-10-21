@@ -81,7 +81,47 @@ xvfb-run -a python -m pytest experiments/topology_stage2_delete/tests -q
 
 ## Result: container, 2026-10-21 [C] (not the reference PC)
 
-Pending: the container run of `probe_stage2.py` is in progress; its numbers follow in the next commit.
+Xeon @ 2.80 GHz, Python 3.13.16, **llvmpipe** (the ID render and the draw are software rasterisation here), `gollum_20k`,
+defaults (`--steps 20 --row-seconds 120`, GC on), n = 20 per row. Raw: [`RESULTS_CONTAINER_2026-10-21.md`](RESULTS_CONTAINER_2026-10-21.md).
+ms, p50 (p95):
+
+| Row | `none` frame / undo | `stage1` frame / undo | `H1,V1` frame / undo | `all` frame / undo / redo |
+|---|---:|---:|---:|---:|
+| Delete 1 face | 970 / 1 165 | 333 / 1 167 | 103 / 89 | **41 (54) / 32 (49) / 27** |
+| Delete 20 faces | 927 / 1 156 | 314 / 1 202 | 102 / 103 | **41 / 46 (68) / 30** |
+| Delete 1 vertex | 1 177 / 1 536 | 496 / 1 450 | 161 / 149 | **51 / 53 (85) / 33** |
+
+Where a Delete-1-face frame goes with `all`: Core op 8.6, history (delta capture + push) 3.0, re-pick 17.2 (of which
+3.4 the V1 patch, synced before the pick; the rest the ID render on llvmpipe ~10 and the read), viewport sync 2.7,
+draw 8.1 (llvmpipe). Undo: delta apply 5.4, re-pick incl. patch 16.0, sync 2.5. B2 check: the face mapping
+`gl_PrimitiveID` → face is **exact** on every pixel (two cameras; fresh, after Delete 20 faces, after its Undo), the
+point pass too; `position` sits at location 0 in all three programs; agreement with the CPU picker: face 75-85 %
+same + the rest half-pixel (0 real differences), vertex 96-98 % (11 neighbouring-vertex differences in 389
+non-trivial cursors, none "GPU none").
+
+This container is slower than the one of the stage-1 run (`none` Delete frame 970 here vs 646 there, GC on here vs
+off there); compare within this table.
+
+Reading (agent, `PROVISIONAL`):
+
+1. **The two parts need each other.** Stage 2 without GPU picking (`H1,V1`) brings Delete and its Undo from ~1.2 s
+   to ~0.1 s; what is left is mostly the CPU `PickCache` rebuild (re-pick 70 ms of the 103 ms frame). GPU picking
+   without stage 2 does not help much either (extra run `--config GPU`, n = 10: Delete 1 face frame 273 ms, Undo
+   1 082 ms): before the pick reads the buffers they must be synced, and with stage 1's full rebuild that sync is
+   ~124 ms of the 141 ms re-pick, while the Undo keeps its whole-mesh `load_state`. Together (`all`) the frame is 41 ms, the Undo 32 ms, and no
+   part of it scales with the mesh except the items below.
+2. **One contract works:** V1's slot rule (degenerate triangles keep their place) and B2's `gl_PrimitiveID` mapping
+   are the same index buffer and the same triangle → face-row map; per pixel the IDs are exact after a patched
+   Delete and its Undo (on llvmpipe; the reference driver is what `check_b2.py` is for).
+3. **What is still whole-mesh or tail-prone:** the Core op's own edge scan (8-12 ms here, ~25 ms on the reference PC
+   per AD-023 §1); vertex Delete's `vertex_edges` scan (no vertex → edge index); the exact-order Undo (Delete 20
+   faces / 1 vertex: history 18-20 ms p50, max 106-142 ms - the container rebuild allocates enough objects to start
+   a GC pass; Delete 1 face only rebuilds the face dict: 5 ms); the highlight flags over all vertices. Each is a
+   candidate for the Core change (vertex → edge index; an order rule) rather than for more viewport work.
+4. **Expectation for the reference PC** (estimate, not measured): the Python parts take about 2-3x the container
+   (AD-023 §1, stage-1 runs), the GPU parts much less than llvmpipe (ID render ~1-3 ms instead of ~10, draw ~1 ms
+   instead of ~8). That puts Delete and its Undo each somewhere around 40-80 ms - near or under the 100 ms proxy,
+   but whether that is "ohne sichtbare Verzögerung" is the practical test.
 
 ## Praktischer Test für Manu (ca. 10 Minuten + ein Messlauf)
 

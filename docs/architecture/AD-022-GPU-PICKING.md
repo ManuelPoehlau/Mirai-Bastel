@@ -277,6 +277,11 @@ Priority and feel, no technical choice (the technical choice stays with engineer
 
 - **Before choosing B1 vs B2:** one reference-PC run that `gl_PrimitiveID` gives exactly the B1 face IDs per pixel
   (the review's probe P2 is that check, about a minute to run), and the AD-018 placement decision (B2-in vs B2-out).
+  The check now exists as a script: [`experiments/topology_stage2_delete/check_b2.py`](../../experiments/topology_stage2_delete/check_b2.py)
+  (B2-out, built 2026-10-21 for the AD-023 stage-2 Delete prototype; also after a patched Delete with degenerate
+  triangles and its Undo, plus the point pass, CPU agreement and pick cost). Container [C]: exact on every pixel;
+  the ID vertex shader must use the production expression `u_proj * u_view * (u_model * p)` (another association
+  differed on 2 px). Reference-PC run pending (it runs at the end of `probe_stage2.py`).
 - **After the direction is decided, inside slice 1, with the abort criteria of §9:** the in-loop read-back with p95 / max
   (the `loop` scenario of `probe_navigation_gl.py` on the reference PC), the ordering fix, the call-site inventory,
   a playable switch for Manu, the tests of §5.
