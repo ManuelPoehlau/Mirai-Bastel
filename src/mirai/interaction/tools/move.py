@@ -75,7 +75,7 @@ from core import (
 
 from ...soft_selection import SoftMoveOperation, compute_influence, symmetric_influence
 from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
-from ..tool import Tool
+from ..tool import Tool, ToolStateError
 from .selection_helpers import _VertexSelectionView
 from .transform import _resolve_space, world_masked_delta
 
@@ -106,6 +106,10 @@ class MoveTool(Tool):
         # Symmetric Soft with seeds only on the seam (AD-SYM-04 SS2): the step stays parallel to
         # the mirror plane, so both sides move alike (`SymmetricInfluence.in_plane_only`).
         self._in_plane_normal: tuple[float, float, float] | None = None
+        # The seeds of a running Soft gesture (None without Soft) and the sum of the deltas handed to
+        # the op since begin(): what `reweight()` re-begins from and replays.
+        self._soft_seeds: frozenset[VertexId] | None = None
+        self._total_delta: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     # -- Beobachtbarkeit für Tests/Integration ------------------------------
 
@@ -122,6 +126,25 @@ class MoveTool(Tool):
     def axes_mask(self) -> tuple[float, float, float]:
         """Achsen-/Ebenenmaske dieser Interaktion (1.0 = frei, AD-009)."""
         return self._axes_mask
+
+    @property
+    def is_soft_gesture(self) -> bool:
+        """A begun Soft gesture is running: `reweight()` applies."""
+        return self.is_interacting and self._soft_seeds is not None
+
+    def reweight(self, soft) -> set[VertexId]:
+        """Live Soft radius, as `TransformTool.reweight`: cancel (exact start geometry, no History),
+        begin again from the same seeds with `soft`, replay the summed delta as one step. Returns the
+        vertices whose position may have changed (old ∪ new influenced set)."""
+        if not self.is_soft_gesture:
+            raise ToolStateError("reweight() needs a running Soft gesture.")
+        touched = set(self._vertex_ids)
+        self._operation.cancel()
+        self._operation = None
+        self._begin_operation(set(self._soft_seeds), soft)
+        if self._total_delta != (0.0, 0.0, 0.0):
+            self._operation.update(delta=self._total_delta)
+        return touched | self._vertex_ids
 
     # -- Hooks -----------------------------------------------------------------
 
@@ -201,7 +224,15 @@ class MoveTool(Tool):
         else:
             raise ValueError(f"MoveTool.begin(): space-Parameter muss String oder None sein, nicht {type(space).__name__}.")
 
+        self._total_delta = (0.0, 0.0, 0.0)
+        self._soft_seeds = None
+        self._begin_operation(vertex_ids, soft)
+        if soft is not None:
+            self._soft_seeds = frozenset(vertex_ids)
+
+    def _begin_operation(self, vertex_ids: set[VertexId], soft) -> None:
         mesh = self._scene.mesh
+        self._in_plane_normal = None
         affected_vertex_ids = set(vertex_ids)
         operation_params: dict[str, Any] = {}
         definition = mesh.symmetry_definition
@@ -308,15 +339,19 @@ class MoveTool(Tool):
             )
 
         self._operation.update(delta=world_delta)
+        t = self._total_delta
+        self._total_delta = (t[0] + world_delta[0], t[1] + world_delta[1], t[2] + world_delta[2])
 
     def _on_commit(self) -> Any:
         command = self._operation.commit()
         self._operation = None
+        self._soft_seeds = None
         return command
 
     def _on_cancel(self) -> None:
         self._operation.cancel()
         self._operation = None
+        self._soft_seeds = None
 
     def _on_deactivate(self) -> None:
         self._anchor_vertex = None

@@ -373,7 +373,7 @@ def test_a_running_gesture_keeps_its_own_settings(app, begins):
     weights = dict(app.tool_manager.active_tool.operation.weights)
     for key in (O, SHIFT_O, CTRL_O):
         app.key_press(key)  # state changes mid-gesture, status line posts ...
-    app.pointer_scroll(SHIFT_WHEEL_UP)
+    # (the radius is the exception: a running Soft gesture takes it live, test_soft_live_radius.py)
     app.pointer_motion(300.0, 300.0, 3.0, 3.0)  # ... the gesture goes on unchanged
     assert type(app.tool_manager.active_tool.operation) is SoftMoveOperation
     assert dict(app.tool_manager.active_tool.operation.weights) == weights

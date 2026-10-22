@@ -180,7 +180,14 @@ class ScaleTool(TransformTool):
         step = target_scale / self._applied_scale
         if step == 1.0:
             return
+        self._apply_step(step)
+        self._applied_scale = target_scale
 
+    def _replay(self) -> None:
+        if self._applied_scale != 1.0:
+            self._apply_step(self._applied_scale)
+
+    def _apply_step(self, step: float) -> None:
         # Skalierungsfaktor anwenden: tangent-basis, oder Weltachsen-Maske.
         if self._tangent_basis is not None:
             factor = tuple(step if active else 1.0 for active in self._active_axes)
@@ -193,7 +200,6 @@ class ScaleTool(TransformTool):
                 self._operation.update(factor=factor, basis=self._world_basis)
             else:
                 self._operation.update(factor=factor)
-        self._applied_scale = target_scale
 
     def _on_deactivate(self) -> None:
         super()._on_deactivate()

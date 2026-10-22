@@ -645,10 +645,17 @@ class Application:
         # WP-SOFT-01 S2a (AD-020, `PROVISIONAL`, off by default): sticky Soft Selection
         # settings with the semantics of the axis constraint above - they survive commit,
         # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
-        # that is armed but has not begun takes a new value; a running one keeps its own.
+        # that is armed but has not begun takes a new value; a running one keeps its own -
+        # except the radius, which a running Soft gesture takes live (AD-020 "Live radius").
         # The radius is held in world units (computed on switch-on, on a step change and
         # on scene load) so that the tool and the later preview read one value.
         self._soft: SoftSettings = SoftSettings()
+        # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
+        # `begin()`, with only the radius replaced by a live radius step. `_soft_gesture_reference` is
+        # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
+        # radius was computed from), so the deforming mesh never redefines a step.
+        self._soft_gesture: SoftSettings | None = None
+        self._soft_gesture_reference: float = 0.0
         # WP-SOFT-01 S2b (AD-020 §5, `PROVISIONAL`): the influence bands shown in the window.
         # `_soft_overlay` is the host-supplied sink (None = headless: no overlay work at all),
         # `_soft_bands` what it currently shows. `_soft_op_running`: the bands are the running
@@ -2929,6 +2936,8 @@ class Application:
                 return False
             self._transform_begun = True
             if soft is not None:
+                self._soft_gesture = soft
+                self._soft_gesture_reference = soft.world_radius * 100.0 / soft.radius_percent
                 self._soft_show_op_weights()
         update = {"dx": float(dx), "dy": float(dy), "width": self.viewport_width, "height": self.viewport_height}
         if self._transform_command == commands.ROTATE:
@@ -2993,6 +3002,7 @@ class Application:
         resume_preview = self._soft_gesture_shown
         self._soft_op_running = False
         self._soft_gesture_shown = False
+        self._soft_gesture = None
         self.tool_manager.deactivate()
         self._transform_key = None
         self._transform_command = None
@@ -3035,6 +3045,8 @@ class Application:
             self._soft = soft.toggled()
             if self._soft.enabled:
                 self._soft_refresh_radius()
+        elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN) and self._soft_live_tool():
+            changed = self._soft_radius_live(1 if command == commands.SOFT_RADIUS_UP else -1)
         elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN):
             step = soft.radius_step + (1 if command == commands.SOFT_RADIUS_UP else -1)
             step = max(0, min(step, len(RADIUS_STEPS_PERCENT) - 1))
@@ -3059,6 +3071,32 @@ class Application:
         self._set_status(self._soft.status_text())
         return changed
 
+    def _soft_live_tool(self):
+        """The tool of a begun Soft Move/Rotate/Scale (key hold, Tweak or gizmo drag), else None: the
+        state in which the wheel steps the radius of the running gesture."""
+        if self._soft_gesture is None or not self._transform_begun:
+            return None
+        tool = self.tool_manager.active_tool
+        return tool if getattr(tool, "is_soft_gesture", False) else None
+
+    def _soft_radius_live(self, delta: int) -> bool:
+        """One radius step for the running Soft gesture (AD-020 "Live radius", `PROVISIONAL`): the gesture
+        is re-evaluated from its start geometry with the new influence (`reweight`), the display shows the
+        new weights, and the sticky setting takes the same step. Clamped, no wrap; False at the end of
+        the list (nothing recomputed). Metric, curve and display stay those of the gesture."""
+        gesture = self._soft_gesture
+        step = max(0, min(gesture.radius_step + delta, len(RADIUS_STEPS_PERCENT) - 1))
+        if step == gesture.radius_step:
+            return False
+        gesture = gesture.with_radius_step(step, self._soft_gesture_reference)
+        self._soft_gesture = gesture
+        self._soft = dataclasses.replace(self._soft, radius_step=step, world_radius=gesture.world_radius)
+        touched = self._soft_live_tool().reweight(gesture)
+        self._pick_cache.invalidate()
+        self.viewport.on_vertices_moved(touched)
+        self._soft_show_op_weights()
+        return True
+
     # -- Soft Selection bands (WP-SOFT-01 S2b, AD-020 §5, PROVISIONAL) -------------------
     #
     # The overlays only show; `Application` computes. Influence is computed here at most once
@@ -3081,10 +3119,11 @@ class Application:
         """The weights the face shading currently shows ({} = no shading; also in the bands mode)."""
         return dict(self._soft_shading)
 
-    def _soft_show(self, weights: dict[VertexId, float] | None) -> None:
-        """Route `weights` (None = nothing to show) to the active display mode and clear the other,
-        so bands and face shading are never visible together. Pushes only what changed."""
-        mode = self._soft.view_mode
+    def _soft_show(self, weights: dict[VertexId, float] | None, mode: str | None = None) -> None:
+        """Route `weights` (None = nothing to show) to the display mode `mode` (default: the active one)
+        and clear the other, so bands and face shading are never visible together. Pushes only what
+        changed."""
+        mode = self._soft.view_mode if mode is None else mode
         bands = SoftBands.from_weights(weights) if weights and mode == "bands" else EMPTY_BANDS
         shading = dict(weights) if weights and mode == "faces" else {}
         if bands != self._soft_bands:
@@ -3176,13 +3215,17 @@ class Application:
         if self._soft_overlay is None and self._soft_shading_overlay is None:
             return
         # Also while hidden: the gesture still owns the display (a bands toggle or mode switch
-        # mid-gesture takes effect when it ends), it just has nothing to show (S2d E7).
+        # mid-gesture takes effect when it ends), it just has nothing to show (S2d E7). Hence the
+        # gesture's own display settings (a live radius step calls this again mid-gesture).
         self._soft_op_running = True
         self._soft_gesture_shown = True
-        if not self._soft.bands_visible:
-            self._soft_show(None)
+        display = self._soft_gesture or self._soft
+        if not display.bands_visible:
+            self._soft_show(None, display.view_mode)
             return
-        self._soft_show(self.tool_manager.active_tool.operation.context.params["influence"])
+        self._soft_show(
+            self.tool_manager.active_tool.operation.context.params["influence"], display.view_mode
+        )
 
     # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
     #
@@ -3652,8 +3695,13 @@ class Application:
         """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings. Ein Wheel mit
         gehaltener Shift-Taste trägt `{"shift"}` und ist (Default) die Soft-Radius-Stufe, eines
         mit Ctrl `{"ctrl"}` die Form der Soft-Kurve `custom` (S2d); beide zoomen nie
-        (WP-SOFT-01 S2a, AD-020). In einer Knife-Session tun sie nichts."""
+        (WP-SOFT-01 S2a, AD-020). In einer Knife-Session tun sie nichts.
+
+        Live radius (AD-020, `PROVISIONAL`): während einer begonnenen Soft-Geste (Move/Rotate/Scale,
+        auch per Gizmo/Tweak) ist das Zoom-Rad die Radius-Stufe dieser Geste und zoomt nicht."""
         command = self.bindings.command_for(input)
+        if command == commands.ZOOM and self._soft_live_tool() is not None:
+            command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:
             if self._knife is not None or self._gate_refuses(command):
                 return False

@@ -183,6 +183,19 @@ class RotateTool(TransformTool):
                 "dial": DialAngle(self._camera, self._operation.pivot, self._axis, gizmo["press"], width, height),
             }
 
+    def _replay(self) -> None:
+        # Trackball: the whole applied rotation as one step (for a soft op this is `w` times the total
+        # angle about the total axis - the path-independent form of the gesture's intent).
+        if self._gizmo is not None and self._gizmo["mode"] == "trackball":
+            axis, angle = _quat_to_axis_angle(self._quat_applied)
+            if angle > math.pi:
+                angle -= 2.0 * math.pi
+            if abs(angle) > 1e-12:
+                self._operation.update(axis=axis, angle=angle)
+            return
+        if self._applied_angle != 0.0:
+            self._operation.update(axis=self._axis, angle=self._applied_angle)
+
     def _on_update(
         self, dx: float, dy: float, width: int, height: int, x: float | None = None, y: float | None = None,
         precise: bool = False, snap: bool = False,

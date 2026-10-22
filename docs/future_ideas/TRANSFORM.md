@@ -19,11 +19,16 @@ Ein einfacher erster Praxistest sollte beantworten, welche zwei oder drei Pivot-
 
 ## Soft Selection: Radius live während des Ziehens ändern
 
-**Status:** Bewusst zurückgestellt. Im S2c-Verdikt (AD-020, „S2c verdict“) steht der Radius-Schritt per Shift+Mausrad auf KEEP („passt erstmal“); den Radius während einer laufenden Geste zu ändern bleibt eine Idee für später.
+**Status: umgesetzt (2026-10-22, `PROVISIONAL`), Praxistest offen** (ATELIER B12). Während einer laufenden Soft-Geste
+(Move/Rotate/Scale, auch per Gizmo oder Tweak) ändert das Mausrad – und weiterhin Shift+Mausrad – den Radius dieser Geste
+um eine Stufe; das Rad zoomt dann nicht. Die Geste wird von ihrer Startgeometrie aus mit dem neuen Einfluss und der bisherigen
+Bewegung neu ausgewertet (kein Aufaddieren, kein Drift); eine Geste bleibt ein History-Eintrag. Ctrl+Mausrad und alle anderen
+Soft-Einstellungen gelten weiter ab der nächsten Geste. Semantik und Tests: AD-020, „Live radius during a running gesture“.
+Core unverändert.
 
-Heute ist der Radius pro Geste fest: `SoftSettings` wird bei `begin()` gelesen, ein Wechsel mitten in der Geste gilt ab der nächsten Geste (AD-020 §4.3). Live-Änderung würde die Einflussgewichte neu berechnen, während der Artist zieht. Das muss gegen die Kosten der Influence-Berechnung und die Viewport-Aktualisierung getestet werden; siehe `experiments/drag_cost/README.md`.
-
-**Wieder aufgreifen, wenn** ein konkreter Character-Shaping-Fall zeigt, dass der feste Radius eine Geste unnötig unterbricht – nicht allein, weil ein anderes DCC Live-Änderung anbietet.
+Früherer Stand (S2c-Verdikt): Radius pro Geste fest, Idee zurückgestellt. Kosten wurden nicht gemessen: eine
+Influence-Berechnung pro Rad-Raste, wie beim Start der Geste; gemessen wird nur, wenn es sich im Praxistest träge anfühlt
+(`experiments/drag_cost/README.md`).
 
 ## Multi-Element Tangent-Basis Derivation (deferred per AD-012 Amendment, WP-03C)
 

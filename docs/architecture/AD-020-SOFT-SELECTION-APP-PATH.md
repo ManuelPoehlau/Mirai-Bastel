@@ -10,6 +10,7 @@ Core seam moves with symmetric soft selection (Way 2), not now.** Keys and band 
 runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses of the Core ops (M-b); the F3 tripwires
 flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
 **Hover preview and display modes (2026-10-22, see "Hover preview and display modes" below):** the influence preview now follows the hovered component when nothing is selected, and has a second, exclusive display mode (face shading) next to the vertex bands; `PROVISIONAL`, Artist test open.
+**Live radius (2026-10-22, see "Live radius during a running gesture" below):** the wheel changes the radius of a running Soft Move/Rotate/Scale; the gesture is re-evaluated from its start geometry. Narrows the §4.3 per-gesture rule for the radius only; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
@@ -222,6 +223,64 @@ Performance am 20k Gollum ist noch etwas träge. Das ist aber ein Thema für ein
 both display modes are **KEEP**; colours, alpha and the keys stay `PROVISIONAL` and adjustable. Open, for a separate
 session: the preview feels somewhat sluggish on the 20k gollum (not measured; candidates are the per-hover-change influence
 field and the redundant recompute at hover-arm named under "Cost").
+
+## Live radius during a running gesture (2026-10-22, `PROVISIONAL`)
+
+Artist intent (Manu, 2026-10-22, task brief; the idea kept in `docs/future_ideas/TRANSFORM.md` since the S2c verdict):
+change the influence radius while a Move/Rotate/Scale is already running, without cancelling or restarting it; the
+deformation and the influence display follow at once.
+
+**Input** (resolved by the running interaction state, `Application._soft_live_tool`: a *begun* mesh Move/Rotate/Scale
+whose tool runs a Soft op - W/E/R hold, Tweak and gizmo drag alike, since all drive the same tools):
+- during it, the **plain wheel** (`ZOOM`) and **Shift+wheel** (`SoftRadiusUp/Down`) step the radius of that gesture by one
+  `RADIUS_STEPS_PERCENT` step; the plain wheel is consumed and never zooms. Clamped at both ends, no wrap; at an end
+  nothing is recomputed and the status line is posted anyway;
+- **Ctrl+wheel** keeps its meaning (custom-curve shape of the sticky settings, for the next gesture); Shift+O / Ctrl+O /
+  O / Alt+O / Alt+Shift+O keep theirs too (state for the next gesture, or display at gesture end);
+- outside a begun Soft gesture (nothing armed, W/E/R armed but not begun, a plain transform, object mode, Extrude, Slide,
+  Knife) the plain wheel zooms and Shift+wheel is the sticky step, unchanged.
+
+**Semantics.** The Core ops fix their weights at `begin()` and apply `update()` incrementally (`core/operations/transform.py`),
+so the running op is not reweighted in place. `MoveTool.reweight` / `TransformTool.reweight` instead:
+1. `cancel()` the running op - the exact start positions, no History (the Core contract);
+2. begin a new op of the same kind through the same `begin()` path (`compute_influence` / `symmetric_influence` with the
+   gesture's metric, curve and curve power, the new world radius), on that start geometry, with the same seeds and the
+   **same pivot** (passed explicitly); constraint, axis, basis, dial and trackball state live in the tool and are kept;
+3. replay the gesture's accumulated intent as **one** step: Move the summed world delta, Rotate the applied angle about
+   the fixed axis (trackball: the applied quaternion as one axis/angle), Scale the applied factor with the same mask/basis.
+Every call starts from the start geometry, so radius steps never accumulate (up/down/up gives the same bits); the result
+equals a gesture begun at that radius and given the same intent up to rounding (the per-step sums are replayed as one sum).
+For the trackball with falloff vertices the replay is the path-independent form (`w` times the total rotation); seeds
+(`w = 1`) land on the same rotation. The following pointer motion continues from the replayed state; the Rotate dial's grip
+and the Move anchor (a seed) are unaffected. Symmetric Soft re-runs `symmetric_influence` (pair minimum, categories,
+falloff seam) on the start geometry, so pair consistency and the seam rules hold as at `begin()`.
+
+**Percent reference.** `Application` fixes the bounding radius the steps refer to at `begin()`:
+`world_radius · 100 / radius_percent` of the gesture's settings, i.e. the reference the start radius was computed from.
+The deforming mesh never redefines a step, and returning to the start step returns the start radius (up to rounding).
+After the gesture the sticky settings keep the new step; the next Shift+wheel outside a gesture recomputes from the
+current mesh as before (§4.3).
+
+**History and display.** A radius step is part of the gesture: the cancelled op leaves no entry; the commit is one
+`VertexTransformCommand` from the start geometry to the final one (exact Undo/Redo); Esc restores the start geometry.
+Selection and hover are untouched. `on_vertices_moved` gets the old ∪ new influenced set (vertices that drop out return
+to their start). The display shows the new op's weights in the gesture's own display mode (bands, faces, or nothing when
+hidden); a display switch made mid-gesture still applies at gesture end. **§4.3 clarification:** "read once per gesture
+at `begin()`" still holds for every setting except the radius, which a running Soft gesture takes live; the sticky
+`radius_step` follows the gesture's step.
+
+**Cost.** One influence computation per wheel notch (the same call as at `begin()`; symmetric Soft also derives the
+correspondence again, as at `begin()`), one cancel and one replay step - no work per pointer motion beyond today's. No
+cache, no benchmark (decision: measure only if it feels slow in the Artist test). **Core unchanged.**
+
+**Verified by tests** (`tests/test_soft_live_radius.py`; three older tests narrowed to the settings that stay per
+gesture): plain wheel and Shift+wheel in Move/Rotate/Scale, weights == production influence on the start geometry, result
+== gesture begun at that radius (drag fallback and dial) incl. continuing the drag, up/down without drift, pivot/axis/
+factor kept, fixed percent reference, clamping, one History entry with exact Undo/Redo, Cancel, selection/hover,
+old ∪ new viewport report, bands/faces/hidden display and the mid-gesture mode switch, zoom outside (no gesture, armed,
+plain transform), Shift+wheel outside, Ctrl+wheel mid-gesture, gizmo drag, trackball replay, symmetric field and mirror/
+seam consistency (head, X). **Not Artist-validated:** feel, wheel direction, and whether the plain wheel should be the
+radius during a gesture (practical test ATELIER B12).
 
 ---
 
@@ -602,7 +661,8 @@ anything moves (S1 L10, extended by the key-set check that D needs).
 curve; frozen, replaced as a whole), with the semantics of the axis constraint (F2): survives commit, cancel,
 re-arm and Undo; read once per gesture at `begin()`; a change during a running gesture changes the state and
 posts a status line, and applies from the next gesture. *(Engineering proposal; whether a mode switch should
-reset it is left to the Artist.)*
+reset it is left to the Artist.)* *(2026-10-22: except the radius, which a running Soft gesture takes live — see
+"Live radius during a running gesture".)*
 
 - **Tools are not used because** they are re-instantiated per activation (F4).
 - **`DisplayState` is not used because** it is view state; soft settings change what a gesture does.
@@ -880,7 +940,7 @@ After the verdict (not part of S2): the promotion AD (Q2-A vs keeping D, plus th
   (weighting into the Core, Way 2) moves **together with symmetric soft selection**. Owner: the symmetric-soft work
   package. The F3 tripwires stay until then; Q2-D stays as built.*
 - Symmetric soft selection (FINDINGS §5.8) — now also the vehicle for the Core move (see above).
-- Changing the radius during a running gesture (would need a re-evaluation from the start snapshot) — an idea Manu keeps for later (S2c verdict, `docs/future_ideas/TRANSFORM.md`).
+- ~~Changing the radius during a running gesture (would need a re-evaluation from the start snapshot) — an idea Manu keeps for later (S2c verdict, `docs/future_ideas/TRANSFORM.md`).~~ Built 2026-10-22 ("Live radius during a running gesture").
 - A curve shape editor with the GUI (verdict row 2; `docs/future_ideas/UI_UX.md`); soft-selection tests on higher-resolution meshes.
 - Tweak and other consumers V1_CORE §6 names.
 - **Separate follow-up (not part of S2):** a `math.dist` audit in `src` (FINDINGS §5.9, R6). New data point

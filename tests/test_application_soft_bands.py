@@ -410,8 +410,7 @@ def test_settings_change_mid_gesture_leaves_the_bands_alone(app):
     assert app.key_press(W)
     _move(app, ((6, 2),))
     bands = app.soft_bands
-    assert app.pointer_scroll(SHIFT_WHEEL_UP)
-    assert app.key_press(SHIFT_O)
+    assert app.key_press(SHIFT_O)  # the radius alone is live (test_soft_live_radius.py)
     assert app.soft_bands is bands
     assert app.key_release(W)
     # The new settings show up as soon as the gesture is over.

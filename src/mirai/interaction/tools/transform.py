@@ -37,7 +37,7 @@ from core import Mesh, OperationContext, Selection, SelectionMode, VertexId
 from core.operations.transform import SeamConstraintError
 
 from ...soft_selection import compute_influence, primary_pivot, symmetric_influence
-from ..tool import Tool
+from ..tool import Tool, ToolStateError
 from .selection_helpers import (
     _VertexSelectionView,
     resolve_symmetry,
@@ -363,6 +363,8 @@ class TransformTool(Tool):
         self._camera = None
         self._operation = None
         self._vertex_ids: set[VertexId] = set()
+        # The seeds of a running Soft gesture (None without Soft): what `reweight()` re-begins from.
+        self._soft_seeds: frozenset[VertexId] | None = None
 
     # -- Beobachtbarkeit für Tests/Integration -------------------------------
 
@@ -374,6 +376,31 @@ class TransformTool(Tool):
     def vertex_ids(self) -> set[VertexId]:
         """Von dieser Interaktion betroffene Vertex-IDs (Live-Daten)."""
         return set(self._vertex_ids)
+
+    @property
+    def is_soft_gesture(self) -> bool:
+        """A begun Soft gesture is running: `reweight()` applies."""
+        return self.is_interacting and self._soft_seeds is not None
+
+    def reweight(self, soft) -> set[VertexId]:
+        """Live Soft radius (AD-020 "Live radius", `PROVISIONAL`): the running gesture continues with the
+        influence of `soft` (the caller keeps metric/curve of the gesture and changes only the radius).
+
+        The Core op fixes its weights at `begin()` and steps incrementally, so it is not reweighted in place:
+        it is cancelled (exact start geometry, no History), a new op begins on that start geometry with the
+        same seeds and the same pivot - the influence is computed by the same `begin()` path as the first
+        one - and the gesture's accumulated intent is replayed as one step (`_replay`). Each call starts from
+        the start geometry, so radius steps never accumulate. Returns the vertices whose position may have
+        changed (old ∪ new influenced set)."""
+        if not self.is_soft_gesture:
+            raise ToolStateError("reweight() needs a running Soft gesture.")
+        touched = set(self._vertex_ids)
+        pivot = self._operation.pivot
+        self._operation.cancel()
+        self._operation = None
+        self._begin_soft(self._scene, set(self._soft_seeds), soft, pivot, {"pivot": pivot})
+        self._replay()
+        return touched | self._vertex_ids
 
     # -- Hooks ------------------------------------------------------------------
 
@@ -393,25 +420,12 @@ class TransformTool(Tool):
         pivot = params.get("pivot")
         op_params: dict[str, Any] = {"pivot": pivot}
         soft = params.get("soft")
-        if soft is not None and scene.mesh.symmetry_definition is not None:
-            self._begin_symmetric_soft(scene, selected, soft, pivot, op_params)
+        self._soft_seeds = None
+        if soft is not None:
+            self._begin_soft(scene, selected, soft, pivot, op_params)
+            self._soft_seeds = frozenset(selected)
             return
         vertex_ids, symmetry = resolve_symmetry(scene.mesh, selected)
-        if soft is not None:
-            # Soft Selection (WP-SOFT-01 S2a, AD-020 §4.1, `PROVISIONAL`): the influence
-            # is computed here from the seeds, the pivot is the centroid of the seeds
-            # (never of the influenced set), the affected set is the influenced set.
-            influence = compute_influence(
-                scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power,
-            )
-            if not influence:
-                raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
-            op_params["influence"] = influence
-            if pivot is None:
-                pivot = primary_pivot(scene.mesh, selected)
-            op_params["pivot"] = pivot
-            vertex_ids = set(influence)
         if symmetry is not None:
             if pivot is None:
                 op_params["pivot"] = symmetric_default_pivot(
@@ -419,6 +433,25 @@ class TransformTool(Tool):
                 )
             op_params["symmetry"] = symmetry
         self._begin_operation(scene, vertex_ids, op_params)
+
+    def _begin_soft(self, scene, selected, soft, pivot, op_params) -> None:
+        if scene.mesh.symmetry_definition is not None:
+            self._begin_symmetric_soft(scene, selected, soft, pivot, op_params)
+            return
+        # Soft Selection (WP-SOFT-01 S2a, AD-020 §4.1, `PROVISIONAL`): the influence
+        # is computed here from the seeds, the pivot is the centroid of the seeds
+        # (never of the influenced set), the affected set is the influenced set.
+        influence = compute_influence(
+            scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
+            curve_power=soft.curve_power,
+        )
+        if not influence:
+            raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
+        op_params["influence"] = influence
+        if pivot is None:
+            pivot = primary_pivot(scene.mesh, selected)
+        op_params["pivot"] = pivot
+        self._begin_operation(scene, set(influence), op_params)
 
     def _begin_symmetric_soft(self, scene, selected, soft, pivot, op_params) -> None:
         """Symmetric Soft (AD-SYM-04 SS2, `PROVISIONAL`): weights and categories from
@@ -474,11 +507,13 @@ class TransformTool(Tool):
     def _on_commit(self) -> Any:
         command = self._operation.commit()
         self._operation = None
+        self._soft_seeds = None
         return command
 
     def _on_cancel(self) -> None:
         self._operation.cancel()
         self._operation = None
+        self._soft_seeds = None
 
     def _on_deactivate(self) -> None:
         self._scene = None
@@ -488,4 +523,8 @@ class TransformTool(Tool):
 
     def _create_operation(self, context: OperationContext):
         """Erzeugt die konkrete Core-Operation für diese Interaktion."""
+        raise NotImplementedError
+
+    def _replay(self) -> None:
+        """Apply the gesture's accumulated intent to the freshly begun op as one step (`reweight`)."""
         raise NotImplementedError

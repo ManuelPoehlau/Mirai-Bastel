@@ -194,7 +194,7 @@ def test_settings_change_mid_gesture_leaves_the_symmetric_bands_alone(preview_ca
     preview = app.soft_bands
     _drag(app, KEYS["move"])
     preview_calls.clear()
-    app.dispatch_command(commands.SOFT_RADIUS_UP)
+    app.dispatch_command(commands.SOFT_CURVE_CYCLE)  # the radius alone is live (test_soft_live_radius.py)
     assert preview_calls == [] and app.soft_bands == preview
     app.key_press(ESC)
 
