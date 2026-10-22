@@ -217,6 +217,12 @@ triggers, exclusivity, hide / show, gesture stability and resume after commit / 
 scene load, topology change + Undo, draw order, real-GL selected-fill-above-shading. **Not Artist-validated:** look
 (colours, alpha), whether hover preview feels right (flicker while orbiting, speed on dense meshes), the key.
 
+**Verdict (Manu, 2026-10-22, recorded from chat):** "Keep, Farben/Alpha, Bindings etc. kann man später noch anpassen.
+Performance am 20k Gollum ist noch etwas träge. Das ist aber ein Thema für eine andere Session." -> hover preview and
+both display modes are **KEEP**; colours, alpha and the keys stay `PROVISIONAL` and adjustable. Open, for a separate
+session: the preview feels somewhat sluggish on the 20k gollum (not measured; candidates are the per-hover-change influence
+field and the redundant recompute at hover-arm named under "Cost").
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
