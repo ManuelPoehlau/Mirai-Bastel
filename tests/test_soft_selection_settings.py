@@ -26,7 +26,13 @@ def test_defaults_are_geodesic_smooth_15_percent_bands_on():
 
 
 def test_radius_steps_go_up_to_200_percent():
-    assert RADIUS_STEPS_PERCENT == (2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200)
+    # 2026-10-22: finer (Manu: "kleinere Sprünge"); every earlier step is still in the list.
+    assert RADIUS_STEPS_PERCENT[0] == 2 and RADIUS_STEPS_PERCENT[-1] == 200
+    assert set((2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200)) <= set(RADIUS_STEPS_PERCENT)
+    assert list(RADIUS_STEPS_PERCENT) == sorted(set(RADIUS_STEPS_PERCENT))
+    # From 10 % up one notch changes the radius by at most 20 % (the old list: up to 50 %).
+    big = [b / a for a, b in zip(RADIUS_STEPS_PERCENT, RADIUS_STEPS_PERCENT[1:]) if a >= 10]
+    assert max(big) <= 1.2
     assert RADIUS_STEPS_PERCENT[DEFAULT_RADIUS_STEP] == 15
     assert world_radius_for(2.0, len(RADIUS_STEPS_PERCENT) - 1) == pytest.approx(4.0)
 
@@ -78,11 +84,12 @@ def test_invalid_shape_step_is_rejected():
 
 def test_status_text_shows_the_full_state():
     s = SoftSettings(enabled=True).with_bounding_radius(3.4)
-    assert s.status_text() == "Soft: on · 15 % (0.51) · geodesic · smooth · bands on"
+    assert s.status_text() == "Soft: on · 15 % (0.51) · geodesic · smooth · bands on · mono"
     custom = s.with_custom_shape_step(+1)  # p = 1.5
-    assert custom.status_text() == "Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on"
-    assert custom.with_bands_toggled().status_text().endswith("· custom p=1.5 · bands off")
-    assert s.with_next_curve().status_text().endswith("· sphere · bands on")  # no p unless custom
+    assert custom.status_text() == "Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on · mono"
+    assert custom.with_bands_toggled().status_text().endswith("· custom p=1.5 · bands off · mono")
+    assert s.with_next_curve().status_text().endswith("· sphere · bands on · mono")  # no p unless custom
+    assert s.with_next_look().status_text().endswith("· bands on · tint")
 
 
 def test_bands_toggle_changes_nothing_else():

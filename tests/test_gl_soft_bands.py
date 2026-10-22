@@ -94,6 +94,7 @@ def _by_eye_distance(app):
 def test_every_band_layer_draws_in_its_own_colour(gl_window):
     app = _app(gl_window)
     overlay = app._soft_overlay
+    overlay.set_look("color")  # the opaque S2b colours (the default look since 2026-10-22 is `mono`)
     vids = _by_eye_distance(app)[:4]
     # One vertex per band (weights 0.9 / 0.6 / 0.4 / 0.1), pushed the way Application does.
     overlay.set_bands(SoftBands.from_weights(dict(zip(vids, (0.9, 0.6, 0.4, 0.1)))))
@@ -139,3 +140,22 @@ def test_application_soft_on_draws_bands_and_off_removes_them(gl_window):
 
     app.key_press(Input("key", "o"))
     assert _render(gl_window, app) == plain
+
+
+def test_mono_look_lightens_the_surface_and_fades_with_the_band(gl_window):
+    """2026-10-22: the default `mono` look - translucent white points: each lightens the mesh pixel under it
+    (no hue of its own), the strongest band the most."""
+    app = _app(gl_window)
+    overlay = app._soft_overlay
+    assert overlay.look == "mono"
+    vids = _by_eye_distance(app)[:4]
+    spots = [tuple(int(c) for c in _screen(app, vid)) for vid in vids]
+    bare = _render(gl_window, app)
+    overlay.set_bands(SoftBands.from_weights(dict(zip(vids, (0.9, 0.6, 0.4, 0.1)))))
+    shown = _render(gl_window, app)
+    gains = []
+    for spot in spots:
+        before, after = _pixel(bare, *spot), _pixel(shown, *spot)
+        assert all(a >= b for a, b in zip(after, before)), (before, after)  # only lighter
+        gains.append(sum(after) - sum(before))
+    assert gains[0] > gains[-1] > 0  # strongest band most opaque, the weakest still visible

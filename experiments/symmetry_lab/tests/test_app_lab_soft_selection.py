@@ -51,6 +51,7 @@ SOFT_COMMANDS = {
     cmd.SOFT_CURVE_SHAPE_SHARPER,
     cmd.SOFT_BANDS_TOGGLE,
     cmd.SOFT_VIEW_MODE_CYCLE,
+    cmd.SOFT_LOOK_CYCLE,
 }
 
 
@@ -102,7 +103,7 @@ def test_curve_shape_and_band_switch_pass_block_and_change_nothing_else():
     assert app.status_message.startswith("Soft: ") and app.status_message != BLOCK_NOT_ALLOWED_TEXT
     assert press(app, lab, ALT_O) is True
     assert app.soft_settings.bands_visible is False
-    assert app.status_message.endswith("bands off")
+    assert app.status_message.endswith("bands off · mono")
     assert press(app, lab, ALT_O) is True and app.soft_settings.bands_visible
     assert _state(app) == before
 
@@ -130,7 +131,7 @@ def _soft_gesture(mode, key, seeds_of=_ring_on_plus_x, armed_first=False):
         assert press(app, lab, O)
     else:
         assert press(app, lab, O)
-        for _ in range(6):  # 15 % -> 100 %: the falloff crosses the plane on subd_cube
+        while app.soft_settings.radius_percent < 100:  # the falloff crosses the plane on subd_cube
             assert app.pointer_scroll(SHIFT_WHEEL_UP) is True
         assert press(app, lab, key)
     before = _state(app)
@@ -213,7 +214,7 @@ def test_symmetric_bands_are_the_apps_and_alike_in_mark_and_block():
         app.selection.set(seeds)
         app.viewport.on_selection_changed()
         assert press(app, lab, O)
-        for _ in range(6):  # 15 % -> 100 %: the falloff crosses the plane on subd_cube
+        while app.soft_settings.radius_percent < 100:  # the falloff crosses the plane on subd_cube
             assert app.pointer_scroll(SHIFT_WHEEL_UP) is True
         soft = app.soft_settings
         field = symmetric_influence(

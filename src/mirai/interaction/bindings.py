@@ -256,6 +256,9 @@ def build_default_bindings() -> BindingSet:
     # influence display between vertex bands and face shading; Alt+O hides/shows whichever is active.
     # Alt+Shift+O is unbound elsewhere (the other Alt+Shift keys are A and LMB-drag); rebindable.
     bs.set_default(_key("o", "alt", "shift"), cmd.SOFT_VIEW_MODE_CYCLE)
+    # 2026-10-22 (`PROVISIONAL`, engineering key for Manu's look test): Ctrl+Shift+O cycles the look of the
+    # influence display (mono / tint / color). Ctrl+Shift+O was unbound; rebindable.
+    bs.set_default(_key("o", "ctrl", "shift"), cmd.SOFT_LOOK_CYCLE)
 
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-

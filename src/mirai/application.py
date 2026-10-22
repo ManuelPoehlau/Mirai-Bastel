@@ -257,6 +257,7 @@ _SOFT_COMMANDS = (
     commands.SOFT_CURVE_SHAPE_SHARPER,
     commands.SOFT_BANDS_TOGGLE,
     commands.SOFT_VIEW_MODE_CYCLE,
+    commands.SOFT_LOOK_CYCLE,
 )
 
 #: `Application._gpu_pick`: the window cannot serve this pick, ask the CPU picker.
@@ -896,6 +897,7 @@ class Application:
         if soft_shading_overlay_type is not None:
             self._soft_shading_overlay = soft_shading_overlay_type()
             self.viewport.add_overlay(self._soft_shading_overlay)
+        self._soft_apply_look()
         if self._soft_overlay is not None or self._soft_shading_overlay is not None:
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
         self._symmetry_display = None
@@ -3066,10 +3068,20 @@ class Application:
             self._soft = soft.with_bands_toggled()
         elif command == commands.SOFT_VIEW_MODE_CYCLE:
             self._soft = soft.with_next_view_mode()
+        elif command == commands.SOFT_LOOK_CYCLE:
+            # Colours only: applied at once, also mid-gesture (the weights and what is shown stay).
+            self._soft = soft.with_next_look()
+            self._soft_apply_look()
         if changed:
             self._soft_preview_refresh()
         self._set_status(self._soft.status_text())
         return changed
+
+    def _soft_apply_look(self) -> None:
+        """Push the look (`SoftSettings.look`) to the influence sinks that exist."""
+        for sink in (self._soft_overlay, self._soft_shading_overlay):
+            if sink is not None and hasattr(sink, "set_look"):
+                sink.set_look(self._soft.look)
 
     def _soft_live_tool(self):
         """The tool of a begun Soft Move/Rotate/Scale (key hold, Tweak or gizmo drag), else None: the

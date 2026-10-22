@@ -172,10 +172,10 @@ def test_edit_wheel_zoom_and_radius():
     assert state.radius_step == DEFAULT_RADIUS_STEP and state.radius_percent == 15
     out = state.wheel(0, 1, {"shift"})
     assert ls.PREVIEW_CHANGED in out and state.radius_step == DEFAULT_RADIUS_STEP + 1
-    for _ in range(30):
+    for _ in range(len(RADIUS_STEPS_PERCENT) + 2):
         state.wheel(0, 1, {"shift"})
     assert state.radius_percent == RADIUS_STEPS_PERCENT[-1] == 200
-    for _ in range(30):
+    for _ in range(len(RADIUS_STEPS_PERCENT) + 2):
         state.wheel(0, -1, {"shift"})
     assert state.radius_percent == 2
     assert state.wheel(0, 1, {"ctrl"}).effects == set() and state.wheel(0, 1, {"alt"}).effects == set()

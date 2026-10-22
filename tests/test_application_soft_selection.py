@@ -39,6 +39,9 @@ from mirai.soft_selection import (
 )
 
 WIDTH, HEIGHT = 800, 600
+#: One wheel notch up / down from the default 15 % (the step list is finer since 2026-10-22).
+ONE_UP = RADIUS_STEPS_PERCENT[DEFAULT_RADIUS_STEP + 1]
+ONE_DOWN = RADIUS_STEPS_PERCENT[DEFAULT_RADIUS_STEP - 1]
 
 
 def _key(value: str, *modifiers: str) -> Input:
@@ -333,7 +336,7 @@ def test_settings_are_sticky_across_commit_cancel_and_undo(app):
     app.pointer_scroll(SHIFT_WHEEL_UP)
     settings = app.soft_settings
     assert (settings.metric, settings.curve) == ("euclidean", "sphere")
-    assert settings.radius_percent == 20
+    assert settings.radius_percent == ONE_UP
     _gesture(app, W)  # commit
     assert app.soft_settings == settings
     _gesture(app, E, release=False)
@@ -351,7 +354,7 @@ def test_armed_but_not_begun_takes_the_new_value(app, begins):
     app.pointer_scroll(SHIFT_WHEEL_UP)
     app.pointer_motion(300.0, 300.0, 6.0, 2.0)  # begin() reads the settings now
     assert begins[0]["soft"].curve == "sphere"
-    assert begins[0]["soft"].radius_percent == 20
+    assert begins[0]["soft"].radius_percent == ONE_UP
     app.key_press(ESC)
 
 
@@ -394,7 +397,7 @@ def test_world_radius_is_the_step_times_the_bounding_radius(app):
     s = app.soft_settings
     assert s.world_radius == pytest.approx(bounding * 0.15)
     app.pointer_scroll(SHIFT_WHEEL_UP)
-    assert app.soft_settings.world_radius == pytest.approx(bounding * 0.20)
+    assert app.soft_settings.world_radius == pytest.approx(bounding * ONE_UP / 100)
 
 
 def test_tool_influence_is_computed_from_the_settings_world_radius(app):
@@ -446,7 +449,7 @@ def test_o_toggles_and_posts_the_full_state(app):
     assert app.key_press(O)
     assert app.status_serial == serial + 1
     assert app.status_message.startswith("Soft: on · 15 % (")
-    assert app.status_message.endswith(") · geodesic · smooth · bands on")
+    assert app.status_message.endswith(") · geodesic · smooth · bands on · mono")
     assert app.key_press(O)
     assert app.status_message.startswith("Soft: off · 15 % (")
 
@@ -454,13 +457,13 @@ def test_o_toggles_and_posts_the_full_state(app):
 def test_curve_and_metric_cycle_and_post_the_state(app):
     assert app.key_press(SHIFT_O)
     assert app.soft_settings.curve == "sphere"
-    assert app.status_message.endswith("· geodesic · sphere · bands on")
+    assert app.status_message.endswith("· geodesic · sphere · bands on · mono")
     for _ in range(len(CURVES) - 1):  # the whole cycle comes back to smooth
         assert app.key_press(SHIFT_O)
     assert app.soft_settings.curve == "smooth"
     assert app.key_press(CTRL_O)
     assert app.soft_settings.metric == "euclidean"
-    assert app.status_message.endswith("· euclidean · smooth · bands on")
+    assert app.status_message.endswith("· euclidean · smooth · bands on · mono")
     assert app.key_press(CTRL_O)
     assert app.soft_settings.metric == "geodesic"
 
@@ -483,10 +486,10 @@ def test_shift_wheel_steps_the_radius_clamped_without_wrap(app):
 def test_one_notch_is_one_step_and_up_is_larger(app):
     assert app.soft_settings.radius_percent == 15
     app.pointer_scroll(SHIFT_WHEEL_UP)
-    assert app.soft_settings.radius_percent == 20
+    assert app.soft_settings.radius_percent == ONE_UP
     app.pointer_scroll(SHIFT_WHEEL_DOWN)
     app.pointer_scroll(SHIFT_WHEEL_DOWN)
-    assert app.soft_settings.radius_percent == 10
+    assert app.soft_settings.radius_percent == ONE_DOWN
 
 
 def test_shift_wheel_never_zooms_even_with_soft_off(app):
@@ -541,7 +544,7 @@ def test_direct_dispatch_reaches_the_same_state(app):
     assert app.dispatch_command(cmd.SOFT_TOGGLE)
     assert app.soft_settings.enabled
     assert app.dispatch_command(cmd.SOFT_RADIUS_UP)
-    assert app.soft_settings.radius_percent == 20
+    assert app.soft_settings.radius_percent == ONE_UP
 
 
 # -- S2d: defaults, curve set, custom shape, radius steps, band switch (S2c verdict 2026-10-11) -----
@@ -565,10 +568,10 @@ def test_ctrl_wheel_shapes_the_custom_curve_and_selects_it(app):
     assert app.soft_settings.curve == "smooth" and app.soft_settings.curve_power == 1.0
     assert app.pointer_scroll(CTRL_WHEEL_UP)  # up = rounder = smaller p
     assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 0.67
-    assert app.status_message.endswith("· custom p=0.67 · bands on")
+    assert app.status_message.endswith("· custom p=0.67 · bands on · mono")
     assert app.pointer_scroll(CTRL_WHEEL_DOWN) and app.pointer_scroll(CTRL_WHEEL_DOWN)
     assert app.soft_settings.curve_power == 1.5  # down = sharper
-    assert app.status_message.endswith("· geodesic · custom p=1.5 · bands on")
+    assert app.status_message.endswith("· geodesic · custom p=1.5 · bands on · mono")
 
 
 def test_ctrl_wheel_clamps_at_both_ends_and_never_zooms(app):
@@ -577,7 +580,7 @@ def test_ctrl_wheel_clamps_at_both_ends_and_never_zooms(app):
         app.pointer_scroll(CTRL_WHEEL_UP)
     assert app.soft_settings.curve_power == CUSTOM_SHAPE_STEPS[0]
     assert app.pointer_scroll(CTRL_WHEEL_UP) is False  # at the end: unchanged ...
-    assert app.status_message.endswith("· custom p=0.25 · bands on")  # ... but the state is posted
+    assert app.status_message.endswith("· custom p=0.25 · bands on · mono")  # ... but the state is posted
     for _ in range(len(CUSTOM_SHAPE_STEPS) + 2):
         app.pointer_scroll(CTRL_WHEEL_DOWN)
     assert app.soft_settings.curve_power == CUSTOM_SHAPE_STEPS[-1]
@@ -652,10 +655,10 @@ def test_alt_o_toggles_the_bands_state_and_posts_it(app):
     serial = app.status_serial
     assert app.key_press(ALT_O)
     assert app.soft_settings.bands_visible is False and app.status_serial == serial + 1
-    assert app.status_message.endswith("· bands off")
+    assert app.status_message.endswith("· bands off · mono")
     assert app.soft_settings.enabled is False  # Alt+O is not O
     assert app.key_press(ALT_O)
-    assert app.soft_settings.bands_visible is True and app.status_message.endswith("· bands on")
+    assert app.soft_settings.bands_visible is True and app.status_message.endswith("· bands on · mono")
 
 
 def test_bands_switch_is_sticky_and_allowed_while_armed(app):

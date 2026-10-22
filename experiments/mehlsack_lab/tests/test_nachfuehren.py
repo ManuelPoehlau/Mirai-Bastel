@@ -19,16 +19,19 @@ from mehlsack_lab.signed_ops import (
     SignedSoftScaleOperation,
     VertexView,
 )
-from mirai.soft_selection import primary_pivot
+from mirai.soft_selection import RADIUS_STEPS_PERCENT, primary_pivot
 
 from .helpers import horizontal_edge, positions
+
+#: The radius steps by percent (the shared list got finer on 2026-10-22; 50 % was index 7 before).
+_STEP_50 = RADIUS_STEPS_PERCENT.index(50)
 
 PARAMS = BoxParams(height=2.0, width=1.5, h=10, n=5)
 DELTAS = [(0.0, 0.05, 0.0), (0.01, 0.07, 0.0), (0.0, 0.11, -0.02), (0.0, 0.03, 0.0)]
 HAT = SignedCurve.from_preset(PRESET_HAT)
 
 
-def _session_after_gesture(curve=DEFAULT_CURVE, radius_step=7, metric="geodesic"):
+def _session_after_gesture(curve=DEFAULT_CURVE, radius_step=_STEP_50, metric="geodesic"):
     session = EditSession(build_box_mesh(PARAMS))
     start = positions(session.mesh)
     target = session.target(horizontal_edge(session.mesh, 0.0), "loop")
@@ -75,7 +78,7 @@ def test_new_curve_equals_a_fresh_gesture_and_replaces_the_entry():
 def test_new_radius_and_metric_also_retune():
     session, target, start, radius = _session_after_gesture(curve=HAT)
     total = session.last.total
-    bigger = session.world_radius(9)
+    bigger = session.world_radius(RADIUS_STEPS_PERCENT.index(100))
     assert session.retune(bigger, "geodesic", HAT)
     assert session.retune(bigger, "euclidean", HAT)
     assert positions(session.mesh) == positions(_fresh(target.seeds, total, bigger, "euclidean", HAT))
@@ -91,7 +94,7 @@ def test_new_radius_and_metric_also_retune():
 def test_retune_reports_the_touched_vertices():
     session, target, _, radius = _session_after_gesture()
     old = set(session.last.weights)
-    assert session.retune(session.world_radius(10), "geodesic", DEFAULT_CURVE)
+    assert session.retune(session.world_radius(RADIUS_STEPS_PERCENT.index(150)), "geodesic", DEFAULT_CURVE)
     assert session.last_changed == old | set(session.last.weights)
 
 
@@ -110,7 +113,7 @@ def test_nachfuehren_ends_with_next_gesture_undo_redo():
 def _state_after_gesture():
     state = LabState(PARAMS)
     state.key("RETURN")
-    state.radius_step = 7
+    state.radius_step = _STEP_50
     target = state.session.target(horizontal_edge(state.session.mesh, 0.0), "loop")
     state.begin_drag(target)
     for d in DELTAS:
@@ -165,7 +168,7 @@ ANGLES = [0.1, 0.07, -0.02, 0.2]
 FACTORS = [(1.1, 1.0, 1.1), (1.2, 1.0, 1.2), (0.95, 1.0, 0.95)]
 
 
-def _session_after(kind, curve=DEFAULT_CURVE, formula="linear", radius_step=7):
+def _session_after(kind, curve=DEFAULT_CURVE, formula="linear", radius_step=_STEP_50):
     session = EditSession(build_box_mesh(PARAMS))
     start = positions(session.mesh)
     target = session.target(horizontal_edge(session.mesh, 0.0), "loop")

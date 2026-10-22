@@ -23,6 +23,7 @@ from mirai.application import Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.bindings import build_default_bindings
 from mirai.interaction.input import BindingSet, Input, KNIFE_CONTEXT, TOPOLOGY_CONTEXT
+from mirai.soft_selection import DEFAULT_RADIUS_STEP, RADIUS_STEPS_PERCENT
 
 pyglet = pytest.importorskip("pyglet")
 pyglet.options["headless"] = True
@@ -49,6 +50,10 @@ def _load_main():
 
 main_module = _load_main()
 
+#: One wheel notch up / down from the default 15 %.
+ONE_UP = RADIUS_STEPS_PERCENT[DEFAULT_RADIUS_STEP + 1]
+ONE_DOWN = RADIUS_STEPS_PERCENT[DEFAULT_RADIUS_STEP - 1]
+
 SOFT_BINDINGS = [
     (_key("o"), cmd.SOFT_TOGGLE),
     (_wheel("UP", "shift"), cmd.SOFT_RADIUS_UP),
@@ -59,6 +64,7 @@ SOFT_BINDINGS = [
     (_wheel("DOWN", "ctrl"), cmd.SOFT_CURVE_SHAPE_SHARPER),
     (_key("o", "alt"), cmd.SOFT_BANDS_TOGGLE),
     (_key("o", "alt", "shift"), cmd.SOFT_VIEW_MODE_CYCLE),  # 2026-10-22, PROVISIONAL
+    (_key("o", "ctrl", "shift"), cmd.SOFT_LOOK_CYCLE),  # 2026-10-22, PROVISIONAL
 ]
 
 
@@ -71,10 +77,10 @@ def test_default_soft_bindings_resolve_in_every_context(inp, command, context):
     assert build_default_bindings().command_for(inp, context) == command
 
 
-def test_eight_commands_eight_distinct_inputs():
+def test_each_soft_command_has_its_own_input():
     bs = build_default_bindings()
     assert {bs.command_for(inp) for inp, _ in SOFT_BINDINGS} == {c for _, c in SOFT_BINDINGS}
-    assert len(SOFT_BINDINGS) == len({c for _, c in SOFT_BINDINGS}) == 8
+    assert len(SOFT_BINDINGS) == len({c for _, c in SOFT_BINDINGS}) == 10
 
 
 def test_plain_wheel_stays_zoom_and_other_modifiers_are_unbound():
@@ -84,8 +90,7 @@ def test_plain_wheel_stays_zoom_and_other_modifiers_are_unbound():
     assert bs.command_for(_wheel("UP", "alt")) is None
     assert bs.command_for(_wheel("UP", "shift", "ctrl")) is None  # Ctrl+Shift+wheel: unbound
     assert bs.command_for(_wheel("DOWN", "shift", "ctrl")) is None
-    assert bs.command_for(_key("o", "shift", "ctrl")) is None
-    assert bs.command_for(_key("o", "alt", "shift")) is None
+    assert bs.command_for(_key("o", "alt", "ctrl")) is None
 
 
 def test_o_is_not_a_display_key():
@@ -212,14 +217,14 @@ def test_shift_scroll_steps_the_radius_and_does_not_zoom(wired, shift_symbol):
     assert app.soft_settings.radius_percent == 15
     h["on_key_press"](shift_symbol, key.MOD_SHIFT)
     h["on_mouse_scroll"](10, 10, 0, 1)
-    assert app.soft_settings.radius_percent == 20
+    assert app.soft_settings.radius_percent == ONE_UP
     h["on_mouse_scroll"](10, 10, 0, -1)
     h["on_mouse_scroll"](10, 10, 0, -1)
-    assert app.soft_settings.radius_percent == 10
+    assert app.soft_settings.radius_percent == ONE_DOWN
     assert app.camera.distance == distance  # never zoomed
     h["on_key_release"](shift_symbol, 0)
     h["on_mouse_scroll"](10, 10, 0, 1)  # Shift released: the wheel zooms again
-    assert app.soft_settings.radius_percent == 10
+    assert app.soft_settings.radius_percent == ONE_DOWN
     assert app.camera.distance < distance
 
 
@@ -229,7 +234,7 @@ def test_shift_scroll_with_horizontal_driver_steps_the_radius(wired):
     distance = app.camera.distance
     h["on_key_press"](key.LSHIFT, key.MOD_SHIFT)
     h["on_mouse_scroll"](10, 10, 3, 0)
-    assert app.soft_settings.radius_percent == 20
+    assert app.soft_settings.radius_percent == ONE_UP
     assert app.camera.distance == distance
 
 
@@ -291,7 +296,7 @@ def test_alt_o_through_the_window_toggles_the_bands(wired):
     window, app = wired
     assert app.soft_settings.bands_visible
     assert window.handlers["on_key_press"](key.O, key.MOD_ALT)
-    assert not app.soft_settings.bands_visible and app.status_message.endswith("bands off")
+    assert not app.soft_settings.bands_visible and app.status_message.endswith("bands off · mono")
     window.handlers["on_key_press"](key.O, key.MOD_ALT)
     assert app.soft_settings.bands_visible
 

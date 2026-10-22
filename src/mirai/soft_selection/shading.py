@@ -4,7 +4,7 @@ Headless data behind the second influence display mode (the first are the vertex
 Every face with at least one influenced vertex is fan-triangulated like `RenderMesh`
 (`viewport.derived.triangulate_mesh_face`) and each triangle corner carries the colour of its
 vertex's weight; GL interpolates it across the face. The display idea is the one of the Mehlsack
-Lab's surface preview (`experiments/mehlsack_lab/lab_preview.py`, not imported); Soft Selection's
+Lab's surface preview (its `lab_preview.py`, not imported; path in AD-020); Soft Selection's
 weights stay `0 < w <= 1` (no signed weights) and nothing here computes influence.
 
 Look: the hue runs through the four band colours (strong red .. weak blue, so both display modes
@@ -32,24 +32,33 @@ SHADING_HUES: tuple[tuple[float, float, float], ...] = (
     (1.0, 0.50, 0.08),
     (1.0, 0.22, 0.15),
 )
-#: PROVISIONAL alpha at w -> 0+ and at w = 1 (seeds).
+#: PROVISIONAL alpha at w -> 0+ and at w = 1 (seeds), `color` look.
 SHADING_ALPHA_MIN = 0.12
 SHADING_ALPHA_MAX = 0.45
 assert len(SHADING_HUES) == BAND_COUNT
+#: PROVISIONAL (2026-10-22) per look (`settings.LOOKS`): hue stops (weak .. strong) and the alpha range.
+#: `mono` lightens the surface towards white, `tint` one muted coral; both with a lower alpha than `color`,
+#: so the shape and its lighting read through while shaping.
+SHADING_LOOKS: dict[str, tuple[tuple[tuple[float, float, float], ...], float, float]] = {
+    "mono": (((1.0, 1.0, 1.0), (1.0, 1.0, 1.0)), 0.03, 0.20),
+    "tint": (((0.95, 0.55, 0.40), (0.95, 0.55, 0.40)), 0.04, 0.24),
+    "color": (SHADING_HUES, SHADING_ALPHA_MIN, SHADING_ALPHA_MAX),
+}
 
 
-def shading_color(weight: float) -> RGBA:
-    """Corner colour of one weight: transparent for `w <= 0`, else the hue ramp at `w` with an
-    alpha between `SHADING_ALPHA_MIN` and `SHADING_ALPHA_MAX`."""
+def shading_color(weight: float, look: str = "color") -> RGBA:
+    """Corner colour of one weight: transparent for `w <= 0`, else the hue ramp of `look` at `w` with
+    an alpha between the look's minimum and maximum."""
+    hues, alpha_min, alpha_max = SHADING_LOOKS[look]
     if not weight > 0.0:
-        return (*SHADING_HUES[0], 0.0)
+        return (*hues[0], 0.0)
     w = min(1.0, weight)
-    position = w * (len(SHADING_HUES) - 1)
-    lower = min(int(position), len(SHADING_HUES) - 2)
+    position = w * (len(hues) - 1)
+    lower = min(int(position), len(hues) - 2)
     t = position - lower
-    a, b = SHADING_HUES[lower], SHADING_HUES[lower + 1]
+    a, b = hues[lower], hues[lower + 1]
     rgb = tuple(a[i] + (b[i] - a[i]) * t for i in range(3))
-    return (*rgb, SHADING_ALPHA_MIN + (SHADING_ALPHA_MAX - SHADING_ALPHA_MIN) * w)  # type: ignore[return-value]
+    return (*rgb, alpha_min + (alpha_max - alpha_min) * w)  # type: ignore[return-value]
 
 
 def shaded_triangles(mesh: Mesh, weights: Mapping[VertexId, float]) -> list[Triangle]:
@@ -71,7 +80,9 @@ def triangle_positions(mesh: Mesh, triangles: list[Triangle]) -> list[tuple[Posi
     return [(position(a), position(b), position(c)) for a, b, c in triangles]
 
 
-def triangle_colors(weights: Mapping[VertexId, float], triangles: list[Triangle]) -> list[tuple[RGBA, RGBA, RGBA]]:
+def triangle_colors(
+    weights: Mapping[VertexId, float], triangles: list[Triangle], look: str = "color"
+) -> list[tuple[RGBA, RGBA, RGBA]]:
     colour = {}
     result = []
     for tri in triangles:
@@ -79,7 +90,7 @@ def triangle_colors(weights: Mapping[VertexId, float], triangles: list[Triangle]
         for v in tri:
             w = weights.get(v, 0.0)
             if w not in colour:
-                colour[w] = shading_color(w)
+                colour[w] = shading_color(w, look)
             corner.append(colour[w])
         result.append(tuple(corner))
     return result  # type: ignore[return-value]

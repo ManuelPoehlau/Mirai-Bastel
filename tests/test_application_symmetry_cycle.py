@@ -35,6 +35,7 @@ from core import SelectionMode  # noqa: E402
 from loaders.assets import asset_path  # noqa: E402
 from mirai.application import Application  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
+from mirai.soft_selection import DEFAULT_RADIUS_STEP, RADIUS_STEPS_PERCENT  # noqa: E402
 from mirai.interaction.bindings import build_default_bindings  # noqa: E402
 from mirai.interaction.input import KNIFE_CONTEXT, Input  # noqa: E402
 from mirai.soft_selection import SoftBands, symmetric_influence  # noqa: E402
@@ -200,7 +201,7 @@ def test_the_soft_bands_follow_the_cycle():
     vid = sorted(app.scene.mesh.all_vertex_ids(), key=int)[0]
     app.selection.set({vid})
     assert app.key_press(O)
-    for _ in range(6):  # a radius that reaches the cube's neighbours
+    for _ in range(RADIUS_STEPS_PERCENT.index(100) - DEFAULT_RADIUS_STEP):  # reaches the cube's neighbours
         app.dispatch_command(commands.SOFT_RADIUS_UP)
     shown = app.soft_bands
     assert shown.count > 0

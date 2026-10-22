@@ -405,10 +405,10 @@ def test_view_state_is_not_history_or_scene_state(app):
 
 def test_status_text_names_the_active_mode():
     s = SoftSettings()
-    assert s.status_text().endswith("bands on")
+    assert s.status_text().endswith("bands on · mono")
     faces = s.with_next_view_mode()
-    assert faces.view_mode == "faces" and faces.status_text().endswith("faces on")
-    assert faces.with_bands_toggled().status_text().endswith("faces off")
+    assert faces.view_mode == "faces" and faces.status_text().endswith("faces on · mono")
+    assert faces.with_bands_toggled().status_text().endswith("faces off · mono")
     assert faces.with_next_view_mode() == s
     with pytest.raises(ValueError):
         SoftSettings(view_mode="dots")

@@ -1289,6 +1289,13 @@ Same classification as the two notes above: the group **soft settings** of the G
 selection or history change; no Limit of G is lifted and no writer added, so no second H2 review. Test:
 `experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.
 
+### Amendment note (2026-10-22, AD-020 "Finer radius steps and display look"): the look command
+
+Same classification again: the group **soft settings** gains `SoftLookCycle` (Ctrl+Shift+O, gate path `key_press`), the
+colour look of the influence display (mono / tint / color). Display only: no interaction, no mesh, selection or history
+change; no Limit of G is lifted and no writer added, so no second H2 review. Test:
+`experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.
+
 ## Addendum (2026-10-14, AD-SYM-04 — Symmetry in the Production app: H2-R5 and H2-R1 amended, H2-R6 clarified)
 
 **Status:** **DECIDED ✓** (Manu, 2026-10-14). Basis: [AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) (M-1: Symmetry must

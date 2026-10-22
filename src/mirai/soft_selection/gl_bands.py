@@ -21,15 +21,37 @@ from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands
 #: Layer names, strongest band first (`bands.SoftBands.bands` order).
 BAND_LAYERS: tuple[str, ...] = tuple(f"soft_band_{i}" for i in range(BAND_COUNT))
 
-#: PROVISIONAL colours, strongest .. weakest: red, orange, teal, blue.
-BAND_COLORS: tuple[tuple[float, float, float, float], ...] = (
+RGBA = tuple[float, float, float, float]
+
+#: PROVISIONAL colours of the `color` look, strongest .. weakest: red, orange, teal, blue.
+BAND_COLORS: tuple[RGBA, ...] = (
     (1.0, 0.22, 0.15, 1.0),
     (1.0, 0.50, 0.08, 1.0),
     (0.15, 0.78, 0.70, 1.0),
     (0.25, 0.45, 1.0, 1.0),
 )
-#: PROVISIONAL point size in px.
+#: PROVISIONAL point size in px (`color` look).
 BAND_POINT_SIZE = 6.0
+#: PROVISIONAL (2026-10-22) band colours and point size per look (`settings.LOOKS`): `mono` is one neutral
+#: white that fades with the band, `tint` one muted coral (no yellow: that is the selection) that fades;
+#: both smaller than the `color` points, so the surface stays the thing you look at.
+BAND_LOOKS: dict[str, tuple[tuple[RGBA, ...], float]] = {
+    "mono": (
+        ((1.0, 1.0, 1.0, 0.80), (1.0, 1.0, 1.0, 0.60), (1.0, 1.0, 1.0, 0.42), (1.0, 1.0, 1.0, 0.26)),
+        5.0,
+    ),
+    "tint": (
+        ((0.95, 0.55, 0.40, 0.85), (0.95, 0.55, 0.40, 0.62), (0.95, 0.55, 0.40, 0.42),
+         (0.95, 0.55, 0.40, 0.25)),
+        5.0,
+    ),
+    "color": (BAND_COLORS, BAND_POINT_SIZE),
+}
+
+
+def band_layer_styles(look: str) -> dict[str, tuple[RGBA, float]]:
+    colors, size = BAND_LOOKS[look]
+    return {layer: (colors[i], size) for i, layer in enumerate(BAND_LAYERS)}
 
 
 class GLSoftBandOverlay(GLPointOverlay):
@@ -37,11 +59,13 @@ class GLSoftBandOverlay(GLPointOverlay):
     strongest band is on top)."""
 
     LAYERS = tuple(reversed(BAND_LAYERS))
-    LAYER_STYLES = {layer: (BAND_COLORS[i], BAND_POINT_SIZE) for i, layer in enumerate(BAND_LAYERS)}
+    #: The class default is the `color` look; `set_look` gives an instance its own styles.
+    LAYER_STYLES = band_layer_styles("color")
 
     def __init__(self) -> None:
         super().__init__()
         self._bands: SoftBands = EMPTY_BANDS
+        self.look = "color"
         #: True until the next `sync()`: the bands changed (or none were synced yet).
         self.dirty = False
         #: Number of `set_bands` calls so far (diagnostics/tests).
@@ -50,6 +74,12 @@ class GLSoftBandOverlay(GLPointOverlay):
     @property
     def bands(self) -> SoftBands:
         return self._bands
+
+    def set_look(self, look: str) -> None:
+        """Colours of the band layers (`settings.LOOKS`); the points are unchanged, the next draw uses them."""
+        self.look = look
+        self.LAYER_STYLES = band_layer_styles(look)
+        self.dirty = True
 
     def set_bands(self, bands: SoftBands) -> None:
         self._bands = bands

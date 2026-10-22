@@ -64,6 +64,7 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
     def __init__(self) -> None:
         super().__init__()
         self._shown: Mapping[VertexId, float] = {}
+        self.look = "color"
         self._colors: list[float] = []
         self._triangles: list | None = None  # touched triangles (vertex ids); None = rebuild
         self._corner_colors: list = []
@@ -96,6 +97,12 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
         self.dirty = True
         self.pushes += 1
 
+    def set_look(self, look: str) -> None:
+        """Colours of the shading (`settings.LOOKS`); recomputed at the next sync."""
+        self.look = look
+        self._triangles = None
+        self.dirty = True
+
     def colors(self) -> list[float]:
         return list(self._colors)
 
@@ -112,7 +119,7 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
             return
         if self._triangles is None:
             self._triangles = shaded_triangles(mesh, self._shown)
-            self._corner_colors = triangle_colors(self._shown, self._triangles)
+            self._corner_colors = triangle_colors(self._shown, self._triangles, self.look)
             self.scans += 1
         self._set_shading(triangle_positions(mesh, self._triangles), self._corner_colors)
 

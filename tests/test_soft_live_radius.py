@@ -60,6 +60,8 @@ SHIFT_UP, SHIFT_DOWN = _wheel("UP", "shift"), _wheel("DOWN", "shift")
 CTRL_UP = _wheel("UP", "ctrl")
 
 KEYS = {"move": W, "rotate": E, "scale": R}
+#: One notch up from the default 15 %.
+ONE_UP = RADIUS_STEPS_PERCENT[RADIUS_STEPS_PERCENT.index(15) + 1]
 MOTIONS = ((6.0, 2.0), (5.0, 3.0), (4.0, -1.0))
 MORE = ((7.0, -3.0), (2.0, 5.0))
 
@@ -135,9 +137,9 @@ def test_wheel_steps_the_running_gestures_radius_on_the_start_geometry(op_name, 
 
     assert app.pointer_scroll(wheel)
     soft = app.soft_settings
-    assert soft.radius_percent == 20
+    assert soft.radius_percent == ONE_UP
     assert app.camera.eye() == eye  # consumed: no zoom
-    assert "20 %" in app.status_message
+    assert f"{ONE_UP} %" in app.status_message
     assert _op(app) is not first_op
     # The production influence of the seeds on the gesture-start geometry, at the new radius.
     expected = compute_influence(
@@ -156,7 +158,7 @@ def test_result_equals_a_gesture_begun_at_that_radius_and_the_drag_continues(op_
     assert live.pointer_scroll(UP)
     after_wheel = _positions(live)
 
-    fresh, _ = _ready(cursor, radius_steps=1)  # 20 % before the gesture
+    fresh, _ = _ready(cursor, radius_steps=1)  # one step up before the gesture
     assert fresh.key_press(KEYS[op_name])
     _move(fresh, MOTIONS)
     assert _close(after_wheel, _positions(fresh))
@@ -218,7 +220,7 @@ def test_percent_reference_is_fixed_for_the_gesture():
     assert app.key_press(R)
     _move(app, ((400.0, 300.0),))  # a big scale changes the bounding sphere
     assert app.pointer_scroll(UP)
-    assert app.soft_settings.world_radius == pytest.approx(start_radius * 20 / 15, rel=1e-12)
+    assert app.soft_settings.world_radius == pytest.approx(start_radius * ONE_UP / 15, rel=1e-12)
     assert app.pointer_scroll(DOWN)
     assert app.soft_settings.world_radius == pytest.approx(start_radius, rel=1e-12)
     assert app.key_press(ESC)
@@ -301,8 +303,13 @@ def test_viewport_is_told_about_the_old_and_the_new_influenced_set(monkeypatch):
     reports: list[set] = []
     original = app.viewport.on_vertices_moved
     monkeypatch.setattr(app.viewport, "on_vertices_moved", lambda ids: (reports.append(set(ids)), original(ids)))
-    assert app.pointer_scroll(DOWN)  # smaller: vertices drop out and return to their start
-    assert reports == [old | set(_op(app).weights)] and set(_op(app).weights) < old
+    expected = []
+    while app.soft_settings.radius_percent > 5:  # smaller: vertices drop out and return to their start
+        before = set(_op(app).weights)
+        assert app.pointer_scroll(DOWN)
+        expected.append(before | set(_op(app).weights))
+    assert reports == expected  # each notch: old ∪ new influenced set
+    assert set(_op(app).weights) < old
     assert app.key_press(ESC)
 
 
@@ -386,11 +393,11 @@ def test_shift_wheel_outside_a_gesture_is_the_sticky_step_and_moves_nothing():
     app, _ = _ready()
     start, eye = _positions(app), app.camera.eye()
     assert app.pointer_scroll(SHIFT_UP)
-    assert app.soft_settings.radius_percent == 20 and app.camera.eye() == eye
+    assert app.soft_settings.radius_percent == ONE_UP and app.camera.eye() == eye
     assert _positions(app) == start and not app.history.can_undo()
     assert app.key_press(W)
     _move(app, MOTIONS)
-    assert app.soft_settings.radius_percent == 20  # the next gesture begins with it
+    assert app.soft_settings.radius_percent == ONE_UP  # the next gesture begins with it
     assert app.key_press(ESC)
 
 

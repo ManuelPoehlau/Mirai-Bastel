@@ -39,8 +39,10 @@ from mirai.interaction.input import Input  # noqa: E402
 from mirai.mesh_geometry import mesh_center_and_radius  # noqa: E402
 from mirai.scene_factory import build_core_scene_from_obj, mesh_from_positions_and_faces  # noqa: E402
 from mirai.soft_selection import (  # noqa: E402
+    DEFAULT_RADIUS_STEP,
     EMPTY_BANDS,
     METRICS,
+    RADIUS_STEPS_PERCENT,
     SoftSymmetryRefusal,
     compute_influence,
     symmetric_influence,
@@ -381,8 +383,12 @@ def _drag(app, key, moves=((14.0, 9.0), (21.0, -6.0), (-5.0, 12.0), (30.0, 4.0))
     return app.tool_manager.active_tool.operation
 
 
-#: Radius steps up from the default 15 % until the falloff of the ring crosses the plane.
-RADIUS_STEPS = {"subd_cube": 6, "head_basemesh": 0}
+#: Radius steps up from the default 15 % until the falloff of the ring crosses the plane (100 % on the
+#: cube); pinned by percent, so a finer step list keeps the same radius.
+RADIUS_STEPS = {
+    "subd_cube": RADIUS_STEPS_PERCENT.index(100) - DEFAULT_RADIUS_STEP,
+    "head_basemesh": 0,
+}
 
 
 @pytest.mark.parametrize("op_name", sorted(KEYS))
@@ -531,7 +537,7 @@ def test_r6_1_straddling_fixtures_stay_exact(fixture, op_name):
     corr = vertex_correspondence(mesh)
     s = mesh.all_vertex_ids()[0]
     _select(app, {s})
-    _soft_on(app, 8)
+    _soft_on(app, RADIUS_STEPS_PERCENT.index(200) - DEFAULT_RADIUS_STEP)
     start = _positions(mesh)
     op = _drag(app, KEYS[op_name])
     assert set(op.weights) == set(mesh.all_vertex_ids())  # the falloff covers the fixture

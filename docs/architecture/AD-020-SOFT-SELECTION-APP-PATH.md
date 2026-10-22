@@ -11,6 +11,7 @@ runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses 
 flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
 **Hover preview and display modes (2026-10-22, see "Hover preview and display modes" below):** the influence preview now follows the hovered component when nothing is selected, and has a second, exclusive display mode (face shading) next to the vertex bands; `PROVISIONAL`, Artist test open.
 **Live radius (2026-10-22, see "Live radius during a running gesture" below):** the wheel changes the radius of a running Soft Move/Rotate/Scale; the gesture is re-evaluated from its start geometry. Narrows the §4.3 per-gesture rule for the radius only; `PROVISIONAL`, Artist test open (ATELIER B12).
+**Finer radius steps and display look (2026-10-22, see "Finer radius steps and display look" below):** about 10-15 % per wheel notch; the influence display has three looks (`mono` default, `tint`, `color`) on Ctrl+Shift+O; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
@@ -105,7 +106,7 @@ outside p95. Details in the drag_cost README.
 | E2 | Custom shape `p` on a fixed `PROVISIONAL` step list 0.25, 0.33, 0.5, 0.67, 1, 1.5, 2, 3, 4 (start 1). Ctrl+wheel up = rounder (smaller p), down = sharper; clamped. Any Ctrl+wheel switches the curve to `custom`. *(Assumption: Manu wants this now, not with the GUI; the direction is read from "spitz <> rund" and is to be confirmed in the test.)* |
 | E3 | Shift+O cycles smooth → sphere → root → sharp → linear → custom → smooth; `custom` keeps its last `p`. |
 | E4 | Defaults: metric `geodesic`, curve `smooth` (verdict rows 2 and 3). Soft stays off by default. |
-| E5 | Radius steps (% of the mesh bounding radius): 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200; start 15; clamped, no wrap. |
+| E5 | Radius steps (% of the mesh bounding radius): 2, 5, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200; start 15; clamped, no wrap. *(2026-10-22: finer, 32 steps, see "Finer radius steps and display look".)* |
 | E6 | `src/main.py` tracks Ctrl like Shift; the wheel input carries `{"ctrl"}`; the bindings give it the meaning (`SoftCurveShapeRounder` / `SoftCurveShapeSharper`). Ctrl+wheel never zooms, also with soft off (then only the stored shape changes). Same horizontal-scroll fallback as Shift (sign unconfirmed). Ctrl+Shift+wheel is unbound and does nothing. |
 | E7 | Band switch: **Alt+O** (`SoftBandsToggle`), sticky, default on. Bands off = no band points at all (preview and gesture) and no influence work for display; the operation still computes its own influence. A switch during a running gesture takes effect when the gesture ends (the gesture owns the display). *(Proposal; Manu may change the key. Alt+O is free in GLOBAL, KNIFE, TOPOLOGY and the Symmetry Lab; Alt+A and Alt+LMB are other Alt inputs.)* |
 | E8 | Status line: `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on` (`p=` only while the curve is `custom`). |
@@ -281,6 +282,35 @@ old ∪ new viewport report, bands/faces/hidden display and the mid-gesture mode
 plain transform), Shift+wheel outside, Ctrl+wheel mid-gesture, gizmo drag, trackball replay, symmetric field and mirror/
 seam consistency (head, X). **Not Artist-validated:** feel, wheel direction, and whether the plain wheel should be the
 radius during a gesture (practical test ATELIER B12).
+
+## Finer radius steps and display look (2026-10-22, `PROVISIONAL`)
+
+Artist notes (Manu, 2026-10-22, after the live-radius slice): "die Abstufung beim Scroll müsste vielleicht präziser
+sein, also kleinere Sprünge. Farben / Alpha beim Einflussbereich möglichst dezent / monochromer machen (mal testen),
+sollte nicht zu aufdringlich sein beim Formen." *Reading (assumption, correct in one sentence if wrong):* both concern
+the moment of shaping, so they apply to every wheel step (live and sticky) and to both display modes.
+
+**Radius steps.** `RADIUS_STEPS_PERCENT` = 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 17, 20, 23, 26, 30, 35, 40, 45,
+50, 57, 65, 75, 85, 100, 115, 130, 150, 175, 200 (32 steps, was 12). From 10 % up one notch changes the radius by
+10-15 % (at most 20 %), was up to 50 %; below 10 % whole percents. Start 15 %, ends 2 % / 200 %, clamped, no wrap,
+whole numbers (status line unchanged) - all unchanged, and every earlier step is still in the list. Trade-off: the
+whole range now takes 31 notches (was 11). Applies to the live radius and to Shift+wheel alike, and to the Mehlsack
+Lab, which reads the same list.
+
+**Display look** (`SoftSettings.look`, view state like `view_mode`: sticky, never in the scene file or the history):
+- `mono` (**default**) - one neutral white, translucent: band points 5 px, alpha 0.80 .. 0.26 from the strongest band to
+  the weakest; face shading lightens towards white with alpha 0.03 .. 0.20;
+- `tint` - the same, in one muted coral (0.95, 0.55, 0.40): band alpha 0.85 .. 0.25, shading alpha 0.04 .. 0.24;
+- `color` - the S2b / hover-preview look, unchanged (red .. blue, 6 px opaque points, shading alpha 0.12 .. 0.45).
+Neither quiet look uses the selection / hover yellow. **Ctrl+Shift+O** (`SoftLookCycle`, `PROVISIONAL` engineering key,
+was unbound, rebindable; joins the Symmetry Lab's `NON_OPERATION` like `SoftViewModeCycle`) cycles mono -> tint ->
+color. Unlike the mode switch it applies at once, also during a gesture: it only recolours, the weights and what is shown
+stay. Status line: `... · bands on · mono`. The values live with the sinks (`gl_bands.BAND_LOOKS`,
+`shading.SHADING_LOOKS`); the sinks default to `color` when the host pushes no look (`set_look`).
+
+**Verified by tests** (`tests/test_soft_display_look.py`, real GL in `test_gl_soft_bands.py`: the mono bands render
+neutral and fade with the band; tests that counted notches now pin percents). **Not Artist-validated:** which look,
+the exact alpha, the step density, the key.
 
 ---
 
