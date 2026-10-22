@@ -8,6 +8,10 @@ among those few stays the CPU picker's rule, so the two paths differ only where 
   (`camera.project_to_screen`, as `pick_nearest_vertex`), ties by ID;
 - edge: among the edge IDs within `EDGE_RADIUS_PX`, the nearest by exact distance to the projected segment
   (as `pick_nearest_edge`), ties by ID;
+- vertex / edge visibility: the candidates come from the ID buffers drawn *without* depth test and the nearest
+  one the CPU rule calls visible wins (usually one ray test): the depth buffer also holds the element's own
+  faces, and a non-planar or concave Ngon's triangle can lie in front of its own corner or edge - the depth
+  test hid exactly those (the CPU rule excludes the incident faces);
 - face: the face under the cursor's pixel (pixel-centre convention);
 - Box (`elements_in_rect`): the CPU candidate rule (all corners inside the rectangle, `PickCache` projections)
   with the depth buffer as the visibility test instead of one ray test per element ("depth oracle", AD-022 §3).
@@ -22,7 +26,7 @@ import math
 
 from core import EdgeId, FaceId, Mesh, SelectionMode, VertexId
 
-from .picking import _point_segment_distance
+from .picking import _point_segment_distance_t, edge_point_occluded, vertex_occluded
 from .picking_cache import PickCache
 
 VERTEX_RADIUS_PX = 14.0
@@ -30,7 +34,7 @@ EDGE_RADIUS_PX = 9.0
 
 
 def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, y: float,
-                       width: int, height: int, *, occlusion: bool):
+                       width: int, height: int, *, occlusion: bool, cache: PickCache | None = None):
     """Element under the cursor in `mode` (vertex / edge / face), or None. `picker` must be prepared
     for this frame's buffers (`GpuPicker.prepare` is called here)."""
     from viewport.gpu_picker import EDGES, FACES, POINTS
@@ -39,9 +43,11 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         picker.prepare(render_mesh, width, height, occlusion=occlusion, target=FACES)
         face = picker.face_at(render_mesh, x, y)
         return face if face is not None and mesh.is_valid_face(face) else None
+    if occlusion and cache is not None:
+        cache.refresh(camera, mesh, width, height)
     if mode is SelectionMode.VERTEX:
-        picker.prepare(render_mesh, width, height, occlusion=occlusion, target=POINTS)
-        best = None
+        picker.prepare(render_mesh, width, height, occlusion=False, target=POINTS)
+        candidates = []
         for vid in picker.vertices_near(render_mesh, x, y, VERTEX_RADIUS_PX):
             if not mesh.is_valid_vertex(vid):
                 continue
@@ -49,11 +55,14 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
             if p is None:
                 continue
             d = math.hypot(p[0] - x, p[1] - y)
-            if d < VERTEX_RADIUS_PX and (best is None or (d, vid) < best):
-                best = (d, vid)
-        return None if best is None else VertexId(best[1])
-    picker.prepare(render_mesh, width, height, occlusion=occlusion, target=EDGES)
-    best = None
+            if d < VERTEX_RADIUS_PX:
+                candidates.append((d, vid))
+        for _, vid in sorted(candidates):
+            if not occlusion or not vertex_occluded(camera, mesh, cache, vid, width, height):
+                return VertexId(vid)
+        return None
+    picker.prepare(render_mesh, width, height, occlusion=False, target=EDGES)
+    candidates = []
     for eid in picker.edges_near(render_mesh, x, y, EDGE_RADIUS_PX):
         if not mesh.is_valid_edge(eid):
             continue
@@ -62,10 +71,20 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         b = camera.project_to_screen(mesh.vertex_position(vb), width, height)
         if a is None or b is None:
             continue
-        d = _point_segment_distance(x, y, a[0], a[1], b[0], b[1])
-        if d < EDGE_RADIUS_PX and (best is None or (d, eid) < best):
-            best = (d, eid)
-    return None if best is None else EdgeId(best[1])
+        d, t = _point_segment_distance_t(x, y, a[0], a[1], b[0], b[1])
+        if d < EDGE_RADIUS_PX:
+            candidates.append((d, eid, t))
+    for _, eid, t in sorted(candidates):
+        if not occlusion or not edge_point_occluded(camera, mesh, cache, eid, t, width, height):
+            return EdgeId(eid)
+    return None
+
+
+def _faces_of_vertex(mesh: Mesh, vid) -> set:
+    faces = set()
+    for eid in mesh.vertex_edges(vid):
+        faces.update(mesh.edge_faces(eid))
+    return faces
 
 
 def gpu_elements_in_rect(picker, render_mesh, camera, mesh: Mesh, mode, rect, width: int, height: int,
@@ -95,10 +114,18 @@ def gpu_elements_in_region(picker, render_mesh, camera, mesh: Mesh, mode, contai
     if occlusion:
         picker.prepare(render_mesh, width, height, occlusion=True, target=FACES)
         visible = picker.visibility(x0, y0, x1, y1)
+        # A non-planar Ngon's triangle can lie in front of its own vertex / edge: a point whose pixel
+        # shows one of its own incident faces counts as visible (the CPU test excludes those faces).
+        face_under = picker.face_lookup(render_mesh, x0, y0, x1, y1)
     position = mesh.vertex_position
 
     if mode is SelectionMode.VERTEX:
-        return {VertexId(v) for v in inside if visible is None or visible(position(v))}
+        if visible is None:
+            return {VertexId(v) for v in inside}
+        return {
+            VertexId(v) for v in inside
+            if visible(position(v)) or face_under(position(v)) in _faces_of_vertex(mesh, v)
+        }
 
     if mode is SelectionMode.EDGE:
         edges = set()
@@ -109,15 +136,11 @@ def gpu_elements_in_region(picker, render_mesh, camera, mesh: Mesh, mode, contai
                     pa, pb = position(a), position(b)
                     mid = (pa[0] + (pb[0] - pa[0]) * 0.5, pa[1] + (pb[1] - pa[1]) * 0.5,
                            pa[2] + (pb[2] - pa[2]) * 0.5)
-                    if not visible(mid):
+                    if not visible(mid) and face_under(mid) not in mesh.edge_faces(eid):
                         continue
                 edges.add(EdgeId(eid))
         return edges
 
-    if visible is not None:
-        # A non-planar quad's centroid can lie behind its own triangles: the face's own ID at the
-        # centroid's pixel counts as visible (the CPU test excludes the face itself).
-        face_under = picker.face_lookup(render_mesh, x0, y0, x1, y1)
     faces = set()
     for fid in mesh.all_face_ids():
         corners = mesh.face_vertices(fid)

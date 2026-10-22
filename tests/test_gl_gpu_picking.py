@@ -32,6 +32,7 @@ from core import FaceId, SelectionMode  # noqa: E402
 from mirai.application import Application  # noqa: E402
 from mirai.interaction.input import Input  # noqa: E402
 from mirai.viewport.box_select import elements_in_rect  # noqa: E402
+from mirai.viewport.gpu_picking import gpu_elements_in_rect  # noqa: E402
 from mirai.viewport.picking import pick_component, pick_face  # noqa: E402
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
@@ -173,3 +174,50 @@ def test_a_gl_failure_falls_back_to_the_cpu_picker(app, monkeypatch):
     assert _gpu(app, SelectionMode.FACE, x, y) == expected
     assert app.gpu_picking is False
     assert "GPU picking off" in app.status_message
+
+
+def _wavy_ngon_app(gl_window, tmp_path, yaw, pitch) -> Application:
+    """One non-planar 12-gon (alternating z): its own triangles lie in front of some of its corners."""
+    import math
+
+    n = 12
+    rows = [f"v {math.cos(2 * math.pi * i / n):.5f} {math.sin(2 * math.pi * i / n):.5f} {0.35 * (-1) ** i}"
+            for i in range(n)]
+    rows.append("f " + " ".join(str(i + 1) for i in range(n)))
+    obj = tmp_path / "wavy.obj"
+    obj.write_text("\n".join(rows) + "\n")
+    gl_window.switch_to()
+    app = Application()
+    app.init_scene(
+        "obj", obj_path=obj, store_type=GLRenderStore, point_overlay_type=GLPointOverlay,
+        line_overlay_type=GLLineOverlay, face_overlay_type=GLTriangleOverlay,
+    )
+    app.set_viewport_size(W, H)
+    app.frame_scene()
+    app._edit_camera.orbit(yaw, pitch)
+    app._camera_changed()
+    app.viewport.sync()
+    return app
+
+
+@pytest.mark.parametrize("yaw,pitch", [(0.0, 0.0), (0.5, 0.6), (0.3, 1.2)])
+def test_corners_and_edges_of_a_non_planar_ngon_stay_pickable(gl_window, tmp_path, yaw, pitch):
+    """The ID buffer's depth holds the Ngon's own triangles; the CPU rule excludes the incident faces, so
+    the GPU path must too (the corner under the cursor was unpickable, reported 2026-10-22)."""
+    app = _wavy_ngon_app(gl_window, tmp_path, yaw, pitch)
+    mesh = app.scene.mesh
+    camera = app._edit_camera
+    for vid in mesh.all_vertex_ids():
+        p = camera.project_to_screen(mesh.vertex_position(vid), W, H)
+        assert _gpu(app, SelectionMode.VERTEX, p[0], p[1]) == vid, vid
+    for eid in mesh.all_edge_ids():
+        va, vb = mesh.edge_vertices(eid)
+        a = camera.project_to_screen(mesh.vertex_position(va), W, H)
+        b = camera.project_to_screen(mesh.vertex_position(vb), W, H)
+        mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+        assert _gpu(app, SelectionMode.EDGE, mx, my) == _cpu(app, SelectionMode.EDGE, mx, my), eid
+    picked = gpu_elements_in_rect(
+        app.viewport.gpu_picker, app._gpu_pick_mesh(), camera, mesh, SelectionMode.VERTEX, (0, 0, W, H), W, H,
+        cache=app._pick_cache, occlusion=True,
+    )
+    assert set(picked) == set(mesh.all_vertex_ids())

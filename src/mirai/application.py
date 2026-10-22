@@ -3850,7 +3850,7 @@ class Application:
             return gpu_pick_component(
                 self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
                 x, y, int(self.viewport_width), int(self.viewport_height),
-                occlusion=self.display.show_faces,
+                occlusion=self.display.show_faces, cache=self._pick_cache,
             )
         except Exception as exc:  # noqa: BLE001 - any GL failure falls back, never breaks picking
             self._gpu_failed(exc)
