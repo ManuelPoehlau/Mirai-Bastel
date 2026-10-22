@@ -48,6 +48,11 @@ def _intersect_ray_plane(
     return v.add(origin, v.scale(direction, t))
 
 
+def ray_plane_point(origin: Vec3, direction: Vec3, plane_point: Vec3, plane_normal: Vec3) -> Vec3 | None:
+    """Where the ray meets the plane (None when parallel); `OrbitCamera.screen_to_ray` gives the ray."""
+    return _intersect_ray_plane(origin, direction, plane_point, plane_normal)
+
+
 @dataclass
 class OrbitCamera:
     target: Vec3 = (0.0, 0.0, 0.0)

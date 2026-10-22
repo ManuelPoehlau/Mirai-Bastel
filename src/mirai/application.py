@@ -748,6 +748,7 @@ class Application:
         # `_gizmo_gesture` = the handle pressed by the running LMB gesture; `_gizmo_cache` = (key, pivot).
         self.gizmo_enabled: bool = False
         self._gizmo_gesture: str | None = None
+        self._gizmo_press_xy: tuple[float, float] | None = None  # cursor at the handle press (Rotate dial)
         self._gizmo_cache: tuple | None = None
         self.tweak_command: str = commands.MOVE
         self._gesture_refused: bool = False
@@ -2852,6 +2853,9 @@ class Application:
             }
             if soft is not None:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
+            rotate_gizmo = self._gizmo_rotate_mode()
+            if rotate_gizmo is not None:
+                begin_context["gizmo"] = {"mode": rotate_gizmo, "press": self._gizmo_press_xy}
             try:
                 self.tool_manager.begin_current_interaction(begin_context)
             except (SeamConstraintError, SoftSymmetryRefusal) as exc:
@@ -2866,12 +2870,23 @@ class Application:
             self._transform_begun = True
             if soft is not None:
                 self._soft_show_op_weights()
-        self.tool_manager.update(
-            dx=float(dx), dy=float(dy), width=self.viewport_width, height=self.viewport_height
-        )
+        update = {"dx": float(dx), "dy": float(dy), "width": self.viewport_width, "height": self.viewport_height}
+        if self._gizmo_rotate_mode() == "dial" and self._cursor is not None:
+            update["x"], update["y"] = self._cursor
+        self.tool_manager.update(**update)
         self._pick_cache.invalidate()
         self.viewport.on_vertices_moved(self._active_transform_vertex_ids())
         return True
+
+    def _gizmo_rotate_mode(self) -> str | None:
+        """How a Rotate handle drag turns: `trackball` (centre), `dial` (rings, the view ring), else None."""
+        if (
+            self._gizmo_gesture is None
+            or self._gizmo_press_xy is None
+            or self._transform_command != commands.ROTATE
+        ):
+            return None
+        return "trackball" if self._gizmo_gesture == "center" else "dial"
 
     def _active_transform_vertex_ids(self) -> set[VertexId]:
         """Vom laufenden Transform betroffene Vertex-IDs (E29): `MoveTool.moves`
@@ -4037,8 +4052,10 @@ class Application:
         if handle is None:
             return
         self._gizmo_gesture = handle
-        # `center` (Scale) is the uniform handle: no constraint.
-        self._axis_constraint = None if handle == "center" else handle
+        self._gizmo_press_xy = tuple(self._cursor)
+        # `center` (free Move / Rotate trackball / uniform Scale) and `screen` (Rotate about the view axis)
+        # are the unconstrained handles.
+        self._axis_constraint = None if handle in ("center", "screen") else handle
         self._set_hovered(None)
         self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
 
@@ -4064,6 +4081,7 @@ class Application:
     def _gizmo_release(self, clicked: bool) -> bool:
         """LMB released: commit a running handle drag; a plain click on a handle leaves just the constraint."""
         self._gizmo_gesture = None
+        self._gizmo_press_xy = None
         self._gesture_refused = False
         if self._transform_key == TWEAK_KEY:
             self._transform_finish()

@@ -96,3 +96,21 @@ Start: `python src/main.py` (Head).
 
 Fragen an dich (nur falls es sich falsch anfühlt): Ist `Q` halten für Lasso richtig? Soll das Gizmo während des Ziehens sichtbar bleiben?
 
+### Nachtrag 2026-10-22: weißer Mittelkreis und Blender-artiges Ring-Drehen (Manu)
+
+**Status:** Umgesetzt — `PROVISIONAL` (Faktoren: `RADIANS_PER_PIXEL`, `CENTER_RING_RATIO`, `SCREEN_RING_RATIO`, `DIAL_GRAZING_COS`).
+Wunsch Manu: wie in Blender in der Mitte ein weißer Kreis in allen Werkzeugen (ohne Constraint), und Rotate soll sich beim Ziehen natürlich anfühlen.
+
+- **Mittelkreis** (Handle `center`, alle drei Werkzeuge, ersetzt das Scale-Kreuz): Move = freies Verschieben (Kamera-Ebene), Rotate = Trackball,
+  Scale = gleichmäßig. Rotate hat zusätzlich den äußeren Ring `screen` (jetzt greifbar): Drehung um die Blickachse.
+- **Ring-Drehen = Blenders Dial** (`dial3d_gizmo.cc`, `dial_ghostarc_get_angles`): Cursor bei Press und aktuell werden per Ray auf die Ringebene
+  (Pivot, Achse) gelegt, der Winkel dazwischen um die Achse ist die Drehung, volle Umdrehungen werden mitgezählt. Dadurch klebt der Greifpunkt am
+  Cursor, die Richtung ist die Tangente am Ring, und je näher der Cursor am Pivot ist, desto mehr Grad pro Pixel. Steht der Ring (fast) kantenparallel
+  zur Sicht (|cos| < 0,12 beim Press), gilt für die Geste der Cursor-Versatz entlang der Bildschirm-Tangente / Ring-Radius in Pixeln.
+- **Trackball** (`transform_mode_trackball.cc`): Mausversatz seit Start `phi`, Achse `up*phi.x - right*phi.y` der beim Start eingefrorenen Kamera,
+  Winkel `|phi| * RADIANS_PER_PIXEL`; absolut ab Start, daher unabhängig vom Event-Chunking. Mit Seam-Vertices (Symmetrie) abgelehnt.
+- Die R-Taste / Tweak ohne Gizmo ändern sich nicht. Offen (wie Blender): Shift = Präzision, Ctrl = Snap beim Dial.
+- Playground: `playground/gizmo.py` nutzt weiter den alten Griffsatz (`pick_handle(free_handles=False)`).
+Code: `viewport/gizmo.py`, `interaction/tools/rotate.py` (`begin(gizmo=...)`), `application.py` (`_gizmo_rotate_mode`), `viewport/camera.py` (`ray_plane_point`).
+Tests: `tests/test_rotate_dial.py`, `tests/test_viewport_gizmo.py`, `tests/test_application_gizmo.py`.
+

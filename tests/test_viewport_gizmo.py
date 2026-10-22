@@ -55,10 +55,17 @@ def test_rotate_picks_the_ring_not_the_line_and_has_no_plane_brackets(camera):
     assert _pick(camera, (s, s, 0.0), "rotate") is None
 
 
-def test_the_scale_centre_exists_for_scale_only_and_wins_at_the_pivot(camera):
-    assert _pick(camera, PIVOT, "scale") == "center"
-    assert _pick(camera, PIVOT, "move") != "center"
-    assert _pick(camera, PIVOT, "rotate") != "center"
+def test_the_centre_circle_exists_in_every_tool_and_wins_at_the_pivot(camera):
+    for tool in gizmo.TOOLS:
+        assert _pick(camera, PIVOT, tool) == "center"
+
+
+def test_the_outer_screen_ring_is_pickable_for_rotate_only(camera):
+    _, right, _ = camera.basis()
+    r = gizmo.gizmo_size(camera, PIVOT) * gizmo.SCREEN_RING_RATIO
+    on_ring = (right[0] * r, right[1] * r, right[2] * r)
+    assert _pick(camera, on_ring, "rotate") == "screen"
+    assert _pick(camera, on_ring, "move") != "screen"
 
 
 def test_draw_items_follow_the_tool(camera):
@@ -67,17 +74,17 @@ def test_draw_items_follow_the_tool(camera):
         return [(i.primitive, len(i.positions) // 3) for i in items]
 
     move = kinds("move")
-    assert len(move) == 3 + 3 + 3  # 3 axis lines + 3 arrow caps + 3 plane brackets
+    assert len(move) == 3 + 3 + 3 + 1  # 3 axis lines + 3 arrow caps + 3 plane brackets + centre circle
     scale = kinds("scale")
-    assert len(scale) == 3 + 3 + 3 + 1  # lines + box caps + brackets + centre cross
+    assert len(scale) == 3 + 3 + 3 + 1  # lines + box caps + brackets + centre circle
     rotate = kinds("rotate")
     assert all(primitive == "loop" for primitive, _ in rotate)
-    assert len(rotate) == 3 + 1  # three rings + the camera-facing ring while no axis is chosen
+    assert len(rotate) == 3 + 1 + 1  # three rings + the camera-facing ring + the centre circle
 
 
-def test_rotate_hides_the_screen_ring_once_an_axis_is_chosen(camera):
+def test_rotate_keeps_the_screen_ring_and_centre_when_an_axis_is_chosen(camera):
     items = gizmo.draw_items(camera, PIVOT, "rotate", "x", None)
-    assert len(items) == 3
+    assert len(items) == 5
 
 
 def test_active_and_hover_states_change_width_and_hover_brightens(camera):

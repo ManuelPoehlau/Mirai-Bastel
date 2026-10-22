@@ -23,7 +23,7 @@ from mirai.viewport.gizmo import (  # noqa: F401,E402
     axis_line_positions,
     axis_ring_positions,
     box_cap_positions,
-    pick_handle,
+    pick_handle as _pick_handle,
     plane_indicator_positions,
     screen_ring_positions,
 )
@@ -32,6 +32,12 @@ from mirai.viewport.gizmo import (  # noqa: F401,E402
 # ---------------------------------------------------------------------------
 # Mode classification (pure, unit-testable)
 # ---------------------------------------------------------------------------
+
+def pick_handle(*args, **kwargs):
+    """The shared picker with the Playground's older handle set (`center` for Scale only, no `screen` ring)."""
+    kwargs.setdefault("free_handles", False)
+    return _pick_handle(*args, **kwargs)
+
 
 def gizmo_mode(selection, transform_space: str, axis_constraint: str | None) -> str:
     """Classify which gizmo appearance applies for the current tool state.

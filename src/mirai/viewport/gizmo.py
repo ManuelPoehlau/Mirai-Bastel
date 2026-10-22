@@ -11,8 +11,9 @@ a handle takes priority over a selection click, a miss falls through. In the app
 Playground's `normal_full` / `normal_z_only` appearances stay Playground-only).
 
 Handles (names = the constraint spaces of `Application`): `x`, `y`, `z` (axes; rings when the tool is Rotate),
-`xy`, `xz`, `yz` (plane brackets; not for Rotate) and `center` (Scale only: uniform, no constraint). Look and sizes
-are `PROVISIONAL` (Playground values, "needs playtest").
+`xy`, `xz`, `yz` (plane brackets; not for Rotate), `center` (white circle at the pivot, every tool: no constraint -
+free Move, Rotate trackball, uniform Scale) and `screen` (Rotate only: the outer camera-facing ring, rotation about
+the view axis). Look and sizes are `PROVISIONAL` (Playground values, "needs playtest").
 """
 
 from __future__ import annotations
@@ -52,7 +53,10 @@ COLOR_PLANES = {
     "xz": (0.75, 0.15, 0.75, 1.0),
     "yz": (0.15, 0.75, 0.75, 1.0),
 }
-COLOR_CENTER = (0.85, 0.85, 0.85, 1.0)
+COLOR_CENTER = (1.0, 1.0, 1.0, 1.0)
+#: Radius of the centre circle / of the outer `screen` ring, as a fraction of the gizmo size.
+CENTER_RING_RATIO: float = 0.1
+SCREEN_RING_RATIO: float = 1.1
 _AXIS_COLORS = {"x": COLOR_X, "y": COLOR_Y, "z": COLOR_Z}
 
 TOOLS = ("move", "rotate", "scale")
@@ -166,14 +170,9 @@ def box_cap_positions(tip: Vec3, direction: Vec3, cap_size: float) -> list[float
     return out
 
 
-def center_cross_positions(pivot: Vec3, size: float) -> list[float]:
-    """The small three-line cross of the Scale `center` handle."""
-    r = size * 0.07
-    return [
-        pivot[0] - r, pivot[1], pivot[2], pivot[0] + r, pivot[1], pivot[2],
-        pivot[0], pivot[1] - r, pivot[2], pivot[0], pivot[1] + r, pivot[2],
-        pivot[0], pivot[1], pivot[2] - r, pivot[0], pivot[1], pivot[2] + r,
-    ]
+def center_ring_positions(pivot: Vec3, right: Vec3, up: Vec3, size: float) -> list[float]:
+    """The small billboard circle of the `center` handle (line loop)."""
+    return screen_ring_positions(pivot, right, up, size * CENTER_RING_RATIO)
 
 
 # ---------------------------------------------------------------------------
@@ -191,14 +190,16 @@ def pick_handle(
     width: int,
     height: int,
     max_pixel_distance: float = PICK_RADIUS_PX,
+    free_handles: bool = True,
 ) -> str | None:
     """The handle nearest to (click_x, click_y) within `max_pixel_distance`, or None.
 
     `axes` are `(name, direction)` pairs, `planes` `(name, axis_a, axis_b)` triples (the caller passes the frame:
     world axes and planes in the app). Axis and plane-bracket handles are picked along their whole projected
     segment (a click anywhere on the line counts, not only at the tip); Rotate rings by dense sample points
-    along the ring; the Scale centre is one projected point and wins ties with the axis lines (which all start
-    at the pivot). `planes` is ignored for Rotate; `center` exists for Scale only.
+    along the ring; the `center` is one projected point and wins ties with the axis lines (which all start
+    at the pivot). `planes` is ignored for Rotate; `screen` (the outer camera-facing ring) exists for Rotate only.
+    `free_handles=False` is the Playground's older set: `center` for Scale only, no `screen` ring.
     """
     size = gizmo_size(camera, pivot)
 
@@ -241,8 +242,13 @@ def pick_handle(
             seg_candidates.append((name, corner, end_a))
             seg_candidates.append((name, corner, end_b))
 
-    if tool == "scale":
-        pt_candidates.append(("center", pivot))
+    if free_handles or tool == "scale":
+        pt_candidates.insert(0, ("center", pivot))  # first: wins ties with edge-on rings and the axis lines
+    if free_handles and tool == "rotate":
+        _, right, up = camera.basis()
+        ring = screen_ring_positions(pivot, right, up, size * SCREEN_RING_RATIO)
+        for i in range(0, len(ring), 3):
+            pt_candidates.append(("screen", (ring[i], ring[i + 1], ring[i + 2])))
 
     best_name = None
     best_dist = max_pixel_distance
@@ -284,7 +290,7 @@ def draw_items(
 ) -> list[DrawItem]:
     """The gizmo for `tool` at `pivot`: three states per handle - default, hover (thicker, brighter) and active
     (= the current `constraint`, thickest). Tool-specific shapes: Move = line + arrowhead, Rotate = ring per axis
-    (plus a camera-facing ring while no axis is chosen), Scale = line + box cap and the `center` cross."""
+    plus the camera-facing `screen` ring, Scale = line + box cap; every tool has the `center` circle."""
     size = gizmo_size(camera, pivot)
     cap = size * CAP_SIZE_RATIO
     items: list[DrawItem] = []
@@ -317,13 +323,11 @@ def draw_items(
         elif tool == "scale":
             add(box_cap_positions(tip, direction, cap), base, name, "lines")
 
+    _, right, up = camera.basis()
     if tool == "rotate":
-        if constraint is None:
-            _, right, up = camera.basis()
-            add(screen_ring_positions(pivot, right, up, size * 1.1), COLOR_SCREEN, "screen", "loop")
+        add(screen_ring_positions(pivot, right, up, size * SCREEN_RING_RATIO), COLOR_SCREEN, "screen", "loop")
     else:
         for name, axis_a, axis_b in planes:
             add(plane_indicator_positions(pivot, axis_a, axis_b, size), COLOR_PLANES[name], name, "lines")
-        if tool == "scale":
-            add(center_cross_positions(pivot, size), COLOR_CENTER, "center", "lines")
+    add(center_ring_positions(pivot, right, up, size), COLOR_CENTER, "center", "loop")
     return items
