@@ -20,6 +20,9 @@ Look (E46, `PROVISIONAL`):
   colour)
 - hover: pale yellow `(0.95, 0.90, 0.35)`, alpha 0.55, blended (Playground)
 
+2026-10-22 (Manu: "dezenter ... damit man die Form / das Shading noch gut sehen kann"): both fills are
+translucent, selected alpha 0.35, hover 0.25, so the lit surface reads through; hue unchanged (A10).
+
 Depth test `GL_LEQUAL` (Playground): the fill passes on the mesh's own
 depth and stays hidden behind nearer geometry.
 """
@@ -32,8 +35,9 @@ from .overlay import HOVER_LAYER, SELECTED_LAYER
 
 TRIANGLE_LAYERS = (SELECTED_LAYER, HOVER_LAYER)
 
-SELECTED_FACE_COLOR = SELECTED_COLOR
-HOVER_FACE_COLOR = HOVER_COLOR
+#: PROVISIONAL (2026-10-22): the selection / hover yellow as a translucent tint over the shaded surface.
+SELECTED_FACE_COLOR = (*SELECTED_COLOR[:3], 0.35)
+HOVER_FACE_COLOR = (*HOVER_COLOR[:3], 0.25)
 
 
 class GLTriangleOverlay(FlatColorLayers):

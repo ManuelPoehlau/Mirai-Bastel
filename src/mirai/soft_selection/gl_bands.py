@@ -30,11 +30,12 @@ BAND_COLORS: tuple[RGBA, ...] = (
     (0.15, 0.78, 0.70, 1.0),
     (0.25, 0.45, 1.0, 1.0),
 )
-#: PROVISIONAL point size in px (`color` look).
-BAND_POINT_SIZE = 6.0
+#: PROVISIONAL point size in px (`color` look); below the selected point (6 px since 2026-10-22).
+BAND_POINT_SIZE = 5.0
 #: PROVISIONAL (2026-10-22) band colours and point size per look (`settings.LOOKS`): `mono` is one neutral
 #: white that fades with the band, `tint` one muted coral (no yellow: that is the selection) that fades;
-#: both smaller than the `color` points, so the surface stays the thing you look at.
+#: both no larger than the `color` points (5 px, below the 6 px selected point), so the surface stays the thing
+#: you look at.
 BAND_LOOKS: dict[str, tuple[tuple[RGBA, ...], float]] = {
     "mono": (
         ((1.0, 1.0, 1.0, 0.80), (1.0, 1.0, 1.0, 0.60), (1.0, 1.0, 1.0, 0.42), (1.0, 1.0, 1.0, 0.26)),

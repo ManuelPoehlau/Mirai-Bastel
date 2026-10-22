@@ -15,8 +15,11 @@ Look (Artist A10/A11, 2026-09-26; sizes/hover color = Playground values,
 technical reference only: `playground/window.py` `_HOVER_COLOR`, selected
 8 px, hover 10 px):
 
-- selected: production yellow `(1.0, 0.82, 0.15)`, opaque, 8 px
-- hover:    pale yellow `(0.95, 0.90, 0.35)`, alpha 0.55, 10 px — PROVISIONAL
+- selected: production yellow `(1.0, 0.82, 0.15)`, opaque, 6 px
+- hover:    pale yellow `(0.95, 0.90, 0.35)`, alpha 0.55, 8 px — PROVISIONAL
+
+2026-10-22 (Manu: selection and hover "dezenter ... sichtbar genug, aber so subtil wie möglich, damit man die
+Form / das Shading noch gut sehen kann"): the points shrank from 8 / 10 px; colours (A10) unchanged.
 
 Tool layers (WP-06 B7, `overlay.TOOL_LAYERS`, Knife session): no new look -
 `tool_preview` (prospective point) uses the hover style, `tool_active`
@@ -52,9 +55,9 @@ from .overlay import (
 )
 
 SELECTED_COLOR = (1.0, 0.82, 0.15, 1.0)
-SELECTED_POINT_SIZE = 8.0
+SELECTED_POINT_SIZE = 6.0
 HOVER_COLOR = (0.95, 0.90, 0.35, 0.55)
-HOVER_POINT_SIZE = 10.0
+HOVER_POINT_SIZE = 8.0
 
 # Symmetric Knife (AD-SYM-03 slice 6c, PROVISIONAL colours - the Artist's call in the practical test):
 # the mirror in a blue-violet of its own (the Lab's markers are cyan / magenta), dimmed for V-b, the clipped

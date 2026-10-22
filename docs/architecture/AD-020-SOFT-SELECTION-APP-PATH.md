@@ -301,7 +301,9 @@ Lab, which reads the same list.
 - `mono` (**default**) - one neutral white, translucent: band points 5 px, alpha 0.80 .. 0.26 from the strongest band to
   the weakest; face shading lightens towards white with alpha 0.03 .. 0.20;
 - `tint` - the same, in one muted coral (0.95, 0.55, 0.40): band alpha 0.85 .. 0.25, shading alpha 0.04 .. 0.24;
-- `color` - the S2b / hover-preview look, unchanged (red .. blue, 6 px opaque points, shading alpha 0.12 .. 0.45).
+- `color` - the S2b / hover-preview look (red .. blue, opaque points, shading alpha 0.12 .. 0.45); its points went
+  6 -> 5 px on 2026-10-22 so they stay below the selected point, which shrank to 6 px (`WP-06_INTAKE_LOG.md`, "Quieter
+  selection and hover highlight"); `mono` / `tint` use the same 5 px.
 Neither quiet look uses the selection / hover yellow. **Ctrl+Shift+O** (`SoftLookCycle`, `PROVISIONAL` engineering key,
 was unbound, rebindable; joins the Symmetry Lab's `NON_OPERATION` like `SoftViewModeCycle`) cycles mono -> tint ->
 color. Unlike the mode switch it applies at once, also during a gesture: it only recolours, the weights and what is shown

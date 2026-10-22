@@ -94,10 +94,21 @@ def test_selected_face_fill_stays_above_the_shading(gl_window):
     app.selection.set({face})
     app.viewport.on_selection_changed()
     app._soft_preview_refresh()
-    assert app.soft_shading
-    pixels = _render(gl_window, app)
+    weights = app.soft_shading
+    assert weights
+    # Baseline: the same shading with no selection (pushed straight into the sink).
+    app.selection.clear()
+    app.viewport.on_selection_changed()
+    app._soft_shading_overlay.set_weights(weights)
+    shaded_only = _render(gl_window, app)
     sx, sy = app.camera.project_to_screen(centroid(face), app.viewport_width, app.viewport_height)
-    rgb = _pixel(pixels, int(sx), int(sy))
-    # The selected face's fill is opaque and drawn after the translucent shading: it reads as the
-    # selection colour, not as a tinted mix.
-    assert all(abs(c - round(e * 255)) <= 9 for c, e in zip(rgb, SELECTED_COLOR[:3])), rgb
+    app.selection.set({face})
+    app.viewport.on_selection_changed()
+    app._soft_preview_refresh()
+    assert app.soft_shading == weights
+    pixels = _render(gl_window, app)
+    before, rgb = _pixel(shaded_only, int(sx), int(sy)), _pixel(pixels, int(sx), int(sy))
+    # The selected face's fill (a translucent tint since 2026-10-22) is drawn after the shading: the pixel
+    # moves towards the selection yellow compared with the shading alone.
+    yellowness = lambda c: (c[0] + c[1]) / 2.0 - c[2]  # noqa: E731
+    assert yellowness(rgb) - yellowness(before) >= 20, (before, rgb)

@@ -104,7 +104,7 @@ def test_quiet_looks_are_one_colour_quieter_than_color_and_not_the_selection(loo
     assert len({c[:3] for c in colors}) == 1  # monochrome
     alphas = [c[3] for c in colors]
     assert alphas == sorted(alphas, reverse=True) and max(alphas) < 1.0  # strongest band most opaque
-    assert size < color_size
+    assert size <= color_size
     for c in colors:
         assert c[:3] != SELECTED_COLOR[:3] and c[:3] != HOVER_COLOR[:3]
     hues, alpha_min, alpha_max = SHADING_LOOKS[look]

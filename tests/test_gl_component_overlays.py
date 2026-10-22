@@ -85,6 +85,22 @@ def _selected_pixel_count(pixels: bytes) -> int:
     return sum(1 for i in range(0, len(pixels), 3) if _is_selected(pixels[i:i + 3]))
 
 
+def _yellowness(rgb) -> float:
+    return (rgb[0] + rgb[1]) / 2.0 - rgb[2]
+
+
+#: 2026-10-22: face fills are a translucent tint (selected alpha 0.35, hover 0.25), not an opaque colour.
+#: "Tinted" = clearly shifted towards the selection yellow compared with the same pixel unselected.
+TINT_MIN = 20
+
+
+def _tinted_pixel_count(plain: bytes, pixels: bytes) -> int:
+    return sum(
+        1 for i in range(0, len(pixels), 3)
+        if _yellowness(pixels[i:i + 3]) - _yellowness(plain[i:i + 3]) >= TINT_MIN
+    )
+
+
 def _screen(app, point) -> tuple[float, float]:
     return app.camera.project_to_screen(point, app.viewport_width, app.viewport_height)
 
@@ -126,22 +142,45 @@ def _select_face(app, fid) -> None:
     "display",
     [(), (cmd.TOGGLE_WIREFRAME_OVERLAY,), (cmd.SET_FLAT_SHADED,), (cmd.SET_WIREFRAME,)],
 )
-def test_selected_front_face_is_filled_yellow(gl_window, app, display):
+def test_selected_front_face_is_tinted_yellow(gl_window, app, display):
     for command in display:
         app.dispatch_command(command)
     fid = _faces_by_facing(app)[0]
+    plain = _render(gl_window, app)
     _select_face(app, fid)
     pixels = _render(gl_window, app)
     for x, y in _face_samples(app, fid):
-        assert _is_selected(_pixel(pixels, x, y))
+        before, after = _pixel(plain, x, y), _pixel(pixels, x, y)
+        assert _yellowness(after) - _yellowness(before) >= TINT_MIN, (before, after)
+        assert not _is_selected(after)  # a tint over the surface, not an opaque fill
+
+
+def test_selected_faces_keep_the_shading_readable(gl_window, app):
+    """The fill is translucent: two selected faces lit differently stay different (the form reads)."""
+    front, side = _faces_by_facing(app)[0], _faces_by_facing(app)[1]
+    plain = _render(gl_window, app)
+    app.selection.mode = SelectionMode.FACE
+    app.selection.set({front, side})
+    app.viewport.on_selection_changed()
+    pixels = _render(gl_window, app)
+    (fx, fy), (sx, sy) = _face_samples(app, front)[0], _face_samples(app, side)[0]
+    plain_gap = sum(_pixel(plain, fx, fy)) - sum(_pixel(plain, sx, sy))
+    tinted_gap = sum(_pixel(pixels, fx, fy)) - sum(_pixel(pixels, sx, sy))
+    assert abs(plain_gap) > 3 * TOL  # the two faces are lit differently ...
+    assert tinted_gap * plain_gap > 0 and abs(tinted_gap) >= abs(plain_gap) * 0.5  # ... and still are
 
 
 def test_selected_back_face_is_hidden_by_depth_but_shows_in_wireframe(gl_window, app):
     fid = _faces_by_facing(app)[-1]
+    plain = _render(gl_window, app)
     _select_face(app, fid)
-    assert _selected_pixel_count(_render(gl_window, app)) == 0
+    assert _tinted_pixel_count(plain, _render(gl_window, app)) == 0
     app.dispatch_command(cmd.SET_WIREFRAME)
-    assert _selected_pixel_count(_render(gl_window, app)) > 0
+    app.selection.clear()
+    app.viewport.on_selection_changed()
+    plain = _render(gl_window, app)
+    _select_face(app, fid)
+    assert _tinted_pixel_count(plain, _render(gl_window, app)) > 0
 
 
 def test_hovered_face_tints_without_replacing_the_shading(gl_window, app):
@@ -155,6 +194,14 @@ def test_hovered_face_tints_without_replacing_the_shading(gl_window, app):
         before, after = _pixel(plain, x, y), _pixel(hovered, x, y)
         assert after != before
         assert not _is_selected(after)  # translucent, not the selection fill
+    # Hover is the quieter of the two tints.
+    app.selection.hovered = None
+    _select_face(app, fid)
+    selected = _render(gl_window, app)
+    x, y = _face_samples(app, fid)[0]
+    hover_gain = _yellowness(_pixel(hovered, x, y)) - _yellowness(_pixel(plain, x, y))
+    selected_gain = _yellowness(_pixel(selected, x, y)) - _yellowness(_pixel(plain, x, y))
+    assert 0 < hover_gain < selected_gain
 
 
 def test_selected_edge_is_drawn_as_a_yellow_line(gl_window, app):
@@ -181,8 +228,9 @@ def test_selected_edge_is_drawn_as_a_yellow_line(gl_window, app):
 
 def test_deselect_removes_the_fill(gl_window, app):
     fid = _faces_by_facing(app)[0]
+    plain = _render(gl_window, app)
     _select_face(app, fid)
-    assert _selected_pixel_count(_render(gl_window, app)) > 0
+    assert _tinted_pixel_count(plain, _render(gl_window, app)) > 0
     app.selection.clear()
     app.viewport.on_selection_changed()
-    assert _selected_pixel_count(_render(gl_window, app)) == 0
+    assert _render(gl_window, app) == plain
