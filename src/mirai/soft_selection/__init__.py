@@ -13,20 +13,27 @@ S2b adds the window look: `bands` (weights -> band -> positions, headless) and `
 geodesic/smooth defaults, the curve set (+ a `custom` curve with an adjustable shape), radius
 steps up to 200 %, and a switch for the bands.
 
+2026-10-22 adds the second display mode: `shading` (weights -> per-corner colours, headless) and
+`gl_shading` (the triangle-overlay sink); exactly one of bands / face shading is shown
+(`SoftSettings.view_mode`), and a hover with no selection is the preview target.
+
 This package imports nothing from `mirai.interaction` or `mirai.application` (the tools
 import it), and no Core private member (AD-020 §3, §9).
 """
 
 from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands, band_index
 from .gl_bands import BAND_LAYERS, GLSoftBandOverlay
+from .gl_shading import GLSoftShadingOverlay
 from .influence import CURVES, METRICS, compute_influence, custom_curve, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
 from .symmetric import SoftSymmetryRefusal, SymmetricInfluence, symmetric_influence
+from .shading import shading_color
 from .settings import (
     CUSTOM_SHAPE_STEPS,
     DEFAULT_CUSTOM_SHAPE_STEP,
     DEFAULT_RADIUS_STEP,
     RADIUS_STEPS_PERCENT,
+    VIEW_MODES,
     SoftSettings,
     world_radius_for,
 )
@@ -40,6 +47,7 @@ __all__ = [
     "DEFAULT_RADIUS_STEP",
     "EMPTY_BANDS",
     "GLSoftBandOverlay",
+    "GLSoftShadingOverlay",
     "METRICS",
     "RADIUS_STEPS_PERCENT",
     "SoftBands",
@@ -49,10 +57,12 @@ __all__ = [
     "SoftSettings",
     "SoftSymmetryRefusal",
     "SymmetricInfluence",
+    "VIEW_MODES",
     "band_index",
     "compute_influence",
     "custom_curve",
     "primary_pivot",
+    "shading_color",
     "symmetric_influence",
     "world_radius_for",
 ]

@@ -15,7 +15,7 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 
-from core import Selection
+from core import Selection, SelectionMode
 from mirai.scene_factory import create_cube
 from mirai.viewport.camera import OrbitCamera
 from viewport import Viewport
@@ -92,6 +92,29 @@ def test_draw_order_extra_after_tool_lines_before_points(viewport):
     assert names[-3:] == ["extra1", "extra2", "points"]
     assert LOG[-4][0] == "lines" and TOOL_ACTIVE_LAYER in LOG[-4][1]
     assert len(first.draws[0]) == 32  # view + projection, the mesh's camera packet
+
+
+def test_under_highlights_overlay_is_drawn_before_wire_and_selection_fills(viewport):
+    """2026-10-22 (Soft face shading): an extra overlay declaring `DRAW_UNDER_HIGHLIGHTS` is drawn
+    right after the mesh, below the wire, the face / edge highlights and the other extra overlays."""
+
+    class _Under(_Extra):
+        DRAW_UNDER_HIGHLIGHTS = True
+
+    over, under = _Extra("over"), _Under("under")
+    viewport.add_overlay(over)
+    viewport.add_overlay(under)
+    viewport.show_edges = True
+    viewport.selection.mode = SelectionMode.FACE
+    viewport.selection.set({next(iter(viewport.mesh.all_face_ids()))})
+    viewport.on_selection_changed()
+    viewport.sync()
+    LOG.clear()
+    viewport.render()
+    names = [entry[0] for entry in LOG]
+    assert names[0] == "under" and names.count("under") == 1
+    assert names.index("under") < names.index("lines") < names.index("faces")  # wire, then fills
+    assert names.index("faces") < names.index("over") < names.index("points")
 
 
 def test_extra_overlay_drawn_without_any_gl_overlay():

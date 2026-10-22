@@ -686,6 +686,11 @@ class Viewport:
         # (gebundene Kamera + synchronisierter Aspect) - kein zweiter
         # Kamera-Matrix-Pfad (WP-06 B2b, E17).
         camera_uniforms = self.overlay_camera_uniforms()
+        # Zusatz-Overlays mit `DRAW_UNDER_HIGHLIGHTS` (Soft-Shading, 2026-10-22) liegen unter Wire,
+        # Auswahl- und Hover-Markierung, damit diese lesbar oben bleiben.
+        for overlay in self.extra_overlays:
+            if getattr(overlay, "DRAW_UNDER_HIGHLIGHTS", False):
+                overlay.draw(camera_uniforms)
         if self.line_overlay is not None and self.show_edges:
             self.line_overlay.draw(camera_uniforms, layers=(WIRE_LAYER,))
         if self.face_overlay is not None and any(self.face_layers.values()):
@@ -695,7 +700,8 @@ class Viewport:
         if self.line_overlay is not None and any(self.tool_line_layers.values()):
             self.line_overlay.draw(camera_uniforms, layers=_TOOL_LINE_DRAW_ORDER)
         for overlay in self.extra_overlays:
-            overlay.draw(camera_uniforms)
+            if not getattr(overlay, "DRAW_UNDER_HIGHLIGHTS", False):
+                overlay.draw(camera_uniforms)
         if self.point_overlay is not None:
             self.point_overlay.draw(camera_uniforms)
 

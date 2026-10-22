@@ -37,6 +37,9 @@ DEFAULT_CURVE = "smooth"
 CUSTOM_SHAPE_STEPS: tuple[float, ...] = (0.25, 0.33, 0.5, 0.67, 1.0, 1.5, 2.0, 3.0, 4.0)
 #: PROVISIONAL: the custom curve starts linear (p = 1).
 DEFAULT_CUSTOM_SHAPE_STEP = CUSTOM_SHAPE_STEPS.index(1.0)
+#: Influence display modes (2026-10-22, `PROVISIONAL`): precise vertex bands or translucent face
+#: shading. Exactly one is shown; `bands_visible` hides whichever is active. The first is the default.
+VIEW_MODES: tuple[str, ...] = ("bands", "faces")
 
 
 def world_radius_for(bounding_radius: float, step: int) -> float:
@@ -58,8 +61,11 @@ class SoftSettings:
     curve: str = DEFAULT_CURVE
     #: Index into `CUSTOM_SHAPE_STEPS`; kept while another curve is active (E3).
     custom_shape_step: int = DEFAULT_CUSTOM_SHAPE_STEP
-    #: Display only (S2d E7): False = no band points at all. Changes no weight.
+    #: Display only (S2d E7): False = no influence display at all (bands or faces, whichever is
+    #: active). Changes no weight. The field keeps its S2d name.
     bands_visible: bool = True
+    #: Display only (2026-10-22): which of `VIEW_MODES` is shown while `bands_visible`.
+    view_mode: str = VIEW_MODES[0]
 
     def __post_init__(self) -> None:
         if not 0 <= self.radius_step < len(RADIUS_STEPS_PERCENT):
@@ -70,6 +76,8 @@ class SoftSettings:
             raise ValueError(f"Unknown metric {self.metric!r}; expected one of {sorted(METRICS)}.")
         if self.curve not in CURVES:
             raise ValueError(f"Unknown curve {self.curve!r}; expected one of {sorted(CURVES)}.")
+        if self.view_mode not in VIEW_MODES:
+            raise ValueError(f"Unknown view_mode {self.view_mode!r}; expected one of {VIEW_MODES}.")
 
     @property
     def radius_percent(self) -> int:
@@ -108,15 +116,19 @@ class SoftSettings:
     def with_bands_toggled(self) -> "SoftSettings":
         return dataclasses.replace(self, bands_visible=not self.bands_visible)
 
+    def with_next_view_mode(self) -> "SoftSettings":
+        return dataclasses.replace(self, view_mode=_next_in(VIEW_MODES, self.view_mode))
+
     def with_next_metric(self) -> "SoftSettings":
         return dataclasses.replace(self, metric=_next_in(METRICS, self.metric))
 
     def status_text(self) -> str:
         """Full state for the status line (`PROVISIONAL` until a HUD exists), e.g.
-        `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on`."""
+        `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on` (the display part names the active
+        view mode: `bands on`, `faces off`)."""
         curve = f"custom p={self.curve_power:g}" if self.curve == "custom" else self.curve
         return (
             f"Soft: {'on' if self.enabled else 'off'} · {self.radius_percent} % "
             f"({self.world_radius:.2f}) · {self.metric} · {curve} · "
-            f"bands {'on' if self.bands_visible else 'off'}"
+            f"{self.view_mode} {'on' if self.bands_visible else 'off'}"
         )

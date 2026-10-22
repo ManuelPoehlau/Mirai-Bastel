@@ -180,6 +180,8 @@ NON_OPERATION = frozenset(
         cmd.SOFT_CURVE_SHAPE_ROUNDER,
         cmd.SOFT_CURVE_SHAPE_SHARPER,
         cmd.SOFT_BANDS_TOGGLE,
+        # 2026-10-22: vertex bands <-> face shading, display only (same kind as the bands switch).
+        cmd.SOFT_VIEW_MODE_CYCLE,
         # Navigation und Knife-Session: nur über eine User-GLOBAL-Taste erreichbar (Review N2);
         # `Application` gibt dafür ohnehin False zurück, die Auflistung hält die Taste still
         cmd.ORBIT,

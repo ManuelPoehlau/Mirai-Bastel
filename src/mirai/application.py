@@ -256,6 +256,7 @@ _SOFT_COMMANDS = (
     commands.SOFT_CURVE_SHAPE_ROUNDER,
     commands.SOFT_CURVE_SHAPE_SHARPER,
     commands.SOFT_BANDS_TOGGLE,
+    commands.SOFT_VIEW_MODE_CYCLE,
 )
 
 #: `Application._gpu_pick`: the window cannot serve this pick, ask the CPU picker.
@@ -656,6 +657,11 @@ class Application:
         # resumes the preview.
         self._soft_overlay = None
         self._soft_bands: SoftBands = EMPTY_BANDS
+        # 2026-10-22: the second display mode (face shading) - its sink and the weights it shows
+        # ({} = nothing). View state only: never in the scene file or the history. Exactly one of
+        # `_soft_bands` / `_soft_shading` is non-empty at a time.
+        self._soft_shading_overlay = None
+        self._soft_shading: dict[VertexId, float] = {}
         self._soft_op_running: bool = False
         self._soft_gesture_shown: bool = False
         # AD-SYM-04 A2 (Q-2 = S-2): plane outline and problem markers; None = headless (no
@@ -793,6 +799,7 @@ class Application:
         line_overlay_type: type | None = None,
         face_overlay_type: type | None = None,
         soft_overlay_type: type | None = None,
+        soft_shading_overlay_type: type | None = None,
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
     ) -> None:
@@ -839,6 +846,10 @@ class Application:
         Zusatz-Overlay (`Viewport.add_overlay`, H1) am Viewport, den es nicht kennt. Default
         `None` = keine Band-Arbeit (headless).
 
+        `soft_shading_overlay_type` (2026-10-22): die GL-Senke für den zweiten Anzeige-Modus der
+        Soft Selection (Face-Shading, `GLSoftShadingOverlay`); sie hängt wie die Bänder als
+        Zusatz-Overlay am Viewport. Es ist immer nur einer der beiden Modi sichtbar. Default `None`.
+
         `symmetry_overlay_type` (AD-SYM-04 A2, Q-2 = S-2): die GL-Senke für Ebenen-Umriss und
         Problem-Marker; der Entry-Point übergibt `GLSymmetryOverlay`. `Application` hängt sie
         in ihr eigenes `SymmetryDisplay` (`mirai.symmetry_display`), das als Zusatz-Overlay nach
@@ -869,10 +880,16 @@ class Application:
         self.viewport.bind_camera(self.camera)
         self._soft_overlay = None
         self._soft_bands = EMPTY_BANDS
+        self._soft_shading_overlay = None
+        self._soft_shading = {}
         self._symmetry_reports = ReportCache(defer=self._symmetry_display_deferred)
         if soft_overlay_type is not None:
             self._soft_overlay = soft_overlay_type()
             self.viewport.add_overlay(self._soft_overlay)
+        if soft_shading_overlay_type is not None:
+            self._soft_shading_overlay = soft_shading_overlay_type()
+            self.viewport.add_overlay(self._soft_shading_overlay)
+        if self._soft_overlay is not None or self._soft_shading_overlay is not None:
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
         self._symmetry_display = None
         if symmetry_overlay_type is not None:
@@ -1453,6 +1470,7 @@ class Application:
         line_overlay_type: type | None = None,
         face_overlay_type: type | None = None,
         soft_overlay_type: type | None = None,
+        soft_shading_overlay_type: type | None = None,
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
     ) -> None:
@@ -1486,6 +1504,7 @@ class Application:
             line_overlay_type=line_overlay_type,
             face_overlay_type=face_overlay_type,
             soft_overlay_type=soft_overlay_type,
+            soft_shading_overlay_type=soft_shading_overlay_type,
             symmetry_overlay_type=symmetry_overlay_type,
             scene_path=scene_path,
         )
@@ -3006,7 +3025,7 @@ class Application:
         self._soft = self._soft.with_bounding_radius(bounding_radius)
 
     def _soft_command(self, command: str) -> bool:
-        """O / Shift+wheel / Shift+O / Ctrl+O / Ctrl+wheel / Alt+O: change the sticky settings
+        """O / Shift+wheel / Shift+O / Ctrl+O / Ctrl+wheel / Alt+O / Alt+Shift+O: change the sticky settings
         and post the full state. Never touches mesh, selection or history. False only for a
         radius or shape step that is already at the end of the list (clamped, no wrap) and
         changes nothing - the status line is posted anyway, so the end of the list is visible."""
@@ -3033,6 +3052,8 @@ class Application:
             changed = self._soft != soft
         elif command == commands.SOFT_BANDS_TOGGLE:
             self._soft = soft.with_bands_toggled()
+        elif command == commands.SOFT_VIEW_MODE_CYCLE:
+            self._soft = soft.with_next_view_mode()
         if changed:
             self._soft_preview_refresh()
         self._set_status(self._soft.status_text())
@@ -3040,56 +3061,95 @@ class Application:
 
     # -- Soft Selection bands (WP-SOFT-01 S2b, AD-020 §5, PROVISIONAL) -------------------
     #
-    # The overlay only shows; `Application` computes. Influence is computed here at most
-    # once per triggering event (selection, mode, settings, scene load, Undo/Redo, topology
-    # change, gesture end) - never from hover, never per mouse move: during a gesture the
-    # bands are the op's own weights (fixed at `begin()`), and the overlay merely re-reads
-    # the live positions when the viewport syncs after `on_vertices_moved`.
+    # The overlays only show; `Application` computes. Influence is computed here at most once
+    # per triggering event (selection, mode, settings, scene load, Undo/Redo, topology change,
+    # gesture end, and - since 2026-10-22 - a change of the hovered component while there is no
+    # explicit selection) - never per mouse move over the same component: during a gesture the
+    # display is the op's own weights (fixed at `begin()`), and the overlay merely re-reads the
+    # live positions when the viewport syncs after `on_vertices_moved`. Two display modes
+    # (vertex bands / face shading, `SoftSettings.view_mode`) are routed from the same weights;
+    # only one is ever non-empty.
 
     @property
     def soft_bands(self) -> SoftBands:
-        """The bands the window currently shows (`EMPTY_BANDS` = no band points)."""
+        """The bands the window currently shows (`EMPTY_BANDS` = no band points; also in the
+        face-shading mode)."""
         return self._soft_bands
 
-    def _soft_push(self, bands: SoftBands) -> None:
-        if bands == self._soft_bands:
-            return
-        self._soft_bands = bands
-        self._soft_overlay.set_bands(bands)
+    @property
+    def soft_shading(self) -> dict[VertexId, float]:
+        """The weights the face shading currently shows ({} = no shading; also in the bands mode)."""
+        return dict(self._soft_shading)
+
+    def _soft_show(self, weights: dict[VertexId, float] | None) -> None:
+        """Route `weights` (None = nothing to show) to the active display mode and clear the other,
+        so bands and face shading are never visible together. Pushes only what changed."""
+        mode = self._soft.view_mode
+        bands = SoftBands.from_weights(weights) if weights and mode == "bands" else EMPTY_BANDS
+        shading = dict(weights) if weights and mode == "faces" else {}
+        if bands != self._soft_bands:
+            self._soft_bands = bands
+            if self._soft_overlay is not None:
+                self._soft_overlay.set_bands(bands)
+        if shading != self._soft_shading:
+            self._soft_shading = shading
+            if self._soft_shading_overlay is not None:
+                self._soft_shading_overlay.set_weights(shading)
+
+    def _soft_selection_seeds(self) -> set[VertexId]:
+        selection = self.selection
+        return set(resolve_selection_vertices(self.scene.mesh, selection, selection.mode))
 
     def _soft_seeds(self) -> set[VertexId]:
-        """What the next W/E/R would use as the primary selection: the armed target while a
-        Move/Rotate/Scale is armed (a hover-armed one has no selection), else the selection."""
+        """What the next W/E/R would use as the primary selection (`_transform_arm`): the armed
+        target while a Move/Rotate/Scale is armed, else the explicit selection, else - with none -
+        the vertices of the hovered component. An existing selection is never replaced by the
+        hover."""
         if (
             self._transform_key is not None
             and self._transform_command in (commands.MOVE, commands.ROTATE, commands.SCALE)
         ):
             return set(self._transform_target)
-        selection = self.selection
-        return set(resolve_selection_vertices(self.scene.mesh, selection, selection.mode))
+        seeds = self._soft_selection_seeds()
+        if not seeds and self.selection.hovered is not None:
+            seeds = _element_vertices(self.scene.mesh, self.selection.hovered)
+        return seeds
+
+    def _soft_hover_changed(self) -> None:
+        """The hovered component changed (identity, `_set_hovered`): with Soft on, shown and no
+        explicit selection, the hover is the preview target. Not while a transform is armed or
+        running (its target owns the display), and never for a pointer move over the same
+        component."""
+        soft = self._soft
+        if not (soft.enabled and soft.bands_visible) or self._transform_key is not None:
+            return
+        if self._soft_overlay is None and self._soft_shading_overlay is None:
+            return
+        if self._soft_selection_seeds():
+            return  # the explicit selection is the target; hover is only the highlight
+        self._soft_preview_refresh()
 
     def _soft_preview_refresh(self, shown_by_gesture: bool = False) -> None:
-        """Recompute the preview bands (E3). No-op without a sink, and while a running op
-        owns the bands. Soft off or an empty selection show nothing; under a symmetry
-        definition the bands are the symmetric field (AD-SYM-04 D-5, slice SS3)."""
-        if self._soft_overlay is None or self._soft_op_running:
+        """Recompute the preview (E3). No-op without a sink, and while a running op owns the
+        display. Soft off, hidden (`bands_visible` False) or no target (no selection and no hovered
+        component) show nothing; under a symmetry definition the preview is the symmetric field
+        (AD-SYM-04 D-5, slice SS3). The display mode (`view_mode`) only routes the same weights."""
+        if (self._soft_overlay is None and self._soft_shading_overlay is None) or self._soft_op_running:
             return
         soft = self._soft
-        # Bands off (S2d E7): no influence work for display, nothing shown.
+        # Hidden (S2d E7): no influence work for display, nothing shown.
         shown = soft.enabled and soft.bands_visible
         seeds = self._soft_seeds() if shown else None
         weights = self._soft_preview_weights(seeds) if seeds else None
+        self._soft_show(weights)
         if weights is not None:
-            self._soft_push(SoftBands.from_weights(weights))
             self._soft_gesture_shown = self._soft_gesture_shown or shown_by_gesture
-        else:
-            self._soft_push(EMPTY_BANDS)
 
     def _soft_preview_weights(self, seeds: set[VertexId]) -> dict[VertexId, float] | None:
         """The weights the next gesture's `begin()` computes for `seeds`, by the same function
         with the same arguments (preview == op weights, F9). Under a definition: the symmetric
         field, its correspondence from the shared report of the current geometry (the tool
-        derives its own, equal one at `begin()`). None = no bands: a selection symmetric Soft
+        derives its own, equal one at `begin()`). None = nothing shown: a selection symmetric Soft
         refuses (D-2) shows none (`PROVISIONAL`), never plain Soft's field; the refusal itself
         is shown by the gesture, at `begin()`, as before."""
         soft = self._soft
@@ -3110,20 +3170,19 @@ class Application:
         return field.weights
 
     def _soft_show_op_weights(self) -> None:
-        """At `begin()`: the bands become the op's own weights (E4), so the preview and the
+        """At `begin()`: the display becomes the op's own weights (E4), so the preview and the
         gesture cannot disagree; nothing is computed. Under symmetry the op's weights are the
         symmetric field, both sides (AD-SYM-04 D-5)."""
-        if self._soft_overlay is None:
+        if self._soft_overlay is None and self._soft_shading_overlay is None:
             return
-        # Also with bands off: the gesture still owns the display (a bands toggle mid-gesture
-        # takes effect when it ends), it just has nothing to show (S2d E7).
+        # Also while hidden: the gesture still owns the display (a bands toggle or mode switch
+        # mid-gesture takes effect when it ends), it just has nothing to show (S2d E7).
         self._soft_op_running = True
         self._soft_gesture_shown = True
         if not self._soft.bands_visible:
-            self._soft_push(EMPTY_BANDS)
+            self._soft_show(None)
             return
-        weights = self.tool_manager.active_tool.operation.context.params["influence"]
-        self._soft_push(SoftBands.from_weights(weights))
+        self._soft_show(self.tool_manager.active_tool.operation.context.params["influence"])
 
     # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
     #
@@ -3747,6 +3806,7 @@ class Application:
         self.selection.hovered = hovered
         if self.viewport is not None:
             self.viewport.on_selection_changed()
+        self._soft_hover_changed()
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:

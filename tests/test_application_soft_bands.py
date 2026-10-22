@@ -347,12 +347,16 @@ def test_hover_and_pointer_motion_never_compute_influence(app, influence_calls):
     assert app.soft_bands is bands and _overlay(app).pushes == pushes
 
 
-def test_hover_alone_shows_no_bands(app, influence_calls):
+def test_hover_alone_previews_the_hovered_component(app, influence_calls):
+    """2026-10-22: with no selection the hovered component is the preview target (it used to show
+    nothing). Full coverage of the hover rules: `tests/test_soft_hover_preview.py`."""
     assert app.key_press(O)
-    x, y = _screen(app, _front_vertices(app)[0])
+    vid = _front_vertices(app)[0]
+    x, y = _screen(app, vid)
     app.pointer_motion(x, y, 1.0, 1.0)
-    assert app.selection.hovered is not None
-    assert influence_calls == [] and app.soft_bands == EMPTY_BANDS
+    assert app.selection.hovered == vid and app.selection.vertices == set()
+    assert len(_preview_calls(influence_calls)) == 1
+    assert app.soft_bands == _expected(app, {vid})
 
 
 # -- preview == begin weights (F9) --------------------------------------------------------
@@ -473,13 +477,19 @@ def test_armed_but_not_begun_takes_new_settings_in_the_preview(app):
 # -- hover-armed (F11) ---------------------------------------------------------------------
 
 
-def test_hover_armed_gesture_computes_its_bands_once_at_arm(app, influence_calls):
+def _hovered_seeds(app) -> set:
+    hovered = app.selection.hovered
+    return set() if hovered is None else {hovered}
+
+
+def test_hover_armed_gesture_takes_the_hover_weights_at_arm_and_begin(app, influence_calls):
     assert app.key_press(O)
     vid = _front_vertices(app)[0]
     x, y = _screen(app, vid)
     app.pointer_motion(x, y, 1.0, 1.0)
     assert app.selection.hovered == vid and app.selection.vertices == set()
-    assert influence_calls == []
+    assert [c[0] for c in influence_calls] == ["mirai.application"]  # the hover preview
+    influence_calls.clear()
 
     assert app.key_press(W)  # arms on the hovered vertex
     assert [c[0] for c in influence_calls] == ["mirai.application"]
@@ -495,24 +505,26 @@ def test_hover_armed_gesture_computes_its_bands_once_at_arm(app, influence_calls
         if 0.0 < w < 1.0
     }
     assert app.key_release(W)
-    # The selection stays empty, so the preview has nothing to show afterwards.
-    assert app.soft_bands == EMPTY_BANDS
+    # The selection stays empty: afterwards the preview follows whatever is hovered now.
+    assert app.selection.vertices == set()
+    assert app.soft_bands == _expected(app, _hovered_seeds(app))
 
 
-def test_hover_armed_tap_and_cancel_leave_no_bands(app):
+def test_hover_armed_tap_and_cancel_resume_the_hover_preview(app):
     assert app.key_press(O)
     x, y = _screen(app, _front_vertices(app)[0])
     app.pointer_motion(x, y, 1.0, 1.0)
     assert app.key_press(W)
     assert app.soft_bands.count > 0
     assert app.key_release(W)  # tap
-    assert app.soft_bands == EMPTY_BANDS
+    assert app.soft_bands == _expected(app, _hovered_seeds(app))
 
     app.pointer_motion(x, y, 1.0, 1.0)
     assert app.key_press(W)
     _move(app, ((4, 1),))
     assert app.key_press(ESC)
-    assert app.soft_bands == EMPTY_BANDS
+    assert app.selection.vertices == set()
+    assert app.soft_bands == _expected(app, _hovered_seeds(app))
 
 
 def test_hover_armed_with_soft_off_shows_nothing(app, influence_calls):

@@ -155,6 +155,8 @@ SOFT_METRIC_CYCLE = "SoftMetricCycle"
 SOFT_CURVE_SHAPE_ROUNDER = "SoftCurveShapeRounder"
 SOFT_CURVE_SHAPE_SHARPER = "SoftCurveShapeSharper"
 SOFT_BANDS_TOGGLE = "SoftBandsToggle"
+#: 2026-10-22 (`PROVISIONAL`): vertex bands <-> face shading; display only, like SOFT_BANDS_TOGGLE.
+SOFT_VIEW_MODE_CYCLE = "SoftViewModeCycle"
 
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"

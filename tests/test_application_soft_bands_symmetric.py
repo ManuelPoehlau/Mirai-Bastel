@@ -291,7 +291,9 @@ def test_a_hover_armed_refused_gesture_shows_no_bands():
     assert app.soft_bands == EMPTY_BANDS
     assert app.pointer_motion(400.0, 300.0, 9.0, 4.0) is False  # refused at begin(), as SS2
     assert app.status_message.startswith("Move: refused")
-    assert app.soft_bands == EMPTY_BANDS
+    # No gesture bands are left; whatever is hovered under the cursor now previews as usual.
+    hovered = app.selection.hovered
+    assert app.soft_bands == (EMPTY_BANDS if hovered is None else _expected(app, {hovered}))
 
 
 def test_a_hover_armed_gesture_shows_the_symmetric_field_once_at_arm(preview_calls):
@@ -309,7 +311,9 @@ def test_a_hover_armed_gesture_shows_the_symmetric_field_once_at_arm(preview_cal
     influence = app.tool_manager.active_tool.operation.context.params["influence"]
     assert shown.weights == {v: w for v, w in influence.items() if 0.0 < w < 1.0}
     assert app.key_release(KEYS["move"])
-    assert app.soft_bands == EMPTY_BANDS  # the selection is empty
+    assert app.selection.vertices == set()  # the selection stays empty
+    hovered = app.selection.hovered
+    assert app.soft_bands == (EMPTY_BANDS if hovered is None else _expected(app, {hovered}))
 
 
 # -- cost: the correspondence comes from the shared report, not per trigger ---------------------

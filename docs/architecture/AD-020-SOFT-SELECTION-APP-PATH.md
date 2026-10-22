@@ -9,6 +9,7 @@ Core seam moves with symmetric soft selection (Way 2), not now.** Keys and band 
 **Core seam moved (2026-10-14, AD-SYM-04 slice SS1, [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md)):** the weighting now
 runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses of the Core ops (M-b); the F3 tripwires
 flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
+**Hover preview and display modes (2026-10-22, see "Hover preview and display modes" below):** the influence preview now follows the hovered component when nothing is selected, and has a second, exclusive display mode (face shading) next to the vertex bands; `PROVISIONAL`, Artist test open.
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
 capability for a Discovery test and claims no new insight.
@@ -159,8 +160,74 @@ No code, test or key changes come with this record.
 
 ---
 
+## Hover preview and display modes (2026-10-22, `PROVISIONAL`)
+
+Artist intent (Manu, 2026-10-22, from the Soft Selection UX brief): the influence region should be visible
+**before** committing to a selection or a transform; a face-shading look (adapted from the Mehlsack Lab,
+`experiments/mehlsack_lab/lab_preview.py`) next to the vertex bands; the display can be hidden without switching Soft
+off; bands and shading never compete. This supersedes the §5 "no preview from the hover target" scope for the
+hover (the cost reason stays as a watch item below); the F14 rejection of a tinted face for the *selection* is
+untouched - this is the influence display, and whether it is liked is an Artist question (below).
+
+**Preview target** (`Application._soft_seeds`, one rule, the one `_transform_arm` uses for the gesture):
+1. while W/E/R is armed or running: the armed target (the display belongs to the gesture);
+2. else the vertices of the **explicit selection** in the active mode - the hovered component is then only the
+   ordinary highlight and never changes the preview, the selection or the history;
+3. else the vertices of the **hovered component** in the active mode (vertex, edge or face);
+4. else nothing.
+
+**State rules.** The preview is recomputed by the existing triggers (selection, mode, settings, scene load,
+Undo/Redo, topology / mesh change, gesture end) and, new, when the **identity** of the hovered component changes while
+there is no explicit selection (`_set_hovered` -> `_soft_hover_changed`). A pointer move over the same component, a hover
+change while a selection exists, and a hover change during an armed/running gesture compute nothing. During a running
+gesture the display is the op's own weights (fixed at `begin()`); a hover change, a mode switch or a visibility toggle
+mid-gesture take effect when it ends. Orbit/pan clear the hover, so with no selection the preview disappears during
+a camera drag and is computed again when a component is hovered. The weights are `compute_influence` /
+`symmetric_influence` with the same arguments as the transform (preview == op weights, F9); under a symmetry definition
+both modes show the symmetric field.
+
+**Display modes** (`SoftSettings.view_mode`, view state only: never in the scene file or the history, sticky like
+the other Soft settings, default **bands**):
+- *bands* - the S2b vertex bands, unchanged (four equal bands over `0 < w < 1`, seeds keep the selection look);
+- *faces* - face shading: every face with an influenced vertex is fan-triangulated like `RenderMesh` and each corner
+  gets a colour from its weight (hue = the band colours, strong red .. weak blue; alpha 0.12 .. 0.45, so the surface,
+  wire and selection stay readable), interpolated by GL (`soft_selection/shading.py`, `gl_shading.py`
+  `GLSoftShadingOverlay`, wired by `soft_shading_overlay_type`). Mehlsack's signed weights are not carried over.
+Exactly one is shown: `Application._soft_show` routes the same weights to the active mode and clears the other.
+`bands_visible` (**Alt+O**, `SoftBandsToggle`, unchanged key and purpose) now hides whichever mode is active; Soft itself,
+the weights, the transform, selection and history are untouched. Status line: `... · bands on` / `faces off`.
+
+**Draw order.** The shading overlay declares `DRAW_UNDER_HIGHLIGHTS`: `Viewport.render` draws such extra overlays right
+after the mesh, below the wire, the face / edge highlights and the points, so selection and hover stay on top (the only
+`src/viewport` change, a generic hook; the Viewport knows nothing about Soft). The bands stay above the highlights as before.
+
+**Cost.** Hover recompute equals a selection recompute (one influence field per hovered component), with no work per
+pixel of pointer motion. The shading overlay scans the faces once per weights change or `MeshWatch` face change and
+only re-reads positions on a drag. No benchmark was run for this slice (decision: measure only if it feels slow in the
+Artist test). Known repeat: a hover-armed W/E/R recomputes once at arm although the hover preview already holds the
+same field.
+
+**Keys (`PROVISIONAL`, engineering choice, not Artist Input Truth, rebindable via `keymap.json`):**
+`Alt+Shift+O` = `SoftViewModeCycle` (bands <-> faces); Alt+Shift+O was unbound (Alt+Shift+A and Alt+Shift+drag are other
+inputs). `SoftViewModeCycle` is state/display only and joined the Symmetry Lab's `NON_OPERATION` (AD-013 G-2 line, 2026-10-22).
+
+**Verified by tests** (`tests/test_soft_hover_preview.py`, `test_gl_soft_shading.py`, `test_viewport_extra_overlays.py`,
+adjusted `test_application_soft_bands*.py`): target rules, selection precedence, no recompute per move, settings
+triggers, exclusivity, hide / show, gesture stability and resume after commit / cancel / Undo, symmetric field,
+scene load, topology change + Undo, draw order, real-GL selected-fill-above-shading. **Not Artist-validated:** look
+(colours, alpha), whether hover preview feels right (flicker while orbiting, speed on dense meshes), the key.
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
+> **Nachtrag 2026-10-22 (Hover-Vorschau und Anzeige-Modi, `PROVISIONAL`):** Bei eingeschaltetem Soft zeigt die Vorschau schon
+> beim **Hovern** (ohne Auswahl) die Wirkungszone des Elements unter der Maus (im aktiven Vertex-/Edge-/Face-Modus). Gibt es
+> eine Auswahl, zeigt sie die Zone der Auswahl; Hover ändert sie nie. Zwei Anzeige-Modi, immer nur einer: **Bänder** (Punkte, wie
+> bisher, Standard) oder **Flächen-Schattierung** (zarte, durchscheinende Farbe auf den Flächen, rot = stark .. blau = schwach).
+> `Alt+Shift+O` wechselt den Modus (vorläufig, umbindbar); `Alt+O` blendet die Anzeige des aktiven Modus aus/ein, Soft bleibt an.
+> Offener Praxistest steht in `docs/ATELIER.md` (B11).
+>
 > **Nachtrag 2026-10-11 (Promotion):** „Soft Selection wird eine feste Fähigkeit.“ Die Gewichtung wandert erst **zusammen mit
 > der symmetrischen Soft Selection** in den Core (Weg 2, eine Core-Änderung); bis dahin bleibt alles wie gebaut. Tasten und
 > Bänder-Look bleiben `PROVISIONAL`, Soft bleibt beim Start aus (diese beiden Punkte sind Engineering-Annahmen, von dir nicht bestätigt).
@@ -569,6 +636,7 @@ test can pin `preview == influence at begin`. During a gesture the overlay shows
 the settings or the mesh change; no preview from the hover target (hover changes are the most frequent event,
 and on the reference PC a hover change on the body mesh already costs ~9.5 ms in the Symmetry Lab measurement,
 WP-SYM-LAB-03 plan A3). For a hover-armed gesture the bands appear with the first motion.
+*(2026-10-22: superseded for the hover target - see "Hover preview and display modes"; the selection still wins.)*
 
 **Wiring:** the overlay class lives with the soft code in `src/mirai`; `Application.init_scene` gets one more
 pass-through type parameter (`soft_overlay_type=None`, the E17 pattern of `point_overlay_type`,

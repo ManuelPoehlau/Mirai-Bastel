@@ -252,6 +252,10 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_wheel("UP", "ctrl"), cmd.SOFT_CURVE_SHAPE_ROUNDER)
     bs.set_default(_wheel("DOWN", "ctrl"), cmd.SOFT_CURVE_SHAPE_SHARPER)
     bs.set_default(_key("o", "alt"), cmd.SOFT_BANDS_TOGGLE)
+    # 2026-10-22 (`PROVISIONAL`, engineering key - not an Artist decision): Alt+Shift+O switches the
+    # influence display between vertex bands and face shading; Alt+O hides/shows whichever is active.
+    # Alt+Shift+O is unbound elsewhere (the other Alt+Shift keys are A and LMB-drag); rebindable.
+    bs.set_default(_key("o", "alt", "shift"), cmd.SOFT_VIEW_MODE_CYCLE)
 
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-

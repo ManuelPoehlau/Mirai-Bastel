@@ -58,6 +58,7 @@ SOFT_BINDINGS = [
     (_wheel("UP", "ctrl"), cmd.SOFT_CURVE_SHAPE_ROUNDER),
     (_wheel("DOWN", "ctrl"), cmd.SOFT_CURVE_SHAPE_SHARPER),
     (_key("o", "alt"), cmd.SOFT_BANDS_TOGGLE),
+    (_key("o", "alt", "shift"), cmd.SOFT_VIEW_MODE_CYCLE),  # 2026-10-22, PROVISIONAL
 ]
 
 

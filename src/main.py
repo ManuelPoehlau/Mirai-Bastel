@@ -101,9 +101,15 @@ Scope (binding, see the handoffs):
   region is shown as banded points around the selection (`GLSoftBandOverlay`, an extra
   overlay; four bands over 0 < w < 1, warm = strong .. cold = weak, seeds keep the
   selection look). It follows the selection, the mode, the settings, Undo/Redo and topology
-  changes (never the hover); a hover-armed W/E/R shows it once at arm. During a gesture the
-  points are the gesture's own weights at the live positions; afterwards the preview
-  resumes. Soft off: no band points.
+  changes; during a gesture the points are the gesture's own weights at the live positions;
+  afterwards the preview resumes. Soft off: no band points.
+  Hover preview and display modes (`PROVISIONAL`, 2026-10-22, AD-020): with no selection the
+  preview is the influence region of the hovered component (current Vertex/Edge/Face mode;
+  recomputed when the hovered component changes, never per pointer move); with a selection it
+  stays the selection's region and the hover is only the highlight. Alt+Shift+O switches the
+  display between the vertex bands and face shading (`GLSoftShadingOverlay`, translucent
+  corner colours under the wire and highlights); only one is shown. Alt+O hides/shows the
+  active one - Soft stays on. View state only: not in scene files or History.
   WP Delete/Dissolve (PROVISIONAL): Delete removes the selection with a
   hole, Backspace dissolves it (Edge / Face: leftover 2-valent vertices
   removed; Vertex: the vertex dissolve), Ctrl+Backspace dissolves Edge /
@@ -213,7 +219,7 @@ from mirai.pyglet_input import (  # noqa: E402
     shift_keys_after,
     wheel_from_pyglet,
 )
-from mirai.soft_selection import GLSoftBandOverlay  # noqa: E402
+from mirai.soft_selection import GLSoftBandOverlay, GLSoftShadingOverlay  # noqa: E402
 from viewport.gl_gizmo_overlay import draw_gizmo  # noqa: E402
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
@@ -238,6 +244,7 @@ GL_TYPES = {
     "line_overlay_type": GLLineOverlay,
     "face_overlay_type": GLTriangleOverlay,
     "soft_overlay_type": GLSoftBandOverlay,
+    "soft_shading_overlay_type": GLSoftShadingOverlay,
     "symmetry_overlay_type": GLSymmetryOverlay,
 }
 
