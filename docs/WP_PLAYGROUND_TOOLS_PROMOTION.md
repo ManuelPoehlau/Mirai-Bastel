@@ -126,5 +126,7 @@ Tests: `tests/test_rotate_dial.py`, `tests/test_viewport_gizmo.py`, `tests/test_
 - **Cursor-Wrap** (`mirai/cursor_wrap.py`, `CursorWrapper`): während eines Transforms (`Application.cursor_wrap_active`) springt der Zeiger am Fensterrand auf die Gegenseite
   (`window.set_mouse_position`); das vom Warp ausgelöste Ereignis wird geschluckt. Alle Gesten laufen auf Deltas (der Dial integriert sie zu einem virtuellen Cursor), daher gibt es keinen Sprung.
   Ohne Warp-Unterstützung der Plattform (z. B. Wayland) schaltet sich der Wrap ab. Der Baustein ist für spätere Slider-Drags gedacht (gleiche Bedingung `cursor_wrap_active` bzw. ein eigener Gate).
+  **Fix 2026-10-22 (Geometrie sprang beim Wrap):** Pyglets `dx`/`dy` hängen an seiner eigenen letzten Position, und vor dem Warp gequeute Ereignisse tragen noch die alte Randposition.
+  `CursorWrapper.filter` rechnet nach einem Warp die Deltas selbst aus den Positionen, verwirft veraltete Ereignisse am alten Rand (40 px, 0,25 s) und löst währenddessen keinen zweiten Warp aus.
 Tests: `tests/test_rotate_dial.py`, `tests/test_cursor_wrap.py`.
 

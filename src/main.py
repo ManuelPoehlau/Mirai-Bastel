@@ -436,9 +436,10 @@ def install_handlers(
     def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
         if menu is not None and menu.is_open:
             return pyglet.event.EVENT_HANDLED
-        if wrapper.swallow(x, y):
+        step = wrapper.filter(x, y, dx, dy)
+        if step is None:
             return
-        app.pointer_drag(dx, dy, x, y)
+        app.pointer_drag(step[0], step[1], x, y)
         wrapper.after_event(x, y)
 
     @window.event
@@ -456,9 +457,10 @@ def install_handlers(
         if menu is not None and menu.is_open:
             menu.motion(x, y)
             return pyglet.event.EVENT_HANDLED
-        if wrapper.swallow(x, y):
+        step = wrapper.filter(x, y, dx, dy)
+        if step is None:
             return
-        app.pointer_motion(x, y, dx, dy)
+        app.pointer_motion(x, y, step[0], step[1])
         wrapper.after_event(x, y)
 
     @window.event
