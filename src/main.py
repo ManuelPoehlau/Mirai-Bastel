@@ -262,6 +262,16 @@ def ctrl_keys_after(held: frozenset[int], symbol: int, pressed: bool) -> frozens
     return held | {symbol} if pressed else held - {symbol}
 
 
+def alt_keys_after(held: frozenset[int], symbol: int, pressed: bool) -> frozenset[int] | None:
+    """The Alt keys held after a key event, like `ctrl_keys_after` (2026-10-22: Alt during a transform
+    orbits, `Application.set_alt_held`)."""
+    from pyglet.window import key as _key
+
+    if symbol not in (_key.LALT, _key.RALT):
+        return None
+    return held | {symbol} if pressed else held - {symbol}
+
+
 def wheel_input(
     scroll_x: float, scroll_y: float, shift_held: bool, ctrl_held: bool = False
 ) -> Input | None:
@@ -365,6 +375,16 @@ def install_handlers(
             ctrl_keys = held
             app.set_ctrl_held(bool(held))
 
+    # 2026-10-22: the Alt keys held right now (`Application.set_alt_held`: Alt during a transform orbits).
+    alt_keys: frozenset[int] = frozenset()
+
+    def track_alt(symbol: int, pressed: bool) -> None:
+        nonlocal alt_keys
+        held = alt_keys_after(alt_keys, symbol, pressed)
+        if held is not None:
+            alt_keys = held
+            app.set_alt_held(bool(held))
+
     # 2026-10-22: the pointer leaves the viewport on one side and comes back on the other during a transform.
     wrapper = CursorWrapper(window, app)
 
@@ -397,6 +417,7 @@ def install_handlers(
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
         track_ctrl(symbol, True)
+        track_alt(symbol, True)
         if inp is not None:
             app.key_press(inp)
         # Always handled: pyglet's default handler would close the window on
@@ -408,6 +429,7 @@ def install_handlers(
         # A release only ever clears: tracked even under the modal menu, so a Ctrl let go
         # there cannot stay "held" and turn the plain wheel into a curve-shape step.
         track_ctrl(symbol, False)
+        track_alt(symbol, False)
         if menu is not None and menu.is_open:
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, False)
@@ -419,11 +441,13 @@ def install_handlers(
     @window.event
     def on_deactivate():
         # A Shift/Ctrl released while another window has focus sends no release here.
-        nonlocal shift_keys, ctrl_keys
+        nonlocal shift_keys, ctrl_keys, alt_keys
         shift_keys = frozenset()
         ctrl_keys = frozenset()
+        alt_keys = frozenset()
         app.set_shift_held(False)
         app.set_ctrl_held(False)
+        app.set_alt_held(False)
         # The menu must not outlive the focus (it would stay modal).
         if menu is not None:
             menu.close()
