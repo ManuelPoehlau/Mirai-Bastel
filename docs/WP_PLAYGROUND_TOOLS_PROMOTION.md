@@ -61,7 +61,7 @@ Die folgenden Antworten von Manu (2026-10-15) sind bestätigt:
 
 ## Nachtrag 2026-10-21: Lasso und Gizmo in die App (Manu)
 
-**Status:** Umgesetzt (2026-10-21) — `PROVISIONAL`, Praxistest unten. Entscheidungen Manu (Chat 2026-10-21): „Gizmo nach `src/` heben“,
+**Status:** Umgesetzt (2026-10-21) — `PROVISIONAL`, Praxistest unten. Gizmo seit 2026-10-22 erweitert (Mittelkreis, Dial, Shift/Ctrl, Cursor-Wrap; **Keep** Manu, Finetuning später): siehe die beiden Nachträge 2026-10-22 unten — wo sie dem Absatz „Engineering-Annahmen“ widersprechen (Scale-Mitte als Kreuz, Rotate nur dx), gelten sie. Entscheidungen Manu (Chat 2026-10-21): „Gizmo nach `src/` heben“,
 „Lasso kommt auch in die Production (Box und Paint sind auch schon dort)“, „Articulation bleibt erstmal im Playground“,
 „Knife ist kein Playground-Thema mehr“, Deformer/Modifier (Bends, Twists, Lattices) später
 ([future_ideas/MODELING.md](future_ideas/MODELING.md)).
@@ -93,12 +93,15 @@ Start: `python src/main.py` (Head).
 | G1 | Ein paar Punkte wählen, auf eine Gizmo-Achse klicken, dann `X`/`Y`/`Z` drücken | Klick = Constraint, Auswahl bleibt; Taste schaltet dieselbe Constraint | |
 | G2 | Auf eine Achse klicken und ziehen, loslassen; `Ctrl+Z` | bewegt nur entlang der Achse, ein Undo-Schritt | |
 | G3 | `E` antippen (Ringe), `R` antippen (Scale-Mitte ziehen = gleichmäßig) | Form wechselt mit dem Werkzeug; Mitte skaliert gleichmäßig | |
+| G4 | Mittelkreis ziehen bei `W` (frei), `E` (Trackball), `R` (gleichmäßig); bei `E` den äußeren Ring ziehen | Move frei in der Bildebene, Trackball folgt der Mausrichtung, äußerer Ring dreht um die Blickachse | Keep (2026-10-22) |
+| G5 | Einen Ring (oder `E` halten / Ctrl+LMB) mit dem Cursor um den Pivot kreisen; mit Shift (fein), mit Ctrl (5°-Raster) | Greifpunkt klebt am Cursor, nahe am Pivot dreht es schneller; Shift/Ctrl wirken ohne Sprung | Keep (2026-10-22) |
+| G6 | Beim Ziehen (Move, Rotate, Scale) über den Fensterrand fahren | Zeiger erscheint auf der Gegenseite, die Geometrie springt nicht | Keep (2026-10-22) |
 
 Fragen an dich (nur falls es sich falsch anfühlt): Ist `Q` halten für Lasso richtig? Soll das Gizmo während des Ziehens sichtbar bleiben?
 
 ### Nachtrag 2026-10-22: weißer Mittelkreis und Blender-artiges Ring-Drehen (Manu)
 
-**Status:** Umgesetzt — `PROVISIONAL` (Faktoren: `RADIANS_PER_PIXEL`, `CENTER_RING_RATIO`, `SCREEN_RING_RATIO`, `DIAL_GRAZING_COS`).
+**Status:** Umgesetzt, **Keep** (Manu, 2026-10-22; Finetuning später) — `PROVISIONAL` (Faktoren: `RADIANS_PER_PIXEL`, `CENTER_RING_RATIO`, `SCREEN_RING_RATIO`, `GRAZING_COS` in `interaction/dial.py`).
 Wunsch Manu: wie in Blender in der Mitte ein weißer Kreis in allen Werkzeugen (ohne Constraint), und Rotate soll sich beim Ziehen natürlich anfühlen.
 
 - **Mittelkreis** (Handle `center`, alle drei Werkzeuge, ersetzt das Scale-Kreuz): Move = freies Verschieben (Kamera-Ebene), Rotate = Trackball,
@@ -109,14 +112,14 @@ Wunsch Manu: wie in Blender in der Mitte ein weißer Kreis in allen Werkzeugen (
   zur Sicht (|cos| < 0,12 beim Press), gilt für die Geste der Cursor-Versatz entlang der Bildschirm-Tangente / Ring-Radius in Pixeln.
 - **Trackball** (`transform_mode_trackball.cc`): Mausversatz seit Start `phi`, Achse `up*phi.x - right*phi.y` der beim Start eingefrorenen Kamera,
   Winkel `|phi| * RADIANS_PER_PIXEL`; absolut ab Start, daher unabhängig vom Event-Chunking. Mit Seam-Vertices (Symmetrie) abgelehnt.
-- Die R-Taste / Tweak ohne Gizmo ändern sich nicht. Offen (wie Blender): Shift = Präzision, Ctrl = Snap beim Dial.
+- R-Taste / Tweak ohne Gizmo: in dieser Runde unverändert, seit Runde 2 ebenfalls Dial. Shift / Ctrl: Runde 2.
 - Playground: `playground/gizmo.py` nutzt weiter den alten Griffsatz (`pick_handle(free_handles=False)`).
-Code: `viewport/gizmo.py`, `interaction/tools/rotate.py` (`begin(gizmo=...)`), `application.py` (`_gizmo_rotate_mode`), `viewport/camera.py` (`ray_plane_point`).
+Code: `viewport/gizmo.py`, `interaction/tools/rotate.py` (`begin(gizmo=...)`), `application.py` (`_rotate_gesture_mode`), `viewport/camera.py` (`ray_plane_point`).
 Tests: `tests/test_rotate_dial.py`, `tests/test_viewport_gizmo.py`, `tests/test_application_gizmo.py`.
 
 ### Nachtrag 2026-10-22 (Runde 2): Dial überall, Shift/Ctrl, Cursor-Wrap (Manu)
 
-**Status:** Umgesetzt — `PROVISIONAL` (`PRECISION_GAIN`, `SNAP_STEP`, `SNAP_STEP_PRECISE`, `FALLBACK_MIN_RADIUS_PX`, `MIN_PRESS_RADIUS_PX`, Wrap-Ränder).
+**Status:** Umgesetzt, **Keep** (Manu, 2026-10-22; Finetuning später) — `PROVISIONAL` (`PRECISION_GAIN`, `SNAP_STEP`, `SNAP_STEP_PRECISE`, `FALLBACK_MIN_RADIUS_PX`, `MIN_PRESS_RADIUS_PX`, Wrap-Ränder).
 - **Dial für jede Rotate-Geste** (Entscheidung Manu: „beide an Dial angleichen“): E-Taste gehalten, Tweak (Ctrl+LMB) und Gizmo-Ring drehen über `interaction/dial.py` (`DialAngle`),
   auch Rotate im Objekt-Modus. Press-Punkt = Cursor beim Arm. Die Drehung ist der Cursor-Winkel um den Pivot (Cursor im Uhrzeigersinn = Drehung im Uhrzeigersinn
   auf dem Bildschirm). Liegt der Press-Punkt näher als 20 px am Pivot oder steht die Ebene kantenparallel zur Sicht, gilt der Tangenten-Fallback (Hebelarm mindestens 100 px
