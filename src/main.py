@@ -205,6 +205,7 @@ for _p in (str(_SRC), str(_ROOT), str(_ROOT / "examples")):
 import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
+from mirai.cursor_wrap import CursorWrapper  # noqa: E402
 from mirai.interaction.input import Input  # noqa: E402
 from mirai.pyglet_input import (  # noqa: E402
     key_from_pyglet,
@@ -346,8 +347,8 @@ def install_handlers(
             shift_keys = held
             app.set_shift_held(bool(held))
 
-    # WP-SOFT-01 S2d: the Ctrl keys held right now, for the wheel only (Ctrl+wheel = shape
-    # of the custom Soft curve). `Application` never needs to know.
+    # WP-SOFT-01 S2d: the Ctrl keys held right now, for the wheel (Ctrl+wheel = shape of the custom
+    # Soft curve) and, since 2026-10-22, `Application.set_ctrl_held` (Ctrl = snap in a transform).
     ctrl_keys: frozenset[int] = frozenset()
 
     def track_ctrl(symbol: int, pressed: bool) -> None:
@@ -355,6 +356,10 @@ def install_handlers(
         held = ctrl_keys_after(ctrl_keys, symbol, pressed)
         if held is not None:
             ctrl_keys = held
+            app.set_ctrl_held(bool(held))
+
+    # 2026-10-22: the pointer leaves the viewport on one side and comes back on the other during a transform.
+    wrapper = CursorWrapper(window, app)
 
     @window.event
     def on_key_press(symbol: int, modifiers: int):
@@ -411,6 +416,7 @@ def install_handlers(
         shift_keys = frozenset()
         ctrl_keys = frozenset()
         app.set_shift_held(False)
+        app.set_ctrl_held(False)
         # The menu must not outlive the focus (it would stay modal).
         if menu is not None:
             menu.close()
@@ -430,7 +436,10 @@ def install_handlers(
     def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
         if menu is not None and menu.is_open:
             return pyglet.event.EVENT_HANDLED
+        if wrapper.swallow(x, y):
+            return
         app.pointer_drag(dx, dy, x, y)
+        wrapper.after_event(x, y)
 
     @window.event
     def on_mouse_release(x: int, y: int, button: int, modifiers: int):
@@ -447,7 +456,10 @@ def install_handlers(
         if menu is not None and menu.is_open:
             menu.motion(x, y)
             return pyglet.event.EVENT_HANDLED
+        if wrapper.swallow(x, y):
+            return
         app.pointer_motion(x, y, dx, dy)
+        wrapper.after_event(x, y)
 
     @window.event
     def on_mouse_leave(x: int, y: int):

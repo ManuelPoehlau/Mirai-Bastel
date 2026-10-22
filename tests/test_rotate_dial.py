@@ -161,3 +161,165 @@ def test_the_centre_circle_frees_a_constrained_move(app):
     shifts = [tuple(a[i] - b[i] for i in range(3)) for a, b in zip(after, before)]
     assert all(s == pytest.approx(shifts[0]) for s in shifts)
     assert abs(shifts[0][0]) > 1e-3 and abs(shifts[0][1]) > 1e-3  # both screen directions
+
+
+# -- every rotate gesture follows the cursor like the dial (R/E key, Tweak, objects), Shift / Ctrl -----------------
+
+FORWARD_AXIS = "forward"
+
+
+def _circle(centre, radius, degrees):
+    a = math.radians(degrees)
+    return (centre[0] + radius * math.cos(a), centre[1] + radius * math.sin(a))
+
+
+def _hold_e_and_circle(app, a0, a1, steps, *, radius=110.0, before=None):
+    """E held, the cursor circles the pivot's screen position from a0 to a1 (degrees, ccw on screen)."""
+    centre = _screen(app, PIVOT)
+    px, py = _circle(centre, radius, a0)
+    app.pointer_motion(px, py)
+    if before:
+        before()
+    assert app.key_press(E)
+    for i in range(1, steps + 1):
+        x, y = _circle(centre, radius, a0 + (a1 - a0) * i / steps)
+        app.pointer_motion(x, y, x - px, y - py)
+        px, py = x, y
+    return (px, py)
+
+
+def _forward(app):
+    return app.camera.basis()[0]
+
+
+def test_the_e_key_turns_like_the_dial_cursor_circle_follows(app):
+    ids = _select_quad(app, E)
+    _hold_e_and_circle(app, 0.0, 90.0, 18)
+    app.key_release(E)
+    # ccw on screen = clockwise about the view direction (it points away from the viewer)
+    for got, want in zip(_positions(app, ids), _expected(QUAD, _forward(app), -math.pi / 2)):
+        assert got == pytest.approx(want, abs=1e-6)
+
+
+def test_tweak_turns_like_the_dial(app):
+    ids = _select_quad(app, E)
+    centre = _screen(app, PIVOT)
+    px, py = _circle(centre, 110.0, 0.0)
+    app.pointer_motion(px, py)
+    app.pointer_press(_mouse("LEFT", "ctrl"), px, py)
+    for i in range(1, 19):
+        x, y = _circle(centre, 110.0, 90.0 * i / 18)
+        app.pointer_drag(x - px, y - py, x, y)
+        px, py = x, y
+    app.pointer_release("LEFT", px, py)
+    for got, want in zip(_positions(app, ids), _expected(QUAD, _forward(app), -math.pi / 2)):
+        assert got == pytest.approx(want, abs=1e-6)
+
+
+def test_shift_is_precision_and_stays_continuous_when_toggled(app):
+    ids = _select_quad(app, E)
+
+    app.set_shift_held(False)
+    centre = _screen(app, PIVOT)
+    px, py = _circle(centre, 110.0, 0.0)
+    app.pointer_motion(px, py)
+    app.key_press(E)
+    for i in range(1, 19):  # 0 -> 90 degrees at full gain
+        x, y = _circle(centre, 110.0, 90.0 * i / 18)
+        app.pointer_motion(x, y, x - px, y - py)
+        px, py = x, y
+    app.set_shift_held(True)
+    for i in range(1, 19):  # 90 -> 180 degrees at 0.2
+        x, y = _circle(centre, 110.0, 90.0 + 90.0 * i / 18)
+        app.pointer_motion(x, y, x - px, y - py)
+        px, py = x, y
+    app.key_release(E)
+    want = -(math.pi / 2 + 0.2 * math.pi / 2)
+    for got, exp in zip(_positions(app, ids), _expected(QUAD, _forward(app), want)):
+        assert got == pytest.approx(exp, abs=1e-6)
+
+
+def test_ctrl_snaps_the_turn_to_five_degrees_and_shift_ctrl_to_one(app):
+    ids = _select_quad(app, E)
+    _hold_e_and_circle(app, 0.0, 17.4, 6, before=lambda: app.set_ctrl_held(True))
+    for got, exp in zip(_positions(app, ids), _expected(QUAD, _forward(app), -math.radians(15.0))):
+        assert got == pytest.approx(exp, abs=1e-6)
+    app.key_release(E)
+    app.set_ctrl_held(False)
+
+
+def test_shift_ctrl_snaps_the_precise_turn_to_one_degree(app):
+    ids = _select_quad(app, E)
+    app.set_shift_held(True)
+    _hold_e_and_circle(app, 0.0, 17.4, 6, before=lambda: app.set_ctrl_held(True))
+    # 17.4 degrees of cursor travel at 0.2 = 3.48 degrees -> 3
+    for got, exp in zip(_positions(app, ids), _expected(QUAD, _forward(app), -math.radians(3.0))):
+        assert got == pytest.approx(exp, abs=1e-6)
+    app.key_release(E)
+    app.set_ctrl_held(False)
+    app.set_shift_held(False)
+
+
+def test_ctrl_held_from_the_tweak_press_does_not_snap_until_it_is_pressed_again(app):
+    ids = _select_quad(app, E)
+    centre = _screen(app, PIVOT)
+    px, py = _circle(centre, 110.0, 0.0)
+    app.pointer_motion(px, py)
+    app.set_ctrl_held(True)  # Ctrl+LMB: Ctrl is part of the gesture
+    app.pointer_press(_mouse("LEFT", "ctrl"), px, py)
+    for i in range(1, 7):
+        x, y = _circle(centre, 110.0, 17.4 * i / 6)
+        app.pointer_drag(x - px, y - py, x, y)
+        px, py = x, y
+    free = _positions(app, ids)
+    for got, exp in zip(free, _expected(QUAD, _forward(app), -math.radians(17.4))):
+        assert got == pytest.approx(exp, abs=1e-6)  # not snapped
+    app.set_ctrl_held(False)
+    app.set_ctrl_held(True)  # pressed again: snap now (and at once)
+    for got, exp in zip(_positions(app, ids), _expected(QUAD, _forward(app), -math.radians(15.0))):
+        assert got == pytest.approx(exp, abs=1e-6)
+    app.pointer_release("LEFT", px, py)
+    app.set_ctrl_held(False)
+
+
+def test_the_dial_snaps_with_ctrl(app):
+    ids = _select_quad(app, E)
+    app.set_ctrl_held(True)
+    _dial_drag(app, (0.0, 0.0, 1.0), math.radians(33.0), 10)
+    for got, exp in zip(_positions(app, ids), _expected(QUAD, (0.0, 0.0, 1.0), math.radians(35.0))):
+        assert got == pytest.approx(exp, abs=1e-6)
+    app.set_ctrl_held(False)
+
+
+def test_shift_slows_the_trackball(app):
+    ids = _select_quad(app, E)
+    _, _, up = app.camera.basis()
+    app.set_shift_held(True)
+    _drag(app, _mouse("LEFT"), _screen(app, PIVOT), (40.0, 0.0))
+    app.set_shift_held(False)
+    for got, want in zip(_positions(app, ids), _expected(QUAD, up, 0.2 * 40.0 * math.pi / 400.0)):
+        assert got == pytest.approx(want, abs=1e-6)
+
+
+def test_an_object_rotates_like_the_dial(app):
+    from mirai import object_space
+    from tests.test_object_transform import FOUR
+
+    app.key_press(FOUR)
+    obj = app.scene.edit_object
+    app.selection.objects = {obj.id}
+    pivot = object_space.to_world(obj, obj.pivot)
+    centre = _screen(app, pivot)
+    px, py = _circle(centre, 110.0, 0.0)
+    before = obj.transform.rotation
+    app.pointer_motion(px, py)
+    app.key_press(E)
+    for i in range(1, 19):
+        x, y = _circle(centre, 110.0, 90.0 * i / 18)
+        app.pointer_motion(x, y, x - px, y - py)
+        px, py = x, y
+    app.key_release(E)
+    turn = object_space.axis_angle_rotation(_forward(app), -math.pi / 2)
+    want = object_space.orthonormalize(object_space.matmul3(turn, before))
+    for got_row, want_row in zip(obj.transform.rotation, want):
+        assert got_row == pytest.approx(want_row, abs=1e-6)

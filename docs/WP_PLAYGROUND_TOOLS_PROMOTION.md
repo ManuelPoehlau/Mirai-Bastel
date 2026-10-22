@@ -114,3 +114,17 @@ Wunsch Manu: wie in Blender in der Mitte ein weißer Kreis in allen Werkzeugen (
 Code: `viewport/gizmo.py`, `interaction/tools/rotate.py` (`begin(gizmo=...)`), `application.py` (`_gizmo_rotate_mode`), `viewport/camera.py` (`ray_plane_point`).
 Tests: `tests/test_rotate_dial.py`, `tests/test_viewport_gizmo.py`, `tests/test_application_gizmo.py`.
 
+### Nachtrag 2026-10-22 (Runde 2): Dial überall, Shift/Ctrl, Cursor-Wrap (Manu)
+
+**Status:** Umgesetzt — `PROVISIONAL` (`PRECISION_GAIN`, `SNAP_STEP`, `SNAP_STEP_PRECISE`, `FALLBACK_MIN_RADIUS_PX`, `MIN_PRESS_RADIUS_PX`, Wrap-Ränder).
+- **Dial für jede Rotate-Geste** (Entscheidung Manu: „beide an Dial angleichen“): E-Taste gehalten, Tweak (Ctrl+LMB) und Gizmo-Ring drehen über `interaction/dial.py` (`DialAngle`),
+  auch Rotate im Objekt-Modus. Press-Punkt = Cursor beim Arm. Die Drehung ist der Cursor-Winkel um den Pivot (Cursor im Uhrzeigersinn = Drehung im Uhrzeigersinn
+  auf dem Bildschirm). Liegt der Press-Punkt näher als 20 px am Pivot oder steht die Ebene kantenparallel zur Sicht, gilt der Tangenten-Fallback (Hebelarm mindestens 100 px
+  = ca. 0,57°/px, Press genau auf dem Pivot: Ziehen nach rechts = im Uhrzeigersinn, wie das alte dx-Rotate). Ohne Cursor (Tool direkt benutzt) bleibt das dx-Rotate.
+- **Shift = Präzision** (Winkel × 0,2, stetig beim Umschalten; Move/Scale: dx/dy × 0,2; Trackball × 0,2). **Ctrl = Snap** beim Dial: 5°, mit Shift 1°; wirkt sofort beim Drücken.
+  Ctrl+LMB-Tweak startet mit gehaltenem Ctrl, deshalb snappt der Tweak erst, nachdem Ctrl einmal losgelassen und neu gedrückt wurde. `Application.set_shift_held` / `set_ctrl_held`, gespeist aus `src/main.py`.
+- **Cursor-Wrap** (`mirai/cursor_wrap.py`, `CursorWrapper`): während eines Transforms (`Application.cursor_wrap_active`) springt der Zeiger am Fensterrand auf die Gegenseite
+  (`window.set_mouse_position`); das vom Warp ausgelöste Ereignis wird geschluckt. Alle Gesten laufen auf Deltas (der Dial integriert sie zu einem virtuellen Cursor), daher gibt es keinen Sprung.
+  Ohne Warp-Unterstützung der Plattform (z. B. Wayland) schaltet sich der Wrap ab. Der Baustein ist für spätere Slider-Drags gedacht (gleiche Bedingung `cursor_wrap_active` bzw. ein eigener Gate).
+Tests: `tests/test_rotate_dial.py`, `tests/test_cursor_wrap.py`.
+

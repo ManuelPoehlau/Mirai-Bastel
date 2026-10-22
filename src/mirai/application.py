@@ -76,6 +76,7 @@ from viewport.resource_store import ResourceStore, TraceStore
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.input import KNIFE_CONTEXT
+from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
@@ -344,6 +345,8 @@ class _ObjectGesture:
     mask: tuple[float, float, float] | None = None
     move: tuple[float, float, float] = (0.0, 0.0, 0.0)
     pixels: float = 0.0
+    angle: float = 0.0  # Rotate: the total angle (rad), from the dial or the dx fallback
+    dial: DialAngle | None = None
 
 
 @dataclasses.dataclass
@@ -724,6 +727,15 @@ class Application:
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
         self._shift_held: bool = False
+        # Transform modifiers (2026-10-22, Blender): Shift = precision, Ctrl = snap while a transform runs.
+        # A Tweak starts with Ctrl down, so its snap waits until Ctrl was let go once (`_ctrl_snap_ok`).
+        self._ctrl_held: bool = False
+        self._ctrl_snap_ok: bool = True
+        # Where the cursor was when the running transform armed (the dial's press point) and the cursor as the
+        # deltas draw it since (`press + sum(dx, dy)`): the dial reads this, not `_cursor`, so the window may warp
+        # the pointer across the viewport edge (cursor wrap, 2026-10-22) without a jump in the gesture.
+        self._rotate_press: tuple[float, float] | None = None
+        self._rotate_virtual: tuple[float, float] | None = None
         # WP-KNIFE-01 S4: where the hovered segment crosses edges (the planner's dots).
         self._knife_hover_crossings: tuple = ()
         # AD-SYM-03 slice 6c: the running session's symmetry view (None = no definition at begin: the Knife
@@ -1335,12 +1347,26 @@ class Application:
             gesture.move = tuple(gesture.move[i] + delta[i] for i in range(3))
         elif command == commands.ROTATE:
             gesture.pixels += dx
+            self._object_rotate_angle(gesture, dx)
         else:
             gesture.pixels += dx + dy
         for obj, start in gesture.targets:
             obj.transform = self._object_transform_from(start)
         self._placement_changed()
         return True
+
+    def _object_rotate_angle(self, gesture: _ObjectGesture, dx: float) -> None:
+        """The Rotate angle of the object gesture: the dial about the first object's pivot when the pointer
+        is known (as the mesh Rotate), else the dx fallback."""
+        width, height = int(self.viewport_width), int(self.viewport_height)
+        if self._rotate_virtual is None:
+            gesture.angle += RotateTool.RADIANS_PER_PIXEL * dx * (PRECISION_GAIN if self._shift_held else 1.0)
+            return
+        if gesture.dial is None:
+            anchor = gesture.targets[0][0]
+            pivot = object_space.to_world(anchor, anchor.pivot)
+            gesture.dial = DialAngle(self.camera, pivot, gesture.axis, self._rotate_press, width, height)
+        gesture.angle = gesture.dial.update(*self._rotate_virtual, width, height, self._shift_held, self._snap_held())
 
     def _object_transform_from(self, start: ObjectTransform) -> ObjectTransform:
         """The transform the running gesture gives an object that started at `start`; exactly
@@ -1353,7 +1379,7 @@ class Application:
             translation = tuple(start.translation[i] + gesture.move[i] for i in range(3))
             return dataclasses.replace(start, translation=translation)
         if command == commands.ROTATE:
-            angle = RotateTool.RADIANS_PER_PIXEL * gesture.pixels
+            angle = gesture.angle
             if angle == 0.0:
                 return start
             turn = object_space.axis_angle_rotation(gesture.axis, angle)
@@ -2764,6 +2790,13 @@ class Application:
         eine Transform-Taste gehalten, wird abgelehnt."""
         if self._transform_key is not None or self.viewport is None:
             return False
+        if key == TWEAK_KEY:
+            press = self._gizmo_press_xy or self._press_point or self._cursor
+        else:
+            press = self._cursor
+        self._rotate_press = None if press is None else (float(press[0]), float(press[1]))
+        self._rotate_virtual = self._rotate_press
+        self._ctrl_snap_ok = not (self._ctrl_held and key == TWEAK_KEY and self._gizmo_gesture is None)
         if command == commands.EXTRUDE:
             return self._extrude_arm(key)
         if command == commands.LOOP_SLIDE:
@@ -2816,7 +2849,7 @@ class Application:
         self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
         return True
 
-    def _transform_step(self, dx: float, dy: float) -> bool:
+    def _transform_step(self, dx: float, dy: float, force: bool = False) -> bool:
         """Eine Mausbewegung, während ein Transform scharf ist. Die erste
         Bewegung startet die Interaktion (keine Schwelle, AD-016); ein
         Nullschritt zählt nicht als Bewegung.
@@ -2825,8 +2858,12 @@ class Application:
         (`SeamConstraintError`, INV-8 / AD-SYM-02 §2.4: ein Seam-Vertex würde
         die Ebene verlassen), endet der Transform sichtbar, ohne History und
         mit unverändertem Mesh (das Tool bricht selbst exakt ab)."""
-        if dx == 0 and dy == 0:
+        if dx == 0 and dy == 0 and not force:
             return False
+        if self._rotate_virtual is not None:
+            self._rotate_virtual = (self._rotate_virtual[0] + dx, self._rotate_virtual[1] + dy)
+        if not force and self._shift_held and self._transform_command in (commands.MOVE, commands.SCALE):
+            dx, dy = dx * PRECISION_GAIN, dy * PRECISION_GAIN  # Shift = precision (Rotate scales its own angle)
         if self._object_gesture is not None:
             return self._object_step(dx, dy)
         if self._transform_command == commands.LOOP_SLIDE:
@@ -2853,9 +2890,13 @@ class Application:
             }
             if soft is not None:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
-            rotate_gizmo = self._gizmo_rotate_mode()
+            rotate_gizmo = self._rotate_gesture_mode()
             if rotate_gizmo is not None:
-                begin_context["gizmo"] = {"mode": rotate_gizmo, "press": self._gizmo_press_xy}
+                begin_context["gizmo"] = {
+                    "mode": rotate_gizmo,
+                    "press": self._rotate_press,
+                    "size": (int(self.viewport_width), int(self.viewport_height)),
+                }
             try:
                 self.tool_manager.begin_current_interaction(begin_context)
             except (SeamConstraintError, SoftSymmetryRefusal) as exc:
@@ -2871,22 +2912,54 @@ class Application:
             if soft is not None:
                 self._soft_show_op_weights()
         update = {"dx": float(dx), "dy": float(dy), "width": self.viewport_width, "height": self.viewport_height}
-        if self._gizmo_rotate_mode() == "dial" and self._cursor is not None:
-            update["x"], update["y"] = self._cursor
+        if self._transform_command == commands.ROTATE:
+            update["precise"], update["snap"] = self._shift_held, self._snap_held()
+            if self._rotate_gesture_mode() == "dial":
+                update["x"], update["y"] = self._rotate_virtual
         self.tool_manager.update(**update)
         self._pick_cache.invalidate()
         self.viewport.on_vertices_moved(self._active_transform_vertex_ids())
         return True
 
-    def _gizmo_rotate_mode(self) -> str | None:
-        """How a Rotate handle drag turns: `trackball` (centre), `dial` (rings, the view ring), else None."""
-        if (
-            self._gizmo_gesture is None
-            or self._gizmo_press_xy is None
-            or self._transform_command != commands.ROTATE
-        ):
+    def _rotate_gesture_mode(self) -> str | None:
+        """How the running Rotate follows the pointer: `trackball` (gizmo centre), `dial` (every other cursor
+        gesture: gizmo ring, R/E key, Tweak), None without a command, a cursor or a viewport (dx fallback)."""
+        if self._transform_command != commands.ROTATE or self._rotate_press is None:
             return None
         return "trackball" if self._gizmo_gesture == "center" else "dial"
+
+    def _snap_held(self) -> bool:
+        return self._ctrl_held and self._ctrl_snap_ok
+
+    @property
+    def cursor_wrap_active(self) -> bool:
+        """True while the window should warp the pointer across the viewport edge (a running transform;
+        a reusable gate for later slider drags)."""
+        return self._transform_key is not None
+
+    def cursor_wrapped(self, jump_x: float, jump_y: float) -> None:
+        """The window moved the pointer by (jump_x, jump_y) to the opposite edge. Gestures run on deltas (the
+        warp's own event is swallowed), so only the stored cursor follows."""
+        if self._cursor is not None:
+            self._cursor = (self._cursor[0] + jump_x, self._cursor[1] + jump_y)
+
+    def set_ctrl_held(self, held: bool) -> bool:
+        """The window reports whether any Ctrl key is held. Ctrl = snap in a running transform (a Tweak needs
+        Ctrl let go once first); the snap shows at once. True = the transform changed."""
+        held = bool(held)
+        if held == self._ctrl_held:
+            return False
+        self._ctrl_held = held
+        if not held:
+            self._ctrl_snap_ok = True
+        if (
+            self._transform_key is None
+            or not self._transform_begun
+            or self._transform_command != commands.ROTATE
+            or self._rotate_virtual is None
+        ):
+            return False
+        return self._transform_step(0.0, 0.0, force=True)
 
     def _active_transform_vertex_ids(self) -> set[VertexId]:
         """Vom laufenden Transform betroffene Vertex-IDs (E29): `MoveTool.moves`
@@ -2907,6 +2980,8 @@ class Application:
         self._transform_target = frozenset()
         self._transform_begun = False
         self._transform_space = None
+        self._rotate_press = None
+        self._rotate_virtual = None
         self._extrude_faces = frozenset()
         self._extrude_travel = (0.0, 0.0)
         self._extrude_selection_before = None

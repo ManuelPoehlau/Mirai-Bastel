@@ -29,3 +29,5 @@ Heute formt `Ctrl`+Mausrad die Kurve `custom` (`t^p` auf einer festen Schrittlis
 ## Morph-Gewicht bedienen
 
 Der Gewichtungsregler für das Morph Lab ist ein offener Artist-Wunsch und steht im Lab-README als offen. Ein späterer Slider soll das Gewicht direkt ziehen lassen und den Viewport kontinuierlich aktualisieren. Die eigentliche Morph-Datenhaltung und das Verhalten mehrerer Targets gehören nach [ANIMATION.md](ANIMATION.md), nicht in eine zweite UI-Spezifikation.
+
+- **Cursor-Wrap für Slider-Drags** (2026-10-22): `mirai/cursor_wrap.py` (`CursorWrapper`) lässt den Zeiger am Fensterrand auf die Gegenseite springen, ohne dass der Drag es merkt (Deltas bleiben gültig). Für den Morph-Weight-Slider die Gate-Bedingung (`cursor_wrap_active`) um den Slider-Drag erweitern.
