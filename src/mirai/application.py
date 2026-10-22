@@ -745,6 +745,9 @@ class Application:
         # A Tweak starts with Ctrl down, so its snap waits until Ctrl was let go once (`_ctrl_snap_ok`).
         self._ctrl_held: bool = False
         self._ctrl_snap_ok: bool = True
+        # Alt held during a transform (2026-10-22, `PROVISIONAL`, Manu "Alt halten um zu orbiten"): the motion
+        # navigates (Orbit, Alt+Shift Pan) instead of driving the gesture; letting Alt go resumes it.
+        self._alt_held: bool = False
         # Where the cursor was when the running transform armed (the dial's press point) and the cursor as the
         # deltas draw it since (`press + sum(dx, dy)`): the dial reads this, not `_cursor`, so the window may warp
         # the pointer across the viewport edge (cursor wrap, 2026-10-22) without a jump in the gesture.
@@ -2973,6 +2976,15 @@ class Application:
         if self._cursor is not None:
             self._cursor = (self._cursor[0] + jump_x, self._cursor[1] + jump_y)
 
+    def set_alt_held(self, held: bool) -> bool:
+        """The window reports whether any Alt key is held. During a transform, motion then navigates
+        (`_navigate_during_transform`); otherwise it is only stored. True = the state changed."""
+        held = bool(held)
+        if held == self._alt_held:
+            return False
+        self._alt_held = held
+        return True
+
     def set_ctrl_held(self, held: bool) -> bool:
         """The window reports whether any Ctrl key is held. Ctrl = snap in a running transform (a Tweak needs
         Ctrl let go once first); the snap shows at once. True = the transform changed."""
@@ -3676,6 +3688,9 @@ class Application:
             self._cursor = (x, y)
         if self._knife_gesture:
             return self._knife_drag(dx, dy)
+        if self._alt_held and self._transform_key == TWEAK_KEY:
+            # A gizmo / Tweak drag: Alt borrows the motion for the camera, the gesture keeps running.
+            return self._navigate_during_transform(dx, dy)
         step = self.pointer.drag(dx, dy)
         return step is not None and self._execute_drag(step)
 
@@ -3747,6 +3762,8 @@ class Application:
                 return False
             return self._knife_hover(x, y)
         if self._transform_key is not None:
+            if self._alt_held:
+                return self._navigate_during_transform(dx, dy)
             return self._transform_step(dx, dy)
         if self.coalesce_hover:
             self._hover_stale = True
@@ -3876,13 +3893,8 @@ class Application:
             return self._drag_select_step(step.command)
         if step.command == commands.TWEAK:
             return self._tweak_step(step.dx, step.dy)
-        if step.command == commands.ORBIT:
-            self.camera.orbit(-step.dx * ORBIT_RADIANS_PER_PX, -step.dy * ORBIT_RADIANS_PER_PX)
-        elif step.command == commands.PAN:
-            self.camera.pan(step.dx, step.dy, self.viewport_width, self.viewport_height)
-        else:
+        if not self._navigate(step.command, step.dx, step.dy):
             return False
-        self._camera_changed()
         # Eine laufende Orbit-/Pan-Geste löscht Hover (während einer Knife-
         # Session die Knife-Vorschau; Start und Pfad bleiben); er kehrt mit
         # der nächsten Mausbewegung nach dem Release zurück.
@@ -3891,6 +3903,24 @@ class Application:
         else:
             self._set_hovered(None)
         return True
+
+    def _navigate(self, command: str, dx: float, dy: float) -> bool:
+        if command == commands.ORBIT:
+            self.camera.orbit(-dx * ORBIT_RADIANS_PER_PX, -dy * ORBIT_RADIANS_PER_PX)
+        elif command == commands.PAN:
+            self.camera.pan(dx, dy, self.viewport_width, self.viewport_height)
+        else:
+            return False
+        self._camera_changed()
+        return True
+
+    def _navigate_during_transform(self, dx: float, dy: float) -> bool:
+        """Alt held while a transform is armed or runs: Orbit (Alt+Shift: Pan) like Alt+LMB, without a
+        button. The gesture is not stepped - Move/Scale continue in the new view (they read the camera per
+        step); the Rotate dial keeps its virtual cursor but re-projects its pivot, so its angle can jump."""
+        if dx == 0 and dy == 0:
+            return False
+        return self._navigate(commands.PAN if self._shift_held else commands.ORBIT, dx, dy)
 
     def _execute_click(self, click: Click) -> bool:
         if click.command in _SELECT_COMMANDS:
