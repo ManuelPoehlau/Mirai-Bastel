@@ -259,6 +259,13 @@ def build_default_bindings() -> BindingSet:
     # 2026-10-22 (`PROVISIONAL`, engineering key for Manu's look test): Ctrl+Shift+O cycles the look of the
     # influence display (mono / tint / color). Ctrl+Shift+O was unbound; rebindable.
     bs.set_default(_key("o", "ctrl", "shift"), cmd.SOFT_LOOK_CYCLE)
+    # 2026-10-22 (`PROVISIONAL`, engineering choice for Manu's practical test, AD-020 "Loop / Ring flow"):
+    # Ctrl+Shift+wheel = Loop / Ring balance (up = farther along the loops, down = farther across the rings),
+    # live during a begun Soft gesture like the radius. Ctrl+Shift+wheel was the one unbound wheel chord the
+    # window reports (plain = zoom / live radius, Shift = radius, Ctrl = curve shape; Alt is not reported with
+    # the wheel and navigates the camera during a transform); rebindable.
+    bs.set_default(_wheel("UP", "ctrl", "shift"), cmd.SOFT_FLOW_LOOP)
+    bs.set_default(_wheel("DOWN", "ctrl", "shift"), cmd.SOFT_FLOW_RING)
 
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-

@@ -132,8 +132,13 @@ class MoveTool(Tool):
         """A begun Soft gesture is running: `reweight()` applies."""
         return self.is_interacting and self._soft_seeds is not None
 
+    @property
+    def soft_seeds(self) -> frozenset[VertexId]:
+        """The seeds of the running Soft gesture (empty without one)."""
+        return self._soft_seeds or frozenset()
+
     def reweight(self, soft) -> set[VertexId]:
-        """Live Soft radius, as `TransformTool.reweight`: cancel (exact start geometry, no History),
+        """Live Soft radius / flow balance, as `TransformTool.reweight`: cancel (exact start geometry, no History),
         begin again from the same seeds with `soft`, replay the summed delta as one step. Returns the
         vertices whose position may have changed (old ∪ new influenced set)."""
         if not self.is_soft_gesture:
@@ -242,7 +247,7 @@ class MoveTool(Tool):
             # before anything moves; falloff seam vertices slide in the plane (P-a).
             field = symmetric_influence(
                 mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power,
+                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
             if not field.weights:
                 raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")
@@ -271,7 +276,7 @@ class MoveTool(Tool):
             # the current (= start) positions.
             influence = compute_influence(
                 mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power,
+                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
             if not influence:
                 raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")

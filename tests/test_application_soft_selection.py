@@ -14,6 +14,8 @@ Taste → `Application.key_press` (scharf) → `pointer_motion` (erste Bewegung:
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 import tests._bootstrap  # noqa: F401
@@ -449,7 +451,7 @@ def test_o_toggles_and_posts_the_full_state(app):
     assert app.key_press(O)
     assert app.status_serial == serial + 1
     assert app.status_message.startswith("Soft: on · 15 % (")
-    assert app.status_message.endswith(") · geodesic · smooth · bands on · mono")
+    assert app.status_message.endswith(") · geodesic · smooth · flow 1:1 · bands on · mono")
     assert app.key_press(O)
     assert app.status_message.startswith("Soft: off · 15 % (")
 
@@ -457,13 +459,13 @@ def test_o_toggles_and_posts_the_full_state(app):
 def test_curve_and_metric_cycle_and_post_the_state(app):
     assert app.key_press(SHIFT_O)
     assert app.soft_settings.curve == "sphere"
-    assert app.status_message.endswith("· geodesic · sphere · bands on · mono")
+    assert app.status_message.endswith("· geodesic · sphere · flow 1:1 · bands on · mono")
     for _ in range(len(CURVES) - 1):  # the whole cycle comes back to smooth
         assert app.key_press(SHIFT_O)
     assert app.soft_settings.curve == "smooth"
     assert app.key_press(CTRL_O)
     assert app.soft_settings.metric == "euclidean"
-    assert app.status_message.endswith("· euclidean · smooth · bands on · mono")
+    assert app.status_message.endswith("· euclidean · smooth · flow 1:1 · bands on · mono")
     assert app.key_press(CTRL_O)
     assert app.soft_settings.metric == "geodesic"
 
@@ -568,10 +570,10 @@ def test_ctrl_wheel_shapes_the_custom_curve_and_selects_it(app):
     assert app.soft_settings.curve == "smooth" and app.soft_settings.curve_power == 1.0
     assert app.pointer_scroll(CTRL_WHEEL_UP)  # up = rounder = smaller p
     assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 0.67
-    assert app.status_message.endswith("· custom p=0.67 · bands on · mono")
+    assert app.status_message.endswith("· custom p=0.67 · flow 1:1 · bands on · mono")
     assert app.pointer_scroll(CTRL_WHEEL_DOWN) and app.pointer_scroll(CTRL_WHEEL_DOWN)
     assert app.soft_settings.curve_power == 1.5  # down = sharper
-    assert app.status_message.endswith("· geodesic · custom p=1.5 · bands on · mono")
+    assert app.status_message.endswith("· geodesic · custom p=1.5 · flow 1:1 · bands on · mono")
 
 
 def test_ctrl_wheel_clamps_at_both_ends_and_never_zooms(app):
@@ -580,7 +582,7 @@ def test_ctrl_wheel_clamps_at_both_ends_and_never_zooms(app):
         app.pointer_scroll(CTRL_WHEEL_UP)
     assert app.soft_settings.curve_power == CUSTOM_SHAPE_STEPS[0]
     assert app.pointer_scroll(CTRL_WHEEL_UP) is False  # at the end: unchanged ...
-    assert app.status_message.endswith("· custom p=0.25 · bands on · mono")  # ... but the state is posted
+    assert app.status_message.endswith("· custom p=0.25 · flow 1:1 · bands on · mono")  # ... but the state is posted
     for _ in range(len(CUSTOM_SHAPE_STEPS) + 2):
         app.pointer_scroll(CTRL_WHEEL_DOWN)
     assert app.soft_settings.curve_power == CUSTOM_SHAPE_STEPS[-1]
@@ -610,10 +612,12 @@ def test_ctrl_wheel_with_soft_off_changes_only_the_stored_shape(app):
     assert app.soft_settings.curve == "custom" and app.soft_settings.curve_power == 0.67
 
 
-def test_ctrl_shift_wheel_does_nothing(app):
+def test_ctrl_shift_wheel_is_the_flow_balance_and_never_zooms(app):
+    """Unbound until 2026-10-22; now the Loop / Ring balance (AD-020 "Loop / Ring flow", `test_soft_flow_live.py`)."""
     distance, settings = app.camera.distance, app.soft_settings
-    assert app.pointer_scroll(_wheel("UP", "ctrl", "shift")) is False
-    assert app.pointer_scroll(_wheel("DOWN", "ctrl", "shift")) is False
+    assert app.pointer_scroll(_wheel("UP", "ctrl", "shift"))
+    assert app.soft_settings == dataclasses.replace(settings, flow_step=settings.flow_step + 1)
+    assert app.pointer_scroll(_wheel("DOWN", "ctrl", "shift"))
     assert app.camera.distance == distance and app.soft_settings == settings
 
 

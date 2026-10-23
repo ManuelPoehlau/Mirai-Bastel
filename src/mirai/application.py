@@ -109,6 +109,7 @@ from .soft_selection import (
     SoftSettings,
     SoftSymmetryRefusal,
     compute_influence,
+    has_flow_direction,
     symmetric_influence,
 )
 from .topology.connect_per_face import EDGE_CONNECT_LABEL, TopologyToolError, apply_connect_edges
@@ -258,6 +259,8 @@ _SOFT_COMMANDS = (
     commands.SOFT_BANDS_TOGGLE,
     commands.SOFT_VIEW_MODE_CYCLE,
     commands.SOFT_LOOK_CYCLE,
+    commands.SOFT_FLOW_LOOP,
+    commands.SOFT_FLOW_RING,
 )
 
 #: `Application._gpu_pick`: the window cannot serve this pick, ask the CPU picker.
@@ -647,12 +650,13 @@ class Application:
         # settings with the semantics of the axis constraint above - they survive commit,
         # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
         # that is armed but has not begun takes a new value; a running one keeps its own -
-        # except the radius, which a running Soft gesture takes live (AD-020 "Live radius").
+        # except the radius and the Loop / Ring balance, which a running Soft gesture takes live
+        # (AD-020 "Live radius", "Loop / Ring flow").
         # The radius is held in world units (computed on switch-on, on a step change and
         # on scene load) so that the tool and the later preview read one value.
         self._soft: SoftSettings = SoftSettings()
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
-        # `begin()`, with only the radius replaced by a live radius step. `_soft_gesture_reference` is
+        # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
         # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
         # radius was computed from), so the deforming mesh never redefines a step.
         self._soft_gesture: SoftSettings | None = None
@@ -3049,7 +3053,7 @@ class Application:
         self._soft = self._soft.with_bounding_radius(bounding_radius)
 
     def _soft_command(self, command: str) -> bool:
-        """O / Shift+wheel / Shift+O / Ctrl+O / Ctrl+wheel / Alt+O / Alt+Shift+O: change the sticky settings
+        """O / Shift+wheel / Shift+O / Ctrl+O / Ctrl+wheel / Ctrl+Shift+wheel / Alt+O / Alt+Shift+O: change the sticky settings
         and post the full state. Never touches mesh, selection or history. False only for a
         radius or shape step that is already at the end of the list (clamped, no wrap) and
         changes nothing - the status line is posted anyway, so the end of the list is visible."""
@@ -3061,6 +3065,13 @@ class Application:
                 self._soft_refresh_radius()
         elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN) and self._soft_live_tool():
             changed = self._soft_radius_live(1 if command == commands.SOFT_RADIUS_UP else -1)
+        elif command in (commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING):
+            delta = 1 if command == commands.SOFT_FLOW_LOOP else -1
+            if self._soft_live_tool():
+                changed = self._soft_flow_live(delta)
+            else:
+                self._soft = soft.with_flow_step(delta)
+                changed = self._soft != soft
         elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN):
             step = soft.radius_step + (1 if command == commands.SOFT_RADIUS_UP else -1)
             step = max(0, min(step, len(RADIUS_STEPS_PERCENT) - 1))
@@ -3086,8 +3097,23 @@ class Application:
             self._soft_apply_look()
         if changed:
             self._soft_preview_refresh()
-        self._set_status(self._soft.status_text())
+        status = self._soft.status_text()
+        if command in (commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING):
+            status += self._soft_flow_hint()
+        self._set_status(status)
         return changed
+
+    def _soft_flow_hint(self) -> str:
+        """Status suffix for a flow step: says when the seeds give no Loop / Ring direction, so the field
+        stays round (AD-020 "Loop / Ring flow": one vertex, one quad, a square block ...)."""
+        soft = self._soft_gesture or self._soft
+        if soft.flow_ratio == 1.0 or soft.metric != "geodesic":
+            return ""
+        tool = self._soft_live_tool()
+        seeds = set(tool.soft_seeds) if tool is not None else self._soft_seeds()
+        if not seeds or has_flow_direction(self.scene.mesh, seeds):
+            return ""
+        return " (no loop/ring direction here: round)"
 
     def _soft_apply_look(self) -> None:
         """Push the look (`SoftSettings.look`) to the influence sinks that exist."""
@@ -3113,13 +3139,29 @@ class Application:
         if step == gesture.radius_step:
             return False
         gesture = gesture.with_radius_step(step, self._soft_gesture_reference)
-        self._soft_gesture = gesture
         self._soft = dataclasses.replace(self._soft, radius_step=step, world_radius=gesture.world_radius)
+        self._soft_reweight_live(gesture)
+        return True
+
+    def _soft_flow_live(self, delta: int) -> bool:
+        """One Loop / Ring balance step for the running Soft gesture (AD-020 "Loop / Ring flow",
+        `PROVISIONAL`): the same re-evaluation from the start geometry as a live radius step; the sticky
+        setting takes the same step. Clamped, no wrap; False at the end of the list."""
+        gesture = self._soft_gesture.with_flow_step(delta)
+        if gesture == self._soft_gesture:
+            return False
+        self._soft = dataclasses.replace(self._soft, flow_step=gesture.flow_step)
+        self._soft_reweight_live(gesture)
+        return True
+
+    def _soft_reweight_live(self, gesture: SoftSettings) -> None:
+        """The running Soft gesture continues with `gesture`'s influence (`reweight`: cancel, begin again
+        on the start geometry with the same seeds / pivot, replay the intent), and the display shows it."""
+        self._soft_gesture = gesture
         touched = self._soft_live_tool().reweight(gesture)
         self._pick_cache.invalidate()
         self.viewport.on_vertices_moved(touched)
         self._soft_show_op_weights()
-        return True
 
     # -- Soft Selection bands (WP-SOFT-01 S2b, AD-020 §5, PROVISIONAL) -------------------
     #
@@ -3220,13 +3262,14 @@ class Application:
         if mesh.symmetry_definition is None:
             return compute_influence(
                 mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power,
+                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
         correspondence = self._symmetry_reports.current(mesh).correspondence
         try:
             field = symmetric_influence(
                 mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
                 curve_power=soft.curve_power, correspondence=correspondence,
+                flow_ratio=soft.flow_ratio,
             )
         except SoftSymmetryRefusal:
             return None

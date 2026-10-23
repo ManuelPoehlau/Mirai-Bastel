@@ -382,9 +382,15 @@ class TransformTool(Tool):
         """A begun Soft gesture is running: `reweight()` applies."""
         return self.is_interacting and self._soft_seeds is not None
 
+    @property
+    def soft_seeds(self) -> frozenset[VertexId]:
+        """The seeds of the running Soft gesture (empty without one)."""
+        return self._soft_seeds or frozenset()
+
     def reweight(self, soft) -> set[VertexId]:
-        """Live Soft radius (AD-020 "Live radius", `PROVISIONAL`): the running gesture continues with the
-        influence of `soft` (the caller keeps metric/curve of the gesture and changes only the radius).
+        """Live Soft radius / Loop-Ring balance (AD-020 "Live radius", "Loop / Ring flow", `PROVISIONAL`): the running
+        gesture continues with the influence of `soft` (the caller keeps metric/curve of the gesture and changes
+        only the radius or the flow balance).
 
         The Core op fixes its weights at `begin()` and steps incrementally, so it is not reweighted in place:
         it is cancelled (exact start geometry, no History), a new op begins on that start geometry with the
@@ -443,7 +449,7 @@ class TransformTool(Tool):
         # (never of the influenced set), the affected set is the influenced set.
         influence = compute_influence(
             scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
-            curve_power=soft.curve_power,
+            curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
         )
         if not influence:
             raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
@@ -464,7 +470,7 @@ class TransformTool(Tool):
         vertices slide in the plane (P-a) and take no part in either seam check."""
         field = symmetric_influence(
             scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
-            curve_power=soft.curve_power,
+            curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
         )
         if not field.weights:
             raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")

@@ -10,6 +10,7 @@ import tests._bootstrap  # noqa: F401
 from mirai.soft_selection import (
     CURVES,
     CUSTOM_SHAPE_STEPS,
+    FLOW_STEPS,
     DEFAULT_CUSTOM_SHAPE_STEP,
     DEFAULT_RADIUS_STEP,
     RADIUS_STEPS_PERCENT,
@@ -84,12 +85,24 @@ def test_invalid_shape_step_is_rejected():
 
 def test_status_text_shows_the_full_state():
     s = SoftSettings(enabled=True).with_bounding_radius(3.4)
-    assert s.status_text() == "Soft: on · 15 % (0.51) · geodesic · smooth · bands on · mono"
+    assert s.status_text() == "Soft: on · 15 % (0.51) · geodesic · smooth · flow 1:1 · bands on · mono"
     custom = s.with_custom_shape_step(+1)  # p = 1.5
-    assert custom.status_text() == "Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on · mono"
-    assert custom.with_bands_toggled().status_text().endswith("· custom p=1.5 · bands off · mono")
-    assert s.with_next_curve().status_text().endswith("· sphere · bands on · mono")  # no p unless custom
+    assert custom.status_text() == "Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · flow 1:1 · bands on · mono"
+    assert custom.with_bands_toggled().status_text().endswith("· custom p=1.5 · flow 1:1 · bands off · mono")
+    assert s.with_next_curve().status_text().endswith("· sphere · flow 1:1 · bands on · mono")  # no p unless custom
     assert s.with_next_look().status_text().endswith("· bands on · tint")
+
+
+def test_flow_balance_steps_clamp_and_name_the_direction():
+    s = SoftSettings()
+    assert s.flow_ratio == 1.0 and s.flow_text() == "flow 1:1"
+    assert s.with_flow_step(+2).flow_text() == "flow loop 2:1" and s.with_flow_step(+2).flow_ratio == 2.0
+    assert s.with_flow_step(-1).flow_text() == "flow ring 3:2"
+    assert s.with_flow_step(+99).flow_text() == "flow loop 4:1"  # clamped, no wrap
+    assert s.with_flow_step(-99).flow_ratio == 0.25
+    assert s.with_flow_step(+2).with_next_metric().flow_text() == "flow loop 2:1 (geodesic only)"
+    with pytest.raises(ValueError):
+        SoftSettings(flow_step=len(FLOW_STEPS))
 
 
 def test_bands_toggle_changes_nothing_else():

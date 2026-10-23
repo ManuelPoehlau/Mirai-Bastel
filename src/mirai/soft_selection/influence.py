@@ -13,6 +13,8 @@ primary selection that feeds an operation:
   hands them in; this module never reads a `Selection`).
 - Metrics `euclidean` (min straight-line distance to any seed) and `geodesic`
   (multi-source Dijkstra over mesh edges, edge length as cost, pruned at `r`).
+- Loop / Ring flow (`flow_ratio`, 2026-10-22, `flow.py`): with `geodesic` and a ratio other than 1
+  the edge costs follow the seeds' edge flow; `euclidean` has no edge flow and ignores it.
 - Curves on `t = 1 - d/r` in [0, 1] (S2d, handoff E1; formulas defined here, not copied
   from any product): `smooth` 3t^2 - 2t^3, `sphere` sqrt(2t - t^2), `root` sqrt(t),
   `sharp` t^2, `linear` t, `custom` t^p with `p` handed in (`curve_power`).
@@ -30,6 +32,8 @@ import math
 from typing import Callable, Iterable
 
 from core import Mesh, VertexId
+
+from .flow import flow_distances
 
 Position = tuple[float, float, float]
 
@@ -154,8 +158,11 @@ METRICS: dict[str, Callable[[Mesh, set[VertexId], float], dict[VertexId, float]]
 
 # --- Public API ---------------------------------------------------------------
 
-def checked_radius(metric: str, curve: str, radius: float) -> float:
+def checked_radius(metric: str, curve: str, radius: float, flow_ratio: float = 1.0) -> float:
     """Validate the settings `compute_influence` (and the symmetric field) take; the radius as float."""
+    flow_ratio = float(flow_ratio)
+    if not math.isfinite(flow_ratio) or flow_ratio <= 0.0:
+        raise ValueError(f"flow_ratio must be finite and > 0, got {flow_ratio!r}.")
     if metric not in METRICS:
         raise ValueError(f"Unknown metric {metric!r}; expected one of {sorted(METRICS)}.")
     if curve not in CURVES:
@@ -171,6 +178,16 @@ def curve_shape(curve: str, curve_power: float = 1.0) -> Callable[[float], float
     return custom_curve(curve_power) if curve == "custom" else CURVES[curve]
 
 
+def distance_function(
+    metric: str, flow_ratio: float = 1.0
+) -> Callable[[Mesh, set[VertexId], float], dict[VertexId, float]]:
+    """The distance field for `metric`: `METRICS[metric]`, or the Loop / Ring flow metric for
+    `geodesic` with `flow_ratio != 1` (neutral never enters `flow.py`: bit-identical to today)."""
+    if metric != "geodesic" or flow_ratio == 1.0:
+        return METRICS[metric]
+    return lambda mesh, seeds, radius: flow_distances(mesh, seeds, radius, flow_ratio)
+
+
 def compute_influence(
     mesh: Mesh,
     seeds: Iterable[VertexId],
@@ -178,6 +195,7 @@ def compute_influence(
     metric: str = "euclidean",
     curve: str = "smooth",
     curve_power: float = 1.0,
+    flow_ratio: float = 1.0,
 ) -> dict[VertexId, float]:
     """Influence weights for all vertices within `radius` (world units) of the seeds.
 
@@ -185,9 +203,10 @@ def compute_influence(
     vertices at `d >= radius` are absent. Seeds the mesh no longer knows are skipped
     (same rule as `resolve_selection_vertices`); no valid seed -> `{}`.
     `radius == 0` -> exactly the seeds, all `1.0`. `curve_power` is the `p` of the `custom`
-    curve and is ignored by every other curve.
+    curve and is ignored by every other curve. `flow_ratio` is the Loop / Ring balance (loop reach /
+    ring reach, `flow.py`; 1 = isotropic); `radius` stays the farthest reach.
     """
-    radius = checked_radius(metric, curve, radius)
+    radius = checked_radius(metric, curve, radius, flow_ratio)
 
     valid_seeds = {s for s in seeds if mesh.is_valid_vertex(s)}
     if not valid_seeds:
@@ -197,7 +216,7 @@ def compute_influence(
         return weights
 
     shape = curve_shape(curve, curve_power)
-    for vid, d in METRICS[metric](mesh, valid_seeds, radius).items():
+    for vid, d in distance_function(metric, flow_ratio)(mesh, valid_seeds, radius).items():
         if vid in weights:
             continue
         w = shape(1.0 - d / radius)

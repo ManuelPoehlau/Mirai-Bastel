@@ -4,7 +4,8 @@ window's wheel.
 - O = on/off, Shift+wheel up/down = radius step, Shift+O = curve, Ctrl+O = metric, Ctrl+wheel up/down =
   rounder/sharper custom curve, Alt+O = bands on/off, as defaults of `build_default_bindings()`
   (re-bindable through keymap.json; the binding carries the direction);
-- the plain wheel stays Zoom; Shift+wheel and Ctrl+wheel never zoom; Ctrl+Shift+wheel is unbound;
+- the plain wheel stays Zoom; Shift+wheel, Ctrl+wheel and Ctrl+Shift+wheel (Loop / Ring balance, 2026-10-22)
+  never zoom;
 - `src/main.py`: the window reports "Shift/Ctrl held" with the wheel event (`wheel_input`), a driver
   that maps the modified wheel to a horizontal scroll is read from `scroll_x`, and the handlers wire
   it through.
@@ -65,6 +66,8 @@ SOFT_BINDINGS = [
     (_key("o", "alt"), cmd.SOFT_BANDS_TOGGLE),
     (_key("o", "alt", "shift"), cmd.SOFT_VIEW_MODE_CYCLE),  # 2026-10-22, PROVISIONAL
     (_key("o", "ctrl", "shift"), cmd.SOFT_LOOK_CYCLE),  # 2026-10-22, PROVISIONAL
+    (_wheel("UP", "ctrl", "shift"), cmd.SOFT_FLOW_LOOP),  # 2026-10-22, PROVISIONAL
+    (_wheel("DOWN", "ctrl", "shift"), cmd.SOFT_FLOW_RING),  # 2026-10-22, PROVISIONAL
 ]
 
 
@@ -80,7 +83,7 @@ def test_default_soft_bindings_resolve_in_every_context(inp, command, context):
 def test_each_soft_command_has_its_own_input():
     bs = build_default_bindings()
     assert {bs.command_for(inp) for inp, _ in SOFT_BINDINGS} == {c for _, c in SOFT_BINDINGS}
-    assert len(SOFT_BINDINGS) == len({c for _, c in SOFT_BINDINGS}) == 10
+    assert len(SOFT_BINDINGS) == len({c for _, c in SOFT_BINDINGS}) == 12
 
 
 def test_plain_wheel_stays_zoom_and_other_modifiers_are_unbound():
@@ -88,8 +91,6 @@ def test_plain_wheel_stays_zoom_and_other_modifiers_are_unbound():
     assert bs.command_for(_wheel("UP")) == cmd.ZOOM
     assert bs.command_for(_wheel("DOWN")) == cmd.ZOOM
     assert bs.command_for(_wheel("UP", "alt")) is None
-    assert bs.command_for(_wheel("UP", "shift", "ctrl")) is None  # Ctrl+Shift+wheel: unbound
-    assert bs.command_for(_wheel("DOWN", "shift", "ctrl")) is None
     assert bs.command_for(_key("o", "alt", "ctrl")) is None
 
 

@@ -14,6 +14,8 @@ precondition is made true.
   differ). It takes the minimum of *distances*, never the maximum of two weights: `smooth` is not
   monotone in float. The union (not the seeds' plain field plus a partner lookup) so that an
   unpaired vertex on the mirrored side gets its own value from the mirrored seeds (D-2).
+  Loop / Ring flow (`flow_ratio`) only changes the distance function; the mirrored seeds orient
+  their own region, and the pair minimum keeps the pairs consistent as for the isotropic field.
 - **Categories (O-1).** A declared seam vertex reached only by the falloff slides in the plane
   (`falloff_seam_vertex_ids`, P-a), a selected seam vertex keeps today's rules (`seam_vertex_ids`,
   weight 1.0), the seeds' own partners take the conjugate step. Every other falloff vertex, by the
@@ -48,7 +50,7 @@ from typing import Any, Iterable, Mapping
 from core import Mesh, VertexId
 
 from ..symmetry import CorrespondenceState, VertexCorrespondence, vertex_correspondence
-from .influence import METRICS, checked_radius, curve_shape
+from .influence import checked_radius, curve_shape, distance_function
 
 
 class SoftSymmetryRefusal(ValueError):
@@ -101,13 +103,15 @@ def symmetric_influence(
     curve: str = "smooth",
     curve_power: float = 1.0,
     correspondence: Mapping[VertexId, VertexCorrespondence] | None = None,
+    flow_ratio: float = 1.0,
 ) -> SymmetricInfluence:
     """Weights and categories for symmetric Soft from the explicit seeds (module docstring).
 
     Needs a symmetry definition on `mesh`. Seeds the mesh no longer knows are skipped (as in
     `compute_influence`); none left -> empty weights. Raises `SoftSymmetryRefusal` for a seed
     without a partner (D-2)."""
-    radius = checked_radius(metric, curve, radius)
+    radius = checked_radius(metric, curve, radius, flow_ratio)
+    distances_of = distance_function(metric, flow_ratio)
     definition = mesh.symmetry_definition
     if definition is None:
         raise ValueError("symmetric_influence() needs a symmetry definition.")
@@ -142,14 +146,14 @@ def symmetric_influence(
         shape = curve_shape(curve, curve_power)
         if both_sides:
             # K-near needs to know which source is nearest: the union as two fields.
-            from_seeds = METRICS[metric](mesh, set(valid_seeds), radius)
-            from_partners = METRICS[metric](mesh, set(partners), radius) if partners else {}
+            from_seeds = distances_of(mesh, set(valid_seeds), radius)
+            from_partners = distances_of(mesh, set(partners), radius) if partners else {}
             distances = dict(from_seeds)
             for vid, d in from_partners.items():
                 if d < distances.get(vid, math.inf):
                     distances[vid] = d
         else:
-            distances = METRICS[metric](mesh, set(valid_seeds | partners), radius)
+            distances = distances_of(mesh, set(valid_seeds | partners), radius)
         for vid, d in distances.items():
             if vid in weights:
                 continue  # a seed, a partner, or the second member of a pair already done

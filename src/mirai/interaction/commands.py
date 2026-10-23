@@ -159,6 +159,10 @@ SOFT_BANDS_TOGGLE = "SoftBandsToggle"
 SOFT_VIEW_MODE_CYCLE = "SoftViewModeCycle"
 #: 2026-10-22 (`PROVISIONAL`): the look of the influence display (mono / tint / color); display only.
 SOFT_LOOK_CYCLE = "SoftLookCycle"
+#: 2026-10-22 (`PROVISIONAL`, AD-020 "Loop / Ring flow"): the Loop / Ring balance one step towards Loop / Ring;
+#: sticky, and taken live by a running Soft gesture like the radius.
+SOFT_FLOW_LOOP = "SoftFlowLoop"
+SOFT_FLOW_RING = "SoftFlowRing"
 
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"

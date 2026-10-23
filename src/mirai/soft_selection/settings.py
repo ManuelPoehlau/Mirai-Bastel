@@ -41,6 +41,13 @@ DEFAULT_CURVE = "smooth"
 CUSTOM_SHAPE_STEPS: tuple[float, ...] = (0.25, 0.33, 0.5, 0.67, 1.0, 1.5, 2.0, 3.0, 4.0)
 #: PROVISIONAL: the custom curve starts linear (p = 1).
 DEFAULT_CUSTOM_SHAPE_STEP = CUSTOM_SHAPE_STEPS.index(1.0)
+#: PROVISIONAL (2026-10-22, AD-020 "Loop / Ring flow"): the Loop / Ring balance as `(loop, ring)` reach
+#: proportions; the larger side reaches the radius, the other `radius * smaller / larger`. Ctrl+Shift+wheel up
+#: = one step towards Loop (the end of the list). The middle step is neutral: today's isotropic field.
+FLOW_STEPS: tuple[tuple[int, int], ...] = (
+    (1, 4), (1, 3), (1, 2), (2, 3), (1, 1), (3, 2), (2, 1), (3, 1), (4, 1),
+)
+DEFAULT_FLOW_STEP = FLOW_STEPS.index((1, 1))
 #: Influence display modes (2026-10-22, `PROVISIONAL`): precise vertex bands or translucent face
 #: shading. Exactly one is shown; `bands_visible` hides whichever is active. The first is the default.
 VIEW_MODES: tuple[str, ...] = ("bands", "faces")
@@ -69,6 +76,8 @@ class SoftSettings:
     curve: str = DEFAULT_CURVE
     #: Index into `CUSTOM_SHAPE_STEPS`; kept while another curve is active (E3).
     custom_shape_step: int = DEFAULT_CUSTOM_SHAPE_STEP
+    #: Index into `FLOW_STEPS` (2026-10-22): the Loop / Ring balance; a running Soft gesture takes it live.
+    flow_step: int = DEFAULT_FLOW_STEP
     #: Display only (S2d E7): False = no influence display at all (bands or faces, whichever is
     #: active). Changes no weight. The field keeps its S2d name.
     bands_visible: bool = True
@@ -82,6 +91,8 @@ class SoftSettings:
             raise ValueError(f"radius_step out of range: {self.radius_step!r}")
         if not 0 <= self.custom_shape_step < len(CUSTOM_SHAPE_STEPS):
             raise ValueError(f"custom_shape_step out of range: {self.custom_shape_step!r}")
+        if not 0 <= self.flow_step < len(FLOW_STEPS):
+            raise ValueError(f"flow_step out of range: {self.flow_step!r}")
         if self.metric not in METRICS:
             raise ValueError(f"Unknown metric {self.metric!r}; expected one of {sorted(METRICS)}.")
         if self.curve not in CURVES:
@@ -99,6 +110,25 @@ class SoftSettings:
     def curve_power(self) -> float:
         """The `p` of the custom curve (used only while `curve == "custom"`)."""
         return CUSTOM_SHAPE_STEPS[self.custom_shape_step]
+
+    @property
+    def flow_ratio(self) -> float:
+        """Loop reach / ring reach (1.0 = neutral, isotropic), what `compute_influence(flow_ratio=)` takes."""
+        loop, ring = FLOW_STEPS[self.flow_step]
+        return loop / ring
+
+    def flow_text(self) -> str:
+        """`flow 1:1`, `flow loop 2:1`, `flow ring 3:2`; `(geodesic only)` while the metric has no edge flow."""
+        loop, ring = FLOW_STEPS[self.flow_step]
+        if loop == ring:
+            return "flow 1:1"
+        text = f"flow loop {loop}:{ring}" if loop > ring else f"flow ring {ring}:{loop}"
+        return text if self.metric == "geodesic" else f"{text} (geodesic only)"
+
+    def with_flow_step(self, delta: int) -> "SoftSettings":
+        """Ctrl+Shift+wheel: `delta` steps along `FLOW_STEPS` (+ = towards Loop), clamped, no wrap."""
+        step = max(0, min(self.flow_step + delta, len(FLOW_STEPS) - 1))
+        return dataclasses.replace(self, flow_step=step)
 
     def toggled(self) -> "SoftSettings":
         return dataclasses.replace(self, enabled=not self.enabled)
@@ -139,11 +169,11 @@ class SoftSettings:
 
     def status_text(self) -> str:
         """Full state for the status line (`PROVISIONAL` until a HUD exists), e.g.
-        `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · bands on · mono` (the display part names the
-        active view mode, `bands on` / `faces off`, and the look)."""
+        `Soft: on · 15 % (0.51) · geodesic · custom p=1.5 · flow 1:1 · bands on · mono` (the display part
+        names the active view mode, `bands on` / `faces off`, and the look)."""
         curve = f"custom p={self.curve_power:g}" if self.curve == "custom" else self.curve
         return (
             f"Soft: {'on' if self.enabled else 'off'} · {self.radius_percent} % "
-            f"({self.world_radius:.2f}) · {self.metric} · {curve} · "
+            f"({self.world_radius:.2f}) · {self.metric} · {curve} · {self.flow_text()} · "
             f"{self.view_mode} {'on' if self.bands_visible else 'off'} · {self.look}"
         )

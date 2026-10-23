@@ -184,6 +184,9 @@ NON_OPERATION = frozenset(
         cmd.SOFT_VIEW_MODE_CYCLE,
         # 2026-10-22: the look of the influence display, display only (same kind).
         cmd.SOFT_LOOK_CYCLE,
+        # 2026-10-22: the Loop / Ring balance - a soft setting like the radius (live in a gesture, too).
+        cmd.SOFT_FLOW_LOOP,
+        cmd.SOFT_FLOW_RING,
         # Navigation und Knife-Session: nur über eine User-GLOBAL-Taste erreichbar (Review N2);
         # `Application` gibt dafür ohnehin False zurück, die Auflistung hält die Taste still
         cmd.ORBIT,

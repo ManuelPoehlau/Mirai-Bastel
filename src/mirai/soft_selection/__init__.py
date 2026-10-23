@@ -15,7 +15,8 @@ steps up to 200 %, and a switch for the bands.
 
 2026-10-22 adds the second display mode: `shading` (weights -> per-corner colours, headless) and
 `gl_shading` (the triangle-overlay sink); exactly one of bands / face shading is shown
-(`SoftSettings.view_mode`), and a hover with no selection is the preview target.
+(`SoftSettings.view_mode`), and a hover with no selection is the preview target. Also 2026-10-22:
+`flow` - the Loop / Ring balance, a topology-oriented anisotropic geodesic field (AD-020).
 
 This package imports nothing from `mirai.interaction` or `mirai.application` (the tools
 import it), and no Core private member (AD-020 §3, §9).
@@ -24,6 +25,7 @@ import it), and no Core private member (AD-020 §3, §9).
 from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands, band_index
 from .gl_bands import BAND_LAYERS, GLSoftBandOverlay
 from .gl_shading import GLSoftShadingOverlay
+from .flow import flow_families, has_flow_direction
 from .influence import CURVES, METRICS, compute_influence, custom_curve, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
 from .symmetric import SoftSymmetryRefusal, SymmetricInfluence, symmetric_influence
@@ -31,7 +33,9 @@ from .shading import shading_color
 from .settings import (
     CUSTOM_SHAPE_STEPS,
     DEFAULT_CUSTOM_SHAPE_STEP,
+    DEFAULT_FLOW_STEP,
     DEFAULT_RADIUS_STEP,
+    FLOW_STEPS,
     LOOKS,
     RADIUS_STEPS_PERCENT,
     VIEW_MODES,
@@ -45,7 +49,9 @@ __all__ = [
     "CURVES",
     "CUSTOM_SHAPE_STEPS",
     "DEFAULT_CUSTOM_SHAPE_STEP",
+    "DEFAULT_FLOW_STEP",
     "DEFAULT_RADIUS_STEP",
+    "FLOW_STEPS",
     "LOOKS",
     "EMPTY_BANDS",
     "GLSoftBandOverlay",
@@ -63,6 +69,8 @@ __all__ = [
     "band_index",
     "compute_influence",
     "custom_curve",
+    "flow_families",
+    "has_flow_direction",
     "primary_pivot",
     "shading_color",
     "symmetric_influence",

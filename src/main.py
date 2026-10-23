@@ -79,7 +79,8 @@ Scope (binding, see the handoffs):
   are the defaults; Shift+O cycles smooth → sphere → root → sharp → linear → custom; Ctrl +
   mouse wheel shapes the `custom` curve (up = rounder, down = sharper, always selects
   `custom`, never zooms — the window tracks Ctrl like Shift, `ctrl_keys_after`, and
-  `wheel_input` carries `{"ctrl"}`; Ctrl+Shift+wheel does nothing); Alt+O switches the
+  `wheel_input` carries `{"ctrl"}`; Ctrl+Shift+wheel is the Loop / Ring balance since 2026-10-22, AD-020
+  "Loop / Ring flow"); Alt+O switches the
   influence bands on/off (no band points at all while off; the status line shows it). With a symmetry definition
   (Shift+S, below) W/E/R act on both sides (AD-SYM-04 SS2) and the bands show both sides, the
   symmetric field (SS3); a selected vertex without a mirror partner shows no bands and is refused

@@ -11,6 +11,7 @@ runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses 
 flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
 **Hover preview and display modes (2026-10-22, see "Hover preview and display modes" below):** the influence preview now follows the hovered component when nothing is selected, and has a second, exclusive display mode (face shading) next to the vertex bands; `PROVISIONAL`, Artist test open.
 **Live radius (2026-10-22, see "Live radius during a running gesture" below):** the wheel changes the radius of a running Soft Move/Rotate/Scale; the gesture is re-evaluated from its start geometry. Narrows the §4.3 per-gesture rule for the radius only; `PROVISIONAL`, Artist test open (ATELIER B12).
+**Loop / Ring flow (2026-10-22, see "Loop / Ring flow" below):** a topology-oriented anisotropic geodesic field - the reach along the seeds' edge loops vs. across their edge rings is adjustable (Ctrl+Shift+wheel), sticky and live in a running gesture like the radius; neutral = the isotropic field bit for bit. `PROVISIONAL`, Artist test open (ATELIER B15).
 **Finer radius steps and display look (2026-10-22, see "Finer radius steps and display look" below):** about 10-15 % per wheel notch; the influence display has three looks (`mono` default, `tint`, `color`) on Ctrl+Shift+O; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
 **Mode (M5):** Discovery, decision preparation (the original text of §1–§12); S2a is a `PROVISIONAL` production of the
@@ -267,8 +268,8 @@ current mesh as before (§4.3).
 Selection and hover are untouched. `on_vertices_moved` gets the old ∪ new influenced set (vertices that drop out return
 to their start). The display shows the new op's weights in the gesture's own display mode (bands, faces, or nothing when
 hidden); a display switch made mid-gesture still applies at gesture end. **§4.3 clarification:** "read once per gesture
-at `begin()`" still holds for every setting except the radius, which a running Soft gesture takes live; the sticky
-`radius_step` follows the gesture's step.
+at `begin()`" still holds for every setting except the radius (and, since "Loop / Ring flow", the flow balance),
+which a running Soft gesture takes live; the sticky `radius_step` / `flow_step` follow the gesture's step.
 
 **Cost.** One influence computation per wheel notch (the same call as at `begin()`; symmetric Soft also derives the
 correspondence again, as at `begin()`), one cancel and one replay step - no work per pointer motion beyond today's. No
@@ -314,10 +315,87 @@ stay. Status line: `... · bands on · mono`. The values live with the sinks (`g
 neutral and fade with the band; tests that counted notches now pin percents). **Not Artist-validated:** which look,
 the exact alpha, the step density, the key.
 
+## Loop / Ring flow (2026-10-22, `PROVISIONAL`)
+
+Task brief (Manu, 2026-10-22): an influence that spreads farther along the edge-loop flow or farther across successive
+edge rings, adjustable independently, for character shaping along the real edge flow - not a screen or world-axis
+ellipse. Implemented in `soft_selection/flow.py`; the rules below are its contract (module docstring = detail).
+
+**Feasibility.** `edge_loop` / `edge_ring` follow one line from one edge; a field needs a direction at every edge of the
+region. The ring rule supplies it: opposite edges of a quad are parallel (same ring), adjacent ones cross. That
+2-colours the edges of a quad region into two *families*; walking along a family-A edge moves in the A-direction of
+the flow. No world or screen direction is used anywhere, so the field is invariant under rotating or bending the mesh
+(tested). No Core change: everything is a query over `Mesh` (`vertex_edges`, `edge_faces`, `face_edges`).
+
+**Which family is Loop.** The tools see vertex seeds (vertex / edge / face selection and the hover are resolved to
+vertices, unchanged). A *seed region* is a connected component of the seeds through the edges between two seeds; its
+edges are 2-coloured through the quads touching it and the family holding **more of the region's own edges is Loop** -
+the direction the region extends along the flow. So: an edge -> along it; a vertex path / edge loop -> along it; a
+strip of n >= 2 faces -> along the strip; an edge-ring selection of n >= 3 edges -> along the ring (across its edges);
+a 3x2 face block -> along its long side. **No direction** (the region adds no labels): one vertex, scattered vertices,
+one quad face, two parallel edges, a square block (ties), edges in no quad. Several regions orient themselves
+independently. If no region has a direction the result **is** the isotropic geodesic field (tested bit for bit) - the
+deterministic fallback; the status line then says `(no loop/ring direction here: round)` after a flow step.
+
+**Propagation and terminations.** The oriented regions' labels spread over the quads of the influence region in order
+of isotropic geodesic distance (ties by face id), first label wins. They never cross a non-quad (as `edge_ring`); edges
+in no labelled quad (triangle / n-gon regions, behind such a face) are **neutral** and cost their plain length; the
+boundary simply ends the region. Where two fronts with different colourings meet - around an odd-valence pole, a cube
+corner, between two differently oriented regions - the quad whose labels disagree spreads nothing; that is the only
+place the direction field has a seam, and it lies where the fronts meet, i.e. away from the seeds. Measured on
+`head_basemesh` (30 random edge seeds, 30 % radius): 99.4 % of the region's edges get a label.
+
+**Metric.** Dijkstra as `geodesic` with the edge length scaled by family: balance `ratio = loop reach / ring reach`;
+the weaker family costs `max(ratio, 1/ratio)` x its length, the dominant family and neutral edges cost their length.
+Hence the **radius stays the farthest reach** (dominant direction and neutral regions reach it, the other
+`radius / k`), the field is never wider than the isotropic one, weights are never larger, seeds keep 1.0 and every
+curve acts on `1 - d/r` unchanged. A literal ellipse is not the model: the existing geodesic metric is already an
+edge-path metric (diamonds on a grid); flow stretches those along the flow. `euclidean` has no edge flow and ignores
+the balance (status `(geodesic only)`). Symmetric Soft only swaps the distance function: the mirrored seeds orient
+their own region, the pair minimum keeps one weight per pair, categories and seam rules are untouched (tested on the
+head, X).
+
+**Settings and input (`PROVISIONAL` engineering choice for the practical test, not Artist Input Truth).**
+`SoftSettings.flow_step` indexes `FLOW_STEPS` = ring 4:1, 3:1, 2:1, 3:2, **1:1** (default, neutral), loop 3:2, 2:1, 3:1,
+4:1 (`(loop, ring)` reach proportions). Overall radius and balance are separate settings. **Ctrl+Shift+wheel** up = one
+step towards Loop, down = towards Ring (`SoftFlowLoop` / `SoftFlowRing`), clamped, no wrap, never zooms. Audit: it was
+the only unbound wheel chord the window reports (plain = zoom / live radius, Shift = radius, Ctrl = curve shape; Alt
+is not reported with the wheel and orbits during a transform; Ctrl+Shift+O = look). Known interplay: in a running
+Rotate, holding Ctrl/Shift also switches snap / precision (as for Shift+wheel / Ctrl+wheel today); a wheel notch
+does not move the pointer, so it only matters while dragging with the chord held. Status line: `· flow 1:1 ·`,
+`· flow loop 2:1 ·`, `· flow ring 3:2 ·`. The Symmetry Lab lists both commands in `NON_OPERATION`.
+
+**Live in a gesture.** Outside a begun Soft gesture the step is sticky (next gesture, preview recomputed). During
+one it takes the live-radius path unchanged (`_soft_reweight_live` -> `tool.reweight`): cancel, begin again on the
+start geometry with the same seeds and pivot, replay the accumulated intent as one step - no accumulation, one
+History entry, exact Undo/Redo/Cancel, display = the op's weights in the gesture's mode (nothing while hidden). The
+live radius keeps the balance and vice versa.
+
+**Cost.** Neutral: unchanged (never enters `flow.py`). With a balance: one isotropic + one weighted Dijkstra, both
+lazy over the region (no whole-mesh adjacency pass). Container, gollum_20k, one edge seed: 15 % radius 3.8 ms (the
+isotropic `geodesic` call 18 ms, almost all its whole-mesh neighbour pass), 50 % 33 ms vs 22 ms. Not measured on the
+reference PC. Side finding for the open gollum preview sluggishness (B11): `_geodesic_distances` builds the
+neighbour map of the whole mesh per call; the lazy form in `flow.py` would make it proportional to the region.
+
+**Verified by tests** (`tests/test_soft_flow.py`, `tests/test_soft_flow_live.py`; status / binding pins adjusted in
+`test_soft_selection_settings.py`, `test_soft_selection_input.py`, `test_application_soft_selection.py`): neutral
+bit-identical, the factor along / across on a grid, all curves, rotated / standing grid, cylinder wrap along the
+surface, every seed kind above, all-triangle mesh, boundary, non-quad cut, cube corners, head poles (determinism,
+never wider), two regions, symmetric pairs; in the app: sticky step, clamping, status hint, preview == op == display,
+live reweight == gesture begun at that balance, no drift, pivot / intent, live radius keeps the balance, History /
+Undo / Redo / Cancel, bands / faces / hidden, plain transform, symmetric live gesture. **Not Artist-validated:** whether
+the seed rules match intent (e.g. the edge-ring and single-face cases), the step list, the key, the feel on a head.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
 
+> **Nachtrag 2026-10-22 (Loop / Ring, `PROVISIONAL`):** Die Wirkungszone kann jetzt entlang des Edge-Flusses gestreckt
+> werden: `Strg+Shift+Mausrad` hoch = weiter entlang der Loops, runter = weiter quer über die Ringe (Stufen bis 4:1, Mitte 1:1 =
+> wie bisher). Die Richtung kommt aus der Topologie der Auswahl (eine Kante, ein Kantenzug, ein Face-Streifen …); ein
+> einzelner Punkt, ein einzelnes Face oder ein quadratischer Block hat keine Richtung und bleibt rund. Geht auch während W/E/R.
+> Praxistest: `docs/ATELIER.md` (B15).
+>
 > **Nachtrag 2026-10-22 (Hover-Vorschau und Anzeige-Modi, `PROVISIONAL`):** Bei eingeschaltetem Soft zeigt die Vorschau schon
 > beim **Hovern** (ohne Auswahl) die Wirkungszone des Elements unter der Maus (im aktiven Vertex-/Edge-/Face-Modus). Gibt es
 > eine Auswahl, zeigt sie die Zone der Auswahl; Hover ändert sie nie. Zwei Anzeige-Modi, immer nur einer: **Bänder** (Punkte, wie
