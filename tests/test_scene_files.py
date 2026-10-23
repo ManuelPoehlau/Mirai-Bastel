@@ -94,7 +94,7 @@ def test_save_then_load_round_trips_objects_edit_object_and_symmetry(tmp_path):
 
     assert app.save_scene_file(path) is True
     assert app.status_message == f"Saved scene: {path}"
-    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 3  # v3 since the mirror pairs
 
     other = _app()
     other.load_scene("file", scene_path=path)

@@ -307,11 +307,12 @@ class TestSerializationV2(unittest.TestCase):
         scene.edit_object_id = ref.id
         return scene, head, ref
 
-    def test_format_is_version_2_with_objects(self) -> None:
+    def test_format_is_version_3_with_objects(self) -> None:
+        # Version 3 since the mirror pairs (2026-10-23); v2 still reads (tests/test_mirror_pairs.py).
         scene, head, ref = self._two_object_scene()
         data = scene_to_dict(scene)
-        self.assertEqual(FORMAT_VERSION, 2)
-        self.assertEqual(data["version"], 2)
+        self.assertEqual(FORMAT_VERSION, 3)
+        self.assertEqual(data["version"], 3)
         self.assertNotIn("mesh", data)
         self.assertEqual(data["edit_object"], int(ref.id))
         self.assertEqual(data["object_id_counter"], scene.object_id_counter)
@@ -361,7 +362,7 @@ class TestSerializationV2(unittest.TestCase):
         self.assertEqual(obj.transform, IDENTITY_TRANSFORM)
         self.assertEqual(obj.pivot, (0.0, 0.0, 0.0))
         self.assertEqual(restored.mesh.export_state(), mesh.export_state())
-        self.assertEqual(scene_to_dict(restored)["version"], 2)
+        self.assertEqual(scene_to_dict(restored)["version"], FORMAT_VERSION)
 
     def test_inconsistent_v2_data_refused(self) -> None:
         scene, head, ref = self._two_object_scene()

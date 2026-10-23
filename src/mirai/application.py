@@ -45,6 +45,7 @@ from core import (
     FaceId,
     HistoryStack,
     Mesh,
+    MirrorPair,
     ObjectId,
     ObjectState,
     ObjectTransform,
@@ -87,6 +88,7 @@ from .interaction.tools.transform import _resolve_space
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from .object_space import ObjectSpaceCamera
+from .object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from .scene_objects import (
     REFERENCE_GHOST_ALPHA,
     AddObjectCommand,
@@ -94,14 +96,22 @@ from .scene_objects import (
     CompositeCommand,
     DeleteObjectsCommand,
     DeleteRefused,
+    MirrorPairCommand,
+    MirrorRefused,
     ObjectPivotCommand,
     ObjectStateCommand,
     ObjectTransformCommand,
     applied_symmetry_axis,
     apply_placement,
+    check_pairable,
+    describe_pair,
     object_base_color,
+    out_of_sync_text,
+    pair_existing_command,
+    pair_names,
     plan_object_delete,
     replace_scene,
+    resync_command,
     selected_color,
     reset_scene,
     unique_object_name,
@@ -357,6 +367,9 @@ class _ObjectGesture:
     pixels: float = 0.0
     angle: float = 0.0  # Rotate: the total angle (rad), from the dial or the dx fallback
     dial: DialAngle | None = None
+    # Mirror pairs (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.4): (follower, its start, driver, driver's
+    # start, pair). The follower is F(driver) after every step - stateless, nothing accumulates.
+    followers: list = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -1052,10 +1065,28 @@ class Application:
         before = self._selection_snapshot()
         edit_before = scene.edit_object_id
         edit_changed = edit_after != edit_before
+        # Mirror pairs (proposal §5.5): a pair with a deleted object is broken in the same Undo
+        # step - first, so the scene never holds a pair to a missing object; Undo restores both.
+        doomed_ids = {obj.id for obj in doomed}
+        broken = [pair for pair in scene.mirror_pairs if pair.a in doomed_ids or pair.b in doomed_ids]
+        pair_notes = []
+        for pair in broken:
+            survivors = [scene.objects[oid] for oid in (pair.a, pair.b) if oid not in doomed_ids]
+            if survivors:
+                pair_notes.append(f"mirror pair with {survivors[0].name!r} broken")
+            else:
+                pair_notes.append(f"mirror pair {pair_names(scene, pair)} removed")
+            scene.remove_mirror_pair(pair)
         scene.edit_object_id = edit_after
         for obj in doomed:
             scene.remove_object(obj.id)
-        self.history.push(DeleteObjectsCommand(scene, doomed, edit_before, edit_after))
+        delete = DeleteObjectsCommand(scene, doomed, edit_before, edit_after)
+        if broken:
+            delete = CompositeCommand(
+                [MirrorPairCommand(scene, pair, create=False) for pair in broken] + [delete],
+                delete.description,
+            )
+        self.history.push(delete)
         selection.objects -= {obj.id for obj in doomed}
         if edit_changed:
             selection.clear()  # component ids belong to the deleted edit object's mesh
@@ -1069,10 +1100,212 @@ class Application:
         self._refresh_hover()
         names = ", ".join(repr(obj.name) for obj in doomed)
         text = f"Deleted {names}"
+        for note in pair_notes:
+            text += f" - {note}"
         if edit_changed:
             text += f" - now editing {scene.edit_object.name!r}"
         self._set_status(text)
         return True
+
+    # -- Mirror pairs (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5, 2026-10-23, `PROVISIONAL`) ----------
+    #
+    # Window-level commands (the Shift+M menu, `src/scene_menu.py`), mode `4` only. Each is one Undo
+    # step built from the existing commands; pair state changes only through `MirrorPairCommand`.
+    # Planes: X = 0 / Y = 0 / Z = 0 (`object_mirror.PLANES`, proposal §9 decision 7 default).
+
+    def _mirror_selection(self, label: str) -> list[SceneObject] | None:
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
+            return None
+        if self.selection.mode is not SelectionMode.OBJECT:
+            self._set_status(f"{label}: works on objects - press 4 and select them")
+            return None
+        scene = self.scene
+        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
+        if not selected:
+            self._set_status(f"{label}: no object selected - click one first")
+            return None
+        return selected
+
+    def _selected_pairs(self, selected: list[SceneObject]) -> list[MirrorPair]:
+        pairs: list[MirrorPair] = []
+        for obj in selected:
+            pair = self.scene.mirror_pair_of(obj.id)
+            if pair is not None and pair not in pairs:
+                pairs.append(pair)
+        return pairs
+
+    def mirror_copy(self, axis: str = "X") -> SceneObject | None:
+        """Mirror copy (proposal §5.5): a new Normal object B with the selected object's mesh
+        reflected across the world plane (`object_mirror.mirror_mesh`: positions `H p`, winding
+        reversed, no symmetry definition) at `F(A)`, paired with A. One Undo step
+        (`AddObjectCommand` + `MirrorPairCommand`); B becomes the object selection (`PROVISIONAL`),
+        named by `unique_object_name`. Refused (status line, None) without exactly one selected
+        object, for a Reference or an object already in a pair."""
+        label = "Mirror copy"
+        normal, offset = MIRROR_PLANES[axis]
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return None
+        if len(selected) != 1:
+            self._set_status(f"{label}: select one object ({len(selected)} are selected)")
+            return None
+        scene, selection = self.scene, self.selection
+        source = selected[0]
+        try:
+            check_pairable(scene, [source])
+        except MirrorRefused as exc:
+            self._set_status(f"{label}: {exc}")
+            return None
+        before = self._selection_snapshot()
+        obj = scene.add_object(mirror_mesh(source.mesh, normal), name=unique_object_name(scene, source.name))
+        obj.transform, obj.pivot = mirror_placement(source, normal, offset)
+        add = AddObjectCommand(scene, obj)
+        pair = MirrorPair(source.id, obj.id, normal=normal, offset=offset)
+        scene.add_mirror_pair(pair)
+        self.history.push(
+            CompositeCommand([add, MirrorPairCommand(scene, pair, create=True)], f"Mirror copy {source.name!r}")
+        )
+        selection.objects = {obj.id}
+        selection.hovered = None
+        self._record_selection_history(before, mesh_step=False)
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._sync_object_views()
+        self._refresh_hover()
+        self._set_status(
+            f"Mirror copy: {describe_pair(scene, pair)} - paired: moving either moves both mirrored;"
+            " the meshes stay independent"
+        )
+        return obj
+
+    def pair_selected(self, axis: str = "X") -> bool:
+        """Pair two selected objects (proposal §5.5): the lower ObjectId drives and stays, the other
+        is placed at `F(driver)` (transform, scale and pivot - announced), then the pair. One Undo
+        step. The meshes are not inspected. Refused unless exactly two objects are selected, for a
+        Reference or an object already in a pair."""
+        label = "Mirror pair"
+        normal, offset = MIRROR_PLANES[axis]
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        if len(selected) != 2:
+            self._set_status(
+                f"{label}: select exactly two objects ({len(selected)} are selected) - the first created"
+                " stays, the other is placed at its mirror"
+            )
+            return False
+        driver, follower = selected
+        before = self._selection_snapshot()
+        try:
+            command = pair_existing_command(self.scene, driver, follower, normal, offset)
+        except MirrorRefused as exc:
+            self._set_status(f"{label}: {exc}")
+            return False
+        self.history.push(command)
+        self._record_selection_history(before, mesh_step=False)
+        self._placement_changed()
+        pair = self.scene.mirror_pair_of(driver.id)
+        self._set_status(
+            f"{label}: {follower.name!r} is placed at the mirror of {driver.name!r}"
+            f" - paired {describe_pair(self.scene, pair)}"
+        )
+        return True
+
+    def break_mirror_pairs(self) -> bool:
+        """Break the pairs of the selected objects (proposal §5.5): both objects stay exactly where
+        they are; one Undo step however many pairs."""
+        label = "Break pair"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        pairs = self._selected_pairs(selected)
+        if not pairs:
+            self._set_status(f"{label}: no selected object is in a mirror pair")
+            return False
+        scene = self.scene
+        names = ", ".join(pair_names(scene, pair) for pair in pairs)
+        before = self._selection_snapshot()
+        parts = []
+        for pair in pairs:
+            scene.remove_mirror_pair(pair)
+            parts.append(MirrorPairCommand(scene, pair, create=False))
+        self.history.push(parts[0] if len(parts) == 1 else CompositeCommand(parts, "Break mirror pairs"))
+        self._record_selection_history(before, mesh_step=False)
+        self._set_status(f"Mirror pair {names} broken - both stay where they are")
+        return True
+
+    def resync_mirror_pairs(self) -> bool:
+        """Re-sync the pairs of the selected objects (proposal §5.7): B is placed at `F(A)` again
+        (`pair.a` = the driver at creation). One Undo step; nothing for a pair in sync; refused,
+        before anything changes, when a B to move is a Reference."""
+        label = "Re-sync"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        pairs = self._selected_pairs(selected)
+        if not pairs:
+            self._set_status(f"{label}: no selected object is in a mirror pair")
+            return False
+        scene = self.scene
+        todo = [p for p in pairs if not in_sync(scene.objects[p.a], scene.objects[p.b], p)]
+        if not todo:
+            names = ", ".join(pair_names(scene, pair) for pair in pairs)
+            self._set_status(f"{label}: mirror pair {names} is in sync - nothing to do")
+            return False
+        for pair in todo:
+            b = scene.objects[pair.b]
+            if b.state is ObjectState.REFERENCE:
+                self._set_status(
+                    f"{label}: {b.name!r} (mirror partner of {scene.objects[pair.a].name!r}) is a Reference - locked"
+                )
+                return False
+        before = self._selection_snapshot()
+        parts = [resync_command(scene, pair) for pair in todo]
+        self.history.push(parts[0] if len(parts) == 1 else CompositeCommand(parts, "Re-sync mirror pairs"))
+        self._record_selection_history(before, mesh_step=False)
+        self._placement_changed()
+        moved = ", ".join(repr(scene.objects[pair.b].name) for pair in todo)
+        self._set_status(f"{label}: {moved} placed at the mirror of its partner again")
+        return True
+
+    def _mirror_followers(
+        self, label: str, targets: list[SceneObject]
+    ) -> tuple[list[SceneObject], list] | None:
+        """The object gesture's drivers and followers (proposal §5.4): a pair is one unit - the
+        partner of a driven object follows; with both selected the lower ObjectId drives. None
+        (refusal posted) when a partner is a Reference (locked) or a pair is out of sync."""
+        scene = self.scene
+        ids = {obj.id for obj in targets}
+        drivers: list[SceneObject] = []
+        followers: list = []
+        for obj in targets:
+            pair = scene.mirror_pair_of(obj.id)
+            if pair is None:
+                drivers.append(obj)
+                continue
+            partner = scene.objects[pair.other(obj.id)]
+            if partner.id in ids and partner.id < obj.id:
+                continue  # the partner drives this one
+            if partner.state is ObjectState.REFERENCE:
+                self._set_status(
+                    f"{label}: {partner.name!r} (mirror partner of {obj.name!r}) is a Reference - locked"
+                )
+                return None
+            if not in_sync(scene.objects[pair.a], scene.objects[pair.b], pair):
+                self._set_status(f"{label}: {out_of_sync_text(scene, pair)}")
+                return None
+            drivers.append(obj)
+            followers.append((partner, partner.transform, obj, obj.transform, pair))
+        return drivers, followers
+
+    @staticmethod
+    def _mirror_note(followers: list) -> str:
+        if not followers:
+            return ""
+        names = ", ".join(f"{f.name!r} mirrors {d.name!r}" for f, _, d, _, _ in followers)
+        return f" - {names}"
 
     def _sync_object_views(self) -> None:
         """Gleicht die Render-Einträge und Pick-Caches der Nicht-Edit-Objekte mit
@@ -1330,12 +1563,19 @@ class Application:
         if picked is None:
             return False
         targets, references = picked
+        paired = self._mirror_followers(f"Object {label}", targets)
+        if paired is None:
+            return False
+        targets, followers = paired
         self._transform_key = key
         self._transform_command = command
         self._transform_target = frozenset()
         self._transform_begun = False
         self._object_gesture = _ObjectGesture(
-            [(obj, obj.transform) for obj in targets], references, self._selection_snapshot()
+            [(obj, obj.transform) for obj in targets],
+            references,
+            self._selection_snapshot(),
+            followers=followers,
         )
         if command == commands.SCALE:
             constraint = " (uniform - X/Y/Z do not apply)" if self._axis_constraint else ""
@@ -1343,7 +1583,7 @@ class Application:
             constraint = self._constraint_suffix(self._axis_constraint)
         self._set_status(
             f"Object {label}: {', '.join(repr(obj.name) for obj in targets)}{constraint}"
-            f"{self._object_references_note(references)}"
+            f"{self._mirror_note(followers)}{self._object_references_note(references)}"
             f" - move the mouse, release {key.upper()} to commit"
         )
         return True
@@ -1384,6 +1624,12 @@ class Application:
         placed = [obj for obj in targets if not object_space.is_identity(obj.transform)]
         if not placed:
             self._set_status(f"{label}: nothing to do - {self._objects_text(targets)} not placed")
+            return False
+        paired = [obj for obj in placed if self.scene.mirror_pair_of(obj.id) is not None]
+        if paired:
+            # PROVISIONAL (proposal §5.7 / §9 decision 4): Apply/Clear would change the placement
+            # and the mesh/pivot relation the pair assumes - refused in v1, the way out named.
+            self._set_status(f"{label}: {paired[0].name!r} is in a mirror pair - break the pair first (Shift+M)")
             return False
         if command == commands.CLEAR_TRANSFORM:
             return self._clear_transform(placed, references)
@@ -1501,6 +1747,12 @@ class Application:
             gesture.pixels += dx + dy
         for obj, start in gesture.targets:
             obj.transform = self._object_transform_from(start)
+        for follower, follower_start, driver, driver_start, pair in gesture.followers:
+            follower.transform = (
+                follower_start
+                if driver.transform == driver_start
+                else mirror_transform(driver.transform, pair.normal, pair.offset)
+            )
         self._placement_changed()
         return True
 
@@ -1548,9 +1800,8 @@ class Application:
         if not self._transform_begun:
             self._set_status(f"Object {label}: no motion, nothing {participle}")
             return
-        changes = [
-            (obj, start, obj.transform) for obj, start in gesture.targets if obj.transform != start
-        ]
+        starts = gesture.targets + [(f, start) for f, start, _, _, _ in gesture.followers]
+        changes = [(obj, start, obj.transform) for obj, start in starts if obj.transform != start]
         if not changes:
             self._set_status(f"Object {label}: no change")
             return
@@ -1560,12 +1811,14 @@ class Application:
         self._set_status(
             f"{self._objects_text(objects)}: {participle} (object level)"
             f"{self._constraint_suffix(self._transform_space)}"
+            f"{self._mirror_note(gesture.followers)}"
             f"{self._object_references_note(gesture.references)}"
         )
 
     def _object_cancel(self) -> None:
         """Esc: every target gets its start transform back - the same instance, exactly."""
-        for obj, start in self._object_gesture.targets:
+        gesture = self._object_gesture
+        for obj, start in gesture.targets + [(f, start) for f, start, _, _, _ in gesture.followers]:
             obj.transform = start
         self._placement_changed()
 
@@ -4442,6 +4695,14 @@ class Application:
             for oid in self.selection.objects
             if oid in scene.objects and scene.objects[oid].state is not ObjectState.REFERENCE
         ]
+        # A mirror pair is one unit (proposal §5.4): with both selected the gizmo sits on the driver.
+        ids = {obj.id for obj in targets}
+        followers = set()
+        for obj in targets:
+            pair = scene.mirror_pair_of(obj.id)
+            if pair is not None and pair.other(obj.id) in ids:
+                followers.add(max(pair.a, pair.b))
+        targets = [obj for obj in targets if obj.id not in followers]
         if not targets:
             return None
         points = [object_space.to_world(obj, obj.pivot) for obj in targets]

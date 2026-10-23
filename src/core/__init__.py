@@ -14,7 +14,7 @@ from .mesh import Mesh, SymmetryDefinition
 from .selection import Selection, SelectionMode
 from .history import HistoryStack, Command
 from .operation import Operation, OperationContext
-from .scene import Scene, SceneObject, ObjectState, ObjectTransform
+from .scene import MirrorPair, Scene, SceneObject, ObjectState, ObjectTransform
 from .serialization import scene_to_dict, scene_from_dict, scene_to_json, scene_from_json
 from .operations.move import MoveOperation
 from .operations.transform import RotateOperation, ScaleOperation, VertexTransformCommand
@@ -36,6 +36,7 @@ __all__ = [
     "SceneObject",
     "ObjectState",
     "ObjectTransform",
+    "MirrorPair",
     "scene_to_dict",
     "scene_from_dict",
     "scene_to_json",

@@ -1,6 +1,10 @@
 # Object-Level Mirror Symmetry — Design Proposal
 
-**Status:** Proposal (Discovery, M5). **Nothing is built, nothing is decided.** Written 2026-10-23 as Track B of the
+**Status:** **Implemented, `PROVISIONAL` (2026-10-23)** — slices B1–B4 plus the light B5 (status lines, `Shift+M` menu), per
+Manu's go for the recommended architecture (option B, incl. the Core addition, recorded in
+[CORE_V1_FREEZE §7.1](../../architecture/CORE_V1_FREEZE.md)). Decisions 2–7 of §9 are agent defaults, `PROVISIONAL`; what was
+built and where is §11; no Artist verdict yet (practical test: [AD-021 Kurzfassung](../../architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch)).
+*Original status:* Proposal (Discovery, M5), nothing built. Written 2026-10-23 as Track B of the
 "Mesh Primitives, Object Deletion, Object-Level Mirror Symmetry" task; Track A (Add Mesh, Delete object) is implemented
 ([AD-021 §6.7](../../architecture/AD-021-OBJECT-COMPONENT-MODEL.md#67-track-a-implementation-note--add-mesh-and-delete-object-2026-10-23)).
 **Evidence tags:** **[Code]** read in the repo at the commit of this document, **[Doc]**, **[Probe]** (scratch script, described
@@ -314,3 +318,29 @@ and Blender users routinely freeze/apply it, which is the Reset-XForm problem AD
 mirror object (Blender), or as instances sharing geometry (Max Instance clone, Maya instance, Blender linked duplicate).
 A *paired placement without shared geometry* is, in those tools, an add-on or a constraint rather than a core feature. The
 closest in-repo precedent is the mesh-level "conjugated intent" rule (CORE_V1_FREEZE §7.1), on which §3 builds.
+
+## 11. Implementation (2026-10-23, `PROVISIONAL`)
+
+Built as recommended in §5; the design above stays the reference. Only what the code decided beyond it, and where it lives:
+
+| Topic | Built | Where |
+|---|---|---|
+| Core data (B1) | `MirrorPair` + `Scene.mirror_pairs` / `mirror_pair_of` / `add_mirror_pair` / `remove_mirror_pair`; `remove_object` refuses a paired object; file v3 | `src/core/scene.py`, `serialization.py`, CORE_V1_FREEZE §7.1 |
+| Maths (B2) | `mirror_transform`, `mirror_pivot`, `mirror_placement`, `mirror_mesh` (also loose edges), `pair_residual`, `in_sync` (`SYNC_TOLERANCE = 1e-9`) | `src/mirai/object_mirror.py` |
+| Commands (B3) | `MirrorPairCommand`, `pair_existing_command`, `resync_command`; mirror copy and Delete as `CompositeCommand`s; `replace_scene` remaps pair ids, `reset_scene` drops pairs | `src/mirai/scene_objects.py`, `Application.mirror_copy` / `pair_selected` / `break_mirror_pairs` / `resync_mirror_pairs` / `_delete_objects_command` |
+| Gesture (B4) | followers in `_ObjectGesture`; `_mirror_followers` refuses a Reference partner and an out-of-sync pair; the gizmo drag goes through the same `_object_arm`; with both partners selected the gizmo sits on the driver | `Application._object_arm` / `_object_step` / `_object_release` / `_object_cancel`, `_gizmo_object_pivot` |
+| Menu (B5 light) | `Shift+M` "Mirror": Mirror copy X/Y/Z = 0, Pair selected X/Y/Z = 0, Break pair, Re-sync pair | `src/scene_menu.py` (`MIRROR_ENTRIES`), `src/main.py` (`install_handlers(..., mirror_menu=)`) |
+
+**Agent defaults (`PROVISIONAL`, §9):** decision 2 — the mirror copy is named `unique_object_name(source)` (`eye` → `eye.001`)
+and becomes the only selection; it works on exactly one selected object. Decision 3 — the `Shift+M` menu. Decision 4 —
+Apply/Clear on a paired object refused (`… is in a mirror pair - break the pair first (Shift+M)`). Decisions 5/6 — no partner
+tint, no plane marker, no Re-mirror-mesh command. Decision 7 — planes `X = 0` / `Y = 0` / `Z = 0` only (the Core stores any).
+*Pair selected:* the lower ObjectId (created first) drives and stays, the other is placed (§5.5). *Re-sync:* `pair.b` follows
+`pair.a` (the driver at creation).
+
+**Deviation from §5.7:** a scene file with a pair to a missing object (or another invalid pair) is **refused as a whole** with
+the load error in the status line, instead of loading without that pair — a Core `Scene` never holds an invalid pair, and the
+case only arises from a hand-edited file. An out-of-sync pair still loads as it is and is reported on the gesture.
+
+**Tests:** `tests/test_mirror_pairs.py` (B1 + B3 + menu entries), `tests/test_object_mirror.py` (B2, incl. the §3 probe as a
+test), `tests/test_object_mirror_gesture.py` (B4 incl. gizmo), 4 wiring tests in `tests/test_main_wiring.py` (`Shift+M`).

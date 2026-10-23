@@ -27,6 +27,10 @@ Track A1 (2026-10-23): dieselbe Menü-Klasse trägt das Menü "Add Mesh" (`Shift
 `SPACE`): Plane, Cube, Sphere, Cylinder (`scene_factory.PRIMITIVES`), ein Klick fügt das Primitiv als
 bearbeitbares Objekt hinzu (`Application.add_primitive`, `add_primitive_named`).
 
+Spiegelpaare (2026-10-23, `PROVISIONAL`, OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.8): das Menü "Mirror"
+(`Shift+M`, Fenster-Ebene wie `Shift+A`; das bloße `M` ist die Morph-Lab-Brücke) mit Mirror copy und
+Pair selected je Ebene X/Y/Z = 0, Break pair, Re-sync (`mirror_entries`, `run_mirror_entry`).
+
 Kein pyglet-Import auf Modulebene: Zeichnung und Textbreite bauen lazy
 (Muster `playground/hud.py`), damit der Menüzustand headless testbar ist.
 """
@@ -109,6 +113,32 @@ def add_primitive_named(app, name: str) -> bool:
         app.set_status(f"Add {name!r} failed: {exc}")
         return False
     return obj is not None
+
+
+#: Einträge des Menüs "Mirror" (Text `PROVISIONAL`) -> (Application-Methode, Ebene).
+MIRROR_ENTRIES: dict[str, tuple[str, str | None]] = {
+    "Mirror copy  X = 0": ("mirror_copy", "X"),
+    "Mirror copy  Y = 0": ("mirror_copy", "Y"),
+    "Mirror copy  Z = 0": ("mirror_copy", "Z"),
+    "Pair selected  X = 0": ("pair_selected", "X"),
+    "Pair selected  Y = 0": ("pair_selected", "Y"),
+    "Pair selected  Z = 0": ("pair_selected", "Z"),
+    "Break pair": ("break_mirror_pairs", None),
+    "Re-sync pair": ("resync_mirror_pairs", None),
+}
+
+
+def mirror_entries() -> tuple[str, ...]:
+    return tuple(MIRROR_ENTRIES)
+
+
+def run_mirror_entry(app, name: str) -> bool:
+    """Einen Eintrag des Menüs "Mirror" ausführen. True = ausgeführt; Ablehnungen und Erfolg meldet
+    die Application selbst in der Statuszeile."""
+    method, axis = MIRROR_ENTRIES[name]
+    action = getattr(app, method)
+    result = action(axis) if axis is not None else action()
+    return bool(result)
 
 
 class SceneMenu:

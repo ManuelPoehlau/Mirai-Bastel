@@ -21,6 +21,9 @@ Architekturvertrag:
 - `Scene.mesh` ist eine Kompatibilitäts-Zugriffsstelle für "das Mesh des
   Edit-Objekts" (AD-021 §5.2), nie "die Geometrie der Scene".
 - Namen sind AD-021-`PROVISIONAL`.
+- Spiegelpaare (`MirrorPair`, `Scene.mirror_pairs`; OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1,
+  CORE_V1_FREEZE §7.1): reine Daten wie M0 - welche zwei Objekte über welche Weltebene
+  gekoppelt sind. Das Verhalten (Platzierung folgt, Commands, Ablehnungen) lebt in `src/mirai`.
 """
 
 from __future__ import annotations
@@ -102,6 +105,41 @@ class ObjectTransform:
 IDENTITY_TRANSFORM = ObjectTransform()
 
 
+@dataclass(frozen=True)
+class MirrorPair:
+    """Zwei Objekte, deren Platzierungen über die Weltebene `normal·x = offset` gekoppelt sind
+    (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1). Nur Daten: die Scene prüft die Invarianten, die
+    Kopplung selbst rechnet `src/mirai` (`object_mirror`). `a` war bei der Erzeugung der
+    Treiber; danach trägt die Reihenfolge keine Bedeutung. `normal` ist ein Einheitsvektor."""
+
+    a: ObjectId
+    b: ObjectId
+    normal: Vec3 = (1.0, 0.0, 0.0)
+    offset: float = 0.0
+
+    def __post_init__(self) -> None:
+        _require_object_id(self.a)
+        _require_object_id(self.b)
+        if self.a == self.b:
+            raise ValueError(f"Spiegelpaar mit sich selbst: Objekt {int(self.a)}")
+        normal = _vec3(self.normal, "normal")
+        if abs(math.sqrt(sum(v * v for v in normal)) - 1.0) > ROTATION_TOLERANCE:
+            raise ValueError(f"normal muss ein Einheitsvektor sein: {normal!r}")
+        offset = float(self.offset)
+        if not math.isfinite(offset):
+            raise ValueError(f"offset muss endlich sein: {self.offset!r}")
+        object.__setattr__(self, "normal", normal)
+        object.__setattr__(self, "offset", offset)
+
+    def other(self, object_id: ObjectId) -> ObjectId:
+        """Der Partner von `object_id` (KeyError, wenn es nicht zu diesem Paar gehört)."""
+        if object_id == self.a:
+            return self.b
+        if object_id == self.b:
+            return self.a
+        raise KeyError(f"Objekt {int(object_id)} gehört nicht zu diesem Spiegelpaar")
+
+
 def _require_object_id(object_id: object) -> ObjectId:
     # IDs sind ints: VertexId(0) == ObjectId(0). Ein Objekt wird nie aus einer
     # Element-ID abgeleitet (AD-021 §4.10 N-3), daher hier der Typ.
@@ -153,6 +191,7 @@ class Scene:
         # Wie bisher startet eine Scene mit einem leeren, bearbeitbaren Mesh -
         # jetzt als einziges Objekt, das zugleich Edit-Objekt ist.
         self._edit_object_id: ObjectId = self.add_object(Mesh()).id
+        self._mirror_pairs: tuple[MirrorPair, ...] = ()
 
         self.selection: Selection = Selection()
         self.history: HistoryStack = HistoryStack()
@@ -170,12 +209,14 @@ class Scene:
         *,
         edit_object_id: ObjectId,
         object_id_counter: int,
+        mirror_pairs: Iterable[MirrorPair] = (),
     ) -> "Scene":
         """Scene aus bestehenden Objekten (Laden einer Datei, serialization.py).
 
         `object_id_counter` ist der nächste zu vergebende Rohwert; er muss über
         jeder geladenen ID liegen, sonst würde eine künftige ID eine geladene
-        wiederholen (AD-001 auf Objekte erweitert).
+        wiederholen (AD-001 auf Objekte erweitert). `mirror_pairs` werden wie
+        über `add_mirror_pair` geprüft (ValueError bei einem ungültigen Paar).
         """
         scene = cls()
         loaded: dict[ObjectId, SceneObject] = {}
@@ -192,6 +233,8 @@ class Scene:
         scene._object_ids = IdAllocator(ObjectId, start=object_id_counter)
         scene._objects = dict(sorted(loaded.items()))
         scene._edit_object_id = edit_object_id
+        for pair in mirror_pairs:
+            scene.add_mirror_pair(pair)
         return scene
 
     # ------------------------------------------------------------------
@@ -232,6 +275,9 @@ class Scene:
         """
         if _require_object_id(object_id) == self._edit_object_id:
             raise ValueError(f"Das Edit-Objekt {int(object_id)} kann nicht entfernt werden")
+        if self.mirror_pair_of(object_id) is not None:
+            # Ein Paar zeigt nie auf ein fehlendes Objekt: erst das Paar lösen (ein Command).
+            raise ValueError(f"Objekt {int(object_id)} ist in einem Spiegelpaar - erst das Paar lösen")
         return self._objects.pop(object_id)
 
     def restore_object(self, obj: SceneObject) -> None:
@@ -248,6 +294,41 @@ class Scene:
         # Wieder an seinen Platz in der ID-Reihenfolge, damit Undo auch die
         # Reihenfolge exakt herstellt.
         self._objects = dict(sorted(self._objects.items()))
+
+    # ------------------------------------------------------------------
+    # Spiegelpaare (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1)
+    # ------------------------------------------------------------------
+
+    @property
+    def mirror_pairs(self) -> tuple[MirrorPair, ...]:
+        """Die Spiegelpaare in Erzeugungsreihenfolge; ändern nur über `add_mirror_pair` /
+        `remove_mirror_pair` (Commands in `src/mirai`)."""
+        return self._mirror_pairs
+
+    def mirror_pair_of(self, object_id: ObjectId) -> MirrorPair | None:
+        """Das Paar, zu dem `object_id` gehört, oder None."""
+        for pair in self._mirror_pairs:
+            if object_id == pair.a or object_id == pair.b:
+                return pair
+        return None
+
+    def add_mirror_pair(self, pair: MirrorPair) -> None:
+        """Invarianten: beide Objekte sind in der Scene (`a != b` prüft `MirrorPair`), und jedes
+        Objekt gehört zu höchstens einem Paar. Ob die Platzierungen gespiegelt sind, prüft die
+        Scene nicht - ein Paar kann ungleich geladen werden und wird dann gemeldet, nie repariert."""
+        if not isinstance(pair, MirrorPair):
+            raise TypeError(f"erwartet ein MirrorPair, nicht {pair!r}")
+        for object_id in (pair.a, pair.b):
+            if object_id not in self._objects:
+                raise ValueError(f"Spiegelpaar: Objekt {int(object_id)} ist nicht in der Scene")
+            if self.mirror_pair_of(object_id) is not None:
+                raise ValueError(f"Spiegelpaar: Objekt {int(object_id)} ist schon in einem Paar")
+        self._mirror_pairs = self._mirror_pairs + (pair,)
+
+    def remove_mirror_pair(self, pair: MirrorPair) -> None:
+        if pair not in self._mirror_pairs:
+            raise ValueError(f"Spiegelpaar {pair!r} ist nicht in der Scene")
+        self._mirror_pairs = tuple(p for p in self._mirror_pairs if p != pair)
 
     # ------------------------------------------------------------------
     # Edit-Objekt (AD-021 §4.4, review R-3)

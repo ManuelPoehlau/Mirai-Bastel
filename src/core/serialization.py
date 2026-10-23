@@ -15,6 +15,11 @@ liegt nicht mehr unter `"mesh"`, sondern pro Objekt unter
 Identitäts-Transform, das Edit-Objekt ist; geschrieben wird nur Version 2.
 Das ist ein einzelner Lese-Zweig, keine Migrations-Engine.
 
+Version 3 (Spiegelpaare, OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1, CORE_V1_FREEZE §7.1) ist
+additiv: ein benannter Platz `"mirror_pairs"` (`a`/`b` = ObjectIds der Datei, `normal`,
+`offset`) neben den reservierten Plätzen. Version 2 liest sich als Version 3 ohne Paare;
+geschrieben wird nur Version 3. Ein Paar auf ein fehlendes Objekt macht die Datei ungültig.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -26,9 +31,9 @@ import json
 
 from .ids import ObjectId
 from .mesh import Mesh
-from .scene import ObjectState, ObjectTransform, Scene, SceneObject
+from .scene import MirrorPair, ObjectState, ObjectTransform, Scene, SceneObject
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -37,6 +42,7 @@ def scene_to_dict(scene: Scene) -> dict:
         "object_id_counter": scene.object_id_counter,
         "edit_object": int(scene.edit_object_id),
         "objects": [_object_to_dict(obj) for obj in scene.objects.values()],
+        "mirror_pairs": [_pair_to_dict(pair) for pair in scene.mirror_pairs],
         # Reservierte, aktuell leere Plätze für künftige Subsysteme (§12):
         "morph_targets": scene.morph_targets,
         "rig": scene.rig,
@@ -46,11 +52,16 @@ def scene_to_dict(scene: Scene) -> dict:
 
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version == FORMAT_VERSION:
+    if version in (2, FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
             object_id_counter=int(data["object_id_counter"]),
+            mirror_pairs=(
+                [_pair_from_dict(raw) for raw in data.get("mirror_pairs") or ()]
+                if version == FORMAT_VERSION
+                else ()
+            ),
         )
     elif version == 1:
         scene = Scene()
@@ -92,6 +103,14 @@ def _object_from_dict(raw: dict) -> SceneObject:
         pivot=raw["pivot"],
         state=ObjectState(raw["state"]),
     )
+
+
+def _pair_to_dict(pair: MirrorPair) -> dict:
+    return {"a": int(pair.a), "b": int(pair.b), "normal": list(pair.normal), "offset": pair.offset}
+
+
+def _pair_from_dict(raw: dict) -> MirrorPair:
+    return MirrorPair(ObjectId(raw["a"]), ObjectId(raw["b"]), normal=raw["normal"], offset=raw["offset"])
 
 
 def scene_to_json(scene: Scene, *, indent: int | None = 2) -> str:
