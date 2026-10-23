@@ -2,7 +2,7 @@
 
 Since 2026-10-23 SubD is a Production capability (`src/mirai/subdivision/`, `Application.subdivision`):
 the replacement surface (AD-013 H7), the cage / isoline lines, the view and level keys (`V`,
-`Ctrl+1/2/3`, `Shift+V`, binding context `subd`) and the unsupported-topology fallback are
+`Ctrl+1/2/3`, `Shift+V`, `Alt+V`, binding context `subd`) and the unsupported-topology fallback are
 the app's, in `python src/main.py` as here. Until WP-SUBD-LAB-02 the lab carried its own provider
 and keys; they moved to Production, so there is one implementation.
 

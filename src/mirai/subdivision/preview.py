@@ -42,7 +42,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Optional
 
-from core import EdgeId, SelectionMode, VertexId
+from core import EdgeId, FaceId, SelectionMode, VertexId
 
 from ..interaction import commands
 from ..interaction.input import GLOBAL_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
@@ -121,6 +121,9 @@ class SubdSurfaceProvider:
         self.surface_topology_changed = False
         #: how many topology rebuilds patched the derived mesh instead of replacing it (tests, probe)
         self.surface_patches = 0
+        #: H7 addition (inert default False): the host draws the edit mesh's edges itself while the
+        #: surface is shown, so the viewport leaves out its wire layer (no second, full-strength cage)
+        self.replaces_wire = True
 
         self._mesh = None
         self._watch = None
@@ -399,66 +402,201 @@ def _patch_derived_mesh(previous: tuple, derived: SubdLevel, positions: list):
 
 # -- lines --------------------------------------------------------------------------------------
 
-#: Layer names of the presentation (the GL sink draws them in this order).
-CAGE_LAYER = "subd_cage"
+#: Layers of the presentation, in draw order (the GL sink is `gl_lines.GLSubdLineOverlay`).
 ISO_LAYER = "subd_iso"
+CAGE_LAYER = "subd_cage"
+ISO_HOVER_LAYER = "subd_iso_hover"
+ISO_SELECTED_LAYER = "subd_iso_selected"
+CAGE_HOVER_LAYER = "subd_cage_hover"
+CAGE_SELECTED_LAYER = "subd_cage_selected"
+LINE_LAYERS = (ISO_LAYER, CAGE_LAYER, ISO_HOVER_LAYER, ISO_SELECTED_LAYER, CAGE_HOVER_LAYER, CAGE_SELECTED_LAYER)
+
+#: Depth modes the sink understands.
+DEPTH_LEQUAL = "lequal"    # hidden where the smooth surface (polygon-offset behind its lines) is in front
+DEPTH_ALWAYS = "always"    # no depth test: drawn over the surface
+DEPTH_GREATER = "greater"  # only where the surface is in front: the hidden part
+
+#: PROVISIONAL (Artist direction 2026-10-23, value agent-set): opacity of the secondary line system
+#: (the cage in the iso view). One parameter; Alt+V steps through `SECONDARY_STEPS` (0 = hidden).
+DEFAULT_SECONDARY_STRENGTH = 0.35
+SECONDARY_STEPS = (0.35, 0.6, 0.0, 0.15)
+
+#: Look (PROVISIONAL): cage = the app's wire grey, isolines = the Lab's cooler slate, highlights = the
+#: app's own hover / selection colours (same colour family as the cage edge's highlight).
+CAGE_RGB = (0.15, 0.15, 0.15)
+ISO_RGB = (0.22, 0.34, 0.52)
+HOVER_RGBA = (0.95, 0.90, 0.35, 0.55)   # viewport.gl_point_overlay.HOVER_COLOR
+SELECTED_RGBA = (1.0, 0.82, 0.15, 1.0)  # viewport.gl_point_overlay.SELECTED_COLOR
+
+
+def highlight_edges(selection, mesh) -> tuple[frozenset, frozenset]:
+    """(hovered, selected) control edges whose isoline chains are highlighted, by the app's own
+    highlight rules: Edge mode = the edges; Face mode = the boundary edges of the faces (their
+    outline on the surface). Vertices map to no chain (their points stay on the cage, where they
+    are grabbed). Invalid ids are skipped."""
+    if selection is None or mesh is None:
+        return frozenset(), frozenset()
+
+    def edges_of(element) -> set:
+        if isinstance(element, EdgeId):
+            return {element} if mesh.is_valid_edge(element) else set()
+        if isinstance(element, FaceId):
+            return set(mesh.face_edges(element)) if mesh.is_valid_face(element) else set()
+        return set()
+
+    hover = frozenset(edges_of(selection.hovered))
+    selected: set = set()
+    if selection.mode is SelectionMode.EDGE:
+        selected = {e for e in selection.edges if mesh.is_valid_edge(e)}
+    elif selection.mode is SelectionMode.FACE:
+        for f in selection.faces:
+            selected |= edges_of(f)
+    return hover, frozenset(selected)
 
 
 class SubdLinePresentation:
-    """H1 overlay: the cage (view `cage`) or the isolines (view `iso`) of the provider's state.
+    """H1 overlay: the cage, the isolines and the highlighted isoline chains (GL-free).
 
-    Runs after the provider in `Viewport.sync()` (H7 syncs before the extra overlays), so it reads
-    positions that already match the control mesh. `sink` is the GL side or None headless; the
-    segments stay observable in `segments`.
+    Hierarchy (Artist direction 2026-10-23, `PROVISIONAL`): exactly one line system is primary.
+    View `cage`: the cage at full strength, no isolines except highlighted chains. View `iso`: the
+    isolines at full strength, the cage secondary (`secondary_strength`, blended, no depth write).
+
+    Highlight: a hovered / selected control edge (Face mode: the face's boundary) highlights its
+    isoline chain — from the evaluator's provenance (`SubdSurfaceProvider.iso_indices_of`), never
+    from proximity — in the app's hover / selection colour. The cage edge itself is highlighted by
+    the app's own edge layer, drawn after this overlay (`DRAW_UNDER_HIGHLIGHTS`), so the cage can
+    never paint over it. With the cage always visible (`cage_depth_test` False) the part of a
+    highlighted cage edge that the surface hides gets its own layer (depth GREATER), so the
+    highlight stays the strongest element there too.
+
+    Depth policy: the smooth surface is always polygon-offset (viewport), isolines and chains are
+    depth-tested on it (`DEPTH_LEQUAL`); cage lines are depth-tested against the surface (hidden
+    cage edges hidden) or, with Shift+V, drawn over it (`DEPTH_ALWAYS`). In Wireframe (no faces)
+    the preview draws nothing; the viewport's wire shows the cage as always.
+
+    Cage / isoline segments are rebuilt only when the provider's revision or the view changes; a
+    hover or selection change touches the highlight layers alone.
     """
+
+    DRAW_UNDER_HIGHLIGHTS = True
 
     def __init__(self, provider: SubdSurfaceProvider, sink=None) -> None:
         self.provider = provider
         self.sink = sink
         self.view = VIEW_OFF
         self.cage_depth_test = True
+        self.secondary_strength = DEFAULT_SECONDARY_STRENGTH
+        self.faces_shown = True
         self.dirty = True
-        self.segments: dict[str, list] = {CAGE_LAYER: [], ISO_LAYER: []}
-        self._key: Optional[tuple] = None
+        self.segments: dict[str, list] = {layer: [] for layer in LINE_LAYERS}
+        self._geometry_key: Optional[tuple] = None
+        self._highlight_key: Optional[tuple] = None
+        self._style_key: Optional[tuple] = None
 
-    def set_view(self, view: str, cage_depth_test: bool) -> None:
-        if view not in VIEW_ORDER:
+    def configure(self, *, view=None, cage_depth_test=None, secondary_strength=None, faces_shown=None) -> None:
+        if view is not None and view not in VIEW_ORDER:
             raise ValueError(view)
-        if (view, cage_depth_test) != (self.view, self.cage_depth_test):
-            self.view = view
-            self.cage_depth_test = cage_depth_test
-            self.dirty = True
+        changes = {
+            "view": view, "cage_depth_test": cage_depth_test,
+            "secondary_strength": secondary_strength, "faces_shown": faces_shown,
+        }
+        for name, value in changes.items():
+            if value is not None and getattr(self, name) != value:
+                setattr(self, name, value)
+                self.dirty = True
 
-    def layer(self) -> Optional[str]:
-        if self.provider.surface_mesh is None:
-            return None
-        return {VIEW_CAGE: CAGE_LAYER, VIEW_ISO: ISO_LAYER}.get(self.view)
+    def reset(self) -> None:
+        """Forget what was pushed (a new sink / viewport)."""
+        self._geometry_key = self._highlight_key = self._style_key = None
+        self.dirty = True
+
+    def visible(self) -> bool:
+        return self.view != VIEW_OFF and self.faces_shown and self.provider.surface_mesh is not None
+
+    def active_layers(self) -> tuple[str, ...]:
+        if not self.visible():
+            return ()
+        layers = []
+        if self.view == VIEW_ISO:
+            layers.append(ISO_LAYER)
+            if self.secondary_strength > 0.0:
+                layers.append(CAGE_LAYER)
+        else:
+            layers.append(CAGE_LAYER)
+        layers += [ISO_HOVER_LAYER, ISO_SELECTED_LAYER]
+        if not self.cage_depth_test and CAGE_LAYER in layers:
+            layers += [CAGE_HOVER_LAYER, CAGE_SELECTED_LAYER]
+        return tuple(layers)
+
+    def _push(self, layer: str, segments: list) -> None:
+        self.segments[layer] = segments
+        if self.sink is not None:
+            self.sink.set_segments(layer, segments)
 
     def sync(self, mesh, selection) -> None:
         self.dirty = False
-        layer = self.layer()
-        key = (layer, self.provider.revision)
-        if key == self._key:
-            return
-        self._key = key
-        cage, iso = [], []
-        if layer == CAGE_LAYER:
-            p = self.provider.control_positions()
-            cage = [(p[a], p[b]) for a, b in self.provider.control_edges()]
-        elif layer == ISO_LAYER:
-            p = self.provider.derived_positions()
-            iso = [(p[a], p[b]) for a, b in self.provider.iso_edges()]
-        self.segments = {CAGE_LAYER: cage, ISO_LAYER: iso}
-        if self.sink is not None:
-            self.sink.set_segments(CAGE_LAYER, cage)
-            self.sink.set_segments(ISO_LAYER, iso)
+        provider = self.provider
+        visible = self.visible()
+        geometry_key = (visible, self.view, provider.revision)
+        if geometry_key != self._geometry_key:
+            self._geometry_key = geometry_key
+            cage, iso = [], []
+            if visible:
+                p = provider.control_positions()
+                cage = [(p[a], p[b]) for a, b in provider.control_edges()]
+                if self.view == VIEW_ISO:
+                    d = provider.derived_positions()
+                    iso = [(d[a], d[b]) for a, b in provider.iso_edges()]
+            self._push(CAGE_LAYER, cage)
+            self._push(ISO_LAYER, iso)
+        hover, selected = highlight_edges(selection, mesh) if visible else (frozenset(), frozenset())
+        highlight_key = (geometry_key, hover, selected, self.cage_depth_test)
+        if highlight_key != self._highlight_key:
+            self._highlight_key = highlight_key
+            self._push(ISO_HOVER_LAYER, self._chains(hover))
+            self._push(ISO_SELECTED_LAYER, self._chains(selected))
+            x_ray = visible and not self.cage_depth_test
+            self._push(CAGE_HOVER_LAYER, self._cage_segments(hover) if x_ray else [])
+            self._push(CAGE_SELECTED_LAYER, self._cage_segments(selected) if x_ray else [])
+        style_key = (self.view, self.secondary_strength, self.cage_depth_test)
+        if style_key != self._style_key and self.sink is not None:
+            self._style_key = style_key
+            cage_alpha = 1.0 if self.view != VIEW_ISO else self.secondary_strength
+            self.sink.set_style(CAGE_LAYER, (*CAGE_RGB, cage_alpha))
+            self.sink.set_style(ISO_LAYER, (*ISO_RGB, 1.0))
+            for layer, rgba in ((ISO_HOVER_LAYER, HOVER_RGBA), (CAGE_HOVER_LAYER, HOVER_RGBA),
+                                (ISO_SELECTED_LAYER, SELECTED_RGBA), (CAGE_SELECTED_LAYER, SELECTED_RGBA)):
+                self.sink.set_style(layer, rgba)
+            self.sink.set_depth(CAGE_LAYER, DEPTH_LEQUAL if self.cage_depth_test else DEPTH_ALWAYS)
+            for layer in (ISO_LAYER, ISO_HOVER_LAYER, ISO_SELECTED_LAYER):
+                self.sink.set_depth(layer, DEPTH_LEQUAL)
+            for layer in (CAGE_HOVER_LAYER, CAGE_SELECTED_LAYER):
+                self.sink.set_depth(layer, DEPTH_GREATER)
+
+    def _chains(self, edges) -> list:
+        provider = self.provider
+        iso = provider.iso_edges()
+        d = provider.derived_positions()
+        out = []
+        for e in sorted(edges, key=int):
+            for i in provider.iso_indices_of(e):
+                a, b = iso[i]
+                out.append((d[a], d[b]))
+        return out
+
+    def _cage_segments(self, edges) -> list:
+        mesh = self.provider._mesh
+        out = []
+        for e in sorted(edges, key=int):
+            a, b = mesh.edge_vertices(e)
+            out.append((tuple(mesh.vertex_position(a)), tuple(mesh.vertex_position(b))))
+        return out
 
     def draw(self, camera_uniforms) -> None:
-        layer = self.layer()
-        if self.sink is None or layer is None:
+        layers = self.active_layers()
+        if self.sink is None or not layers:
             return
-        self.sink.set_depth_test(CAGE_LAYER, self.cage_depth_test)
-        self.sink.draw(camera_uniforms, layers=(layer,))
+        self.sink.draw(camera_uniforms, layers=layers)
 
 
 # -- keys (context `subd`, PROVISIONAL) ----------------------------------------------------------
@@ -469,6 +607,7 @@ class SubdLinePresentation:
 
 CYCLE_VIEW = commands.SUBD_CYCLE_VIEW
 TOGGLE_CAGE_DEPTH = commands.SUBD_TOGGLE_CAGE_DEPTH
+CYCLE_SECONDARY = commands.SUBD_CYCLE_SECONDARY
 LEVEL_COMMANDS = {commands.SUBD_LEVEL_1: 1, commands.SUBD_LEVEL_2: 2, commands.SUBD_LEVEL_3: 3}
 
 
@@ -494,6 +633,7 @@ SUBD_KEYS: tuple[SubdKey, ...] = (
         for command, n in LEVEL_COMMANDS.items()
     ),
     SubdKey(Input("key", "v", frozenset({"shift"})), TOGGLE_CAGE_DEPTH, "Käfig: von der Fläche verdeckt / immer sichtbar"),
+    SubdKey(Input("key", "v", frozenset({"alt"})), CYCLE_SECONDARY, "Käfig in der Isolinien-Ansicht: 35 % → 60 % → aus → 15 %"),
 )
 SUBD_COMMANDS = frozenset(entry.command for entry in SUBD_KEYS)
 
@@ -532,6 +672,7 @@ class SubdivisionPreview:
     def __init__(self, set_status: Optional[Callable[[str], None]] = None) -> None:
         self.view = VIEW_OFF
         self.cage_depth_test = True
+        self.secondary_strength = DEFAULT_SECONDARY_STRENGTH
         self.provider = SubdSurfaceProvider(level=DEFAULT_LEVEL)
         self.provider.on_message = set_status
         self.lines = SubdLinePresentation(self.provider)
@@ -561,8 +702,7 @@ class SubdivisionPreview:
         overlay (once per viewport). Without SubD the viewport stays exactly as before."""
         self.viewport = viewport
         self.lines.sink = line_sink
-        self.lines._key = None
-        self.lines.dirty = True
+        self.lines.reset()
         self._overlay_viewport = None
         if self.enabled and not self._claim_slot():
             self._fall_back_off(self._slot_refusal())
@@ -597,12 +737,23 @@ class SubdivisionPreview:
 
     def _apply(self) -> None:
         self.provider.set_enabled(self.enabled)
-        self.lines.set_view(self.view, self.cage_depth_test)
+        self.lines.configure(
+            view=self.view, cage_depth_test=self.cage_depth_test, secondary_strength=self.secondary_strength
+        )
         if self.enabled:
             self._claim_slot()
         else:
             self.provider.sync(None, None)  # drop derived data and the journal at once
             self._release_slot()
+
+    def set_faces_shown(self, shown: bool) -> None:
+        """The app's display mode: without faces (Wireframe) the preview draws no lines."""
+        self.lines.configure(faces_shown=bool(shown))
+
+    def set_secondary_strength(self, strength: float) -> None:
+        """Opacity of the secondary line system (the cage in the iso view), 0 = hidden."""
+        self.secondary_strength = max(0.0, min(1.0, float(strength)))
+        self._apply()
 
     # -- commands ---------------------------------------------------------------------------------
 
@@ -630,6 +781,15 @@ class SubdivisionPreview:
                 "SubD: Käfig von der Fläche verdeckt" if self.cage_depth_test else "SubD: Käfig immer sichtbar"
             )
             return True
+        if command == CYCLE_SECONDARY:
+            steps = SECONDARY_STEPS
+            i = steps.index(self.secondary_strength) if self.secondary_strength in steps else -1
+            self.set_secondary_strength(steps[(i + 1) % len(steps)])
+            strength = self.secondary_strength
+            self._set_status(
+                "SubD: Käfig in der Isolinien-Ansicht " + (f"{round(strength * 100)} %" if strength else "aus")
+            )
+            return True
         if command in LEVEL_COMMANDS:
             refusal = self.provider.set_level(LEVEL_COMMANDS[command])
             if refusal is not None:
@@ -649,16 +809,3 @@ class SubdivisionPreview:
         if self.provider.message:
             parts.append(self.provider.message)
         return " · ".join(parts)
-
-
-def selection_edges(selection, mesh) -> tuple[frozenset, frozenset]:
-    """(hovered edges, selected edges) of `selection` that exist in `mesh`; selected edges only in
-    Edge mode (the app's own highlight rules, `viewport.overlay.SelectionOverlay.line_layers`)."""
-    if selection is None or mesh is None:
-        return frozenset(), frozenset()
-    hovered = selection.hovered
-    hover = frozenset({hovered}) if isinstance(hovered, EdgeId) and mesh.is_valid_edge(hovered) else frozenset()
-    selected: frozenset = frozenset()
-    if selection.mode is SelectionMode.EDGE:
-        selected = frozenset(e for e in selection.edges if mesh.is_valid_edge(e))
-    return hover, selected

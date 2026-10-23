@@ -102,6 +102,9 @@ jedem `sync()` wie die Objekt-Einträge, ohne den Provider zu fragen. Ohne Provi
 Optional (2026-10-23, SubD in Production): `p.surface_topology_changed` True nach `p.sync(...)` heißt
 "dasselbe Mesh-Objekt, Topologie in place geändert" - der Viewport markiert dann die Topologie des
 Flächen-RenderMesh (inkrementeller Abgleich über das Journal, AD-023) statt nur bewegter Vertices.
+Die Ersatzfläche zeichnet immer mit Polygon-Offset (Host-Linien liegen auf ihr), und mit
+`p.replaces_wire` True lässt `render()` den Wire des Edit-Mesh weg, solange die Fläche gezeichnet wird
+(der Host zeigt die Kanten selbst, `wire_drawn()`).
 
 H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Optional liest der Viewport nach
 `p.sync(...)` `p.entry_surfaces` (`dict[key, Mesh]`, `key` wie bei `set_object_entry`) und `p.entry_moved`
@@ -533,13 +536,10 @@ class Viewport:
         if self.surface_render_mesh is not None:
             set_draw_style = getattr(self.surface_render_mesh.store, "set_draw_style", None)
             if set_draw_style is not None:
-                # Der Käfig-Wire liegt meist außerhalb dieser Fläche; wo er sie berührt (Ränder,
-                # flache Stellen), hält derselbe Offset wie beim Edit-Mesh die Linien vorn.
-                set_draw_style(
-                    flat=self.flat,
-                    polygon_offset=self.show_faces
-                    and (self.show_edges or self._edge_highlight),
-                )
+                # Immer mit Offset (2026-10-23): Host-Linien liegen exakt auf dieser Fläche (SubD-
+                # Isolinien) oder berühren sie; der Viewport sieht sie nicht. Vorher hing der Offset an
+                # Wire/Edge-Highlight - ohne Hover z-fighteten die Isolinien und wirkten gestrichelt.
+                set_draw_style(flat=self.flat, polygon_offset=self.show_faces)
         for key, entry in self.object_entries.items():
             self._apply_entry_style(key, entry)
 
@@ -710,7 +710,7 @@ class Viewport:
         for overlay in self.extra_overlays:
             if getattr(overlay, "DRAW_UNDER_HIGHLIGHTS", False):
                 overlay.draw(camera_uniforms)
-        if self.line_overlay is not None and self.show_edges:
+        if self.line_overlay is not None and self.wire_drawn():
             self.line_overlay.draw(camera_uniforms, layers=(WIRE_LAYER,))
         if self.face_overlay is not None and any(self.face_layers.values()):
             self.face_overlay.draw(camera_uniforms)
@@ -723,6 +723,14 @@ class Viewport:
                 overlay.draw(camera_uniforms)
         if self.point_overlay is not None:
             self.point_overlay.draw(camera_uniforms)
+
+    def wire_drawn(self) -> bool:
+        """Zeichnet `render()` den Wire des Edit-Mesh? Nicht, solange eine Ersatzfläche gezeichnet wird,
+        deren Provider die Kanten selbst zeigt (`replaces_wire`, H7 2026-10-23)."""
+        if not self.show_edges:
+            return False
+        surface_shown = self.show_faces and self.surface_render_mesh is not None
+        return not (surface_shown and getattr(self.surface_provider, "replaces_wire", False))
 
     # -- GPU-Picking (AD-022 B2-out) --------------------------------------------
 

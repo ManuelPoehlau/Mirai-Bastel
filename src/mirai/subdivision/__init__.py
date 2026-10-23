@@ -6,7 +6,8 @@ surface is derived display geometry drawn through the Viewport's replacement-sur
 (AD-013 H7) with the app's light, Flat/Smooth and placement.
 
 - `catmull_clark` — the evaluator (topology + stencils + provenance, GL-free); the evaluator boundary.
-- `preview` — provider (H7), line presentation (H1), view state and the provisional `subd` keys.
+- `preview` — provider (H7), line presentation (H1: cage / isolines / highlighted chains), view
+  state and the provisional `subd` keys.
 - `gl_lines` — the GL sink of the line presentation (pyglet only when drawing).
 
 `Application` owns one `SubdivisionPreview` (`app.subdivision`). Usage, status, limits and
@@ -25,7 +26,10 @@ from .catmull_clark import (
     predicted_face_count,
 )
 from .preview import (
+    CYCLE_SECONDARY,
     CYCLE_VIEW,
+    DEFAULT_SECONDARY_STRENGTH,
+    SECONDARY_STEPS,
     DEFAULT_LEVEL,
     LEVEL_COMMANDS,
     LEVELS,
@@ -49,7 +53,10 @@ from .preview import (
 )
 
 __all__ = [
+    "CYCLE_SECONDARY",
     "CYCLE_VIEW",
+    "DEFAULT_SECONDARY_STRENGTH",
+    "SECONDARY_STEPS",
     "ControlTopology",
     "DEFAULT_LEVEL",
     "KIND_EDGE",

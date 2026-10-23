@@ -172,6 +172,8 @@ SUBD_LEVEL_2 = "SubdLevel2"
 SUBD_LEVEL_3 = "SubdLevel3"
 #: The cage hidden by the smooth surface <-> always visible.
 SUBD_TOGGLE_CAGE_DEPTH = "SubdToggleCageDepth"
+#: The opacity of the secondary line system (the cage in the isoline view), one step.
+SUBD_CYCLE_SECONDARY = "SubdCycleSecondary"
 
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"

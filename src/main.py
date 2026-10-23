@@ -173,7 +173,9 @@ Scope (binding, see the handoffs):
   `Application` (`gizmo_enabled` is set here only).
 - SubD preview (2026-10-23, `PROVISIONAL` keys, `mirai.subdivision`, promoted from the SubD Lab): V cycles
   off → smooth surface + cage → smooth surface + isolines, Ctrl+1/2/3 the level (start 2), Shift+V the cage's
-  depth (hidden by the surface / always visible). View state only; all tools keep editing the cage. Lives in
+  depth (hidden by the surface / always visible), Alt+V the opacity of the cage in the isoline view. A hovered /
+  selected edge lights up on the cage and as its isoline chain on the surface. View state only; all tools keep
+  editing the cage. Lives in
   `Application` (binding context `subd`); this file only adds its GL sink `GLSubdLineOverlay` to `GL_TYPES`.
 - No imports from `playground/` (AD-010 Addendum).
 

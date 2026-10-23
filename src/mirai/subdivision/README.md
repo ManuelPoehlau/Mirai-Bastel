@@ -15,6 +15,15 @@ Start wie immer: `python src/main.py` (Kopf) oder `python src/main.py subd_cube`
 | `V` | aus → glatte Fläche + Käfig → glatte Fläche + Isolinien → aus |
 | `Strg+1` / `Strg+2` / `Strg+3` | Stufe 1 / 2 / 3 (Start: 2) |
 | `Shift+V` | Käfig: von der glatten Fläche verdeckt (Start) ↔ immer sichtbar |
+| `Alt+V` | Stärke des Käfigs in der Isolinien-Ansicht: 35 % (Start) → 60 % → aus → 15 % |
+
+**Was man sieht (Vorschlag, `PROVISIONAL`):** In jeder Ansicht ist genau ein Liniensystem das Hauptsystem.
+*Glatte Fläche + Käfig:* der Käfig kräftig, keine Isolinien. *Glatte Fläche + Isolinien:* die Isolinien (bläulich) kräftig,
+der Käfig nur schwach (`Alt+V` stellt die Stärke ein, auch ganz aus). Eine gehoverte oder ausgewählte Kante leuchtet am
+Käfig **und** als ihre Isolinie auf der Fläche in derselben Farbe (Hover blassgelb, Auswahl gelb) — so sieht man, welche
+Linie auf der Fläche zu welcher Käfigkante gehört. Im Face-Modus leuchtet der Rand der Fläche auf der glatten Fläche mit.
+Das Drahtgitter `Shift+D` legt in den SubD-Ansichten keinen zweiten Käfig darüber; im Wireframe-Modus (`D`) gibt es keine
+Fläche, dort ist alles wie ohne SubD.
 
 Alles andere ist die App: Auswahl, `W`/`E`/`R`, Tweak, Soft Selection, `C`/Knife, `T`, Löschen/Auflösen, Symmetrie,
 Undo/Redo, `D`/`Strg+D`. Bearbeitet wird immer der Käfig (das Control-Mesh); die glatte Fläche folgt live.
@@ -48,10 +57,34 @@ Undo), ist die Fläche wieder da.
 - **Limits** (`PROVISIONAL`): levels 1–3, `MAX_DERIVED_FACES = 25 000`. Face counts: `subd_cube` (24 quads)
   96 / 384 / 1 536; `head_basemesh` 1 296 / 5 184 / 20 736; `man_with_shoes_basemesh` 3 704 / 14 816 / 59 264
   (level 3 refused). A topology change that pushes the shown level over the limit falls back to the highest allowed level.
+- **Lines** (`SubdLinePresentation`, sink `gl_lines.GLSubdLineOverlay`): layers `subd_iso`, `subd_cage`,
+  `subd_iso_hover`, `subd_iso_selected`, `subd_cage_hover`, `subd_cage_selected`, in that draw order, all drawn *under*
+  the app's own wire / face / edge highlights (`DRAW_UNDER_HIGHLIGHTS`). Hierarchy: view `cage` = cage α 1, no isolines
+  but highlighted chains; view `iso` = isolines α 1, cage α `secondary_strength` (default 0.35, steps 0.35 / 0.6 / 0 /
+  0.15). Blended layers write no depth. Chains come from provenance (`iso_indices_of(edge)` ← `SubdLevel.iso_control_edge`);
+  Edge mode = the edges, Face mode = the face's boundary edges; vertices keep their points on the cage. Segments are
+  rebuilt on provider revision / view changes only; a hover touches the highlight layers alone (no surface data).
+- **Depth policy:** the replacement surface is *always* polygon-offset (1, 1) while drawn (viewport); isolines and chains
+  `GL_LEQUAL` on it; the cage `GL_LEQUAL` against the surface (edges behind the surface hidden) or, `Shift+V`, no depth
+  test; then the hidden part of a highlighted cage edge is drawn with `GL_GREATER` so the highlight is never covered by
+  the visible cage. The viewport's wire layer is left out while the surface is drawn (`replaces_wire`).
+- **Root causes fixed 2026-10-23** (pinned in `tests/test_gl_subdivision_lines.py`): (1) dashed isolines that turned solid
+  on hover — the surface got its polygon offset only with the wire overlay or an edge highlight on, so isolines on its
+  triangle edges z-fought (measured: 381 isoline pixels without, 726 with a hovered edge); (2) no highlight in cage +
+  smooth — the Lab's cage was an extra overlay drawn *after* the app's hover/selected edge layers at the same positions
+  and overwrote them (0 selection pixels).
+- **Picking unchanged:** hover and click pick the cage (CPU / GPU picker on the control mesh). Where the smooth surface
+  lies noticeably inside the cage, the editable edge is the cage edge, and its chain on the surface shows which one it is.
+  If cage-only hover proves insufficient in practice, an option for an Artist decision is isoline-based hover through the
+  reverse provenance (derived edge → control edge); not built.
 - **Keys:** `preview.SUBD_KEYS`, binding context `subd` (`interaction.input.SUBD_CONTEXT`), installed in
   `Application.__init__` with a conflict check against the default contexts (`SubdBindingConflict`); resolved by
   `Application.key_press` only when the global context leaves the input unbound, so an app key or a user `keymap.json`
   binding always wins; `keymap.json` may rebind them in context `subd`.
+- **Known limits:** selected / hovered *faces* keep their translucent fill on the cage (only their outline is mapped
+  to the surface); vertex points stay on the cage; the Soft Selection face shading is drawn on the cage faces; lines are
+  1 px (hierarchy by opacity / colour). A topology edit rebuilds all stencils (global index data, ≈ 0.5 s at head level 3
+  in the container); only the derived mesh and its GPU buffers are patched locally.
 - **Out of scope:** creases, adaptive subdivision, limit-surface normals, picking on the surface, Multires, OpenSubdiv.
 
 ## Measurements (container only — not the reference PC)
@@ -69,7 +102,8 @@ writes (evaluator side), *upload* = the surface `RenderMesh.sync` (GPU buffer pa
 | man_with_shoes_basemesh | 1 | 3 704 | 0.10 / 0.14 | 0.56 / 0.79 | 2.01 / 2.69 | 8.3 / 10.3 | 113 ms |
 | man_with_shoes_basemesh | 2 | 14 816 | 0.40 / 0.60 | 1.63 / 2.62 | 3.08 / 4.79 | 14.1 / 18.9 | 487 ms |
 
-A topology edit is dominated by the global stencil rebuild (head level 3: ≈ 0.5–0.6 s of the 0.93 s); before the in-place
+A re-run after the line work (Slice 3) gave the same picture within run-to-run noise (head level 2 topology edit 336 vs.
+462 ms, level 3 928 vs. 971 ms; per-move rows within ±15 %). A topology edit is dominated by the global stencil rebuild (head level 3: ≈ 0.5–0.6 s of the 0.93 s); before the in-place
 patch the same edit cost 2.3 s (a fresh derived mesh + a structural GPU rebuild). The Lab's standalone bench
 (`bench.py`, M1–M8/D1) on the same container: head level 3 drag step D1 18.5 ms median (the Lab's 2026-10-02 run measured
 2 845 ms, before the 2026-10-10 slice-patch fix in `GLRenderStore`). Reference-PC rule of thumb from
@@ -81,4 +115,8 @@ patch the same edit cost 2.3 s (a fresh derived mesh + a structural GPU rebuild)
 (evaluator: exact values, stencils = an independent recursive Catmull-Clark, local = full, provenance, unsupported input;
 moved from the Lab), `tests/test_subdivision_app.py` (app path: keys, levels, W/E/R, Tweak, Soft, symmetry, Extrude,
 Connect/Split, Knife, Dissolve, Delete, unsupported fallback, Undo/Redo, in-place patch, scene load, foreign provider),
-`tests/test_subdivision_import_boundary.py` (nothing from `experiments/` or `playground/`).
+`tests/test_subdivision_import_boundary.py` (nothing from `experiments/` or `playground/`),
+`tests/test_subdivision_lines.py` (hierarchy, provenance chains incl. after moves / topology / symmetry / Undo, depth
+modes, wire suppression, Wireframe, no rebuild on hover), `tests/test_gl_subdivision_lines.py` (real GL: isolines
+independent of hover, surface always offset, highlight visible in both views and on the chain, secondary cage, Shift+V,
+no surface upload on hover).

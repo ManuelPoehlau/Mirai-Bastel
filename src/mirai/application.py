@@ -2653,6 +2653,7 @@ class Application:
         )
         self.viewport.set_light(self.display.light_rig)
         self.viewport.set_surface_finish(self.display.surface_finish)
+        self.subdivision.set_faces_shown(self.display.show_faces)
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
 

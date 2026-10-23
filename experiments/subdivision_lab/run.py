@@ -7,7 +7,7 @@ Usage (from the repo root, same on Windows and Linux):
 
 Builds the same path as `src/main.py` (`Application` → Viewport V02 → `GLRenderStore`) through its
 `create_window` / `install_handlers` / `run` (H6) and its `GL_TYPES`. SubD itself is the app's since
-2026-10-23 (`mirai.subdivision`, keys `V`, `Ctrl+1/2/3`, `Shift+V`); the lab adds only its A/B key and
+2026-10-23 (`mirai.subdivision`, keys `V`, `Ctrl+1/2/3`, `Shift+V`, `Alt+V`); the lab adds only its A/B key and
 a HUD line (`lab_app`, `lab_app_window`). Valid names = `loaders.assets.asset_names()`; an unknown
 name exits with code 2 before a window opens. The standalone window of WP-SUBD-LAB-01 (and its F9
 bench) is `run_standalone.py`.

@@ -1470,3 +1470,7 @@ as Artist Input Truth. Code: `src/mirai/subdivision/` (status home: its `README.
   — "the same `surface_mesh` object, topology changed in place". The viewport then marks the surface `RenderMesh`'s
   topology dirty (incremental patch through the mesh journal, AD-023) instead of only the moved vertices. Without the
   attribute nothing changes. Used by the SubD provider, which patches its derived mesh by stable provenance keys.
+- **Two further contract points (2026-10-23, SubD line coherence).** (a) The replacement surface is drawn with polygon
+  offset whenever it is drawn — no longer only while the wire overlay or an edge highlight is on: host lines lie exactly
+  on it (SubD isolines) and z-fought without hover. (b) Optional, inert `p.replaces_wire`: while the surface is drawn the
+  viewport leaves out the edit mesh's wire layer, because the host shows those edges itself (`Viewport.wire_drawn()`).

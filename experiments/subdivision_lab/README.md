@@ -3,7 +3,7 @@
 **Status: Nicht Artist-validiert.** Gebaut und automatisch getestet; kein Verdikt von Manu liegt vor.
 
 **Seit 2026-10-23 ist Subdivision in Production** ([`src/mirai/subdivision/`](../../src/mirai/subdivision/README.md),
-dort stehen Bedienung, Grenzen, Messungen und Tests): `python src/main.py`, `V` / `Strg+1/2/3` / `Shift+V`. Der
+dort stehen Bedienung, Grenzen, Messungen und Tests): `python src/main.py`, `V` / `Strg+1/2/3` / `Shift+V` / `Alt+V`. Der
 Catmull-Clark-Evaluator und der Flächen-Provider sind von hier nach `src/` **verschoben** worden; `subd.py` re-exportiert
 nur noch den Production-Evaluator, `lab_surface.py` gibt es nicht mehr, die Evaluator-Tests liegen in `tests/`. Das Lab
 bleibt als Vergleichs- und Testumgebung: der App-Pfad (`run.py`) ist die App mit HUD und einer A/B-Taste, das alte
@@ -31,7 +31,7 @@ Das alte Fenster aus Slice 1 (eigener Renderer, Control-Vertex ziehen, `F9`-Benc
 
 **Die App** (`src/main.py`, über `create_window` / `install_handlers` / `run` und `GL_TYPES`, H6): alles — Navigation,
 Auswahl, W/E/R, Tweak, Soft Selection, C/Knife, Extrude, Loops, Delete/Dissolve, Symmetrie, Undo/Redo, Anzeige, Licht
-und **SubD selbst** (glatte Fläche über AD-013 H7, Käfig/Isolinien, die Tasten `V`, `Strg+1/2/3`, `Shift+V` im Kontext
+und **SubD selbst** (glatte Fläche über AD-013 H7, Käfig/Isolinien, die Tasten `V`, `Strg+1/2/3`, `Shift+V`, `Alt+V` im Kontext
 `subd`, Rückfall auf den Käfig bei nicht unterstützter Topologie).
 
 **Das Lab** ergänzt nur:
