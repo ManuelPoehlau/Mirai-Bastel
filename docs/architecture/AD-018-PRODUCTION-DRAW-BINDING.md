@@ -577,3 +577,21 @@ on the reference PC: does the GeForce 9800 GTX driver deliver `gl_PrimitiveID` a
 diagonal give the same image, with the old per-triangle path as the failing control; no seams; "Heute" equals
 the old formula; zero uploads for light changes), `tests/test_render_mesh_face_data.py`,
 `tests/test_viewport_light.py`, `tests/test_light_rig.py`.
+
+*Addendum 2026-10-23 (specular / gloss, Artist-approved direction "einstellbarer Glanz für die Formlesbarkeit"):*
+the material packet (`material_uniforms`) grows from 3 to 6 floats, `[r, g, b, specular, glossiness,
+fill_specular]` (`src/viewport/material.py`: `Material`, `SurfaceFinish`, `read_packet`); a 3-float packet still
+reads as a colour with the default finish, so a host material keeps working. It stays a declared uniform: a finish
+change is one `material_updates` count, never geometry, index or face data. `GLRenderStore` maps glossiness to the
+Blinn-Phong exponent on the CPU (`gloss_exponent`: `4 · 64^g`, 4 … 256) and the fragment shader adds a neutral
+key highlight `specular · luminance(key) · max(N·H, 0)^e` where `N·L > 0` (plus the same term on the fill with its
+own strength, 0 by default), with the diffuse term's normal and a **non-local viewer** (V = the camera's view
+axis, the fixed-function default) so a Flat polygon stays one colour. No pass, no buffer, no GL feature beyond
+3.3. Defaults (`DEFAULT_FINISH`, `PROVISIONAL`): specular 0.25, glossiness 0.5 (exponent 32), fill 0. The settings
+home is `DisplayState.surface_finish` (→ `Application._apply_display` → `Viewport.set_surface_finish`); there is no
+key and no material editor. "Heute" reproduces the old formula with `MATTE_FINISH`. The Python reference is
+`light_rig.shade(..., view_dir=, finish=)` with `material.specular_term`. Tests: `tests/test_surface_finish.py`,
+`tests/test_gl_shading.py` (shader = reference, strength / glossiness change the image, Flat one colour per
+polygon, no diagonal in Smooth, finish change = material update only). Cost, container only (Xvfb + llvmpipe, not the reference
+PC): `head_basemesh` at 1280×800, median frame `sync + render + glFinish` 3.3–3.5 ms matte vs. 3.6–3.7 ms with
+the default finish (two alternating runs, within run-to-run noise); the reference PC is not measured.

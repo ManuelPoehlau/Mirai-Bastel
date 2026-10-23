@@ -27,6 +27,7 @@ from viewport.light_rig import (
     SPACE_WORLD,
     LightRig,
 )
+from viewport.material import DEFAULT_FINISH, SurfaceFinish
 
 #: Anzeige-Namen der Bezugsräume in der Statuszeile.
 _SPACE_LABELS = {SPACE_CAMERA: "Kamera", SPACE_WORLD: "Welt"}
@@ -56,6 +57,10 @@ class DisplayState:
         # hat (None = der des Presets). Der Umschalter bleibt beim Preset-Wechsel stehen.
         self.light_preset = DEFAULT_PRESET
         self.light_space: str | None = None
+        # Glanz der Flächen (2026-10-23, `viewport.material`): Specular-Stärke, Glossiness und
+        # Fill-Specular, `PROVISIONAL` Defaults. Ansichts-Zustand wie das Licht, keine Taste
+        # (kein Material-Editor): `set_surface_finish(...)` ist die Schnittstelle.
+        self.surface_finish: SurfaceFinish = DEFAULT_FINISH
 
     # -- Übergänge ----------------------------------------------------------
 
@@ -82,6 +87,11 @@ class DisplayState:
     def toggle_light_space(self) -> None:
         """Licht folgt der Kamera <-> steht in der Welt."""
         self.light_space = SPACE_WORLD if self.light_rig.space == SPACE_CAMERA else SPACE_CAMERA
+
+    def set_surface_finish(self, **changes) -> SurfaceFinish:
+        """Ändert `specular`, `glossiness` und/oder `fill_specular` (je 0..1, geklemmt)."""
+        self.surface_finish = self.surface_finish.with_(**changes)
+        return self.surface_finish
 
     @property
     def light_rig(self) -> LightRig:

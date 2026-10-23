@@ -35,9 +35,9 @@ def test_an_entry_is_a_render_mesh_without_overlay_and_with_its_colour():
     assert entry.mesh is other
     assert entry.overlay is None
     assert entry.camera is camera
-    assert entry.material.uniform_packet() == [0.1, 0.2, 0.3]
+    assert entry.material.color == (0.1, 0.2, 0.3)
     viewport.sync()
-    assert entry.store.data("material_uniforms") == [0.1, 0.2, 0.3]
+    assert entry.store.data("material_uniforms")[:3] == [0.1, 0.2, 0.3]
     assert len(entry.store.data("camera_uniforms")) == 32
     assert not entry.store.has("highlight_flags")
 
@@ -54,7 +54,7 @@ def test_a_colour_change_does_not_rebuild_the_entry():
     viewport.sync()
     assert viewport.object_entries["ref"] is entry
     assert entry.benchmark_counters["mesh_rebuilds"] == rebuilds
-    assert entry.store.data("material_uniforms") == list(DEFAULT_BASE_COLOR)
+    assert entry.store.data("material_uniforms")[:3] == list(DEFAULT_BASE_COLOR)
 
 
 def test_another_mesh_under_the_same_key_replaces_the_entry_and_remove_drops_it():

@@ -259,10 +259,22 @@ def wrap_term(ndl: float, w: float) -> float:
     return max((ndl + w) / (1.0 + w), 0.0)
 
 
-def shade(normal: Vec3, uniforms: dict, base_color: Vec3, highlight: float = 0.0) -> Vec3:
+def shade(
+    normal: Vec3,
+    uniforms: dict,
+    base_color: Vec3,
+    highlight: float = 0.0,
+    *,
+    view_dir: Optional[Vec3] = None,
+    finish=None,
+) -> Vec3:
     """Pure-Python mirror of the lighting in `gl_render_store.FRAGMENT_SRC` (keep both in
     sync). Returns the unclamped fragment color; GL clamps to [0, 1] on output. `highlight` is the
-    lab's selection tint (production no longer draws it, AD-018 §7) and stays for the lab tests."""
+    lab's selection tint (production no longer draws it, AD-018 §7) and stays for the lab tests.
+
+    Specular (`material.py`) needs the direction to the eye: with `view_dir` the finish's
+    highlight is added (`finish` None = `material.DEFAULT_FINISH`, the store's default); without
+    it the result is the diffuse term alone, as before 2026-10-23."""
     n = _normalize(normal)
     k = wrap_term(_dot(n, uniforms["u_key_dir"]), uniforms["u_key_wrap"])
     f = wrap_term(_dot(n, uniforms["u_fill_dir"]), uniforms["u_fill_wrap"])
@@ -272,6 +284,18 @@ def shade(normal: Vec3, uniforms: dict, base_color: Vec3, highlight: float = 0.0
         for i in range(3)
     )
     shaded = tuple(base_color[i] * light[i] for i in range(3))
+    if view_dir is not None:
+        from .material import DEFAULT_FINISH, luminance, specular_term
+
+        finish = DEFAULT_FINISH if finish is None else finish
+        v = _normalize(view_dir)
+        e = finish.exponent
+        spec = finish.specular * luminance(uniforms["u_key_color"]) * specular_term(
+            n, uniforms["u_key_dir"], v, e
+        ) + finish.fill_specular * luminance(uniforms["u_fill_color"]) * specular_term(
+            n, uniforms["u_fill_dir"], v, e
+        )
+        shaded = tuple(c + spec for c in shaded)
     h = max(0.0, min(1.0, highlight))
     highlight_color = (1.0, 0.82, 0.15)
     return tuple(shaded[i] * (1.0 - h) + highlight_color[i] * h for i in range(3))

@@ -40,6 +40,7 @@ from __future__ import annotations
 from array import array
 
 from .light_rig import PRESET_HEUTE, PRESETS, resolve
+from .material import read_packet
 from .resource_store import ResourceStore
 
 VERTEX_SRC = """
@@ -94,7 +95,12 @@ void main() {
 #
 # Light (`light_rig.resolve`, promoted from the Shading Lab 2026-10-15):
 # ambient + key + fill with wrap; preset "Heute" reproduces the old
-# `mix(base * 0.35, base, N·L)` exactly. Keep in sync with `light_rig.shade()`.
+# `mix(base * 0.35, base, N·L)` exactly (with the matte finish). Keep in sync with
+# `light_rig.shade()`.
+# Specular (2026-10-23, `material.py`): neutral Blinn-Phong on the key (and, separately and off by
+# default, the fill), added on top of the diffuse colour; strength and exponent come from the
+# material packet. Same normal as the diffuse term and a non-local viewer (V = view axis), so Flat
+# keeps one colour per polygon and Smooth gets the bilinear quad normal's highlight.
 FRAGMENT_SRC = """
 #version 330 core
 in vec3 v_normal;
@@ -117,8 +123,13 @@ uniform vec3 u_fill_dir;
 uniform vec3 u_fill_color;
 uniform float u_fill_wrap;
 uniform float u_ambient;
+uniform float u_specular;
+uniform float u_spec_exponent;
+uniform float u_fill_specular;
 
 out vec4 out_color;
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
 const int ROW_TEXELS = 9;
 
@@ -247,6 +258,12 @@ vec3 quad_normal(int row, vec3 face_n, vec3 fallback) {
 
 float wrap_light(float ndl, float w) { return max((ndl + w) / (1.0 + w), 0.0); }
 
+// `material.specular_term`: no highlight on the side facing away from the light.
+float blinn_phong(vec3 n, vec3 l, vec3 v, float e) {
+    if (dot(n, l) <= 0.0) return 0.0;
+    return pow(max(dot(n, normalize(l + v)), 0.0), e);
+}
+
 void main() {
     vec3 screen_flat_n = normalize(cross(dFdx(v_world_pos), dFdy(v_world_pos)));
     vec3 n = normalize(v_normal);
@@ -266,6 +283,14 @@ void main() {
                + u_key_color  * wrap_light(dot(n, u_key_dir),  u_key_wrap)
                + u_fill_color * wrap_light(dot(n, u_fill_dir), u_fill_wrap);
     vec3 shaded = u_base_color * light;
+    if (u_specular > 0.0 || u_fill_specular > 0.0) {
+        // Non-local viewer (the fixed-function default): V = the camera's view axis, so a Flat
+        // polygon stays one colour and the highlight depends on the normal only.
+        vec3 v = normalize(transpose(mat3(u_view)) * vec3(0.0, 0.0, 1.0));
+        float spec = u_specular * dot(u_key_color, LUMA) * blinn_phong(n, u_key_dir, v, u_spec_exponent)
+                   + u_fill_specular * dot(u_fill_color, LUMA) * blinn_phong(n, u_fill_dir, v, u_spec_exponent);
+        shaded += vec3(spec);
+    }
     out_color = vec4(shaded, u_alpha);
 }
 """
@@ -625,10 +650,12 @@ class GLRenderStore(ResourceStore):
         program["u_proj"] = tuple(data[16:32])
 
     def _base_color(self) -> tuple[float, float, float]:
-        data = self.uniform_data("material_uniforms")
-        if len(data) == 3:
-            return (data[0], data[1], data[2])
-        return DEFAULT_BASE_COLOR
+        return self.material()[0]
+
+    def material(self):
+        """(base colour, `material.SurfaceFinish`) of the bound material packet (`material.py`;
+        no material = `DEFAULT_BASE_COLOR` with the default finish)."""
+        return read_packet(self.uniform_data("material_uniforms"), DEFAULT_BASE_COLOR)
 
     def draw(self, group: str = "mesh") -> None:
         """Issues the real draw call for `group` (`RenderMesh.render(camera)`,
@@ -646,7 +673,11 @@ class GLRenderStore(ResourceStore):
         self._apply_camera_uniforms(program)
         for name, value in self._light_uniforms.items():
             program[name] = value
-        program["u_base_color"] = self._base_color()
+        color, finish = self.material()
+        program["u_base_color"] = color
+        program["u_specular"] = finish.specular
+        program["u_spec_exponent"] = finish.exponent
+        program["u_fill_specular"] = finish.fill_specular
         program["u_flat"] = 1 if self.flat else 0
         model = self.uniform_data("model_uniforms")
         program["u_model"] = tuple(model) if len(model) == 16 else _IDENTITY_4

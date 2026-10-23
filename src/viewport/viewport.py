@@ -84,6 +84,9 @@ Worklight (Shading Lab, in die App übernommen 2026-10-15): `set_light(rig)` set
 `light_rig.LightRig`; `render()` löst es pro Frame mit der gebundenen Kamera auf
 (`light_uniforms()`) und reicht die Uniforms per Duck-Typing (`set_light_uniforms`, nur
 `GLRenderStore`) an das Edit-Mesh und alle Objekt-Einträge. Start: "Raitt 2:1", Kamera.
+Glanz (2026-10-23, `material.py`): `set_surface_finish(finish)` legt Specular/Glossiness in jedes
+Material, das der Viewport bindet (Edit-Mesh, Ersatzfläche, Objekt-Einträge) - ein Material-Update,
+keine Geometrie.
 
 Ersatzfläche (AD-013 Addendum H7, 2026-10-16): `set_surface_provider(p)` lässt einen Host
 die Flächen des Edit-Mesh durch ein eigenes, daraus abgeleitetes Mesh ersetzen (z. B. die
@@ -151,19 +154,10 @@ def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
             out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
     return out
 from .light_rig import DEFAULT_PRESET, PRESETS, SPACE_WORLD, LightRig, resolve
+from .material import DEFAULT_FINISH, Material, SurfaceFinish
 from .render_mesh import RenderMesh
 from .resource_store import ResourceStore, TraceStore
 from .wireframe import edge_segments
-
-
-class _SolidColor:
-    """Material eines Objekt-Eintrags (Duck-Typing `uniform_packet()`, RenderMesh)."""
-
-    def __init__(self, color: tuple[float, float, float]) -> None:
-        self.color = tuple(float(c) for c in color)
-
-    def uniform_packet(self) -> list[float]:
-        return list(self.color)
 
 
 class Viewport:
@@ -230,6 +224,8 @@ class Viewport:
         self.flat = False
         # Worklight (light_rig): pro Frame in `render()` aufgelöst und an alle Stores gegeben.
         self.light_rig: LightRig = PRESETS[DEFAULT_PRESET]
+        # Glanz (material.py): Teil jedes Materials, das der Viewport bindet.
+        self.surface_finish: SurfaceFinish = DEFAULT_FINISH
 
     # -- Display (WP-06 B5a, E36) ----------------------------------------------
 
@@ -245,6 +241,22 @@ class Viewport:
         """Setzt das Worklight (`light_rig.LightRig`). Reiner Draw-Zustand: keine Ressource,
         kein Upload; im Bezugsraum Kamera folgt es der Kamera bei jedem `render()`."""
         self.light_rig = rig
+
+    def set_surface_finish(self, finish: SurfaceFinish) -> bool:
+        """Glanz aller Flächen (`material.SurfaceFinish`): ein Material-Update je RenderMesh
+        (`material_updates`), keine Geometrie. True = geändert."""
+        if finish == self.surface_finish:
+            return False
+        self.surface_finish = finish
+        current = self.render_mesh.material
+        color = current.color if current is not None else DEFAULT_BASE_COLOR
+        self.bind_material(Material(color, finish))
+        for entry in self.object_entries.values():
+            if entry.material is not None:
+                entry.bind_material(Material(entry.material.color, finish))
+                entry.mark_material_dirty()
+        # Ersatzflächen der Einträge übernehmen das neue Material in `_follow_entry`.
+        return True
 
     def light_uniforms(self) -> dict:
         """Die Licht-Uniforms für die gebundene Kamera (headless beobachtbar). Eine Kamera ohne
@@ -293,7 +305,7 @@ class Viewport:
             entry.set_model_matrix(model_matrix)
             changed = True
         if entry.material is None or entry.material.color != color:
-            entry.bind_material(_SolidColor(color))
+            entry.bind_material(Material(color, self.surface_finish))
             entry.mark_material_dirty()
             changed = True
         return changed
@@ -553,11 +565,11 @@ class Viewport:
         sichtbare Objekt-Auswahl in Modus `4` (2026-10-16). Kein Rebuild; True = geändert."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
         current = self.render_mesh.material
-        if current is not None and tuple(current.uniform_packet()) == color:
+        if current is not None and tuple(current.color) == color:
             return False
-        if current is None and color == DEFAULT_BASE_COLOR:
+        if current is None and color == DEFAULT_BASE_COLOR and self.surface_finish == DEFAULT_FINISH:
             return False
-        self.bind_material(_SolidColor(color))
+        self.bind_material(Material(color, self.surface_finish))
         return True
 
     # -- Notifikations-API (aufgerufen von src.mirai nach Core-Mutationen) --

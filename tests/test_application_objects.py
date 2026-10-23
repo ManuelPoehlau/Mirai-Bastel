@@ -161,7 +161,7 @@ def test_add_reference_adds_a_reference_and_keeps_edit_object_camera_and_selecti
     assert app.status_message == "Added 'cube' as Reference"
     entry = app.viewport.object_entries[ref.id]
     assert entry.mesh is ref.mesh
-    assert entry.material.uniform_packet() == list(REFERENCE_BASE_COLOR)
+    assert entry.material.color == tuple(REFERENCE_BASE_COLOR)
     # The edit object's render mesh is not touched by adding another object.
     app.viewport.sync()
     assert app.viewport.render_mesh.benchmark_counters.get("topology_updates", 0) == rebuilds
@@ -229,12 +229,12 @@ def test_a_click_only_selects_and_alt_r_switches_the_state_as_one_undo_step(tmp_
     assert len(app.history) == 1
     assert "Alt+R" in app.status_message
     entry = app.viewport.object_entries[ref.id]
-    assert entry.material.uniform_packet() == list(selected_color(ref, DEFAULT_BASE_COLOR))
+    assert entry.material.color == tuple(selected_color(ref, DEFAULT_BASE_COLOR))
 
     assert app.key_press(ALT_R)
     assert ref.state is ObjectState.NORMAL
     assert app.status_message == "Object 'plate': Normal"
-    assert entry.material.uniform_packet() == list(selected_color(ref, DEFAULT_BASE_COLOR))
+    assert entry.material.color == tuple(selected_color(ref, DEFAULT_BASE_COLOR))
     assert len(app.history) == 2
     app.key_press(ALT_R)
     assert ref.state is ObjectState.REFERENCE
@@ -248,7 +248,7 @@ def test_a_click_only_selects_and_alt_r_switches_the_state_as_one_undo_step(tmp_
     assert ref.state is ObjectState.NORMAL
     app.selection.clear_objects()  # any path that changes the selection: the next frame redraws
     app.update_viewport(1 / 60)
-    assert entry.material.uniform_packet() == list(DEFAULT_BASE_COLOR)
+    assert entry.material.color == tuple(DEFAULT_BASE_COLOR)
 
 
 def test_alt_r_refusals_and_the_edit_object_stays_normal(tmp_path):
@@ -273,9 +273,9 @@ def test_the_selected_edit_object_is_tinted_in_mode_4_only():
     app.key_press(FOUR)
     _click(app, WIDTH / 2, HEIGHT / 2)
     edit = app.scene.edit_object
-    assert app.viewport.render_mesh.material.uniform_packet() == list(selected_color(edit, DEFAULT_BASE_COLOR))
+    assert app.viewport.render_mesh.material.color == tuple(selected_color(edit, DEFAULT_BASE_COLOR))
     app.key_press(ONE)  # the edit object stays selected, but `1` shows components, not objects
-    assert app.viewport.render_mesh.material.uniform_packet() == list(DEFAULT_BASE_COLOR)
+    assert app.viewport.render_mesh.material.color == tuple(DEFAULT_BASE_COLOR)
 
 
 def test_a_click_on_the_edit_object_in_mode_4_never_makes_it_a_reference():

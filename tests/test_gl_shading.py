@@ -7,6 +7,9 @@
 - Worklight (light_rig, promoted from the Shading Lab): "Heute" reproduces the old single light,
   every preset changes the image, and a light change is draw state only (no upload, same
   VertexList).
+- Specular / gloss (`viewport.material`, 2026-10-23): the shader's highlight equals the Python
+  reference, strength and glossiness change the image, Flat keeps one colour per polygon, and a
+  finish change is a material update only (same VertexList, no geometry upload).
 
 Needs a real GL context (`xvfb-run -a python -m pytest tests/test_gl_shading.py`); skips without.
 """
@@ -25,10 +28,12 @@ from viewport.gl_render_store import DEFAULT_BASE_COLOR, GLRenderStore  # noqa: 
 from viewport.light_rig import (  # noqa: E402
     PRESET_HEUTE,
     PRESET_ORDER,
+    PRESET_RAITT,
     PRESETS,
     resolve,
     shade,
 )
+from viewport.material import DEFAULT_FINISH, MATTE_FINISH, Material, SurfaceFinish  # noqa: E402
 from viewport.render_mesh import RenderMesh  # noqa: E402
 
 SIZE = 160
@@ -87,8 +92,14 @@ def _draw(gl_window, rm: RenderMesh, camera) -> bytes:
     return bytes(buf)
 
 
-def _render(gl_window, mesh: Mesh, *, flat: bool, face_data: bool = True, light=None) -> bytes:
+def _render(
+    gl_window, mesh: Mesh, *, flat: bool, face_data: bool = True, light=None, finish=None
+) -> bytes:
     rm, camera = _build(gl_window, mesh)
+    if finish is not None:
+        rm.bind_material(Material(DEFAULT_BASE_COLOR, finish))
+        rm.mark_material_dirty()
+        rm.sync()
     rm.store.set_draw_style(flat=flat, polygon_offset=False)
     if light is not None:
         rm.store.set_light_uniforms(light)
@@ -169,7 +180,8 @@ def _flat_quad() -> Mesh:
 
 
 def test_heute_reproduces_the_old_single_light(gl_window):
-    pixels = _render(gl_window, _flat_quad(), flat=False)
+    """With the matte finish (no highlight) - the look before 2026-10-23."""
+    pixels = _render(gl_window, _flat_quad(), flat=False, finish=MATTE_FINISH)
     centre = (SIZE // 2 * SIZE + SIZE // 2) * 3
     expected = shade((0.0, 0.0, 1.0), resolve(PRESETS[PRESET_HEUTE]), DEFAULT_BASE_COLOR)
     # The pre-2026-10-15 shader: mix(base * 0.35, base, N·L) with L = normalize(0.4, 0.6, 0.7).
@@ -224,3 +236,90 @@ def test_moving_a_vertex_patches_the_face_data(gl_window):
 
     fresh = _render(gl_window, _grid(rotate=False, lift=0.35), flat=False)
     assert _diff(patched, fresh) == (0, 0)
+
+
+# -- specular / gloss (viewport.material) -------------------------------------------------------
+
+
+def _centre(pixels: bytes) -> bytes:
+    i = (SIZE // 2 * SIZE + SIZE // 2) * 3
+    return pixels[i:i + 3]
+
+
+@pytest.mark.parametrize(
+    "finish",
+    [DEFAULT_FINISH, SurfaceFinish(specular=1.0, glossiness=0.25), SurfaceFinish(specular=0.6, glossiness=0.0)],
+    ids=["default", "strong-broad", "broadest"],
+)
+def test_shader_highlight_matches_the_reference(gl_window, finish):
+    """Centre of a quad facing the camera: N = V = +Z (eye on the axis), light "Heute" (world)."""
+    pixels = _render(gl_window, _flat_quad(), flat=False, finish=finish)
+    expected = shade((0.0, 0.0, 1.0), resolve(PRESETS[PRESET_HEUTE]), DEFAULT_BASE_COLOR,
+                     view_dir=(0.0, 0.0, 1.0), finish=finish)
+    for got, want in zip(_centre(pixels), expected):
+        assert abs(got - round(min(want, 1.0) * 255)) <= 1
+
+
+def test_specular_strength_and_glossiness_change_the_image(gl_window):
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.0, pitch=0.0)
+    light = resolve(PRESETS[PRESET_RAITT], camera)
+    mesh = lambda: _grid(rotate=False, lift=0.8)  # noqa: E731 - curved enough for a highlight
+    matte = _render(gl_window, mesh(), flat=False, light=light, finish=MATTE_FINISH)
+    default = _render(gl_window, mesh(), flat=False, light=light, finish=DEFAULT_FINISH)
+    strong = _render(gl_window, mesh(), flat=False, light=light, finish=DEFAULT_FINISH.with_(specular=0.8))
+    glossy = _render(gl_window, mesh(), flat=False, light=light, finish=DEFAULT_FINISH.with_(glossiness=0.9))
+    assert _diff(default, matte)[1] > 50
+    assert _diff(strong, default)[1] > 50
+    assert _diff(glossy, default)[1] > 50
+    # the highlight only adds light: no pixel gets darker than the matte image
+    assert all(d >= m for d, m in zip(strong, matte))
+    # a tighter highlight lights fewer pixels noticeably
+    lit = lambda img: sum(  # noqa: E731
+        1 for i in range(0, len(img), 3) if max(img[i:i + 3]) - max(matte[i:i + 3]) > 6
+    )
+    assert lit(_render(gl_window, mesh(), flat=False, light=light, finish=SurfaceFinish(0.8, 0.9))) < lit(
+        _render(gl_window, mesh(), flat=False, light=light, finish=SurfaceFinish(0.8, 0.1))
+    )
+
+
+def test_flat_with_specular_stays_one_colour_per_polygon(gl_window):
+    """Flat uses the face normal and a non-local viewer for the highlight too."""
+    finish = SurfaceFinish(specular=0.6, glossiness=0.3)
+    pixels = _render(gl_window, _grid(rotate=False), flat=True, finish=finish)
+    matte = _render(gl_window, _grid(rotate=False), flat=True, finish=MATTE_FINISH)
+    assert _diff(pixels, matte)[1] > 50
+    colours = {pixels[i:i + 3] for i in range(0, len(pixels), 3) if any(pixels[i:i + 3])}
+    assert len(colours) <= 4, len(colours)
+    other = _render(gl_window, _grid(rotate=True), flat=True, finish=finish)
+    assert _diff(pixels, other)[1] <= 40  # still independent of the triangulation diagonal
+
+
+def test_smooth_with_specular_has_no_triangulation_diagonal(gl_window):
+    finish = SurfaceFinish(specular=0.8, glossiness=0.4)
+    a = _render(gl_window, _grid(rotate=False), flat=False, finish=finish)
+    b = _render(gl_window, _grid(rotate=True), flat=False, finish=finish)
+    assert _diff(a, b)[1] <= 40
+
+
+def test_finish_change_is_a_material_update_only(gl_window):
+    rm, camera = _build(gl_window, _grid(rotate=False))
+    rm.bind_material(Material(DEFAULT_BASE_COLOR, DEFAULT_FINISH))
+    rm.mark_material_dirty()
+    rm.sync()
+    first = _draw(gl_window, rm, camera)
+    vlist = rm.store.vertex_list()
+    ids = {k: v for k, v in rm.resource_ids().items() if k != "material_uniforms"}
+    counters = dict(rm.benchmark_counters)
+    rm.bind_material(Material(DEFAULT_BASE_COLOR, SurfaceFinish(specular=0.9, glossiness=0.1)))
+    rm.mark_material_dirty()
+    rm.sync()
+    second = _draw(gl_window, rm, camera)
+    assert _diff(first, second)[1] > 50
+    assert rm.store.vertex_list() is vlist
+    assert {k: v for k, v in rm.resource_ids().items() if k != "material_uniforms"} == ids
+    now = rm.benchmark_counters
+    assert now["material_updates"] == counters["material_updates"] + 1
+    for name in ("structural_rebuilds", "topology_updates", "vertex_updates", "geometry_uploads"):
+        assert now.get(name, 0) == counters.get(name, 0), name
+    assert not rm.store._face_dirty  # no face-data re-upload pending
+    rm.store.release()

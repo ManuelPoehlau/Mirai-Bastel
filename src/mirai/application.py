@@ -2621,6 +2621,7 @@ class Application:
             flat=self.display.mode is DisplayMode.FLAT_SHADED,
         )
         self.viewport.set_light(self.display.light_rig)
+        self.viewport.set_surface_finish(self.display.surface_finish)
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
 

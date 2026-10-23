@@ -359,7 +359,7 @@ Jede Frage wird später in einer spielbaren Testsituation gestellt. Antwort: **K
 | F10 | Welche Presets aus Polarität × Kontraststufe tragen — für genaue Formprüfung und für lange Sitzungen? | §4.1b |
 | F11 | Einzelfarbe oder Verlauf als Hintergrund? | §4.1b |
 | ~~F2~~ | ~~MatCap-Look~~ — **raus** (Artist-Aussage 2026-09-26, §2.4) | A5 |
-| ~~F3~~ | ~~Glanzlicht~~ — zurückgestellt, nicht Teil des Zielsetups Key + Rim | A7 |
+| ~~F3~~ | ~~Glanzlicht~~ — zurückgestellt, nicht Teil des Zielsetups Key + Rim. **2026-10-23:** Richtung von Manu freigegeben (einstellbarer Glanz für die Formlesbarkeit), in Production gebaut, Werte `PROVISIONAL` — [AD-018, Addendum 2026-10-23](../../architecture/AD-018-PRODUCTION-DRAW-BINDING.md) | A7 |
 | F4 | Sind Zebra-Streifen ein nützlicher Prüfmodus (z. B. für Pole)? | B6 |
 | F5 | X-Ray: lieber durchsichtige Faces oder nur gedimmte verdeckte Kanten? | E1 vs. E3 |
 | F6 | Wie deutlich soll Hover sein — Farbe, Umriss, beides? | D2 (Darstellung), Semantik bleibt im UX-System |
