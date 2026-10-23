@@ -150,6 +150,10 @@ LOOP_SLIDE = "LoopSlide"
 # Alt+E binding is gone. Face mode only.
 EXTRUDE = "Extrude"
 
+# TOGGLE_TRANSFORM_SPACE (WP Toolbox Gaps C1, the Playground's `K`, `PROVISIONAL`): global, World <->
+# Normal for the axis constraints and the gizmo (`mirai.transform_space`); state like a constraint.
+TOGGLE_TRANSFORM_SPACE = "ToggleTransformSpace"
+
 # --- Selection steps (WP Toolbox Gaps A1, Manu 2026-10-23; `mirai.topology.selection_steps`) ---
 # Global, like Shift+L / Shift+R: no History step (a selection change, like a click).
 # SELECT_GROW / SELECT_SHRINK: active mode V/E/F. LOOP_GROW / LOOP_SHRINK (Shift+Up / Shift+Down,

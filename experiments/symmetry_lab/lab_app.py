@@ -168,6 +168,8 @@ NON_OPERATION = frozenset(
         cmd.CONSTRAIN_PLANE_XY,
         cmd.CONSTRAIN_PLANE_XZ,
         cmd.CONSTRAIN_PLANE_YZ,
+        # WP Toolbox Gaps C1: World <-> Normal for the constraints - state like them, no mesh.
+        cmd.TOGGLE_TRANSFORM_SPACE,
         # soft settings (WP-SOFT-01 S2a, AD-020 / AD-013 G-2 note 2026-10-10): state for the next
         # gesture like the constraints - no interaction, no mesh. The Soft + symmetry refusal is
         # `Application`'s, at `begin()`; O must stay allowed so soft can be switched off here.

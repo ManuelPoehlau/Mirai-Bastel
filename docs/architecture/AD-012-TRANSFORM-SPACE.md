@@ -291,3 +291,26 @@ possible axis. It stops working now that Normal needs `x`/`y`/`z` sub-selection.
 - `space="screen"` — still axis-less, per the original deferral.
 - `space="local"` / gimbal — still ARCH-01-blocked, unrelated to this amendment.
 - Core (`VertexTransformOperation` and subclasses) — untouched, per AD-003.
+
+## Implementation note (2026-10-23): Normal in App (WP Toolbox Gaps C1)
+
+The production app (`src/mirai/application.py`) now reaches `space="normal"`; before, only the Playground did.
+
+- **State and key:** `Application.transform_orientation` (`world` / `normal`), toggled by `K`
+  (`commands.TOGGLE_TRANSFORM_SPACE`, the Playground's key, `PROVISIONAL`, rebindable). The toggle clears the
+  constraint (the same letter is another direction in the other frame), is no History step and is shown in the HUD
+  row "Space". Not during a begun gesture; an armed one takes the new value.
+- **What it changes:** only constrained gestures. With a constraint in Normal, `begin()` gets
+  `space="normal", axis=<constraint>` (the two-parameter form of the 2026-09-19 amendment). **No constraint stays
+  free** in both spaces (screen plane / view axis / uniform) — a deliberate difference from the Playground, which
+  moved along the normal there (`PROVISIONAL`, practical test C).
+- **Frame:** `mirai.transform_space.normal_frame` — one selected face: the amendment's basis (X = first edge,
+  Y = normal × X, Z = normal); any other selection: Z = the averaged normal only. Gizmo and gesture read the same
+  frame, computed from the current mesh (`SelectionNormals`), not from the viewport's derived data, which follows
+  only at the next draw. The gizmo maps it to world for a placed object (`object_space.axis_to_world`); mode `4`
+  keeps the world axes (object gesture, object-local stays ARCH-01).
+- **Refusals** (status line, nothing moves, no History): X/Y and the planes without one selected face; Scale along
+  any axis without one selected face (`ScaleTool` needs the full basis); a selection whose normals cancel out.
+- **Not changed:** the tools, `_resolve_space`, Core. Multi-face tangent frames stay deferred
+  (`docs/future_ideas/TRANSFORM.md`).
+- Tests: `tests/test_application_transform_space.py`.

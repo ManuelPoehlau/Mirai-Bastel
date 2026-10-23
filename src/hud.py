@@ -70,6 +70,8 @@ class HudState:
     #: The interaction that owns the keys right now ("Move", "Knife", ...), None = none.
     active: Optional[str]
     constraint: Optional[str]
+    #: Transform orientation (WP Toolbox Gaps C1): "world" / "normal".
+    space: str
     symmetry: Optional[str]
     display: str
     soft_on: bool
@@ -98,6 +100,7 @@ def hud_state(app) -> HudState:
         tool=_TOOL_NAMES.get(app.tweak_command, app.tweak_command),
         active=active,
         constraint=app.axis_constraint,
+        space=app.transform_orientation,
         symmetry=current_axis(app.scene.mesh),
         display=app.display.label,
         soft_on=soft.enabled,
@@ -121,6 +124,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     ),
     "Tool": ((commands.MOVE, commands.ROTATE, commands.SCALE), None),
     "Axis": ((commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z), None),
+    "Space": ((commands.TOGGLE_TRANSFORM_SPACE,), None),
     "Sym": ((commands.SYMMETRY_CYCLE,), None),
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),
@@ -175,6 +179,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         HudRow("Mode", state.mode, hints.get("Mode", "")),
         HudRow("Tool", tool, hints.get("Tool", ""), on=state.active is not None),
         HudRow("Axis", axis, hints.get("Axis", ""), on=state.constraint is not None),
+        HudRow("Space", state.space.capitalize(), hints.get("Space", ""), on=state.space != "world"),
         HudRow("Sym", state.symmetry.upper() if state.symmetry else "off", hints.get("Sym", ""),
                on=state.symmetry is not None),
         HudRow("Display", state.display, hints.get("Display", "")),

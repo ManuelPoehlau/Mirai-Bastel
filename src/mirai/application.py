@@ -171,6 +171,7 @@ from .viewport.box_select import (
     stroke_samples,
 )
 from .viewport import gizmo as _gizmo
+from . import transform_space
 from .viewport.gpu_picking import gpu_elements_in_rect, gpu_elements_in_region, gpu_pick_component
 from .viewport.picking import pick_component, pick_face, pick_object
 from .viewport.picking_cache import PickCache
@@ -682,6 +683,10 @@ class Application:
         # scharfen Tool, überlebt Commit/Cancel/neues Scharfschalten und wird
         # bei jedem `begin()` gelesen. None = frei.
         self._axis_constraint: str | None = None
+        # WP Toolbox Gaps C1 (`PROVISIONAL`): what the constraints mean - world axes or the
+        # selection's normal frame (`mirai.transform_space`). Sticky like the constraint, read at
+        # `begin()` and by the gizmo; not in History or scene files.
+        self._orientation: str = transform_space.WORLD
         # WP-SOFT-01 S2a (AD-020, `PROVISIONAL`, off by default): sticky Soft Selection
         # settings with the semantics of the axis constraint above - they survive commit,
         # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
@@ -824,6 +829,7 @@ class Application:
         self._gizmo_gesture: str | None = None
         self._gizmo_press_xy: tuple[float, float] | None = None  # cursor at the handle press (Rotate dial)
         self._gizmo_cache: tuple | None = None
+        self._gizmo_frame_cache: tuple | None = None  # (pivot cache key, NormalFrame | None), Normal space
         self.tweak_command: str = commands.MOVE
         self._gesture_refused: bool = False
         # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
@@ -1976,6 +1982,8 @@ class Application:
             return self._subd_command(command)
         if command in _MODE_COMMANDS:
             return self._set_selection_mode(_MODE_COMMANDS[command])
+        if command == commands.TOGGLE_TRANSFORM_SPACE:
+            return self._toggle_orientation()
         if self._object_mode_refuses(command):
             return False
         if command in _PLACEMENT_COMMANDS:
@@ -3270,6 +3278,11 @@ class Application:
         return self._transform_space
 
     @property
+    def transform_orientation(self) -> str:
+        """`world` or `normal` (WP Toolbox Gaps C1): the frame the axis constraints and the gizmo use."""
+        return self._orientation
+
+    @property
     def axis_constraint(self) -> str | None:
         """Sticky Achsen-/Ebenen-Constraint als `space`-String (None = frei)."""
         return self._axis_constraint
@@ -3351,6 +3364,8 @@ class Application:
                 # nor the sticky state changes.
                 return False
             return self._constrain(_CONSTRAINT_SPACES[command])
+        if command == commands.TOGGLE_TRANSFORM_SPACE:
+            return self._toggle_orientation()
         if command == commands.CANCEL:
             return self._cancel()
         if command in _DISPLAY_COMMANDS:
@@ -3500,6 +3515,31 @@ class Application:
         self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
         return True
 
+    def _toggle_orientation(self) -> bool:
+        """`K` (WP Toolbox Gaps C1, the Playground's key, `PROVISIONAL`): World <-> Normal. Clears the
+        constraint like the Playground: the same letter is another direction in the other frame. Not
+        during a begun gesture (its frame is fixed at `begin()`); an armed one takes the new value."""
+        if self._transform_begun:
+            return False
+        self._orientation = (
+            transform_space.NORMAL if self._orientation == transform_space.WORLD else transform_space.WORLD
+        )
+        self._axis_constraint = None
+        self._set_status(f"Transform space: {self._orientation.capitalize()} (constraint none)")
+        return True
+
+    def _normal_space_context(self) -> tuple[str | None, dict]:
+        """(refusal, begin parameters) of a constrained gesture in Normal space: `space="normal"` with the
+        constraint as `axis`, and the selection's current normals as `derived_geometry` (the tools' frame is
+        the gizmo's frame, `transform_space`)."""
+        normals = transform_space.SelectionNormals(self.scene.mesh, self.selection)
+        frame = transform_space.normal_frame(self.scene.mesh, self.selection, normals)
+        refusal = transform_space.normal_refusal(
+            frame, self._transform_space, scale=self._transform_command == commands.SCALE
+        )
+        context = {"space": transform_space.NORMAL, "axis": self._transform_space, "derived_geometry": normals}
+        return refusal, context
+
     def _transform_step(self, dx: float, dy: float, force: bool = False) -> bool:
         """Eine Mausbewegung, während ein Transform scharf ist. Die erste
         Bewegung startet die Interaktion (keine Schwelle, AD-016); ein
@@ -3541,6 +3581,15 @@ class Application:
             }
             if soft is not None:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
+            if self._orientation == transform_space.NORMAL and self._transform_space is not None:
+                refusal, normal_context = self._normal_space_context()
+                if refusal is not None:
+                    label = _TRANSFORM_COMMANDS[self._transform_command][0]
+                    self._transform_end()
+                    self._set_status(f"{label}: refused — {refusal}")
+                    self._refresh_hover()
+                    return False
+                begin_context.update(normal_context)
             rotate_gizmo = self._rotate_gesture_mode()
             if rotate_gizmo is not None:
                 begin_context["gizmo"] = {
@@ -4941,6 +4990,32 @@ class Application:
         points = [object_space.to_world(obj, obj.pivot) for obj in targets]
         return tuple(sum(p[i] for p in points) / len(points) for i in range(3))
 
+    def _gizmo_frame(self) -> tuple[list, list]:
+        """The gizmo's axes and planes in world space: the world axes, or in Normal space (C1) the
+        selection's frame (`transform_space.normal_frame`: X/Y/Z for one face, Z only otherwise, nothing
+        but the free handles when the selection has no normal). Mode `4` stays on the world axes (the
+        object gesture). Cached with the same key as the pivot."""
+        if self._orientation == transform_space.WORLD or self.selection.mode is SelectionMode.OBJECT:
+            return _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES
+        # The pivot is computed first (`_gizmo_pivot`), so its cache key is current here.
+        key = self._gizmo_cache[0] if self._gizmo_cache is not None else None
+        cache = self._gizmo_frame_cache
+        if key is None or cache is None or cache[0] != key:
+            frame = transform_space.normal_frame(self.scene.mesh, self.selection)
+            self._gizmo_frame_cache = (key, frame)
+        else:
+            frame = cache[1]
+        if frame is None:
+            return [], []
+        edit = self.scene.edit_object
+
+        def world(v):
+            return object_space.axis_to_world(edit, v)
+
+        axes = [(name, world(d)) for name, d in frame.axes()]
+        planes = [(name, world(a), world(b)) for name, a, b in frame.planes()]
+        return axes, planes
+
     @property
     def _gizmo_camera(self):
         """The gizmo lives in world space, at both levels: the pivot is a world point and the handles
@@ -4976,14 +5051,16 @@ class Application:
         hover = None
         if self._cursor is not None and not self.pointer.active:
             hover = self._gizmo_handle_at(*self._cursor, pivot=pivot)
-        return _gizmo.draw_items(camera, pivot, self.gizmo_tool, self._axis_constraint, hover)
+        axes, planes = self._gizmo_frame()
+        return _gizmo.draw_items(camera, pivot, self.gizmo_tool, self._axis_constraint, hover, axes, planes)
 
     def _gizmo_handle_at(self, x: float, y: float, pivot=None) -> str | None:
         pivot = self._gizmo_pivot_if_shown() if pivot is None else pivot
         if pivot is None:
             return None
+        axes, planes = self._gizmo_frame()
         return _gizmo.pick_handle(
-            self._gizmo_camera, pivot, _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES, self.gizmo_tool, x, y,
+            self._gizmo_camera, pivot, axes, planes, self.gizmo_tool, x, y,
             int(self.viewport_width), int(self.viewport_height),
         )
 

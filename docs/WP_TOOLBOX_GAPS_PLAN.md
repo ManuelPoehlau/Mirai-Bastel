@@ -2,7 +2,7 @@
 
 **An:** Claude Code
 **Modell/Effort:** Opus, effort `high` für B1/B2 (Core-Topologie), `medium` für A1/A2/C1/C2
-**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest B nach B2); C1 … B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
+**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest B nach B2); C1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest C nach C2); C2, B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
 **Modus (M5):** Production, Core-first, **kein Lab** (Blender-bekannte Werkzeuge, AGENTS.md §7a).
 Promotion (M3) durch Manu im Chat 2026-10-23: „Werkzeuge, die in Mirai noch in Production müssen“ —
 Collapse, Box/Lasso Select Through, Koordinatensystem aus dem Playground, Grow Selection, Loop-Extend,
@@ -141,6 +141,18 @@ gesammelten Praxistest (§3).
 ### Paket C — Transform-Raum und Glätten
 
 **C1 Transform Orientation World/Normal.**
+- *Gebaut 2026-10-23* (`src/mirai/transform_space.py`, `Application.transform_orientation` / `_toggle_orientation`
+  / `_gizmo_frame`, HUD-Zeile „Space“; Tests `tests/test_application_transform_space.py`;
+  [AD-012, Implementierungsnotiz](architecture/AD-012-TRANSFORM-SPACE.md#implementation-note-2026-10-23-normal-in-app-wp-toolbox-gaps-c1)).
+  Präzisierungen, `PROVISIONAL`:
+  - Taste `K` (wie im Playground), schaltet World ↔ Normal und löscht die Constraint.
+  - Der Rahmen liegt in `mirai/transform_space.py` statt in `viewport/gizmo.py`: Gizmo **und** Geste lesen ihn,
+    das Gizmo bekommt nur Achsen und Ebenen.
+  - **Ohne Constraint bleibt es frei**, auch in Normal (Blender/Maya). Der Playground schob ohne Constraint entlang
+    der Normale; das ist ein Punkt für den Praxistest.
+  - Ablehnung mit Statuszeile: X/Y und Ebenen ohne genau eine gewählte Fläche, Scale entlang einer Achse ohne genau
+    eine Fläche.
+  - Modus `4` bleibt World.
 - *Ziel:* Gizmo und W/E/R wahlweise im Normal-Raum, wie im Playground.
 - *Scope:*
   - App-Zustand `transform_space` mit Toggle-Command und HUD-Anzeige, durchgereicht an
@@ -187,7 +199,10 @@ gesammelten Praxistest (§3).
   - Vertex-Modus: zwei benachbarte Punkte wählen → einer; zwei nicht verbundene Punkte → nichts passiert.
   - Subdivide auf einer Face-Insel und auf dem ganzen Mesh.
 - **C:**
-  - Umschalten World/Normal, an Wange und Nase in beiden Räumen bewegen und drehen.
+  - Umschalten World/Normal (`K`, HUD-Zeile „Space“), an Wange und Nase in beiden Räumen bewegen und drehen:
+    eine Fläche wählen → Gizmo zeigt X/Y/Z der Fläche; Punkte/Kanten → nur Z (Normale).
+  - Frage: Soll W/E/R **ohne** Constraint in Normal frei bleiben (jetzt), oder wie im Playground entlang der Normale
+    schieben?
   - Relax und Smooth auf einem Loop-Bereich, mit SubD-Vorschau an: einmal antippen, einmal halten + ziehen.
 
 ## 4. Definition of Done (je Slice)

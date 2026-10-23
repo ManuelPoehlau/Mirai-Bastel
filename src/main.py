@@ -188,6 +188,9 @@ Scope (binding, see the handoffs):
   Also shown for a placed edit object (2026-10-23): at the selection's world position, world axes.
   Object level (2026-10-23, `PROVISIONAL`): in mode `4` the same gizmo sits at the centroid of the selected
   Normal objects' pivots (Reference: none) and drives the object gesture along the world axes.
+  World / Normal (WP Toolbox Gaps C1, `PROVISIONAL`): K toggles the transform space; in Normal the gizmo and
+  X/Y/Z use the selection's frame (one face: first edge / normal × edge / normal; otherwise the normal only),
+  shown in the HUD row "Space" (`mirai.transform_space`).
 - SubD preview (2026-10-23, `PROVISIONAL` keys, `mirai.subdivision`, promoted from the SubD Lab): V cycles
   off → smooth surface + cage → smooth surface + isolines, Ctrl+1/2/3 the level (start 2), Shift+V the cage's
   depth (hidden by the surface / always visible), Alt+V the opacity of the cage in the isoline view; in a SubD

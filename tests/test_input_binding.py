@@ -189,7 +189,8 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("c", "shift"), GLOBAL_CONTEXT), cmd.COLLAPSE)
         self.assertEqual(bs.command_for(_key("c", "shift"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
         self.assertEqual(bs.command_for(_key("c"), GLOBAL_CONTEXT), cmd.CONNECT)
-        self.assertIsNone(bs.command_for(_key("k"), TOPOLOGY_CONTEXT))
+        # C1: K is now the global World/Normal toggle, so the topology context falls back to it.
+        self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.TOGGLE_TRANSFORM_SPACE)
 
     def test_global_fallback_in_topology_context(self):
         bs = build_default_bindings()

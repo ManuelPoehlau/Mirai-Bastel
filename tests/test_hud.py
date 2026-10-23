@@ -146,7 +146,7 @@ def test_rows_text(app):
     app.key_press(_key("x"))
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
-    assert list(rows) == ["Mode", "Tool", "Axis", "Sym", "Display", "Soft", "SubD"]
+    assert list(rows) == ["Mode", "Tool", "Axis", "Space", "Sym", "Display", "Soft", "SubD"]
     assert rows["Axis"].value == "X" and rows["Axis"].on
     assert rows["Sym"].value == "off" and not rows["Sym"].on
     assert rows["Soft"].value == "on · 15 % · smooth" and rows["Soft"].on

@@ -177,6 +177,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("x", "shift"), cmd.CONSTRAIN_PLANE_YZ)
     bs.set_default(_key("y", "shift"), cmd.CONSTRAIN_PLANE_XZ)
     bs.set_default(_key("z", "shift"), cmd.CONSTRAIN_PLANE_XY)
+    # WP Toolbox Gaps C1 (`PROVISIONAL`, "Orientation-Toggle wie im Playground"): K = World <-> Normal.
+    bs.set_default(_key("k"), cmd.TOGGLE_TRANSFORM_SPACE)
     # Komplette Deselection zusätzlich zum „Klick ins Leere" (WP-01-BUGS_AND_TODOS).
     bs.set_default(_key("a", "alt"), cmd.CLEAR_SELECTION)
     # WP-06 B6 (AD-017): Contextual C — Split (1 edge) / Edge Connect (2+
