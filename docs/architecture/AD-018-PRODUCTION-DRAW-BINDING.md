@@ -578,7 +578,7 @@ diagonal give the same image, with the old per-triangle path as the failing cont
 the old formula; zero uploads for light changes), `tests/test_render_mesh_face_data.py`,
 `tests/test_viewport_light.py`, `tests/test_light_rig.py`.
 
-*Addendum 2026-10-23 (specular / gloss, Artist-approved direction "einstellbarer Glanz für die Formlesbarkeit"):*
+*Addendum 2026-10-23 (specular / gloss, Artist-approved direction "einstellbarer Glanz für die Formlesbarkeit"):* **Verdict KEEP** (Manu, 2026-10-23, in chat after the practical test, recorded by the agent; covers the built look and defaults).
 the material packet (`material_uniforms`) grows from 3 to 6 floats, `[r, g, b, specular, glossiness,
 fill_specular]` (`src/viewport/material.py`: `Material`, `SurfaceFinish`, `read_packet`); a 3-float packet still
 reads as a colour with the default finish, so a host material keeps working. It stays a declared uniform: a finish

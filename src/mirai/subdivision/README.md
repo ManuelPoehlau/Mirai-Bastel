@@ -1,6 +1,8 @@
 # SubD in Production (`src/mirai/subdivision/`)
 
-**Status (2026-10-23):** Production-Fähigkeit, **nicht Artist-validiert**. Gebaut, automatisch getestet und im
+**Status (2026-10-23):** Production-Fähigkeit, **Verdikt KEEP** (Manu, 2026-10-23, im Chat nach dem Praxistest:
+„ich gebe allem ein Keep“ — SubD in der App mit Tasten, Stufen, Linien-Hierarchie, Highlights und `Shift+D`; vom Agent
+eingetragen). KEEP ist keine Festlegung der Tasten als Artist Input Truth. Gebaut, automatisch getestet und im
 Container gemessen. Die Richtung hat Manu freigegeben ("SubD gehört in den Production-Modeller", Käfig, Isolinien und
 Highlight als eine zusammenhängende Darstellung); Tasten, Stufen-Default, Limit und Look sind `PROVISIONAL`.
 Herkunft: das SubD Lab ([`experiments/subdivision_lab/`](../../../experiments/subdivision_lab/README.md),
