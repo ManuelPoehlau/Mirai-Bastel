@@ -22,7 +22,9 @@ from scene_menu import (
     HEADER_HEIGHT,
     ROW_HEIGHT,
     SceneMenu,
+    add_mesh_entries,
     add_named_reference,
+    add_primitive_named,
     load_named_scene,
     scene_entries,
 )
@@ -220,3 +222,46 @@ def test_refresh_replaces_the_entries_on_every_open():
     assert menu.rect[3] == HEADER_HEIGHT + 3 * ROW_HEIGHT
     menu.press(110.0, 500.0 - HEADER_HEIGHT - 5)
     assert loaded == ["new"]
+
+
+# -- Add Mesh (Track A1, 2026-10-23) ---------------------------------------------------------
+
+
+def test_add_mesh_entries_are_the_four_primitives_in_order():
+    assert add_mesh_entries() == ("plane", "cube", "sphere", "cylinder")
+
+
+def test_add_primitive_named_adds_a_selected_normal_object():
+    app = Application()
+    app.init_scene("cube")
+    app.set_viewport_size(800, 600)
+
+    assert add_primitive_named(app, "sphere") is True
+
+    assert len(app.scene.objects) == 2
+    assert app.status_message.startswith("Added 'sphere'")
+
+
+def test_add_primitive_named_reports_a_failure_as_a_status_line():
+    app = Application()
+    app.init_scene("cube")
+
+    assert add_primitive_named(app, "teapot") is False
+
+    assert app.status_message == "Add 'teapot' failed: unknown primitive 'teapot'"
+    assert len(app.scene.objects) == 1
+
+
+def test_the_add_mesh_menu_uses_its_own_title_and_a_click_adds_the_row():
+    added: list = []
+    menu = SceneMenu(
+        add_mesh_entries(),
+        load=lambda name: added.append(name) or True,
+        title="Add Mesh (Shift+A)",
+    )
+    menu.open(100.0, 300.0, 800, 600)
+    x, top, _, _ = menu.rect
+    # Row 2 = sphere.
+    assert menu.press(x + 10, top - HEADER_HEIGHT - 2 * ROW_HEIGHT - 5) is True
+    assert added == ["sphere"]
+    assert not menu.is_open

@@ -92,15 +92,19 @@ from .scene_objects import (
     AddObjectCommand,
     ApplyRefused,
     CompositeCommand,
+    DeleteObjectsCommand,
+    DeleteRefused,
     ObjectPivotCommand,
     ObjectStateCommand,
     ObjectTransformCommand,
     applied_symmetry_axis,
     apply_placement,
     object_base_color,
+    plan_object_delete,
     replace_scene,
     selected_color,
     reset_scene,
+    unique_object_name,
 )
 from .soft_selection import (
     EMPTY_BANDS,
@@ -937,10 +941,10 @@ class Application:
     @staticmethod
     def _build_mesh(geometry_type: str, obj_path: str | Path | None) -> tuple[Mesh, str]:
         """Das Mesh einer Szene bzw. eines hinzugefügten Objekts und sein Objektname."""
-        if geometry_type == "cube":
-            from .scene_factory import create_cube
+        from .scene_factory import PRIMITIVES
 
-            return create_cube(), "cube"
+        if geometry_type in PRIMITIVES:
+            return PRIMITIVES[geometry_type](), geometry_type
         if geometry_type == "obj":
             if obj_path is None:
                 raise ValueError('geometry_type="obj" requires obj_path')
@@ -981,6 +985,94 @@ class Application:
         self._sync_object_views()
         self._set_status(f"Added {obj.name!r} as Reference")
         return obj
+
+    def add_primitive(self, kind: str, name: str | None = None) -> SceneObject | None:
+        """Add Mesh (Track A1, 2026-10-23, `PROVISIONAL`; `scene_factory.PRIMITIVES`: plane, cube,
+        sphere, cylinder): ein neues, **bearbeitbares** Objekt am Ursprung - keine Referenz.
+
+        Wechselwirkung mit Modus und Edit-Objekt: die Application geht in Modus `4`, das neue
+        Objekt ist die einzige Objekt-Auswahl (sichtbar hervorgehoben, W/E/R bewegen es sofort) und
+        die Komponenten-Auswahl wird geleert; das **Edit-Objekt bleibt** - `1`/`2`/`3` machen das
+        neue Objekt über die Q-5-Geste (ein ausgewähltes Normal-Objekt) zum Edit-Objekt. Ein
+        Undo-Schritt (`AddObjectCommand` + ein Spiegel-Eintrag): Undo entfernt das Objekt und stellt
+        Modus, Auswahl und Edit-Objekt davor wieder her, Redo setzt dieselbe Instanz (gleiche
+        ObjectId) wieder ein. Abgelehnt (Statuszeile, None), solange eine Interaktion die Tasten
+        hält; ein unbekannter `kind` fliegt als ValueError. Gibt das neue Objekt zurück."""
+        if self.viewport is None:
+            raise RuntimeError("add_primitive() before init_scene()")
+        from .scene_factory import PRIMITIVES
+
+        if kind not in PRIMITIVES:
+            raise ValueError(f"unknown primitive {kind!r}")
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"Add {kind}: not while the {owner} interaction runs")
+            return None
+        scene, selection = self.scene, self.selection
+        before = self._selection_snapshot()
+        obj = scene.add_object(PRIMITIVES[kind](), name=name or unique_object_name(scene, kind))
+        self.history.push(AddObjectCommand(scene, obj))
+        selection.mode = SelectionMode.OBJECT
+        selection.clear()
+        selection.objects = {obj.id}
+        selection.hovered = None
+        self._record_selection_history(before, mesh_step=False)
+        self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        self._sync_object_views()
+        self._refresh_hover()
+        self._set_status(
+            f"Added {obj.name!r} - selected (Object mode); W/E/R place it, 1/2/3 edit it"
+        )
+        return obj
+
+    def _delete_objects_command(self) -> bool:
+        """`Delete` in mode `4` (Track A2): remove the selected objects - **not** points/edges/
+        faces (`_removal_command` is the component Delete and is unchanged). One Undo step
+        (`DeleteObjectsCommand` + one mirror entry) however many objects; the same instances come
+        back on Undo with their ids, and Undo restores the selection and the edit object of
+        before. Deleting the edit object hands the edit role to a surviving Normal object
+        (`plan_object_delete`); the last object, or leaving only References, is refused with a
+        status line - the scene has no empty state."""
+        label = "Delete object"
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
+            return False
+        scene, selection = self.scene, self.selection
+        selected = [oid for oid in sorted(selection.objects) if oid in scene.objects]
+        if not selected:
+            self._set_status(f"{label}: no object selected - click one first")
+            return False
+        try:
+            doomed, edit_after = plan_object_delete(scene, selected)
+        except DeleteRefused as exc:
+            self._set_status(f"{label}: {exc}")
+            return False
+        before = self._selection_snapshot()
+        edit_before = scene.edit_object_id
+        edit_changed = edit_after != edit_before
+        scene.edit_object_id = edit_after
+        for obj in doomed:
+            scene.remove_object(obj.id)
+        self.history.push(DeleteObjectsCommand(scene, doomed, edit_before, edit_after))
+        selection.objects -= {obj.id for obj in doomed}
+        if edit_changed:
+            selection.clear()  # component ids belong to the deleted edit object's mesh
+        selection.hovered = None
+        self._record_selection_history(before, mesh_step=edit_changed)
+        if edit_changed:
+            self._follow_edit_object()
+        else:
+            self._sync_object_views()
+        self._soft_preview_refresh()
+        self._refresh_hover()
+        names = ", ".join(repr(obj.name) for obj in doomed)
+        text = f"Deleted {names}"
+        if edit_changed:
+            text += f" - now editing {scene.edit_object.name!r}"
+        self._set_status(text)
+        return True
 
     def _sync_object_views(self) -> None:
         """Gleicht die Render-Einträge und Pick-Caches der Nicht-Edit-Objekte mit
@@ -1069,11 +1161,18 @@ class Application:
         if object_id == scene.edit_object_id:
             return
         scene.edit_object_id = object_id
-        obj = scene.edit_object
+        self._follow_edit_object()
+
+    def _follow_edit_object(self) -> None:
+        """Everything that hangs on the edit object's mesh follows `scene.edit_object_id`. Called
+        by `_set_edit_object`, by Delete of the edit object, and by Undo/Redo of a step whose
+        command changed the edit object itself (`DeleteObjectsCommand`, `AddObjectCommand`): the
+        scene is already switched there, only the view is behind."""
+        obj = self.scene.edit_object
         self._pick_cache.invalidate()
         self.selection.hovered = None
         if self.viewport is not None:
-            self.viewport.remove_object_entry(object_id)
+            self.viewport.remove_object_entry(obj.id)
             self.viewport.set_edit_mesh(obj.mesh, object_space.model_matrix(obj))
         self._soft_refresh_radius()
         self._sync_object_views()
@@ -1208,12 +1307,12 @@ class Application:
         (`_object_arm`: nothing selected, only References)."""
         if self.selection.mode is not SelectionMode.OBJECT or command not in _COMPONENT_COMMANDS:
             return False
-        if command in _OBJECT_TRANSFORM_COMMANDS:
-            return False
+        if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
+            return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
         self._set_status(
-            "Object mode: T, G, I, C, Delete/Dissolve, Shift+L/R and Shift+S work on"
+            "Object mode: T, G, I, C, Dissolve, Shift+L/R and Shift+S work on"
             " points/edges/faces"
-            " - press 1/2/3"
+            " - press 1/2/3 (Delete removes the selected objects)"
         )
         return True
 
@@ -1617,6 +1716,8 @@ class Application:
             return self._reference_command()
         if command == commands.CONNECT:
             return self._connect_command()
+        if command == commands.DELETE and self.selection.mode is SelectionMode.OBJECT:
+            return self._delete_objects_command()
         if command in _REMOVAL_COMMANDS:
             return self._removal_command(command)
         if command == commands.SYMMETRY_CYCLE:
@@ -3560,13 +3661,20 @@ class Application:
             self._last_undo_redo_mesh_step = entry[2]
             object_meshes = entry[3]
 
+        edit_before_step = self.scene.edit_object_id
         if command == commands.UNDO:
             self.history.undo()
         else:
             self.history.redo()
+        if self.scene.edit_object_id != edit_before_step:
+            # A command that carries the edit object itself (Delete of the edit object, Add with
+            # an edit switch) switched the scene; viewport, caches and hover follow.
+            self._follow_edit_object()
 
         if restored is not None:
             self._restore_selection(restored)
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()  # an object step can change mode / selection
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
         # may be a placement (M2-2), so the pick caches re-project too (`_placement_changed`).

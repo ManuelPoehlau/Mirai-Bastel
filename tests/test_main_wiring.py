@@ -27,7 +27,9 @@ from scene_menu import (
     HEADER_HEIGHT,
     ROW_HEIGHT,
     SceneMenu,
+    add_mesh_entries,
     add_named_reference,
+    add_primitive_named,
     load_named_scene,
     scene_entries,
 )
@@ -307,6 +309,89 @@ def test_shift_click_on_a_row_adds_it_as_a_reference():
     assert app.scene.edit_object_id == edit
     assert app.camera.eye() == eye
     assert app.status_message == "Added 'cube' as Reference"
+
+
+# -- Add Mesh menu: Shift+A (Track A1, src/scene_menu.py, PROVISIONAL) -------
+
+
+@pytest.fixture
+def add_wired():
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    scene_menu = SceneMenu(scene_entries(), load=lambda name: True)
+    add_menu = SceneMenu(
+        add_mesh_entries(),
+        load=lambda name: add_primitive_named(app, name),
+        title="Add Mesh (Shift+A)",
+    )
+    main_module.install_handlers(window, app, menu=scene_menu, add_menu=add_menu)
+    return window, app, scene_menu, add_menu
+
+
+def test_shift_a_opens_the_add_mesh_menu_at_the_cursor_and_is_modal(add_wired):
+    window, app, scene_menu, add_menu = add_wired
+    h = window.handlers
+    h["on_mouse_motion"](300, 200, 0, 0)
+
+    assert h["on_key_press"](key.A, key.MOD_SHIFT) == pyglet.event.EVENT_HANDLED
+
+    assert add_menu.is_open and not scene_menu.is_open
+    assert add_menu.rect[0] == 300 and add_menu.rect[1] == 200
+    # Modal: W does not reach the application, and SPACE does not open the scene menu on top.
+    h["on_key_press"](key.W, 0)
+    assert app.transform_command is None
+    h["on_key_press"](key.ESCAPE, 0)
+    assert not add_menu.is_open
+
+
+def test_a_click_on_an_add_mesh_row_adds_that_primitive(add_wired):
+    window, app, _, add_menu = add_wired
+    h = window.handlers
+    h["on_key_press"](key.A, key.MOD_SHIFT)
+    mx, my, _, _ = add_menu.rect
+
+    # Row 2 = sphere (plane, cube, sphere, cylinder).
+    h["on_mouse_press"](mx + 10, my - HEADER_HEIGHT - 2 * ROW_HEIGHT - 5, mouse.LEFT, 0)
+
+    assert not add_menu.is_open
+    assert len(app.scene.objects) == 2
+    added = [o for o in app.scene.objects.values() if o.id != app.scene.edit_object_id][0]
+    assert added.name == "sphere" and app.selection.objects == {added.id}
+
+
+def test_a_click_outside_the_add_mesh_menu_closes_it_without_adding(add_wired):
+    window, app, _, add_menu = add_wired
+    h = window.handlers
+    h["on_key_press"](key.A, key.MOD_SHIFT)
+    h["on_mouse_press"](5, 5, mouse.LEFT, 0)
+    assert not add_menu.is_open and len(app.scene.objects) == 1
+
+
+def test_shift_a_does_not_open_the_menu_while_a_gesture_runs(add_wired):
+    window, app, _, add_menu = add_wired
+    h = window.handlers
+    app.selection.vertices = {sorted(app.scene.mesh.all_vertex_ids())[0]}
+    h["on_key_press"](key.W, 0)  # armed
+    assert app.interaction_owner == "transform"
+    h["on_key_press"](key.A, key.MOD_SHIFT)
+    assert not add_menu.is_open
+
+
+def test_deactivate_closes_the_add_mesh_menu(add_wired):
+    window, _, _, add_menu = add_wired
+    window.handlers["on_key_press"](key.A, key.MOD_SHIFT)
+    assert add_menu.is_open
+    window.handlers["on_deactivate"]()
+    assert not add_menu.is_open
+
+
+def test_without_an_add_menu_shift_a_reaches_the_application_as_before(wired):
+    window, app, = wired
+    assert window.handlers["on_key_press"](key.A, key.MOD_SHIFT) == pyglet.event.EVENT_HANDLED
+    assert len(app.scene.objects) == 1
 
 
 # -- Scene files: Ctrl+S (src/scene_files.py, PROVISIONAL) -------------------

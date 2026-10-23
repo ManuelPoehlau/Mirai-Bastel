@@ -11,7 +11,10 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); **M2-2
 implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); **M2-3 implemented 2026-10-15** (Apply / Clear
 transform, §6.5; new Artist questions Q-14…Q-16); **M2-4 implemented 2026-10-15** (switching the edit object, Q-5/Q-8,
-§6.6) — **M2 is built**; Manu's practical tests (Kurzfassung, `docs/ATELIER.md` B6–B8) pending, nothing promoted. New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+§6.6) — **M2 is built**; Manu's practical tests (Kurzfassung, `docs/ATELIER.md` B6–B8) pending, nothing promoted.
+**Track A implemented 2026-10-23** (Add Mesh primitives and object deletion in mode `4`, [§6.7](#67-track-a-implementation-note--add-mesh-and-delete-object-2026-10-23);
+no Core change; `PROVISIONAL`, practical test pending). Object-level mirror symmetry is **not** built — a design proposal:
+[OBJECT_MIRROR_SYMMETRY_PROPOSAL](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -49,6 +52,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-15 | agent | **M2-4 implemented** (Q-5 gesture, E-14 `_set_edit_object` as the one place, `Viewport.set_edit_mesh`, Q-8 Undo through E-14, §6.6); no Core change; the M1 gap in `_restore_selection` is closed |
 | 2026-10-16 | Manu (chat, Morph Lab test) | **Q-12 revised:** a plain click in `4` that also switches the object to Reference is confusing ("klick aufs mesh wandelt es als referenz um??"), and "man kann nicht wirklich sehen, welches Objekt ausgewählt ist" |
 | 2026-10-16 | agent | Built from that note (`PROVISIONAL`): a click in `4` only selects; **`Alt+R`** switches the selected objects Normal ↔ Reference (one Undo step; the edit object stays Normal, RF-5); selected objects are drawn tinted towards the selection yellow in `4` (`scene_objects.selected_color`, `Viewport.set_edit_base_color` for the edit object); no Core change |
+| 2026-10-23 | agent (task of Manu) | **Track A implemented** (§6.7): Add Mesh (Plane/Grid 4×4, Cube, Sphere 32×16, Cylinder 32; `Shift+A`) and object deletion in mode `4` (`Delete`; edit object hand-over, last object / only References refused); `AddObjectCommand` hardened for an edit object that is the added object. No Core change. Defaults, key and the origin placement are `PROVISIONAL`, practical test pending. Object-level mirror symmetry: design proposal only ([OBJECT_MIRROR_SYMMETRY_PROPOSAL](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md)) |
 
 ---
 
@@ -346,7 +350,7 @@ different objects interleave correctly on one stack. New commands, all plain `Co
 |---|---|---|
 | Object transform/pivot change | object, before/after transform and pivot | restores both |
 | Object state change (Normal ↔ Reference) | object, before/after state | restores state (one Undo step, Q-3 = yes) |
-| Add / remove object | the `SceneObject` instance | removes / re-inserts the **same** instance and ID (AD-001); add is one Undo step (Q-3 = yes) |
+| Add / remove object | the `SceneObject` instance | removes / re-inserts the **same** instance and ID (AD-001); add is one Undo step (Q-3 = yes). Track A: `DeleteObjectsCommand` holds the instances plus the edit object before/after (§6.7) |
 | Apply transform (L-3) | a `MeshStateCommand` + a transform command | both, as one entry |
 
 The last row is the only composite: a small `Command` that holds a list and undoes it in reverse — no change to
@@ -527,7 +531,7 @@ no edit-object change, no object hover, no soft-radius event. Names and texts `P
 | RF-3 object picking | `picking.pick_object` / `front_face_hit_t`; `Application._pick_object` | the front-most face hit along the cursor ray over **every** object, References included; the edit object reuses the App's pick cache, the others get their own |
 | A-2 / §6 "a click toggles" | `Application._select_object_at`, `_switch_object_state` | in `4` a plain click selects the object and, if it is not the edit object, switches Normal ↔ Reference (one Undo step, `ObjectStateCommand`); Shift/Ctrl/Alt+click change only `Selection.objects`; a click into empty space clears it. A click on the edit object selects it and says it cannot become a Reference (RF-5) — **Q-12**. *Superseded 2026-10-16 (Q-12 revised): the click only selects; `Alt+R` switches the selected objects* |
 | RF-6 / Q-2 | unchanged component picking | `1`/`2`/`3` hover, click, Knife and tools look at the edit object's mesh only, so a Reference in front never blocks them (test with a plate between camera and cube) |
-| L-1 / RF-4 / Q-1 | `_COMPONENT_COMMANDS`, `Application._object_mode_refuses` | in `4`, W/E/R/T, C, Delete/Dissolve and Shift+S are refused with a status line (key path and `dispatch_command`); with a Reference selected the transform keys name the lock. Undo/Redo, display, Soft settings and constraints stay allowed |
+| L-1 / RF-4 / Q-1 | `_COMPONENT_COMMANDS`, `Application._object_mode_refuses` | in `4`, W/E/R/T, C, Delete/Dissolve and Shift+S are refused with a status line (key path and `dispatch_command`; **since Track A `Delete` in `4` deletes the selected objects**, §6.7 - Backspace stays refused); with a Reference selected the transform keys name the lock. Undo/Redo, display, Soft settings and constraints stay allowed |
 | §4.6 App consequences / R-9 / E-5 | mirror stack | the snapshot gains `objects` and `edit_object_id`; every push, object steps included, records one mirror entry; an entry is `(before, after, mesh_step)` — an object step's Undo/Redo refreshes only the object entries (`_sync_object_views`, a reconcile against `scene.objects`), not the edit object's render mesh; pruning drops dead `ObjectId`s from `objects` and the hover |
 | RF-5 | `_switch_object_state` | the edit object never becomes a Reference (in M1 it is the only editable object; switching the edit object is M2) |
 
@@ -615,7 +619,7 @@ E-11 and E-12 as in the handoff, no Core change, nothing from M2-3/M2-4. Texts a
 | E-12 / Q-3 | `scene_objects.ObjectTransformCommand` | one command per gesture, `(obj, before, after)` for every object that changed; Undo/Redo set the transforms only (L-1); mirror entry `mesh_step=False`; after commit, every step, Undo and Redo: `_placement_changed()` (matrices, pick caches, hover). A tap or a gesture that ends where it began records nothing |
 | L-1 | — | the gesture writes `transform` only; every mesh's `export_state()` is unchanged (test) |
 | RF-4 / Q-1 | `_object_arm` | nothing selected → refused, text points at `1`/`2`/`3`; only References → refused, `'gollum' is a Reference - locked`; **mixed selection (`PROVISIONAL`)**: the References stay where they are and the arm and commit lines say `Reference 'x' stays (locked)` |
-| L-1 for T, C, Delete, Shift+S | `_object_mode_refuses` | still refused in `4` (`… work on points/edges/faces - press 1/2/3`) |
+| L-1 for T, C, Delete, Shift+S | `_object_mode_refuses` | still refused in `4` (`… work on points/edges/faces - press 1/2/3`); Track A: Delete is now the object delete in `4` (§6.7) |
 | Q-6 / L-4 | `_object_release`, `_set_selection_mode` | after a commit `Object 'gollum': moved|rotated|scaled (object level)` (`Objects 'a', 'b': …` for several); switching to `1`/`2`/`3` while the edit object is placed: `Mode: Vertex · object 'head_basemesh' is placed (object level)` |
 | Q-7 | AD-SYM-04 (E1 addendum), `symmetry_axis.py` docstring | the plane is the object's origin plane with an object axis as normal — the code was already so since M2-1 |
 
@@ -698,6 +702,41 @@ test_a_mesh_step_after_an_object_step_still_undoes_in_order` (M1) clears the obj
 the edit cube; `test_object_transform.py::test_mode_switch_names_the_placed_edit_object` (M2-2) expects the new
 `· editing 'cube'` note.
 
+### 6.7 Track A implementation note — Add Mesh and Delete object (2026-10-23)
+
+Add primitives and delete objects in the production app; no Core change (`Scene.add_object` / `remove_object` / `restore_object`
+and the `Scene` invariants as they are). Names, defaults and keys `PROVISIONAL`; no Artist verdict yet.
+
+| Rule | Where | What |
+|---|---|---|
+| **Primitives** | `scene_factory.PRIMITIVES`, `create_plane` / `create_cube` / `create_sphere` / `create_cylinder` | built with `Mesh.add_vertex` / `add_face` only, Y up like the cube, CCW from outside. Defaults = Blender's (the reference): **Plane/Grid** is *one* entry, a 4×4 quad grid of size 2 in XZ facing +Y (Loop/Ring/Soft have something to grip at once; `create_plane(segments=1)` is the single quad); **Cube** is the existing `create_cube`; **Sphere** is a UV sphere, radius 1, 32 segments × 16 rings, triangle fans at the Y poles (482 v / 512 f); **Cylinder** is 32 sides, radius 1, height 2 along Y, caps as one n-gon each (64 v / 34 f). All closed except the plane |
+| **Add Mesh menu** | `Shift+A` (window level like `SPACE`, `main.install_handlers(..., add_menu=)`), `scene_menu.add_mesh_entries` / `add_primitive_named`, `SceneMenu(title=)` | a menu at the cursor: Plane, Cube, Sphere, Cylinder; modal like the scene menu. `Shift+A` is unbound in the `BindingSet`, so no input-system change |
+| **Add: mode and edit object** | `Application.add_primitive` | a new **Normal** object at the world origin (Q-9: the camera stays), named `sphere`, `sphere.001`, … (`unique_object_name`; the id is the identity). The app goes to mode `4`, the component selection is cleared, the new object is the **only** object selection (drawn tinted) - so `W`/`E`/`R` place it at once and `1`/`2`/`3` edit it through the existing Q-5 gesture. The **edit object does not change**. Refused with a status line while W/E/R/T or the Knife owns the keys. One Undo step: `AddObjectCommand` + one mirror entry; Undo removes the object and restores mode, component/object selection and edit object of before, Redo re-inserts the same instance and id |
+| **`AddObjectCommand` review** | `scene_objects.AddObjectCommand` | `Scene.remove_object` refuses the edit object, and a Normal object *can* become the edit object between its Add and the Undo (`4`, click, `1` - no history step): the old command raised `ValueError` there (it never happened with References, whose state change is a step of its own). The command now carries `edit_before` (default: the scene's edit object at construction): Undo hands the edit role back first, and if the Add itself made the new object the edit object (`edit_before` given), Redo makes it so again |
+| **Delete** | `Application._delete_objects_command`, `scene_objects.plan_object_delete`, `DeleteObjectsCommand` | `Delete` in `4` removes the selected objects (several allowed, References included) - **not** points/edges/faces: the component Delete (`_removal_command`, `1`/`2`/`3`) is untouched, `Backspace` (Dissolve) has no object meaning and stays refused in `4`. One Undo step however many objects. Undo re-inserts the **same instances** (id, mesh, transform, pivot, state) in id order and restores selection, mode and edit object; Redo removes them again. Ids are never reused (AD-001) |
+| **The edit object is deleted** | `plan_object_delete`, `Application._follow_edit_object` | the edit role goes to the nearest surviving **Normal** object by id distance (the earlier one on a tie, `PROVISIONAL`); component selection is cleared, the viewport's overlay entry moves (`Viewport.set_edit_mesh`), pick caches, hover and the soft radius follow. `_follow_edit_object` is the second half of E-14 (`_set_edit_object` = set + follow); `_apply_undo_redo` calls it whenever a command moved `scene.edit_object_id` itself, so Undo/Redo of a delete (or of an Add whose object was the edit object) keep the view consistent |
+| **Last object / only References left** | `plan_object_delete` → `DeleteRefused` | **refused with a status line, nothing changes**: `the scene needs at least one object - the last one stays` / `only References would remain, and the scene needs an editable object - switch one to Normal (Alt+R) or keep the edit object`. There is no empty scene: `Scene` always has an edit object (`remove_object` refuses it, `scene.mesh` is read in ~80 places in `src/`), a hidden placeholder or a silently switched Reference would be the alternatives. Proper empty-scene support is its own Core + app change; it is not needed for the workflow. Everything else may go: deleting all objects *except* the edit object works |
+| **Stale state** | `_sync_object_views`, `_prune_ghost_selection`, mirror entries | the removed object's render entry (GPU buffers released), pick cache, `ObjectSpaceCamera`, object selection and hover are dropped; a selection restored by Undo is filtered against `scene.objects`. Because an object step can change the mode (Add), `_apply_undo_redo` also marks the selection overlays dirty after a restore |
+
+**Tests (focused, Production path):** `tests/test_scene_primitives.py` (20: counts, Euler characteristic, consistent winding,
+outward normals / positive volume, the plane's +Y, pole fans, n-gon caps, triangulation, independence), `tests/test_object_lifecycle.py` (30: every primitive
+added selected / Normal / one step, unknown kind and running gesture refused, unique names, Add from a component mode and Undo,
+Add → Undo → Redo with the same instance, usable with `W` and `1`, **Undo of an Add whose object became the edit object**
+and the bare-`Scene` `AddObjectCommand` with an edit switch, scene-file roundtrip of a primitive; Delete: single / several /
+Reference / edit object with Undo and Redo and viewport, pick cache, entry and highlight checks, in order with mesh steps,
+nearest-Normal rule, last object, only References, nothing selected, running gesture, click selection, id never reused;
+Backspace refused in `4`, component Delete unchanged in `1`/`2`/`3`; `DeleteObjectsCommand` and `plan_object_delete` on a bare
+`Scene`), plus `tests/test_scene_menu.py` (4) and `tests/test_main_wiring.py` (6) for the menu and `Shift+A`. **Mutation check:**
+without the edit-role hand-back in `AddObjectCommand.undo` 2 tests fail with the `ValueError`. One existing test changed on
+purpose: `test_application_objects.py::test_component_work_is_refused_in_object_mode` no longer lists `Delete` (it lists
+Backspace).
+
+**Limits / open (Artist, not tested by a machine):** a new primitive appears **at the origin**, i.e. inside the cube of the start
+scene - there is no 3D cursor yet; Plane/Grid as a 4×4 grid instead of one quad, the 32×16 sphere and the 32-sided cylinder are
+defaults to judge; whether Add should switch to mode `4` (this) or stay in the component mode; the "nearest object takes over
+the edit role" rule; Delete in `4` on `Delete` (Max/Blender habit) without a confirmation (Undo is the net). Not built: primitive
+parameters after creation (resolution, size), several segments/rings in the menu, duplicate/clone.
+
 ## 7. Questions
 
 ### 7.1 For Manu (Artist)
@@ -758,7 +797,8 @@ of the problem anyway: an object that sits inside another because of its file co
 
 Implementation and code names (all `PROVISIONAL`); the look of a Reference; gollum performance; hierarchy/parenting;
 instancing; materials; morph/skin storage details; multi-object component editing and a cross-object soft metric; any key
-binding beyond V1_SPEC §2's `4`; ARCH-02.
+binding beyond V1_SPEC §2's `4`; ARCH-02; object-level mirror symmetry (a proposal exists:
+[OBJECT_MIRROR_SYMMETRY_PROPOSAL](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md)).
 
 ---
 
@@ -939,6 +979,23 @@ oder im neuen Ursprung? Ein gedrehtes symmetrisches Objekt lässt sich nicht üb
    auswählen, `1` → kein Wechsel (eine Referenz wird nie bearbeitet).
 
 **Frage:** Ist „auswählen, dann `1`/`2`/`3`" im Arbeitsfluss richtig, und stört die Wartezeit beim Wechsel auf gollum?
+
+**Track A ist gebaut (2026-10-23, `PROVISIONAL`) — Objekte hinzufügen und löschen. Praxistest (ca. 5 Minuten):**
+
+1. `Shift+A` öffnet am Cursor das Menü „Add Mesh“: Plane (4×4-Raster), Cube, Sphere, Cylinder. Klick auf **Sphere**: die Kugel
+   erscheint im Ursprung (also im Würfel), `4` ist an, sie ist gelblich getönt als einzige Auswahl.
+2. `W` halten und ziehen: die Kugel wandert zur Seite (Objektebene). `Ctrl+Z` / `Ctrl+Y`: erst die Bewegung, dann das Hinzufügen
+   gehen zurück bzw. kommen wieder — je ein Schritt.
+3. Die Kugel ist ausgewählt, `1`: sie ist jetzt das bearbeitete Objekt (Punkte, `C`, Knife wie gewohnt). Danach `Ctrl+Z`
+   bis zum Hinzufügen zurück: die Kugel verschwindet, der Würfel ist wieder das bearbeitete Objekt.
+4. `4`, ein Objekt anklicken (Shift+Klick für mehrere), **`Entf`**: die Objekte sind weg (ein Undo-Schritt, `Ctrl+Z` bringt sie
+   mit Auswahl zurück). Das bearbeitete Objekt löschen: das nächste normale Objekt wird bearbeitet (Statuszeile sagt welches).
+5. Das **letzte** Objekt (oder das bearbeitete, wenn nur Referenzen übrig blieben) lässt sich nicht löschen — die Statuszeile
+   sagt warum. `Entf` in `1`/`2`/`3` löscht wie bisher Punkte/Kanten/Flächen; Rücktaste tut in `4` nichts.
+
+**Fragen:** Gehört das neue Objekt in den Ursprung (es gibt noch keinen 3D-Cursor), und soll Hinzufügen nach `4` springen? Passen
+Raster 4×4, Kugel 32×16, Zylinder 32 Seiten? Reicht „letztes Objekt bleibt“, oder brauchst du eine leere Szene? **Spiegel-Objekte**
+(Augen links/rechts): noch nicht gebaut, nur ein Vorschlag im Forschungsdokument (siehe oben).
 
 **Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
 Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·

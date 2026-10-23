@@ -128,6 +128,11 @@ Scope (binding, see the handoffs):
   is given one, so the Symmetry Lab's shared wiring is unchanged.
   AD-021 M1 (Q-10): Shift+click on a row adds it to the scene as a Reference
   instead (`Application.add_reference`, one Undo step, the camera stays, Q-9).
+- Add Mesh (Track A1, `PROVISIONAL`, `src/scene_menu.py`): `Shift+A` opens a menu at the cursor with
+  Plane (4x4 grid), Cube, Sphere (32x16), Cylinder (32); a click adds the primitive as a Normal
+  object at the origin (`Application.add_primitive`, one Undo step): Object mode `4`, the new object
+  is the selection (W/E/R place it, 1/2/3 edit it), the edit object stays. Window-level like SPACE
+  (`install_handlers(..., add_menu=...)`), not in the BindingSet.
 - Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
   SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
   speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest
@@ -149,7 +154,9 @@ Scope (binding, see the handoffs):
   Alt+R switches the selected objects Reference <-> Normal (one Undo step; the
   edited object stays Normal) - Q-12 revised 2026-10-16, a plain click no
   longer switches. T, C,
-  Delete/Dissolve and Shift+S are refused in `4` (status line). AD-021 M2-0
+  Dissolve and Shift+S are refused in `4` (status line); Delete there deletes the selected
+  objects (Track A2, `PROVISIONAL`: one Undo step, the edit object moves to a surviving Normal
+  object, the last object / only References left is refused). AD-021 M2-0
   (`PROVISIONAL` key and alpha): Alt+D draws every Reference as a translucent
   Ghost / shaded again; References stay drawn in Wireframe. AD-021 M2-2: in
   `4`, hold W/E/R on the selected objects = move / rotate / scale them
@@ -239,7 +246,9 @@ from morph_bridge import send_to_morph_lab  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
 from scene_menu import (  # noqa: E402
     SceneMenu,
+    add_mesh_entries,
     add_named_reference,
+    add_primitive_named,
     load_named_scene,
     scene_entries,
 )
@@ -335,6 +344,7 @@ def install_handlers(
     menu: SceneMenu | None = None,
     save: Callable[[], object] | None = None,
     morph: Callable[[], object] | None = None,
+    add_menu: SceneMenu | None = None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
@@ -352,10 +362,21 @@ def install_handlers(
 
     `morph` (bridge to the Morph Lab, `PROVISIONAL`, `src/morph_bridge.py`): called on M instead
     of forwarding that key to `app`. `None` (default) keeps the wiring as it was, so the labs
-    that share it get no M (the Morph Lab's own M is its A/B key)."""
+    that share it get no M (the Morph Lab's own M is its A/B key).
+
+    `add_menu` (Track A1, `PROVISIONAL`, `src/scene_menu.py`): the "Add Mesh" menu, opened on Shift+A
+    at the cursor like the scene menu (window level; no binding). Modal in the same way; `None`
+    (default) keeps the wiring as it was."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
+
+    def open_menu() -> SceneMenu | None:
+        """The menu that is open right now (the scene loader or "Add Mesh"), else None."""
+        for candidate in (menu, add_menu):
+            if candidate is not None and candidate.is_open:
+                return candidate
+        return None
 
     @window.event
     def on_resize(width: int, height: int):
@@ -401,9 +422,23 @@ def install_handlers(
     @window.event
     def on_key_press(symbol: int, modifiers: int):
         inp = key_from_pyglet(symbol, modifiers)
-        if menu is not None and menu.is_open:
+        shown = open_menu()
+        if shown is not None:
             # Modal: the menu swallows every key; SPACE/Esc closes it.
-            menu.key(inp)
+            shown.key(inp)
+            return pyglet.event.EVENT_HANDLED
+        if (
+            add_menu is not None
+            and inp is not None
+            and inp.kind == "key"
+            and inp.value == "a"
+            and inp.modifiers == frozenset({"shift"})
+            and app.interaction_owner is None
+            and not app.pointer.active
+        ):
+            fallback = (window.width / 2, window.height / 2)
+            cx, cy = cursor if cursor is not None else fallback
+            add_menu.open(cx, cy, window.width, window.height)
             return pyglet.event.EVENT_HANDLED
         if (
             menu is not None
@@ -440,7 +475,7 @@ def install_handlers(
         # there cannot stay "held" and turn the plain wheel into a curve-shape step.
         track_ctrl(symbol, False)
         track_alt(symbol, False)
-        if menu is not None and menu.is_open:
+        if open_menu() is not None:
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, False)
         inp = key_from_pyglet(symbol, modifiers)
@@ -459,23 +494,25 @@ def install_handlers(
         app.set_ctrl_held(False)
         app.set_alt_held(False)
         # The menu must not outlive the focus (it would stay modal).
-        if menu is not None:
-            menu.close()
+        for candidate in (menu, add_menu):
+            if candidate is not None:
+                candidate.close()
 
     @window.event
     def on_mouse_press(x: int, y: int, button: int, modifiers: int):
         inp = mouse_from_pyglet(button, modifiers)
-        if menu is not None and menu.is_open:
-            # A hit loads the row (Shift: adds it as a Reference, AD-021 Q-10), a miss
-            # closes the menu — never forwarded.
-            menu.press(x, y, add=inp is not None and "shift" in inp.modifiers)
+        shown = open_menu()
+        if shown is not None:
+            # A hit loads the row (Shift: adds it as a Reference, AD-021 Q-10; in "Add Mesh" a
+            # hit adds the primitive), a miss closes the menu — never forwarded.
+            shown.press(x, y, add=inp is not None and "shift" in inp.modifiers)
             return pyglet.event.EVENT_HANDLED
         if inp is not None:
             app.pointer_press(inp, x, y)
 
     @window.event
     def on_mouse_drag(x: int, y: int, dx: int, dy: int, buttons: int, modifiers: int):
-        if menu is not None and menu.is_open:
+        if open_menu() is not None:
             return pyglet.event.EVENT_HANDLED
         step = wrapper.filter(x, y, dx, dy)
         if step is None:
@@ -485,7 +522,7 @@ def install_handlers(
 
     @window.event
     def on_mouse_release(x: int, y: int, button: int, modifiers: int):
-        if menu is not None and menu.is_open:
+        if open_menu() is not None:
             return pyglet.event.EVENT_HANDLED
         inp = mouse_from_pyglet(button, modifiers)
         if inp is not None:
@@ -495,8 +532,9 @@ def install_handlers(
     def on_mouse_motion(x: int, y: int, dx: int, dy: int):
         nonlocal cursor
         cursor = (x, y)
-        if menu is not None and menu.is_open:
-            menu.motion(x, y)
+        shown = open_menu()
+        if shown is not None:
+            shown.motion(x, y)
             return pyglet.event.EVENT_HANDLED
         step = wrapper.filter(x, y, dx, dy)
         if step is None:
@@ -506,13 +544,14 @@ def install_handlers(
 
     @window.event
     def on_mouse_leave(x: int, y: int):
-        if menu is not None and menu.is_open:
-            menu.motion(-1.0, -1.0)
+        shown = open_menu()
+        if shown is not None:
+            shown.motion(-1.0, -1.0)
         app.pointer_leave()
 
     @window.event
     def on_mouse_scroll(x: int, y: int, scroll_x: float, scroll_y: float):
-        if menu is not None and menu.is_open:
+        if open_menu() is not None:
             return pyglet.event.EVENT_HANDLED
         inp = wheel_input(scroll_x, scroll_y, bool(shift_keys), bool(ctrl_keys))
         if inp is not None:
@@ -535,8 +574,9 @@ def install_handlers(
         lasso = app.selection_lasso
         if lasso is not None:
             draw_selection_lasso(lasso)
-        if menu is not None and menu.is_open:
-            menu.draw()
+        shown = open_menu()
+        if shown is not None:
+            shown.draw()
 
 
 def draw_selection_box(box: tuple[float, float, float, float]) -> None:
@@ -655,8 +695,18 @@ def main() -> None:
         add=add,
         refresh=lambda: files.entries() + scene_entries(),
     )
+    add_menu = SceneMenu(
+        add_mesh_entries(),
+        load=lambda name: add_primitive_named(app, name),
+        title="Add Mesh (Shift+A)",
+    )
     install_handlers(
-        window, app, menu=menu, save=files.save, morph=lambda: send_to_morph_lab(app)
+        window,
+        app,
+        menu=menu,
+        save=files.save,
+        morph=lambda: send_to_morph_lab(app),
+        add_menu=add_menu,
     )
     run(window, app)
 
