@@ -379,7 +379,8 @@ def test_the_variants_cycle_in_the_knife_session_only_default_v_b_and_the_status
         assert "Taste V" in app.status_message
     assert seen == ["V-c", "V-a", "V-b"]
     assert app.key_press(ESC)
-    assert app.key_press(V) is False                 # outside the session: ignored
+    app.key_press(V)  # outside the session V is the SubD view key (2026-10-23), never the variant
+    assert app.knife_mirror_variant == "V-b" and not app.knife_active
     assert app.knife_mirror_variant == "V-b"
 
 
@@ -583,7 +584,8 @@ def test_begin_on_a_non_exact_plane_starts_no_session():
     assert app.key_press(C) is False
     assert not app.knife_active
     assert app.status_message == TEXT_NON_EXACT_PLANE and app.status_serial == serial + 1
-    assert app.key_press(V) is False
+    app.key_press(V)  # no session: V is the SubD view key (2026-10-23), the variant stays
+    assert app.knife_mirror_variant == "V-b" and not app.knife_active
 
 
 def _one_side_cut(app):

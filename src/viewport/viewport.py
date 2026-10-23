@@ -99,6 +99,9 @@ beim letzten `sync()` heißt neu aufbauen. Der Viewport besitzt dafür einen `Re
 ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
 Edit-Mesh (dem Käfig), Picking ist nicht betroffen. Kamera-Änderungen erreichen die Fläche in
 jedem `sync()` wie die Objekt-Einträge, ohne den Provider zu fragen. Ohne Provider ändert sich nichts.
+Optional (2026-10-23, SubD in Production): `p.surface_topology_changed` True nach `p.sync(...)` heißt
+"dasselbe Mesh-Objekt, Topologie in place geändert" - der Viewport markiert dann die Topologie des
+Flächen-RenderMesh (inkrementeller Abgleich über das Journal, AD-023) statt nur bewegter Vertices.
 
 H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Optional liest der Viewport nach
 `p.sync(...)` `p.entry_surfaces` (`dict[key, Mesh]`, `key` wie bei `set_object_entry`) und `p.entry_moved`
@@ -481,6 +484,10 @@ class Viewport:
                 rm.mark_material_dirty()
             rm.set_model_matrix(self.model_matrix)
             self._apply_draw_style()
+        elif getattr(self.surface_provider, "surface_topology_changed", False):
+            # H7 (2026-10-23): dasselbe Mesh-Objekt, Topologie in place gepatcht - der RenderMesh
+            # gleicht sie über sein Journal inkrementell ab (AD-023), statt neu aufzubauen.
+            rm.mark_topology_dirty()
         elif moved:
             rm.mark_vertices_dirty(set(moved))
         rm.sync()

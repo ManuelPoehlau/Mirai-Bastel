@@ -1,4 +1,4 @@
-"""A1–A3: exact values of the Catmull-Clark rules on tiny meshes."""
+"""A1–A3: exact values of the Catmull-Clark rules on tiny meshes (`mirai.subdivision`; moved from the SubD Lab 2026-10-23)."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import itertools
 
 import pytest
 
-from subdivision_lab.subd import KIND_EDGE, KIND_FACE, KIND_VERTEX, SubdSurface
-
-from .meshes import (
+import tests._bootstrap  # noqa: F401
+from mirai.subdivision import KIND_EDGE, KIND_FACE, KIND_VERTEX, SubdSurface
+from tests.subdivision_meshes import (
     CUBE_POSITIONS,
     cube_mesh,
     edge_pairs,

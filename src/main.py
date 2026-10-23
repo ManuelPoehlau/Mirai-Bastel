@@ -171,6 +171,10 @@ Scope (binding, see the handoffs):
   selection a world-axis gizmo is drawn at its centroid (`draw_gizmo`), shaped for the current tool (the last W/E/R).
   LMB on a handle sets the constraint, LMB drag runs the tool along it, release commits, Esc cancels. All in
   `Application` (`gizmo_enabled` is set here only).
+- SubD preview (2026-10-23, `PROVISIONAL` keys, `mirai.subdivision`, promoted from the SubD Lab): V cycles
+  off → smooth surface + cage → smooth surface + isolines, Ctrl+1/2/3 the level (start 2), Shift+V the cage's
+  depth (hidden by the surface / always visible). View state only; all tools keep editing the cage. Lives in
+  `Application` (binding context `subd`); this file only adds its GL sink `GLSubdLineOverlay` to `GL_TYPES`.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -221,6 +225,7 @@ from mirai.pyglet_input import (  # noqa: E402
     wheel_from_pyglet,
 )
 from mirai.soft_selection import GLSoftBandOverlay, GLSoftShadingOverlay  # noqa: E402
+from mirai.subdivision.gl_lines import GLSubdLineOverlay  # noqa: E402
 from viewport.gl_gizmo_overlay import draw_gizmo  # noqa: E402
 from viewport.gl_line_overlay import GLLineOverlay  # noqa: E402
 from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
@@ -247,6 +252,7 @@ GL_TYPES = {
     "soft_overlay_type": GLSoftBandOverlay,
     "soft_shading_overlay_type": GLSoftShadingOverlay,
     "symmetry_overlay_type": GLSymmetryOverlay,
+    "subd_overlay_type": GLSubdLineOverlay,
 }
 
 

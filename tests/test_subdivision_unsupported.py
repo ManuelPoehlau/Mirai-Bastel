@@ -1,11 +1,12 @@
-"""A8: unsupported input raises `SubdUnsupportedError` with a German message."""
+"""A8: unsupported input raises `SubdUnsupportedError` with a German message (`mirai.subdivision`)."""
 
 from __future__ import annotations
 
 import pytest
-from mirai.scene_factory import mesh_from_positions_and_faces
 
-from subdivision_lab.subd import SubdSurface, SubdUnsupportedError
+import tests._bootstrap  # noqa: F401
+from mirai.scene_factory import mesh_from_positions_and_faces
+from mirai.subdivision import SubdSurface, SubdUnsupportedError
 
 
 def test_a8_edge_with_three_faces():
@@ -40,7 +41,7 @@ def test_a8_vertex_without_face():
 
 
 def test_a8_is_a_value_error_not_a_crash_on_valid_input():
-    from .meshes import single_quad_mesh
+    from tests.subdivision_meshes import single_quad_mesh
 
     SubdSurface(single_quad_mesh()).level(2)  # valid boundary mesh: no exception
     assert issubclass(SubdUnsupportedError, ValueError)

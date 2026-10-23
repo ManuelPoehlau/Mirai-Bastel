@@ -165,9 +165,13 @@ def test_the_knife_runs_coordinated_in_block_and_mark_with_one_history_entry(mod
 def test_the_variant_key_works_through_the_lab_path_inside_the_session_only(mode):
     app, lab = lab_on(mode)
     history = len(app.history)
-    serial = app.status_serial
-    assert press(app, lab, V) is False               # ausserhalb der Session: nichts, keine Ablehnung
-    assert app.status_serial == serial
+    # Outside the session V is the app's SubD key since 2026-10-23 (view state only, never gated:
+    # SUBD_COMMANDS are in NON_OPERATION) - it switches the preview, adds no history step.
+    assert press(app, lab, V) is True
+    assert app.subdivision.view == "cage" and len(app.history) == history
+    press(app, lab, V)
+    press(app, lab, V)
+    assert app.subdivision.view == "off"
     begin_knife(app, lab)
     assert app.knife_mirror_variant == "V-b"
     assert press(app, lab, V) is True

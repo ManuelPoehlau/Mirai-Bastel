@@ -164,5 +164,14 @@ SOFT_LOOK_CYCLE = "SoftLookCycle"
 SOFT_FLOW_LOOP = "SoftFlowLoop"
 SOFT_FLOW_RING = "SoftFlowRing"
 
+# --- SubD preview (2026-10-23, `mirai.subdivision`; keys `PROVISIONAL`, context "subd") ------
+#: View state only (no mesh change, no History): off -> smooth + cage -> smooth + isolines.
+SUBD_CYCLE_VIEW = "SubdCycleView"
+SUBD_LEVEL_1 = "SubdLevel1"
+SUBD_LEVEL_2 = "SubdLevel2"
+SUBD_LEVEL_3 = "SubdLevel3"
+#: The cage hidden by the smooth surface <-> always visible.
+SUBD_TOGGLE_CAGE_DEPTH = "SubdToggleCageDepth"
+
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"

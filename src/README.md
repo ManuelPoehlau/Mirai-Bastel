@@ -12,6 +12,7 @@ src/
 ├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking (inkl. Pick-Cache),
 │              Display-State, Topologie-Capabilities (Split/Connect/Knife/Extrude/Delete/Dissolve), Soft Selection, Symmetry V1, Scene-Factory,
 │              Objekt-Ebene (AD-021 M1: Referenz-Objekte, Modus `4`, `scene_objects.py`)
+│              SubD-Vorschau (Catmull-Clark, `subdivision/`, seit 2026-10-23)
 ├── viewport/  inkrementelle Renderdaten, Dirty-State, Overlays, Resource-Store, GL-Render-Store, Fassade
 ├── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
 ├── scene_menu.py  temporäres Szenen-Menü (`SPACE`; Shift+Klick = als Referenz hinzufügen, AD-021 M1; `PROVISIONAL`)

@@ -52,12 +52,15 @@ TOPOLOGY_CONTEXT = "topology"
 #: WP-06 B7: während einer Knife-Session aufgelöst (Enter = Commit,
 #: Ctrl+Shift+Z = Redo); alles andere fällt auf GLOBAL_CONTEXT zurück.
 KNIFE_CONTEXT = "knife"
+#: 2026-10-23: the provisional keys of the SubD preview (`mirai.subdivision`); resolved only for an
+#: input the global context leaves unbound, so a SubD key never shadows an app key.
+SUBD_CONTEXT = "subd"
 
 KEYMAP_SCHEMA_VERSION = 1
 
 _VALID_KINDS = ("key", "mouse", "drag", "wheel")
 _VALID_MODIFIERS = ("ctrl", "shift", "alt")
-_VALID_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT)
+_VALID_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT)
 
 
 class KeymapConfigError(ValueError):

@@ -1,24 +1,19 @@
-"""SubD Lab on the app path — lab context, keys, view state, HUD text (GL-free).
+"""SubD Lab on the app path — a thin harness around the Production SubD preview (GL-free).
 
-WP-SUBD-LAB-02. Same pattern as the Symmetry Lab (`experiments/symmetry_lab/lab_app.py`, AD-013
-Addendum H2): the lab is not a second input layer. Navigation, selection, W/E/R, Tweak, Soft, C,
-Knife, Extrude, loops, symmetry, Undo/Redo, display modes and the worklight all run unchanged
-through `Application`. The lab only adds
+Since 2026-10-23 SubD is a Production capability (`src/mirai/subdivision/`, `Application.subdivision`):
+the replacement surface (AD-013 H7), the cage / isoline lines, the view and level keys (`V`,
+`Ctrl+1/2/3`, `Shift+V`, binding context `subd`) and the unsupported-topology fallback are
+the app's, in `python src/main.py` as here. Until WP-SUBD-LAB-02 the lab carried its own provider
+and keys; they moved to Production, so there is one implementation.
 
-- its own keys in the context `subd_lab` (`LAB_KEYS`), resolved through the one `app.bindings`
-  before `Application` (`lab_key_press`), with a start-up check that none of them is bound in a
-  context the app resolves (`LabBindingConflict`);
-- the replacement surface (`lab_surface.SubdSurfaceProvider`, AD-013 H7) and the cage/isoline
-  overlay (`lab_surface.SubdLineOverlay`, H1);
-- one HUD line built from public state only.
+What the lab still adds on the app path:
 
-The lab keys only change view state (no mesh change, no History, no Undo step), so the lab needs
-neither `command_gate` nor `apply_mesh_change`. While an `Application` interaction owns the keys
-(`interaction_owner`, H2-R2) a lab key is refused visibly, like in the Symmetry Lab.
+- `B` in the lab context `subd_lab` (`LAB_KEYS`): A/B comparison with the cage view (a toggle; the
+  preview's view and level are restored). Lab-local, `PROVISIONAL`, checked at start against every
+  context the app resolves, including `subd` (`LabBindingConflict`).
+- one HUD line from public state (counts, build / update ms, frame time).
 
-The keys are a proposal for this lab, not an Artist decision. `1`/`2`/`3` (the lab's levels until
-WP-SUBD-LAB-01) are the app's component modes, `X` its constraint, so levels are Ctrl+1/2/3 and the
-cage depth test is Shift+V.
+The standalone window of WP-SUBD-LAB-01 (`run_standalone.py`) stays as the comparison mode.
 """
 
 from __future__ import annotations
@@ -28,17 +23,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 from mirai.application import Application
-from mirai.interaction.input import KNIFE_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
-
-from .lab_state import DEFAULT_LEVEL, LEVELS, VIEW_BOTH, VIEW_CAGE, VIEW_LABELS, VIEW_ORDER
-from .lab_surface import SubdLineOverlay, SubdSurfaceProvider
+from mirai.interaction.input import KNIFE_CONTEXT, SUBD_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
+from mirai.subdivision import SUBD_KEYS, VIEW_LABELS, VIEW_OFF
+from mirai.subdivision.preview import key_label
 
 SUBD_LAB_CONTEXT = "subd_lab"
 
-CYCLE_VIEW = "SubdCycleView"
 TOGGLE_AB = "SubdToggleAB"
-TOGGLE_CAGE_DEPTH = "SubdToggleCageDepth"
-LEVEL_COMMANDS = {f"SubdLevel{n}": n for n in LEVELS}
 
 
 @dataclass(frozen=True)
@@ -51,26 +42,14 @@ class LabKey:
         return f"{key_label(self.input):<10} {self.command:<20} {self.label}"
 
 
-def key_label(input: Input) -> str:
-    mods = "+".join(m.capitalize() for m in sorted(input.modifiers))
-    value = input.value.upper()
-    return f"{mods}+{value}" if mods else value
-
-
 #: The single source of the lab keys (printed at start, mirrored in the README).
 LAB_KEYS: tuple[LabKey, ...] = (
-    LabKey(Input("key", "v"), CYCLE_VIEW, "Ansicht: Käfig → glatte Fläche + Käfig → glatte Fläche + Isolinien"),
-    *(
-        LabKey(Input("key", str(n), frozenset({"ctrl"})), command, f"Stufe {n}")
-        for command, n in LEVEL_COMMANDS.items()
-    ),
     LabKey(Input("key", "b"), TOGGLE_AB, "A/B: Käfig-Ansicht an/aus (Umschalter, Ansicht und Stufe bleiben)"),
-    LabKey(Input("key", "v", frozenset({"shift"})), TOGGLE_CAGE_DEPTH, "Käfig-Tiefentest an / immer sichtbar"),
 )
 LAB_COMMANDS = frozenset(entry.command for entry in LAB_KEYS)
 
 #: Contexts `Application` resolves keys in; a lab key bound in any of them would shadow it.
-APP_CONTEXTS = (None, KNIFE_CONTEXT, TOPOLOGY_CONTEXT)
+APP_CONTEXTS = (None, KNIFE_CONTEXT, TOPOLOGY_CONTEXT, SUBD_CONTEXT)
 
 
 class LabBindingConflict(RuntimeError):
@@ -97,70 +76,58 @@ def install_lab_bindings(bindings: BindingSet) -> None:
 
 
 class SubdAppLab:
-    """View state of the lab and its two Viewport attachments (provider H7, overlay H1)."""
+    """The lab's A/B state over `app.subdivision` (the Production preview)."""
 
-    def __init__(self, app: Application, line_sink=None) -> None:
+    def __init__(self, app: Application) -> None:
         self.app = app
-        self.view = VIEW_CAGE
-        self.ab_active = False
-        self.cage_depth_test = True
-        self.provider = SubdSurfaceProvider(level=DEFAULT_LEVEL)
-        self.provider.on_message = app.set_status
-        self.lines = SubdLineOverlay(self.provider, sink=line_sink)
-        self._apply()
+        #: the preview's view while A/B shows the cage (None = A/B off)
+        self._ab_view: Optional[str] = None
 
-    def attach(self, viewport) -> None:
-        viewport.set_surface_provider(self.provider)
-        viewport.add_overlay(self.lines)
+    @property
+    def preview(self):
+        return self.app.subdivision
+
+    @property
+    def provider(self):
+        return self.app.subdivision.provider
 
     @property
     def level(self) -> int:
-        return self.provider.level
+        return self.preview.level
+
+    @property
+    def ab_active(self) -> bool:
+        if self._ab_view is not None and self.preview.view != VIEW_OFF:
+            self._ab_view = None  # the view was changed with V meanwhile: A/B is over
+        return self._ab_view is not None
 
     def effective_view(self) -> str:
-        return VIEW_CAGE if self.ab_active else self.view
-
-    def _apply(self) -> None:
-        view = self.effective_view()
-        self.provider.set_enabled(view != VIEW_CAGE)
-        self.lines.set_view(view, self.cage_depth_test)
+        return self.preview.view
 
     def run_command(self, command: str) -> bool:
         owner = self.app.interaction_owner
         if owner is not None:
             self.app.set_status(f"SubD: {command} ignoriert — {owner} läuft")
             return False
-        if command == CYCLE_VIEW:
-            self.view = VIEW_ORDER[(VIEW_ORDER.index(self.view) + 1) % len(VIEW_ORDER)]
-            self.ab_active = False
-            self._apply()
-            self.app.set_status(f"SubD: {VIEW_LABELS[self.view]}")
-        elif command == TOGGLE_AB:
-            self.ab_active = not self.ab_active
-            self._apply()
-            self.app.set_status(
-                "SubD: A/B — Käfig" if self.ab_active else f"SubD: {VIEW_LABELS[self.view]}"
-            )
-        elif command == TOGGLE_CAGE_DEPTH:
-            self.cage_depth_test = not self.cage_depth_test
-            self._apply()
-            self.app.set_status(
-                "SubD: Käfig-Tiefentest an" if self.cage_depth_test else "SubD: Käfig immer sichtbar"
-            )
-        elif command in LEVEL_COMMANDS:
-            refusal = self.provider.set_level(LEVEL_COMMANDS[command])
-            self.app.set_status(refusal if refusal is not None else f"SubD: Stufe {self.level}")
-            if refusal is not None:
-                return False
-        else:
+        if command != TOGGLE_AB:
             return False
+        if self.ab_active:
+            view, self._ab_view = self._ab_view, None
+            self.preview.set_view(view)
+            return True
+        if self.preview.view == VIEW_OFF:
+            self.app.set_status("SubD: A/B — die Vorschau ist aus, nichts zu vergleichen")
+            return False
+        self._ab_view = self.preview.view
+        self.preview.set_view(VIEW_OFF)
+        self.app.set_status("SubD: A/B — Käfig")
         return True
 
 
-def start_lab(app: Application, line_sink=None) -> SubdAppLab:
-    """Checks and installs the lab keys; the caller attaches the lab after `init_scene`."""
+def start_lab(app: Application) -> SubdAppLab:
+    """Checks and installs the lab keys (call before `init_scene`; the preview attaches itself)."""
     install_lab_bindings(app.bindings)
-    return SubdAppLab(app, line_sink=line_sink)
+    return SubdAppLab(app)
 
 
 def lab_key_press(
@@ -180,7 +147,9 @@ def lab_key_press(
 
 
 def startup_listing() -> list[str]:
-    lines = [f"Lab-Kontext {SUBD_LAB_CONTEXT!r} (Vorschlag, keine Artist-Entscheidung):"]
+    lines = ["SubD-Tasten der App (Kontext 'subd', PROVISIONAL):"]
+    lines.extend(f"  {key_label(entry.input):<10} {entry.command:<20} {entry.label}" for entry in SUBD_KEYS)
+    lines.append(f"Lab-Kontext {SUBD_LAB_CONTEXT!r} (Vorschlag, keine Artist-Entscheidung):")
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEYS)
     lines.append("Alles andere ist die Bedienung von src/main.py (W/E/R, C, Undo, D, Ctrl+D, …).")
     return lines
@@ -202,8 +171,6 @@ def hud_text(lab: SubdAppLab, asset_name: str, frame_ms: Optional[float] = None)
     counts = provider.derived_counts
     if counts is not None:
         parts.append(f"Fläche {counts[0]} V / {counts[1]} F")
-    if view == VIEW_BOTH:
-        parts.append("Tiefentest an" if lab.cage_depth_test else "Käfig immer sichtbar")
     parts.append(f"Aufbau {_ms(provider.last_build_ms)}")
     parts.append(f"Update {_ms(provider.last_update_ms)}")
     if frame_ms is not None:

@@ -183,9 +183,12 @@ def test_mode_key_ignored_while_transform_key_held(app, key):
 
 
 @pytest.mark.parametrize("value", ["v", "f"])
-def test_legacy_mode_keys_do_nothing(app, value):
+def test_legacy_mode_keys_do_not_switch_modes(app, value):
     app.key_press(TWO)
-    assert not app.key_press(_key(value))
+    handled = app.key_press(_key(value))
+    # F is unbound; V is the SubD preview's view key since 2026-10-23 (context "subd") - neither
+    # is a mode key any more (E47).
+    assert handled is (value == "v")
     assert app.selection.mode is SelectionMode.EDGE
 
 

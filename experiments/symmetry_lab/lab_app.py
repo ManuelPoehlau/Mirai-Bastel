@@ -56,6 +56,7 @@ from mirai import symmetry_declarations as declarations
 from mirai.application import Application, CommandGate
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import KNIFE_CONTEXT, BindingSet, Input
+from mirai.subdivision import SUBD_COMMANDS
 from mirai.topology.contextual_c import CContext
 
 from .lab_bindings import (
@@ -187,6 +188,9 @@ NON_OPERATION = frozenset(
         # 2026-10-22: the Loop / Ring balance - a soft setting like the radius (live in a gesture, too).
         cmd.SOFT_FLOW_LOOP,
         cmd.SOFT_FLOW_RING,
+        # 2026-10-23: the app's SubD preview keys (`mirai.subdivision`, context "subd") - view state
+        # only, no mesh change and no History, like the display commands.
+        *SUBD_COMMANDS,
         # Navigation und Knife-Session: nur über eine User-GLOBAL-Taste erreichbar (Review N2);
         # `Application` gibt dafür ohnehin False zurück, die Auflistung hält die Taste still
         cmd.ORBIT,

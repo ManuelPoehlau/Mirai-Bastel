@@ -75,7 +75,7 @@ from viewport.resource_store import ResourceStore, TraceStore
 
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
-from .interaction.input import KNIFE_CONTEXT
+from .interaction.input import KNIFE_CONTEXT, SUBD_CONTEXT
 from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
@@ -144,6 +144,7 @@ from .topology.loop_slide import (
     slide_positions,
 )
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
+from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.box_select import (
     elements_in_polygon,
@@ -579,6 +580,9 @@ class Application:
         # vorhandene, ungültige Datei wird kontrolliert abgelehnt
         # (`KeymapConfigError`). Kein Runtime-Hot-Reload.
         self.bindings: BindingSet = build_default_bindings()
+        # 2026-10-23: the SubD preview's provisional keys, context "subd" (checked against the
+        # defaults here, before a keymap.json may rebind anything).
+        install_subd_bindings(self.bindings)
         if keymap_path is not None:
             load_keymap_overrides(self.bindings, keymap_path)
 
@@ -718,6 +722,11 @@ class Application:
         # Whether the last Undo/Redo touched the edit object's mesh (`_apply_undo_redo`).
         self._last_undo_redo_mesh_step: bool = True
 
+        # SubD preview of the edit mesh (2026-10-23, `mirai.subdivision`): view state only - no
+        # document state, no History. Survives scene loads like `DisplayState`; re-attached to every
+        # new viewport in `init_scene`.
+        self.subdivision: SubdivisionPreview = SubdivisionPreview(set_status=self._set_status)
+
         # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
         # after the B7 window test: press-slide-release was redundant with the
         # live hover preview): laufende Knife-Session (None = keine). `KnifeTool`
@@ -817,6 +826,7 @@ class Application:
         soft_shading_overlay_type: type | None = None,
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
+        subd_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel, OBJ-Import oder Szenendatei).
 
@@ -869,7 +879,11 @@ class Application:
         Problem-Marker; der Entry-Point übergibt `GLSymmetryOverlay`. `Application` hängt sie
         in ihr eigenes `SymmetryDisplay` (`mirai.symmetry_display`), das als Zusatz-Overlay nach
         den Bändern am Viewport hängt und während eines Transforms aufschiebt. Default `None` =
-        keine Symmetrie-Anzeige (headless)."""
+        keine Symmetrie-Anzeige (headless).
+
+        `subd_overlay_type` (2026-10-23): die GL-Senke der SubD-Linien (Käfig / Isolinien,
+        `mirai.subdivision.gl_lines.GLSubdLineOverlay`). Die SubD-Vorschau (`self.subdivision`) hängt
+        sich an jeden neuen Viewport; ohne Senke rechnet sie headless dieselben Segmente."""
         if geometry_type in ("cube", "obj"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
         elif geometry_type == "file":
@@ -913,6 +927,9 @@ class Application:
                 symmetry_overlay_type(), reports=self._symmetry_reports
             )
             self.viewport.add_overlay(self._symmetry_display)
+        self.subdivision.attach(
+            self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
+        )
         self._object_pick_caches = {}
         self._sync_object_views()
         self._apply_display()
@@ -1489,6 +1506,7 @@ class Application:
         soft_shading_overlay_type: type | None = None,
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
+        subd_overlay_type: type | None = None,
     ) -> None:
         """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
         zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
@@ -1523,6 +1541,7 @@ class Application:
             soft_shading_overlay_type=soft_shading_overlay_type,
             symmetry_overlay_type=symmetry_overlay_type,
             scene_path=scene_path,
+            subd_overlay_type=subd_overlay_type,
         )
         self.selection.clear()
         self.selection.clear_objects()
@@ -1586,6 +1605,8 @@ class Application:
             return self._display_command(command)
         if command in _SOFT_COMMANDS:
             return self._soft_command(command)
+        if command in SUBD_COMMANDS:
+            return self._subd_command(command)
         if command in _MODE_COMMANDS:
             return self._set_selection_mode(_MODE_COMMANDS[command])
         if self._object_mode_refuses(command):
@@ -2607,6 +2628,16 @@ class Application:
         self._set_status(f"Display: {self.display.label}")
         return True
 
+    def _subd_command(self, command: str) -> bool:
+        """SubD preview keys (2026-10-23, `mirai.subdivision`, `PROVISIONAL`): view state only - no
+        mesh change, no History, no Undo step. Refused visibly while an interaction owns the keys
+        (W/E/R/T/G, a drag selection, the Knife): a running gesture keeps the view it began with."""
+        owner = self.interaction_owner
+        if owner is not None or self._drag_select is not None:
+            self._set_status(f"SubD: ignoriert — {owner or 'Auswahl'} läuft")
+            return False
+        return self.subdivision.run(command)
+
     def _apply_display(self) -> None:
         """E36: `DisplayState` → Grundwerte für `Viewport.set_display` (der
         Viewport kennt kein `DisplayState`). WP-06 B8: the pick cache's
@@ -2717,8 +2748,15 @@ class Application:
         if self._knife is not None:
             return self._knife_key(input)
         command = self.bindings.command_for(input)
+        if command is None:
+            # The SubD keys (context "subd") only where the global context binds nothing.
+            subd = self.bindings.command_for(input, SUBD_CONTEXT)
+            if subd in SUBD_COMMANDS:
+                command = subd
         if self._gate_refuses(command):
             return False
+        if command in SUBD_COMMANDS:
+            return self.dispatch_command(command)
         if self._object_mode_refuses(command):
             return False
         if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS):

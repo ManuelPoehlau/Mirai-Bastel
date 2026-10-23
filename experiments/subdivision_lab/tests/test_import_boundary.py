@@ -65,10 +65,11 @@ def test_no_playground_or_other_experiment_imports():
 
     assert {
         "subd", "lab_state", "lab_bindings", "lab_lines", "lab_scene", "lab_window", "run", "bench",
-        "run_standalone", "lab_app", "lab_surface", "lab_app_window",
+        "run_standalone", "lab_app", "lab_app_window",
     } <= set(report["lab_modules"])
     assert report["playground_reachable"], "test would be worthless without importable playground"
     assert report["symmetry_lab_reachable"], "test would be worthless without importable symmetry_lab"
     assert report["playground_loaded"] == []
     assert report["foreign_experiment_modules"] == []
     assert report["numpy_loaded"] is False  # D4: pure Python
+    assert "lab_surface" not in report["lab_modules"]  # moved to Production (mirai.subdivision)

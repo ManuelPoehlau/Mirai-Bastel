@@ -1,15 +1,16 @@
 # Subdivision Lab (WP-SUBD-LAB-01 Slice 1, WP-SUBD-LAB-02 App-Pfad)
 
 **Status: Nicht Artist-validiert.** Gebaut und automatisch getestet; kein Verdikt von Manu liegt vor.
-Dieses Lab bereitet vor, es entscheidet nichts: Es macht die Recherche-Tests **T-SUBD-1** (Käfig, Fläche oder beides)
-und **T-SUBD-2** (wie glatt ist glatt genug) spielbar und misst, was Subdivision auf dem Referenz-PC kostet.
 
-Forschungs-Lab unter `experiments/`. **Subdivision ist nicht in Production**: `src/` kennt kein Catmull-Clark,
-`src/main.py` ist unverändert. Seit WP-SUBD-LAB-02 (2026-10-16) läuft das Lab **auf dem App-Pfad**, wie das Symmetry Lab:
-alle Modellier-Werkzeuge, Undo, Symmetrie, Worklight und Flat/Smooth sind die der App. Für die glatte Fläche bekam der
-Viewport einen kleinen, generischen Haken: [AD-013, Addendum H7](../../docs/architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-16-wp-subd-lab-02-h7--replacement-surface-of-the-edit-mesh-in-viewport)
-(`Viewport.set_surface_provider`, ohne Provider inert). Das Lab importiert nichts aus `playground/` oder anderen
-Experimenten (Test: `tests/test_import_boundary.py`).
+**Seit 2026-10-23 ist Subdivision in Production** ([`src/mirai/subdivision/`](../../src/mirai/subdivision/README.md),
+dort stehen Bedienung, Grenzen, Messungen und Tests): `python src/main.py`, `V` / `Strg+1/2/3` / `Shift+V`. Der
+Catmull-Clark-Evaluator und der Flächen-Provider sind von hier nach `src/` **verschoben** worden; `subd.py` re-exportiert
+nur noch den Production-Evaluator, `lab_surface.py` gibt es nicht mehr, die Evaluator-Tests liegen in `tests/`. Das Lab
+bleibt als Vergleichs- und Testumgebung: der App-Pfad (`run.py`) ist die App mit HUD und einer A/B-Taste, das alte
+eigene Fenster (`run_standalone.py`) bleibt der Vergleichsmodus, `bench.py` und `probe_app.py` messen.
+
+Es macht weiterhin die Recherche-Tests **T-SUBD-1** (Käfig, Fläche oder beides) und **T-SUBD-2** (wie glatt ist glatt
+genug) spielbar. Das Lab importiert nichts aus `playground/` oder anderen Experimenten (Test: `tests/test_import_boundary.py`).
 
 ## Starten (App-Pfad)
 
@@ -24,46 +25,21 @@ python experiments/subdivision_lab/run.py man_with_shoes_basemesh
 Gültige Namen: `head_basemesh`, `man_with_shoes_basemesh`, `subd_cube` (Registry `examples/loaders/assets.py`).
 Ein unbekannter Name beendet mit Exit-Code 2 und der Liste der gültigen Namen, bevor ein Fenster aufgeht.
 Das alte Fenster aus Slice 1 (eigener Renderer, Control-Vertex ziehen, `F9`-Bench) startet mit `run_standalone.py`
-(gleiche Argumente, `--host`) — es bleibt bis zu Manus Verdikt zum Vergleich und wird danach gelöscht.
+(gleiche Argumente, `--host`).
 
 ## Was die App macht, was das Lab macht
 
-**Die App** (`src/main.py`, über `create_window` / `install_handlers` / `run`, H6): Navigation, Auswahl, W/E/R, Tweak,
-Soft Selection, C/Knife, Extrude, Loops, Delete/Dissolve, Symmetrie (Shift+S), Undo/Redo, Anzeige-Modi (D, Shift+D),
-Worklight (Ctrl+D). Bedienung: Docstring von `src/main.py`. Gezogen wird also nicht mehr ein einzelner Vertex wie in
-Slice 1, sondern mit den Werkzeugen der App — am Käfig (Picking bleibt auf dem Control-Mesh, auch wenn die Fläche gezeigt wird).
+**Die App** (`src/main.py`, über `create_window` / `install_handlers` / `run` und `GL_TYPES`, H6): alles — Navigation,
+Auswahl, W/E/R, Tweak, Soft Selection, C/Knife, Extrude, Loops, Delete/Dissolve, Symmetrie, Undo/Redo, Anzeige, Licht
+und **SubD selbst** (glatte Fläche über AD-013 H7, Käfig/Isolinien, die Tasten `V`, `Strg+1/2/3`, `Shift+V` im Kontext
+`subd`, Rückfall auf den Käfig bei nicht unterstützter Topologie).
 
 **Das Lab** ergänzt nur:
 
-- `lab_surface.SubdSurfaceProvider` (H7): nach jeder Änderung, die die App dem Viewport meldet, rechnet es die glatte Fläche
-  nach — nur die betroffenen Vertices über Stencils (`apply_local`), bei vielen bewegten (Soft, Scale) alles (`apply_full`).
-  Ändert sich die Topologie (C, Extrude, Delete, Undo über so einen Schritt, anderes Edit-Objekt), baut es neu. Liegt das
-  Control-Mesh außerhalb der Catmull-Clark-Regeln (`SubdUnsupportedError`), zeigt der Viewport wieder den Käfig und die
-  Statuszeile sagt `SubD aus: …` — nie still eine falsche Fläche. Der Viewport zeichnet die Fläche **statt** der Flächen des
-  Control-Mesh, mit Licht, Flat/Smooth und Platzierung der App. Die Fläche ist reine Anzeige: kein Picking, kein Undo,
-  kein Dokument-Zustand (OF-3 bleibt offen).
-- `lab_surface.SubdLineOverlay` (H1): Käfig (V-BOTH, Tiefentest umschaltbar) bzw. Isolinien (V-ISO). Der Draht der App
-  (Shift+D) ist davon unabhängig.
-- die Lab-Tasten im Kontext `subd_lab` (`lab_app.LAB_KEYS`, beim Start geprüft und gedruckt) und eine HUD-Zeile oben.
-
-## Steuerung (App-Pfad)
-
-**Die Lab-Tasten sind ein Vorschlag, keine Artist-Entscheidung.** `1`/`2`/`3` (in Slice 1 die Stufen) sind in der App die
-Komponentenmodi, `X` ist ein Constraint — deshalb Ctrl+1/2/3 und Shift+V. Belegt die App eine dieser Tasten, bricht der
-Start mit `LabBindingConflict` ab. Solange W/E/R/T oder der Knife läuft, wird eine Lab-Taste sichtbar abgelehnt.
-Lab-Tasten ändern nur die Ansicht: kein Mesh, keine History, kein Undo-Schritt.
-
-| Taste | Funktion |
-|---|---|
-| V | Ansicht: V-CAGE (Käfig, heutiger Stand) → V-BOTH (glatte Fläche + Käfig) → V-ISO (glatte Fläche + Isolinien) |
-| Ctrl+1 / Ctrl+2 / Ctrl+3 | Stufe 1 / 2 / 3 (Limit `MAX_DERIVED_FACES` = 25 000, provisorisch; darüber abgelehnt) |
-| B | A/B-Vergleich mit der Käfig-Ansicht (Umschalter; Ansicht und Stufe bleiben) |
-| Shift+V | Käfig-Tiefentest an / immer sichtbar (V-BOTH) |
-| alles andere | die App (`src/main.py`) |
-
-HUD (oben): Ansicht, Stufe, Käfig V/F, Fläche V/F, Tiefentest, **Aufbau** (letzte Stufe gebaut, ms), **Update** (letztes
-Nachrechnen nach einer Änderung, ms; ohne GPU-Upload), Frame (gleitender Mittelwert), ggf. `SubD aus: …`.
-Messen bleibt Sache von `bench.py` / `run_standalone.py` (F9); das HUD zeigt nur, wie es sich beim Modellieren anfühlt.
+- `B` im Kontext `subd_lab` (`lab_app.LAB_KEYS`, beim Start gegen alle App-Kontexte inkl. `subd` geprüft): A/B-Vergleich
+  mit der Käfig-Ansicht (Umschalter; Ansicht und Stufe kommen zurück). Vorschlag, keine Artist-Entscheidung.
+- eine HUD-Zeile oben: Ansicht, Stufe, Käfig V/F, Fläche V/F, **Aufbau** (letzte Stufe gebaut, ms), **Update** (letztes
+  Nachrechnen nach einer Änderung, ms; ohne GPU-Upload), Frame (gleitender Mittelwert), ggf. `SubD aus: …`.
 
 **Erster Praxistest (Manu, 2026-10-16):** Die Tasten und die drei Stufen passen erstmal. Auf dem Kopf laufen Stufe 1 und 2
 sehr flüssig, Stufe 3 etwas langsamer, aber akzeptabel; das gehört zur allgemeinen Viewport-Performance. Beobachtung
@@ -72,7 +48,7 @@ sehr flüssig, Stufe 3 etwas langsamer, aber akzeptabel; das gehört zur allgeme
 
 ## Standalone-Fenster (WP-SUBD-LAB-01 Slice 1, `run_standalone.py`)
 
-Die folgenden Abschnitte beschreiben das alte Fenster. Es wird nach Manus Verdikt gelöscht.
+Die folgenden Abschnitte beschreiben das alte Fenster (Vergleichsmodus; es bleibt, bis Manu es nicht mehr braucht).
 
 ### Was man sieht
 
@@ -159,6 +135,11 @@ Frage pro Stufe: *Stört beim Modellieren noch etwas an der Glätte?* und *Fühl
 | 3 |  |  |  |
 
 ## Messung
+
+**Aktuelle Container-Zahlen (2026-10-23, App-Pfad und Bench):** [`src/mirai/subdivision/README.md`](../../src/mirai/subdivision/README.md#measurements-container-only--not-the-reference-pc).
+Die Headless-Tabelle unten ist der Stand vom 2026-10-02, **vor** dem Slice-Patch-Fix in `GLRenderStore` (2026-10-10); der dort
+beschriebene Ganzpuffer-Write ist behoben (head Stufe 3, D1: 2 845 ms → 18,5 ms im Container). App-Pfad-Sonde:
+`xvfb-run -a python experiments/subdivision_lab/probe_app.py` (`--assets`, `--levels`, `--moves`, `--host`).
 
 Der Bench druckt `GL_VERSION`/`GL_RENDERER` und eine Markdown-Tabelle; **jede Zahl nennt, wo sie gemessen wurde**
 (Host-Label, headless oder sichtbares Fenster). Headless-Zahlen ersetzen keine Messung auf dem Referenz-PC
@@ -385,15 +366,14 @@ Eigenschaft von `_patch_attribute` auch Production-Bewegungen auf großen Meshes
 
 ## Technik in Kürze
 
-- `subd.py` (GL-frei, reines Python, kein NumPy): Topologie pro Stufe einmal, Positionen über **Stencils** (dünn besetzte Gewichte
+- `subd.py` (seit 2026-10-23 nur noch Re-Export von `src/mirai/subdivision/catmull_clark.py`; GL-frei, reines Python, kein NumPy): Topologie pro Stufe einmal, Positionen über **Stencils** (dünn besetzte Gewichte
   Control-Vertex → abgeleiteter Vertex, über die Stufen komponiert), **Inverse Index** Control-Vertex → betroffene abgeleitete Vertices.
   Regeln: Face-Punkt = Mittel; innere Kante = Mittel(2 Endpunkte, 2 Face-Punkte); Randkante = Mittelpunkt;
   innerer Vertex `(F + 2R + (n−3)P)/n`; Randvertex mit zwei Randkanten `(P_prev + 6P + P_next)/8`; jedes n-Eck → n Vierecke.
   Nicht-Manifold-Eingaben lösen `SubdUnsupportedError` mit deutscher Meldung aus.
-- App-Pfad (WP-SUBD-LAB-02): `run.py` (Aufbau wie `src/main.py`, `build_app_lab` auch headless), `lab_app.py` (Lab-Tasten,
-  Ansichts-Zustand, HUD-Text, GL-frei), `lab_surface.py` (H7-Provider + H1-Linien-Overlay, GL-frei), `lab_app_window.py`
-  (pyglet: Handler aus `src/main.py`, darüber Lab-Taste und HUD). Topologie-Wechsel erkennt der Provider an einer Signatur
-  (Vertex-IDs, Kanten, Face-Ränder), Positions-Änderungen per Vergleich mit dem Cache.
+- App-Pfad (WP-SUBD-LAB-02, seit 2026-10-23 auf der Production-SubD): `run.py` (Aufbau wie `src/main.py`, `build_app_lab`
+  auch headless), `lab_app.py` (A/B-Taste, HUD-Text, GL-frei), `lab_app_window.py` (pyglet: Handler aus `src/main.py`,
+  darüber Lab-Taste und HUD). Provider und Linien: `src/mirai/subdivision/preview.py`.
 - `lab_scene.py` (Standalone): zwei `RenderMesh` auf dem unveränderten Production-`GLRenderStore` (Control + abgeleitetes Wegwerf-`core.Mesh`,
   gebaut über `mesh_from_positions_and_faces`), eine gemeinsame `OrbitCamera`.
 - `lab_lines.py`: Unterklasse von `GLLineOverlay` (Käfig-/Isolinien-Layer, Tiefentest pro Instanz umschaltbar) — Production unberührt.
@@ -408,13 +388,11 @@ xvfb-run -a python -m pytest experiments/subdivision_lab/tests        # Linux he
 python -m pytest experiments/subdivision_lab/tests                    # Windows / Desktop
 ```
 
-GL-Tests überspringen sich sauber, wenn kein GL verfügbar ist. App-Pfad (`tests/test_app_lab.py`, headless): Fläche = `apply_full`
-nach W-Move, Undo/Redo und Topologie-Änderung über die App; kein Neuaufbau bei reinem Move; Ansichten, A/B, Tiefentest, Stufen
-und Limit; Lab-Tasten frei in der App (Konflikt bricht ab), abgelehnt während eines Transforms, alle anderen Tasten gehen an
-die App; nicht unterstütztes Control-Mesh schaltet sichtbar ab. Der Viewport-Haken selbst: `tests/test_viewport_surface_provider.py`.
-Standalone, abgedeckt: exakte Werte (Würfel, Rand, n-Ecke), Stencil = direktes
-rekursives Catmull-Clark, lokal = voll, Provenienz, nicht unterstützte Eingaben, Limit, Import-Grenze, Steuerungstabelle = README,
-CLI, Control-Mesh unverändert, Drag ohne strukturellen Rebuild, Ansichten/A-B/Tiefentest, Bench-Smoke.
+GL-Tests überspringen sich sauber, wenn kein GL verfügbar ist. Seit 2026-10-23 liegen die Evaluator-Tests (exakte Werte,
+Stencil = direktes rekursives Catmull-Clark, lokal = voll, Provenienz, nicht unterstützte Eingaben) und die App-Tests der
+SubD-Vorschau in `tests/` (`tests/test_subdivision_*.py`). Hier bleiben: der App-Pfad des Labs (`tests/test_app_lab.py`:
+A/B, HUD, Tastenkonflikte, Weiterleitung an die App), das Standalone-Fenster (Ansichten/A-B/Tiefentest, Drag ohne
+strukturellen Rebuild), Limit, Import-Grenze, Steuerungstabelle = README, CLI, Bench-Smoke.
 
 ## Nicht im Scope (Slice 1)
 

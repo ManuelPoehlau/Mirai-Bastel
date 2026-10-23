@@ -6,11 +6,11 @@ Usage (from the repo root, same on Windows and Linux):
     python experiments/subdivision_lab/run.py man_with_shoes_basemesh
 
 Builds the same path as `src/main.py` (`Application` → Viewport V02 → `GLRenderStore`) through its
-`create_window` / `install_handlers` / `run` (H6) and adds only the lab parts: the replacement
-surface (AD-013 H7), the cage/isoline overlay (H1), the lab keys and a HUD line (`lab_app`,
-`lab_app_window`). All modelling tools, lighting and shading are the app's. Valid names =
-`loaders.assets.asset_names()`; an unknown name exits with code 2 before a window opens. The
-standalone window of WP-SUBD-LAB-01 (and its F9 bench) is `run_standalone.py`.
+`create_window` / `install_handlers` / `run` (H6) and its `GL_TYPES`. SubD itself is the app's since
+2026-10-23 (`mirai.subdivision`, keys `V`, `Ctrl+1/2/3`, `Shift+V`); the lab adds only its A/B key and
+a HUD line (`lab_app`, `lab_app_window`). Valid names = `loaders.assets.asset_names()`; an unknown
+name exits with code 2 before a window opens. The standalone window of WP-SUBD-LAB-01 (and its F9
+bench) is `run_standalone.py`.
 """
 
 from __future__ import annotations
@@ -48,17 +48,16 @@ def load_src_main():
 
 
 def build_app_lab(
-    asset_name: str, width: int, height: int, gl_types: dict | None = None, line_sink=None
+    asset_name: str, width: int, height: int, gl_types: dict | None = None
 ) -> tuple[Application, SubdAppLab]:
     """Application + lab + scene, without a window (headless: `gl_types=None`, TraceStore). One-time
     set-up before the event loop as in `src/main.py` (`init_scene`, `frame_scene`,
-    `set_viewport_size`)."""
+    `set_viewport_size`); the app's SubD preview attaches itself in `init_scene`."""
     app = Application()
-    lab = start_lab(app, line_sink=line_sink)
+    lab = start_lab(app)
     app.init_scene("obj", obj_path=asset_path(asset_name), **(gl_types or {}))
     app.frame_scene()
     app.set_viewport_size(width, height)
-    lab.attach(app.viewport)
     return app, lab
 
 
@@ -88,12 +87,9 @@ def main(argv: list[str] | None = None) -> int:
     # pyglet (through src/main.py) only here: name check and --help need no window system.
     src_main = load_src_main()
     from subdivision_lab.lab_app_window import install_lab_window
-    from subdivision_lab.lab_lines import LabLineOverlay
 
     window = src_main.create_window(caption=CAPTION)
-    app, lab = build_app_lab(
-        asset_name, window.width, window.height, gl_types=src_main.GL_TYPES, line_sink=LabLineOverlay()
-    )
+    app, lab = build_app_lab(asset_name, window.width, window.height, gl_types=src_main.GL_TYPES)
     install_lab_window(window, app, lab, src_main, asset_name)
     src_main.run(window, app)
     return 0

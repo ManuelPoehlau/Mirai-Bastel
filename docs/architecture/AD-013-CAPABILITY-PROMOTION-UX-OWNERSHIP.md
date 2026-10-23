@@ -1362,7 +1362,8 @@ none of the moved layers; its preview overlays stay until A3.
 hook, not through a zero-change workaround). No independent review yet; one is welcome before a second host uses the hook.
 **Basis:** Manu's question "how do we connect the SubD Lab to the production app without building SubD into Production and
 without rebuilding every modelling tool, lighting and shading in the Lab?". Subdivision itself is **not** promoted:
-`src/` gains no subdivision code, `src/main.py` is unchanged (I7).
+`src/` gains no subdivision code, `src/main.py` is unchanged (I7). *(Superseded 2026-10-23: SubD is promoted, see
+"SubD in Production: H7-R1 amended" at the end of this addendum.)*
 
 ### Problem
 
@@ -1450,3 +1451,22 @@ provider (H7-R4); picking, selection and `Application` untouched. Code: `src/vie
 (`_sync_entry_surfaces`, `_follow_entry`, `entry_surface_render_meshes`); tests in `tests/test_viewport_surface_provider.py`.
 Not reviewed independently (H7-R4 asks for a review when a *second user* is added; this is the same second user using
 more of the hook) — an independent look before this is promoted beyond the lab is advisable.
+
+### SubD in Production: H7-R1 amended (2026-10-23)
+
+**Decision (Manu, 2026-10-23, brief "Production Milestone: SubD Integration"):** subdivision is promoted — "SubD belongs in
+the Production modeller, not as an isolated Lab feature"; the Lab implementation is reused, not rebuilt. Capability
+promotion only (I7): the Lab's keys come along as `PROVISIONAL` engineering keys in their own binding context `subd`, not
+as Artist Input Truth. Code: `src/mirai/subdivision/` (status home: its `README.md`).
+
+- **H7-R1 amended.** `Application` now sets a provider: its own `SubdivisionPreview.provider`, and only while the SubD
+  preview is on; switched off, the provider and its journal are released and the viewport is exactly as before (the
+  presentation overlay, H1, is likewise added only on first use). `src/main.py` still sets none itself. Inert by default
+  stays true for the app as started.
+- **H7-R4 unchanged (one provider).** The app never takes the slot from another host: with a host's provider attached
+  (the Morph Lab) the SubD preview refuses visibly. The SubD Lab no longer has a provider of its own — it drives the app's.
+- **H7-R2 unchanged (display only).** The surface is never picked, never in History or the scene file.
+- **Addition to the contract (optional, inert):** after `p.sync(...)` a provider may set `p.surface_topology_changed = True`
+  — "the same `surface_mesh` object, topology changed in place". The viewport then marks the surface `RenderMesh`'s
+  topology dirty (incremental patch through the mesh journal, AD-023) instead of only the moved vertices. Without the
+  attribute nothing changes. Used by the SubD provider, which patches its derived mesh by stable provenance keys.

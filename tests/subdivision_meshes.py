@@ -1,13 +1,30 @@
-"""Synthetic control meshes + an independent Catmull-Clark reference for the tests.
+"""Synthetic control meshes + an independent Catmull-Clark reference for the SubD tests.
 
 `reference_catmull_clark` works directly on positions (face point / edge point /
 vertex point formulas), with its own topology bookkeeping and no stencils, so
-it is a genuinely different code path from `subd.py` (A4).
+it is a genuinely different code path from `mirai.subdivision.catmull_clark` (A4).
+Moved from `experiments/subdivision_lab/tests/meshes.py` with the evaluator (2026-10-23).
+`asset_mesh(name)` loads a registry asset (`examples/loaders/assets.py`).
 """
 
 from __future__ import annotations
 
-from mirai.scene_factory import mesh_from_positions_and_faces
+import sys
+from pathlib import Path
+
+import tests._bootstrap  # noqa: F401
+
+_EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+if str(_EXAMPLES_DIR) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES_DIR))
+
+from mirai.scene_factory import build_core_scene_from_obj, mesh_from_positions_and_faces  # noqa: E402
+
+
+def asset_mesh(name: str):
+    from loaders.assets import asset_path
+
+    return build_core_scene_from_obj(str(asset_path(name))).mesh
 
 CUBE_POSITIONS = [(x, y, z) for x in (-1.0, 1.0) for y in (-1.0, 1.0) for z in (-1.0, 1.0)]
 

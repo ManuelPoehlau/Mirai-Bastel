@@ -1,22 +1,20 @@
 """A4 (stencils = direct recursive Catmull-Clark), A5 non-GL part (local = full),
-A7 (provenance) on the cube asset and the head asset."""
+A7 (provenance) on the cube asset and the head asset (`mirai.subdivision`; moved from the SubD Lab
+2026-10-23)."""
 
 from __future__ import annotations
 
 import random
 
 import pytest
-from loaders.assets import asset_path
-from mirai.scene_factory import build_core_scene_from_obj
 
-from subdivision_lab.subd import KIND_EDGE, KIND_FACE, KIND_VERTEX, SubdSurface
-
-from .meshes import face_centroids, reference_levels, sorted_close
+import tests._bootstrap  # noqa: F401
+from mirai.subdivision import KIND_EDGE, KIND_FACE, KIND_VERTEX, SubdSurface
+from tests.subdivision_meshes import asset_mesh, face_centroids, reference_levels, sorted_close
 
 
 def asset_surface(name):
-    mesh = build_core_scene_from_obj(str(asset_path(name))).mesh
-    return SubdSurface(mesh)
+    return SubdSurface(asset_mesh(name))
 
 
 @pytest.fixture(scope="module")
