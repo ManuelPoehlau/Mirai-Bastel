@@ -178,6 +178,7 @@ Scope (binding, see the handoffs):
   selection a world-axis gizmo is drawn at its centroid (`draw_gizmo`), shaped for the current tool (the last W/E/R).
   LMB on a handle sets the constraint, LMB drag runs the tool along it, release commits, Esc cancels. All in
   `Application` (`gizmo_enabled` is set here only).
+  Also shown for a placed edit object (2026-10-23): at the selection's world position, world axes.
   Object level (2026-10-23, `PROVISIONAL`): in mode `4` the same gizmo sits at the centroid of the selected
   Normal objects' pivots (Reference: none) and drives the object gesture along the world axes.
 - SubD preview (2026-10-23, `PROVISIONAL` keys, `mirai.subdivision`, promoted from the SubD Lab): V cycles
