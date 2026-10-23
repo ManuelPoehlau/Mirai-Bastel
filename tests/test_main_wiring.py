@@ -380,6 +380,22 @@ def test_shift_a_does_not_open_the_menu_while_a_gesture_runs(add_wired):
     assert not add_menu.is_open
 
 
+def test_shift_released_under_the_add_mesh_menu_is_not_left_held(add_wired):
+    """Shift+A opens the menu with Shift held; its release arrives while the menu is open. It must
+    still clear the application's Shift state, else the wheel keeps changing the Soft radius and
+    W keeps moving in precision mode until Shift is pressed again."""
+    window, app, _, add_menu = add_wired
+    h = window.handlers
+    h["on_key_press"](key.LSHIFT, key.MOD_SHIFT)
+    h["on_key_press"](key.A, key.MOD_SHIFT)
+    assert add_menu.is_open and app._shift_held
+    h["on_key_release"](key.A, key.MOD_SHIFT)
+    h["on_key_release"](key.LSHIFT, 0)
+    assert not app._shift_held
+    h["on_mouse_press"](5, 5, mouse.LEFT, 0)  # close the menu
+    assert not app._shift_held
+
+
 def test_deactivate_closes_the_add_mesh_menu(add_wired):
     window, _, _, add_menu = add_wired
     window.handlers["on_key_press"](key.A, key.MOD_SHIFT)

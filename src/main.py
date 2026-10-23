@@ -472,12 +472,13 @@ def install_handlers(
     @window.event
     def on_key_release(symbol: int, modifiers: int):
         # A release only ever clears: tracked even under the modal menu, so a Ctrl let go
-        # there cannot stay "held" and turn the plain wheel into a curve-shape step.
+        # there cannot stay "held" and turn the plain wheel into a curve-shape step. Shift too:
+        # Shift+A opens "Add Mesh" with Shift held, and its release arrives under the open menu.
         track_ctrl(symbol, False)
         track_alt(symbol, False)
+        track_shift(symbol, False)
         if open_menu() is not None:
             return pyglet.event.EVENT_HANDLED
-        track_shift(symbol, False)
         inp = key_from_pyglet(symbol, modifiers)
         if inp is not None:
             app.key_release(inp)
