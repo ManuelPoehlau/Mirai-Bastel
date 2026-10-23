@@ -10,7 +10,8 @@ Mirais Ziel ist nicht nur, einzelne Topologieoperationen anzubieten. Ein Charact
 
 ### Relax und Smooth
 
-> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice C2.
+> Gebaut (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md) C2 — `S` = Smooth, `Alt+S` = Relax
+> (antippen = ein Schritt, halten + ziehen = Stärke live). Volumenerhalt bleibt offen.
 
 Zwei getrennte Werkzeuge untersuchen:
 

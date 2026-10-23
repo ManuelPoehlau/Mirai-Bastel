@@ -205,7 +205,8 @@ class ContextResolutionTests(unittest.TestCase):
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
         self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.EDGE_RING)
-        self.assertIsNone(bs.command_for(_key("s"), TOPOLOGY_CONTEXT))
+        # 's' is no topology SplitEdge; since C2 the topology context falls back to the global Smooth.
+        self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SMOOTH)
 
     def test_global_connect_is_contextual_c(self):
         # WP-06 B6 (AD-017): 'c' ist global, nicht topology-spezifisch —

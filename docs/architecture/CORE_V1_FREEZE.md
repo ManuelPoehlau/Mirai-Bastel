@@ -298,6 +298,14 @@ twice, two faces that would coincide, an edge on more than two faces — `tests/
 degeneration, cube face, the three refusals, 40 randomised selections on sphere / cube / grid: valid with exact
 Undo/Redo or refused untouched).
 
+**Decision:** WP Toolbox Gaps C2 Smooth / Relax (2026-10-23; same promotion)
+
+`src/core/operations/smooth.py` gains `smooth_positions` / `SMOOTH_FACTOR`: a **pure function on positions** (Laplace
+step toward the neighbour mean, Relax = the step projected onto the vertex's tangent plane, continuous `amount`).
+Freeze rule (§7): (1) requirement — Smooth and Relax in Production (MODELING.md priority 1); (2)/(4) no `Mesh` change at
+all — the function reads mappings and returns positions, the caller writes them through `set_vertex_position` inside its
+own journal; (3) documented in the plan; (5) tests `tests/test_smooth.py`.
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten

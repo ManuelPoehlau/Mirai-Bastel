@@ -2,7 +2,7 @@
 
 **An:** Claude Code
 **Modell/Effort:** Opus, effort `high` für B1/B2 (Core-Topologie), `medium` für A1/A2/C1/C2
-**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest B nach B2); C1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest C nach C2); C2, B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
+**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest B nach B2); C1 und C2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest C = jetzt fällig); B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
 **Modus (M5):** Production, Core-first, **kein Lab** (Blender-bekannte Werkzeuge, AGENTS.md §7a).
 Promotion (M3) durch Manu im Chat 2026-10-23: „Werkzeuge, die in Mirai noch in Production müssen“ —
 Collapse, Box/Lasso Select Through, Koordinatensystem aus dem Playground, Grow Selection, Loop-Extend,
@@ -164,6 +164,18 @@ gesammelten Praxistest (§3).
 - *Tests:* Gizmo-Achsen in beiden Modi; ein Transform-Test mit `space="normal"` über die App.
 
 **C2 Relax / Smooth.**
+- *Gebaut 2026-10-23* (`src/core/operations/smooth.py` = reine Rechnung, `src/mirai/topology/smooth.py` = Plan beim
+  Drücken, `Application._smooth_*`; Tests `tests/test_smooth.py`, `tests/test_application_smooth.py`).
+  Präzisierungen, `PROVISIONAL`:
+  - Ein Schritt bewegt jeden Punkt um die Hälfte zum Mittel seiner Kanten-Nachbarn (`SMOOTH_FACTOR` 0.5, wie
+    Blender). Antippen = 2 Schritte (`TAP_AMOUNT`). Halten: 60 px nach rechts = 1 Schritt, stufenlos
+    (Bruchteile = Teilschritt); nach links bis 0.
+  - Relax projiziert jeden Schritt auf die Tangentialebene aus den aktuellen Flächen-Normalen des Punkts.
+  - Ziel: die Punkte der Auswahl (Kanten/Flächen über ihre Punkte), ohne Auswahl das gehoverte Element. Randpunkte
+    bleiben fest; nur Randpunkte gewählt = Ablehnung mit Statuszeile.
+  - Während S/Alt+S gehalten ist, dreht Alt die Kamera **nicht** (sonst ginge Alt+S-Ziehen nicht).
+  - Unter Symmetrie: Auswahl plus Partner, Seam-Punkte bleiben in jedem Schritt auf der Ebene, Partner werden
+    exakt gespiegelt geschrieben. Im Symmetry Lab unter BLOCK abgelehnt (fail-closed, wie Loop Slide).
 - *Ziel:* zwei getrennte Formwerkzeuge für ausgewählte Vertices (MODELING.md Priorität 1).
 - *Scope:*
   - **Smooth** = Laplace (Nachbarmittel × Stärke).
@@ -203,7 +215,10 @@ gesammelten Praxistest (§3).
     eine Fläche wählen → Gizmo zeigt X/Y/Z der Fläche; Punkte/Kanten → nur Z (Normale).
   - Frage: Soll W/E/R **ohne** Constraint in Normal frei bleiben (jetzt), oder wie im Playground entlang der Normale
     schieben?
-  - Relax und Smooth auf einem Loop-Bereich, mit SubD-Vorschau an: einmal antippen, einmal halten + ziehen.
+  - Relax (`Alt+S`) und Smooth (`S`) auf einem Loop-Bereich, mit SubD-Vorschau an: einmal antippen, einmal
+    halten + nach rechts/links ziehen, einmal mit `Esc` abbrechen; einmal unter Symmetrie.
+  - Fragen: Ist ein Antippen (2 Schritte) zu stark oder zu schwach? Passt die Ziehgeschwindigkeit (60 px pro
+    Schritt)? Flacht Smooth an Nase/Lippen zu sehr ab?
 
 ## 4. Definition of Done (je Slice)
 

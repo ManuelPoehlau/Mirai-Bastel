@@ -145,6 +145,8 @@ from .symmetry_display import ReportCache, SymmetryDisplay
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
+from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
+from .topology.smooth import SmoothPlan, SmoothRefused, plan_smooth
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
@@ -203,7 +205,13 @@ _TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
     commands.EXTRUDE: ("Extrude", "extrude", "extruded"),
     # 2026-10-15 (loop tools promoted): hold G, the same hold-key family as T.
     commands.LOOP_SLIDE: ("Loop Slide", "slide", "slid"),
+    # WP Toolbox Gaps C2: hold S / Alt+S, same family (a tap is one step, see `_smooth_release`).
+    commands.SMOOTH: ("Smooth", "smooth", "smoothed"),
+    commands.RELAX: ("Relax", "relax", "relaxed"),
 }
+
+#: WP Toolbox Gaps C2: the two hold keys of `mirai.topology.smooth`.
+_SMOOTH_COMMANDS = (commands.SMOOTH, commands.RELAX)
 
 #: The pseudo key a Tweak gesture (Ctrl+LMB drag) arms the transform with; no key has this
 #: value, so `key_release` never ends a Tweak - the LMB release does (`pointer_release`).
@@ -840,6 +848,11 @@ class Application:
         self._slide_direction: tuple[float, float] | None = None
         self._slide_before: MeshChange | None = None
         self._slide_selection_before: tuple | None = None
+        # WP Toolbox Gaps C2: the held Smooth / Relax (plan at the press, amount in steps, journal).
+        self._smooth_plan: SmoothPlan | None = None
+        self._smooth_amount: float = 0.0
+        self._smooth_before: MeshChange | None = None
+        self._smooth_selection_before: tuple | None = None
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
@@ -1564,7 +1577,7 @@ class Application:
         if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
             return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
         self._set_status(
-            "Object mode: T, G, I, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Shift+arrows and Ctrl+/- work on"
+            "Object mode: T, G, S, I, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Shift+arrows and Ctrl+/- work on"
             " points/edges/faces"
             " - press 1/2/3 (Delete removes the selected objects)"
         )
@@ -2567,6 +2580,94 @@ class Application:
         if self.viewport is not None:
             self.viewport.on_vertices_moved(set(self._slide_plan.vertex_ids))
 
+    # -- Smooth / Relax (WP Toolbox Gaps C2) -----------------------------------------
+
+    def _smooth_arm(self, command: str, key: str) -> bool:
+        """Hold S / Alt+S: plan on the resolved selection (else the hovered element) now; refusals are
+        posted at the press. Nothing moves before the first motion or the release (tap)."""
+        relax = command == commands.RELAX
+        mesh = self.scene.mesh
+        selection = self.selection
+        target = resolve_selection_vertices(mesh, selection, selection.mode)
+        if not target and selection.hovered is not None:
+            target = _element_vertices(mesh, selection.hovered)
+        try:
+            plan = plan_smooth(mesh, target, relax=relax)
+        except SmoothRefused as exc:
+            self._set_status(str(exc))
+            return False
+        self._transform_key = key
+        self._transform_command = command
+        self._transform_target = plan.movable
+        self._transform_begun = False
+        self._smooth_plan = plan
+        self._smooth_amount = 0.0
+        self._set_hovered(None)
+        self._set_status(
+            f"{plan.label}: {len(plan.movable)} points - tap for one step, or drag right/left for"
+            f" more/less, release {key.upper()} to commit"
+        )
+        return True
+
+    def _smooth_write(self, amount: float) -> set[VertexId]:
+        positions = self._smooth_plan.positions(amount)
+        mesh = self.scene.mesh
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        return set(positions)
+
+    def _smooth_step(self, dx: float) -> bool:
+        """Every motion recomputes the positions from the press state (no drift): right = more steps,
+        left = fewer, down to the start state. Journal from the first motion (as Loop Slide)."""
+        plan = self._smooth_plan
+        if plan is None or dx == 0:
+            return False
+        mesh = self.scene.mesh
+        if not self._transform_begun:
+            self._smooth_before = mesh.begin_change()
+            self._smooth_selection_before = self._selection_snapshot()
+            self._transform_begun = True
+        self._smooth_amount = max(0.0, self._smooth_amount + dx / SMOOTH_PX_PER_STEP)
+        moved = self._smooth_write(self._smooth_amount)
+        self._pick_cache.invalidate()
+        self.viewport.on_vertices_moved(moved)
+        self._set_status(f"{plan.label}: strength {self._smooth_amount:.2f} steps")
+        return True
+
+    def _smooth_release(self) -> None:
+        """Release: a drag commits its journal as one entry; a tap (no motion) is one fixed step
+        (`TAP_AMOUNT`) through the one commit boundary."""
+        plan = self._smooth_plan
+        if plan is None:
+            return
+        mesh = self.scene.mesh
+        if not self._transform_begun:
+            changed = self._mesh_transaction(
+                plan.label,
+                lambda _mesh: self._smooth_write(SMOOTH_TAP_AMOUNT),
+                moved_of=lambda moved: moved,
+            ).changed
+            self._set_status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
+            return
+        before, self._smooth_before = self._smooth_before, None
+        delta = mesh.end_change(before)
+        if delta.empty:
+            self._set_status(f"{plan.label}: no change")
+            return
+        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=plan.label))
+        self._record_selection_history(self._smooth_selection_before)
+        self._soft_preview_refresh()
+        self._set_status(f"{plan.label} committed ({self._smooth_amount:.2f} steps)")
+
+    def _smooth_abort(self) -> None:
+        before, self._smooth_before = self._smooth_before, None
+        if before is None or self._smooth_plan is None:
+            return
+        self.scene.mesh.rollback_change(before)
+        self._pick_cache.invalidate()
+        if self.viewport is not None:
+            self.viewport.on_vertices_moved(set(self._smooth_plan.movable))
+
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 
     def _removal_command(self, command: str) -> bool:
@@ -3359,7 +3460,7 @@ class Application:
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
-            if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE):
+            if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS):
                 # Extrude is normal-only, Loop Slide runs along its edges: neither the gesture
                 # nor the sticky state changes.
                 return False
@@ -3435,6 +3536,8 @@ class Application:
             self._extrude_release()
         elif self._transform_command == commands.LOOP_SLIDE:
             self._slide_release()
+        elif self._transform_command in _SMOOTH_COMMANDS:
+            self._smooth_release()
         elif self._transform_begun:
             before = self._selection_snapshot()
             command = self.tool_manager.commit()
@@ -3467,6 +3570,8 @@ class Application:
             return self._extrude_arm(key)
         if command == commands.LOOP_SLIDE:
             return self._slide_arm(key)
+        if command in _SMOOTH_COMMANDS:
+            return self._smooth_arm(command, key)
         if self.selection.mode is SelectionMode.OBJECT:
             return self._object_arm(command, key)
         label, verb, _ = _TRANSFORM_COMMANDS[command]
@@ -3559,6 +3664,8 @@ class Application:
             return self._object_step(dx, dy)
         if self._transform_command == commands.LOOP_SLIDE:
             return self._slide_step(dx, dy)
+        if self._transform_command in _SMOOTH_COMMANDS:
+            return self._smooth_step(dx)
         if not self._transform_begun and self._transform_command == commands.EXTRUDE:
             # Net displacement since the arm; the first update gets all of it, so the
             # distance follows the pointer from where T went down.
@@ -3707,6 +3814,12 @@ class Application:
             self.scene.mesh.release_change(self._slide_before)
         self._slide_before = None
         self._slide_selection_before = None
+        self._smooth_plan = None
+        self._smooth_amount = 0.0
+        if self._smooth_before is not None:
+            self.scene.mesh.release_change(self._smooth_before)
+        self._smooth_before = None
+        self._smooth_selection_before = None
         if resume_preview:
             self._soft_preview_refresh()
 
@@ -4107,6 +4220,10 @@ class Application:
         elif self._transform_begun and self._transform_command == commands.LOOP_SLIDE:
             self._slide_abort()
             self._set_status(f"{label} cancelled")
+        elif self._transform_command in _SMOOTH_COMMANDS:
+            # Begun: exact start state back. Not begun: Esc instead of the tap step.
+            self._smooth_abort()
+            self._set_status(f"{label} cancelled")
         elif self._transform_begun:
             moved = self._active_transform_vertex_ids()
             self.tool_manager.cancel()
@@ -4478,7 +4595,8 @@ class Application:
                 return False
             return self._knife_hover(x, y)
         if self._transform_key is not None:
-            if self._alt_held:
+            # Relax is held with Alt (Alt+S): for Smooth / Relax Alt never borrows the camera.
+            if self._alt_held and self._transform_command not in _SMOOTH_COMMANDS:
                 return self._navigate_during_transform(dx, dy)
             return self._transform_step(dx, dy)
         if self.coalesce_hover:

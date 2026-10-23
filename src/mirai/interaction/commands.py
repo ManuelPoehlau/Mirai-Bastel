@@ -150,6 +150,12 @@ LOOP_SLIDE = "LoopSlide"
 # Alt+E binding is gone. Face mode only.
 EXTRUDE = "Extrude"
 
+# SMOOTH / RELAX (WP Toolbox Gaps C2, Manu 2026-10-23): global hold keys like G. A tap = one fixed step,
+# hold + drag right/left = more/less strength live, release commits, Esc restores
+# (`mirai.topology.smooth`, `Application._smooth_*`). Keys S / Alt+S are `PROVISIONAL`.
+SMOOTH = "Smooth"
+RELAX = "Relax"
+
 # TOGGLE_TRANSFORM_SPACE (WP Toolbox Gaps C1, the Playground's `K`, `PROVISIONAL`): global, World <->
 # Normal for the axis constraints and the gizmo (`mirai.transform_space`); state like a constraint.
 TOGGLE_TRANSFORM_SPACE = "ToggleTransformSpace"

@@ -57,6 +57,8 @@ _TOOL_NAMES = {
     commands.SCALE: "Scale",
     commands.EXTRUDE: "Extrude",
     commands.LOOP_SLIDE: "Loop Slide",
+    commands.SMOOTH: "Smooth",
+    commands.RELAX: "Relax",
 }
 _SUBD_VIEWS = {VIEW_OFF: "off", VIEW_CAGE: "cage", VIEW_ISO: "isolines"}
 

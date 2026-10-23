@@ -206,6 +206,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("r", "shift"), cmd.EDGE_RING)
     bs.set_default(_key("i"), cmd.LOOP_INSERT)
     bs.set_default(_key("g"), cmd.LOOP_SLIDE)
+    # WP Toolbox Gaps C2: hold S = Smooth, hold Alt+S = Relax (hold + drag: Manu 2026-10-23; keys PROVISIONAL).
+    bs.set_default(_key("s"), cmd.SMOOTH)
+    bs.set_default(_key("s", "alt"), cmd.RELAX)
     # Selection steps (WP Toolbox Gaps A1): Shift+arrows = Manu 2026-10-23; Ctrl++ / Ctrl+-
     # (main keys and keypad, both "plus" / "minus") = Blender's Select More / Less, PROVISIONAL.
     bs.set_default(_key("plus", "ctrl"), cmd.SELECT_GROW)
