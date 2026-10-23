@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -263,6 +263,25 @@ index (internal), `symmetry_definition` becomes a property with the same get/set
 `tests/test_mesh_change_journal.py`. **Public behaviour unchanged**: every query returns what it did (`vertex_edges` in
 ascending ID order = the old scan's order under the new ascending-order invariant, which `load_state` now establishes);
 `export_state` / `load_state` / `MeshStateCommand` unchanged in result. Whole existing Core suite green.
+
+**Decision:** Object mirror pairs (2026-10-23; Manu's go for the recommended architecture of
+[OBJECT_MIRROR_SYMMETRY_PROPOSAL](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md), the M0 precedent above)
+
+Freeze rule (§7): (1) requirement — two independent mesh objects (left/right eye) whose placements stay mirror images across a
+world plane, persistent through Undo/Redo and save/load (proposal §1); (2) not solvable with the existing public API without
+storing the relationship twice or outside the scene file (proposal §5.1, §9 decision 1); (3) documented in the proposal;
+(4) smallest extension, **data only** like M0: `src/core/scene.py` gains `MirrorPair` (frozen: `a`, `b` ObjectIds, unit
+`normal`, `offset`; `a != b` and a unit normal enforced) and on `Scene` `mirror_pairs` (tuple, read-only), `mirror_pair_of`,
+`add_mirror_pair` (both objects exist, each object in at most one pair), `remove_mirror_pair`, a `mirror_pairs=` argument of
+`from_objects`; `remove_object` refuses a paired object (a pair never points at a missing object — the app breaks the pair
+first in the same Undo step). `src/core/serialization.py` writes **version 3** (`"mirror_pairs"` next to the reserved places)
+and reads version 2 as version 3 without pairs; an invalid pair makes the file invalid (`ValueError`). Whether placements are
+mirrored is **not** a Core invariant (an out-of-sync pair loads as it is and is reported by the app). The coupling maths,
+commands and gesture live in `src/mirai` (`object_mirror.py`, `scene_objects.py`, `Application`). Not touched: `Mesh`,
+`Operation`, `HistoryStack`, `ObjectTransform` (negative scale stays impossible). Existing tests unchanged except the three
+assertions that pinned the version number 2 (`test_scene_objects.py::TestSerializationV2::test_format_is_version_3_with_objects`
+(renamed), `…::test_version_1_dict_loads_as_one_normal_edit_object`, `test_scene_files.py::test_save_then_load_round_trips_…`).
+(5) contract tests `tests/test_mirror_pairs.py` (value, invariants, v3 round trip, v2 load, invalid pairs refused, `from_objects`).
 
 ## 2. Was vor dem Freeze validiert wurde
 
