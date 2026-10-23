@@ -119,7 +119,9 @@ def test_main_composes_the_three_parts():
         "line_overlay_type",
         "face_overlay_type",
         "soft_overlay_type",  # WP-SOFT-01 S2b: the influence-band sink
+        "soft_shading_overlay_type",  # 2026-10-22: the influence face shading
         "symmetry_overlay_type",  # AD-SYM-04 A2: plane outline + problem markers
+        "subd_overlay_type",  # 2026-10-23: the SubD preview's cage / isolines
     }
     assert main_module.GL_TYPES["soft_overlay_type"].__name__ == "GLSoftBandOverlay"
     assert main_module.GL_TYPES["symmetry_overlay_type"].__name__ == "GLSymmetryOverlay"
@@ -482,3 +484,40 @@ def test_m_calls_the_morph_bridge_only_when_wired():
     assert calls == ["m"]
     wired_window.handlers["on_key_press"](key.M, key.MOD_SHIFT)  # Shift+M is not the bridge
     assert calls == ["m"]
+
+
+# -- GUI Stage 1: the HUD (`src/hud.py`) ------------------------------------------------------
+
+
+def test_h_steps_the_hud_and_is_not_forwarded():
+    from hud import Hud
+
+    app = Application()
+    app.init_scene("cube")
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    hud = Hud(app.bindings)
+    main_module.install_handlers(window, app, hud=hud)
+    serial = app.status_serial
+    press = window.handlers["on_key_press"]
+    assert press(key.H, 0) == pyglet.event.EVENT_HANDLED
+    assert (hud.visible, hud.variant) == (True, "corner")
+    press(key.H, 0)
+    assert not hud.visible
+    press(key.H, 0)
+    assert (hud.visible, hud.variant) == (True, "bar")
+    assert app.status_serial == serial  # H never reached the app
+    # The other keys still reach the app.
+    press(key._2, 0)
+    assert app.selection.mode.name == "EDGE"
+
+
+def test_without_a_hud_h_reaches_the_application_and_does_nothing(wired):
+    window, app = wired
+    serial = app.status_serial
+    assert window.handlers["on_key_press"](key.H, 0) == pyglet.event.EVENT_HANDLED
+    assert app.status_serial == serial
+
+
+def test_main_wires_a_hud():
+    assert "Hud" in main_module.main.__code__.co_names

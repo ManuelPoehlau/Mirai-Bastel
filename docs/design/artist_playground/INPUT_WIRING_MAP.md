@@ -192,7 +192,7 @@
 | Save | `Ctrl+S` (`PROVISIONAL`, Manu 2026-10-15) | | Overwrites the current scene file (last loaded/saved), else writes a new one to `scenes/`; refused while W/E/R/T or a Knife session runs | Window-level like `SPACE`, not in the BindingSet; "Als neue Szene speichern" in the `SPACE` menu always writes a new file. `src/scene_files.py` |
 | Load | TBD | | | Temporary scene menu on `SPACE` (`PROVISIONAL`, engineering proposal, not Artist input truth): see ROADMAP 2026-10-11 "Scene loader". Since 2026-10-15 it also lists the saved scene files in `scenes/` ("Datei: <name>", newest first); a click loads one (Manu: menu + folder, no OS dialog) |
 | Quit | `Q` / current | | | |
-| Toggle HUD | TBD | | | |
+| Toggle HUD | `H` (Production, 2026-10-23, GUI Stufe 1) | | Discovery: steps bar → corner → hidden while both layouts are on trial; afterwards plain show/hide | Window-level command `ToggleHud` in binding context `window` (never resolved by `Application`). `src/hud.py`, `docs/design/GUI_STAGE1_HUD.md` |
 | Toggle Debug Information | TBD | | | |
 
 ---

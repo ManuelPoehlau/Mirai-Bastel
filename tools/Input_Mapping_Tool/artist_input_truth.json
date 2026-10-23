@@ -607,7 +607,7 @@
       "label": "Toggle HUD",
       "category": "Application",
       "binding": "H",
-      "runtime_ref": null,
+      "runtime_ref": "ToggleHud",
       "notes": ""
     },
     {

@@ -5,6 +5,7 @@ This directory contains interaction and workflow principles that guide how Mirai
 ## Documents
 
 - [Workflow Principles](WORKFLOW.md) — direct, low-overhead interaction inspired by Mirai/Nendo/Silo/Wings3D
+- [GUI Stage 1 — HUD](GUI_STAGE1_HUD.md) — read-only state display in the Production window (2026-10-23): two layout variants on trial, Stage 2 seams, open questions, Artist test steps
 
 ## Artist Playground
 

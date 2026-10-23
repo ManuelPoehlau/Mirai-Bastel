@@ -188,6 +188,12 @@ Scope (binding, see the handoffs):
   selected edge lights up on the cage and as its isoline chain on the surface. View state only; all tools keep
   editing the cage. Lives in
   `Application` (binding context `subd`); this file only adds its GL sink `GLSubdLineOverlay` to `GL_TYPES`.
+- HUD (GUI Stage 1, 2026-10-23, `PROVISIONAL` look, `src/hud.py`): a read-only state display over the
+  viewport (mode, tool, constraint, symmetry, display, Soft, SubD, last status message) replaces the console
+  as the place to read the status; the console print stays as a fallback. `H` (Input Truth
+  `application.toggle_hud`, binding context `window`, never resolved by `Application`) steps bar -> corner
+  -> hidden while both layout variants are on trial. Window level like the menus: `install_handlers(...,
+  hud=None)` keeps the old wiring for the Labs.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -230,7 +236,8 @@ import pyglet  # noqa: E402
 
 from mirai.application import Application  # noqa: E402
 from mirai.cursor_wrap import CursorWrapper  # noqa: E402
-from mirai.interaction.input import Input  # noqa: E402
+from mirai.interaction import commands  # noqa: E402
+from mirai.interaction.input import WINDOW_CONTEXT, Input  # noqa: E402
 from mirai.pyglet_input import (  # noqa: E402
     key_from_pyglet,
     mouse_from_pyglet,
@@ -245,6 +252,7 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
+from hud import Hud  # noqa: E402
 from morph_bridge import send_to_morph_lab  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
 from scene_menu import (  # noqa: E402
@@ -341,6 +349,16 @@ def is_morph_key(inp: Input | None) -> bool:
     )
 
 
+def is_hud_key(app: Application, inp: Input | None) -> bool:
+    """The HUD key (`H`, Input Truth `application.toggle_hud`): whatever the bindings resolve to
+    `ToggleHud` in the window context, so a `keymap.json` can move it."""
+    return (
+        inp is not None
+        and inp.kind == "key"
+        and app.bindings.command_for(inp, WINDOW_CONTEXT) == commands.TOGGLE_HUD
+    )
+
+
 def install_handlers(
     window,
     app: Application,
@@ -348,6 +366,7 @@ def install_handlers(
     save: Callable[[], object] | None = None,
     morph: Callable[[], object] | None = None,
     add_menu: SceneMenu | None = None,
+    hud: Hud | None = None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
@@ -369,7 +388,11 @@ def install_handlers(
 
     `add_menu` (Track A1, `PROVISIONAL`, `src/scene_menu.py`): the "Add Mesh" menu, opened on Shift+A
     at the cursor like the scene menu (window level; no binding). Modal in the same way; `None`
-    (default) keeps the wiring as it was."""
+    (default) keeps the wiring as it was.
+
+    `hud` (GUI Stage 1, `PROVISIONAL`, `src/hud.py`): the read-only state display, drawn last but
+    under an open menu; `H` steps its layout / hides it. It only reads `app`. `None` (default) keeps
+    the wiring as it was."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
@@ -462,6 +485,9 @@ def install_handlers(
             return pyglet.event.EVENT_HANDLED
         if morph is not None and is_morph_key(inp):
             morph()
+            return pyglet.event.EVENT_HANDLED
+        if hud is not None and is_hud_key(app, inp):
+            hud.toggle()
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
         track_ctrl(symbol, True)
@@ -578,6 +604,9 @@ def install_handlers(
         lasso = app.selection_lasso
         if lasso is not None:
             draw_selection_lasso(lasso)
+        if hud is not None:
+            hud.update(app, window.width, window.height)
+            hud.draw()
         shown = open_menu()
         if shown is not None:
             shown.draw()
@@ -635,7 +664,7 @@ def run(window, app: Application) -> None:
         # Keeps `viewport.sync()` running once per frame even without a
         # camera event (Stage B hook — no behavior change for this package).
         app.update_viewport(dt)
-        # Console status (B3, E26) — PROVISIONAL until a HUD exists.
+        # Console status (B3, E26): the fallback behind the HUD (`src/hud.py`, GUI Stage 1).
         if app.status_serial != status_seen:
             status_seen = app.status_serial
             print(app.status_message, flush=True)
@@ -711,6 +740,7 @@ def main() -> None:
         save=files.save,
         morph=lambda: send_to_morph_lab(app),
         add_menu=add_menu,
+        hud=Hud(app.bindings),
     )
     run(window, app)
 
