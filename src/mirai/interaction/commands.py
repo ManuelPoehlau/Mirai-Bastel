@@ -137,6 +137,9 @@ SYMMETRY_CYCLE = "SymmetryCycle"
 
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"
+# COLLAPSE (WP Toolbox Gaps B1, Manu 2026-10-23): global on Shift+C, no longer a Topology-Lab
+# command. Each connected group of the V/E/F selection falls into one point at its centroid
+# (`mirai.topology.collapse`, `mirai.application.Application._collapse_command`).
 COLLAPSE = "Collapse"
 EDGE_LOOP = "EdgeLoop"
 EDGE_RING = "EdgeRing"

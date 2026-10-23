@@ -56,7 +56,7 @@ from core import (
     VertexId,
 )
 from core.mesh import MeshChange
-from core.operations import MeshDeltaCommand, record_mesh_change
+from core.operations import CollapseRefused, MeshDeltaCommand, record_mesh_change
 from core.scene import IDENTITY_TRANSFORM
 from core.serialization import scene_from_json, scene_to_json
 from core.operations.transform import SeamConstraintError
@@ -144,6 +144,7 @@ from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
 from .symmetry_display import ReportCache, SymmetryDisplay
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
+from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
@@ -345,6 +346,7 @@ _COMPONENT_COMMANDS = frozenset(
         *_TRANSFORM_COMMANDS,
         commands.CONNECT,
         *_REMOVAL_COMMANDS,
+        commands.COLLAPSE,
         commands.SYMMETRY_CYCLE,
         *_LOOP_COMMANDS,
         *_SELECTION_STEP_COMMANDS,
@@ -1556,7 +1558,7 @@ class Application:
         if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
             return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
         self._set_status(
-            "Object mode: T, G, I, C, Dissolve, Shift+L/R, Shift+S, Shift+arrows and Ctrl+/- work on"
+            "Object mode: T, G, I, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Shift+arrows and Ctrl+/- work on"
             " points/edges/faces"
             " - press 1/2/3 (Delete removes the selected objects)"
         )
@@ -1986,6 +1988,8 @@ class Application:
             return self._delete_objects_command()
         if command in _REMOVAL_COMMANDS:
             return self._removal_command(command)
+        if command == commands.COLLAPSE:
+            return self._collapse_command()
         if command == commands.SYMMETRY_CYCLE:
             return self._symmetry_cycle()
         if command in (commands.EDGE_LOOP, commands.EDGE_RING):
@@ -2628,6 +2632,76 @@ class Application:
             self._set_status(f"{label}: nothing to do")
             return False
         self._set_status(label)
+        return True
+
+    # -- Collapse (WP Toolbox Gaps B1) --------------------------------------------
+
+    def _collapse_command(self) -> bool:
+        """Shift+C on the selection of the active component mode (`mirai.topology.collapse`):
+        each connected group (over selected edges, the edges of selected faces, or in vertex mode
+        the edges between two selected vertices) falls into one point at its centroid; a vertex
+        without such an edge stays. Exactly one `MeshDeltaCommand` per success, mesh and history
+        untouched on refusal or no-op. Residue (P-4, `PROVISIONAL`): the resulting vertices,
+        mode switches to Vertex.
+
+        With a symmetry definition set and the command declared
+        (`symmetry_declarations.COLLAPSE_COORDINATORS`) the coordinator runs on the selection and
+        its partners inside the same single transaction; a `SymmetryRefusal` posts its text and
+        changes nothing. Under symmetry the residue keeps the result vertices on the side(s) where
+        the live selection was (`residue_sides`, as Split), vertices on the plane always stay."""
+        selection = self.selection
+        mode = selection.mode
+        ids = {
+            SelectionMode.VERTEX: selection.vertices,
+            SelectionMode.EDGE: selection.edges,
+            SelectionMode.FACE: selection.faces,
+        }.get(mode)
+        if not ids:
+            self._set_status(f"{COLLAPSE_LABEL}: nothing selected")
+            return False
+
+        mesh = self.scene.mesh
+        coordinator = (
+            symmetry_declarations.COLLAPSE_COORDINATORS.get(commands.COLLAPSE)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        sides = None
+        if coordinator is not None:
+            vertices_of = {
+                SelectionMode.VERTEX: lambda v: (v,),
+                SelectionMode.EDGE: mesh.edge_vertices,
+                SelectionMode.FACE: mesh.face_vertices,
+            }[mode]
+            sides = residue_sides(mesh, ids, vertices_of)
+
+        def mutate(mesh) -> list[VertexId]:
+            if coordinator is not None:
+                return coordinator(mesh, mode, set(ids))
+            return apply_collapse(mesh, mode, set(ids))
+
+        def residue(survivors) -> None:
+            kept = {v for v in survivors if mesh.is_valid_vertex(v)}
+            if sides is not None:
+                kept = on_residue_sides(mesh, kept, sides, lambda v: (v,))
+            selection.clear()
+            selection.mode = SelectionMode.VERTEX
+            selection.add(kept)
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+
+        try:
+            outcome = self._mesh_transaction(COLLAPSE_LABEL, mutate, on_applied=residue)
+        except CollapseRefused as exc:
+            self._set_status(f"{COLLAPSE_LABEL}: {exc}")
+            return False
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
+            return False
+        if not outcome.changed:
+            self._set_status(f"{COLLAPSE_LABEL}: nothing to do (no selected edge joins two points)")
+            return False
+        self._set_status(f"{COLLAPSE_LABEL}: {len(outcome.result)} point(s)")
         return True
 
     def _notify_topology_changed(self) -> None:
@@ -3299,12 +3373,12 @@ class Application:
                 return False
             return self.dispatch_command(command)
         if (
-            command in (commands.CONNECT, commands.SYMMETRY_CYCLE)
+            command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE)
             or command in _REMOVAL_COMMANDS
             or command in _LOOP_COMMANDS
             or command in _SELECTION_STEP_COMMANDS
         ):
-            # Wie die Modus-Tasten (B5b): C, Entf, Rücktaste und Shift+S werden
+            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste und Shift+S werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
             # Shift+S: AD-SYM-04 R-4, still wie C).
             if self._transform_key is not None:

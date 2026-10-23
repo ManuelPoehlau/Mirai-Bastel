@@ -329,6 +329,7 @@ def block_row() -> GateRow:
     allowed          = NON_OPERATION
                        ∪ APP_SYMMETRY_COMMANDS (benannt, K-6)
                        ∪ deklarierte Removal-Commands
+                       ∪ deklarierte Collapse-Commands (WP Toolbox Gaps B1)
                        ∪ deklarierte Extrude-Commands (Slice 7)
                        ∪ {Connect}, wenn mindestens ein C-Kontext deklariert ist
                        ∪ Transform-Commands mit `supports_symmetry`
@@ -342,6 +343,7 @@ def block_row() -> GateRow:
         NON_OPERATION
         | APP_SYMMETRY_COMMANDS
         | declarations.declared_removal_commands()
+        | declarations.declared_collapse_commands()
         | declarations.declared_extrude_commands()
     )
     allowed.update(command for command in TRANSFORM_OPERATIONS if supports_symmetry(command))
@@ -428,12 +430,15 @@ def startup_listing() -> list[str]:
     )
     contexts = declarations.declared_c_contexts()
     removal = declarations.declared_removal_commands()
+    collapse = declarations.declared_collapse_commands()
     extrude = declarations.declared_extrude_commands()
     lines.append(
         "Deklarationen (mirai.symmetry_declarations): C-Kontexte "
         + (", ".join(sorted(CONTEXT_NAMES.get(c, c.name) for c in contexts)) or "keine")
         + "; Removal "
         + (", ".join(sorted(removal)) or "keine")
+        + "; Collapse "
+        + (", ".join(sorted(collapse)) or "keine")
         + "; Extrude "
         + (", ".join(sorted(extrude)) or "keine")
     )

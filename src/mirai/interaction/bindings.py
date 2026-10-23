@@ -184,6 +184,9 @@ def build_default_bindings() -> BindingSet:
     # (WP-06 B7). Global, not TOPOLOGY_CONTEXT — Artist Input Truth
     # `topology.connect`.
     bs.set_default(_key("c"), cmd.CONNECT)
+    # WP Toolbox Gaps B1 (Manu 2026-10-23): Collapse V/E/F on Shift+C; the dead `K` in the
+    # TOPOLOGY_CONTEXT is gone. C without a modifier stays Connect.
+    bs.set_default(_key("c", "shift"), cmd.COLLAPSE)
     # WP Delete/Dissolve (§0.2 Punkte 1, 2, 5): Delete destruktiv, Backspace
     # räumt auf, Ctrl+Backspace nicht. Umbindbar über keymap.json.
     bs.set_default(_key("delete"), cmd.DELETE)
@@ -284,10 +287,10 @@ def build_default_bindings() -> BindingSet:
     # --- Topology Lab (nur im Kontext "topology") ---------------------------
     # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-
     # Zweiteilung) sind hier entfernt — beide durch das globale, kontextuelle
-    # `C` oben ersetzt (AD-017). `k`/`l`/`r` bleiben unverändert (Legacy,
+    # `C` oben ersetzt (AD-017). `l`/`r` bleiben unverändert (Legacy,
     # außerhalb des B6-Scopes; siehe Handoff-Report). `alt+e` (Extrude) ist seit
-    # WP-06 B9 entfernt: ersetzt durch das globale `T` oben.
-    bs.set_default(_key("k"), cmd.COLLAPSE, context=TOPOLOGY_CONTEXT)
+    # WP-06 B9 entfernt: ersetzt durch das globale `T` oben. `k` (Collapse) ist seit
+    # WP Toolbox Gaps B1 entfernt: ersetzt durch das globale Shift+C oben.
     bs.set_default(_key("l"), cmd.EDGE_LOOP, context=TOPOLOGY_CONTEXT)
     bs.set_default(_key("r"), cmd.EDGE_RING, context=TOPOLOGY_CONTEXT)
 

@@ -46,6 +46,8 @@ Das soll kein zweites Selection-System werden. Zu klären ist, wie Regionen Mesh
 Vor neuen Werkzeugen den Production-Integrationsstand prüfen: Eine Operation kann im Core vorhanden sein, ohne über den normalen App-Pfad verfügbar zu sein. Vorhandene Lab- oder Playground-Arbeit übernehmen, wenn sie bereits validiert wurde; nicht blind kopieren und nicht neu erfinden.
 
 - **Collapse:** Production-Command/Integration prüfen und fehlende Verdrahtung abschließen. Nicht nur den Core-Primitive als „Tool vorhanden“ zählen.
+  *Erledigt 2026-10-23:* [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md) B1 — Collapse V/E/F auf `Shift+C`
+  (`core.operations.collapse`, `Application._collapse_command`, mit Symmetrie).
 - **Weld / Target Weld:** Vertices bzw. Kanten kontrolliert verbinden; Verhalten, Toleranz und Undo eindeutig machen.
 - **Bridge und Close Holes/Gaps:** ausgewählte Randloops verbinden und geeignete Öffnungen schließen. Randanzahl, Reihenfolge, Richtung und nicht unterstützte Fälle klar behandeln.
 - **Edge- und Vertex-Extrude:** gezielte lokale Topologie aufbauen, wo Face-Extrude nicht die passende Absicht ausdrückt.

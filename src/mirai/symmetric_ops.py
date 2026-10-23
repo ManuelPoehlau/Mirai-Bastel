@@ -1,5 +1,6 @@
 """Symmetric topology coordinators (AD-SYM-03 §3, slices 3b/3c/4): Edge Connect, Vertex Connect,
-Split, and the removal commands Delete, Dissolve and Dissolve (no cleanup).
+Split, the removal commands Delete, Dissolve and Dissolve (no cleanup), and Collapse (WP Toolbox
+Gaps B1).
 
 A coordinator is a pure mutation `coordinate_*(mesh, selection[, mode]) -> result` for the
 unchanged `apply_*` function of `mirai.topology`: expand the (already canonical, one-sided)
@@ -24,7 +25,9 @@ from typing import Callable, Iterable
 
 from core import EdgeId, FaceId, SelectionMode, VertexId
 from core.mesh import Mesh, SymmetryDefinition
+from core.operations.collapse import collapse_elements, collapse_groups
 
+from .symmetry import mirror_position
 from .symmetry_coordination import (
     SymmetryIndex,
     both_sides_faces,
@@ -41,6 +44,7 @@ from .symmetry_coordination import (
 )
 from .topology.connect_per_face import EdgeConnectResult, apply_connect_edges
 from .topology.connect_vertices_per_face import apply_connect_vertices
+from .topology.collapse import collapse_input
 from .topology.delete_dissolve import apply_removal
 
 #: Refusal texts (visible status line, each says what to do). The Lab README lists them.
@@ -280,3 +284,59 @@ def coordinate_dissolve(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[
 
 def coordinate_dissolve_no_cleanup(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[FaceId]:
     return coordinate_removal(mesh, mode, ids, dissolve=True, cleanup=False)
+
+
+# ---------------------------------------------------------------------------------------------
+# Collapse (WP Toolbox Gaps B1)
+# ---------------------------------------------------------------------------------------------
+
+
+def coordinate_collapse(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[VertexId]:
+    """Collapse of `ids` (elements of `mode`) and their partners, in one `collapse_elements` call
+    on the union. Returns one vertex per group, like `apply_collapse`.
+
+    A group and its mirror image collapse separately; a group that touches its image (through a
+    seam vertex or a shared face edge) is one group with the plane in its middle. Centroids are
+    not left to float rounding: the survivor of a mirror pair is set to the exact mirror of its
+    partner on the normal's side, a self-mirrored group's survivor is projected onto the plane,
+    so the pairs stay exact (`vertex_correspondence` pairs by position). Seam (as Delete, M): seam
+    edge ids that died inside a group are dropped; the delta check refuses whatever is left
+    unmirrored (a vertex off its seam, a face spanning the plane). No both-sides refusal: the
+    union is "intent + mirrored intent" here, where groups touching their image merge.
+    `CollapseRefused` from Core propagates unchanged."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        raise SymmetryRefusal(TEXT_NON_EXACT_PLANE)
+    index = SymmetryIndex(mesh)
+    _, expand = _REMOVAL_EXPANSION[mode]
+    expansion = expand(index, ids)
+    if expansion.unpaired:
+        raise SymmetryRefusal(TEXT_UNPAIRED)
+    before = completeness_report(mesh, index)
+
+    vertices, edges = collapse_input(mesh, mode, expansion.union)
+    groups = collapse_groups(mesh, vertices, edges)
+    survivors = collapse_elements(mesh, vertices, edges)
+
+    group_of = {v: i for i, group in enumerate(groups) for v in group}
+    normal = definition.plane_normal
+    for i, group in enumerate(groups):
+        if len(group) == 1:
+            continue
+        j = group_of.get(index.vertex_partner(group[0]))
+        if j is None:
+            continue  # the delta check judges an image that is not a group of its own
+        position = mesh.vertex_position(survivors[i])
+        if j == i:
+            distance = sum((p - o) * n for p, o, n in zip(position, definition.plane_point, normal))
+            mesh.set_vertex_position(survivors[i], tuple(p - distance * n for p, n in zip(position, normal)))
+        elif j > i:
+            source, image = (i, j) if element_side(mesh, definition, [survivors[i]]) >= 0 else (j, i)
+            mirrored = mirror_position(
+                mesh.vertex_position(survivors[source]), definition.plane_point, normal
+            )
+            mesh.set_vertex_position(survivors[image], mirrored)
+
+    mesh.symmetry_definition = seam_without_dead_ids(mesh)
+    _check_delta(before, mesh)
+    return survivors

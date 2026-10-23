@@ -2,11 +2,12 @@
 
 A declaration says "a coordinator exists for this resolved operation": one static table per
 kind of key, in the module that will hold the coordinators, so the entry *is* the implementation
-and cannot drift from it. Three keys exist today:
+and cannot drift from it. Four keys exist today:
 
 - the `C` operation contexts (`CContext`: Split, Edge Connect, Vertex Connect, Knife - all four declared
   since slice 6c);
 - the removal commands (`Delete`, `Dissolve`, `DissolveNoCleanup`);
+- the Collapse command (`commands.COLLAPSE`, WP Toolbox Gaps B1), same shape as the removal table;
 - the Extrude command (`commands.EXTRUDE`, slice 7): a live gesture, like the Knife, so its entry is a
   *planner* `(mesh, faces) -> plan` that `Application` runs at `begin` and hands to the unchanged tool.
 
@@ -33,6 +34,7 @@ from .interaction import commands
 from .symmetric_extrude import plan_extrude
 from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
+    coordinate_collapse,
     coordinate_delete,
     coordinate_dissolve,
     coordinate_dissolve_no_cleanup,
@@ -67,6 +69,16 @@ REMOVAL_COORDINATORS: Mapping[str, Any] = MappingProxyType(
     }
 )
 
+#: Collapse command constant -> coordinator `(mesh, SelectionMode, ids) -> survivor vertices`
+#: (`mirai.symmetric_ops.coordinate_collapse`, WP Toolbox Gaps B1). Its own table, not a row of the
+#: removal table: Collapse merges, it removes nothing the removal rules (seam S2, residue faces)
+#: speak about. Keyed per command like the removal table; the entry is the switch (D-b).
+COLLAPSE_COORDINATORS: Mapping[str, Any] = MappingProxyType(
+    {
+        commands.COLLAPSE: coordinate_collapse,
+    }
+)
+
 #: Extrude command constant (`mirai.interaction.commands`) -> planner `(mesh, faces) -> SymmetricExtrudePlan`
 #: (`mirai.symmetric_extrude`, slice 7). The planner refuses before any mutation (`SymmetryRefusal`); the plan
 #: it returns is what the unchanged `ExtrudeTool` is handed at `begin`. Keyed per command like the removal
@@ -86,6 +98,11 @@ def declared_c_contexts() -> frozenset[CContext]:
 def declared_removal_commands() -> frozenset[str]:
     """The removal commands that have a coordinator (read on every call, never cached)."""
     return frozenset(REMOVAL_COORDINATORS)
+
+
+def declared_collapse_commands() -> frozenset[str]:
+    """The Collapse commands that have a coordinator (read on every call, never cached)."""
+    return frozenset(COLLAPSE_COORDINATORS)
 
 
 def declared_extrude_commands() -> frozenset[str]:

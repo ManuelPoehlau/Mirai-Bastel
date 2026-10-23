@@ -283,6 +283,21 @@ assertions that pinned the version number 2 (`test_scene_objects.py::TestSeriali
 (renamed), `…::test_version_1_dict_loads_as_one_normal_edit_object`, `test_scene_files.py::test_save_then_load_round_trips_…`).
 (5) contract tests `tests/test_mirror_pairs.py` (value, invariants, v3 round trip, v2 load, invalid pairs refused, `from_objects`).
 
+**Decision:** WP Toolbox Gaps B1 Collapse V/E/F (2026-10-23; promotion by Manu,
+[WP_TOOLBOX_GAPS_PLAN](../WP_TOOLBOX_GAPS_PLAN.md) B1)
+
+`src/core/operations/collapse.py` gains `collapse_groups` / `collapse_elements` / `CollapseRefused` (a `MeshError`):
+each connected group of the given edges falls into one point at its centroid, as a chain of the existing
+`Mesh.collapse_edge` plus one `set_vertex_position`. Freeze rule (§7): (1) requirement — Collapse of vertex, edge and
+face selections in Production (the command existed but was dead); (2) solvable with the public API, so **`Mesh` is not
+touched** — the module only composes `collapse_edge`, the queries and the journal (a nested `begin_change` /
+`rollback_change` undoes a half-merged group); (3) documented in the plan; (4) smallest extension: one module next to
+`topology.py`, exported from `core.operations`; refusals happen before the first mutation (a face that would hold a vertex
+twice, two faces that would coincide, an edge on more than two faces — `tests/mesh_invariants.py` forbids all three);
+(5) contract tests `tests/test_core_collapse.py` (edge, edge chain, face group, quad strip, border edge, triangle
+degeneration, cube face, the three refusals, 40 randomised selections on sphere / cube / grid: valid with exact
+Undo/Redo or refused untouched).
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten

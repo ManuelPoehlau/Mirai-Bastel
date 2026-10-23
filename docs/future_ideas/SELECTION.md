@@ -86,7 +86,9 @@ Vorteil: Besonders bei repetitiven Aktionen können direkt weitere Vertices verb
 
 ### Collapse Edge
 
-> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice B1.
+> Gebaut (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice B1 (`Shift+C`, Edge/Face/Vertex).
+> Erste Antwort (P-4, `PROVISIONAL`): **Ergebnis aktiv** — die entstandenen Punkte sind gewählt, der Modus wechselt
+> auf Vertex. Der zweite Workflow bleibt Material für den Praxistest B.
 
 Analog entsteht beim Collapse aus einer Edge-Auswahl typischerweise ein verbleibender Vertex. Auch hier gibt es zwei sinnvolle Workflows:
 

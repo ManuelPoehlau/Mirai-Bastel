@@ -83,12 +83,13 @@ def visible(app: Application) -> list:
     return hits
 
 
-def declare(monkeypatch, contexts=(), removal=(), extrude=False) -> None:
+def declare(monkeypatch, contexts=(), removal=(), extrude=False, collapse=False) -> None:
     """Patcht die Deklarationstabellen; `declared_*` lesen bei jedem Aufruf. Ein Kontext mit echtem
     Koordinator (Split, Edge/Vertex Connect, Slice 3b/4) behält ihn, damit `Application` ihn aufrufen kann;
     für die übrigen steht ein Platzhalter (`Application` liest dafür keinen Koordinator).
     `declare(monkeypatch)` stellt den Zustand „nichts deklariert“ her (3a); der Extrude-Planer (Slice 7)
-    gehört dazu: `extrude=True` behält den echten, sonst ist die Tabelle leer."""
+    gehört dazu: `extrude=True` behält den echten, sonst ist die Tabelle leer; ebenso Collapse
+    (WP Toolbox Gaps B1, `collapse=True`)."""
     real = dict(declarations.C_CONTEXT_COORDINATORS)
     monkeypatch.setattr(
         declarations,
@@ -104,6 +105,11 @@ def declare(monkeypatch, contexts=(), removal=(), extrude=False) -> None:
         declarations,
         "EXTRUDE_COORDINATORS",
         declarations.EXTRUDE_COORDINATORS if extrude else MappingProxyType({}),
+    )
+    monkeypatch.setattr(
+        declarations,
+        "COLLAPSE_COORDINATORS",
+        declarations.COLLAPSE_COORDINATORS if collapse else MappingProxyType({}),
     )
 
 

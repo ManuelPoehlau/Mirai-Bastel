@@ -160,6 +160,7 @@ def refused_by_the_row() -> list[str]:
         NON_OPERATION
         | APP_SYMMETRY_COMMANDS
         | declarations.declared_removal_commands()
+        | declarations.declared_collapse_commands()
         | declarations.declared_extrude_commands()
         | frozenset(TRANSFORM_OPERATIONS)
         | ({cmd.CONNECT} if declarations.declared_c_contexts() else set())
@@ -167,19 +168,19 @@ def refused_by_the_row() -> list[str]:
     return sorted(command_constants() - spared)
 
 
-def test_t_fc1_the_refused_set_contains_the_five_unwired_commands():
+def test_t_fc1_the_refused_set_contains_the_four_unwired_commands():
     """Six until slice 7: `Extrude` is declared now (`symmetric_extrude`), like `Connect` and the removal
-    commands before it."""
+    commands before it; five until WP Toolbox Gaps B1 declared `Collapse`."""
     refused = set(refused_by_the_row())
-    five = {
+    four = {
         cmd.SPLIT_EDGE,
-        cmd.COLLAPSE,
         cmd.LOOP_INSERT,
         cmd.LOOP_SLIDE,
         cmd.ARTICULATION_RESTORE,
     }
-    assert five <= refused
+    assert four <= refused
     assert cmd.EXTRUDE not in refused  # seit Slice 7 deklariert
+    assert cmd.COLLAPSE not in refused  # seit WP Toolbox Gaps B1 deklariert
     assert {cmd.EDGE_LOOP, cmd.EDGE_RING} <= refused  # bewusst nicht in NON_OPERATION
     assert cmd.CONNECT not in refused  # seit 3b deklariert: pro Kontext, nicht per Identität
     assert not refused & NON_OPERATION
@@ -604,6 +605,7 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     declarations_line = next(line for line in lines if line.startswith("Deklarationen"))
     assert "C-Kontexte Edge Connect, Knife, Split, Vertex Connect" in declarations_line
     assert "Removal Delete, Dissolve, DissolveNoCleanup" in declarations_line
+    assert "Collapse Collapse" in declarations_line
     assert "C-Kontext Split abgelehnt" not in text  # deklariert (Slice 4)
     assert "C-Kontext Edge Connect abgelehnt" not in text  # deklariert (3b)
     assert "C-Kontext Vertex Connect abgelehnt" not in text
@@ -613,7 +615,7 @@ def test_t_r1d_plus_listing_has_contexts_non_operation_and_declarations(monkeypa
     assert "C-Kontext Split abgelehnt" in empty
     assert "C-Kontext Edge Connect abgelehnt" in empty and "C-Kontext Vertex Connect abgelehnt" in empty
     assert "C-Kontext Knife abgelehnt" in empty
-    assert "C-Kontexte keine" in empty and "Removal keine" in empty
+    assert "C-Kontexte keine" in empty and "Removal keine" in empty and "Collapse keine" in empty
 
 
 # == T-R2h+ ======================================================================================
@@ -650,3 +652,38 @@ def test_t_r2h_plus_installed_row_incl_contexts_follows_undo_redo(monkeypatch):
     for expected in axes[1:]:
         assert press(app, lab, CTRL_Y) is True
         check(expected)
+
+
+# == Collapse (WP Toolbox Gaps B1) ===============================================================
+
+SHIFT_C = Input("key", "c", frozenset({"shift"}))
+
+
+def test_collapse_is_declared_and_runs_symmetrically_under_block():
+    """Shift+C under BLOCK: declared, so the row lets it through and the coordinator collapses the
+    edge and its mirror image in one history entry."""
+    app, lab = symmetric_lab()
+    assert cmd.COLLAPSE in block_row().gate.allowed
+    a, b, c, d = _plus_x_quad(app)
+    app.selection.clear()
+    app.selection.mode = SelectionMode.EDGE
+    app.selection.edges = {_edge_between(app, a, b)}
+    vertices = len(app.scene.mesh.all_vertex_ids())
+    history = len(app.history)
+    assert press(app, lab, SHIFT_C) is True
+    assert len(app.history) == history + 1
+    assert len(app.scene.mesh.all_vertex_ids()) == vertices - 2
+    assert app.selection.mode is SelectionMode.VERTEX
+
+
+def test_collapse_without_a_declaration_is_refused_visibly_under_block(monkeypatch):
+    declare(monkeypatch, contexts=list(CONTEXT_NAMES))
+    app, lab = symmetric_lab()
+    a, b, c, d = _plus_x_quad(app)
+    app.selection.clear()
+    app.selection.mode = SelectionMode.EDGE
+    app.selection.edges = {_edge_between(app, a, b)}
+    before = snapshot(app)
+    assert press(app, lab, SHIFT_C) is False
+    assert app.status_message == BLOCK_NOT_ALLOWED_TEXT
+    assert snapshot(app) == before

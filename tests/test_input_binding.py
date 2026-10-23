@@ -180,9 +180,16 @@ class BindingOverrideTests(unittest.TestCase):
 class ContextResolutionTests(unittest.TestCase):
     def test_topology_context_wins(self):
         bs = build_default_bindings()
-        self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
         self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
         self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.EDGE_RING)
+
+    def test_collapse_is_global_shift_c_and_the_dead_k_is_gone(self):
+        # WP Toolbox Gaps B1 (Manu 2026-10-23): Shift+C everywhere, plain C stays Connect.
+        bs = build_default_bindings()
+        self.assertEqual(bs.command_for(_key("c", "shift"), GLOBAL_CONTEXT), cmd.COLLAPSE)
+        self.assertEqual(bs.command_for(_key("c", "shift"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
+        self.assertEqual(bs.command_for(_key("c"), GLOBAL_CONTEXT), cmd.CONNECT)
+        self.assertIsNone(bs.command_for(_key("k"), TOPOLOGY_CONTEXT))
 
     def test_global_fallback_in_topology_context(self):
         bs = build_default_bindings()
@@ -210,7 +217,7 @@ class ContextResolutionTests(unittest.TestCase):
     def test_global_extrude_is_t_and_the_legacy_alt_e_is_gone(self):
         # WP-06 B9 (E10): 't' is global (Artist Input Truth `topology.extrude`,
         # PROVISIONAL); the Topology-Lab Alt+E default is superseded and removed,
-        # exactly like 's'/'c' in B6. 'k'/'l'/'r' stay in TOPOLOGY_CONTEXT.
+        # exactly like 's'/'c' in B6. 'l'/'r' stay in TOPOLOGY_CONTEXT.
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("t"), GLOBAL_CONTEXT), cmd.EXTRUDE)
         self.assertEqual(bs.command_for(_key("t"), TOPOLOGY_CONTEXT), cmd.EXTRUDE)
@@ -218,7 +225,7 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertIsNone(bs.command_for(_key("e", "alt"), TOPOLOGY_CONTEXT))
         # E (Rotate) is untouched by the removal of Alt+E.
         self.assertEqual(bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.ROTATE)
-        self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
+        self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
 
 
 class SerializationTests(unittest.TestCase):
@@ -233,7 +240,7 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(merged.command_for(_key("g"), TOPOLOGY_CONTEXT), cmd.REDO)
         self.assertEqual(merged.command_for(_mouse("MIDDLE", "shift")), cmd.ORBIT)
         # Defaults unverändert.
-        self.assertEqual(merged.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
+        self.assertEqual(merged.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
         self.assertEqual(merged.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_json_roundtrip(self):
@@ -322,7 +329,7 @@ class KeymapOverrideTests(unittest.TestCase):
         # Bestehende Defaults funktionieren unverändert, wenn keine Config da ist.
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("w")), cmd.MOVE)
-        self.assertEqual(bs.command_for(_key("k"), TOPOLOGY_CONTEXT), cmd.COLLAPSE)
+        self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
 
 
 class ExplicitUnbindTests(unittest.TestCase):
@@ -351,14 +358,14 @@ class ExplicitUnbindTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_unbind_is_scoped_to_context(self):
-        # topology: k → null (überschreibt den Collapse-Default); global:
+        # topology: r → null (überschreibt den EdgeRing-Default); global:
         # r → Scale bleibt erhalten.
         bs = build_default_bindings()
         overlay = BindingSet.from_dict(
-            _keymap(_entry(TOPOLOGY_CONTEXT, "key", "k", [], None))
+            _keymap(_entry(TOPOLOGY_CONTEXT, "key", "r", [], None))
         )
         bs.add_overrides(overlay)
-        self.assertIsNone(bs.command_for(_key("k"), TOPOLOGY_CONTEXT))
+        self.assertIsNone(bs.command_for(_key("r"), TOPOLOGY_CONTEXT))
         self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
 
     def test_unbind_survives_json_roundtrip(self):

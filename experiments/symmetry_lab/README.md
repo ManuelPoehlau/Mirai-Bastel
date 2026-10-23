@@ -82,7 +82,7 @@ Ebene, oder die Aktion wird vor der ersten Bewegung abgelehnt (`Rotate: refused 
 
 Experiment E5 / INV-8, **Artist-Verdikt KEEP-BLOCK** (Manu, 2026-10-03, in AD-SYM-02 §4
 festgehalten): ein Tool, das unter Symmetrie nicht spiegelt, wird verweigert, statt
-einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve, seit Slice 4 Split und seit Slice 6c der Knife (Abschnitt „Symmetrischer Knife, Slice 6c“ unten). Als „nicht unterstützt" zählt C (keine Operation, keine
+einseitig zu laufen. Auf dem App-Pfad spiegeln seit Slice 3b Edge und Vertex Connect (kontextuelles C, Koordinatoren), seit 3c Delete und Dissolve, seit Slice 4 Split und seit Slice 6c der Knife (Abschnitt „Symmetrischer Knife, Slice 6c“ unten); seit WP Toolbox Gaps B1 (2026-10-23) Collapse (`Shift+C`, eigene Deklarationstabelle `COLLAPSE_COORDINATORS`). Als „nicht unterstützt" zählt C (keine Operation, keine
 Erklärung) und jedes Transform-Command, dessen Operation `supports_symmetry` nicht erklärt —
 gelesen am Klassenattribut, keine Tool-Liste. Heute erklären es W/E/R und alle vier C-Kontexte
 sind deklariert; E5 hat also mit den echten Deklarationen nichts mehr zu verweigern oder zu

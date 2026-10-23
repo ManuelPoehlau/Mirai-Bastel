@@ -114,7 +114,9 @@ Scope (binding, see the handoffs):
   WP Delete/Dissolve (PROVISIONAL): Delete removes the selection with a
   hole, Backspace dissolves it (Edge / Face: leftover 2-valent vertices
   removed; Vertex: the vertex dissolve), Ctrl+Backspace dissolves Edge /
-  Face without that cleanup. Status lines
+  Face without that cleanup. WP Toolbox Gaps B1: Shift+C collapses each
+  connected group of the V/E/F selection to one point at its centroid and
+  selects the points in Vertex mode (`PROVISIONAL`). Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - Scene loader (temporary, `PROVISIONAL`, `src/scene_menu.py`): `SPACE`

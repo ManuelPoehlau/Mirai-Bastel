@@ -2,7 +2,7 @@
 
 **An:** Claude Code
 **Modell/Effort:** Opus, effort `high` für B1/B2 (Core-Topologie), `medium` für A1/A2/C1/C2
-**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 … B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
+**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest B nach B2); C1 … B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
 **Modus (M5):** Production, Core-first, **kein Lab** (Blender-bekannte Werkzeuge, AGENTS.md §7a).
 Promotion (M3) durch Manu im Chat 2026-10-23: „Werkzeuge, die in Mirai noch in Production müssen“ —
 Collapse, Box/Lasso Select Through, Koordinatensystem aus dem Playground, Grow Selection, Loop-Extend,
@@ -95,6 +95,21 @@ gesammelten Praxistest (§3).
 ### Paket B — Topologie-Operationen (Core, Change-Journal)
 
 **B1 Collapse V/E/F.**
+- *Gebaut 2026-10-23* (`src/core/operations/collapse.py`, `src/mirai/topology/collapse.py`,
+  `Application._collapse_command`, `symmetric_ops.coordinate_collapse`,
+  `symmetry_declarations.COLLAPSE_COORDINATORS`; Tests `tests/test_core_collapse.py`,
+  `tests/test_application_collapse.py`, Lab `test_app_lab_fail_closed.py`). Präzisierungen, `PROVISIONAL`:
+  - Signatur `collapse_elements(mesh, vertex_ids, edge_ids=None)`: die Gruppen entstehen über `edge_ids`
+    (E: die gewählten Kanten, F: die Kanten der gewählten Flächen), ohne `edge_ids` über die Kanten zwischen
+    zwei gewählten Vertices (V). So bleiben zwei gegenüberliegende Kanten eines Quads zwei Punkte.
+  - **Ablehnung statt kaputter Topologie:** Würde eine Fläche einen Vertex doppelt enthalten (eingeschnürt),
+    würden zwei Flächen zusammenfallen oder hinge eine Kante an mehr als zwei Flächen, lehnt Collapse vor der
+    ersten Mutation ab; die Statuszeile nennt den Grund. Blender lässt das durch; Mirais Invarianten nicht.
+  - Unter Symmetrie: Auswahl plus Spiegelbild in einem Schritt; berührt eine Gruppe ihr Spiegelbild (Seam-
+    Vertex, Seam-Kante), wird sie ein Punkt **auf** der Ebene. Die Spiegelpunkte werden exakt gesetzt, nicht
+    über Rundung gemittelt. Folgeauswahl nur auf der Seite, auf der gewählt war (wie Split).
+  - Im Symmetry Lab ist Collapse deklariert und läuft unter BLOCK.
+  - Statuszeile `Collapse: N point(s)`; Vertices ohne verbindende Kante: `Collapse: nothing to do …`.
 - *Ziel:* Die ausgewählten Elemente fallen in einen Punkt pro zusammenhängender Gruppe.
 - *Scope:*
   - Core-Operation `collapse_elements(mesh, vertex_ids) -> list[VertexId]` in `src/core/operations/`.
@@ -165,7 +180,11 @@ gesammelten Praxistest (§3).
   - Mit `Shift+←/→` über Gesicht und Arm wandern.
   - Box und Lasso über den Kopf ziehen, vor dem Loslassen Alt halten (Band wird blau) → auch die Rückseite ist gewählt; ohne Alt nur die Vorderseite.
 - **B:**
-  - Collapse (`Shift+C`) auf Kante, Kantenzug und Face-Gruppe, jeweils mit Undo; einmal unter Symmetrie.
+  - Collapse (`Shift+C`) auf Kante, Kantenzug und Face-Gruppe, jeweils mit Undo; einmal unter Symmetrie
+    (auch eine Kante an der Mitte: der Punkt landet auf der Ebene).
+  - Folgeauswahl (P-4): Passt es, dass danach die Punkte im Vertex-Modus gewählt sind, oder willst du im
+    Kanten-/Flächen-Modus bleiben, um gleich weiter zu collapsen?
+  - Vertex-Modus: zwei benachbarte Punkte wählen → einer; zwei nicht verbundene Punkte → nichts passiert.
   - Subdivide auf einer Face-Insel und auf dem ganzen Mesh.
 - **C:**
   - Umschalten World/Normal, an Wange und Nase in beiden Räumen bewegen und drehen.
