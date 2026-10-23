@@ -40,7 +40,7 @@ def _key(value: str, *modifiers: str) -> Input:
 
 ONE, FOUR = _key("1"), _key("4")
 W, C, T = _key("w"), _key("c"), _key("t")
-DELETE = _key("delete")
+BACKSPACE = _key("backspace")
 SHIFT_S = _key("s", "shift")
 ALT_R = _key("r", "alt")
 CTRL_Z, CTRL_Y = _key("z", "ctrl"), _key("y", "ctrl")
@@ -353,7 +353,11 @@ def test_a_reference_never_lights_up_selected_or_hovered_ids():
 
 # M2-2: W/E/R in `4` are the object gesture now (`tests/test_object_transform.py`); with nothing
 # selected they still refuse and point at 1/2/3, so W stays in this list.
-@pytest.mark.parametrize("key", [W, T, C, DELETE, SHIFT_S], ids=["w", "t", "c", "delete", "shift_s"])
+# Track A2 (2026-10-23): `Delete` in `4` deletes the selected objects (`tests/test_object_lifecycle.py`);
+# Backspace (Dissolve) has no object meaning and stays refused.
+@pytest.mark.parametrize(
+    "key", [W, T, C, BACKSPACE, SHIFT_S], ids=["w", "t", "c", "backspace", "shift_s"]
+)
 def test_component_work_is_refused_in_object_mode(key):
     app = _app()
     app.key_press(FOUR)

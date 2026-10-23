@@ -23,6 +23,10 @@ Szenen speichern/laden (Manu 2026-10-15): mit `refresh` holt das Menü seine Zei
 jedem Öffnen neu - der Entry-Point stellt so die Speicher-Zeilen und die gespeicherten
 Szenendateien (`src/scene_files.py`) vor `cube` + Assets.
 
+Track A1 (2026-10-23): dieselbe Menü-Klasse trägt das Menü "Add Mesh" (`Shift+A`, Fenster-Ebene wie
+`SPACE`): Plane, Cube, Sphere, Cylinder (`scene_factory.PRIMITIVES`), ein Klick fügt das Primitiv als
+bearbeitbares Objekt hinzu (`Application.add_primitive`, `add_primitive_named`).
+
 Kein pyglet-Import auf Modulebene: Zeichnung und Textbreite bauen lazy
 (Muster `playground/hud.py`), damit der Menüzustand headless testbar ist.
 """
@@ -89,6 +93,24 @@ def add_named_reference(app, name: str) -> bool:
     return obj is not None
 
 
+def add_mesh_entries() -> tuple[str, ...]:
+    """Einträge des Menüs "Add Mesh": die Primitive, in Menü-Reihenfolge."""
+    from mirai.scene_factory import primitive_names
+
+    return primitive_names()
+
+
+def add_primitive_named(app, name: str) -> bool:
+    """Primitiv per Menü-Name hinzufügen (`Application.add_primitive`). True = hinzugefügt; ein Fehler
+    wird als Statuszeile gemeldet. Status bei Erfolg bzw. Ablehnung setzt `add_primitive`."""
+    try:
+        obj = app.add_primitive(name)
+    except Exception as exc:
+        app.set_status(f"Add {name!r} failed: {exc}")
+        return False
+    return obj is not None
+
+
 class SceneMenu:
     """Das Kontextmenü: offener Zustand, Geometrie, Hover, Zeichnung.
 
@@ -104,8 +126,10 @@ class SceneMenu:
         load: Callable[[str], bool],
         add: Callable[[str], bool] | None = None,
         refresh: Callable[[], Sequence[str]] | None = None,
+        title: str | None = None,
     ) -> None:
         self.entries = tuple(entries)
+        self._title_text = title
         self._load = load
         self._add = add
         self._refresh = refresh
@@ -254,9 +278,12 @@ class SceneMenu:
 
             title = text.Label(
                 # AD-021 M1: Shift+Klick = als Referenz hinzufügen (Text `PROVISIONAL`).
-                "Szene laden (SPACE) · Shift+Klick: als Referenz"
-                if self._add is not None
-                else "Szene laden (SPACE)",
+                self._title_text
+                or (
+                    "Szene laden (SPACE) · Shift+Klick: als Referenz"
+                    if self._add is not None
+                    else "Szene laden (SPACE)"
+                ),
                 x=0,
                 y=0,
                 anchor_x="left",

@@ -15,7 +15,9 @@ nur `transform`, nie ein Mesh (L-1). AD-021 M2-3 (E-13, L-3): `ObjectPivotComman
 
 from __future__ import annotations
 
-from core import Mesh, ObjectState, ObjectTransform, Scene, SceneObject, SymmetryDefinition
+from collections.abc import Iterable
+
+from core import Mesh, ObjectId, ObjectState, ObjectTransform, Scene, SceneObject, SymmetryDefinition
 
 from . import object_space
 from .symmetry_axis import AXIS_NORMALS, ORIGIN
@@ -96,18 +98,116 @@ class AddObjectCommand:
     """"Objekt hinzufügen" als ein Undo-Schritt (AD-021 §4.6, Q-3 = ja).
 
     Wird nach `scene.add_object(...)` gepusht. Undo entfernt, Redo setzt **dieselbe**
-    Instanz mit derselben ID wieder ein (AD-001: eine ID wird nie neu vergeben)."""
+    Instanz mit derselben ID wieder ein (AD-001: eine ID wird nie neu vergeben).
 
-    def __init__(self, scene: Scene, obj: SceneObject) -> None:
+    Edit-Objekt (Track A1, 2026-10-23): `Scene.remove_object` verweigert das Edit-Objekt, und ein
+    **Normal**-Objekt kann zwischen Add und Undo Edit-Objekt werden (Modus `4`, anklicken, `1` -
+    kein History-Schritt). Der Command trägt deshalb das Edit-Objekt von davor (`edit_before`;
+    ohne Angabe das aktuelle der Scene, richtig, wenn der Add es nicht ändert): ist das Objekt im
+    Undo das Edit-Objekt, geht die Rolle zuerst dorthin zurück. Hat der Add selbst das neue Objekt
+    zum Edit-Objekt gemacht (`edit_before` angegeben, Scene steht schon auf dem neuen), setzt
+    Redo es wieder dazu. Nur der Scene-Zustand; die Ansicht (Viewport, Caches) folgt
+    `Application._follow_edit_object`."""
+
+    def __init__(
+        self, scene: Scene, obj: SceneObject, edit_before: ObjectId | None = None
+    ) -> None:
         self.scene = scene
         self.obj = obj
+        self.made_edit = edit_before is not None and scene.edit_object_id == obj.id
+        self.edit_before = scene.edit_object_id if edit_before is None else edit_before
+        if self.edit_before == obj.id:
+            raise ValueError("edit_before is the added object itself")
         self.description = f"Add object {obj.name!r}"
 
     def undo(self) -> None:
+        if self.scene.edit_object_id == self.obj.id:
+            self.scene.edit_object_id = self.edit_before
         self.scene.remove_object(self.obj.id)
 
     def redo(self) -> None:
         self.scene.restore_object(self.obj)
+        if self.made_edit:
+            self.scene.edit_object_id = self.obj.id
+
+
+class DeleteObjectsCommand:
+    """"Objekte löschen" (Modus `4`, Track A2) als ein Undo-Schritt.
+
+    Hält die **Instanzen** (AD-001: dieselbe ID, dasselbe Mesh, Transform, Pivot, Zustand kommen
+    im Undo zurück) und das Edit-Objekt davor/danach. Wurde das Edit-Objekt gelöscht, ist
+    `edit_after` ein überlebendes Objekt: Redo stellt es *vor* dem Entfernen ein (die Scene
+    verweigert das Entfernen des Edit-Objekts), Undo setzt die Objekte ein und danach `edit_before`
+    wieder. Nur der Scene-Zustand; Viewport und Caches folgen der Application
+    (`_follow_edit_object`, `_sync_object_views`), die Objekt-Auswahl der Selection-Mirror-Stack."""
+
+    def __init__(
+        self,
+        scene: Scene,
+        objects: list[SceneObject],
+        edit_before: ObjectId,
+        edit_after: ObjectId,
+    ) -> None:
+        self.scene = scene
+        self.objects = list(objects)
+        self.edit_before = edit_before
+        self.edit_after = edit_after
+        names = ", ".join(repr(obj.name) for obj in self.objects)
+        self.description = f"Delete object {names}"
+
+    def undo(self) -> None:
+        for obj in self.objects:
+            self.scene.restore_object(obj)
+        self.scene.edit_object_id = self.edit_before
+
+    def redo(self) -> None:
+        self.scene.edit_object_id = self.edit_after
+        for obj in self.objects:
+            self.scene.remove_object(obj.id)
+
+
+def unique_object_name(scene: Scene, base: str) -> str:
+    """`base`, bzw. `base.001`, `base.002`, ... wenn der Name in der Scene schon vorkommt
+    (Blender-Schema; Namen sind Anzeige, die Identität ist die ObjectId)."""
+    taken = {obj.name for obj in scene.objects.values()}
+    if base not in taken:
+        return base
+    n = 1
+    while f"{base}.{n:03d}" in taken:
+        n += 1
+    return f"{base}.{n:03d}"
+
+
+class DeleteRefused(ValueError):
+    """Objekte löschen ist abgelehnt (Text = Grund, für die Statuszeile)."""
+
+
+def plan_object_delete(scene: Scene, selected: Iterable[ObjectId]) -> tuple[list[SceneObject], ObjectId]:
+    """Was "Objekte löschen" tut, ohne etwas zu ändern: die zu löschenden Objekte (nach ID) und
+    das Edit-Objekt danach, oder `DeleteRefused`.
+
+    Scene-Invarianten (`Scene.remove_object`, RF-5): es bleibt immer ein Edit-Objekt, und das ist
+    nie eine Referenz. Wird das Edit-Objekt gelöscht, folgt ihm das nächstliegende überlebende
+    Normal-Objekt nach ID-Abstand (das davor, bei Gleichstand das danach; `PROVISIONAL`). Gäbe es
+    keines - das letzte Objekt, oder nur Referenzen bleiben -, wird abgelehnt: eine leere Scene
+    gibt es nicht (Scene und `scene.mesh` setzen ein Edit-Objekt überall voraus), und ein
+    Platzhalter oder eine stillschweigend umgeschaltete Referenz wäre ein verstecktes Objekt."""
+    doomed_ids = {oid for oid in selected if oid in scene.objects}
+    doomed = [scene.objects[oid] for oid in sorted(doomed_ids)]
+    edit_id = scene.edit_object_id
+    if edit_id not in doomed_ids:
+        return doomed, edit_id
+    survivors = [obj for obj in scene.objects.values() if obj.id not in doomed_ids]
+    if not survivors:
+        raise DeleteRefused("the scene needs at least one object - the last one stays")
+    editable = [obj for obj in survivors if obj.state is ObjectState.NORMAL]
+    if not editable:
+        raise DeleteRefused(
+            "only References would remain, and the scene needs an editable object"
+            " - switch one to Normal (Alt+R) or keep the edit object"
+        )
+    nearest = min(editable, key=lambda obj: (abs(int(obj.id) - int(edit_id)), int(obj.id)))
+    return doomed, nearest.id
 
 
 class ObjectStateCommand:

@@ -22,6 +22,7 @@ obj_to_core.py` portiert und dabei bewusst in zwei Schichten aufgeteilt:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Sequence
 
@@ -50,6 +51,118 @@ def create_cube(size: float = 2.0) -> Mesh:
     for a, b, c, d in faces:
         mesh.add_face([verts[a], verts[b], verts[c], verts[d]])
     return mesh
+
+
+# ---------------------------------------------------------------------------
+# Add Mesh: Primitive (Track A1, 2026-10-23, `PROVISIONAL`)
+#
+# Alle über `Mesh.add_vertex`/`add_face`, Y oben (wie der Würfel), Außen-Normale per CCW von außen.
+# Echte, geschlossene (Plane: offene) Polygon-Meshes, keine Sonderstruktur - sie sind danach
+# gewöhnliche Objekte. Kugel und Zylinder haben die Blender-Defaults (Referenz: "Established software"),
+# die Plane ist eine eigene Entscheidung (ein Eintrag, 4x4-Raster).
+# ---------------------------------------------------------------------------
+
+#: Plane/Grid: ein Eintrag, ein 4x4-Raster (Loop-/Soft-Werkzeuge haben sofort etwas zu greifen);
+#: `segments=1` ergibt das einzelne Quad.
+PLANE_SEGMENTS = 4
+#: Kugel: 32 Segmente x 16 Ringe (Blender "UV Sphere"), Radius 1 - der Würfel (Kante 2) ist ihr
+#: Umwürfel. Pole auf der Y-Achse (Dreiecksfächer, wie dort).
+SPHERE_SEGMENTS = 32
+SPHERE_RINGS = 16
+#: Zylinder: 32 Seiten, Radius 1, Höhe 2 entlang Y, Deckel als N-Gon (Blender-Default).
+CYLINDER_VERTICES = 32
+
+
+def create_plane(size: float = 2.0, segments: int = PLANE_SEGMENTS) -> Mesh:
+    """Raster aus `segments` x `segments` Quads in der XZ-Ebene (y = 0), Normale +Y."""
+    if segments < 1:
+        raise ValueError(f"segments muss >= 1 sein: {segments!r}")
+    mesh = Mesh()
+    half = size / 2.0
+    step = size / segments
+    grid = [
+        [mesh.add_vertex((-half + i * step, 0.0, -half + j * step)) for j in range(segments + 1)]
+        for i in range(segments + 1)
+    ]
+    for i in range(segments):
+        for j in range(segments):
+            # (x0,z0) (x0,z1) (x1,z1) (x1,z0): (b-a)x(c-a) zeigt nach +Y.
+            mesh.add_face([grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]])
+    return mesh
+
+
+def create_sphere(
+    radius: float = 1.0, segments: int = SPHERE_SEGMENTS, rings: int = SPHERE_RINGS
+) -> Mesh:
+    """UV-Kugel um den Ursprung, Pole (0, +-radius, 0): Dreiecksfächer an den Polen, Quads dazwischen."""
+    if segments < 3 or rings < 2:
+        raise ValueError(f"UV-Kugel braucht segments >= 3 und rings >= 2: {segments!r}, {rings!r}")
+    mesh = Mesh()
+    top = mesh.add_vertex((0.0, radius, 0.0))
+    bottom = mesh.add_vertex((0.0, -radius, 0.0))
+    ring_ids: list[list] = []
+    for r in range(1, rings):
+        polar = math.pi * r / rings
+        y, ring_radius = radius * math.cos(polar), radius * math.sin(polar)
+        ring_ids.append(
+            [
+                mesh.add_vertex(
+                    (
+                        ring_radius * math.cos(2.0 * math.pi * s / segments),
+                        y,
+                        ring_radius * math.sin(2.0 * math.pi * s / segments),
+                    )
+                )
+                for s in range(segments)
+            ]
+        )
+    # Winkel läuft von +X nach +Z, von oben (+Y) gesehen also im Uhrzeigersinn: die Reihenfolgen
+    # unten sind so gewählt, dass die Außen-Normale (b-a)x(c-a) nach außen zeigt.
+    for s in range(segments):
+        n = (s + 1) % segments
+        mesh.add_face([top, ring_ids[0][n], ring_ids[0][s]])
+        mesh.add_face([bottom, ring_ids[-1][s], ring_ids[-1][n]])
+    for r in range(rings - 2):
+        upper, lower = ring_ids[r], ring_ids[r + 1]
+        for s in range(segments):
+            n = (s + 1) % segments
+            mesh.add_face([upper[s], upper[n], lower[n], lower[s]])
+    return mesh
+
+
+def create_cylinder(
+    radius: float = 1.0, depth: float = 2.0, vertices: int = CYLINDER_VERTICES
+) -> Mesh:
+    """Zylinder um die Y-Achse (y = +-depth/2), Mantel aus Quads, Deckel als je ein N-Gon."""
+    if vertices < 3:
+        raise ValueError(f"vertices muss >= 3 sein: {vertices!r}")
+    mesh = Mesh()
+    half = depth / 2.0
+    ring = [
+        (radius * math.cos(2.0 * math.pi * s / vertices), radius * math.sin(2.0 * math.pi * s / vertices))
+        for s in range(vertices)
+    ]
+    top = [mesh.add_vertex((x, half, z)) for x, z in ring]
+    bottom = [mesh.add_vertex((x, -half, z)) for x, z in ring]
+    for s in range(vertices):
+        n = (s + 1) % vertices
+        mesh.add_face([top[s], top[n], bottom[n], bottom[s]])
+    mesh.add_face(list(reversed(top)))  # +Y
+    mesh.add_face(bottom)               # -Y
+    return mesh
+
+
+#: Name -> Factory der Add-Mesh-Einträge, in Menü-Reihenfolge (Track A1).
+PRIMITIVES = {
+    "plane": create_plane,
+    "cube": create_cube,
+    "sphere": create_sphere,
+    "cylinder": create_cylinder,
+}
+
+
+def primitive_names() -> tuple[str, ...]:
+    return tuple(PRIMITIVES)
 
 
 def build_cube_scene(size: float = 2.0) -> Scene:
