@@ -13,8 +13,9 @@ implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); **M2
 transform, §6.5; new Artist questions Q-14…Q-16); **M2-4 implemented 2026-10-15** (switching the edit object, Q-5/Q-8,
 §6.6) — **M2 is built**; Manu's practical tests (Kurzfassung, `docs/ATELIER.md` B6–B8) pending, nothing promoted.
 **Track A implemented 2026-10-23** (Add Mesh primitives and object deletion in mode `4`, [§6.7](#67-track-a-implementation-note--add-mesh-and-delete-object-2026-10-23);
-no Core change; `PROVISIONAL`, practical test pending). Object-level mirror symmetry is **not** built — a design proposal:
-[OBJECT_MIRROR_SYMMETRY_PROPOSAL](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
+no Core change; `PROVISIONAL`, practical test pending). **Object-level mirror pairs implemented 2026-10-23** (`PROVISIONAL`,
+one data-only Core addition + file v3; design and implementation note:
+[OBJECT_MIRROR_SYMMETRY_PROPOSAL §11](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md#11-implementation-2026-10-23-provisional); practical test pending). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
 M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
@@ -53,6 +54,7 @@ named in place, re-runnable from the description), **(Reading)** a derivation, `
 | 2026-10-16 | Manu (chat, Morph Lab test) | **Q-12 revised:** a plain click in `4` that also switches the object to Reference is confusing ("klick aufs mesh wandelt es als referenz um??"), and "man kann nicht wirklich sehen, welches Objekt ausgewählt ist" |
 | 2026-10-16 | agent | Built from that note (`PROVISIONAL`): a click in `4` only selects; **`Alt+R`** switches the selected objects Normal ↔ Reference (one Undo step; the edit object stays Normal, RF-5); selected objects are drawn tinted towards the selection yellow in `4` (`scene_objects.selected_color`, `Viewport.set_edit_base_color` for the edit object); no Core change |
 | 2026-10-23 | agent (task of Manu) | **Track A implemented** (§6.7): Add Mesh (Plane/Grid 4×4, Cube, Sphere 32×16, Cylinder 32; `Shift+A`) and object deletion in mode `4` (`Delete`; edit object hand-over, last object / only References refused); `AddObjectCommand` hardened for an edit object that is the added object. No Core change. Defaults, key and the origin placement are `PROVISIONAL`, practical test pending. Object-level mirror symmetry: design proposal only ([OBJECT_MIRROR_SYMMETRY_PROPOSAL](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md)) |
+| 2026-10-23 | Manu (task) → agent | **Go for the proposal's recommended architecture** (mirror pairs = two independent objects + a stored placement coupling; Core: `Scene.mirror_pairs` data only + file v3, CORE_V1_FREEZE §7.1). **Implemented** (B1–B4, `Shift+M` menu): partner follows W/E/R and the gizmo as `F(driver)`, one Undo step; Delete of a partner breaks the pair in the same step; Apply/Clear on a paired object refused. Proposal §9 decisions 2–7 = agent defaults, `PROVISIONAL` (proposal §11); practical test pending |
 
 ---
 
@@ -980,6 +982,26 @@ oder im neuen Ursprung? Ein gedrehtes symmetrisches Objekt lässt sich nicht üb
 
 **Frage:** Ist „auswählen, dann `1`/`2`/`3`" im Arbeitsfluss richtig, und stört die Wartezeit beim Wechsel auf gollum?
 
+**Spiegelpaare sind gebaut (2026-10-23, `PROVISIONAL`, noch ohne Verdikt) — zwei Objekte, die sich gespiegelt mitbewegen
+(Augen). Praxistest (ca. 10 Minuten, `python src/main.py`):**
+
+1. `Shift+A` → Sphere, mit `W` zur Seite schieben (z. B. nach rechts), mit `E` etwas drehen.
+2. Die Kugel ist ausgewählt: `Shift+M` öffnet das Menü „Mirror“ → **Mirror copy X = 0**. Eine zweite Kugel (`sphere.001`)
+   erscheint gespiegelt auf der anderen Seite und ist jetzt die Auswahl. Ein `Ctrl+Z` nimmt Kopie *und* Paar zurück.
+3. `W`/`E`/`R` an der einen Kugel: die andere folgt **gespiegelt** (quer zur Ebene entgegengesetzt, entlang der Ebene gleich;
+   Drehung um eine Achse in der Ebene läuft gegensinnig). Auch über den Gizmo. Ein Loslassen = ein Undo-Schritt für beide,
+   `Esc` setzt beide zurück. Beide auswählen geht auch: dann führt die zuerst erzeugte.
+4. `1` an einer Kugel und Punkte verschieben: die andere Kugel ändert ihr Mesh **nicht** (die Meshes sind unabhängig, nur die
+   Platzierung ist gekoppelt).
+5. `Strg+S`, Szene neu laden: das Paar ist noch da. `Entf` an einer Kugel: gelöscht, Paar gelöst (Statuszeile), `Ctrl+Z`
+   bringt beides zurück. `Shift+M` → **Break pair** löst das Paar, beide bleiben stehen; **Pair selected** paart zwei
+   ausgewählte Objekte (das später erzeugte springt auf die Spiegelposition des früheren); **Re-sync pair** stellt ein
+   verrutschtes Paar wieder her. `Ctrl+A` / `Alt+Shift+A` auf einer gepaarten Kugel werden abgelehnt (erst Paar lösen).
+
+**Fragen:** Fühlt sich das Mitbewegen richtig an (auch Drehen und Skalieren)? Passen Menü, Name `sphere.001` und dass die Kopie
+die Auswahl wird? Ebenen nur X/Y/Z = 0 — reicht das für die Figur? Willst du eine Tönung des Partners, eine sichtbare Ebene,
+„Apply transform“ für beide zusammen oder ein „Mesh neu spiegeln“? (Details: [Vorschlag §9/§11](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md#11-implementation-2026-10-23-provisional).)
+
 **Track A ist gebaut (2026-10-23, `PROVISIONAL`) — Objekte hinzufügen und löschen. Praxistest (ca. 5 Minuten):**
 
 1. `Shift+A` öffnet am Cursor das Menü „Add Mesh“: Plane (4×4-Raster), Cube, Sphere, Cylinder. Klick auf **Sphere**: die Kugel
@@ -995,7 +1017,7 @@ oder im neuen Ursprung? Ein gedrehtes symmetrisches Objekt lässt sich nicht üb
 
 **Fragen:** Gehört das neue Objekt in den Ursprung (es gibt noch keinen 3D-Cursor), und soll Hinzufügen nach `4` springen? Passen
 Raster 4×4, Kugel 32×16, Zylinder 32 Seiten? Reicht „letztes Objekt bleibt“, oder brauchst du eine leere Szene? **Spiegel-Objekte**
-(Augen links/rechts): noch nicht gebaut, nur ein Vorschlag im Forschungsdokument (siehe oben).
+(Augen links/rechts): seit 2026-10-23 gebaut, Praxistest „Spiegelpaare“ oben.
 
 **Für M2 noch offen — bitte vor dem Bau beantworten** (je eine Zeile reicht; Empfehlung in Klammern):
 Q-5 *Wie wird ein anderes Objekt zum bearbeiteten?* (in `4` auswählen, dann `1`/`2`/`3` drücken) ·

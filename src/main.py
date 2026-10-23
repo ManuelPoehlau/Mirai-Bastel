@@ -133,6 +133,10 @@ Scope (binding, see the handoffs):
   object at the origin (`Application.add_primitive`, one Undo step): Object mode `4`, the new object
   is the selection (W/E/R place it, 1/2/3 edit it), the edit object stays. Window-level like SPACE
   (`install_handlers(..., add_menu=...)`), not in the BindingSet.
+- Mirror pairs (2026-10-23, `PROVISIONAL`, OBJECT_MIRROR_SYMMETRY_PROPOSAL): `Shift+M` opens the "Mirror"
+  menu (window level like Shift+A; bare M stays the Morph Lab bridge): Mirror copy / Pair selected across
+  X/Y/Z = 0, Break pair, Re-sync pair - mode `4`, on the selected objects (`Application.mirror_copy`, ...).
+  A paired object's partner follows W/E/R and the gizmo mirrored (`install_handlers(..., mirror_menu=...)`).
 - Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
   SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
   speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest
@@ -253,6 +257,8 @@ from scene_menu import (  # noqa: E402
     add_named_reference,
     add_primitive_named,
     load_named_scene,
+    mirror_entries,
+    run_mirror_entry,
     scene_entries,
 )
 
@@ -348,6 +354,7 @@ def install_handlers(
     save: Callable[[], object] | None = None,
     morph: Callable[[], object] | None = None,
     add_menu: SceneMenu | None = None,
+    mirror_menu: SceneMenu | None = None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
@@ -369,14 +376,17 @@ def install_handlers(
 
     `add_menu` (Track A1, `PROVISIONAL`, `src/scene_menu.py`): the "Add Mesh" menu, opened on Shift+A
     at the cursor like the scene menu (window level; no binding). Modal in the same way; `None`
-    (default) keeps the wiring as it was."""
+    (default) keeps the wiring as it was.
+
+    `mirror_menu` (mirror pairs, `PROVISIONAL`): the "Mirror" menu, opened on Shift+M at the cursor in
+    the same way as `add_menu`; `None` (default) keeps the wiring as it was."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
 
     def open_menu() -> SceneMenu | None:
         """The menu that is open right now (the scene loader or "Add Mesh"), else None."""
-        for candidate in (menu, add_menu):
+        for candidate in (menu, add_menu, mirror_menu):
             if candidate is not None and candidate.is_open:
                 return candidate
         return None
@@ -430,19 +440,20 @@ def install_handlers(
             # Modal: the menu swallows every key; SPACE/Esc closes it.
             shown.key(inp)
             return pyglet.event.EVENT_HANDLED
-        if (
-            add_menu is not None
-            and inp is not None
-            and inp.kind == "key"
-            and inp.value == "a"
-            and inp.modifiers == frozenset({"shift"})
-            and app.interaction_owner is None
-            and not app.pointer.active
-        ):
-            fallback = (window.width / 2, window.height / 2)
-            cx, cy = cursor if cursor is not None else fallback
-            add_menu.open(cx, cy, window.width, window.height)
-            return pyglet.event.EVENT_HANDLED
+        for shift_menu, letter in ((add_menu, "a"), (mirror_menu, "m")):
+            if (
+                shift_menu is not None
+                and inp is not None
+                and inp.kind == "key"
+                and inp.value == letter
+                and inp.modifiers == frozenset({"shift"})
+                and app.interaction_owner is None
+                and not app.pointer.active
+            ):
+                fallback = (window.width / 2, window.height / 2)
+                cx, cy = cursor if cursor is not None else fallback
+                shift_menu.open(cx, cy, window.width, window.height)
+                return pyglet.event.EVENT_HANDLED
         if (
             menu is not None
             and inp is not None
@@ -498,7 +509,7 @@ def install_handlers(
         app.set_ctrl_held(False)
         app.set_alt_held(False)
         # The menu must not outlive the focus (it would stay modal).
-        for candidate in (menu, add_menu):
+        for candidate in (menu, add_menu, mirror_menu):
             if candidate is not None:
                 candidate.close()
 
@@ -704,6 +715,11 @@ def main() -> None:
         load=lambda name: add_primitive_named(app, name),
         title="Add Mesh (Shift+A)",
     )
+    mirror_menu = SceneMenu(
+        mirror_entries(),
+        load=lambda name: run_mirror_entry(app, name),
+        title="Mirror (Shift+M) - mode 4, selected objects",
+    )
     install_handlers(
         window,
         app,
@@ -711,6 +727,7 @@ def main() -> None:
         save=files.save,
         morph=lambda: send_to_morph_lab(app),
         add_menu=add_menu,
+        mirror_menu=mirror_menu,
     )
     run(window, app)
 

@@ -11,15 +11,29 @@ AD-021 M2-2 (E-12): `ObjectTransformCommand` - die Platzierung als ein Undo-Schr
 nur `transform`, nie ein Mesh (L-1). AD-021 M2-3 (E-13, L-3): `ObjectPivotCommand` und
 `CompositeCommand` (der erste Composite des Projekts, §4.6) für "Apply transform";
 `apply_placement` / `applied_symmetry_axis` rechnen den Bake.
+
+Spiegelpaare (2026-10-23, OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.5, `PROVISIONAL`): `MirrorPairCommand`
+(anlegen / lösen) ist der einzige Weg, `Scene.mirror_pairs` zu ändern; Spiegelkopie, Paaren und
+Löschen sind `CompositeCommand`s aus den vorhandenen Commands. Die Mathematik: `object_mirror`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
-from core import Mesh, ObjectId, ObjectState, ObjectTransform, Scene, SceneObject, SymmetryDefinition
+from core import (
+    Mesh,
+    MirrorPair,
+    ObjectId,
+    ObjectState,
+    ObjectTransform,
+    Scene,
+    SceneObject,
+    SymmetryDefinition,
+)
 
 from . import object_space
+from .object_mirror import in_sync, mirror_placement, pair_residual, plane_label
 from .symmetry_axis import AXIS_NORMALS, ORIGIN
 
 #: AD-021 Q-11 (Manu 2026-10-15: "Das gedämpfte Blau ist gut"): eine Referenz ist schattiert wie
@@ -62,6 +76,7 @@ def reset_scene(scene: Scene, mesh: Mesh, name: str) -> SceneObject:
     wiederverwendet (AD-001). Nur über die M0-API, kein Core-Change."""
     obj = scene.add_object(mesh, name=name)
     scene.edit_object_id = obj.id
+    _clear_mirror_pairs(scene)
     for object_id in [oid for oid in scene.objects if oid != obj.id]:
         scene.remove_object(object_id)
     return obj
@@ -74,24 +89,40 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
 
     Wie `reset_scene` bleibt die Scene-Instanz dieselbe (Selection/History hängen daran),
     deshalb bekommen die Objekte hier neue ObjectIds - die IDs der Datei sind sitzungslokal,
-    Selection und History werden ohnehin nicht gespeichert. Nur über die M0-API."""
-    kept: set = set()
+    Selection und History werden ohnehin nicht gespeichert. Nur über die M0-API.
+
+    Spiegelpaare zeigen auf die IDs der Datei: sie werden auf die neuen IDs umgeschrieben
+    (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1), die Paare der alten Scene fallen mit ihren Objekten."""
+    new_ids: dict[ObjectId, ObjectId] = {}
     edit = None
     for source in loaded.objects.values():
         obj = scene.add_object(source.mesh, name=source.name, state=source.state)
         obj.transform = source.transform
         obj.pivot = source.pivot
-        kept.add(obj.id)
+        new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
     assert edit is not None  # Scene garantiert ein Edit-Objekt unter den Objekten
     scene.edit_object_id = edit.id
+    _clear_mirror_pairs(scene)
+    kept = set(new_ids.values())
     for object_id in [oid for oid in scene.objects if oid not in kept]:
         scene.remove_object(object_id)
+    for pair in loaded.mirror_pairs:
+        scene.add_mirror_pair(
+            MirrorPair(new_ids[pair.a], new_ids[pair.b], normal=pair.normal, offset=pair.offset)
+        )
     scene.morph_targets = loaded.morph_targets
     scene.rig = loaded.rig
     scene.animation = loaded.animation
     return edit
+
+
+def _clear_mirror_pairs(scene: Scene) -> None:
+    """Scene-Reset: die alten Paare gehen mit den alten Objekten (kein History-Schritt - ein
+    Laden setzt die History ohnehin zurück)."""
+    for pair in scene.mirror_pairs:
+        scene.remove_mirror_pair(pair)
 
 
 class AddObjectCommand:
@@ -333,3 +364,102 @@ def apply_placement(obj: SceneObject, axis: str | None) -> None:
         mesh.symmetry_definition = SymmetryDefinition(
             plane_point=ORIGIN, plane_normal=AXIS_NORMALS[axis], seam_edges=definition.seam_edges
         )
+
+
+# -- Spiegelpaare (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.5, `PROVISIONAL`) -------------------------
+
+
+class MirrorPairCommand:
+    """Ein Spiegelpaar anlegen (`create=True`) oder lösen als ein Undo-Schritt; wird nach der
+    Änderung gepusht wie die anderen Objekt-Commands. Nur `Scene.mirror_pairs` - Platzierung und
+    Mesh beider Objekte bleiben, wie sie sind (Lösen ist der Weg, ein Objekt frei zu bewegen)."""
+
+    def __init__(self, scene: Scene, pair: MirrorPair, create: bool) -> None:
+        self.scene = scene
+        self.pair = pair
+        self.create = create
+        self.description = "Mirror pair" if create else "Break mirror pair"
+
+    def undo(self) -> None:
+        if self.create:
+            self.scene.remove_mirror_pair(self.pair)
+        else:
+            self.scene.add_mirror_pair(self.pair)
+
+    def redo(self) -> None:
+        if self.create:
+            self.scene.add_mirror_pair(self.pair)
+        else:
+            self.scene.remove_mirror_pair(self.pair)
+
+
+class MirrorRefused(ValueError):
+    """Ein Spiegelpaar-Command ist abgelehnt (Text = Grund, für die Statuszeile)."""
+
+
+def pair_names(scene: Scene, pair: MirrorPair) -> str:
+    return f"{scene.objects[pair.a].name!r} / {scene.objects[pair.b].name!r}"
+
+
+def check_pairable(scene: Scene, objects: list[SceneObject]) -> None:
+    """Die Ablehnungen beim Anlegen (Proposal §5.7): eine Referenz, ein Objekt in einem Paar."""
+    for obj in objects:
+        if obj.state is ObjectState.REFERENCE:
+            raise MirrorRefused(f"{obj.name!r} is a Reference - locked (Alt+R makes it Normal)")
+        pair = scene.mirror_pair_of(obj.id)
+        if pair is not None:
+            partner = scene.objects[pair.other(obj.id)]
+            raise MirrorRefused(f"{obj.name!r} already belongs to a pair with {partner.name!r}")
+
+
+def pair_existing_command(
+    scene: Scene, driver: SceneObject, follower: SceneObject, normal, offset: float
+) -> CompositeCommand:
+    """Zwei vorhandene Objekte paaren (Proposal §5.5): `follower` springt nach F(`driver`)
+    (Transform samt Skalierung und Pivot), dann das Paar - ein Undo-Schritt. Ändert die Scene
+    und gibt den Command zum Pushen zurück. Die Meshes werden nicht angesehen."""
+    if driver.id == follower.id:
+        raise MirrorRefused("an object cannot be its own mirror partner")
+    check_pairable(scene, [driver, follower])
+    transform, pivot = mirror_placement(driver, normal, offset)
+    pair = MirrorPair(driver.id, follower.id, normal=normal, offset=offset)
+    parts = [
+        ObjectTransformCommand([(follower, follower.transform, transform)], "Mirror pair: place"),
+        ObjectPivotCommand([(follower, follower.pivot, pivot)]),
+        MirrorPairCommand(scene, pair, create=True),
+    ]
+    follower.transform = transform
+    follower.pivot = pivot
+    scene.add_mirror_pair(pair)
+    return CompositeCommand(parts, f"Mirror pair {driver.name!r} / {follower.name!r}")
+
+
+def resync_command(scene: Scene, pair: MirrorPair) -> CompositeCommand | None:
+    """Re-sync (B folgt A, Proposal §5.7): `pair.b` springt nach F(`pair.a`), ein Undo-Schritt;
+    None, wenn das Paar schon synchron ist. Eine Referenz als B wird abgelehnt (gesperrt)."""
+    a, b = scene.objects[pair.a], scene.objects[pair.b]
+    if in_sync(a, b, pair):
+        return None
+    if b.state is ObjectState.REFERENCE:
+        raise MirrorRefused(f"{b.name!r} (mirror partner of {a.name!r}) is a Reference - locked")
+    transform, pivot = mirror_placement(a, pair.normal, pair.offset)
+    parts = [
+        ObjectTransformCommand([(b, b.transform, transform)], "Re-sync mirror pair"),
+        ObjectPivotCommand([(b, b.pivot, pivot)]),
+    ]
+    b.transform = transform
+    b.pivot = pivot
+    return CompositeCommand(parts, f"Re-sync mirror pair {a.name!r} / {b.name!r}")
+
+
+def out_of_sync_text(scene: Scene, pair: MirrorPair) -> str:
+    """Die Statuszeile eines ungleichen Paars (Proposal §5.7, Wortlaut `PROVISIONAL`)."""
+    a, b = scene.objects[pair.a], scene.objects[pair.b]
+    return (
+        f"Mirror pair {pair_names(scene, pair)} is out of sync by {pair_residual(a, b, pair):.3g}"
+        f" - Re-sync ({b.name!r} follows {a.name!r}) or break it (Shift+M)"
+    )
+
+
+def describe_pair(scene: Scene, pair: MirrorPair) -> str:
+    return f"{pair_names(scene, pair)} across {plane_label(pair.normal, pair.offset)}"

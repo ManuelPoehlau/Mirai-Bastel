@@ -31,6 +31,8 @@ from scene_menu import (
     add_named_reference,
     add_primitive_named,
     load_named_scene,
+    mirror_entries,
+    run_mirror_entry,
     scene_entries,
 )
 
@@ -482,3 +484,59 @@ def test_m_calls_the_morph_bridge_only_when_wired():
     assert calls == ["m"]
     wired_window.handlers["on_key_press"](key.M, key.MOD_SHIFT)  # Shift+M is not the bridge
     assert calls == ["m"]
+
+
+# -- Mirror menu: Shift+M (mirror pairs, src/scene_menu.py, PROVISIONAL) ------
+
+
+@pytest.fixture
+def mirror_wired():
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    calls = []
+    mirror_menu = SceneMenu(mirror_entries(), load=lambda name: run_mirror_entry(app, name), title="Mirror")
+    main_module.install_handlers(window, app, morph=lambda: calls.append("m"), mirror_menu=mirror_menu)
+    return window, app, mirror_menu, calls
+
+
+def test_shift_m_opens_the_mirror_menu_and_bare_m_stays_the_morph_bridge(mirror_wired):
+    window, app, mirror_menu, calls = mirror_wired
+    h = window.handlers
+    h["on_mouse_motion"](300, 200, 0, 0)
+    assert h["on_key_press"](key.M, key.MOD_SHIFT) == pyglet.event.EVENT_HANDLED
+    assert mirror_menu.is_open and calls == []
+    assert mirror_menu.rect[0] == 300 and mirror_menu.rect[1] == 200
+    h["on_key_press"](key.ESCAPE, 0)
+    assert not mirror_menu.is_open
+    h["on_key_press"](key.M, 0)
+    assert calls == ["m"] and not mirror_menu.is_open
+
+
+def test_a_click_on_mirror_copy_x_pairs_the_selected_object(mirror_wired):
+    window, app, mirror_menu, _ = mirror_wired
+    h = window.handlers
+    obj = app.add_primitive("sphere", name="eye")
+    h["on_key_press"](key.M, key.MOD_SHIFT)
+    mx, my, _, _ = mirror_menu.rect
+    h["on_mouse_press"](mx + 10, my - HEADER_HEIGHT - 5, mouse.LEFT, 0)  # row 0 = Mirror copy X = 0
+    assert not mirror_menu.is_open
+    (pair,) = app.scene.mirror_pairs
+    assert pair.a == obj.id and app.scene.objects[pair.b].name == "eye.001"
+
+
+def test_shift_m_does_not_open_the_mirror_menu_while_a_gesture_runs(mirror_wired):
+    window, app, mirror_menu, _ = mirror_wired
+    app.selection.vertices = {sorted(app.scene.mesh.all_vertex_ids())[0]}
+    window.handlers["on_key_press"](key.W, 0)
+    window.handlers["on_key_press"](key.M, key.MOD_SHIFT)
+    assert not mirror_menu.is_open
+
+
+def test_deactivate_closes_the_mirror_menu(mirror_wired):
+    window, _, mirror_menu, _ = mirror_wired
+    window.handlers["on_key_press"](key.M, key.MOD_SHIFT)
+    window.handlers["on_deactivate"]()
+    assert not mirror_menu.is_open
