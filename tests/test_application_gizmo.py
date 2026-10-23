@@ -284,10 +284,8 @@ def test_the_object_gizmo_is_drawn_in_world_even_when_the_edit_object_is_placed(
     app.scene.edit_object.transform = ObjectTransform(translation=(5.0, 0.0, 0.0))
     app._placement_changed()
     _object_selected(app)
-    assert app.gizmo_items()  # the component gizmo would be hidden for a placed edit object
+    assert app.gizmo_items()
     assert app.gizmo_camera_uniforms() == app.viewport.render_mesh._camera_uniforms()
-    app.key_press(K1)
-    assert app.gizmo_items() == []  # components: hidden for the placed edit object, as before
 
 
 def test_a_handle_drag_moves_the_object_along_the_axis_in_one_undo_step(app):
@@ -337,3 +335,45 @@ def test_the_object_gizmo_follows_the_last_tool_scale(app):
     start = _on_handle(app, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
     _drag(app, _mouse("LEFT"), start, (60.0, 0.0))
     assert obj.transform.scale != pytest.approx(1.0)
+
+
+# -- component level of a placed edit object (2026-10-23) --------------------------------------
+
+
+def _placed_edit_object(app, rotated: bool = False):
+    """The edit grid moved to (3, 1, 0), optionally turned 90 degrees about Z (so object X is world Y)."""
+    import math
+
+    from core import ObjectTransform
+
+    c, s = math.cos(math.pi / 2), math.sin(math.pi / 2)
+    rotation = ((c, -s, 0.0), (s, c, 0.0), (0.0, 0.0, 1.0)) if rotated else ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+    app.scene.edit_object.transform = ObjectTransform(translation=(3.0, 1.0, 0.0), rotation=rotation)
+    app._placement_changed()
+
+
+def test_a_placed_edit_object_shows_the_component_gizmo_at_the_selections_world_position(app):
+    _placed_edit_object(app)
+    vid, _ = _select_center(app)
+    assert app.gizmo_items()[0].positions[:3] == pytest.approx((3.0, 1.0, 0.0))
+    assert app.gizmo_camera_uniforms() == app.viewport.render_mesh._camera_uniforms()
+    _placed_edit_object(app, rotated=True)  # a placement change needs no cache invalidation
+    assert app.gizmo_items()[0].positions[:3] == pytest.approx((3.0, 1.0, 0.0))
+
+
+@pytest.mark.parametrize("rotated", [False, True])
+def test_a_handle_drag_on_a_placed_edit_object_moves_along_the_world_axis(app, rotated):
+    from mirai import object_space
+
+    _placed_edit_object(app, rotated=rotated)
+    vid, _ = _select_center(app)
+    pivot = app.gizmo_items()[0].positions[:3]
+    start = _on_handle(app, pivot, (1.0, 0.0, 0.0))  # world X
+    assert _drag(app, _mouse("LEFT"), start, (60.0, 0.0)) is True
+    edit = app.scene.edit_object
+    x, y, z = object_space.to_world(edit, app.scene.mesh.vertex_position(vid))
+    assert x != pytest.approx(3.0)
+    assert y == pytest.approx(1.0) and z == pytest.approx(0.0)  # only along world X
+    assert app.gizmo_constraint == "x"
+    app.history.undo()
+    assert app.scene.mesh.vertex_position(vid) == pytest.approx((0.0, 0.0, 0.0))

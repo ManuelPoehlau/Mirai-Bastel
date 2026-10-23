@@ -4402,34 +4402,36 @@ class Application:
     # Tweak reads (D2) - along it, the release commits, Esc cancels. A miss falls through unchanged. The
     # drag is the Tweak machinery (`_transform_arm` / `_transform_step` with the selection as the target), so
     # it is one History step, honours Soft Selection and Symmetry, and is refused where W/E/R is.
-    # World frame only (normal space is not in the app); shown for point / edge / face selections of an
-    # unplaced edit object, hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
+    # World frame only (normal space is not in the app); shown for point / edge / face selections, also of a
+    # placed edit object (2026-10-23: at the selection's world position, in the world camera; the tools turn
+    # the world axes into object space, E-8), hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
     # Object level (2026-10-23): in mode `4` it sits at the centroid of the selected non-Reference objects'
     # world pivots and drives the object gesture (`_object_arm`, the same Tweak path), in the world camera.
 
     def _gizmo_pivot(self):
         """The selection's centroid (world), cached until the selection or the vertex positions change;
-        None when the gizmo is not shown: off, no viewport, Knife session, placed edit object
-        (components), nothing selected. In mode `4` see `_gizmo_object_pivot`."""
+        None when the gizmo is not shown: off, no viewport, Knife session, nothing selected. In
+        mode `4` see `_gizmo_object_pivot`. With a placed edit object the centroid is mapped to world
+        (`object_space.to_world`, an exact pass-through while the placement is identity); the cache
+        holds the object-space centroid, so a placement change needs no invalidation."""
         viewport = self.viewport
         if not self.gizmo_enabled or viewport is None or self._knife is not None:
             return None
         if self.selection.mode is SelectionMode.OBJECT:
             return self._gizmo_object_pivot()
-        if viewport.model_matrix is not None:
-            return None
         ids = self._active_selection_ids()
         if not ids:
             return None
         key = (viewport.geometry_revision, id(self.scene.mesh), self.selection.mode, len(ids), hash(frozenset(ids)))
         cache = self._gizmo_cache
         if cache is not None and cache[0] == key:
-            return cache[1]
-        mesh = self.scene.mesh
-        vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
-        pivot = selection_pivot(mesh, vertex_ids) if vertex_ids else None
-        self._gizmo_cache = (key, pivot)
-        return pivot
+            pivot = cache[1]
+        else:
+            mesh = self.scene.mesh
+            vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
+            pivot = selection_pivot(mesh, vertex_ids) if vertex_ids else None
+            self._gizmo_cache = (key, pivot)
+        return None if pivot is None else object_space.to_world(self.scene.edit_object, pivot)
 
     def _gizmo_object_pivot(self):
         """Mode `4`: the centroid of the selected objects' world pivots, References excluded (they are
@@ -4447,16 +4449,13 @@ class Application:
 
     @property
     def _gizmo_camera(self):
-        """The camera the gizmo is drawn and picked with: the world camera at object level, else the
-        edit object's (components compute in its space)."""
-        return self.camera if self.selection.mode is SelectionMode.OBJECT else self._edit_camera
+        """The gizmo lives in world space, at both levels: the pivot is a world point and the handles
+        are the world axes. (While the edit object is unplaced this is the same camera as before.)"""
+        return self.camera
 
     def gizmo_camera_uniforms(self) -> list[float]:
-        """The `view·model` + `proj` uniforms `draw_gizmo` needs: world at object level, the edit
-        object's overlay matrices for components."""
-        if self.selection.mode is SelectionMode.OBJECT:
-            return self.viewport.world_camera_uniforms()
-        return self.viewport.overlay_camera_uniforms()
+        """The `view` + `proj` uniforms `draw_gizmo` needs: no model matrix, the items are world points."""
+        return self.viewport.world_camera_uniforms()
 
     def _gizmo_pivot_if_shown(self):
         """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down or any drag gesture runs."""
