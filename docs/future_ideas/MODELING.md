@@ -10,6 +10,8 @@ Mirais Ziel ist nicht nur, einzelne Topologieoperationen anzubieten. Ein Charact
 
 ### Relax und Smooth
 
+> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice C2.
+
 Zwei getrennte Werkzeuge untersuchen:
 
 - **Relax:** Punkt- und Kantenverteilung lokal verbessern, mit dem Ziel, den beabsichtigten Oberflächenverlauf möglichst gut zu erhalten.

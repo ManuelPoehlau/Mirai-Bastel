@@ -33,12 +33,13 @@ WP-04 (Production foundation, Gates 1–7 — done, see [ROADMAP](architecture/R
 and the September audits were moved out of the docs root into [archive/early_work_packages/](archive/early_work_packages/)
 and [archive/audits_2026-09/](archive/audits_2026-09/). They are project memory, not current guidance.
 
-## Work Package Delete/Dissolve
+## Work Packages
 
 | Document | Purpose |
 |---|---|
 | [WP_DELETE_DISSOLVE_PLAN.md](WP_DELETE_DISSOLVE_PLAN.md) | Delete (destruktiv) / Dissolve (bewahrend) auf Vertex-/Edge-/Face-Ebene, Production-first ohne Lab; Status, offene Fragen und Praxis-Check am Ende |
 | [WP_PLAYGROUND_TOOLS_PROMOTION.md](WP_PLAYGROUND_TOOLS_PROMOTION.md) | Box/Paint Select, Tweak und Loop-Werkzeuge aus dem Playground in die App (2026-10-15): Manus Entscheidungen, Annahmen, Praxistest |
+| [WP_TOOLBOX_GAPS_PLAN.md](WP_TOOLBOX_GAPS_PLAN.md) | Geplant 2026-10-23: Collapse V/E/F, Select Through, Transform-Raum World/Normal, Grow/Shrink, Loop-Extend, Next/Prev Loop, Relax/Smooth, Subdivide — Pakete A/B/C, Slices, Tasten, Praxistest |
 
 ## For AI collaborators
 

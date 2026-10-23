@@ -1,0 +1,152 @@
+# Work Package: Toolbox-Lücken in Production (2026-10-23)
+
+**An:** Claude Code
+**Modell/Effort:** Opus, effort `high` für B1/B2 (Core-Topologie), `medium` für A1/A2/C1/C2
+**Status:** Geplant (2026-10-23) — noch kein Code. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
+**Modus (M5):** Production, Core-first, **kein Lab** (Blender-bekannte Werkzeuge, AGENTS.md §7a).
+Promotion (M3) durch Manu im Chat 2026-10-23: „Werkzeuge, die in Mirai noch in Production müssen“ —
+Collapse, Box/Lasso Select Through, Koordinatensystem aus dem Playground, Grow Selection, Loop-Extend,
+Next/Previous Loop, Relax/Smooth, Subdivide.
+**Grundlage:** [future_ideas/SELECTION.md](future_ideas/SELECTION.md),
+[future_ideas/MODELING.md](future_ideas/MODELING.md),
+[AD-012](architecture/AD-012-TRANSFORM-SPACE.md), [WP_DELETE_DISSOLVE_PLAN.md](WP_DELETE_DISSOLVE_PLAN.md) (Muster).
+
+## 0. Existenzprüfung (2026-10-23)
+
+| Werkzeug | Stand heute |
+|---|---|
+| Collapse | Core nur `Mesh.collapse_edge` (`src/core/mesh.py`, journal-fähig, v0 überlebt am Mittelpunkt). `cmd.COLLAPSE` hängt auf `K` im `TOPOLOGY_CONTEXT`, den die App nie auflöst; `dispatch_command` hat keinen Zweig → wirkungslos. Playground: `playground/topology_ops.py::collapse_selected_edge` (alter `MeshStateCommand`-Snapshot), Shift+C. Vertex-/Face-Collapse gibt es nirgends. |
+| Select Through | Box/Paint/Lasso existieren (`Application._DragSelect`, `mirai/viewport/box_select.py`, `gpu_picking.py`). Die Verdeckung hängt fest an `display.show_faces` → durch das Mesh wählen geht nur im Wireframe. |
+| Koordinatensystem | App: nur World (`mirai/viewport/gizmo.py`, `WORLD_AXES`). `tools/transform.py::_resolve_space` kann `space="normal"` schon, die App reicht es nie durch. Playground: `playground/gizmo.py::gizmo_mode()` (world / normal_full / normal_z_only), Umschalten in `playground/window.py`. |
+| Grow/Shrink, Loop-Extend, Next/Prev Loop | Kein Code. Bausteine in `src/mirai/topology/loop_ring.py` (`_loop_step`, `_ring_step`, `edge_loop`, `Traversal`). Shift+L / Shift+R wählen ganze Loops/Ringe. |
+| Relax/Smooth | Kein Code (die „smooth“-Treffer sind Shading, SubD und Soft-Kurven). |
+| Subdivide | Nur Catmull-Clark-*Vorschau* (`src/mirai/subdivision/`), keine Topologie-Operation; Core hat `split_edge`. |
+
+**„Local Space“:** Der Playground hat **World + Normal**, kein objekt-lokales Space. Object-Local bleibt laut
+AD-012 / AD-021 ARCH-01-abhängig und ist hier Nicht-Scope (P-1).
+
+## 1. Entscheidungen
+
+| # | Frage | Antwort |
+|---|---|---|
+| P-1 | Was ist „Local“? | Normal Space aus dem Playground (pro Auswahl, eine Fläche: voller Tangentenrahmen). Object-Local deferred. `PROVISIONAL` |
+| P-2 | Tasten | **Manu 2026-10-23:** Collapse `Shift+C` (das tote `K` im `TOPOLOGY_CONTEXT` entfällt); Loop-Extend `Shift+↑` / `Shift+↓`; Next/Prev Loop `Shift+←` / `Shift+→`. `PROVISIONAL`: Grow/Shrink `Ctrl+]` / `Ctrl+[` (plus Numpad `Ctrl+Num+/-`), Select Through `Alt+Z`, Orientation-Toggle wie im Playground. Alle in `GLOBAL`, per `keymap.json` überschreibbar. |
+| P-3 | Wofür gilt Select Through? | Box, Paint, Lasso. Der Klick-Pick bleibt sichtbarkeitsbasiert. `PROVISIONAL` |
+| P-4 | Auswahl nach Collapse | Die Ergebnis-Vertices, Modus wechselt auf Vertex. `PROVISIONAL` (offene Frage aus SELECTION.md „Collapse Edge“) |
+| P-5 | Relax/Smooth modal oder One-Shot? | One-Shot (wiederholtes Drücken wirkt stärker); ein Slider ist ein späterer Slice. `PROVISIONAL` |
+| P-6 | Subdivide | Erst Simple; „SubD-Stufe anwenden“ ist ein eigener Teil-Slice. `PROVISIONAL` |
+
+## 2. Pakete und Slices
+
+Reihenfolge: **A1 → A2 → B1 → C1 → C2 → B2.** Selektion zuerst: Sie hat das geringste Risiko und liefert
+die Auswahl für die späteren Werkzeuge (Loop wählen → Relax). Collapse ist der deutlichste Rückstand, weil
+der Command schon existiert, aber tot ist. Subdivide kommt zuletzt: Es ist die größte Core-Fläche, und die
+Vorschau deckt den Bedarf vorerst. Jeder Slice ist ein Commit mit Tests und Doku. Pro Paket gibt es einen
+gesammelten Praxistest (§3).
+
+### Paket A — Selektion (kein Mesh-Eingriff)
+
+**A1 Topologische Auswahl-Schritte.**
+- *Ziel:* Auswahl schrittweise wachsen, schrumpfen und entlang Loops navigieren lassen.
+- *Scope:* neues Modul `src/mirai/topology/selection_steps.py` auf Basis von `loop_ring.py`:
+  - **Grow/Shrink** modusabhängig (V über Kanten, E über gemeinsame Vertices, F über Vertex-Nachbarschaft
+    wie Blender); Shrink entfernt die Randelemente der Auswahl.
+  - **Loop-Extend:** Jede offene Teil-Loop der Kantenauswahl wächst um je eine Kante per `_loop_step`.
+    `Shift+↑` erweitert das eine Ende, `Shift+↓` das andere; die Enden werden in Laufrichtung der Loop
+    festgelegt. An Polen, Nicht-Quads und Rändern ist Schluss (dieselbe Regel wie `edge_loop`).
+  - **Next/Prev Loop:** die parallele Loop daneben, per `_ring_step` durch das angrenzende Quad;
+    `Shift+→` / `Shift+←` wählen die Seite. Eine Mehrfachauswahl wandert geschlossen.
+    Ergebnis = *ersetzen*, nicht hinzufügen (SELECTION.md: Navigation, nicht Ring-Auswahl).
+  - App: Commands in `interaction/commands.py`, Bindings in `bindings.py`, Zweige in `dispatch_command`,
+    Selektions-History über `_record_selection_history`.
+- *Nicht-Scope:* Soft Selection, ausgeblendete/maskierte Geometrie (gibt es noch nicht).
+- *Verträge:* keine Mesh-Mutation; unter Symmetrie wird das Ergebnis gespiegelt, wie bei den
+  bestehenden Auswahl-Commands.
+- *Tests:* `tests/test_selection_steps.py` (Grid, Zylinder, Pol, offener Rand) und App-Verdrahtung analog
+  `tests/test_application_loop_tools.py`.
+
+**A2 Select-Through-Schalter.**
+- *Ziel:* Box, Paint und Lasso wählen auf Wunsch auch verdeckte Elemente, ohne in den Wireframe-Modus zu
+  wechseln.
+- *Scope:* Flag `select_through` in der App; in `_drag_select_finish` / `_lasso_finish` gilt
+  `occlusion = show_faces and not select_through`. Dazu ein Toggle-Command (`Alt+Z`) und eine HUD-Anzeige.
+- *Nicht-Scope:* X-Ray-Darstellung (AD-021 verwirft das vorerst) und der Klick-Pick (P-3).
+- *Tests:* Verdeckungspfad in `tests/test_application_drag_select_tweak.py`; der GPU-Pfad wird separat mit
+  xvfb geprüft.
+
+### Paket B — Topologie-Operationen (Core, Change-Journal)
+
+**B1 Collapse V/E/F.**
+- *Ziel:* Die ausgewählten Elemente fallen in einen Punkt pro zusammenhängender Gruppe.
+- *Scope:*
+  - Core-Operation `collapse_elements(mesh, vertex_ids) -> list[VertexId]` in `src/core/operations/`.
+    Sie bildet zusammenhängende Gruppen der Auswahl (über ausgewählte Kanten) und kollabiert jede auf ihren
+    Schwerpunkt, als Kette von `Mesh.collapse_edge` plus abschließender Positionssetzung. Der vorhandene,
+    getestete Primitive bleibt so die Grundlage.
+  - E- und F-Auswahl werden auf ihre Vertices abgebildet. Bei einer V-Auswahl ohne verbindende Kanten
+    entsteht ein Punkt pro Vertex, also keine Änderung, wie bei Blender „Merge at Center“, nur pro Gruppe.
+  - App: `cmd.COLLAPSE` wird nach `GLOBAL` auf `Shift+C` verlegt, das `K`-Binding fällt weg. Ausführung über
+    `_mesh_transaction` wie `_removal_command`, mit Symmetrie-Koordinator in `symmetry_declarations.py`.
+    Danach Auswahl nach P-4.
+- *Nicht-Scope:* Dissolve Loop / Collapse Ring (eigenes Folgepaket laut Delete/Dissolve-Plan);
+  der Snapshot-Pfad des Playgrounds bleibt unberührt.
+- *Verträge:* topologie-sicher (`tests/mesh_invariants.py`), ein `MeshDeltaCommand` pro Aktion, Undo exakt.
+- *Tests:* Core-Tests für Edge, Face-Gruppe, Quad-Strip, Randkante und Dreiecks-Degeneration; App- und
+  Symmetrie-Verdrahtung; Symmetry-Lab-Tests, weil `application.py` berührt wird.
+
+**B2 Subdivide (Topologie).**
+- *Ziel:* echtes Unterteilen als Mesh-Operation.
+- *Scope Teil 1 (Simple):* Ausgewählte Faces, ohne Auswahl das ganze Mesh: Kanten mittig teilen
+  (`split_edge`), Quads in 4, N-Gons per Fan zum Mittelpunkt. Nachbar-Faces mit geteilten Kanten bleiben
+  gültige N-Gons, es entstehen keine T-Junctions. Journal über `record_mesh_change`, dazu eine
+  Symmetrie-Deklaration.
+- *Scope Teil 2 (optional, P-6):* die aktuelle SubD-Stufe aus `subdivision/catmull_clark.py` (`SubdLevel`)
+  als Topologie übernehmen („Apply SubD“).
+- *Nicht-Scope:* Unsubdivide, Creases.
+- *Tests:* Face- und Vertex-Zählung, Invarianten, Undo, Symmetrie.
+
+### Paket C — Transform-Raum und Glätten
+
+**C1 Transform Orientation World/Normal.**
+- *Ziel:* Gizmo und W/E/R wahlweise im Normal-Raum, wie im Playground.
+- *Scope:*
+  - App-Zustand `transform_space` mit Toggle-Command und HUD-Anzeige, durchgereicht an
+    `begin_transform(space=…)`; `_resolve_space` existiert schon.
+  - Die Rahmen aus `playground/gizmo.py::gizmo_mode` werden nach `src/mirai/viewport/gizmo.py` übernommen
+    (Achsen und Ebenen aus dem aufgelösten Rahmen statt `WORLD_AXES`).
+  - AD-012 bekommt eine Implementierungsnotiz „Normal in App“.
+- *Nicht-Scope:* Object-Local / Gimbal (ARCH-01), Multi-Face-Tangentenrahmen (TRANSFORM.md, deferred).
+- *Tests:* Gizmo-Achsen in beiden Modi; ein Transform-Test mit `space="normal"` über die App.
+
+**C2 Relax / Smooth.**
+- *Ziel:* zwei getrennte Formwerkzeuge für ausgewählte Vertices (MODELING.md Priorität 1).
+- *Scope:*
+  - **Smooth** = Laplace (Nachbarmittel × Stärke).
+  - **Relax** = dasselbe Delta, auf die Tangentialebene projiziert: Es verteilt die Vertices gleichmäßiger,
+    ohne die Form zu verlieren.
+  - Randvertices sind fixiert; unter Symmetrie bleiben die Punkte auf der Ebene darauf.
+  - Ausführung als One-Shot über `_mesh_transaction(moved_of=…)`, mit Iterationen und Stärke als
+    Konstanten (P-5).
+  - Rechnung in `src/core/operations/` als reine Funktion auf Positionen.
+- *Nicht-Scope:* Volumenerhalt (Forschungsfrage), Pinsel, Modal-Slider.
+- *Tests:* planares Grid (Relax verändert keine Normalenkomponente), Konvergenz, Rand fix, Undo, Symmetrie.
+
+## 3. Praxistest für Manu (je Paket ca. 10–15 Minuten)
+
+- **A:**
+  - Grow/Shrink in V/E/F auf dem Kopf.
+  - Teil-Loop mit `Shift+↑/↓` verlängern (Stopp am Pol prüfen).
+  - Mit `Shift+←/→` über Gesicht und Arm wandern.
+  - Box und Lasso mit `Alt+Z` an und aus auf sichtbaren Flächen.
+- **B:**
+  - Collapse (`Shift+C`) auf Kante, Kantenzug und Face-Gruppe, jeweils mit Undo; einmal unter Symmetrie.
+  - Subdivide auf einer Face-Insel und auf dem ganzen Mesh.
+- **C:**
+  - Umschalten World/Normal, an Wange und Nase in beiden Räumen bewegen und drehen.
+  - Relax und Smooth auf einem Loop-Bereich, mit SubD-Vorschau an.
+
+## 4. Definition of Done (je Slice)
+
+Gezielte Tests grün (AGENTS.md §8a, GL-Tests isoliert mit `xvfb-run -a`), Symmetry-Lab-Tests bei
+Änderungen an `application.py`, `docs/` im selben Commit aktualisiert (dieses Dokument: Status-Zeile und
+dated Status-Update; ATELIER §3), und am Ende jedes Pakets steht der Praxistest bereit.

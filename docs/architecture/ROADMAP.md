@@ -861,6 +861,8 @@ Candidates proven in the Playground feed back into the production roadmap throug
 
 3. **WP-03 — Transform Foundation** — Move/Rotate/Scale exist as Core operations and are in the production app since WP-06 B3/B4 (`PROMOTED`, Transform Lab verdict); no new Core work expected
 
+4. **WP Toolbox Gaps** — Collapse V/E/F, Select Through, World/Normal transform space, Grow/Shrink, Loop-Extend, Next/Prev Loop, Relax/Smooth, Subdivide; planned 2026-10-23 in [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md) (order A1 → A2 → B1 → C1 → C2 → B2)
+
 Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Knife Face Cut) remains a parallel research track, feeding WP-06 the same way Symmetry and Shading do.
 
 ## Strategic research / gates

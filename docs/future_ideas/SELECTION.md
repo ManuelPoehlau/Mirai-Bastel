@@ -13,6 +13,8 @@ Ideen und Beobachtungen rund um Selection, die bewusst noch nicht umgesetzt werd
 
 ### Grow / Shrink Selection
 
+> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice A1.
+
 Die Auswahl mode-aware schrittweise vergrößern oder verkleinern:
 
 - Vertex Mode: benachbarte Vertices entlang der Mesh-Adjazenz hinzufügen bzw. zurücknehmen.
@@ -23,11 +25,15 @@ Das Wachstum soll der Topologie folgen, nicht der Bildschirmnähe. Mehrere Itera
 
 ### Loop Selection: Extend in beide Richtungen
 
+> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice A1.
+
 Die bestehende Loop-Auswahl über `Shift+L` erkennt bereits einen kompletten unterstützten Edge Loop. Eine zusätzliche Extend-Geste soll deshalb nicht einfach dieselbe Traversierung duplizieren.
 
 Zu untersuchen ist eine schrittweise Erweiterung einer partiellen Loop-Auswahl von ihren offenen Enden aus: beide Richtungen gleichzeitig, soweit die Topologie eindeutig fortsetzbar ist. Das wäre bei offenen Loops, Grenzen und absichtlich partiellen Auswahlen nützlich. Verhalten bei Poles, Non-Quads, Mesh-Grenzen oder mehreren möglichen Fortsetzungen muss explizit und vorhersagbar sein.
 
 ### Next / Previous Parallel Loop – innerhalb eines Rings bzw. Quad-Strips navigieren
+
+> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice A1.
 
 Von einem Loop zum nächsten parallelen Loop wechseln, ohne den nächsten Loop im Viewport neu anklicken zu müssen. Der Ausgangspunkt ist der aktuelle Loop; die Navigation folgt dem angrenzenden Quad-Strip bzw. der Ring-Richtung. Mehrere Schritte vor/zurück könnten ein schnelles Durchwandern von Gesichtsloops ermöglichen.
 
@@ -80,6 +86,8 @@ Vorteil: Besonders bei repetitiven Aktionen können direkt weitere Vertices verb
 
 ### Collapse Edge
 
+> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice B1.
+
 Analog entsteht beim Collapse aus einer Edge-Auswahl typischerweise ein verbleibender Vertex. Auch hier gibt es zwei sinnvolle Workflows:
 
 - **Ergebnis aktiv:** Vertex auswählen und in Vertex Mode wechseln → direkt verschieben oder weiter bearbeiten.
@@ -112,5 +120,7 @@ Bei Experimenten soll nicht nur geprüft werden, **ob eine Operation technisch f
 **Noch keine Entscheidung.** AD-017s entschiedene Residue-Regeln bleiben davon unberührt.
 
 ## X-ray / select-through as a user toggle
+
+> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice A2.
 
 WP-06 B8 gab Production einen Occlusion-Test: verdeckte Vertices/Edges sind bei angezeigten Flächen nicht pickbar. Außerhalb von B8 lag die benutzerseitige Wahlmöglichkeit. Ein künftiger X-ray-/Select-through-Schalter könnte dieses Verhalten bei sichtbaren Flächen bewusst übersteuern, ohne in Wireframe wechseln zu müssen. Nicht entschieden, nicht gebaut.
