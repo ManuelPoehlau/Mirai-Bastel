@@ -30,6 +30,9 @@ Display (Artist Input Truth, WP-06 B5a E42: vorher O):
                    Ctrl+Shift+D → Licht folgt der Kamera / steht in der Welt
                    (Engineering-Tasten `PROVISIONAL`, keine Artist Input Truth)
 SetShaded/SetFlatShaded/SetWireframe bleiben ohne Taste.
+- H              → HUD (Zustandsanzeige) zeigen/verbergen (Artist Input Truth
+                   `application.toggle_hud`, GUI Stufe 1; Kontext "window", vom
+                   Fenster behandelt, für `Application` ungebunden)
 
 Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
 - W              → Move (MoveTool)
@@ -117,7 +120,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import commands as cmd
-from .input import KNIFE_CONTEXT, BindingSet, Input, TOPOLOGY_CONTEXT
+from .input import KNIFE_CONTEXT, BindingSet, Input, TOPOLOGY_CONTEXT, WINDOW_CONTEXT
 
 
 def _key(value: str, *modifiers: str) -> Input:
@@ -217,6 +220,9 @@ def build_default_bindings() -> BindingSet:
     # Worklight (2026-10-15, Tasten `PROVISIONAL`, Display-Familie D).
     bs.set_default(_key("d", "ctrl"), cmd.CYCLE_LIGHT_PRESET)
     bs.set_default(_key("d", "ctrl", "shift"), cmd.TOGGLE_LIGHT_SPACE)
+    # GUI Stufe 1 (2026-10-23): H = Artist Input Truth `application.toggle_hud`. Fenster-Command im
+    # Kontext "window": `src/main.py` behandelt ihn, `Application` löst diesen Kontext nie auf.
+    bs.set_default(_key("h"), cmd.TOGGLE_HUD, context=WINDOW_CONTEXT)
 
     # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)

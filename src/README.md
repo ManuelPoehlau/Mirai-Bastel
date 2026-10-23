@@ -15,6 +15,7 @@ src/
 │              SubD-Vorschau (Catmull-Clark, `subdivision/`, seit 2026-10-23)
 ├── viewport/  inkrementelle Renderdaten, Dirty-State, Overlays, Resource-Store, GL-Render-Store, Fassade
 ├── main.py    Production-Entry-Point: eigenes Fenster (pyglet) auf dem echten Draw-Pfad
+├── hud.py     GUI Stufe 1: read-only Zustandsanzeige (`H`; zwei Layouts in Erprobung, `PROVISIONAL`)
 ├── scene_menu.py  temporäres Szenen-Menü (`SPACE`; Shift+Klick = als Referenz hinzufügen, AD-021 M1; `PROVISIONAL`)
 └── scene_files.py Szenen speichern/laden (`Strg+S`, Datei-Zeilen im `SPACE`-Menü, Ordner `scenes/`; `PROVISIONAL`)
 ```

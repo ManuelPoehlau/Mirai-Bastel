@@ -84,6 +84,12 @@ TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
 CYCLE_LIGHT_PRESET = "CycleLightPreset"
 TOGGLE_LIGHT_SPACE = "ToggleLightSpace"
 
+# TOGGLE_HUD (GUI Stufe 1, 2026-10-23; Artist Input Truth `application.toggle_hud` = H): die
+# Zustandsanzeige des Fensters zeigen/verbergen. Ein Fenster-Command (Kontext `WINDOW_CONTEXT`):
+# der Entry-Point (`src/main.py`, `src/hud.py`) löst ihn über die Bindings auf und behandelt ihn
+# selbst, `Application` kennt ihn nicht (sie besitzt keinen HUD-Zustand).
+TOGGLE_HUD = "ToggleHud"
+
 # --- Objekt-Platzierung (AD-021 M2-3, L-3; Namen und Tasten `PROVISIONAL`) ----
 # Apply = Platzierung ins Mesh übernehmen (Max "Reset XForm"); Clear = Platzierung auf
 # Identität, das Mesh bleibt, das Objekt springt. Nur in Modus `4`.

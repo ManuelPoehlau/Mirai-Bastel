@@ -4,6 +4,9 @@ Ideen und Beobachtungen rund um UI / UX, die bewusst noch nicht umgesetzt werden
 
 > Im Hinterkopf behalten und später erneut bewerten. UI-Ideen sollen die bestehenden App-Werkzeuge sichtbar machen, nicht in Labs neu implementieren.
 
+> 2026-10-23: GUI Stufe 1 (read-only Zustandsanzeige) ist umgesetzt — `docs/design/GUI_STAGE1_HUD.md`
+> (Stufe-2-Nähte und offene Fragen dort).
+
 ## Character Editing: Zustand klar sichtbar machen
 
 Masken und gespeicherte Gesichtsregionen bringen nur dann einen echten Workflow-Gewinn, wenn der Artist jederzeit unterscheiden kann, was **ausgewählt**, was **maskiert** und was nur **ausgeblendet** ist.

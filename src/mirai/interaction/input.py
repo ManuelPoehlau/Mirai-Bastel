@@ -55,6 +55,10 @@ KNIFE_CONTEXT = "knife"
 #: 2026-10-23: the provisional keys of the SubD preview (`mirai.subdivision`); resolved only for an
 #: input the global context leaves unbound, so a SubD key never shadows an app key.
 SUBD_CONTEXT = "subd"
+#: 2026-10-23 (GUI Stufe 1): keys the window handles itself (H = HUD). `Application` never resolves
+#: this context, so such a key is no app command (and no host's `CommandGate` sees it); the window
+#: asks `command_for(input, WINDOW_CONTEXT)` before forwarding a key.
+WINDOW_CONTEXT = "window"
 
 KEYMAP_SCHEMA_VERSION = 1
 
@@ -220,6 +224,16 @@ class BindingSet:
             if hit is not None:
                 return hit
         return None
+
+    def inputs_for(self, command: str, context: str | None = None) -> tuple[Input, ...]:
+        """Rückwärts-Auflösung: alle Inputs, die in `context` (mit GLOBAL-Fallback) auf
+        `command` auflösen - nach denselben Regeln wie `command_for`, ein User-Override oder
+        Unbind zählt also. Für Anzeigen (HUD-Tastenhinweise, GUI Stufe 1), damit kein Text eine
+        Taste hart kodiert. Sortiert nach (kind, Modifier-Anzahl, value) - die schlichteste
+        Belegung zuerst."""
+        candidates = {inp for (_ctx, inp) in self._defaults} | {inp for (_ctx, inp) in self._user}
+        hits = [inp for inp in candidates if self.command_for(inp, context) == command]
+        return tuple(sorted(hits, key=lambda i: (i.kind, len(i.modifiers), sorted(i.modifiers), i.value)))
 
     # -- Serialisierung (nur User-Ebene = keymap.json-Inhalt) ---------------
 
