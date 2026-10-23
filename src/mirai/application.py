@@ -2618,6 +2618,15 @@ class Application:
             self._apply_display()
             self._set_status(f"Light: {self.display.light_label}")
             return True
+        if (
+            command == commands.TOGGLE_WIREFRAME_OVERLAY
+            and self.subdivision.enabled
+            and self.display.show_faces
+        ):
+            # SubD view (Manu 2026-10-23, option A): Shift+D shows / hides the preview's cage or
+            # isolines instead of the wire overlay (which the preview replaces while it is on).
+            self.subdivision.toggle_lines()
+            return True
         if command == commands.CYCLE_DISPLAY_MODE:
             self.display.cycle()
         elif command == commands.TOGGLE_WIREFRAME_OVERLAY:

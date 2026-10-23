@@ -223,3 +223,22 @@ def test_hover_changes_upload_no_surface_geometry(gl_window):
     assert rm.stats.uploaded_bytes == uploaded
     assert rm.store.vertex_list() is vlist
     assert {layer: sink.vertex_list(layer) for layer in lines_before} == lines_before
+
+
+@pytest.mark.parametrize("view", [VIEW_CAGE, VIEW_ISO])
+def test_shift_d_hides_the_lines_and_the_highlight_stays(gl_window, view):
+    """Manu 2026-10-23 (option A): Shift+D in a SubD view takes cage / isolines away; a selected edge
+    still shows in the selection colour."""
+    app = _app(gl_window)
+    _view(app, view)
+    edge = _front_edge(app)
+    _select_edge(app, edge)
+    with_lines = _render(gl_window, app)
+    app.key_press(Input("key", "d", frozenset({"shift"})))
+    without = _render(gl_window, app)
+    app.selection.set(set())
+    app.viewport.on_selection_changed()
+    plain = _render(gl_window, app)
+    assert _change(with_lines, without)[0] > 200  # the lines are gone
+    assert _count(without, SELECTED_COLOR) > 20  # the highlight is not
+    assert _count(plain, SELECTED_COLOR) == 0

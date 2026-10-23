@@ -16,14 +16,16 @@ Start wie immer: `python src/main.py` (Kopf) oder `python src/main.py subd_cube`
 | `Strg+1` / `Strg+2` / `Strg+3` | Stufe 1 / 2 / 3 (Start: 2) |
 | `Shift+V` | Käfig: von der glatten Fläche verdeckt (Start) ↔ immer sichtbar |
 | `Alt+V` | Stärke des Käfigs in der Isolinien-Ansicht: 35 % (Start) → 60 % → aus → 15 % |
+| `Shift+D` (in einer SubD-Ansicht) | Käfig bzw. Isolinien aus / an — die Highlights bleiben (deine Wahl A, 2026-10-23). Ohne SubD oder im Wireframe ist `Shift+D` wie immer das Drahtgitter |
 
 **Was man sieht (Vorschlag, `PROVISIONAL`):** In jeder Ansicht ist genau ein Liniensystem das Hauptsystem.
 *Glatte Fläche + Käfig:* der Käfig kräftig, keine Isolinien. *Glatte Fläche + Isolinien:* die Isolinien (bläulich) kräftig,
 der Käfig nur schwach (`Alt+V` stellt die Stärke ein, auch ganz aus). Eine gehoverte oder ausgewählte Kante leuchtet am
 Käfig **und** als ihre Isolinie auf der Fläche in derselben Farbe (Hover blassgelb, Auswahl gelb) — so sieht man, welche
 Linie auf der Fläche zu welcher Käfigkante gehört. Im Face-Modus leuchtet der Rand der Fläche auf der glatten Fläche mit.
-Das Drahtgitter `Shift+D` legt in den SubD-Ansichten keinen zweiten Käfig darüber; im Wireframe-Modus (`D`) gibt es keine
-Fläche, dort ist alles wie ohne SubD.
+In den SubD-Ansichten schaltet `Shift+D` die SubD-Linien (Käfig bzw. Isolinien) aus und an, statt ein zweites Drahtgitter
+darüberzulegen; ausgeblendet bleiben nur die Highlights (Käfigkante und Isolinie). Die Einstellung bleibt beim Wechsel mit
+`V` stehen. Im Wireframe-Modus (`D`) gibt es keine Fläche, dort ist alles wie ohne SubD.
 
 Alles andere ist die App: Auswahl, `W`/`E`/`R`, Tweak, Soft Selection, `C`/Knife, `T`, Löschen/Auflösen, Symmetrie,
 Undo/Redo, `D`/`Strg+D`. Bearbeitet wird immer der Käfig (das Control-Mesh); die glatte Fläche folgt live.
@@ -68,6 +70,9 @@ Undo), ist die Fläche wieder da.
   `GL_LEQUAL` on it; the cage `GL_LEQUAL` against the surface (edges behind the surface hidden) or, `Shift+V`, no depth
   test; then the hidden part of a highlighted cage edge is drawn with `GL_GREATER` so the highlight is never covered by
   the visible cage. The viewport's wire layer is left out while the surface is drawn (`replaces_wire`).
+- **Shift+D in a SubD view** (Manu 2026-10-23, option A): `Application._display_command` routes `ToggleWireframeOverlay`
+  to `SubdivisionPreview.toggle_lines()` while the preview is on and faces are shown (`DisplayState.wireframe_overlay`
+  untouched); hidden lines = no cage / isoline layers and no segment work, the highlighted chains stay. Sticky across `V`.
 - **Root causes fixed 2026-10-23** (pinned in `tests/test_gl_subdivision_lines.py`): (1) dashed isolines that turned solid
   on hover — the surface got its polygon offset only with the wire overlay or an edge highlight on, so isolines on its
   triangle edges z-fought (measured: 381 isoline pixels without, 726 with a hovered edge); (2) no highlight in cage +

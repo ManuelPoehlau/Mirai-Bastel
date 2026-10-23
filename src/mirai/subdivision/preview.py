@@ -487,18 +487,24 @@ class SubdLinePresentation:
         self.cage_depth_test = True
         self.secondary_strength = DEFAULT_SECONDARY_STRENGTH
         self.faces_shown = True
+        #: Shift+D in a SubD view (2026-10-23, Manu: option A): the cage / isoline lines on or off;
+        #: the highlighted chains stay
+        self.lines_shown = True
         self.dirty = True
         self.segments: dict[str, list] = {layer: [] for layer in LINE_LAYERS}
         self._geometry_key: Optional[tuple] = None
         self._highlight_key: Optional[tuple] = None
         self._style_key: Optional[tuple] = None
 
-    def configure(self, *, view=None, cage_depth_test=None, secondary_strength=None, faces_shown=None) -> None:
+    def configure(
+        self, *, view=None, cage_depth_test=None, secondary_strength=None, faces_shown=None, lines_shown=None
+    ) -> None:
         if view is not None and view not in VIEW_ORDER:
             raise ValueError(view)
         changes = {
             "view": view, "cage_depth_test": cage_depth_test,
             "secondary_strength": secondary_strength, "faces_shown": faces_shown,
+            "lines_shown": lines_shown,
         }
         for name, value in changes.items():
             if value is not None and getattr(self, name) != value:
@@ -517,7 +523,9 @@ class SubdLinePresentation:
         if not self.visible():
             return ()
         layers = []
-        if self.view == VIEW_ISO:
+        if not self.lines_shown:
+            pass  # Shift+D: no cage, no isolines - only the highlighted chains below
+        elif self.view == VIEW_ISO:
             layers.append(ISO_LAYER)
             if self.secondary_strength > 0.0:
                 layers.append(CAGE_LAYER)
@@ -537,11 +545,11 @@ class SubdLinePresentation:
         self.dirty = False
         provider = self.provider
         visible = self.visible()
-        geometry_key = (visible, self.view, provider.revision)
+        geometry_key = (visible, self.view, provider.revision, self.lines_shown)
         if geometry_key != self._geometry_key:
             self._geometry_key = geometry_key
             cage, iso = [], []
-            if visible:
+            if visible and self.lines_shown:
                 p = provider.control_positions()
                 cage = [(p[a], p[b]) for a, b in provider.control_edges()]
                 if self.view == VIEW_ISO:
@@ -550,12 +558,12 @@ class SubdLinePresentation:
             self._push(CAGE_LAYER, cage)
             self._push(ISO_LAYER, iso)
         hover, selected = highlight_edges(selection, mesh) if visible else (frozenset(), frozenset())
-        highlight_key = (geometry_key, hover, selected, self.cage_depth_test)
+        highlight_key = (visible, self.view, provider.revision, hover, selected, self.cage_depth_test, self.lines_shown)
         if highlight_key != self._highlight_key:
             self._highlight_key = highlight_key
             self._push(ISO_HOVER_LAYER, self._chains(hover))
             self._push(ISO_SELECTED_LAYER, self._chains(selected))
-            x_ray = visible and not self.cage_depth_test
+            x_ray = visible and self.lines_shown and not self.cage_depth_test
             self._push(CAGE_HOVER_LAYER, self._cage_segments(hover) if x_ray else [])
             self._push(CAGE_SELECTED_LAYER, self._cage_segments(selected) if x_ray else [])
         style_key = (self.view, self.secondary_strength, self.cage_depth_test)
@@ -749,6 +757,17 @@ class SubdivisionPreview:
     def set_faces_shown(self, shown: bool) -> None:
         """The app's display mode: without faces (Wireframe) the preview draws no lines."""
         self.lines.configure(faces_shown=bool(shown))
+
+    @property
+    def lines_shown(self) -> bool:
+        return self.lines.lines_shown
+
+    def toggle_lines(self) -> bool:
+        """Shift+D in a SubD view (Manu 2026-10-23, option A): the preview's cage / isoline lines on
+        or off; hover / selection highlights (cage edge and chain) stay. View state, sticky across V."""
+        self.lines.configure(lines_shown=not self.lines.lines_shown)
+        self._set_status("SubD: Linien " + ("an" if self.lines.lines_shown else "aus (nur Highlights)"))
+        return self.lines.lines_shown
 
     def set_secondary_strength(self, strength: float) -> None:
         """Opacity of the secondary line system (the cage in the iso view), 0 = hidden."""

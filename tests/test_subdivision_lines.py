@@ -352,3 +352,82 @@ def test_hover_changes_rebuild_no_cage_or_isoline_segments():
         assert lines(app).segments[CAGE_LAYER] is cage
         assert lines(app).segments[ISO_LAYER] is iso
     assert app.subdivision.provider.revision == revision
+
+
+# -- Shift+D in a SubD view (Manu 2026-10-23, option A) --------------------------------------------
+
+SHIFT_D = _key("d", "shift")
+
+
+@pytest.mark.parametrize("view", [VIEW_CAGE, VIEW_ISO])
+def test_shift_d_hides_and_shows_the_preview_lines_but_keeps_the_highlight(view):
+    app = _app()
+    on(app, view)
+    app.key_press(_key("2"))
+    edge = sorted(app.viewport.mesh.all_edge_ids(), key=int)[5]
+    app.selection.set({edge})
+    app.viewport.on_selection_changed()
+    app.viewport.sync()
+    wire_overlay = app.display.wireframe_overlay
+    assert app.key_press(SHIFT_D)
+    app.viewport.sync()
+    assert "Linien aus" in app.status_message
+    assert app.display.wireframe_overlay == wire_overlay  # the app's wire overlay is untouched
+    assert not app.viewport.wire_drawn()
+    seg = lines(app).segments
+    assert seg[CAGE_LAYER] == [] and seg[ISO_LAYER] == []
+    chain_is_the_control_edge(app, edge, seg[ISO_SELECTED_LAYER])  # the highlight stays
+    lines(app).draw([0.0] * 32)
+    assert lines(app).sink.drawn[-1] == (ISO_HOVER_LAYER, ISO_SELECTED_LAYER)
+    assert app.key_press(SHIFT_D)
+    app.viewport.sync()
+    assert "Linien an" in app.status_message
+    assert lines(app).segments[CAGE_LAYER]
+
+
+def test_hidden_lines_stay_hidden_across_v_and_shift_d_is_the_wire_again_with_subd_off():
+    app = _app()
+    on(app, VIEW_CAGE)
+    app.key_press(SHIFT_D)
+    on(app, VIEW_ISO)
+    assert not app.subdivision.lines_shown
+    assert lines(app).segments[ISO_LAYER] == []
+    app.key_press(V)  # off
+    app.viewport.sync()
+    assert not app.display.wireframe_overlay
+    app.key_press(SHIFT_D)
+    assert app.display.wireframe_overlay  # SubD off: Shift+D is the wire overlay as always
+    assert app.viewport.wire_drawn()
+
+
+def test_hidden_lines_do_no_segment_work_while_dragging():
+    app = _app()
+    on(app, VIEW_ISO)
+    app.key_press(SHIFT_D)
+    app.viewport.sync()
+    sink = lines(app).sink
+    calls = sink.set_calls
+    app.selection.set({sorted(app.viewport.mesh.all_vertex_ids(), key=int)[0]})
+    app.viewport.on_selection_changed()
+    app.viewport.sync()
+    x, y = WIDTH / 2, HEIGHT / 2
+    app.key_press(W)
+    for _ in range(3):
+        x += 6
+        app.pointer_motion(x, y, 6, 0)
+        app.viewport.sync()
+    app.key_release(W)
+    app.viewport.sync()
+    assert lines(app).segments[CAGE_LAYER] == [] and lines(app).segments[ISO_LAYER] == []
+    assert sink.set_calls > calls  # highlight layers follow the moves; cage / iso stay empty
+
+
+def test_in_wireframe_shift_d_is_the_plain_wire_overlay():
+    app = _app()
+    on(app, VIEW_CAGE)
+    app.key_press(_key("d"))
+    app.key_press(_key("d"))  # Wireframe: no faces, the preview draws nothing
+    before = app.display.wireframe_overlay
+    app.key_press(SHIFT_D)
+    assert app.display.wireframe_overlay != before
+    assert app.subdivision.lines_shown
