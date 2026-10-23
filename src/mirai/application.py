@@ -390,7 +390,8 @@ class _DragSelect:
     the press was in empty space, else `paint`; with the Lasso key held (2026-10-21) `lasso`
     whatever the press point. `add` = Shift (adds) instead of replacing.
     `before` is the selection at the start (Esc restores it); `last` the last painted point;
-    `points` the lasso outline so far (window pixels)."""
+    `points` the lasso outline so far (window pixels). Alt held at the release makes a box or lasso
+    select through the mesh (WP Toolbox Gaps A2, Manu 2026-10-23); paint stays visible-only."""
 
     kind: str
     add: bool
@@ -3523,7 +3524,8 @@ class Application:
 
     def set_alt_held(self, held: bool) -> bool:
         """The window reports whether any Alt key is held. During a transform, motion then navigates
-        (`_navigate_during_transform`); otherwise it is only stored. True = the state changed."""
+        (`_navigate_during_transform`); during a Box / Lasso drag it switches the release to select
+        through the mesh (`selection_through`); otherwise it is only stored. True = the state changed."""
         held = bool(held)
         if held == self._alt_held:
             return False
@@ -4583,6 +4585,20 @@ class Application:
             return None
         return list(drag.points)
 
+    @property
+    def selection_through(self) -> bool:
+        """True while a running Box / Lasso would select through the mesh if released now: Alt is
+        held (WP Toolbox Gaps A2, Manu 2026-10-23: "nach dem Gummiband-Aufziehen Alt gedrückt
+        halten"). Alt at the press is still Orbit - by then the drag is no selection. The window
+        draws the band in the through colour."""
+        drag = self._drag_select
+        return drag is not None and drag.kind in ("box", "lasso") and not drag.cancelled and self._alt_held
+
+    def _region_occlusion(self) -> bool:
+        """The occlusion rule of a Box / Lasso release: only what is visible while faces are shown,
+        unless Alt is held (`selection_through`)."""
+        return self.display.show_faces and not self._alt_held
+
     def _lasso_arm(self, key: str) -> bool:
         """The Lasso key went down: LMB drags make a lasso until it is let go. Not underneath a
         held W/E/R/T/G (the same gate as the mode keys) and not in a Knife session (which has its
@@ -4687,12 +4703,14 @@ class Application:
         if drag.kind == "lasso":
             return self._lasso_finish(drag)
         rm = self._gpu_pick_mesh() if drag.kind == "box" else None
+        occlusion = self._region_occlusion()
+        through = "" if occlusion or not self.display.show_faces else " (through)"
         if rm is not None:
             try:
                 found = gpu_elements_in_rect(
                     self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, selection.mode,
                     normalized_rect(drag.start, drag.end), int(self.viewport_width), int(self.viewport_height),
-                    cache=self._pick_cache, occlusion=self.display.show_faces,
+                    cache=self._pick_cache, occlusion=occlusion,
                 )
             except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
                 self._gpu_failed(exc)
@@ -4702,7 +4720,7 @@ class Application:
                 selection.add(found)
             else:
                 selection.set(found)
-            label = "Box"
+            label = "Box" + through
         elif drag.kind == "box":
             found = elements_in_rect(
                 self._edit_camera,
@@ -4712,13 +4730,13 @@ class Application:
                 self.viewport_width,
                 self.viewport_height,
                 cache=self._pick_cache,
-                occlusion=self.display.show_faces,
+                occlusion=occlusion,
             )
             if drag.add:
                 selection.add(found)
             else:
                 selection.set(found)
-            label = "Box"
+            label = "Box" + through
         else:
             label = "Paint"
         if self.viewport is not None:
@@ -4734,7 +4752,8 @@ class Application:
 
     def _lasso_finish(self, drag: _DragSelect) -> bool:
         """Apply a finished Lasso: the elements whose corners all lie inside the outline (as Box, with
-        the same occlusion rule); fewer than three outline points select nothing and change nothing."""
+        the same occlusion rule, Alt = through); fewer than three outline points select nothing and change
+        nothing."""
         selection = self.selection
         polygon = drag.points
         if len(polygon) < 3:
@@ -4742,6 +4761,8 @@ class Application:
             self._refresh_hover()
             return True
         width, height = int(self.viewport_width), int(self.viewport_height)
+        occlusion = self._region_occlusion()
+        through = "" if occlusion or not self.display.show_faces else " (through)"
         found = None
         rm = self._gpu_pick_mesh()
         if rm is not None:
@@ -4749,14 +4770,14 @@ class Application:
                 found = gpu_elements_in_region(
                     self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, selection.mode,
                     lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
-                    cache=self._pick_cache, occlusion=self.display.show_faces,
+                    cache=self._pick_cache, occlusion=occlusion,
                 )
             except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
                 self._gpu_failed(exc)
         if found is None:
             found = elements_in_polygon(
                 self._edit_camera, self.scene.mesh, selection.mode, polygon, width, height,
-                cache=self._pick_cache, occlusion=self.display.show_faces,
+                cache=self._pick_cache, occlusion=occlusion,
             )
         if drag.add:
             selection.add(found)
@@ -4769,7 +4790,7 @@ class Application:
         noun = selection.mode.name.lower()
         if count != 1:
             noun = "vertices" if noun == "vertex" else noun + "s"
-        self._set_status(f"Lasso: {count} {noun} selected")
+        self._set_status(f"Lasso{through}: {count} {noun} selected")
         self._refresh_hover()
         return True
 

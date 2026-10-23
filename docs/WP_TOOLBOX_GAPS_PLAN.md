@@ -2,7 +2,7 @@
 
 **An:** Claude Code
 **Modell/Effort:** Opus, effort `high` für B1/B2 (Core-Topologie), `medium` für A1/A2/C1/C2
-**Status:** A1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A); A2 … B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
+**Status:** A1 und A2 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A = jetzt fällig); B1 … B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
 **Modus (M5):** Production, Core-first, **kein Lab** (Blender-bekannte Werkzeuge, AGENTS.md §7a).
 Promotion (M3) durch Manu im Chat 2026-10-23: „Werkzeuge, die in Mirai noch in Production müssen“ —
 Collapse, Box/Lasso Select Through, Koordinatensystem aus dem Playground, Grow Selection, Loop-Extend,
@@ -30,8 +30,8 @@ AD-012 / AD-021 ARCH-01-abhängig und ist hier Nicht-Scope (P-1).
 | # | Frage | Antwort |
 |---|---|---|
 | P-1 | Was ist „Local“? | Normal Space aus dem Playground (pro Auswahl, eine Fläche: voller Tangentenrahmen). Object-Local deferred. `PROVISIONAL` |
-| P-2 | Tasten | **Manu 2026-10-23:** Collapse `Shift+C` (das tote `K` im `TOPOLOGY_CONTEXT` entfällt); Loop-Extend `Shift+↑` / `Shift+↓`; Next/Prev Loop `Shift+←` / `Shift+→`; Relax/Smooth zusätzlich „S gedrückt halten + Maus ziehen“. `PROVISIONAL`: Grow/Shrink `Ctrl++` / `Ctrl+-` (Haupttastatur und Ziffernblock, Blender „Select More/Less“; `]`/`[` braucht auf deutscher Tastatur AltGr), Select Through `Alt+Z`, Orientation-Toggle wie im Playground, Smooth `S` / Relax `Alt+S`. Alle in `GLOBAL`, per `keymap.json` überschreibbar. |
-| P-3 | Wofür gilt Select Through? | Box, Paint, Lasso. Der Klick-Pick bleibt sichtbarkeitsbasiert. `PROVISIONAL` |
+| P-2 | Tasten | **Manu 2026-10-23:** Collapse `Shift+C` (das tote `K` im `TOPOLOGY_CONTEXT` entfällt); Loop-Extend `Shift+↑` / `Shift+↓`; Next/Prev Loop `Shift+←` / `Shift+→`; Relax/Smooth zusätzlich „S gedrückt halten + Maus ziehen“; Select Through = nach dem Aufziehen von Box/Lasso **Alt gedrückt halten** (kein Umschalter). `PROVISIONAL`: Grow/Shrink `Ctrl++` / `Ctrl+-` (Haupttastatur und Ziffernblock, Blender „Select More/Less“; `]`/`[` braucht auf deutscher Tastatur AltGr), Orientation-Toggle wie im Playground, Smooth `S` / Relax `Alt+S`. Alle in `GLOBAL`, per `keymap.json` überschreibbar. |
+| P-3 | Wofür gilt Select Through? | **Manu 2026-10-23:** Box und Lasso. Paint und der Klick-Pick bleiben sichtbarkeitsbasiert. |
 | P-4 | Auswahl nach Collapse | Die Ergebnis-Vertices, Modus wechselt auf Vertex. `PROVISIONAL` (offene Frage aus SELECTION.md „Collapse Edge“) |
 | P-5 | Relax/Smooth modal oder One-Shot? | **Beides (Manu 2026-10-23):** Antippen = ein Schritt mit fester Stärke; **S (bzw. Alt+S) gedrückt halten + Maus ziehen** = Stärke live, Loslassen übernimmt, Esc stellt exakt wieder her (Haltetasten-Muster wie G / Loop Slide). |
 | P-6 | Subdivide | Erst Simple; „SubD-Stufe anwenden“ ist ein eigener Teil-Slice. `PROVISIONAL` |
@@ -75,14 +75,22 @@ gesammelten Praxistest (§3).
 - *Tests:* `tests/test_selection_steps.py` (Grid, Zylinder, Pol, offener Rand) und App-Verdrahtung analog
   `tests/test_application_loop_tools.py`.
 
-**A2 Select-Through-Schalter.**
-- *Ziel:* Box, Paint und Lasso wählen auf Wunsch auch verdeckte Elemente, ohne in den Wireframe-Modus zu
-  wechseln.
-- *Scope:* Flag `select_through` in der App; in `_drag_select_finish` / `_lasso_finish` gilt
-  `occlusion = show_faces and not select_through`. Dazu ein Toggle-Command (`Alt+Z`) und eine HUD-Anzeige.
-- *Nicht-Scope:* X-Ray-Darstellung (AD-021 verwirft das vorerst) und der Klick-Pick (P-3).
-- *Tests:* Verdeckungspfad in `tests/test_application_drag_select_tweak.py`; der GPU-Pfad wird separat mit
-  xvfb geprüft.
+**A2 Select Through (Alt während Box/Lasso).**
+- *Gebaut 2026-10-23* (`Application.selection_through`, `_region_occlusion`; Farbe in `src/main.py`).
+  Manu 2026-10-23: „bei Box und Lasso nach dem Gummiband-Aufziehen Alt gedrückt halten für Select
+  Through“. Das ersetzt den zuerst geplanten Schalter `Alt+Z`.
+- *Verhalten:*
+  - Ist Alt beim **Loslassen** der Maustaste gehalten, wählt Box bzw. Lasso auch verdeckte Elemente
+    (`occlusion = show_faces and not alt`).
+  - Solange Alt gehalten ist, sind Gummiband bzw. Umriss blau statt gelb (`PROVISIONAL`).
+  - Statuszeile: `Box (through): …` / `Lasso (through): …`.
+  - Alt beim *Drücken* bleibt Orbit, dann läuft keine Auswahl.
+  - Shift (hinzufügen) lässt sich mit Alt kombinieren.
+  - Kein Command, keine Taste, kein Undo-Schritt.
+- *Nicht-Scope:* X-Ray-Darstellung (AD-021 verwirft das vorerst), Paint und der Klick-Pick (P-3).
+- *Tests:* `tests/test_application_drag_select_tweak.py` (Box: Alt beim Loslassen, Alt vorher
+  losgelassen, Paint unberührt), `tests/test_application_lasso.py` (Lasso mit Alt);
+  GPU-Pfad mit `tests/test_gl_gpu_picking.py` (xvfb, isoliert).
 
 ### Paket B — Topologie-Operationen (Core, Change-Journal)
 
@@ -155,7 +163,7 @@ gesammelten Praxistest (§3).
   - Grow/Shrink (`Ctrl++` / `Ctrl+-`) in V/E/F auf dem Kopf.
   - Teil-Loop mit `Shift+↑` verlängern und mit `Shift+↓` kürzen (Stopp am Pol prüfen).
   - Mit `Shift+←/→` über Gesicht und Arm wandern.
-  - Box und Lasso mit `Alt+Z` an und aus auf sichtbaren Flächen.
+  - Box und Lasso über den Kopf ziehen, vor dem Loslassen Alt halten (Band wird blau) → auch die Rückseite ist gewählt; ohne Alt nur die Vorderseite.
 - **B:**
   - Collapse (`Shift+C`) auf Kante, Kantenzug und Face-Gruppe, jeweils mit Undo; einmal unter Symmetrie.
   - Subdivide auf einer Face-Insel und auf dem ganzen Mesh.

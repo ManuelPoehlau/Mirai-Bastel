@@ -243,3 +243,25 @@ def test_lasso_is_refused_in_object_mode_with_a_status_line(app):
     _stroke(app, _mouse("LEFT"), outline)
     assert app.status_message.startswith("Box/Paint/Lasso:")
     assert app.selection_lasso is None
+
+
+def test_alt_held_at_the_release_makes_a_lasso_select_through():
+    """WP Toolbox Gaps A2 (Manu 2026-10-23): Alt after drawing the outline = through the mesh."""
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    app.key_press(K1)
+    app.key_press(Q)
+    outline = [(2.0, 2.0), (WIDTH - 2.0, 2.0), (WIDTH - 2.0, HEIGHT - 2.0), (2.0, HEIGHT - 2.0)]
+    _stroke(app, _mouse("LEFT"), outline, release=False)
+    hidden_rule = app.selection_through
+    app.set_alt_held(True)
+    assert hidden_rule is False and app.selection_through is True
+    app.pointer_release("LEFT", *outline[-1])
+    app.set_alt_held(False)
+    assert len(app.selection.vertices) == 8
+    assert app.status_message == "Lasso (through): 8 vertices selected"
+    app.key_press(Q)  # same outline without Alt: the far corner stays hidden
+    _stroke(app, _mouse("LEFT"), outline)
+    assert 0 < len(app.selection.vertices) < 8

@@ -68,7 +68,7 @@ def _vertex(mesh, x: float, y: float):
     return vid
 
 
-def _drag(app, inp: Input, start, end, steps: int = 10) -> bool:
+def _drag(app, inp: Input, start, end, steps: int = 10, release: bool = True) -> bool | None:
     app.pointer_motion(*start)
     app.pointer_press(inp, *start)
     (x0, y0), (x1, y1) = start, end
@@ -78,6 +78,8 @@ def _drag(app, inp: Input, start, end, steps: int = 10) -> bool:
         y = y0 + (y1 - y0) * i / steps
         app.pointer_drag(x - px, y - py, x, y)
         px, py = x, y
+    if not release:
+        return None
     return app.pointer_release(inp.value, x1, y1)
 
 
@@ -271,3 +273,62 @@ def test_box_skips_hidden_vertices_while_faces_are_shown():
     assert not app.display.show_faces
     _drag(app, _mouse("LEFT"), *everything)
     assert len(app.selection.vertices) == 8
+
+
+# -- Select through: Alt held at the release (WP Toolbox Gaps A2, Manu 2026-10-23) --------------
+
+
+def _cube_app() -> Application:
+    app = Application()
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    app.key_press(K1)
+    return app
+
+
+EVERYTHING = ((2.0, 2.0), (WIDTH - 2.0, HEIGHT - 2.0))
+
+
+def _box_with_alt(app, *, alt_during: bool, alt_at_release: bool) -> None:
+    start, end = EVERYTHING
+    _drag(app, _mouse("LEFT"), start, end, release=False)
+    assert app.selection_box is not None
+    assert app.selection_through is False
+    if alt_during:
+        app.set_alt_held(True)
+        assert app.selection_through is True
+    app.set_alt_held(alt_at_release)
+    app.pointer_release("LEFT", *end)
+    app.set_alt_held(False)
+
+
+def test_alt_held_at_the_release_makes_a_box_select_through():
+    app = _cube_app()
+    _box_with_alt(app, alt_during=False, alt_at_release=True)
+    assert app.display.show_faces
+    assert len(app.selection.vertices) == 8  # the hidden corner too
+    assert app.status_message == "Box (through): 8 vertices selected"
+    assert not app.history.can_undo()
+
+
+def test_alt_let_go_before_the_release_keeps_the_visible_rule():
+    app = _cube_app()
+    _box_with_alt(app, alt_during=True, alt_at_release=False)
+    assert 0 < len(app.selection.vertices) < 8
+    assert app.status_message.startswith("Box: ")
+
+
+def test_alt_does_not_make_paint_or_a_click_select_through():
+    app = _cube_app()
+    app.set_alt_held(True)
+    assert app.selection_through is False  # no drag running
+    app.set_alt_held(False)
+    centre = (WIDTH / 2.0, HEIGHT / 2.0)
+    _drag(app, _mouse("LEFT"), centre, (centre[0] + 30, centre[1] + 30), release=False)
+    assert app.selection_box is None  # pressed on the mesh: Paint
+    app.set_alt_held(True)
+    assert app.selection_through is False
+    app.pointer_release("LEFT", centre[0] + 30, centre[1] + 30)
+    app.set_alt_held(False)
+    assert app.status_message.startswith("Paint: ")

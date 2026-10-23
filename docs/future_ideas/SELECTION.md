@@ -121,6 +121,6 @@ Bei Experimenten soll nicht nur geprüft werden, **ob eine Operation technisch f
 
 ## X-ray / select-through as a user toggle
 
-> Geplant (2026-10-23): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice A2.
+> Gebaut (2026-10-23, `PROVISIONAL`): [WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Slice A2. Kein Schalter, sondern Alt gedrückt halten beim Loslassen von Box/Lasso (Manu); ohne X-Ray-Darstellung. Der Absatz unten ist der Stand davor.
 
 WP-06 B8 gab Production einen Occlusion-Test: verdeckte Vertices/Edges sind bei angezeigten Flächen nicht pickbar. Außerhalb von B8 lag die benutzerseitige Wahlmöglichkeit. Ein künftiger X-ray-/Select-through-Schalter könnte dieses Verhalten bei sichtbaren Flächen bewusst übersteuern, ohne in Wireframe wechseln zu müssen. Nicht entschieden, nicht gebaut.

@@ -173,7 +173,8 @@ Scope (binding, see the handoffs):
 - Playground tools promoted 2026-10-15 (Manu; keys and look `PROVISIONAL`): LMB drag
   from empty space = Box Select (rubber band drawn here, `draw_selection_box`; with the Lasso key `Q` held a
   Lasso outline, `draw_selection_lasso`), from the mesh
-  = Paint Select; no modifier replaces, Shift adds; Esc discards. Ctrl+LMB drag = Tweak with
+  = Paint Select; no modifier replaces, Shift adds; Esc discards. Alt held at the release of a Box /
+  Lasso selects through the mesh (WP Toolbox Gaps A2, band drawn blue meanwhile). Ctrl+LMB drag = Tweak with
   the last W/E/R (Move until one is pressed; a tap sets it) on the selection, else on the
   element under the press point; Ctrl+LMB click still removes. Edge mode: Shift+L / Shift+R
   add the edge loop / ring, I inserts a loop through the ring, hold G slides the selected
@@ -611,10 +612,10 @@ def install_handlers(
             draw_gizmo(gizmo, app.gizmo_camera_uniforms())
         box = app.selection_box
         if box is not None:
-            draw_selection_box(box)
+            draw_selection_box(box, through=app.selection_through)
         lasso = app.selection_lasso
         if lasso is not None:
-            draw_selection_lasso(lasso)
+            draw_selection_lasso(lasso, through=app.selection_through)
         if hud is not None:
             hud.update(app, window.width, window.height)
             hud.draw()
@@ -623,40 +624,48 @@ def install_handlers(
             shown.draw()
 
 
-def draw_selection_box(box: tuple[float, float, float, float]) -> None:
+#: Rubber band / lasso colour (look `PROVISIONAL`): pale yellow = only what is visible; cool blue
+#: while Alt is held = select through the mesh (WP Toolbox Gaps A2, `Application.selection_through`).
+BAND_RGB = (255, 236, 160)
+BAND_THROUGH_RGB = (150, 205, 255)
+
+
+def draw_selection_box(box: tuple[float, float, float, float], through: bool = False) -> None:
     """The Box Select rubber band (window pixels; look `PROVISIONAL`): a thin pale outline
-    over the viewport, drawn like the menu (depth off, blending on)."""
+    over the viewport, drawn like the menu (depth off, blending on); blue while it selects through."""
     from pyglet import gl, shapes
 
     x0, y0, x1, y1 = box
+    rgb = BAND_THROUGH_RGB if through else BAND_RGB
     gl.glDisable(gl.GL_DEPTH_TEST)
     gl.glEnable(gl.GL_BLEND)
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-    shapes.Rectangle(x0, y0, x1 - x0, y1 - y0, color=(255, 236, 160, 28)).draw()
-    shapes.Box(x0, y0, x1 - x0, y1 - y0, thickness=1, color=(255, 236, 160, 200)).draw()
+    shapes.Rectangle(x0, y0, x1 - x0, y1 - y0, color=(*rgb, 28)).draw()
+    shapes.Box(x0, y0, x1 - x0, y1 - y0, thickness=1, color=(*rgb, 200)).draw()
 
 
-_LASSO_DRAW: dict = {"points": None, "batch": None, "shapes": None}
+_LASSO_DRAW: dict = {"points": None, "through": None, "batch": None, "shapes": None}
 
 
-def draw_selection_lasso(points: list[tuple[float, float]]) -> None:
+def draw_selection_lasso(points: list[tuple[float, float]], through: bool = False) -> None:
     """The Lasso Select outline (window pixels; look `PROVISIONAL`, same colours as the Box band): the path
-    drawn so far plus a fainter closing line back to the first point. The line batch is rebuilt only when
-    the outline grew, not every frame."""
+    drawn so far plus a fainter closing line back to the first point; blue while it selects through. The
+    line batch is rebuilt only when the outline grew or the colour changed, not every frame."""
     from pyglet import gl, graphics, shapes
 
     if len(points) < 2:
         return
     cache = _LASSO_DRAW
-    if cache["points"] != points:
+    if cache["points"] != points or cache["through"] != through:
+        rgb = BAND_THROUGH_RGB if through else BAND_RGB
         batch = graphics.Batch()
         lines = [
-            shapes.Line(a[0], a[1], b[0], b[1], thickness=1, color=(255, 236, 160, 220), batch=batch)
+            shapes.Line(a[0], a[1], b[0], b[1], thickness=1, color=(*rgb, 220), batch=batch)
             for a, b in zip(points, points[1:])
         ]
         lines.append(shapes.Line(points[-1][0], points[-1][1], points[0][0], points[0][1], thickness=1,
-                                 color=(255, 236, 160, 90), batch=batch))
-        cache["points"], cache["batch"], cache["shapes"] = list(points), batch, lines
+                                 color=(*rgb, 90), batch=batch))
+        cache["points"], cache["through"], cache["batch"], cache["shapes"] = list(points), through, batch, lines
     gl.glDisable(gl.GL_DEPTH_TEST)
     gl.glEnable(gl.GL_BLEND)
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
