@@ -2,7 +2,7 @@
 
 **An:** Claude Code
 **Modell/Effort:** Opus, effort `high` für B1/B2 (Core-Topologie), `medium` für A1/A2/C1/C2
-**Status:** Geplant (2026-10-23) — noch kein Code. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
+**Status:** A1 gebaut (2026-10-23, `PROVISIONAL`, Praxistest am Ende von Paket A); A2 … B2 geplant. Reihenfolge und Keys siehe unten; alles Übrige `PROVISIONAL`.
 **Modus (M5):** Production, Core-first, **kein Lab** (Blender-bekannte Werkzeuge, AGENTS.md §7a).
 Promotion (M3) durch Manu im Chat 2026-10-23: „Werkzeuge, die in Mirai noch in Production müssen“ —
 Collapse, Box/Lasso Select Through, Koordinatensystem aus dem Playground, Grow Selection, Loop-Extend,
@@ -30,10 +30,10 @@ AD-012 / AD-021 ARCH-01-abhängig und ist hier Nicht-Scope (P-1).
 | # | Frage | Antwort |
 |---|---|---|
 | P-1 | Was ist „Local“? | Normal Space aus dem Playground (pro Auswahl, eine Fläche: voller Tangentenrahmen). Object-Local deferred. `PROVISIONAL` |
-| P-2 | Tasten | **Manu 2026-10-23:** Collapse `Shift+C` (das tote `K` im `TOPOLOGY_CONTEXT` entfällt); Loop-Extend `Shift+↑` / `Shift+↓`; Next/Prev Loop `Shift+←` / `Shift+→`. `PROVISIONAL`: Grow/Shrink `Ctrl+]` / `Ctrl+[` (plus Numpad `Ctrl+Num+/-`), Select Through `Alt+Z`, Orientation-Toggle wie im Playground. Alle in `GLOBAL`, per `keymap.json` überschreibbar. |
+| P-2 | Tasten | **Manu 2026-10-23:** Collapse `Shift+C` (das tote `K` im `TOPOLOGY_CONTEXT` entfällt); Loop-Extend `Shift+↑` / `Shift+↓`; Next/Prev Loop `Shift+←` / `Shift+→`; Relax/Smooth zusätzlich „S gedrückt halten + Maus ziehen“. `PROVISIONAL`: Grow/Shrink `Ctrl++` / `Ctrl+-` (Haupttastatur und Ziffernblock, Blender „Select More/Less“; `]`/`[` braucht auf deutscher Tastatur AltGr), Select Through `Alt+Z`, Orientation-Toggle wie im Playground, Smooth `S` / Relax `Alt+S`. Alle in `GLOBAL`, per `keymap.json` überschreibbar. |
 | P-3 | Wofür gilt Select Through? | Box, Paint, Lasso. Der Klick-Pick bleibt sichtbarkeitsbasiert. `PROVISIONAL` |
 | P-4 | Auswahl nach Collapse | Die Ergebnis-Vertices, Modus wechselt auf Vertex. `PROVISIONAL` (offene Frage aus SELECTION.md „Collapse Edge“) |
-| P-5 | Relax/Smooth modal oder One-Shot? | One-Shot (wiederholtes Drücken wirkt stärker); ein Slider ist ein späterer Slice. `PROVISIONAL` |
+| P-5 | Relax/Smooth modal oder One-Shot? | **Beides (Manu 2026-10-23):** Antippen = ein Schritt mit fester Stärke; **S (bzw. Alt+S) gedrückt halten + Maus ziehen** = Stärke live, Loslassen übernimmt, Esc stellt exakt wieder her (Haltetasten-Muster wie G / Loop Slide). |
 | P-6 | Subdivide | Erst Simple; „SubD-Stufe anwenden“ ist ein eigener Teil-Slice. `PROVISIONAL` |
 
 ## 2. Pakete und Slices
@@ -48,20 +48,30 @@ gesammelten Praxistest (§3).
 
 **A1 Topologische Auswahl-Schritte.**
 - *Ziel:* Auswahl schrittweise wachsen, schrumpfen und entlang Loops navigieren lassen.
+- *Gebaut 2026-10-23* (`src/mirai/topology/selection_steps.py`, `Application._selection_step`,
+  Tests `tests/test_selection_steps.py`). Abweichungen von der ersten Planfassung, `PROVISIONAL`:
+  - `Shift+↑` verlängert **beide** Enden jedes offenen Loop-Stücks um eine Kante, `Shift+↓` nimmt an
+    beiden Enden eine weg (Maya „Grow/Shrink Along Loop“). Ein Ende als „oben“ festzulegen, hätte keine
+    sichtbare Regel gehabt.
+  - Next/Prev: `Shift+→` wählt die Nachbar-Loop, die auf dem **Bildschirm** rechts liegt; liegen die
+    Nachbarn übereinander, gilt oben als rechts.
+  - Jedes Stück entscheidet für sich, unter Symmetrie also nicht gespiegelt; das ist ein Punkt für den
+    Praxistest.
 - *Scope:* neues Modul `src/mirai/topology/selection_steps.py` auf Basis von `loop_ring.py`:
   - **Grow/Shrink** modusabhängig (V über Kanten, E über gemeinsame Vertices, F über Vertex-Nachbarschaft
     wie Blender); Shrink entfernt die Randelemente der Auswahl.
-  - **Loop-Extend:** Jede offene Teil-Loop der Kantenauswahl wächst um je eine Kante per `_loop_step`.
-    `Shift+↑` erweitert das eine Ende, `Shift+↓` das andere; die Enden werden in Laufrichtung der Loop
-    festgelegt. An Polen, Nicht-Quads und Rändern ist Schluss (dieselbe Regel wie `edge_loop`).
+  - **Loop-Extend:** Jede offene Teil-Loop der Kantenauswahl wächst (`Shift+↑`) bzw. schrumpft
+    (`Shift+↓`) an beiden Enden um je eine Kante per `_loop_step`. Geschlossene Loops bleiben, wie sie
+    sind. An Polen, Nicht-Quads und Rändern ist Schluss (dieselbe Regel wie `edge_loop`).
   - **Next/Prev Loop:** die parallele Loop daneben, per `_ring_step` durch das angrenzende Quad;
-    `Shift+→` / `Shift+←` wählen die Seite. Eine Mehrfachauswahl wandert geschlossen.
+    `Shift+→` / `Shift+←` wählen die Seite auf dem Bildschirm. Jedes Stück wandert; ein Stück ohne Quads
+    auf dieser Seite bleibt stehen, die Statuszeile sagt es.
     Ergebnis = *ersetzen*, nicht hinzufügen (SELECTION.md: Navigation, nicht Ring-Auswahl).
   - App: Commands in `interaction/commands.py`, Bindings in `bindings.py`, Zweige in `dispatch_command`,
-    Selektions-History über `_record_selection_history`.
+    kein History-Eintrag (eine Auswahländerung wie ein Klick oder Shift+L, `core.selection`).
 - *Nicht-Scope:* Soft Selection, ausgeblendete/maskierte Geometrie (gibt es noch nicht).
-- *Verträge:* keine Mesh-Mutation; unter Symmetrie wird das Ergebnis gespiegelt, wie bei den
-  bestehenden Auswahl-Commands.
+- *Verträge:* keine Mesh-Mutation. Wie alle Auswahl-Commands nicht gespiegelt; Grow/Shrink und
+  Loop-Extend sind rein topologisch, eine symmetrische Auswahl bleibt also symmetrisch.
 - *Tests:* `tests/test_selection_steps.py` (Grid, Zylinder, Pol, offener Rand) und App-Verdrahtung analog
   `tests/test_application_loop_tools.py`.
 
@@ -125,17 +135,25 @@ gesammelten Praxistest (§3).
   - **Relax** = dasselbe Delta, auf die Tangentialebene projiziert: Es verteilt die Vertices gleichmäßiger,
     ohne die Form zu verlieren.
   - Randvertices sind fixiert; unter Symmetrie bleiben die Punkte auf der Ebene darauf.
-  - Ausführung als One-Shot über `_mesh_transaction(moved_of=…)`, mit Iterationen und Stärke als
+  - Antippen: One-Shot über `_mesh_transaction(moved_of=…)`, mit Iterationen und Stärke als
     Konstanten (P-5).
+  - **Haltetaste (Manu 2026-10-23):** `S` (Smooth) / `Alt+S` (Relax) gedrückt halten und die Maus
+    ziehen:
+    - Ziehen nach rechts erhöht die Stärke, über die Iterationen hinaus fortlaufend; nach links nimmt
+      sie wieder ab, bis 0.
+    - Die Positionen werden live aus dem Zustand beim Drücken berechnet.
+    - Journal: `begin_change` beim ersten Ziehen, `end_change` plus ein `MeshDeltaCommand` beim
+      Loslassen, `rollback_change` bei Esc. Antippen ohne Ziehen ist der One-Shot-Schritt.
+    - Gleiche Gates wie G (Loop Slide): nicht unter gehaltenem W/E/R/T, nicht in Modus `4`.
   - Rechnung in `src/core/operations/` als reine Funktion auf Positionen.
-- *Nicht-Scope:* Volumenerhalt (Forschungsfrage), Pinsel, Modal-Slider.
+- *Nicht-Scope:* Volumenerhalt (Forschungsfrage), Pinsel.
 - *Tests:* planares Grid (Relax verändert keine Normalenkomponente), Konvergenz, Rand fix, Undo, Symmetrie.
 
 ## 3. Praxistest für Manu (je Paket ca. 10–15 Minuten)
 
 - **A:**
-  - Grow/Shrink in V/E/F auf dem Kopf.
-  - Teil-Loop mit `Shift+↑/↓` verlängern (Stopp am Pol prüfen).
+  - Grow/Shrink (`Ctrl++` / `Ctrl+-`) in V/E/F auf dem Kopf.
+  - Teil-Loop mit `Shift+↑` verlängern und mit `Shift+↓` kürzen (Stopp am Pol prüfen).
   - Mit `Shift+←/→` über Gesicht und Arm wandern.
   - Box und Lasso mit `Alt+Z` an und aus auf sichtbaren Flächen.
 - **B:**
@@ -143,7 +161,7 @@ gesammelten Praxistest (§3).
   - Subdivide auf einer Face-Insel und auf dem ganzen Mesh.
 - **C:**
   - Umschalten World/Normal, an Wange und Nase in beiden Räumen bewegen und drehen.
-  - Relax und Smooth auf einem Loop-Bereich, mit SubD-Vorschau an.
+  - Relax und Smooth auf einem Loop-Bereich, mit SubD-Vorschau an: einmal antippen, einmal halten + ziehen.
 
 ## 4. Definition of Done (je Slice)
 

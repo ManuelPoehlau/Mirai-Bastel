@@ -147,6 +147,18 @@ LOOP_SLIDE = "LoopSlide"
 # Alt+E binding is gone. Face mode only.
 EXTRUDE = "Extrude"
 
+# --- Selection steps (WP Toolbox Gaps A1, Manu 2026-10-23; `mirai.topology.selection_steps`) ---
+# Global, like Shift+L / Shift+R: no History step (a selection change, like a click).
+# SELECT_GROW / SELECT_SHRINK: active mode V/E/F. LOOP_GROW / LOOP_SHRINK (Shift+Up / Shift+Down,
+# Manu): the open pieces of selected loop edges at both ends. LOOP_NEXT / LOOP_PREVIOUS
+# (Shift+Right / Shift+Left, Manu): the parallel loop on that screen side. Loop steps: edge mode.
+SELECT_GROW = "SelectGrow"
+SELECT_SHRINK = "SelectShrink"
+LOOP_GROW = "LoopGrow"
+LOOP_SHRINK = "LoopShrink"
+LOOP_NEXT = "LoopNext"
+LOOP_PREVIOUS = "LoopPrevious"
+
 # --- Soft Selection (WP-SOFT-01 S2a, AD-020; PROVISIONAL) --------------------------
 # State commands like the constraints: they start no interaction and change no mesh;
 # they set the sticky soft settings that the next gesture reads at begin(). Which input

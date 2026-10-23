@@ -201,6 +201,14 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("r", "shift"), cmd.EDGE_RING)
     bs.set_default(_key("i"), cmd.LOOP_INSERT)
     bs.set_default(_key("g"), cmd.LOOP_SLIDE)
+    # Selection steps (WP Toolbox Gaps A1): Shift+arrows = Manu 2026-10-23; Ctrl++ / Ctrl+-
+    # (main keys and keypad, both "plus" / "minus") = Blender's Select More / Less, PROVISIONAL.
+    bs.set_default(_key("plus", "ctrl"), cmd.SELECT_GROW)
+    bs.set_default(_key("minus", "ctrl"), cmd.SELECT_SHRINK)
+    bs.set_default(_key("up", "shift"), cmd.LOOP_GROW)
+    bs.set_default(_key("down", "shift"), cmd.LOOP_SHRINK)
+    bs.set_default(_key("right", "shift"), cmd.LOOP_NEXT)
+    bs.set_default(_key("left", "shift"), cmd.LOOP_PREVIOUS)
 
     # --- Knife session (WP-06 B7, AD-017; context "knife") ------------------
     # Artist Input Truth `topology.knife_commit` (Enter); Ctrl+Shift+Z is the

@@ -150,6 +150,7 @@ from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
 from .topology.knife_pick import knife_pick, snap_own_point, space_point
 from .topology.knife_preview import KnifeRenderData, build_knife_render_data
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
+from .topology import selection_steps
 from .topology.loop_slide import (
     LOOP_SLIDE_LABEL,
     LoopSlideRefused,
@@ -208,6 +209,16 @@ TWEAK_KEY = "LMB-tweak"
 
 #: 2026-10-15: the loop commands that run once on a key press (Shift+L, Shift+R, I).
 _LOOP_COMMANDS = (commands.EDGE_LOOP, commands.EDGE_RING, commands.LOOP_INSERT)
+
+#: WP Toolbox Gaps A1 (2026-10-23): the selection steps (`_selection_step`), once per press.
+_SELECTION_STEP_COMMANDS = (
+    commands.SELECT_GROW,
+    commands.SELECT_SHRINK,
+    commands.LOOP_GROW,
+    commands.LOOP_SHRINK,
+    commands.LOOP_NEXT,
+    commands.LOOP_PREVIOUS,
+)
 
 #: The transforms a Tweak can use (`tweak_command`).
 _TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
@@ -336,6 +347,7 @@ _COMPONENT_COMMANDS = frozenset(
         *_REMOVAL_COMMANDS,
         commands.SYMMETRY_CYCLE,
         *_LOOP_COMMANDS,
+        *_SELECTION_STEP_COMMANDS,
     }
 )
 
@@ -1543,7 +1555,7 @@ class Application:
         if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
             return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
         self._set_status(
-            "Object mode: T, G, I, C, Dissolve, Shift+L/R and Shift+S work on"
+            "Object mode: T, G, I, C, Dissolve, Shift+L/R, Shift+S, Shift+arrows and Ctrl+/- work on"
             " points/edges/faces"
             " - press 1/2/3 (Delete removes the selected objects)"
         )
@@ -1979,6 +1991,8 @@ class Application:
             return self._loop_select(command)
         if command == commands.LOOP_INSERT:
             return self._loop_insert()
+        if command in _SELECTION_STEP_COMMANDS:
+            return self._selection_step(command)
 
         return False
 
@@ -2305,6 +2319,129 @@ class Application:
         added = len(selection.edges) - before
         self._set_status(f"{label}: {len(selection.edges)} edges selected (+{added})")
         return True
+
+    # -- Selection steps (WP Toolbox Gaps A1, Manu 2026-10-23) ---------------------------
+    #
+    # Ctrl++ / Ctrl+- grow / shrink the selection in the active mode; Shift+Up / Shift+Down grow
+    # / shrink the selected loop pieces at both ends; Shift+Right / Shift+Left move them to the
+    # parallel loop on that screen side. Like Shift+L: a selection change, no History step;
+    # the loop steps need edge mode. Not mirrored under symmetry (no selection command is);
+    # `PROVISIONAL`.
+
+    def _selection_step(self, command: str) -> bool:
+        selection = self.selection
+        mesh = self.scene.mesh
+        mode = selection.mode
+        if command in (commands.SELECT_GROW, commands.SELECT_SHRINK):
+            label = "Grow" if command == commands.SELECT_GROW else "Shrink"
+            current = {
+                SelectionMode.VERTEX: selection.vertices,
+                SelectionMode.EDGE: selection.edges,
+                SelectionMode.FACE: selection.faces,
+            }[mode]
+            valid = {
+                SelectionMode.VERTEX: mesh.is_valid_vertex,
+                SelectionMode.EDGE: mesh.is_valid_edge,
+                SelectionMode.FACE: mesh.is_valid_face,
+            }[mode]
+            ids = {i for i in current if valid(i)}
+            if not ids:
+                self._set_status(f"{label}: nothing selected")
+                return False
+            step = selection_steps.grow if command == commands.SELECT_GROW else selection_steps.shrink
+            return self._apply_selection_step(label, step(mesh, mode, ids))
+        labels = {
+            commands.LOOP_GROW: "Loop grow",
+            commands.LOOP_SHRINK: "Loop shrink",
+            commands.LOOP_NEXT: "Next loop",
+            commands.LOOP_PREVIOUS: "Previous loop",
+        }
+        label = labels[command]
+        if mode is not SelectionMode.EDGE:
+            self._set_status(f"{label}: edge mode needed (2)")
+            return False
+        edges = {e for e in selection.edges if mesh.is_valid_edge(e)}
+        if not edges:
+            self._set_status(f"{label}: select edges of a loop")
+            return False
+        if command == commands.LOOP_GROW:
+            return self._apply_selection_step(label, selection_steps.loop_grow(mesh, edges))
+        if command == commands.LOOP_SHRINK:
+            return self._apply_selection_step(label, selection_steps.loop_shrink(mesh, edges))
+        return self._loop_shift(label, edges, rightwards=command == commands.LOOP_NEXT)
+
+    def _apply_selection_step(self, label: str, ids: set, note: str = "") -> bool:
+        selection = self.selection
+        before = _selection_state(selection)
+        selection.set(ids)
+        count = len(ids)
+        if _selection_state(selection) == before:
+            self._set_status(f"{label}: no change ({count} selected){note}")
+            return False
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        self._set_status(f"{label}: {count} selected{note}")
+        return True
+
+    def _loop_shift(self, label: str, edges: set[EdgeId], rightwards: bool) -> bool:
+        """Each loop piece moves to its parallel piece on the screen side asked for: right
+        (Shift+Right) or left; for a piece whose neighbours lie above / below each other on
+        screen, up counts as right. A piece without quads on that side stays."""
+        mesh = self.scene.mesh
+        out: set[EdgeId] = set()
+        stuck = 0
+        for piece in selection_steps.loop_pieces(mesh, edges):
+            sides = {
+                left: selection_steps.shifted_piece(mesh, piece, left) for left in (True, False)
+            }
+            left = self._screen_side(piece.edges, sides, rightwards)
+            target = sides[left]
+            if target is None:
+                stuck += 1
+                out.update(piece.edges)
+            else:
+                out.update(target)
+        note = f" - {stuck} piece(s) at a border or non-quad stayed" if stuck else ""
+        return self._apply_selection_step(label, out, note)
+
+    def _screen_side(self, piece_edges, sides: dict, rightwards: bool) -> bool:
+        """The winding side (`left` key of `sides`) that lies towards screen right / up when
+        `rightwards`, else the other one. Without a usable projection: right = the left side."""
+        centre = self._edges_screen_centre(piece_edges)
+        offsets = {}
+        if centre is not None:
+            for left, shifted in sides.items():
+                if shifted is None:
+                    continue
+                c = self._edges_screen_centre(shifted)
+                if c is not None:
+                    offsets[left] = (c[0] - centre[0], c[1] - centre[1])
+        if True in offsets and False in offsets:
+            dx = offsets[True][0] - offsets[False][0]
+            dy = offsets[True][1] - offsets[False][1]
+        elif offsets:
+            ((left, (dx, dy)),) = offsets.items()
+            if not left:
+                dx, dy = -dx, -dy
+        else:
+            dx = dy = 0.0
+        # (dx, dy): screen direction from the right-hand to the left-hand winding side.
+        along = dx if abs(dx) >= abs(dy) else dy
+        if abs(along) < 1e-6:
+            return rightwards
+        return (along > 0) == rightwards
+
+    def _edges_screen_centre(self, edge_ids) -> tuple[float, float] | None:
+        mesh = self.scene.mesh
+        vertices = {v for e in edge_ids for v in mesh.edge_vertices(e)}
+        if not vertices or self.viewport_width <= 0 or self.viewport_height <= 0:
+            return None
+        n = len(vertices)
+        x = sum(mesh.vertex_position(v)[0] for v in vertices) / n
+        y = sum(mesh.vertex_position(v)[1] for v in vertices) / n
+        z = sum(mesh.vertex_position(v)[2] for v in vertices) / n
+        return self._edit_camera.project_to_screen((x, y, z), self.viewport_width, self.viewport_height)
 
     def _loop_insert(self) -> bool:
         seeds = self._loop_seed_edges("Loop Insert")
@@ -3164,6 +3301,7 @@ class Application:
             command in (commands.CONNECT, commands.SYMMETRY_CYCLE)
             or command in _REMOVAL_COMMANDS
             or command in _LOOP_COMMANDS
+            or command in _SELECTION_STEP_COMMANDS
         ):
             # Wie die Modus-Tasten (B5b): C, Entf, Rücktaste und Shift+S werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;

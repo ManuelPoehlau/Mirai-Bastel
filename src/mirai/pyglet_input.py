@@ -66,6 +66,8 @@ def _key_map() -> dict[int, str]:
             # WP Delete/Dissolve: Entf und Rücktaste. Auf macOS liefert die
             # mit "delete" beschriftete Taste BACKSPACE, fn+delete DELETE.
             _key.BACKSPACE: "backspace", _key.DELETE: "delete",
+            # WP Toolbox Gaps A1: Ctrl++ / Ctrl+- (Grow / Shrink), main keys and keypad.
+            _key.PLUS: "plus", _key.NUM_ADD: "plus", _key.MINUS: "minus", _key.NUM_SUBTRACT: "minus",
         }
     return _KEY_MAP
 
@@ -103,7 +105,8 @@ def key_from_pyglet(symbol: int, modifiers: int) -> Input | None:
 
     Gibt `None` zurück, wenn `symbol` nicht im übernommenen Key-Set liegt
     (A–Z, 0–9, TAB, ESCAPE, SPACE, Pfeile, ENTER/Keypad-ENTER — WP-06 B7,
-    beide als `"enter"`; BACKSPACE/DELETE — WP Delete/Dissolve).
+    beide als `"enter"`; BACKSPACE/DELETE — WP Delete/Dissolve; `+`/`-` und
+    Keypad-`+`/`-` als `"plus"`/`"minus"` — WP Toolbox Gaps A1).
     """
     key_name = _key_map().get(symbol)
     if key_name is None:
