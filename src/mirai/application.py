@@ -4404,19 +4404,19 @@ class Application:
     # it is one History step, honours Soft Selection and Symmetry, and is refused where W/E/R is.
     # World frame only (normal space is not in the app); shown for point / edge / face selections of an
     # unplaced edit object, hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
+    # Object level (2026-10-23): in mode `4` it sits at the centroid of the selected non-Reference objects'
+    # world pivots and drives the object gesture (`_object_arm`, the same Tweak path), in the world camera.
 
     def _gizmo_pivot(self):
         """The selection's centroid (world), cached until the selection or the vertex positions change;
-        None when the gizmo is not shown: off, no viewport, Knife session, mode `4`, placed edit
-        object, nothing selected."""
+        None when the gizmo is not shown: off, no viewport, Knife session, placed edit object
+        (components), nothing selected. In mode `4` see `_gizmo_object_pivot`."""
         viewport = self.viewport
-        if (
-            not self.gizmo_enabled
-            or viewport is None
-            or self._knife is not None
-            or self.selection.mode is SelectionMode.OBJECT
-            or viewport.model_matrix is not None
-        ):
+        if not self.gizmo_enabled or viewport is None or self._knife is not None:
+            return None
+        if self.selection.mode is SelectionMode.OBJECT:
+            return self._gizmo_object_pivot()
+        if viewport.model_matrix is not None:
             return None
         ids = self._active_selection_ids()
         if not ids:
@@ -4430,6 +4430,33 @@ class Application:
         pivot = selection_pivot(mesh, vertex_ids) if vertex_ids else None
         self._gizmo_cache = (key, pivot)
         return pivot
+
+    def _gizmo_object_pivot(self):
+        """Mode `4`: the centroid of the selected objects' world pivots, References excluded (they are
+        locked, `_object_targets`); None when no movable object is selected. Cheap, so not cached."""
+        scene = self.scene
+        targets = [
+            scene.objects[oid]
+            for oid in self.selection.objects
+            if oid in scene.objects and scene.objects[oid].state is not ObjectState.REFERENCE
+        ]
+        if not targets:
+            return None
+        points = [object_space.to_world(obj, obj.pivot) for obj in targets]
+        return tuple(sum(p[i] for p in points) / len(points) for i in range(3))
+
+    @property
+    def _gizmo_camera(self):
+        """The camera the gizmo is drawn and picked with: the world camera at object level, else the
+        edit object's (components compute in its space)."""
+        return self.camera if self.selection.mode is SelectionMode.OBJECT else self._edit_camera
+
+    def gizmo_camera_uniforms(self) -> list[float]:
+        """The `view·model` + `proj` uniforms `draw_gizmo` needs: world at object level, the edit
+        object's overlay matrices for components."""
+        if self.selection.mode is SelectionMode.OBJECT:
+            return self.viewport.world_camera_uniforms()
+        return self.viewport.overlay_camera_uniforms()
 
     def _gizmo_pivot_if_shown(self):
         """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down or any drag gesture runs."""
@@ -4452,7 +4479,7 @@ class Application:
         pivot = self._gizmo_pivot_if_shown()
         if pivot is None:
             return []
-        camera = self._edit_camera
+        camera = self._gizmo_camera
         hover = None
         if self._cursor is not None and not self.pointer.active:
             hover = self._gizmo_handle_at(*self._cursor, pivot=pivot)
@@ -4463,7 +4490,7 @@ class Application:
         if pivot is None:
             return None
         return _gizmo.pick_handle(
-            self._edit_camera, pivot, _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES, self.gizmo_tool, x, y,
+            self._gizmo_camera, pivot, _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES, self.gizmo_tool, x, y,
             int(self.viewport_width), int(self.viewport_height),
         )
 

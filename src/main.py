@@ -178,6 +178,8 @@ Scope (binding, see the handoffs):
   selection a world-axis gizmo is drawn at its centroid (`draw_gizmo`), shaped for the current tool (the last W/E/R).
   LMB on a handle sets the constraint, LMB drag runs the tool along it, release commits, Esc cancels. All in
   `Application` (`gizmo_enabled` is set here only).
+  Object level (2026-10-23, `PROVISIONAL`): in mode `4` the same gizmo sits at the centroid of the selected
+  Normal objects' pivots (Reference: none) and drives the object gesture along the world axes.
 - SubD preview (2026-10-23, `PROVISIONAL` keys, `mirai.subdivision`, promoted from the SubD Lab): V cycles
   off → smooth surface + cage → smooth surface + isolines, Ctrl+1/2/3 the level (start 2), Shift+V the cage's
   depth (hidden by the surface / always visible), Alt+V the opacity of the cage in the isoline view; in a SubD
@@ -568,7 +570,7 @@ def install_handlers(
         app.viewport.render()
         gizmo = app.gizmo_items()
         if gizmo:
-            draw_gizmo(gizmo, app.viewport.overlay_camera_uniforms())
+            draw_gizmo(gizmo, app.gizmo_camera_uniforms())
         box = app.selection_box
         if box is not None:
             draw_selection_box(box)

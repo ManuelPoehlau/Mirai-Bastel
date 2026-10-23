@@ -391,6 +391,11 @@ class Viewport:
         if self.surface_render_mesh is not None:
             self.surface_render_mesh.set_model_matrix(self.model_matrix)
 
+    def world_camera_uniforms(self) -> list[float]:
+        """`view` + `proj` without a model matrix: for overlays whose points are already world
+        coordinates (the object-level gizmo)."""
+        return self.render_mesh._camera_uniforms()
+
     def overlay_camera_uniforms(self) -> list[float]:
         """Die Kamera-Uniforms der Overlays des Edit-Objekts: `view·model` + `proj`."""
         uniforms = self.render_mesh._camera_uniforms()
