@@ -107,7 +107,7 @@ def test_it_is_shown_for_a_point_edge_or_face_selection_only(app):
     assert app.gizmo_items() == []  # nothing selected
     vid, _ = _select_center(app)
     assert app.gizmo_items()
-    app.key_press(K4)  # object mode: no component gizmo
+    app.key_press(K4)  # object mode: no component gizmo, and no object selected
     assert app.gizmo_items() == []
 
 
@@ -238,3 +238,102 @@ def test_a_press_with_a_modifier_on_a_handle_is_not_taken(app):
     app.pointer_press(_mouse("LEFT", "shift"), *point)
     app.pointer_release("LEFT", *point)
     assert app.gizmo_constraint is None
+
+
+# -- object level (2026-10-23): mode `4` shows the gizmo at the selected objects ----------------
+
+
+def _object_selected(app, *, translation=(0.0, 0.0, 0.0)):
+    """Mode `4` with one extra Normal object selected; the grid stays the edit object."""
+    from core import ObjectTransform
+
+    obj = app.add_primitive("cube", name="box")  # mode 4, selected
+    obj.transform = ObjectTransform(translation=translation)
+    app._placement_changed()
+    return obj
+
+
+def test_the_object_gizmo_sits_at_the_selected_objects_world_pivot(app):
+    assert app.gizmo_items() == []
+    obj = _object_selected(app, translation=(2.0, 1.0, 0.0))
+    assert app.gizmo_items()[0].positions[:3] == pytest.approx((2.0, 1.0, 0.0))
+    app.selection.objects = set()
+    assert app.gizmo_items() == []  # nothing selected
+    app.selection.objects = {obj.id}
+    other = app.add_primitive("sphere", name="ball")
+    app.selection.objects = {obj.id, other.id}
+    assert app.gizmo_items()[0].positions[:3] == pytest.approx((1.0, 0.5, 0.0))  # centroid of both pivots
+
+
+def test_the_object_gizmo_is_hidden_for_a_reference_and_during_the_gesture(app):
+    ref = app.add_reference("cube", name="guide")
+    app.key_press(K4)
+    app.selection.objects = {ref.id}
+    assert app.gizmo_items() == []  # locked: nothing to drive
+    obj = _object_selected(app)
+    assert app.gizmo_items()
+    app.key_press(W)
+    assert app.gizmo_items() == []
+    app.key_release(W)
+    assert obj.id in app.selection.objects
+
+
+def test_the_object_gizmo_is_drawn_in_world_even_when_the_edit_object_is_placed(app):
+    from core import ObjectTransform
+
+    app.scene.edit_object.transform = ObjectTransform(translation=(5.0, 0.0, 0.0))
+    app._placement_changed()
+    _object_selected(app)
+    assert app.gizmo_items()  # the component gizmo would be hidden for a placed edit object
+    assert app.gizmo_camera_uniforms() == app.viewport.render_mesh._camera_uniforms()
+    app.key_press(K1)
+    assert app.gizmo_items() == []  # components: hidden for the placed edit object, as before
+
+
+def test_a_handle_drag_moves_the_object_along_the_axis_in_one_undo_step(app):
+    obj = _object_selected(app)
+    mesh_state = obj.mesh.export_state()
+    pivot = (0.0, 0.0, 0.0)
+    start = _on_handle(app, pivot, (0.0, 1.0, 0.0))
+    depth = len(app.history)
+    assert _drag(app, _mouse("LEFT"), start, (0.0, -60.0)) is True
+    x, y, z = obj.transform.translation
+    assert x == pytest.approx(0.0) and z == pytest.approx(0.0) and y != pytest.approx(0.0)
+    assert app.gizmo_constraint == "y"
+    assert obj.id in app.selection.objects and app.selection.mode.name == "OBJECT"
+    assert len(app.history) == depth + 1
+    assert obj.mesh.export_state() == mesh_state  # object level writes the placement only
+    app.history.undo()
+    assert obj.transform.translation == (0.0, 0.0, 0.0)
+
+
+def test_esc_during_an_object_handle_drag_restores_the_placement_without_history(app):
+    obj = _object_selected(app)
+    start = _on_handle(app, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    depth = len(app.history)
+    _drag(app, _mouse("LEFT"), start, (50.0, 0.0), release=False)
+    assert obj.transform.translation != (0.0, 0.0, 0.0)
+    assert app.key_press(ESC) is True
+    assert obj.transform.translation == (0.0, 0.0, 0.0)
+    app.pointer_release("LEFT", start[0] + 50.0, start[1])
+    assert len(app.history) == depth and obj.transform.translation == (0.0, 0.0, 0.0)
+
+
+def test_a_click_on_an_object_handle_sets_the_constraint_and_keeps_the_object_selection(app):
+    obj = _object_selected(app)
+    point = _on_handle(app, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    app.pointer_motion(*point)
+    app.pointer_press(_mouse("LEFT"), *point)
+    app.pointer_release("LEFT", *point)
+    assert app.gizmo_constraint == "x"
+    assert app.selection.objects == {obj.id}
+
+
+def test_the_object_gizmo_follows_the_last_tool_scale(app):
+    obj = _object_selected(app)
+    app.key_press(R)
+    app.key_release(R)  # tap: only sets the tool
+    assert app.gizmo_tool == "scale"
+    start = _on_handle(app, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    _drag(app, _mouse("LEFT"), start, (60.0, 0.0))
+    assert obj.transform.scale != pytest.approx(1.0)
