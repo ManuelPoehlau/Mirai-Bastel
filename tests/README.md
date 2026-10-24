@@ -24,6 +24,8 @@ python -m tests.test_core
 python -m pytest tests -q
 ```
 
+Teststrategie und Umfang pro Änderung: `AGENTS.md` §8a (einzige Quelle).
+
 `test_extrude_tool.py` (historischer V1-Experimenttest, veralteter Importpfad) ist seit
 2026-10-09 nach `tests/_archive/test_extrude_tool_v1_obsolete.py` archiviert und
 über `pytest.ini` (`norecursedirs`) von allen Läufen ausgenommen. Das
@@ -43,7 +45,7 @@ Production-Extrude (seit WP-06 B9, `mirai.topology.extrude`, Taste `T` gehalten)
 | `test_scene_serialization.py` | E | Dict-/JSON-Roundtrip nach Mutationen, Allocator, Kollisionen, Versionsprüfung |
 | `test_core.py` | — | Architekturverträge AD-001/002/003, Basis-Serialisierung |
 
-Die Tabelle zeigt nur die Core-Hardening-Module. Seitdem sind Tests für Application/Interaction (`test_application_*.py`, `test_tool_lifecycle.py`, `test_input_binding.py`), Kamera/Picking (`test_camera.py`, `test_application_picking_cache.py`), Mesh-Geometrie und die Topologie-Capabilities (Contextual C, Knife) dazugekommen — Stand 2026-09-29 insgesamt 61 `test_*.py`-Module in `tests/`. Der Artist Playground hat einen eigenen Testbaum: `playground/tests/` (Ausführung: `python -m pytest playground/tests`).
+Die Tabelle zeigt nur die Core-Hardening-Module. Seitdem sind Tests für Application/Interaction (`test_application_*.py`, `test_tool_lifecycle.py`, `test_input_binding.py`), Kamera/Picking (`test_camera.py`, `test_application_picking_cache.py`), Mesh-Geometrie und die Topologie-Capabilities (Contextual C, Knife) dazugekommen — heute der größte Teil der Suite. Welche Tests wann laufen (Standardlauf, Knife-Orakel, Labs): `AGENTS.md` §8a.
 | `test_history_contract.py` | WP-04 | HistoryStack-Vertrag (No-op-undo/redo, Redo-Zweig-Verwerfen, LIFO) — separat ausführbar |
 | `test_operation_lifecycle.py` | WP-04 | Operation-Lifecycle-Guards (AD-003: begin/update/commit/cancel-State-Machine, History-Grenzen, No-op/Boundary) — separat ausführbar |
 

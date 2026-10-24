@@ -5,8 +5,7 @@ Since SS2 the combination runs: symmetric Soft (weights and categories from
 The settings are still read at `begin()` (review F2), so W armed → O → motion runs symmetric Soft
 too, and the refusal that remains (D-2, a seed without partner) comes from there.
 The soft ops have no symmetry backstop any more (`supports_symmetry` is the Core op's `True`).
-The Symmetry Lab's MARK/BLOCK variants are in
-`experiments/symmetry_lab/tests/test_app_lab_soft_selection.py`.
+The Symmetry Lab's MARK/BLOCK variants went with the Lab (removed 2026-10-24).
 
 Mesh: two quads mirrored at x = 0 (as `test_application_symmetry.py`), shared seam edge on the plane.
 """

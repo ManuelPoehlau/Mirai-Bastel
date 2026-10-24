@@ -81,3 +81,11 @@ Decisions and consequences (Manu, 2026-10-21, all implemented in the same change
   topic (`docs/future_ideas/`).
 - The remaining variant families (presentation, selection, transform, tweak, connect, topology) are *candidates* for
   archiving; that is a separate, later step.
+
+## Addendum — 2026-10-24: Playground removed (Manu, consolidation)
+
+The "separate, later step" above is taken: `playground/` is removed together with its tests (Manu's decision,
+2026-10-24). Nothing in `src/` or `tests/` imported it; the gizmo's normal-space frames are in the app since the
+WP Toolbox Gaps C1 orientation (`K`). Articulation (EX-A) and the shadow-map study are not carried over; the note in
+`docs/future_ideas/MODELING.md` names the commit with their last state (`61ebe77`). README, MANUAL and family decisions:
+`docs/archive/experiments_2026-10/playground/`.

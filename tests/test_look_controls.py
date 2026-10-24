@@ -56,7 +56,7 @@ def _select_row(app: Application, row_id: str) -> None:
         assert app.key_press(DOWN) is True
 
 
-# -- rows (parity with the Shading Lab: experiments/viewport_shading_lab/tests/test_production_look_parity.py)
+# -- rows (formerly held in parity with the Shading Lab, removed 2026-10-24)
 
 
 def test_rows_in_the_lab_order():

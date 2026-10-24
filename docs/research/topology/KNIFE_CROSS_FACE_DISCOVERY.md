@@ -8,7 +8,7 @@ unchanged before discussion (AGENTS.md §6).
 point; not repeated here) · `docs/research/topology/KNIFE_FACE_DECISIONS.md` (Variant D = KEEP, 2026-09-29) ·
 Artist intent A5 (2026-09-28) · ARCH-02 (`docs/architecture/ROADMAP.md`)
 **Code examined:** `main` @ `52d52b8` (Knife Face Cut Lab, Variants B/D)
-**Probe:** [`experiments/topology/knife_cross_face_probe.py`](../../../experiments/topology/knife_cross_face_probe.py)
+**Probe:** `experiments/topology/knife_cross_face_probe.py` (removed 2026-10-24, last state in commit `61ebe77`)
 (public Core API + existing read-only helpers; drives Variant D's engine through `click()`/`commit()`;
 no Core, Production or Lab change)
 

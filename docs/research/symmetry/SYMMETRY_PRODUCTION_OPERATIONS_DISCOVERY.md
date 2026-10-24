@@ -10,7 +10,7 @@ open questions and say so. Code refs are `file:line` at this commit.
 **Read first:** `AGENTS.md`, `CLAUDE.md`, `AD-SYM-01`, `AD-SYM-02`, `AD-017`, `AD-013` addendum H2,
 `WP_DELETE_DISSOLVE_PLAN.md`, `SYMMETRY_DESIGN_BRIEF.md` (INV-1…13), `SYMMETRY_TOPOLOGY_OPERATIONS_RESEARCH.md`,
 `WP-SYM-LAB-03_REBASE_PLAN.md`, `ONE_KNIFE_PROMOTION_DISCOVERY.md`.
-**Probe:** [`experiments/topology/symmetry_ops_probe.py`](../../../experiments/topology/symmetry_ops_probe.py)
+**Probe:** `experiments/topology/symmetry_ops_probe.py` (removed 2026-10-24, last state in commit `61ebe77`)
 (read-only, in-memory; `python experiments/topology/symmetry_ops_probe.py`). Its partner helpers are local
 stand-ins to ask "is it derivable?", not proposed `src/` code.
 **Baseline:** `pytest tests --ignore=tests/test_extrude_tool.py` → 1665 passed, 8 skipped.

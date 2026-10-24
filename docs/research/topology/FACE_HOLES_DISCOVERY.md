@@ -8,7 +8,7 @@ unchanged before discussion (AGENTS.md §6). Possible later Type C gate (archite
 `docs/research/topology/KNIFE_FACE_DECISIONS.md` (task 5, closed-shape stand-in) · ARCH-02
 (`docs/architecture/ROADMAP.md`) · `docs/architecture/CORE_V1_FREEZE.md` §7
 **Code examined:** `ccr-d8697d4f-6z4f4f` @ `3a7576e` (= Knife Face Cut Lab)
-**Probe:** [`experiments/topology/face_holes_probe.py`](../../../experiments/topology/face_holes_probe.py)
+**Probe:** `experiments/topology/face_holes_probe.py` (removed 2026-10-24, last state in commit `61ebe77`)
 (public Core API + existing read-only consumers; no Core change, no Lab change)
 
 > This document answers Q1–Q5 of the Face Holes discovery brief. It makes no product decision and no

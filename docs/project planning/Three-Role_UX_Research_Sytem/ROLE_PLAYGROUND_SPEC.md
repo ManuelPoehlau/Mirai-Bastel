@@ -32,7 +32,7 @@ You do not own production architecture or invent final shortcuts without a resea
 
 Use:
 
-`docs/design/artist_playground/UX_RESEARCH.md`
+`docs/design/UX_RESEARCH.md`
 
 The shared Experiment Host model and terminology are defined in:
 

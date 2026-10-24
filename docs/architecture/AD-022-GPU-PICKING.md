@@ -24,8 +24,8 @@ reference PC is the only machine until a modern one is bought in the coming mont
 morph targets on very dense meshes is acceptable ([REFERENCE_HARDWARE](REFERENCE_HARDWARE.md) §3).
 **Basis (only linked):** [`experiments/drag_cost/README.md`](../../experiments/drag_cost/README.md) ("Result: fix
 slice 2", "Haltepunkt: what Blender-level fluidity on 20k would need");
-[`experiments/gpu_picking_spike/README.md`](../../experiments/gpu_picking_spike/README.md) and its raw outputs
-[`RESULTS_REFERENCE_PC_2026-10-20.md`](../../experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md) (the
+[`experiments/gpu_picking_spike/README.md`](../archive/experiments_2026-10/gpu_picking_spike/README.md) and its raw outputs
+[`RESULTS_REFERENCE_PC_2026-10-20.md`](../archive/experiments_2026-10/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md) (the
 evidence below);
 [`VIEWPORT_V02_ARCHITECTURE.md`](../viewport/VIEWPORT_V02_ARCHITECTURE.md) §1 (non-goals), §4.6, §11;
 [AD-018](AD-018-PRODUCTION-DRAW-BINDING.md); [REFERENCE_HARDWARE](REFERENCE_HARDWARE.md) §2, §4;
@@ -282,7 +282,7 @@ Priority and feel, no technical choice (the technical choice stays with engineer
 
 - **Before choosing B1 vs B2:** one reference-PC run that `gl_PrimitiveID` gives exactly the B1 face IDs per pixel
   (the review's probe P2 is that check, about a minute to run), and the AD-018 placement decision (B2-in vs B2-out).
-  The check now exists as a script: [`experiments/topology_stage2_delete/check_b2.py`](../../experiments/topology_stage2_delete/check_b2.py)
+  The check now exists as a script: `experiments/topology_stage2_delete/check_b2.py` (removed 2026-10-24, last state in commit `61ebe77`)
   (B2-out, built 2026-10-21 for the AD-023 stage-2 Delete prototype; also after a patched Delete with degenerate
   triangles and its Undo, plus the point pass, CPU agreement and pick cost). Container [C]: exact on every pixel;
   the ID vertex shader must use the production expression `u_proj * u_view * (u_model * p)` (another association

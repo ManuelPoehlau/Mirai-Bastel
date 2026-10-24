@@ -22,7 +22,7 @@ The user remains the **director / synthesis point**. Findings from the three rol
 
 The common UX knowledge lives in:
 
-`docs/design/artist_playground/UX_RESEARCH.md`
+`docs/design/UX_RESEARCH.md`
 
 The common experiment infrastructure is documented in:
 

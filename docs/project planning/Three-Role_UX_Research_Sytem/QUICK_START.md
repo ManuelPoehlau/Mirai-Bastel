@@ -33,7 +33,7 @@ Then give each role the same core context:
 ```text
 We are researching Mirai-Bastel's artist interaction language.
 The shared research document is:
-  docs/design/artist_playground/UX_RESEARCH.md
+  docs/design/UX_RESEARCH.md
 
 The goal is to discover interaction principles before finalizing
 individual keyboard and mouse bindings.
@@ -172,7 +172,7 @@ UNKNOWN is a valid result. Do not force a decision just to keep moving.
 
 If the finding changes our understanding of Mirai's interaction language, update:
 
-`docs/design/artist_playground/UX_RESEARCH.md`
+`docs/design/UX_RESEARCH.md`
 
 A useful finding has the form:
 
@@ -284,7 +284,7 @@ No giant UX architecture. No final shortcut map. No production refactor just bec
 
 Shared research:
 
-`docs/design/artist_playground/UX_RESEARCH.md`
+`docs/design/UX_RESEARCH.md`
 
 Experiment infrastructure:
 

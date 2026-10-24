@@ -26,7 +26,7 @@ The empirical Playground result is especially important, but it is not a replace
 
 The central research document is:
 
-**`docs/design/artist_playground/UX_RESEARCH.md`**
+**`docs/design/UX_RESEARCH.md`**
 
 It is the shared idea/research space for the interaction language. Tweak is one research subject inside it, not the organizing principle of the whole system.
 
@@ -181,6 +181,6 @@ That means the artist learns reusable interaction principles instead of memorizi
 - `ROLE_UX_RESEARCHER.md` — research role prompt
 - `ROLE_INTERACTION_DEV.md` — implementation/prototyping role prompt
 - `ROLE_PLAYGROUND_SPEC.md` — experiment/validation role prompt
-- `docs/design/artist_playground/UX_RESEARCH.md` — shared UX research / idea space
+- `docs/design/UX_RESEARCH.md` — shared UX research / idea space
 
 **Last aligned:** 2026-09-12

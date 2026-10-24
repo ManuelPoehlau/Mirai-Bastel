@@ -5,7 +5,7 @@
 eingetragen). KEEP ist keine Festlegung der Tasten als Artist Input Truth. Gebaut, automatisch getestet und im
 Container gemessen. Die Richtung hat Manu freigegeben ("SubD gehört in den Production-Modeller", Käfig, Isolinien und
 Highlight als eine zusammenhängende Darstellung); Tasten, Stufen-Default, Limit und Look sind `PROVISIONAL`.
-Herkunft: das SubD Lab ([`experiments/subdivision_lab/`](../../../experiments/subdivision_lab/README.md),
+Herkunft: das SubD Lab ([`experiments/subdivision_lab/`](../../../docs/archive/experiments_2026-10/subdivision_lab/README.md),
 WP-SUBD-LAB-01/02) — der Evaluator ist von dort **verschoben**, nicht kopiert; das Lab nutzt jetzt diesen Code.
 
 ## Für Manu (Deutsch)

@@ -7,12 +7,13 @@ This directory contains the durable project knowledge that should survive indivi
 | Area | Purpose |
 |---|---|
 | [Atelier](ATELIER.md) | Artist-Übersicht: Stand, offene Verdikte, nächste Kandidaten (Index, Deutsch) |
+| [Roadmap](architecture/ROADMAP.md) | Canonical roadmap and work packages |
 | [Architecture](architecture/README.md) | Current system boundaries, accepted architectural direction and V1 decisions |
 | [Design](design/README.md) | Interaction and workflow principles |
 | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |
 | [Research](research/README.md) | Historical and technical investigation |
 | [Archive](archive/README.md) | Historical reviews and superseded working material |
-| [Viewport](viewport/VIEWPORT_V02_ARCHITECTURE.md) | Viewport v0.2 architecture and research (`viewport/`) |
+| [Viewport](viewport/VIEWPORT_V02_ARCHITECTURE.md) | Viewport v0.2 architecture (binding spec of `src/viewport`) and research (`viewport/`) |
 | [Reusable Development Prompts](DEVELOPMENT_PROMPTS.md) | General prompts for recurring software-development tasks across projects |
 
 ## Important distinction
@@ -32,6 +33,13 @@ When documents overlap, the canonical document wins. Other documents should link
 WP-04 (Production foundation, Gates 1–7 — done, see [ROADMAP](architecture/ROADMAP.md)), the early WP-01/WP-02 packages
 and the September audits were moved out of the docs root into [archive/early_work_packages/](archive/early_work_packages/)
 and [archive/audits_2026-09/](archive/audits_2026-09/). They are project memory, not current guidance.
+
+## Consolidation (2026-10-24)
+
+The Playground, the Symmetry / SubD / Shading Labs and the experiments whose results are in `src/` were removed (list
+and last commit: [experiments/README.md](../experiments/README.md)). Their docs, the finished Claude Code handoffs from
+`architecture/` and the Playground design docs are in [archive/experiments_2026-10/](archive/experiments_2026-10/) and
+[archive/handoffs_2026-10/](archive/handoffs_2026-10/).
 
 ## Work Packages
 

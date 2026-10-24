@@ -23,7 +23,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | Decision | Topic | Status (per document) |
 |---|---|---|
 | [AD-004](AD-004-SYSTEM-VISION-REEVALUATION.md) | System vision re-evaluation | Accepted architectural guidance |
-| [AD-005](../../experiments/rigging-skinning-morphing/src/AD-005-RIGGING-INTEGRATION.md) | Rigging integration (lives in the rigging experiment) | see document |
+| [AD-005](AD-005-RIGGING-INTEGRATION.md) | Rigging integration (lives in the rigging experiment) | see document |
 | [AD-006](AD-006-V1-VIEWPORT-RETIREMENT.md) | V1 viewport retirement | DECIDED |
 | [AD-007](AD-007-SHARED-ASSET-LOADER-OWNERSHIP.md) | Shared asset & loader ownership | DECIDED |
 | [AD-008](AD-008-IMPORT-FRAMING-PRODUCTION.md) | Import, mesh geometry queries, camera framing become production capabilities | DECIDED |
@@ -50,7 +50,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) | Weighted transforms in the Core: the one Core change of symmetric Soft Selection (slice SS1), P-a seam category, R-6 at pair level | DECIDED (2026-10-14): reviewed, go for SS1 |
 | [ADR-001](../ADR-001-core-v1-reassessment.md) | Core V1 reassessment | Accepted |
 
-Production entry point and integration: [Stage A](PRODUCTION_ENTRY_POINT_STAGE_A.md), [WP-06 Stage B kickoff](WP-06_STAGE_B_KICKOFF.md).
+Production entry point and integration: [Stage A](PRODUCTION_ENTRY_POINT_STAGE_A.md), [WP-06 Stage B kickoff](../archive/handoffs_2026-10/WP-06_STAGE_B_KICKOFF.md).
 
 ## Responsibility boundaries
 

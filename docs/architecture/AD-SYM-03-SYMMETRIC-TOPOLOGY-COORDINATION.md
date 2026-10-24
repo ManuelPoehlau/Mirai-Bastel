@@ -16,9 +16,9 @@ The AD-013 H2 amendment (G-2), required before Slice 3 (§5, §7), is **DECIDED*
 [`WP_DELETE_DISSOLVE_PLAN.md`](../WP_DELETE_DISSOLVE_PLAN.md) (DD-2),
 [`SYMMETRY_DESIGN_BRIEF.md`](../research/symmetry/SYMMETRY_DESIGN_BRIEF.md) (INV-1…13),
 [`SYMMETRY_TOPOLOGY_OPERATIONS_RESEARCH.md`](../research/symmetry/SYMMETRY_TOPOLOGY_OPERATIONS_RESEARCH.md) (R2),
-[`WP-SYM-LAB-03_REBASE_PLAN.md`](WP-SYM-LAB-03_REBASE_PLAN.md), [`experiments/symmetry_lab/README.md`](../../experiments/symmetry_lab/README.md)
-**Probes:** [`experiments/topology/symmetry_ops_probe.py`](../../experiments/topology/symmetry_ops_probe.py) (Disc.)
-and, new for this AD, [`experiments/topology/symmetry_coordination_probe.py`](../../experiments/topology/symmetry_coordination_probe.py)
+[`WP-SYM-LAB-03_REBASE_PLAN.md`](../archive/handoffs_2026-10/WP-SYM-LAB-03_REBASE_PLAN.md), [`experiments/symmetry_lab/README.md`](../archive/experiments_2026-10/symmetry_lab/README.md)
+**Probes:** `experiments/topology/symmetry_ops_probe.py` (removed 2026-10-24, last state in commit `61ebe77`) (Disc.)
+and, new for this AD, `experiments/topology/symmetry_coordination_probe.py` (removed 2026-10-24, last state in commit `61ebe77`)
 (read-only, in-memory; `python experiments/topology/symmetry_coordination_probe.py`).
 
 **Question:** How does Symmetry *coordinate* the existing topology operations (Split, Edge/Vertex Connect,
@@ -886,7 +886,7 @@ needs. **Slices 6a, 6b and 6c built** (10.8; 6c as built: **KEEP**, Manu, 2026-1
 **Basis:** [Knife Discovery](../research/symmetry/SYMMETRY_KNIFE_DISCOVERY.md) (KD) §1.3, §1.4, §2, §3, §6, §7; the
 independent review [CLAUDE-001](../archive/symmetry_lab/reviews/SYMMETRY_KNIFE_DISCOVERY_REVIEW_CLAUDE_001.md) (R;
 ACCEPT WITH CHANGES, blocker B1; archived, not edited; answered in KD §7); Manu's answers of 2026-10-09 (KD §6).
-**Probe:** [`experiments/topology/symmetry_knife_probe.py`](../../experiments/topology/symmetry_knife_probe.py), section
+**Probe:** `experiments/topology/symmetry_knife_probe.py` (removed 2026-10-24, last state in commit `61ebe77`), section
 KC (K-C+clip). **Read at:** `main` @ `fe040f1`.
 
 ### 10.1 Problem

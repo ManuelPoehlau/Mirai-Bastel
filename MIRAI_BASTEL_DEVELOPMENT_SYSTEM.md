@@ -35,11 +35,11 @@ Das meiste ist vorhanden und wird nicht ersetzt. Dieses Dokument verbindet die T
 |---|---|
 | Intent / Vision | `docs/architecture/PROJECT_VISION_AND_V1_PRINCIPLE.md`, AD-004 |
 | Entscheidungen | AD-001, AD-004, AD-005, AD-006, AD-007, AD-008, AD-009, AD-010, AD-011, ADR-001 (append-only) |
-| Architektur-Realität | `docs/architecture/SOURCE_ARCHITECTURE.md`, `CORE_API_AUDIT.md` |
+| Architektur-Realität | `docs/architecture/SOURCE_ARCHITECTURE.md` (das frühere `CORE_API_AUDIT.md` des Rigging-Experiments liegt in `docs/archive/experiments_2026-10/rigging-skinning-morphing/`) |
 | Reifegrad-Grenze | `experiments/` ↔ `src/core` ↔ `src/mirai` (strukturell, nicht dokumentarisch) |
 | Technische Wahrheit | Tests, Gates, Fehlerregel in `tests/README.md` |
 | Erkenntnisdisziplin | FINDINGS-Praxis: leer starten, Observation ≠ Interpretation, Mechanical ≠ Semantic |
-| Artist-Wahrheit (Interaction) | Three-Role UX System, `docs/design/artist_playground/UX_RESEARCH.md` |
+| Artist-Wahrheit (Interaction) | Three-Role UX System, `docs/design/UX_RESEARCH.md` |
 | Agent-Regeln | `AGENTS.md` |
 
 ---
@@ -209,7 +209,7 @@ Workflow und dem, was nur sein Referenz-PC zeigt. Details: AGENTS.md §7a.
 
 ## 6. Das Three-Role UX System
 
-Bleibt unverändert. Es behält seinen eigenen Wissensspeicher (`docs/design/artist_playground/UX_RESEARCH.md`), seine drei Rollen und seine eigene Schleife.
+Bleibt unverändert. Es behält seinen eigenen Wissensspeicher (`docs/design/UX_RESEARCH.md`), seine drei Rollen und seine eigene Schleife.
 
 Für Artist-/UX-/Interaction-Research ist das [Three-Role UX Research System](docs/project%20planning/Three-Role_UX_Research_Sytem/README.md) die derzeit vorgesehene spezialisierte Arbeitsmethode innerhalb von M4.
 
@@ -323,5 +323,5 @@ Der nächste Schritt ist nicht, es weiter zu verbessern. Der nächste Schritt is
 - `AGENTS.md` — repository-weite Agentenregeln (sollte auf dieses Dokument verweisen)
 - `docs/architecture/PROJECT_VISION_AND_V1_PRINCIPLE.md` — Intent
 - `docs/architecture/SOURCE_ARCHITECTURE.md` — Architektur-Realität
-- `docs/design/artist_playground/UX_RESEARCH.md` — UX-Subsystem, erste M4-Instanz
+- `docs/design/UX_RESEARCH.md` — UX-Subsystem, erste M4-Instanz
 - `tests/README.md` — Fehler-Entscheidungsregel

@@ -13,7 +13,7 @@ the Knife record [`knife_face/decision.md`](../topology/KNIFE_FACE_DECISIONS.md)
 [`SYMMETRY_DESIGN_BRIEF.md`](SYMMETRY_DESIGN_BRIEF.md) (INV-1…13),
 [`SYMMETRY_PRODUCTION_OPERATIONS_DISCOVERY.md`](SYMMETRY_PRODUCTION_OPERATIONS_DISCOVERY.md) (cited as **Disc.**, not edited),
 [`SYMMETRY_TOPOLOGY_OPERATIONS_RESEARCH.md`](SYMMETRY_TOPOLOGY_OPERATIONS_RESEARCH.md) (R2).
-**Probe:** [`experiments/topology/symmetry_knife_probe.py`](../../../experiments/topology/symmetry_knife_probe.py) —
+**Probe:** `experiments/topology/symmetry_knife_probe.py` (removed 2026-10-24, last state in commit `61ebe77`) —
 read-only, headless, in-memory, no `pyglet`, no file writes:
 `python experiments/topology/symmetry_knife_probe.py` (all sections, fixed seed `20261008`, 500 camera-free fuzz paths
 per asset; `--quick` for a smoke run). All numbers below are from one run of that command (§1.3).

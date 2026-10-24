@@ -2,7 +2,7 @@
 
 **Status:** `RESOLVED — Production `OrbitCamera` corrected` (siehe Update 2026-09-12)
 **Date:** 2026-09-10 (investigation), resolved 2026-09-12
-**Trigger:** Erste Artist-Tests im [`playground/`](../../../playground/README.md) (Branch `experiment/artist-playground-v1`, WP-AP-01) haben den technischen Befund sichtbar gemacht.
+**Trigger:** Erste Artist-Tests im [`playground/`](../../archive/experiments_2026-10/playground/README.md) (Branch `experiment/artist-playground-v1`, WP-AP-01) haben den technischen Befund sichtbar gemacht.
 
 > **Update 2026-09-12 (Auflösung):** Commit `bbeef97` ("docs/core(viewport): reconcile production
 > architecture and camera convention") hat `src/mirai/viewport/camera.py` geändert:
@@ -101,7 +101,7 @@ geclippt. Detaillierter Nachweis inkl. Zeilen: [§A.1 des Reconciliation-Audits]
 - `OrbitCamera` wurde **nicht** in diesem Investigation-Task, sondern in einem separaten, späteren
   Schritt (`bbeef97`, 2026-09-12) korrigiert — siehe Update oben.
 - `PlaygroundRenderer` bleibt gemäß
-  [`docs/design/artist_playground/ARCHITECTURE_MAP.md`](../../design/artist_playground/ARCHITECTURE_MAP.md)
+  [`docs/design/artist_playground/ARCHITECTURE_MAP.md`](../../archive/experiments_2026-10/artist_playground_design/ARCHITECTURE_MAP.md)
   ein 🔵 **WRAP**/Adapter auf den Production Viewport.
 - Experiment-Code (z. B. `LabOrbitCamera`) wird **nicht automatisch** Production-Architektur.
 
@@ -123,8 +123,8 @@ Repository-Wide Structural Health Audit (2026-09-17), Finding D2.
 
 ## 6. Referenzen / Navigation
 
-- Investigation-Auslöser: [`playground/README.md`](../../../playground/README.md)
-- Artist Playground Architecture Map: [`docs/design/artist_playground/ARCHITECTURE_MAP.md`](../../design/artist_playground/ARCHITECTURE_MAP.md)
-- Artist Playground Roadmap: [`docs/design/artist_playground/ROADMAP.md`](../../design/artist_playground/ROADMAP.md)
+- Investigation-Auslöser: [`playground/README.md`](../../archive/experiments_2026-10/playground/README.md)
+- Artist Playground Architecture Map: [`docs/design/artist_playground/ARCHITECTURE_MAP.md`](../../archive/experiments_2026-10/artist_playground_design/ARCHITECTURE_MAP.md)
+- Artist Playground Roadmap: [`docs/design/artist_playground/ROADMAP.md`](../../archive/experiments_2026-10/artist_playground_design/ROADMAP.md)
 - Autoritativer Detail-Befund (SSOT): [`experiments/mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md`](../../../experiments/mirai_bastel_integration_lab/docs/ARCHITECTURE_RECONCILIATION_AUDIT.md) §A.1
 - Lab-Kamera-Override: [`experiments/mirai_bastel_integration_lab/lab_camera.py`](../../../experiments/mirai_bastel_integration_lab/lab_camera.py)

@@ -18,7 +18,7 @@
 
 | Bereich | Autoritatives Zuhause | Verhältnis zu diesem Dokument |
 |---|---|---|
-| Interaction Grammar (Select / Transform / Topology als **UX**-Fragen) | `docs/design/artist_playground/UX_RESEARCH.md`, Research Map V1 | **Nicht hier.** Dieses Dokument liefert dorthin höchstens Fragen, keine UX-Antworten. |
+| Interaction Grammar (Select / Transform / Topology als **UX**-Fragen) | `docs/design/UX_RESEARCH.md`, Research Map V1 | **Nicht hier.** Dieses Dokument liefert dorthin höchstens Fragen, keine UX-Antworten. |
 | Tweak als SelectMethod-Variante | Tweak-Design-Entscheidung (Playground) | Wird hier nur als bestehende Designrichtung erwähnt, nicht neu verhandelt. |
 | Character Systems (Rigging, Skinning, Deformation, Morph, Facial-Systeme) | `CHARACTER_SYSTEMS_RESEARCH.md` | Abschnitte 8 und 9 hier betrachten Topologie **nur aus Modellierersicht**. Alles, was Rig-, Deformer- oder Morph-*Systeme* betrifft, gehört dorthin. |
 | Rigging/Skinning/Morphing (technische Realität) | `experiments/rigging-skinning-morphing/` (AD-005, CORE_API_AUDIT, FINDINGS-3C) | Liefert die technische Grundlage für Abschnitt 8. Wird zitiert, nicht dupliziert. |
@@ -1710,7 +1710,7 @@ Prioritätsentscheidung des Artists (vgl. L4).
 - `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` — M1–M5, Artist-Attention-Filter
 - `ROADMAP.md` — Modeling Track, WP-03, ARCH-02
 - `CHARACTER_SYSTEMS_RESEARCH.md` — Character-Systems-Research (Rigging, Deformation, Facial-Systeme)
-- `docs/design/artist_playground/UX_RESEARCH.md` und Research Map V1 — Interaction Grammar
+- `docs/design/UX_RESEARCH.md` und Research Map V1 — Interaction Grammar
 - `experiments/rigging-skinning-morphing/` — technische Realität der Topologie-Mutation
 - `experiments/topology/` — Loop/Ring, Connect Edges
 - `docs/research/topology/CONNECT_NONQUAD_DISCOVERY.md` und AD-017 — Connect/Split/Knife-Semantik (§16)

@@ -9,7 +9,7 @@ unchanged before discussion (AGENTS.md §6). Manu decides (M3); nothing here is 
 AD-013 · AD-SYM-02 · `docs/architecture/ROADMAP.md` §9/§13 · `REFERENCE_HARDWARE.md`
 **Code examined:** `6cbe522` (= `f2d34e8` + `5a00d45` Playground session-state persistence + the Q5 verdict line; the
 knife engines are unchanged since `f2d34e8`)
-**Probe:** [`experiments/topology/one_knife_parity_probe.py`](../../../experiments/topology/one_knife_parity_probe.py) —
+**Probe:** `experiments/topology/one_knife_parity_probe.py` (removed 2026-10-24, last state in commit `61ebe77`) —
 drives the Production `KnifeTool` and the Lab `KnifeFaceCrossFace` (Q5) through their public session interface only
 (`activate/begin/accepts/hover/click/undo_step/redo_step/commit/cancel`, Q5 also `set_view`). No Core, Production or
 Playground change.

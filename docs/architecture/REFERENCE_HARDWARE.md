@@ -100,7 +100,7 @@ nicht der Engpass. Die Interaktionskosten (Hover, Klick, Box/Paint, W-Drag) bei 
 
 **Gemessen auf dem Referenz-PC (Manu, 2026-10-20), GPU-ID-Picking-Spike und Topologie-Operationen** — gleiche Maschine, Python 3.14.2,
 `GL_VERSION` 3.3.0; Rohausgaben in
-[`experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md`](../../experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md) und
+[`experiments/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md`](../archive/experiments_2026-10/gpu_picking_spike/RESULTS_REFERENCE_PC_2026-10-20.md) und
 [`experiments/drag_cost/RESULTS_TOPOLOGY_REFERENCE_PC_2026-10-20.md`](../../experiments/drag_cost/RESULTS_TOPOLOGY_REFERENCE_PC_2026-10-20.md),
 Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference PC“, `drag_cost` „Result: topology operations, reference PC“):
 

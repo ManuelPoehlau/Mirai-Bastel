@@ -1,8 +1,8 @@
 # Architektur-Audit Viewport, Mesh & Workspaces — Kurzfassung für Manu
 
 **Status:** Discovery-Ergebnis eines Agenten (2026-10-20, `main` @ `435ac7e`). Keine Entscheidung, nicht Artist-validiert.
-**Ausführlich:** [Audit 1: Viewport, Mesh, Workspaces](ARCHITECTURE_AUDIT_2026-10-20_VIEWPORT_MESH_WORKSPACES.md) und [Audit 2: Zukunftsanforderungen](ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) (inkl. Anforderungsmatrix und Prototypen-Plan P0–P9). Die Container-Messungen daraus: [`experiments/architecture_audit_probes/`](../../../experiments/architecture_audit_probes/README.md).
-**Zahlen:** **[RPC]** = Referenz-PC (Manu, 2026-10-20; eingetragen in [`REFERENCE_HARDWARE.md`](../../architecture/REFERENCE_HARDWARE.md) §2, [Spike-README](../../../experiments/gpu_picking_spike/README.md) und [drag_cost-README](../../../experiments/drag_cost/README.md)). **[C]** = Container, nicht übertragbar. **[H]** = Hypothese.
+**Ausführlich:** [Audit 1: Viewport, Mesh, Workspaces](ARCHITECTURE_AUDIT_2026-10-20_VIEWPORT_MESH_WORKSPACES.md) und [Audit 2: Zukunftsanforderungen](ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) (inkl. Anforderungsmatrix und Prototypen-Plan P0–P9). Die Container-Messungen daraus: [`experiments/architecture_audit_probes/`](../../archive/experiments_2026-10/architecture_audit_probes/README.md).
+**Zahlen:** **[RPC]** = Referenz-PC (Manu, 2026-10-20; eingetragen in [`REFERENCE_HARDWARE.md`](../../architecture/REFERENCE_HARDWARE.md) §2, [Spike-README](../../archive/experiments_2026-10/gpu_picking_spike/README.md) und [drag_cost-README](../../../experiments/drag_cost/README.md)). **[C]** = Container, nicht übertragbar. **[H]** = Hypothese.
 
 ## Ergebnis
 

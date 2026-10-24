@@ -12,7 +12,7 @@ Technische und artist-seitige Recherche zu Catmull-Clark und verwandten Subdivis
   Algorithmenraum (Catmull-Clark, Ränder, Pole, Creases, Grenzfläche), OpenSubdiv vs. eigene Implementierung,
   Sandbox-Messungen und Budget für die Referenz-Hardware, Viewport (Käfig, Normalen, Picking), Wechselwirkungen
   (Topologie-Operationen, Symmetrie, Undo, Deformationskette), DCC-Vergleich, vorbereitete Artist-Tests.
-- Lab: [`experiments/subdivision_lab/`](../../../experiments/subdivision_lab/README.md) (WP-SUBD-LAB-01 Slice 1) — macht
+- Lab: [`experiments/subdivision_lab/`](../../archive/experiments_2026-10/subdivision_lab/README.md) (WP-SUBD-LAB-01 Slice 1) — macht
   T-SUBD-1 und T-SUBD-2 spielbar. Stand: gebaut, nicht Artist-validiert. Seit WP-SUBD-LAB-02 (2026-10-16) auf dem App-Pfad:
   die Werkzeuge, Licht und Shading der App, die glatte Fläche über den Viewport-Haken
   [AD-013 H7](../../architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-16-wp-subd-lab-02-h7--replacement-surface-of-the-edit-mesh-in-viewport);

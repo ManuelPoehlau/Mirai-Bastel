@@ -21,9 +21,9 @@ capability for a Discovery test and claims no new insight.
 Production window).
 **Read at:** `main` @ `f65d223`. The handoff's baseline is `eaf43a3`; the delta was checked and contradicts
 neither FINDINGS nor the handoff (§0.2).
-**Basis (binding, only linked):** [`experiments/soft_selection/FINDINGS.md`](../../experiments/soft_selection/FINDINGS.md)
+**Basis (binding, only linked):** [`experiments/soft_selection/FINDINGS.md`](../archive/experiments_2026-10/soft_selection/FINDINGS.md)
 (cited as **FINDINGS**, observation IDs N/R/M/C/S/B/L as there),
-[`README.md`](../../experiments/soft_selection/README.md), `influence.py`, `weighted_ops.py` of the same experiment;
+[`README.md`](../archive/experiments_2026-10/soft_selection/README.md), `influence.py`, `weighted_ops.py` of the same experiment;
 [CORE_V1_FREEZE](CORE_V1_FREEZE.md), [AD-014](AD-014_Core-Change-Basis-Parameter-for-ScaleOperation.md),
 [AD-013](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md) incl. Addendum H2 and the G-2 amendment,
 [AD-016](AD-016-TRANSFORM-OWNS-QWE-SINGLE-CURRENT-TOOL.md), [AD-018](AD-018-PRODUCTION-DRAW-BINDING.md) §7,

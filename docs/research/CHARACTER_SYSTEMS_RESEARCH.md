@@ -25,7 +25,7 @@ It collects **what other people have tried**, and how they thought about it.
 
 | Document                                                                      | Responsibility                                                       |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `docs/design/artist_playground/UX_RESEARCH.md` + Three-Role UX System         | Interaction Grammar and research methodology                         |
+| `docs/design/UX_RESEARCH.md` + Three-Role UX System         | Interaction Grammar and research methodology                         |
 | `experiments/rigging-skinning-morphing/` (RESEARCH, DESIGN, AD-005, FINDINGS) | technical experiments, core behavior, architectural knowledge        |
 | **this document**                                                             | external research, concepts, observations, possible experiment ideas |
 
@@ -723,7 +723,7 @@ Candidates, not decisions. No KEEP / ITERATE / REJECT. Which of them are actuall
 
 * `AGENTS.md` — repository-wide agent and documentation rules
 * `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` — M1–M5, Discovery/Production, Artist Verdict
-* `docs/design/artist_playground/UX_RESEARCH.md` — Interaction Grammar (different responsibility)
+* `docs/design/UX_RESEARCH.md` — Interaction Grammar (different responsibility)
 * `docs/design/artist_playground/EXPERIMENT_HOST.md` — Experiment/Variant/Slot vocabulary
 * `experiments/rigging-skinning-morphing/` — technical rigging experiment, AD-005, FINDINGS (different responsibility)
 

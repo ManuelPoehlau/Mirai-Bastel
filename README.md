@@ -94,7 +94,7 @@ There is no planned "finished version". The system is expected to remain alive a
 
 ## Current status
 
-The first Core V1 milestone is complete, hardened, reviewed and frozen. Its production baseline is under `src/core/`, while the complete experimental milestone remains under `experiments/mirai_bastel_core_V1/` for reference.
+The first Core V1 milestone is complete, hardened, reviewed and frozen. Its production baseline is under `src/core/`; the experimental milestone was removed on 2026-10-24 (last state in commit `61ebe77`).
 
 The currently implemented production foundation is:
 
@@ -113,22 +113,20 @@ Stage A itself was deliberately read-only (no mutation, no tool activation).
 Stage B (WP-06) has since added editing capabilities to the same window,
 slice by slice — so the window is no longer read-only. Each capability's
 verdict state (`PROMOTED` / `PROVISIONAL`, many still without an Artist
-verdict) is in the WP-06 intake log, not here. This is still not a claim
+verdict) is in [`docs/ATELIER.md`](docs/ATELIER.md) and the linked documents, not here. This is still not a claim
 that the final modeling/selection workflow exists.
 
-The former interactive Viewport V1 experiment (`experiments/mirai_bastel_viewport_V1/`) validated the basic Core → Viewport path on real hardware and has since been retired ([AD-006](docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md), 2026-09-17). Selection, Workflow and Topology research now runs in the Artist Playground ([`playground/`](playground/README.md)).
+The former interactive Viewport V1 experiment (`experiments/mirai_bastel_viewport_V1/`) validated the basic Core → Viewport path on real hardware and has since been retired ([AD-006](docs/architecture/AD-006-V1-VIEWPORT-RETIREMENT.md), 2026-09-17). The Artist Playground that followed it was removed on 2026-10-24 after its decided results had moved into `src/` ([archive](docs/archive/experiments_2026-10/playground/README.md)).
 
-The Topology research is documented in [`experiments/topology/`](experiments/topology/) and [`docs/research/topology/`](docs/research/topology/). Loop/Ring selection, Connect, Loop Insert/Slide, Extrude and the Knife family (including the Knife Face Cut Lab) have been explored in the Artist Playground; results reach the production app only one slice at a time and only after an Artist verdict (WP-06).
+The Topology research is documented in [`docs/research/topology/`](docs/research/topology/). Loop/Ring selection, Connect, Loop Insert/Slide, Extrude and the Knife are in the production app.
 
 The Production Viewport, Application and Interaction foundations now exist under
 `src/`, and the production draw call (AD-018) and the Stage A production
 window/entry point (`src/main.py`, camera + rendering, above) are now real.
 Stage B — incrementally wiring the final modeling/selection workflow into
 that window, capability by capability — is in progress (WP-06); see
-`docs/architecture/WP-06_INTAKE_LOG.md` for the intake log (the single
-authoritative list of what is wired in) and
-[`docs/ATELIER.md`](docs/ATELIER.md) for the artist-level overview. Experiments continue to derive later requirements; they are not
-promoted automatically.
+[`docs/ATELIER.md`](docs/ATELIER.md) for the artist-level overview (the WP-06 intake log is frozen since 2026-10-14).
+The few remaining labs are listed in [`experiments/README.md`](experiments/README.md); they are not promoted automatically.
 
 ## Current V1 direction
 
@@ -216,8 +214,7 @@ The repository deliberately distinguishes between current canonical documents, d
 
 ```text
 src/          Production Core, Application/Interaction and Viewport foundations, production entry point (`src/main.py`)
-playground/   Artist Playground: research host with variant families and Artist verdicts (the research application)
-experiments/  Isolated milestones, prototypes and practical tests
+experiments/  The few active labs, the Knife oracle and a cost probe (index: experiments/README.md)
 tools/        Small helper tools (e.g. Input Mapping Tool)
 tests/        Repository-level tests
 docs/         Architecture, design, research, workflow and future ideas

@@ -12,8 +12,8 @@ in Production einbauen“, Auswahl: Box-Select, Loop-Werkzeuge, Tweak, Paint Sel
 | P-2 | Box und Paint teilen sich LMB-Ziehen — wie? | **Startpunkt entscheidet:** Start im leeren Raum = Box, auf dem Mesh = Malen; ohne Taste neu, Shift dazu. Der Wings-Zusatz des Box-Verdikts (Box mit Modifier im Mesh) entfällt. |
 | P-3 | Tweak (Silo, Ctrl+LMB) kollidiert mit Ctrl = Entfernen | **Ctrl+LMB, Auswahl weicht:** Ctrl+LMB-Ziehen = Tweak; Ctrl+LMB-Klick bleibt Entfernen; Entfernen per Box/Malen gibt es nicht. |
 
-Quellen der Verdikte: Box KEEP in [`selection/decision.md`](../playground/experiments/selection/decision.md),
-Tweak V2 KEEP in [`tweak_decision.md`](../playground/experiments/tweak/tweak_decision.md); Paint war dort nur
+Quellen der Verdikte: Box KEEP in [`selection/decision.md`](archive/experiments_2026-10/playground/experiments/selection/decision.md),
+Tweak V2 KEEP in [`tweak_decision.md`](archive/experiments_2026-10/playground/experiments/tweak/tweak_decision.md); Paint war dort nur
 geplant, Loop-Werkzeuge hatten kein Verdikt (Tasten aus der Artist Input Truth,
 `tools/Input_Mapping_Tool/artist_input_truth.json`).
 

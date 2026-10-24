@@ -36,7 +36,7 @@ The objective is not theoretical elegance. The objective is a system the artist 
 
 Read and contribute to:
 
-`docs/design/artist_playground/UX_RESEARCH.md`
+`docs/design/UX_RESEARCH.md`
 
 The shared Experiment Host model and terminology are defined in:
 

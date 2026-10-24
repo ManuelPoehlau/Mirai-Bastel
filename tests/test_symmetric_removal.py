@@ -2,8 +2,8 @@
 (coordinator `coordinate_removal` in `mirai.symmetric_ops`, wired in `Application._removal_command`).
 
 Headless, no gate: the coordinators run whenever a definition is set, in MARK as in BLOCK (AD-013 H2
-amendment, "Runtime refusals are not G-3"); the Lab path is tested in
-`experiments/symmetry_lab/tests/test_app_lab_symmetric_removal.py`.
+amendment, "Runtime refusals are not G-3"); the end-to-end app path is
+`test_application_symmetric_tools.py`.
 
 Assets and helpers as in `tests/test_symmetric_ops.py`: plane x = 0, the x = 0 edges are the seam,
 `subd_cube` / `head_basemesh` are fully paired, `man_with_shoes_basemesh` is `partial`.

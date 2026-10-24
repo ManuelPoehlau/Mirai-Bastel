@@ -32,7 +32,7 @@ The flow is **not strictly sequential**. All three roles can work in parallel an
 
 Shared UX research lives **outside this folder** in:
 
-`docs/design/artist_playground/UX_RESEARCH.md`
+`docs/design/UX_RESEARCH.md`
 
 That separation is intentional: this folder describes the working method; `UX_RESEARCH.md` contains the actual UX knowledge.
 

@@ -7,7 +7,7 @@ M2. Where a section still says "proposed" or "proposal only", this status wins. 
 (Core only, no app behaviour; record in [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md), tests in `tests/test_scene_objects.py`).
 **M1 implemented 2026-10-15** (App only, no Core change; [§6.1](#61-m1-implementation-note-2026-10-15)); Manu tried it
 (his Q-11 answer describes the behaviour); no KEEP/ITERATE verdict recorded, M1 stays `PROVISIONAL`. **M2:**
-[handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
+[handoff](../archive/handoffs_2026-10/AD-021_M2_CLAUDE_CODE_HANDOFF.md); Q-5–Q-8 answered, Q-13 deferred (pivot = origin); **M2-0 and M2-1
 implemented 2026-10-15** (§6.2, §6.3); Manu's M2-0 answers recorded (Ghost bright enough, Wireframe rule fine); **M2-2
 implemented 2026-10-15** (objects moved/rotated/scaled in mode `4`, §6.4); **M2-3 implemented 2026-10-15** (Apply / Clear
 transform, §6.5; new Artist questions Q-14…Q-16); **M2-4 implemented 2026-10-15** (switching the edit object, Q-5/Q-8,
@@ -17,7 +17,7 @@ no Core change; `PROVISIONAL`, practical test pending). **Object-level mirror pa
 one data-only Core addition + file v3; design and implementation note:
 [OBJECT_MIRROR_SYMMETRY_PROPOSAL §11](../research/symmetry/OBJECT_MIRROR_SYMMETRY_PROPOSAL.md#11-implementation-2026-10-23-provisional); practical test pending). New Artist questions from M1: **Q-11** (look of a Reference), **Q-12** (the click that switches the
 state) — **both answered by Manu 2026-10-15** (Decision record); Q-11 leads to the Reference display of §7.3, built first in
-M2 ([M2 handoff](AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
+M2 ([M2 handoff](../archive/handoffs_2026-10/AD-021_M2_CLAUDE_CODE_HANDOFF.md)).
 **Mode (M5):** Discovery, Type C (Architecture Gate). Decision document, no production code.
 **Answers:** [ROADMAP §6 ARCH-01](ROADMAP.md#arch-01--object--component-model) ("Must answer" list) plus two questions from
 the handoff: where the Reference state lives, and in which space symmetry and soft selection compute.

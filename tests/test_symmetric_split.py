@@ -2,8 +2,8 @@
 wired in `Application._connect_command`).
 
 Headless, no gate: the coordinator runs whenever a definition is set, in MARK as in BLOCK (AD-013
-H2 amendment, "Runtime refusals are not G-3"); the Lab path is tested in
-`experiments/symmetry_lab/tests/test_app_lab_symmetric_split.py`. Assets and helpers as in
+H2 amendment, "Runtime refusals are not G-3"); the end-to-end app path is
+`test_application_symmetric_tools.py`. Assets and helpers as in
 `tests/test_symmetric_ops.py`, but axis-aware: `subd_cube` is exact on the X and Z planes,
 `head_basemesh` on the X plane (the Y plane of `subd_cube` is not exact: `partial`).
 """

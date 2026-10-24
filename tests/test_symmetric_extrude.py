@@ -1,7 +1,7 @@
 """AD-SYM-03 slice 7 (WP-SYM-EXTRUDE-01): symmetric Face Extrude.
 
 Tool level (`ExtrudeTool` + `plan_extrude`, a stub camera) and Application level (`T` hold, `make_app`). The
-Lab path is tested in `experiments/symmetry_lab/tests/test_app_lab_symmetric_extrude.py`.
+end-to-end app path is `test_application_symmetric_tools.py`.
 
 What is pinned (the Step-0 probe table of the AD-SYM-03 addendum, as tests):
 

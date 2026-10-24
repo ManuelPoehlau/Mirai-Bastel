@@ -16,15 +16,16 @@ AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independ
 §10 R-a as proposed; key **Alt+M** instead of M (M is the Morph Lab bridge since 2026-10-17, `PROVISIONAL`); AD-013
 [Addendum 2026-10-24](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-24-ad-sym-04-slice-a3--re-symmetrize-in-the-app-h2-r1-h2-r2-h2-r3-amended-d1-and-the-preview-row-retired).
 The separate review §10 asked for was not held (open point, Kurzfassung).
+**2026-10-24 (consolidation, Manu):** the Symmetry Lab is removed. With it go the Lab-only parts of §1.2 (Lab keys, the MARK/BLOCK switch E5 / Shift+B of UA-2, the Lab HUD and overlays, the Lab cost probe); the app behaviour is unchanged. The Lab's app-path tests of the coordinated tools were ported to `tests/test_application_symmetric_tools.py`; the Lab README is in `docs/archive/experiments_2026-10/symmetry_lab/`.
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
 **Work package:** WP-SYM-APP-01 (decision package).
 **Read at:** `main` @ `54de6ee`. Line numbers refer to that commit.
 **Basis (binding, only linked):** [AD-013](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md) (Addendum H2: H2-R1 … H2-R6, and the
 G-2 amendment of 2026-10-08), [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md),
 [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md), [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md),
-[AD-020](AD-020-SOFT-SELECTION-APP-PATH.md) (§8, "Promotion decision"), [WP-SYM-LAB-03 plan](WP-SYM-LAB-03_REBASE_PLAN.md),
+[AD-020](AD-020-SOFT-SELECTION-APP-PATH.md) (§8, "Promotion decision"), [WP-SYM-LAB-03 plan](../archive/handoffs_2026-10/WP-SYM-LAB-03_REBASE_PLAN.md),
 [WP-06 intake log](WP-06_INTAKE_LOG.md) (frozen), [ROADMAP](ROADMAP.md) §7/§14,
-[Symmetry Lab README](../../experiments/symmetry_lab/README.md), [REFERENCE_HARDWARE](REFERENCE_HARDWARE.md),
+[Symmetry Lab README](../archive/experiments_2026-10/symmetry_lab/README.md), [REFERENCE_HARDWARE](REFERENCE_HARDWARE.md),
 [CORE_V1_FREEZE](CORE_V1_FREEZE.md).
 
 **Evidence tags.** **[Code]** read at `54de6ee` (file:line). **[Doc]** quoted from a repo document. **(Assumption)** not

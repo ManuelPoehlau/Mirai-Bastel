@@ -624,7 +624,7 @@ Keine Empfehlung. Das sind die Achsen, auf denen später entschieden werden müs
 
 ## 11. Vorbereitete Artist-Tests (nicht jetzt fragen)
 
-*Lab: [`experiments/subdivision_lab/`](../../../experiments/subdivision_lab/README.md) (WP-SUBD-LAB-01 Slice 1) macht T-SUBD-1 und T-SUBD-2 spielbar. Stand: gebaut, nicht Artist-validiert.*
+*Lab: [`experiments/subdivision_lab/`](../../archive/experiments_2026-10/subdivision_lab/README.md) (WP-SUBD-LAB-01 Slice 1) macht T-SUBD-1 und T-SUBD-2 spielbar. Stand: gebaut, nicht Artist-validiert.*
 
 Alle Tests setzen eine spielbare SubD-Vorschau voraus. **Ob dafür ein Lab gebaut wird, ist eine Prioritätsentscheidung des
 Artists** — dieselbe Bedingung wie bei `MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md` Kandidat L4. Jede Variante wird mit

@@ -3,7 +3,8 @@
 Headless, fixture as `tests/test_application_pointer.py`. The addendum's T-H at
 `Application` level (review CLAUDE-001 F3, probe P2; CLAUDE-002 N5: Face mode set
 before the flag), plus T-R5a extended to the flag. The Lab-level T-H (through the
-Re-Symmetrize preview) is in `experiments/symmetry_lab/tests/test_app_lab_preview.py`.
+Re-Symmetrize preview) went with the Symmetry Lab (removed 2026-10-24); the app's preview is
+`test_application_resymmetrize.py`.
 
 Deliberately not named `test_application_*` (that set is what T-R5c re-runs).
 """

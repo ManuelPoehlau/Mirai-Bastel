@@ -260,7 +260,7 @@ that matter (Knife, Extrude, Connect, Soft Selection, all), the reference-PC rol
 3. Order with AD-022: decided together, in parallel slices, or one after the other? (Open.)
 
 Stage 1 result (2026-10-21): measured on the reference PC (op + Undo roughly halved, e.g. Delete 3.7 → 2.0 s;
-[experiment README](../../experiments/topology_sync_stage1/README.md)). **Manu, 2026-10-21 (chat, with the raw output,
+[experiment README](../archive/experiments_2026-10/topology_sync_stage1/README.md)). **Manu, 2026-10-21 (chat, with the raw output,
 instruction):** "vielleicht minimal schneller, das zeigen auch die Messungen. Trotzdem viel zu langsam um vernünftig
 arbeiten zu können." → the §7 decision point is missed; stage 2 is indicated. **On Core changes (same message):** "core
 freeze bedeutet nicht, dass er nicht verändert werden darf. Bringen uns Veränderungen am Core einen deutlichen Gewinn,
@@ -275,7 +275,7 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
 - **Stage 1 (no Core change, cheap):** V2 + V3 + V0 + H0 (G only if the tails matter), measured on the reference PC with
   n >= 10 and p95 (the probe prints p50 and max today: extend it), history depth 1 and ~20, GC on / off, under the Python
   the Artist actually uses. Decision point: if op and Undo on `gollum_20k` feel "sofort" to Manu, stop; H1 / V1 are not needed.
-  Prototype (experiment, `src/` unchanged): [`experiments/topology_sync_stage1/`](../../experiments/topology_sync_stage1/README.md),
+  Prototype (experiment, `src/` unchanged): [`experiments/topology_sync_stage1/`](../archive/experiments_2026-10/topology_sync_stage1/README.md),
   every switch separately, equivalence tests, a probe with p95, `run.py` for the practical test. H0 shifts one `export_state`
   from the op into the Undo, which runs against answer 1 of §6; it is measured as a switch, not assumed.
 - **Stage 2 (only if stage 1 misses):** a touched-set prototype for Delete, Extrude **and** Knife (or Dissolve with
@@ -283,7 +283,7 @@ operation including Undo, `PROVISIONAL`) gate the engineering steps.
   symmetric coordinators with rollback to `session_before`), with the capture mechanism stated and the exactness contract
   as the test oracle on every sample (randomised op sequences with undo/redo).
   Prototype for Delete only, **together with AD-022 B2-out** (2026-10-21, experiment, `src/` unchanged):
-  [`experiments/topology_stage2_delete/`](../../experiments/topology_stage2_delete/README.md). Capture mechanism:
+  [`experiments/topology_stage2_delete/`](../archive/experiments_2026-10/topology_stage2_delete/README.md). Capture mechanism:
   declared neighbourhood + local diff (no full snapshot, no Core hook; a per-op "mutates nothing outside" contract),
   exactness contract met incl. container order; V1 slot rule (dead triangles degenerate, revived on Undo) shared with
   B2's `gl_PrimitiveID` mapping; pick synced before it reads. Container [C], Delete 1 face frame / Undo: `stage1`

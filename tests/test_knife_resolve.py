@@ -1,7 +1,7 @@
 """WP-KNIFE-01 S1: the Knife's commit-time resolver in `src` (`mirai.topology.knife_resolve`).
 
 Headless, no camera, no Playground: paths are built by hand as the resolver's plain records. The
-Lab sessions that produce these records in practice are covered in `playground/tests/`
+Lab sessions that produce these records in practice are covered in `experiments/knife_oracle/tests/`
 (`test_knife_face_lab.py`, `test_knife_face_q5.py`, the golden net `test_knife_resolver_golden.py`,
 the construction oracle `test_split_face_equivalence.py`).
 """

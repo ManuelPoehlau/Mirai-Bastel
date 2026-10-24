@@ -1,14 +1,13 @@
 """Transform Gizmo: handle geometry, picking and draw primitives (promoted 2026-10-21, Manu: "Gizmo nach src/").
 
-Moved (not copied) from `playground/gizmo.py` (WP-AP-GIZMO-01/04); the Playground imports the geometry and the
-picking from here. Pure screen / world maths, no GL and no `Application`: `Application` owns the state (pivot,
+Moved (not copied) from `playground/gizmo.py` (WP-AP-GIZMO-01/04; the Playground was removed 2026-10-24). Pure screen / world maths, no GL and no `Application`: `Application` owns the state (pivot,
 current tool, constraint, hover, the gesture), `viewport.gl_gizmo_overlay` draws what `draw_items` returns.
 
 Artist decision AD-016 D3 (2026-09-21): the gizmo is an *entry point*. A click on a handle only sets the axis
 constraint (like X / Y / Z); click + drag also runs the current tool along it and the LMB release commits; a hit on
 a handle takes priority over a selection click, a miss falls through. In the app this is wired in
-`Application.pointer_press` / `_gizmo_step` (world frame only: normal space is not in the app yet, so the
-Playground's `normal_full` / `normal_z_only` appearances stay Playground-only).
+`Application.pointer_press` / `_gizmo_step`; the frame is the world axes or, in Normal orientation (`K`, WP Toolbox
+Gaps C1), the selection's frame from `Application._gizmo_frame`.
 
 Handles (names = the constraint spaces of `Application`): `x`, `y`, `z` (axes; rings when the tool is Rotate),
 `xy`, `xz`, `yz` (plane brackets; not for Rotate), `center` (white circle at the pivot, every tool: no constraint -

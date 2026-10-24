@@ -6,18 +6,12 @@ This directory contains interaction and workflow principles that guide how Mirai
 
 - [Workflow Principles](WORKFLOW.md) — direct, low-overhead interaction inspired by Mirai/Nendo/Silo/Wings3D
 - [GUI Stage 1 — HUD](GUI_STAGE1_HUD.md) — read-only state display in the Production window (2026-10-23): two layout variants on trial, Stage 2 seams, open questions, Artist test steps
+- [Input Map](INPUT_WIRING_MAP.md) — Manu's desired physical input bindings (Artist Input Truth)
+- [UX Research](UX_RESEARCH.md) — open research / idea space; shared knowledge store of the Three-Role UX system
 
-## Artist Playground
-
-- [Artist Playground — Architecture Map](artist_playground/ARCHITECTURE_MAP.md) — building block status analysis: what exists, what is missing, what must not be changed
-- [Artist Playground — Roadmap](artist_playground/ROADMAP.md) — WP-AP work package sequence and development model (research-first, Playground → Candidate → Production)
-- [Experiment Host](artist_playground/EXPERIMENT_HOST.md) — canonical documentation of the Playground's experiment host (variant families)
-- [UX Research](artist_playground/UX_RESEARCH.md) — open research / idea space; shared knowledge store of the Three-Role UX system
-- [Research Map](artist_playground/RESEARCH_MAP.md) — discovery: conceptual map of the research space
-- [Experiment Host Audit](artist_playground/DEV_HOST_AUDIT.md) — technical assessment of the host against Research Map V2
-- [AP-03 Selection Lab plan](artist_playground/AP-03_PLAN.md)
-- [WP-AP-CUT plan](artist_playground/WP-AP-CUT_PLAN.md) — Contextual C implementation brief (IMPLEMENTED 2026-09-22)
-- [Input Ownership Audit](artist_playground/INPUT_OWNERSHIP_AUDIT.md) — factual inventory of interaction state, dispatch order, and Gizmo preconditions; evidence base for the pending input-ownership architecture decision (2026-09-21)
+The Artist Playground design documents (architecture map, roadmap, experiment host, research map, host and input
+audits, AP-03 and WP-AP-CUT plans) were archived with the Playground on 2026-10-24:
+[`archive/experiments_2026-10/artist_playground_design/`](../archive/experiments_2026-10/artist_playground_design/).
 
 ## Relationship to other documentation
 

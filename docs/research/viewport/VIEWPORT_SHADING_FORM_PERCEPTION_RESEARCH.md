@@ -23,7 +23,7 @@ Kennzeichnung wie in `MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md`:
 
 Welche einfachen, günstigen Darstellungstechniken machen beim Modellieren die **Form** besser lesbar — Krümmung, Wellen, Pinching an Polen, Silhouette, Topologie — und das auf sehr alter Hardware?
 
-Dazu gehören ausdrücklich auch Hover-Hervorhebung und X-Ray, **aber nur als Darstellungstechnik**. Die Frage *wann* etwas als gehovert gilt oder *ob man durch X-Ray hindurch selektieren darf*, ist Interaktions-Semantik und gehört ins Three-Role-UX-System (`docs/design/artist_playground/UX_RESEARCH.md`), nicht hierher.
+Dazu gehören ausdrücklich auch Hover-Hervorhebung und X-Ray, **aber nur als Darstellungstechnik**. Die Frage *wann* etwas als gehovert gilt oder *ob man durch X-Ray hindurch selektieren darf*, ist Interaktions-Semantik und gehört ins Three-Role-UX-System (`docs/design/UX_RESEARCH.md`), nicht hierher.
 
 Das Ziel ist nicht Realismus. Das Ziel ist ein Viewport, der wie eine gute Werkstattlampe funktioniert: Er zeigt Fehler in der Oberfläche, bevor man sie mit der Hand fühlen würde.
 

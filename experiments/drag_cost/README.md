@@ -40,7 +40,7 @@ Per mouse move, in ms, p50 / p95 / max over `--moves` moves (after `--warmup` un
 
 Scenario `plain_w`: the selection is the region of N vertices grown (breadth-first over edges) from the
 front-most vertex; N = the influenced-vertex counts of
-[`experiments/soft_selection/FINDINGS.md`](../soft_selection/FINDINGS.md) §2.2 (head 9 / 36 / 68, body
+[`experiments/soft_selection/FINDINGS.md`](../../docs/archive/experiments_2026-10/soft_selection/FINDINGS.md) §2.2 (head 9 / 36 / 68, body
 18 / 76 / 112). The region is set through the `Selection` (112 pick clicks would measure the picker),
 then W is armed, `--moves` moves run (direction reverses halfway), W is released, and the drag is undone
 so every row starts from the unmodified asset.
@@ -754,7 +754,7 @@ the 2.7-3.5x is largely a container difference. Same-day, same-probe container a
 reference PC and ranks the viewport part (V0-V2) ahead of the history part (H0-H2) by share. Open: the split of the sync
 into triangulation / normals / buffer upload on the reference PC. **Correction (2026-10-20, later):** `--profile-top` profiles
 only `orbit`, `zoom` and `first_hover`, not `topology`, so a `--profile-top 15` run does not give that split; use
-[`probe_topology_sync_split.py`](../architecture_audit_probes/probe_topology_sync_split.py) instead.
+`probe_topology_sync_split.py` (removed 2026-10-24, last state in commit `61ebe77`) instead.
 
 **Second run (same day, `--profile-top 15`, raw:
 [`RESULTS_TOPOLOGY_PROFILE_REFERENCE_PC_2026-10-20.md`](RESULTS_TOPOLOGY_PROFILE_REFERENCE_PC_2026-10-20.md)), n = 3 again:**
@@ -774,7 +774,7 @@ the same run (cProfile inflates Python time, roughly 2.5x against the unprofiled
 is the occlusion test. That is the per-camera cost AD-022 removes.
 
 **Rebuild split, reference PC (third run, raw:
-[`RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md`](../architecture_audit_probes/RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)),
+[`RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md`](../../docs/archive/experiments_2026-10/architecture_audit_probes/RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)),
 `probe_topology_sync_split.py`, n = 3, default GC, history depth ~1.** Frames 2 923 / 3 540 / 2 320 / 1 846 / 1 823 ms (extrude 1, extrude 20,
 knife, dissolve, delete), within ~10 % of the earlier runs. One `_sync_topology` costs **1 224 ms** on average (42 calls over the
 run; the extrude sync of ~2 500 ms is two structural rebuilds, not three, see the AD-023 review B-1), split (wall clock, nested):
@@ -798,7 +798,7 @@ is not the main cost. The effect of the cyclic GC and of the history depth (AD-0
 `probe_topology_sync_split.py --steps 12 --row-seconds 120 --history-depth 20` with `--gc on`, `--gc off` and `--gc freeze` (20 real
 undo entries of two whole-mesh snapshots each stay on the stack), `gollum_20k`, Python 3.14.2, **n = 12 per row**; the report prints p50 and
 max, no p95. Raw:
-[`RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md`](../architecture_audit_probes/RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md).
+[`RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md`](../../docs/archive/experiments_2026-10/architecture_audit_probes/RESULTS_TOPOLOGY_GC_HISTORY_DEPTH_REFERENCE_PC_2026-10-20.md).
 ms; frame p50 (max) / history p50 / undo frame p50:
 
 | Op | GC on | GC off | GC frozen |
@@ -910,7 +910,7 @@ still far slower than Blender). Next: Manu's reference-PC run and window check (
 the architecture decision in "Haltepunkt: what Blender-level fluidity on 20k would need" (world index / GPU picking /
 incremental topology sync) - Manu + review, no code before it. Manu (2026-10-17): GPU picking "bringt wohl den größten
 Gewinn", incremental topology "gleich wichtig" - drafted as [AD-022](../../docs/architecture/AD-022-GPU-PICKING.md)
-(spike: [`experiments/gpu_picking_spike/`](../gpu_picking_spike/README.md)) and
+(spike: [`experiments/gpu_picking_spike/`](../../docs/archive/experiments_2026-10/gpu_picking_spike/README.md)) and
 [AD-023](../../docs/architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md), both PROPOSED. Left inside the current architecture: option 8 (dead
 `highlight_flags`) and batched `store.update` for large Soft drags.
 

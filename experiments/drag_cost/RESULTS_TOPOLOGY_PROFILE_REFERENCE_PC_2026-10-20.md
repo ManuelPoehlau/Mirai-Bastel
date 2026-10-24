@@ -5,7 +5,7 @@ Unverändert aus dem Chat übernommen. Referenz-PC: Core 2 Quad Q9550, GeForce 9
 je Zeile wieder **n = 3**. **Wichtig:** `--profile-top` profiliert in `probe_navigation_gl.py` nur `orbit`, `zoom` und
 `first_hover` (`run_profiles`), **nicht** das Szenario `topology`. Die Profile unten sind also CPU-Picker-Profile (mit
 cProfile-Aufschlag), keine Zerlegung des Viewport-Neuaufbaus. Die Zerlegung liefert
-[`experiments/architecture_audit_probes/probe_topology_sync_split.py`](../architecture_audit_probes/probe_topology_sync_split.py).
+`experiments/architecture_audit_probes/probe_topology_sync_split.py` (removed 2026-10-24, last state in commit `61ebe77`).
 
 ```
 PS C:\Users\Manuel\Mirai_Bastel> python experiments/drag_cost/probe_navigation_gl.py --assets examples/meshes/gollum_20k.obj --scenarios topology --profile-top 15

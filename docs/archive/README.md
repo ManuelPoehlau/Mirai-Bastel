@@ -22,6 +22,8 @@ Current archive areas:
 - [Symmetry Lab](symmetry_lab/README.md)
 - [Early work packages](early_work_packages/) — WP-01A, WP-02, WP-04 (Gates, reports, amendments), moved from the docs root 2026-10-21 (repository slimming)
 - [Audits 2026-09](audits_2026-09/) — Ownership/Lifecycle, Repository-wide health, shared-infrastructure, genealogy, WP-03 and Core-reassessment audits, moved from the docs root 2026-10-21
+- [Experiments 2026-10](experiments_2026-10/) — READMEs, findings and results of the Playground and the labs removed in the consolidation of 2026-10-24 (code: commit `61ebe77`, list in `experiments/README.md`), plus the Artist Playground design docs (`artist_playground_design/`)
+- [Handoffs 2026-10](handoffs_2026-10/) — finished Claude Code handoffs and plans moved out of `docs/architecture/` on 2026-10-24 (Symmetry slices, WP-SYM-LAB-01/03, WP-06 Stage B kickoff, AD-021 M2, Core V1 review requests and hardening plan); the two 2026-09-19 health checks went to `audits_2026-09/`
 
 **Moved 2026-10-21:** the `docs/WP-04_*`, `docs/Cline - Work Package *`, `docs/Mirai-Bastel — Work Package *` and audit files of the
 docs root now live in the two folders above (same file names). Independent reviews under `*/reviews/` were left untouched, so

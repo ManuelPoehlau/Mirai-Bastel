@@ -32,7 +32,7 @@ Folgerungen:
 1. AD-023 hat den Viewport-Teil (V0/V1/V2) bisher nicht höher bewertet als die History (H0/H1). Auf dem RPC ist **der Viewport-Sync der größte Einzelposten** (55–85 % je Operation), die History der zweitgrößte (8–26 %, bei Dissolve und Extrude 20 Faces ~25 %).
 2. Das Picking ist auch hier nur **4–13 %** (Hover-Neupick). AD-022 allein ändert die Topologie-Operation nicht (bestätigt AD-023 §1).
 3. Ein Undo kostet ~1,7–2,0 s, fast so viel wie die Operation. "Undo so schnell wie die Operation" (AD-023 Frage 1) ist ohne lokalen Viewport-Patch nicht erreichbar, auch nicht mit Delta-History allein, weil der Neuaufbau des Viewports danach bleibt.
-4. ~~Offen bleibt die Aufteilung des Syncs auf dem RPC.~~ **Beantwortet (2026-10-20, dritter Lauf, [Rohausgabe](../../../experiments/architecture_audit_probes/RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)):** ein Strukturneubau 1 224 ms = Normalen/Adjazenz 24 %, Index-Karte mit Triangulierung 42 %, Flatten und Upload 34 % (GL-Store nur ~12 %). Offen: Einfluss des zyklischen GC und der History-Tiefe (AD-023-Review B-1).
+4. ~~Offen bleibt die Aufteilung des Syncs auf dem RPC.~~ **Beantwortet (2026-10-20, dritter Lauf, [Rohausgabe](../../archive/experiments_2026-10/architecture_audit_probes/RESULTS_TOPOLOGY_SYNC_SPLIT_REFERENCE_PC_2026-10-20.md)):** ein Strukturneubau 1 224 ms = Normalen/Adjazenz 24 %, Index-Karte mit Triangulierung 42 %, Flatten und Upload 34 % (GL-Store nur ~12 %). Offen: Einfluss des zyklischen GC und der History-Tiefe (AD-023-Review B-1).
 
 ### 1.2 GPU-Picking-Spike auf `gollum` 87 500 V [RPC] (neu; vorher nur 20k)
 
