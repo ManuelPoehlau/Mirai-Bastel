@@ -16,10 +16,8 @@ Headless, no camera. Item numbers are AD-017 §13's:
 from __future__ import annotations
 
 import ast
-import contextlib
 import dataclasses
 import random
-import sys
 from pathlib import Path
 
 import pytest
@@ -44,6 +42,7 @@ from mirai.topology.knife_resolve import (
     rollback,
 )
 from tests.knife_kept_replay import assert_report_replays
+from tests.symmetric_knife_support import fuzz_paths, start_state
 from tests.test_knife_resolve import _grid, _Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -568,31 +567,15 @@ FUZZ_ASSETS = ("subd_cube", "head_basemesh", "tie_grid")
 FUZZ_PER_ASSET = 110
 
 
-@contextlib.contextmanager
-def _probe_on_path():
-    """The probe puts `experiments/`, `examples/` and `src/` first on `sys.path` while it imports and builds
-    its fixtures; keep that to this block so no other test sees the change."""
-    saved = list(sys.path)
-    sys.path[:0] = [str(_ROOT / "examples"), str(_ROOT / "experiments")]
-    try:
-        yield
-    finally:
-        sys.path[:] = saved
-
-
 @pytest.fixture(scope="module")
 def fuzz_sessions():
-    """Camera-free paths from the symmetric-Knife probe's generator (Production click rules through `KnifeTool`):
-    [(asset, session-start state, resolver path)]. The probe imports without pyglet."""
-    with _probe_on_path():
-        try:
-            from topology import symmetry_knife_probe as probe
-        except ImportError as exc:                                # pragma: no cover - the probe is importable today
-            pytest.skip(f"probe not importable: {exc}")
-        out = []
-        for name in FUZZ_ASSETS:
-            for s in probe.fuzz_sessions_for(name, random.Random(f"kept-calls/{name}"), FUZZ_PER_ASSET):
-                out.append((name, s.state, s.path))
+    """Camera-free paths from the Production-click-rule fuzz generator (`symmetric_knife_support.fuzz_paths`,
+    normal side, no coordinator): [(asset, session-start state, resolver path)]."""
+    out = []
+    for name in FUZZ_ASSETS:
+        state = start_state(name)
+        for path in fuzz_paths(state, random.Random(f"kept-calls/{name}"), FUZZ_PER_ASSET):
+            out.append((name, state, [p for p in path if p["kind"] != "space"]))
     return out
 
 
