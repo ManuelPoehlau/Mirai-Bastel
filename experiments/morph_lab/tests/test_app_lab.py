@@ -38,7 +38,7 @@ def _key(value: str, *modifiers: str) -> Input:
 
 
 UP, DOWN, SHIFT_UP, CTRL_UP, CTRL_DOWN, M = (
-    _key("up"), _key("down"), _key("up", "shift"), _key("up", "ctrl"), _key("down", "ctrl"), _key("m"),
+    _key("up", "alt"), _key("down", "alt"), _key("up", "alt", "shift"), _key("up", "ctrl"), _key("down", "ctrl"), _key("m"),
 )
 ONE, FOUR, W = _key("1"), _key("4"), _key("w")
 CTRL_Z, CTRL_Y, CTRL_A, SHIFT_S = _key("z", "ctrl"), _key("y", "ctrl"), _key("a", "ctrl"), _key("s", "shift")
@@ -249,7 +249,7 @@ def test_undo_of_a_target_step_jumps_to_the_target_and_the_surface_follows(lab_a
 def test_topology_change_switches_off_with_one_status_and_undo_restores(lab_app):
     app, lab, _ = lab_app
     base, _target = sculpted_lab(app, lab)
-    press(app, lab, _key("up"))
+    press(app, lab, UP)
     frame(app)
 
     def split():
@@ -396,7 +396,7 @@ def test_broken_file_refuses_the_start(tmp_path):
 
 # -- Left/Right switch, relative target -----------------------------------------------------------
 
-LEFT, RIGHT = _key("left"), _key("right")
+LEFT, RIGHT = _key("comma"), _key("period")
 
 
 def test_left_right_switch_the_edit_object_through_the_apps_own_gesture(lab_app):

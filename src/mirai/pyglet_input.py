@@ -68,6 +68,8 @@ def _key_map() -> dict[int, str]:
             _key.BACKSPACE: "backspace", _key.DELETE: "delete",
             # WP Toolbox Gaps A1: Ctrl++ / Ctrl+- (Grow / Shrink), main keys and keypad.
             _key.PLUS: "plus", _key.NUM_ADD: "plus", _key.MINUS: "minus", _key.NUM_SUBTRACT: "minus",
+            # Morph Lab: Basis / Ziel wechseln (`,` / `.`).
+            _key.COMMA: "comma", _key.PERIOD: "period",
         }
     return _KEY_MAP
 

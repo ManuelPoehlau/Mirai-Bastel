@@ -12,7 +12,7 @@ unchanged through `Application`. The lab only adds
   "Second user (Morph Lab)" and review CLAUDE-001);
 - one HUD line built from public state only.
 
-The weight keys change view state only (no mesh change, no History, not saved); Left/Right switch the
+The weight keys change view state only (no mesh change, no History, not saved); Comma/Period switch the
 edit object by running the app's own `4` · select · `1` gesture. So the lab
 needs neither `command_gate` nor `apply_mesh_change`. While an `Application` interaction owns the
 keys (`interaction_owner`, H2-R2) a lab key is refused visibly. The keys are a proposal
@@ -61,7 +61,7 @@ class LabKey:
 
 
 def key_label(input: Input) -> str:
-    names = {"up": "Pfeil hoch", "down": "Pfeil runter", "left": "Pfeil links", "right": "Pfeil rechts"}
+    names = {"up": "Pfeil hoch", "down": "Pfeil runter", "comma": ",", "period": "."}
     mods = "+".join(m.capitalize() for m in sorted(input.modifiers))
     value = names.get(input.value, input.value.upper())
     return f"{mods}+{value}" if mods else value
@@ -73,16 +73,16 @@ def _key(value: str, *modifiers: str) -> Input:
 
 #: The single source of the lab keys (printed at start, mirrored in the README).
 LAB_KEYS: tuple[LabKey, ...] = (
-    LabKey(_key("up"), WEIGHT_UP, f"Gewicht +{STEP} %"),
-    LabKey(_key("down"), WEIGHT_DOWN, f"Gewicht -{STEP} %"),
-    LabKey(_key("up", "shift"), WEIGHT_UP_FINE, f"Gewicht +{FINE_STEP} %"),
-    LabKey(_key("down", "shift"), WEIGHT_DOWN_FINE, f"Gewicht -{FINE_STEP} %"),
+    LabKey(_key("up", "alt"), WEIGHT_UP, f"Gewicht +{STEP} %"),
+    LabKey(_key("down", "alt"), WEIGHT_DOWN, f"Gewicht -{STEP} %"),
+    LabKey(_key("up", "alt", "shift"), WEIGHT_UP_FINE, f"Gewicht +{FINE_STEP} %"),
+    LabKey(_key("down", "alt", "shift"), WEIGHT_DOWN_FINE, f"Gewicht -{FINE_STEP} %"),
     LabKey(_key("up", "ctrl"), WEIGHT_FULL, "Gewicht 100 %"),
     LabKey(_key("down", "ctrl"), WEIGHT_ZERO, "Gewicht 0 %"),
     LabKey(_key("m"), TOGGLE_AB, "A/B: 0 % <-> zuletzt eingestelltes Gewicht"),
     LabKey(_key("b"), TOGGLE_RELATIVE, "Ziel relativ <-> absolut"),
-    LabKey(_key("left"), EDIT_BASE, "Basis bearbeiten"),
-    LabKey(_key("right"), EDIT_TARGET, "Ziel 1 bearbeiten"),
+    LabKey(_key("comma"), EDIT_BASE, "Basis bearbeiten"),
+    LabKey(_key("period"), EDIT_TARGET, "Ziel 1 bearbeiten"),
 )
 LAB_COMMANDS = frozenset(entry.command for entry in LAB_KEYS)
 
@@ -146,7 +146,7 @@ class MorphAppLab:
         return weight
 
     def switch_edit_object(self, object_id) -> bool:
-        """Left/Right: the gesture `4` · select the object · `1`, run through the app's own keys,
+        """Comma/Period: the gesture `4` · select the object · `1`, run through the app's own keys,
         so the switch is the app's (Q-5, E-14: no Undo step, its refusals and status line). The
         lab never calls `_set_edit_object`. Ends in the component mode the artist was in
         (`1` when coming from `4`); the object selection afterwards is the one object."""
@@ -216,7 +216,7 @@ def startup_listing() -> list[str]:
     lines = [f"Lab-Kontext {MORPH_LAB_CONTEXT!r} (Vorschlag, keine Artist-Entscheidung):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEYS)
     lines.append("Alles andere ist die Bedienung von src/main.py (W/E/R, Tweak, Soft, Shift+S, Undo, 4, D, ...).")
-    lines.append("Ziel bearbeiten: Pfeil rechts (oder 4 · Klick aufs Ziel · 1). Zurück zur Basis: Pfeil links.")
+    lines.append("Ziel bearbeiten: . (Punkt, oder 4 · Klick aufs Ziel · 1). Zurück zur Basis: , (Komma).")
     lines.append("In 4 ist das ausgewählte Objekt gelblich; Alt+R schaltet es auf Referenz und zurück.")
     return lines
 
@@ -232,7 +232,7 @@ def hints(lab: MorphAppLab) -> list[str]:
     if provider.editing == EDITING_TARGET:
         out.append(
             "Ziel wird bearbeitet - Basis zeigt die Mischung" if lab.weight > MIN_WEIGHT
-            else "Ziel wird bearbeitet - Pfeil hoch zeigt die Mischung an der Basis"
+            else "Ziel wird bearbeitet - Alt+Pfeil hoch zeigt die Mischung an der Basis"
         )
     elif provider.editing == EDITING_BASE and lab.weight > MIN_WEIGHT:
         if app.display.mode is DisplayMode.WIREFRAME:

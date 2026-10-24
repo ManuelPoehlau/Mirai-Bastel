@@ -1,7 +1,7 @@
 # Morph Lab (WP-MORPH-LAB-01)
 
 **Status: Praxistest beantwortet (2026-10-17), Iteration offen.** Gebaut und automatisch getestet (2026-10-16); Manus Antworten
-und Verdikte stehen unter „Praxistest“ (`←`/`→` und relatives Ziel umgesetzt, 2026-10-17, noch nicht artist-geprüft; Schieberegler offen).
+und Verdikte stehen unter „Praxistest“ (`,`/`.` und relatives Ziel umgesetzt, 2026-10-17, noch nicht artist-geprüft; Schieberegler offen).
 Discovery-Lab unter `experiments/`. **Morph Targets sind nicht in Production**: `src/` ist unverändert, `src/main.py` kennt
 kein Morph. Das Lab läuft **auf dem App-Pfad** wie das SubD Lab: alle Modellier-Werkzeuge, Undo, Symmetrie, Soft Selection,
 Licht und Shading sind die der App. Die gemischte Form zeichnet der Viewport über den Haken AD-013 H7
@@ -42,7 +42,7 @@ Extrude, Loops, Delete, Undo/Redo, Objekt-Modus `4`, das bearbeitete Objekt wech
 
 **Das Lab** ergänzt nur das **Gewicht** und die Anzeige der Mischung: Ist die Basis das bearbeitete Objekt und das
 Gewicht über 0 %, zeigt der Viewport statt der Basis die Mischung Basis → Ziel, mit Licht und Flat/Smooth der App.
-**Auch beim Arbeiten am Ziel** zeigt die Basis die Mischung beim eingestellten Gewicht (Manu 2026-10-17): mit `Pfeil hoch/runter`
+**Auch beim Arbeiten am Ziel** zeigt die Basis die Mischung beim eingestellten Gewicht (Manu 2026-10-17): mit `Alt+Pfeil hoch/runter`
 morpht man, während man das Ziel formt, und jeder Schritt am Ziel ist an der Basis sofort sichtbar. Das Ziel selbst wird wie
 es ist gezeichnet. (Viewport-Erweiterung H7-E, siehe unten.)
 
@@ -50,19 +50,21 @@ Das Gewicht ist reine Ansicht: kein Undo-Schritt, wird nicht gespeichert, änder
 
 ## Steuerung (Vorschlag, `PROVISIONAL`)
 
+Umgestellt 2026-10-24 (Manu): `Pfeil`, `Shift+Pfeil`, `←`/`→` kollidierten mit den Look-Zeilen-Tasten der App (AD-024 §8, `LookRow*`, `LookValue*`, `Loop*`); Gewicht jetzt auf `Alt+Pfeil`, Basis/Ziel auf `,`/`.`.
+
 | Taste | Funktion |
 |---|---|
-| `Pfeil hoch` / `Pfeil runter` | Gewicht +10 % / −10 % |
-| `Shift+Pfeil hoch` / `Shift+Pfeil runter` | Gewicht +1 % / −1 % |
+| `Alt+Pfeil hoch` / `Alt+Pfeil runter` | Gewicht +10 % / −10 % |
+| `Alt+Shift+Pfeil hoch` / `Alt+Shift+Pfeil runter` | Gewicht +1 % / −1 % |
 | `Strg+Pfeil hoch` / `Strg+Pfeil runter` | Gewicht 100 % / 0 % |
 | `M` | A/B: 0 % ↔ zuletzt eingestelltes Gewicht |
 | `B` | Ziel **relativ ↔ absolut** (`PROVISIONAL`; später eine Checkbox in der UI) |
-| `Pfeil rechts` | **Ziel bearbeiten** (`PROVISIONAL`, J-2) |
-| `Pfeil links` | **Zurück zur Basis** |
+| `.` (Punkt) | **Ziel bearbeiten** (`PROVISIONAL`, J-2) |
+| `,` (Komma) | **Zurück zur Basis** |
 | alternativ | `4` · Klick aufs Objekt · `1` (wie die App) |
 | alles andere | die App |
 
-`Pfeil links/rechts` führen genau die App-Geste `4` · Objekt auswählen · `1` aus (kein eigener Pfad, kein Undo-Schritt, mit
+`,` / `.` führen genau die App-Geste `4` · Objekt auswählen · `1` aus (kein eigener Pfad, kein Undo-Schritt, mit
 den Ablehnungen der App); danach bist du im Komponenten-Modus, in dem du warst (aus `4` in `1`). Bei mehreren Targets wird die
 Lösung neu entschieden.
 
@@ -80,10 +82,10 @@ in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 
 1. **Ziel finden.** Das Ziel steht rechts neben dem Kopf, die Kamera zeigt aber nur den Kopf: mit dem **Mausrad ein paar
    Rasten zurück**, bis beide zu sehen sind.
-2. **Ziel formen.** `Pfeil rechts` (HUD: `Bearbeitet: Ziel 1`; oder `4`, aufs Ziel klicken, `1`). Dann ein Lächeln oder einen offenen Kiefer
+2. **Ziel formen.** `.` (HUD: `Bearbeitet: Ziel 1`; oder `4`, aufs Ziel klicken, `1`). Dann ein Lächeln oder einen offenen Kiefer
    modellieren — mit allem, was die App hat: W/E/R, Tweak (Strg+LMB ziehen), Soft Selection (`O`), Symmetrie (`Shift+S`),
    Undo. Die HUD sagt `Ziel wird bearbeitet`.
-3. **Zurück zur Basis** (`Pfeil links`) und mit den Pfeiltasten das
+3. **Zurück zur Basis** (`,`) und mit `Alt+Pfeil` das
    Gewicht hochfahren. Bei 0 % ist es exakt die Basis, bei 100 % exakt das Ziel; jedes Gewicht sieht gleich aus, egal auf
    welchem Weg du es erreichst. `M` vergleicht 0 % mit dem letzten Gewicht.
 4. **Weiterformen und vergleichen.** Am Ziel nachbessern, zurück, wieder schieben. `Strg+Z` springt zum Objekt des
@@ -124,7 +126,7 @@ in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
 | Gewicht als Undo-Schritt / gespeichert? | **Nein** | keine Änderung (wie gebaut) |
 | 6a Auswahl/Picking auf der Ruhelage | **hilft** (zeigt die Abweichung von der Basis) | keine Änderung; bewusst behalten |
 
-Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE: `←`/`→` und relatives Ziel sind umgesetzt (noch nicht von Manu geprüft), der Schieberegler steht aus.
+Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE: `,`/`.` und relatives Ziel sind umgesetzt (noch nicht von Manu geprüft), der Schieberegler steht aus.
 
 ## Annahmen (`PROVISIONAL`, in einem Satz korrigierbar)
 
