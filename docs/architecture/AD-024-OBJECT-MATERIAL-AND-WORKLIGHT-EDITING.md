@@ -121,10 +121,10 @@ to tell from "selected" (Artist question Q-M4; the cure would be an outline, out
 
 ## 9. Open Artist questions (max 10 lines)
 
-- Q-L1: Light changes are not Undo steps (view state, like the camera). Right, or should Ctrl+Z undo them too?
-- Q-L2: Light drag: which gesture — e.g. hold a key + move the mouse (like `S`/`G`), or `Ctrl+Alt+LMB` drag?
-- Q-L3: Should the light be saved with the scene later (now: not saved, resets to Raitt 2:1)?
-- Q-M1: Base colour by keys as hue / saturation / brightness steps until the colour picker comes — OK?
-- Q-M2: Mirror copy takes the source's material — OK?
-- Q-M3: References keep the fixed blue even when they have their own material — OK?
-- Q-M4: Selected objects tint toward yellow; on a yellow object that is hard to see — acceptable for now?
+- Q-L1: Light changes are not Undo steps (view state, like the camera). Right, or should Ctrl+Z undo them too? A: Right
+- Q-L2: Light drag: which gesture — e.g. hold a key + move the mouse (like `S`/`G`), or `Ctrl+Alt+LMB` drag? A: Hold L + move mouse 
+- Q-L3: Should the light be saved with the scene later (now: not saved, resets to Raitt 2:1)? A: Yes
+- Q-M1: Base colour by keys as hue / saturation / brightness steps until the colour picker comes — OK? A: Yes
+- Q-M2: Mirror copy takes the source's material — OK? A: Yes
+- Q-M3: References keep the fixed blue even when they have their own material — OK? A: Yes
+- Q-M4: Selected objects tint toward yellow; on a yellow object that is hard to see — acceptable for now? A: Yes
