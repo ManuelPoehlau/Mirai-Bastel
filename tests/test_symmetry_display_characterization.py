@@ -1,30 +1,37 @@
-"""Anzeige unter Symmetrie, charakterisiert an Production (WP-SYM-LAB-03 Slice 5).
+"""Display under symmetry, characterised on Production (GL-free; finding, not a capability rule).
 
-Bis Slice 5 `test_draw_data.py` gegen die Lab-VBO-Daten (`lab_draw_data`, gelöscht mit
-dem alten Renderer). Was bleibt — Plan A2-Tabelle:
+Ported 2026-10-24 from the Symmetry Lab (`experiments/symmetry_lab/tests/test_display_characterization.py`,
+removed with the Lab; last state in commit `61ebe77`):
 
-- `test_subd_cube_topology_is_as_registered` unverändert;
-- der E10-Befund zur Quad-Diagonale, jetzt gegen die Triangulierung, mit der der
-  App-Pfad zeichnet und pickt (`viewport.derived.triangulate_mesh_face`). Er hält die
-  Grundlage von Q1 fest (Plan §6, Artist (a)): `subd_cube` schattiert unter X
-  asymmetrisch, `head_basemesh` nicht. Die Lab-Teilung an der kürzeren Diagonale ist mit
-  Q1 = (a) entfallen;
-- die gespiegelten Vertex-Normalen, jetzt gegen `viewport.derived.DerivedGeometry`
-  (Newell-Face-Normale seit `e64de4f`, Plan §1.2 D6).
-
-Befund, keine Capability-Regel. GL-frei.
+- `subd_cube` topology as registered;
+- the E10 finding on the quad diagonal against the triangulation the app draws and picks with
+  (`viewport.derived.triangulate_mesh_face`): `subd_cube` shades asymmetrically under X, `head_basemesh` does not
+  (basis of the Symmetry Lab's Q1 = (a));
+- mirrored vertex normals for paired vertices (`viewport.derived.DerivedGeometry`, Newell face normal).
 """
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
-from core import SymmetryDefinition
-from mirai.application import Application
-from mirai.symmetry import CorrespondenceState, mirror_position, vertex_correspondence
-from viewport.derived import DerivedGeometry, triangulate_mesh_face
+import tests._bootstrap  # noqa: F401
+from tests._bootstrap import _REPO_ROOT
 
-from symmetry_lab.lab_scene import load_asset_into
+_EXAMPLES = _REPO_ROOT / "examples"
+if str(_EXAMPLES) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES))
+
+from core import SymmetryDefinition  # noqa: E402
+from loaders.assets import asset_path  # noqa: E402
+from mirai.application import Application  # noqa: E402
+from mirai.symmetry import CorrespondenceState, mirror_position, vertex_correspondence  # noqa: E402
+from viewport.derived import DerivedGeometry, triangulate_mesh_face  # noqa: E402
+
+
+def load_asset_into(app: Application, name: str) -> None:
+    app.init_scene("obj", obj_path=asset_path(name))
 
 
 @pytest.fixture

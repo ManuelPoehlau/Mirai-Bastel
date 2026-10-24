@@ -1,4 +1,4 @@
-"""The lab loads nothing from `playground/` or from any other `experiments/` folder. Pattern:
+"""The lab loads nothing from `playground/` or from any other `experiments/` folder. Pattern: the former
 `experiments/subdivision_lab/tests/test_import_boundary.py` (rebuilt, not imported).
 
 Fresh subprocess, import every lab module (incl. the window module and `run` — `main()` does not
@@ -43,7 +43,7 @@ _SCRIPT = textwrap.dedent(
     print(json.dumps({{
         "lab_modules": names,
         "playground_reachable": importlib.util.find_spec("playground") is not None,
-        "subdivision_lab_reachable": importlib.util.find_spec("subdivision_lab") is not None,
+        "other_lab_reachable": importlib.util.find_spec("knife_oracle") is not None,
         "playground_loaded": sorted(
             n for n in sys.modules if n == "playground" or n.startswith("playground.")
         ),
@@ -61,6 +61,6 @@ def test_no_playground_or_other_experiment_imports():
 
     assert {"_paths", "morph", "lab_scene", "lab_app", "lab_app_window", "run"} <= set(report["lab_modules"])
     assert report["playground_reachable"], "test would be worthless without importable playground"
-    assert report["subdivision_lab_reachable"], "test would be worthless without importable subdivision_lab"
+    assert report["other_lab_reachable"], "test would be worthless without an importable other experiment"
     assert report["playground_loaded"] == []
     assert report["foreign_experiment_modules"] == []
