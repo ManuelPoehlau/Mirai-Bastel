@@ -1,11 +1,16 @@
-"""Re-Symmetrize-Plan und -Ausführung — reine, GL-freie Funktionen (Lab).
+"""Re-Symmetrize-Plan und -Ausführung — reine, GL-freie Funktionen.
+
+AD-SYM-04 Slice A3 (2026-10-24): **verschoben, nicht kopiert** aus
+`experiments/symmetry_lab/lab_resymmetrize.py` (K-2, AD-013 I1). Die modale Vorschau
+(öffnen, ausführen, abbrechen) gehört `Application` (§10 R-a, `interaction_owner`
+`"resymmetrize"`); hier liegt nur, was sie rechnet und zeigt.
 
 Handoff WP-SYM-LAB-01 Slice 5, §2 E12–E14. Vorschau und Ausführung benutzen
 denselben `ResymPlan` (Handoff §4.2): `plan_resymmetrize` rechnet, die Vorschau
 zeigt den Plan (`resym_preview_data`, `plan_summary`) und `set_plan_positions`
 setzt genau diese Positionen.
 
-- **Quellseite (A6, E12):** die topologische Seite (`lab_topology`) des
+- **Quellseite (A6, E12):** die topologische Seite (`mirai.symmetry_topology`) des
   ausgewählten Vertex — nicht das Vorzeichen seiner Position. Dadurch auch
   richtig, wenn der Vertex schon über die Ebene gewandert ist.
 - **Was sich ändert (E13):** Jeder Zielseiten-Vertex mit topologischem
@@ -17,13 +22,10 @@ setzt genau diese Positionen.
 - **Keine Toleranz (A5):** „schon symmetrisch" heißt exakt gleich; nur echte
   Positionsänderungen landen im Plan.
 - **Ein Undo-Schritt (E14):** `set_plan_positions` setzt die Positionen ohne
-  History; es ist das `mutate` von `Application.apply_mesh_change` (`lab_app`,
-  WP-SYM-LAB-03 Slice 3), der History-Eintrag entsteht dort (H3). Ein leerer Plan
-  erzeugt keinen. Das frühere `apply_plan` (eigener `MeshStateCommand`) ging in
-  Slice 5 mit dem alten Dispatcher.
+  History; `Application` ruft es in seiner Mesh-Transaktion, der History-Eintrag
+  entsteht dort. Ein leerer Plan erzeugt keinen.
 - **Vorschau-Daten (E15):** `resym_preview_data` liefert Punkte und Linien der
-  Vorschau aus demselben Plan (für `lab_overlays`); seit WP-SYM-LAB-03 Slice 5
-  hier statt im gelöschten `lab_draw_data`.
+  Vorschau aus demselben Plan (für `mirai.symmetry_display.SymmetryDisplay`).
 """
 
 from __future__ import annotations
@@ -35,7 +37,12 @@ from core import Mesh, VertexId
 from mirai.symmetry import mirror_position
 from mirai.symmetry_axis import AXIS_INDEX, current_axis
 
-from .lab_topology import TopologyReport, topology_report
+from .symmetry_topology import (
+    TopologyReport,
+    has_seam_edges,
+    topological_pairing,
+    topological_sides,
+)
 
 Vec3 = tuple[float, float, float]
 
@@ -97,15 +104,19 @@ def plan_resymmetrize(
 ) -> ResymPlan:
     """Plan für Re-Symmetrize von der Seite von `source_vertex` aus (A6, E12, E13).
 
-    Wirft `ResymmetrizeRejected`, wenn Symmetrie aus ist, `source_vertex` ein
-    Seam-Vertex ist oder keine eindeutige Seite hat, oder die Seam das Mesh
-    nicht in genau zwei Komponenten teilt.
+    Wirft `ResymmetrizeRejected`, wenn Symmetrie aus ist, die Definition keine Seam-Edge
+    hat, `source_vertex` ein Seam-Vertex ist oder keine eindeutige Seite hat, oder die Seam
+    das Mesh nicht in genau zwei Komponenten teilt. Ohne `report` werden erst die Seiten und
+    nur für einen gültigen Fall die Paarung gerechnet: eine Ablehnung kostet keine Paarung
+    (A3, gemessen auf `gollum`: 87 500 V, ohne Seam unter X).
     """
     axis = current_axis(mesh)
     if axis is None:
         raise ResymmetrizeRejected("Symmetrie aus")
-    report = report if report is not None else topology_report(mesh)
-    sides = report.sides
+    if report is None and not has_seam_edges(mesh):
+        # Ohne Seam-Edge gibt es kein Face-Paar zum Loslaufen (E11): der Plan bliebe leer.
+        raise ResymmetrizeRejected("keine Seam auf der Ebene — nichts zu spiegeln")
+    sides = report.sides if report is not None else topological_sides(mesh)
     if sides.component_count != 2:
         raise ResymmetrizeRejected(
             f"Seam teilt das Mesh in {sides.component_count} Teile (nötig: genau 2)"
@@ -116,6 +127,8 @@ def plan_resymmetrize(
     if source is None:
         raise ResymmetrizeRejected(f"v{int(source_vertex)} gehört zu keiner Seite")
 
+    if report is None:
+        report = TopologyReport(topological_pairing(mesh), sides)
     definition = mesh.symmetry_definition
     partners = report.pairing.partners
     moves: list[PositionChange] = []
@@ -162,15 +175,15 @@ def plan_description(plan: ResymPlan) -> str:
 
 def set_plan_positions(mesh: Mesh, plan: ResymPlan) -> set[VertexId]:
     """Setzt genau die Positionen des Plans (E13) und gibt die bewegten Vertex-IDs
-    zurück — ohne History; das `mutate` von `Application.apply_mesh_change`
-    (WP-SYM-LAB-03 Slice 3), wie `lab_symmetry.set_symmetry_axis` in Slice 1b."""
+    zurück — ohne History (das `mutate` der Mesh-Transaktion von `Application`)."""
     for change in plan.changes:
         mesh.set_vertex_position(change.vertex, change.after)
     return {change.vertex for change in plan.changes}
 
 
-def plan_summary(plan: ResymPlan) -> str:
-    """Statuszeilen-Text der Vorschau (E15)."""
+def plan_summary(plan: ResymPlan, key: str = "M") -> str:
+    """Statuszeilen-Text der Vorschau (E15); `key` = die Taste, die ausführt (die App nennt ihre
+    gebundene, A3)."""
     direction = f"Quelle {plan.source_label} → Ziel {plan.target_label}"
     if plan.is_empty:
         counts = "0 Änderungen"
@@ -178,7 +191,7 @@ def plan_summary(plan: ResymPlan) -> str:
         counts = f"bewegt {len(plan.moves)}, Seam → Ebene {len(plan.seam_moves)}"
     if plan.unmatched:
         counts += f", ohne Partner bleibt {len(plan.unmatched)}"
-    return f"Re-Symmetrize {direction}: {counts} | M = ausführen, ESC = abbrechen"
+    return f"Re-Symmetrize {direction}: {counts} | {key} = ausführen, ESC = abbrechen"
 
 
 @dataclass(frozen=True)

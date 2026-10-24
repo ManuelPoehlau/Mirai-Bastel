@@ -97,7 +97,7 @@ def symmetric_fixture(selection: str) -> Application:
 
 def press_through(app: Application, command: str) -> bool:
     """Press the test key bound to `command`; an armed hold-key tool is moved and released, a
-    Knife session is committed (no clicks: nothing to cut)."""
+    Knife session is committed (no clicks: nothing to cut), an open Re-Symmetrize preview executed."""
     app.bindings.bind(TEST_KEY, command)
     returned = app.key_press(TEST_KEY)
     if app.interaction_owner == "transform":
@@ -106,6 +106,8 @@ def press_through(app: Application, command: str) -> bool:
         app.key_release(TEST_KEY)
     elif app.interaction_owner == "knife":
         app.key_press(ENTER)
+    elif app.interaction_owner == "resymmetrize":
+        app.key_press(TEST_KEY)  # the second press executes the preview (AD-SYM-04 A3)
     assert app.interaction_owner is None
     return bool(returned)
 

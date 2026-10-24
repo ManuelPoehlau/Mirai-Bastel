@@ -50,9 +50,7 @@ LAB_MODULES = (
     "symmetry_lab.lab_app_window",
     "symmetry_lab.lab_bindings",
     "symmetry_lab.lab_overlays",
-    "symmetry_lab.lab_resymmetrize",
     "symmetry_lab.lab_scene",
-    "symmetry_lab.lab_topology",
     "symmetry_lab.probe_drag_cost",
     "symmetry_lab.run",
 )

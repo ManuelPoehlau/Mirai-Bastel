@@ -7,15 +7,15 @@ werden nicht kopiert. Das Lab legt nur zwei Handler darüber
 - `on_key_press`: die Lab-Entscheidung (`lab_app.lab_key_press`). Jede Taste,
   die nicht zum Lab gehört, läuft durch den `on_key_press` aus `main.py` — mit
   allen seinen Seiteneffekten (Shift-Tracking für den Knife-Hover, WP-KNIFE-01
-  UX2b; `app.key_press`). Eine Lab-Taste (S, M, B mit Modifiern) erreicht ihn
+  UX2b; `app.key_press`). Die Lab-Taste (Shift+B) erreicht ihn
   nicht; sein Shift-Tracking reagiert nur auf die Shift-Symbole selbst
   (`shift_keys_after` gibt sonst `None`), die nie Lab-Tasten sind — es geht also
   nichts verloren. Immer `EVENT_HANDLED`, wie `main.py` (Esc schließt das
   Fenster nicht, H2-R3).
 - `on_draw`: erst der Draw aus `main.py`, dann die Lab-HUD-Zeile (Slice 2: volle
   Zeile wie die alte Statuszeile, `lab_app.hud_text`) und darüber, solange die
-  Re-Symmetrize-Vorschau offen ist, die blaue Vorschau-Zeile (Slice 3,
-  `lab_app.preview_text`, Farbe wie im alten `lab_window`). Slice 4: die
+  Re-Symmetrize-Vorschau offen ist (seit AD-SYM-04 A3 die der App), die blaue Vorschau-Zeile
+  (Slice 3, `lab_app.preview_text`, Farbe wie im alten `lab_window`). Slice 4: die
   HUD-Zeile zeigt bei aktiver Symmetrie den E5-Modus, und darüber steht, solange
   etwas einseitig läuft (Knife-Session oder ein nicht spiegelnder Transform unter
   Symmetrie), die orange E5-Warnzeile (`lab_app.e5_warning_text`).

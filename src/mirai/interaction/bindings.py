@@ -207,6 +207,10 @@ def build_default_bindings() -> BindingSet:
     # PROVISIONAL (AD-013 A5: the Lab's key is not promoted with the capability); it is the
     # key the refusal texts of `symmetric_ops`/`symmetric_knife`/`symmetric_extrude` name.
     bs.set_default(_key("s", "shift"), cmd.SYMMETRY_CYCLE)
+    # AD-SYM-04 Slice A3: Re-Symmetrize (preview, again = execute, Esc = cancel). PROVISIONAL key:
+    # the Lab's M (Artist A7) is taken in `src/main.py` by the Morph Lab bridge (Manu 2026-10-17),
+    # and AD-013 A5 promotes the capability, not the Lab's key.
+    bs.set_default(_key("m", "alt"), cmd.RESYMMETRIZE)
 
     # Loop tools (2026-10-15, promoted from the Playground; keys = Artist Input Truth
     # `topology.edge_loop_select` / `edge_ring_select` / `loop_insert` / `loop_slide`).

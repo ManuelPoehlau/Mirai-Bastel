@@ -607,11 +607,14 @@ longer a Limit; everything else in this section stands unchanged.
   of the three inputs resolves to `None` in GLOBAL and in KNIFE (user and default layers) and
   fails loudly otherwise (F15, D2). The three entries are printed at start-up.
   *Amended 2026-10-14 ([Addendum 2026-10-14](#addendum-2026-10-14-ad-sym-04--symmetry-in-the-production-app-h2-r5-and-h2-r1-amended-h2-r6-clarified)): two entries, M and Shift+B; Shift+S is the app's GLOBAL symmetry
-  command.* The only app
-  command the Lab interprets is `Cancel`, and only while the preview is open (D1).
+  command.* *Amended 2026-10-24 ([Addendum 2026-10-24](#addendum-2026-10-24-ad-sym-04-slice-a3--re-symmetrize-in-the-app-h2-r1-h2-r2-h2-r3-amended-d1-and-the-preview-row-retired)): one entry, Shift+B; Re-Symmetrize is the app's GLOBAL
+  command (default Alt+M).* The only app
+  command the Lab interprets is `Cancel`, and only while the preview is open (D1). *(Retired 2026-10-24 with D1.)*
 - **H2-R2 — start and end stay with their owner (I3, AD-015 runtime-state rule).**
   *Key-owning interactions* are: `Application`'s armed or running transform and its Knife
   session (exactly `app.interaction_owner is not None`), and the Lab's Re-Symmetrize preview.
+  *Amended 2026-10-24 ([Addendum 2026-10-24](#addendum-2026-10-24-ad-sym-04-slice-a3--re-symmetrize-in-the-app-h2-r1-h2-r2-h2-r3-amended-d1-and-the-preview-row-retired)): the preview is `Application`'s (`interaction_owner` "resymmetrize"); the
+  preview bullets below are retired, the `interaction_owner` bullet covers it.*
   **Camera gestures (orbit, pan, zoom) own no keys:** `Application` does not gate keys during
   them (`application.py:993-1029`), and the command gate applies during them as at any other
   time (F1). Consequences:
@@ -647,7 +650,7 @@ longer a Limit; everything else in this section stands unchanged.
   gate table per Lab state (above) is printed at start-up next to the three binding entries,
   because a refusal deviates from the Artist language like a rebinding does (F8).
   The listing also prints D1's contextual meaning: `Cancel (Esc): closes the Re-Symmetrize
-  preview while it is open` (CLAUDE-002 N8).
+  preview while it is open` (CLAUDE-002 N8). *(Retired 2026-10-24 with D1 and the preview row.)*
   **Return contract (F13, N4):** refused input returns `False` ("the model did not change"), like
   `Application`'s own gates (`:1011-1012`, `:1017-1018`); a Lab command that ran returns `True`,
   a refused Lab command `False`; Esc that closes the preview (D1) returns `True`; allowed
@@ -1329,6 +1332,7 @@ symmetry command allowed under BLOCK and refused under the preview row; the F-a 
 [AD-SYM-04 §10](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#10-re-symmetrize-in-the-app-proposed-2026-10-14) proposes making
 the preview an `Application`-owned interaction; that would reduce H2-R1 to one Lab entry (Shift+B), retire D1, the Lab's
 preview bullets of H2-R2 and the preview row. Until it is reviewed and decided, the table above stands.
+*Built 2026-10-24: [Addendum 2026-10-24](#addendum-2026-10-24-ad-sym-04-slice-a3--re-symmetrize-in-the-app-h2-r1-h2-r2-h2-r3-amended-d1-and-the-preview-row-retired).*
 
 ### Implementation note (2026-10-14, AD-SYM-04 slice A1)
 
@@ -1355,6 +1359,43 @@ and calls neither `add_overlay` nor `apply_mesh_change` nor `set_status` (H2-R5 
 with the real import, now pinned by a test). No rule text changes: the Lab still writes the gate alone (H2-R6), uses only
 the H2-R4 list (it keeps its own report cache instance for HUD and partners rather than reading `Application`'s), and draws
 none of the moved layers; its preview overlays stay until A3.
+
+## Addendum (2026-10-24, AD-SYM-04 slice A3 — Re-Symmetrize in the app: H2-R1, H2-R2, H2-R3 amended, D1 and the preview row retired)
+
+**Status:** **BUILT** (2026-10-24). The decision *that* Re-Symmetrize comes into the app is Manu's (2026-10-14, "Re
+Symmtrizes kommt mit in die App", AD-SYM-04 Decision record); the go to build it is his message of 2026-10-24
+("Resymmetrize in die App holen ist noch offen"). The mechanism is AD-SYM-04 §10 **R-a** as proposed. **Open point for
+Manu:** §10 asked for an independent review in a fresh session before A3; it was not held as a separate session — the
+author checked the rule changes below against H2-R1…R6 and the tests listed. If Manu wants that review, it reviews this
+built state.
+
+**Why.** The Lab ran the preview through its gate row (display commands only) and `hover_suspended`; `src/main.py` may
+write no gate data (H2-R5) and a second gate writer needs its own review (H2-R6), so the Lab's mechanism could not move.
+R-a makes the preview an `Application` interaction shaped like the Knife session: `key_press` routes keys to it first.
+
+| Rule | Change |
+|---|---|
+| **H2-R1** | The Lab context holds **exactly one entry, Shift+B → `SymmetryGateMode`**. Re-Symmetrize is the app's GLOBAL `commands.RESYMMETRIZE`, default **Alt+M** (`PROVISIONAL`, AD-013 A5): bare M — the Lab's key, Artist A7 — has been the Morph Lab bridge in `src/main.py` since 2026-10-17 (window level). The start-up assert covers Shift+B only. |
+| **D1** | **Retired.** Esc reaches `Application`, which closes its own preview like a Knife session. T-R2f stays (Esc without a preview disarms W and ends a Knife session). |
+| **H2-R2** | The preview leaves the list of the Lab's key-owning interactions; it is `Application`'s (`interaction_owner == "resymmetrize"`), so the bullet "while `interaction_owner` is not `None`, the Lab executes none of its commands and writes neither the gate nor the hover flag" covers it (Shift+B is refused with `Re-Symmetrize-Vorschau offen`). The preview bullets (the Lab opens/ends it, N2, "installing another row asserts") are retired with it. |
+| **Gate table** | The **preview row is removed** (three rows: off, MARK, BLOCK). The BLOCK row's named entries (K-6) gain `ReSymmetrize` next to `SymmetryCycle`: it changes positions under an existing definition and mirrors by construction. MARK and symmetry-off rows unchanged. |
+| **H2-R3** | The start-up listing loses the preview row and the D1 line and names the app key (`App-Taste Alt+M -> ReSymmetrize`). |
+| **`hover_suspended`** | Keeps its contract; its only external writer (the Lab's preview) is gone, the Lab no longer writes it (`GateRow` lost the column). `Application` pauses the hover for its own preview without the flag (`_update_hover` reads the open preview), so the flag stays a host hook with no user. |
+
+**Unchanged:** H2-R4 (the Lab reads the open preview through the public `resymmetrize_preview` for its blue line), H2-R5
+(`src/main.py` gained no code; the key is a default binding), H2-R6, G-2, the Limits of G.
+
+**What the app's preview does (the Lab's KEEP behaviour, tests `tests/test_application_resymmetrize.py`):** exactly one
+selected vertex; the plan is computed once at open; the key again executes exactly that plan as one Undo step (selection
+restored with it), an empty plan records nothing; Esc closes without change; while open only `_DISPLAY_COMMANDS` and
+navigation pass, every other bound key, click, Soft step answers `Vorschau aktiv — Befehl ignoriert | <summary>`, a drag
+selection or Tweak does not start, the gizmo is hidden, the hover is paused; save, object adds, the Morph bridge and the
+menus refuse as during any interaction; `apply_mesh_change` raises (D3). The status line carries the summary (the app has
+no HUD line of its own; the GUI HUD shows `Re-Symmetrize (running)`).
+
+**Tests:** Lab T-R1a/b for one entry, T-FC1 with `ReSymmetrize` named under BLOCK, T-R2a on Shift+B; the Lab's preview
+dispatcher, T-R2c/e/g, T-H, N2 and T-R3 preview tests ported to `tests/test_application_resymmetrize.py` (incl. the fuzz,
+12 seeds × 300 events over every default-bound key); the F-a guard executes an opened preview.
 
 ## Addendum (2026-10-16, WP-SUBD-LAB-02 H7 — replacement surface of the edit mesh in `Viewport`)
 

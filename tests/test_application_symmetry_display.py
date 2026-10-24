@@ -38,6 +38,7 @@ from mirai.symmetry_axis import AXIS_INDEX, current_axis  # noqa: E402
 from mirai.symmetry_display import SymmetryDisplay, symmetry_report  # noqa: E402
 from mirai.viewport.picking import pick_nearest_vertex  # noqa: E402
 from viewport import gl_symmetry_overlay as sink_module  # noqa: E402
+from viewport.gl_point_overlay import SELECTED_POINT_SIZE  # noqa: E402
 from viewport.gl_symmetry_overlay import (  # noqa: E402
     AMBIGUOUS_LAYER,
     MARKER_LAYERS,
@@ -200,8 +201,26 @@ def test_sink_look_is_the_lab_legend():
     assert styles[UNPAIRED_LAYER] == ((0.95, 0.2, 0.85, 1.0), 7.0)
     assert styles[AMBIGUOUS_LAYER] == ((1.0, 1.0, 1.0, 1.0), 7.0)
     assert MARKER_LAYERS == (SEAM_LAYER, UNPAIRED_LAYER, AMBIGUOUS_LAYER)
-    assert set(styles) == {sink_module.PLANE_LAYER, *MARKER_LAYERS}
+    assert set(styles) == {
+        sink_module.PLANE_LAYER,
+        *MARKER_LAYERS,
+        *sink_module.PREVIEW_POINT_LAYERS,
+        *sink_module.PREVIEW_LINE_LAYERS,
+    }
     assert sink_module._PlaneLines.NO_DEPTH_LAYERS == frozenset()
+
+
+def test_preview_look_is_the_lab_legend():
+    """A3: the Re-Symmetrize preview keeps the Lab's colours (values pinned in the Lab at `065508c`):
+    blue = moves, light green = seam into the plane, light red = stays; points at the app's selection
+    size, lines 1 px without depth test."""
+    styles = GLSymmetryOverlay.LAYER_STYLES
+    assert styles[sink_module.RESYM_MOVE_LAYER] == ((0.25, 0.5, 1.0, 1.0), SELECTED_POINT_SIZE)
+    assert styles[sink_module.RESYM_SEAM_LAYER] == ((0.75, 1.0, 0.1, 1.0), SELECTED_POINT_SIZE)
+    assert styles[sink_module.RESYM_KEEP_LAYER] == ((1.0, 0.55, 0.55, 1.0), SELECTED_POINT_SIZE)
+    assert styles[sink_module.RESYM_MOVE_LINE_LAYER] == ((0.25, 0.5, 1.0, 1.0), 1.0)
+    assert styles[sink_module.RESYM_SEAM_LINE_LAYER] == ((0.75, 1.0, 0.1, 1.0), 1.0)
+    assert sink_module._PreviewLines.NO_DEPTH_LAYERS == frozenset(sink_module.PREVIEW_LINE_LAYERS)
 
 
 # == What is shown ================================================================================

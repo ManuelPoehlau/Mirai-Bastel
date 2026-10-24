@@ -26,10 +26,8 @@ from viewport.gl_symmetry_overlay import SEAM_LAYER, UNPAIRED_LAYER
 from symmetry_lab.lab_overlays import (
     HOVER_PARTNER_LAYER,
     MIRRORED_VERTEX_COLOR,
-    RESYM_MOVE_LAYER,
     SELECTION_PARTNER_LAYER,
     LabPointOverlay,
-    ResymPreviewLineOverlay,
 )
 
 from ._app_lab_support import (  # noqa: F401
@@ -56,8 +54,8 @@ SHIFT_LMB = Input("mouse", "LEFT", frozenset({"shift"}))
 
 
 def _overlays(lab) -> LabPointOverlay:
-    # Vorschau-Linien, dann die Punkte (Vorschau + Partner); Ebene und Zustand zeichnet die App.
-    _preview_lines, state = lab.overlays
+    # Nur die Partner; Ebene, Zustand und (seit AD-SYM-04 A3) die Vorschau zeichnet die App.
+    (state,) = lab.overlays
     return state
 
 
@@ -302,21 +300,18 @@ def test_no_partner_markers_in_edge_or_face_mode(mode_key):
 # -- Zeichenreihenfolge ---------------------------------------------------------------
 
 
-def test_partner_layers_are_drawn_after_the_preview_points():
-    # Die Zustands-Marker zeichnet seit AD-SYM-04 A2 die App, davor (eigenes Overlay).
-    layers = LabPointOverlay.LAYERS
-    assert layers[0] == RESYM_MOVE_LAYER
-    assert layers[-2:] == (HOVER_PARTNER_LAYER, SELECTION_PARTNER_LAYER)
+def test_partner_layers_are_the_only_lab_points():
+    # Zustands-Marker (A2) und Vorschau-Punkte (A3) zeichnet die App, davor (eigenes Overlay).
+    assert LabPointOverlay.LAYERS == (HOVER_PARTNER_LAYER, SELECTION_PARTNER_LAYER)
 
 
 def test_lab_overlays_are_drawn_between_the_app_display_and_the_app_points(lab_app, monkeypatch):
-    """H1: Ebene und Zustands-Marker der App, dann die Lab-Overlays (Vorschau-Linien, Lab-Punkte),
-    dann erst die Punkte der App (Hover/Auswahl gelb) — Hover und Auswahl liegen über allem.
-    Bis AD-SYM-04 A2: „lab plane", „lab points", „app points"."""
+    """H1: Ebene, Zustands-Marker und Vorschau der App, dann das Lab-Overlay (Partner), dann erst
+    die Punkte der App (Hover/Auswahl gelb) — Hover und Auswahl liegen über allem.
+    Bis AD-SYM-04 A2: „lab plane", „lab points", „app points"; bis A3 mit „lab lines"."""
     pytest.importorskip("pyglet", reason="Overlay.draw importiert pyglet.gl (requirements-dev.txt)")
     app, lab = lab_app
-    lines, state = lab.overlays
-    assert isinstance(lines, ResymPreviewLineOverlay)
+    (state,) = lab.overlays
     log = []
 
     class AppPoints:
@@ -328,11 +323,10 @@ def test_lab_overlays_are_drawn_between_the_app_display_and_the_app_points(lab_a
 
     app.viewport.point_overlay = AppPoints()
     monkeypatch.setattr(app.symmetry_display, "draw", lambda uniforms: log.append("app plane + state"))
-    monkeypatch.setattr(lines, "draw", lambda uniforms: log.append("lab lines"))
     monkeypatch.setattr(state, "draw", lambda uniforms: log.append("lab points"))
     app.viewport.sync()
     app.viewport.render()
-    assert log == ["app plane + state", "lab lines", "lab points", "app points"]
+    assert log == ["app plane + state", "lab points", "app points"]
 
 
 # -- Overlay-Kosten (Plan A3) --------------------------------------------------------

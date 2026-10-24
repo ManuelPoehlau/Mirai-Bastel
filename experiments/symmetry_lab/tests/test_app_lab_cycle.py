@@ -32,7 +32,7 @@ from viewport.gl_symmetry_overlay import SEAM_LAYER, GLSymmetryOverlay
 from symmetry_lab import run
 from symmetry_lab._paths import LAB_DIR
 from symmetry_lab.lab_app import hud_text
-from symmetry_lab.lab_overlays import LabPointOverlay, ResymPreviewLineOverlay
+from symmetry_lab.lab_overlays import LabPointOverlay
 
 from ._app_lab_support import (  # noqa: F401
     CTRL_Y,
@@ -164,7 +164,7 @@ def test_the_app_draws_plane_and_markers_once_the_lab_adds_only_its_own(lab_app)
     display = app.symmetry_display
     assert isinstance(display, SymmetryDisplay)
     assert app.viewport.extra_overlays == [display, *lab.overlays]
-    assert [type(o) for o in lab.overlays] == [ResymPreviewLineOverlay, LabPointOverlay]
+    assert [type(o) for o in lab.overlays] == [LabPointOverlay]  # seit AD-SYM-04 A3 ohne Vorschau
     lab_layers = {layer for o in lab.overlays for layer in o.LAYERS}
     assert not lab_layers & set(GLSymmetryOverlay.LAYER_STYLES)
 

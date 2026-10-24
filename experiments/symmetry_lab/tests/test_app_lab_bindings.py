@@ -1,8 +1,9 @@
-"""Lab-Kontext auf dem App-Pfad: genau zwei Tasten, Start-Prüfung, Start-Liste.
+"""Lab-Kontext auf dem App-Pfad: genau eine Taste, Start-Prüfung, Start-Liste.
 
 AD-013 H2 addendum, § Required tests, Lab-Seite: T-R1a, T-R1b, T-R1c, T-R1d — seit dem
-Addendum 2026-10-14 (AD-SYM-04 A1) mit zwei Einträgen (M, Shift+B): Shift+S ist die
-GLOBAL-Taste der App (`commands.SYMMETRY_CYCLE`), das Lab nutzt sie wie jede App-Taste.
+Addendum 2026-10-24 (AD-SYM-04 A3) mit einem Eintrag (Shift+B): Shift+S (A1) und
+Re-Symmetrize (A3, Default Alt+M; bis dahin die Lab-Taste M) sind GLOBAL-Tasten der App, das Lab
+nutzt sie wie jede App-Taste.
 Dazu (Slice 5, Ports aus dem gelöschten `test_lab_bindings.py`): Kontext und
 Commands sind Lab-lokal, nicht in `mirai.interaction`. Die Enumeration der Binding-Einträge liest `BindingSet._defaults`/`_user` — nur
 im Test; die Lab-Module selbst nutzen ausschließlich `command_for`/`set_default`.
@@ -26,15 +27,16 @@ from symmetry_lab.lab_app import (
     start_lab,
     startup_listing,
 )
+from mirai.interaction.input import Input
 from symmetry_lab.lab_bindings import (
-    RESYMMETRIZE,
     SYMMETRY_GATE_MODE,
     SYMMETRY_LAB_CONTEXT,
 )
 
 from ._app_lab_support import M, SHIFT_B, SHIFT_S, forbid_lab_calls  # noqa: F401
 
-LAB_INPUTS = {M: RESYMMETRIZE, SHIFT_B: SYMMETRY_GATE_MODE}
+LAB_INPUTS = {SHIFT_B: SYMMETRY_GATE_MODE}
+ALT_M = Input("key", "m", frozenset({"alt"}))
 
 
 def _context_entries(bindings: BindingSet, context: str) -> dict:
@@ -52,8 +54,8 @@ def _all_inputs(*binding_sets: BindingSet) -> set:
     }
 
 
-def test_lab_context_has_exactly_two_key_entries_and_global_knife_unchanged():
-    """T-R1a: der Lab-Kontext enthält genau {M, Shift+B}, nur Tasten (seit 2026-10-14);
+def test_lab_context_has_exactly_one_key_entry_and_global_knife_unchanged():
+    """T-R1a: der Lab-Kontext enthält genau {Shift+B}, nur Tasten (seit 2026-10-24);
     nach dem Lab-Start lösen GLOBAL und KNIFE jede Eingabe exakt wie
     `build_default_bindings()` auf."""
     app = Application()
@@ -77,8 +79,11 @@ def test_lab_context_has_exactly_two_key_entries_and_global_knife_unchanged():
     # Alles andere fällt im Lab-Kontext auf GLOBAL zurück.
     for inp in inputs - set(LAB_INPUTS):
         assert app.bindings.command_for(inp, SYMMETRY_LAB_CONTEXT) == reference.command_for(inp)
-    # Shift+S kommt über den GLOBAL-Fallback als Befehl der App an (AD-SYM-04 A1).
+    # Shift+S und Alt+M kommen über den GLOBAL-Fallback als Befehle der App an (AD-SYM-04 A1/A3);
+    # M ist im Lab frei (in `src/main.py` die Morph-Lab-Brücke, die das Lab nicht installiert).
     assert app.bindings.command_for(SHIFT_S, SYMMETRY_LAB_CONTEXT) == cmd.SYMMETRY_CYCLE
+    assert app.bindings.command_for(ALT_M, SYMMETRY_LAB_CONTEXT) == cmd.RESYMMETRIZE
+    assert app.bindings.command_for(M, SYMMETRY_LAB_CONTEXT) is None
 
 
 def test_lab_keys_are_free_by_default():
@@ -91,7 +96,7 @@ def test_lab_keys_are_free_by_default():
 
 @pytest.mark.parametrize("layer", ["user", "default"])
 @pytest.mark.parametrize("context", [GLOBAL_CONTEXT, KNIFE_CONTEXT])
-@pytest.mark.parametrize("inp", [M, SHIFT_B], ids=["m", "shift_b"])
+@pytest.mark.parametrize("inp", [SHIFT_B], ids=["shift_b"])
 def test_startup_raises_when_a_lab_key_is_bound(inp, context, layer):
     """T-R1b: eine Belegung einer Lab-Taste in GLOBAL oder KNIFE (User- oder
     Default-Ebene) lässt den Lab-Start laut scheitern, ohne Lab-Einträge."""
@@ -106,11 +111,11 @@ def test_startup_raises_when_a_lab_key_is_bound(inp, context, layer):
     assert _context_entries(app.bindings, SYMMETRY_LAB_CONTEXT) == {}
 
 
-def test_startup_raises_with_user_global_binding_on_m():
-    """T-R1b (der benannte Fall, seit 2026-10-14 auf M statt Shift+S): User-GLOBAL-Bindung auf
+def test_startup_raises_with_user_global_binding_on_shift_b():
+    """T-R1b (der benannte Fall, seit 2026-10-24 auf Shift+B statt M): User-GLOBAL-Bindung auf
     eine Lab-Taste → Start wirft."""
     app = Application()
-    app.bindings.bind(M, cmd.SET_SHADED)
+    app.bindings.bind(SHIFT_B, cmd.SET_SHADED)
     with pytest.raises(LabBindingConflict):
         start_lab(app)
 
@@ -156,10 +161,11 @@ def test_startup_listing_names_every_entry_and_every_gate_row():
         assert entry.describe() in text
     for row in gate_rows():
         assert row.describe() in text
-    assert len(gate_rows()) == 4
+    assert len(gate_rows()) == 3  # seit AD-SYM-04 A3 ohne Vorschau-Zeile
     assert lab_app.block_text("Knife") not in text  # `C` geht seit 3b durch, der Knife-Kontext seit 6c
     assert "ReSymmetrize" in text and "SymmetryGateMode" in text
-    assert "App-Taste Shift+S -> SymmetryCycle" in text  # die App-Taste wird benannt (H2-R3)
+    assert "App-Taste Shift+S -> SymmetryCycle" in text  # die App-Tasten werden benannt (H2-R3)
+    assert "App-Taste Alt+M -> ReSymmetrize" in text
     # Seit Slice 4 tun alle Lab-Tasten etwas.
     assert not any("noch nicht verfügbar" in line for line in lines)
 
@@ -173,8 +179,8 @@ def test_context_defined_in_lab_not_in_mirai_interaction():
 
 
 def test_lab_commands_defined_in_lab_not_in_commands():
-    """Die zwei Lab-Commands sind Lab-Strings, keine Production-Commands (Plan §3.2); der
-    Symmetrie-Zyklus ist seit 2026-10-14 einer (AD-SYM-04 A1)."""
-    for command in (RESYMMETRIZE, SYMMETRY_GATE_MODE):
-        assert command not in vars(cmd).values()
+    """Das Lab-Command ist ein Lab-String, kein Production-Command (Plan §3.2); der
+    Symmetrie-Zyklus ist seit 2026-10-14 einer (AD-SYM-04 A1), Re-Symmetrize seit 2026-10-24 (A3)."""
+    assert SYMMETRY_GATE_MODE not in vars(cmd).values()
     assert cmd.SYMMETRY_CYCLE in vars(cmd).values()
+    assert cmd.RESYMMETRIZE in vars(cmd).values()

@@ -5,8 +5,10 @@ AD-013 I1) aus dem Symmetry Lab — `SymmetryReport`, `symmetry_report` und
 `plane_outline_data` aus `experiments/symmetry_lab/lab_symmetry.py` (das Modul ist damit
 gelöscht), `geometry_signature`, `only_positions_differ` und `ReportCache` sowie die Ebenen-
 und Zustands-Logik der früheren `SymmetryPlaneOverlay`/`SymmetryStateOverlay` aus
-`lab_overlays.py`. Das Lab importiert sie von hier; seine Partner-Marker und die
-Re-Symmetrize-Vorschau bleiben dort (S-2: keine Partner in der App; die Vorschau gehört zu A3).
+`lab_overlays.py`. Das Lab importiert sie von hier; seine Partner-Marker bleiben dort (S-2: keine
+Partner in der App). Seit Slice A3 (2026-10-24) zeigt dasselbe Overlay auch die offene
+Re-Symmetrize-Vorschau der App (`preview`, Daten aus `mirai.resymmetrize.resym_preview_data`), aus
+`lab_overlays.py` verschoben wie Ebene und Marker in A2.
 
 Die Symmetrie-*Semantik* (Correspondence, State) kommt unverändert aus `mirai.symmetry`, die
 Achse aus `mirai.symmetry_axis` (E1). Hier liegt nur, was angezeigt wird:
@@ -53,6 +55,7 @@ from .symmetry import (
     vertex_correspondence,
 )
 from .symmetry_axis import AXIS_INDEX, current_axis
+from .resymmetrize import ResymPlan, resym_preview_data
 
 #: Umriss ragt um diesen Anteil der größten In-Ebene-Ausdehnung über die Bounds.
 PLANE_MARGIN = 0.1
@@ -200,9 +203,17 @@ def _positions(mesh: Mesh, ids) -> list:
     return [mesh.vertex_position(v) for v in sorted(ids, key=int)]
 
 
+def _triples(flat: list[float]) -> list:
+    return [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
+
+
 def _segments(flat: list[float]) -> list:
-    points = [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
+    points = _triples(flat)
     return list(zip(points[0::2], points[1::2]))
+
+
+def _no_preview() -> Optional[ResymPlan]:
+    return None
 
 
 class SymmetryDisplay:
@@ -210,20 +221,28 @@ class SymmetryDisplay:
     der App; alles leer bei Symmetrie aus. `Application.init_scene` baut es, wenn der Host
     `symmetry_overlay_type` übergibt, und hängt es an den Viewport (H1).
 
-    `sink` = die GL-Senke (`set_segments(segments)`, `set_markers(seam, unpaired, ambiguous)`
-    mit Weltpositionen, `draw(camera_uniforms)`; Layer, Farben und Größen kennt nur sie);
+    `sink` = die GL-Senke (`set_segments(segments)`, `set_markers(seam, unpaired, ambiguous)`,
+    `set_preview(move_points, seam_points, keep_points, move_lines, seam_lines)` mit
+    Weltpositionen, `draw(camera_uniforms)`; Layer, Farben und Größen kennt nur sie);
     `defer` = „läuft gerade ein Transform?" (Modul-Docstring); `reports` = ein Befund-Cache, den
     der Besitzer mit anderen Lesern teilt (die App: mit der Soft-Vorschau, AD-SYM-04 SS3) —
-    dann gilt dessen `defer`, nicht das übergebene."""
+    dann gilt dessen `defer`, nicht das übergebene; `preview` = der offene Re-Symmetrize-Plan
+    oder None (A3). Das Mesh kann sich bei offener Vorschau nicht ändern (sie gehört
+    `Application`), deshalb hängen ihre Layer nur am Plan-Objekt; Öffnen und Schließen setzen
+    `dirty`."""
 
     def __init__(
         self,
         sink,
         defer: Optional[Callable[[], bool]] = None,
         reports: Optional[ReportCache] = None,
+        preview: Optional[Callable[[], Optional[ResymPlan]]] = None,
     ) -> None:
         self.sink = sink
         self.reports = reports if reports is not None else ReportCache(defer)
+        self.preview = preview or _no_preview
+        self._preview_plan: object = None
+        self._preview_synced = False
         #: Viewport-Vertrag H1: True = beim nächsten Frame `sync()` aufrufen, auch ohne Meldung.
         self.dirty = False
         self._outlined: Optional[SymmetryReport] = None
@@ -241,6 +260,7 @@ class SymmetryDisplay:
         return self._outlined
 
     def sync(self, mesh: Mesh, selection: Selection) -> None:
+        self._sync_preview(mesh)
         if (
             mesh.symmetry_definition is None
             and self._outlined is not None
@@ -267,6 +287,21 @@ class SymmetryDisplay:
             _positions(mesh, report.ambiguous),
         )
         self.dirty = self.reports.defer() and self.reports.stale(signature)
+
+    def _sync_preview(self, mesh: Mesh) -> None:
+        plan = self.preview()
+        if self._preview_synced and plan is self._preview_plan:
+            return
+        self._preview_plan = plan
+        self._preview_synced = True
+        data = resym_preview_data(mesh, plan)
+        self.sink.set_preview(
+            _triples(data.move_points),
+            _triples(data.seam_points),
+            _triples(data.keep_points),
+            _segments(data.move_lines),
+            _segments(data.seam_lines),
+        )
 
     def draw(self, camera_uniforms) -> None:
         self.sink.draw(camera_uniforms)

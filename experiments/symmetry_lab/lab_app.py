@@ -5,24 +5,22 @@ WP-SYM-LAB-03 Slice 1b–4. Vertrag: AD-013, Addendum „2026-10-03, WP-SYM-LAB-
 zweite Eingabeschicht: Navigation, Auswahl, W/E/R, C, Knife und Undo laufen
 unverändert durch `Application`. Das Lab ergänzt nur
 
-- zwei eigene Tasten im Kontext `symmetry_lab` (H2-R1, geändert 2026-10-14):
-  M → `ReSymmetrize`, Shift+B → `SymmetryGateMode` — aufgelöst über das eine
-  `app.bindings`, vor `Application` (`lab_key_press`). Shift+S ist seit AD-SYM-04
-  Slice A1 die GLOBAL-Taste der App (`commands.SYMMETRY_CYCLE`): das Lab reicht sie
-  wie jede App-Taste an `Application` weiter;
+- eine eigene Taste im Kontext `symmetry_lab` (H2-R1, geändert 2026-10-14 und mit AD-SYM-04
+  Slice A3 am 2026-10-24): Shift+B → `SymmetryGateMode` — aufgelöst über das eine
+  `app.bindings`, vor `Application` (`lab_key_press`). Shift+S (A1, `commands.SYMMETRY_CYCLE`)
+  und Re-Symmetrize (A3, `commands.RESYMMETRIZE`, Default Alt+M) sind GLOBAL-Tasten der App:
+  das Lab reicht sie wie jede App-Taste an `Application` weiter;
 - eine Zeile der Gate-Tabelle in `app.command_gate`, abgeleitet aus
   `mesh.symmetry_definition` (H2-R2, nie gecacht) — auch nach einem Shift+S der App
   (K-4: die Ableitung nach jeder weitergereichten Taste deckt ihn ab);
-- Re-Symmetrize über `app.apply_mesh_change` (H3), Meldungen über
-  `app.set_status` (H4);
+- Meldungen über `app.set_status` (H4);
 - (Slice 2) die HUD-Zeile `hud_text`, gebaut nur aus öffentlichem Zustand
   (`selection`, `transform_command`/`transform_interacting`/`transform_target`,
   `axis_constraint`, `status_message`) und dem Symmetrie-Befund;
-- (Slice 3) die Re-Symmetrize-Vorschau als einzige modale Lab-Interaktion: M öffnet
-  sie (Plan einmal gerechnet), M führt aus (`apply_mesh_change`), Esc schließt sie
-  (D1, nur solange sie offen ist). Solange sie offen ist, steht die Vorschau-Zeile
-  der Gate-Tabelle (nur Anzeige-Commands, `hover_suspended`), und sie dominiert
-  jede andere Zeile (H2-R2, review N2);
+- (Slice 3, bis AD-SYM-04 A3) die Re-Symmetrize-Vorschau: seit A3 (2026-10-24) eine
+  `Application`-Interaktion (`interaction_owner` "resymmetrize", §10 R-a); die Vorschau-Zeile
+  der Gate-Tabelle, D1 und das Schreiben von `hover_suspended` sind damit weg. Das Lab zeigt die
+  offene Vorschau der App nur noch als blaue Zeile (`preview_text`);
 - (Slice 4) den E5-Modus MARK/BLOCK (Shift+B, nur Lab-Zustand, AD-SYM-02 §4): bei
   aktiver Symmetrie lehnt BLOCK C und jedes Transform-Command ab, dessen Operation
   `supports_symmetry` nicht erklärt; MARK lässt alles laufen und warnt im HUD
@@ -61,26 +59,20 @@ from mirai.topology.contextual_c import CContext
 
 from .lab_bindings import (
     LAB_OVERRIDES,
-    RESYMMETRIZE,
     SYMMETRY_GATE_MODE,
     SYMMETRY_LAB_CONTEXT,
     LabOverride,
 )
-from .lab_resymmetrize import (
-    ResymmetrizeRejected,
-    ResymPlan,
-    plan_description,
-    plan_resymmetrize,
-    plan_summary,
-    set_plan_positions,
-)
+from mirai.resymmetrize import plan_summary
+from mirai.subdivision.preview import key_label
 from mirai.symmetry_axis import current_axis
 from mirai.symmetry_display import ReportCache, SymmetryReport
 
-#: Die zwei Lab-Commands (H2-R1, seit 2026-10-14 ohne Shift+S). Alles andere geht an `Application`.
-LAB_COMMANDS = frozenset({RESYMMETRIZE, SYMMETRY_GATE_MODE})
+#: Das Lab-Command (H2-R1, seit 2026-10-14 ohne Shift+S, seit AD-SYM-04 A3 ohne M). Alles andere
+#: geht an `Application`.
+LAB_COMMANDS = frozenset({SYMMETRY_GATE_MODE})
 
-#: Die Lab-Kontext-Einträge: genau die zwei Tasten aus `LAB_OVERRIDES` (eine Quelle, H2-R1).
+#: Die Lab-Kontext-Einträge: genau die Taste aus `LAB_OVERRIDES` (eine Quelle, H2-R1).
 LAB_KEY_ENTRIES: tuple[LabOverride, ...] = tuple(
     o for o in LAB_OVERRIDES if o.command in LAB_COMMANDS
 )
@@ -129,9 +121,9 @@ BLOCK_NOT_ALLOWED_TEXT = "Symmetrie aktiv — Befehl nicht koordiniert (BLOCK: n
 #: Benannte Einträge der BLOCK-Zeile (AD-SYM-04 K-6, AD-013 Addendum 2026-10-14, Gate-Tabelle):
 #: der Symmetrie-Zyklus der App (Shift+S). Er ändert Mesh-Zustand (die Definition) und steht
 #: deshalb nicht in `NON_OPERATION`; ohne diesen Eintrag ließe sich Symmetrie unter BLOCK
-#: einschalten, aber nie weiterschalten oder ausschalten. Die Vorschau-Zeile lehnt ihn ab
-#: (nur Anzeige-Commands, H2-R2).
-APP_SYMMETRY_COMMANDS = frozenset({cmd.SYMMETRY_CYCLE})
+#: einschalten, aber nie weiterschalten oder ausschalten. Seit AD-SYM-04 A3 auch Re-Symmetrize
+#: der App (ändert Positionen, spiegelt per Konstruktion; AD-013 Addendum 2026-10-24).
+APP_SYMMETRY_COMMANDS = frozenset({cmd.SYMMETRY_CYCLE, cmd.RESYMMETRIZE})
 
 #: Befehle, die keine Operation sind und deshalb unter BLOCK immer durchgehen (H2-Amendment,
 #: Tabelle `NON_OPERATION`). Eine Auslassung hier ist sichtbar (`BLOCK_NOT_ALLOWED_TEXT`),
@@ -241,31 +233,12 @@ def unsupported_commands() -> dict[str, str]:
     return names
 
 
-#: Text der Vorschau-Zeile für jede Ablehnung (App-Gate und Lab), wie im alten Lab
-#: (`lab_dispatch.PREVIEW_HINT`; hier kopiert, das alte Modul ist seit Slice 5 gelöscht).
-PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
-
-#: Was die Vorschau durchlässt (Addendum, Gate-Tabelle „preview open"): nur die
-#: Anzeige-Commands. Navigation braucht keinen Eintrag (nie gegatet).
-DISPLAY_COMMANDS = frozenset(
-    {
-        cmd.CYCLE_DISPLAY_MODE,
-        cmd.TOGGLE_WIREFRAME_OVERLAY,
-        cmd.SET_SHADED,
-        cmd.SET_FLAT_SHADED,
-        cmd.SET_WIREFRAME,
-    }
-)
-
-#: D1, H2-R3 (review CLAUDE-002 N8): die kontextuelle Bedeutung von Esc, wörtlich
-#: aus dem Addendum, in der Start-Liste.
-CANCEL_PREVIEW_LINE = "Cancel (Esc): closes the Re-Symmetrize preview while it is open"
-
-_COMMAND_LABELS = {
-    RESYMMETRIZE: "Re-Symmetrize (M)",
-    SYMMETRY_GATE_MODE: "E5-Modus (Shift+B)",
+_COMMAND_LABELS = {SYMMETRY_GATE_MODE: "E5-Modus (Shift+B)"}
+_OWNER_LABELS = {
+    "transform": "Transform läuft",
+    "knife": "Knife-Session läuft",
+    "resymmetrize": "Re-Symmetrize-Vorschau offen",
 }
-_OWNER_LABELS = {"transform": "Transform läuft", "knife": "Knife-Session läuft"}
 
 
 class LabBindingConflict(RuntimeError):
@@ -277,12 +250,11 @@ class LabBindingConflict(RuntimeError):
 
 @dataclass(frozen=True)
 class GateRow:
-    """Eine Zeile der statischen Gate-Tabelle: Lab-Zustand → `command_gate` und
-    `hover_suspended` (die beiden Spalten des Addendums)."""
+    """Eine Zeile der statischen Gate-Tabelle: Lab-Zustand → `command_gate`. (Die zweite
+    Spalte `hover_suspended` ging mit der Vorschau-Zeile, AD-SYM-04 A3.)"""
 
     state: str
     gate: Optional[CommandGate]
-    hover_suspended: bool = False
 
     def describe(self) -> str:
         if self.gate is None:
@@ -304,9 +276,6 @@ class GateRow:
             # Eine Ablehnungsregel je Zeile: die BLOCK-Zeile (Allow-List, Kontexte) wäre sonst
             # eine einzige unlesbare Zeile in der Start-Liste (H2-R3).
             text = f"{self.state}:" + "".join(f"\n    {part}" for part in parts)
-        if self.hover_suspended:
-            separator = "\n    " if self.gate is not None else "; "
-            text += f"{separator}Hover pausiert (hover_suspended)"
         return text
 
 
@@ -315,12 +284,6 @@ ROW_SYMMETRY_OFF = GateRow("Symmetrie aus (E5-Modus egal)", None)
 #: einseitiger Lauf wird im HUD markiert (`e5_warning_text`).
 ROW_MARK = GateRow("Symmetrie an, E5 MARK: C und W/E/R laufen, HUD warnt", None)
 _BLOCK_STATE = "Symmetrie an, E5 BLOCK (Default; fail-closed: nur NON_OPERATION und Deklarationen)"
-#: Slice 3: dominiert jede andere Zeile, solange die Vorschau offen ist (H2-R2, N2).
-ROW_PREVIEW = GateRow(
-    "Re-Symmetrize-Vorschau offen (Slice 3)",
-    CommandGate(allowed=DISPLAY_COMMANDS, not_allowed_text=PREVIEW_HINT),
-    hover_suspended=True,
-)
 
 
 def block_row() -> GateRow:
@@ -329,7 +292,7 @@ def block_row() -> GateRow:
     sichtbar abgelehnt (`BLOCK_NOT_ALLOWED_TEXT`), nie still einseitig.
 
     allowed          = NON_OPERATION
-                       ∪ APP_SYMMETRY_COMMANDS (benannt, K-6)
+                       ∪ APP_SYMMETRY_COMMANDS (benannt, K-6; Shift+S, Re-Symmetrize)
                        ∪ deklarierte Removal-Commands
                        ∪ deklarierte Collapse-Commands (WP Toolbox Gaps B1)
                        ∪ deklarierte Extrude-Commands (Slice 7)
@@ -365,12 +328,12 @@ def block_row() -> GateRow:
 
 
 def gate_rows() -> tuple[GateRow, ...]:
-    """Die Gate-Tabelle (H2-R3, Start-Liste): aus, MARK, BLOCK, Vorschau."""
-    return (ROW_SYMMETRY_OFF, ROW_MARK, block_row(), ROW_PREVIEW)
+    """Die Gate-Tabelle (H2-R3, Start-Liste): aus, MARK, BLOCK."""
+    return (ROW_SYMMETRY_OFF, ROW_MARK, block_row())
 
 
 def gate_row_for(axis: Optional[str], mode: GateMode = GateMode.BLOCK) -> GateRow:
-    """Zeile zum Lab-Zustand ohne Vorschau (die Vorschau-Zeile setzt `_open_preview`)."""
+    """Zeile zum Lab-Zustand."""
     if axis is None:
         return ROW_SYMMETRY_OFF
     return ROW_MARK if mode is GateMode.MARK else block_row()
@@ -408,7 +371,7 @@ def assert_lab_keys_free(bindings: BindingSet) -> None:
 
 
 def install_lab_bindings(bindings: BindingSet) -> None:
-    """Prüft (H2-R1) und trägt genau die zwei Lab-Tasten im Lab-Kontext ein."""
+    """Prüft (H2-R1) und trägt genau die Lab-Taste im Lab-Kontext ein."""
     assert_lab_keys_free(bindings)
     for entry in LAB_KEY_ENTRIES:
         bindings.set_default(entry.input, entry.command, context=SYMMETRY_LAB_CONTEXT)
@@ -416,10 +379,14 @@ def install_lab_bindings(bindings: BindingSet) -> None:
 
 def startup_listing() -> list[str]:
     """Konsolen-Liste beim Start (H2-R1, H2-R3, AD-013 I6): Lab-Einträge + Gate-Zeilen."""
-    lines = [f"Lab-Kontext {SYMMETRY_LAB_CONTEXT!r} (AD-013 H2-R1, genau zwei Tasten):"]
+    lines = [f"Lab-Kontext {SYMMETRY_LAB_CONTEXT!r} (AD-013 H2-R1, genau eine Taste):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEY_ENTRIES)
     lines.append(
         f"App-Taste Shift+S -> {cmd.SYMMETRY_CYCLE} (GLOBAL, AD-SYM-04; unter BLOCK benannt erlaubt)"
+    )
+    lines.append(
+        f"App-Taste Alt+M -> {cmd.RESYMMETRIZE} (GLOBAL, AD-SYM-04 A3: Vorschau, nochmal = ausführen,"
+        " Esc = abbrechen; unter BLOCK benannt erlaubt)"
     )
     lines.append(
         "E5-Modus (Shift+B: BLOCK <-> MARK, Default BLOCK; nur Lab-Zustand, kein Undo-Schritt)"
@@ -444,8 +411,6 @@ def startup_listing() -> list[str]:
         + "; Extrude "
         + (", ".join(sorted(extrude)) or "keine")
     )
-    lines.append("Kontextuelle App-Taste (AD-013 D1):")
-    lines.append(f"  {CANCEL_PREVIEW_LINE}")
     return lines
 
 
@@ -465,18 +430,10 @@ class SymmetryAppLab:
         #: aufgeschoben (Plan A3). Eine eigene Instanz neben der des App-Overlays: das Lab liest
         #: keinen `Application`-Zustand außerhalb der H2-R4-Liste (AD-SYM-04 A2, Implementierungsnotiz).
         self.reports = ReportCache(defer=self.transform_running)
-        #: Re-Symmetrize-Vorschau (Slice 3): der beim Öffnen einmal gerechnete Plan,
-        #: `None` = keine Vorschau. Lab-Zustand, keine Symmetrie-Kopie: während sie
-        #: offen ist, lässt das Gate keine Mesh-Änderung zu.
-        self.preview: Optional[ResymPlan] = None
         #: E5-Modus (Slice 4, Default BLOCK seit Slice 5): reiner Lab-Zustand, nie
         #: Mesh oder History — Undo/Redo ändert ihn nicht, wohl aber die Symmetrie,
         #: aus der die Zeile folgt.
         self.gate_mode = GateMode.BLOCK
-
-    @property
-    def preview_open(self) -> bool:
-        return self.preview is not None
 
     @property
     def axis(self) -> Optional[str]:
@@ -505,55 +462,31 @@ class SymmetryAppLab:
     def sync_gate(self) -> bool:
         """Installiert die Gate-Zeile zum aktuellen Symmetrie-Zustand, falls sie
         sich geändert hat — nur, solange keine `Application`-Interaktion läuft
-        (H2-R2: das Gate bleibt über deren ganze Dauer konstant) und die Vorschau
-        zu ist (ihre Zeile dominiert, H2-R2/N2). True = neu installiert."""
+        (H2-R2: das Gate bleibt über deren ganze Dauer konstant; seit AD-SYM-04 A3 gehört
+        auch die Re-Symmetrize-Vorschau dazu). True = neu installiert."""
         app = self.app
-        if app.interaction_owner is not None or self.preview_open:
+        if app.interaction_owner is not None:
             return False
         row = gate_row_for(self.axis, self.gate_mode)
         # `==`, nicht `is`: die BLOCK-Zeile wird bei jeder Ableitung neu gebaut.
-        if app.command_gate == row.gate and app.hover_suspended == row.hover_suspended:
+        if app.command_gate == row.gate:
             return False
         self._install_row(row)
         return True
 
     def _install_row(self, row: GateRow) -> None:
-        """Der einzige Schreiber von `command_gate`/`hover_suspended` (H2-R6).
-        Eine andere Zeile als die Vorschau-Zeile bei offener Vorschau ist ein
-        Programmierfehler (H2-R2, review N2): sonst könnte W unter der Vorschau
-        scharf werden und Esc (D1) die Vorschau statt des Moves beenden. Bewusst
-        `raise`, kein `assert` (gilt auch unter `python -O`)."""
-        if self.preview_open and row is not ROW_PREVIEW:
-            raise AssertionError(
-                f"Gate-Zeile {row.state!r} bei offener Re-Symmetrize-Vorschau (AD-013 H2-R2)"
-            )
-        app = self.app
-        app.command_gate = row.gate
-        if app.hover_suspended != row.hover_suspended:
-            app.hover_suspended = row.hover_suspended
-
-    def mark_overlays_dirty(self) -> None:
-        # Öffnen und Schließen der Vorschau ändern kein Mesh und melden dem Viewport
-        # nichts — die Overlays bauen sich selbst neu. (Ein Shift+S der App meldet seit
-        # AD-SYM-04 A1 eine Topologie-Änderung, K-3; dafür braucht es das hier nicht mehr.)
-        for overlay in self.overlays:
-            overlay.dirty = True
+        """Der einzige Schreiber von `command_gate` (H2-R6)."""
+        self.app.command_gate = row.gate
 
     def run_command(self, command: str) -> bool:
         """Führt ein Lab-Command aus. Abgelehnt (False + Status) während einer
-        `Application`-Interaktion (H2-R2) und bei offener Vorschau jedes außer M
-        (H2-R2, N2: die Vorschau-Zeile bleibt). Shift+S ist kein Lab-Command mehr
-        (AD-SYM-04 A1): `lab_key_press` reicht ihn an `Application` weiter, wo das Gate
-        der Vorschau-Zeile und die Interaktions-Sperren der App gelten."""
+        `Application`-Interaktion (H2-R2), auch bei offener Re-Symmetrize-Vorschau der App.
+        Shift+S und Re-Symmetrize sind App-Tasten (AD-SYM-04 A1/A3): `lab_key_press` reicht sie
+        an `Application` weiter."""
         app = self.app
         owner = app.interaction_owner
         if owner is not None:
             app.set_status(f"{_COMMAND_LABELS[command]} abgelehnt — {_OWNER_LABELS[owner]}")
-            return False
-        if command == RESYMMETRIZE:
-            return self._execute_preview() if self.preview_open else self._open_preview()
-        if self.preview_open:
-            app.set_status(PREVIEW_HINT)
             return False
         return self._toggle_gate_mode()
 
@@ -566,71 +499,6 @@ class SymmetryAppLab:
         self.sync_gate()
         self.app.set_status(f"E5-Modus: {self.gate_mode.value}")
         return True
-
-    # -- Re-Symmetrize (Slice 3; Verhalten = alter Dispatcher, README Slice 5) ----
-
-    def _open_preview(self) -> bool:
-        """M ohne Vorschau: Plan einmal rechnen und die Vorschau öffnen, oder mit
-        dem Grund des alten Labs ablehnen (README Slice 5, Schritt 12). Die
-        Quelle wählt der alte Dispatcher genauso: genau ein ausgewählter Vertex
-        (`selection.vertices`)."""
-        app = self.app
-        mesh = app.scene.mesh
-        selected = app.selection.vertices
-        try:
-            if mesh.symmetry_definition is None:
-                raise ResymmetrizeRejected("Symmetrie aus")
-            if not selected:
-                raise ResymmetrizeRejected("keine Auswahl")
-            if len(selected) != 1:
-                raise ResymmetrizeRejected("genau einen Vertex auswählen")
-            plan = plan_resymmetrize(mesh, next(iter(selected)))
-        except ResymmetrizeRejected as exc:
-            app.set_status(f"Re-Symmetrize: {exc}")
-            return False
-        self.preview = plan
-        self._install_row(ROW_PREVIEW)
-        self.mark_overlays_dirty()
-        # Wie das alte Lab: die Statusmeldung wird geleert, die Vorschau-Zeile
-        # (`preview_text`) trägt Richtung, Anzahlen und Tasten.
-        app.set_status("")
-        return True
-
-    def _execute_preview(self) -> bool:
-        """M bei offener Vorschau: genau den Plan der Vorschau setzen, ein
-        Undo-Schritt über H3; ein leerer Plan erzeugt keinen (E15,
-        `apply_mesh_change` gibt dann False zurück). Danach ist die Vorschau zu."""
-        plan = self.preview
-        mesh = self.app.scene.mesh
-
-        def mutate() -> set:
-            return set_plan_positions(mesh, plan)
-
-        changed = self.app.apply_mesh_change(plan_description(plan), mutate)
-        if changed:
-            message = f"Re-Symmetrize ausgeführt: {len(plan.changes)} Änderungen"
-        else:
-            message = "Re-Symmetrize: 0 Änderungen — kein Schritt"
-        self.end_preview()
-        self.app.set_status(message)
-        return True
-
-    def cancel_preview(self) -> bool:
-        """Esc bei offener Vorschau (D1): schließen, ohne etwas zu ändern."""
-        self.end_preview()
-        self.app.set_status("Re-Symmetrize abgebrochen")
-        return True
-
-    def end_preview(self) -> None:
-        """Schließt die Vorschau (M, Esc, Fenster zu): Gate und Hover-Flag zurück
-        auf die Zeile des aktuellen Symmetrie-Zustands; das Hover-Flag auf False
-        pickt den Hover am Cursor neu (`Application.hover_suspended`). Ohne
-        offene Vorschau ein No-op."""
-        if not self.preview_open:
-            return
-        self.preview = None
-        self.mark_overlays_dirty()
-        self.sync_gate()
 
 
 def start_lab(app: Application) -> SymmetryAppLab:
@@ -655,11 +523,9 @@ def lab_key_press(
     """Ein Tastendruck auf dem Lab-Pfad, pyglet-frei (Addendum-Pseudocode).
 
     Lab-Command (Kontext `symmetry_lab`, GLOBAL-Fallback) → das Lab führt es aus
-    oder lehnt sichtbar ab (bei offener Vorschau alles außer M). Esc (`Cancel`)
-    bei offener Vorschau → das Lab schließt sie (D1, True); ohne Vorschau geht Esc
-    unverändert an `Application` (T-R2f). Sonst → `Application` (`forward`,
-    Default `app.key_press`; dazu gehört seit AD-SYM-04 A1 auch Shift+S, der
-    Symmetrie-Zyklus der App), danach leitet das Lab Symmetrie-Zustand und
+    oder lehnt sichtbar ab. Sonst → `Application` (`forward`,
+    Default `app.key_press`; dazu gehören seit AD-SYM-04 A1/A3 auch Shift+S und
+    Re-Symmetrize mit seiner Vorschau samt Esc), danach leitet das Lab Symmetrie-Zustand und
     Gate-Zeile neu ab (H2-R2, K-4: Shift+S schaltet die Definition, Ctrl+Z über einen
     Zyklus-Schritt stellt sie wieder her). `forward` existiert nur für den pyglet-Adapter, der
     stattdessen den Handler aus `src/main.py` aufruft (mit dessen Seiteneffekten,
@@ -668,8 +534,6 @@ def lab_key_press(
     command = app.bindings.command_for(input, SYMMETRY_LAB_CONTEXT)
     if command in LAB_COMMANDS:
         return lab.run_command(command)
-    if lab.preview_open and command == cmd.CANCEL:
-        return lab.cancel_preview()
     result = (forward or app.key_press)(input)
     lab.sync_gate()
     return bool(result)
@@ -775,6 +639,12 @@ def e5_warning_text(lab: SymmetryAppLab) -> str:
 
 
 def preview_text(lab: SymmetryAppLab) -> str:
-    """Die Vorschau-Zeile über der HUD-Zeile (E15, wie `lab_status.preview_text`);
-    leer ohne Vorschau."""
-    return plan_summary(lab.preview) if lab.preview is not None else ""
+    """Die blaue Vorschau-Zeile über der HUD-Zeile (E15) — seit AD-SYM-04 A3 gelesen aus der
+    offenen Vorschau der App (`resymmetrize_preview`), mit deren gebundener Taste; leer ohne
+    Vorschau."""
+    app = lab.app
+    plan = app.resymmetrize_preview
+    if plan is None:
+        return ""
+    bound = [i for i in app.bindings.inputs_for(cmd.RESYMMETRIZE) if i.kind == "key"]
+    return plan_summary(plan, key_label(bound[0]) if bound else "?")

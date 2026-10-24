@@ -30,9 +30,7 @@ LAB_MODULES = {
     "lab_app_window",
     "lab_bindings",
     "lab_overlays",
-    "lab_resymmetrize",
     "lab_scene",
-    "lab_topology",
     "probe_drag_cost",
     "run",
 }
@@ -49,6 +47,9 @@ DELETED_MODULES = {
     "run_app",
     # AD-SYM-04 A2 (2026-10-14): Befund und Ebenen-Umriss nach `mirai.symmetry_display` verschoben.
     "lab_symmetry",
+    # AD-SYM-04 A3 (2026-10-24): nach `mirai.symmetry_topology` / `mirai.resymmetrize` verschoben.
+    "lab_topology",
+    "lab_resymmetrize",
 }
 
 _SCRIPT = textwrap.dedent(

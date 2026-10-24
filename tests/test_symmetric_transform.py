@@ -453,20 +453,30 @@ class ProductionUnchangedTests(unittest.TestCase):
         reversed that: the app starts without a definition and has exactly one way to set one,
         the Shift+S command (`SYMMETRY_CYCLE` → `_symmetry_cycle`). Slice A2 adds the display, which
         only reads the definition (`symmetry_display`, its backing field and the deferral predicate);
-        slice SS3 the report cache it shares with the soft preview (`_symmetry_reports`, read-only)."""
+        slice SS3 the report cache it shares with the soft preview (`_symmetry_reports`, read-only).
+        Slice A3 adds Re-Symmetrize (`RESYMMETRIZE` → `_resymmetrize_*`), which moves positions
+        under an existing definition and never sets one (`tests/test_application_resymmetrize.py`)."""
         from mirai.application import Application
 
         app = Application()
         self.assertIsNone(app.scene.mesh.symmetry_definition)
         names = [n for n in dir(cmd) if not n.startswith("_")]
-        self.assertEqual([n for n in names if "symmetr" in n.lower()], ["SYMMETRY_CYCLE"])
+        self.assertEqual([n for n in names if "symmetr" in n.lower()], ["RESYMMETRIZE", "SYMMETRY_CYCLE"])
         self.assertEqual(
             [m for m in dir(app) if "symmetr" in m.lower() and not m.startswith("__")],
             [
+                "_resymmetrize_close",
+                "_resymmetrize_display_changed",
+                "_resymmetrize_execute",
+                "_resymmetrize_key",
+                "_resymmetrize_open",
+                "_resymmetrize_refuse",
+                "_resymmetrize_summary",
                 "_symmetry_cycle",
                 "_symmetry_display",
                 "_symmetry_display_deferred",
                 "_symmetry_reports",
+                "resymmetrize_preview",
                 "symmetry_display",
             ],
         )

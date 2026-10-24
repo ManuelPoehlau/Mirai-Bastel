@@ -1,11 +1,11 @@
-"""Topologische Paarung und Seiten — **Lab-Experiment**, keine Capability.
+"""Topologische Paarung und Seiten (E11/E12) — reine, GL-freie Funktionen.
 
-Handoff WP-SYM-LAB-01 Slice 5, §2 E11/E12
-(`docs/architecture/WP-SYM-LAB-01_SLICE5_CLAUDE_CODE_HANDOFF.md`). Rein und
-GL-frei. Benutzt wird es ausschließlich von Re-Symmetrize
-(`lab_resymmetrize.py`); symmetrisches Move und die Anzeige der
-gelben/magenta Vertices bleiben bei der exakten Positions-Paarung von
-`mirai.symmetry` — unverändert.
+AD-SYM-04 Slice A3 (Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"; gebaut 2026-10-24):
+**verschoben, nicht kopiert** aus `experiments/symmetry_lab/lab_topology.py` (K-2, AD-013 I1),
+wo es seit WP-SYM-LAB-01 Slice 5 lag (Handoff §2 E11/E12,
+`docs/architecture/WP-SYM-LAB-01_SLICE5_CLAUDE_CODE_HANDOFF.md`). Benutzt wird es
+ausschließlich von Re-Symmetrize (`mirai.resymmetrize`); symmetrisches Move und die Anzeige
+der Problem-Marker bleiben bei der exakten Positions-Paarung von `mirai.symmetry` — unverändert.
 
 Warum topologisch: Die Positions-Paarung findet für einen Vertex, der
 (z. B. durch OBJ-Rundung) `1e-6` neben seiner Spiegelposition liegt, keinen
@@ -31,7 +31,7 @@ E11 — Paarung (Breitensuche über Face-Paare, ausgehend von der Seam):
 5. Bekommt ein Vertex zwei verschiedene Partner → Konflikt; dieser Vertex
    gilt als nicht gepaart (INV-5).
 
-Auslegung von Schritt 5 (Lab-Entscheidung, nicht im Handoff ausbuchstabiert):
+Auslegung von Schritt 5 (Lab-Entscheidung, nicht im Handoff ausbuchstabiert; mit verschoben):
 Ein Vertex, dessen Partner selbst im Konflikt ist, gilt ebenfalls als nicht
 gepaart. Sonst könnten zwei Vertices denselben (mehrdeutigen) Partner haben
 und Re-Symmetrize legte beide auf dieselbe Spiegelposition — das wäre
@@ -106,6 +106,11 @@ def _valid_seam_edges(mesh: Mesh) -> list[EdgeId]:
     return [eid for eid in definition.seam_edges if mesh.is_valid_edge(eid)]
 
 
+def has_seam_edges(mesh: Mesh) -> bool:
+    """Hat die Definition mindestens eine gültige Seam-Edge? (Billig: ohne sie ist die Paarung leer.)"""
+    return bool(_valid_seam_edges(mesh))
+
+
 def _edge_index(mesh: Mesh) -> dict[frozenset[VertexId], EdgeId]:
     return {frozenset(mesh.edge_vertices(eid)): eid for eid in mesh.all_edge_ids()}
 
@@ -145,13 +150,14 @@ def topological_pairing(mesh: Mesh) -> TopologicalPairing:
         for vid in mesh.edge_vertices(eid):
             assign(vid, vid)
 
-    edges = _edge_index(mesh)
     queue: deque = deque()
     for eid in seam_edges:
         faces = mesh.edge_faces(eid)
         if len(faces) == 2:
             a, b = mesh.edge_vertices(eid)
             queue.append((faces[0], faces[1], (a, b), (a, b)))
+    # O(E) to build; without a face pair at the seam nothing walks (A3: gollum under X has no seam, 0.5 s).
+    edges = _edge_index(mesh) if queue else {}
 
     visited: set[frozenset[FaceId]] = set()
     face_pair_conflicts = 0

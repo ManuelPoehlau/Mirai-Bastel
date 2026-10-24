@@ -146,6 +146,13 @@ DISSOLVE_NO_CLEANUP = "DissolveNoCleanup"
 # Knife-Session läuft (wie `C`). Siehe `mirai.application.Application._symmetry_cycle`.
 SYMMETRY_CYCLE = "SymmetryCycle"
 
+# RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):
+# global; mit genau einem ausgewählten Vertex öffnet es die Re-Symmetrize-Vorschau (Plan einmal
+# gerechnet), ein zweiter Druck führt sie aus (ein Undo-Schritt), Esc schließt sie. Solange sie
+# offen ist, gehört sie `Application` (`interaction_owner` "resymmetrize"). Siehe
+# `mirai.resymmetrize` / `mirai.application.Application._resymmetrize_open`.
+RESYMMETRIZE = "ReSymmetrize"
+
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"
 # COLLAPSE (WP Toolbox Gaps B1, Manu 2026-10-23): global on Shift+C, no longer a Topology-Lab

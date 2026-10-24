@@ -12,6 +12,10 @@ Slice A0 is done with this. **Slice A1 is built (2026-10-14, [implementation not
 **Slice SS3 is built (2026-10-14, [note](#implementation-note-2026-10-14-slice-ss3)):** the bands show both sides under symmetry (D-5); the symmetric probe rows `soft_w_sym` are ready (D-4). **Reference-PC run done (Manu, 2026-10-15, [addendum](#addendum-2026-10-15-reference-pc-run-d-4)): over the 8 ms bar on the body from radius 15 % and on the head at 50 % euclidean** — a viewport question (AD-020 §7), semantics unchanged. Left before J: A3 (after the §10 review).
 **Addition (Manu, 2026-10-14): Re-Symmetrize comes into the app too** (UA-3 corrected). How it gets there touches decided
 AD-013 H2 rules, so §10 is a **PROPOSED** extension that needs its own independent review before slice A3 is built.
+**Slice A3 is built (2026-10-24, on Manu's go "Resymmetrize in die App holen ist noch offen", [implementation note](#implementation-note-2026-10-24-slice-a3)):**
+§10 R-a as proposed; key **Alt+M** instead of M (M is the Morph Lab bridge since 2026-10-17, `PROVISIONAL`); AD-013
+[Addendum 2026-10-24](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-24-ad-sym-04-slice-a3--re-symmetrize-in-the-app-h2-r1-h2-r2-h2-r3-amended-d1-and-the-preview-row-retired).
+The separate review §10 asked for was not held (open point, Kurzfassung).
 **Mode (M5):** Type C (Architecture Gate), decision preparation. Documents only: no change under `src/` or `experiments/`.
 **Work package:** WP-SYM-APP-01 (decision package).
 **Read at:** `main` @ `54de6ee`. Line numbers refer to that commit.
@@ -479,9 +483,9 @@ consequence of it). Manu may ask for one.
 
 ---
 
-## 10. Re-Symmetrize in the app (PROPOSED, 2026-10-14)
+## 10. Re-Symmetrize in the app (PROPOSED, 2026-10-14; built 2026-10-24 as R-a)
 
-**Status:** PROPOSED. The decision *that* it comes is Manu's (Decision record); *how* is proposed here and needs an
+**Status:** PROPOSED; **built 2026-10-24** ([implementation note A3](#implementation-note-2026-10-24-slice-a3)). The decision *that* it comes is Manu's (Decision record); *how* is proposed here and needs an
 independent review in a fresh session before A3, because it changes decided AD-013 H2 rules (Development System §5,
 Haltepunkt "Änderung an einer entschiedenen Architekturentscheidung").
 
@@ -986,6 +990,58 @@ symmetric head would read `partial` (AD-021 Probe P-2). Wording changed in `src/
 in the same commit; tests: `tests/test_object_transform.py` (a symmetric Move on a head turned by the M2-2 gesture stays
 bit-exact) and `tests/test_object_space.py::test_p2_…`.
 
+## Implementation note (2026-10-24, slice A3)
+
+Production order (Manu, 2026-10-24: "Resymmetrize in die App holen ist noch offen"), mechanism §10 R-a, rule changes
+AD-013 [Addendum 2026-10-24](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-24-ad-sym-04-slice-a3--re-symmetrize-in-the-app-h2-r1-h2-r2-h2-r3-amended-d1-and-the-preview-row-retired).
+
+**As built.**
+- **Moved, not copied (K-2):** `experiments/symmetry_lab/lab_topology.py` → `src/mirai/symmetry_topology.py`,
+  `lab_resymmetrize.py` → `src/mirai/resymmetrize.py` (`git mv`); their pure tests → `tests/test_symmetry_topology.py`,
+  `tests/test_resymmetrize.py` (19 + 8, unchanged statements; assets loaded through `mirai.scene_factory` instead of
+  `lab_scene`). The Lab's research test `test_lab_knife.py` and two probes import the moved module.
+- **Command and key:** `commands.RESYMMETRIZE` (GLOBAL), default **Alt+M** (`PROVISIONAL`, AD-013 A5). Deviation from
+  §10.4 ("default binding M"): M has been the Morph Lab bridge in `src/main.py` since 2026-10-17 (window level, before the
+  BindingSet), so it is not free in the app any more. The status line names whatever key is bound (`inputs_for`), the HUD's
+  Sym row shows `Shift+S/Alt+M`.
+- **The preview is an `Application` interaction** (`_resym_plan`, public `resymmetrize_preview`, `interaction_owner`
+  `"resymmetrize"`): `key_press` routes to `_resymmetrize_key` right after the Knife check — the key executes, Cancel
+  closes, `_DISPLAY_COMMANDS` pass, every other bound key answers `Vorschau aktiv — Befehl ignoriert | <summary>`
+  (`RESYM_PREVIEW_HINT`), unbound keys do nothing. Pointer: a select click posts the hint, a Box/Paint drag and a Tweak do not
+  start (`_execute_drag`), no gizmo press and the gizmo is hidden, Soft wheel steps post the hint; orbit, pan and zoom run.
+  The hover is paused by `_update_hover` reading the open preview (the `hover_suspended` hook is not used). Opening: the
+  Lab's three reasons plus the plan's (symmetry off, no selection, not exactly one vertex, seam vertex, no side, seam does not
+  split into two, **new:** no seam edge at all); refused in Object mode (`_COMPONENT_COMMANDS`) and ignored silently while
+  W/E/R/T is held or a Knife session runs (like Shift+S, R-4). Executing: `_mesh_transaction` with `set_plan_positions`
+  (one `MeshDeltaCommand`, selection mirror, moved IDs to the viewport); an empty plan records nothing. Esc: closes, no
+  change. Everything that refuses "while the <owner> interaction runs" (save, object adds, the Morph bridge, the SPACE /
+  Shift+A / Shift+M menus) covers the preview without new code.
+- **Display:** the preview layers moved with the code into the app's `SymmetryDisplay` / `GLSymmetryOverlay` (`preview`
+  callable, `set_preview`): blue = moves, light green = seam into the plane (both with a line, no depth test), light red =
+  stays without partner; points at the app's selection size. Draw order outline → markers → preview lines → preview points,
+  the Lab's since A2. Layers are keyed on the plan object (the mesh cannot change while it is open).
+- **Lab:** one context entry (Shift+B); `ReSymmetrize` named in the BLOCK row's `APP_SYMMETRY_COMMANDS`; no preview row,
+  no D1, no `hover_suspended` writes (`GateRow` lost the column); `run_command` refuses Shift+B with
+  `Re-Symmetrize-Vorschau offen`; the blue line (`preview_text`) reads the app's preview; `lab_overlays` keeps only the
+  partner points; `run_lab` no longer ends a preview.
+- **Cost (container):** opening = sides + pairing + plan + preview data, once per open: subd_cube 0.5 ms, head 6.8 ms,
+  man_with_shoes 10.8 ms (27 moves). `gollum` (87 500 V) has no seam edge under X: before the early refusal it walked the
+  topology for ~1 s just to refuse; now the refusal costs 1.8 ms (no edge index without a seam face pair, sides before the
+  pairing, no pairing on a refusal). A symmetric mesh of gollum's size would cost ~0.4–1 s once per open (measured parts:
+  sides 0.4–0.8 s, edge index 0.5 s) — not per frame; **reference-PC run not done**. Script: the timings above are
+  `topology_report` / `plan_resymmetrize` medians of 5 runs.
+
+**Tests (container, Xvfb):** `tests/test_application_resymmetrize.py` 69 (the Lab's dispatcher ports, T-R2c/e/g, T-H, N2,
+T-R3 preview rows, overlay, owner refusals, the fuzz over every default-bound key, 12 seeds × 300 events; mutation-checked:
+without the drag guard or the hover pause the fuzz fails); `tests/test_application_symmetry_display.py` +1 (preview look);
+`tests/test_hud.py`, `tests/test_symmetric_transform.py`, `tests/test_symmetry_fail_closed_guard.py` adjusted (key hint,
+named members, the guard executes an opened preview). Lab `experiments/symmetry_lab/tests` 509 → 413 (deleted with their
+ports: `test_app_lab_resymmetrize.py` 22, `test_app_lab_preview_fuzz.py` 13; `test_app_lab_preview.py` rewritten to the
+Lab's part, 10; the 27 pure tests moved to `tests/`; T-R1a/b, T-R2a, T-FC1, T-R3 rows and the overlay/draw-order tests
+adjusted).
+
+**Not done here:** the joint practical test J; the reference-PC timing of an open on a large symmetric mesh.
+
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Du hast entschieden: Symmetrie kommt in die App (`src/main.py`), danach baut man dort die symmetrische
@@ -1144,3 +1200,27 @@ sich nichts. Die Optionen dafür stehen in `experiments/drag_cost/README.md` (V-
 **Deine Entscheidung:** soll diese Viewport-Arbeit **vor** dem gemeinsamen Praxistest J kommen, oder reicht dir das Gefühl
 (Zeile 7 im SS3-Test oben) für J, und sie kommt danach? Empfehlung: erst das Gefühl prüfen — wenn der Mann bei 15–30 % ruckelt,
 vorher.
+
+**A3 gebaut (2026-10-24): Re-Symmetrize ist in der App.** Ablauf wie im Lab: genau einen Punkt auf der Seite wählen, die
+stimmt, **Alt+M** → Vorschau (blau = wird bewegt, hellgrün = Mittelpunkt wird auf die Ebene gelegt, hellrot = ohne Partner,
+bleibt), **Alt+M** nochmal → ausführen (ein Strg+Z-Schritt), **Esc** → abbrechen. Die Zeile mit Richtung und Anzahlen steht
+in der Statuszeile; das HUD zeigt `Re-Symmetrize (running)`. Solange die Vorschau offen ist, gehen nur Anzeige-Tasten (D,
+Shift+D …) und Navigation; alles andere wird mit „Vorschau aktiv — Befehl ignoriert" beantwortet.
+**Annahme, die du mit einem Satz korrigieren kannst:** Die Taste ist **Alt+M** statt M, weil M in `src/main.py` seit dem
+17.10. die Brücke ins Morph Lab ist. Wenn du lieber M für Re-Symmetrize willst, muss die Morph-Brücke eine andere Taste
+bekommen. Im Lab gilt jetzt dieselbe Taste (Alt+M); das Lab behält nur Shift+B.
+**Offener Punkt:** §10 sah vor dem Bauen eine unabhängige Review vor (weil sich entschiedene AD-013-Regeln ändern). Die habe
+ich nicht als eigene Session gemacht, sondern nach deinem „noch offen" direkt gebaut und die Regeländerungen in AD-013
+(Nachtrag 2026-10-24) aufgeschrieben. Wenn du die Review willst, prüft sie den gebauten Stand.
+**Neu gegenüber dem Lab:** ohne Mittelnaht auf der Ebene (z. B. Würfel auf Y, gollum auf X) kommt sofort
+„keine Seam auf der Ebene — nichts zu spiegeln"; vorher rechnete es bei gollum ~1 s, um dann abzulehnen.
+
+**Kurzcheck (optional vor J, 3 Minuten):** `python src/main.py examples/meshes/Man_With_Shoes_basemesh.obj`, Shift+S
+(`partial`, magenta Punkte), einen normalen Punkt an der linken Brust anklicken, Alt+M.
+
+| # | Was du prüfst | Erwartet | Verdikt |
+|---|---|---|---|
+| 1 | Vorschau | blaue Punkte mit Linien auf der anderen Seite, Statuszeile „Quelle … → Ziel …: bewegt 27 …", kein Hover | |
+| 2 | Alt+M | magenta Punkte verschwinden, Symmetrie `valid`; Strg+Z bringt alles zurück, Strg+Y wieder | |
+| 3 | Alt+M, dann Esc | nichts ändert sich | |
+| 4 | Gefühl | Öffnen und Ausführen ohne spürbare Pause | |

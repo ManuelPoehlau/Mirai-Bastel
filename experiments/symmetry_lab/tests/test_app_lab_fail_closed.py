@@ -11,8 +11,9 @@ Benannte Tests des Amendments (die IDs stehen in den Testnamen):
 
 - T-FC1  fail-closed: jeder Befehl außerhalb von `NON_OPERATION`, Deklarationen,
          Transform-Allow-List und den benannten App-Symmetrie-Befehlen wird sichtbar abgelehnt
-         (inkl. der sechs unverdrahteten); der Symmetrie-Zyklus der App (Shift+S) ist unter BLOCK
-         benannt erlaubt und unter der Vorschau-Zeile abgelehnt (AD-SYM-04 K-6, Addendum 2026-10-14)
+         (inkl. der sechs unverdrahteten); der Symmetrie-Zyklus der App (Shift+S) und seit
+         AD-SYM-04 A3 Re-Symmetrize (Alt+M) sind unter BLOCK benannt erlaubt (K-6, Addenda
+         2026-10-14 und 2026-10-24; die Vorschau-Zeile gibt es seit A3 nicht mehr)
 - T-FC2  jeder `NON_OPERATION`-Befehl verhält sich wie bei Symmetrie aus
 - T-FC3  die Zeile ist eine Funktion der Deklarationen (und der `supports_symmetry`-Flags)
 - T-FC4  `C` über das Lab: deklarierter Kontext läuft, undeklarierter wird benannt abgelehnt,
@@ -39,8 +40,6 @@ from mirai.topology.contextual_c import CContext
 from symmetry_lab.lab_app import (
     APP_SYMMETRY_COMMANDS,
     BLOCK_NOT_ALLOWED_TEXT,
-    PREVIEW_HINT,
-    ROW_PREVIEW,
     CONTEXT_NAMES,
     KNIFE_ONE_SIDED_TEXT,
     NON_OPERATION,
@@ -221,10 +220,11 @@ def test_t_fc1_connect_is_refused_by_identity_without_declarations(monkeypatch):
 def test_t_fc1_the_app_symmetry_command_is_a_named_entry_of_the_block_row():
     """K-6: unter BLOCK (Default bei Symmetrie an) schaltet Shift+S weiter und aus — benannt in der
     Allow-List, nicht über `NON_OPERATION` (es ändert Mesh-Zustand); die Zeile folgt jedem Schritt."""
-    assert APP_SYMMETRY_COMMANDS == {cmd.SYMMETRY_CYCLE}
-    assert cmd.SYMMETRY_CYCLE not in NON_OPERATION
-    assert cmd.SYMMETRY_CYCLE in block_row().gate.allowed
-    assert block_row().gate.refusal(cmd.SYMMETRY_CYCLE) is None
+    assert APP_SYMMETRY_COMMANDS == {cmd.SYMMETRY_CYCLE, cmd.RESYMMETRIZE}
+    for command in APP_SYMMETRY_COMMANDS:
+        assert command not in NON_OPERATION
+        assert command in block_row().gate.allowed
+        assert block_row().gate.refusal(command) is None
     app, lab = symmetric_lab()
     for axis in ("Y", "Z", None):
         history = len(app.history)
@@ -233,22 +233,6 @@ def test_t_fc1_the_app_symmetry_command_is_a_named_entry_of_the_block_row():
         assert len(app.history) == history + 1
         assert app.command_gate == gate_row_for(axis, GateMode.BLOCK).gate
     assert app.command_gate is None
-
-
-def test_t_fc1_the_preview_row_refuses_the_app_symmetry_command():
-    """Die Vorschau-Zeile lässt nur Anzeige-Commands durch (H2-R2): Shift+S wird mit ihrem Text
-    abgelehnt, Definition und Gate bleiben."""
-    from ._app_lab_preview_support import open_preview
-
-    app, lab, _vid = open_preview()
-    definition = app.scene.mesh.symmetry_definition
-    serial = app.status_serial
-    assert ROW_PREVIEW.gate.refusal(cmd.SYMMETRY_CYCLE) == PREVIEW_HINT
-    assert press(app, lab, SHIFT_S) is False
-    assert app.status_serial == serial + 1
-    assert app.status_message == PREVIEW_HINT
-    assert app.scene.mesh.symmetry_definition is definition
-    assert app.command_gate is ROW_PREVIEW.gate
 
 
 @pytest.mark.parametrize("command", refused_by_the_row())
@@ -430,8 +414,8 @@ def test_t_fc3_other_rows_do_not_depend_on_declarations(monkeypatch):
     before = gate_rows()
     declare(monkeypatch, contexts=list(CONTEXT_NAMES), removal=[cmd.DELETE])
     after = gate_rows()
-    off, mark, _block, preview = after
-    assert (off, mark, preview) == (before[0], before[1], before[3])
+    off, mark, _block = after
+    assert (off, mark) == (before[0], before[1])
     assert off.gate is None and mark.gate is None
 
 

@@ -38,7 +38,7 @@ from mirai.topology.connect_per_face import connect_selected_edges_per_face  # n
 from mirai.topology.delete_dissolve import RemovalRefused, remove_selected  # noqa: E402
 from mirai.topology.knife_resolve import check_commit, resolve_cross_face  # noqa: E402
 from mirai.topology.split import split_selected_edge  # noqa: E402
-from symmetry_lab.lab_topology import topological_sides  # noqa: E402
+from mirai.symmetry_topology import topological_sides  # noqa: E402
 from topology.symmetry_ops_probe import (  # noqa: E402
     load,
     partner_edge,

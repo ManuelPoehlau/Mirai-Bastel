@@ -1,19 +1,32 @@
 """Topologische Paarung und Seiten (Handoff Slice 5 §2 E11/E12, §7 Charakterisierung).
 
+`mirai.symmetry_topology`; bis AD-SYM-04 A3 (2026-10-24) als `test_lab_topology.py` im Symmetry Lab.
+
 Ebene X, Seam aus Slice 3 E3. Die Zahlen sind Charakterisierung der heutigen
 Assets aus der Untersuchung zum Handoff, keine Capability-Regel.
 """
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
-from mirai.application import Application
-from mirai.symmetry import CorrespondenceState, vertex_correspondence
-from mirai.symmetry_axis import definition_for_axis
+import tests._bootstrap  # noqa: F401
+from tests._bootstrap import _REPO_ROOT
 
-from symmetry_lab.lab_scene import load_asset_into
-from symmetry_lab.lab_topology import topological_pairing, topological_sides, topology_report
+_EXAMPLES = _REPO_ROOT / "examples"
+if str(_EXAMPLES) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES))
+
+from loaders.assets import asset_path  # noqa: E402
+from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
+
+from mirai.application import Application  # noqa: E402
+from mirai.symmetry import CorrespondenceState, vertex_correspondence  # noqa: E402
+from mirai.symmetry_axis import definition_for_axis  # noqa: E402
+
+from mirai.symmetry_topology import topological_pairing, topological_sides, topology_report  # noqa: E402
 
 ASSETS = [
     # asset, Vertices, capability-PAIRED, Faces je Seite
@@ -25,7 +38,7 @@ ASSETS = [
 
 def mesh_with_axis(asset: str, axis: str = "X"):
     app = Application()
-    load_asset_into(app, asset)
+    app.scene.mesh = build_core_scene_from_obj(asset_path(asset)).mesh
     mesh = app.scene.mesh
     mesh.symmetry_definition = definition_for_axis(mesh, axis)
     return mesh
@@ -117,7 +130,7 @@ def test_seam_vertices_have_no_side():
 
 def test_symmetry_off_is_empty():
     app = Application()
-    load_asset_into(app, "subd_cube")
+    app.scene.mesh = build_core_scene_from_obj(asset_path("subd_cube")).mesh
     pairing = topological_pairing(app.scene.mesh)
     assert pairing.partners == {}
     assert pairing.conflicts == frozenset()

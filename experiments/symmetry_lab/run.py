@@ -80,7 +80,7 @@ def build_app_lab(
     app.set_viewport_size(width, height)
     lab.attach_overlays(
         app.viewport,
-        build_lab_overlays(lab.reports, lambda: lab.preview),
+        build_lab_overlays(lab.reports),
     )
     return app, lab
 
@@ -136,15 +136,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run_lab(window, app: Application, lab: SymmetryAppLab, src_main) -> None:
-    """Event-Loop aus `src/main.py` (H6). Kehrt zurück, wenn das Fenster zu ist;
-    eine dann noch offene Re-Symmetrize-Vorschau endet mit dem Fenster (AD-013
-    H2-R2, § Consequences „Focus loss"): Gate und Hover-Flag zurück auf die Zeile
-    des Symmetrie-Zustands. Kein eigener `on_close`-Handler: pyglets
-    Standard-Schließen bleibt unverändert."""
-    try:
-        src_main.run(window, app)
-    finally:
-        lab.end_preview()
+    """Event-Loop aus `src/main.py` (H6). Kehrt zurück, wenn das Fenster zu ist. Kein eigener
+    `on_close`-Handler: pyglets Standard-Schließen bleibt unverändert. (Bis AD-SYM-04 A3 endete
+    hier eine offene Lab-Vorschau; die Vorschau gehört jetzt `Application`.)"""
+    src_main.run(window, app)
 
 
 if __name__ == "__main__":

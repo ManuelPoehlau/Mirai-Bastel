@@ -124,8 +124,8 @@ def test_the_block_row_names_no_context_and_its_allow_list_is_what_it_was():
     assert cmd.KNIFE_COMMIT in gate.allowed and cmd.KNIFE_LIFT in gate.allowed
 
 
-def test_the_variant_key_is_no_third_lab_key():
-    assert len(LAB_KEY_ENTRIES) == 2
+def test_the_variant_key_is_no_second_lab_key():
+    assert len(LAB_KEY_ENTRIES) == 1  # seit AD-SYM-04 A3 nur Shift+B
     assert V not in {entry.input for entry in LAB_KEY_ENTRIES}
     assert V.value not in {entry.input.value for entry in LAB_KEY_ENTRIES if not entry.input.modifiers}
 

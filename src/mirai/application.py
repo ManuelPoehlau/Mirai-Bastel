@@ -146,6 +146,14 @@ from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
 from .symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
 from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
 from .symmetry_display import ReportCache, SymmetryDisplay
+from .resymmetrize import (
+    ResymmetrizeRejected,
+    ResymPlan,
+    plan_description,
+    plan_resymmetrize,
+    plan_summary,
+    set_plan_positions,
+)
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
@@ -167,6 +175,7 @@ from .topology.loop_slide import (
 )
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
+from .subdivision.preview import key_label
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.box_select import (
     elements_in_polygon,
@@ -381,10 +390,15 @@ _COMPONENT_COMMANDS = frozenset(
         *_REMOVAL_COMMANDS,
         commands.COLLAPSE,
         commands.SYMMETRY_CYCLE,
+        commands.RESYMMETRIZE,
         *_LOOP_COMMANDS,
         *_SELECTION_STEP_COMMANDS,
     }
 )
+
+#: AD-SYM-04 A3: what an open Re-Symmetrize preview answers to every other bound key, click or
+#: Soft step (the Lab's text, `PROVISIONAL`); the plan summary follows it so it stays readable.
+RESYM_PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
 
 #: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture (`_object_arm`) instead of a
 #: component tool; T (Extrude) stays component work.
@@ -685,9 +699,14 @@ class Application:
         # `src/main.py` never sets it.
         self.command_gate: CommandGate | None = None
         # H2 (same addendum): pauses the selection hover while a host's modal
-        # interaction is open (the Lab's Re-Symmetrize preview). Backing field,
-        # because `viewport` is None until `init_scene()`; see `hover_suspended`.
+        # interaction is open. Backing field, because `viewport` is None until
+        # `init_scene()`; see `hover_suspended`. (Its only writer, the Lab's
+        # Re-Symmetrize preview, became `_resym_plan` in AD-SYM-04 A3.)
         self._hover_suspended: bool = False
+        # AD-SYM-04 A3 (§10 R-a): the open Re-Symmetrize preview - the plan computed once when it
+        # opened, executed exactly as shown. None = closed. An `Application` interaction like the
+        # Knife session (`interaction_owner` "resymmetrize").
+        self._resym_plan: ResymPlan | None = None
 
         # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
         # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
@@ -1002,9 +1021,12 @@ class Application:
         if self._soft_overlay is not None or self._soft_shading_overlay is not None:
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
         self._symmetry_display = None
+        self._resym_plan = None
         if symmetry_overlay_type is not None:
             self._symmetry_display = SymmetryDisplay(
-                symmetry_overlay_type(), reports=self._symmetry_reports
+                symmetry_overlay_type(),
+                reports=self._symmetry_reports,
+                preview=lambda: self._resym_plan,
             )
             self.viewport.add_overlay(self._symmetry_display)
         self.subdivision.attach(
@@ -1609,8 +1631,8 @@ class Application:
         if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
             return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
         self._set_status(
-            "Object mode: T, G, S, I, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Shift+arrows and Ctrl+/- work on"
-            " points/edges/faces"
+            "Object mode: T, G, S, I, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
+            " on points/edges/faces"
             " - press 1/2/3 (Delete removes the selected objects)"
         )
         return True
@@ -2047,6 +2069,8 @@ class Application:
             return self._collapse_command()
         if command == commands.SYMMETRY_CYCLE:
             return self._symmetry_cycle()
+        if command == commands.RESYMMETRIZE:
+            return self._resymmetrize_open()
         if command in (commands.EDGE_LOOP, commands.EDGE_RING):
             return self._loop_select(command)
         if command == commands.LOOP_INSERT:
@@ -2075,6 +2099,95 @@ class Application:
         ).changed
         self._set_status(symmetry_status_text(self.scene.mesh))
         return changed
+
+    # -- Re-Symmetrize (AD-SYM-04 Slice A3, §10 R-a) -------------------------------
+
+    @property
+    def resymmetrize_preview(self) -> ResymPlan | None:
+        """The open Re-Symmetrize preview (its plan), None = closed."""
+        return self._resym_plan
+
+    def _resymmetrize_summary(self) -> str:
+        # The bound key, not a literal (as the HUD hints): a `keymap.json` rebinding shows up here.
+        bound = [inp for inp in self.bindings.inputs_for(commands.RESYMMETRIZE) if inp.kind == "key"]
+        return plan_summary(self._resym_plan, key_label(bound[0]) if bound else "?")
+
+    def _resymmetrize_open(self) -> bool:
+        """Re-Symmetrize key without a preview (the Lab's KEEP behaviour, M / M / Esc): exactly one
+        selected vertex is the source; its topological side is mirrored onto the other side and the
+        seam laid into the plane (`mirai.resymmetrize`). The plan is computed once here and shown;
+        the next press executes exactly it, Esc closes it. Refused with the Lab's reasons."""
+        if self.interaction_owner is not None:
+            return False
+        mesh = self.scene.mesh
+        selected = self.selection.vertices
+        try:
+            if mesh.symmetry_definition is None:
+                raise ResymmetrizeRejected("Symmetrie aus")
+            if not selected:
+                raise ResymmetrizeRejected("keine Auswahl")
+            if len(selected) != 1:
+                raise ResymmetrizeRejected("genau einen Vertex auswählen")
+            plan = plan_resymmetrize(mesh, next(iter(selected)))
+        except ResymmetrizeRejected as exc:
+            self._set_status(f"Re-Symmetrize: {exc}")
+            return False
+        self._resym_plan = plan
+        # The Lab paused the hover through the gate (`hover_suspended`); here `_update_hover` reads
+        # the open preview itself, so the flag stays a host hook.
+        self._set_hovered(None)
+        self._resymmetrize_display_changed()
+        self._set_status(self._resymmetrize_summary())
+        return True
+
+    def _resymmetrize_key(self, input: Input) -> bool:
+        """Keys while the preview is open: the Re-Symmetrize key executes, Cancel closes, the pure
+        display keys pass; every other bound key is ignored with the hint (the Lab's preview row:
+        display commands only). Navigation is pointer input and never reaches here."""
+        command = self.bindings.command_for(input)
+        if command == commands.RESYMMETRIZE:
+            return self._resymmetrize_execute()
+        if command == commands.CANCEL:
+            self._resymmetrize_close()
+            self._set_status("Re-Symmetrize abgebrochen")
+            return True
+        if command in _DISPLAY_COMMANDS:
+            return self.dispatch_command(command)
+        if command is not None:
+            self._resymmetrize_refuse()
+        return False
+
+    def _resymmetrize_refuse(self) -> None:
+        self._set_status(f"{RESYM_PREVIEW_HINT} | {self._resymmetrize_summary()}")
+
+    def _resymmetrize_execute(self) -> bool:
+        """Sets exactly the shown plan: one Undo step (selection kept and restored with it); an
+        empty plan records nothing. The preview is closed first, so the transaction's hover
+        refresh picks again."""
+        plan = self._resym_plan
+        self._resymmetrize_close()
+        changed = self._mesh_transaction(
+            plan_description(plan),
+            lambda mesh: set_plan_positions(mesh, plan),
+            moved_of=lambda moved: moved,
+        ).changed
+        if changed:
+            self._set_status(f"Re-Symmetrize ausgeführt: {len(plan.changes)} Änderungen")
+        else:
+            self._set_status("Re-Symmetrize: 0 Änderungen — kein Schritt")
+        return True
+
+    def _resymmetrize_close(self) -> None:
+        if self._resym_plan is None:
+            return
+        self._resym_plan = None
+        self._resymmetrize_display_changed()
+        self._refresh_hover()
+
+    def _resymmetrize_display_changed(self) -> None:
+        # Opening and closing change no mesh and tell the viewport nothing: the display re-syncs.
+        if self._symmetry_display is not None:
+            self._symmetry_display.dirty = True
 
     @property
     def symmetry_display(self) -> SymmetryDisplay | None:
@@ -3655,12 +3768,15 @@ class Application:
         """Which of `Application`'s own interactions owns the keys right now
         (AD-013 H2 addendum, H2-R2): `"transform"` while W/E/R (and, WP-06 B9, T =
         Extrude - the same hold-key family, no new value) is armed or running,
-        `"knife"` during a Knife session, else None. Camera gestures
+        `"knife"` during a Knife session, `"resymmetrize"` while the Re-Symmetrize
+        preview is open (AD-SYM-04 A3), else None. Camera gestures
         (orbit, pan, zoom) own no keys and are never an owner."""
         if self._transform_command is not None:
             return "transform"
         if self._knife is not None:
             return "knife"
+        if self._resym_plan is not None:
+            return "resymmetrize"
         return None
 
     @property
@@ -3670,7 +3786,8 @@ class Application:
         refreshes after Undo/Redo, commit, cancel and `apply_mesh_change`),
         because they all go through `_update_hover`. The cursor is still
         tracked. Default False; `src/main.py` never sets it. The Knife hover
-        is not affected."""
+        is not affected. The app's own Re-Symmetrize preview pauses the hover
+        without it (`_update_hover`)."""
         return self._hover_suspended
 
     @hover_suspended.setter
@@ -3694,6 +3811,8 @@ class Application:
         self.flush_hover()
         if self._knife is not None:
             return self._knife_key(input)
+        if self._resym_plan is not None:
+            return self._resymmetrize_key(input)
         command = self.bindings.command_for(input)
         if command is None:
             # The SubD keys (context "subd") only where the global context binds nothing.
@@ -3748,12 +3867,12 @@ class Application:
                 return False
             return self.dispatch_command(command)
         if (
-            command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE)
+            command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE)
             or command in _REMOVAL_COMMANDS
             or command in _LOOP_COMMANDS
             or command in _SELECTION_STEP_COMMANDS
         ):
-            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste und Shift+S werden
+            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste, Shift+S und Alt+M werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
             # Shift+S: AD-SYM-04 R-4, still wie C).
             if self._transform_key is not None:
@@ -4783,7 +4902,8 @@ class Application:
             return
         if not self.pointer.active:
             self._press_point = self._cursor
-            self._gizmo_press(input)
+            if self._resym_plan is None:
+                self._gizmo_press(input)
         self.pointer.press(input)
 
     def pointer_drag(
@@ -4838,6 +4958,9 @@ class Application:
         if command == commands.ZOOM and self._soft_live():
             command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:
+            if self._resym_plan is not None:
+                self._resymmetrize_refuse()
+                return False
             if self._knife is not None or self._gate_refuses(command):
                 return False
             return self.dispatch_command(command)
@@ -4923,7 +5046,7 @@ class Application:
         # Hover im aktiven Modus: Vertex (B2b), Edge oder Face (B5b).
         if self.viewport is None:
             return False
-        if self._hover_suspended:
+        if self._hover_suspended or self._resym_plan is not None:
             return self._set_hovered(None)
         if self.selection.mode is SelectionMode.OBJECT:
             # AD-021 M1 (`PROVISIONAL`): no object hover yet - it would have no look, and an
@@ -4998,6 +5121,12 @@ class Application:
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:
+        if self._resym_plan is not None and step.command in (
+            commands.SELECT_DRAG, commands.SELECT_DRAG_ADD, commands.TWEAK
+        ):
+            # The open preview owns the mesh and the selection; navigation still runs. (A handle
+            # pressed before the preview opened would arm a Tweak here.)
+            return False
         if self._gizmo_gesture is not None and step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
             return self._gizmo_step(step.dx, step.dy)
         if step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
@@ -5035,6 +5164,9 @@ class Application:
 
     def _execute_click(self, click: Click) -> bool:
         if click.command in _SELECT_COMMANDS:
+            if self._resym_plan is not None:
+                self._resymmetrize_refuse()
+                return False
             if self._gate_refuses(click.command):
                 return False
             self.select_at(click.command, click.x, click.y)
@@ -5444,8 +5576,9 @@ class Application:
         return self.viewport.world_camera_uniforms()
 
     def _gizmo_pivot_if_shown(self):
-        """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down or any drag gesture runs."""
-        if self._transform_key is not None or self._drag_select is not None:
+        """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down, any drag gesture runs
+        or the Re-Symmetrize preview is open."""
+        if self._transform_key is not None or self._drag_select is not None or self._resym_plan is not None:
             return None
         return self._gizmo_pivot()
 

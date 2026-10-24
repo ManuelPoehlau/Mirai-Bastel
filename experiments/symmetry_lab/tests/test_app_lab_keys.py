@@ -45,6 +45,7 @@ from ._app_lab_support import (  # noqa: F401
 
 
 X = Input("key", "x")
+ALT_M = Input("key", "m", frozenset({"alt"}))
 
 
 def _gate_matches_mesh(app, lab) -> bool:
@@ -55,22 +56,23 @@ def _gate_matches_mesh(app, lab) -> bool:
 # -- T-R2a ------------------------------------------------------------------------
 
 
-def test_m_during_armed_and_running_move_is_refused(lab_app):
-    """T-R2a: W scharf, M → False, Status gepostet, `transform_command == MOVE`;
-    W loslassen committet genau einen History-Eintrag."""
+def test_lab_key_during_armed_and_running_move_is_refused(lab_app):
+    """T-R2a (seit AD-SYM-04 A3 mit Shift+B, der einzigen Lab-Taste; bis dahin M): W scharf,
+    Shift+B → False, Status gepostet, `transform_command == MOVE`; W loslassen committet genau
+    einen History-Eintrag."""
     app, lab = lab_app
     a = visible(app)[0]
     click(app, *screen(app, a))
     assert press(app, lab, W)
     serial = app.status_serial
-    assert press(app, lab, M) is False  # nur scharf
+    assert press(app, lab, SHIFT_B) is False  # nur scharf
     assert app.status_serial == serial + 1
-    assert app.status_message == "Re-Symmetrize (M) abgelehnt — Transform läuft"
+    assert app.status_message == "E5-Modus (Shift+B) abgelehnt — Transform läuft"
     assert app.transform_command == cmd.MOVE
 
     app.pointer_motion(400, 300, 12.0, 7.0)
     assert app.transform_interacting
-    assert press(app, lab, M) is False  # läuft
+    assert press(app, lab, SHIFT_B) is False  # läuft
     assert app.status_serial == serial + 2
     assert app.transform_command == cmd.MOVE
 
@@ -259,9 +261,10 @@ REFUSALS = [
     ("C_under_symmetry_block", _symmetry_on_block, C, block_text("Knife")),   # Knife undeklariert (6c: s. u.)
     # Shift+S unter einer Interaktion: seit AD-SYM-04 A1 die App-Taste, still ignoriert wie C
     # (review R-4) — `test_shift_s_is_ignored_silently_under_an_interaction` unten.
-    # Seit Slice 3 die Ablehnungen des alten Labs (README Slice 5, Schritt 12).
-    ("M_idle", _idle, M, "Re-Symmetrize: Symmetrie aus"),
-    ("M_symmetry_on", _symmetry_on, M, "Re-Symmetrize: keine Auswahl"),
+    # Seit Slice 3 die Ablehnungen des alten Labs (README Slice 5, Schritt 12); seit AD-SYM-04 A3
+    # die der App (Alt+M), über den Lab-Pfad weitergereicht.
+    ("AltM_idle", _idle, ALT_M, "Re-Symmetrize: Symmetrie aus"),
+    ("AltM_symmetry_on", _symmetry_on, ALT_M, "Re-Symmetrize: keine Auswahl"),
     ("ShiftB_transform_armed", _armed, SHIFT_B, "E5-Modus (Shift+B) abgelehnt — Transform läuft"),
     ("ShiftB_knife", start_knife, SHIFT_B, "E5-Modus (Shift+B) abgelehnt — Knife-Session läuft"),
 ]

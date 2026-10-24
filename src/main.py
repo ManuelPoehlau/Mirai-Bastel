@@ -98,6 +98,11 @@ Scope (binding, see the handoffs):
   sink, `GLSymmetryOverlay` in `GL_TYPES` (T-G3b as narrowed); `Application` owns what it shows
   (`mirai.symmetry_display`) and keeps the outline and markers from the drag start while W/E/R/T
   runs (the markers follow the moved vertices).
+  Re-Symmetrize (AD-SYM-04 slice A3, key `PROVISIONAL`): with exactly one vertex selected, Alt+M opens
+  a preview of mirroring that vertex's side onto the other (blue = moves, light green = seam vertex
+  into the plane, light red = no partner, stays; the status line names direction and counts), Alt+M
+  again executes it as one Undo step, Esc cancels. While it is open only the display keys and
+  navigation work. A binding, not code here (bare M stays the Morph Lab bridge).
   WP-SOFT-01 S2b (`PROVISIONAL`, AD-020 §5): with Soft on and a selection, the influence
   region is shown as banded points around the selection (`GLSoftBandOverlay`, an extra
   overlay; four bands over 0 < w < 1, warm = strong .. cold = weak, seeds keep the

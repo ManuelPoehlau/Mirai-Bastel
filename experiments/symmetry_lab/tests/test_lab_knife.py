@@ -26,7 +26,7 @@ from mirai.symmetry import (
 from mirai.symmetry_axis import definition_for_axis
 
 from symmetry_lab.lab_scene import load_asset_into
-from symmetry_lab.lab_topology import topological_pairing, topological_sides, topology_report
+from mirai.symmetry_topology import topological_pairing, topological_sides, topology_report
 
 PLANE = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
 

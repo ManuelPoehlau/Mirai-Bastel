@@ -95,6 +95,8 @@ def hud_state(app) -> HudState:
     curve = f"custom p={soft.curve_power:g}" if soft.curve == "custom" else soft.curve
     if app.knife_active:
         active = "Knife"
+    elif app.resymmetrize_preview is not None:
+        active = "Re-Symmetrize"
     elif app.transform_command is not None:
         active = _TOOL_NAMES.get(app.transform_command, app.transform_command)
     else:
@@ -132,7 +134,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     "Tool": ((commands.MOVE, commands.ROTATE, commands.SCALE), None),
     "Axis": ((commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z), None),
     "Space": ((commands.TOGGLE_TRANSFORM_SPACE,), None),
-    "Sym": ((commands.SYMMETRY_CYCLE,), None),
+    "Sym": ((commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE), None),
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),
     "SubD": ((commands.SUBD_CYCLE_VIEW,), SUBD_CONTEXT),

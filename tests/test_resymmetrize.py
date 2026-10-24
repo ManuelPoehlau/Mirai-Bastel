@@ -1,36 +1,47 @@
 """Re-Symmetrize über topologische Paarung (Handoff Slice 5 §2 A5–A7, E12–E15) — reine
-Tests von `lab_resymmetrize` (Plan, Positionen, Vorschau-Daten).
+Tests von `mirai.resymmetrize` (Plan, Positionen, Vorschau-Daten); bis AD-SYM-04 A3
+(2026-10-24) als `test_lab_resymmetrize.py` im Symmetry Lab.
 
-Kein GL, keine Eingabe: das Verhalten über die Tasten (M / M / Esc, Ablehnungen,
-Vorschau-Zustand) läuft seit WP-SYM-LAB-03 auf dem App-Pfad,
-`test_app_lab_resymmetrize.py` und `test_app_lab_preview.py` (Plan A2-Tabelle,
-Slice 5). Positionen werden exakt verglichen (A5: keine Toleranz).
+Kein GL, keine Eingabe: das Verhalten über die Taste (Vorschau / ausführen / Esc, Ablehnungen,
+Vorschau-Zustand) läuft in `Application`, `test_application_resymmetrize.py`. Positionen werden
+exakt verglichen (A5: keine Toleranz).
 """
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
-from mirai.application import Application
-from mirai.symmetry import SymmetryState, mirror_position, symmetry_state
-from mirai.symmetry_axis import definition_for_axis
+import tests._bootstrap  # noqa: F401
+from tests._bootstrap import _REPO_ROOT
 
-from symmetry_lab.lab_resymmetrize import (
+_EXAMPLES = _REPO_ROOT / "examples"
+if str(_EXAMPLES) not in sys.path:
+    sys.path.insert(0, str(_EXAMPLES))
+
+from loaders.assets import asset_path  # noqa: E402
+from mirai.scene_factory import build_core_scene_from_obj  # noqa: E402
+
+from mirai.application import Application  # noqa: E402
+from mirai.symmetry import SymmetryState, mirror_position, symmetry_state  # noqa: E402
+from mirai.symmetry_axis import definition_for_axis  # noqa: E402
+
+from mirai.resymmetrize import (  # noqa: E402
     ResymmetrizeRejected,
     plan_resymmetrize,
     plan_summary,
     resym_preview_data,
     set_plan_positions,
 )
-from symmetry_lab.lab_scene import load_asset_into
-from symmetry_lab.lab_topology import topology_report
+from mirai.symmetry_topology import topology_report  # noqa: E402
 
 PLANE = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
 
 
 def make_app(asset: str, axis: str | None = "X") -> Application:
     app = Application()
-    load_asset_into(app, asset)
+    app.scene.mesh = build_core_scene_from_obj(asset_path(asset)).mesh
     mesh = app.scene.mesh
     mesh.symmetry_definition = definition_for_axis(mesh, axis)
     return app
@@ -162,7 +173,7 @@ def test_conflict_partners_stay_unchanged():
 
 def test_preview_draw_data():
     """Seit Slice 5 rein: der Plan kommt direkt aus `plan_resymmetrize` (vorher über
-    die Vorschau des alten Dispatchers), die Daten aus `lab_resymmetrize`."""
+    die Vorschau des alten Dispatchers), die Daten aus `mirai.resymmetrize`."""
     app = make_app("man_with_shoes_basemesh")
     plan = plan_resymmetrize(app.scene.mesh, vertex_on_side(app, 0))
     assert len(plan.moves) == 27

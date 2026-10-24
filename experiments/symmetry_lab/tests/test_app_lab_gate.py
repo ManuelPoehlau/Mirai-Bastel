@@ -37,7 +37,6 @@ from mirai.topology.knife_pick import knife_pick
 from symmetry_lab.lab_app import (
     KNIFE_ONE_SIDED_TEXT,
     ROW_MARK,
-    ROW_PREVIEW,
     ROW_SYMMETRY_OFF,
     GateMode,
     block_row,
@@ -49,6 +48,8 @@ from symmetry_lab.lab_app import (
     startup_listing,
 )
 from viewport.gl_symmetry_overlay import UNPAIRED_LAYER
+
+ALT_M = Input("key", "m", frozenset({"alt"}))
 
 from ._app_lab_support import (  # noqa: F401
     declare,
@@ -488,14 +489,15 @@ def test_shift_b_is_refused_while_application_owns_the_keys(symmetric, setup, ow
 
 
 def test_shift_b_is_refused_while_the_preview_is_open(symmetric):
-    """Shift+B bei offener Re-Symmetrize-Vorschau: abgelehnt, die Vorschau-Zeile bleibt."""
+    """Shift+B bei offener Re-Symmetrize-Vorschau (seit AD-SYM-04 A3 eine Interaktion der App):
+    abgelehnt, die MARK-Zeile bleibt."""
     app, lab = symmetric
     select(app, paired(app)[0])
-    assert press(app, lab, M) and lab.preview_open
+    assert press(app, lab, ALT_M) and app.interaction_owner == "resymmetrize"
     assert press(app, lab, SHIFT_B) is False
     assert lab.gate_mode is GateMode.MARK
-    assert app.command_gate is ROW_PREVIEW.gate
-    assert press(app, lab, ESC) and not lab.preview_open
+    assert app.command_gate is ROW_MARK.gate
+    assert press(app, lab, ESC) and app.resymmetrize_preview is None
     assert app.command_gate is ROW_MARK.gate
 
 
@@ -701,15 +703,13 @@ def test_patched_declaration_refuses_in_block_and_warns_in_mark(symmetric, monke
 
 
 @pytest.mark.parametrize("patched", [False, True], ids=["declared", "all_unsupported"])
-def test_gate_never_refuses_cancel_outside_the_preview(monkeypatch, patched):
-    """H2-R2: außerhalb der Vorschau lehnt keine Zeile `Cancel` ab — auch nicht,
-    wenn keine Operation Symmetrie erklärt."""
+def test_gate_never_refuses_cancel(monkeypatch, patched):
+    """H2-R2: keine Zeile lehnt `Cancel` ab — auch nicht, wenn keine Operation Symmetrie
+    erklärt (seit AD-SYM-04 A3 gibt es keine Vorschau-Zeile mehr)."""
     if patched:
         for operation in (MoveOperation, RotateOperation, ScaleOperation):
             monkeypatch.setattr(operation, "supports_symmetry", False)
     for row in gate_rows():
-        if row is ROW_PREVIEW:
-            continue
         assert row.gate is None or row.gate.refusal(cmd.CANCEL) is None, row.state
     assert set(block_row().gate.refused) <= {cmd.CONNECT, cmd.MOVE, cmd.ROTATE, cmd.SCALE}
 
