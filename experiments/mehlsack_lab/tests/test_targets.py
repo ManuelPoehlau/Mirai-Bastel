@@ -1,4 +1,4 @@
-"""§7.2 Loop/Ring on the box (rules of `playground.topology_tools.loop_ring`, unchanged), and
+"""§7.2 Loop/Ring on the box (rules of `mirai.topology.loop_ring`, unchanged), and
 the `TopologyIndex` returns the same traversal as the raw mesh for every edge. Slice 2a E15:
 with the box's rims given, a Loop on a rim edge runs closed around the corners; every other
 Loop and every Ring stays `loop_ring`'s."""
@@ -9,7 +9,7 @@ import pytest
 
 from mehlsack_lab.box import BoxParams, box_rims, build_box_mesh
 from mehlsack_lab.targets import MODE_LOOP, MODE_RING, TargetFinder, TopologyIndex
-from playground.topology_tools.loop_ring import edge_loop, edge_ring
+from mirai.topology.loop_ring import edge_loop, edge_ring
 
 from .helpers import horizontal_edge
 

@@ -16,8 +16,7 @@ import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"), str(_REPO_ROOT / "examples"),
-           str(_REPO_ROOT / "experiments" / "rigging-skinning-morphing")):
+for _p in (str(_REPO_ROOT / "src"), str(_REPO_ROOT), str(_REPO_ROOT / "tests"), str(_REPO_ROOT / "examples")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

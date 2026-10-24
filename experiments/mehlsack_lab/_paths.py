@@ -4,8 +4,7 @@ Puts, in this order, at the front of sys.path:
 
 1. repo `src/`    — production packages `core`, `viewport`, `mirai`
 2. repo root      — after `src/`, so a top-level `viewport` always resolves to
-                    `src/viewport`; also what makes `playground.topology_tools.loop_ring`
-                    importable (the one allowed `playground` module, handoff E3)
+                    `src/viewport`
 3. `experiments/` — so the package `mehlsack_lab` itself is importable
 
 With `python experiments/mehlsack_lab/run.py` only this folder is on sys.path[0];

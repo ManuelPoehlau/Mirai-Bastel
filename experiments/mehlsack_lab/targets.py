@@ -1,8 +1,8 @@
 """Hover targets: the Loop or Ring of a hovered edge and its seed vertices (handoff E3).
 
-The traversal itself is `playground.topology_tools.loop_ring` — imported read-only, its
-conservative rules unchanged (the one `playground` module this lab may import; the
-import-boundary test pins that).
+The traversal itself is Production's `mirai.topology.loop_ring` — imported read-only, its
+conservative rules unchanged (until 2026-10-24 through the Playground's re-export
+`playground.topology_tools.loop_ring`, removed with the Playground).
 
 `loop_ring` is duck-typed over the mesh query API (`is_valid_edge`, `edge_vertices`,
 `edge_faces`, `face_edges`, `vertex_edges`). Core V1's `Mesh.vertex_edges()` is an O(E)
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Sequence
 
 from core import EdgeId, FaceId, Mesh, VertexId
-from playground.topology_tools.loop_ring import edge_loop, edge_ring
+from mirai.topology.loop_ring import edge_loop, edge_ring
 
 MODE_LOOP = "loop"
 MODE_RING = "ring"

@@ -42,7 +42,6 @@ _SCRIPT = textwrap.dedent(
     )
     print(json.dumps({{
         "lab_modules": names,
-        "playground_reachable": importlib.util.find_spec("playground") is not None,
         "other_lab_reachable": importlib.util.find_spec("knife_oracle") is not None,
         "playground_loaded": sorted(
             n for n in sys.modules if n == "playground" or n.startswith("playground.")
@@ -60,7 +59,6 @@ def test_no_playground_or_other_experiment_imports():
     report = json.loads(result.stdout.strip().splitlines()[-1])
 
     assert {"_paths", "morph", "lab_scene", "lab_app", "lab_app_window", "run"} <= set(report["lab_modules"])
-    assert report["playground_reachable"], "test would be worthless without importable playground"
     assert report["other_lab_reachable"], "test would be worthless without an importable other experiment"
     assert report["playground_loaded"] == []
     assert report["foreign_experiment_modules"] == []

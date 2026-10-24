@@ -1,6 +1,6 @@
-"""Import boundary (handoff §6, E3): the lab loads `src` modules plus exactly one `playground`
-module — `playground.topology_tools.loop_ring` — and nothing from any other `experiments/`
-folder. Nothing imports the lab. Pattern: `subdivision_lab/tests/test_import_boundary.py`.
+"""Import boundary (handoff §6, E3): the lab loads `src` modules only — nothing from `playground`
+(removed 2026-10-24; the lab used its `loop_ring` re-export, now `mirai.topology.loop_ring`) and
+nothing from any other `experiments/` folder. Nothing imports the lab.
 
 Fresh subprocess, import every lab module (incl. window and `run`; `main()` does not run),
 then inspect `sys.modules`.
@@ -19,8 +19,6 @@ from mehlsack_lab._paths import EXPERIMENTS_DIR, REPO_ROOT
 from ._pyglet_headless import import_pyglet, needs_headless
 
 import_pyglet()  # skip if pyglet is missing — lab_window needs it
-
-ALLOWED_PLAYGROUND = {"playground", "playground.topology_tools", "playground.topology_tools.loop_ring"}
 
 _SCRIPT = textwrap.dedent(
     """
@@ -54,7 +52,7 @@ _SCRIPT = textwrap.dedent(
 )
 
 
-def test_only_src_and_loop_ring():
+def test_only_src():
     script = _SCRIPT.format(experiments=str(EXPERIMENTS_DIR), headless=needs_headless())
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
@@ -64,14 +62,14 @@ def test_only_src_and_loop_ring():
         "lab_bands", "lab_preview", "curve_panel", "lab_bindings", "lab_state", "lab_scene", "lab_window",
         "lab_selection", "lab_pointer", "run",
     } <= set(report["lab_modules"])
-    assert set(report["playground_loaded"]) == ALLOWED_PLAYGROUND
+    assert report["playground_loaded"] == []
     assert report["foreign_experiment_modules"] == []
     assert report["numpy_loaded"] is False
 
 
 def test_nothing_imports_the_lab():
     offenders = []
-    for root in ("src", "playground", "tests", "examples", "experiments"):
+    for root in ("src", "tests", "examples", "experiments"):
         for path in (REPO_ROOT / root).rglob("*.py"):
             if "mehlsack_lab" in path.parts:
                 continue

@@ -79,9 +79,11 @@ Schneller Weg zu einem posebaren, editierbaren Mannequin: eine einfache humanoid
 
 ### Deformer / Modifier (Bend, Twist, Lattice o. ä.)
 
-**Manu, 2026-10-21 (Chat, vom Agenten eingetragen):** ein Thema für später. Bis dahin bleibt die Articulation-Probe (EX-A) im Playground
-(`playground/experiments/articulation/`, [Research Map](../design/artist_playground/ROADMAP.md) „EX-A — Bend Probe"); sie ist die einzige vorhandene
-Vorarbeit und nicht für die App vorgesehen.
+**Manu, 2026-10-21 (Chat, vom Agenten eingetragen):** ein Thema für später. Die einzige Vorarbeit ist die Articulation-Probe (EX-A,
+„Bend Probe“, nicht für die App vorgesehen). Sie ist mit dem Playground am 2026-10-24 entfernt worden (Konsolidierung, Manus
+Entscheidung): Code im Stand `61ebe77` unter `playground/experiments/articulation/` (dazu `deformation.Transform` aus
+`experiments/rigging-skinning-morphing/`), Handoffs in [`archive/experiments_2026-10/playground/`](../archive/experiments_2026-10/playground/experiments/articulation/).
+Ebenso dort: die Self-Shadowing-Studie `playground/shadow_map.py` (Tiefenkarte, Discovery; die App hat kein Schatten-Rendering).
 
 ### UVs, Baking und Split Normals (Retopo-Raum)
 
