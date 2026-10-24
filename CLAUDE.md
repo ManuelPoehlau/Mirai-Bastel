@@ -13,24 +13,14 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
   (`begin_change` / `end_change` / `rollback_change`, `MeshDeltaCommand`, `Mesh.watch()`): use it for history,
   rollback and derived data instead of `export_state()` / `load_state()` snapshots.
 - `src/viewport/`, `src/mirai/` — In-progress production areas
-- `src/main.py` — the production app (own window). `playground/` — optional Artist research tool on an older
-  viewport/renderer path (not a daily dev environment; most of its UX questions are answered and in `src/`).
-  It depends on `src/`, `examples/` (OBJ loader, head asset) and `experiments/rigging-skinning-morphing`
-  (Articulation). Unique there: Articulation (EX-A) and the gizmo's normal-space frames (the gizmo itself is in
-  `src/`, `mirai.viewport.gizmo`; its rotate maths `mirai.interaction.dial`, the viewport-edge pointer wrap
-  `mirai.cursor_wrap`); no Knife (Knife = Production). Own test tree `playground/tests/` — **not** in the
-  default `pytest` run. The frozen Knife Face Lab engines and the Knife / `split_face` oracle tests are
-  `experiments/knife_oracle/` (AGENTS.md §8a, "Knife oracle").
-- Labs under `experiments/<lab>/run.py` start their own windows; see `experiments/README.md`.
-- `experiments/` — Research, prototypes, practical validation at the repository level (OK to be
-  messy). Not the same thing as `playground/experiments/` (variant families inside the Playground
-  host) — see `docs/design/artist_playground/EXPERIMENT_HOST.md` for that distinction.
-- `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. `pytest.ini` at the
-  repo root sets `testpaths` (`tests`, `experiments/symmetry_lab/tests`,
-  `experiments/subdivision_lab/tests`, `experiments/morph_lab/tests`), so bare
-  `pytest` collects cleanly (the old `viewport`/`test_core.py` name collisions with
-  `experiments/` came from collecting everything; see
-  `docs/archive/audits_2026-09/Repository_Wide Structural_Codebase_Health_Audit.md` D1).
+- `src/main.py` — the production app (own window); it is the product.
+- `experiments/` — the few active research tools (index: `experiments/README.md`): `morph_lab` (Morph is not in
+  `src/`; the app starts it through `src/morph_bridge.py`), `mehlsack_lab` (open Artist verdicts), `drag_cost`
+  (GL cost probe) and `knife_oracle` (frozen engines; regression coverage for the Production Knife). Labs start
+  their own windows via `experiments/<lab>/run.py`. Removed labs and the Playground (2026-10-24) are listed with
+  their last commit in `experiments/README.md`; their docs are in `docs/archive/experiments_2026-10/`.
+- `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. Bare `pytest` runs `tests/` and
+  `experiments/morph_lab/tests` (`pytest.ini`); every other tree only when named (AGENTS.md §8a).
 - `docs/` — Architecture, design, research decisions. Hierarchy: `README.md` → index → local docs → plans/specs
 - `references/` — External material (historical Mirai docs, etc.)
 
@@ -47,7 +37,7 @@ verification is the agent's job, shared bottlenecks first, larger coherent steps
    measured change — not a plan or another probe (AGENTS.md §7a)
 1. Read the nearest `docs/README.md` or design document
 2. **Check the Architecture Map**: Is there an existing, validated solution already documented?
-   - Example: Camera was validated in Integration Lab, adapted for Viewport, documented in Architecture. Don't rebuild it without reason.
+   - Example: Symmetry, SubD and Soft Selection were validated in Labs and now live in `src/`; extend them there.
 3. If touching `src/core/`, read any relevant Architecture Decision in `docs/`
 4. If working in `experiments/`, you have more freedom, but results still need docs
 5. Check git history (`git log --oneline -20 src/`) to understand recent decisions
@@ -70,7 +60,6 @@ verification is the agent's job, shared bottlenecks first, larger coherent steps
    pytest tests/test_<module>.py -q                    # one test file
    pytest tests/test_<module>.py::test_name -q         # one test
    pytest tests -k "<pattern>" -q   # pattern match
-   pytest playground/tests/test_<module>.py -q         # playground/ changes (explicit; not in default testpaths)
    ```
    Useful flags: `-x` (stop at first failure), `--lf` (re-run last failures only).
 
@@ -87,14 +76,13 @@ Details:
   EGL run them in their own process: `xvfb-run -a python -m pytest tests/test_gl_*.py -q` (observed 2026-10-21).
 - `tests/_archive/` holds obsolete tests (e.g. the stale V1 `test_extrude_tool`); `pytest.ini`
   excludes it. Don't re-add `--ignore` workarounds — fix the cause or archive with a date.
-- The Symmetry Lab runs on the `src/mirai/application.py` path (start: `python experiments/symmetry_lab/run.py [asset]`,
-  WP-SYM-LAB-03), so shared `src/` changes it can reach are checked against its tests (scope rules: AGENTS.md §8a)
 
 ## Documentation maintenance
 
 - When code changes a documented decision, update the `docs/` source of truth *in the same commit*
 - Keep `docs/README.md` index current; it is the navigation map
-- Mark obsolete documents with a date; don't delete them (project memory)
+- Mark obsolete documents with a date and move finished plans/handoffs to `docs/archive/` (project memory,
+  outside the default reading path)
 - For completed experiments, write a short result summary and point to next step
 
 ## Architecture constraints to respect
@@ -109,9 +97,10 @@ Details:
 1. Check `docs/` for prior decisions
 2. Read the nearest `README.md` in that directory
 3. Look at recent git history for context
-4. Ask: "Is this a research experiment or a production change?" If unclear, default to `experiments/`
+4. Ask: "Is this a research experiment or a production change?" Default to Production; a separate experiment
+   only for a material uncertainty (AGENTS.md §7a)
 
 ---
 
-**Last revised**: 2026-10-21  
+**Last revised**: 2026-10-24  
 See [AGENTS.md](AGENTS.md) for full collaboration model.

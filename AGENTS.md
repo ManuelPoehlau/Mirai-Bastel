@@ -177,20 +177,18 @@ At the end of every finished slice, say in one or two lines whether the next ste
 
 **Principle:** run the smallest test set that gives meaningful evidence for the current change; widen only when a shared dependency, an integration boundary or an observed failure justifies it. The agent selects the suites itself — the Artist is not asked which tests to run.
 
-Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). `pytest.ini` defines `testpaths` (`tests` and the three Lab trees — **not** `playground/tests` and **not** `experiments/knife_oracle/tests`, which run only when named explicitly, see below), but for targeted runs always pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …`. Without it, pyglet-dependent tests are *skipped*, not green — report "N skipped" as skipped, never as a pass.
+Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). Bare `pytest` runs the default trees from `pytest.ini` (`tests/` and `experiments/morph_lab/tests`); for targeted runs always pass an explicit path. Setup: `pip install -r requirements-dev.txt`; pyglet needs a display, so headless runs use `xvfb-run -a pytest …`. Without it, pyglet-dependent tests are *skipped*, not green — report "N skipped" as skipped, never as a pass.
 
-**Test trees and what they cover**
+**Test trees**
 
-| Tree | Covers |
-|---|---|
-| `tests/` | Production: `src/core`, `src/mirai`, `src/viewport` |
-| `playground/tests/` | the Playground host (`playground/`, optional research tool; no Knife since 2026-10-21). Not in the default `testpaths` |
-| `experiments/knife_oracle/tests/` | the frozen Knife Face Lab engines and the golden / differential / `split_face` equivalence tests that hold the Production Knife (`src/mirai/topology/knife*.py`) and `Mesh.split_face` against them. Not in the default `testpaths` (run on the trigger list below) |
-| `experiments/symmetry_lab/tests/` | the Symmetry Lab (`experiments/symmetry_lab/`) running on the `src/mirai/application.py` path |
-| `experiments/subdivision_lab/tests/` | the SubD Lab (`experiments/subdivision_lab/`): the GL-free Catmull-Clark core and, since WP-SUBD-LAB-02, the lab on the `Application` path through the Viewport hook H7 (`set_surface_provider`) |
-| `experiments/morph_lab/tests/` | the Morph Lab (`experiments/morph_lab/`): the GL-free morph evaluation and provider, and the lab on the `Application` path through H7 (second user) with its own scene file |
+| Tree | Covers | Runs |
+|---|---|---|
+| `tests/` | Production: `src/core`, `src/mirai`, `src/viewport`, `src/main.py` | default |
+| `experiments/morph_lab/tests/` | the Morph Lab (started by the app through `src/morph_bridge.py`), on the `Application` path through H7 | default |
+| `experiments/knife_oracle/tests/` | frozen Knife Face Lab engines + golden / differential / `split_face` equivalence tests for the Production Knife | trigger list below |
+| `experiments/mehlsack_lab/`, `experiments/drag_cost/` | the lab itself / the GL cost probe | only when that folder changed |
 
-**Dependency facts (verify with a quick `grep -rln "<module>" --include=*.py .` if the code may have changed since):** Playground and Symmetry Lab both consume `src/core`, `src/mirai` and `src/viewport`. Playground additionally uses `examples/` (OBJ loader, head asset) and `experiments/rigging-skinning-morphing` (`deformation.Transform`, Articulation). `tests/` imports nothing from `playground/`. The Lab imports nothing from `playground/`, and nothing imports the Lab; `experiments/symmetry_lab/tests/test_import_boundary.py` enforces the first direction. Playground and Lab therefore share no code with each other — only `src/`.
+Nothing in `src/` or `tests/` imports from `experiments/` (verified 2026-10-24; check with `grep -rn "experiments" --include=*.py src tests` before relying on it). Morph and Mehlsack Lab pin with their own import-boundary tests that they load only `src/`.
 
 **1. While implementing — targeted tests only.** Never run a whole tree after each small change. Run the tests that exercise the changed behavior:
 
@@ -198,38 +196,27 @@ Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). `pyte
 pytest tests/test_<module>.py -q                      # one test file
 pytest tests/test_<module>.py::test_name -q           # one test
 pytest tests -k "<pattern>" -q                        # pattern match
-pytest playground/tests/test_<module>.py -q           # playground/ behavior
-pytest experiments/symmetry_lab/tests/test_<x>.py -q  # Lab behavior
 ```
 
-Add `-x` to stop at the first failure and `--lf` to re-run only the last failures. To find the tests for a changed function, grep the test trees for its name or module (`grep -rln "<name>" tests playground/tests experiments/symmetry_lab/tests`) rather than guessing from filenames.
+Add `-x` to stop at the first failure and `--lf` to re-run only the last failures. To find the tests for a changed function, grep for its name or module (`grep -rln "<name>" tests experiments`) rather than guessing from filenames.
 
 **2. Choose the scope by what the change can actually affect, not by which file changed:**
 
 - **Docs, comments, AGENTS/CLAUDE.md:** no tests. Check the edit itself (links, commands, diff).
-- **Confined to `experiments/symmetry_lab/` (incl. its tests):** Lab tests only — targeted while working; the whole Lab tree once at the end if shared Lab modules (`lab_app`, `lab_scene`, `lab_bindings`, `run`) changed. Playground and `tests/` have no dependency on Lab code, so they provide no evidence here. Exception: the Lab change was made to work around or alter a `src/` behavior — then it is a `src/` change (below).
-- **Confined to `playground/` (or the experiments helpers only Playground uses):** `playground/tests`, targeted first and the tree once at the end. Lab and `tests/` are unaffected unless the change also touched `src/`.
-- **`src/` (shared code):** first list the consumers of the changed module/function (grep imports across `tests/`, `playground/`, `experiments/symmetry_lab/`). Run `tests/` for the module, then the targeted consumer tests that exercise the changed behavior in each *affected* tree. Whole Lab tree only when the changed behavior is reached broadly (e.g. `src/core`, `Application`, command gate, `viewport` drawing/derived data, `scene_factory`). `playground/tests` is **not** widened for such changes: run the Knife oracle (below) when the change is in its trigger list, nothing else from the Playground.
-- **`src/core` (frozen V1 baseline) or a public contract of `src/mirai`/`src/viewport`:** `tests/` fully plus the affected consumer trees — such a change affects every consumer, so the broader run is expected.
+- **Confined to one lab folder:** that lab's tests — targeted while working, the folder once at the end.
+- **`src/` (shared code):** run `tests/` for the module plus the targeted tests of its consumers (grep `tests/` and `experiments/morph_lab`). Run `experiments/morph_lab/tests` when `viewport` drawing, `Application` keys or scene files changed; the Knife oracle on its trigger list.
+- **`src/core` (frozen V1 baseline) or a public contract of `src/mirai`/`src/viewport`:** `tests/` fully plus the affected consumer trees.
 
-**3. Final verification — once, after targeted tests are green.** Run the whole tree(s) your scope selection named, a single time:
+**3. Final verification — once, after targeted tests are green.** Run the tree(s) your scope selection named, a single time:
 
 ```bash
 pytest tests -q                               # when src/ changed
-pytest playground/tests -q                    # only when playground/ itself changed (host, experiments, its tests)
-pytest experiments/knife_oracle/tests -q      # Knife trigger list below
-pytest experiments/symmetry_lab/tests -q      # when Lab code or a Lab-reached src/ behavior changed
-pytest experiments/subdivision_lab/tests -q   # when SubD Lab code, `viewport` drawing or `Application` keys changed
+xvfb-run -a python -m pytest tests/test_gl_*.py -q   # GL tests in their own process (see CLAUDE.md, Testing)
 pytest experiments/morph_lab/tests -q         # when Morph Lab code, `viewport` drawing, `Application` keys or scene files changed
+xvfb-run -a pytest experiments/knife_oracle/tests -q   # Knife trigger list below
 ```
 
-**Knife oracle** (`experiments/knife_oracle/tests`, 351 tests, ≈ 64 s measured 2026-10-21): the golden / differential / equivalence tests that hold the Production Knife and `Mesh.split_face` against the frozen Lab engines and recorded sessions. Run it once at the end when a change touches `src/mirai/topology/knife*.py`, `face_geometry.py`, `topology_points.py`, `connect_per_face.py`, `connect_vertices_per_face.py`, or the `src/core` topology mutators and change journal (`split_face`, `add_face`, `remove_face`, `begin_change`…):
-
-```bash
-xvfb-run -a pytest experiments/knife_oracle/tests -q
-```
-
-The engines are frozen on purpose (change one only to keep it running, never to follow Production). `playground/tests` (host, window, input, family wiring) protects only the Playground and is not a Production gate.
+**Knife oracle** (`experiments/knife_oracle/tests`, 351 tests, ≈ 64 s measured 2026-10-24): run it once at the end when a change touches `src/mirai/topology/knife*.py`, `face_geometry.py`, `topology_points.py`, `connect_per_face.py`, `connect_vertices_per_face.py`, or the `src/core` topology mutators and change journal (`split_face`, `add_face`, `remove_face`, `begin_change`…). The engines are frozen on purpose (change one only to keep it running, never to follow Production).
 
 Run all trees only for integration/promotion milestones (an experiment enters `src/`, a shared production path changes, or several trees are demonstrably affected) — not merely because they exist. Widen the run whenever targeted tests fail somewhere outside the expected area.
 
