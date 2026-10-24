@@ -452,7 +452,7 @@
     },
     {
       "id": "display.look_row",
-      "label": "Look: choose the light value to edit",
+      "label": "Look: choose the light or material value to edit",
       "category": "Display",
       "binding": "",
       "runtime_ref": "LookRowPrev / LookRowNext",
@@ -464,7 +464,15 @@
       "category": "Display",
       "binding": "",
       "runtime_ref": "LookValueDec / LookValueInc (Fine)",
-      "notes": "No Artist binding yet. Engineering keys PROVISIONAL until the GUI: Left / Right, Ctrl+Left / Ctrl+Right = fine (the Lab's Shift is the selection steps), AD-024 §8, 2026-10-24. Light drag not bound (LMB drag = selection)"
+      "notes": "No Artist binding yet. Engineering keys PROVISIONAL until the GUI: Left / Right, Ctrl+Left / Ctrl+Right = fine (the Lab's Shift is the selection steps), AD-024 §6/§8, 2026-10-24. Material rows act on the selected objects in 4, the edit object in 1/2/3"
+    },
+    {
+      "id": "display.light_drag",
+      "label": "Turn the key light (drag)",
+      "category": "Display",
+      "binding": "L (hold) + mouse",
+      "runtime_ref": "LightDrag",
+      "notes": "Manu 2026-10-24 (AD-024 Q-L2): hold L and move the mouse - dx = key azimuth, dy = key elevation; release ends. No Undo step"
     },
     {
       "id": "modeling.vertex_move",

@@ -140,12 +140,12 @@ def test_scene_pair_api_and_invariants():
     assert scene.mirror_pairs == ()
 
 
-def test_file_v3_roundtrip_keeps_pairs_and_ids():
+def test_file_roundtrip_keeps_pairs_and_ids():
     scene, (a, b, c) = _scene_with(3)
     pair = MirrorPair(a.id, c.id, normal=(0.0, 0.0, 1.0), offset=0.5)
     scene.add_mirror_pair(pair)
     data = scene_to_dict(scene)
-    assert data["version"] == 3
+    assert data["version"] == 4  # v4 since the object material (AD-024); the pairs place is v3's
     assert data["mirror_pairs"] == [{"a": int(a.id), "b": int(c.id), "normal": [0.0, 0.0, 1.0], "offset": 0.5}]
     restored = scene_from_json(scene_to_json(scene))
     assert restored.mirror_pairs == (pair,)

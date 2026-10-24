@@ -19,6 +19,7 @@ from mirai.viewport.look_controls import (
     KEY_INTENSITY_MAX,
     LIGHT_ROW_IDS,
     LIGHT_ROWS,
+    LOOK_ROWS,
     clamp_light,
     light_row,
     step_ratio,
@@ -175,7 +176,7 @@ def test_arrow_keys_are_the_look_bindings():
 
 def test_rows_cycle_and_values_step_by_keys(app):
     assert app.look_row.id == "space"
-    assert app.key_press(UP) is True and app.look_row.id == LIGHT_ROWS[-1].id
+    assert app.key_press(UP) is True and app.look_row.id == LOOK_ROWS[-1].id
     assert app.key_press(DOWN) is True and app.look_row.id == "space"
     _select_row(app, "key_kelvin")
     assert app.status_message == "Look: Key Temperatur 6500 K"
@@ -190,6 +191,7 @@ def test_look_keys_work_in_object_mode_and_while_a_transform_is_armed(app):
     _select_row(app, "ambient")
     assert app.key_press(RIGHT) is True
     app.key_press(_key("1"))
-    app.key_press(_key("w"))  # armed, not begun
+    app.selection.vertices = {next(iter(app.scene.mesh.all_vertex_ids()))}
+    assert app.key_press(_key("w")) is True and app.interaction_owner == "transform"  # armed, not begun
     assert app.key_press(RIGHT) is True
     assert app.display.light_rig.ambient == pytest.approx(0.2)

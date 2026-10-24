@@ -24,6 +24,9 @@ Architekturvertrag:
 - Spiegelpaare (`MirrorPair`, `Scene.mirror_pairs`; OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1,
   CORE_V1_FREEZE §7.1): reine Daten wie M0 - welche zwei Objekte über welche Weltebene
   gekoppelt sind. Das Verhalten (Platzierung folgt, Commands, Ablehnungen) lebt in `src/mirai`.
+- Material pro Objekt (`ObjectMaterial`, `SceneObject.material`; AD-024, CORE_V1_FREEZE §7.1):
+  reine Daten - Grundfarbe, Specular, Glossiness; `None` = der Standard-Look der App. Was die Werte
+  bedeuten (Exponent, Fill-Glanz, Auswahl-Tönung, Referenz-Look), entscheiden `src/mirai`/`src/viewport`.
 """
 
 from __future__ import annotations
@@ -105,6 +108,30 @@ class ObjectTransform:
 IDENTITY_TRANSFORM = ObjectTransform()
 
 
+def _unit(value: float, what: str) -> float:
+    v = float(value)
+    if not (math.isfinite(v) and 0.0 <= v <= 1.0):
+        raise ValueError(f"{what} muss endlich und in [0, 1] sein: {value!r}")
+    return v
+
+
+@dataclass(frozen=True)
+class ObjectMaterial:
+    """Oberfläche eines Objekts (AD-024 §2): Grundfarbe (RGB) und der Glanz des Worklights.
+    Alle Werte in [0, 1]; ungültige Werte werden abgelehnt, nicht geklemmt (die Setter in
+    `src/mirai` klemmen vorher). Keine Standardwerte im Core: "kein Material" ist `None` am Objekt."""
+
+    base_color: Vec3
+    specular: float
+    glossiness: float
+
+    def __post_init__(self) -> None:
+        color = _vec3(self.base_color, "base_color")
+        object.__setattr__(self, "base_color", tuple(_unit(c, "base_color") for c in color))
+        object.__setattr__(self, "specular", _unit(self.specular, "specular"))
+        object.__setattr__(self, "glossiness", _unit(self.glossiness, "glossiness"))
+
+
 @dataclass(frozen=True)
 class MirrorPair:
     """Zwei Objekte, deren Platzierungen über die Weltebene `normal·x = offset` gekoppelt sind
@@ -156,7 +183,7 @@ class SceneObject:
     einfache Werte, die künftige Objekt-Commands (M1/M2) ändern.
     """
 
-    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state")
+    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material")
 
     def __init__(
         self,
@@ -167,6 +194,7 @@ class SceneObject:
         transform: ObjectTransform = IDENTITY_TRANSFORM,
         pivot: Iterable[float] = (0.0, 0.0, 0.0),
         state: ObjectState = ObjectState.NORMAL,
+        material: ObjectMaterial | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -175,6 +203,10 @@ class SceneObject:
         # Punkt im Objektraum, um den Objekt-Rotation/-Skalierung wirken (M2).
         self.pivot: Vec3 = _vec3(pivot, "pivot")
         self.state: ObjectState = state
+        # AD-024: None = der Standard-Look der App (ein unberührtes Objekt folgt dessen Werten).
+        if material is not None and not isinstance(material, ObjectMaterial):
+            raise TypeError(f"erwartet ein ObjectMaterial oder None, nicht {material!r}")
+        self.material: ObjectMaterial | None = material
 
     @property
     def id(self) -> ObjectId:

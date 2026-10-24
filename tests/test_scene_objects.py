@@ -307,12 +307,13 @@ class TestSerializationV2(unittest.TestCase):
         scene.edit_object_id = ref.id
         return scene, head, ref
 
-    def test_format_is_version_3_with_objects(self) -> None:
-        # Version 3 since the mirror pairs (2026-10-23); v2 still reads (tests/test_mirror_pairs.py).
+    def test_format_is_version_4_with_objects(self) -> None:
+        # Version 4 since the object material (AD-024, 2026-10-24); v3 since the mirror pairs; v2 and
+        # v3 still read (tests/test_mirror_pairs.py, tests/test_object_material.py).
         scene, head, ref = self._two_object_scene()
         data = scene_to_dict(scene)
-        self.assertEqual(FORMAT_VERSION, 3)
-        self.assertEqual(data["version"], 3)
+        self.assertEqual(FORMAT_VERSION, 4)
+        self.assertEqual(data["version"], 4)
         self.assertNotIn("mesh", data)
         self.assertEqual(data["edit_object"], int(ref.id))
         self.assertEqual(data["object_id_counter"], scene.object_id_counter)

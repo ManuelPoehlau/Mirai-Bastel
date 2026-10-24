@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -282,6 +282,25 @@ commands and gesture live in `src/mirai` (`object_mirror.py`, `scene_objects.py`
 assertions that pinned the version number 2 (`test_scene_objects.py::TestSerializationV2::test_format_is_version_3_with_objects`
 (renamed), `…::test_version_1_dict_loads_as_one_normal_edit_object`, `test_scene_files.py::test_save_then_load_round_trips_…`).
 (5) contract tests `tests/test_mirror_pairs.py` (value, invariants, v3 round trip, v2 load, invalid pairs refused, `from_objects`).
+
+**Decision:** Object material (2026-10-24; [AD-024](AD-024-OBJECT-MATERIAL-AND-WORKLIGHT-EDITING.md), reviewed and
+approved, Manu: "Material pro Objekt, mit der Szene gespeichert"; the mirror-pairs precedent above)
+
+Freeze rule (§7): (1) requirement — every object carries base colour, specular and glossiness through Undo/Redo, save/load,
+delete/undo and the scene reset (AD-024 §1); (2) not solvable with the public API: `SceneObject` has `__slots__`, and a
+side table keyed by `ObjectId` would store object data outside the scene file format and need a remap on every load
+(AD-024 §1.2); (3) documented in AD-024; (4) smallest extension, **data only**: `src/core/scene.py` gains `ObjectMaterial`
+(frozen: `base_color` RGB, `specular`, `glossiness`, each finite in [0, 1], invalid values refused with `ValueError`) and
+`SceneObject.material: ObjectMaterial | None = None` (one slot, one keyword argument; `None` = the app's default look —
+the Core holds no default numbers). `src/core/serialization.py` writes **version 4** (`"material"` per object, `null` or
+the three values) and reads versions 2 and 3 as version 4 without material; an invalid material makes the file invalid.
+Exported from `core`. The meaning of the values (gloss exponent, fill highlight, selection tint, Reference look), the
+Undo command (`ObjectMaterialCommand`) and the setters live in `src/mirai` / `src/viewport`. Not touched: `Mesh`,
+`Operation`, `HistoryStack`, `ObjectTransform`, `Selection`. Existing tests unchanged except the three assertions that
+pinned the version number 3 (`test_scene_objects.py::TestSerializationV2::test_format_is_version_4_with_objects`
+(renamed), `test_scene_files.py::test_save_then_load_round_trips_…`, `test_mirror_pairs.py::test_file_roundtrip_keeps_pairs_and_ids`
+(renamed)). (5) contract tests `tests/test_object_material.py` (value, validation, default None, v4 round trip, v2/v3
+load, missing key, invalid material refused).
 
 **Decision:** WP Toolbox Gaps B1 Collapse V/E/F (2026-10-23; promotion by Manu,
 [WP_TOOLBOX_GAPS_PLAN](../WP_TOOLBOX_GAPS_PLAN.md) B1)

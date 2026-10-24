@@ -57,6 +57,29 @@ def test_a_colour_change_does_not_rebuild_the_entry():
     assert entry.store.data("material_uniforms")[:3] == list(DEFAULT_BASE_COLOR)
 
 
+def test_an_entry_and_the_edit_mesh_take_their_own_finish_as_a_material_update():
+    # AD-024 §4: per-object specular / glossiness; None = the viewport's finish.
+    from viewport.material import DEFAULT_FINISH
+
+    viewport, _ = _viewport()
+    other = create_cube()
+    viewport.set_object_entry("a", other, (0.1, 0.2, 0.3))
+    viewport.sync()
+    entry = viewport.object_entries["a"]
+    before = dict(entry.benchmark_counters)
+    shiny = DEFAULT_FINISH.with_(specular=0.9, glossiness=0.8)
+    assert viewport.set_object_entry("a", other, (0.1, 0.2, 0.3), finish=shiny) is True
+    assert viewport.set_object_entry("a", other, (0.1, 0.2, 0.3), finish=shiny) is False
+    viewport.sync()
+    assert entry.store.data("material_uniforms")[3:5] == [0.9, 0.8]
+    assert entry.benchmark_counters["material_updates"] == before.get("material_updates", 0) + 1
+    assert entry.benchmark_counters["mesh_rebuilds"] == before["mesh_rebuilds"]
+    assert viewport.set_edit_base_color((0.5, 0.4, 0.3), shiny) is True
+    assert viewport.set_edit_base_color((0.5, 0.4, 0.3), shiny) is False
+    assert viewport.set_edit_base_color((0.5, 0.4, 0.3)) is True  # back to the viewport's finish
+    assert viewport.render_mesh.material.finish == viewport.surface_finish
+
+
 def test_another_mesh_under_the_same_key_replaces_the_entry_and_remove_drops_it():
     viewport, _ = _viewport()
     viewport.set_object_entry("ref", create_cube())

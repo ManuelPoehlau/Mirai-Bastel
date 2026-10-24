@@ -47,6 +47,7 @@ from core import (
     Mesh,
     MirrorPair,
     ObjectId,
+    ObjectMaterial,
     ObjectState,
     ObjectTransform,
     Scene,
@@ -98,6 +99,7 @@ from .scene_objects import (
     DeleteRefused,
     MirrorPairCommand,
     MirrorRefused,
+    ObjectMaterialCommand,
     ObjectPivotCommand,
     ObjectStateCommand,
     ObjectTransformCommand,
@@ -105,7 +107,9 @@ from .scene_objects import (
     apply_placement,
     check_pairable,
     describe_pair,
+    editable_material,
     object_base_color,
+    object_finish,
     out_of_sync_text,
     pair_existing_command,
     pair_names,
@@ -174,7 +178,15 @@ from .viewport.box_select import (
 )
 from .viewport import gizmo as _gizmo
 from . import transform_space
-from .viewport.look_controls import LIGHT_ROWS, LookRow, light_row
+from .viewport.look_controls import (
+    DRAG_DEGREES_PER_PIXEL,
+    LOOK_ROWS,
+    MaterialRow,
+    LookRow,
+    clamp_material_values,
+    light_row,
+    material_row,
+)
 from .viewport.gpu_picking import gpu_elements_in_rect, gpu_elements_in_region, gpu_pick_component
 from .viewport.picking import pick_component, pick_face, pick_object
 from .viewport.picking_cache import PickCache
@@ -593,8 +605,10 @@ class Application:
         # Viewport-State (kein Rendering in Gate 3)
         self.camera: OrbitCamera = OrbitCamera()
         self.display: DisplayState = DisplayState()
-        # AD-024 §8: the Look row the arrow keys edit (index into `LIGHT_ROWS`).
+        # AD-024 §6/§8: the Look row the arrow keys edit (index into `look_controls.LOOK_ROWS`).
         self._look_row_index = 0
+        # AD-024 Q-L2: the key that holds the light drag (None = not held).
+        self._light_drag_key: str | None = None
 
         # WP-06 B8 (picking speed + occlusion, PROVISIONAL): screen-space pick
         # cache, refreshed lazily per camera/mesh state (`picking_cache.py`).
@@ -1210,6 +1224,7 @@ class Application:
         before = self._selection_snapshot()
         obj = scene.add_object(mirror_mesh(source.mesh, normal), name=unique_object_name(scene, source.name))
         obj.transform, obj.pivot = mirror_placement(source, normal, offset)
+        obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
         add = AddObjectCommand(scene, obj)
         pair = MirrorPair(source.id, obj.id, normal=normal, offset=offset)
         scene.add_mirror_pair(pair)
@@ -1388,10 +1403,12 @@ class Application:
                 # drawn in Wireframe too - a Normal object follows the display mode.
                 alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
                 ignores_wireframe=reference,
+                finish=object_finish(obj, self.display.surface_finish),
             )
         edit = scene.edit_object
         self.viewport.set_edit_base_color(
-            selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else None
+            selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else object_base_color(edit),
+            object_finish(edit, self.display.surface_finish),
         )
         self._object_highlight_key = self._object_highlight_signature()
 
@@ -1407,7 +1424,7 @@ class Application:
         return (
             self._highlighted_objects(),
             scene.edit_object_id,
-            tuple((oid, obj.state) for oid, obj in scene.objects.items()),
+            tuple((oid, obj.state, obj.material) for oid, obj in scene.objects.items()),
         )
 
     def _sync_object_highlight(self) -> None:
@@ -3424,15 +3441,115 @@ class Application:
         self._set_status(f"Light: {row.label} {row.format(self.display.light_rig)}{suffix}")
         return changed
 
+    # -- Object material (AD-024 §6/§7, `PROVISIONAL` keys) ----------------------------------
+
+    def _material_preview(self) -> SceneObject | None:
+        """The object whose values the Look row shows (no status line): the edit object in `1/2/3`,
+        the first selected non-Reference in `4` (None = none)."""
+        scene = self.scene
+        if self.selection.mode is not SelectionMode.OBJECT:
+            return scene.edit_object
+        for oid in sorted(self.selection.objects):
+            obj = scene.objects.get(oid)
+            if obj is not None and obj.state is not ObjectState.REFERENCE:
+                return obj
+        return None
+
+    def _material_targets(self, label: str) -> tuple[list[SceneObject], tuple[str, ...]] | None:
+        """AD-024 §6: the selected objects in `4` (References skipped - locked, Q-M3), the edit object in
+        `1/2/3`. None (refusal posted) while an interaction owns the keys or nothing can be edited."""
+        owner = self.interaction_owner
+        if owner is not None or self._drag_select is not None:
+            self._set_status(f"{label}: not while the {owner or 'selection'} interaction runs")
+            return None
+        if self.selection.mode is SelectionMode.OBJECT:
+            return self._object_targets(label, "or press 1/2/3 for the edited object")
+        return [self.scene.edit_object], ()
+
+    def _commit_materials(self, changes: list) -> bool:
+        """One Undo step for `(obj, before, after)` (unchanged ones dropped) and the view; the caller
+        posts the status line. True = something changed."""
+        changes = [(obj, before, after) for obj, before, after in changes if before != after]
+        if not changes:
+            return False
+        before = self._selection_snapshot()
+        for obj, _, after in changes:
+            obj.material = after
+        names = ", ".join(repr(obj.name) for obj, _, _ in changes)
+        self.history.push(ObjectMaterialCommand(changes, f"Material {names}"))
+        self._record_selection_history(before, mesh_step=False)
+        self._sync_object_views()
+        return True
+
+    def set_object_material(self, **changes) -> bool:
+        """The edit path of the object material (keys now, the GUI later): any of `base_color`,
+        `specular`, `glossiness`, clamped to [0, 1], set on every target (`_material_targets`); one Undo
+        step. True = a material changed. An object without a material starts from the default look."""
+        values = clamp_material_values(changes)
+        picked = self._material_targets("Material")
+        if picked is None:
+            return False
+        targets, references = picked
+        default = self.display.surface_finish
+        planned = []
+        for obj in targets:
+            current = editable_material(obj, default)
+            after = ObjectMaterial(
+                values.get("base_color", current.base_color),
+                specular=values.get("specular", current.specular),
+                glossiness=values.get("glossiness", current.glossiness),
+            )
+            planned.append((obj, obj.material, after))
+        changed = self._commit_materials(planned)
+        self._set_status(
+            ("Material set" if changed else "Material unchanged") + self._object_references_note(references)
+        )
+        return changed
+
+    def step_object_material(self, row_id: str, direction: int, fine: bool = False) -> bool:
+        """One value step of the material row `row_id` on every target, each from its own values
+        (`look_controls.MATERIAL_ROWS`); one Undo step. True = a material changed."""
+        row = material_row(row_id)
+        picked = self._material_targets(row.label)
+        if picked is None:
+            return False
+        targets, references = picked
+        default = self.display.surface_finish
+        planned = []
+        for obj in targets:
+            current = editable_material(obj, default)
+            if row.applies(current):
+                planned.append((obj, obj.material, row.step(current, direction, fine)))
+        if not planned:
+            self._set_status(f"{row.label} inaktiv - {row.inactive_reason}")
+            return False
+        changed = self._commit_materials(planned)
+        shown = editable_material(planned[0][0], default)
+        suffix = "" if changed else " (Grenze)"
+        names = ", ".join(repr(obj.name) for obj, _, _ in planned)
+        self._set_status(
+            f"{row.label} {row.format(shown)}{suffix} - {names}" + self._object_references_note(references)
+        )
+        return changed
+
+    # -- Look rows (AD-024 §6/§8) ------------------------------------------------------------
+
     @property
-    def look_row(self) -> LookRow:
+    def look_row(self) -> LookRow | MaterialRow:
         """The row the arrow keys edit."""
-        return LIGHT_ROWS[self._look_row_index]
+        return LOOK_ROWS[self._look_row_index]
 
     @property
     def look_text(self) -> str:
-        """The active row and its value (HUD, status line)."""
+        """The active row and its value (HUD, status line). A material row shows the object it reads."""
         row = self.look_row
+        if isinstance(row, MaterialRow):
+            obj = self._material_preview()
+            if obj is None:
+                return f"{row.label} (kein Objekt gewählt)"
+            values = editable_material(obj, self.display.surface_finish)
+            text = f"{row.label} {row.format(values)} ({obj.name})"
+            return text if row.applies(values) else f"{text} (inaktiv)"
         rig = self.display.light_rig
         text = f"{row.label} {row.format(rig)}"
         return text if row.applies(rig) else f"{text} (inaktiv)"
@@ -3440,12 +3557,15 @@ class Application:
     def _look_command(self, command: str) -> bool:
         if command in (commands.LOOK_ROW_PREV, commands.LOOK_ROW_NEXT):
             step = -1 if command == commands.LOOK_ROW_PREV else 1
-            self._look_row_index = (self._look_row_index + step) % len(LIGHT_ROWS)
+            self._look_row_index = (self._look_row_index + step) % len(LOOK_ROWS)
             self._set_status(f"Look: {self.look_text}")
             return True
         direction = -1 if command in (commands.LOOK_VALUE_DEC, commands.LOOK_VALUE_DEC_FINE) else 1
         fine = command in (commands.LOOK_VALUE_DEC_FINE, commands.LOOK_VALUE_INC_FINE)
-        return self.step_light(self.look_row.id, direction, fine)
+        row = self.look_row
+        if isinstance(row, MaterialRow):
+            return self.step_object_material(row.id, direction, fine)
+        return self.step_light(row.id, direction, fine)
 
     def _subd_command(self, command: str) -> bool:
         """SubD preview keys (2026-10-23, `mirai.subdivision`, `PROVISIONAL`): view state only - no
@@ -3471,7 +3591,9 @@ class Application:
             flat=self.display.mode is DisplayMode.FLAT_SHADED,
         )
         self.viewport.set_light(self.display.light_rig)
-        self.viewport.set_surface_finish(self.display.surface_finish)
+        if self.viewport.set_surface_finish(self.display.surface_finish):
+            # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).
+            self._sync_object_views()
         self.subdivision.set_faces_shown(self.display.show_faces)
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
@@ -3589,6 +3711,8 @@ class Application:
             return False
         if command == commands.LASSO_ARM:
             return self._lasso_arm(input.value)
+        if command == commands.LIGHT_DRAG:
+            return self._light_drag_arm(input.value)
         if command in _TWEAK_TRANSFORMS:
             # Tweak (Ctrl+LMB drag) uses the last W/E/R pressed - a tap sets it ("tool set").
             self.tweak_command = command
@@ -3655,6 +3779,10 @@ class Application:
         if self._lasso_held is not None and input.value == self._lasso_held:
             self._lasso_held = None
             self._set_status("Lasso off")
+            return True
+        if self._light_drag_key is not None and input.value == self._light_drag_key:
+            self._light_drag_key = None
+            self._set_status(f"Light: {self.display.light_label}")
             return True
         if self._transform_key is None or input.value != self._transform_key:
             return False
@@ -4746,6 +4874,8 @@ class Application:
             if self._alt_held and self._transform_command not in _SMOOTH_COMMANDS:
                 return self._navigate_during_transform(dx, dy)
             return self._transform_step(dx, dy)
+        if self._light_drag_key is not None:
+            return self._light_drag_step(dx, dy)
         if self.coalesce_hover:
             self._hover_stale = True
             return False
@@ -4997,6 +5127,28 @@ class Application:
             self._set_status("Lasso: drag with LMB (Shift adds, Esc cancels)")
         self._lasso_held = key
         return True
+
+    def _light_drag_arm(self, key: str) -> bool:
+        """`L` went down (AD-024 Q-L2): mouse motion turns the key light until it is let go. Not
+        underneath a held W/E/R/T/G (the motion belongs to the gesture). View state only."""
+        if self._transform_key is not None:
+            return False
+        if self._light_drag_key is None:
+            self._set_status("Light: move the mouse to turn the key light (release L to stop)")
+        self._light_drag_key = key
+        return True
+
+    def _light_drag_step(self, dx: float, dy: float) -> bool:
+        """The Lab's light drag (E13): dx → key azimuth, dy → key elevation, in the light's space."""
+        rig = self.display.light_rig
+        changed = self.set_light(
+            key_azimuth=rig.key_azimuth + dx * DRAG_DEGREES_PER_PIXEL,
+            key_elevation=rig.key_elevation + dy * DRAG_DEGREES_PER_PIXEL,
+        )
+        if changed:
+            rig = self.display.light_rig
+            self._set_status(f"Light: Key Azimut {rig.key_azimuth:+.1f}° · Höhe {rig.key_elevation:+.1f}°")
+        return changed
 
     def _drag_select_refusal(self) -> str | None:
         """Why a drag selection cannot start now (None = it can). Silent cases return ""."""

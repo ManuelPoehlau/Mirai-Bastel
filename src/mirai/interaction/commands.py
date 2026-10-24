@@ -91,6 +91,9 @@ LOOK_VALUE_DEC = "LookValueDec"
 LOOK_VALUE_INC = "LookValueInc"
 LOOK_VALUE_DEC_FINE = "LookValueDecFine"
 LOOK_VALUE_INC_FINE = "LookValueIncFine"
+# Licht ziehen (Manu 2026-10-24, AD-024 Q-L2): Taste halten + Maus bewegen dreht das Key-Licht
+# (dx Azimut, dy Höhe), loslassen beendet. Ansichts-Zustand, kein Undo-Schritt.
+LIGHT_DRAG = "LightDrag"
 
 # TOGGLE_HUD (GUI Stufe 1, 2026-10-23; Artist Input Truth `application.toggle_hud` = H): die
 # Zustandsanzeige des Fensters zeigen/verbergen. Ein Fenster-Command (Kontext `WINDOW_CONTEXT`):

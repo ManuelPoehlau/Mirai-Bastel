@@ -20,6 +20,11 @@ additiv: ein benannter Platz `"mirror_pairs"` (`a`/`b` = ObjectIds der Datei, `n
 `offset`) neben den reservierten Plätzen. Version 2 liest sich als Version 3 ohne Paare;
 geschrieben wird nur Version 3. Ein Paar auf ein fehlendes Objekt macht die Datei ungültig.
 
+Version 4 (Material pro Objekt, AD-024 §3, CORE_V1_FREEZE §7.1) ist additiv wie Version 3:
+jedes Objekt trägt `"material"` (`null` = Standard-Look der App, sonst `base_color`, `specular`,
+`glossiness`). Versionen 2 und 3 lesen sich als Version 4 ohne Material; geschrieben wird nur
+Version 4. Ein ungültiges Material macht die Datei ungültig.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -31,9 +36,9 @@ import json
 
 from .ids import ObjectId
 from .mesh import Mesh
-from .scene import MirrorPair, ObjectState, ObjectTransform, Scene, SceneObject
+from .scene import MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
 
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -52,14 +57,14 @@ def scene_to_dict(scene: Scene) -> dict:
 
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version in (2, FORMAT_VERSION):
+    if version in (2, 3, FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
             object_id_counter=int(data["object_id_counter"]),
             mirror_pairs=(
                 [_pair_from_dict(raw) for raw in data.get("mirror_pairs") or ()]
-                if version == FORMAT_VERSION
+                if version >= 3
                 else ()
             ),
         )
@@ -85,6 +90,7 @@ def _object_to_dict(obj: SceneObject) -> dict:
             "scale": obj.transform.scale,
         },
         "pivot": list(obj.pivot),
+        "material": _material_to_dict(obj.material),
         "mesh": obj.mesh.export_state(),
     }
 
@@ -102,7 +108,24 @@ def _object_from_dict(raw: dict) -> SceneObject:
         ),
         pivot=raw["pivot"],
         state=ObjectState(raw["state"]),
+        material=_material_from_dict(raw.get("material")),
     )
+
+
+def _material_to_dict(material: ObjectMaterial | None) -> dict | None:
+    if material is None:
+        return None
+    return {
+        "base_color": list(material.base_color),
+        "specular": material.specular,
+        "glossiness": material.glossiness,
+    }
+
+
+def _material_from_dict(raw: dict | None) -> ObjectMaterial | None:
+    if raw is None:
+        return None
+    return ObjectMaterial(raw["base_color"], specular=raw["specular"], glossiness=raw["glossiness"])
 
 
 def _pair_to_dict(pair: MirrorPair) -> dict:

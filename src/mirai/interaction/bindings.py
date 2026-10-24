@@ -32,7 +32,11 @@ Display (Artist Input Truth, WP-06 B5a E42: vorher O):
 - ↑ / ↓          → Look-Zeile wählen (Licht: Bezugsraum, Key Azimut/Höhe/Stärke/Temperatur/Weichheit,
                    Verhältnis, Fill-Kopplung/Azimut/Höhe/Temperatur/Weichheit, Grundhelligkeit),
                    ← / →  Wert eine Stufe kleiner/größer, Ctrl+← / Ctrl+→ fein (Stufen des Shading
-                   Lab; AD-024 §8, `PROVISIONAL` bis zur GUI, kein Undo-Schritt)
+                   Lab; AD-024 §8, `PROVISIONAL` bis zur GUI, kein Undo-Schritt); danach die
+                   Material-Zeilen (Farbton, Sättigung, Helligkeit, Specular, Glossiness) der
+                   ausgewählten Objekte in `4` bzw. des Edit-Objekts in 1/2/3, je ein Undo-Schritt
+- L (halten)     → Licht ziehen: Maus bewegen dreht das Key-Licht (dx Azimut, dy Höhe; Manu
+                   2026-10-24, AD-024 Q-L2), kein Undo-Schritt
 SetShaded/SetFlatShaded/SetWireframe bleiben ohne Taste.
 - H              → HUD (Zustandsanzeige) zeigen/verbergen (Artist Input Truth
                    `application.toggle_hud`, GUI Stufe 1; Kontext "window", vom
@@ -248,6 +252,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("right"), cmd.LOOK_VALUE_INC)
     bs.set_default(_key("left", "ctrl"), cmd.LOOK_VALUE_DEC_FINE)
     bs.set_default(_key("right", "ctrl"), cmd.LOOK_VALUE_INC_FINE)
+    # Light drag (Manu 2026-10-24, AD-024 Q-L2): hold L + move the mouse. Global `l` was free (the
+    # TOPOLOGY_CONTEXT `l` = EdgeLoop keeps priority in the Topology Lab); Shift+L stays Edge Loop.
+    bs.set_default(_key("l"), cmd.LIGHT_DRAG)
     # GUI Stufe 1 (2026-10-23): H = Artist Input Truth `application.toggle_hud`. Fenster-Command im
     # Kontext "window": `src/main.py` behandelt ihn, `Application` löst diesen Kontext nie auf.
     bs.set_default(_key("h"), cmd.TOGGLE_HUD, context=WINDOW_CONTEXT)

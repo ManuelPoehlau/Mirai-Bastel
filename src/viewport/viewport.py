@@ -86,7 +86,10 @@ Worklight (Shading Lab, in die App übernommen 2026-10-15): `set_light(rig)` set
 `GLRenderStore`) an das Edit-Mesh und alle Objekt-Einträge. Start: "Raitt 2:1", Kamera.
 Glanz (2026-10-23, `material.py`): `set_surface_finish(finish)` legt Specular/Glossiness in jedes
 Material, das der Viewport bindet (Edit-Mesh, Ersatzfläche, Objekt-Einträge) - ein Material-Update,
-keine Geometrie.
+keine Geometrie. Material pro Objekt (AD-024 §4): `set_object_entry(..., finish=)` und
+`set_edit_base_color(color, finish=)` geben einem Eintrag einen eigenen Glanz (None = der von
+`set_surface_finish`); `set_surface_finish` setzt alle Einträge auf den neuen Glanz zurück, der Host
+gibt danach die eigenen wieder.
 
 Ersatzfläche (AD-013 Addendum H7, 2026-10-16): `set_surface_provider(p)` lässt einen Host
 die Flächen des Edit-Mesh durch ein eigenes, daraus abgeleitetes Mesh ersetzen (z. B. die
@@ -284,11 +287,13 @@ class Viewport:
         model_matrix: list[float] | None = None,
         alpha: float = 1.0,
         ignores_wireframe: bool = False,
+        finish: SurfaceFinish | None = None,
     ) -> bool:
-        """Legt den Eintrag `key` für `mesh` an oder aktualisiert Farbe, Matrix und Anzeige. Ein
-        anderes Mesh unter demselben Schlüssel ersetzt den Eintrag. True = etwas hat sich
-        geändert. Nie mit `SelectionOverlay` (Modul-Docstring)."""
+        """Legt den Eintrag `key` für `mesh` an oder aktualisiert Farbe, Glanz (None = der von
+        `set_surface_finish`), Matrix und Anzeige. Ein anderes Mesh unter demselben Schlüssel ersetzt
+        den Eintrag. True = etwas hat sich geändert. Nie mit `SelectionOverlay` (Modul-Docstring)."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
+        finish = self.surface_finish if finish is None else finish
         display = (float(alpha), bool(ignores_wireframe))
         entry = self.object_entries.get(key)
         if entry is not None and entry.mesh is not mesh:
@@ -310,8 +315,8 @@ class Viewport:
         if entry.model_matrix != (list(model_matrix) if model_matrix is not None else None):
             entry.set_model_matrix(model_matrix)
             changed = True
-        if entry.material is None or entry.material.color != color:
-            entry.bind_material(Material(color, self.surface_finish))
+        if entry.material is None or entry.material.color != color or getattr(entry.material, "finish", None) != finish:
+            entry.bind_material(Material(color, finish))
             entry.mark_material_dirty()
             changed = True
         return changed
@@ -572,16 +577,20 @@ class Viewport:
             self.surface_render_mesh.bind_material(material)
             self.surface_render_mesh.mark_material_dirty()
 
-    def set_edit_base_color(self, base_color: tuple[float, float, float] | None) -> bool:
-        """Grundfarbe des Edit-Mesh (und einer H7-Ersatzfläche); None = Standardfarbe. Für die
-        sichtbare Objekt-Auswahl in Modus `4` (2026-10-16). Kein Rebuild; True = geändert."""
+    def set_edit_base_color(
+        self, base_color: tuple[float, float, float] | None, finish: SurfaceFinish | None = None
+    ) -> bool:
+        """Grundfarbe (None = Standardfarbe) und Glanz (None = der von `set_surface_finish`) des
+        Edit-Mesh und einer H7-Ersatzfläche: die sichtbare Objekt-Auswahl in Modus `4` (2026-10-16)
+        und das Material des Edit-Objekts (AD-024). Kein Rebuild; True = geändert."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
+        finish = self.surface_finish if finish is None else finish
         current = self.render_mesh.material
-        if current is not None and tuple(current.color) == color:
+        if current is not None and tuple(current.color) == color and getattr(current, "finish", None) == finish:
             return False
-        if current is None and color == DEFAULT_BASE_COLOR and self.surface_finish == DEFAULT_FINISH:
+        if current is None and color == DEFAULT_BASE_COLOR and finish == DEFAULT_FINISH:
             return False
-        self.bind_material(Material(color, self.surface_finish))
+        self.bind_material(Material(color, finish))
         return True
 
     # -- Notifikations-API (aufgerufen von src.mirai nach Core-Mutationen) --

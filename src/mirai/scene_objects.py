@@ -15,6 +15,11 @@ nur `transform`, nie ein Mesh (L-1). AD-021 M2-3 (E-13, L-3): `ObjectPivotComman
 Spiegelpaare (2026-10-23, OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.5, `PROVISIONAL`): `MirrorPairCommand`
 (anlegen / lösen) ist der einzige Weg, `Scene.mirror_pairs` zu ändern; Spiegelkopie, Paaren und
 Löschen sind `CompositeCommand`s aus den vorhandenen Commands. Die Mathematik: `object_mirror`.
+
+Material pro Objekt (AD-024, 2026-10-24): `ObjectMaterialCommand` ist der Undo-Schritt einer
+Material-Änderung (Core-History unverändert); `object_base_color` / `object_finish` sagen, wie ein
+Objekt gezeichnet wird (eine Referenz bleibt im festen Blau, Q-M3), `editable_material`, mit welchen
+Werten ein Objekt ohne eigenes Material bearbeitet wird.
 """
 
 from __future__ import annotations
@@ -25,12 +30,15 @@ from core import (
     Mesh,
     MirrorPair,
     ObjectId,
+    ObjectMaterial,
     ObjectState,
     ObjectTransform,
     Scene,
     SceneObject,
     SymmetryDefinition,
 )
+from viewport.gl_render_store import DEFAULT_BASE_COLOR
+from viewport.material import SurfaceFinish
 
 from . import object_space
 from .object_mirror import in_sync, mirror_placement, pair_residual, plane_label
@@ -55,8 +63,28 @@ SELECTED_REFERENCE_TINT_SHARE = 0.3
 
 
 def object_base_color(obj: SceneObject) -> tuple[float, float, float] | None:
-    """Grundfarbe des Render-Eintrags eines Nicht-Edit-Objekts (None = Standardfarbe)."""
-    return REFERENCE_BASE_COLOR if obj.state is ObjectState.REFERENCE else None
+    """Grundfarbe, mit der ein Objekt gezeichnet wird (None = Standardfarbe): eine Referenz im
+    festen Blau, auch mit eigenem Material (AD-024 Q-M3), sonst die Farbe ihres Materials."""
+    if obj.state is ObjectState.REFERENCE:
+        return REFERENCE_BASE_COLOR
+    return obj.material.base_color if obj.material is not None else None
+
+
+def object_finish(obj: SceneObject, default: SurfaceFinish) -> SurfaceFinish:
+    """Der Glanz, mit dem ein Objekt gezeichnet wird: `default` (der des Worklights, samt
+    `fill_specular`) für eine Referenz und ein Objekt ohne Material, sonst dessen Specular und
+    Glossiness mit dem `fill_specular` von `default` (AD-024 §4: ein Worklight-Wert)."""
+    if obj.state is ObjectState.REFERENCE or obj.material is None:
+        return default
+    return default.with_(specular=obj.material.specular, glossiness=obj.material.glossiness)
+
+
+def editable_material(obj: SceneObject, default: SurfaceFinish) -> ObjectMaterial:
+    """Die Werte, von denen eine Material-Änderung ausgeht: das Material des Objekts, ohne eines
+    der Standard-Look (Standardfarbe, Glanz von `default`)."""
+    if obj.material is not None:
+        return obj.material
+    return ObjectMaterial(DEFAULT_BASE_COLOR, specular=default.specular, glossiness=default.glossiness)
 
 
 def selected_color(obj: SceneObject, default: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -99,6 +127,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj = scene.add_object(source.mesh, name=source.name, state=source.state)
         obj.transform = source.transform
         obj.pivot = source.pivot
+        obj.material = source.material
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
@@ -279,6 +308,28 @@ class ObjectTransformCommand:
     def redo(self) -> None:
         for obj, _, after in self.changes:
             obj.transform = after
+
+
+class ObjectMaterialCommand:
+    """Material eines oder mehrerer Objekte als ein Undo-Schritt (AD-024 §7). `changes` =
+    `(obj, before, after)` je Objekt (`None` = kein eigenes Material); setzt nur `obj.material`.
+    Die Ansicht frischt die Application auf (Material steht in `_object_highlight_signature`)."""
+
+    def __init__(
+        self,
+        changes: list[tuple[SceneObject, ObjectMaterial | None, ObjectMaterial | None]],
+        description: str,
+    ) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in reversed(self.changes):
+            obj.material = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.material = after
 
 
 class ObjectPivotCommand:

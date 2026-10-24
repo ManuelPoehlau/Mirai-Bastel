@@ -9,12 +9,20 @@ not apply (fill off, fill coupled) is refused instead of changed invisibly.
 `Application.set_light` / `step_light` are the edit path; the keys (`↑`/`↓` row, `←`/`→` value) only
 call them, and the later GUI (Stage 2 gate) calls the same setters. Light edits are view state, never
 an Undo step (AD-024 §7).
+
+Material rows (AD-024 §6, Q-M1 = yes): the object material (`core.ObjectMaterial`) as hue /
+saturation / brightness of the base colour (HSV, until the colour picker) plus specular and
+glossiness; `Application.set_object_material` / `step_object_material` apply them, one Undo step each.
+Steps (`PROVISIONAL`, agent-set): hue 10° / 2°, everything else 0.05 / 0.01 - the Lab's wrap step.
 """
 
 from __future__ import annotations
 
+import colorsys
 from dataclasses import dataclass, fields
 from typing import Callable, Optional
+
+from core import ObjectMaterial
 
 from viewport.light_rig import (
     AMBIENT_MAX,
@@ -31,6 +39,10 @@ from viewport.light_rig import (
     LightRig,
     wrap_degrees,
 )
+
+#: Light drag (hold `L` + move the mouse, Manu 2026-10-24, AD-024 Q-L2): the Lab's degrees per pixel
+#: (`lab_controls.DRAG_DEGREES_PER_PIXEL`, E13); dx = key azimuth, dy = key elevation.
+DRAG_DEGREES_PER_PIXEL = 0.5
 
 #: The Lab's key intensity range (`lab_controls.KEY_INTENSITY_MIN/MAX`).
 KEY_INTENSITY_MIN, KEY_INTENSITY_MAX = 0.0, 2.0
@@ -196,3 +208,105 @@ def light_row(row_id: str) -> LookRow:
         return LIGHT_ROWS[LIGHT_ROW_IDS.index(row_id)]
     except ValueError:
         raise KeyError(f"unknown light row {row_id!r}; expected one of {LIGHT_ROW_IDS}") from None
+
+
+# -- material rows (AD-024 §6) ---------------------------------------------------------------------
+
+MATERIAL_FIELDS = frozenset(("base_color", "specular", "glossiness"))
+
+
+def clamp_material_values(changes: dict) -> dict:
+    """`changes` (any of `MATERIAL_FIELDS`) clamped to [0, 1]; `KeyError` for an unknown field."""
+    unknown = set(changes) - MATERIAL_FIELDS
+    if unknown:
+        raise KeyError(f"unknown material parameter(s) {sorted(unknown)}; expected {sorted(MATERIAL_FIELDS)}")
+    out = {}
+    for name, value in changes.items():
+        if name == "base_color":
+            color = tuple(float(c) for c in value)
+            if len(color) != 3:
+                raise ValueError(f"base_color needs three values: {value!r}")
+            out[name] = tuple(_clamp(c, 0.0, 1.0) for c in color)
+        else:
+            out[name] = _clamp(float(value), 0.0, 1.0)
+    return out
+
+
+def hsv(material: ObjectMaterial) -> tuple[float, float, float]:
+    return colorsys.rgb_to_hsv(*material.base_color)
+
+
+def _with_hsv(material: ObjectMaterial, h: float, s: float, v: float) -> ObjectMaterial:
+    rgb = tuple(round(_clamp(c, 0.0, 1.0), 6) for c in colorsys.hsv_to_rgb(h % 1.0, s, v))
+    return ObjectMaterial(rgb, material.specular, material.glossiness)
+
+
+@dataclass(frozen=True)
+class MaterialRow:
+    """One material value: `step(material, direction, fine) -> material`, `format(material)`,
+    `applies(material)` False = a step has no effect on this object (e.g. the hue of a grey)."""
+
+    id: str
+    label: str
+    step: Callable[[ObjectMaterial, int, bool], ObjectMaterial]
+    format: Callable[[ObjectMaterial], str]
+    applies: Callable[[ObjectMaterial], bool]
+    inactive_reason: str = ""
+
+
+def _step_hue(material: ObjectMaterial, direction: int, fine: bool) -> ObjectMaterial:
+    h, s, v = hsv(material)
+    return _with_hsv(material, h + (2.0 if fine else 10.0) / 360.0 * direction, s, v)
+
+
+def _hsv_channel(index: int):
+    def step(material: ObjectMaterial, direction: int, fine: bool) -> ObjectMaterial:
+        values = list(hsv(material))
+        values[index] = round(_clamp(values[index] + (0.01 if fine else 0.05) * direction, 0.0, 1.0), 6)
+        return _with_hsv(material, *values)
+
+    return step
+
+
+def _unit_step(name: str):
+    def step(material: ObjectMaterial, direction: int, fine: bool) -> ObjectMaterial:
+        value = round(_clamp(getattr(material, name) + (0.01 if fine else 0.05) * direction, 0.0, 1.0), 6)
+        return ObjectMaterial(material.base_color, **{
+            "specular": material.specular, "glossiness": material.glossiness, name: value})
+
+    return step
+
+
+def _saturated(material: ObjectMaterial) -> bool:
+    h, s, v = hsv(material)
+    return s > 0.0 and v > 0.0
+
+
+def _always_m(material: ObjectMaterial) -> bool:
+    return True
+
+
+MATERIAL_ROWS: tuple[MaterialRow, ...] = (
+    MaterialRow("hue", "Material Farbton", _step_hue, lambda m: f"{hsv(m)[0] * 360.0:.0f}°", _saturated,
+                "Farbe ohne Sättigung - erst Material Sättigung erhöhen"),
+    MaterialRow("saturation", "Material Sättigung", _hsv_channel(1), lambda m: f"{hsv(m)[1]:.2f}", _always_m),
+    MaterialRow("value", "Material Helligkeit", _hsv_channel(2), lambda m: f"{hsv(m)[2]:.2f}", _always_m),
+    MaterialRow("specular", "Material Specular", _unit_step("specular"), lambda m: f"{m.specular:.2f}",
+                _always_m),
+    MaterialRow("glossiness", "Material Glossiness", _unit_step("glossiness"),
+                lambda m: f"{m.glossiness:.2f}", _always_m),
+)
+
+MATERIAL_ROW_IDS: tuple[str, ...] = tuple(row.id for row in MATERIAL_ROWS)
+
+
+def material_row(row_id: str) -> MaterialRow:
+    try:
+        return MATERIAL_ROWS[MATERIAL_ROW_IDS.index(row_id)]
+    except ValueError:
+        raise KeyError(f"unknown material row {row_id!r}; expected one of {MATERIAL_ROW_IDS}") from None
+
+
+#: The arrow keys' list: the Lab's light rows, then the material rows (↑ from the first row wraps to
+#: the material).
+LOOK_ROWS: tuple = (*LIGHT_ROWS, *MATERIAL_ROWS)
