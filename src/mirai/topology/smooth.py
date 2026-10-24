@@ -8,6 +8,9 @@ state (`core.operations.smooth.smooth_positions`), so a drag can go back and for
 Symmetry (like Loop Slide): the selection plus its partners smooth together; a seam vertex stays on
 the plane in every step, and each partner is written as the exact mirror of the driving vertex at the
 end, so the pairs stay exact. Unpaired selected vertices or an inexact plane are refused at the press.
+
+Soft Selection: the caller passes the influence of the selection (`weights`); every vertex inside the radius
+smooths too, its step scaled by its weight. Border vertices stay fixed in the soft region as well.
 """
 
 from __future__ import annotations
@@ -46,6 +49,8 @@ class SmoothPlan:
     mirrors: dict[VertexId, VertexId] = field(default_factory=dict)
     seam: frozenset[VertexId] = frozenset()
     plane: tuple[Position, Position] | None = None
+    #: Soft Selection: the influence per movable vertex (None = Soft off, every step full).
+    weights: dict[VertexId, float] | None = None
 
     @property
     def label(self) -> str:
@@ -65,7 +70,8 @@ class SmoothPlan:
                 return (p[0] - d * normal[0], p[1] - d * normal[1], p[2] - d * normal[2])
 
         moved = smooth_positions(
-            self.start, self.neighbors, self.movable, amount, faces=self.faces, constrain=constrain
+            self.start, self.neighbors, self.movable, amount, faces=self.faces, constrain=constrain,
+            weights=self.weights,
         )
         result = {v: moved.get(v, self.start[v]) for v in self.movable}
         if self.plane is not None:
@@ -80,7 +86,10 @@ def _is_boundary(mesh: Mesh, vid: VertexId) -> bool:
     return not edges or any(len(mesh.edge_faces(e)) < 2 for e in edges)
 
 
-def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool) -> SmoothPlan:
+def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None) -> SmoothPlan:
+    """`vertex_ids` = the selection (the Soft seeds). `weights` (Soft on) = the influence of the seeds,
+    computed by the caller with the same function as W/E/R (plain or symmetric field): every vertex with a
+    weight > 0 smooths, scaled by it; the field is already both-sided under symmetry."""
     label = RELAX_LABEL if relax else SMOOTH_LABEL
     selected = set(vertex_ids)
     if not selected:
@@ -100,6 +109,8 @@ def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool) -> SmoothPlan:
             partners[v] = partner
         selected |= set(partners.values())
 
+    if weights is not None:
+        selected |= {v for v, w in weights.items() if w > 0.0}
     movable = frozenset(v for v in selected if not _is_boundary(mesh, v))
     if not movable:
         raise SmoothRefused(f"{label}: only border points selected - they stay fixed")
@@ -131,7 +142,8 @@ def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool) -> SmoothPlan:
             partner = index.vertex_partner(v)
             if partner == v:
                 seam.add(v)
-            elif partner in movable and v not in mirrors and partner not in mirrors:
+            elif partner is not None and partner in movable and v not in mirrors and partner not in mirrors:
                 driver, written = (v, partner) if element_side(mesh, definition, [v]) >= 0 else (partner, v)
                 mirrors[written] = driver
-    return SmoothPlan(relax, movable, start, neighbors, faces, mirrors, frozenset(seam), plane)
+    plan_weights = None if weights is None else {v: float(weights.get(v, 0.0)) for v in movable}
+    return SmoothPlan(relax, movable, start, neighbors, faces, mirrors, frozenset(seam), plane, plan_weights)

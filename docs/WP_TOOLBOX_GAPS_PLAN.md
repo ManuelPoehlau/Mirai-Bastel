@@ -176,6 +176,10 @@ gesammelten Praxistest (§3).
   - Während S/Alt+S gehalten ist, dreht Alt die Kamera **nicht** (sonst ginge Alt+S-Ziehen nicht).
   - Unter Symmetrie: Auswahl plus Partner, Seam-Punkte bleiben in jedem Schritt auf der Ebene, Partner werden
     exakt gespiegelt geschrieben. Im Symmetry Lab unter BLOCK abgelehnt (fail-closed, wie Loop Slide).
+  - **Mit Soft Selection (Manu 2026-10-24, gebaut 2026-10-24):** Das ganze Soft-Feld glättet mit, jeder Punkt mit
+    seinem Gewicht als Faktor auf den Schritt; gleiches Feld, gleiche Bänder und gleiches Live-Mausrad (Radius,
+    Ctrl+Shift = Loop/Ring) wie bei W/E/R, auch schon vor dem ersten Ziehen.
+    [AD-020, „Soft Smooth / Relax“](architecture/AD-020-SOFT-SELECTION-APP-PATH.md#soft-smooth--relax-2026-10-24-provisional).
 - *Ziel:* zwei getrennte Formwerkzeuge für ausgewählte Vertices (MODELING.md Priorität 1).
 - *Scope:*
   - **Smooth** = Laplace (Nachbarmittel × Stärke).
@@ -217,6 +221,8 @@ gesammelten Praxistest (§3).
     schieben?
   - Relax (`Alt+S`) und Smooth (`S`) auf einem Loop-Bereich, mit SubD-Vorschau an: einmal antippen, einmal
     halten + nach rechts/links ziehen, einmal mit `Esc` abbrechen; einmal unter Symmetrie.
+  - Dasselbe mit Soft an (`O`): Die Bänder zeigen beim Halten die Wirkung, das Mausrad ändert den Radius live,
+    zum Rand hin glättet es schwächer.
   - Fragen: Ist ein Antippen (2 Schritte) zu stark oder zu schwach? Passt die Ziehgeschwindigkeit (60 px pro
     Schritt)? Flacht Smooth an Nase/Lippen zu sehr ab?
 

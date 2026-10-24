@@ -8,6 +8,9 @@ shape. Both are Jacobi iterations: every step reads the positions of the previou
 `amount` is continuous so a drag can drive it: `floor(amount)` full steps, then one step with the
 fractional part of the factor. Amount 0 changes nothing; the result is continuous in `amount`.
 
+With Soft Selection the caller passes the influence as `weights`: each vertex's step is scaled by its
+weight, so the effect fades out toward the edge of the radius.
+
 Pure: no `Mesh` mutation, no History. The caller decides which vertices move (the selection without
 boundary vertices, say) and writes the result inside its own transaction.
 """
@@ -35,12 +38,14 @@ def smooth_positions(
     factor: float = SMOOTH_FACTOR,
     faces: Mapping[V, Sequence[Sequence[V]]] | None = None,
     constrain: Callable[[V, Vec3], Vec3] | None = None,
+    weights: Mapping[V, float] | None = None,
 ) -> dict[V, Vec3]:
     """New positions of `movable` after `amount` steps.
 
     `positions` must hold every movable vertex and all their neighbours. `faces` given = Relax: per
     movable vertex the boundaries of its faces, for its normal (a vertex whose normal vanishes moves
     like Smooth). `constrain(v, p)` (optional) maps each new position, e.g. back onto a symmetry plane.
+    `weights` (optional, Soft Selection) scales each vertex's step: 1 = full, 0 = stays.
     """
     if amount <= 0.0:
         return {}
@@ -67,7 +72,8 @@ def smooth_positions(
                 if normal is not None:
                     k = d[0] * normal[0] + d[1] * normal[1] + d[2] * normal[2]
                     d = (d[0] - k * normal[0], d[1] - k * normal[1], d[2] - k * normal[2])
-            q = (p[0] + step * d[0], p[1] + step * d[1], p[2] + step * d[2])
+            s = step if weights is None else step * weights.get(v, 0.0)
+            q = (p[0] + s * d[0], p[1] + s * d[1], p[2] + s * d[2])
             updated[v] = constrain(v, q) if constrain is not None else q
         current.update(updated)
     return {v: current[v] for v in moving}

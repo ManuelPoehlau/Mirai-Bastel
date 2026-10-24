@@ -146,7 +146,7 @@ from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
-from .topology.smooth import SmoothPlan, SmoothRefused, plan_smooth
+from .topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.face_geometry import GEO_EPS
 from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
@@ -853,6 +853,7 @@ class Application:
         self._smooth_amount: float = 0.0
         self._smooth_before: MeshChange | None = None
         self._smooth_selection_before: tuple | None = None
+        self._smooth_seeds: frozenset[VertexId] = frozenset()  # the selection (Soft seeds) at the press
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
@@ -2591,11 +2592,16 @@ class Application:
         target = resolve_selection_vertices(mesh, selection, selection.mode)
         if not target and selection.hovered is not None:
             target = _element_vertices(mesh, selection.hovered)
+        soft = self._soft if self._soft.enabled else None
         try:
-            plan = plan_smooth(mesh, target, relax=relax)
-        except SmoothRefused as exc:
-            self._set_status(str(exc))
+            weights = None if soft is None or not target else self._smooth_soft_weights(target, soft)
+            plan = plan_smooth(mesh, target, relax=relax, weights=weights)
+        except (SmoothRefused, SoftSymmetryRefusal) as exc:
+            label = RELAX_LABEL if relax else SMOOTH_LABEL
+            text = str(exc)
+            self._set_status(text if text.startswith(label) else f"{label}: refused — {text}")
             return False
+        self._smooth_seeds = frozenset(target)
         self._transform_key = key
         self._transform_command = command
         self._transform_target = plan.movable
@@ -2603,11 +2609,71 @@ class Application:
         self._smooth_plan = plan
         self._smooth_amount = 0.0
         self._set_hovered(None)
+        if soft is not None:
+            # The same gesture state as a Soft W/E/R: live radius / flow steps go through it.
+            self._soft_gesture = soft
+            self._soft_gesture_reference = soft.world_radius * 100.0 / soft.radius_percent
+            self._smooth_show_weights()
+        soft_note = " (Soft: wheel = radius)" if soft is not None else ""
         self._set_status(
-            f"{plan.label}: {len(plan.movable)} points - tap for one step, or drag right/left for"
+            f"{plan.label}: {len(plan.movable)} points{soft_note} - tap for one step, or drag right/left for"
             f" more/less, release {key.upper()} to commit"
         )
         return True
+
+    def _smooth_soft_weights(self, seeds, soft: SoftSettings) -> dict[VertexId, float]:
+        """The influence of `seeds` by the same function and arguments as a Soft W/E/R (plain field, or
+        under a definition the symmetric field; raises `SoftSymmetryRefusal` like W/E/R at `begin()`)."""
+        mesh = self.scene.mesh
+        if mesh.symmetry_definition is None:
+            return compute_influence(
+                mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
+            )
+        return symmetric_influence(
+            mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
+            curve_power=soft.curve_power, correspondence=vertex_correspondence(mesh),
+            flow_ratio=soft.flow_ratio,
+        ).weights
+
+    def _smooth_show_weights(self) -> None:
+        """The display shows the held Smooth / Relax's own weights (as `_soft_show_op_weights` for W/E/R)."""
+        if self._soft_overlay is None and self._soft_shading_overlay is None:
+            return
+        self._soft_op_running = True
+        self._soft_gesture_shown = True
+        display = self._soft_gesture or self._soft
+        weights = self._smooth_plan.weights if display.bands_visible else None
+        self._soft_show(weights, display.view_mode)
+
+    def _smooth_soft_live(self) -> bool:
+        """A held Smooth / Relax with Soft on (armed or dragging): the wheel steps its radius."""
+        return (
+            self._transform_command in _SMOOTH_COMMANDS
+            and self._smooth_plan is not None
+            and self._smooth_plan.weights is not None
+            and self._soft_gesture is not None
+        )
+
+    def _smooth_reweight(self, gesture: SoftSettings) -> set[VertexId]:
+        """New radius / flow for the held Smooth / Relax: back to the press geometry (only the movable
+        vertices were written), the influence and plan again from there, the current strength replayed.
+        Returns the vertices whose position may have changed."""
+        mesh = self.scene.mesh
+        old = self._smooth_plan
+        if self._transform_begun:
+            for vid in old.movable:
+                mesh.set_vertex_position(vid, old.start[vid])
+        try:
+            weights = self._smooth_soft_weights(self._smooth_seeds, gesture)
+            plan = plan_smooth(mesh, self._smooth_seeds, relax=old.relax, weights=weights)
+        except (SmoothRefused, SoftSymmetryRefusal):
+            plan = old  # the seeds did not change: keep the field it had
+        self._smooth_plan = plan
+        self._transform_target = plan.movable
+        if self._transform_begun:
+            self._smooth_write(self._smooth_amount)
+        return set(old.movable) | set(plan.movable)
 
     def _smooth_write(self, amount: float) -> set[VertexId]:
         positions = self._smooth_plan.positions(amount)
@@ -3820,6 +3886,7 @@ class Application:
             self.scene.mesh.release_change(self._smooth_before)
         self._smooth_before = None
         self._smooth_selection_before = None
+        self._smooth_seeds = frozenset()
         if resume_preview:
             self._soft_preview_refresh()
 
@@ -3842,11 +3909,11 @@ class Application:
             self._soft = soft.toggled()
             if self._soft.enabled:
                 self._soft_refresh_radius()
-        elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN) and self._soft_live_tool():
+        elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN) and self._soft_live():
             changed = self._soft_radius_live(1 if command == commands.SOFT_RADIUS_UP else -1)
         elif command in (commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING):
             delta = 1 if command == commands.SOFT_FLOW_LOOP else -1
-            if self._soft_live_tool():
+            if self._soft_live():
                 changed = self._soft_flow_live(delta)
             else:
                 self._soft = soft.with_flow_step(delta)
@@ -3908,6 +3975,11 @@ class Application:
         tool = self.tool_manager.active_tool
         return tool if getattr(tool, "is_soft_gesture", False) else None
 
+    def _soft_live(self) -> bool:
+        """A running Soft gesture takes radius / flow steps live: a begun Soft W/E/R, or a held Smooth /
+        Relax with Soft on (C2)."""
+        return self._soft_live_tool() is not None or self._smooth_soft_live()
+
     def _soft_radius_live(self, delta: int) -> bool:
         """One radius step for the running Soft gesture (AD-020 "Live radius", `PROVISIONAL`): the gesture
         is re-evaluated from its start geometry with the new influence (`reweight`), the display shows the
@@ -3937,6 +4009,12 @@ class Application:
         """The running Soft gesture continues with `gesture`'s influence (`reweight`: cancel, begin again
         on the start geometry with the same seeds / pivot, replay the intent), and the display shows it."""
         self._soft_gesture = gesture
+        if self._smooth_soft_live():
+            touched = self._smooth_reweight(gesture)
+            self._pick_cache.invalidate()
+            self.viewport.on_vertices_moved(touched)
+            self._smooth_show_weights()
+            return
         touched = self._soft_live_tool().reweight(gesture)
         self._pick_cache.invalidate()
         self.viewport.on_vertices_moved(touched)
@@ -4560,7 +4638,7 @@ class Application:
         Live radius (AD-020, `PROVISIONAL`): während einer begonnenen Soft-Geste (Move/Rotate/Scale,
         auch per Gizmo/Tweak) ist das Zoom-Rad die Radius-Stufe dieser Geste und zoomt nicht."""
         command = self.bindings.command_for(input)
-        if command == commands.ZOOM and self._soft_live_tool() is not None:
+        if command == commands.ZOOM and self._soft_live():
             command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:
             if self._knife is not None or self._gate_refuses(command):

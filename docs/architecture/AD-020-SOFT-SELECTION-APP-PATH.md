@@ -11,6 +11,7 @@ runs in the Core loop (`params["influence"]`); the Q2-D ops are thin subclasses 
 flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-symmetric Soft is bit-identical to Q2-D.
 **Hover preview and display modes (2026-10-22, see "Hover preview and display modes" below):** the influence preview now follows the hovered component when nothing is selected, and has a second, exclusive display mode (face shading) next to the vertex bands; `PROVISIONAL`, Artist test open.
 **Live radius (2026-10-22, see "Live radius during a running gesture" below):** the wheel changes the radius of a running Soft Move/Rotate/Scale; the gesture is re-evaluated from its start geometry. Narrows the §4.3 per-gesture rule for the radius only; `PROVISIONAL`, Artist test open (ATELIER B12).
+**Smooth / Relax (2026-10-24, see "Soft Smooth / Relax" below):** with Soft on, the held S / Alt+S smooths the whole influence field, each point's step scaled by its weight; same field, display and live wheel as W/E/R. `PROVISIONAL`.
 **Loop / Ring flow (2026-10-22, see "Loop / Ring flow" below):** a topology-oriented anisotropic geodesic field - the reach along the seeds' edge loops vs. across their edge rings is adjustable (Ctrl+Shift+wheel), sticky and live in a running gesture like the radius; neutral = the isotropic field bit for bit. `PROVISIONAL`, Artist test open (ATELIER B15).
 **Finer radius steps and display look (2026-10-22, see "Finer radius steps and display look" below):** about 10-15 % per wheel notch; the influence display has three looks (`mono` default, `tint`, `color`) on Ctrl+Shift+O; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
@@ -314,6 +315,24 @@ stay. Status line: `... · bands on · mono`. The values live with the sinks (`g
 **Verified by tests** (`tests/test_soft_display_look.py`, real GL in `test_gl_soft_bands.py`: the mono bands render
 neutral and fade with the band; tests that counted notches now pin percents). **Not Artist-validated:** which look,
 the exact alpha, the step density, the key.
+
+## Soft Smooth / Relax (2026-10-24, `PROVISIONAL`)
+
+Manu 2026-10-24: "Smooth und Relax müssen in Kombination mit Soft Selection funktionieren." Built as WP Toolbox Gaps C2
+follow-up ([plan](../WP_TOOLBOX_GAPS_PLAN.md) C2).
+
+- **Field:** at the press of S / Alt+S the selection (else the hovered element) is the seed set; the influence is
+  computed by the same function and arguments as a Soft W/E/R at `begin()` (`compute_influence`, under a definition
+  `symmetric_influence` with its refusals, `Application._smooth_soft_weights`). Every vertex with a weight > 0
+  smooths, its Laplace / Relax step scaled by its weight (`smooth_positions(..., weights=)`); border vertices stay
+  fixed in the falloff too.
+- **Display:** the bands / face shading show the gesture's own weights from the press on (like E4), the preview
+  resumes at the end.
+- **Live radius and flow:** the wheel (and Ctrl+Shift+wheel) step the held gesture's radius / flow balance, armed or
+  dragging, never zoom. Re-evaluation from the press geometry: the moved points are written back, field and plan are
+  computed again there, the current strength is replayed. One History entry at release, Esc restores exactly.
+- Soft off: unchanged (selection only).
+- Tests: `tests/test_application_smooth.py` (falloff, weight ratio, bands, live radius armed and dragging, Esc, symmetry).
 
 ## Loop / Ring flow (2026-10-22, `PROVISIONAL`)
 

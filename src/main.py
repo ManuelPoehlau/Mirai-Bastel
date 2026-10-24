@@ -118,7 +118,8 @@ Scope (binding, see the handoffs):
   connected group of the V/E/F selection to one point at its centroid and
   selects the points in Vertex mode (`PROVISIONAL`). C2: hold S = Smooth,
   hold Alt+S = Relax (a tap = one step, drag right/left = stronger/weaker,
-  release commits, Esc restores; `PROVISIONAL`). Status lines
+  release commits, Esc restores; with Soft on the whole field smooths, scaled
+  by its weights, the wheel = live radius; `PROVISIONAL`). Status lines
   (`Application.status_message`) are printed to stdout — `PROVISIONAL`
   until a HUD exists.
 - Scene loader (temporary, `PROVISIONAL`, `src/scene_menu.py`): `SPACE`
