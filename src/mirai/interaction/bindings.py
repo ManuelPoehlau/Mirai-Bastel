@@ -29,6 +29,10 @@ Display (Artist Input Truth, WP-06 B5a E42: vorher O):
 - Ctrl+D         → Licht-Preset wechseln (Raitt 2:1 → Softbox → Warm/Kalt → Heute),
                    Ctrl+Shift+D → Licht folgt der Kamera / steht in der Welt
                    (Engineering-Tasten `PROVISIONAL`, keine Artist Input Truth)
+- ↑ / ↓          → Look-Zeile wählen (Licht: Bezugsraum, Key Azimut/Höhe/Stärke/Temperatur/Weichheit,
+                   Verhältnis, Fill-Kopplung/Azimut/Höhe/Temperatur/Weichheit, Grundhelligkeit),
+                   ← / →  Wert eine Stufe kleiner/größer, Ctrl+← / Ctrl+→ fein (Stufen des Shading
+                   Lab; AD-024 §8, `PROVISIONAL` bis zur GUI, kein Undo-Schritt)
 SetShaded/SetFlatShaded/SetWireframe bleiben ohne Taste.
 - H              → HUD (Zustandsanzeige) zeigen/verbergen (Artist Input Truth
                    `application.toggle_hud`, GUI Stufe 1; Kontext "window", vom
@@ -236,6 +240,14 @@ def build_default_bindings() -> BindingSet:
     # Worklight (2026-10-15, Tasten `PROVISIONAL`, Display-Familie D).
     bs.set_default(_key("d", "ctrl"), cmd.CYCLE_LIGHT_PRESET)
     bs.set_default(_key("d", "ctrl", "shift"), cmd.TOGGLE_LIGHT_SPACE)
+    # Look rows (AD-024 §8, `PROVISIONAL` until the GUI): the Shading Lab's arrows; the fine step is Ctrl,
+    # because Shift+arrows are the selection steps (WP Toolbox Gaps A1).
+    bs.set_default(_key("up"), cmd.LOOK_ROW_PREV)
+    bs.set_default(_key("down"), cmd.LOOK_ROW_NEXT)
+    bs.set_default(_key("left"), cmd.LOOK_VALUE_DEC)
+    bs.set_default(_key("right"), cmd.LOOK_VALUE_INC)
+    bs.set_default(_key("left", "ctrl"), cmd.LOOK_VALUE_DEC_FINE)
+    bs.set_default(_key("right", "ctrl"), cmd.LOOK_VALUE_INC_FINE)
     # GUI Stufe 1 (2026-10-23): H = Artist Input Truth `application.toggle_hud`. Fenster-Command im
     # Kontext "window": `src/main.py` behandelt ihn, `Application` löst diesen Kontext nie auf.
     bs.set_default(_key("h"), cmd.TOGGLE_HUD, context=WINDOW_CONTEXT)

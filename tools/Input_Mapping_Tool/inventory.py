@@ -97,6 +97,8 @@ DEFAULT_INVENTORY: list[dict[str, str | None]] = [
     {"id": "display.set_flat_shaded", "label": "Set Flat Shaded", "category": "Display", "runtime_ref": "SetFlatShaded"},
     {"id": "display.set_wireframe", "label": "Set Wireframe", "category": "Display", "runtime_ref": "SetWireframe"},
     {"id": "display.toggle_vertex_display", "label": "Toggle Vertex Display", "category": "Display", "runtime_ref": None},
+    {"id": "display.look_row", "label": "Look: choose the light value to edit", "category": "Display", "runtime_ref": "LookRowPrev / LookRowNext"},
+    {"id": "display.look_value", "label": "Look: change the chosen value", "category": "Display", "runtime_ref": "LookValueDec / LookValueInc (Fine)"},
 
     # --- Modeling / Component Operations ---------------------------------
     {"id": "modeling.vertex_move", "label": "Vertex Move", "category": "Modeling", "runtime_ref": None},

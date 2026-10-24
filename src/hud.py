@@ -82,6 +82,9 @@ class HudState:
     subd_view: str
     subd_level: int
     subd_lines: bool
+    #: Worklight name and the active Look row with its value (AD-024 §8).
+    light: str
+    look: str
     status: str
     status_serial: int
 
@@ -111,6 +114,8 @@ def hud_state(app) -> HudState:
         subd_view=subd.view,
         subd_level=subd.level,
         subd_lines=subd.lines_shown,
+        light=app.display.light_label,
+        look=app.look_text,
         status=app.status_message,
         status_serial=app.status_serial,
     )
@@ -131,8 +136,15 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),
     "SubD": ((commands.SUBD_CYCLE_VIEW,), SUBD_CONTEXT),
+    "Look": (
+        (commands.LOOK_ROW_PREV, commands.LOOK_ROW_NEXT, commands.LOOK_VALUE_DEC, commands.LOOK_VALUE_INC),
+        None,
+    ),
     "HUD": ((commands.TOGGLE_HUD,), WINDOW_CONTEXT),
 }
+
+
+_ARROWS = {"UP": "↑", "DOWN": "↓", "LEFT": "←", "RIGHT": "→"}
 
 
 def key_hint(bindings: BindingSet, command_names: tuple[str, ...], context: Optional[str] = None) -> str:
@@ -142,7 +154,8 @@ def key_hint(bindings: BindingSet, command_names: tuple[str, ...], context: Opti
     for name in command_names:
         bound = [inp for inp in bindings.inputs_for(name, context) if inp.kind == "key"]
         if bound:
-            keys.append(key_label(bound[0]))
+            label = key_label(bound[0])
+            keys.append(_ARROWS.get(label, label))
     return "/".join(keys)
 
 
@@ -187,6 +200,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         HudRow("Display", state.display, hints.get("Display", "")),
         HudRow("Soft", soft, hints.get("Soft", ""), on=state.soft_on),
         HudRow("SubD", subd, hints.get("SubD", ""), on=state.subd_view != VIEW_OFF),
+        HudRow("Look", f"{state.light} · {state.look}", hints.get("Look", "")),
     ]
 
 

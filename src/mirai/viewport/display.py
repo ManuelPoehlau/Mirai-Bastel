@@ -29,8 +29,12 @@ from viewport.light_rig import (
 )
 from viewport.material import DEFAULT_FINISH, SurfaceFinish
 
+from .look_controls import LIGHT_FIELDS, clamp_light
+
 #: Anzeige-Namen der Bezugsräume in der Statuszeile.
 _SPACE_LABELS = {SPACE_CAMERA: "Kamera", SPACE_WORLD: "Welt"}
+#: Wie im Shading Lab: nach einer Werte-Änderung heißt das Licht so (das Preset steht dahinter).
+EDITED_LABEL = "angepasst"
 
 # Bevorzugte Anzeige-Reihenfolge für die Cycle-Aktion.
 _MODE_CYCLE: tuple["DisplayMode", ...]
@@ -57,6 +61,8 @@ class DisplayState:
         # hat (None = der des Presets). Der Umschalter bleibt beim Preset-Wechsel stehen.
         self.light_preset = DEFAULT_PRESET
         self.light_space: str | None = None
+        # AD-024 §8: die bearbeiteten Werte (None = die des Presets); ein Preset-Wechsel verwirft sie.
+        self.light_edit: LightRig | None = None
         # Glanz der Flächen (2026-10-23, `viewport.material`): Specular-Stärke, Glossiness und
         # Fill-Specular, `PROVISIONAL` Defaults. Ansichts-Zustand wie das Licht, keine Taste
         # (kein Material-Editor): `set_surface_finish(...)` ist die Schnittstelle.
@@ -83,6 +89,7 @@ class DisplayState:
         """Raitt 2:1 → Softbox → Warm/Kalt → Heute → ..."""
         index = APP_PRESET_ORDER.index(self.light_preset)
         self.light_preset = APP_PRESET_ORDER[(index + 1) % len(APP_PRESET_ORDER)]
+        self.light_edit = None
 
     def toggle_light_space(self) -> None:
         """Licht folgt der Kamera <-> steht in der Welt."""
@@ -93,14 +100,36 @@ class DisplayState:
         self.surface_finish = self.surface_finish.with_(**changes)
         return self.surface_finish
 
+    def set_light(self, **changes) -> LightRig:
+        """Ändert Werte des Worklights (jedes `LightRig`-Feld; in den Bereich des Shading Lab
+        geklemmt, AD-024 §8). Ein geänderter Bezugsraum bleibt wie `toggle_light_space` über
+        Preset-Wechsel stehen. Gibt das Licht danach zurück."""
+        unknown = set(changes) - LIGHT_FIELDS
+        if unknown:
+            raise KeyError(f"unknown light parameter(s) {sorted(unknown)}; expected {sorted(LIGHT_FIELDS)}")
+        rig = clamp_light(self.light_rig.with_(**changes))
+        if "space" in changes:
+            self.light_space = rig.space
+        if rig != self.light_rig:
+            self.light_edit = rig
+        return self.light_rig
+
+    @property
+    def light_edited(self) -> bool:
+        """True, wenn Werte vom Preset abweichen (der Bezugsraum zählt nicht, er ist ein Umschalter)."""
+        if self.light_edit is None:
+            return False
+        return self.light_edit.with_(space=PRESETS[self.light_preset].space) != PRESETS[self.light_preset]
+
     @property
     def light_rig(self) -> LightRig:
-        rig = PRESETS[self.light_preset]
+        rig = self.light_edit if self.light_edit is not None else PRESETS[self.light_preset]
         return rig if self.light_space is None else rig.with_(space=self.light_space)
 
     @property
     def light_label(self) -> str:
-        return f"{self.light_preset} · {_SPACE_LABELS[self.light_rig.space]}"
+        name = f"{self.light_preset} {EDITED_LABEL}" if self.light_edited else self.light_preset
+        return f"{name} · {_SPACE_LABELS[self.light_rig.space]}"
 
     # -- Ableitungen für die Darstellung ------------------------------------
 

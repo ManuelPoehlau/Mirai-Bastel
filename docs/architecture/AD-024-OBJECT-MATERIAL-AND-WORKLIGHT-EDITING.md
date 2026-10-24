@@ -105,16 +105,25 @@ to tell from "selected" (Artist question Q-M4; the cure would be an outline, out
   (precedent `_subd_command`; Blender's viewport shading is not in the undo history either), and it is not saved.
   Test point 4 then reads: Undo reverts the material, the light stays (Artist question Q-L1).
 
-## 8. Worklight setters (no Core change; built before the review — independent of §2–§7)
+## 8. Worklight setters (no Core change; **built 2026-10-24**, before the review — independent of §2–§7)
 
-- `DisplayState` holds the edited rig: `light_rig` (a `LightRig`), `light_preset` (name or "angepasst" after an
-  edit, as the Lab). A preset (`Ctrl+D`) replaces the rig; `Ctrl+Shift+D` keeps toggling the space.
+- `DisplayState` holds the edit: `light_edit` (a `LightRig`, None = the preset's values) over `light_preset`; the
+  label reads "<preset> angepasst" after an edit, as the Lab. A preset (`Ctrl+D`) replaces the edit;
+  `Ctrl+Shift+D` keeps toggling the space, which stays across presets and is not an edit.
 - `Application.set_light(**changes)` (any `LightRig` field, clamped to the Lab's ranges) and
   `step_light(param, direction, fine)` with the Lab's steps (azimuth 15°/1°, elevation 5°/1°, intensity 0.05/0.01,
   Kelvin 500/100, wrap 0.1/0.02, ambient 0.05/0.01, ratio over `RATIO_STEPS`, coupling and space as toggles).
-- Temporary bindings (`PROVISIONAL`, binding layer, keymap-overridable): a "Look" parameter list (light rows, later
-  the material rows) — `↑`/`↓` row, `←`/`→` value, `Ctrl+←`/`Ctrl+→` fine (the Lab's `Shift` is taken by the
-  selection steps `Shift+arrows`). The HUD and status line show the active row and value.
+- Rows and steps: `src/mirai/viewport/look_controls.py` (a copy of the Lab's rows; parity held by
+  `experiments/viewport_shading_lab/tests/test_production_look_parity.py`). A row that does not apply (fill off /
+  coupled) is refused with a status line instead of changed invisibly.
+- Temporary bindings (`PROVISIONAL`, binding layer, keymap-overridable, commands `LookRow*` / `LookValue*`): `↑`/`↓`
+  row, `←`/`→` value, `Ctrl+←`/`Ctrl+→` fine (the Lab's `Shift` is taken by the selection steps `Shift+arrows`).
+  Allowed at any time, like the display keys. The HUD row "Look" and the status line show the active row and value.
+  The material rows join this list after the review (§6).
+- **Morph Lab key conflict (finding, not fixed here — the Morph system is out of scope):** the Morph Lab asserts its
+  arrow keys are free in the app bindings (AD-013 H2-R1) and has failed at start since `Shift+↑/↓` became Loop
+  grow/shrink (WP Toolbox Gaps A1, 2026-10-23, on `main` before this AD); the plain arrows widen the same conflict.
+  Under H2-R1 the Lab moves its keys; that is a Morph Lab change for a separate step.
 - **Light drag is not bound: stop point.** The Lab's plain `LMB` drag is `SelectDrag` (Box/Paint) in Production;
   every modifier variant of `LMB` drag is taken (Alt = Orbit, Alt+Shift = Pan, Shift = add, Ctrl = Tweak), RMB/MMB
   are deliberately unbound (AD-013 rule 2). Not remapped; options for Manu in Q-L2.

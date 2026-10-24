@@ -83,6 +83,14 @@ TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
 # Bezugsraum Kamera <-> Welt.
 CYCLE_LIGHT_PRESET = "CycleLightPreset"
 TOGGLE_LIGHT_SPACE = "ToggleLightSpace"
+# Look-Zeilen (AD-024 §8, Tasten `PROVISIONAL`, vorläufig bis zur GUI): eine Zeile wählen (Licht-Werte
+# aus dem Shading Lab) und ihren Wert in Stufen ändern; FINE = die kleine Stufe des Lab.
+LOOK_ROW_PREV = "LookRowPrev"
+LOOK_ROW_NEXT = "LookRowNext"
+LOOK_VALUE_DEC = "LookValueDec"
+LOOK_VALUE_INC = "LookValueInc"
+LOOK_VALUE_DEC_FINE = "LookValueDecFine"
+LOOK_VALUE_INC_FINE = "LookValueIncFine"
 
 # TOGGLE_HUD (GUI Stufe 1, 2026-10-23; Artist Input Truth `application.toggle_hud` = H): die
 # Zustandsanzeige des Fensters zeigen/verbergen. Ein Fenster-Command (Kontext `WINDOW_CONTEXT`):

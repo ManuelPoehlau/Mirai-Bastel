@@ -174,6 +174,7 @@ from .viewport.box_select import (
 )
 from .viewport import gizmo as _gizmo
 from . import transform_space
+from .viewport.look_controls import LIGHT_ROWS, LookRow, light_row
 from .viewport.gpu_picking import gpu_elements_in_rect, gpu_elements_in_region, gpu_pick_component
 from .viewport.picking import pick_component, pick_face, pick_object
 from .viewport.picking_cache import PickCache
@@ -272,6 +273,17 @@ _DISPLAY_COMMANDS = (
     commands.TOGGLE_REFERENCE_GHOST,
     commands.CYCLE_LIGHT_PRESET,
     commands.TOGGLE_LIGHT_SPACE,
+)
+
+#: AD-024 §8 (`PROVISIONAL`): the Look rows - choose a row, step its value. Light rows are view state
+#: (no Undo step), allowed at any time like the display keys.
+_LOOK_COMMANDS = (
+    commands.LOOK_ROW_PREV,
+    commands.LOOK_ROW_NEXT,
+    commands.LOOK_VALUE_DEC,
+    commands.LOOK_VALUE_INC,
+    commands.LOOK_VALUE_DEC_FINE,
+    commands.LOOK_VALUE_INC_FINE,
 )
 
 _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
@@ -581,6 +593,8 @@ class Application:
         # Viewport-State (kein Rendering in Gate 3)
         self.camera: OrbitCamera = OrbitCamera()
         self.display: DisplayState = DisplayState()
+        # AD-024 §8: the Look row the arrow keys edit (index into `LIGHT_ROWS`).
+        self._look_row_index = 0
 
         # WP-06 B8 (picking speed + occlusion, PROVISIONAL): screen-space pick
         # cache, refreshed lazily per camera/mesh state (`picking_cache.py`).
@@ -1990,6 +2004,8 @@ class Application:
             return True
         if command in _DISPLAY_COMMANDS:
             return self._display_command(command)
+        if command in _LOOK_COMMANDS:
+            return self._look_command(command)
         if command in _SOFT_COMMANDS:
             return self._soft_command(command)
         if command in SUBD_COMMANDS:
@@ -3378,6 +3394,59 @@ class Application:
         self._set_status(f"Display: {self.display.label}")
         return True
 
+    # -- Worklight and Look rows (AD-024 §8, `PROVISIONAL`) ------------------------------
+
+    def set_light(self, **changes) -> bool:
+        """The edit path of the Worklight (keys now, the GUI later): any `LightRig` field, clamped to
+        the Shading Lab's ranges (`DisplayState.set_light`). View state - no Undo step, not saved. True
+        = the light changed; the viewport gets it at once (a uniform update at draw time, AD-018)."""
+        before = self.display.light_rig
+        if self.display.set_light(**changes) == before:
+            return False
+        if self.viewport is not None:
+            self.viewport.set_light(self.display.light_rig)
+        return True
+
+    def step_light(self, row_id: str, direction: int, fine: bool = False) -> bool:
+        """One value step of the Look row `row_id` (`look_controls.LIGHT_ROWS`, the Lab's steps);
+        `direction` -1 / +1. A row that does not apply (fill off / coupled) is refused with a status
+        line. True = the light changed."""
+        row = light_row(row_id)
+        rig = self.display.light_rig
+        if not row.applies(rig):
+            self._set_status(f"Light: {row.label} inaktiv - {row.inactive_reason}")
+            return False
+        stepped = row.step(rig, direction, fine)
+        changed = self.set_light(
+            **{name: value for name, value in stepped.to_dict().items() if getattr(rig, name) != value}
+        )
+        suffix = "" if changed else " (Grenze)"
+        self._set_status(f"Light: {row.label} {row.format(self.display.light_rig)}{suffix}")
+        return changed
+
+    @property
+    def look_row(self) -> LookRow:
+        """The row the arrow keys edit."""
+        return LIGHT_ROWS[self._look_row_index]
+
+    @property
+    def look_text(self) -> str:
+        """The active row and its value (HUD, status line)."""
+        row = self.look_row
+        rig = self.display.light_rig
+        text = f"{row.label} {row.format(rig)}"
+        return text if row.applies(rig) else f"{text} (inaktiv)"
+
+    def _look_command(self, command: str) -> bool:
+        if command in (commands.LOOK_ROW_PREV, commands.LOOK_ROW_NEXT):
+            step = -1 if command == commands.LOOK_ROW_PREV else 1
+            self._look_row_index = (self._look_row_index + step) % len(LIGHT_ROWS)
+            self._set_status(f"Look: {self.look_text}")
+            return True
+        direction = -1 if command in (commands.LOOK_VALUE_DEC, commands.LOOK_VALUE_DEC_FINE) else 1
+        fine = command in (commands.LOOK_VALUE_DEC_FINE, commands.LOOK_VALUE_INC_FINE)
+        return self.step_light(self.look_row.id, direction, fine)
+
     def _subd_command(self, command: str) -> bool:
         """SubD preview keys (2026-10-23, `mirai.subdivision`, `PROVISIONAL`): view state only - no
         mesh change, no History, no Undo step. Refused visibly while an interaction owns the keys
@@ -3515,7 +3584,7 @@ class Application:
             return self.dispatch_command(command)
         if self._object_mode_refuses(command):
             return False
-        if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS):
+        if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS, *_LOOK_COMMANDS):
             # A Box/Paint drag owns the selection until the LMB release (like a gesture).
             return False
         if command == commands.LASSO_ARM:
@@ -3535,7 +3604,7 @@ class Application:
             return self._toggle_orientation()
         if command == commands.CANCEL:
             return self._cancel()
-        if command in _DISPLAY_COMMANDS:
+        if command in _DISPLAY_COMMANDS or command in _LOOK_COMMANDS:
             # Reine Darstellung: auch während eines Transforms erlaubt.
             return self.dispatch_command(command)
         if command in _SOFT_COMMANDS:

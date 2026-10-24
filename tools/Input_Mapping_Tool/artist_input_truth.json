@@ -451,6 +451,22 @@
       "notes": ""
     },
     {
+      "id": "display.look_row",
+      "label": "Look: choose the light value to edit",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "LookRowPrev / LookRowNext",
+      "notes": "No Artist binding yet. Engineering keys PROVISIONAL until the GUI: Up / Down (the Shading Lab's arrows), AD-024 §8, 2026-10-24"
+    },
+    {
+      "id": "display.look_value",
+      "label": "Look: change the chosen value",
+      "category": "Display",
+      "binding": "",
+      "runtime_ref": "LookValueDec / LookValueInc (Fine)",
+      "notes": "No Artist binding yet. Engineering keys PROVISIONAL until the GUI: Left / Right, Ctrl+Left / Ctrl+Right = fine (the Lab's Shift is the selection steps), AD-024 §8, 2026-10-24. Light drag not bound (LMB drag = selection)"
+    },
+    {
       "id": "modeling.vertex_move",
       "label": "Vertex Move",
       "category": "Modeling",
