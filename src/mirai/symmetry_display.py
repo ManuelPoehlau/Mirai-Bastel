@@ -245,6 +245,8 @@ class SymmetryDisplay:
         self._preview_synced = False
         #: Viewport-Vertrag H1: True = beim nächsten Frame `sync()` aufrufen, auch ohne Meldung.
         self.dirty = False
+        #: Shift+Ctrl+S: False = plane, markers and preview are not drawn (the data stays in sync).
+        self.visible = True
         self._outlined: Optional[SymmetryReport] = None
         #: Anzahl der Umriss-Neuberechnungen (Diagnose/Tests).
         self.plane_recomputes = 0
@@ -304,4 +306,6 @@ class SymmetryDisplay:
         )
 
     def draw(self, camera_uniforms) -> None:
+        if not self.visible:
+            return
         self.sink.draw(camera_uniforms)

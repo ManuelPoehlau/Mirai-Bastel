@@ -1102,13 +1102,56 @@ class Application:
 
         if kind not in PRIMITIVES:
             raise ValueError(f"unknown primitive {kind!r}")
+        return self._add_mesh_object(
+            lambda: PRIMITIVES[kind](), name or unique_object_name(self.scene, kind), f"Add {kind}"
+        )
+
+    def import_obj(self, path: str | Path) -> SceneObject | None:
+        """OBJ import (SPACE menu, `src/obj_files.py`): the file becomes a new editable object like an
+        Add-Mesh primitive (same Undo step, selection and status behaviour), named after the file.
+        Parse errors fly as exceptions (`ObjLoadError`, OSError) before the scene is touched."""
+        from .scene_factory import mesh_from_positions_and_faces
+
+        if self.viewport is None:
+            raise RuntimeError("import_obj() before init_scene()")
+        path = Path(path)
+
+        def build() -> Mesh:
+            from loaders.obj_loader import load_obj  # lazy - `examples/` on sys.path, see scene_factory
+
+            data = load_obj(path)
+            return mesh_from_positions_and_faces(data.vertices, data.faces)
+
+        return self._add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
+
+    def export_obj(self, path: str | Path) -> bool:
+        """OBJ export (SPACE menu): the edit object in world space (object transform applied), one
+        `o` record. True = written. Refused during an interaction like `save_scene_file`."""
+        from .obj_export import mesh_to_obj
+
         owner = self.interaction_owner
         if owner is not None:
-            self._set_status(f"Add {kind}: not while the {owner} interaction runs")
+            self._set_status(f"Export OBJ: not while the {owner} interaction runs")
+            return False
+        obj = self.scene.edit_object
+        path = Path(path)
+        text = mesh_to_obj(obj.mesh, obj.name, lambda p: object_space.to_world(obj, p))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+        self._set_status(f"Exported OBJ: {path}")
+        return True
+
+    def _add_mesh_object(self, build: Callable[[], Mesh], name: str, label: str) -> SceneObject | None:
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
             return None
+        mesh = build()
         scene, selection = self.scene, self.selection
         before = self._selection_snapshot()
-        obj = scene.add_object(PRIMITIVES[kind](), name=name or unique_object_name(scene, kind))
+        obj = scene.add_object(mesh, name=name)
         self.history.push(AddObjectCommand(scene, obj))
         selection.mode = SelectionMode.OBJECT
         selection.clear()
@@ -2194,6 +2237,16 @@ class Application:
         """Plane outline and problem markers (AD-SYM-04 A2), None without a
         `symmetry_overlay_type` (headless)."""
         return self._symmetry_display
+
+    def toggle_symmetry_display(self) -> bool | None:
+        """Shift+Ctrl+S: show / hide the symmetry plane and the seam / problem markers (display only,
+        the symmetry definition is untouched). Returns the new visibility, None without a display."""
+        display = self._symmetry_display
+        if display is None:
+            return None
+        display.visible = not display.visible
+        self._set_status(f"Symmetry display: {'on' if display.visible else 'off'}")
+        return display.visible
 
     def _symmetry_display_deferred(self) -> bool:
         # Plan A3 of WP-SYM-LAB-03 (`mirai.symmetry_display`): while W/E/R/T is armed or running

@@ -147,6 +147,11 @@ Scope (binding, see the handoffs):
   menu (window level like Shift+A; bare M stays the Morph Lab bridge): Mirror copy / Pair selected across
   X/Y/Z = 0, Break pair, Re-sync pair - mode `4`, on the selected objects (`Application.mirror_copy`, ...).
   A paired object's partner follows W/E/R and the gizmo mirrored (`install_handlers(..., mirror_menu=...)`).
+- Symmetry display (Shift+Ctrl+S, window level): shows / hides the symmetry plane and the seam / problem
+  markers (`Application.toggle_symmetry_display`; display only, the definition stays).
+- OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): rows in the SPACE menu - "OBJ exportieren"
+  writes the edit object (world space) to `obj/`, "OBJ importieren: <name>" adds a file of `obj/` as a
+  new editable object.
 - Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
   SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
   speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest
@@ -272,6 +277,7 @@ from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
 from hud import Hud  # noqa: E402
 from morph_bridge import send_to_morph_lab  # noqa: E402
+from obj_files import ObjFiles  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
 from scene_menu import (  # noqa: E402
     SceneMenu,
@@ -359,6 +365,16 @@ def is_save_key(inp: Input | None) -> bool:
         and inp.kind == "key"
         and inp.value == "s"
         and inp.modifiers == frozenset({"ctrl"})
+    )
+
+
+def is_symmetry_display_key(inp: Input | None) -> bool:
+    """Shift+Ctrl+S (show / hide the symmetry plane and seam markers): exactly Shift and Ctrl."""
+    return (
+        inp is not None
+        and inp.kind == "key"
+        and inp.value == "s"
+        and inp.modifiers == frozenset({"ctrl", "shift"})
     )
 
 
@@ -504,6 +520,9 @@ def install_handlers(
             fallback = (window.width / 2, window.height / 2)
             cx, cy = cursor if cursor is not None else fallback
             menu.open(cx, cy, window.width, window.height)
+            return pyglet.event.EVENT_HANDLED
+        if is_symmetry_display_key(inp):
+            app.toggle_symmetry_display()
             return pyglet.event.EVENT_HANDLED
         if save is not None and is_save_key(inp):
             save()
@@ -712,6 +731,7 @@ def main() -> None:
     app = Application()
     app.gizmo_enabled = True  # this window draws the gizmo (`draw_gizmo`); Labs on Application do not
     files = SceneFiles(app, gl_types=GL_TYPES)
+    obj_files = ObjFiles(app)
 
     entries = scene_entries()
     arg = sys.argv[1] if len(sys.argv) > 1 else None
@@ -743,6 +763,8 @@ def main() -> None:
     # Temporary scene loader (PROVISIONAL): SPACE opens it at the cursor; the
     # scene-file rows come first and are re-read on every open.
     def load(name: str) -> bool:
+        if obj_files.handles(name):
+            return obj_files.activate(name)
         if files.handles(name):
             return files.activate(name)
         loaded = load_named_scene(app, name, GL_TYPES)
@@ -751,15 +773,17 @@ def main() -> None:
         return loaded
 
     def add(name: str) -> bool:
+        if obj_files.handles(name):
+            return obj_files.refuse_add(name)
         if files.handles(name):
             return files.refuse_add(name)
         return add_named_reference(app, name)
 
     menu = SceneMenu(
-        files.entries() + entries,
+        files.entries() + obj_files.entries() + entries,
         load=load,
         add=add,
-        refresh=lambda: files.entries() + scene_entries(),
+        refresh=lambda: files.entries() + obj_files.entries() + scene_entries(),
     )
     add_menu = SceneMenu(
         add_mesh_entries(),

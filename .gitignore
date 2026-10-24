@@ -54,3 +54,6 @@ playground/.session_state.json.tmp
 
 # User scene files (src/scene_files.py, Ctrl+S)
 scenes/
+
+# OBJ import/export folder (SPACE menu)
+obj/
