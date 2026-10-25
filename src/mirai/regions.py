@@ -44,6 +44,30 @@ def lost_count(mesh: Mesh, name: str) -> int:
     return 0 if region is None else sum(1 for f in region.faces if not mesh.is_valid_face(f))
 
 
+def region_of_face(mesh: Mesh, face: FaceId, prefer: str | None = None) -> str | None:
+    """The region a face belongs to: `prefer` (the active slot) if it contains the face, else the first region that
+    does (regions may overlap), else None."""
+    regions = mesh.face_regions
+    if regions is None:
+        return None
+    if prefer is not None:
+        chosen = regions.get(prefer)
+        if chosen is not None and face in chosen.faces:
+            return prefer
+    return next((r.name for r in regions.regions if face in r.faces), None)
+
+
+def interior_vertices(mesh: Mesh, faces: Iterable[FaceId]) -> set[VertexId]:
+    """The vertices of `faces` that no other face touches: hiding them hides exactly `faces` and leaves every
+    other face visible (a face is hidden when one of its corners is)."""
+    face_set = set(faces)
+    border: set[VertexId] = set()
+    for f in mesh.all_face_ids():
+        if f not in face_set:
+            border.update(mesh.face_vertices(f))
+    return region_vertices(mesh, face_set) - border
+
+
 def region_vertices(mesh: Mesh, faces: Iterable[FaceId]) -> set[VertexId]:
     out: set[VertexId] = set()
     for f in faces:

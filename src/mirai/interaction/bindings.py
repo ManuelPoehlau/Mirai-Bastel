@@ -290,6 +290,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_mouse("LEFT", "shift"), cmd.SELECT_ADD)
     bs.set_default(_mouse("LEFT", "ctrl"), cmd.SELECT_REMOVE)
     bs.set_default(_mouse("LEFT", "alt"), cmd.SELECT_TOGGLE)
+    # Saved regions (Manu 2026-10-25): Shift+Ctrl+click isolates the clicked face's region / inverts / shows all.
+    bs.set_default(_mouse("LEFT", "ctrl", "shift"), cmd.REGION_CLICK)
     bs.set_default(_drag("LEFT", "alt"), cmd.ORBIT)
     bs.set_default(_drag("LEFT", "alt", "shift"), cmd.PAN)
     # 2026-10-15 (Manu): Box/Paint und Tweak - siehe Moduldocstring.

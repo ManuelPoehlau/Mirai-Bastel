@@ -341,6 +341,11 @@ class RenderMesh:
         Vertices anzufassen. Eine Face mit einer versteckten Ecke ist ganz versteckt. Leere Mengen zeigen alles. Patcht nur die betroffenen Slots (kein Rebuild);
         `content_revision` macht den GPU-Picker-Cache ungültig."""
         hidden, hidden_faces = frozenset(vertices), frozenset(faces)
+        pending = self._watch.peek()
+        if pending.vertices or pending.edges or pending.faces:
+            # The mesh changed since the last sync: the slot layout must catch up before slots are patched.
+            self.mark_topology_dirty()
+            self.sync()
         changed = self._hidden ^ hidden
         changed_faces = self._hidden_faces ^ hidden_faces
         if not changed and not changed_faces:

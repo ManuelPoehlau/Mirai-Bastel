@@ -176,6 +176,10 @@ REGION_SELECT_ADD = "RegionSelectAdd"
 REGION_ISOLATE = "RegionIsolate"
 REGION_MASK = "RegionMask"
 REGION_DELETE = "RegionDelete"
+# REGION_CLICK (Manu 2026-10-25): Shift+Ctrl+Klick. On a face of a saved region it isolates that region; on the
+# isolated region it inverts the visibility (the rest becomes visible, the region's interior hidden); in empty
+# space it shows everything. A click-only gesture: Shift+Ctrl has no drag binding, so it never starts a Tweak.
+REGION_CLICK = "RegionClick"
 
 # RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):
 # global; mit genau einem ausgewählten Vertex öffnet es die Re-Symmetrize-Vorschau (Plan einmal

@@ -4612,6 +4612,47 @@ class Application:
             return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
         return self._mask_vertices(vertices)
 
+    def _pick_face_at(self, x: float, y: float):
+        """The face under (x, y) whatever the selection mode is (GPU ID buffer, else the CPU picker), else None."""
+        face = self._gpu_pick(SelectionMode.FACE, x, y)
+        if face is not _CPU:
+            return face
+        return pick_face(
+            self._edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
+            cache=self._pick_cache,
+        )
+
+    def _region_click(self, x: float, y: float) -> bool:
+        """Shift+Ctrl+click (`commands.REGION_CLICK`): a face of region R isolates R; the already isolated R inverts
+        the visibility (the rest becomes visible, only R's interior is hidden); empty space shows everything. View
+        state only: no History, no selection or mesh change. Ignored in object mode and during a gesture."""
+        if self.viewport is None or self._transform_key is not None or self.selection.mode is SelectionMode.OBJECT:
+            return False
+        mesh = self.scene.mesh
+        face = self._pick_face_at(x, y)
+        if face is None:
+            return self._hide_command(commands.SHOW_ALL)
+        name = face_regions_api.region_of_face(mesh, face, prefer=self.active_region)
+        if name is None:
+            self._set_status("Face has no saved region (Ctrl+G assigns the selection)")
+            return False
+        faces = face_regions_api.live_faces(mesh, name)
+        vertices = face_regions_api.region_vertices(mesh, faces)
+        hidden = self._hidden
+        isolated = hidden.vertices() == frozenset(mesh.all_vertex_ids()) - vertices
+        if not isolated:
+            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
+        interior = face_regions_api.interior_vertices(mesh, faces)
+        hidden.show_all()
+        if interior:
+            hidden.hide(interior)
+        self._hidden_push()
+        self._set_status(
+            f"{name} hidden, the rest is visible (Shift+Ctrl+click on empty space shows all)" if interior
+            else f"{name} has no interior to hide; everything is visible"
+        )
+        return True
+
     def _region_edit(self, command: str, name: str) -> bool:
         """Assign / add / remove the faces of the selection (all corners selected) to / from region `name`."""
         mesh = self.scene.mesh
@@ -5605,6 +5646,13 @@ class Application:
         return self._navigate(commands.PAN if self._shift_held else commands.ORBIT, dx, dy)
 
     def _execute_click(self, click: Click) -> bool:
+        if click.command == commands.REGION_CLICK:
+            if self._resym_plan is not None:
+                self._resymmetrize_refuse()
+                return False
+            if self._gate_refuses(click.command):
+                return False
+            return self._region_click(click.x, click.y)
         if click.command in _SELECT_COMMANDS:
             if self._resym_plan is not None:
                 self._resymmetrize_refuse()
