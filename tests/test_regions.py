@@ -1,8 +1,9 @@
-"""Saved regions / polygroups (`mirai.regions`, AD-REGIONS-01; PROVISIONAL), Slice 1+2: no inheritance.
+"""Saved regions / polygroups (`mirai.regions`, AD-REGIONS-01; PROVISIONAL).
 
-The pure functions, then the app path: Ctrl+G assigns the selection's faces, Undo / Redo restore the value,
-Alt+G selects (never hidden faces), Ctrl+Alt+H / Ctrl+Alt+M isolate / mask the region, topology edits leave
-regions alone and the status reports what was lost, the value rides through save/load and object switches."""
+The pure functions, then the app path: Ctrl+G makes the selection a new group (never overwrites one, a face is in
+one group), Ctrl+Alt+N saves the group as a named set, Undo / Redo restore the value, Alt+G selects (never hidden
+faces), Ctrl+Alt+H / Ctrl+Alt+M isolate / mask the whole group, the status reports what was lost, the value rides
+through save/load and object switches."""
 
 from __future__ import annotations
 
@@ -28,7 +29,8 @@ def _key(value: str, *modifiers: str) -> Input:
 
 
 NEXT, PREV = _key("g", "shift"), _key("g", "shift", "alt")
-ASSIGN, ADD, REMOVE = _key("g", "ctrl"), _key("g", "ctrl", "shift"), _key("g", "ctrl", "alt")
+NEW, ADD, REMOVE = _key("g", "ctrl"), _key("g", "ctrl", "shift"), _key("g", "ctrl", "alt")
+NAME = _key("n", "ctrl", "alt")
 SELECT, SELECT_ADD = _key("g", "alt"), _key("g", "ctrl", "alt", "shift")
 ISOLATE, MASK, DELETE = _key("h", "ctrl", "alt"), _key("m", "ctrl", "alt"), _key("backspace", "ctrl", "alt")
 HIDE, SHOW_ALL = _key("h", "ctrl"), _key("h", "alt")
@@ -61,7 +63,7 @@ def _select_faces(app, count: int = 6, start: int = 100):
     return faces
 
 
-def _stored(app, name: str = "Brow"):
+def _stored(app, name: str = "Group 1"):
     region = api.region_named(app.scene.mesh, name)
     return None if region is None else region.faces
 
@@ -78,9 +80,38 @@ def test_assign_add_remove_delete_keep_order_and_none_without_regions():
     assert regions.get("Brow").faces == frozenset(faces[:2]) | frozenset(faces[3:])
     regions = api.removed(regions, "Brow", faces[:1])
     assert faces[0] not in regions.get("Brow").faces
+    assert api.removed(regions, "Jaw", faces[2:3]).get("Jaw") is None  # an emptied group is gone
     assert api.removed(None, "Brow", faces) is None
     assert api.deleted(api.deleted(regions, "Brow"), "Jaw") is None
     assert [r.name for r in api.assigned(regions, "Brow", faces[:1]).regions] == ["Brow", "Jaw"]
+
+
+def test_grouped_takes_faces_from_other_groups_and_drops_emptied_ones():
+    faces = _grid(2).all_face_ids()
+    regions = api.grouped(None, "Group 1", faces[:2])
+    regions = api.grouped(regions, "Group 2", faces[1:3])
+    assert regions.get("Group 1").faces == {faces[0]}
+    assert regions.get("Group 2").faces == {faces[1], faces[2]}
+    regions = api.grouped(regions, "Group 2", faces[:1], add=True)
+    assert regions.get("Group 1") is None
+    assert regions.get("Group 2").faces == set(faces[:3])
+    assert api.grouped(regions, "Group 2", faces[3:]).get("Group 2").faces == {faces[3]}
+
+
+def test_new_group_names_count_up_and_set_names_cycle():
+    faces = _grid(2).all_face_ids()
+    assert api.new_group_name(None) == "Group 1"
+    regions = api.grouped(api.grouped(None, "Group 1", faces[:1]), "Group 3", faces[1:2])
+    assert api.new_group_name(regions) == "Group 4"
+    assert api.next_name(regions, "Group 1") == "Brow"
+    regions = api.renamed(regions, "Group 1", "Brow")
+    assert [r.name for r in regions.regions] == ["Brow", "Group 3"]
+    assert api.next_name(regions, "Group 3") == "Upper Lip"  # Brow is taken
+    assert api.next_name(regions, "Brow") == "Upper Lip"
+    regions = api.renamed(regions, "Group 3", "Jaw")
+    assert api.next_name(regions, "Jaw") == "Group 1"  # after the last set name: back to an automatic name
+    assert api.renamed(regions, "Brow", "Jaw") is regions  # a taken name is refused
+    assert api.slot_index("Brow") != api.slot_index("Group 1") != api.slot_index("Group 2")
 
 
 def test_live_and_lost_faces_filter_dead_ids_on_read_only():
@@ -109,34 +140,68 @@ def test_faces_from_vertices_needs_all_corners_and_elements_convert():
 # -- App path ------------------------------------------------------------------------
 
 
-def test_assign_is_one_undo_step_and_restores_exactly(app):
+def test_new_group_is_one_undo_step_and_restores_exactly(app):
     faces = _select_faces(app)
-    assert app.key_press(ASSIGN)
+    assert app.key_press(NEW)
     assert _stored(app) == frozenset(faces)
-    assert "Brow" in app.status_message
+    assert "Group 1" in app.status_message and app.active_region == "Group 1"
     assert app.key_press(UNDO)
-    assert app.scene.mesh.face_regions is None
+    assert app.scene.mesh.face_regions is None and app.active_region is None
     assert app.key_press(REDO)
     assert _stored(app) == frozenset(faces)
 
 
-def test_slots_cycle_and_each_slot_is_its_own_region(app):
+def test_ctrl_g_always_makes_a_new_group_and_never_overwrites_one(app):
+    """Manu 2026-10-25: a second group must not need a slot switch first, or it overwrites the first one."""
     first = _select_faces(app, 4, 100)
-    app.key_press(ASSIGN)
-    app.key_press(NEXT)
-    assert app.active_region == "Upper Lip"
+    app.key_press(NEW)
     second = _select_faces(app, 4, 200)
-    app.key_press(ASSIGN)
-    assert _stored(app, "Upper Lip") == frozenset(second)
-    assert _stored(app, "Brow") == frozenset(first)
-    app.key_press(PREV)
-    assert app.active_region == "Brow"
-    assert app.key_press(PREV) and app.active_region == "Region 9"  # wraps
+    app.key_press(NEW)
+    assert _stored(app, "Group 1") == frozenset(first)
+    assert _stored(app, "Group 2") == frozenset(second)
+    assert app.active_region == "Group 2"
+    assert api.region_named(app.scene.mesh, "Brow") is None  # no set name unless the artist saves one
+
+
+def test_new_group_takes_its_faces_out_of_the_old_group(app):
+    first = sorted(_select_faces(app, 4, 100))
+    app.key_press(NEW)
+    app.selection.set(set(first[:2]))
+    app.key_press(NEW)
+    assert _stored(app, "Group 1") == frozenset(first[2:])
+    assert _stored(app, "Group 2") == frozenset(first[:2])
+    app.selection.set(set(first[2:]))
+    app.key_press(NEW)
+    assert _stored(app, "Group 1") is None  # emptied, gone
+    assert [r.name for r in app.scene.mesh.face_regions.regions] == ["Group 2", "Group 3"]
+
+
+def test_next_and_prev_cycle_the_existing_groups(app):
+    _select_faces(app, 4, 100)
+    app.key_press(NEW)
+    _select_faces(app, 4, 200)
+    app.key_press(NEW)
+    assert app.key_press(NEXT) and app.active_region == "Group 1"  # wraps
+    assert app.key_press(NEXT) and app.active_region == "Group 2"
+    assert app.key_press(PREV) and app.active_region == "Group 1"
+
+
+def test_name_saves_the_active_group_as_a_set_and_cycles(app):
+    faces = _select_faces(app)
+    app.key_press(NEW)
+    assert app.key_press(NAME)
+    assert _stored(app, "Brow") == frozenset(faces) and _stored(app) is None
+    assert app.active_region == "Brow" and "saved as Brow" in app.status_message
+    assert app.key_press(NAME) and app.active_region == "Upper Lip"
+    app.key_press(UNDO)
+    assert _stored(app, "Brow") == frozenset(faces)
+    app.key_press(UNDO)
+    assert _stored(app) == frozenset(faces)
 
 
 def test_add_and_remove_change_the_active_region(app):
     faces = sorted(_select_faces(app, 4, 100))
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     more = _select_faces(app, 2, 300)
     assert app.key_press(ADD)
     assert _stored(app) == frozenset(faces) | frozenset(more)
@@ -151,7 +216,7 @@ def test_vertex_selection_assigns_the_faces_whose_corners_are_all_selected(app):
     app.selection.mode = SelectionMode.VERTEX
     app.selection.set(set(mesh.face_vertices(face)))
     app.viewport.on_selection_changed()
-    assert app.key_press(ASSIGN)
+    assert app.key_press(NEW)
     assert face in _stored(app)
     assert all(set(mesh.face_vertices(f)) <= set(mesh.face_vertices(face)) for f in _stored(app))
 
@@ -159,7 +224,7 @@ def test_vertex_selection_assigns_the_faces_whose_corners_are_all_selected(app):
 def test_select_region_writes_the_normal_selection_in_each_mode(app):
     mesh = app.scene.mesh
     faces = _select_faces(app)
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     app.selection.clear()
     assert app.key_press(SELECT)
     assert app.selection.faces == faces
@@ -180,7 +245,7 @@ def test_select_region_writes_the_normal_selection_in_each_mode(app):
 def test_selecting_a_region_never_selects_hidden_faces(app):
     mesh = app.scene.mesh
     faces = sorted(_select_faces(app))
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     victim = mesh.face_vertices(faces[0])[0]
     app._hidden.hide([victim])
     app._hidden_push()
@@ -190,10 +255,23 @@ def test_selecting_a_region_never_selects_hidden_faces(app):
     assert not any(app._hidden.is_hidden_face(mesh, f) for f in app.selection.faces)
 
 
+def test_isolate_and_mask_act_on_the_whole_group_even_partly_hidden(app):
+    mesh = app.scene.mesh
+    faces = sorted(_select_faces(app))
+    app.key_press(NEW)
+    app._hidden.hide([mesh.face_vertices(faces[0])[0]])
+    app._hidden_push()
+    verts = api.region_vertices(mesh, faces)
+    assert app.key_press(MASK)
+    assert app._mask.full() == frozenset(verts)
+    assert app.key_press(ISOLATE)
+    assert app._hidden.vertices() == frozenset(mesh.all_vertex_ids()) - verts
+
+
 def test_isolate_and_mask_by_region_use_its_vertices_and_write_no_history(app):
     mesh = app.scene.mesh
     faces = _select_faces(app)
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     app.selection.clear()
     depth = len(app.history.undo_stack) if hasattr(app.history, "undo_stack") else None
     verts = api.region_vertices(mesh, faces)
@@ -221,17 +299,19 @@ def test_every_region_command_has_its_own_chord():
         assert bindings.command_for(chord) in region_commands
 
 
-def test_empty_region_commands_are_refused_with_a_hint(app):
+def test_group_commands_without_groups_are_refused_with_a_hint(app):
     assert not app.key_press(SELECT)
-    assert "empty" in app.status_message
+    assert "Ctrl+G" in app.status_message
     assert not app.key_press(DELETE)
+    assert not app.key_press(NEXT)
+    assert not app.key_press(NAME)
     app.selection.clear()
-    assert not app.key_press(ADD)
+    assert not app.key_press(NEW)
 
 
 def test_delete_region_is_undoable(app):
     _select_faces(app)
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     assert app.key_press(DELETE)
     assert app.scene.mesh.face_regions is None
     app.key_press(UNDO)
@@ -241,23 +321,22 @@ def test_delete_region_is_undoable(app):
 def test_deleting_faces_keeps_the_stored_value_and_undo_makes_the_region_whole(app):
     mesh = app.scene.mesh
     faces = sorted(_select_faces(app, 6))
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     app.selection.set({faces[0]})
     assert app.key_press(_key("delete"))
-    assert api.lost_count(mesh, "Brow") == 1
-    assert faces[0] in mesh.face_regions.get("Brow").faces
+    assert api.lost_count(mesh, "Group 1") == 1
+    assert faces[0] in mesh.face_regions.get("Group 1").faces
     app.key_press(NEXT)
-    app.key_press(PREV)
     assert "lost" in app.status_message
     app.key_press(UNDO)
-    assert api.lost_count(mesh, "Brow") == 0 and len(api.live_faces(mesh, "Brow")) == 6
+    assert api.lost_count(mesh, "Group 1") == 0 and len(api.live_faces(mesh, "Group 1")) == 6
 
 
 def test_topology_edits_do_not_carry_regions_along_yet(app):
     """AD-REGIONS-01 §1.6: no inheritance in this slice. Pinned so that Slice 3 has to flip it on purpose."""
     mesh = app.scene.mesh
     faces = _select_faces(app, 4)
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     before = mesh.face_regions
     edge = next(e for e in mesh.all_edge_ids() if set(mesh.edge_faces(e)) & faces)
     app.selection.mode = SelectionMode.EDGE
@@ -271,28 +350,31 @@ def test_topology_edits_do_not_carry_regions_along_yet(app):
 
 def test_regions_ride_through_save_and_load(app):
     faces = _select_faces(app)
-    app.key_press(ASSIGN)
+    app.key_press(NEW)
     restored = scene_from_dict(scene_to_dict(app.scene))
     assert restored.mesh.face_regions == app.scene.mesh.face_regions
-    assert restored.mesh.face_regions.get("Brow").faces == frozenset(faces)
+    assert restored.mesh.face_regions.get("Group 1").faces == frozenset(faces)
 
 
-def test_each_edit_object_keeps_its_own_regions_and_slot(app):
-    _select_faces(app)
-    app.key_press(ASSIGN)
+def test_each_edit_object_keeps_its_own_regions_and_active_group(app):
+    _select_faces(app, 4, 100)
+    app.key_press(NEW)
+    _select_faces(app, 4, 200)
+    app.key_press(NEW)
     app.key_press(NEXT)
     first = app.scene.edit_object_id
     other = app.add_primitive("cube")
     app._set_edit_object(other.id if hasattr(other, "id") else other)
-    assert app.scene.mesh.face_regions is None and app.active_region == "Brow"
+    assert app.scene.mesh.face_regions is None and app.active_region is None
     app._set_edit_object(first)
-    assert app.scene.mesh.face_regions is not None and app.active_region == "Upper Lip"
+    assert app.scene.mesh.face_regions is not None and app.active_region == "Group 1"
 
 
-def test_scene_load_resets_the_slot(app):
-    app.key_press(NEXT)
+def test_scene_load_resets_the_active_group(app):
+    _select_faces(app)
+    app.key_press(NEW)
     app.init_scene("cube")
-    assert app.active_region == "Brow" and app.scene.mesh.face_regions is None
+    assert app.active_region is None and app.scene.mesh.face_regions is None
 
 
 def test_symmetry_assign_takes_the_mirror_partners(app):
@@ -306,7 +388,7 @@ def test_symmetry_assign_takes_the_mirror_partners(app):
     face = next(f for f in mesh.all_face_ids() if index.face_partner(f) not in (None, f))
     app.selection.set({face})
     app.viewport.on_selection_changed()
-    assert app.key_press(ASSIGN)
+    assert app.key_press(NEW)
     assert {face, index.face_partner(face)} <= _stored(app)
 
 
@@ -315,6 +397,6 @@ def test_assigning_a_whole_large_mesh_region_is_cheap(app):
     app.selection.set(set(mesh.all_face_ids()))
     app.viewport.on_selection_changed()
     started = time.perf_counter()
-    assert app.key_press(ASSIGN)
+    assert app.key_press(NEW)
     assert time.perf_counter() - started < 5.0
-    assert len(api.live_faces(mesh, "Brow")) == len(mesh.all_face_ids())
+    assert len(api.live_faces(mesh, "Group 1")) == len(mesh.all_face_ids())

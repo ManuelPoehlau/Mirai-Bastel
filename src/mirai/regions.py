@@ -12,21 +12,25 @@ come with it). This module holds the pure functions on top of it - the Core know
   `inherit_children_into`). A face without a parent, or with parents in different regions, joins none - fail
   closed (AD-REGIONS-01 §1.6). `lost_count` tells how many faces a region lost since it was assigned.
 - A region is **not a selection**: selecting it writes the normal `Selection` of the active mode.
-- The app has no text input, so regions are named from `PRESET_NAMES` slots.
+- **Group first, name later (Manu 2026-10-25):** a new group gets an automatic name (`Group N`, `new_group_name`) and
+  never overwrites another one; a face belongs to one group (`grouped` takes it out of the others, a group that becomes
+  empty is gone). Saving a group as a named set renames it (`renamed`); the app has no text input, so the names come
+  from `SET_NAMES` (`next_name` cycles them).
 """
 
 from __future__ import annotations
 
 import colorsys
+import re
 from collections import defaultdict
 from typing import Iterable, Mapping
 
 from core import EdgeId, FaceId, FaceRegion, FaceRegions, Mesh, SelectionMode, VertexId
 
-#: The slots the artist cycles through (Shift+G): the face regions of the Character workflow, then spares.
-PRESET_NAMES: tuple[str, ...] = (
-    "Brow", "Upper Lip", "Lower Lip", "Eyelids", "Jaw", "Region 6", "Region 7", "Region 8", "Region 9",
-)
+#: The names a group can be saved under (the face regions of the Character workflow); no text input yet.
+SET_NAMES: tuple[str, ...] = ("Brow", "Upper Lip", "Lower Lip", "Eyelids", "Jaw")
+
+_GROUP_NAME = re.compile(r"Group (\d+)$")
 
 
 #: Region colours (Manu 2026-10-25, ZBrush-like): a distinct, desaturated colour per region. The hue steps by the golden
@@ -38,16 +42,41 @@ _GOLDEN_ANGLE = 0.38196601125010515  # 1 - 1/phi, as a fraction of the colour ci
 
 
 def region_color(index: int) -> tuple[float, float, float]:
-    """The colour of preset slot `index` (also beyond the preset count: the sequence just goes on)."""
+    """The colour of colour slot `index` (`slot_index`); the sequence has no end."""
     hue = (0.08 + index * _GOLDEN_ANGLE) % 1.0
     return colorsys.hsv_to_rgb(hue, TINT_SATURATION, TINT_VALUE)
 
 
 def slot_index(name: str) -> int:
-    """The slot of a region name: its place in `PRESET_NAMES`, else after them by name order (stable)."""
-    if name in PRESET_NAMES:
-        return PRESET_NAMES.index(name)
-    return len(PRESET_NAMES) + sum(ord(c) for c in name)
+    """The colour slot of a region name, stable and distinct: a set name's place in `SET_NAMES`, `Group N` after
+    them, any other name (older files: "Region 6") further on by its characters."""
+    if name in SET_NAMES:
+        return SET_NAMES.index(name)
+    match = _GROUP_NAME.match(name)
+    if match:
+        return len(SET_NAMES) + int(match.group(1))
+    return 1000 + sum(ord(c) for c in name)
+
+
+def new_group_name(regions: FaceRegions | None) -> str:
+    """`Group N` with N one above every `Group` number in `regions` (a deleted number is not handed out again while
+    a higher one exists, so a colour does not jump to another group)."""
+    numbers = [int(m.group(1)) for r in (regions.regions if regions else ()) if (m := _GROUP_NAME.match(r.name))]
+    return f"Group {max(numbers, default=0) + 1}"
+
+
+def next_name(regions: FaceRegions | None, name: str) -> str:
+    """The name Ctrl+Alt+N gives region `name`: the next set name no other region has; after the last one the group
+    goes back to an automatic `Group N` (`name` itself if it is one already). Returns `name` when nothing is free."""
+    taken = {r.name for r in (regions.regions if regions else ()) if r.name != name}
+    cycle = [n for n in SET_NAMES if n not in taken]
+    if name in SET_NAMES:
+        later = [n for n in cycle if SET_NAMES.index(n) > SET_NAMES.index(name)]
+        if later:
+            return later[0]
+        others = FaceRegions(tuple(r for r in regions.regions if r.name != name)) if regions else None
+        return new_group_name(others)
+    return cycle[0] if cycle else name
 
 
 def region_tints(mesh: Mesh) -> dict[FaceId, tuple[float, float, float]]:
@@ -84,8 +113,8 @@ def lost_count(mesh: Mesh, name: str) -> int:
 
 
 def region_of_face(mesh: Mesh, face: FaceId, prefer: str | None = None) -> str | None:
-    """The region a face belongs to: `prefer` (the active slot) if it contains the face, else the first region that
-    does (regions may overlap), else None."""
+    """The region a face belongs to: `prefer` (the active group) if it contains the face, else the first region that
+    does (older files may hold overlapping regions), else None."""
     regions = mesh.face_regions
     if regions is None:
         return None
@@ -165,11 +194,37 @@ def added(regions: FaceRegions | None, name: str, faces: Iterable[FaceId]) -> Fa
 
 
 def removed(regions: FaceRegions | None, name: str, faces: Iterable[FaceId]) -> FaceRegions | None:
-    """`faces` leave region `name`; a region that becomes empty stays (an empty named slot is valid)."""
+    """`faces` leave region `name`; a region that becomes empty is gone (an empty group means nothing)."""
     old = regions.get(name) if regions else None
     if old is None:
         return regions
-    return _replace(regions, name, old.faces - frozenset(faces))
+    rest = old.faces - frozenset(faces)
+    return _replace(regions, name, rest if rest else None)
+
+
+def grouped(
+    regions: FaceRegions | None, name: str, faces: Iterable[FaceId], *, add: bool = False
+) -> FaceRegions | None:
+    """Polygroup semantics: `faces` become group `name` (or join it, `add`) and leave every other region; a region
+    that becomes empty is gone. A new `name` goes to the end of the list."""
+    chosen = frozenset(faces)
+    kept = []
+    for r in regions.regions if regions else ():
+        if r.name == name:
+            kept.append(FaceRegion(name, (r.faces | chosen) if add else chosen))
+        elif r.faces - chosen:
+            kept.append(r if not (r.faces & chosen) else FaceRegion(r.name, r.faces - chosen))
+    if not any(r.name == name for r in kept) and chosen:
+        kept.append(FaceRegion(name, chosen))
+    kept = [r for r in kept if r.faces]
+    return FaceRegions(tuple(kept)) if kept else None
+
+
+def renamed(regions: FaceRegions | None, old: str, new: str) -> FaceRegions | None:
+    """Region `old` is called `new` (same place, same faces). Unchanged when `old` is unknown or `new` is taken."""
+    if regions is None or regions.get(old) is None or old == new or regions.get(new) is not None:
+        return regions
+    return FaceRegions(tuple(FaceRegion(new, r.faces) if r.name == old else r for r in regions.regions))
 
 
 def deleted(regions: FaceRegions | None, name: str) -> FaceRegions | None:

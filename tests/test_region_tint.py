@@ -25,7 +25,7 @@ def _key(value: str, *modifiers: str) -> Input:
     return Input("key", value, frozenset(modifiers))
 
 
-ASSIGN, TOGGLE, UNDO = _key("g", "ctrl"), _key("d", "ctrl", "alt"), _key("z", "ctrl")
+NEW, TOGGLE, UNDO = _key("g", "ctrl"), _key("d", "ctrl", "alt"), _key("z", "ctrl")
 
 
 def _grid(n: int = 3) -> Mesh:
@@ -47,7 +47,7 @@ def _row(rm: RenderMesh, face) -> list[float]:
 
 
 def test_every_slot_has_its_own_desaturated_never_black_colour():
-    colors = [api.region_color(i) for i in range(len(api.PRESET_NAMES) + 6)]
+    colors = [api.region_color(i) for i in range(len(api.SET_NAMES) + 12)]
     assert len(set(colors)) == len(colors)
     hues = sorted(colorsys.rgb_to_hsv(*c)[0] for c in colors)
     gaps = [b - a for a, b in zip(hues, hues[1:])]
@@ -66,7 +66,7 @@ def test_region_tints_use_the_slot_colour_later_regions_win_and_dead_ids_stay():
     ))
     tints = api.region_tints(mesh)
     assert tints[faces[0]] == api.region_color(0)
-    assert tints[faces[3]] == api.region_color(api.PRESET_NAMES.index("Jaw"))  # overlap: the later one
+    assert tints[faces[3]] == api.region_color(api.SET_NAMES.index("Jaw"))  # overlap: the later one
     assert faces[6] not in tints
     mesh.delete_faces([faces[0]])
     assert faces[0] in api.region_tints(mesh)  # a revived face comes back coloured
@@ -148,7 +148,7 @@ def _assign(app, count=6, start=100):
     faces = set(app.scene.mesh.all_face_ids()[start:start + count])
     app.selection.set(faces)
     app.viewport.on_selection_changed()
-    assert app.key_press(ASSIGN)
+    assert app.key_press(NEW)
     return faces
 
 
@@ -156,7 +156,7 @@ def test_assign_undo_and_scene_load_update_the_viewport_colours(app):
     faces = _assign(app)
     app.update_viewport(0.016)
     assert set(app.viewport.render_mesh._tints) == faces
-    assert all(c == api.region_color(0) for c in app.viewport.render_mesh._tints.values())
+    assert all(c == api.region_color(api.slot_index("Group 1")) for c in app.viewport.render_mesh._tints.values())
     app.key_press(UNDO)
     app.update_viewport(0.016)
     assert app.viewport.render_mesh._tints == {}
@@ -194,13 +194,13 @@ def test_each_edit_object_gets_its_own_colours(app):
     assert app.viewport.render_mesh._tints
 
 
-def test_hud_row_shows_the_slot_faces_and_colour_state(app):
+def test_hud_row_shows_the_group_faces_and_colour_state(app):
     from hud import hud_rows, hud_state
     from hud import key_hints
 
     _assign(app)
     row = {r.label: r for r in hud_rows(hud_state(app), key_hints(app.bindings))}["Region"]
-    assert row.value == "Brow · 6 faces · colours on" and row.on
+    assert row.value == "Group 1 · 6 faces · 1 group · colours on" and row.on
     app.key_press(TOGGLE)
     row = {r.label: r for r in hud_rows(hud_state(app), key_hints(app.bindings))}["Region"]
     assert "colours off" in row.value
@@ -227,14 +227,14 @@ def test_subd_surface_faces_take_the_colour_of_their_control_face():
     app.selection.mode = SelectionMode.FACE
     app.selection.set({face})
     app.viewport.on_selection_changed()
-    assert app.key_press(ASSIGN)
+    assert app.key_press(NEW)
     app.update_viewport(0.016)
     provider = app.subdivision.provider
     _level, _vids, derived_faces = provider.derived_elements()
     rm = app.viewport.surface_render_mesh
     tinted = set(rm._tints)
     assert tinted and len(tinted) == len(derived_faces) // len(mesh.all_face_ids())
-    assert set(rm._tints.values()) == {api.region_color(0)}
+    assert set(rm._tints.values()) == {api.region_color(api.slot_index("Group 1"))}
     app.key_press(UNDO)
     app.update_viewport(0.016)
     assert rm._tints == {}

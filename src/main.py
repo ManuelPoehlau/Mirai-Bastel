@@ -147,11 +147,12 @@ Scope (binding, see the handoffs):
   menu (window level like Shift+A; bare M stays the Morph Lab bridge): Mirror copy / Pair selected across
   X/Y/Z = 0, Break pair, Re-sync pair - mode `4`, on the selected objects (`Application.mirror_copy`, ...).
   A paired object's partner follows W/E/R and the gizmo mirrored (`install_handlers(..., mirror_menu=...)`).
-- Saved regions (`PROVISIONAL`, AD-REGIONS-01, `src/mirai/regions.py`): Shift+G / Shift+Alt+G pick the preset slot, Ctrl+G assigns
-  the selected faces, Ctrl+Shift+G adds, Ctrl+Alt+G removes, Alt+G selects the region, Ctrl+Alt+H isolates, Ctrl+Alt+M masks,
-  Ctrl+Alt+Backspace deletes it; stored in the Mesh (Undo, scene file); a face a topology edit creates joins a region when all its
+- Polygroups / saved regions (`PROVISIONAL`, AD-REGIONS-01, `src/mirai/regions.py`): Ctrl+G makes the selected faces a new group
+  (`Group N`; never overwrites one, a face is in one group), Shift+G / Shift+Alt+G pick the active group, Ctrl+Shift+G adds,
+  Ctrl+Alt+G removes, Ctrl+Alt+N saves the group as a named set (Brow, Upper Lip, …), Alt+G selects it, Ctrl+Alt+H isolates,
+  Ctrl+Alt+M masks (the whole group, hidden parts included), Ctrl+Alt+Backspace deletes it; stored in the Mesh (Undo, scene file); a face a topology edit creates joins a region when all its
   parents were in it. Every region has its own desaturated face colour (Ctrl+Alt+D shows / hides them). Shift+Ctrl+click on a
-  region's face isolates the region, again on the isolated region hides only its interior, on empty space shows all.
+  region's face makes it the active group and isolates it, again on the isolated region hides only its interior, on empty space shows all.
 - Hide / Isolate (`PROVISIONAL`, `src/mirai/hidden.py`): Ctrl+H hides the selection, Ctrl+Shift+H isolates it, Alt+H shows
   all; hidden geometry is neither drawn nor picked nor moved, and topology edits next to it are refused.
 - Mask Geometry (`PROVISIONAL`, `src/mirai/mask.py`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts,

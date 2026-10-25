@@ -223,12 +223,14 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("h", "ctrl"), cmd.HIDE_SELECTION)
     bs.set_default(_key("h", "ctrl", "shift"), cmd.ISOLATE_SELECTION)
     bs.set_default(_key("h", "alt"), cmd.SHOW_ALL)
-    # Saved regions (`PROVISIONAL`, AD-REGIONS-01): Shift+G / Shift+Alt+G cycle the slot, Ctrl+G assigns the selection,
-    # Ctrl+Shift+G adds, Ctrl+Alt+G removes, Alt+G selects the region (Ctrl+Alt+Shift+G adds it to the selection),
-    # Ctrl+Alt+H isolates it, Ctrl+Alt+M masks it, Ctrl+Alt+Backspace deletes it (bare G stays Loop Slide).
+    # Polygroups / saved regions (`PROVISIONAL`, AD-REGIONS-01): Ctrl+G makes the selection a new group, Shift+G /
+    # Shift+Alt+G cycle the active group, Ctrl+Shift+G adds to it, Ctrl+Alt+G removes from it, Ctrl+Alt+N saves it as a
+    # named set, Alt+G selects it (Ctrl+Alt+Shift+G adds it to the selection), Ctrl+Alt+H isolates it, Ctrl+Alt+M
+    # masks it, Ctrl+Alt+Backspace deletes it (bare G stays Loop Slide).
     bs.set_default(_key("g", "shift"), cmd.REGION_NEXT)
     bs.set_default(_key("g", "shift", "alt"), cmd.REGION_PREV)
-    bs.set_default(_key("g", "ctrl"), cmd.REGION_ASSIGN)
+    bs.set_default(_key("g", "ctrl"), cmd.REGION_NEW)
+    bs.set_default(_key("n", "ctrl", "alt"), cmd.REGION_NAME)
     bs.set_default(_key("g", "ctrl", "shift"), cmd.REGION_ADD)
     bs.set_default(_key("g", "ctrl", "alt"), cmd.REGION_REMOVE)
     bs.set_default(_key("g", "alt"), cmd.REGION_SELECT)

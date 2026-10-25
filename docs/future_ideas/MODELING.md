@@ -63,15 +63,18 @@ Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope 
 > Gebaut (2026-10-25, `PROVISIONAL`, [AD-REGIONS-01](../architecture/AD-REGIONS-01-FACE-REGIONS-STORAGE.md),
 > `src/mirai/regions.py`, Core: `Mesh.face_regions`): Regionen sind benannte, auch überlappende Face-Mengen **im Mesh**
 > (Undo/Redo, Knife-Rollback und Szenendatei kommen mit; additiver Schlüssel `"face_regions"`). Die App hat keine
-> Texteingabe, daher Preset-Slots (Brow, Upper Lip, Lower Lip, Eyelids, Jaw, Region 6–9): `Shift+G` / `Shift+Alt+G`
-> wechseln den aktiven Slot, `Ctrl+G` weist die Faces der Auswahl zu (alle Ecken ausgewählt; unter Symmetrie mit den
-> Spiegelpartnern), `Ctrl+Shift+G` fügt hinzu, `Ctrl+Alt+G` entfernt, `Alt+G` wählt die Region im aktiven Modus aus
-> (`Ctrl+Alt+Shift+G` zur Auswahl hinzu, nie Verstecktes), `Ctrl+Alt+H` isoliert, `Ctrl+Alt+M` maskiert sie,
-> `Ctrl+Alt+Backspace` löscht sie. **Vererbung (Slice 3, 2026-10-25):** eine neue Face tritt einer Region bei, wenn alle ihre
+> Texteingabe. **Erst gruppieren, dann benennen (Manu 2026-10-25):** `Ctrl+G` macht die Faces der Auswahl (alle Ecken
+> ausgewählt; unter Symmetrie mit den Spiegelpartnern) zu einer **neuen** Gruppe `Group N` und überschreibt nie eine andere;
+> eine Face gehört zu einer Gruppe (sie verlässt ihre alte, eine leer gewordene Gruppe verschwindet), die neue Gruppe wird
+> aktiv. `Shift+G` / `Shift+Alt+G` wechseln durch die vorhandenen Gruppen, `Ctrl+Alt+N` speichert die aktive Gruppe als
+> benanntes Set (Brow, Upper Lip, Lower Lip, Eyelids, Jaw; erneut = nächster freier Name, danach zurück zu `Group N`),
+> `Ctrl+Shift+G` fügt hinzu, `Ctrl+Alt+G` entfernt, `Alt+G` wählt die Gruppe im aktiven Modus aus (`Ctrl+Alt+Shift+G` zur
+> Auswahl hinzu, nie Verstecktes), `Ctrl+Alt+H` isoliert, `Ctrl+Alt+M` maskiert sie (beides die ganze Gruppe, auch
+> versteckte Teile), `Ctrl+Alt+Backspace` löscht sie. **Vererbung (Slice 3, 2026-10-25):** eine neue Face tritt einer Region bei, wenn alle ihre
 > Eltern darin waren (Split, Connect, Loop Insert, Knife, Dissolve; Dissolve über eine Regionsgrenze erbt nicht; Extrude-
 > Deckel und -Wände erben von der extrudierten Face), sonst keiner Region; Undo setzt Mesh und Regionen zusammen zurück
 > (siehe AD-REGIONS-01 §1.6). **Farben:** jede Region hat eine eigene entsättigte Farbe auf ihren Faces (auch auf der SubD-
-> Fläche), `Ctrl+Alt+D` blendet sie ein/aus (Standard an). **Shift+Ctrl+Klick** auf eine Region-Face isoliert die Region,
+> Fläche), `Ctrl+Alt+D` blendet sie ein/aus (Standard an). **Shift+Ctrl+Klick** auf eine Region-Face macht sie zur aktiven Gruppe und isoliert sie,
 > erneut auf die isolierte Region versteckt nur ihr Inneres (der Rest ist voll sichtbar), ins Leere zeigt alles.
 > **Loops und Hide:** Loop Insert, Loop/Ring-Auswahl und die Loop-Schritte enden an versteckter Geometrie (z. B. Nase isolieren,
 > dann Loop Insert schneidet nur die sichtbaren Quads); Loop Slide bleibt neben Verstecktem abgelehnt. Offen: Mirror-Copy-

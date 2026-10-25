@@ -1,6 +1,6 @@
 # AD-REGIONS-01 — Face Regions (Saved Regions / Polygroups) Storage
 
-**Status:** DECIDED ✓ (Manu, 2026-10-25), Slice 1 (Core storage) and Slice 2 (commands) implemented
+**Status:** DECIDED ✓ (Manu, 2026-10-25), Slice 1 (Core storage), Slice 2 (commands), Slice 3 (inheritance) implemented; §1.8 App-Verhalten „erst gruppieren, dann benennen“ (2026-10-25)
 **Gehört zu:** `docs/future_ideas/MODELING.md`, Priorität 1, „Gespeicherte Regionen / Polygroups“
 **Grundlage:** AD-SYM-01 (gleiches Muster: vom Mesh besessener Wert), AD-001 (IDs nie wiederverwendet),
 AD-021 §4.9 (ID-gebundene Daten gehören ins Mesh oder in eine mit ihm gesnapshottete Struktur, nicht in `Scene`),
@@ -41,10 +41,19 @@ bei Topologieänderungen?
    Wrapper (`topology/split.py` u. ä., Playground/Test-API). Sie ist ein Notbehelf für Face-Daten, keine Antwort auf ARCH-02.
 7. **Links/Rechts wird abgeleitet,** nicht gespeichert: `SymmetryIndex.face_partner` / `expand_faces`. Zuweisen unter
    Symmetrie nimmt die Spiegelpartner mit (wie Hide und Mask).
+8. **App-Verhalten: erst gruppieren, dann benennen (Manu 2026-10-25, `PROVISIONAL`).** Der Core erlaubt Überlappung weiter;
+   die App schreibt Polygroup-Semantik (`mirai.regions.grouped`): `Ctrl+G` legt immer eine neue Gruppe mit automatischem
+   Namen `Group N` an (N = höchste vorhandene Nummer + 1) und überschreibt keine andere; Faces der neuen bzw. erweiterten
+   Gruppe verlassen ihre alte Gruppe, eine leer gewordene Gruppe verschwindet (auch beim Entfernen). Die aktive Gruppe
+   (UI-Zustand, per Edit-Objekt) ist die zuletzt angelegte, gewählte oder angeklickte; fehlt sie (Undo, Löschen), die letzte
+   der Liste. Benennen (`Ctrl+Alt+N`) ist ein Umbenennen der Gruppe in einen freien Set-Namen (`SET_NAMES`, ohne
+   Texteingabe), ein Undo-Schritt. Die Farbe hängt am Namen (`slot_index`): Set-Namen und `Group N` haben je eine eigene.
+   Ältere Dateien mit überlappenden Regionen oder Namen wie `Region 6` laden unverändert. Ersetzt die Preset-Slots
+   (Brow … Region 9), bei denen ein vergessener Slot-Wechsel die vorige Region überschrieb.
 
 ## 2. Offene Punkte (Slice 3+)
 
 Vererbung für die eigenständigen Wrapper und für Knife-Innenformen aus neuen Vertices (sie haben keinen Anker und erben
 nicht; `KeptSplitFace` würde exakte Herkunft liefern), Mirror-Copy-Remap (neue ID-Räume), OBJ-Gruppen beim Import/Export, Anzeige auf der SubD-Fläche über
-`face_parent`, Auswahl per Klick, Umbenennen (die App hat keine Texteingabe: Preset-Slots), ein Per-Face-Label-Layer, falls
+`face_parent`, Auswahl per Klick, freie Namen (die App hat keine Texteingabe: `SET_NAMES`), ein Per-Face-Label-Layer, falls
 das ganzwertige Journal (Messung: ~4 MiB und ~55 ms je Änderung bei einer 87k-Faces-Region) zu teuer wird.

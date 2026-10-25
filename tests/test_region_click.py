@@ -129,7 +129,7 @@ def test_click_on_a_face_without_a_region_changes_nothing(app):
     app.scene.mesh.face_regions = FaceRegions((FaceRegion("Brow", frozenset(api.live_faces(mesh, "Brow"))),))
     assert not _click(app, 1.5, 1.5) or not app._hidden
     assert not app._hidden
-    assert "no saved region" in app.status_message
+    assert "no group" in app.status_message
 
 
 def test_works_in_every_component_mode_and_not_in_object_mode(app):
@@ -163,3 +163,14 @@ def test_a_plain_ctrl_drag_is_still_a_tweak(app):
     """The new chord adds no drag binding: Ctrl+drag keeps working (the gesture is fixed at the press)."""
     bindings = build_default_bindings()
     assert bindings.command_for(Input("drag", "LEFT", frozenset({"ctrl"}))) == cmd.TWEAK
+
+
+def test_click_makes_the_clicked_group_the_active_one(app):
+    mesh = app.scene.mesh
+    _click(app, 1.5, 1.5)  # a face of Upper Lip
+    assert app.active_region == "Upper Lip"
+    app._hidden.show_all()
+    app._hidden_push()
+    _click(app, -1.5, -1.5)
+    assert app.active_region == "Brow"
+    assert api.live_faces(mesh, "Brow")

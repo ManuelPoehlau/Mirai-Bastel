@@ -82,9 +82,10 @@ class HudState:
     subd_view: str
     subd_level: int
     subd_lines: bool
-    #: Saved regions: the active preset slot, how many faces it has, and whether the colours show.
-    region: str
+    #: Polygroups: the active group (None = no group yet), its face count, how many groups, whether the colours show.
+    region: Optional[str]
     region_faces: int
+    region_count: int
     region_tint: bool
     #: Worklight name and the active Look row with its value (AD-024 §8).
     light: str
@@ -122,6 +123,7 @@ def hud_state(app) -> HudState:
         subd_lines=subd.lines_shown,
         region=app.active_region,
         region_faces=app.active_region_faces,
+        region_count=app.region_count,
         region_tint=app.display.region_tint,
         light=app.display.light_label,
         look=app.look_text,
@@ -145,7 +147,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),
     "SubD": ((commands.SUBD_CYCLE_VIEW,), SUBD_CONTEXT),
-    "Region": ((commands.REGION_NEXT, commands.REGION_ASSIGN, commands.TOGGLE_REGION_TINT), None),
+    "Region": ((commands.REGION_NEW, commands.REGION_NEXT, commands.REGION_NAME, commands.TOGGLE_REGION_TINT), None),
     "Look": (
         (commands.LOOK_ROW_PREV, commands.LOOK_ROW_NEXT, commands.LOOK_VALUE_DEC, commands.LOOK_VALUE_INC),
         None,
@@ -212,7 +214,12 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         HudRow("SubD", subd, hints.get("SubD", ""), on=state.subd_view != VIEW_OFF),
         HudRow(
             "Region",
-            f"{state.region} · {state.region_faces} faces · colours {'on' if state.region_tint else 'off'}",
+            (
+                f"{state.region} · {state.region_faces} faces · {state.region_count} "
+                f"group{'s' if state.region_count != 1 else ''} · colours {'on' if state.region_tint else 'off'}"
+                if state.region is not None
+                else f"no groups · colours {'on' if state.region_tint else 'off'}"
+            ),
             hints.get("Region", ""),
             on=state.region_faces > 0,
         ),

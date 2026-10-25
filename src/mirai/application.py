@@ -333,7 +333,8 @@ _HIDE_COMMANDS = (commands.HIDE_SELECTION, commands.ISOLATE_SELECTION, commands.
 _REGION_COMMANDS = (
     commands.REGION_NEXT,
     commands.REGION_PREV,
-    commands.REGION_ASSIGN,
+    commands.REGION_NEW,
+    commands.REGION_NAME,
     commands.REGION_ADD,
     commands.REGION_REMOVE,
     commands.REGION_SELECT,
@@ -801,8 +802,8 @@ class Application:
         self._mask_overlay = None
         # Hide / Isolate (`mirai.hidden`): the same kind of state, per edit object.
         self._hiddens: dict[ObjectId, HiddenSet] = {}
-        # Saved regions (AD-REGIONS-01): the regions themselves live in the Mesh; this is the active preset slot.
-        self._region_slots: dict[ObjectId, int] = {}
+        # Polygroups (AD-REGIONS-01): the groups themselves live in the Mesh; this is the name of the active one.
+        self._active_regions: dict[ObjectId, str] = {}
         self._tints_seen: tuple | None = None  # (mesh, face_regions, viewport) the viewport last got colours for
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
@@ -1073,7 +1074,7 @@ class Application:
             self.viewport.add_overlay(self._soft_shading_overlay)
         self._masks.clear()  # their IDs belong to the old meshes
         self._hiddens.clear()
-        self._region_slots.clear()
+        self._active_regions.clear()
         self._pick_cache.set_hidden(())
         self._mask_overlay = None
         if mask_overlay_type is not None:
@@ -4551,13 +4552,26 @@ class Application:
 
     # -- Saved regions (`mirai.regions`, AD-REGIONS-01) -----------------------------------
 
-    def _region_slot(self) -> int:
-        return self._region_slots.get(self.scene.edit_object_id, 0)
+    @property
+    def active_region(self) -> str | None:
+        """The active group: the one last made, picked or clicked; when that one is gone (Undo, Delete) the last group
+        in the list; None without groups."""
+        regions = self.scene.mesh.face_regions
+        if regions is None:
+            return None
+        name = self._active_regions.get(self.scene.edit_object_id)
+        if name is not None and regions.get(name) is not None:
+            return name
+        return regions.regions[-1].name
+
+    def _set_active_region(self, name: str) -> None:
+        self._active_regions[self.scene.edit_object_id] = name
 
     @property
-    def active_region(self) -> str:
-        """The preset name of the active region slot."""
-        return face_regions_api.PRESET_NAMES[self._region_slot() % len(face_regions_api.PRESET_NAMES)]
+    def region_count(self) -> int:
+        """How many groups the edit mesh has (read-only, for the HUD)."""
+        regions = self.scene.mesh.face_regions
+        return 0 if regions is None else len(regions.regions)
 
     def _push_region_tints(self) -> None:
         """The regions' colours go to the viewport whenever the edit mesh's `face_regions` value (or the mesh, or
@@ -4573,8 +4587,9 @@ class Application:
 
     @property
     def active_region_faces(self) -> int:
-        """How many faces the active region still has (read-only, for the HUD)."""
-        return len(face_regions_api.live_faces(self.scene.mesh, self.active_region))
+        """How many faces the active group still has (read-only, for the HUD)."""
+        name = self.active_region
+        return 0 if name is None else len(face_regions_api.live_faces(self.scene.mesh, name))
 
     def _region_summary(self, name: str) -> str:
         mesh = self.scene.mesh
@@ -4582,61 +4597,80 @@ class Application:
         lost = face_regions_api.lost_count(mesh, name)
         text = f"{name}: {live} faces"
         if lost:
-            text += f" ({lost} lost to topology edits, Ctrl+G assigns again)"
+            text += f" ({lost} lost to topology edits)"
         return text
 
     def _region_command(self, command: str) -> bool:
-        """Shift+G / Shift+Alt+G (slot), Ctrl+G / Ctrl+Shift+G / Ctrl+Alt+G (assign, add, remove), Alt+G / Alt+Shift+G
-        (select), Ctrl+Alt+H (isolate), Ctrl+Alt+M (mask), Ctrl+Alt+Shift+G (delete). Edits of the stored regions
-        are one Undo step (`_mesh_transaction`); select / isolate / mask only read them. Refused during a gesture."""
+        """Ctrl+G (new group), Shift+G / Shift+Alt+G (active group), Ctrl+Shift+G / Ctrl+Alt+G (add, remove),
+        Ctrl+Alt+N (save as named set), Alt+G / Ctrl+Alt+Shift+G (select), Ctrl+Alt+H (isolate), Ctrl+Alt+M (mask),
+        Ctrl+Alt+Backspace (delete). Edits of the stored groups are one Undo step (`_mesh_transaction`); select /
+        isolate / mask only read them. Refused during a gesture."""
         if self._transform_key is not None:
             return False
         mesh = self.scene.mesh
-        names = face_regions_api.PRESET_NAMES
-        if command in (commands.REGION_NEXT, commands.REGION_PREV):
-            step = 1 if command == commands.REGION_NEXT else -1
-            self._region_slots[self.scene.edit_object_id] = (self._region_slot() + step) % len(names)
-            self._set_status(f"Region: {self._region_summary(self.active_region)}")
-            return True
+        if command == commands.REGION_NEW:
+            return self._region_edit(command, face_regions_api.new_group_name(mesh.face_regions))
         name = self.active_region
-        if command in (commands.REGION_ASSIGN, commands.REGION_ADD, commands.REGION_REMOVE):
+        if name is None:
+            self._set_status("No groups yet (select faces, Ctrl+G makes a group)")
+            return False
+        if command in (commands.REGION_NEXT, commands.REGION_PREV):
+            names = [r.name for r in mesh.face_regions.regions]
+            step = 1 if command == commands.REGION_NEXT else -1
+            name = names[(names.index(name) + step) % len(names)]
+            self._set_active_region(name)
+            self._set_status(f"Active group {names.index(name) + 1}/{len(names)}: {self._region_summary(name)}")
+            return True
+        if command in (commands.REGION_ADD, commands.REGION_REMOVE):
             return self._region_edit(command, name)
-        if command == commands.REGION_DELETE:
-            if face_regions_api.region_named(mesh, name) is None:
-                self._set_status(f"Region {name}: nothing to delete")
+        if command == commands.REGION_NAME:
+            new = face_regions_api.next_name(mesh.face_regions, name)
+            if new == name:
+                self._set_status(f"{name}: every set name is taken")
                 return False
             self._mesh_transaction(
-                f"Delete Region {name}",
+                f"Name {name} {new}",
+                lambda m: setattr(m, "face_regions", face_regions_api.renamed(m.face_regions, name, new)),
+                moved_of=lambda _: set(),
+            )
+            self._set_active_region(new)
+            self._set_status(f"{name} saved as {new} (Ctrl+Alt+N again: next name)")
+            return True
+        if command == commands.REGION_DELETE:
+            self._mesh_transaction(
+                f"Delete {name}",
                 lambda m: setattr(m, "face_regions", face_regions_api.deleted(m.face_regions, name)),
                 moved_of=lambda _: set(),
             )
-            self._set_status(f"Region {name} deleted")
+            self._set_status(f"{name} deleted")
             return True
         faces = face_regions_api.live_faces(mesh, name)
         if not faces:
-            self._set_status(f"Region {name}: empty (select faces, Ctrl+G assigns)")
+            self._set_status(f"{name}: no faces left")
+            return False
+        vertices = face_regions_api.region_vertices(mesh, faces)
+        # Isolate and mask act on the whole group, hidden parts included (Isolate shows them again); only the
+        # selection skips what is hidden.
+        if command == commands.REGION_ISOLATE:
+            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
+        if command == commands.REGION_MASK:
+            return self._mask_vertices(vertices)
+        selection = self.selection
+        if selection.mode is SelectionMode.OBJECT:
             return False
         hidden = self._hidden
         faces = frozenset(f for f in faces if not hidden.is_hidden_face(mesh, f))
-        if command in (commands.REGION_SELECT, commands.REGION_SELECT_ADD):
-            selection = self.selection
-            if selection.mode is SelectionMode.OBJECT:
-                return False
-            elements = face_regions_api.elements_of(mesh, selection.mode, faces)
-            if command == commands.REGION_SELECT:
-                selection.set(elements)
-            else:
-                selection.add(elements)
-            self._prune_hidden_selection()
-            if self.viewport is not None:
-                self.viewport.on_selection_changed()
-            self._soft_preview_refresh()
-            self._set_status(self._region_summary(name) + " selected")
-            return True
-        vertices = face_regions_api.region_vertices(mesh, faces)
-        if command == commands.REGION_ISOLATE:
-            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
-        return self._mask_vertices(vertices)
+        elements = face_regions_api.elements_of(mesh, selection.mode, faces)
+        if command == commands.REGION_SELECT:
+            selection.set(elements)
+        else:
+            selection.add(elements)
+        self._prune_hidden_selection()
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        self._set_status(self._region_summary(name) + " selected")
+        return True
 
     def _pick_face_at(self, x: float, y: float):
         """The face under (x, y) whatever the selection mode is (GPU ID buffer, else the CPU picker), else None."""
@@ -4660,8 +4694,9 @@ class Application:
             return self._hide_command(commands.SHOW_ALL)
         name = face_regions_api.region_of_face(mesh, face, prefer=self.active_region)
         if name is None:
-            self._set_status("Face has no saved region (Ctrl+G assigns the selection)")
+            self._set_status("Face has no group (Ctrl+G makes the selection a group)")
             return False
+        self._set_active_region(name)
         faces = face_regions_api.live_faces(mesh, name)
         vertices = face_regions_api.region_vertices(mesh, faces)
         hidden = self._hidden
@@ -4680,7 +4715,8 @@ class Application:
         return True
 
     def _region_edit(self, command: str, name: str) -> bool:
-        """Assign / add / remove the faces of the selection (all corners selected) to / from region `name`."""
+        """New group `name` from / add to / remove from group `name` the faces of the selection (all corners selected).
+        A face is in one group: new and add take it out of its old group."""
         mesh = self.scene.mesh
         selection = self.selection
         if selection.mode is SelectionMode.OBJECT:
@@ -4691,26 +4727,30 @@ class Application:
             faces = face_regions_api.faces_from_vertices(
                 mesh, resolve_selection_vertices(mesh, selection, selection.mode)
             )
-        if not faces and command != commands.REGION_ASSIGN:
-            self._set_status(f"Region {name}: select faces first")
+        if not faces:
+            self._set_status("Group: select faces first")
             return False
-        if mesh.symmetry_definition is not None and faces:
+        if mesh.symmetry_definition is not None:
             faces |= set(expand_faces(SymmetryIndex(mesh), faces).union)  # a pair belongs together
-        change = {
-            commands.REGION_ASSIGN: face_regions_api.assigned,
-            commands.REGION_ADD: face_regions_api.added,
-            commands.REGION_REMOVE: face_regions_api.removed,
-        }[command]
-        verb = {commands.REGION_ASSIGN: "assigned", commands.REGION_ADD: "added to", commands.REGION_REMOVE: "removed from"}[command]
+        if command == commands.REGION_REMOVE:
+            change = lambda regions: face_regions_api.removed(regions, name, faces)  # noqa: E731
+            verb = "removed from"
+        else:
+            add = command == commands.REGION_ADD
+            change = lambda regions: face_regions_api.grouped(regions, name, faces, add=add)  # noqa: E731
+            verb = "added to" if add else "grouped as"
         done = self._mesh_transaction(
-            f"Region {name}",
-            lambda m: setattr(m, "face_regions", change(m.face_regions, name, faces)),
+            f"New {name}" if command == commands.REGION_NEW else name,
+            lambda m: setattr(m, "face_regions", change(m.face_regions)),
             moved_of=lambda _: set(),
         )
         if not done.changed:
-            self._set_status(f"Region {name}: no change")
+            self._set_status(f"{name}: no change")
             return False
-        self._set_status(f"{len(faces)} faces {verb} {self._region_summary(name)}")
+        if command != commands.REGION_REMOVE:
+            self._set_active_region(name)
+        summary = self._region_summary(name) if face_regions_api.region_named(mesh, name) else f"{name} (now empty, gone)"
+        self._set_status(f"{len(faces)} faces {verb} {summary}")
         return True
 
     def _soft_refresh_radius(self) -> None:

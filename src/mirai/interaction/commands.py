@@ -163,14 +163,17 @@ HIDE_SELECTION = "HideSelection"
 ISOLATE_SELECTION = "IsolateSelection"
 SHOW_ALL = "ShowAll"
 
-# Saved regions / polygroups (docs/future_ideas/MODELING.md, Priorität 1; AD-REGIONS-01; `PROVISIONAL`): the active
-# slot (a preset name, the app has no text input) is UI state. REGION_NEXT / REGION_PREV cycle it. ASSIGN makes the
-# region exactly the faces of the selection (all corners selected), ADD / REMOVE change it, SELECT / SELECT_ADD write
-# the normal selection, ISOLATE / MASK reuse Hide and Mask on the region, DELETE removes it. The edits are one Undo
-# step each (the regions live in the Mesh); topology edits do not carry regions along yet.
+# Saved regions / polygroups (docs/future_ideas/MODELING.md, Priorität 1; AD-REGIONS-01; `PROVISIONAL`). Group first,
+# name later (Manu 2026-10-25): NEW makes the faces of the selection (all corners selected) a new group `Group N` - it
+# never overwrites another group, the faces leave their old group - and that group becomes the active one (UI state).
+# REGION_NEXT / REGION_PREV cycle the active group through the existing ones. ADD / REMOVE change it, NAME saves it as a
+# named set (cycles the free set names, then back to `Group N`; the app has no text input), SELECT / SELECT_ADD write
+# the normal selection, ISOLATE / MASK reuse Hide and Mask on the whole group, DELETE removes it. The edits are one Undo
+# step each (the regions live in the Mesh).
 REGION_NEXT = "RegionNext"
 REGION_PREV = "RegionPrev"
-REGION_ASSIGN = "RegionAssign"
+REGION_NEW = "RegionNew"
+REGION_NAME = "RegionName"
 REGION_ADD = "RegionAdd"
 REGION_REMOVE = "RegionRemove"
 REGION_SELECT = "RegionSelect"
