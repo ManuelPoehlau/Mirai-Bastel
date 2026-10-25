@@ -60,6 +60,19 @@ Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope 
 
 ### Gespeicherte Regionen / Polygroups
 
+> Gebaut (2026-10-25, `PROVISIONAL`, [AD-REGIONS-01](../architecture/AD-REGIONS-01-FACE-REGIONS-STORAGE.md),
+> `src/mirai/regions.py`, Core: `Mesh.face_regions`): Regionen sind benannte, auch überlappende Face-Mengen **im Mesh**
+> (Undo/Redo, Knife-Rollback und Szenendatei kommen mit; additiver Schlüssel `"face_regions"`). Die App hat keine
+> Texteingabe, daher Preset-Slots (Brow, Upper Lip, Lower Lip, Eyelids, Jaw, Region 6–9): `Shift+G` / `Shift+Alt+G`
+> wechseln den aktiven Slot, `Ctrl+G` weist die Faces der Auswahl zu (alle Ecken ausgewählt; unter Symmetrie mit den
+> Spiegelpartnern), `Ctrl+Shift+G` fügt hinzu, `Ctrl+Alt+G` entfernt, `Alt+G` wählt die Region im aktiven Modus aus
+> (`Ctrl+Alt+Shift+G` zur Auswahl hinzu, nie Verstecktes), `Ctrl+Alt+H` isoliert, `Ctrl+Alt+M` maskiert sie,
+> `Ctrl+Alt+Backspace` löscht sie. **Keine automatische Erhaltung:** Split, Connect, Knife, Dissolve und Extrude lassen
+> Regionen unverändert, neue Faces gehören zu keiner Region, entfernte verschwinden beim Lesen (der Status meldet „N lost to
+> topology edits“; ein Undo macht sie wieder lebendig). Offen (Slice 3+): generische Vererbung aus dem Journal mit Hooks in
+> Extrude/Knife und Entscheidungen zu Dissolve über Regionsgrenzen und Extrude-Wänden, Mirror-Copy-Remap, OBJ-Gruppen,
+> Anzeige auf der SubD-Fläche, Auswahl per Klick, Umbenennen.
+
 Benannte und wiederverwendbare Gesichtsbereiche untersuchen, etwa Brow, Upper Lip, Lower Lip, Eyelids und Jaw. Benötigte Aktionen: Region auswählen, Auswahl hinzufügen/entfernen, isolieren und gegebenenfalls maskieren.
 
 Das soll kein zweites Selection-System werden. Zu klären ist, wie Regionen Mesh-Elemente referenzieren und wie sie sich bei Split, Collapse, Extrude, Remesh oder anderen Topologieänderungen verhalten. Bis diese Regeln klar sind, keine automatische Erhaltung versprechen. Details zu Auswahlaktionen und Navigation stehen in [SELECTION.md](SELECTION.md).
