@@ -43,6 +43,7 @@ Das ist **nicht** dasselbe wie die bestehende Edge-Ring-Auswahl (`Shift+R`), die
 
 - **Select Linked / Connected:** die verbundene Mesh-Komponente unter dem Cursor auswählen.
 - **Boundary / Non-Manifold / Isolated:** offene Ränder, nicht-manifold Elemente und isolierte Elemente gezielt auffinden – besonders zur Reparatur vor Deformation.
+  *Offene Ränder erledigt 2026-10-25:* Border Select auf `B` ([WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Nachtrag D); Non-Manifold / Isolated offen.
 - **Face Loop / Face Ring:** zur bestehenden Edge-Loop-/Ring-Unterstützung passend untersuchen.
 - **Select Similar:** nach nachvollziehbaren Kriterien wie Topologie/Attributen auswählen, sofern es einen echten Workflow-Bedarf gibt.
 

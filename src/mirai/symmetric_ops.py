@@ -1,6 +1,6 @@
 """Symmetric topology coordinators (AD-SYM-03 §3, slices 3b/3c/4): Edge Connect, Vertex Connect,
-Split, the removal commands Delete, Dissolve and Dissolve (no cleanup), and Collapse (WP Toolbox
-Gaps B1).
+Split, the removal commands Delete, Dissolve and Dissolve (no cleanup), Collapse (WP Toolbox
+Gaps B1) and Cap (2026-10-25).
 
 A coordinator is a pure mutation `coordinate_*(mesh, selection[, mode]) -> result` for the
 unchanged `apply_*` function of `mirai.topology`: expand the (already canonical, one-sided)
@@ -44,6 +44,7 @@ from .symmetry_coordination import (
 )
 from .topology.connect_per_face import EdgeConnectResult, apply_connect_edges
 from .topology.connect_vertices_per_face import apply_connect_vertices
+from .topology.border import border_loop, cap_loops, cap_winding, check_cappable
 from .topology.collapse import collapse_input
 from .topology.delete_dissolve import apply_removal
 
@@ -63,6 +64,10 @@ TEXT_BOTH_SIDES_FACE = (
 TEXT_DELTA = (
     "Symmetrie: Ergebnis wäre nicht spiegelbildlich (neue Elemente ohne Partner) — nichts "
     "geändert; an einer Stelle mit Partner arbeiten oder Symmetrie ausschalten (Shift+S)"
+)
+TEXT_CAP_PLANE = (
+    "Symmetrie: das Loch liegt über der Ebene, hat aber nicht genau zwei Seam-Punkte gegenüber — "
+    "nichts geändert; Symmetrie ausschalten (Shift+S) oder die Seam bis an den Rand führen"
 )
 TEXT_SEAM_DISSOLVE = (
     "Symmetrie: Auflösen an der Seam wird noch nicht unterstützt (Seam-Kante oder -Vertex würde "
@@ -340,3 +345,57 @@ def coordinate_collapse(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[
     mesh.symmetry_definition = seam_without_dead_ids(mesh)
     _check_delta(before, mesh)
     return survivors
+
+
+def coordinate_cap(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[FaceId]:
+    """Cap of the borders `ids` touch and of their mirror images, in one mutation. Returns the new
+    faces.
+
+    A border and its image are capped separately. A border that is its own image (a hole across
+    the plane, e.g. the neck of a head) would become one face spanning the plane, which D-strict
+    refuses; it is closed with two mirror faces instead, split along a new edge between its two
+    seam vertices, and that edge joins the seam (as Split's halves do, S1). Such a hole needs
+    exactly two seam vertices that are not neighbours on the border, else `TEXT_CAP_PLANE`.
+    `CapRefused` propagates unchanged; the delta check stays the guard."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        raise SymmetryRefusal(TEXT_NON_EXACT_PLANE)
+    index = SymmetryIndex(mesh)
+    loops = cap_loops(mesh, mode, ids)
+    by_edges = {frozenset(loop.edges): loop for loop in loops}
+    for loop in loops:
+        images = [index.edge_partner(e) for e in loop.edges]
+        if any(image is None for image in images):
+            raise SymmetryRefusal(TEXT_UNPAIRED)
+        if frozenset(images) not in by_edges:
+            image_loop = border_loop(mesh, images[0])
+            by_edges[frozenset(image_loop.edges)] = image_loop
+    before = completeness_report(mesh, index)
+
+    plans: list[list[list[VertexId]]] = []
+    seam_pairs: list[tuple[VertexId, VertexId]] = []
+    for loop in by_edges.values():
+        check_cappable(mesh, loop)
+        winding = cap_winding(mesh, loop)
+        if frozenset(index.edge_partner(e) for e in loop.edges) != frozenset(loop.edges):
+            plans.append([winding])
+            continue
+        on_seam = [i for i, v in enumerate(winding) if index.vertex_partner(v) == v]
+        if len(on_seam) != 2 or (on_seam[1] - on_seam[0]) in (1, len(winding) - 1):
+            raise SymmetryRefusal(TEXT_CAP_PLANE)
+        a, b = winding[on_seam[0]], winding[on_seam[1]]
+        if any(b in mesh.edge_vertices(e) for e in mesh.vertex_edges(a)):
+            raise SymmetryRefusal(TEXT_CAP_PLANE)
+        rotated = winding[on_seam[0]:] + winding[: on_seam[0]]
+        k = on_seam[1] - on_seam[0]
+        plans.append([rotated[: k + 1], rotated[k:] + rotated[:1]])
+        seam_pairs.append((a, b))
+
+    new_faces = [mesh.add_face(face) for plan in plans for face in plan]
+    if seam_pairs:
+        seam = set(definition.seam_edges) | {_edge_between(mesh, a, b) for a, b in seam_pairs}
+        mesh.symmetry_definition = SymmetryDefinition(
+            definition.plane_point, definition.plane_normal, frozenset(seam)
+        )
+    _check_delta(before, mesh)
+    return new_faces

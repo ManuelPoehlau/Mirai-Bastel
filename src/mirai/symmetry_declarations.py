@@ -8,6 +8,7 @@ and cannot drift from it. Four keys exist today:
   since slice 6c);
 - the removal commands (`Delete`, `Dissolve`, `DissolveNoCleanup`);
 - the Collapse command (`commands.COLLAPSE`, WP Toolbox Gaps B1), same shape as the removal table;
+- the Cap command (`commands.CAP`, 2026-10-25), same shape again;
 - the Extrude command (`commands.EXTRUDE`, slice 7): a live gesture, like the Knife, so its entry is a
   *planner* `(mesh, faces) -> plan` that `Application` runs at `begin` and hands to the unchanged tool.
 
@@ -34,6 +35,7 @@ from .interaction import commands
 from .symmetric_extrude import plan_extrude
 from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
+    coordinate_cap,
     coordinate_collapse,
     coordinate_delete,
     coordinate_dissolve,
@@ -79,6 +81,14 @@ COLLAPSE_COORDINATORS: Mapping[str, Any] = MappingProxyType(
     }
 )
 
+#: Cap command constant -> coordinator `(mesh, SelectionMode, ids) -> new faces`
+#: (`mirai.symmetric_ops.coordinate_cap`). Its own table like Collapse; the entry is the switch (D-b).
+CAP_COORDINATORS: Mapping[str, Any] = MappingProxyType(
+    {
+        commands.CAP: coordinate_cap,
+    }
+)
+
 #: Extrude command constant (`mirai.interaction.commands`) -> planner `(mesh, faces) -> SymmetricExtrudePlan`
 #: (`mirai.symmetric_extrude`, slice 7). The planner refuses before any mutation (`SymmetryRefusal`); the plan
 #: it returns is what the unchanged `ExtrudeTool` is handed at `begin`. Keyed per command like the removal
@@ -103,6 +113,11 @@ def declared_removal_commands() -> frozenset[str]:
 def declared_collapse_commands() -> frozenset[str]:
     """The Collapse commands that have a coordinator (read on every call, never cached)."""
     return frozenset(COLLAPSE_COORDINATORS)
+
+
+def declared_cap_commands() -> frozenset[str]:
+    """The Cap commands that have a coordinator (read on every call, never cached)."""
+    return frozenset(CAP_COORDINATORS)
 
 
 def declared_extrude_commands() -> frozenset[str]:

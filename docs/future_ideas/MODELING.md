@@ -100,6 +100,7 @@ Vor neuen Werkzeugen den Production-Integrationsstand prüfen: Eine Operation ka
   (`core.operations.collapse`, `Application._collapse_command`, mit Symmetrie).
 - **Weld / Target Weld:** Vertices bzw. Kanten kontrolliert verbinden; Verhalten, Toleranz und Undo eindeutig machen.
 - **Bridge und Close Holes/Gaps:** ausgewählte Randloops verbinden und geeignete Öffnungen schließen. Randanzahl, Reihenfolge, Richtung und nicht unterstützte Fälle klar behandeln.
+  *Close erledigt 2026-10-25:* Cap auf `Shift+B` ([WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Nachtrag D); Bridge offen.
 - **Edge- und Vertex-Extrude:** gezielte lokale Topologie aufbauen, wo Face-Extrude nicht die passende Absicht ausdrückt.
 - **Bevel/Chamfer:** bestehende Bevel-Fähigkeit und ihre tatsächliche Production-Abdeckung auditieren; später gezielt Edge-/Vertex-Bevel ergänzen, falls der Character-Workflow es verlangt.
 - **Set Flow / Loop Flow:** untersuchen, wie eine Folge bestehender Kanten zwischen angrenzenden Loops gleichmäßiger oder gezielter verteilt werden kann.

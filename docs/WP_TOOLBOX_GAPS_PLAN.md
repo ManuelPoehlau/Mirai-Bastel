@@ -200,6 +200,29 @@ gesammelten Praxistest (§3).
 - *Nicht-Scope:* Volumenerhalt (Forschungsfrage), Pinsel.
 - *Tests:* planares Grid (Relax verändert keine Normalenkomponente), Konvergenz, Rand fix, Undo, Symmetrie.
 
+### Nachtrag D — Border Select und Cap (Manu 2026-10-25: „Border Select und Cap/Close brauch ich“)
+
+- *Gebaut 2026-10-25* (`src/mirai/topology/border.py`, `Application._border_select` / `_cap_command`,
+  `symmetric_ops.coordinate_cap`, `symmetry_declarations.CAP_COORDINATORS`; Tests `tests/test_border_cap.py`).
+  Kein Core-Eingriff (nur `Mesh.add_face`). Tasten `PROVISIONAL`: `B` = Border Select, `Shift+B` = Cap
+  (`F` bleibt für Frame Selection reserviert, E47).
+- *Border Select (`B`):* Ein Rand ist eine Kette von Kanten mit genau einer Fläche (3ds Max „Border“).
+  V/E: jeder gewählte Randpunkt bzw. jede Randkante wächst zum ganzen Rand, die Auswahl wird ersetzt; ohne
+  Auswahl der Rand unter dem Cursor, sonst alle Ränder des Meshes (Löcher finden). F: der Umriss der gewählten
+  Flächen als Kantenauswahl (Blender „Select Boundary Loop“). Kein Undo-Schritt, wie ein Klick. An einem
+  Punkt, an dem mehr als zwei Randkanten zusammenkommen, endet der Rand.
+- *Cap (`Shift+B`):* Jeder geschlossene Rand, den die Auswahl (sonst das gehoverte Element) berührt, wird mit
+  einer Fläche (N-Gon) geschlossen, ein Undo-Schritt. Die Fläche ist gegen ihre Nachbarn gewunden, die Normale
+  zeigt also mit der Oberfläche nach außen. Danach ist die neue Fläche im Face-Modus gewählt, bereit für
+  `T`/`W` (`PROVISIONAL`). Abgelehnt (nichts geändert, Statuszeile): kein Rand in der Auswahl; Rand nicht
+  geschlossen; der Rand ist der ganze Umriss einer einzelnen Fläche (die Kappe wäre deren Rückseite).
+- *Symmetrie:* Das Spiegelloch wird mitgeschlossen. Ein Loch **über** der Ebene (Hals, Kragen) würde eine
+  Fläche über der Ebene ergeben, die D-strict ablehnt; es wird stattdessen mit zwei Spiegelflächen geschlossen,
+  geteilt durch eine neue Kante zwischen seinen zwei Seam-Punkten, die zur Seam kommt (wie Split, S1). Ohne
+  genau zwei nicht benachbarte Seam-Punkte lehnt Cap mit Text ab.
+- *Nicht-Scope:* Bridge (zwei Ränder verbinden), Grid Fill / Kappe mit Quads, Kappe mit Mittelpunkt (Fan).
+  Der Kandidat für „Kappe als Quads“ ist ein späteres Teilstück, falls die N-Gon-Kappe für SubD stört.
+
 ## 3. Praxistest für Manu (je Paket ca. 10–15 Minuten)
 
 - **A:**
@@ -225,6 +248,14 @@ gesammelten Praxistest (§3).
     zum Rand hin glättet es schwächer.
   - Fragen: Ist ein Antippen (2 Schritte) zu stark oder zu schwach? Passt die Ziehgeschwindigkeit (60 px pro
     Schritt)? Flacht Smooth an Nase/Lippen zu sehr ab?
+
+- **D (Border / Cap, ca. 5 Minuten):**
+  - Auf dem Kopf im Face-Modus eine Fläche löschen (`Entf`), dann `2`, eine Kante am Loch wählen, `B` → das
+    ganze Loch ist gewählt; `Shift+B` → zu, die neue Fläche ist gewählt; `Strg+Z` → wieder offen.
+  - Ohne Auswahl: mit dem Cursor über eine Randkante fahren, `Shift+B` schließt dieses Loch direkt.
+  - Im Face-Modus ein paar Flächen wählen, `B` → ihr Umriss als Kanten.
+  - Unter Symmetrie ein Loch auf einer Seite und eins über der Mitte (z. B. den Hals) schließen.
+  - Fragen: Passen `B` / `Shift+B`? Soll nach Cap die Fläche gewählt sein (jetzt) oder der Rand bleiben?
 
 ## 4. Definition of Done (je Slice)
 

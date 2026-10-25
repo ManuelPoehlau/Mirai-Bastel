@@ -166,6 +166,7 @@ from .resymmetrize import (
 )
 from . import symmetry_declarations
 from .topology.contextual_c import CContext, resolve_c_context
+from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
 from .topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
@@ -352,6 +353,7 @@ _TOPOLOGY_COMMANDS = frozenset(
     {
         commands.CONNECT,
         commands.COLLAPSE,
+        commands.CAP,
         commands.EXTRUDE,
         commands.LOOP_SLIDE,
         commands.RESYMMETRIZE,
@@ -433,6 +435,8 @@ _COMPONENT_COMMANDS = frozenset(
         commands.CONNECT,
         *_REMOVAL_COMMANDS,
         commands.COLLAPSE,
+        commands.BORDER_SELECT,
+        commands.CAP,
         commands.SYMMETRY_CYCLE,
         commands.RESYMMETRIZE,
         *_MASK_COMMANDS,
@@ -2180,6 +2184,10 @@ class Application:
             return self._removal_command(command)
         if command == commands.COLLAPSE:
             return self._collapse_command()
+        if command == commands.BORDER_SELECT:
+            return self._border_select()
+        if command == commands.CAP:
+            return self._cap_command()
         if command == commands.SYMMETRY_CYCLE:
             return self._symmetry_cycle()
         if command in _MASK_COMMANDS:
@@ -3186,6 +3194,119 @@ class Application:
         self._set_status(f"{COLLAPSE_LABEL}: {len(outcome.result)} point(s)")
         return True
 
+    # -- Border Select / Cap (Manu 2026-10-25, keys PROVISIONAL) -------------------------
+
+    def _border_select(self) -> bool:
+        """B (`mirai.topology.border.border_select`): in vertex / edge mode the whole open border(s)
+        the selection touches replace it; nothing selected = the border under the cursor, else every
+        border of the mesh. In face mode the outline of the selected faces becomes the edge
+        selection. A selection change like Shift+L, no History step."""
+        selection = self.selection
+        mesh = self.scene.mesh
+        mode = selection.mode
+        current = {
+            SelectionMode.VERTEX: selection.vertices,
+            SelectionMode.EDGE: selection.edges,
+            SelectionMode.FACE: selection.faces,
+        }[mode]
+        valid = {
+            SelectionMode.VERTEX: mesh.is_valid_vertex,
+            SelectionMode.EDGE: mesh.is_valid_edge,
+            SelectionMode.FACE: mesh.is_valid_face,
+        }[mode]
+        ids = {i for i in current if valid(i)}
+        hovered = self._hovered_of_mode()
+        if not ids and mode is not SelectionMode.FACE and hovered is not None:
+            ids = {hovered}
+            if not border_select(mesh, mode, ids)[1]:
+                ids = set()
+        if not ids and mode is SelectionMode.FACE:
+            self._set_status(f"{BORDER_LABEL}: select faces (outline) or use 1/2 for holes")
+            return False
+        new_mode, found = border_select(mesh, mode, ids)
+        if not found:
+            self._set_status(f"{BORDER_LABEL}: no open border here")
+            return False
+        if new_mode is not mode:
+            selection.clear()
+            selection.mode = new_mode
+        return self._apply_selection_step(BORDER_LABEL, found)
+
+    def _hovered_of_mode(self):
+        """The hovered element if it is a valid element of the active component mode, else None."""
+        hovered = self.selection.hovered
+        kind, valid = {
+            SelectionMode.VERTEX: (VertexId, self.scene.mesh.is_valid_vertex),
+            SelectionMode.EDGE: (EdgeId, self.scene.mesh.is_valid_edge),
+            SelectionMode.FACE: (FaceId, self.scene.mesh.is_valid_face),
+        }.get(self.selection.mode, (None, None))
+        if kind is None or not isinstance(hovered, kind) or not valid(hovered):
+            return None
+        return hovered
+
+    def _cap_command(self) -> bool:
+        """Shift+B (`mirai.topology.border.apply_cap`): each closed border the selection (else the hovered
+        element) touches is closed with one face, wound against its neighbours. One
+        `MeshDeltaCommand`; mesh and history untouched on refusal. Residue (`PROVISIONAL`): the new
+        faces in face mode, ready for T / W. Under symmetry the coordinator
+        (`symmetry_declarations.CAP_COORDINATORS`) caps the mirror border too and splits a hole
+        across the plane into two mirror faces along the seam."""
+        selection = self.selection
+        mesh = self.scene.mesh
+        mode = selection.mode
+        ids = {
+            SelectionMode.VERTEX: selection.vertices,
+            SelectionMode.EDGE: selection.edges,
+            SelectionMode.FACE: selection.faces,
+        }.get(mode)
+        if not ids and self._hovered_of_mode() is not None:
+            ids = {self._hovered_of_mode()}
+        if not ids:
+            self._set_status(f"{CAP_LABEL}: select or hover a border edge of the hole")
+            return False
+        coordinator = (
+            symmetry_declarations.CAP_COORDINATORS.get(commands.CAP)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        sides = None
+        if coordinator is not None:
+            vertices_of = {
+                SelectionMode.VERTEX: lambda v: (v,),
+                SelectionMode.EDGE: mesh.edge_vertices,
+                SelectionMode.FACE: mesh.face_vertices,
+            }[mode]
+            sides = residue_sides(mesh, ids, vertices_of)
+
+        def mutate(mesh) -> list[FaceId]:
+            if coordinator is not None:
+                return coordinator(mesh, mode, set(ids))
+            return apply_cap(mesh, mode, set(ids))
+
+        def residue(new_faces) -> None:
+            kept = {f for f in new_faces if mesh.is_valid_face(f)}
+            if sides is not None:
+                kept = on_residue_sides(mesh, kept, sides, mesh.face_vertices)
+            selection.clear()
+            selection.mode = SelectionMode.FACE
+            selection.add(kept)
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+
+        try:
+            outcome = self._mesh_transaction(CAP_LABEL, mutate, on_applied=residue)
+        except CapRefused as exc:
+            self._set_status(f"{CAP_LABEL}: {exc}")
+            return False
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
+            return False
+        if not outcome.changed:
+            self._set_status(f"{CAP_LABEL}: nothing to do")
+            return False
+        self._set_status(f"{CAP_LABEL}: {len(outcome.result)} face(s)")
+        return True
+
     def _notify_topology_changed(self) -> None:
         """Meldet dem Viewport eine Topologie-Änderung und richtet den Hover
         neu aus.
@@ -4036,7 +4157,15 @@ class Application:
                 return False
             return self.dispatch_command(command)
         if (
-            command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE)
+            command
+            in (
+                commands.CONNECT,
+                commands.COLLAPSE,
+                commands.BORDER_SELECT,
+                commands.CAP,
+                commands.SYMMETRY_CYCLE,
+                commands.RESYMMETRIZE,
+            )
             or command in _MASK_COMMANDS
             or command in _HIDE_COMMANDS
             or command in _REGION_COMMANDS

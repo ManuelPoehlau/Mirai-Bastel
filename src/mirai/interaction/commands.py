@@ -235,6 +235,14 @@ LOOP_SHRINK = "LoopShrink"
 LOOP_NEXT = "LoopNext"
 LOOP_PREVIOUS = "LoopPrevious"
 
+# --- Border / Cap (Manu 2026-10-25; `mirai.topology.border`, keys `PROVISIONAL`) ---------------
+# BORDER_SELECT (B): V/E = the whole open border(s) the selection touches (nothing selected = every
+# border), F = the outline of the selected faces as edges; a selection change, no History step.
+# CAP (Shift+B; Blender Fill, 3ds Max Cap): each closed border the selection touches gets one face; one Undo step,
+# mirrored under symmetry (`symmetry_declarations.CAP_COORDINATORS`).
+BORDER_SELECT = "BorderSelect"
+CAP = "Cap"
+
 # --- Soft Selection (WP-SOFT-01 S2a, AD-020; PROVISIONAL) --------------------------
 # State commands like the constraints: they start no interaction and change no mesh;
 # they set the sticky soft settings that the next gesture reads at begin(). Which input
