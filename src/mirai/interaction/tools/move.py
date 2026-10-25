@@ -73,6 +73,7 @@ from core import (
     VertexId,
 )
 
+from ...mask import mask_symmetric_influence, mask_weights, unblocked
 from ...soft_selection import SoftMoveOperation, compute_influence, symmetric_influence
 from ...symmetry import CorrespondenceState, mirrored_selection, vertex_correspondence
 from ..tool import Tool, ToolStateError
@@ -98,6 +99,7 @@ class MoveTool(Tool):
         self._scene = None
         self._camera = None
         self._operation: MoveOperation | None = None
+        self._mask: dict = {}
         self._vertex_ids: set[VertexId] = set()
         self._anchor_vertex: VertexId | None = None
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
@@ -155,9 +157,10 @@ class MoveTool(Tool):
 
     def _on_begin(
         self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None,
-        soft=None, **params: Any
+        soft=None, mask=None, **params: Any
     ) -> None:
-        vertex_ids = set(vertex_ids or ())
+        self._mask = mask or {}  # Mask Geometry: `mirai.mask`; fixed for the gesture
+        vertex_ids = unblocked(vertex_ids or (), self._mask)
         if not vertex_ids:
             raise ValueError("MoveTool.begin() benötigt mindestens einen Vertex.")
         self._scene = scene
@@ -249,6 +252,7 @@ class MoveTool(Tool):
                 mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
                 curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
+            field = mask_symmetric_influence(field, self._mask)
             if not field.weights:
                 raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")
             operation_params["symmetry"] = field.symmetry_params(mesh)
@@ -278,6 +282,7 @@ class MoveTool(Tool):
                 mesh, vertex_ids, soft.world_radius, metric=soft.metric, curve=soft.curve,
                 curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
+            influence = mask_weights(influence, vertex_ids, self._mask)
             if not influence:
                 raise ValueError("MoveTool.begin() benötigt mindestens einen gültigen Vertex.")
             operation_params["influence"] = influence

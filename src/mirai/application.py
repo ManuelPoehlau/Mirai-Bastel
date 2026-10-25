@@ -75,6 +75,7 @@ from viewport.overlay import (
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
+from .mask import VertexMask, effective_mask, unblocked
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.input import KNIFE_CONTEXT, SUBD_CONTEXT
@@ -143,7 +144,7 @@ from .symmetry_coordination import (
     canonical_vertices,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
-from .symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
+from .symmetry import CorrespondenceState, mirrored_selection, symmetry_state, vertex_correspondence
 from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
 from .symmetry_display import ReportCache, SymmetryDisplay
 from .resymmetrize import (
@@ -317,6 +318,8 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
 #: WP-SOFT-01 S2a (AD-020, `PROVISIONAL`): the state commands of Soft Selection. They start
 #: no interaction and change no mesh, like the constraints: they set the sticky
 #: `SoftSettings`, which the next gesture reads at `begin()`.
+_MASK_COMMANDS = (commands.MASK_TOGGLE, commands.MASK_INVERT, commands.MASK_CLEAR)
+
 _SOFT_COMMANDS = (
     commands.SOFT_TOGGLE,
     commands.SOFT_RADIUS_UP,
@@ -391,6 +394,7 @@ _COMPONENT_COMMANDS = frozenset(
         commands.COLLAPSE,
         commands.SYMMETRY_CYCLE,
         commands.RESYMMETRIZE,
+        *_MASK_COMMANDS,
         *_LOOP_COMMANDS,
         *_SELECTION_STEP_COMMANDS,
     }
@@ -751,6 +755,9 @@ class Application:
         # The radius is held in world units (computed on switch-on, on a step change and
         # on scene load) so that the tool and the later preview read one value.
         self._soft: SoftSettings = SoftSettings()
+        # Mask Geometry (`mirai.mask`): protection state, not mesh data - no History, cleared on scene load.
+        self._mask: VertexMask = VertexMask()
+        self._mask_overlay = None
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
         # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
@@ -926,6 +933,7 @@ class Application:
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
         subd_overlay_type: type | None = None,
+        mask_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel, OBJ-Import oder Szenendatei).
 
@@ -1017,6 +1025,11 @@ class Application:
         if soft_shading_overlay_type is not None:
             self._soft_shading_overlay = soft_shading_overlay_type()
             self.viewport.add_overlay(self._soft_shading_overlay)
+        self._mask.clear()  # its IDs belong to the old mesh
+        self._mask_overlay = None
+        if mask_overlay_type is not None:
+            self._mask_overlay = mask_overlay_type()
+            self.viewport.add_overlay(self._mask_overlay)
         self._soft_apply_look()
         if self._soft_overlay is not None or self._soft_shading_overlay is not None:
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
@@ -1990,6 +2003,7 @@ class Application:
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
         subd_overlay_type: type | None = None,
+        mask_overlay_type: type | None = None,
     ) -> None:
         """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
         zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
@@ -2025,6 +2039,7 @@ class Application:
             symmetry_overlay_type=symmetry_overlay_type,
             scene_path=scene_path,
             subd_overlay_type=subd_overlay_type,
+            mask_overlay_type=mask_overlay_type,
         )
         self.selection.clear()
         self.selection.clear_objects()
@@ -2112,6 +2127,8 @@ class Application:
             return self._collapse_command()
         if command == commands.SYMMETRY_CYCLE:
             return self._symmetry_cycle()
+        if command in _MASK_COMMANDS:
+            return self._mask_command(command)
         if command == commands.RESYMMETRIZE:
             return self._resymmetrize_open()
         if command in (commands.EDGE_LOOP, commands.EDGE_RING):
@@ -2794,7 +2811,7 @@ class Application:
         soft = self._soft if self._soft.enabled else None
         try:
             weights = None if soft is None or not target else self._smooth_soft_weights(target, soft)
-            plan = plan_smooth(mesh, target, relax=relax, weights=weights)
+            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=self._mask_values())
         except (SmoothRefused, SoftSymmetryRefusal) as exc:
             label = RELAX_LABEL if relax else SMOOTH_LABEL
             text = str(exc)
@@ -2865,7 +2882,9 @@ class Application:
                 mesh.set_vertex_position(vid, old.start[vid])
         try:
             weights = self._smooth_soft_weights(self._smooth_seeds, gesture)
-            plan = plan_smooth(mesh, self._smooth_seeds, relax=old.relax, weights=weights)
+            plan = plan_smooth(
+                mesh, self._smooth_seeds, relax=old.relax, weights=weights, mask=self._mask_values()
+            )
         except (SmoothRefused, SoftSymmetryRefusal):
             plan = old  # the seeds did not change: keep the field it had
         self._smooth_plan = plan
@@ -3921,11 +3940,12 @@ class Application:
             return self.dispatch_command(command)
         if (
             command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE)
+            or command in _MASK_COMMANDS
             or command in _REMOVAL_COMMANDS
             or command in _LOOP_COMMANDS
             or command in _SELECTION_STEP_COMMANDS
         ):
-            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste, Shift+S und Alt+M werden
+            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste, Shift+S, Alt+M und die Mask-Tasten werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
             # Shift+S: AD-SYM-04 R-4, still wie C).
             if self._transform_key is not None:
@@ -4019,6 +4039,9 @@ class Application:
         if not target:
             noun = selection.mode.name.lower()
             self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
+            return False
+        if not unblocked(target, self._mask_values()):
+            self._set_status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
             return False
         self.dispatch_command(command)
         self._transform_key = key
@@ -4123,6 +4146,9 @@ class Application:
             }
             if soft is not None:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
+            mask = self._mask_values()
+            if mask:
+                begin_context["mask"] = mask  # absent without a mask: today's payload, unchanged
             if self._orientation == transform_space.NORMAL and self._transform_space is not None:
                 refusal, normal_context = self._normal_space_context()
                 if refusal is not None:
@@ -4260,6 +4286,46 @@ class Application:
             self._soft_preview_refresh()
 
     # -- Soft Selection settings (WP-SOFT-01 S2a, AD-020, PROVISIONAL) ------------------
+
+    # -- Mask Geometry (`mirai.mask`) ----------------------------------------------
+
+    def _mask_values(self) -> dict[VertexId, float]:
+        """The mask a gesture begins with (stale IDs dropped, symmetric pairs protected alike); `{}` = none."""
+        return effective_mask(self.scene.mesh, self._mask) if self._mask else {}
+
+    def _mask_changed(self, status: str) -> bool:
+        self._mask.prune(self.scene.mesh)
+        if self._mask_overlay is not None:
+            self._mask_overlay.set_values(self._mask.values())
+            if self.viewport is not None:
+                self.viewport.on_vertices_moved(set(self._mask.values()))  # re-syncs the overlay
+        self._set_status(status)
+        return True
+
+    def _mask_command(self, command: str) -> bool:
+        """Ctrl+M / Ctrl+Shift+M / Alt+Shift+M: mask the selection (or unmask it when it is fully masked),
+        invert, clear. No History, no selection or mesh change; refused during a running gesture."""
+        if self._transform_key is not None:
+            return False
+        mesh = self.scene.mesh
+        if command == commands.MASK_CLEAR:
+            self._mask.clear()
+            return self._mask_changed("Mask cleared")
+        if command == commands.MASK_INVERT:
+            self._mask.invert(mesh)
+            return self._mask_changed(f"Mask inverted: {len(self._mask.full())} points masked")
+        selection = self.selection
+        target = set(resolve_selection_vertices(mesh, selection, selection.mode))
+        if not target:
+            self._set_status("Mask: select vertices first (Ctrl+M)")
+            return False
+        if mesh.symmetry_definition is not None:
+            target |= mirrored_selection(mesh, target)  # a pair is masked together
+        if target <= self._mask.full():
+            self._mask.set(target, 0.0)
+            return self._mask_changed(f"Unmasked {len(target)} points ({len(self._mask.full())} masked)")
+        self._mask.set(target)
+        return self._mask_changed(f"Masked {len(target)} points ({len(self._mask.full())} masked)")
 
     def _soft_refresh_radius(self) -> None:
         """Recompute the world radius from the mesh's bounding radius for the current step

@@ -147,6 +147,8 @@ Scope (binding, see the handoffs):
   menu (window level like Shift+A; bare M stays the Morph Lab bridge): Mirror copy / Pair selected across
   X/Y/Z = 0, Break pair, Re-sync pair - mode `4`, on the selected objects (`Application.mirror_copy`, ...).
   A paired object's partner follows W/E/R and the gizmo mirrored (`install_handlers(..., mirror_menu=...)`).
+- Mask Geometry (`PROVISIONAL`, `src/mirai/mask.py`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts,
+  Alt+Shift+M clears; masked points are skipped by W/E/R and Smooth / Relax and drawn dark (`GLMaskOverlay` in `GL_TYPES`).
 - Symmetry display (Shift+Ctrl+S, window level): shows / hides the symmetry plane and the seam / problem
   markers (`Application.toggle_symmetry_display`; display only, the definition stays).
 - OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): rows in the SPACE menu - "OBJ exportieren"
@@ -267,6 +269,7 @@ from mirai.pyglet_input import (  # noqa: E402
     shift_keys_after,
     wheel_from_pyglet,
 )
+from mirai.mask_display import GLMaskOverlay  # noqa: E402
 from mirai.soft_selection import GLSoftBandOverlay, GLSoftShadingOverlay  # noqa: E402
 from mirai.subdivision.gl_lines import GLSubdLineOverlay  # noqa: E402
 from viewport.gl_gizmo_overlay import draw_gizmo  # noqa: E402
@@ -302,6 +305,7 @@ GL_TYPES = {
     "soft_shading_overlay_type": GLSoftShadingOverlay,
     "symmetry_overlay_type": GLSymmetryOverlay,
     "subd_overlay_type": GLSubdLineOverlay,
+    "mask_overlay_type": GLMaskOverlay,
 }
 
 

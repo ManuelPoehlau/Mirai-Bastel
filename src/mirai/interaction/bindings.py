@@ -211,6 +211,10 @@ def build_default_bindings() -> BindingSet:
     # the Lab's M (Artist A7) is taken in `src/main.py` by the Morph Lab bridge (Manu 2026-10-17),
     # and AD-013 A5 promotes the capability, not the Lab's key.
     bs.set_default(_key("m", "alt"), cmd.RESYMMETRIZE)
+    # Mask Geometry (`PROVISIONAL`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts, Alt+Shift+M clears.
+    bs.set_default(_key("m", "ctrl"), cmd.MASK_TOGGLE)
+    bs.set_default(_key("m", "ctrl", "shift"), cmd.MASK_INVERT)
+    bs.set_default(_key("m", "alt", "shift"), cmd.MASK_CLEAR)
 
     # Loop tools (2026-10-15, promoted from the Playground; keys = Artist Input Truth
     # `topology.edge_loop_select` / `edge_ring_select` / `loop_insert` / `loop_slide`).

@@ -32,6 +32,15 @@ Das ist **nicht** dasselbe wie den vorhandenen Reference/Ghost-Modus für andere
 
 ### Mask Geometry
 
+> Gebaut (2026-10-25, `PROVISIONAL`, `src/mirai/mask.py`, `src/mirai/mask_display.py`): `Ctrl+M` maskiert die Auswahl
+> (bei vollständig maskierter Auswahl hebt es die Maske auf), `Ctrl+Shift+M` invertiert, `Alt+Shift+M` löscht.
+> Scope: Move/Rotate/Scale (plain und Soft) sowie Smooth/Relax; ein voll maskierter Vertex bewegt sich nie, ein
+> teilmaskierter dämpft das Soft-Gewicht mit `w * (1 - m)` (Seeds behalten 1.0). Unter Symmetrie wirkt pro
+> Spiegelpaar das Maximum. Die Maske ist Schutzzustand, kein Mesh-Datum: kein History-Eintrag (Undo macht sie nicht
+> rückgängig), keine Auswahl-/Topologieänderung, beim Szenenwechsel geleert, schwarze Punkte im Viewport.
+> Offen: Pinsel/Malen und weiche Werte per UI, Maske für weitere Werkzeuge (Extrude, Knife, Loop Slide), Erhalt über
+> Topologieänderungen (neue Vertices starten unmaskiert), Speichern in Szenendateien.
+
 Eine Maske schützt Bereiche vor Bearbeitung, ohne die eigentliche Auswahl ersetzen zu müssen. Das ist besonders wichtig bei großen Soft-Selection-Radien und beim Formen von Augenlidern, Lippen, Wangen und Kiefer.
 
 Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope untersuchen: nur Transform/Soft Selection oder später auch weitere Deformer und bestimmte Modellierwerkzeuge? Maskierung darf nicht stillschweigend die Topologie oder die Auswahl verändern.
