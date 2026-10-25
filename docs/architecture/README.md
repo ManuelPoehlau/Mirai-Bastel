@@ -48,6 +48,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife/Extrude without `SymmetricX` copies) | DECIDED (2026-10-08) |
 | [AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) | Symmetry in `src/main.py` (entry, display, AD-013 H2 text), Core basis and slices for symmetric Soft Selection | DECIDED (2026-10-14); slices A1, A2 built (2026-10-14) |
 | [AD-SYM-05](AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) | Weighted transforms in the Core: the one Core change of symmetric Soft Selection (slice SS1), P-a seam category, R-6 at pair level | DECIDED (2026-10-14): reviewed, go for SS1 |
+| [AD-REGIONS-01](AD-REGIONS-01-FACE-REGIONS-STORAGE.md) | Face regions (saved regions / polygroups): mesh-owned, journaled, saved as `"face_regions"`; no automatic inheritance yet | DECIDED (2026-10-25); Core storage and commands built |
 | [ADR-001](../ADR-001-core-v1-reassessment.md) | Core V1 reassessment | Accepted |
 
 Production entry point and integration: [Stage A](PRODUCTION_ENTRY_POINT_STAGE_A.md), [WP-06 Stage B kickoff](../archive/handoffs_2026-10/WP-06_STAGE_B_KICKOFF.md).

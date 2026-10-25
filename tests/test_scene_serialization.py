@@ -199,6 +199,26 @@ class TestSceneSerializationRoundtrip(unittest.TestCase):
         self.assertIsNone(restored.mesh.symmetry_definition)
 
 
+    def test_face_regions_survive_scene_roundtrip_and_are_absent_by_default(self) -> None:
+        """AD-REGIONS-01: wie die Symmetry Definition ein vom Mesh besessener, additiver Schlüssel
+        (`"face_regions"`, keine Formatversion); ein Zustand ohne den Schlüssel lädt als `None`."""
+        from core import FaceRegion, FaceRegions
+
+        scene, (*_vertices, face) = build_mutated_scene()
+        self.assertIsNone(scene.mesh.face_regions)
+        self.assertIsNone(scene_from_dict(scene_to_dict(scene)).mesh.face_regions)
+        regions = FaceRegions((FaceRegion("Brow", frozenset({face})), FaceRegion("Jaw")))
+        scene.mesh.face_regions = regions
+
+        data = scene_to_dict(scene)
+        restored = scene_from_dict(data)
+        self.assertEqual(restored.mesh.face_regions, regions)
+
+        for obj in data["objects"]:
+            obj["mesh"].pop("face_regions", None)  # a file from before regions
+        self.assertIsNone(scene_from_dict(data).mesh.face_regions)
+
+
 class TestSceneSerializationEmptyScene(unittest.TestCase):
     """Randfall: eine leere Scene (kein einziger Vertex) muss ebenfalls
     verlustfrei roundtriggen - nicht nur mesh-tragende Szenen."""

@@ -106,6 +106,42 @@ class SymmetryDefinition:
     seam_edges: frozenset[EdgeId] = field(default_factory=frozenset)
 
 
+@dataclass(frozen=True)
+class FaceRegion:
+    """Eine benannte Menge von Faces (Saved Regions / Polygroups, AD-REGIONS-01).
+
+    Das Mesh *besitzt* die Regionen (speichert, serialisiert, journalisiert sie), *kennt* aber keine
+    Semantik: wofür eine Region steht und wie sie bei Topologieänderungen nachgeführt wird, lebt oberhalb
+    des Core (`mirai.regions`). IDs toter Faces bleiben enthalten - eine ID wird nie wiederverwendet
+    (AD-001), ein Undo kann sie wieder lebendig machen; Leser filtern mit `is_valid_face`.
+    """
+
+    name: str
+    faces: frozenset[FaceId] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name:
+            raise MeshError("Eine Region braucht einen nicht leeren Namen.")
+        if not all(isinstance(f, FaceId) for f in self.faces):
+            raise MeshError("Eine Region enthält nur FaceIds.")
+
+
+@dataclass(frozen=True)
+class FaceRegions:
+    """Die Regionen eines Meshes: eindeutige Namen, Reihenfolge = Anzeigereihenfolge. Regionen dürfen
+    sich überlappen. Ein Mesh ohne Regionen hat `None`, nie eine leere Instanz."""
+
+    regions: tuple[FaceRegion, ...] = ()
+
+    def __post_init__(self) -> None:
+        names = [r.name for r in self.regions]
+        if len(set(names)) != len(names):
+            raise MeshError("Regionsnamen müssen eindeutig sein.")
+
+    def get(self, name: str) -> FaceRegion | None:
+        return next((r for r in self.regions if r.name == name), None)
+
+
 # ----------------------------------------------------------------------
 # Change journal (AD-023 H1, CORE_V1_FREEZE §7.1 2026-10-21)
 #
@@ -123,20 +159,29 @@ class MeshChange:
     `MeshWatch`). An element that did not exist is recorded as None. Touched is not changed: an
     element may be back to its record (`Mesh.end_change` drops those)."""
 
-    __slots__ = ("vertices", "edges", "faces", "symmetry")
+    __slots__ = ("vertices", "edges", "faces", "symmetry", "regions")
 
     def __init__(self) -> None:
         self.vertices: dict[VertexId, VertexRecord | None] = {}
         self.edges: dict[EdgeId, EdgeRecord | None] = {}
         self.faces: dict[FaceId, FaceRecord | None] = {}
         self.symmetry = _UNSET
+        self.regions = _UNSET
 
     @property
     def symmetry_touched(self) -> bool:
         return self.symmetry is not _UNSET
 
+    @property
+    def regions_touched(self) -> bool:
+        return self.regions is not _UNSET
+
     def is_empty(self) -> bool:
-        return not (self.vertices or self.edges or self.faces) and self.symmetry is _UNSET
+        return (
+            not (self.vertices or self.edges or self.faces)
+            and self.symmetry is _UNSET
+            and self.regions is _UNSET
+        )
 
 
 @dataclass(frozen=True)
@@ -151,10 +196,16 @@ class MeshDelta:
     edges: dict
     faces: dict
     symmetry: tuple | None = None
+    #: `(before, after)` of the face regions if they changed (either side may be None = no regions)
+    regions: tuple | None = None
 
     @property
     def empty(self) -> bool:
-        return not (self.vertices or self.edges or self.faces) and self.symmetry is None
+        return (
+            not (self.vertices or self.edges or self.faces)
+            and self.symmetry is None
+            and self.regions is None
+        )
 
 
 class MeshWatch:
@@ -228,6 +279,24 @@ class Mesh:
         # (Symmetrie "aus"). Seit 2026-10-21 eine Property, damit das Journal das Setzen sieht;
         # Lesen und Setzen bleiben unverändert `mesh.symmetry_definition`.
         self._symmetry_definition: SymmetryDefinition | None = None
+        # Saved Regions (AD-REGIONS-01): wie die Symmetry Definition ein vom Mesh besessener Wert, den das
+        # Journal beim Setzen sieht; Lesen und Setzen als `mesh.face_regions`.
+        self._face_regions: FaceRegions | None = None
+
+    @property
+    def face_regions(self) -> FaceRegions | None:
+        return self._face_regions
+
+    @face_regions.setter
+    def face_regions(self, regions: FaceRegions | None) -> None:
+        if regions is not None and not isinstance(regions, FaceRegions):
+            raise MeshError("face_regions erwartet FaceRegions oder None.")
+        if regions is not None and not regions.regions:
+            regions = None  # no regions is always None, never an empty instance
+        for log in self._logs:
+            if log.regions is _UNSET:
+                log.regions = self._face_regions
+        self._face_regions = regions
 
     @property
     def symmetry_definition(self) -> SymmetryDefinition | None:
@@ -1322,7 +1391,18 @@ class Mesh:
                 for fid, data in self._faces.items()
             },
             "symmetry": self._export_symmetry_definition(),
+            "face_regions": self._export_face_regions(),
         }
+
+    def _export_face_regions(self) -> list | None:
+        """Additiver Schlüssel `"face_regions"` (AD-REGIONS-01) wie `"symmetry"`: `None` ohne Regionen,
+        sonst eine Liste `{"name", "faces"}` in Anzeigereihenfolge, FaceIds aufsteigend."""
+        regions = self._face_regions
+        if regions is None:
+            return None
+        return [
+            {"name": r.name, "faces": [int(f) for f in sorted(r.faces)]} for r in regions.regions
+        ]
 
     def _export_symmetry_definition(self) -> dict | None:
         definition = self.symmetry_definition
@@ -1416,6 +1496,15 @@ class Mesh:
         if definition != self._symmetry_definition:
             self.symmetry_definition = definition
 
+        regions_raw = state.get("face_regions")
+        regions = None if not regions_raw else FaceRegions(
+            tuple(
+                FaceRegion(r["name"], frozenset(FaceId(f) for f in r["faces"])) for r in regions_raw
+            )
+        )
+        if regions != self._face_regions:
+            self.face_regions = regions
+
     # ------------------------------------------------------------------
     # Änderungs-Journal (AD-023 H1, CORE_V1_FREEZE §7.1 2026-10-21): Delta statt Snapshot
     # ------------------------------------------------------------------
@@ -1450,7 +1539,10 @@ class Mesh:
         symmetry = None
         if change.symmetry is not _UNSET and change.symmetry != self._symmetry_definition:
             symmetry = (change.symmetry, self._symmetry_definition)
-        return MeshDelta(vertices, edges, faces, symmetry)
+        regions = None
+        if change.regions is not _UNSET and change.regions != self._face_regions:
+            regions = (change.regions, self._face_regions)
+        return MeshDelta(vertices, edges, faces, symmetry, regions)
 
     def rollback_change(self, change: MeshChange) -> None:
         """Stellt den Zustand bei `begin_change()` exakt wieder her (Element-Records,
@@ -1460,6 +1552,8 @@ class Mesh:
         self._apply_records(change.vertices, change.edges, change.faces)
         if change.symmetry is not _UNSET:
             self.symmetry_definition = change.symmetry
+        if change.regions is not _UNSET:
+            self.face_regions = change.regions
 
     def revert_change(self, change: MeshChange) -> None:
         """Wie `rollback_change`, aber die Aufzeichnung läuft weiter (leer, ab dem wieder
@@ -1472,8 +1566,11 @@ class Mesh:
         self._apply_records(change.vertices, change.edges, change.faces)
         if change.symmetry is not _UNSET:
             self.symmetry_definition = change.symmetry
+        if change.regions is not _UNSET:
+            self.face_regions = change.regions
         change.vertices, change.edges, change.faces = {}, {}, {}
         change.symmetry = _UNSET
+        change.regions = _UNSET
 
     def release_change(self, change: MeshChange) -> None:
         """Beendet eine Aufzeichnung ohne Delta: die Änderungen bleiben (ein Checkpoint, zu dem
@@ -1491,6 +1588,8 @@ class Mesh:
         )
         if delta.symmetry is not None:
             self.symmetry_definition = delta.symmetry[side]
+        if delta.regions is not None:
+            self.face_regions = delta.regions[side]
 
     def watch(self) -> MeshWatch:
         """Dauerhaftes Journal für abgeleitete Daten (Viewport, Pick-Cache), siehe MeshWatch."""

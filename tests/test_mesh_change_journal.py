@@ -19,7 +19,7 @@ import pytest
 import tests._bootstrap  # noqa: F401
 
 from core import HistoryStack, VertexId
-from core.mesh import Mesh, MeshError, SymmetryDefinition
+from core.mesh import FaceRegion, FaceRegions, Mesh, MeshError, SymmetryDefinition
 from core.operations import MeshDeltaCommand, record_mesh_change
 from tests.mesh_invariants import assert_mesh_invariants
 
@@ -64,7 +64,7 @@ def _random_op(mesh: Mesh, rng: random.Random) -> None:
     kind = rng.choice(
         ["split_edge", "split_face", "connect", "dissolve_edges", "dissolve_faces",
          "dissolve_vertex", "delete_faces", "delete_edges", "delete_vertices", "move",
-         "add_face", "symmetry", "collapse"]
+         "add_face", "symmetry", "collapse", "regions"]
     )
     if kind == "split_edge" and edges:
         mesh.split_edge(rng.choice(edges), rng.uniform(0.2, 0.8))
@@ -106,6 +106,12 @@ def _random_op(mesh: Mesh, rng: random.Random) -> None:
         )
     elif kind == "collapse" and edges:
         mesh.collapse_edge(rng.choice(edges))
+    elif kind == "regions" and faces:
+        # dead IDs stay in the value on purpose (AD-REGIONS-01): only readers filter
+        mesh.face_regions = None if rng.random() < 0.2 else FaceRegions(
+            (FaceRegion("A", frozenset(rng.sample(faces, min(len(faces), 3)))),
+             FaceRegion("B", frozenset(rng.sample(faces, 1))))
+        )
 
 
 def _recorded_step(mesh: Mesh, rng: random.Random):
@@ -311,6 +317,75 @@ def test_symmetry_definition_rides_in_the_delta():
     assert mesh.symmetry_definition is None
     mesh.apply_delta(delta)
     assert mesh.symmetry_definition == definition
+
+
+def test_face_regions_ride_in_the_delta():
+    mesh = _grid(2)
+    faces = mesh.all_face_ids()
+    regions = FaceRegions((FaceRegion("Brow", frozenset(faces[:2])),))
+
+    def set_it():
+        mesh.face_regions = regions
+
+    delta, _ = record_mesh_change(mesh, set_it)
+    assert delta.regions == (None, regions) and not delta.empty
+    mesh.apply_delta(delta, reverse=True)
+    assert mesh.face_regions is None
+    mesh.apply_delta(delta)
+    assert mesh.face_regions == regions
+    # setting the same value again records nothing
+    delta, _ = record_mesh_change(mesh, lambda: setattr(mesh, "face_regions", regions))
+    assert delta.empty
+
+
+def test_regions_survive_rollback_and_nested_checkpoints():
+    mesh = _grid(2)
+    faces = mesh.all_face_ids()
+    first = FaceRegions((FaceRegion("A", frozenset(faces[:1])),))
+    second = FaceRegions((FaceRegion("A", frozenset(faces[:3])), FaceRegion("B", frozenset(faces[3:]))))
+    mesh.face_regions = first
+    outer = mesh.begin_change()
+    mesh.face_regions = second
+    inner = mesh.begin_change()
+    mesh.face_regions = None
+    mesh.rollback_change(inner)
+    assert mesh.face_regions == second
+    mesh.rollback_change(outer)
+    assert mesh.face_regions == first
+    checkpoint = mesh.begin_change()
+    mesh.face_regions = second
+    mesh.revert_change(checkpoint)
+    assert mesh.face_regions == first and checkpoint.is_empty()
+    mesh.face_regions = second
+    mesh.revert_change(checkpoint)
+    assert mesh.face_regions == first
+    mesh.release_change(checkpoint)
+
+
+def test_regions_only_change_is_not_empty_for_a_watch():
+    mesh = _grid(1)
+    watch = mesh.watch()
+    mesh.face_regions = FaceRegions((FaceRegion("A", frozenset(mesh.all_face_ids())),))
+    change = watch.take()
+    assert not change.is_empty() and change.regions_touched
+    assert not (change.vertices or change.edges or change.faces)
+    watch.close()
+
+
+def test_regions_validation_and_empty_normalisation():
+    mesh = _grid(1)
+    face = mesh.all_face_ids()[0]
+    with pytest.raises(MeshError):
+        FaceRegion("", frozenset())
+    with pytest.raises(MeshError):
+        FaceRegion("A", frozenset({1}))
+    with pytest.raises(MeshError):
+        FaceRegions((FaceRegion("A"), FaceRegion("A")))
+    with pytest.raises(MeshError):
+        mesh.face_regions = "nope"
+    mesh.face_regions = FaceRegions((FaceRegion("A", frozenset({face})),))
+    mesh.face_regions = FaceRegions(())
+    assert mesh.face_regions is None
 
 
 def test_end_change_of_an_inactive_recording_is_refused():

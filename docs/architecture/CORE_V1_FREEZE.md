@@ -325,6 +325,19 @@ Freeze rule (§7): (1) requirement — Smooth and Relax in Production (MODELING.
 all — the function reads mappings and returns positions, the caller writes them through `set_vertex_position` inside its
 own journal; (3) documented in the plan; (5) tests `tests/test_smooth.py`.
 
+**Decision:** AD-REGIONS-01 Face Regions (2026-10-25; [AD-REGIONS-01](AD-REGIONS-01-FACE-REGIONS-STORAGE.md), Manu)
+
+`Mesh` gains `face_regions: FaceRegions | None` (new frozen value types `FaceRegion`, `FaceRegions` in
+`src/core/mesh.py`, exported from `core`): named, possibly overlapping sets of `FaceId`s, owned and journaled like
+`symmetry_definition` (`MeshChange.regions`, `MeshDelta.regions`; `end_change` / `rollback_change` / `revert_change` /
+`apply_delta`), saved as the additive key `"face_regions"` (no `FORMAT_VERSION` bump). Freeze rule (§7): (1) requirement —
+saved regions / polygroups for the Character workflow (MODELING.md priority 1) need Undo, Knife-checkpoint rollback and
+the scene file, which a Scene- or Application-level store cannot give (AD-SYM-01 §1.1, AD-021 §4.9); (2) additive only,
+no existing method or record changed; the Core knows no region semantics and no provenance; (3) AD-REGIONS-01; (4)
+`tests/test_mesh_change_journal.py` (random sequences with a `regions` mutation, delta, nested rollback, watch),
+`tests/test_scene_serialization.py` (round trip, file without the key); (5) `knife_resolve.SessionStart.unchanged()` reads the
+new journal slot.
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten

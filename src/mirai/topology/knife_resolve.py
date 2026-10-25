@@ -290,6 +290,7 @@ class SessionStart:
             and all(m._edge_record(e) == r for e, r in ch.edges.items())
             and all(m._face_record(f) == r for f, r in ch.faces.items())
             and (not ch.symmetry_touched or ch.symmetry == m.symmetry_definition)
+            and (not ch.regions_touched or ch.regions == m.face_regions)
         )
 
     def state(self) -> dict:
