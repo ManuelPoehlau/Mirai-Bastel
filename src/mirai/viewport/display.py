@@ -67,6 +67,8 @@ class DisplayState:
         # Fill-Specular, `PROVISIONAL` Defaults. Ansichts-Zustand wie das Licht, keine Taste
         # (kein Material-Editor): `set_surface_finish(...)` ist die Schnittstelle.
         self.surface_finish: SurfaceFinish = DEFAULT_FINISH
+        # Saved regions (2026-10-25): their face colours show (Ctrl+Alt+D toggles).
+        self.region_tint: bool = True
 
     # -- Übergänge ----------------------------------------------------------
 
@@ -78,6 +80,9 @@ class DisplayState:
         """Wechselt in der Reihenfolge Shaded → Flat Shaded → Wireframe → ..."""
         index = _MODE_CYCLE.index(self.mode)
         self.mode = _MODE_CYCLE[(index + 1) % len(_MODE_CYCLE)]
+
+    def toggle_region_tint(self) -> None:
+        self.region_tint = not self.region_tint
 
     def toggle_wireframe_overlay(self) -> None:
         self.wireframe_overlay = not self.wireframe_overlay

@@ -93,14 +93,14 @@ class LoopPiece:
     closed: bool
 
 
-def _selected_step(mesh, edge: EdgeId, vertex: VertexId, selected: set[EdgeId]):
-    step = _loop_step(mesh, edge, vertex)
+def _selected_step(mesh, edge: EdgeId, vertex: VertexId, selected: set[EdgeId], blocked=frozenset()):
+    step = _loop_step(mesh, edge, vertex, blocked)
     if step is None or step[0] not in selected:
         return None
     return step
 
 
-def loop_pieces(mesh, edges) -> list[LoopPiece]:
+def loop_pieces(mesh, edges, blocked=frozenset()) -> list[LoopPiece]:
     """The selected edges split into ordered loop pieces (a lone edge is a piece of one)."""
     selected = set(edges)
     seen: set[EdgeId] = set()
@@ -113,7 +113,7 @@ def loop_pieces(mesh, edges) -> list[LoopPiece]:
         def walk(edge, vertex):
             run = []
             while True:
-                step = _selected_step(mesh, edge, vertex, selected)
+                step = _selected_step(mesh, edge, vertex, selected, blocked)
                 if step is None or step[0] in seen or step[0] == start:
                     return run, step is not None and step[0] == start
                 edge, vertex = step
@@ -135,23 +135,23 @@ def loop_pieces(mesh, edges) -> list[LoopPiece]:
     return pieces
 
 
-def loop_grow(mesh, edges) -> set[EdgeId]:
+def loop_grow(mesh, edges, blocked=frozenset()) -> set[EdgeId]:
     """The selected edges plus, at both ends of each open piece, the next loop edge."""
     out = set(edges)
-    for piece in loop_pieces(mesh, edges):
+    for piece in loop_pieces(mesh, edges, blocked):
         if piece.closed:
             continue
         for edge, vertex in ((piece.edges[0], piece.vertices[0]), (piece.edges[-1], piece.vertices[-1])):
-            step = _loop_step(mesh, edge, vertex)
+            step = _loop_step(mesh, edge, vertex, blocked)
             if step is not None:
                 out.add(step[0])
     return out
 
 
-def loop_shrink(mesh, edges) -> set[EdgeId]:
+def loop_shrink(mesh, edges, blocked=frozenset()) -> set[EdgeId]:
     """The selected edges minus the end edges of each open piece (a lone edge goes)."""
     out = set(edges)
-    for piece in loop_pieces(mesh, edges):
+    for piece in loop_pieces(mesh, edges, blocked):
         if not piece.closed:
             out.discard(piece.edges[0])
             out.discard(piece.edges[-1])
@@ -181,7 +181,7 @@ def piece_edge_ends(piece: LoopPiece, i: int) -> tuple[VertexId, VertexId]:
     return vertices[i], vertices[(i + 1) % len(vertices)]
 
 
-def shifted_piece(mesh, piece: LoopPiece, left: bool) -> tuple[EdgeId, ...] | None:
+def shifted_piece(mesh, piece: LoopPiece, left: bool, blocked=frozenset()) -> tuple[EdgeId, ...] | None:
     """The piece moved one quad to its left / right side (sides by the faces' winding, so the
     same for the whole piece), or None if a quad on that side is missing."""
     out = []
@@ -190,7 +190,7 @@ def shifted_piece(mesh, piece: LoopPiece, left: bool) -> tuple[EdgeId, ...] | No
         face = _side_face(mesh, edge, a, b, left)
         if face is None:
             return None
-        step = _ring_step(mesh, edge, face)
+        step = _ring_step(mesh, edge, face, blocked)
         if step is None:
             return None
         out.append(step[0])

@@ -65,6 +65,8 @@ from typing import Any, Union
 from core import EdgeId, FaceId, Mesh, VertexId
 from core.mesh import MeshError
 
+from ..regions import inherit_into
+
 from .face_geometry import (
     GEO_EPS,
     FaceFrame,
@@ -317,6 +319,7 @@ class SessionStart:
 
     def finish(self):
         self._done = True
+        inherit_into(self.mesh, self.change)  # saved regions: the faces the cuts created join their parents' regions
         return self.mesh.end_change(self.change)
 
     def abandon(self) -> None:

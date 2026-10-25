@@ -13,6 +13,9 @@ Konservative Regeln (Absicht, kein Zwischenstand):
   Kandidaten. Boundary-Loop-Fortsetzung ist bewusst nicht implementiert.
 - Geschlossene Traversierungen werden erkannt (closed=True); die Startkante erscheint
   nicht doppelt.
+- `blocked` (Hide / Isolate, `mirai.hidden`): Vertices, die nicht betreten werden. Ein Ring läuft nicht in eine
+  Face mit blockierter Ecke und endet an einer solchen wie an einem Mesh-Rand (die sichtbare Gegenkante gehört
+  noch dazu); ein Loop endet vor einer Kante mit blockiertem Endpunkt. Leer (Default) = bisheriges Verhalten.
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ class Traversal:
         return set(self.edges)
 
 
-def _loop_step(mesh, edge_id, from_vertex):
+def _loop_step(mesh, edge_id, from_vertex, blocked=frozenset()):
     incident = mesh.vertex_edges(from_vertex)
     if len(incident) != 4:
         return None
@@ -53,11 +56,13 @@ def _loop_step(mesh, edge_id, from_vertex):
         return None
     next_edge = candidates[0]
     v0, v1 = mesh.edge_vertices(next_edge)
+    if blocked and (v0 in blocked or v1 in blocked):
+        return None
     next_vertex = v1 if v0 == from_vertex else v0
     return next_edge, next_vertex
 
 
-def edge_loop(mesh, start_edge) -> Traversal:
+def edge_loop(mesh, start_edge, blocked=frozenset()) -> Traversal:
     """Konservative Edge-Loop-Traversierung ausgehend von start_edge."""
     if not mesh.is_valid_edge(start_edge):
         raise LoopRingError(f"Unbekannte Edge: {start_edge!r}")
@@ -68,7 +73,7 @@ def edge_loop(mesh, start_edge) -> Traversal:
     def walk(current_edge, current_vertex):
         collected = []
         while True:
-            step = _loop_step(mesh, current_edge, current_vertex)
+            step = _loop_step(mesh, current_edge, current_vertex, blocked)
             if step is None:
                 return collected, False
             next_edge, next_vertex = step
@@ -86,22 +91,29 @@ def edge_loop(mesh, start_edge) -> Traversal:
     return Traversal(edges=list(reversed(backward)) + [start_edge] + forward, closed=False)
 
 
-def _ring_step(mesh, edge_id, through_face):
+def _ring_step(mesh, edge_id, through_face, blocked=frozenset()):
     boundary_edges = mesh.face_edges(through_face)
     if len(boundary_edges) != 4:
+        return None
+    if blocked and not blocked.isdisjoint(mesh.face_vertices(through_face)):
         return None
     idx = boundary_edges.index(edge_id)
     opposite_edge = boundary_edges[(idx + 2) % 4]
     other_faces = [f for f in mesh.edge_faces(opposite_edge) if f != through_face]
-    return opposite_edge, (other_faces[0] if other_faces else None)
+    next_face = other_faces[0] if other_faces else None
+    if blocked and next_face is not None and not blocked.isdisjoint(mesh.face_vertices(next_face)):
+        next_face = None  # a hidden face ends the ring like a mesh border
+    return opposite_edge, next_face
 
 
-def edge_ring(mesh, start_edge) -> Traversal:
+def edge_ring(mesh, start_edge, blocked=frozenset()) -> Traversal:
     """Konservative Edge-Ring-Traversierung ausgehend von start_edge."""
     if not mesh.is_valid_edge(start_edge):
         raise LoopRingError(f"Unbekannte Edge: {start_edge!r}")
 
     adjacent_faces = mesh.edge_faces(start_edge)
+    if blocked:
+        adjacent_faces = [f for f in adjacent_faces if blocked.isdisjoint(mesh.face_vertices(f))]
     visited = {start_edge}
 
     def walk(through_face):
@@ -109,7 +121,7 @@ def edge_ring(mesh, start_edge) -> Traversal:
         current_edge = start_edge
         current_face = through_face
         while current_face is not None:
-            step = _ring_step(mesh, current_edge, current_face)
+            step = _ring_step(mesh, current_edge, current_face, blocked)
             if step is None:
                 return collected, False
             next_edge, next_face = step

@@ -77,6 +77,8 @@ TOGGLE_WIREFRAME_OVERLAY = "ToggleWireframeOverlay"
 SET_SHADED = "SetShaded"
 SET_FLAT_SHADED = "SetFlatShaded"
 SET_WIREFRAME = "SetWireframe"
+# Saved regions (Manu 2026-10-25): show / hide the regions' colours on the faces (view state, default on).
+TOGGLE_REGION_TINT = "ToggleRegionTint"
 # AD-021 M2-0 (§7.3 RD-2, `PROVISIONAL`): alle Referenzen schattiert <-> Ghost.
 TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
 # Worklight (Shading Lab promoted 2026-10-15; Tasten `PROVISIONAL`): Preset wechseln,
@@ -176,6 +178,10 @@ REGION_SELECT_ADD = "RegionSelectAdd"
 REGION_ISOLATE = "RegionIsolate"
 REGION_MASK = "RegionMask"
 REGION_DELETE = "RegionDelete"
+# REGION_CLICK (Manu 2026-10-25): Shift+Ctrl+Klick. On a face of a saved region it isolates that region; on the
+# isolated region it inverts the visibility (the rest becomes visible, the region's interior hidden); in empty
+# space it shows everything. A click-only gesture: Shift+Ctrl has no drag binding, so it never starts a Tweak.
+REGION_CLICK = "RegionClick"
 
 # RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):
 # global; mit genau einem ausgewählten Vertex öffnet es die Re-Symmetrize-Vorschau (Plan einmal

@@ -304,6 +304,7 @@ _DISPLAY_COMMANDS = (
     commands.TOGGLE_REFERENCE_GHOST,
     commands.CYCLE_LIGHT_PRESET,
     commands.TOGGLE_LIGHT_SPACE,
+    commands.TOGGLE_REGION_TINT,
 )
 
 #: AD-024 §8 (`PROVISIONAL`): the Look rows - choose a row, step its value. Light rows are view state
@@ -343,13 +344,13 @@ _REGION_COMMANDS = (
 )
 
 #: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
-#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`).
+#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`). Loop Insert is not in
+#: the list: its ring ends at hidden faces (`edge_ring(..., blocked)`) and `_edge_connect` guards the rest.
 _TOPOLOGY_COMMANDS = frozenset(
     {
         commands.CONNECT,
         commands.COLLAPSE,
         commands.EXTRUDE,
-        commands.LOOP_INSERT,
         commands.LOOP_SLIDE,
         commands.RESYMMETRIZE,
         commands.DELETE,
@@ -802,6 +803,7 @@ class Application:
         self._hiddens: dict[ObjectId, HiddenSet] = {}
         # Saved regions (AD-REGIONS-01): the regions themselves live in the Mesh; this is the active preset slot.
         self._region_slots: dict[ObjectId, int] = {}
+        self._tints_seen: tuple | None = None  # (mesh, face_regions, viewport) the viewport last got colours for
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
         # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
@@ -1598,6 +1600,7 @@ class Application:
         if self.viewport is not None:
             self.viewport.remove_object_entry(obj.id)
             self.viewport.set_edit_mesh(obj.mesh, object_space.model_matrix(obj))
+        self._tints_seen = None  # the new RenderMesh has no region colours yet
         self._hidden_push()  # the new edit object keeps its own hidden set and mask
         self._soft_refresh_radius()
         self._sync_object_views()
@@ -2504,12 +2507,19 @@ class Application:
             selection.clear()
             selection.add(created)
 
+        def mutate(mesh):
+            result = self._connect_op(ctx, apply_connect_edges)(mesh, set(effective_edges))
+            if guarded and not all(mesh.is_valid_face(f) for f in guarded):
+                # e.g. a ring that closes around the hidden part (or a mirrored ring) would cut a hidden quad
+                raise TopologyToolError(f"{description}: hidden geometry in the way (Alt+H shows all)")
+            return result
+
+        hidden = self._hidden
+        guarded = (
+            [f for f in mesh.all_face_ids() if hidden.is_hidden_face(mesh, f)] if hidden else []
+        )
         try:
-            self._mesh_transaction(
-                description,
-                lambda mesh: self._connect_op(ctx, apply_connect_edges)(mesh, set(effective_edges)),
-                on_applied=residue,
-            )
+            self._mesh_transaction(description, mutate, on_applied=residue)
         except (TopologyToolError, SymmetryRefusal) as exc:
             self._set_status(str(exc))
             return False
@@ -2596,12 +2606,13 @@ class Application:
             return False
         walk = edge_loop if command == commands.EDGE_LOOP else edge_ring
         mesh = self.scene.mesh
+        blocked = self._hidden.vertices()  # a loop / ring ends at hidden geometry, it does not run through it
         found: set[EdgeId] = set()
         for edge in sorted(seeds):
             if edge in found:
                 continue
             try:
-                found.update(walk(mesh, edge).edges)
+                found.update(walk(mesh, edge, blocked).edges)
             except LoopRingError as exc:
                 self._set_status(f"{label}: {exc}")
                 return False
@@ -2659,10 +2670,11 @@ class Application:
         if not edges:
             self._set_status(f"{label}: select edges of a loop")
             return False
+        blocked = self._hidden.vertices()
         if command == commands.LOOP_GROW:
-            return self._apply_selection_step(label, selection_steps.loop_grow(mesh, edges))
+            return self._apply_selection_step(label, selection_steps.loop_grow(mesh, edges, blocked))
         if command == commands.LOOP_SHRINK:
-            return self._apply_selection_step(label, selection_steps.loop_shrink(mesh, edges))
+            return self._apply_selection_step(label, selection_steps.loop_shrink(mesh, edges, blocked))
         return self._loop_shift(label, edges, rightwards=command == commands.LOOP_NEXT)
 
     def _drop_hidden(self, ids: set) -> set:
@@ -2700,11 +2712,12 @@ class Application:
         (Shift+Right) or left; for a piece whose neighbours lie above / below each other on
         screen, up counts as right. A piece without quads on that side stays."""
         mesh = self.scene.mesh
+        blocked = self._hidden.vertices()
         out: set[EdgeId] = set()
         stuck = 0
-        for piece in selection_steps.loop_pieces(mesh, edges):
+        for piece in selection_steps.loop_pieces(mesh, edges, blocked):
             sides = {
-                left: selection_steps.shifted_piece(mesh, piece, left) for left in (True, False)
+                left: selection_steps.shifted_piece(mesh, piece, left, blocked) for left in (True, False)
             }
             left = self._screen_side(piece.edges, sides, rightwards)
             target = sides[left]
@@ -2759,12 +2772,16 @@ class Application:
         if seeds is None:
             return False
         mesh = self.scene.mesh
+        blocked = self._hidden.vertices()  # the ring ends at hidden geometry (Isolate): only visible quads are cut
         ring: set[EdgeId] = set()
         for edge in sorted(seeds):
             if edge not in ring:
-                ring.update(edge_ring(mesh, edge).edges)
+                ring.update(edge_ring(mesh, edge, blocked).edges)
         if len(ring) < 2:
-            self._set_status("Loop Insert: no edge ring through this edge (needs quads)")
+            self._set_status(
+                "Loop Insert: no edge ring through this edge (needs visible quads)" if blocked
+                else "Loop Insert: no edge ring through this edge (needs quads)"
+            )
             return False
         effective = ring
         if mesh.symmetry_definition is not None:
@@ -3637,6 +3654,11 @@ class Application:
             self._sync_object_views()
             self._set_status(f"References: {'ghost' if self.reference_ghost else 'shaded'}")
             return True
+        if command == commands.TOGGLE_REGION_TINT:
+            self.display.toggle_region_tint()
+            self._apply_display()
+            self._set_status(f"Region colours: {'on' if self.display.region_tint else 'off'}")
+            return True
         if command in (commands.CYCLE_LIGHT_PRESET, commands.TOGGLE_LIGHT_SPACE):
             if command == commands.CYCLE_LIGHT_PRESET:
                 self.display.cycle_light_preset()
@@ -3843,6 +3865,7 @@ class Application:
             show_edges=self.display.show_edges,
             flat=self.display.mode is DisplayMode.FLAT_SHADED,
         )
+        self.viewport.set_region_tint(self.display.region_tint)
         self.viewport.set_light(self.display.light_rig)
         if self.viewport.set_surface_finish(self.display.surface_finish):
             # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).
@@ -4536,6 +4559,23 @@ class Application:
         """The preset name of the active region slot."""
         return face_regions_api.PRESET_NAMES[self._region_slot() % len(face_regions_api.PRESET_NAMES)]
 
+    def _push_region_tints(self) -> None:
+        """The regions' colours go to the viewport whenever the edit mesh's `face_regions` value (or the mesh, or
+        the viewport) changed: assign, Undo / Redo, load and Knife rollback all replace that value."""
+        if self.viewport is None:
+            return
+        mesh = self.scene.mesh
+        seen = self._tints_seen
+        if seen is not None and seen[0] is mesh and seen[1] is mesh.face_regions and seen[2] is self.viewport:
+            return
+        self._tints_seen = (mesh, mesh.face_regions, self.viewport)
+        self.viewport.set_face_tints(face_regions_api.region_tints(mesh))
+
+    @property
+    def active_region_faces(self) -> int:
+        """How many faces the active region still has (read-only, for the HUD)."""
+        return len(face_regions_api.live_faces(self.scene.mesh, self.active_region))
+
     def _region_summary(self, name: str) -> str:
         mesh = self.scene.mesh
         live = len(face_regions_api.live_faces(mesh, name))
@@ -4597,6 +4637,47 @@ class Application:
         if command == commands.REGION_ISOLATE:
             return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
         return self._mask_vertices(vertices)
+
+    def _pick_face_at(self, x: float, y: float):
+        """The face under (x, y) whatever the selection mode is (GPU ID buffer, else the CPU picker), else None."""
+        face = self._gpu_pick(SelectionMode.FACE, x, y)
+        if face is not _CPU:
+            return face
+        return pick_face(
+            self._edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
+            cache=self._pick_cache,
+        )
+
+    def _region_click(self, x: float, y: float) -> bool:
+        """Shift+Ctrl+click (`commands.REGION_CLICK`): a face of region R isolates R; the already isolated R inverts
+        the visibility (the rest becomes visible, only R's interior is hidden); empty space shows everything. View
+        state only: no History, no selection or mesh change. Ignored in object mode and during a gesture."""
+        if self.viewport is None or self._transform_key is not None or self.selection.mode is SelectionMode.OBJECT:
+            return False
+        mesh = self.scene.mesh
+        face = self._pick_face_at(x, y)
+        if face is None:
+            return self._hide_command(commands.SHOW_ALL)
+        name = face_regions_api.region_of_face(mesh, face, prefer=self.active_region)
+        if name is None:
+            self._set_status("Face has no saved region (Ctrl+G assigns the selection)")
+            return False
+        faces = face_regions_api.live_faces(mesh, name)
+        vertices = face_regions_api.region_vertices(mesh, faces)
+        hidden = self._hidden
+        isolated = hidden.vertices() == frozenset(mesh.all_vertex_ids()) - vertices
+        if not isolated:
+            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
+        interior = face_regions_api.interior_vertices(mesh, faces)
+        hidden.show_all()
+        if interior:
+            hidden.hide(interior)
+        self._hidden_push()
+        self._set_status(
+            f"{name} hidden, the rest is visible (Shift+Ctrl+click on empty space shows all)" if interior
+            else f"{name} has no interior to hide; everything is visible"
+        )
+        return True
 
     def _region_edit(self, command: str, name: str) -> bool:
         """Assign / add / remove the faces of the selection (all corners selected) to / from region `name`."""
@@ -5186,7 +5267,16 @@ class Application:
         selection_before = self._selection_snapshot()
         # Change journal (AD-023 H1): the entry holds only what `mutate` changed; a raising
         # `mutate` is rolled back exactly, an unchanged mesh records nothing.
-        delta, result = record_mesh_change(mesh, lambda: mutate(mesh))
+        # Saved regions: a face this edit creates inherits its parents' regions inside the same recording (Undo restores
+        # the mesh and the regions together; a raising `mutate` or hook is rolled back exactly).
+        change = mesh.begin_change()
+        try:
+            result = mutate(mesh)
+            face_regions_api.inherit_into(mesh, change)
+        except BaseException:
+            mesh.rollback_change(change)
+            raise
+        delta = mesh.end_change(change)
         if delta.empty:
             return _MeshTransaction(False, result)
         self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=description))
@@ -5591,6 +5681,13 @@ class Application:
         return self._navigate(commands.PAN if self._shift_held else commands.ORBIT, dx, dy)
 
     def _execute_click(self, click: Click) -> bool:
+        if click.command == commands.REGION_CLICK:
+            if self._resym_plan is not None:
+                self._resymmetrize_refuse()
+                return False
+            if self._gate_refuses(click.command):
+                return False
+            return self._region_click(click.x, click.y)
         if click.command in _SELECT_COMMANDS:
             if self._resym_plan is not None:
                 self._resymmetrize_refuse()
@@ -6136,6 +6233,7 @@ class Application:
         if self.viewport is not None:
             self.flush_hover()
             self._sync_object_highlight()
+            self._push_region_tints()
             self.viewport.sync()
 
     def shutdown(self) -> None:

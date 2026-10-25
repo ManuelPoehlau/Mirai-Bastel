@@ -50,6 +50,7 @@ from core.operations.topology import MeshDeltaCommand
 from core.selection import SelectionMode
 
 from ..interaction.tool import Tool
+from ..regions import inherit_children_into
 from .connect_per_face import TopologyToolError
 
 
@@ -114,6 +115,8 @@ class ExtrudeTool(Tool):
         self._original_positions: dict[VertexId, tuple] = {}
         self._old_to_new: dict[VertexId, VertexId] = {}
         self._new_face_ids: frozenset[FaceId] = frozenset()
+        # Saved regions: the original face each created wall / cap grew from (they inherit its regions)
+        self._face_source: dict[FaceId, FaceId] = {}
         self._before_state = None  # MeshChange (Journal) zwischen begin() und commit()/cancel()
         self._before_sel_mode: SelectionMode | None = None
         self._before_sel_faces: frozenset = frozenset()
@@ -221,6 +224,7 @@ class ExtrudeTool(Tool):
 
         # Ein neuer Vertex pro altem Vertex
         self._old_to_new = {}
+        self._face_source = {}
         for vid in all_vids:
             self._old_to_new[vid] = mesh.add_vertex(mesh.vertex_position(vid))
 
@@ -235,13 +239,16 @@ class ExtrudeTool(Tool):
                 if in_sel == 1:  # Boundary-Edge → Seitenwand
                     v_curr = boundary[i]
                     v_next = boundary[(i + 1) % n]
-                    mesh.add_face([v_curr, v_next, self._old_to_new[v_next], self._old_to_new[v_curr]])
+                    wall = mesh.add_face([v_curr, v_next, self._old_to_new[v_next], self._old_to_new[v_curr]])
+                    self._face_source[wall] = fid
 
         # Cap-Faces: eine pro Original-Face, auf neue Vertices gemappt
         new_face_ids: set[FaceId] = set()
         for fid in face_ids_frozen:
             new_boundary = [self._old_to_new[vid] for vid in mesh.face_vertices(fid)]
-            new_face_ids.add(mesh.add_face(new_boundary))
+            cap = mesh.add_face(new_boundary)
+            new_face_ids.add(cap)
+            self._face_source[cap] = fid
 
         # Kanten der Original-Region merken, bevor die Faces verschwinden: nur
         # diese dürfen anschließend als Rest-Geometrie bereinigt werden.
@@ -307,6 +314,9 @@ class ExtrudeTool(Tool):
                 self._refusal = str(exc)
                 return None
         change, self._before_state = self._before_state, None
+        # Saved regions (PROVISIONAL, Manu 2026-10-25): caps and walls inherit from the face they grew from; written
+        # inside the still active recording, so Undo restores the mesh and the regions together.
+        inherit_children_into(mesh, {f: (src,) for f, src in self._face_source.items()})
         self._scene.history.push(
             MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(change), description="Extrude")
         )
@@ -342,6 +352,7 @@ class ExtrudeTool(Tool):
         self._vertex_normal = {}
         self._original_positions = {}
         self._old_to_new = {}
+        self._face_source = {}
         self._new_face_ids = frozenset()
         if self._before_state is not None and self._scene is not None:
             self._scene.mesh.release_change(self._before_state)

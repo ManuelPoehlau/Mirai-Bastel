@@ -20,6 +20,8 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
                     SelectRemove. Alles `PROVISIONAL`, Manu 2026-10-15 (Promotion der
                     Playground-Werkzeuge: Box/Paint "Startpunkt entscheidet", Tweak
                     "Ctrl+LMB, Auswahl weicht")
+- Shift+Ctrl+LMB → (nur Klick, kein Drag) Saved Regions: Region der Face unter dem Cursor isolieren / auf der isolierten
+                    Region die Sichtbarkeit invertieren / ins Leere alles zeigen (Manu 2026-10-25, `PROVISIONAL`)
 - RMB/MMB         → bewusst ungebunden (eine Primärbindung pro Funktion,
                     AD-013 Truth-Regel 2)
 
@@ -29,6 +31,7 @@ Display (Artist Input Truth, WP-06 B5a E42: vorher O):
 - Ctrl+D         → Licht-Preset wechseln (Raitt 2:1 → Softbox → Warm/Kalt → Heute),
                    Ctrl+Shift+D → Licht folgt der Kamera / steht in der Welt
                    (Engineering-Tasten `PROVISIONAL`, keine Artist Input Truth)
+- Ctrl+Alt+D     → Regionen-Farben auf den Faces ein/aus (Saved Regions, `PROVISIONAL`)
 - ↑ / ↓          → Look-Zeile wählen (Licht: Bezugsraum, Key Azimut/Höhe/Stärke/Temperatur/Weichheit,
                    Verhältnis, Fill-Kopplung/Azimut/Höhe/Temperatur/Weichheit, Grundhelligkeit),
                    ← / →  Wert eine Stufe kleiner/größer, Ctrl+← / Ctrl+→ fein (Stufen des Shading
@@ -270,6 +273,8 @@ def build_default_bindings() -> BindingSet:
     # Worklight (2026-10-15, Tasten `PROVISIONAL`, Display-Familie D).
     bs.set_default(_key("d", "ctrl"), cmd.CYCLE_LIGHT_PRESET)
     bs.set_default(_key("d", "ctrl", "shift"), cmd.TOGGLE_LIGHT_SPACE)
+    # Saved regions: Ctrl+Alt+D shows / hides the regions' face colours.
+    bs.set_default(_key("d", "ctrl", "alt"), cmd.TOGGLE_REGION_TINT)
     # Look rows (AD-024 §8, `PROVISIONAL` until the GUI): the Shading Lab's arrows; the fine step is Ctrl,
     # because Shift+arrows are the selection steps (WP Toolbox Gaps A1).
     bs.set_default(_key("up"), cmd.LOOK_ROW_PREV)
@@ -290,6 +295,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_mouse("LEFT", "shift"), cmd.SELECT_ADD)
     bs.set_default(_mouse("LEFT", "ctrl"), cmd.SELECT_REMOVE)
     bs.set_default(_mouse("LEFT", "alt"), cmd.SELECT_TOGGLE)
+    # Saved regions (Manu 2026-10-25): Shift+Ctrl+click isolates the clicked face's region / inverts / shows all.
+    bs.set_default(_mouse("LEFT", "ctrl", "shift"), cmd.REGION_CLICK)
     bs.set_default(_drag("LEFT", "alt"), cmd.ORBIT)
     bs.set_default(_drag("LEFT", "alt", "shift"), cmd.PAN)
     # 2026-10-15 (Manu): Box/Paint und Tweak - siehe Moduldocstring.
