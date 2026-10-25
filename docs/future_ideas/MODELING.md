@@ -78,6 +78,11 @@ Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope 
 > Gruppen unter dem Cursor (Vertex/Edge im Vertex-/Edge-Modus: alle Gruppen, die er berührt): Ist nichts versteckt, werden sie
 > isoliert; sind nur sie sichtbar, kehrt sich die Sichtbarkeit um (Rest sichtbar, sie versteckt); ist schon etwas anderes
 > versteckt, werden sie zusätzlich versteckt. Ins Leere zeigt alles.
+> **Mask by Polygroup** (`Ctrl+Alt+Shift+M`, Schalter, Standard aus, Manu 2026-10-25, ZBrush-artig): Solange an, wirken W/E/R
+> (auch Soft), Smooth/Relax und die Soft-Vorschau nur auf die Gruppen der Auswahl (ohne Auswahl: des gehoverten Elements);
+> alles außerhalb ist für diese Geste maskiert, die eigene Maske bleibt unberührt. Gruppen der Auswahl = die der Faces, die
+> ganz in der Auswahl liegen, sonst aller berührten Faces (ein Rand-Vertex gibt beide Gruppen frei); Faces ohne Gruppe zählen
+> als eine Gruppe; der Gruppenrand bleibt maskiert, außer er ist selbst ausgewählt (Soft endet am Rand). `mirai.regions.group_lock`.
 > **Loops und Hide:** Loop Insert, Loop/Ring-Auswahl und die Loop-Schritte enden an versteckter Geometrie (z. B. Nase isolieren,
 > dann Loop Insert schneidet nur die sichtbaren Quads); Loop Slide bleibt neben Verstecktem abgelehnt. Offen: Mirror-Copy-
 > Remap, OBJ-Gruppen, Auswahl per Klick (ohne Isolieren), Umbenennen.

@@ -239,6 +239,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("h", "ctrl", "alt"), cmd.REGION_ISOLATE)
     bs.set_default(_key("m", "ctrl", "alt"), cmd.REGION_MASK)
     bs.set_default(_key("backspace", "ctrl", "alt"), cmd.REGION_DELETE)
+    # Mask by Polygroup (`PROVISIONAL`): Ctrl+Alt+Shift+M switches it on / off.
+    bs.set_default(_key("m", "ctrl", "alt", "shift"), cmd.GROUP_MASK_TOGGLE)
 
     # Loop tools (2026-10-15, promoted from the Playground; keys = Artist Input Truth
     # `topology.edge_loop_select` / `edge_ring_select` / `loop_insert` / `loop_slide`).

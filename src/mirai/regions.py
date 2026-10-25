@@ -149,6 +149,36 @@ def regions_of_faces(mesh: Mesh, faces: Iterable[FaceId], prefer: str | None = N
     return names
 
 
+def group_lock(mesh: Mesh, seeds: Iterable[VertexId]) -> set[VertexId]:
+    """Mask by Polygroup (Manu 2026-10-25, ZBrush-like): the vertices a gesture on `seeds` must not move because they
+    lie outside the seeds' groups. Empty = no restriction (no groups, no seeds, or the groups cover the mesh).
+
+    The seeds' groups are those of the faces lying fully inside the seeds (a face selection, a selected patch), else of
+    every face touching them (a single vertex / edge, a hovered element: a border vertex frees both groups). Faces
+    without a group count as one more group. The groups' border vertices stay masked unless they are seeds, so a
+    Soft falloff stops at the border while an explicitly selected border still moves."""
+    regions = mesh.face_regions
+    seed_set = {v for v in seeds if mesh.is_valid_vertex(v)}
+    if regions is None or not seed_set:
+        return set()
+    owner: dict[FaceId, str] = {}
+    for r in regions.regions:
+        for f in r.faces:
+            owner[f] = r.name
+    touching = {f for v in seed_set for e in mesh.vertex_edges(v) for f in mesh.edge_faces(e)}
+    inside = {f for f in touching if seed_set.issuperset(mesh.face_vertices(f))}
+    keys = {owner.get(f) for f in (inside or touching)}  # None = the faces without a group
+    if not keys:
+        return set()
+    free_faces, other_faces = [], []
+    for f in mesh.all_face_ids():
+        (free_faces if owner.get(f) in keys else other_faces).append(f)
+    if not other_faces:
+        return set()
+    allowed = (region_vertices(mesh, free_faces) - region_vertices(mesh, other_faces)) | seed_set
+    return {v for v in mesh.all_vertex_ids() if v not in allowed}
+
+
 def interior_vertices(mesh: Mesh, faces: Iterable[FaceId]) -> set[VertexId]:
     """The vertices of `faces` that no other face touches: hiding them hides exactly `faces` and leaves every
     other face visible (a face is hidden when one of its corners is)."""

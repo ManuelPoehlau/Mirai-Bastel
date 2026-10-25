@@ -38,7 +38,7 @@ import os
 import time
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from core import (
     EdgeId,
@@ -335,6 +335,7 @@ _REGION_COMMANDS = (
     commands.REGION_PREV,
     commands.REGION_NEW,
     commands.REGION_NAME,
+    commands.GROUP_MASK_TOGGLE,
     commands.REGION_ADD,
     commands.REGION_REMOVE,
     commands.REGION_SELECT,
@@ -804,6 +805,8 @@ class Application:
         self._hiddens: dict[ObjectId, HiddenSet] = {}
         # Polygroups (AD-REGIONS-01): the groups themselves live in the Mesh; this is the name of the active one.
         self._active_regions: dict[ObjectId, str] = {}
+        #: Mask by Polygroup (Ctrl+Alt+Shift+M, ZBrush-like): gestures only move the groups of what they act on.
+        self.group_mask = False
         self._tints_seen: tuple | None = None  # (mesh, face_regions, viewport) the viewport last got colours for
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
@@ -2897,7 +2900,7 @@ class Application:
         soft = self._soft if self._soft.enabled else None
         try:
             weights = None if soft is None or not target else self._smooth_soft_weights(target, soft)
-            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=self._mask_values())
+            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=self._mask_values(target))
         except (SmoothRefused, SoftSymmetryRefusal) as exc:
             label = RELAX_LABEL if relax else SMOOTH_LABEL
             text = str(exc)
@@ -2969,7 +2972,7 @@ class Application:
         try:
             weights = self._smooth_soft_weights(self._smooth_seeds, gesture)
             plan = plan_smooth(
-                mesh, self._smooth_seeds, relax=old.relax, weights=weights, mask=self._mask_values()
+                mesh, self._smooth_seeds, relax=old.relax, weights=weights, mask=self._mask_values(self._smooth_seeds)
             )
         except (SmoothRefused, SoftSymmetryRefusal):
             plan = old  # the seeds did not change: keep the field it had
@@ -4136,7 +4139,7 @@ class Application:
             noun = selection.mode.name.lower()
             self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
             return False
-        if not unblocked(target, self._mask_values()):
+        if not unblocked(target, self._mask_values(target)):
             self._set_status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
             return False
         self.dispatch_command(command)
@@ -4242,7 +4245,7 @@ class Application:
             }
             if soft is not None:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
-            mask = self._mask_values()
+            mask = self._mask_values(self._transform_target)
             if mask:
                 begin_context["mask"] = mask  # absent without a mask: today's payload, unchanged
             if self._orientation == transform_space.NORMAL and self._transform_space is not None:
@@ -4394,13 +4397,21 @@ class Application:
     def _hidden(self) -> HiddenSet:
         return self._hiddens.setdefault(self.scene.edit_object_id, HiddenSet())
 
-    def _mask_values(self) -> dict[VertexId, float]:
-        """The mask a gesture begins with (stale IDs dropped, symmetric pairs protected alike); `{}` = none.
-        Hidden vertices count as fully masked: nothing the artist cannot see is moved."""
+    def _mask_values(self, seeds: Iterable[VertexId] = ()) -> dict[VertexId, float]:
+        """The mask a gesture on `seeds` begins with (stale IDs dropped, symmetric pairs protected alike); `{}` = none.
+        Hidden vertices count as fully masked: nothing the artist cannot see is moved. With Mask by Polygroup on,
+        everything outside the seeds' groups is masked too, for this gesture only (`mirai.regions.group_lock`)."""
         hidden = self._hidden
-        if not self._mask and not hidden:
+        mesh = self.scene.mesh
+        locked: set[VertexId] = set()
+        if self.group_mask and mesh.face_regions is not None:
+            seeds = set(seeds)
+            if seeds and mesh.symmetry_definition is not None:
+                seeds |= mirrored_selection(mesh, seeds)  # the mirror side's group is free as well
+            locked = face_regions_api.group_lock(mesh, seeds)
+        if not self._mask and not hidden and not locked:
             return {}
-        return effective_mask(self.scene.mesh, self._mask, extra_full=hidden.vertices())
+        return effective_mask(mesh, self._mask, extra_full=hidden.vertices() | locked)
 
     def _mask_changed(self, status: str) -> bool:
         self._mask.prune(self.scene.mesh)
@@ -4611,6 +4622,14 @@ class Application:
         if self._transform_key is not None:
             return False
         mesh = self.scene.mesh
+        if command == commands.GROUP_MASK_TOGGLE:
+            self.group_mask = not self.group_mask
+            self._soft_preview_refresh()
+            self._set_status(
+                "Mask by Polygroup: on (W/E/R, Smooth / Relax only move the groups of the selection or hover)"
+                if self.group_mask else "Mask by Polygroup: off"
+            )
+            return True
         if command == commands.REGION_NEW:
             return self._region_edit(command, face_regions_api.new_group_name(mesh.face_regions))
         name = self.active_region
@@ -5002,7 +5021,7 @@ class Application:
         is shown by the gesture, at `begin()`, as before."""
         soft = self._soft
         mesh = self.scene.mesh
-        mask = self._mask_values()  # the same mask the tools apply at `begin()` (Mask Geometry, Hide)
+        mask = self._mask_values(seeds)  # the same mask the tools apply at `begin()` (Mask Geometry, Hide, groups)
         seeds = unblocked(seeds, mask)
         if mesh.symmetry_definition is None:
             weights = compute_influence(

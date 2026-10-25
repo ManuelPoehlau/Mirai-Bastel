@@ -181,6 +181,10 @@ REGION_SELECT_ADD = "RegionSelectAdd"
 REGION_ISOLATE = "RegionIsolate"
 REGION_MASK = "RegionMask"
 REGION_DELETE = "RegionDelete"
+# Mask by Polygroup (Manu 2026-10-25, ZBrush-like): a toggle. While on, every gesture (W/E/R, Smooth / Relax, the
+# Soft preview) treats everything outside the groups of its selection (else the hovered element) as masked, for that
+# gesture only; the artist's own mask is untouched.
+GROUP_MASK_TOGGLE = "GroupMaskToggle"
 # REGION_CLICK (Manu 2026-10-25, ZBrush-like): Shift+Ctrl+Klick on the groups under the cursor (a hovered vertex or
 # edge takes every group it touches). Nothing hidden: isolates them; they are all that is visible: inverts the
 # visibility (the rest visible, they hidden); something else hidden already: hides them as well. Empty space shows

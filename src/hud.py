@@ -87,6 +87,7 @@ class HudState:
     region_faces: int
     region_count: int
     region_tint: bool
+    group_mask: bool
     #: Worklight name and the active Look row with its value (AD-024 §8).
     light: str
     look: str
@@ -125,6 +126,7 @@ def hud_state(app) -> HudState:
         region_faces=app.active_region_faces,
         region_count=app.region_count,
         region_tint=app.display.region_tint,
+        group_mask=app.group_mask,
         light=app.display.light_label,
         look=app.look_text,
         status=app.status_message,
@@ -219,7 +221,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
                 f"group{'s' if state.region_count != 1 else ''} · colours {'on' if state.region_tint else 'off'}"
                 if state.region is not None
                 else f"no groups · colours {'on' if state.region_tint else 'off'}"
-            ),
+            ) + (" · group mask on" if state.group_mask else ""),
             hints.get("Region", ""),
             on=state.region_faces > 0,
         ),

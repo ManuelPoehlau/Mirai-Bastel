@@ -153,7 +153,8 @@ Scope (binding, see the handoffs):
   Ctrl+Alt+M masks (the whole group, hidden parts included), Ctrl+Alt+Backspace deletes it; stored in the Mesh (Undo, scene file); a face a topology edit creates joins a region when all its
   parents were in it. Every region has its own desaturated face colour (Ctrl+Alt+D shows / hides them). Shift+Ctrl+click (ZBrush-like) takes the
   groups under the cursor (a vertex / edge: every group it touches): nothing hidden isolates them, all that is visible inverts, else
-  they are hidden as well; on empty space shows all.
+  they are hidden as well; on empty space shows all. Ctrl+Alt+Shift+M switches Mask by Polygroup: W/E/R, Smooth / Relax only move the
+  groups of the selection (or hover), the rest is masked for the gesture.
 - Hide / Isolate (`PROVISIONAL`, `src/mirai/hidden.py`): Ctrl+H hides the selection, Ctrl+Shift+H isolates it, Alt+H shows
   all; hidden geometry is neither drawn nor picked nor moved, and topology edits next to it are refused.
 - Mask Geometry (`PROVISIONAL`, `src/mirai/mask.py`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts,
