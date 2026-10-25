@@ -221,3 +221,24 @@ def test_corners_and_edges_of_a_non_planar_ngon_stay_pickable(gl_window, tmp_pat
         cache=app._pick_cache, occlusion=True,
     )
     assert set(picked) == set(mesh.all_vertex_ids())
+
+
+def test_hidden_faces_are_never_picked_and_stop_occluding(app):
+    """Hide / Isolate: the face-ID pass draws degenerate triangles for hidden faces, so the GPU names no hidden
+    face (hover and Box), and CPU and GPU agree on what is left."""
+    mesh = app.scene.mesh
+    seed = mesh.all_vertex_ids()[300]
+    app.selection.set({seed})
+    app.viewport.on_selection_changed()
+    app.selection.mode = SelectionMode.VERTEX
+    assert app.key_press(Input("key", "h", frozenset({"ctrl"})))
+    app.viewport.sync()
+    app.selection.mode = SelectionMode.FACE
+    hidden_faces = app._pick_cache.hidden_faces or {f for f in mesh.all_face_ids() if seed in mesh.face_vertices(f)}
+    assert hidden_faces
+    hits = 0
+    for x, y in _cursors(5):
+        gpu = _gpu(app, SelectionMode.FACE, x, y)
+        assert gpu not in hidden_faces, (x, y, gpu)
+        hits += gpu is not None
+    assert hits > 100

@@ -36,6 +36,7 @@ from typing import Any
 from core import Mesh, OperationContext, Selection, SelectionMode, VertexId
 from core.operations.transform import SeamConstraintError
 
+from ...mask import mask_symmetric_influence, mask_weights, unblocked
 from ...soft_selection import compute_influence, primary_pivot, symmetric_influence
 from ..tool import Tool, ToolStateError
 from .selection_helpers import (
@@ -413,7 +414,8 @@ class TransformTool(Tool):
     def _on_begin(
         self, scene=None, camera=None, vertex_ids=None, **params: Any
     ) -> None:
-        selected = set(vertex_ids or ())
+        self._mask = params.get("mask") or {}  # Mask Geometry: `mirai.mask`; fixed for the gesture
+        selected = unblocked(vertex_ids or (), self._mask)
         if not selected:
             raise ValueError("TransformTool.begin() benötigt mindestens einen Vertex.")
         self._scene = scene
@@ -451,6 +453,7 @@ class TransformTool(Tool):
             scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
             curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
         )
+        influence = mask_weights(influence, selected, self._mask)
         if not influence:
             raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
         op_params["influence"] = influence
@@ -472,6 +475,7 @@ class TransformTool(Tool):
             scene.mesh, selected, soft.world_radius, metric=soft.metric, curve=soft.curve,
             curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
         )
+        field = mask_symmetric_influence(field, self._mask)
         if not field.weights:
             raise ValueError("TransformTool.begin() benötigt mindestens einen gültigen Vertex.")
         symmetry = field.symmetry_params(scene.mesh)

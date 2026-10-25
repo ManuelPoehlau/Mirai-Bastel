@@ -86,10 +86,11 @@ def _is_boundary(mesh: Mesh, vid: VertexId) -> bool:
     return not edges or any(len(mesh.edge_faces(e)) < 2 for e in edges)
 
 
-def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None) -> SmoothPlan:
+def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None, mask=None) -> SmoothPlan:
     """`vertex_ids` = the selection (the Soft seeds). `weights` (Soft on) = the influence of the seeds,
     computed by the caller with the same function as W/E/R (plain or symmetric field): every vertex with a
-    weight > 0 smooths, scaled by it; the field is already both-sided under symmetry."""
+    weight > 0 smooths, scaled by it; the field is already both-sided under symmetry. `mask` (Mask Geometry,
+    `mirai.mask.effective_mask`): fully masked vertices stay fixed, a partial mask scales the weight."""
     label = RELAX_LABEL if relax else SMOOTH_LABEL
     selected = set(vertex_ids)
     if not selected:
@@ -111,6 +112,10 @@ def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None) -> SmoothP
 
     if weights is not None:
         selected |= {v for v, w in weights.items() if w > 0.0}
+    if mask:
+        selected = {v for v in selected if mask.get(v, 0.0) < 1.0}
+        if not selected:
+            raise SmoothRefused(f"{label}: all selected points are masked")
     movable = frozenset(v for v in selected if not _is_boundary(mesh, v))
     if not movable:
         raise SmoothRefused(f"{label}: only border points selected - they stay fixed")
@@ -146,4 +151,6 @@ def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None) -> SmoothP
                 driver, written = (v, partner) if element_side(mesh, definition, [v]) >= 0 else (partner, v)
                 mirrors[written] = driver
     plan_weights = None if weights is None else {v: float(weights.get(v, 0.0)) for v in movable}
+    if plan_weights is not None and mask:
+        plan_weights = {v: w * (1.0 - mask.get(v, 0.0)) for v, w in plan_weights.items()}
     return SmoothPlan(relax, movable, start, neighbors, faces, mirrors, frozenset(seam), plane, plan_weights)

@@ -75,6 +75,14 @@ from viewport.overlay import (
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
+from .hidden import HiddenSet, touches_hidden, visible
+from .mask import (
+    VertexMask,
+    effective_mask,
+    mask_symmetric_influence,
+    mask_weights,
+    unblocked,
+)
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
 from .interaction.input import KNIFE_CONTEXT, SUBD_CONTEXT
@@ -143,7 +151,7 @@ from .symmetry_coordination import (
     canonical_vertices,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
-from .symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
+from .symmetry import CorrespondenceState, mirrored_selection, symmetry_state, vertex_correspondence
 from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
 from .symmetry_display import ReportCache, SymmetryDisplay
 from .resymmetrize import (
@@ -317,6 +325,25 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
 #: WP-SOFT-01 S2a (AD-020, `PROVISIONAL`): the state commands of Soft Selection. They start
 #: no interaction and change no mesh, like the constraints: they set the sticky
 #: `SoftSettings`, which the next gesture reads at `begin()`.
+_MASK_COMMANDS = (commands.MASK_TOGGLE, commands.MASK_INVERT, commands.MASK_CLEAR)
+_HIDE_COMMANDS = (commands.HIDE_SELECTION, commands.ISOLATE_SELECTION, commands.SHOW_ALL)
+
+#: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
+#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`).
+_TOPOLOGY_COMMANDS = frozenset(
+    {
+        commands.CONNECT,
+        commands.COLLAPSE,
+        commands.EXTRUDE,
+        commands.LOOP_INSERT,
+        commands.LOOP_SLIDE,
+        commands.RESYMMETRIZE,
+        commands.DELETE,
+        commands.DISSOLVE,
+        commands.DISSOLVE_NO_CLEANUP,
+    }
+)
+
 _SOFT_COMMANDS = (
     commands.SOFT_TOGGLE,
     commands.SOFT_RADIUS_UP,
@@ -391,6 +418,8 @@ _COMPONENT_COMMANDS = frozenset(
         commands.COLLAPSE,
         commands.SYMMETRY_CYCLE,
         commands.RESYMMETRIZE,
+        *_MASK_COMMANDS,
+        *_HIDE_COMMANDS,
         *_LOOP_COMMANDS,
         *_SELECTION_STEP_COMMANDS,
     }
@@ -751,6 +780,11 @@ class Application:
         # The radius is held in world units (computed on switch-on, on a step change and
         # on scene load) so that the tool and the later preview read one value.
         self._soft: SoftSettings = SoftSettings()
+        # Mask Geometry (`mirai.mask`): protection state, not mesh data - no History, cleared on scene load.
+        self._masks: dict[ObjectId, VertexMask] = {}
+        self._mask_overlay = None
+        # Hide / Isolate (`mirai.hidden`): the same kind of state, per edit object.
+        self._hiddens: dict[ObjectId, HiddenSet] = {}
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
         # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
@@ -926,6 +960,7 @@ class Application:
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
         subd_overlay_type: type | None = None,
+        mask_overlay_type: type | None = None,
     ) -> None:
         """Initialisiert die Default-Szene (Würfel, OBJ-Import oder Szenendatei).
 
@@ -1017,6 +1052,13 @@ class Application:
         if soft_shading_overlay_type is not None:
             self._soft_shading_overlay = soft_shading_overlay_type()
             self.viewport.add_overlay(self._soft_shading_overlay)
+        self._masks.clear()  # their IDs belong to the old meshes
+        self._hiddens.clear()
+        self._pick_cache.set_hidden(())
+        self._mask_overlay = None
+        if mask_overlay_type is not None:
+            self._mask_overlay = mask_overlay_type()
+            self.viewport.add_overlay(self._mask_overlay)
         self._soft_apply_look()
         if self._soft_overlay is not None or self._soft_shading_overlay is not None:
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
@@ -1538,6 +1580,7 @@ class Application:
         if self.viewport is not None:
             self.viewport.remove_object_entry(obj.id)
             self.viewport.set_edit_mesh(obj.mesh, object_space.model_matrix(obj))
+        self._hidden_push()  # the new edit object keeps its own hidden set and mask
         self._soft_refresh_radius()
         self._sync_object_views()
 
@@ -1990,6 +2033,7 @@ class Application:
         symmetry_overlay_type: type | None = None,
         scene_path: str | Path | None = None,
         subd_overlay_type: type | None = None,
+        mask_overlay_type: type | None = None,
     ) -> None:
         """Lädt eine Szene zur Laufzeit und setzt den mesh-gebundenen Zustand
         zurück (temporärer Scene-Loader `src/scene_menu.py`, PROVISIONAL).
@@ -2025,6 +2069,7 @@ class Application:
             symmetry_overlay_type=symmetry_overlay_type,
             scene_path=scene_path,
             subd_overlay_type=subd_overlay_type,
+            mask_overlay_type=mask_overlay_type,
         )
         self.selection.clear()
         self.selection.clear_objects()
@@ -2112,6 +2157,10 @@ class Application:
             return self._collapse_command()
         if command == commands.SYMMETRY_CYCLE:
             return self._symmetry_cycle()
+        if command in _MASK_COMMANDS:
+            return self._mask_command(command)
+        if command in _HIDE_COMMANDS:
+            return self._hide_command(command)
         if command == commands.RESYMMETRIZE:
             return self._resymmetrize_open()
         if command in (commands.EDGE_LOOP, commands.EDGE_RING):
@@ -2538,7 +2587,7 @@ class Application:
                 return False
         selection = self.selection
         before = len(selection.edges)
-        selection.add(found)
+        selection.add(self._drop_hidden(found))
         if self.viewport is not None:
             self.viewport.on_selection_changed()
         self._soft_preview_refresh()
@@ -2596,9 +2645,25 @@ class Application:
             return self._apply_selection_step(label, selection_steps.loop_shrink(mesh, edges))
         return self._loop_shift(label, edges, rightwards=command == commands.LOOP_NEXT)
 
+    def _drop_hidden(self, ids: set) -> set:
+        """`ids` (of the active mode) without the hidden elements: a step or loop never selects what cannot be seen."""
+        hidden = self._hidden
+        if not hidden or not ids:
+            return ids
+        mesh = self.scene.mesh
+        mode = self.selection.mode
+        if mode is SelectionMode.VERTEX:
+            return {i for i in ids if not hidden.is_hidden_vertex(i)}
+        if mode is SelectionMode.EDGE:
+            return {i for i in ids if not hidden.is_hidden_edge(mesh, i)}
+        if mode is SelectionMode.FACE:
+            return {i for i in ids if not hidden.is_hidden_face(mesh, i)}
+        return ids
+
     def _apply_selection_step(self, label: str, ids: set, note: str = "") -> bool:
         selection = self.selection
         before = _selection_state(selection)
+        ids = self._drop_hidden(ids)
         selection.set(ids)
         count = len(ids)
         if _selection_state(selection) == before:
@@ -2794,7 +2859,7 @@ class Application:
         soft = self._soft if self._soft.enabled else None
         try:
             weights = None if soft is None or not target else self._smooth_soft_weights(target, soft)
-            plan = plan_smooth(mesh, target, relax=relax, weights=weights)
+            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=self._mask_values())
         except (SmoothRefused, SoftSymmetryRefusal) as exc:
             label = RELAX_LABEL if relax else SMOOTH_LABEL
             text = str(exc)
@@ -2865,7 +2930,9 @@ class Application:
                 mesh.set_vertex_position(vid, old.start[vid])
         try:
             weights = self._smooth_soft_weights(self._smooth_seeds, gesture)
-            plan = plan_smooth(mesh, self._smooth_seeds, relax=old.relax, weights=weights)
+            plan = plan_smooth(
+                mesh, self._smooth_seeds, relax=old.relax, weights=weights, mask=self._mask_values()
+            )
         except (SmoothRefused, SoftSymmetryRefusal):
             plan = old  # the seeds did not change: keep the field it had
         self._smooth_plan = plan
@@ -3878,6 +3945,8 @@ class Application:
             return self.dispatch_command(command)
         if self._object_mode_refuses(command):
             return False
+        if command in _TOPOLOGY_COMMANDS and self._hidden_refuses(command):
+            return False
         if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS, *_LOOK_COMMANDS):
             # A Box/Paint drag owns the selection until the LMB release (like a gesture).
             return False
@@ -3921,11 +3990,13 @@ class Application:
             return self.dispatch_command(command)
         if (
             command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE)
+            or command in _MASK_COMMANDS
+            or command in _HIDE_COMMANDS
             or command in _REMOVAL_COMMANDS
             or command in _LOOP_COMMANDS
             or command in _SELECTION_STEP_COMMANDS
         ):
-            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste, Shift+S und Alt+M werden
+            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste, Shift+S, Alt+M und die Mask-Tasten werden
             # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
             # Shift+S: AD-SYM-04 R-4, still wie C).
             if self._transform_key is not None:
@@ -4019,6 +4090,9 @@ class Application:
         if not target:
             noun = selection.mode.name.lower()
             self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
+            return False
+        if not unblocked(target, self._mask_values()):
+            self._set_status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
             return False
         self.dispatch_command(command)
         self._transform_key = key
@@ -4123,6 +4197,9 @@ class Application:
             }
             if soft is not None:
                 begin_context["soft"] = soft  # absent when off: today's payload, unchanged
+            mask = self._mask_values()
+            if mask:
+                begin_context["mask"] = mask  # absent without a mask: today's payload, unchanged
             if self._orientation == transform_space.NORMAL and self._transform_space is not None:
                 refusal, normal_context = self._normal_space_context()
                 if refusal is not None:
@@ -4260,6 +4337,163 @@ class Application:
             self._soft_preview_refresh()
 
     # -- Soft Selection settings (WP-SOFT-01 S2a, AD-020, PROVISIONAL) ------------------
+
+    # -- Mask Geometry (`mirai.mask`) ----------------------------------------------
+
+    @property
+    def _mask(self) -> VertexMask:
+        """The edit object's mask (each object keeps its own: its IDs mean nothing on another mesh)."""
+        return self._masks.setdefault(self.scene.edit_object_id, VertexMask())
+
+    @property
+    def _hidden(self) -> HiddenSet:
+        return self._hiddens.setdefault(self.scene.edit_object_id, HiddenSet())
+
+    def _mask_values(self) -> dict[VertexId, float]:
+        """The mask a gesture begins with (stale IDs dropped, symmetric pairs protected alike); `{}` = none.
+        Hidden vertices count as fully masked: nothing the artist cannot see is moved."""
+        hidden = self._hidden
+        if not self._mask and not hidden:
+            return {}
+        return effective_mask(self.scene.mesh, self._mask, extra_full=hidden.vertices())
+
+    def _mask_changed(self, status: str) -> bool:
+        self._mask.prune(self.scene.mesh)
+        self._mask_push()
+        self._set_status(status)
+        return True
+
+    def _mask_push(self) -> None:
+        """The mask overlay shows the edit object's mask without its hidden vertices."""
+        if self._mask_overlay is None:
+            return
+        hidden = self._hidden.vertices()
+        values = {v: m for v, m in self._mask.values().items() if v not in hidden}
+        self._mask_overlay.set_values(values)
+        if self.viewport is not None:
+            self.viewport.on_vertices_moved(set(values))  # re-syncs the overlay
+
+    # -- Hide / Isolate (`mirai.hidden`) --------------------------------------------
+
+    def _hidden_push(self) -> None:
+        """Everything that draws or picks learns the hidden set; the selection never keeps a hidden element."""
+        mesh = self.scene.mesh
+        hidden = self._hidden
+        hidden.prune(mesh)
+        vertices = hidden.vertices()
+        if self.viewport is not None:
+            self.viewport.set_hidden(vertices)
+        self._pick_cache.set_hidden(vertices)
+        self._prune_hidden_selection()
+        self._mask_push()
+        self._soft_preview_refresh()
+
+    def _prune_hidden_selection(self) -> None:
+        hidden = self._hidden
+        if not hidden:
+            return
+        mesh = self.scene.mesh
+        selection = self.selection
+        selection.vertices = {v for v in selection.vertices if not hidden.is_hidden_vertex(v)}
+        selection.edges = {
+            e for e in selection.edges if mesh.is_valid_edge(e) and not hidden.is_hidden_edge(mesh, e)
+        }
+        selection.faces = {
+            f for f in selection.faces if mesh.is_valid_face(f) and not hidden.is_hidden_face(mesh, f)
+        }
+        h = selection.hovered
+        if (
+            (isinstance(h, VertexId) and hidden.is_hidden_vertex(h))
+            or (isinstance(h, EdgeId) and mesh.is_valid_edge(h) and hidden.is_hidden_edge(mesh, h))
+            or (isinstance(h, FaceId) and mesh.is_valid_face(h) and hidden.is_hidden_face(mesh, h))
+        ):
+            selection.hovered = None
+
+    def _hidden_refuses(self, command: str) -> bool:
+        """True (and the reason posted) if `command` would rewrite geometry the artist has hidden: the
+        selection (else the hovered element) touches a hidden vertex, or - the Knife, `C` with nothing
+        selected - anything is hidden at all. Cheap exit when nothing is hidden."""
+        hidden = self._hidden
+        if not hidden or self.selection.mode is SelectionMode.OBJECT:
+            return False
+        mesh = self.scene.mesh
+        selection = self.selection
+        vertices = set(resolve_selection_vertices(mesh, selection, selection.mode))
+        if not vertices and selection.hovered is not None and command != commands.CONNECT:
+            vertices = set(_element_vertices(mesh, selection.hovered))
+        if not vertices:
+            if command != commands.CONNECT:
+                return False  # the command's own "nothing selected" refusal speaks
+            text = "Knife"
+        elif touches_hidden(mesh, hidden, vertices):
+            text = "Topology edit"
+        else:
+            return False
+        self._set_status(f"{text}: hidden geometry in the way (Alt+H shows all)")
+        return True
+
+    def _hide_command(self, command: str) -> bool:
+        """Ctrl+H / Ctrl+Shift+H / Alt+H: hide the selection, isolate it (hide everything else), show all.
+        No History, no mesh change; the selection loses what became hidden. Refused during a running gesture."""
+        if self._transform_key is not None:
+            return False
+        mesh = self.scene.mesh
+        hidden = self._hidden
+        if command == commands.SHOW_ALL:
+            if not hidden:
+                self._set_status("Nothing is hidden")
+                return False
+            count = len(hidden)
+            hidden.show_all()
+            self._hidden_push()
+            self._set_status(f"Shown all ({count} points)")
+            return True
+        selection = self.selection
+        target = set(resolve_selection_vertices(mesh, selection, selection.mode))
+        if not target:
+            self._set_status("Hide: select vertices first (Ctrl+H)")
+            return False
+        if mesh.symmetry_definition is not None:
+            target |= mirrored_selection(mesh, target)  # a pair is hidden together
+        if command == commands.ISOLATE_SELECTION:
+            hidden.isolate(mesh, target)
+            label = f"Isolated {len(target)} points"
+        else:
+            hidden.hide(target)
+            label = f"Hid {len(target)} points"
+        if len(hidden) >= len(mesh.all_vertex_ids()):
+            hidden.show_all()  # nothing visible is a trap: refuse instead
+            self._hidden_push()
+            self._set_status("Hide: everything would be hidden")
+            return False
+        self._hidden_push()  # a hidden element leaves the selection; Isolate keeps what it isolated
+        self._set_status(f"{label} ({len(hidden)} hidden, Alt+H shows all)")
+        return True
+
+    def _mask_command(self, command: str) -> bool:
+        """Ctrl+M / Ctrl+Shift+M / Alt+Shift+M: mask the selection (or unmask it when it is fully masked),
+        invert, clear. No History, no selection or mesh change; refused during a running gesture."""
+        if self._transform_key is not None:
+            return False
+        mesh = self.scene.mesh
+        if command == commands.MASK_CLEAR:
+            self._mask.clear()
+            return self._mask_changed("Mask cleared")
+        if command == commands.MASK_INVERT:
+            self._mask.invert(mesh)
+            return self._mask_changed(f"Mask inverted: {len(self._mask.full())} points masked")
+        selection = self.selection
+        target = set(resolve_selection_vertices(mesh, selection, selection.mode))
+        if not target:
+            self._set_status("Mask: select vertices first (Ctrl+M)")
+            return False
+        if mesh.symmetry_definition is not None:
+            target |= mirrored_selection(mesh, target)  # a pair is masked together
+        if target <= self._mask.full():
+            self._mask.set(target, 0.0)
+            return self._mask_changed(f"Unmasked {len(target)} points ({len(self._mask.full())} masked)")
+        self._mask.set(target)
+        return self._mask_changed(f"Masked {len(target)} points ({len(self._mask.full())} masked)")
 
     def _soft_refresh_radius(self) -> None:
         """Recompute the world radius from the mesh's bounding radius for the current step
@@ -4485,11 +4719,14 @@ class Application:
         is shown by the gesture, at `begin()`, as before."""
         soft = self._soft
         mesh = self.scene.mesh
+        mask = self._mask_values()  # the same mask the tools apply at `begin()` (Mask Geometry, Hide)
+        seeds = unblocked(seeds, mask)
         if mesh.symmetry_definition is None:
-            return compute_influence(
+            weights = compute_influence(
                 mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
                 curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
+            return mask_weights(weights, seeds, mask)
         correspondence = self._symmetry_reports.current(mesh).correspondence
         try:
             field = symmetric_influence(
@@ -4499,7 +4736,7 @@ class Application:
             )
         except SoftSymmetryRefusal:
             return None
-        return field.weights
+        return mask_symmetric_influence(field, mask).weights
 
     def _soft_show_op_weights(self) -> None:
         """At `begin()`: the display becomes the op's own weights (E4), so the preview and the
@@ -4909,6 +5146,7 @@ class Application:
             selection.hovered = None
         elif isinstance(hovered, ObjectId) and hovered not in self.scene.objects:
             selection.hovered = None
+        self._prune_hidden_selection()  # an Undo may have brought back what is hidden
 
     def _set_status(self, message: str) -> None:
         self.status_message = message

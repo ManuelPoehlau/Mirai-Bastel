@@ -146,6 +146,21 @@ DISSOLVE_NO_CLEANUP = "DissolveNoCleanup"
 # Knife-Session läuft (wie `C`). Siehe `mirai.application.Application._symmetry_cycle`.
 SYMMETRY_CYCLE = "SymmetryCycle"
 
+# Mask Geometry (docs/future_ideas/MODELING.md, Priorität 1; `PROVISIONAL`): state commands like the
+# constraints - they start no interaction, change no mesh and write no History. MASK_TOGGLE masks the
+# selected vertices (unmasks them if all are already masked), MASK_INVERT inverts the mask,
+# MASK_CLEAR removes it. A masked vertex is skipped by Move / Rotate / Scale / Smooth / Relax (`mirai.mask`).
+MASK_TOGGLE = "MaskToggle"
+MASK_INVERT = "MaskInvert"
+MASK_CLEAR = "MaskClear"
+
+# Hide / Isolate / Show all (docs/future_ideas/MODELING.md, Priorität 1; `PROVISIONAL`): state commands like
+# the mask - no History, no mesh change, refused during a running gesture. HIDE_SELECTION hides the selected
+# elements (and their mirror partners), ISOLATE_SELECTION hides everything else, SHOW_ALL shows everything.
+HIDE_SELECTION = "HideSelection"
+ISOLATE_SELECTION = "IsolateSelection"
+SHOW_ALL = "ShowAll"
+
 # RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):
 # global; mit genau einem ausgewählten Vertex öffnet es die Re-Symmetrize-Vorschau (Plan einmal
 # gerechnet), ein zweiter Druck führt sie aus (ein Undo-Schritt), Esc schließt sie. Solange sie
