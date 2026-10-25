@@ -15,10 +15,13 @@ from core.scene import Scene, SceneObject
 from mirai.scene_factory import mesh_from_positions_and_faces
 
 from morph_lab.morph import (
+    MESSAGE_JAW_REGION,
     MESSAGE_TOPOLOGY,
     MorphSurfaceProvider,
     blend,
     evaluate,
+    jaw_weights,
+    pose_jaw,
     topology_signature,
 )
 
@@ -200,3 +203,83 @@ def test_reshaping_the_target_takes_a_new_reference():
     target.set_vertex_position(vid, (x + 1.0, y + 0.5, z))  # ... against the base as it is now
     provider.sync(base, None)
     assert provider.surface_mesh.vertex_position(vid) == target.vertex_position(vid)
+
+
+# -- jaw pose --------------------------------------------------------------------------
+
+
+def _jaw_scene():
+    """The grid as a 'head' whose two lower faces (y 0..1) are the jaw group."""
+    from core.mesh import FaceRegion, FaceRegions
+
+    scene, base, target = _pair()
+    jaw = frozenset(f for f in base.all_face_ids() if max(base.vertex_position(v)[1] for v in base.face_vertices(f)) <= 1.0)
+    base.face_regions = FaceRegions((FaceRegion("Kiefer", jaw),))
+    return scene, base, target, jaw
+
+
+def _row(mesh, y):
+    return [v for v in mesh.all_vertex_ids() if mesh.vertex_position(v)[1] == y]
+
+
+def test_pose_jaw_turns_about_the_x_axis_and_opens_a_plus_z_jaw():
+    pivot = (0.0, 1.0, 0.0)
+    assert pose_jaw((0.5, 1.0, 0.0), pivot, 30, 1.0) == (0.5, 1.0, 0.0)
+    x, y, z = pose_jaw((0.5, 1.0, 2.0), pivot, 90, 1.0)
+    assert (x, round(y, 9), round(z, 9)) == (0.5, 1.0 - 2.0, 0.0)  # front of the jaw swings down
+    assert pose_jaw((0.5, 1.0, 2.0), pivot, 90, 0.0) == (0.5, 1.0, 2.0)
+
+
+def test_jaw_weights_are_one_in_the_group_and_fall_off_outside():
+    _scene, base, _target, jaw = _jaw_scene()
+    weights = jaw_weights(base, next(r for r in base.face_regions.regions if r.faces == jaw))
+    in_group = {v for f in jaw for v in base.face_vertices(f)}
+    assert all(weights[v] == 1.0 for v in in_group)
+    top = _row(base, 2.0)
+    assert all(0.0 < weights[v] < 1.0 for v in top)
+
+
+def test_without_a_pose_or_a_weight_there_is_no_surface_and_the_pose_needs_the_group():
+    scene, base, _target, _jaw = _jaw_scene()
+    provider, status = _provider(scene)
+    assert provider.sync(base, None) == set() and provider.surface_mesh is None
+    base.face_regions = None
+    provider.set_jaw_angle(20)
+    provider.sync(base, None)
+    assert provider.message == MESSAGE_JAW_REGION
+    assert all(provider.surface_mesh.vertex_position(v) == base.vertex_position(v) for v in base.all_vertex_ids())
+    assert status.posts == [MESSAGE_JAW_REGION]
+
+
+def test_pose_moves_the_jaw_only_and_never_writes_the_base():
+    scene, base, target, jaw = _jaw_scene()
+    before = {v: base.vertex_position(v) for v in base.all_vertex_ids()}
+    provider, _status = _provider(scene)
+    provider.set_jaw_angle(30)
+    provider.set_jaw_pivot((0.0, 2.0, 0.0))
+    provider.sync(base, None)
+    surface = provider.surface_mesh
+    assert surface is not None
+    assert {v: base.vertex_position(v) for v in base.all_vertex_ids()} == before
+    for v in _row(base, 0.0):
+        assert surface.vertex_position(v) != before[v]
+    for v in _row(base, 2.0):  # outside the group but in the falloff: weights < 1, still moved
+        assert surface.vertex_position(v)[0] == before[v][0]
+    provider.set_jaw_angle(0)
+    provider.sync(base, None)
+    assert provider.surface_mesh is None
+
+
+def test_pose_rides_on_the_morph_not_the_other_way_round():
+    scene, base, target, _jaw = _jaw_scene()
+    provider, _status = _provider(scene)
+    provider.set_jaw_pivot((0.0, 2.0, 0.0))
+    provider.set_weight(100)
+    provider.sync(base, None)
+    morphed = {v: provider.surface_mesh.vertex_position(v) for v in base.all_vertex_ids()}
+    assert morphed == {v: target.vertex_position(v) for v in base.all_vertex_ids()}
+    provider.set_jaw_angle(25)
+    provider.sync(base, None)
+    for v in _row(base, 0.0):
+        expected = pose_jaw(morphed[v], (0.0, 2.0, 0.0), 25, 1.0)
+        assert provider.surface_mesh.vertex_position(v) == expected

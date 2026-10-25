@@ -64,6 +64,11 @@ Umgestellt 2026-10-24 (Manu): `Pfeil`, `Shift+Pfeil`, `←`/`→` kollidierten m
 | alternativ | `4` · Klick aufs Objekt · `1` (wie die App) |
 | alles andere | die App |
 
+| `Alt+Pfeil rechts` / `Alt+Pfeil links` | **Kiefer-Pose** +5° (öffnen) / −5° (schließen) (`PROVISIONAL`, 2026-10-25) |
+| `Alt+Shift+Pfeil rechts` / `links` | Kiefer ±1° |
+| `J` | Kiefer: 0° ↔ zuletzt eingestellter Winkel |
+| `Shift+J` | Kiefer-Scharnier = Mitte der ausgewählten Punkte (Modus `1`); nichts gewählt = automatisch |
+
 `,` / `.` führen genau die App-Geste `4` · Objekt auswählen · `1` aus (kein eigener Pfad, kein Undo-Schritt, mit
 den Ablehnungen der App); danach bist du im Komponenten-Modus, in dem du warst (aus `4` in `1`). Bei mehreren Targets wird die
 Lösung neu entschieden.
@@ -75,6 +80,25 @@ die App-Tasten geprüft und ausgegeben; solange W/E/R/T oder der Knife läuft, l
 Oben im Fenster stehen drei HUD-Zeilen: (1) Gewicht, Kosten eines Schritts, Hinweise; (2) **welches Objekt bearbeitet
 wird** (Basis oder Ziel 1), der Modus und in `4` die Auswahl; (3) die letzte Meldung der App (in `src/main.py` steht sie nur
 in der Konsole) — z. B. warum `1` das bearbeitete Objekt nicht gewechselt hat.
+
+## Kiefer-Pose zusammen mit Morphs (`PROVISIONAL`, Übergang bis zum Rig, 2026-10-25)
+
+Zum Beispiel Gollum: `python experiments/morph_lab/run.py gollum`. Der Kiefer wird **gedreht** und die Morphs liegen
+**darunter** — erst die Mischung (Lächeln, Backen, was im Ziel steht), dann die Pose. Ein „Kiefer offen"-Ziel wird
+also am ruhenden Kiefer gesculptet und fährt bei jedem Winkel mit.
+
+1. An der Basis (`,`) die Flächen des Unterkiefers auswählen (Modus `3`), `Strg+G` (neue Polygroup), `Strg+Alt+N` →
+   Name **`Kiefer`** (auch `Unterkiefer` / `Jaw`; Groß-/Kleinschreibung egal). Die Gruppe wird mit `Strg+S` gespeichert.
+2. Optional das **Scharnier** setzen: Punkte am Kiefergelenk auswählen (Modus `1`), `Shift+J`. Ohne Scharnier nimmt das Lab
+   die Gruppenmitte in X, die Oberkante in Y und die Rückseite in Z (für einen Kopf, der nach +Z schaut). Achse ist X.
+3. `Alt+Pfeil rechts/links` dreht, `J` vergleicht mit 0°. Positive Winkel öffnen einen Kiefer, der nach +Z schaut.
+   Außerhalb der Gruppe läuft die Pose über 3 Kantenringe auf 0 aus (Mundwinkel/Wange reißen nicht).
+
+Wie das Gewicht ist die Pose **reine Ansicht** (kein Undo, nicht gespeichert, ändert weder Basis noch Ziel) und
+erscheint an der Basis; auch beim Sculpten des Ziels zeigt die Basis Mischung **und** Pose. Auswahl/Picking liegen
+wie beim Gewicht auf der Ruhelage. Kosten bei Gollum (87 500 V, Container): erster Schritt einmalig einige Sekunden
+(Ersatzfläche), danach ca. 80–150 ms je Schritt — für Tastenschritte, nicht zum Ziehen. Grenzen: nur eine Achse (X), ein
+Scharnier, harte Gewichte 1 in der Gruppe; ein echtes Rig mit Gelenk-Gewichten ersetzt das später (AD-005).
 
 ## Praxistest für Manu (ca. 20–30 Minuten)
 
@@ -220,6 +244,12 @@ refusals, HUD), `test_run_cli.py`, `test_import_boundary.py`.
 Tests: `tests/test_viewport_surface_provider.py` (three H7-E tests), `test_app_lab.py` (base preview, `B`).
 
 **Left/Right:** `lab_app.MorphAppLab.switch_edit_object` presses `4`, sets `selection.objects`, presses the mode key through `app.key_press` — the app's Q-5 switch, no private call, no History entry.
+
+**Jaw pose (2026-10-25):** `morph.MorphSurfaceProvider.set_jaw_angle` / `set_jaw_pivot`; `jaw_weights` (polygroup
+`JAW_REGION_NAMES`, linear falloff over `JAW_FALLOFF_RINGS`), `pose_jaw` (rotation about X, applied after `blend`);
+`active` (weight > 0 or angle ≠ 0) replaces the former weight-only gate. `_SignatureCache` keeps `topology_signature`
+per mesh and recomputes it only when the `Mesh.watch()` journal reports edges/faces/new or removed vertices (87 500 V:
+0.7 s → 0). Keys in `lab_app.LAB_KEYS`; tests: `test_morph.py` (jaw section), `test_app_lab.py` (jaw section).
 
 **Not in scope:** several targets or a runtime "new target" (needs a reviewed host entry; AD-021 E-15 first), a weight
 slider, weights as document state, morph + SubD together, topology changes with morphs (ARCH-02), production storage.

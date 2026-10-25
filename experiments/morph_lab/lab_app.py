@@ -30,7 +30,14 @@ from mirai.application import Application
 from mirai.interaction.input import KNIFE_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
 from mirai.viewport.display import DisplayMode
 
-from .morph import EDITING_BASE, EDITING_OTHER, EDITING_TARGET, MAX_WEIGHT, MIN_WEIGHT, MorphSurfaceProvider
+from .morph import (
+    EDITING_BASE,
+    EDITING_OTHER,
+    EDITING_TARGET,
+    MAX_WEIGHT,
+    MIN_WEIGHT,
+    MorphSurfaceProvider,
+)
 
 MORPH_LAB_CONTEXT = "morph_lab"
 
@@ -42,12 +49,21 @@ WEIGHT_FULL = "MorphWeightFull"
 WEIGHT_ZERO = "MorphWeightZero"
 TOGGLE_AB = "MorphToggleAB"
 TOGGLE_RELATIVE = "MorphToggleRelative"
+JAW_OPEN = "MorphJawOpen"
+JAW_CLOSE = "MorphJawClose"
+JAW_OPEN_FINE = "MorphJawOpenFine"
+JAW_CLOSE_FINE = "MorphJawCloseFine"
+JAW_TOGGLE = "MorphJawToggle"
+JAW_SET_HINGE = "MorphJawSetHinge"
 EDIT_BASE = "MorphEditBase"
 EDIT_TARGET = "MorphEditTarget"
 
 #: Weight steps in whole percent (`PROVISIONAL`).
 STEP, FINE_STEP = 10, 1
 STEPS = {WEIGHT_UP: STEP, WEIGHT_DOWN: -STEP, WEIGHT_UP_FINE: FINE_STEP, WEIGHT_DOWN_FINE: -FINE_STEP}
+#: Jaw pose steps in whole degrees (`PROVISIONAL`).
+JAW_STEP, JAW_FINE_STEP = 5, 1
+JAW_STEPS = {JAW_OPEN: JAW_STEP, JAW_CLOSE: -JAW_STEP, JAW_OPEN_FINE: JAW_FINE_STEP, JAW_CLOSE_FINE: -JAW_FINE_STEP}
 
 
 @dataclass(frozen=True)
@@ -61,7 +77,7 @@ class LabKey:
 
 
 def key_label(input: Input) -> str:
-    names = {"up": "Pfeil hoch", "down": "Pfeil runter", "comma": ",", "period": "."}
+    names = {"up": "Pfeil hoch", "down": "Pfeil runter", "left": "Pfeil links", "right": "Pfeil rechts", "comma": ",", "period": "."}
     mods = "+".join(m.capitalize() for m in sorted(input.modifiers))
     value = names.get(input.value, input.value.upper())
     return f"{mods}+{value}" if mods else value
@@ -81,6 +97,12 @@ LAB_KEYS: tuple[LabKey, ...] = (
     LabKey(_key("down", "ctrl"), WEIGHT_ZERO, "Gewicht 0 %"),
     LabKey(_key("m"), TOGGLE_AB, "A/B: 0 % <-> zuletzt eingestelltes Gewicht"),
     LabKey(_key("b"), TOGGLE_RELATIVE, "Ziel relativ <-> absolut"),
+    LabKey(_key("right", "alt"), JAW_OPEN, f"Kiefer +{JAW_STEP} Grad (öffnen)"),
+    LabKey(_key("left", "alt"), JAW_CLOSE, f"Kiefer -{JAW_STEP} Grad (schließen)"),
+    LabKey(_key("right", "alt", "shift"), JAW_OPEN_FINE, f"Kiefer +{JAW_FINE_STEP} Grad"),
+    LabKey(_key("left", "alt", "shift"), JAW_CLOSE_FINE, f"Kiefer -{JAW_FINE_STEP} Grad"),
+    LabKey(_key("j"), JAW_TOGGLE, "Kiefer: 0 Grad <-> zuletzt eingestellter Winkel"),
+    LabKey(_key("j", "shift"), JAW_SET_HINGE, "Kiefer-Scharnier = Mitte der ausgewählten Punkte (nichts gewählt: automatisch)"),
     LabKey(_key("comma"), EDIT_BASE, "Basis bearbeiten"),
     LabKey(_key("period"), EDIT_TARGET, "Ziel 1 bearbeiten"),
 )
@@ -131,6 +153,8 @@ class MorphAppLab:
         )
         #: the weight the A/B key returns to (the last one above 0 %)
         self.ab_weight = MAX_WEIGHT
+        #: the angle the jaw key returns to (the last one away from 0)
+        self.ab_jaw = JAW_STEP * 4
 
     def attach(self, viewport) -> None:
         viewport.set_surface_provider(self.provider)
@@ -144,6 +168,28 @@ class MorphAppLab:
         if weight > MIN_WEIGHT:
             self.ab_weight = weight
         return weight
+
+    def set_jaw_angle(self, angle: int) -> int:
+        angle = self.provider.set_jaw_angle(angle)
+        if angle != 0:
+            self.ab_jaw = angle
+        return angle
+
+    def set_jaw_hinge(self) -> bool:
+        """Shift+J: the hinge is the centre of the selected vertices (rest position of the base);
+        with none selected it goes back to the automatic one."""
+        app = self.app
+        base = app.scene.objects.get(self.provider.base_id)
+        ids = [v for v in app.selection.vertices if base is not None and base.mesh.is_valid_vertex(v)]
+        if app.selection.mode is not SelectionMode.VERTEX or not ids:
+            self.provider.set_jaw_pivot(None)
+            app.set_status("Kiefer: Scharnier automatisch (Oberkante/Rückseite der Gruppe)")
+            return True
+        points = [base.mesh.vertex_position(v) for v in ids]
+        pivot = tuple(sum(p[i] for p in points) / len(points) for i in range(3))
+        self.provider.set_jaw_pivot(pivot)
+        app.set_status("Kiefer: Scharnier bei ({:.3f}, {:.3f}, {:.3f}), Achse X".format(*pivot))
+        return True
 
     def switch_edit_object(self, object_id) -> bool:
         """Comma/Period: the gesture `4` · select the object · `1`, run through the app's own keys,
@@ -171,6 +217,16 @@ class MorphAppLab:
             relative = self.provider.set_relative(not self.provider.relative)
             self.app.set_status(f"Morph: Ziel {'relativ' if relative else 'absolut'}")
             return True
+        if command in JAW_STEPS:
+            self.set_jaw_angle(self.provider.jaw_angle + JAW_STEPS[command])
+            self.app.set_status(f"Kiefer: {self.provider.jaw_angle} Grad")
+            return True
+        if command == JAW_TOGGLE:
+            self.provider.set_jaw_angle(self.ab_jaw if self.provider.jaw_angle == 0 else 0)
+            self.app.set_status(f"Kiefer: {self.provider.jaw_angle} Grad")
+            return True
+        if command == JAW_SET_HINGE:
+            return self.set_jaw_hinge()
         if command == EDIT_BASE:
             return self.switch_edit_object(self.provider.base_id)
         if command == EDIT_TARGET:
@@ -216,6 +272,7 @@ def startup_listing() -> list[str]:
     lines = [f"Lab-Kontext {MORPH_LAB_CONTEXT!r} (Vorschlag, keine Artist-Entscheidung):"]
     lines.extend(f"  {entry.describe()}" for entry in LAB_KEYS)
     lines.append("Alles andere ist die Bedienung von src/main.py (W/E/R, Tweak, Soft, Shift+S, Undo, 4, D, ...).")
+    lines.append("Kiefer-Pose: Polygroup 'Kiefer' an der Basis anlegen (Strg+G, Strg+Alt+N), dann Alt+Pfeil links/rechts.")
     lines.append("Ziel bearbeiten: . (Punkt, oder 4 · Klick aufs Ziel · 1). Zurück zur Basis: , (Komma).")
     lines.append("In 4 ist das ausgewählte Objekt gelblich; Alt+R schaltet es auf Referenz und zurück.")
     return lines
@@ -234,7 +291,7 @@ def hints(lab: MorphAppLab) -> list[str]:
             "Ziel wird bearbeitet - Basis zeigt die Mischung" if lab.weight > MIN_WEIGHT
             else "Ziel wird bearbeitet - Alt+Pfeil hoch zeigt die Mischung an der Basis"
         )
-    elif provider.editing == EDITING_BASE and lab.weight > MIN_WEIGHT:
+    elif provider.editing == EDITING_BASE and provider.active:
         if app.display.mode is DisplayMode.WIREFRAME:
             out.append("Wireframe: Morph nicht sichtbar")
         elif app.selection.mode is not SelectionMode.OBJECT:
@@ -282,12 +339,14 @@ def hud_text(lab: MorphAppLab, asset_name: str, frame_ms: Optional[float] = None
         f"Morph Lab · {asset_name}",
         f"Ziel 1 ({'relativ' if provider.relative else 'absolut'}) · Gewicht {lab.weight} %",
     ]
-    if provider.editing != EDITING_OTHER and lab.weight > MIN_WEIGHT:
+    if provider.jaw_angle:
+        parts.append(f"Kiefer {provider.jaw_angle} Grad")
+    if provider.editing != EDITING_OTHER and provider.active:
         parts.append(f"Schritt {_ms(provider.last_update_ms)} ({provider.last_changed} V)")
     if frame_ms is not None:
         parts.append(f"Frame {frame_ms:.1f} ms")
     parts.extend(hints(lab))
-    if provider.message and lab.weight > MIN_WEIGHT:
+    if provider.message and provider.active:
         parts.append(provider.message)
     lines = [" · ".join(parts), object_line(lab)]
     if lab.app.status_message:

@@ -530,3 +530,91 @@ def test_unreadable_sent_file_is_a_lab_scene_error(tmp_path):
     bad.write_text("{nope", encoding="utf-8")
     with pytest.raises(LabSceneError):
         read_sent_object(bad)
+
+
+# -- jaw pose ---------------------------------------------------------------------------------
+
+JAW_OPEN_KEY, JAW_CLOSE_KEY, JAW_FINE_KEY = _key("right", "alt"), _key("left", "alt"), _key("right", "alt", "shift")
+JAW_TOGGLE_KEY, JAW_HINGE_KEY = _key("j"), _key("j", "shift")
+
+
+def name_jaw_group(app, lab):
+    """The lower half of the head (by Y) becomes the polygroup 'Kiefer' on the base."""
+    from core.mesh import FaceRegion, FaceRegions
+
+    base, _ = objects(app, lab)
+    mesh = base.mesh
+    ys = sorted(mesh.vertex_position(v)[1] for v in mesh.all_vertex_ids())
+    middle = ys[len(ys) // 2]
+    faces = frozenset(f for f in mesh.all_face_ids() if all(mesh.vertex_position(v)[1] <= middle for v in mesh.face_vertices(f)))
+    mesh.face_regions = FaceRegions((FaceRegion("Kiefer", faces),))
+    return faces
+
+
+def test_jaw_keys_pose_the_group_without_history_or_changing_the_meshes(lab_app):
+    app, lab, _ = lab_app
+    base, target = objects(app, lab)
+    faces = name_jaw_group(app, lab)
+    states = (base.mesh.export_state(), target.mesh.export_state())
+    undo_steps = len(app.history)
+    press(app, lab, JAW_OPEN_KEY, JAW_OPEN_KEY, JAW_FINE_KEY)
+    frame(app)
+    assert lab.provider.jaw_angle == 11 and app.status_message == "Kiefer: 11 Grad"
+    surface = app.viewport.surface_render_mesh
+    assert surface is not None  # a pose alone (weight 0 %) already shows a surface
+    inside = {v for f in faces for v in base.mesh.face_vertices(f)}
+    moved = {v for v in base.mesh.all_vertex_ids() if lab.provider.surface_mesh.vertex_position(v) != base.mesh.vertex_position(v)}
+    assert moved and moved - inside  # falloff reaches past the group
+    assert (base.mesh.export_state(), target.mesh.export_state()) == states
+    assert len(app.history) == undo_steps
+    press(app, lab, JAW_TOGGLE_KEY)
+    frame(app)
+    assert lab.provider.jaw_angle == 0 and app.viewport.surface_render_mesh is None
+    press(app, lab, JAW_TOGGLE_KEY)
+    assert lab.provider.jaw_angle == 11
+
+
+def test_jaw_pose_follows_the_morph_weight(lab_app):
+    app, lab, _ = lab_app
+    sculpted_lab(app, lab)
+    name_jaw_group(app, lab)
+    press(app, lab, CTRL_UP, JAW_OPEN_KEY)
+    frame(app)
+    posed = shown(lab)
+    press(app, lab, CTRL_DOWN)
+    frame(app)
+    assert shown(lab) != posed  # the pose alone differs from the pose on the full morph
+    assert HUD_JAW in app_hud(app, lab)
+
+
+HUD_JAW = "Kiefer 5 Grad"
+
+
+def app_hud(app, lab) -> str:
+    from morph_lab.lab_app import hud_text
+
+    return hud_text(lab, ASSET)
+
+
+def test_jaw_hinge_comes_from_the_selected_vertices(lab_app):
+    app, lab, _ = lab_app
+    name_jaw_group(app, lab)
+    base, _ = objects(app, lab)
+    press(app, lab, JAW_OPEN_KEY)
+    app.selection.mode = SelectionMode.VERTEX
+    chosen = sorted(base.mesh.all_vertex_ids())[:3]
+    app.selection.vertices.update(chosen)
+    press(app, lab, JAW_HINGE_KEY)
+    points = [base.mesh.vertex_position(v) for v in chosen]
+    assert lab.provider.jaw_pivot == tuple(sum(p[i] for p in points) / 3 for i in range(3))
+    app.selection.vertices.clear()
+    press(app, lab, JAW_HINGE_KEY)
+    assert lab.provider.jaw_pivot is None
+
+
+def test_jaw_without_a_group_says_so_once(lab_app):
+    app, lab, _ = lab_app
+    press(app, lab, JAW_OPEN_KEY)
+    frame(app)
+    frame(app)
+    assert "Polygroup 'Kiefer'" in lab.provider.message

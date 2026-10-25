@@ -25,6 +25,12 @@ while `b == r`, else `b + (t − r)`:
 - otherwise  `b + w·(t' − b)` with `w = k / 100` — exact where base and target agree and exactly
   mirrored for mirrored inputs. (`(1 − w)·b + w·t` moves unchanged regions by one rounding step.)
 
+Jaw pose (`PROVISIONAL`, a temporary stand-in for the rig, Manu 2026-10-25): after the mixture the base's
+vertices of the polygroup named "Kiefer" (or "Unterkiefer" / "Jaw") are turned about a hinge axis (X through
+`jaw_pivot`) by `jaw_angle`, fading out over `JAW_FALLOFF_RINGS` edge rings outside the group. Morph first, pose
+second: a "jaw open" or "smile" target is sculpted on the rest jaw and rides along with the pose. Like the weight it
+is view state (no History, not saved) and shown on the base only.
+
 The provider never writes base or target (H7-R2: display only). It wakes on the H7 triggers, on a
 weight change and on a new status message of the app (`status_serial`): H7 reports no change of a
 *non-edit* object's mesh (Apply transform on the target, its Undo), but every such path posts a
@@ -49,6 +55,14 @@ MIN_WEIGHT, MAX_WEIGHT = 0, 100
 #: review F-2). A sculpted expression stays far below it.
 OFFSET_WARNING_SHARE = 0.25
 
+#: Polygroup names (case-insensitive) that mark the jaw; the first region of the base that matches is used.
+JAW_REGION_NAMES = ("kiefer", "unterkiefer", "jaw")
+#: `PROVISIONAL`: edge rings outside the jaw group over which the pose fades to zero.
+JAW_FALLOFF_RINGS = 3
+#: Whole degrees; the pose is limited to this range either way.
+MAX_JAW_ANGLE = 60
+
+MESSAGE_JAW_REGION = "Kiefer: keine Polygroup 'Kiefer' an der Basis (Auswahl, Strg+G, dann Strg+Alt+N: Name 'Kiefer')"
 MESSAGE_MISSING = "Morph aus: Basis oder Ziel fehlt in der Szene"
 MESSAGE_TOPOLOGY = (
     "Morph aus: Topologie von Basis und Ziel weicht ab (Strg+Z bis sie wieder gleich ist)"
@@ -76,6 +90,29 @@ def topology_signature(mesh) -> tuple:
     )
 
 
+class _SignatureCache:
+    """`topology_signature` of one mesh, recomputed only when its change journal (`Mesh.watch`) reports a
+    touched edge or face or a vertex that appeared or vanished. Sorting every ID of a dense mesh (gollum,
+    87 500 V) on each update cost ~0.7 s; a pose or weight step moves vertices only."""
+
+    def __init__(self, mesh) -> None:
+        self.mesh = mesh
+        self._watch = mesh.watch()
+        self._signature: Optional[tuple] = None
+
+    def get(self) -> tuple:
+        change = self._watch.take()
+        if self._signature is None or self._topology_touched(change):
+            self._signature = topology_signature(self.mesh)
+        return self._signature
+
+    def _topology_touched(self, change) -> bool:
+        if change.edges or change.faces:
+            return True
+        mesh = self.mesh
+        return any(before is None or not mesh.is_valid_vertex(vid) for vid, before in change.vertices.items())
+
+
 def blend(base: tuple, target: tuple, weight: int) -> tuple:
     """One morphed position for a weight in whole percent (module docstring)."""
     if weight >= MAX_WEIGHT:
@@ -96,6 +133,61 @@ def evaluate(base_mesh, target_mesh, weight: int) -> dict:
 
 def clamp_weight(weight: int) -> int:
     return max(MIN_WEIGHT, min(MAX_WEIGHT, int(weight)))
+
+
+def clamp_jaw_angle(angle: int) -> int:
+    return max(-MAX_JAW_ANGLE, min(MAX_JAW_ANGLE, int(angle)))
+
+
+def jaw_region(mesh):
+    """The base's jaw polygroup (`JAW_REGION_NAMES`), or None."""
+    regions = mesh.face_regions
+    if regions is None:
+        return None
+    return next((r for r in regions.regions if r.name.lower() in JAW_REGION_NAMES), None)
+
+
+def jaw_weights(mesh, region) -> dict:
+    """Pose weight per vertex: 1 on the vertices of the group's live faces, falling off linearly to 0 over
+    `JAW_FALLOFF_RINGS` edge rings outside it. Only vertices with a weight above 0 are in the result."""
+    weights = {}
+    frontier = []
+    for fid in region.faces:
+        if mesh.is_valid_face(fid):
+            for vid in mesh.face_vertices(fid):
+                if vid not in weights:
+                    weights[vid] = 1.0
+                    frontier.append(vid)
+    if not frontier or JAW_FALLOFF_RINGS <= 0:
+        return weights
+    neighbours: dict = {}
+    for eid in mesh.all_edge_ids():
+        a, b = mesh.edge_vertices(eid)
+        neighbours.setdefault(a, []).append(b)
+        neighbours.setdefault(b, []).append(a)
+    for ring in range(1, JAW_FALLOFF_RINGS + 1):
+        w = 1.0 - ring / (JAW_FALLOFF_RINGS + 1)
+        nxt = []
+        for vid in frontier:
+            for other in neighbours.get(vid, ()):
+                if other not in weights:
+                    weights[other] = w
+                    nxt.append(other)
+        frontier = nxt
+    return weights
+
+
+def rotate_about_x(point: tuple, pivot: tuple, angle: float) -> tuple:
+    """`point` turned by `angle` (radians, right-hand rule) about the X axis through `pivot`."""
+    c, s = math.cos(angle), math.sin(angle)
+    y, z = point[1] - pivot[1], point[2] - pivot[2]
+    return (point[0], pivot[1] + y * c - z * s, pivot[2] + y * s + z * c)
+
+
+def pose_jaw(position: tuple, pivot: tuple, angle_degrees: float, weight: float) -> tuple:
+    """One posed position. Positive `angle_degrees` is the right-hand rotation about +X: it opens a jaw that
+    faces +Z (the chin swings down)."""
+    return rotate_about_x(position, pivot, math.radians(angle_degrees * weight))
 
 
 def _bbox_diagonal(positions) -> float:
@@ -129,6 +221,7 @@ class MorphSurfaceProvider:
         self._serial = serial or (lambda: 0)
         self._seen_serial = self._serial()
         self._dirty = False
+        self._signatures: dict = {}
 
         #: the mesh the viewport draws instead of the base's faces (None = the edit mesh itself)
         self.surface_mesh: Optional[Mesh] = None
@@ -144,8 +237,16 @@ class MorphSurfaceProvider:
         self._surface_ok = False
         self.last_update_ms: Optional[float] = None
         self.last_changed = 0
+        #: why the jaw pose cannot be shown (None = fine)
+        self._jaw_message: Optional[str] = None
 
         self._weight = MIN_WEIGHT
+        #: jaw pose (module docstring): degrees, hinge point (None = derived from the group), view state
+        self._jaw_angle = 0
+        self._jaw_pivot: Optional[tuple] = None
+        self._jaw_region = None
+        self._jaw_weights: dict = {}
+        self._jaw_signature: Optional[tuple] = None
         self._surface: Optional[Mesh] = None
         self._surface_signature: Optional[tuple] = None
         self._shown: dict = {}
@@ -168,6 +269,34 @@ class MorphSurfaceProvider:
             self._weight = weight
             self._dirty = True
         return self._weight
+
+    # -- jaw pose (view state like the weight) ---------------------------------------------
+
+    @property
+    def jaw_angle(self) -> int:
+        return self._jaw_angle
+
+    @property
+    def jaw_pivot(self) -> Optional[tuple]:
+        return self._jaw_pivot
+
+    @property
+    def active(self) -> bool:
+        """Something to show: a morph weight above 0 or a jaw pose."""
+        return self._weight != MIN_WEIGHT or self._jaw_angle != 0
+
+    def set_jaw_angle(self, angle: int) -> int:
+        angle = clamp_jaw_angle(angle)
+        if angle != self._jaw_angle:
+            self._jaw_angle = angle
+            self._dirty = True
+        return self._jaw_angle
+
+    def set_jaw_pivot(self, pivot: Optional[tuple]) -> None:
+        pivot = None if pivot is None else tuple(float(c) for c in pivot)
+        if pivot != self._jaw_pivot:
+            self._jaw_pivot = pivot
+            self._dirty = True
 
     def set_relative(self, relative: bool) -> bool:
         relative = bool(relative)
@@ -208,7 +337,7 @@ class MorphSurfaceProvider:
             self.editing = EDITING_TARGET
             self.surface_mesh = None
             self._target_valid = False  # the edit mesh changes under us: read it every sync ...
-            if self._weight == MIN_WEIGHT:
+            if not self.active:
                 return set()
             rebuilt, changed = self._update_surface(base.mesh, target.mesh)
             self._target_valid = False  # ... and once more when the base is edited again
@@ -221,7 +350,7 @@ class MorphSurfaceProvider:
             self.surface_mesh = None
             return set()
         self.editing = EDITING_BASE
-        if self._weight == MIN_WEIGHT and self._target_valid:
+        if not self.active and self._target_valid:
             self.surface_mesh = None
             return set()
         # At 0 % too when the target is not valid: the reference of the relative target must be
@@ -232,23 +361,30 @@ class MorphSurfaceProvider:
         # A new surface object is rebuilt by the viewport from its current positions anyway.
         return set() if rebuilt else changed
 
+    def _signature(self, mesh) -> tuple:
+        cache = self._signatures.get(id(mesh))
+        if cache is None or cache.mesh is not mesh:
+            cache = self._signatures[id(mesh)] = _SignatureCache(mesh)
+        return cache.get()
+
     def _update_surface(self, base_mesh, target_mesh) -> tuple:
         """Reads the target when it is not valid, then (weight > 0 and pairing intact) updates the
         shared surface Mesh to the mixture. Sets `surface_mesh` (the edit-mesh slot, only when the
         base is the edit mesh) and `_surface_ok`; returns (rebuilt, changed vertices)."""
         started = time.perf_counter()
         self._surface_ok = False
-        base_signature = topology_signature(base_mesh)
+        base_signature = self._signature(base_mesh)
         if not self._target_valid:
             self._read_target(target_mesh, base_mesh, base_signature)
-        if self._weight == MIN_WEIGHT:
+        if not self.active:
             self.surface_mesh = None
             return False, set()
         if base_signature != self._target_signature:
             self.surface_mesh = None
             self._set_message(MESSAGE_TOPOLOGY)
             return False, set()
-        self._set_message(MESSAGE_OFFSET if self._target_offset else None)
+        jaw, pivot = self._read_jaw(base_mesh, base_signature)
+        self._set_message(self._jaw_message or (MESSAGE_OFFSET if self._target_offset else None))
 
         rebuilt = self._surface is None or base_signature != self._surface_signature
         if rebuilt:
@@ -257,6 +393,7 @@ class MorphSurfaceProvider:
             self._shown = {}
         surface, shown, target_positions, weight = self._surface, self._shown, self._target_positions, self._weight
         reference, relative = self._reference, self.relative
+        angle = self._jaw_angle
         changed = set()
         for vid in base_mesh.all_vertex_ids():
             b, t = tuple(base_mesh.vertex_position(vid)), target_positions[vid]
@@ -265,6 +402,10 @@ class MorphSurfaceProvider:
                 if b != r:
                     t = tuple(bi + (ti - ri) for bi, ti, ri in zip(b, t, r))
             position = blend(b, t, weight)
+            if jaw:
+                w = jaw.get(vid)
+                if w:
+                    position = pose_jaw(position, pivot, angle, w)
             if shown.get(vid) != position:
                 shown[vid] = position
                 surface.set_vertex_position(vid, position)
@@ -275,8 +416,33 @@ class MorphSurfaceProvider:
         self.last_update_ms = (time.perf_counter() - started) * 1000.0
         return rebuilt, changed
 
+    def _read_jaw(self, base_mesh, base_signature: tuple) -> tuple:
+        """(weights, pivot) of the pose, or ({}, None) when there is none to show; sets `_jaw_message`
+        when a pose is asked for but cannot be shown."""
+        self._jaw_message = None
+        if self._jaw_angle == 0:
+            return {}, None
+        region = jaw_region(base_mesh)
+        if region is None:
+            self._jaw_message = MESSAGE_JAW_REGION
+            return {}, None
+        if region is not self._jaw_region or base_signature != self._jaw_signature:
+            self._jaw_region, self._jaw_signature = region, base_signature
+            self._jaw_weights = jaw_weights(base_mesh, region)
+        pivot = self._jaw_pivot or self._default_pivot(base_mesh)
+        return self._jaw_weights, pivot
+
+    def _default_pivot(self, base_mesh) -> tuple:
+        """Without a set hinge: the group's centre in X, its top in Y and its back in Z (a jaw facing +Z)."""
+        points = [base_mesh.vertex_position(v) for v in self._jaw_weights if self._jaw_weights[v] == 1.0]
+        return (
+            sum(p[0] for p in points) / len(points),
+            max(p[1] for p in points),
+            min(p[2] for p in points),
+        )
+
     def _read_target(self, target_mesh, base_mesh, base_signature: tuple) -> None:
-        signature = topology_signature(target_mesh)
+        signature = self._signature(target_mesh)
         positions = {vid: tuple(target_mesh.vertex_position(vid)) for vid in target_mesh.all_vertex_ids()}
         self._target_valid = True
         if signature != base_signature:
