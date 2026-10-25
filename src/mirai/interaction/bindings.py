@@ -20,8 +20,9 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
                     SelectRemove. Alles `PROVISIONAL`, Manu 2026-10-15 (Promotion der
                     Playground-Werkzeuge: Box/Paint "Startpunkt entscheidet", Tweak
                     "Ctrl+LMB, Auswahl weicht")
-- Shift+Ctrl+LMB → (nur Klick, kein Drag) Saved Regions: Region der Face unter dem Cursor isolieren / auf der isolierten
-                    Region die Sichtbarkeit invertieren / ins Leere alles zeigen (Manu 2026-10-25, `PROVISIONAL`)
+- Shift+Ctrl+LMB → (nur Klick, kein Drag) Polygroups: die Gruppen unter dem Cursor (Vertex/Edge: alle berührten)
+                    isolieren, wenn nichts versteckt ist / invertieren, wenn nur sie sichtbar sind / sonst zusätzlich
+                    verstecken; ins Leere alles zeigen (Manu 2026-10-25, ZBrush-artig, `PROVISIONAL`)
 - RMB/MMB         → bewusst ungebunden (eine Primärbindung pro Funktion,
                     AD-013 Truth-Regel 2)
 

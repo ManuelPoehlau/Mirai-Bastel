@@ -125,6 +125,30 @@ def region_of_face(mesh: Mesh, face: FaceId, prefer: str | None = None) -> str |
     return next((r.name for r in regions.regions if face in r.faces), None)
 
 
+def faces_around(mesh: Mesh, element) -> set[FaceId]:
+    """The faces a picked element touches: a face itself, an edge's faces, a vertex's faces."""
+    if isinstance(element, FaceId):
+        return {element} if mesh.is_valid_face(element) else set()
+    if isinstance(element, EdgeId):
+        return set(mesh.edge_faces(element)) if mesh.is_valid_edge(element) else set()
+    if isinstance(element, VertexId) and mesh.is_valid_vertex(element):
+        return {f for e in mesh.vertex_edges(element) for f in mesh.edge_faces(e)}
+    return set()
+
+
+def regions_of_faces(mesh: Mesh, faces: Iterable[FaceId], prefer: str | None = None) -> list[str]:
+    """The regions that hold one of `faces`, in list order (`prefer` first when it is one of them)."""
+    regions = mesh.face_regions
+    if regions is None:
+        return []
+    face_set = set(faces)
+    names = [r.name for r in regions.regions if r.faces & face_set]
+    if prefer in names:
+        names.remove(prefer)
+        names.insert(0, prefer)
+    return names
+
+
 def interior_vertices(mesh: Mesh, faces: Iterable[FaceId]) -> set[VertexId]:
     """The vertices of `faces` that no other face touches: hiding them hides exactly `faces` and leaves every
     other face visible (a face is hidden when one of its corners is)."""

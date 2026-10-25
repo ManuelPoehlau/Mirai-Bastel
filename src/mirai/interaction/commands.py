@@ -181,9 +181,10 @@ REGION_SELECT_ADD = "RegionSelectAdd"
 REGION_ISOLATE = "RegionIsolate"
 REGION_MASK = "RegionMask"
 REGION_DELETE = "RegionDelete"
-# REGION_CLICK (Manu 2026-10-25): Shift+Ctrl+Klick. On a face of a saved region it isolates that region; on the
-# isolated region it inverts the visibility (the rest becomes visible, the region's interior hidden); in empty
-# space it shows everything. A click-only gesture: Shift+Ctrl has no drag binding, so it never starts a Tweak.
+# REGION_CLICK (Manu 2026-10-25, ZBrush-like): Shift+Ctrl+Klick on the groups under the cursor (a hovered vertex or
+# edge takes every group it touches). Nothing hidden: isolates them; they are all that is visible: inverts the
+# visibility (the rest visible, they hidden); something else hidden already: hides them as well. Empty space shows
+# everything. A click-only gesture: Shift+Ctrl has no drag binding, so it never starts a Tweak.
 REGION_CLICK = "RegionClick"
 
 # RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):

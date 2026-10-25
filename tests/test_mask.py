@@ -199,3 +199,16 @@ def test_mask_overlay_follows_the_mesh_and_skips_stale_ids(app):
     assert not overlay.dirty
     assert overlay._positions[MASK_LAYER_FULL] == [mesh.vertex_position(a)]
     assert overlay._positions[MASK_LAYER_PARTIAL] == [mesh.vertex_position(b)]
+
+
+def test_ctrl_m_unmasks_a_masked_selection_even_when_symmetry_came_on_later(app):
+    """Masked before symmetry was switched on: Ctrl+M on the masked selection must unmask it, not mask the mirror side."""
+    chosen = _select(app, 3, 4, 5)
+    assert app.key_press(CTRL_M)
+    app.key_press(_key("s", "shift"))  # symmetry on
+    if app.scene.mesh.symmetry_definition is None:
+        pytest.skip("symmetry did not switch on for this fixture")
+    app.selection.set(chosen)
+    assert app.key_press(CTRL_M)
+    assert "Unmasked" in app.status_message
+    assert not app._mask.full() & chosen

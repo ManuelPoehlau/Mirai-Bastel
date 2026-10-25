@@ -46,7 +46,7 @@ Das ist **nicht** dasselbe wie den vorhandenen Reference/Ghost-Modus für andere
 ### Mask Geometry
 
 > Gebaut (2026-10-25, `PROVISIONAL`, `src/mirai/mask.py`, `src/mirai/mask_display.py`): `Ctrl+M` maskiert die Auswahl
-> (bei vollständig maskierter Auswahl hebt es die Maske auf), `Ctrl+Shift+M` invertiert, `Alt+Shift+M` löscht.
+> (bei vollständig maskierter Auswahl hebt es die Maske auf; entscheidend ist die Auswahl selbst, nicht ihre Spiegelpartner — Fix 2026-10-25: eine vor dem Einschalten der Symmetrie maskierte Seite wurde sonst gespiegelt nachmaskiert statt freigegeben), `Ctrl+Shift+M` invertiert, `Alt+Shift+M` löscht.
 > Scope: Move/Rotate/Scale (plain und Soft) sowie Smooth/Relax; ein voll maskierter Vertex bewegt sich nie, ein
 > teilmaskierter dämpft das Soft-Gewicht mit `w * (1 - m)` (Seeds behalten 1.0). Unter Symmetrie wirkt pro
 > Spiegelpaar das Maximum. Die Maske ist Schutzzustand, kein Mesh-Datum: kein History-Eintrag (Undo macht sie nicht
@@ -74,8 +74,10 @@ Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope 
 > Eltern darin waren (Split, Connect, Loop Insert, Knife, Dissolve; Dissolve über eine Regionsgrenze erbt nicht; Extrude-
 > Deckel und -Wände erben von der extrudierten Face), sonst keiner Region; Undo setzt Mesh und Regionen zusammen zurück
 > (siehe AD-REGIONS-01 §1.6). **Farben:** jede Region hat eine eigene entsättigte Farbe auf ihren Faces (auch auf der SubD-
-> Fläche), `Ctrl+Alt+D` blendet sie ein/aus (Standard an). **Shift+Ctrl+Klick** auf eine Region-Face macht sie zur aktiven Gruppe und isoliert sie,
-> erneut auf die isolierte Region versteckt nur ihr Inneres (der Rest ist voll sichtbar), ins Leere zeigt alles.
+> Fläche), `Ctrl+Alt+D` blendet sie ein/aus (Standard an). **Shift+Ctrl+Klick** (ZBrush-artig, Manu 2026-10-25) nimmt die
+> Gruppen unter dem Cursor (Vertex/Edge im Vertex-/Edge-Modus: alle Gruppen, die er berührt): Ist nichts versteckt, werden sie
+> isoliert; sind nur sie sichtbar, kehrt sich die Sichtbarkeit um (Rest sichtbar, sie versteckt); ist schon etwas anderes
+> versteckt, werden sie zusätzlich versteckt. Ins Leere zeigt alles.
 > **Loops und Hide:** Loop Insert, Loop/Ring-Auswahl und die Loop-Schritte enden an versteckter Geometrie (z. B. Nase isolieren,
 > dann Loop Insert schneidet nur die sichtbaren Quads); Loop Slide bleibt neben Verstecktem abgelehnt. Offen: Mirror-Copy-
 > Remap, OBJ-Gruppen, Auswahl per Klick (ohne Isolieren), Umbenennen.

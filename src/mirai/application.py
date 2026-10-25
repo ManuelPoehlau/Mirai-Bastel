@@ -4538,13 +4538,16 @@ class Application:
         if not target:
             self._set_status("Mask: select vertices first (Ctrl+M)")
             return False
+        selected = frozenset(target)
         if mesh.symmetry_definition is not None:
             target |= mirrored_selection(mesh, target)  # a pair is masked together
-        return self._mask_vertices(target)
+        return self._mask_vertices(target, decide_by=selected)
 
-    def _mask_vertices(self, target: set[VertexId]) -> bool:
-        """Mask `target`, or unmask it when it is already fully masked (Ctrl+M and the region mask)."""
-        if target <= self._mask.full():
+    def _mask_vertices(self, target: set[VertexId], decide_by: frozenset[VertexId] | None = None) -> bool:
+        """Mask `target`, or unmask it when it is already fully masked (Ctrl+M and the region mask). `decide_by` is
+        what the toggle looks at: the selection itself, not its mirror partners - a side masked before symmetry was
+        switched on would otherwise make Ctrl+M on a masked selection mask the other side instead of unmasking."""
+        if (target if decide_by is None else decide_by) <= self._mask.full():
             self._mask.set(target, 0.0)
             return self._mask_changed(f"Unmasked {len(target)} points ({len(self._mask.full())} masked)")
         self._mask.set(target)
@@ -4683,35 +4686,57 @@ class Application:
         )
 
     def _region_click(self, x: float, y: float) -> bool:
-        """Shift+Ctrl+click (`commands.REGION_CLICK`): a face of region R isolates R; the already isolated R inverts
-        the visibility (the rest becomes visible, only R's interior is hidden); empty space shows everything. View
-        state only: no History, no selection or mesh change. Ignored in object mode and during a gesture."""
+        """Shift+Ctrl+click (`commands.REGION_CLICK`, ZBrush-like, Manu 2026-10-25) on the groups G under the cursor:
+        every group a hovered vertex or edge touches (a face: its group). Nothing hidden: G is isolated. G is all that
+        is visible: the visibility inverts (the rest visible, G hidden). Something else is hidden already: G is hidden
+        as well. Empty space shows everything. View state only: no History, no selection or mesh change. Ignored in
+        object mode and during a gesture."""
         if self.viewport is None or self._transform_key is not None or self.selection.mode is SelectionMode.OBJECT:
             return False
         mesh = self.scene.mesh
-        face = self._pick_face_at(x, y)
-        if face is None:
-            return self._hide_command(commands.SHOW_ALL)
-        name = face_regions_api.region_of_face(mesh, face, prefer=self.active_region)
-        if name is None:
+        hidden = self._hidden
+        touched = face_regions_api.faces_around(mesh, self._pick(x, y))
+        if not touched:
+            face = self._pick_face_at(x, y)
+            if face is None:
+                return self._hide_command(commands.SHOW_ALL)
+            touched = {face}
+        touched = {f for f in touched if not hidden.is_hidden_face(mesh, f)}
+        names = face_regions_api.regions_of_faces(mesh, touched, prefer=self.active_region)
+        if not names:
             self._set_status("Face has no group (Ctrl+G makes the selection a group)")
             return False
-        self._set_active_region(name)
-        faces = face_regions_api.live_faces(mesh, name)
-        vertices = face_regions_api.region_vertices(mesh, faces)
-        hidden = self._hidden
-        isolated = hidden.vertices() == frozenset(mesh.all_vertex_ids()) - vertices
-        if not isolated:
-            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
-        interior = face_regions_api.interior_vertices(mesh, faces)
-        hidden.show_all()
-        if interior:
-            hidden.hide(interior)
+        self._set_active_region(names[0])
+        group: set[FaceId] = set()
+        for name in names:
+            group |= face_regions_api.live_faces(mesh, name)
+        label = " + ".join(names)
+        vertices = face_regions_api.region_vertices(mesh, group)
+        if not hidden:
+            hidden.isolate(mesh, vertices)
+            self._hidden_push()
+            self._set_status(f"{label} isolated (Shift+Ctrl+click again inverts, on empty space shows all)")
+            return True
+        rest = [f for f in mesh.all_face_ids() if f not in group and not hidden.is_hidden_face(mesh, f)]
+        if not rest:
+            # G is everything that is visible: invert (the whole rest visible, only G hidden).
+            interior = face_regions_api.interior_vertices(mesh, group)
+            hidden.show_all()
+            if interior:
+                hidden.hide(interior)
+            self._hidden_push()
+            self._set_status(
+                f"{label} hidden, the rest is visible (Shift+Ctrl+click on empty space shows all)" if interior
+                else f"{label} has no interior to hide; everything is visible"
+            )
+            return True
+        own = vertices - face_regions_api.region_vertices(mesh, rest)  # the corners no face that stays visible needs
+        if not own:
+            self._set_status(f"{label}: nothing to hide without hiding its neighbours")
+            return False
+        hidden.hide(own)
         self._hidden_push()
-        self._set_status(
-            f"{name} hidden, the rest is visible (Shift+Ctrl+click on empty space shows all)" if interior
-            else f"{name} has no interior to hide; everything is visible"
-        )
+        self._set_status(f"{label} hidden ({len(hidden)} hidden points, Shift+Ctrl+click on empty space shows all)")
         return True
 
     def _region_edit(self, command: str, name: str) -> bool:

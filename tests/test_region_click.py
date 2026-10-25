@@ -1,5 +1,6 @@
-"""Shift+Ctrl+click on saved regions (Manu 2026-10-25): a face of a region isolates it, a click on the isolated region
-inverts the visibility (rest visible, the region's interior hidden), a click into empty space shows everything."""
+"""Shift+Ctrl+click on groups (Manu 2026-10-25, ZBrush-like): with nothing hidden it isolates the groups under the
+cursor (a vertex / edge: every group it touches), on the isolated groups it inverts the visibility, with something
+else hidden it hides them as well; a click into empty space shows everything."""
 
 from __future__ import annotations
 
@@ -79,7 +80,7 @@ def test_click_in_a_region_isolates_it(app):
     assert _click(app, -1.5, -1.5)
     assert app._hidden.vertices() == frozenset(mesh.all_vertex_ids()) - _region_vertices(app, "Brow")
     assert not app.history.can_undo() or True  # view state: no mesh History entry
-    assert "Isolated" in app.status_message
+    assert "isolated" in app.status_message
 
 
 def test_click_again_inverts_the_visibility_and_the_rest_stays_whole(app):
@@ -104,17 +105,52 @@ def test_click_on_the_rest_after_inverting_continues_the_toggle(app):
     assert app._hidden.vertices() == frozenset(
         api.interior_vertices(mesh, api.live_faces(mesh, "Upper Lip"))
     )
-    rows = FaceRegions((
+
+
+def _three_columns(app):
+    mesh = app.scene.mesh
+    mesh.face_regions = FaceRegions((
         FaceRegion("Brow", frozenset(f for f in mesh.all_face_ids() if _center(mesh, f)[0] < -1)),
+        FaceRegion("Upper Lip", frozenset(f for f in mesh.all_face_ids() if -1 < _center(mesh, f)[0] < 1)),
         FaceRegion("Jaw", frozenset(f for f in mesh.all_face_ids() if _center(mesh, f)[0] > 1)),
     ))
-    mesh.face_regions = rows
+    return mesh
+
+
+def _hidden_faces(app):
+    mesh = app.scene.mesh
+    return {f for f in mesh.all_face_ids() if app._hidden.is_hidden_face(mesh, f)}
+
+
+def test_with_something_hidden_a_click_hides_the_next_group_instead_of_isolating(app):
+    """Manu 2026-10-25: all visible -> isolate; once a group is hidden (3+ groups), the next click hides."""
+    mesh = _three_columns(app)
+    brow, lip, jaw = (api.live_faces(mesh, n) for n in ("Brow", "Upper Lip", "Jaw"))
+    _click(app, -1.5, -1.5)
+    assert _hidden_faces(app) == lip | jaw  # isolated
+    _click(app, -1.5, -1.5)
+    assert _hidden_faces(app) == brow  # inverted
+    assert _click(app, 1.5, 1.5)
+    assert _hidden_faces(app) == brow | jaw  # Jaw hidden as well, Upper Lip stays
+    assert "Jaw hidden" in app.status_message
+    assert _click(app, -0.5, 1.5)  # the last visible group: inverts
+    assert _hidden_faces(app) == lip
+
+
+def test_a_vertex_between_groups_takes_all_groups_it_touches(app):
+    mesh = _three_columns(app)
+    brow, lip, jaw = (api.live_faces(mesh, n) for n in ("Brow", "Upper Lip", "Jaw"))
+    app.key_press(Input("key", "1", frozenset()))  # vertex mode
+    _click(app, -1.0, 0.0)  # the vertex on the Brow / Upper Lip border
+    assert _hidden_faces(app) == jaw  # both groups isolated together
+    assert "Brow + Upper Lip" in app.status_message or "Upper Lip + Brow" in app.status_message
+    _click(app, -1.0, 0.0)
+    assert _hidden_faces(app) == brow | lip  # inverted: both hidden
     app._hidden.show_all()
     app._hidden_push()
-    _click(app, -1.5, -1.5)
-    assert _click(app, -1.5, -1.5)  # inverted: Brow hidden, rest visible
-    assert _click(app, 1.5, 1.5)  # a face of Jaw: Jaw is not the isolated region, so it is isolated
-    assert app._hidden.vertices() == frozenset(mesh.all_vertex_ids()) - _region_vertices(app, "Jaw")
+    app.key_press(Input("key", "2", frozenset()))  # edge mode
+    _click(app, 1.0, 0.5)  # an edge on the Upper Lip / Jaw border
+    assert _hidden_faces(app) == brow
 
 
 def test_click_into_empty_space_shows_everything(app):
