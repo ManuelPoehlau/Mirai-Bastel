@@ -171,6 +171,7 @@ def test_no_mutating_mesh_call_in_the_resolver_outside_the_recording_helpers():
         "begin_change": {"checkpoint", "__init__"}, "revert_change": {"rollback", "revert"},
         "release_change": {"release"}, "end_change": {"finish"}, "rollback_change": {"abandon"},
         "symmetry_definition": {"unchanged"},  # read only: compares with the recorded definition
+        "face_regions": {"unchanged"},  # read only: compares with the recorded regions (AD-REGIONS-01)
     }
     bad = [(name, line, fn) for name, line, fn in _uses_of(mutating) if fn not in allowed.get(name, set())]
     assert bad == [], f"mutating Mesh call outside a recording helper: {bad}"
