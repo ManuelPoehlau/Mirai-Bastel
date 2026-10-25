@@ -5267,7 +5267,16 @@ class Application:
         selection_before = self._selection_snapshot()
         # Change journal (AD-023 H1): the entry holds only what `mutate` changed; a raising
         # `mutate` is rolled back exactly, an unchanged mesh records nothing.
-        delta, result = record_mesh_change(mesh, lambda: mutate(mesh))
+        # Saved regions: a face this edit creates inherits its parents' regions inside the same recording (Undo restores
+        # the mesh and the regions together; a raising `mutate` or hook is rolled back exactly).
+        change = mesh.begin_change()
+        try:
+            result = mutate(mesh)
+            face_regions_api.inherit_into(mesh, change)
+        except BaseException:
+            mesh.rollback_change(change)
+            raise
+        delta = mesh.end_change(change)
         if delta.empty:
             return _MeshTransaction(False, result)
         self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=description))

@@ -7,8 +7,10 @@ come with it). This module holds the pure functions on top of it - the Core know
 - A region stores **faces only**; vertices and edges are derived (`region_vertices`, `region_edges`).
 - Dead IDs stay in the stored value and are filtered when read (`live_faces`): an ID is never reused and an
   Undo can bring a face back (AD-001). Nothing here writes a pruned value except an explicit assign.
-- **No inheritance yet:** topology operations leave regions as they are; new faces join no region
-  (AD-REGIONS-01 §1.6). `lost_count` tells the artist how many faces a region lost since it was assigned.
+- **Inheritance (Slice 3):** a face a topology edit creates joins a region exactly when *all* of its parent faces were
+  in it (`inherit`, one generic rule read from the change journal; Extrude names its parents itself,
+  `inherit_children_into`). A face without a parent, or with parents in different regions, joins none - fail
+  closed (AD-REGIONS-01 §1.6). `lost_count` tells how many faces a region lost since it was assigned.
 - A region is **not a selection**: selecting it writes the normal `Selection` of the active mode.
 - The app has no text input, so regions are named from `PRESET_NAMES` slots.
 """
@@ -16,7 +18,8 @@ come with it). This module holds the pure functions on top of it - the Core know
 from __future__ import annotations
 
 import colorsys
-from typing import Iterable
+from collections import defaultdict
+from typing import Iterable, Mapping
 
 from core import EdgeId, FaceId, FaceRegion, FaceRegions, Mesh, SelectionMode, VertexId
 
@@ -171,3 +174,95 @@ def removed(regions: FaceRegions | None, name: str, faces: Iterable[FaceId]) -> 
 
 def deleted(regions: FaceRegions | None, name: str) -> FaceRegions | None:
     return _replace(regions, name, None)
+
+
+# -- Inheritance through topology edits (Slice 3, AD-REGIONS-01 §1.6) -------------------------------------
+
+
+def candidate_parents(mesh: Mesh, change) -> dict[FaceId, set[FaceId]]:
+    """For every face the recorded edit created: the faces it may have come from, read from the journal alone.
+
+    `change` is an active `MeshChange` (before-records: a removed face's old boundary, `None` for a created element).
+    A removed face is a candidate parent of a created face `c` when either
+    - *split*: all of `c`'s corners that existed before the edit lie on the removed face's old boundary (Split,
+      Connect, Vertex / Edge Connect, Loop Insert, Knife: the new corners sit on its edges), or
+    - *merge*: the removed face's old boundary lies inside `c`'s corners plus the vertices the edit removed, and the
+      two share a corner (Dissolve).
+    The true parent is always a candidate, so a spurious extra candidate can only make the face join *fewer*
+    regions, never one its real parent was not in."""
+    created = [f for f, rec in change.faces.items() if rec is None and mesh.is_valid_face(f)]
+    if not created:
+        return {}
+    removed = {
+        f: frozenset(rec) for f, rec in change.faces.items() if rec is not None and not mesh.is_valid_face(f)
+    }
+    if not removed:
+        return {}
+    gone = {v for v, rec in change.vertices.items() if rec is not None and not mesh.is_valid_vertex(v)}
+    by_vertex: dict[VertexId, list[FaceId]] = defaultdict(list)
+    for f, boundary in removed.items():
+        for v in boundary:
+            by_vertex[v].append(f)
+    parents: dict[FaceId, set[FaceId]] = {}
+    for c in created:
+        corners = set(mesh.face_vertices(c))
+        old = {v for v in corners if change.vertices.get(v, True) is not None}  # not created by this edit
+        touched = {f for v in corners | gone for f in by_vertex.get(v, ())}
+        candidates = set()
+        for f in touched:
+            boundary = removed[f]
+            if old and old <= boundary:
+                candidates.add(f)
+            elif boundary <= (corners | gone) and boundary & corners:
+                candidates.add(f)
+        if candidates:
+            parents[c] = candidates
+    return parents
+
+
+def inherit_children(mesh: Mesh, parents: Mapping[FaceId, Iterable[FaceId]]) -> FaceRegions | None:
+    """The regions after every child in `parents` (child -> its parent faces) joined each region that holds ALL of its
+    parents; a parent that passed its membership on leaves the region (it is gone). None = nothing changes."""
+    regions = mesh.face_regions
+    if regions is None or not parents:
+        return None
+    sets = {r.name: set(r.faces) for r in regions.regions}
+    handed_on: dict[str, set[FaceId]] = {r.name: set() for r in regions.regions}
+    for child, raw in parents.items():
+        ps = tuple(raw)
+        if not ps or not mesh.is_valid_face(child):
+            continue
+        for r in regions.regions:
+            if all(p in r.faces for p in ps):
+                sets[r.name].add(child)
+                handed_on[r.name].update(p for p in ps if not mesh.is_valid_face(p))
+    result = FaceRegions(
+        tuple(FaceRegion(r.name, frozenset(sets[r.name] - handed_on[r.name])) for r in regions.regions)
+    )
+    return None if result == regions else result
+
+
+def inherit(mesh: Mesh, change) -> FaceRegions | None:
+    """`inherit_children` with the parents read from the journal (`candidate_parents`). Cheap exit without regions."""
+    if mesh.face_regions is None:
+        return None
+    return inherit_children(mesh, candidate_parents(mesh, change))
+
+
+def inherit_into(mesh: Mesh, change) -> bool:
+    """Write `inherit(mesh, change)` into the mesh *inside* the still active recording `change`, so the new value
+    is part of the same Undo step. True = regions changed."""
+    result = inherit(mesh, change)
+    if result is None:
+        return False
+    mesh.face_regions = result
+    return True
+
+
+def inherit_children_into(mesh: Mesh, parents: Mapping[FaceId, Iterable[FaceId]]) -> bool:
+    """`inherit_children` for a tool that knows its parents (Extrude), written inside its active recording."""
+    result = inherit_children(mesh, parents)
+    if result is None:
+        return False
+    mesh.face_regions = result
+    return True

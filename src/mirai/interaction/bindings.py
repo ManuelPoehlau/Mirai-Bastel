@@ -20,6 +20,8 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
                     SelectRemove. Alles `PROVISIONAL`, Manu 2026-10-15 (Promotion der
                     Playground-Werkzeuge: Box/Paint "Startpunkt entscheidet", Tweak
                     "Ctrl+LMB, Auswahl weicht")
+- Shift+Ctrl+LMB → (nur Klick, kein Drag) Saved Regions: Region der Face unter dem Cursor isolieren / auf der isolierten
+                    Region die Sichtbarkeit invertieren / ins Leere alles zeigen (Manu 2026-10-25, `PROVISIONAL`)
 - RMB/MMB         → bewusst ungebunden (eine Primärbindung pro Funktion,
                     AD-013 Truth-Regel 2)
 
@@ -29,6 +31,7 @@ Display (Artist Input Truth, WP-06 B5a E42: vorher O):
 - Ctrl+D         → Licht-Preset wechseln (Raitt 2:1 → Softbox → Warm/Kalt → Heute),
                    Ctrl+Shift+D → Licht folgt der Kamera / steht in der Welt
                    (Engineering-Tasten `PROVISIONAL`, keine Artist Input Truth)
+- Ctrl+Alt+D     → Regionen-Farben auf den Faces ein/aus (Saved Regions, `PROVISIONAL`)
 - ↑ / ↓          → Look-Zeile wählen (Licht: Bezugsraum, Key Azimut/Höhe/Stärke/Temperatur/Weichheit,
                    Verhältnis, Fill-Kopplung/Azimut/Höhe/Temperatur/Weichheit, Grundhelligkeit),
                    ← / →  Wert eine Stufe kleiner/größer, Ctrl+← / Ctrl+→ fein (Stufen des Shading

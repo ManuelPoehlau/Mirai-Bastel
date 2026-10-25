@@ -26,17 +26,25 @@ bei Topologieänderungen?
    Topologieänderungen bedeutungsvoll und braucht keine eigenen Split-/Extrude-Regeln für Vertex-Mengen.
 5. **Tote IDs bleiben im Wert.** Nur Leser filtern (`is_valid_face`). Ein Undo kann eine tote ID wieder lebendig machen;
    ein Prune beim Schreiben würde das verlieren (bekannte Schwäche von `HiddenSet`/`VertexMask`, die Sitzungszustand sind).
-6. **Keine automatische Vererbung (Slice 1+2).** Der Core-Journal kennt nur Vorher-Zustände, keine Herkunft
-   (`CORE_V1_FREEZE.md` §7.1 und ARCH-02 offen). Split, Connect, Knife, Dissolve und Extrude lassen Regionen unverändert; neue
-   Faces gehören zu keiner Region, entfernte Faces verschwinden beim Lesen. Der Status meldet „N Faces durch Topologie-Edits
-   verloren“. Eine generische Vererbungsregel aus dem Journal (neue Face erbt, wenn alle Kandidaten-Eltern in der Region
-   sind) ist Slice 3 und braucht Hooks in `extrude.py` und `knife_resolve.py` sowie Manus Entscheidungen zu Dissolve über
-   Regionsgrenzen und Extrude-Wänden. Sie ist ein Notbehelf für Face-Daten, keine Antwort auf ARCH-02.
+6. **Vererbung (Slice 3, 2026-10-25).** Der Core-Journal kennt nur Vorher-Zustände, keine Herkunft (`CORE_V1_FREEZE.md` §7.1
+   und ARCH-02 offen). Darum eine einzige generische Regel außerhalb des Core (`mirai.regions.inherit`): Zu jeder neu entstandenen
+   Face (Vorher-Record `None`) sind die Kandidaten-Eltern die entfernten Faces, auf deren alter Boundary alle schon vorher
+   vorhandenen Ecken der neuen Face liegen (Split, Connect, Edge/Loop Insert, Knife) oder die in den Ecken der neuen Face plus den
+   entfernten Vertices liegen und sie berühren (Dissolve). Die neue Face tritt einer Region **nur bei, wenn alle** Kandidaten in
+   ihr waren (mindestens einer); sonst keine Region (fail closed). Die echten Eltern sind immer Kandidaten, ein überzähliger
+   Kandidat macht die Regel also nur strenger, nie falsch. Eltern, die ihre Mitgliedschaft weitergegeben haben, verlassen die
+   Region (sie zählen nicht als „verloren“). Entschieden (Manu, 2026-10-25): Dissolve über eine Regionsgrenze erbt nicht;
+   Extrude-Deckel und -Wände erben von der extrudierten Face (`PROVISIONAL`, Extrude benennt seine Eltern selbst:
+   `inherit_children_into`). Die Regel läuft **im selben Recording** und schreibt `mesh.face_regions` vor `end_change`, damit
+   Undo Mesh und Regionen zusammen zurücksetzt: in `Application._mesh_transaction`, in `ExtrudeTool._on_commit` und in
+   `knife_resolve.SessionStart.finish()` (nach `unchanged()`/Integritätsprüfung). Nicht angeschlossen: die eigenständigen
+   Wrapper (`topology/split.py` u. ä., Playground/Test-API). Sie ist ein Notbehelf für Face-Daten, keine Antwort auf ARCH-02.
 7. **Links/Rechts wird abgeleitet,** nicht gespeichert: `SymmetryIndex.face_partner` / `expand_faces`. Zuweisen unter
    Symmetrie nimmt die Spiegelpartner mit (wie Hide und Mask).
 
 ## 2. Offene Punkte (Slice 3+)
 
-Vererbung (s. o.), Mirror-Copy-Remap (neue ID-Räume), OBJ-Gruppen beim Import/Export, Anzeige auf der SubD-Fläche über
+Vererbung für die eigenständigen Wrapper und für Knife-Innenformen aus neuen Vertices (sie haben keinen Anker und erben
+nicht; `KeptSplitFace` würde exakte Herkunft liefern), Mirror-Copy-Remap (neue ID-Räume), OBJ-Gruppen beim Import/Export, Anzeige auf der SubD-Fläche über
 `face_parent`, Auswahl per Klick, Umbenennen (die App hat keine Texteingabe: Preset-Slots), ein Per-Face-Label-Layer, falls
 das ganzwertige Journal (Messung: ~4 MiB und ~55 ms je Änderung bei einer 87k-Faces-Region) zu teuer wird.

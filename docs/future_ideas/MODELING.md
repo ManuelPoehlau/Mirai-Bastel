@@ -67,11 +67,15 @@ Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope 
 > wechseln den aktiven Slot, `Ctrl+G` weist die Faces der Auswahl zu (alle Ecken ausgewählt; unter Symmetrie mit den
 > Spiegelpartnern), `Ctrl+Shift+G` fügt hinzu, `Ctrl+Alt+G` entfernt, `Alt+G` wählt die Region im aktiven Modus aus
 > (`Ctrl+Alt+Shift+G` zur Auswahl hinzu, nie Verstecktes), `Ctrl+Alt+H` isoliert, `Ctrl+Alt+M` maskiert sie,
-> `Ctrl+Alt+Backspace` löscht sie. **Keine automatische Erhaltung:** Split, Connect, Knife, Dissolve und Extrude lassen
-> Regionen unverändert, neue Faces gehören zu keiner Region, entfernte verschwinden beim Lesen (der Status meldet „N lost to
-> topology edits“; ein Undo macht sie wieder lebendig). Offen (Slice 3+): generische Vererbung aus dem Journal mit Hooks in
-> Extrude/Knife und Entscheidungen zu Dissolve über Regionsgrenzen und Extrude-Wänden, Mirror-Copy-Remap, OBJ-Gruppen,
-> Anzeige auf der SubD-Fläche, Auswahl per Klick, Umbenennen.
+> `Ctrl+Alt+Backspace` löscht sie. **Vererbung (Slice 3, 2026-10-25):** eine neue Face tritt einer Region bei, wenn alle ihre
+> Eltern darin waren (Split, Connect, Loop Insert, Knife, Dissolve; Dissolve über eine Regionsgrenze erbt nicht; Extrude-
+> Deckel und -Wände erben von der extrudierten Face), sonst keiner Region; Undo setzt Mesh und Regionen zusammen zurück
+> (siehe AD-REGIONS-01 §1.6). **Farben:** jede Region hat eine eigene entsättigte Farbe auf ihren Faces (auch auf der SubD-
+> Fläche), `Ctrl+Alt+D` blendet sie ein/aus (Standard an). **Shift+Ctrl+Klick** auf eine Region-Face isoliert die Region,
+> erneut auf die isolierte Region versteckt nur ihr Inneres (der Rest ist voll sichtbar), ins Leere zeigt alles.
+> **Loops und Hide:** Loop Insert, Loop/Ring-Auswahl und die Loop-Schritte enden an versteckter Geometrie (z. B. Nase isolieren,
+> dann Loop Insert schneidet nur die sichtbaren Quads); Loop Slide bleibt neben Verstecktem abgelehnt. Offen: Mirror-Copy-
+> Remap, OBJ-Gruppen, Auswahl per Klick (ohne Isolieren), Umbenennen.
 
 Benannte und wiederverwendbare Gesichtsbereiche untersuchen, etwa Brow, Upper Lip, Lower Lip, Eyelids und Jaw. Benötigte Aktionen: Region auswählen, Auswahl hinzufügen/entfernen, isolieren und gegebenenfalls maskieren.
 
