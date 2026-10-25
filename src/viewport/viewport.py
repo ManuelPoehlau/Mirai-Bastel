@@ -215,6 +215,11 @@ class Viewport:
         #: Hide / Isolate (`set_hidden`); `_surface_hidden_key` = was die SubD-Fläche zuletzt davon bekam
         self.hidden_vertices: frozenset = frozenset()
         self._surface_hidden_key = None
+        #: Saved regions' colours (`mirai.regions.region_tints`, pushed by the host) and whether they are drawn
+        self.region_tint: bool = True
+        self._face_tints: dict = {}
+        self._tint_version = 0
+        self._surface_tint_key = None
         self._edges_dirty = True
         self.tool_point_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
         self.tool_line_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
@@ -377,6 +382,8 @@ class Viewport:
         self.geometry_revision += 1
         self.hidden_vertices = frozenset()  # the caller pushes the new edit mesh's own set
         self._surface_hidden_key = None
+        self._face_tints = {}  # ... and its region colours
+        self._surface_tint_key = None
         self.render_mesh = RenderMesh(mesh, overlay=self.overlay, store_type=self._store_type)
         if old.material is not None:
             self.render_mesh.bind_material(old.material)
@@ -515,6 +522,12 @@ class Viewport:
             if key != self._surface_hidden_key:
                 self._surface_hidden_key = key
                 rm.set_hidden(faces=hidden_faces())
+        surface_tints = getattr(self.surface_provider, "surface_face_tints", None)
+        if surface_tints is not None:
+            key = (id(mesh), self.surface_provider.hidden_key, self._tint_version)
+            if key != self._surface_tint_key:
+                self._surface_tint_key = key
+                rm.set_face_tints(surface_tints(self._face_tints))
 
     # -- Tool-Layer (WP-06 B7) -------------------------------------------------
 
@@ -543,6 +556,18 @@ class Viewport:
             self._edge_highlight = edge_highlight
             self._apply_draw_style()
 
+    def set_face_tints(self, tints) -> None:
+        """Saved regions' colours `{FaceId: (r, g, b)}` of the edit mesh (replaces the previous map); a SubD surface
+        gets them through its faces' parents. Whether they show is `set_region_tint`."""
+        self._face_tints = dict(tints)
+        self._tint_version += 1
+        self.render_mesh.set_face_tints(self._face_tints)
+
+    def set_region_tint(self, on: bool) -> None:
+        """Draw the regions' colours (pure draw state: one uniform per store, no upload)."""
+        self.region_tint = bool(on)
+        self._apply_draw_style()
+
     def _apply_draw_style(self) -> None:
         # Polygon-Offset, sobald Linien auf den Faces liegen: Wire (E40) oder
         # ein Edge-Highlight (B5b) - ohne Offset z-fightet die 1-px-Linie mit
@@ -554,6 +579,10 @@ class Viewport:
                 polygon_offset=self.show_faces
                 and (self.show_edges or self._edge_highlight),
             )
+        for rm in (self.render_mesh, self.surface_render_mesh):
+            set_region_tint = getattr(rm.store, "set_region_tint", None) if rm is not None else None
+            if set_region_tint is not None:
+                set_region_tint(self.region_tint)
         if self.surface_render_mesh is not None:
             set_draw_style = getattr(self.surface_render_mesh.store, "set_draw_style", None)
             if set_draw_style is not None:

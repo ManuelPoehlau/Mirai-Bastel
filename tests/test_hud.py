@@ -146,7 +146,8 @@ def test_rows_text(app):
     app.key_press(_key("x"))
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
-    assert list(rows) == ["Mode", "Tool", "Axis", "Space", "Sym", "Display", "Soft", "SubD", "Look"]
+    assert list(rows) == ["Mode", "Tool", "Axis", "Space", "Sym", "Display", "Soft", "SubD", "Region", "Look"]
+    assert rows["Region"].value == "Brow · 0 faces · colours on" and not rows["Region"].on
     assert rows["Look"].value == "Raitt 2:1 · Kamera · Licht Bezugsraum Kamera"
     assert rows["Look"].keys == "↑/↓/←/→"
     assert rows["Axis"].value == "X" and rows["Axis"].on

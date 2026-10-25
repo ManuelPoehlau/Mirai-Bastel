@@ -304,6 +304,7 @@ _DISPLAY_COMMANDS = (
     commands.TOGGLE_REFERENCE_GHOST,
     commands.CYCLE_LIGHT_PRESET,
     commands.TOGGLE_LIGHT_SPACE,
+    commands.TOGGLE_REGION_TINT,
 )
 
 #: AD-024 §8 (`PROVISIONAL`): the Look rows - choose a row, step its value. Light rows are view state
@@ -802,6 +803,7 @@ class Application:
         self._hiddens: dict[ObjectId, HiddenSet] = {}
         # Saved regions (AD-REGIONS-01): the regions themselves live in the Mesh; this is the active preset slot.
         self._region_slots: dict[ObjectId, int] = {}
+        self._tints_seen: tuple | None = None  # (mesh, face_regions, viewport) the viewport last got colours for
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
         # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
@@ -1598,6 +1600,7 @@ class Application:
         if self.viewport is not None:
             self.viewport.remove_object_entry(obj.id)
             self.viewport.set_edit_mesh(obj.mesh, object_space.model_matrix(obj))
+        self._tints_seen = None  # the new RenderMesh has no region colours yet
         self._hidden_push()  # the new edit object keeps its own hidden set and mask
         self._soft_refresh_radius()
         self._sync_object_views()
@@ -3651,6 +3654,11 @@ class Application:
             self._sync_object_views()
             self._set_status(f"References: {'ghost' if self.reference_ghost else 'shaded'}")
             return True
+        if command == commands.TOGGLE_REGION_TINT:
+            self.display.toggle_region_tint()
+            self._apply_display()
+            self._set_status(f"Region colours: {'on' if self.display.region_tint else 'off'}")
+            return True
         if command in (commands.CYCLE_LIGHT_PRESET, commands.TOGGLE_LIGHT_SPACE):
             if command == commands.CYCLE_LIGHT_PRESET:
                 self.display.cycle_light_preset()
@@ -3857,6 +3865,7 @@ class Application:
             show_edges=self.display.show_edges,
             flat=self.display.mode is DisplayMode.FLAT_SHADED,
         )
+        self.viewport.set_region_tint(self.display.region_tint)
         self.viewport.set_light(self.display.light_rig)
         if self.viewport.set_surface_finish(self.display.surface_finish):
             # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).
@@ -4549,6 +4558,23 @@ class Application:
     def active_region(self) -> str:
         """The preset name of the active region slot."""
         return face_regions_api.PRESET_NAMES[self._region_slot() % len(face_regions_api.PRESET_NAMES)]
+
+    def _push_region_tints(self) -> None:
+        """The regions' colours go to the viewport whenever the edit mesh's `face_regions` value (or the mesh, or
+        the viewport) changed: assign, Undo / Redo, load and Knife rollback all replace that value."""
+        if self.viewport is None:
+            return
+        mesh = self.scene.mesh
+        seen = self._tints_seen
+        if seen is not None and seen[0] is mesh and seen[1] is mesh.face_regions and seen[2] is self.viewport:
+            return
+        self._tints_seen = (mesh, mesh.face_regions, self.viewport)
+        self.viewport.set_face_tints(face_regions_api.region_tints(mesh))
+
+    @property
+    def active_region_faces(self) -> int:
+        """How many faces the active region still has (read-only, for the HUD)."""
+        return len(face_regions_api.live_faces(self.scene.mesh, self.active_region))
 
     def _region_summary(self, name: str) -> str:
         mesh = self.scene.mesh
@@ -6198,6 +6224,7 @@ class Application:
         if self.viewport is not None:
             self.flush_hover()
             self._sync_object_highlight()
+            self._push_region_tints()
             self.viewport.sync()
 
     def shutdown(self) -> None:

@@ -15,6 +15,7 @@ come with it). This module holds the pure functions on top of it - the Core know
 
 from __future__ import annotations
 
+import colorsys
 from typing import Iterable
 
 from core import EdgeId, FaceId, FaceRegion, FaceRegions, Mesh, SelectionMode, VertexId
@@ -23,6 +24,41 @@ from core import EdgeId, FaceId, FaceRegion, FaceRegions, Mesh, SelectionMode, V
 PRESET_NAMES: tuple[str, ...] = (
     "Brow", "Upper Lip", "Lower Lip", "Eyelids", "Jaw", "Region 6", "Region 7", "Region 8", "Region 9",
 )
+
+
+#: Region colours (Manu 2026-10-25, ZBrush-like): a distinct, desaturated colour per region. The hue steps by the golden
+#: angle per slot, so every slot gets a hue no other slot has and neighbouring slots stay far apart; saturation and
+#: value are fixed, low and bright. A colour is never (0, 0, 0): the renderer reads black as "no region".
+TINT_SATURATION = 0.38
+TINT_VALUE = 0.92
+_GOLDEN_ANGLE = 0.38196601125010515  # 1 - 1/phi, as a fraction of the colour circle
+
+
+def region_color(index: int) -> tuple[float, float, float]:
+    """The colour of preset slot `index` (also beyond the preset count: the sequence just goes on)."""
+    hue = (0.08 + index * _GOLDEN_ANGLE) % 1.0
+    return colorsys.hsv_to_rgb(hue, TINT_SATURATION, TINT_VALUE)
+
+
+def slot_index(name: str) -> int:
+    """The slot of a region name: its place in `PRESET_NAMES`, else after them by name order (stable)."""
+    if name in PRESET_NAMES:
+        return PRESET_NAMES.index(name)
+    return len(PRESET_NAMES) + sum(ord(c) for c in name)
+
+
+def region_tints(mesh: Mesh) -> dict[FaceId, tuple[float, float, float]]:
+    """`{face: colour}` of every stored face (dead IDs included: a revived face comes back coloured). Where regions
+    overlap, the later region in the list wins."""
+    regions = mesh.face_regions
+    if regions is None:
+        return {}
+    tints: dict[FaceId, tuple[float, float, float]] = {}
+    for region in regions.regions:
+        color = region_color(slot_index(region.name))
+        for f in region.faces:
+            tints[f] = color
+    return tints
 
 
 def region_named(mesh: Mesh, name: str) -> FaceRegion | None:

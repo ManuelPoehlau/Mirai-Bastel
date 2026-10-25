@@ -111,6 +111,7 @@ uniform mat4 u_view;
 uniform mat4 u_model;
 uniform vec3 u_base_color;
 uniform int u_flat;
+uniform int u_region_tint;
 uniform float u_alpha;
 uniform int u_has_face_data;
 uniform samplerBuffer u_face_data;
@@ -267,9 +268,16 @@ float blinn_phong(vec3 n, vec3 l, vec3 v, float e) {
 void main() {
     vec3 screen_flat_n = normalize(cross(dFdx(v_world_pos), dFdy(v_world_pos)));
     vec3 n = normalize(v_normal);
+    vec3 albedo = u_base_color;
     if (u_has_face_data != 0) {
         int row = int(texelFetch(u_triangle_faces, gl_PrimitiveID).r + 0.5) * ROW_TEXELS;
         vec4 head = texelFetch(u_face_data, row);
+        if (u_region_tint != 0) {
+            // Saved regions: the colour rides in the free .w of corner texels 1-3; black = no region.
+            vec3 tint = vec3(texelFetch(u_face_data, row + 1).w, texelFetch(u_face_data, row + 2).w,
+                             texelFetch(u_face_data, row + 3).w);
+            if (dot(tint, tint) > 0.0) albedo = mix(u_base_color, tint, 0.85);
+        }
         vec3 face_n = normalize(head.xyz);
         if (u_flat != 0) {
             n = normalize(mat3(u_model) * face_n);
@@ -282,7 +290,7 @@ void main() {
     vec3 light = vec3(u_ambient)
                + u_key_color  * wrap_light(dot(n, u_key_dir),  u_key_wrap)
                + u_fill_color * wrap_light(dot(n, u_fill_dir), u_fill_wrap);
-    vec3 shaded = u_base_color * light;
+    vec3 shaded = albedo * light;
     if (u_specular > 0.0 || u_fill_specular > 0.0) {
         // Non-local viewer (the fixed-function default): V = the camera's view axis, so a Flat
         // polygon stays one colour and the highlight depends on the normal only.
@@ -348,6 +356,8 @@ class GLRenderStore(ResourceStore):
         # WP-06 B5a (E36/E40): vom Viewport gesetzt, wirkt nur in `draw()`.
         self.flat = False
         self.polygon_offset = False
+        # Region colours (saved regions): off for every store nobody switched on (labs, entries, tests).
+        self.region_tint = False
         # AD-021 M2-0 (Ghost, §7.3 RD-1): < 1.0 = durchscheinend, ohne Depth-Write.
         self.alpha = 1.0
         # Licht (light_rig.resolve), vom Viewport pro Frame gesetzt; reiner Draw-Zustand.
@@ -619,6 +629,11 @@ class GLRenderStore(ResourceStore):
         self.polygon_offset = bool(polygon_offset)
         self.alpha = float(alpha)
 
+    def set_region_tint(self, on: bool) -> None:
+        """Show the saved regions' colours (the rows carry them, see `RenderMesh.set_face_tints`): a single draw
+        uniform, no upload and no rebuild."""
+        self.region_tint = bool(on)
+
     def set_light_uniforms(self, uniforms: dict) -> None:
         """Light for the next `draw()` (`light_rig.resolve()`): pure draw state, no resource,
         no upload."""
@@ -679,6 +694,7 @@ class GLRenderStore(ResourceStore):
         program["u_spec_exponent"] = finish.exponent
         program["u_fill_specular"] = finish.fill_specular
         program["u_flat"] = 1 if self.flat else 0
+        program["u_region_tint"] = 1 if self.region_tint else 0
         model = self.uniform_data("model_uniforms")
         program["u_model"] = tuple(model) if len(model) == 16 else _IDENTITY_4
         program["u_alpha"] = self.alpha

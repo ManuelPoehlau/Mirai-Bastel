@@ -214,6 +214,19 @@ class SubdSurfaceProvider:
         """Changes whenever `hidden_surface_faces` may differ (hidden set, topology or level rebuilt)."""
         return (self._hidden_version, self.topology_builds, self.level_builds)
 
+    def surface_face_tints(self, control_tints) -> dict:
+        """`{derived face: colour}` for the shown surface from `{control face: colour}` (saved regions): every derived
+        face takes the colour of the control face it was born in (`face_parent`), as ZBrush shows a polygroup."""
+        if not control_tints or self._surface is None or self._derived is None:
+            return {}
+        face_ids = self._surface.topology.face_ids
+        out = {}
+        for i, parent in enumerate(self._derived.face_parent):
+            color = control_tints.get(face_ids[parent])
+            if color is not None:
+                out[self._derived_face_ids[i]] = color
+        return out
+
     def hidden_control_edges(self) -> frozenset:
         """Indices (into `control_edges()`) of the cage edges with a hidden endpoint."""
         if not self._hidden_control or self._surface is None:

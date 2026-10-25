@@ -121,6 +121,7 @@ DEAD_COORD = 1.0e19
 DEAD_POSITION = (DEAD_COORD, DEAD_COORD, DEAD_COORD)
 _ZERO3 = (0.0, 0.0, 0.0)
 _DEAD_TRIANGLE = (0.0, 0.0, 0.0)
+_NO_TINT = (0.0, 0.0, 0.0)
 
 
 def _flatten_vec3(values) -> list[float]:
@@ -238,6 +239,9 @@ class RenderMesh:
         # Dasselbe für ganze Faces (die abgeleitete SubD-Fläche versteckt die Teilflächen versteckter Käfig-Faces,
         # deren Vertices sie mit sichtbaren teilt).
         self._hidden_faces: frozenset[FaceId] = frozenset()
+        # Region colours (`mirai.regions.region_tints`, pushed by the host): FaceId -> rgb, written into the free `.w`
+        # slots of texels 1-3 of the face row; (0, 0, 0) = no region, the row stays what it always was.
+        self._tints: dict[FaceId, tuple[float, float, float]] = {}
 
         self.build()
 
@@ -371,6 +375,23 @@ class RenderMesh:
         self._upload_vec3("indices", tri_slots)
         self.content_revision += 1
 
+    def set_face_tints(self, tints) -> None:
+        """Region colours (`{FaceId: (r, g, b)}`, replaces the previous map): only the face rows whose colour changed
+        are rewritten, through the same upload as a position patch. Reads of the mesh come first, so pending mesh
+        changes are synced before rows are addressed."""
+        tints = dict(tints)
+        if tints == self._tints:
+            return
+        pending = self._watch.peek()
+        if pending.vertices or pending.edges or pending.faces:
+            self.mark_topology_dirty()
+            self.sync()
+        old, self._tints = self._tints, tints
+        changed = {f for f in old.keys() | tints.keys() if old.get(f) != tints.get(f)}
+        rows = {self._face_row[f] for f in changed if f in self._face_row}
+        if rows:
+            self._upload_rows(rows)
+
     def is_vertex_hidden(self, vertex_id: VertexId) -> bool:
         return vertex_id in self._hidden
 
@@ -450,18 +471,20 @@ class RenderMesh:
         face_normals = self.derived.face_normals
         out: list[float] = []
         append_row = out.extend
+        tints = self._tints
         for face_id in face_ids:
             boundary = face_vertices(face_id)
             n = len(boundary)
             nx, ny, nz = face_normals[face_id]
+            tr, tg, tb = tints.get(face_id, _NO_TINT) if tints else _NO_TINT
             if n == 4:
                 a, b, c, d = boundary
                 pa, pb, pc, pd = position(a), position(b), position(c), position(d)
                 na, nb, nc, nd = normals[a], normals[b], normals[c], normals[d]
                 append_row((
                     nx, ny, nz, 4.0,
-                    pa[0], pa[1], pa[2], 0.0, pb[0], pb[1], pb[2], 0.0,
-                    pc[0], pc[1], pc[2], 0.0, pd[0], pd[1], pd[2], 0.0,
+                    pa[0], pa[1], pa[2], tr, pb[0], pb[1], pb[2], tg,
+                    pc[0], pc[1], pc[2], tb, pd[0], pd[1], pd[2], 0.0,
                     na[0], na[1], na[2], 0.0, nb[0], nb[1], nb[2], 0.0,
                     nc[0], nc[1], nc[2], 0.0, nd[0], nd[1], nd[2], 0.0,
                 ))
@@ -477,6 +500,8 @@ class RenderMesh:
                 x, y, z = normals[v]
                 row += (x, y, z, 0.0)
             row += padding
+            if tr or tg or tb:
+                row[7], row[11], row[15] = tr, tg, tb
             append_row(row)
         return out
 

@@ -270,6 +270,8 @@ def build_default_bindings() -> BindingSet:
     # Worklight (2026-10-15, Tasten `PROVISIONAL`, Display-Familie D).
     bs.set_default(_key("d", "ctrl"), cmd.CYCLE_LIGHT_PRESET)
     bs.set_default(_key("d", "ctrl", "shift"), cmd.TOGGLE_LIGHT_SPACE)
+    # Saved regions: Ctrl+Alt+D shows / hides the regions' face colours.
+    bs.set_default(_key("d", "ctrl", "alt"), cmd.TOGGLE_REGION_TINT)
     # Look rows (AD-024 §8, `PROVISIONAL` until the GUI): the Shading Lab's arrows; the fine step is Ctrl,
     # because Shift+arrows are the selection steps (WP Toolbox Gaps A1).
     bs.set_default(_key("up"), cmd.LOOK_ROW_PREV)

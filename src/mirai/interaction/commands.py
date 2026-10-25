@@ -77,6 +77,8 @@ TOGGLE_WIREFRAME_OVERLAY = "ToggleWireframeOverlay"
 SET_SHADED = "SetShaded"
 SET_FLAT_SHADED = "SetFlatShaded"
 SET_WIREFRAME = "SetWireframe"
+# Saved regions (Manu 2026-10-25): show / hide the regions' colours on the faces (view state, default on).
+TOGGLE_REGION_TINT = "ToggleRegionTint"
 # AD-021 M2-0 (§7.3 RD-2, `PROVISIONAL`): alle Referenzen schattiert <-> Ghost.
 TOGGLE_REFERENCE_GHOST = "ToggleReferenceGhost"
 # Worklight (Shading Lab promoted 2026-10-15; Tasten `PROVISIONAL`): Preset wechseln,
