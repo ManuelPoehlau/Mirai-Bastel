@@ -75,6 +75,7 @@ from viewport.overlay import (
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
+from . import regions as face_regions_api
 from .hidden import HiddenSet, touches_hidden, visible
 from .mask import (
     VertexMask,
@@ -149,6 +150,7 @@ from .symmetry_coordination import (
     canonical_edges,
     canonical_faces,
     canonical_vertices,
+    expand_faces,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
 from .symmetry import CorrespondenceState, mirrored_selection, symmetry_state, vertex_correspondence
@@ -327,6 +329,18 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
 #: `SoftSettings`, which the next gesture reads at `begin()`.
 _MASK_COMMANDS = (commands.MASK_TOGGLE, commands.MASK_INVERT, commands.MASK_CLEAR)
 _HIDE_COMMANDS = (commands.HIDE_SELECTION, commands.ISOLATE_SELECTION, commands.SHOW_ALL)
+_REGION_COMMANDS = (
+    commands.REGION_NEXT,
+    commands.REGION_PREV,
+    commands.REGION_ASSIGN,
+    commands.REGION_ADD,
+    commands.REGION_REMOVE,
+    commands.REGION_SELECT,
+    commands.REGION_SELECT_ADD,
+    commands.REGION_ISOLATE,
+    commands.REGION_MASK,
+    commands.REGION_DELETE,
+)
 
 #: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
 #: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`).
@@ -420,6 +434,7 @@ _COMPONENT_COMMANDS = frozenset(
         commands.RESYMMETRIZE,
         *_MASK_COMMANDS,
         *_HIDE_COMMANDS,
+        *_REGION_COMMANDS,
         *_LOOP_COMMANDS,
         *_SELECTION_STEP_COMMANDS,
     }
@@ -785,6 +800,8 @@ class Application:
         self._mask_overlay = None
         # Hide / Isolate (`mirai.hidden`): the same kind of state, per edit object.
         self._hiddens: dict[ObjectId, HiddenSet] = {}
+        # Saved regions (AD-REGIONS-01): the regions themselves live in the Mesh; this is the active preset slot.
+        self._region_slots: dict[ObjectId, int] = {}
         # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
         # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
         # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
@@ -1054,6 +1071,7 @@ class Application:
             self.viewport.add_overlay(self._soft_shading_overlay)
         self._masks.clear()  # their IDs belong to the old meshes
         self._hiddens.clear()
+        self._region_slots.clear()
         self._pick_cache.set_hidden(())
         self._mask_overlay = None
         if mask_overlay_type is not None:
@@ -2161,6 +2179,8 @@ class Application:
             return self._mask_command(command)
         if command in _HIDE_COMMANDS:
             return self._hide_command(command)
+        if command in _REGION_COMMANDS:
+            return self._region_command(command)
         if command == commands.RESYMMETRIZE:
             return self._resymmetrize_open()
         if command in (commands.EDGE_LOOP, commands.EDGE_RING):
@@ -3992,6 +4012,7 @@ class Application:
             command in (commands.CONNECT, commands.COLLAPSE, commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE)
             or command in _MASK_COMMANDS
             or command in _HIDE_COMMANDS
+            or command in _REGION_COMMANDS
             or command in _REMOVAL_COMMANDS
             or command in _LOOP_COMMANDS
             or command in _SELECTION_STEP_COMMANDS
@@ -4455,6 +4476,12 @@ class Application:
             return False
         if mesh.symmetry_definition is not None:
             target |= mirrored_selection(mesh, target)  # a pair is hidden together
+        return self._hide_vertices(command, target)
+
+    def _hide_vertices(self, command: str, target: set[VertexId]) -> bool:
+        """Hide or isolate `target` (the shared body of Ctrl+H / Ctrl+Shift+H and the region isolate)."""
+        mesh = self.scene.mesh
+        hidden = self._hidden
         if command == commands.ISOLATE_SELECTION:
             hidden.isolate(mesh, target)
             label = f"Isolated {len(target)} points"
@@ -4489,11 +4516,121 @@ class Application:
             return False
         if mesh.symmetry_definition is not None:
             target |= mirrored_selection(mesh, target)  # a pair is masked together
+        return self._mask_vertices(target)
+
+    def _mask_vertices(self, target: set[VertexId]) -> bool:
+        """Mask `target`, or unmask it when it is already fully masked (Ctrl+M and the region mask)."""
         if target <= self._mask.full():
             self._mask.set(target, 0.0)
             return self._mask_changed(f"Unmasked {len(target)} points ({len(self._mask.full())} masked)")
         self._mask.set(target)
         return self._mask_changed(f"Masked {len(target)} points ({len(self._mask.full())} masked)")
+
+    # -- Saved regions (`mirai.regions`, AD-REGIONS-01) -----------------------------------
+
+    def _region_slot(self) -> int:
+        return self._region_slots.get(self.scene.edit_object_id, 0)
+
+    @property
+    def active_region(self) -> str:
+        """The preset name of the active region slot."""
+        return face_regions_api.PRESET_NAMES[self._region_slot() % len(face_regions_api.PRESET_NAMES)]
+
+    def _region_summary(self, name: str) -> str:
+        mesh = self.scene.mesh
+        live = len(face_regions_api.live_faces(mesh, name))
+        lost = face_regions_api.lost_count(mesh, name)
+        text = f"{name}: {live} faces"
+        if lost:
+            text += f" ({lost} lost to topology edits, Ctrl+G assigns again)"
+        return text
+
+    def _region_command(self, command: str) -> bool:
+        """Shift+G / Shift+Alt+G (slot), Ctrl+G / Ctrl+Shift+G / Ctrl+Alt+G (assign, add, remove), Alt+G / Alt+Shift+G
+        (select), Ctrl+Alt+H (isolate), Ctrl+Alt+M (mask), Ctrl+Alt+Shift+G (delete). Edits of the stored regions
+        are one Undo step (`_mesh_transaction`); select / isolate / mask only read them. Refused during a gesture."""
+        if self._transform_key is not None:
+            return False
+        mesh = self.scene.mesh
+        names = face_regions_api.PRESET_NAMES
+        if command in (commands.REGION_NEXT, commands.REGION_PREV):
+            step = 1 if command == commands.REGION_NEXT else -1
+            self._region_slots[self.scene.edit_object_id] = (self._region_slot() + step) % len(names)
+            self._set_status(f"Region: {self._region_summary(self.active_region)}")
+            return True
+        name = self.active_region
+        if command in (commands.REGION_ASSIGN, commands.REGION_ADD, commands.REGION_REMOVE):
+            return self._region_edit(command, name)
+        if command == commands.REGION_DELETE:
+            if face_regions_api.region_named(mesh, name) is None:
+                self._set_status(f"Region {name}: nothing to delete")
+                return False
+            self._mesh_transaction(
+                f"Delete Region {name}",
+                lambda m: setattr(m, "face_regions", face_regions_api.deleted(m.face_regions, name)),
+                moved_of=lambda _: set(),
+            )
+            self._set_status(f"Region {name} deleted")
+            return True
+        faces = face_regions_api.live_faces(mesh, name)
+        if not faces:
+            self._set_status(f"Region {name}: empty (select faces, Ctrl+G assigns)")
+            return False
+        hidden = self._hidden
+        faces = frozenset(f for f in faces if not hidden.is_hidden_face(mesh, f))
+        if command in (commands.REGION_SELECT, commands.REGION_SELECT_ADD):
+            selection = self.selection
+            if selection.mode is SelectionMode.OBJECT:
+                return False
+            elements = face_regions_api.elements_of(mesh, selection.mode, faces)
+            if command == commands.REGION_SELECT:
+                selection.set(elements)
+            else:
+                selection.add(elements)
+            self._prune_hidden_selection()
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+            self._soft_preview_refresh()
+            self._set_status(self._region_summary(name) + " selected")
+            return True
+        vertices = face_regions_api.region_vertices(mesh, faces)
+        if command == commands.REGION_ISOLATE:
+            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
+        return self._mask_vertices(vertices)
+
+    def _region_edit(self, command: str, name: str) -> bool:
+        """Assign / add / remove the faces of the selection (all corners selected) to / from region `name`."""
+        mesh = self.scene.mesh
+        selection = self.selection
+        if selection.mode is SelectionMode.OBJECT:
+            return False
+        if selection.mode is SelectionMode.FACE:
+            faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        else:
+            faces = face_regions_api.faces_from_vertices(
+                mesh, resolve_selection_vertices(mesh, selection, selection.mode)
+            )
+        if not faces and command != commands.REGION_ASSIGN:
+            self._set_status(f"Region {name}: select faces first")
+            return False
+        if mesh.symmetry_definition is not None and faces:
+            faces |= set(expand_faces(SymmetryIndex(mesh), faces).union)  # a pair belongs together
+        change = {
+            commands.REGION_ASSIGN: face_regions_api.assigned,
+            commands.REGION_ADD: face_regions_api.added,
+            commands.REGION_REMOVE: face_regions_api.removed,
+        }[command]
+        verb = {commands.REGION_ASSIGN: "assigned", commands.REGION_ADD: "added to", commands.REGION_REMOVE: "removed from"}[command]
+        done = self._mesh_transaction(
+            f"Region {name}",
+            lambda m: setattr(m, "face_regions", change(m.face_regions, name, faces)),
+            moved_of=lambda _: set(),
+        )
+        if not done.changed:
+            self._set_status(f"Region {name}: no change")
+            return False
+        self._set_status(f"{len(faces)} faces {verb} {self._region_summary(name)}")
+        return True
 
     def _soft_refresh_radius(self) -> None:
         """Recompute the world radius from the mesh's bounding radius for the current step

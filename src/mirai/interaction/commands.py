@@ -161,6 +161,22 @@ HIDE_SELECTION = "HideSelection"
 ISOLATE_SELECTION = "IsolateSelection"
 SHOW_ALL = "ShowAll"
 
+# Saved regions / polygroups (docs/future_ideas/MODELING.md, Priorität 1; AD-REGIONS-01; `PROVISIONAL`): the active
+# slot (a preset name, the app has no text input) is UI state. REGION_NEXT / REGION_PREV cycle it. ASSIGN makes the
+# region exactly the faces of the selection (all corners selected), ADD / REMOVE change it, SELECT / SELECT_ADD write
+# the normal selection, ISOLATE / MASK reuse Hide and Mask on the region, DELETE removes it. The edits are one Undo
+# step each (the regions live in the Mesh); topology edits do not carry regions along yet.
+REGION_NEXT = "RegionNext"
+REGION_PREV = "RegionPrev"
+REGION_ASSIGN = "RegionAssign"
+REGION_ADD = "RegionAdd"
+REGION_REMOVE = "RegionRemove"
+REGION_SELECT = "RegionSelect"
+REGION_SELECT_ADD = "RegionSelectAdd"
+REGION_ISOLATE = "RegionIsolate"
+REGION_MASK = "RegionMask"
+REGION_DELETE = "RegionDelete"
+
 # RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):
 # global; mit genau einem ausgewählten Vertex öffnet es die Re-Symmetrize-Vorschau (Plan einmal
 # gerechnet), ein zweiter Druck führt sie aus (ein Undo-Schritt), Esc schließt sie. Solange sie

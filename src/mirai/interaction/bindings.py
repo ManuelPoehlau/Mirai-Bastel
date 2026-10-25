@@ -220,6 +220,19 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("h", "ctrl"), cmd.HIDE_SELECTION)
     bs.set_default(_key("h", "ctrl", "shift"), cmd.ISOLATE_SELECTION)
     bs.set_default(_key("h", "alt"), cmd.SHOW_ALL)
+    # Saved regions (`PROVISIONAL`, AD-REGIONS-01): Shift+G / Shift+Alt+G cycle the slot, Ctrl+G assigns the selection,
+    # Ctrl+Shift+G adds, Ctrl+Alt+G removes, Alt+G selects the region (Ctrl+Alt+Shift+G adds it to the selection),
+    # Ctrl+Alt+H isolates it, Ctrl+Alt+M masks it, Ctrl+Alt+Backspace deletes it (bare G stays Loop Slide).
+    bs.set_default(_key("g", "shift"), cmd.REGION_NEXT)
+    bs.set_default(_key("g", "shift", "alt"), cmd.REGION_PREV)
+    bs.set_default(_key("g", "ctrl"), cmd.REGION_ASSIGN)
+    bs.set_default(_key("g", "ctrl", "shift"), cmd.REGION_ADD)
+    bs.set_default(_key("g", "ctrl", "alt"), cmd.REGION_REMOVE)
+    bs.set_default(_key("g", "alt"), cmd.REGION_SELECT)
+    bs.set_default(_key("g", "ctrl", "alt", "shift"), cmd.REGION_SELECT_ADD)
+    bs.set_default(_key("h", "ctrl", "alt"), cmd.REGION_ISOLATE)
+    bs.set_default(_key("m", "ctrl", "alt"), cmd.REGION_MASK)
+    bs.set_default(_key("backspace", "ctrl", "alt"), cmd.REGION_DELETE)
 
     # Loop tools (2026-10-15, promoted from the Playground; keys = Artist Input Truth
     # `topology.edge_loop_select` / `edge_ring_select` / `loop_insert` / `loop_slide`).
