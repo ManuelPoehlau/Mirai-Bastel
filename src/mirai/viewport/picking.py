@@ -242,7 +242,10 @@ def _face_boundaries_within_bbox(mesh, cache, sx, sy):
     if cache is None:
         return mesh.all_face_ids()
     candidates = []
+    hidden_faces = cache.hidden_faces
     for fid in mesh.all_face_ids():
+        if fid in hidden_faces:
+            continue  # Hide / Isolate: a face the artist cannot see is not picked
         bbox = cache.face_bbox.get(fid)
         if bbox is None:
             candidates.append(fid)
@@ -386,9 +389,10 @@ def _occluded(mesh, cache, eye, point, screen, exclude_faces, depth_tolerance, b
             faces = grid.faces_at(screen[0], screen[1])
     if faces is None:
         faces = mesh.all_face_ids()
+    hidden_faces = cache.hidden_faces if cache is not None else ()
     for fid in faces:
-        if fid in exclude_faces:
-            continue
+        if fid in exclude_faces or fid in hidden_faces:
+            continue  # a hidden face occludes nothing
         bbox = cache.face_bbox.get(fid) if cache is not None else None
         if bbox is not None and screen is not None:
             minx, miny, maxx, maxy = bbox

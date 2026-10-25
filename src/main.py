@@ -147,6 +147,8 @@ Scope (binding, see the handoffs):
   menu (window level like Shift+A; bare M stays the Morph Lab bridge): Mirror copy / Pair selected across
   X/Y/Z = 0, Break pair, Re-sync pair - mode `4`, on the selected objects (`Application.mirror_copy`, ...).
   A paired object's partner follows W/E/R and the gizmo mirrored (`install_handlers(..., mirror_menu=...)`).
+- Hide / Isolate (`PROVISIONAL`, `src/mirai/hidden.py`): Ctrl+H hides the selection, Ctrl+Shift+H isolates it, Alt+H shows
+  all; hidden geometry is neither drawn nor picked nor moved, and topology edits next to it are refused.
 - Mask Geometry (`PROVISIONAL`, `src/mirai/mask.py`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts,
   Alt+Shift+M clears; masked points are skipped by W/E/R and Smooth / Relax and drawn dark (`GLMaskOverlay` in `GL_TYPES`).
 - Symmetry display (Shift+Ctrl+S, window level): shows / hides the symmetry plane and the seam / problem

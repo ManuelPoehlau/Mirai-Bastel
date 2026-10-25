@@ -93,6 +93,20 @@ class PickCache:
         self._scans = 0
         self._watch = None
         self._project = None
+        #: Hide / Isolate (`mirai.hidden`): hidden vertices have no screen position (every vertex and
+        #: edge pick skips them), `hidden_faces` are the faces with a hidden corner (no pick, no occluder).
+        self.hidden: frozenset = frozenset()
+        self.hidden_faces: frozenset = frozenset()
+
+    def set_hidden(self, vertices) -> None:
+        """Replaces the hidden vertex set; the next `refresh()` re-projects everything."""
+        vertices = frozenset(vertices)
+        if vertices == self.hidden:
+            return
+        self.hidden = vertices
+        self.hidden_faces = frozenset()
+        self._signature = None
+        self._generation += 1
 
     def invalidate(self) -> None:
         """Marks the cache for a check on the next `refresh()` call. Call this whenever
@@ -137,11 +151,16 @@ class PickCache:
                 return camera.project_to_screen(point, width, height)
         self._project = project
         position = mesh.vertex_position
-        vertex_screen = {vid: project(position(vid)) for vid in mesh.all_vertex_ids()}
+        hidden = self.hidden
+        vertex_screen = {vid: project(position(vid)) for vid in mesh.all_vertex_ids() if vid not in hidden}
         self.vertex_screen = vertex_screen
 
         face_vertices = mesh.face_vertices
         self.face_bbox = {fid: _bbox(vertex_screen, face_vertices(fid)) for fid in mesh.all_face_ids()}
+        self.hidden_faces = (
+            frozenset(fid for fid in self.face_bbox if not hidden.isdisjoint(face_vertices(fid)))
+            if hidden else frozenset()
+        )
 
     def _patch(self, mesh, change, old_signature) -> bool:
         """Re-projects what `change` touched (same camera, size and mesh), and moves the touched
@@ -159,9 +178,11 @@ class PickCache:
         position = mesh.vertex_position
         is_valid_vertex, is_valid_face = mesh.is_valid_vertex, mesh.is_valid_face
         faces: set = set()
+        hidden = self.hidden
         for vid in change.vertices:
             if is_valid_vertex(vid):
-                vertex_screen[vid] = project(position(vid))
+                if vid not in hidden:
+                    vertex_screen[vid] = project(position(vid))
                 for eid in mesh.vertex_edges(vid):
                     faces.update(mesh.edge_faces(eid))
             else:
@@ -179,6 +200,10 @@ class PickCache:
             box = face_bbox[fid] = _bbox(vertex_screen, face_vertices(fid))
             if grid is not None:
                 grid.move(fid, box)
+        if hidden:
+            gone = {f for f in self.hidden_faces if not is_valid_face(f)}
+            now = {f for f in faces if not hidden.isdisjoint(face_vertices(f))}
+            self.hidden_faces = (self.hidden_faces - gone - faces) | now
         self._keep_grid(grid, old_signature)
         return True
 

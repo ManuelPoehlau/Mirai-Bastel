@@ -212,6 +212,9 @@ class Viewport:
             line_overlay_type() if line_overlay_type is not None else None
         )
         self.edge_segments: list = []
+        #: Hide / Isolate (`set_hidden`); `_surface_hidden_key` = was die SubD-Fläche zuletzt davon bekam
+        self.hidden_vertices: frozenset = frozenset()
+        self._surface_hidden_key = None
         self._edges_dirty = True
         self.tool_point_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
         self.tool_line_layers: dict[str, list] = {layer: [] for layer in TOOL_LAYERS}
@@ -372,6 +375,8 @@ class Viewport:
             release()
         self.mesh = mesh
         self.geometry_revision += 1
+        self.hidden_vertices = frozenset()  # the caller pushes the new edit mesh's own set
+        self._surface_hidden_key = None
         self.render_mesh = RenderMesh(mesh, overlay=self.overlay, store_type=self._store_type)
         if old.material is not None:
             self.render_mesh.bind_material(old.material)
@@ -504,6 +509,12 @@ class Viewport:
         elif moved:
             rm.mark_vertices_dirty(set(moved))
         rm.sync()
+        hidden_faces = getattr(self.surface_provider, "hidden_surface_faces", None)
+        if hidden_faces is not None:
+            key = (id(mesh), self.surface_provider.hidden_key)
+            if key != self._surface_hidden_key:
+                self._surface_hidden_key = key
+                rm.set_hidden(faces=hidden_faces())
 
     # -- Tool-Layer (WP-06 B7) -------------------------------------------------
 
@@ -673,9 +684,24 @@ class Viewport:
                 self.face_overlay.set_triangles(layer, triangles)
         self._selection_overlays_dirty = False
 
+    def set_hidden(self, vertex_ids) -> None:
+        """Hide / Isolate (`mirai.hidden`): `vertex_ids` (ersetzt die bisherige Menge) und alles, was sie
+        als Ecke oder Endpunkt hat, wird nicht gezeichnet und nicht gepickt; leer zeigt alles. Der
+        Aufrufer sorgt dafür, dass die Auswahl nichts Verstecktes enthält. Eine SubD-Fläche (H7-Provider
+        mit `set_hidden`) versteckt die Teilflächen der versteckten Käfig-Faces."""
+        self.hidden_vertices = frozenset(vertex_ids)
+        self.render_mesh.set_hidden(self.hidden_vertices)
+        provider = self.surface_provider
+        if provider is not None and hasattr(provider, "set_hidden"):
+            provider.set_hidden(self.hidden_vertices)
+        self._surface_hidden_key = None
+        self._edges_dirty = True
+        self._selection_overlays_dirty = True
+        self._extra_overlays_dirty = True
+
     def _sync_edges(self) -> None:
         # E39: voller Neuaufbau pro dirty Frame (für B5a akzeptiert).
-        self.edge_segments = edge_segments(self.mesh)
+        self.edge_segments = edge_segments(self.mesh, self.hidden_vertices)
         if self.line_overlay is not None:
             self.line_overlay.set_segments(self.edge_segments)
         self.render_mesh.stats.count("line_overlay_rebuilds")

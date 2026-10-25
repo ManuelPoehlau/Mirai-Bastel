@@ -22,6 +22,19 @@ Beide sollen die aktuelle Auswahl oder einen gezielten Bereich berücksichtigen,
 
 ### Hide/Show Geometry und Isolate
 
+> Gebaut (2026-10-25, `PROVISIONAL`, `src/mirai/hidden.py`): `Ctrl+H` versteckt die Auswahl (Spiegelpartner mit),
+> `Ctrl+Shift+H` isoliert sie (alles andere versteckt), `Alt+H` zeigt alles. Versteckt werden Vertices; eine Face oder
+> Kante ist versteckt, sobald eine Ecke es ist (neue Topologie bleibt dadurch konsistent). Versteckte Geometrie wird
+> nicht gezeichnet (degenerierte Dreiecke im Index-Buffer, Shading, Tiefe und GPU-Face-ID-Pass sehen dasselbe), nicht
+> gepickt (GPU und CPU, Box/Lasso) und verdeckt nichts; die SubD-Fläche und ihre Käfig-/Isolinien blenden die Teile
+> versteckter Käfig-Faces aus. Die Auswahl enthält nie Verstecktes (Hide nimmt es heraus, Grow/Shrink/Loop wählen es nicht
+> an). Transformationen, Soft Selection und Smooth/Relax behandeln Verstecktes wie voll maskiert. Topologie-Befehle
+> (Connect, Knife, Collapse, Delete/Dissolve, Extrude, Loop Insert/Slide, Re-Symmetrize) neben verstecktem werden
+> abgelehnt („hidden geometry in the way“). Der Zustand ist flüchtig wie die Maske (kein History-Eintrag, nicht in
+> Szenendateien, pro Edit-Objekt, beim Szenenwechsel geleert). Mit dem Objektwechsel behält jetzt auch die Maske ihren
+> Zustand pro Objekt (vorher leakte sie). Offen: Speichern in Szenendateien, Hide für weitere Objekte gleichzeitig,
+> Verhalten von Shrink an der Grenze zu Verstecktem.
+
 Ein Mesh soll sich lokal leichter bearbeiten lassen:
 
 - ausgewählte Geometrie ausblenden,

@@ -125,6 +125,11 @@ class SubdSurfaceProvider:
         #: surface is shown, so the viewport leaves out its wire layer (no second, full-strength cage)
         self.replaces_wire = True
 
+        #: Hide / Isolate (`mirai.hidden`): hidden control vertices. A control face with one of them is
+        #: hidden, and with it every derived face born from it (`hidden_surface_faces`).
+        self._hidden_control: frozenset = frozenset()
+        self._hidden_version = 0
+
         self._mesh = None
         self._watch = None
         self._signature: Optional[tuple] = None
@@ -199,6 +204,41 @@ class SubdSurfaceProvider:
         return self._iso_by_edge.get(edge_id, [])
 
     # -- H7 -------------------------------------------------------------------------------------
+
+    def set_hidden(self, vertex_ids) -> None:
+        self._hidden_control = frozenset(vertex_ids)
+        self._hidden_version += 1
+
+    @property
+    def hidden_key(self) -> tuple:
+        """Changes whenever `hidden_surface_faces` may differ (hidden set, topology or level rebuilt)."""
+        return (self._hidden_version, self.topology_builds, self.level_builds)
+
+    def hidden_control_edges(self) -> frozenset:
+        """Indices (into `control_edges()`) of the cage edges with a hidden endpoint."""
+        if not self._hidden_control or self._surface is None:
+            return frozenset()
+        topology = self._surface.topology
+        hidden = self._hidden_control
+        vertex_ids = topology.vertex_ids
+        return frozenset(
+            i for i, (a, b) in enumerate(topology.edges) if vertex_ids[a] in hidden or vertex_ids[b] in hidden
+        )
+
+    def hidden_surface_faces(self) -> frozenset:
+        """The shown surface's faces that lie in a hidden control face (by provenance, `face_parent`)."""
+        if not self._hidden_control or self._surface is None or self._derived is None:
+            return frozenset()
+        topology = self._surface.topology
+        hidden = self._hidden_control
+        vertex_ids = topology.vertex_ids
+        hidden_parents = {
+            i for i, face in enumerate(topology.faces) if any(vertex_ids[v] in hidden for v in face)
+        }
+        return frozenset(
+            self._derived_face_ids[i] for i, parent in enumerate(self._derived.face_parent)
+            if parent in hidden_parents
+        )
 
     def sync(self, mesh, selection) -> set:
         self.dirty = False
@@ -545,16 +585,18 @@ class SubdLinePresentation:
         self.dirty = False
         provider = self.provider
         visible = self.visible()
-        geometry_key = (visible, self.view, provider.revision, self.lines_shown)
+        geometry_key = (visible, self.view, provider.revision, self.lines_shown, provider.hidden_key)
         if geometry_key != self._geometry_key:
             self._geometry_key = geometry_key
             cage, iso = [], []
             if visible and self.lines_shown:
                 p = provider.control_positions()
-                cage = [(p[a], p[b]) for a, b in provider.control_edges()]
+                gone = provider.hidden_control_edges()  # Hide / Isolate: no line of a hidden edge
+                cage = [(p[a], p[b]) for i, (a, b) in enumerate(provider.control_edges()) if i not in gone]
                 if self.view == VIEW_ISO:
                     d = provider.derived_positions()
-                    iso = [(d[a], d[b]) for a, b in provider.iso_edges()]
+                    owner = provider._derived.iso_control_edge
+                    iso = [(d[a], d[b]) for i, (a, b) in enumerate(provider.iso_edges()) if owner[i] not in gone]
             self._push(CAGE_LAYER, cage)
             self._push(ISO_LAYER, iso)
         hover, selected = highlight_edges(selection, mesh) if visible else (frozenset(), frozenset())

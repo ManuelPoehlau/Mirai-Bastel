@@ -80,10 +80,14 @@ class VertexMask:
         self._values = {v: m for v, m in self._values.items() if mesh.is_valid_vertex(v)}
 
 
-def effective_mask(mesh: Mesh, mask: VertexMask) -> dict[VertexId, float]:
+def effective_mask(mesh: Mesh, mask: VertexMask, extra_full: Iterable[VertexId] = ()) -> dict[VertexId, float]:
     """What a gesture runs on: the mask without stale IDs, and under a symmetry definition the pair
-    maximum, so both members of a mirror pair are protected alike."""
+    maximum, so both members of a mirror pair are protected alike. `extra_full` are further fully
+    protected vertices (the hidden ones, `mirai.hidden`) that take part in the pair rule."""
     values = {v: m for v, m in mask.values().items() if mesh.is_valid_vertex(v)}
+    for v in extra_full:
+        if mesh.is_valid_vertex(v):
+            values[v] = FULL
     if not values or mesh.symmetry_definition is None:
         return values
     correspondence = vertex_correspondence(mesh)

@@ -215,6 +215,11 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("m", "ctrl"), cmd.MASK_TOGGLE)
     bs.set_default(_key("m", "ctrl", "shift"), cmd.MASK_INVERT)
     bs.set_default(_key("m", "alt", "shift"), cmd.MASK_CLEAR)
+    # Hide / Isolate / Show all (`PROVISIONAL`): Ctrl+H hides the selection, Ctrl+Shift+H isolates it, Alt+H shows all
+    # (bare H stays the HUD toggle of the window level).
+    bs.set_default(_key("h", "ctrl"), cmd.HIDE_SELECTION)
+    bs.set_default(_key("h", "ctrl", "shift"), cmd.ISOLATE_SELECTION)
+    bs.set_default(_key("h", "alt"), cmd.SHOW_ALL)
 
     # Loop tools (2026-10-15, promoted from the Playground; keys = Artist Input Truth
     # `topology.edge_loop_select` / `edge_ring_select` / `loop_insert` / `loop_slide`).
