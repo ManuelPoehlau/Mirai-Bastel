@@ -10,7 +10,7 @@ vollständige Modeling-Feature-Menge.
 """
 
 from .ids import VertexId, EdgeId, FaceId, ObjectId
-from .mesh import Mesh, SymmetryDefinition
+from .mesh import FaceRegion, FaceRegions, Mesh, SymmetryDefinition
 from .selection import Selection, SelectionMode
 from .history import HistoryStack, Command
 from .operation import Operation, OperationContext
@@ -26,6 +26,8 @@ __all__ = [
     "ObjectId",
     "Mesh",
     "SymmetryDefinition",
+    "FaceRegion",
+    "FaceRegions",
     "Selection",
     "SelectionMode",
     "HistoryStack",
