@@ -343,13 +343,13 @@ _REGION_COMMANDS = (
 )
 
 #: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
-#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`).
+#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`). Loop Insert is not in
+#: the list: its ring ends at hidden faces (`edge_ring(..., blocked)`) and `_edge_connect` guards the rest.
 _TOPOLOGY_COMMANDS = frozenset(
     {
         commands.CONNECT,
         commands.COLLAPSE,
         commands.EXTRUDE,
-        commands.LOOP_INSERT,
         commands.LOOP_SLIDE,
         commands.RESYMMETRIZE,
         commands.DELETE,
@@ -2504,12 +2504,19 @@ class Application:
             selection.clear()
             selection.add(created)
 
+        def mutate(mesh):
+            result = self._connect_op(ctx, apply_connect_edges)(mesh, set(effective_edges))
+            if guarded and not all(mesh.is_valid_face(f) for f in guarded):
+                # e.g. a ring that closes around the hidden part (or a mirrored ring) would cut a hidden quad
+                raise TopologyToolError(f"{description}: hidden geometry in the way (Alt+H shows all)")
+            return result
+
+        hidden = self._hidden
+        guarded = (
+            [f for f in mesh.all_face_ids() if hidden.is_hidden_face(mesh, f)] if hidden else []
+        )
         try:
-            self._mesh_transaction(
-                description,
-                lambda mesh: self._connect_op(ctx, apply_connect_edges)(mesh, set(effective_edges)),
-                on_applied=residue,
-            )
+            self._mesh_transaction(description, mutate, on_applied=residue)
         except (TopologyToolError, SymmetryRefusal) as exc:
             self._set_status(str(exc))
             return False
@@ -2596,12 +2603,13 @@ class Application:
             return False
         walk = edge_loop if command == commands.EDGE_LOOP else edge_ring
         mesh = self.scene.mesh
+        blocked = self._hidden.vertices()  # a loop / ring ends at hidden geometry, it does not run through it
         found: set[EdgeId] = set()
         for edge in sorted(seeds):
             if edge in found:
                 continue
             try:
-                found.update(walk(mesh, edge).edges)
+                found.update(walk(mesh, edge, blocked).edges)
             except LoopRingError as exc:
                 self._set_status(f"{label}: {exc}")
                 return False
@@ -2659,10 +2667,11 @@ class Application:
         if not edges:
             self._set_status(f"{label}: select edges of a loop")
             return False
+        blocked = self._hidden.vertices()
         if command == commands.LOOP_GROW:
-            return self._apply_selection_step(label, selection_steps.loop_grow(mesh, edges))
+            return self._apply_selection_step(label, selection_steps.loop_grow(mesh, edges, blocked))
         if command == commands.LOOP_SHRINK:
-            return self._apply_selection_step(label, selection_steps.loop_shrink(mesh, edges))
+            return self._apply_selection_step(label, selection_steps.loop_shrink(mesh, edges, blocked))
         return self._loop_shift(label, edges, rightwards=command == commands.LOOP_NEXT)
 
     def _drop_hidden(self, ids: set) -> set:
@@ -2700,11 +2709,12 @@ class Application:
         (Shift+Right) or left; for a piece whose neighbours lie above / below each other on
         screen, up counts as right. A piece without quads on that side stays."""
         mesh = self.scene.mesh
+        blocked = self._hidden.vertices()
         out: set[EdgeId] = set()
         stuck = 0
-        for piece in selection_steps.loop_pieces(mesh, edges):
+        for piece in selection_steps.loop_pieces(mesh, edges, blocked):
             sides = {
-                left: selection_steps.shifted_piece(mesh, piece, left) for left in (True, False)
+                left: selection_steps.shifted_piece(mesh, piece, left, blocked) for left in (True, False)
             }
             left = self._screen_side(piece.edges, sides, rightwards)
             target = sides[left]
@@ -2759,12 +2769,16 @@ class Application:
         if seeds is None:
             return False
         mesh = self.scene.mesh
+        blocked = self._hidden.vertices()  # the ring ends at hidden geometry (Isolate): only visible quads are cut
         ring: set[EdgeId] = set()
         for edge in sorted(seeds):
             if edge not in ring:
-                ring.update(edge_ring(mesh, edge).edges)
+                ring.update(edge_ring(mesh, edge, blocked).edges)
         if len(ring) < 2:
-            self._set_status("Loop Insert: no edge ring through this edge (needs quads)")
+            self._set_status(
+                "Loop Insert: no edge ring through this edge (needs visible quads)" if blocked
+                else "Loop Insert: no edge ring through this edge (needs quads)"
+            )
             return False
         effective = ring
         if mesh.symmetry_definition is not None:
