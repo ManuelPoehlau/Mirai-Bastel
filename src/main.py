@@ -121,7 +121,9 @@ Scope (binding, see the handoffs):
   removed; Vertex: the vertex dissolve), Ctrl+Backspace dissolves Edge /
   Face without that cleanup. WP Toolbox Gaps B1: Shift+C collapses each
   connected group of the V/E/F selection to one point at its centroid and
-  selects the points in Vertex mode (`PROVISIONAL`). C2: hold S = Smooth,
+  selects the points in Vertex mode (`PROVISIONAL`). B selects whole open
+  borders (face mode: the outline), Shift+B caps each closed border the
+  selection touches with one face (`PROVISIONAL`). C2: hold S = Smooth,
   hold Alt+S = Relax (a tap = one step, drag right/left = stronger/weaker,
   release commits, Esc restores; with Soft on the whole field smooths, scaled
   by its weights, the wheel = live radius; `PROVISIONAL`). Status lines

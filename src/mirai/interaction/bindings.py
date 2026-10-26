@@ -259,6 +259,10 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("down", "shift"), cmd.LOOP_SHRINK)
     bs.set_default(_key("right", "shift"), cmd.LOOP_NEXT)
     bs.set_default(_key("left", "shift"), cmd.LOOP_PREVIOUS)
+    # Border / Cap (Manu 2026-10-25, keys PROVISIONAL): B = Border Select, Shift+B = Cap
+    # (F stays reserved for frame selection, E47).
+    bs.set_default(_key("b"), cmd.BORDER_SELECT)
+    bs.set_default(_key("b", "shift"), cmd.CAP)
 
     # --- Knife session (WP-06 B7, AD-017; context "knife") ------------------
     # Artist Input Truth `topology.knife_commit` (Enter); Ctrl+Shift+Z is the
