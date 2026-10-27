@@ -396,8 +396,11 @@ class SubdSurfaceProvider:
             return set()
         derived = self._derived
         if len(changed) > FULL_UPDATE_SHARE * len(cached):
-            self._derived_positions = derived.apply_full(cached)
-            touched = range(len(self._derived_ids))
+            old = self._derived_positions
+            new = self._derived_positions = derived.apply_full(cached)
+            # only the derived vertices that actually moved (a morph weight step or a soft drag moves a
+            # region: the viewport then patches that region, not the whole surface - AD-025 Phase 4)
+            touched = [d for d, (p, q) in enumerate(zip(new, old)) if p != q]
         else:
             touched = set()
             for i in changed:
@@ -743,6 +746,9 @@ class SubdivisionPreview:
         self.viewport = None
         #: the viewport the presentation was added to as an extra overlay (added on first use)
         self._overlay_viewport = None
+        #: AD-025 Phase 4: the app's `surface_chain.SurfaceChain` (SubD after the morph mix); None = the
+        #: single H7 slot as before (a host without a chain)
+        self.chain = None
 
     @property
     def level(self) -> int:
@@ -771,7 +777,14 @@ class SubdivisionPreview:
             self._fall_back_off(self._slot_refusal())
 
     def _owns_slot(self) -> bool:
+        if self.chain is not None:
+            return self.chain.holds(self.provider)
         return self.viewport is not None and self.viewport.surface_provider is self.provider
+
+    def _slot_free(self) -> bool:
+        if self.chain is not None:
+            return self.chain.can_take(self.provider)
+        return self.viewport.surface_provider is None or self._owns_slot()
 
     def _slot_refusal(self) -> str:
         return "SubD: nicht verfügbar — die Ersatzfläche des Viewports gehört einem anderen Host"
@@ -780,17 +793,24 @@ class SubdivisionPreview:
         vp = self.viewport
         if vp is None:
             return True
-        if vp.surface_provider is None:
-            vp.set_surface_provider(self.provider)
-        if vp.surface_provider is not self.provider:
-            return False
+        if self.chain is not None:
+            if not self.chain.want(self.provider, True):
+                self.chain.want(self.provider, False)
+                return False
+        else:
+            if vp.surface_provider is None:
+                vp.set_surface_provider(self.provider)
+            if vp.surface_provider is not self.provider:
+                return False
         if self._overlay_viewport is not vp:
             vp.add_overlay(self.lines)
             self._overlay_viewport = vp
         return True
 
     def _release_slot(self) -> None:
-        if self._owns_slot():
+        if self.chain is not None:
+            self.chain.want(self.provider, False)
+        elif self._owns_slot():
             self.viewport.set_surface_provider(None)
 
     def _fall_back_off(self, message: str) -> None:
@@ -834,9 +854,7 @@ class SubdivisionPreview:
     def set_view(self, view: str) -> bool:
         if view not in VIEW_ORDER:
             raise ValueError(view)
-        if view != VIEW_OFF and self.viewport is not None and not (
-            self.viewport.surface_provider is None or self._owns_slot()
-        ):
+        if view != VIEW_OFF and self.viewport is not None and not self._slot_free():
             self._set_status(self._slot_refusal())
             return False
         self.view = view

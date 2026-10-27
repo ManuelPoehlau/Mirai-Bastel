@@ -43,6 +43,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from .ids import VertexId, EdgeId, FaceId, IdAllocator, LayerId
+from .layer_storage import LayerSlots, PackedValues
 
 Position = tuple[float, float, float]
 #: Value of a vector point layer (AD-025 §4.2): three finite floats, default (0, 0, 0).
@@ -377,13 +378,15 @@ class Mesh:
         # Saved Regions (AD-REGIONS-01): wie die Symmetry Definition ein vom Mesh besessener Wert, den das
         # Journal beim Setzen sieht; Lesen und Setzen als `mesh.face_regions`.
         self._face_regions: FaceRegions | None = None
-        # Point layers (AD-025 §4.2). Meta in display order; one sparse value dict per layer
-        # (L2: a value equal to the default is never stored). Copy-on-write: a value dict that a
+        # Point layers (AD-025 §4.2). Meta in display order; one value mapping per layer (L2: a value
+        # equal to the default is never stored), packed since Phase 4 (`layer_storage`: float64
+        # arrays over one append-only slot map per mesh). Copy-on-write: a value mapping that a
         # record or a delta references is never mutated - `_layer_shared` names the layers whose
-        # live dict is such a shared one, the first write copies it.
+        # live mapping is such a shared one, the first write copies it.
         self._layer_alloc = IdAllocator(LayerId, start=1)
         self._layer_meta: tuple[tuple[LayerId, PointLayerInfo], ...] = ()
-        self._layer_values: dict[LayerId, dict[VertexId, LayerValue]] = {}
+        self._layer_slots = LayerSlots()
+        self._layer_values: dict[LayerId, PackedValues] = {}
         self._layer_shared: set[LayerId] = set()
 
     @property
@@ -455,7 +458,7 @@ class Mesh:
         if self._logs:
             self._touch_l(lid, vid)
         if lid in self._layer_shared:
-            values = self._layer_values[lid] = dict(values)
+            values = self._layer_values[lid] = values.copy()
             self._layer_shared.discard(lid)
         if value is None:
             del values[vid]
@@ -475,11 +478,18 @@ class Mesh:
             self._layer_values.pop(lid, None)
             self._layer_shared.discard(lid)
         else:
-            self._layer_values[lid] = values
+            self._layer_values[lid] = self._packed(values)
             if shared:
                 self._layer_shared.add(lid)
             else:
                 self._layer_shared.discard(lid)
+
+    def _packed(self, values) -> PackedValues:
+        """`values` as this mesh's packed form: itself when it is one already (a record's or a
+        delta's, shared as it is), else a packed copy (a plain dict, another mesh's values)."""
+        if isinstance(values, PackedValues) and values.slots is self._layer_slots:
+            return values
+        return PackedValues(self._layer_slots, values)
 
     def _set_layer_meta(self, meta: tuple) -> None:
         for log in self._logs:
@@ -576,6 +586,11 @@ class Mesh:
             raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
         return sorted(values.items())
 
+    def layer_storage_bytes(self) -> int:
+        """Bytes held by the live layer value buffers plus the shared slot map's entries (an
+        estimate for the memory probe; records and deltas may share or hold older buffers)."""
+        return sum(v.nbytes() for v in self._layer_values.values()) + 100 * len(self._layer_slots)
+
     def add_point_layer(self, info: PointLayerInfo) -> LayerId:
         """Appends an empty layer. ID continuity: exactly one new LayerId (never reused, AD-001)."""
         if not isinstance(info, PointLayerInfo):
@@ -639,20 +654,15 @@ class Mesh:
             raise MeshError("map_vector_layers erwartet eine endliche 3x3-Matrix.")
         if m == ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
             return
-        (a, b, c), (d, e, f), (g, h, i) = m
-        mapped: dict[LayerId, dict] = {}
+        mapped: dict[LayerId, PackedValues] = {}
         for lid, info in self._layer_meta:
             values = self._layer_values[lid]
             if info.kind is not LayerKind.VECTOR or not values:
                 continue
-            new = {}
-            for vid, (x, y, z) in values.items():
-                value = (a * x + b * y + c * z, d * x + e * y + f * z, g * x + h * y + i * z)
-                if value != _VECTOR_DEFAULT:
-                    new[vid] = value
-            if not all(math.isfinite(comp) for value in new.values() for comp in value):
-                raise MeshError("map_vector_layers: Ergebnis nicht endlich.")
-            mapped[lid] = new
+            try:
+                mapped[lid] = self._packed(values).mapped(m)
+            except ValueError:
+                raise MeshError("map_vector_layers: Ergebnis nicht endlich.") from None
         for lid, new in mapped.items():
             self._bulk_set(lid, new, shared=False)
 
@@ -1943,7 +1953,7 @@ class Mesh:
     def _load_point_layers(self, meta: tuple, values: dict) -> None:
         if not self._logs:
             self._layer_meta = meta
-            self._layer_values = values
+            self._layer_values = {lid: self._packed(v) for lid, v in values.items()}
             self._layer_shared = set()
             return
         # Under a journal: only what differs (whole-layer records for layers that appear or go).
@@ -2214,7 +2224,7 @@ def _with_overlay(old: dict | None, overlay: dict) -> dict | None:
     per-element before-records applied (a new dict; the old one stays untouched)."""
     if not overlay:
         return old
-    out = dict(old) if old is not None else {}
+    out = old.copy() if old is not None else {}
     for vid, value in overlay.items():
         if value is None:
             out.pop(vid, None)

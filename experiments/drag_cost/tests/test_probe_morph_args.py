@@ -1,4 +1,4 @@
-"""Argument handling and import boundary of the morph probe (AD-025 Phases 3 and 5) - headless: no pyglet,
+"""Argument handling and import boundary of the morph probe (AD-025 Phases 3, 4 and 5) - headless: no pyglet,
 no window (the probe imports pyglet and `src/main.py` lazily)."""
 
 from __future__ import annotations
@@ -29,7 +29,8 @@ def test_imports_only_src_examples_and_its_own_folder():
     tree = ast.parse(inspect.getsource(probe))
     modules = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     modules |= {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
-    assert modules <= {"__future__", "argparse", "math", "sys", "time", "pathlib", "drag_cost", "loaders",
+    assert modules <= {"__future__", "argparse", "gc", "math", "random", "sys", "time", "tracemalloc", "pathlib",
+                       "drag_cost", "loaders",
                        "pyglet", "main", "mirai", "core", "viewport"}
 
 
@@ -37,3 +38,13 @@ def test_topology_rows_cover_the_phase5_operations():
     args = probe.build_parser().parse_args(["--only-topology", "--reps", "3"])
     assert args.only_topology and args.reps == 3
     assert probe.TOPOLOGY_OPS == ("knife", "loop insert", "extrude", "collapse")
+
+
+def test_phase4_rows_and_memory_mode():
+    args = probe.build_parser().parse_args([])
+    assert args.targets == [1, 10] and not args.only_phase4 and not args.no_subd and not args.memory
+    args = probe.build_parser().parse_args(["--only-phase4", "--targets", "1", "10", "--no-subd"])
+    assert args.only_phase4 and args.targets == [1, 10] and args.no_subd
+    assert probe.build_parser().parse_args(["--memory"]).memory
+    assert probe.MEMORY_COUNTS == (10, 50) and probe.OCCUPANCIES == (15, 100)
+    assert probe.resolve_mesh(probe.MEMORY_ASSETS[1]).name == "gollum.obj"

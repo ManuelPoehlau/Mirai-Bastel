@@ -295,3 +295,6 @@ MORPH_WEIGHT_DOWN_FINE = "MorphWeightDownFine"
 MORPH_WEIGHT_FULL = "MorphWeightFull"
 MORPH_WEIGHT_ZERO = "MorphWeightZero"
 MORPH_WEIGHT_DRAG = "MorphWeightDrag"
+#: AD-025 Phase 4: the current target (the one Tab and the weight keys act on) -> the next / previous one.
+MORPH_NEXT = "MorphNext"
+MORPH_PREVIOUS = "MorphPrevious"

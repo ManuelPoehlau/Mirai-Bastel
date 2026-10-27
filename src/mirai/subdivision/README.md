@@ -46,12 +46,21 @@ Undo), ist die Fläche wieder da.
   the replacement-surface hook (AD-013 H7, `Viewport.set_surface_provider`), the lines through an extra overlay (H1).
   Both are attached only while the preview is on (H7-R1 as amended 2026-10-23: inert without SubD), and never over another
   host's provider (H7-R4; the Morph Lab keeps its slot).
+- **Stage chain (AD-025 Phase 4, 2026-10-27, H5b).** In the app the slot is coordinated by `mirai.surface_chain.SurfaceChain`
+  (`SubdivisionPreview.chain`): SubD is the stage after the morph mix. Alone it sits in the slot itself, exactly as
+  before (`viewport.surface_provider is preview.provider`); with a morph target on the edit mesh the slot holds a
+  `ChainedSurface`, and the provider's `sync(mesh, …)` receives the **mixed cage** (`b + Σ wᵢ·dᵢ`, the morph stage's
+  surface mesh, same IDs and topology as the edit mesh) instead of the edit mesh — it attaches to it and follows its
+  journal like any control mesh; the provider itself is unchanged. While SubD is on, the mix of a mesh with targets is
+  kept even at 0 % so a weight step patches positions (stencils) instead of switching the input mesh. Picking,
+  selection and the tools stay on the edit mesh. A host without a chain (`chain = None`) gets the single slot as before.
 - **Evaluator boundary.** `catmull_clark.py`: `SubdSurface(mesh).level(n)` → `SubdLevel` (faces, composed stencils,
   inverse index, provenance, isolines with their control edge, stable keys). Nothing else knows Catmull-Clark; an
   alternative evaluator (OpenSubdiv) replaces this module behind the same data. Pure Python, no NumPy.
 - **Updates** (`SubdSurfaceProvider`, reads the control mesh's change journal `Mesh.watch()`): nothing recorded → no work;
-  positions only → `apply_local` per moved control vertex (> 12.5 % moved: `apply_full`), the viewport patches the moved
-  derived vertices; edges/faces touched or vertices created/removed → topology + stencils rebuilt (global index data),
+  positions only → `apply_local` per moved control vertex (> 12.5 % moved: `apply_full`, then only the derived vertices
+  whose position changed are reported — since 2026-10-27, a regional move such as a morph weight step no longer patches
+  the whole surface), the viewport patches the moved derived vertices; edges/faces touched or vertices created/removed → topology + stencils rebuilt (global index data),
   the derived mesh **patched in place** by stable keys (`surface_topology_changed`, the surface `RenderMesh` patches its
   topology incrementally, AD-023); level switch / other edit object / first build → fresh derived mesh. Shift+S alone
   (definition only) rebuilds nothing.

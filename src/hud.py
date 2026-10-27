@@ -91,8 +91,10 @@ class HudState:
     #: Worklight name and the active Look row with its value (AD-024 §8).
     light: str
     look: str
-    #: Morph target (AD-025 Phase 3): name · weight · base / editing view; None = no target.
+    #: Morph target (AD-025 Phase 3): the current target's name · weight · base / editing view; None = no target.
     morph: Optional[str]
+    #: AD-025 Phase 4: every target with its weight, the current one in brackets; None = fewer than two.
+    morph_targets: Optional[str]
     status: str
     status_serial: int
 
@@ -132,6 +134,7 @@ def hud_state(app) -> HudState:
         light=app.display.light_label,
         look=app.look_text,
         morph=app.morph_status_text(),
+        morph_targets=app.morph_targets_text(),
         status=app.status_message,
         status_serial=app.status_serial,
     )
@@ -158,6 +161,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
         None,
     ),
     "Morph": ((commands.MORPH_NEW, commands.MORPH_EDIT_TOGGLE, commands.MORPH_WEIGHT_DRAG), MORPH_CONTEXT),
+    "Targets": ((commands.MORPH_NEXT, commands.MORPH_PREVIOUS), MORPH_CONTEXT),
     "HUD": ((commands.TOGGLE_HUD,), WINDOW_CONTEXT),
 }
 
@@ -233,6 +237,8 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
     ]
     if state.morph is not None:  # only a mesh with a morph target gets the row (AD-025 Phase 3)
         rows.append(HudRow("Morph", state.morph, hints.get("Morph", ""), on=True))
+    if state.morph_targets is not None:  # several targets (AD-025 Phase 4)
+        rows.append(HudRow("Targets", state.morph_targets, hints.get("Targets", ""), on=True))
     return rows
 
 

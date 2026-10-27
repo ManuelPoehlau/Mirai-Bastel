@@ -16,6 +16,9 @@ die Ruheform, „Ziel 1“ = Ruheform + Offsets des ersten Ziels, beide ohne Lay
 (`lab_scene.build_pair_scene`). Das Lab bleibt eine Einweg-Kopie: nichts kommt zurück. Während das
 Ziel daneben bearbeitet wird, geht die Basis (die Ansicht ist flüchtig).
 
+Mehrere Ziele (AD-025 Phase 4, `PROVISIONAL`): die Datei trägt nur das **aktuelle** Ziel des Objekts
+(das, auf das Tab und `N` wirken) - das Lab kennt ein Ziel, und es ist das, an dem gerade gearbeitet wird.
+
 Dieses Modul importiert kein pyglet und kein `experiments/`: es kennt nur den Pfad zu `run.py` und dessen Option `--von` (`main.py` kennt kein Experiment, CLAUDE.md).
 """
 
@@ -61,9 +64,13 @@ def pick_object(app) -> SceneObject | None:
     return chosen[0]
 
 
-def write_object_scene(obj: SceneObject, directory: Path = DEFAULT_SEND_DIR) -> Path:
-    """Das Objekt (Mesh-Kopie, gleiche Namen) als Ein-Objekt-Szene; überschreibt gleichnamige."""
-    mesh = Mesh.from_state(obj.mesh.export_state())
+def write_object_scene(obj: SceneObject, directory: Path = DEFAULT_SEND_DIR, target=None) -> Path:
+    """Das Objekt (Mesh-Kopie, gleiche Namen) als Ein-Objekt-Szene; überschreibt gleichnamige.
+    `target` (eine LayerId): nur dieses Morph-Ziel geht mit (siehe Modul)."""
+    state = obj.mesh.export_state()
+    if target is not None and state.get("point_layers"):
+        state["point_layers"] = [entry for entry in state["point_layers"] if entry["id"] == int(target)] or None
+    mesh = Mesh.from_state(state)
     one = SceneObject(ObjectId(0), mesh, name=obj.name)
     scene = Scene.from_objects([one], edit_object_id=one.id, object_id_counter=1)
     stem = re.sub(r"[^A-Za-z0-9_-]+", "_", obj.name).strip("_") or "objekt"
@@ -90,8 +97,10 @@ def send_to_morph_lab(
     obj = pick_object(app)
     if obj is None:
         return None
+    morph = getattr(app, "morph", None)
+    target = morph.provider.current_target(obj.id) if morph is not None else None
     try:
-        path = write_object_scene(obj, directory)
+        path = write_object_scene(obj, directory, target)
         launcher(path)
     except Exception as exc:  # disk full, no python, ...: one visible line, the scene stays as is
         app.set_status(f"Morph Lab failed: {exc}")

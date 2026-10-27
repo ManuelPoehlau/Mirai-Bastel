@@ -384,6 +384,29 @@ and `()`, every refusal with mesh and counters unchanged, the length check witho
 `tests/test_mesh_change_journal.py` (T-1: the layered random sequences call `split_face(…, origins=…)`), the Knife's
 `tests/test_layer_knife.py` (T-6) and `experiments/knife_oracle/tests` (no layers there: unchanged).
 
+**Decision:** AD-025 Phase 4 packed point-layer storage (2026-10-27; [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md)
+§4.2 "packed storage", §17; Manu's go for the Phase 4 Core internals, given with the Phase 4 assignment)
+
+A Core-internal change behind the unchanged public API (§7: internals change when profiling justifies it). Each layer's
+values were one `dict[VertexId, tuple]` (≈ 190 bytes per stored value); 50 dense targets on gollum_20k held **204 MiB**
+against the 50 MB budget of the audit (§G), 50 on gollum (87.5k) 818 MiB [C]. New module `src/core/layer_storage.py`:
+`LayerSlots` (one per mesh, `VertexId` → slot, **append-only** — a slot is never freed or reused, so a value array held by a
+journal record or a history delta keeps its meaning without a journal of its own; AD-001's "an ID is never an array index"
+holds: the ID goes through the map) and `PackedValues` (a `MutableMapping` over three float64 per slot in one `array('d')`
+plus a presence byte: 25 bytes per slot, values bit-exact). `core/mesh.py`: `_layer_values` holds `PackedValues`
+(`_packed` converts a plain dict at the one whole-layer entry `_bulk_set`), copy-on-write copies the buffers,
+`map_vector_layers` maps a layer as whole buffers (`PackedValues.mapped`, the same per-component arithmetic), a load packs
+the parsed values in one pass; `layer_storage_bytes()` is a read-only measuring aid. Freeze rule (§7): (1) requirement —
+50 targets ≤ 50 MB at 20k (audit §G Phase 4), measured: 29.7 MiB for 50 dense, 25.7 MiB for 50 sparse; (2) no public
+change can do it: the API returns values, the storage is internal; (3) AD-025 §4.2 / §17 and the measurements there;
+(4) smallest change — not touched: every public signature, `MeshChange` / `MeshDelta` (their layer slots now hold
+`PackedValues`, which compare equal to the dicts they replace), the file format, the journal's record shapes; (5) tests:
+**every existing layer test and the T-1 / T-2 oracles unchanged and green** (`tests/test_point_layers.py`,
+`tests/test_mesh_change_journal.py`), plus `tests/test_layer_storage.py` (dict semantics against a dict oracle through
+random operations, equality incl. −0.0 and deleted slots, copy independence, the append-only map, 25 bytes per point).
+Cost [C]: per-element reads ≈ 0.3 µs instead of ≈ 0.04 µs (a dense target written per element 11 → 37 ms at 20k); bulk
+map 215 → 95 ms for 10 dense layers at 20k; details in AD-025 §17.
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten
@@ -470,8 +493,8 @@ Folgende Systeme werden nicht nachträglich in Core V1 hineingezogen:
 - Herkunfts-/Provenance-Metadaten — *bleibt draußen: seit 2026-10-27 werden Herkünfte beim Erzeugen eines Vertex
   angewendet, nicht gespeichert ([AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) §4.1, §7.1)*
 - Skin-Weight-Remapping
-- Morph Targets — *Speicherung seit 2026-10-27 im Core als Punkt-Layer (AD-025 Phase 2, §7.1); Auswertung, Editier-Ansicht
-  und Gewichte bleiben außerhalb*
+- Morph Targets — *Speicherung seit 2026-10-27 im Core als Punkt-Layer (AD-025 Phase 2, §7.1; seit Phase 4 gepackt, §7.1);
+  Auswertung (die Mischung mehrerer Ziele), Editier-Ansicht und Gewichte bleiben außerhalb (`src/mirai`)*
 - Rigging / Bones
 - Animation
 - Soft Selection / Influence-System

@@ -208,6 +208,7 @@ from .morph_targets import (
     world_width,
 )
 from .subdivision.preview import key_label
+from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.box_select import (
     elements_in_polygon,
@@ -909,12 +910,17 @@ class Application:
         # state: no History, not saved), the open editing view of a target (None = none), the hold key
         # of the weight drag and the weight a tap of it returns to.
         self.morph: MorphDisplay = MorphDisplay(lambda: self.scene, self._set_status)
+        # AD-025 Phase 4 (H5b): the viewport's replacement surface as a chain - the morph mix, then the
+        # SubD preview of the mixed cage (`mirai.surface_chain`); either alone sits in the slot itself.
+        self.surface_chain = SurfaceChain((self.morph.provider, self.subdivision.provider))
+        self.morph.chain = self.surface_chain
+        self.subdivision.chain = self.surface_chain
         self._target_view: TargetView | None = None
         self._morph_view_shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self._morph_drag_key: str | None = None
         self._morph_drag_moved = False
         self._morph_drag_rest = 0.0
-        self._morph_ab: dict[ObjectId, int] = {}
+        self._morph_ab: dict[tuple, int] = {}  # (ObjectId, LayerId) -> the weight a tap returns to
 
         # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
         # after the B7 window test: press-slide-release was redundant with the
@@ -1136,6 +1142,7 @@ class Application:
                 preview=lambda: self._resym_plan,
             )
             self.viewport.add_overlay(self._symmetry_display)
+        self.surface_chain.attach(self.viewport)
         self.subdivision.attach(
             self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
         )
@@ -5725,22 +5732,51 @@ class Application:
         return view.base_obj if view is not None else self.scene.edit_object
 
     @property
+    def morph_current_target(self):
+        """The document edit object's current target (AD-025 Phase 4: the one Tab, N and +/- act on;
+        view state), or None."""
+        return self.morph.provider.current_target(self.morph_document_object.id)
+
+    @property
     def morph_weight(self) -> int:
-        """The weight of the document edit object's target in whole percent (view state)."""
+        """The weight of the document edit object's current target in whole percent (view state)."""
         return self.morph.provider.weight(self.morph_document_object.id)
 
     def morph_status_text(self) -> str | None:
-        """The HUD's morph row: None = the document edit object has no target."""
+        """The HUD's morph row (the current target): None = the document edit object has no target."""
         obj = self.morph_document_object
-        lid = morph_target(obj.mesh)
+        lid = self.morph_current_target
         if lid is None:
             return None
+        ids = morph_target_ids(obj.mesh)
         name = obj.mesh.point_layer_info(lid).name
         where = "editing target (beside the base)" if self._target_view is not None else "base"
         text = f"{name} · {self.morph_weight} % · {where}"
+        if len(ids) > 1:
+            text += f" · {ids.index(lid) + 1}/{len(ids)}"
         if self.morph.blocked:
-            text += " · mix hidden (SubD on)"
+            text += " · mix hidden (another host holds the surface)"
         return text
+
+    def morph_targets_text(self, limit: int = 8) -> str | None:
+        """The HUD's targets row (AD-025 Phase 4, `PROVISIONAL`): every target with its weight in display
+        order, the current one in brackets; None with fewer than two targets."""
+        obj = self.morph_document_object
+        ids = morph_target_ids(obj.mesh)
+        if len(ids) < 2:
+            return None
+        provider, current = self.morph.provider, self.morph_current_target
+        parts = []
+        for lid in ids:
+            entry = f"{obj.mesh.point_layer_info(lid).name} {provider.weight(obj.id, lid)}"
+            parts.append(f"[{entry}]" if lid == current else entry)
+        if len(parts) > limit:
+            at = ids.index(current)
+            start = max(0, min(at - limit // 2, len(parts) - limit))
+            shown = parts[start:start + limit]
+            more = len(parts) - limit
+            return " · ".join(shown) + f" · +{more} more"
+        return " · ".join(parts)
 
     def _document_scene(self) -> Scene:
         """The scene as a file holds it: without a target's editing view, the base as the edit object."""
@@ -5773,6 +5809,8 @@ class Application:
             return self.set_morph_weight(MORPH_MAX_WEIGHT)
         if command == commands.MORPH_WEIGHT_ZERO:
             return self.set_morph_weight(MORPH_MIN_WEIGHT)
+        if command in (commands.MORPH_NEXT, commands.MORPH_PREVIOUS):
+            return self.step_morph_target(1 if command == commands.MORPH_NEXT else -1)
         return False
 
     def _morph_lifecycle_refuses(self, label: str) -> bool:
@@ -5788,21 +5826,24 @@ class Application:
 
     def create_morph_target(self, name: str | None = None):
         """A new target on the edit object's mesh, equal to its current shape (all offsets zero): one
-        Undo step, a layer-only `_mesh_transaction`. Phase 3: at most `MAX_TARGETS` per mesh. Returns
-        the new `LayerId` or None (refused, status set)."""
+        Undo step, a layer-only `_mesh_transaction`; it becomes the current target (view state). At
+        most `MAX_TARGETS` per mesh. Returns the new `LayerId` or None (refused, status set)."""
         label = "New morph target"
         if self._morph_lifecycle_refuses(label):
             return None
         mesh = self.scene.mesh
         if len(morph_target_ids(mesh)) >= MORPH_MAX_TARGETS:
-            self._set_status(f"{label}: this mesh has its target already (several targets: Phase 4)")
+            self._set_status(f"{label}: this mesh has {MORPH_MAX_TARGETS} targets, the most it can have")
             return None
         name = name or new_target_name(mesh)
         done = self._mesh_transaction(
             f"New morph target {name!r}", lambda m: m.add_point_layer(PointLayerInfo(name)), moved_of=lambda _: set()
         )
+        self.morph.provider.set_current(self.scene.edit_object_id, done.result)
+        count = len(morph_target_ids(mesh))
         self._set_status(
-            f"Morph target {name!r} created (= the current shape). Tab edits it beside the base, N / +/- set the weight"
+            f"Morph target {name!r} created (= the current shape, {count} on this mesh). Tab edits it beside the base,"
+            " N / +/- set its weight, Shift+N / Alt+N switch targets"
         )
         return done.result
 
@@ -5813,7 +5854,7 @@ class Application:
         if self._morph_lifecycle_refuses(label):
             return False
         mesh = self.scene.mesh
-        lid = morph_target(mesh)
+        lid = self.morph_current_target
         if lid is None:
             self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
             return False
@@ -5831,43 +5872,83 @@ class Application:
         return True
 
     def delete_morph_target(self) -> bool:
-        """Deletes the edit object's target with its offsets (one Undo step; Undo brings it back
-        exactly). The weight goes with it."""
+        """Deletes the edit object's current target with its offsets (one Undo step; Undo brings it
+        back exactly). Its weight goes with it; the next target in the list becomes current."""
         label = "Delete morph target"
         if self._morph_lifecycle_refuses(label):
             return False
         mesh = self.scene.mesh
-        lid = morph_target(mesh)
+        lid = self.morph_current_target
         if lid is None:
             self._set_status(f"{label}: this mesh has no target")
             return False
+        ids = morph_target_ids(mesh)
+        at = ids.index(lid)
+        neighbour = ids[at + 1] if at + 1 < len(ids) else (ids[at - 1] if at > 0 else None)
         name = mesh.point_layer_info(lid).name
+        oid = self.scene.edit_object_id
+        self.morph.provider.set_weight(oid, MORPH_MIN_WEIGHT, lid)
+        self._morph_ab.pop((oid, lid), None)
         self._mesh_transaction(f"Delete morph target {name!r}", lambda m: m.remove_point_layer(lid), moved_of=lambda _: set())
+        if neighbour is not None:
+            self.morph.provider.set_current(oid, neighbour)
+        self.morph.refresh()
         self._set_status(f"Morph target {name!r} deleted (Ctrl+Z brings it back)")
         return True
 
-    def set_morph_weight(self, weight: int) -> bool:
-        """The weight of the document edit object's target (view state: no Undo step, not saved)."""
+    def step_morph_target(self, step: int) -> bool:
+        """AD-025 Phase 4 (keys `PROVISIONAL`): the next / previous target of the document edit object
+        becomes current (view state, no Undo step). With the editing view open, the view shows it."""
         obj = self.morph_document_object
-        if morph_target(obj.mesh) is None:
+        ids = morph_target_ids(obj.mesh)
+        if not ids:
+            self._set_status("Morph targets: this mesh has none (Ctrl+N makes one)")
+            return False
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"Morph targets: not while the {owner} interaction runs")
+            return False
+        if len(ids) == 1:
+            self._set_status(f"Morph: {self.morph_status_text()} (the only target; Ctrl+N makes another)")
+            return False
+        lid = ids[(ids.index(self.morph_current_target) + step) % len(ids)]
+        self.morph.provider.set_current(obj.id, lid)
+        view = self._target_view
+        if view is not None:
+            moved = view.retarget(lid)
+            view.view_obj.name = f"{obj.name} · {view.name}"
+            if moved and self.viewport is not None:
+                self._pick_cache.invalidate()
+                self.viewport.on_vertices_moved(moved)
+            self._soft_preview_refresh()
+            self._refresh_hover()
+        self._set_status(f"Morph: {self.morph_status_text()}")
+        return True
+
+    def set_morph_weight(self, weight: int, lid=None) -> bool:
+        """The weight of a target of the document edit object (default: the current one); view
+        state: no Undo step, not saved."""
+        obj = self.morph_document_object
+        lid = self.morph_current_target if lid is None else lid
+        if lid is None:
             self._set_status("Morph weight: this mesh has no target (Ctrl+N makes one)")
             return False
-        weight = self.morph.provider.set_weight(obj.id, weight)
+        weight = self.morph.provider.set_weight(obj.id, weight, lid)
         if weight > MORPH_MIN_WEIGHT:
-            self._morph_ab[obj.id] = weight
+            self._morph_ab[(obj.id, lid)] = weight
         self.morph.refresh()
         self._set_status(f"Morph: {self.morph_status_text()}")
         return True
 
     def _morph_toggle_ab(self) -> bool:
         obj = self.morph_document_object
-        last = self._morph_ab.get(obj.id, MORPH_MAX_WEIGHT)
+        last = self._morph_ab.get((obj.id, self.morph_current_target), MORPH_MAX_WEIGHT)
         return self.set_morph_weight(last if self.morph_weight == MORPH_MIN_WEIGHT else MORPH_MIN_WEIGHT)
 
     def _morph_drag_arm(self, key: str) -> bool:
-        """`N` went down: mouse motion left/right sets the weight until it is let go; a tap without
-        motion toggles 0 % <-> the last weight (`_morph_drag_release`). View state only."""
-        if morph_target(self.morph_document_object.mesh) is None:
+        """`N` went down: mouse motion left/right sets the current target's weight until it is let go; a
+        tap without motion toggles 0 % <-> the last weight (`_morph_drag_release`). View state only."""
+        if self.morph_current_target is None:
             self._set_status("Morph weight: this mesh has no target (Ctrl+N makes one)")
             return False
         if self._morph_drag_key is None:
@@ -5910,7 +5991,7 @@ class Application:
             return False
         scene = self.scene
         base = scene.edit_object
-        lid = morph_target(base.mesh)
+        lid = self.morph.provider.current_target(base.id)
         if lid is None:
             self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
             return False

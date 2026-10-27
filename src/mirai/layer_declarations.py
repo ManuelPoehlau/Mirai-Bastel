@@ -149,7 +149,7 @@ _MORPH_COMMANDS = (
     commands.MORPH_NEW, commands.MORPH_RENAME, commands.MORPH_DELETE, commands.MORPH_EDIT_TOGGLE,
     commands.MORPH_WEIGHT_UP, commands.MORPH_WEIGHT_DOWN, commands.MORPH_WEIGHT_UP_FINE,
     commands.MORPH_WEIGHT_DOWN_FINE, commands.MORPH_WEIGHT_FULL, commands.MORPH_WEIGHT_ZERO,
-    commands.MORPH_WEIGHT_DRAG,
+    commands.MORPH_WEIGHT_DRAG, commands.MORPH_NEXT, commands.MORPH_PREVIOUS,
 )
 
 #: Commands whose target meshes are not the edit mesh: checked at their own site with every mesh

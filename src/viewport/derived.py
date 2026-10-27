@@ -333,12 +333,17 @@ class DerivedGeometry:
         Faces jedes Vertex (flächengewichteter Durchschnitt) — es werden
         KEINE Faces außerhalb `vertex_ids` neu besucht.
         """
+        # Scalars instead of a new tuple per face (same additions in the same order): this runs for
+        # every moved vertex's 1-ring per frame (a morph weight step, a SubD surface patch, a drag).
+        v2f, face_normals, out = self.vertex_to_faces, self.face_normals, self.vertex_normals
         for vertex_id in vertex_ids:
-            acc: Vec3 = (0.0, 0.0, 0.0)
-            for face_id in self.vertex_to_faces.get(vertex_id, ()):
-                fn = self.face_normals[face_id]
-                acc = (acc[0] + fn[0], acc[1] + fn[1], acc[2] + fn[2])
-            self.vertex_normals[vertex_id] = _normalize(acc)
+            x = y = z = 0.0
+            for face_id in v2f.get(vertex_id, ()):
+                fx, fy, fz = face_normals[face_id]
+                x += fx
+                y += fy
+                z += fz
+            out[vertex_id] = _normalize((x, y, z))
 
     def recompute_bounds(self, mesh: Mesh) -> None:
         positions = [mesh.vertex_position(v) for v in mesh.all_vertex_ids()]

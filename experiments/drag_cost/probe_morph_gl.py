@@ -5,6 +5,8 @@ Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window
     python experiments/drag_cost/probe_morph_gl.py --assets head_basemesh --steps 300
     python experiments/drag_cost/probe_morph_gl.py --assets examples/meshes/gollum_20k.obj
     python experiments/drag_cost/probe_morph_gl.py --only-topology      # the Phase 5 rows only
+    python experiments/drag_cost/probe_morph_gl.py --only-phase4        # Phase 4: 1 / 10 targets, with SubD
+    python experiments/drag_cost/probe_morph_gl.py --memory             # Phase 4: layer memory, no window
 
 Headless container: prefix with `xvfb-run -a`.
 
@@ -29,6 +31,15 @@ offset; the offsets are a smooth bump):
                  without a target, then with one target (offsets on 100 % of the points) dialled in at
                  60 % (the mix is rebuilt on the new topology in the frame after). Every run is undone.
 
+- `targets`      (Phase 4) per asset, 1 and 10 targets with offsets on 15 % (each target its own region) or
+                 100 % of the points, every target but the current one at 50 %: the hold-N weight step of the
+                 current one, without SubD and with the SubD preview on (level 2, the stage chain morph ->
+                 SubD of the mixed cage). gollum_20k: SubD refuses (> 25,000 faces at level 1).
+- `memory`       (Phase 4, `--memory`, no window) the traced memory of 10 / 50 targets with offsets on 15 % / 100 %
+                 of the points, a per-element write of one dense target under one recording, a bulk frame change
+                 (`map_vector_layers`, the Apply-transform write) of all of them under one recording plus five
+                 watches (time, traced peak, journal records) and its Undo. Defaults: gollum_20k and gollum.
+
 Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); only
 the reference PC decides the 16.7 ms bar. Output is plain ASCII.
 """
@@ -36,9 +47,12 @@ the reference PC decides the 16.7 ms bar. Output is plain ASCII.
 from __future__ import annotations
 
 import argparse
+import gc
 import math
+import random
 import sys
 import time
+import tracemalloc
 from pathlib import Path
 
 _EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent
@@ -52,6 +66,9 @@ ensure_paths()
 from drag_cost.probe_drag_gl import HEIGHT, WIDTH, Stats, grow_region, machine_info  # noqa: E402
 
 DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh", "examples/meshes/gollum_20k.obj")
+MEMORY_ASSETS = ("examples/meshes/gollum_20k.obj", "examples/meshes/gollum.obj")
+MEMORY_COUNTS = (10, 50)
+PHASE4_COUNTS = (1, 10)
 DEFAULT_STEPS = 200
 DEFAULT_REPS = 5
 TOPOLOGY_OPS = ("knife", "loop insert", "extrude", "collapse")
@@ -79,6 +96,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="weight steps per row")
     parser.add_argument("--reps", type=int, default=DEFAULT_REPS, help="runs per topology operation (Phase 5)")
     parser.add_argument("--only-topology", action="store_true", help="skip the Phase 3 weight / view rows")
+    parser.add_argument("--only-phase4", action="store_true",
+                        help="Phase 4 rows only: weight steps with 1 / 10 targets (15 / 100 %%), with and without SubD")
+    parser.add_argument("--targets", type=int, nargs="+", default=list(PHASE4_COUNTS),
+                        help="target counts of the Phase 4 rows (default 1 10)")
+    parser.add_argument("--no-subd", action="store_true", help="Phase 4 rows without the SubD variant")
+    parser.add_argument("--memory", action="store_true",
+                        help="Phase 4: layer memory and journal cost only (no window; default assets gollum_20k, gollum)")
     return parser
 
 
@@ -103,12 +127,17 @@ def build_app(path: Path):
     return window, app
 
 
-def fill_target(app, occupancy: int) -> int:
-    """A smooth bump on `occupancy` % of the points (the ones nearest the front-most point)."""
+def fill_target(app, occupancy: int, lid=None, rank: int = 0) -> int:
+    """A smooth bump on `occupancy` % of the points (the ones nearest a seed point: the front-most one, or
+    for `rank` k > 0 the k-th of the points sorted by z, x - another region per target)."""
     mesh = app.scene.mesh
-    lid = mesh.point_layer_ids()[0]
+    lid = mesh.point_layer_ids()[0] if lid is None else lid
     ids = mesh.all_vertex_ids()
-    seed = max(ids, key=lambda v: (mesh.vertex_position(v)[2], int(v)))
+    if rank:
+        ordered_seeds = sorted(ids, key=lambda v: (mesh.vertex_position(v)[2], mesh.vertex_position(v)[0], int(v)))
+        seed = ordered_seeds[(len(ordered_seeds) - 1 - rank * len(ordered_seeds) // 13) % len(ordered_seeds)]
+    else:
+        seed = max(ids, key=lambda v: (mesh.vertex_position(v)[2], int(v)))
     sp = mesh.vertex_position(seed)
     ordered = sorted(ids, key=lambda v: math.dist(mesh.vertex_position(v), sp))
     chosen = ordered[: max(1, len(ids) * occupancy // 100)]
@@ -305,18 +334,155 @@ def topology_rows(app, reps: int) -> dict:
     return out
 
 
+# -- Phase 4: weight steps with several targets, with and without SubD ---------------------------------
+
+
+def phase4_rows(path: Path, steps: int, counts, subd: bool) -> list[str]:
+    """Per target count and occupancy: a fresh app, `count` targets (each a bump on its own region, or on
+    every point), every target but the current one dialled in at 50 %, then the hold-N drag of the current
+    one (`weight_rows`) - without SubD and, when `subd`, with the SubD preview on (level 2, the stage chain
+    morph -> SubD). A level the preview refuses (gollum_20k: > 25,000 faces already at level 1) is reported."""
+    lines = []
+    for count in counts:
+        for occupancy in OCCUPANCIES:
+            window, app = build_app(path)
+            for _ in range(count):
+                app.key_press(_key("n", "ctrl"))
+            lids = app.scene.mesh.point_layer_ids()
+            stored = sum(fill_target(app, occupancy, lid, rank) for rank, lid in enumerate(lids))
+            for lid in lids[:-1]:
+                app.set_morph_weight(50, lid)
+            frame(app)
+            label = f"{path.stem:<26} {len(app.scene.mesh.all_vertex_ids()):>6} V  {count:>2} target{'s' if count > 1 else ' '} x {occupancy:>3} % ({stored:>7})"
+            for with_subd in (False, True) if subd else (False,):
+                if with_subd:
+                    if not app.subdivision.set_view("cage") or (frame(app) and app.subdivision.provider.surface_mesh is None):
+                        lines.append(f"{label}  + SubD L{app.subdivision.level}: refused ({app.status_message})")
+                        continue
+                step, draw, first = weight_rows(app, steps)
+                verdict = "ok" if step.p95 <= THRESHOLD_P95_MS else "OVER"
+                what = f"+ SubD L{app.subdivision.level}" if with_subd else "no SubD  "
+                lines.append(f"{label}  {what}  weight step {step.text()}  [{verdict}]  (draw p50 {draw.p50:.2f})")
+            window.close()
+    return lines
+
+
+# -- Phase 4: memory of many targets (no window) --------------------------------------------------
+
+
+def _support(mesh, occupancy: int, rng) -> list:
+    """`occupancy` % of the points, a contiguous patch around a random point (a facial target is local)."""
+    ids = mesh.all_vertex_ids()
+    if occupancy >= 100:
+        return ids
+    seed = mesh.vertex_position(rng.choice(ids))
+    ordered = sorted(ids, key=lambda v: math.dist(mesh.vertex_position(v), seed))
+    return ordered[: max(1, len(ids) * occupancy // 100)]
+
+
+def _traced() -> int:
+    gc.collect()
+    return tracemalloc.get_traced_memory()[0]
+
+
+def memory_rows(path: Path) -> list[str]:
+    from core import PointLayerInfo
+    from core.operations import record_mesh_change
+    from mirai.scene_factory import build_core_scene_from_obj
+
+    mib = 1024.0 * 1024.0
+    lines = []
+    for count in MEMORY_COUNTS:
+        for occupancy in OCCUPANCIES:
+            mesh = build_core_scene_from_obj(path).mesh
+            rng = random.Random(count * 1000 + occupancy)
+            supports = [_support(mesh, occupancy, rng) for _ in range(count)]
+            tracemalloc.start()
+            before = _traced()
+            lids = []
+            for k, support in enumerate(supports):
+                lid = mesh.add_point_layer(PointLayerInfo(f"T{k}"))
+                lids.append(lid)
+                for v in support:
+                    mesh.set_layer_value(lid, v, (rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)))
+            held = _traced() - before
+            tracemalloc.stop()  # timings untraced (tracing slows Python allocations several-fold)
+            # a per-element write of one dense target under one recording (the editing view's commit, an import)
+            values = [(v, (rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))) for v in mesh.all_vertex_ids()]
+            t0 = time.perf_counter()
+            delta, _ = record_mesh_change(mesh, lambda: [mesh.set_layer_value(lids[0], v, d) for v, d in values] and None)
+            write_ms = (time.perf_counter() - t0) * 1000.0
+            del delta, values
+            # the bulk frame change (Apply transform) of every target under one recording + five watches
+            watches = [mesh.watch() for _ in range(5)]
+            rotate = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+            t0 = time.perf_counter()
+            change = mesh.begin_change()
+            mesh.map_vector_layers(rotate)
+            delta = mesh.end_change(change)
+            bulk_ms = (time.perf_counter() - t0) * 1000.0
+            t0 = time.perf_counter()
+            mesh.apply_delta(delta, reverse=True)
+            undo_ms = (time.perf_counter() - t0) * 1000.0
+            del delta
+            for watch in watches:
+                watch.take()
+            tracemalloc.start()
+            base = _traced()
+            tracemalloc.reset_peak()
+            change = mesh.begin_change()
+            mesh.map_vector_layers(rotate)
+            delta = mesh.end_change(change)
+            peak = tracemalloc.get_traced_memory()[1] - base
+            kept = _traced() - base
+            tracemalloc.stop()
+            records = sum(len(r) for r in delta.layer_values.values())
+            for watch in watches:
+                watch.close()
+            stored = sum(len(s) for s in supports)
+            lines.append(
+                f"{path.stem:<12} {len(mesh.all_vertex_ids()):>6} V  {count:>2} targets x {occupancy:>3} %"
+                f" ({stored:>8} values): held {held / mib:7.1f} MiB | one dense target written, 1 recording"
+                f" {write_ms:7.1f} ms | bulk map {bulk_ms:7.1f} ms, peak {peak / mib:6.1f} MiB, kept {kept / mib:6.1f} MiB,"
+                f" {len(delta.layer_whole)} whole + {records} per-element records | undo {undo_ms:6.1f} ms"
+            )
+            del mesh, delta, change
+            gc.collect()
+    return lines
+
+
+def _header(args) -> list[str]:
+    from pyglet.gl import gl_info
+
+    lines = machine_info(gl_info.get_version_string(), gl_info.get_renderer())
+    lines.append(f"Morph probe (AD-025 Phases 3, 4 and 5), {args.steps} weight steps per row; bar {THRESHOLD_P95_MS} ms p95;"
+                 f" {args.reps} runs per topology row")
+    return lines
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    if args.memory:
+        assets = args.assets if args.assets != list(DEFAULT_ASSETS) else list(MEMORY_ASSETS)
+        lines = [f"Morph probe (AD-025 Phase 4): point-layer memory and journal cost, Python {sys.version.split()[0]}"]
+        for path in (resolve_mesh(a) for a in assets):
+            lines += memory_rows(path)
+        print("\n".join(lines))
+        return 0
     paths = [resolve_mesh(a) for a in args.assets]
     lines = []
+    if args.only_phase4:
+        for path in paths:
+            rows = phase4_rows(path, args.steps, args.targets, not args.no_subd)
+            if not lines:
+                lines = _header(args)
+            lines += rows
+        print("\n".join(lines))
+        return 0
     for path in paths:
         window, app = build_app(path)
         if not lines:
-            from pyglet.gl import gl_info
-
-            lines += machine_info(gl_info.get_version_string(), gl_info.get_renderer())
-            lines.append(f"Morph probe (AD-025 Phases 3 and 5), {args.steps} weight steps per row; bar {THRESHOLD_P95_MS} ms p95;"
-                         f" {args.reps} runs per topology row")
+            lines = _header(args)
         count = len(app.scene.mesh.all_vertex_ids())
         plain = topology_rows(app, args.reps)
         app.key_press(_key("n", "ctrl"))
@@ -333,6 +499,7 @@ def main(argv=None) -> int:
             release, after = view_commit_row(app)
             lines.append(f"{path.stem:<26} view commit (36 points): release {release.text()}  frame after {after.text()}")
             lines.append(f"{path.stem:<26} apply transform with one target: {apply_row(app):.1f} ms")
+            lines += phase4_rows(path, args.steps, args.targets, not args.no_subd)
         stored = fill_target(app, 100)
         app.set_morph_weight(60)
         frame(app)

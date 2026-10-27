@@ -1,4 +1,4 @@
-"""AD-025 Phase 3: one persistent morph target in Production (`mirai.morph_targets`, `Application`).
+"""AD-025 Phase 3: one persistent morph target in Production (several targets: `test_morph_multi.py`) (`mirai.morph_targets`, `Application`).
 
 Headless (TraceStore). Covers the Definition of Done of the Phase 3 package: target lifecycle with
 exact Undo / Redo; offsets bit-exact after save -> load; the editing view beside the base (H4) - a
@@ -129,11 +129,10 @@ def test_create_rename_delete_each_one_exact_undo_step():
         assert mesh.export_state() == state | {"layer_id_counter": 2}
 
 
-def test_phase3_allows_one_target_per_mesh():
+def test_a_second_target_is_allowed_since_phase4():
+    """Phase 3 allowed one target per mesh; Phase 4 lifts the cap (`test_morph_multi.py`)."""
     app, _ = _with_target()
-    history = len(app.history)
-    assert app.key_press(CTRL_N) is False
-    assert "Phase 4" in app.status_message and len(app.history) == history
+    assert app.key_press(CTRL_N) is True and len(app.scene.mesh.point_layer_ids()) == 2
 
 
 def test_rename_and_delete_without_a_target_are_refused():
@@ -521,14 +520,16 @@ def test_the_mix_is_shown_on_the_base_and_beside_the_view():
     assert app.viewport.surface_provider is None
 
 
-def test_the_subd_preview_keeps_the_slot_and_the_morph_says_so():
+def test_the_subd_preview_and_the_mix_show_together_since_phase4():
+    """Phase 3: whoever held the H7 slot kept it. Phase 4 (H5b): the stage chain shows SubD of the mix
+    (`test_morph_multi.py` pins the values)."""
     app, _ = _with_target()
     assert app.subdivision.set_view("cage")
     app.update_viewport(0.0)
     app.set_morph_weight(50)
     app.update_viewport(0.0)
-    assert app.viewport.surface_provider is not app.morph.provider
-    assert app.morph.blocked and "SubD" in app.morph_status_text()
+    assert app.surface_chain.holds(app.morph.provider) and app.surface_chain.holds(app.subdivision.provider)
+    assert not app.morph.blocked and "hidden" not in app.morph_status_text()
 
 
 def test_without_a_target_nothing_takes_the_slot():

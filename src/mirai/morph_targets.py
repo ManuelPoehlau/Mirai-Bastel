@@ -1,20 +1,22 @@
-"""Morph targets in Production (AD-025 Phase 3, ARCH-02): one persistent target per mesh. Names, keys
-and texts `PROVISIONAL`.
+"""Morph targets in Production (AD-025 Phases 3 and 4, ARCH-02): several persistent targets per mesh.
+Names, keys and texts `PROVISIONAL`.
 
 What a target is: one vector point layer of the base mesh (`core.Mesh` point layers, AD-025 §4.2) —
 offsets keyed by `VertexId` (Manu J-3 "relativ": the target follows later base edits). The Core owns
 the values, their journal, Undo and the file; this module gives them their meaning:
 
 - **Lifecycle** (`Application.create_morph_target` / `rename_` / `delete_`): one Undo step each, a
-  layer-only `_mesh_transaction`. Phase 3 allows one target per mesh (`MAX_TARGETS`).
-- **Weight** (`MorphSurfaceProvider.weights`): view state per object in whole percent — no Undo
-  step, not saved (F-11, Manu 2026-10-17). The viewport shows the mix `b + w·d` through the H7
-  replacement surface (`Viewport.set_surface_provider`): the edit object's faces (`surface_mesh`) and,
-  H7-E, object entries (`entry_surfaces`, the base beside the editing view). The wire follows the
-  mix (`wire_follows_surface`, Manu 2026-10-27); picking, selection, hover and every tool stay on the rest
-  shape (H7: the cage is authoritative; Morph Lab 6a: "hilft"). The
-  slot is shared with the SubD preview; morph + SubD together come with Phase 4 (H5b), so whoever
-  holds the slot first keeps it and the other says so (`MorphDisplay`).
+  layer-only `_mesh_transaction`. Phase 4: up to `MAX_TARGETS` per mesh; one of them is the
+  **current target** (`MorphSurfaceProvider.current`, view state) that Tab, `N` and `+`/`-` act on,
+  switched with `MORPH_NEXT` / `MORPH_PREVIOUS`; a new target becomes current.
+- **Weight** (`MorphSurfaceProvider.weights`): view state per object and target in whole percent — no
+  Undo step, not saved (F-11, Manu 2026-10-17). The viewport shows the additive mix `b + Σ wᵢ·dᵢ`
+  (`morph_mix`, the evaluation rule and its drift guard) through the H7 replacement surface: the edit
+  object's faces (`surface_mesh`) and, H7-E, object entries (`entry_surfaces`, the base beside the
+  editing view). The wire follows the mix (`wire_follows_surface`, Manu 2026-10-27); picking,
+  selection, hover and every tool stay on the rest shape (H7: the cage is authoritative; Morph Lab 6a:
+  "hilft"). Morph + SubD together (H5b, Phase 4): the provider is the first stage of the app's
+  `surface_chain.SurfaceChain`, the SubD preview reads the mixed cage (`MorphDisplay`).
 - **Editing view** (H4, the §11 "editing-view mechanics" decided here, AD-025 §15): `TargetView`.
   The target is edited *beside* the base, as in the Morph Lab (J-5): a transient scene object whose
   mesh is an ID-identical copy of the base with positions `b + d`, placed beside the base, becomes
@@ -43,8 +45,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core import HistoryStack, Mesh
-from core.mesh import LayerKind, MeshDelta
+from core.mesh import LayerKind
 from core.operations import MeshDeltaCommand, record_mesh_change
+
+from .morph_mix import MixSurface, mix_position, offset_keys as _offset_keys, rest_state as _rest_state
+from .morph_mix import topology_touched as _topology_touched
 
 from .interaction import commands
 from .interaction.input import (
@@ -57,8 +62,9 @@ from .interaction.input import (
     Input,
 )
 
-#: Phase 3: one target per mesh; several targets, the stage chain and morph + SubD are Phase 4.
-MAX_TARGETS = 1
+#: AD-025 Phase 4: several targets per mesh, capped (`PROVISIONAL`): above the audit's 20-50 per character, under
+#: what the HUD and the measured budget (50 targets <= 50 MB at 20k, AD-025 §17) can carry.
+MAX_TARGETS = 64
 #: New targets are called "Target 1", "Target 2", ... (first free number).
 NEW_TARGET_PREFIX = "Target"
 #: What MORPH_RENAME cycles through (the app has no text field yet; `rename_morph_target(name)`
@@ -79,12 +85,12 @@ _ZERO = (0.0, 0.0, 0.0)
 
 
 def morph_target_ids(mesh: Mesh) -> list:
-    """The mesh's morph targets: its vector point layers, in display order (in Phase 3 at most one)."""
+    """The mesh's morph targets: its vector point layers, in display order."""
     return [lid for lid in mesh.point_layer_ids() if mesh.point_layer_info(lid).kind is LayerKind.VECTOR]
 
 
 def morph_target(mesh: Mesh):
-    """The target the app works with (the first one), or None."""
+    """The mesh's first target, or None (the app works with its current one, `MorphSurfaceProvider.current_target`)."""
     ids = morph_target_ids(mesh)
     return ids[0] if ids else None
 
@@ -117,34 +123,12 @@ def clamp_weight(weight: int) -> int:
 
 
 def blend(b, d, weight: int) -> tuple:
-    """One evaluated position: `b` at 0 %, exactly `b + d` at 100 %, else `b + w·d` (exact where the
-    offset is zero, exactly mirrored for mirrored inputs)."""
-    if weight >= MAX_WEIGHT:
-        return (b[0] + d[0], b[1] + d[1], b[2] + d[2])
+    """One target's evaluated position: `b` at 0 %, exactly `b + d` at 100 %, else `b + w·d` (exact where
+    the offset is zero, exactly mirrored for mirrored inputs). Several targets: `morph_mix.mix_position`,
+    which equals this for one."""
     if weight <= MIN_WEIGHT:
         return tuple(b)
-    w = weight / 100.0
-    return (b[0] + w * d[0], b[1] + w * d[1], b[2] + w * d[2])
-
-
-def _rest_state(mesh: Mesh) -> dict:
-    """The mesh's state without its point layers (a derived mesh carries none)."""
-    state = mesh.export_state()
-    state["point_layers"] = None
-    return state
-
-
-def _topology_touched(change, mesh: Mesh) -> bool:
-    if change.edges or change.faces:
-        return True
-    return any(before is None or not mesh.is_valid_vertex(vid) for vid, before in change.vertices.items())
-
-
-def _offset_keys(change, lid) -> Optional[set]:
-    """The vertices whose offset in `lid` may have changed (None = the whole layer)."""
-    if lid in change.layer_whole:
-        return None
-    return set(change.layer_values.get(lid, ()))
+    return mix_position(b, [(1.0 if weight >= MAX_WEIGHT else weight / 100.0, d)])
 
 
 # -- keys (context `morph`, PROVISIONAL) -------------------------------------------------------------
@@ -176,6 +160,8 @@ MORPH_KEYS: tuple[MorphKey, ...] = (
     MorphKey(_key("minus", "shift"), commands.MORPH_WEIGHT_DOWN_FINE, f"Gewicht -{WEIGHT_FINE_STEP} %"),
     MorphKey(_key("plus", "alt"), commands.MORPH_WEIGHT_FULL, "Gewicht 100 %"),
     MorphKey(_key("minus", "alt"), commands.MORPH_WEIGHT_ZERO, "Gewicht 0 %"),
+    MorphKey(_key("n", "shift"), commands.MORPH_NEXT, "Nächstes Ziel (Tab, N und +/- wirken auf das aktuelle)"),
+    MorphKey(_key("n", "alt"), commands.MORPH_PREVIOUS, "Voriges Ziel"),
 )
 MORPH_COMMANDS = frozenset(entry.command for entry in MORPH_KEYS)
 #: Weight commands: view state (ignored under a held W/E/R, like the mode keys).
@@ -282,6 +268,16 @@ class TargetView:
     def target_alive(self) -> bool:
         return self.lid in self.base_mesh.point_layer_ids()
 
+    def retarget(self, lid) -> set:
+        """AD-025 Phase 4: the view shows another target of the same base (`b + d` of `lid`): same
+        topology and IDs, only positions change. Returns the moved view vertices."""
+        self._view_watch.take()
+        self._base_watch.take()
+        self.lid = lid
+        moved = self._rederive(self.base_mesh.all_vertex_ids())
+        self._view_watch.take()
+        return moved
+
     def translate(self, command) -> tuple:
         """(command to keep or None, refusal text or None, view vertices re-derived). See module."""
         change = self._view_watch.take()
@@ -367,120 +363,18 @@ def view_placement(base_obj, world_width: float):
 # -- display (H7 provider) -------------------------------------------------------------------------
 
 
-class _Surface:
-    """The evaluated surface of one base mesh at one weight, patched from the base's journal. Keeps
-    `(b, d)` of every point with an offset (`_bd`) and what it shows (`_shown`), so a weight step reads
-    no mesh and touches only the points with an offset."""
-
-    def __init__(self, base: Mesh) -> None:
-        self.base = base
-        self._watch = base.watch()
-        self.mesh: Optional[Mesh] = None
-        self.lid = None
-        self.weight: Optional[int] = None
-        self._bd: dict = {}
-        self._shown: dict = {}
-
-    def close(self) -> None:
-        self._watch.close()
-
-    def pending(self) -> bool:
-        return not self._watch.peek().is_empty()
-
-    def update(self, lid, weight: int) -> tuple[bool, set]:
-        """(rebuilt, changed vertices). Cost: O(stored offsets) for a weight step, O(touched) for an
-        edit or a topology change on the base (patched in place, `topology_changed`), O(V) only for a
-        rebuild (first show, another target)."""
-        base = self.base
-        change = self._watch.take()
-        self.topology_changed = False
-        if self.mesh is not None and lid == self.lid and _topology_touched(change, base):
-            # AD-025 Phase 5: a topology edit on the base (Loop Insert, Knife, Extrude, ...) reaches the
-            # surface as the base's own changed elements, applied in place: the surface's RenderMesh
-            # follows through its journal (H7 `surface_topology_changed`) instead of a full rebuild
-            # (gollum_20k: ~3 s per edit before, §16). Positions of the touched points follow below.
-            self.mesh.apply_delta(_topology_delta(change, base, self.mesh))
-            self.topology_changed = True
-        elif self.mesh is None or lid != self.lid:
-            state = _rest_state(base)
-            vertices = state["vertices"]
-            self._bd, self._shown = {}, {}
-            for vid, d in base.layer_items(lid):
-                b = tuple(vertices[int(vid)])
-                p = blend(b, d, weight)
-                self._bd[vid] = (b, d)
-                self._shown[vid] = p
-                vertices[int(vid)] = list(p)
-            self.mesh = Mesh.from_state(state)
-            self.lid, self.weight = lid, weight
-            return True, set()
-        keys = _offset_keys(change, lid)
-        if keys is None:
-            keys = set(self._bd) | {vid for vid, _ in base.layer_items(lid)}
-        candidates = set(change.vertices) | keys
-        bd, shown = self._bd, self._shown
-        for vid in candidates:  # refresh (b, d) where the journal says something changed
-            if not base.is_valid_vertex(vid):
-                bd.pop(vid, None)
-                shown.pop(vid, None)
-                continue
-            d = base.layer_value(lid, vid)
-            if d == _ZERO:
-                bd.pop(vid, None)
-            else:
-                bd[vid] = (tuple(base.vertex_position(vid)), d)
-        if weight != self.weight:
-            candidates |= set(bd)
-            self.weight = weight
-        surface, changed = self.mesh, set()
-        for vid in candidates:
-            entry = bd.get(vid)
-            if entry is None:
-                if not base.is_valid_vertex(vid):
-                    continue
-                p = tuple(base.vertex_position(vid))
-            else:
-                p = blend(entry[0], entry[1], weight)
-            if shown.get(vid) != p:
-                shown[vid] = p
-                if entry is None:
-                    shown.pop(vid)
-                    if tuple(surface.vertex_position(vid)) == p:
-                        continue
-                surface.set_vertex_position(vid, p)
-                changed.add(vid)
-        return False, changed
-
-
-def _topology_delta(change, base: Mesh, surface: Mesh) -> MeshDelta:
-    """The surface's records of the elements `change` names (before) against the base's (after), read
-    through the public queries. Vertices only where one appears or goes (a new one at the base's rest
-    position): the positions of kept vertices are the caller's (they carry the blended offsets)."""
-    def vertex(mesh, v):
-        if not mesh.is_valid_vertex(v):
-            return None
-        return tuple(surface.vertex_position(v)) if mesh is base and surface.is_valid_vertex(v) else tuple(mesh.vertex_position(v))
-
-    def edge(mesh, e):
-        return (*mesh.edge_vertices(e), tuple(mesh.edge_faces(e))) if mesh.is_valid_edge(e) else None
-
-    def face(mesh, f):
-        return tuple(mesh.face_vertices(f)) if mesh.is_valid_face(f) else None
-
-    pairs = []
-    for keys, read in ((change.vertices, vertex), (change.edges, edge), (change.faces, face)):
-        pairs.append({k: (read(surface, k), read(base, k)) for k in keys if read(surface, k) != read(base, k)})
-    return MeshDelta(*pairs)
-
-
 class MorphSurfaceProvider:
     """H7 provider (`sync(mesh, selection) -> moved`, `surface_mesh`, `dirty`, H7-E `entry_surfaces` /
-    `entry_moved`): the mix of every object whose weight is above 0. Never writes a scene mesh."""
+    `entry_moved`): the mix `b + Σ wᵢ·dᵢ` (`morph_mix`) of every object with a target above 0 %. Never
+    writes a scene mesh. Weights and the current target are view state per object (F-11): no Undo
+    step, not saved; a weight belongs to a target and goes with it."""
 
     def __init__(self, scene_of: Callable) -> None:
         self._scene_of = scene_of
-        #: ObjectId -> weight in whole percent (view state, F-11)
+        #: ObjectId -> {LayerId: weight in whole percent} (above 0 only; view state, F-11)
         self.weights: dict = {}
+        #: ObjectId -> the current target (AD-025 Phase 4): the one Tab, N and +/- act on
+        self.current: dict = {}
         self.surface_mesh: Optional[Mesh] = None
         self.entry_surfaces: dict = {}
         self.entry_moved: dict = {}
@@ -493,6 +387,8 @@ class MorphSurfaceProvider:
         #: H7 (viewport): the wire is drawn at the mix, not at the rest shape (Manu 2026-10-27: "das Wireframe geht
         #: nicht mit"); selection, hover and picking stay on the rest shape (Morph Lab 6a "hilft").
         self.wire_follows_surface = True
+        #: AD-025 Phase 4 (stage chain): show the edit object's mix even at 0 % while a later stage reads it
+        self.keep_edit_surface = False
         self.last_update_ms: Optional[float] = None
         self.last_changed = 0
 
@@ -502,34 +398,74 @@ class MorphSurfaceProvider:
             surface.close()
         self._surfaces.clear()
         self.weights.clear()
+        self.current.clear()
         self.surface_mesh = None
         self.entry_surfaces, self.entry_moved = {}, {}
         self._dirty = True
 
-    def weight(self, object_id) -> int:
-        return self.weights.get(object_id, MIN_WEIGHT)
+    def _mesh_of(self, object_id):
+        obj = self._scene_of().objects.get(object_id)
+        return None if obj is None else obj.mesh
 
-    def set_weight(self, object_id, weight: int) -> int:
+    def current_target(self, object_id):
+        """The object's current target: the one set (while it exists), else its first; None = no target."""
+        mesh = self._mesh_of(object_id)
+        if mesh is None:
+            return None
+        ids = morph_target_ids(mesh)
+        lid = self.current.get(object_id)
+        if lid in ids:
+            return lid
+        return ids[0] if ids else None
+
+    def set_current(self, object_id, lid) -> None:
+        self.current[object_id] = lid
+
+    def weight(self, object_id, lid=None) -> int:
+        """The weight of `lid` (default: the current target) in whole percent."""
+        lid = self.current_target(object_id) if lid is None else lid
+        return self.weights.get(object_id, {}).get(lid, MIN_WEIGHT)
+
+    def object_weights(self, object_id) -> dict:
+        """{LayerId: weight} of the object's targets above 0 % (only targets that exist)."""
+        mesh = self._mesh_of(object_id)
+        if mesh is None:
+            return {}
+        alive = set(morph_target_ids(mesh))
+        return {lid: w for lid, w in self.weights.get(object_id, {}).items() if lid in alive}
+
+    def set_weight(self, object_id, weight: int, lid=None) -> int:
+        lid = self.current_target(object_id) if lid is None else lid
         weight = clamp_weight(weight)
-        if weight != self.weight(object_id):
+        if lid is None:
+            return weight
+        if weight != self.weight(object_id, lid):
+            per = self.weights.setdefault(object_id, {})
             if weight == MIN_WEIGHT:
-                self.weights.pop(object_id, None)
+                per.pop(lid, None)
+                if not per:
+                    self.weights.pop(object_id, None)
             else:
-                self.weights[object_id] = weight
+                per[lid] = weight
             self._dirty = True
         return weight
 
-    def shown(self) -> dict:
-        """ObjectId -> (object, target, weight) of what is to be shown now."""
+    def shown(self, edit_mesh=None) -> dict:
+        """ObjectId -> (object, {LayerId: weight}) of what is to be shown now (`edit_mesh`: kept at 0 %
+        while a later stage of the chain reads its mix, `keep_edit_surface`)."""
         scene = self._scene_of()
         out = {}
-        for oid, weight in self.weights.items():
+        for oid in self.weights:
             obj = scene.objects.get(oid)
-            if obj is None or weight <= MIN_WEIGHT:
+            if obj is None:
                 continue
-            lid = morph_target(obj.mesh)
-            if lid is not None:
-                out[oid] = (obj, lid, weight)
+            weights = self.object_weights(oid)
+            if weights:
+                out[oid] = (obj, weights)
+        if self.keep_edit_surface and edit_mesh is not None:
+            for oid, obj in scene.objects.items():
+                if obj.mesh is edit_mesh and oid not in out and morph_target_ids(obj.mesh):
+                    out[oid] = (obj, {})
         return out
 
     def wants_surface(self) -> bool:
@@ -546,24 +482,24 @@ class MorphSurfaceProvider:
     def sync(self, mesh, selection) -> set:
         started = time.perf_counter()
         self._dirty = False
-        shown = self.shown()
+        shown = self.shown(mesh)
         scene = self._scene_of()
         for oid, surface in list(self._surfaces.items()):
             # Kept at 0 % (a tap back to the last weight costs a patch, not a rebuild); dropped with
-            # its object, its mesh or its target.
+            # its object, its mesh or its last target.
             obj = scene.objects.get(oid)
-            if obj is None or obj.mesh is not surface.base or morph_target(obj.mesh) is None:
+            if obj is None or obj.mesh is not surface.base or not morph_target_ids(obj.mesh):
                 self._surfaces.pop(oid).close()
         self.surface_mesh = None
         self.entry_surfaces, self.entry_moved = {}, {}
         self.surface_topology_changed, self.entry_topology_changed = False, set()
         moved_edit: set = set()
         changed_total = 0
-        for oid, (obj, lid, weight) in shown.items():
+        for oid, (obj, weights) in shown.items():
             surface = self._surfaces.get(oid)
             if surface is None:
-                surface = self._surfaces[oid] = _Surface(obj.mesh)
-            rebuilt, changed = surface.update(lid, weight)
+                surface = self._surfaces[oid] = MixSurface(obj.mesh)
+            rebuilt, changed = surface.update(weights)
             changed_total += len(changed)
             if obj.mesh is mesh:
                 self.surface_mesh = surface.mesh
@@ -581,15 +517,18 @@ class MorphSurfaceProvider:
 
 
 class MorphDisplay:
-    """The provider and its claim on the viewport's single H7 slot (shared with the SubD preview,
-    `mirai.subdivision.preview`): taken while something is to be shown and the slot is free, given
-    back at 0 %. A slot held by another host is reported once (`blocked`)."""
+    """The provider and its stage in the viewport's surface chain (`mirai.surface_chain`, AD-025 Phase 4:
+    morph -> SubD, H5b). Without a chain (a host that never set one up) it claims the single H7 slot
+    as in Phase 3: taken while something is to be shown and the slot is free, given back at 0 %; a slot
+    held by another host is reported once (`blocked`)."""
 
     def __init__(self, scene_of: Callable, set_status: Callable[[str], None]) -> None:
         self.provider = MorphSurfaceProvider(scene_of)
         self._set_status = set_status
         self.viewport = None
         self.blocked = False
+        #: the app's `SurfaceChain` (set by `Application`); None = the Phase 3 single-slot behaviour
+        self.chain = None
 
     def attach(self, viewport) -> None:
         self.viewport = viewport
@@ -597,20 +536,32 @@ class MorphDisplay:
         self.blocked = False
 
     def owns_slot(self) -> bool:
-        return self.viewport is not None and self.viewport.surface_provider is self.provider
+        if self.viewport is None:
+            return False
+        if self.chain is not None:
+            return self.chain.holds(self.provider)
+        return self.viewport.surface_provider is self.provider
 
     def refresh(self) -> None:
         vp = self.viewport
         if vp is None:
             return
-        wants = self.provider.wants_surface()
-        if wants and vp.surface_provider is None:
+        provider = self.provider
+        # a later stage (SubD) reads the edit object's mix: keep it at 0 % too, so a weight step patches
+        # SubD's positions instead of switching its input mesh (a rebuild)
+        provider.keep_edit_surface = self.chain is not None and self.chain.later_stage_wanted(provider)
+        wants = provider.wants_surface() or bool(
+            provider.keep_edit_surface and vp.mesh is not None and morph_target_ids(vp.mesh)
+        )
+        if self.chain is not None:
+            self.chain.want(self.provider, wants)
+        elif wants and vp.surface_provider is None:
             vp.set_surface_provider(self.provider)
         elif not wants and self.owns_slot():
             vp.set_surface_provider(None)
         blocked = wants and not self.owns_slot()
         if blocked and not self.blocked:
-            self._set_status("Morph: the mix is not shown while the SubD preview is on (morph + SubD: Phase 4)")
+            self._set_status("Morph: the mix is not shown while another host holds the viewport's surface")
         self.blocked = blocked
 
 

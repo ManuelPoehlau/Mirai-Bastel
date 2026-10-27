@@ -8,14 +8,17 @@ persistent target in the app: lifecycle, the editing view beside the base (the �
 view state, the mix display, Apply transform carrying the targets; implementation note in §15. **IMPLEMENTED (Phase 5,
 2026-10-27)** — topology edits while a mesh has targets: Split, Edge Connect, Loop Insert, Collapse, Extrude, the Knife
 (`split_face(…, origins=…)`, the second small Core change) and mirror copy are declared, plain and symmetric; implementation
-note in §16. Phases 4, 6 and 7 open.
+note in §16. **IMPLEMENTED (Phase 4, 2026-10-27)** — several targets per mesh, the additive mix with its drift guard,
+the stage chain morph → SubD (H5b) and packed layer storage (the Core internals); implementation note in §17. Phases 6
+and 7 open.
 **Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). **Go for the Phase 5
 Core change (`split_face(…, origins=…)`): Manu, 2026-10-27** (given with the Phase 5 assignment). **H1–H5 and C-1 decided: Manu, 2026-10-27**
 ("ok ich gebe H1-H5 und C1 ein ja") — every recommended default of §10 / Kurzfassung holds; nothing is `PROVISIONAL` in §10
 any more.
 **Gate:** [ROADMAP ARCH-02](ROADMAP.md#arch-02--topology-identity--provenance--remapping); audit §G Phase 1.
-**Mode (M5):** Discovery → decision preparation; Phases 2, 3 and 5 implemented (§14–§16). Next: Phase 4 or Phase 6 (§16,
-"Next").
+**Mode (M5):** Discovery → decision preparation; Phases 2, 3, 4 and 5 implemented (§14–§17). Next: Phase 6 (§17.5).
+**Go for the Phase 4 Core internals (packed storage behind the unchanged API): Manu, 2026-10-27** (given with the Phase 4
+assignment).
 **Input:** [mesh architecture audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) (§C–§H and
 the Phase 0 addendum). Every claim taken from it was re-verified against the code at `a53c14f` (Phase 0 merged); where
 this AD differs from the audit, it says so (§1, last paragraph).
@@ -221,7 +224,8 @@ equal to the kind's default is never stored, so layer state compares as dicts an
 values are three finite floats; **L4** names unique, `LayerId`s never reused, a layer's `kind` never changes; **L5** no
 layers ⇔ `export_state()["point_layers"] is None`.
 
-**Storage:** one sparse dict per layer, Core-internal. Measured [C] [R] (dict of tuples): one layer at 15 % / 100 %
+**Storage:** one sparse dict per layer, Core-internal (Phase 2–5); **packed since Phase 4** (§17: float64 arrays over one
+append-only slot map per mesh, behind the same API). Measured [C] [R] (dict of tuples): one layer at 15 % / 100 %
 occupancy = 0.57 / 3.96–4.09 MiB at 20k, 2.14–2.26 / 16.2–16.4 MiB at 87.5k; 50 sparse targets at 20k ≈ 29 MiB, 50 dense
 ≈ 200 MiB. Packed storage (an array per layer plus a slot map) is an internal change behind the same API (CORE_V1_FREEZE
 §7: internals change when profiling justifies it), decided in Phase 4 against its budget (50 targets ≤ 50 MB at 20k, audit
@@ -384,7 +388,7 @@ is measured too slow. Corner-domain data (UVs) would use the same primitive hook
   transform wiring (one `map_vector_layers` call per baked object, F-7) — decided here, so `Strg+A` works with targets from
   the first app version. The editing view needs its own Undo command that writes layer values (a gesture on the view is no
   position write; F-8).
-- **Phase 4** — multiple targets (audit Phase 4); the packed-storage decision belongs here.
+- **Phase 4** — multiple targets (audit Phase 4); the packed-storage decision belongs here (**built 2026-10-27, §17**).
 - **Phase 5 — topology edits with targets** (**built 2026-10-27, §16**), one operation at a time with its acceptance test and gate lift: Split /
   Edge Connect / Loop Insert (only the gate entry — the edge blend exists), Collapse (gate entry), Extrude (`origin=`),
   the Knife (`split_face(origins=…)` as the second small Core change, origins from the hit triangle, the symmetric replay
@@ -457,16 +461,16 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
 
 - **Skinning data model:** influence keys, maximum influences, normalization tolerance, bind pose, where bindings live
   beyond AD-021 §4.9 — and therefore the final shape of the weights kind.
-- **Evaluation location and chain:** CPU or GPU, the stage chain that replaces the single H7 slot, SubD on evaluated
-  positions, normals of the evaluated surface.
-- **Multi-target evaluation rules:** combination, correctives, normalization, clamping, weight ranges, the drift guard
-  of incremental sums.
+- ~~**Evaluation location and chain**~~ — decided with Phase 4 (§17.1): CPU (`morph_mix`), the stage chain above H7,
+  SubD on the mixed cage, normals from the evaluated mesh. Still open: a GPU path (its trigger in §17.1).
+- ~~**Multi-target evaluation rules**~~ — decided with Phase 4 (§17.1): additive, 0–100 %, no clamping or normalization,
+  drift guard by construction. Still open: correctives / combination shapes, weights beyond 0–100 %.
 - **Transfer between different meshes:** retopology, import, linking a mirror copy's targets to its source's, morph
   export (OBJ / glTF).
 - ~~**Editing-view mechanics**~~ — decided with Phase 3 (§15). Still open: editing on a deformed pose; symmetric target
   editing beyond what the app's symmetric tools already do on the view (they mirror positions, so offsets come out mirrored).
 - **Weights as document state / animation** (`Scene.morph_targets` stays reserved, `null`).
-- A merge rule other than the average (H3 alternative); face- and corner-domain layers; packed storage (Phase 4).
+- A merge rule other than the average (H3 alternative); face- and corner-domain layers. (Packed storage: built, §17.)
 
 ## 12. Risks and their guards
 
@@ -779,6 +783,164 @@ Manu's practical test (Kurzfassung, "Praxistest Phase 5"); the reference-PC run 
 (≈ 3 s with and without a target, §16.3) for the viewport-performance list. **Next:** Phase 4 (several targets, packed storage, stage chain, morph + SubD)
 or Phase 6 (skinning; the weights kind gets the Phase 5 rules for free).
 
+## 17. Phase 4 implementation note (2026-10-27)
+
+### 17.1 Decisions (the §11 points "evaluation location and chain" and "multi-target evaluation rules"; `PROVISIONAL` where marked)
+
+- **Combination rule.** The additive mix `p = b + Σᵢ (wᵢ/100)·dᵢ` over the targets above 0 %; weights stay whole percent
+  0–100 (the Phase 3 range; nothing clamps the sum, nothing normalizes; no correctives — out of scope). The sum runs in
+  ascending `LayerId` order (fixed for a layer's life, unlike the display order, so a reorder never changes a value),
+  the first term as it is: one target gives the Phase 3 values bit for bit (`b + d` at 100 %, `b + w·d` below).
+- **Drift guard by construction** (audit §G "≤ 1e-6"): no point is updated incrementally. Every point whose inputs may
+  have changed — the points of a target whose weight changed (sparse: only that target's points), the points the base's
+  journal names, every point of a target rewritten whole — is recomputed from `b`, the weights and the offsets. The shown
+  surface is a pure function of its inputs: bit-identical whatever the order or number of weight steps (tested).
+- **Evaluation location: CPU, in `src/mirai/morph_mix.py`** (`MixSurface`, one evaluated `core.Mesh` per base: same IDs
+  and topology, positions = the mix, patched in place from the base's journal — Phase 3/5's `_Surface` generalized). A
+  shown target's offsets are cached as a dict while its weight is above 0 (memory bounded by what is dialled in). Normals
+  of the evaluated surface stay the viewport's, computed from that mesh (exact, as in Phase 3).
+- **Stage chain instead of the single H7 slot: `src/mirai/surface_chain.py`, above the viewport** (the viewport and the
+  H7 contract are unchanged — an additive layer, easy to reverse). Stages are ordinary H7 providers in a fixed order,
+  morph then SubD; a stage's input is the edit mesh or the nearest earlier stage's `surface_mesh`, so SubD's stencils run
+  on the mixed cage (H5b). One wanted stage sits in the slot itself (every Phase 3 and SubD behaviour unchanged without
+  the other); two sit in it as a `ChainedSurface` that forwards the output stage's H7 attributes and every stage's H7-E
+  entry surfaces. A foreign host (the Morph Lab) keeps the slot. While SubD is on, the mix of an edit mesh with targets
+  is kept even at 0 % (`keep_edit_surface`), so a weight step patches SubD's positions instead of switching its input.
+  Skinning (Phase 6) slots in between as its own stage (audit §E: morph → skin → SubD). Picking, selection, hover and the
+  tools stay on the rest-shape cage (Morph Lab 6a, §15); the SubD cage lines and the morph wire follow the mix.
+- **No GPU path in this phase** (the assignment's condition "if the CPU path cannot meet fluid on head and body with 10
+  targets"): in the container every head row and every body row with sparse targets is far under the bar; the only rows
+  at the bar step a target that moves every body point — with one target as with ten (p95 16.6 / 16.7 ms [C]), Phase 3's
+  single-target cost, i.e. the viewport's per-vertex patch, not the multi-target mix. That row is probably over the bar
+  on the reference PC, which decides it (§17.3); this is a deliberate agent decision against building the GPU path now
+  (`PROVISIONAL`, for Manu / a review to overturn). A vertex-shader blend would not carry the two other consumers of the mix: SubD needs
+  the mixed cage on the CPU (stencils), and the wire and the Production shader's flat shading read positions on the CPU
+  (`edge_segments`, the face-data rows with their corner positions), so the blend would have to be duplicated into three
+  paths with approximate normals. Alternatives kept for the trigger (a reference-PC row over the bar): (a) GPU blend of
+  the morph-only surface (offsets in a buffer texture, weights as uniforms, glTF-style normal deltas; CPU `morph_mix` as
+  the reference); (b) a bulk path in `RenderMesh._sync_geometry` for a large moved share (the shared bottleneck of every
+  whole-region move); (c) SubD stencils on the GPU. Built instead (the shared bottleneck, §15.3): the SubD provider
+  reports only the derived vertices that moved after a full stencil pass (a regional move no longer patches the whole
+  surface; head 15 % + SubD 56 → 22 ms p50 [C]), `update_vertex_normals` without a tuple per face (same arithmetic), and
+  the inlined mix loop.
+- **Packed storage (the Core internals, go given):** built, because the sparse dicts miss the budget for dense targets
+  (50 dense at 20k: 204 MiB, §17.3). `src/core/layer_storage.py`: one append-only `LayerSlots` map per mesh (`VertexId` →
+  slot, never freed or reused, so a value array held by a record or a delta keeps its meaning without a journal of its
+  own) and per layer a `PackedValues` (three float64 per slot + a presence byte, a `MutableMapping` with dict semantics,
+  values bit-exact). Behind the unchanged API; every existing layer test and the T-1 / T-2 oracles unchanged and green;
+  CORE_V1_FREEZE §7.1 entry of the same date.
+- **App** (names, keys, texts `PROVISIONAL`): `MAX_TARGETS = 64` (above the audit's 20–50); a **current target** per object
+  (view state, not saved: the one Tab, `N`, `+`/`-`, rename and delete act on), a new target becomes current, a deleted one
+  hands over to the next in the list; `Shift+N` / `Alt+N` next / previous (free in every app context, in the window keys
+  and the Morph Lab's — tested); with the editing view open the switch re-derives the view as `b + dᵢ` of the new target
+  (`TargetView.retarget`, positions only). A weight per (object, target), view state; a deleted target's weight goes with
+  it and does not come back on Undo. HUD: the "Morph" row is the current target (with `i/n`), a "Targets" row lists every
+  target with its weight, the current one in brackets (from two targets; a window of eight around the current one).
+  `M` sends only the current target (the Lab knows one). Save / load, Apply transform, mirror copy and every Phase 5 tool
+  already handled any number of layers; the tests now run them with three app targets dialled in.
+
+### 17.2 What was built
+
+`src/core/layer_storage.py` (new), `src/core/mesh.py` (packed values, `PackedValues.mapped` for `map_vector_layers`,
+`layer_storage_bytes`); `src/mirai/morph_mix.py` (new: the rule, `evaluate` as the reference, `MixSurface`);
+`src/mirai/surface_chain.py` (new); `src/mirai/morph_targets.py` (provider with weights and the current target per object,
+the switch keys, `TargetView.retarget`, `MorphDisplay` as a chain stage); `src/mirai/subdivision/preview.py` (the chain hook,
+the changed-only report); `src/mirai/application.py` (lifecycle on the current target, `step_morph_target`, the chain,
+`morph_targets_text`); `src/hud.py` (the "Targets" row); `src/morph_bridge.py` (the current target);
+`src/viewport/derived.py` (vertex normals); `experiments/drag_cost/probe_morph_gl.py` (`--only-phase4`, `--memory`).
+
+### 17.3 Measured [C]
+
+Container (Linux, Python 3.13.17, Xeon 2.1 GHz, Mesa llvmpipe); container timings vary up to ~2× between runs; the reference
+PC runs Python ≈ 2× slower (REFERENCE_HARDWARE §2). **Lines for the reference PC:** `python
+experiments/drag_cost/probe_morph_gl.py --only-phase4` (weight steps) and `python experiments/drag_cost/probe_morph_gl.py
+--memory` (memory, no window).
+
+**Memory and journal** (`--memory`; traced memory of the layer values after filling 10 / 50 targets with offsets on 15 % —
+each target its own patch — or 100 % of the points; "write" = one dense target rewritten per element under one recording;
+"bulk" = `map_vector_layers` of every target under one recording plus five watches, the Apply-transform write; timings
+untraced):
+
+| Case | dicts (before): held · write · bulk | packed (Phase 4): held · write · bulk | journal of the bulk write |
+|---|---|---|---|
+| gollum_20k, 10 × 15 % | 5.7 MiB · 27 ms · 25 ms | 4.2 MiB · 66 ms · 58 ms | 10 whole-layer records, 0 per element; Undo < 0.1 ms |
+| gollum_20k, 10 × 100 % | 40.9 MiB · 25 ms · 216 ms | 7.5 MiB · 64 ms · 93 ms | 10 / 0 |
+| gollum_20k, 50 × 15 % | 28.3 MiB · 33 ms · 239 ms | 25.7 MiB · 60 ms · 466 ms | 50 / 0 |
+| **gollum_20k, 50 × 100 %** | **204.4 MiB** · 30 ms · 752 ms | **29.7 MiB** · 67 ms · 532 ms | 50 / 0; kept 27.7 MiB (the old buffers) |
+| gollum, 10 × 15 % | 22.7 MiB · 103 ms · 126 ms | 18.0 MiB · 287 ms · 271 ms | 10 / 0 |
+| gollum, 10 × 100 % | 163.5 MiB · 203 ms · 1.18 s | 30.1 MiB · 384 ms · 0.47 s | 10 / 0 |
+| gollum, 50 × 15 % | 113.3 MiB · 131 ms · 0.92 s | 101.3 MiB · 478 ms · 1.91 s | 50 / 0 |
+| gollum, 50 × 100 % | 817.5 MiB · 155 ms · 4.18 s | 118.6 MiB · 515 ms · 2.85 s | 50 / 0 |
+
+**Verdict:** the budget (50 targets ≤ 50 MB at 20k) holds for sparse and dense targets with packed storage (25.7 / 29.7
+MiB); the dicts missed it for dense ones (204 MiB). A packed layer costs 25 bytes per slot whatever its occupancy, and
+slots are shared, so 50 sparse targets on different regions cost about as much as 50 dense ones (a sparse layer below
+≈ 13 % occupancy would be smaller as a dict — not worth a second representation now). The price is per-element access:
+≈ 0.3 µs per read instead of ≈ 0.04 µs (a whole dense target written point by point 2–3× slower; the editing view's
+commit writes only the touched points, 36 in §15.3); bulk maps of dense layers got faster (whole buffers), of sparse
+layers slower (every slot is visited). The journal stays O(layers) for bulk writes (whole-layer records, no per-element
+records), Undo is a buffer swap.
+
+**Weight step** (`--only-phase4`, 200 steps per row; the hold-N step of the current target, every other target at 50 %;
+p50 / p95 ms; the bar 16.7 ms p95 applies to head and body on the reference PC):
+
+| Asset | targets × offsets | no SubD | + SubD level 2 (the chain) |
+|---|---|---|---|
+| head_basemesh (326 V) | 1 × 15 % | 0.88 / 1.27 | 21.4 / 31.1 |
+| | 1 × 100 % | 2.74 / 4.29 | 55.3 / 89.1 |
+| | 10 × 15 % | 0.83 / 1.13 | 21.2 / 31.7 |
+| | 10 × 100 % | 3.48 / 5.29 | 62.3 / 99.9 |
+| Man_With_Shoes (928 V) | 1 × 15 % | 1.58 / 2.41 | 50.5 / 74.9 |
+| | 1 × 100 % | 9.16 / 16.6 | 185 / 260 |
+| | 10 × 15 % | 2.29 / 3.14 | 66.2 / 98.8 |
+| | 10 × 100 % | 11.0 / 16.7 | 186 / 260 |
+| gollum_20k (21,875 V) | 1 × 15 % | 36.1 / 55.2 | SubD refuses (> 25,000 faces at level 1) |
+| | 1 × 100 % | 252 / 342 | — |
+| | 10 × 15 % | 44.6 / 67.1 | — |
+| | 10 × 100 % | 376 / 450 | — |
+
+**Reading.** Ten targets cost about what one costs: a step touches only the stepped target's points, the other targets
+add a dict lookup per point and term. Head is far under the bar in every row (≤ 5.3 ms p95 in the container, ≈ 11 ms
+expected on the reference PC). Body with sparse targets likewise (≤ 3.2 ms); stepping a target that moves every body
+point is at the bar in the container with one or ten targets (p95 16.6 / 16.7 ms) — the same cost Phase 3 measured for
+one dense target (§15.3: 7.3 / 10.4 ms; this run is noisier) — and therefore probably over it on the reference PC: the
+cost is the viewport's per-vertex patch of 928 moved points, not the mix (profiled: the evaluation ≈ ⅓ before the
+inlined loop). gollum_20k stays "usable, not fluid" (H5c) with sparse targets and slow with dense ones. **Morph + SubD**
+costs what SubD costs for a regional move of the cage: the viewport patches every derived vertex the move reaches (head
+level 2: 5,184 faces; body level 2: 14,816) — before the changed-only report every step patched the whole derived surface
+(head 15 %: 56 → 21 ms p50). It is not fluid on body; whether head is (21 / 31 ms in the container) only the reference PC
+can say. The remedies are the alternatives of §17.1; their trigger is the reference-PC run.
+
+
+### 17.4 Tests
+
+`tests/test_morph_multi.py` (32): keys free in every context, the window and the Lab; lifecycle of three targets with the
+current target and exact Undo / Redo; the cap; weights per target and tap `N` per target; save → load bit-exact with four
+reordered targets (export and JSON text); the editing view per target (= `b + dᵢ`, switching in the view, a gesture writes
+only the current target, Undo); the randomized oracle (260 steps: weight steps on random targets, base moves, offset
+writes, bulk map, layer add / remove / reorder, deletions, `split_edge`, `split_face(…, origins=…)`, Collapse, Undo /
+Redo — bit-exact against `evaluate`, ≤ 1e-12 against an independent `math.fsum`, a fresh evaluation bit-identical, rebuilt
+only when the mesh lost every target); order independence (six permutations after 150-step random walks, bit-identical);
+a weight step touches only its target's points; one target = Phase 3 bit for bit; morph + SubD = SubD of the mixed cage
+from scratch (≤ 1e-12, through weight steps without a SubD rebuild, a base edit, a topology edit, Undo / Redo), the slot
+rules (SubD alone, mix alone, foreign host), SubD on the editing view with the mixed base beside it; every Phase 5
+declared operation (Split, Edge Connect, Loop Insert, Collapse, Extrude; plain and symmetric) and the Knife with three app
+targets dialled in — rule, shown mix = definition before, after, after Undo / Redo; Apply transform and mirror copy with
+three targets (world mix within 1e-12, the copy's mix mirrored bit for bit); HUD rows; the bridge.
+`tests/test_layer_storage.py` (5, the storage itself). Two Phase 3 tests changed with the decided behaviour (one target per
+mesh, the slot taken by whoever came first). **Mutation checks by hand** — each caught: the sum in display order, a target
+going to 0 % not recomputing its points, offset writes not recomputing their points, a whole-layer rewrite not reloading
+the cache, the chain feeding the edit mesh to SubD, the view not following a target switch, a deleted slot keeping its
+floats, a copy sharing the buffer.
+
+### 17.5 Open / next
+
+Manu's practical test (Kurzfassung, "Praxistest Phase 4"); the reference-PC run of `--only-phase4` and `--memory` (it
+decides whether the GPU / bulk-patch alternatives of §17.1 are needed); morph + SubD is as fluid as the SubD preview's own
+regional moves (the per-vertex viewport patch of the derived surface). **Next:** Phase 6 (skinning; the weights kind, a
+stage between morph and SubD). The chain and the evaluation rule are additive and reversible (no viewport change), so an
+independent review is not needed for them.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -899,3 +1061,60 @@ automatischen Tests laufen mit drei; (b) in stark gebogenen Stellen kann ein neu
 | Spiegelkopie mit Ziel (7) | | |
 | Undo / Speichern / Laden (8) | | |
 | Annahmen (a)–(c) | | |
+
+### Praxistest Phase 4: mehrere Morph-Ziele (ca. 20–30 Minuten)
+
+**Phase 4 ist gebaut (2026-10-27):** ein Mesh kann jetzt viele Ziele haben. Eines davon ist das **aktuelle** — darauf
+wirken `Tab` (daneben formen), `N` / `+` / `-` (Gewicht), Umbenennen und Löschen. Jedes Ziel hat sein eigenes Gewicht;
+die Basis zeigt die Summe aller eingestellten Ziele (Ruheform + Gewicht₁ × Abstand₁ + Gewicht₂ × Abstand₂ + …). Mit der
+SubD-Vorschau (`V`) siehst du jetzt die geglättete Mischung — Morph und SubD zusammen.
+
+**Annahmen zum Korrigieren in einem Satz** (alles `PROVISIONAL`):
+(a) Tasten: `Shift+N` nächstes Ziel, `Alt+N` voriges; ein neues Ziel (`Strg+N`) wird sofort das aktuelle.
+(b) HUD: Zeile „Morph“ = das aktuelle Ziel (Name · Gewicht · Basis/Arbeitskopie · Nummer, z. B. `2/3`); Zeile „Targets“
+    = alle Ziele mit ihrem Gewicht, das aktuelle in `[Klammern]` (erst ab zwei Zielen; ab neun ein Ausschnitt um das aktuelle).
+(c) Die Mischung ist eine einfache Summe: zwei Ziele auf denselben Punkten bei 100 % addieren sich; nichts wird begrenzt
+    oder normiert. Gewichte sind reine Ansicht (nicht gespeichert); löschst du ein Ziel, ist sein Gewicht weg — `Strg+Z`
+    bringt das Ziel zurück, aber bei 0 %.
+(d) Morph + SubD: die glatte Fläche und die SubD-Käfiglinien folgen der Mischung; Auswahl, Hover und die Werkzeuge bleiben
+    auf der Ruheform (wie bisher). Steht SubD an, hält die App die Mischung auch bei 0 % bereit, damit Gewichtsschritte
+    nicht jedes Mal die SubD-Fläche neu aufbauen.
+(e) `M` (Morph Lab) schickt nur das aktuelle Ziel (das Lab kennt eines).
+(f) Höchstens 64 Ziele pro Mesh.
+
+`python src/main.py` (Start: Head-Basemesh)
+
+1. **Drei Ziele anlegen.** `Strg+N`, `Strg+Shift+N` (→ „Smile“); `Strg+N`, `Strg+Shift+N` (→ „Blink“); `Strg+N`,
+   `Strg+Shift+N` (→ „Jaw open“). Die HUD-Zeile „Targets“ zeigt alle drei, das aktuelle in Klammern. `Shift+N` / `Alt+N`
+   wechseln; `Strg+Z` / `Strg+Y` gehen Schritt für Schritt (Anlegen und Umbenennen sind je ein Schritt).
+2. **Jedes Ziel daneben formen.** Ziel wählen (`Shift+N`), Punkte am Mund wählen, `Tab`, ein Lächeln formen (gern mit Soft
+   `O`). **In der Arbeitskopie bleiben** und `Shift+N` drücken: die Kopie zeigt jetzt das nächste Ziel („Blink“) — ein Auge
+   halb schließen; noch einmal `Shift+N` („Jaw open“) — den Mund öffnen. `Tab` zurück zur Basis. Jede Geste ist ein
+   `Strg+Z` und ändert nur das Ziel, das die Kopie gerade zeigt.
+3. **Mischen.** An der Basis: „Smile“ wählen, `N` halten + Maus = 60 %; `Shift+N` → „Blink“ 100 %; „Jaw open“ 30 %. Die
+   Basis zeigt alle drei zusammen; `N` antippen schaltet nur das aktuelle Ziel aus und wieder ein. Fühlt sich das
+   Ziehen flüssig an, auch mit drei eingestellten Zielen?
+4. **Morph + SubD.** `V` (glatte Fläche + Käfig), dann wieder Gewichte ziehen: die glatte Fläche zeigt die Mischung. `V`
+   weiter (Isolinien), `Strg+3` (Stufe 3). Auch `Tab` mit SubD: die Arbeitskopie wird geglättet, die Basis daneben zeigt
+   die Mischung. Ist das das Bild, das du erwartet hast? Fühlt sich das Ziehen mit SubD noch brauchbar an?
+5. **Topologie mit mehreren Zielen.** Mit eingestellter Mischung an der Basis: `2`, eine Kante quer zum Augenloop, `I`
+   (Loop Insert); Knife (`C`) durch eine Fläche an der Wange; `Shift+C` auf eine Kante. Alle Ziele gehen mit, keine
+   Delle; `Tab` + `Shift+N` zeigt den neuen Loop in jedem Ziel.
+6. **Löschen und Undo.** Ein Ziel wählen, `Alt+Shift+N` (löscht das aktuelle), dann `Strg+Z`: es ist wieder da (bei 0 %).
+   Mit `Strg+Z` weiter bis zum Anfang, mit `Strg+Y` wieder vor.
+7. **Speichern.** `Strg+S`, Fenster schließen, über `Leertaste` laden: alle Ziele sind da (Gewichte 0 %, aktuelles = das erste).
+8. Optional: `python src/main.py examples/meshes/gollum_20k.obj` — mehrere kleine Ziele sind benutzbar, ein Ziel über das
+   ganze Mesh macht jeden Gewichtsschritt langsam (wie bisher); SubD lehnt dort schon Stufe 1 ab (zu viele Flächen).
+9. Optional auf deinem PC (die 16,7-ms-Grenze für Kopf und Körper kann nur dein PC bestätigen), die Ausgaben in den Chat:
+   `python experiments/drag_cost/probe_morph_gl.py --only-phase4` und `python experiments/drag_cost/probe_morph_gl.py --memory`.
+
+| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
+| --- | --- | --- |
+| Ziele anlegen / umbenennen / löschen, Undo (1, 6) | | |
+| Wechseln mit `Shift+N` / `Alt+N`, auch in der Arbeitskopie (1, 2) | | |
+| HUD-Zeilen „Morph“ und „Targets“ (1, 3) | | |
+| Mischen: Summe, `N` pro Ziel, flüssig? (3) | | |
+| Morph + SubD zusammen, flüssig genug? (4) | | |
+| Topologie mit mehreren Zielen (5) | | |
+| Speichern / Laden (7) | | |
+| Annahmen (a)–(f) | | |
