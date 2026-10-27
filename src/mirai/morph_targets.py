@@ -10,8 +10,9 @@ the values, their journal, Undo and the file; this module gives them their meani
 - **Weight** (`MorphSurfaceProvider.weights`): view state per object in whole percent — no Undo
   step, not saved (F-11, Manu 2026-10-17). The viewport shows the mix `b + w·d` through the H7
   replacement surface (`Viewport.set_surface_provider`): the edit object's faces (`surface_mesh`) and,
-  H7-E, object entries (`entry_surfaces`, the base beside the editing view). Picking, selection, the
-  wire and every tool stay on the rest shape (H7: the cage is authoritative; Manu: "hilft"). The
+  H7-E, object entries (`entry_surfaces`, the base beside the editing view). The wire follows the
+  mix (`wire_follows_surface`, Manu 2026-10-27); picking, selection, hover and every tool stay on the rest
+  shape (H7: the cage is authoritative; Morph Lab 6a: "hilft"). The
   slot is shared with the SubD preview; morph + SubD together come with Phase 4 (H5b), so whoever
   holds the slot first keeps it and the other says so (`MorphDisplay`).
 - **Editing view** (H4, the §11 "editing-view mechanics" decided here, AD-025 §15): `TargetView`.
@@ -455,6 +456,9 @@ class MorphSurfaceProvider:
         self.entry_moved: dict = {}
         self._surfaces: dict = {}
         self._dirty = False
+        #: H7 (viewport): the wire is drawn at the mix, not at the rest shape (Manu 2026-10-27: "das Wireframe geht
+        #: nicht mit"); selection, hover and picking stay on the rest shape (Morph Lab 6a "hilft").
+        self.wire_follows_surface = True
         self.last_update_ms: Optional[float] = None
         self.last_changed = 0
 

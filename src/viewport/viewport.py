@@ -108,6 +108,9 @@ Flächen-RenderMesh (inkrementeller Abgleich über das Journal, AD-023) statt nu
 Die Ersatzfläche zeichnet immer mit Polygon-Offset (Host-Linien liegen auf ihr), und mit
 `p.replaces_wire` True lässt `render()` den Wire des Edit-Mesh weg, solange die Fläche gezeichnet wird
 (der Host zeigt die Kanten selbst, `wire_drawn()`).
+Optional (2026-10-27, Morph-Ziel in Production, AD-025 §15): `p.wire_follows_surface` True heißt, die Ersatzfläche hat
+dieselben IDs und Kanten wie das Edit-Mesh, nur andere Positionen (die Morph-Mischung) - dann zeichnet der Wire die Kanten
+an den Positionen der Ersatzfläche, solange es eine gibt. Auswahl, Hover und Picking bleiben am Edit-Mesh.
 
 H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Optional liest der Viewport nach
 `p.sync(...)` `p.entry_surfaces` (`dict[key, Mesh]`, `key` wie bei `set_object_entry`) und `p.entry_moved`
@@ -435,6 +438,7 @@ class Viewport:
         (None, gibt den RenderMesh frei). Er synct beim nächsten `sync()` in jedem Fall."""
         self.surface_provider = provider
         self._extra_overlays_dirty = True
+        self._edges_dirty = True  # a provider whose wire follows its surface (or none any more)
         if provider is None:
             self._release_surface()
 
@@ -494,6 +498,10 @@ class Viewport:
         self._sync_entry_surfaces()
         mesh = self.surface_provider.surface_mesh
         rm = self.surface_render_mesh
+        if getattr(self.surface_provider, "wire_follows_surface", False) and (
+            moved or mesh is not (rm.mesh if rm is not None else None)
+        ):
+            self._edges_dirty = True  # the wire is drawn at the surface's positions (module docstring)
         if mesh is None:
             self._release_surface()
             return
@@ -728,9 +736,17 @@ class Viewport:
         self._selection_overlays_dirty = True
         self._extra_overlays_dirty = True
 
+    def _wire_mesh(self):
+        """The mesh whose positions the wire shows: the replacement surface if the provider says it
+        follows (`wire_follows_surface`, same IDs and edges), else the edit mesh."""
+        rm = self.surface_render_mesh
+        if rm is not None and getattr(self.surface_provider, "wire_follows_surface", False):
+            return rm.mesh
+        return self.mesh
+
     def _sync_edges(self) -> None:
         # E39: voller Neuaufbau pro dirty Frame (für B5a akzeptiert).
-        self.edge_segments = edge_segments(self.mesh, self.hidden_vertices)
+        self.edge_segments = edge_segments(self._wire_mesh(), self.hidden_vertices)
         if self.line_overlay is not None:
             self.line_overlay.set_segments(self.edge_segments)
         self.render_mesh.stats.count("line_overlay_rebuilds")

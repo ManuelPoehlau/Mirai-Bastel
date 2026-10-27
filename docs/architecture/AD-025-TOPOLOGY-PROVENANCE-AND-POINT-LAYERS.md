@@ -603,7 +603,10 @@ Requirements taken from the Morph Lab (J-5 "daneben" KEEP, J-3 "relativ", F-11 w
 4. **Weight = view state** (F-11): per object in whole percent, no Undo step, not saved; keys `+`/`-` (10 %), `Shift` (1 %),
    `Alt` (100 % / 0 %), and hold `N` + mouse left/right (Manu's J-4 "Schieberegler" without window UI; tap `N` = 0 % ↔ last).
    Display through H7: `morph_targets.MorphSurfaceProvider` shows `b + w·d` as the edit object's surface and, H7-E, on the
-   base beside the view; picking, wire and tools stay on the rest shape. The H7 slot is shared with the SubD preview: whoever
+   base beside the view. **The wire follows the mix** (Manu 2026-10-27, after the first try: "das Wireframe geht nicht
+   mit, nur die Polygone"; viewport hook `provider.wire_follows_surface`, additive to H7); selection, hover, picking and the
+   tools stay on the rest shape (Morph Lab 6a "hilft" — `PROVISIONAL` reading: his note is about the wire only). Cost [C]:
+   with the wire shown a weight step rebuilds it (gollum_20k, 43,750 edges: +22 ms; head / body < 1 ms). The H7 slot is shared with the SubD preview: whoever
    holds it keeps it, the other says so (H5b: together from Phase 4). The surface patches from the base's journal: a weight step
    touches only the points with an offset (`_Surface`, `(b, d)` cached), an edit only the touched ones.
 
@@ -693,6 +696,14 @@ dich erst mit dem ersten Ziel in der App.
 **Phase 3 ist gebaut (2026-10-27): das erste Morph-Ziel in der App.** Praxistest (ca. 20–30 Minuten), Annahmen zum
 Korrigieren in einem Satz: das Ziel wird daneben bearbeitet wie im Morph Lab, die Kamera springt mit (gleiche Stelle am
 Bildschirm), das Gewicht ist reine Ansicht, Tasten sind Vorschläge.
+
+**Wie es zusammenhängt (ein Mesh, nicht zwei):** Gespeichert wird nur die Basis — ihre Ruheform und, pro Punkt, wie weit
+er im Ziel davon abweicht (der Abstand). Links steht immer die Basis: bei 0 % die Ruheform, bei einem Gewicht die Mischung
+Ruheform + Gewicht × Abstand. Rechts steht nur während `Tab` eine **Arbeitskopie**: Ruheform + voller Abstand, also das Ziel
+bei 100 % — egal, welches Gewicht eingestellt ist. Sie ist nur zum Formen da und wird nie gespeichert: was du an ihr bewegst,
+wird nach jeder Geste als neuer Abstand in die Basis geschrieben (ein `Strg+Z`), und die Kopie verschwindet beim nächsten
+`Tab`. Gleich aussehen tun beide nur bei 100 %. Änderst du links die Ruheform, behalten die Punkte ihren Abstand — das Ziel
+geht mit. Drahtgitter folgt der Mischung (seit deiner Rückmeldung), Auswahl und Hover bleiben auf der Ruheform.
 
 `python src/main.py` (Start: Head-Basemesh)
 

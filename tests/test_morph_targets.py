@@ -614,3 +614,28 @@ def test_the_evaluated_surface_equals_the_definition_through_random_edits():
         if provider.weight(oid) == 0 and rng.random() < 0.5:
             provider.set_weight(oid, 50)
         check()
+
+
+def test_the_wire_follows_the_mix_while_selection_stays_on_the_rest_shape():
+    """Manu 2026-10-27: during the N drag the wireframe must move with the polygons."""
+    from viewport import edge_segments
+
+    app, base = _with_target()
+    v = _grid_vertex(app, 1, 1)
+    _sculpt(app, {v})
+    mesh = base.mesh
+    app.viewport.show_edges = True
+    app.update_viewport(0.0)
+    assert app.viewport.edge_segments == edge_segments(mesh)  # 0 %: the rest shape
+    for weight in (30, 100):
+        app.set_morph_weight(weight)
+        app.update_viewport(0.0)
+        surface = app.morph.provider.surface_mesh
+        assert app.viewport.edge_segments == edge_segments(surface) != edge_segments(mesh)
+    _select(app, V, {v})
+    app.viewport.on_selection_changed()
+    app.update_viewport(0.0)
+    assert any(tuple(p) == mesh.vertex_position(v) for layer in app.viewport.point_positions.values() for p in layer)
+    app.set_morph_weight(0)
+    app.update_viewport(0.0)
+    assert app.viewport.edge_segments == edge_segments(mesh)
