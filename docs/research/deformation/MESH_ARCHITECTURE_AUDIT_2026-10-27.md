@@ -317,3 +317,9 @@ What §B and §G Phase 0 listed, and what was done (details in the commit; the s
 - **Verification [C]:** `tests/` 4,789 passed, 114 skipped (the GL tests; in their own process 98 passed);
   `experiments/morph_lab/tests` 47 passed; `experiments/knife_oracle/tests` 351 passed. Not run: `mehlsack_lab`,
   `drag_cost` (unchanged). Nothing measured on the reference PC.
+
+## Addendum 2026-10-27 — Phase 1 drafted
+
+The ARCH-02 decision document is [AD-025](../../architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) (PROPOSED,
+independent review pending). It moves the Core half of Phase 5's origin interpolation into Phase 2 and treats H1–H5 as
+parameters (AD-025 §7, §10); the sections above stay as delivered.
