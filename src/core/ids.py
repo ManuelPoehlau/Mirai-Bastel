@@ -61,6 +61,14 @@ class ObjectId(ElementId):
     __slots__ = ()
 
 
+class LayerId(ElementId):
+    """ID eines Punkt-Layers eines Meshes (AD-025 §4.2), kein Mesh-Element: derselbe Vertrag
+    (monoton, nie wiederverwendet, mit dem Counter serialisiert); Gültigkeit prüft
+    `Mesh.point_layer_ids()`."""
+
+    __slots__ = ()
+
+
 class IdAllocator:
     """Monotoner Counter-Allocator für einen einzelnen Element-Typ.
 

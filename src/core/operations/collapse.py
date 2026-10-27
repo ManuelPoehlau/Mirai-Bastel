@@ -81,6 +81,9 @@ def collapse_elements(
     if merging:
         _refuse_invalid_result(mesh, merging)
     centroids = {g[0]: _centroid(mesh, g) for g in merging}
+    # Point layers (AD-025 §4.1, H3): the survivor gets the component mean of the group's original
+    # values, with the centroid's arithmetic; the chain's pairwise averages are overwritten.
+    layer_means = {g[0]: _layer_means(mesh, g) for g in merging} if mesh.has_point_layers() else {}
 
     change = mesh.begin_change()
     try:
@@ -92,11 +95,20 @@ def collapse_elements(
     for group, survivor in zip(groups, survivors):
         if len(group) > 1:
             mesh.set_vertex_position(survivor, centroids[group[0]])
+            for lid, mean in layer_means.get(group[0], ()):
+                mesh.set_layer_value(lid, survivor, mean)
     return survivors
 
 
+def _layer_means(mesh: Mesh, group: list[VertexId]) -> list:
+    return [(lid, _mean([mesh.layer_value(lid, v) for v in group])) for lid in mesh.point_layer_ids()]
+
+
 def _centroid(mesh: Mesh, group: list[VertexId]) -> tuple[float, float, float]:
-    points = [mesh.vertex_position(v) for v in group]
+    return _mean([mesh.vertex_position(v) for v in group])
+
+
+def _mean(points: list) -> tuple[float, float, float]:
     n = len(points)
     return (sum(p[0] for p in points) / n, sum(p[1] for p in points) / n, sum(p[2] for p in points) / n)
 

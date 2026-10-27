@@ -25,6 +25,12 @@ jedes Objekt trägt `"material"` (`null` = Standard-Look der App, sonst `base_co
 `glossiness`). Versionen 2 und 3 lesen sich als Version 4 ohne Material; geschrieben wird nur
 Version 4. Ein ungültiges Material macht die Datei ungültig.
 
+Version 5 (Punkt-Layer, AD-025 §4.2, CORE_V1_FREEZE §7.1 2026-10-27) ändert die Hülle nicht: die
+Layer reisen in `Mesh.export_state()` (`"point_layers"`, `"layer_id_counter"`). Version 5 wird nur
+geschrieben, wenn ein Mesh Punkt-Layer hat - sonst weiter 4 -, damit ein älterer Build eine Datei
+mit Morph-Zielen ablehnt, statt die Ziele beim nächsten Speichern still zu verlieren. Gelesen
+werden 2-5.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -39,11 +45,14 @@ from .mesh import Mesh
 from .scene import MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
 
 FORMAT_VERSION = 4
+#: Written instead of FORMAT_VERSION when any mesh has point layers (AD-025 §4.2).
+LAYERS_FORMAT_VERSION = 5
 
 
 def scene_to_dict(scene: Scene) -> dict:
+    layered = any(obj.mesh.has_point_layers() for obj in scene.objects.values())
     return {
-        "version": FORMAT_VERSION,
+        "version": LAYERS_FORMAT_VERSION if layered else FORMAT_VERSION,
         "object_id_counter": scene.object_id_counter,
         "edit_object": int(scene.edit_object_id),
         "objects": [_object_to_dict(obj) for obj in scene.objects.values()],
@@ -57,7 +66,7 @@ def scene_to_dict(scene: Scene) -> dict:
 
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version in (2, 3, FORMAT_VERSION):
+    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),

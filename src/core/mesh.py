@@ -36,13 +36,19 @@ Symmetrie-*Logik* (Correspondence, State) lebt in `mirai.symmetry`.
 
 from __future__ import annotations
 
+import enum
+import math
 import weakref
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from .ids import VertexId, EdgeId, FaceId, IdAllocator
+from .ids import VertexId, EdgeId, FaceId, IdAllocator, LayerId
 
 Position = tuple[float, float, float]
+#: Value of a vector point layer (AD-025 §4.2): three finite floats, default (0, 0, 0).
+LayerValue = tuple[float, float, float]
+#: Origin of a new vertex (AD-025 §4.1): live source vertices with weights summing to 1; () = no source.
+VertexOrigin = tuple[tuple[VertexId, float], ...]
 
 #: Element records of the change journal (AD-023 H1). None = the element does not exist.
 VertexRecord = Position
@@ -76,6 +82,67 @@ class _FaceData:
 
 class MeshError(ValueError):
     """Verletzung eines Topologie-Invarianten."""
+
+
+# ----------------------------------------------------------------------
+# Point layers (AD-025 §4.2, CORE_V1_FREEZE §7.1 2026-10-27): per-vertex data owned by the Mesh
+# (a morph target is one vector layer of offsets keyed by VertexId). The Core stores the values,
+# journals them like positions and applies their per-kind arithmetic (origin combination, frame
+# map, the new-point rule); what a layer *means* lives in `src/mirai`. Names PROVISIONAL.
+# ----------------------------------------------------------------------
+
+
+class LayerKind(enum.Enum):
+    VECTOR = "vector"
+    #: Reserved for skinning weights (AD-025 §4.1, built with Phase 6); `add_point_layer` refuses it.
+    WEIGHTS = "weights"
+
+
+#: H2 (AD-025 §10): what a new point gets in an existing layer.
+NEW_POINT_RULES = ("interpolate", "zero")
+
+_VECTOR_DEFAULT: LayerValue = (0.0, 0.0, 0.0)
+_ORIGIN_SUM_TOLERANCE = 1e-9
+
+
+@dataclass(frozen=True)
+class PointLayerInfo:
+    """Description of one point layer: a non-empty name (unique per mesh), its kind (never changes)
+    and the new-point rule (H2): `"interpolate"` = a vertex created with an origin gets the weighted
+    combination of its sources' values, `"zero"` = it gets the default. Merges always average (H3)."""
+
+    name: str
+    kind: LayerKind = LayerKind.VECTOR
+    new_point: str = "interpolate"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name:
+            raise MeshError("Ein Punkt-Layer braucht einen nicht leeren Namen.")
+        if not isinstance(self.kind, LayerKind):
+            raise MeshError(f"Unbekannte Layer-Art: {self.kind!r}")
+        if self.new_point not in NEW_POINT_RULES:
+            raise MeshError(f"Unbekannte Neupunkt-Regel: {self.new_point!r}")
+        if self.kind is LayerKind.WEIGHTS and self.new_point != "interpolate":
+            # an unweighted new vertex would be unbound (AD-025 §4.1)
+            raise MeshError("Ein Gewichts-Layer erlaubt nur new_point='interpolate'.")
+
+
+def _vector_value(value) -> LayerValue:
+    # Fast path for the common case (a tuple of three floats); x - x is 0.0 exactly for a finite x
+    # and NaN for NaN / inf.
+    if type(value) is tuple and len(value) == 3:
+        x, y, z = value
+        if type(x) is float and type(y) is float and type(z) is float:
+            if (x - x) + (y - y) + (z - z) == 0.0:
+                return value
+            raise MeshError(f"Ein Vektorwert muss endlich sein: {value!r}")
+    try:
+        x, y, z = (float(c) for c in value)
+    except (TypeError, ValueError):
+        raise MeshError(f"Ein Vektorwert braucht genau drei Zahlen: {value!r}") from None
+    if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+        raise MeshError(f"Ein Vektorwert muss endlich sein: {value!r}")
+    return (x, y, z)
 
 
 @dataclass(frozen=True)
@@ -159,14 +226,27 @@ class MeshChange:
     `MeshWatch`). An element that did not exist is recorded as None. Touched is not changed: an
     element may be back to its record (`Mesh.end_change` drops those)."""
 
-    __slots__ = ("vertices", "edges", "faces", "symmetry", "regions")
+    __slots__ = (
+        "vertices", "edges", "faces", "symmetry", "regions",
+        "layer_meta", "layer_values", "layer_whole", "keys_only",
+    )
 
-    def __init__(self) -> None:
+    def __init__(self, keys_only: bool = False) -> None:
         self.vertices: dict[VertexId, VertexRecord | None] = {}
         self.edges: dict[EdgeId, EdgeRecord | None] = {}
         self.faces: dict[FaceId, FaceRecord | None] = {}
         self.symmetry = _UNSET
         self.regions = _UNSET
+        # Point layers (AD-025 §4.2), two record shapes. Per element: the before-value of each
+        # touched (layer, vertex), None = absent. Whole layer (bulk operations): the layer's value
+        # dict at the bulk write (None = the layer did not exist) plus this recording's per-element
+        # records of it made before that write (the overlay; old dict + overlay = the state at the
+        # start). A layer with a whole record takes no further per-element records.
+        self.layer_meta = _UNSET
+        self.layer_values: dict[LayerId, dict[VertexId, LayerValue | None]] = {}
+        self.layer_whole: dict[LayerId, tuple] = {}
+        # A watch records which layer values changed, never their before-values (all None there).
+        self.keys_only = keys_only
 
     @property
     def symmetry_touched(self) -> bool:
@@ -176,11 +256,16 @@ class MeshChange:
     def regions_touched(self) -> bool:
         return self.regions is not _UNSET
 
+    @property
+    def layers_touched(self) -> bool:
+        return bool(self.layer_values or self.layer_whole) or self.layer_meta is not _UNSET
+
     def is_empty(self) -> bool:
         return (
             not (self.vertices or self.edges or self.faces)
             and self.symmetry is _UNSET
             and self.regions is _UNSET
+            and not self.layers_touched
         )
 
 
@@ -198,6 +283,13 @@ class MeshDelta:
     symmetry: tuple | None = None
     #: `(before, after)` of the face regions if they changed (either side may be None = no regions)
     regions: tuple | None = None
+    #: `(before, after)` of the point-layer meta (AD-025 §4.2) if it changed
+    layer_meta: tuple | None = None
+    #: point layers changed per element: {LayerId: {VertexId: (before, after)}}, None = absent
+    layer_values: dict = field(default_factory=dict)
+    #: point layers changed as a whole: {LayerId: (before dict | None, after dict | None)}. Both
+    #: dicts are shared (copy-on-write, never mutated); None = the layer does not exist.
+    layer_whole: dict = field(default_factory=dict)
 
     @property
     def empty(self) -> bool:
@@ -205,6 +297,9 @@ class MeshDelta:
             not (self.vertices or self.edges or self.faces)
             and self.symmetry is None
             and self.regions is None
+            and self.layer_meta is None
+            and not self.layer_values
+            and not self.layer_whole
         )
 
 
@@ -216,13 +311,13 @@ class MeshWatch:
 
     def __init__(self, mesh: "Mesh") -> None:
         self.mesh = mesh
-        self._box = [MeshChange()]
+        self._box = [MeshChange(keys_only=True)]
         mesh._logs.append(self._box[0])
         self._finalizer = weakref.finalize(self, _detach_log, mesh._logs, self._box)
 
     def take(self) -> MeshChange:
         box, logs = self._box, self.mesh._logs
-        old, new = box[0], MeshChange()
+        old, new = box[0], MeshChange(keys_only=True)
         for i, log in enumerate(logs):
             if log is old:
                 logs[i] = new
@@ -282,6 +377,14 @@ class Mesh:
         # Saved Regions (AD-REGIONS-01): wie die Symmetry Definition ein vom Mesh besessener Wert, den das
         # Journal beim Setzen sieht; Lesen und Setzen als `mesh.face_regions`.
         self._face_regions: FaceRegions | None = None
+        # Point layers (AD-025 §4.2). Meta in display order; one sparse value dict per layer
+        # (L2: a value equal to the default is never stored). Copy-on-write: a value dict that a
+        # record or a delta references is never mutated - `_layer_shared` names the layers whose
+        # live dict is such a shared one, the first write copies it.
+        self._layer_alloc = IdAllocator(LayerId, start=1)
+        self._layer_meta: tuple[tuple[LayerId, PointLayerInfo], ...] = ()
+        self._layer_values: dict[LayerId, dict[VertexId, LayerValue]] = {}
+        self._layer_shared: set[LayerId] = set()
 
     @property
     def face_regions(self) -> FaceRegions | None:
@@ -330,6 +433,59 @@ class Mesh:
             if fid not in log.faces:
                 data = self._faces.get(fid)
                 log.faces[fid] = None if data is None else tuple(data.boundary)
+
+    def _touch_l(self, lid: LayerId, vid: VertexId) -> None:
+        values = self._layer_values[lid]
+        for log in self._logs:
+            if lid in log.layer_whole:
+                continue
+            records = log.layer_values.get(lid)
+            if records is None:
+                records = log.layer_values[lid] = {}
+            if vid not in records:
+                records[vid] = None if log.keys_only else values.get(vid)
+
+    def _write_value(self, lid: LayerId, vid: VertexId, value: LayerValue | None) -> None:
+        """The one per-element write path: journal, copy-on-write, canonical form (L2)."""
+        if value is not None and value == _VECTOR_DEFAULT:
+            value = None
+        values = self._layer_values[lid]
+        if values.get(vid) == value:
+            return
+        if self._logs:
+            self._touch_l(lid, vid)
+        if lid in self._layer_shared:
+            values = self._layer_values[lid] = dict(values)
+            self._layer_shared.discard(lid)
+        if value is None:
+            del values[vid]
+        else:
+            values[vid] = value
+
+    def _bulk_set(self, lid: LayerId, values: dict | None, *, shared: bool) -> None:
+        """The one whole-layer write path (AD-025 §4.2): `values` replaces the layer's dict
+        (None = the layer's values go away). The old dict is never mutated; it becomes the
+        before-record of every recording that has none for this layer yet (O(1) per log)."""
+        old = self._layer_values.get(lid)
+        for log in self._logs:
+            if lid not in log.layer_whole:
+                overlay = log.layer_values.pop(lid, {})
+                log.layer_whole[lid] = (None, None) if log.keys_only else (old, overlay)
+        if values is None:
+            self._layer_values.pop(lid, None)
+            self._layer_shared.discard(lid)
+        else:
+            self._layer_values[lid] = values
+            if shared:
+                self._layer_shared.add(lid)
+            else:
+                self._layer_shared.discard(lid)
+
+    def _set_layer_meta(self, meta: tuple) -> None:
+        for log in self._logs:
+            if log.layer_meta is _UNSET:
+                log.layer_meta = self._layer_meta
+        self._layer_meta = meta
 
     def _index_edge(self, eid: EdgeId, v0: VertexId, v1: VertexId) -> None:
         index = self._vertex_edges
@@ -390,6 +546,150 @@ class Mesh:
         data.position = position
 
     # ------------------------------------------------------------------
+    # Point layers (AD-025 §4.2) - API names PROVISIONAL
+    # ------------------------------------------------------------------
+
+    def point_layer_ids(self) -> list[LayerId]:
+        """Layer IDs in display order."""
+        return [lid for lid, _ in self._layer_meta]
+
+    def has_point_layers(self) -> bool:
+        return bool(self._layer_meta)
+
+    def point_layer_info(self, layer_id: LayerId) -> PointLayerInfo:
+        for lid, info in self._layer_meta:
+            if lid == layer_id:
+                return info
+        raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
+
+    def layer_value(self, layer_id: LayerId, vertex_id: VertexId) -> LayerValue:
+        """The value of a vertex in a layer; the kind's default when none is stored."""
+        values = self._layer_values.get(layer_id)
+        if values is None:
+            raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
+        return values.get(vertex_id, _VECTOR_DEFAULT)
+
+    def layer_items(self, layer_id: LayerId) -> list[tuple[VertexId, LayerValue]]:
+        """The stored (non-default) values of a layer, ascending VertexId."""
+        values = self._layer_values.get(layer_id)
+        if values is None:
+            raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
+        return sorted(values.items())
+
+    def add_point_layer(self, info: PointLayerInfo) -> LayerId:
+        """Appends an empty layer. ID continuity: exactly one new LayerId (never reused, AD-001)."""
+        if not isinstance(info, PointLayerInfo):
+            raise MeshError("add_point_layer erwartet PointLayerInfo.")
+        if info.kind is not LayerKind.VECTOR:
+            raise MeshError(f"Layer-Art {info.kind.value!r} ist noch nicht gebaut (AD-025 §4.1).")
+        if any(other.name == info.name for _, other in self._layer_meta):
+            raise MeshError(f"Punkt-Layer-Name schon vergeben: {info.name!r}")
+        lid = self._layer_alloc.allocate()
+        self._set_layer_meta(self._layer_meta + ((lid, info),))
+        self._bulk_set(lid, {}, shared=False)
+        return lid
+
+    def remove_point_layer(self, layer_id: LayerId) -> None:
+        """Removes a layer with its values (a whole-layer record, O(1) journal memory)."""
+        self.point_layer_info(layer_id)
+        self._bulk_set(layer_id, None, shared=False)
+        self._set_layer_meta(tuple(entry for entry in self._layer_meta if entry[0] != layer_id))
+
+    def set_point_layer_info(self, layer_id: LayerId, info: PointLayerInfo) -> None:
+        """Renames a layer or changes its new-point rule; the kind never changes (L4)."""
+        old = self.point_layer_info(layer_id)
+        if not isinstance(info, PointLayerInfo):
+            raise MeshError("set_point_layer_info erwartet PointLayerInfo.")
+        if info.kind is not old.kind:
+            raise MeshError("Die Art eines Punkt-Layers ändert sich nie.")
+        if any(lid != layer_id and other.name == info.name for lid, other in self._layer_meta):
+            raise MeshError(f"Punkt-Layer-Name schon vergeben: {info.name!r}")
+        if info != old:
+            self._set_layer_meta(
+                tuple((lid, info if lid == layer_id else other) for lid, other in self._layer_meta)
+            )
+
+    def set_point_layer_order(self, layer_ids: Sequence[LayerId]) -> None:
+        """Sets the display order; `layer_ids` is a permutation of `point_layer_ids()`."""
+        order = list(layer_ids)
+        current = self.point_layer_ids()
+        if sorted(order) != sorted(current) or len(set(order)) != len(order):
+            raise MeshError("set_point_layer_order erwartet eine Permutation der Layer-IDs.")
+        if order != current:
+            infos = dict(self._layer_meta)
+            self._set_layer_meta(tuple((lid, infos[lid]) for lid in order))
+
+    def set_layer_value(self, layer_id: LayerId, vertex_id: VertexId, value) -> None:
+        """Sets one value (journaled per element); the default removes the stored value (L2)."""
+        if layer_id not in self._layer_values:
+            raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
+        if vertex_id not in self._vertices:
+            raise MeshError(f"Unbekannter Vertex {vertex_id!r}")
+        self._write_value(layer_id, vertex_id, _vector_value(value))
+
+    def map_vector_layers(self, matrix: Sequence[Sequence[float]]) -> None:
+        """Frame change (AD-025 §4.3): every vector value v -> M·v, M the linear part of the point
+        map (Apply transform: s·R; a mirror: H). A bulk operation: each layer gets a new dict, the
+        old one becomes the whole-layer record. The identity records nothing."""
+        try:
+            m = tuple(tuple(float(c) for c in row) for row in matrix)
+        except (TypeError, ValueError):
+            raise MeshError("map_vector_layers erwartet eine 3x3-Matrix.") from None
+        if len(m) != 3 or any(len(row) != 3 for row in m) or not all(map(math.isfinite, sum(m, ()))):
+            raise MeshError("map_vector_layers erwartet eine endliche 3x3-Matrix.")
+        if m == ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)):
+            return
+        (a, b, c), (d, e, f), (g, h, i) = m
+        mapped: dict[LayerId, dict] = {}
+        for lid, info in self._layer_meta:
+            values = self._layer_values[lid]
+            if info.kind is not LayerKind.VECTOR or not values:
+                continue
+            new = {}
+            for vid, (x, y, z) in values.items():
+                value = (a * x + b * y + c * z, d * x + e * y + f * z, g * x + h * y + i * z)
+                if value != _VECTOR_DEFAULT:
+                    new[vid] = value
+            if not all(math.isfinite(comp) for value in new.values() for comp in value):
+                raise MeshError("map_vector_layers: Ergebnis nicht endlich.")
+            mapped[lid] = new
+        for lid, new in mapped.items():
+            self._bulk_set(lid, new, shared=False)
+
+    def _origin_values(self, origin: VertexOrigin) -> list[tuple[LayerId, LayerValue]]:
+        """Validates `origin` and combines its sources' values per layer (AD-025 §4.1), before
+        any mutation. Vector: sum of w_i·v_i per component, the first term not added to 0.0 so a
+        copy ((v, 1.0),) is bit-exact (also for -0.0)."""
+        try:
+            pairs = [(src, float(w)) for src, w in origin]
+        except (TypeError, ValueError):
+            raise MeshError(f"Ungültige Herkunft: {origin!r}") from None
+        for src, w in pairs:
+            if src not in self._vertices:
+                raise MeshError(f"Herkunft nennt einen unbekannten Vertex {src!r}")
+            if not math.isfinite(w):
+                raise MeshError(f"Herkunftsgewicht nicht endlich: {w!r}")
+        if pairs and abs(sum(w for _, w in pairs) - 1.0) > _ORIGIN_SUM_TOLERANCE:
+            raise MeshError("Herkunftsgewichte müssen sich zu 1 summieren.")
+        out = []
+        if not pairs:
+            return out
+        for lid, info in self._layer_meta:
+            if info.new_point != "interpolate":
+                continue
+            values = self._layer_values[lid]
+            total = None
+            for src, w in pairs:
+                v = values.get(src, _VECTOR_DEFAULT)
+                term = (w * v[0], w * v[1], w * v[2])
+                total = term if total is None else (total[0] + term[0], total[1] + term[1], total[2] + term[2])
+            if total != _VECTOR_DEFAULT:
+                out.append((lid, total))
+        if not all(math.isfinite(c) for _, value in out for c in value):
+            raise MeshError("Herkunft ergibt keinen endlichen Wert.")
+        return out
+
+    # ------------------------------------------------------------------
     # Topologie-Query-API (AD-002) - einziger erlaubter Lesezugriff
     # ------------------------------------------------------------------
 
@@ -436,8 +736,26 @@ class Mesh:
     # ID-Kontinuitäts-Vertrag (§8 / AD-001).
     # ------------------------------------------------------------------
 
-    def add_vertex(self, position: Position) -> VertexId:
-        """ID-Kontinuität: erzeugt genau eine neue VertexId."""
+    def add_vertex(self, position: Position, origin: VertexOrigin | None = None) -> VertexId:
+        """ID-Kontinuität: erzeugt genau eine neue VertexId.
+
+        Point layers (AD-025 §4.1): without layers `origin` is ignored. With layers the caller
+        must say where the vertex comes from - `((v, 1.0),)` for a copy of v, any affine
+        combination of live vertices, or `()` for "no source" (defaults); `None` raises MeshError
+        before any mutation (the Core backstop against a tool that forgot its origin)."""
+        if self._layer_meta:
+            if origin is None:
+                raise MeshError(
+                    "add_vertex: dieses Mesh hat Punkt-Layer - der neue Vertex braucht eine Herkunft (origin)."
+                )
+            values = self._origin_values(origin)
+            vid = self._new_vertex(position)
+            for lid, value in values:
+                self._write_value(lid, vid, value)
+            return vid
+        return self._new_vertex(position)
+
+    def _new_vertex(self, position: Position) -> VertexId:
         vid = self._vertex_alloc.allocate()
         if self._logs:
             self._touch_v(vid)
@@ -560,12 +878,17 @@ class Mesh:
         if logged and edge_id in self._edges:
             self._touch_e(edge_id)
         edge = self._edges[edge_id]
+        # Point layers (AD-025 §4.1): origin ((v0, 1-t), (v1, t)) with the stored ends, the value
+        # in the position's own expression - computed before the first mutation.
+        layer_values = self._blend_values(edge.v0, edge.v1, t) if self._layer_meta else ()
         self._pop_edge(edge_id)
 
         p0 = self.vertex_position(edge.v0)
         p1 = self.vertex_position(edge.v1)
         mid_pos = tuple(a * (1.0 - t) + b * t for a, b in zip(p0, p1))
-        mid = self.add_vertex(mid_pos)
+        mid = self._new_vertex(mid_pos)
+        for lid, value in layer_values:
+            self._write_value(lid, mid, value)
 
         eid_a = self._edge_alloc.allocate()
         eid_b = self._edge_alloc.allocate()
@@ -595,6 +918,28 @@ class Mesh:
             self._edges[eid_b].faces.append(fid)
 
         return mid, eid_a, eid_b
+
+    def _blend_values(self, v0: VertexId, v1: VertexId, t: float) -> list[tuple[LayerId, LayerValue]]:
+        out = []
+        layer_values = self._layer_values
+        s = 1.0 - t
+        for lid, info in self._layer_meta:
+            if info.new_point != "interpolate":
+                continue
+            values = layer_values[lid]
+            a = values.get(v0)
+            b = values.get(v1)
+            if a is None:
+                if b is None:
+                    continue
+                a = _VECTOR_DEFAULT
+            elif b is None:
+                b = _VECTOR_DEFAULT
+            # the position's own expression, a·(1 - t) + b·t per component
+            value = (a[0] * s + b[0] * t, a[1] * s + b[1] * t, a[2] * s + b[2] * t)
+            if value != _VECTOR_DEFAULT:
+                out.append((lid, value))
+        return out
 
     def collapse_edge(self, edge_id: EdgeId) -> VertexId:
         """Zieht eine Edge zu einem einzelnen Vertex zusammen.
@@ -631,6 +976,14 @@ class Mesh:
         p0 = self.vertex_position(survivor)
         p1 = self.vertex_position(removed)
         self.set_vertex_position(survivor, tuple((a + b) / 2.0 for a, b in zip(p0, p1)))
+        # Point layers (AD-025 §4.1, H3): the survivor gets the average, the position's expression
+        # (every layer - the new-point rule is about new points); `removed`'s values go with it.
+        for lid in self._layer_values:
+            values = self._layer_values[lid]
+            a, b = values.get(survivor), values.get(removed)
+            if a is not None or b is not None:
+                a, b = a or _VECTOR_DEFAULT, b or _VECTOR_DEFAULT
+                self._write_value(lid, survivor, tuple((x + y) / 2.0 for x, y in zip(a, b)))
 
         # Jede Face, die `removed` in ihrer Boundary hat, hängt an einer Edge von `removed` (eine Face
         # steht in den Face-Listen aller Edges ihrer Boundary) - vor dem Umbiegen unten einsammeln,
@@ -731,11 +1084,14 @@ class Mesh:
         del self._faces[face_id]
 
     def _delete_vertex(self, vertex_id: VertexId) -> None:
-        """Entfernt einen Vertex, an dem keine Edge mehr hängt."""
+        """Entfernt einen Vertex, an dem keine Edge mehr hängt (samt seinen Layer-Werten, L1)."""
         if self._logs:
             self._touch_v(vertex_id)
         del self._vertices[vertex_id]
         self._vertex_edges.pop(vertex_id, None)
+        for lid, values in self._layer_values.items():
+            if vertex_id in values:
+                self._write_value(lid, vertex_id, None)
 
     def connect_vertices(self, face_id: FaceId, v_a: VertexId, v_b: VertexId) -> tuple[EdgeId, FaceId, FaceId]:
         """Teilt eine Face entlang zweier ihrer Boundary-Vertices.
@@ -797,6 +1153,8 @@ class Mesh:
           bei connect_vertices: benachbarte Enden werden abgelehnt; ab k >= 1
           sind benachbarte Enden erlaubt (Notch).
         - jede Position ist ein 3-Tupel.
+        - k >= 1 auf einem Mesh mit Punkt-Layern: abgelehnt, bis die Knife-Herkunft gebaut ist
+          (AD-025 §4.1, Phase 5).
         - k = 0 und v_a-v_b ist bereits Edge einer anderen Face: abgelehnt
           (das Ergebnis hätte eine Edge mit mehr als zwei Faces). Das ist der
           einzige Fall, in dem split_face(k = 0) ablehnt, wo connect_vertices
@@ -861,10 +1219,14 @@ class Mesh:
             existing = self._edge_lookup.get(frozenset((v_a, v_b)))
             if existing is not None and self._edges[existing].faces:
                 raise MeshError("split_face: v_a-v_b ist bereits Edge einer anderen Face.")
+        elif self._layer_meta:
+            # AD-025 §4.1: interior points get their origin from the Knife (Phase 5,
+            # `origins=`); until then they are refused on a layered mesh.
+            raise MeshError("split_face: Innenpunkte auf einem Mesh mit Punkt-Layern brauchen eine Herkunft (Phase 5).")
 
         self._delete_face(face_id)
 
-        new_vertices = [self.add_vertex(p) for p in positions]
+        new_vertices = [self._new_vertex(p) for p in positions]
         chain = [v_a, *new_vertices, v_b]
         # Endpunkte jeder Pfad-Edge so, wie face_1 sie durchläuft (e -> s) -
         # bei k = 0 genau die Edge, die connect_vertices über add_face(loop_1)
@@ -1399,7 +1761,52 @@ class Mesh:
             },
             "symmetry": self._export_symmetry_definition(),
             "face_regions": self._export_face_regions(),
+            "layer_id_counter": self._layer_alloc.peek_next(),
+            "point_layers": self._export_point_layers(),
         }
+
+    def _export_point_layers(self, meta: tuple | None = None, values_of=None) -> list | None:
+        """Additive key `"point_layers"` (AD-025 §4.2): None without layers (L5), else one entry
+        per layer in display order, vertex IDs ascending (deterministic JSON text)."""
+        meta = self._layer_meta if meta is None else meta
+        if not meta:
+            return None
+        values_of = values_of or self._layer_values.__getitem__
+        return [
+            {
+                "id": int(lid),
+                "name": info.name,
+                "kind": info.kind.value,
+                "new_point": info.new_point,
+                "values": {int(vid): list(value) for vid, value in sorted(values_of(lid).items())},
+            }
+            for lid, info in meta
+        ]
+
+    def _layers_at_start(self, change: MeshChange) -> list | None:
+        """The `"point_layers"` export as it was at `begin_change` of the active `change` (for
+        readers of a running recording, e.g. the Knife's `SessionStart.state()`)."""
+        meta = self._layer_meta if change.layer_meta is _UNSET else change.layer_meta
+
+        def values_of(lid):
+            if lid in change.layer_whole:
+                return _with_overlay(*change.layer_whole[lid]) or {}
+            return _with_overlay(self._layer_values.get(lid, {}), change.layer_values.get(lid, {})) or {}
+
+        return self._export_point_layers(meta, values_of)
+
+    def _layers_unchanged_since(self, change: MeshChange) -> bool:
+        """True when the layers are back to their state at `begin_change` of `change`."""
+        if change.layer_meta is not _UNSET and change.layer_meta != self._layer_meta:
+            return False
+        for lid, records in change.layer_values.items():
+            current = self._layer_values.get(lid, {})
+            if any(current.get(vid) != before for vid, before in records.items()):
+                return False
+        return all(
+            _with_overlay(old, overlay) == self._layer_values.get(lid)
+            for lid, (old, overlay) in change.layer_whole.items()
+        )
 
     def _export_face_regions(self) -> list | None:
         """Additiver Schlüssel `"face_regions"` (AD-REGIONS-01) wie `"symmetry"`: `None` ohne Regionen,
@@ -1452,6 +1859,8 @@ class Mesh:
         vertex_records = {
             VertexId(int(vid_raw)): tuple(pos) for vid_raw, pos in state["vertices"].items()
         }
+        # Validated whole before the first write: an invalid file leaves the mesh unchanged.
+        layer_meta, layer_values = _parse_point_layers(state.get("point_layers"), vertex_records)
         edge_records = {
             EdgeId(int(eid_raw)): (
                 VertexId(edata["v0"]), VertexId(edata["v1"]), tuple(FaceId(f) for f in edata["faces"])
@@ -1490,6 +1899,9 @@ class Mesh:
         self._vertex_alloc.restore_counter(state["vertex_id_counter"])
         self._edge_alloc.restore_counter(state["edge_id_counter"])
         self._face_alloc.restore_counter(state["face_id_counter"])
+        self._layer_alloc.restore_counter(int(state.get("layer_id_counter", 1)))
+        self._layer_alloc.restore_counter(max((int(lid) + 1 for lid, _ in layer_meta), default=1))
+        self._load_point_layers(layer_meta, layer_values)
 
         symmetry_raw = state.get("symmetry")
         if symmetry_raw is None:
@@ -1511,6 +1923,28 @@ class Mesh:
         )
         if regions != self._face_regions:
             self.face_regions = regions
+
+    def _load_point_layers(self, meta: tuple, values: dict) -> None:
+        if not self._logs:
+            self._layer_meta = meta
+            self._layer_values = values
+            self._layer_shared = set()
+            return
+        # Under a journal: only what differs (whole-layer records for layers that appear or go).
+        for lid in [lid for lid in self._layer_values if lid not in values]:
+            self._bulk_set(lid, None, shared=False)
+        if meta != self._layer_meta:
+            self._set_layer_meta(meta)
+        for lid, new in values.items():
+            old = self._layer_values.get(lid)
+            if old is None:
+                self._bulk_set(lid, new, shared=False)
+                continue
+            for vid in [vid for vid in old if vid not in new]:
+                self._write_value(lid, vid, None)
+            for vid, value in new.items():
+                if old.get(vid) != value:
+                    self._write_value(lid, vid, value)
 
     # ------------------------------------------------------------------
     # Änderungs-Journal (AD-023 H1, CORE_V1_FREEZE §7.1 2026-10-21): Delta statt Snapshot
@@ -1549,7 +1983,30 @@ class Mesh:
         regions = None
         if change.regions is not _UNSET and change.regions != self._face_regions:
             regions = (change.regions, self._face_regions)
-        return MeshDelta(vertices, edges, faces, symmetry, regions)
+        if not change.layers_touched:
+            return MeshDelta(vertices, edges, faces, symmetry, regions)
+        layer_meta = None
+        if change.layer_meta is not _UNSET and change.layer_meta != self._layer_meta:
+            layer_meta = (change.layer_meta, self._layer_meta)
+        layer_values = {}
+        for lid, records in change.layer_values.items():
+            current = self._layer_values.get(lid, {})
+            pairs = {
+                vid: (before, current.get(vid))
+                for vid, before in records.items()
+                if current.get(vid) != before
+            }
+            if pairs:
+                layer_values[lid] = pairs
+        layer_whole = {}
+        for lid, (old, overlay) in change.layer_whole.items():
+            before = _with_overlay(old, overlay)
+            after = self._layer_values.get(lid)
+            if before != after:
+                layer_whole[lid] = (before, after)
+                if after is not None:
+                    self._layer_shared.add(lid)  # the delta holds the live dict now
+        return MeshDelta(vertices, edges, faces, symmetry, regions, layer_meta, layer_values, layer_whole)
 
     def rollback_change(self, change: MeshChange) -> None:
         """Stellt den Zustand bei `begin_change()` exakt wieder her (Element-Records,
@@ -1561,6 +2018,8 @@ class Mesh:
             self.symmetry_definition = change.symmetry
         if change.regions is not _UNSET:
             self.face_regions = change.regions
+        if change.layers_touched:
+            self._restore_layers(change)
 
     def revert_change(self, change: MeshChange) -> None:
         """Wie `rollback_change`, aber die Aufzeichnung läuft weiter (leer, ab dem wieder
@@ -1575,9 +2034,13 @@ class Mesh:
             self.symmetry_definition = change.symmetry
         if change.regions is not _UNSET:
             self.face_regions = change.regions
+        if change.layers_touched:
+            self._restore_layers(change)
         change.vertices, change.edges, change.faces = {}, {}, {}
         change.symmetry = _UNSET
         change.regions = _UNSET
+        change.layer_meta = _UNSET
+        change.layer_values, change.layer_whole = {}, {}
 
     def release_change(self, change: MeshChange) -> None:
         """Beendet eine Aufzeichnung ohne Delta: die Änderungen bleiben (ein Checkpoint, zu dem
@@ -1597,6 +2060,34 @@ class Mesh:
             self.symmetry_definition = delta.symmetry[side]
         if delta.regions is not None:
             self.face_regions = delta.regions[side]
+        if delta.layer_meta is not None or delta.layer_values or delta.layer_whole:
+            self._apply_layer_records(
+                _UNSET if delta.layer_meta is None else delta.layer_meta[side],
+                {lid: {vid: pair[side] for vid, pair in pairs.items()} for lid, pairs in delta.layer_values.items()},
+                {lid: pair[side] for lid, pair in delta.layer_whole.items()},
+            )
+
+    def _restore_layers(self, change: MeshChange) -> None:
+        """Rollback / revert of the point layers to the state at `begin_change`."""
+        self._apply_layer_records(
+            change.layer_meta,
+            {lid: dict(records) for lid, records in change.layer_values.items()},
+            {lid: _with_overlay(old, overlay) for lid, (old, overlay) in list(change.layer_whole.items())},
+        )
+
+    def _apply_layer_records(self, meta, per_element: dict, whole: dict) -> None:
+        """Sets the layers to the given records (the layer part of `_apply_records`). Order
+        (AD-025 §4.2): whole-layer dicts first (they create, replace or drop a layer's values),
+        then per-element values, then the meta - L1 holds afterwards. Installed dicts come from a
+        record or a delta, so they are shared (copy-on-write)."""
+        for lid, values in whole.items():
+            if values is not self._layer_values.get(lid):
+                self._bulk_set(lid, values, shared=True)
+        for lid, records in per_element.items():
+            for vid, value in records.items():
+                self._write_value(lid, vid, value)
+        if meta is not _UNSET and meta != self._layer_meta:
+            self._set_layer_meta(meta)
 
     def watch(self) -> MeshWatch:
         """Dauerhaftes Journal für abgeleitete Daten (Viewport, Pick-Cache), siehe MeshWatch."""
@@ -1700,3 +2191,56 @@ class Mesh:
         mesh = cls()
         mesh.load_state(state)
         return mesh
+
+
+def _with_overlay(old: dict | None, overlay: dict) -> dict | None:
+    """A whole-layer record's state at `begin_change`: the old dict with this recording's earlier
+    per-element before-records applied (a new dict; the old one stays untouched)."""
+    if not overlay:
+        return old
+    out = dict(old) if old is not None else {}
+    for vid, value in overlay.items():
+        if value is None:
+            out.pop(vid, None)
+        else:
+            out[vid] = value
+    return out
+
+
+def _parse_point_layers(raw, vertex_records: dict) -> tuple[tuple, dict]:
+    """The `"point_layers"` value of a state dict, validated whole (AD-025 §4.2 File): an unknown
+    kind or rule, a duplicate name or id, a value for a missing vertex or an invalid value raises
+    ValueError (MeshError) before anything is written."""
+    if not raw:
+        return (), {}
+    meta = []
+    values: dict[LayerId, dict[VertexId, LayerValue]] = {}
+    names = set()
+    try:
+        for entry in raw:
+            lid = LayerId(int(entry["id"]))
+            try:
+                kind = LayerKind(entry["kind"])
+            except ValueError:
+                raise MeshError(f"Unbekannte Layer-Art: {entry['kind']!r}") from None
+            if kind is not LayerKind.VECTOR:
+                raise MeshError(f"Layer-Art {kind.value!r} ist noch nicht gebaut.")
+            info = PointLayerInfo(entry["name"], kind, entry["new_point"])
+            if info.name in names or lid in values:
+                raise MeshError(f"Doppelter Punkt-Layer: {info.name!r} / {int(lid)}")
+            names.add(info.name)
+            layer = {}
+            for vid_raw, value in entry["values"].items():
+                vid = VertexId(int(vid_raw))
+                if vid not in vertex_records:
+                    raise MeshError(f"Layer {info.name!r}: Wert für fehlenden Vertex {int(vid)}")
+                if type(value) is list and len(value) == 3:
+                    value = tuple(value)  # JSON gives lists; the fast path takes tuples of floats
+                value = _vector_value(value)
+                if value != _VECTOR_DEFAULT:
+                    layer[vid] = value
+            meta.append((lid, info))
+            values[lid] = dict(sorted(layer.items()))
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise MeshError(f"Ungültige point_layers: {exc!r}") from None
+    return tuple(meta), values

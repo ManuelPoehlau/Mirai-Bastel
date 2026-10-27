@@ -19,9 +19,10 @@ import pytest
 import tests._bootstrap  # noqa: F401
 
 from core import HistoryStack, VertexId
-from core.mesh import FaceRegion, FaceRegions, Mesh, MeshError, SymmetryDefinition
+from core.mesh import FaceRegion, FaceRegions, Mesh, MeshError, PointLayerInfo, SymmetryDefinition
 from core.operations import MeshDeltaCommand, record_mesh_change
-from tests.mesh_invariants import assert_mesh_invariants
+from core.operations.collapse import collapse_elements
+from tests.mesh_invariants import assert_layer_invariants, assert_mesh_invariants
 
 
 def _grid(n: int) -> Mesh:
@@ -48,7 +49,10 @@ def _snapshot(mesh: Mesh) -> tuple:
 
 def _counters(mesh: Mesh) -> tuple:
     state = mesh.export_state()
-    return state["vertex_id_counter"], state["edge_id_counter"], state["face_id_counter"]
+    return (
+        state["vertex_id_counter"], state["edge_id_counter"], state["face_id_counter"],
+        state["layer_id_counter"],
+    )
 
 
 def _scan_vertex_edges(mesh: Mesh, vid) -> list:
@@ -394,3 +398,257 @@ def test_end_change_of_an_inactive_recording_is_refused():
     mesh.end_change(change)
     with pytest.raises(MeshError):
         mesh.end_change(change)
+
+
+# -- point layers (AD-025 §4.2, T-1 / T-2) ------------------------------------------------------
+
+
+def _layered_grid(n: int, rng: random.Random) -> Mesh:
+    """A grid with three layers: two sparse vector layers and one with the `zero` rule."""
+    mesh = _grid(n)
+    vertices = mesh.all_vertex_ids()
+    for name, rule in (("A", "interpolate"), ("B", "interpolate"), ("Z", "zero")):
+        lid = mesh.add_point_layer(PointLayerInfo(name, new_point=rule))
+        for vid in rng.sample(vertices, len(vertices) // 3):
+            mesh.set_layer_value(lid, vid, (rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)))
+    return mesh
+
+
+def _random_value(rng: random.Random) -> tuple:
+    return (0.0, 0.0, 0.0) if rng.random() < 0.15 else (rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1))
+
+
+def _random_matrix(rng: random.Random) -> tuple:
+    return tuple(tuple(rng.uniform(-1.5, 1.5) for _ in range(3)) for _ in range(3))
+
+
+def _random_layer_op(mesh: Mesh, rng: random.Random, counter: list) -> None:
+    """One mutation on a layered mesh: every primitive (through `_random_op`; `add_vertex` without
+    an origin and `split_face` with interior points refuse there), plus `add_vertex(origin)`,
+    Collapse and every layer write."""
+    layers = mesh.point_layer_ids()
+    vertices = mesh.all_vertex_ids()
+    kind = rng.choice(
+        ["primitive", "primitive", "primitive", "origin", "collapse", "set", "set", "map", "map_then_set",
+         "add_layer", "remove_layer", "rename", "reorder"]
+    )
+    if kind == "primitive":
+        _random_op(mesh, rng)
+    elif kind == "origin" and len(vertices) >= 3:
+        sources = rng.sample(vertices, rng.randint(1, 3))
+        if len(sources) == 1:
+            origin = ((sources[0], 1.0),)
+        else:
+            w = [rng.random() + 0.1 for _ in sources]
+            origin = tuple((v, x / sum(w)) for v, x in zip(sources, w))
+            origin = origin[:-1] + ((origin[-1][0], 1.0 - sum(x for _, x in origin[:-1])),)
+        if rng.random() < 0.15:
+            origin = ()
+        new = [mesh.add_vertex((rng.random(), rng.random(), 2.0), origin=origin) for _ in range(3)]
+        mesh.add_face(new)
+    elif kind == "collapse" and vertices:
+        v = rng.choice(vertices)
+        group = [v] + [mesh.edge_vertices(e)[0] if mesh.edge_vertices(e)[1] == v else mesh.edge_vertices(e)[1]
+                       for e in mesh.vertex_edges(v)[:rng.randint(1, 2)]]
+        collapse_elements(mesh, group)
+    elif kind == "set" and layers and vertices:
+        lid = rng.choice(layers)
+        for vid in rng.sample(vertices, min(len(vertices), rng.randint(1, 4))):
+            mesh.set_layer_value(lid, vid, _random_value(rng))
+    elif kind == "map":
+        mesh.map_vector_layers(_random_matrix(rng))
+    elif kind == "map_then_set" and layers and vertices:
+        # sparse edits before and after a bulk write in the same recording
+        lid = rng.choice(layers)
+        mesh.set_layer_value(lid, rng.choice(vertices), _random_value(rng))
+        mesh.map_vector_layers(_random_matrix(rng))
+        mesh.set_layer_value(lid, rng.choice(vertices), _random_value(rng))
+        if rng.random() < 0.5:
+            mesh.remove_point_layer(lid)
+    elif kind == "add_layer":
+        counter[0] += 1
+        lid = mesh.add_point_layer(PointLayerInfo(f"N{counter[0]}", new_point=rng.choice(["interpolate", "zero"])))
+        for vid in rng.sample(vertices, min(len(vertices), 3)):
+            mesh.set_layer_value(lid, vid, _random_value(rng))
+    elif kind == "remove_layer" and layers:
+        mesh.remove_point_layer(rng.choice(layers))
+    elif kind == "rename" and layers:
+        lid = rng.choice(layers)
+        counter[0] += 1
+        info = mesh.point_layer_info(lid)
+        mesh.set_point_layer_info(lid, PointLayerInfo(f"R{counter[0]}", info.kind, rng.choice(["interpolate", "zero"])))
+    elif kind == "reorder" and len(layers) > 1:
+        mesh.set_point_layer_order(rng.sample(layers, len(layers)))
+
+
+def _export_text(mesh: Mesh) -> str:
+    import json
+
+    return json.dumps(mesh.export_state()["point_layers"])
+
+
+@pytest.mark.parametrize("seed,steps", [(seed, 25) for seed in range(12)] + [(99, 300)])
+def test_layered_random_sequences_undo_redo_match_snapshots(seed, steps):
+    """T-1: exactness contract (1)-(7) with point layers, copy-on-write included - a shared dict
+    mutated by a later write would make an earlier Undo / Redo state differ from its snapshot."""
+    rng = random.Random(1000 + seed)
+    mesh = _layered_grid(4, rng)
+    kinds: dict = {}
+    counter = [0]
+    history = HistoryStack()
+    snapshots = [(_snapshot(mesh), _export_text(mesh))]
+    for _ in range(steps):
+        before = _snapshot(mesh)
+        counters = _counters(mesh)
+        try:
+            delta = record_mesh_change(mesh, lambda: _random_layer_op(mesh, rng, counter))[0]
+        except MeshError:
+            assert _snapshot(mesh) == before
+            assert_layer_invariants(mesh, kinds=kinds)
+            continue
+        assert_layer_invariants(mesh, kinds=kinds)
+        assert _counters(mesh) >= counters
+        # Per layer a delta holds per-element records or one whole-layer record, never both: that
+        # is why the apply order of the two shapes cannot change the result (AD-025 §4.2).
+        assert not set(delta.layer_values) & set(delta.layer_whole)
+        if delta.empty:
+            assert _body(mesh) == before[0]
+            continue
+        history.push(MeshDeltaCommand(mesh, delta, "op"))
+        snapshots.append((_snapshot(mesh), _export_text(mesh)))
+    for expected in reversed(snapshots[:-1]):
+        counters = _counters(mesh)
+        history.undo()
+        assert (_snapshot(mesh), _export_text(mesh)) == expected
+        assert _counters(mesh) == counters
+        assert_layer_invariants(mesh, kinds=kinds)
+    for expected in snapshots[1:]:
+        history.redo()
+        assert (_snapshot(mesh), _export_text(mesh)) == expected
+        assert_layer_invariants(mesh, kinds=kinds)
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_layered_rollback_restores_exactly_also_nested(seed):
+    """T-2: nested rollback with both record shapes (per element and whole layer)."""
+    rng = random.Random(200 + seed)
+    mesh = _layered_grid(3, rng)
+    counter = [0]
+
+    def some_ops():
+        for _ in range(5):
+            try:
+                _random_layer_op(mesh, rng, counter)
+            except MeshError:
+                pass
+
+    outer_start = (_snapshot(mesh), _export_text(mesh))
+    outer = mesh.begin_change()
+    some_ops()
+    middle = (_snapshot(mesh), _export_text(mesh))
+    inner = mesh.begin_change()
+    some_ops()
+    mesh.rollback_change(inner)
+    assert (_snapshot(mesh), _export_text(mesh)) == middle
+    mesh.rollback_change(outer)
+    assert (_snapshot(mesh), _export_text(mesh)) == outer_start
+    assert_layer_invariants(mesh)
+    assert not mesh._logs
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_layered_checkpoints_revert_and_release(seed):
+    """T-2: the Knife checkpoint pattern - a session recording with checkpoints that are reverted
+    (several times) or released, ending in one delta that undoes / redoes exactly."""
+    rng = random.Random(300 + seed)
+    mesh = _layered_grid(3, rng)
+    counter = [0]
+    start = (_snapshot(mesh), _export_text(mesh))
+    session = mesh.begin_change()
+    for _ in range(4):
+        checkpoint = mesh.begin_change()
+        here = (_snapshot(mesh), _export_text(mesh))
+        for _ in range(2):
+            for _ in range(3):
+                try:
+                    _random_layer_op(mesh, rng, counter)
+                except MeshError:
+                    pass
+            mesh.revert_change(checkpoint)
+            assert (_snapshot(mesh), _export_text(mesh)) == here
+            assert checkpoint.is_empty()
+        for _ in range(3):
+            try:
+                _random_layer_op(mesh, rng, counter)
+            except MeshError:
+                pass
+        mesh.release_change(checkpoint)
+    end = (_snapshot(mesh), _export_text(mesh))
+    delta = mesh.end_change(session)
+    mesh.apply_delta(delta, reverse=True)
+    assert (_snapshot(mesh), _export_text(mesh)) == start
+    mesh.apply_delta(delta)
+    assert (_snapshot(mesh), _export_text(mesh)) == end
+    assert_layer_invariants(mesh)
+
+
+def test_watch_sees_layer_changes_as_keys_without_values():
+    """T-2: a watch records which layers / vertices changed, never their before-values."""
+    rng = random.Random(5)
+    mesh = _layered_grid(2, rng)
+    lid = mesh.point_layer_ids()[0]
+    vid = mesh.all_vertex_ids()[0]
+    watch = mesh.watch()
+    mesh.set_layer_value(lid, vid, (1.0, 2.0, 3.0))
+    change = watch.take()
+    assert not change.is_empty() and change.layers_touched
+    assert change.layer_values == {lid: {vid: None}}
+    assert not (change.vertices or change.edges or change.faces)
+    mesh.map_vector_layers(((2.0, 0.0, 0.0), (0.0, 2.0, 0.0), (0.0, 0.0, 2.0)))
+    change = watch.take()
+    assert set(change.layer_whole) == set(mesh.point_layer_ids())
+    assert all(record == (None, None) for record in change.layer_whole.values())
+    watch.close()
+
+
+def test_layer_only_change_is_a_non_empty_delta():
+    mesh = _grid(1)
+
+    def add():
+        lid = mesh.add_point_layer(PointLayerInfo("Smile"))
+        mesh.set_layer_value(lid, mesh.all_vertex_ids()[0], (0.0, 0.5, 0.0))
+
+    delta, _ = record_mesh_change(mesh, add)
+    assert not delta.empty and not (delta.vertices or delta.edges or delta.faces)
+    mesh.apply_delta(delta, reverse=True)
+    assert not mesh.has_point_layers() and mesh.export_state()["point_layers"] is None
+    mesh.apply_delta(delta)
+    assert [v for _, v in mesh.layer_items(mesh.point_layer_ids()[0])] == [(0.0, 0.5, 0.0)]
+    # writing the same value again records nothing
+    lid = mesh.point_layer_ids()[0]
+    delta, _ = record_mesh_change(mesh, lambda: mesh.set_layer_value(lid, mesh.all_vertex_ids()[0], (0.0, 0.5, 0.0)))
+    assert delta.empty
+
+
+def test_bulk_write_journals_o_layers_and_shares_dicts():
+    """§4.2: a bulk operation records one old dict per layer (no per-element records), and the
+    delta's dicts are never mutated by later writes (copy-on-write)."""
+    mesh = _grid(6)
+    lid = mesh.add_point_layer(PointLayerInfo("A"))
+    for vid in mesh.all_vertex_ids():
+        mesh.set_layer_value(lid, vid, (1.0, 1.0, 1.0))
+    outer = mesh.begin_change()
+    watch = mesh.watch()
+    mesh.map_vector_layers(((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)))
+    assert outer.layer_values == {} and set(outer.layer_whole) == {lid}
+    assert watch.peek().layer_whole == {lid: (None, None)}
+    delta = mesh.end_change(outer)
+    before, after = delta.layer_whole[lid]
+    frozen_before, frozen_after = dict(before), dict(after)
+    vid = mesh.all_vertex_ids()[0]
+    mesh.set_layer_value(lid, vid, (9.0, 9.0, 9.0))  # must copy, not touch the delta's dict
+    assert after == frozen_after and before == frozen_before
+    mesh.apply_delta(delta, reverse=True)
+    mesh.set_layer_value(lid, vid, (7.0, 7.0, 7.0))
+    assert before == frozen_before
+    watch.close()

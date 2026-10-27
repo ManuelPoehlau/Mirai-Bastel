@@ -872,7 +872,7 @@ Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Kn
 ## Strategic research / gates
 
 - **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15; M0, M1, M2-0, M2-0…M2-4 implemented 2026-10-15; Manu's practical tests pending)
-- **ARCH-02 — Topology Identity / Provenance / Remapping**
+- **ARCH-02 — Topology Identity / Provenance / Remapping** — [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) (PROPOSED 2026-10-27; Phase 2 IMPLEMENTED 2026-10-27: Core point layers, journal, file v5, fail-closed gate; H1–H5 open; next Phase 3, one persistent target)
 
 ## Later (after WP-06 / production foundation stabilizes)
 
