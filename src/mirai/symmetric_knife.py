@@ -388,12 +388,16 @@ class _Replay:
         self.mv(b)                      # both ends need a partner (raises otherwise)
         if not mesh.is_valid_edge(e2):
             raise KnifeRefusal(TEXT_KNIFE_COLLISION, "mirror edge already cut by the source")
+        # The mirror split runs at the mapped t (t, or 1 - t when the mirror edge is stored the other way
+        # round), so its point-layer values are the edge blend of the mirror ends at the mirror point
+        # (AD-025 §3, F-6; Phase 5). The position is then placed exactly (below); values need no snap.
+        t2 = call.t if mesh.edge_vertices(e2)[0] == a2 else 1.0 - call.t
         try:
-            vertex, x1, x2 = mesh.split_edge(e2, 0.5)
+            vertex, x1, x2 = mesh.split_edge(e2, t2)
         except (MeshError, KeyError) as exc:
             raise KnifeRefusal(TEXT_KNIFE_MIRROR_FAILED, f"mirror edge split refused ({type(exc).__name__})") from None
-        # Placement at replay: the mirror vertex sits exactly at the mirror of the source vertex (t = 0.5
-        # above only chose a valid place on the edge to start from).
+        # Placement at replay: the mirror vertex sits exactly at the mirror of the source vertex (the
+        # split's own expression at t2 agrees up to rounding).
         mesh.set_vertex_position(vertex, self.mirror(call.position))
         self.vmap[call.vertex] = vertex
         straight = a2 in mesh.edge_vertices(x1)
@@ -408,8 +412,15 @@ class _Replay:
         if not mesh.is_valid_face(g):
             raise KnifeRefusal(TEXT_KNIFE_COLLISION, "mirror face already cut by the source")
         a2, b2 = self.mv(call.a), self.mv(call.b)
+        positions = [self.mirror(p) for p in call.positions]
         try:
-            new_vertices, new_edges, g1, g2 = mesh.split_face(g, a2, b2, [self.mirror(p) for p in call.positions])
+            if call.origins is None:
+                new_vertices, new_edges, g1, g2 = mesh.split_face(g, a2, b2, positions)
+            else:
+                # AD-025 Phase 5: the source's interior origins through the vertex map - the mirror point
+                # interpolates the mirror corners with the same weights.
+                origins = [tuple((self.mv(v), w) for v, w in origin) for origin in call.origins]
+                new_vertices, new_edges, g1, g2 = mesh.split_face(g, a2, b2, positions, origins=origins)
         except (MeshError, KeyError) as exc:
             raise KnifeRefusal(TEXT_KNIFE_MIRROR_FAILED, f"mirror face cut refused ({str(exc)[:40]})") from None
         self.vmap.update(zip(call.new_vertices, new_vertices))

@@ -126,7 +126,8 @@ def test_add_vertex_without_layers_ignores_origin():
     assert mesh.vertex_position(vid) == mesh.vertex_position(other)
 
 
-def test_split_face_interior_points_refuse_on_a_layered_mesh():
+def test_split_face_interior_points_without_origins_refuse_on_a_layered_mesh():
+    """The Core backstop (AD-025 §4.4): interior points on a layered mesh need `origins=`."""
     mesh, _ = _layered(seed=6)
     face = mesh.all_face_ids()[0]
     a, _, c, _ = mesh.face_vertices(face)
@@ -136,6 +137,81 @@ def test_split_face_interior_points_refuse_on_a_layered_mesh():
     assert _snapshot(mesh) == before and _counters(mesh) == counters
     _, _, f1, f2 = mesh.split_face(face, a, c)  # k = 0 has no layer effect
     assert mesh.is_valid_face(f1) and mesh.is_valid_face(f2)
+
+
+def test_split_face_origins_apply_per_layer():
+    """Phase 5 (CORE_V1_FREEZE §7.1 2026-10-27): each interior vertex gets the affine combination of
+    its origin's values in every `interpolate` layer, bit for bit `add_vertex`'s arithmetic; a `zero`
+    layer stores nothing; `()` stores defaults; the corners keep their values."""
+    mesh, lid = _layered(seed=11)
+    z = mesh.add_point_layer(PointLayerInfo("Z", new_point="zero"))
+    face = mesh.all_face_ids()[0]
+    a, b, c, d = mesh.face_vertices(face)
+    for v in (a, b, c, d):
+        mesh.set_layer_value(z, v, (1.0, 1.0, 1.0))
+    corners = {v: mesh.layer_value(lid, v) for v in (a, b, c, d)}
+    origins = [((a, 0.2), (b, 0.5), (c, 0.3)), ((c, 0.6), (d, 0.15), (a, 0.25)), ()]
+    positions = [(0.4, 0.3, 0.0), (0.6, 0.7, 0.0), (0.7, 0.8, 0.0)]
+    new, _, _, _ = mesh.split_face(face, a, c, positions, origins=origins)
+    for vid, origin in zip(new, origins):
+        expected = None
+        for src, w in origin:
+            term = tuple(w * x for x in corners[src])
+            expected = term if expected is None else tuple(p + q for p, q in zip(expected, term))
+        assert mesh.layer_value(lid, vid) == (expected or ZERO)
+        assert mesh.layer_value(z, vid) == ZERO
+    assert {v: mesh.layer_value(lid, v) for v in (a, b, c, d)} == corners
+    assert_layer_invariants(mesh)
+
+
+@pytest.mark.parametrize(
+    "origins",
+    [
+        [((VertexId(9999), 1.0),)],                      # unknown source
+        [((VertexId(0), 0.5),)],                         # weights do not sum to 1
+        [((VertexId(0), float("inf")), (VertexId(1), 0.0))],
+        [((VertexId(0), 1.0),), ((VertexId(1), 1.0),)],  # one origin too many
+        [],                                              # one too few
+        ["x"],
+    ],
+)
+def test_split_face_origin_refusals_leave_mesh_and_counters_unchanged(origins):
+    mesh, _ = _layered(seed=12)
+    face = mesh.all_face_ids()[0]
+    a, _, c, _ = mesh.face_vertices(face)
+    before, counters = _snapshot(mesh), _counters(mesh)
+    with pytest.raises(MeshError):
+        mesh.split_face(face, a, c, [(0.5, 0.5, 0.0)], origins=origins)
+    assert _snapshot(mesh) == before and _counters(mesh) == counters
+
+
+def test_split_face_origins_without_layers_are_ignored_but_counted():
+    plain, other = _grid(2), _grid(2)
+    face = plain.all_face_ids()[0]
+    a, _, c, _ = plain.face_vertices(face)
+    plain.split_face(face, a, c, [(0.5, 0.5, 0.0)])
+    other.split_face(face, a, c, [(0.5, 0.5, 0.0)], origins=[((VertexId(4242), 3.0),)])
+    assert plain.export_state() == other.export_state()
+    with pytest.raises(MeshError):
+        other.split_face(other.all_face_ids()[0], *other.face_vertices(other.all_face_ids()[0])[::2],
+                         [(0.1, 0.1, 0.0)], origins=[])
+
+
+def test_split_face_origins_undo_redo_exact():
+    mesh, lid = _layered(seed=13, dense=False)
+    face = mesh.all_face_ids()[1]
+    a, b, c, _ = mesh.face_vertices(face)
+    before = _snapshot(mesh)
+    history = HistoryStack()
+    delta, _ = record_mesh_change(
+        mesh, lambda: mesh.split_face(face, a, c, [(0.3, 0.3, 0.0)], origins=[((a, 0.5), (b, 0.25), (c, 0.25))])
+    )
+    after = _snapshot(mesh)
+    history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description="cut"))
+    history.undo()
+    assert _snapshot(mesh) == before
+    history.redo()
+    assert _snapshot(mesh) == after
 
 
 @pytest.mark.parametrize(

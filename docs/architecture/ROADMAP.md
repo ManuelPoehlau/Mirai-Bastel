@@ -422,7 +422,7 @@ A reviewed architectural model and documented constraints. Do not build a large 
 
 **Input (2026-10-27, Discovery, not a decision):** [mesh architecture audit](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) — per-operation contract (§D), proposed minimum (vertex origin in the primitives, journaled per-point layers, operation gate), phased roadmap and Manu's open decisions H1–H5.
 
-**Decision document (2026-10-27, PROPOSED; reviewed — ACCEPT WITH CHANGES, revised; Manu's go for Phase 2 2026-10-27):** [AD-025 — Topology Identity, Provenance and Point Layers](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) — answers the six questions above (§2), per-operation contract (§3), mechanism for Phase 2 (§4, §8–§9).
+**Decision document (2026-10-27, PROPOSED; reviewed — ACCEPT WITH CHANGES, revised; Manu's go for Phase 2 2026-10-27):** [AD-025 — Topology Identity, Provenance and Point Layers](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) — answers the six questions above (§2), per-operation contract (§3), mechanism for Phase 2 (§4, §8–§9). **Status (2026-10-27):** Phases 2, 3 and 5 implemented — topology edits (Split, Edge Connect, Loop Insert, Knife, Extrude, Collapse, mirror copy) run on a mesh with a target, plain and symmetric ([§16](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#16-phase-5-implementation-note-2026-10-27)); next Phase 4 or 6.
 
 ---
 
@@ -536,7 +536,7 @@ Base Mesh + Morph Target + Weight -> Evaluated Geometry
 
 Morph is a later consumer, not an immediate Core foundation.
 
-**Status (2026-10-27):** one persistent target per mesh is in the app (AD-025 Phase 3, [§15](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#15-editing-view-and-phase-3-implementation-note-2026-10-27)); several targets, the stage chain and morph + SubD are AD-025 Phase 4.
+**Status (2026-10-27):** one persistent target per mesh is in the app (AD-025 Phase 3, [§15](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#15-editing-view-and-phase-3-implementation-note-2026-10-27)), and the topology tools run on a mesh with a target (Phase 5, [§16](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#16-phase-5-implementation-note-2026-10-27)); several targets, the stage chain and morph + SubD are AD-025 Phase 4.
 
 ---
 
@@ -874,7 +874,7 @@ Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Kn
 ## Strategic research / gates
 
 - **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15; M0, M1, M2-0, M2-0…M2-4 implemented 2026-10-15; Manu's practical tests pending)
-- **ARCH-02 — Topology Identity / Provenance / Remapping** — [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) (PROPOSED 2026-10-27; Phase 2 IMPLEMENTED 2026-10-27: Core point layers, journal, file v5, fail-closed gate; H1–H5 and C-1 decided 2026-10-27; **Phase 3 IMPLEMENTED 2026-10-27**: one persistent morph target in the app, editing view beside the base, Apply transform carries targets — AD-025 §15; next Phase 5 or 4)
+- **ARCH-02 — Topology Identity / Provenance / Remapping** — [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) (PROPOSED 2026-10-27; Phase 2 IMPLEMENTED 2026-10-27: Core point layers, journal, file v5, fail-closed gate; H1–H5 and C-1 decided 2026-10-27; **Phase 3 IMPLEMENTED 2026-10-27**: one persistent morph target in the app, editing view beside the base, Apply transform carries targets — AD-025 §15; **Phase 5 IMPLEMENTED 2026-10-27**: topology edits with targets, `split_face(…, origins=…)` — AD-025 §16; next Phase 4 or 6)
 
 ## Later (after WP-06 / production foundation stabilizes)
 

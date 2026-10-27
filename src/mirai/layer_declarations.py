@@ -7,8 +7,10 @@ as they are), or declared in `LAYER_SAFE_OPERATIONS` - whose value is the implem
 runs (plain and symmetric), so a rename fails loudly and `tests/test_layer_gate.py` runs every entry
 against its rule on a plain and a symmetric layered fixture. Everything else is locked with a
 status line. The table is H1 (AD-025 §10, decided by Manu 2026-10-27): allowed are Delete, Dissolve,
-Vertex Connect, Cap and every position-only tool; locked until Phase 5 are Split, Edge Connect, Loop
-Insert, Knife, Extrude, Collapse and mirror copy. Apply transform is declared since Phase 3
+Vertex Connect, Cap and every position-only tool; Split, Edge Connect, Loop Insert, Knife, Extrude,
+Collapse and mirror copy were locked until Phase 5 and are declared since then (2026-10-27, AD-025 §16),
+each with its rule test on a plain and a symmetric layered fixture (`tests/test_layer_topology_ops.py`,
+`tests/test_layer_knife.py`). Apply transform is declared since Phase 3
 (2026-10-27): `scene_objects.apply_placement` maps the vector layers by the placement's linear part
 (`Mesh.map_vector_layers(s·R)`) in the same recording as the positions (AD-025 §4.3, F-7).
 
@@ -23,8 +25,8 @@ test lists them from the code; an unclassified one fails. Checked per target mes
 component commands, every baked object's mesh for Apply transform, the source for mirror copy. No
 layers: no lookup. The Core backstop (`Mesh.add_vertex` without an origin, `split_face` with interior
 points) catches what a forgotten declaration would let through on the host path
-(`apply_mesh_change`, labs). The module depends on `core`, `mirai.topology` and `mirai.symmetric_ops`,
-never on `application`.
+(`apply_mesh_change`, labs). The module depends on `core`, `mirai.topology`, the symmetric coordinators
+(`symmetric_ops`, `symmetric_knife`, `symmetric_extrude`) and `object_mirror`, never on `application`.
 """
 
 from __future__ import annotations
@@ -32,23 +34,40 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from core import Mesh
+
 from .interaction import commands
+from .object_mirror import mirror_mesh
 from .scene_objects import apply_placement
+from .symmetric_extrude import plan_extrude
+from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
     coordinate_cap,
+    coordinate_collapse,
     coordinate_delete,
     coordinate_dissolve,
     coordinate_dissolve_no_cleanup,
+    coordinate_edge_connect,
+    coordinate_split,
     coordinate_vertex_connect,
 )
 from .topology.border import apply_cap
+from .topology.collapse import apply_collapse
+from .topology.connect_per_face import apply_connect_edges
 from .topology.connect_vertices_per_face import apply_connect_vertices
 from .topology.contextual_c import CContext
 from .topology.delete_dissolve import apply_removal
+from .topology.extrude import ExtrudeTool
+from .topology.knife_resolve import resolve_cross_face
 
-#: Declared operations (H1 "allowed" topology rows): key -> (plain implementation, symmetric
-#: implementation), exactly the functions `Application` runs for that key. Each one creates no vertex
-#: (Vertex Connect, Cap) or only removes vertices (Delete, Dissolve; the Core deletes their values).
+#: Declared operations: key -> (plain implementation, symmetric implementation), exactly the functions
+#: `Application` runs for that key. The H1 "allowed" rows create no vertex (Vertex Connect, Cap) or only
+#: remove vertices (Delete, Dissolve; the Core deletes their values). The Phase 5 rows (AD-025 §3, §16)
+#: create or merge vertices by a rule the Core applies: midpoint splits (Split, Edge Connect, Loop
+#: Insert: the edge blend), the group average (Collapse; the symmetric snap moves positions only), the
+#: cap copies (Extrude: `add_vertex(origin=((v, 1.0),))`), the Knife (edge blend; interior points the
+#: barycentric origin picked with them, `split_face(origins=...)`; the symmetric replay at the mapped t
+#: with the mirrored origins) and the mirror copy (layers through the index map, v -> H·v).
 LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
     {
         CContext.VERTEX_CONNECT: (apply_connect_vertices, coordinate_vertex_connect),
@@ -56,11 +75,23 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         commands.DISSOLVE: (apply_removal, coordinate_dissolve),
         commands.DISSOLVE_NO_CLEANUP: (apply_removal, coordinate_dissolve_no_cleanup),
         commands.CAP: (apply_cap, coordinate_cap),
+        # AD-025 Phase 5 (2026-10-27)
+        CContext.SPLIT: (Mesh.split_edge, coordinate_split),
+        CContext.EDGE_CONNECT: (apply_connect_edges, coordinate_edge_connect),
+        commands.LOOP_INSERT: (apply_connect_edges, coordinate_edge_connect),
+        CContext.KNIFE: (resolve_cross_face, coordinate_knife),
+        commands.COLLAPSE: (apply_collapse, coordinate_collapse),
+        commands.EXTRUDE: (ExtrudeTool, plan_extrude),
+        # A new mesh from a layered one (AD-025 §4.3): its layers through the index map, v -> H·v.
+        "mirror_copy": (mirror_mesh, mirror_mesh),
         # A frame change (AD-025 §4.3): positions p -> to_world(p), vector values v -> s·R·v; one
         # function for plain and symmetric meshes (the symmetry plane moves with `axis`).
         commands.APPLY_TRANSFORM: (apply_placement, apply_placement),
     }
 )
+
+#: Keys of `LAYER_SAFE_OPERATIONS` that are `Application` methods, not command constants.
+_DECLARED_METHODS = frozenset({"mirror_copy"})
 
 NON_MESH = "non-mesh"
 POSITION_ONLY = "position-only"
@@ -107,13 +138,12 @@ _POSITION_ONLY_COMMANDS = (
     commands.SMOOTH, commands.RELAX, commands.RESYMMETRIZE,
 )
 
-#: H1 locked: topology the Core has a rule for but the tool or its symmetric path does not yet
-#: (Phase 5), the Knife session keys (the session itself is locked at `C`), and constants no
-#: `Application` path handles (fail-closed).
-_LOCKED_COMMANDS = (
-    commands.EXTRUDE, commands.COLLAPSE, commands.LOOP_INSERT,
-    commands.SPLIT_EDGE, commands.KNIFE_COMMIT, commands.KNIFE_LIFT, commands.ARTICULATION_RESTORE,
-)
+#: Locked: constants no `Application` path handles (fail-closed). Phase 5 lifted the H1 locks.
+_LOCKED_COMMANDS = (commands.SPLIT_EDGE, commands.ARTICULATION_RESTORE)
+
+#: The Knife session's keys act only inside a session, which is gated where it starts (`C`,
+#: `CContext.KNIFE`); outside one they change nothing.
+_KNIFE_SESSION_COMMANDS = (commands.KNIFE_COMMIT, commands.KNIFE_LIFT)
 
 _MORPH_COMMANDS = (
     commands.MORPH_NEW, commands.MORPH_RENAME, commands.MORPH_DELETE, commands.MORPH_EDIT_TOGGLE,
@@ -131,19 +161,20 @@ COMMAND_CLASSES: Mapping[str, str] = MappingProxyType(
     {
         **{c: NON_MESH for c in _NON_MESH_COMMANDS},
         **{c: POSITION_ONLY for c in _POSITION_ONLY_COMMANDS},
+        **{c: NON_MESH for c in _KNIFE_SESSION_COMMANDS},
         **{c: LOCKED for c in _LOCKED_COMMANDS},
         **{c: MORPH for c in _MORPH_COMMANDS},
         commands.CONNECT: RESOLVED,
-        **{c: DECLARED for c in LAYER_SAFE_OPERATIONS if isinstance(c, str)},
+        **{c: DECLARED for c in LAYER_SAFE_OPERATIONS if isinstance(c, str) and c not in _DECLARED_METHODS},
     }
 )
 
 #: Resolved `C` context -> class (the declared one is in `LAYER_SAFE_OPERATIONS`).
 CONTEXT_CLASSES: Mapping[CContext, str] = MappingProxyType(
     {
-        CContext.SPLIT: LOCKED,
-        CContext.EDGE_CONNECT: LOCKED,
-        CContext.KNIFE: LOCKED,
+        CContext.SPLIT: DECLARED,
+        CContext.EDGE_CONNECT: DECLARED,
+        CContext.KNIFE: DECLARED,
         CContext.VERTEX_CONNECT: DECLARED,
         CContext.NONE: NON_MESH,  # resolves to no operation
     }
@@ -153,7 +184,7 @@ CONTEXT_CLASSES: Mapping[CContext, str] = MappingProxyType(
 #: are gated. "commands": through the command classes above (key / pointer / dispatch paths);
 #: "new mesh": a new ID space without layers, or a file that restores its own layers; "host": the
 #: external-host entry, which gets the Core backstop (AD-025 §4.4); "non-mesh": objects / pairs only;
-#: LOCKED: refused while its source has layers (mirror copy, Phase 5).
+#: DECLARED: in `LAYER_SAFE_OPERATIONS` (mirror copy, since Phase 5).
 METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
     {
         "dispatch_command": "commands",
@@ -173,7 +204,7 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "pair_selected": "non-mesh",
         "break_mirror_pairs": "non-mesh",
         "resync_mirror_pairs": "non-mesh",
-        "mirror_copy": LOCKED,
+        "mirror_copy": DECLARED,
         # AD-025 Phase 3: the target lifecycle (one layer-only Undo step each) and the editing view
         "create_morph_target": MORPH,
         "rename_morph_target": MORPH,

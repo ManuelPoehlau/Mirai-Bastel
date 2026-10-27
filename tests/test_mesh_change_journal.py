@@ -425,15 +425,32 @@ def _random_matrix(rng: random.Random) -> tuple:
 def _random_layer_op(mesh: Mesh, rng: random.Random, counter: list) -> None:
     """One mutation on a layered mesh: every primitive (through `_random_op`; `add_vertex` without
     an origin and `split_face` with interior points refuse there), plus `add_vertex(origin)`,
-    Collapse and every layer write."""
+    `split_face(..., origins=...)` (AD-025 Phase 5: weights over the face's corners, as the Knife
+    passes them), Collapse and every layer write."""
     layers = mesh.point_layer_ids()
     vertices = mesh.all_vertex_ids()
     kind = rng.choice(
-        ["primitive", "primitive", "primitive", "origin", "collapse", "set", "set", "map", "map_then_set",
-         "add_layer", "remove_layer", "rename", "reorder"]
+        ["primitive", "primitive", "primitive", "origin", "split_face", "split_face", "collapse", "set", "set",
+         "map", "map_then_set", "add_layer", "remove_layer", "rename", "reorder"]
     )
     if kind == "primitive":
         _random_op(mesh, rng)
+    elif kind == "split_face" and mesh.all_face_ids():
+        f = rng.choice(mesh.all_face_ids())
+        boundary = mesh.face_vertices(f)
+        if len(boundary) >= 3 and len(set(boundary)) == len(boundary):
+            a, b = rng.sample(boundary, 2)
+            positions, origins = [], []
+            for _ in range(rng.randint(1, 3)):
+                corners = rng.sample(boundary, 3)
+                w = [rng.random() + 0.05 for _ in corners]
+                w = [x / sum(w) for x in w]
+                w[-1] = 1.0 - w[0] - w[1]
+                positions.append(tuple(
+                    sum(wi * mesh.vertex_position(c)[i] for wi, c in zip(w, corners)) for i in range(3)
+                ))
+                origins.append(() if rng.random() < 0.1 else tuple(zip(corners, w)))
+            mesh.split_face(f, a, b, positions, origins=origins)
     elif kind == "origin" and len(vertices) >= 3:
         sources = rng.sample(vertices, rng.randint(1, 3))
         if len(sources) == 1:

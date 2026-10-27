@@ -85,7 +85,11 @@ def mirror_mesh(mesh: Mesh, normal: Vec3) -> Mesh:
     """A new, independent mesh with every position reflected about the object origin (`H p`) and
     every face's winding reversed, so outward stays outward. Built through the public Mesh API
     (`mesh_from_positions_and_faces`, `add_edge` for loose edges) with fresh dense ids and **no**
-    symmetry definition (the copy's ids are its own; Shift+S is per mesh, proposal §5.2)."""
+    symmetry definition (the copy's ids are its own; Shift+S is per mesh, proposal §5.2).
+
+    Point layers (AD-025 §4.3 Phase 5: a frame change of a new mesh): every layer is copied in order,
+    with its name and rule, through the same index map; a vector value maps like a position, `v -> H v`
+    (bit-exact mirror for an axis plane: H holds only 0 and ±1)."""
     h = reflection_matrix(normal)
     vertex_ids = sorted(mesh.all_vertex_ids())
     index = {vid: i for i, vid in enumerate(vertex_ids)}
@@ -100,6 +104,10 @@ def mirror_mesh(mesh: Mesh, normal: Vec3) -> Mesh:
         if not mesh.edge_faces(eid):
             a, b = mesh.edge_vertices(eid)
             mirrored.add_edge(new_ids[index[a]], new_ids[index[b]])
+    for lid in mesh.point_layer_ids():
+        new_lid = mirrored.add_point_layer(mesh.point_layer_info(lid))
+        for vid, value in mesh.layer_items(lid):
+            mirrored.set_layer_value(new_lid, new_ids[index[vid]], _apply(h, value))
     return mirrored
 
 

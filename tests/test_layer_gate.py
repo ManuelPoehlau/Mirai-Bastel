@@ -3,9 +3,10 @@
 
 Headless. The gate is fail-closed: every command constant, every resolved `C` context and every
 public `Application` method that can change or copy a mesh is classified; a declared operation runs
-on a plain and a symmetric layered fixture against its rule (no vertex created, survivors keep their
-values bit for bit, the Core deletes the values of removed vertices); everything else that changes a
-mesh is refused before any mutation, per target mesh. Without layers nothing is looked up.
+on a plain and a symmetric layered fixture against its rule (here: no vertex created, survivors keep
+their values bit for bit, the Core deletes the values of removed vertices; the Phase 5 operations that
+create or merge vertices in `test_layer_topology_ops.py` and `test_layer_knife.py`); everything else
+that changes a mesh is refused before any mutation, per target mesh. Without layers nothing is looked up.
 """
 
 from __future__ import annotations
@@ -125,6 +126,23 @@ def test_declared_entries_are_the_implementations_the_app_runs():
         assert ops[command] == (application_module.apply_removal, symmetry_declarations.REMOVAL_COORDINATORS[command])
     assert ops[commands.CAP] == (application_module.apply_cap, symmetry_declarations.CAP_COORDINATORS[commands.CAP])
     assert ops[commands.APPLY_TRANSFORM] == (application_module.apply_placement,) * 2
+    # AD-025 Phase 5
+    sym = symmetry_declarations.C_CONTEXT_COORDINATORS
+    from core import Mesh
+    from mirai.interaction.routing import tool_for_command
+    from mirai.topology import knife
+
+    assert ops[CContext.SPLIT] == (Mesh.split_edge, sym[CContext.SPLIT])
+    assert ops[CContext.EDGE_CONNECT] == (application_module.apply_connect_edges, sym[CContext.EDGE_CONNECT])
+    assert ops[commands.LOOP_INSERT] == ops[CContext.EDGE_CONNECT]  # Loop Insert is `_edge_connect` of the ring
+    assert ops[CContext.KNIFE] == (knife.resolve_cross_face, sym[CContext.KNIFE])
+    assert ops[commands.COLLAPSE] == (
+        application_module.apply_collapse, symmetry_declarations.COLLAPSE_COORDINATORS[commands.COLLAPSE]
+    )
+    assert ops[commands.EXTRUDE] == (
+        tool_for_command(commands.EXTRUDE), symmetry_declarations.EXTRUDE_COORDINATORS[commands.EXTRUDE]
+    )
+    assert ops["mirror_copy"] == (application_module.mirror_mesh,) * 2
 
 
 def test_unknown_keys_are_refused():
@@ -202,7 +220,12 @@ FRAME_FIXTURES = {commands.APPLY_TRANSFORM}
 
 
 def test_every_declared_entry_has_a_rule_fixture():
-    assert set(RULE_FIXTURES) | FRAME_FIXTURES == set(gate.LAYER_SAFE_OPERATIONS)
+    from tests import test_layer_topology_ops as phase5
+
+    for name in phase5.OTHER_FIXTURES.values():
+        assert callable(getattr(phase5, name))
+    declared = set(RULE_FIXTURES) | FRAME_FIXTURES | set(phase5.RULE_FIXTURES) | set(phase5.OTHER_FIXTURES)
+    assert declared == set(gate.LAYER_SAFE_OPERATIONS)
 
 
 @pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
@@ -227,69 +250,30 @@ def test_declared_operation_runs_on_a_layered_mesh_by_its_rule(key, symmetric):
     assert set(mesh.all_vertex_ids()) == before_vertices and _layers(mesh) == before
 
 
-# -- locked operations: refused before any mutation -------------------------------------------------
+# -- what stays locked: refused before any mutation -------------------------------------------------
 
 
-def _locked_cases():
-    def split(app):
-        mesh = app.scene.mesh
-        _select(app, E, {_edge(mesh, _grid_vertex(app, 1, 1), _grid_vertex(app, 1, 2))})
-        return commands.CONNECT
-
-    def edge_connect(app):
-        mesh = app.scene.mesh
-        _select(app, E, {
-            _edge(mesh, _grid_vertex(app, 1, 1), _grid_vertex(app, 1, 2)),
-            _edge(mesh, _grid_vertex(app, 2, 1), _grid_vertex(app, 2, 2)),
-        })
-        return commands.CONNECT
-
-    def knife(app):
-        app.selection.clear()
-        return commands.CONNECT
-
-    def collapse(app):
-        _plain_dissolve(app)
-        return commands.COLLAPSE
-
-    def extrude(app):
-        _plain_delete(app)
-        return commands.EXTRUDE
-
-    def loop_insert(app):
-        _plain_dissolve(app)
-        return commands.LOOP_INSERT
-
-    return {"split": split, "edge_connect": edge_connect, "knife": knife, "collapse": collapse,
-            "extrude": extrude, "loop_insert": loop_insert}
+def test_phase5_lifted_every_h1_lock():
+    """AD-025 Phase 5: nothing an `Application` path runs is locked any more; only constants no path
+    handles stay locked (fail-closed)."""
+    for key in (CContext.SPLIT, CContext.EDGE_CONNECT, CContext.KNIFE, commands.LOOP_INSERT, commands.COLLAPSE,
+                commands.EXTRUDE, "mirror_copy"):
+        assert key in gate.LAYER_SAFE_OPERATIONS and gate.layer_refusal(key) is None, key
+    locked = {k for k, cls in gate.COMMAND_CLASSES.items() if cls == gate.LOCKED}
+    assert locked == {commands.SPLIT_EDGE, commands.ARTICULATION_RESTORE}
+    assert {k for k, cls in gate.CONTEXT_CLASSES.items() if cls == gate.LOCKED} == set()
+    assert {k for k, cls in gate.METHOD_CLASSES.items() if cls == gate.LOCKED} == set()
+    for key in locked:
+        assert "locked while this mesh has morph targets" in gate.layer_refusal(key)
 
 
-@pytest.mark.parametrize("case", list(_locked_cases()))
-def test_locked_operation_is_refused_untouched(case):
+def test_an_unhandled_constant_is_refused_untouched_on_a_layered_mesh():
     app = _app(3)
-    command = _locked_cases()[case](app)
     _add_layers(app.scene.mesh)
     before = _state(app)
-    assert _press(app, command) is False
+    assert _press(app, commands.SPLIT_EDGE) is False
     assert "locked while this mesh has morph targets" in app.status_message
-    assert app.interaction_owner is None
     assert _state(app) == before
-
-
-@pytest.mark.parametrize("case", list(_locked_cases()))
-def test_locked_operation_runs_without_layers(case):
-    app = _app(3)
-    command = _locked_cases()[case](app)
-    before = app.scene.mesh.export_state()
-    _press(app, command)
-    if app.interaction_owner == "transform":
-        app.pointer_motion(400, 300, 0.0, -30.0)
-        app.key_release(TEST_KEY)
-    elif app.interaction_owner == "knife":
-        assert case == "knife"  # the session starts: the C context was not refused
-        app.key_press(Input("key", "escape"))
-        return
-    assert app.scene.mesh.export_state() != before, (case, app.status_message)
 
 
 def _evaluated_world(obj, lid, weight: float) -> dict:
@@ -408,21 +392,6 @@ def test_apply_transform_of_a_plain_object_is_not_refused_by_a_layered_edit_mesh
     app.key_press(Input("key", "4"))
     app.selection.objects = {plain.id}
     assert app.dispatch_command(commands.APPLY_TRANSFORM) is True, app.status_message
-
-
-def test_mirror_copy_of_a_layered_source_is_refused():
-    app = _app()
-    source = _placed_sphere(app)
-    _add_layers(source.mesh)
-    app.key_press(Input("key", "4"))
-    app.selection.objects = {source.id}
-    objects, history = dict(app.scene.objects), len(app.history)
-    assert app.mirror_copy("X") is None
-    assert "Mirror copy: locked" in app.status_message
-    assert dict(app.scene.objects) == objects and len(app.history) == history
-    source.mesh.remove_point_layer(source.mesh.point_layer_ids()[0])
-    source.mesh.remove_point_layer(source.mesh.point_layer_ids()[0])
-    assert app.mirror_copy("X") is not None
 
 
 # -- allowed: position-only commands leave layers bit-identical ---------------------------------------

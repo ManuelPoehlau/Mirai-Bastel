@@ -310,6 +310,10 @@ def _base_only_cases():
         _select(app, E, {ids["edge"]})
         return _key("b", "shift")
 
+    def knife(app, ids):
+        app.selection.clear()
+        return _key("c")
+
     def symmetry(app, ids):
         return _key("s", "shift")
 
@@ -328,7 +332,7 @@ def _base_only_cases():
 
     return {
         "split": split, "vertex_connect": connect_vertices, "delete": delete, "dissolve": dissolve,
-        "collapse": collapse, "extrude": extrude, "loop_insert": loop_insert, "cap": cap,
+        "collapse": collapse, "extrude": extrude, "loop_insert": loop_insert, "cap": cap, "knife": knife,
         "symmetry": symmetry, "new_group": new_group, "object_mode": object_mode,
         "new_target": new_target, "delete_target": delete_target,
     }
@@ -567,7 +571,8 @@ def test_the_hud_shows_a_morph_row_only_with_a_target():
 def test_the_evaluated_surface_equals_the_definition_through_random_edits():
     """`_Surface` patches from the journal; after every step it must equal `blend(b, d, w)` everywhere
     (an oracle over every vertex), through weight steps, base moves, offset writes (per element and
-    bulk), deletions and Undo / Redo."""
+    bulk), deletions, the Phase 5 topology edits (split_edge, split_face with origins, Collapse -
+    patched into the surface in place, AD-025 §16) and Undo / Redo."""
     import random
 
     from core import PointLayerInfo
@@ -587,14 +592,21 @@ def test_the_evaluated_surface_equals_the_definition_through_random_edits():
             assert surface is None
             return
         assert sorted(surface.all_vertex_ids()) == sorted(mesh.all_vertex_ids())
+        assert {f: surface.face_vertices(f) for f in surface.all_face_ids()} == {
+            f: mesh.face_vertices(f) for f in mesh.all_face_ids()}
+        assert {e: (surface.edge_vertices(e), surface.edge_faces(e)) for e in surface.all_edge_ids()} == {
+            e: (mesh.edge_vertices(e), mesh.edge_faces(e)) for e in mesh.all_edge_ids()}
         for v in mesh.all_vertex_ids():
             assert tuple(surface.vertex_position(v)) == morph_targets.blend(
                 mesh.vertex_position(v), mesh.layer_value(lid, v), w
             ), v
 
-    for step in range(120):
+    from core.operations.collapse import collapse_elements
+
+    surfaces = set()
+    for step in range(160):
         ids = mesh.all_vertex_ids()
-        op = rng.randrange(6)
+        op = rng.randrange(9)
         if op == 0:
             provider.set_weight(oid, rng.randrange(0, 101))
         elif op == 1:
@@ -611,9 +623,29 @@ def test_the_evaluated_surface_equals_the_definition_through_random_edits():
             app.apply_mesh_change("delete", lambda: mesh.delete_faces([face]))
         elif op == 5 and app.history.can_undo():
             app.dispatch_command(commands.UNDO if rng.random() < 0.6 else commands.REDO)
+        elif op == 6:
+            edge = rng.choice(mesh.all_edge_ids())
+            t = rng.uniform(0.2, 0.8)
+            app.apply_mesh_change("split", lambda: mesh.split_edge(edge, t) and None)
+        elif op == 7:
+            face = rng.choice(mesh.all_face_ids())
+            a, b, c = mesh.face_vertices(face)[:3]
+            p = tuple(sum(mesh.vertex_position(x)[k] for x in (a, b, c)) / 3.0 for k in range(3))
+            app.apply_mesh_change(
+                "cut", lambda: mesh.split_face(face, a, c, [p], origins=[((a, 0.25), (b, 0.5), (c, 0.25))]) and None
+            )
+        elif op == 8:
+            edge = rng.choice(mesh.all_edge_ids())
+            try:
+                app.apply_mesh_change("collapse", lambda: collapse_elements(mesh, mesh.edge_vertices(edge)) and None)
+            except Exception:
+                pass  # a refused collapse leaves everything as it was
         if provider.weight(oid) == 0 and rng.random() < 0.5:
             provider.set_weight(oid, 50)
         check()
+        if provider.surface_mesh is not None:
+            surfaces.add(id(provider.surface_mesh))
+    assert len(surfaces) <= 3  # patched in place, not rebuilt per topology edit
 
 
 def test_the_wire_follows_the_mix_while_selection_stays_on_the_rest_shape():

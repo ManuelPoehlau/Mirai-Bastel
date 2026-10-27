@@ -1135,6 +1135,7 @@ class Mesh:
         v_a: VertexId,
         v_b: VertexId,
         positions: Sequence[Position] = (),
+        origins: Sequence[VertexOrigin] | None = None,
     ) -> tuple[list[VertexId], list[EdgeId], FaceId, FaceId]:
         """Teilt eine Face entlang eines Pfads v_a -> positions... -> v_b
         (AD-017 B2c / K1, Addendum 2026-10-01 in
@@ -1153,8 +1154,11 @@ class Mesh:
           bei connect_vertices: benachbarte Enden werden abgelehnt; ab k >= 1
           sind benachbarte Enden erlaubt (Notch).
         - jede Position ist ein 3-Tupel.
-        - k >= 1 auf einem Mesh mit Punkt-Layern: abgelehnt, bis die Knife-Herkunft gebaut ist
-          (AD-025 §4.1, Phase 5).
+        - `origins` (AD-025 §4.1, Phase 5): None oder genau eine `VertexOrigin` pro Position, in
+          derselben Reihenfolge (Quellen: lebende Vertices, z. B. die Ecken der Parent-Face, die
+          split_face nie löscht). Auf einem Mesh mit Punkt-Layern ist sie für k >= 1 Pflicht; jede
+          Herkunft wird wie bei add_vertex geprüft und auf jeden Layer angewendet. Ohne Layer wird
+          sie nur auf ihre Länge geprüft und sonst ignoriert.
         - k = 0 und v_a-v_b ist bereits Edge einer anderen Face: abgelehnt
           (das Ergebnis hätte eine Edge mit mehr als zwei Faces). Das ist der
           einzige Fall, in dem split_face(k = 0) ablehnt, wo connect_vertices
@@ -1219,14 +1223,26 @@ class Mesh:
             existing = self._edge_lookup.get(frozenset((v_a, v_b)))
             if existing is not None and self._edges[existing].faces:
                 raise MeshError("split_face: v_a-v_b ist bereits Edge einer anderen Face.")
-        elif self._layer_meta:
-            # AD-025 §4.1: interior points get their origin from the Knife (Phase 5,
-            # `origins=`); until then they are refused on a layered mesh.
-            raise MeshError("split_face: Innenpunkte auf einem Mesh mit Punkt-Layern brauchen eine Herkunft (Phase 5).")
+        if origins is not None:
+            origins = list(origins)
+            if len(origins) != k:
+                raise MeshError("split_face: origins braucht genau eine Herkunft pro Position.")
+        layer_values = None
+        if k and self._layer_meta:
+            # AD-025 §4.1 (Phase 5): the Knife passes each interior point's origin (barycentric weights
+            # of its hit triangle over the original face's corners); validated and combined before the
+            # first mutation, so a refusal leaves the mesh and the counters unchanged.
+            if origins is None:
+                raise MeshError("split_face: Innenpunkte auf einem Mesh mit Punkt-Layern brauchen eine Herkunft (origins).")
+            layer_values = [self._origin_values(o) for o in origins]
 
         self._delete_face(face_id)
 
         new_vertices = [self._new_vertex(p) for p in positions]
+        if layer_values is not None:
+            for vid, values in zip(new_vertices, layer_values):
+                for lid, value in values:
+                    self._write_value(lid, vid, value)
         chain = [v_a, *new_vertices, v_b]
         # Endpunkte jeder Pfad-Edge so, wie face_1 sie durchläuft (e -> s) -
         # bei k = 0 genau die Edge, die connect_vertices über add_face(loop_1)

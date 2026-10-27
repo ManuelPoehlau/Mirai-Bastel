@@ -111,6 +111,8 @@ Die Ersatzfläche zeichnet immer mit Polygon-Offset (Host-Linien liegen auf ihr)
 Optional (2026-10-27, Morph-Ziel in Production, AD-025 §15): `p.wire_follows_surface` True heißt, die Ersatzfläche hat
 dieselben IDs und Kanten wie das Edit-Mesh, nur andere Positionen (die Morph-Mischung) - dann zeichnet der Wire die Kanten
 an den Positionen der Ersatzfläche, solange es eine gibt. Auswahl, Hover und Picking bleiben am Edit-Mesh.
+Optional (2026-10-27, AD-025 Phase 5): `p.entry_topology_changed` (Menge von Eintrags-Schlüsseln) heißt dasselbe wie
+`surface_topology_changed` für die Ersatzflächen der Objekt-Einträge (H7-E).
 
 H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Optional liest der Viewport nach
 `p.sync(...)` `p.entry_surfaces` (`dict[key, Mesh]`, `key` wie bei `set_object_entry`) und `p.entry_moved`
@@ -463,6 +465,7 @@ class Viewport:
         provider = self.surface_provider
         wanted = getattr(provider, "entry_surfaces", None) or {}
         moved = getattr(provider, "entry_moved", None) or {}
+        patched = getattr(provider, "entry_topology_changed", None) or ()
         for key in list(self.entry_surface_render_meshes):
             if key not in wanted or key not in self.object_entries:
                 self._release_entry_surface(key)
@@ -476,6 +479,8 @@ class Viewport:
                 rm = RenderMesh(mesh, overlay=None, store_type=self._store_type)
                 self.entry_surface_render_meshes[key] = rm
                 self._follow_entry(key, entry, rm, rebuilt=True)
+            elif apply_moved and key in patched:
+                rm.mark_topology_dirty()
             elif apply_moved and moved.get(key):
                 rm.mark_vertices_dirty(set(moved[key]))
 
@@ -500,6 +505,7 @@ class Viewport:
         rm = self.surface_render_mesh
         if getattr(self.surface_provider, "wire_follows_surface", False) and (
             moved or mesh is not (rm.mesh if rm is not None else None)
+            or getattr(self.surface_provider, "surface_topology_changed", False)
         ):
             self._edges_dirty = True  # the wire is drawn at the surface's positions (module docstring)
         if mesh is None:

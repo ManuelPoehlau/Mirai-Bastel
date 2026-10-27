@@ -361,7 +361,28 @@ solvable outside the Mesh (AD-025 X-1, X-2, X-8); (3) AD-025 and the mesh-archit
 signature (`add_vertex` gains a keyword with a default); (5) contract tests `tests/test_point_layers.py`,
 `tests/test_mesh_change_journal.py` (layered random sequences, nested rollback, checkpoints, watches, copy-on-write),
 `tests/test_layer_gate.py` (the app gate in `src/mirai/layer_declarations.py`, the `SessionStart` reader). Phase 5's
-`split_face(…, origins=…)` will be its own small entry.
+`split_face(…, origins=…)` is its own small entry (below).
+
+**Decision:** AD-025 Phase 5 Knife origins (2026-10-27; [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) §4.1
+"Phase 5", §16; Manu's go for the Phase 5 Core change)
+
+`Mesh.split_face(face_id, v_a, v_b, positions=(), origins=None)` gains the keyword `origins`: one `VertexOrigin` per
+interior position, in path order, with any live vertices as sources (the Knife passes the barycentric weights of the hit
+triangle over the original face's corners, which `split_face` never deletes). On a mesh with point layers it is required
+for k ≥ 1 (else `MeshError`, the Phase 2 backstop with a new text); each origin is validated and combined like
+`add_vertex(origin=…)` (`_origin_values`: live sources, finite weights, |Σw − 1| ≤ 1e-9, the `zero` rule) **before the
+first mutation**, so a refusal leaves the mesh and the counters unchanged; the values are written through the one
+journaled per-element path (`_write_value`), so Undo, rollback, Knife checkpoints and the file need nothing new. A wrong
+length raises `MeshError` with or without layers; without layers the origins are otherwise ignored and the behaviour is
+byte-identical. Freeze rule (§7): (1) requirement — the Knife on a mesh with morph targets (AD-025 Phase 5, H5a: topology
+after morphs before skinning); (2) not solvable outside the primitive: `split_face` creates the interior vertices after
+deleting the parent, and `add_vertex` cannot be called for them from outside (AD-017 K1: the Knife cuts only through
+`split_face` / `split_edge`); (3) AD-025 §4.1 (the evidence for barycentric origins, X-10); (4) smallest extension — one
+keyword with a default and its validation, no new record shape, no triangulation in the Core; not touched: every other
+signature, the journal, `MeshDelta`, the file; (5) contract tests `tests/test_point_layers.py` (rule per layer incl. `zero`
+and `()`, every refusal with mesh and counters unchanged, the length check without layers, Undo / Redo exact),
+`tests/test_mesh_change_journal.py` (T-1: the layered random sequences call `split_face(…, origins=…)`), the Knife's
+`tests/test_layer_knife.py` (T-6) and `experiments/knife_oracle/tests` (no layers there: unchanged).
 
 ## 2. Was vor dem Freeze validiert wurde
 

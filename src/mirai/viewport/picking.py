@@ -290,20 +290,74 @@ def face_hit_position(camera, mesh, face_id, sx, sy, width, height):
     or a concave face is hit where `pick_face` hit it). None if the ray misses
     the face. Moved from the Knife Face Lab (`face_interior_hit`, WP-KNIFE-01
     S3) unchanged."""
+    hit = face_hit(camera, mesh, face_id, sx, sy, width, height)
+    return None if hit is None else hit[0]
+
+
+def face_hit(camera, mesh, face_id, sx, sy, width, height):
+    """`(position, origin)` of the cursor ray's nearest hit on `face_id`, or None: the position is
+    `face_hit_position`'s, the origin the barycentric weights of the hit triangle over its three
+    corners — corners of the face itself (AD-025 §4.1 Phase 5: a Knife interior point's value in every
+    point layer, exactly on the target's drawn surface)."""
     origin, direction = camera.screen_to_ray(sx, sy, width, height)
-    best_t = None
+    best_t = best_tri = None
     for tri in triangulate_mesh_face(mesh, face_id):
         p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
         t = _ray_triangle_intersection(origin, direction, p0, p1, p2)
         if t is not None and (best_t is None or t < best_t):
-            best_t = t
+            best_t, best_tri = t, tri
     if best_t is None:
         return None
-    return (
+    position = (
         origin[0] + best_t * direction[0],
         origin[1] + best_t * direction[1],
         origin[2] + best_t * direction[2],
     )
+    return position, triangle_origin(mesh, best_tri, position)
+
+
+def triangle_origin(mesh, tri, position):
+    """Barycentric weights of `position` in the triangle `tri` (three vertex ids), as a
+    `VertexOrigin` `((a, wa), (b, wb), (c, wc))` with wa = 1 - wb - wc. `position` is expected in the
+    triangle's plane (a ray hit); off the plane its projection counts. A degenerate triangle gives
+    the copy of its first corner."""
+    a, b, c = tri
+    pa, pb, pc = (mesh.vertex_position(v) for v in tri)
+    e1 = (pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2])
+    e2 = (pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2])
+    ep = (position[0] - pa[0], position[1] - pa[1], position[2] - pa[2])
+    d11 = e1[0] * e1[0] + e1[1] * e1[1] + e1[2] * e1[2]
+    d12 = e1[0] * e2[0] + e1[1] * e2[1] + e1[2] * e2[2]
+    d22 = e2[0] * e2[0] + e2[1] * e2[1] + e2[2] * e2[2]
+    dp1 = ep[0] * e1[0] + ep[1] * e1[1] + ep[2] * e1[2]
+    dp2 = ep[0] * e2[0] + ep[1] * e2[1] + ep[2] * e2[2]
+    denom = d11 * d22 - d12 * d12
+    if denom <= 1e-300:
+        return ((a, 1.0),)
+    wb = (d22 * dp1 - d12 * dp2) / denom
+    wc = (d11 * dp2 - d12 * dp1) / denom
+    return ((a, 1.0 - wb - wc), (b, wb), (c, wc))
+
+
+def face_point_origin(mesh, face_id, position):
+    """The camera-free counterpart of `face_hit`'s origin for a face point that came without one (a
+    host or a headless session): the barycentric weights in the triangle of the face's triangulation
+    that holds `position` — the least outside, then the nearest to its plane (on a fold both are hit,
+    and both give the same value on the shared diagonal)."""
+    best = None
+    for tri in triangulate_mesh_face(mesh, face_id):
+        weights = triangle_origin(mesh, tri, position)
+        if len(weights) == 1:
+            continue
+        outside = max(0.0, -min(w for _, w in weights))
+        p = [mesh.vertex_position(v) for v in tri]
+        back = tuple(sum(w * q[i] for (_, w), q in zip(weights, p)) for i in range(3))
+        key = (outside, math.dist(back, position))
+        if best is None or key < best[0]:
+            best = (key, weights)
+    if best is None:
+        return ((mesh.face_vertices(face_id)[0], 1.0),)
+    return best[1]
 
 
 def face_edge_distance_px(camera, mesh, face_id, sx, sy, width, height, *, cache: PickCache | None = None):

@@ -5,12 +5,16 @@
 of every finding is in §13). **IMPLEMENTED (Phase 2, 2026-10-27)** — Core layers, journal, file, origin rules, backstop and
 the app gate; implementation note with the measured numbers in §14. **IMPLEMENTED (Phase 3, 2026-10-27)** — one
 persistent target in the app: lifecycle, the editing view beside the base (the §11 mechanics decided in §15), the weight as
-view state, the mix display, Apply transform carrying the targets; implementation note in §15. Phases 4–7 open.
-**Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). **H1–H5 and C-1 decided: Manu, 2026-10-27**
+view state, the mix display, Apply transform carrying the targets; implementation note in §15. **IMPLEMENTED (Phase 5,
+2026-10-27)** — topology edits while a mesh has targets: Split, Edge Connect, Loop Insert, Collapse, Extrude, the Knife
+(`split_face(…, origins=…)`, the second small Core change) and mirror copy are declared, plain and symmetric; implementation
+note in §16. Phases 4, 6 and 7 open.
+**Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). **Go for the Phase 5
+Core change (`split_face(…, origins=…)`): Manu, 2026-10-27** (given with the Phase 5 assignment). **H1–H5 and C-1 decided: Manu, 2026-10-27**
 ("ok ich gebe H1-H5 und C1 ein ja") — every recommended default of §10 / Kurzfassung holds; nothing is `PROVISIONAL` in §10
 any more.
 **Gate:** [ROADMAP ARCH-02](ROADMAP.md#arch-02--topology-identity--provenance--remapping); audit §G Phase 1.
-**Mode (M5):** Discovery → decision preparation; Phases 2 and 3 implemented (§14, §15). Next: Phase 5 or Phase 4 (§15,
+**Mode (M5):** Discovery → decision preparation; Phases 2, 3 and 5 implemented (§14–§16). Next: Phase 4 or Phase 6 (§16,
 "Next").
 **Input:** [mesh architecture audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) (§C–§H and
 the Phase 0 addendum). Every claim taken from it was re-verified against the code at `a53c14f` (Phase 0 merged); where
@@ -122,20 +126,20 @@ writes made by the primitives are part of both. "Gate" = the H1 default (`PROVIS
 
 | Operation (code path) | Keeps | Creates / invalidates | Point-layer rule | Gate |
 |---|---|---|---|---|
-| Split (`C`, 1 edge: `split_edge(e, 0.5)`) | both ends; both faces (boundary +1) | +1 V, +2 E / `e` | new = (1−t)·v0 + t·v1, `(v0, v1)` as stored — the position's expression (Phase 2) | locked until Phase 5 |
-| Edge Connect, Loop Insert (`split_edge(e, 0.5)` per kept edge, then `connect_vertices` per face) | edge ends; faces without a chord | per split as Split; per chord +1 E, +2 F / the face | midpoints as Split; chords none | locked until Phase 5 |
+| Split (`C`, 1 edge: `split_edge(e, 0.5)`) | both ends; both faces (boundary +1) | +1 V, +2 E / `e` | new = (1−t)·v0 + t·v1, `(v0, v1)` as stored — the position's expression (Phase 2) | **declared since Phase 5** |
+| Edge Connect, Loop Insert (`split_edge(e, 0.5)` per kept edge, then `connect_vertices` per face) | edge ends; faces without a chord | per split as Split; per chord +1 E, +2 F / the face | midpoints as Split; chords none | **declared since Phase 5** |
 | Vertex Connect (`connect_vertices`) | all vertices, untouched edges | +1 E, +2 F / the face | none (no vertex) | allowed |
-| Knife (kept `split_edge(e, t)`, `split_face(f, a, b, positions)`; closed shape = two calls) | boundary vertices and edges of the cut faces | edge points as Split; per call k V, k+1 E, 2 F / the parent (an intermediate face is burned) | edge points (1−t, t) (Phase 2; a split of an already split piece stays linear along the original edge). Interior points: the Knife passes their origin — barycentric weights of the hit triangle over the **original** face's corners (`split_face(origins=…)`, Phase 5). Until then `split_face` with k > 0 refuses on a layered mesh. Session: `SessionStart`; a dropped candidate `revert_change`; refused commit `abandon` | locked until Phase 5 |
-| Symmetric Knife (replay of kept calls) | per side as Knife | per side as Knife | source side as Knife. **Mirror side today: split at 0.5, then snap the position (F-6) — its value would be the midpoint blend.** Phase 5 splits at the mapped t (t or 1−t by edge orientation), then snaps, and mirrors the interior origins through the vertex map | locked until that fix |
+| Knife (kept `split_edge(e, t)`, `split_face(f, a, b, positions)`; closed shape = two calls) | boundary vertices and edges of the cut faces | edge points as Split; per call k V, k+1 E, 2 F / the parent (an intermediate face is burned) | edge points (1−t, t) (Phase 2; a split of an already split piece stays linear along the original edge). Interior points: the Knife passes their origin — barycentric weights of the hit triangle over the **original** face's corners (`split_face(origins=…)`, Phase 5). Until then `split_face` with k > 0 refuses on a layered mesh. A point the run makes where it crosses itself: the blend of its segment's ends (§16). Session: `SessionStart`; a dropped candidate `revert_change`; refused commit `abandon` | **declared since Phase 5** |
+| Symmetric Knife (replay of kept calls) | per side as Knife | per side as Knife | source side as Knife. Mirror side (Phase 5; before it: split at 0.5, then the snap, F-6): `split_edge` at the mapped t (t or 1−t by the mirror edge's stored orientation), then the position snap; interior origins mirrored through the vertex map (the source triangle's weights on the mirror corners, §16) | **declared since Phase 5** |
 | Symmetric Split / Edge Connect / Collapse / removal / Cap / Extrude coordinators | per side | per side | each side through its own primitive call; mirror values equal the mirrored source values up to rounding (positions keep their exact snap; values need none; the Collapse snap does not affect the average) | as the plain operation |
-| Extrude (tool: `add_vertex` copies, walls/caps `add_face`, `remove_face`, `delete_edges` of orphans) | everything outside the region; region boundary vertices (wall bases) | +1 V per region vertex, walls, caps / region faces, inner edges, inner vertices | cap vertex = copy of its source, `origin=((v, 1.0),)`; the drag then moves positions only | locked until Extrude passes origins (Phase 5) |
-| Collapse V/E/F (`collapse_elements`) | one survivor per group | other group vertices, inner edges, degenerate faces / none created | survivor = component mean of the group's **original** values, `_centroid`'s arithmetic (H3, Phase 2) | locked until Phase 5 |
+| Extrude (tool: `add_vertex` copies, walls/caps `add_face`, `remove_face`, `delete_edges` of orphans) | everything outside the region; region boundary vertices (wall bases) | +1 V per region vertex, walls, caps / region faces, inner edges, inner vertices | cap vertex = copy of its source, `origin=((v, 1.0),)`; the drag then moves positions only | **declared since Phase 5** |
+| Collapse V/E/F (`collapse_elements`) | one survivor per group | other group vertices, inner edges, degenerate faces / none created | survivor = component mean of the group's **original** values, `_centroid`'s arithmetic (H3, Phase 2) | **declared since Phase 5** |
 | `collapse_edge` (primitive) | `v0` | `v1`, `e`, degenerate faces | (a + b)/2, the position's expression | — |
 | Dissolve V/E/F (± cleanup), Delete V/E/F, Cap | everything not removed | deletions; Dissolve +1 F per region, +1 E per chain; Cap +1 F per loop | none created; values of removed vertices are deleted (journaled) | allowed |
 | Move / Rotate / Scale, Tweak, Soft, Loop Slide, Smooth, Relax, Re-Symmetrize | all | positions only | untouched (edit rule, §4.3); Re-Symmetrize therefore leaves targets as they were | allowed |
 | Apply transform (`apply_placement`, composite command, every baked object) | all | positions `p → to_world(p)` | vector `v → s·R·v`; weights unchanged; identity placement: nothing | **declared since Phase 3** (`apply_placement` maps, §15) |
 | Clear transform, object W/E/R in `4` | all | placement only | none | allowed |
-| Mirror copy (menu method `mirror_copy` → `mirror_mesh`) | source unchanged | new mesh, new IDs (dense, source-ID order) | each layer copied through the index map, vector `v → H·v` | locked for a layered source until wired (Phase 5) |
+| Mirror copy (menu method `mirror_copy` → `mirror_mesh`) | source unchanged | new mesh, new IDs (dense, source-ID order) | each layer copied through the index map, vector `v → H·v` (bit-exact for axis planes); the copy's layers are its own (no link to the source's, §11) | **declared since Phase 5** |
 | Morph Lab send (`M`, `morph_bridge`) | source unchanged | a file copy of the mesh state | the copy carries the layers (the Lab ignores them) | allowed |
 | Undo / Redo (`apply_delta`) | exact | — | the delta's records | — |
 | Load scene · OBJ import · Add Mesh · SubD derived mesh | new ID spaces | — | the scene file restores layers; the others carry none | — |
@@ -171,7 +175,7 @@ validated **before the first mutation** of the primitive (F-2: today `split_edge
 - No layer effect: `connect_vertices`, `add_face`, `add_edge`, `remove_face`, the face/edge part of Dissolve,
   `set_vertex_position`.
 
-**Phase 5 (with the Knife wiring; a second, additive Core change):** `split_face(…, origins=None)` — one `VertexOrigin`
+**Phase 5 (with the Knife wiring; a second, additive Core change — built 2026-10-27, §16):** `split_face(…, origins=None)` — one `VertexOrigin`
 per interior position, required for k > 0 on a layered mesh, any live vertices as sources. The Knife computes each
 interior point's origin when the point is picked: the barycentric weights of the triangle `face_hit_position` hit, over
 that triangle's corners — corners of the **original** face, which stay live for the whole session because `split_face`
@@ -326,8 +330,8 @@ the Morph Lab's `Mesh.from_state` copies and the `morph_bridge` file carry the l
 - **Classes:** allowed = non-mesh commands (selection, display, modes, Undo/Redo, cancel, constraints, region / mask /
   hide / symmetry commands) ∪ position-only commands (contract test: layers bit-identical afterwards) ∪ copies that carry
   layers (Morph Lab send) ∪ declared operations.
-- **Core backstop:** `add_vertex` without an origin and `split_face` with interior points (until Phase 5's `origins=`)
-  refuse on a layered mesh. The backstop catches a forgotten origin (mechanical omission); the gate catches what the Core
+- **Core backstop:** `add_vertex` without an origin and `split_face` with interior points but without `origins=` refuse
+  on a layered mesh. The backstop catches a forgotten origin (mechanical omission); the gate catches what the Core
   cannot see — a tool that post-processes positions after a primitive (F-6), a frame change that rewrites positions
   without the map, a new mesh built from a layered one. External hosts (`apply_mesh_change`, labs) get the backstop.
 - **H1 is the table's content** (§10).
@@ -381,7 +385,7 @@ is measured too slow. Corner-domain data (UVs) would use the same primitive hook
   the first app version. The editing view needs its own Undo command that writes layer values (a gesture on the view is no
   position write; F-8).
 - **Phase 4** — multiple targets (audit Phase 4); the packed-storage decision belongs here.
-- **Phase 5 — topology edits with targets,** one operation at a time with its acceptance test and gate lift: Split /
+- **Phase 5 — topology edits with targets** (**built 2026-10-27, §16**), one operation at a time with its acceptance test and gate lift: Split /
   Edge Connect / Loop Insert (only the gate entry — the edge blend exists), Collapse (gate entry), Extrude (`origin=`),
   the Knife (`split_face(origins=…)` as the second small Core change, origins from the hit triangle, the symmetric replay
   at the mapped t), mirror copy (layer copy through the index map); the artist test (loops around eyes and mouth with 3
@@ -440,7 +444,7 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
 
 | | Decides | Lives in | `PROVISIONAL` default | Needed by |
 |---|---|---|---|---|
-| H1 | Which operations run while a mesh has targets | the gate table's entries (§4.4) | allowed: Delete, Dissolve, Vertex Connect, Cap, every position-only tool, Apply transform (from Phase 3); locked with a message: Split, Edge Connect, Loop Insert, Knife, Extrude, Collapse, mirror copy — lifted one by one in Phase 5 | Phase 3 |
+| H1 | Which operations run while a mesh has targets | the gate table's entries (§4.4) | allowed: Delete, Dissolve, Vertex Connect, Cap, every position-only tool, Apply transform (from Phase 3); locked with a message: Split, Edge Connect, Loop Insert, Knife, Extrude, Collapse, mirror copy — lifted one by one in Phase 5 (all lifted 2026-10-27, §16) | Phase 3 |
 | H2 | What a new point does in an existing target | `PointLayerInfo.new_point` | `"interpolate"` (follows its neighbours linearly; a touch-up may be needed in strongly bent areas) | Phase 5 (visible) |
 | H3 | What merged points keep | the merge rule (average; an alternative would be an additive per-layer field) | average (matches the merge-at-centre position) | Phase 5 (visible) |
 | H4 | How a target is edited | the Phase 3 editing view; no Core impact (both answers write the same layer values) | beside the base (J-5), shape edits on the view, topology only on the base | Phase 3 |
@@ -608,7 +612,8 @@ Requirements taken from the Morph Lab (J-5 "daneben" KEEP, J-3 "relativ", F-11 w
    tools stay on the rest shape (Morph Lab 6a "hilft" — `PROVISIONAL` reading: his note is about the wire only). Cost [C]:
    with the wire shown a weight step rebuilds it (gollum_20k, 43,750 edges: +22 ms; head / body < 1 ms). The H7 slot is shared with the SubD preview: whoever
    holds it keeps it, the other says so (H5b: together from Phase 4). The surface patches from the base's journal: a weight step
-   touches only the points with an offset (`_Surface`, `(b, d)` cached), an edit only the touched ones.
+   touches only the points with an offset (`_Surface`, `(b, d)` cached), an edit only the touched ones; since Phase 5 a
+   topology edit on the base is patched in as well instead of rebuilding the surface (§16.1).
 
 Alternatives considered: in-place editing with a target switch (Blender-style; Manu chose "daneben", H4); a persistent second
 object as in the Lab (X-3: desync and memory); every tool writing offsets itself (touches every tool, many paths to keep in
@@ -659,9 +664,96 @@ the base and beside the view; the SubD slot; the HUD row; a randomized oracle of
 mirror-exact offsets after a 90° bake, identity maps nothing, Undo / Redo), `experiments/morph_lab/tests/test_app_lab.py`
 (a sent Production target becomes the Lab's pair), `experiments/drag_cost/tests/test_probe_morph_args.py`.
 
-**Next (H5a):** Phase 5 (topology edits with targets, one gate lift at a time) before skinning; Phase 4 (several targets,
+**Next (H5a):** Phase 5 (topology edits with targets, one gate lift at a time) before skinning — built, §16; Phase 4 (several targets,
 packed storage, stage chain, GPU evaluation) is independent of it. Open from Phase 3: the reference-PC run of the probe; mask
 and hide sets are not carried onto the view; Manu's practical test (Kurzfassung).
+
+## 16. Phase 5 implementation note (2026-10-27)
+
+### 16.1 What was built
+
+- **Core (CORE_V1_FREEZE §7.1 entry of the same date):** `Mesh.split_face(…, origins=None)` — one `VertexOrigin` per
+  interior position; required for k ≥ 1 on a layered mesh, validated and combined before the first mutation (the
+  `add_vertex` arithmetic, `_origin_values`), written through the journaled per-element path. Nothing else in the Core.
+- **Knife origin at the pick:** `picking.face_hit` returns the hit position (bit-identical to `face_hit_position`, now its
+  wrapper) and the barycentric weights of the hit triangle over its corners (`triangle_origin`); `knife_pick` adds them
+  to a face target as `"origin"` when the mesh has layers. `KnifeTool` stores the origin in the face record; a target
+  without one (a host, a headless session) gets the same rule from the face's triangulation (`face_point_origin`: the
+  triangle that holds the point). The record travels to the camera-free resolver.
+- **Resolver:** `RecordedMesh.origins` (only on a layered mesh) maps each interior position to its origin — filled from
+  the face records, and for a point the run makes where it crosses itself, with the blend of its two segment ends at the
+  crossing parameter (`blend_origins`; affine like every Knife value). `kept_split_face` passes the origins; a position
+  without one passes none, so Core refuses and the run is dropped (fail-closed). `KeptSplitFace.origins` records them.
+- **Symmetric Knife (F-6):** the mirror `split_edge` runs at the mapped t (`t`, or `1 − t` when the mirror edge is stored
+  the other way round), then the position is snapped as before; the mirror `split_face` gets the source origins through
+  the vertex map.
+- **Extrude:** every cap vertex is `add_vertex(position, origin=((v, 1.0),))` — the drag moves positions only.
+- **Mirror copy:** `object_mirror.mirror_mesh` copies every layer in order (name, rule) through the index map, values
+  `v → H·v` with the position's arithmetic (bit-exact for the axis planes).
+- **Gate:** `LAYER_SAFE_OPERATIONS` declares Split (`Mesh.split_edge` / `coordinate_split`), Edge Connect and Loop Insert
+  (`apply_connect_edges` / `coordinate_edge_connect`), the Knife (`resolve_cross_face` / `coordinate_knife`), Collapse
+  (`apply_collapse` / `coordinate_collapse`), Extrude (`ExtrudeTool` / `plan_extrude`) and mirror copy (`mirror_mesh`);
+  every H1 lock is lifted. Still locked: `SPLIT_EDGE`, `ARTICULATION_RESTORE` (no `Application` path handles them). The
+  Knife session keys (`KNIFE_COMMIT`, `KNIFE_LIFT`) are non-mesh outside a session; the session is gated at `C`.
+- **The mix follows a topology edit in place** (found by the Phase 5 probe, §16.3): the Phase 3 surface rebuilt itself
+  from scratch on every topology change of the base — `export_state` + `Mesh.from_state` + a new `RenderMesh`, ≈ 3–4 s
+  on gollum_20k with a target dialled in, after every cut. `_Surface.update` now applies the base's changed elements
+  (the watch's keys, records read through the public queries) to the existing surface as a `MeshDelta`, and the provider
+  says so (`surface_topology_changed`, the H7 hook the SubD preview uses; `entry_topology_changed`, a new additive H7-E
+  hook, for the base beside the view); the surface's `RenderMesh` follows through its journal. The editing view still
+  rebuilds after an Undo across a topology step (it is closed for topology edits anyway).
+- **Unchanged:** the editing view stays shape-only (every topology operation, the Knife included, is refused on it).
+
+### 16.2 Choices within the decision (`PROVISIONAL` where marked)
+
+- **Origins by position in the resolver:** the constructions (`split_face_path`, `cut_in_face`, both loop closers) pass
+  interior positions on unchanged, and two interior points never share a position (an interior click snaps to an own
+  point within 14 px), so a position table reaches every `split_face` call without changing a construction's signature
+  (they are patched by tests and probes). The value of a closed shape therefore does not depend on the bridges (tested
+  bit-exact against another bridge rule).
+- **Mirror-side interior points** take the source triangle's weights on the mirror corners. The mirror face's own ear-clip
+  triangulation starts at its own first corner and can take the other diagonal of a quad; on a non-planar quad the mirror
+  point then lies on the mirror image of the source's drawn triangle, not on the mirror side's drawn triangle. For a
+  symmetric target the mirror value is the mirrored source value (AD-025 §3) — what symmetry asks; an asymmetric target
+  gets the same weights on its own mirror-side values. Found by the symmetric fuzz test; no rule changes.
+- **Self-crossing points** (the run crosses itself inside a face, Artist decision 2026-09-30): the blend of the two trail
+  points the crossing lies between. Inside one triangle this equals the barycentric rule (tested); across a fold of the
+  drawn triangulation it is the straight blend between those two points, not the piecewise value at the crossing.
+- **Item 7 of the assignment (`PROVISIONAL`):** the audit's artist test asks for 3 targets, the app allows one per mesh
+  until Phase 4. The automated tests run with **three layers** (two dense, one sparse); Manu's practical test uses **one
+  target**. Manu can correct this in one sentence.
+- **Mirror copy:** the copy's layers are independent copies (no link to the source's targets; linking is §11 "transfer",
+  Phase 7).
+
+### 16.3 Measured [C]
+
+(The container numbers follow with the full test runs of this package.)
+
+### 16.4 Tests
+
+`tests/test_point_layers.py` (Core: the rule per layer incl. `zero` and `()`, every refusal with mesh and counters
+unchanged, the length check without layers, Undo / Redo); `tests/test_mesh_change_journal.py` (T-1: the layered random
+sequences call `split_face(…, origins=…)` — 75 kept calls with 129 interior points over the 12 × 25 + 300 steps, Undo to
+the start and Redo to the end against the snapshot oracle); `tests/test_layer_knife.py` (T-6: open cut, closed shape
+independent of the bridges bit for bit, a self-crossing run, dropped runs / a forced `check_commit` rollback / cancel /
+dropped bridge candidates exact, the Core backstop drops a face point without an origin, 75 fuzzed sessions on two grids
+and the head — the layered cut equals the cut without layers, every edge and interior point follows its rule, Undo / Redo
+exact — and 50 fuzzed symmetric sessions with mirrored targets, the mirror edge stored the other way round at the mapped t);
+`tests/test_layer_topology_ops.py` (through `Application`, plain and symmetric: Split, Edge Connect, Loop Insert, Collapse
+(edge and face group), Extrude, the Knife with real picks on a warped face — the record's origin is the hit triangle's
+barycentrics and the new point lies on the displaced triangle (≤ 1e-12) —, mirror copy bit-exact; the mix and the view
+follow Loop Insert, Collapse, Extrude and Split on the base); `tests/test_layer_gate.py` (the declarations are the
+implementations the app runs; every declared entry has its fixture; only unhandled constants stay locked);
+`tests/test_morph_targets.py` (the Knife joins the refused-on-the-view cases). **Mutation checks by hand** — each caught:
+the mirror split back at t = 0.5, swapped barycentric weights, a crossing that takes its first end's origin, mirror origins
+not mapped through the vertex map.
+
+### 16.5 Open / next
+
+Manu's practical test (Kurzfassung, "Praxistest Phase 5"); the reference-PC run of the probe; the frame after a topology
+edit with a target dialled in rebuilds the mix surface (§16.3) — the same full rebuild as any topology edit on the surface,
+for Phase 4 (incremental or GPU evaluation). **Next:** Phase 4 (several targets, packed storage, stage chain, morph + SubD)
+or Phase 6 (skinning; the weights kind gets the Phase 5 rules for free).
 
 ---
 
@@ -738,3 +830,48 @@ geht mit. Drahtgitter folgt der Mischung (seit deiner Rückmeldung), Auswahl und
 | Speichern / Laden (6) | | |
 | Tasten (`Strg+N`, `Tab`, `N`, `+`/`-`) | | |
 
+### Praxistest Phase 5: Topologie mit Morph-Ziel (ca. 20–30 Minuten)
+
+**Phase 5 ist gebaut (2026-10-27):** an der Basis gehen jetzt auch mit Ziel Split, Connect Edges, Loop Insert (`I`),
+Knife, Extrude (`T`), Collapse (`Shift+C`) und die Spiegelkopie (`Shift+M`) — einzeln, mit Symmetrie gespiegelt. Ein
+neuer Punkt bekommt im Ziel den Abstand, der zwischen seinen Nachbarn liegt (H2 „mitgehen“); ein Knife-Punkt in einer
+Fläche genau den Abstand an der Stelle, an der du geklickt hast; ein zusammengeführter Punkt den Mittelwert (H3).
+Topologie weiterhin nur an der Basis, die Arbeitskopie (`Tab`) bleibt zum Formen.
+
+**Annahmen zum Korrigieren in einem Satz:** (a) du testest mit **einem** Ziel — die App erlaubt bis Phase 4 nur eines; die
+automatischen Tests laufen mit drei; (b) in stark gebogenen Stellen kann ein neuer Loop kurz nachgeformt werden müssen
+(H2); (c) die Spiegelkopie bekommt eine eigene, unabhängige Kopie des Ziels (keine Verbindung zum Original).
+
+`python src/main.py` (Start: Head-Basemesh)
+
+1. **Vorbereiten.** `Strg+N`, ein paar Punkte am Mund und an einem Auge wählen, `Tab`, ein Lächeln und ein halbes
+   Zwinkern formen (gern mit Soft `O`; mit `Shift+S` vorher an der Basis auch symmetrisch), `Tab` zurück. `N` halten und
+   die Maus ziehen, bis das Ziel bei etwa 60–100 % deutlich zu sehen ist.
+2. **Loop Insert.** `2`, eine Kante quer zum Augen- oder Mundloop, `I`: der neue Loop sitzt im Ausdruck, ohne Delle;
+   `Tab` zeigt ihn auch in der Arbeitskopie. `Strg+Z` / `Strg+Y`.
+3. **Knife.** Nichts auswählen, `C`: Kante → zwei Klicks in eine Fläche → Kante, `Enter`. Dann eine geschlossene Form in
+   einer Fläche (drei Klicks hinein, den ersten wieder anklicken, `Enter`). Die neuen Punkte liegen auf der Ausdrucksform.
+4. **Extrude.** `3`, eine oder zwei Flächen im Mundwinkel, `T` halten und ziehen: der Deckel nimmt den Ausdruck mit, die
+   Seitenwände verbinden.
+5. **Collapse und Split.** `Shift+C` auf eine Kante im Loop: der Punkt in der Mitte bekommt den Mittelwert. `C` auf einer
+   Kante (Split) und auf zwei gegenüberliegenden Kanten (Connect).
+6. **Symmetrie.** Mit `Shift+S` (X) an der Basis 2–5 auf einer Seite wiederholen: die Gegenseite folgt gespiegelt, das
+   Ziel bleibt spiegelbildlich, wenn du es symmetrisch geformt hast.
+7. **Spiegelkopie.** In `4` den Kopf mit `W` zur Seite schieben, `Shift+M` → *Mirror copy X = 0*: die Kopie trägt das Ziel
+   gespiegelt: die Kopie ist danach gewählt, `1` macht sie zum bearbeiteten Objekt, `N` halten + Maus blendet ihr Ziel ein.
+8. **Undo und Speichern.** Mit `Strg+Z` bis zum Anfang zurück und mit `Strg+Y` wieder vor; `Strg+S`, Fenster schließen,
+   über `Leertaste` laden: Ziel und neue Loops sind da.
+9. Optional: `python src/main.py examples/meshes/gollum_20k.obj` — Loop Insert / Knife mit Ziel; der Rahmen nach jedem
+   Schnitt baut die Mischung neu auf (spürbar kurz).
+10. Optional auf deinem PC: `python experiments/drag_cost/probe_morph_gl.py --only-topology` und die Ausgabe in den Chat.
+
+| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
+| --- | --- | --- |
+| Loop Insert mit Ziel (2) | | |
+| Knife mit Ziel, auch geschlossene Form (3) | | |
+| Extrude mit Ziel (4) | | |
+| Collapse / Split / Connect mit Ziel (5) | | |
+| Symmetrisch (6) | | |
+| Spiegelkopie mit Ziel (7) | | |
+| Undo / Speichern / Laden (8) | | |
+| Annahmen (a)–(c) | | |

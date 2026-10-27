@@ -33,7 +33,7 @@ from ..viewport.picking import (
     DEPTH_TOLERANCE,
     edge_point_occluded,
     face_edge_distance_px,
-    face_hit_position,
+    face_hit,
     pick_face,
     pick_nearest_edge,
     pick_nearest_vertex,
@@ -127,7 +127,10 @@ def knife_pick(
       {"kind": "vertex", "vertex_id": vid}
       {"kind": "edge", "edge_id": eid, "t": float}  — t in (THRESHOLD, 1-THRESHOLD)
       {"kind": "face", "face_id": fid, "position": (x, y, z), "distance_px": float | None}
-                                                     — the hit on the face, its clearance from the edges
+                                                     — the hit on the face, its clearance from the edges;
+                                                       on a mesh with point layers also "origin": the
+                                                       barycentric weights of the hit triangle over its
+                                                       corners (AD-025 §4.1 Phase 5)
       {"kind": "outside"}
 
     debug=True prints the temporary [KNIFE] pick trace (AD-017 diagnosis).
@@ -181,13 +184,17 @@ def knife_pick(
         print(f"[KNIFE] pick_face -> face:{int(fid)}" if fid is not None
               else "[KNIFE] pick_face -> None")
     if fid is not None:
-        pos = face_hit_position(camera, mesh, fid, sx, sy, width, height)
-        if pos is None:  # numerically degenerate: the face was hit a moment ago
+        hit = face_hit(camera, mesh, fid, sx, sy, width, height)
+        if hit is None:  # numerically degenerate: the face was hit a moment ago
             return {"kind": "outside"}
+        pos, origin = hit
         dist = face_edge_distance_px(camera, mesh, fid, sx, sy, width, height, cache=cache)
         if debug:
             print(f"[KNIFE] face point clearance={dist}px (margin {EDGE_MARGIN_PX})")
-        return {"kind": "face", "face_id": fid, "position": pos, "distance_px": dist}
+        target = {"kind": "face", "face_id": fid, "position": pos, "distance_px": dist}
+        if mesh.has_point_layers():
+            target["origin"] = origin
+        return target
 
     if debug:
         print("[KNIFE] pick -> outside")

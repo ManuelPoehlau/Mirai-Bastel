@@ -222,11 +222,12 @@ class ExtrudeTool(Tool):
         self._original_positions = {vid: mesh.vertex_position(vid) for vid in all_vids}
         self._total_distance = 0.0
 
-        # Ein neuer Vertex pro altem Vertex
+        # Ein neuer Vertex pro altem Vertex - als Kopie (AD-025 Phase 5): in jedem Punkt-Layer
+        # bekommt die Cap-Ecke den Wert ihrer Quelle, der Drag bewegt danach nur Positionen.
         self._old_to_new = {}
         self._face_source = {}
         for vid in all_vids:
-            self._old_to_new[vid] = mesh.add_vertex(mesh.vertex_position(vid))
+            self._old_to_new[vid] = mesh.add_vertex(mesh.vertex_position(vid), origin=((vid, 1.0),))
 
         # Seitenwände: nur Boundary-Edges (genau 1 angrenzende Face in face_ids_frozen)
         for fid in face_ids_frozen:

@@ -1,9 +1,10 @@
-"""Morph-target cost probe with the real GL backend (AD-025 Phase 3, 2026-10-27).
+"""Morph-target cost probe with the real GL backend (AD-025 Phase 3 and Phase 5, 2026-10-27).
 
 Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window):
     python experiments/drag_cost/probe_morph_gl.py
     python experiments/drag_cost/probe_morph_gl.py --assets head_basemesh --steps 300
     python experiments/drag_cost/probe_morph_gl.py --assets examples/meshes/gollum_20k.obj
+    python experiments/drag_cost/probe_morph_gl.py --only-topology      # the Phase 5 rows only
 
 Headless container: prefix with `xvfb-run -a`.
 
@@ -22,6 +23,11 @@ offset; the offsets are a smooth bump):
                  release: the time of the release (the offset write through `TranslatingHistory`) and
                  of the frame after it.
 - `apply`        Ctrl+A in `4` on the placed base with its target (positions + `map_vector_layers`).
+- `topology`     (Phase 5) Knife commit (Enter after edge -> interior -> interior -> edge on the front-most
+                 quad), Loop Insert (`I` on its edge), Extrude (hold T, drag, release: the whole gesture)
+                 and Collapse (its edge), each as the operation's own call and the frame after it, first
+                 without a target, then with one target (offsets on 100 % of the points) dialled in at
+                 60 % (the mix is rebuilt on the new topology in the frame after). Every run is undone.
 
 Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); only
 the reference PC decides the 16.7 ms bar. Output is plain ASCII.
@@ -47,6 +53,8 @@ from drag_cost.probe_drag_gl import HEIGHT, WIDTH, Stats, grow_region, machine_i
 
 DEFAULT_ASSETS = ("head_basemesh", "man_with_shoes_basemesh", "examples/meshes/gollum_20k.obj")
 DEFAULT_STEPS = 200
+DEFAULT_REPS = 5
+TOPOLOGY_OPS = ("knife", "loop insert", "extrude", "collapse")
 OCCUPANCIES = (15, 100)
 THRESHOLD_P95_MS = 16.7
 
@@ -65,10 +73,12 @@ def resolve_mesh(name: str) -> Path:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Morph-target cost of the real GL chain (AD-025 Phase 3)")
+    parser = argparse.ArgumentParser(description="Morph-target cost of the real GL chain (AD-025 Phases 3 and 5)")
     parser.add_argument("--assets", nargs="+", default=list(DEFAULT_ASSETS),
                         help="registry names or .obj paths (default: head, body, gollum_20k)")
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="weight steps per row")
+    parser.add_argument("--reps", type=int, default=DEFAULT_REPS, help="runs per topology operation (Phase 5)")
+    parser.add_argument("--only-topology", action="store_true", help="skip the Phase 3 weight / view rows")
     return parser
 
 
@@ -211,6 +221,90 @@ def apply_row(app) -> float:
     return elapsed
 
 
+# -- Phase 5: topology edits with a target ------------------------------------------------------------
+
+
+def _front_quad(mesh):
+    """The quad with the front-most centroid (deterministic)."""
+    def key(f):
+        pts = [mesh.vertex_position(v) for v in mesh.face_vertices(f)]
+        return (sum(p[2] for p in pts) / len(pts), -int(f))
+
+    return max((f for f in mesh.all_face_ids() if len(mesh.face_vertices(f)) == 4), key=key)
+
+
+def _select(app, mode, ids):
+    from core import SelectionMode
+
+    sel = app.selection
+    sel.mode = getattr(SelectionMode, mode)
+    sel.clear()
+    sel.add(set(ids))
+    app.viewport.on_selection_changed()
+
+
+def _run_op(app, op: str) -> float:
+    """One operation through the app's keys; returns the ms of its own call (the Knife: Enter; Extrude:
+    the whole hold-drag-release gesture). Raises when it did not push exactly one history entry."""
+    mesh = app.scene.mesh
+    face = _front_quad(mesh)
+    edge = mesh.face_edges(face)[0]
+    history = len(app.history)
+    if op == "knife":
+        # The session's clicks go to the tool directly (on small faces a screen click would snap to a
+        # vertex); Enter then runs the app's commit: resolver, Core, check, history, residue, sync.
+        from viewport.derived import triangulate_mesh_face
+
+        edges = mesh.face_edges(face)
+        centres = [tuple(sum(mesh.vertex_position(v)[k] for v in tri) / 3.0 for k in range(3))
+                   for tri in triangulate_mesh_face(mesh, face)]
+        app.selection.clear()
+        app.key_press(_key("c"))
+        knife = app._knife
+        targets = [{"kind": "edge", "edge_id": edges[0], "t": 0.4}]
+        targets += [{"kind": "face", "face_id": face, "position": c, "distance_px": 100.0} for c in centres]
+        targets.append({"kind": "edge", "edge_id": edges[2], "t": 0.6})
+        for target in targets:
+            if not knife.click(target):
+                raise RuntimeError(f"knife: click refused ({knife.last_refusal if hasattr(knife, 'last_refusal') else target})")
+        t0 = time.perf_counter()
+        app.key_press(_key("enter"))
+    elif op == "extrude":
+        _select(app, "FACE", {face})
+        t = _key("t")
+        t0 = time.perf_counter()
+        app.key_press(t)
+        for i in range(6):
+            app.pointer_motion(400 + 3 * i, 300 - 2 * i, 3.0, -2.0)
+        app.key_release(t)
+    else:
+        _select(app, "EDGE", {edge})
+        t0 = time.perf_counter()
+        app.dispatch_command("LoopInsert" if op == "loop insert" else "Collapse")
+    elapsed = (time.perf_counter() - t0) * 1000.0
+    if len(app.history) != history + 1:
+        raise RuntimeError(f"{op}: {app.status_message}")
+    return elapsed
+
+
+def topology_rows(app, reps: int) -> dict:
+    """op -> (Stats of the call, Stats of the frame after); each run undone (Undo not timed). The cursor
+    is over the viewport first, as in use: a commit then refreshes the hover with a GPU pick of the new
+    topology, which is part of the call (≈ 20 ms on head in the container); without a cursor that pick
+    is skipped and the rows are not comparable."""
+    app.pointer_motion(WIDTH / 2, HEIGHT / 2, 0.0, 0.0)
+    out = {}
+    for op in TOPOLOGY_OPS:
+        calls, frames = [], []
+        for _ in range(reps):
+            calls.append(_run_op(app, op))
+            frames.append(sum(frame(app)))
+            app.key_press(_key("z", "ctrl"))
+            frame(app)
+        out[op] = (Stats.of(calls), Stats.of(frames))
+    return out
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     paths = [resolve_mesh(a) for a in args.assets]
@@ -221,10 +315,12 @@ def main(argv=None) -> int:
             from pyglet.gl import gl_info
 
             lines += machine_info(gl_info.get_version_string(), gl_info.get_renderer())
-            lines.append(f"Morph probe (AD-025 Phase 3), {args.steps} weight steps per row; bar {THRESHOLD_P95_MS} ms p95")
+            lines.append(f"Morph probe (AD-025 Phases 3 and 5), {args.steps} weight steps per row; bar {THRESHOLD_P95_MS} ms p95;"
+                         f" {args.reps} runs per topology row")
         count = len(app.scene.mesh.all_vertex_ids())
+        plain = topology_rows(app, args.reps)
         app.key_press(_key("n", "ctrl"))
-        for occupancy in OCCUPANCIES:
+        for occupancy in () if args.only_topology else OCCUPANCIES:
             stored = fill_target(app, occupancy)
             step, draw, first = weight_rows(app, args.steps)
             verdict = "ok" if step.p95 <= THRESHOLD_P95_MS else "OVER"
@@ -232,10 +328,21 @@ def main(argv=None) -> int:
                 f"{path.stem:<26} {count:>6} V  offsets {occupancy:>3} % ({stored:>6})  weight step {step.text()}"
                 f"  [{verdict}]  (draw p50 {draw.p50:.2f})  first show {first:.1f} ms"
             )
-        lines.append(f"{path.stem:<26} tap N 0 % -> 60 %: {ab_row(app).text()}")
-        release, after = view_commit_row(app)
-        lines.append(f"{path.stem:<26} view commit (36 points): release {release.text()}  frame after {after.text()}")
-        lines.append(f"{path.stem:<26} apply transform with one target: {apply_row(app):.1f} ms")
+        if not args.only_topology:
+            lines.append(f"{path.stem:<26} tap N 0 % -> 60 %: {ab_row(app).text()}")
+            release, after = view_commit_row(app)
+            lines.append(f"{path.stem:<26} view commit (36 points): release {release.text()}  frame after {after.text()}")
+            lines.append(f"{path.stem:<26} apply transform with one target: {apply_row(app):.1f} ms")
+        stored = fill_target(app, 100)
+        app.set_morph_weight(60)
+        frame(app)
+        layered = topology_rows(app, args.reps)
+        for op in TOPOLOGY_OPS:
+            (c0, f0), (c1, f1) = plain[op], layered[op]
+            lines.append(
+                f"{path.stem:<26} {op:<11} no target: call {c0.text()} frame {f0.p50:.1f}"
+                f" | one target ({stored} offsets, 60 %): call {c1.text()} frame {f1.p50:.1f}"
+            )
         window.close()
     print("\n".join(lines))
     return 0

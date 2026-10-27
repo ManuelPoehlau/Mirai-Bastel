@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core import HistoryStack, Mesh
-from core.mesh import LayerKind
+from core.mesh import LayerKind, MeshDelta
 from core.operations import MeshDeltaCommand, record_mesh_change
 
 from .interaction import commands
@@ -389,10 +389,19 @@ class _Surface:
 
     def update(self, lid, weight: int) -> tuple[bool, set]:
         """(rebuilt, changed vertices). Cost: O(stored offsets) for a weight step, O(touched) for an
-        edit, O(V) only for a rebuild (first show, topology change, another target)."""
+        edit or a topology change on the base (patched in place, `topology_changed`), O(V) only for a
+        rebuild (first show, another target)."""
         base = self.base
         change = self._watch.take()
-        if self.mesh is None or lid != self.lid or _topology_touched(change, base):
+        self.topology_changed = False
+        if self.mesh is not None and lid == self.lid and _topology_touched(change, base):
+            # AD-025 Phase 5: a topology edit on the base (Loop Insert, Knife, Extrude, ...) reaches the
+            # surface as the base's own changed elements, applied in place: the surface's RenderMesh
+            # follows through its journal (H7 `surface_topology_changed`) instead of a full rebuild
+            # (gollum_20k: ~3 s per edit before, §16). Positions of the touched points follow below.
+            self.mesh.apply_delta(_topology_delta(change, base, self.mesh))
+            self.topology_changed = True
+        elif self.mesh is None or lid != self.lid:
             state = _rest_state(base)
             vertices = state["vertices"]
             self._bd, self._shown = {}, {}
@@ -443,6 +452,27 @@ class _Surface:
         return False, changed
 
 
+def _topology_delta(change, base: Mesh, surface: Mesh) -> MeshDelta:
+    """The surface's records of the elements `change` names (before) against the base's (after), read
+    through the public queries. Vertices only where one appears or goes (a new one at the base's rest
+    position): the positions of kept vertices are the caller's (they carry the blended offsets)."""
+    def vertex(mesh, v):
+        if not mesh.is_valid_vertex(v):
+            return None
+        return tuple(surface.vertex_position(v)) if mesh is base and surface.is_valid_vertex(v) else tuple(mesh.vertex_position(v))
+
+    def edge(mesh, e):
+        return (*mesh.edge_vertices(e), tuple(mesh.edge_faces(e))) if mesh.is_valid_edge(e) else None
+
+    def face(mesh, f):
+        return tuple(mesh.face_vertices(f)) if mesh.is_valid_face(f) else None
+
+    pairs = []
+    for keys, read in ((change.vertices, vertex), (change.edges, edge), (change.faces, face)):
+        pairs.append({k: (read(surface, k), read(base, k)) for k in keys if read(surface, k) != read(base, k)})
+    return MeshDelta(*pairs)
+
+
 class MorphSurfaceProvider:
     """H7 provider (`sync(mesh, selection) -> moved`, `surface_mesh`, `dirty`, H7-E `entry_surfaces` /
     `entry_moved`): the mix of every object whose weight is above 0. Never writes a scene mesh."""
@@ -454,6 +484,10 @@ class MorphSurfaceProvider:
         self.surface_mesh: Optional[Mesh] = None
         self.entry_surfaces: dict = {}
         self.entry_moved: dict = {}
+        #: H7: the edit object's surface mesh kept its identity but its topology was patched (Phase 5)
+        self.surface_topology_changed = False
+        #: H7-E: ObjectIds whose entry surface was patched in place the same way
+        self.entry_topology_changed: set = set()
         self._surfaces: dict = {}
         self._dirty = False
         #: H7 (viewport): the wire is drawn at the mix, not at the rest shape (Manu 2026-10-27: "das Wireframe geht
@@ -522,6 +556,7 @@ class MorphSurfaceProvider:
                 self._surfaces.pop(oid).close()
         self.surface_mesh = None
         self.entry_surfaces, self.entry_moved = {}, {}
+        self.surface_topology_changed, self.entry_topology_changed = False, set()
         moved_edit: set = set()
         changed_total = 0
         for oid, (obj, lid, weight) in shown.items():
@@ -533,9 +568,12 @@ class MorphSurfaceProvider:
             if obj.mesh is mesh:
                 self.surface_mesh = surface.mesh
                 moved_edit = set() if rebuilt else changed
+                self.surface_topology_changed = surface.topology_changed
             else:
                 self.entry_surfaces[oid] = surface.mesh
                 self.entry_moved[oid] = set() if rebuilt else changed
+                if surface.topology_changed:
+                    self.entry_topology_changed.add(oid)
         if shown:
             self.last_update_ms = (time.perf_counter() - started) * 1000.0
             self.last_changed = changed_total

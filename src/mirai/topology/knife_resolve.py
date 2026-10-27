@@ -30,6 +30,8 @@ Path records (dicts; the resolver never mutates them):
     {"pid": P, "kind": "edge",   "edge_id": EdgeId, "t": float}            # t along the click-time edge
     {"pid": P, "kind": "face",   "face_id": FaceId, "position": (x, y, z)}  # an interior click
       ... optionally "crossing": True (a planner crossing, not clicked)
+      ... on a mesh with point layers a face record also holds "origin": its `VertexOrigin` (AD-025
+          §4.1 Phase 5, picked with the point: weights over the click-time face's corners)
     {"kind": "break", "reason": "gap" | "edge"}                             # a skipped stretch (Q5)
     {"kind": "break", "reason": "closed", "cyclic": bool}                   # a chain end (Q5)
     {"kind": "break", "reason": "lift"}                                     # a chain end, no seed (UX2)
@@ -154,7 +156,8 @@ class KeptSplitFace:
     """One kept `Mesh.split_face(face_id, a, b, positions)`: its arguments as passed and its results in
     Core's order (new vertices and new edges in path order, then `face_1`, `face_2` — Core's order, not
     the caller's), the positions of the new vertices, and the vertex lists of both halves right after
-    the call (a reader matches mirror halves by inclusion)."""
+    the call (a reader matches mirror halves by inclusion). `origins`: the interior points' origins as
+    passed (AD-025 Phase 5; None on a mesh without point layers)."""
 
     face_id: FaceId
     a: VertexId
@@ -167,6 +170,7 @@ class KeptSplitFace:
     created_positions: tuple[Position, ...]
     face_1_vertices: tuple[VertexId, ...]
     face_2_vertices: tuple[VertexId, ...]
+    origins: tuple | None = None
     op: str = field(default="split_face", init=False)
 
 
@@ -177,11 +181,18 @@ class RecordedMesh:
     """The mesh as the resolver sees it: every read passes straight through to `raw`; `kept` is the
     report of the resolution in progress. It is how the report reaches the construction functions
     below without a new parameter (their signatures are patched by tests and probes). Mutations and
-    rollbacks go through `kept_split_edge`, `kept_split_face`, `checkpoint` and `rollback` only."""
+    rollbacks go through `kept_split_edge`, `kept_split_face`, `checkpoint` and `rollback` only.
+
+    `origins` (AD-025 §4.1 Phase 5, only on a mesh with point layers): interior position -> its
+    `VertexOrigin`, from the path's face records and the run's own crossing points. Keyed by position
+    because the constructions pass every interior position on unchanged (the resolver never moves a
+    point, and two interior points never share a position: an interior click snaps to an own point
+    within 14 px), so the layer values do not depend on how a cut is decomposed or bridged."""
 
     def __init__(self, raw) -> None:
         self.raw = raw
         self.kept: list[KeptCall] = []
+        self.origins: dict | None = {} if raw.has_point_layers() else None
 
     def __getattr__(self, name: str):
         return getattr(self.raw, name)
@@ -204,17 +215,36 @@ def kept_split_edge(mesh, edge_id: EdgeId, t: float = 0.5):
 def kept_split_face(mesh, face_id: FaceId, a: VertexId, b: VertexId, positions=()):
     """`Mesh.split_face`, unchanged, plus one report entry when `mesh` is a `RecordedMesh`. A call that
     raises changed nothing in Core (its preconditions are checked before the first mutation) and leaves
-    no entry."""
+    no entry. On a mesh with point layers the interior points' origins come from `mesh.origins`; a
+    position without one passes none, and Core refuses the call (fail-closed: the run is dropped)."""
     raw = _raw(mesh)
-    result = raw.split_face(face_id, a, b, positions)
+    origins = None
+    table = mesh.origins if isinstance(mesh, RecordedMesh) else None
+    if table is not None and positions:
+        found = [table.get(tuple(p)) for p in positions]
+        origins = None if any(o is None for o in found) else tuple(found)
+    if origins is None:
+        result = raw.split_face(face_id, a, b, positions)
+    else:
+        result = raw.split_face(face_id, a, b, positions, origins=origins)
     if isinstance(mesh, RecordedMesh):
         new_vs, new_edges, f1, f2 = result
         mesh.kept.append(KeptSplitFace(
             face_id, a, b, tuple(tuple(p) for p in positions), tuple(new_vs), tuple(new_edges), f1, f2,
             tuple(tuple(raw.vertex_position(v)) for v in new_vs),
-            tuple(raw.face_vertices(f1)), tuple(raw.face_vertices(f2)),
+            tuple(raw.face_vertices(f1)), tuple(raw.face_vertices(f2)), origins,
         ))
     return result
+
+
+def blend_origins(o1, o2, lam: float) -> tuple:
+    """The origin of the point at `lam` along the segment between two points with origins `o1`, `o2`:
+    `(1 - lam)·o1 + lam·o2`, merged per source vertex (ascending id; weights still sum to 1)."""
+    weights: dict = {}
+    for origin, f in ((o1, 1.0 - lam), (o2, lam)):
+        for v, w in origin:
+            weights[v] = weights.get(v, 0.0) + f * w
+    return tuple(sorted(weights.items(), key=lambda item: int(item[0])))
 
 
 class Checkpoint:
@@ -756,6 +786,15 @@ class KnifeResolver:
         self._edge_splits: dict[EdgeId, list[tuple[float, VertexId]]] = {}
         self._helper_ids = itertools.count()
 
+    def _register_origins(self, path: list[dict]) -> None:
+        """AD-025 Phase 5: the face records' origins, by position (`RecordedMesh.origins`)."""
+        table = self.mesh.origins
+        if table is None:
+            return
+        for p in path:
+            if p.get("kind") == "face" and p.get("origin") is not None:
+                table[tuple(p["position"])] = tuple(p["origin"])
+
     def helper_point(self, **fields: Any) -> dict:
         """A point the resolver makes itself (never one of the session's ids)."""
         return {"pid": ("resolver", next(self._helper_ids)), **fields}
@@ -965,6 +1004,8 @@ class KnifeResolver:
             cur2, skip, pending = fr.pts2[i0], i0, []
             trail = [cur2]                          # the run inside this face so far, in 2D ...
             trail3 = [m.vertex_position(p)]         # ... and in 3D
+            table = m.origins                       # ... and, with point layers, their origins
+            trail_o = [((p, 1.0),)]
             pinches: list[tuple[Position, list[Position]]] = []   # (crossing X, loop points)
             while True:
                 t2 = fr.p2(targets[k])
@@ -984,6 +1025,16 @@ class KnifeResolver:
                     pinches.append((x3, pending[j:]))
                     pending = pending[:j] + [x3]
                     trail, trail3 = trail[:j + 1] + [fr.p2(x3)], trail3[:j + 1] + [x3]
+                    if table is not None:
+                        # X lies on the segment between two trail points: its origin is theirs, blended
+                        # at the same parameter (affine like every Knife value, AD-025 §4.1).
+                        o_c, o_d = trail_o[j], trail_o[j + 1]
+                        x_o = None if o_c is None or o_d is None else blend_origins(o_c, o_d, lam)
+                        if x_o is None:
+                            table.pop(x3, None)
+                        else:
+                            table[x3] = x_o  # this walk's (a dropped earlier walk may have left another)
+                        trail_o = trail_o[:j + 1] + [x_o]
                     cur2, skip = trail[-1], None
                     continue
                 if hit is None:
@@ -992,6 +1043,8 @@ class KnifeResolver:
                     pending.append(targets[k])
                     trail.append(t2)
                     trail3.append(targets[k])
+                    if table is not None:
+                        trail_o.append(table.get(tuple(targets[k])))
                     cur2, skip, k = t2, None, k + 1
                     continue
                 s = hit[0]
@@ -1165,6 +1218,7 @@ class KnifeResolver:
         if not path:
             res.empty = True
             return res
+        self._register_origins(path)
 
         if all(p["kind"] == "face" for p in path):
             fid = path[0]["face_id"]
@@ -1319,6 +1373,7 @@ class CrossFaceResolver(KnifeResolver):
         if not path:
             res.empty = True
             return res
+        self._register_origins(path)
 
         runs: list[list[dict]] = []
         seeded_runs: list[list[dict]] = []     # chains anchored on an interior start point: applied last

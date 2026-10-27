@@ -111,6 +111,7 @@ from core.operations.topology import MeshDeltaCommand
 from core.selection import SelectionMode
 from ..interaction.tool import Tool
 from ..regions import inherit_into
+from ..viewport.picking import face_point_origin
 from .chord_validity import chord_valid_in_polygon
 from .face_geometry import GEO_EPS, segment_in_face
 from .knife_pick import EDGE_MARGIN_PX
@@ -380,7 +381,15 @@ class KnifeTool(Tool):
             fid, pos = target.get("face_id"), target.get("position")
             if fid is None or pos is None or not m.is_valid_face(fid):
                 return None
-            return {"kind": "face", "face_id": fid, "position": tuple(pos)}
+            record = {"kind": "face", "face_id": fid, "position": tuple(pos)}
+            if m.has_point_layers():
+                # AD-025 §4.1 Phase 5: the point's origin, fixed when it is picked - the barycentric
+                # weights of the hit triangle over the click-time face's corners (they stay live for the
+                # whole session); a target without one (a host, a headless session) gets the same rule
+                # from the face's triangulation. It travels with the record to the resolver.
+                origin = target.get("origin")
+                record["origin"] = tuple(origin) if origin is not None else face_point_origin(m, fid, record["position"])
+            return record
         if kind == "point":
             return self._point_by_pid(target.get("pid"))
         if kind == "space" and target.get("position") is not None:
