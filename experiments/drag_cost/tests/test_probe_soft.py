@@ -100,7 +100,7 @@ def test_symmetric_soft_variants_are_the_soft_variants():
     assert probe.parse_args([]).scenarios == ["plain_w", "soft_w"]  # default unchanged
 
 
-@pytest.mark.parametrize("bad", [["--sizes", "7"], ["--metrics", "manhattan"]])
+@pytest.mark.parametrize("bad", [["--sizes", "14"], ["--metrics", "manhattan"]])
 def test_symmetric_soft_arguments_are_checked_like_soft_w(bad):
     with pytest.raises(SystemExit):
         probe.parse_args(["--scenarios", "soft_w_sym", *bad])

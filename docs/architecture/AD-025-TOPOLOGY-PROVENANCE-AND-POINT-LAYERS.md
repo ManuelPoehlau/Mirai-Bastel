@@ -3,12 +3,15 @@
 **Status:** PROPOSED (2026-10-27); **revised the same day after the independent review**
 [CLAUDE-001](../archive/deformation/reviews/AD-025_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, no blocker; the disposition
 of every finding is in §13). **IMPLEMENTED (Phase 2, 2026-10-27)** — Core layers, journal, file, origin rules, backstop and
-the app gate; implementation note with the measured numbers in §14. Phases 3–7 open.
+the app gate; implementation note with the measured numbers in §14. **IMPLEMENTED (Phase 3, 2026-10-27)** — one
+persistent target in the app: lifecycle, the editing view beside the base (the §11 mechanics decided in §15), the weight as
+view state, the mix display, Apply transform carrying the targets; implementation note in §15. Phases 4–7 open.
 **Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). **H1–H5 and C-1 decided: Manu, 2026-10-27**
 ("ok ich gebe H1-H5 und C1 ein ja") — every recommended default of §10 / Kurzfassung holds; nothing is `PROVISIONAL` in §10
 any more.
 **Gate:** [ROADMAP ARCH-02](ROADMAP.md#arch-02--topology-identity--provenance--remapping); audit §G Phase 1.
-**Mode (M5):** Discovery → decision preparation; Phase 2 implemented (§14). Next: Phase 3 (§7).
+**Mode (M5):** Discovery → decision preparation; Phases 2 and 3 implemented (§14, §15). Next: Phase 5 or Phase 4 (§15,
+"Next").
 **Input:** [mesh architecture audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) (§C–§H and
 the Phase 0 addendum). Every claim taken from it was re-verified against the code at `a53c14f` (Phase 0 merged); where
 this AD differs from the audit, it says so (§1, last paragraph).
@@ -130,7 +133,7 @@ writes made by the primitives are part of both. "Gate" = the H1 default (`PROVIS
 | `collapse_edge` (primitive) | `v0` | `v1`, `e`, degenerate faces | (a + b)/2, the position's expression | — |
 | Dissolve V/E/F (± cleanup), Delete V/E/F, Cap | everything not removed | deletions; Dissolve +1 F per region, +1 E per chain; Cap +1 F per loop | none created; values of removed vertices are deleted (journaled) | allowed |
 | Move / Rotate / Scale, Tweak, Soft, Loop Slide, Smooth, Relax, Re-Symmetrize | all | positions only | untouched (edit rule, §4.3); Re-Symmetrize therefore leaves targets as they were | allowed |
-| Apply transform (`apply_placement`, composite command, every baked object) | all | positions `p → to_world(p)` | vector `v → s·R·v`; weights unchanged; identity placement: nothing | locked in Phase 2; **wired with Phase 3** (§7) |
+| Apply transform (`apply_placement`, composite command, every baked object) | all | positions `p → to_world(p)` | vector `v → s·R·v`; weights unchanged; identity placement: nothing | **declared since Phase 3** (`apply_placement` maps, §15) |
 | Clear transform, object W/E/R in `4` | all | placement only | none | allowed |
 | Mirror copy (menu method `mirror_copy` → `mirror_mesh`) | source unchanged | new mesh, new IDs (dense, source-ID order) | each layer copied through the index map, vector `v → H·v` | locked for a layered source until wired (Phase 5) |
 | Morph Lab send (`M`, `morph_bridge`) | source unchanged | a file copy of the mesh state | the copy carries the layers (the Lab ignores them) | allowed |
@@ -373,7 +376,7 @@ is measured too slow. Corner-domain data (UVs) would use the same primitive hook
   mesh, `map_vector_layers`. In `src/mirai`: the gate with the H1 default table and its enumeration, the F-9 / §4.2
   consumers. No UI and no target creation in the app; exercised by tests. Needs the review disposition (done, §13) and
   Manu's go for the Core change (given 2026-10-27), **not** the H answers.
-- **Phase 3 — one persistent target** (audit Phase 3). Needs H1 (the table as shipped) and H4. Includes the Apply
+- **Phase 3 — one persistent target** (audit Phase 3; **built 2026-10-27, §15**). Needs H1 (the table as shipped) and H4. Includes the Apply
   transform wiring (one `map_vector_layers` call per baked object, F-7) — decided here, so `Strg+A` works with targets from
   the first app version. The editing view needs its own Undo command that writes layer values (a gesture on the view is no
   position write; F-8).
@@ -456,8 +459,8 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
   of incremental sums.
 - **Transfer between different meshes:** retopology, import, linking a mirror copy's targets to its source's, morph
   export (OBJ / glTF).
-- **Editing-view mechanics** (H4 design: how a gesture on the view becomes one Undo step on the offsets; writing back only
-  touched points), editing on a deformed pose, symmetric target editing.
+- ~~**Editing-view mechanics**~~ — decided with Phase 3 (§15). Still open: editing on a deformed pose; symmetric target
+  editing beyond what the app's symmetric tools already do on the view (they mirror positions, so offsets come out mirrored).
 - **Weights as document state / animation** (`Scene.morph_targets` stays reserved, `null`).
 - A merge rule other than the average (H3 alternative); face- and corner-domain layers; packed storage (Phase 4).
 
@@ -567,8 +570,95 @@ copy, no value deletion in `_delete_vertex`, `split_edge` with swapped weights, 
 keeping stale layers, and a bulk write leaving per-element records beside its whole record; survives by construction —
 the apply order (see above).
 
-**Open:** Phase 3 (one persistent target, the Apply transform wiring, the editing-view Undo
-command); the reference PC is not needed before Phase 3.
+**Open after Phase 2:** Phase 3 — built, §15.
+
+## 15. Editing view and Phase 3 implementation note (2026-10-27)
+
+### 15.1 Decision: the editing view (H4 mechanics, §11) — agent decision, names `PROVISIONAL`
+
+Requirements taken from the Morph Lab (J-5 "daneben" KEEP, J-3 "relativ", F-11 weight = view, 6a picking on the rest shape
+"hilft", the Lab's own limits) and from §4.2 / F-8; the Lab's file structure is not copied (M3).
+
+1. **The view is a transient scene object.** `Tab` on a base with a target adds an object whose mesh is an ID-identical copy
+   of the base at `b + d` (no layers; `morph_targets.view_state`), placed 1.25 world widths of the base along +X with the
+   base's rotation, scale, pivot and material, and makes it the edit object (E-14 `_set_edit_object`). Every app tool runs on
+   it unchanged; the component selection carries over (same IDs); the camera pans by the same offset (the shape stays where it
+   was on screen; zoom out to see the base beside it). Opening and closing are no Undo step. The view lives while it is the
+   edit object: `Tab` again, an Undo that brings back another edit object (Q-8), or a scene load closes it. It is never a
+   document: `save_scene_file` writes the scene without it (base = edit object), OBJ export and the `M` bridge take the base.
+2. **A gesture on the view is one offset write (F-8).** The app's history is `morph_targets.TranslatingHistory`, a subclass of
+   the Core `HistoryStack` in `src/mirai` (Core unchanged): while a view is open every push goes through `TargetView.translate`
+   — the view's `Mesh.watch()` (keys only) names the touched points, their offsets `p − b` are written into the base's layer in
+   **one** `record_mesh_change`, and that `MeshDeltaCommand` on the base replaces the view's own command; the view is then
+   re-derived as `b + d` on those points (bit-exact by definition). Only touched points are written, and the delta holds only
+   the ones that changed. One choke point covers every tool (W/E/R, Tweak, Soft, Smooth, Relax, Loop Slide, Re-Symmetrize, the
+   host `apply_mesh_change`) instead of a hook per gesture path. A push that keeps nothing sets `swallowed`, and the selection
+   mirror skips its entry (the stacks stay 1:1). Undo / Redo change the base's layer; `TargetView.sync_from_base` brings the
+   view back to `b + d` (or rebuilds it if an older step changed the topology).
+3. **Topology only on the base.** A second gate table for the view (`layer_declarations.view_refusal`): non-mesh and
+   position-only commands and the morph keys run; every topology operation (also the H1-allowed Delete, Dissolve, Vertex
+   Connect, Cap), Apply transform, `Shift+S`, saved-region edits, mode `4` and adding objects are refused with
+   `"<operation>: on the base only (Tab returns to it)"`. Fail-closed backstop: `translate` reverts a view change that is not a
+   position change (a host bypassing the keys) and keeps nothing.
+4. **Weight = view state** (F-11): per object in whole percent, no Undo step, not saved; keys `+`/`-` (10 %), `Shift` (1 %),
+   `Alt` (100 % / 0 %), and hold `N` + mouse left/right (Manu's J-4 "Schieberegler" without window UI; tap `N` = 0 % ↔ last).
+   Display through H7: `morph_targets.MorphSurfaceProvider` shows `b + w·d` as the edit object's surface and, H7-E, on the
+   base beside the view; picking, wire and tools stay on the rest shape. The H7 slot is shared with the SubD preview: whoever
+   holds it keeps it, the other says so (H5b: together from Phase 4). The surface patches from the base's journal: a weight step
+   touches only the points with an offset (`_Surface`, `(b, d)` cached), an edit only the touched ones.
+
+Alternatives considered: in-place editing with a target switch (Blender-style; Manu chose "daneben", H4); a persistent second
+object as in the Lab (X-3: desync and memory); every tool writing offsets itself (touches every tool, many paths to keep in
+step); a commit hook per gesture path (six paths, a seventh would be missed silently — the push is the one boundary they share).
+
+### 15.2 What was built
+
+- `src/mirai/morph_targets.py` (new): names (`Target n`, rename cycle), `MAX_TARGETS = 1`, keys (context `"morph"`, resolved
+  after global and SubD; none collides with an app or Morph Lab key), `TranslatingHistory`, `TargetView`, the provider and its
+  slot (`MorphDisplay`). `Application`: `create_morph_target` / `rename_morph_target` / `delete_morph_target` (`Ctrl+N`,
+  `Ctrl+Shift+N`, `Alt+Shift+N`; one layer-only `_mesh_transaction` each, base only), `edit_morph_target` /
+  `leave_morph_target` (`Tab`), `set_morph_weight`, the hold-`N` drag, `morph_document_object`, `_document_scene`; HUD row
+  "Morph" (only with a target).
+- **Apply transform** (F-7): `scene_objects.apply_placement` calls `Mesh.map_vector_layers(s·R)` after the positions, inside
+  the same `record_mesh_change` per baked object; identity records nothing. `layer_declarations`: `APPLY_TRANSFORM` declared
+  (`apply_placement` for plain and symmetric), the lock lifted.
+- **Morph Lab and `M`** (decision, `PROVISIONAL`): both stay. The Lab is the Discovery tool for what Production does not do
+  (jaw pose, relative ↔ absolute, the HUD timing); `M` still sends a copy. A mesh with a Production target arrives as the Lab's
+  pair — base = rest shape, "Ziel 1" = rest + the first target's offsets, both without layers (`lab_scene.build_pair_scene`);
+  nothing comes back. During target editing `M` sends the base.
+- Unchanged: the Core, the H1 table on the base (Phase 2 rules: Delete / Dissolve keep the survivors' offsets exactly).
+
+### 15.3 Measured [C] (container, Python 3.13, Mesa llvmpipe; `xvfb-run -a python experiments/drag_cost/probe_morph_gl.py`)
+
+| Row | head_basemesh (326 V) | Man_With_Shoes (928 V) | gollum_20k (21,875 V) |
+|---|---|---|---|
+| weight step p50 / p95, offsets on 15 % | 0.84 / 1.20 ms | 1.30 / 1.80 ms | 34 / 52 ms |
+| weight step p50 / p95, offsets on 100 % | 2.54 / 4.94 ms | 7.25 / 10.4 ms | 203 / 255 ms |
+| first show (0 → 1 %, builds the surface) | 11 ms | 29–63 ms | 1.3–2.7 s |
+| tap `N` 0 % → 60 % (surface kept, GL buffers rebuilt) | 7.5 ms | 21 ms | 0.7–0.9 s |
+| view gesture commit (36 points, the release) | 3.1 ms | 4.0 ms | 30 ms |
+| Apply transform with one target | 1.8 ms | 3.8 ms | 81 ms |
+
+A weight step = the hold-`N` mouse move + `update_viewport` (provider + `Viewport.sync`), without the draw. **Verdict:** head
+and body are far under the 16.7 ms bar in the container; the reference PC runs Python ≈ 2× slower (REFERENCE_HARDWARE §2),
+which keeps head comfortable and the dense body row near 10–20 ms — **only the reference PC can confirm the bar** (run the
+probe there). gollum_20k is "usable, not fluid" (H5c) with sparse targets (≈ 35–50 ms) and slow with a dense one (≈ 0.2 s per
+step): the cost is the viewport's incremental patch of every moved vertex (normals and face rows, `render_mesh._sync_geometry`),
+not the evaluation (profiled: provider ≈ ¼) — the shared bottleneck of any whole-mesh move, for the Phase 4 GPU evaluation
+probe. Tab into the view on gollum_20k pays one mesh copy (≈ 1 s).
+
+**Tests:** `tests/test_morph_targets.py` (lifecycle with exact Undo / Redo; one target per mesh; save → load bit-exact, also
+with the view open; the view equals `b + d`; W/E/R/Tweak/Soft/Smooth on the view = one Undo step on the base writing only the
+touched offsets; 13 topology and base-only commands refused on the view untouched; the backstop; Undo across the session; Delete
+/ Dissolve on the base keep the survivors' offsets; C-1; the weight is no history entry and not saved; the drag; the mix on
+the base and beside the view; the SubD slot; the HUD row; a randomized oracle of the evaluated surface; the bridge),
+`tests/test_layer_gate.py` (Apply transform plain and symmetric, one layered object among several, world shape equal to 1e-12,
+mirror-exact offsets after a 90° bake, identity maps nothing, Undo / Redo), `experiments/morph_lab/tests/test_app_lab.py`
+(a sent Production target becomes the Lab's pair), `experiments/drag_cost/tests/test_probe_morph_args.py`.
+
+**Next (H5a):** Phase 5 (topology edits with targets, one gate lift at a time) before skinning; Phase 4 (several targets,
+packed storage, stage chain, GPU evaluation) is independent of it. Open from Phase 3: the reference-PC run of the probe; mask
+and hide sets are not carried onto the view; Manu's practical test (Kurzfassung).
 
 ---
 
@@ -599,3 +689,41 @@ dich erst mit dem ersten Ziel in der App.
   mit, ab dem ersten Ziel in der App. — *ja / anders*
 
 **Zur Kenntnis (keine Frage):** Re-Symmetrize gleicht nur die Basis an, nicht die Ziele.
+
+**Phase 3 ist gebaut (2026-10-27): das erste Morph-Ziel in der App.** Praxistest (ca. 20–30 Minuten), Annahmen zum
+Korrigieren in einem Satz: das Ziel wird daneben bearbeitet wie im Morph Lab, die Kamera springt mit (gleiche Stelle am
+Bildschirm), das Gewicht ist reine Ansicht, Tasten sind Vorschläge.
+
+`python src/main.py` (Start: Head-Basemesh)
+
+1. **Ziel anlegen.** `Strg+N` — die HUD-Zeile „Morph“ zeigt `Target 1 · 0 % · base`. `Strg+Shift+N` gibt ihm den nächsten
+   Namen (Smile, Blink, …); `Strg+Z` / `Strg+Y` gehen Schritt für Schritt zurück und vor.
+2. **Ziel formen.** In `1` ein paar Punkte am Mund wählen, `Tab`: das Ziel steht neben der Basis, die Kamera springt mit,
+   die Auswahl bleibt. Formen mit allem, was die App hat: `W`/`E`/`R`, Tweak (`Strg`+Ziehen), Soft (`O`), Symmetrie
+   (`Shift+S` vorher an der Basis), `S` Smooth. Jede Geste ist **ein** `Strg+Z`. Probier `C`, `Entf`, `T`: die Statuszeile
+   sagt „on the base only“.
+3. **Mischen.** `Tab` zurück zur Basis. `N` halten und die Maus nach links/rechts ziehen = Gewicht; `N` antippen = 0 % ↔
+   zuletzt; `+`/`-` 10 %, mit `Shift` 1 %, `Alt+` / `Alt-` 100 % / 0 %. Auswahl und Hover liegen auf der Ruheform (wie im
+   Lab). Auch während du am Ziel arbeitest (`Tab`), zeigt die Basis daneben die Mischung — Mausrad zurück, dann siehst du beide.
+4. **Basis ändern.** An der Basis Punkte verschieben: das Ziel geht mit (relativ, J-3). Ein Loch mit `Entf`, Kanten mit
+   Rücktaste auflösen: das Ziel bleibt auf den übrigen Punkten. `C`, `T`, `Shift+C`, `I` an der Basis: gesperrt mit Meldung
+   (bis Phase 5).
+5. **Drehen und übernehmen.** In `4` das Objekt mit `E` drehen und mit `R` skalieren, dann `Strg+A`: die Mischung sieht danach
+   gleich aus. Gegenprobe: in `1` alles wählen und drehen — die Ziel-Bewegungen bleiben in ihrer alten Richtung (C-1).
+6. **Speichern.** `Strg+S`, Fenster schließen, die Szene über `Leertaste` wieder laden: das Ziel ist da (Gewicht 0 %).
+7. Optional: `python src/main.py examples/meshes/gollum_20k.obj` — benutzbar, nicht flüssig: ein kleines Ziel geht, ein Ziel
+   über das ganze Mesh macht jeden Gewichtsschritt langsam; `Tab` dauert dort etwa eine Sekunde.
+8. Optional auf deinem PC: `python experiments/drag_cost/probe_morph_gl.py` und die Ausgabe in den Chat (die 16,7-ms-Grenze
+   für Kopf und Körper kann nur dein PC bestätigen).
+
+| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
+| --- | --- | --- |
+| Ziel anlegen / umbenennen / löschen (1) | | |
+| Ziel daneben formen, Kamera springt mit (2) | | |
+| Gewicht mit `N` ziehen / antippen, `+`/`-` (3) | | |
+| Mischung an der Basis, auch während du am Ziel formst (3) | | |
+| Basis ändern, Löschen/Auflösen, Sperren (4) | | |
+| Drehen + `Strg+A`, C-1 (5) | | |
+| Speichern / Laden (6) | | |
+| Tasten (`Strg+N`, `Tab`, `N`, `+`/`-`) | | |
+

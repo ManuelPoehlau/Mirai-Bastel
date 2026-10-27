@@ -536,6 +536,8 @@ Base Mesh + Morph Target + Weight -> Evaluated Geometry
 
 Morph is a later consumer, not an immediate Core foundation.
 
+**Status (2026-10-27):** one persistent target per mesh is in the app (AD-025 Phase 3, [§15](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#15-editing-view-and-phase-3-implementation-note-2026-10-27)); several targets, the stage chain and morph + SubD are AD-025 Phase 4.
+
 ---
 
 ## Rigging Foundation
@@ -872,7 +874,7 @@ Modeling / Topology Expansion (Loop Insert, Loop Slide, Connect Edges, Knife, Kn
 ## Strategic research / gates
 
 - **ARCH-01 — Object / Component Model** — [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (DECIDED 2026-10-15; M0, M1, M2-0, M2-0…M2-4 implemented 2026-10-15; Manu's practical tests pending)
-- **ARCH-02 — Topology Identity / Provenance / Remapping** — [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) (PROPOSED 2026-10-27; Phase 2 IMPLEMENTED 2026-10-27: Core point layers, journal, file v5, fail-closed gate; H1–H5 and C-1 decided 2026-10-27; next Phase 3, one persistent target)
+- **ARCH-02 — Topology Identity / Provenance / Remapping** — [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) (PROPOSED 2026-10-27; Phase 2 IMPLEMENTED 2026-10-27: Core point layers, journal, file v5, fail-closed gate; H1–H5 and C-1 decided 2026-10-27; **Phase 3 IMPLEMENTED 2026-10-27**: one persistent morph target in the app, editing view beside the base, Apply transform carries targets — AD-025 §15; next Phase 5 or 4)
 
 ## Later (after WP-06 / production foundation stabilizes)
 

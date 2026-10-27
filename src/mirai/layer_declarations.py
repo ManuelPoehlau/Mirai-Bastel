@@ -8,8 +8,13 @@ runs (plain and symmetric), so a rename fails loudly and `tests/test_layer_gate.
 against its rule on a plain and a symmetric layered fixture. Everything else is locked with a
 status line. The table is H1 (AD-025 §10, decided by Manu 2026-10-27): allowed are Delete, Dissolve,
 Vertex Connect, Cap and every position-only tool; locked until Phase 5 are Split, Edge Connect, Loop
-Insert, Knife, Extrude, Collapse and mirror copy; Apply transform is locked until Phase 3 wires the
-frame map (`Mesh.map_vector_layers`).
+Insert, Knife, Extrude, Collapse and mirror copy. Apply transform is declared since Phase 3
+(2026-10-27): `scene_objects.apply_placement` maps the vector layers by the placement's linear part
+(`Mesh.map_vector_layers(s·R)`) in the same recording as the positions (AD-025 §4.3, F-7).
+
+Phase 3 adds a second, stricter table for the morph target's **editing view** (`view_refusal`,
+AD-025 §15): on the view only what changes no mesh data or positions only runs; topology, the symmetry
+definition, saved regions, mode `4` and the object methods stay on the base.
 
 Key space: every `mirai.interaction.commands` constant (`COMMAND_CLASSES`), the resolved `C` context
 (`CContext`, checked after `resolve_c_context`) and the public `Application` methods that can change
@@ -28,6 +33,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from .interaction import commands
+from .scene_objects import apply_placement
 from .symmetric_ops import (
     coordinate_cap,
     coordinate_delete,
@@ -50,12 +56,16 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         commands.DISSOLVE: (apply_removal, coordinate_dissolve),
         commands.DISSOLVE_NO_CLEANUP: (apply_removal, coordinate_dissolve_no_cleanup),
         commands.CAP: (apply_cap, coordinate_cap),
+        # A frame change (AD-025 §4.3): positions p -> to_world(p), vector values v -> s·R·v; one
+        # function for plain and symmetric meshes (the symmetry plane moves with `axis`).
+        commands.APPLY_TRANSFORM: (apply_placement, apply_placement),
     }
 )
 
 NON_MESH = "non-mesh"
 POSITION_ONLY = "position-only"
 DECLARED = "declared"
+MORPH = "morph"  # the target lifecycle, weight and view keys (`mirai.morph_targets`): they handle layers
 RESOLVED = "resolved"  # gated where the operation is resolved (C: the context)
 LOCKED = "locked"
 
@@ -98,11 +108,18 @@ _POSITION_ONLY_COMMANDS = (
 )
 
 #: H1 locked: topology the Core has a rule for but the tool or its symmetric path does not yet
-#: (Phase 5), a frame change not yet wired (Apply transform, Phase 3), the Knife session keys (the
-#: session itself is locked at `C`), and constants no `Application` path handles (fail-closed).
+#: (Phase 5), the Knife session keys (the session itself is locked at `C`), and constants no
+#: `Application` path handles (fail-closed).
 _LOCKED_COMMANDS = (
-    commands.EXTRUDE, commands.COLLAPSE, commands.LOOP_INSERT, commands.APPLY_TRANSFORM,
+    commands.EXTRUDE, commands.COLLAPSE, commands.LOOP_INSERT,
     commands.SPLIT_EDGE, commands.KNIFE_COMMIT, commands.KNIFE_LIFT, commands.ARTICULATION_RESTORE,
+)
+
+_MORPH_COMMANDS = (
+    commands.MORPH_NEW, commands.MORPH_RENAME, commands.MORPH_DELETE, commands.MORPH_EDIT_TOGGLE,
+    commands.MORPH_WEIGHT_UP, commands.MORPH_WEIGHT_DOWN, commands.MORPH_WEIGHT_UP_FINE,
+    commands.MORPH_WEIGHT_DOWN_FINE, commands.MORPH_WEIGHT_FULL, commands.MORPH_WEIGHT_ZERO,
+    commands.MORPH_WEIGHT_DRAG,
 )
 
 #: Commands whose target meshes are not the edit mesh: checked at their own site with every mesh
@@ -115,6 +132,7 @@ COMMAND_CLASSES: Mapping[str, str] = MappingProxyType(
         **{c: NON_MESH for c in _NON_MESH_COMMANDS},
         **{c: POSITION_ONLY for c in _POSITION_ONLY_COMMANDS},
         **{c: LOCKED for c in _LOCKED_COMMANDS},
+        **{c: MORPH for c in _MORPH_COMMANDS},
         commands.CONNECT: RESOLVED,
         **{c: DECLARED for c in LAYER_SAFE_OPERATIONS if isinstance(c, str)},
     }
@@ -156,6 +174,12 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "break_mirror_pairs": "non-mesh",
         "resync_mirror_pairs": "non-mesh",
         "mirror_copy": LOCKED,
+        # AD-025 Phase 3: the target lifecycle (one layer-only Undo step each) and the editing view
+        "create_morph_target": MORPH,
+        "rename_morph_target": MORPH,
+        "delete_morph_target": MORPH,
+        "edit_morph_target": MORPH,
+        "leave_morph_target": MORPH,
     }
 )
 
@@ -168,7 +192,6 @@ _LABELS: Mapping[Any, str] = MappingProxyType(
         commands.EXTRUDE: "Extrude",
         commands.COLLAPSE: "Collapse",
         commands.LOOP_INSERT: "Loop Insert",
-        commands.APPLY_TRANSFORM: "Apply transform",
         "mirror_copy": "Mirror copy",
     }
 )
@@ -185,7 +208,44 @@ def layer_refusal(key: Any) -> str | None:
         cls = COMMAND_CLASSES.get(key)
         if cls is None:
             cls = METHOD_CLASSES.get(key)
-    if cls in (NON_MESH, POSITION_ONLY, RESOLVED, "commands", "new mesh", "host", "non-mesh"):
+    if cls in (NON_MESH, POSITION_ONLY, RESOLVED, MORPH, "commands", "new mesh", "host", "non-mesh"):
         return None
     label = _LABELS.get(key, getattr(key, "name", None) or str(key))
     return f"{label}: locked while this mesh has morph targets"
+
+
+# -- the editing view of a morph target (AD-025 §15, H4: shape edits on the view, topology on the base) --
+
+#: Non-mesh commands that still write mesh data (the symmetry definition, saved regions) or leave the
+#: component level (mode `4` and the object commands): base only.
+_VIEW_BASE_ONLY = frozenset(
+    {
+        commands.SYMMETRY_CYCLE, commands.REGION_NEW, commands.REGION_NAME, commands.REGION_ADD,
+        commands.REGION_REMOVE, commands.REGION_DELETE, commands.SET_OBJECT_MODE,
+        commands.CLEAR_TRANSFORM, commands.TOGGLE_REFERENCE,
+    }
+)
+#: Methods that run on the view: the host entry (positions are written as offsets, the rest is reverted
+#: by `TargetView.translate`), scene loads (they close the view) and the morph methods.
+_VIEW_METHODS = frozenset({"init_scene", "load_scene", "apply_mesh_change"})
+
+_VIEW_HINT = "on the base only (Tab returns to it)"
+
+
+def view_refusal(key: Any) -> str | None:
+    """The refusal text for `key` while the edit object is a morph target's editing view; None =
+    allowed. Allowed: non-mesh and position-only commands, the morph keys, and `_VIEW_METHODS`.
+    Everything else - every topology operation (declared or not), Apply transform, the base-only
+    commands above, unknown keys - is refused (fail-closed)."""
+    if isinstance(key, CContext):
+        cls = None if key is CContext.NONE else LOCKED
+    else:
+        cls = COMMAND_CLASSES.get(key)
+        if cls is None:
+            cls = METHOD_CLASSES.get(key)
+    if key in _VIEW_BASE_ONLY:
+        cls = LOCKED
+    if cls in (NON_MESH, POSITION_ONLY, MORPH, "commands") or key in _VIEW_METHODS or key is CContext.NONE:
+        return None
+    label = _LABELS.get(key, getattr(key, "name", None) or str(key))
+    return f"{label}: {_VIEW_HINT}"

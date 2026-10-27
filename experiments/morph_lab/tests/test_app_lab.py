@@ -523,6 +523,37 @@ def test_sent_object_becomes_base_with_an_id_identical_target(tmp_path):
     assert backup_path(files.current).exists()
 
 
+def test_a_sent_production_target_becomes_the_labs_pair(tmp_path):
+    # AD-025 Phase 3: a mesh with a Production morph target (a point layer) arrives as base = rest shape,
+    # Ziel 1 = rest shape + offsets, both without layers (the app's gate would lock topology in the lab).
+    from core import PointLayerInfo
+    from core.mesh import Mesh
+    from core.scene import Scene, SceneObject
+    from core.ids import ObjectId
+    from core.serialization import scene_to_json
+    from morph_lab.lab_scene import read_sent_object
+
+    asset = build_app_lab(ASSET, WIDTH, HEIGHT, scene_dir=tmp_path / "a")[0].scene.edit_object
+    mesh = Mesh.from_state(asset.mesh.export_state())
+    lid = mesh.add_point_layer(PointLayerInfo("Smile"))
+    moved = mesh.all_vertex_ids()[:5]
+    for vid in moved:
+        mesh.set_layer_value(lid, vid, (0.01, -0.02, 0.5))
+    sent_obj = SceneObject(ObjectId(0), mesh, name="Kopf")
+    sent_file = tmp_path / "sent.mirai.json"
+    sent_file.write_text(scene_to_json(Scene.from_objects([sent_obj], edit_object_id=sent_obj.id,
+                                                          object_id_counter=1)), encoding="utf-8")
+    app, lab, _ = build_app_lab("Kopf", WIDTH, HEIGHT, scene_dir=tmp_path / "lab", sent=read_sent_object(sent_file))
+
+    base, target = objects(app, lab)
+    assert not base.mesh.has_point_layers() and not target.mesh.has_point_layers()
+    for vid in base.mesh.all_vertex_ids():
+        b = asset.mesh.vertex_position(vid)
+        assert base.mesh.vertex_position(vid) == b
+        d = mesh.layer_value(lid, vid)
+        assert target.mesh.vertex_position(vid) == tuple(bi + di for bi, di in zip(b, d))
+
+
 def test_unreadable_sent_file_is_a_lab_scene_error(tmp_path):
     from morph_lab.lab_scene import read_sent_object
 

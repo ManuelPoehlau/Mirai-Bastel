@@ -8,8 +8,15 @@ nichts passiert), sonst das Edit-Objekt. Das Objekt wird als Ein-Objekt-Szenenda
 `scenes/morph_lab/von_main/<name>.mirai.json` geschrieben (Format `core.serialization`; die
 Platzierung des Objekts geht nicht mit, das Lab setzt die Basis auf die Identität) und das Lab
 als eigener Prozess mit eigenem Fenster gestartet. Das Production-Fenster bleibt unverändert,
-kein History-Eintrag. Dieses Modul importiert kein pyglet und kein `experiments/`: es kennt nur
-den Pfad zu `run.py` und dessen Option `--von` (`main.py` kennt kein Experiment, CLAUDE.md).
+kein History-Eintrag.
+
+Morph-Ziele (AD-025 Phase 3, `PROVISIONAL`): Production und Lab bestehen nebeneinander. Hat das Mesh
+ein Production-Ziel, nimmt die Datei es mit (Punkt-Layer); das Lab baut daraus sein Paar - Basis =
+die Ruheform, „Ziel 1“ = Ruheform + Offsets des ersten Ziels, beide ohne Layer
+(`lab_scene.build_pair_scene`). Das Lab bleibt eine Einweg-Kopie: nichts kommt zurück. Während das
+Ziel daneben bearbeitet wird, geht die Basis (die Ansicht ist flüchtig).
+
+Dieses Modul importiert kein pyglet und kein `experiments/`: es kennt nur den Pfad zu `run.py` und dessen Option `--von` (`main.py` kennt kein Experiment, CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -45,7 +52,8 @@ def pick_object(app) -> SceneObject | None:
     """Das zu sendende Objekt, oder None mit Grund in der Statuszeile (siehe Modul)."""
     scene = app.scene
     if app.selection.mode is not SelectionMode.OBJECT:
-        return scene.edit_object
+        # AD-025 Phase 3: while a target's editing view is open, the base (the view is transient).
+        return getattr(app, "morph_document_object", scene.edit_object)
     chosen = [scene.objects[oid] for oid in sorted(app.selection.objects) if oid in scene.objects]
     if len(chosen) != 1:
         app.set_status("Morph Lab: select exactly one object (mode 4), or leave mode 4 for the edited one")

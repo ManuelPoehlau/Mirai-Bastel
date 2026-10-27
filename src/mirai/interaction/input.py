@@ -55,6 +55,9 @@ KNIFE_CONTEXT = "knife"
 #: 2026-10-23: the provisional keys of the SubD preview (`mirai.subdivision`); resolved only for an
 #: input the global context leaves unbound, so a SubD key never shadows an app key.
 SUBD_CONTEXT = "subd"
+#: 2026-10-27 (AD-025 Phase 3): the provisional morph-target keys (`mirai.morph_targets`); resolved like
+#: SUBD_CONTEXT, only for an input the global and the SubD context leave unbound.
+MORPH_CONTEXT = "morph"
 #: 2026-10-23 (GUI Stufe 1): keys the window handles itself (H = HUD). `Application` never resolves
 #: this context, so such a key is no app command (and no host's `CommandGate` sees it); the window
 #: asks `command_for(input, WINDOW_CONTEXT)` before forwarding a key.

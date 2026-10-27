@@ -179,7 +179,14 @@ Scope (binding, see the handoffs):
   selected object (mode `4`: the one selected; otherwise the edit object) to the Morph Lab, which
   opens in its own window with base and target already built. Window-level like Ctrl+S
   (`install_handlers(..., morph=...)`), not in the BindingSet; refused while W/E/R/T or a Knife
-  session runs. This file only calls the bridge and knows no experiment.
+  session runs. This file only calls the bridge and knows no experiment. A mesh with a morph
+  target arrives in the Lab as its pair (rest shape + target); nothing comes back.
+- Morph targets (AD-025 Phase 3, `PROVISIONAL` keys, `mirai.morph_targets`, context "morph"):
+  Ctrl+N = new target of the edit object (= its current shape), Ctrl+Shift+N = next name,
+  Alt+Shift+N = delete (one Undo step each, saved with the scene). Tab = edit the target beside
+  the base (W/E/R, Tweak, Soft, Smooth/Relax shape it, one Undo step per gesture; topology only on
+  the base) and back. Weight (view state, no Undo step, not saved): hold N + mouse left/right, tap N
+  = 0 % <-> last, +/- = 10 %, Shift = 1 %, Alt = 100 % / 0 %. In `4`, Ctrl+A carries the targets.
 - Objects (AD-021 M1, `PROVISIONAL` look and click): `4` = Object mode. A
   Reference is drawn in a muted blue (no selection overlays, never pickable in
   `1`/`2`/`3`, picking goes through it); in `4` a click selects (Shift/Ctrl/Alt

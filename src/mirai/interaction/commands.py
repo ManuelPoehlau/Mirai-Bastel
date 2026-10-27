@@ -279,3 +279,19 @@ SUBD_CYCLE_SECONDARY = "SubdCycleSecondary"
 
 # --- Articulation (EX-A / H02) -----------------------------------------------
 ARTICULATION_RESTORE = "ArticulationRestore"
+# --- Morph targets (AD-025 Phase 3, 2026-10-27; `mirai.morph_targets`, keys `PROVISIONAL`, context "morph") ---
+#: New / rename / delete the edit mesh's target: one Undo step each (a layer-only step).
+MORPH_NEW = "MorphNew"
+MORPH_RENAME = "MorphRename"
+MORPH_DELETE = "MorphDelete"
+#: Base <-> the target's editing view beside it (H4); view state, no Undo step.
+MORPH_EDIT_TOGGLE = "MorphEditToggle"
+#: The weight (view state: no Undo step, not saved, F-11). MORPH_WEIGHT_DRAG is the hold key: mouse
+#: motion sets the weight, a tap toggles 0 % <-> the last weight.
+MORPH_WEIGHT_UP = "MorphWeightUp"
+MORPH_WEIGHT_DOWN = "MorphWeightDown"
+MORPH_WEIGHT_UP_FINE = "MorphWeightUpFine"
+MORPH_WEIGHT_DOWN_FINE = "MorphWeightDownFine"
+MORPH_WEIGHT_FULL = "MorphWeightFull"
+MORPH_WEIGHT_ZERO = "MorphWeightZero"
+MORPH_WEIGHT_DRAG = "MorphWeightDrag"

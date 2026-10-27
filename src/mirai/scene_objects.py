@@ -406,10 +406,18 @@ def apply_placement(obj: SceneObject, axis: str | None) -> None:
     """Bake (L-3): jede Mesh-Position wird ihre Weltposition (`object_space.to_world`, also
     bitgleich zu dem, was Picking und Werkzeuge bisher als Welt gerechnet haben); eine
     Symmetrie-Definition bekommt die Achse `axis` (aus `applied_symmetry_axis`) bei gleicher
-    Seam. Schreibt nur das Mesh; Transform und Pivot setzt der Aufrufer (Commands)."""
+    Seam. Schreibt nur das Mesh; Transform und Pivot setzt der Aufrufer (Commands).
+
+    Punkt-Layer (AD-025 §4.3, Phase 3): ein Frame-Wechsel - Vektor-Werte (Morph-Offsets) werden mit
+    dem linearen Teil s·R der Platzierung abgebildet (`Mesh.map_vector_layers`, ein Ganz-Layer-Record
+    in derselben Aufzeichnung wie die Positionen); die Translation berührt keinen Offset. Danach ist
+    die ausgewertete Weltform `b + w·d` dieselbe wie vorher (bis auf Rundung)."""
     mesh = obj.mesh
     for vid in mesh.all_vertex_ids():
         mesh.set_vertex_position(vid, object_space.to_world(obj, mesh.vertex_position(vid)))
+    if mesh.has_point_layers() and not object_space.is_identity(obj.transform):
+        t = obj.transform
+        mesh.map_vector_layers(tuple(tuple(t.scale * c for c in row) for row in t.rotation))
     definition = mesh.symmetry_definition
     if definition is not None and axis is not None:
         mesh.symmetry_definition = SymmetryDefinition(

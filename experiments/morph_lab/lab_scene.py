@@ -74,9 +74,22 @@ def build_start_scene(asset_name: str) -> Scene:
 
 def build_pair_scene(name: str, base_mesh: Mesh) -> Scene:
     """Base (named `name`, a copy of `base_mesh`) + ID-identical target. Shared by the asset start
-    and the bridge from `src/main.py` (`--von`)."""
-    base_mesh = Mesh.from_state(base_mesh.export_state())
-    target_mesh = Mesh.from_state(base_mesh.export_state())
+    and the bridge from `src/main.py` (`--von`).
+
+    A mesh with a Production morph target (AD-025 Phase 3, a vector point layer): the base is its
+    rest shape, the target its rest shape + the first target's offsets; both copies carry no layers
+    (the lab's own pair is the target; a layer would lock the app's topology tools in the lab)."""
+    state = base_mesh.export_state()
+    layers = state.get("point_layers") or []
+    state["point_layers"] = None
+    target_state = Mesh.from_state(state).export_state()
+    if layers:
+        vertices = target_state["vertices"]
+        for vid, (dx, dy, dz) in layers[0]["values"].items():
+            x, y, z = vertices[int(vid)]
+            vertices[int(vid)] = [x + dx, y + dy, z + dz]
+    base_mesh = Mesh.from_state(state)
+    target_mesh = Mesh.from_state(target_state)
     xs = [base_mesh.vertex_position(v)[0] for v in base_mesh.all_vertex_ids()]
     width = (max(xs) - min(xs)) if xs else 1.0
     placement = ObjectTransform(translation=(TARGET_SPACING * (width or 1.0), 0.0, 0.0))

@@ -124,6 +124,7 @@ def test_declared_entries_are_the_implementations_the_app_runs():
     for command in (commands.DELETE, commands.DISSOLVE, commands.DISSOLVE_NO_CLEANUP):
         assert ops[command] == (application_module.apply_removal, symmetry_declarations.REMOVAL_COORDINATORS[command])
     assert ops[commands.CAP] == (application_module.apply_cap, symmetry_declarations.CAP_COORDINATORS[commands.CAP])
+    assert ops[commands.APPLY_TRANSFORM] == (application_module.apply_placement,) * 2
 
 
 def test_unknown_keys_are_refused():
@@ -196,8 +197,12 @@ RULE_FIXTURES = {
 }
 
 
+#: Declared frame changes (AD-025 §4.3): their rule test is `test_apply_transform_maps_the_targets`.
+FRAME_FIXTURES = {commands.APPLY_TRANSFORM}
+
+
 def test_every_declared_entry_has_a_rule_fixture():
-    assert set(RULE_FIXTURES) == set(gate.LAYER_SAFE_OPERATIONS)
+    assert set(RULE_FIXTURES) | FRAME_FIXTURES == set(gate.LAYER_SAFE_OPERATIONS)
 
 
 @pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
@@ -287,20 +292,113 @@ def test_locked_operation_runs_without_layers(case):
     assert app.scene.mesh.export_state() != before, (case, app.status_message)
 
 
-def test_apply_transform_refused_when_one_baked_object_has_layers():
+def _evaluated_world(obj, lid, weight: float) -> dict:
+    from mirai import object_space
+
+    mesh = obj.mesh
+    return {
+        v: object_space.to_world(
+            obj, tuple(p + weight * d for p, d in zip(mesh.vertex_position(v), mesh.layer_value(lid, v)))
+        )
+        for v in mesh.all_vertex_ids()
+    }
+
+
+def _symmetric_placed(app):
+    """A symmetric (X) cube, placed so that the symmetry survives the bake (90 degrees about Y,
+    scale 2, a translation off the plane's world normal Z)."""
+    from core import ObjectTransform, SymmetryDefinition
+    from mirai.symmetry_axis import AXIS_NORMALS, ORIGIN
+
+    obj = app.add_primitive("cube", name="sym")
+    mesh = obj.mesh
+    seam = frozenset(e for e in mesh.all_edge_ids() if all(mesh.vertex_position(v)[0] == 0.0 for v in mesh.edge_vertices(e)))
+    mesh.symmetry_definition = SymmetryDefinition(ORIGIN, AXIS_NORMALS["X"], seam)
+    obj.transform = ObjectTransform(
+        translation=(1.5, -0.25, 0.0), rotation=((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)), scale=2.0
+    )
+    app._placement_changed()
+    return obj
+
+
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
+def test_apply_transform_maps_the_targets(symmetric):
+    """AD-025 §4.3 / F-7 (Phase 3): Apply transform with one layered object among several - each baked
+    object's vector layers map by s·R in the same Undo step as the positions; the evaluated world
+    shape stays (rounding); a plain object's mesh gets no layer record; Undo / Redo exact."""
+    from mirai import object_space
+
     app = _app()
     plain = app.add_primitive("sphere", name="plain")
-    layered = _placed_sphere(app, "layered")
+    layered = _symmetric_placed(app) if symmetric else _placed_sphere(app, "layered")
     plain.transform = layered.transform
-    _add_layers(layered.mesh)
+    lids = _add_layers(layered.mesh)
+    if symmetric:  # mirrored offsets: the mirror pair of a value is its X-mirror
+        from mirai.symmetry import vertex_correspondence
+
+        corr = vertex_correspondence(layered.mesh)
+        for lid in lids:
+            for v, c in corr.items():
+                partner = getattr(c, "partner", None)
+                if partner is not None and int(v) < int(partner):
+                    x, y, z = layered.mesh.layer_value(lid, v)
+                    layered.mesh.set_layer_value(lid, partner, (-x, y, z))
+    before_world = {lid: _evaluated_world(layered, lid, 0.7) for lid in lids}
+    t = layered.transform
+    m = [[t.scale * c for c in row] for row in t.rotation]
+    expected = {
+        lid: {v: tuple(sum(m[i][k] * d[k] for k in range(3)) for i in range(3)) for v, d in layered.mesh.layer_items(lid)}
+        for lid in lids
+    }
+    states = (plain.mesh.export_state(), layered.mesh.export_state())
     app.key_press(Input("key", "4"))
     app.selection.objects = {plain.id, layered.id}
-    states = (plain.mesh.export_state(), layered.mesh.export_state(), plain.transform, len(app.history))
+    history = len(app.history)
+    assert app.dispatch_command(commands.APPLY_TRANSFORM) is True, app.status_message
+    assert len(app.history) == history + 1
+    assert object_space.is_identity(layered.transform)
+    assert plain.mesh.point_layer_ids() == []
+    for lid in lids:
+        assert dict(layered.mesh.layer_items(lid)) == {v: d for v, d in expected[lid].items() if d != (0.0, 0.0, 0.0)}
+        after = _evaluated_world(layered, lid, 0.7)
+        assert max(max(abs(a - b) for a, b in zip(after[v], before_world[lid][v])) for v in after) < 1e-12
+    assert_layer_invariants(layered.mesh)
+    if symmetric:  # still mirror-exact across the baked plane (normal Z): 90-degree rotation, scale 2
+        definition = layered.mesh.symmetry_definition
+        assert definition is not None and tuple(definition.plane_normal) == (0.0, 0.0, 1.0)
+        pairs = [(v, c.partner) for v, c in corr.items() if getattr(c, "partner", None) is not None]
+        assert pairs
+        for lid in lids:
+            for v, partner in pairs:
+                x, y, z = layered.mesh.layer_value(lid, v)
+                assert layered.mesh.layer_value(lid, partner) == (x, y, -z)
+    app.key_press(Input("key", "z", frozenset({"ctrl"})))
+    assert (plain.mesh.export_state(), layered.mesh.export_state()) == states
+    app.key_press(Input("key", "y", frozenset({"ctrl"})))
+    assert dict(layered.mesh.layer_items(lids[0])) == {v: d for v, d in expected[lids[0]].items() if d != (0.0, 0.0, 0.0)}
+
+
+def test_apply_transform_of_an_unplaced_layered_object_maps_nothing():
+    """Identity placement: Apply leaves it alone (nothing to do), the layer values untouched."""
+    app = _app()
+    lids = _add_layers(app.scene.mesh)
+    before = _layers(app.scene.mesh)
+    app.key_press(Input("key", "4"))
+    app.selection.objects = {app.scene.edit_object_id}
     assert app.dispatch_command(commands.APPLY_TRANSFORM) is False
-    assert "Apply transform: locked" in app.status_message
-    assert (plain.mesh.export_state(), layered.mesh.export_state(), plain.transform, len(app.history)) == states
-    app.selection.objects = {plain.id}  # the layered object is not a target: allowed
-    assert app.dispatch_command(commands.APPLY_TRANSFORM) is True
+    assert "nothing to do" in app.status_message
+    assert _layers(app.scene.mesh) == before and lids
+
+
+def test_apply_placement_with_identity_records_no_layer_change():
+    from core.operations import record_mesh_change
+    from mirai.scene_objects import apply_placement
+
+    app = _app()
+    obj = app.scene.edit_object
+    _add_layers(obj.mesh)
+    delta, _ = record_mesh_change(obj.mesh, lambda: apply_placement(obj, None))
+    assert delta.empty
 
 
 def test_apply_transform_of_a_plain_object_is_not_refused_by_a_layered_edit_mesh():

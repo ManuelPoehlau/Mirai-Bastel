@@ -50,6 +50,7 @@ from core import (
     ObjectMaterial,
     ObjectState,
     ObjectTransform,
+    PointLayerInfo,
     Scene,
     SceneObject,
     Selection,
@@ -86,7 +87,7 @@ from .mask import (
 )
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import build_default_bindings, load_keymap_overrides
-from .interaction.input import KNIFE_CONTEXT, SUBD_CONTEXT
+from .interaction.input import KNIFE_CONTEXT, MORPH_CONTEXT, SUBD_CONTEXT
 from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
@@ -165,7 +166,7 @@ from .resymmetrize import (
     set_plan_positions,
 )
 from . import symmetry_declarations
-from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal
+from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal, view_refusal
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
@@ -187,6 +188,25 @@ from .topology.loop_slide import (
 )
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
+from .morph_targets import (
+    DRAG_PIXELS_PER_PERCENT as MORPH_DRAG_PIXELS_PER_PERCENT,
+    MAX_TARGETS as MORPH_MAX_TARGETS,
+    MAX_WEIGHT as MORPH_MAX_WEIGHT,
+    MIN_WEIGHT as MORPH_MIN_WEIGHT,
+    MORPH_COMMANDS,
+    WEIGHT_STEPS as MORPH_WEIGHT_STEPS,
+    MorphDisplay,
+    TargetView,
+    TranslatingHistory,
+    install_morph_bindings,
+    morph_target,
+    morph_target_ids,
+    new_target_name,
+    next_target_name,
+    view_placement,
+    view_state,
+    world_width,
+)
 from .subdivision.preview import key_label
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.box_select import (
@@ -666,7 +686,10 @@ class Application:
         # Core-Strukturen
         self.scene: Scene = Scene()
         self.selection: Selection = self.scene.selection
-        self.history: HistoryStack = self.scene.history
+        # AD-025 Phase 3: the app's history translates pushes while a morph target's editing view is
+        # open (`morph_targets.TranslatingHistory`; Core `HistoryStack` unchanged).
+        self.history: HistoryStack = TranslatingHistory()
+        self.scene.history = self.history
 
         # Viewport-State (kein Rendering in Gate 3)
         self.camera: OrbitCamera = OrbitCamera()
@@ -718,6 +741,8 @@ class Application:
         # 2026-10-23: the SubD preview's provisional keys, context "subd" (checked against the
         # defaults here, before a keymap.json may rebind anything).
         install_subd_bindings(self.bindings)
+        # AD-025 Phase 3: the morph-target keys, context "morph" (resolved after global and SubD).
+        install_morph_bindings(self.bindings)
         if keymap_path is not None:
             load_keymap_overrides(self.bindings, keymap_path)
 
@@ -880,6 +905,16 @@ class Application:
         # document state, no History. Survives scene loads like `DisplayState`; re-attached to every
         # new viewport in `init_scene`.
         self.subdivision: SubdivisionPreview = SubdivisionPreview(set_status=self._set_status)
+        # AD-025 Phase 3 (`mirai.morph_targets`): the weight per object and the mix display (view
+        # state: no History, not saved), the open editing view of a target (None = none), the hold key
+        # of the weight drag and the weight a tap of it returns to.
+        self.morph: MorphDisplay = MorphDisplay(lambda: self.scene, self._set_status)
+        self._target_view: TargetView | None = None
+        self._morph_view_shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._morph_drag_key: str | None = None
+        self._morph_drag_moved = False
+        self._morph_drag_rest = 0.0
+        self._morph_ab: dict[ObjectId, int] = {}
 
         # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
         # after the B7 window test: press-slide-release was redundant with the
@@ -1046,6 +1081,7 @@ class Application:
         `subd_overlay_type` (2026-10-23): die GL-Senke der SubD-Linien (Käfig / Isolinien,
         `mirai.subdivision.gl_lines.GLSubdLineOverlay`). Die SubD-Vorschau (`self.subdivision`) hängt
         sich an jeden neuen Viewport; ohne Senke rechnet sie headless dieselben Segmente."""
+        self._morph_drop_view()  # the reset replaces every object, the view included
         if geometry_type in ("cube", "obj"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
         elif geometry_type == "file":
@@ -1103,6 +1139,8 @@ class Application:
         self.subdivision.attach(
             self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
         )
+        self.morph.attach(self.viewport)
+        self._morph_ab.clear()
         self._object_pick_caches = {}
         self._sync_object_views()
         self._apply_display()
@@ -1143,6 +1181,8 @@ class Application:
         owner = self.interaction_owner
         if owner is not None:
             self._set_status(f"Add object: not while the {owner} interaction runs")
+            return None
+        if self._layer_gate_refuses("add_reference", ()):
             return None
         mesh, default_name = self._build_mesh(geometry_type, obj_path)
         before = self._selection_snapshot()
@@ -1204,7 +1244,7 @@ class Application:
         if owner is not None:
             self._set_status(f"Export OBJ: not while the {owner} interaction runs")
             return False
-        obj = self.scene.edit_object
+        obj = self.morph_document_object  # the rest shape of the base, never the editing view
         path = Path(path)
         text = mesh_to_obj(obj.mesh, obj.name, lambda p: object_space.to_world(obj, p))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1218,6 +1258,8 @@ class Application:
         owner = self.interaction_owner
         if owner is not None:
             self._set_status(f"{label}: not while the {owner} interaction runs")
+            return None
+        if self._layer_gate_refuses("add_primitive", ()):
             return None
         mesh = build()
         scene, selection = self.scene, self.selection
@@ -1604,7 +1646,9 @@ class Application:
         """Everything that hangs on the edit object's mesh follows `scene.edit_object_id`. Called
         by `_set_edit_object`, by Delete of the edit object, and by Undo/Redo of a step whose
         command changed the edit object itself (`DeleteObjectsCommand`, `AddObjectCommand`): the
-        scene is already switched there, only the view is behind."""
+        scene is already switched there, only the view is behind. A morph target's editing view lives
+        while it is the edit object: it closes here when another object became the edit object."""
+        self._morph_close_if_left()
         obj = self.scene.edit_object
         self._pick_cache.invalidate()
         self.selection.hovered = None
@@ -2108,7 +2152,7 @@ class Application:
         )
         self.selection.clear()
         self.selection.clear_objects()
-        self.history = HistoryStack()
+        self.history = TranslatingHistory()
         self.scene.history = self.history
         self._selection_undo_stack.clear()
         self._selection_redo_stack.clear()
@@ -2131,7 +2175,7 @@ class Application:
             self._set_status(f"Save scene: not while the {owner} interaction runs")
             return False
         path = Path(path)
-        text = scene_to_json(self.scene)
+        text = scene_to_json(self._document_scene())
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
@@ -2155,6 +2199,8 @@ class Application:
         self.flush_hover()
         if self._layer_gate_refuses(command):
             return False
+        if command in MORPH_COMMANDS:
+            return self._morph_command(command)
         tool_class = tool_for_command(command)
         if tool_class:
             return self.tool_manager.activate(command, context=context)
@@ -4115,11 +4161,22 @@ class Application:
             subd = self.bindings.command_for(input, SUBD_CONTEXT)
             if subd in SUBD_COMMANDS:
                 command = subd
+            else:
+                morph = self.bindings.command_for(input, MORPH_CONTEXT)
+                if morph in MORPH_COMMANDS:
+                    command = morph
         if self._gate_refuses(command):
             return False
         if self._layer_gate_refuses(command):
             return False
         if command in SUBD_COMMANDS:
+            return self.dispatch_command(command)
+        if command in MORPH_COMMANDS:
+            # Like the mode keys: not underneath a held W/E/R/T or a Box/Paint drag.
+            if self._transform_key is not None or self._drag_select is not None:
+                return False
+            if command == commands.MORPH_WEIGHT_DRAG:
+                return self._morph_drag_arm(input.value)
             return self.dispatch_command(command)
         if self._object_mode_refuses(command):
             return False
@@ -4210,6 +4267,8 @@ class Application:
             self._lasso_held = None
             self._set_status("Lasso off")
             return True
+        if self._morph_drag_key is not None and input.value == self._morph_drag_key:
+            return self._morph_drag_release()
         if self._light_drag_key is not None and input.value == self._light_drag_key:
             self._light_drag_key = None
             self._set_status(f"Light: {self.display.light_label}")
@@ -5433,6 +5492,7 @@ class Application:
             self._restore_selection(restored)
             if self.viewport is not None:
                 self.viewport.on_selection_changed()  # an object step can change mode / selection
+        self._morph_after_history()
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
         # may be a placement (M2-2), so the pick caches re-project too (`_placement_changed`).
@@ -5567,6 +5627,11 @@ class Application:
         dort den echten. `mesh_step` False = ein Objekt-Schritt (AD-021 M1), dessen
         Undo/Redo das Mesh des Edit-Objekts nicht neu aufbaut. `object_meshes` (M2-3): die
         Nicht-Edit-Objekte, deren Mesh der Schritt geändert hat."""
+        if getattr(self.history, "swallowed", False):
+            # The push before this call kept nothing (a morph target's editing view translated it to
+            # no change, `TranslatingHistory`): no mirror entry either, the stacks stay 1:1.
+            self.history.swallowed = False
+            return
         after = self._selection_snapshot()
         self._selection_undo_stack.append((before, after, mesh_step, frozenset(object_meshes)))
         self._selection_redo_stack.clear()
@@ -5624,7 +5689,17 @@ class Application:
         context or a method name) is not allowed on a target mesh with point layers
         (`mirai.layer_declarations`). `meshes`: the meshes the operation changes or copies (default:
         the edit mesh). Without layers there is no lookup. Unbound input (None) is never refused."""
-        if key is None or (meshes is None and key in PER_TARGET_COMMANDS):
+        if key is None:
+            return False
+        if self._target_view is not None:
+            # AD-025 §15: on a target's editing view only shapes change (`view_refusal`).
+            text = view_refusal(key)
+            if text is not None:
+                self._set_status(text)
+                return True
+            if meshes is None:
+                return False
+        if meshes is None and key in PER_TARGET_COMMANDS:
             return False
         targets = (self.scene.mesh,) if meshes is None else meshes
         if not any(mesh.has_point_layers() for mesh in targets):
@@ -5634,6 +5709,306 @@ class Application:
             return False
         self._set_status(text)
         return True
+
+    # -- Morph targets (AD-025 Phase 3, `mirai.morph_targets`; keys and texts PROVISIONAL) -------------
+
+    @property
+    def morph_view_open(self) -> bool:
+        """True while a morph target's editing view is the edit object (H4)."""
+        return self._target_view is not None
+
+    @property
+    def morph_document_object(self) -> SceneObject:
+        """The object the document means by "the edit object": the base while its target's editing
+        view is open (the view is transient: never saved, exported or sent), else the edit object."""
+        view = self._target_view
+        return view.base_obj if view is not None else self.scene.edit_object
+
+    @property
+    def morph_weight(self) -> int:
+        """The weight of the document edit object's target in whole percent (view state)."""
+        return self.morph.provider.weight(self.morph_document_object.id)
+
+    def morph_status_text(self) -> str | None:
+        """The HUD's morph row: None = the document edit object has no target."""
+        obj = self.morph_document_object
+        lid = morph_target(obj.mesh)
+        if lid is None:
+            return None
+        name = obj.mesh.point_layer_info(lid).name
+        where = "editing target (beside the base)" if self._target_view is not None else "base"
+        text = f"{name} · {self.morph_weight} % · {where}"
+        if self.morph.blocked:
+            text += " · mix hidden (SubD on)"
+        return text
+
+    def _document_scene(self) -> Scene:
+        """The scene as a file holds it: without a target's editing view, the base as the edit object."""
+        view = self._target_view
+        scene = self.scene
+        if view is None or view.view_obj.id not in scene.objects:
+            return scene
+        objects = [obj for oid, obj in scene.objects.items() if oid != view.view_obj.id]
+        return Scene.from_objects(
+            objects,
+            edit_object_id=view.base_obj.id,
+            object_id_counter=scene.object_id_counter,
+            mirror_pairs=scene.mirror_pairs,
+        )
+
+    def _morph_command(self, command: str) -> bool:
+        if command == commands.MORPH_NEW:
+            return self.create_morph_target() is not None
+        if command == commands.MORPH_RENAME:
+            return self.rename_morph_target()
+        if command == commands.MORPH_DELETE:
+            return self.delete_morph_target()
+        if command == commands.MORPH_EDIT_TOGGLE:
+            return self.leave_morph_target() if self._target_view is not None else self.edit_morph_target()
+        if command == commands.MORPH_WEIGHT_DRAG:
+            return self._morph_toggle_ab()
+        if command in MORPH_WEIGHT_STEPS:
+            return self.set_morph_weight(self.morph_weight + MORPH_WEIGHT_STEPS[command])
+        if command == commands.MORPH_WEIGHT_FULL:
+            return self.set_morph_weight(MORPH_MAX_WEIGHT)
+        if command == commands.MORPH_WEIGHT_ZERO:
+            return self.set_morph_weight(MORPH_MIN_WEIGHT)
+        return False
+
+    def _morph_lifecycle_refuses(self, label: str) -> bool:
+        """New / rename / delete run on the base, outside every interaction (one Undo step each)."""
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
+            return True
+        if self._target_view is not None:
+            self._set_status(f"{label}: on the base only (Tab returns to it)")
+            return True
+        return False
+
+    def create_morph_target(self, name: str | None = None):
+        """A new target on the edit object's mesh, equal to its current shape (all offsets zero): one
+        Undo step, a layer-only `_mesh_transaction`. Phase 3: at most `MAX_TARGETS` per mesh. Returns
+        the new `LayerId` or None (refused, status set)."""
+        label = "New morph target"
+        if self._morph_lifecycle_refuses(label):
+            return None
+        mesh = self.scene.mesh
+        if len(morph_target_ids(mesh)) >= MORPH_MAX_TARGETS:
+            self._set_status(f"{label}: this mesh has its target already (several targets: Phase 4)")
+            return None
+        name = name or new_target_name(mesh)
+        done = self._mesh_transaction(
+            f"New morph target {name!r}", lambda m: m.add_point_layer(PointLayerInfo(name)), moved_of=lambda _: set()
+        )
+        self._set_status(
+            f"Morph target {name!r} created (= the current shape). Tab edits it beside the base, N / +/- set the weight"
+        )
+        return done.result
+
+    def rename_morph_target(self, name: str | None = None) -> bool:
+        """Renames the edit object's target (one Undo step); without `name` the next name of
+        `morph_targets.RENAME_CYCLE` (the app has no text field yet)."""
+        label = "Rename morph target"
+        if self._morph_lifecycle_refuses(label):
+            return False
+        mesh = self.scene.mesh
+        lid = morph_target(mesh)
+        if lid is None:
+            self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
+            return False
+        info = mesh.point_layer_info(lid)
+        new = name or next_target_name(mesh, info.name)
+        if not new or new == info.name or new in {mesh.point_layer_info(x).name for x in mesh.point_layer_ids()}:
+            self._set_status(f"{label}: {new!r} is not a free name")
+            return False
+        self._mesh_transaction(
+            f"Rename morph target {info.name!r} {new!r}",
+            lambda m: m.set_point_layer_info(lid, dataclasses.replace(info, name=new)),
+            moved_of=lambda _: set(),
+        )
+        self._set_status(f"Morph target {info.name!r} is now {new!r} (again: next name)")
+        return True
+
+    def delete_morph_target(self) -> bool:
+        """Deletes the edit object's target with its offsets (one Undo step; Undo brings it back
+        exactly). The weight goes with it."""
+        label = "Delete morph target"
+        if self._morph_lifecycle_refuses(label):
+            return False
+        mesh = self.scene.mesh
+        lid = morph_target(mesh)
+        if lid is None:
+            self._set_status(f"{label}: this mesh has no target")
+            return False
+        name = mesh.point_layer_info(lid).name
+        self._mesh_transaction(f"Delete morph target {name!r}", lambda m: m.remove_point_layer(lid), moved_of=lambda _: set())
+        self._set_status(f"Morph target {name!r} deleted (Ctrl+Z brings it back)")
+        return True
+
+    def set_morph_weight(self, weight: int) -> bool:
+        """The weight of the document edit object's target (view state: no Undo step, not saved)."""
+        obj = self.morph_document_object
+        if morph_target(obj.mesh) is None:
+            self._set_status("Morph weight: this mesh has no target (Ctrl+N makes one)")
+            return False
+        weight = self.morph.provider.set_weight(obj.id, weight)
+        if weight > MORPH_MIN_WEIGHT:
+            self._morph_ab[obj.id] = weight
+        self.morph.refresh()
+        self._set_status(f"Morph: {self.morph_status_text()}")
+        return True
+
+    def _morph_toggle_ab(self) -> bool:
+        obj = self.morph_document_object
+        last = self._morph_ab.get(obj.id, MORPH_MAX_WEIGHT)
+        return self.set_morph_weight(last if self.morph_weight == MORPH_MIN_WEIGHT else MORPH_MIN_WEIGHT)
+
+    def _morph_drag_arm(self, key: str) -> bool:
+        """`N` went down: mouse motion left/right sets the weight until it is let go; a tap without
+        motion toggles 0 % <-> the last weight (`_morph_drag_release`). View state only."""
+        if morph_target(self.morph_document_object.mesh) is None:
+            self._set_status("Morph weight: this mesh has no target (Ctrl+N makes one)")
+            return False
+        if self._morph_drag_key is None:
+            self._morph_drag_moved = False
+            self._morph_drag_rest = 0.0
+            self._set_status(f"Morph: move the mouse left/right for the weight ({self.morph_weight} %), release N")
+        self._morph_drag_key = key
+        return True
+
+    def _morph_drag_step(self, dx: float) -> bool:
+        total = self._morph_drag_rest + dx / MORPH_DRAG_PIXELS_PER_PERCENT
+        steps = int(total)
+        self._morph_drag_rest = total - steps
+        if steps == 0:
+            return False
+        self._morph_drag_moved = True
+        return self.set_morph_weight(self.morph_weight + steps)
+
+    def _morph_drag_release(self) -> bool:
+        self._morph_drag_key = None
+        if not self._morph_drag_moved:
+            return self._morph_toggle_ab()
+        return True
+
+    def edit_morph_target(self) -> bool:
+        """Tab on the base (H4, AD-025 §15): the target's editing view beside the base becomes the
+        edit object - an ID-identical copy at `b + d` (`morph_targets.view_state`), placed beside the
+        base. The component selection carries over (same IDs); the camera follows by the same offset,
+        so the shape stays where it was on screen. No Undo step (view state, like switching objects)."""
+        label = "Edit morph target"
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
+            return False
+        if self._target_view is not None:
+            self._set_status(f"{label}: the target is being edited already (Tab returns to the base)")
+            return False
+        if self.selection.mode is SelectionMode.OBJECT:
+            self._set_status(f"{label}: works from points/edges/faces - press 1/2/3")
+            return False
+        scene = self.scene
+        base = scene.edit_object
+        lid = morph_target(base.mesh)
+        if lid is None:
+            self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
+            return False
+        name = base.mesh.point_layer_info(lid).name
+        view_obj = scene.add_object(Mesh.from_state(view_state(base.mesh, lid)), name=f"{base.name} · {name}")
+        view_obj.transform = view_placement(base, world_width(base, base.mesh))
+        view_obj.pivot = base.pivot
+        view_obj.material = base.material
+        self._target_view = TargetView(base, lid, view_obj)
+        self.history.translate = self._morph_translate
+        shift = tuple(view_obj.transform.translation[i] - base.transform.translation[i] for i in range(3))
+        self._morph_view_shift = shift
+        self._set_edit_object(view_obj.id)
+        self._morph_pan(shift)
+        self._soft_preview_refresh()
+        self._refresh_hover()
+        self._set_status(
+            f"Editing morph target {name!r} beside the base: W/E/R, Tweak, Soft, Smooth shape it"
+            " (topology on the base only) - Tab returns to the base"
+        )
+        return True
+
+    def leave_morph_target(self) -> bool:
+        """Tab on the editing view: the base is the edit object again; the view closes
+        (`_morph_close_if_left`) and the camera follows back."""
+        view = self._target_view
+        if view is None:
+            self._set_status("Back to the base: no morph target is being edited")
+            return False
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"Back to the base: not while the {owner} interaction runs")
+            return False
+        self._set_edit_object(view.base_obj.id)
+        self._soft_preview_refresh()
+        self._refresh_hover()
+        self._set_status(f"Base {view.base_obj.name!r} (target {view.name!r} at {self.morph_weight} %)")
+        return True
+
+    def _morph_pan(self, shift) -> None:
+        cam = self.camera
+        cam.target = tuple(cam.target[i] + shift[i] for i in range(3))
+        cam.camera_revision += 1
+        self._camera_changed()
+
+    def _morph_close_if_left(self) -> None:
+        """Closes the editing view once it is no longer the edit object (Tab, an Undo that brings
+        back another edit object, a scene load). Back on its base, the camera follows back."""
+        view = self._target_view
+        scene = self.scene
+        if view is None or scene.edit_object_id == view.view_obj.id:
+            return
+        self._morph_drop_view()
+        if view.view_obj.id in scene.objects:
+            scene.remove_object(view.view_obj.id)
+        self._masks.pop(view.view_obj.id, None)
+        self._hiddens.pop(view.view_obj.id, None)
+        if scene.edit_object_id == view.base_obj.id:
+            self._morph_pan(tuple(-c for c in self._morph_view_shift))
+
+    def _morph_drop_view(self) -> None:
+        view = self._target_view
+        if view is None:
+            return
+        view.close()
+        self._target_view = None
+        if isinstance(self.history, TranslatingHistory):
+            self.history.translate = None
+
+    def _morph_translate(self, command):
+        """`TranslatingHistory.translate` while the editing view is open (module `morph_targets`)."""
+        kept, refusal, moved = self._target_view.translate(command)
+        if refusal is not None:
+            self._set_status(refusal)
+            self._pick_cache.invalidate()
+            if self.viewport is not None:
+                self.viewport.on_topology_changed()
+        elif moved and self.viewport is not None:
+            self._pick_cache.invalidate()
+            self.viewport.on_vertices_moved(moved)
+        return kept
+
+    def _morph_after_history(self) -> None:
+        """After Undo / Redo: the open view follows its base's offsets (or closes with its target)."""
+        view = self._target_view
+        if view is None:
+            return
+        if not view.target_alive():
+            self._set_edit_object(view.base_obj.id)
+            return
+        moved = view.sync_from_base()
+        if self.viewport is None:
+            return
+        self._pick_cache.invalidate()
+        if moved is None:
+            self.viewport.on_topology_changed()
+        elif moved:
+            self.viewport.on_vertices_moved(moved)
 
     def set_status(self, message: str) -> None:
         """Public form of `_set_status` (WP-SYM-LAB-03 H4, AD-013 H2 addendum):
@@ -5761,6 +6136,8 @@ class Application:
             return self._transform_step(dx, dy)
         if self._light_drag_key is not None:
             return self._light_drag_step(dx, dy)
+        if self._morph_drag_key is not None:
+            return self._morph_drag_step(dx)
         if self.coalesce_hover:
             self._hover_stale = True
             return False
@@ -6478,6 +6855,7 @@ class Application:
             self.flush_hover()
             self._sync_object_highlight()
             self._push_region_tints()
+            self.morph.refresh()
             self.viewport.sync()
 
     def shutdown(self) -> None:

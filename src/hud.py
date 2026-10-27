@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from mirai.interaction import commands
-from mirai.interaction.input import SUBD_CONTEXT, WINDOW_CONTEXT, BindingSet
+from mirai.interaction.input import MORPH_CONTEXT, SUBD_CONTEXT, WINDOW_CONTEXT, BindingSet
 from mirai.subdivision.preview import VIEW_CAGE, VIEW_ISO, VIEW_OFF, key_label
 from mirai.symmetry_axis import current_axis
 
@@ -91,6 +91,8 @@ class HudState:
     #: Worklight name and the active Look row with its value (AD-024 §8).
     light: str
     look: str
+    #: Morph target (AD-025 Phase 3): name · weight · base / editing view; None = no target.
+    morph: Optional[str]
     status: str
     status_serial: int
 
@@ -129,6 +131,7 @@ def hud_state(app) -> HudState:
         group_mask=app.group_mask,
         light=app.display.light_label,
         look=app.look_text,
+        morph=app.morph_status_text(),
         status=app.status_message,
         status_serial=app.status_serial,
     )
@@ -154,6 +157,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
         (commands.LOOK_ROW_PREV, commands.LOOK_ROW_NEXT, commands.LOOK_VALUE_DEC, commands.LOOK_VALUE_INC),
         None,
     ),
+    "Morph": ((commands.MORPH_NEW, commands.MORPH_EDIT_TOGGLE, commands.MORPH_WEIGHT_DRAG), MORPH_CONTEXT),
     "HUD": ((commands.TOGGLE_HUD,), WINDOW_CONTEXT),
 }
 
@@ -204,7 +208,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         subd = f"{_SUBD_VIEWS.get(state.subd_view, state.subd_view)} · L{state.subd_level}"
         if not state.subd_lines:
             subd += " · lines hidden"
-    return [
+    rows = [
         HudRow("Mode", state.mode, hints.get("Mode", "")),
         HudRow("Tool", tool, hints.get("Tool", ""), on=state.active is not None),
         HudRow("Axis", axis, hints.get("Axis", ""), on=state.constraint is not None),
@@ -227,6 +231,9 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         ),
         HudRow("Look", f"{state.light} · {state.look}", hints.get("Look", "")),
     ]
+    if state.morph is not None:  # only a mesh with a morph target gets the row (AD-025 Phase 3)
+        rows.append(HudRow("Morph", state.morph, hints.get("Morph", ""), on=True))
+    return rows
 
 
 # -- the HUD ------------------------------------------------------------------------------------

@@ -2,8 +2,13 @@
 
 **Status: Praxistest beantwortet (2026-10-17), Iteration offen.** Gebaut und automatisch getestet (2026-10-16); Manus Antworten
 und Verdikte stehen unter „Praxistest“ (`,`/`.` und relatives Ziel umgesetzt, 2026-10-17, noch nicht artist-geprüft; Schieberegler offen).
-Discovery-Lab unter `experiments/`. **Morph Targets sind nicht in Production**: `src/` ist unverändert, `src/main.py` kennt
-kein Morph. Das Lab läuft **auf dem App-Pfad** wie das SubD Lab: alle Modellier-Werkzeuge, Undo, Symmetrie, Soft Selection,
+Discovery-Lab unter `experiments/`. **Seit 2026-10-27 hat Production ein Morph-Ziel pro Mesh** (AD-025 Phase 3,
+[§15](../../docs/architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#15-editing-view-and-phase-3-implementation-note-2026-10-27)):
+Abstände im Basis-Mesh, daneben bearbeitet wie hier (J-5), Gewicht als Ansicht. **Rolle des Labs seitdem:** Discovery für
+das, was Production nicht macht (Kiefer-Pose, relativ ↔ absolut, Kosten-HUD) — es ist nicht der Weg, ein Production-Ziel zu
+bearbeiten. Ein mit `M` geschicktes Mesh mit Production-Ziel kommt hier als Paar an (Basis = Ruheform, „Ziel 1“ = Ruheform +
+Abstände, beide ohne Layer); nichts geht zurück. Die Production-Tasten (`Strg+N`, `Tab`, `N`, `+`/`-`) kollidieren mit
+keiner Lab-Taste. Das Lab läuft **auf dem App-Pfad** wie das SubD Lab: alle Modellier-Werkzeuge, Undo, Symmetrie, Soft Selection,
 Licht und Shading sind die der App. Die gemischte Form zeichnet der Viewport über den Haken AD-013 H7
 (`set_surface_provider`); das Lab ist dessen zweiter Nutzer, geprüft durch die unabhängige Review
 [CLAUDE-001](../../docs/archive/morph_lab/reviews/AD-013_H7_MORPH_LAB_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, Notiz in
@@ -201,7 +206,7 @@ Die HUD zeigt die Kosten des letzten Schritts auch auf deinem PC.
 **Representation (`PROVISIONAL`, a lab convention, not a morph format).** Base and target are two `SceneObject`s; the
 target's Mesh is `Mesh.from_state(base.export_state())`, so equal IDs pair vertices while `morph.topology_signature`
 (IDs + edges + faces, sorted) agrees. Production storage belongs on the Mesh (AD-021 §4.9; precedent: the additive
-`"symmetry"` key in `export_state`) and is a Core change — decided only after Manu's verdict. `Scene.morph_targets` stays
+`"symmetry"` key in `export_state`) — built since 2026-10-27 as Core point layers (AD-025). `Scene.morph_targets` stays
 `None`. Why not the delta dict of `experiments/rigging-skinning-morphing` (AD-005, `RigController.morph_targets`): the
 target must be sculptable with the app's own tools, and an object is what those tools edit; neither is the decided home.
 In-place sculpting was not built: lab-held morph data outside the Mesh would drift on Undo, and H2-R4 forbids lab
@@ -252,4 +257,5 @@ per mesh and recomputes it only when the `Mesh.watch()` journal reports edges/fa
 0.7 s → 0). Keys in `lab_app.LAB_KEYS`; tests: `test_morph.py` (jaw section), `test_app_lab.py` (jaw section).
 
 **Not in scope:** several targets or a runtime "new target" (needs a reviewed host entry; AD-021 E-15 first), a weight
-slider, weights as document state, morph + SubD together, topology changes with morphs (ARCH-02), production storage.
+slider, weights as document state, morph + SubD together, topology changes with morphs (ARCH-02), production storage (since 2026-10-27 in Production: AD-025 §15; a sent
+Production target becomes the lab's pair in `lab_scene.build_pair_scene`).

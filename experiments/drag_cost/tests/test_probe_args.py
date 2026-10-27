@@ -39,7 +39,7 @@ def test_default_sizes_are_the_findings_counts():
         ["--warmup", "-1"],
         ["--assets", "no_such_asset"],
         ["--scenarios", "no_such_scenario"],
-        ["--scenarios", "soft_w", "--sizes", "7"],          # not a radius step
+        ["--scenarios", "soft_w", "--sizes", "14"],         # not a radius step
         ["--scenarios", "soft_w", "--metrics", "manhattan"],
         ["--scenarios", "plain_w", "--metrics", "euclidean"],  # metrics are soft_w only
     ],
