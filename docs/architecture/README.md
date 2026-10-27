@@ -43,6 +43,7 @@ Status wie im jeweiligen Dokumentkopf; dort steht die maßgebliche Angabe. AD-00
 | [AD-022](AD-022-GPU-PICKING.md) | GPU ID-buffer picking (WP-VIEW-PERF-02; spike in `experiments/gpu_picking_spike/`) | IMPLEMENTED B2-out (2026-10-21, §11) |
 | [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) | Incremental topology sync and history (delta history, partial viewport rebuild) | IMPLEMENTED (2026-10-21, §9: Core change journal) |
 | [AD-024](AD-024-OBJECT-MATERIAL-AND-WORKLIGHT-EDITING.md) | Per-object material (field on `SceneObject`, scene file v4) and Worklight editing in Production (setters, temporary bindings, Undo path) | DECIDED and IMPLEMENTED (2026-10-24) |
+| [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) | Topology identity / provenance (ARCH-02): vertex origin applied inside the Core primitives, mesh-owned point layers journaled per element (morph offsets), edit vs. frame-change rule, fail-closed operation gate; Manu's H1–H5 as parameters | PROPOSED (2026-10-27); independent review pending |
 | [AD-SYM-01](AD-SYM-01-SYMMETRY-DEFINITION-STORAGE.md) | Symmetry definition storage | DECIDED |
 | [AD-SYM-02](AD-SYM-02-SYMMETRIC-OPERATION-HISTORY-CONTRACT.md) | Symmetric operation / history contract | DECIDED |
 | [AD-SYM-03](AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) | Symmetric topology coordination (Split/Connect/Delete/Dissolve/Knife/Extrude without `SymmetricX` copies) | DECIDED (2026-10-08) |
