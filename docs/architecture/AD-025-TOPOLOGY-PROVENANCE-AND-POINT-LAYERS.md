@@ -3,7 +3,7 @@
 **Status:** PROPOSED (2026-10-27); **revised the same day after the independent review**
 [CLAUDE-001](../archive/deformation/reviews/AD-025_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, no blocker; the disposition
 of every finding is in §13). Decision preparation, docs only: nothing in `src/`, `tests/` or `experiments/` is changed.
-Awaiting Manu: the go for the Phase 2 Core change, and H1–H5 (the mechanism takes them as parameters with `PROVISIONAL`
+**Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). Still open: H1–H5 (the mechanism takes them as parameters with `PROVISIONAL`
 defaults, §10, Kurzfassung).
 **Gate:** [ROADMAP ARCH-02](ROADMAP.md#arch-02--topology-identity--provenance--remapping); audit §G Phase 1.
 **Mode (M5):** Discovery → decision preparation. Implementation starts with Phase 2 (§7–§9).
@@ -370,7 +370,7 @@ is measured too slow. Corner-domain data (UVs) would use the same primitive hook
   rules (`split_edge`, `collapse_edge`, `collapse_elements` average), `split_face` refusing interior points on a layered
   mesh, `map_vector_layers`. In `src/mirai`: the gate with the H1 default table and its enumeration, the F-9 / §4.2
   consumers. No UI and no target creation in the app; exercised by tests. Needs the review disposition (done, §13) and
-  Manu's go for the Core change, **not** the H answers.
+  Manu's go for the Core change (given 2026-10-27), **not** the H answers.
 - **Phase 3 — one persistent target** (audit Phase 3). Needs H1 (the table as shipped) and H4. Includes the Apply
   transform wiring (one `map_vector_layers` call per baked object, F-7) — decided here, so `Strg+A` works with targets from
   the first app version. The editing view needs its own Undo command that writes layer values (a gesture on the view is no
