@@ -12,7 +12,10 @@ Research is detailed and may investigate individual systems or technical questio
 
 - [CHARACTER_SYSTEMS_RESEARCH.md](CHARACTER_SYSTEMS_RESEARCH.md) — **authoritative artist-side research** on rigging, controls/handles, skinning, weighting, deformation, posing, morphs/blendshapes, correctives and related character workflows.
 
-This document is the canonical home for the artist-side Character Systems research. Technical implementation experiments are kept separately under `experiments/rigging-skinning-morphing/` and should not be treated as a substitute for the research document.
+This document is the canonical home for the artist-side Character Systems research. The technical side is kept separately and does not substitute for it:
+
+- [deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md](deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) — mesh architecture audit for morphing, rigging and topology edits after morph targets (English, Discovery): current state verified against code and tests, Half-Edge vs. targeted additions, topology-change contract per operation (ARCH-02), recommended deformation architecture, phased roadmap, five open decisions for Manu (H1–H5).
+- The earlier technical experiment `experiments/rigging-skinning-morphing/` was removed on 2026-10-24; its findings are in `docs/archive/experiments_2026-10/rigging-skinning-morphing/`.
 
 ## Edit-Mode Mirror / Symmetry Research
 

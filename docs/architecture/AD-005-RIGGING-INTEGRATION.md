@@ -1,5 +1,12 @@
 # AD-005: Rigging & Skinning Integration Architecture
 
+> **SUPERSEDED (2026-10-27)** — historical record, not the current direction. Never implemented in `src/` (no
+> listeners, bones or RigController exist); the owner sign-off below was never given ("Manu — TBD"); its experiment was
+> removed on 2026-10-24 (`experiments/README.md`). Parts contradict newer decisions: bones on the `Mesh` (AD-021 §4.9 puts
+> the rig on the `Scene`), and "a new vertex copies its parent's morph offset" (an edge split needs a blend of both ends).
+> Current basis: [AD-021 §4.9](AD-021-OBJECT-COMPONENT-MODEL.md), ROADMAP ARCH-02, and the
+> [mesh architecture audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md).
+
 **Status:** DECIDED ✓  
 **Date:** August 2026  
 **Owner:** Manu (Project Owner)  

@@ -65,8 +65,6 @@ from typing import Any, Union
 from core import EdgeId, FaceId, Mesh, VertexId
 from core.mesh import MeshError
 
-from ..regions import inherit_into
-
 from .face_geometry import (
     GEO_EPS,
     FaceFrame,
@@ -265,11 +263,17 @@ class SessionStart:
     an `export_state()` dict (AD-023 H1, 2026-10-21): what the resolver and the commit check ask of
     "before" is answered from the records of the elements the commit touched, everything else is
     unchanged. Accepted wherever a `before_state` dict is (`resolve_cross_face`, `check_commit`,
-    `integrity_problem`). Ends with `finish()` (-> `MeshDelta`) or `abandon()` (exact rollback)."""
+    `integrity_problem`). Ends with `finish()` (-> `MeshDelta`) or `abandon()` (exact rollback).
 
-    def __init__(self, mesh) -> None:
+    `on_finish(mesh, change)` runs inside the recording just before it ends, so data derived from the cut
+    (the tool passes the saved-region inheritance) lands in the same Undo step; the resolver itself stays
+    free of it (import boundary, `tests/test_knife_resolve.py`). If it raises, the session is not done and
+    `abandon()` still rolls back exactly."""
+
+    def __init__(self, mesh, on_finish=None) -> None:
         self.mesh = _raw(mesh)
         self.change = self.mesh.begin_change()
+        self._on_finish = on_finish
         self._done = False
 
     def had_vertex(self, vid: VertexId) -> bool:
@@ -318,8 +322,9 @@ class SessionStart:
         self.mesh.revert_change(self.change)
 
     def finish(self):
+        if self._on_finish is not None:
+            self._on_finish(self.mesh, self.change)
         self._done = True
-        inherit_into(self.mesh, self.change)  # saved regions: the faces the cuts created join their parents' regions
         return self.mesh.end_change(self.change)
 
     def abandon(self) -> None:

@@ -420,8 +420,9 @@ Der V1-Core muss diesen Workflow noch nicht vollständig implementieren; er darf
 Folgende Systeme werden nicht nachträglich in Core V1 hineingezogen:
 
 - Half-Edge-/Winged-Edge-Neuimplementierung
-- generisches Change-Set-System
-- Herkunfts-/Provenance-Metadaten
+- generisches Change-Set-System — *seit 2026-10-21 als Änderungs-Journal im Core (§7.1, AD-023 §9)*
+- Herkunfts-/Provenance-Metadaten — *weiter offen (ROADMAP ARCH-02; Stand:
+  [Mesh-Architektur-Audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md))*
 - Skin-Weight-Remapping
 - Morph Targets
 - Rigging / Bones

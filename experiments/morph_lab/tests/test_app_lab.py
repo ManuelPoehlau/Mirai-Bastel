@@ -447,7 +447,7 @@ def test_editing_the_base_after_the_target_moves_the_target_along(lab_app):
 
 # -- Absolute/relative, base preview while the target is edited -----------------------------------
 
-B_KEY = _key("b")
+B_KEY = _key("b", "alt")
 
 
 def entry_surface(app, lab):

@@ -455,7 +455,9 @@ class ProductionUnchangedTests(unittest.TestCase):
         only reads the definition (`symmetry_display`, its backing field and the deferral predicate);
         slice SS3 the report cache it shares with the soft preview (`_symmetry_reports`, read-only).
         Slice A3 adds Re-Symmetrize (`RESYMMETRIZE` → `_resymmetrize_*`), which moves positions
-        under an existing definition and never sets one (`tests/test_application_resymmetrize.py`)."""
+        under an existing definition and never sets one (`tests/test_application_resymmetrize.py`).
+        2026-10-24 adds `toggle_symmetry_display` (Shift+Ctrl+S), which only shows / hides the display
+        (`display.visible`) and never touches the definition."""
         from mirai.application import Application
 
         app = Application()
@@ -478,6 +480,7 @@ class ProductionUnchangedTests(unittest.TestCase):
                 "_symmetry_reports",
                 "resymmetrize_preview",
                 "symmetry_display",
+                "toggle_symmetry_display",
             ],
         )
 

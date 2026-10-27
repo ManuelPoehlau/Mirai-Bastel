@@ -50,7 +50,7 @@ Das Gewicht ist reine Ansicht: kein Undo-Schritt, wird nicht gespeichert, änder
 
 ## Steuerung (Vorschlag, `PROVISIONAL`)
 
-Umgestellt 2026-10-24 (Manu): `Pfeil`, `Shift+Pfeil`, `←`/`→` kollidierten mit den Look-Zeilen-Tasten der App (AD-024 §8, `LookRow*`, `LookValue*`, `Loop*`); Gewicht jetzt auf `Alt+Pfeil`, Basis/Ziel auf `,`/`.`.
+Umgestellt 2026-10-24 (Manu): `Pfeil`, `Shift+Pfeil`, `←`/`→` kollidierten mit den Look-Zeilen-Tasten der App (AD-024 §8, `LookRow*`, `LookValue*`, `Loop*`); Gewicht jetzt auf `Alt+Pfeil`, Basis/Ziel auf `,`/`.`. 2026-10-27: relativ ↔ absolut von `B` auf `Alt+B` (`B` ist seit 2026-10-25 Border Select der App; bis dahin startete das Lab nicht).
 
 | Taste | Funktion |
 |---|---|
@@ -58,7 +58,7 @@ Umgestellt 2026-10-24 (Manu): `Pfeil`, `Shift+Pfeil`, `←`/`→` kollidierten m
 | `Alt+Shift+Pfeil hoch` / `Alt+Shift+Pfeil runter` | Gewicht +1 % / −1 % |
 | `Strg+Pfeil hoch` / `Strg+Pfeil runter` | Gewicht 100 % / 0 % |
 | `M` | A/B: 0 % ↔ zuletzt eingestelltes Gewicht |
-| `B` | Ziel **relativ ↔ absolut** (`PROVISIONAL`; später eine Checkbox in der UI) |
+| `Alt+B` | Ziel **relativ ↔ absolut** (`PROVISIONAL`; später eine Checkbox in der UI; seit 2026-10-27 mit `Alt`, weil `B` in der App Border Select ist) |
 | `.` (Punkt) | **Ziel bearbeiten** (`PROVISIONAL`, J-2) |
 | `,` (Komma) | **Zurück zur Basis** |
 | alternativ | `4` · Klick aufs Objekt · `1` (wie die App) |
@@ -158,7 +158,7 @@ Verdikt gesamt: die vier Punkte oben **KEEP**; ITERATE: `,`/`.` und relatives Zi
   im laufenden Lab gibt es kein „neues Ziel“.
 - Bei 0 % zeigt der Viewport die Basis selbst (keine Ersatzfläche), darüber die Mischung.
 - Das Gewicht ist reine Ansicht (kein Undo, nicht gespeichert); Schritte 10 % / 1 %.
-- Das Ziel ist **relativ oder absolut**, umschaltbar mit `B` (Standard relativ; reine Ansicht wie das Gewicht, nicht
+- Das Ziel ist **relativ oder absolut**, umschaltbar mit `Alt+B` (Standard relativ; reine Ansicht wie das Gewicht, nicht
   gespeichert). **Absolut:** die Form des Ziels, wie sie ist. **Relativ** (J-3, 2026-10-17): gespeichert ist seine Form, gelesen wird sie als Abstand zur Basis, wie sie war,
   als das Ziel zuletzt geformt wurde. Ändert man danach die Basis, geht das Ziel mit (100 % = Basis jetzt + Abstand). Ändert
   man das Ziel (oder macht es rückgängig), gilt wieder die Basis von jetzt als Bezug. Der Bezug lebt nur in der Sitzung:
@@ -240,8 +240,8 @@ refusals, HUD), `test_run_cli.py`, `test_import_boundary.py`.
 
 **H7-E (2026-10-17):** the base is an object entry while the target is the edit object, so the lab needed the hook for entries.
 `Viewport` reads the optional `provider.entry_surfaces` / `entry_moved` (additive, duck-typed; AD-013 "H7-E"); the provider fills
-`entry_surfaces = {base_id: surface}` while the target is edited and the weight is above 0. `B` = `MorphSurfaceProvider.relative`.
-Tests: `tests/test_viewport_surface_provider.py` (three H7-E tests), `test_app_lab.py` (base preview, `B`).
+`entry_surfaces = {base_id: surface}` while the target is edited and the weight is above 0. `Alt+B` = `MorphSurfaceProvider.relative`.
+Tests: `tests/test_viewport_surface_provider.py` (three H7-E tests), `test_app_lab.py` (base preview, `Alt+B`).
 
 **Left/Right:** `lab_app.MorphAppLab.switch_edit_object` presses `4`, sets `selection.objects`, presses the mode key through `app.key_press` — the app's Q-5 switch, no private call, no History entry.
 
