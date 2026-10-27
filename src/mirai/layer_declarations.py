@@ -6,7 +6,7 @@ classified as not changing a mesh, as changing positions only (the edit rule, §
 as they are), or declared in `LAYER_SAFE_OPERATIONS` - whose value is the implementation the app
 runs (plain and symmetric), so a rename fails loudly and `tests/test_layer_gate.py` runs every entry
 against its rule on a plain and a symmetric layered fixture. Everything else is locked with a
-status line. The table is H1 (AD-025 §10, `PROVISIONAL` default): allowed are Delete, Dissolve,
+status line. The table is H1 (AD-025 §10, decided by Manu 2026-10-27): allowed are Delete, Dissolve,
 Vertex Connect, Cap and every position-only tool; locked until Phase 5 are Split, Edge Connect, Loop
 Insert, Knife, Extrude, Collapse and mirror copy; Apply transform is locked until Phase 3 wires the
 frame map (`Mesh.map_vector_layers`).
