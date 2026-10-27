@@ -4,8 +4,9 @@
 [CLAUDE-001](../archive/deformation/reviews/AD-025_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, no blocker; the disposition
 of every finding is in §13). **IMPLEMENTED (Phase 2, 2026-10-27)** — Core layers, journal, file, origin rules, backstop and
 the app gate; implementation note with the measured numbers in §14. Phases 3–7 open.
-**Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). Still open: H1–H5 (the mechanism takes them as parameters with `PROVISIONAL`
-defaults, §10, Kurzfassung).
+**Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). **H1–H5 and C-1 decided: Manu, 2026-10-27**
+("ok ich gebe H1-H5 und C1 ein ja") — every recommended default of §10 / Kurzfassung holds; nothing is `PROVISIONAL` in §10
+any more.
 **Gate:** [ROADMAP ARCH-02](ROADMAP.md#arch-02--topology-identity--provenance--remapping); audit §G Phase 1.
 **Mode (M5):** Discovery → decision preparation; Phase 2 implemented (§14). Next: Phase 3 (§7).
 **Input:** [mesh architecture audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) (§C–§H and
@@ -432,6 +433,8 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
 
 ## 10. Artist decisions H1–H5 as parameters
 
+**Decided (Manu, 2026-10-27): "ja" to H1–H5 and C-1** — the defaults below are the decisions.
+
 | | Decides | Lives in | `PROVISIONAL` default | Needed by |
 |---|---|---|---|---|
 | H1 | Which operations run while a mesh has targets | the gate table's entries (§4.4) | allowed: Delete, Dissolve, Vertex Connect, Cap, every position-only tool, Apply transform (from Phase 3); locked with a message: Split, Edge Connect, Loop Insert, Knife, Extrude, Collapse, mirror copy — lifted one by one in Phase 5 | Phase 3 |
@@ -564,7 +567,7 @@ copy, no value deletion in `_delete_vertex`, `split_edge` with swapped weights, 
 keeping stale layers, and a bulk write leaving per-element records beside its whole record; survives by construction —
 the apply order (see above).
 
-**Open:** H1–H5 and C-1 (Kurzfassung); Phase 3 (one persistent target, the Apply transform wiring, the editing-view Undo
+**Open:** Phase 3 (one persistent target, the Apply transform wiring, the editing-view Undo
 command); the reference PC is not needed before Phase 3.
 
 ---
@@ -577,7 +580,7 @@ einen Punkt erzeugt oder zusammenführt, gibt ihm im selben Moment seinen Wert; 
 den Positionen. Die unabhängige Review ist gelaufen („annehmen mit Änderungen“) und eingearbeitet. Sichtbar ändert sich für
 dich erst mit dem ersten Ziel in der App.
 
-**Deine Entscheidungen** (je eine Zeile; „ja“ = Empfehlung):
+**Deine Entscheidungen** (je eine Zeile; „ja“ = Empfehlung) — **beantwortet am 2026-10-27: „ja“ zu H1–H5 und C-1.**
 
 - **H1** Solange ein Mesh Ziele hat: Löschen, Auflösen, Vertex Connect, Cap, alle Verschiebe-/Glätt-Werkzeuge und
   „Transform übernehmen“ erlaubt; Split, Connect Edges, Loop Insert, Knife, Extrude, Collapse und Spiegelkopie mit Meldung
