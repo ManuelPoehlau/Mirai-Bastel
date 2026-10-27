@@ -338,6 +338,31 @@ no existing method or record changed; the Core knows no region semantics and no 
 `tests/test_scene_serialization.py` (round trip, file without the key); (5) `knife_resolve.SessionStart.unchanged()` reads the
 new journal slot.
 
+**Decision:** AD-025 Phase 2 point layers (2026-10-27; [AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) §8,
+review CLAUDE-001 dispositioned, Manu's go for the Core change)
+
+`Mesh` owns **point layers**: per-vertex data keyed by `VertexId` (a morph target = one vector layer of offsets). New in
+the Core: `LayerId` (`core/ids.py`); `LayerKind`, `PointLayerInfo` (name, kind, new-point rule H2), the layer API
+(`point_layer_ids`, `point_layer_info`, `layer_value`, `layer_items`, `has_point_layers`, `add_point_layer`,
+`remove_point_layer`, `set_point_layer_info`, `set_point_layer_order`, `set_layer_value`, `map_vector_layers`) and
+`add_vertex(position, origin=None)` (`core/mesh.py`, exported from `core`). Origins are **applied, not stored**: `split_edge`
+blends (1 − t, t) in the position's own expression, `collapse_edge` averages, `collapse_elements` gives the survivor the
+group mean of the original values (`core/operations/collapse.py`), `add_vertex` combines a caller's origin and refuses
+`None` on a layered mesh, `split_face` refuses interior points on a layered mesh (both before the first mutation: the Core
+backstop), `_delete_vertex` deletes the values. Journal: `MeshChange` / `MeshDelta` gain layer slots in two record shapes —
+per element, and one whole-layer record for bulk operations (`map_vector_layers`, `remove_point_layer`, a layer created or
+dropped by `load_state`) with copy-on-write of shared value dicts; a `MeshWatch` records layer keys, never values. File:
+additive keys `"layer_id_counter"` and `"point_layers"` in `export_state()`, validated whole before the first write;
+`serialization.py` writes **version 5** only when a mesh has layers (else 4) and reads 2–5. Freeze rule (§7): (1)
+requirement — persistent morph targets that ride Undo, Knife checkpoints, rollback and the file (AD-025 §8.1); (2) not
+solvable outside the Mesh (AD-025 X-1, X-2, X-8); (3) AD-025 and the mesh-architecture audit; (4) smallest extension as AD-025
+§8.4 lists it — **without layers the behaviour is byte-identical** apart from the two additive export keys; not touched:
+`Operation`, `OperationContext`, `HistoryStack`, `MeshDeltaCommand`, `MeshStateCommand`, `Scene`, `Selection`, every existing
+signature (`add_vertex` gains a keyword with a default); (5) contract tests `tests/test_point_layers.py`,
+`tests/test_mesh_change_journal.py` (layered random sequences, nested rollback, checkpoints, watches, copy-on-write),
+`tests/test_layer_gate.py` (the app gate in `src/mirai/layer_declarations.py`, the `SessionStart` reader). Phase 5's
+`split_face(…, origins=…)` will be its own small entry.
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten
@@ -421,10 +446,11 @@ Folgende Systeme werden nicht nachträglich in Core V1 hineingezogen:
 
 - Half-Edge-/Winged-Edge-Neuimplementierung
 - generisches Change-Set-System — *seit 2026-10-21 als Änderungs-Journal im Core (§7.1, AD-023 §9)*
-- Herkunfts-/Provenance-Metadaten — *weiter offen (ROADMAP ARCH-02; Stand:
-  [Mesh-Architektur-Audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md))*
+- Herkunfts-/Provenance-Metadaten — *bleibt draußen: seit 2026-10-27 werden Herkünfte beim Erzeugen eines Vertex
+  angewendet, nicht gespeichert ([AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) §4.1, §7.1)*
 - Skin-Weight-Remapping
-- Morph Targets
+- Morph Targets — *Speicherung seit 2026-10-27 im Core als Punkt-Layer (AD-025 Phase 2, §7.1); Auswertung, Editier-Ansicht
+  und Gewichte bleiben außerhalb*
 - Rigging / Bones
 - Animation
 - Soft Selection / Influence-System

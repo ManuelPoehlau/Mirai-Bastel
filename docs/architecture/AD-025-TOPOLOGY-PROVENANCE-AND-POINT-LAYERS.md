@@ -2,11 +2,12 @@
 
 **Status:** PROPOSED (2026-10-27); **revised the same day after the independent review**
 [CLAUDE-001](../archive/deformation/reviews/AD-025_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, no blocker; the disposition
-of every finding is in §13). Decision preparation, docs only: nothing in `src/`, `tests/` or `experiments/` is changed.
+of every finding is in §13). **IMPLEMENTED (Phase 2, 2026-10-27)** — Core layers, journal, file, origin rules, backstop and
+the app gate; implementation note with the measured numbers in §14. Phases 3–7 open.
 **Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). Still open: H1–H5 (the mechanism takes them as parameters with `PROVISIONAL`
 defaults, §10, Kurzfassung).
 **Gate:** [ROADMAP ARCH-02](ROADMAP.md#arch-02--topology-identity--provenance--remapping); audit §G Phase 1.
-**Mode (M5):** Discovery → decision preparation. Implementation starts with Phase 2 (§7–§9).
+**Mode (M5):** Discovery → decision preparation; Phase 2 implemented (§14). Next: Phase 3 (§7).
 **Input:** [mesh architecture audit 2026-10-27](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) (§C–§H and
 the Phase 0 addendum). Every claim taken from it was re-verified against the code at `a53c14f` (Phase 0 merged); where
 this AD differs from the audit, it says so (§1, last paragraph).
@@ -502,6 +503,69 @@ The independent first-pass review is archived unedited:
 No second review is planned: the revision takes the review's own proposals; the one addition (copy-on-write) is an
 implementation-level rule that Phase 2's oracle tests decide. If Manu wants a check of the revision, a short re-review of
 §4.1, §4.2 and §4.4 is enough.
+
+## 14. Implementation note (Phase 2, 2026-10-27)
+
+**Built** (CORE_V1_FREEZE §7.1 entry of the same date): `LayerId`, `LayerKind`, `PointLayerInfo` and the §4.2 API in
+`core/mesh.py` (plus `has_point_layers()`); `add_vertex(position, origin=None)`; the exact rules in `split_edge`,
+`collapse_edge`, `collapse_elements`; the `split_face` interior-point refusal; value deletion in `_delete_vertex`; both
+journal record shapes with copy-on-write and value-free watches; `"layer_id_counter"` / `"point_layers"` in the export and
+scene file version 5 with layers; `map_vector_layers`. App side: the gate `src/mirai/layer_declarations.py` (H1 default
+table), checked in `key_press`, `dispatch_command`, after `resolve_c_context`, per baked object in Apply transform and for
+the source of mirror copy; `SessionStart.unchanged()` / `.state()` read the layers; a layer-only `_mesh_transaction` is a
+non-topology step (no topology rebuild, its mirror entry `mesh_step=False`).
+
+**Implementation choices within the decision** (names `PROVISIONAL`):
+
+- `MeshDelta` carries the two shapes in two fields, `layer_values` (`{lid: {vid: (before, after)}}`) and `layer_whole`
+  (`{lid: (before dict, after dict)}`), instead of one mixed dict; `MeshChange` has `layer_meta`, `layer_values`,
+  `layer_whole` and `keys_only` (a watch). Layer existence rides the whole-layer record (`add_point_layer` /
+  `remove_point_layer` write `None ↔ dict` whole), so per layer a recording or delta holds per-element records **or** one
+  whole record, never both (pinned in T-1). Consequence: the §4.2 apply order cannot change the result; the T-10 mutation
+  "wrong apply order" survives by construction, the mutation that breaks the disjointness is caught.
+- §4.1 "a new or merged vertex … unless `new_point` is `zero`": read as **H2 applies to new points only**; a merge averages
+  in every layer (H3, the position's arithmetic). A merged survivor losing its offset in a `zero` layer would be a dent,
+  which H2 does not ask for.
+- `LayerKind.WEIGHTS` exists for the rule validation (`PointLayerInfo` refuses `new_point="zero"` for it); `add_point_layer`
+  and the file refuse the kind until Phase 6 builds its values.
+- `load_state` under a journal: whole-layer records for layers that appear or go, per-element records for the differing
+  values of a layer that stays.
+- Gate key space beyond the §4.4 list: `CContext.NONE` is non-mesh; `SPLIT_EDGE`, `KNIFE_COMMIT`, `KNIFE_LIFT`,
+  `ARTICULATION_RESTORE` are locked (no `Application` path changes a mesh with them outside a locked Knife session;
+  fail-closed). Apply transform is skipped at dispatch (`PER_TARGET_COMMANDS`) and checked with every baked mesh.
+
+**Measured [C]** (container, Python 3.13; scratchpad probes against the real `Mesh`, not kept; gollum_20k = 21,875 V,
+gollum = 87,500 V; container timings vary up to ~2× between runs):
+
+| Quantity | gollum_20k | gollum (87.5k) | AD (§4.1–§4.3) | Verdict |
+|---|---|---|---|---|
+| memory one layer 15 % / 100 % | 0.57 / 4.09 MiB | 2.27 / 16.35 MiB | 0.57 / 3.96–4.09; 2.14–2.26 / 16.2–16.4 | equal |
+| `set_layer_value`, no recording | 0.86 µs | 1.04 µs | 0.2–0.6 µs | **1.7×, explained:** the AD's prototypes wrote raw dict entries; the real path validates L3 (three finite floats) and the canonical form L2 |
+| `set_layer_value`, 1 / 3 recordings | 1.16 / 1.57 µs | 1.40 / 2.90 µs | 0.5–1.3 / 0.8–1.9 µs | within 1.5× |
+| `set_layer_value`, 1 recording + 4 watches | 1.99 µs | 2.02 µs | 1.2–3.6 µs (5 logs) | within |
+| `split_edge`, 0 / 10 / 50 sparse layers (one recording) | 0.029 / 0.032 / 0.072 ms | 0.026 / 0.061 / 0.111 ms | 0.024–0.028; +0.01; +0.04–0.06 | within 1.5× (the 87.5k 10-layer row 1.6× in one run, 20k 0.9×: run noise) |
+| `collapse_edge`, 0 / 10 / 50 layers | 0.036 / 0.045 / 0.133 ms | 0.037 / 0.055 / 0.175 ms | — | recorded |
+| `delete_vertices(1000)`, 0 / 10 / 50 layers | 89 / 100 / 106 ms | 110 / 108 / 132 ms | 83 → 99; 133 → 146 ms | within |
+| one dense layer rewritten per element, one recording | 21–66 ms | 87 ms | 11–34 / 35–200 ms | within (run-to-run spread) |
+| one dense layer, `map_vector_layers` | 15–27 ms | 61 ms | — | the bulk path is cheaper |
+| export / load, 50 sparse layers (fresh process) | 123 ms / +141 ms over 693 ms | 483 ms / +2.3 s over 3.35 s | — | recorded (load ≈ 0.9 / 3.5 µs per value; the large heap's GC dominates at 87.5k) |
+| Apply-transform case: `map_vector_layers`, 50 sparse + 10 dense layers, 1 recording + 5 watches | 0.83 s (382,800 values) | 3.26 s (1,531,250 values) | 0.4–2 µs per value; "several seconds" [H] | 2.2 µs per value: within 1.5× |
+| … traced memory of that bulk write | 69.6 MiB | 279 MiB peak, 277 MiB kept | per-element journaling: 1.3 / 2.5 GiB for 50 dense [R] | the peak is the 60 new value dicts themselves; **journal O(layers): 60 whole-layer records, 0 per-element records, watches 60 layer keys and 0 vertex keys** |
+| Undo / Redo of that bulk write | < 0.1 ms | < 0.1 ms | — | dict swaps (one probe run showed 70–245 ms: a GC pass after the large allocation, not the apply) |
+
+**Tests:** `tests/test_point_layers.py` (T-3, T-4, T-5, T-8), `tests/test_mesh_change_journal.py` (T-1: 12 seeds × 25 steps
+plus one 300-step run over every primitive and layer write, L1–L5 after each step, Undo / Redo against the snapshot oracle
+and the JSON text; T-2: nested rollback, checkpoints with revert / release, watches, copy-on-write), `tests/test_layer_gate.py`
+(T-7: enumeration of commands, contexts and methods incl. `MIRROR_ENTRIES` from the code; every declared entry on a plain
+and a symmetric layered fixture; locked operations refused untouched and running without layers; Apply transform per
+baked object; mirror copy; position-only commands keep layers bit-identical; no lookup without layers; T-9). **T-10 by
+hand:** caught — a write without `_touch_l`, a bulk operation mutating the old dict, a write to a shared dict without the
+copy, no value deletion in `_delete_vertex`, `split_edge` with swapped weights, an unsorted export, a non-journal load
+keeping stale layers, and a bulk write leaving per-element records beside its whole record; survives by construction —
+the apply order (see above).
+
+**Open:** H1–H5 and C-1 (Kurzfassung); Phase 3 (one persistent target, the Apply transform wiring, the editing-view Undo
+command); the reference PC is not needed before Phase 3.
 
 ---
 

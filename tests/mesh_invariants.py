@@ -184,3 +184,30 @@ def assert_face_triangulations_sound(mesh: Mesh, *, context: str = "", samples: 
                         f"{prefix}Face {fid!r}: Punkt {p} von {covering} Dreiecken überdeckt "
                         f"(im Polygon: {in_poly(p, poly)})"
                     )
+
+
+def assert_layer_invariants(mesh: Mesh, *, kinds: dict | None = None) -> None:
+    """Point-layer invariants L1-L5 (AD-025 §4.2), through the public API. `kinds` (optional,
+    LayerId -> LayerKind, updated in place) checks L4 "a layer's kind never changes" across calls."""
+    import math
+
+    ids = mesh.point_layer_ids()
+    state = mesh.export_state()
+    assert len(set(ids)) == len(ids), "L4: duplicate LayerId"
+    assert all(int(lid) < state["layer_id_counter"] for lid in ids), "L4: LayerId at/above the counter"
+    names = [mesh.point_layer_info(lid).name for lid in ids]
+    assert len(set(names)) == len(names), "L4: duplicate layer name"
+    for lid in ids:
+        kind = mesh.point_layer_info(lid).kind
+        if kinds is not None:
+            assert kinds.setdefault(lid, kind) is kind, "L4: a layer's kind changed"
+        for vid, value in mesh.layer_items(lid):
+            assert mesh.is_valid_vertex(vid), f"L1: value for dead vertex {vid!r}"
+            assert value != (0.0, 0.0, 0.0), "L2: default value stored"
+            assert isinstance(value, tuple) and len(value) == 3, "L3: not a 3-tuple"
+            assert all(isinstance(c, float) and math.isfinite(c) for c in value), "L3: not finite floats"
+    assert (not ids) == (state["point_layers"] is None), "L5"
+    if state["point_layers"] is not None:
+        for entry in state["point_layers"]:
+            keys = list(entry["values"])
+            assert keys == sorted(keys), "export not ascending"

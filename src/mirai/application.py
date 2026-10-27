@@ -165,6 +165,7 @@ from .resymmetrize import (
     set_plan_positions,
 )
 from . import symmetry_declarations
+from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
@@ -1351,6 +1352,8 @@ class Application:
             return None
         scene, selection = self.scene, self.selection
         source = selected[0]
+        if self._layer_gate_refuses("mirror_copy", [source.mesh]):
+            return None
         try:
             check_pairable(scene, [source])
         except MirrorRefused as exc:
@@ -1861,7 +1864,10 @@ class Application:
         alternative, pivot = origin, is a question for Manu). One `CompositeCommand` per press
         (E-13): a `MeshDeltaCommand` per object, then the transforms, then the pivots. Refused
         as a whole, before anything changes, when one object's symmetry definition would not
-        survive the bake (`applied_symmetry_axis`)."""
+        survive the bake (`applied_symmetry_axis`), or when one object's mesh has point layers
+        (AD-025 §4.4: locked until Phase 3 maps the layers)."""
+        if self._layer_gate_refuses(commands.APPLY_TRANSFORM, [obj.mesh for obj in placed]):
+            return False
         try:
             axes = [applied_symmetry_axis(obj) for obj in placed]
         except ApplyRefused as exc:
@@ -2147,6 +2153,8 @@ class Application:
         Alles andere → False (bewusst minimal gehalten).
         """
         self.flush_hover()
+        if self._layer_gate_refuses(command):
+            return False
         tool_class = tool_for_command(command)
         if tool_class:
             return self.tool_manager.activate(command, context=context)
@@ -2428,7 +2436,7 @@ class Application:
         selection = self.selection
         effective = self._canonical_c_selection()
         ctx = resolve_c_context(effective)
-        if self._context_refuses(ctx):
+        if self._context_refuses(ctx) or self._layer_gate_refuses(ctx):
             return False
 
         if ctx is CContext.SPLIT:
@@ -4109,6 +4117,8 @@ class Application:
                 command = subd
         if self._gate_refuses(command):
             return False
+        if self._layer_gate_refuses(command):
+            return False
         if command in SUBD_COMMANDS:
             return self.dispatch_command(command)
         if self._object_mode_refuses(command):
@@ -5495,8 +5505,13 @@ class Application:
         self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=description))
         if on_applied is not None:
             on_applied(result)
-        self._record_selection_history(selection_before)
-        moved = moved_of(result) if moved_of is not None else None
+        # AD-025 §4.2: a change of point layers only moves nothing the viewport draws (the rest
+        # shape): no topology rebuild now, and none on its Undo / Redo (a non-mesh mirror entry).
+        layer_only = not (delta.vertices or delta.edges or delta.faces) and (
+            delta.symmetry is None and delta.regions is None
+        )
+        self._record_selection_history(selection_before, mesh_step=not layer_only)
+        moved = set() if layer_only else moved_of(result) if moved_of is not None else None
         if moved is None:
             self._notify_topology_changed()
         else:
@@ -5599,6 +5614,22 @@ class Application:
         if gate is None or command is None:
             return False
         text = gate.refusal(command)
+        if text is None:
+            return False
+        self._set_status(text)
+        return True
+
+    def _layer_gate_refuses(self, key, meshes=None) -> bool:
+        """AD-025 §4.4: True (and the refusal posted as status) if `key` (a command, a resolved `C`
+        context or a method name) is not allowed on a target mesh with point layers
+        (`mirai.layer_declarations`). `meshes`: the meshes the operation changes or copies (default:
+        the edit mesh). Without layers there is no lookup. Unbound input (None) is never refused."""
+        if key is None or (meshes is None and key in PER_TARGET_COMMANDS):
+            return False
+        targets = (self.scene.mesh,) if meshes is None else meshes
+        if not any(mesh.has_point_layers() for mesh in targets):
+            return False
+        text = layer_refusal(key)
         if text is None:
             return False
         self._set_status(text)
