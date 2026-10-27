@@ -110,6 +110,7 @@ from dataclasses import dataclass, field
 from core.operations.topology import MeshDeltaCommand
 from core.selection import SelectionMode
 from ..interaction.tool import Tool
+from ..regions import inherit_into
 from .chord_validity import chord_valid_in_polygon
 from .face_geometry import GEO_EPS, segment_in_face
 from .knife_pick import EDGE_MARGIN_PX
@@ -710,7 +711,8 @@ class KnifeTool(Tool):
         the resolver did (counts and notes; `empty` for a path without points)."""
         self._redo.clear()
         self.last_problem = None
-        start = self._session_before = SessionStart(self._mesh)
+        # Saved regions: the faces the cuts create join their parents' regions, in the same Undo step.
+        start = self._session_before = SessionStart(self._mesh, on_finish=inherit_into)
         try:
             if self._symmetric_commit is None:
                 # Points in space are no mesh points: the resolver gets the path without them, the "space"

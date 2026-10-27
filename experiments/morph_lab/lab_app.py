@@ -96,7 +96,8 @@ LAB_KEYS: tuple[LabKey, ...] = (
     LabKey(_key("up", "ctrl"), WEIGHT_FULL, "Gewicht 100 %"),
     LabKey(_key("down", "ctrl"), WEIGHT_ZERO, "Gewicht 0 %"),
     LabKey(_key("m"), TOGGLE_AB, "A/B: 0 % <-> zuletzt eingestelltes Gewicht"),
-    LabKey(_key("b"), TOGGLE_RELATIVE, "Ziel relativ <-> absolut"),
+    # Alt+B since 2026-10-27: plain B is the app's Border Select (864c39b).
+    LabKey(_key("b", "alt"), TOGGLE_RELATIVE, "Ziel relativ <-> absolut"),
     LabKey(_key("right", "alt"), JAW_OPEN, f"Kiefer +{JAW_STEP} Grad (öffnen)"),
     LabKey(_key("left", "alt"), JAW_CLOSE, f"Kiefer -{JAW_STEP} Grad (schließen)"),
     LabKey(_key("right", "alt", "shift"), JAW_OPEN_FINE, f"Kiefer +{JAW_FINE_STEP} Grad"),

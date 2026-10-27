@@ -1,5 +1,6 @@
-"""MeshStateCommand: generischer, snapshot-basierter History-Eintrag für
-atomare Topologie-Mutationen (split_edge / collapse_edge / connect_vertices).
+"""History-Einträge für Topologie-Mutationen: `MeshDeltaCommand` (Änderungs-Journal, seit
+2026-10-21 an jeder `src/`-Stelle, AD-023 §9) und der ältere `MeshStateCommand` (zwei
+vollständige Snapshots, bleibt für andere Nutzer).
 
 Bezug: docs/architecture/CORE_V1_ANALYSIS_AND_HARDENING_PLAN.md §17 Phase D.
 
@@ -11,9 +12,11 @@ Elements. Ein "Undo durch Gegenoperation" (z. B. einen Split rückgängig
 machen, indem intern etwas wie collapse_edge aufgerufen wird) würde für
 alles, was dabei neu entsteht, zwangsläufig NEUE IDs vergeben - niemals
 exakt dieselben, die vor der ursprünglichen Operation existierten. Ein
-vollständiger Zustands-Snapshot (Mesh.export_state()/load_state()) ist
-deshalb nicht nur die pragmatischste, sondern die einzige Möglichkeit,
-exakte ID-Kontinuität über Undo/Redo hinweg zu garantieren.
+Zustand, der die Records wiederherstellt statt neu zu erzeugen, ist
+deshalb nötig, um exakte ID-Kontinuität über Undo/Redo hinweg zu
+garantieren. Bis 2026-10-21 war das ein vollständiger Snapshot
+(Mesh.export_state()/load_state()); seitdem leistet das Änderungs-Journal
+dasselbe mit den Records nur der geänderten Elemente (`MeshDeltaCommand`).
 
 Bewusst NICHT enthalten (Hardening-Plan §17 Phase D, Absprache im Chat):
 - keine automatische Kopplung von split_edge/collapse_edge/connect_vertices

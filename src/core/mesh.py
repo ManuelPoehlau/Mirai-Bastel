@@ -632,6 +632,11 @@ class Mesh:
         p1 = self.vertex_position(removed)
         self.set_vertex_position(survivor, tuple((a + b) / 2.0 for a, b in zip(p0, p1)))
 
+        # Jede Face, die `removed` in ihrer Boundary hat, hängt an einer Edge von `removed` (eine Face
+        # steht in den Face-Listen aller Edges ihrer Boundary) - vor dem Umbiegen unten einsammeln,
+        # statt alle Faces des Meshes zu durchsuchen.
+        removed_faces = {f for eid in self.vertex_edges(removed) for f in self._edges[eid].faces}
+
         # Invariant (fehlte bisher als expliziter Test, siehe tests/test_core.py):
         # nach collapse_edge() darf KEINE Edge mehr auf `removed` verweisen.
         # Jede verbleibende Edge, die `removed` als Endpunkt hatte, wird daher
@@ -670,13 +675,15 @@ class Mesh:
                 self._edge_lookup[new_key] = eid
                 self._index_edge(eid, e.v0, e.v1)
 
+        # Reihenfolge wie beim früheren Scan: die Faces der Edge, dann aufsteigend nach ID (= Tabellenreihenfolge).
         affected_faces = list(edge.faces)
-        for fid in list(self._faces.keys()):
-            boundary = self._faces[fid].boundary
-            if removed not in boundary:
-                continue
-            if fid not in affected_faces:
-                affected_faces.append(fid)
+        affected_faces += sorted(
+            (
+                f for f in removed_faces
+                if f not in affected_faces and f in self._faces and removed in self._faces[f].boundary
+            ),
+            key=int,
+        )
 
         for fid in affected_faces:
             face = self._faces.get(fid)

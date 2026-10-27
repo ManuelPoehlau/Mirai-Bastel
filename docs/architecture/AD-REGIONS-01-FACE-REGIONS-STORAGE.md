@@ -36,8 +36,10 @@ bei Topologieänderungen?
    Region (sie zählen nicht als „verloren“). Entschieden (Manu, 2026-10-25): Dissolve über eine Regionsgrenze erbt nicht;
    Extrude-Deckel und -Wände erben von der extrudierten Face (`PROVISIONAL`, Extrude benennt seine Eltern selbst:
    `inherit_children_into`). Die Regel läuft **im selben Recording** und schreibt `mesh.face_regions` vor `end_change`, damit
-   Undo Mesh und Regionen zusammen zurücksetzt: in `Application._mesh_transaction`, in `ExtrudeTool._on_commit` und in
-   `knife_resolve.SessionStart.finish()` (nach `unchanged()`/Integritätsprüfung). Nicht angeschlossen: die eigenständigen
+   Undo Mesh und Regionen zusammen zurücksetzt: in `Application._mesh_transaction`, in `ExtrudeTool._on_commit` und im
+   Knife-Commit (`KnifeTool` übergibt `inherit_into` als `SessionStart(on_finish=…)`, das in `finish()` nach
+   `unchanged()`/Integritätsprüfung läuft; der Resolver selbst importiert `mirai.regions` nicht — Importgrenze in
+   `tests/test_knife_resolve.py`, 2026-10-27). Nicht angeschlossen: die eigenständigen
    Wrapper (`topology/split.py` u. ä., Playground/Test-API). Sie ist ein Notbehelf für Face-Daten, keine Antwort auf ARCH-02.
 7. **Links/Rechts wird abgeleitet,** nicht gespeichert: `SymmetryIndex.face_partner` / `expand_faces`. Zuweisen unter
    Symmetrie nimmt die Spiegelpartner mit (wie Hide und Mask).

@@ -293,3 +293,27 @@ reference-PC GL-limits probe (open since 2026-10-20, P0 b).
    object.
 5. **H5 — Scope and order.** Fluid on head/body and "usable, not fluid" on 20k until the GPU phase? Topology-after-morphs
    (phase 5) before skinning (phase 6)? Morph + SubD together not before phase 4? Recommended: yes to all three.
+
+---
+
+## Addendum 2026-10-27 — Phase 0 done (same session)
+
+What §B and §G Phase 0 listed, and what was done (details in the commit; the sections above stay as delivered):
+
+- **Morph Lab starts again:** relative ↔ absolute moved from `B` to `Alt+B` (free in every app context);
+  `experiments/morph_lab/tests` 47 passed (was 19 passed, 2 failed, 26 errors).
+- **Knife / regions import boundary:** the resolver no longer imports `mirai.regions`; `SessionStart(mesh, on_finish=…)`
+  takes the hook and the Knife tool passes `inherit_into` (same behaviour, same Undo step). The hook now runs before the
+  session counts as done, so a raising hook is rolled back exactly by the existing `abandon()` (before, the recording
+  stayed open). AD-REGIONS-01 §1.6 names the new site.
+- **Symmetry pin test:** `toggle_symmetry_display` (display only, never sets the definition) added to the pinned list.
+- **`collapse_edge` local:** the faces holding the removed point are taken from its edges instead of scanning every face;
+  same order as before. Equivalence against the previous implementation on 10,000 random steps (collapse / split /
+  delete sequences incl. invalid intermediate meshes): identical `export_state` (order, counters) and identical failures
+  [C]. `collapse_edge` + journal p50: 1.97 → **0.037 ms** (20k), 8.16 → **0.048 ms** (87.5k) [C].
+- **Doc drift fixed:** AD-005 marked SUPERSEDED (banner, original text kept); architecture README rows for AD-005 and
+  AD-REGIONS-01; ATELIER B10; `topology.py` / `history.py` docstrings; CORE_V1_FREEZE §4; CHARACTER_SYSTEMS_RESEARCH
+  and research README pointers; dated note in the 2026-10-20 audit.
+- **Verification [C]:** `tests/` 4,789 passed, 114 skipped (the GL tests; in their own process 98 passed);
+  `experiments/morph_lab/tests` 47 passed; `experiments/knife_oracle/tests` 351 passed. Not run: `mehlsack_lab`,
+  `drag_cost` (unchanged). Nothing measured on the reference PC.

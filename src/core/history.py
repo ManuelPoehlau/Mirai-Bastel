@@ -12,10 +12,9 @@ Architekturvertrag:
   interaktive Operationen (z. B. MoveOperation) ruft ausschließlich
   Operation.commit() push() auf - nie aus update() (siehe operation.py).
   Für atomare, nicht-interaktive Mutationen ohne Operation-Lebenszyklus
-  (split_edge/collapse_edge/connect_vertices, siehe
-  operations/topology.py MeshStateCommand) bauen Aufrufer das Command
-  selbst und rufen push() direkt auf - Mesh selbst bleibt dabei bewusst
-  ohne jede History-Abhängigkeit (§15 Punkt 5).
+  (Topologie-Werkzeuge, siehe operations/topology.py MeshDeltaCommand)
+  bauen Aufrufer das Command selbst und rufen push() direkt auf - Mesh
+  selbst bleibt dabei bewusst ohne jede History-Abhängigkeit (§15 Punkt 5).
 - Kein Undo-Baum, kein Merge, keine Cross-Subsystem-Transaktionen (§10) -
   ein einfacher linearer Stack genügt für V1.
 """
