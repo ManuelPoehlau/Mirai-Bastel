@@ -447,7 +447,7 @@ Touches: O-05.
 Edit an arbitrary value (not necessarily weights) in two layers instead of directly. Question: Does “I edit the origin of the result” feel freer or more indirect?
 Touches: O-06.
 
-**Not listed as a candidate:** anything that tests topology changes under active deformation. That is the subject of the existing technical experiment (`experiments/rigging-skinning-morphing/`) and should not be duplicated here as a UX experiment.
+**Not listed as a candidate:** anything that tests topology changes under active deformation. That is a technical architecture question (ROADMAP ARCH-02; current state: [mesh architecture audit 2026-10-27](deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md)) and should not be duplicated here as a UX experiment. *(Until 2026-10-24 it pointed to `experiments/rigging-skinning-morphing/`, which was removed; its findings are in `docs/archive/experiments_2026-10/rigging-skinning-morphing/`.)*
 
 ---
 

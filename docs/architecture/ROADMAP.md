@@ -420,6 +420,8 @@ Stable IDs alone are not assumed to solve future Morph/Skin remapping.
 
 A reviewed architectural model and documented constraints. Do not build a large remapping framework before real use cases justify it.
 
+**Input (2026-10-27, Discovery, not a decision):** [mesh architecture audit](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) — per-operation contract (§D), proposed minimum (vertex origin in the primitives, journaled per-point layers, operation gate), phased roadmap and Manu's open decisions H1–H5.
+
 ---
 
 # 7. Production Foundation & Later Work
