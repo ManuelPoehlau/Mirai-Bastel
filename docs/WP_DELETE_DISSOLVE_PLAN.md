@@ -291,4 +291,4 @@ Start: `python src/main.py examples/meshes/grid_2x2.obj`, `python src/main.py cu
 `python src/main.py examples/meshes/grid_3x3.obj`. Modus mit 1/2/3, Auswahl mit Klick/Shift+Klick, Wireframe-Overlay
 mit Shift+D, Undo mit Ctrl+Z. Die drei Szenarien aus §Practical viewport test (2×2-Grid nach §0.2.3 in der
 präzisierten Fassung: frei schwebende Randkanten verschwinden mit), dazu DD-3 und DD-4. Danach das Kurzverdikt KEEP/ITERATE/REJECT hier und in `docs/architecture/ROADMAP.md`
-eintragen.
+eintragen. Manu:Keep
