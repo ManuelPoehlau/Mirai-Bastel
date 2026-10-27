@@ -727,7 +727,27 @@ and hide sets are not carried onto the view; Manu's practical test (Kurzfassung)
 
 ### 16.3 Measured [C]
 
-(The container numbers follow with the full test runs of this package.)
+Container (Linux, Python 3.13, Mesa llvmpipe; `xvfb-run -a python experiments/drag_cost/probe_morph_gl.py --only-topology
+--reps 7`), p50 in ms over 7 runs, each undone; "call" = the operation's own call through the app's keys (the Knife: `Enter`
+after edge → two interior points → edge on the front-most quad; Extrude: the whole hold-drag-release), the cursor over the
+viewport (a commit's hover refresh with a GPU pick of the new topology is part of the call); "frame" = the frame after it.
+"Target" = one target with an offset on every point, dialled in at 60 %. Container timings vary up to ~2× between runs.
+
+| Operation | head_basemesh (326 V) call / frame: no target · target | Man_With_Shoes (928 V) | gollum_20k (21,875 V) |
+|---|---|---|---|
+| Knife commit | 11.3 / 1.7 · 10.7 / 8.4 | 22.3 / 2.0 · 24.8 / 21.9 | 32.7 / 11.5 · 31.1 / 11.5 |
+| Loop Insert | 20.2 / 1.9 · 25.2 / 15.4 | 73.0 / 2.6 · 99.8 / 39.8 | 2,903 / 11.9 · 3,027 / 112 |
+| Extrude (gesture) | 9.2 / 1.7 · 9.5 / 8.8 | 24.8 / 2.1 · 24.5 / 23.7 | 17.3 / 10.5 · 18.6 / 10.8 |
+| Collapse | 9.2 / 1.5 · 9.9 / 8.2 | 22.0 / 1.7 · 32.7 / 27.8 | 21.8 / 10.9 · 24.1 / 13.8 |
+
+**Reading.** The operations cost the same with a target within the container's spread (the Core's layer writes are
+µs per point, §14); what a shown target adds is the frame after (the mix surface and its render mesh take the change).
+**Before the in-place patch** (§16.1, same probe, same container): the frame after was 15–20 ms on head, 49–55 ms on
+body and **2.9–3.5 s on gollum_20k** for every operation. Loop Insert on gollum_20k costs ≈ 3 s without a target too
+(a ring around the whole mesh; not a Phase 5 cost — noted for the viewport-performance list). A first probe run without
+the cursor in the viewport made Knife and Loop Insert look +11 ms slower with a target: the hover refresh's GPU pick ran
+only in the target rows; the probe now places the cursor first. **Reference PC:** the same line (`python
+experiments/drag_cost/probe_morph_gl.py --only-topology`); Python there is ≈ 2× slower (REFERENCE_HARDWARE §2).
 
 ### 16.4 Tests
 
@@ -744,15 +764,19 @@ exact — and 50 fuzzed symmetric sessions with mirrored targets, the mirror edg
 barycentrics and the new point lies on the displaced triangle (≤ 1e-12) —, mirror copy bit-exact; the mix and the view
 follow Loop Insert, Collapse, Extrude and Split on the base); `tests/test_layer_gate.py` (the declarations are the
 implementations the app runs; every declared entry has its fixture; only unhandled constants stay locked);
-`tests/test_morph_targets.py` (the Knife joins the refused-on-the-view cases). **Mutation checks by hand** — each caught:
-the mirror split back at t = 0.5, swapped barycentric weights, a crossing that takes its first end's origin, mirror origins
-not mapped through the vertex map.
+`tests/test_morph_targets.py` (the Knife joins the refused-on-the-view cases; the randomized surface oracle now runs
+`split_edge`, `split_face(…, origins=…)` and Collapse through the in-place patch and compares topology too);
+`tests/test_layer_topology_ops.py` also pins the patch (the same surface mesh and render mesh, its triangles on the new
+faces, through Undo / Redo; a point moved away and back in the same step; the entry surface beside the view).
+**Mutation checks by hand** — each caught: the mirror split back at t = 0.5, swapped barycentric weights, a crossing that
+takes its first end's origin, mirror origins not mapped through the vertex map, edges left out of the surface patch, kept
+points reset to their rest position by the patch, the viewport not told about the patched topology (edit surface and
+entry surface).
 
 ### 16.5 Open / next
 
-Manu's practical test (Kurzfassung, "Praxistest Phase 5"); the reference-PC run of the probe; the frame after a topology
-edit with a target dialled in rebuilds the mix surface (§16.3) — the same full rebuild as any topology edit on the surface,
-for Phase 4 (incremental or GPU evaluation). **Next:** Phase 4 (several targets, packed storage, stage chain, morph + SubD)
+Manu's practical test (Kurzfassung, "Praxistest Phase 5"); the reference-PC run of the probe; Loop Insert on gollum_20k
+(≈ 3 s with and without a target, §16.3) for the viewport-performance list. **Next:** Phase 4 (several targets, packed storage, stage chain, morph + SubD)
 or Phase 6 (skinning; the weights kind gets the Phase 5 rules for free).
 
 ---
@@ -861,8 +885,8 @@ automatischen Tests laufen mit drei; (b) in stark gebogenen Stellen kann ein neu
    gespiegelt: die Kopie ist danach gewählt, `1` macht sie zum bearbeiteten Objekt, `N` halten + Maus blendet ihr Ziel ein.
 8. **Undo und Speichern.** Mit `Strg+Z` bis zum Anfang zurück und mit `Strg+Y` wieder vor; `Strg+S`, Fenster schließen,
    über `Leertaste` laden: Ziel und neue Loops sind da.
-9. Optional: `python src/main.py examples/meshes/gollum_20k.obj` — Loop Insert / Knife mit Ziel; der Rahmen nach jedem
-   Schnitt baut die Mischung neu auf (spürbar kurz).
+9. Optional: `python src/main.py examples/meshes/gollum_20k.obj` — Knife, Extrude, Collapse mit eingeblendetem Ziel
+   (der Rahmen danach hing hier vorher ~3 Sekunden, jetzt nicht mehr); Loop Insert dauert dort auch ohne Ziel ~3 Sekunden.
 10. Optional auf deinem PC: `python experiments/drag_cost/probe_morph_gl.py --only-topology` und die Ausgabe in den Chat.
 
 | Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
