@@ -20,6 +20,7 @@ Current archive areas:
 - [Viewport V1](viewport_v1/README.md)
 - [Viewport V02](viewport_v02/README.md)
 - [Symmetry Lab](symmetry_lab/README.md)
+- [Deformation reviews](deformation/reviews/) — independent review of AD-025 (ARCH-02), CLAUDE-001 (2026-10-27)
 - [Early work packages](early_work_packages/) — WP-01A, WP-02, WP-04 (Gates, reports, amendments), moved from the docs root 2026-10-21 (repository slimming)
 - [Audits 2026-09](audits_2026-09/) — Ownership/Lifecycle, Repository-wide health, shared-infrastructure, genealogy, WP-03 and Core-reassessment audits, moved from the docs root 2026-10-21
 - [Experiments 2026-10](experiments_2026-10/) — READMEs, findings and results of the Playground and the labs removed in the consolidation of 2026-10-24 (code: commit `61ebe77`, list in `experiments/README.md`), plus the Artist Playground design docs (`artist_playground_design/`)

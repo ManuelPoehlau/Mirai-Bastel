@@ -422,7 +422,7 @@ A reviewed architectural model and documented constraints. Do not build a large 
 
 **Input (2026-10-27, Discovery, not a decision):** [mesh architecture audit](../research/deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) — per-operation contract (§D), proposed minimum (vertex origin in the primitives, journaled per-point layers, operation gate), phased roadmap and Manu's open decisions H1–H5.
 
-**Decision document (2026-10-27, PROPOSED, review pending):** [AD-025 — Topology Identity, Provenance and Point Layers](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) — answers the six questions above (§2), per-operation contract (§3), mechanism for Phase 2 (§4, §8–§9).
+**Decision document (2026-10-27, PROPOSED; reviewed — ACCEPT WITH CHANGES, revised, awaiting Manu):** [AD-025 — Topology Identity, Provenance and Point Layers](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) — answers the six questions above (§2), per-operation contract (§3), mechanism for Phase 2 (§4, §8–§9).
 
 ---
 
