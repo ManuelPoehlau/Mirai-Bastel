@@ -227,6 +227,10 @@ Scope (binding, see the handoffs):
   World / Normal (WP Toolbox Gaps C1, `PROVISIONAL`): K toggles the transform space; in Normal the gizmo and
   X/Y/Z use the selection's frame (one face: first edge / normal × edge / normal; otherwise the normal only),
   shown in the HUD row "Space" (`mirai.transform_space`).
+- Working Pivot (2026-10-28, Manu U-1..U-4, AD-012 addendum; key `PROVISIONAL`): hold P + LMB click places it
+  (inside the mesh under the cursor; Shift = on a vertex / edge; off the mesh = same depth), a tap on P switches it
+  off / on; E / R and the gizmo then turn and scale around it (World axes), Move is unaffected. No undo step. Drawn
+  as an orange cross + ring (`pivot_marker_items`, also during a gesture), HUD row "Pivot". All in `Application`.
 - SubD preview (2026-10-23, `PROVISIONAL` keys, `mirai.subdivision`, promoted from the SubD Lab): V cycles
   off → smooth surface + cage → smooth surface + isolines, Ctrl+1/2/3 the level (start 2), Shift+V the cage's
   depth (hidden by the surface / always visible), Alt+V the opacity of the cage in the isoline view; in a SubD
@@ -652,7 +656,7 @@ def install_handlers(
         window.clear()
         app.viewport.sync()
         app.viewport.render()
-        gizmo = app.gizmo_items()
+        gizmo = app.gizmo_items() + app.pivot_marker_items()
         if gizmo:
             draw_gizmo(gizmo, app.gizmo_camera_uniforms())
         box = app.selection_box

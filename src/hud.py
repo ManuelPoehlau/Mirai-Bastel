@@ -101,6 +101,8 @@ class HudState:
     keymap_problem: Optional[str] = None
     #: 2026-10-28 (Manu A1): the session's constraint lifetime, "one-shot" / "sticky".
     constraint_mode: str = "one-shot"
+    #: Working Pivot (2026-10-28, `mirai.pivot`): "off" / "on" / "placing" / "off · placed" / "other object".
+    pivot: str = "off"
 
 
 def hud_state(app) -> HudState:
@@ -145,7 +147,21 @@ def hud_state(app) -> HudState:
         status_serial=app.status_serial,
         keymap_problem=None if app.keymap_load is None else app.keymap_load.problem,
         constraint_mode=app.constraint_mode,
+        pivot=_pivot_text(app),
     )
+
+
+def _pivot_text(app) -> str:
+    if app.pivot_placing:
+        return "placing"
+    if app.active_pivot is not None:
+        return "on"
+    pivot = app.working_pivot
+    if pivot is None:
+        return "off"
+    if pivot.object_id != app.scene.edit_object_id:
+        return "other object"
+    return "off · placed"
 
 
 # -- key hints (binding layer) ------------------------------------------------------------------
@@ -162,6 +178,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
         None,
     ),
     "Space": ((commands.TOGGLE_TRANSFORM_SPACE,), None),
+    "Pivot": ((commands.PIVOT_PLACE,), None),
     "Sym": ((commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE), None),
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),
@@ -229,6 +246,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         HudRow("Tool", tool, hints.get("Tool", ""), on=state.active is not None),
         HudRow("Axis", axis, hints.get("Axis", ""), on=state.constraint is not None),
         HudRow("Space", state.space.capitalize(), hints.get("Space", ""), on=state.space != "world"),
+        HudRow("Pivot", state.pivot, hints.get("Pivot", ""), on=state.pivot in ("on", "placing")),
         HudRow("Sym", state.symmetry.upper() if state.symmetry else "off", hints.get("Sym", ""),
                on=state.symmetry is not None),
         HudRow("Display", state.display, hints.get("Display", "")),

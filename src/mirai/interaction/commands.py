@@ -41,6 +41,9 @@ SELECT_DRAG_ADD = "SelectDragAdd"
 # Taste gehalten wird, wird aus dem LMB-Drag (SELECT_DRAG / SELECT_DRAG_ADD) ein Lasso-Polygon statt
 # Box/Paint. Wie W/E/R eine Halte-Taste; Shift fügt hinzu, kein Modifier ersetzt.
 LASSO_ARM = "LassoArm"
+# PIVOT_PLACE (2026-10-28, Manu U-1 "hold to place"; key `PROVISIONAL`): while the key is held an LMB click places
+# the Working Pivot (`mirai.pivot`); a tap without a click switches it off / on again.
+PIVOT_PLACE = "PivotPlace"
 # TWEAK (2026-10-15, Tweak Lab V2 "Silo" KEEP): ein LMB-Drag transformiert mit dem zuletzt
 # gewählten W/E/R (Start: Move) die Auswahl, ohne Auswahl das Element unter dem Press-Punkt.
 # 2026-10-28 (Manu A3): die Ctrl+LMB-Drag-Bindung ist entfernt, der Command bleibt bindbar (E4).
@@ -335,5 +338,5 @@ MORPH_PREVIOUS = "MorphPrevious"
 #: Commands armed by holding a key (AD-016 hold-key-hover and its family): `Application` ends them on the release
 #: of that key's value, which only a `key` input has, so a keymap entry may bind them to `kind: "key"` only.
 HOLD_COMMANDS = frozenset(
-    {MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, LASSO_ARM, LIGHT_DRAG, MORPH_WEIGHT_DRAG}
+    {MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, LASSO_ARM, LIGHT_DRAG, MORPH_WEIGHT_DRAG, PIVOT_PLACE}
 )

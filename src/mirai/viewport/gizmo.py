@@ -371,3 +371,35 @@ def draw_items(
             add(plane_indicator_positions(pivot, axis_a, axis_b, size), COLOR_PLANES[name], name, "lines")
     add(center_ring_positions(pivot, right, up, size), COLOR_CENTER, "center", "loop")
     return items
+
+
+# ---------------------------------------------------------------------------
+# Working Pivot marker (2026-10-28, `mirai.pivot`; look `PROVISIONAL`)
+# ---------------------------------------------------------------------------
+
+#: Orange, so it never reads as a gizmo handle (red / green / blue / white); the placement preview is half as opaque.
+COLOR_PIVOT = (1.0, 0.55, 0.1, 1.0)
+PIVOT_PREVIEW_ALPHA = 0.5
+#: Half-length of the cross arms and radius of the ring, as fractions of the gizmo size at the point.
+PIVOT_CROSS_RATIO: float = 0.35
+PIVOT_RING_RATIO: float = 0.2
+PIVOT_LINE_WIDTH = 2.5
+
+
+def pivot_marker_items(camera, point: Vec3, scale: float = GIZMO_SCALE, preview: bool = False) -> list[DrawItem]:
+    """The Working Pivot: a world-axis cross through `point` (U-4: World axes) and a camera-facing ring, constant
+    on screen like the gizmo. Drawn whenever the pivot is on - also while a W/E/R gesture runs - and dimmed as the
+    preview of where a click would place it."""
+    size = gizmo_size(camera, point, scale)
+    arm = size * PIVOT_CROSS_RATIO
+    color = COLOR_PIVOT if not preview else COLOR_PIVOT[:3] + (PIVOT_PREVIEW_ALPHA,)
+    cross: list[float] = []
+    for _, direction in WORLD_AXES:
+        start = (point[0] - direction[0] * arm, point[1] - direction[1] * arm, point[2] - direction[2] * arm)
+        cross.extend(axis_line_positions(start, direction, 2.0 * arm))
+    _, right, up = camera.basis()
+    ring = screen_ring_positions(point, right, up, size * PIVOT_RING_RATIO, segments=24)
+    return [
+        DrawItem(tuple(cross), color, "lines", PIVOT_LINE_WIDTH),
+        DrawItem(tuple(ring), color, "loop", PIVOT_LINE_WIDTH),
+    ]

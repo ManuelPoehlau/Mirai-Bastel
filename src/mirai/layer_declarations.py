@@ -110,6 +110,7 @@ _NON_MESH_COMMANDS = (
     commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z,
     commands.CONSTRAIN_PLANE_XY, commands.CONSTRAIN_PLANE_XZ, commands.CONSTRAIN_PLANE_YZ,
     commands.TOGGLE_TRANSFORM_SPACE, commands.CONSTRAINT_MODE_TOGGLE, commands.GIZMO_SIZE_CYCLE,
+    commands.PIVOT_PLACE,  # app state: the Working Pivot is a point, never mesh data
     commands.ORBIT, commands.PAN, commands.ZOOM,
     commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY, commands.SET_SHADED,
     commands.SET_FLAT_SHADED, commands.SET_WIREFRAME, commands.TOGGLE_REGION_TINT,

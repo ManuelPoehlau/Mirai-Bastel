@@ -105,7 +105,8 @@ def symmetric_default_pivot(
     Rückfall auf den Zentroid über Auswahl ∪ Partner (die frühere Paarmitte), wenn
     ein Seam-Vertex betroffen ist und der eigene Zentroid nicht auf der Ebene liegt —
     sonst würde der Seam-Constraint (INV-2) jede solche Rotation ablehnen. Ein
-    freier/temporärer Pivot ist ein eigenes Thema (Pivot-System, später).
+    frei platzierter Pivot (Working Pivot, `mirai.pivot`, 2026-10-28) kommt als
+    explizites `pivot` und ersetzt diesen Default.
     """
     own = selection_pivot(mesh, selected)
     if symmetry["seam_vertex_ids"] and not pivot_on_plane(

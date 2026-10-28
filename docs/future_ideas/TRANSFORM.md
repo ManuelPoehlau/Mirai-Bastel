@@ -6,6 +6,12 @@ Ideen und Beobachtungen rund um Transform, die bewusst noch nicht umgesetzt werd
 
 ## Pivot-System: später gezielt erweitern
 
+**Status 2026-10-28:** der **Working Pivot** ist umgesetzt (`PROVISIONAL`, Manus Entscheidungen U-1…U-4, Praxistest
+ATELIER B22): `P` halten + Klick platziert einen Pivot im Volumen, `E`/`R` drehen und skalieren darum, Weltachsen.
+Quelle: [AD-012, Addendum 2026-10-28](../architecture/AD-012-TRANSFORM-SPACE.md#addendum-2026-10-28-working-pivot-manu-u-1u-4).
+Offen bleiben die Punkte unten (Ausrichtung des Pivots, Pivot-Modi, Per-Object Pivot = AD-021 Q-13) und
+**QuickPose** (ein Pivot nur für eine Geste, Transpose-artig; teilt die Platzierung, nicht den Lebenszyklus).
+
 Mirai hat bereits einen Auswahlmittelpunkt als Komponenten-Pivot und einen Objektursprung für Objekttransformationen. Der Pivot bleibt während einer laufenden Geste fest. Ein frei platzierbares Pivot-System ist eine spätere Erweiterung, keine fehlende Voraussetzung für die nächsten Character-Shaping-Schritte.
 
 Für die spätere Untersuchung sind diese Möglichkeiten relevant:

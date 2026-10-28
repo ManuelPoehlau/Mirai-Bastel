@@ -67,6 +67,13 @@ Q ist unbelegt. Achsen-Constraints (WP-06 B4, Blender-Konvention
 Ctrl+Z / Ctrl+Y (Undo/Redo) sind ein anderes Modifier-Set und bleiben
 unberührt.
 
+Working Pivot (2026-10-28, Manu U-1..U-4, AD-012 Addendum "Working Pivot"; Taste `PROVISIONAL`, nicht in
+keymap.json, bis Manu sie bestätigt):
+- P (halten)     -> LMB-Klick setzt den Working Pivot (Mitte im Volumen unter dem Cursor; Shift = auf Vertex/Kante,
+                    neben dem Mesh = gleiche Tiefe wie bisher), erneut klicken korrigiert, loslassen beendet;
+                    P antippen ohne Klick = Pivot aus / wieder an. W/E/R drehen und skalieren dann um ihn.
+                    Kein Undo-Schritt (U-3). Wie `C` ignoriert, solange W/E/R/T/G scharf ist.
+
 Contextual C (WP-06 B6, AD-017): `C` ist GLOBAL, nicht Topology-Lab —
 Split (Edge-Modus, 1 Edge) / Edge Connect (Edge-Modus, 2+ Edges) / Vertex
 Connect (Vertex-Modus, 2+ Vertices); leere Auswahl = Knife-Session (WP-06
@@ -370,6 +377,9 @@ def build_default_bindings() -> BindingSet:
     # 2026-10-21 (Manu): Lasso kommt in die App. Halte-Taste Q (Artist Input Truth
     # `selection.lasso_select` ist leer, Q ist frei; `PROVISIONAL`, keymap.json kann umbinden).
     bs.set_default(_key("q"), cmd.LASSO_ARM)
+    # Working Pivot (2026-10-28, Manu U-1 "hold to place"): hold P + LMB click places it, a tap toggles it.
+    # `PROVISIONAL` engineering key: bare P was free in the code defaults and in config/keymap.json.
+    bs.set_default(_key("p"), cmd.PIVOT_PLACE)
     bs.set_default(_wheel("UP"), cmd.ZOOM)
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
 

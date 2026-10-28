@@ -99,6 +99,7 @@ from .interaction.tools.transform import _resolve_space
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from .object_space import ObjectSpaceCamera
+from .pivot import WorkingPivot, place_pivot
 from .object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from .scene_objects import (
     REFERENCE_GHOST_ALPHA,
@@ -1000,6 +1001,15 @@ class Application:
         self._drag_select: _DragSelect | None = None
         # The key that holds the Lasso mode (None = not held); see `commands.LASSO_ARM`.
         self._lasso_held: str | None = None
+        # Working Pivot (2026-10-28, Manu U-1..U-4, `mirai.pivot`): the placed pivot (None = never placed), the
+        # held placement key, the pivot as it was at that press (Esc restores it), whether a click placed it during
+        # this hold (else the release is a tap = off/on), the running LMB placement and the hover preview point.
+        self._working_pivot: WorkingPivot | None = None
+        self._pivot_key: str | None = None
+        self._pivot_before: WorkingPivot | None = None
+        self._pivot_placed: bool = False
+        self._pivot_dragging: bool = False
+        self._pivot_preview = None
         # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
         # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
         # `_gizmo_gesture` = the handle pressed by the running LMB gesture; `_gizmo_cache` = (key, pivot).
@@ -2182,6 +2192,7 @@ class Application:
         )
         self.selection.clear()
         self.selection.clear_objects()
+        self._working_pivot = None  # its object id belongs to the old scene
         self.history = TranslatingHistory()
         self.scene.history = self.history
         self._selection_undo_stack.clear()
@@ -4221,6 +4232,8 @@ class Application:
             return False
         if command == commands.LASSO_ARM:
             return self._lasso_arm(input.value)
+        if command == commands.PIVOT_PLACE:
+            return self._pivot_arm(input.value)
         if command == commands.LIGHT_DRAG:
             return self._light_drag_arm(input.value)
         if command in _TWEAK_TRANSFORMS:
@@ -4301,6 +4314,8 @@ class Application:
             self._lasso_held = None
             self._set_status("Lasso off")
             return True
+        if self._pivot_key is not None and input.value == self._pivot_key:
+            return self._pivot_release()
         if self._morph_drag_key is not None and input.value == self._morph_drag_key:
             return self._morph_drag_release()
         if self._light_drag_key is not None and input.value == self._light_drag_key:
@@ -4417,8 +4432,9 @@ class Application:
             self._soft_preview_refresh(shown_by_gesture=True)
         count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
+        around = " around the Working Pivot" if command != commands.MOVE and self.active_pivot is not None else ""
         self._set_status(
-            f"{label}: {count} {noun}{self._constraint_suffix(self._axis_constraint)}{self._commit_hint(key)}"
+            f"{label}: {count} {noun}{around}{self._constraint_suffix(self._axis_constraint)}{self._commit_hint(key)}"
         )
         return True
 
@@ -4528,6 +4544,9 @@ class Application:
             mask = self._mask_values(self._transform_target)
             if mask:
                 begin_context["mask"] = mask  # absent without a mask: today's payload, unchanged
+            pivot = self.active_pivot if self._transform_command in (commands.ROTATE, commands.SCALE) else None
+            if pivot is not None:
+                begin_context["pivot"] = pivot  # Working Pivot (U-1); Move and pivot off: today's payload
             if self._orientation == transform_space.NORMAL and self._transform_space is not None:
                 refusal, normal_context = self._normal_space_context()
                 if refusal is not None:
@@ -4551,8 +4570,11 @@ class Application:
                 # the settings are read, before anything moves - like a seam refusal.
                 label = _TRANSFORM_COMMANDS[self._transform_command][0]
                 self._transform_end()
+                hint = ""
+                if pivot is not None and isinstance(exc, SeamConstraintError):
+                    hint = " (the Working Pivot is off the symmetry plane: place it on the plane or tap P to turn it off)"
                 # Status text PROVISIONAL, like the other transform status lines.
-                self._set_status(f"{label}: refused — {exc}")
+                self._set_status(f"{label}: refused — {exc}{hint}")
                 self._refresh_hover()
                 return False
             self._transform_begun = True
@@ -5469,6 +5491,8 @@ class Application:
         nichts. Eine Box/Paint-Geste wird verworfen (Auswahl wie vor der Geste)."""
         if self._drag_select is not None:
             return self._drag_select_cancel()
+        if self._pivot_key is not None:
+            return self._pivot_cancel()
         if self._transform_key is None:
             return False
         if self._transform_key == TWEAK_KEY:
@@ -6197,6 +6221,10 @@ class Application:
         if self._knife is not None and self._knife_owns_press(input):
             self._knife_press(input)
             return
+        if self._pivot_owns_press(input):
+            self._pivot_place_at(*self._cursor, snap="shift" in input.modifiers)
+            self._pivot_dragging = True
+            return
         if not self.pointer.active:
             self._press_point = self._cursor
             if self._resym_plan is None:
@@ -6213,6 +6241,8 @@ class Application:
             self._cursor = (x, y)
         if self._knife_gesture:
             return self._knife_drag(dx, dy)
+        if self._pivot_dragging:
+            return self._cursor is not None and self._pivot_place_at(*self._cursor, snap=self._shift_held)
         if self._alt_held and self._transform_key == TWEAK_KEY:
             # A gizmo / Tweak drag: Alt borrows the motion for the camera, the gesture keeps running.
             return self._navigate_during_transform(dx, dy)
@@ -6225,6 +6255,9 @@ class Application:
         self._cursor = (x, y)
         if self._knife_gesture and button == self._knife_gesture_button:
             return self._knife_release(x, y)
+        if self._pivot_dragging and button == "LEFT":
+            self._pivot_dragging = False
+            return True
         click = self.pointer.release(button, x, y)
         if button == "LEFT" and self._gizmo_gesture is not None:
             return self._gizmo_release(click is not None)
@@ -6346,6 +6379,10 @@ class Application:
         if self.viewport is None:
             return False
         if self._hover_suspended or self._resym_plan is not None:
+            return self._set_hovered(None)
+        if self._pivot_key is not None:
+            # Placing the pivot: the marker preview shows where a click lands; no selection hover.
+            self._pivot_preview = self._pivot_point_at(x, y, snap=self._shift_held)
             return self._set_hovered(None)
         if self._gizmo_handle_at(x, y) is not None:
             # E3 (2026-10-28): inside a handle's pick zone the handle wins - no mesh hover under it, so the
@@ -6568,6 +6605,134 @@ class Application:
         if self._lasso_held is None:
             self._set_status("Lasso: drag with LMB (Shift adds, Esc cancels)")
         self._lasso_held = key
+        return True
+
+    # -- Working Pivot (2026-10-28, Manu U-1..U-4, AD-012 addendum; `mirai.pivot`) ----------------------
+    # Hold the key + LMB click places it, a tap switches it off / on (U-1); a click on the mesh lands inside the
+    # volume, Shift on a vertex / edge point (U-2); it stays until replaced or off, and is no undo step (U-3); W/E/R
+    # keep World axes and turn / scale around it (U-4). Mode `4` keeps the objects' own pivots (AD-021 Q-13).
+
+    @property
+    def working_pivot(self) -> WorkingPivot | None:
+        """The placed Working Pivot (also while off or on another object); None = never placed."""
+        return self._working_pivot
+
+    @property
+    def active_pivot(self):
+        """The Working Pivot's position (edit-object space) when W/E/R use it - placed, on, of the edit object, not
+        in mode `4`; None = the selection centre as before."""
+        pivot = self._working_pivot
+        if pivot is None or not pivot.enabled or pivot.object_id != self.scene.edit_object_id:
+            return None
+        if self.selection.mode is SelectionMode.OBJECT:
+            return None
+        return pivot.position
+
+    @property
+    def pivot_placing(self) -> bool:
+        """True while the placement key is held."""
+        return self._pivot_key is not None
+
+    def pivot_marker_items(self) -> list:
+        """What the window draws for the Working Pivot (`viewport.gizmo.pivot_marker_items`): the active pivot,
+        also during a gesture, and the dimmed preview while placing; [] otherwise."""
+        if self.viewport is None or self._knife is not None:
+            return []
+        items = []
+        edit = self.scene.edit_object
+        pivot = self.active_pivot
+        if pivot is not None:
+            world = object_space.to_world(edit, pivot)
+            items += _gizmo.pivot_marker_items(self.camera, world, scale=self.gizmo_scale)
+        if self._pivot_key is not None and self._pivot_preview is not None and not self._pivot_dragging:
+            world = object_space.to_world(edit, self._pivot_preview)
+            items += _gizmo.pivot_marker_items(self.camera, world, scale=self.gizmo_scale, preview=True)
+        return items
+
+    def _pivot_arm(self, key: str) -> bool:
+        """The placement key went down: LMB clicks place the pivot until it is let go. Not underneath a held
+        W/E/R/T/G (the same gate as Lasso); refused in mode `4`."""
+        if self.viewport is None or self._transform_key is not None:
+            return False
+        if self.selection.mode is SelectionMode.OBJECT:
+            self._set_status("Working Pivot: for points / edges / faces - press 1/2/3 (objects turn about their own pivot)")
+            return False
+        if self._pivot_key is None:
+            self._pivot_before = self._working_pivot
+            self._pivot_placed = False
+            self._set_status(
+                f"Working Pivot: click to place (inside the mesh; Shift = vertex / edge), release {key.upper()} to"
+                " finish, tap = off / on"
+            )
+        self._pivot_key = key
+        self._refresh_hover()
+        return True
+
+    def _pivot_owns_press(self, input: Input) -> bool:
+        """While the key is held an LMB press places the pivot; Alt+LMB keeps navigating."""
+        return (
+            self._pivot_key is not None
+            and input.kind == "mouse"
+            and input.value == "LEFT"
+            and "alt" not in input.modifiers
+            and not self.pointer.active
+            and not self._pivot_dragging
+            and self._cursor is not None
+        )
+
+    def _pivot_anchor(self):
+        """The depth for a click off the mesh: the current pivot of this object, else the selection centre."""
+        pivot = self._working_pivot
+        if pivot is not None and pivot.object_id == self.scene.edit_object_id:
+            return pivot.position
+        vertex_ids = resolve_selection_vertices(self.scene.mesh, self.selection, self.selection.mode)
+        return selection_pivot(self.scene.mesh, vertex_ids) if vertex_ids else None
+
+    def _pivot_point_at(self, x: float, y: float, snap: bool):
+        return place_pivot(
+            self._edit_camera, self.scene.mesh, x, y, int(self.viewport_width), int(self.viewport_height),
+            snap=snap, anchor=self._pivot_anchor(), cache=self._pick_cache, occlusion=self.display.show_faces,
+        )
+
+    def _pivot_place_at(self, x: float, y: float, snap: bool) -> bool:
+        """Places the pivot under (x, y) and switches it on - no History entry (U-3). True = placed."""
+        point = self._pivot_point_at(x, y, snap)
+        if point is None:
+            self._set_status("Working Pivot: no point under the cursor")
+            return False
+        self._working_pivot = WorkingPivot(self.scene.edit_object_id, tuple(float(c) for c in point))
+        self._pivot_placed = True
+        self._pivot_preview = None
+        self._set_status("Working Pivot placed - E / R turn and scale around it")
+        return True
+
+    def _pivot_release(self) -> bool:
+        """The key went up: placement ends; a tap without a click switches the pivot off / on (U-1). A running
+        LMB placement continues to its release."""
+        self._pivot_key = None
+        self._pivot_preview = None
+        pivot = self._working_pivot
+        if self._pivot_placed:
+            pass  # the placing status line stays
+        elif pivot is None or pivot.object_id != self.scene.edit_object_id:
+            self._set_status("Working Pivot: none on this object - hold P and click to place one")
+        else:
+            self._working_pivot = pivot.toggled()
+            if self._working_pivot.enabled:
+                self._set_status("Working Pivot on - E / R turn and scale around it")
+            else:
+                self._set_status("Working Pivot off - E / R use the selection centre")
+        self._refresh_hover()
+        return True
+
+    def _pivot_cancel(self) -> bool:
+        """Esc while the key is held: the pivot as it was at the press, placement ends."""
+        self._working_pivot = self._pivot_before
+        self._pivot_key = None
+        self._pivot_preview = None
+        self._pivot_dragging = False
+        self._set_status("Working Pivot: placement cancelled")
+        self._refresh_hover()
         return True
 
     def _light_drag_arm(self, key: str) -> bool:
@@ -6827,7 +6992,10 @@ class Application:
             mesh = self.scene.mesh
             vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
             pivot = selection_pivot(mesh, vertex_ids) if vertex_ids else None
-            self._gizmo_cache = (key, pivot)
+            self._gizmo_cache = (key, pivot)  # also with a Working Pivot: `_gizmo_frame` keys on it
+        if pivot is not None and self.active_pivot is not None:
+            # The gizmo shows where W/E/R turn and scale: the Working Pivot while it is on (U-1).
+            pivot = self.active_pivot
         return None if pivot is None else object_space.to_world(self.scene.edit_object, pivot)
 
     def _gizmo_object_pivot(self):

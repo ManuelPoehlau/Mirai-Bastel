@@ -314,3 +314,50 @@ The production app (`src/mirai/application.py`) now reaches `space="normal"`; be
 - **Not changed:** the tools, `_resolve_space`, Core. Multi-face tangent frames stay deferred
   (`docs/future_ideas/TRANSFORM.md`).
 - Tests: `tests/test_application_transform_space.py`.
+
+## Addendum 2026-10-28: Working Pivot (Manu U-1..U-4)
+
+**Decision (Manu, chat 2026-10-28; all four as recommended in the UX discussion):**
+
+- **U-1 "Hold to place":** hold the pivot key, an LMB click places the Working Pivot (click again or drag to
+  correct), releasing the key ends placement; a tap without a click switches it off / on. It is never held together
+  with `E`: place, then turn.
+- **U-2 Depth "inside the volume":** a click on the mesh lands in the middle between where the view ray enters and
+  leaves it (jaw hinge, elbow, knuckle in one click; an open sheet: the surface point). Shift = snap to the vertex /
+  edge point under the cursor (the Knife's pick, Shift as in the Knife). Off the mesh: the plane facing the camera
+  through the current pivot (else the selection centre), so a click after orbiting keeps the depth.
+- **U-3 Lifetime:** it stays through selection changes until replaced or switched off; placing it is **no undo
+  step** (Ctrl+Z undoes geometry, the pivot stays for the retry). Esc while placing restores the pivot from before.
+- **U-4 Orientation:** World axes only — X/Y/Z mean world axes through the pivot; unconstrained `E` is the existing
+  dial about the view axis. Pivot orientation is a later refinement.
+
+**Contract (no Core change, no mesh data):** `Application` passes the pivot as `params["pivot"]` (edit-object space)
+into Rotate and Scale at `begin()`, which the tools and Core already accept: fixed for the gesture, mirrored by Core
+for symmetry partners, the Soft influence still from the seeds. Move gets today's payload. Not applied in mode `4`
+(objects keep their own pivots, AD-021 Q-13) or on another edit object; forgotten on scene load; not saved. The gizmo
+sits on the pivot while it is on; an orange marker shows it, also during a gesture; HUD row "Pivot". A selection with
+seam vertices and an off-plane pivot is refused as before (Core INV-8), with a hint in the status line.
+Key: bare `P`, `PROVISIONAL` code default (not in `config/keymap.json`). Code: `mirai.pivot`,
+`Application` (`_pivot_*`, `active_pivot`); tests `tests/test_pivot_placement.py`,
+`tests/test_application_working_pivot.py`.
+
+**Later, not in this step:** pivot orientation (aligned to the surface / free) as a transform space next to
+World/Normal, editing the pivot with the gizmo, saving it with the scene, setting an object's pivot (Q-13) with the
+same placement, and **QuickPose** — a pivot for one gesture only (press on the mesh, drag = screen-space rotation
+around it, release, gone) that would share `place_pivot` and `params["pivot"]`, not the lifecycle.
+
+### Praxistest Working Pivot (für Manu, ca. 15 Minuten, `python src/main.py`, Kopf-Mesh)
+
+1. **Kiefer:** Kieferflächen wählen. `P` halten, von der Seite neben dem Ohr klicken — der orange Pivot liegt im
+   Kopf (Mitte zwischen den Wangen); `P` loslassen. `E` halten und die Maus um den Pivot kreisen: der Kiefer öffnet
+   sich um das Gelenk. Andere Auswahl, nochmal `E`: der Pivot bleibt. Mit `O` (Soft) wiederholen.
+2. **Braue mit Symmetrie:** `Shift+S`, Pivot mit `P` + Klick an den Brauenansatz (mit Shift: auf einen Punkt),
+   Braue drehen/skalieren (`E`/`R`) — die andere Seite dreht gespiegelt um den gespiegelten Pivot.
+3. **Korrigieren:** `P` halten, nochmal klicken oder ziehen; danach orbiten und neben das Mesh klicken — der Pivot
+   wandert seitlich, die Tiefe bleibt. `Esc` beim Halten = zurück wie vorher.
+4. **An/aus:** `P` antippen = aus (Statuszeile, HUD-Zeile „Pivot“), nochmal = an, am selben Ort. `Strg+Z` nach
+   einem Drehen nimmt nur das Drehen zurück.
+5. **Fragen:** Liegt der Klick „im Volumen“ dort, wo du ihn erwartest (Kiefer, Lippe, Braue)? Ist Shift für
+   Punkt/Kante richtig? Ist `P` die richtige Taste (sonst sag welche — erst dann kommt sie in `config/keymap.json`)?
+   Ist der orange Marker gut sichtbar, aber nicht störend? Fehlt dir die Ausrichtung des Pivots (eigene Achsen)
+   schon jetzt?

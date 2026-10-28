@@ -549,6 +549,24 @@ def front_face_hit_t(camera, mesh, sx, sy, width, height, *, cache: PickCache | 
     return best_t
 
 
+def face_hits_t(camera, mesh, sx, sy, width, height, *, cache: PickCache | None = None) -> list[float]:
+    """Every ray parameter `t` where the cursor ray crosses a face, ascending (front and back sides
+    alike, hidden faces skipped like `pick_face`). The Working Pivot's "inside" point (`mirai.pivot`)
+    reads where the ray enters and leaves the mesh from it."""
+    origin, direction = camera.screen_to_ray(sx, sy, width, height)
+    if cache is not None:
+        cache.refresh(camera, mesh, width, height)
+    hits = []
+    for fid in _face_boundaries_within_bbox(mesh, cache, sx, sy):
+        for tri in triangulate_mesh_face(mesh, fid):
+            p0, p1, p2 = (mesh.vertex_position(v) for v in tri)
+            t = _ray_triangle_intersection(origin, direction, p0, p1, p2)
+            if t is not None:
+                hits.append(t)
+    hits.sort()
+    return hits
+
+
 def pick_object(candidates, sx, sy, width, height):
     """AD-021 M1/M2-1: the key of the object whose surface is front-most under the cursor (or
     None). `candidates` are `(key, mesh, cache, camera, scale)` - every object that is not

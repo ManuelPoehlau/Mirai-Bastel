@@ -146,7 +146,9 @@ def test_rows_text(app):
     app.key_press(_key("x"))
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
-    assert list(rows) == ["Mode", "Tool", "Axis", "Space", "Sym", "Display", "Soft", "SubD", "Region", "Look", "Fixed"]
+    assert list(rows) == [
+        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Display", "Soft", "SubD", "Region", "Look", "Fixed"
+    ]
     # AD-013 addendum 2026-10-28: the fixed modifier grammar is listed read-only, without keys.
     assert rows["Fixed"].value == FIXED_ROW and rows["Fixed"].keys == ""
     assert rows["Region"].value == "no groups · colours on" and not rows["Region"].on
