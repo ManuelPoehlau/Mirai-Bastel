@@ -702,3 +702,52 @@ def test_a_symmetric_soft_gesture_shows_its_own_weights_as_bands():
     assert app.soft_bands == SoftBands.from_weights(op.context.params["influence"]) == preview
     app.key_release(W)
     assert app.soft_bands != EMPTY_BANDS
+
+
+def _trackball_drag(app, steps):
+    """The gizmo's centre circle in Rotate (trackball): tap E, press on the pivot, drag `steps`; returns the
+    positions after each step."""
+    app.gizmo_enabled = True
+    assert app.key_press(E) and app.key_release(E)
+    cx, cy = app.camera.project_to_screen(app._gizmo_pivot(), WIDTH, HEIGHT)
+    app.pointer_motion(cx, cy)
+    app.pointer_press(Input("mouse", "LEFT"), cx, cy)
+    x, y, after = cx, cy, []
+    for dx, dy in steps:
+        x, y = x + dx, y + dy
+        app.pointer_drag(dx, dy, x, y)
+        after.append(_positions(app.scene.mesh))
+    return x, y, after
+
+
+@pytest.mark.parametrize("asset,axis", VALID_CASES)
+def test_trackball_keeps_turning_when_the_soft_zone_crosses_the_seam(asset, axis):
+    """Fix 2026-10-28 (Manu: "zuckt nur kurz ... bewegt sich dann nicht mehr"): with falloff seam vertices the
+    Core op needs one axis per op (AD-SYM-05 §4.4); the trackball's axis changes every step, so the second step
+    raised and froze the gesture. Now every step turns, the seam stays on the plane, the pairs mirror exactly,
+    the result does not depend on how the drag is chunked, and it is one Undo step."""
+    steps = [(4.0, 1.0)] * 6 + [(1.0, 5.0)] * 6
+    results = []
+    for chunked in (steps, [(sum(s[0] for s in steps[:6]), sum(s[1] for s in steps[:6])),
+                            (sum(s[0] for s in steps[6:]), sum(s[1] for s in steps[6:]))]):
+        app = _app(asset, axis)
+        mesh = app.scene.mesh
+        corr = vertex_correspondence(mesh)
+        _select(app, _seeds(mesh, axis, "ring"))
+        _soft_on(app, RADIUS_STEPS[asset])
+        start = _positions(mesh)
+        history = len(app.history)
+        x, y, after = _trackball_drag(app, chunked)
+        op = app.tool_manager.active_tool.operation
+        assert op.context.params["symmetry"]["falloff_seam_vertex_ids"]
+        assert all(a != b for a, b in zip([start] + after, after)), "a step did not turn"
+        _assert_exact_mirror(mesh, corr, axis)
+        assert app.pointer_release("LEFT", x, y)
+        assert app.status_message.startswith("Rotate committed"), app.status_message
+        assert len(app.history) == history + 1
+        end = _positions(mesh)
+        results.append(end)
+        assert app.key_press(CTRL_Z) and _positions(mesh) == start
+    fine, coarse = results
+    for vid in fine:
+        assert fine[vid] == pytest.approx(coarse[vid], abs=1e-9)
