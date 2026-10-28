@@ -74,7 +74,7 @@ Scope (binding, see the handoffs):
   window reports "Shift held" with the wheel event — `wheel_input` — and a driver that maps
   Shift+wheel to a horizontal scroll is read from `scroll_x`, direction to be confirmed
   in the S2 test); Shift+O cycles the curve, Ctrl+O the metric. The settings are sticky
-  like X/Y/Z and apply from the next gesture on.
+  (as X/Y/Z were until 2026-10-28) and apply from the next gesture on.
   WP-SOFT-01 S2d (`PROVISIONAL`, S2c verdict Manu 2026-10-11, AD-020): geodesic and Smooth
   are the defaults; Shift+O cycles smooth → sphere → root → sharp → linear → custom; Ctrl +
   mouse wheel shapes the `custom` curve (up = rounder, down = sharper, always selects
@@ -210,15 +210,17 @@ Scope (binding, see the handoffs):
   from empty space = Box Select (rubber band drawn here, `draw_selection_box`; with the Lasso key `Q` held a
   Lasso outline, `draw_selection_lasso`), from the mesh
   = Paint Select; no modifier replaces, Shift adds; Esc discards. Alt held at the release of a Box /
-  Lasso selects through the mesh (WP Toolbox Gaps A2, band drawn blue meanwhile). Ctrl+LMB drag = Tweak with
-  the last W/E/R (Move until one is pressed; a tap sets it) on the selection, else on the
-  element under the press point; Ctrl+LMB click still removes. Edge mode: Shift+L / Shift+R
+  Lasso selects through the mesh (WP Toolbox Gaps A2, band drawn blue meanwhile). Ctrl+LMB drag is unbound
+  since 2026-10-28 (Manu A3; it was the `Tweak` drag), Ctrl+LMB click still removes; "Tweak" now names the
+  hold-key gesture (W/E/R held + mouse). Edge mode: Shift+L / Shift+R
   add the edge loop / ring, I inserts a loop through the ring, hold G slides the selected
   loop(s); under symmetry Loop Insert and Loop Slide mirror. All in `Application`.
 - Transform gizmo (2026-10-21, promoted from the Playground, AD-016 D3; look `PROVISIONAL`): with a point / edge / face
   selection a world-axis gizmo is drawn at its centroid (`draw_gizmo`), shaped for the current tool (the last W/E/R).
   LMB on a handle sets the constraint, LMB drag runs the tool along it, release commits, Esc cancels. All in
-  `Application` (`gizmo_enabled` is set here only).
+  `Application` (`gizmo_enabled` is set here only). 2026-10-28 (`PROVISIONAL`, practical test): constraints are
+  one-shot (F7 = sticky for the session), the gizmo is smaller (F8 = size S/M/L for the session), a handle wins the
+  hover over the mesh and shows its hover also while it is the active constraint.
   Also shown for a placed edit object (2026-10-23): at the selection's world position, world axes.
   Object level (2026-10-23, `PROVISIONAL`): in mode `4` the same gizmo sits at the centroid of the selected
   Normal objects' pivots (Reference: none) and drives the object gesture along the world axes.

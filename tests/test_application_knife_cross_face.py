@@ -88,7 +88,8 @@ def test_hover_over_a_far_target_previews_its_crossings_and_the_click_stores_the
     planned = list(data.prospective_crossings)
     assert _click(app, far)
     stored = [target_position(app.scene.mesh, p) for p in _crossings(app)]
-    assert stored == pytest.approx(planned)
+    assert len(stored) == len(planned)
+    assert all(s == pytest.approx(p) for s, p in zip(stored, planned))  # approx() takes no nested tuples
     assert "crossing" in app.status_message
     assert app.key_press(ENTER) and _history_depths(app) == (1, 0)
     assert_mesh_invariants(app.scene.mesh, context="S4 Application far click")

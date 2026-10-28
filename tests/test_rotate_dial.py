@@ -9,6 +9,8 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 from core.operations.transform import rotate_around_axis
+from mirai.interaction import commands as cmd
+from mirai.interaction.input import Input
 from mirai.viewport import gizmo
 from mirai.viewport import vecmath as v
 from tests.test_application_gizmo import (  # noqa: F401  (app is a fixture)
@@ -91,7 +93,7 @@ def test_the_dial_undoes_as_one_step(app):
     before = _positions(app, ids)
     _dial_drag(app, (0.0, 0.0, 1.0), 1.0, 10)
     app.history.undo()
-    assert _positions(app, ids) == pytest.approx(before)
+    assert all(got == pytest.approx(want) for got, want in zip(_positions(app, ids), before))
     assert not app.history.can_undo()
 
 
@@ -201,7 +203,13 @@ def test_the_e_key_turns_like_the_dial_cursor_circle_follows(app):
         assert got == pytest.approx(want, abs=1e-6)
 
 
+def _bind_tweak(app):
+    """The `Tweak` drag lost its Ctrl+LMB default 2026-10-28 (Manu A3); the mechanism stays bindable (E4)."""
+    app.bindings.set_default(Input("drag", "LEFT", frozenset({"ctrl"})), cmd.TWEAK)
+
+
 def test_tweak_turns_like_the_dial(app):
+    _bind_tweak(app)
     ids = _select_quad(app, E)
     centre = _screen(app, PIVOT)
     px, py = _circle(centre, 110.0, 0.0)
@@ -261,6 +269,7 @@ def test_shift_ctrl_snaps_the_precise_turn_to_one_degree(app):
 
 
 def test_ctrl_held_from_the_tweak_press_does_not_snap_until_it_is_pressed_again(app):
+    _bind_tweak(app)
     ids = _select_quad(app, E)
     centre = _screen(app, PIVOT)
     px, py = _circle(centre, 110.0, 0.0)

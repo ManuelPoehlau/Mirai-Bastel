@@ -68,8 +68,8 @@ def test_state_follows_the_keys(app):
 
 def test_running_interaction_is_shown(app):
     app.selection.vertices = {next(iter(app.scene.mesh.all_vertex_ids()))}
-    app.key_press(_key("w"))  # armed (held)
-    assert hud_state(app).active == "Move"
+    app.key_press(_key("w"))  # armed (held): the hold-key gesture is "Tweak" (Manu A2, 2026-10-28)
+    assert hud_state(app).active == "Tweak · Move"
     app.key_release(_key("w"))
     assert hud_state(app).active is None
 
@@ -115,7 +115,7 @@ def test_key_hints_come_from_the_bindings(app):
     hints = key_hints(app.bindings)
     assert hints["Mode"] == "1/2/3/4"
     assert hints["Tool"] == "W/E/R"
-    assert hints["Axis"] == "X/Y/Z"
+    assert hints["Axis"] == "X/Y/Z/F7"  # F7: one-shot <-> sticky (session switch, 2026-10-28)
     assert hints["Sym"] == "Shift+S/Alt+M"
     assert hints["Display"] == "D/Shift+D"
     assert hints["Soft"] == "O"
@@ -152,13 +152,15 @@ def test_rows_text(app):
     assert rows["Region"].value == "no groups · colours on" and not rows["Region"].on
     assert rows["Look"].value == "Raitt 2:1 · Kamera · Licht Bezugsraum Kamera"
     assert rows["Look"].keys == "↑/↓/←/→"
-    assert rows["Axis"].value == "X" and rows["Axis"].on
+    assert rows["Axis"].value == "X · one-shot" and rows["Axis"].on
     assert rows["Sym"].value == "off" and not rows["Sym"].on
     assert rows["Soft"].value == "on · 15 % · smooth" and rows["Soft"].on
     assert rows["Mode"].keys == "1/2/3/4"
     state = dataclasses.replace(hud_state(app), constraint="yz", subd_view="iso", subd_lines=False, active="Knife")
     rows = {row.label: row for row in hud_rows(state, {})}
-    assert rows["Axis"].value == "YZ plane"
+    assert rows["Axis"].value == "YZ plane · one-shot"
+    sticky = dataclasses.replace(state, constraint=None, constraint_mode="sticky")
+    assert {row.label: row for row in hud_rows(sticky, {})}["Axis"].value == "free · sticky"
     assert rows["SubD"].value == "isolines · L2 · lines hidden"
     assert rows["Tool"].value == "Knife (running)" and rows["Tool"].on
 

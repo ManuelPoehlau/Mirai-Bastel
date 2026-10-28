@@ -195,10 +195,10 @@ def test_selection_and_mesh_are_untouched(app):
     assert app.selection.faces == mine
 
 
-def test_a_plain_ctrl_drag_is_still_a_tweak(app):
-    """The new chord adds no drag binding: Ctrl+drag keeps working (the gesture is fixed at the press)."""
+def test_the_chord_adds_no_ctrl_drag(app):
+    """The new chord adds no drag binding; a plain Ctrl+drag has none either since 2026-10-28 (Manu A3)."""
     bindings = build_default_bindings()
-    assert bindings.command_for(Input("drag", "LEFT", frozenset({"ctrl"}))) == cmd.TWEAK
+    assert bindings.command_for(Input("drag", "LEFT", frozenset({"ctrl"}))) is None
 
 
 def test_click_makes_the_clicked_group_the_active_one(app):

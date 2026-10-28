@@ -1,8 +1,11 @@
-"""Box Select, Paint Select and Tweak in the production app (2026-10-15, Playground tools
+"""Box Select, Paint Select and the `Tweak` drag command in the production app (2026-10-15, Playground tools
 promoted, Manu): LMB drag from empty space = Box, from the mesh = Paint (no modifier replaces,
-Shift adds); Ctrl+LMB drag = Tweak with the last W/E/R (Move by default) on the selection, else
-on the element under the press point. Ctrl+LMB click still removes. None of the selections is a
-History step; a Tweak is exactly one."""
+Shift adds); the `Tweak` drag transforms with the last W/E/R (Move by default) the selection, else
+the element under the press point. Ctrl+LMB click still removes. None of the selections is a
+History step; a `Tweak` drag is exactly one.
+
+2026-10-28 (Manu A3): the Ctrl+LMB-drag binding is removed - a Ctrl+LMB drag does nothing by default. The
+command stays bindable (E4), so its tests bind it themselves (`_bind_tweak`)."""
 
 from __future__ import annotations
 
@@ -43,6 +46,14 @@ def _grid(n: int = 4, size: float = 4.0) -> Mesh:
         for c in range(n):
             mesh.add_face([p[(r, c)], p[(r, c + 1)], p[(r + 1, c + 1)], p[(r + 1, c)]])
     return mesh
+
+
+CTRL_DRAG = Input("drag", "LEFT", frozenset({"ctrl"}))
+
+
+def _bind_tweak(app: Application) -> None:
+    """The removed default, bound by hand: the mechanism stays (E4)."""
+    app.bindings.set_default(CTRL_DRAG, cmd.TWEAK)
 
 
 @pytest.fixture
@@ -94,7 +105,7 @@ def test_drag_bindings():
     bindings = build_default_bindings()
     assert bindings.command_for(Input("drag", "LEFT")) == cmd.SELECT_DRAG
     assert bindings.command_for(Input("drag", "LEFT", frozenset({"shift"}))) == cmd.SELECT_DRAG_ADD
-    assert bindings.command_for(Input("drag", "LEFT", frozenset({"ctrl"}))) == cmd.TWEAK
+    assert bindings.command_for(CTRL_DRAG) is None  # Manu A3, 2026-10-28
     # The clicks stay as they were.
     assert bindings.command_for(_mouse("LEFT", "ctrl")) == cmd.SELECT_REMOVE
     assert bindings.command_for(Input("drag", "LEFT", frozenset({"alt"}))) == cmd.ORBIT
@@ -193,7 +204,21 @@ def test_stroke_samples_are_spaced():
 # -- Tweak ----------------------------------------------------------------------------------
 
 
+def test_a_ctrl_drag_does_nothing_by_default(app):
+    mesh = app.scene.mesh
+    app.key_press(K1)
+    vid = _vertex(mesh, 0.0, 0.0)
+    app.selection.vertices = {vid}
+    before = _state(app)
+    start = _screen(app, (0.0, 0.0, 0.0))
+    assert not _drag(app, _mouse("LEFT", "ctrl"), start, (start[0] + 40, start[1]))
+    assert _state(app) == before
+    assert app.selection.vertices == {vid}  # no Ctrl+click removal either: it was a drag
+    assert not app.history.can_undo()
+
+
 def test_tweak_moves_the_element_under_the_press_point_one_undo_step(app):
+    _bind_tweak(app)
     mesh = app.scene.mesh
     app.key_press(K1)
     vid = _vertex(mesh, 0.0, 0.0)
@@ -208,6 +233,7 @@ def test_tweak_moves_the_element_under_the_press_point_one_undo_step(app):
 
 
 def test_tweak_uses_the_selection_anywhere_and_the_last_wer(app):
+    _bind_tweak(app)
     mesh = app.scene.mesh
     app.key_press(K1)
     picked = {_vertex(mesh, 1.0, 1.0), _vertex(mesh, 2.0, 2.0)}
@@ -222,6 +248,7 @@ def test_tweak_uses_the_selection_anywhere_and_the_last_wer(app):
 
 
 def test_tweak_esc_cancels_and_the_rest_of_the_drag_does_nothing(app):
+    _bind_tweak(app)
     app.key_press(K1)
     before = _state(app)
     start = _screen(app, (0.0, 0.0, 0.0))
@@ -250,6 +277,7 @@ def test_ctrl_click_still_removes(app):
 
 
 def test_tweak_with_nothing_under_the_press_point_does_nothing(app):
+    _bind_tweak(app)
     app.key_press(K1)
     before = _state(app)
     empty = _screen(app, (-2.4, 2.4, 0.0))

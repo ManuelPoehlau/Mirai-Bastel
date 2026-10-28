@@ -11,7 +11,6 @@
     {"context": "global", "input": {"kind": "mouse", "value": "LEFT", "modifiers": ["alt"]}, "command": "SelectToggle", "set": "2026-09-26"},
     {"context": "global", "input": {"kind": "drag", "value": "LEFT", "modifiers": []}, "command": "SelectDrag", "set": "2026-10-15"},
     {"context": "global", "input": {"kind": "drag", "value": "LEFT", "modifiers": ["shift"]}, "command": "SelectDragAdd", "set": "2026-10-15"},
-    {"context": "global", "input": {"kind": "drag", "value": "LEFT", "modifiers": ["ctrl"]}, "command": "Tweak", "set": "2026-10-15"},
     {"context": "global", "input": {"kind": "key", "value": "1", "modifiers": []}, "command": "SetVertexMode"},
     {"context": "global", "input": {"kind": "key", "value": "2", "modifiers": []}, "command": "SetEdgeMode"},
     {"context": "global", "input": {"kind": "key", "value": "3", "modifiers": []}, "command": "SetFaceMode"},

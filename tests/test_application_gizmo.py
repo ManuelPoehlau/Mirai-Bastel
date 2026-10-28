@@ -154,7 +154,7 @@ def test_a_click_on_a_handle_sets_the_constraint_and_does_not_touch_the_selectio
     assert app.gizmo_constraint == "x"
     assert app.selection.vertices == {vid}
     assert not app.history.can_undo()
-    assert app.status_message == "Constraint: X"
+    assert app.status_message == "Constraint: X (one-shot)"
 
 
 def test_a_drag_on_a_handle_moves_along_that_axis_and_commits_one_step(app):
@@ -165,7 +165,7 @@ def test_a_drag_on_a_handle_moves_along_that_axis_and_commits_one_step(app):
     x, y, z = mesh.vertex_position(vid)
     assert x == pytest.approx(0.0) and z == pytest.approx(0.0)
     assert y != pytest.approx(0.0)
-    assert app.gizmo_constraint == "y"
+    assert app.gizmo_constraint is None  # one-shot (E2): the handle's axis was for this drag only
     assert app.selection.vertices == {vid}
     app.history.undo()
     assert mesh.vertex_position(vid) == pytest.approx((0.0, 0.0, 0.0))
@@ -297,7 +297,7 @@ def test_a_handle_drag_moves_the_object_along_the_axis_in_one_undo_step(app):
     assert _drag(app, _mouse("LEFT"), start, (0.0, -60.0)) is True
     x, y, z = obj.transform.translation
     assert x == pytest.approx(0.0) and z == pytest.approx(0.0) and y != pytest.approx(0.0)
-    assert app.gizmo_constraint == "y"
+    assert app.gizmo_constraint is None  # one-shot (E2)
     assert obj.id in app.selection.objects and app.selection.mode.name == "OBJECT"
     assert len(app.history) == depth + 1
     assert obj.mesh.export_state() == mesh_state  # object level writes the placement only
@@ -374,6 +374,115 @@ def test_a_handle_drag_on_a_placed_edit_object_moves_along_the_world_axis(app, r
     x, y, z = object_space.to_world(edit, app.scene.mesh.vertex_position(vid))
     assert x != pytest.approx(3.0)
     assert y == pytest.approx(1.0) and z == pytest.approx(0.0)  # only along world X
-    assert app.gizmo_constraint == "x"
+    assert app.gizmo_constraint is None  # one-shot (E2)
     app.history.undo()
     assert app.scene.mesh.vertex_position(vid) == pytest.approx((0.0, 0.0, 0.0))
+
+
+# -- 2026-10-28: one-shot handles (Manu A1, E2), handle over mesh (E3), hover on the active handle (A5/E5), sizes (A4)
+
+
+def test_a_handle_drag_is_constrained_for_that_drag_only_even_over_a_pending_key_constraint(app):
+    vid, pivot = _select_center(app)
+    mesh = app.scene.mesh
+    app.key_press(_key("x"))  # pending one-shot X
+    start = _on_handle(app, pivot, (0.0, 1.0, 0.0))
+    assert _drag(app, _mouse("LEFT"), start, (0.0, 60.0)) is True
+    x, y, _ = mesh.vertex_position(vid)
+    assert x == pytest.approx(0.0) and y != pytest.approx(0.0)  # the handle (Y) decided
+    assert app.gizmo_constraint is None
+    assert app.status_message.endswith("· free again (one-shot)")
+
+
+def test_esc_on_a_handle_drag_keeps_what_was_pending_before_the_press(app):
+    vid, pivot = _select_center(app)
+    app.key_press(_key("x"))
+    start = _on_handle(app, pivot, (0.0, 1.0, 0.0))
+    _drag(app, _mouse("LEFT"), start, (0.0, 60.0), release=False)
+    assert app.key_press(ESC) is True
+    app.pointer_release("LEFT", start[0], start[1] + 60.0)
+    assert app.scene.mesh.vertex_position(vid) == pytest.approx((0.0, 0.0, 0.0))
+    assert app.gizmo_constraint == "x"
+    assert not app.history.can_undo()
+
+
+def test_a_handle_click_sets_a_one_shot_constraint_like_the_key(app):
+    vid, pivot = _select_center(app)
+    point = _on_handle(app, pivot, (1.0, 0.0, 0.0))
+    app.pointer_motion(*point)
+    app.pointer_press(_mouse("LEFT"), *point)
+    app.pointer_release("LEFT", *point)
+    assert app.gizmo_constraint == "x"
+    app.pointer_motion(5.0, 5.0)  # off the gizmo
+    assert app.key_press(W)
+    for _ in range(4):
+        app.pointer_motion(5.0, 5.0, 12.0, -9.0)
+    assert app.transform_space == "x"
+    app.key_release(W)
+    x, y, _ = app.scene.mesh.vertex_position(vid)
+    assert x != pytest.approx(0.0) and y == pytest.approx(0.0)
+    assert app.gizmo_constraint is None
+
+
+def test_sticky_mode_keeps_the_handle_axis_after_the_drag(app):
+    app.constraint_mode = "sticky"
+    vid, pivot = _select_center(app)
+    start = _on_handle(app, pivot, (0.0, 1.0, 0.0))
+    assert _drag(app, _mouse("LEFT"), start, (0.0, 60.0)) is True
+    assert app.gizmo_constraint == "y"
+    assert app.status_message == "Move committed (constraint Y)"
+
+
+def test_a_handle_wins_the_hover_over_the_mesh_behind_it(app):
+    """E3: the grid lies behind every handle; inside a handle's pick zone no mesh element is hovered."""
+    app.key_press(_key("3"))
+    mesh = app.scene.mesh
+    (face,) = [f for f in mesh.all_face_ids() if _face_has(mesh, f, (0.0, 0.0)) and _face_has(mesh, f, (1.0, 1.0))]
+    app.selection.set({face})
+    app.viewport.on_selection_changed()
+    pivot = app._gizmo_pivot()
+    on_x = _on_handle(app, pivot, (1.0, 0.0, 0.0))
+    app.gizmo_enabled = False
+    app.pointer_motion(*on_x)
+    assert app.selection.hovered is not None  # control: a face is there
+    app.gizmo_enabled = True
+    app.pointer_motion(*on_x)
+    assert app._gizmo_handle_at(*on_x) == "x"
+    assert app.selection.hovered is None
+    centre = _screen(app, pivot)
+    app.pointer_motion(*centre)
+    assert app._gizmo_handle_at(*centre) == "center" and app.selection.hovered is None
+    away = _screen(app, (-1.5, -1.5, 0.0))
+    app.pointer_motion(*away)
+    assert app._gizmo_handle_at(*away) is None
+    assert app.selection.hovered is not None  # off the handles the mesh hovers as before
+
+
+def _face_has(mesh, face, xy):
+    return any(mesh.vertex_position(v)[:2] == xy for v in mesh.face_vertices(face))
+
+
+def test_hovering_the_active_handle_shows_in_the_drawn_gizmo(app):
+    vid, pivot = _select_center(app)
+    app.key_press(_key("x"))
+    app.pointer_motion(5.0, 5.0)
+    widths = {item.width for item in app.gizmo_items()}
+    assert gizmo.LINE_WIDTH_ACTIVE in widths and gizmo.LINE_WIDTH_ACTIVE_HOVER not in widths
+    app.pointer_motion(*_on_handle(app, pivot, (1.0, 0.0, 0.0)))
+    hovered = [item for item in app.gizmo_items() if item.width == gizmo.LINE_WIDTH_ACTIVE_HOVER]
+    assert hovered and all(item.color == gizmo.hover_color(gizmo.COLOR_X) for item in hovered)
+
+
+def test_f8_cycles_the_session_gizmo_size_and_picking_follows(app):
+    vid, pivot = _select_center(app)
+    assert app.gizmo_size_name == gizmo.GIZMO_SIZE_DEFAULT == "M"
+    seen = []
+    for _ in range(3):
+        assert app.key_press(_key("f8"))
+        seen.append(app.gizmo_size_name)
+        assert app.status_message == f"Gizmo size: {app.gizmo_size_name} (session setting)"
+    assert seen == ["L", "S", "M"]
+    app.key_press(_key("f8"))  # L
+    tip = gizmo.gizmo_size(app.camera, pivot, gizmo.GIZMO_SIZES["L"]) * 0.95
+    assert app.gizmo_items()[0].positions[3] == pytest.approx(tip / 0.95)
+    assert app._gizmo_handle_at(*_screen(app, (tip, 0.0, 0.0))) == "x"

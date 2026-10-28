@@ -16,10 +16,10 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
 - Alt+LMB-Drag    → Orbit, Alt+Shift+LMB-Drag → Pan
 - LMB-Drag        → SelectDrag: Start im leeren Raum = Box, auf dem Mesh = Paint
                     (ersetzt die Auswahl); Shift+LMB-Drag → SelectDragAdd (fügt hinzu)
-- Ctrl+LMB-Drag   → Tweak (zuletzt gewähltes W/E/R, Start Move); Ctrl+LMB-Klick bleibt
-                    SelectRemove. Alles `PROVISIONAL`, Manu 2026-10-15 (Promotion der
-                    Playground-Werkzeuge: Box/Paint "Startpunkt entscheidet", Tweak
-                    "Ctrl+LMB, Auswahl weicht")
+- Ctrl+LMB-Drag   → ungebunden seit 2026-10-28 (Manu A3; bis dahin der `Tweak`-Drag, 2026-10-15
+                    "Ctrl+LMB, Auswahl weicht"); Ctrl+LMB-Klick bleibt SelectRemove. Box/Paint
+                    `PROVISIONAL`, Manu 2026-10-15 ("Startpunkt entscheidet"). "Tweak" heißt
+                    nutzerseitig die Halte-Geste W/E/R + Maus (Manu A2, 2026-10-28)
 - Shift+Ctrl+LMB → (nur Klick, kein Drag) Polygroups: die Gruppen unter dem Cursor (Vertex/Edge: alle berührten)
                     isolieren, wenn nichts versteckt ist / invertieren, wenn nur sie sichtbar sind / sonst zusätzlich
                     verstecken; ins Leere alles zeigen (Manu 2026-10-25, ZBrush-artig, `PROVISIONAL`)
@@ -60,7 +60,10 @@ Q ist unbelegt. Achsen-Constraints (WP-06 B4, Blender-Konvention
 „Shift+Achse schließt diese Achse aus", Manu 2026-09-27):
 - X / Y / Z      → nur entlang dieser Achse
 - Shift+X        → YZ-Ebene, Shift+Y → XZ-Ebene, Shift+Z → XY-Ebene
-  (B4.1: sticky Toggle — dieselbe Taste erneut hebt auf, bleibt über Gesten)
+  (B4.1: Toggle — dieselbe Taste erneut hebt auf. Seit 2026-10-28 (Manu A1) one-shot: der Commit
+  der nächsten Move/Rotate/Scale-Geste räumt sie, Esc behält sie; F7 schaltet für die Sitzung auf
+  sticky (bleibt über Gesten) und zurück, F8 die Gizmo-Größe S/M/L — beides `PROVISIONAL`, nicht
+  gespeichert)
 Ctrl+Z / Ctrl+Y (Undo/Redo) sind ein anderes Modifier-Set und bleiben
 unberührt.
 
@@ -117,7 +120,7 @@ Soft Selection (WP-SOFT-01 S2a, AD-020, `PROVISIONAL`, aus per Default; Manu 202
 - Ctrl+Mausrad     → Form der Kurve `custom` (hoch = runder, runter = spitzer); schaltet auf
                     `custom`, zoomt nie. Ctrl+Shift+Mausrad ist ungebunden.
 - Alt+O            → Influence-Bänder (Farbpunkte) an/aus
-Sticky wie X/Y/Z, wirken ab der nächsten Geste; Engineering-Tasten, keine Artist Input Truth.
+Sticky (wie X/Y/Z bis 2026-10-28), wirken ab der nächsten Geste; Engineering-Tasten, keine Artist Input Truth.
 
 Loop-Werkzeuge (2026-10-15, Tasten aus der Artist Input Truth, `PROVISIONAL`):
 - Shift+L          → Edge Loop zur Auswahl (Edge-Modus; ausgewählte Edges, sonst die gehoverte)
@@ -164,7 +167,7 @@ KNOWN_COMMANDS = frozenset(
 FIXED_MODIFIER_RULES: tuple[tuple[str, str], ...] = (
     ("Shift", "W/E/R laufen: fein (x0,2)"),
     ("Ctrl", "Rotate läuft: Raster 5°, mit Shift 1°"),
-    ("Alt", "W/E/R/T/G, Tweak oder Gizmo läuft: Maus = Orbit, Alt+Shift = Pan (nicht bei Smooth/Relax)"),
+    ("Alt", "Tweak (W/E/R), T/G oder Gizmo läuft: Maus = Orbit, Alt+Shift = Pan (nicht bei Smooth/Relax)"),
     ("Alt", "Box/Lasso vor dem Loslassen: durch das Mesh wählen"),
     ("Shift", "Knife: Hover und Klick auf die Kantenmitte"),
     ("Shift", "Klick auf eine Zeile im Szenen-Menü: als Referenz dazu"),
@@ -337,6 +340,10 @@ def build_default_bindings() -> BindingSet:
     # GUI Stufe 1 (2026-10-23): H = Artist Input Truth `application.toggle_hud`. Fenster-Command im
     # Kontext "window": `src/main.py` behandelt ihn, `Application` löst diesen Kontext nie auf.
     bs.set_default(_key("h"), cmd.TOGGLE_HUD, context=WINDOW_CONTEXT)
+    # Practical-test session switches (2026-10-28, Manu A1/A4; engineering keys `PROVISIONAL`, F-keys so no letter
+    # Manu might want is taken): one-shot <-> sticky constraints, gizmo size S -> M -> L.
+    bs.set_default(_key("f7"), cmd.CONSTRAINT_MODE_TOGGLE)
+    bs.set_default(_key("f8"), cmd.GIZMO_SIZE_CYCLE)
     # AD-013 addendum 2026-10-28: the window's other keys, until then literals in `src/main.py` (no behaviour
     # change; all `PROVISIONAL`). The scene loader key is an engineering proposal (INPUT_WIRING_MAP §10
     # "Load" = TBD); bare M is the Morph Lab bridge (Manu 2026-10-17), Shift+A / Shift+M the object menus.
@@ -359,7 +366,7 @@ def build_default_bindings() -> BindingSet:
     # 2026-10-15 (Manu): Box/Paint und Tweak - siehe Moduldocstring.
     bs.set_default(_drag("LEFT"), cmd.SELECT_DRAG)
     bs.set_default(_drag("LEFT", "shift"), cmd.SELECT_DRAG_ADD)
-    bs.set_default(_drag("LEFT", "ctrl"), cmd.TWEAK)
+    # 2026-10-28 (Manu A3): no Ctrl+LMB drag (was `Tweak`); the command stays bindable.
     # 2026-10-21 (Manu): Lasso kommt in die App. Halte-Taste Q (Artist Input Truth
     # `selection.lasso_select` ist leer, Q ist frei; `PROVISIONAL`, keymap.json kann umbinden).
     bs.set_default(_key("q"), cmd.LASSO_ARM)

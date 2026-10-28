@@ -87,6 +87,11 @@ class TestKeyFromPyglet:
         assert key_from_pyglet(_key.BACKSPACE, 0) == Input("key", "backspace", frozenset())
         assert key_from_pyglet(_key.DELETE, 0) == Input("key", "delete", frozenset())
 
+    def test_function_keys(self):
+        # 2026-10-28: F7 / F8 are the practical test's session switches (Bindings).
+        assert key_from_pyglet(_key.F7, 0) == Input("key", "f7", frozenset())
+        assert key_from_pyglet(_key.F12, 0) == Input("key", "f12", frozenset())
+
     def test_unknown_symbol_returns_none(self):
         assert key_from_pyglet(999999, 0) is None
 

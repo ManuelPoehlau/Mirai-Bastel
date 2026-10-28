@@ -352,6 +352,8 @@ def test_tweak_moves_through_the_preview(app):
     on(app)
     vid, pos = hover_some_vertex(app)
     before = builds(app)
+    # The `Tweak` drag lost its Ctrl+LMB default 2026-10-28 (Manu A3); bound here, the mechanism stays (E4).
+    app.bindings.set_default(Input("drag", "LEFT", frozenset({"ctrl"})), cmd.TWEAK)
     app.pointer_press(Input("mouse", "LEFT", frozenset({"ctrl"})), *pos)
     x, y = pos
     for _ in range(6):

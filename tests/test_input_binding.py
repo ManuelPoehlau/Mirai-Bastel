@@ -133,10 +133,11 @@ class DefaultBindingsTests(unittest.TestCase):
         # WP-06 B2 (A6, AD-019): Navigation per Artist Truth.
         self.assertEqual(self.bs.command_for(_drag("LEFT", "alt")), cmd.ORBIT)
         self.assertEqual(self.bs.command_for(_drag("LEFT", "alt", "shift")), cmd.PAN)
-        # 2026-10-15 (Playground tools promoted, Manu): Box/Paint and Tweak.
+        # 2026-10-15 (Playground tools promoted, Manu): Box/Paint; the Ctrl+LMB-drag Tweak is
+        # removed 2026-10-28 (Manu A3).
         self.assertEqual(self.bs.command_for(_drag("LEFT")), cmd.SELECT_DRAG)
         self.assertEqual(self.bs.command_for(_drag("LEFT", "shift")), cmd.SELECT_DRAG_ADD)
-        self.assertEqual(self.bs.command_for(_drag("LEFT", "ctrl")), cmd.TWEAK)
+        self.assertIsNone(self.bs.command_for(_drag("LEFT", "ctrl")))
         self.assertIsNone(self.bs.command_for(_drag("RIGHT")))
         self.assertIsNone(self.bs.command_for(_drag("MIDDLE")))
 

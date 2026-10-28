@@ -174,7 +174,7 @@ def test_symmetric_move_with_axis_constraint(setup, axis_key, moved_axis):
     assert _close(new_r0, (-new_l0[0], new_l0[1], new_l0[2]))
     assert app.history.can_undo()
     assert app.status_message.endswith(
-        f"(constraint {'Y' if moved_axis == 1 else 'X'})"
+        f"(constraint {'Y' if moved_axis == 1 else 'X'}) · free again (one-shot)"
     )
     # One undo step restores both.
     app.key_press(Input("key", "z", frozenset({"ctrl"})))

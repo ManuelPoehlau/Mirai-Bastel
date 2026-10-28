@@ -268,9 +268,18 @@ _TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
 #: WP Toolbox Gaps C2: the two hold keys of `mirai.topology.smooth`.
 _SMOOTH_COMMANDS = (commands.SMOOTH, commands.RELAX)
 
-#: The pseudo key a Tweak gesture (Ctrl+LMB drag) arms the transform with; no key has this
-#: value, so `key_release` never ends a Tweak - the LMB release does (`pointer_release`).
+#: The pseudo key an LMB-drag transform (a gizmo handle drag; the `Tweak` drag command, unbound since 2026-10-28)
+#: arms the transform with; no key has this value, so `key_release` never ends it - the LMB release does
+#: (`pointer_release`). Not the user-facing "Tweak", which is the hold-key gesture (Manu A2, 2026-10-28).
 TWEAK_KEY = "LMB-tweak"
+
+#: How long an axis / plane constraint lives (2026-10-28, Manu A1 + E1, `PROVISIONAL`; the switch is a session
+#: setting for the comparison, `commands.CONSTRAINT_MODE_TOGGLE`, not saved). One-shot: the constraint applies to the
+#: next Move / Rotate / Scale gesture (also when pressed while the key is armed) and its commit clears it; Esc keeps
+#: it. Sticky: the B4.1 behaviour until 2026-10-28 - it stays until toggled off.
+CONSTRAINT_ONE_SHOT = "one-shot"
+CONSTRAINT_STICKY = "sticky"
+CONSTRAINT_MODES = (CONSTRAINT_ONE_SHOT, CONSTRAINT_STICKY)
 
 #: 2026-10-15: the loop commands that run once on a key press (Shift+L, Shift+R, I).
 _LOOP_COMMANDS = (commands.EDGE_LOOP, commands.EDGE_RING, commands.LOOP_INSERT)
@@ -285,8 +294,11 @@ _SELECTION_STEP_COMMANDS = (
     commands.LOOP_PREVIOUS,
 )
 
-#: The transforms a Tweak can use (`tweak_command`).
+#: The transforms the gizmo drag (and the hold-key Tweak) can use (`tweak_command`).
 _TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
+
+#: 2026-10-28 practical-test switches (session only): `Application._session_switch`.
+_SESSION_SWITCH_COMMANDS = (commands.CONSTRAINT_MODE_TOGGLE, commands.GIZMO_SIZE_CYCLE)
 
 #: WP-06 B9 (E3, PROVISIONAL, agent-set): Extrude mutates the topology in `begin()`,
 #: so unlike Move/Rotate/Scale (AD-016: first motion begins) it needs the pointer's net
@@ -816,16 +828,20 @@ class Application:
         # (mode keys, C, Undo while running, add object) holds for it unchanged.
         self._object_gesture: _ObjectGesture | None = None
         # WP-06 B4.1 (Artist-Entscheidung Manu 2026-09-27, Playground-Verhalten
-        # WP-AP-INPUT-FIX-03 1:1): sticky Achsen-Constraint, unabhängig vom
-        # scharfen Tool, überlebt Commit/Cancel/neues Scharfschalten und wird
-        # bei jedem `begin()` gelesen. None = frei.
+        # WP-AP-INPUT-FIX-03 1:1): Achsen-Constraint, unabhängig vom scharfen Tool,
+        # überlebt Cancel/neues Scharfschalten und wird bei jedem `begin()` gelesen. None = frei.
+        # 2026-10-28 (Manu A1, `CONSTRAINT_MODES`): one-shot by default - the commit of the gesture that
+        # used it clears it; `sticky` keeps the B4.1 behaviour for the comparison (session only).
         self._axis_constraint: str | None = None
+        self.constraint_mode: str = CONSTRAINT_ONE_SHOT
+        # A constraint key pressed while a gesture runs sets the next gesture's constraint: that commit keeps it.
+        self._constraint_retouched: bool = False
         # WP Toolbox Gaps C1 (`PROVISIONAL`): what the constraints mean - world axes or the
-        # selection's normal frame (`mirai.transform_space`). Sticky like the constraint, read at
+        # selection's normal frame (`mirai.transform_space`). Sticky (never one-shot), read at
         # `begin()` and by the gizmo; not in History or scene files.
         self._orientation: str = transform_space.WORLD
         # WP-SOFT-01 S2a (AD-020, `PROVISIONAL`, off by default): sticky Soft Selection
-        # settings with the semantics of the axis constraint above - they survive commit,
+        # settings with the semantics of the sticky axis constraint above - they survive commit,
         # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
         # that is armed but has not begun takes a new value; a running one keeps its own -
         # except the radius and the Loop / Ring balance, which a running Soft gesture takes live
@@ -992,6 +1008,10 @@ class Application:
         self._gizmo_press_xy: tuple[float, float] | None = None  # cursor at the handle press (Rotate dial)
         self._gizmo_cache: tuple | None = None
         self._gizmo_frame_cache: tuple | None = None  # (pivot cache key, NormalFrame | None), Normal space
+        # The constraint before the handle press (one-shot: Esc on a handle drag restores it, E2) and the session
+        # size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
+        self._gizmo_constraint_before: str | None = None
+        self.gizmo_size_name: str = _gizmo.GIZMO_SIZE_DEFAULT
         self.tweak_command: str = commands.MOVE
         self._gesture_refused: bool = False
         # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
@@ -1844,8 +1864,7 @@ class Application:
             constraint = self._constraint_suffix(self._axis_constraint)
         self._set_status(
             f"Object {label}: {', '.join(repr(obj.name) for obj in targets)}{constraint}"
-            f"{self._mirror_note(followers)}{self._object_references_note(references)}"
-            f" - move the mouse, release {key.upper()} to commit"
+            f"{self._mirror_note(followers)}{self._object_references_note(references)}{self._commit_hint(key)}"
         )
         return True
 
@@ -4110,7 +4129,7 @@ class Application:
 
     @property
     def axis_constraint(self) -> str | None:
-        """Sticky Achsen-/Ebenen-Constraint als `space`-String (None = frei)."""
+        """Achsen-/Ebenen-Constraint als `space`-String (None = frei); one-shot or sticky (`constraint_mode`)."""
         return self._axis_constraint
 
     @property
@@ -4195,6 +4214,8 @@ class Application:
             return False
         if command in _TOPOLOGY_COMMANDS and self._hidden_refuses(command):
             return False
+        if command in _SESSION_SWITCH_COMMANDS:
+            return self._session_switch(command)
         if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS, *_LOOK_COMMANDS):
             # A Box/Paint drag owns the selection until the LMB release (like a gesture).
             return False
@@ -4203,14 +4224,14 @@ class Application:
         if command == commands.LIGHT_DRAG:
             return self._light_drag_arm(input.value)
         if command in _TWEAK_TRANSFORMS:
-            # Tweak (Ctrl+LMB drag) uses the last W/E/R pressed - a tap sets it ("tool set").
+            # The gizmo (and the unbound `Tweak` drag) uses the last W/E/R pressed - a tap sets it ("tool set").
             self.tweak_command = command
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
             if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS):
                 # Extrude is normal-only, Loop Slide runs along its edges: neither the gesture
-                # nor the sticky state changes.
+                # nor the pending constraint changes.
                 return False
             return self._constrain(_CONSTRAINT_SPACES[command])
         if command == commands.TOGGLE_TRANSFORM_SPACE:
@@ -4293,8 +4314,10 @@ class Application:
 
     def _transform_finish(self) -> None:
         """End the armed/running hold gesture: commit after motion, else just disarm. The
-        release of its key (`key_release`) or, for a Tweak, of the LMB (`pointer_release`)."""
+        release of its key (`key_release`) or, for an LMB-drag transform, of the LMB (`pointer_release`).
+        A one-shot constraint is cleared by the commit of the Move / Rotate / Scale gesture that used it."""
         label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
+        consumed = self._transform_begun and self._transform_command in _TWEAK_TRANSFORMS
         if self._object_gesture is not None:
             self._object_release()
         elif self._transform_command == commands.EXTRUDE:
@@ -4314,8 +4337,35 @@ class Application:
             self._set_status(outcome + self._constraint_suffix(self._transform_space))
         else:
             self._set_status(f"{label}: tool set (no motion, nothing {participle})")
+        if consumed and self._consume_constraint():
+            self._set_status(f"{self.status_message} · free again (one-shot)")
         self._transform_end()
         self._refresh_hover()
+
+    def _consume_constraint(self) -> bool:
+        """One-shot (Manu A1, E1): the committed gesture used the constraint, so it goes - unless a constraint key
+        was pressed during the gesture (that one is for the next gesture) or the gesture ignored it. True = cleared."""
+        if (
+            self.constraint_mode != CONSTRAINT_ONE_SHOT
+            or self._constraint_retouched
+            or self._axis_constraint is None
+            or self._transform_space is None  # not used: object Scale is always uniform
+        ):
+            return False
+        self._axis_constraint = None
+        return True
+
+    @property
+    def tweak_running(self) -> bool:
+        """True while W/E/R is held for a gesture (armed or begun): the user-facing "Tweak" (Manu A2, 2026-10-28) -
+        not a gizmo drag (LMB) and not T / G / S."""
+        return self._transform_key not in (None, TWEAK_KEY) and self._transform_command in _TWEAK_TRANSFORMS
+
+    def _commit_hint(self, key: str) -> str:
+        """The arm line's instruction; the hold-key gesture is named "Tweak" there (Manu A2)."""
+        if key == TWEAK_KEY:
+            return " - move the mouse, release the mouse button to commit"
+        return f" - Tweak: move the mouse, release {key.upper()} to commit"
 
     def _transform_arm(self, command: str, key: str) -> bool:
         """Transform scharf schalten (E21/E28): Ziel = aufgelöste Selection,
@@ -4367,10 +4417,8 @@ class Application:
             self._soft_preview_refresh(shown_by_gesture=True)
         count = len(self._transform_target)
         noun = "vertex" if count == 1 else "vertices"
-        release = "the mouse button" if key == TWEAK_KEY else key.upper()
         self._set_status(
-            f"{label}: {count} {noun}{self._constraint_suffix(self._axis_constraint)}"
-            f" - move the mouse, release {release} to commit"
+            f"{label}: {count} {noun}{self._constraint_suffix(self._axis_constraint)}{self._commit_hint(key)}"
         )
         return True
 
@@ -4383,9 +4431,30 @@ class Application:
         erneut → frei, eine andere ersetzt. Wirkt auch ohne scharfes Tool;
         während einer laufenden Geste ändert sich nur der Zustand — der
         Tool-`space` ist ab `begin()` fix, der neue Wert gilt ab der nächsten
-        Geste."""
+        Geste (one-shot: deren Commit räumt ihn, nicht der der laufenden)."""
         self._axis_constraint = None if self._axis_constraint == space else space
-        self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
+        if self._transform_begun:
+            self._constraint_retouched = True
+        self._set_status(self._constraint_status())
+        return True
+
+    def _constraint_status(self) -> str:
+        if self._axis_constraint is None:
+            return "Constraint: none"
+        return f"Constraint: {_constraint_label(self._axis_constraint)} ({self.constraint_mode})"
+
+    def _session_switch(self, command: str) -> bool:
+        """The session switches of the 2026-10-28 practical test (not saved, `PROVISIONAL` keys): one-shot <->
+        sticky constraints, and the gizmo size S -> M -> L. State only, allowed at any time."""
+        if command == commands.CONSTRAINT_MODE_TOGGLE:
+            index = CONSTRAINT_MODES.index(self.constraint_mode)
+            self.constraint_mode = CONSTRAINT_MODES[(index + 1) % len(CONSTRAINT_MODES)]
+            self._set_status(f"Constraints: {self.constraint_mode} (session setting)")
+            return True
+        names = list(_gizmo.GIZMO_SIZES)
+        self.gizmo_size_name = names[(names.index(self.gizmo_size_name) + 1) % len(names)]
+        self._set_status(f"Gizmo size: {self.gizmo_size_name} (session setting)")
+        self._refresh_hover()
         return True
 
     def _toggle_orientation(self) -> bool:
@@ -4571,6 +4640,7 @@ class Application:
         self._transform_target = frozenset()
         self._transform_begun = False
         self._transform_space = None
+        self._constraint_retouched = False
         self._rotate_press = None
         self._rotate_virtual = None
         self._extrude_faces = frozenset()
@@ -5402,8 +5472,11 @@ class Application:
         if self._transform_key is None:
             return False
         if self._transform_key == TWEAK_KEY:
-            # The LMB is still down: the rest of this drag must not arm a new Tweak.
+            # The LMB is still down: the rest of this drag must not arm a new one.
             self._gesture_refused = True
+            if self._gizmo_gesture is not None and self.constraint_mode == CONSTRAINT_ONE_SHOT:
+                # E2: the handle's axis was for this drag only; Esc keeps what was pending before the press.
+                self._axis_constraint = self._gizmo_constraint_before
         label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
         if self._object_gesture is not None:
             if self._transform_begun:
@@ -6274,6 +6347,10 @@ class Application:
             return False
         if self._hover_suspended or self._resym_plan is not None:
             return self._set_hovered(None)
+        if self._gizmo_handle_at(x, y) is not None:
+            # E3 (2026-10-28): inside a handle's pick zone the handle wins - no mesh hover under it, so the
+            # highlight never suggests a click would select (the press goes to the handle, `_gizmo_press`).
+            return self._set_hovered(None)
         if self.selection.mode is SelectionMode.OBJECT:
             # AD-021 M1 (`PROVISIONAL`): no object hover yet - it would have no look, and an
             # object pick per motion costs the full picking of every object (gollum,
@@ -6715,10 +6792,13 @@ class Application:
     #
     # AD-016 D3 (Artist verdict 2026-09-21): the gizmo is an entry point. An LMB press on a handle (no
     # modifier) takes priority over the selection click: a click only sets the axis constraint (like X/Y/Z),
-    # click + drag also runs the current tool - the last W/E/R, Move until one is pressed, the same state
-    # Tweak reads (D2) - along it, the release commits, Esc cancels. A miss falls through unchanged. The
-    # drag is the Tweak machinery (`_transform_arm` / `_transform_step` with the selection as the target), so
-    # it is one History step, honours Soft Selection and Symmetry, and is refused where W/E/R is.
+    # click + drag also runs the current tool - the last W/E/R, Move until one is pressed (D2) - along it, the
+    # release commits, Esc cancels. A miss falls through unchanged. The drag is the LMB-drag transform
+    # (`_transform_arm` / `_transform_step` with `TWEAK_KEY` and the selection as the target), so it is one
+    # History step, honours Soft Selection and Symmetry, and is refused where W/E/R is.
+    # 2026-10-28 (Manu A1/A4/A5, E2/E3/E5): with one-shot constraints a handle click sets the one-shot constraint
+    # (like X) and a handle drag is constrained for that drag only (commit clears, Esc restores what was pending);
+    # inside a handle's pick zone the handle wins over the mesh hover; session sizes `gizmo_size_name`.
     # World frame only (normal space is not in the app); shown for point / edge / face selections, also of a
     # placed edit object (2026-10-23: at the selection's world position, in the world camera; the tools turn
     # the world axes into object space, E-8), hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
@@ -6835,7 +6915,14 @@ class Application:
         if self._cursor is not None and not self.pointer.active:
             hover = self._gizmo_handle_at(*self._cursor, pivot=pivot)
         axes, planes = self._gizmo_frame()
-        return _gizmo.draw_items(camera, pivot, self.gizmo_tool, self._axis_constraint, hover, axes, planes)
+        return _gizmo.draw_items(
+            camera, pivot, self.gizmo_tool, self._axis_constraint, hover, axes, planes, scale=self.gizmo_scale
+        )
+
+    @property
+    def gizmo_scale(self) -> float:
+        """The session size as the gizmo's fraction of the eye distance (`viewport.gizmo.GIZMO_SIZES`)."""
+        return _gizmo.GIZMO_SIZES[self.gizmo_size_name]
 
     def _gizmo_handle_at(self, x: float, y: float, pivot=None) -> str | None:
         pivot = self._gizmo_pivot_if_shown() if pivot is None else pivot
@@ -6844,7 +6931,7 @@ class Application:
         axes, planes = self._gizmo_frame()
         return _gizmo.pick_handle(
             self._gizmo_camera, pivot, axes, planes, self.gizmo_tool, x, y,
-            int(self.viewport_width), int(self.viewport_height),
+            int(self.viewport_width), int(self.viewport_height), scale=self.gizmo_scale,
         )
 
     def _gizmo_press(self, input: Input) -> None:
@@ -6858,15 +6945,16 @@ class Application:
             return
         self._gizmo_gesture = handle
         self._gizmo_press_xy = tuple(self._cursor)
+        self._gizmo_constraint_before = self._axis_constraint
         # `center` (free Move / Rotate trackball / uniform Scale) and `screen` (Rotate about the view axis)
         # are the unconstrained handles.
         self._axis_constraint = None if handle in ("center", "screen") else handle
         self._set_hovered(None)
-        self._set_status(f"Constraint: {_constraint_label(self._axis_constraint)}")
+        self._set_status(self._constraint_status())
 
     def _gizmo_step(self, dx: float, dy: float) -> bool:
         """A drag step of a gesture that started on a handle: the first one arms the current tool on the
-        selection (a Tweak with the selection as target), every step drives it."""
+        selection (an LMB-drag transform with the selection as target), every step drives it."""
         if self._gesture_refused:
             return False
         if self._transform_key is None:
@@ -6894,10 +6982,12 @@ class Application:
         self._refresh_hover()
         return clicked
 
-    # -- Tweak (2026-10-15, Tweak Lab V2 "Silo" KEEP, Manu: "Ctrl+LMB, Auswahl weicht") ------
+    # -- `Tweak` drag command (2026-10-15, Tweak Lab V2 "Silo" KEEP, Manu: "Ctrl+LMB, Auswahl weicht") ------
+    # 2026-10-28 (Manu A3): its Ctrl+LMB-drag binding is removed (keymap.json and the code default); the command
+    # stays bindable (E4). "Tweak" in user-facing text now means the hold-key gesture (A2).
 
     def _tweak_step(self, dx: float, dy: float) -> bool:
-        """Ctrl+LMB drag: the first step arms `tweak_command` (the last W/E/R, Move by default)
+        """The `Tweak` drag: the first step arms `tweak_command` (the last W/E/R, Move by default)
         like holding its key - target = the selection, else the element under the press point
         (Tweak Lab rule; the selection is not changed) - and every step drives it. Ctrl may be
         let go during the drag; the LMB release commits, Esc cancels (`_cancel`)."""

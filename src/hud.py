@@ -99,6 +99,8 @@ class HudState:
     status_serial: int
     #: AD-013 addendum 2026-10-28: why `config/keymap.json` was not loaded (None = loaded, missing or not asked).
     keymap_problem: Optional[str] = None
+    #: 2026-10-28 (Manu A1): the session's constraint lifetime, "one-shot" / "sticky".
+    constraint_mode: str = "one-shot"
 
 
 def hud_state(app) -> HudState:
@@ -111,6 +113,8 @@ def hud_state(app) -> HudState:
         active = "Re-Symmetrize"
     elif app.transform_command is not None:
         active = _TOOL_NAMES.get(app.transform_command, app.transform_command)
+        if app.tweak_running:  # W/E/R held: the gesture is called Tweak (Manu A2, 2026-10-28)
+            active = f"Tweak · {active}"
     else:
         active = None
     subd = app.subdivision
@@ -140,6 +144,7 @@ def hud_state(app) -> HudState:
         status=app.status_message,
         status_serial=app.status_serial,
         keymap_problem=None if app.keymap_load is None else app.keymap_load.problem,
+        constraint_mode=app.constraint_mode,
     )
 
 
@@ -152,7 +157,10 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
         None,
     ),
     "Tool": ((commands.MOVE, commands.ROTATE, commands.SCALE), None),
-    "Axis": ((commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z), None),
+    "Axis": (
+        (commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z, commands.CONSTRAINT_MODE_TOGGLE),
+        None,
+    ),
     "Space": ((commands.TOGGLE_TRANSFORM_SPACE,), None),
     "Sym": ((commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE), None),
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
@@ -206,6 +214,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
     axis = state.constraint.upper() if state.constraint else "free"
     if state.constraint and len(state.constraint) == 2:
         axis += " plane"
+    axis += f" · {state.constraint_mode}"
     soft = (
         f"on · {state.soft_radius_percent} % · {state.soft_curve}" if state.soft_on else "off"
     )

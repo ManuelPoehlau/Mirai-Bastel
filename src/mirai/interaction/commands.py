@@ -34,15 +34,17 @@ SELECT_TOGGLE = "SelectToggle"
 # SELECT_DRAG* sind Drag-Commands (2026-10-15, Box KEEP + Paint, Manu: "Startpunkt
 # entscheidet"): der Press-Punkt entscheidet - im leeren Raum Box, auf dem Mesh Paint.
 # SELECT_DRAG ersetzt die Auswahl, SELECT_DRAG_ADD fügt hinzu (Entfernen per Drag gibt es
-# nicht: Ctrl+Drag ist Tweak, Manu 2026-10-15 "Auswahl weicht").
+# nicht: Ctrl+Drag war bis 2026-10-28 Tweak, Manu 2026-10-15 "Auswahl weicht"; seither ungebunden).
 SELECT_DRAG = "SelectDrag"
 SELECT_DRAG_ADD = "SelectDragAdd"
 # LASSO_ARM (2026-10-21, Manu: "Lasso kommt auch in die Production"; Taste `PROVISIONAL`): solange die
 # Taste gehalten wird, wird aus dem LMB-Drag (SELECT_DRAG / SELECT_DRAG_ADD) ein Lasso-Polygon statt
 # Box/Paint. Wie W/E/R eine Halte-Taste; Shift fügt hinzu, kein Modifier ersetzt.
 LASSO_ARM = "LassoArm"
-# TWEAK (2026-10-15, Tweak Lab V2 "Silo" KEEP): Ctrl+LMB-Drag transformiert mit dem zuletzt
+# TWEAK (2026-10-15, Tweak Lab V2 "Silo" KEEP): ein LMB-Drag transformiert mit dem zuletzt
 # gewählten W/E/R (Start: Move) die Auswahl, ohne Auswahl das Element unter dem Press-Punkt.
+# 2026-10-28 (Manu A3): die Ctrl+LMB-Drag-Bindung ist entfernt, der Command bleibt bindbar (E4).
+# Nutzerseitig heißt "Tweak" jetzt die Halte-Geste W/E/R + Maus (Manu A2).
 TWEAK = "Tweak"
 # MOVE ist das explizite modale Move-Command (WP-02): Es wird über die
 # Mapping-Schicht auf das MoveTool geroutet — Bindings (z. B. M oder G)
@@ -213,7 +215,7 @@ GROUP_MASK_TOGGLE = "GroupMaskToggle"
 # REGION_CLICK (Manu 2026-10-25, ZBrush-like): Shift+Ctrl+Klick on the groups under the cursor (a hovered vertex or
 # edge takes every group it touches). Nothing hidden: isolates them; they are all that is visible: inverts the
 # visibility (the rest visible, they hidden); something else hidden already: hides them as well. Empty space shows
-# everything. A click-only gesture: Shift+Ctrl has no drag binding, so it never starts a Tweak.
+# everything. A click-only gesture: Shift+Ctrl has no drag binding, so a drag never becomes the click.
 REGION_CLICK = "RegionClick"
 
 # RESYMMETRIZE (AD-SYM-04 Slice A3, §10 R-a; Manu 2026-10-14: „Re Symmtrizes kommt mit in die App"):
@@ -222,6 +224,11 @@ REGION_CLICK = "RegionClick"
 # offen ist, gehört sie `Application` (`interaction_owner` "resymmetrize"). Siehe
 # `mirai.resymmetrize` / `mirai.application.Application._resymmetrize_open`.
 RESYMMETRIZE = "ReSymmetrize"
+
+# Practical-test session switches (2026-10-28, Manu A1/A4; keys `PROVISIONAL`, nothing is saved):
+# CONSTRAINT_MODE_TOGGLE = axis constraints one-shot <-> sticky, GIZMO_SIZE_CYCLE = gizmo size S -> M -> L.
+CONSTRAINT_MODE_TOGGLE = "ConstraintModeToggle"
+GIZMO_SIZE_CYCLE = "GizmoSizeCycle"
 
 # --- Topology Lab (Context "topology") ------------------------------------
 SPLIT_EDGE = "SplitEdge"

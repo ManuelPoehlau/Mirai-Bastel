@@ -4,7 +4,8 @@ Headless (TraceStore), kein pyglet/Fenster. Gleicher AD-016-Pfad wie Move
 (`test_application_move.py`): Taste → `Application.key_press` (scharf, Tool
 aktiv) → `pointer_motion(x, y, dx, dy)` (erste Bewegung: `begin(space=...)`,
 dann `update`) → Release → `commit`. Constraints (B4.1, Playground-Modell):
-sticky Toggle, unabhängig vom scharfen Tool, gelesen bei jedem `begin()`.
+Toggle, unabhängig vom scharfen Tool, gelesen bei jedem `begin()`; seit 2026-10-28
+(Manu A1) one-shot (der Commit räumt ihn), sticky als Sitzungsvariante (F7).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import pytest
 import tests._bootstrap  # noqa: F401
 
 from core import VertexId
-from mirai.application import Application
+from mirai.application import CONSTRAINT_ONE_SHOT, CONSTRAINT_STICKY, Application
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.interaction.tools import MoveTool, RotateTool, ScaleTool
@@ -130,7 +131,7 @@ def test_arm_with_selection_activates_tool_without_begin(app, begins, command):
     assert begins == []
     key = TRANSFORM_KEYS[command].value.upper()
     assert app.status_message == (
-        f"{LABELS[command]}: 2 vertices - move the mouse, release {key} to commit"
+        f"{LABELS[command]}: 2 vertices - Tweak: move the mouse, release {key} to commit"
     )
     # Die Move-Weiterleitungen bleiben Move-spezifisch (E28).
     assert not app.move_armed
@@ -319,7 +320,7 @@ def test_undo_ignored_while_transforming_and_disarms_when_armed(app, command):
     assert _positions(app) != moved
 
 
-# -- Constraints (B4.1: sticky Toggle wie im Playground) ------------------------------
+# -- Constraints (B4.1 Toggle; since 2026-10-28 one-shot by default, sticky as the session variant) ---------
 
 
 @pytest.mark.parametrize("key, space", CONSTRAINTS)
@@ -329,7 +330,7 @@ def test_constraint_key_sets_state_without_armed_tool(app, key, space):
     assert app.axis_constraint == space
     assert app.status_serial == serial + 1
     label = space.upper() if len(space) == 1 else f"{space.upper()} plane"
-    assert app.status_message == f"Constraint: {label}"
+    assert app.status_message == f"Constraint: {label} (one-shot)"
     assert app.tool_manager.active_tool is None
 
 
@@ -372,7 +373,7 @@ def test_constraint_set_before_arming_reaches_begin(app, begins, command, key, s
     assert app.key_release(TRANSFORM_KEYS[command])
     assert len(app.history) == 1
     _assert_idle(app)
-    assert app.axis_constraint == space
+    assert app.axis_constraint is None  # one-shot: the commit cleared it
 
 
 @pytest.mark.parametrize("command", ALL_TRANSFORMS)
@@ -385,7 +386,59 @@ def test_constraint_set_while_armed_before_motion_reaches_begin(app, begins, com
 
 
 @pytest.mark.parametrize("command", ALL_TRANSFORMS)
-def test_constraint_persists_across_commit_and_cancel(app, begins, command):
+def test_one_shot_commit_clears_esc_and_tap_keep(app, begins, command):
+    """Manu A1 / E1 (2026-10-28): the constraint applies to one gesture; its commit clears it, Esc and a tap
+    (armed, no motion) keep it for the next gesture."""
+    assert app.constraint_mode == CONSTRAINT_ONE_SHOT
+    _select_all(app)
+    app.key_press(_key("x"))
+    key = TRANSFORM_KEYS[command]
+
+    app.key_press(key)
+    _move(app)
+    app.key_press(ESC)  # Cancel: keeps it
+    app.key_release(key)
+    assert app.axis_constraint == "x"
+    app.key_press(key)
+    app.key_release(key)  # Antippen: keeps it
+    assert app.axis_constraint == "x"
+    app.key_press(key)
+    _move(app)
+    app.key_release(key)  # Commit: clears it
+    assert app.axis_constraint is None
+    assert app.status_message.endswith("(constraint X) · free again (one-shot)")
+    app.key_press(key)
+    _move(app)
+    app.key_release(key)  # the next gesture is free
+
+    assert [b["space"] for b in begins] == ["x", "x", None]
+    assert len(app.history) == 2
+
+
+def test_one_shot_x_twice_is_two_constrained_gestures(app, begins):
+    """The seam case: X before every stroke."""
+    _select_all(app)
+    for _ in range(2):
+        app.key_press(_key("x"))
+        app.key_press(W)
+        _move(app)
+        app.key_release(W)
+    assert [b["space"] for b in begins] == ["x", "x"]
+    assert app.axis_constraint is None
+
+
+def test_constraint_mode_is_a_session_switch_on_f7(app):
+    assert app.constraint_mode == CONSTRAINT_ONE_SHOT
+    assert app.key_press(_key("f7"))
+    assert app.constraint_mode == CONSTRAINT_STICKY
+    assert app.status_message == "Constraints: sticky (session setting)"
+    assert app.key_press(_key("f7"))
+    assert app.constraint_mode == CONSTRAINT_ONE_SHOT
+
+
+@pytest.mark.parametrize("command", ALL_TRANSFORMS)
+def test_constraint_persists_across_commit_and_cancel_when_sticky(app, begins, command):
+    app.constraint_mode = CONSTRAINT_STICKY
     _select_all(app)
     app.key_press(_key("x"))
     key = TRANSFORM_KEYS[command]
@@ -408,7 +461,8 @@ def test_constraint_persists_across_commit_and_cancel(app, begins, command):
     assert len(app.history) == 2
 
 
-def test_constraint_carries_over_between_tools(app, begins):
+def test_constraint_carries_over_between_tools_when_sticky(app, begins):
+    app.constraint_mode = CONSTRAINT_STICKY
     _select_all(app)
     app.key_press(_key("z"))
     for key in (W, E, R):
@@ -427,7 +481,7 @@ def test_key_during_motion_changes_state_but_not_running_gesture(app, begins, co
     tool = app.tool_manager.active_tool
     assert app.key_press(_key("y"))
     assert app.axis_constraint == "y"
-    assert app.status_message == "Constraint: Y"
+    assert app.status_message == "Constraint: Y (one-shot)"
     # Laufende Geste: kein Neustart, `space` bleibt der von begin().
     assert app.transform_interacting
     assert app.tool_manager.active_tool is tool
@@ -436,6 +490,7 @@ def test_key_during_motion_changes_state_but_not_running_gesture(app, begins, co
     assert len(begins) == 1
     app.key_release(key)
     assert len(app.history) == 1
+    assert app.axis_constraint == "y"  # set during the gesture: for the next one, its commit keeps it
     # Nächste Geste nutzt den neuen Wert.
     app.key_press(key)
     _move(app)
@@ -456,6 +511,7 @@ def test_toggle_off_during_motion_frees_the_next_gesture(app, begins):
 
 
 def test_undo_redo_unaffected_by_constraint(app):
+    app.constraint_mode = CONSTRAINT_STICKY
     _select_all(app)
     app.key_press(_key("x"))
     before = _positions(app)
@@ -488,12 +544,13 @@ def test_arm_and_commit_status_show_active_constraint(app, command, constraint_k
     key = TRANSFORM_KEYS[command]
     app.key_press(key)
     assert app.status_message == (
-        f"{LABELS[command]}: 8 vertices{arm_suffix} - move the mouse, "
+        f"{LABELS[command]}: 8 vertices{arm_suffix} - Tweak: move the mouse, "
         f"release {key.value.upper()} to commit"
     )
     _move(app)
     app.key_release(key)
-    assert app.status_message == f"{LABELS[command]} committed{arm_suffix}"
+    cleared = " · free again (one-shot)" if arm_suffix else ""
+    assert app.status_message == f"{LABELS[command]} committed{arm_suffix}{cleared}"
 
 
 def test_commit_status_shows_the_gestures_constraint_not_a_later_change(app):

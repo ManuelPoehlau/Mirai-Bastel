@@ -105,3 +105,85 @@ def test_the_size_is_a_constant_fraction_of_the_eye_distance(camera):
     camera.distance = 20.0
     far = gizmo.gizmo_size(camera, PIVOT)
     assert far == pytest.approx(near * 2.0, rel=1e-6)
+
+
+# -- 2026-10-28 (Manu A4/A5, E3/E5): sizes, the filled centre, ring segments, hover on the active handle ---------
+
+
+def test_every_session_size_is_smaller_than_the_old_one_and_scales_the_gizmo(camera):
+    assert set(gizmo.GIZMO_SIZES) == {"S", "M", "L"} and gizmo.GIZMO_SIZE_DEFAULT in gizmo.GIZMO_SIZES
+    assert all(scale < 0.18 for scale in gizmo.GIZMO_SIZES.values())  # 0.18 = the size until 2026-10-28
+    small, large = gizmo.GIZMO_SIZES["S"], gizmo.GIZMO_SIZES["L"]
+    assert gizmo.gizmo_size(camera, PIVOT, large) == pytest.approx(gizmo.gizmo_size(camera, PIVOT, small) * large / small)
+    x_line = gizmo.draw_items(camera, PIVOT, "move", None, None, scale=small)[0]
+    assert x_line.positions[3] == pytest.approx(gizmo.gizmo_size(camera, PIVOT, small))
+
+
+def test_the_centre_circle_is_picked_over_its_whole_disc_not_only_at_the_pivot(camera):
+    radius = gizmo.center_pick_radius_px(camera, PIVOT, WIDTH, HEIGHT)
+    cx, cy = _screen(camera, PIVOT)
+    for tool in gizmo.TOOLS:
+        # On the x axis line (and on edge-on rings) just inside the circle's outline: the centre wins.
+        assert gizmo.pick_handle(
+            camera, PIVOT, gizmo.WORLD_AXES, gizmo.WORLD_PLANES, tool, cx + radius - 1.0, cy, WIDTH, HEIGHT
+        ) == "center"
+    outside = gizmo.pick_handle(
+        camera, PIVOT, gizmo.WORLD_AXES, gizmo.WORLD_PLANES, "move", cx + radius + 3.0, cy, WIDTH, HEIGHT
+    )
+    assert outside == "x"
+
+
+def test_the_centre_disc_covers_the_drawn_circle(camera):
+    ring = gizmo.gizmo_size(camera, PIVOT) * gizmo.CENTER_RING_RATIO
+    _, right, _ = camera.basis()
+    edge = _screen(camera, tuple(right[i] * ring for i in range(3)))
+    centre = _screen(camera, PIVOT)
+    drawn = ((edge[0] - centre[0]) ** 2 + (edge[1] - centre[1]) ** 2) ** 0.5
+    assert gizmo.center_pick_radius_px(camera, PIVOT, WIDTH, HEIGHT) >= drawn + gizmo.CENTER_PICK_MARGIN_PX - 1e-9
+
+
+def test_a_large_ring_is_pickable_between_its_samples(camera):
+    """Picking along the segments: a point on the chord between two of the 32 samples of a big ring is picked
+    (sample points alone left gaps wider than the pick radius there)."""
+    import math
+
+    scale = 0.6
+    size = gizmo.gizmo_size(camera, PIVOT, scale)
+    half_step = math.pi / 32
+    _, right, up = camera.basis()
+    # The screen ring (Rotate) lies in the view plane: its chord midpoint between samples 0 and 1.
+    r = size * gizmo.SCREEN_RING_RATIO * math.cos(half_step)
+    c, s = math.cos(half_step), math.sin(half_step)
+    point = tuple(r * (c * right[i] + s * up[i]) for i in range(3))
+    sample = tuple(size * gizmo.SCREEN_RING_RATIO * right[i] for i in range(3))
+    px, py = _screen(camera, point)
+    sx, sy = _screen(camera, sample)
+    assert math.hypot(px - sx, py - sy) > gizmo.PICK_RADIUS_PX  # the old sample pick would miss it
+    picked = gizmo.pick_handle(
+        camera, PIVOT, gizmo.WORLD_AXES, gizmo.WORLD_PLANES, "rotate", px, py, WIDTH, HEIGHT, scale=scale
+    )
+    assert picked == "screen"
+
+
+def test_hovering_the_active_handle_has_its_own_visible_state(camera):
+    """E5: until 2026-10-28 the active state hid the hover; now hover on the active handle is thicker than active
+    and takes the hover colour."""
+    plain_active = [i for i in gizmo.draw_items(camera, PIVOT, "move", "x", None) if i.width == gizmo.LINE_WIDTH_ACTIVE]
+    items = gizmo.draw_items(camera, PIVOT, "move", "x", "x")
+    hovered_active = [i for i in items if i.width == gizmo.LINE_WIDTH_ACTIVE_HOVER]
+    assert len(plain_active) == len(hovered_active) == 2  # line + arrowhead
+    assert gizmo.LINE_WIDTH_ACTIVE_HOVER > gizmo.LINE_WIDTH_ACTIVE
+    assert all(i.color == gizmo.hover_color(gizmo.COLOR_X) != gizmo.COLOR_X for i in hovered_active)
+    assert all(i.color == gizmo.COLOR_X for i in plain_active)
+
+
+@pytest.mark.parametrize("tool", gizmo.TOOLS)
+def test_every_handle_shows_its_hover(camera, tool):
+    handles = {"center", "x", "y", "z"} | ({"screen"} if tool == "rotate" else {"xy", "xz", "yz"})
+    base = gizmo.draw_items(camera, PIVOT, tool, None, None)
+    for handle in handles:
+        hovered = gizmo.draw_items(camera, PIVOT, tool, None, handle)
+        changed = [h for b, h in zip(base, hovered) if (b.color, b.width) != (h.color, h.width)]
+        assert changed, handle
+        assert all(h.color != b.color for b, h in zip(base, hovered) if (b.color, b.width) != (h.color, h.width))
+    assert gizmo.hover_color(gizmo.COLOR_CENTER) == gizmo.COLOR_CENTER_HOVER  # white cannot get lighter

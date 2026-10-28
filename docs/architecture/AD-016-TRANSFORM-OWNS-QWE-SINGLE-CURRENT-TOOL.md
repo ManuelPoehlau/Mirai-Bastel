@@ -46,6 +46,15 @@ This lifts the WP-AP-GIZMO Phase-1 boundary ("a Gizmo click does not choose/star
 
 *Addendum 2026-10-21 (Manu: "Gizmo nach `src/` heben"):* D3 is implemented in the production app — `mirai.viewport.gizmo`, `Application` (press / drag / release as the Tweak machinery on the selection, world frame only; hidden while a gesture runs; no modifier), drawn by `src/main.py`. `PROVISIONAL`; see [WP Playground-Werkzeuge, Nachtrag](../WP_PLAYGROUND_TOOLS_PROMOTION.md#nachtrag-2026-10-21-lasso-und-gizmo-in-die-app-manu). The Playground keeps its own wiring and the normal-space frames.
 
+*Addendum 2026-10-28 (Manu A1/A4/A5; engineering E1–E5 `PROVISIONAL`, Discovery):* in the production app the axis
+constraint is **one-shot** by default — the commit of the Move / Rotate / Scale gesture that used it clears it, Esc and a
+tap keep it (sticky = the B4.1 behaviour, kept as a session switch on F7 for the comparison). For D3 this means: a handle
+**click** sets the one-shot constraint (still "equivalent to pressing X/Y/Z"); a handle **drag** is constrained for that
+drag only (commit clears; Esc restores what was pending before the press). Inside a handle's pick zone the handle also
+wins the **hover** over the mesh (no mesh highlight under it); the centre circle is picked over its filled disc; hover on
+the active handle has its own state. Gizmo sizes S/M/L are a session switch (F8). The tool contract (`space` fixed at
+`begin()`) and AD-022 are unchanged. See [WP Playground-Werkzeuge, Nachtrag 2026-10-28](../WP_PLAYGROUND_TOOLS_PROMOTION.md#nachtrag-2026-10-28-achse-einmalig-tweak--halte-geste-gizmo-kleiner-manu).
+
 ### D4 — New Transform activation variant: "Hold-Key Hover" (Playground experiment)
 Artist proposal (2026-09-21), implemented as an additional variant in the `transform` slot, selectable alongside the existing ones:
 - **Tap Q/W/E (movement below `CLICK_THRESHOLD`):** sets the current tool. No execution.
@@ -61,6 +70,9 @@ This is the former V1 behavior, re-owned by Transform. Its product value is not 
 ### D5 — Tweak family after this change
 - **V1:** moved into Transform as D4 (ITERATE, behavior preserved).
 - **V2 (Ctrl+LMB), V4 (Ctrl+move):** remain Tweak; they read the shared current tool (D2).
+  *Production 2026-10-28 (Manu A2/A3):* V2's Ctrl+LMB-drag binding is removed from the app (`config/keymap.json` and the
+  code default; the `Tweak` command stays bindable). In user-facing text "Tweak" now names the hold-key gesture (D4:
+  W/E/R held + mouse).
 - **V3 (hold key + LMB):** conflicts with D1. **Parked** — code kept, removed from the selectable Tweak variants until the Artist decides. Not deleted.
 
 ## Not decided here

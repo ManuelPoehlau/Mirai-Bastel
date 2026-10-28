@@ -10,7 +10,7 @@ in Production einbauen“, Auswahl: Box-Select, Loop-Werkzeuge, Tweak, Paint Sel
 |---|---|---|
 | P-1 | Welche Werkzeuge? | Box-Select, Loop-Werkzeuge (Loop/Ring-Auswahl, Loop Insert, Loop Slide), Tweak (Silo), Paint Select. Articulation nicht. |
 | P-2 | Box und Paint teilen sich LMB-Ziehen — wie? | **Startpunkt entscheidet:** Start im leeren Raum = Box, auf dem Mesh = Malen; ohne Taste neu, Shift dazu. Der Wings-Zusatz des Box-Verdikts (Box mit Modifier im Mesh) entfällt. |
-| P-3 | Tweak (Silo, Ctrl+LMB) kollidiert mit Ctrl = Entfernen | **Ctrl+LMB, Auswahl weicht:** Ctrl+LMB-Ziehen = Tweak; Ctrl+LMB-Klick bleibt Entfernen; Entfernen per Box/Malen gibt es nicht. |
+| P-3 | Tweak (Silo, Ctrl+LMB) kollidiert mit Ctrl = Entfernen | **Ctrl+LMB, Auswahl weicht:** Ctrl+LMB-Ziehen = Tweak; Ctrl+LMB-Klick bleibt Entfernen; Entfernen per Box/Malen gibt es nicht. **Abgelöst 2026-10-28** (Manu A3): Ctrl+LMB-Ziehen ist entfernt, „Tweak“ heißt jetzt die Halte-Geste W/E/R + Maus — siehe [Nachtrag 2026-10-28](#nachtrag-2026-10-28-achse-einmalig-tweak--halte-geste-gizmo-kleiner-manu). |
 
 Quellen der Verdikte: Box KEEP in [`selection/decision.md`](archive/experiments_2026-10/playground/experiments/selection/decision.md),
 Tweak V2 KEEP in [`tweak_decision.md`](archive/experiments_2026-10/playground/experiments/tweak/tweak_decision.md); Paint war dort nur
@@ -132,4 +132,69 @@ Tests: `tests/test_rotate_dial.py`, `tests/test_viewport_gizmo.py`, `tests/test_
   **Fix 2026-10-22 (Geometrie sprang beim Wrap):** Pyglets `dx`/`dy` hängen an seiner eigenen letzten Position, und vor dem Warp gequeute Ereignisse tragen noch die alte Randposition.
   `CursorWrapper.filter` rechnet nach einem Warp die Deltas selbst aus den Positionen, verwirft veraltete Ereignisse am alten Rand (40 px, 0,25 s) und löst währenddessen keinen zweiten Warp aus.
 Tests: `tests/test_rotate_dial.py`, `tests/test_cursor_wrap.py`.
+
+## Nachtrag 2026-10-28: Achse einmalig, Tweak = Halte-Geste, Gizmo kleiner (Manu)
+
+**Status:** Umgesetzt (2026-10-28) — Discovery, `PROVISIONAL`, Praxistest unten. Ziel (Manu): vergessene
+Achsen-Sperren sollen die Hauptgeste (hovern + `W`/`E`/`R` halten + Maus) nicht mehr stören.
+
+**Entscheidungen Manu (2026-10-28):** A1 Achsen-/Ebenen-Constraint (`X`/`Y`/`Z`, `Shift+X/Y/Z`) gilt für **eine** Geste,
+dann ist sie weg — zu testen gegen das bisherige „sticky“. A2 Die Halte-Geste (`W`/`E`/`R` halten + Maus) heißt in allen
+Texten **Tweak**; Verhalten unverändert. A3 Ctrl+LMB-Ziehen (Tweak, Eintrag in `config/keymap.json` vom 2026-10-15) ist
+entfernt; Ctrl+LMB-Klick (Entfernen) bleibt. A4 Gizmo kleiner, Bildschirmgröße beim Zoomen konstant (war schon so),
+zuverlässiges Picken mit Geometrie dahinter, Mittelkreis per Hover treffbar. A5 Hover auf dem Griff, der schon die aktive
+Constraint ist, muss sichtbar sein.
+
+**Engineering (`PROVISIONAL`, korrigierbar in einem Satz):**
+- **One-shot (E1):** Eine Constraint, die vor dem Beginn der Geste gesetzt wird (auch bei gehaltenem, noch nicht bewegtem
+  `W`/`E`/`R`), gilt für diese Geste. Der **Commit** räumt sie, `Esc` und ein bloßes Antippen behalten sie. Wird während
+  einer laufenden Geste eine Achsentaste gedrückt, gilt sie (wie bisher) erst für die nächste Geste, und der Commit der
+  laufenden lässt sie stehen. Eine Geste, die die Achse gar nicht nutzt (Objekt-Scale ist immer gleichmäßig; Extrude,
+  Loop Slide, Smooth), räumt sie nicht. Statuszeile beim Commit: „… (constraint X) · free again (one-shot)“.
+- **Gizmo-Griff (E2):** Ziehen am Griff gilt nur für diesen Zug (danach frei; `Esc` stellt wieder her, was vor dem Klick
+  anstand). Ein Klick ohne Ziehen setzt die One-shot-Constraint wie `X`.
+- **Sitzungs-Schalter** (nur für diesen Test, nicht gespeichert, Tasten `PROVISIONAL`): **`F7`** = Constraints one-shot ↔
+  sticky (Start: one-shot; sticky = das Verhalten bis heute, auch am Gizmo). **`F8`** = Gizmo-Größe **M → L → S** (Start M).
+  HUD-Zeile „Axis“ zeigt die Variante („X · one-shot“, „free · sticky“), die Statuszeile die Größe.
+- **Gizmo-Größen (A4):** S / M / L = 0,07 / 0,10 / 0,13 der Kameradistanz (bisher 0,18; M ≈ 55 % der alten Größe, bei
+  1080 px Fensterhöhe eine Achse von etwa 115 px). Bleibt beim Zoomen gleich groß auf dem Bildschirm.
+- **Picken (E3):** Liegt der Cursor in der Pick-Zone eines Griffs, gewinnt der Griff: kein Mesh-Hover darunter (vorher
+  leuchtete das Mesh dahinter mit auf, und es sah aus, als würde der Klick auswählen). Der Mittelkreis ist eine **gefüllte**
+  Fläche (Kreis + 4 px, mindestens 10 px Radius): darin gewinnt immer `center`, auch gegen die Achslinien, die durch den Pivot
+  laufen. Ringe werden entlang ihrer Segmente gepickt (bei großen Ringen gab es Lücken zwischen den Stützpunkten). AD-022
+  (GPU-Picking) und der Tool-Vertrag („space fix ab `begin()`“) sind unberührt.
+- **Hover (A5/E5):** Ursache war `draw_items`: der aktive Zustand überdeckte den Hover. Jetzt eigener Zustand „Hover auf
+  aktiv“ (Strichbreite 5,5 statt 4, Hover-Farbe). Hover-Farbe = Grundfarbe 45 % Richtung Weiß (vorher ×1,4, auf Rot/Blau
+  kaum sichtbar); der weiße Mittelkreis wird beim Hover warm-gelb.
+- **Tweak (A2/A3/E4):** Die Halte-Geste heißt „Tweak“: Statuszeile beim Scharfschalten „Move: 3 vertices - Tweak: move the
+  mouse, release W to commit“, HUD-Zeile „Tool“ während der Geste „Tweak · Move (running)“. Die Ergebnis-Zeilen („Move
+  committed“) bleiben (sie nennen das Ergebnis, nicht die Geste). Die Gizmo-Ziehgeste heißt nicht Tweak. Der interne
+  Mechanismus (LMB-Ziehen mit `TWEAK_KEY`, den das Gizmo nutzt) und der Command `Tweak` bleiben; er ist nur ungebunden.
+  Ctrl+LMB-Ziehen tut jetzt nichts (kein Klick, keine Auswahländerung).
+
+Code: `src/mirai/application.py` (`CONSTRAINT_MODES`, `_consume_constraint`, `_session_switch`, `_update_hover`,
+`_gizmo_press`/`_cancel`), `src/mirai/viewport/gizmo.py` (`GIZMO_SIZES`, `center_pick_radius_px`, `hover_color`),
+`src/mirai/interaction/bindings.py` (F7/F8, Ctrl+LMB-Ziehen entfernt), `src/mirai/pyglet_input.py` (F1–F12), `src/hud.py`,
+`config/keymap.json`. Tests: `tests/test_application_transform.py`, `tests/test_application_gizmo.py`,
+`tests/test_viewport_gizmo.py`, `tests/test_application_drag_select_tweak.py`, `tests/test_hud.py`.
+
+### Praxistest für Manu (ca. 20–30 Minuten)
+
+Start: `python src/main.py` (Head). Die HUD-Zeile „Axis“ zeigt, welche Variante läuft. `F7` = one-shot ↔ sticky,
+`F8` = Gizmo-Größe — beides gilt nur bis zum Schließen.
+
+| # | Was tun | Worauf achten | Verdikt |
+|---|---|---|---|
+| K1 | **„Achse vergessen“** (one-shot): einen Punkt wählen, `X` drücken, `W` halten und ziehen, loslassen. Dann nochmal mit `W` ziehen | 1. Zug nur entlang X, Statuszeile „… free again (one-shot)“, HUD „free“; 2. Zug frei | |
+| K2 | Dasselbe nach `F7` (HUD „sticky“), danach `F7` zurück | sticky: 2. Zug wieder nur entlang X, bis du `X` erneut drückst. Was fühlt sich beim Formen besser an? | |
+| K3 | `X` drücken, `W` halten, mit `Esc` abbrechen, nochmal ziehen; außerdem `X`, `W` nur antippen, dann ziehen | `Esc` und Antippen behalten X; erst der fertige Zug räumt es | |
+| K4 | **Naht-Fall:** entlang einer Kontur (z. B. Lippenkante) fünf, sechs Punkte nacheinander, jedes Mal `X` + `W` ziehen. Danach dasselbe in sticky | Wie lästig ist das wiederholte `X`? Lieber sticky für solche Serien? | |
+| K5 | **Gizmo-Größe:** ein paar Punkte wählen, `F8` mehrmals (M → L → S), dabei zoomen | Welche Größe passt (S / M / L)? Bleibt sie beim Zoomen gleich? | |
+| K6 | **Picken mit Mesh dahinter:** Gizmo über dem Gesicht, langsam über Achsen, Ebenen-Winkel und den Mittelkreis fahren, dann klicken und ziehen | Unter einem Griff leuchtet kein Mesh-Element mehr; der Klick trifft den Griff, nie die Auswahl dahinter. Mittelkreis: überall innen treffbar (färbt sich gelb), Ziehen = frei (`W`), Trackball (`E`), gleichmäßig (`R`) | |
+| K7 | **Aktive Achse hovern:** `X` drücken (X-Achse dick), dann mit der Maus über die X-Achse fahren; auch bei `E` (Ring) und `R` | Siehst du, dass du sie triffst (noch dicker, heller)? Andere Griffe: heller + dicker | |
+| K8 | **Gizmo-Griff ziehen** (one-shot): `X` drücken, dann an der Y-Achse ziehen, loslassen, danach mit `W` ziehen. Auch: an einer Achse klicken ohne zu ziehen, dann `W` ziehen | Zug am Griff nur entlang Y, danach ist alles frei; Klick auf den Griff wirkt wie `X` für einen Zug | |
+| K9 | **Ctrl+LMB:** Strg halten und auf dem Mesh ziehen; Strg-Klick auf einen gewählten Punkt | Ziehen tut nichts; Klick entfernt weiter aus der Auswahl. Fehlt dir Ctrl+LMB-Ziehen irgendwo? | |
+
+Meine Lesart (bitte in einem Satz korrigieren, falls falsch): „eine Geste“ = ein fertiger Zug (Commit), nicht schon das
+Antippen; `Esc` gibt die Achse zurück; eine Taste mitten im Zug ist für den nächsten Zug gedacht.
 

@@ -272,7 +272,7 @@ def test_a_drag_on_the_normal_handle_of_the_gizmo_moves_along_the_normal(app):
         app.pointer_drag(0.0, -8.0, x, y - 8.0)
         y -= 8.0
     app.pointer_release("LEFT", x, y)
-    assert app.gizmo_constraint == "z"
+    assert app.gizmo_constraint is None  # one-shot (Manu A1 / E2, 2026-10-28): for that drag only
     moved = _displacements(before, _positions(app))
     assert len(moved) == 4 and all(_parallel(d, NORMAL) for d in moved)
 

@@ -261,7 +261,8 @@ def test_tweak_soft_and_smooth_on_the_view_write_offsets():
     assert app.history._undo_stack[-1].mesh is mesh
     _view_equals_base_plus_offsets(app)
     history = len(app.history)
-    _select(app, V, {centre})  # Tweak (Ctrl+LMB drag) moves the selection
+    _select(app, V, {centre})  # the `Tweak` drag moves the selection (Ctrl+LMB unbound since 2026-10-28: bound here)
+    app.bindings.set_default(Input("drag", "LEFT", frozenset({"ctrl"})), commands.TWEAK)
     app.pointer_press(Input("mouse", "LEFT", frozenset({"ctrl"})), 400, 300)
     for i in range(1, 4):
         app.pointer_drag(10.0, 0.0, 400 + 10 * i, 300)

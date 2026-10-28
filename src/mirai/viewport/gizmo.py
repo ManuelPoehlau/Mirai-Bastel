@@ -13,6 +13,12 @@ Handles (names = the constraint spaces of `Application`): `x`, `y`, `z` (axes; r
 `xy`, `xz`, `yz` (plane brackets; not for Rotate), `center` (white circle at the pivot, every tool: no constraint -
 free Move, Rotate trackball, uniform Scale) and `screen` (Rotate only: the outer camera-facing ring, rotation about
 the view axis). Look and sizes are `PROVISIONAL` (Playground values, "needs playtest").
+
+2026-10-28 (Manu A4/A5, E3/E5, `PROVISIONAL`): smaller, with three session sizes (`GIZMO_SIZES`, the caller passes
+`scale`; still a fraction of the eye distance, so constant on screen while zooming); the centre circle is picked over
+its whole filled disc (`center_pick_radius_px`), not just near the pivot point; rings are picked along their segments
+(no gaps between samples on a large ring); a hovered handle that is also the active constraint gets its own state
+(`LINE_WIDTH_ACTIVE_HOVER` + the hover colour), so the hover shows on every handle.
 """
 
 from __future__ import annotations
@@ -22,8 +28,12 @@ from dataclasses import dataclass
 
 Vec3 = tuple[float, float, float]
 
-#: Gizmo size as a fraction of the pivot's distance to the eye (constant on-screen size).
-GIZMO_SCALE: float = 0.18
+#: Session gizmo sizes (2026-10-28, Manu A4 "smaller than today", `PROVISIONAL`): a fraction of the pivot's distance
+#: to the eye (constant on-screen size). Until 2026-10-28 the only size was 0.18; at the 50 degree field of view the
+#: axis length is about this fraction / 0.47 of half the viewport height (M ~ 21 %, ~115 px at 1080 px).
+GIZMO_SIZES: dict[str, float] = {"S": 0.07, "M": 0.10, "L": 0.13}
+GIZMO_SIZE_DEFAULT: str = "M"
+GIZMO_SCALE: float = GIZMO_SIZES[GIZMO_SIZE_DEFAULT]
 CAP_SIZE_RATIO: float = 0.12
 #: Click radius around a handle's projected line / ring / point, in window pixels.
 PICK_RADIUS_PX: float = 16.0
@@ -43,6 +53,10 @@ WORLD_PLANES: list[tuple[str, Vec3, Vec3]] = [
 LINE_WIDTH_DEFAULT = 2.0
 LINE_WIDTH_HOVER = 3.0
 LINE_WIDTH_ACTIVE = 4.0
+#: Hover on the handle that is already the active constraint (E5): thicker than active, in the hover colour.
+LINE_WIDTH_ACTIVE_HOVER = 5.5
+#: Hover colour = the base colour this far towards white (a plain gain hardly shows on saturated red / blue).
+HOVER_LIGHTEN = 0.45
 COLOR_X = (0.9, 0.15, 0.15, 1.0)
 COLOR_Y = (0.15, 0.85, 0.15, 1.0)
 COLOR_Z = (0.15, 0.35, 0.9, 1.0)
@@ -53,9 +67,14 @@ COLOR_PLANES = {
     "yz": (0.15, 0.75, 0.75, 1.0),
 }
 COLOR_CENTER = (1.0, 1.0, 1.0, 1.0)
+#: The centre circle is white already, so its hover is a warm tint instead of lighter.
+COLOR_CENTER_HOVER = (1.0, 0.82, 0.35, 1.0)
 #: Radius of the centre circle / of the outer `screen` ring, as a fraction of the gizmo size.
 CENTER_RING_RATIO: float = 0.1
 SCREEN_RING_RATIO: float = 1.1
+#: The centre circle's filled pick disc reaches this far beyond its outline, and is never smaller than the minimum.
+CENTER_PICK_MARGIN_PX: float = 4.0
+CENTER_PICK_MIN_PX: float = 10.0
 _AXIS_COLORS = {"x": COLOR_X, "y": COLOR_Y, "z": COLOR_Z}
 
 TOOLS = ("move", "rotate", "scale")
@@ -65,11 +84,11 @@ TOOLS = ("move", "rotate", "scale")
 # Geometry (no GL)
 # ---------------------------------------------------------------------------
 
-def gizmo_size(camera, pivot: Vec3) -> float:
-    """World size of the gizmo at `pivot` (distance to the eye x `GIZMO_SCALE`)."""
+def gizmo_size(camera, pivot: Vec3, scale: float = GIZMO_SCALE) -> float:
+    """World size of the gizmo at `pivot` (distance to the eye x `scale`, one of `GIZMO_SIZES`)."""
     eye = camera.eye()
     dist = math.sqrt((pivot[0] - eye[0]) ** 2 + (pivot[1] - eye[1]) ** 2 + (pivot[2] - eye[2]) ** 2)
-    return max(dist * GIZMO_SCALE, 1e-6)
+    return max(dist * scale, 1e-6)
 
 
 def screen_ring_positions(pivot: Vec3, right: Vec3, up: Vec3, radius: float, segments: int = 32) -> list[float]:
@@ -190,17 +209,19 @@ def pick_handle(
     height: int,
     max_pixel_distance: float = PICK_RADIUS_PX,
     free_handles: bool = True,
+    scale: float = GIZMO_SCALE,
 ) -> str | None:
     """The handle nearest to (click_x, click_y) within `max_pixel_distance`, or None.
 
     `axes` are `(name, direction)` pairs, `planes` `(name, axis_a, axis_b)` triples (the caller passes the frame:
     world axes and planes in the app). Axis and plane-bracket handles are picked along their whole projected
-    segment (a click anywhere on the line counts, not only at the tip); Rotate rings by dense sample points
-    along the ring; the `center` is one projected point and wins ties with the axis lines (which all start
-    at the pivot). `planes` is ignored for Rotate; `screen` (the outer camera-facing ring) exists for Rotate only.
-    `free_handles=False` is the Playground's older set: `center` for Scale only, no `screen` ring.
+    segment (a click anywhere on the line counts, not only at the tip); rings along their projected segments.
+    The `center` owns its filled disc (`center_pick_radius_px`): inside it nothing else is picked, so the axis
+    lines and edge-on rings that cross the pivot never steal it. `planes` is ignored for Rotate; `screen` (the outer
+    camera-facing ring) exists for Rotate only. `free_handles=False` is the Playground's older set: `center` for
+    Scale only, no `screen` ring.
     """
-    size = gizmo_size(camera, pivot)
+    size = gizmo_size(camera, pivot, scale)
 
     def _seg_dist(p1, p2) -> float:
         s1 = camera.project_to_screen(p1, width, height)
@@ -216,18 +237,23 @@ def pick_handle(
         t = max(0.0, min(1.0, ((click_x - ax) * dx + (click_y - ay) * dy) / len_sq))
         return math.hypot(ax + t * dx - click_x, ay + t * dy - click_y)
 
-    def _pt_dist(pos3d) -> float:
-        s = camera.project_to_screen(pos3d, width, height)
-        return math.hypot(s[0] - click_x, s[1] - click_y) if s is not None else float("inf")
+    if free_handles or tool == "scale":
+        center = camera.project_to_screen(pivot, width, height)
+        if center is not None and math.hypot(center[0] - click_x, center[1] - click_y) <= center_pick_radius_px(
+            camera, pivot, width, height, scale
+        ):
+            return "center"
 
     seg_candidates: list[tuple[str, tuple, tuple]] = []
-    pt_candidates: list[tuple[str, tuple]] = []
+
+    def add_ring(name: str, ring: list[float]) -> None:
+        points = [(ring[i], ring[i + 1], ring[i + 2]) for i in range(0, len(ring), 3)]
+        for i, p in enumerate(points):
+            seg_candidates.append((name, p, points[(i + 1) % len(points)]))
 
     for name, direction in axes:
         if tool == "rotate":
-            ring = axis_ring_positions(pivot, direction, size)
-            for i in range(0, len(ring), 3):
-                pt_candidates.append((name, (ring[i], ring[i + 1], ring[i + 2])))
+            add_ring(name, axis_ring_positions(pivot, direction, size))
         else:
             tip = (pivot[0] + direction[0] * size, pivot[1] + direction[1] * size, pivot[2] + direction[2] * size)
             seg_candidates.append((name, pivot, tip))
@@ -241,21 +267,12 @@ def pick_handle(
             seg_candidates.append((name, corner, end_a))
             seg_candidates.append((name, corner, end_b))
 
-    if free_handles or tool == "scale":
-        pt_candidates.insert(0, ("center", pivot))  # first: wins ties with edge-on rings and the axis lines
     if free_handles and tool == "rotate":
         _, right, up = camera.basis()
-        ring = screen_ring_positions(pivot, right, up, size * SCREEN_RING_RATIO)
-        for i in range(0, len(ring), 3):
-            pt_candidates.append(("screen", (ring[i], ring[i + 1], ring[i + 2])))
+        add_ring("screen", screen_ring_positions(pivot, right, up, size * SCREEN_RING_RATIO))
 
     best_name = None
     best_dist = max_pixel_distance
-    for name, pos3d in pt_candidates:
-        d = _pt_dist(pos3d)
-        if d < best_dist:
-            best_dist = d
-            best_name = name
     for name, p1, p2 in seg_candidates:
         d = _seg_dist(p1, p2)
         if d < best_dist:
@@ -264,9 +281,31 @@ def pick_handle(
     return best_name
 
 
+def center_pick_radius_px(camera, pivot: Vec3, width: int, height: int, scale: float = GIZMO_SCALE) -> float:
+    """Radius in pixels of the centre circle's filled pick disc: its projected outline plus a margin, at least
+    `CENTER_PICK_MIN_PX` (a far or small gizmo keeps a hittable centre)."""
+    size = gizmo_size(camera, pivot, scale)
+    _, right, _ = camera.basis()
+    radius = size * CENTER_RING_RATIO
+    edge = (pivot[0] + right[0] * radius, pivot[1] + right[1] * radius, pivot[2] + right[2] * radius)
+    c = camera.project_to_screen(pivot, width, height)
+    e = camera.project_to_screen(edge, width, height)
+    ring_px = math.hypot(e[0] - c[0], e[1] - c[1]) if c is not None and e is not None else 0.0
+    return max(ring_px + CENTER_PICK_MARGIN_PX, CENTER_PICK_MIN_PX)
+
+
 # ---------------------------------------------------------------------------
 # Draw primitives
 # ---------------------------------------------------------------------------
+
+def hover_color(base):
+    """The hover colour of a handle: `base` lightened towards white; the white centre gets its warm tint."""
+    if base == COLOR_CENTER:
+        return COLOR_CENTER_HOVER
+    r, g, b, a = base
+    k = HOVER_LIGHTEN
+    return (r + (1.0 - r) * k, g + (1.0 - g) * k, b + (1.0 - b) * k, a)
+
 
 @dataclass(frozen=True)
 class DrawItem:
@@ -286,26 +325,28 @@ def draw_items(
     hover: str | None,
     axes=WORLD_AXES,
     planes=WORLD_PLANES,
+    scale: float = GIZMO_SCALE,
 ) -> list[DrawItem]:
-    """The gizmo for `tool` at `pivot`: three states per handle - default, hover (thicker, brighter) and active
-    (= the current `constraint`, thickest). Tool-specific shapes: Move = line + arrowhead, Rotate = ring per axis
-    plus the camera-facing `screen` ring, Scale = line + box cap; every tool has the `center` circle."""
-    size = gizmo_size(camera, pivot)
+    """The gizmo for `tool` at `pivot`: four states per handle - default, hover (thicker, lighter), active
+    (= the current `constraint`, thickest, base colour) and hover on the active handle (thicker still, in the
+    hover colour; until 2026-10-28 active hid the hover, E5). Tool-specific shapes: Move = line + arrowhead,
+    Rotate = ring per axis plus the camera-facing `screen` ring, Scale = line + box cap; every tool has the
+    `center` circle."""
+    size = gizmo_size(camera, pivot, scale)
     cap = size * CAP_SIZE_RATIO
     items: list[DrawItem] = []
 
     def width(name: str) -> float:
         if constraint == name:
-            return LINE_WIDTH_ACTIVE
+            return LINE_WIDTH_ACTIVE_HOVER if hover == name else LINE_WIDTH_ACTIVE
         if hover == name:
             return LINE_WIDTH_HOVER
         return LINE_WIDTH_DEFAULT
 
     def color(base, name: str):
-        if hover == name and constraint != name:
-            r, g, b, a = base
-            return (min(r * 1.4, 1.0), min(g * 1.4, 1.0), min(b * 1.4, 1.0), a)
-        return base
+        if hover != name:
+            return base
+        return hover_color(base)
 
     def add(positions, base, name, primitive):
         items.append(DrawItem(tuple(positions), color(base, name), primitive, width(name)))

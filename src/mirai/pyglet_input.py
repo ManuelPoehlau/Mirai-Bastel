@@ -70,6 +70,8 @@ def _key_map() -> dict[int, str]:
             _key.PLUS: "plus", _key.NUM_ADD: "plus", _key.MINUS: "minus", _key.NUM_SUBTRACT: "minus",
             # Morph Lab: Basis / Ziel wechseln (`,` / `.`).
             _key.COMMA: "comma", _key.PERIOD: "period",
+            # 2026-10-28: function keys (session switches of the practical tests, F7 / F8).
+            **{getattr(_key, f"F{i}"): f"f{i}" for i in range(1, 13)},
         }
     return _KEY_MAP
 
@@ -108,7 +110,7 @@ def key_from_pyglet(symbol: int, modifiers: int) -> Input | None:
     Gibt `None` zurück, wenn `symbol` nicht im übernommenen Key-Set liegt
     (A–Z, 0–9, TAB, ESCAPE, SPACE, Pfeile, ENTER/Keypad-ENTER — WP-06 B7,
     beide als `"enter"`; BACKSPACE/DELETE — WP Delete/Dissolve; `+`/`-` und
-    Keypad-`+`/`-` als `"plus"`/`"minus"` — WP Toolbox Gaps A1).
+    Keypad-`+`/`-` als `"plus"`/`"minus"` — WP Toolbox Gaps A1; F1–F12 als `"f1"`…`"f12"`).
     """
     key_name = _key_map().get(symbol)
     if key_name is None:

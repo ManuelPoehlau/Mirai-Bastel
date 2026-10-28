@@ -11,7 +11,10 @@ The user should be able to work directly with visible geometry whenever possible
 1. Few, memorable modes.
 2. Mouse position and hover provide context.
 3. Keyboard modifiers may refine an operation where useful.
-4. Tweak should allow direct manipulation without an additional tool step.
+4. Tweak should allow direct manipulation without an additional tool step. ("Tweak" = hold W/E/R + move the mouse,
+   release = done; Manu 2026-10-28. Axis constraints apply to one Tweak and then clear, so a forgotten one does not
+   get in the way of the next — `PROVISIONAL`, compared against sticky in the practical test of
+   [WP Playground-Werkzeuge, Nachtrag 2026-10-28](../WP_PLAYGROUND_TOOLS_PROMOTION.md#nachtrag-2026-10-28-achse-einmalig-tweak--halte-geste-gizmo-kleiner-manu).)
 5. Camera and modeling should remain fast and reliable to operate.
 6. Keep UI noise low.
 7. Consider Undo/Redo from the beginning.
