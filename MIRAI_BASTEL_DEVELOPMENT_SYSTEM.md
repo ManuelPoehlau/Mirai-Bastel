@@ -284,6 +284,15 @@ Lösung. Ein Atelier-Brief ist Input für Discovery (M5), keine Entscheidung; di
 M1 und baut daraus Experimente oder technische Handoffs. Was dauerhaft festgehalten werden soll, landet
 in `docs/future_ideas/` oder in der zuständigen Research-/Design-Datei, nicht in einem neuen Dokumenttyp.
 
+
+**Ausnahme (2026-10-28, Manu): Mirai UX & Interface.** Ein eigenes Claude-Projekt für
+Interaktionsgrammatik und GUI. Begründung (eingetretener Fehler): Die Belegung aus Ctrl/Shift/Alt +
+Taste/Klick/Drag ist mit dem Wachstum der App nicht mehr merkbar (Manu, 2026-10-25), und GUI-Fragen
+jenseits von Hotkeys nehmen zu. Das Projekt ist das Chat-Zuhause des Three-Role UX Systems (§6),
+`UX_RESEARCH.md` bleibt sein Wissensspeicher. Es schreibt Handoffs an Claude Code nur für die UI-
+und Input-Schicht. Änderungen an ADs, Core-Verträgen oder Nicht-UI-Systemen gehen zuerst als zweite
+Meinung an das Entwicklungs-Projekt. Intent, Product Truth, Priorität und Promotion bleiben bei Manu.
+
 Regel für alles Weitere:
 
 > **Ein Prozessmechanismus muss einen eingetretenen Fehler lösen, nicht einen erwarteten.**
