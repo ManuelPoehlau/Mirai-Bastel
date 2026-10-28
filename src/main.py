@@ -648,7 +648,7 @@ def install_handlers(
     def on_draw():
         from pyglet import gl
 
-        gl.glClearColor(0.05, 0.05, 0.08, 1.0)
+        gl.glClearColor(0.7, 0.7, 0.7, 1.0)
         window.clear()
         app.viewport.sync()
         app.viewport.render()
