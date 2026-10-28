@@ -48,6 +48,7 @@ and last commit: [experiments/README.md](../experiments/README.md)). Their docs,
 | [WP_DELETE_DISSOLVE_PLAN.md](WP_DELETE_DISSOLVE_PLAN.md) | Delete (destruktiv) / Dissolve (bewahrend) auf Vertex-/Edge-/Face-Ebene, Production-first ohne Lab; Status, offene Fragen und Praxis-Check am Ende |
 | [WP_PLAYGROUND_TOOLS_PROMOTION.md](WP_PLAYGROUND_TOOLS_PROMOTION.md) | Box/Paint Select, Tweak und Loop-Werkzeuge aus dem Playground in die App (2026-10-15); Nachtrag 2026-10-28: Achse einmalig, Tweak = Halte-Geste, Ctrl+LMB-Ziehen entfernt, kleineres Gizmo: Manus Entscheidungen, Annahmen, Praxistest |
 | [WP_TOOLBOX_GAPS_PLAN.md](WP_TOOLBOX_GAPS_PLAN.md) | Geplant 2026-10-23: Collapse V/E/F, Select Through, Transform-Raum World/Normal, Grow/Shrink, Loop-Extend, Next/Prev Loop, Relax/Smooth, Subdivide — Pakete A/B/C, Slices, Tasten, Praxistest |
+| [WP_ORTHO_VIEWS_PLAN.md](WP_ORTHO_VIEWS_PLAN.md) | Geplant 2026-10-28: Ortho/Persp, Standardansichten per Shift beim Orbit, Working Pivot rastet auf die Symmetrieebene (Manus V-1..V-3); alle Perspektiv-Annahmen im Code, Tests, Doku — noch nicht gebaut |
 
 ## For AI collaborators
 
