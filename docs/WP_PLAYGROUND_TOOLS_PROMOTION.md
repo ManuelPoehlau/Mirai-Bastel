@@ -172,6 +172,14 @@ Constraint ist, muss sichtbar sein.
   Mechanismus (LMB-Ziehen mit `TWEAK_KEY`, den das Gizmo nutzt) und der Command `Tweak` bleiben; er ist nur ungebunden.
   Ctrl+LMB-Ziehen tut jetzt nichts (kein Klick, keine Auswahländerung).
 
+- **Fix Kugeldrehung (Manu, 2026-10-28: „zuckt nur kurz … bewegt sich dann nicht mehr“):** Mit Symmetrie und einer
+  Soft-Zone über der Naht verlangt der Core pro Operation eine feste Drehachse (AD-SYM-05 §4.4); die Kugel (Mittelkreis bei
+  Rotate) wechselt die Achse bei jedem Schritt, deshalb scheiterte der zweite Schritt und die Geste fror ein. Jetzt setzt die
+  Kugel in diesem Fall bei jedem Schritt die Operation auf den Start zurück und wendet die ganze Drehung als einen Schritt an
+  (`RotateTool`, `TransformTool._restart_operation`, derselbe Weg wie der Live-Radius). Naht bleibt auf der Ebene, Paare exakt
+  gespiegelt, ein Undo-Schritt, unabhängig davon, wie der Zug in Ereignisse zerfällt (`tests/test_symmetric_soft_selection.py`).
+  Kosten: 0,2–0,7 ms pro Schritt auf dem Kopf (Container-CPU, nicht der Referenz-PC). Der Core bleibt unverändert.
+
 Code: `src/mirai/application.py` (`CONSTRAINT_MODES`, `_consume_constraint`, `_session_switch`, `_update_hover`,
 `_gizmo_press`/`_cancel`), `src/mirai/viewport/gizmo.py` (`GIZMO_SIZES`, `center_pick_radius_px`, `hover_color`),
 `src/mirai/interaction/bindings.py` (F7/F8, Ctrl+LMB-Ziehen entfernt), `src/mirai/pyglet_input.py` (F1–F12), `src/hud.py`,
@@ -193,6 +201,7 @@ Start: `python src/main.py` (Head). Die HUD-Zeile „Axis“ zeigt, welche Varia
 | K6 | **Picken mit Mesh dahinter:** Gizmo über dem Gesicht, langsam über Achsen, Ebenen-Winkel und den Mittelkreis fahren, dann klicken und ziehen | Unter einem Griff leuchtet kein Mesh-Element mehr; der Klick trifft den Griff, nie die Auswahl dahinter. Mittelkreis: überall innen treffbar (färbt sich gelb), Ziehen = frei (`W`), Trackball (`E`), gleichmäßig (`R`) | |
 | K7 | **Aktive Achse hovern:** `X` drücken (X-Achse dick), dann mit der Maus über die X-Achse fahren; auch bei `E` (Ring) und `R` | Siehst du, dass du sie triffst (noch dicker, heller)? Andere Griffe: heller + dicker | |
 | K8 | **Gizmo-Griff ziehen** (one-shot): `X` drücken, dann an der Y-Achse ziehen, loslassen, danach mit `W` ziehen. Auch: an einer Achse klicken ohne zu ziehen, dann `W` ziehen | Zug am Griff nur entlang Y, danach ist alles frei; Klick auf den Griff wirkt wie `X` für einen Zug | |
+| K10 | **Kugeldrehung mit Symmetrie + Soft:** `Shift+S` (Symmetrie), `O` (Soft), Radius so groß, dass die Zone über die Mitte reicht, ein paar Punkte neben der Naht wählen, `E` antippen, am Mittelkreis ziehen | dreht durchgehend weiter (kein Zucken/Einfrieren), die Mitte bleibt auf der Ebene, ein `Strg+Z` | |
 | K9 | **Ctrl+LMB:** Strg halten und auf dem Mesh ziehen; Strg-Klick auf einen gewählten Punkt | Ziehen tut nichts; Klick entfernt weiter aus der Auswahl. Fehlt dir Ctrl+LMB-Ziehen irgendwo? | |
 
 Meine Lesart (bitte in einem Satz korrigieren, falls falsch): „eine Geste“ = ein fertiger Zug (Commit), nicht schon das

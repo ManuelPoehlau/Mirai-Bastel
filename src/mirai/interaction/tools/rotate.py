@@ -210,6 +210,16 @@ class RotateTool(TransformTool):
             if n < 1e-12:
                 return
             target = _quat_from_axis_angle(v.scale(axis, 1.0 / n), n * self.RADIANS_PER_PIXEL)
+            symmetry = self._operation.context.params.get("symmetry") or {}
+            if symmetry.get("falloff_seam_vertex_ids"):
+                # Soft zone across the seam (AD-SYM-05 §4.4, R-1): the Core op needs ONE axis per op, the
+                # trackball's axis changes every step. So each step restarts the op from the start geometry
+                # and applies the whole rotation as one step about the total axis (fix 2026-10-28: before,
+                # the second step raised and the gesture froze after a twitch).
+                self._quat_applied = target
+                self._restart_operation()
+                self._replay()
+                return
             w, qx, qy, qz = self._quat_applied
             step_q = _quat_mul(target, (w, -qx, -qy, -qz))
             step_axis, step_angle = _quat_to_axis_angle(step_q)

@@ -500,6 +500,15 @@ class TransformTool(Tool):
         operation.begin()  # wirft SeamConstraintError bei Seam-Pivot abseits der Ebene
         self._operation = operation
 
+    def _restart_operation(self) -> None:
+        """Cancel the op (exact start geometry, no History) and begin a new one on the same vertices with the
+        same params (weights, symmetry, pivot) - for a caller that then applies its whole intent as one step
+        (`_replay`). Cheaper than `reweight`: nothing is recomputed."""
+        params = dict(self._operation.context.params)
+        self._operation.cancel()
+        self._operation = None
+        self._begin_operation(self._scene, self._vertex_ids, params)
+
     def _refuse_if_seam_unsafe(self, keeps_plane) -> None:
         """INV-8: Seam-Vertices dürfen die Ebene nie verlassen - sichtbar ablehnen
         (SeamConstraintError, vor der ersten Bewegung), nie still driften.
