@@ -147,8 +147,13 @@ def test_rows_text(app):
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
     assert list(rows) == [
-        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Display", "Soft", "SubD", "Region", "Look", "Fixed"
+        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Display", "View", "Soft", "SubD", "Region", "Look", "Fixed"
     ]
+    # WP Ortho / Views: the view row with the toggle key; on once it is not the plain perspective.
+    assert rows["View"].value == "Persp" and rows["View"].keys == "U" and not rows["View"].on
+    app.key_press(_key("u"))
+    view = {row.label: row for row in hud_rows(hud_state(app), {})}["View"]
+    assert view.value == "Ortho" and view.on
     # AD-013 addendum 2026-10-28: the fixed modifier grammar is listed read-only, without keys.
     assert rows["Fixed"].value == FIXED_ROW and rows["Fixed"].keys == ""
     assert rows["Region"].value == "no groups · colours on" and not rows["Region"].on

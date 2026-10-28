@@ -75,6 +75,10 @@ CANCEL = "Cancel"
 ORBIT = "Orbit"
 PAN = "Pan"
 ZOOM = "Zoom"
+# WP Ortho / Views (Manu V-2, 2026-10-28): Ortho <-> Persp at any time. View state (no History, not saved),
+# allowed during gestures like the display keys. The snap to a standard view is Shift during an Alt+LMB orbit
+# (V-1, fixed modifier grammar, `bindings.FIXED_MODIFIER_RULES`), not a command.
+TOGGLE_ORTHO = "ToggleOrtho"
 
 # --- Display Modes / Viewport-Anzeige (Viewport-only) ---------------------
 CYCLE_DISPLAY_MODE = "CycleDisplayMode"

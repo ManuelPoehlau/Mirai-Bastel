@@ -393,7 +393,8 @@ def face_edge_distance_px(camera, mesh, face_id, sx, sy, width, height, *, cache
 
 def point_occluded(camera, mesh, cache, point, width, height, exclude_faces, depth_tolerance=DEPTH_TOLERANCE):
     """True if some face other than `exclude_faces` lies strictly closer to
-    the camera than `point` along the ray from the eye through it (a small
+    the camera than `point` along the view ray through it (from the eye; in ortho the
+    parallel ray, `_ray_origin`) (a small
     `depth_tolerance` keeps silhouette elements pickable, per the handoff's
     occlusion rule).
 
@@ -402,9 +403,17 @@ def point_occluded(camera, mesh, cache, point, width, height, exclude_faces, dep
     visited - every face whose bbox contains the point is among them, the others were skipped
     by the bbox check anyway - so the answer is the same as testing every face."""
     return _occluded(
-        mesh, cache, camera.eye(), point, camera.project_to_screen(point, width, height),
+        mesh, cache, _ray_origin(camera, point), point, camera.project_to_screen(point, width, height),
         exclude_faces, depth_tolerance, False,
     )
+
+
+def _ray_origin(camera, point):
+    """Where the view ray through `point` starts: the eye, or in ortho (parallel rays) the point
+    moved back behind all geometry (`OrbitCamera.ray_origin_toward`)."""
+    if getattr(camera, "ortho", False):
+        return camera.ray_origin_toward(point)
+    return camera.eye()
 
 
 def point_occlusion_test(camera, mesh, cache, width, height, depth_tolerance=DEPTH_TOLERANCE):
@@ -413,7 +422,8 @@ def point_occlusion_test(camera, mesh, cache, width, height, depth_tolerance=DEP
     (Box Select): eye and projection are set up once. `screen` may pass the point's projection
     when the caller has it (it must equal `camera.project_to_screen(point, width, height)`, as
     `PickCache.vertex_screen` does)."""
-    eye = camera.eye()
+    ortho = getattr(camera, "ortho", False)
+    eye = None if ortho else camera.eye()
     projector = getattr(camera, "screen_projector", None)
     if projector is not None:
         project = projector(width, height)
@@ -424,7 +434,8 @@ def point_occlusion_test(camera, mesh, cache, width, height, depth_tolerance=DEP
     def occluded(point, exclude_faces, screen=None):
         if screen is None:
             screen = project(point)
-        return _occluded(mesh, cache, eye, point, screen, exclude_faces, depth_tolerance, True)
+        origin = camera.ray_origin_toward(point) if ortho else eye
+        return _occluded(mesh, cache, origin, point, screen, exclude_faces, depth_tolerance, True)
 
     return occluded
 

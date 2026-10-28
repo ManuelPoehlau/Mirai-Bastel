@@ -742,3 +742,56 @@ def test_random_sessions_mixing_mesh_and_space_clicks_stay_sound(seed):
         assert knife.last_problem is None, knife.last_problem
         assert len(scene.history) == history + (cmd is not None)
         assert_mesh_invariants(mesh, context=f"S4 random space session {seed}")
+
+
+# =========================================================================================================
+# WP Ortho / Views: the Knife with parallel rays (the plane planner cuts along A, B and the view direction)
+# =========================================================================================================
+
+
+def _ortho_front(mesh) -> OrbitCamera:
+    cam = _camera(mesh, 0.0, 0.0)
+    cam.set_ortho(True)
+    return cam
+
+
+def test_ortho_far_click_crosses_any_number_of_faces():
+    mesh, p = _grid(n=6)
+    knife, scene = _session(mesh, _camera(mesh))
+    knife.set_view(_ortho_front(mesh), W, H, occlusion=True)
+    assert knife.click(_ept(mesh, p[(3, 0)], p[(4, 0)], 0.5))
+    assert knife.click(_ept(mesh, p[(3, 6)], p[(4, 6)], 0.5))
+    assert len(_crossings(knife)) == 5 and not _breaks(knife)
+    assert knife.commit() is not None
+    assert_mesh_invariants(mesh, context="ortho 6 quads")
+
+
+def test_ortho_space_line_cuts_along_the_view_direction_through_both_ends():
+    """Both ends in space (plane planner): in an ortho Front view the cut plane is y = 1.5 itself, so every
+    vertical edge is crossed at its middle - with a perspective plane through the eye it would not be."""
+    mesh, p = _grid()
+    cam = _ortho_front(mesh)
+    cam.target = (cam.target[0], cam.target[1], 0.8)  # the space points lie in front of the grid (z = 0.8)
+    knife, scene = _session(mesh, cam)
+    left, right = _screen(cam, (-0.7, 1.5, 0.0)), _screen(cam, (4.7, 1.5, 0.0))
+    assert knife.click(_space(cam, *left))
+    assert knife.click(_space(cam, *right))
+    crossings = [target_position(mesh, q) for q in _crossings(knife)]
+    assert len(crossings) == 5
+    assert all(pos[1] == pytest.approx(1.5, abs=1e-9) for pos in crossings)
+    assert knife.commit() is not None
+    assert_mesh_invariants(mesh, context="ortho space line")
+
+
+def test_ortho_space_point_lies_on_the_click_ray_and_on_the_target_plane():
+    from mirai.topology.knife_pick import space_point
+
+    mesh = create_cube()
+    cam = _camera(mesh, 35.0, 30.0)
+    cam.set_ortho(True)
+    cam.pan(37.0, -12.0, W, H)
+    pos = space_point(cam, 40.0, 60.0, W, H)
+    forward = cam.basis()[0]
+    assert abs(sum((pos[k] - cam.target[k]) * forward[k] for k in range(3))) < 1e-9
+    back = cam.project_to_screen(pos, W, H)
+    assert back[0] == pytest.approx(40.0, abs=1e-6) and back[1] == pytest.approx(60.0, abs=1e-6)

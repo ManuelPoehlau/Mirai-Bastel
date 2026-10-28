@@ -99,6 +99,41 @@ camera.orbit(delta)
   → draw()
 ```
 
+#### Addendum 2026-10-28: Ortho and standard views (WP Ortho / Views)
+
+Manu (2026-10-28): *"Jetzt zeigt sich aber echter Bedarf nach einer Ortho Persp mit Front/Side/Top/Bottom View,
+sonst kann man den Pivot gar nicht genau mittig auf der X Achse setzen (dann geht auch Symmetry nicht so gut)."*
+Decisions V-1..V-3 (chat 2026-10-28, all as recommended):
+
+- **V-1 Snap by Shift during orbit:** during an Alt+LMB orbit, Shift snaps the camera to the nearest of Front /
+  Back / Left / Right / Top / Bottom while dragging; Shift up = free orbit again. Shift held *before* the press
+  stays Pan (Alt+Shift+LMB). No numpad. Fixed modifier grammar (`bindings.FIXED_MODIFIER_RULES`), not a binding.
+- **V-2 Auto ortho:** a snapped view is orthographic; orbiting away returns to perspective (Blender "Auto
+  Perspective"). One toggle key Ortho <-> Persp at any time (`TOGGLE_ORTHO`, code default `U`, `PROVISIONAL`);
+  ortho switched on by hand survives leaving a snapped view.
+- **V-3 Pivot symmetry snap:** see AD-012, addendum "Working Pivot".
+
+**Contract (`src/mirai/viewport/camera.py`, one camera, `ortho` is its mode):**
+- Ortho half-height in world units = `distance * tan(fov/2)`: the same size at the target when toggling; dolly
+  is the ortho zoom, pan speed is unchanged.
+- **Parallel rays:** `screen_to_ray` returns direction = `forward` and an origin on the plane `ortho_back`
+  (= `far / 2`) behind the eye plane, so geometry between or behind the orbit eye is neither cut nor
+  unpickable; ray parameters stay positive for everything on screen (pickers drop `t <= 1e-9`).
+- `project_to_screen`, `screen_projector` (bit-identical to each other) and `build_projection_matrix` use the
+  same depth range: near = `-ortho_back`, far = `far`; ndc = camera x / half width, no division by depth.
+- **No `eye()` as a ray origin:** consumers that cast toward a point use `ray_origin_toward(point)`; a
+  screen-constant size uses `view_scale_at(point)` (persp: eye distance; ortho: `distance`). `eye()` stays the
+  view centre (`target + distance * dir`), so the view matrix, `space_point` and light-follows-camera are
+  unchanged. `ObjectSpaceCamera` carries the same three names.
+- A plane through the view (Knife plane planner) is spanned by the two points and `forward` in ortho; the GPU
+  depth oracle clips with `-w <= z <= w` (in ortho `w` is 1); the smooth-quad shader casts the parallel ray when
+  `u_proj[3][3] == 1`.
+- `basis()` at |pitch| = 90° (Top / Bottom) takes `right` from the yaw; free orbit stays within ±85°,
+  `set_view` sets ±90° for a snapped view. `nearest_standard_view` keeps the yaw in its turn.
+- Every ortho or view change bumps `camera_revision` (PickCache, GPU picking and uniforms key on it).
+- The camera (and so ortho) is view state: not saved, no History.
+- Not in scope: snapping in the transform's Alt-orbit (`Application._navigate_during_transform`).
+
 ### 4.2 RenderMesh
 
 **Responsibility:** Persistent GPU geometry; dirty state tracking; update dispatch.

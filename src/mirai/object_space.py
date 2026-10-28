@@ -122,7 +122,8 @@ class ObjectSpaceCamera:
 
     Genau die Schnittstelle, die die Komponentenpfade lesen (grep 2026-10-15: `project_to_screen`,
     `screen_to_ray`, `eye`, `basis`, `screen_delta_to_world`, `camera_revision`, `target`;
-    WP-VIEW-PERF-01: `screen_projector` für `PickCache.refresh`);
+    WP-VIEW-PERF-01: `screen_projector` für `PickCache.refresh`; WP Ortho / Views 2026-10-28:
+    `ortho`, `ray_origin_toward`, `view_scale_at`);
     alles andere fehlt absichtlich, damit ein neuer Konsument laut scheitert statt still in
     Welt zu rechnen. Liest Kamera und Transform live: ein Transform-Wechsel braucht keinen
     neuen Adapter. `camera_revision` ändert sich mit beiden, damit ein `PickCache` nach einem
@@ -150,6 +151,18 @@ class ObjectSpaceCamera:
 
     def eye(self) -> Vec3:
         return to_object(self.obj, self.camera.eye())
+
+    @property
+    def ortho(self) -> bool:
+        return bool(getattr(self.camera, "ortho", False))
+
+    def ray_origin_toward(self, point: Vec3) -> Vec3:
+        """Ursprung des Sichtstrahls durch `point` (Objektraum): das Auge, in Ortho der zurückgeschobene Punkt."""
+        return to_object(self.obj, self.camera.ray_origin_toward(to_world(self.obj, point)))
+
+    def view_scale_at(self, point: Vec3) -> float:
+        """`OrbitCamera.view_scale_at` in Objekteinheiten (Welt / `scale`)."""
+        return self.camera.view_scale_at(to_world(self.obj, point)) / self.obj.transform.scale
 
     def basis(self) -> tuple[Vec3, Vec3, Vec3]:
         return tuple(axis_to_object(self.obj, a) for a in self.camera.basis())  # type: ignore[return-value]

@@ -352,7 +352,8 @@ class GpuPicker:
 
     def _pixel_of(self, block):
         """`pixel(point)` -> (index into the block, window depth) of an object-space point, with the
-        matrices of the face pass; None if it is behind the eye or outside the block."""
+        matrices of the face pass; None if it is clipped (behind the eye, outside the depth range) or
+        outside the block."""
         width, height = self._size
         bx0, by0, w, h = block
         camera, model = self._state[3], self._state[4]
@@ -366,6 +367,10 @@ class GpuPicker:
             cx = m[0] * x + m[4] * y + m[8] * z + m[12]
             cy = m[1] * x + m[5] * y + m[9] * z + m[13]
             cz = m[2] * x + m[6] * y + m[10] * z + m[14]
+            if cz < -cw or cz > cw:
+                # Outside the depth range (clipped, no depth-buffer pixel). In ortho `cw` is always 1,
+                # so this is the only test that rejects a point behind the ray origins (WP Ortho / Views).
+                return None
             px = math.floor((cx / cw + 1.0) * 0.5 * width) - bx0
             py = math.floor((cy / cw + 1.0) * 0.5 * height) - by0
             if not (0 <= px < w and 0 <= py < h):

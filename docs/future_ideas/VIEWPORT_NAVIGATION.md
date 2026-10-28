@@ -22,6 +22,11 @@ unterschiedliche Orbit-/Drag-Konventionen.
 
 ## Viewport View Snapping
 
+**Umgesetzt 2026-10-28** (`PROVISIONAL`, Manu V-1/V-2): Shift während des Alt+LMB-Orbits rastet auf die
+nächste Standardansicht ein, ortho; `U` schaltet Ortho/Persp. Vertrag:
+[VIEWPORT_V02_ARCHITECTURE §4.1, Addendum Ortho](../viewport/VIEWPORT_V02_ARCHITECTURE.md#addendum-2026-10-28-ortho-and-standard-views-wp-ortho--views).
+Der Rest unten ist die ursprüngliche Idee.
+
 Inspiration aus ZBrush: eine Modifikatortaste (z. B. Shift) könnte während
 des Orbit-Drags zur nächstgelegenen Standardansicht snappen.
 

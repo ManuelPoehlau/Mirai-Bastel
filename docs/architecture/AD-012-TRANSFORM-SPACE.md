@@ -341,6 +341,15 @@ Key: bare `P`, `PROVISIONAL` code default (not in `config/keymap.json`). Code: `
 `Application` (`_pivot_*`, `active_pivot`); tests `tests/test_pivot_placement.py`,
 `tests/test_application_working_pivot.py`.
 
+**V-3 Symmetry plane snap (Manu, chat 2026-10-28, as recommended; WP Ortho / Views):** with symmetry on, a placed
+point within `PIVOT_PLANE_SNAP_PX` (12 px screen, `PROVISIONAL`) of its projection onto the symmetry plane lands
+exactly on the plane - in every view, also perspective, after every placement mode (inside, Shift vertex/edge, off
+the mesh) and in the preview; the status line says "on the symmetry plane". Without symmetry nothing snaps.
+Consequence of the rule (to confirm in the practical test): in a view facing the plane (Side, ortho or nearly),
+point and projection share the pixel, so every click lands on the plane - also a Shift-picked vertex off the plane.
+Code: `mirai.pivot.snap_to_plane`, `Application._pivot_point_at`. The ortho side view itself (V-1/V-2) is
+[VIEWPORT_V02_ARCHITECTURE §4.1, Addendum Ortho](../viewport/VIEWPORT_V02_ARCHITECTURE.md#addendum-2026-10-28-ortho-and-standard-views-wp-ortho--views).
+
 **Later, not in this step:** pivot orientation (aligned to the surface / free) as a transform space next to
 World/Normal, editing the pivot with the gizmo, saving it with the scene, setting an object's pivot (Q-13) with the
 same placement, and **QuickPose** — a pivot for one gesture only (press on the mesh, drag = screen-space rotation

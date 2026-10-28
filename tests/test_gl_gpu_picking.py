@@ -15,6 +15,8 @@ Needs a real GL context (`xvfb-run -a python -m pytest tests/test_gl_gpu_picking
 
 from __future__ import annotations
 
+import math
+
 import tests._bootstrap  # noqa: F401
 
 import sys
@@ -242,3 +244,23 @@ def test_hidden_faces_are_never_picked_and_stop_occluding(app):
         assert gpu not in hidden_faces, (x, y, gpu)
         hits += gpu is not None
     assert hits > 100
+
+
+# -- WP Ortho / Views: the same agreements with parallel rays ----------------------------------------------
+
+
+@pytest.mark.parametrize("view", ["free", "right"])
+def test_ortho_gpu_picking_agrees_with_the_cpu_picker(app, view):
+    """Faces exact, Vertex / Edge hover and Box within the same tolerances as in perspective (the GPU depth
+    oracle clips by `-w <= z <= w`, the CPU occlusion casts the parallel ray)."""
+    if view == "right":
+        app.camera.set_view(math.pi / 2, 0.0, ortho=True)
+    else:
+        app.camera.set_ortho(True)
+    app._camera_changed()
+    app.viewport.sync()
+    test_face_ids_are_exact_at_pixel_centres(app)
+    for mode in (SelectionMode.VERTEX, SelectionMode.EDGE):
+        test_hover_agrees_with_the_cpu_picker(app, mode)
+    for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
+        test_box_keeps_the_cpu_rule_within_a_few_percent(app, mode)

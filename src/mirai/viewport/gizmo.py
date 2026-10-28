@@ -85,7 +85,11 @@ TOOLS = ("move", "rotate", "scale")
 # ---------------------------------------------------------------------------
 
 def gizmo_size(camera, pivot: Vec3, scale: float = GIZMO_SCALE) -> float:
-    """World size of the gizmo at `pivot` (distance to the eye x `scale`, one of `GIZMO_SIZES`)."""
+    """World size of the gizmo at `pivot` (distance to the eye x `scale`, one of `GIZMO_SIZES`). In ortho the
+    distance is the camera's (`view_scale_at`), so the gizmo and the pivot marker stay constant on screen
+    instead of growing with the pulled-back ray origin."""
+    if getattr(camera, "ortho", False):
+        return max(camera.view_scale_at(pivot) * scale, 1e-6)
     eye = camera.eye()
     dist = math.sqrt((pivot[0] - eye[0]) ** 2 + (pivot[1] - eye[1]) ** 2 + (pivot[2] - eye[2]) ** 2)
     return max(dist * scale, 1e-6)

@@ -324,11 +324,15 @@ def walk(view: View, mesh, a: dict, b: dict, *, vertex_tol_px=VERTEX_TOL_PX, max
 # -- PLANE -----------------------------------------------------------------------------
 
 def plane_hits(view: View, mesh, a: dict, b: dict, *, vertex_tol_px=VERTEX_TOL_PX):
-    """Visible hits of every edge with the plane (eye, A, B) whose projection lies
+    """Visible hits of every edge with the plane (eye, A, B) (ortho: A, B and the view direction) whose projection lies
     on the screen segment; vertices within `vertex_tol_px` first (edges incident
     to a vertex hit are skipped — Blender's order). Returns (crossings, hidden)."""
-    eye = view.camera.eye()
+    camera = view.camera
     pa, pb = point_position(mesh, a), point_position(mesh, b)
+    # The plane's normal and a point on it (`eye`): through the eye, A and B; in ortho (parallel rays)
+    # through A and B along the view direction (WP Ortho / Views).
+    ortho = getattr(camera, "ortho", False)
+    eye = pa if ortho else camera.eye()
     A2, B2 = view.p2(pa), view.p2(pb)
     if A2 is None or B2 is None:
         return [], 0
@@ -337,7 +341,7 @@ def plane_hits(view: View, mesh, a: dict, b: dict, *, vertex_tol_px=VERTEX_TOL_P
     if LL < 1.0:
         return [], 0
     L = math.sqrt(LL)
-    n = _cross3(_sub(pa, eye), _sub(pb, eye))
+    n = _cross3(_sub(pb, pa), camera.basis()[0]) if ortho else _cross3(_sub(pa, eye), _sub(pb, eye))
     skip_edges = {q.get("edge_id") for q in (a, b) if q["kind"] == "edge"}
     skip_verts = {q["vertex_id"] for q in (a, b) if q["kind"] == "vertex"}
     for q in (a, b):

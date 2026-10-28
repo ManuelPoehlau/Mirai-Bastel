@@ -8,7 +8,16 @@ import math
 import pytest
 
 import tests._bootstrap  # noqa: F401
-from mirai.pivot import WorkingPivot, inside_point, place_pivot, snap_point, view_plane_point
+from mirai.pivot import (
+    PIVOT_PLANE_SNAP_PX,
+    WorkingPivot,
+    inside_point,
+    place_pivot,
+    snap_point,
+    snap_to_plane,
+    view_plane_point,
+)
+from mirai.scene_factory import create_sphere
 from mirai.viewport.camera import OrbitCamera
 from mirai.viewport.picking import face_hits_t
 from mirai.viewport.picking_cache import PickCache
@@ -128,3 +137,44 @@ def test_place_pivot_is_deterministic(snap):
     a = place_pivot(camera, mesh, 410.0, 290.0, WIDTH, HEIGHT, snap=snap)
     b = place_pivot(camera, mesh, 410.0, 290.0, WIDTH, HEIGHT, snap=snap)
     assert a == b
+
+
+# -- WP Ortho / Views: ortho side view and the symmetry plane snap (V-3) ----------------------------------------
+
+
+def _side_camera(ortho: bool) -> OrbitCamera:
+    """Right view: the eye on +X, every ortho ray runs along -X."""
+    return OrbitCamera(target=(0.0, 0.0, 0.0), distance=6.0, yaw=math.pi / 2, pitch=0.0, ortho=ortho)
+
+
+def test_ortho_side_view_puts_the_inside_point_of_a_round_head_on_the_plane():
+    """Manu 2026-10-28: in perspective the slanted ray's midpoint drifts off x = 0 on a curved head; in ortho it
+    does not (rays along X, entry and exit mirror each other)."""
+    mesh = create_sphere()
+    for target in ((0.0, 0.5, 0.4), (0.0, -0.3, -0.6), (0.0, 0.8, 0.1)):
+        persp, ortho = _side_camera(False), _side_camera(True)
+        drift = inside_point(persp, mesh, *persp.project_to_screen(target, WIDTH, HEIGHT), WIDTH, HEIGHT)
+        assert abs(drift[0]) > 1e-3
+        point = inside_point(ortho, mesh, *ortho.project_to_screen(target, WIDTH, HEIGHT), WIDTH, HEIGHT)
+        assert abs(point[0]) < 1e-12
+        assert _close(point[1:], target[1:], 1e-9)
+
+
+def test_plane_snap_within_the_threshold_lands_exactly_on_the_plane():
+    camera = _front_camera()
+    plane = ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    world_per_px = 2.0 * 6.0 * math.tan(math.radians(25.0)) / HEIGHT  # at the target depth
+    near = (0.7 * PIVOT_PLANE_SNAP_PX * world_per_px, 0.3, 0.0)
+    snapped, on_plane = snap_to_plane(camera, near, *plane, WIDTH, HEIGHT)
+    assert on_plane and snapped == (0.0, 0.3, 0.0)
+    far = (1.5 * PIVOT_PLANE_SNAP_PX * world_per_px, 0.3, 0.0)
+    assert snap_to_plane(camera, far, *plane, WIDTH, HEIGHT) == (far, False)
+    assert snap_to_plane(camera, (0.0, 0.2, 0.1), *plane, WIDTH, HEIGHT) == ((0.0, 0.2, 0.1), True)
+
+
+def test_plane_snap_works_in_perspective_and_ortho_and_for_any_axis():
+    for ortho in (False, True):
+        camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=6.0, yaw=0.4, pitch=0.3, ortho=ortho)
+        point = (0.2, 0.004, -0.1)
+        snapped, on_plane = snap_to_plane(camera, point, (0.0, 0.0, 0.0), (0.0, 1.0, 0.0), WIDTH, HEIGHT)
+        assert on_plane and snapped == (0.2, 0.0, -0.1)

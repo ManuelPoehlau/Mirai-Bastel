@@ -10,6 +10,12 @@ enters and leaves it ("inside": jaw hinge, elbow, knuckle in one click); with `s
 point under the cursor (the Knife's pick, Shift as in the Knife); off the mesh the plane facing the camera
 through `anchor`, so a click after orbiting moves the pivot sideways without changing its depth.
 Pure maths: `camera` is the edit object's camera (`ObjectSpaceCamera` or `OrbitCamera`).
+
+Symmetry plane snap (V-3, Manu 2026-10-28; WP Ortho / Views): with symmetry on, a placed point within
+`PIVOT_PLANE_SNAP_PX` (screen) of its projection onto the symmetry plane lands exactly on the plane -
+in every view and after every placement mode (`snap_to_plane`; `Application._pivot_point_at` applies it).
+In an orthographic Side view every view ray runs along the plane normal, so the "inside" point of a
+mirror-symmetric mesh is on the plane already and the snap only removes float rounding.
 """
 
 from __future__ import annotations
@@ -24,6 +30,9 @@ from .viewport.camera import ray_plane_point
 from .viewport.picking import face_hits_t
 
 Vec3 = tuple[float, float, float]
+
+#: V-3 (`PROVISIONAL`): screen distance in pixels within which a placed pivot snaps onto the symmetry plane.
+PIVOT_PLANE_SNAP_PX: float = 12.0
 
 #: Two hits closer than this (relative to the entry `t`) are one surface: a ray through a shared edge or
 #: a quad's diagonal hits both triangles at the same `t`.
@@ -103,3 +112,28 @@ def place_pivot(
     if point is not None:
         return point
     return view_plane_point(camera, sx, sy, width, height, tuple(camera.target) if anchor is None else anchor)
+
+
+def snap_to_plane(
+    camera,
+    point: Vec3,
+    plane_point: Vec3,
+    plane_normal: Vec3,
+    width: int,
+    height: int,
+    threshold_px: float = PIVOT_PLANE_SNAP_PX,
+) -> tuple[Vec3, bool]:
+    """(point, on_plane) (V-3): `point` projected onto the plane (unit `plane_normal`) when the two are at
+    most `threshold_px` apart on screen, else `point` unchanged. For an axis plane through the origin the
+    projected coordinate is exactly 0 (x - 1·x)."""
+    d = v.dot(v.sub(point, plane_point), plane_normal)
+    if d == 0.0:
+        return point, True
+    projected = v.sub(point, v.scale(plane_normal, d))
+    a = camera.project_to_screen(point, width, height)
+    b = camera.project_to_screen(projected, width, height)
+    if a is None or b is None:
+        return point, False
+    if (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 <= threshold_px * threshold_px:
+        return projected, True
+    return point, False

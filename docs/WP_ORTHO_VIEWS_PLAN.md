@@ -1,6 +1,6 @@
 # WP Ortho / Views — Ortho/Persp, standard views, pivot symmetry snap
 
-> **Status:** geplant 2026-10-28, Manus Entscheidungen V-1..V-3 gefallen, **noch nicht gebaut**. Production-Paket für eine frische Session. Verwandt: [AD-012, Addendum Working Pivot](architecture/AD-012-TRANSFORM-SPACE.md#addendum-2026-10-28-working-pivot-manu-u-1u-4), [VIEWPORT_V02_ARCHITECTURE §4.1](viewport/VIEWPORT_V02_ARCHITECTURE.md), [future_ideas/VIEWPORT_NAVIGATION.md](future_ideas/VIEWPORT_NAVIGATION.md).
+> **Status:** **gebaut 2026-10-28** (`PROVISIONAL`, Praxistest B23 unten offen). Vertrag: [VIEWPORT_V02_ARCHITECTURE §4.1, Addendum Ortho](viewport/VIEWPORT_V02_ARCHITECTURE.md#addendum-2026-10-28-ortho-and-standard-views-wp-ortho--views); V-3: AD-012 Addendum Working Pivot. Der Plan unten ist der Bauauftrag, wie er war. Verwandt: [AD-012, Addendum Working Pivot](architecture/AD-012-TRANSFORM-SPACE.md#addendum-2026-10-28-working-pivot-manu-u-1u-4), [VIEWPORT_V02_ARCHITECTURE §4.1](viewport/VIEWPORT_V02_ARCHITECTURE.md), [future_ideas/VIEWPORT_NAVIGATION.md](future_ideas/VIEWPORT_NAVIGATION.md).
 
 (Working Pivot v1 is done and accepted by Manu 2026-10-28: "Funktioniert alles so, wie es bisher soll"; commit 016c33f
 on `claude/vigilant-planck-0p1o4l`.)
@@ -128,3 +128,38 @@ explicit allow-list and must fail loudly for anything missing).
 ## Session hint
 Fresh session (Manu 2026-10-28: "Vielleicht was für eine frische Session"), Opus, effort high: camera contract + GLSL + pickers + Application gesture, one
 coherent Production package; start by re-reading this plan, `camera.py`, `picking.py`, `gizmo.py`, `pivot.py`.
+
+## Result (2026-10-28)
+
+Built as planned; deviations and findings for later agents:
+- `view_scale_at` in perspective is the Euclidean eye distance (what `gizmo_size` always used), not the depth along
+  `forward`, so the perspective gizmo stays bit-identical.
+- The GPU depth oracle's clip test `-w <= z <= w` applies in perspective too (a point nearer than `near` or beyond
+  `far` has no depth pixel either); no existing test changed.
+- The toggle key is also honoured in a Knife session and in the Re-Symmetrize preview (view state like the orbit).
+- The orbit's virtual pitch keeps the ±85° clamp; a free orbit from Top/Bottom therefore starts at ±85°.
+- Measured (tests): on a UV sphere seen from the side, the perspective "inside" point drifts ~0.066 off x = 0; the
+  ortho one is exactly 0.0 (`tests/test_pivot_placement.py`).
+
+Tests: `tests/test_camera_ortho.py`, `tests/test_application_view_snap.py`, ortho cases in
+`tests/test_pivot_placement.py`, `test_picking_equivalence.py`, `test_knife_cross_face.py`, `test_gl_shading.py`,
+`test_gl_gpu_picking.py`, `test_hud.py`.
+
+### Praxistest B23 (für Manu, ca. 10–15 Minuten, `python src/main.py`, Kopf-Mesh)
+
+Annahmen, die du mit einem Satz korrigieren kannst: Shift rastet nur während eines laufenden Alt+LMB-Orbits ein
+(Shift vor dem Klick bleibt Pan); die eingerastete Ansicht bleibt nach dem Loslassen stehen, bis du wieder frei
+orbitest; `U` ist eine vorläufige Taste.
+
+1. **Einrasten:** Alt+LMB orbiten, dabei Shift drücken — die Ansicht springt auf Front/Seite/Oben/…, flach (ortho);
+   weiterziehen wechselt zur nächsten Ansicht; Shift los = wieder frei und perspektivisch. HUD-Zeile „View“ zeigt
+   z. B. „Right · Ortho“.
+2. **Umschalten:** `U` = Ortho ↔ Persp, jederzeit (auch mit gehaltenem `W`). Mit `U` eingeschaltetes Ortho bleibt
+   beim freien Orbiten an.
+3. **Pivot mittig:** Seitenansicht (Shift beim Orbit), `P` halten, in den Kopf klicken — der Pivot liegt genau auf
+   der Mittelebene. Mit `Shift+S` (Symmetrie) auch in einer schrägen Ansicht nahe der Mitte: Statuszeile „on the
+   symmetry plane“.
+4. **Arbeiten in Ortho:** Auswahl per Klick und Box, Gizmo, Knife (`C`), Smooth-Shading — alles wie gewohnt?
+5. **Fragen:** Fühlt sich das Einrasten richtig an (Zeitpunkt, Rückkehr)? Ist `U` die richtige Taste (sonst
+   welche — erst dann kommt sie in `config/keymap.json`)? Sind 12 px Ebenen-Snap gut? In der Seitenansicht rastet
+   **jeder** Pivot-Klick auf die Ebene, auch Shift auf einen Punkt außerhalb — ist das so richtig?

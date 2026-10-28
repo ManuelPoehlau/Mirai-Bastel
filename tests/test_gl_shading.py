@@ -66,10 +66,10 @@ def _grid(rotate: bool, lift: float = 0.8) -> Mesh:
     return mesh
 
 
-def _build(gl_window, mesh: Mesh):
+def _build(gl_window, mesh: Mesh, ortho: bool = False):
     gl_window.switch_to()
     rm = RenderMesh(mesh, store_type=GLRenderStore)
-    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.0, pitch=0.0)
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.0, pitch=0.0, ortho=ortho)
     rm.bind_camera(camera)
     rm.mark_camera_dirty(aspect=1.0)
     rm.sync()
@@ -93,9 +93,9 @@ def _draw(gl_window, rm: RenderMesh, camera) -> bytes:
 
 
 def _render(
-    gl_window, mesh: Mesh, *, flat: bool, face_data: bool = True, light=None, finish=None
+    gl_window, mesh: Mesh, *, flat: bool, face_data: bool = True, light=None, finish=None, ortho: bool = False
 ) -> bytes:
-    rm, camera = _build(gl_window, mesh)
+    rm, camera = _build(gl_window, mesh, ortho)
     if finish is not None:
         rm.bind_material(Material(DEFAULT_BASE_COLOR, finish))
         rm.mark_material_dirty()
@@ -160,6 +160,19 @@ def test_smooth_has_no_seams_between_bent_quads(gl_window):
     (one shading plane per quad would leave seams on bent quads)."""
     for lift in (0.8, 1.2):
         assert _max_neighbour_jump(_render(gl_window, _grid(False, lift), flat=False)) <= 3
+
+
+@pytest.mark.parametrize("flat", [False, True], ids=["smooth", "flat"])
+def test_ortho_shading_does_not_depend_on_the_diagonal_and_has_no_seams(gl_window, flat):
+    """WP Ortho / Views: the smooth-quad normal casts the parallel ortho ray (`u_proj[3][3] == 1`)."""
+    a = _render(gl_window, _grid(rotate=False), flat=flat, ortho=True)
+    b = _render(gl_window, _grid(rotate=True), flat=flat, ortho=True)
+    assert _covered(a) > SIZE * SIZE // 4
+    _max, differing = _diff(a, b)
+    assert differing <= 40, differing
+    if not flat:
+        for lift in (0.8, 1.2):
+            assert _max_neighbour_jump(_render(gl_window, _grid(False, lift), flat=False, ortho=True)) <= 3
 
 
 def test_flat_is_one_colour_per_polygon(gl_window):

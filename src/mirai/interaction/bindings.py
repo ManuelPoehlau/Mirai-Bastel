@@ -13,7 +13,12 @@ physische Taste kann beides tragen; `pointer.PointerGestures` entscheidet.
 - LMB-Klick       → Select (Replace; Klick ins Leere leert)
 - Shift+LMB-Klick → SelectAdd, Ctrl+LMB-Klick → SelectRemove
 - Alt+LMB-Klick   → SelectToggle
-- Alt+LMB-Drag    → Orbit, Alt+Shift+LMB-Drag → Pan
+- Alt+LMB-Drag    → Orbit, Alt+Shift+LMB-Drag → Pan; Shift *während* des Orbits rastet auf die
+                    nächste Standardansicht ein (Front/Back/Left/Right/Top/Bottom, ortho), Shift los =
+                    frei (WP Ortho / Views V-1, feste Modifier-Grammatik, keine Bindung)
+- U               → Ortho <-> Persp (V-2, `PROVISIONAL`, nicht in keymap.json); eine eingerastete
+                    Ansicht ist ortho, ein freier Orbit kehrt zur Perspektive zurück (außer Ortho
+                    wurde mit U eingeschaltet)
 - LMB-Drag        → SelectDrag: Start im leeren Raum = Box, auf dem Mesh = Paint
                     (ersetzt die Auswahl); Shift+LMB-Drag → SelectDragAdd (fügt hinzu)
 - Ctrl+LMB-Drag   → ungebunden seit 2026-10-28 (Manu A3; bis dahin der `Tweak`-Drag, 2026-10-15
@@ -176,6 +181,7 @@ FIXED_MODIFIER_RULES: tuple[tuple[str, str], ...] = (
     ("Ctrl", "Rotate läuft: Raster 5°, mit Shift 1°"),
     ("Alt", "Tweak (W/E/R), T/G oder Gizmo läuft: Maus = Orbit, Alt+Shift = Pan (nicht bei Smooth/Relax)"),
     ("Alt", "Box/Lasso vor dem Loslassen: durch das Mesh wählen"),
+    ("Shift", "Alt+LMB-Orbit läuft: Standardansicht einrasten (ortho), loslassen = frei"),
     ("Shift", "Knife: Hover und Klick auf die Kantenmitte"),
     ("Shift", "Klick auf eine Zeile im Szenen-Menü: als Referenz dazu"),
 )
@@ -382,6 +388,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("p"), cmd.PIVOT_PLACE)
     bs.set_default(_wheel("UP"), cmd.ZOOM)
     bs.set_default(_wheel("DOWN"), cmd.ZOOM)
+    # WP Ortho / Views (Manu V-2 2026-10-28, "one toggle key Ortho <-> Persp"; no numpad): `PROVISIONAL`
+    # engineering key - bare U was free in the code defaults and in config/keymap.json.
+    bs.set_default(_key("u"), cmd.TOGGLE_ORTHO)
 
     # --- Soft Selection (WP-SOFT-01 S2a, AD-020; PROVISIONAL) -----------------
     # O = on/off ("O passt erstmal", Manu 2026-10-10; O was the old display key,

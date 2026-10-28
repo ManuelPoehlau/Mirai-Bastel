@@ -99,7 +99,7 @@ from .interaction.tools.transform import _resolve_space
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from .object_space import ObjectSpaceCamera
-from .pivot import WorkingPivot, place_pivot
+from .pivot import WorkingPivot, place_pivot, snap_to_plane
 from .object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from .scene_objects import (
     REFERENCE_GHOST_ALPHA,
@@ -211,6 +211,7 @@ from .morph_targets import (
 from .subdivision.preview import key_label
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
+from .viewport.camera import nearest_standard_view
 from .viewport.box_select import (
     elements_in_polygon,
     elements_in_rect,
@@ -1010,6 +1011,14 @@ class Application:
         self._pivot_placed: bool = False
         self._pivot_dragging: bool = False
         self._pivot_preview = None
+        # V-3: whether the last pivot point (preview or placement) was snapped onto the symmetry plane.
+        self._pivot_on_plane: bool = False
+        # WP Ortho / Views (V-1/V-2, 2026-10-28): the virtual orbit angles of the running Alt+LMB orbit (None = no
+        # orbit gesture), the standard view the camera is snapped to (None = free) and whether its ortho came from
+        # the snap (V-2 "Auto Perspective": a free orbit leaves it) rather than the toggle key.
+        self._orbit_virtual: tuple[float, float] | None = None
+        self._view_name: str | None = None
+        self._ortho_auto: bool = False
         # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
         # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
         # `_gizmo_gesture` = the handle pressed by the running LMB gesture; `_gizmo_cache` = (key, pivot).
@@ -2253,6 +2262,8 @@ class Application:
         if command in (commands.UNDO, commands.REDO):
             self._apply_undo_redo(command)
             return True
+        if command == commands.TOGGLE_ORTHO:
+            return self._toggle_ortho()
         if command in _DISPLAY_COMMANDS:
             return self._display_command(command)
         if command in _LOOK_COMMANDS:
@@ -2373,7 +2384,7 @@ class Application:
             self._resymmetrize_close()
             self._set_status("Re-Symmetrize abgebrochen")
             return True
-        if command in _DISPLAY_COMMANDS:
+        if command in _DISPLAY_COMMANDS or command == commands.TOGGLE_ORTHO:
             return self.dispatch_command(command)
         if command is not None:
             self._resymmetrize_refuse()
@@ -3549,8 +3560,8 @@ class Application:
         return True
 
     def _knife_key(self, input: Input) -> bool:
-        """Session Gate: only commit, cancel, the pen lift and the in-session
-        Undo/Redo pass; every other key (W/R, 1/2/3, D/Shift+D, C, X/Y/Z, ...)
+        """Session Gate: only commit, cancel, the pen lift, the in-session
+        Undo/Redo and the Ortho toggle (view state) pass; every other key (W/R, 1/2/3, D/Shift+D, C, X/Y/Z, ...)
         is ignored."""
         command = self.bindings.command_for(input, KNIFE_CONTEXT)
         self._knife_last_click = None     # a key between two clicks is no double-click
@@ -3564,6 +3575,9 @@ class Application:
             return False if self._knife_gesture else self._knife_lift()
         if command in (commands.UNDO, commands.REDO):
             return self._knife_history_step(command)
+        if command == commands.TOGGLE_ORTHO:
+            # View state like the orbit, which the session allows; the planner plans with the live camera.
+            return self._toggle_ortho()
         return False
 
     def _knife_owns_press(self, input: Input) -> bool:
@@ -3736,6 +3750,11 @@ class Application:
         if held == self._shift_held:
             return False
         self._shift_held = held
+        if self._orbit_virtual is not None:
+            # V-1: Shift during a running Alt+LMB orbit snaps (and its release frees) the view at once.
+            self._apply_orbit_virtual()
+            self._camera_changed()
+            return True
         if self._knife is None or self._knife_gesture or self._cursor is None or self.pointer.active:
             return False
         return self._knife_hover(*self._cursor)
@@ -4227,7 +4246,9 @@ class Application:
             return False
         if command in _SESSION_SWITCH_COMMANDS:
             return self._session_switch(command)
-        if self._drag_select is not None and command not in (commands.CANCEL, *_DISPLAY_COMMANDS, *_LOOK_COMMANDS):
+        if self._drag_select is not None and command not in (
+            commands.CANCEL, commands.TOGGLE_ORTHO, *_DISPLAY_COMMANDS, *_LOOK_COMMANDS
+        ):
             # A Box/Paint drag owns the selection until the LMB release (like a gesture).
             return False
         if command == commands.LASSO_ARM:
@@ -4251,7 +4272,7 @@ class Application:
             return self._toggle_orientation()
         if command == commands.CANCEL:
             return self._cancel()
-        if command in _DISPLAY_COMMANDS or command in _LOOK_COMMANDS:
+        if command in _DISPLAY_COMMANDS or command in _LOOK_COMMANDS or command == commands.TOGGLE_ORTHO:
             # Reine Darstellung: auch während eines Transforms erlaubt.
             return self.dispatch_command(command)
         if command in _SOFT_COMMANDS:
@@ -6259,6 +6280,8 @@ class Application:
             self._pivot_dragging = False
             return True
         click = self.pointer.release(button, x, y)
+        if not self.pointer.active:
+            self._orbit_virtual = None  # the orbit gesture (if any) is over; a snapped view stays
         if button == "LEFT" and self._gizmo_gesture is not None:
             return self._gizmo_release(click is not None)
         if button == "LEFT" and self._drag_select is not None:
@@ -6473,7 +6496,7 @@ class Application:
             return self._drag_select_step(step.command)
         if step.command == commands.TWEAK:
             return self._tweak_step(step.dx, step.dy)
-        if not self._navigate(step.command, step.dx, step.dy):
+        if not self._navigate(step.command, step.dx, step.dy, snap=True):
             return False
         # Eine laufende Orbit-/Pan-Geste löscht Hover (während einer Knife-
         # Session die Knife-Vorschau; Start und Pfad bleiben); er kehrt mit
@@ -6484,14 +6507,79 @@ class Application:
             self._set_hovered(None)
         return True
 
-    def _navigate(self, command: str, dx: float, dy: float) -> bool:
+    def _navigate(self, command: str, dx: float, dy: float, *, snap: bool = False) -> bool:
+        """Orbit / Pan one step. `snap` (the pointer ORBIT gesture only, V-1): Shift held snaps the camera to the
+        nearest standard view; the transform's Alt-orbit (`_navigate_during_transform`) never snaps."""
         if command == commands.ORBIT:
-            self.camera.orbit(-dx * ORBIT_RADIANS_PER_PX, -dy * ORBIT_RADIANS_PER_PX)
+            self._orbit_step(-dx * ORBIT_RADIANS_PER_PX, -dy * ORBIT_RADIANS_PER_PX, snap)
         elif command == commands.PAN:
             self.camera.pan(dx, dy, self.viewport_width, self.viewport_height)
         else:
             return False
         self._camera_changed()
+        return True
+
+    # -- Views: ortho / standard views (WP Ortho / Views, Manu V-1/V-2 2026-10-28) ------------------------
+
+    @property
+    def view_name(self) -> str | None:
+        """The standard view the camera is snapped to ("Front", ...), None = a free view."""
+        return self._view_name
+
+    @property
+    def view_text(self) -> str:
+        """HUD / status text of the view: "Persp", "Ortho", "Front · Ortho", "Front · Persp"."""
+        projection = "Ortho" if self.camera.ortho else "Persp"
+        return projection if self._view_name is None else f"{self._view_name} · {projection}"
+
+    def _orbit_step(self, d_yaw: float, d_pitch: float, snap: bool) -> None:
+        """One orbit step. In the pointer ORBIT gesture (`snap`) the gesture keeps virtual angles: with Shift held
+        the camera shows the nearest standard view of them, orthographic (V-1, V-2); Shift up returns to them.
+        A free step from a snapped view leaves the view and, unless ortho was switched on by hand, ortho too."""
+        camera = self.camera
+        if not snap:
+            self._leave_view()
+            camera.orbit(d_yaw, d_pitch)
+            return
+        if self._orbit_virtual is None:
+            self._orbit_virtual = (camera.yaw, camera.pitch)
+        yaw, pitch = self._orbit_virtual
+        max_pitch = math.radians(85)
+        self._orbit_virtual = (yaw + d_yaw, max(-max_pitch, min(max_pitch, pitch + d_pitch)))
+        self._apply_orbit_virtual()
+
+    def _apply_orbit_virtual(self) -> None:
+        """The camera for the running orbit gesture's virtual angles and the held Shift."""
+        yaw, pitch = self._orbit_virtual
+        if self._shift_held:
+            name, snap_yaw, snap_pitch = nearest_standard_view(yaw, pitch)
+            if self._view_name is None:
+                self._ortho_auto = not self.camera.ortho
+            self._view_name = name
+            self.camera.set_view(snap_yaw, snap_pitch, ortho=True)
+            self._set_status(f"View: {self.view_text}")
+        else:
+            self._leave_view()
+            self.camera.set_view(yaw, pitch)
+
+    def _leave_view(self) -> None:
+        """Out of a snapped standard view; its automatic ortho goes with it (V-2)."""
+        if self._view_name is None:
+            return
+        self._view_name = None
+        if self._ortho_auto:
+            self.camera.set_ortho(False)
+        self._ortho_auto = False
+        self._set_status(f"View: {self.view_text}")
+
+    def _toggle_ortho(self) -> bool:
+        """`TOGGLE_ORTHO` (V-2): Ortho <-> Persp at any time; view state only (no History, not saved). Ortho set by
+        hand stays when a free orbit leaves a snapped view."""
+        self.camera.set_ortho(not self.camera.ortho)
+        self._ortho_auto = False
+        self._camera_changed()
+        self._set_status(f"View: {self.view_text}")
+        self._refresh_hover()
         return True
 
     def _navigate_during_transform(self, dx: float, dy: float) -> bool:
@@ -6689,10 +6777,20 @@ class Application:
         return selection_pivot(self.scene.mesh, vertex_ids) if vertex_ids else None
 
     def _pivot_point_at(self, x: float, y: float, snap: bool):
-        return place_pivot(
-            self._edit_camera, self.scene.mesh, x, y, int(self.viewport_width), int(self.viewport_height),
+        """The pivot point a click at (x, y) would place; with symmetry on, snapped onto the plane when it is
+        within `PIVOT_PLANE_SNAP_PX` on screen (V-3, every placement mode, also the preview)."""
+        width, height = int(self.viewport_width), int(self.viewport_height)
+        point = place_pivot(
+            self._edit_camera, self.scene.mesh, x, y, width, height,
             snap=snap, anchor=self._pivot_anchor(), cache=self._pick_cache, occlusion=self.display.show_faces,
         )
+        self._pivot_on_plane = False
+        definition = self.scene.mesh.symmetry_definition
+        if point is not None and definition is not None:
+            point, self._pivot_on_plane = snap_to_plane(
+                self._edit_camera, point, definition.plane_point, definition.plane_normal, width, height,
+            )
+        return point
 
     def _pivot_place_at(self, x: float, y: float, snap: bool) -> bool:
         """Places the pivot under (x, y) and switches it on - no History entry (U-3). True = placed."""
@@ -6703,7 +6801,8 @@ class Application:
         self._working_pivot = WorkingPivot(self.scene.edit_object_id, tuple(float(c) for c in point))
         self._pivot_placed = True
         self._pivot_preview = None
-        self._set_status("Working Pivot placed - E / R turn and scale around it")
+        where = " on the symmetry plane" if self._pivot_on_plane else ""
+        self._set_status(f"Working Pivot placed{where} - E / R turn and scale around it")
         return True
 
     def _pivot_release(self) -> bool:

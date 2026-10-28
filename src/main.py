@@ -20,6 +20,10 @@ Scope (binding, see the handoffs):
   `BindingSet` + `PointerGestures` (click vs. drag, AD-019). Orbit =
   Alt+LMB drag, Pan = Alt+Shift+LMB drag, Zoom = wheel; LMB click =
   select (Shift add, Ctrl remove, Alt toggle). RMB/MMB are unbound.
+  WP Ortho / Views (Manu V-1/V-2, 2026-10-28, `PROVISIONAL`): Shift pressed
+  during the orbit snaps to the nearest standard view, orthographic (the
+  held Shift reaches `Application.set_shift_held`, below); U toggles
+  Ortho <-> Persp. No code here: camera and `Application` own it.
 - Selected vertices are drawn as small round yellow points by
   `GLPointOverlay` on top of the mesh; the mesh itself is no longer tinted
   (Slice B2b, AD-018 §7 addendum). The vertex under the cursor shows a

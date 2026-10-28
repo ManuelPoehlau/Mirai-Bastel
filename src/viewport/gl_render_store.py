@@ -80,7 +80,8 @@ void main() {
 #   diagonal (Artist REJECT of per-triangle flat, 2026-09-27).
 # - Smooth on a quad: the four corner normals blended bilinearly at the
 #   fragment's patch coordinates (u, v), found by intersecting the pixel's
-#   view ray with the quad's bilinear patch. The patch does not depend on the
+#   view ray (ortho: the parallel ray along the view axis, `u_proj[3][3] == 1`)
+#   with the quad's bilinear patch. The patch does not depend on the
 #   triangulation diagonal, and its edges are the mesh's straight edges, so
 #   neighbouring quads agree along a shared edge (one plane per quad would
 #   not: tried, it leaves seams on bent quads). Where the ray misses the patch
@@ -108,6 +109,7 @@ in float v_highlight;
 in vec3 v_world_pos;
 
 uniform mat4 u_view;
+uniform mat4 u_proj;
 uniform mat4 u_model;
 uniform vec3 u_base_color;
 uniform int u_flat;
@@ -242,7 +244,15 @@ vec3 quad_normal(int row, vec3 face_n, vec3 fallback) {
     vec3 p2 = face_corner(row, 3);
     vec3 p3 = face_corner(row, 4);
     vec3 eye = -transpose(mat3(u_view)) * u_view[3].xyz;
-    vec2 uv = ray_patch(eye, normalize(v_world_pos - eye), p0, p1, p2, p3);
+    vec3 ray_o = eye;
+    vec3 ray_d = normalize(v_world_pos - eye);
+    if (u_proj[3][3] == 1.0) {
+        // Ortho (WP Ortho / Views): parallel rays along the view direction; the origin is the
+        // fragment pushed back in front of the patch (any point on the ray serves the patch test).
+        ray_d = normalize(transpose(mat3(u_view)) * vec3(0.0, 0.0, -1.0));
+        ray_o = v_world_pos - ray_d * (length(p2 - p0) + length(p3 - p1) + 1.0);
+    }
+    vec2 uv = ray_patch(ray_o, ray_d, p0, p1, p2, p3);
     if (uv.x < 0.0 && uv.y < 0.0) {
         uv = projected_uv(normalize(mat3(u_model) * face_n), p0, p1, p2, p3);
         if (!inside(uv)) return fallback;

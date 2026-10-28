@@ -103,6 +103,8 @@ class HudState:
     constraint_mode: str = "one-shot"
     #: Working Pivot (2026-10-28, `mirai.pivot`): "off" / "on" / "placing" / "off · placed" / "other object".
     pivot: str = "off"
+    #: WP Ortho / Views (V-1/V-2): "Persp" / "Ortho" / "Front · Ortho" ... (`Application.view_text`).
+    view: str = "Persp"
 
 
 def hud_state(app) -> HudState:
@@ -148,6 +150,7 @@ def hud_state(app) -> HudState:
         keymap_problem=None if app.keymap_load is None else app.keymap_load.problem,
         constraint_mode=app.constraint_mode,
         pivot=_pivot_text(app),
+        view=app.view_text,
     )
 
 
@@ -181,6 +184,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     "Pivot": ((commands.PIVOT_PLACE,), None),
     "Sym": ((commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE), None),
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
+    "View": ((commands.TOGGLE_ORTHO,), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),
     "SubD": ((commands.SUBD_CYCLE_VIEW,), SUBD_CONTEXT),
     "Region": ((commands.REGION_NEW, commands.REGION_NEXT, commands.REGION_NAME, commands.TOGGLE_REGION_TINT), None),
@@ -250,6 +254,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         HudRow("Sym", state.symmetry.upper() if state.symmetry else "off", hints.get("Sym", ""),
                on=state.symmetry is not None),
         HudRow("Display", state.display, hints.get("Display", "")),
+        HudRow("View", state.view, hints.get("View", ""), on=state.view != "Persp"),
         HudRow("Soft", soft, hints.get("Soft", ""), on=state.soft_on),
         HudRow("SubD", subd, hints.get("SubD", ""), on=state.subd_view != VIEW_OFF),
         HudRow(
@@ -277,7 +282,7 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
 
 
 #: The "Fixed" row: `bindings.FIXED_MODIFIER_RULES` in short (the full sentences are printed at start).
-FIXED_ROW = "Shift fine · Ctrl snap · Alt orbit / through"
+FIXED_ROW = "Shift fine / view snap · Ctrl snap · Alt orbit / through"
 
 
 # -- the HUD ------------------------------------------------------------------------------------

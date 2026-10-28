@@ -86,7 +86,8 @@ class _OldPickCache(PickCache):
 
 
 def _old_point_occluded(camera, mesh, cache, point, width, height, exclude_faces, depth_tolerance=DEPTH_TOLERANCE):
-    eye = camera.eye()
+    # The full-scan reference; in ortho (WP Ortho / Views) its ray is the parallel one through the point.
+    eye = camera.ray_origin_toward(point) if getattr(camera, "ortho", False) else camera.eye()
     to_point = vecmath.sub(point, eye)
     dist = vecmath.length(to_point)
     if dist <= 1e-9:
@@ -233,12 +234,12 @@ def _load(path: Path) -> Mesh:
     return build_core_scene_from_obj(path).mesh
 
 
-def _framed_cameras(mesh) -> list[OrbitCamera]:
+def _framed_cameras(mesh, ortho: bool = False) -> list[OrbitCamera]:
     """Front (default yaw/pitch) and back (yaw + 180 deg, pitch down), framed on the mesh."""
     center, radius = mesh_center_and_radius(mesh)
     cameras = []
     for yaw, pitch in ((math.radians(30), math.radians(15)), (math.radians(210), math.radians(-20))):
-        camera = OrbitCamera(yaw=yaw, pitch=pitch)
+        camera = OrbitCamera(yaw=yaw, pitch=pitch, ortho=ortho)
         camera.frame_on_bounds(center, radius)
         cameras.append(camera)
     return cameras
@@ -297,6 +298,13 @@ def test_same_picks_as_the_old_pickers_on_a_cursor_grid(path):
     for i, camera in enumerate(_framed_cameras(mesh)):
         hits = _assert_equivalent(mesh, camera, _cursors(camera, mesh, 37, 60, seed=i))
         assert hits > 50
+
+
+def test_same_picks_as_the_old_pickers_in_ortho():
+    """WP Ortho / Views: the cached, grid-accelerated pickers equal the full-scan reference with parallel rays."""
+    mesh = _load(_HEAD) if _HEAD.is_file() else pytest.skip("head asset not found")
+    for i, camera in enumerate(_framed_cameras(mesh, ortho=True)):
+        assert _assert_equivalent(mesh, camera, _cursors(camera, mesh, 37, 60, seed=i)) > 50
 
 
 def test_same_picks_without_a_cache():
@@ -525,14 +533,16 @@ def test_box_select_same_elements_on_a_gollum_20k_sample():
         assert new == old and new, mode
 
 
+@pytest.mark.parametrize("ortho", [False, True], ids=["persp", "ortho"])
 @pytest.mark.parametrize("path", [_HEAD, _BODY], ids=["head", "body"])
-def test_point_occluded_through_the_grid_matches_the_full_scan(path):
+def test_point_occluded_through_the_grid_matches_the_full_scan(path, ortho):
     """Every vertex, edge midpoint and face centroid (the points hover, click and Box test),
-    with the grid built, against the old full scan - from the front and the back."""
+    with the grid built, against the old full scan - from the front and the back (also in ortho,
+    WP Ortho / Views: the reference casts the parallel ray)."""
     if not path.is_file():
         pytest.skip(f"asset {path.name} not found")
     mesh = _load(path)
-    for camera in _framed_cameras(mesh):
+    for camera in _framed_cameras(mesh, ortho):
         cache, old_cache = PickCache(), _OldPickCache()
         cache.refresh(camera, mesh, WIDTH, HEIGHT)
         old_cache.refresh(camera, mesh, WIDTH, HEIGHT)
