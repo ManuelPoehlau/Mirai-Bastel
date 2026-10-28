@@ -91,7 +91,10 @@ Details:
 - History is decoupled from Mesh internals (see `AD-003` if it exists)
 - Viewport is separate from Core (data flows Core → Viewport, never back)
 - Input: the active `BindingSet` is the only input truth (AD-013 addendum 2026-10-28). `config/keymap.json` is
-  Manu's — read it, never write it; check a new default key against it (AGENTS.md §7)
+  Manu's Artist decision layer — read it and check new defaults against it. Agents add/update an entry only after Manu
+  explicitly approves that binding (e.g. “Taste passt” or KEEP for that key in a practical test); include
+  `"set": "YYYY-MM-DD"` for the decision date and preserve his wording in the commit message. Never add or move entries
+  on an agent's own judgment (AGENTS.md §7).
 - Future systems (rig, anim, script) must not be blocked by current Core boundaries
 
 ## When in doubt

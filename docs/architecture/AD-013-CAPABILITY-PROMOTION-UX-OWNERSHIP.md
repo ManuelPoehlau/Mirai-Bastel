@@ -163,15 +163,13 @@ Artist Input Truth is the authoritative representation of Artist input intent, s
 3. Multiple functions sharing a physical input remain possible, but the conflict must be explicitly visible.
 4. An empty binding means **intentionally unbound**. If the project later needs to distinguish this from "not yet decided", that distinction may be introduced explicitly.
 5. Artist Input Truth is not rewritten merely to match implementation.
-   *Reworded 2026-10-28 ([addendum](#addendum-2026-10-28-the-active-bindingset-is-the-single-input-truth-manus-keymap-in-the-repo)): Manu's keymap (`config/keymap.json`) is not rewritten to match
-   implementation — agents read it and never write it; only Manu (or the future in-app editor on his behalf) does.*
+   *Revised 2026-10-28 (Manu's rule change, option A; see the addendum below): the keymap is never changed merely to match implementation. An agent may add or update a binding only when Manu explicitly approves that particular key (e.g. “Taste passt” or a KEEP verdict on that key in a practical test). The entry carries `"set": "YYYY-MM-DD"` using the decision date, and the commit message preserves Manu's wording. Agents never add or move entries on their own judgment.*
 6. Implementation follows Artist Input Truth unless an explicit override or unresolved discrepancy exists.
    *Replaced 2026-10-28: implementation follows the keymap by construction — its entries are the user layer and win
    over the code defaults at resolution (`BindingSet.command_for`), so no discrepancy can stay open. Before adding a
    new default an agent checks the key against `config/keymap.json`.*
 7. Changes to Artist Input Truth are Artist/Product decisions, not implementation-driven corrections.
-   *Replaced 2026-10-28: a change to `config/keymap.json` is an Artist/Product decision. Engineering changes only the
-   default layer; a code default stays `PROVISIONAL` until Manu writes it into the keymap.*
+   *Revised 2026-10-28 (Manu, option A): engineering changes the code-default layer; a default without a keymap entry stays `PROVISIONAL`. When Manu explicitly approves a particular key, the agent records that decision in `config/keymap.json` with `"set": "YYYY-MM-DD"` (the decision date) and preserves Manu's wording in the commit message. Agents never add or move entries on their own judgment.*
 
 ---
 
@@ -1556,10 +1554,8 @@ followed the same day after Manu chose **K-1** (see below).
 
 - File `config/keymap.json`, existing schema (`schemaVersion: 1`, contract §8). Optional per-entry `"set": "YYYY-MM-DD"`
   is additive (the parser ignores unknown entry keys; no version bump, AD-019 precedent).
-- **Origin is given by the layer:** entry in `config/keymap.json` = set by Manu; code default only = engineering,
-  `PROVISIONAL`. No per-binding origin field in code.
-- **Agents read `config/keymap.json`, never write it** (only Manu / the future editor). Before adding a new default, an
-  agent checks the key against this file.
+- **Origin is given by the layer:** an entry in `config/keymap.json` = explicitly approved by Manu (the agent may record it only after that approval); code default only = engineering, `PROVISIONAL`. No per-binding origin field in code.
+- Agents read `config/keymap.json` before changing input. They add or update an entry only when Manu explicitly approves that particular binding (e.g. “Taste passt” or a KEEP verdict on that key in a practical test). The entry includes `"set": "YYYY-MM-DD"` using the decision date; the commit message preserves Manu's wording. Agents never add or move entries on their own judgment. Before adding a code default, an agent checks its key against this file.
 - Only bindings **documented** as Manu's decisions were migrated into the file (table below); everything else stays a
   code default. No verdict was inferred from a code comment.
 - `src/main.py` and every Lab host on `Application` load the same file (A1), path relative to the repo root
@@ -1572,9 +1568,9 @@ followed the same day after Manu chose **K-1** (see below).
 | Rule | Change |
 |---|---|
 | **A4** | **Replaced:** the active BindingSet is the single source of truth for input; its user layer (`config/keymap.json`) is Artist intent, its default layer (code) engineering, `PROVISIONAL`. The in-app editor edits exactly this. |
-| **Truth rule 5** | **Reworded:** Manu's keymap is not rewritten to match implementation; agents read it, never write it. |
+| **Truth rule 5** | **Revised (Manu, option A):** the keymap is not changed merely to match implementation. An agent may add/update an entry only on Manu's explicit approval of that binding; add `"set": "YYYY-MM-DD"` for the decision date and preserve Manu's wording in the commit message. No agent-initiated additions or moves. |
 | **Truth rule 6** | **Replaced:** implementation follows the keymap by construction (user layer wins at resolution); before a new default, check its key against the file. |
-| **Truth rule 7** | **Replaced:** a keymap change is an Artist/Product decision; engineering changes only defaults, which stay `PROVISIONAL` until Manu writes them into the keymap. |
+| **Truth rule 7** | **Revised (Manu, option A):** code defaults remain `PROVISIONAL` until explicitly approved by Manu; after approval, the agent records the binding in the keymap with its decision date and Manu's wording in the commit message. Agents never add or move entries on their own judgment. |
 | **I8** | **Reworded:** intent vs. implementation is carried by the two layers; code and code comments are no evidence of intent. |
 
 **Unchanged:** A1, A2, A3, A5, I1–I7 (explicitly I4 one binding authority, I5 layered not forked, I6 overrides visible),

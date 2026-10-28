@@ -128,10 +128,13 @@ Do not build future systems merely because the vision mentions them. Known futur
 A Lab tests new ideas; it does not rebuild application capabilities (selection, hover, input handling, gizmo, grid, pivot …). If a Lab would need one, stop and report (Development System §5, Haltepunkte) instead of rebuilding it.
 
 **Input truth (AD-013 addendum 2026-10-28):** every key resolves through the one `BindingSet`. Code defaults
-(`src/mirai/interaction/bindings.py`) are engineering, `PROVISIONAL`; Manu's bindings are `config/keymap.json` in the
-repo, loaded by `src/main.py` and every Lab host on `Application`. Agents **read** `config/keymap.json` and **never
-write** it (only Manu / the future in-app editor). Before adding a new default, check its key against that file. No key
-literal in a window or host; only the fixed modifier grammar (`bindings.FIXED_MODIFIER_RULES`) is read from held keys.
+(`src/mirai/interaction/bindings.py`) are engineering, `PROVISIONAL`, until Manu explicitly approves the particular
+binding. Manu's accepted bindings are recorded in repo-tracked `config/keymap.json`, loaded by `src/main.py` and
+every Lab host using `Application`. Agents read the file and may add/update an entry only after Manu explicitly says
+that key is right (e.g. “Taste passt” or KEEP for that key in a practical test); include `"set": "YYYY-MM-DD"` using
+the decision date and preserve Manu's wording in the commit message. Never add or move entries on an agent's own
+judgment. Before adding a code default, check its key against the file. No key literal in a window or host; only the
+fixed modifier grammar (`bindings.FIXED_MODIFIER_RULES`) is read from held keys.
 
 ## 7a. Engineering velocity (Manu, 2026-10-21)
 
