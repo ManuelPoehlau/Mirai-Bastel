@@ -146,7 +146,7 @@ _LOCKED_COMMANDS = (commands.SPLIT_EDGE, commands.ARTICULATION_RESTORE)
 
 #: The Knife session's keys act only inside a session, which is gated where it starts (`C`,
 #: `CContext.KNIFE`); outside one they change nothing.
-_KNIFE_SESSION_COMMANDS = (commands.KNIFE_COMMIT, commands.KNIFE_LIFT)
+_KNIFE_SESSION_COMMANDS = (commands.KNIFE_COMMIT, commands.KNIFE_LIFT, commands.KNIFE_MIRROR_VARIANT)
 
 _MORPH_COMMANDS = (
     commands.MORPH_NEW, commands.MORPH_RENAME, commands.MORPH_DELETE, commands.MORPH_EDIT_TOGGLE,

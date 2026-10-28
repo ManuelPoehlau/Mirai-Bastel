@@ -149,6 +149,10 @@ KNIFE_COMMIT = "KnifeCommit"
 # ohne Commit, der nächste Klick beginnt eine neue. Nur im KNIFE_CONTEXT
 # gebunden (E und ein RMB-Klick, Blender 2.79 / 3.0+ "New Cut").
 KNIFE_LIFT = "KnifeLift"
+# KNIFE_MIRROR_VARIANT (AD-SYM-03, key `PROVISIONAL`): the mirror preview variant V-a -> V-b -> V-c of a
+# symmetric Knife session; outside one it does nothing. Only bound in the KNIFE_CONTEXT (V). A literal in
+# `Application._knife_key` until 2026-10-28 (AD-013 addendum, K-1).
+KNIFE_MIRROR_VARIANT = "KnifeMirrorVariant"
 
 # DELETE / DISSOLVE / DISSOLVE_NO_CLEANUP (WP Delete/Dissolve, docs/
 # WP_DELETE_DISSOLVE_PLAN.md): global, wirken auf die Auswahl des aktiven

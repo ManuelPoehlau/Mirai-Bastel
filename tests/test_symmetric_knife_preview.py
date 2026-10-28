@@ -272,8 +272,8 @@ def test_render_data_without_symmetry_has_every_additive_field_at_its_default():
     assert data.placed_points and data.path_segments
 
 
-def _app(asset: str, with_definition: bool) -> Application:
-    app = Application()
+def _app(asset: str, with_definition: bool, keymap_path=None) -> Application:
+    app = Application(keymap_path=keymap_path)
     app.init_scene("obj", obj_path=asset_path(asset))
     app.frame_scene()
     app.set_viewport_size(WIDTH, HEIGHT)
@@ -358,13 +358,29 @@ def _layers(app):
     )
 
 
-def test_the_variant_key_is_free_in_the_knife_context_and_not_a_lab_key():
+def test_the_variant_key_is_a_knife_context_binding_and_global_v_stays_free():
+    # AD-013 addendum 2026-10-28, K-1: V is the default of `KnifeMirrorVariant` in the knife context only;
+    # globally it stays unbound, so outside a session it reaches the SubD context as before.
     app = Application()
-    assert app.bindings.command_for(V, KNIFE_CONTEXT) is None
+    assert app.bindings.command_for(V, KNIFE_CONTEXT) == cmd.KNIFE_MIRROR_VARIANT
     assert app.bindings.command_for(V) is None
     assert KNIFE_MIRROR_VARIANT_KEY == "v"
-    assert not any(command in (cmd.KNIFE_COMMIT, cmd.KNIFE_LIFT, cmd.CANCEL, cmd.UNDO, cmd.REDO)
-                   for command in [app.bindings.command_for(V, KNIFE_CONTEXT)])
+
+
+def test_a_keymap_moves_the_variant_key_and_the_status_names_the_new_one(tmp_path):
+    import json
+
+    path = tmp_path / "keymap.json"
+    path.write_text(json.dumps({"schemaVersion": 1, "bindings": [
+        {"context": "knife", "input": {"kind": "key", "value": "j", "modifiers": []}, "command": cmd.KNIFE_MIRROR_VARIANT},
+        {"context": "knife", "input": {"kind": "key", "value": "v", "modifiers": []}, "command": None},
+    ]}), encoding="utf-8")
+    app = _app("subd_cube", with_definition=True, keymap_path=path)
+    _begin(app)
+    assert "Taste J wechselt" in app.status_message
+    before = app.knife_mirror_variant
+    assert app.key_press(V) is False and app.knife_mirror_variant == before
+    assert app.key_press(_key("j")) is True and app.knife_mirror_variant != before
 
 
 def test_the_variants_cycle_in_the_knife_session_only_default_v_b_and_the_status_names_them():

@@ -621,7 +621,8 @@ session scratchpad instead and are reproduced in shape in Appendix A and B:
   Esc, W/E/R, T, X/Y/Z, Shift+X/Y/Z, Alt+A, C, Delete, Backspace, Ctrl+Backspace, D, Shift+D; mouse LMB
   (plain/Shift/Ctrl/Alt click), Alt+LMB drag, Alt+Shift+LMB drag, wheel up/down = Zoom. KNIFE context: Enter,
   E, RMB click, Ctrl+Shift+Z; plus plain V, hard-coded (not a binding) while a symmetric Knife session runs
-  (`KNIFE_MIRROR_VARIANT_KEY`, `application.py:250`, `:1022-1024`; AD-SYM-03 slice 6c, `PROVISIONAL`).
+  (`KNIFE_MIRROR_VARIANT_KEY`, `application.py:250`, `:1022-1024`; AD-SYM-03 slice 6c, `PROVISIONAL`; *since
+  2026-10-28 a knife-context binding, `KnifeMirrorVariant`, AD-013 addendum 2026-10-28 K-1*).
   TOPOLOGY context: K, L, R. Symmetry Lab context: Shift+S, M, Shift+B
   (`experiments/symmetry_lab/lab_bindings.py:46-62`), with a start-up assert that they resolve to `None` in
   GLOBAL and KNIFE (AD-013 H2-R1). Artist Input Truth reserves, beyond these, F (frame), S (split),

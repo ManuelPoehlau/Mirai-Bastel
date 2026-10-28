@@ -45,7 +45,7 @@ from typing import Optional
 from core import EdgeId, FaceId, SelectionMode, VertexId
 
 from ..interaction import commands
-from ..interaction.input import GLOBAL_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
+from ..interaction.input import GLOBAL_CONTEXT, SUBD_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
 from ..scene_factory import mesh_from_positions_and_faces
 from .catmull_clark import SubdLevel, SubdSurface, SubdUnsupportedError
 
@@ -703,8 +703,10 @@ SUBD_KEYS: tuple[SubdKey, ...] = (
 )
 SUBD_COMMANDS = frozenset(entry.command for entry in SUBD_KEYS)
 
-#: Contexts `Application` resolves keys in; a SubD key bound in any of them would be unreachable.
-APP_CONTEXTS = (GLOBAL_CONTEXT, KNIFE_CONTEXT, TOPOLOGY_CONTEXT)
+#: Contexts in which a binding would make a SubD key unreachable. Not KNIFE (K-1, AD-013 addendum 2026-10-28):
+#: during a Knife session every key goes to the session first, so a SubD key is never resolved there and a
+#: knife-only binding on it (V = mirror preview variant) shadows nothing.
+APP_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT)
 
 
 class SubdBindingConflict(RuntimeError):

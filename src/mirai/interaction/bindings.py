@@ -101,6 +101,8 @@ Session aufgelöst, sonst ungebunden):
                     WP-KNIFE-01 UX2, Manu 2026-10-02; nur in diesem Kontext,
                     global bleibt E = Rotate und RMB ungebunden)
 - Ctrl+Shift+Z    → Redo (alternative Geste, AD-017 DECIDED 2026-09-22)
+- V               → Spiegelvorschau-Variante V-a / V-b / V-c (nur in einer
+                    symmetrischen Session wirksam; bis 2026-10-28 ein Literal)
 Esc (Cancel), Ctrl+Z (Undo) und Ctrl+Y (Redo) kommen über den GLOBAL-
 Fallback; `Application` routet sie während der Session auf die Knife-
 Session-History. LMB und Shift+LMB (Mittelpunkt-Snap, UX2) gehören während
@@ -147,6 +149,9 @@ from .input import KNIFE_CONTEXT, BindingSet, Input, KeymapConfigError, WINDOW_C
 
 #: Manus Keymap (AD-013 Addendum 2026-10-28): im Repo, relativ zur Repo-Wurzel (gleich auf Windows und Linux).
 KEYMAP_PATH = Path(__file__).resolve().parents[3] / "config" / "keymap.json"
+
+#: Default key of `KNIFE_MIRROR_VARIANT` (`Application` re-exports the name).
+KNIFE_MIRROR_VARIANT_KEY = "v"
 
 #: Every command name `mirai.interaction.commands` defines; a keymap entry outside it only warns.
 KNOWN_COMMANDS = frozenset(
@@ -304,6 +309,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("e"), cmd.KNIFE_LIFT, context=KNIFE_CONTEXT)
     bs.set_default(_mouse("RIGHT"), cmd.KNIFE_LIFT, context=KNIFE_CONTEXT)
     bs.set_default(_key("z", "ctrl", "shift"), cmd.REDO, context=KNIFE_CONTEXT)
+    # AD-SYM-03 (key `PROVISIONAL`): the mirror preview variant of a symmetric session (K-1, AD-013 addendum
+    # 2026-10-28; the SubD check no longer consults this context, a session never resolves SubD keys).
+    bs.set_default(_key(KNIFE_MIRROR_VARIANT_KEY), cmd.KNIFE_MIRROR_VARIANT, context=KNIFE_CONTEXT)
 
     # --- Display ------------------------------------------------------------
     bs.set_default(_key("d"), cmd.CYCLE_DISPLAY_MODE)

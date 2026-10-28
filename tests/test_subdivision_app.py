@@ -19,7 +19,7 @@ from core import SelectionMode
 from loaders.assets import asset_path
 from mirai.application import Application
 from mirai.interaction import commands as cmd
-from mirai.interaction.input import SUBD_CONTEXT, Input
+from mirai.interaction.input import KNIFE_CONTEXT, SUBD_CONTEXT, Input
 from mirai.subdivision import (
     CYCLE_VIEW,
     DEFAULT_LEVEL,
@@ -168,6 +168,15 @@ def test_a_conflicting_default_aborts_the_install():
     bindings.set_default(V, "Something")
     with pytest.raises(SubdBindingConflict):
         install_subd_bindings(bindings)
+
+
+def test_a_knife_only_binding_on_a_subd_key_does_not_abort_the_install():
+    # K-1 (AD-013 addendum 2026-10-28): a Knife session never resolves SubD keys, so the check skips the
+    # knife context - the default V = KnifeMirrorVariant lives there.
+    bindings = build_default_bindings()
+    assert bindings.command_for(V, KNIFE_CONTEXT) == cmd.KNIFE_MIRROR_VARIANT
+    install_subd_bindings(bindings)
+    assert bindings.command_for(V, SUBD_CONTEXT) == SUBD_KEYS[0].command
 
 
 def test_a_user_binding_of_a_subd_key_wins_over_subd(app):

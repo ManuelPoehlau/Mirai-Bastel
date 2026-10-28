@@ -1538,8 +1538,8 @@ as Artist Input Truth. Code: `src/mirai/subdivision/` (status home: its `README.
 ## Addendum (2026-10-28, the active BindingSet is the single input truth, Manu's keymap in the repo)
 
 **Status:** **DECIDED ✓** (Artist decisions: Manu, 2026-10-28; engineering decisions: set in the handoff "AD-013
-addendum: BindingSet as single input truth, Manu's keymap in the repo", M5, Type C) · **BUILT** 2026-10-28, except
-**Knife V** (see below: stop point, Manu decides).
+addendum: BindingSet as single input truth, Manu's keymap in the repo", M5, Type C) · **BUILT** 2026-10-28; Knife V
+followed the same day after Manu chose **K-1** (see below).
 
 ### Decisions
 
@@ -1608,9 +1608,18 @@ checks and `Application` never resolves.
   orbit / Alt+Shift pan while W/E/R/T/G, Tweak or a gizmo drag runs, Alt at the release of Box / Lasso = select through,
   Shift = Knife edge midpoint, Shift+click on a scene-menu row = add as Reference. Printed at start, HUD row "Fixed".
 
-### Knife V — not moved (stop point)
+### Knife V — stop point, resolved by K-1 (Manu, 2026-10-28)
 
-`KNIFE_MIRROR_VARIANT_KEY = "v"` (`Application._knife_key`, the mirror preview variant of a symmetric Knife session)
+**Decision (Manu, 2026-10-28): K-1.** Built: `subdivision.preview.APP_CONTEXTS` is GLOBAL + TOPOLOGY (the SubD check
+no longer consults KNIFE), and V → `commands.KNIFE_MIRROR_VARIANT` is a default in the `knife` context
+(`KNIFE_MIRROR_VARIANT_KEY` lives in `mirai.interaction.bindings`, re-exported by `Application`). `_knife_key` acts on
+the command (only in a symmetric session, otherwise it does nothing, as before); the status text names the bound key.
+The layer gate lists it with the other Knife session commands. No behaviour change; globally V stays unbound and
+reaches the SubD context outside a session. With it, no key resolves outside the BindingSet. Tests:
+`tests/test_symmetric_knife_preview.py` (V is a knife binding, a keymap moves it and the status follows),
+`tests/test_subdivision_app.py` (a knife-only binding on a SubD key does not abort the install).
+
+*The stop-point record as first written:* `KNIFE_MIRROR_VARIANT_KEY = "v"` (`Application._knife_key`, the mirror preview variant of a symmetric Knife session)
 stays a literal, the one key left outside the BindingSet. Binding it as a command in the `knife` context — the obvious
 move, behaviour-neutral, like E = KnifeLift there — makes the app fail at start: the SubD start-up assert
 (`subdivision.preview.assert_subd_keys_free`) requires every SubD key, V included, to resolve to nothing in GLOBAL,

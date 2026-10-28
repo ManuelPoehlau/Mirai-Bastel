@@ -86,7 +86,7 @@ from .mask import (
     unblocked,
 )
 from .interaction import BindingSet, Input, ToolManager, commands
-from .interaction.bindings import KeymapLoad, build_default_bindings, load_keymap
+from .interaction.bindings import KNIFE_MIRROR_VARIANT_KEY, KeymapLoad, build_default_bindings, load_keymap
 from .interaction.input import KNIFE_CONTEXT, MORPH_CONTEXT, SUBD_CONTEXT
 from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
@@ -594,13 +594,9 @@ KNIFE_MIRROR_VARIANT_LABELS = {
     "V-b": "immer sichtbar, gedimmt",
     "V-c": "nur Punkte",
 }
-#: The provisional variant key. A key of the Knife context that no command uses: not bound in `KNIFE_CONTEXT`
-#: (nor in GLOBAL), none of the Lab's three keys, and none the Session Gate passes. It is checked here, not
-#: through a command, so the command tables (and with them the Lab's gate rows) stay as they are.
-#: AD-013 addendum 2026-10-28: the one key literal left outside the BindingSet - binding it in `KNIFE_CONTEXT`
-#: trips the SubD start-up check (`subdivision.preview.assert_subd_keys_free`: V must be free in GLOBAL, KNIFE
-#: and TOPOLOGY); the handoff's stop point leaves that check alone, Manu decides (addendum, "Knife V").
-KNIFE_MIRROR_VARIANT_KEY = "v"
+#: The provisional variant key (`KNIFE_MIRROR_VARIANT_KEY`, imported above) is the default of
+#: `commands.KNIFE_MIRROR_VARIANT` in `KNIFE_CONTEXT` since 2026-10-28 (AD-013 addendum, K-1; a literal before).
+#: The Knife session is never gated (`key_press` routes to it first).
 
 # The preview builder ends a chain at a "closed" break only; a pen lift is drawn the same way.
 _KNIFE_DRAWN_LIFT = {"kind": "break", "reason": "closed", "cyclic": False}
@@ -3502,8 +3498,11 @@ class Application:
     def _knife_mirror_text(self) -> str:
         """The symmetric session's note in the status line: the active mirror preview variant and its key."""
         variant = self.knife_mirror_variant
+        # The bound key, not a literal (as `_resymmetrize_summary`): a keymap.json rebinding shows up here.
+        bound = [inp for inp in self.bindings.inputs_for(commands.KNIFE_MIRROR_VARIANT, KNIFE_CONTEXT)
+                 if inp.kind == "key"]
         return (f"Spiegelvorschau {variant} ({KNIFE_MIRROR_VARIANT_LABELS[variant]}), "
-                f"Taste {KNIFE_MIRROR_VARIANT_KEY.upper()} wechselt V-a / V-b / V-c")
+                f"Taste {key_label(bound[0]) if bound else '?'} wechselt V-a / V-b / V-c")
 
     def _knife_say(self, message: str) -> None:
         """A Knife status message; a symmetric session names its mirror preview variant in it."""
@@ -3525,9 +3524,8 @@ class Application:
         is ignored."""
         command = self.bindings.command_for(input, KNIFE_CONTEXT)
         self._knife_last_click = None     # a key between two clicks is no double-click
-        if (command is None and self._knife_view is not None and input.kind == "key"
-                and input.value == KNIFE_MIRROR_VARIANT_KEY and not input.modifiers):
-            return self._knife_cycle_variant()
+        if command == commands.KNIFE_MIRROR_VARIANT:
+            return self._knife_cycle_variant() if self._knife_view is not None else False
         if command == commands.CANCEL:
             return self._knife_end(commit=False)
         if command == commands.KNIFE_COMMIT:
