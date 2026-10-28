@@ -102,6 +102,27 @@ LIGHT_DRAG = "LightDrag"
 # der Entry-Point (`src/main.py`, `src/hud.py`) löst ihn über die Bindings auf und behandelt ihn
 # selbst, `Application` kennt ihn nicht (sie besitzt keinen HUD-Zustand).
 TOGGLE_HUD = "ToggleHud"
+# Further window commands (AD-013 addendum 2026-10-28, context `WINDOW_CONTEXT`, keys `PROVISIONAL`): the
+# window handles them itself, as TOGGLE_HUD, and only when its host passed the matching hook (menu, save,
+# morph bridge); otherwise the key goes on to `Application`. Until 2026-10-28 these keys were literals in
+# `src/main.py`, outside the BindingSet.
+OPEN_SCENE_MENU = "OpenSceneMenu"
+OPEN_ADD_MENU = "OpenAddMenu"
+OPEN_MIRROR_MENU = "OpenMirrorMenu"
+SAVE_SCENE = "SaveScene"
+SEND_TO_MORPH_LAB = "SendToMorphLab"
+TOGGLE_SYMMETRY_DISPLAY = "ToggleSymmetryDisplay"
+WINDOW_COMMANDS = frozenset(
+    {
+        TOGGLE_HUD,
+        OPEN_SCENE_MENU,
+        OPEN_ADD_MENU,
+        OPEN_MIRROR_MENU,
+        SAVE_SCENE,
+        SEND_TO_MORPH_LAB,
+        TOGGLE_SYMMETRY_DISPLAY,
+    }
+)
 
 # --- Objekt-Platzierung (AD-021 M2-3, L-3; Namen und Tasten `PROVISIONAL`) ----
 # Apply = Platzierung ins Mesh übernehmen (Max "Reset XForm"); Clear = Platzierung auf
@@ -298,3 +319,10 @@ MORPH_WEIGHT_DRAG = "MorphWeightDrag"
 #: AD-025 Phase 4: the current target (the one Tab and the weight keys act on) -> the next / previous one.
 MORPH_NEXT = "MorphNext"
 MORPH_PREVIOUS = "MorphPrevious"
+
+# --- Hold commands (AD-013 addendum 2026-10-28) -------------------------------------------------------------
+#: Commands armed by holding a key (AD-016 hold-key-hover and its family): `Application` ends them on the release
+#: of that key's value, which only a `key` input has, so a keymap entry may bind them to `kind: "key"` only.
+HOLD_COMMANDS = frozenset(
+    {MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, LASSO_ARM, LIGHT_DRAG, MORPH_WEIGHT_DRAG}
+)

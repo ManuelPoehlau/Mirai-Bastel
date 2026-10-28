@@ -86,7 +86,7 @@ from .mask import (
     unblocked,
 )
 from .interaction import BindingSet, Input, ToolManager, commands
-from .interaction.bindings import build_default_bindings, load_keymap_overrides
+from .interaction.bindings import KeymapLoad, build_default_bindings, load_keymap
 from .interaction.input import KNIFE_CONTEXT, MORPH_CONTEXT, SUBD_CONTEXT
 from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
@@ -597,6 +597,9 @@ KNIFE_MIRROR_VARIANT_LABELS = {
 #: The provisional variant key. A key of the Knife context that no command uses: not bound in `KNIFE_CONTEXT`
 #: (nor in GLOBAL), none of the Lab's three keys, and none the Session Gate passes. It is checked here, not
 #: through a command, so the command tables (and with them the Lab's gate rows) stay as they are.
+#: AD-013 addendum 2026-10-28: the one key literal left outside the BindingSet - binding it in `KNIFE_CONTEXT`
+#: trips the SubD start-up check (`subdivision.preview.assert_subd_keys_free`: V must be free in GLOBAL, KNIFE
+#: and TOPOLOGY); the handoff's stop point leaves that check alone, Manu decides (addendum, "Knife V").
 KNIFE_MIRROR_VARIANT_KEY = "v"
 
 # The preview builder ends a chain at a "closed" break only; a pen lift is drawn the same way.
@@ -735,17 +738,20 @@ class Application:
 
         # Input
         # Gate 6 (Input Config): Default → optionales keymap.json → BindingSet.
-        # Das Overlay wird genau einmal beim Application-Start geladen; eine
-        # vorhandene, ungültige Datei wird kontrolliert abgelehnt
-        # (`KeymapConfigError`). Kein Runtime-Hot-Reload.
+        # Das Overlay wird genau einmal beim Application-Start geladen. Seit dem
+        # AD-013-Addendum 2026-10-28 blockiert eine ungültige Datei den Start nicht
+        # mehr: sie wird ganz verworfen, die Defaults gelten, `keymap_load` sagt warum
+        # (Statuszeile, HUD, Konsole des Hosts). Kein Runtime-Hot-Reload.
         self.bindings: BindingSet = build_default_bindings()
         # 2026-10-23: the SubD preview's provisional keys, context "subd" (checked against the
         # defaults here, before a keymap.json may rebind anything).
         install_subd_bindings(self.bindings)
         # AD-025 Phase 3: the morph-target keys, context "morph" (resolved after global and SubD).
         install_morph_bindings(self.bindings)
-        if keymap_path is not None:
-            load_keymap_overrides(self.bindings, keymap_path)
+        #: What loading `keymap_path` did (None = no path given, defaults only).
+        self.keymap_load: KeymapLoad | None = (
+            None if keymap_path is None else load_keymap(self.bindings, keymap_path)
+        )
 
         # WP-06 B2 (AD-019): Pointer-Gesten laufen über dieselben Bindings.
         # Größe in logischen Fenster-Pixeln (gleiche Einheit wie die
@@ -771,6 +777,8 @@ class Application:
         # (z. B. zweimal "Undo") erkennt.
         self.status_message: str = ""
         self.status_serial: int = 0
+        if self.keymap_load is not None and self.keymap_load.problem is not None:
+            self._set_status(self.keymap_load.problem)
 
         # WP-SYM-LAB-03 H2 (AD-013 H2 addendum): optional `CommandGate` of one
         # host (the Symmetry Lab, H2-R6). None = nothing is refused;

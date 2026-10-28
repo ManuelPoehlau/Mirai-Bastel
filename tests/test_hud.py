@@ -13,7 +13,7 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 
-from hud import VARIANTS, Hud, HudState, hud_rows, hud_state, key_hint, key_hints
+from hud import FIXED_ROW, VARIANTS, Hud, HudState, hud_rows, hud_state, key_hint, key_hints
 from mirai.application import Application
 from mirai.interaction import commands
 from mirai.interaction.input import WINDOW_CONTEXT, BindingSet, Input
@@ -146,7 +146,9 @@ def test_rows_text(app):
     app.key_press(_key("x"))
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
-    assert list(rows) == ["Mode", "Tool", "Axis", "Space", "Sym", "Display", "Soft", "SubD", "Region", "Look"]
+    assert list(rows) == ["Mode", "Tool", "Axis", "Space", "Sym", "Display", "Soft", "SubD", "Region", "Look", "Fixed"]
+    # AD-013 addendum 2026-10-28: the fixed modifier grammar is listed read-only, without keys.
+    assert rows["Fixed"].value == FIXED_ROW and rows["Fixed"].keys == ""
     assert rows["Region"].value == "no groups · colours on" and not rows["Region"].on
     assert rows["Look"].value == "Raitt 2:1 · Kamera · Licht Bezugsraum Kamera"
     assert rows["Look"].keys == "↑/↓/←/→"

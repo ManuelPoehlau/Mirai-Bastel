@@ -11,7 +11,8 @@ binding with `phase=None` applies in both.
 LMB in the edit phase carries two bindings (Slice 3 E24, AD-019): a click (`kind="click"`,
 below `CLICK_THRESHOLD_PX`) selects, a drag moves; `lab_pointer.PointerPress` decides.
 
-Fixed by the Artist Input Truth (`tools/Input_Mapping_Tool/artist_input_truth.json`):
+Fixed by the Artist Input Truth (`artist_input_truth.json`, archived 2026-10-28 under
+`docs/archive/input_truth_2026-10/`):
 Alt+LMB orbit, Alt+Shift+LMB pan, wheel zoom (edit phase only — in the creation phase
 the wheel belongs to the box), X/Y/Z sticky axis, Shift+X/Y/Z sticky plane (Blender
 exclude-axis: Shift+X = YZ, Shift+Y = XZ, Shift+Z = XY), W/E/R = Move/Rotate/Scale held

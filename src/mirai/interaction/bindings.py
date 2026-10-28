@@ -42,9 +42,15 @@ Display (Artist Input Truth, WP-06 B5a E42: vorher O):
 - L (halten)     → Licht ziehen: Maus bewegen dreht das Key-Licht (dx Azimut, dy Höhe; Manu
                    2026-10-24, AD-024 Q-L2), kein Undo-Schritt
 SetShaded/SetFlatShaded/SetWireframe bleiben ohne Taste.
-- H              → HUD (Zustandsanzeige) zeigen/verbergen (Artist Input Truth
-                   `application.toggle_hud`, GUI Stufe 1; Kontext "window", vom
-                   Fenster behandelt, für `Application` ungebunden)
+- H              → HUD (Zustandsanzeige) zeigen/verbergen (GUI Stufe 1; Kontext
+                   "window", vom Fenster behandelt, für `Application` ungebunden)
+
+Fenster (Kontext "window", AD-013 Addendum 2026-10-28, `PROVISIONAL`; bis dahin
+Literale in `src/main.py`): das Fenster behandelt diese Tasten selbst, wenn sein
+Host den passenden Hook übergeben hat, sonst gehen sie an `Application` weiter:
+- Leertaste      → Szenen-Menü, Shift+A → Add Mesh, Shift+M → Mirror-Menü
+- M              → Objekt ins Morph Lab schicken (Brücke)
+- Ctrl+S         → Szene speichern, Ctrl+Shift+S → Symmetrie-Anzeige an/aus
 
 Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
 - W              → Move (MoveTool)
@@ -56,9 +62,7 @@ Q ist unbelegt. Achsen-Constraints (WP-06 B4, Blender-Konvention
 - Shift+X        → YZ-Ebene, Shift+Y → XZ-Ebene, Shift+Z → XY-Ebene
   (B4.1: sticky Toggle — dieselbe Taste erneut hebt auf, bleibt über Gesten)
 Ctrl+Z / Ctrl+Y (Undo/Redo) sind ein anderes Modifier-Set und bleiben
-unberührt. Im Topology-Lab behält das kontextspezifische R-Binding
-(EdgeRing) Vorrang vor dieser globalen Bindung (Kontext-Priorität in
-input_binding.BindingSet.command_for).
+unberührt.
 
 Contextual C (WP-06 B6, AD-017): `C` ist GLOBAL, nicht Topology-Lab —
 Split (Edge-Modus, 1 Edge) / Edge Connect (Edge-Modus, 2+ Edges) / Vertex
@@ -120,19 +124,46 @@ Loop-Werkzeuge (2026-10-15, Tasten aus der Artist Input Truth, `PROVISIONAL`):
 - G (halten)       → Loop Slide der ausgewählten Edges, Maus bewegen, loslassen = Commit
 Wie `C` ignoriert, solange W/E/R/T/G scharf ist; in der Knife-Session ungebunden.
 
-Die verbleibenden Topology-Lab-Keys (K/L/R) liegen im Kontext "topology"
-und gelten nur dort (der GLOBAL_CONTEXT-Fallback greift nicht für sie).
+Der Kontext "topology" hat seit 2026-10-28 keine Defaults mehr (die toten L/R
+des Topology Lab sind entfernt; kein Host löst ihn auf).
 
-Jede Bindung ist über die optionale `keymap.json` im Experiment-Ordner
-überschreibbar (siehe input_binding.BindingSet / load_keymap_overrides).
+Zwei Ebenen (AD-013 Addendum 2026-10-28): diese Defaults sind die Engineering-
+Ebene (`PROVISIONAL`); Manus Belegung steht in `config/keymap.json`
+(`KEYMAP_PATH`), die `src/main.py` und jeder Lab-Host über
+`Application(keymap_path=KEYMAP_PATH)` lädt (`load_keymap`). Ein Eintrag dort
+heißt "von Manu gesetzt". Agenten lesen die Datei, schreiben sie nie, und prüfen
+eine neue Default-Taste gegen sie. Die Modifier-Regeln während einer Geste
+(`FIXED_MODIFIER_RULES`) sind feste Grammatik, keine Bindung.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 from . import commands as cmd
-from .input import KNIFE_CONTEXT, BindingSet, Input, TOPOLOGY_CONTEXT, WINDOW_CONTEXT
+from .input import KNIFE_CONTEXT, BindingSet, Input, KeymapConfigError, WINDOW_CONTEXT
+
+#: Manus Keymap (AD-013 Addendum 2026-10-28): im Repo, relativ zur Repo-Wurzel (gleich auf Windows und Linux).
+KEYMAP_PATH = Path(__file__).resolve().parents[3] / "config" / "keymap.json"
+
+#: Every command name `mirai.interaction.commands` defines; a keymap entry outside it only warns.
+KNOWN_COMMANDS = frozenset(
+    value for name, value in vars(cmd).items() if name.isupper() and isinstance(value, str)
+)
+
+#: The modifier grammar during a gesture (AD-013 Addendum 2026-10-28): read from the held keys
+#: (`Application.set_shift_held` / `set_ctrl_held` / `set_alt_held`), not through the bindings, so it is
+#: not rebindable. Listed read-only next to the bindings (HUD row "Fixed", start-up listing of `src/main.py`).
+FIXED_MODIFIER_RULES: tuple[tuple[str, str], ...] = (
+    ("Shift", "W/E/R laufen: fein (x0,2)"),
+    ("Ctrl", "Rotate läuft: Raster 5°, mit Shift 1°"),
+    ("Alt", "W/E/R/T/G, Tweak oder Gizmo läuft: Maus = Orbit, Alt+Shift = Pan (nicht bei Smooth/Relax)"),
+    ("Alt", "Box/Lasso vor dem Loslassen: durch das Mesh wählen"),
+    ("Shift", "Knife: Hover und Klick auf die Kantenmitte"),
+    ("Shift", "Klick auf eine Zeile im Szenen-Menü: als Referenz dazu"),
+)
 
 
 def _key(value: str, *modifiers: str) -> Input:
@@ -292,12 +323,21 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("right"), cmd.LOOK_VALUE_INC)
     bs.set_default(_key("left", "ctrl"), cmd.LOOK_VALUE_DEC_FINE)
     bs.set_default(_key("right", "ctrl"), cmd.LOOK_VALUE_INC_FINE)
-    # Light drag (Manu 2026-10-24, AD-024 Q-L2): hold L + move the mouse. Global `l` was free (the
-    # TOPOLOGY_CONTEXT `l` = EdgeLoop keeps priority in the Topology Lab); Shift+L stays Edge Loop.
+    # Light drag (Manu 2026-10-24, AD-024 Q-L2): hold L + move the mouse. Global `l` was free; Shift+L stays
+    # Edge Loop.
     bs.set_default(_key("l"), cmd.LIGHT_DRAG)
     # GUI Stufe 1 (2026-10-23): H = Artist Input Truth `application.toggle_hud`. Fenster-Command im
     # Kontext "window": `src/main.py` behandelt ihn, `Application` löst diesen Kontext nie auf.
     bs.set_default(_key("h"), cmd.TOGGLE_HUD, context=WINDOW_CONTEXT)
+    # AD-013 addendum 2026-10-28: the window's other keys, until then literals in `src/main.py` (no behaviour
+    # change; all `PROVISIONAL`). The scene loader key is an engineering proposal (INPUT_WIRING_MAP §10
+    # "Load" = TBD); bare M is the Morph Lab bridge (Manu 2026-10-17), Shift+A / Shift+M the object menus.
+    bs.set_default(_key("space"), cmd.OPEN_SCENE_MENU, context=WINDOW_CONTEXT)
+    bs.set_default(_key("a", "shift"), cmd.OPEN_ADD_MENU, context=WINDOW_CONTEXT)
+    bs.set_default(_key("m", "shift"), cmd.OPEN_MIRROR_MENU, context=WINDOW_CONTEXT)
+    bs.set_default(_key("m"), cmd.SEND_TO_MORPH_LAB, context=WINDOW_CONTEXT)
+    bs.set_default(_key("s", "ctrl"), cmd.SAVE_SCENE, context=WINDOW_CONTEXT)
+    bs.set_default(_key("s", "ctrl", "shift"), cmd.TOGGLE_SYMMETRY_DISPLAY, context=WINDOW_CONTEXT)
 
     # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)
@@ -350,28 +390,82 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_wheel("UP", "ctrl", "shift"), cmd.SOFT_FLOW_LOOP)
     bs.set_default(_wheel("DOWN", "ctrl", "shift"), cmd.SOFT_FLOW_RING)
 
-    # --- Topology Lab (nur im Kontext "topology") ---------------------------
-    # WP-06 B6: `s` (SplitEdge) und `c` (Connect, alte Vertex-Mode/Edge-Mode-
-    # Zweiteilung) sind hier entfernt — beide durch das globale, kontextuelle
-    # `C` oben ersetzt (AD-017). `l`/`r` bleiben unverändert (Legacy,
-    # außerhalb des B6-Scopes; siehe Handoff-Report). `alt+e` (Extrude) ist seit
-    # WP-06 B9 entfernt: ersetzt durch das globale `T` oben. `k` (Collapse) ist seit
-    # WP Toolbox Gaps B1 entfernt: ersetzt durch das globale Shift+C oben.
-    bs.set_default(_key("l"), cmd.EDGE_LOOP, context=TOPOLOGY_CONTEXT)
-    bs.set_default(_key("r"), cmd.EDGE_RING, context=TOPOLOGY_CONTEXT)
+    # The Topology Lab's context "topology" has no defaults since 2026-10-28: its last keys, `l` / `r`
+    # (EdgeLoop / EdgeRing), were dead (no host resolves that context); Shift+L / Shift+R are the app's.
 
     return bs
+
+
+def check_keymap(overlay: BindingSet) -> list[str]:
+    """The keymap rules beyond the schema (AD-013 addendum 2026-10-28) on a parsed overlay.
+
+    A hold command (`commands.HOLD_COMMANDS`) bound to anything but a `key` makes the file invalid
+    (`KeymapConfigError`): its gesture ends on that key's release. A command name `commands` does not
+    define only warns (returned as text) - the input layer keeps treating commands as strings.
+    """
+    warnings = []
+    for context, inp, command in overlay.user_entries():
+        if command is None:
+            continue
+        where = f"{context}: {inp.kind} {'+'.join(sorted(inp.modifiers) + [inp.value])} -> {command}"
+        if command in cmd.HOLD_COMMANDS and inp.kind != "key":
+            raise KeymapConfigError(f"{where}: Halte-Command nur mit kind 'key' erlaubt")
+        if command not in KNOWN_COMMANDS:
+            warnings.append(f"{where}: unbekannter Command (Eintrag bleibt, wirkt aber nicht)")
+    return warnings
 
 
 def load_keymap_overrides(
     bindings: BindingSet, path: str | Path
 ) -> BindingSet:
-    """Wendet eine optionale `keymap.json` als User-Overlay an.
+    """Wendet eine optionale `keymap.json` als User-Overlay an (streng).
 
     Existiert die Datei nicht, bleibt die Default-Belegung unverändert.
     Eine vorhandene, ungültige Datei wird kontrolliert abgelehnt
-    (`KeymapConfigError`, siehe `BindingSet.from_json_file`).
+    (`KeymapConfigError`, siehe `BindingSet.from_json_file` und `check_keymap`).
+    Hosts nehmen `load_keymap`, das nie abbricht.
     """
     overlay = BindingSet.from_json_file(path)
+    check_keymap(overlay)
     bindings.add_overrides(overlay)
     return bindings
+
+
+@dataclass(frozen=True)
+class KeymapLoad:
+    """What `load_keymap` did: `status` "loaded" / "missing" / "invalid"."""
+
+    path: Path
+    status: str
+    entries: int = 0
+    error: Optional[str] = None
+    warnings: tuple[str, ...] = ()
+
+    @property
+    def problem(self) -> Optional[str]:
+        """The loud one-line message for an invalid file (None otherwise)."""
+        if self.status != "invalid":
+            return None
+        return f"keymap.json ungültig - Standardbelegung aktiv ({self.path}): {self.error}"
+
+    def messages(self) -> list[str]:
+        """Lines for the console at start-up: the problem, then each warning."""
+        lines = [] if self.problem is None else [self.problem]
+        lines.extend(f"keymap.json: {warning}" for warning in self.warnings)
+        return lines
+
+
+def load_keymap(bindings: BindingSet, path: str | Path) -> KeymapLoad:
+    """Loads a keymap.json onto `bindings` without ever blocking the start: a missing file leaves the
+    defaults; an invalid one (schema, JSON, a hold command off a key, unreadable) leaves the defaults
+    *completely* and reports why; unknown command names load and warn."""
+    p = Path(path)
+    if not p.is_file():
+        return KeymapLoad(p, "missing")
+    try:
+        overlay = BindingSet.from_json_file(p)
+        warnings = check_keymap(overlay)
+    except (KeymapConfigError, OSError, UnicodeDecodeError) as exc:
+        return KeymapLoad(p, "invalid", error=str(exc))
+    bindings.add_overrides(overlay)
+    return KeymapLoad(p, "loaded", entries=len(overlay.user_entries()), warnings=tuple(warnings))

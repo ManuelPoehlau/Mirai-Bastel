@@ -23,7 +23,7 @@
 | Character Systems (Rigging, Skinning, Deformation, Morph, Facial-Systeme) | `CHARACTER_SYSTEMS_RESEARCH.md` | Abschnitte 8 und 9 hier betrachten Topologie **nur aus Modellierersicht**. Alles, was Rig-, Deformer- oder Morph-*Systeme* betrifft, gehört dorthin. |
 | Rigging/Skinning/Morphing (technische Realität) | `experiments/rigging-skinning-morphing/` (AD-005, CORE_API_AUDIT, FINDINGS-3C) | Liefert die technische Grundlage für Abschnitt 8. Wird zitiert, nicht dupliziert. |
 | Topologie-Operationen im Core | `experiments/topology/`, Core-API-Audit | Die Operationsliste in Abschnitt 10 beschreibt die Branche, nicht den Mirai-Core-Stand. |
-| Input / Bindings / Artist Input Truth | AD-013, `tools/Input_Mapping_Tool/artist_input_truth.json` | Hier bewusst **keine** Tastenaussagen. |
+| Input / Bindings / Artist Input Truth | AD-013 (addendum 2026-10-28), `config/keymap.json` (Manu's bindings; the old `artist_input_truth.json` is archived in `docs/archive/input_truth_2026-10/`) | Hier bewusst **keine** Tastenaussagen. |
 | Reihenfolge der Arbeitspakete | `ROADMAP.md` (Modeling Track, WP-03, ARCH-02) | Dieses Dokument verschiebt nichts in der Roadmap. |
 
 **Ergebnis der Existenzprüfung:** Ein Dokument, das *Modeling-Workflow als Artist-Grammatik*

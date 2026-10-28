@@ -152,6 +152,10 @@ A successful experiment may later produce a new Artist decision, but that promot
 
 ## Artist Input Truth
 
+*2026-10-28 ([Addendum 2026-10-28](#addendum-2026-10-28-the-active-bindingset-is-the-single-input-truth-manus-keymap-in-the-repo)): the separate Artist Input Truth (`artist_input_truth.json`, the
+mapping tool, `INPUT_WIRING_MAP.md`) is archived in `docs/archive/input_truth_2026-10/`. Artist intent is now the user
+layer of the active BindingSet, Manu's `config/keymap.json`; rules 5–7 below are reworded or replaced accordingly.*
+
 Artist Input Truth is the authoritative representation of Artist input intent, subject to these rules:
 
 1. Each function has a stable semantic ID, e.g. `transform.move`.
@@ -159,8 +163,15 @@ Artist Input Truth is the authoritative representation of Artist input intent, s
 3. Multiple functions sharing a physical input remain possible, but the conflict must be explicitly visible.
 4. An empty binding means **intentionally unbound**. If the project later needs to distinguish this from "not yet decided", that distinction may be introduced explicitly.
 5. Artist Input Truth is not rewritten merely to match implementation.
+   *Reworded 2026-10-28 ([addendum](#addendum-2026-10-28-the-active-bindingset-is-the-single-input-truth-manus-keymap-in-the-repo)): Manu's keymap (`config/keymap.json`) is not rewritten to match
+   implementation — agents read it and never write it; only Manu (or the future in-app editor on his behalf) does.*
 6. Implementation follows Artist Input Truth unless an explicit override or unresolved discrepancy exists.
+   *Replaced 2026-10-28: implementation follows the keymap by construction — its entries are the user layer and win
+   over the code defaults at resolution (`BindingSet.command_for`), so no discrepancy can stay open. Before adding a
+   new default an agent checks the key against `config/keymap.json`.*
 7. Changes to Artist Input Truth are Artist/Product decisions, not implementation-driven corrections.
+   *Replaced 2026-10-28: a change to `config/keymap.json` is an Artist/Product decision. Engineering changes only the
+   default layer; a code default stays `PROVISIONAL` until Manu writes it into the keymap.*
 
 ---
 
@@ -193,6 +204,10 @@ No architecture should prematurely force this decision.
 **DECIDED: YES**
 
 Artist Input Truth is the authoritative representation of Artist input intent according to the rules in this document.
+
+*Replaced 2026-10-28 ([addendum](#addendum-2026-10-28-the-active-bindingset-is-the-single-input-truth-manus-keymap-in-the-repo), Manu): **the active BindingSet is the single source of truth for
+input.** Its user layer, Manu's repo-tracked `config/keymap.json`, is Artist intent; its default layer (code) is
+engineering, `PROVISIONAL`. A later in-app hotkey editor edits exactly this; there is no parallel list.*
 
 ### A5 — Capability promotion promotes binding
 
@@ -243,6 +258,10 @@ Promoting a capability to Production does not promote its binding, interaction, 
 ### I8 — Artist intent and implementation state are separate
 
 The current code is evidence of implementation state. It is not automatically evidence of Artist intent.
+
+*Reworded 2026-10-28 ([addendum](#addendum-2026-10-28-the-active-bindingset-is-the-single-input-truth-manus-keymap-in-the-repo)): the two are carried by the two layers of the BindingSet. An entry
+in `config/keymap.json` is Artist intent; a code default without such an entry is implementation state
+(`PROVISIONAL`). Code and code comments are no evidence of Artist intent.*
 
 ---
 
@@ -1515,3 +1534,147 @@ as Artist Input Truth. Code: `src/mirai/subdivision/` (status home: its `README.
   offset whenever it is drawn — no longer only while the wire overlay or an edge highlight is on: host lines lie exactly
   on it (SubD isolines) and z-fought without hover. (b) Optional, inert `p.replaces_wire`: while the surface is drawn the
   viewport leaves out the edit mesh's wire layer, because the host shows those edges itself (`Viewport.wire_drawn()`).
+
+## Addendum (2026-10-28, the active BindingSet is the single input truth, Manu's keymap in the repo)
+
+**Status:** **DECIDED ✓** (Artist decisions: Manu, 2026-10-28; engineering decisions: set in the handoff "AD-013
+addendum: BindingSet as single input truth, Manu's keymap in the repo", M5, Type C) · **BUILT** 2026-10-28, except
+**Knife V** (see below: stop point, Manu decides).
+
+### Decisions
+
+**Artist (Manu, 2026-10-28):**
+
+- `tools/Input_Mapping_Tool/` (incl. `artist_input_truth.json`) and `docs/design/INPUT_WIRING_MAP.md` are archived as
+  historical reference ([`docs/archive/input_truth_2026-10/`](../archive/input_truth_2026-10/README.md)). They were never
+  runtime input and are partly stale.
+- The active BindingSet is the single source of truth for input. A later in-app hotkey editor edits exactly this; no
+  parallel list.
+- Manu's keymap lives **in the repo**, not per machine.
+
+**Engineering (handoff):**
+
+- File `config/keymap.json`, existing schema (`schemaVersion: 1`, contract §8). Optional per-entry `"set": "YYYY-MM-DD"`
+  is additive (the parser ignores unknown entry keys; no version bump, AD-019 precedent).
+- **Origin is given by the layer:** entry in `config/keymap.json` = set by Manu; code default only = engineering,
+  `PROVISIONAL`. No per-binding origin field in code.
+- **Agents read `config/keymap.json`, never write it** (only Manu / the future editor). Before adding a new default, an
+  agent checks the key against this file.
+- Only bindings **documented** as Manu's decisions were migrated into the file (table below); everything else stays a
+  code default. No verdict was inferred from a code comment.
+- `src/main.py` and every Lab host on `Application` load the same file (A1), path relative to the repo root
+  (`mirai.interaction.bindings.KEYMAP_PATH`, `pathlib`, works on Windows 10).
+- The modifier-hold rules during a gesture (Shift precision, Ctrl snap, Alt camera / select-through) stay fixed grammar
+  outside the keymap: listed read-only next to the bindings, not bindable.
+
+### Rule changes
+
+| Rule | Change |
+|---|---|
+| **A4** | **Replaced:** the active BindingSet is the single source of truth for input; its user layer (`config/keymap.json`) is Artist intent, its default layer (code) engineering, `PROVISIONAL`. The in-app editor edits exactly this. |
+| **Truth rule 5** | **Reworded:** Manu's keymap is not rewritten to match implementation; agents read it, never write it. |
+| **Truth rule 6** | **Replaced:** implementation follows the keymap by construction (user layer wins at resolution); before a new default, check its key against the file. |
+| **Truth rule 7** | **Replaced:** a keymap change is an Artist/Product decision; engineering changes only defaults, which stay `PROVISIONAL` until Manu writes them into the keymap. |
+| **I8** | **Reworded:** intent vs. implementation is carried by the two layers; code and code comments are no evidence of intent. |
+
+**Unchanged:** A1, A2, A3, A5, I1–I7 (explicitly I4 one binding authority, I5 layered not forked, I6 overrides visible),
+truth rules 1–4, H2-R1 … H2-R6, H7. The Lab start-up asserts (Morph Lab `assert_lab_keys_free`, SubD
+`assert_subd_keys_free`, morph targets) are unchanged; the window keys sit in the context `window`, which none of them
+checks and `Application` never resolves.
+
+### What was built
+
+- **Loading.** `bindings.load_keymap(bindings, path) -> KeymapLoad` never blocks the start: missing file = defaults;
+  invalid file (JSON, schema, a hold command off a key, unreadable) = the whole file is discarded, the defaults stay
+  complete, and the problem is loud — `Application.keymap_load.problem` as the status line, a stderr line at start
+  (`main.print_input_listing`), a lasting HUD row "Keymap". `load_keymap_overrides` stays the strict variant.
+  `Application(keymap_path=KEYMAP_PATH)` in `src/main.py` and the Morph Lab (`experiments/morph_lab/run.py
+  build_app_lab`); `Application()` without a path stays defaults-only (tests, `experiments/drag_cost` probes).
+- **Validator** (contract §8.1/§8.2): contexts `window` and `morph` accepted (with `global`, `knife`, `subd`, `topology`);
+  `commands.HOLD_COMMANDS` (Move, Rotate, Scale, Extrude, LoopSlide, Smooth, Relax, LassoArm, LightDrag,
+  MorphWeightDrag) accept only `kind: "key"`; a command name not in `mirai.interaction.commands` loads and warns.
+- **Moved into the BindingSet** (context `window`, new window commands in `commands.WINDOW_COMMANDS`, no behaviour change):
+  Space → `OpenSceneMenu`, Shift+A → `OpenAddMenu`, Shift+M → `OpenMirrorMenu`, M → `SendToMorphLab`, Ctrl+S →
+  `SaveScene`, Ctrl+Shift+S → `ToggleSymmetryDisplay` (with H → `ToggleHud` from 2026-10-23). `src/main.py`
+  resolves them with `window_command(app, inp)` and acts only when its host passed the matching hook (menu, save, morph,
+  hud) — otherwise the key goes on to `Application` as before. The open menu closes on the inputs bound to `Cancel`
+  (Esc) and `OpenSceneMenu` (Space) instead of literals (`SceneMenu.key(command)`). A test pins that `src/main.py`
+  compares no input value / kind / modifier set with a literal and reads no key symbol but the modifier keys
+  (`tests/test_main_wiring.py::test_main_py_resolves_no_key_outside_the_bindingset`). The layer gate classifies the
+  window commands `non-mesh` like `ToggleHud` (`mirai.layer_declarations`; `Application` never dispatches them).
+- **Removed:** the dead `topology` defaults L → EdgeLoop, R → EdgeRing (no host resolves the context; the context stays
+  valid in the schema).
+- **Fixed modifier grammar** listed in `bindings.FIXED_MODIFIER_RULES`: Shift fine (W/E/R), Ctrl snap (Rotate), Alt
+  orbit / Alt+Shift pan while W/E/R/T/G, Tweak or a gizmo drag runs, Alt at the release of Box / Lasso = select through,
+  Shift = Knife edge midpoint, Shift+click on a scene-menu row = add as Reference. Printed at start, HUD row "Fixed".
+
+### Knife V — not moved (stop point)
+
+`KNIFE_MIRROR_VARIANT_KEY = "v"` (`Application._knife_key`, the mirror preview variant of a symmetric Knife session)
+stays a literal, the one key left outside the BindingSet. Binding it as a command in the `knife` context — the obvious
+move, behaviour-neutral, like E = KnifeLift there — makes the app fail at start: the SubD start-up assert
+(`subdivision.preview.assert_subd_keys_free`) requires every SubD key, V included, to resolve to nothing in GLOBAL,
+KNIFE and TOPOLOGY (`SubdBindingConflict: V ist im Kontext 'knife' an 'KnifeMirrorVariant' gebunden`). Per the
+handoff's stop point the assert was not changed. Options for Manu:
+
+| | Option | Effect |
+|---|---|---|
+| **K-1** (recommended) | Narrow the SubD assert to GLOBAL + TOPOLOGY, then bind V → `KnifeMirrorVariant` in `knife` | Behaviour-neutral: in a Knife session every key goes to `_knife_key` first, a SubD key is never resolved there. The assert keeps guarding what it is for (a SubD key must not shadow an app key outside the session). |
+| K-2 | A separate binding context for the symmetric session, resolved only when `knife` binds nothing | No assert change, but a context that exists only to pass the assert. |
+| K-3 | Another key for the variant | A rebind — Manu's choice of key. |
+
+### Migrated into `config/keymap.json` (documented Manu decisions)
+
+| Context | Input → Command | Source | `set` |
+|---|---|---|---|
+| global | Alt+LMB drag → Orbit, Alt+Shift+LMB drag → Pan, wheel up / down → Zoom | AD-019 basis A6; WP-06 intake log B2 (navigation KEEP) | 2026-09-26 |
+| global | LMB click → Select, Shift → SelectAdd, Ctrl → SelectRemove, Alt → SelectToggle | AD-019 basis A7; intake log B2 (selection KEEP) | 2026-09-26 |
+| global | LMB drag → SelectDrag, Shift+LMB drag → SelectDragAdd, Ctrl+LMB drag → Tweak | `WP_PLAYGROUND_TOOLS_PROMOTION.md` P-2 / P-3 (Manu, chat), T1–T4 KEEP | 2026-10-15 |
+| global | 1 / 2 / 3 / 4 → Vertex / Edge / Face / Object mode | `V1_SPEC.md` §2 | — |
+| global | W / E / R → Move / Rotate / Scale, T → Extrude | Addendum 2026-09-26 (WP-06 B1) | 2026-09-26 |
+| global | X / Y / Z → axis, Shift+X / Y / Z → YZ / XZ / XY plane | Intake log B4 (Blender exclude-axis convention, "Artist decision Manu 2026-09-27") | 2026-09-27 |
+| global | Esc → Cancel | AD-016 (Artist proposal 2026-09-21, "Esc cancels as today"), Transform Lab KEEP | 2026-09-21 |
+| global | Ctrl+Z → Undo, Ctrl+Y → Redo | AD-017 decided bindings (Owner Manu) | 2026-09-22 |
+| global | O → SoftToggle | Intake log WP-SOFT-01 S2a, "Artist decisions (Manu, 2026-10-10)": "O passt erstmal" | 2026-10-10 |
+| global | Shift+S → SymmetryCycle | AD-SYM-04 decision record Q-1 = E-1 ("Ich nehme deine Empfehlung") | 2026-10-14 |
+| global | Shift+C → Collapse; Shift+↑ / ↓ → LoopGrow / LoopShrink; Shift+→ / ← → LoopNext / LoopPrevious | `WP_TOOLBOX_GAPS_PLAN.md` P-2 ("Manu 2026-10-23") | 2026-10-23 |
+| global | L → LightDrag | AD-024 Q-L2 ("Hold L + move mouse") | 2026-10-24 |
+| knife | Enter → KnifeCommit, Ctrl+Shift+Z → Redo | AD-017 decided (#8 "Commit via Enter", in-session Redo bindings); reaffirmed in Manu's UX2 decisions | 2026-09-22 |
+| knife | E → KnifeLift, RMB click → KnifeLift | `KNIFE_FACE_DECISIONS.md` WP-KNIFE-01 UX2, Artist decisions 2 / 5 (Manu 2026-10-02), verdict KEEP | 2026-10-02 |
+
+40 entries, each equal to the code default it shadows (checked when written: no input in any context resolves
+differently with the file than without it).
+
+### Left as code defaults (`PROVISIONAL`) — not clearly documented as Manu's
+
+- **Only in the archived Artist Input Truth JSON** (the handoff's sources exclude it): D / Shift+D (display), C (Connect),
+  H (HUD), Shift+L / Shift+R / I / G (loop tools; T5/T6 were ITERATE), Delete / Backspace / Ctrl+Backspace (§0.2 decided
+  "two keys", not which).
+- **Behaviour decided by Manu, key marked `PROVISIONAL` or a proposal:** Q (Lasso, open question in the WP), S / Alt+S
+  (Smooth / Relax), B / Shift+B (Border / Cap), Ctrl+Shift+LMB click (regions), Alt+R (Reference), Alt+M
+  (Re-Symmetrize, "Annahme, die du korrigieren kannst"), Ctrl+A / Alt+Shift+A (Apply / Clear transform), and the window
+  keys M (Morph bridge), Space, Shift+A, Shift+M, Ctrl+S ("ein Vorschlag"), Ctrl+Shift+S.
+- **Borderline verdicts, left for Manu:** Shift+wheel / Shift+O / Ctrl+O (AD-020 S2c row 7 "Keys … KEEP", but AD-020
+  calls the keys engineering keys right after); Ctrl+wheel up / down (Manu's idea, direction an engineering assumption);
+  Alt+O (proposal); the SubD keys V, Shift+V, Alt+V, Ctrl+1/2/3 ("accepted erstmal" 2026-10-16, marked `PROVISIONAL`).
+- **Engineering:** K, Alt+A, Alt+D, Ctrl+D, Ctrl+Shift+D, Ctrl+Alt+D, the arrow keys and Ctrl+← / → (Look rows), Ctrl++ /
+  Ctrl+- (grow / shrink), the Mask, Hide and Region keys, Alt+Shift+O, Ctrl+Shift+O, Ctrl+Shift+wheel, every `morph`
+  context key (AD-025, "noch ohne Verdikt").
+
+### Hosts
+
+`src/main.py` and the Morph Lab load the file. The Symmetry Lab named in the handoff's test points no longer exists
+(removed 2026-10-24, `experiments/README.md`). The Mehlsack Lab has its own input table (`lab_bindings.py`, no
+`Application`, no `BindingSet`) and is untouched; its tests now read the archived JSON. The `drag_cost` probes measure
+with the defaults.
+
+### Tests
+
+`tests/test_keymap_config.py` (repo file location and clean load, `Application` loads only when asked, rebinding reaches
+resolution and the HUD hint, `window` / `morph` contexts, every hold command × mouse / drag / wheel rejected, unknown
+command warns, invalid JSON / schema / modifier start with complete defaults and a loud status + HUD row, an invalid file
+applies none of its entries, a missing file is quiet, the fixed grammar is listed and unbound);
+`tests/test_main_wiring.py` (every former literal window key resolves through `window`, a keymap moves Save and the
+scene menu with its closing keys, the start listing, the no-literal AST check); `tests/test_input_binding.py` (topology
+context empty); `tests/test_application.py` (an invalid keymap starts with the defaults — it raised until now);
+`experiments/morph_lab/tests/test_app_lab.py` (the lab loads the same file).

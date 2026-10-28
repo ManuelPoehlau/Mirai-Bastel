@@ -32,7 +32,9 @@ from mirai.viewport.camera import OrbitCamera
 
 from .helpers import horizontal_edge, positions
 
-TRUTH = Path(lb.__file__).resolve().parents[2] / "tools" / "Input_Mapping_Tool" / "artist_input_truth.json"
+# Archived 2026-10-28 (AD-013 addendum): the lab's table is still checked against that historical record.
+TRUTH = (Path(lb.__file__).resolve().parents[2] / "docs" / "archive" / "input_truth_2026-10" / "Input_Mapping_Tool"
+         / "artist_input_truth.json")
 W, H = 800, 600
 PARAMS = BoxParams(h=4, n=3)  # rows at y = 0, ±0.5, ±1
 

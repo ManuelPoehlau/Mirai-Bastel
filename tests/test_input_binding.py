@@ -40,6 +40,7 @@ from mirai.interaction.input import (
     BindingSet,
     GLOBAL_CONTEXT,
     Input,
+    KNIFE_CONTEXT,
     TOPOLOGY_CONTEXT,
 )
 
@@ -178,10 +179,18 @@ class BindingOverrideTests(unittest.TestCase):
 
 
 class ContextResolutionTests(unittest.TestCase):
-    def test_topology_context_wins(self):
+    def test_topology_context_has_no_defaults_left(self):
+        # AD-013 addendum 2026-10-28: the dead Topology Lab keys L/R are gone; the context falls back
+        # to GLOBAL like any other (L = light drag, R = Scale).
         bs = build_default_bindings()
-        self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
-        self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.EDGE_RING)
+        self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.LIGHT_DRAG)
+        self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.SCALE)
+        self.assertFalse([key for key in bs._defaults if key[0] == TOPOLOGY_CONTEXT])
+
+    def test_a_specific_context_wins_over_global(self):
+        bs = build_default_bindings()
+        self.assertEqual(bs.command_for(_key("e"), KNIFE_CONTEXT), cmd.KNIFE_LIFT)
+        self.assertEqual(bs.command_for(_key("e")), cmd.ROTATE)
 
     def test_collapse_is_global_shift_c_and_the_dead_k_is_gone(self):
         # WP Toolbox Gaps B1 (Manu 2026-10-23): Shift+C everywhere, plain C stays Connect.
@@ -198,13 +207,11 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertEqual(bs.command_for(_key("z", "ctrl"), TOPOLOGY_CONTEXT), cmd.UNDO)
 
     def test_global_scale_is_not_topology_split(self):
-        # Im default/global context ist 'r' Scale, im Topology-Kontext EdgeRing
-        # (WP-06 B6, AD-017: 's'/SplitEdge und das alte 'c'/Connect im
-        # TOPOLOGY_CONTEXT haben keinen Default mehr — ersetzt durch das
-        # globale, kontextuelle 'C').
+        # Im default/global context ist 'r' Scale (WP-06 B6, AD-017: 's'/SplitEdge und das alte
+        # 'c'/Connect im TOPOLOGY_CONTEXT haben keinen Default mehr — ersetzt durch das globale,
+        # kontextuelle 'C'; seit 2026-10-28 auch 'r'/EdgeRing nicht mehr).
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("r"), GLOBAL_CONTEXT), cmd.SCALE)
-        self.assertEqual(bs.command_for(_key("r"), TOPOLOGY_CONTEXT), cmd.EDGE_RING)
         # 's' is no topology SplitEdge; since C2 the topology context falls back to the global Smooth.
         self.assertEqual(bs.command_for(_key("s"), TOPOLOGY_CONTEXT), cmd.SMOOTH)
 
@@ -219,7 +226,7 @@ class ContextResolutionTests(unittest.TestCase):
     def test_global_extrude_is_t_and_the_legacy_alt_e_is_gone(self):
         # WP-06 B9 (E10): 't' is global (Artist Input Truth `topology.extrude`,
         # PROVISIONAL); the Topology-Lab Alt+E default is superseded and removed,
-        # exactly like 's'/'c' in B6. 'l'/'r' stay in TOPOLOGY_CONTEXT.
+        # exactly like 's'/'c' in B6 (and 'l'/'r' on 2026-10-28).
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("t"), GLOBAL_CONTEXT), cmd.EXTRUDE)
         self.assertEqual(bs.command_for(_key("t"), TOPOLOGY_CONTEXT), cmd.EXTRUDE)
@@ -227,7 +234,6 @@ class ContextResolutionTests(unittest.TestCase):
         self.assertIsNone(bs.command_for(_key("e", "alt"), TOPOLOGY_CONTEXT))
         # E (Rotate) is untouched by the removal of Alt+E.
         self.assertEqual(bs.command_for(_key("e"), GLOBAL_CONTEXT), cmd.ROTATE)
-        self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
 
 
 class SerializationTests(unittest.TestCase):
@@ -242,7 +248,7 @@ class SerializationTests(unittest.TestCase):
         self.assertEqual(merged.command_for(_key("g"), TOPOLOGY_CONTEXT), cmd.REDO)
         self.assertEqual(merged.command_for(_mouse("MIDDLE", "shift")), cmd.ORBIT)
         # Defaults unverändert.
-        self.assertEqual(merged.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
+        self.assertEqual(merged.command_for(_key("l", "shift")), cmd.EDGE_LOOP)
         self.assertEqual(merged.command_for(_key("1")), cmd.SET_VERTEX_MODE)
 
     def test_json_roundtrip(self):
@@ -331,7 +337,7 @@ class KeymapOverrideTests(unittest.TestCase):
         # Bestehende Defaults funktionieren unverändert, wenn keine Config da ist.
         bs = build_default_bindings()
         self.assertEqual(bs.command_for(_key("w")), cmd.MOVE)
-        self.assertEqual(bs.command_for(_key("l"), TOPOLOGY_CONTEXT), cmd.EDGE_LOOP)
+        self.assertEqual(bs.command_for(_key("l", "shift")), cmd.EDGE_LOOP)
 
 
 class ExplicitUnbindTests(unittest.TestCase):

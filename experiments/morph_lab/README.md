@@ -14,6 +14,8 @@ Licht und Shading sind die der App. Die gemischte Form zeichnet der Viewport üb
 [CLAUDE-001](../../docs/archive/morph_lab/reviews/AD-013_H7_MORPH_LAB_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, Notiz in
 [AD-013, „Second user (Morph Lab)“](../../docs/architecture/AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#second-user-morph-lab-2026-10-16)).
 Das Lab importiert nichts aus `playground/` oder anderen Experimenten (Test: `tests/test_import_boundary.py`).
+Die App-Tasten kommen aus derselben Belegung wie in `src/main.py`: Standardbelegung plus Manus `config/keymap.json`
+(AD-013 Addendum 2026-10-28); die Lab-Tasten (Kontext `morph_lab`) sind nicht Teil dieser Datei.
 
 ## Starten
 

@@ -97,6 +97,8 @@ class HudState:
     morph_targets: Optional[str]
     status: str
     status_serial: int
+    #: AD-013 addendum 2026-10-28: why `config/keymap.json` was not loaded (None = loaded, missing or not asked).
+    keymap_problem: Optional[str] = None
 
 
 def hud_state(app) -> HudState:
@@ -137,6 +139,7 @@ def hud_state(app) -> HudState:
         morph_targets=app.morph_targets_text(),
         status=app.status_message,
         status_serial=app.status_serial,
+        keymap_problem=None if app.keymap_load is None else app.keymap_load.problem,
     )
 
 
@@ -239,7 +242,15 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         rows.append(HudRow("Morph", state.morph, hints.get("Morph", ""), on=True))
     if state.morph_targets is not None:  # several targets (AD-025 Phase 4)
         rows.append(HudRow("Targets", state.morph_targets, hints.get("Targets", ""), on=True))
+    # AD-013 addendum 2026-10-28: the modifier grammar is no binding; it is listed read-only.
+    rows.append(HudRow("Fixed", FIXED_ROW, ""))
+    if state.keymap_problem is not None:  # loud and lasting, unlike the status line
+        rows.append(HudRow("Keymap", "invalid, defaults active - see console", "", on=True))
     return rows
+
+
+#: The "Fixed" row: `bindings.FIXED_MODIFIER_RULES` in short (the full sentences are printed at start).
+FIXED_ROW = "Shift fine · Ctrl snap · Alt orbit / through"
 
 
 # -- the HUD ------------------------------------------------------------------------------------

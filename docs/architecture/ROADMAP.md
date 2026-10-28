@@ -485,7 +485,7 @@ Move is a production-validated capability (Core/Tool/History already committed v
 
 Two separate paths bring a capability's *interaction* into `src/main.py` (AD-013: capability promotion ≠ UX promotion):
 
-- **`PROVISIONAL`** — a conventional, exchangeable baseline for an indispensable basic function per Artist Input Truth (`tools/Input_Mapping_Tool/artist_input_truth.json`). Not a UX decision; explicitly a placeholder, swappable via `keymap.json`/`BindingSet`.
+- **`PROVISIONAL`** — a conventional, exchangeable baseline for an indispensable basic function. Not a UX decision; explicitly a placeholder. For keys (AD-013 addendum 2026-10-28): a code default in `mirai.interaction.bindings` that has no entry in Manu's `config/keymap.json` is `PROVISIONAL`; an entry there is Manu's. (Until 2026-10-28 the baseline was the Artist Input Truth, now archived in `docs/archive/input_truth_2026-10/`.)
 - **`PROMOTED`** — a Lab result with an explicit Artist verdict of KEEP/DECIDED, carried over with a short note or AD.
 
 The dated entries (2026-09-26 to 2026-10-11) are frozen in [WP-06_INTAKE_LOG.md](WP-06_INTAKE_LOG.md). No new per-slice entries here (AGENTS.md §4b); slices are recorded in Git and the area README, decisions in ADs.

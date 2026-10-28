@@ -90,6 +90,8 @@ Details:
 - `core/` mesh operations must remain topology-safe (see `tests/mesh_invariants.py`)
 - History is decoupled from Mesh internals (see `AD-003` if it exists)
 - Viewport is separate from Core (data flows Core → Viewport, never back)
+- Input: the active `BindingSet` is the only input truth (AD-013 addendum 2026-10-28). `config/keymap.json` is
+  Manu's — read it, never write it; check a new default key against it (AGENTS.md §7)
 - Future systems (rig, anim, script) must not be blocked by current Core boundaries
 
 ## When in doubt

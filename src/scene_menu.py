@@ -9,12 +9,11 @@ AD-021 M1 (Q-10, Manu 2026-10-15): Shift+Klick auf eine Zeile fügt sie als Refe
 hinzu, statt die Szene zu ersetzen (`Application.add_reference`, ein Undo-Schritt, die
 Kamera bleibt stehen, Q-9). Nur wenn das Menü einen `add`-Callback bekommt.
 
-Bewusst Fenster-Ebene wie die Lab-Tasten (AD-013 H2, Variante G): keine
-Neuerung im Binding-System — `SPACE` bleibt in `mirai.interaction.bindings`
-unbelegt, und `install_handlers` bekommt das Menü nur auf Anforderung
-(`menu=...`), der Symmetry Lab teilt die Verdrahtung also unverändert. Der
-Key ist ein Engineering-Vorschlag, kein Artist-Input-Truth
-(INPUT_WIRING_MAP.md §10 „Load“ = TBD). Das Modul ist temporär und darf mit
+Bewusst Fenster-Ebene: `install_handlers` bekommt das Menü nur auf Anforderung
+(`menu=...`), ein Lab ohne Menü behält seine Verdrahtung. Seit dem AD-013-Addendum
+2026-10-28 ist `SPACE` eine Default-Bindung im Kontext "window"
+(`commands.OPEN_SCENE_MENU`, ebenso Shift+A / Shift+M), keine Konstante hier. Der
+Key ist ein Engineering-Vorschlag (`PROVISIONAL`). Das Modul ist temporär und darf mit
 seiner Begründung wieder entfernt werden.
 
 Einträge kommen aus der Asset-Registry (`examples/loaders/assets.py`,
@@ -38,6 +37,8 @@ Kein pyglet-Import auf Modulebene: Zeichnung und Textbreite bauen lazy
 from __future__ import annotations
 
 from typing import Callable, Sequence
+
+from mirai.interaction import commands
 
 #: Layout in Fensterpixeln (y steigt nach oben, wie bei pyglet).
 HEADER_HEIGHT = 24
@@ -217,17 +218,14 @@ class SceneMenu:
 
     # -- Eingabe --------------------------------------------------------------
 
-    def key(self, inp) -> bool:
-        """Taste im offenen Menü: `SPACE`/`Esc` schließt (True = geschlossen).
+    def key(self, command: str | None) -> bool:
+        """Taste im offenen Menü, schon über die Bindings aufgelöst (`src/main.py`): `Cancel` (Esc)
+        und `OpenSceneMenu` (Leertaste) schließen (True = geschlossen). Seit dem AD-013-Addendum
+        2026-10-28 kein Tasten-Literal mehr, eine `keymap.json` verschiebt auch das.
 
         Alles andere ist beim Aufrufer modal zu schlucken — das Menü kennt
         keine weitere Aktion."""
-        if (
-            inp is not None
-            and inp.kind == "key"
-            and not inp.modifiers
-            and inp.value in ("space", "ESCAPE")
-        ):
+        if command in (commands.CANCEL, commands.OPEN_SCENE_MENU):
             self.close()
             return True
         return False

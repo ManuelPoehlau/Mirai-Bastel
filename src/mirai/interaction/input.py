@@ -30,10 +30,17 @@ plattform-Events in `Input`-Objekte (die einzige Stelle mit einer Render-/
 Fenster-Abhängigkeit).
 
 Context bleibt minimal: Es gibt einen GLOBAL_CONTEXT plus optionale
-benannte Kontexte (hier: TOPOLOGY_CONTEXT für die Topology-Lab-Belegung,
-KNIFE_CONTEXT für die Tasten einer laufenden Knife-Session, WP-06 B7).
-Bei der Auflösung gewinnt der spezifische Kontext, sonst greift der
+benannte Kontexte (KNIFE_CONTEXT für die Tasten einer laufenden Knife-Session,
+WP-06 B7; SUBD_CONTEXT, MORPH_CONTEXT; WINDOW_CONTEXT für die Tasten, die das
+Fenster selbst behandelt; TOPOLOGY_CONTEXT hat seit 2026-10-28 keine Defaults
+mehr). Bei der Auflösung gewinnt der spezifische Kontext, sonst greift der
 GLOBAL_CONTEXT-Fallback.
+
+AD-013 Addendum 2026-10-28: das aktive BindingSet ist die einzige Input-
+Wahrheit. Default-Ebene = Engineering (`build_default_bindings`), User-Ebene =
+Manus `config/keymap.json` (`bindings.KEYMAP_PATH`); die Regeln über das Schema
+hinaus (Halte-Commands nur auf Tasten, Warnung bei unbekannten Commands,
+sicherer Fallback) liegen in `bindings.load_keymap`.
 
 (Extrahiert aus dem Viewport-V1-Experiment, `input_binding.py`, unverändert
 bis auf den Produktions-Kontext des Modul-Docstrings und die Gate-6-
@@ -67,7 +74,9 @@ KEYMAP_SCHEMA_VERSION = 1
 
 _VALID_KINDS = ("key", "mouse", "drag", "wheel")
 _VALID_MODIFIERS = ("ctrl", "shift", "alt")
-_VALID_CONTEXTS = (GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT)
+_VALID_CONTEXTS = (
+    GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT, MORPH_CONTEXT, WINDOW_CONTEXT
+)
 
 
 class KeymapConfigError(ValueError):
@@ -198,6 +207,10 @@ class BindingSet:
     def unbind(self, input: Input, context: str = GLOBAL_CONTEXT) -> bool:
         """Entfernt eine User-Bindung; die Default-Belegung gilt dann wieder."""
         return self._user.pop((context, input), None) is not None
+
+    def user_entries(self) -> tuple[tuple[str, Input, Optional[str]], ...]:
+        """The user layer as (context, input, command) - what a keymap.json put there (read-only)."""
+        return tuple((ctx, inp, command) for (ctx, inp), command in self._user.items())
 
     def add_overrides(self, other: "BindingSet") -> None:
         """Übernimmt alle User-Bindungen aus `other` (z.B. aus keymap.json).

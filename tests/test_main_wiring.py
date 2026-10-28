@@ -124,6 +124,7 @@ def test_main_composes_the_three_parts():
         "soft_shading_overlay_type",  # 2026-10-22: the influence face shading
         "symmetry_overlay_type",  # AD-SYM-04 A2: plane outline + problem markers
         "subd_overlay_type",  # 2026-10-23: the SubD preview's cage / isolines
+        "mask_overlay_type",  # Mask Geometry: masked points drawn dark
     }
     assert main_module.GL_TYPES["soft_overlay_type"].__name__ == "GLSoftBandOverlay"
     assert main_module.GL_TYPES["symmetry_overlay_type"].__name__ == "GLSymmetryOverlay"
@@ -579,3 +580,152 @@ def test_without_a_hud_h_reaches_the_application_and_does_nothing(wired):
 
 def test_main_wires_a_hud():
     assert "Hud" in main_module.main.__code__.co_names
+
+
+# -- AD-013 addendum 2026-10-28: the window keys are bindings, not literals ---------------------
+
+
+def _keymap_app(tmp_path, *entries):
+    """A cube app with a keymap.json of `entries` (context, kind, value, modifiers, command)."""
+    import json
+
+    path = tmp_path / "keymap.json"
+    path.write_text(json.dumps({
+        "schemaVersion": 1,
+        "bindings": [
+            {"context": c, "input": {"kind": k, "value": v, "modifiers": list(m)}, "command": cmd}
+            for c, k, v, m, cmd in entries
+        ],
+    }), encoding="utf-8")
+    app = Application(keymap_path=path)
+    app.init_scene("cube")
+    app.frame_scene()
+    app.set_viewport_size(WIDTH, HEIGHT)
+    return app
+
+
+def test_every_former_literal_window_key_resolves_through_the_window_context():
+    from mirai.interaction.input import Input
+
+    app = Application()
+
+    def k(value, *mods):
+        return Input("key", value, frozenset(mods))
+
+    assert main_module.window_command(app, k("space")) == commands.OPEN_SCENE_MENU
+    assert main_module.window_command(app, k("a", "shift")) == commands.OPEN_ADD_MENU
+    assert main_module.window_command(app, k("m", "shift")) == commands.OPEN_MIRROR_MENU
+    assert main_module.window_command(app, k("m")) == commands.SEND_TO_MORPH_LAB
+    assert main_module.window_command(app, k("s", "ctrl")) == commands.SAVE_SCENE
+    assert main_module.window_command(app, k("s", "ctrl", "shift")) == commands.TOGGLE_SYMMETRY_DISPLAY
+    assert main_module.window_command(app, k("h")) == commands.TOGGLE_HUD
+    # The GLOBAL fallback is no window command, and neither is "no input".
+    assert main_module.window_command(app, k("w")) is None
+    assert main_module.window_command(app, None) is None
+    # `Application` never resolves the window context: these keys mean nothing to it.
+    assert all(app.bindings.command_for(k(*key)) is None
+               for key in (("space",), ("a", "shift"), ("m", "shift"), ("m",), ("s", "ctrl"), ("h",)))
+
+
+def test_a_keymap_moves_save_and_the_old_key_reaches_the_application(tmp_path, monkeypatch):
+    app = _keymap_app(
+        tmp_path,
+        ("window", "key", "j", [], commands.SAVE_SCENE),
+        ("window", "key", "s", ["ctrl"], None),
+    )
+    window = FakeWindow()
+    saved: list = []
+    main_module.install_handlers(window, app, save=lambda: saved.append(True))
+    forwarded: list = []
+    monkeypatch.setattr(app, "key_press", forwarded.append)
+
+    window.handlers["on_key_press"](key.J, 0)
+    assert saved == [True] and forwarded == []
+    window.handlers["on_key_press"](key.S, key.MOD_CTRL)
+    assert saved == [True]
+    assert [(i.value, i.modifiers) for i in forwarded] == [("s", frozenset({"ctrl"}))]
+
+
+def test_a_keymap_moves_the_scene_menu_and_its_closing_keys(tmp_path):
+    app = _keymap_app(
+        tmp_path,
+        ("window", "key", "j", [], commands.OPEN_SCENE_MENU),
+        ("window", "key", "space", [], None),
+        ("global", "key", "q", [], commands.CANCEL),
+    )
+    window = FakeWindow()
+    menu = SceneMenu(scene_entries(), load=lambda name: True)
+    main_module.install_handlers(window, app, menu=menu)
+    press = window.handlers["on_key_press"]
+
+    press(key.SPACE, 0)
+    assert not menu.is_open
+    press(key.J, 0)
+    assert menu.is_open
+    press(key.ESCAPE, 0)  # Esc is still Cancel too (an added binding, not a move)
+    assert not menu.is_open
+    press(key.J, 0)
+    press(key.Q, 0)
+    assert not menu.is_open
+    press(key.J, 0)
+    press(key.J, 0)  # the open key closes, as SPACE did
+    assert not menu.is_open
+
+
+def test_print_input_listing_names_the_fixed_modifier_rules_and_a_broken_keymap(tmp_path, capsys):
+    from mirai.interaction.bindings import FIXED_MODIFIER_RULES
+
+    path = tmp_path / "keymap.json"
+    path.write_text("{ kaputt", encoding="utf-8")
+    app = Application(keymap_path=path)
+
+    main_module.print_input_listing(app)
+
+    out, err = capsys.readouterr()
+    assert "keymap.json ungültig - Standardbelegung aktiv" in err
+    for modifier, rule in FIXED_MODIFIER_RULES:
+        assert rule in out
+
+
+def test_main_loads_the_repo_keymap_and_prints_the_listing():
+    names = main_module.main.__code__.co_names
+    assert "KEYMAP_PATH" in names and "print_input_listing" in names
+
+
+#: Names of `pyglet.window.key` symbols `src/main.py` may read: the modifier keys of the fixed grammar.
+_MODIFIER_SYMBOLS = {"LCTRL", "RCTRL", "LALT", "RALT", "LSHIFT", "RSHIFT"}
+
+
+def test_main_py_resolves_no_key_outside_the_bindingset():
+    """DoD of the AD-013 addendum 2026-10-28: `src/main.py` compares no input's value, modifiers or kind
+    with a literal and reads no key symbol except the modifier keys of the fixed grammar; every key it
+    reacts to comes out of `app.bindings`."""
+    import ast
+
+    tree = ast.parse((_SRC / "main.py").read_text(encoding="utf-8"))
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            # `"shift" in inp.modifiers` asks whether a modifier is held: the fixed grammar, allowed.
+            held_modifier = (
+                len(node.ops) == 1
+                and isinstance(node.ops[0], ast.In)
+                and isinstance(node.left, ast.Constant)
+                and node.left.value in {"shift", "ctrl", "alt"}
+            )
+            for operand in (node.left, *node.comparators):
+                if (
+                    isinstance(operand, ast.Attribute)
+                    and operand.attr in {"value", "modifiers", "kind"}
+                    and not (held_modifier and operand.attr == "modifiers")
+                ):
+                    offenders.append(f"line {node.lineno}: compares .{operand.attr}")
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id in {"key", "_key"}
+            and node.attr.isupper()
+            and node.attr not in _MODIFIER_SYMBOLS
+        ):
+            offenders.append(f"line {node.lineno}: key symbol {node.attr}")
+    assert offenders == []

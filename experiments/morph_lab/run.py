@@ -33,6 +33,7 @@ from morph_lab._paths import REPO_SRC_DIR, ensure_paths  # noqa: E402
 ensure_paths()
 
 from mirai.application import Application  # noqa: E402
+from mirai.interaction.bindings import KEYMAP_PATH  # noqa: E402
 from scene_files import SceneFiles  # noqa: E402
 
 from morph_lab.lab_app import MorphAppLab, install_lab_bindings, startup_listing  # noqa: E402
@@ -69,11 +70,13 @@ def build_app_lab(
     scene_dir: str | Path = DEFAULT_SCENE_DIR,
     new: bool = False,
     sent: tuple | None = None,
+    keymap_path: str | Path | None = KEYMAP_PATH,
 ) -> tuple[Application, MorphAppLab, SceneFiles]:
     """Application + lab from the lab's scene file, without a window (headless: `gl_types=None`,
     TraceStore). One-time set-up before the event loop as `src/main.py` opens a scene file
     (`init_scene` + `SceneFiles.load` → `load_scene`, then `frame_scene`, `set_viewport_size`);
-    the provider is attached after the load, which builds a new viewport (review F-5)."""
+    the provider is attached after the load, which builds a new viewport (review F-5). The app loads
+    the same `config/keymap.json` as `src/main.py` (AD-013 A1, addendum 2026-10-28)."""
     path = scene_path(safe_file_stem(asset_name) if sent else asset_name, scene_dir)
     if sent is not None:
         # The bridge always starts over: the sent object is the new base (old file -> .bak).
@@ -82,7 +85,7 @@ def build_app_lab(
     elif new or not path.exists():
         backup = write_start_scene(asset_name, path)
         print(f"Neue Morph-Szene: {path}" + (f" (alte Datei: {backup.name})" if backup else ""))
-    app = Application()
+    app = Application(keymap_path=keymap_path)
     install_lab_bindings(app.bindings)
     gl_types = dict(gl_types or {})
     app.init_scene("cube", **gl_types)
@@ -151,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         window.close()
         return 1
+    src_main.print_input_listing(app)
     install_lab_window(window, app, lab, src_main, asset_name, save=files.save)
     src_main.run(window, app)
     return 0

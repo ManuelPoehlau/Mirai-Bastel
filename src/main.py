@@ -135,16 +135,16 @@ Scope (binding, see the handoffs):
   a row loads it through `Application.load_scene` (selection/history/pick
   cache reset, camera re-framed), clicking elsewhere / `SPACE` / `Esc` closes
   it. While open the menu is modal. The key is an engineering proposal
-  (INPUT_WIRING_MAP §10 "Load" = TBD) — `SPACE` stays unbound in the
-  BindingSet, and the menu only exists when `install_handlers(..., menu=...)`
-  is given one, so the Symmetry Lab's shared wiring is unchanged.
+  (`PROVISIONAL`), bound in the window context (`OpenSceneMenu`), and the menu
+  only exists when `install_handlers(..., menu=...)` is given one, so a Lab's
+  shared wiring is unchanged.
   AD-021 M1 (Q-10): Shift+click on a row adds it to the scene as a Reference
   instead (`Application.add_reference`, one Undo step, the camera stays, Q-9).
 - Add Mesh (Track A1, `PROVISIONAL`, `src/scene_menu.py`): `Shift+A` opens a menu at the cursor with
   Plane (4x4 grid), Cube, Sphere (32x16), Cylinder (32); a click adds the primitive as a Normal
   object at the origin (`Application.add_primitive`, one Undo step): Object mode `4`, the new object
   is the selection (W/E/R place it, 1/2/3 edit it), the edit object stays. Window-level like SPACE
-  (`install_handlers(..., add_menu=...)`), not in the BindingSet.
+  (`install_handlers(..., add_menu=...)`, window context `OpenAddMenu`).
 - Mirror pairs (2026-10-23, `PROVISIONAL`, OBJECT_MIRROR_SYMMETRY_PROPOSAL): `Shift+M` opens the "Mirror"
   menu (window level like Shift+A; bare M stays the Morph Lab bridge): Mirror copy / Pair selected across
   X/Y/Z = 0, Break pair, Re-sync pair - mode `4`, on the selected objects (`Application.mirror_copy`, ...).
@@ -174,11 +174,11 @@ Scope (binding, see the handoffs):
   current scene file (the one last loaded or saved), else writes a new
   `scenes/<edit object>_<date-time>.mirai.json`; refused while W/E/R/T or a
   Knife session runs. Like SPACE it is window-level (`install_handlers(...,
-  save=...)`), not in the BindingSet.
+  save=...)`, window context `SaveScene`).
 - Morph Lab bridge (`PROVISIONAL`, Manu 2026-10-17, `src/morph_bridge.py`): `M` sends the
   selected object (mode `4`: the one selected; otherwise the edit object) to the Morph Lab, which
   opens in its own window with base and target already built. Window-level like Ctrl+S
-  (`install_handlers(..., morph=...)`), not in the BindingSet; refused while W/E/R/T or a Knife
+  (`install_handlers(..., morph=...)`, window context `SendToMorphLab`); refused while W/E/R/T or a Knife
   session runs. This file only calls the bridge and knows no experiment. A mesh with a morph
   target arrives in the Lab as its pair (rest shape + target); nothing comes back.
 - Morph targets (AD-025 Phase 3, `PROVISIONAL` keys, `mirai.morph_targets`, context "morph"):
@@ -238,6 +238,14 @@ Scope (binding, see the handoffs):
   `application.toggle_hud`, binding context `window`, never resolved by `Application`) steps bar -> corner
   -> hidden while both layout variants are on trial. Window level like the menus: `install_handlers(...,
   hud=None)` keeps the old wiring for the Labs.
+- Input truth (AD-013 addendum 2026-10-28): every key resolves through `app.bindings`, the one
+  BindingSet - code defaults (`mirai.interaction.bindings`, engineering, `PROVISIONAL`) under Manu's
+  repo-tracked `config/keymap.json` (`KEYMAP_PATH`, `Application(keymap_path=...)`). The window keys
+  (SPACE, Shift+A, Shift+M, M, Ctrl+S, Ctrl+Shift+S, H) are commands of the window context
+  (`window_command`), no literals here. Only the modifier grammar during a gesture (Shift / Ctrl / Alt
+  held, `FIXED_MODIFIER_RULES`) is read from the held keys; it is printed at start
+  (`print_input_listing`) and shown in the HUD row "Fixed". An invalid keymap does not block the start:
+  defaults, a loud console line, the status line and the HUD row "Keymap" say so.
 - No imports from `playground/` (AD-010 Addendum).
 
 This file is intentionally thin: construction and event translation only,
@@ -281,6 +289,7 @@ import pyglet  # noqa: E402
 from mirai.application import Application  # noqa: E402
 from mirai.cursor_wrap import CursorWrapper  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
+from mirai.interaction.bindings import FIXED_MODIFIER_RULES, KEYMAP_PATH  # noqa: E402
 from mirai.interaction.input import WINDOW_CONTEXT, Input  # noqa: E402
 from mirai.pyglet_input import (  # noqa: E402
     key_from_pyglet,
@@ -381,41 +390,28 @@ def create_window(caption: str = "Mirai — Stage B"):
     return pyglet.window.Window(width=1024, height=768, resizable=True, caption=caption)
 
 
-def is_save_key(inp: Input | None) -> bool:
-    """Ctrl+S (scene files, `PROVISIONAL`): exactly Ctrl, no other modifier."""
-    return (
-        inp is not None
-        and inp.kind == "key"
-        and inp.value == "s"
-        and inp.modifiers == frozenset({"ctrl"})
-    )
+def window_command(app: Application, inp: Input | None) -> str | None:
+    """The window command `inp` resolves to in the window context (AD-013 addendum 2026-10-28: the
+    BindingSet is the only input truth, so a `config/keymap.json` can move every one of these keys), else
+    None. The GLOBAL fallback of `command_for` is filtered out: an app command is no window command."""
+    if inp is None:
+        return None
+    command = app.bindings.command_for(inp, WINDOW_CONTEXT)
+    return command if command in commands.WINDOW_COMMANDS else None
 
 
-def is_symmetry_display_key(inp: Input | None) -> bool:
-    """Shift+Ctrl+S (show / hide the symmetry plane and seam markers): exactly Shift and Ctrl."""
-    return (
-        inp is not None
-        and inp.kind == "key"
-        and inp.value == "s"
-        and inp.modifiers == frozenset({"ctrl", "shift"})
-    )
-
-
-def is_morph_key(inp: Input | None) -> bool:
-    """M (bridge to the Morph Lab, `PROVISIONAL`): exactly M, no modifier."""
-    return (
-        inp is not None and inp.kind == "key" and inp.value == "m" and not inp.modifiers
-    )
-
-
-def is_hud_key(app: Application, inp: Input | None) -> bool:
-    """The HUD key (`H`, Input Truth `application.toggle_hud`): whatever the bindings resolve to
-    `ToggleHud` in the window context, so a `keymap.json` can move it."""
-    return (
-        inp is not None
-        and inp.kind == "key"
-        and app.bindings.command_for(inp, WINDOW_CONTEXT) == commands.TOGGLE_HUD
-    )
+def print_input_listing(app: Application) -> None:
+    """Start-up listing: what loading `config/keymap.json` did (loud when it is invalid) and the fixed
+    modifier grammar during a gesture, which is not in the bindings and not rebindable."""
+    report = app.keymap_load
+    if report is not None:
+        for line in report.messages():
+            print(line, file=sys.stderr, flush=True)
+        if report.status == "loaded":
+            print(f"Keymap: {report.path} ({report.entries} Einträge von Manu)", flush=True)
+    print("Feste Modifier-Regeln (nicht umbelegbar):", flush=True)
+    for modifier, rule in FIXED_MODIFIER_RULES:
+        print(f"  {modifier:<6} {rule}", flush=True)
 
 
 def install_handlers(
@@ -513,47 +509,39 @@ def install_handlers(
         inp = key_from_pyglet(symbol, modifiers)
         shown = open_menu()
         if shown is not None:
-            # Modal: the menu swallows every key; SPACE/Esc closes it.
-            shown.key(inp)
+            # Modal: the menu swallows every key; the scene menu key (SPACE) or Cancel (Esc) closes it.
+            command = window_command(app, inp)
+            if command is None and inp is not None:
+                command = app.bindings.command_for(inp)
+            shown.key(command)
             return pyglet.event.EVENT_HANDLED
-        for shift_menu, letter in ((add_menu, "a"), (mirror_menu, "m")):
-            if (
-                shift_menu is not None
-                and inp is not None
-                and inp.kind == "key"
-                and inp.value == letter
-                and inp.modifiers == frozenset({"shift"})
-                and app.interaction_owner is None
-                and not app.pointer.active
-            ):
-                fallback = (window.width / 2, window.height / 2)
-                cx, cy = cursor if cursor is not None else fallback
-                shift_menu.open(cx, cy, window.width, window.height)
-                return pyglet.event.EVENT_HANDLED
+        command = window_command(app, inp)
+        menus = {
+            commands.OPEN_SCENE_MENU: menu,
+            commands.OPEN_ADD_MENU: add_menu,
+            commands.OPEN_MIRROR_MENU: mirror_menu,
+        }
+        target = menus.get(command)
         if (
-            menu is not None
-            and inp is not None
-            and inp.kind == "key"
-            and inp.value == "space"
-            and not inp.modifiers
+            target is not None
             # No menu in the middle of a running gesture (W/E/R/T, Knife).
             and app.interaction_owner is None
             and not app.pointer.active
         ):
             fallback = (window.width / 2, window.height / 2)
             cx, cy = cursor if cursor is not None else fallback
-            menu.open(cx, cy, window.width, window.height)
+            target.open(cx, cy, window.width, window.height)
             return pyglet.event.EVENT_HANDLED
-        if is_symmetry_display_key(inp):
+        if command == commands.TOGGLE_SYMMETRY_DISPLAY:
             app.toggle_symmetry_display()
             return pyglet.event.EVENT_HANDLED
-        if save is not None and is_save_key(inp):
+        if save is not None and command == commands.SAVE_SCENE:
             save()
             return pyglet.event.EVENT_HANDLED
-        if morph is not None and is_morph_key(inp):
+        if morph is not None and command == commands.SEND_TO_MORPH_LAB:
             morph()
             return pyglet.event.EVENT_HANDLED
-        if hud is not None and is_hud_key(app, inp):
+        if hud is not None and command == commands.TOGGLE_HUD:
             hud.toggle()
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
@@ -751,7 +739,8 @@ def run(window, app: Application) -> None:
 def main() -> None:
     window = create_window()
 
-    app = Application()
+    app = Application(keymap_path=KEYMAP_PATH)
+    print_input_listing(app)
     app.gizmo_enabled = True  # this window draws the gizmo (`draw_gizmo`); Labs on Application do not
     files = SceneFiles(app, gl_types=GL_TYPES)
     obj_files = ObjFiles(app)

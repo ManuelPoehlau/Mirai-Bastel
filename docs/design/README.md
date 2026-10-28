@@ -6,7 +6,7 @@ This directory contains interaction and workflow principles that guide how Mirai
 
 - [Workflow Principles](WORKFLOW.md) — direct, low-overhead interaction inspired by Mirai/Nendo/Silo/Wings3D
 - [GUI Stage 1 — HUD](GUI_STAGE1_HUD.md) — read-only state display in the Production window (2026-10-23): two layout variants on trial, Stage 2 seams, open questions, Artist test steps
-- [Input Map](INPUT_WIRING_MAP.md) — Manu's desired physical input bindings (Artist Input Truth)
+- Input Map — archived 2026-10-28 ([`archive/input_truth_2026-10/`](../archive/input_truth_2026-10/README.md)); the input truth is the BindingSet with Manu's [`config/keymap.json`](../../config/keymap.json) (AD-013 addendum 2026-10-28)
 - [UX Research](UX_RESEARCH.md) — open research / idea space; shared knowledge store of the Three-Role UX system
 
 The Artist Playground design documents (architecture map, roadmap, experiment host, research map, host and input

@@ -234,12 +234,17 @@ A full keymap editor, plugin system, command palette, sophisticated preferences 
 Die Default-Belegung (`build_default_bindings()`) kann beim Application-Start durch eine optionale `keymap.json` als User-Overlay ergänzt werden:
 
 ```text
-Default Bindings
+Default Bindings          (Engineering, `PROVISIONAL`)
       ↓
-optional keymap.json
+config/keymap.json        (Manus Belegung, im Repo)
       ↓
-BindingSet
+BindingSet                (die einzige Input-Wahrheit)
 ```
+
+*Aktualisiert 2026-10-28 ([AD-013 Addendum 2026-10-28](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-28-the-active-bindingset-is-the-single-input-truth-manus-keymap-in-the-repo)):*
+das aktive BindingSet ist die einzige Input-Wahrheit. Die Ebene sagt die Herkunft: ein Eintrag in `config/keymap.json` =
+von Manu gesetzt; nur Code-Default = Engineering, `PROVISIONAL`. Ein späterer In-App-Hotkey-Editor bearbeitet genau diese
+Datei. Agenten lesen sie, schreiben sie nie, und prüfen eine neue Default-Taste gegen sie.
 
 ### 8.1 Format
 
@@ -257,15 +262,20 @@ BindingSet
 ```
 
 - `schemaVersion` ist verpflichtend und muss exakt `1` sein (`KEYMAP_SCHEMA_VERSION`). Es gibt kein Migrationsframework.
-- `context`: `"global"` oder `"topology"` (bestehende Kontexte; ein unbekannter Context wird abgelehnt).
+- `context`: `"global"`, `"knife"`, `"subd"`, `"morph"`, `"window"` oder `"topology"` (bestehende Kontexte; ein unbekannter Context wird abgelehnt). `"window"` = Tasten, die das Fenster selbst behandelt (`src/main.py`: Leertaste, Shift+A, Shift+M, M, Ctrl+S, Ctrl+Shift+S, H), `Application` löst ihn nie auf. `"topology"` hat seit 2026-10-28 keine Defaults mehr (kein Host löst ihn auf), bleibt aber gültig. *(Seit 2026-10-28; vorher `global`, `topology`, `knife`, `subd`.)*
 - `input.kind`: `"key"` | `"mouse"` | `"drag"` | `"wheel"`; `input.value` ein String; `input.modifiers` eine Liste aus `"ctrl"`, `"shift"`, `"alt"`. `mouse` = click, `drag` = press+move ≥ threshold (AD-019).
 - `command`: String (Command-Name) oder `null`.
+- Optional pro Eintrag: `"set": "YYYY-MM-DD"` — wann Manu die Bindung gesetzt hat (additiv seit 2026-10-28; der Parser ignoriert unbekannte Eintrags-Schlüssel, daher keine neue `schemaVersion`, Präzedenz AD-019).
 
 Die Case-Semantik der bestehenden Auflösung bleibt erhalten (exakter Vergleich, keine pauschale Lowercase-Transformation). `command` wird unverändert als String behandelt.
 
 ### 8.2 Validierung an der I/O-Grenze
 
 Ungültige Konfigurationen werden kontrolliert mit `KeymapConfigError` abgelehnt: ungültiges JSON, fehlende/falsche `schemaVersion`, `bindings` keine Liste, fehlende Pflichtfelder eines Bindings, ungültiges `kind`/`value`/`modifiers`, unbekannter `context` oder `command` weder String noch `null`. Commands werden bewusst NICHT gegen ein festes Enum oder eine Registry validiert — der Input-Layer behandelt sie als Strings.
+
+*Seit 2026-10-28 zusätzlich (`mirai.interaction.bindings.check_keymap`):*
+- **Halte-Commands nur auf Tasten:** `commands.HOLD_COMMANDS` (Move, Rotate, Scale, Extrude, LoopSlide, Smooth, Relax, LassoArm, LightDrag, MorphWeightDrag) enden mit dem Loslassen ihrer Taste; ein Eintrag mit `kind` ≠ `"key"` macht die Datei ungültig. Ein `null` (Unbind) ist auf jedem Input erlaubt.
+- **Unbekannte Command-Namen warnen, lehnen nicht ab:** ein Name, den `mirai.interaction.commands` nicht kennt, wird geladen (er wirkt nicht) und als Warnung gemeldet.
 
 ### 8.3 Explicit Unbind
 
@@ -283,3 +293,6 @@ Doppelte Einträge im selben Context: **der spätere gewinnt** (deterministisch)
 
 - Geladen wird beim Application-Start bzw. beim Aufbau der Bindings (`Application(keymap_path=...)`); fehlt die Datei, bleiben die Defaults unverändert.
 - Kein Runtime-Hot-Reload, keine Preferences-UI.
+- *Seit 2026-10-28:* **Ort** `config/keymap.json` im Repo (`bindings.KEYMAP_PATH`, relativ zur Repo-Wurzel über `pathlib`, gleich auf Windows 10 und Linux). `src/main.py` und jeder Lab-Host auf `Application` (heute das Morph Lab) übergeben diesen Pfad (AD-013 A1); `Application()` ohne Pfad = nur Defaults (Tests, Messsonden).
+- *Seit 2026-10-28:* **Ladeverhalten** `bindings.load_keymap` bricht nie ab: eine ungültige Datei wird **ganz** verworfen (keine halbe Übernahme), die Defaults gelten, und das Problem ist laut — `Application.keymap_load.problem` als Statuszeile, eine Zeile auf stderr beim Start (`main.print_input_listing`), die HUD-Zeile „Keymap“. Warnungen (unbekannte Commands) gehen auf stderr. `load_keymap_overrides` bleibt die strenge Variante (wirft `KeymapConfigError`).
+- *Seit 2026-10-28:* **Feste Modifier-Grammatik** — Shift fein, Ctrl Raster, Alt Kamera / durch das Mesh wählen während einer Geste, Shift Kantenmitte im Knife, Shift+Klick im Szenen-Menü — liest das Fenster aus den gehaltenen Tasten (`set_shift_held` / `set_ctrl_held` / `set_alt_held`), nicht über das BindingSet; nicht umbelegbar, gelistet in `bindings.FIXED_MODIFIER_RULES` (Start-Listing, HUD-Zeile „Fixed“).

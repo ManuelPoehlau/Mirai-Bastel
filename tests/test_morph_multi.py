@@ -106,8 +106,9 @@ def test_the_switch_keys_are_free_and_avoid_the_lab_keys():
 def test_main_window_keys_do_not_take_the_switch_keys():
     import main
 
+    app = _app()
     for inp in (NEXT, PREV):
-        assert not (main.is_save_key(inp) or main.is_symmetry_display_key(inp) or main.is_morph_key(inp))
+        assert main.window_command(app, inp) is None
 
 
 # -- lifecycle --------------------------------------------------------------------------------------

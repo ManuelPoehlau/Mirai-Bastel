@@ -51,6 +51,15 @@ def lab_app(tmp_path):
     return app, lab, files
 
 
+def test_the_lab_loads_the_same_keymap_as_the_app(lab_app):
+    # AD-013 A1, addendum 2026-10-28: one keymap file for `src/main.py` and every Lab host.
+    from mirai.interaction.bindings import KEYMAP_PATH
+
+    app = lab_app[0]
+    assert app.keymap_load is not None and app.keymap_load.path == KEYMAP_PATH
+    assert app.keymap_load.status == "loaded"
+
+
 def frame(app) -> None:
     app.viewport.sync()
 

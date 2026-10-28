@@ -22,7 +22,7 @@ import tests._bootstrap  # noqa: F401
 from core import Scene, SelectionMode
 from mirai.application import Application
 from mirai.interaction import commands as cmd
-from mirai.interaction.input import Input, KeymapConfigError
+from mirai.interaction.input import Input
 from mirai.interaction.tools.move import MoveTool
 from mirai.interaction.tools.rotate import RotateTool
 from mirai.interaction.tools.scale import ScaleTool
@@ -292,12 +292,16 @@ class ApplicationKeymapTests(unittest.TestCase):
         app = Application(keymap_path=Path("does-not-exist.json"))
         self.assertEqual(app.bindings.command_for(_key("w")), cmd.MOVE)
 
-    def test_invalid_keymap_file_raises_controlled_error(self):
+    def test_invalid_keymap_file_starts_with_the_defaults(self):
+        # AD-013 addendum 2026-10-28: an invalid file no longer blocks the start (it raised
+        # `KeymapConfigError` until then); the defaults stay and the problem is the status line.
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "keymap.json"
             path.write_text("{ \"kaputt\"", encoding="utf-8")
-            with self.assertRaises(KeymapConfigError):
-                Application(keymap_path=path)
+            app = Application(keymap_path=path)
+        self.assertEqual(app.bindings.command_for(_key("w")), cmd.MOVE)
+        self.assertEqual(app.keymap_load.status, "invalid")
+        self.assertEqual(app.status_message, app.keymap_load.problem)
 
 
 if __name__ == "__main__":

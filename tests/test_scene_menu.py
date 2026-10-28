@@ -17,7 +17,8 @@ import tests._bootstrap  # noqa: F401
 from tests._bootstrap import _REPO_ROOT
 
 from mirai.application import Application
-from mirai.interaction.input import Input
+from mirai.interaction.bindings import build_default_bindings
+from mirai.interaction.input import WINDOW_CONTEXT, Input
 from scene_menu import (
     HEADER_HEIGHT,
     ROW_HEIGHT,
@@ -114,13 +115,20 @@ def test_a_click_outside_closes_without_loading():
 def test_space_and_escape_close_but_other_keys_do_not():
     menu = _menu([])
 
-    menu.open(100.0, 500.0, 800, 600)
-    assert menu.key(W) is False and menu.is_open
-    assert menu.key(W_CTRL) is False and menu.is_open  # Modifier-Key schließt nicht
-    assert menu.key(SPACE) is True and not menu.is_open
+    # The keys arrive resolved (`src/main.py`, AD-013 addendum 2026-10-28): the menu knows commands only.
+    bindings = build_default_bindings()
+
+    def resolve(inp):
+        return bindings.command_for(inp, WINDOW_CONTEXT)
 
     menu.open(100.0, 500.0, 800, 600)
-    assert menu.key(ESCAPE) is True and not menu.is_open
+    assert menu.key(resolve(W)) is False and menu.is_open
+    assert menu.key(resolve(W_CTRL)) is False and menu.is_open  # Modifier-Key schließt nicht
+    assert menu.key(None) is False and menu.is_open
+    assert menu.key(resolve(SPACE)) is True and not menu.is_open
+
+    menu.open(100.0, 500.0, 800, 600)
+    assert menu.key(resolve(ESCAPE)) is True and not menu.is_open
 
 
 def test_load_named_scene_loads_the_cube():

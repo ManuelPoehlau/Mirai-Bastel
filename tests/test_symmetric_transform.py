@@ -457,13 +457,18 @@ class ProductionUnchangedTests(unittest.TestCase):
         Slice A3 adds Re-Symmetrize (`RESYMMETRIZE` → `_resymmetrize_*`), which moves positions
         under an existing definition and never sets one (`tests/test_application_resymmetrize.py`).
         2026-10-24 adds `toggle_symmetry_display` (Shift+Ctrl+S), which only shows / hides the display
-        (`display.visible`) and never touches the definition."""
+        (`display.visible`) and never touches the definition; since the AD-013 addendum 2026-10-28 its
+        key is the window command `TOGGLE_SYMMETRY_DISPLAY` (handled by `src/main.py`, never by `Application`)."""
         from mirai.application import Application
 
         app = Application()
         self.assertIsNone(app.scene.mesh.symmetry_definition)
         names = [n for n in dir(cmd) if not n.startswith("_")]
-        self.assertEqual([n for n in names if "symmetr" in n.lower()], ["RESYMMETRIZE", "SYMMETRY_CYCLE"])
+        self.assertEqual(
+            [n for n in names if "symmetr" in n.lower()],
+            ["RESYMMETRIZE", "SYMMETRY_CYCLE", "TOGGLE_SYMMETRY_DISPLAY"],
+        )
+        self.assertIn(cmd.TOGGLE_SYMMETRY_DISPLAY, cmd.WINDOW_COMMANDS)
         self.assertEqual(
             [m for m in dir(app) if "symmetr" in m.lower() and not m.startswith("__")],
             [

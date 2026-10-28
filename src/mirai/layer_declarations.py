@@ -114,7 +114,10 @@ _NON_MESH_COMMANDS = (
     commands.SET_FLAT_SHADED, commands.SET_WIREFRAME, commands.TOGGLE_REGION_TINT,
     commands.TOGGLE_REFERENCE_GHOST, commands.CYCLE_LIGHT_PRESET, commands.TOGGLE_LIGHT_SPACE,
     commands.LOOK_ROW_PREV, commands.LOOK_ROW_NEXT, commands.LOOK_VALUE_DEC, commands.LOOK_VALUE_INC,
-    commands.LOOK_VALUE_DEC_FINE, commands.LOOK_VALUE_INC_FINE, commands.LIGHT_DRAG, commands.TOGGLE_HUD,
+    commands.LOOK_VALUE_DEC_FINE, commands.LOOK_VALUE_INC_FINE, commands.LIGHT_DRAG,
+    # window commands (context "window", AD-013 addendum 2026-10-28): `Application` never resolves them; the
+    # app methods a window hook calls (add_primitive, mirror_copy, ...) are gated on their own
+    *sorted(commands.WINDOW_COMMANDS),
     # object level: placement, state and objects, never a mesh's content (Delete in `4` removes objects)
     commands.CLEAR_TRANSFORM, commands.TOGGLE_REFERENCE,
     # the symmetry definition, mask, hide and saved regions are not layer data
