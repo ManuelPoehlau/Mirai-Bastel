@@ -7,8 +7,8 @@
 
 **Status:** PROPOSED (2026-10-17), **revised 2026-10-20** after the independent review
 [`AD-023_REVIEW_CLAUDE_001`](../archive/viewport_v02/reviews/AD-023_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES; the
-disposition of every finding is in §8). Draft for Manu's decision. Not decided; no production code exists. Per
-AGENTS.md §5 this document lists alternatives, it does not select one.
+disposition of every finding is in §8). **DECIDED (Manu, 2026-10-29)**. Implemented in production since 2026-10-21 (Core
+change journal, commit `a0250fb`, §9); §1–§8 keep the alternatives as the decision history.
 **Mode (M5):** Discovery, decision preparation.
 **Work package:** WP-TOPO-PERF-01 (proposed name).
 **Artist input:** Manu, 2026-10-17: Blender on the reference PC runs "Topologie-Operationen" on 20k gollum

@@ -258,6 +258,11 @@ Und falls beim Bauen etwas Neues auftaucht: zurück zu Discovery (M5).
 - **Nach seinen Verdikten geht der Artist direkt zu Claude Code**, in eigenen Worten, ohne Handoff. Claude Code wendet M1 selbst an und schreibt seine Deutung der Verdikte als Annahmen in den neuen Praxistest.
 - **Der Chat kommt dazu**, wenn der Artist unsicher ist, was er will, und als zweite Meinung bei Architekturentscheidungen und Promotion (Erzeuger ≠ Bewerter, §6).
 - **Production-Aufträge** laufen autonom bis zur Definition of Done; Unterbrechung nur an den Haltepunkten (§5).
+- **Praxistests sind keine Abhakliste** (Manu, 2026-10-29): „Statt Liste abhaken, ob was funktioniert, melde ich mich
+  eher, wenn etwas Probleme macht.“ Folge: `PROVISIONAL` bleibt als Etikett (Wahl des Agenten, nicht vom Artist
+  geprüft). Die Testschritte bleiben im Bereichsdokument, bilden aber keine Warteschlange; `docs/ATELIER.md` §2 führt nur,
+  was den nächsten Schritt blockiert (offene Entscheidungen, Messungen am Referenz-PC). Die Regel für
+  `config/keymap.json` bleibt: nur auf Manus ausdrückliches Wort.
 
 ---
 
