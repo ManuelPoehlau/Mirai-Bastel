@@ -7,8 +7,8 @@
 
 **Status:** PROPOSED (2026-10-17), **revised 2026-10-20** after the independent review
 [`AD-022_REVIEW_CLAUDE_001`](../archive/viewport_v02/reviews/AD-022_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES; the
-disposition of every finding is in §10). Draft for Manu's decision. Not decided; no production code exists. Per
-AGENTS.md §5 this document lists alternatives, it does not select one.
+disposition of every finding is in §10). **DECIDED (Manu, 2026-10-29)**. Implemented in production since 2026-10-21 (B2-out,
+commit `8d867b2`, §11); §1–§10 keep the alternatives as the decision history.
 **Mode (M5):** Discovery, decision preparation.
 **Work package:** WP-VIEW-PERF-02 (follows WP-VIEW-PERF-01 Slices 1 + 2).
 **Artist input:** Manu, 2026-10-17, on the Slice-1 practical test: "Fühlt sich gleich an, nur schneller. Im

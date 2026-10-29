@@ -1,6 +1,7 @@
 # Mehlsack Lab (WP-MEHLSACK-LAB-01, Slice 1 + 2a + 2b + 3 + 3b + 3c: Move, Rotate, Scale, Auswahl)
 
-**Status: Verdikte von Manu für Slice 1, 2a, 2b, 3 und 3b liegen vor (alle 2026-10-13)** — siehe die
+**Status: geparkt (Manu, 2026-10-29) — der Code bleibt, kein offener Test in `docs/ATELIER.md`.**
+Verdikte von Manu für Slice 1, 2a, 2b, 3 und 3b liegen vor (alle 2026-10-13) — siehe die
 Verdikt-Tabellen in [Slice 1](#praxistest-für-manu-ca-10-minuten), [Slice 2a](#slice-2a-2026-10-13),
 [Slice 2b](#slice-2b-2026-10-13), [Slice 3](#slice-3-2026-10-13-komponenten-auswahl) und
 [Slice 3b](#slice-3b-2026-10-13-hover-modi-doppelklick-umrechnen). Offen aus 2a: (d2) ITERATE (Kurvenpunkte hinzufügen/wegnehmen, nicht eingeplant) und

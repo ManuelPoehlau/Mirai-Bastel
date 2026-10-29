@@ -85,6 +85,9 @@ in `src/main.py`), update `docs/ATELIER.md` with the next commit that touches th
 never canonical content. Manu records verdicts himself where the practical test asks for them; his commit is the
 record. Do not make a separate docs-only commit just to propagate verdicts or status.
 A verdict counts only once it is recorded in its authoritative document, not when it appears in a chat or only here.
+Practical tests are not a queue (Manu, 2026-10-29; wording in Development System §7): their steps stay in the area
+docs, and `docs/ATELIER.md` §2 lists only what blocks a next step (open decisions, reference-PC measurements).
+`PROVISIONAL` stays the label for an agent choice the Artist has not verified.
 
 An **Atelier-Brief** (from the separate Mirai Atelier context, see Development System §8) carries Manu's intent,
 references and open questions. It is Discovery input, not a decision and not a spec: apply M1 before acting on it,

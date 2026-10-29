@@ -1,6 +1,6 @@
 # AD-025 — Topology Identity, Provenance and Point Layers (ARCH-02)
 
-**Status:** PROPOSED (2026-10-27); **revised the same day after the independent review**
+**Status:** **DECIDED (Manu, 2026-10-29)**; Phases 2–5 implemented (§14–§17). Was PROPOSED (2026-10-27); **revised the same day after the independent review**
 [CLAUDE-001](../archive/deformation/reviews/AD-025_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES, no blocker; the disposition
 of every finding is in §13). **IMPLEMENTED (Phase 2, 2026-10-27)** — Core layers, journal, file, origin rules, backstop and
 the app gate; implementation note with the measured numbers in §14. **IMPLEMENTED (Phase 3, 2026-10-27)** — one

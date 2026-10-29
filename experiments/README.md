@@ -14,7 +14,7 @@ in `src/` überführen. Welche Tests wann laufen: AGENTS.md §8a.
 | Ordner | Zweck | Tests |
 |---|---|---|
 | [`morph_lab/`](morph_lab/README.md) | Morph-Ziel neben der Basis formen, Gewicht mischen (WP-MORPH-LAB-01). Seit 2026-10-27 hat die App selbst ein Ziel pro Mesh (AD-025 Phase 3); das Lab bleibt für Kiefer-Pose, relativ ↔ absolut und Neues, die App schickt mit `M` eine Kopie (`src/morph_bridge.py`). Nicht Artist-validiert | Standardlauf |
-| [`mehlsack_lab/`](mehlsack_lab/README.md) | Box per Mausrad, Loop/Ring direkt ziehen, signierte Einflusskurve (WP-MEHLSACK-LAB-01). Offene Verdikte: ATELIER B5, B5c | nur gezielt |
+| [`mehlsack_lab/`](mehlsack_lab/README.md) | Box per Mausrad, Loop/Ring direkt ziehen, signierte Einflusskurve (WP-MEHLSACK-LAB-01). Geparkt (Manu, 2026-10-29): Code bleibt, kein offener Test in ATELIER | nur gezielt |
 | [`drag_cost/`](drag_cost/README.md) | GL-Kostensonden für W-Drag, Navigation, Hover und Picking (WP-VIEW-PATCH-01, WP-VIEW-PERF-01); Messwerkzeug für die offene Viewport-Performance | nur gezielt |
 
 ## Regressionsschutz
