@@ -49,6 +49,7 @@ Bereichsdokumenten.
 
 | # | Was | Wo |
 |---|---|---|
+| G1 | **Umbau der App-Steuerung vor Phase 6** (Verhalten bleibt gleich): Entwurf in den Development-Chat geben, dann dein Go | [AD-027](architecture/AD-027-INTERACTION-LAYER-SESSION-SLOT.md#kurzfassung-für-manu-deutsch) |
 | B2d | **Symmetrischer Knife**: Wahl zwischen den Spiegel-Varianten V-a / V-b / V-c (V-b bleibt Start) und F6 (Schnittstart im leeren Raum) | [AD-SYM-03 §10.8](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | D1c | **Viewport-Performance**: Stufe 2 und GPU-Picking sind in der App; offen ist Move/Rotate/Scale großer Auswahlen, vor allem mit Soft Selection (dein Verdikt 2026-10-21: vorerst so lassen) | [AD-022 §11](architecture/AD-022-GPU-PICKING.md) · [AD-023 §9](architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) |
 | D1f | **Symmetrie + Soft Selection auf dem Körper**: über dem 8-ms-Wert ab 15 % Radius; ob die Viewport-Aufgabe vor J kommt | [AD-SYM-04, Addendum 2026-10-15](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#addendum-2026-10-15-reference-pc-run-d-4) |
