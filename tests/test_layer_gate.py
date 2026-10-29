@@ -142,6 +142,12 @@ def test_declared_entries_are_the_implementations_the_app_runs():
     assert ops[commands.EXTRUDE] == (
         tool_for_command(commands.EXTRUDE), symmetry_declarations.EXTRUDE_COORDINATORS[commands.EXTRUDE]
     )
+    assert ops[commands.INSET] == (
+        application_module.build_inset, symmetry_declarations.OFFSET_COORDINATORS[commands.INSET]
+    )
+    assert ops[commands.BEVEL] == (
+        application_module.build_bevel, symmetry_declarations.OFFSET_COORDINATORS[commands.BEVEL]
+    )
     assert ops["mirror_copy"] == (application_module.mirror_mesh,) * 2
 
 

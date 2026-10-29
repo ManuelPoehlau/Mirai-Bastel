@@ -30,6 +30,10 @@ Position = tuple[float, float, float]
 
 LOOP_SLIDE_LABEL = "Loop Slide"
 
+#: Under a symmetry definition the slide stops short of the next loop (2026-10-29): sliding all the way puts two
+#: vertices on one position, which makes the position-based mirror pairing ambiguous (`PROVISIONAL`).
+SYMMETRIC_MAX_T = 0.98
+
 
 class LoopSlideRefused(ValueError):
     """The edges cannot slide; the message is the status line."""
@@ -46,6 +50,10 @@ class SlidePlan:
     slides: dict[VertexId, tuple[Position, Position, Position]]
     mirrors: dict[VertexId, VertexId] = field(default_factory=dict)
     plane: Optional[tuple[Position, Position]] = None
+
+    @property
+    def max_t(self) -> float:
+        return 1.0 if self.plane is None else SYMMETRIC_MAX_T
 
     @property
     def vertex_ids(self) -> set[VertexId]:
@@ -218,8 +226,8 @@ def _signed(position: Position, plane: tuple[Position, Position]) -> float:
 
 
 def slide_positions(plan: SlidePlan, t: float) -> dict[VertexId, Position]:
-    """New positions for `t` in [-1, 1] (clamped): positive towards side A, negative towards B."""
-    t = max(-1.0, min(1.0, t))
+    """New positions for `t` in [-max_t, max_t] (clamped): positive towards side A, negative towards B."""
+    t = max(-plan.max_t, min(plan.max_t, t))
     result: dict[VertexId, Position] = {}
     for vid, (orig, ta, tb) in plan.slides.items():
         target, f = (ta, t) if t >= 0.0 else (tb, -t)

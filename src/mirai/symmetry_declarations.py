@@ -10,7 +10,9 @@ and cannot drift from it. Four keys exist today:
 - the Collapse command (`commands.COLLAPSE`, WP Toolbox Gaps B1), same shape as the removal table;
 - the Cap command (`commands.CAP`, 2026-10-25), same shape again;
 - the Extrude command (`commands.EXTRUDE`, slice 7): a live gesture, like the Knife, so its entry is a
-  *planner* `(mesh, faces) -> plan` that `Application` runs at `begin` and hands to the unchanged tool.
+  *planner* `(mesh, faces) -> plan` that `Application` runs at `begin` and hands to the unchanged tool;
+- the width gestures (`commands.INSET`, `commands.BEVEL`, 2026-10-29): a planner `(mesh, ids) -> (union, coordinator)` that
+  `Application` runs at the press (`mirai.symmetric_offset`).
 
 Transforms keep `Operation.supports_symmetry`; there the Operation itself mirrors.
 
@@ -33,6 +35,7 @@ from typing import Any, Mapping
 
 from .interaction import commands
 from .symmetric_extrude import plan_extrude
+from .symmetric_offset import plan_bevel, plan_inset
 from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
     coordinate_cap,
@@ -100,6 +103,17 @@ EXTRUDE_COORDINATORS: Mapping[str, Any] = MappingProxyType(
 )
 
 
+#: Width gesture command constant -> planner `(mesh, ids) -> (union, SymmetricOffset)` (`mirai.symmetric_offset`,
+#: 2026-10-29). The planner refuses before any mutation (`SymmetryRefusal`); `Application` builds the topology
+#: on the union and lets the coordinator mirror the positions, the seam and the delta. The entry is the switch.
+OFFSET_COORDINATORS: Mapping[str, Any] = MappingProxyType(
+    {
+        commands.INSET: plan_inset,
+        commands.BEVEL: plan_bevel,
+    }
+)
+
+
 def declared_c_contexts() -> frozenset[CContext]:
     """The `C` contexts that have a coordinator (read on every call, never cached)."""
     return frozenset(C_CONTEXT_COORDINATORS)
@@ -118,6 +132,11 @@ def declared_collapse_commands() -> frozenset[str]:
 def declared_cap_commands() -> frozenset[str]:
     """The Cap commands that have a coordinator (read on every call, never cached)."""
     return frozenset(CAP_COORDINATORS)
+
+
+def declared_offset_commands() -> frozenset[str]:
+    """The width gesture commands that have a planner (read on every call, never cached)."""
+    return frozenset(OFFSET_COORDINATORS)
 
 
 def declared_extrude_commands() -> frozenset[str]:

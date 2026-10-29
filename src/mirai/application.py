@@ -187,6 +187,18 @@ from .topology.loop_slide import (
     plan_loop_slide,
     slide_positions,
 )
+from .topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
+from .topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
+from .topology.offset_build import OffsetBuild, OffsetRefused
+from .symmetric_offset import SymmetricOffset
+from .topology.vertex_slide import (
+    VERTEX_SLIDE_LABEL,
+    VertexSlidePlan,
+    VertexSlideRefused,
+    best_neighbour,
+    plan_vertex_slide,
+    vertex_slide_positions,
+)
 from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import (
@@ -265,7 +277,13 @@ _TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
     # WP Toolbox Gaps C2: hold S / Alt+S, same family (a tap is one step, see `_smooth_release`).
     commands.SMOOTH: ("Smooth", "smooth", "smoothed"),
     commands.RELAX: ("Relax", "relax", "relaxed"),
+    # 2026-10-29 (Manu: Inset, Bevel, Grundfunktion): hold I in face mode / hold Ctrl+B, the T family (`_offset_*`).
+    commands.INSET: ("Inset", "inset", "inset"),
+    commands.BEVEL: ("Bevel", "bevel", "beveled"),
 }
+
+#: The width gestures (`_offset_*`): topology built once when the drag starts, then only the new vertices move.
+_OFFSET_COMMANDS = (commands.INSET, commands.BEVEL)
 
 #: WP Toolbox Gaps C2: the two hold keys of `mirai.topology.smooth`.
 _SMOOTH_COMMANDS = (commands.SMOOTH, commands.RELAX)
@@ -392,6 +410,8 @@ _TOPOLOGY_COMMANDS = frozenset(
         commands.CAP,
         commands.EXTRUDE,
         commands.LOOP_SLIDE,
+        commands.INSET,
+        commands.BEVEL,
         commands.RESYMMETRIZE,
         commands.DELETE,
         commands.DISSOLVE,
@@ -434,6 +454,24 @@ def symmetry_status_text(mesh: Mesh) -> str:
     if ambiguous:
         details.append(f"{ambiguous} mehrdeutig")
     return f"Symmetrie {axis} ({', '.join(details)})"
+
+
+@dataclasses.dataclass
+class _OffsetGesture:
+    """A held Inset / Bevel (2026-10-29): fixed at the press (`build` = the mutation, run once the drag passes
+    `EXTRUDE_BEGIN_PX`; `symmetric` = the coordinator under a symmetry definition), then the width, the
+    journal from the start of the drag and the selection snapshot taken before it."""
+
+    label: str
+    build: Callable[[Mesh], OffsetBuild]
+    symmetric: SymmetricOffset | None
+    residue: Callable[[OffsetBuild], None]
+    world_per_px: float
+    travel: tuple[float, float] = (0.0, 0.0)
+    width: float = 0.0
+    result: OffsetBuild | None = None
+    before: MeshChange | None = None
+    selection_before: tuple | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1041,6 +1079,14 @@ class Application:
         self._slide_direction: tuple[float, float] | None = None
         self._slide_before: MeshChange | None = None
         self._slide_selection_before: tuple | None = None
+        # Vertex Slide (hold G in vertex mode, 2026-10-29): the plan, the screen positions of each driven
+        # vertex and its candidate neighbours at the press, and the net drag since the press. The journal and
+        # the selection snapshot are Loop Slide's (`_slide_before`, `_slide_selection_before`).
+        self._vslide_plan: VertexSlidePlan | None = None
+        self._vslide_px: dict[VertexId, tuple] = {}
+        self._vslide_drag: tuple[float, float] = (0.0, 0.0)
+        # Inset / Bevel (2026-10-29): the held width gesture, None = none (`_OffsetGesture`).
+        self._offset: _OffsetGesture | None = None
         # WP Toolbox Gaps C2: the held Smooth / Relax (plan at the press, amount in steps, journal).
         self._smooth_plan: SmoothPlan | None = None
         self._smooth_amount: float = 0.0
@@ -1875,7 +1921,7 @@ class Application:
         if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
             return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
         self._set_status(
-            "Object mode: T, G, S, I, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
+            "Object mode: T, G, S, I, Ctrl+B, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
             " on points/edges/faces"
             " - press 1/2/3 (Delete removes the selected objects)"
         )
@@ -2940,7 +2986,10 @@ class Application:
 
     def _slide_arm(self, key: str) -> bool:
         """Hold G: plan the slide of the selected (else the hovered) edges now; refusals are
-        posted at the press, before anything moves. Nothing moves before the first motion."""
+        posted at the press, before anything moves. Nothing moves before the first motion.
+        In vertex mode G is Vertex Slide (`_vertex_slide_arm`)."""
+        if self.selection.mode is SelectionMode.VERTEX:
+            return self._vertex_slide_arm(key)
         edges = self._loop_seed_edges(LOOP_SLIDE_LABEL)
         if edges is None:
             return False
@@ -2981,7 +3030,91 @@ class Application:
             return None
         return (sx / n, sy / n)
 
+    def _vertex_slide_arm(self, key: str) -> bool:
+        """Hold G in vertex mode: plan the slide of the selected (else the hovered) vertices now; refusals
+        are posted at the press. Which edge each vertex takes is decided by the drag (`_vertex_slide_step`)."""
+        mesh = self.scene.mesh
+        selection = self.selection
+        vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
+        hovered = selection.hovered
+        if not vertices and isinstance(hovered, VertexId) and mesh.is_valid_vertex(hovered):
+            vertices = {hovered}
+        if not vertices:
+            self._set_status(f"{VERTEX_SLIDE_LABEL}: select or hover a vertex")
+            return False
+        try:
+            plan = plan_vertex_slide(
+                mesh, vertices, blocked=frozenset(self._hidden.vertices()), mask=self._mask_values(vertices)
+            )
+        except VertexSlideRefused as exc:
+            self._set_status(str(exc))
+            return False
+        camera, w, h = self._edit_camera, self.viewport_width, self.viewport_height
+        self._vslide_px = {
+            vid: (
+                camera.project_to_screen(origin, w, h),
+                tuple(camera.project_to_screen(p, w, h) for _, p in plan.candidates[vid]),
+            )
+            for vid, origin in plan.origins.items()
+        }
+        self._transform_key = key
+        self._transform_command = commands.LOOP_SLIDE
+        self._transform_target = frozenset(plan.vertex_ids)
+        self._transform_begun = False
+        self._vslide_plan = plan
+        self._vslide_drag = (0.0, 0.0)
+        self._set_hovered(None)
+        count = len(plan.vertex_ids)
+        noun = "vertex" if count == 1 else "vertices"
+        self._set_status(
+            f"{VERTEX_SLIDE_LABEL}: {count} {noun} - move the mouse towards an edge, release {key.upper()} to commit"
+        )
+        return True
+
+    def _vertex_slide_step(self, dx: float, dy: float) -> bool:
+        """Every motion: each driven vertex takes the edge whose screen direction best matches the net drag
+        since the press; the drag along the mean of those directions is the common amount (0 = start, 1 = on
+        the neighbour). Recomputed from the press state, so dragging back restores it."""
+        plan = self._vslide_plan
+        mesh = self.scene.mesh
+        if not self._transform_begun:
+            self._slide_before = mesh.begin_change()
+            self._slide_selection_before = self._selection_snapshot()
+            self._transform_begun = True
+        drag = (self._vslide_drag[0] + dx, self._vslide_drag[1] + dy)
+        self._vslide_drag = drag
+        chosen: dict[VertexId, VertexId] = {}
+        sx = sy = 0.0
+        for vid in plan.origins:
+            origin_px, candidates_px = self._vslide_px[vid]
+            i = best_neighbour(origin_px, candidates_px, drag)
+            if i is None:
+                continue
+            chosen[vid] = plan.candidates[vid][i][0]
+            sx += candidates_px[i][0] - origin_px[0]
+            sy += candidates_px[i][1] - origin_px[1]
+        t = 0.0
+        if chosen:
+            sx, sy = sx / len(chosen), sy / len(chosen)
+            length2 = sx * sx + sy * sy
+            if length2 >= 1.0:
+                t = max(0.0, min(plan.max_amount, (drag[0] * sx + drag[1] * sy) / length2))
+                if t < 1e-9:
+                    t = 0.0  # back at the press point (float sums of the motion): exactly the start
+        positions = vertex_slide_positions(plan, chosen, t)
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        self._pick_cache.invalidate()
+        self.viewport.on_vertices_moved(set(positions))
+        self._set_status(f"{VERTEX_SLIDE_LABEL}: {t * 100.0:.0f} %")
+        return True
+
+    def _slide_label(self) -> str:
+        return VERTEX_SLIDE_LABEL if self._vslide_plan is not None else LOOP_SLIDE_LABEL
+
     def _slide_step(self, dx: float, dy: float) -> bool:
+        if self._vslide_plan is not None:
+            return self._vertex_slide_step(dx, dy)
         plan = self._slide_plan
         if plan is None:
             return False
@@ -2998,7 +3131,7 @@ class Application:
             self._slide_t += (dx * direction[0] + dy * direction[1]) / (
                 direction[0] ** 2 + direction[1] ** 2
             )
-        self._slide_t = max(-1.0, min(1.0, self._slide_t))
+        self._slide_t = max(-plan.max_t, min(plan.max_t, self._slide_t))
         positions = slide_positions(plan, self._slide_t)
         for vid, position in positions.items():
             mesh.set_vertex_position(vid, position)
@@ -3009,28 +3142,30 @@ class Application:
     def _slide_release(self) -> None:
         mesh = self.scene.mesh
         before = self._slide_before
+        label = self._slide_label()
         if not self._transform_begun or before is None:
-            self._set_status(f"{LOOP_SLIDE_LABEL}: no change")
+            self._set_status(f"{label}: no change")
             return
         self._slide_before = None
         delta = mesh.end_change(before)
         if delta.empty:
-            self._set_status(f"{LOOP_SLIDE_LABEL}: no change")
+            self._set_status(f"{label}: no change")
             return
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=LOOP_SLIDE_LABEL))
+        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=label))
         self._record_selection_history(self._slide_selection_before)
         self._soft_preview_refresh()
-        self._set_status(f"{LOOP_SLIDE_LABEL} committed")
+        self._set_status(f"{label} committed")
 
     def _slide_abort(self) -> None:
         before = self._slide_before
-        if before is None or self._slide_plan is None:
+        plan = self._vslide_plan or self._slide_plan
+        if before is None or plan is None:
             return
         self._slide_before = None
         self.scene.mesh.rollback_change(before)
         self._pick_cache.invalidate()
         if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(self._slide_plan.vertex_ids))
+            self.viewport.on_vertices_moved(set(plan.vertex_ids))
 
     # -- Smooth / Relax (WP Toolbox Gaps C2) -----------------------------------------
 
@@ -3186,6 +3321,219 @@ class Application:
         self._pick_cache.invalidate()
         if self.viewport is not None:
             self.viewport.on_vertices_moved(set(self._smooth_plan.movable))
+
+    # -- Inset / Bevel (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
+    #    `PROVISIONAL`) ------------------------------------------------------------------------------
+    #
+    # A width gesture in the T family: the press plans and refuses (nothing changes), the drag past
+    # EXTRUDE_BEGIN_PX builds the topology once (`build_*`), every further motion only moves the new
+    # vertices (right = wider, left = narrower, down to 0; Shift = fine), the release commits one
+    # History entry, Esc / a tap / width 0 leave the mesh exactly as it was. Under a symmetry definition
+    # the declared planner (`symmetry_declarations.OFFSET_COORDINATORS`) expands the selection by its
+    # partners and the coordinator keeps the result an exact mirror.
+
+    def _inset_arm(self, key: str) -> bool:
+        """Hold I in face mode: the selected faces, else the hovered face."""
+        selection = self.selection
+        mesh = self.scene.mesh
+        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        hovered = selection.hovered
+        if not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered):
+            faces = {hovered}
+        if not faces:
+            self._set_status(f"{INSET_LABEL}: select or hover a face")
+            return False
+        symmetric = None
+        planner = (
+            symmetry_declarations.OFFSET_COORDINATORS.get(commands.INSET)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        try:
+            if planner is not None:
+                faces, symmetric = planner(mesh, faces)
+            plan = plan_inset(mesh, faces)
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
+            return False
+        except InsetRefused as exc:
+            self._set_status(str(exc))
+            return False
+
+        def residue(result: OffsetBuild) -> None:
+            kept = {f for f in result.faces if mesh.is_valid_face(f)}
+            if symmetric is not None:
+                kept = symmetric.residue(mesh, kept, mesh.face_vertices)
+            selection.clear()
+            selection.mode = SelectionMode.FACE
+            selection.add(kept)
+
+        anchor = {v for f in plan.faces for v in mesh.face_vertices(f)}
+        self._offset_arm(commands.INSET, key, INSET_LABEL, lambda m: build_inset(m, plan), symmetric, residue, anchor)
+        count = len(plan.faces)
+        self._set_status(
+            f"{INSET_LABEL}: {count} {'face' if count == 1 else 'faces'} - drag right / left for the width,"
+            f" release {key.upper()} to commit"
+        )
+        return True
+
+    def _bevel_arm(self, key: str) -> bool:
+        """Hold Ctrl+B: the selected vertices / edges / faces of the active mode, else the hovered one. Face mode
+        bevels the faces' inner edges. Residue (`PROVISIONAL`, Blender): the new vertices in vertex mode, the new
+        faces' edges in edge mode, the new faces in face mode."""
+        selection = self.selection
+        mesh = self.scene.mesh
+        mode = selection.mode
+        current = {
+            SelectionMode.VERTEX: selection.vertices,
+            SelectionMode.EDGE: selection.edges,
+            SelectionMode.FACE: selection.faces,
+        }.get(mode)
+        if current is None:
+            self._set_status(f"{BEVEL_LABEL}: vertex, edge or face mode needed (1/2/3)")
+            return False
+        valid = {
+            SelectionMode.VERTEX: mesh.is_valid_vertex,
+            SelectionMode.EDGE: mesh.is_valid_edge,
+            SelectionMode.FACE: mesh.is_valid_face,
+        }[mode]
+        ids = {i for i in current if valid(i)}
+        if not ids and self._hovered_of_mode() is not None:
+            ids = {self._hovered_of_mode()}
+        if not ids:
+            self._set_status(f"{BEVEL_LABEL}: select or hover a {mode.name.lower()}")
+            return False
+        kind = SelectionMode.VERTEX if mode is SelectionMode.VERTEX else SelectionMode.EDGE
+        if mode is SelectionMode.FACE:
+            ids = {e for f in ids for e in mesh.face_edges(f) if len(mesh.edge_faces(e)) == 2}
+        symmetric = None
+        planner = (
+            symmetry_declarations.OFFSET_COORDINATORS.get(commands.BEVEL)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        try:
+            if planner is not None and ids:
+                ids, symmetric = planner(mesh, kind, ids)
+            plan = plan_bevel(mesh, kind, ids)
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
+            return False
+        except BevelRefused as exc:
+            self._set_status(str(exc))
+            return False
+
+        def residue(result: OffsetBuild) -> None:
+            if mode is SelectionMode.VERTEX:
+                kept, vertices_of = {v for v in result.vertices if mesh.is_valid_vertex(v)}, lambda v: (v,)
+            elif mode is SelectionMode.EDGE:
+                kept = {e for f in result.faces if mesh.is_valid_face(f) for e in mesh.face_edges(f)}
+                vertices_of = mesh.edge_vertices
+            else:
+                kept, vertices_of = {f for f in result.faces if mesh.is_valid_face(f)}, mesh.face_vertices
+            if symmetric is not None:
+                kept = symmetric.residue(mesh, kept, vertices_of)
+            selection.clear()
+            selection.mode = mode
+            selection.add(kept)
+
+        anchor = set(plan.fans)
+        self._offset_arm(commands.BEVEL, key, BEVEL_LABEL, lambda m: build_bevel(m, plan), symmetric, residue, anchor)
+        count = len(plan.vertices) if plan.vertex_mode else len(plan.edges)
+        noun = ("vertex" if count == 1 else "vertices") if plan.vertex_mode else ("edge" if count == 1 else "edges")
+        self._set_status(
+            f"{BEVEL_LABEL}: {count} {noun} - drag right / left for the width, release {key.upper()} to commit"
+        )
+        return True
+
+    def _offset_arm(self, command, key, label, build, symmetric, residue, anchor_vertices) -> None:
+        mesh = self.scene.mesh
+        n = len(anchor_vertices)
+        centre = tuple(sum(mesh.vertex_position(v)[i] for v in anchor_vertices) / n for i in range(3))
+        step = self._edit_camera.screen_delta_to_world(centre, 1.0, 0.0, self.viewport_width, self.viewport_height)
+        world_per_px = math.sqrt(sum(c * c for c in step)) or 0.01
+        self._offset = _OffsetGesture(label, build, symmetric, residue, world_per_px)
+        self._transform_key = key
+        self._transform_command = command
+        self._transform_target = frozenset(anchor_vertices)
+        self._transform_begun = False
+        self._set_hovered(None)
+
+    def _offset_step(self, dx: float, dy: float) -> bool:
+        gesture = self._offset
+        mesh = self.scene.mesh
+        if not self._transform_begun:
+            px, py = gesture.travel[0] + dx, gesture.travel[1] + dy
+            gesture.travel = (px, py)
+            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
+                return False
+            gesture.selection_before = self._selection_snapshot()
+            gesture.before = mesh.begin_change()
+            try:
+                gesture.result = gesture.build(mesh)
+            except OffsetRefused as exc:
+                mesh.rollback_change(gesture.before)
+                gesture.before = None
+                self._transform_end()
+                self._set_status(str(exc))
+                self._refresh_hover()
+                return False
+            except BaseException:
+                mesh.rollback_change(gesture.before)
+                gesture.before = None
+                raise
+            self._transform_begun = True
+            self._extrude_topology_changed()
+            dx = px
+        result = gesture.result
+        gesture.width = max(0.0, min(result.limit, gesture.width + dx * gesture.world_per_px))
+        positions = result.positions(gesture.width)
+        if gesture.symmetric is not None:
+            positions = gesture.symmetric.place(result.keys, positions)
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        self._pick_cache.invalidate()
+        if self.viewport is not None:
+            self.viewport.on_vertices_moved(set(positions))
+        at_limit = " (limit)" if gesture.width >= result.limit else ""
+        self._set_status(f"{gesture.label}: width {gesture.width:.4g}{at_limit}")
+        return True
+
+    def _offset_release(self) -> None:
+        gesture = self._offset
+        mesh = self.scene.mesh
+        if not self._transform_begun or gesture.before is None:
+            self._set_status(f"{gesture.label}: no change")
+            return
+        if gesture.width < EXTRUDE_MIN_DISTANCE:
+            self._offset_abort()
+            self._set_status(f"{gesture.label}: no change")
+            return
+        try:
+            if gesture.symmetric is not None:
+                gesture.symmetric.finish(mesh, gesture.before)
+            face_regions_api.inherit_into(mesh, gesture.before)
+        except SymmetryRefusal as exc:
+            self._offset_abort()
+            self._set_status(str(exc))
+            return
+        before, gesture.before = gesture.before, None
+        self.history.push(MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(before), description=gesture.label))
+        gesture.residue(gesture.result)
+        self._record_selection_history(gesture.selection_before)
+        self._extrude_topology_changed()
+        self._set_status(f"{gesture.label} committed")
+
+    def _offset_abort(self) -> None:
+        """Exact prior mesh and selection, no History entry."""
+        gesture = self._offset
+        if gesture is None or gesture.before is None:
+            return
+        before, gesture.before = gesture.before, None
+        self.scene.mesh.rollback_change(before)
+        if gesture.selection_before is not None:
+            self._restore_selection(gesture.selection_before)
+        self._extrude_topology_changed()
 
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 
@@ -4259,6 +4607,8 @@ class Application:
                 morph = self.bindings.command_for(input, MORPH_CONTEXT)
                 if morph in MORPH_COMMANDS:
                     command = morph
+        if command == commands.LOOP_INSERT and self.selection.mode is SelectionMode.FACE:
+            command = commands.INSET  # I: Loop Insert in edge mode, Inset in face mode (2026-10-29, Blender)
         if self._gate_refuses(command):
             return False
         if self._layer_gate_refuses(command):
@@ -4295,7 +4645,7 @@ class Application:
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
-            if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS):
+            if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS, *_OFFSET_COMMANDS):
                 # Extrude is normal-only, Loop Slide runs along its edges: neither the gesture
                 # nor the pending constraint changes.
                 return False
@@ -4394,6 +4744,8 @@ class Application:
             self._slide_release()
         elif self._transform_command in _SMOOTH_COMMANDS:
             self._smooth_release()
+        elif self._offset is not None:
+            self._offset_release()
         elif self._transform_begun:
             before = self._selection_snapshot()
             command = self.tool_manager.commit()
@@ -4455,6 +4807,10 @@ class Application:
             return self._slide_arm(key)
         if command in _SMOOTH_COMMANDS:
             return self._smooth_arm(command, key)
+        if command == commands.INSET:
+            return self._inset_arm(key)
+        if command == commands.BEVEL:
+            return self._bevel_arm(key)
         if self.selection.mode is SelectionMode.OBJECT:
             return self._object_arm(command, key)
         label, verb, _ = _TRANSFORM_COMMANDS[command]
@@ -4564,7 +4920,7 @@ class Application:
             return False
         if self._rotate_virtual is not None:
             self._rotate_virtual = (self._rotate_virtual[0] + dx, self._rotate_virtual[1] + dy)
-        if not force and self._shift_held and self._transform_command in (commands.MOVE, commands.SCALE):
+        if not force and self._shift_held and self._transform_command in (commands.MOVE, commands.SCALE, *_OFFSET_COMMANDS):
             dx, dy = dx * PRECISION_GAIN, dy * PRECISION_GAIN  # Shift = precision (Rotate scales its own angle)
         if self._object_gesture is not None:
             return self._object_step(dx, dy)
@@ -4572,6 +4928,8 @@ class Application:
             return self._slide_step(dx, dy)
         if self._transform_command in _SMOOTH_COMMANDS:
             return self._smooth_step(dx)
+        if self._offset is not None:
+            return self._offset_step(dx, dy)
         if not self._transform_begun and self._transform_command == commands.EXTRUDE:
             # Net displacement since the arm; the first update gets all of it, so the
             # distance follows the pointer from where T went down.
@@ -4725,11 +5083,18 @@ class Application:
         self._slide_plan = None
         self._slide_t = 0.0
         self._slide_direction = None
+        self._vslide_plan = None
+        self._vslide_px = {}
+        self._vslide_drag = (0.0, 0.0)
         if self._slide_before is not None:
             # A slide that ended without release / abort: stop its recording, keep the mesh.
             self.scene.mesh.release_change(self._slide_before)
         self._slide_before = None
         self._slide_selection_before = None
+        if self._offset is not None and self._offset.before is not None:
+            # A width gesture that ended without release / abort: stop its recording, keep the mesh.
+            self.scene.mesh.release_change(self._offset.before)
+        self._offset = None
         self._smooth_plan = None
         self._smooth_amount = 0.0
         if self._smooth_before is not None:
@@ -5555,6 +5920,8 @@ class Application:
                 # E2: the handle's axis was for this drag only; Esc keeps what was pending before the press.
                 self._axis_constraint = self._gizmo_constraint_before
         label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
+        if self._transform_command == commands.LOOP_SLIDE:
+            label = self._slide_label()
         if self._object_gesture is not None:
             if self._transform_begun:
                 self._object_cancel()
@@ -5570,6 +5937,9 @@ class Application:
         elif self._transform_command in _SMOOTH_COMMANDS:
             # Begun: exact start state back. Not begun: Esc instead of the tap step.
             self._smooth_abort()
+            self._set_status(f"{label} cancelled")
+        elif self._transform_begun and self._offset is not None:
+            self._offset_abort()
             self._set_status(f"{label} cancelled")
         elif self._transform_begun:
             moved = self._active_transform_vertex_ids()

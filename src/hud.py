@@ -59,6 +59,8 @@ _TOOL_NAMES = {
     commands.LOOP_SLIDE: "Loop Slide",
     commands.SMOOTH: "Smooth",
     commands.RELAX: "Relax",
+    commands.INSET: "Inset",
+    commands.BEVEL: "Bevel",
 }
 _SUBD_VIEWS = {VIEW_OFF: "off", VIEW_CAGE: "cage", VIEW_ISO: "isolines"}
 
@@ -117,6 +119,8 @@ def hud_state(app) -> HudState:
         active = "Re-Symmetrize"
     elif app.transform_command is not None:
         active = _TOOL_NAMES.get(app.transform_command, app.transform_command)
+        if app.transform_command == commands.LOOP_SLIDE and app.selection.mode.name == "VERTEX":
+            active = "Vertex Slide"  # G in vertex mode (2026-10-29)
         if app.tweak_running:  # W/E/R held: the gesture is called Tweak (Manu A2, 2026-10-28)
             active = f"Tweak · {active}"
     else:

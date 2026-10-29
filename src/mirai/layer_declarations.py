@@ -40,6 +40,7 @@ from .interaction import commands
 from .object_mirror import mirror_mesh
 from .scene_objects import apply_placement
 from .symmetric_extrude import plan_extrude
+from .symmetric_offset import plan_bevel as plan_symmetric_bevel, plan_inset as plan_symmetric_inset
 from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
     coordinate_cap,
@@ -58,6 +59,8 @@ from .topology.connect_vertices_per_face import apply_connect_vertices
 from .topology.contextual_c import CContext
 from .topology.delete_dissolve import apply_removal
 from .topology.extrude import ExtrudeTool
+from .topology.bevel import build_bevel
+from .topology.inset import build_inset
 from .topology.knife_resolve import resolve_cross_face
 
 #: Declared operations: key -> (plain implementation, symmetric implementation), exactly the functions
@@ -82,6 +85,10 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         CContext.KNIFE: (resolve_cross_face, coordinate_knife),
         commands.COLLAPSE: (apply_collapse, coordinate_collapse),
         commands.EXTRUDE: (ExtrudeTool, plan_extrude),
+        # 2026-10-29: Inset's new vertices are copies of their outline vertex (`add_vertex(origin=((v, 1.0),))`).
+        commands.INSET: (build_inset, plan_symmetric_inset),
+        # 2026-10-29: Bevel's new vertices are copies of the vertex they grew from.
+        commands.BEVEL: (build_bevel, plan_symmetric_bevel),
         # A new mesh from a layered one (AD-025 §4.3): its layers through the index map, v -> H·v.
         "mirror_copy": (mirror_mesh, mirror_mesh),
         # A frame change (AD-025 §4.3): positions p -> to_world(p), vector values v -> s·R·v; one
@@ -226,6 +233,8 @@ _LABELS: Mapping[Any, str] = MappingProxyType(
         CContext.EDGE_CONNECT: "Connect Edges",
         CContext.KNIFE: "Knife",
         commands.EXTRUDE: "Extrude",
+        commands.INSET: "Inset",
+        commands.BEVEL: "Bevel",
         commands.COLLAPSE: "Collapse",
         commands.LOOP_INSERT: "Loop Insert",
         "mirror_copy": "Mirror copy",

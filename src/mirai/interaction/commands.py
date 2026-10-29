@@ -258,6 +258,14 @@ EXTRUDE = "Extrude"
 SMOOTH = "Smooth"
 RELAX = "Relax"
 
+# INSET / BEVEL (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
+# `PROVISIONAL`): global hold keys like T. Hold + drag right/left = width, release commits, Esc restores
+# (`mirai.topology.inset` / `mirai.topology.bevel`, `Application._offset_*`). INSET has no default binding:
+# `I` in face mode resolves to it (`I` in edge mode stays LOOP_INSERT). BEVEL works on the vertices, the
+# edges or the faces' edges of the active mode.
+INSET = "Inset"
+BEVEL = "Bevel"
+
 # TOGGLE_TRANSFORM_SPACE (WP Toolbox Gaps C1, the Playground's `K`, `PROVISIONAL`): global, World <->
 # Normal for the axis constraints and the gizmo (`mirai.transform_space`); state like a constraint.
 TOGGLE_TRANSFORM_SPACE = "ToggleTransformSpace"
@@ -342,5 +350,8 @@ MORPH_PREVIOUS = "MorphPrevious"
 #: Commands armed by holding a key (AD-016 hold-key-hover and its family): `Application` ends them on the release
 #: of that key's value, which only a `key` input has, so a keymap entry may bind them to `kind: "key"` only.
 HOLD_COMMANDS = frozenset(
-    {MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, LASSO_ARM, LIGHT_DRAG, MORPH_WEIGHT_DRAG, PIVOT_PLACE}
+    {
+        MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, INSET, BEVEL, LASSO_ARM, LIGHT_DRAG,
+        MORPH_WEIGHT_DRAG, PIVOT_PLACE,
+    }
 )

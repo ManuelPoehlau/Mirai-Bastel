@@ -103,6 +103,9 @@ Vor neuen Werkzeugen den Production-Integrationsstand prüfen: Eine Operation ka
   *Close erledigt 2026-10-25:* Cap auf `Shift+B` ([WP_TOOLBOX_GAPS_PLAN.md](../WP_TOOLBOX_GAPS_PLAN.md), Nachtrag D); Bridge offen.
 - **Edge- und Vertex-Extrude:** gezielte lokale Topologie aufbauen, wo Face-Extrude nicht die passende Absicht ausdrückt.
 - **Bevel/Chamfer:** bestehende Bevel-Fähigkeit und ihre tatsächliche Production-Abdeckung auditieren; später gezielt Edge-/Vertex-Bevel ergänzen, falls der Character-Workflow es verlangt.
+  *Grundfunktion gebaut 2026-10-29* (Manu: „Inset, Chamfer/Bevel, Slide (Vertices)“): Edge-/Vertex-Bevel mit einem
+  Segment auf `Ctrl+B`, dazu Inset (`I` im Face-Modus) und Vertex Slide (`G` im Vertex-Modus) —
+  [WP_INSET_BEVEL_SLIDE.md](../WP_INSET_BEVEL_SLIDE.md); Segmente, Profil, Inset-Tiefe offen.
 - **Set Flow / Loop Flow:** untersuchen, wie eine Folge bestehender Kanten zwischen angrenzenden Loops gleichmäßiger oder gezielter verteilt werden kann.
 - **Spin Edge / Spin Vertex:** nützliches ergänzendes Topologie-Werkzeug, aber hinter Relax, Maskierung, Loop-Navigation und den Reparaturoperationen priorisieren.
 

@@ -30,7 +30,9 @@ geplant, Loop-Werkzeuge hatten kein Verdikt (Tasten aus der Artist Input Truth,
   Shift+L / Shift+R fügen Loop / Ring zur Auswahl hinzu. I = Loop Insert durch den Ring (über dasselbe
   Edge Connect wie `C`, daher unter Symmetrie gespiegelt). G halten = Loop Slide: offene Loop-Stücke und
   mehrere Loops gleiten mit; die Maus folgt der Richtung der Kanten auf dem Bildschirm; unter Symmetrie
-  gleitet die Spiegelseite exakt mit, ein Loop *auf* der Spiegelebene wird abgelehnt.
+  gleitet die Spiegelseite exakt mit, ein Loop *auf* der Spiegelebene wird abgelehnt. Fix 2026-10-29: unter
+  Symmetrie stoppt der Slide bei 98 % (ganz bis zur Nachbar-Loop lagen zwei Punkte aufeinander, die Spiegelpaarung
+  wurde still mehrdeutig). Im Vertex-Modus ist `G` seit 2026-10-29 Vertex Slide ([WP_INSET_BEVEL_SLIDE.md](WP_INSET_BEVEL_SLIDE.md)).
 - Loop Slide in `src` ist neu gebaut (`mirai.topology.loop_slide`); der Playground behält sein
   `LoopSlideTool` (nur geschlossene Loops). Loop/Ring-Erkennung ist verschoben (eine Implementierung).
 

@@ -221,6 +221,11 @@ Scope (binding, see the handoffs):
   hold-key gesture (W/E/R held + mouse). Edge mode: Shift+L / Shift+R
   add the edge loop / ring, I inserts a loop through the ring, hold G slides the selected
   loop(s); under symmetry Loop Insert and Loop Slide mirror. All in `Application`.
+  Vertex mode (2026-10-29, `PROVISIONAL`): hold G = Vertex Slide, each selected vertex along the edge
+  the drag points to (`mirai.topology.vertex_slide`).
+- Inset / Bevel (2026-10-29, `PROVISIONAL`, docs/WP_INSET_BEVEL_SLIDE.md): hold I in face mode = Inset of the
+  selected faces, hold Ctrl+B = Bevel of the vertices / edges / faces' edges of the active mode; drag right =
+  wider, release commits one Undo step, Esc restores; mirrored under symmetry. All in `Application`.
 - Transform gizmo (2026-10-21, promoted from the Playground, AD-016 D3; look `PROVISIONAL`): with a point / edge / face
   selection a world-axis gizmo is drawn at its centroid (`draw_gizmo`), shaped for the current tool (the last W/E/R).
   LMB on a handle sets the constraint, LMB drag runs the tool along it, release commits, Esc cancels. All in

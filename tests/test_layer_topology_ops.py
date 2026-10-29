@@ -144,6 +144,18 @@ def copy_rule(ref: Mesh, mesh: Mesh, info) -> int:
     return len(created)
 
 
+def source_copy_rule(ref: Mesh, mesh: Mesh, info) -> int:
+    """Bevel: every new vertex is a copy of the vertex it grew from (bit-exact); several may share one."""
+    sources = info["sources"]
+    assert sources
+    for new, old in sources.items():
+        for lid in mesh.point_layer_ids():
+            assert mesh.layer_value(lid, new) == ref.layer_value(lid, old), (old, new, lid)
+    created = {v for v in mesh.all_vertex_ids() if not ref.is_valid_vertex(v)}
+    assert created == set(sources)
+    return len(created)
+
+
 def knife_rule(ref: Mesh, mesh: Mesh, info) -> int:
     from tests.test_layer_knife import check_values
 
@@ -225,6 +237,29 @@ def _sym_extrude(app):
     return commands.EXTRUDE
 
 
+def _plain_inset(app):
+    _select(app, F, {_grid_face(app, 1, 1)})
+    return commands.INSET
+
+
+def _sym_inset(app):
+    _select(app, F, {plus_x_quad(app.scene.mesh, touching_seam=False)})
+    return commands.INSET
+
+
+def _plain_bevel(app):
+    mesh = app.scene.mesh
+    _select(app, E, {_edge(mesh, _grid_vertex(app, 1, 1), _grid_vertex(app, 1, 2))})
+    return commands.BEVEL
+
+
+def _sym_bevel(app):
+    mesh = app.scene.mesh
+    a, b, _, _ = mesh.face_vertices(plus_x_quad(mesh, touching_seam=False))
+    _select(app, E, {_edge(mesh, a, b)})
+    return commands.BEVEL
+
+
 #: key -> (plain fixture, symmetric fixture, rule). The fixtures build their own app.
 RULE_FIXTURES = {
     CContext.SPLIT: (_plain_split, _sym_split, midpoint_rule),
@@ -232,6 +267,8 @@ RULE_FIXTURES = {
     commands.LOOP_INSERT: (_plain_loop_insert, _sym_loop_insert, midpoint_rule),
     commands.COLLAPSE: (_plain_collapse, _sym_collapse, collapse_rule),
     commands.EXTRUDE: (_plain_extrude, _sym_extrude, copy_rule),
+    commands.INSET: (_plain_inset, _sym_inset, copy_rule),
+    commands.BEVEL: (_plain_bevel, _sym_bevel, source_copy_rule),
 }
 #: Declared entries whose rule test runs through other fixtures here: the Knife (real picks, below)
 #: and mirror copy (a new mesh, below).
@@ -242,11 +279,14 @@ OTHER_FIXTURES = {CContext.KNIFE: "test_knife_cuts_a_layered_mesh_by_its_rule",
 def _run(app, command: str, info: dict) -> None:
     history = len(app.history)
     assert _press(app, command), app.status_message
-    if app.interaction_owner == "transform":  # Extrude: hold, drag, release
+    if app.interaction_owner == "transform":  # Extrude / Inset: hold, drag, release
         for _ in range(4):
             app.pointer_motion(400, 300, 20.0, -15.0)
-        tool = app.tool_manager.active_tool
-        info["old_to_new"] = dict(tool._old_to_new)
+        if app._offset is not None:  # Inset / Bevel: each new vertex is keyed first by the vertex it copies
+            info["sources"] = {new: key[0] for new, key in app._offset.result.keys.items()}
+            info["old_to_new"] = {old: new for new, old in info["sources"].items()}
+        else:
+            info["old_to_new"] = dict(app.tool_manager.active_tool._old_to_new)
         app.key_release(TEST_KEY)
     assert len(app.history) == history + 1, app.status_message
 

@@ -141,6 +141,11 @@ Loop-Werkzeuge (2026-10-15, Tasten aus der Artist Input Truth, `PROVISIONAL`):
 - G (halten)       → Loop Slide der ausgewählten Edges, Maus bewegen, loslassen = Commit
 Wie `C` ignoriert, solange W/E/R/T/G scharf ist; in der Knife-Session ungebunden.
 
+Modellier-Werkzeuge (2026-10-29, Manu „Inset, Chamfer/Bevel, Slide (Vertices)“; Tasten `PROVISIONAL`):
+- I (halten, Face-Modus)  → Inset der ausgewählten/gehoverten Faces, Maus rechts/links = Breite
+- Ctrl+B (halten)         → Bevel der Vertices (V), Kanten (E) bzw. der Kanten der Faces (F)
+- G (halten, Vertex-Modus) → Vertex Slide entlang der Kante, auf die die Maus zeigt
+
 Der Kontext "topology" hat seit 2026-10-28 keine Defaults mehr (die toten L/R
 des Topology Lab sind entfernt; kein Host löst ihn auf).
 
@@ -177,9 +182,9 @@ KNOWN_COMMANDS = frozenset(
 #: (`Application.set_shift_held` / `set_ctrl_held` / `set_alt_held`), not through the bindings, so it is
 #: not rebindable. Listed read-only next to the bindings (HUD row "Fixed", start-up listing of `src/main.py`).
 FIXED_MODIFIER_RULES: tuple[tuple[str, str], ...] = (
-    ("Shift", "W/E/R laufen: fein (x0,2)"),
+    ("Shift", "W/E/R, Inset bzw. Bevel laufen: fein (x0,2)"),
     ("Ctrl", "Rotate läuft: Raster 5°, mit Shift 1°"),
-    ("Alt", "Tweak (W/E/R), T/G oder Gizmo läuft: Maus = Orbit, Alt+Shift = Pan (nicht bei Smooth/Relax)"),
+    ("Alt", "Tweak (W/E/R), T/G/I/Ctrl+B oder Gizmo läuft: Maus = Orbit, Alt+Shift = Pan (nicht bei Smooth/Relax)"),
     ("Alt", "Box/Lasso vor dem Loslassen: durch das Mesh wählen"),
     ("Shift", "Alt+LMB-Orbit läuft: Standardansicht einrasten (ortho), loslassen = frei"),
     ("Shift", "Knife: Hover und Klick auf die Kantenmitte"),
@@ -300,6 +305,11 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("r", "shift"), cmd.EDGE_RING)
     bs.set_default(_key("i"), cmd.LOOP_INSERT)
     bs.set_default(_key("g"), cmd.LOOP_SLIDE)
+    # Inset / Bevel (2026-10-29, `PROVISIONAL` engineering keys, Blender's): I in face mode is Inset (resolved in
+    # `Application.key_press`; I in edge mode stays Loop Insert), so INSET has no binding of its own. Hold Ctrl+B =
+    # Bevel of the vertices / edges / faces' edges of the active mode (Ctrl+B was free in the code defaults and in
+    # config/keymap.json; B / Shift+B are Border / Cap).
+    bs.set_default(_key("b", "ctrl"), cmd.BEVEL)
     # WP Toolbox Gaps C2: hold S = Smooth, hold Alt+S = Relax (hold + drag: Manu 2026-10-23; keys PROVISIONAL).
     bs.set_default(_key("s"), cmd.SMOOTH)
     bs.set_default(_key("s", "alt"), cmd.RELAX)

@@ -227,6 +227,20 @@ def test_slide_under_symmetry_keeps_the_mirror_exact(app):
     assert symmetry_state(mesh) is SymmetryState.VALID
 
 
+def test_slide_under_symmetry_stops_short_of_the_next_loop(app):
+    """2026-10-29: all the way would put two vertices on one position (ambiguous mirror pairing)."""
+    mesh = app.scene.mesh
+    set_symmetry_axis(mesh, "X")
+    _select(app, *{_v_edge(mesh, -1.0, y) for y in (-2.0, -1.0, 0.0, 1.0)})
+    app.key_press(G)
+    _slide(app, dx=40.0, steps=40)
+    app.key_release(G)
+    assert app.status_message == "Loop Slide committed"
+    assert symmetry_state(mesh) is SymmetryState.VALID
+    xs = sorted({round(mesh.vertex_position(v)[0], 9) for v in mesh.all_vertex_ids()})
+    assert len(xs) == 5  # no loop landed on its neighbour
+
+
 def test_slide_refuses_the_seam_loop_under_symmetry(app):
     mesh = app.scene.mesh
     set_symmetry_axis(mesh, "X")
