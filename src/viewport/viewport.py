@@ -272,10 +272,10 @@ class Viewport:
         self.surface_finish = finish
         current = self.render_mesh.material
         color = current.color if current is not None else DEFAULT_BASE_COLOR
-        self.bind_material(Material(color, finish))
+        self.bind_material(Material(color, finish, getattr(current, "texture", None)))
         for entry in self.object_entries.values():
             if entry.material is not None:
-                entry.bind_material(Material(entry.material.color, finish))
+                entry.bind_material(Material(entry.material.color, finish, getattr(entry.material, "texture", None)))
                 entry.mark_material_dirty()
         # Ersatzflächen der Einträge übernehmen das neue Material in `_follow_entry`.
         return True
@@ -301,6 +301,7 @@ class Viewport:
         alpha: float = 1.0,
         ignores_wireframe: bool = False,
         finish: SurfaceFinish | None = None,
+        texture: str | None = None,
     ) -> bool:
         """Legt den Eintrag `key` für `mesh` an oder aktualisiert Farbe, Glanz (None = der von
         `set_surface_finish`), Matrix und Anzeige. Ein anderes Mesh unter demselben Schlüssel ersetzt
@@ -328,8 +329,12 @@ class Viewport:
         if entry.model_matrix != (list(model_matrix) if model_matrix is not None else None):
             entry.set_model_matrix(model_matrix)
             changed = True
-        if entry.material is None or entry.material.color != color or getattr(entry.material, "finish", None) != finish:
-            entry.bind_material(Material(color, finish))
+        material = entry.material
+        if (
+            material is None or material.color != color or getattr(material, "finish", None) != finish
+            or getattr(material, "texture", None) != texture
+        ):
+            entry.bind_material(Material(color, finish, texture))
             entry.mark_material_dirty()
             changed = True
         return changed
@@ -632,19 +637,26 @@ class Viewport:
             self.surface_render_mesh.mark_material_dirty()
 
     def set_edit_base_color(
-        self, base_color: tuple[float, float, float] | None, finish: SurfaceFinish | None = None
+        self,
+        base_color: tuple[float, float, float] | None,
+        finish: SurfaceFinish | None = None,
+        texture: str | None = None,
     ) -> bool:
         """Grundfarbe (None = Standardfarbe) und Glanz (None = der von `set_surface_finish`) des
         Edit-Mesh und einer H7-Ersatzfläche: die sichtbare Objekt-Auswahl in Modus `4` (2026-10-16)
-        und das Material des Edit-Objekts (AD-024). Kein Rebuild; True = geändert."""
+        und das Material des Edit-Objekts (AD-024), dazu seine Textur (AD-026, None = keine). Kein
+        Rebuild; True = geändert."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
         finish = self.surface_finish if finish is None else finish
         current = self.render_mesh.material
-        if current is not None and tuple(current.color) == color and getattr(current, "finish", None) == finish:
+        if (
+            current is not None and tuple(current.color) == color and getattr(current, "finish", None) == finish
+            and getattr(current, "texture", None) == texture
+        ):
             return False
-        if current is None and color == DEFAULT_BASE_COLOR and finish == DEFAULT_FINISH:
+        if current is None and color == DEFAULT_BASE_COLOR and finish == DEFAULT_FINISH and texture is None:
             return False
-        self.bind_material(Material(color, finish))
+        self.bind_material(Material(color, finish, texture))
         return True
 
     # -- Notifikations-API (aufgerufen von src.mirai nach Core-Mutationen) --

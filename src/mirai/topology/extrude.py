@@ -229,10 +229,16 @@ class ExtrudeTool(Tool):
         for vid in all_vids:
             self._old_to_new[vid] = mesh.add_vertex(mesh.vertex_position(vid), origin=((vid, 1.0),))
 
+        # UVs (AD-026): der Deckel übernimmt die UVs seiner Original-Face, eine Wand die der
+        # Original-Face an ihren beiden Ecken (oben wie unten) - in UV eine Linie, wie Blender sie
+        # einer Extrude-Wand gibt; die Textur des Deckels bleibt dadurch unverändert.
+        has_uvs = mesh.has_face_uvs()
+
         # Seitenwände: nur Boundary-Edges (genau 1 angrenzende Face in face_ids_frozen)
         for fid in face_ids_frozen:
             boundary = mesh.face_vertices(fid)
             edges = mesh.face_edges(fid)
+            uvs = mesh.face_uvs(fid) if has_uvs else None
             n = len(boundary)
             for i, eid in enumerate(edges):
                 adj = mesh.edge_faces(eid)
@@ -240,14 +246,19 @@ class ExtrudeTool(Tool):
                 if in_sel == 1:  # Boundary-Edge → Seitenwand
                     v_curr = boundary[i]
                     v_next = boundary[(i + 1) % n]
-                    wall = mesh.add_face([v_curr, v_next, self._old_to_new[v_next], self._old_to_new[v_curr]])
+                    wall_uvs = None if uvs is None else (uvs[i], uvs[(i + 1) % n], uvs[(i + 1) % n], uvs[i])
+                    wall = mesh.add_face(
+                        [v_curr, v_next, self._old_to_new[v_next], self._old_to_new[v_curr]],
+                        wall_uvs,
+                        infer_uvs=False,
+                    )
                     self._face_source[wall] = fid
 
         # Cap-Faces: eine pro Original-Face, auf neue Vertices gemappt
         new_face_ids: set[FaceId] = set()
         for fid in face_ids_frozen:
             new_boundary = [self._old_to_new[vid] for vid in mesh.face_vertices(fid)]
-            cap = mesh.add_face(new_boundary)
+            cap = mesh.add_face(new_boundary, mesh.face_uvs(fid) if has_uvs else None, infer_uvs=False)
             new_face_ids.add(cap)
             self._face_source[cap] = fid
 

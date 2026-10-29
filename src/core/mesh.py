@@ -1380,9 +1380,8 @@ class Mesh:
         Boundary-Edge von face_id gehört danach zu genau einer der beiden.
 
         UVs (AD-026): beide Faces übernehmen die Ecken der Parent-Face; ein Innenpunkt bekommt
-        die mit seiner Herkunft gewichteten UVs, wenn alle Quellen Ecken der Parent-Face sind (das
-        Dreieck, das der Knife getroffen hat), sonst seine Mean-Value-Koordinaten über die Parent-
-        Face (`corner_uvs.polygon_weights`).
+        die UVs seiner Mean-Value-Koordinaten über die Parent-Face (`corner_uvs.polygon_weights`) -
+        immer, auch mit `origins`, damit ein Mesh mit Punkt-Layern genauso schneidet wie eins ohne.
 
         Rückgabe: (neue_vertex_ids, neue_edge_ids, face_1, face_2)
         """
@@ -1430,7 +1429,7 @@ class Mesh:
             layer_values = [self._origin_values(o) for o in origins]
         corners = self._corner_map(face_id)
         if corners is not None and k:
-            interior_uvs = self._interior_uvs(boundary, corners, positions, origins)
+            interior_uvs = self._interior_uvs(boundary, corners, positions)
 
         self._delete_face(face_id)
 
@@ -1461,19 +1460,11 @@ class Mesh:
         face_2 = self.add_face(boundary_2, uvs_2, infer_uvs=False)
         return new_vertices, new_edges, face_1, face_2
 
-    def _interior_uvs(self, boundary, corners: dict, positions, origins) -> list[UV]:
+    def _interior_uvs(self, boundary, corners: dict, positions) -> list[UV]:
         """UVs of `split_face`'s interior points (its docstring), before the first mutation."""
-        corner_positions = None
-        out = []
-        for i, p in enumerate(positions):
-            origin = origins[i] if origins is not None else None
-            if origin and all(src in corners for src, _w in origin):
-                out.append(weighted_uv([float(w) for _s, w in origin], [corners[src] for src, _w in origin]))
-                continue
-            if corner_positions is None:
-                corner_positions = [self._vertices[v].position for v in boundary]
-            out.append(weighted_uv(polygon_weights(corner_positions, p), [corners[v] for v in boundary]))
-        return out
+        corner_positions = [self._vertices[v].position for v in boundary]
+        corner_uvs = [corners[v] for v in boundary]
+        return [weighted_uv(polygon_weights(corner_positions, p), corner_uvs) for p in positions]
 
     # ------------------------------------------------------------------
     # Entfernen: Dissolve (bewahrend) und Delete (destruktiv) -

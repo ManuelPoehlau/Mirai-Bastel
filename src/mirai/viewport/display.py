@@ -69,6 +69,8 @@ class DisplayState:
         self.surface_finish: SurfaceFinish = DEFAULT_FINISH
         # Saved regions (2026-10-25): their face colours show (Ctrl+Alt+D toggles).
         self.region_tint: bool = True
+        # Textures (AD-026, 2026-10-29): an object's texture shows on its UVs (SPACE menu row toggles).
+        self.show_texture: bool = True
 
     # -- Übergänge ----------------------------------------------------------
 

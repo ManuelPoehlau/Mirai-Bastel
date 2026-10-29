@@ -1648,13 +1648,31 @@ class Application:
                 alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
                 ignores_wireframe=reference,
                 finish=object_finish(obj, self.display.surface_finish),
+                texture=self._shown_texture(obj, oid in highlighted),
             )
         edit = scene.edit_object
         self.viewport.set_edit_base_color(
             selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else object_base_color(edit),
             object_finish(edit, self.display.surface_finish),
+            self._shown_texture(edit, edit.id in highlighted),
         )
         self._object_highlight_key = self._object_highlight_signature()
+
+    def _shown_texture(self, obj: SceneObject, highlighted: bool) -> str | None:
+        """The texture the viewport draws for `obj` (AD-026): its own while textures are shown
+        (`DisplayState.show_texture`); a highlighted object (mode `4` selection) shows its selection
+        tint instead, so the selection stays visible on a textured object (`PROVISIONAL`)."""
+        if obj.texture is None or highlighted or not self.display.show_texture:
+            return None
+        return obj.texture
+
+    def toggle_texture_display(self) -> bool:
+        """Textures on/off (SPACE menu row, `src/obj_files.py`): pure view state, no Undo step.
+        Returns the new state."""
+        self.display.show_texture = not self.display.show_texture
+        self._sync_object_views()
+        self._set_status(f"Textures: {'on' if self.display.show_texture else 'off'}")
+        return self.display.show_texture
 
     def _highlighted_objects(self) -> frozenset:
         """The objects drawn as selected: the object selection, in mode `4` only (2026-10-16, Manu:
@@ -1668,7 +1686,7 @@ class Application:
         return (
             self._highlighted_objects(),
             scene.edit_object_id,
-            tuple((oid, obj.state, obj.material) for oid, obj in scene.objects.items()),
+            tuple((oid, obj.state, obj.material, obj.texture) for oid, obj in scene.objects.items()),
         )
 
     def _sync_object_highlight(self) -> None:

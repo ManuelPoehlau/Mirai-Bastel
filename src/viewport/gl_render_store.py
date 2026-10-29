@@ -130,6 +130,14 @@ uniform float u_specular;
 uniform float u_spec_exponent;
 uniform float u_fill_specular;
 
+#ifdef TEXTURED
+// AD-026: the textured program (`TEXTURED_*_SRC`) - barycentrics from the geometry shader, the
+// triangle's corner UVs by `gl_PrimitiveID` (3 texels per triangle), the image on its own unit.
+in vec3 g_bary;
+uniform sampler2D u_texture;
+uniform samplerBuffer u_triangle_uvs;
+#endif
+
 out vec4 out_color;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
@@ -279,6 +287,17 @@ void main() {
     vec3 screen_flat_n = normalize(cross(dFdx(v_world_pos), dFdy(v_world_pos)));
     vec3 n = normalize(v_normal);
     vec3 albedo = u_base_color;
+#ifdef TEXTURED
+    {
+        int t = gl_PrimitiveID * 3;
+        vec2 a = texelFetch(u_triangle_uvs, t).xy;
+        if (a.x > -1.0e29) {
+            vec2 uv = a * g_bary.x + texelFetch(u_triangle_uvs, t + 1).xy * g_bary.y
+                    + texelFetch(u_triangle_uvs, t + 2).xy * g_bary.z;
+            albedo = texture(u_texture, uv).rgb;
+        }
+    }
+#endif
     if (u_has_face_data != 0) {
         int row = int(texelFetch(u_triangle_faces, gl_PrimitiveID).r + 0.5) * ROW_TEXELS;
         vec4 head = texelFetch(u_face_data, row);
@@ -286,7 +305,7 @@ void main() {
             // Saved regions: the colour rides in the free .w of corner texels 1-3; black = no region.
             vec3 tint = vec3(texelFetch(u_face_data, row + 1).w, texelFetch(u_face_data, row + 2).w,
                              texelFetch(u_face_data, row + 3).w);
-            if (dot(tint, tint) > 0.0) albedo = mix(u_base_color, tint, 0.85);
+            if (dot(tint, tint) > 0.0) albedo = mix(albedo, tint, 0.85);
         }
         vec3 face_n = normalize(head.xyz);
         if (u_flat != 0) {
@@ -313,6 +332,60 @@ void main() {
 }
 """
 
+# AD-026: the textured variant. Its vertex shader takes the plain program's attribute locations
+# (`{position}` / `{normal}` are filled in from `GLRenderStore.program()`, as the GPU picker does), so
+# it draws the store's one VertexList; the geometry shader adds per-corner barycentrics and passes
+# `gl_PrimitiveID` through, so the fragment shader (FRAGMENT_SRC with `TEXTURED`) reads the face data
+# and the triangle UVs by the same triangle number as the plain program.
+TEXTURED_VERTEX_SRC = """
+#version 330 core
+layout(location = {position}) in vec3 position;
+layout(location = {normal}) in vec3 normal;
+
+uniform mat4 u_view;
+uniform mat4 u_proj;
+uniform mat4 u_model;
+
+out vec3 t_normal;
+out vec3 t_world_pos;
+
+void main() {{
+    vec4 world = u_model * vec4(position, 1.0);
+    gl_Position = u_proj * u_view * world;
+    t_normal = mat3(u_model) * normal;
+    t_world_pos = world.xyz;
+}}
+"""
+
+TEXTURED_GEOMETRY_SRC = """
+#version 330 core
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 3) out;
+
+in vec3 t_normal[];
+in vec3 t_world_pos[];
+
+out vec3 v_normal;
+out float v_highlight;
+out vec3 v_world_pos;
+out vec3 g_bary;
+
+void main() {
+    for (int i = 0; i < 3; ++i) {
+        gl_Position = gl_in[i].gl_Position;
+        v_normal = t_normal[i];
+        v_highlight = 0.0;
+        v_world_pos = t_world_pos[i];
+        g_bary = vec3(i == 0 ? 1.0 : 0.0, i == 1 ? 1.0 : 0.0, i == 2 ? 1.0 : 0.0);
+        gl_PrimitiveID = gl_PrimitiveIDIn;
+        EmitVertex();
+    }
+    EndPrimitive();
+}
+"""
+
+TEXTURED_FRAGMENT_SRC = FRAGMENT_SRC.replace("#version 330 core\n", "#version 330 core\n#define TEXTURED 1\n", 1)
+
 DEFAULT_BASE_COLOR = (0.72, 0.75, 0.82)
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 #: Light of a store nobody configured (labs, tests): "Heute", i.e. the pre-2026-10-15 look.
@@ -321,6 +394,9 @@ LIGHT_UNIFORM_NAMES = tuple(DEFAULT_LIGHT_UNIFORMS)
 #: Texture units of the face data; unit 0 stays free for pyglet's own textures (text, HUD).
 _FACE_DATA_UNIT = 1
 _TRIANGLE_FACES_UNIT = 2
+#: AD-026: the triangle UVs (buffer texture) and the image (2D texture) of the textured program.
+_TRIANGLE_UVS_UNIT = 3
+_TEXTURE_UNIT = 4
 #: Dirty face-data ranges closer than this (floats; 1024 = 4 KiB) are uploaded as one.
 _FACE_MERGE_GAP = 1024
 
@@ -349,12 +425,61 @@ def _build_program():
     return ShaderProgram(vertex_shader, fragment_shader)
 
 
+def _build_textured_program(plain):
+    """The textured variant (AD-026), on the plain program's attribute locations."""
+    from pyglet.graphics.shader import Shader, ShaderProgram
+
+    _register_sampler_buffer_uniform()
+    attributes = plain.attributes
+    source = TEXTURED_VERTEX_SRC.format(
+        position=attributes["position"]["location"], normal=attributes["normal"]["location"]
+    )
+    return ShaderProgram(
+        Shader(source, "vertex"),
+        Shader(TEXTURED_GEOMETRY_SRC, "geometry"),
+        Shader(TEXTURED_FRAGMENT_SRC, "fragment"),
+    )
+
+
+def load_texture(path: str):
+    """The image at `path` as a mipmapped, repeating, linearly filtered GL texture (AD-026), or None
+    when it cannot be read. Requires an active GL context; the caller caches."""
+    import pyglet
+    from pyglet import gl
+
+    try:
+        image = pyglet.image.load(path)
+    except Exception as exc:  # pyglet raises its own decoder errors and OSError
+        print(f"Texture {path!r} could not be loaded: {exc}")
+        return None
+    texture = image.get_texture()
+    gl.glBindTexture(texture.target, texture.id)
+    # pyglet's `get_mipmapped_texture` calls glGenerateMipmap without binding the texture first
+    # (GL_INVALID_OPERATION on Mesa, 2026-10-29): bind, then generate; without mipmaps if it fails.
+    try:
+        gl.glGenerateMipmap(texture.target)
+        min_filter = gl.GL_LINEAR_MIPMAP_LINEAR
+    except gl.GLException:
+        min_filter = gl.GL_LINEAR
+    gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MIN_FILTER, min_filter)
+    gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
+    gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
+    gl.glBindTexture(texture.target, 0)
+    return texture
+
+
 class GLRenderStore(ResourceStore):
     """Real pyglet/OpenGL backend: one indexed VertexList + uniform passthrough
     + `draw()`, driven by `RenderMesh`'s declared layout (AD-018 §5) instead
     of inferred call order."""
 
     _program = None  # lazily compiled, shared across instances (one GL context)
+    _textured_program = None  # AD-026, the same
+    #: AD-026: (path, mtime, size) -> GL texture (None = could not be loaded), shared like the programs;
+    #: an object and its SubD surface, or several objects, show one image with one upload. The file's
+    #: stamp is part of the key, so a texture re-exported under the same name shows at the next draw.
+    _textures: dict = {}
 
     def __init__(self, stats) -> None:
         super().__init__(stats)
@@ -380,12 +505,39 @@ class GLRenderStore(ResourceStore):
         self._face_cpu: dict[str, array] = {}
         self._face_dirty: dict[str, list[tuple[int, int]] | None] = {}
         self._face_gl: dict[str, tuple[int, int, int]] = {}  # Name -> (Buffer, Textur, Floats)
+        # AD-026: face-data buffers that may be absent without switching the face data off (the
+        # triangle UVs exist only while a texture shows), and the texture path to show.
+        self._optional_face_buffers: set[str] = set()
+        self._texture_path: str | None = None
 
     @classmethod
     def program(cls):
         if cls._program is None:
             cls._program = _build_program()
         return cls._program
+
+    @classmethod
+    def textured_program(cls):
+        if cls._textured_program is None:
+            cls._textured_program = _build_textured_program(cls.program())
+        return cls._textured_program
+
+    @classmethod
+    def texture(cls, path: str):
+        import os
+
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return None
+        key = (path, stat.st_mtime_ns, stat.st_size)
+        if key not in cls._textures:
+            for old in [k for k in cls._textures if k[0] == path]:
+                stale = cls._textures.pop(old)
+                if stale is not None:
+                    stale.delete()
+            cls._textures[key] = load_texture(path)
+        return cls._textures[key]
 
     # -- Layout-Deklaration (AD-018 §5) --------------------------------------
 
@@ -400,6 +552,16 @@ class GLRenderStore(ResourceStore):
     def declare_face_data(self, data: str, triangle_map: str, row_texels: int) -> None:
         self._face_buffers[data] = ("GL_RGBA32F", _FACE_DATA_UNIT, "u_face_data")
         self._face_buffers[triangle_map] = ("GL_R32F", _TRIANGLE_FACES_UNIT, "u_triangle_faces")
+
+    def declare_triangle_uvs(self, name: str) -> None:
+        """AD-026: `name` holds per triangle the (u, v) of its three corners, read by the textured
+        program; it exists only while a texture shows."""
+        self._face_buffers[name] = ("GL_RG32F", _TRIANGLE_UVS_UNIT, "u_triangle_uvs")
+        self._optional_face_buffers.add(name)
+
+    def set_texture(self, path: str | None) -> None:
+        """The texture to show (AD-026; None = none): pure draw state, loaded at the first draw."""
+        self._texture_path = path
 
     def begin_rebuild(self, group: str) -> None:
         self._rebuild_active.add(group)
@@ -495,7 +657,8 @@ class GLRenderStore(ResourceStore):
         for name, (fmt, unit, _uniform) in self._face_buffers.items():
             data = self._face_cpu.get(name)
             if not data:
-                ready = False
+                if name not in self._optional_face_buffers:
+                    ready = False
                 continue
             buffer_id, texture_id, size = self._face_gl.get(name, (0, 0, 0))
             gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
@@ -532,6 +695,15 @@ class GLRenderStore(ResourceStore):
             gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
             gl.glBindTexture(gl.GL_TEXTURE_BUFFER, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0)
+
+    def _textured(self) -> bool:
+        """True when this draw shows a texture: a path, its triangle UVs and a loadable image."""
+        if self._texture_path is None:
+            return False
+        names = [n for n in self._optional_face_buffers if self._face_buffers[n][2] == "u_triangle_uvs"]
+        if not names or not self._face_cpu.get(names[0]):
+            return False
+        return self.texture(self._texture_path) is not None
 
     def _release_face_data(self) -> None:
         if self._face_gl:
@@ -693,7 +865,8 @@ class GLRenderStore(ResourceStore):
         if vlist is None:
             return
 
-        program = self.program()
+        textured = self._textured()
+        program = self.textured_program() if textured else self.program()
         program.use()
         self._apply_camera_uniforms(program)
         for name, value in self._light_uniforms.items():
@@ -710,8 +883,17 @@ class GLRenderStore(ResourceStore):
         program["u_alpha"] = self.alpha
         has_face_data = self._flush_face_data()
         program["u_has_face_data"] = 1 if has_face_data else 0
-        for _fmt, unit, uniform in self._face_buffers.values():
-            program[uniform] = unit
+        for name, (_fmt, unit, uniform) in self._face_buffers.items():
+            if name not in self._optional_face_buffers:
+                program[uniform] = unit
+            elif textured:
+                program[uniform] = unit
+        if textured:
+            texture = self.texture(self._texture_path)
+            gl.glActiveTexture(gl.GL_TEXTURE0 + _TEXTURE_UNIT)
+            gl.glBindTexture(texture.target, texture.id)
+            gl.glActiveTexture(gl.GL_TEXTURE0)
+            program["u_texture"] = _TEXTURE_UNIT
         ghost = self.alpha < 1.0
 
         gl.glEnable(gl.GL_DEPTH_TEST)
@@ -737,3 +919,7 @@ class GLRenderStore(ResourceStore):
         gl.glDisable(gl.GL_CULL_FACE)
         gl.glDisable(gl.GL_DEPTH_TEST)
         self._unbind_face_data()
+        if textured:
+            gl.glActiveTexture(gl.GL_TEXTURE0 + _TEXTURE_UNIT)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+            gl.glActiveTexture(gl.GL_TEXTURE0)

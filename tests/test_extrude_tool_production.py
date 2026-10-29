@@ -296,11 +296,11 @@ def test_a_failure_while_building_restores_the_mesh_and_selection(monkeypatch):
     real_add_face = mesh.add_face
     calls = []
 
-    def failing_add_face(vertex_ids):
+    def failing_add_face(vertex_ids, *args, **kwargs):  # Extrude passes the UVs too (AD-026)
         calls.append(1)
         if len(calls) == 3:
             raise RuntimeError("core refused")
-        return real_add_face(vertex_ids)
+        return real_add_face(vertex_ids, *args, **kwargs)
 
     monkeypatch.setattr(mesh, "add_face", failing_add_face)
     tool = ExtrudeTool()

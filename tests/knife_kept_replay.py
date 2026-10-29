@@ -80,6 +80,8 @@ def _relabelled(state: dict, ids: IdMaps) -> dict:
     out["edges"] = {e(k): {"v0": v(d["v0"]), "v1": v(d["v1"]), "faces": [f(x) for x in d["faces"]]}
                     for k, d in state["edges"].items()}
     out["faces"] = {f(k): [v(x) for x in b] for k, b in state["faces"].items()}
+    if state.get("face_uvs"):
+        out["face_uvs"] = dict(sorted((f(k), uvs) for k, uvs in state["face_uvs"].items()))
     if "symmetry" in state and state["symmetry"] is not None:
         out["symmetry"] = dict(state["symmetry"], seam_edges=[e(x) for x in state["symmetry"]["seam_edges"]])
     return out

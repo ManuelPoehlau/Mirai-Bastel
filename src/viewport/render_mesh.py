@@ -69,6 +69,14 @@ Normale pro Polygon statt pro Dreieck, und Smooth interpoliert die Normalen übe
 bilinear statt pro Dreieck linear. Die Vertex-Gruppe bleibt unverändert. `triangle_faces` ändert
 sich nur strukturell; `face_shading` wird beim Verschieben zeilenweise gepatcht (die Faces um
 alle Vertices, deren Normale sich geändert hat).
+
+Textur (AD-026, 2026-10-29): hat die Mesh Face-Ecken-UVs und das gebundene Material eine Textur
+(`material.texture`), legt `RenderMesh` eine dritte Daten-Ressource an, `triangle_uvs`: je
+Dreiecks-Slot die UVs seiner drei Ecken (6 Floats, in der Reihenfolge seiner Indizes; eine Face ohne
+UVs, ein freier oder versteckter Slot trägt `UNMAPPED_UV`). Pro Dreieck statt pro Vertex, weil eine
+UV-Naht denselben Vertex in zwei Faces verschieden abbildet. Sie folgt den Dreiecks-Slots wie
+`triangle_faces` (neu geschrieben, wo ein Topology-Patch Dreiecke schreibt) und ändert sich nicht
+beim Verschieben. Ohne Textur gibt es sie nicht - kein Upload, kein Unterschied zu vorher.
 """
 
 from __future__ import annotations
@@ -101,6 +109,12 @@ MESH_GROUP_INDEX = "indices"
 
 FACE_DATA = "face_shading"
 TRIANGLE_FACES = "triangle_faces"
+#: AD-026: je Dreiecks-Slot die UVs seiner drei Ecken (nur mit Textur, Modul-Docstring).
+TRIANGLE_UVS = "triangle_uvs"
+TRIANGLE_UV_FLOATS = 6
+#: u einer Ecke ohne UVs (der Shader zeigt dort die Grundfarbe); endlich in float32.
+UNMAPPED_U = -1.0e30
+_UNMAPPED_TRIANGLE = (UNMAPPED_U, 0.0) * 3
 #: Texel (vec4) je Face-Zeile: (Normale, Eckenzahl), 4 Eck-Positionen, 4 Eck-Normalen.
 FACE_ROW_TEXELS = 9
 FACE_ROW_FLOATS = FACE_ROW_TEXELS * 4
@@ -183,6 +197,11 @@ class RenderMesh:
         # dass ein nie platziertes Objekt genau die bisherigen Ressourcen hat.
         self.store.declare_uniform("model_uniforms")
         self.store.declare_face_data(FACE_DATA, TRIANGLE_FACES, FACE_ROW_TEXELS)
+        declare_uvs = getattr(self.store, "declare_triangle_uvs", None)
+        if declare_uvs is not None:
+            declare_uvs(TRIANGLE_UVS)
+        # AD-026: ob `triangle_uvs` gerade existiert (Mesh mit UVs und Material mit Textur).
+        self._uv_active = False
         # Änderungs-Journal der Mesh (AD-023 V1): was sich seit dem letzten Sync geändert hat.
         self._watch = mesh.watch()
         self._mirror: dict[str, array] = {}
@@ -459,6 +478,73 @@ class RenderMesh:
     def _indices_flat(self) -> list[float]:
         return [c for t, tri in enumerate(self._triangle_indices) for c in self._triangle_values(t, tri)]
 
+    # -- UVs (AD-026, Modul-Docstring) -------------------------------------------------------
+
+    def _uv_wanted(self) -> bool:
+        return getattr(self.material, "texture", None) is not None and self.mesh.has_face_uvs()
+
+    def _triangle_uv_values(self, t: int, tri, corners: dict | None = None) -> tuple:
+        if tri is None or self._triangle_hidden(t, tri):
+            return _UNMAPPED_TRIANGLE
+        face = self._row_face[self._triangle_face_rows[t]]
+        if corners is None:
+            uvs = self.mesh.face_uvs(face)
+            if uvs is None:
+                return _UNMAPPED_TRIANGLE
+            corners = dict(zip(self._face_boundary[face], uvs))
+        a, b, c = corners[tri[0]], corners[tri[1]], corners[tri[2]]
+        return (a[0], a[1], b[0], b[1], c[0], c[1])
+
+    def _triangle_uvs_flat(self) -> list[float]:
+        face_uvs = self.mesh.face_uvs
+        values: list = [_UNMAPPED_TRIANGLE] * len(self._triangle_indices)
+        for face, slots in self._face_triangles.items():
+            uvs = face_uvs(face)
+            if uvs is None:
+                continue
+            corners = dict(zip(self._face_boundary[face], uvs))
+            for t in slots:
+                values[t] = self._triangle_uv_values(t, self._triangle_indices[t], corners)
+        return [c for v in values for c in v]
+
+    def _upload_triangle_uvs(self, slots) -> None:
+        if not self._uv_active or not slots:
+            return
+        cache: dict = {}
+        face_uvs = self.mesh.face_uvs
+        for run in _runs(slots):
+            data: list[float] = []
+            for t in run:
+                tri = self._triangle_indices[t]
+                if tri is None:
+                    data.extend(_UNMAPPED_TRIANGLE)
+                    continue
+                face = self._row_face[self._triangle_face_rows[t]]
+                if face not in cache:
+                    uvs = face_uvs(face)
+                    cache[face] = None if uvs is None else dict(zip(self._face_boundary[face], uvs))
+                corners = cache[face]
+                data.extend(_UNMAPPED_TRIANGLE if corners is None else self._triangle_uv_values(t, tri, corners))
+            self.store.update(TRIANGLE_UVS, run[0] * TRIANGLE_UV_FLOATS, data, len(data) * FLOAT_BYTES)
+
+    def _sync_uv_resource(self) -> None:
+        """Legt `triangle_uvs` an oder gibt sie frei, wenn Textur oder UVs kommen oder gehen."""
+        wanted = self._uv_wanted()
+        if wanted == self._uv_active:
+            return
+        self._uv_active = wanted
+        if wanted:
+            data = self._triangle_uvs_flat()
+            self.store.allocate(TRIANGLE_UVS, len(data) * FLOAT_BYTES)
+            self.store.update(TRIANGLE_UVS, 0, data, len(data) * FLOAT_BYTES)
+        elif self.store.has(TRIANGLE_UVS):
+            self.store.destroy(TRIANGLE_UVS)
+
+    def _push_texture(self) -> None:
+        set_texture = getattr(self.store, "set_texture", None)
+        if set_texture is not None:
+            set_texture(getattr(self.material, "texture", None) if self._uv_active else None)
+
     def _face_row_data(self, face_id: FaceId) -> list[float]:
         return self._face_rows_data((face_id,))
 
@@ -547,9 +633,15 @@ class RenderMesh:
 
         put(TRIANGLE_FACES, [float(row) for row in self._triangle_face_rows])
         put(FACE_DATA, self._face_data_flat())
+        self._uv_active = self._uv_wanted()
+        if self._uv_active:
+            put(TRIANGLE_UVS, self._triangle_uvs_flat())
+        elif self.store.has(TRIANGLE_UVS):
+            self.store.destroy(TRIANGLE_UVS)
 
         if self.material is not None:
             put("material_uniforms", self.material.uniform_packet())
+            self._push_texture()
         if self.camera is not None:
             put("camera_uniforms", self._camera_uniforms())
 
@@ -646,7 +738,7 @@ class RenderMesh:
 
     def _structural(self, change) -> bool:
         mesh = self.mesh
-        if change.faces:
+        if change.faces or change.face_uvs:
             return True
         index = self._vertex_index
         return any((v in index) != mesh.is_valid_vertex(v) for v in change.vertices)
@@ -666,6 +758,8 @@ class RenderMesh:
         """Patcht Slot-Layout, Derived Data und Buffer für die vom Journal gemeldete Änderung
         (Modul-Docstring). False = nichts verändert, der Aufrufer baut voll neu auf."""
         mesh = self.mesh
+        if self._uv_active != self._uv_wanted():
+            return False  # the UV map came or went (a load, an Undo of it): the full rebuild decides
         index = self._vertex_index
         face_row = self._face_row
         face_boundary = self._face_boundary
@@ -807,8 +901,11 @@ class RenderMesh:
             if edge_dirty is not None:
                 edge_dirty.add(slot)
 
-        # Neu triangulieren: neue / geänderte Faces und alle Faces um bewegte Vertices.
+        # Neu triangulieren: neue / geänderte Faces und alle Faces um bewegte Vertices; dazu Faces mit
+        # neuen UVs (AD-026: ihre Dreiecks-Slots bekommen sie beim Schreiben).
         retri: set[FaceId] = set(new_boundary)
+        if self._uv_active:
+            retri.update(f for f in change.face_uvs if f in face_row and is_valid_face(f))
         for v in (*moved_v, *self._retriangulate):
             faces_of = v2f.get(v)
             if faces_of:
@@ -869,6 +966,7 @@ class RenderMesh:
         for run in _runs(tri_slots):
             data = [float(self._triangle_face_rows[t]) for t in run]
             self.store.update(TRIANGLE_FACES, run[0], data, len(data) * FLOAT_BYTES)
+        self._upload_triangle_uvs(tri_slots)
         self._upload_rows(row_slots)
         if self.overlay is not None:
             # Wie der volle Rebuild: die Flags passen zu den (neuen) Slots und zur Auswahl.
@@ -965,6 +1063,8 @@ class RenderMesh:
             "material_uniforms", 0, packet, len(packet) * FLOAT_BYTES
         )
         self.stats.count("partial_updates")
+        self._sync_uv_resource()
+        self._push_texture()
 
     def _sync_camera(self) -> None:
         if self.camera is None:

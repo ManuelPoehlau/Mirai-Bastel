@@ -474,3 +474,33 @@ class SubdSurface:
     def build_seconds(self, n: int) -> float:
         """Total seconds spent on levels 1..n (as currently cached)."""
         return sum(self._levels[k].build_seconds for k in range(1, n + 1))
+
+
+def refine_face_uvs(face_uvs, face_sizes, level: int) -> list:
+    """Face-corner UVs of the derived faces at `level` (AD-026), parallel to `SubdLevel.faces`.
+
+    Face-varying *linear* refinement (OpenSubdiv's `FVAR_LINEAR_ALL`): a sub-face's corners take the
+    parent's corner, the two edge midpoints and the face centre in UV space, so seams stay exact and
+    no UV crosses its island; the positions are smoothed, the UVs are not (the texture slides a little
+    on strongly curved control faces). `face_uvs[i]` is None for a control face without UVs, then its
+    sub-faces have none either. Same sub-face order as `_refine`: per face, per corner k the quad
+    (corner k, edge k, centre, edge k-1)."""
+    faces = list(face_uvs)
+    sizes = list(face_sizes)
+    for _ in range(level):
+        out = []
+        out_sizes = []
+        for uvs, n in zip(faces, sizes):
+            if uvs is None:
+                out.extend([None] * n)
+                out_sizes.extend([4] * n)
+                continue
+            cu = sum(u for u, _ in uvs) / n
+            cv = sum(v for _, v in uvs) / n
+            centre = (cu, cv)
+            mids = [((uvs[k][0] + uvs[(k + 1) % n][0]) * 0.5, (uvs[k][1] + uvs[(k + 1) % n][1]) * 0.5) for k in range(n)]
+            for k in range(n):
+                out.append((uvs[k], mids[k], centre, mids[k - 1]))
+            out_sizes.extend([4] * n)
+        faces, sizes = out, out_sizes
+    return faces

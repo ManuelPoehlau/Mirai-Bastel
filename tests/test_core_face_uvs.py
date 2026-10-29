@@ -118,14 +118,17 @@ def test_connect_and_split_face():
     assert_uv_invariants(mesh)
 
 
-def test_split_face_uses_the_origin_when_its_sources_are_corners():
-    mesh, vid = grid()
-    face = next(f for f in mesh.all_face_ids() if vid[(0, 0)] in mesh.face_vertices(f))
-    origin = ((vid[(0, 0)], 0.5), (vid[(1, 0)], 0.25), (vid[(1, 1)], 0.25))
-    new, _e, a, _b = mesh.split_face(face, vid[(0, 0)], vid[(1, 1)], [(0.7, 0.2, 0.0)], origins=[origin])
-    u = 0.5 * 0 + 0.25 * (1 / 3) + 0.25 * (1 / 3)
-    v = 0.25 * 0.5
-    assert mesh.corner_uv(a, new[0]) == pytest.approx((u, v))
+def test_split_face_interior_uvs_do_not_depend_on_origins():
+    """A layered mesh (the Knife passes origins) cuts its UVs exactly like a plain one."""
+    meshes = []
+    for origins in (None, "given"):
+        mesh, vid = grid()
+        face = next(f for f in mesh.all_face_ids() if vid[(0, 0)] in mesh.face_vertices(f))
+        origin = ((vid[(0, 0)], 0.5), (vid[(1, 0)], 0.25), (vid[(1, 1)], 0.25))
+        mesh.split_face(face, vid[(0, 0)], vid[(1, 1)], [(0.7, 0.2, 0.0)], origins=[origin] if origins else None)
+        meshes.append(mesh)
+    assert content(meshes[0]) == content(meshes[1])
+    assert_planar(meshes[0])
 
 
 def test_collapse_edge_moves_continuous_corners_and_keeps_the_seam():

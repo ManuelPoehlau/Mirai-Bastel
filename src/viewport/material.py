@@ -80,11 +80,15 @@ MATTE_FINISH = SurfaceFinish(specular=0.0, fill_specular=0.0)
 
 
 class Material:
-    """Base colour + finish (duck-typed `uniform_packet()` for `RenderMesh.bind_material`)."""
+    """Base colour + finish (duck-typed `uniform_packet()` for `RenderMesh.bind_material`), and the
+    path of a texture image (AD-026; None = none). The texture is not part of the packet: `RenderMesh`
+    hands it to its store (`set_texture`) when the mesh has UVs, and a textured fragment takes its
+    colour from the image instead of `color`."""
 
-    def __init__(self, color: Vec3, finish: SurfaceFinish = DEFAULT_FINISH) -> None:
+    def __init__(self, color: Vec3, finish: SurfaceFinish = DEFAULT_FINISH, texture: str | None = None) -> None:
         self.color = tuple(float(c) for c in color)
         self.finish = finish
+        self.texture = texture
 
     def uniform_packet(self) -> list[float]:
         f = self.finish

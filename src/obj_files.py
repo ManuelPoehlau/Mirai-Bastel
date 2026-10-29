@@ -3,8 +3,12 @@
 Der Ordner `obj/` (Repo-Wurzel, in `.gitignore`) ist Quelle und Ziel; im `SPACE`-Menü erscheinen:
 
     OBJ exportieren              - das Edit-Objekt (Weltraum) als neue Datei `<Name>_<Datum-Uhrzeit>.obj`
+                                   (mit seinen UVs als `vt`, AD-026)
     OBJ importieren: <name>      - die `.obj`-Dateien des Ordners, neueste zuerst (höchstens 10);
-                                   ein Klick fügt sie als neues, bearbeitbares Objekt hinzu
+                                   ein Klick fügt sie als neues, bearbeitbares Objekt hinzu, samt UVs
+                                   und Textur (`map_Kd` der MTL-Datei oder ein Bild gleichen Namens)
+    Textur anzeigen: an / aus    - nur, solange ein Objekt eine Textur hat: schaltet die Anzeige aller
+                                   Texturen (`Application.toggle_texture_display`, kein Undo-Schritt)
 
 Schreiben und Einlesen machen `Application.export_obj` / `Application.import_obj`; dieses Modul
 kennt nur Pfade und Labels und importiert kein pyglet (headless testbar).
@@ -21,6 +25,7 @@ MAX_LISTED_FILES = 10
 
 EXPORT_LABEL = "OBJ exportieren"
 IMPORT_LABEL_PREFIX = "OBJ importieren: "
+TEXTURE_LABEL_PREFIX = "Textur anzeigen: "
 
 
 class ObjFiles:
@@ -39,14 +44,22 @@ class ObjFiles:
 
     def entries(self) -> tuple[str, ...]:
         self._files_by_label = {IMPORT_LABEL_PREFIX + p.stem: p for p in self.files()}
-        return (EXPORT_LABEL,) + tuple(self._files_by_label)
+        return (EXPORT_LABEL,) + tuple(self._files_by_label) + self._texture_entries()
+
+    def _texture_entries(self) -> tuple[str, ...]:
+        if not any(obj.texture is not None for obj in self.app.scene.objects.values()):
+            return ()
+        return (TEXTURE_LABEL_PREFIX + ("an" if self.app.display.show_texture else "aus"),)
 
     def handles(self, label: str) -> bool:
-        return label == EXPORT_LABEL or label in self._files_by_label
+        return label == EXPORT_LABEL or label in self._files_by_label or label.startswith(TEXTURE_LABEL_PREFIX)
 
     def activate(self, label: str) -> bool:
         if label == EXPORT_LABEL:
             return self.export()
+        if label.startswith(TEXTURE_LABEL_PREFIX):
+            self.app.toggle_texture_display()
+            return True
         path = self._files_by_label.get(label)
         return path is not None and self.import_file(path)
 

@@ -137,6 +137,8 @@ Ebenso dort: die Self-Shadowing-Studie `playground/shadow_map.py` (Tiefenkarte, 
 
 ### UVs, Baking und Split Normals (Retopo-Raum)
 
+**Stand 2026-10-29:** UVs aus einer OBJ-Datei samt Textur importieren, anzeigen und beim Modellieren mitführen ist gebaut ([AD-026](../architecture/AD-026-FACE-CORNER-UVS-AND-TEXTURE.md)); UV-Editor, Texture Painting und Baking bleiben hier (Manu 2026-10-29: „brauche ich noch nicht“).
+
 **Manu, 2026-10-20 (Chat, vom Agenten eingetragen):** UVs: ja. Split Normals: unsicher, ob nötig. Falls später im Retopo-Raum Displacements oder Normal Maps gebacken werden sollen, könnten sie nötig werden. Offene Fragen: ob harte Kanten als Kantenmarkierung genügen oder echte pro-Ecke-Normalen gebraucht werden, wo UV-Daten am Mesh wohnen (Ecken-Domäne, siehe [Audit 2](../research/viewport/ARCHITECTURE_AUDIT_2026-10-20_FUTURE_REQUIREMENTS.md) K2) und wie ein Bake auf dem Referenz-PC läuft (Strahlen auf die Quellfläche, Zielbild). Keine Implementierungszusage.
 
 ## Grundsatz

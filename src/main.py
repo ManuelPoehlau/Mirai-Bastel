@@ -169,7 +169,9 @@ Scope (binding, see the handoffs):
   markers (`Application.toggle_symmetry_display`; display only, the definition stays).
 - OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): rows in the SPACE menu - "OBJ exportieren"
   writes the edit object (world space) to `obj/`, "OBJ importieren: <name>" adds a file of `obj/` as a
-  new editable object.
+  new editable object. AD-026: UVs come and go with the file, an OBJ's texture (MTL `map_Kd` or a
+  same-named image) becomes the object's texture and shows in the viewport; "Textur anzeigen: an/aus"
+  switches all textures (the row exists while an object has one).
 - Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
   SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
   speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest

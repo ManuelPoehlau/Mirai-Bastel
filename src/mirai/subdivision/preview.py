@@ -47,7 +47,7 @@ from core import EdgeId, FaceId, SelectionMode, VertexId
 from ..interaction import commands
 from ..interaction.input import GLOBAL_CONTEXT, SUBD_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
 from ..scene_factory import mesh_from_positions_and_faces
-from .catmull_clark import SubdLevel, SubdSurface, SubdUnsupportedError
+from .catmull_clark import SubdLevel, SubdSurface, SubdUnsupportedError, refine_face_uvs
 
 # -- view state ---------------------------------------------------------------------------------
 
@@ -90,7 +90,7 @@ def topology_signature(mesh) -> tuple:
 def _structural(change, mesh, index: dict) -> bool:
     """True when the journal shows more than moved vertices: an edge or face touched, or a vertex
     created / removed since the last sync."""
-    if change.edges or change.faces:
+    if change.edges or change.faces or change.face_uvs:
         return True
     return any((v in index) != mesh.is_valid_vertex(v) for v in change.vertices)
 
@@ -273,6 +273,10 @@ class SubdSurfaceProvider:
             if signature != self._signature:
                 self._rebuild(signature)
                 return set()
+            if change.face_uvs and self._derived is not None:
+                # AD-026: only UVs changed (same topology): the level's faces keep their ids
+                self._build_level((self.surface_mesh, self._derived, self._derived_ids, self._derived_face_ids))
+                return set()
         if self._error is not None:
             self._set_message(self._error)  # unsupported topology: nothing to draw until it changes
             return set()
@@ -357,12 +361,18 @@ class SubdSurfaceProvider:
         patched = None
         if previous is not None and previous[1].level == derived.level:
             patched = _patch_derived_mesh(previous, derived, positions)
+        face_uvs = None
+        if mesh.has_face_uvs():
+            # AD-026: the texture shows on the smooth surface too (linear face-varying UVs)
+            control_uvs = [mesh.face_uvs(f) for f in surface.topology.face_ids]
+            face_uvs = refine_face_uvs(control_uvs, surface.topology.face_sizes, derived.level)
         if patched is not None:
             derived_mesh, vertex_ids, face_ids = patched
             self.surface_topology_changed = True
             self.surface_patches += 1
+            _set_derived_uvs(derived_mesh, face_ids, face_uvs)
         else:
-            derived_mesh = mesh_from_positions_and_faces(positions, derived.faces)
+            derived_mesh = mesh_from_positions_and_faces(positions, derived.faces, face_uvs)
             vertex_ids, face_ids = derived_mesh.all_vertex_ids(), derived_mesh.all_face_ids()
         edge_ids = surface.topology.edge_ids
         by_edge: dict[EdgeId, list[int]] = {}
@@ -413,6 +423,20 @@ class SubdSurfaceProvider:
         self.revision += 1
         self.last_update_ms = (time.perf_counter() - started) * 1000.0
         return moved
+
+
+def _set_derived_uvs(mesh, face_ids: list, face_uvs) -> None:
+    """The derived faces' UVs (None = the control mesh has none any more), written only where they
+    differ - a patched surface keeps most faces and their UVs."""
+    if face_uvs is None:
+        if mesh.has_face_uvs():
+            for fid in face_ids:
+                if mesh.face_uvs(fid) is not None:
+                    mesh.set_face_uvs(fid, None)
+        return
+    for fid, uvs in zip(face_ids, face_uvs):
+        if mesh.face_uvs(fid) != uvs:
+            mesh.set_face_uvs(fid, uvs)
 
 
 def _patch_derived_mesh(previous: tuple, derived: SubdLevel, positions: list):

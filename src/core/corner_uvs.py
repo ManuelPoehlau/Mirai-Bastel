@@ -28,6 +28,17 @@ _EPS = 1e-12
 
 def uv_tuple(uvs, n: int) -> FaceUVs:
     """`uvs` as a tuple of `n` pairs of finite floats; ValueError otherwise."""
+    if type(uvs) is tuple and len(uvs) == n:
+        # fast path (the SubD surface and the primitives pass tuples of float pairs): x - x is 0.0
+        # exactly for a finite x and NaN for NaN / inf
+        for uv in uvs:
+            if type(uv) is not tuple or len(uv) != 2:
+                break
+            u, v = uv
+            if type(u) is not float or type(v) is not float or (u - u) + (v - v) != 0.0:
+                break
+        else:
+            return uvs
     try:
         out = tuple((float(u), float(v)) for u, v in uvs)
     except (TypeError, ValueError):

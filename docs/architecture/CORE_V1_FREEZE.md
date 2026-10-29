@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -406,6 +406,25 @@ change can do it: the API returns values, the storage is internal; (3) AD-025 §
 random operations, equality incl. −0.0 and deleted slots, copy independence, the append-only map, 25 bytes per point).
 Cost [C]: per-element reads ≈ 0.3 µs instead of ≈ 0.04 µs (a dense target written per element 11 → 37 ms at 20k); bulk
 map 215 → 95 ms for 10 dense layers at 20k; details in AD-025 §17.
+
+**Decision:** AD-026 face-corner UVs and an object texture (2026-10-29; [AD-026](AD-026-FACE-CORNER-UVS-AND-TEXTURE.md);
+Manu's request of 2026-10-29 — import an OBJ with UVs and a texture from ZBrush and keep the texture while modelling — is
+the requirement; no separate Go was asked, the change is additive and Manu can overturn it in the B24 practical test)
+
+`Mesh` gains a corner domain: per face one `(u, v)` per boundary corner (`_face_uvs`, one write path `_write_uvs`), API
+`has_face_uvs` / `face_uvs` / `corner_uv` / `set_face_uvs`, `add_face(…, uvs=None, *, infer_uvs=True)`. Every topology
+primitive carries the UVs by a documented rule (AD-026 §3: `split_edge` per face, `connect_vertices` / `split_face` from
+the parent with mean value coordinates for interior points — new module `src/core/corner_uvs.py` —, `collapse_edge`,
+Dissolve, deletions; `add_face` without UVs infers them from the neighbours). Journal: `MeshChange.face_uvs`,
+`MeshDelta.face_uvs`, handled by `end_change` / `rollback_change` / `revert_change` / `apply_delta` / `load_state`.
+File: additive key `"face_uvs"` in `export_state()`; `SceneObject.texture` (`Scene.add_object(…, texture=)`); scene format
+version 6 only when UVs or a texture exist (4 / 5 files unchanged). Freeze rule (§7): (1) requirement — above; (2) the
+public API had no corner domain, and data outside the Mesh does not survive the journal's rollbacks (AD-025 X-2);
+(3) audit 2026-10-20 K2 / A4, AD-025 §4.5; (4) smallest extension — one dict, one record slot, additive keywords and keys;
+untouched: every existing signature's behaviour on a mesh without UVs (export: one more key, `null`), the face / edge /
+vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
+exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
+`tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
 
 ## 2. Was vor dem Freeze validiert wurde
 
