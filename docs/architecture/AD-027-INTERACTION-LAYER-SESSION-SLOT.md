@@ -1,8 +1,9 @@
 # AD-027 — Interaction layer: one session slot, one `can_run`, feature controllers
 
-**Status:** PROPOSED (2026-10-29). Architecture Gate (Type C), stop point before code: Manu takes this draft to the
-Development chat for a second opinion; the implementation (§7) starts after his go. No code has changed with this text.
-**Mode (M5):** Architecture Gate, then Production (a behaviour-neutral restructuring).
+**Status:** **DECIDED (Manu, 2026-10-29: go with C1–C3; V1, V3, V7 stay as they are).** Proposed the same day as the
+Architecture Gate (Type C) stop point; second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md)
+(Development chat): ACCEPT WITH CHANGES, disposition in §12. **Not implemented yet** (M0 not started).
+**Mode (M5):** Production (a behaviour-neutral restructuring), in fresh sessions with this AD as the handoff (§7).
 **Baseline:** `main` @ `dfd6e5d`. Every code fact, line count and probe result below was read or run there.
 **References:** AGENTS.md §5, §7, §7a, §8a · Development System §5 · [SOURCE_ARCHITECTURE](SOURCE_ARCHITECTURE.md) ·
 [INPUT_COMMAND_TOOL_CONTRACT](INPUT_COMMAND_TOOL_CONTRACT.md) §5 · [AD-013](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md)
@@ -19,11 +20,13 @@ code: `src/mirai/application.py`, `src/mirai/interaction/`, `src/main.py`, `src/
   Interaktion (Knife, W/E/R halten, Box-Auswahl …); **eine Frage** „darf dieser Befehl jetzt laufen?“, die Tasten,
   Befehle, HUD und später Buttons gleich beantwortet; **Knife, Morph, Objekte, Symmetrie** und die Halte-Gesten
   ziehen in eigene Module.
-- **Verhalten:** bleibt gleich, auch in Ecken wie „P halten, dann W, dann Esc“ (§1.1). Belegt wird das so: Vor dem
-  Umbau werden zehntausende zufällige und geskriptete Eingabefolgen aufgezeichnet; nach jedem Umbauschritt müssen sie
-  Schritt für Schritt exakt gleich ablaufen (§6).
-- **Was du tun musst:** diesen Entwurf in den Development-Chat geben (zweite Meinung), dann dein Go. Danach kein
-  Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas anders anfühlt (§10).
+- **Verhalten:** bleibt gleich, auch in Ecken wie „P halten, dann W, dann Esc“ (§1.1; deine Entscheidung: V1, V3, V7
+  bleiben so). Belegt wird das so: Vor dem Umbau werden zehntausende zufällige und geskriptete Eingabefolgen
+  aufgezeichnet; nach jedem Umbauschritt müssen sie Schritt für Schritt exakt gleich ablaufen (§6). Danach bleiben
+  nur die lesbaren Szenarien als Tests; die Zufallsaufzeichnung wird gelöscht, damit sie spätere gewollte Änderungen
+  (Tasten, Phase 6) nicht blockiert.
+- **Stand:** entschieden (dein Go, 2026-10-29, mit den drei Änderungen der zweiten Meinung, §12). Der Umbau läuft in
+  drei frischen Sessions (§7). Kein Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas anders anfühlt (§10).
 - **Danach:** AD-025 Phase 6 mit dem Kiefer-Szenario.
 
 ## 0. Decisions this AD rests on
@@ -39,6 +42,8 @@ code: `src/mirai/application.py`, `src/mirai/interaction/`, `src/main.py`, `src/
   mode, clickable GUI, morph sliders), not neatness; no failure has been observed yet.
 - *Assumption (unconfirmed, from the handoff):* the clickable GUI (Mirai UX project) dispatches through the same
   command path. If it does not, only the GUI use of (b) is wasted; (a) and (c) stand on their own.
+- *Artist (Manu, 2026-10-29), after the second opinion:* "Go for AD-027 with C1-C3. V1, V3, V7 stay as they are."
+  (C1–C3 and the review: §12.)
 
 ## 1. Problem (measured at `dfd6e5d`)
 
@@ -150,7 +155,8 @@ window and HUD read (`knife_render_data`, `selection_box`, `selection_lasso`, `g
 runs, `pivot_marker_items()`, `cursor_wrap_active`, the HUD's running label) stays public on `Application` and reads
 the slot. No new draw timing.
 
-**Routing rule** (`InteractionSlot.route`; the only place precedence lives):
+**Routing rule** (`InteractionSlot.route`; the only place precedence lives inside `Application` — a UI hit-test in
+front of it, §3.5, is outside this rule):
 
 1. **Grab:** if `session.grabs(event)`, the session alone handles it.
 2. **Hold claims** in rank order.
@@ -288,6 +294,15 @@ def key_press(self, input: Input) -> bool:
   its owner is a new `interaction_owner` value stays GUI_STAGE1_HUD §5 Q4 (not decided here).
 - **GUI button:** `dispatch_command(cmd)` with the same gates as the key; greyed out when
   `can_run(cmd, RunContext("ui", operands=False))` refuses.
+- **UI in front of the slot (C2).** A grabbing session takes every pointer event *that reaches `Application`* (the
+  Knife: every plain LMB). A window-level UI hit-test may therefore sit in front of `Application.pointer_*` and so in
+  front of `InteractionSlot.route`: a press on a panel goes to the UI, a miss goes on to `Application`. Which presses a
+  panel takes while a session runs is **not decided here** (Mirai UX project; GUI_STAGE1_HUD §5 Q4). The slot API
+  keeps this open: the slot knows no window and no panel; `Application.pointer_*` stay its only pointer entries; no
+  session assumes it sees every pointer event — only every event of a press it took. The one requirement on such a
+  UI layer: drags and the release follow their press (capture at press, as `PointerGestures` fixes a gesture at
+  press, AD-019), so a session never loses the release of a press it took, and a panel never gets half a viewport
+  gesture.
 
 ## 4. Alternatives
 
@@ -350,12 +365,19 @@ behaviour (V8).
   commit and cancel, symmetric session), W/E/R held with a constraint, Alt orbit, Shift fine and Ctrl snap, Box /
   Paint / Lasso (also through), gizmo click and drag, Working Pivot (place, tap, Esc), the morph view (Tab, W in the
   view, N drag, Undo), Undo/Redo chains, object gestures with a mirror pair, Re-Symmetrize — and V1–V7.
-- *Rule:* after M0 the corpus is never re-recorded to make a step pass. A divergence is a bug of that step. Only a
-  bug in the driver itself justifies re-recording, and then from a worktree of the baseline commit.
+- *Rule:* from M0 to M8 the corpus is never re-recorded to make a step pass. A divergence is a bug of that step. Only
+  a bug in the driver itself justifies re-recording, and then from a worktree of the baseline commit.
+- *Lifecycle (C1):* the randomised digest corpus is a **migration oracle, not a permanent test**: it encodes every
+  binding and every status text, so any intended keymap or behaviour change after the migration (UX project,
+  Phase 6) would break it. At M8 the randomised digest fixtures and the random generator are removed. The scripted
+  sequences (V1–V7 and the test-point scenarios above) stay as readable regression tests: named steps with explicit
+  assertions on the observations that matter to each scenario, so an intended change later edits a readable
+  expectation instead of re-recording digests.
 
 **E2 — Differential deep run per step.** The same driver runs in two subprocesses, one on a `git worktree` of
 `dfd6e5d`, one on the working tree, with seeds beyond the corpus (≥ 200 000 events on the small meshes and ≥ 20 000
-on the basemesh per step, under ten minutes); the first divergence is printed with both observations. Not committed.
+on the basemesh per step, under ten minutes); the first divergence is printed with both observations. A migration
+tool only: not committed beyond the driver it shares with E1, and removed with the random generator at M8 (C1).
 
 **E3 — Suites.** Targeted tests while moving a cluster; at the end once: `tests/` fully (baseline: 5 449 passed,
 125 skipped, 8 min 50 s), the GL tests in their own process, `experiments/morph_lab/tests`, and the Knife oracle — its
@@ -381,6 +403,10 @@ reported, not guessed.
 
 Each step is one or more commits. After each: E1 equal, E2 equal, the moved cluster's targeted tests green.
 
+**Execution (C3):** in three fresh sessions with this AD as the handoff — **M0–M2**, **M3–M5**, **M6–M8** —
+Claude Opus 5.5, effort **high**. Each session starts from the branch state the previous one pushed and reads §3, §6
+and its rows below; a session ends with its steps green (E1, E2, targeted tests) and pushed.
+
 | Step | Content | Why here |
 |---|---|---|
 | M0 | Driver, scripted sequences and the golden corpus, recorded on the baseline; no `src/` change | the oracle must exist before anything moves |
@@ -389,9 +415,9 @@ Each step is one or more commits. After each: E1 equal, E2 equal, the moved clus
 | M3 | KnifeController + `KnifeSession` | self-contained, the largest block of test accesses |
 | M4 | the four hold keys; MorphController (lifecycle, editing view, view policy) | the hold rank (V1, V4) is pinned before the gestures move |
 | M5 | `DragSelect`, `GizmoPress`, `SwallowedGesture` | the pointer sessions the gestures hand over to |
-| M6 | `GestureSession` and its kinds (Move/Rotate/Scale via `ToolManager`, Extrude, Loop / Vertex Slide, Smooth / Relax, Inset / Bevel), the gizmo / Tweak origin, Soft live radius and flow | the biggest step; everything it touches is in place |
+| M6 | `GestureSession` and its kinds (Move/Rotate/Scale via `ToolManager`, Extrude, Loop / Vertex Slide, Smooth / Relax, Inset / Bevel), the gizmo / Tweak origin, Soft live radius and flow — **one gesture kind at a time, E1 and E2 after each kind** (C3), not only at the end of the step | the biggest step; everything it touches is in place |
 | M7 | ObjectController, including the object gesture kind and the stage-4 policy | the object gesture is a gesture kind |
-| M8 | command table; E5 checks; SOURCE_ARCHITECTURE; line counts; E3 | closes the DoD |
+| M8 | command table; E5 checks; SOURCE_ARCHITECTURE; line counts; E3; then the scripted sequences become the permanent regression tests and the randomised digest fixtures and generator are removed (C1) | closes the DoD |
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 
@@ -400,11 +426,12 @@ Each step is one or more commits. After each: E1 equal, E2 equal, the moved clus
 | No modal state outside the session slot | E5 (i): the field list of `Application.__init__` against §3.1 |
 | One `can_run` used by keys, `dispatch_command` and the HUD | grep: no `_*_refuses` left; E5 (iv); tests that call it through each path |
 | The named clusters live outside `Application` | `controllers/{knife,morph,objects,symmetry}.py` (plus gestures, pointer tools); E5 (ii) |
-| Behaviour equivalence | E1 and E2 equal after every step; E3 green; numbers reported (events, scenes, seeds) |
+| Behaviour equivalence | E1 and E2 equal after every step (in M6 after every gesture kind); E3 green; numbers reported (events, scenes, seeds) |
+| Corpus lifecycle (C1) | after M8: the scripted sequences (V1–V7, the test-point scenarios) are readable regression tests in `tests/`; no randomised digest fixture or random generator is left in the repository |
 | `SOURCE_ARCHITECTURE.md` reflects the structure | updated at M8 |
 | Line counts before / after, model / effort for Phase 6 | in the final report; before (§1): `application.py` 7 713, `main.py` 841, `hud.py` 481, `src/mirai` 30 184 |
 
-## 9. Risks, limits and open points for the second opinion
+## 9. Risks, limits and the points put to the second opinion
 
 **Risks.** A large diff — mitigated by the steps and E1/E2 after each. Exact float equivalence — a step must not
 reorder float arithmetic; if that ever proves unavoidable it is reported as a finding, never absorbed by re-recording.
@@ -412,16 +439,17 @@ reorder float arithmetic; if that ever proves unavoidable it is reported as a fi
 member needs a reason in the commit.
 
 **Limits.** The accidental orders V1, V3 and V7 (a held P beats a later W or an open preview for LMB and Esc) are
-kept, not normalised: normalising is a behaviour change. The equivalence covers what E1 observes (§6); the GPU picking
+kept, not normalised (Manu, 2026-10-29: "V1, V3, V7 stay as they are"); normalising them would be a behaviour change
+and a new decision. The equivalence covers what E1 observes (§6); the GPU picking
 path and the pyglet adapter keep their own tests.
 
-**Open points (for the Development chat):**
+**Points put to the Development chat — all decided as chosen (DEVCHAT-001, Manu's go; §12):**
 
 1. Hold keys as a second, ranked list inside the slot (chosen) — or as input state outside the session concept?
 2. `dispatch_command` gated (chosen; one AD-013 H2 sentence changes) — or `dispatch_command` ungated and a new gated
    `run_command` for the UI?
 3. A `src/mirai/controllers/` package (chosen) — or flat modules next to the existing feature modules?
-4. Normalise V1, V3, V7 later (Manu's call, a behaviour change) — or keep them?
+4. Normalise V1, V3, V7 later (a behaviour change) — or keep them? **Kept** (Manu).
 5. AD-013 H2's `CommandGate` and `hover_suspended` have no host writer since 2026-10-24 (V9): keep them as stage 2
    (chosen) — or retire them in a separate decision?
 6. The HUD uses `can_run` as data only (chosen) — greying the hints is the UX project's decision.
@@ -436,3 +464,16 @@ sich etwas anders anfühlt. Die Gleichheit prüfen die aufgezeichneten Eingabefo
 Behaviour, key or binding changes; `config/keymap.json`; any GUI or HUD look; skeleton and skinning; new features;
 Core changes; rewriting tool internals (Knife engines, topology operations, SubD, picking); Lab changes beyond keeping
 the Morph Lab running.
+
+## 12. Review disposition
+
+Second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md) (Development chat,
+2026-10-29, archived verbatim): **ACCEPT WITH CHANGES**. Manu's go the same day: "Go for AD-027 with C1-C3. V1, V3, V7
+stay as they are." The AD is DECIDED with the changes below; nothing beyond them was changed.
+
+| Point | Review | Disposition |
+|---|---|---|
+| Open points 1–6 (§9) | agrees with the chosen option in each (1: precedence in one place; 2: an ungated public entry is the V8 bug class, GUI and future scripts hit the same gate; 3: keeps interaction code apart from the model modules and makes E5 (ii) checkable; 4: keep V1/V3/V7; 5: retiring `CommandGate` is a separate decision; 6: greying is the UX project's call) | Chosen options stand; §9 marks them decided |
+| C1 — corpus lifecycle | the randomised digest corpus is a migration oracle, not a permanent test; after M8 keep the scripted sequences as readable regression tests, remove the randomised digest fixtures; state it in §6 and the DoD | **Adopted:** §6 E1 *Lifecycle*, E2 (removed with the generator), §7 M8, §8 row "Corpus lifecycle" |
+| C2 — UI in front of the slot | a grabbing session would swallow clicks on future panels; do not decide panel / viewport pointer ownership; state that a window-level UI hit-test may sit in front of `InteractionSlot.route` and keep the slot API from precluding it | **Adopted:** §3.5 "UI in front of the slot" (the slot knows no window, `Application.pointer_*` stay its only pointer entries, no session assumes it sees every pointer event; the one requirement on a UI layer: drags and the release follow their press); §3.2 routing rule scoped to `Application`. Ownership stays GUI_STAGE1_HUD §5 Q4 |
+| C3 — execution | fresh sessions with AD-027 as the handoff, split M0–M2, M3–M5, M6–M8, Opus 5.5 high; in M6 E1/E2 after each gesture kind | **Adopted:** §7 "Execution", M6 row, §8 equivalence row. This replaces the drafting session's suggestion (same session, xhigh) |
