@@ -89,16 +89,22 @@ def mirror_mesh(mesh: Mesh, normal: Vec3) -> Mesh:
 
     Point layers (AD-025 §4.3 Phase 5: a frame change of a new mesh): every layer is copied in order,
     with its name and rule, through the same index map; a vector value maps like a position, `v -> H v`
-    (bit-exact mirror for an axis plane: H holds only 0 and ±1)."""
+    (bit-exact mirror for an axis plane: H holds only 0 and ±1). Face-corner UVs (AD-026) follow
+    their corners through the reversed winding, values unchanged."""
     h = reflection_matrix(normal)
     vertex_ids = sorted(mesh.all_vertex_ids())
     index = {vid: i for i, vid in enumerate(vertex_ids)}
     positions = [_apply(h, mesh.vertex_position(vid)) for vid in vertex_ids]
     faces = []
+    face_uvs = [] if mesh.has_face_uvs() else None
     for fid in sorted(mesh.all_face_ids()):
         boundary = [index[vid] for vid in mesh.face_vertices(fid)]
         faces.append([boundary[0]] + boundary[:0:-1])
-    mirrored = mesh_from_positions_and_faces(positions, faces)
+        if face_uvs is not None:
+            uvs = mesh.face_uvs(fid)
+            # UVs stay as they are (AD-026): the mirror image shows the same texture, mirrored
+            face_uvs.append(None if uvs is None else (uvs[0],) + uvs[:0:-1])
+    mirrored = mesh_from_positions_and_faces(positions, faces, face_uvs)
     new_ids = sorted(mirrored.all_vertex_ids())
     for eid in sorted(mesh.all_edge_ids()):
         if not mesh.edge_faces(eid):

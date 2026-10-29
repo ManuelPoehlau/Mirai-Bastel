@@ -295,7 +295,9 @@ def test_layer_free_sequences_export_the_same_plus_two_keys(seed):
             pass
         state = mesh.export_state()
         assert state["point_layers"] is None and state["layer_id_counter"] == 1
-        assert list(state)[-2:] == ["layer_id_counter", "point_layers"]
+        # AD-026 added "face_uvs" after them, None without UVs
+        assert list(state)[-3:] == ["layer_id_counter", "point_layers", "face_uvs"]
+        assert state["face_uvs"] is None
 
 
 def test_scene_without_layers_stays_version_4():

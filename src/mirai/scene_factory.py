@@ -179,6 +179,7 @@ def build_cube_scene(size: float = 2.0) -> Scene:
 def mesh_from_positions_and_faces(
     vertices: Sequence[tuple[float, float, float]],
     faces: Sequence[Sequence[int]],
+    face_uvs: Sequence | None = None,
 ) -> Mesh:
     """Baut ein `Mesh` aus rohen Vertex-Positionen + 0-basierten Face-Indizes.
 
@@ -186,11 +187,17 @@ def mesh_from_positions_and_faces(
       Eingabe-Reihenfolge → deterministische Vertex-IDs).
     - Face-Boundaries bleiben Polygone (Tris/Quads/N-gons) — Triangulierung
       passiert bewusst erst im Core→Render-Adapter, nicht hier.
+    - `face_uvs` (AD-026): parallel zu `faces` je Face ein (u, v) je Ecke oder None; eine Face
+      ohne UVs bekommt keine (nichts wird aus Nachbarn abgeleitet).
     """
     mesh = Mesh()
     vertex_ids = [mesh.add_vertex(position) for position in vertices]
-    for face in faces:
-        mesh.add_face([vertex_ids[index] for index in face])
+    if face_uvs is None:
+        for face in faces:
+            mesh.add_face([vertex_ids[index] for index in face])
+        return mesh
+    for face, uvs in zip(faces, face_uvs):
+        mesh.add_face([vertex_ids[index] for index in face], uvs, infer_uvs=False)
     return mesh
 
 
@@ -213,4 +220,11 @@ def build_core_scene_from_obj(obj_path: str | Path) -> Scene:
     from loaders.obj_loader import load_obj  # lokal — siehe Moduldocstring
 
     data = load_obj(obj_path)
-    return scene_from_positions_and_faces(data.vertices, data.faces)
+    scene = Scene()
+    scene.mesh = mesh_from_obj_data(data)
+    return scene
+
+
+def mesh_from_obj_data(data) -> Mesh:
+    """Mesh aus einem geparsten OBJ (`loaders.obj_loader.ObjMeshData`), mit seinen UVs (AD-026)."""
+    return mesh_from_positions_and_faces(data.vertices, data.faces, data.face_uvs() if data.has_uvs else None)

@@ -41,7 +41,7 @@ def rest_state(mesh: Mesh) -> dict:
 
 
 def topology_touched(change, mesh: Mesh) -> bool:
-    if change.edges or change.faces:
+    if change.edges or change.faces or change.face_uvs:
         return True
     return any(before is None or not mesh.is_valid_vertex(vid) for vid, before in change.vertices.items())
 
@@ -225,7 +225,12 @@ def _topology_delta(change, base: Mesh, surface: Mesh) -> MeshDelta:
     def face(mesh, f):
         return tuple(mesh.face_vertices(f)) if mesh.is_valid_face(f) else None
 
+    def uvs(mesh, f):
+        return mesh.face_uvs(f) if mesh.is_valid_face(f) else None
+
     pairs = []
     for keys, read in ((change.vertices, vertex), (change.edges, edge), (change.faces, face)):
         pairs.append({k: (read(surface, k), read(base, k)) for k in keys if read(surface, k) != read(base, k)})
-    return MeshDelta(*pairs)
+    uv_keys = set(change.faces) | set(change.face_uvs)
+    face_uvs = {f: (uvs(surface, f), uvs(base, f)) for f in uv_keys if uvs(surface, f) != uvs(base, f)}
+    return MeshDelta(*pairs, face_uvs=face_uvs)

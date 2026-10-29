@@ -17,7 +17,7 @@ from .assets import (
     get_asset,
     load_asset,
 )
-from .obj_loader import ObjLoadError, ObjMeshData, load_obj, parse_obj
+from .obj_loader import ObjLoadError, ObjMeshData, find_texture, load_obj, parse_mtl_textures, parse_obj
 
 __all__ = [
     "ASSETS",
@@ -25,10 +25,12 @@ __all__ = [
     "ObjAsset",
     "ObjLoadError",
     "ObjMeshData",
+    "find_texture",
     "asset_names",
     "asset_path",
     "get_asset",
     "load_asset",
     "load_obj",
+    "parse_mtl_textures",
     "parse_obj",
 ]

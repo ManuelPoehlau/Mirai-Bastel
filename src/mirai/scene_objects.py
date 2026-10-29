@@ -94,7 +94,7 @@ def selected_color(obj: SceneObject, default: tuple[float, float, float]) -> tup
     return tuple(b + share * (t - b) for b, t in zip(base, SELECTED_TINT))
 
 
-def reset_scene(scene: Scene, mesh: Mesh, name: str) -> SceneObject:
+def reset_scene(scene: Scene, mesh: Mesh, name: str, texture: str | None = None) -> SceneObject:
     """Scene-Reset beim Laden (AD-021 §5.2, review R-4): alle Objekte werden durch genau ein
     neues, bearbeitbares Objekt ersetzt, das Edit-Objekt wird.
 
@@ -102,7 +102,7 @@ def reset_scene(scene: Scene, mesh: Mesh, name: str) -> SceneObject:
     Setter bedeutet ab M1 nur noch "Mesh dieses Objekts tauschen". Die Scene-Instanz
     bleibt dieselbe (Selection/History hängen daran); ObjectIds laufen weiter, keine wird
     wiederverwendet (AD-001). Nur über die M0-API, kein Core-Change."""
-    obj = scene.add_object(mesh, name=name)
+    obj = scene.add_object(mesh, name=name, texture=texture)
     scene.edit_object_id = obj.id
     _clear_mirror_pairs(scene)
     for object_id in [oid for oid in scene.objects if oid != obj.id]:
@@ -128,6 +128,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj.transform = source.transform
         obj.pivot = source.pivot
         obj.material = source.material
+        obj.texture = source.texture
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj

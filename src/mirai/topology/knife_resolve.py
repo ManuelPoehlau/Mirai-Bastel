@@ -328,6 +328,7 @@ class SessionStart:
             and (not ch.symmetry_touched or ch.symmetry == m.symmetry_definition)
             and (not ch.regions_touched or ch.regions == m.face_regions)
             and (not ch.layers_touched or m._layers_unchanged_since(ch))
+            and all(m._face_uvs.get(f) == r for f, r in ch.face_uvs.items())
         )
 
     def state(self) -> dict:
@@ -349,6 +350,13 @@ class SessionStart:
                 state["faces"][int(f)] = [int(v) for v in rec]
         if ch.layers_touched:
             state["point_layers"] = m._layers_at_start(ch)
+        if ch.face_uvs:
+            uvs = state["face_uvs"] or {}
+            for f, rec in ch.face_uvs.items():
+                uvs.pop(int(f), None)
+                if rec is not None:
+                    uvs[int(f)] = [list(uv) for uv in rec]
+            state["face_uvs"] = dict(sorted(uvs.items())) or None
         return state
 
     def revert(self) -> None:

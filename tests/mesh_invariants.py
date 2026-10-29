@@ -211,3 +211,25 @@ def assert_layer_invariants(mesh: Mesh, *, kinds: dict | None = None) -> None:
         for entry in state["point_layers"]:
             keys = list(entry["values"])
             assert keys == sorted(keys), "export not ascending"
+
+
+def assert_uv_invariants(mesh: Mesh) -> None:
+    """Face-corner UV invariant U1 (AD-026): UVs only on live faces, one finite (u, v) pair per
+    boundary corner; `has_face_uvs` iff the export carries them."""
+    import math
+
+    state = mesh.export_state()
+    raw = state["face_uvs"]
+    assert mesh.has_face_uvs() == (raw is not None), "U1: has_face_uvs vs export"
+    for fid in mesh.all_face_ids():
+        uvs = mesh.face_uvs(fid)
+        if uvs is None:
+            continue
+        assert len(uvs) == len(mesh.face_vertices(fid)), f"U1: corner count of face {fid!r}"
+        for uv in uvs:
+            assert isinstance(uv, tuple) and len(uv) == 2, "U1: not a pair"
+            assert all(isinstance(c, float) and math.isfinite(c) for c in uv), "U1: not finite floats"
+    if raw is not None:
+        live = {int(f) for f in mesh.all_face_ids()}
+        assert set(raw) <= live, "U1: UVs for a dead face"
+        assert list(raw) == sorted(raw), "export not ascending"

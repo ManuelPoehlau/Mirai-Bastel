@@ -27,6 +27,9 @@ Architekturvertrag:
 - Material pro Objekt (`ObjectMaterial`, `SceneObject.material`; AD-024, CORE_V1_FREEZE §7.1):
   reine Daten - Grundfarbe, Specular, Glossiness; `None` = der Standard-Look der App. Was die Werte
   bedeuten (Exponent, Fill-Glanz, Auswahl-Tönung, Referenz-Look), entscheiden `src/mirai`/`src/viewport`.
+- Textur pro Objekt (`SceneObject.texture`; AD-026, CORE_V1_FREEZE §7.1 2026-10-29): reine Daten -
+  der Pfad einer Bilddatei (oder `None`), die über die Face-Ecken-UVs des Meshes gezeigt wird. Das
+  Bild selbst ist kein Scene-Inhalt; Laden und Anzeigen leben in `src/mirai`/`src/viewport`.
 """
 
 from __future__ import annotations
@@ -183,7 +186,7 @@ class SceneObject:
     einfache Werte, die künftige Objekt-Commands (M1/M2) ändern.
     """
 
-    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material")
+    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture")
 
     def __init__(
         self,
@@ -195,6 +198,7 @@ class SceneObject:
         pivot: Iterable[float] = (0.0, 0.0, 0.0),
         state: ObjectState = ObjectState.NORMAL,
         material: ObjectMaterial | None = None,
+        texture: str | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -207,6 +211,10 @@ class SceneObject:
         if material is not None and not isinstance(material, ObjectMaterial):
             raise TypeError(f"erwartet ein ObjectMaterial oder None, nicht {material!r}")
         self.material: ObjectMaterial | None = material
+        # AD-026: Pfad der Textur (None = keine); eine Textur pro Objekt, also pro Mesh.
+        if texture is not None and not (isinstance(texture, str) and texture):
+            raise TypeError(f"erwartet einen nicht leeren Pfad oder None, nicht {texture!r}")
+        self.texture: str | None = texture
 
     @property
     def id(self) -> ObjectId:
@@ -293,9 +301,10 @@ class Scene:
         *,
         name: str = "object",
         state: ObjectState = ObjectState.NORMAL,
+        texture: str | None = None,
     ) -> SceneObject:
         """Neues Objekt mit frischer, nie wiederverwendeter ObjectId."""
-        obj = SceneObject(self._object_ids.allocate(), mesh, name=name, state=state)
+        obj = SceneObject(self._object_ids.allocate(), mesh, name=name, state=state, texture=texture)
         self._objects[obj.id] = obj
         return obj
 

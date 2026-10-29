@@ -42,6 +42,9 @@ import weakref
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from .corner_uvs import (
+    UV, FaceUVs, lerp_uv, mean_uv, polygon_weights, same_uv, uv_tuple, weighted_uv,
+)
 from .ids import VertexId, EdgeId, FaceId, IdAllocator, LayerId
 from .layer_storage import LayerSlots, PackedValues
 
@@ -229,7 +232,7 @@ class MeshChange:
 
     __slots__ = (
         "vertices", "edges", "faces", "symmetry", "regions",
-        "layer_meta", "layer_values", "layer_whole", "keys_only",
+        "layer_meta", "layer_values", "layer_whole", "keys_only", "face_uvs",
     )
 
     def __init__(self, keys_only: bool = False) -> None:
@@ -248,6 +251,9 @@ class MeshChange:
         self.layer_whole: dict[LayerId, tuple] = {}
         # A watch records which layer values changed, never their before-values (all None there).
         self.keys_only = keys_only
+        # Face-corner UVs (AD-026): the before-tuple of every face whose UVs were written, None =
+        # the face had none. Tuples are immutable, so a watch keeps them too (no copy cost).
+        self.face_uvs: dict[FaceId, FaceUVs | None] = {}
 
     @property
     def symmetry_touched(self) -> bool:
@@ -267,6 +273,7 @@ class MeshChange:
             and self.symmetry is _UNSET
             and self.regions is _UNSET
             and not self.layers_touched
+            and not self.face_uvs
         )
 
 
@@ -291,6 +298,8 @@ class MeshDelta:
     #: point layers changed as a whole: {LayerId: (before dict | None, after dict | None)}. Both
     #: dicts are shared (copy-on-write, never mutated); None = the layer does not exist.
     layer_whole: dict = field(default_factory=dict)
+    #: face-corner UVs (AD-026) that changed: {FaceId: (before, after)}, None = no UVs
+    face_uvs: dict = field(default_factory=dict)
 
     @property
     def empty(self) -> bool:
@@ -301,6 +310,7 @@ class MeshDelta:
             and self.layer_meta is None
             and not self.layer_values
             and not self.layer_whole
+            and not self.face_uvs
         )
 
 
@@ -388,6 +398,10 @@ class Mesh:
         self._layer_slots = LayerSlots()
         self._layer_values: dict[LayerId, PackedValues] = {}
         self._layer_shared: set[LayerId] = set()
+        # Face-corner UVs (AD-026): per face one (u, v) per boundary corner, in boundary order
+        # (invariant U1: keys are live faces, one pair per corner). Faces without UVs have no entry;
+        # the mesh "has UVs" while any face has. Every write goes through `_write_uvs` (journal).
+        self._face_uvs: dict[FaceId, FaceUVs] = {}
 
     @property
     def face_regions(self) -> FaceRegions | None:
@@ -700,6 +714,93 @@ class Mesh:
         return out
 
     # ------------------------------------------------------------------
+    # Face-corner UVs (AD-026, CORE_V1_FREEZE §7.1 2026-10-29): one UV map per mesh, stored per
+    # face as one (u, v) per boundary corner. The Core stores, journals and carries them through its
+    # topology primitives (each documents its rule); what they show (a texture) lives above.
+    # ------------------------------------------------------------------
+
+    def has_face_uvs(self) -> bool:
+        return bool(self._face_uvs)
+
+    def face_uvs(self, face_id: FaceId) -> FaceUVs | None:
+        """The face's UVs in boundary order (one pair per `face_vertices` entry), None = none."""
+        if face_id not in self._faces:
+            raise MeshError(f"Unbekannte Face: {face_id!r}")
+        return self._face_uvs.get(face_id)
+
+    def corner_uv(self, face_id: FaceId, vertex_id: VertexId) -> UV | None:
+        uvs = self._face_uvs.get(face_id)
+        if uvs is None:
+            return None
+        return uvs[self._faces[face_id].boundary.index(vertex_id)]
+
+    def set_face_uvs(self, face_id: FaceId, uvs) -> None:
+        """Sets (or with None removes) the face's UVs; one pair per boundary corner, finite. Journaled."""
+        face = self._faces.get(face_id)
+        if face is None:
+            raise MeshError(f"Unbekannte Face: {face_id!r}")
+        if uvs is not None:
+            try:
+                uvs = uv_tuple(uvs, len(face.boundary))
+            except ValueError as exc:
+                raise MeshError(str(exc)) from None
+        self._write_uvs(face_id, uvs)
+
+    def _write_uvs(self, fid: FaceId, uvs: FaceUVs | None) -> None:
+        """The one write path of the UVs (journal; no validation - callers pass valid tuples)."""
+        old = self._face_uvs.get(fid)
+        if old == uvs:
+            return
+        for log in self._logs:
+            if fid not in log.face_uvs:
+                log.face_uvs[fid] = old
+        if uvs is None:
+            del self._face_uvs[fid]
+        else:
+            self._face_uvs[fid] = uvs
+
+    def _corner_map(self, fid: FaceId) -> dict[VertexId, UV] | None:
+        uvs = self._face_uvs.get(fid)
+        if uvs is None:
+            return None
+        return dict(zip(self._faces[fid].boundary, uvs))
+
+    def _infer_uvs(self, boundary: Sequence[VertexId]) -> FaceUVs | None:
+        """UVs for a new face nobody gave UVs to (Cap, symmetric Cap, a tool's `add_face`), read from
+        the existing faces around each corner before the face exists: a face that shares an edge of
+        the new boundary at that corner wins, else any face with that corner (ascending ids, so the
+        result is deterministic). Unresolved corners get the mean of the resolved ones; no resolved
+        corner = no UVs."""
+        uvs = self._face_uvs
+        n = len(boundary)
+        out: list[UV | None] = []
+        for i, v in enumerate(boundary):
+            neighbours = (boundary[i - 1], boundary[(i + 1) % n])
+            shared = fallback = None
+            for eid in sorted(self._vertex_edges.get(v, ()), key=int):
+                e = self._edges[eid]
+                other = e.v1 if e.v0 == v else e.v0
+                for f in e.faces:
+                    fu = uvs.get(f)
+                    if fu is None:
+                        continue
+                    if other in neighbours:
+                        shared = fu[self._faces[f].boundary.index(v)]
+                        break
+                    if fallback is None:
+                        fallback = fu[self._faces[f].boundary.index(v)]
+                if shared is not None:
+                    break
+            out.append(shared if shared is not None else fallback)
+        known = [uv for uv in out if uv is not None]
+        if not known:
+            return None
+        if len(known) < n:
+            centre = mean_uv(known)
+            out = [centre if uv is None else uv for uv in out]
+        return tuple(out)
+
+    # ------------------------------------------------------------------
     # Topologie-Query-API (AD-002) - einziger erlaubter Lesezugriff
     # ------------------------------------------------------------------
 
@@ -785,7 +886,7 @@ class Mesh:
         self._index_edge(eid, v_a, v_b)
         return eid
 
-    def add_face(self, vertex_ids: list[VertexId]) -> FaceId:
+    def add_face(self, vertex_ids: list[VertexId], uvs=None, *, infer_uvs: bool = True) -> FaceId:
         """Erzeugt eine Face aus einer geordneten Liste bestehender Vertices.
 
         ID-Kontinuität:
@@ -794,12 +895,23 @@ class Mesh:
           Edge wiederverwendet, falls vorhanden, sonst eine neue EdgeId
           erzeugt.
         - es entsteht genau eine neue FaceId.
+
+        UVs (AD-026): `uvs` = ein (u, v) je Ecke (geprüft vor der ersten Mutation). Ohne `uvs` auf
+        einem Mesh mit UVs werden sie aus den Nachbar-Faces der Ecken abgeleitet (`_infer_uvs`),
+        außer mit `infer_uvs=False` (die Face bleibt ohne UVs).
         """
         if len(vertex_ids) < 3:
             raise MeshError("Eine Face benötigt mindestens 3 Vertices.")
         for v in vertex_ids:
             if not self.is_valid_vertex(v):
                 raise MeshError(f"Unbekanntes Vertex: {v!r}")
+        if uvs is not None:
+            try:
+                uvs = uv_tuple(uvs, len(vertex_ids))
+            except ValueError as exc:
+                raise MeshError(str(exc)) from None
+        elif infer_uvs and self._face_uvs:
+            uvs = self._infer_uvs(vertex_ids)
 
         fid = self._face_alloc.allocate()
         logged = bool(self._logs)
@@ -814,6 +926,8 @@ class Mesh:
             self._edges[eid].faces.append(fid)
 
         self._faces[fid] = _FaceData(boundary=list(vertex_ids))
+        if uvs is not None:
+            self._write_uvs(fid, uvs)
         return fid
 
     def add_edge(self, v_a: VertexId, v_b: VertexId) -> EdgeId:
@@ -852,6 +966,8 @@ class Mesh:
         logged = bool(self._logs)
         if logged and face_id in self._faces:
             self._touch_f(face_id)
+        if face_id in self._face_uvs:
+            self._write_uvs(face_id, None)
         face = self._faces.pop(face_id)
         n = len(face.boundary)
         for i in range(n):
@@ -878,6 +994,10 @@ class Mesh:
         - es entsteht genau eine neue VertexId und zwei neue EdgeIds.
         - jede angrenzende Face behält ihre FaceId, ihre Boundary-Liste
           wird jedoch aktualisiert (neuer Vertex wird eingefügt).
+
+        UVs (AD-026): in jeder angrenzenden Face mit UVs bekommt die neue Ecke
+        (1-t)·uv(v0) + t·uv(v1) der Ecken dieser Face - pro Face, also bleibt
+        eine UV-Naht entlang der Edge erhalten.
 
         Rückgabe: (neue_vertex_id, neue_edge_id_a, neue_edge_id_b)
         """
@@ -916,14 +1036,24 @@ class Mesh:
             if logged:
                 self._touch_f(fid)
             boundary = self._faces[fid].boundary
+            uvs = self._face_uvs.get(fid)
             new_boundary = []
+            new_uvs = []
             n = len(boundary)
             for i in range(n):
                 v_curr, v_next = boundary[i], boundary[(i + 1) % n]
                 new_boundary.append(v_curr)
+                if uvs is not None:
+                    new_uvs.append(uvs[i])
                 if frozenset((v_curr, v_next)) == frozenset((edge.v0, edge.v1)):
                     new_boundary.append(mid)
+                    if uvs is not None:
+                        j = (i + 1) % n
+                        a, b = (uvs[i], uvs[j]) if v_curr == edge.v0 else (uvs[j], uvs[i])
+                        new_uvs.append(lerp_uv(a, b, t))
             self._faces[fid].boundary = new_boundary
+            if uvs is not None:
+                self._write_uvs(fid, tuple(new_uvs))
             self._edges[eid_a].faces.append(fid)
             self._edges[eid_b].faces.append(fid)
 
@@ -974,12 +1104,17 @@ class Mesh:
           Edge, werden beide zusammengeführt (Face-Referenzen vereinigt), statt
           eine zweite, stale Edge stehen zu lassen.
 
+        UVs (AD-026): in den Faces der Edge bekommt die Survivor-Ecke den Mittelwert ihrer beiden
+        Ecken. In den übrigen Faces um beide Endpunkte rückt eine Ecke mit, wenn ihr Wert dem einer
+        Edge-Face gleicht (keine Naht dort); an einer Naht behält sie ihren Wert.
+
         Bekannte V1-Einschränkung: keine allgemeine Non-Manifold-Prüfung.
         """
         logged = bool(self._logs)
         if logged and edge_id in self._edges:
             self._touch_e(edge_id)
         edge = self._edges[edge_id]
+        uv_plan = self._plan_collapse_uvs(edge.v0, edge.v1, edge.faces) if self._face_uvs else None
         self._pop_edge(edge_id)
         survivor, removed = edge.v0, edge.v1
 
@@ -1070,8 +1205,45 @@ class Mesh:
 
             self._faces[fid].boundary = deduped
 
+        if uv_plan:
+            for fid, corners in uv_plan.items():
+                face = self._faces.get(fid)
+                if face is not None:
+                    self._write_uvs(fid, tuple(corners[v] for v in face.boundary))
         self._delete_vertex(removed)
         return survivor
+
+    def _plan_collapse_uvs(self, survivor: VertexId, removed: VertexId, edge_faces) -> dict:
+        """The corner maps every face around `survivor` / `removed` has after `collapse_edge`
+        (its docstring), read before the first mutation."""
+        mids = []
+        for f in edge_faces:
+            corners = self._corner_map(f)
+            if corners is not None:
+                a, b = corners[survivor], corners[removed]
+                mids.append((f, a, b, ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)))
+        mid_of = {f: m for f, _a, _b, m in mids}
+        faces = {
+            f for x in (survivor, removed) for eid in self._vertex_edges.get(x, ()) for f in self._edges[eid].faces
+        }
+        plan = {}
+        for f in faces:
+            corners = self._corner_map(f)
+            if corners is None:
+                continue
+            if f in mid_of:
+                corners[survivor] = mid_of[f]
+            else:
+                key = removed if removed in corners else survivor
+                uv = corners[key]
+                for _f, a, b, m in mids:
+                    if same_uv(uv, b if key == removed else a):
+                        uv = m
+                        break
+                corners[survivor] = uv
+            corners.pop(removed, None)
+            plan[f] = corners
+        return plan
 
     def _remove_face_edges_only(self, face_id: FaceId) -> None:
         face = self._faces[face_id]
@@ -1090,6 +1262,8 @@ class Mesh:
         """Entfernt eine Face und ihre Einträge in den Edge-Face-Listen; Edges bleiben."""
         if self._logs:
             self._touch_f(face_id)
+        if face_id in self._face_uvs:
+            self._write_uvs(face_id, None)
         self._remove_face_edges_only(face_id)
         del self._faces[face_id]
 
@@ -1129,12 +1303,16 @@ class Mesh:
 
         if len(loop_1) < 3 or len(loop_2) < 3:
             raise MeshError("connect_vertices würde eine degenerierte Face erzeugen.")
+        # UVs (AD-026): beide Teil-Faces übernehmen die Ecken der Parent-Face.
+        corners = self._corner_map(face_id)
 
         # alte Face-Referenzen der bestehenden Edges entfernen
         self._delete_face(face_id)
 
-        new_face_1 = self.add_face(loop_1)
-        new_face_2 = self.add_face(loop_2)
+        uvs_1 = None if corners is None else [corners[v] for v in loop_1]
+        uvs_2 = None if corners is None else [corners[v] for v in loop_2]
+        new_face_1 = self.add_face(loop_1, uvs_1, infer_uvs=False)
+        new_face_2 = self.add_face(loop_2, uvs_2, infer_uvs=False)
         new_edge = self._edge_lookup[frozenset((v_a, v_b))]
 
         return new_edge, new_face_1, new_face_2
@@ -1201,6 +1379,11 @@ class Mesh:
         Teil einer Edge), jede Pfad-Edge trennt face_1 von face_2, und jede
         Boundary-Edge von face_id gehört danach zu genau einer der beiden.
 
+        UVs (AD-026): beide Faces übernehmen die Ecken der Parent-Face; ein Innenpunkt bekommt
+        die mit seiner Herkunft gewichteten UVs, wenn alle Quellen Ecken der Parent-Face sind (das
+        Dreieck, das der Knife getroffen hat), sonst seine Mean-Value-Koordinaten über die Parent-
+        Face (`corner_uvs.polygon_weights`).
+
         Rückgabe: (neue_vertex_ids, neue_edge_ids, face_1, face_2)
         """
         face = self._faces.get(face_id)
@@ -1245,6 +1428,9 @@ class Mesh:
             if origins is None:
                 raise MeshError("split_face: Innenpunkte auf einem Mesh mit Punkt-Layern brauchen eine Herkunft (origins).")
             layer_values = [self._origin_values(o) for o in origins]
+        corners = self._corner_map(face_id)
+        if corners is not None and k:
+            interior_uvs = self._interior_uvs(boundary, corners, positions, origins)
 
         self._delete_face(face_id)
 
@@ -1263,9 +1449,31 @@ class Mesh:
         ]
         interior_s_to_e = new_vertices if a_first else new_vertices[::-1]
 
-        face_1 = self.add_face(arc_1 + interior_s_to_e[::-1])
-        face_2 = self.add_face(arc_2 + interior_s_to_e)
+        boundary_1 = arc_1 + interior_s_to_e[::-1]
+        boundary_2 = arc_2 + interior_s_to_e
+        uvs_1 = uvs_2 = None
+        if corners is not None:
+            if k:
+                corners.update(zip(new_vertices, interior_uvs))
+            uvs_1 = [corners[v] for v in boundary_1]
+            uvs_2 = [corners[v] for v in boundary_2]
+        face_1 = self.add_face(boundary_1, uvs_1, infer_uvs=False)
+        face_2 = self.add_face(boundary_2, uvs_2, infer_uvs=False)
         return new_vertices, new_edges, face_1, face_2
+
+    def _interior_uvs(self, boundary, corners: dict, positions, origins) -> list[UV]:
+        """UVs of `split_face`'s interior points (its docstring), before the first mutation."""
+        corner_positions = None
+        out = []
+        for i, p in enumerate(positions):
+            origin = origins[i] if origins is not None else None
+            if origin and all(src in corners for src, _w in origin):
+                out.append(weighted_uv([float(w) for _s, w in origin], [corners[src] for src, _w in origin]))
+                continue
+            if corner_positions is None:
+                corner_positions = [self._vertices[v].position for v in boundary]
+            out.append(weighted_uv(polygon_weights(corner_positions, p), [corners[v] for v in boundary]))
+        return out
 
     # ------------------------------------------------------------------
     # Entfernen: Dissolve (bewahrend) und Delete (destruktiv) -
@@ -1655,6 +1863,7 @@ class Mesh:
             "removed_edges": removed_edges,
             "removed_vertices": removed_vertices,
             "merged": [updated.get(("new", i), b) for i, b in enumerate(merged)],
+            "outlines": merged,
             "updated": {k: b for k, b in updated.items() if not isinstance(k, tuple)},
             "wire_edges": wire_edges,
         }
@@ -1691,7 +1900,14 @@ class Mesh:
         return e.v1 if e.v0 == vertex_id else e.v0
 
     def _apply_dissolve(self, plan: dict) -> list[FaceId]:
-        """Wendet einen `_plan_dissolve`-Plan an (keine Prüfungen mehr)."""
+        """Wendet einen `_plan_dissolve`-Plan an (keine Prüfungen mehr).
+
+        UVs (AD-026): eine verschmolzene Face nimmt an jeder Ecke den Wert der alten Face, die die
+        Rand-Edge ab dieser Ecke trug (exakt, auch an Nähten); eine Face, die nur Ketten-Vertices
+        verliert, behält die Werte ihrer übrigen Ecken."""
+        merged_uvs = updated_uvs = None
+        if self._face_uvs:
+            merged_uvs, updated_uvs = self._plan_dissolve_uvs(plan)
         for fid in plan["removed_faces"]:
             self._delete_face(fid)
         logged = bool(self._logs)
@@ -1699,13 +1915,21 @@ class Mesh:
             if logged:
                 self._touch_f(fid)
             self._faces[fid].boundary = boundary
+            if updated_uvs is not None and fid in updated_uvs:
+                self._write_uvs(fid, updated_uvs[fid])
         for eid in plan["removed_edges"]:
             if logged:
                 self._touch_e(eid)
             self._pop_edge(eid)
         for vid in plan["removed_vertices"]:
             self._delete_vertex(vid)
-        new_faces = [self.add_face(boundary) for boundary in plan["merged"]]
+        if merged_uvs is None:
+            new_faces = [self.add_face(boundary) for boundary in plan["merged"]]
+        else:
+            new_faces = [
+                self.add_face(boundary, uvs, infer_uvs=False)
+                for boundary, uvs in zip(plan["merged"], merged_uvs)
+            ]
         for fid in sorted(plan["updated"], key=int):
             boundary = self._faces[fid].boundary
             n = len(boundary)
@@ -1718,6 +1942,36 @@ class Mesh:
         for v_a, v_b in plan["wire_edges"]:
             self._get_or_create_edge(v_a, v_b)
         return new_faces
+
+    def _plan_dissolve_uvs(self, plan: dict) -> tuple[list, dict]:
+        """The UVs of `_apply_dissolve`'s merged and updated faces, read before the first mutation."""
+        directed: dict[tuple[VertexId, VertexId], UV] = {}
+        for fid in plan["removed_faces"]:
+            uvs = self._face_uvs.get(fid)
+            if uvs is None:
+                continue
+            boundary = self._faces[fid].boundary
+            n = len(boundary)
+            for i in range(n):
+                directed[(boundary[i], boundary[(i + 1) % n])] = uvs[i]
+        merged_uvs = []
+        for outline, boundary in zip(plan["outlines"], plan["merged"]):
+            n = len(outline)
+            corners = {}
+            for i in range(n):
+                uv = directed.get((outline[i], outline[(i + 1) % n]))
+                if uv is not None:
+                    corners[outline[i]] = uv
+            if len(corners) == n:
+                merged_uvs.append(tuple(corners[v] for v in boundary))
+            else:
+                merged_uvs.append(None)  # a face of the region had no UVs: the merged face has none
+        updated_uvs = {}
+        for fid, boundary in plan["updated"].items():
+            corners = self._corner_map(fid)
+            if corners is not None:
+                updated_uvs[fid] = tuple(corners[v] for v in boundary)
+        return merged_uvs, updated_uvs
 
     def _delete_region(
         self, faces: set[FaceId], edges: set[EdgeId], vertices: set[VertexId]
@@ -1789,7 +2043,15 @@ class Mesh:
             "face_regions": self._export_face_regions(),
             "layer_id_counter": self._layer_alloc.peek_next(),
             "point_layers": self._export_point_layers(),
+            "face_uvs": self._export_face_uvs(),
         }
+
+    def _export_face_uvs(self) -> dict | None:
+        """Additive key `"face_uvs"` (AD-026): None without UVs, else `{"<fid>": [[u, v], ...]}` in
+        boundary order, face ids ascending (deterministic JSON text)."""
+        if not self._face_uvs:
+            return None
+        return {int(fid): [list(uv) for uv in self._face_uvs[fid]] for fid in sorted(self._face_uvs)}
 
     def _export_point_layers(self, meta: tuple | None = None, values_of=None) -> list | None:
         """Additive key `"point_layers"` (AD-025 §4.2): None without layers (L5), else one entry
@@ -1897,6 +2159,7 @@ class Mesh:
             FaceId(int(fid_raw)): tuple(VertexId(v) for v in boundary)
             for fid_raw, boundary in state["faces"].items()
         }
+        face_uvs = _parse_face_uvs(state.get("face_uvs"), face_records)
         if self._logs:
             # Ein Journal läuft (Rollback eines Checkpoints, Undo, ein Viewport beobachtet):
             # nur die Elemente schreiben, die sich unterscheiden, damit es genau diese sieht.
@@ -1928,6 +2191,13 @@ class Mesh:
         self._layer_alloc.restore_counter(int(state.get("layer_id_counter", 1)))
         self._layer_alloc.restore_counter(max((int(lid) + 1 for lid, _ in layer_meta), default=1))
         self._load_point_layers(layer_meta, layer_values)
+        if self._logs:
+            self._apply_uv_records(
+                {fid: uvs for fid, uvs in face_uvs.items() if self._face_uvs.get(fid) != uvs}
+                | {fid: None for fid in self._face_uvs if fid not in face_uvs}
+            )
+        else:
+            self._face_uvs = face_uvs
 
         symmetry_raw = state.get("symmetry")
         if symmetry_raw is None:
@@ -2009,8 +2279,13 @@ class Mesh:
         regions = None
         if change.regions is not _UNSET and change.regions != self._face_regions:
             regions = (change.regions, self._face_regions)
+        face_uvs = {}
+        for fid, before in change.face_uvs.items():
+            after = self._face_uvs.get(fid)
+            if after != before:
+                face_uvs[fid] = (before, after)
         if not change.layers_touched:
-            return MeshDelta(vertices, edges, faces, symmetry, regions)
+            return MeshDelta(vertices, edges, faces, symmetry, regions, face_uvs=face_uvs)
         layer_meta = None
         if change.layer_meta is not _UNSET and change.layer_meta != self._layer_meta:
             layer_meta = (change.layer_meta, self._layer_meta)
@@ -2032,7 +2307,9 @@ class Mesh:
                 layer_whole[lid] = (before, after)
                 if after is not None:
                     self._layer_shared.add(lid)  # the delta holds the live dict now
-        return MeshDelta(vertices, edges, faces, symmetry, regions, layer_meta, layer_values, layer_whole)
+        return MeshDelta(
+            vertices, edges, faces, symmetry, regions, layer_meta, layer_values, layer_whole, face_uvs
+        )
 
     def rollback_change(self, change: MeshChange) -> None:
         """Stellt den Zustand bei `begin_change()` exakt wieder her (Element-Records,
@@ -2046,6 +2323,8 @@ class Mesh:
             self.face_regions = change.regions
         if change.layers_touched:
             self._restore_layers(change)
+        if change.face_uvs:
+            self._apply_uv_records(change.face_uvs)
 
     def revert_change(self, change: MeshChange) -> None:
         """Wie `rollback_change`, aber die Aufzeichnung läuft weiter (leer, ab dem wieder
@@ -2062,7 +2341,10 @@ class Mesh:
             self.face_regions = change.regions
         if change.layers_touched:
             self._restore_layers(change)
+        if change.face_uvs:
+            self._apply_uv_records(dict(change.face_uvs))
         change.vertices, change.edges, change.faces = {}, {}, {}
+        change.face_uvs = {}
         change.symmetry = _UNSET
         change.regions = _UNSET
         change.layer_meta = _UNSET
@@ -2092,6 +2374,15 @@ class Mesh:
                 {lid: {vid: pair[side] for vid, pair in pairs.items()} for lid, pairs in delta.layer_values.items()},
                 {lid: pair[side] for lid, pair in delta.layer_whole.items()},
             )
+        if delta.face_uvs:
+            self._apply_uv_records({fid: pair[side] for fid, pair in delta.face_uvs.items()})
+
+    def _apply_uv_records(self, records: dict) -> None:
+        """Sets each named face's UVs to its record (None = none). Runs after the element records,
+        so every named face with UVs exists. The dict's order is not semantic (`_export_face_uvs`
+        sorts)."""
+        for fid in sorted(records, key=int):
+            self._write_uvs(fid, records[fid])
 
     def _restore_layers(self, change: MeshChange) -> None:
         """Rollback / revert of the point layers to the state at `begin_change`."""
@@ -2270,3 +2561,23 @@ def _parse_point_layers(raw, vertex_records: dict) -> tuple[tuple, dict]:
     except (KeyError, TypeError, AttributeError) as exc:
         raise MeshError(f"Ungültige point_layers: {exc!r}") from None
     return tuple(meta), values
+
+
+def _parse_face_uvs(raw, face_records: dict) -> dict[FaceId, FaceUVs]:
+    """The `"face_uvs"` value of a state dict, validated whole (AD-026): UVs for a missing face, a
+    wrong corner count or a non-finite value raise MeshError before anything is written."""
+    if not raw:
+        return {}
+    out: dict[FaceId, FaceUVs] = {}
+    try:
+        for fid_raw, uvs in raw.items():
+            fid = FaceId(int(fid_raw))
+            boundary = face_records.get(fid)
+            if boundary is None:
+                raise MeshError(f"face_uvs: UVs für fehlende Face {int(fid)}")
+            out[fid] = uv_tuple(uvs, len(boundary))
+    except (TypeError, AttributeError, ValueError) as exc:
+        if isinstance(exc, MeshError):
+            raise
+        raise MeshError(f"Ungültige face_uvs: {exc}") from None
+    return dict(sorted(out.items()))

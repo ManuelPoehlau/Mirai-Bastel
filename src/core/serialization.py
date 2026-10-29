@@ -31,6 +31,12 @@ geschrieben, wenn ein Mesh Punkt-Layer hat - sonst weiter 4 -, damit ein ältere
 mit Morph-Zielen ablehnt, statt die Ziele beim nächsten Speichern still zu verlieren. Gelesen
 werden 2-5.
 
+Version 6 (UVs und Textur, AD-026, CORE_V1_FREEZE §7.1 2026-10-29) ist additiv: die Face-Ecken-UVs
+reisen in `Mesh.export_state()` (`"face_uvs"`), ein Objekt mit Textur trägt `"texture"` (ihr Pfad; ohne
+den Schlüssel: keine). Wie Version 5 nur geschrieben, wenn ein Mesh UVs oder ein Objekt eine Textur hat (sonst
+4 bzw. 5), damit ein älterer Build die Datei ablehnt, statt UVs und Textur beim Speichern still zu
+verlieren. Gelesen werden 2-6.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -47,12 +53,20 @@ from .scene import MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Sce
 FORMAT_VERSION = 4
 #: Written instead of FORMAT_VERSION when any mesh has point layers (AD-025 §4.2).
 LAYERS_FORMAT_VERSION = 5
+#: Written when any mesh has face-corner UVs or any object a texture (AD-026).
+UV_FORMAT_VERSION = 6
 
 
 def scene_to_dict(scene: Scene) -> dict:
-    layered = any(obj.mesh.has_point_layers() for obj in scene.objects.values())
+    objects = scene.objects.values()
+    layered = any(obj.mesh.has_point_layers() for obj in objects)
+    textured = any(obj.mesh.has_face_uvs() or obj.texture is not None for obj in objects)
+    if textured:
+        version = UV_FORMAT_VERSION
+    else:
+        version = LAYERS_FORMAT_VERSION if layered else FORMAT_VERSION
     return {
-        "version": LAYERS_FORMAT_VERSION if layered else FORMAT_VERSION,
+        "version": version,
         "object_id_counter": scene.object_id_counter,
         "edit_object": int(scene.edit_object_id),
         "objects": [_object_to_dict(obj) for obj in scene.objects.values()],
@@ -66,7 +80,7 @@ def scene_to_dict(scene: Scene) -> dict:
 
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION):
+    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -89,7 +103,7 @@ def scene_from_dict(data: dict) -> Scene:
 
 
 def _object_to_dict(obj: SceneObject) -> dict:
-    return {
+    out = {
         "id": int(obj.id),
         "name": obj.name,
         "state": obj.state.value,
@@ -102,6 +116,9 @@ def _object_to_dict(obj: SceneObject) -> dict:
         "material": _material_to_dict(obj.material),
         "mesh": obj.mesh.export_state(),
     }
+    if obj.texture is not None:
+        out["texture"] = obj.texture  # AD-026 (version 6); absent = none, so 4/5 files stay as they were
+    return out
 
 
 def _object_from_dict(raw: dict) -> SceneObject:
@@ -118,6 +135,7 @@ def _object_from_dict(raw: dict) -> SceneObject:
         pivot=raw["pivot"],
         state=ObjectState(raw["state"]),
         material=_material_from_dict(raw.get("material")),
+        texture=raw.get("texture"),
     )
 
 

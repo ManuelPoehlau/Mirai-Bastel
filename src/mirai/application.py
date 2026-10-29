@@ -1196,20 +1196,28 @@ class Application:
         self._apply_display()
 
     @staticmethod
-    def _build_mesh(geometry_type: str, obj_path: str | Path | None) -> tuple[Mesh, str]:
-        """Das Mesh einer Szene bzw. eines hinzugefügten Objekts und sein Objektname."""
+    def _build_mesh(geometry_type: str, obj_path: str | Path | None) -> tuple[Mesh, str, str | None]:
+        """Das Mesh einer Szene bzw. eines hinzugefügten Objekts, sein Objektname und seine Textur
+        (AD-026: die einer OBJ-Datei, `loaders.obj_loader.find_texture`; sonst None)."""
         from .scene_factory import PRIMITIVES
 
         if geometry_type in PRIMITIVES:
-            return PRIMITIVES[geometry_type](), geometry_type
+            return PRIMITIVES[geometry_type](), geometry_type, None
         if geometry_type == "obj":
             if obj_path is None:
                 raise ValueError('geometry_type="obj" requires obj_path')
-
-            from .scene_factory import build_core_scene_from_obj
-
-            return build_core_scene_from_obj(obj_path).mesh, Path(obj_path).stem
+            return Application._load_obj(Path(obj_path))
         raise ValueError(f"unknown geometry_type {geometry_type!r}")
+
+    @staticmethod
+    def _load_obj(path: Path) -> tuple[Mesh, str, str | None]:
+        from loaders.obj_loader import find_texture, load_obj  # lazy - `examples/` on sys.path, see scene_factory
+
+        from .scene_factory import mesh_from_obj_data
+
+        data = load_obj(path)
+        texture = find_texture(path, data) if data.has_uvs else None
+        return mesh_from_obj_data(data), path.stem, None if texture is None else str(texture.resolve())
 
     # -- Objekte (AD-021 M1) ----------------------------------------------------
 
@@ -1234,10 +1242,10 @@ class Application:
             return None
         if self._layer_gate_refuses("add_reference", ()):
             return None
-        mesh, default_name = self._build_mesh(geometry_type, obj_path)
+        mesh, default_name, texture = self._build_mesh(geometry_type, obj_path)
         before = self._selection_snapshot()
         obj = self.scene.add_object(
-            mesh, name=name or default_name, state=ObjectState.REFERENCE
+            mesh, name=name or default_name, state=ObjectState.REFERENCE, texture=texture
         )
         self.history.push(AddObjectCommand(self.scene, obj))
         self._record_selection_history(before, mesh_step=False)
@@ -1270,20 +1278,25 @@ class Application:
     def import_obj(self, path: str | Path) -> SceneObject | None:
         """OBJ import (SPACE menu, `src/obj_files.py`): the file becomes a new editable object like an
         Add-Mesh primitive (same Undo step, selection and status behaviour), named after the file.
-        Parse errors fly as exceptions (`ObjLoadError`, OSError) before the scene is touched."""
-        from .scene_factory import mesh_from_positions_and_faces
+        Parse errors fly as exceptions (`ObjLoadError`, OSError) before the scene is touched.
 
+        AD-026: the file's UVs come along as the mesh's face-corner UVs, and its texture (`map_Kd` of
+        its MTL file, else an image of the same name beside it) becomes the object's texture."""
         if self.viewport is None:
             raise RuntimeError("import_obj() before init_scene()")
         path = Path(path)
+        loaded = {}
 
         def build() -> Mesh:
-            from loaders.obj_loader import load_obj  # lazy - `examples/` on sys.path, see scene_factory
+            mesh, _name, loaded["texture"] = self._load_obj(path)
+            return mesh
 
-            data = load_obj(path)
-            return mesh_from_positions_and_faces(data.vertices, data.faces)
-
-        return self._add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
+        obj = self._add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
+        if obj is not None and loaded.get("texture"):
+            obj.texture = loaded["texture"]
+            self._sync_object_views()
+            self._set_status(f"{self.status_message} - texture {Path(obj.texture).name}")
+        return obj
 
     def export_obj(self, path: str | Path) -> bool:
         """OBJ export (SPACE menu): the edit object in world space (object transform applied), one
@@ -1455,6 +1468,7 @@ class Application:
         obj = scene.add_object(mirror_mesh(source.mesh, normal), name=unique_object_name(scene, source.name))
         obj.transform, obj.pivot = mirror_placement(source, normal, offset)
         obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
+        obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
         add = AddObjectCommand(scene, obj)
         pair = MirrorPair(source.id, obj.id, normal=normal, offset=offset)
         scene.add_mirror_pair(pair)
@@ -6120,7 +6134,9 @@ class Application:
             self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
             return False
         name = base.mesh.point_layer_info(lid).name
-        view_obj = scene.add_object(Mesh.from_state(view_state(base.mesh, lid)), name=f"{base.name} · {name}")
+        view_obj = scene.add_object(
+            Mesh.from_state(view_state(base.mesh, lid)), name=f"{base.name} · {name}", texture=base.texture
+        )
         view_obj.transform = view_placement(base, world_width(base, base.mesh))
         view_obj.pivot = base.pivot
         view_obj.material = base.material
