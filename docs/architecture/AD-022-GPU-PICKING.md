@@ -5,10 +5,10 @@
 > instruction of 2026-10-21 ("Mach mit GPU-Picking weiter") and AGENTS.md §7a. The sections below are the decision
 > history; §11 is the current state.
 
-**Status:** PROPOSED (2026-10-17), **revised 2026-10-20** after the independent review
+**Status:** **DECIDED (Manu, 2026-10-29)**; implemented in production since 2026-10-21 (B2-out, commit `8d867b2`, §11).
+Was PROPOSED (2026-10-17); **revised 2026-10-20** after the independent review
 [`AD-022_REVIEW_CLAUDE_001`](../archive/viewport_v02/reviews/AD-022_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES; the
-disposition of every finding is in §10). **DECIDED (Manu, 2026-10-29)**. Implemented in production since 2026-10-21 (B2-out,
-commit `8d867b2`, §11); §1–§10 keep the alternatives as the decision history.
+disposition of every finding is in §10). §1–§10 keep the alternatives as the decision history.
 **Mode (M5):** Discovery, decision preparation.
 **Work package:** WP-VIEW-PERF-02 (follows WP-VIEW-PERF-01 Slices 1 + 2).
 **Artist input:** Manu, 2026-10-17, on the Slice-1 practical test: "Fühlt sich gleich an, nur schneller. Im
