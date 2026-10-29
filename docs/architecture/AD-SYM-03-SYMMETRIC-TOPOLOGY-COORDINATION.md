@@ -4,7 +4,7 @@
 **Addendum §10 (2026-10-09, symmetric Knife, slice 6): DECIDED** (Manu, 2026-10-09: **ACCEPT**) — K-C with side rule and clip; the assumptions of §10.2 are the basis; build order 6a → 6b → 6c (practical test) → 6d. Slices **6a, 6b and 6c are built** (§10.8); **slice 6c as built: KEEP** (Manu, 2026-10-09, practical test; see §10.8 "Artist verdict"). Slice 6d is not needed now. F6 and the choice between the mirror variants V-a / V-b / V-c stay **open** (§10.9).
 The AD-013 H2 amendment (G-2), required before Slice 3 (§5, §7), is **DECIDED** (Manu, 2026-10-08; [AD-013, Addendum 2026-10-08](AD-013-CAPABILITY-PROMOTION-UX-OWNERSHIP.md#addendum-2026-10-08-ad-sym-03-slice-3--h2-amendment-g-2-context-keyed-refusal-for-c-fail-closed-block-row)).
 **Date:** 2026-10-06 · revised 2026-10-07 after the independent review CLAUDE-001 (answers in §9) · decided 2026-10-08
-**Mode (M5):** Discovery → decision preparation. No implementation, no code change.
+**Mode (M5):** Production — slices 1–4, 6a–6c and 7 built in `src/mirai/` (2026-10-08 … 2026-10-09; §7, §10.8, §11; slice 5 has no Done mark, its decided seam cases are built with 3c and S2, §6), in the production app since 2026-10-14 ([AD-SYM-04](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md) slice A1); the original text (§1–§9) was written in Discovery (decision preparation).
 **Belongs to:** Symmetry Lab track (WP-SYM-LAB), follow-up of WP-SYM-LAB-03; working milestone
 "Symmetry Basic Modeling Parity" (Discovery header)
 **Primary input (preserved, not edited):**
