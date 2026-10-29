@@ -9,7 +9,8 @@
 Was PROPOSED (2026-10-17); **revised 2026-10-20** after the independent review
 [`AD-022_REVIEW_CLAUDE_001`](../archive/viewport_v02/reviews/AD-022_REVIEW_CLAUDE_001.md) (ACCEPT WITH CHANGES; the
 disposition of every finding is in §10). §1–§10 keep the alternatives as the decision history.
-**Mode (M5):** Discovery, decision preparation.
+**Mode (M5):** Production — implemented in production 2026-10-21 (B2-out, §11); §1–§10 were written in Discovery
+(decision preparation).
 **Work package:** WP-VIEW-PERF-02 (follows WP-VIEW-PERF-01 Slices 1 + 2).
 **Artist input:** Manu, 2026-10-17, on the Slice-1 practical test: "Fühlt sich gleich an, nur schneller. Im
 Vergleich zu Blender auf meinem PC aber noch wesentlich langsamer. Dort lässt sich 20k Gollum sehr flüssig
