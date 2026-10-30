@@ -9,7 +9,8 @@ topology commands, the other hold keys and the drag selections silently).
 
 Behaviour as it was inside `Application` (AD-027 M6 moves it, nothing else). The kinds:
 
-- `TransformGesture` - Move / Rotate / Scale on components through the `ToolManager` (also from the gizmo / Tweak).
+- `TransformGesture` - Move / Rotate / Scale on components through the `ToolManager` (also from the gizmo / Tweak);
+- `ExtrudeGesture` - Extrude (hold T) through the `ToolManager`.
 
 The axis / plane constraint, its mode (one-shot / sticky) and the transform space (World / Normal) are sticky
 settings of this controller (AD-027 §3.1): a gesture reads them at `begin()`, the gizmo shows them.
@@ -18,12 +19,13 @@ settings of this controller (AD-027 §3.1): a gesture reads them at `begin()`, t
 from __future__ import annotations
 
 import dataclasses
+import math
 from typing import Optional
 
 from core import EdgeId, FaceId, ObjectId, Selection, SelectionMode, VertexId
 from core.operations.transform import SeamConstraintError
 
-from .. import transform_space
+from .. import symmetry_declarations, transform_space
 from ..interaction import commands
 from ..interaction.dial import PRECISION_GAIN
 from ..interaction.session import (
@@ -41,6 +43,8 @@ from ..interaction.tools import resolve_selection_vertices
 from ..mask import unblocked
 from ..morph_targets import MORPH_COMMANDS
 from ..soft_selection import RADIUS_STEPS_PERCENT, SoftSettings, SoftSymmetryRefusal
+from ..symmetric_ops import SymmetryRefusal
+from ..topology.connect_per_face import TopologyToolError
 from .services import AppServices
 
 #: WP-06 B4 (E28): the hold-key gestures. Values: (label, verb, participle) for the status lines (E34, `PROVISIONAL`).
@@ -493,6 +497,109 @@ class TransformGesture(GestureSession):
         self.show_weights(tool.operation.context.params["influence"] if display.bands_visible else None)
 
 
+class ExtrudeGesture(GestureSession):
+    """Extrude (WP-06 B9, hold T; `PROVISIONAL` baseline, key T = Artist Input Truth `topology.extrude` "for now",
+    Manu 2026-10-09; the hold-key-hover activation and the hover fallback are engineering proposals). The W/E/R
+    lifecycle with these differences: face mode only, the target is faces (`faces`), `begin()` mutates the topology
+    (hence EXTRUDE_BEGIN_PX: `travel` = the net displacement since the arm), the viewport is told about a topology
+    change, a zero extrusion is cancelled, and the selection-history `before` is the snapshot taken ahead of `begin()`
+    (the tool remaps the selection to the caps during `begin()`)."""
+
+    def __init__(self, controller: "GestureController", key: str, faces, origin) -> None:
+        mesh = controller.services.scene.mesh
+        target = (vid for f in faces for vid in element_vertices(mesh, f))
+        super().__init__(controller, commands.EXTRUDE, key, target, origin)
+        self.faces: frozenset[FaceId] = frozenset(faces)
+        self.travel: tuple[float, float] = (0.0, 0.0)
+        self.selection_before: tuple | None = None
+
+    def step(self, dx: float, dy: float) -> bool:
+        """Net displacement since the arm until EXTRUDE_BEGIN_PX, then `begin()`; the first update gets all of it,
+        so the distance follows the pointer from where T went down."""
+        services = self.services
+        tool_manager = self._controller.tool_manager
+        if not self.begun:
+            px, py = self.travel[0] + dx, self.travel[1] + dy
+            self.travel = (px, py)
+            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
+                return False
+            if not self._begin():
+                return False
+            dx, dy = px, py
+        width, height = services.viewport_size
+        tool_manager.update(dx=float(dx), dy=float(dy), width=width, height=height)
+        services.invalidate_picks()
+        tool = tool_manager.active_tool
+        moves = getattr(tool, "moves", None)
+        services.notify_vertices_moved(moves if moves is not None else tool.vertex_ids)
+        return True
+
+    def _begin(self) -> bool:
+        """Start the Extrude (topology changes here). False = refused, the gesture ended.
+
+        AD-SYM-03 slice 7: whenever a symmetry definition is set the declared planner
+        (`symmetry_declarations.EXTRUDE_COORDINATORS`, D-b - the declaration is the only switch) runs first, in MARK
+        as in BLOCK (H2 amendment, "Runtime refusals are not G-3"): it refuses before any mutation (`SymmetryRefusal`:
+        status text, mesh / history / selection untouched) or returns the plan - selection plus mirror partners as
+        one intent - that the unchanged tool is handed. Without a definition the tool runs exactly as in B9."""
+        services = self.services
+        self.selection_before = services.selection_snapshot()
+        faces = set(self.faces)
+        mesh = services.scene.mesh
+        context = {"scene": services.scene, "camera": services.edit_camera}
+        planner = (
+            symmetry_declarations.EXTRUDE_COORDINATORS.get(commands.EXTRUDE)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        if planner is not None:
+            try:
+                plan = planner(mesh, faces)
+            except SymmetryRefusal as exc:
+                return self.refused(str(exc))
+            faces = set(plan.face_ids)
+            context["symmetric_plan"] = plan
+        context["face_ids"] = faces
+        try:
+            self._controller.tool_manager.begin_current_interaction(context)
+        except TopologyToolError as exc:
+            return self.refused(f"Extrude: refused — {exc}")
+        self.begun = True
+        self._controller.topology_changed()
+        return True
+
+    def release(self) -> None:
+        """Commit, or - tap, jitter below EXTRUDE_BEGIN_PX, or a total distance below EXTRUDE_MIN_DISTANCE - leave
+        everything exactly as it was."""
+        services = self.services
+        tool_manager = self._controller.tool_manager
+        if not self.begun:
+            services.status("Extrude: no change")
+            return
+        if abs(tool_manager.active_tool.total_distance) < EXTRUDE_MIN_DISTANCE:
+            self.abort()
+            services.status("Extrude: no change")
+            return
+        tool = tool_manager.active_tool
+        tool_manager.commit()
+        if tool.refusal is not None:
+            # A symmetric commit the coordinator refused (delta): the tool has taken everything back, no history
+            # entry. Same exact prior state as an abort, with the refusal as the visible status.
+            services.restore_selection(self.selection_before)
+            self._controller.topology_changed()
+            services.status(tool.refusal)
+            return
+        services.record_selection_history(self.selection_before)
+        self._controller.topology_changed()
+        services.status("Extrude committed")
+
+    def abort(self) -> None:
+        """A begun Extrude: exact prior mesh (tool), exact prior selection, no history."""
+        self._controller.tool_manager.cancel()
+        self.services.restore_selection(self.selection_before)
+        self._controller.topology_changed()
+
+
 class GestureController:
     """Arms the gestures, owns the constraint settings (`axis_constraint`: None = free; `constraint_mode`;
     `orientation`: World / Normal, WP Toolbox Gaps C1) and the Soft live steps of the running gesture."""
@@ -562,6 +669,44 @@ class GestureController:
         around = " around the Working Pivot" if command != commands.MOVE and services.active_pivot is not None else ""
         services.status(f"{label}: {count} {noun}{around}{constraint_suffix(self.axis_constraint)}{commit_hint(key)}")
         return True
+
+    def arm_extrude(self, key: str, origin) -> bool:
+        """Extrude: face mode with >= 1 selected face, else the hovered face, else refused with a status line. The
+        tool is active, `begin()` waits for the pointer."""
+        services = self.services
+        selection = services.selection
+        mesh = services.scene.mesh
+        if selection.mode is not SelectionMode.FACE:
+            services.status("Extrude: face mode needed")
+            return False
+        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        hovered = selection.hovered
+        from_hover = not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered)
+        if from_hover:
+            faces = {hovered}
+        if not faces:
+            services.status("Extrude: select or hover a face")
+            return False
+        services.flush_hover()  # (as `arm_transform`)
+        self.tool_manager.activate(commands.EXTRUDE)
+        services.interaction.start(ExtrudeGesture(self, key, faces, origin))
+        # Same clear-on-arm as the transforms: no hover highlight on what is extruded.
+        if from_hover or active_selection_contains(selection, hovered):
+            services.set_hovered(None)
+        count = len(faces)
+        services.status(f"Extrude: {count} {'face' if count == 1 else 'faces'} - move the mouse, release {key.upper()} to commit")
+        return True
+
+    def topology_changed(self) -> None:
+        """After a topology gesture's begin / commit / cancel: caches, viewport and a dead-ID sweep (B6 lesson: a
+        stale hovered / selected ID after a topology change crashed the draw loop)."""
+        services = self.services
+        services.invalidate_picks()
+        services.prune_selection()
+        if services.viewport is not None:
+            services.viewport.on_topology_changed()
+            services.viewport.on_selection_changed()
+        services.soft_preview_refresh()
 
     # -- constraints and space -----------------------------------------------------------------------
 

@@ -159,7 +159,6 @@ from .controllers.gestures import (
     CONSTRAINT_SPACES,
     GestureController,
     GestureSession,
-    active_selection_contains,
     commit_hint,
     constraint_suffix,
     element_vertices,
@@ -453,7 +452,7 @@ class _ObjectGesture:
 
 
 class _AppGesture(GestureSession):
-    """AD-027 M6, transitional: a gesture kind whose code is still `Application`'s (`kind`: "extrude", "slide",
+    """AD-027 M6, transitional: a gesture kind whose code is still `Application`'s (`kind`: "slide",
     "smooth", "offset", "object"); it moves into `controllers` kind by kind, the object gesture at M7."""
 
     def __init__(self, app: "Application", kind: str, command: str, key: str, target, origin) -> None:
@@ -473,7 +472,6 @@ class _AppGesture(GestureSession):
     def step(self, dx: float, dy: float) -> bool:
         app = self._app
         return {
-            "extrude": app._extrude_step,
             "slide": app._slide_step,
             "smooth": lambda dx, dy: app._smooth_step(dx),
             "offset": app._offset_step,
@@ -483,7 +481,6 @@ class _AppGesture(GestureSession):
     def release(self) -> None:
         app = self._app
         {
-            "extrude": app._extrude_release,
             "slide": app._slide_release,
             "smooth": app._smooth_release,
             "offset": app._offset_release,
@@ -493,7 +490,6 @@ class _AppGesture(GestureSession):
     def abort(self) -> None:
         app = self._app
         {
-            "extrude": app._extrude_abort,
             "slide": app._slide_abort,
             "smooth": app._smooth_abort,
             "offset": app._offset_abort,
@@ -673,13 +669,6 @@ class Application:
         # The hold-key gestures (W/E/R, T, G, S, I, Ctrl+B; the gizmo / Tweak drag) as sessions in the slot, their
         # constraint settings and Soft live steps (`controllers.gestures` since AD-027 M6).
         self._gestures = GestureController(self._services, self.tool_manager)
-        # WP-06 B9 (Extrude, hold T): the faces fixed at the arm, the pointer's net
-        # displacement since the arm (until `begin()`, see EXTRUDE_BEGIN_PX) and the
-        # selection snapshot taken BEFORE `begin()` - the tool remaps the selection to
-        # the caps during `begin()`, so the Undo mirror entry needs the earlier one.
-        self._extrude_faces: frozenset[FaceId] = frozenset()
-        self._extrude_travel: tuple[float, float] = (0.0, 0.0)
-        self._extrude_selection_before: tuple | None = None
         # AD-021 M2-2 (E-11): the object gesture of mode `4` (None = none); a gesture session like the component
         # gestures, so `interaction_owner` reports "transform" and every key gate holds for it unchanged.
         self._object_gesture: _ObjectGesture | None = None
@@ -3086,7 +3075,7 @@ class Application:
                 gesture.before = None
                 raise
             self._gesture.begun = True
-            self._extrude_topology_changed()
+            self._gestures.topology_changed()
             dx = px
         result = gesture.result
         gesture.width = max(0.0, min(result.limit, gesture.width + dx * gesture.world_per_px))
@@ -3124,7 +3113,7 @@ class Application:
         self.history.push(MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(before), description=gesture.label))
         gesture.residue(gesture.result)
         self._record_selection_history(gesture.selection_before)
-        self._extrude_topology_changed()
+        self._gestures.topology_changed()
         self._set_status(f"{gesture.label} committed")
 
     def _offset_abort(self) -> None:
@@ -3136,7 +3125,7 @@ class Application:
         self.scene.mesh.rollback_change(before)
         if gesture.selection_before is not None:
             self._restore_selection(gesture.selection_before)
-        self._extrude_topology_changed()
+        self._gestures.topology_changed()
 
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 
@@ -3899,7 +3888,7 @@ class Application:
             return False
         origin = self._gestures.origin(key)
         if command == commands.EXTRUDE:
-            return self._extrude_arm(key, origin)
+            return self._gestures.arm_extrude(key, origin)
         if command == commands.LOOP_SLIDE:
             return self._slide_arm(key, origin)
         if command in SMOOTH_COMMANDS:
@@ -4568,141 +4557,6 @@ class Application:
             return None
         return mask_symmetric_influence(field, mask).weights
 
-    # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
-    #
-    # PROVISIONAL baseline. Key T = Artist Input Truth `topology.extrude` ("for now",
-    # Manu 2026-10-09). The hold-key-hover activation (E1) and the hover fallback (E2)
-    # are engineering proposals, NOT Artist decisions. Same lifecycle as W/E/R
-    # (`_transform_*`), with the differences the branches above mark: Face mode only,
-    # target = faces, `begin()` mutates the topology (hence EXTRUDE_BEGIN_PX), the
-    # viewport is told about a topology change, a zero extrusion is cancelled, and the
-    # selection-history `before` is the snapshot taken ahead of `begin()`.
-
-    def _extrude_arm(self, key: str, origin) -> bool:
-        """Arm Extrude: Face mode with >= 1 selected face, else the hovered face, else
-        refuse with a status line. The tool is active, `begin()` waits for the pointer."""
-        selection = self.selection
-        mesh = self.scene.mesh
-        if selection.mode is not SelectionMode.FACE:
-            self._set_status("Extrude: face mode needed")
-            return False
-        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
-        hovered = selection.hovered
-        from_hover = not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered)
-        if from_hover:
-            faces = {hovered}
-        if not faces:
-            self._set_status("Extrude: select or hover a face")
-            return False
-        self._execute(commands.EXTRUDE)
-        self._start_gesture(
-            "extrude", commands.EXTRUDE, key, (vid for f in faces for vid in element_vertices(mesh, f)), origin
-        )
-        self._extrude_faces = frozenset(faces)
-        self._extrude_travel = (0.0, 0.0)
-        # Same clear-on-arm as the transforms: no hover highlight on what is extruded.
-        if from_hover or active_selection_contains(selection, hovered):
-            self._set_hovered(None)
-        count = len(faces)
-        self._set_status(
-            f"Extrude: {count} {'face' if count == 1 else 'faces'}"
-            f" - move the mouse, release {key.upper()} to commit"
-        )
-        return True
-
-    def _extrude_step(self, dx: float, dy: float) -> bool:
-        """Net displacement since the arm until EXTRUDE_BEGIN_PX, then `begin()`; the first update gets all of
-        it, so the distance follows the pointer from where T went down."""
-        gesture = self._gesture
-        if not gesture.begun:
-            px, py = self._extrude_travel
-            px, py = px + dx, py + dy
-            self._extrude_travel = (px, py)
-            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
-                return False
-            if not self._extrude_begin():
-                return False
-            dx, dy = px, py
-        update = {"dx": float(dx), "dy": float(dy), "width": self.viewport_width, "height": self.viewport_height}
-        self.tool_manager.update(**update)
-        self._pick_cache.invalidate()
-        tool = self.tool_manager.active_tool
-        moves = getattr(tool, "moves", None)
-        self.viewport.on_vertices_moved(moves if moves is not None else tool.vertex_ids)
-        return True
-
-    def _extrude_begin(self) -> bool:
-        """Start the Extrude (topology changes here). False = refused, tool disarmed.
-
-        AD-SYM-03 slice 7: whenever a symmetry definition is set the declared planner
-        (`symmetry_declarations.EXTRUDE_COORDINATORS`, D-b - the declaration is the only switch) runs
-        first, in MARK as in BLOCK (H2 amendment, "Runtime refusals are not G-3"): it refuses before any
-        mutation (`SymmetryRefusal`: status text, mesh/history/selection untouched, tool disarmed) or
-        returns the plan - selection plus mirror partners as one intent - that the unchanged tool is handed.
-        Without a definition the tool runs exactly as in B9."""
-        self._extrude_selection_before = self._selection_snapshot()
-        faces = set(self._extrude_faces)
-        context = {"scene": self.scene, "camera": self._edit_camera}
-        planner = (
-            symmetry_declarations.EXTRUDE_COORDINATORS.get(commands.EXTRUDE)
-            if self.scene.mesh.symmetry_definition is not None
-            else None
-        )
-        if planner is not None:
-            try:
-                plan = planner(self.scene.mesh, faces)
-            except SymmetryRefusal as exc:
-                return self._gesture.refused(str(exc))
-            faces = set(plan.face_ids)
-            context["symmetric_plan"] = plan
-        context["face_ids"] = faces
-        try:
-            self.tool_manager.begin_current_interaction(context)
-        except TopologyToolError as exc:
-            return self._gesture.refused(f"Extrude: refused — {exc}")
-        self._gesture.begun = True
-        self._extrude_topology_changed()
-        return True
-
-    def _extrude_topology_changed(self) -> None:
-        """After begin/commit/cancel: caches, viewport and a dead-ID sweep (B6 lesson:
-        a stale hovered/selected ID after a topology change crashed the draw loop)."""
-        self._pick_cache.invalidate()
-        self._prune_ghost_selection()
-        if self.viewport is not None:
-            self.viewport.on_topology_changed()
-            self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-
-    def _extrude_release(self) -> None:
-        """Release of T: commit, or - tap, jitter below EXTRUDE_BEGIN_PX, or a total
-        distance below EXTRUDE_MIN_DISTANCE - leave everything exactly as it was."""
-        if not self._gesture.begun:
-            self._set_status("Extrude: no change")
-            return
-        if abs(self.tool_manager.active_tool.total_distance) < EXTRUDE_MIN_DISTANCE:
-            self._extrude_abort()
-            self._set_status("Extrude: no change")
-            return
-        tool = self.tool_manager.active_tool
-        self.tool_manager.commit()
-        if tool.refusal is not None:
-            # A symmetric commit the coordinator refused (delta): the tool has taken everything back, no
-            # history entry. Same exact prior state as an abort, with the refusal as the visible status.
-            self._restore_selection(self._extrude_selection_before)
-            self._extrude_topology_changed()
-            self._set_status(tool.refusal)
-            return
-        self._record_selection_history(self._extrude_selection_before)
-        self._extrude_topology_changed()
-        self._set_status("Extrude committed")
-
-    def _extrude_abort(self) -> None:
-        """Cancel a begun Extrude: exact prior mesh (tool), exact prior selection, no history."""
-        self.tool_manager.cancel()
-        self._restore_selection(self._extrude_selection_before)
-        self._extrude_topology_changed()
-
     def _cancel(self) -> bool:
         """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
         exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
@@ -4728,11 +4582,7 @@ class Application:
     def _gesture_cleanup(self, kind: str) -> None:
         """AD-027 M6 (transitional): the kind state of an ending gesture whose code is still here; a journal that
         ended without release / abort stops recording (the mesh stays)."""
-        if kind == "extrude":
-            self._extrude_faces = frozenset()
-            self._extrude_travel = (0.0, 0.0)
-            self._extrude_selection_before = None
-        elif kind == "object":
+        if kind == "object":
             self._object_gesture = None
         elif kind == "slide":
             self._slide_plan = None

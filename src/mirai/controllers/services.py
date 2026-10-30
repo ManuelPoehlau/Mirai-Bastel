@@ -172,6 +172,11 @@ class AppServices:
         (AD-027 M5): Lasso Select's release."""
         return self._app._elements_in_polygon(polygon, occlusion)
 
+    def prune_selection(self) -> None:
+        """Drop selected / hovered IDs the mesh no longer has (`Application._prune_ghost_selection`). Reason for the
+        member (AD-027 M6): a topology gesture (Extrude, Inset / Bevel) sweeps after its begin, commit and cancel."""
+        self._app._prune_ghost_selection()
+
     def soft_preview_refresh(self) -> bool:
         """True = the preview shows weights now (AD-027 M6: a hover-armed gesture then owns the bands it put there)."""
         return self._app._soft_preview_refresh()
