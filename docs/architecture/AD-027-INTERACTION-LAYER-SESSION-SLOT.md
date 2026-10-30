@@ -28,8 +28,11 @@ code: `src/mirai/application.py`, `src/mirai/interaction/`, `src/main.py`, `src/
   (Tasten, Phase 6) nicht blockiert.
 - **Stand:** entschieden (dein Go, 2026-10-29, mit den drei Änderungen der zweiten Meinung, §12). Der Umbau läuft in
   drei frischen Sessions (§7); die erste (M0–M2: Aufzeichnung, Platz, eine Frage) und die zweite (M3–M5: Knife,
-  Halte-Tasten und Morph, Box/Lasso und Gizmo-Klick) sind fertig (2026-10-30). Kein Abhak-Test: normal
-  weiterarbeiten und melden, wenn sich etwas anders anfühlt (§10).
+  Halte-Tasten und Morph, Box/Lasso und Gizmo-Klick) sind fertig (2026-10-30). Eine Korrektur am Plan (§7.1 M5):
+  Box/Lasso, der Gizmo-Klick und eine abgelehnte Ziehgeste bekommen einen eigenen zweiten Platz neben dem ersten,
+  weil heute z. B. Alt+M bei gedrücktem Gizmo-Griff die Vorschau öffnet und das Loslassen trotzdem dem Griff gehört -
+  mit nur einem Platz hätte sich das geändert. Kein Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas
+  anders anfühlt (§10).
 - **Danach:** AD-025 Phase 6 mit dem Kiefer-Szenario.
 
 ## 0. Decisions this AD rests on

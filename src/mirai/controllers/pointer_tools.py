@@ -44,7 +44,7 @@ from ..viewport.box_select import normalized_rect, stroke_samples
 from ..viewport.look_controls import DRAG_DEGREES_PER_PIXEL
 from .services import AppServices
 
-#: Lasso outline points are recorded at least this far apart (window pixels).
+#: Pixels the pointer must move before the next Lasso outline point is added (`PROVISIONAL`).
 LASSO_POINT_SPACING_PX = 3.0
 
 _SELECT_DRAGS = frozenset({commands.SELECT_DRAG, commands.SELECT_DRAG_ADD})

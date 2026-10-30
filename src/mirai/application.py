@@ -5677,7 +5677,7 @@ class Application:
                 return
             self._press_point = self._cursor
             if outcome is PASS:
-                outcome = self.interaction.handle(press)  # no gizmo press under the Re-Symmetrize preview
+                outcome = self.interaction.handle(press)  # no gizmo press under the preview or a press session
             if outcome is PASS:
                 self._gizmo_press(input)
         self.pointer.press(input)
@@ -5776,7 +5776,8 @@ class Application:
         self._cursor = (x, y)
         if self.pointer.active:
             return False
-        grabbed = self.interaction.grab(Motion(x, y, dx, dy))  # the Knife's preview
+        motion = Motion(x, y, dx, dy)
+        grabbed = self.interaction.grab(motion)  # the Knife's preview
         if grabbed is not PASS:
             return grabbed
         if self._transform_key is not None:
@@ -5784,7 +5785,7 @@ class Application:
             if self._alt_held and self._transform_command not in _SMOOTH_COMMANDS:
                 return self._navigate_during_transform(dx, dy)
             return self._transform_step(dx, dy)
-        outcome = self.interaction.background(Motion(x, y, dx, dy))  # the light drag, then the Morph weight
+        outcome = self.interaction.background(motion)  # the light drag, then the Morph weight
         if outcome is not PASS:
             return outcome
         if self.coalesce_hover:
