@@ -457,7 +457,7 @@ def test_component_move_and_knife_work_on_the_placed_edit_object():
     for eid in sorted(mesh.all_edge_ids()):
         a, b = (mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
         mid = tuple((a[i] + b[i]) / 2 for i in range(3))
-        hit = app._knife_pick(*cam.project_to_screen(mid, WIDTH, HEIGHT))
+        hit = app._knife.pick(*cam.project_to_screen(mid, WIDTH, HEIGHT))
         if hit.get("kind") == "edge" and hit["edge_id"] == eid:
             break
     else:

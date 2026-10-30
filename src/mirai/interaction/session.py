@@ -1,17 +1,20 @@
 """The interaction slot (AD-027 §3.2): one running session, the held keys beside it, one routing rule.
 
 A **session** is an interaction that runs over several events and owns some input while it runs (the
-Re-Symmetrize preview, later the Knife, a held W/E/R, a drag selection). At most one runs. A **hold
-key** is a held key that changes what the pointer does (Working Pivot, Lasso, Light, Morph weight);
-several may be held and a session may start while one is held. Modes (component mode, object mode, a
-morph target's editing view) are not sessions: `can_run` reads them, they own no input.
+Re-Symmetrize preview, the Knife, later a held W/E/R). At most one runs. A **press session** is an
+owner-less pointer session that lives exactly from one LMB press to that press's release (a drag selection,
+a press on a gizmo handle, a refused drag gesture that swallows the rest of its drag); at most one runs, and a
+session may start while it runs, as it could before (AD-027 §7.1, M5). A **hold key** is a held key that
+changes what the pointer does (Working Pivot, Lasso, Light, Morph weight); several may be held and a session
+may start while one is held. Modes (component mode, object mode, a morph target's editing view) are not
+sessions: `can_run` reads them, they own no input.
 
 Precedence is fixed by kind, not by start order (AD-027 §1.1, V1-V7), and lives only in
 `InteractionSlot.route`:
 
 1. **grab** - a session that `grabs(event)` decides the event alone;
 2. **hold claims**, in rank order;
-3. **session** - `session.handle(event)`;
+3. **session** - `session.handle(event)`, then the press session's;
 4. **hold background**, in rank order;
 5. **idle** - whatever the caller does when everything answered `PASS`.
 
@@ -91,7 +94,11 @@ class KeyRelease:
 
 @dataclass(frozen=True)
 class Press:
-    """A mouse button went down at (x, y); the pointer resolver (AD-019) has not decided click / drag."""
+    """A mouse button went down at (x, y); the pointer resolver (AD-019) has not decided click / drag.
+
+    What a handler returns: True = the press is taken (it does not reach the pointer resolver: the Knife's
+    point, the Working Pivot's placement); False = handled, the press still goes on to the resolver (no gizmo
+    press under the Re-Symmetrize preview); `PASS` = idle (the gizmo press, then the resolver)."""
 
     input: Input
     x: Optional[float]
@@ -100,21 +107,24 @@ class Press:
 
 @dataclass(frozen=True)
 class Drag:
-    """One drag step the pointer resolver produced (`command` = its resolved drag command)."""
+    """One drag step: the pointer resolver's (`command` = its resolved drag command), or `command` None = a raw
+    step of a press a session or a hold key took (the resolver never saw that press)."""
 
-    command: str
+    command: Optional[str]
     dx: float
     dy: float
 
 
 @dataclass(frozen=True)
 class Release:
-    """A mouse button went up; `click` = the click command the resolver produced, None = no click."""
+    """A mouse button went up; `click` = the click command the resolver produced, None = no click. `raw` = before
+    the resolver (the release of a press a session or a hold key took), else after it."""
 
     button: str
     x: float
     y: float
     click: Optional[str] = None
+    raw: bool = False
 
 
 @dataclass(frozen=True)
@@ -150,7 +160,8 @@ class Hover:
 
 @dataclass(frozen=True)
 class Leave:
-    """The cursor left the window."""
+    """The hover point is gone: the cursor left the window, a camera gesture took the pointer, or a re-pick has no
+    cursor to pick at."""
 
 
 @dataclass(frozen=True)
@@ -220,11 +231,13 @@ class InteractionSlot:
 
     def __init__(self) -> None:
         self.session: Optional[Session] = None
+        #: The LMB press's own pointer session (owner None, never exclusive), None = none.
+        self.press: Optional[Session] = None
         self._holds: dict[str, HoldKey] = {}
 
     @property
     def owner(self) -> Optional[str]:
-        """The running session's `interaction_owner` value (None = none, or a pointer-only session)."""
+        """The running session's `interaction_owner` value (None = none; a press session owns no keys)."""
         return None if self.session is None else self.session.owner
 
     @property
@@ -238,6 +251,15 @@ class InteractionSlot:
     def end(self, session: Session) -> None:
         assert self.session is session, f"{session!r} is not the running session"
         self.session = None
+
+    def start_press(self, session: Session) -> None:
+        assert self.press is None, f"press slot busy: {self.press!r}"
+        assert session.owner is None and not session.exclusive, session
+        self.press = session
+
+    def end_press(self, session: Session) -> None:
+        assert self.press is session, f"{session!r} is not the running press session"
+        self.press = None
 
     def hold(self, hold: HoldKey) -> None:
         assert hold.command in self.HOLD_RANK, hold.command
@@ -254,28 +276,45 @@ class InteractionSlot:
             return session.handle(event)
         return PASS
 
-    def route(self, event: Event) -> Outcome:
-        """Stages 1-4; `PASS` = idle (stage 5 is the caller's)."""
-        outcome = self.grab(event)
-        if outcome is not PASS:
-            return outcome
-        holds = self.holds
-        for hold in holds:
+    def claim(self, event: Event) -> Outcome:
+        """Stage 2: the hold keys' claims, in rank order."""
+        for hold in self.holds:
             outcome = hold.claims(event)
             if outcome is not PASS:
                 return outcome
-        session = self.session
-        if session is not None:
-            outcome = session.handle(event)
-            if outcome is not PASS:
-                return outcome
-        for hold in holds:
+        return PASS
+
+    def handle(self, event: Event) -> Outcome:
+        """Stage 3: the running session, then the press session."""
+        for session in (self.session, self.press):
+            if session is not None:
+                outcome = session.handle(event)
+                if outcome is not PASS:
+                    return outcome
+        return PASS
+
+    def background(self, event: Event) -> Outcome:
+        """Stage 4: the hold keys' background, in rank order."""
+        for hold in self.holds:
             outcome = hold.background(event)
             if outcome is not PASS:
                 return outcome
         return PASS
 
+    def route(self, event: Event) -> Outcome:
+        """Stages 1-4; `PASS` = idle (stage 5 is the caller's). Until the held gestures are sessions (AD-027 M6)
+        `Application` calls the stages one by one around its gesture branch where one applies."""
+        for stage in (self.grab, self.claim, self.handle, self.background):
+            outcome = stage(event)
+            if outcome is not PASS:
+                return outcome
+        return PASS
+
     def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
-        """The running session's `allows` (None without a session)."""
-        session = self.session
-        return None if session is None else session.allows(command, ctx)
+        """The running session's `allows`, then the press session's (None without either)."""
+        for session in (self.session, self.press):
+            if session is not None:
+                refusal = session.allows(command, ctx)
+                if refusal is not None:
+                    return refusal
+        return None

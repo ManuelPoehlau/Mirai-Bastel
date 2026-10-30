@@ -243,9 +243,9 @@ def test_knife_hover_is_not_coalesced(twins):
     assert coalesced.knife_active
     for x, y in _cursor_path(sync, 6):
         _both(twins, lambda app: app.pointer_motion(x, y))
-        assert coalesced._knife_target == sync._knife_target
+        assert coalesced._knife.session.target == sync._knife.session.target
         _both(twins, lambda app: app.pointer_scroll(WHEEL_UP))
-        assert coalesced._knife_target == sync._knife_target
+        assert coalesced._knife.session.target == sync._knife.session.target
         assert not coalesced._hover_stale
     _both(twins, lambda app: app.key_press(ESC))
     _tick_and_compare(twins)

@@ -82,7 +82,7 @@ def test_a_bent_cut_through_a_face_is_cut_at_enter_only(app):
     assert _click(app, _edge_screen(app, e56, 0.5))
     assert _click(app, _face_screen(app, 0.5, 0.3))
     assert app.status_message == "Knife: cut (1 path segment)"
-    assert [p["kind"] for p in app._knife.path] == ["edge", "face"]
+    assert [p["kind"] for p in app._knife.tool.path] == ["edge", "face"]
     assert _click(app, _edge_screen(app, e47, 0.5))
     assert len(app.knife_render_data.placed_points) == 3 and len(app.knife_render_data.path_segments) == 2
     assert _topology(mesh) == before and app._pick_cache._generation == generation
@@ -100,17 +100,17 @@ def test_closing_a_shape_by_clicking_its_start_does_not_commit(app):
     corners = [(0.3, 0.3), (0.7, 0.3), (0.5, 0.7)]
     for u, w in corners:
         assert _click(app, _face_screen(app, u, w))
-    first = app._knife.points[0]
+    first = app._knife.tool.points[0]
     start = _screen(app, first["position"])
-    assert app._knife_pick(start[0] + 4.0, start[1]) == {"kind": "point", "pid": first["pid"]}   # snap
+    assert app._knife.pick(start[0] + 4.0, start[1]) == {"kind": "point", "pid": first["pid"]}   # snap
     assert _click(app, (start[0] + 4.0, start[1]))
     assert app.status_message == "Knife: shape closed - the next click cuts on from its start (3 path segments)"
     assert app.knife_active and _history_depths(app) == (0, 0)
-    assert app._knife.last_point is first
+    assert app._knife.tool.last_point is first
     assert len(app.knife_render_data.path_segments) == 3      # the closing segment is drawn
     assert app.viewport.tool_line_layers[TOOL_ACTIVE_LAYER] == list(app.knife_render_data.path_segments)
-    assert app.key_press(CTRL_Z) and len(app._knife.points) == 3
-    assert app.key_press(CTRL_Y) and app._knife.last_point is first
+    assert app.key_press(CTRL_Z) and len(app._knife.tool.points) == 3
+    assert app.key_press(CTRL_Y) and app._knife.tool.last_point is first
     assert app.key_press(ENTER)
     assert app.status_message.startswith("Knife committed (")
     assert len(mesh.all_face_ids()) == n_f + 2                 # the closed-shape stand-in: 3 faces from 1
@@ -143,18 +143,18 @@ def test_refusals_name_the_s3_reasons(app, monkeypatch):
     _begin(app)
     for u, w in ((0.3, 0.3), (0.7, 0.3)):
         assert _click(app, _face_screen(app, u, w))
-    first = app._knife.points[0]
+    first = app._knife.tool.points[0]
     start = _screen(app, first["position"])
     assert not _click(app, start)
     assert app.status_message == "Knife: closing a shape needs at least 3 points"
     assert _click(app, _face_screen(app, 0.5, 0.7))
-    second = _screen(app, app._knife.points[1]["position"])
+    second = _screen(app, app._knife.tool.points[1]["position"])
     assert not _click(app, second)
     assert app.status_message == "Knife: an earlier point inside a face cannot be clicked again (not yet)"
     # A face hit closer than 9 px to an edge (an edge the pick did not return, e.g. hidden): refused.
     near = _face_screen(app, 0.5, 0.5)
-    real = app._knife_pick
-    monkeypatch.setattr(app, "_knife_pick", lambda x, y, **kw: dict(real(x, y, **kw), distance_px=5.0))
+    real = app._knife.pick
+    monkeypatch.setattr(app._knife, "pick", lambda x, y, **kw: dict(real(x, y, **kw), distance_px=5.0))
     assert not _click(app, near)
     assert app.status_message == "Knife: too close to an edge - click on the edge or further inside the face"
     assert app.knife_render_data.prospective_point is None    # no preview for a refused target
@@ -163,8 +163,8 @@ def test_refusals_name_the_s3_reasons(app, monkeypatch):
 def test_a_face_point_snaps_only_within_the_vertex_pick_radius(app):
     _begin(app)
     assert _click(app, _face_screen(app, 0.5, 0.5))
-    own = app._knife.points[0]
+    own = app._knife.tool.points[0]
     sx, sy = _screen(app, own["position"])
-    assert app._knife_pick(sx + 10.0, sy) == {"kind": "point", "pid": own["pid"]}
-    far = app._knife_pick(sx + 30.0, sy)
+    assert app._knife.pick(sx + 10.0, sy) == {"kind": "point", "pid": own["pid"]}
+    far = app._knife.pick(sx + 30.0, sy)
     assert far["kind"] == "face" and math.dist(far["position"], own["position"]) > 0.0

@@ -1054,7 +1054,7 @@ def run_topology(rig: NavRig, cfg) -> list[TopoResult]:
                 app.pointer_motion(x, y)
                 app.pointer_press(lmb, x, y)
                 app.pointer_release("LEFT", x, y)
-            plan = app._knife.last_plan if app._knife is not None else None
+            plan = app._knife.tool.last_plan if app._knife.tool is not None else None
             crossings = len(plan.crossings) if plan is not None and plan.crossings else 0
             app.key_press(key["ESCAPE"])
             rig.settle()

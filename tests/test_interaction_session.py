@@ -162,6 +162,43 @@ def test_allows_is_the_running_sessions():
     assert SILENT.text is None
 
 
+class _Press(_Session):
+    owner = None
+    label = None
+
+
+def test_a_press_session_runs_beside_the_session():
+    """AD-027 §7.1 (M5): a press session (owner None) lives from its LMB press to that release; a session may start
+    while it runs (a Knife begun while LMB is held on a gizmo handle), and the press keeps its own events."""
+    slot = InteractionSlot()
+    press = _Press(answer=False, refusal=Refusal("press"))
+    slot.start_press(press)
+    assert slot.owner is None
+    with pytest.raises(AssertionError):
+        slot.start_press(_Press())
+    with pytest.raises(AssertionError):
+        slot.start_press(_Session())  # an owning session is never a press session
+    session = _Session()
+    slot.start(session)
+    assert slot.owner == "test"
+    assert slot.handle(Press(LMB, 0, 0)) is False  # stage 3: the session passed, the press session answered
+    assert session.seen == [Press(LMB, 0, 0)] and press.seen == [Press(LMB, 0, 0)]
+    assert slot.allows(commands.MOVE, RunContext("key")) == Refusal("press")
+    slot.end(session)
+    slot.end_press(press)
+    assert slot.press is None and slot.allows(commands.MOVE, RunContext("key")) is None
+
+
+def test_the_session_answers_before_the_press_session():
+    slot = InteractionSlot()
+    press = _Press(answer=False, refusal=Refusal("press"))
+    session = _Session(answer=True, refusal=Refusal("session"))
+    slot.start_press(press)
+    slot.start(session)
+    assert slot.handle(Motion(1, 1)) is True and press.seen == []
+    assert slot.allows(commands.MOVE, RunContext("key")) == Refusal("session")
+
+
 # -- E5 (ii): the controller boundary ---------------------------------------------------------------
 
 

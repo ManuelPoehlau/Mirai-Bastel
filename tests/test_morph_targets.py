@@ -65,7 +65,7 @@ def _sculpt(app, vertices, key: str = "w"):
 
 
 def _view_equals_base_plus_offsets(app) -> None:
-    view = app._target_view
+    view = app._morph.view
     base, lid, mesh = view.base_mesh, view.lid, view.view_mesh
     assert sorted(mesh.all_vertex_ids()) == sorted(base.all_vertex_ids())
     for v in base.all_vertex_ids():

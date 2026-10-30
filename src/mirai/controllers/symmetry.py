@@ -119,6 +119,10 @@ class ResymPreview:
 
     def handle(self, event) -> Outcome:
         controller = self._controller
+        if isinstance(event, Press):
+            return False  # no gizmo press under the preview (the press itself goes on to the resolver)
+        if not self.grabs(event):
+            return PASS  # stage 3 of the routing: nothing else that it did not grab
         if isinstance(event, KeyPress):
             # Keys while the preview is open: the Re-Symmetrize key executes, Cancel closes, the pure
             # display keys pass (to the key path); every other bound key is ignored with the hint.
@@ -143,8 +147,6 @@ class ResymPreview:
             return False
         if isinstance(event, Drag):
             return False  # the preview owns the mesh and the selection; navigation still runs
-        if isinstance(event, Press):
-            return True  # no gizmo press under the preview (the press itself goes on to the resolver)
         return PASS
 
     def cancel(self) -> bool:

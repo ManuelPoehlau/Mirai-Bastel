@@ -732,7 +732,7 @@ def test_a_pending_knife_session_follows_the_definition_it_started_with():
     """The session view is built at begin; the session gate ignores Shift+S while the Knife runs."""
     app = symmetric_app()
     begin_knife(app)
-    assert app._knife._symmetric_view is not None and app._knife._symmetric_commit is not None
+    assert app._knife.tool._symmetric_view is not None and app._knife.tool._symmetric_commit is not None
     definition = app.scene.mesh.symmetry_definition
     assert app.key_press(SHIFT_S) is False
     assert app.scene.mesh.symmetry_definition is definition
@@ -742,7 +742,7 @@ def test_a_pending_knife_session_follows_the_definition_it_started_with():
 def test_without_a_definition_the_knife_is_the_plain_knife():
     app = make_app()
     begin_knife(app)
-    assert app._knife._symmetric_commit is None and app._knife._symmetric_view is None
+    assert app._knife.tool._symmetric_commit is None and app._knife.tool._symmetric_view is None
     assert app.key_press(ESC) is True
 
 

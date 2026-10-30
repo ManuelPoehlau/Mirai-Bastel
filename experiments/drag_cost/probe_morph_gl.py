@@ -289,7 +289,7 @@ def _run_op(app, op: str) -> float:
                    for tri in triangulate_mesh_face(mesh, face)]
         app.selection.clear()
         app.key_press(_key("c"))
-        knife = app._knife
+        knife = app._knife.tool
         targets = [{"kind": "edge", "edge_id": edges[0], "t": 0.4}]
         targets += [{"kind": "face", "face_id": face, "position": c, "distance_px": 100.0} for c in centres]
         targets.append({"kind": "edge", "edge_id": edges[2], "t": 0.6})

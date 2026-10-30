@@ -83,6 +83,13 @@ class AppServices:
     def edit_camera(self):
         return self._app._edit_camera
 
+    @property
+    def pick_cache(self):
+        """The edit object's screen-space pick cache. Reason for the member (AD-027 M3): the Knife picks with its
+        own occlusion tests on the shared cache (`knife_pick`, `snap_own_point`, the planner's `set_view`);
+        picking stays in `Application` (§3.4), the cache is the one it keeps."""
+        return self._app._pick_cache
+
     # -- operations --------------------------------------------------------------------------------
 
     def status(self, text: str) -> None:
@@ -129,8 +136,30 @@ class AppServices:
     def pick_face(self, x: float, y: float):
         return self._app._pick_face_at(x, y)
 
+    def pick_in_rect(self, rect, occlusion: bool) -> set:
+        """The elements of the active mode inside a window rectangle (GPU ID buffers, else the CPU picker). Reason
+        for the member (AD-027 M5): Box Select's release picks a region; picking stays in `Application` (§3.4)."""
+        return self._app._elements_in_rect(rect, occlusion)
+
+    def pick_in_polygon(self, polygon, occlusion: bool) -> set:
+        """The elements of the active mode inside a window polygon (as `pick_in_rect`). Reason for the member
+        (AD-027 M5): Lasso Select's release."""
+        return self._app._elements_in_polygon(polygon, occlusion)
+
     def soft_preview_refresh(self, *args, **kwargs) -> None:
         self._app._soft_preview_refresh(*args, **kwargs)
+
+    def set_light(self, **changes) -> bool:
+        """The Worklight's edit path (`Application.set_light`). Reason for the member (AD-027 M4): the light drag
+        (a hold key, `controllers.pointer_tools`) turns the key light; display and the Worklight look stay in
+        `Application` (§3.4)."""
+        return self._app.set_light(**changes)
+
+    def toggle_ortho(self) -> bool:
+        """Ortho <-> Persp (view state, `Application._toggle_ortho`). Reason for the member (AD-027 M3): the Knife
+        session's own ortho key (resolved in the `knife` context) runs the view command `Application` owns
+        (navigation and views stay there, §3.4)."""
+        return self._app._toggle_ortho()
 
     def set_edit_object(self, object_id) -> None:
         self._app._set_edit_object(object_id)

@@ -50,7 +50,6 @@ from core import (
     ObjectMaterial,
     ObjectState,
     ObjectTransform,
-    PointLayerInfo,
     Scene,
     SceneObject,
     Selection,
@@ -64,15 +63,6 @@ from core.serialization import scene_from_json, scene_to_json
 from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
-from viewport.overlay import (
-    TOOL_ACTIVE_LAYER,
-    TOOL_CLIPPED_LAYER,
-    TOOL_MIRROR_DIM_LAYER,
-    TOOL_MIRROR_LAYER,
-    TOOL_MIRROR_PREVIEW_LAYER,
-    TOOL_PREVIEW_LAYER,
-    TOOL_REFUSED_LAYER,
-)
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
@@ -87,9 +77,9 @@ from .mask import (
 )
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import KNIFE_MIRROR_VARIANT_KEY, KeymapLoad, build_default_bindings, load_keymap
-from .interaction.input import KNIFE_CONTEXT, MORPH_CONTEXT, SUBD_CONTEXT
+from .interaction.input import MORPH_CONTEXT, SUBD_CONTEXT
 from .interaction.dial import PRECISION_GAIN, DialAngle
-from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
+from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
@@ -99,7 +89,7 @@ from .interaction.tools.transform import _resolve_space
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from .object_space import ObjectSpaceCamera
-from .pivot import WorkingPivot, place_pivot, snap_to_plane
+from .pivot import WorkingPivot
 from .object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from .scene_objects import (
     REFERENCE_GHOST_ALPHA,
@@ -159,14 +149,21 @@ from .symmetry import mirrored_selection, vertex_correspondence
 from .symmetry_display import SymmetryDisplay
 from .resymmetrize import ResymPlan
 from .controllers.services import AppServices
+from .controllers.knife import KnifeController
+from .controllers.morph import MorphController
+from .controllers.pointer_tools import PointerToolsController
 from .controllers.symmetry import SymmetryController
 from .interaction.session import (
     PASS,
     SILENT,
+    Command,
     Drag,
     Hover,
     InteractionSlot,
     KeyPress,
+    Leave,
+    Modifiers,
+    Motion,
     Press,
     Refusal,
     Release,
@@ -174,17 +171,14 @@ from .interaction.session import (
     Wheel,
 )
 from . import symmetry_declarations
-from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal, view_refusal
+from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
 from .topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
-from .topology.face_geometry import GEO_EPS
-from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
-from .topology.knife_pick import knife_pick, snap_own_point, space_point
-from .topology.knife_preview import KnifeRenderData, build_knife_render_data
+from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
 from .topology.loop_slide import (
@@ -206,28 +200,8 @@ from .topology.vertex_slide import (
     plan_vertex_slide,
     vertex_slide_positions,
 )
-from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
-from .morph_targets import (
-    DRAG_PIXELS_PER_PERCENT as MORPH_DRAG_PIXELS_PER_PERCENT,
-    MAX_TARGETS as MORPH_MAX_TARGETS,
-    MAX_WEIGHT as MORPH_MAX_WEIGHT,
-    MIN_WEIGHT as MORPH_MIN_WEIGHT,
-    MORPH_COMMANDS,
-    WEIGHT_STEPS as MORPH_WEIGHT_STEPS,
-    MorphDisplay,
-    TargetView,
-    TranslatingHistory,
-    install_morph_bindings,
-    morph_target,
-    morph_target_ids,
-    new_target_name,
-    next_target_name,
-    view_placement,
-    view_state,
-    world_width,
-)
-from .subdivision.preview import key_label
+from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
@@ -237,12 +211,10 @@ from .viewport.box_select import (
     normalized_rect,
     point_in_polygon,
     polygon_bounds,
-    stroke_samples,
 )
 from .viewport import gizmo as _gizmo
 from . import transform_space
 from .viewport.look_controls import (
-    DRAG_DEGREES_PER_PIXEL,
     LOOK_ROWS,
     MaterialRow,
     LookRow,
@@ -336,8 +308,6 @@ EXTRUDE_BEGIN_PX = 4.0
 #: The gizmo's name for the tool a handle drag runs (`Application.tweak_command`, the last W/E/R).
 _GIZMO_TOOLS = {commands.MOVE: "move", commands.ROTATE: "rotate", commands.SCALE: "scale"}
 
-#: Pixels the pointer must move before the next Lasso outline point is added (`PROVISIONAL`).
-LASSO_POINT_SPACING_PX = 3.0
 #: WP-06 B9 (E3, PROVISIONAL, agent-set): at release an Extrude whose |total distance|
 #: is below this (world units) counts as cancelled - exact prior state, no history.
 EXTRUDE_MIN_DISTANCE = 1e-6
@@ -355,30 +325,9 @@ _CONSTRAINT_SPACES: dict[str, str] = {
 }
 
 
-#: WP-06 B5a (E42): Display-Commands, alle über die bestehenden
-#: `DisplayState`-Übergänge.
-_DISPLAY_COMMANDS = (
-    commands.CYCLE_DISPLAY_MODE,
-    commands.TOGGLE_WIREFRAME_OVERLAY,
-    commands.SET_SHADED,
-    commands.SET_FLAT_SHADED,
-    commands.SET_WIREFRAME,
-    commands.TOGGLE_REFERENCE_GHOST,
-    commands.CYCLE_LIGHT_PRESET,
-    commands.TOGGLE_LIGHT_SPACE,
-    commands.TOGGLE_REGION_TINT,
-)
-
-#: AD-024 §8 (`PROVISIONAL`): the Look rows - choose a row, step its value. Light rows are view state
-#: (no Undo step), allowed at any time like the display keys.
-_LOOK_COMMANDS = (
-    commands.LOOK_ROW_PREV,
-    commands.LOOK_ROW_NEXT,
-    commands.LOOK_VALUE_DEC,
-    commands.LOOK_VALUE_INC,
-    commands.LOOK_VALUE_DEC_FINE,
-    commands.LOOK_VALUE_INC_FINE,
-)
+#: WP-06 B5a (E42) and AD-024 §8: the display and Look commands (groups in `commands` since AD-027 M3).
+_DISPLAY_COMMANDS = commands.DISPLAY_COMMANDS
+_LOOK_COMMANDS = commands.LOOK_COMMANDS
 
 _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
     commands.SET_SHADED: DisplayMode.SHADED,
@@ -545,33 +494,6 @@ _BEGUN_GESTURE_REFUSES = frozenset({commands.UNDO, commands.REDO, commands.TOGGL
 #: The gestures that ignore the constraint keys: Extrude is normal-only, Loop Slide runs along its edges, Smooth /
 #: Relax and Inset / Bevel have no axis - neither the gesture nor the pending constraint changes.
 _UNCONSTRAINED_GESTURES = frozenset({commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS, *_OFFSET_COMMANDS})
-#: What a running Box / Paint / Lasso drag lets through (it owns the selection until the LMB release).
-_DRAG_SELECT_ALLOWS = frozenset(
-    {
-        commands.CANCEL,
-        commands.TOGGLE_ORTHO,
-        *_DISPLAY_COMMANDS,
-        *_LOOK_COMMANDS,
-        *_SESSION_SWITCH_COMMANDS,
-        *SUBD_COMMANDS,
-    }
-)
-#: What a Knife session lets through from outside its own key map (AD-017; AD-027 §3.3: its commands, Cancel,
-#: Undo/Redo into its isolated history, view state). Its keys never ask: the session resolves them itself.
-_KNIFE_ALLOWS = frozenset(
-    {
-        commands.KNIFE_COMMIT,
-        commands.KNIFE_LIFT,
-        commands.KNIFE_MIRROR_VARIANT,
-        commands.CANCEL,
-        commands.UNDO,
-        commands.REDO,
-        commands.TOGGLE_ORTHO,
-        *_DISPLAY_COMMANDS,
-        *_LOOK_COMMANDS,
-    }
-)
-
 #: The commands a key runs through `_execute` once `can_run` let them through: pure display and view state (allowed
 #: while a transform runs), the Soft settings (state only, like the constraints: they apply to the next gesture - or
 #: to this one if it is armed and has not begun yet; symmetric Soft refuses at `begin()`, AD-SYM-04 SS2), and the
@@ -634,25 +556,6 @@ class _ObjectGesture:
     followers: list = dataclasses.field(default_factory=list)
 
 
-@dataclasses.dataclass
-class _DragSelect:
-    """A running LMB drag selection (2026-10-15, Manu: "Startpunkt entscheidet"): `box` when
-    the press was in empty space, else `paint`; with the Lasso key held (2026-10-21) `lasso`
-    whatever the press point. `add` = Shift (adds) instead of replacing.
-    `before` is the selection at the start (Esc restores it); `last` the last painted point;
-    `points` the lasso outline so far (window pixels). Alt held at the release makes a box or lasso
-    select through the mesh (WP Toolbox Gaps A2, Manu 2026-10-23); paint stays visible-only."""
-
-    kind: str
-    add: bool
-    start: tuple[float, float]
-    end: tuple[float, float]
-    before: tuple
-    last: tuple[float, float]
-    cancelled: bool = False
-    points: list = dataclasses.field(default_factory=list)
-
-
 def _element_vertices(mesh, element) -> set[VertexId]:
     """Vertices eines einzelnen Vertex/Edge/Face (Hover-Fallback des Transforms).
 
@@ -695,77 +598,6 @@ def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
         frozenset(selection.objects),
     )
 
-
-# WP-KNIFE-01 S3 (PROVISIONAL wording, decision.md "One Knife S3"): status for a refused Knife click
-# by the tool's reason - the S3 cases are named, every other refusal keeps the S2 text.
-_KNIFE_REFUSED = {
-    TOO_CLOSE: "Knife: too close to an edge - click on the edge or further inside the face",
-    CLOSE_NEEDS: "Knife: closing a shape needs at least 3 points",
-    EARLIER_INTERIOR: "Knife: an earlier point inside a face cannot be clicked again (not yet)",
-}
-
-
-# WP-KNIFE-01 UX2 (D7, decision.md "WP-KNIFE-01 UX2"): two Knife clicks this close in time (s) and
-# place (px) are a double-click.
-KNIFE_DOUBLE_CLICK_S = 0.35
-KNIFE_DOUBLE_CLICK_PX = 4.0
-
-# AD-SYM-03 slice 6c (PROVISIONAL, the Artist's call in the 6c practical test, removed or kept in 6d): the three
-# looks of the mirror side in a symmetric Knife session, switched inside the session by one provisional key.
-# V-a: drawn like the working side's own preview (path lines depth-tested, points through); V-b: always
-# visible (no depth test), dimmed; V-c: the mirror's points only. Default V-b: from a side camera every
-# mirror point is hidden (KD 2.7), so V-a can show nothing there.
-KNIFE_MIRROR_VARIANTS = ("V-a", "V-b", "V-c")
-KNIFE_MIRROR_VARIANT_DEFAULT = "V-b"
-KNIFE_MIRROR_VARIANT_LABELS = {
-    "V-a": "wie die eigene Vorschau, verdeckt",
-    "V-b": "immer sichtbar, gedimmt",
-    "V-c": "nur Punkte",
-}
-#: The provisional variant key (`KNIFE_MIRROR_VARIANT_KEY`, imported above) is the default of
-#: `commands.KNIFE_MIRROR_VARIANT` in `KNIFE_CONTEXT` since 2026-10-28 (AD-013 addendum, K-1; a literal before).
-#: The Knife session is never gated (`key_press` routes to it first).
-
-# The preview builder ends a chain at a "closed" break only; a pen lift is drawn the same way.
-_KNIFE_DRAWN_LIFT = {"kind": "break", "reason": "closed", "cyclic": False}
-
-
-def _knife_notes(res) -> list[str]:
-    """What the commit joined or dropped (`KnifeResolution`), for the status line. Nothing of it is
-    shown while cutting (Artist, 2026-09-30: the join to the nearest corner is made at commit only)."""
-    if res is None:
-        return []
-    notes = []
-    if res.joined:
-        notes.append(f"{res.joined} last point(s) inside a face joined to the nearest corner")
-    if res.dropped_tail:
-        notes.append("a last point inside a face could not be joined to a corner - dropped")
-    if res.dropped_lead:
-        notes.append("first point(s) inside a face before any edge or vertex dropped")
-    rejected = [shape for shape in res.closed_shapes if not shape.built]
-    if rejected:
-        notes.append(f"{len(rejected)} closed shape(s) could not be built")
-    if res.short_shapes:
-        notes.append(f"{len(res.short_shapes)} shape(s) inside a face with fewer than 3 points dropped")
-    if res.skipped_shapes:
-        notes.append(f"{res.skipped_shapes} closed shape(s) skipped - their face was already cut")
-    for reason, n in sorted(res.loops_dropped.items()):
-        notes.append(f"{n} loop(s) closed at a point dropped ({reason})")
-    if res.lost_continuation:
-        notes.append("the cut on from an interior start point dropped")
-    return notes
-
-
-def _knife_plan_notes(plan) -> list[str]:
-    """What a click's segment across faces left uncut (WP-KNIFE-01 S4, PROVISIONAL wording)."""
-    notes = []
-    if plan.hidden:
-        notes.append(f"{plan.hidden} hidden crossing(s) not cut")
-    if "gap" in plan.skipped:
-        notes.append("skipped: over a hole, border or hidden part")
-    if plan.method and "edge" in plan.skipped:
-        notes.append("skipped: along an existing edge")
-    return notes
 
 @dataclasses.dataclass(frozen=True)
 class CommandGate:
@@ -824,8 +656,6 @@ class Application:
         self.display: DisplayState = DisplayState()
         # AD-024 §6/§8: the Look row the arrow keys edit (index into `look_controls.LOOK_ROWS`).
         self._look_row_index = 0
-        # AD-024 Q-L2: the key that holds the light drag (None = not held).
-        self._light_drag_key: str | None = None
 
         # WP-06 B8 (picking speed + occlusion, PROVISIONAL): screen-space pick
         # cache, refreshed lazily per camera/mesh state (`picking_cache.py`).
@@ -1036,45 +866,18 @@ class Application:
         # document state, no History. Survives scene loads like `DisplayState`; re-attached to every
         # new viewport in `init_scene`.
         self.subdivision: SubdivisionPreview = SubdivisionPreview(set_status=self._set_status)
-        # AD-025 Phase 3 (`mirai.morph_targets`): the weight per object and the mix display (view
-        # state: no History, not saved), the open editing view of a target (None = none), the hold key
-        # of the weight drag and the weight a tap of it returns to.
-        self.morph: MorphDisplay = MorphDisplay(lambda: self.scene, self._set_status)
+        # AD-025 Phase 3/4 (`controllers.morph` since AD-027 M4): the morph targets, their weights and mix display
+        # (`morph`, view state), the editing view and the weight drag.
+        self._morph = MorphController(self._services)
+        self.morph: MorphDisplay = self._morph.display
         # AD-025 Phase 4 (H5b): the viewport's replacement surface as a chain - the morph mix, then the
         # SubD preview of the mixed cage (`mirai.surface_chain`); either alone sits in the slot itself.
         self.surface_chain = SurfaceChain((self.morph.provider, self.subdivision.provider))
         self.morph.chain = self.surface_chain
         self.subdivision.chain = self.surface_chain
-        self._target_view: TargetView | None = None
-        self._morph_view_shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
-        self._morph_drag_key: str | None = None
-        self._morph_drag_moved = False
-        self._morph_drag_rest = 0.0
-        self._morph_ab: dict[tuple, int] = {}  # (ObjectId, LayerId) -> the weight a tap returns to
 
-        # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
-        # after the B7 window test: press-slide-release was redundant with the
-        # live hover preview): laufende Knife-Session (None = keine). `KnifeTool`
-        # hält Mesh-Schritte, Start und Pfad; hier liegt nur der Interaktions-
-        # zustand: das gültige prospektive Ziel (None = keins oder ungültig),
-        # die hervorgehobene Edge (gehovert) und ob die LMB-Geste des Knife
-        # gerade gehalten wird (nur zur Klick-Schwellen-Erkennung).
-        # `_knife_selection_before` ist der Snapshot vor der Session für den
-        # Selection-Mirror-Stack beim Commit.
-        self._knife: KnifeTool | None = None
-        self._knife_selection_before: tuple | None = None
-        self._knife_target: dict | None = None
-        self._knife_highlight_edge: EdgeId | None = None
-        self._knife_gesture: bool = False
-        self._knife_gesture_moved: float = 0.0
-        # WP-KNIFE-01 UX2: the gesture's button (LMB = a point, RMB = pen lift),
-        # Shift at the press (midpoint snap; the gesture is fixed at the press,
-        # AD-019), and the last LMB click (time, x, y) for the double-click on
-        # `knife_clock` (injectable for headless tests).
-        self._knife_gesture_button: str = "LEFT"
-        self._knife_gesture_midpoint: bool = False
-        self._knife_last_click: tuple[float, float, float] | None = None
-        self.knife_clock = time.monotonic
+        # The Knife session (AD-017, `controllers.knife` since AD-027 M3): its settings live in the controller.
+        self._knife = KnifeController(self._services)
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -1091,36 +894,15 @@ class Application:
         # the pointer across the viewport edge (cursor wrap, 2026-10-22) without a jump in the gesture.
         self._rotate_press: tuple[float, float] | None = None
         self._rotate_virtual: tuple[float, float] | None = None
-        # WP-KNIFE-01 S4: where the hovered segment crosses edges (the planner's dots).
-        self._knife_hover_crossings: tuple = ()
-        # AD-SYM-03 slice 6c: the running session's symmetry view (None = no definition at begin: the Knife
-        # as it always was), the hovered target a click is refused for (and the text shown for it), and the
-        # provisional mirror preview variant (kept across sessions of this Application).
-        self._knife_view: SymmetricKnifeView | None = None
-        self._knife_refused: dict | None = None
-        self._knife_refused_text: str | None = None
-        self.knife_mirror_variant: str = KNIFE_MIRROR_VARIANT_DEFAULT
 
         # 2026-10-15 (Playground tools promoted, Manu): the press point of the current LMB
-        # gesture (Box/Paint/Tweak decide by it), the running drag selection, the transform a
-        # Tweak uses (the last W/E/R pressed; Move until then) and whether the current LMB drag
-        # gesture (Box/Paint or Tweak) was refused (its further drag steps do nothing until the
-        # release).
+        # gesture (Box/Paint/Tweak decide by it) and the transform a Tweak uses (the last W/E/R
+        # pressed; Move until then, below).
         self._press_point: tuple[float, float] | None = None
-        self._drag_select: _DragSelect | None = None
-        # The key that holds the Lasso mode (None = not held); see `commands.LASSO_ARM`.
-        self._lasso_held: str | None = None
-        # Working Pivot (2026-10-28, Manu U-1..U-4, `mirai.pivot`): the placed pivot (None = never placed), the
-        # held placement key, the pivot as it was at that press (Esc restores it), whether a click placed it during
-        # this hold (else the release is a tap = off/on), the running LMB placement and the hover preview point.
-        self._working_pivot: WorkingPivot | None = None
-        self._pivot_key: str | None = None
-        self._pivot_before: WorkingPivot | None = None
-        self._pivot_placed: bool = False
-        self._pivot_dragging: bool = False
-        self._pivot_preview = None
-        # V-3: whether the last pivot point (preview or placement) was snapped onto the symmetry plane.
-        self._pivot_on_plane: bool = False
+        # The hold keys of the pointer (Working Pivot, Lasso, light drag), the Working Pivot itself and the press
+        # sessions of an LMB press (Box / Paint / Lasso, a gizmo handle press, a refused drag gesture)
+        # (`controllers.pointer_tools` since AD-027 M4 / M5).
+        self._pointer_tools = PointerToolsController(self._services)
         # WP Ortho / Views (V-1/V-2, 2026-10-28): the virtual orbit angles of the running Alt+LMB orbit (None = no
         # orbit gesture), the standard view the camera is snapped to (None = free) and whether its ortho came from
         # the snap (V-2 "Auto Perspective": a free orbit leaves it) rather than the toggle key.
@@ -1129,18 +911,13 @@ class Application:
         self._ortho_auto: bool = False
         # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
         # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
-        # `_gizmo_gesture` = the handle pressed by the running LMB gesture; `_gizmo_cache` = (key, pivot).
+        # The handle press itself is a press session (`pointer_tools.GizmoPress`); `_gizmo_cache` = (key, pivot).
         self.gizmo_enabled: bool = False
-        self._gizmo_gesture: str | None = None
-        self._gizmo_press_xy: tuple[float, float] | None = None  # cursor at the handle press (Rotate dial)
         self._gizmo_cache: tuple | None = None
         self._gizmo_frame_cache: tuple | None = None  # (pivot cache key, NormalFrame | None), Normal space
-        # The constraint before the handle press (one-shot: Esc on a handle drag restores it, E2) and the session
-        # size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
-        self._gizmo_constraint_before: str | None = None
+        # The session size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
         self.gizmo_size_name: str = _gizmo.GIZMO_SIZE_DEFAULT
         self.tweak_command: str = commands.MOVE
-        self._gesture_refused: bool = False
         # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
         # direction of side A (px per unit t; None = fall back to horizontal), and the mesh
         # state at the first motion (Esc and the History entry use it).
@@ -1246,7 +1023,7 @@ class Application:
         `subd_overlay_type` (2026-10-23): die GL-Senke der SubD-Linien (Käfig / Isolinien,
         `mirai.subdivision.gl_lines.GLSubdLineOverlay`). Die SubD-Vorschau (`self.subdivision`) hängt
         sich an jeden neuen Viewport; ohne Senke rechnet sie headless dieselben Segmente."""
-        self._morph_drop_view()  # the reset replaces every object, the view included
+        self._morph.drop_view()  # the reset replaces every object, the view included
         if geometry_type in ("cube", "obj"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
         elif geometry_type == "file":
@@ -1298,7 +1075,7 @@ class Application:
             self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
         )
         self.morph.attach(self.viewport)
-        self._morph_ab.clear()
+        self._morph.ab.clear()
         self._object_pick_caches = {}
         self._sync_object_views()
         self._apply_display()
@@ -1838,7 +1615,10 @@ class Application:
         command changed the edit object itself (`DeleteObjectsCommand`, `AddObjectCommand`): the
         scene is already switched there, only the view is behind. A morph target's editing view lives
         while it is the edit object: it closes here when another object became the edit object."""
-        self._morph_close_if_left()
+        closed = self._morph.close_if_left()
+        if closed is not None:
+            self._masks.pop(closed, None)
+            self._hiddens.pop(closed, None)
         obj = self.scene.edit_object
         self._pick_cache.invalidate()
         self.selection.hovered = None
@@ -2340,7 +2120,7 @@ class Application:
         )
         self.selection.clear()
         self.selection.clear_objects()
-        self._working_pivot = None  # its object id belongs to the old scene
+        self._pointer_tools.working_pivot = None  # its object id belongs to the old scene
         self.history = TranslatingHistory()
         self.scene.history = self.history
         self._selection_undo_stack.clear()
@@ -2364,7 +2144,7 @@ class Application:
             self._set_status(f"Save scene: not while the {owner} interaction runs")
             return False
         path = Path(path)
-        text = scene_to_json(self._document_scene())
+        text = scene_to_json(self._morph.document_scene())
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
@@ -2390,9 +2170,14 @@ class Application:
         own calls, which run after their gate, use `_execute`.
         """
         self.flush_hover()
-        refusal = self.can_run(command, RunContext("api"))
+        ctx = RunContext("api")
+        refusal = self.can_run(command, ctx)
         if refusal is not None:
             return self._refused(refusal)
+        # AD-017 history isolation: during a Knife session never the global history - also not through the API.
+        grabbed = self.interaction.grab(Command(command, ctx))
+        if grabbed is not PASS:
+            return grabbed
         return self._execute(command, context)
 
     def _execute(self, command: str, context: Optional[dict] = None) -> bool:
@@ -2400,15 +2185,11 @@ class Application:
         reached it)."""
         self.flush_hover()
         if command in MORPH_COMMANDS:
-            return self._morph_command(command)
+            return self._morph.command(command)
         tool_class = tool_for_command(command)
         if tool_class:
             return self.tool_manager.activate(command, context=context)
 
-        if self._knife is not None and command in (commands.UNDO, commands.REDO):
-            # AD-017 history isolation: während einer Knife-Session nie die
-            # globale History - auch nicht über den direkten Command-Pfad.
-            return self._knife_history_step(command)
         if command in (commands.UNDO, commands.REDO):
             self._apply_undo_redo(command)
             return True
@@ -2540,7 +2321,7 @@ class Application:
         dispatch as the Playground `window.py`) and applies Split / Edge
         Connect / Vertex Connect through the shared `mirai.topology`
         implementation; an empty selection begins a Knife session (WP-06
-        B7, `_knife_begin`). Mutates only through
+        B7, `KnifeController.begin`). Mutates only through
         `Mesh.split_edge`/`Mesh.connect_vertices` (ARCH-02); exactly one
         `MeshDeltaCommand` per success, mesh and history untouched on
         rejection or no-op. Each success branch reports the topology change
@@ -2632,7 +2413,7 @@ class Application:
             return True
 
         if ctx is CContext.KNIFE:
-            return self._knife_begin()
+            return self._knife.begin(self._connect_coordinator(ctx))
 
         # CContext.NONE: 1 vertex, Face mode, or another combination with no
         # C meaning (AD-017 §7).
@@ -3773,311 +3554,39 @@ class Application:
         self._soft_preview_refresh()
         self._refresh_hover()
 
-    # -- Knife session (WP-06 B7 / B7.1, AD-017) ---------------------------------
+    # -- Knife session (WP-06 B7 / B7.1, AD-017; `controllers.knife` since AD-027 M3) ----------------------
     #
-    # Click-only interaction (Artist decision Manu 2026-09-28, after the B7
-    # window test: press -> slide -> release was redundant with the live hover
-    # preview, which already slides along the edge while hovering) = Playground
-    # Variant A only: hover preview, a click cuts at the previewed position,
-    # start highlight, and a line preview from the start to the prospective
-    # point. Session engine, in-session history, commit/cancel and residue are
-    # `KnifeTool`'s (AD-017 DECIDED); this section only routes input and builds
-    # render data. Blender-style drag cutting (Variant B / F1 edge lock) is a
-    # possible Knife V2 idea — not built, not prepared; the Playground's own
-    # Variant B (`project_locked_edge` in `mirai.topology.knife_pick`) is
-    # unaffected (AD-013 A2, contextual deviation).
-    #
-    # WP-KNIFE-01 S2 (KEEP 2026-10-01): a click adds a point to the session's
-    # virtual path; the mesh is cut at commit (`Enter`). The
-    # session is drawn from the path (`knife_render_data`), so neither the
-    # mesh nor the pick cache changes while clicking.
-    #
-    # WP-KNIFE-01 S3 (PROVISIONAL): a click inside a face is a point too
-    # (`knife_pick` face hit, the session's own interior points snap); the
-    # status line names the S3 refusals and closes, and at commit what the
-    # resolver joined or dropped (`_knife_notes`).
-    #
-    # WP-KNIFE-01 UX2 (PROVISIONAL, Artist 2026-10-02): `E` / an RMB click
-    # lift the pen (the chain ends, nothing is committed), a double-click
-    # closes the chain and lifts; a click outside the mesh does nothing (S4:
-    # it is a point in space now, below); Shift+click on an edge places the
-    # point at its midpoint.
-    #
-    # WP-KNIFE-01 UX2b (PROVISIONAL, Artist 2026-10-02): while Shift is held
-    # (`set_shift_held`, from the window) the hover already shows that midpoint.
-    #
-    # WP-KNIFE-01 S4 (PROVISIONAL): the live camera, viewport size, pick cache and
-    # occlusion switch go to the `KnifeTool` at hover and click time, so a far
-    # click is planned across faces with the camera of that click (crossing dots
-    # while hovering). A click outside the mesh is a point in space and cuts
-    # (Manu 2026-10-02, Blender); the hover line runs to the cursor over empty
-    # space, after the click only the cuts commit will make are drawn.
+    # The session, its routing and its render data are `KnifeController` / `KnifeSession`'s; `C` begins it
+    # (`_connect_command`), the slot routes its input. What stays here is the public read API.
 
     @property
     def knife_active(self) -> bool:
         """A Knife session is running (`C` with an empty selection)."""
-        return self._knife is not None
+        return self._knife.session is not None
 
     @property
     def knife_render_data(self) -> KnifeRenderData | None:
         """What the running session shows (headless), None without a session."""
-        if self._knife is None:
-            return None
-        data = build_knife_render_data(
-            self.scene.mesh,
-            [_KNIFE_DRAWN_LIFT if p.get("reason") == "lift" else p for p in self._knife.path],
-            self._knife_target,
-            self._knife_highlight_edge,
-            self._knife_hover_crossings,
-            symmetry=self._knife_view,
-            refused=self._knife_refused,
-            pen_up=self._knife_view is not None and self._knife.last_point is None,
-        )
-        if self._knife_view is None and self._knife.last_point is None:
-            # After a pen lift no point starts the next segment: no start marker, no rubber band.
-            data = dataclasses.replace(data, start_point=None, line_preview=None)
-        return data
+        return self._knife.render_data()
 
-    def _knife_begin(self) -> bool:
-        if self.viewport is None:
-            return False
-        # AD-SYM-03 slice 6c: whenever a symmetry definition is set the session runs the declared
-        # coordinator (`mirai.symmetry_declarations`, D-b - the declaration is the only switch) and
-        # gets the session view that previews and refuses with the commit's own rules. A plane the
-        # coordinator cannot handle starts no session at all.
-        coordinator = self._connect_coordinator(CContext.KNIFE)
-        view = None
-        if coordinator is not None:
-            try:
-                view = SymmetricKnifeView(self.scene.mesh)
-            except KnifeRefusal as exc:
-                self._set_status(str(exc))
-                return False
-        self._knife_selection_before = self._selection_snapshot()
-        knife = KnifeTool()
-        knife.activate()
-        knife.begin(mesh=self.scene.mesh, scene=self.scene, selection=self.selection,
-                    **({} if view is None else {"symmetric_commit": coordinator, "symmetric_view": view}))
-        self._knife = knife
-        self._knife_view = view
-        self._knife_refused = None
-        self._knife_refused_text = None
-        # R-SEL-2 (as in the Playground): the Knife draws its own preview, the
-        # selection hover must not stay drawn underneath it.
-        self._set_hovered(None)
-        self._refresh_hover()
-        self._set_status(
-            "Knife: click on vertices, edges, inside faces or outside the mesh to cut - a far click cuts"
-            " across faces, Shift+click = edge midpoint, E / right-click = new cut (pen lift),"
-            " double-click = close + lift, Enter = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo"
-            + ("" if view is None else f" - {self._knife_mirror_text()}")
-        )
-        return True
+    @property
+    def knife_clock(self) -> Callable[[], float]:
+        """The Knife's double-click clock (`time.monotonic`; injectable for headless tests)."""
+        return self._knife.clock
 
-    def _knife_mirror_text(self) -> str:
-        """The symmetric session's note in the status line: the active mirror preview variant and its key."""
-        variant = self.knife_mirror_variant
-        # The bound key, not a literal (as `SymmetryController.summary`): a keymap.json rebinding shows up here.
-        bound = [inp for inp in self.bindings.inputs_for(commands.KNIFE_MIRROR_VARIANT, KNIFE_CONTEXT)
-                 if inp.kind == "key"]
-        return (f"Spiegelvorschau {variant} ({KNIFE_MIRROR_VARIANT_LABELS[variant]}), "
-                f"Taste {key_label(bound[0]) if bound else '?'} wechselt V-a / V-b / V-c")
+    @knife_clock.setter
+    def knife_clock(self, clock: Callable[[], float]) -> None:
+        self._knife.clock = clock
 
-    def _knife_say(self, message: str) -> None:
-        """A Knife status message; a symmetric session names its mirror preview variant in it."""
-        if self._knife_view is not None:
-            message += f" [Spiegel {self.knife_mirror_variant}]"
-        self._set_status(message)
+    @property
+    def knife_mirror_variant(self) -> str:
+        """The provisional mirror preview variant of a symmetric Knife session (AD-SYM-03 slice 6c), kept across
+        sessions of this app."""
+        return self._knife.mirror_variant
 
-    def _knife_cycle_variant(self) -> bool:
-        """The provisional variant key: V-a -> V-b -> V-c -> V-a (symmetric session only)."""
-        order = KNIFE_MIRROR_VARIANTS
-        self.knife_mirror_variant = order[(order.index(self.knife_mirror_variant) + 1) % len(order)]
-        self._knife_sync_overlay()
-        self._set_status(f"Knife: {self._knife_mirror_text()}")
-        return True
-
-    def _knife_key(self, input: Input) -> bool:
-        """Session Gate: only commit, cancel, the pen lift, the in-session
-        Undo/Redo and the Ortho toggle (view state) pass; every other key (W/R, 1/2/3, D/Shift+D, C, X/Y/Z, ...)
-        is ignored."""
-        command = self.bindings.command_for(input, KNIFE_CONTEXT)
-        self._knife_last_click = None     # a key between two clicks is no double-click
-        if command == commands.KNIFE_MIRROR_VARIANT:
-            return self._knife_cycle_variant() if self._knife_view is not None else False
-        if command == commands.CANCEL:
-            return self._knife_end(commit=False)
-        if command == commands.KNIFE_COMMIT:
-            return self._knife_end(commit=True)
-        if command == commands.KNIFE_LIFT:
-            return False if self._knife_gesture else self._knife_lift()
-        if command in (commands.UNDO, commands.REDO):
-            return self._knife_history_step(command)
-        if command == commands.TOGGLE_ORTHO:
-            # View state like the orbit, which the session allows; the planner plans with the live camera.
-            return self._toggle_ortho()
-        return False
-
-    def _knife_owns_press(self, input: Input) -> bool:
-        # The unmodified and the Shift-only LMB (midpoint snap, UX2 D11) are the
-        # Knife's, and a button bound to KnifeLift (RMB); Alt+LMB (orbit / pan),
-        # Ctrl+LMB and the other buttons keep going through the pointer gestures.
-        if input.kind != "mouse" or self.pointer.active or self._knife_gesture:
-            return False
-        if input.value == "LEFT" and input.modifiers <= {"shift"}:
-            return True
-        return self.bindings.command_for(input, KNIFE_CONTEXT) == commands.KNIFE_LIFT
-
-    def _knife_press(self, input: Input) -> None:
-        """Press: only starts the click-threshold gesture (B7.1); the preview
-        is recomputed with the press's own Shift (the click decides by the
-        press modifiers, AD-019) - with a held Shift the hover showed the same
-        midpoint already (UX2b)."""
-        self._knife_gesture = True
-        self._knife_gesture_moved = 0.0
-        self._knife_gesture_button = input.value
-        self._knife_gesture_midpoint = input.value == "LEFT" and "shift" in input.modifiers
-        if self._cursor is None or input.value != "LEFT":
-            return
-        self._knife_set_preview(self._knife_pick(*self._cursor, midpoint=self._knife_gesture_midpoint))
-
-    def _knife_drag(self, dx: float, dy: float) -> bool:
-        """LMB held and moved: only tracks distance for the click threshold
-        (B7.1, no slide) - a drag past the threshold neither locks nor cuts."""
-        self._knife_gesture_moved += abs(dx) + abs(dy)
-        return False
-
-    def _knife_release(self, x: float, y: float) -> bool:
-        """Release: press+release under the click threshold is a click - LMB
-        adds the point at the cursor, the second LMB click of a double-click
-        finishes the chain, an RMB click lifts the pen; a press that moved past
-        the threshold is not a click and does nothing (Playground click rule,
-        B7.1). A click outside the mesh adds a point in space (S4); it never
-        commits."""
-        moved = self._knife_gesture_moved
-        self._knife_gesture = False
-        self._knife_gesture_moved = 0.0
-        last, self._knife_last_click = self._knife_last_click, None
-        if moved >= CLICK_THRESHOLD_PX:
-            self._refresh_hover()
-            return False
-        if self._knife_gesture_button != "LEFT":
-            return self._knife_lift()
-        now = self.knife_clock()
-        if (
-            last is not None
-            and now - last[0] <= KNIFE_DOUBLE_CLICK_S
-            and math.hypot(x - last[1], y - last[2]) <= KNIFE_DOUBLE_CLICK_PX
-            and self._knife.plan_lift(close=True).ok
-        ):
-            return self._knife_lift(finish=True)
-        target = self._knife_pick(x, y, midpoint=self._knife_gesture_midpoint)
-        self._knife_last_click = (now, x, y)
-        if not self._knife.click(target):
-            plan = self._knife.last_plan
-            # A symmetric refusal (F3 = A) carries its own status text; the click was ignored.
-            self._set_status(plan.reason if plan.refused
-                             else _KNIFE_REFUSED.get(plan.reason, "Knife: no valid cut target here"))
-            self._refresh_hover()
-            return False
-        # WP-KNIFE-01 S2: a click only adds a point to the session's path - the
-        # mesh (and with it the pick cache) is unchanged until commit.
-        plan = self._knife.last_plan
-        cuts = len(self._knife.cut_segments)
-        segments = f"{cuts} path {'segment' if cuts == 1 else 'segments'}"
-        crossings = f"{len(plan.crossings)} crossing(s)" if plan.crossings else "the line crosses nothing"
-        if plan.start:
-            where = " on an earlier point" if plan.earlier else " in space" if target["kind"] == "space" else ""
-            status = "Knife: start point set" + where
-        elif plan.closing:
-            status = f"Knife: shape closed - the next click cuts on from its start ({segments})"
-        elif plan.skip:
-            status = f"Knife: along an existing edge - nothing to cut ({segments})"
-        elif target["kind"] == "space":
-            status = f"Knife: point in space - {crossings} ({segments})"
-        elif plan.method:
-            status = f"Knife: cut across {crossings} ({segments})"
-        else:
-            status = f"Knife: cut ({segments})"
-        self._knife_say("; ".join([status] + _knife_plan_notes(plan)))
-        self._refresh_hover()
-        return True
-
-    def _knife_lift(self, finish: bool = False) -> bool:
-        """Pen lift (`E` / RMB click), or close + lift (`finish`, the double-click): the
-        chain ends, nothing is committed, the next click starts a new chain (UX2)."""
-        knife = self._knife
-        self._knife_set_view()   # the close may run across faces (S4)
-        if not (knife.finish_chain() if finish else knife.lift()):
-            self._set_status("Knife: nothing to lift")
-            return False
-        plan = knife.last_plan
-        what = "shape closed, pen lifted" if plan.closing or plan.replaces else plan.reason
-        self._knife_say(f"Knife: {what} - the next click starts a new cut")
-        self._refresh_hover()
-        return True
-
-    def _knife_history_step(self, command: str) -> bool:
-        """In-session Undo/Redo (AD-017 DECIDED): only the session's own steps,
-        never the global history. Ignored while the Knife's LMB is held."""
-        if self._knife_gesture:
-            return False
-        undo = command == commands.UNDO
-        done = self._knife.undo_step() if undo else self._knife.redo_step()
-        if not done:
-            self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
-            return False
-        self._knife_say("Knife: last cut undone" if undo else "Knife: cut redone")
-        self._refresh_hover()
-        return True
-
-    def _knife_end(self, commit: bool) -> bool:
-        """Enter = commit (exactly one history entry, residue = path edges
-        selected, Edge mode); Esc = cancel (mesh, selection and history exactly
-        as before the session)."""
-        knife = self._knife
-        before = self._knife_selection_before
-        if commit:
-            command = knife.commit()
-        else:
-            knife.cancel()
-            command = None
-        knife.deactivate()
-        self._knife = None
-        self._knife_selection_before = None
-        self._knife_gesture = False
-        self._knife_gesture_moved = 0.0
-        self._knife_last_click = None
-        self._knife_target = None
-        self._knife_highlight_edge = None
-        self._knife_hover_crossings = ()
-        self._knife_view = None
-        self._knife_refused = None
-        self._knife_refused_text = None
-        notes = _knife_notes(knife.last_resolution) if commit else []
-        if command is not None:
-            self._record_selection_history(before)
-            count = len(self.selection.edges)
-            status = f"Knife committed ({count} path {'edge' if count == 1 else 'edges'} selected)"
-            res = knife.last_resolution
-            if res is not None and res.applied < res.runs:
-                # Valid while clicking, dropped at commit (the run would have
-                # left its face) - the Q5 "N-1/N" note (WP-KNIFE-01 S2).
-                status += f" - {res.runs - res.applied} of {res.runs} cuts dropped"
-            self._set_status("; ".join([status] + notes))
-        elif commit and knife.last_problem is not None:
-            self._set_status(f"Knife: result taken back ({knife.last_problem}), nothing committed")
-        elif commit:
-            self._set_status("Knife: no cuts made, nothing committed" + (f" ({'; '.join(notes)})" if notes else ""))
-        else:
-            self._set_status("Knife cancelled")
-        self._pick_cache.invalidate()
-        self.viewport.set_tool_overlay()
-        self.viewport.on_topology_changed()
-        self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-        self._refresh_hover()
-        return True
+    @knife_mirror_variant.setter
+    def knife_mirror_variant(self, variant: str) -> None:
+        self._knife.mirror_variant = variant
 
     def set_shift_held(self, held: bool) -> bool:
         """The window reports whether any Shift key is held (WP-KNIFE-01 UX2b).
@@ -4093,137 +3602,10 @@ class Application:
             self._apply_orbit_virtual()
             self._camera_changed()
             return True
-        if self._knife is None or self._knife_gesture or self._cursor is None or self.pointer.active:
+        if self._cursor is None or self.pointer.active:
             return False
-        return self._knife_hover(*self._cursor)
-
-    def _knife_hover(self, x: float, y: float) -> bool:
-        return self._knife_set_preview(self._knife_pick(x, y, midpoint=self._shift_held))
-
-    def _knife_pick(self, x: float, y: float, midpoint: bool = False) -> dict:
-        """WP-06 B8: same cache/occlusion as `_pick()` - a hidden edge/vertex
-        cannot be a Knife target while faces are shown. WP-KNIFE-01 S2: then
-        the session's own edge points (`snap_own_point`) - a click on one
-        reaches that point again, as the real-cut Knife's split vertex did.
-        UX2 `midpoint` (Shift): an edge target moves to t = 0.5 - after the
-        own-point snap, which wins - or to an own point already there.
-        S4: the knife gets the live view first (the planner plans with the camera
-        of this hover / click); outside the mesh the target is a point in space."""
-        kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
-        size = (self.viewport_width, self.viewport_height)
-        if self.display.show_faces:
-            # One Knife pick runs several occlusion tests (vertex, edge, face, own points): build the
-            # screen grid at once instead of after `GRID_AFTER_SCANS` whole-mesh scans.
-            self._pick_cache.refresh(self._edit_camera, self.scene.mesh, *size)
-            self._pick_cache.face_grid(self.scene.mesh, batch=True)
-        target = knife_pick(self._edit_camera, self.scene.mesh, x, y, *size, **kwargs)
-        if self._knife is None:
-            return target
-        self._knife_set_view()
-        # Also over "outside": the real-cut Knife's split vertex was caught by the
-        # 14 px vertex pick just off the silhouette too.
-        target = snap_own_point(
-            self._edit_camera, self.scene.mesh, x, y, *size, self._knife.snap_points, target, **kwargs
-        )
-        if target.get("kind") == "outside":
-            return {"kind": "space", "position": space_point(self._edit_camera, x, y, *size)}
-        if not midpoint or target.get("kind") != "edge":
-            return target
-        eid = target["edge_id"]
-        own = next((p for p in self._knife.snap_points if p["kind"] == "edge" and p["edge_id"] == eid
-                    and abs(p["t"] - 0.5) <= GEO_EPS), None)
-        return {"kind": "point", "pid": own["pid"]} if own is not None else dict(target, t=0.5)
-
-    def _knife_set_view(self) -> None:
-        """The live camera for the planner (S4) - set before every hover / click plan."""
-        self._knife.set_view(self._edit_camera, self.viewport_width, self.viewport_height,
-                             cache=self._pick_cache, occlusion=self.display.show_faces)
-
-    def _knife_set_preview(self, target: dict) -> bool:
-        """Prospective target = `target` only if the click would be accepted
-        (`KnifeTool.plan`, the same rules as `accepts`); invalid → no point, no
-        line (`PROVISIONAL`); S4: with the segment's planned crossings.
-        True = changed."""
-        plan = self._knife.plan(target)
-        prospective = target if plan.ok else None
-        highlight = target["edge_id"] if plan.ok and target.get("kind") == "edge" else None
-        crossings = tuple(tuple(c) for c in plan.crossings) if plan.ok else ()
-        refused = target if plan.refused else None
-        changed = (prospective, highlight, crossings, refused) != (
-            self._knife_target, self._knife_highlight_edge, self._knife_hover_crossings, self._knife_refused)
-        self._knife_target = prospective
-        self._knife_highlight_edge = highlight
-        self._knife_hover_crossings = crossings
-        self._knife_refused = refused
-        self._knife_refusal_status(plan.reason if plan.refused else None)
-        self._knife_sync_overlay()
-        return changed
-
-    def _knife_refusal_status(self, text: str | None) -> None:
-        """Hover refusal (F3 = A): the refused target's reason is shown while it is hovered - once, not on
-        every mouse move - and the status returns to the session's note when the hover leaves it."""
-        if text == self._knife_refused_text:
-            return
-        self._knife_refused_text = text
-        self._set_status(text if text is not None else f"Knife: {self._knife_mirror_text()}")
-
-    def _knife_clear_preview(self) -> bool:
-        changed = (self._knife_target is not None or self._knife_highlight_edge is not None
-                   or self._knife_refused is not None)
-        self._knife_target = None
-        self._knife_highlight_edge = None
-        self._knife_hover_crossings = ()
-        self._knife_refused = None
-        self._knife_refusal_status(None)
-        self._knife_sync_overlay()
-        return changed
-
-    def _knife_sync_overlay(self) -> None:
-        """Knife render data → viewport tool layers: prospective point, target
-        edge and line preview in the hover style, the placed points (the start
-        among them) and the segments commit will cut in the selected style (no
-        new look; WP-KNIFE-01 S2: drawn from the path, the mesh is not cut
-        before commit).
-
-        A symmetric session (slice 6c) adds the layers of the mirror, of the part that will not be cut and
-        of the refused hover (`knife_render_data`'s fields; the mirror per variant, `KNIFE_MIRROR_VARIANTS`).
-        Without a symmetry view only the two layers above are passed, exactly as before."""
-        data = self.knife_render_data
-        if self.viewport is None or data is None:
-            return
-        points = {
-            TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None]
-            + list(data.prospective_crossings),
-            TOOL_ACTIVE_LAYER: list(data.placed_points),
-        }
-        segments = {
-            TOOL_PREVIEW_LAYER: [
-                s for s in (data.target_edge, data.line_preview) if s is not None
-            ],
-            TOOL_ACTIVE_LAYER: list(data.path_segments),
-        }
-        if self._knife_view is not None:
-            mirror_points = list(data.mirror_placed_points)
-            mirror_hover_points = [p for p in (data.mirror_prospective_point,) if p is not None] + list(
-                data.mirror_prospective_crossings)
-            mirror_path = list(data.mirror_path_segments)
-            mirror_hover = [s for s in (data.mirror_target_edge, data.mirror_line_preview) if s is not None]
-            variant = self.knife_mirror_variant
-            if variant == "V-a":       # like the working side's own preview
-                points[TOOL_MIRROR_LAYER] = mirror_points
-                points[TOOL_MIRROR_PREVIEW_LAYER] = mirror_hover_points
-                segments[TOOL_MIRROR_LAYER] = mirror_path
-                segments[TOOL_MIRROR_PREVIEW_LAYER] = mirror_hover
-            elif variant == "V-b":     # always visible, dimmed
-                points[TOOL_MIRROR_DIM_LAYER] = mirror_points + mirror_hover_points
-                segments[TOOL_MIRROR_DIM_LAYER] = mirror_path + mirror_hover
-            else:                      # V-c: the mirror's points only
-                points[TOOL_MIRROR_LAYER] = mirror_points + mirror_hover_points
-            points[TOOL_CLIPPED_LAYER] = list(data.clipped_points) + list(data.clipped_hover_points)
-            segments[TOOL_CLIPPED_LAYER] = list(data.clipped_segments) + list(data.clipped_hover_segments)
-            points[TOOL_REFUSED_LAYER] = list(data.refused_points)
-            segments[TOOL_REFUSED_LAYER] = list(data.refused_segments)
-        self.viewport.set_tool_overlay(points=points, segments=segments)
+        grabbed = self.interaction.grab(Modifiers(held, self._ctrl_held, self._alt_held))  # the Knife's preview
+        return False if grabbed is PASS else grabbed
 
     # -- Display (WP-06 B5a) ----------------------------------------------------
 
@@ -4313,7 +3695,7 @@ class Application:
         """AD-024 §6: the selected objects in `4` (References skipped - locked, Q-M3), the edit object in
         `1/2/3`. None (refusal posted) while an interaction owns the keys or nothing can be edited."""
         owner = self.interaction_owner
-        if owner is not None or self._drag_select is not None:
+        if owner is not None or self._pointer_tools.drag_select is not None:
             self._set_status(f"{label}: not while the {owner or 'selection'} interaction runs")
             return None
         if self.selection.mode is SelectionMode.OBJECT:
@@ -4426,7 +3808,7 @@ class Application:
         mesh change, no History, no Undo step. Refused visibly while an interaction owns the keys
         (W/E/R/T/G, a drag selection, the Knife): a running gesture keeps the view it began with."""
         owner = self.interaction_owner
-        if owner is not None or self._drag_select is not None:
+        if owner is not None or self._pointer_tools.drag_select is not None:
             self._set_status(f"SubD: ignoriert — {owner or 'Auswahl'} läuft")
             return False
         return self.subdivision.run(command)
@@ -4515,8 +3897,6 @@ class Application:
         (orbit, pan, zoom) own no keys and are never an owner."""
         if self._transform_command is not None:
             return "transform"
-        if self._knife is not None:
-            return "knife"
         return self.interaction.owner
 
     @property
@@ -4549,9 +3929,7 @@ class Application:
         (H2) postet den Ablehnungstext und gibt False zurück; die Knife-Session
         liegt davor und wird nie gegatet."""
         self.flush_hover()
-        if self._knife is not None:
-            return self._knife_key(input)
-        grabbed = self.interaction.grab(KeyPress(input))  # the Re-Symmetrize preview
+        grabbed = self.interaction.grab(KeyPress(input))  # the Knife, the Re-Symmetrize preview
         if grabbed is not PASS:
             return grabbed
         command = self._resolve_key(input)
@@ -4582,16 +3960,16 @@ class Application:
             return self._execute(command)
         if command in MORPH_COMMANDS:
             if command == commands.MORPH_WEIGHT_DRAG:
-                return self._morph_drag_arm(input.value)
+                return self._morph.weight_hold.arm(input.value)
             return self._execute(command)
         if command in _SESSION_SWITCH_COMMANDS:
             return self._session_switch(command)
         if command == commands.LASSO_ARM:
-            return self._lasso_arm(input.value)
+            return self._pointer_tools.lasso.arm(input.value)
         if command == commands.PIVOT_PLACE:
-            return self._pivot_arm(input.value)
+            return self._pointer_tools.pivot.arm(input.value)
         if command == commands.LIGHT_DRAG:
-            return self._light_drag_arm(input.value)
+            return self._pointer_tools.light.arm(input.value)
         if command in _TWEAK_TRANSFORMS:
             # The gizmo (and the unbound `Tweak` drag) uses the last W/E/R pressed - a tap sets it ("tool set").
             self.tweak_command = command
@@ -4619,18 +3997,12 @@ class Application:
         Loslassen der Transform-Taste committet, wenn seit dem Scharfschalten
         eine Mausbewegung kam; ein bloßes Antippen entschärft nur (E21). Loslassen der
         Lasso-Taste beendet den Lasso-Modus (ein laufender Lasso-Drag läuft bis zum LMB-Release)."""
-        if self._lasso_held is not None and input.value == self._lasso_held:
-            self._lasso_held = None
-            self._set_status("Lasso off")
-            return True
-        if self._pivot_key is not None and input.value == self._pivot_key:
-            return self._pivot_release()
-        if self._morph_drag_key is not None and input.value == self._morph_drag_key:
-            return self._morph_drag_release()
-        if self._light_drag_key is not None and input.value == self._light_drag_key:
-            self._light_drag_key = None
-            self._set_status(f"Light: {self.display.light_label}")
-            return True
+        # The hold keys end on their own key's release (AD-027 §3.2), in this order: two holds may share a key
+        # value (other modifiers), the first one here lets go.
+        tools = self._pointer_tools
+        for hold in (tools.lasso, tools.pivot, self._morph.weight_hold, tools.light):
+            if hold.key is not None and input.value == hold.key:
+                return hold.release()
         if self._transform_key is None or input.value != self._transform_key:
             return False
         self._transform_finish()
@@ -4700,13 +4072,14 @@ class Application:
         eine Transform-Taste gehalten, wird abgelehnt."""
         if self._transform_key is not None or self.viewport is None:
             return False
+        gizmo = self._pointer_tools.gizmo_press
         if key == TWEAK_KEY:
-            press = self._gizmo_press_xy or self._press_point or self._cursor
+            press = (None if gizmo is None else gizmo.press_xy) or self._press_point or self._cursor
         else:
             press = self._cursor
         self._rotate_press = None if press is None else (float(press[0]), float(press[1]))
         self._rotate_virtual = self._rotate_press
-        self._ctrl_snap_ok = not (self._ctrl_held and key == TWEAK_KEY and self._gizmo_gesture is None)
+        self._ctrl_snap_ok = not (self._ctrl_held and key == TWEAK_KEY and gizmo is None)
         if command == commands.EXTRUDE:
             return self._extrude_arm(key)
         if command == commands.LOOP_SLIDE:
@@ -4914,7 +4287,8 @@ class Application:
         gesture: gizmo ring, R/E key, Tweak), None without a command, a cursor or a viewport (dx fallback)."""
         if self._transform_command != commands.ROTATE or self._rotate_press is None:
             return None
-        return "trackball" if self._gizmo_gesture == "center" else "dial"
+        gizmo = self._pointer_tools.gizmo_press
+        return "trackball" if gizmo is not None and gizmo.handle_id == "center" else "dial"
 
     def _snap_held(self) -> bool:
         return self._ctrl_held and self._ctrl_snap_ok
@@ -5813,18 +5187,21 @@ class Application:
         """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
         exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
         nichts. Eine Box/Paint-Geste wird verworfen (Auswahl wie vor der Geste)."""
-        if self._drag_select is not None:
-            return self._drag_select_cancel()
-        if self._pivot_key is not None:
-            return self._pivot_cancel()
+        drag = self._pointer_tools.drag_select  # (a drag selection and a held pivot never coexist)
+        if drag is not None:
+            return drag.cancel()
+        claimed = self.interaction.claim(Command(commands.CANCEL, RunContext("key")))  # the Working Pivot
+        if claimed is not PASS:
+            return claimed
         if self._transform_key is None:
             return False
         if self._transform_key == TWEAK_KEY:
             # The LMB is still down: the rest of this drag must not arm a new one.
-            self._gesture_refused = True
-            if self._gizmo_gesture is not None and self.constraint_mode == CONSTRAINT_ONE_SHOT:
+            self._pointer_tools.swallow()
+            gizmo = self._pointer_tools.gizmo_press
+            if gizmo is not None and self.constraint_mode == CONSTRAINT_ONE_SHOT:
                 # E2: the handle's axis was for this drag only; Esc keeps what was pending before the press.
-                self._axis_constraint = self._gizmo_constraint_before
+                self._axis_constraint = gizmo.constraint_before
         label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
         if self._transform_command == commands.LOOP_SLIDE:
             label = self._slide_label()
@@ -5931,7 +5308,7 @@ class Application:
             self._restore_selection(restored)
             if self.viewport is not None:
                 self.viewport.on_selection_changed()  # an object step can change mode / selection
-        self._morph_after_history()
+        self._morph.after_history()
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
         # may be a placement (M2-2), so the pick caches re-project too (`_placement_changed`).
@@ -6131,8 +5508,6 @@ class Application:
         `tweak_command`, every "nothing selected", `C: nothing to do here`)."""
         if command is None:
             return None
-        if self._knife is not None:
-            return None if command in _KNIFE_ALLOWS else SILENT
         session = self.interaction.session
         if session is not None and session.exclusive:
             return session.allows(command, ctx)
@@ -6158,8 +5533,8 @@ class Application:
         return None
 
     def _session_refusal(self, command: str, ctx: RunContext) -> Refusal | None:
-        """`can_run` stage 6. The held gestures and the drag selection still live in `Application` (they move
-        into the slot at AD-027 M5 / M6); their `allows` is here until then."""
+        """`can_run` stage 6. The held gestures still live in `Application` (they move into the slot at AD-027
+        M6); their `allows` is here until then. Then the slot's (a drag selection lets through only its list)."""
         if self._transform_key is not None:
             if command in _GESTURE_REFUSES:
                 return SILENT
@@ -6168,10 +5543,6 @@ class Application:
             if command in _CONSTRAINT_SPACES and self._transform_command in _UNCONSTRAINED_GESTURES:
                 return SILENT
             return None
-        if self._drag_select is not None:
-            if command in _DRAG_SELECT_ALLOWS or ctx.source == "wheel":
-                return None  # the Soft wheel steps were never held back by a drag
-            return SILENT
         return self.interaction.allows(command, ctx)
 
     def _refused(self, refusal: Refusal) -> bool:
@@ -6187,9 +5558,9 @@ class Application:
         input (None) is never refused. Pure (`can_run` stage 3)."""
         if key is None:
             return None
-        if self._target_view is not None:
-            # AD-025 §15: on a target's editing view only shapes change (`view_refusal`).
-            text = view_refusal(key)
+        if self._morph.view is not None:
+            # AD-025 §15: on a target's editing view only shapes change (`MorphController.view_refusal`).
+            text = self._morph.view_refusal(key)
             if text is not None:
                 return text
             if meshes is None:
@@ -6215,376 +5586,63 @@ class Application:
     @property
     def morph_view_open(self) -> bool:
         """True while a morph target's editing view is the edit object (H4)."""
-        return self._target_view is not None
+        return self._morph.view is not None
 
     @property
     def morph_document_object(self) -> SceneObject:
         """The object the document means by "the edit object": the base while its target's editing
         view is open (the view is transient: never saved, exported or sent), else the edit object."""
-        view = self._target_view
-        return view.base_obj if view is not None else self.scene.edit_object
+        return self._morph.document_object
 
     @property
     def morph_current_target(self):
         """The document edit object's current target (AD-025 Phase 4: the one Tab, N and +/- act on;
         view state), or None."""
-        return self.morph.provider.current_target(self.morph_document_object.id)
+        return self._morph.current_target
 
     @property
     def morph_weight(self) -> int:
         """The weight of the document edit object's current target in whole percent (view state)."""
-        return self.morph.provider.weight(self.morph_document_object.id)
+        return self._morph.weight
 
     def morph_status_text(self) -> str | None:
         """The HUD's morph row (the current target): None = the document edit object has no target."""
-        obj = self.morph_document_object
-        lid = self.morph_current_target
-        if lid is None:
-            return None
-        ids = morph_target_ids(obj.mesh)
-        name = obj.mesh.point_layer_info(lid).name
-        where = "editing target (beside the base)" if self._target_view is not None else "base"
-        text = f"{name} · {self.morph_weight} % · {where}"
-        if len(ids) > 1:
-            text += f" · {ids.index(lid) + 1}/{len(ids)}"
-        if self.morph.blocked:
-            text += " · mix hidden (another host holds the surface)"
-        return text
+        return self._morph.status_text()
 
     def morph_targets_text(self, limit: int = 8) -> str | None:
         """The HUD's targets row (AD-025 Phase 4, `PROVISIONAL`): every target with its weight in display
         order, the current one in brackets; None with fewer than two targets."""
-        obj = self.morph_document_object
-        ids = morph_target_ids(obj.mesh)
-        if len(ids) < 2:
-            return None
-        provider, current = self.morph.provider, self.morph_current_target
-        parts = []
-        for lid in ids:
-            entry = f"{obj.mesh.point_layer_info(lid).name} {provider.weight(obj.id, lid)}"
-            parts.append(f"[{entry}]" if lid == current else entry)
-        if len(parts) > limit:
-            at = ids.index(current)
-            start = max(0, min(at - limit // 2, len(parts) - limit))
-            shown = parts[start:start + limit]
-            more = len(parts) - limit
-            return " · ".join(shown) + f" · +{more} more"
-        return " · ".join(parts)
-
-    def _document_scene(self) -> Scene:
-        """The scene as a file holds it: without a target's editing view, the base as the edit object."""
-        view = self._target_view
-        scene = self.scene
-        if view is None or view.view_obj.id not in scene.objects:
-            return scene
-        objects = [obj for oid, obj in scene.objects.items() if oid != view.view_obj.id]
-        return Scene.from_objects(
-            objects,
-            edit_object_id=view.base_obj.id,
-            object_id_counter=scene.object_id_counter,
-            mirror_pairs=scene.mirror_pairs,
-        )
-
-    def _morph_command(self, command: str) -> bool:
-        if command == commands.MORPH_NEW:
-            return self.create_morph_target() is not None
-        if command == commands.MORPH_RENAME:
-            return self.rename_morph_target()
-        if command == commands.MORPH_DELETE:
-            return self.delete_morph_target()
-        if command == commands.MORPH_EDIT_TOGGLE:
-            return self.leave_morph_target() if self._target_view is not None else self.edit_morph_target()
-        if command == commands.MORPH_WEIGHT_DRAG:
-            return self._morph_toggle_ab()
-        if command in MORPH_WEIGHT_STEPS:
-            return self.set_morph_weight(self.morph_weight + MORPH_WEIGHT_STEPS[command])
-        if command == commands.MORPH_WEIGHT_FULL:
-            return self.set_morph_weight(MORPH_MAX_WEIGHT)
-        if command == commands.MORPH_WEIGHT_ZERO:
-            return self.set_morph_weight(MORPH_MIN_WEIGHT)
-        if command in (commands.MORPH_NEXT, commands.MORPH_PREVIOUS):
-            return self.step_morph_target(1 if command == commands.MORPH_NEXT else -1)
-        return False
-
-    def _morph_lifecycle_refuses(self, label: str) -> bool:
-        """New / rename / delete run on the base, outside every interaction (one Undo step each)."""
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return True
-        if self._target_view is not None:
-            self._set_status(f"{label}: on the base only (Tab returns to it)")
-            return True
-        return False
+        return self._morph.targets_text(limit)
 
     def create_morph_target(self, name: str | None = None):
-        """A new target on the edit object's mesh, equal to its current shape (all offsets zero): one
-        Undo step, a layer-only `_mesh_transaction`; it becomes the current target (view state). At
-        most `MAX_TARGETS` per mesh. Returns the new `LayerId` or None (refused, status set)."""
-        label = "New morph target"
-        if self._morph_lifecycle_refuses(label):
-            return None
-        mesh = self.scene.mesh
-        if len(morph_target_ids(mesh)) >= MORPH_MAX_TARGETS:
-            self._set_status(f"{label}: this mesh has {MORPH_MAX_TARGETS} targets, the most it can have")
-            return None
-        name = name or new_target_name(mesh)
-        done = self._mesh_transaction(
-            f"New morph target {name!r}", lambda m: m.add_point_layer(PointLayerInfo(name)), moved_of=lambda _: set()
-        )
-        self.morph.provider.set_current(self.scene.edit_object_id, done.result)
-        count = len(morph_target_ids(mesh))
-        self._set_status(
-            f"Morph target {name!r} created (= the current shape, {count} on this mesh). Tab edits it beside the base,"
-            " N / +/- set its weight, Shift+N / Alt+N switch targets"
-        )
-        return done.result
+        """A new target on the edit object's mesh, equal to its current shape: one Undo step; it becomes the
+        current target. Returns the new `LayerId` or None (refused, status set)."""
+        return self._morph.create_target(name)
 
     def rename_morph_target(self, name: str | None = None) -> bool:
         """Renames the edit object's target (one Undo step); without `name` the next name of
-        `morph_targets.RENAME_CYCLE` (the app has no text field yet)."""
-        label = "Rename morph target"
-        if self._morph_lifecycle_refuses(label):
-            return False
-        mesh = self.scene.mesh
-        lid = self.morph_current_target
-        if lid is None:
-            self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
-            return False
-        info = mesh.point_layer_info(lid)
-        new = name or next_target_name(mesh, info.name)
-        if not new or new == info.name or new in {mesh.point_layer_info(x).name for x in mesh.point_layer_ids()}:
-            self._set_status(f"{label}: {new!r} is not a free name")
-            return False
-        self._mesh_transaction(
-            f"Rename morph target {info.name!r} {new!r}",
-            lambda m: m.set_point_layer_info(lid, dataclasses.replace(info, name=new)),
-            moved_of=lambda _: set(),
-        )
-        self._set_status(f"Morph target {info.name!r} is now {new!r} (again: next name)")
-        return True
+        `morph_targets.RENAME_CYCLE`."""
+        return self._morph.rename_target(name)
 
     def delete_morph_target(self) -> bool:
-        """Deletes the edit object's current target with its offsets (one Undo step; Undo brings it
-        back exactly). Its weight goes with it; the next target in the list becomes current."""
-        label = "Delete morph target"
-        if self._morph_lifecycle_refuses(label):
-            return False
-        mesh = self.scene.mesh
-        lid = self.morph_current_target
-        if lid is None:
-            self._set_status(f"{label}: this mesh has no target")
-            return False
-        ids = morph_target_ids(mesh)
-        at = ids.index(lid)
-        neighbour = ids[at + 1] if at + 1 < len(ids) else (ids[at - 1] if at > 0 else None)
-        name = mesh.point_layer_info(lid).name
-        oid = self.scene.edit_object_id
-        self.morph.provider.set_weight(oid, MORPH_MIN_WEIGHT, lid)
-        self._morph_ab.pop((oid, lid), None)
-        self._mesh_transaction(f"Delete morph target {name!r}", lambda m: m.remove_point_layer(lid), moved_of=lambda _: set())
-        if neighbour is not None:
-            self.morph.provider.set_current(oid, neighbour)
-        self.morph.refresh()
-        self._set_status(f"Morph target {name!r} deleted (Ctrl+Z brings it back)")
-        return True
+        """Deletes the edit object's current target with its offsets (one Undo step)."""
+        return self._morph.delete_target()
 
     def step_morph_target(self, step: int) -> bool:
-        """AD-025 Phase 4 (keys `PROVISIONAL`): the next / previous target of the document edit object
-        becomes current (view state, no Undo step). With the editing view open, the view shows it."""
-        obj = self.morph_document_object
-        ids = morph_target_ids(obj.mesh)
-        if not ids:
-            self._set_status("Morph targets: this mesh has none (Ctrl+N makes one)")
-            return False
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"Morph targets: not while the {owner} interaction runs")
-            return False
-        if len(ids) == 1:
-            self._set_status(f"Morph: {self.morph_status_text()} (the only target; Ctrl+N makes another)")
-            return False
-        lid = ids[(ids.index(self.morph_current_target) + step) % len(ids)]
-        self.morph.provider.set_current(obj.id, lid)
-        view = self._target_view
-        if view is not None:
-            moved = view.retarget(lid)
-            view.view_obj.name = f"{obj.name} · {view.name}"
-            if moved and self.viewport is not None:
-                self._pick_cache.invalidate()
-                self.viewport.on_vertices_moved(moved)
-            self._soft_preview_refresh()
-            self._refresh_hover()
-        self._set_status(f"Morph: {self.morph_status_text()}")
-        return True
+        """The next / previous target of the document edit object becomes current (view state)."""
+        return self._morph.step_target(step)
 
     def set_morph_weight(self, weight: int, lid=None) -> bool:
-        """The weight of a target of the document edit object (default: the current one); view
-        state: no Undo step, not saved."""
-        obj = self.morph_document_object
-        lid = self.morph_current_target if lid is None else lid
-        if lid is None:
-            self._set_status("Morph weight: this mesh has no target (Ctrl+N makes one)")
-            return False
-        weight = self.morph.provider.set_weight(obj.id, weight, lid)
-        if weight > MORPH_MIN_WEIGHT:
-            self._morph_ab[(obj.id, lid)] = weight
-        self.morph.refresh()
-        self._set_status(f"Morph: {self.morph_status_text()}")
-        return True
-
-    def _morph_toggle_ab(self) -> bool:
-        obj = self.morph_document_object
-        last = self._morph_ab.get((obj.id, self.morph_current_target), MORPH_MAX_WEIGHT)
-        return self.set_morph_weight(last if self.morph_weight == MORPH_MIN_WEIGHT else MORPH_MIN_WEIGHT)
-
-    def _morph_drag_arm(self, key: str) -> bool:
-        """`N` went down: mouse motion left/right sets the current target's weight until it is let go; a
-        tap without motion toggles 0 % <-> the last weight (`_morph_drag_release`). View state only."""
-        if self.morph_current_target is None:
-            self._set_status("Morph weight: this mesh has no target (Ctrl+N makes one)")
-            return False
-        if self._morph_drag_key is None:
-            self._morph_drag_moved = False
-            self._morph_drag_rest = 0.0
-            self._set_status(f"Morph: move the mouse left/right for the weight ({self.morph_weight} %), release N")
-        self._morph_drag_key = key
-        return True
-
-    def _morph_drag_step(self, dx: float) -> bool:
-        total = self._morph_drag_rest + dx / MORPH_DRAG_PIXELS_PER_PERCENT
-        steps = int(total)
-        self._morph_drag_rest = total - steps
-        if steps == 0:
-            return False
-        self._morph_drag_moved = True
-        return self.set_morph_weight(self.morph_weight + steps)
-
-    def _morph_drag_release(self) -> bool:
-        self._morph_drag_key = None
-        if not self._morph_drag_moved:
-            return self._morph_toggle_ab()
-        return True
+        """The weight of a target of the document edit object (default: the current one); view state."""
+        return self._morph.set_weight(weight, lid)
 
     def edit_morph_target(self) -> bool:
-        """Tab on the base (H4, AD-025 §15): the target's editing view beside the base becomes the
-        edit object - an ID-identical copy at `b + d` (`morph_targets.view_state`), placed beside the
-        base. The component selection carries over (same IDs); the camera follows by the same offset,
-        so the shape stays where it was on screen. No Undo step (view state, like switching objects)."""
-        label = "Edit morph target"
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return False
-        if self._target_view is not None:
-            self._set_status(f"{label}: the target is being edited already (Tab returns to the base)")
-            return False
-        if self.selection.mode is SelectionMode.OBJECT:
-            self._set_status(f"{label}: works from points/edges/faces - press 1/2/3")
-            return False
-        scene = self.scene
-        base = scene.edit_object
-        lid = self.morph.provider.current_target(base.id)
-        if lid is None:
-            self._set_status(f"{label}: this mesh has no target (Ctrl+N makes one)")
-            return False
-        name = base.mesh.point_layer_info(lid).name
-        view_obj = scene.add_object(
-            Mesh.from_state(view_state(base.mesh, lid)), name=f"{base.name} · {name}", texture=base.texture
-        )
-        view_obj.transform = view_placement(base, world_width(base, base.mesh))
-        view_obj.pivot = base.pivot
-        view_obj.material = base.material
-        self._target_view = TargetView(base, lid, view_obj)
-        self.history.translate = self._morph_translate
-        shift = tuple(view_obj.transform.translation[i] - base.transform.translation[i] for i in range(3))
-        self._morph_view_shift = shift
-        self._set_edit_object(view_obj.id)
-        self._morph_pan(shift)
-        self._soft_preview_refresh()
-        self._refresh_hover()
-        self._set_status(
-            f"Editing morph target {name!r} beside the base: W/E/R, Tweak, Soft, Smooth shape it"
-            " (topology on the base only) - Tab returns to the base"
-        )
-        return True
+        """Tab on the base (H4, AD-025 §15): the target's editing view beside the base becomes the edit object."""
+        return self._morph.edit_target()
 
     def leave_morph_target(self) -> bool:
-        """Tab on the editing view: the base is the edit object again; the view closes
-        (`_morph_close_if_left`) and the camera follows back."""
-        view = self._target_view
-        if view is None:
-            self._set_status("Back to the base: no morph target is being edited")
-            return False
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"Back to the base: not while the {owner} interaction runs")
-            return False
-        self._set_edit_object(view.base_obj.id)
-        self._soft_preview_refresh()
-        self._refresh_hover()
-        self._set_status(f"Base {view.base_obj.name!r} (target {view.name!r} at {self.morph_weight} %)")
-        return True
-
-    def _morph_pan(self, shift) -> None:
-        cam = self.camera
-        cam.target = tuple(cam.target[i] + shift[i] for i in range(3))
-        cam.camera_revision += 1
-        self._camera_changed()
-
-    def _morph_close_if_left(self) -> None:
-        """Closes the editing view once it is no longer the edit object (Tab, an Undo that brings
-        back another edit object, a scene load). Back on its base, the camera follows back."""
-        view = self._target_view
-        scene = self.scene
-        if view is None or scene.edit_object_id == view.view_obj.id:
-            return
-        self._morph_drop_view()
-        if view.view_obj.id in scene.objects:
-            scene.remove_object(view.view_obj.id)
-        self._masks.pop(view.view_obj.id, None)
-        self._hiddens.pop(view.view_obj.id, None)
-        if scene.edit_object_id == view.base_obj.id:
-            self._morph_pan(tuple(-c for c in self._morph_view_shift))
-
-    def _morph_drop_view(self) -> None:
-        view = self._target_view
-        if view is None:
-            return
-        view.close()
-        self._target_view = None
-        if isinstance(self.history, TranslatingHistory):
-            self.history.translate = None
-
-    def _morph_translate(self, command):
-        """`TranslatingHistory.translate` while the editing view is open (module `morph_targets`)."""
-        kept, refusal, moved = self._target_view.translate(command)
-        if refusal is not None:
-            self._set_status(refusal)
-            self._pick_cache.invalidate()
-            if self.viewport is not None:
-                self.viewport.on_topology_changed()
-        elif moved and self.viewport is not None:
-            self._pick_cache.invalidate()
-            self.viewport.on_vertices_moved(moved)
-        return kept
-
-    def _morph_after_history(self) -> None:
-        """After Undo / Redo: the open view follows its base's offsets (or closes with its target)."""
-        view = self._target_view
-        if view is None:
-            return
-        if not view.target_alive():
-            self._set_edit_object(view.base_obj.id)
-            return
-        moved = view.sync_from_base()
-        if self.viewport is None:
-            return
-        self._pick_cache.invalidate()
-        if moved is None:
-            self.viewport.on_topology_changed()
-        elif moved:
-            self.viewport.on_vertices_moved(moved)
+        """Tab on the editing view: the base is the edit object again; the view closes."""
+        return self._morph.leave_target()
 
     def set_status(self, message: str) -> None:
         """Public form of `_set_status` (WP-SYM-LAB-03 H4, AD-013 H2 addendum):
@@ -6610,16 +5668,17 @@ class Application:
         self.flush_hover()
         if x is not None and y is not None:
             self._cursor = (x, y)
-        if self._knife is not None and self._knife_owns_press(input):
-            self._knife_press(input)
-            return
-        if self._pivot_owns_press(input):
-            self._pivot_place_at(*self._cursor, snap="shift" in input.modifiers)
-            self._pivot_dragging = True
-            return
         if not self.pointer.active:
+            press = Press(input, x, y)
+            outcome = self.interaction.grab(press)  # the Knife's point / pen lift
+            if outcome is PASS:
+                outcome = self.interaction.claim(press)  # the Working Pivot's placement
+            if outcome is True:
+                return
             self._press_point = self._cursor
-            if self.interaction.route(Press(input, x, y)) is PASS:
+            if outcome is PASS:
+                outcome = self.interaction.handle(press)  # no gizmo press under the preview or a press session
+            if outcome is PASS:
                 self._gizmo_press(input)
         self.pointer.press(input)
 
@@ -6631,10 +5690,12 @@ class Application:
         Klick-Schwelle - `x`/`y` werden nicht für eine Vorschau verwendet."""
         if x is not None and y is not None:
             self._cursor = (x, y)
-        if self._knife_gesture:
-            return self._knife_drag(dx, dy)
-        if self._pivot_dragging:
-            return self._cursor is not None and self._pivot_place_at(*self._cursor, snap=self._shift_held)
+        raw = Drag(None, dx, dy)
+        outcome = self.interaction.grab(raw)  # the Knife's click-threshold gesture
+        if outcome is PASS:
+            outcome = self.interaction.claim(raw)  # the Working Pivot's LMB placement
+        if outcome is not PASS:
+            return outcome
         if self._alt_held and self._transform_key == TWEAK_KEY:
             # A gizmo / Tweak drag: Alt borrows the motion for the camera, the gesture keeps running.
             return self._navigate_during_transform(dx, dy)
@@ -6645,29 +5706,31 @@ class Application:
         """Maustaste losgelassen. True = ein Klick-Command wurde ausgeführt
         bzw. der Knife hat einen Punkt gesetzt / den Stift abgesetzt."""
         self._cursor = (x, y)
-        if self._knife_gesture and button == self._knife_gesture_button:
-            return self._knife_release(x, y)
-        if self._pivot_dragging and button == "LEFT":
-            self._pivot_dragging = False
-            return True
+        raw = Release(button, x, y, raw=True)
+        outcome = self.interaction.grab(raw)  # the Knife's own press: its click
+        if outcome is PASS:
+            outcome = self.interaction.claim(raw)  # the end of the Working Pivot's LMB placement
+        if outcome is not PASS:
+            return outcome
         click = self.pointer.release(button, x, y)
         if not self.pointer.active:
             self._orbit_virtual = None  # the orbit gesture (if any) is over; a snapped view stays
-        if button == "LEFT" and self._gizmo_gesture is not None:
-            return self._gizmo_release(click is not None)
-        if button == "LEFT" and self._drag_select is not None:
-            return self._drag_select_finish()
-        if button == "LEFT" and self._transform_key == TWEAK_KEY:
-            self._transform_finish()
-            return True
         if button == "LEFT":
-            self._gesture_refused = False
-        if self._knife is not None:
-            # Session Gate (B7): Navigation ist vorbei bzw. ein modifizierter
-            # Klick fiel - der Klick selbst tut während der Session nichts
-            # (keine Auswahländerung), die Knife-Vorschau pickt neu.
-            self._refresh_hover()
-            return False
+            tools = self._pointer_tools
+            gizmo = tools.gizmo_press
+            if gizmo is not None:
+                return self._gizmo_release(gizmo, click is not None)
+            drag = tools.drag_select
+            if drag is not None:
+                return drag.commit()
+            if self._transform_key == TWEAK_KEY:
+                self._transform_finish()
+                return True
+            tools.end_swallowed()
+        # The Knife's session gate (every release); the Re-Symmetrize preview refuses the select / region clicks.
+        grabbed = self.interaction.grab(Release(button, x, y, None if click is None else click.command))
+        if grabbed is not PASS:
+            return grabbed
         return click is not None and self._execute_click(click, button)
 
     def pointer_scroll(self, input: Input) -> bool:
@@ -6694,7 +5757,7 @@ class Application:
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
         self._camera_changed()
         # Unter dem ruhenden Cursor liegt nach dem Zoom ggf. ein anderer Vertex.
-        if self.coalesce_hover and self._knife is None:
+        if self.coalesce_hover and self.interaction.owner != "knife":
             self._hover_stale = True  # a burst of notches picks once, at the next tick
         else:
             self._refresh_hover()
@@ -6713,19 +5776,18 @@ class Application:
         self._cursor = (x, y)
         if self.pointer.active:
             return False
-        if self._knife is not None:
-            if self._knife_gesture:
-                return False
-            return self._knife_hover(x, y)
+        motion = Motion(x, y, dx, dy)
+        grabbed = self.interaction.grab(motion)  # the Knife's preview
+        if grabbed is not PASS:
+            return grabbed
         if self._transform_key is not None:
             # Relax is held with Alt (Alt+S): for Smooth / Relax Alt never borrows the camera.
             if self._alt_held and self._transform_command not in _SMOOTH_COMMANDS:
                 return self._navigate_during_transform(dx, dy)
             return self._transform_step(dx, dy)
-        if self._light_drag_key is not None:
-            return self._light_drag_step(dx, dy)
-        if self._morph_drag_key is not None:
-            return self._morph_drag_step(dx)
+        outcome = self.interaction.background(motion)  # the light drag, then the Morph weight
+        if outcome is not PASS:
+            return outcome
         if self.coalesce_hover:
             self._hover_stale = True
             return False
@@ -6748,25 +5810,19 @@ class Application:
         """Hover an der letzten Cursor-Position neu picken (nach Zoom bzw.
         wenn sich das Mesh unter dem ruhenden Cursor bewegt hat). Während
         einer Knife-Session statt des Selection-Hovers die Knife-Vorschau."""
-        if self._knife is not None:
-            if self._knife_gesture:
-                return
-            if self._cursor is not None and not self.pointer.active:
-                self._knife_hover(*self._cursor)
-            else:
-                self._knife_clear_preview()
-            return
-        if self._cursor is not None and not self.pointer.active and self._transform_key is None:
-            self._update_hover(*self._cursor)
+        cursor = None if self.pointer.active else self._cursor
+        if self.interaction.grab(Leave() if cursor is None else Hover(*cursor)) is not PASS:
+            return  # the Knife's preview (or the Re-Symmetrize preview's paused hover)
+        if cursor is not None and self._transform_key is None:
+            self._update_hover(*cursor)
 
     def pointer_leave(self) -> bool:
         """Cursor hat das Fenster verlassen: Hover (bzw. Knife-Vorschau) löschen."""
         self._cursor = None
         self._hover_stale = False
-        if self._knife is not None:
-            if self._knife_gesture:
-                return False
-            return self._knife_clear_preview()
+        grabbed = self.interaction.grab(Leave())  # the Knife's preview
+        if grabbed is not PASS:
+            return grabbed
         return self._set_hovered(None)
 
     def _update_hover(self, x: float, y: float) -> bool:
@@ -6778,10 +5834,9 @@ class Application:
         grabbed = self.interaction.grab(Hover(x, y))
         if grabbed is not PASS:
             return grabbed
-        if self._pivot_key is not None:
-            # Placing the pivot: the marker preview shows where a click lands; no selection hover.
-            self._pivot_preview = self._pivot_point_at(x, y, snap=self._shift_held)
-            return self._set_hovered(None)
+        claimed = self.interaction.claim(Hover(x, y))  # placing the Working Pivot: its marker preview
+        if claimed is not PASS:
+            return claimed
         if self._gizmo_handle_at(x, y) is not None:
             # E3 (2026-10-28): inside a handle's pick zone the handle wins - no mesh hover under it, so the
             # highlight never suggests a click would select (the press goes to the handle, `_gizmo_press`).
@@ -6845,6 +5900,54 @@ class Application:
             self._gpu_failed(exc)
             return _CPU
 
+    def _elements_in_rect(self, rect, occlusion: bool) -> set:
+        """Box Select's pick: the elements of the active mode inside `rect` (window pixels) - from the GPU ID buffers
+        when the window has them (AD-022 B2-out), else (or after a GL failure, `_gpu_failed`) the CPU picker."""
+        mode = self.selection.mode
+        rm = self._gpu_pick_mesh()
+        if rm is not None:
+            try:
+                return gpu_elements_in_rect(
+                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                    rect, int(self.viewport_width), int(self.viewport_height),
+                    cache=self._pick_cache, occlusion=occlusion,
+                )
+            except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
+                self._gpu_failed(exc)
+        return elements_in_rect(
+            self._edit_camera,
+            self.scene.mesh,
+            mode,
+            rect,
+            self.viewport_width,
+            self.viewport_height,
+            cache=self._pick_cache,
+            occlusion=occlusion,
+        )
+
+    def _elements_in_polygon(self, polygon, occlusion: bool) -> set:
+        """Lasso Select's pick: the elements of the active mode whose corners all lie inside `polygon` (window
+        pixels) - the GPU ID buffers, else the CPU picker (as `_elements_in_rect`)."""
+        mode = self.selection.mode
+        width, height = int(self.viewport_width), int(self.viewport_height)
+        found = None
+        rm = self._gpu_pick_mesh()
+        if rm is not None:
+            try:
+                found = gpu_elements_in_region(
+                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                    lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
+                    cache=self._pick_cache, occlusion=occlusion,
+                )
+            except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
+                self._gpu_failed(exc)
+        if found is None:
+            found = elements_in_polygon(
+                self._edit_camera, self.scene.mesh, mode, polygon, width, height,
+                cache=self._pick_cache, occlusion=occlusion,
+            )
+        return found
+
     def _set_hovered(self, hovered) -> bool:
         """Setzt `selection.hovered` (reiner UI-State, kein History-Eintrag) und
         benachrichtigt den Viewport nur bei einer echten Änderung."""
@@ -6859,15 +5962,20 @@ class Application:
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:
-        grabbed = self.interaction.grab(Drag(step.command, step.dx, step.dy))
-        if grabbed is not PASS:
+        drag = Drag(step.command, step.dx, step.dy)
+        outcome = self.interaction.grab(drag)
+        if outcome is not PASS:
             # The open preview owns the mesh and the selection; navigation still runs. (A handle
             # pressed before the preview opened would arm a Tweak here.)
-            return grabbed
-        if self._gizmo_gesture is not None and step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
-            return self._gizmo_step(step.dx, step.dy)
+            return outcome
+        outcome = self.interaction.handle(drag)  # a running drag selection; a refused gesture swallows its drags
+        if outcome is not PASS:
+            return outcome
+        gizmo = self._pointer_tools.gizmo_press
+        if gizmo is not None and step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
+            return self._gizmo_step(gizmo, step.dx, step.dy)
         if step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
-            return self._drag_select_step(step.command)
+            return self._pointer_tools.start_drag_select(step.command)
         if step.command == commands.TWEAK:
             return self._tweak_step(step.dx, step.dy)
         if not self._navigate(step.command, step.dx, step.dy, snap=True):
@@ -6875,9 +5983,7 @@ class Application:
         # Eine laufende Orbit-/Pan-Geste löscht Hover (während einer Knife-
         # Session die Knife-Vorschau; Start und Pfad bleiben); er kehrt mit
         # der nächsten Mausbewegung nach dem Release zurück.
-        if self._knife is not None:
-            self._knife_clear_preview()
-        else:
+        if self.interaction.grab(Leave()) is PASS:
             self._set_hovered(None)
         return True
 
@@ -6966,9 +6072,6 @@ class Application:
 
     def _execute_click(self, click: Click, button: str) -> bool:
         if click.command == commands.REGION_CLICK or click.command in _SELECT_COMMANDS:
-            grabbed = self.interaction.grab(Release(button, click.x, click.y, click.command))
-            if grabbed is not PASS:
-                return grabbed
             refusal = self.can_run(click.command, RunContext("click"))
             if refusal is not None:
                 return self._refused(refusal)
@@ -7027,7 +6130,7 @@ class Application:
     def selection_box(self) -> tuple[float, float, float, float] | None:
         """The rubber band of a running Box Select (min x, min y, max x, max y in window
         pixels), for the window to draw; None otherwise."""
-        drag = self._drag_select
+        drag = self._pointer_tools.drag_select
         if drag is None or drag.kind != "box" or drag.cancelled:
             return None
         return normalized_rect(drag.start, drag.end)
@@ -7036,7 +6139,7 @@ class Application:
     def selection_lasso(self) -> list[tuple[float, float]] | None:
         """The outline of a running Lasso Select (window pixels, in drawing order; the window
         closes it back to the first point), for the window to draw; None otherwise."""
-        drag = self._drag_select
+        drag = self._pointer_tools.drag_select
         if drag is None or drag.kind != "lasso" or drag.cancelled:
             return None
         return list(drag.points)
@@ -7047,40 +6150,25 @@ class Application:
         held (WP Toolbox Gaps A2, Manu 2026-10-23: "nach dem Gummiband-Aufziehen Alt gedrückt
         halten"). Alt at the press is still Orbit - by then the drag is no selection. The window
         draws the band in the through colour."""
-        drag = self._drag_select
+        drag = self._pointer_tools.drag_select
         return drag is not None and drag.kind in ("box", "lasso") and not drag.cancelled and self._alt_held
-
-    def _region_occlusion(self) -> bool:
-        """The occlusion rule of a Box / Lasso release: only what is visible while faces are shown,
-        unless Alt is held (`selection_through`)."""
-        return self.display.show_faces and not self._alt_held
-
-    def _lasso_arm(self, key: str) -> bool:
-        """The Lasso key went down: LMB drags make a lasso until it is let go. Not underneath a
-        held W/E/R/T/G (the same gate as the mode keys) and not in a Knife session (which has its
-        own key map and never gets here)."""
-        if self.viewport is None or self._transform_key is not None:
-            return False
-        if self._lasso_held is None:
-            self._set_status("Lasso: drag with LMB (Shift adds, Esc cancels)")
-        self._lasso_held = key
-        return True
 
     # -- Working Pivot (2026-10-28, Manu U-1..U-4, AD-012 addendum; `mirai.pivot`) ----------------------
     # Hold the key + LMB click places it, a tap switches it off / on (U-1); a click on the mesh lands inside the
     # volume, Shift on a vertex / edge point (U-2); it stays until replaced or off, and is no undo step (U-3); W/E/R
-    # keep World axes and turn / scale around it (U-4). Mode `4` keeps the objects' own pivots (AD-021 Q-13).
+    # keep World axes and turn / scale around it (U-4). Mode `4` keeps the objects' own pivots (AD-021 Q-13). The
+    # hold key and the pivot are `controllers.pointer_tools`' since AD-027 M4.
 
     @property
     def working_pivot(self) -> WorkingPivot | None:
         """The placed Working Pivot (also while off or on another object); None = never placed."""
-        return self._working_pivot
+        return self._pointer_tools.working_pivot
 
     @property
     def active_pivot(self):
         """The Working Pivot's position (edit-object space) when W/E/R use it - placed, on, of the edit object, not
         in mode `4`; None = the selection centre as before."""
-        pivot = self._working_pivot
+        pivot = self._pointer_tools.working_pivot
         if pivot is None or not pivot.enabled or pivot.object_id != self.scene.edit_object_id:
             return None
         if self.selection.mode is SelectionMode.OBJECT:
@@ -7090,12 +6178,12 @@ class Application:
     @property
     def pivot_placing(self) -> bool:
         """True while the placement key is held."""
-        return self._pivot_key is not None
+        return self._pointer_tools.pivot.key is not None
 
     def pivot_marker_items(self) -> list:
         """What the window draws for the Working Pivot (`viewport.gizmo.pivot_marker_items`): the active pivot,
         also during a gesture, and the dimmed preview while placing; [] otherwise."""
-        if self.viewport is None or self._knife is not None:
+        if self.viewport is None or self.knife_active:
             return []
         items = []
         edit = self.scene.edit_object
@@ -7103,326 +6191,11 @@ class Application:
         if pivot is not None:
             world = object_space.to_world(edit, pivot)
             items += _gizmo.pivot_marker_items(self.camera, world, scale=self.gizmo_scale)
-        if self._pivot_key is not None and self._pivot_preview is not None and not self._pivot_dragging:
-            world = object_space.to_world(edit, self._pivot_preview)
+        hold = self._pointer_tools.pivot
+        if hold.key is not None and hold.preview is not None and not hold.dragging:
+            world = object_space.to_world(edit, hold.preview)
             items += _gizmo.pivot_marker_items(self.camera, world, scale=self.gizmo_scale, preview=True)
         return items
-
-    def _pivot_arm(self, key: str) -> bool:
-        """The placement key went down: LMB clicks place the pivot until it is let go. Not underneath a held
-        W/E/R/T/G (the same gate as Lasso); refused in mode `4`."""
-        if self.viewport is None or self._transform_key is not None:
-            return False
-        if self.selection.mode is SelectionMode.OBJECT:
-            self._set_status("Working Pivot: for points / edges / faces - press 1/2/3 (objects turn about their own pivot)")
-            return False
-        if self._pivot_key is None:
-            self._pivot_before = self._working_pivot
-            self._pivot_placed = False
-            self._set_status(
-                f"Working Pivot: click to place (inside the mesh; Shift = vertex / edge), release {key.upper()} to"
-                " finish, tap = off / on"
-            )
-        self._pivot_key = key
-        self._refresh_hover()
-        return True
-
-    def _pivot_owns_press(self, input: Input) -> bool:
-        """While the key is held an LMB press places the pivot; Alt+LMB keeps navigating."""
-        return (
-            self._pivot_key is not None
-            and input.kind == "mouse"
-            and input.value == "LEFT"
-            and "alt" not in input.modifiers
-            and not self.pointer.active
-            and not self._pivot_dragging
-            and self._cursor is not None
-        )
-
-    def _pivot_anchor(self):
-        """The depth for a click off the mesh: the current pivot of this object, else the selection centre."""
-        pivot = self._working_pivot
-        if pivot is not None and pivot.object_id == self.scene.edit_object_id:
-            return pivot.position
-        vertex_ids = resolve_selection_vertices(self.scene.mesh, self.selection, self.selection.mode)
-        return selection_pivot(self.scene.mesh, vertex_ids) if vertex_ids else None
-
-    def _pivot_point_at(self, x: float, y: float, snap: bool):
-        """The pivot point a click at (x, y) would place; with symmetry on, snapped onto the plane when it is
-        within `PIVOT_PLANE_SNAP_PX` on screen (V-3, every placement mode, also the preview)."""
-        width, height = int(self.viewport_width), int(self.viewport_height)
-        point = place_pivot(
-            self._edit_camera, self.scene.mesh, x, y, width, height,
-            snap=snap, anchor=self._pivot_anchor(), cache=self._pick_cache, occlusion=self.display.show_faces,
-        )
-        self._pivot_on_plane = False
-        definition = self.scene.mesh.symmetry_definition
-        if point is not None and definition is not None:
-            point, self._pivot_on_plane = snap_to_plane(
-                self._edit_camera, point, definition.plane_point, definition.plane_normal, width, height,
-            )
-        return point
-
-    def _pivot_place_at(self, x: float, y: float, snap: bool) -> bool:
-        """Places the pivot under (x, y) and switches it on - no History entry (U-3). True = placed."""
-        point = self._pivot_point_at(x, y, snap)
-        if point is None:
-            self._set_status("Working Pivot: no point under the cursor")
-            return False
-        self._working_pivot = WorkingPivot(self.scene.edit_object_id, tuple(float(c) for c in point))
-        self._pivot_placed = True
-        self._pivot_preview = None
-        where = " on the symmetry plane" if self._pivot_on_plane else ""
-        self._set_status(f"Working Pivot placed{where} - E / R turn and scale around it")
-        return True
-
-    def _pivot_release(self) -> bool:
-        """The key went up: placement ends; a tap without a click switches the pivot off / on (U-1). A running
-        LMB placement continues to its release."""
-        self._pivot_key = None
-        self._pivot_preview = None
-        pivot = self._working_pivot
-        if self._pivot_placed:
-            pass  # the placing status line stays
-        elif pivot is None or pivot.object_id != self.scene.edit_object_id:
-            self._set_status("Working Pivot: none on this object - hold P and click to place one")
-        else:
-            self._working_pivot = pivot.toggled()
-            if self._working_pivot.enabled:
-                self._set_status("Working Pivot on - E / R turn and scale around it")
-            else:
-                self._set_status("Working Pivot off - E / R use the selection centre")
-        self._refresh_hover()
-        return True
-
-    def _pivot_cancel(self) -> bool:
-        """Esc while the key is held: the pivot as it was at the press, placement ends."""
-        self._working_pivot = self._pivot_before
-        self._pivot_key = None
-        self._pivot_preview = None
-        self._pivot_dragging = False
-        self._set_status("Working Pivot: placement cancelled")
-        self._refresh_hover()
-        return True
-
-    def _light_drag_arm(self, key: str) -> bool:
-        """`L` went down (AD-024 Q-L2): mouse motion turns the key light until it is let go. Not
-        underneath a held W/E/R/T/G (the motion belongs to the gesture). View state only."""
-        if self._transform_key is not None:
-            return False
-        if self._light_drag_key is None:
-            self._set_status("Light: move the mouse to turn the key light (release L to stop)")
-        self._light_drag_key = key
-        return True
-
-    def _light_drag_step(self, dx: float, dy: float) -> bool:
-        """The Lab's light drag (E13): dx → key azimuth, dy → key elevation, in the light's space."""
-        rig = self.display.light_rig
-        changed = self.set_light(
-            key_azimuth=rig.key_azimuth + dx * DRAG_DEGREES_PER_PIXEL,
-            key_elevation=rig.key_elevation + dy * DRAG_DEGREES_PER_PIXEL,
-        )
-        if changed:
-            rig = self.display.light_rig
-            self._set_status(f"Light: Key Azimut {rig.key_azimuth:+.1f}° · Höhe {rig.key_elevation:+.1f}°")
-        return changed
-
-    def _drag_select_refusal(self, command: str) -> Refusal | None:
-        """Why a drag selection cannot start now (None = it can): `can_run` (a Knife session, a held gesture,
-        the host gate), then the drag's own preconditions (no viewport; mode `4`)."""
-        refusal = self.can_run(command, RunContext("drag"))
-        if refusal is not None:
-            return refusal
-        if self.viewport is None:
-            return SILENT
-        if self.selection.mode is SelectionMode.OBJECT:
-            return Refusal("Box/Paint/Lasso: points, edges and faces only - press 1/2/3")
-        return None
-
-    def _drag_select_step(self, command: str) -> bool:
-        cursor = self._cursor
-        if cursor is None:
-            return False
-        drag = self._drag_select
-        if drag is None:
-            if self._gesture_refused:
-                return False
-            refusal = self._drag_select_refusal(command)
-            if refusal is not None:
-                self._refused(refusal)
-                self._gesture_refused = True  # silence the rest of this gesture
-                return False
-            start = self._press_point if self._press_point is not None else cursor
-            lasso = self._lasso_held is not None
-            gpu_face = None if lasso else self._gpu_pick(SelectionMode.FACE, start[0], start[1])
-            on_mesh = False if lasso else gpu_face is not None if gpu_face is not _CPU else (
-                pick_face(
-                    self._edit_camera,
-                    self.scene.mesh,
-                    start[0],
-                    start[1],
-                    self.viewport_width,
-                    self.viewport_height,
-                    cache=self._pick_cache,
-                )
-                is not None
-            )
-            drag = _DragSelect(
-                kind="lasso" if lasso else "paint" if on_mesh else "box",
-                add=command == commands.SELECT_DRAG_ADD,
-                start=start,
-                end=cursor,
-                before=self._selection_snapshot(),
-                last=start,
-                points=[start] if lasso else [],
-            )
-            self._drag_select = drag
-            self._set_hovered(None)
-            if drag.kind == "paint":
-                if not drag.add:
-                    self.selection.clear()
-                    self.viewport.on_selection_changed()
-                self._paint_at([start])
-        if drag.cancelled:
-            return False
-        drag.end = cursor
-        if drag.kind == "paint":
-            self._paint_at(stroke_samples(drag.last, cursor))
-            drag.last = cursor
-        elif drag.kind == "lasso":
-            last = drag.points[-1]
-            if math.hypot(cursor[0] - last[0], cursor[1] - last[1]) >= LASSO_POINT_SPACING_PX:
-                drag.points.append(cursor)
-        return True
-
-    def _paint_at(self, points) -> None:
-        hits = {hit for hit in (self._pick(x, y) for x, y in points) if hit is not None}
-        before = len(self._active_selection_ids())
-        self.selection.add(hits)
-        if len(self._active_selection_ids()) != before:
-            self.viewport.on_selection_changed()
-
-    def _active_selection_ids(self) -> set:
-        selection = self.selection
-        if selection.mode is SelectionMode.VERTEX:
-            return selection.vertices
-        if selection.mode is SelectionMode.EDGE:
-            return selection.edges
-        return selection.faces
-
-    def _drag_select_finish(self) -> bool:
-        drag = self._drag_select
-        self._drag_select = None
-        self._gesture_refused = False
-        if drag is None or drag.cancelled:
-            self._refresh_hover()
-            return False
-        selection = self.selection
-        if drag.kind == "lasso":
-            return self._lasso_finish(drag)
-        rm = self._gpu_pick_mesh() if drag.kind == "box" else None
-        occlusion = self._region_occlusion()
-        through = "" if occlusion or not self.display.show_faces else " (through)"
-        if rm is not None:
-            try:
-                found = gpu_elements_in_rect(
-                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, selection.mode,
-                    normalized_rect(drag.start, drag.end), int(self.viewport_width), int(self.viewport_height),
-                    cache=self._pick_cache, occlusion=occlusion,
-                )
-            except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
-                self._gpu_failed(exc)
-                rm = None
-        if rm is not None:
-            if drag.add:
-                selection.add(found)
-            else:
-                selection.set(found)
-            label = "Box" + through
-        elif drag.kind == "box":
-            found = elements_in_rect(
-                self._edit_camera,
-                self.scene.mesh,
-                selection.mode,
-                normalized_rect(drag.start, drag.end),
-                self.viewport_width,
-                self.viewport_height,
-                cache=self._pick_cache,
-                occlusion=occlusion,
-            )
-            if drag.add:
-                selection.add(found)
-            else:
-                selection.set(found)
-            label = "Box" + through
-        else:
-            label = "Paint"
-        if self.viewport is not None:
-            self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-        count = len(self._active_selection_ids())
-        noun = selection.mode.name.lower()
-        if count != 1:
-            noun = "vertices" if noun == "vertex" else noun + "s"
-        self._set_status(f"{label}: {count} {noun} selected")
-        self._refresh_hover()
-        return True
-
-    def _lasso_finish(self, drag: _DragSelect) -> bool:
-        """Apply a finished Lasso: the elements whose corners all lie inside the outline (as Box, with
-        the same occlusion rule, Alt = through); fewer than three outline points select nothing and change
-        nothing."""
-        selection = self.selection
-        polygon = drag.points
-        if len(polygon) < 3:
-            self._set_status("Lasso: draw a closed outline")
-            self._refresh_hover()
-            return True
-        width, height = int(self.viewport_width), int(self.viewport_height)
-        occlusion = self._region_occlusion()
-        through = "" if occlusion or not self.display.show_faces else " (through)"
-        found = None
-        rm = self._gpu_pick_mesh()
-        if rm is not None:
-            try:
-                found = gpu_elements_in_region(
-                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, selection.mode,
-                    lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
-                    cache=self._pick_cache, occlusion=occlusion,
-                )
-            except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
-                self._gpu_failed(exc)
-        if found is None:
-            found = elements_in_polygon(
-                self._edit_camera, self.scene.mesh, selection.mode, polygon, width, height,
-                cache=self._pick_cache, occlusion=occlusion,
-            )
-        if drag.add:
-            selection.add(found)
-        else:
-            selection.set(found)
-        if self.viewport is not None:
-            self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-        count = len(self._active_selection_ids())
-        noun = selection.mode.name.lower()
-        if count != 1:
-            noun = "vertices" if noun == "vertex" else noun + "s"
-        self._set_status(f"Lasso{through}: {count} {noun} selected")
-        self._refresh_hover()
-        return True
-
-    def _drag_select_cancel(self) -> bool:
-        drag = self._drag_select
-        if drag is None or drag.cancelled:
-            return False
-        drag.cancelled = True
-        if drag.kind == "paint":
-            self._restore_selection(drag.before)
-            if self.viewport is not None:
-                self.viewport.on_selection_changed()
-        self._set_status(f"{drag.kind.capitalize()} cancelled")
-        return True
 
     # -- Transform gizmo (2026-10-21, promoted from the Playground, Manu "Gizmo nach src/") -----
     #
@@ -7448,11 +6221,11 @@ class Application:
         (`object_space.to_world`, an exact pass-through while the placement is identity); the cache
         holds the object-space centroid, so a placement change needs no invalidation."""
         viewport = self.viewport
-        if not self.gizmo_enabled or viewport is None or self._knife is not None:
+        if not self.gizmo_enabled or viewport is None or self.knife_active:
             return None
         if self.selection.mode is SelectionMode.OBJECT:
             return self._gizmo_object_pivot()
-        ids = self._active_selection_ids()
+        ids = self._pointer_tools.active_selection_ids()
         if not ids:
             return None
         key = (viewport.geometry_revision, id(self.scene.mesh), self.selection.mode, len(ids), hash(frozenset(ids)))
@@ -7530,7 +6303,11 @@ class Application:
     def _gizmo_pivot_if_shown(self):
         """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down, any drag gesture runs
         or the Re-Symmetrize preview is open."""
-        if self._transform_key is not None or self._drag_select is not None or self.resymmetrize_preview is not None:
+        if (
+            self._transform_key is not None
+            or self._pointer_tools.drag_select is not None
+            or self.resymmetrize_preview is not None
+        ):
             return None
         return self._gizmo_pivot()
 
@@ -7577,37 +6354,32 @@ class Application:
         """LMB press without a modifier on a handle: it owns the gesture and sets the constraint now."""
         if not self.gizmo_enabled or input.value != "LEFT" or input.modifiers or self._cursor is None:
             return
-        if self._gesture_refused:
-            return
         handle = self._gizmo_handle_at(*self._cursor)
         if handle is None:
             return
-        self._gizmo_gesture = handle
-        self._gizmo_press_xy = tuple(self._cursor)
-        self._gizmo_constraint_before = self._axis_constraint
+        self._pointer_tools.press_gizmo(handle, tuple(self._cursor), self._axis_constraint)
         # `center` (free Move / Rotate trackball / uniform Scale) and `screen` (Rotate about the view axis)
         # are the unconstrained handles.
         self._axis_constraint = None if handle in ("center", "screen") else handle
         self._set_hovered(None)
         self._set_status(self._constraint_status())
 
-    def _gizmo_step(self, dx: float, dy: float) -> bool:
-        """A drag step of a gesture that started on a handle: the first one arms the current tool on the
-        selection (an LMB-drag transform with the selection as target), every step drives it."""
-        if self._gesture_refused:
-            return False
+    def _gizmo_step(self, gizmo, dx: float, dy: float) -> bool:
+        """A drag step of a gesture that started on a handle (`gizmo`, the press session; refused drags it swallowed
+        itself): the first one arms the current tool on the selection (an LMB-drag transform with the selection as
+        target), every step drives it."""
         if self._transform_key is None:
             if self.viewport is None or self._refused_tweak():
-                self._gesture_refused = True
+                gizmo.refused = True
                 return False
             if not self._transform_arm(self.tweak_command, TWEAK_KEY):
-                self._gesture_refused = True
+                gizmo.refused = True
                 return False
         elif self._transform_key != TWEAK_KEY:
             return False
         stepped = self._transform_step(dx, dy)
         if self._transform_key is None:
-            self._gesture_refused = True  # refused at begin (seam, symmetric Soft)
+            gizmo.refused = True  # refused at begin (seam, symmetric Soft)
         return stepped
 
     def _refused_tweak(self) -> bool:
@@ -7618,11 +6390,9 @@ class Application:
         self._refused(refusal)
         return True
 
-    def _gizmo_release(self, clicked: bool) -> bool:
+    def _gizmo_release(self, gizmo, clicked: bool) -> bool:
         """LMB released: commit a running handle drag; a plain click on a handle leaves just the constraint."""
-        self._gizmo_gesture = None
-        self._gizmo_press_xy = None
-        self._gesture_refused = False
+        self.interaction.end_press(gizmo)
         if self._transform_key == TWEAK_KEY:
             self._transform_finish()
             return True
@@ -7637,26 +6407,26 @@ class Application:
         """The `Tweak` drag: the first step arms `tweak_command` (the last W/E/R, Move by default)
         like holding its key - target = the selection, else the element under the press point
         (Tweak Lab rule; the selection is not changed) - and every step drives it. Ctrl may be
-        let go during the drag; the LMB release commits, Esc cancels (`_cancel`)."""
-        if self._gesture_refused:
-            return False
+        let go during the drag; the LMB release commits, Esc cancels (`_cancel`). A refused drag swallows the rest
+        of its steps (`pointer_tools.swallow`)."""
+        tools = self._pointer_tools
         if self._transform_key is None:
             if self.viewport is None or self._refused_tweak():
-                self._gesture_refused = True
+                tools.swallow()
                 return False
             if self.selection.mode is not SelectionMode.OBJECT:
                 press = self._press_point if self._press_point is not None else self._cursor
-                if not self._active_selection_ids() and press is not None:
+                if not tools.active_selection_ids() and press is not None:
                     self._set_hovered(self._pick(*press))
             if not self._transform_arm(self.tweak_command, TWEAK_KEY):
-                self._gesture_refused = True
+                tools.swallow()
                 return False
         elif self._transform_key != TWEAK_KEY:
             return False
         stepped = self._transform_step(dx, dy)
         if self._transform_key is None:
             # Refused at begin (seam, symmetric Soft): no re-arm until the release.
-            self._gesture_refused = True
+            tools.swallow()
         return stepped
 
     def _camera_changed(self) -> None:
@@ -7685,6 +6455,5 @@ class Application:
     def shutdown(self) -> None:
         """Sauberes Herunterfahren: aktives Tool deaktivieren (kein stale State);
         eine laufende Knife-Session wird verworfen (wie Esc)."""
-        if self._knife is not None:
-            self._knife_end(commit=False)
+        self._knife.shutdown()
         self.tool_manager.deactivate()

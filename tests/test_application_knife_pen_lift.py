@@ -119,7 +119,7 @@ def test_lift_ends_the_chain_without_commit(app, how):
 
     assert _lift_with(app, how) is True
 
-    knife = app._knife
+    knife = app._knife.tool
     assert app.knife_active
     assert knife.path[-1] == LIFT and knife.last_point is None and knife.chain_points == []
     assert _history_depths(app) == (0, 0) and _topology(mesh) == before
@@ -157,27 +157,27 @@ def test_two_chains_with_a_lift_commit_as_one_entry_and_one_undo_reverts_both(ap
 def test_lift_with_nothing_to_lift_is_refused(app, how):
     _begin(app)
     assert _lift_with(app, how) is False
-    assert app._knife.path == [] and app.status_message == "Knife: nothing to lift"
+    assert app._knife.tool.path == [] and app.status_message == "Knife: nothing to lift"
     _chain_a(app)
     assert _lift_with(app, how)
-    path = app._knife.path
+    path = app._knife.tool.path
     assert _lift_with(app, how) is False
-    assert app._knife.path == path and app.status_message == "Knife: nothing to lift"
+    assert app._knife.tool.path == path and app.status_message == "Knife: nothing to lift"
 
 
 @pytest.mark.parametrize("how", ["e", "rmb"])
 def test_ctrl_z_takes_the_lift_back_and_ctrl_y_lifts_again(app, how):
     _begin(app)
     _chain_a(app)
-    before_lift = app._knife.path
+    before_lift = app._knife.tool.path
     assert _lift_with(app, how)
-    lifted = app._knife.path
+    lifted = app._knife.tool.path
 
     assert app.key_press(CTRL_Z)
-    assert app._knife.path == before_lift and app._knife.last_point is not None
+    assert app._knife.tool.path == before_lift and app._knife.tool.last_point is not None
     assert app.knife_render_data.start_point is not None
     assert app.key_press(CTRL_Y)
-    assert app._knife.path == lifted
+    assert app._knife.tool.path == lifted
     assert app.key_press(CTRL_Z)
     assert _click(app, _edge_screen(app, _edges(app)["26"], 0.5))
     assert app.key_press(CTRL_Y) is False                         # the click cleared the redo branch
@@ -190,9 +190,9 @@ def test_an_rmb_drag_is_no_lift_and_rmb_never_commits_or_cancels(app):
     assert _rmb_click(app) is False                                # nothing to lift: no commit, no cancel
     assert app.knife_active
     _chain_a(app)
-    path = app._knife.path
+    path = app._knife.tool.path
     assert _rmb_click(app, drag=40.0) is False
-    assert app._knife.path == path and app.knife_active
+    assert app._knife.tool.path == path and app.knife_active
     assert _rmb_click(app) and app.knife_active
     assert _history_depths(app) == (0, 0) and len(mesh.all_face_ids()) == 6
 
@@ -205,10 +205,10 @@ def test_after_a_lift_a_click_on_an_earlier_own_point_starts_the_new_chain_there
     e = _edges(app)
     _begin(app)
     _chain_a(app)
-    shared = app._knife.points[1]
+    shared = app._knife.tool.points[1]
     assert app.key_press(E)
     assert _click(app, _edge_screen(app, e["56"], 0.5))           # snaps to the own point
-    assert app._knife.path[-1] is shared and app._knife.last_point is shared
+    assert app._knife.tool.path[-1] is shared and app._knife.tool.last_point is shared
     assert _click(app, _edge_screen(app, e["26"], 0.5))
     mid = _edge_point(app, e["56"], 0.5)
     assert app.key_press(ENTER)
@@ -228,12 +228,12 @@ def test_a_double_click_on_a_third_point_closes_the_chain_and_lifts(app, clock):
     assert _click(app, p2)
     clock.now += 1.0
     assert _click(app, p3)
-    three = app._knife.path
+    three = app._knife.tool.path
     clock.now += 0.2
 
     assert _click(app, (p3[0] + 2.0, p3[1] + 1.0)) is True
 
-    knife = app._knife
+    knife = app._knife.tool
     assert knife.path == three + [{"kind": "break", "reason": "closed", "cyclic": True}, LIFT]
     assert knife.last_point is None and app.knife_active
     assert app.status_message == "Knife: shape closed, pen lifted - the next click starts a new cut"
@@ -248,12 +248,12 @@ def test_a_double_click_on_the_chain_start_closes_with_the_first_click_and_lifts
     for p in (p1, p2, p3):
         assert _click(app, p)
         clock.now += 1.0
-    assert _click(app, p1) and app._knife.last_plan.closing
-    closed = app._knife.path
+    assert _click(app, p1) and app._knife.tool.last_plan.closing
+    closed = app._knife.tool.path
     clock.now += 0.1
     assert _click(app, p1)
-    assert app._knife.path == closed[:-1] + [LIFT]
-    assert app._knife.last_point is None
+    assert app._knife.tool.path == closed[:-1] + [LIFT]
+    assert app._knife.tool.last_point is None
     assert app.key_press(ENTER)
     assert _history_depths(app) == (1, 0)
 
@@ -265,10 +265,10 @@ def test_a_double_click_with_fewer_than_three_points_only_lifts_and_says_why(app
     clock.now += 1.0
     p2 = _edge_screen(app, e["56"], 0.5)
     assert _click(app, p2)
-    two = app._knife.path
+    two = app._knife.tool.path
     clock.now += 0.1
     assert _click(app, p2)
-    assert app._knife.path == two + [LIFT]
+    assert app._knife.tool.path == two + [LIFT]
     assert app.status_message.startswith("Knife: pen lifted (not closed: closing needs at least 3 points)")
 
 
@@ -281,7 +281,7 @@ def test_a_second_click_outside_the_double_click_window_is_an_ordinary_click(app
     assert _click(app, p2)
     clock.now += dt
     second = (p2[0] + dx, p2[1])
-    knife = app._knife
+    knife = app._knife.tool
     path = knife.path
     accepted = _click(app, second)
     assert LIFT not in knife.path
@@ -302,8 +302,8 @@ def test_a_triple_click_is_one_double_click_and_one_new_start(app, clock):
     assert _click(app, p2)                                        # double-click: lift
     clock.now += 0.1
     assert _click(app, p2)                                        # a new start (on the own point), no 2nd finish
-    assert app._knife.last_plan.start
-    assert app._knife.path[-2] == LIFT and app._knife.path[-1] is app._knife.points[1]
+    assert app._knife.tool.last_plan.start
+    assert app._knife.tool.path[-2] == LIFT and app._knife.tool.path[-1] is app._knife.tool.points[1]
 
 
 def test_a_drag_cannot_be_the_second_click_of_a_double_click(app, clock):
@@ -312,12 +312,12 @@ def test_a_drag_cannot_be_the_second_click_of_a_double_click(app, clock):
     assert _click(app, p1)
     clock.now += 1.0
     assert _click(app, p2)
-    path = app._knife.path
+    path = app._knife.tool.path
     clock.now += 0.1
     app.pointer_press(LMB, *p2)
     app.pointer_drag(20.0, 0.0, p2[0] + 20.0, p2[1])
     assert app.pointer_release("LEFT", p2[0], p2[1]) is False
-    assert app._knife.path == path
+    assert app._knife.tool.path == path
 
 
 # -- 8. click outside, Enter, Esc ------------------------------------------------------------------------
@@ -330,12 +330,12 @@ def test_a_click_outside_the_mesh_adds_a_point_in_space_and_never_commits(app):
     before = _topology(mesh)
     _begin(app)
     _chain_a(app)
-    path = app._knife.path
+    path = app._knife.tool.path
 
     assert _click(app, OUTSIDE) is True
 
-    assert app.knife_active and app._knife.path[: len(path)] == path
-    assert app._knife.path[-1]["kind"] == "space"
+    assert app.knife_active and app._knife.tool.path[: len(path)] == path
+    assert app._knife.tool.path[-1]["kind"] == "space"
     assert _history_depths(app) == (0, 0) and _topology(mesh) == before
     assert app.status_message.startswith("Knife: point in space")
 
@@ -344,7 +344,7 @@ def test_a_click_outside_on_an_empty_session_starts_the_chain_in_space(app):
     """S4 (decided behaviour change, Manu 2026-10-02): before, nothing happened; now the start is in space."""
     _begin(app)
     assert _click(app, OUTSIDE) is True
-    assert app.knife_active and [p["kind"] for p in app._knife.path] == ["space"]
+    assert app.knife_active and [p["kind"] for p in app._knife.tool.path] == ["space"]
     assert app.status_message == "Knife: start point set in space"
 
 
@@ -403,9 +403,9 @@ def test_e_and_rmb_are_bound_to_knife_lift_in_the_knife_context_only(app):
 def test_the_session_gate_still_ignores_other_keys(app, key):
     _begin(app)
     _chain_a(app)
-    path = app._knife.path
+    path = app._knife.tool.path
     assert app.key_press(_key(key)) is False
-    assert app._knife.path == path and app.knife_active
+    assert app._knife.tool.path == path and app.knife_active
     assert app.key_press(E) is True
 
 
@@ -428,8 +428,8 @@ def test_knife_lift_is_rebindable_through_keymap_json():
     _begin(app)
     _chain_a(app)
     assert app.key_press(E) is False and _rmb_click(app) is False
-    assert app._knife.last_point is not None
-    assert app.key_press(_key("q")) is True and app._knife.last_point is None
+    assert app._knife.tool.last_point is not None
+    assert app.key_press(_key("q")) is True and app._knife.tool.last_point is None
 
 
 # -- 10. render data after a lift -------------------------------------------------------------------------
@@ -466,9 +466,9 @@ def test_after_a_close_and_a_lift_a_new_cyclic_close_draws_its_own_closing_segme
         clock.now += 1.0
         assert _click(app, p)
     clock.now += 1.0
-    assert _click(app, pts[0]) and app._knife.last_plan.cyclic
+    assert _click(app, pts[0]) and app._knife.tool.last_plan.cyclic
     segments = app.knife_render_data.path_segments
-    knife = app._knife
+    knife = app._knife.tool
 
     def touching(point) -> int:
         pos = knife.point_position(point)
@@ -487,10 +487,10 @@ def test_shift_click_on_an_edge_places_the_point_at_its_midpoint_and_the_cut_pas
     e = _edges(app)
     _begin(app)
     assert _shift_click(app, _edge_screen(app, e["47"], 0.3))
-    rec = app._knife.path[-1]
+    rec = app._knife.tool.path[-1]
     assert rec["kind"] == "edge" and rec["edge_id"] == e["47"] and rec["t"] == 0.5
     assert _click(app, _edge_screen(app, e["56"], 0.3))             # plain click: unchanged
-    assert app._knife.path[-1]["t"] == pytest.approx(0.3, abs=0.02)
+    assert app._knife.tool.path[-1]["t"] == pytest.approx(0.3, abs=0.02)
     mid = _edge_point(app, e["47"], 0.5)
     assert app.key_press(ENTER)
     assert _vertices_at(mesh, mid) == 1
@@ -501,13 +501,13 @@ def test_shift_click_on_a_vertex_or_inside_a_face_is_a_plain_click(app):
     _begin(app)
     v7 = _v(app, 7)
     assert _shift_click(app, _vertex_screen(app, v7))
-    assert app._knife.path[-1] == {"kind": "vertex", "vertex_id": v7, "pid": app._knife.path[-1]["pid"]}
+    assert app._knife.tool.path[-1] == {"kind": "vertex", "vertex_id": v7, "pid": app._knife.tool.path[-1]["pid"]}
     assert app.key_press(E)
     pos = _face_screen(app, 0.4, 0.6)
     hit = knife_pick(app.camera, app.scene.mesh, *pos, WIDTH, HEIGHT, cache=app._pick_cache, occlusion=True)
     assert _shift_click(app, pos)
-    assert app._knife.path[-1]["kind"] == "face"
-    assert app._knife.path[-1]["position"] == tuple(hit["position"])
+    assert app._knife.tool.path[-1]["kind"] == "face"
+    assert app._knife.tool.path[-1]["position"] == tuple(hit["position"])
 
 
 def test_shift_click_near_an_own_edge_point_reaches_that_point(app):
@@ -515,22 +515,22 @@ def test_shift_click_near_an_own_edge_point_reaches_that_point(app):
     _begin(app)
     assert _click(app, _edge_screen(app, e["47"], 0.3))
     assert _click(app, _edge_screen(app, e["56"], 0.5))
-    own = app._knife.points[0]
-    n = len(app._knife.points)
+    own = app._knife.tool.points[0]
+    n = len(app._knife.tool.points)
     assert app.key_press(E)
     assert _shift_click(app, _edge_screen(app, e["47"], 0.3))       # own point first, no midpoint
-    assert app._knife.path[-1] is own and len({p["pid"] for p in app._knife.points}) == n
+    assert app._knife.tool.path[-1] is own and len({p["pid"] for p in app._knife.tool.points}) == n
 
 
 def test_shift_click_at_the_midpoint_of_an_edge_carrying_an_own_midpoint_reaches_that_point(app):
     e = _edges(app)
     _begin(app)
     assert _shift_click(app, _edge_screen(app, e["47"], 0.2))
-    own = app._knife.path[-1]
+    own = app._knife.tool.path[-1]
     assert _click(app, _edge_screen(app, e["56"], 0.5))
     assert app.key_press(E)
     assert _shift_click(app, _edge_screen(app, e["47"], 0.85))      # far from the own point, same midpoint
-    assert app._knife.path[-1] is own
+    assert app._knife.tool.path[-1] is own
 
 
 def test_shift_click_along_the_last_points_edge_keeps_the_skip_rule(app):
@@ -538,9 +538,9 @@ def test_shift_click_along_the_last_points_edge_keeps_the_skip_rule(app):
     _begin(app)
     assert _click(app, _edge_screen(app, e["47"], 0.2))
     assert _shift_click(app, _edge_screen(app, e["47"], 0.8))       # the same edge: a skip, as today
-    plan = app._knife.last_plan
-    assert plan.skip and app._knife.path[-1]["t"] == 0.5
-    assert app._knife.path[-2] == {"kind": "break", "reason": "edge"}
+    plan = app._knife.tool.last_plan
+    assert plan.skip and app._knife.tool.path[-1]["t"] == 0.5
+    assert app._knife.tool.path[-2] == {"kind": "break", "reason": "edge"}
 
 
 def test_shift_lmb_belongs_to_the_knife_alt_and_ctrl_lmb_do_not(app):
@@ -549,17 +549,17 @@ def test_shift_lmb_belongs_to_the_knife_alt_and_ctrl_lmb_do_not(app):
     for mods in (("alt",), ("ctrl",), ("ctrl", "shift"), ("alt", "shift")):
         app.pointer_motion(*pos)
         app.pointer_press(_mouse("LEFT", *mods), *pos)
-        assert not app._knife_gesture and app.pointer.active   # the pointer gestures have it
+        assert not app._knife.session.gesture and app.pointer.active   # the pointer gestures have it
         app.pointer_release("LEFT", *pos)
-        assert app._knife.path == []
-    assert _shift_click(app, pos) and len(app._knife.path) == 1
+        assert app._knife.tool.path == []
+    assert _shift_click(app, pos) and len(app._knife.tool.path) == 1
 
 
 def test_a_shift_lmb_drag_past_the_threshold_is_no_cut(app):
     _begin(app)
     pos = _edge_screen(app, _edges(app)["47"], 0.3)
     assert _shift_click(app, pos, drag=20.0) is False
-    assert app._knife.path == []
+    assert app._knife.tool.path == []
 
 
 def test_the_shift_press_previews_the_midpoint_and_the_plain_hover_the_free_position(app):

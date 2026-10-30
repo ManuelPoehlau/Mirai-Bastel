@@ -2,7 +2,7 @@
 
 **Status:** **DECIDED (Manu, 2026-10-29: go with C1–C3; V1, V3, V7 stay as they are).** Proposed the same day as the
 Architecture Gate (Type C) stop point; second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md)
-(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M2 implemented (2026-10-30)**; M3–M8 open (§7,
+(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M5 implemented (2026-10-30)**; M6–M8 open (§7,
 findings of the steps so far in §7.1).
 **Mode (M5):** Production (a behaviour-neutral restructuring), in fresh sessions with this AD as the handoff (§7).
 **Baseline:** `main` @ `dfd6e5d`. Every code fact, line count and probe result below was read or run there.
@@ -27,8 +27,12 @@ code: `src/mirai/application.py`, `src/mirai/interaction/`, `src/main.py`, `src/
   nur die lesbaren Szenarien als Tests; die Zufallsaufzeichnung wird gelöscht, damit sie spätere gewollte Änderungen
   (Tasten, Phase 6) nicht blockiert.
 - **Stand:** entschieden (dein Go, 2026-10-29, mit den drei Änderungen der zweiten Meinung, §12). Der Umbau läuft in
-  drei frischen Sessions (§7); die erste (M0–M2: Aufzeichnung, Platz, eine Frage) ist fertig (2026-10-30). Kein
-  Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas anders anfühlt (§10).
+  drei frischen Sessions (§7); die erste (M0–M2: Aufzeichnung, Platz, eine Frage) und die zweite (M3–M5: Knife,
+  Halte-Tasten und Morph, Box/Lasso und Gizmo-Klick) sind fertig (2026-10-30). Eine Korrektur am Plan (§7.1 M5):
+  Box/Lasso, der Gizmo-Klick und eine abgelehnte Ziehgeste bekommen einen eigenen zweiten Platz neben dem ersten,
+  weil heute z. B. Alt+M bei gedrücktem Gizmo-Griff die Vorschau öffnet und das Loslassen trotzdem dem Griff gehört -
+  mit nur einem Platz hätte sich das geändert. Kein Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas
+  anders anfühlt (§10).
 - **Danach:** AD-025 Phase 6 mit dem Kiefer-Szenario.
 
 ## 0. Decisions this AD rests on
@@ -102,6 +106,9 @@ Probe scripts are throwaway (not committed); M0 (§7) turns V1–V7 into scripte
 ### 3.1 What counts as modal state
 
 - **Session** — an interaction that runs over several events and owns some input while it runs. At most one.
+  *(M5, 2026-10-30: the three owner-less pointer sessions of one LMB press - drag select, gizmo press, swallowed
+  gesture - sit in a second field of the slot, `press`, because a session may start while one of them runs;
+  §7.1 M5.)*
 - **Hold key** — a held key that changes what the pointer does: Lasso (Q), Working Pivot (P), Light (L), Morph weight
   (N) — the `commands.HOLD_COMMANDS` that are not gestures. Several may be held; a session may start while one is held
   (V1, V5, V6, V7); each ends with its own key release (the pivot also on Cancel).
@@ -447,6 +454,64 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   ever shows in a profile.
 - **Until their sessions move** (M3, M5, M6) the Knife's, the held gestures' and the drag selection's `allows` are
   `Application` tables (`_KNIFE_ALLOWS`, `_GESTURE_REFUSES`, `_DRAG_SELECT_ALLOWS`) read by `can_run`.
+- **M3 (Knife).** `controllers/knife.py`: `KnifeController` (begin / end, the mirror-preview variant and the
+  double-click clock as its settings, picking and the tool overlay) and `KnifeSession` (exclusive, owner `"knife"`,
+  `allows` = `KNIFE_ALLOWS`); `Application` keeps `knife_active`, `knife_render_data` and `knife_clock` /
+  `knife_mirror_variant` as delegating properties. The session grabs keys (resolved in `knife`), its own press
+  (plain / Shift LMB, the KnifeLift button) with its drags and release, motion, hover, Shift held, leave, the Soft
+  wheel steps, every release after the pointer resolver (the session gate) and Undo/Redo arriving through
+  `dispatch_command` (a `Command` event after `can_run`, AD-017's isolated history from every source).
+- **Event details the Knife needed (implementation, the contract unchanged):** a press, drag or release a session or
+  hold key took never reaches the pointer resolver, so it travels as a *raw* event (`Drag(None, ...)`,
+  `Release(..., raw=True)`); after the resolver come the resolved ones. A press's answer means: True = taken (no
+  resolver), False = handled (no gizmo press, the resolver still gets it - the preview's answer, which M1 returned as
+  True through `route`), `PASS` = idle. `Leave` also stands for "no hover point" (a navigation drag clears the hover,
+  a re-pick without a cursor). The slot exposes its stages (`claim`, `handle`, `background`) for the entry points
+  that keep a gesture branch between them until M6. `AppServices` gains `pick_cache` (the Knife picks with its own
+  occlusion tests on the shared cache) and `toggle_ortho` (the session's own ortho key runs the view command
+  `Application` owns); the display / Look command groups moved to `interaction/commands.py`.
+- **M4 (hold keys, Morph).** `controllers/pointer_tools.py`: `PointerToolsController` with `PivotHold`,
+  `LassoHold`, `LightHold` and the Working Pivot itself (a sticky setting the pivot hold writes);
+  `controllers/morph.py`: `MorphController` (lifecycle, current target and weight, A/B, the editing view and its
+  history translation, `view_refusal` for `can_run` stage 3) with `MorphWeightHold`; `Application.morph` (the mix
+  display) is the controller's. The hold objects live one per app (a second press of a key bound to the same
+  command keeps their state, as before) and sit in the slot while held; the pivot also while its LMB placement
+  runs past the key release (until that LMB release). Precedence = the slot's rank: the pivot claims press, raw
+  drag and release, Cancel and the hover before the session; the light drag, then the Morph weight take the motion
+  after it (V4, V5). `key_release` asks the holds in the order it always did (Lasso, Pivot, Morph weight, Light -
+  it matters only when two holds share a key value), not in rank order. `AppServices` gains `set_light` (the light
+  drag turns the key light; the Worklight stays in `Application`). The editing view's mask / hidden set are dropped
+  by `Application` when `close_if_left` reports the closed view.
+- **M5 (pointer sessions) and a correction of §3.2.** `DragSelect`, `GizmoPress` and `SwallowedGesture`
+  (`controllers/pointer_tools.py`) are owner-less sessions of one LMB press. §3.2 put them in the one session
+  field; probing at `dfd6e5d` showed that a session can start while one of them runs and that the press keeps its
+  own release: Alt+M with one vertex selected while LMB is held on a gizmo handle opens the Re-Symmetrize preview,
+  and the release is still the handle's (True, no click reaches the preview, no hint); by the code, `C` with the
+  selection cleared during the press starts the Knife the same way, and a refused drag that is still swallowing when
+  a session starts keeps swallowing. One field cannot hold both (refusing the session would change behaviour, ending the press
+  would hand its release to the session). **Chosen direction:** the slot has a second field, `press` (at most one
+  press session; owner None, never exclusive), beside `session`; stage 3 asks the session, then the press session;
+  `can_run` stage 6 asks both, the session first; `interaction_owner` stays the session's. Pinned by
+  `test_application_gizmo.py::test_a_preview_opened_during_a_handle_press_leaves_the_press_its_release` (it
+  passes on `dfd6e5d` too) and the slot tests. The random corpus never produces the case (0 in the 50 000 events
+  of 200 corpus sequences, instrumented), so E1/E2 alone would not have caught it.
+- **M5 details.** `DragSelect` holds the Box / Paint / Lasso state and its finish (its `allows` is the old
+  `_DRAG_SELECT_ALLOWS`, now `DRAG_SELECT_ALLOWS`); a refused gesture is a `SwallowedGesture` (it swallows the
+  select and Tweak drags and the gizmo press until the LMB release; navigation runs), or `GizmoPress.refused` when the
+  press was on a handle (that press keeps its own release, which re-picks the hover). Until the held gestures move
+  (M6) the gizmo / Tweak origin (`_gizmo_step`, `_gizmo_release`, `_tweak_step`, the TWEAK branch of `_cancel`)
+  stays in `Application` and reads `GizmoPress` (`handle_id`, `press_xy`, `constraint_before`). `AppServices` gains
+  `pick_in_rect` and `pick_in_polygon` (Box / Lasso release picks; picking stays in `Application`). **For M6:**
+  today a key gesture (W/E/R) may be armed while LMB is held on a handle (its drags then do nothing for the gizmo,
+  the release is still the handle's); with the press field the `GestureSession` starts in the session field beside
+  the `GizmoPress`, which need not be replaced on the first drag step - the gesture can read the handle from it.
+- **Verification M3-M5 (2026-10-30, 4-core container, Python 3.13).** After each step, on a worktree of its commit:
+  E1 25 passed, E2 220 000 events beyond the corpus (200 000 on the small scenes, 20 000 on the basemesh), 0
+  divergences against `dfd6e5d`. At the end: `tests/` 5 510 passed, 125 skipped (the GL tests, which a combined run
+  skips); GL tests in their own process 109 passed; `experiments/morph_lab/tests` 49 passed; Knife oracle 351
+  passed. Routing cost (best of 5 x 20 000 calls, this tree vs `dfd6e5d`): an idle coalesced `pointer_motion`
+  1.56 vs 0.25 µs, an unbound `key_press` 4.90 vs 5.36 µs, `key_release` 0.33 vs 0.14 µs, a Shift toggle 1.62 vs
+  0.35 µs per pair - within the 5 µs budget per event.
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 

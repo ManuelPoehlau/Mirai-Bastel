@@ -33,12 +33,8 @@ from core import Mesh
 from core.mesh import SymmetryDefinition
 from mirai import symmetric_knife as sk
 from mirai import symmetry_declarations
-from mirai.application import (
-    KNIFE_MIRROR_VARIANT_DEFAULT,
-    KNIFE_MIRROR_VARIANT_KEY,
-    KNIFE_MIRROR_VARIANTS,
-    Application,
-)
+from mirai.application import KNIFE_MIRROR_VARIANT_KEY, Application
+from mirai.controllers.knife import KNIFE_MIRROR_VARIANT_DEFAULT, KNIFE_MIRROR_VARIANTS
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import KNIFE_CONTEXT, Input
 from mirai.symmetric_knife import (
@@ -319,7 +315,7 @@ def _begin(app) -> None:
 def test_without_a_definition_the_session_overlay_and_status_are_what_they_were():
     app = _app("subd_cube", with_definition=False)
     _begin(app)
-    assert app._knife._symmetric_commit is None and app._knife._symmetric_view is None
+    assert app._knife.tool._symmetric_commit is None and app._knife.tool._symmetric_view is None
     assert "Spiegel" not in app.status_message
     a, b = _visible(app)[:2]
     assert _click_vertex(app, a)
@@ -580,7 +576,7 @@ def test_a_refused_hover_and_click_in_the_application_use_the_refused_style_and_
     app.pointer_motion(*_screen(app, victim))                # the same hover again: the status is not re-posted
     assert app.status_serial == serial
     assert _click_vertex(app, victim) is False               # the click is ignored ...
-    assert app._knife.points == []                           # ... and adds nothing
+    assert app._knife.tool.points == []                           # ... and adds nothing
     assert app.status_message == TEXT_KNIFE_TARGET_UNPAIRED
     other = next(v for v in _visible(app) if v != victim)
     app.pointer_motion(*_screen(app, other))                 # leaving the refused target clears it
@@ -634,7 +630,7 @@ def test_a_definition_makes_the_session_pass_the_coordinator_and_enter_cuts_both
     entries = len(app.history)
     edges = len(mesh.all_edge_ids())
     _begin(app)
-    assert app._knife._symmetric_commit is coordinate_knife
+    assert app._knife.tool._symmetric_commit is coordinate_knife
     assert _click_vertex(app, a) and _click_vertex(app, b)
     assert app.key_press(ENTER) is True
     assert not app.knife_active
@@ -657,7 +653,7 @@ def test_the_application_cut_equals_the_coordinator_on_the_same_path():
     state = app.scene.mesh.export_state()
     _begin(app)
     assert _click_vertex(app, a) and _click_vertex(app, b)
-    path = app._knife.path
+    path = app._knife.tool.path
     app.key_press(ENTER)
     reference = commit_session(state, path)
     assert reference.status == "committed"
