@@ -173,6 +173,9 @@ class Session(Protocol):
     owner: Optional[str]
     #: What the HUD shows as running ("Move", "Knife", ...).
     label: Optional[str]
+    #: True for a session that grabs input (keys among it: the Knife, the Re-Symmetrize preview): its `allows`
+    #: alone answers `can_run` (stage 1). False: its `allows` is stage 6, after the host and mode gates.
+    exclusive: bool
 
     def grabs(self, event: Event) -> bool:
         """True = this event is the session's alone, before hold keys and gates."""

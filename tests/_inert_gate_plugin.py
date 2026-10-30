@@ -17,7 +17,8 @@ The `inert` gate also carries `refused_contexts = {}` (T-R5c+): the context chec
 runs on every `C` that reaches `_connect_command` but must change nothing.
 
 `MIRAI_GATE_COUNT_FILE` (optional): receives how often the gate was consulted
-with a gate installed, to prove the check path actually ran.
+with a gate installed, to prove the check path actually ran (since AD-027 M2 the
+gate's own `refusal`, which `Application.can_run` stage 2 asks for every path).
 `MIRAI_CONTEXT_COUNT_FILE` (optional): the same for the context check
 (`_context_refuses`), to prove that path executed too.
 """
@@ -46,6 +47,13 @@ def pytest_configure(config) -> None:
     from mirai.application import Application, CommandGate
     from mirai.topology.contextual_c import CContext
 
+    class CountingGate(CommandGate):
+        def refusal(self, command):
+            global _calls
+            _calls += 1
+            return super().refusal(command)
+
+    CommandGate = CountingGate  # noqa: N806 - the gates below count their consultations
     mode = os.environ.get("MIRAI_GATE_MODE", "")
     if mode == "inert":
         gate = CommandGate(
@@ -75,18 +83,11 @@ def pytest_configure(config) -> None:
         return
 
     original_init = Application.__init__
-    original_check = Application._gate_refuses
     original_context_check = Application._context_refuses
 
     def init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         self.command_gate = gate
-
-    def check(self, command):
-        global _calls
-        if self.command_gate is not None and command is not None:
-            _calls += 1
-        return original_check(self, command)
 
     def context_check(self, context):
         global _context_calls
@@ -95,7 +96,6 @@ def pytest_configure(config) -> None:
         return original_context_check(self, context)
 
     Application.__init__ = init
-    Application._gate_refuses = check
     Application._context_refuses = context_check
 
 

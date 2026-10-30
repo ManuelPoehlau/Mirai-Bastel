@@ -1683,3 +1683,19 @@ applies none of its entries, a missing file is quiet, the fixed grammar is liste
 scene menu with its closing keys, the start listing, the no-literal AST check); `tests/test_input_binding.py` (topology
 context empty); `tests/test_application.py` (an invalid keymap starts with the defaults — it raised until now);
 `experiments/morph_lab/tests/test_app_lab.py` (the lab loads the same file).
+
+## Addendum (2026-10-30, AD-027 M2 — one `can_run`; `dispatch_command` is the gated public entry)
+
+[AD-027](AD-027-INTERACTION-LAYER-SESSION-SLOT.md) §3.3 (decided by Manu 2026-10-29) replaces the H2 gate sites with one
+check, `Application.can_run(command, RunContext(source, ...)) -> Refusal | None`, asked by `key_press`, the click,
+drag-start, wheel, gizmo and Tweak paths, the HUD (data only) and `dispatch_command`. What changes here:
+
+- **H2 § "no gate checks in … `dispatch_command`"** no longer holds: `dispatch_command` asks `can_run` (source `"api"`)
+  before it runs anything; `Application`'s internal calls go to the ungated `_execute`, as they always ran after the
+  gate. The `CommandGate` is `can_run` stage 2; its text is posted the same way (`status_serial` + 1, `False`).
+- **G-2's note "a direct `dispatch_command(CONNECT)` is context-gated but not identity-gated"** no longer holds: it is
+  both (stage 2, then the context gate in `_connect_command`, unchanged).
+- **`interaction_owner`** reads the session slot for the Re-Symmetrize preview (AD-027 M1); its values and moments are
+  unchanged ("transform", "knife", "resymmetrize", None; never a camera gesture, H2-R2).
+- **Unchanged:** H2-R5 (`src/main.py` writes no gate), H2-R6 (one writer), `hover_suspended`, `apply_mesh_change`,
+  `set_status`. No host writes a gate since 2026-10-24 (AD-027 V9); retiring `CommandGate` is a separate decision.

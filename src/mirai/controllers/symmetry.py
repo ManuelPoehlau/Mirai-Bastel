@@ -93,6 +93,7 @@ class ResymPreview:
 
     owner = "resymmetrize"
     label = "Re-Symmetrize"
+    exclusive = True
 
     def __init__(self, controller: "SymmetryController", plan: ResymPlan) -> None:
         self._controller = controller

@@ -160,7 +160,19 @@ from .symmetry_display import SymmetryDisplay
 from .resymmetrize import ResymPlan
 from .controllers.services import AppServices
 from .controllers.symmetry import SymmetryController
-from .interaction.session import PASS, Drag, Hover, InteractionSlot, KeyPress, Press, Release, Wheel
+from .interaction.session import (
+    PASS,
+    SILENT,
+    Drag,
+    Hover,
+    InteractionSlot,
+    KeyPress,
+    Press,
+    Refusal,
+    Release,
+    RunContext,
+    Wheel,
+)
 from . import symmetry_declarations
 from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal, view_refusal
 from .topology.contextual_c import CContext, resolve_c_context
@@ -396,7 +408,7 @@ _REGION_COMMANDS = (
 )
 
 #: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
-#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refuses`). Loop Insert is not in
+#: refused instead of silently changing faces the artist cannot see (`Application._hidden_refusal`). Loop Insert is not in
 #: the list: its ring ends at hidden faces (`edge_ring(..., blocked)`) and `_edge_connect` guards the rest.
 _TOPOLOGY_COMMANDS = frozenset(
     {
@@ -493,6 +505,97 @@ _COMPONENT_COMMANDS = frozenset(
         *_MASK_COMMANDS,
         *_HIDE_COMMANDS,
         *_REGION_COMMANDS,
+        *_LOOP_COMMANDS,
+        *_SELECTION_STEP_COMMANDS,
+    }
+)
+
+#: AD-027 §3.3 stage 6: what a held W/E/R/T/G/S/I/Ctrl+B (armed or begun) refuses underneath it, silently (the
+#: Playground session gate, AD-SYM-04 R-4, AD-021 M2-3): the mode, placement and topology commands, the other hold
+#: keys, the morph keys and the drag selections. A second gesture key is refused by `_transform_arm`, after it set
+#: `tweak_command` (so the HUD tool follows, as before).
+_GESTURE_REFUSES = frozenset(
+    {
+        *MORPH_COMMANDS,
+        commands.LASSO_ARM,
+        commands.PIVOT_PLACE,
+        commands.LIGHT_DRAG,
+        *_MODE_COMMANDS,
+        commands.APPLY_TRANSFORM,
+        commands.CLEAR_TRANSFORM,
+        commands.TOGGLE_REFERENCE,
+        commands.CONNECT,
+        commands.COLLAPSE,
+        commands.BORDER_SELECT,
+        commands.CAP,
+        commands.SYMMETRY_CYCLE,
+        commands.RESYMMETRIZE,
+        *_MASK_COMMANDS,
+        *_HIDE_COMMANDS,
+        *_REGION_COMMANDS,
+        *_REMOVAL_COMMANDS,
+        *_LOOP_COMMANDS,
+        *_SELECTION_STEP_COMMANDS,
+        commands.SELECT_DRAG,
+        commands.SELECT_DRAG_ADD,
+    }
+)
+#: ... and once it has begun: Undo/Redo (E23; only armed, the key disarms first) and `K` (its frame is fixed).
+_BEGUN_GESTURE_REFUSES = frozenset({commands.UNDO, commands.REDO, commands.TOGGLE_TRANSFORM_SPACE})
+#: The gestures that ignore the constraint keys: Extrude is normal-only, Loop Slide runs along its edges, Smooth /
+#: Relax and Inset / Bevel have no axis - neither the gesture nor the pending constraint changes.
+_UNCONSTRAINED_GESTURES = frozenset({commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS, *_OFFSET_COMMANDS})
+#: What a running Box / Paint / Lasso drag lets through (it owns the selection until the LMB release).
+_DRAG_SELECT_ALLOWS = frozenset(
+    {
+        commands.CANCEL,
+        commands.TOGGLE_ORTHO,
+        *_DISPLAY_COMMANDS,
+        *_LOOK_COMMANDS,
+        *_SESSION_SWITCH_COMMANDS,
+        *SUBD_COMMANDS,
+    }
+)
+#: What a Knife session lets through from outside its own key map (AD-017; AD-027 §3.3: its commands, Cancel,
+#: Undo/Redo into its isolated history, view state). Its keys never ask: the session resolves them itself.
+_KNIFE_ALLOWS = frozenset(
+    {
+        commands.KNIFE_COMMIT,
+        commands.KNIFE_LIFT,
+        commands.KNIFE_MIRROR_VARIANT,
+        commands.CANCEL,
+        commands.UNDO,
+        commands.REDO,
+        commands.TOGGLE_ORTHO,
+        *_DISPLAY_COMMANDS,
+        *_LOOK_COMMANDS,
+    }
+)
+
+#: The commands a key runs through `_execute` once `can_run` let them through: pure display and view state (allowed
+#: while a transform runs), the Soft settings (state only, like the constraints: they apply to the next gesture - or
+#: to this one if it is armed and has not begun yet; symmetric Soft refuses at `begin()`, AD-SYM-04 SS2), and the
+#: mode, placement and topology commands (refused underneath a held gesture, `_GESTURE_REFUSES`).
+_KEY_COMMANDS = frozenset(
+    {
+        *_DISPLAY_COMMANDS,
+        *_LOOK_COMMANDS,
+        commands.TOGGLE_ORTHO,
+        *_SOFT_COMMANDS,
+        *_MODE_COMMANDS,
+        commands.APPLY_TRANSFORM,
+        commands.CLEAR_TRANSFORM,
+        commands.TOGGLE_REFERENCE,
+        commands.CONNECT,
+        commands.COLLAPSE,
+        commands.BORDER_SELECT,
+        commands.CAP,
+        commands.SYMMETRY_CYCLE,
+        commands.RESYMMETRIZE,
+        *_MASK_COMMANDS,
+        *_HIDE_COMMANDS,
+        *_REGION_COMMANDS,
+        *_REMOVAL_COMMANDS,
         *_LOOP_COMMANDS,
         *_SELECTION_STEP_COMMANDS,
     }
@@ -814,6 +917,8 @@ class Application:
         # keys; `_services` is what the controllers get instead of this object (§3.4).
         self.interaction: InteractionSlot = InteractionSlot()
         self._services = AppServices(self)
+        # `can_run` stage 7 (AD-027 §3.5): (command, ctx) -> Refusal | None per mode; none yet.
+        self._mode_policies: tuple[Callable[[str, RunContext], Refusal | None], ...] = ()
 
         # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
         # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
@@ -1869,20 +1974,19 @@ class Application:
         self._set_status(f"Object {obj.name!r}: {after.name.capitalize()}")
         return True
 
-    def _object_mode_refuses(self, command: str | None) -> bool:
-        """AD-021 M1 (L-1, RF-4): True (and the refusal posted) for component work in mode `4`.
+    def _object_mode_refusal(self, command: str | None) -> str | None:
+        """AD-021 M1 (L-1, RF-4): the refusal text for component work in mode `4` (`can_run` stage 4).
         M2-2: W/E/R pass - in `4` they are the object gesture, which refuses on its own
         (`_object_arm`: nothing selected, only References)."""
         if self.selection.mode is not SelectionMode.OBJECT or command not in _COMPONENT_COMMANDS:
-            return False
+            return None
         if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
-            return False  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
-        self._set_status(
+            return None  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
+        return (
             "Object mode: T, G, S, I, Ctrl+B, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
             " on points/edges/faces"
             " - press 1/2/3 (Delete removes the selected objects)"
         )
-        return True
 
     # -- Objekt-Geste in Modus `4` (AD-021 M2-2, E-11/E-12) -----------------------------
 
@@ -2280,10 +2384,21 @@ class Application:
         Modus-Commands → `Selection.mode` (WP-06 B5b, E43).
         Symmetrie-Zyklus → Definition des Meshs (AD-SYM-04 A1, `SymmetryController.cycle`).
         Alles andere → False (bewusst minimal gehalten).
+
+        AD-027 M2: the gated public entry - `can_run(command, RunContext("api"))` first, with the gates
+        the key has (a GUI button, a script); a refusal posts its text and returns False. `Application`'s
+        own calls, which run after their gate, use `_execute`.
         """
         self.flush_hover()
-        if self._layer_gate_refuses(command):
-            return False
+        refusal = self.can_run(command, RunContext("api"))
+        if refusal is not None:
+            return self._refused(refusal)
+        return self._execute(command, context)
+
+    def _execute(self, command: str, context: Optional[dict] = None) -> bool:
+        """The command's handler, ungated (AD-027 M2): called after `can_run` (or the gate of the path that
+        reached it)."""
+        self.flush_hover()
         if command in MORPH_COMMANDS:
             return self._morph_command(command)
         tool_class = tool_for_command(command)
@@ -2311,8 +2426,6 @@ class Application:
             return self._set_selection_mode(_MODE_COMMANDS[command])
         if command == commands.TOGGLE_TRANSFORM_SPACE:
             return self._toggle_orientation()
-        if self._object_mode_refuses(command):
-            return False
         if command in _PLACEMENT_COMMANDS:
             return self._placement_command(command)
         if command == commands.TOGGLE_REFERENCE:
@@ -4441,9 +4554,17 @@ class Application:
         grabbed = self.interaction.grab(KeyPress(input))  # the Re-Symmetrize preview
         if grabbed is not PASS:
             return grabbed
+        command = self._resolve_key(input)
+        refusal = self.can_run(command, RunContext("key", input))
+        if refusal is not None:
+            return self._refused(refusal)
+        return self._key_command(command, input)
+
+    def _resolve_key(self, input: Input) -> str | None:
+        """A key's command: global, then the SubD keys (context "subd") and the morph keys (context "morph")
+        only where the global context binds nothing; I is Inset in face mode."""
         command = self.bindings.command_for(input)
         if command is None:
-            # The SubD keys (context "subd") only where the global context binds nothing.
             subd = self.bindings.command_for(input, SUBD_CONTEXT)
             if subd in SUBD_COMMANDS:
                 command = subd
@@ -4453,30 +4574,18 @@ class Application:
                     command = morph
         if command == commands.LOOP_INSERT and self.selection.mode is SelectionMode.FACE:
             command = commands.INSET  # I: Loop Insert in edge mode, Inset in face mode (2026-10-29, Blender)
-        if self._gate_refuses(command):
-            return False
-        if self._layer_gate_refuses(command):
-            return False
+        return command
+
+    def _key_command(self, command: str | None, input: Input) -> bool:
+        """A key's command after `can_run` let it through (AD-027 M2): the hold keys arm, the rest runs."""
         if command in SUBD_COMMANDS:
-            return self.dispatch_command(command)
+            return self._execute(command)
         if command in MORPH_COMMANDS:
-            # Like the mode keys: not underneath a held W/E/R/T or a Box/Paint drag.
-            if self._transform_key is not None or self._drag_select is not None:
-                return False
             if command == commands.MORPH_WEIGHT_DRAG:
                 return self._morph_drag_arm(input.value)
-            return self.dispatch_command(command)
-        if self._object_mode_refuses(command):
-            return False
-        if command in _TOPOLOGY_COMMANDS and self._hidden_refuses(command):
-            return False
+            return self._execute(command)
         if command in _SESSION_SWITCH_COMMANDS:
             return self._session_switch(command)
-        if self._drag_select is not None and command not in (
-            commands.CANCEL, commands.TOGGLE_ORTHO, *_DISPLAY_COMMANDS, *_LOOK_COMMANDS
-        ):
-            # A Box/Paint drag owns the selection until the LMB release (like a gesture).
-            return False
         if command == commands.LASSO_ARM:
             return self._lasso_arm(input.value)
         if command == commands.PIVOT_PLACE:
@@ -4489,66 +4598,19 @@ class Application:
         if command in _TRANSFORM_COMMANDS:
             return self._transform_arm(command, input.value)
         if command in _CONSTRAINT_SPACES:
-            if self._transform_command in (commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS, *_OFFSET_COMMANDS):
-                # Extrude is normal-only, Loop Slide runs along its edges: neither the gesture
-                # nor the pending constraint changes.
-                return False
             return self._constrain(_CONSTRAINT_SPACES[command])
         if command == commands.TOGGLE_TRANSFORM_SPACE:
             return self._toggle_orientation()
         if command == commands.CANCEL:
             return self._cancel()
-        if command in _DISPLAY_COMMANDS or command in _LOOK_COMMANDS or command == commands.TOGGLE_ORTHO:
-            # Reine Darstellung: auch während eines Transforms erlaubt.
-            return self.dispatch_command(command)
-        if command in _SOFT_COMMANDS:
-            # State only, like the constraints: allowed while W/E/R/T is held. It applies
-            # to the next gesture - or to this one if it is armed and has not begun yet
-            # (the settings are read at `begin()`, which is also where symmetric Soft
-            # refuses the selections it does not define, AD-SYM-04 SS2).
-            return self.dispatch_command(command)
-        if command in _MODE_COMMANDS:
-            # Kein Moduswechsel mitten in einer Geste (Playground Session Gate).
-            if self._transform_key is not None:
-                return False
-            return self.dispatch_command(command)
-        if command in _PLACEMENT_COMMANDS or command == commands.TOGGLE_REFERENCE:
-            # AD-021 M2-3: not underneath a held W/E/R/T (same gate as C and the mode keys).
-            if self._transform_key is not None:
-                return False
-            return self.dispatch_command(command)
-        if (
-            command
-            in (
-                commands.CONNECT,
-                commands.COLLAPSE,
-                commands.BORDER_SELECT,
-                commands.CAP,
-                commands.SYMMETRY_CYCLE,
-                commands.RESYMMETRIZE,
-            )
-            or command in _MASK_COMMANDS
-            or command in _HIDE_COMMANDS
-            or command in _REGION_COMMANDS
-            or command in _REMOVAL_COMMANDS
-            or command in _LOOP_COMMANDS
-            or command in _SELECTION_STEP_COMMANDS
-        ):
-            # Wie die Modus-Tasten (B5b): C, Shift+C, Entf, Rücktaste, Shift+S, Alt+M und die Mask-Tasten werden
-            # ignoriert, solange W/E/R scharf ist (Playground Session Gate;
-            # Shift+S: AD-SYM-04 R-4, still wie C).
-            if self._transform_key is not None:
-                return False
-            return self.dispatch_command(command)
         if command in (commands.UNDO, commands.REDO):
-            # E23: während eines laufenden Transforms ignoriert; nur scharf →
-            # erst entschärfen, dann ausführen.
-            if self._transform_begun:
-                return False
+            # E23: only armed -> disarm first, then run (a begun gesture refused it in `can_run`).
             if self._transform_key is not None:
                 self._transform_end()
                 self._refresh_hover()
             return self._undo_redo(command)
+        if command in _KEY_COMMANDS:
+            return self._execute(command)
         return False
 
     def key_release(self, input: Input) -> bool:
@@ -4671,7 +4733,7 @@ class Application:
         if not unblocked(target, self._mask_values(target)):
             self._set_status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
             return False
-        self.dispatch_command(command)
+        self._execute(command)
         self._transform_key = key
         self._transform_command = command
         self._transform_target = frozenset(target)
@@ -5030,13 +5092,14 @@ class Application:
         ):
             selection.hovered = None
 
-    def _hidden_refuses(self, command: str) -> bool:
-        """True (and the reason posted) if `command` would rewrite geometry the artist has hidden: the
+    def _hidden_refusal(self, command: str) -> str | None:
+        """The refusal text (`can_run` stage 5) if `command` would rewrite geometry the artist has hidden: the
         selection (else the hovered element) touches a hidden vertex, or - the Knife, `C` with nothing
-        selected - anything is hidden at all. Cheap exit when nothing is hidden."""
-        hidden = self._hidden
+        selected - anything is hidden at all. Cheap exit when nothing is hidden. Pure (reads, never creates,
+        the edit object's `HiddenSet`)."""
+        hidden = self._hiddens.get(self.scene.edit_object_id)
         if not hidden or self.selection.mode is SelectionMode.OBJECT:
-            return False
+            return None
         mesh = self.scene.mesh
         selection = self.selection
         vertices = set(resolve_selection_vertices(mesh, selection, selection.mode))
@@ -5044,14 +5107,13 @@ class Application:
             vertices = set(_element_vertices(mesh, selection.hovered))
         if not vertices:
             if command != commands.CONNECT:
-                return False  # the command's own "nothing selected" refusal speaks
+                return None  # the command's own "nothing selected" refusal speaks
             text = "Knife"
         elif touches_hidden(mesh, hidden, vertices):
             text = "Topology edit"
         else:
-            return False
-        self._set_status(f"{text}: hidden geometry in the way (Alt+H shows all)")
-        return True
+            return None
+        return f"{text}: hidden geometry in the way (Alt+H shows all)"
 
     def _hide_command(self, command: str) -> bool:
         """Ctrl+H / Ctrl+Shift+H / Alt+H: hide the selection, isolate it (hide everything else), show all.
@@ -5650,7 +5712,7 @@ class Application:
         if not faces:
             self._set_status("Extrude: select or hover a face")
             return False
-        self.dispatch_command(commands.EXTRUDE)
+        self._execute(commands.EXTRUDE)
         self._transform_key = key
         self._transform_command = commands.EXTRUDE
         self._transform_target = frozenset(
@@ -5802,7 +5864,7 @@ class Application:
         if not can:
             self._set_status(f"{command}: nothing to {command.lower()}")
             return False
-        self.dispatch_command(command)
+        self._execute(command)
         # E23: `HistoryStack` bietet keinen öffentlichen Zugriff auf das
         # gerade rückgängig gemachte Command (und `core/history.py` ist
         # tabu) - daher der gröbere, aber für jedes Command korrekte Rebuild
@@ -6049,39 +6111,100 @@ class Application:
         self.status_message = message
         self.status_serial += 1
 
-    def _gate_refuses(self, command: str | None) -> bool:
-        """H2: True (and the refusal posted as status) if `command_gate`
-        refuses `command`. Unbound input (None) is never refused."""
-        gate = self.command_gate
-        if gate is None or command is None:
-            return False
-        text = gate.refusal(command)
-        if text is None:
-            return False
-        self._set_status(text)
-        return True
+    # -- can_run (AD-027 §3.3): one availability check for keys, clicks, drags, wheel, API, HUD ---------
 
-    def _layer_gate_refuses(self, key, meshes=None) -> bool:
-        """AD-025 §4.4: True (and the refusal posted as status) if `key` (a command, a resolved `C`
-        context or a method name) is not allowed on a target mesh with point layers
-        (`mirai.layer_declarations`). `meshes`: the meshes the operation changes or copies (default:
-        the edit mesh). Without layers there is no lookup. Unbound input (None) is never refused."""
+    def can_run(self, command: str | None, ctx: RunContext) -> Refusal | None:
+        """May `command` run now from `ctx.source`? None = yes; else the `Refusal` (its text None = silent).
+
+        Pure: no status line, no hover flush, no state change. An unbound input (None) is never refused.
+        Exactly the checks that ran before the command's first side effect, in the key path's order:
+
+        1. a running session that grabs input (the Knife, the Re-Symmetrize preview): its `allows` alone;
+        2. the host's `CommandGate` (AD-013 H2);
+        3. the point-layer gate and the morph target's editing view (AD-025 §4.4, §15);
+        4. object mode (AD-021 L-1);
+        5. hidden geometry next to a topology command (`ctx.operands`: reads selection and hover);
+        6. the running session's `allows` (a held gesture, a drag selection);
+        7. mode policies (none yet: a pose mode adds its rule here).
+
+        A check that runs after a side effect stays in the command as its outcome (a second W/E/R after it set
+        `tweak_command`, every "nothing selected", `C: nothing to do here`)."""
+        if command is None:
+            return None
+        if self._knife is not None:
+            return None if command in _KNIFE_ALLOWS else SILENT
+        session = self.interaction.session
+        if session is not None and session.exclusive:
+            return session.allows(command, ctx)
+        gate = self.command_gate
+        if gate is not None:
+            text = gate.refusal(command)
+            if text is not None:
+                return Refusal(text)
+        text = self._layer_refusal(command)
+        if text is None:
+            text = self._object_mode_refusal(command)
+        if text is None and ctx.operands and command in _TOPOLOGY_COMMANDS:
+            text = self._hidden_refusal(command)
+        if text is not None:
+            return Refusal(text)
+        refusal = self._session_refusal(command, ctx)
+        if refusal is not None:
+            return refusal
+        for policy in self._mode_policies:
+            refusal = policy(command, ctx)
+            if refusal is not None:
+                return refusal
+        return None
+
+    def _session_refusal(self, command: str, ctx: RunContext) -> Refusal | None:
+        """`can_run` stage 6. The held gestures and the drag selection still live in `Application` (they move
+        into the slot at AD-027 M5 / M6); their `allows` is here until then."""
+        if self._transform_key is not None:
+            if command in _GESTURE_REFUSES:
+                return SILENT
+            if self._transform_begun and command in _BEGUN_GESTURE_REFUSES:
+                return SILENT
+            if command in _CONSTRAINT_SPACES and self._transform_command in _UNCONSTRAINED_GESTURES:
+                return SILENT
+            return None
+        if self._drag_select is not None:
+            if command in _DRAG_SELECT_ALLOWS or ctx.source == "wheel":
+                return None  # the Soft wheel steps were never held back by a drag
+            return SILENT
+        return self.interaction.allows(command, ctx)
+
+    def _refused(self, refusal: Refusal) -> bool:
+        """Posts a refusal's text (unless silent); always False - the event did nothing."""
+        if refusal.text is not None:
+            self._set_status(refusal.text)
+        return False
+
+    def _layer_refusal(self, key, meshes=None) -> str | None:
+        """AD-025 §4.4: the refusal text if `key` (a command, a resolved `C` context or a method name) is
+        not allowed on a target mesh with point layers (`mirai.layer_declarations`). `meshes`: the meshes the
+        operation changes or copies (default: the edit mesh). Without layers there is no lookup. Unbound
+        input (None) is never refused. Pure (`can_run` stage 3)."""
         if key is None:
-            return False
+            return None
         if self._target_view is not None:
             # AD-025 §15: on a target's editing view only shapes change (`view_refusal`).
             text = view_refusal(key)
             if text is not None:
-                self._set_status(text)
-                return True
+                return text
             if meshes is None:
-                return False
+                return None
         if meshes is None and key in PER_TARGET_COMMANDS:
-            return False
+            return None
         targets = (self.scene.mesh,) if meshes is None else meshes
         if not any(mesh.has_point_layers() for mesh in targets):
-            return False
-        text = layer_refusal(key)
+            return None
+        return layer_refusal(key)
+
+    def _layer_gate_refuses(self, key, meshes=None) -> bool:
+        """`_layer_refusal` at an operation's own site (a method, a `C` context, Apply on several meshes):
+        True and the text posted when refused."""
+        text = self._layer_refusal(key, meshes)
         if text is None:
             return False
         self._set_status(text)
@@ -6562,9 +6685,10 @@ class Application:
             grabbed = self.interaction.grab(Wheel(input, command))
             if grabbed is not PASS:
                 return grabbed
-            if self._knife is not None or self._gate_refuses(command):
-                return False
-            return self.dispatch_command(command)
+            refusal = self.can_run(command, RunContext("wheel", input))
+            if refusal is not None:
+                return self._refused(refusal)
+            return self._execute(command)
         if command != commands.ZOOM:
             return False
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
@@ -6845,13 +6969,12 @@ class Application:
             grabbed = self.interaction.grab(Release(button, click.x, click.y, click.command))
             if grabbed is not PASS:
                 return grabbed
+            refusal = self.can_run(click.command, RunContext("click"))
+            if refusal is not None:
+                return self._refused(refusal)
         if click.command == commands.REGION_CLICK:
-            if self._gate_refuses(click.command):
-                return False
             return self._region_click(click.x, click.y)
         if click.command in _SELECT_COMMANDS:
-            if self._gate_refuses(click.command):
-                return False
             self.select_at(click.command, click.x, click.y)
             return True
         return False
@@ -7104,12 +7227,16 @@ class Application:
             self._set_status(f"Light: Key Azimut {rig.key_azimuth:+.1f}° · Höhe {rig.key_elevation:+.1f}°")
         return changed
 
-    def _drag_select_refusal(self) -> str | None:
-        """Why a drag selection cannot start now (None = it can). Silent cases return ""."""
-        if self.viewport is None or self._knife is not None or self._transform_key is not None:
-            return ""
+    def _drag_select_refusal(self, command: str) -> Refusal | None:
+        """Why a drag selection cannot start now (None = it can): `can_run` (a Knife session, a held gesture,
+        the host gate), then the drag's own preconditions (no viewport; mode `4`)."""
+        refusal = self.can_run(command, RunContext("drag"))
+        if refusal is not None:
+            return refusal
+        if self.viewport is None:
+            return SILENT
         if self.selection.mode is SelectionMode.OBJECT:
-            return "Box/Paint/Lasso: points, edges and faces only - press 1/2/3"
+            return Refusal("Box/Paint/Lasso: points, edges and faces only - press 1/2/3")
         return None
 
     def _drag_select_step(self, command: str) -> bool:
@@ -7120,12 +7247,9 @@ class Application:
         if drag is None:
             if self._gesture_refused:
                 return False
-            refusal = self._drag_select_refusal()
-            if refusal is None and self._gate_refuses(command):
-                refusal = ""
+            refusal = self._drag_select_refusal(command)
             if refusal is not None:
-                if refusal:
-                    self._set_status(refusal)
+                self._refused(refusal)
                 self._gesture_refused = True  # silence the rest of this gesture
                 return False
             start = self._press_point if self._press_point is not None else cursor
@@ -7473,7 +7597,7 @@ class Application:
         if self._gesture_refused:
             return False
         if self._transform_key is None:
-            if self.viewport is None or self._knife is not None or self._gate_refuses(commands.TWEAK):
+            if self.viewport is None or self._refused_tweak():
                 self._gesture_refused = True
                 return False
             if not self._transform_arm(self.tweak_command, TWEAK_KEY):
@@ -7485,6 +7609,14 @@ class Application:
         if self._transform_key is None:
             self._gesture_refused = True  # refused at begin (seam, symmetric Soft)
         return stepped
+
+    def _refused_tweak(self) -> bool:
+        """The first step of a gizmo / Tweak drag asks `can_run(TWEAK)` (a Knife session, the host gate)."""
+        refusal = self.can_run(commands.TWEAK, RunContext("drag"))
+        if refusal is None:
+            return False
+        self._refused(refusal)
+        return True
 
     def _gizmo_release(self, clicked: bool) -> bool:
         """LMB released: commit a running handle drag; a plain click on a handle leaves just the constraint."""
@@ -7509,7 +7641,7 @@ class Application:
         if self._gesture_refused:
             return False
         if self._transform_key is None:
-            if self.viewport is None or self._knife is not None or self._gate_refuses(commands.TWEAK):
+            if self.viewport is None or self._refused_tweak():
                 self._gesture_refused = True
                 return False
             if self.selection.mode is not SelectionMode.OBJECT:
