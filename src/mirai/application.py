@@ -155,17 +155,12 @@ from .symmetry_coordination import (
     expand_faces,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
-from .symmetry import CorrespondenceState, mirrored_selection, symmetry_state, vertex_correspondence
-from .symmetry_axis import current_axis, next_axis, set_symmetry_axis
-from .symmetry_display import ReportCache, SymmetryDisplay
-from .resymmetrize import (
-    ResymmetrizeRejected,
-    ResymPlan,
-    plan_description,
-    plan_resymmetrize,
-    plan_summary,
-    set_plan_positions,
-)
+from .symmetry import mirrored_selection, vertex_correspondence
+from .symmetry_display import SymmetryDisplay
+from .resymmetrize import ResymPlan
+from .controllers.services import AppServices
+from .controllers.symmetry import SymmetryController
+from .interaction.session import PASS, Drag, Hover, InteractionSlot, KeyPress, Press, Release, Wheel
 from . import symmetry_declarations
 from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal, view_refusal
 from .topology.contextual_c import CContext, resolve_c_context
@@ -438,24 +433,6 @@ _SOFT_COMMANDS = (
 _CPU = object()
 
 
-def symmetry_status_text(mesh: Mesh) -> str:
-    """Status line after a symmetry cycle step (AD-SYM-04 Q-2 = S-2, its status part S-1; text
-    `PROVISIONAL`): `Symmetrie X (valid)`, `Symmetrie X (partial, 54 ohne Partner)`,
-    `Symmetrie aus`."""
-    axis = current_axis(mesh)
-    if axis is None:
-        return "Symmetrie aus"
-    states = [c.state for c in vertex_correspondence(mesh).values()]
-    details = [symmetry_state(mesh).value]
-    unpaired = states.count(CorrespondenceState.UNPAIRED)
-    ambiguous = states.count(CorrespondenceState.AMBIGUOUS)
-    if unpaired:
-        details.append(f"{unpaired} ohne Partner")
-    if ambiguous:
-        details.append(f"{ambiguous} mehrdeutig")
-    return f"Symmetrie {axis} ({', '.join(details)})"
-
-
 @dataclasses.dataclass
 class _OffsetGesture:
     """A held Inset / Bevel (2026-10-29): fixed at the press (`build` = the mutation, run once the drag passes
@@ -520,10 +497,6 @@ _COMPONENT_COMMANDS = frozenset(
         *_SELECTION_STEP_COMMANDS,
     }
 )
-
-#: AD-SYM-04 A3: what an open Re-Symmetrize preview answers to every other bound key, click or
-#: Soft step (the Lab's text, `PROVISIONAL`); the plan summary follows it so it stays readable.
-RESYM_PREVIEW_HINT = "Vorschau aktiv — Befehl ignoriert"
 
 #: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture (`_object_arm`) instead of a
 #: component tool; T (Extrude) stays component work.
@@ -835,12 +808,12 @@ class Application:
         # H2 (same addendum): pauses the selection hover while a host's modal
         # interaction is open. Backing field, because `viewport` is None until
         # `init_scene()`; see `hover_suspended`. (Its only writer, the Lab's
-        # Re-Symmetrize preview, became `_resym_plan` in AD-SYM-04 A3.)
+        # Re-Symmetrize preview, became an `Application` session in AD-SYM-04 A3, AD-027 M1.)
         self._hover_suspended: bool = False
-        # AD-SYM-04 A3 (§10 R-a): the open Re-Symmetrize preview - the plan computed once when it
-        # opened, executed exactly as shown. None = closed. An `Application` interaction like the
-        # Knife session (`interaction_owner` "resymmetrize").
-        self._resym_plan: ResymPlan | None = None
+        # AD-027 §3.2: the slot for the running session (the Re-Symmetrize preview since M1) and the held
+        # keys; `_services` is what the controllers get instead of this object (§3.4).
+        self.interaction: InteractionSlot = InteractionSlot()
+        self._services = AppServices(self)
 
         # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
         # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
@@ -920,16 +893,8 @@ class Application:
         self._soft_shading: dict[VertexId, float] = {}
         self._soft_op_running: bool = False
         self._soft_gesture_shown: bool = False
-        # AD-SYM-04 A2 (Q-2 = S-2): plane outline and problem markers; None = headless (no
-        # `symmetry_overlay_type`, no display work at all).
-        self._symmetry_display: SymmetryDisplay | None = None
-        # AD-SYM-04 SS3 (`PROVISIONAL`): one symmetry report per geometry, shared by the display
-        # and the soft preview, so the preview takes its correspondence from it instead of
-        # pairing the mesh per trigger. Keyed by `geometry_signature` (definition, ids,
-        # positions, seam), so Undo/Redo, topology, Shift+S and a scene load make it stale by
-        # construction; `mirai.symmetry` stays cache-free (AR-1/INV-3) and the tools still pair
-        # once per gesture start for the op itself. Fresh per scene (`init_scene`).
-        self._symmetry_reports = ReportCache(defer=self._symmetry_display_deferred)
+        # Shift+S, the symmetry display and its report cache, Re-Symmetrize (AD-027 M1, `controllers.symmetry`).
+        self._symmetry = SymmetryController(self._services)
 
         # WP-06 B6 Follow-up (Artist-Entscheidung Manu 2026-09-28): Undo/Redo
         # stellt jetzt auch die Selection wieder her, nicht nur das Mesh.
@@ -1204,7 +1169,7 @@ class Application:
         self._soft_bands = EMPTY_BANDS
         self._soft_shading_overlay = None
         self._soft_shading = {}
-        self._symmetry_reports = ReportCache(defer=self._symmetry_display_deferred)
+        self._symmetry.reset_reports()
         if soft_overlay_type is not None:
             self._soft_overlay = soft_overlay_type()
             self.viewport.add_overlay(self._soft_overlay)
@@ -1222,15 +1187,7 @@ class Application:
         self._soft_apply_look()
         if self._soft_overlay is not None or self._soft_shading_overlay is not None:
             self._soft_preview_refresh()  # a scene load is one of the preview triggers (E3)
-        self._symmetry_display = None
-        self._resym_plan = None
-        if symmetry_overlay_type is not None:
-            self._symmetry_display = SymmetryDisplay(
-                symmetry_overlay_type(),
-                reports=self._symmetry_reports,
-                preview=lambda: self._resym_plan,
-            )
-            self.viewport.add_overlay(self._symmetry_display)
+        self._symmetry.attach_display(symmetry_overlay_type)
         self.surface_chain.attach(self.viewport)
         self.subdivision.attach(
             self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
@@ -2321,7 +2278,7 @@ class Application:
         Undo/Redo → History.
         Display-Commands → `DisplayState` + Viewport (WP-06 B5a, E42).
         Modus-Commands → `Selection.mode` (WP-06 B5b, E43).
-        Symmetrie-Zyklus → Definition des Meshs (AD-SYM-04 A1, `_symmetry_cycle`).
+        Symmetrie-Zyklus → Definition des Meshs (AD-SYM-04 A1, `SymmetryController.cycle`).
         Alles andere → False (bewusst minimal gehalten).
         """
         self.flush_hover()
@@ -2373,7 +2330,7 @@ class Application:
         if command == commands.CAP:
             return self._cap_command()
         if command == commands.SYMMETRY_CYCLE:
-            return self._symmetry_cycle()
+            return self._symmetry.cycle()
         if command in _MASK_COMMANDS:
             return self._mask_command(command)
         if command in _HIDE_COMMANDS:
@@ -2381,7 +2338,7 @@ class Application:
         if command in _REGION_COMMANDS:
             return self._region_command(command)
         if command == commands.RESYMMETRIZE:
-            return self._resymmetrize_open()
+            return self._symmetry.open()
         if command in (commands.EDGE_LOOP, commands.EDGE_RING):
             return self._loop_select(command)
         if command == commands.LOOP_INSERT:
@@ -2391,135 +2348,23 @@ class Application:
 
         return False
 
-    # -- Symmetry definition (AD-SYM-04 Slice A1) ---------------------------------
-
-    def _symmetry_cycle(self) -> bool:
-        """Shift+S (Q-1 = E-1): off → X → Y → Z → off, one Undo step per press (E2), E1 plane
-        and E3 seam from `mirai.symmetry_axis`. Not while an interaction owns the keys (R-4): an
-        armed W/E/R/T has resolved its partner set at arm/`begin()`, a Knife session its
-        symmetry view at begin, and a changed definition must not slide in underneath them.
-        The change is reported to the viewport as a topology change (K-3): a definition-only
-        change moves nothing, but every overlay that reads the definition must re-derive, the
-        soft bands too (the symmetric field under a definition, AD-SYM-04 D-5) - the same
-        notification Undo of it gets."""
-        if self.interaction_owner is not None:
-            return False
-        axis = next_axis(current_axis(self.scene.mesh))
-        changed = self._mesh_transaction(
-            f"Symmetry {axis or 'off'}", lambda mesh: set_symmetry_axis(mesh, axis)
-        ).changed
-        self._set_status(symmetry_status_text(self.scene.mesh))
-        return changed
-
-    # -- Re-Symmetrize (AD-SYM-04 Slice A3, §10 R-a) -------------------------------
+    # -- Symmetry (AD-SYM-04 A1-A3; `controllers.symmetry` since AD-027 M1) ------------------------
 
     @property
     def resymmetrize_preview(self) -> ResymPlan | None:
         """The open Re-Symmetrize preview (its plan), None = closed."""
-        return self._resym_plan
-
-    def _resymmetrize_summary(self) -> str:
-        # The bound key, not a literal (as the HUD hints): a `keymap.json` rebinding shows up here.
-        bound = [inp for inp in self.bindings.inputs_for(commands.RESYMMETRIZE) if inp.kind == "key"]
-        return plan_summary(self._resym_plan, key_label(bound[0]) if bound else "?")
-
-    def _resymmetrize_open(self) -> bool:
-        """Re-Symmetrize key without a preview (the Lab's KEEP behaviour, M / M / Esc): exactly one
-        selected vertex is the source; its topological side is mirrored onto the other side and the
-        seam laid into the plane (`mirai.resymmetrize`). The plan is computed once here and shown;
-        the next press executes exactly it, Esc closes it. Refused with the Lab's reasons."""
-        if self.interaction_owner is not None:
-            return False
-        mesh = self.scene.mesh
-        selected = self.selection.vertices
-        try:
-            if mesh.symmetry_definition is None:
-                raise ResymmetrizeRejected("Symmetrie aus")
-            if not selected:
-                raise ResymmetrizeRejected("keine Auswahl")
-            if len(selected) != 1:
-                raise ResymmetrizeRejected("genau einen Vertex auswählen")
-            plan = plan_resymmetrize(mesh, next(iter(selected)))
-        except ResymmetrizeRejected as exc:
-            self._set_status(f"Re-Symmetrize: {exc}")
-            return False
-        self._resym_plan = plan
-        # The Lab paused the hover through the gate (`hover_suspended`); here `_update_hover` reads
-        # the open preview itself, so the flag stays a host hook.
-        self._set_hovered(None)
-        self._resymmetrize_display_changed()
-        self._set_status(self._resymmetrize_summary())
-        return True
-
-    def _resymmetrize_key(self, input: Input) -> bool:
-        """Keys while the preview is open: the Re-Symmetrize key executes, Cancel closes, the pure
-        display keys pass; every other bound key is ignored with the hint (the Lab's preview row:
-        display commands only). Navigation is pointer input and never reaches here."""
-        command = self.bindings.command_for(input)
-        if command == commands.RESYMMETRIZE:
-            return self._resymmetrize_execute()
-        if command == commands.CANCEL:
-            self._resymmetrize_close()
-            self._set_status("Re-Symmetrize abgebrochen")
-            return True
-        if command in _DISPLAY_COMMANDS or command == commands.TOGGLE_ORTHO:
-            return self.dispatch_command(command)
-        if command is not None:
-            self._resymmetrize_refuse()
-        return False
-
-    def _resymmetrize_refuse(self) -> None:
-        self._set_status(f"{RESYM_PREVIEW_HINT} | {self._resymmetrize_summary()}")
-
-    def _resymmetrize_execute(self) -> bool:
-        """Sets exactly the shown plan: one Undo step (selection kept and restored with it); an
-        empty plan records nothing. The preview is closed first, so the transaction's hover
-        refresh picks again."""
-        plan = self._resym_plan
-        self._resymmetrize_close()
-        changed = self._mesh_transaction(
-            plan_description(plan),
-            lambda mesh: set_plan_positions(mesh, plan),
-            moved_of=lambda moved: moved,
-        ).changed
-        if changed:
-            self._set_status(f"Re-Symmetrize ausgeführt: {len(plan.changes)} Änderungen")
-        else:
-            self._set_status("Re-Symmetrize: 0 Änderungen — kein Schritt")
-        return True
-
-    def _resymmetrize_close(self) -> None:
-        if self._resym_plan is None:
-            return
-        self._resym_plan = None
-        self._resymmetrize_display_changed()
-        self._refresh_hover()
-
-    def _resymmetrize_display_changed(self) -> None:
-        # Opening and closing change no mesh and tell the viewport nothing: the display re-syncs.
-        if self._symmetry_display is not None:
-            self._symmetry_display.dirty = True
+        return self._symmetry.preview_plan()
 
     @property
     def symmetry_display(self) -> SymmetryDisplay | None:
         """Plane outline and problem markers (AD-SYM-04 A2), None without a
         `symmetry_overlay_type` (headless)."""
-        return self._symmetry_display
+        return self._symmetry.display
 
     def toggle_symmetry_display(self) -> bool | None:
         """Shift+Ctrl+S: show / hide the symmetry plane and the seam / problem markers (display only,
         the symmetry definition is untouched). Returns the new visibility, None without a display."""
-        display = self._symmetry_display
-        if display is None:
-            return None
-        display.visible = not display.visible
-        self._set_status(f"Symmetry display: {'on' if display.visible else 'off'}")
-        return display.visible
-
-    def _symmetry_display_deferred(self) -> bool:
-        # Plan A3 of WP-SYM-LAB-03 (`mirai.symmetry_display`): while W/E/R/T is armed or running
-        # a pure position change is not re-derived; the markers still follow the moved vertices.
-        return self.interaction_owner == "transform"
+        return self._symmetry.toggle_display()
 
     # -- Component-Modi (WP-06 B5b) ---------------------------------------------
 
@@ -3919,7 +3764,7 @@ class Application:
     def _knife_mirror_text(self) -> str:
         """The symmetric session's note in the status line: the active mirror preview variant and its key."""
         variant = self.knife_mirror_variant
-        # The bound key, not a literal (as `_resymmetrize_summary`): a keymap.json rebinding shows up here.
+        # The bound key, not a literal (as `SymmetryController.summary`): a keymap.json rebinding shows up here.
         bound = [inp for inp in self.bindings.inputs_for(commands.KNIFE_MIRROR_VARIANT, KNIFE_CONTEXT)
                  if inp.kind == "key"]
         return (f"Spiegelvorschau {variant} ({KNIFE_MIRROR_VARIANT_LABELS[variant]}), "
@@ -4559,9 +4404,7 @@ class Application:
             return "transform"
         if self._knife is not None:
             return "knife"
-        if self._resym_plan is not None:
-            return "resymmetrize"
-        return None
+        return self.interaction.owner
 
     @property
     def hover_suspended(self) -> bool:
@@ -4595,8 +4438,9 @@ class Application:
         self.flush_hover()
         if self._knife is not None:
             return self._knife_key(input)
-        if self._resym_plan is not None:
-            return self._resymmetrize_key(input)
+        grabbed = self.interaction.grab(KeyPress(input))  # the Re-Symmetrize preview
+        if grabbed is not PASS:
+            return grabbed
         command = self.bindings.command_for(input)
         if command is None:
             # The SubD keys (context "subd") only where the global context binds nothing.
@@ -5750,7 +5594,7 @@ class Application:
                 curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
             )
             return mask_weights(weights, seeds, mask)
-        correspondence = self._symmetry_reports.current(mesh).correspondence
+        correspondence = self._symmetry.reports.current(mesh).correspondence
         try:
             field = symmetric_influence(
                 mesh, seeds, soft.world_radius, metric=soft.metric, curve=soft.curve,
@@ -6652,7 +6496,7 @@ class Application:
             return
         if not self.pointer.active:
             self._press_point = self._cursor
-            if self._resym_plan is None:
+            if self.interaction.route(Press(input, x, y)) is PASS:
                 self._gizmo_press(input)
         self.pointer.press(input)
 
@@ -6701,7 +6545,7 @@ class Application:
             # (keine Auswahländerung), die Knife-Vorschau pickt neu.
             self._refresh_hover()
             return False
-        return click is not None and self._execute_click(click)
+        return click is not None and self._execute_click(click, button)
 
     def pointer_scroll(self, input: Input) -> bool:
         """Wheel-Input (`kind == "wheel"`), aufgelöst über die Bindings. Ein Wheel mit
@@ -6715,9 +6559,9 @@ class Application:
         if command == commands.ZOOM and self._soft_live():
             command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:
-            if self._resym_plan is not None:
-                self._resymmetrize_refuse()
-                return False
+            grabbed = self.interaction.grab(Wheel(input, command))
+            if grabbed is not PASS:
+                return grabbed
             if self._knife is not None or self._gate_refuses(command):
                 return False
             return self.dispatch_command(command)
@@ -6805,8 +6649,11 @@ class Application:
         # Hover im aktiven Modus: Vertex (B2b), Edge oder Face (B5b).
         if self.viewport is None:
             return False
-        if self._hover_suspended or self._resym_plan is not None:
+        if self._hover_suspended:
             return self._set_hovered(None)
+        grabbed = self.interaction.grab(Hover(x, y))
+        if grabbed is not PASS:
+            return grabbed
         if self._pivot_key is not None:
             # Placing the pivot: the marker preview shows where a click lands; no selection hover.
             self._pivot_preview = self._pivot_point_at(x, y, snap=self._shift_held)
@@ -6888,12 +6735,11 @@ class Application:
         return True
 
     def _execute_drag(self, step: DragStep) -> bool:
-        if self._resym_plan is not None and step.command in (
-            commands.SELECT_DRAG, commands.SELECT_DRAG_ADD, commands.TWEAK
-        ):
+        grabbed = self.interaction.grab(Drag(step.command, step.dx, step.dy))
+        if grabbed is not PASS:
             # The open preview owns the mesh and the selection; navigation still runs. (A handle
             # pressed before the preview opened would arm a Tweak here.)
-            return False
+            return grabbed
         if self._gizmo_gesture is not None and step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
             return self._gizmo_step(step.dx, step.dy)
         if step.command in (commands.SELECT_DRAG, commands.SELECT_DRAG_ADD):
@@ -6994,18 +6840,16 @@ class Application:
             return False
         return self._navigate(commands.PAN if self._shift_held else commands.ORBIT, dx, dy)
 
-    def _execute_click(self, click: Click) -> bool:
+    def _execute_click(self, click: Click, button: str) -> bool:
+        if click.command == commands.REGION_CLICK or click.command in _SELECT_COMMANDS:
+            grabbed = self.interaction.grab(Release(button, click.x, click.y, click.command))
+            if grabbed is not PASS:
+                return grabbed
         if click.command == commands.REGION_CLICK:
-            if self._resym_plan is not None:
-                self._resymmetrize_refuse()
-                return False
             if self._gate_refuses(click.command):
                 return False
             return self._region_click(click.x, click.y)
         if click.command in _SELECT_COMMANDS:
-            if self._resym_plan is not None:
-                self._resymmetrize_refuse()
-                return False
             if self._gate_refuses(click.command):
                 return False
             self.select_at(click.command, click.x, click.y)
@@ -7562,7 +7406,7 @@ class Application:
     def _gizmo_pivot_if_shown(self):
         """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down, any drag gesture runs
         or the Re-Symmetrize preview is open."""
-        if self._transform_key is not None or self._drag_select is not None or self._resym_plan is not None:
+        if self._transform_key is not None or self._drag_select is not None or self.resymmetrize_preview is not None:
             return None
         return self._gizmo_pivot()
 

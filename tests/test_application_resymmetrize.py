@@ -35,8 +35,9 @@ if str(_EXAMPLES) not in sys.path:
 
 from core import SelectionMode, VertexId  # noqa: E402
 from loaders.assets import asset_path  # noqa: E402
-from mirai import application as application_module  # noqa: E402
-from mirai.application import RESYM_PREVIEW_HINT, Application  # noqa: E402
+from mirai.application import Application  # noqa: E402
+from mirai.controllers import symmetry as symmetry_controller  # noqa: E402
+from mirai.controllers.symmetry import RESYM_PREVIEW_HINT  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
 from mirai.interaction.input import Input  # noqa: E402
 from mirai.resymmetrize import plan_summary  # noqa: E402
@@ -198,7 +199,7 @@ def test_open_sets_the_owner_pauses_the_hover_and_posts_the_summary(previewing):
 def test_plan_is_computed_once_when_opening(previewing, monkeypatch):
     app, _source = previewing
     plan = app.resymmetrize_preview
-    monkeypatch.setattr(application_module, "plan_resymmetrize", lambda *a, **k: pytest.fail("recomputed"))
+    monkeypatch.setattr(symmetry_controller, "plan_resymmetrize", lambda *a, **k: pytest.fail("recomputed"))
     app.pointer_scroll(WHEEL_UP)
     app.key_press(W)
     assert app.resymmetrize_preview is plan

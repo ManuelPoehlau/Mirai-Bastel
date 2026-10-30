@@ -458,7 +458,9 @@ class ProductionUnchangedTests(unittest.TestCase):
         under an existing definition and never sets one (`tests/test_application_resymmetrize.py`).
         2026-10-24 adds `toggle_symmetry_display` (Shift+Ctrl+S), which only shows / hides the display
         (`display.visible`) and never touches the definition; since the AD-013 addendum 2026-10-28 its
-        key is the window command `TOGGLE_SYMMETRY_DISPLAY` (handled by `src/main.py`, never by `Application`)."""
+        key is the window command `TOGGLE_SYMMETRY_DISPLAY` (handled by `src/main.py`, never by `Application`).
+        AD-027 M1 (2026-10-30) moved all of it into `controllers.symmetry.SymmetryController` (`_symmetry`):
+        `cycle`, the display and its reports, the preview session; the public names stay."""
         from mirai.application import Application
 
         app = Application()
@@ -472,17 +474,7 @@ class ProductionUnchangedTests(unittest.TestCase):
         self.assertEqual(
             [m for m in dir(app) if "symmetr" in m.lower() and not m.startswith("__")],
             [
-                "_resymmetrize_close",
-                "_resymmetrize_display_changed",
-                "_resymmetrize_execute",
-                "_resymmetrize_key",
-                "_resymmetrize_open",
-                "_resymmetrize_refuse",
-                "_resymmetrize_summary",
-                "_symmetry_cycle",
-                "_symmetry_display",
-                "_symmetry_display_deferred",
-                "_symmetry_reports",
+                "_symmetry",
                 "resymmetrize_preview",
                 "symmetry_display",
                 "toggle_symmetry_display",

@@ -250,9 +250,9 @@ def test_shift_s_cycle_switches_the_preview_with_the_definition():
 
 def test_scene_load_takes_the_new_meshs_pairing(preview_calls):
     app, _seeds_ = _ready("head_basemesh", "X")
-    reports = app._symmetry_reports
+    reports = app._symmetry.reports
     app.load_scene("obj", obj_path=asset_path("subd_cube"), soft_overlay_type=GLSoftBandOverlay)
-    assert app._symmetry_reports is not reports  # fresh per scene
+    assert app._symmetry.reports is not reports  # fresh per scene
     assert app.soft_bands == EMPTY_BANDS  # the loader clears the selection
     set_symmetry_axis(app.scene.mesh, "X")
     app.viewport.on_topology_changed()
@@ -322,31 +322,31 @@ def test_a_hover_armed_gesture_shows_the_symmetric_field_once_at_arm(preview_cal
 def test_selection_and_settings_triggers_pair_nothing(pairings):
     app, seeds = _ready("head_basemesh", "X")
     pairings.clear()
-    reports = app._symmetry_reports.recomputes
+    reports = app._symmetry.reports.recomputes
     for _ in range(3):
         app.dispatch_command(commands.SOFT_RADIUS_UP)
     app.dispatch_command(commands.SOFT_METRIC_CYCLE)
     _select(app, set(list(seeds)[:1]))
     app._soft_preview_refresh()
-    assert pairings == [] and app._symmetry_reports.recomputes == reports
+    assert pairings == [] and app._symmetry.reports.recomputes == reports
     assert app.soft_bands == _expected(app, set(list(seeds)[:1]))
 
 
 def test_a_geometry_change_pairs_once_for_preview_and_display_together():
     app = Application_with_display("head_basemesh")
-    assert app.symmetry_display.reports is app._symmetry_reports
+    assert app.symmetry_display.reports is app._symmetry.reports
     seeds = _seeds(app.scene.mesh, "X", "ring")
     _select(app, seeds)
     _soft_on(app)
     app.viewport.sync()
-    runs = app._symmetry_reports.recomputes
+    runs = app._symmetry.reports.recomputes
     _drag(app, KEYS["move"])
     app.viewport.sync()
     app.key_release(KEYS["move"])  # commit: the preview re-derives for the new positions ...
-    assert app._symmetry_reports.recomputes == runs + 1
+    assert app._symmetry.reports.recomputes == runs + 1
     app.viewport.sync()  # ... and the display reads the same report
-    assert app._symmetry_reports.recomputes == runs + 1
-    assert app.symmetry_display.report is app._symmetry_reports.current(app.scene.mesh)
+    assert app._symmetry.reports.recomputes == runs + 1
+    assert app.symmetry_display.report is app._symmetry.reports.current(app.scene.mesh)
     assert app.soft_bands == _expected(app, seeds)
 
 
