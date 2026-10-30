@@ -11,7 +11,8 @@ Behaviour as it was inside `Application` (AD-027 M6 moves it, nothing else). The
 
 - `TransformGesture` - Move / Rotate / Scale on components through the `ToolManager` (also from the gizmo / Tweak);
 - `ExtrudeGesture` - Extrude (hold T) through the `ToolManager`;
-- `LoopSlideGesture`, `VertexSlideGesture` - hold G in edge / vertex mode, a journal from the first motion.
+- `LoopSlideGesture`, `VertexSlideGesture` - hold G in edge / vertex mode, a journal from the first motion;
+- `SmoothGesture` - Smooth / Relax (hold S / Alt+S), a tap is one step; Soft live radius as W/E/R.
 
 The axis / plane constraint, its mode (one-shot / sticky) and the transform space (World / Normal) are sticky
 settings of this controller (AD-027 §3.1): a gesture reads them at `begin()`, the gizmo shows them.
@@ -45,9 +46,18 @@ from ..interaction.session import (
 from ..interaction.tools import resolve_selection_vertices
 from ..mask import unblocked
 from ..morph_targets import MORPH_COMMANDS
-from ..soft_selection import RADIUS_STEPS_PERCENT, SoftSettings, SoftSymmetryRefusal
+from ..soft_selection import (
+    RADIUS_STEPS_PERCENT,
+    SoftSettings,
+    SoftSymmetryRefusal,
+    compute_influence,
+    symmetric_influence,
+)
+from ..symmetry import vertex_correspondence
 from ..symmetric_ops import SymmetryRefusal
 from ..topology.connect_per_face import TopologyToolError
+from ..topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
+from ..topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from ..topology.loop_slide import LOOP_SLIDE_LABEL, LoopSlideRefused, SlidePlan, plan_loop_slide, slide_positions
 from ..topology.vertex_slide import (
     VERTEX_SLIDE_LABEL,
@@ -759,6 +769,111 @@ class VertexSlideGesture(_SlideGesture):
         return True
 
 
+class SmoothGesture(GestureSession):
+    """Smooth / Relax (WP Toolbox Gaps C2, hold S / Alt+S): the plan on the press selection (`seeds`), the strength
+    in steps (`amount`); every motion recomputes the positions from the press state (no drift), right = more, left =
+    fewer, down to the start. A tap (no motion) is one fixed step at the release. Journal from the first motion (as
+    Loop Slide). With Soft on the plan carries the influence weights, and the wheel steps its radius live, as for a
+    Soft W/E/R. Esc ends it with "cancelled" also before it began (instead of the tap step)."""
+
+    cancel_unbegun = True
+
+    def __init__(self, controller: "GestureController", command: str, key: str, plan: SmoothPlan, seeds, origin) -> None:
+        super().__init__(controller, command, key, plan.movable, origin)
+        self.plan = plan
+        self.seeds: frozenset[VertexId] = frozenset(seeds)
+        self.amount = 0.0
+        self.before: MeshChange | None = None
+        self.selection_before: tuple | None = None
+
+    def _write(self, amount: float) -> set[VertexId]:
+        positions = self.plan.positions(amount)
+        mesh = self.services.scene.mesh
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        return set(positions)
+
+    def step(self, dx: float, dy: float) -> bool:
+        services = self.services
+        plan = self.plan
+        if plan is None or dx == 0:
+            return False
+        if not self.begun:
+            self.before = services.scene.mesh.begin_change()
+            self.selection_before = services.selection_snapshot()
+            self.begun = True
+        self.amount = max(0.0, self.amount + dx / SMOOTH_PX_PER_STEP)
+        moved = self._write(self.amount)
+        services.invalidate_picks()
+        services.notify_vertices_moved(moved)
+        services.status(f"{plan.label}: strength {self.amount:.2f} steps")
+        return True
+
+    def release(self) -> None:
+        """A drag commits its journal as one entry; a tap (no motion) is one fixed step (`TAP_AMOUNT`) through the
+        one commit boundary."""
+        services = self.services
+        plan = self.plan
+        if plan is None:
+            return
+        mesh = services.scene.mesh
+        if not self.begun:
+            changed = services.mesh_transaction(
+                plan.label, lambda _mesh: self._write(SMOOTH_TAP_AMOUNT), moved_of=lambda moved: moved
+            ).changed
+            services.status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
+            return
+        before, self.before = self.before, None
+        delta = mesh.end_change(before)
+        if delta.empty:
+            services.status(f"{plan.label}: no change")
+            return
+        services.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=plan.label))
+        services.record_selection_history(self.selection_before)
+        services.soft_preview_refresh()
+        services.status(f"{plan.label} committed ({self.amount:.2f} steps)")
+
+    def abort(self) -> None:
+        before, self.before = self.before, None
+        if before is None or self.plan is None:
+            return
+        self.services.scene.mesh.rollback_change(before)
+        self.services.invalidate_picks()
+        self.services.notify_vertices_moved(set(self.plan.movable))
+
+    def cleanup(self) -> None:
+        if self.before is not None:
+            self.services.scene.mesh.release_change(self.before)
+            self.before = None
+
+    def soft_live(self) -> bool:
+        """With Soft on (armed or dragging) the wheel steps its radius."""
+        return self.plan is not None and self.plan.weights is not None and self.soft is not None
+
+    def reweight(self, settings: SoftSettings) -> None:
+        """New radius / flow: back to the press geometry (only the movable vertices were written), the influence and
+        plan again from there, the current strength replayed; the display shows the new weights."""
+        services = self.services
+        self.soft = settings
+        mesh = services.scene.mesh
+        old = self.plan
+        if self.begun:
+            for vid in old.movable:
+                mesh.set_vertex_position(vid, old.start[vid])
+        try:
+            weights = self._controller.smooth_soft_weights(self.seeds, settings)
+            plan = plan_smooth(mesh, self.seeds, relax=old.relax, weights=weights, mask=services.mask_values(self.seeds))
+        except (SmoothRefused, SoftSymmetryRefusal):
+            plan = old  # the seeds did not change: keep the field it had
+        self.plan = plan
+        self.target = plan.movable
+        if self.begun:
+            self._write(self.amount)
+        services.invalidate_picks()
+        services.notify_vertices_moved(set(old.movable) | set(plan.movable))
+        self.show_weights(self.plan.weights)
+
+
 class GestureController:
     """Arms the gestures, owns the constraint settings (`axis_constraint`: None = free; `constraint_mode`;
     `orientation`: World / Normal, WP Toolbox Gaps C1) and the Soft live steps of the running gesture."""
@@ -912,6 +1027,56 @@ class GestureController:
             f"{VERTEX_SLIDE_LABEL}: {count} {noun} - move the mouse towards an edge, release {key.upper()} to commit"
         )
         return True
+
+    def arm_smooth(self, command: str, key: str, origin) -> bool:
+        """Hold S / Alt+S: plan on the resolved selection (else the hovered element) now; refusals are posted at the
+        press. Nothing moves before the first motion or the release (tap)."""
+        services = self.services
+        relax = command == commands.RELAX
+        mesh = services.scene.mesh
+        selection = services.selection
+        target = resolve_selection_vertices(mesh, selection, selection.mode)
+        if not target and selection.hovered is not None:
+            target = element_vertices(mesh, selection.hovered)
+        soft_settings = services.soft_settings
+        soft = soft_settings if soft_settings.enabled else None
+        try:
+            weights = None if soft is None or not target else self.smooth_soft_weights(target, soft)
+            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=services.mask_values(target))
+        except (SmoothRefused, SoftSymmetryRefusal) as exc:
+            label = RELAX_LABEL if relax else SMOOTH_LABEL
+            text = str(exc)
+            services.status(text if text.startswith(label) else f"{label}: refused — {text}")
+            return False
+        gesture = SmoothGesture(self, command, key, plan, target, origin)
+        services.interaction.start(gesture)
+        services.set_hovered(None)
+        if soft is not None:
+            # The same gesture state as a Soft W/E/R: live radius / flow steps go through it.
+            gesture.soft = soft
+            gesture.soft_reference = soft.world_radius * 100.0 / soft.radius_percent
+            gesture.show_weights(plan.weights)
+        soft_note = " (Soft: wheel = radius)" if soft is not None else ""
+        services.status(
+            f"{plan.label}: {len(plan.movable)} points{soft_note} - tap for one step, or drag right/left for"
+            f" more/less, release {key.upper()} to commit"
+        )
+        return True
+
+    def smooth_soft_weights(self, seeds, soft: SoftSettings) -> dict[VertexId, float]:
+        """The influence of `seeds` by the same function and arguments as a Soft W/E/R (plain field, or under a
+        definition the symmetric field; raises `SoftSymmetryRefusal` like W/E/R at `begin()`)."""
+        mesh = self.services.scene.mesh
+        if mesh.symmetry_definition is None:
+            return compute_influence(
+                mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
+                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
+            )
+        return symmetric_influence(
+            mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
+            curve_power=soft.curve_power, correspondence=vertex_correspondence(mesh),
+            flow_ratio=soft.flow_ratio,
+        ).weights
 
     def topology_changed(self) -> None:
         """After a topology gesture's begin / commit / cancel: caches, viewport and a dead-ID sweep (B6 lesson: a

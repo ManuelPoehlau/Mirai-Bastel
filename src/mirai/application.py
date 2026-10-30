@@ -144,7 +144,7 @@ from .symmetry_coordination import (
     expand_faces,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
-from .symmetry import mirrored_selection, vertex_correspondence
+from .symmetry import mirrored_selection
 from .symmetry_display import SymmetryDisplay
 from .resymmetrize import ResymPlan
 from .controllers.services import AppServices
@@ -189,8 +189,6 @@ from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
-from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
-from .topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
@@ -438,13 +436,12 @@ class _ObjectGesture:
 
 class _AppGesture(GestureSession):
     """AD-027 M6, transitional: a gesture kind whose code is still `Application`'s (`kind`:
-    "smooth", "offset", "object"); it moves into `controllers` kind by kind, the object gesture at M7."""
+    "offset", "object"); it moves into `controllers` kind by kind, the object gesture at M7."""
 
     def __init__(self, app: "Application", kind: str, command: str, key: str, target, origin) -> None:
         super().__init__(app._gestures, command, key, target, origin)
         self._app = app
         self.kind = kind
-        self.cancel_unbegun = kind == "smooth"
 
     @property
     def label(self) -> str:
@@ -455,7 +452,6 @@ class _AppGesture(GestureSession):
     def step(self, dx: float, dy: float) -> bool:
         app = self._app
         return {
-            "smooth": lambda dx, dy: app._smooth_step(dx),
             "offset": app._offset_step,
             "object": app._object_step,
         }[self.kind](dx, dy)
@@ -463,7 +459,6 @@ class _AppGesture(GestureSession):
     def release(self) -> None:
         app = self._app
         {
-            "smooth": app._smooth_release,
             "offset": app._offset_release,
             "object": app._object_release,
         }[self.kind]()
@@ -471,7 +466,6 @@ class _AppGesture(GestureSession):
     def abort(self) -> None:
         app = self._app
         {
-            "smooth": app._smooth_abort,
             "offset": app._offset_abort,
             "object": app._object_cancel,
         }[self.kind]()
@@ -479,11 +473,6 @@ class _AppGesture(GestureSession):
     def cleanup(self) -> None:
         self._app._gesture_cleanup(self.kind)
 
-    def soft_live(self) -> bool:
-        return self.kind == "smooth" and self._app._smooth_soft_live(self)
-
-    def reweight(self, settings) -> None:
-        self._app._smooth_live_reweight(self, settings)
 
 
 def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
@@ -767,12 +756,6 @@ class Application:
         self.tweak_command: str = commands.MOVE
         # Inset / Bevel (2026-10-29): the held width gesture, None = none (`_OffsetGesture`).
         self._offset: _OffsetGesture | None = None
-        # WP Toolbox Gaps C2: the held Smooth / Relax (plan at the press, amount in steps, journal).
-        self._smooth_plan: SmoothPlan | None = None
-        self._smooth_amount: float = 0.0
-        self._smooth_before: MeshChange | None = None
-        self._smooth_selection_before: tuple | None = None
-        self._smooth_seeds: frozenset[VertexId] = frozenset()  # the selection (Soft seeds) at the press
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
@@ -2556,155 +2539,6 @@ class Application:
             effective = canonical_edges(SymmetryIndex(mesh), ring)
         return self._edge_connect(ring, effective, "Loop Insert", "Loop Insert")
 
-    # -- Smooth / Relax (WP Toolbox Gaps C2) -----------------------------------------
-
-    def _smooth_arm(self, command: str, key: str, origin) -> bool:
-        """Hold S / Alt+S: plan on the resolved selection (else the hovered element) now; refusals are
-        posted at the press. Nothing moves before the first motion or the release (tap)."""
-        relax = command == commands.RELAX
-        mesh = self.scene.mesh
-        selection = self.selection
-        target = resolve_selection_vertices(mesh, selection, selection.mode)
-        if not target and selection.hovered is not None:
-            target = element_vertices(mesh, selection.hovered)
-        soft = self._soft if self._soft.enabled else None
-        try:
-            weights = None if soft is None or not target else self._smooth_soft_weights(target, soft)
-            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=self._mask_values(target))
-        except (SmoothRefused, SoftSymmetryRefusal) as exc:
-            label = RELAX_LABEL if relax else SMOOTH_LABEL
-            text = str(exc)
-            self._set_status(text if text.startswith(label) else f"{label}: refused — {text}")
-            return False
-        self._smooth_seeds = frozenset(target)
-        gesture = self._start_gesture("smooth", command, key, plan.movable, origin)
-        self._smooth_plan = plan
-        self._smooth_amount = 0.0
-        self._set_hovered(None)
-        if soft is not None:
-            # The same gesture state as a Soft W/E/R: live radius / flow steps go through it.
-            gesture.soft = soft
-            gesture.soft_reference = soft.world_radius * 100.0 / soft.radius_percent
-            self._smooth_show_weights()
-        soft_note = " (Soft: wheel = radius)" if soft is not None else ""
-        self._set_status(
-            f"{plan.label}: {len(plan.movable)} points{soft_note} - tap for one step, or drag right/left for"
-            f" more/less, release {key.upper()} to commit"
-        )
-        return True
-
-    def _smooth_soft_weights(self, seeds, soft: SoftSettings) -> dict[VertexId, float]:
-        """The influence of `seeds` by the same function and arguments as a Soft W/E/R (plain field, or
-        under a definition the symmetric field; raises `SoftSymmetryRefusal` like W/E/R at `begin()`)."""
-        mesh = self.scene.mesh
-        if mesh.symmetry_definition is None:
-            return compute_influence(
-                mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
-            )
-        return symmetric_influence(
-            mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
-            curve_power=soft.curve_power, correspondence=vertex_correspondence(mesh),
-            flow_ratio=soft.flow_ratio,
-        ).weights
-
-    def _smooth_show_weights(self) -> None:
-        """The display shows the held Smooth / Relax's own weights (as `show_op_weights` for W/E/R)."""
-        self._gesture.show_weights(self._smooth_plan.weights)
-
-    def _smooth_soft_live(self, gesture) -> bool:
-        """A held Smooth / Relax with Soft on (armed or dragging): the wheel steps its radius."""
-        return self._smooth_plan is not None and self._smooth_plan.weights is not None and gesture.soft is not None
-
-    def _smooth_live_reweight(self, gesture, settings: SoftSettings) -> None:
-        gesture.soft = settings
-        touched = self._smooth_reweight(settings)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(touched)
-        self._smooth_show_weights()
-
-    def _smooth_reweight(self, gesture: SoftSettings) -> set[VertexId]:
-        """New radius / flow for the held Smooth / Relax: back to the press geometry (only the movable
-        vertices were written), the influence and plan again from there, the current strength replayed.
-        Returns the vertices whose position may have changed."""
-        mesh = self.scene.mesh
-        old = self._smooth_plan
-        session = self._gesture
-        if session.begun:
-            for vid in old.movable:
-                mesh.set_vertex_position(vid, old.start[vid])
-        try:
-            weights = self._smooth_soft_weights(self._smooth_seeds, gesture)
-            plan = plan_smooth(
-                mesh, self._smooth_seeds, relax=old.relax, weights=weights, mask=self._mask_values(self._smooth_seeds)
-            )
-        except (SmoothRefused, SoftSymmetryRefusal):
-            plan = old  # the seeds did not change: keep the field it had
-        self._smooth_plan = plan
-        session.target = plan.movable
-        if session.begun:
-            self._smooth_write(self._smooth_amount)
-        return set(old.movable) | set(plan.movable)
-
-    def _smooth_write(self, amount: float) -> set[VertexId]:
-        positions = self._smooth_plan.positions(amount)
-        mesh = self.scene.mesh
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        return set(positions)
-
-    def _smooth_step(self, dx: float) -> bool:
-        """Every motion recomputes the positions from the press state (no drift): right = more steps,
-        left = fewer, down to the start state. Journal from the first motion (as Loop Slide)."""
-        plan = self._smooth_plan
-        if plan is None or dx == 0:
-            return False
-        mesh = self.scene.mesh
-        if not self._gesture.begun:
-            self._smooth_before = mesh.begin_change()
-            self._smooth_selection_before = self._selection_snapshot()
-            self._gesture.begun = True
-        self._smooth_amount = max(0.0, self._smooth_amount + dx / SMOOTH_PX_PER_STEP)
-        moved = self._smooth_write(self._smooth_amount)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(moved)
-        self._set_status(f"{plan.label}: strength {self._smooth_amount:.2f} steps")
-        return True
-
-    def _smooth_release(self) -> None:
-        """Release: a drag commits its journal as one entry; a tap (no motion) is one fixed step
-        (`TAP_AMOUNT`) through the one commit boundary."""
-        plan = self._smooth_plan
-        if plan is None:
-            return
-        mesh = self.scene.mesh
-        if not self._gesture.begun:
-            changed = self._mesh_transaction(
-                plan.label,
-                lambda _mesh: self._smooth_write(SMOOTH_TAP_AMOUNT),
-                moved_of=lambda moved: moved,
-            ).changed
-            self._set_status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
-            return
-        before, self._smooth_before = self._smooth_before, None
-        delta = mesh.end_change(before)
-        if delta.empty:
-            self._set_status(f"{plan.label}: no change")
-            return
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=plan.label))
-        self._record_selection_history(self._smooth_selection_before)
-        self._soft_preview_refresh()
-        self._set_status(f"{plan.label} committed ({self._smooth_amount:.2f} steps)")
-
-    def _smooth_abort(self) -> None:
-        before, self._smooth_before = self._smooth_before, None
-        if before is None or self._smooth_plan is None:
-            return
-        self.scene.mesh.rollback_change(before)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(self._smooth_plan.movable))
-
     # -- Inset / Bevel (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
     #    `PROVISIONAL`) ------------------------------------------------------------------------------
     #
@@ -3681,7 +3515,7 @@ class Application:
         if command == commands.LOOP_SLIDE:
             return self._gestures.arm_slide(key, origin)
         if command in SMOOTH_COMMANDS:
-            return self._smooth_arm(command, key, origin)
+            return self._gestures.arm_smooth(command, key, origin)
         if command == commands.INSET:
             return self._inset_arm(key, origin)
         if command == commands.BEVEL:
@@ -4377,14 +4211,6 @@ class Application:
             if self._offset is not None and self._offset.before is not None:
                 self.scene.mesh.release_change(self._offset.before)
             self._offset = None
-        elif kind == "smooth":
-            self._smooth_plan = None
-            self._smooth_amount = 0.0
-            if self._smooth_before is not None:
-                self.scene.mesh.release_change(self._smooth_before)
-            self._smooth_before = None
-            self._smooth_selection_before = None
-            self._smooth_seeds = frozenset()
 
     def _undo_redo(self, command: str) -> bool:
         can = self.history.can_undo() if command == commands.UNDO else self.history.can_redo()
