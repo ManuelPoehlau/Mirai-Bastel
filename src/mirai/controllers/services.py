@@ -201,6 +201,17 @@ class AppServices:
         the member (AD-027 M6): the gestures pass them to their tools; mask / hide stay in `Application` (§3.4)."""
         return self._app._mask_values(seeds)
 
+    def hidden_vertices(self) -> set:
+        """The edit object's hidden vertices (`mirai.hidden`). Reason for the member (AD-027 M6): Vertex Slide ends at
+        hidden geometry; Hide stays in `Application` (§3.4)."""
+        return self._app._hidden.vertices()
+
+    def loop_seed_edges(self, label: str):
+        """The selected edges, else the hovered edge; None (status posted) outside edge mode or without either
+        (`Application._loop_seed_edges`). Reason for the member (AD-027 M6): Loop Slide plans from the seeds the
+        loop commands (which stay in `Application`) use."""
+        return self._app._loop_seed_edges(label)
+
     def flush_hover(self) -> None:
         """Pick a hover `coalesce_hover` left stale. Reason for the member (AD-027 M6): a gesture's tool activation
         went through `Application._execute`, which flushes first; the gesture keeps that order."""

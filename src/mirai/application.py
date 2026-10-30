@@ -195,25 +195,10 @@ from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_lab
 from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
-from .topology.loop_slide import (
-    LOOP_SLIDE_LABEL,
-    LoopSlideRefused,
-    SlidePlan,
-    plan_loop_slide,
-    slide_positions,
-)
 from .topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
 from .topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
 from .topology.offset_build import OffsetBuild, OffsetRefused
 from .symmetric_offset import SymmetricOffset
-from .topology.vertex_slide import (
-    VERTEX_SLIDE_LABEL,
-    VertexSlidePlan,
-    VertexSlideRefused,
-    best_neighbour,
-    plan_vertex_slide,
-    vertex_slide_positions,
-)
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
 from .surface_chain import SurfaceChain
@@ -284,7 +269,7 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
 #: `SoftSettings`, which the next gesture reads at `begin()`.
 _MASK_COMMANDS = commands.MASK_COMMANDS
 _HIDE_COMMANDS = commands.HIDE_COMMANDS
-_REGION_COMMANDS = commands.REGION_COMMANDS
+_REGION_COMMANDS = commands.POLYGROUP_COMMANDS
 
 #: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
 #: refused instead of silently changing faces the artist cannot see (`Application._hidden_refusal`). Loop Insert is not in
@@ -452,7 +437,7 @@ class _ObjectGesture:
 
 
 class _AppGesture(GestureSession):
-    """AD-027 M6, transitional: a gesture kind whose code is still `Application`'s (`kind`: "slide",
+    """AD-027 M6, transitional: a gesture kind whose code is still `Application`'s (`kind`:
     "smooth", "offset", "object"); it moves into `controllers` kind by kind, the object gesture at M7."""
 
     def __init__(self, app: "Application", kind: str, command: str, key: str, target, origin) -> None:
@@ -463,8 +448,6 @@ class _AppGesture(GestureSession):
 
     @property
     def label(self) -> str:
-        if self.kind == "slide":
-            return self._app._slide_label()
         if self.kind == "object":
             return f"Object {super().label}"
         return super().label
@@ -472,7 +455,6 @@ class _AppGesture(GestureSession):
     def step(self, dx: float, dy: float) -> bool:
         app = self._app
         return {
-            "slide": app._slide_step,
             "smooth": lambda dx, dy: app._smooth_step(dx),
             "offset": app._offset_step,
             "object": app._object_step,
@@ -481,7 +463,6 @@ class _AppGesture(GestureSession):
     def release(self) -> None:
         app = self._app
         {
-            "slide": app._slide_release,
             "smooth": app._smooth_release,
             "offset": app._offset_release,
             "object": app._object_release,
@@ -490,7 +471,6 @@ class _AppGesture(GestureSession):
     def abort(self) -> None:
         app = self._app
         {
-            "slide": app._slide_abort,
             "smooth": app._smooth_abort,
             "offset": app._offset_abort,
             "object": app._object_cancel,
@@ -785,20 +765,6 @@ class Application:
         # The session size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
         self.gizmo_size_name: str = _gizmo.GIZMO_SIZE_DEFAULT
         self.tweak_command: str = commands.MOVE
-        # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
-        # direction of side A (px per unit t; None = fall back to horizontal), and the mesh
-        # state at the first motion (Esc and the History entry use it).
-        self._slide_plan: SlidePlan | None = None
-        self._slide_t: float = 0.0
-        self._slide_direction: tuple[float, float] | None = None
-        self._slide_before: MeshChange | None = None
-        self._slide_selection_before: tuple | None = None
-        # Vertex Slide (hold G in vertex mode, 2026-10-29): the plan, the screen positions of each driven
-        # vertex and its candidate neighbours at the press, and the net drag since the press. The journal and
-        # the selection snapshot are Loop Slide's (`_slide_before`, `_slide_selection_before`).
-        self._vslide_plan: VertexSlidePlan | None = None
-        self._vslide_px: dict[VertexId, tuple] = {}
-        self._vslide_drag: tuple[float, float] = (0.0, 0.0)
         # Inset / Bevel (2026-10-29): the held width gesture, None = none (`_OffsetGesture`).
         self._offset: _OffsetGesture | None = None
         # WP Toolbox Gaps C2: the held Smooth / Relax (plan at the press, amount in steps, journal).
@@ -2590,183 +2556,6 @@ class Application:
             effective = canonical_edges(SymmetryIndex(mesh), ring)
         return self._edge_connect(ring, effective, "Loop Insert", "Loop Insert")
 
-    def _slide_arm(self, key: str, origin) -> bool:
-        """Hold G: plan the slide of the selected (else the hovered) edges now; refusals are
-        posted at the press, before anything moves. Nothing moves before the first motion.
-        In vertex mode G is Vertex Slide (`_vertex_slide_arm`)."""
-        if self.selection.mode is SelectionMode.VERTEX:
-            return self._vertex_slide_arm(key, origin)
-        edges = self._loop_seed_edges(LOOP_SLIDE_LABEL)
-        if edges is None:
-            return False
-        mesh = self.scene.mesh
-        try:
-            plan = plan_loop_slide(mesh, edges)
-        except LoopSlideRefused as exc:
-            self._set_status(str(exc))
-            return False
-        self._start_gesture("slide", commands.LOOP_SLIDE, key, plan.vertex_ids, origin)
-        self._slide_plan = plan
-        self._slide_t = 0.0
-        self._slide_direction = self._slide_screen_direction(plan)
-        self._set_hovered(None)
-        count = len(plan.vertex_ids)
-        self._set_status(
-            f"{LOOP_SLIDE_LABEL}: {count} vertices - move the mouse, release {key.upper()} to commit"
-        )
-        return True
-
-    def _slide_screen_direction(self, plan: SlidePlan) -> tuple[float, float] | None:
-        """Mean screen vector from each driven vertex to its side-A target (px for t = 1)."""
-        camera = self._edit_camera
-        sx = sy = 0.0
-        n = 0
-        for orig, side_a, _ in plan.slides.values():
-            a = camera.project_to_screen(orig, self.viewport_width, self.viewport_height)
-            b = camera.project_to_screen(side_a, self.viewport_width, self.viewport_height)
-            if a is None or b is None:
-                continue
-            sx += b[0] - a[0]
-            sy += b[1] - a[1]
-            n += 1
-        if n == 0 or math.hypot(sx / n, sy / n) < 1.0:
-            return None
-        return (sx / n, sy / n)
-
-    def _vertex_slide_arm(self, key: str, origin) -> bool:
-        """Hold G in vertex mode: plan the slide of the selected (else the hovered) vertices now; refusals
-        are posted at the press. Which edge each vertex takes is decided by the drag (`_vertex_slide_step`)."""
-        mesh = self.scene.mesh
-        selection = self.selection
-        vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
-        hovered = selection.hovered
-        if not vertices and isinstance(hovered, VertexId) and mesh.is_valid_vertex(hovered):
-            vertices = {hovered}
-        if not vertices:
-            self._set_status(f"{VERTEX_SLIDE_LABEL}: select or hover a vertex")
-            return False
-        try:
-            plan = plan_vertex_slide(
-                mesh, vertices, blocked=frozenset(self._hidden.vertices()), mask=self._mask_values(vertices)
-            )
-        except VertexSlideRefused as exc:
-            self._set_status(str(exc))
-            return False
-        camera, w, h = self._edit_camera, self.viewport_width, self.viewport_height
-        self._vslide_px = {
-            vid: (
-                camera.project_to_screen(origin, w, h),
-                tuple(camera.project_to_screen(p, w, h) for _, p in plan.candidates[vid]),
-            )
-            for vid, origin in plan.origins.items()
-        }
-        self._start_gesture("slide", commands.LOOP_SLIDE, key, plan.vertex_ids, origin)
-        self._vslide_plan = plan
-        self._vslide_drag = (0.0, 0.0)
-        self._set_hovered(None)
-        count = len(plan.vertex_ids)
-        noun = "vertex" if count == 1 else "vertices"
-        self._set_status(
-            f"{VERTEX_SLIDE_LABEL}: {count} {noun} - move the mouse towards an edge, release {key.upper()} to commit"
-        )
-        return True
-
-    def _vertex_slide_step(self, dx: float, dy: float) -> bool:
-        """Every motion: each driven vertex takes the edge whose screen direction best matches the net drag
-        since the press; the drag along the mean of those directions is the common amount (0 = start, 1 = on
-        the neighbour). Recomputed from the press state, so dragging back restores it."""
-        plan = self._vslide_plan
-        mesh = self.scene.mesh
-        if not self._gesture.begun:
-            self._slide_before = mesh.begin_change()
-            self._slide_selection_before = self._selection_snapshot()
-            self._gesture.begun = True
-        drag = (self._vslide_drag[0] + dx, self._vslide_drag[1] + dy)
-        self._vslide_drag = drag
-        chosen: dict[VertexId, VertexId] = {}
-        sx = sy = 0.0
-        for vid in plan.origins:
-            origin_px, candidates_px = self._vslide_px[vid]
-            i = best_neighbour(origin_px, candidates_px, drag)
-            if i is None:
-                continue
-            chosen[vid] = plan.candidates[vid][i][0]
-            sx += candidates_px[i][0] - origin_px[0]
-            sy += candidates_px[i][1] - origin_px[1]
-        t = 0.0
-        if chosen:
-            sx, sy = sx / len(chosen), sy / len(chosen)
-            length2 = sx * sx + sy * sy
-            if length2 >= 1.0:
-                t = max(0.0, min(plan.max_amount, (drag[0] * sx + drag[1] * sy) / length2))
-                if t < 1e-9:
-                    t = 0.0  # back at the press point (float sums of the motion): exactly the start
-        positions = vertex_slide_positions(plan, chosen, t)
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(set(positions))
-        self._set_status(f"{VERTEX_SLIDE_LABEL}: {t * 100.0:.0f} %")
-        return True
-
-    def _slide_label(self) -> str:
-        return VERTEX_SLIDE_LABEL if self._vslide_plan is not None else LOOP_SLIDE_LABEL
-
-    def _slide_step(self, dx: float, dy: float) -> bool:
-        if self._vslide_plan is not None:
-            return self._vertex_slide_step(dx, dy)
-        plan = self._slide_plan
-        if plan is None:
-            return False
-        mesh = self.scene.mesh
-        if not self._gesture.begun:
-            self._slide_before = mesh.begin_change()
-            self._slide_selection_before = self._selection_snapshot()
-            self._gesture.begun = True
-        direction = self._slide_direction
-        if direction is None:
-            # Edges seen end-on: the Playground's mapping (horizontal motion).
-            self._slide_t += dx / self.viewport_width * 2.0
-        else:
-            self._slide_t += (dx * direction[0] + dy * direction[1]) / (
-                direction[0] ** 2 + direction[1] ** 2
-            )
-        self._slide_t = max(-plan.max_t, min(plan.max_t, self._slide_t))
-        positions = slide_positions(plan, self._slide_t)
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(set(positions))
-        return True
-
-    def _slide_release(self) -> None:
-        mesh = self.scene.mesh
-        before = self._slide_before
-        label = self._slide_label()
-        if not self._gesture.begun or before is None:
-            self._set_status(f"{label}: no change")
-            return
-        self._slide_before = None
-        delta = mesh.end_change(before)
-        if delta.empty:
-            self._set_status(f"{label}: no change")
-            return
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=label))
-        self._record_selection_history(self._slide_selection_before)
-        self._soft_preview_refresh()
-        self._set_status(f"{label} committed")
-
-    def _slide_abort(self) -> None:
-        before = self._slide_before
-        plan = self._vslide_plan or self._slide_plan
-        if before is None or plan is None:
-            return
-        self._slide_before = None
-        self.scene.mesh.rollback_change(before)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(plan.vertex_ids))
-
     # -- Smooth / Relax (WP Toolbox Gaps C2) -----------------------------------------
 
     def _smooth_arm(self, command: str, key: str, origin) -> bool:
@@ -3890,7 +3679,7 @@ class Application:
         if command == commands.EXTRUDE:
             return self._gestures.arm_extrude(key, origin)
         if command == commands.LOOP_SLIDE:
-            return self._slide_arm(key, origin)
+            return self._gestures.arm_slide(key, origin)
         if command in SMOOTH_COMMANDS:
             return self._smooth_arm(command, key, origin)
         if command == commands.INSET:
@@ -4584,17 +4373,6 @@ class Application:
         ended without release / abort stops recording (the mesh stays)."""
         if kind == "object":
             self._object_gesture = None
-        elif kind == "slide":
-            self._slide_plan = None
-            self._slide_t = 0.0
-            self._slide_direction = None
-            self._vslide_plan = None
-            self._vslide_px = {}
-            self._vslide_drag = (0.0, 0.0)
-            if self._slide_before is not None:
-                self.scene.mesh.release_change(self._slide_before)
-            self._slide_before = None
-            self._slide_selection_before = None
         elif kind == "offset":
             if self._offset is not None and self._offset.before is not None:
                 self.scene.mesh.release_change(self._offset.before)

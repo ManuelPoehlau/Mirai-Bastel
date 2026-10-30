@@ -10,7 +10,8 @@ topology commands, the other hold keys and the drag selections silently).
 Behaviour as it was inside `Application` (AD-027 M6 moves it, nothing else). The kinds:
 
 - `TransformGesture` - Move / Rotate / Scale on components through the `ToolManager` (also from the gizmo / Tweak);
-- `ExtrudeGesture` - Extrude (hold T) through the `ToolManager`.
+- `ExtrudeGesture` - Extrude (hold T) through the `ToolManager`;
+- `LoopSlideGesture`, `VertexSlideGesture` - hold G in edge / vertex mode, a journal from the first motion.
 
 The axis / plane constraint, its mode (one-shot / sticky) and the transform space (World / Normal) are sticky
 settings of this controller (AD-027 §3.1): a gesture reads them at `begin()`, the gizmo shows them.
@@ -23,6 +24,8 @@ import math
 from typing import Optional
 
 from core import EdgeId, FaceId, ObjectId, Selection, SelectionMode, VertexId
+from core.mesh import MeshChange
+from core.operations import MeshDeltaCommand
 from core.operations.transform import SeamConstraintError
 
 from .. import symmetry_declarations, transform_space
@@ -45,6 +48,15 @@ from ..morph_targets import MORPH_COMMANDS
 from ..soft_selection import RADIUS_STEPS_PERCENT, SoftSettings, SoftSymmetryRefusal
 from ..symmetric_ops import SymmetryRefusal
 from ..topology.connect_per_face import TopologyToolError
+from ..topology.loop_slide import LOOP_SLIDE_LABEL, LoopSlideRefused, SlidePlan, plan_loop_slide, slide_positions
+from ..topology.vertex_slide import (
+    VERTEX_SLIDE_LABEL,
+    VertexSlidePlan,
+    VertexSlideRefused,
+    best_neighbour,
+    plan_vertex_slide,
+    vertex_slide_positions,
+)
 from .services import AppServices
 
 #: WP-06 B4 (E28): the hold-key gestures. Values: (label, verb, participle) for the status lines (E34, `PROVISIONAL`).
@@ -123,7 +135,7 @@ GESTURE_REFUSES = frozenset(
         commands.RESYMMETRIZE,
         *commands.MASK_COMMANDS,
         *commands.HIDE_COMMANDS,
-        *commands.REGION_COMMANDS,
+        *commands.POLYGROUP_COMMANDS,
         *commands.REMOVAL_COMMANDS,
         *commands.LOOP_COMMANDS,
         *commands.SELECTION_STEP_COMMANDS,
@@ -600,6 +612,153 @@ class ExtrudeGesture(GestureSession):
         self._controller.topology_changed()
 
 
+class _SlideGesture(GestureSession):
+    """Hold G (2026-10-15, loop tools promoted): the plan is fixed at the arm, nothing moves before the first motion;
+    from it the mesh records into a journal (`before`, with the selection snapshot `selection_before`): the release
+    commits it as one entry, Esc rolls it back."""
+
+    def __init__(self, controller: "GestureController", key: str, plan, origin) -> None:
+        super().__init__(controller, commands.LOOP_SLIDE, key, plan.vertex_ids, origin)
+        self.plan = plan
+        self.before: MeshChange | None = None
+        self.selection_before: tuple | None = None
+
+    def _record(self) -> None:
+        if not self.begun:
+            self.before = self.services.scene.mesh.begin_change()
+            self.selection_before = self.services.selection_snapshot()
+            self.begun = True
+
+    def _write(self, positions: dict) -> None:
+        mesh = self.services.scene.mesh
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        self.services.invalidate_picks()
+        self.services.notify_vertices_moved(set(positions))
+
+    def release(self) -> None:
+        services = self.services
+        mesh = services.scene.mesh
+        before = self.before
+        label = self.label
+        if not self.begun or before is None:
+            services.status(f"{label}: no change")
+            return
+        self.before = None
+        delta = mesh.end_change(before)
+        if delta.empty:
+            services.status(f"{label}: no change")
+            return
+        services.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=label))
+        services.record_selection_history(self.selection_before)
+        services.soft_preview_refresh()
+        services.status(f"{label} committed")
+
+    def abort(self) -> None:
+        before = self.before
+        if before is None:
+            return
+        self.before = None
+        self.services.scene.mesh.rollback_change(before)
+        self.services.invalidate_picks()
+        self.services.notify_vertices_moved(set(self.plan.vertex_ids))
+
+    def cleanup(self) -> None:
+        if self.before is not None:
+            self.services.scene.mesh.release_change(self.before)
+            self.before = None
+
+
+class LoopSlideGesture(_SlideGesture):
+    """Loop Slide (G in edge mode): the selected (else the hovered) edges slide along their side edges; `t` = the
+    slide amount, `direction` = the screen direction of side A (px per unit t; None = fall back to horizontal)."""
+
+    @property
+    def label(self) -> str:
+        return LOOP_SLIDE_LABEL
+
+    def __init__(self, controller: "GestureController", key: str, plan: SlidePlan, origin) -> None:
+        super().__init__(controller, key, plan, origin)
+        self.t = 0.0
+        self.direction = self._screen_direction()
+
+    def _screen_direction(self) -> tuple[float, float] | None:
+        """Mean screen vector from each driven vertex to its side-A target (px for t = 1)."""
+        camera = self.services.edit_camera
+        width, height = self.services.viewport_size
+        sx = sy = 0.0
+        n = 0
+        for orig, side_a, _ in self.plan.slides.values():
+            a = camera.project_to_screen(orig, width, height)
+            b = camera.project_to_screen(side_a, width, height)
+            if a is None or b is None:
+                continue
+            sx += b[0] - a[0]
+            sy += b[1] - a[1]
+            n += 1
+        if n == 0 or math.hypot(sx / n, sy / n) < 1.0:
+            return None
+        return (sx / n, sy / n)
+
+    def step(self, dx: float, dy: float) -> bool:
+        plan = self.plan
+        self._record()
+        direction = self.direction
+        if direction is None:
+            # Edges seen end-on: the Playground's mapping (horizontal motion).
+            self.t += dx / self.services.viewport_size[0] * 2.0
+        else:
+            self.t += (dx * direction[0] + dy * direction[1]) / (direction[0] ** 2 + direction[1] ** 2)
+        self.t = max(-plan.max_t, min(plan.max_t, self.t))
+        self._write(slide_positions(plan, self.t))
+        return True
+
+
+class VertexSlideGesture(_SlideGesture):
+    """Vertex Slide (G in vertex mode, 2026-10-29): which edge each vertex takes is decided by the drag. `px` = the
+    screen positions of each driven vertex and its candidate neighbours at the press, `drag` = the net drag since
+    the press."""
+
+    @property
+    def label(self) -> str:
+        return VERTEX_SLIDE_LABEL
+
+    def __init__(self, controller: "GestureController", key: str, plan: VertexSlidePlan, px: dict, origin) -> None:
+        super().__init__(controller, key, plan, origin)
+        self.px = px
+        self.drag: tuple[float, float] = (0.0, 0.0)
+
+    def step(self, dx: float, dy: float) -> bool:
+        """Every motion: each driven vertex takes the edge whose screen direction best matches the net drag since
+        the press; the drag along the mean of those directions is the common amount (0 = start, 1 = on the
+        neighbour). Recomputed from the press state, so dragging back restores it."""
+        plan = self.plan
+        self._record()
+        drag = (self.drag[0] + dx, self.drag[1] + dy)
+        self.drag = drag
+        chosen: dict[VertexId, VertexId] = {}
+        sx = sy = 0.0
+        for vid in plan.origins:
+            origin_px, candidates_px = self.px[vid]
+            i = best_neighbour(origin_px, candidates_px, drag)
+            if i is None:
+                continue
+            chosen[vid] = plan.candidates[vid][i][0]
+            sx += candidates_px[i][0] - origin_px[0]
+            sy += candidates_px[i][1] - origin_px[1]
+        t = 0.0
+        if chosen:
+            sx, sy = sx / len(chosen), sy / len(chosen)
+            length2 = sx * sx + sy * sy
+            if length2 >= 1.0:
+                t = max(0.0, min(plan.max_amount, (drag[0] * sx + drag[1] * sy) / length2))
+                if t < 1e-9:
+                    t = 0.0  # back at the press point (float sums of the motion): exactly the start
+        self._write(vertex_slide_positions(plan, chosen, t))
+        self.services.status(f"{VERTEX_SLIDE_LABEL}: {t * 100.0:.0f} %")
+        return True
+
+
 class GestureController:
     """Arms the gestures, owns the constraint settings (`axis_constraint`: None = free; `constraint_mode`;
     `orientation`: World / Normal, WP Toolbox Gaps C1) and the Soft live steps of the running gesture."""
@@ -695,6 +854,63 @@ class GestureController:
             services.set_hovered(None)
         count = len(faces)
         services.status(f"Extrude: {count} {'face' if count == 1 else 'faces'} - move the mouse, release {key.upper()} to commit")
+        return True
+
+    def arm_slide(self, key: str, origin) -> bool:
+        """Hold G: plan the slide of the selected (else the hovered) edges now; refusals are posted at the press,
+        before anything moves. In vertex mode G is Vertex Slide."""
+        services = self.services
+        if services.selection.mode is SelectionMode.VERTEX:
+            return self._arm_vertex_slide(key, origin)
+        edges = services.loop_seed_edges(LOOP_SLIDE_LABEL)
+        if edges is None:
+            return False
+        try:
+            plan = plan_loop_slide(services.scene.mesh, edges)
+        except LoopSlideRefused as exc:
+            services.status(str(exc))
+            return False
+        services.interaction.start(LoopSlideGesture(self, key, plan, origin))
+        services.set_hovered(None)
+        services.status(f"{LOOP_SLIDE_LABEL}: {len(plan.vertex_ids)} vertices - move the mouse, release {key.upper()} to commit")
+        return True
+
+    def _arm_vertex_slide(self, key: str, origin) -> bool:
+        """Hold G in vertex mode: plan the slide of the selected (else the hovered) vertices now; refusals are
+        posted at the press."""
+        services = self.services
+        mesh = services.scene.mesh
+        selection = services.selection
+        vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
+        hovered = selection.hovered
+        if not vertices and isinstance(hovered, VertexId) and mesh.is_valid_vertex(hovered):
+            vertices = {hovered}
+        if not vertices:
+            services.status(f"{VERTEX_SLIDE_LABEL}: select or hover a vertex")
+            return False
+        try:
+            plan = plan_vertex_slide(
+                mesh, vertices, blocked=frozenset(services.hidden_vertices()), mask=services.mask_values(vertices)
+            )
+        except VertexSlideRefused as exc:
+            services.status(str(exc))
+            return False
+        camera = services.edit_camera
+        w, h = services.viewport_size
+        px = {
+            vid: (
+                camera.project_to_screen(start, w, h),
+                tuple(camera.project_to_screen(p, w, h) for _, p in plan.candidates[vid]),
+            )
+            for vid, start in plan.origins.items()
+        }
+        services.interaction.start(VertexSlideGesture(self, key, plan, px, origin))
+        services.set_hovered(None)
+        count = len(plan.vertex_ids)
+        noun = "vertex" if count == 1 else "vertices"
+        services.status(
+            f"{VERTEX_SLIDE_LABEL}: {count} {noun} - move the mouse towards an edge, release {key.upper()} to commit"
+        )
         return True
 
     def topology_changed(self) -> None:
