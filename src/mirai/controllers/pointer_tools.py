@@ -1,25 +1,67 @@
 """PointerToolsController (AD-027 §3.4): what the pointer does under a held key - the Working Pivot (P), the Lasso
-(Q) and the light drag (L) as hold keys in the slot (`PivotHold`, `LassoHold`, `LightHold`) - and the Working Pivot
-itself (a sticky setting: placed, on / off, of one object).
+(Q) and the light drag (L) as hold keys in the slot (`PivotHold`, `LassoHold`, `LightHold`) - the Working Pivot
+itself (a sticky setting: placed, on / off, of one object), and the press sessions of an LMB press: Box / Paint /
+Lasso (`DragSelect`), a press on a gizmo handle before the drag decides (`GizmoPress`) and a refused drag gesture
+that swallows the rest of its drag (`SwallowedGesture`).
 
-Behaviour as it was inside `Application` (AD-027 M4 moves it, nothing else). Hold keys are a lighter kind than
+Behaviour as it was inside `Application` (AD-027 M4 / M5 move it, nothing else). Hold keys are a lighter kind than
 sessions (AD-027 §3.1): several may be held, a session may start while one is held, each ends with its own key
 release (the pivot also on Cancel). Their precedence is the slot's fixed rank: Pivot, Lasso, Light (then the Morph
 weight): the pivot claims its LMB press / drag / release, Cancel and the hover *before* the running session (V1,
 V3, V7); the light drag takes the motion only *after* it (V5) and before the Morph weight (V4).
+
+The press sessions sit in the slot's press field (owner None): a session (the Knife, the Re-Symmetrize preview) may
+start while one runs, as it always could, and the press keeps its own release. Until the held gestures move (AD-027
+M6) the gizmo / Tweak origin that arms a gesture from a gizmo drag stays in `Application` and reads `GizmoPress`.
 """
 
 from __future__ import annotations
 
+import math
+from typing import Optional
+
 from core import SelectionMode
 
 from ..interaction import commands
-from ..interaction.session import PASS, Command, Drag, Hover, Motion, Outcome, Press, Release
+from ..interaction.session import (
+    PASS,
+    SILENT,
+    Command,
+    Drag,
+    Hover,
+    Motion,
+    Outcome,
+    Press,
+    Refusal,
+    Release,
+    RunContext,
+)
 from ..interaction.tools import resolve_selection_vertices
 from ..interaction.tools.selection_helpers import selection_pivot
 from ..pivot import WorkingPivot, place_pivot, snap_to_plane
+from ..subdivision import SUBD_COMMANDS
+from ..viewport.box_select import normalized_rect, stroke_samples
 from ..viewport.look_controls import DRAG_DEGREES_PER_PIXEL
 from .services import AppServices
+
+#: Lasso outline points are recorded at least this far apart (window pixels).
+LASSO_POINT_SPACING_PX = 3.0
+
+_SELECT_DRAGS = frozenset({commands.SELECT_DRAG, commands.SELECT_DRAG_ADD})
+#: The drag steps a refused LMB gesture swallows until its release: select drags, the Tweak drag (navigation runs).
+_SWALLOWED_DRAGS = _SELECT_DRAGS | {commands.TWEAK}
+#: What a running Box / Paint / Lasso drag lets through (it owns the selection until the LMB release).
+DRAG_SELECT_ALLOWS = frozenset(
+    {
+        commands.CANCEL,
+        commands.TOGGLE_ORTHO,
+        *commands.DISPLAY_COMMANDS,
+        *commands.LOOK_COMMANDS,
+        commands.CONSTRAINT_MODE_TOGGLE,
+        commands.GIZMO_SIZE_CYCLE,
+        *SUBD_COMMANDS,
+    }
+)
 
 
 class _Hold:
@@ -268,9 +310,197 @@ class PivotHold(_Hold):
         return True
 
 
+class DragSelect:
+    """A running LMB drag selection (2026-10-15, Manu: "Startpunkt entscheidet"): `box` when the press was in empty
+    space, else `paint`; with the Lasso key held (2026-10-21) `lasso` whatever the press point. `add` = Shift (adds)
+    instead of replacing. `before` is the selection at the start (Esc restores it); `last` the last painted point;
+    `points` the lasso outline so far (window pixels). Alt held at the release makes a box or lasso select through
+    the mesh (WP Toolbox Gaps A2, Manu 2026-10-23); paint stays visible-only. Esc keeps it in the slot as
+    `cancelled` until the LMB release. A press session (owner None)."""
+
+    owner = None
+    exclusive = False
+
+    def __init__(self, controller: "PointerToolsController", kind: str, add: bool, start, end, before: tuple,
+                 last, points: list) -> None:
+        self._controller = controller
+        self.kind = kind
+        self.add = add
+        self.start = start
+        self.end = end
+        self.before = before
+        self.last = last
+        self.cancelled = False
+        self.points = points
+
+    @property
+    def label(self) -> str:
+        return self.kind.capitalize()
+
+    def grabs(self, event) -> bool:
+        return False
+
+    def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
+        if command in DRAG_SELECT_ALLOWS or ctx.source == "wheel":
+            return None  # the Soft wheel steps were never held back by a drag
+        return SILENT
+
+    def handle(self, event) -> Outcome:
+        if isinstance(event, Drag) and event.command in _SELECT_DRAGS:
+            cursor = self._controller.services.cursor
+            return False if cursor is None else self.step(cursor)
+        if isinstance(event, Command) and event.command == commands.CANCEL:
+            return self.cancel()
+        return PASS
+
+    def step(self, cursor) -> bool:
+        if self.cancelled:
+            return False
+        self.end = cursor
+        if self.kind == "paint":
+            self._controller.paint_at(stroke_samples(self.last, cursor))
+            self.last = cursor
+        elif self.kind == "lasso":
+            last = self.points[-1]
+            if math.hypot(cursor[0] - last[0], cursor[1] - last[1]) >= LASSO_POINT_SPACING_PX:
+                self.points.append(cursor)
+        return True
+
+    def cancel(self) -> bool:
+        if self.cancelled:
+            return False
+        services = self._controller.services
+        self.cancelled = True
+        if self.kind == "paint":
+            services.restore_selection(self.before)
+            services.notify_selection_changed()
+        services.status(f"{self.kind.capitalize()} cancelled")
+        return True
+
+    def commit(self) -> bool:
+        """The LMB release: apply the box / lasso (paint selected as it went), one status line; a cancelled drag
+        ends without a change."""
+        controller = self._controller
+        services = controller.services
+        services.interaction.end_press(self)
+        if self.cancelled:
+            services.refresh_hover()
+            return False
+        selection = services.selection
+        if self.kind == "lasso":
+            return self._finish_lasso()
+        occlusion = controller.region_occlusion()
+        through = "" if occlusion or not services.display.show_faces else " (through)"
+        if self.kind == "box":
+            found = services.pick_in_rect(normalized_rect(self.start, self.end), occlusion)
+            if self.add:
+                selection.add(found)
+            else:
+                selection.set(found)
+            label = "Box" + through
+        else:
+            label = "Paint"
+        services.notify_selection_changed()
+        services.soft_preview_refresh()
+        services.status(f"{label}: {controller.selected_text()}")
+        services.refresh_hover()
+        return True
+
+    def _finish_lasso(self) -> bool:
+        """Apply a finished Lasso: the elements whose corners all lie inside the outline (as Box, with the same
+        occlusion rule, Alt = through); fewer than three outline points select nothing and change nothing."""
+        controller = self._controller
+        services = controller.services
+        selection = services.selection
+        polygon = self.points
+        if len(polygon) < 3:
+            services.status("Lasso: draw a closed outline")
+            services.refresh_hover()
+            return True
+        occlusion = controller.region_occlusion()
+        through = "" if occlusion or not services.display.show_faces else " (through)"
+        found = services.pick_in_polygon(polygon, occlusion)
+        if self.add:
+            selection.add(found)
+        else:
+            selection.set(found)
+        services.notify_selection_changed()
+        services.soft_preview_refresh()
+        services.status(f"Lasso{through}: {controller.selected_text()}")
+        services.refresh_hover()
+        return True
+
+
+class GizmoPress:
+    """An LMB press without a modifier on a gizmo handle (AD-016 D3, 2026-10-21): it owns the gesture from the press;
+    a click leaves just the constraint the press set, a drag arms the current tool along the handle (the gizmo /
+    Tweak origin in `Application` until AD-027 M6). `handle_id` = the pressed handle, `press_xy` = the cursor at the press (the Rotate dial),
+    `constraint_before` = the pending constraint before the press (one-shot: Esc on a handle drag restores it, E2),
+    `refused` = the handle drag was refused or cancelled, the rest of it does nothing. A press session (owner None);
+    it refuses nothing."""
+
+    owner = None
+    label = None
+    exclusive = False
+
+    def __init__(self, handle_id: str, press_xy, constraint_before) -> None:
+        self.handle_id = handle_id
+        self.press_xy = press_xy
+        self.constraint_before = constraint_before
+        self.refused = False
+
+    def grabs(self, event) -> bool:
+        return False
+
+    def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
+        return None
+
+    def handle(self, event) -> Outcome:
+        if isinstance(event, Drag) and self.refused and event.command in _SWALLOWED_DRAGS:
+            return False
+        if isinstance(event, Press):
+            return False  # its press runs to its release: no second gizmo press
+        return PASS
+
+    def cancel(self) -> bool:
+        return False
+
+    def commit(self) -> bool:
+        return False
+
+
+class SwallowedGesture:
+    """A refused LMB drag gesture (a drag selection, a Tweak or a gizmo drag `can_run` or the gesture's own start
+    refused, or a Tweak drag Esc cancelled): its further select / Tweak drag steps do nothing until its LMB release,
+    and no gizmo press starts under it; navigation runs. A press session (owner None); it refuses nothing."""
+
+    owner = None
+    label = None
+    exclusive = False
+
+    def grabs(self, event) -> bool:
+        return False
+
+    def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
+        return None
+
+    def handle(self, event) -> Outcome:
+        if isinstance(event, Drag) and event.command in _SWALLOWED_DRAGS:
+            return False
+        if isinstance(event, Press):
+            return False
+        return PASS
+
+    def cancel(self) -> bool:
+        return False
+
+    def commit(self) -> bool:
+        return False
+
+
 class PointerToolsController:
-    """The hold keys of the pointer tools and the Working Pivot (`working_pivot`: None = never placed; also while
-    off or on another object)."""
+    """The hold keys of the pointer tools, the Working Pivot (`working_pivot`: None = never placed; also while off or
+    on another object) and the press sessions."""
 
     def __init__(self, services: AppServices) -> None:
         self.services = services
@@ -278,3 +508,119 @@ class PointerToolsController:
         self.pivot = PivotHold(self)
         self.lasso = LassoHold(self)
         self.light = LightHold(self)
+
+    # -- the press sessions ----------------------------------------------------------------------------
+
+    @property
+    def drag_select(self) -> DragSelect | None:
+        press = self.services.interaction.press
+        return press if isinstance(press, DragSelect) else None
+
+    @property
+    def gizmo_press(self) -> GizmoPress | None:
+        press = self.services.interaction.press
+        return press if isinstance(press, GizmoPress) else None
+
+    def press_gizmo(self, handle_id: str, press_xy, constraint_before) -> GizmoPress:
+        press = GizmoPress(handle_id, press_xy, constraint_before)
+        self.services.interaction.start_press(press)
+        return press
+
+    def swallow(self) -> None:
+        """The rest of this LMB gesture does nothing until its release. A gizmo press keeps its own release (it only
+        stops arming); a drag selection, which cannot be refused mid-drag, keeps running."""
+        interaction = self.services.interaction
+        press = interaction.press
+        if isinstance(press, GizmoPress):
+            press.refused = True
+        elif press is None:
+            interaction.start_press(SwallowedGesture())
+
+    def end_swallowed(self) -> None:
+        """The LMB went up: a swallowed gesture is over."""
+        interaction = self.services.interaction
+        if isinstance(interaction.press, SwallowedGesture):
+            interaction.end_press(interaction.press)
+
+    # -- Box / Paint / Lasso (2026-10-15, Playground tools promoted, Manu) ------------------------------
+    #
+    # Box: Selection Lab KEEP (`playground/experiments/selection/decision.md`). Paint: planned there ("Paint
+    # Select"), first built here. Manu 2026-10-15: the press point decides - in empty space a box, on the mesh a
+    # paint stroke; no modifier replaces, Shift adds. Like a click, neither is a History step. Not in mode `4`
+    # (`PROVISIONAL`).
+
+    def drag_select_refusal(self, command: str) -> Refusal | None:
+        """Why a drag selection cannot start now (None = it can): `can_run` (a Knife session, a held gesture, the
+        host gate), then the drag's own preconditions (no viewport; mode `4`)."""
+        services = self.services
+        refusal = services.can_run(command, RunContext("drag"))
+        if refusal is not None:
+            return refusal
+        if services.viewport is None:
+            return SILENT
+        if services.selection.mode is SelectionMode.OBJECT:
+            return Refusal("Box/Paint/Lasso: points, edges and faces only - press 1/2/3")
+        return None
+
+    def start_drag_select(self, command: str) -> bool:
+        """The first select-drag step of an LMB gesture nothing else took: a box, paint or lasso starts at the press
+        point (refused: the rest of the gesture is swallowed), and takes this step."""
+        services = self.services
+        cursor = services.cursor
+        if cursor is None:
+            return False
+        refusal = self.drag_select_refusal(command)
+        if refusal is not None:
+            if refusal.text is not None:
+                services.status(refusal.text)
+            self.swallow()  # silence the rest of this gesture
+            return False
+        start = services.press_point if services.press_point is not None else cursor
+        lasso = self.lasso.key is not None
+        on_mesh = False if lasso else services.pick_face(start[0], start[1]) is not None
+        drag = DragSelect(
+            self,
+            kind="lasso" if lasso else "paint" if on_mesh else "box",
+            add=command == commands.SELECT_DRAG_ADD,
+            start=start,
+            end=cursor,
+            before=services.selection_snapshot(),
+            last=start,
+            points=[start] if lasso else [],
+        )
+        services.interaction.start_press(drag)
+        services.set_hovered(None)
+        if drag.kind == "paint":
+            if not drag.add:
+                services.selection.clear()
+                services.notify_selection_changed()
+            self.paint_at([start])
+        return drag.step(cursor)
+
+    def paint_at(self, points) -> None:
+        services = self.services
+        hits = {hit for hit in (services.pick(x, y) for x, y in points) if hit is not None}
+        before = len(self.active_selection_ids())
+        services.selection.add(hits)
+        if len(self.active_selection_ids()) != before:
+            services.notify_selection_changed()
+
+    def active_selection_ids(self) -> set:
+        selection = self.services.selection
+        if selection.mode is SelectionMode.VERTEX:
+            return selection.vertices
+        if selection.mode is SelectionMode.EDGE:
+            return selection.edges
+        return selection.faces
+
+    def selected_text(self) -> str:
+        count = len(self.active_selection_ids())
+        noun = self.services.selection.mode.name.lower()
+        if count != 1:
+            noun = "vertices" if noun == "vertex" else noun + "s"
+        return f"{count} {noun} selected"
+
+    def region_occlusion(self) -> bool:
+        """The occlusion rule of a Box / Lasso release: only what is visible while faces are shown, unless Alt is
+        held (`Application.selection_through`)."""
+        return self.services.display.show_faces and not self.services.modifiers[2]

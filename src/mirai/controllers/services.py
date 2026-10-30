@@ -136,6 +136,16 @@ class AppServices:
     def pick_face(self, x: float, y: float):
         return self._app._pick_face_at(x, y)
 
+    def pick_in_rect(self, rect, occlusion: bool) -> set:
+        """The elements of the active mode inside a window rectangle (GPU ID buffers, else the CPU picker). Reason
+        for the member (AD-027 M5): Box Select's release picks a region; picking stays in `Application` (§3.4)."""
+        return self._app._elements_in_rect(rect, occlusion)
+
+    def pick_in_polygon(self, polygon, occlusion: bool) -> set:
+        """The elements of the active mode inside a window polygon (as `pick_in_rect`). Reason for the member
+        (AD-027 M5): Lasso Select's release."""
+        return self._app._elements_in_polygon(polygon, occlusion)
+
     def soft_preview_refresh(self, *args, **kwargs) -> None:
         self._app._soft_preview_refresh(*args, **kwargs)
 

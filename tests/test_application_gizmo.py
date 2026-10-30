@@ -486,3 +486,24 @@ def test_f8_cycles_the_session_gizmo_size_and_picking_follows(app):
     tip = gizmo.gizmo_size(app.camera, pivot, gizmo.GIZMO_SIZES["L"]) * 0.95
     assert app.gizmo_items()[0].positions[3] == pytest.approx(tip / 0.95)
     assert app._gizmo_handle_at(*_screen(app, (tip, 0.0, 0.0))) == "x"
+
+
+def test_a_preview_opened_during_a_handle_press_leaves_the_press_its_release(app):
+    """AD-027 §7.1 (M5): the handle press is a press session beside the slot's session - Alt+M while LMB is held on
+    a handle opens the Re-Symmetrize preview, and the release still belongs to the press (a click on the handle:
+    True, no click for the preview to refuse), as before the interaction slot."""
+    app.key_press(K1)
+    vid = _vertex(app.scene.mesh, 1.0, 0.0)
+    app.selection.set({vid})
+    app.viewport.on_selection_changed()
+    assert app.key_press(_key("s", "shift"))  # symmetry X
+    point = _on_handle(app, (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    app.pointer_motion(*point)
+    app.pointer_press(_mouse("LEFT"), *point)
+    assert app.gizmo_constraint == "y"
+    assert app.key_press(_key("m", "alt")) is True
+    assert app.interaction_owner == "resymmetrize"
+    status = app.status_message
+    assert app.pointer_release("LEFT", *point) is True
+    assert app.status_message == status  # no "Vorschau aktiv" hint: the preview never saw a click
+    assert app.interaction_owner == "resymmetrize" and app.selection.vertices == {vid}

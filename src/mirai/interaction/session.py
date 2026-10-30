@@ -1,17 +1,20 @@
 """The interaction slot (AD-027 §3.2): one running session, the held keys beside it, one routing rule.
 
 A **session** is an interaction that runs over several events and owns some input while it runs (the
-Re-Symmetrize preview, later the Knife, a held W/E/R, a drag selection). At most one runs. A **hold
-key** is a held key that changes what the pointer does (Working Pivot, Lasso, Light, Morph weight);
-several may be held and a session may start while one is held. Modes (component mode, object mode, a
-morph target's editing view) are not sessions: `can_run` reads them, they own no input.
+Re-Symmetrize preview, the Knife, later a held W/E/R). At most one runs. A **press session** is an
+owner-less pointer session that lives exactly from one LMB press to that press's release (a drag selection,
+a press on a gizmo handle, a refused drag gesture that swallows the rest of its drag); at most one runs, and a
+session may start while it runs, as it could before (AD-027 §7.1, M5). A **hold key** is a held key that
+changes what the pointer does (Working Pivot, Lasso, Light, Morph weight); several may be held and a session
+may start while one is held. Modes (component mode, object mode, a morph target's editing view) are not
+sessions: `can_run` reads them, they own no input.
 
 Precedence is fixed by kind, not by start order (AD-027 §1.1, V1-V7), and lives only in
 `InteractionSlot.route`:
 
 1. **grab** - a session that `grabs(event)` decides the event alone;
 2. **hold claims**, in rank order;
-3. **session** - `session.handle(event)`;
+3. **session** - `session.handle(event)`, then the press session's;
 4. **hold background**, in rank order;
 5. **idle** - whatever the caller does when everything answered `PASS`.
 
@@ -228,11 +231,13 @@ class InteractionSlot:
 
     def __init__(self) -> None:
         self.session: Optional[Session] = None
+        #: The LMB press's own pointer session (owner None, never exclusive), None = none.
+        self.press: Optional[Session] = None
         self._holds: dict[str, HoldKey] = {}
 
     @property
     def owner(self) -> Optional[str]:
-        """The running session's `interaction_owner` value (None = none, or a pointer-only session)."""
+        """The running session's `interaction_owner` value (None = none; a press session owns no keys)."""
         return None if self.session is None else self.session.owner
 
     @property
@@ -246,6 +251,15 @@ class InteractionSlot:
     def end(self, session: Session) -> None:
         assert self.session is session, f"{session!r} is not the running session"
         self.session = None
+
+    def start_press(self, session: Session) -> None:
+        assert self.press is None, f"press slot busy: {self.press!r}"
+        assert session.owner is None and not session.exclusive, session
+        self.press = session
+
+    def end_press(self, session: Session) -> None:
+        assert self.press is session, f"{session!r} is not the running press session"
+        self.press = None
 
     def hold(self, hold: HoldKey) -> None:
         assert hold.command in self.HOLD_RANK, hold.command
@@ -271,9 +285,13 @@ class InteractionSlot:
         return PASS
 
     def handle(self, event: Event) -> Outcome:
-        """Stage 3: the running session."""
-        session = self.session
-        return PASS if session is None else session.handle(event)
+        """Stage 3: the running session, then the press session."""
+        for session in (self.session, self.press):
+            if session is not None:
+                outcome = session.handle(event)
+                if outcome is not PASS:
+                    return outcome
+        return PASS
 
     def background(self, event: Event) -> Outcome:
         """Stage 4: the hold keys' background, in rank order."""
@@ -293,6 +311,10 @@ class InteractionSlot:
         return PASS
 
     def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
-        """The running session's `allows` (None without a session)."""
-        session = self.session
-        return None if session is None else session.allows(command, ctx)
+        """The running session's `allows`, then the press session's (None without either)."""
+        for session in (self.session, self.press):
+            if session is not None:
+                refusal = session.allows(command, ctx)
+                if refusal is not None:
+                    return refusal
+        return None
