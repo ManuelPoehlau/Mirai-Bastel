@@ -92,7 +92,7 @@ def test_visible_vertex_stays_hoverable_in_shaded(app):
 
 
 def test_knife_cannot_target_a_hidden_vertex_in_shaded_but_can_in_wireframe(app):
-    """Uses the raw `knife_pick()` target (via `app._knife_pick`) rather than
+    """Uses the raw `knife_pick()` target (via `app._knife.pick`) rather than
     the rendered preview: at the hidden vertex's exact screen position, a
     coincidentally nearby *visible* edge may legitimately win once the vertex
     itself is excluded (its own separate `max_pixel_distance`) - what matters
@@ -103,11 +103,11 @@ def test_knife_cannot_target_a_hidden_vertex_in_shaded_but_can_in_wireframe(app)
     _front, hidden = _front_and_hidden(app)
     pos = _vertex_screen(app, hidden)
 
-    shaded_target = app._knife_pick(*pos)
+    shaded_target = app._knife.pick(*pos)
     assert not (shaded_target.get("kind") == "vertex" and shaded_target.get("vertex_id") == hidden)
 
     app.dispatch_command(cmd.SET_WIREFRAME)
-    wireframe_target = app._knife_pick(*pos)
+    wireframe_target = app._knife.pick(*pos)
     assert wireframe_target == {"kind": "vertex", "vertex_id": hidden}
 
 

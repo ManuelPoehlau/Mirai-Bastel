@@ -355,3 +355,27 @@ HOLD_COMMANDS = frozenset(
         MORPH_WEIGHT_DRAG, PIVOT_PLACE,
     }
 )
+
+# --- View-state groups (AD-027 M3) ---------------------------------------------------------------------------
+#: WP-06 B5a (E42): the display commands, all through the existing `DisplayState` transitions.
+DISPLAY_COMMANDS = (
+    CYCLE_DISPLAY_MODE,
+    TOGGLE_WIREFRAME_OVERLAY,
+    SET_SHADED,
+    SET_FLAT_SHADED,
+    SET_WIREFRAME,
+    TOGGLE_REFERENCE_GHOST,
+    CYCLE_LIGHT_PRESET,
+    TOGGLE_LIGHT_SPACE,
+    TOGGLE_REGION_TINT,
+)
+#: AD-024 §8 (`PROVISIONAL`): the Look rows - choose a row, step its value. Light rows are view state (no Undo
+#: step), allowed at any time like the display keys.
+LOOK_COMMANDS = (
+    LOOK_ROW_PREV,
+    LOOK_ROW_NEXT,
+    LOOK_VALUE_DEC,
+    LOOK_VALUE_INC,
+    LOOK_VALUE_DEC_FINE,
+    LOOK_VALUE_INC_FINE,
+)

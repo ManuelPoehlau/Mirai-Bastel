@@ -439,7 +439,7 @@ def test_knife_cuts_a_layered_mesh_by_its_rule(symmetric):
         app.pointer_motion(sx, sy)
         app.pointer_press(LMB, sx, sy)
         assert app.pointer_release("LEFT", sx, sy), app.status_message
-    path = [dict(p) for p in app._knife.path]
+    path = [dict(p) for p in app._knife.tool.path]
     interior = [p for p in path if p["kind"] == "face"]
     assert len(interior) == 2 and all("origin" in p for p in interior)
     for p in interior:  # the origin is the hit triangle's barycentrics; p + d is on the drawn target

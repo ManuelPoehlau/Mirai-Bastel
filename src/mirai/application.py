@@ -64,15 +64,6 @@ from core.serialization import scene_from_json, scene_to_json
 from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
-from viewport.overlay import (
-    TOOL_ACTIVE_LAYER,
-    TOOL_CLIPPED_LAYER,
-    TOOL_MIRROR_DIM_LAYER,
-    TOOL_MIRROR_LAYER,
-    TOOL_MIRROR_PREVIEW_LAYER,
-    TOOL_PREVIEW_LAYER,
-    TOOL_REFUSED_LAYER,
-)
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
@@ -87,9 +78,9 @@ from .mask import (
 )
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import KNIFE_MIRROR_VARIANT_KEY, KeymapLoad, build_default_bindings, load_keymap
-from .interaction.input import KNIFE_CONTEXT, MORPH_CONTEXT, SUBD_CONTEXT
+from .interaction.input import MORPH_CONTEXT, SUBD_CONTEXT
 from .interaction.dial import PRECISION_GAIN, DialAngle
-from .interaction.pointer import CLICK_THRESHOLD_PX, Click, DragStep, PointerGestures
+from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
@@ -159,14 +150,19 @@ from .symmetry import mirrored_selection, vertex_correspondence
 from .symmetry_display import SymmetryDisplay
 from .resymmetrize import ResymPlan
 from .controllers.services import AppServices
+from .controllers.knife import KnifeController
 from .controllers.symmetry import SymmetryController
 from .interaction.session import (
     PASS,
     SILENT,
+    Command,
     Drag,
     Hover,
     InteractionSlot,
     KeyPress,
+    Leave,
+    Modifiers,
+    Motion,
     Press,
     Refusal,
     Release,
@@ -181,10 +177,7 @@ from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
 from .topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
-from .topology.face_geometry import GEO_EPS
-from .topology.knife import CLOSE_NEEDS, EARLIER_INTERIOR, TOO_CLOSE, KnifeTool
-from .topology.knife_pick import knife_pick, snap_own_point, space_point
-from .topology.knife_preview import KnifeRenderData, build_knife_render_data
+from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
 from .topology.loop_slide import (
@@ -206,7 +199,6 @@ from .topology.vertex_slide import (
     plan_vertex_slide,
     vertex_slide_positions,
 )
-from .symmetric_knife import KnifeRefusal, SymmetricKnifeView
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import (
     DRAG_PIXELS_PER_PERCENT as MORPH_DRAG_PIXELS_PER_PERCENT,
@@ -227,7 +219,6 @@ from .morph_targets import (
     view_state,
     world_width,
 )
-from .subdivision.preview import key_label
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
@@ -355,30 +346,9 @@ _CONSTRAINT_SPACES: dict[str, str] = {
 }
 
 
-#: WP-06 B5a (E42): Display-Commands, alle über die bestehenden
-#: `DisplayState`-Übergänge.
-_DISPLAY_COMMANDS = (
-    commands.CYCLE_DISPLAY_MODE,
-    commands.TOGGLE_WIREFRAME_OVERLAY,
-    commands.SET_SHADED,
-    commands.SET_FLAT_SHADED,
-    commands.SET_WIREFRAME,
-    commands.TOGGLE_REFERENCE_GHOST,
-    commands.CYCLE_LIGHT_PRESET,
-    commands.TOGGLE_LIGHT_SPACE,
-    commands.TOGGLE_REGION_TINT,
-)
-
-#: AD-024 §8 (`PROVISIONAL`): the Look rows - choose a row, step its value. Light rows are view state
-#: (no Undo step), allowed at any time like the display keys.
-_LOOK_COMMANDS = (
-    commands.LOOK_ROW_PREV,
-    commands.LOOK_ROW_NEXT,
-    commands.LOOK_VALUE_DEC,
-    commands.LOOK_VALUE_INC,
-    commands.LOOK_VALUE_DEC_FINE,
-    commands.LOOK_VALUE_INC_FINE,
-)
+#: WP-06 B5a (E42) and AD-024 §8: the display and Look commands (groups in `commands` since AD-027 M3).
+_DISPLAY_COMMANDS = commands.DISPLAY_COMMANDS
+_LOOK_COMMANDS = commands.LOOK_COMMANDS
 
 _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
     commands.SET_SHADED: DisplayMode.SHADED,
@@ -556,22 +526,6 @@ _DRAG_SELECT_ALLOWS = frozenset(
         *SUBD_COMMANDS,
     }
 )
-#: What a Knife session lets through from outside its own key map (AD-017; AD-027 §3.3: its commands, Cancel,
-#: Undo/Redo into its isolated history, view state). Its keys never ask: the session resolves them itself.
-_KNIFE_ALLOWS = frozenset(
-    {
-        commands.KNIFE_COMMIT,
-        commands.KNIFE_LIFT,
-        commands.KNIFE_MIRROR_VARIANT,
-        commands.CANCEL,
-        commands.UNDO,
-        commands.REDO,
-        commands.TOGGLE_ORTHO,
-        *_DISPLAY_COMMANDS,
-        *_LOOK_COMMANDS,
-    }
-)
-
 #: The commands a key runs through `_execute` once `can_run` let them through: pure display and view state (allowed
 #: while a transform runs), the Soft settings (state only, like the constraints: they apply to the next gesture - or
 #: to this one if it is armed and has not begun yet; symmetric Soft refuses at `begin()`, AD-SYM-04 SS2), and the
@@ -695,77 +649,6 @@ def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
         frozenset(selection.objects),
     )
 
-
-# WP-KNIFE-01 S3 (PROVISIONAL wording, decision.md "One Knife S3"): status for a refused Knife click
-# by the tool's reason - the S3 cases are named, every other refusal keeps the S2 text.
-_KNIFE_REFUSED = {
-    TOO_CLOSE: "Knife: too close to an edge - click on the edge or further inside the face",
-    CLOSE_NEEDS: "Knife: closing a shape needs at least 3 points",
-    EARLIER_INTERIOR: "Knife: an earlier point inside a face cannot be clicked again (not yet)",
-}
-
-
-# WP-KNIFE-01 UX2 (D7, decision.md "WP-KNIFE-01 UX2"): two Knife clicks this close in time (s) and
-# place (px) are a double-click.
-KNIFE_DOUBLE_CLICK_S = 0.35
-KNIFE_DOUBLE_CLICK_PX = 4.0
-
-# AD-SYM-03 slice 6c (PROVISIONAL, the Artist's call in the 6c practical test, removed or kept in 6d): the three
-# looks of the mirror side in a symmetric Knife session, switched inside the session by one provisional key.
-# V-a: drawn like the working side's own preview (path lines depth-tested, points through); V-b: always
-# visible (no depth test), dimmed; V-c: the mirror's points only. Default V-b: from a side camera every
-# mirror point is hidden (KD 2.7), so V-a can show nothing there.
-KNIFE_MIRROR_VARIANTS = ("V-a", "V-b", "V-c")
-KNIFE_MIRROR_VARIANT_DEFAULT = "V-b"
-KNIFE_MIRROR_VARIANT_LABELS = {
-    "V-a": "wie die eigene Vorschau, verdeckt",
-    "V-b": "immer sichtbar, gedimmt",
-    "V-c": "nur Punkte",
-}
-#: The provisional variant key (`KNIFE_MIRROR_VARIANT_KEY`, imported above) is the default of
-#: `commands.KNIFE_MIRROR_VARIANT` in `KNIFE_CONTEXT` since 2026-10-28 (AD-013 addendum, K-1; a literal before).
-#: The Knife session is never gated (`key_press` routes to it first).
-
-# The preview builder ends a chain at a "closed" break only; a pen lift is drawn the same way.
-_KNIFE_DRAWN_LIFT = {"kind": "break", "reason": "closed", "cyclic": False}
-
-
-def _knife_notes(res) -> list[str]:
-    """What the commit joined or dropped (`KnifeResolution`), for the status line. Nothing of it is
-    shown while cutting (Artist, 2026-09-30: the join to the nearest corner is made at commit only)."""
-    if res is None:
-        return []
-    notes = []
-    if res.joined:
-        notes.append(f"{res.joined} last point(s) inside a face joined to the nearest corner")
-    if res.dropped_tail:
-        notes.append("a last point inside a face could not be joined to a corner - dropped")
-    if res.dropped_lead:
-        notes.append("first point(s) inside a face before any edge or vertex dropped")
-    rejected = [shape for shape in res.closed_shapes if not shape.built]
-    if rejected:
-        notes.append(f"{len(rejected)} closed shape(s) could not be built")
-    if res.short_shapes:
-        notes.append(f"{len(res.short_shapes)} shape(s) inside a face with fewer than 3 points dropped")
-    if res.skipped_shapes:
-        notes.append(f"{res.skipped_shapes} closed shape(s) skipped - their face was already cut")
-    for reason, n in sorted(res.loops_dropped.items()):
-        notes.append(f"{n} loop(s) closed at a point dropped ({reason})")
-    if res.lost_continuation:
-        notes.append("the cut on from an interior start point dropped")
-    return notes
-
-
-def _knife_plan_notes(plan) -> list[str]:
-    """What a click's segment across faces left uncut (WP-KNIFE-01 S4, PROVISIONAL wording)."""
-    notes = []
-    if plan.hidden:
-        notes.append(f"{plan.hidden} hidden crossing(s) not cut")
-    if "gap" in plan.skipped:
-        notes.append("skipped: over a hole, border or hidden part")
-    if plan.method and "edge" in plan.skipped:
-        notes.append("skipped: along an existing edge")
-    return notes
 
 @dataclasses.dataclass(frozen=True)
 class CommandGate:
@@ -1052,29 +935,8 @@ class Application:
         self._morph_drag_rest = 0.0
         self._morph_ab: dict[tuple, int] = {}  # (ObjectId, LayerId) -> the weight a tap returns to
 
-        # WP-06 B7.1 (AD-017 Knife; click-only = Artist decision Manu 2026-09-28,
-        # after the B7 window test: press-slide-release was redundant with the
-        # live hover preview): laufende Knife-Session (None = keine). `KnifeTool`
-        # hält Mesh-Schritte, Start und Pfad; hier liegt nur der Interaktions-
-        # zustand: das gültige prospektive Ziel (None = keins oder ungültig),
-        # die hervorgehobene Edge (gehovert) und ob die LMB-Geste des Knife
-        # gerade gehalten wird (nur zur Klick-Schwellen-Erkennung).
-        # `_knife_selection_before` ist der Snapshot vor der Session für den
-        # Selection-Mirror-Stack beim Commit.
-        self._knife: KnifeTool | None = None
-        self._knife_selection_before: tuple | None = None
-        self._knife_target: dict | None = None
-        self._knife_highlight_edge: EdgeId | None = None
-        self._knife_gesture: bool = False
-        self._knife_gesture_moved: float = 0.0
-        # WP-KNIFE-01 UX2: the gesture's button (LMB = a point, RMB = pen lift),
-        # Shift at the press (midpoint snap; the gesture is fixed at the press,
-        # AD-019), and the last LMB click (time, x, y) for the double-click on
-        # `knife_clock` (injectable for headless tests).
-        self._knife_gesture_button: str = "LEFT"
-        self._knife_gesture_midpoint: bool = False
-        self._knife_last_click: tuple[float, float, float] | None = None
-        self.knife_clock = time.monotonic
+        # The Knife session (AD-017, `controllers.knife` since AD-027 M3): its settings live in the controller.
+        self._knife = KnifeController(self._services)
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -1091,15 +953,6 @@ class Application:
         # the pointer across the viewport edge (cursor wrap, 2026-10-22) without a jump in the gesture.
         self._rotate_press: tuple[float, float] | None = None
         self._rotate_virtual: tuple[float, float] | None = None
-        # WP-KNIFE-01 S4: where the hovered segment crosses edges (the planner's dots).
-        self._knife_hover_crossings: tuple = ()
-        # AD-SYM-03 slice 6c: the running session's symmetry view (None = no definition at begin: the Knife
-        # as it always was), the hovered target a click is refused for (and the text shown for it), and the
-        # provisional mirror preview variant (kept across sessions of this Application).
-        self._knife_view: SymmetricKnifeView | None = None
-        self._knife_refused: dict | None = None
-        self._knife_refused_text: str | None = None
-        self.knife_mirror_variant: str = KNIFE_MIRROR_VARIANT_DEFAULT
 
         # 2026-10-15 (Playground tools promoted, Manu): the press point of the current LMB
         # gesture (Box/Paint/Tweak decide by it), the running drag selection, the transform a
@@ -2390,9 +2243,14 @@ class Application:
         own calls, which run after their gate, use `_execute`.
         """
         self.flush_hover()
-        refusal = self.can_run(command, RunContext("api"))
+        ctx = RunContext("api")
+        refusal = self.can_run(command, ctx)
         if refusal is not None:
             return self._refused(refusal)
+        # AD-017 history isolation: during a Knife session never the global history - also not through the API.
+        grabbed = self.interaction.grab(Command(command, ctx))
+        if grabbed is not PASS:
+            return grabbed
         return self._execute(command, context)
 
     def _execute(self, command: str, context: Optional[dict] = None) -> bool:
@@ -2405,10 +2263,6 @@ class Application:
         if tool_class:
             return self.tool_manager.activate(command, context=context)
 
-        if self._knife is not None and command in (commands.UNDO, commands.REDO):
-            # AD-017 history isolation: während einer Knife-Session nie die
-            # globale History - auch nicht über den direkten Command-Pfad.
-            return self._knife_history_step(command)
         if command in (commands.UNDO, commands.REDO):
             self._apply_undo_redo(command)
             return True
@@ -2540,7 +2394,7 @@ class Application:
         dispatch as the Playground `window.py`) and applies Split / Edge
         Connect / Vertex Connect through the shared `mirai.topology`
         implementation; an empty selection begins a Knife session (WP-06
-        B7, `_knife_begin`). Mutates only through
+        B7, `KnifeController.begin`). Mutates only through
         `Mesh.split_edge`/`Mesh.connect_vertices` (ARCH-02); exactly one
         `MeshDeltaCommand` per success, mesh and history untouched on
         rejection or no-op. Each success branch reports the topology change
@@ -2632,7 +2486,7 @@ class Application:
             return True
 
         if ctx is CContext.KNIFE:
-            return self._knife_begin()
+            return self._knife.begin(self._connect_coordinator(ctx))
 
         # CContext.NONE: 1 vertex, Face mode, or another combination with no
         # C meaning (AD-017 §7).
@@ -3773,311 +3627,39 @@ class Application:
         self._soft_preview_refresh()
         self._refresh_hover()
 
-    # -- Knife session (WP-06 B7 / B7.1, AD-017) ---------------------------------
+    # -- Knife session (WP-06 B7 / B7.1, AD-017; `controllers.knife` since AD-027 M3) ----------------------
     #
-    # Click-only interaction (Artist decision Manu 2026-09-28, after the B7
-    # window test: press -> slide -> release was redundant with the live hover
-    # preview, which already slides along the edge while hovering) = Playground
-    # Variant A only: hover preview, a click cuts at the previewed position,
-    # start highlight, and a line preview from the start to the prospective
-    # point. Session engine, in-session history, commit/cancel and residue are
-    # `KnifeTool`'s (AD-017 DECIDED); this section only routes input and builds
-    # render data. Blender-style drag cutting (Variant B / F1 edge lock) is a
-    # possible Knife V2 idea — not built, not prepared; the Playground's own
-    # Variant B (`project_locked_edge` in `mirai.topology.knife_pick`) is
-    # unaffected (AD-013 A2, contextual deviation).
-    #
-    # WP-KNIFE-01 S2 (KEEP 2026-10-01): a click adds a point to the session's
-    # virtual path; the mesh is cut at commit (`Enter`). The
-    # session is drawn from the path (`knife_render_data`), so neither the
-    # mesh nor the pick cache changes while clicking.
-    #
-    # WP-KNIFE-01 S3 (PROVISIONAL): a click inside a face is a point too
-    # (`knife_pick` face hit, the session's own interior points snap); the
-    # status line names the S3 refusals and closes, and at commit what the
-    # resolver joined or dropped (`_knife_notes`).
-    #
-    # WP-KNIFE-01 UX2 (PROVISIONAL, Artist 2026-10-02): `E` / an RMB click
-    # lift the pen (the chain ends, nothing is committed), a double-click
-    # closes the chain and lifts; a click outside the mesh does nothing (S4:
-    # it is a point in space now, below); Shift+click on an edge places the
-    # point at its midpoint.
-    #
-    # WP-KNIFE-01 UX2b (PROVISIONAL, Artist 2026-10-02): while Shift is held
-    # (`set_shift_held`, from the window) the hover already shows that midpoint.
-    #
-    # WP-KNIFE-01 S4 (PROVISIONAL): the live camera, viewport size, pick cache and
-    # occlusion switch go to the `KnifeTool` at hover and click time, so a far
-    # click is planned across faces with the camera of that click (crossing dots
-    # while hovering). A click outside the mesh is a point in space and cuts
-    # (Manu 2026-10-02, Blender); the hover line runs to the cursor over empty
-    # space, after the click only the cuts commit will make are drawn.
+    # The session, its routing and its render data are `KnifeController` / `KnifeSession`'s; `C` begins it
+    # (`_connect_command`), the slot routes its input. What stays here is the public read API.
 
     @property
     def knife_active(self) -> bool:
         """A Knife session is running (`C` with an empty selection)."""
-        return self._knife is not None
+        return self._knife.session is not None
 
     @property
     def knife_render_data(self) -> KnifeRenderData | None:
         """What the running session shows (headless), None without a session."""
-        if self._knife is None:
-            return None
-        data = build_knife_render_data(
-            self.scene.mesh,
-            [_KNIFE_DRAWN_LIFT if p.get("reason") == "lift" else p for p in self._knife.path],
-            self._knife_target,
-            self._knife_highlight_edge,
-            self._knife_hover_crossings,
-            symmetry=self._knife_view,
-            refused=self._knife_refused,
-            pen_up=self._knife_view is not None and self._knife.last_point is None,
-        )
-        if self._knife_view is None and self._knife.last_point is None:
-            # After a pen lift no point starts the next segment: no start marker, no rubber band.
-            data = dataclasses.replace(data, start_point=None, line_preview=None)
-        return data
+        return self._knife.render_data()
 
-    def _knife_begin(self) -> bool:
-        if self.viewport is None:
-            return False
-        # AD-SYM-03 slice 6c: whenever a symmetry definition is set the session runs the declared
-        # coordinator (`mirai.symmetry_declarations`, D-b - the declaration is the only switch) and
-        # gets the session view that previews and refuses with the commit's own rules. A plane the
-        # coordinator cannot handle starts no session at all.
-        coordinator = self._connect_coordinator(CContext.KNIFE)
-        view = None
-        if coordinator is not None:
-            try:
-                view = SymmetricKnifeView(self.scene.mesh)
-            except KnifeRefusal as exc:
-                self._set_status(str(exc))
-                return False
-        self._knife_selection_before = self._selection_snapshot()
-        knife = KnifeTool()
-        knife.activate()
-        knife.begin(mesh=self.scene.mesh, scene=self.scene, selection=self.selection,
-                    **({} if view is None else {"symmetric_commit": coordinator, "symmetric_view": view}))
-        self._knife = knife
-        self._knife_view = view
-        self._knife_refused = None
-        self._knife_refused_text = None
-        # R-SEL-2 (as in the Playground): the Knife draws its own preview, the
-        # selection hover must not stay drawn underneath it.
-        self._set_hovered(None)
-        self._refresh_hover()
-        self._set_status(
-            "Knife: click on vertices, edges, inside faces or outside the mesh to cut - a far click cuts"
-            " across faces, Shift+click = edge midpoint, E / right-click = new cut (pen lift),"
-            " double-click = close + lift, Enter = commit, Esc = cancel, Ctrl+Z / Ctrl+Y = undo / redo"
-            + ("" if view is None else f" - {self._knife_mirror_text()}")
-        )
-        return True
+    @property
+    def knife_clock(self) -> Callable[[], float]:
+        """The Knife's double-click clock (`time.monotonic`; injectable for headless tests)."""
+        return self._knife.clock
 
-    def _knife_mirror_text(self) -> str:
-        """The symmetric session's note in the status line: the active mirror preview variant and its key."""
-        variant = self.knife_mirror_variant
-        # The bound key, not a literal (as `SymmetryController.summary`): a keymap.json rebinding shows up here.
-        bound = [inp for inp in self.bindings.inputs_for(commands.KNIFE_MIRROR_VARIANT, KNIFE_CONTEXT)
-                 if inp.kind == "key"]
-        return (f"Spiegelvorschau {variant} ({KNIFE_MIRROR_VARIANT_LABELS[variant]}), "
-                f"Taste {key_label(bound[0]) if bound else '?'} wechselt V-a / V-b / V-c")
+    @knife_clock.setter
+    def knife_clock(self, clock: Callable[[], float]) -> None:
+        self._knife.clock = clock
 
-    def _knife_say(self, message: str) -> None:
-        """A Knife status message; a symmetric session names its mirror preview variant in it."""
-        if self._knife_view is not None:
-            message += f" [Spiegel {self.knife_mirror_variant}]"
-        self._set_status(message)
+    @property
+    def knife_mirror_variant(self) -> str:
+        """The provisional mirror preview variant of a symmetric Knife session (AD-SYM-03 slice 6c), kept across
+        sessions of this app."""
+        return self._knife.mirror_variant
 
-    def _knife_cycle_variant(self) -> bool:
-        """The provisional variant key: V-a -> V-b -> V-c -> V-a (symmetric session only)."""
-        order = KNIFE_MIRROR_VARIANTS
-        self.knife_mirror_variant = order[(order.index(self.knife_mirror_variant) + 1) % len(order)]
-        self._knife_sync_overlay()
-        self._set_status(f"Knife: {self._knife_mirror_text()}")
-        return True
-
-    def _knife_key(self, input: Input) -> bool:
-        """Session Gate: only commit, cancel, the pen lift, the in-session
-        Undo/Redo and the Ortho toggle (view state) pass; every other key (W/R, 1/2/3, D/Shift+D, C, X/Y/Z, ...)
-        is ignored."""
-        command = self.bindings.command_for(input, KNIFE_CONTEXT)
-        self._knife_last_click = None     # a key between two clicks is no double-click
-        if command == commands.KNIFE_MIRROR_VARIANT:
-            return self._knife_cycle_variant() if self._knife_view is not None else False
-        if command == commands.CANCEL:
-            return self._knife_end(commit=False)
-        if command == commands.KNIFE_COMMIT:
-            return self._knife_end(commit=True)
-        if command == commands.KNIFE_LIFT:
-            return False if self._knife_gesture else self._knife_lift()
-        if command in (commands.UNDO, commands.REDO):
-            return self._knife_history_step(command)
-        if command == commands.TOGGLE_ORTHO:
-            # View state like the orbit, which the session allows; the planner plans with the live camera.
-            return self._toggle_ortho()
-        return False
-
-    def _knife_owns_press(self, input: Input) -> bool:
-        # The unmodified and the Shift-only LMB (midpoint snap, UX2 D11) are the
-        # Knife's, and a button bound to KnifeLift (RMB); Alt+LMB (orbit / pan),
-        # Ctrl+LMB and the other buttons keep going through the pointer gestures.
-        if input.kind != "mouse" or self.pointer.active or self._knife_gesture:
-            return False
-        if input.value == "LEFT" and input.modifiers <= {"shift"}:
-            return True
-        return self.bindings.command_for(input, KNIFE_CONTEXT) == commands.KNIFE_LIFT
-
-    def _knife_press(self, input: Input) -> None:
-        """Press: only starts the click-threshold gesture (B7.1); the preview
-        is recomputed with the press's own Shift (the click decides by the
-        press modifiers, AD-019) - with a held Shift the hover showed the same
-        midpoint already (UX2b)."""
-        self._knife_gesture = True
-        self._knife_gesture_moved = 0.0
-        self._knife_gesture_button = input.value
-        self._knife_gesture_midpoint = input.value == "LEFT" and "shift" in input.modifiers
-        if self._cursor is None or input.value != "LEFT":
-            return
-        self._knife_set_preview(self._knife_pick(*self._cursor, midpoint=self._knife_gesture_midpoint))
-
-    def _knife_drag(self, dx: float, dy: float) -> bool:
-        """LMB held and moved: only tracks distance for the click threshold
-        (B7.1, no slide) - a drag past the threshold neither locks nor cuts."""
-        self._knife_gesture_moved += abs(dx) + abs(dy)
-        return False
-
-    def _knife_release(self, x: float, y: float) -> bool:
-        """Release: press+release under the click threshold is a click - LMB
-        adds the point at the cursor, the second LMB click of a double-click
-        finishes the chain, an RMB click lifts the pen; a press that moved past
-        the threshold is not a click and does nothing (Playground click rule,
-        B7.1). A click outside the mesh adds a point in space (S4); it never
-        commits."""
-        moved = self._knife_gesture_moved
-        self._knife_gesture = False
-        self._knife_gesture_moved = 0.0
-        last, self._knife_last_click = self._knife_last_click, None
-        if moved >= CLICK_THRESHOLD_PX:
-            self._refresh_hover()
-            return False
-        if self._knife_gesture_button != "LEFT":
-            return self._knife_lift()
-        now = self.knife_clock()
-        if (
-            last is not None
-            and now - last[0] <= KNIFE_DOUBLE_CLICK_S
-            and math.hypot(x - last[1], y - last[2]) <= KNIFE_DOUBLE_CLICK_PX
-            and self._knife.plan_lift(close=True).ok
-        ):
-            return self._knife_lift(finish=True)
-        target = self._knife_pick(x, y, midpoint=self._knife_gesture_midpoint)
-        self._knife_last_click = (now, x, y)
-        if not self._knife.click(target):
-            plan = self._knife.last_plan
-            # A symmetric refusal (F3 = A) carries its own status text; the click was ignored.
-            self._set_status(plan.reason if plan.refused
-                             else _KNIFE_REFUSED.get(plan.reason, "Knife: no valid cut target here"))
-            self._refresh_hover()
-            return False
-        # WP-KNIFE-01 S2: a click only adds a point to the session's path - the
-        # mesh (and with it the pick cache) is unchanged until commit.
-        plan = self._knife.last_plan
-        cuts = len(self._knife.cut_segments)
-        segments = f"{cuts} path {'segment' if cuts == 1 else 'segments'}"
-        crossings = f"{len(plan.crossings)} crossing(s)" if plan.crossings else "the line crosses nothing"
-        if plan.start:
-            where = " on an earlier point" if plan.earlier else " in space" if target["kind"] == "space" else ""
-            status = "Knife: start point set" + where
-        elif plan.closing:
-            status = f"Knife: shape closed - the next click cuts on from its start ({segments})"
-        elif plan.skip:
-            status = f"Knife: along an existing edge - nothing to cut ({segments})"
-        elif target["kind"] == "space":
-            status = f"Knife: point in space - {crossings} ({segments})"
-        elif plan.method:
-            status = f"Knife: cut across {crossings} ({segments})"
-        else:
-            status = f"Knife: cut ({segments})"
-        self._knife_say("; ".join([status] + _knife_plan_notes(plan)))
-        self._refresh_hover()
-        return True
-
-    def _knife_lift(self, finish: bool = False) -> bool:
-        """Pen lift (`E` / RMB click), or close + lift (`finish`, the double-click): the
-        chain ends, nothing is committed, the next click starts a new chain (UX2)."""
-        knife = self._knife
-        self._knife_set_view()   # the close may run across faces (S4)
-        if not (knife.finish_chain() if finish else knife.lift()):
-            self._set_status("Knife: nothing to lift")
-            return False
-        plan = knife.last_plan
-        what = "shape closed, pen lifted" if plan.closing or plan.replaces else plan.reason
-        self._knife_say(f"Knife: {what} - the next click starts a new cut")
-        self._refresh_hover()
-        return True
-
-    def _knife_history_step(self, command: str) -> bool:
-        """In-session Undo/Redo (AD-017 DECIDED): only the session's own steps,
-        never the global history. Ignored while the Knife's LMB is held."""
-        if self._knife_gesture:
-            return False
-        undo = command == commands.UNDO
-        done = self._knife.undo_step() if undo else self._knife.redo_step()
-        if not done:
-            self._set_status(f"Knife: nothing to {'undo' if undo else 'redo'}")
-            return False
-        self._knife_say("Knife: last cut undone" if undo else "Knife: cut redone")
-        self._refresh_hover()
-        return True
-
-    def _knife_end(self, commit: bool) -> bool:
-        """Enter = commit (exactly one history entry, residue = path edges
-        selected, Edge mode); Esc = cancel (mesh, selection and history exactly
-        as before the session)."""
-        knife = self._knife
-        before = self._knife_selection_before
-        if commit:
-            command = knife.commit()
-        else:
-            knife.cancel()
-            command = None
-        knife.deactivate()
-        self._knife = None
-        self._knife_selection_before = None
-        self._knife_gesture = False
-        self._knife_gesture_moved = 0.0
-        self._knife_last_click = None
-        self._knife_target = None
-        self._knife_highlight_edge = None
-        self._knife_hover_crossings = ()
-        self._knife_view = None
-        self._knife_refused = None
-        self._knife_refused_text = None
-        notes = _knife_notes(knife.last_resolution) if commit else []
-        if command is not None:
-            self._record_selection_history(before)
-            count = len(self.selection.edges)
-            status = f"Knife committed ({count} path {'edge' if count == 1 else 'edges'} selected)"
-            res = knife.last_resolution
-            if res is not None and res.applied < res.runs:
-                # Valid while clicking, dropped at commit (the run would have
-                # left its face) - the Q5 "N-1/N" note (WP-KNIFE-01 S2).
-                status += f" - {res.runs - res.applied} of {res.runs} cuts dropped"
-            self._set_status("; ".join([status] + notes))
-        elif commit and knife.last_problem is not None:
-            self._set_status(f"Knife: result taken back ({knife.last_problem}), nothing committed")
-        elif commit:
-            self._set_status("Knife: no cuts made, nothing committed" + (f" ({'; '.join(notes)})" if notes else ""))
-        else:
-            self._set_status("Knife cancelled")
-        self._pick_cache.invalidate()
-        self.viewport.set_tool_overlay()
-        self.viewport.on_topology_changed()
-        self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-        self._refresh_hover()
-        return True
+    @knife_mirror_variant.setter
+    def knife_mirror_variant(self, variant: str) -> None:
+        self._knife.mirror_variant = variant
 
     def set_shift_held(self, held: bool) -> bool:
         """The window reports whether any Shift key is held (WP-KNIFE-01 UX2b).
@@ -4093,137 +3675,10 @@ class Application:
             self._apply_orbit_virtual()
             self._camera_changed()
             return True
-        if self._knife is None or self._knife_gesture or self._cursor is None or self.pointer.active:
+        if self._cursor is None or self.pointer.active:
             return False
-        return self._knife_hover(*self._cursor)
-
-    def _knife_hover(self, x: float, y: float) -> bool:
-        return self._knife_set_preview(self._knife_pick(x, y, midpoint=self._shift_held))
-
-    def _knife_pick(self, x: float, y: float, midpoint: bool = False) -> dict:
-        """WP-06 B8: same cache/occlusion as `_pick()` - a hidden edge/vertex
-        cannot be a Knife target while faces are shown. WP-KNIFE-01 S2: then
-        the session's own edge points (`snap_own_point`) - a click on one
-        reaches that point again, as the real-cut Knife's split vertex did.
-        UX2 `midpoint` (Shift): an edge target moves to t = 0.5 - after the
-        own-point snap, which wins - or to an own point already there.
-        S4: the knife gets the live view first (the planner plans with the camera
-        of this hover / click); outside the mesh the target is a point in space."""
-        kwargs = {"cache": self._pick_cache, "occlusion": self.display.show_faces}
-        size = (self.viewport_width, self.viewport_height)
-        if self.display.show_faces:
-            # One Knife pick runs several occlusion tests (vertex, edge, face, own points): build the
-            # screen grid at once instead of after `GRID_AFTER_SCANS` whole-mesh scans.
-            self._pick_cache.refresh(self._edit_camera, self.scene.mesh, *size)
-            self._pick_cache.face_grid(self.scene.mesh, batch=True)
-        target = knife_pick(self._edit_camera, self.scene.mesh, x, y, *size, **kwargs)
-        if self._knife is None:
-            return target
-        self._knife_set_view()
-        # Also over "outside": the real-cut Knife's split vertex was caught by the
-        # 14 px vertex pick just off the silhouette too.
-        target = snap_own_point(
-            self._edit_camera, self.scene.mesh, x, y, *size, self._knife.snap_points, target, **kwargs
-        )
-        if target.get("kind") == "outside":
-            return {"kind": "space", "position": space_point(self._edit_camera, x, y, *size)}
-        if not midpoint or target.get("kind") != "edge":
-            return target
-        eid = target["edge_id"]
-        own = next((p for p in self._knife.snap_points if p["kind"] == "edge" and p["edge_id"] == eid
-                    and abs(p["t"] - 0.5) <= GEO_EPS), None)
-        return {"kind": "point", "pid": own["pid"]} if own is not None else dict(target, t=0.5)
-
-    def _knife_set_view(self) -> None:
-        """The live camera for the planner (S4) - set before every hover / click plan."""
-        self._knife.set_view(self._edit_camera, self.viewport_width, self.viewport_height,
-                             cache=self._pick_cache, occlusion=self.display.show_faces)
-
-    def _knife_set_preview(self, target: dict) -> bool:
-        """Prospective target = `target` only if the click would be accepted
-        (`KnifeTool.plan`, the same rules as `accepts`); invalid → no point, no
-        line (`PROVISIONAL`); S4: with the segment's planned crossings.
-        True = changed."""
-        plan = self._knife.plan(target)
-        prospective = target if plan.ok else None
-        highlight = target["edge_id"] if plan.ok and target.get("kind") == "edge" else None
-        crossings = tuple(tuple(c) for c in plan.crossings) if plan.ok else ()
-        refused = target if plan.refused else None
-        changed = (prospective, highlight, crossings, refused) != (
-            self._knife_target, self._knife_highlight_edge, self._knife_hover_crossings, self._knife_refused)
-        self._knife_target = prospective
-        self._knife_highlight_edge = highlight
-        self._knife_hover_crossings = crossings
-        self._knife_refused = refused
-        self._knife_refusal_status(plan.reason if plan.refused else None)
-        self._knife_sync_overlay()
-        return changed
-
-    def _knife_refusal_status(self, text: str | None) -> None:
-        """Hover refusal (F3 = A): the refused target's reason is shown while it is hovered - once, not on
-        every mouse move - and the status returns to the session's note when the hover leaves it."""
-        if text == self._knife_refused_text:
-            return
-        self._knife_refused_text = text
-        self._set_status(text if text is not None else f"Knife: {self._knife_mirror_text()}")
-
-    def _knife_clear_preview(self) -> bool:
-        changed = (self._knife_target is not None or self._knife_highlight_edge is not None
-                   or self._knife_refused is not None)
-        self._knife_target = None
-        self._knife_highlight_edge = None
-        self._knife_hover_crossings = ()
-        self._knife_refused = None
-        self._knife_refusal_status(None)
-        self._knife_sync_overlay()
-        return changed
-
-    def _knife_sync_overlay(self) -> None:
-        """Knife render data → viewport tool layers: prospective point, target
-        edge and line preview in the hover style, the placed points (the start
-        among them) and the segments commit will cut in the selected style (no
-        new look; WP-KNIFE-01 S2: drawn from the path, the mesh is not cut
-        before commit).
-
-        A symmetric session (slice 6c) adds the layers of the mirror, of the part that will not be cut and
-        of the refused hover (`knife_render_data`'s fields; the mirror per variant, `KNIFE_MIRROR_VARIANTS`).
-        Without a symmetry view only the two layers above are passed, exactly as before."""
-        data = self.knife_render_data
-        if self.viewport is None or data is None:
-            return
-        points = {
-            TOOL_PREVIEW_LAYER: [p for p in (data.prospective_point,) if p is not None]
-            + list(data.prospective_crossings),
-            TOOL_ACTIVE_LAYER: list(data.placed_points),
-        }
-        segments = {
-            TOOL_PREVIEW_LAYER: [
-                s for s in (data.target_edge, data.line_preview) if s is not None
-            ],
-            TOOL_ACTIVE_LAYER: list(data.path_segments),
-        }
-        if self._knife_view is not None:
-            mirror_points = list(data.mirror_placed_points)
-            mirror_hover_points = [p for p in (data.mirror_prospective_point,) if p is not None] + list(
-                data.mirror_prospective_crossings)
-            mirror_path = list(data.mirror_path_segments)
-            mirror_hover = [s for s in (data.mirror_target_edge, data.mirror_line_preview) if s is not None]
-            variant = self.knife_mirror_variant
-            if variant == "V-a":       # like the working side's own preview
-                points[TOOL_MIRROR_LAYER] = mirror_points
-                points[TOOL_MIRROR_PREVIEW_LAYER] = mirror_hover_points
-                segments[TOOL_MIRROR_LAYER] = mirror_path
-                segments[TOOL_MIRROR_PREVIEW_LAYER] = mirror_hover
-            elif variant == "V-b":     # always visible, dimmed
-                points[TOOL_MIRROR_DIM_LAYER] = mirror_points + mirror_hover_points
-                segments[TOOL_MIRROR_DIM_LAYER] = mirror_path + mirror_hover
-            else:                      # V-c: the mirror's points only
-                points[TOOL_MIRROR_LAYER] = mirror_points + mirror_hover_points
-            points[TOOL_CLIPPED_LAYER] = list(data.clipped_points) + list(data.clipped_hover_points)
-            segments[TOOL_CLIPPED_LAYER] = list(data.clipped_segments) + list(data.clipped_hover_segments)
-            points[TOOL_REFUSED_LAYER] = list(data.refused_points)
-            segments[TOOL_REFUSED_LAYER] = list(data.refused_segments)
-        self.viewport.set_tool_overlay(points=points, segments=segments)
+        grabbed = self.interaction.grab(Modifiers(held, self._ctrl_held, self._alt_held))  # the Knife's preview
+        return False if grabbed is PASS else grabbed
 
     # -- Display (WP-06 B5a) ----------------------------------------------------
 
@@ -4515,8 +3970,6 @@ class Application:
         (orbit, pan, zoom) own no keys and are never an owner."""
         if self._transform_command is not None:
             return "transform"
-        if self._knife is not None:
-            return "knife"
         return self.interaction.owner
 
     @property
@@ -4549,9 +4002,7 @@ class Application:
         (H2) postet den Ablehnungstext und gibt False zurück; die Knife-Session
         liegt davor und wird nie gegatet."""
         self.flush_hover()
-        if self._knife is not None:
-            return self._knife_key(input)
-        grabbed = self.interaction.grab(KeyPress(input))  # the Re-Symmetrize preview
+        grabbed = self.interaction.grab(KeyPress(input))  # the Knife, the Re-Symmetrize preview
         if grabbed is not PASS:
             return grabbed
         command = self._resolve_key(input)
@@ -6131,8 +5582,6 @@ class Application:
         `tweak_command`, every "nothing selected", `C: nothing to do here`)."""
         if command is None:
             return None
-        if self._knife is not None:
-            return None if command in _KNIFE_ALLOWS else SILENT
         session = self.interaction.session
         if session is not None and session.exclusive:
             return session.allows(command, ctx)
@@ -6610,16 +6059,19 @@ class Application:
         self.flush_hover()
         if x is not None and y is not None:
             self._cursor = (x, y)
-        if self._knife is not None and self._knife_owns_press(input):
-            self._knife_press(input)
-            return
-        if self._pivot_owns_press(input):
-            self._pivot_place_at(*self._cursor, snap="shift" in input.modifiers)
-            self._pivot_dragging = True
-            return
         if not self.pointer.active:
+            press = Press(input, x, y)
+            outcome = self.interaction.grab(press)  # the Knife's point / pen lift
+            if outcome is True:
+                return
+            if self._pivot_owns_press(input):
+                self._pivot_place_at(*self._cursor, snap="shift" in input.modifiers)
+                self._pivot_dragging = True
+                return
             self._press_point = self._cursor
-            if self.interaction.route(Press(input, x, y)) is PASS:
+            if outcome is PASS:
+                outcome = self.interaction.handle(press)  # no gizmo press under the Re-Symmetrize preview
+            if outcome is PASS:
                 self._gizmo_press(input)
         self.pointer.press(input)
 
@@ -6631,8 +6083,9 @@ class Application:
         Klick-Schwelle - `x`/`y` werden nicht für eine Vorschau verwendet."""
         if x is not None and y is not None:
             self._cursor = (x, y)
-        if self._knife_gesture:
-            return self._knife_drag(dx, dy)
+        grabbed = self.interaction.grab(Drag(None, dx, dy))  # the Knife's click-threshold gesture
+        if grabbed is not PASS:
+            return grabbed
         if self._pivot_dragging:
             return self._cursor is not None and self._pivot_place_at(*self._cursor, snap=self._shift_held)
         if self._alt_held and self._transform_key == TWEAK_KEY:
@@ -6645,8 +6098,9 @@ class Application:
         """Maustaste losgelassen. True = ein Klick-Command wurde ausgeführt
         bzw. der Knife hat einen Punkt gesetzt / den Stift abgesetzt."""
         self._cursor = (x, y)
-        if self._knife_gesture and button == self._knife_gesture_button:
-            return self._knife_release(x, y)
+        grabbed = self.interaction.grab(Release(button, x, y, raw=True))  # the Knife's own press: its click
+        if grabbed is not PASS:
+            return grabbed
         if self._pivot_dragging and button == "LEFT":
             self._pivot_dragging = False
             return True
@@ -6662,12 +6116,10 @@ class Application:
             return True
         if button == "LEFT":
             self._gesture_refused = False
-        if self._knife is not None:
-            # Session Gate (B7): Navigation ist vorbei bzw. ein modifizierter
-            # Klick fiel - der Klick selbst tut während der Session nichts
-            # (keine Auswahländerung), die Knife-Vorschau pickt neu.
-            self._refresh_hover()
-            return False
+        # The Knife's session gate (every release); the Re-Symmetrize preview refuses the select / region clicks.
+        grabbed = self.interaction.grab(Release(button, x, y, None if click is None else click.command))
+        if grabbed is not PASS:
+            return grabbed
         return click is not None and self._execute_click(click, button)
 
     def pointer_scroll(self, input: Input) -> bool:
@@ -6694,7 +6146,7 @@ class Application:
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
         self._camera_changed()
         # Unter dem ruhenden Cursor liegt nach dem Zoom ggf. ein anderer Vertex.
-        if self.coalesce_hover and self._knife is None:
+        if self.coalesce_hover and self.interaction.owner != "knife":
             self._hover_stale = True  # a burst of notches picks once, at the next tick
         else:
             self._refresh_hover()
@@ -6713,10 +6165,9 @@ class Application:
         self._cursor = (x, y)
         if self.pointer.active:
             return False
-        if self._knife is not None:
-            if self._knife_gesture:
-                return False
-            return self._knife_hover(x, y)
+        grabbed = self.interaction.grab(Motion(x, y, dx, dy))  # the Knife's preview
+        if grabbed is not PASS:
+            return grabbed
         if self._transform_key is not None:
             # Relax is held with Alt (Alt+S): for Smooth / Relax Alt never borrows the camera.
             if self._alt_held and self._transform_command not in _SMOOTH_COMMANDS:
@@ -6748,25 +6199,19 @@ class Application:
         """Hover an der letzten Cursor-Position neu picken (nach Zoom bzw.
         wenn sich das Mesh unter dem ruhenden Cursor bewegt hat). Während
         einer Knife-Session statt des Selection-Hovers die Knife-Vorschau."""
-        if self._knife is not None:
-            if self._knife_gesture:
-                return
-            if self._cursor is not None and not self.pointer.active:
-                self._knife_hover(*self._cursor)
-            else:
-                self._knife_clear_preview()
-            return
-        if self._cursor is not None and not self.pointer.active and self._transform_key is None:
-            self._update_hover(*self._cursor)
+        cursor = None if self.pointer.active else self._cursor
+        if self.interaction.grab(Leave() if cursor is None else Hover(*cursor)) is not PASS:
+            return  # the Knife's preview (or the Re-Symmetrize preview's paused hover)
+        if cursor is not None and self._transform_key is None:
+            self._update_hover(*cursor)
 
     def pointer_leave(self) -> bool:
         """Cursor hat das Fenster verlassen: Hover (bzw. Knife-Vorschau) löschen."""
         self._cursor = None
         self._hover_stale = False
-        if self._knife is not None:
-            if self._knife_gesture:
-                return False
-            return self._knife_clear_preview()
+        grabbed = self.interaction.grab(Leave())  # the Knife's preview
+        if grabbed is not PASS:
+            return grabbed
         return self._set_hovered(None)
 
     def _update_hover(self, x: float, y: float) -> bool:
@@ -6875,9 +6320,7 @@ class Application:
         # Eine laufende Orbit-/Pan-Geste löscht Hover (während einer Knife-
         # Session die Knife-Vorschau; Start und Pfad bleiben); er kehrt mit
         # der nächsten Mausbewegung nach dem Release zurück.
-        if self._knife is not None:
-            self._knife_clear_preview()
-        else:
+        if self.interaction.grab(Leave()) is PASS:
             self._set_hovered(None)
         return True
 
@@ -6966,9 +6409,6 @@ class Application:
 
     def _execute_click(self, click: Click, button: str) -> bool:
         if click.command == commands.REGION_CLICK or click.command in _SELECT_COMMANDS:
-            grabbed = self.interaction.grab(Release(button, click.x, click.y, click.command))
-            if grabbed is not PASS:
-                return grabbed
             refusal = self.can_run(click.command, RunContext("click"))
             if refusal is not None:
                 return self._refused(refusal)
@@ -7095,7 +6535,7 @@ class Application:
     def pivot_marker_items(self) -> list:
         """What the window draws for the Working Pivot (`viewport.gizmo.pivot_marker_items`): the active pivot,
         also during a gesture, and the dimmed preview while placing; [] otherwise."""
-        if self.viewport is None or self._knife is not None:
+        if self.viewport is None or self.knife_active:
             return []
         items = []
         edit = self.scene.edit_object
@@ -7448,7 +6888,7 @@ class Application:
         (`object_space.to_world`, an exact pass-through while the placement is identity); the cache
         holds the object-space centroid, so a placement change needs no invalidation."""
         viewport = self.viewport
-        if not self.gizmo_enabled or viewport is None or self._knife is not None:
+        if not self.gizmo_enabled or viewport is None or self.knife_active:
             return None
         if self.selection.mode is SelectionMode.OBJECT:
             return self._gizmo_object_pivot()
@@ -7685,6 +7125,5 @@ class Application:
     def shutdown(self) -> None:
         """Sauberes Herunterfahren: aktives Tool deaktivieren (kein stale State);
         eine laufende Knife-Session wird verworfen (wie Esc)."""
-        if self._knife is not None:
-            self._knife_end(commit=False)
+        self._knife.shutdown()
         self.tool_manager.deactivate()

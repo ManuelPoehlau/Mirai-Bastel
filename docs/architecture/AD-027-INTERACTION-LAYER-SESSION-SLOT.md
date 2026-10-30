@@ -2,7 +2,7 @@
 
 **Status:** **DECIDED (Manu, 2026-10-29: go with C1–C3; V1, V3, V7 stay as they are).** Proposed the same day as the
 Architecture Gate (Type C) stop point; second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md)
-(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M2 implemented (2026-10-30)**; M3–M8 open (§7,
+(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M3 implemented (2026-10-30)**; M4–M8 open (§7,
 findings of the steps so far in §7.1).
 **Mode (M5):** Production (a behaviour-neutral restructuring), in fresh sessions with this AD as the handoff (§7).
 **Baseline:** `main` @ `dfd6e5d`. Every code fact, line count and probe result below was read or run there.
@@ -447,6 +447,22 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   ever shows in a profile.
 - **Until their sessions move** (M3, M5, M6) the Knife's, the held gestures' and the drag selection's `allows` are
   `Application` tables (`_KNIFE_ALLOWS`, `_GESTURE_REFUSES`, `_DRAG_SELECT_ALLOWS`) read by `can_run`.
+- **M3 (Knife).** `controllers/knife.py`: `KnifeController` (begin / end, the mirror-preview variant and the
+  double-click clock as its settings, picking and the tool overlay) and `KnifeSession` (exclusive, owner `"knife"`,
+  `allows` = `KNIFE_ALLOWS`); `Application` keeps `knife_active`, `knife_render_data` and `knife_clock` /
+  `knife_mirror_variant` as delegating properties. The session grabs keys (resolved in `knife`), its own press
+  (plain / Shift LMB, the KnifeLift button) with its drags and release, motion, hover, Shift held, leave, the Soft
+  wheel steps, every release after the pointer resolver (the session gate) and Undo/Redo arriving through
+  `dispatch_command` (a `Command` event after `can_run`, AD-017's isolated history from every source).
+- **Event details the Knife needed (implementation, the contract unchanged):** a press, drag or release a session or
+  hold key took never reaches the pointer resolver, so it travels as a *raw* event (`Drag(None, ...)`,
+  `Release(..., raw=True)`); after the resolver come the resolved ones. A press's answer means: True = taken (no
+  resolver), False = handled (no gizmo press, the resolver still gets it - the preview's answer, which M1 returned as
+  True through `route`), `PASS` = idle. `Leave` also stands for "no hover point" (a navigation drag clears the hover,
+  a re-pick without a cursor). The slot exposes its stages (`claim`, `handle`, `background`) for the entry points
+  that keep a gesture branch between them until M6. `AppServices` gains `pick_cache` (the Knife picks with its own
+  occlusion tests on the shared cache) and `toggle_ortho` (the session's own ortho key runs the view command
+  `Application` owns); the display / Look command groups moved to `interaction/commands.py`.
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 

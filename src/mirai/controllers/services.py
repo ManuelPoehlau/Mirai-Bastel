@@ -83,6 +83,13 @@ class AppServices:
     def edit_camera(self):
         return self._app._edit_camera
 
+    @property
+    def pick_cache(self):
+        """The edit object's screen-space pick cache. Reason for the member (AD-027 M3): the Knife picks with its
+        own occlusion tests on the shared cache (`knife_pick`, `snap_own_point`, the planner's `set_view`);
+        picking stays in `Application` (§3.4), the cache is the one it keeps."""
+        return self._app._pick_cache
+
     # -- operations --------------------------------------------------------------------------------
 
     def status(self, text: str) -> None:
@@ -131,6 +138,12 @@ class AppServices:
 
     def soft_preview_refresh(self, *args, **kwargs) -> None:
         self._app._soft_preview_refresh(*args, **kwargs)
+
+    def toggle_ortho(self) -> bool:
+        """Ortho <-> Persp (view state, `Application._toggle_ortho`). Reason for the member (AD-027 M3): the Knife
+        session's own ortho key (resolved in the `knife` context) runs the view command `Application` owns
+        (navigation and views stay there, §3.4)."""
+        return self._app._toggle_ortho()
 
     def set_edit_object(self, object_id) -> None:
         self._app._set_edit_object(object_id)

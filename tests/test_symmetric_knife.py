@@ -928,13 +928,13 @@ def test_a_live_application_knife_session_runs_the_coordinator_only_with_a_defin
     app.set_viewport_size(800, 600)
     set_plane(app.scene.mesh)
     assert app.key_press(Input("key", "c", frozenset()))
-    assert app.knife_active and app._knife._symmetric_commit is coordinate_knife
-    assert app._knife._symmetric_view is not None
+    assert app.knife_active and app._knife.tool._symmetric_commit is coordinate_knife
+    assert app._knife.tool._symmetric_view is not None
     assert app.key_press(Input("key", "ESCAPE", frozenset()))
 
     app.scene.mesh.symmetry_definition = None
     assert app.key_press(Input("key", "c", frozenset()))
-    assert app.knife_active and app._knife._symmetric_commit is None and app._knife._symmetric_view is None
+    assert app.knife_active and app._knife.tool._symmetric_commit is None and app._knife.tool._symmetric_view is None
 
 
 def test_the_probe_is_not_imported_by_src_or_by_these_tests():

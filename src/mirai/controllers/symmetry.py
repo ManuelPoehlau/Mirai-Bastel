@@ -144,7 +144,7 @@ class ResymPreview:
         if isinstance(event, Drag):
             return False  # the preview owns the mesh and the selection; navigation still runs
         if isinstance(event, Press):
-            return True  # no gizmo press under the preview (the press itself goes on to the resolver)
+            return False  # no gizmo press under the preview (the press itself goes on to the resolver)
         return PASS
 
     def cancel(self) -> bool:

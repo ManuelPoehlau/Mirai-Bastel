@@ -69,7 +69,7 @@ def _space_position(app, pos):
 
 
 def _crossings(app):
-    return [p for p in app._knife.path if p.get("crossing")]
+    return [p for p in app._knife.tool.path if p.get("crossing")]
 
 
 # -- far clicks across faces -----------------------------------------------------------------------------
@@ -112,7 +112,7 @@ def test_the_status_names_hidden_crossings_and_skipped_stretches(app):
     assert _click(app, _edge_screen(app, e["56"], 0.5))
     _outside(app, FAR_LEFT)
     assert _click(app, FAR_LEFT)
-    plan = app._knife.last_plan
+    plan = app._knife.tool.last_plan
     assert plan.hidden > 0
     assert f"{plan.hidden} hidden crossing(s) not cut" in app.status_message
 
@@ -122,11 +122,11 @@ def test_orbit_between_clicks_keeps_the_placed_cut(app):
     _begin(app)
     assert _click(app, _edge_screen(app, e["56"], 0.5))
     assert _click(app, _edge_screen(app, e["73"], 0.5))
-    placed = app._knife.path
+    placed = app._knife.tool.path
     app.camera.orbit(math.radians(30.0), math.radians(10.0))
     app._camera_changed()
     app.pointer_motion(400.0, 300.0)
-    assert app._knife.path == placed
+    assert app._knife.tool.path == placed
 
 
 def test_wireframe_shows_and_cuts_what_the_shaded_view_hides(app):
@@ -141,7 +141,7 @@ def test_wireframe_shows_and_cuts_what_the_shaded_view_hides(app):
     assert _click(app, _edge_screen(app, e["56"], 0.5))
     app.pointer_motion(*FAR_LEFT)
     assert len(app.knife_render_data.prospective_crossings) > shaded
-    assert _click(app, FAR_LEFT) and app._knife.last_plan.hidden == 0
+    assert _click(app, FAR_LEFT) and app._knife.tool.last_plan.hidden == 0
 
 
 def test_a_double_click_closes_across_faces(app, clock):
@@ -151,7 +151,7 @@ def test_a_double_click_closes_across_faces(app, clock):
         assert _click(app, _screen(app, world))
     clock.now += 0.1
     assert _click(app, _screen(app, (1.0, 0.3, 0.2)))                    # the double-click's second click
-    path = app._knife.path
+    path = app._knife.tool.path
     assert path[-1] == LIFT and any(p.get("reason") == "closed" and p.get("cyclic") for p in path)
     assert "closed" in app.status_message
     assert app.key_press(ENTER) and _history_depths(app) == (1, 0)
@@ -162,7 +162,7 @@ def test_a_shift_midpoint_start_then_a_cross_face_segment(app):
     _begin(app)
     assert _shift_click(app, _edge_screen(app, e["47"], 0.3))
     assert _click(app, _edge_screen(app, e["26"], 0.4))                  # 4-7 and 2-6 share no face: planned
-    assert app._knife.path[0]["t"] == 0.5
+    assert app._knife.tool.path[0]["t"] == 0.5
     assert app.key_press(ENTER) and _history_depths(app) == (1, 0)
 
 
@@ -198,7 +198,7 @@ def test_a_click_in_space_adds_a_point_and_only_the_cuts_stay_drawn(app):
     _begin(app)
     assert _click(app, _edge_screen(app, e["56"], 0.5))
     assert _click(app, FAR_LEFT) is True
-    rec = app._knife.path[-1]
+    rec = app._knife.tool.path[-1]
     assert rec["kind"] == "space" and rec["position"] == pytest.approx(_space_position(app, FAR_LEFT))
     assert "point in space" in app.status_message
     assert app.knife_active and _history_depths(app) == (0, 0) and _topology(mesh) == before
@@ -244,12 +244,12 @@ def test_undo_redo_lift_and_esc_with_a_space_point(app):
     e = _edges(app)
     _begin(app)
     assert _click(app, _edge_screen(app, e["56"], 0.5))
-    one = app._knife.path
+    one = app._knife.tool.path
     assert _click(app, FAR_LEFT)
-    two = app._knife.path
-    assert app.key_press(CTRL_Z) and app._knife.path == one
-    assert app.key_press(CTRL_Y) and app._knife.path == two
-    assert app.key_press(E) and app._knife.path[-1] == LIFT
+    two = app._knife.tool.path
+    assert app.key_press(CTRL_Z) and app._knife.tool.path == one
+    assert app.key_press(CTRL_Y) and app._knife.tool.path == two
+    assert app.key_press(E) and app._knife.tool.path[-1] == LIFT
     assert _rmb_click(app) is False                                       # nothing to lift
     assert app.key_press(ESC) and not app.knife_active
     assert _topology(mesh) == before and _history_depths(app) == (0, 0)
@@ -268,7 +268,7 @@ def test_a_double_click_in_space_after_a_space_start_lifts_and_says_why(app, clo
     assert _click(app, FAR_RIGHT)
     clock.now += 0.1
     assert _click(app, FAR_RIGHT)                                         # second click: finish the chain
-    assert app._knife.path[-1] == LIFT
+    assert app._knife.tool.path[-1] == LIFT
     assert "space" in app.status_message and "not closed" in app.status_message
 
 
@@ -277,7 +277,7 @@ def test_shift_has_no_effect_on_a_space_point(app):
     app.set_shift_held(True)
     app.pointer_motion(*FAR_LEFT)
     assert app.knife_render_data.prospective_point == pytest.approx(_space_position(app, FAR_LEFT))
-    assert _shift_click(app, FAR_LEFT) and app._knife.path[-1]["kind"] == "space"
+    assert _shift_click(app, FAR_LEFT) and app._knife.tool.path[-1]["kind"] == "space"
 
 
 def test_the_start_hint_names_far_clicks_outside_clicks_and_enter(app):

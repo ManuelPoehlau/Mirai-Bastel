@@ -91,7 +91,11 @@ class KeyRelease:
 
 @dataclass(frozen=True)
 class Press:
-    """A mouse button went down at (x, y); the pointer resolver (AD-019) has not decided click / drag."""
+    """A mouse button went down at (x, y); the pointer resolver (AD-019) has not decided click / drag.
+
+    What a handler returns: True = the press is taken (it does not reach the pointer resolver: the Knife's
+    point, the Working Pivot's placement); False = handled, the press still goes on to the resolver (no gizmo
+    press under the Re-Symmetrize preview); `PASS` = idle (the gizmo press, then the resolver)."""
 
     input: Input
     x: Optional[float]
@@ -100,21 +104,24 @@ class Press:
 
 @dataclass(frozen=True)
 class Drag:
-    """One drag step the pointer resolver produced (`command` = its resolved drag command)."""
+    """One drag step: the pointer resolver's (`command` = its resolved drag command), or `command` None = a raw
+    step of a press a session or a hold key took (the resolver never saw that press)."""
 
-    command: str
+    command: Optional[str]
     dx: float
     dy: float
 
 
 @dataclass(frozen=True)
 class Release:
-    """A mouse button went up; `click` = the click command the resolver produced, None = no click."""
+    """A mouse button went up; `click` = the click command the resolver produced, None = no click. `raw` = before
+    the resolver (the release of a press a session or a hold key took), else after it."""
 
     button: str
     x: float
     y: float
     click: Optional[str] = None
+    raw: bool = False
 
 
 @dataclass(frozen=True)
@@ -150,7 +157,8 @@ class Hover:
 
 @dataclass(frozen=True)
 class Leave:
-    """The cursor left the window."""
+    """The hover point is gone: the cursor left the window, a camera gesture took the pointer, or a re-pick has no
+    cursor to pick at."""
 
 
 @dataclass(frozen=True)
@@ -254,23 +262,32 @@ class InteractionSlot:
             return session.handle(event)
         return PASS
 
-    def route(self, event: Event) -> Outcome:
-        """Stages 1-4; `PASS` = idle (stage 5 is the caller's)."""
-        outcome = self.grab(event)
-        if outcome is not PASS:
-            return outcome
-        holds = self.holds
-        for hold in holds:
+    def claim(self, event: Event) -> Outcome:
+        """Stage 2: the hold keys' claims, in rank order."""
+        for hold in self.holds:
             outcome = hold.claims(event)
             if outcome is not PASS:
                 return outcome
+        return PASS
+
+    def handle(self, event: Event) -> Outcome:
+        """Stage 3: the running session."""
         session = self.session
-        if session is not None:
-            outcome = session.handle(event)
+        return PASS if session is None else session.handle(event)
+
+    def background(self, event: Event) -> Outcome:
+        """Stage 4: the hold keys' background, in rank order."""
+        for hold in self.holds:
+            outcome = hold.background(event)
             if outcome is not PASS:
                 return outcome
-        for hold in holds:
-            outcome = hold.background(event)
+        return PASS
+
+    def route(self, event: Event) -> Outcome:
+        """Stages 1-4; `PASS` = idle (stage 5 is the caller's). Until the held gestures are sessions (AD-027 M6)
+        `Application` calls the stages one by one around its gesture branch where one applies."""
+        for stage in (self.grab, self.claim, self.handle, self.background):
+            outcome = stage(event)
             if outcome is not PASS:
                 return outcome
         return PASS

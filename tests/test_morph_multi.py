@@ -636,7 +636,7 @@ def test_the_knife_with_three_targets_in_the_app():
         app.pointer_motion(sx, sy)
         app.pointer_press(LMB, sx, sy)
         assert app.pointer_release("LEFT", sx, sy), app.status_message
-    path = [dict(p) for p in app._knife.path]
+    path = [dict(p) for p in app._knife.tool.path]
     assert app.key_press(ENTER), app.status_message
     ops.knife_rule(ref, mesh, {"path": path, "symmetric": False})
     _shown_equals_definition(app)

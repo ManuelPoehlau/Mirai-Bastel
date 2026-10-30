@@ -353,11 +353,11 @@ def test_the_knife_picks_the_edge_at_its_placed_screen_position():
         if vid not in mesh.edge_vertices(eid):
             continue
         mid = _centroid(mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
-        target = app._knife_pick(*cam.project_to_screen(mid, WIDTH, HEIGHT))
+        target = app._knife.pick(*cam.project_to_screen(mid, WIDTH, HEIGHT))
         if target.get("kind") == "edge" and target["edge_id"] == eid:
             assert app.key_press(_key("c"))
             assert app.knife_active
-            hit = app._knife_pick(*_screen_of(app, mid))
+            hit = app._knife.pick(*_screen_of(app, mid))
             assert hit.get("kind") == "edge" and hit["edge_id"] == eid
             return
     raise AssertionError("no edge of the visible vertex is knife-pickable")

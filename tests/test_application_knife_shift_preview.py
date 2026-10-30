@@ -54,13 +54,13 @@ _HEAD = Path(__file__).resolve().parent.parent / "examples" / "meshes" / "head_b
 def _preview(app):
     """(prospective target, highlighted edge, drawn prospective point) of the running session."""
     data = app.knife_render_data
-    return app._knife_target, app._knife_highlight_edge, data.prospective_point
+    return app._knife.session.target, app._knife.session.highlight_edge, data.prospective_point
 
 
 def _expected(app, x, y, midpoint):
     """What the click at (x, y) would add: the pick with / without the midpoint, if the session accepts it."""
-    target = app._knife_pick(x, y, midpoint=midpoint)
-    return target if app._knife.accepts(target) else None
+    target = app._knife.pick(x, y, midpoint=midpoint)
+    return target if app._knife.tool.accepts(target) else None
 
 
 def _strip(entries):
@@ -105,13 +105,13 @@ def test_moving_with_shift_held_keeps_the_midpoint_preview(app):
 def _sweep(app, positions):
     """With Shift held: the preview equals `_knife_pick(midpoint=True)` (when accepted) and a Shift+click there
     adds exactly what that target plans; each click is undone again so every position sees the same session."""
-    knife = app._knife
+    knife = app._knife.tool
     app.set_shift_held(True)
     seen = {"edge": 0, "vertex": 0, "face": 0, "point": 0, "space": 0, "refused": 0}   # space: S4
     for x, y in positions:
         app.pointer_motion(x, y)
         expected = _expected(app, x, y, midpoint=True)
-        assert app._knife_target == expected, (x, y)
+        assert app._knife.session.target == expected, (x, y)
         if expected is None:
             seen["refused"] += 1
             path = knife.path
@@ -160,7 +160,7 @@ def test_shift_held_preview_equals_the_shift_click_target_on_a_head_patch(head_a
     _begin(app)
     patch = [(x, y) for x in range(330, 470, 9) for y in range(230, 370, 9)]
     if started:
-        start = next(p for p in patch if app._knife_pick(*p).get("kind") == "edge")
+        start = next(p for p in patch if app._knife.pick(*p).get("kind") == "edge")
         assert _click(app, start)
         # around the start: the faces it shares, their edges and the refused cross-face targets
         patch = [(start[0] + dx, start[1] + dy) for dx in range(-30, 31, 3) for dy in range(-30, 31, 3)]
@@ -176,16 +176,16 @@ def test_with_shift_held_an_own_point_near_the_midpoint_wins_in_preview_and_clic
     e = _edges(app)
     _begin(app)
     assert _click(app, _edge_screen(app, e["47"], 0.46))
-    own = app._knife.path[-1]
+    own = app._knife.tool.path[-1]
     assert _click(app, _edge_screen(app, e["56"], 0.5))
     assert app.key_press(E)
     pos = _edge_screen(app, e["47"], 0.5)
     app.pointer_motion(*pos)
     app.set_shift_held(True)
-    target = app._knife_target
+    target = app._knife.session.target
     assert target == {"kind": "point", "pid": own["pid"]}
     assert _preview(app)[2] == pytest.approx(_edge_point(app, e["47"], 0.46))
-    assert _shift_click(app, pos) and app._knife.path[-1] is own
+    assert _shift_click(app, pos) and app._knife.tool.path[-1] is own
 
 
 # -- 4. Vertex and face targets: unchanged by Shift ---------------------------------------------------------
@@ -201,7 +201,7 @@ def test_with_shift_held_a_vertex_and_a_face_target_are_unchanged(app):
         assert _preview(app)[0] == plain[0] and _preview(app)[1] == plain[1]
         assert plain[0] is not None and plain[0]["kind"] in ("vertex", "face")
     assert _shift_click(app, _vertex_screen(app, _v(app, 7)))
-    assert app._knife.path[-1]["kind"] == "vertex"
+    assert app._knife.tool.path[-1]["kind"] == "vertex"
 
 
 # -- 5. Without a session: harmless ------------------------------------------------------------------------
@@ -261,8 +261,8 @@ def test_set_shift_held_is_idempotent(app, monkeypatch):
     _begin(app)
     app.pointer_motion(*_edge_screen(app, _edges(app)["47"], 0.3))
     syncs = []
-    original = app._knife_sync_overlay
-    monkeypatch.setattr(app, "_knife_sync_overlay", lambda: (syncs.append(1), original())[1])
+    original = app._knife.sync_overlay
+    monkeypatch.setattr(app._knife, "sync_overlay", lambda: (syncs.append(1), original())[1])
     assert app.set_shift_held(True) is True
     assert len(syncs) == 1
     assert app.set_shift_held(True) is False         # key repeat / both Shift keys: no recompute
@@ -280,7 +280,7 @@ def test_a_plain_click_decides_by_its_press_not_by_the_held_shift(app, held):
     _begin(app)
     app.set_shift_held(held)
     assert _click(app, _edge_screen(app, e["47"], 0.3))                 # the press carries no Shift
-    assert app._knife.path[-1]["t"] == pytest.approx(0.3, abs=0.02)
+    assert app._knife.tool.path[-1]["t"] == pytest.approx(0.3, abs=0.02)
 
 
 def test_the_press_preview_stays_fixed_while_the_button_is_held(app):
@@ -293,7 +293,7 @@ def test_the_press_preview_stays_fixed_while_the_button_is_held(app):
     app.set_shift_held(True)                                             # Shift after the press: no change
     assert _preview(app)[0] == pressed[0]
     assert app.pointer_release("LEFT", *pos)
-    assert app._knife.path[-1]["t"] == pytest.approx(0.3, abs=0.02)
+    assert app._knife.tool.path[-1]["t"] == pytest.approx(0.3, abs=0.02)
     app.pointer_motion(*_edge_screen(app, e["56"], 0.3))                 # after the release: the held Shift counts
     assert _preview(app)[0]["t"] == 0.5
 
@@ -310,12 +310,12 @@ def test_double_click_rmb_lift_enter_and_esc_are_unchanged(app, clock, held):
         assert _click(app, _vertex_screen(app, v[i]))
     clock.now += 0.1
     assert _click(app, _vertex_screen(app, v[6]))                         # double-click: close + lift
-    assert app._knife.path[-1] == LIFT
+    assert app._knife.tool.path[-1] == LIFT
     assert app.knife_render_data.line_preview is None
     clock.now += 1.0
     assert _click(app, _edge_screen(app, _edges(app)["73"], 0.4))
     clock.now += 1.0
-    assert _rmb_click(app) and app._knife.path[-1] == LIFT
+    assert _rmb_click(app) and app._knife.tool.path[-1] == LIFT
     assert app.key_press(ESC) and not app.knife_active
     assert _topology(mesh) == before and _history_depths(app) == (0, 0)
     _begin(app)
