@@ -428,7 +428,9 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   preview, drags, held P / L / N / Q, gizmo drags), 18 scripted sequences (V1–V7, the test points). Deterministic
   across `PYTHONHASHSEED` (the SubD provider's cache had to stay out of the digest). The replay takes **2 min 31 s**
   on the 4-core container, over the "about one minute" budget; E2 per step (230 000 events, both trees) about
-  ten minutes on 4 workers.
+  ten minutes on 4 workers. E2 by hand: `git worktree add <dir> dfd6e5d`, copy `tests/interaction_trace.py` into it,
+  run `python tests/interaction_trace.py digests <scene> 1000 <count> 250` in both trees and compare the lines;
+  `... observe <scene> <seed> 250 <index>` prints the observation at the first differing event.
 - **Session protocol:** `exclusive: bool` added - True for a session that grabs input (the Knife, the preview); its
   `allows` alone answers `can_run` (stage 1, "alone" taken literally: the preview's display keys run without the
   host gate, as before).
