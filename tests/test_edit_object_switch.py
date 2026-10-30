@@ -3,7 +3,7 @@
 Headless (TraceStore), no pyglet. Q-5: in `4` select exactly one Normal object, then
 `1`/`2`/`3` - it becomes the edit object (order §4.4: read `objects`, set the edit object,
 clear the components); several objects or a Reference: no switch, the status line says why.
-E-14: `Application._set_edit_object` is the one place - viewport overlay entry
+E-14: `ObjectController.set_edit_object` is the one place - viewport overlay entry
 (`Viewport.set_edit_mesh`), object entries, pick caches, hover, soft radius. Q-8: Undo of a
 step made on another object makes that object the edit object again. RF-5: a Reference never
 becomes the edit object.
@@ -54,9 +54,9 @@ def _second(app: Application, name: str = "other", translation=(3.0, 0.0, 0.0), 
         obj = app.add_reference("cube", name=name)
     else:
         obj = app.add_reference("obj", obj_path=obj_path, name=name)
-    app._switch_object_state(obj.id, app._selection_snapshot())  # Normal, one Undo step
+    app._objects.switch_state(obj.id, app._selection_snapshot())  # Normal, one Undo step
     obj.transform = ObjectTransform(translation=translation)
-    app._placement_changed()
+    app._objects.placement_changed()
     return obj
 
 
@@ -67,7 +67,7 @@ def _switch_to(app: Application, obj, key: Input = ONE) -> None:
 
 
 def _visible_vertex(app: Application) -> tuple[VertexId, tuple[float, float]]:
-    mesh, cam = app.scene.mesh, app._edit_camera
+    mesh, cam = app.scene.mesh, app._objects.edit_camera
     for vid in sorted(mesh.all_vertex_ids()):
         x, y = cam.project_to_screen(mesh.vertex_position(vid), WIDTH, HEIGHT)
         if pick_nearest_vertex(cam, mesh, x, y, WIDTH, HEIGHT, occlusion=True) == vid:
@@ -161,7 +161,7 @@ def test_no_switch_while_an_interaction_owns_the_keys():
     app.key_press(W)
     app.pointer_motion(400, 300, 10.0, 0.0)
     assert app.key_press(ONE) is False  # the key gate
-    assert "not while the transform" in app._edit_object_from_selection()
+    assert "not while the transform" in app._objects.edit_from_selection()
     assert app.scene.edit_object_id == cube.id
     app.key_release(W)
 
@@ -174,7 +174,7 @@ def test_component_move_on_the_new_placed_edit_object_and_the_old_mesh_stays():
     cube = app.scene.edit_object
     other = _second(app)
     other.transform = ObjectTransform(translation=(0.5, 1.0, 0.0), scale=0.8)
-    app._placement_changed()
+    app._objects.placement_changed()
     cube_state = cube.mesh.export_state()
     _switch_to(app, other)
     vid, screen = _visible_vertex(app)

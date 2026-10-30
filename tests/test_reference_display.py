@@ -47,7 +47,7 @@ def _two_objects(app: Application):
     ref = app.add_reference("cube")
     normal = app.add_reference("cube")
     normal.state = ObjectState.NORMAL
-    app._sync_object_views()
+    app._objects.sync_views()
     return ref, normal
 
 
@@ -90,7 +90,7 @@ def test_a_reference_switched_to_normal_stops_being_a_ghost():
     entry = app.viewport.object_entries[ref.id]
     assert entry.store.alpha == REFERENCE_GHOST_ALPHA
     app.key_press(Input("key", "4", frozenset()))
-    app._switch_object_state(ref.id, app._selection_snapshot())
+    app._objects.switch_state(ref.id, app._selection_snapshot())
     assert ref.state is ObjectState.NORMAL
     assert entry.store.alpha == 1.0
 

@@ -1,7 +1,7 @@
 """AD-021 M2-1 — object placement in the draw and component paths (no UI yet).
 
 Headless (TraceStore), no pyglet. The placement is set directly on `SceneObject.transform`
-(the M2-2 object tools do not exist yet) and announced with `Application._placement_changed`.
+(the M2-2 object tools do not exist yet) and announced with `ObjectController.placement_changed`.
 Checks E-2 (formula), E-7 (Objektraum-Kamera), E-8 (world-axis constraints), E-9 (model
 matrix), E-10 (object picking), §4.8 (symmetry and soft in object space; Probe P-2 as a test)
 and that an unplaced object stays bit-exact as before.
@@ -68,7 +68,7 @@ def _app(placed: bool = True, obj_path=None) -> Application:
 def _place(app: Application, obj: SceneObject, transform=PLACEMENT, pivot=PIVOT) -> None:
     obj.transform = transform
     obj.pivot = pivot
-    app._placement_changed()
+    app._objects.placement_changed()
 
 
 def _close(a, b, tol=1e-9) -> bool:
@@ -86,7 +86,7 @@ def _centroid(points):
 
 
 def _visible_vertex(app: Application) -> VertexId:
-    mesh, cam = app.scene.mesh, app._edit_camera
+    mesh, cam = app.scene.mesh, app._objects.edit_camera
     for vid in sorted(mesh.all_vertex_ids()):
         x, y = cam.project_to_screen(mesh.vertex_position(vid), WIDTH, HEIGHT)
         if pick_nearest_vertex(cam, mesh, x, y, WIDTH, HEIGHT, occlusion=True) == vid:
@@ -157,7 +157,7 @@ def test_object_space_camera_projects_and_casts_rays_through_the_placement():
 
 def test_an_unplaced_edit_object_uses_the_orbit_camera_and_no_model_uniform():
     app = _app(placed=False)
-    assert app._edit_camera is app.camera
+    assert app._objects.edit_camera is app.camera
     app.viewport.sync()
     assert not app.viewport.render_mesh.store.has("model_uniforms")
     assert app.viewport.overlay_camera_uniforms() == app.viewport.render_mesh._camera_uniforms()
@@ -211,7 +211,7 @@ def test_hover_and_click_hit_the_element_at_its_placed_screen_position(mode):
         element = _visible_vertex(app)
         point = mesh.vertex_position(element)
     elif mode == "2":
-        cam = app._edit_camera
+        cam = app._objects.edit_camera
         element = next(
             e for e in sorted(mesh.all_edge_ids())
             if app._pick(*cam.project_to_screen(
@@ -220,7 +220,7 @@ def test_hover_and_click_hit_the_element_at_its_placed_screen_position(mode):
         )
         point = _centroid(mesh.vertex_position(v) for v in mesh.edge_vertices(element))
     else:
-        cam = app._edit_camera
+        cam = app._objects.edit_camera
         element = next(
             f for f in sorted(mesh.all_face_ids())
             if app._pick(*cam.project_to_screen(
@@ -348,7 +348,7 @@ def test_the_knife_picks_the_edge_at_its_placed_screen_position():
     app = _app()
     mesh = app.scene.mesh
     vid = _visible_vertex(app)
-    cam = app._edit_camera
+    cam = app._objects.edit_camera
     for eid in sorted(mesh.all_edge_ids()):
         if vid not in mesh.edge_vertices(eid):
             continue
@@ -385,7 +385,7 @@ def test_p2_a_rotated_symmetric_head_stays_exactly_symmetric_under_a_symmetric_m
     vid = next(
         v for v in sorted(mesh.all_vertex_ids())
         if mesh.vertex_position(v)[0] > 0.1
-        and app._pick(*app._edit_camera.project_to_screen(mesh.vertex_position(v), WIDTH, HEIGHT)) == v
+        and app._pick(*app._objects.edit_camera.project_to_screen(mesh.vertex_position(v), WIDTH, HEIGHT)) == v
     )
     _click(app, *_screen_of(app, mesh.vertex_position(vid)))
     _gesture(app, _key("w"), dx=17.0, dy=-11.0)

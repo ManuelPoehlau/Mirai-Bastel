@@ -1344,6 +1344,11 @@ class GestureController:
             services.viewport.on_selection_changed()
         services.soft_preview_refresh()
 
+    def ctrl_changed(self, held: bool) -> bool:
+        """The window's Ctrl report: snap in a running Rotate (`GestureSession.ctrl_changed`). True = it changed."""
+        session = self.session
+        return session is not None and session.ctrl_changed(held)
+
     # -- constraints and space -----------------------------------------------------------------------
 
     def constrain(self, space: str) -> bool:

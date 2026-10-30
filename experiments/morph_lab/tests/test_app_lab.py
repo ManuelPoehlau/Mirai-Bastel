@@ -210,7 +210,7 @@ def test_w_move_with_symmetry_on_the_target_reaches_the_surface(lab_app):
     base, target = objects(app, lab)
     switch_to(app, lab, target)
     app.key_press(SHIFT_S)  # symmetry X on the target's own mesh (object space)
-    mesh, cam = app.scene.mesh, app._edit_camera
+    mesh, cam = app.scene.mesh, app._objects.edit_camera
     before = mesh.export_state()
     for vid in sorted(mesh.all_vertex_ids()):
         if abs(mesh.vertex_position(vid)[0]) < 1e-3:

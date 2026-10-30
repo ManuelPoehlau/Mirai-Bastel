@@ -91,7 +91,7 @@ def _states(app: Application) -> dict:
 def _normal_second_cube(app: Application):
     other = app.add_reference("cube", name="other")
     other.state = ObjectState.NORMAL
-    app._sync_object_views()
+    app._objects.sync_views()
     return other
 
 
@@ -259,7 +259,7 @@ def test_undo_and_redo_restore_the_transform_matrices_and_picking():
     mesh_state = mesh.export_state()
 
     def visible_vertex() -> tuple[VertexId, tuple[float, float]]:
-        cam = app._edit_camera
+        cam = app._objects.edit_camera
         for vid in sorted(mesh.all_vertex_ids()):
             x, y = cam.project_to_screen(mesh.vertex_position(vid), WIDTH, HEIGHT)
             if pick_nearest_vertex(cam, mesh, x, y, WIDTH, HEIGHT, occlusion=True) == vid:
@@ -387,7 +387,7 @@ def test_two_objects_move_by_the_same_delta_and_turn_about_their_own_pivots():
     other = _normal_second_cube(app)
     other.transform = ObjectTransform(translation=(3.0, 0.0, 0.0))
     other.pivot = (0.5, 0.0, 0.0)
-    app._placement_changed()
+    app._objects.placement_changed()
     _object_mode(app, cube, other)
     _gesture(app, W)
     delta = cube.transform.translation
@@ -420,7 +420,7 @@ def test_mode_switch_names_the_placed_edit_object():
 
 
 def _visible_vertex(app: Application) -> tuple[VertexId, tuple[float, float]]:
-    mesh, cam = app.scene.mesh, app._edit_camera
+    mesh, cam = app.scene.mesh, app._objects.edit_camera
     for vid in sorted(mesh.all_vertex_ids()):
         x, y = cam.project_to_screen(mesh.vertex_position(vid), WIDTH, HEIGHT)
         if pick_nearest_vertex(cam, mesh, x, y, WIDTH, HEIGHT, occlusion=True) == vid:
@@ -452,7 +452,7 @@ def test_component_move_and_knife_work_on_the_placed_edit_object():
     assert _close([world_after[i] - world_before[i] for i in range(3)], expected, 1e-9)
     # Knife: C with an empty selection starts a session; the edge pick is at its placed position.
     app.key_press(ONE)
-    cam = app._edit_camera
+    cam = app._objects.edit_camera
     assert app.key_press(_key("c")) and app.knife_active
     for eid in sorted(mesh.all_edge_ids()):
         a, b = (mesh.vertex_position(v) for v in mesh.edge_vertices(eid))
@@ -480,7 +480,7 @@ def test_a_turned_symmetric_head_stays_exactly_symmetric_under_a_symmetric_move(
     assert symmetry_state(mesh).value == "valid"
     app.key_press(ONE)
     app.frame_scene()
-    cam = app._edit_camera
+    cam = app._objects.edit_camera
     vid = next(
         v for v in sorted(mesh.all_vertex_ids())
         if mesh.vertex_position(v)[0] > 0.1

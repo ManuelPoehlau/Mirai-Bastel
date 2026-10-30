@@ -71,7 +71,7 @@ def _state(app) -> dict:
 
 def _towards(app, start, target) -> tuple[float, float]:
     """Screen vector (px) from world point `start` to world point `target`."""
-    camera = app._edit_camera
+    camera = app._objects.edit_camera
     a = camera.project_to_screen(start, WIDTH, HEIGHT)
     b = camera.project_to_screen(target, WIDTH, HEIGHT)
     return (b[0] - a[0], b[1] - a[1])

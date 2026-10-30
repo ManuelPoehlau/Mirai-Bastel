@@ -35,7 +35,6 @@ from __future__ import annotations
 import dataclasses
 import math
 import os
-import time
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional
@@ -45,23 +44,18 @@ from core import (
     FaceId,
     HistoryStack,
     Mesh,
-    MirrorPair,
     ObjectId,
-    ObjectMaterial,
     ObjectState,
-    ObjectTransform,
     Scene,
     SceneObject,
     Selection,
     SelectionMode,
     VertexId,
 )
-from core.operations import CollapseRefused, MeshDeltaCommand, record_mesh_change
-from core.scene import IDENTITY_TRANSFORM
+from core.operations import CollapseRefused, MeshDeltaCommand
 from core.serialization import scene_from_json, scene_to_json
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
-from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
 from . import regions as face_regions_api
@@ -76,46 +70,16 @@ from .mask import (
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import KNIFE_MIRROR_VARIANT_KEY, KeymapLoad, build_default_bindings, load_keymap
 from .interaction.input import MORPH_CONTEXT, SUBD_CONTEXT
-from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
-from .interaction.tools.rotate import RotateTool
-from .interaction.tools.scale import ScaleTool
-from .interaction.tools.transform import _resolve_space
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
-from .object_space import ObjectSpaceCamera
 from .pivot import WorkingPivot
-from .object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from .scene_objects import (
-    REFERENCE_GHOST_ALPHA,
-    AddObjectCommand,
-    ApplyRefused,
-    CompositeCommand,
-    DeleteObjectsCommand,
-    DeleteRefused,
-    MirrorPairCommand,
-    MirrorRefused,
-    ObjectMaterialCommand,
-    ObjectPivotCommand,
-    ObjectStateCommand,
-    ObjectTransformCommand,
-    applied_symmetry_axis,
-    apply_placement,
-    check_pairable,
-    describe_pair,
     editable_material,
-    object_base_color,
-    object_finish,
-    out_of_sync_text,
-    pair_existing_command,
-    pair_names,
-    plan_object_delete,
     replace_scene,
-    resync_command,
-    selected_color,
     reset_scene,
     unique_object_name,
 )
@@ -156,13 +120,12 @@ from .controllers.gestures import (
     CONSTRAINT_SPACES,
     GestureController,
     GestureSession,
-    commit_hint,
-    constraint_suffix,
     element_vertices,
     hovered_of_mode,
 )
 from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
+from .controllers.objects import PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
 from .controllers.symmetry import SymmetryController
 from .interaction.session import (
@@ -209,12 +172,10 @@ from .viewport.look_controls import (
     LOOK_ROWS,
     MaterialRow,
     LookRow,
-    clamp_material_values,
     light_row,
-    material_row,
 )
 from .viewport.gpu_picking import gpu_elements_in_rect, gpu_elements_in_region, gpu_pick_component
-from .viewport.picking import pick_component, pick_face, pick_object
+from .viewport.picking import pick_component, pick_face
 from .viewport.picking_cache import PickCache
 
 
@@ -326,28 +287,6 @@ _MODE_COMMANDS: dict[str, SelectionMode] = {
     commands.SET_OBJECT_MODE: SelectionMode.OBJECT,
 }
 
-#: AD-021 M1 (L-1: one gesture writes one level): commands that work on the edit object's
-#: components. In mode `4` they are refused with a status line, except the object transforms
-#: below; a Reference is locked (RF-4, Q-1). Undo/Redo, display, Soft settings and constraints
-#: are state or history, not component work, and stay allowed.
-_COMPONENT_COMMANDS = frozenset(
-    {
-        *TRANSFORM_COMMANDS,
-        commands.CONNECT,
-        *_REMOVAL_COMMANDS,
-        commands.COLLAPSE,
-        commands.BORDER_SELECT,
-        commands.CAP,
-        commands.SYMMETRY_CYCLE,
-        commands.RESYMMETRIZE,
-        *_MASK_COMMANDS,
-        *_HIDE_COMMANDS,
-        *_REGION_COMMANDS,
-        *_LOOP_COMMANDS,
-        *_SELECTION_STEP_COMMANDS,
-    }
-)
-
 #: The commands a key runs through `_execute` once `can_run` let them through: pure display and view state (allowed
 #: while a transform runs), the Soft settings (state only, like the constraints: they apply to the next gesture - or
 #: to this one if it is armed and has not begun yet; symmetric Soft refuses at `begin()`, AD-SYM-04 SS2), and the
@@ -376,73 +315,6 @@ _KEY_COMMANDS = frozenset(
         *_SELECTION_STEP_COMMANDS,
     }
 )
-
-#: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture (`_object_arm`) instead of a
-#: component tool; T (Extrude) stays component work.
-_OBJECT_TRANSFORM_COMMANDS = frozenset({commands.MOVE, commands.ROTATE, commands.SCALE})
-
-#: AD-021 M2-3 (L-3): the two explicit level conversions, mode `4` only. Labels for the status
-#: line (`PROVISIONAL`).
-_PLACEMENT_COMMANDS: dict[str, str] = {
-    commands.APPLY_TRANSFORM: "Apply transform",
-    commands.CLEAR_TRANSFORM: "Clear transform",
-}
-
-
-@dataclasses.dataclass
-class _ObjectGesture:
-    """A W/E/R gesture in mode `4` (AD-021 M2-2, E-11): the targets with their start transforms
-    (Esc restores exactly these), the References of the selection that stay where they are, the
-    selection snapshot for the mirror entry, and what the motion has accumulated so far. Every
-    step recomputes each transform from its start, so nothing drifts inside one gesture."""
-
-    targets: list[tuple[SceneObject, ObjectTransform]]
-    references: tuple[str, ...]
-    selection_before: tuple
-    axis: tuple[float, float, float] | None = None
-    mask: tuple[float, float, float] | None = None
-    move: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    pixels: float = 0.0
-    angle: float = 0.0  # Rotate: the total angle (rad), from the dial or the dx fallback
-    dial: DialAngle | None = None
-    # Mirror pairs (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.4): (follower, its start, driver, driver's
-    # start, pair). The follower is F(driver) after every step - stateless, nothing accumulates.
-    followers: list = dataclasses.field(default_factory=list)
-
-
-class _ObjectGestureSession(GestureSession):
-    """AD-027 M6, transitional: the object gesture of mode `4` as a session; its code is still `Application`'s
-    (`_object_*`) and moves into the ObjectController at M7."""
-
-    def __init__(self, app: "Application", command: str, key: str, origin) -> None:
-        super().__init__(app._gestures, command, key, (), origin)
-        self._app = app
-
-    @property
-    def label(self) -> str:
-        return f"Object {super().label}"
-
-    def step(self, dx: float, dy: float) -> bool:
-        return self._app._object_step(dx, dy)
-
-    def release(self) -> None:
-        self._app._object_release()
-
-    def abort(self) -> None:
-        self._app._object_cancel()
-
-    def cleanup(self) -> None:
-        self._app._object_gesture = None
-
-
-def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
-    return (
-        frozenset(selection.vertices),
-        frozenset(selection.edges),
-        frozenset(selection.faces),
-        frozenset(selection.objects),
-    )
-
 
 @dataclasses.dataclass(frozen=True)
 class CommandGate:
@@ -515,18 +387,6 @@ class Application:
         # (comparison runs, the probes; `MIRAI_CPU_PICKING=1` in the environment as the escape hatch
         # if a driver draws wrong IDs).
         self.gpu_picking: bool = os.environ.get("MIRAI_CPU_PICKING") != "1"
-        # AD-021 M1: pick caches of the objects other than the edit object (mode `4` picking;
-        # the edit object shares `_pick_cache`). Pruned with the render entries.
-        self._object_pick_caches: dict[ObjectId, PickCache] = {}
-        # 2026-10-16: what the selection highlight in mode `4` was last drawn for.
-        self._object_highlight_key: tuple | None = None
-        # AD-021 M2-1 (E-7): one Objektraum-Kamera per placed object, stable so that a
-        # `PickCache` keyed on `id(camera)` keeps working; read live, pruned with the entries.
-        self._object_cameras: dict[ObjectId, ObjectSpaceCamera] = {}
-        # AD-021 M2-0 (§7.3 RD-2): all References drawn as Ghost (`Alt+D`); display state,
-        # not an Undo step, kept across scene loads like `DisplayState`.
-        self.reference_ghost: bool = False
-
         # Gate 7: V0.2 Viewport wird in init_scene() mit dem Mesh gebunden.
         # Bliebt None, bis init_scene() aufgerufen wurde (kein Mesh verfügbar).
         self.viewport: Viewport | None = None
@@ -598,9 +458,9 @@ class Application:
         # The hold-key gestures (W/E/R, T, G, S, I, Ctrl+B; the gizmo / Tweak drag) as sessions in the slot, their
         # constraint settings and Soft live steps (`controllers.gestures` since AD-027 M6).
         self._gestures = GestureController(self._services, self.tool_manager)
-        # AD-021 M2-2 (E-11): the object gesture of mode `4` (None = none); a gesture session like the component
-        # gestures, so `interaction_owner` reports "transform" and every key gate holds for it unchanged.
-        self._object_gesture: _ObjectGesture | None = None
+        # The objects: add / delete, mirror pairs, Reference, Apply / Clear, material, their views, cameras and pick
+        # caches, the edit-object switch, the object click and the object gesture (`controllers.objects`, AD-027 M7).
+        self._objects = ObjectController(self._services, self._gestures)
         # WP-SOFT-01 S2a (AD-020, `PROVISIONAL`, off by default): sticky Soft Selection
         # settings with the semantics of the sticky axis constraint above - they survive commit,
         # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
@@ -659,9 +519,6 @@ class Application:
         # (Apply transform on a non-edit object), so their render entries rebuild on Undo/Redo.
         self._selection_undo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
         self._selection_redo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
-        # AD-021 M2-4: how long the last Q-5 switch of the edit object took (s, `time.perf_counter`;
-        # measured, not optimised - the viewport rebuilds the entries of both objects).
-        self.last_edit_switch_seconds: float = 0.0
         # Whether the last Undo/Redo touched the edit object's mesh (`_apply_undo_redo`).
         self._last_undo_redo_mesh_step: bool = True
 
@@ -850,8 +707,8 @@ class Application:
         )
         self.morph.attach(self.viewport)
         self._morph.ab.clear()
-        self._object_pick_caches = {}
-        self._sync_object_views()
+        self._objects.pick_caches = {}
+        self._objects.sync_views()
         self._apply_display()
 
     @staticmethod
@@ -878,7 +735,7 @@ class Application:
         texture = find_texture(path, data) if data.has_uvs else None
         return mesh_from_obj_data(data), path.stem, None if texture is None else str(texture.resolve())
 
-    # -- Objekte (AD-021 M1) ----------------------------------------------------
+    # -- Objects (AD-021; `controllers.objects` since AD-027 M7) ----------------------------------------
 
     def add_reference(
         self,
@@ -895,22 +752,10 @@ class Application:
         meldet ihn). Gibt das neue Objekt zurück."""
         if self.viewport is None:
             raise RuntimeError("add_reference() before init_scene()")
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"Add object: not while the {owner} interaction runs")
-            return None
-        if self._layer_gate_refuses("add_reference", ()):
+        if self._objects.refused_during_interaction("Add object") or self._objects.layer_refused("add_reference", ()):
             return None
         mesh, default_name, texture = self._build_mesh(geometry_type, obj_path)
-        before = self._selection_snapshot()
-        obj = self.scene.add_object(
-            mesh, name=name or default_name, state=ObjectState.REFERENCE, texture=texture
-        )
-        self.history.push(AddObjectCommand(self.scene, obj))
-        self._record_selection_history(before, mesh_step=False)
-        self._sync_object_views()
-        self._set_status(f"Added {obj.name!r} as Reference")
-        return obj
+        return self._objects.add_reference(mesh, name or default_name, texture)
 
     def add_primitive(self, kind: str, name: str | None = None) -> SceneObject | None:
         """Add Mesh (Track A1, 2026-10-23, `PROVISIONAL`; `scene_factory.PRIMITIVES`: plane, cube,
@@ -930,7 +775,7 @@ class Application:
 
         if kind not in PRIMITIVES:
             raise ValueError(f"unknown primitive {kind!r}")
-        return self._add_mesh_object(
+        return self._objects.add_mesh_object(
             lambda: PRIMITIVES[kind](), name or unique_object_name(self.scene, kind), f"Add {kind}"
         )
 
@@ -950,442 +795,59 @@ class Application:
             mesh, _name, loaded["texture"] = self._load_obj(path)
             return mesh
 
-        obj = self._add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
+        obj = self._objects.add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
         if obj is not None and loaded.get("texture"):
             obj.texture = loaded["texture"]
-            self._sync_object_views()
+            self._objects.sync_views()
             self._set_status(f"{self.status_message} - texture {Path(obj.texture).name}")
         return obj
 
     def export_obj(self, path: str | Path) -> bool:
         """OBJ export (SPACE menu): the edit object in world space (object transform applied), one
         `o` record. True = written. Refused during an interaction like `save_scene_file`."""
-        from .obj_export import mesh_to_obj
-
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"Export OBJ: not while the {owner} interaction runs")
-            return False
-        obj = self.morph_document_object  # the rest shape of the base, never the editing view
-        path = Path(path)
-        text = mesh_to_obj(obj.mesh, obj.name, lambda p: object_space.to_world(obj, p))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
-        self._set_status(f"Exported OBJ: {path}")
-        return True
-
-    def _add_mesh_object(self, build: Callable[[], Mesh], name: str, label: str) -> SceneObject | None:
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return None
-        if self._layer_gate_refuses("add_primitive", ()):
-            return None
-        mesh = build()
-        scene, selection = self.scene, self.selection
-        before = self._selection_snapshot()
-        obj = scene.add_object(mesh, name=name)
-        self.history.push(AddObjectCommand(scene, obj))
-        selection.mode = SelectionMode.OBJECT
-        selection.clear()
-        selection.objects = {obj.id}
-        selection.hovered = None
-        self._record_selection_history(before, mesh_step=False)
-        self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-        self._sync_object_views()
-        self._refresh_hover()
-        self._set_status(
-            f"Added {obj.name!r} - selected (Object mode); W/E/R place it, 1/2/3 edit it"
-        )
-        return obj
-
-    def _delete_objects_command(self) -> bool:
-        """`Delete` in mode `4` (Track A2): remove the selected objects - **not** points/edges/
-        faces (`_removal_command` is the component Delete and is unchanged). One Undo step
-        (`DeleteObjectsCommand` + one mirror entry) however many objects; the same instances come
-        back on Undo with their ids, and Undo restores the selection and the edit object of
-        before. Deleting the edit object hands the edit role to a surviving Normal object
-        (`plan_object_delete`); the last object, or leaving only References, is refused with a
-        status line - the scene has no empty state."""
-        label = "Delete object"
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return False
-        scene, selection = self.scene, self.selection
-        selected = [oid for oid in sorted(selection.objects) if oid in scene.objects]
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first")
-            return False
-        try:
-            doomed, edit_after = plan_object_delete(scene, selected)
-        except DeleteRefused as exc:
-            self._set_status(f"{label}: {exc}")
-            return False
-        before = self._selection_snapshot()
-        edit_before = scene.edit_object_id
-        edit_changed = edit_after != edit_before
-        # Mirror pairs (proposal §5.5): a pair with a deleted object is broken in the same Undo
-        # step - first, so the scene never holds a pair to a missing object; Undo restores both.
-        doomed_ids = {obj.id for obj in doomed}
-        broken = [pair for pair in scene.mirror_pairs if pair.a in doomed_ids or pair.b in doomed_ids]
-        pair_notes = []
-        for pair in broken:
-            survivors = [scene.objects[oid] for oid in (pair.a, pair.b) if oid not in doomed_ids]
-            if survivors:
-                pair_notes.append(f"mirror pair with {survivors[0].name!r} broken")
-            else:
-                pair_notes.append(f"mirror pair {pair_names(scene, pair)} removed")
-            scene.remove_mirror_pair(pair)
-        scene.edit_object_id = edit_after
-        for obj in doomed:
-            scene.remove_object(obj.id)
-        delete = DeleteObjectsCommand(scene, doomed, edit_before, edit_after)
-        if broken:
-            delete = CompositeCommand(
-                [MirrorPairCommand(scene, pair, create=False) for pair in broken] + [delete],
-                delete.description,
-            )
-        self.history.push(delete)
-        selection.objects -= {obj.id for obj in doomed}
-        if edit_changed:
-            selection.clear()  # component ids belong to the deleted edit object's mesh
-        selection.hovered = None
-        self._record_selection_history(before, mesh_step=edit_changed)
-        if edit_changed:
-            self._follow_edit_object()
-        else:
-            self._sync_object_views()
-        self._soft_preview_refresh()
-        self._refresh_hover()
-        names = ", ".join(repr(obj.name) for obj in doomed)
-        text = f"Deleted {names}"
-        for note in pair_notes:
-            text += f" - {note}"
-        if edit_changed:
-            text += f" - now editing {scene.edit_object.name!r}"
-        self._set_status(text)
-        return True
-
-    # -- Mirror pairs (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5, 2026-10-23, `PROVISIONAL`) ----------
-    #
-    # Window-level commands (the Shift+M menu, `src/scene_menu.py`), mode `4` only. Each is one Undo
-    # step built from the existing commands; pair state changes only through `MirrorPairCommand`.
-    # Planes: X = 0 / Y = 0 / Z = 0 (`object_mirror.PLANES`, proposal §9 decision 7 default).
-
-    def _mirror_selection(self, label: str) -> list[SceneObject] | None:
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return None
-        if self.selection.mode is not SelectionMode.OBJECT:
-            self._set_status(f"{label}: works on objects - press 4 and select them")
-            return None
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first")
-            return None
-        return selected
-
-    def _selected_pairs(self, selected: list[SceneObject]) -> list[MirrorPair]:
-        pairs: list[MirrorPair] = []
-        for obj in selected:
-            pair = self.scene.mirror_pair_of(obj.id)
-            if pair is not None and pair not in pairs:
-                pairs.append(pair)
-        return pairs
+        return self._objects.export_obj(path)
 
     def mirror_copy(self, axis: str = "X") -> SceneObject | None:
-        """Mirror copy (proposal §5.5): a new Normal object B with the selected object's mesh
-        reflected across the world plane (`object_mirror.mirror_mesh`: positions `H p`, winding
-        reversed, no symmetry definition) at `F(A)`, paired with A. One Undo step
-        (`AddObjectCommand` + `MirrorPairCommand`); B becomes the object selection (`PROVISIONAL`),
-        named by `unique_object_name`. Refused (status line, None) without exactly one selected
-        object, for a Reference or an object already in a pair."""
-        label = "Mirror copy"
-        normal, offset = MIRROR_PLANES[axis]
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return None
-        if len(selected) != 1:
-            self._set_status(f"{label}: select one object ({len(selected)} are selected)")
-            return None
-        scene, selection = self.scene, self.selection
-        source = selected[0]
-        if self._layer_gate_refuses("mirror_copy", [source.mesh]):
-            return None
-        try:
-            check_pairable(scene, [source])
-        except MirrorRefused as exc:
-            self._set_status(f"{label}: {exc}")
-            return None
-        before = self._selection_snapshot()
-        obj = scene.add_object(mirror_mesh(source.mesh, normal), name=unique_object_name(scene, source.name))
-        obj.transform, obj.pivot = mirror_placement(source, normal, offset)
-        obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
-        obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
-        add = AddObjectCommand(scene, obj)
-        pair = MirrorPair(source.id, obj.id, normal=normal, offset=offset)
-        scene.add_mirror_pair(pair)
-        self.history.push(
-            CompositeCommand([add, MirrorPairCommand(scene, pair, create=True)], f"Mirror copy {source.name!r}")
-        )
-        selection.objects = {obj.id}
-        selection.hovered = None
-        self._record_selection_history(before, mesh_step=False)
-        if self.viewport is not None:
-            self.viewport.on_selection_changed()
-        self._sync_object_views()
-        self._refresh_hover()
-        self._set_status(
-            f"Mirror copy: {describe_pair(scene, pair)} - paired: moving either moves both mirrored;"
-            " the meshes stay independent"
-        )
-        return obj
+        """Mirror copy of the one selected object, paired with it (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.5, the
+        Shift+M menu): `ObjectController.mirror_copy`."""
+        return self._objects.mirror_copy(axis)
 
     def pair_selected(self, axis: str = "X") -> bool:
-        """Pair two selected objects (proposal §5.5): the lower ObjectId drives and stays, the other
-        is placed at `F(driver)` (transform, scale and pivot - announced), then the pair. One Undo
-        step. The meshes are not inspected. Refused unless exactly two objects are selected, for a
-        Reference or an object already in a pair."""
-        label = "Mirror pair"
-        normal, offset = MIRROR_PLANES[axis]
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return False
-        if len(selected) != 2:
-            self._set_status(
-                f"{label}: select exactly two objects ({len(selected)} are selected) - the first created"
-                " stays, the other is placed at its mirror"
-            )
-            return False
-        driver, follower = selected
-        before = self._selection_snapshot()
-        try:
-            command = pair_existing_command(self.scene, driver, follower, normal, offset)
-        except MirrorRefused as exc:
-            self._set_status(f"{label}: {exc}")
-            return False
-        self.history.push(command)
-        self._record_selection_history(before, mesh_step=False)
-        self._placement_changed()
-        pair = self.scene.mirror_pair_of(driver.id)
-        self._set_status(
-            f"{label}: {follower.name!r} is placed at the mirror of {driver.name!r}"
-            f" - paired {describe_pair(self.scene, pair)}"
-        )
-        return True
+        """Pair two selected objects (proposal §5.5): `ObjectController.pair_selected`."""
+        return self._objects.pair_selected(axis)
 
     def break_mirror_pairs(self) -> bool:
-        """Break the pairs of the selected objects (proposal §5.5): both objects stay exactly where
-        they are; one Undo step however many pairs."""
-        label = "Break pair"
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return False
-        pairs = self._selected_pairs(selected)
-        if not pairs:
-            self._set_status(f"{label}: no selected object is in a mirror pair")
-            return False
-        scene = self.scene
-        names = ", ".join(pair_names(scene, pair) for pair in pairs)
-        before = self._selection_snapshot()
-        parts = []
-        for pair in pairs:
-            scene.remove_mirror_pair(pair)
-            parts.append(MirrorPairCommand(scene, pair, create=False))
-        self.history.push(parts[0] if len(parts) == 1 else CompositeCommand(parts, "Break mirror pairs"))
-        self._record_selection_history(before, mesh_step=False)
-        self._set_status(f"Mirror pair {names} broken - both stay where they are")
-        return True
+        """Break the pairs of the selected objects (proposal §5.5): `ObjectController.break_mirror_pairs`."""
+        return self._objects.break_mirror_pairs()
 
     def resync_mirror_pairs(self) -> bool:
-        """Re-sync the pairs of the selected objects (proposal §5.7): B is placed at `F(A)` again
-        (`pair.a` = the driver at creation). One Undo step; nothing for a pair in sync; refused,
-        before anything changes, when a B to move is a Reference."""
-        label = "Re-sync"
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return False
-        pairs = self._selected_pairs(selected)
-        if not pairs:
-            self._set_status(f"{label}: no selected object is in a mirror pair")
-            return False
-        scene = self.scene
-        todo = [p for p in pairs if not in_sync(scene.objects[p.a], scene.objects[p.b], p)]
-        if not todo:
-            names = ", ".join(pair_names(scene, pair) for pair in pairs)
-            self._set_status(f"{label}: mirror pair {names} is in sync - nothing to do")
-            return False
-        for pair in todo:
-            b = scene.objects[pair.b]
-            if b.state is ObjectState.REFERENCE:
-                self._set_status(
-                    f"{label}: {b.name!r} (mirror partner of {scene.objects[pair.a].name!r}) is a Reference - locked"
-                )
-                return False
-        before = self._selection_snapshot()
-        parts = [resync_command(scene, pair) for pair in todo]
-        self.history.push(parts[0] if len(parts) == 1 else CompositeCommand(parts, "Re-sync mirror pairs"))
-        self._record_selection_history(before, mesh_step=False)
-        self._placement_changed()
-        moved = ", ".join(repr(scene.objects[pair.b].name) for pair in todo)
-        self._set_status(f"{label}: {moved} placed at the mirror of its partner again")
-        return True
-
-    def _mirror_followers(
-        self, label: str, targets: list[SceneObject]
-    ) -> tuple[list[SceneObject], list] | None:
-        """The object gesture's drivers and followers (proposal §5.4): a pair is one unit - the
-        partner of a driven object follows; with both selected the lower ObjectId drives. None
-        (refusal posted) when a partner is a Reference (locked) or a pair is out of sync."""
-        scene = self.scene
-        ids = {obj.id for obj in targets}
-        drivers: list[SceneObject] = []
-        followers: list = []
-        for obj in targets:
-            pair = scene.mirror_pair_of(obj.id)
-            if pair is None:
-                drivers.append(obj)
-                continue
-            partner = scene.objects[pair.other(obj.id)]
-            if partner.id in ids and partner.id < obj.id:
-                continue  # the partner drives this one
-            if partner.state is ObjectState.REFERENCE:
-                self._set_status(
-                    f"{label}: {partner.name!r} (mirror partner of {obj.name!r}) is a Reference - locked"
-                )
-                return None
-            if not in_sync(scene.objects[pair.a], scene.objects[pair.b], pair):
-                self._set_status(f"{label}: {out_of_sync_text(scene, pair)}")
-                return None
-            drivers.append(obj)
-            followers.append((partner, partner.transform, obj, obj.transform, pair))
-        return drivers, followers
-
-    @staticmethod
-    def _mirror_note(followers: list) -> str:
-        if not followers:
-            return ""
-        names = ", ".join(f"{f.name!r} mirrors {d.name!r}" for f, _, d, _, _ in followers)
-        return f" - {names}"
-
-    def _sync_object_views(self) -> None:
-        """Gleicht die Render-Einträge und Pick-Caches der Nicht-Edit-Objekte mit
-        `scene.objects` ab (AD-021 §4.6 "App consequences"): ein entferntes Objekt verliert
-        seinen Eintrag, ein neues bekommt einen, ein Zustandswechsel ändert nur die Farbe.
-        Läuft nach jedem Objekt-Schritt, nach Undo/Redo und beim Laden. Das Edit-Objekt
-        zeichnet der Viewport selbst, mit den Selection-Overlays (§4.4 "Drawing")."""
-        scene = self.scene
-        others = {
-            oid: obj for oid, obj in scene.objects.items() if oid != scene.edit_object_id
-        }
-        for oid in [oid for oid in self._object_pick_caches if oid not in others]:
-            del self._object_pick_caches[oid]
-        for oid in [oid for oid in self._object_cameras if oid not in scene.objects]:
-            del self._object_cameras[oid]
-        if self.viewport is None:
-            return
-        # M2-1: the edit object's placement (mesh uniform + `view·model` for its overlays).
-        self.viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
-        for key in [key for key in self.viewport.object_entries if key not in others]:
-            self.viewport.remove_object_entry(key)
-        highlighted = self._highlighted_objects()
-        for oid, obj in others.items():
-            reference = obj.state is ObjectState.REFERENCE
-            self.viewport.set_object_entry(
-                oid,
-                obj.mesh,
-                selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj),
-                model_matrix=object_space.model_matrix(obj),
-                # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is
-                # drawn in Wireframe too - a Normal object follows the display mode.
-                alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
-                ignores_wireframe=reference,
-                finish=object_finish(obj, self.display.surface_finish),
-                texture=self._shown_texture(obj, oid in highlighted),
-            )
-        edit = scene.edit_object
-        self.viewport.set_edit_base_color(
-            selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else object_base_color(edit),
-            object_finish(edit, self.display.surface_finish),
-            self._shown_texture(edit, edit.id in highlighted),
-        )
-        self._object_highlight_key = self._object_highlight_signature()
-
-    def _shown_texture(self, obj: SceneObject, highlighted: bool) -> str | None:
-        """The texture the viewport draws for `obj` (AD-026): its own while textures are shown
-        (`DisplayState.show_texture`); a highlighted object (mode `4` selection) shows its selection
-        tint instead, so the selection stays visible on a textured object (`PROVISIONAL`)."""
-        if obj.texture is None or highlighted or not self.display.show_texture:
-            return None
-        return obj.texture
+        """Re-sync the pairs of the selected objects (proposal §5.7): `ObjectController.resync_mirror_pairs`."""
+        return self._objects.resync_mirror_pairs()
 
     def toggle_texture_display(self) -> bool:
         """Textures on/off (SPACE menu row, `src/obj_files.py`): pure view state, no Undo step.
         Returns the new state."""
-        self.display.show_texture = not self.display.show_texture
-        self._sync_object_views()
-        self._set_status(f"Textures: {'on' if self.display.show_texture else 'off'}")
-        return self.display.show_texture
+        return self._objects.toggle_texture_display()
 
-    def _highlighted_objects(self) -> frozenset:
-        """The objects drawn as selected: the object selection, in mode `4` only (2026-10-16, Manu:
-        "man kann nicht wirklich sehen, welches Objekt ausgewählt ist"; look `PROVISIONAL`)."""
-        if self.selection.mode is not SelectionMode.OBJECT:
-            return frozenset()
-        return frozenset(oid for oid in self.selection.objects if oid in self.scene.objects)
+    @property
+    def reference_ghost(self) -> bool:
+        """AD-021 M2-0 (§7.3 RD-2): all References drawn as Ghost (`Alt+D`); display state, not an Undo step,
+        kept across scene loads like `DisplayState`."""
+        return self._objects.reference_ghost
 
-    def _object_highlight_signature(self) -> tuple:
-        scene = self.scene
-        return (
-            self._highlighted_objects(),
-            scene.edit_object_id,
-            tuple((oid, obj.state, obj.material, obj.texture) for oid, obj in scene.objects.items()),
-        )
+    @reference_ghost.setter
+    def reference_ghost(self, value: bool) -> None:
+        self._objects.reference_ghost = value
 
-    def _sync_object_highlight(self) -> None:
-        """Redraws the selection highlight when the object selection, the mode, the edit object or
-        a state changed since it was last drawn - every path that changes them (click, box, Undo,
-        key `4`, ...) is covered by the per-frame call in `update_viewport`."""
-        if self.viewport is not None and self._object_highlight_signature() != self._object_highlight_key:
-            self._sync_object_views()
-
-    def _placement_changed(self) -> None:
-        """An object's `transform`/`pivot` changed (AD-021 M2-1; the M2-2 object tools and their
-        Undo call this). Positions in object space are unchanged, so nothing is rebuilt: the
-        matrices go to the viewport, every pick cache re-projects (the edit object's camera
-        revision already carries its transform; the explicit invalidation also covers the
-        switch between `OrbitCamera` and its adapter), the hover is re-picked. Soft weights and
-        symmetry live in object space and stay as they are (§4.8)."""
-        self._pick_cache.invalidate()
-        for cache in self._object_pick_caches.values():
-            cache.invalidate()
-        self._sync_object_views()
-        self._refresh_hover()
-
-    def _set_edit_object(self, object_id: ObjectId) -> None:
-        """AD-021 M2-4 (E-14): **the one place** that changes the edit object. Sets
-        `scene.edit_object_id` and moves everything that hangs on the edit object's mesh with
-        it: the viewport's overlay entry (`Viewport.set_edit_mesh`; the previous edit object
-        becomes an object entry in `_sync_object_views`), the pick caches, the hover and the
-        soft radius (the fourth radius event, §4.8). The symmetry report cache is keyed by the
-        mesh's geometry and needs nothing. The caller owns the component sets (§4.4: the Q-5
-        gesture clears them, Undo/Redo restores the ones of the step), the soft preview that
-        follows from them, and the refusals (a running interaction, a Reference - RF-5)."""
-        scene = self.scene
-        if object_id == scene.edit_object_id:
-            return
-        scene.edit_object_id = object_id
-        self._follow_edit_object()
+    @property
+    def last_edit_switch_seconds(self) -> float:
+        """AD-021 M2-4: how long the last Q-5 switch of the edit object took (s, `time.perf_counter`; measured,
+        not optimised - the viewport rebuilds the entries of both objects)."""
+        return self._objects.last_edit_switch_seconds
 
     def _follow_edit_object(self) -> None:
         """Everything that hangs on the edit object's mesh follows `scene.edit_object_id`. Called
-        by `_set_edit_object`, by Delete of the edit object, and by Undo/Redo of a step whose
+        by `ObjectController.set_edit_object`, by Delete of the edit object, and by Undo/Redo of a step whose
         command changed the edit object itself (`DeleteObjectsCommand`, `AddObjectCommand`): the
         scene is already switched there, only the view is behind. A morph target's editing view lives
         while it is the edit object: it closes here when another object became the edit object."""
@@ -1402,425 +864,7 @@ class Application:
         self._tints_seen = None  # the new RenderMesh has no region colours yet
         self._hidden_push()  # the new edit object keeps its own hidden set and mask
         self._soft_refresh_radius()
-        self._sync_object_views()
-
-    def _object_camera(self, obj: SceneObject):
-        """The camera as the object's own space sees it (AD-021 M2-1, E-7): the `OrbitCamera`
-        itself while the placement is identity (bit-exact as before), else its stable
-        `ObjectSpaceCamera`."""
-        if object_space.is_identity(obj.transform):
-            return self.camera
-        adapter = self._object_cameras.get(obj.id)
-        if adapter is None or adapter.camera is not self.camera:
-            adapter = self._object_cameras[obj.id] = ObjectSpaceCamera(self.camera, obj)
-        return adapter
-
-    @property
-    def _edit_camera(self):
-        """The camera every component path uses (picking, Knife, W/E/R/T): in the edit object's
-        space (L-5)."""
-        return self._object_camera(self.scene.edit_object)
-
-    def _pick_object(self, x: float, y: float) -> ObjectId | None:
-        """Mode `4`: the object whose surface is front-most under the cursor - every object,
-        References included (RF-3); none is hidden in M1."""
-        candidates = []
-        for oid, obj in self.scene.objects.items():
-            if oid == self.scene.edit_object_id:
-                cache = self._pick_cache
-            else:
-                cache = self._object_pick_caches.setdefault(oid, PickCache())
-            candidates.append(
-                (oid, obj.mesh, cache, self._object_camera(obj), obj.transform.scale)
-            )
-        return pick_object(candidates, x, y, self.viewport_width, self.viewport_height)
-
-    def _select_object_at(self, command: str, x: float, y: float) -> bool:
-        """Klick in Modus `4` (AD-021 M1): ändert nur die Objekt-Auswahl (`selection.objects`).
-        Ein einfacher Klick wählt genau dieses Objekt (ins Leere: Auswahl leer), Shift/Ctrl/Alt
-        wie bei Komponenten. Q-12 revidiert (Manu 2026-10-16: ein Klick, der zugleich auf Referenz
-        umschaltet, ist verwirrend): Referenz an/aus ist `Alt+R` (`_reference_command`). True =
-        die Auswahl hat sich geändert."""
-        if self._gesture is not None:
-            # M2-2: no selection or state change underneath a held W/E/R (its targets are fixed).
-            return False
-        selection = self.selection
-        before = self._selection_snapshot()
-        before_state = _selection_state(selection)
-        hit = self._pick_object(x, y)
-        if hit is None:
-            if command == commands.SELECT:
-                selection.clear_objects()
-        elif command == commands.SELECT:
-            selection.set({hit})
-        elif command == commands.SELECT_ADD:
-            selection.add({hit})
-        elif command == commands.SELECT_REMOVE:
-            selection.remove({hit})
-        elif command == commands.SELECT_TOGGLE:
-            selection.toggle(hit)
-        changed = _selection_state(selection) != before_state
-        if hit is not None and command == commands.SELECT:
-            obj = self.scene.objects[hit]
-            if hit == self.scene.edit_object_id:
-                self._set_status(f"Object {obj.name!r} selected (being edited)")
-            elif obj.state is ObjectState.REFERENCE:
-                self._set_status(f"Object {obj.name!r} selected (Reference - Alt+R makes it Normal)")
-            else:
-                self._set_status(f"Object {obj.name!r} selected - 1/2/3 edits it")
-        self._sync_object_highlight()
-        return changed
-
-    def _reference_command(self) -> bool:
-        """`Alt+R` in mode `4`: switch every selected object except the edit object Normal <->
-        Reference, one Undo step (Q-3; Q-12 revised 2026-10-16, key `PROVISIONAL`). The edit object
-        never becomes a Reference (RF-2/RF-5)."""
-        label = "Reference on/off"
-        if self.interaction_owner is not None:
-            return False
-        if self.selection.mode is not SelectionMode.OBJECT:
-            self._set_status(f"{label}: works on objects - press 4 and select them")
-            return False
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first")
-            return False
-        edit = scene.edit_object
-        targets = [obj for obj in selected if obj.id != edit.id]
-        if not targets:
-            self._set_status(f"Object {edit.name!r} is being edited - it cannot become a Reference")
-            return False
-        before = self._selection_snapshot()
-        if len(targets) == len(selected) == 1:
-            return self._switch_object_state(targets[0].id, before)
-        steps = []
-        for obj in targets:
-            old = obj.state
-            new = ObjectState.NORMAL if old is ObjectState.REFERENCE else ObjectState.REFERENCE
-            obj.state = new
-            steps.append(ObjectStateCommand(obj, old, new))
-        self.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, label))
-        self._record_selection_history(before, mesh_step=False)
-        self._sync_object_views()
-        text = ", ".join(f"{obj.name!r}: {obj.state.name.capitalize()}" for obj in targets)
-        if len(targets) < len(selected):
-            text += f" ({edit.name!r} is being edited - stays Normal)"
-        self._set_status(f"Object {text}")
-        return True
-
-    def _switch_object_state(self, object_id: ObjectId, selection_before: tuple) -> bool:
-        """Normal <-> Referenz als ein Undo-Schritt (Q-3). Das Edit-Objekt wird nie Referenz
-        (RF-2; RF-5 `PROVISIONAL`: in M1 ist es das einzige bearbeitbare Objekt, einen
-        Wechsel des Edit-Objekts gibt es erst in M2)."""
-        obj = self.scene.objects[object_id]
-        if object_id == self.scene.edit_object_id:
-            self._set_status(
-                f"Object {obj.name!r} is being edited - it cannot become a Reference"
-            )
-            return False
-        before = obj.state
-        after = ObjectState.NORMAL if before is ObjectState.REFERENCE else ObjectState.REFERENCE
-        obj.state = after
-        self.history.push(ObjectStateCommand(obj, before, after))
-        self._record_selection_history(selection_before, mesh_step=False)
-        self._sync_object_views()
-        self._set_status(f"Object {obj.name!r}: {after.name.capitalize()}")
-        return True
-
-    def _object_mode_refusal(self, command: str | None) -> str | None:
-        """AD-021 M1 (L-1, RF-4): the refusal text for component work in mode `4` (`can_run` stage 4).
-        M2-2: W/E/R pass - in `4` they are the object gesture, which refuses on its own
-        (`_object_arm`: nothing selected, only References)."""
-        if self.selection.mode is not SelectionMode.OBJECT or command not in _COMPONENT_COMMANDS:
-            return None
-        if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
-            return None  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
-        return (
-            "Object mode: T, G, S, I, Ctrl+B, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
-            " on points/edges/faces"
-            " - press 1/2/3 (Delete removes the selected objects)"
-        )
-
-    # -- Objekt-Geste in Modus `4` (AD-021 M2-2, E-11/E-12) -----------------------------
-
-    def _object_arm(self, command: str, key: str, origin) -> bool:
-        """W/E/R in mode `4`: arm the object gesture on the selected objects without the
-        References (RF-4, Q-1: locked; in a mixed selection they stay where they are and the
-        status line says so, `PROVISIONAL`). Refused with a status line when nothing or only
-        References are selected. Nothing moves before the first motion (AD-016, as W/E/R)."""
-        label, verb, _ = TRANSFORM_COMMANDS[command]
-        picked = self._object_targets(
-            f"Object {label}", f"to {verb} points/edges/faces press 1/2/3"
-        )
-        if picked is None:
-            return False
-        targets, references = picked
-        paired = self._mirror_followers(f"Object {label}", targets)
-        if paired is None:
-            return False
-        targets, followers = paired
-        self.interaction.start(_ObjectGestureSession(self, command, key, origin))
-        self._object_gesture = _ObjectGesture(
-            [(obj, obj.transform) for obj in targets],
-            references,
-            self._selection_snapshot(),
-            followers=followers,
-        )
-        if command == commands.SCALE:
-            constraint = " (uniform - X/Y/Z do not apply)" if self._gestures.axis_constraint else ""
-        else:
-            constraint = constraint_suffix(self._gestures.axis_constraint)
-        self._set_status(
-            f"Object {label}: {', '.join(repr(obj.name) for obj in targets)}{constraint}"
-            f"{self._mirror_note(followers)}{self._object_references_note(references)}{commit_hint(key)}"
-        )
-        return True
-
-    def _object_targets(
-        self, label: str, hint: str
-    ) -> tuple[list[SceneObject], tuple[str, ...]] | None:
-        """The selected objects an object command works on, and the names of the selected
-        References it leaves alone (RF-4, Q-1). None (refusal posted) when nothing or only
-        References are selected."""
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        targets = [obj for obj in selected if obj.state is not ObjectState.REFERENCE]
-        references = tuple(obj.name for obj in selected if obj.state is ObjectState.REFERENCE)
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first ({hint})")
-            return None
-        if not targets:
-            self._set_status(
-                f"Object mode: {references[0]!r} is a Reference - locked (select or switch only)"
-            )
-            return None
-        return targets, references
-
-    def _placement_command(self, command: str) -> bool:
-        """Apply / Clear transform (AD-021 M2-3, L-3) on the selected non-Reference objects, mode
-        `4` only. Objects without a placement are left alone; one Undo step for all of them."""
-        label = _PLACEMENT_COMMANDS[command]
-        if self.interaction_owner is not None:
-            return False
-        if self.selection.mode is not SelectionMode.OBJECT:
-            self._set_status(f"{label}: works on objects - press 4 and select them")
-            return False
-        picked = self._object_targets(label, "press 4 and click the object")
-        if picked is None:
-            return False
-        targets, references = picked
-        placed = [obj for obj in targets if not object_space.is_identity(obj.transform)]
-        if not placed:
-            self._set_status(f"{label}: nothing to do - {self._objects_text(targets)} not placed")
-            return False
-        paired = [obj for obj in placed if self.scene.mirror_pair_of(obj.id) is not None]
-        if paired:
-            # PROVISIONAL (proposal §5.7 / §9 decision 4): Apply/Clear would change the placement
-            # and the mesh/pivot relation the pair assumes - refused in v1, the way out named.
-            self._set_status(f"{label}: {paired[0].name!r} is in a mirror pair - break the pair first (Shift+M)")
-            return False
-        if command == commands.CLEAR_TRANSFORM:
-            return self._clear_transform(placed, references)
-        return self._apply_transform(placed, references)
-
-    def _clear_transform(self, placed: list[SceneObject], references: tuple[str, ...]) -> bool:
-        """Clear (L-3): placement back to identity, the mesh stays, the object jumps; the pivot
-        stays. One `ObjectTransformCommand` (an object step, `mesh_step=False`)."""
-        before = self._selection_snapshot()
-        changes = [(obj, obj.transform, IDENTITY_TRANSFORM) for obj in placed]
-        for obj, _, after in changes:
-            obj.transform = after
-        self.history.push(ObjectTransformCommand(changes, "Clear transform"))
-        self._record_selection_history(before, mesh_step=False)
-        self._placement_changed()
-        self._set_status(
-            f"{self._objects_text(placed)}: transform cleared (object level, mesh unchanged)"
-            f"{self._object_references_note(references)}"
-        )
-        return True
-
-    def _apply_transform(self, placed: list[SceneObject], references: tuple[str, ...]) -> bool:
-        """Apply (L-3, Max "Reset XForm"): every mesh position becomes its world position, the
-        placement becomes identity, and the pivot moves to its old world position `t + c`
-        (`PROVISIONAL`: a later Rotate/Scale turns about the same place as before; the
-        alternative, pivot = origin, is a question for Manu). One `CompositeCommand` per press
-        (E-13): a `MeshDeltaCommand` per object, then the transforms, then the pivots. Refused
-        as a whole, before anything changes, when one object's symmetry definition would not
-        survive the bake (`applied_symmetry_axis`), or when one object's mesh has point layers
-        (AD-025 §4.4: locked until Phase 3 maps the layers)."""
-        if self._layer_gate_refuses(commands.APPLY_TRANSFORM, [obj.mesh for obj in placed]):
-            return False
-        try:
-            axes = [applied_symmetry_axis(obj) for obj in placed]
-        except ApplyRefused as exc:
-            self._set_status(f"Apply transform: refused - {exc}")
-            return False
-        before = self._selection_snapshot()
-        parts: list = []
-        transforms, pivots = [], []
-        for obj, axis in zip(placed, axes):
-            mesh = obj.mesh
-            delta, _ = record_mesh_change(mesh, lambda obj=obj, axis=axis: apply_placement(obj, axis))
-            parts.append(MeshDeltaCommand(mesh=mesh, delta=delta, description=f"Apply transform {obj.name!r}"))
-            pivots.append((obj, obj.pivot, object_space.to_world(obj, obj.pivot)))
-            transforms.append((obj, obj.transform, IDENTITY_TRANSFORM))
-        for obj, _, after in transforms:
-            obj.transform = after
-        for obj, _, after in pivots:
-            obj.pivot = after
-        parts += [ObjectTransformCommand(transforms, "Apply transform"), ObjectPivotCommand(pivots)]
-        self.history.push(CompositeCommand(parts, "Apply transform"))
-        edit_id = self.scene.edit_object_id
-        others = frozenset(obj.id for obj in placed if obj.id != edit_id)
-        edit_changed = len(others) < len(placed)
-        self._record_selection_history(before, mesh_step=edit_changed, object_meshes=others)
-        self._object_meshes_changed(others)
-        if edit_changed:
-            self._notify_topology_changed()
-        self._placement_changed()
-        self._set_status(
-            f"{self._objects_text(placed)}: transform applied (object level -> mesh;"
-            f" placement is identity now){self._object_references_note(references)}"
-        )
-        return True
-
-    def _object_meshes_changed(self, object_ids) -> None:
-        """The mesh of these non-edit objects changed (Apply transform, its Undo/Redo): their
-        render entries rebuild and their pick caches re-project."""
-        for oid in object_ids:
-            cache = self._object_pick_caches.get(oid)
-            if cache is not None:
-                cache.invalidate()
-            if self.viewport is not None and oid in self.viewport.object_entries:
-                self.viewport.object_entries[oid].mark_topology_dirty()
-
-    @staticmethod
-    def _object_references_note(references: tuple[str, ...]) -> str:
-        if not references:
-            return ""
-        names = ", ".join(repr(name) for name in references)
-        return f" - Reference {names} stays (locked)"
-
-    def _object_step(self, dx: float, dy: float) -> bool:
-        """One motion of the object gesture. The first one fixes the constraint (sticky axis,
-        read once as at `begin()`; Q-4: Scale is always uniform) and, for Rotate, the axis:
-        the camera's view direction without a constraint, else the world axis or the plane's
-        normal. Move: world delta on the camera plane through the first target's pivot, masked
-        by the world constraint, `t' = t_start + Σdelta`. Rotate: `R' = Q(axis, angle)·R_start`
-        about each object's own pivot (its world position `t + c` does not depend on R and s,
-        so no translation is corrected). Scale: `s' = s_start·f`. The factors are the
-        component tools' (`RotateTool`, `ScaleTool`)."""
-        gesture = self._object_gesture
-        session = self._gesture
-        command = session.command
-        if not session.begun:
-            space = None if command == commands.SCALE else self._gestures.axis_constraint
-            session.space = space
-            if command == commands.ROTATE:
-                gesture.axis = (
-                    self.camera.basis()[0] if space is None else _resolve_space(space, for_rotation=True)
-                )
-            elif command == commands.MOVE and space is not None:
-                gesture.mask = _resolve_space(space, for_rotation=False)
-            session.begun = True
-        if command == commands.MOVE:
-            anchor = gesture.targets[0][0]
-            delta = self.camera.screen_delta_to_world(
-                object_space.to_world(anchor, anchor.pivot),
-                dx, dy, self.viewport_width, self.viewport_height,
-            )
-            if gesture.mask is not None:
-                delta = tuple(d * m for d, m in zip(delta, gesture.mask))
-            gesture.move = tuple(gesture.move[i] + delta[i] for i in range(3))
-        elif command == commands.ROTATE:
-            gesture.pixels += dx
-            self._object_rotate_angle(gesture, dx)
-        else:
-            gesture.pixels += dx + dy
-        for obj, start in gesture.targets:
-            obj.transform = self._object_transform_from(start)
-        for follower, follower_start, driver, driver_start, pair in gesture.followers:
-            follower.transform = (
-                follower_start
-                if driver.transform == driver_start
-                else mirror_transform(driver.transform, pair.normal, pair.offset)
-            )
-        self._placement_changed()
-        return True
-
-    def _object_rotate_angle(self, gesture: _ObjectGesture, dx: float) -> None:
-        """The Rotate angle of the object gesture: the dial about the first object's pivot when the pointer
-        is known (as the mesh Rotate), else the dx fallback."""
-        width, height = int(self.viewport_width), int(self.viewport_height)
-        session = self._gesture
-        if session.rotate_virtual is None:
-            gesture.angle += RotateTool.RADIANS_PER_PIXEL * dx * (PRECISION_GAIN if self._shift_held else 1.0)
-            return
-        if gesture.dial is None:
-            anchor = gesture.targets[0][0]
-            pivot = object_space.to_world(anchor, anchor.pivot)
-            gesture.dial = DialAngle(self.camera, pivot, gesture.axis, session.rotate_press, width, height)
-        gesture.angle = gesture.dial.update(*session.rotate_virtual, width, height, self._shift_held, session.snap_held())
-
-    def _object_transform_from(self, start: ObjectTransform) -> ObjectTransform:
-        """The transform the running gesture gives an object that started at `start`; exactly
-        `start` while the gesture has accumulated nothing."""
-        gesture = self._object_gesture
-        command = self._gesture.command
-        if command == commands.MOVE:
-            if gesture.move == (0.0, 0.0, 0.0):
-                return start
-            translation = tuple(start.translation[i] + gesture.move[i] for i in range(3))
-            return dataclasses.replace(start, translation=translation)
-        if command == commands.ROTATE:
-            angle = gesture.angle
-            if angle == 0.0:
-                return start
-            turn = object_space.axis_angle_rotation(gesture.axis, angle)
-            rotation = object_space.orthonormalize(object_space.matmul3(turn, start.rotation))
-            return dataclasses.replace(start, rotation=rotation)
-        factor = max(ScaleTool.MIN_SCALE, 1.0 + ScaleTool.SCALE_PER_PIXEL * gesture.pixels)
-        if factor == 1.0:
-            return start
-        return dataclasses.replace(start, scale=start.scale * factor)
-
-    def _object_release(self) -> None:
-        """Release of W/E/R in mode `4`: one `ObjectTransformCommand` for every object that
-        changed (Q-3: one Undo step; mirror entry with `mesh_step=False`), status line on the
-        level (Q-6); a tap or a gesture that ends where it started records nothing."""
-        gesture = self._object_gesture
-        session = self._gesture
-        label, _, participle = TRANSFORM_COMMANDS[session.command]
-        if not session.begun:
-            self._set_status(f"Object {label}: no motion, nothing {participle}")
-            return
-        starts = gesture.targets + [(f, start) for f, start, _, _, _ in gesture.followers]
-        changes = [(obj, start, obj.transform) for obj, start in starts if obj.transform != start]
-        if not changes:
-            self._set_status(f"Object {label}: no change")
-            return
-        objects = [obj for obj, _, _ in changes]
-        self.history.push(ObjectTransformCommand(changes, f"Object {label.lower()}"))
-        self._record_selection_history(gesture.selection_before, mesh_step=False)
-        self._set_status(
-            f"{self._objects_text(objects)}: {participle} (object level)"
-            f"{constraint_suffix(session.space)}"
-            f"{self._mirror_note(gesture.followers)}"
-            f"{self._object_references_note(gesture.references)}"
-        )
-
-    def _object_cancel(self) -> None:
-        """Esc: every target gets its start transform back - the same instance, exactly."""
-        gesture = self._object_gesture
-        for obj, start in gesture.targets + [(f, start) for f, start, _, _, _ in gesture.followers]:
-            obj.transform = start
-        self._placement_changed()
-
-    @staticmethod
-    def _objects_text(objects: list[SceneObject]) -> str:
-        names = ", ".join(repr(obj.name) for obj in objects)
-        return f"Object {names}" if len(objects) == 1 else f"Objects {names}"
+        self._objects.sync_views()
 
     def frame_scene(self) -> None:
         """Richtet die Kamera auf die Bounds des aktuellen Meshs aus (WP-06 B1).
@@ -1981,14 +1025,14 @@ class Application:
             return self._set_selection_mode(_MODE_COMMANDS[command])
         if command == commands.TOGGLE_TRANSFORM_SPACE:
             return self._gestures.toggle_orientation()
-        if command in _PLACEMENT_COMMANDS:
-            return self._placement_command(command)
+        if command in PLACEMENT_COMMANDS:
+            return self._objects.placement_command(command)
         if command == commands.TOGGLE_REFERENCE:
-            return self._reference_command()
+            return self._objects.reference_command()
         if command == commands.CONNECT:
             return self._connect_command()
         if command == commands.DELETE and self.selection.mode is SelectionMode.OBJECT:
-            return self._delete_objects_command()
+            return self._objects.delete_selected()
         if command in _REMOVAL_COMMANDS:
             return self._removal_command(command)
         if command == commands.COLLAPSE:
@@ -2049,7 +1093,7 @@ class Application:
         Several objects or a Reference selected: no switch, the status line says why."""
         note = ""
         if mode is not SelectionMode.OBJECT and self.selection.mode is SelectionMode.OBJECT:
-            note = self._edit_object_from_selection()
+            note = self._objects.edit_from_selection()
         self.selection.mode = mode
         self.selection.clear()
         self.selection.hovered = None
@@ -2062,31 +1106,8 @@ class Application:
             # AD-021 Q-6 (status line first, L-4): the edit object carries a placement.
             text += f" · object {edit.name!r} is placed (object level)"
         self._set_status(text)
-        self._sync_object_highlight()
+        self._objects.sync_highlight()
         return True
-
-    def _edit_object_from_selection(self) -> str:
-        """Q-5: switch the edit object to the one Normal object selected in `4` (E-14). Returns
-        the status-line note: whom `1`/`2`/`3` now edit, or why the edit object stayed."""
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        edit = scene.edit_object
-        if not selected:
-            return ""
-        if len(selected) > 1:
-            return f" · {len(selected)} objects selected - still editing {edit.name!r}"
-        (obj,) = selected
-        if obj.state is ObjectState.REFERENCE:
-            return f" · {obj.name!r} is a Reference - still editing {edit.name!r}"
-        if obj.id == edit.id:
-            return f" · editing {edit.name!r}"
-        owner = self.interaction_owner
-        if owner is not None:
-            return f" · not while the {owner} interaction runs - still editing {edit.name!r}"
-        started = time.perf_counter()
-        self._set_edit_object(obj.id)
-        self.last_edit_switch_seconds = time.perf_counter() - started
-        return f" · editing {obj.name!r}"
 
     # -- Contextual C: Split / Edge Connect / Vertex Connect (WP-06 B6, AD-017) --
 
@@ -2403,11 +1424,11 @@ class Application:
 
     def _apply_selection_step(self, label: str, ids: set, note: str = "") -> bool:
         selection = self.selection
-        before = _selection_state(selection)
+        before = selection_state(selection)
         ids = self._drop_hidden(ids)
         selection.set(ids)
         count = len(ids)
-        if _selection_state(selection) == before:
+        if selection_state(selection) == before:
             self._set_status(f"{label}: no change ({count} selected){note}")
             return False
         if self.viewport is not None:
@@ -2474,7 +1495,7 @@ class Application:
         x = sum(mesh.vertex_position(v)[0] for v in vertices) / n
         y = sum(mesh.vertex_position(v)[1] for v in vertices) / n
         z = sum(mesh.vertex_position(v)[2] for v in vertices) / n
-        return self._edit_camera.project_to_screen((x, y, z), self.viewport_width, self.viewport_height)
+        return self._objects.edit_camera.project_to_screen((x, y, z), self.viewport_width, self.viewport_height)
 
     def _loop_insert(self) -> bool:
         seeds = self._loop_seed_edges("Loop Insert")
@@ -2826,10 +1847,7 @@ class Application:
 
     def _display_command(self, command: str) -> bool:
         if command == commands.TOGGLE_REFERENCE_GHOST:
-            self.reference_ghost = not self.reference_ghost
-            self._sync_object_views()
-            self._set_status(f"References: {'ghost' if self.reference_ghost else 'shaded'}")
-            return True
+            return self._objects.toggle_reference_ghost()
         if command == commands.TOGGLE_REGION_TINT:
             self.display.toggle_region_tint()
             self._apply_display()
@@ -2892,96 +1910,19 @@ class Application:
         self._set_status(f"Light: {row.label} {row.format(self.display.light_rig)}{suffix}")
         return changed
 
-    # -- Object material (AD-024 §6/§7, `PROVISIONAL` keys) ----------------------------------
-
-    def _material_preview(self) -> SceneObject | None:
-        """The object whose values the Look row shows (no status line): the edit object in `1/2/3`,
-        the first selected non-Reference in `4` (None = none)."""
-        scene = self.scene
-        if self.selection.mode is not SelectionMode.OBJECT:
-            return scene.edit_object
-        for oid in sorted(self.selection.objects):
-            obj = scene.objects.get(oid)
-            if obj is not None and obj.state is not ObjectState.REFERENCE:
-                return obj
-        return None
-
-    def _material_targets(self, label: str) -> tuple[list[SceneObject], tuple[str, ...]] | None:
-        """AD-024 §6: the selected objects in `4` (References skipped - locked, Q-M3), the edit object in
-        `1/2/3`. None (refusal posted) while an interaction owns the keys or nothing can be edited."""
-        owner = self.interaction_owner
-        if owner is not None or self._pointer_tools.drag_select is not None:
-            self._set_status(f"{label}: not while the {owner or 'selection'} interaction runs")
-            return None
-        if self.selection.mode is SelectionMode.OBJECT:
-            return self._object_targets(label, "or press 1/2/3 for the edited object")
-        return [self.scene.edit_object], ()
-
-    def _commit_materials(self, changes: list) -> bool:
-        """One Undo step for `(obj, before, after)` (unchanged ones dropped) and the view; the caller
-        posts the status line. True = something changed."""
-        changes = [(obj, before, after) for obj, before, after in changes if before != after]
-        if not changes:
-            return False
-        before = self._selection_snapshot()
-        for obj, _, after in changes:
-            obj.material = after
-        names = ", ".join(repr(obj.name) for obj, _, _ in changes)
-        self.history.push(ObjectMaterialCommand(changes, f"Material {names}"))
-        self._record_selection_history(before, mesh_step=False)
-        self._sync_object_views()
-        return True
+    # -- Object material (AD-024 §6/§7, `PROVISIONAL` keys; `controllers.objects` since AD-027 M7) --------------
 
     def set_object_material(self, **changes) -> bool:
         """The edit path of the object material (keys now, the GUI later): any of `base_color`,
-        `specular`, `glossiness`, clamped to [0, 1], set on every target (`_material_targets`); one Undo
-        step. True = a material changed. An object without a material starts from the default look."""
-        values = clamp_material_values(changes)
-        picked = self._material_targets("Material")
-        if picked is None:
-            return False
-        targets, references = picked
-        default = self.display.surface_finish
-        planned = []
-        for obj in targets:
-            current = editable_material(obj, default)
-            after = ObjectMaterial(
-                values.get("base_color", current.base_color),
-                specular=values.get("specular", current.specular),
-                glossiness=values.get("glossiness", current.glossiness),
-            )
-            planned.append((obj, obj.material, after))
-        changed = self._commit_materials(planned)
-        self._set_status(
-            ("Material set" if changed else "Material unchanged") + self._object_references_note(references)
-        )
-        return changed
+        `specular`, `glossiness`, clamped to [0, 1], set on every target (the selected objects in `4`, the edit
+        object in `1/2/3`); one Undo step. True = a material changed. An object without a material starts from the
+        default look."""
+        return self._objects.set_material(**changes)
 
     def step_object_material(self, row_id: str, direction: int, fine: bool = False) -> bool:
         """One value step of the material row `row_id` on every target, each from its own values
         (`look_controls.MATERIAL_ROWS`); one Undo step. True = a material changed."""
-        row = material_row(row_id)
-        picked = self._material_targets(row.label)
-        if picked is None:
-            return False
-        targets, references = picked
-        default = self.display.surface_finish
-        planned = []
-        for obj in targets:
-            current = editable_material(obj, default)
-            if row.applies(current):
-                planned.append((obj, obj.material, row.step(current, direction, fine)))
-        if not planned:
-            self._set_status(f"{row.label} inaktiv - {row.inactive_reason}")
-            return False
-        changed = self._commit_materials(planned)
-        shown = editable_material(planned[0][0], default)
-        suffix = "" if changed else " (Grenze)"
-        names = ", ".join(repr(obj.name) for obj, _, _ in planned)
-        self._set_status(
-            f"{row.label} {row.format(shown)}{suffix} - {names}" + self._object_references_note(references)
-        )
-        return changed
+        return self._objects.step_material(row_id, direction, fine)
 
     # -- Look rows (AD-024 §6/§8) ------------------------------------------------------------
 
@@ -2995,7 +1936,7 @@ class Application:
         """The active row and its value (HUD, status line). A material row shows the object it reads."""
         row = self.look_row
         if isinstance(row, MaterialRow):
-            obj = self._material_preview()
+            obj = self._objects.material_preview()
             if obj is None:
                 return f"{row.label} (kein Objekt gewählt)"
             values = editable_material(obj, self.display.surface_finish)
@@ -3045,7 +1986,7 @@ class Application:
         self.viewport.set_light(self.display.light_rig)
         if self.viewport.set_surface_finish(self.display.surface_finish):
             # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).
-            self._sync_object_views()
+            self._objects.sync_views()
         self.subdivision.set_faces_shown(self.display.show_faces)
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
@@ -3260,7 +2201,7 @@ class Application:
         if command == commands.BEVEL:
             return self._gestures.arm_bevel(key, origin)
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._object_arm(command, key, origin)
+            return self._objects.arm_gesture(command, key, origin)
         return self._gestures.arm_transform(command, key, origin)
 
     def _session_switch(self, command: str) -> bool:
@@ -3303,10 +2244,7 @@ class Application:
         if held == self._ctrl_held:
             return False
         self._ctrl_held = held
-        gesture = self._gesture
-        if gesture is None:
-            return False
-        return gesture.handle(Modifiers(self._shift_held, held, self._alt_held)) is True
+        return self._gestures.ctrl_changed(held)
 
     # -- Soft Selection settings (WP-SOFT-01 S2a, AD-020, PROVISIONAL) ------------------
 
@@ -3624,7 +2562,7 @@ class Application:
         if face is not _CPU:
             return face
         return pick_face(
-            self._edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
+            self._objects.edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
             cache=self._pick_cache,
         )
 
@@ -4010,12 +2948,12 @@ class Application:
         self._morph.after_history()
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
-        # may be a placement (M2-2), so the pick caches re-project too (`_placement_changed`).
-        self._object_meshes_changed(object_meshes)
+        # may be a placement (M2-2), so the pick caches re-project too (`ObjectController.placement_changed`).
+        self._objects.meshes_changed(object_meshes)
         if self._last_undo_redo_mesh_step and not object_meshes:
-            self._sync_object_views()
+            self._objects.sync_views()
         else:
-            self._placement_changed()
+            self._objects.placement_changed()
         self._soft_preview_refresh()
 
     def apply_mesh_change(
@@ -4124,7 +3062,7 @@ class Application:
             and edit_object_id != scene.edit_object_id
             and target.state is not ObjectState.REFERENCE
         ):
-            self._set_edit_object(edit_object_id)
+            self._objects.set_edit_object(edit_object_id)
         selection = self.selection
         selection.mode = mode
         selection.vertices = set(vertices)
@@ -4217,7 +3155,7 @@ class Application:
                 return Refusal(text)
         text = self._layer_refusal(command)
         if text is None:
-            text = self._object_mode_refusal(command)
+            text = self._objects.mode_refusal(command)
         if text is None and ctx.operands and command in _TOPOLOGY_COMMANDS:
             text = self._hidden_refusal(command)
         if text is not None:
@@ -4550,12 +3488,12 @@ class Application:
         AD-021 M1: in mode `4` the ObjectId under the cursor; every other mode looks at the
         edit object's mesh only, so a Reference never blocks it (RF-6)."""
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._pick_object(x, y)
+            return self._objects.pick(x, y)
         hit = self._gpu_pick(self.selection.mode, x, y)
         if hit is not _CPU:
             return hit
         return pick_component(
-            self._edit_camera,
+            self._objects.edit_camera,
             self.scene.mesh,
             self.selection.mode,
             x,
@@ -4586,7 +3524,7 @@ class Application:
             return _CPU
         try:
             return gpu_pick_component(
-                self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
                 x, y, int(self.viewport_width), int(self.viewport_height),
                 occlusion=self.display.show_faces, cache=self._pick_cache,
             )
@@ -4602,14 +3540,14 @@ class Application:
         if rm is not None:
             try:
                 return gpu_elements_in_rect(
-                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
                     rect, int(self.viewport_width), int(self.viewport_height),
                     cache=self._pick_cache, occlusion=occlusion,
                 )
             except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
                 self._gpu_failed(exc)
         return elements_in_rect(
-            self._edit_camera,
+            self._objects.edit_camera,
             self.scene.mesh,
             mode,
             rect,
@@ -4629,7 +3567,7 @@ class Application:
         if rm is not None:
             try:
                 found = gpu_elements_in_region(
-                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
                     lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
                     cache=self._pick_cache, occlusion=occlusion,
                 )
@@ -4637,7 +3575,7 @@ class Application:
                 self._gpu_failed(exc)
         if found is None:
             found = elements_in_polygon(
-                self._edit_camera, self.scene.mesh, mode, polygon, width, height,
+                self._objects.edit_camera, self.scene.mesh, mode, polygon, width, height,
                 cache=self._pick_cache, occlusion=occlusion,
             )
         return found
@@ -4788,9 +3726,9 @@ class Application:
         if self.viewport is None:
             return False
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._select_object_at(command, x, y)
+            return self._objects.select_at(command, x, y)
         selection = self.selection
-        before = _selection_state(selection)
+        before = selection_state(selection)
         hit = self._pick(x, y)
         if hit is None:
             if command == commands.SELECT:
@@ -4803,7 +3741,7 @@ class Application:
             selection.remove({hit})
         elif command == commands.SELECT_TOGGLE:
             selection.toggle(hit)
-        if _selection_state(selection) == before:
+        if selection_state(selection) == before:
             return False
         self.viewport.on_selection_changed()
         self._soft_preview_refresh()
@@ -4906,7 +3844,7 @@ class Application:
     # placed edit object (2026-10-23: at the selection's world position, in the world camera; the tools turn
     # the world axes into object space, E-8), hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
     # Object level (2026-10-23): in mode `4` it sits at the centroid of the selected non-Reference objects'
-    # world pivots and drives the object gesture (`_object_arm`, the same Tweak path), in the world camera.
+    # world pivots and drives the object gesture (`ObjectController.arm_gesture`, the same Tweak path), in the world camera.
 
     def _gizmo_pivot(self):
         """The selection's centroid (world), cached until the selection or the vertex positions change;
@@ -4938,7 +3876,7 @@ class Application:
 
     def _gizmo_object_pivot(self):
         """Mode `4`: the centroid of the selected objects' world pivots, References excluded (they are
-        locked, `_object_targets`); None when no movable object is selected. Cheap, so not cached."""
+        locked, `ObjectController.targets`); None when no movable object is selected. Cheap, so not cached."""
         scene = self.scene
         targets = [
             scene.objects[oid]
@@ -5146,7 +4084,7 @@ class Application:
         """
         if self.viewport is not None:
             self.flush_hover()
-            self._sync_object_highlight()
+            self._objects.sync_highlight()
             self._push_region_tints()
             self.morph.refresh()
             self.viewport.sync()

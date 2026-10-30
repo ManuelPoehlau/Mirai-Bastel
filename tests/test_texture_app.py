@@ -57,7 +57,7 @@ def textured(app, tmp_path):
     png = tmp_path / "skin.png"
     write_png(png)
     app.scene.edit_object.texture = str(png)
-    app._sync_object_views()
+    app._objects.sync_views()
     return app, str(png)
 
 
@@ -76,7 +76,7 @@ def test_the_switch_and_the_object_highlight_hide_the_texture(textured):
     assert app.viewport.render_mesh.material.texture == png
     app.selection.mode = SelectionMode.OBJECT
     app.selection.objects = {app.scene.edit_object_id}
-    app._sync_object_views()
+    app._objects.sync_views()
     assert app.viewport.render_mesh.material.texture is None  # the selection tint shows instead
 
 
@@ -85,7 +85,7 @@ def test_an_imported_object_is_drawn_with_its_texture(app, tmp_path):
     write_png(tmp_path / "quad.png")
     obj = app.import_obj(tmp_path / "quad.obj")
     app.selection.mode = SelectionMode.VERTEX  # out of mode 4: no highlight
-    app._sync_object_views()
+    app._objects.sync_views()
     entry = app.viewport.object_entries[obj.id]
     assert entry.material.texture == obj.texture
     entry.sync()

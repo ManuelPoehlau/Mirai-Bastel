@@ -84,7 +84,7 @@ def test_object_mode_edits_the_selected_objects_and_keeps_them_apart(app):
     assert other.material == ObjectMaterial(RED, 0.9, DEFAULT_FINISH.glossiness)
     assert edit.material == ObjectMaterial((0.1, 0.2, 0.9), DEFAULT_FINISH.specular, 0.1)
     app.selection.objects = set()
-    app._sync_object_views()
+    app._objects.sync_views()
     entry = app.viewport.object_entries[other.id]
     assert _packet(entry)[:5] == pytest.approx([*RED, 0.9, DEFAULT_FINISH.glossiness])
     assert _packet(app.viewport.render_mesh)[:5] == pytest.approx([0.1, 0.2, 0.9, DEFAULT_FINISH.specular, 0.1])
@@ -93,7 +93,7 @@ def test_object_mode_edits_the_selected_objects_and_keeps_them_apart(app):
 def test_untouched_objects_keep_the_default_look(app):
     _, other = _two_objects(app)
     app.selection.objects = set()
-    app._sync_object_views()
+    app._objects.sync_views()
     assert other.material is None
     assert _packet(app.viewport.object_entries[other.id])[:5] == pytest.approx(
         [*DEFAULT_BASE_COLOR, DEFAULT_FINISH.specular, DEFAULT_FINISH.glossiness]
@@ -115,7 +115,7 @@ def test_references_are_skipped_and_stay_blue(app):
     assert app.set_object_material(specular=0.1) is False
     assert "Reference" in app.status_message
     app.selection.objects = set()
-    app._sync_object_views()
+    app._objects.sync_views()
     packet = _packet(app.viewport.object_entries[ref.id])
     assert packet[:3] == pytest.approx(list(REFERENCE_BASE_COLOR))
     assert packet[3:5] == pytest.approx([DEFAULT_FINISH.specular, DEFAULT_FINISH.glossiness])
@@ -149,12 +149,12 @@ def test_selected_tint_works_on_a_custom_colour(app):
     edit, other = _two_objects(app)
     app.selection.objects = {other.id}
     app.set_object_material(base_color=RED)
-    app._sync_object_views()
+    app._objects.sync_views()
     expected = tuple(b + SELECTED_TINT_SHARE * (t - b) for b, t in zip(RED, SELECTED_TINT))
     assert selected_color(other, DEFAULT_BASE_COLOR) == pytest.approx(expected)
     assert _packet(app.viewport.object_entries[other.id])[:3] == pytest.approx(list(expected))
     app.selection.objects = set()
-    app._sync_object_highlight()
+    app._objects.sync_highlight()
     assert _packet(app.viewport.object_entries[other.id])[:3] == pytest.approx(list(RED))
 
 

@@ -75,7 +75,7 @@ def _placed_sphere(app: Application, name: str = "eye.L"):
         rotation=object_space.axis_angle_rotation((0.0, 1.0, 0.0), 0.4),
         scale=0.5,
     )
-    app._placement_changed()
+    app._objects.placement_changed()
     return obj
 
 

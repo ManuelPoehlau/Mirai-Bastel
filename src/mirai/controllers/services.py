@@ -57,8 +57,7 @@ class AppServices:
 
     @property
     def interaction_owner(self) -> str | None:
-        """AD-013 H2's owner. Until the gestures and the Knife sit in the slot (AD-027 M3, M6) it also
-        reports those, so this is not `interaction.owner` yet (reason for the member, M1)."""
+        """AD-013 H2's owner: the slot's session's (since AD-027 M6 every interaction that owns keys is one)."""
         return self._app.interaction_owner
 
     @property
@@ -81,7 +80,7 @@ class AppServices:
 
     @property
     def edit_camera(self):
-        return self._app._edit_camera
+        return self._app._objects.edit_camera
 
     @property
     def status_message(self) -> str:
@@ -102,6 +101,19 @@ class AppServices:
         M6): a gesture armed from a handle drag reads its press point and handle (the Rotate trackball); forwarded,
         so the gesture controller does not import the pointer tools."""
         return self._app._pointer_tools.gizmo_press
+
+    @property
+    def drag_select(self):
+        """The running Box / Paint / Lasso drag (`pointer_tools.DragSelect`), else None. Reason for the member (AD-027
+        M7): a material edit is refused while a drag selection runs; forwarded, so the object controller does not
+        import the pointer tools."""
+        return self._app._pointer_tools.drag_select
+
+    @property
+    def document_object(self):
+        """The object the document means by "the edit object" (`MorphController.document_object`: the base while
+        its target's editing view is open). Reason for the member (AD-027 M7): OBJ export writes it; forwarded."""
+        return self._app._morph.document_object
 
     @property
     def soft_settings(self):
@@ -212,6 +224,12 @@ class AppServices:
         loop commands (which stay in `Application`) use."""
         return self._app._loop_seed_edges(label)
 
+    def layer_refusal(self, key, meshes=None) -> str | None:
+        """AD-025 §4.4: the refusal text if `key` (a command or a method name) is not allowed on `meshes` (default the
+        edit mesh), else None; pure. Reason for the member (AD-027 M7): Add object, mirror copy and Apply transform ask
+        it at their own site (`Application._layer_refusal`, `can_run` stage 3)."""
+        return self._app._layer_refusal(key, meshes)
+
     def flush_hover(self) -> None:
         """Pick a hover `coalesce_hover` left stale. Reason for the member (AD-027 M6): a gesture's tool activation
         went through `Application._execute`, which flushes first; the gesture keeps that order."""
@@ -230,7 +248,7 @@ class AppServices:
         return self._app._toggle_ortho()
 
     def set_edit_object(self, object_id) -> None:
-        self._app._set_edit_object(object_id)
+        self._app._objects.set_edit_object(object_id)
 
     def follow_edit_object(self) -> None:
         self._app._follow_edit_object()
