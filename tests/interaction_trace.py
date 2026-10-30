@@ -1,38 +1,22 @@
-"""AD-027 §6 E1/E2: the interaction trace driver - a migration oracle for the interaction-layer
-restructuring (slot, `can_run`, controllers).
+"""The interaction scenario driver (AD-027 §6): feeds an `Application` the events a hand makes, through public
+entry points only - `key_press/release`, `pointer_press/drag/release/motion/scroll/leave`, `set_shift/ctrl/alt_held`,
+`update_viewport` - and the public calls hosts make (`add_primitive`, `mirror_copy`, `create_morph_target`, ...). It
+never calls `dispatch_command` and reads no private `Application` member. After every event it calls
+`update_viewport(0)`, the window's frame tick.
 
-The driver feeds an `Application` only through public entry points (`key_press/release`,
-`pointer_press/drag/release/motion/scroll/leave`, `set_shift/ctrl/alt_held`, `update_viewport`) and the
-public calls hosts make (`add_primitive`, `mirror_copy`, `create_morph_target`, `set_light`, ...). It
-never calls `dispatch_command` (its gating changes on purpose, AD-027 §3.3) and reads no private
-`Application` member. After every event it calls `update_viewport(0)` (the window's frame tick) and
-digests one observation (`observe`): return value, status, `interaction_owner`, the HUD state, the
-selection and hover, every object (mesh `export_state()`, transform, material, state), the history,
-the camera, the overlays the window reads, and the headless viewport's buffers and sinks.
+The scenarios themselves are `tests/test_interaction_scenarios.py` (V1-V7 of AD-027 §1.1 and Manu's test points,
+readable steps with explicit assertions). `observe` is the full observation of one moment the restructuring was
+checked against (E1, E2); `tests/test_interaction_structure.py` uses it for the purity of `can_run` (E5 iv).
 
-Two kinds of sequences (fixtures in `tests/fixtures/interaction_traces/`, checked by
-`tests/test_interaction_trace.py`):
-
-- **random** - a seed per sequence; one 12-hex digest per event. Lifecycle (AD-027 C1): a migration
-  oracle only; removed together with this generator at M8.
-- **scripted** - named scenarios (V1-V7 of AD-027 §1.1, Manu's test points); the full observation per
-  step, for a readable diff. They become the permanent regression tests at M8.
-
-The corpus is recorded on the baseline commit (`dfd6e5d`) and never re-recorded to make a step pass;
-only a bug in this driver justifies re-recording, from a worktree of the baseline (AD-027 §6).
-
-E2 (differential deep run) uses the CLI at the bottom: `python tests/interaction_trace.py digests ...`
-prints the digests of seeds beyond the corpus, `... observe ...` the full observation at one event.
+Lifecycle (AD-027 C1): the randomised digest corpus recorded on `dfd6e5d`, its generator and the E2 command line
+were a migration oracle for M0-M8 and are gone (last commit with them: the M8.1 commit, `4ccc13c`).
 """
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
 import enum
 import hashlib
-import json
-import random
 import sys
 from array import array
 from itertools import chain
@@ -52,7 +36,7 @@ from mirai import object_space  # noqa: E402
 from mirai.object_space import ObjectSpaceCamera  # noqa: E402
 from mirai.application import Application  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
-from mirai.interaction.input import KNIFE_CONTEXT, MORPH_CONTEXT, SUBD_CONTEXT, Input  # noqa: E402
+from mirai.interaction.input import Input  # noqa: E402
 from mirai.mask_display import GLMaskOverlay  # noqa: E402
 from mirai.soft_selection import GLSoftBandOverlay, GLSoftShadingOverlay  # noqa: E402
 from mirai.subdivision.gl_lines import GLSubdLineOverlay  # noqa: E402
@@ -63,7 +47,6 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
 
-FIXTURES = _TESTS / "fixtures" / "interaction_traces"
 WIDTH, HEIGHT = 800, 600
 
 #: The window's sink types (`src/main.py` `GL_TYPES` without the GL store): all of them hold their data
@@ -87,11 +70,6 @@ HUD_FIELDS = (
     "region_tint", "group_mask", "light", "look", "morph", "morph_targets", "status", "status_serial",
     "keymap_problem", "constraint_mode", "pivot", "view",
 )
-
-
-def driver_hash() -> str:
-    """Hash of this file: a fixture recorded by another driver version is refused, not compared."""
-    return hashlib.blake2b(Path(__file__).read_bytes(), digest_size=6).hexdigest()
 
 
 # -- observation ------------------------------------------------------------------------------------
@@ -338,19 +316,11 @@ def observe(app: Application, result: Any) -> dict:
     }
 
 
-def digest(observation: dict) -> str:
-    return hashlib.blake2b(repr(observation).encode(), digest_size=6).hexdigest()
-
-
 # -- scenes -----------------------------------------------------------------------------------------
 
 
-def _key(value: str, *modifiers: str) -> Input:
-    return Input("key", value, frozenset(modifiers))
-
-
-SHIFT_S = _key("s", "shift")
-CTRL_H = _key("h", "ctrl")
+SHIFT_S = Input("key", "s", frozenset({"shift"}))
+CTRL_H = Input("key", "h", frozenset({"ctrl"}))
 
 
 def _new_app(coalesce: bool) -> Application:
@@ -467,9 +437,9 @@ _MODIFIERS = ("shift", "ctrl", "alt")
 
 class Driver:
     """One app plus the hand's state (held keys, buttons, modifiers, cursor) and the injected clock.
-    Every method is one event: it calls one public entry point, ticks the viewport and records."""
+    Every method is one event: it calls one public entry point, ticks the viewport and names the event."""
 
-    def __init__(self, scene: str, coalesce: bool = False, keep: bool = False) -> None:
+    def __init__(self, scene: str, coalesce: bool = False) -> None:
         self.app = make_app(scene, coalesce)
         self.now = 1000.0
         self.app.knife_clock = lambda: self.now
@@ -477,24 +447,14 @@ class Driver:
         self.modifiers: set[str] = set()
         self.keys_down: dict[str, Input] = {}  # key value -> the press input
         self.button: str | None = None
-        self.keep = keep
-        self.digests: list[str] = []
-        self.observations: list[dict] = []
         self.events: list[str] = []
 
     # -- recording
 
     def _record(self, label: str, call: Callable[[], Any]) -> Any:
-        try:
-            result = call()
-        except Exception as exc:  # noqa: BLE001 - an exception is an observed outcome, the run goes on
-            result = f"EXC {type(exc).__name__}: {exc}"
+        result = call()
         self.app.update_viewport(0)
-        obs = observe(self.app, result)
-        self.digests.append(digest(obs))
         self.events.append(label)
-        if self.keep:
-            self.observations.append(obs)
         return result
 
     def tick(self, seconds: float) -> None:
@@ -592,8 +552,7 @@ class Driver:
         self, kind: str, visible: bool = False, limit: int | None = None, near: tuple[float, float] | None = None
     ) -> list[tuple[float, float]]:
         """Screen points of the edit mesh: vertices, edge midpoints or face centres (inside the window).
-        `visible` (the scripted sequences): only those the CPU picker returns at their own point, so a
-        scripted click hits what it names; the random generator also clicks hidden ones (a miss).
+        `visible`: only those the CPU picker returns at their own point, so a scripted click hits what it names.
         `near`: nearest to that screen point first; `limit`: at most that many."""
         app = self.app
         obj = app.scene.edit_object
@@ -649,723 +608,37 @@ def _label(inp: Input) -> str:
     return "+".join(sorted(inp.modifiers) + [inp.value])
 
 
-# -- the random generator (removed at M8, AD-027 C1) ------------------------------------------------
+# -- scenario helpers ---------------------------------------------------------------------------------
 
 
-def bound_key_inputs(app: Application) -> list[Input]:
-    """Every key input bound in the global, SubD, morph and Knife contexts (the window's own context
-    excluded: `Application` never resolves it)."""
-    names = {getattr(commands, n) for n in dir(commands) if n.isupper() and isinstance(getattr(commands, n), str)}
-    found: set[Input] = set()
-    for context in (None, SUBD_CONTEXT, MORPH_CONTEXT, KNIFE_CONTEXT):
-        for name in names:
-            found.update(inp for inp in app.bindings.inputs_for(name, context) if inp.kind == "key")
-    return sorted(found, key=lambda i: (i.value, sorted(i.modifiers)))
+def key(value: str, *modifiers: str) -> Input:
+    return Input("key", value, frozenset(modifiers))
 
 
-_MOUSE_INTENTS = (
-    ("LEFT", ()), ("LEFT", ()), ("LEFT", ()), ("LEFT", ("shift",)), ("LEFT", ("ctrl",)), ("LEFT", ("alt",)),
-    ("LEFT", ("alt", "shift")), ("LEFT", ("ctrl", "shift")), ("RIGHT", ()), ("MIDDLE", ()),
-)
-_WHEEL_INTENTS = (("UP", ()), ("DOWN", ()), ("UP", ("shift",)), ("DOWN", ("shift",)), ("UP", ("ctrl",)))
-
-#: Commands a hand holds (several events between press and release) and the keys pressed most.
-_FAVOURED = frozenset(
-    {
-        *commands.HOLD_COMMANDS, commands.CANCEL, commands.CONNECT, commands.UNDO, commands.REDO,
-        commands.SET_VERTEX_MODE, commands.SET_EDGE_MODE, commands.SET_FACE_MODE, commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.RESYMMETRIZE, commands.SOFT_TOGGLE,
-        commands.KNIFE_COMMIT, commands.KNIFE_LIFT, commands.LOOP_INSERT, commands.SYMMETRY_CYCLE,
-        commands.MORPH_EDIT_TOGGLE, commands.EDGE_LOOP, commands.DELETE,
-    }
-)
+W, E, R, T, G, P, L, N, Q = (key(k) for k in "wertgplnq")
+C, X, ESC, ENTER, TAB = key("c"), key("x"), key("ESCAPE"), key("enter"), key("tab")
+ALT_M, CTRL_Z, CTRL_Y, CTRL_SHIFT_Z = key("m", "alt"), key("z", "ctrl"), key("y", "ctrl"), key("z", "ctrl", "shift")
 
 
-def _host_calls(app: Application, rng: random.Random) -> list[tuple[str, Callable[[], Any]]]:
-    return [
-        ("add_primitive", lambda: app.add_primitive(rng.choice(("cube", "plane")))),
-        ("mirror_copy", lambda: app.mirror_copy("X")),
-        ("pair_selected", lambda: app.pair_selected("X")),
-        ("break_mirror_pairs", app.break_mirror_pairs),
-        ("resync_mirror_pairs", app.resync_mirror_pairs),
-        ("create_morph_target", app.create_morph_target),
-        ("set_morph_weight", lambda: app.set_morph_weight(rng.randrange(0, 101, 10))),
-        ("step_morph_target", lambda: app.step_morph_target(rng.choice((1, -1)))),
-        ("edit_morph_target", app.edit_morph_target),
-        ("leave_morph_target", app.leave_morph_target),
-        ("set_light", lambda: app.set_light(key_azimuth=float(rng.randrange(-90, 91, 15)))),
-        ("toggle_symmetry_display", app.toggle_symmetry_display),
-        ("set_object_material", lambda: app.set_object_material(specular=rng.choice((0.2, 0.8)))),
-        ("frame_scene", app.frame_scene),
-    ]
-
-
-@dataclasses.dataclass
-class _Hand:
-    """What the generator knows about the app's keys (fixed per sequence)."""
-
-    keys: list
-    weights: list
-    hold_keys: set
-    hosts: list
-
-
-def random_sequence(driver: Driver, rng: random.Random, events: int) -> None:
-    """Drive `driver` with a hand-like random sequence until it has recorded `events` events: single
-    random events, interleaved with short "macros" a hand does (select + hold a gesture key and move,
-    a Knife session, the Re-Symmetrize preview, a drag selection, a held P / L / N / Q, a gizmo drag)
-    that themselves carry random noise."""
-    app = driver.app
-    keys = bound_key_inputs(app)
-    weights = [6.0 if _context_command(app, k) in _FAVOURED else 1.0 for k in keys]
-    hand = _Hand(
-        keys, weights, {k.value for k in keys if _context_command(app, k) in commands.HOLD_COMMANDS},
-        _host_calls(app, rng),
-    )
-    macros = (_macro_gesture, _macro_gesture, _macro_knife, _macro_resym, _macro_drag, _macro_hold, _macro_gizmo)
-    while len(driver.digests) < events:
-        if rng.random() < 0.25:
-            rng.choice(macros)(driver, rng, hand)
-        else:
-            _step(driver, rng, hand)
-    del driver.digests[events:]
-    del driver.events[events:]
-    del driver.observations[events:]
-
-
-def _step(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    """One random event (sometimes two: a click, a tap)."""
-    driver.tick(rng.choice((0.05, 0.12, 0.3, 0.8)))
-    # Keys let go: a tapped key soon, a held one after a while.
-    for value in list(driver.keys_down):
-        if rng.random() < (0.12 if value in hand.hold_keys else 0.6):
-            driver.key_up(value)
-    roll = rng.random()
-    if roll < 0.30:
-        _random_motion(driver, rng)
-    elif roll < 0.50:
-        driver.key_down(rng.choices(hand.keys, hand.weights)[0])
-    elif roll < 0.62:
-        if driver.button is None:
-            button, mods = rng.choice(_MOUSE_INTENTS)
-            _random_motion(driver, rng, jump=True)
-            driver.press(button, mods)
-        else:
-            driver.release(driver.button if rng.random() < 0.9 else rng.choice(("LEFT", "RIGHT")))
-    elif roll < 0.70:
-        button, mods = rng.choice(_MOUSE_INTENTS)
-        x, y = _random_point(driver, rng)
-        driver.click(x, y, button, mods)
-    elif roll < 0.78:
-        name = rng.choice(_MODIFIERS)
-        driver.set_modifier(name, name not in driver.modifiers)
-    elif roll < 0.83:
-        driver.scroll(*rng.choice(_WHEEL_INTENTS))
-    elif roll < 0.86:
-        driver.tap(_key("ESCAPE"))
-    elif roll < 0.89:
-        label, call = rng.choice(hand.hosts)
-        driver.host(label, call)
-    elif roll < 0.91:
-        driver.leave()
-    elif roll < 0.92:
-        driver.focus_loss()
-    else:
-        _random_motion(driver, rng)
-
-
-def _noise(driver: Driver, rng: random.Random, hand: _Hand, p: float = 0.15) -> None:
-    if rng.random() < p:
-        _step(driver, rng, hand)
-
-
-def _let_go(driver: Driver) -> None:
-    """Release the button and the keys a macro starts from a clean hand."""
-    if driver.button is not None:
-        driver.release()
-    for value in list(driver.keys_down):
-        driver.key_up(value)
-
-
-_GESTURE_KEYS = (
-    _key("w"), _key("w"), _key("e"), _key("r"), _key("t"), _key("g"), _key("s"), _key("s", "alt"), _key("i"),
-    _key("b", "ctrl"),
-)
-_CONSTRAINT_KEYS = (_key("x"), _key("y"), _key("z"), _key("x", "shift"), _key("z", "shift"))
-_MODE_KEYS = {"VERTEX": _key("1"), "EDGE": _key("2"), "FACE": _key("3")}
-_MODE_TARGETS = {"VERTEX": "vertex", "EDGE": "edge", "FACE": "face"}
-
-
-def _component_select(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    mode = driver.app.selection.mode.name
-    if mode not in _MODE_KEYS or rng.random() < 0.3:
-        mode = rng.choice(("VERTEX", "VERTEX", "EDGE", "FACE"))
-        driver.tap(_MODE_KEYS[mode])
-    points = driver.targets(_MODE_TARGETS[mode])
-    for _ in range(rng.choice((0, 1, 1, 1, 2, 3))):
-        if points:
-            driver.click(*rng.choice(points), modifiers=("shift",) if rng.random() < 0.5 else ())
-        _noise(driver, rng, hand)
-
-
-def _wiggle(driver: Driver, rng: random.Random, hand: _Hand, count: int) -> None:
-    for _ in range(count):
-        driver.nudge(rng.uniform(-25, 25), rng.uniform(-25, 25))
-        roll = rng.random()
-        if roll < 0.08:
-            name = rng.choice(_MODIFIERS)
-            driver.set_modifier(name, name not in driver.modifiers)
-        elif roll < 0.12:
-            driver.scroll(*rng.choice(_WHEEL_INTENTS))
-        elif roll < 0.16:
-            driver.tap(rng.choice(_CONSTRAINT_KEYS))
-        else:
-            _noise(driver, rng, hand, 0.08)
-
-
-def _macro_gesture(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    _let_go(driver)
-    _component_select(driver, rng, hand)
-    driver.modifiers_to(())
-    if rng.random() < 0.3:
-        driver.tap(rng.choice(_CONSTRAINT_KEYS))
-    key = rng.choice(_GESTURE_KEYS)
-    driver.key_down(key)
-    _wiggle(driver, rng, hand, rng.randint(0, 6))
-    roll = rng.random()
-    if roll < 0.2:
-        driver.tap(_key("ESCAPE"))
-    elif roll < 0.25:
-        driver.tap(rng.choice((_key("z", "ctrl"), _key("y", "ctrl"))))
-    if rng.random() < 0.95:
-        driver.key_up(key.value)
-
-
-def _macro_knife(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    _let_go(driver)
-    if rng.random() < 0.6:
-        driver.click(3.0, 3.0)  # empty space clears the selection, so C starts the Knife
-    driver.tap(_key("c"))
-    for _ in range(rng.randint(1, 6)):
-        roll = rng.random()
-        kind = rng.choice(("edge", "edge", "vertex", "face"))
-        points = driver.targets(kind)
-        point = rng.choice(points) if points else _random_point(driver, rng)
-        if roll < 0.6:
-            driver.click(*point, modifiers=("shift",) if rng.random() < 0.2 else ())
-            if rng.random() < 0.15:
-                driver.tick(0.1)
-                driver.click(*point)  # a double-click
-        elif roll < 0.7:
-            driver.tap(_key("e"))  # pen lift
-        elif roll < 0.75:
-            driver.click(*point, button="RIGHT")
-        elif roll < 0.85:
-            driver.tap(rng.choice((_key("z", "ctrl"), _key("z", "ctrl", "shift"), _key("y", "ctrl"))))
-        else:
-            driver.motion(*point)
-        _noise(driver, rng, hand)
-    roll = rng.random()
-    if roll < 0.5:
-        driver.tap(_key("enter"))
-    elif roll < 0.9:
-        driver.tap(_key("ESCAPE"))
-
-
-def _macro_resym(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    _let_go(driver)
-    if driver.app.selection.mode.name != "VERTEX":
-        driver.tap(_key("1"))
-    points = driver.targets("vertex")
-    if points:
-        driver.click(*rng.choice(points))
-    driver.tap(_key("m", "alt"))
-    for _ in range(rng.randint(0, 3)):
-        _step(driver, rng, hand)
-    driver.tap(_key("m", "alt") if rng.random() < 0.5 else _key("ESCAPE"))
-
-
-def _macro_drag(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    _let_go(driver)
-    lasso = rng.random() < 0.25
-    if lasso:
-        driver.key_down(_key("q"))
-    driver.motion(*_random_point(driver, rng))
-    driver.press("LEFT", rng.choice(((), (), ("shift",), ("alt",), ("ctrl",), ("alt", "shift"))))
-    for _ in range(rng.randint(1, 6)):
-        if rng.random() < 0.4:
-            driver.motion(*_random_point(driver, rng))
-        else:
-            driver.nudge(rng.uniform(-60, 60), rng.uniform(-60, 60))
-        _noise(driver, rng, hand, 0.1)
-    if rng.random() < 0.15:
-        driver.tap(_key("ESCAPE"))
-    if rng.random() < 0.3:
-        driver.set_modifier("alt", True)
-    driver.release("LEFT")
-    if lasso:
-        driver.key_up("q")
-
-
-def _macro_hold(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    _let_go(driver)
-    key = rng.choice((_key("p"), _key("p"), _key("l"), _key("n"), _key("q")))
-    driver.key_down(key)
-    for _ in range(rng.randint(1, 4)):
-        roll = rng.random()
-        if roll < 0.4:
-            _wiggle(driver, rng, hand, 1)
-        elif roll < 0.7:
-            driver.click(*_random_point(driver, rng), modifiers=("shift",) if rng.random() < 0.3 else ())
-        elif roll < 0.8:
-            driver.tap(_key("ESCAPE"))
-        elif roll < 0.9:
-            driver.key_down(rng.choice(_GESTURE_KEYS))
-        else:
-            _step(driver, rng, hand)
-    driver.key_up(key.value)
-
-
-def _macro_gizmo(driver: Driver, rng: random.Random, hand: _Hand) -> None:
-    _let_go(driver)
-    _component_select(driver, rng, hand)
-    driver.modifiers_to(())
-    driver.tap(rng.choice((_key("w"), _key("e"), _key("r"))))  # a tap sets the gizmo's tool
-    app = driver.app
-    mesh = app.scene.mesh
-    ids = [v for v in app.selection.vertices if mesh.is_valid_vertex(v)]
-    if not ids:
-        return
-    centre = tuple(sum(c) / len(ids) for c in zip(*(mesh.vertex_position(v) for v in ids)))
-    point = _screen(app, app.scene.edit_object, centre)
-    if point is None:
-        return
-    x, y = point
-    driver.motion(x + rng.choice((0.0, 0.0, 30.0, 60.0)), y + rng.choice((0.0, -30.0, 0.0)))
-    driver.press("LEFT")
-    for _ in range(rng.randint(0, 4)):
-        driver.nudge(rng.uniform(-20, 20), rng.uniform(-20, 20))
-        _noise(driver, rng, hand, 0.1)
-    if rng.random() < 0.15:
-        driver.tap(_key("ESCAPE"))
-    driver.release("LEFT")
-
-
-def _context_command(app: Application, inp: Input):
-    for context in (None, SUBD_CONTEXT, MORPH_CONTEXT, KNIFE_CONTEXT):
-        command = app.bindings.command_for(inp, context)
-        if command is not None:
-            return command
-    return None
-
-
-def _random_point(driver: Driver, rng: random.Random) -> tuple[float, float]:
-    if driver.app.selection.mode.name == "OBJECT" and rng.random() < 0.6:
-        points = driver.object_points()
-    else:
-        points = driver.targets(rng.choice(("vertex", "vertex", "edge", "face")))
-    if points and rng.random() < 0.8:
-        x, y = rng.choice(points)
-        return x + rng.uniform(-1.5, 1.5), y + rng.uniform(-1.5, 1.5)
-    return rng.uniform(3, WIDTH - 3), rng.uniform(3, HEIGHT - 3)
-
-
-def _random_motion(driver: Driver, rng: random.Random, jump: bool = False) -> None:
-    if jump or driver.cursor is None or rng.random() < 0.35:
-        driver.motion(*_random_point(driver, rng))
-        return
-    step = rng.choice((1.0, 3.0, 8.0, 20.0))
-    driver.nudge(rng.uniform(-step, step), rng.uniform(-step, step))
-
-
-def run_random(scene: str, seed: int, events: int, keep: bool = False) -> Driver:
-    rng = random.Random(f"{scene}:{seed}")
-    driver = Driver(scene, coalesce=rng.random() < 0.5, keep=keep)
-    random_sequence(driver, rng, events)
-    return driver
-
-
-# -- scripted sequences ------------------------------------------------------------------------------
-
-
-def _first(points, fallback=(WIDTH / 2, HEIGHT / 2)):
+def first(points, fallback=(WIDTH / 2, HEIGHT / 2)):
     return points[0] if points else fallback
 
 
-def _centre_face(d: Driver) -> tuple[float, float]:
+def centre_face(d: Driver) -> tuple[float, float]:
+    """The visible face centre nearest the window centre."""
     faces = d.targets("face", visible=True, limit=1, near=(WIDTH / 2, HEIGHT / 2))
     return faces[0] if faces else (WIDTH / 2, HEIGHT / 2)
 
 
-def _select_vertex(d: Driver, index: int = 0) -> None:
+def select_vertex(d: Driver, index: int = 0) -> None:
+    """A click on the `index`-th of the first eight visible vertices."""
     points = d.targets("vertex", visible=True, limit=8)
     d.click(*points[index % len(points)])
 
 
-def _hold_move(d: Driver, key: Input, steps=((12, 0), (12, 4), (6, -3))) -> None:
-    d.key_down(key)
+def hold_move(d: Driver, inp: Input, steps=((12, 0), (12, 4), (6, -3))) -> None:
+    """Hold a gesture key over a few motions and let it go."""
+    d.key_down(inp)
     for dx, dy in steps:
         d.nudge(dx, dy)
-    d.key_up(key.value)
-
-
-W, E, R, T, G, P, L, N, Q = (_key(k) for k in "wertgplnq")
-C, X, ESC, ENTER = _key("c"), _key("x"), _key("ESCAPE"), _key("enter")
-ALT_M, CTRL_Z, CTRL_Y, CTRL_SHIFT_Z, TAB = _key("m", "alt"), _key("z", "ctrl"), _key("y", "ctrl"), \
-    _key("z", "ctrl", "shift"), _key("tab")
-
-
-def _v1(d: Driver) -> None:
-    """V1: hold P, then W (Move armed), Esc: Esc cancels the pivot placement, Move stays armed."""
-    _select_vertex(d, 2)
-    d.key_down(P)
-    d.key_down(W)
-    d.tap(ESC)
-    d.nudge(10, 0)
-    d.key_up("w")
-    d.key_up("p")
-
-
-def _v2(d: Driver) -> None:
-    """V2: W armed, then P: P refused silently."""
-    _select_vertex(d, 2)
-    d.key_down(W)
-    d.key_down(P)
-    d.key_up("p")
-    d.key_up("w")
-
-
-def _v3(d: Driver) -> None:
-    """V3: hold P, W armed, LMB click: the pivot is placed while Move stays armed."""
-    _select_vertex(d, 2)
-    d.key_down(P)
-    d.key_down(W)
-    d.click(*_centre_face(d))
-    d.key_up("w")
-    d.key_up("p")
-
-
-def _v4(d: Driver) -> None:
-    """V4: hold L and N (either order), move: the light turns, the weight does not."""
-    d.key_down(L)
-    d.key_down(N)
-    d.nudge(30, 5)
-    d.key_up("l")
-    d.key_up("n")
-    d.key_down(N)
-    d.key_down(L)
-    d.nudge(-30, -5)
-    d.key_up("n")
-    d.key_up("l")
-
-
-def _v5(d: Driver) -> None:
-    """V5: hold L, hold W, move, release W, move: the motion drives Move, then turns the light again."""
-    _select_vertex(d, 2)
-    d.key_down(L)
-    d.key_down(W)
-    d.nudge(15, 0)
-    d.key_up("w")
-    d.nudge(15, 0)
-    d.key_up("l")
-
-
-def _v6(d: Driver) -> None:
-    """V6: hold P, then C (Knife), LMB click, Esc: LMB sets a Knife point; Esc ends the Knife, P held."""
-    d.key_down(P)
-    d.tap(C)
-    edges = d.targets("edge", visible=True, limit=8)
-    d.click(*_first(edges))
-    d.tap(ESC)
-    d.key_up("p")
-
-
-def _v7(d: Driver) -> None:
-    """V7: hold P, then Alt+M (Re-Symmetrize preview), LMB, Esc: LMB places the pivot under the open
-    preview; Esc closes the preview, P stays held."""
-    _select_vertex(d, 1)
-    d.key_down(P)
-    d.tap(ALT_M)
-    d.click(*_centre_face(d))
-    d.tap(ESC)
-    d.key_up("p")
-
-
-def _knife_scenario(d: Driver) -> None:
-    """Knife: cut across faces, pen lift, double-click, in-session Undo/Redo, commit; a second session
-    cancelled."""
-    d.tap(C)
-    edges = d.targets("edge", visible=True, limit=8)
-    for point in edges[:3]:
-        d.click(*point)
-    d.tap(_key("e"))  # pen lift
-    d.click(*edges[3 % len(edges)])
-    d.tap(CTRL_Z)
-    d.tap(CTRL_SHIFT_Z)
-    d.click(*edges[4 % len(edges)])
-    d.tick(0.1)
-    d.click(*edges[4 % len(edges)])  # double-click
-    d.tap(ENTER)
-    d.tap(C)
-    d.click(*_first(d.targets("edge", visible=True, limit=8)))
-    d.tap(ESC)
-    d.tap(CTRL_Z)
-
-
-def _wer_scenario(d: Driver) -> None:
-    """W/E/R held with a constraint, Shift fine, Ctrl snap, Alt orbit."""
-    _select_vertex(d, 0)
-    d.tap(X)
-    _hold_move(d, W)
-    d.key_down(E)
-    d.set_modifier("ctrl", True)
-    d.nudge(25, 10)
-    d.set_modifier("ctrl", False)
-    d.key_up("e")
-    d.key_down(R)
-    d.set_modifier("shift", True)
-    d.nudge(20, 0)
-    d.set_modifier("shift", False)
-    d.set_modifier("alt", True)
-    d.nudge(20, 0)
-    d.set_modifier("alt", False)
-    d.nudge(5, 0)
-    d.key_up("r")
-    d.key_down(W)
-    d.nudge(9, 0)
-    d.tap(ESC)
-    d.key_up("w")
-    d.tap(CTRL_Z)
-    d.tap(CTRL_Y)
-
-
-def _box_paint_lasso_scenario(d: Driver) -> None:
-    """Box from empty space, Paint from the mesh, Lasso with Q, Alt through, Esc cancels."""
-    d.motion(5, 5)
-    d.press()
-    for step in range(4):
-        d.motion(5 + 100 * (step + 1), 5 + 80 * (step + 1))
-    d.release()
-    face = _centre_face(d)
-    d.motion(*face)
-    d.press(modifiers=("shift",))
-    d.motion(face[0] + 30, face[1] + 10)
-    d.motion(face[0] + 60, face[1] + 5)
-    d.release()
-    d.key_down(Q)
-    d.motion(100, 100)
-    d.press()
-    for x, y in ((700, 120), (680, 520), (120, 500)):
-        d.motion(x, y)
-    d.set_modifier("alt", True)
-    d.release()
-    d.set_modifier("alt", False)
-    d.key_up("q")
-    d.motion(5, 5)
-    d.press()
-    d.motion(300, 300)
-    d.tap(ESC)
-    d.release()
-
-
-def _gizmo_scenario(d: Driver) -> None:
-    """Gizmo: click on the centre handle, then a drag on it (Move along the handle), Esc on a second drag."""
-    _select_vertex(d, 4)
-    d.tap(W)
-    pivot = d.app.gizmo_items()
-    del pivot
-    face = _centre_face(d)
-    points = d.targets("vertex", visible=True, limit=8)
-    centre = points[4 % len(points)]
-    d.click(*centre)
-    d.motion(*centre)
-    d.press()
-    d.motion(centre[0] + 20, centre[1])
-    d.motion(centre[0] + 40, centre[1] + 5)
-    d.release()
-    d.motion(*centre)
-    d.press()
-    d.motion(centre[0] - 20, centre[1])
-    d.tap(ESC)
-    d.release()
-    d.motion(*face)
-
-
-def _pivot_scenario(d: Driver) -> None:
-    """Working Pivot: place, tap off / on, Esc restores."""
-    d.key_down(P)
-    d.click(*_centre_face(d))
-    d.key_up("p")
-    d.tap(P)
-    d.tap(P)
-    d.key_down(P)
-    d.click(*_first(d.targets("vertex", visible=True, limit=8)), modifiers=("shift",))
-    d.tap(ESC)
-    d.key_up("p")
-    _select_vertex(d, 3)
-    _hold_move(d, E)
-
-
-def _morph_scenario(d: Driver) -> None:
-    """The morph view: Tab, W in the view, N drag, Undo, Tab back."""
-    d.tap(TAB)
-    _select_vertex(d, 2)
-    _hold_move(d, W)
-    d.key_down(N)
-    d.nudge(40, 0)
-    d.key_up("n")
-    d.tap(N)
-    d.tap(CTRL_Z)
-    d.tap(TAB)
-    d.tap(CTRL_Z)
-    d.tap(CTRL_Y)
-
-
-def _undo_chain_scenario(d: Driver) -> None:
-    """Undo/Redo chains across a move, an extrude and a connect."""
-    _select_vertex(d, 1)
-    _hold_move(d, W)
-    d.tap(_key("3"))
-    d.click(*_centre_face(d))
-    d.key_down(T)
-    for _ in range(3):
-        d.nudge(4, -6)
-    d.key_up("t")
-    d.tap(_key("1"))
-    _select_vertex(d, 0)
-    _select_vertex(d, 5)
-    for _ in range(3):
-        d.tap(CTRL_Z)
-    for _ in range(2):
-        d.tap(CTRL_Y)
-
-
-def _objects_scenario(d: Driver) -> None:
-    """Object gestures with a mirror pair (mode `4`)."""
-    d.tap(_key("4"))
-    points = d.object_points()
-    d.click(*points[1 % len(points)])
-    _hold_move(d, W, steps=((15, 0), (10, 5)))
-    _hold_move(d, E, steps=((15, 0), (10, 5)))
-    d.key_down(R)
-    d.nudge(10, 0)
-    d.tap(ESC)
-    d.key_up("r")
-    d.tap(CTRL_Z)
-    d.tap(_key("1"))
-
-
-def _resym_scenario(d: Driver) -> None:
-    """Re-Symmetrize: open, a refused key and click, close with Esc; open again, execute, Undo."""
-    _select_vertex(d, 1)
-    d.tap(ALT_M)
-    d.tap(W)
-    d.click(*_centre_face(d))
-    d.scroll("UP", ("shift",))
-    d.tap(_key("d"))
-    d.tap(ESC)
-    _select_vertex(d, 1)
-    d.tap(ALT_M)
-    d.tap(ALT_M)
-    d.tap(CTRL_Z)
-
-
-SCRIPTED: dict[str, tuple[str, Callable[[Driver], None]]] = {
-    "v1_pivot_then_move_esc": ("subd_sym", _v1),
-    "v2_move_then_pivot": ("subd_sym", _v2),
-    "v3_pivot_move_click": ("subd_sym", _v3),
-    "v4_light_and_morph_weight": ("morph", _v4),
-    "v5_light_move_light": ("subd_sym", _v5),
-    "v6_pivot_knife": ("cube", _v6),
-    "v7_pivot_resym_preview": ("basemesh", _v7),
-    "knife_session": ("cube", _knife_scenario),
-    "knife_symmetric": ("subd_sym", _knife_scenario),
-    "wer_constraint_modifiers": ("subd_sym", _wer_scenario),
-    "box_paint_lasso": ("subd_sym", _box_paint_lasso_scenario),
-    "gizmo_click_drag": ("subd_sym", _gizmo_scenario),
-    "working_pivot": ("subd_sym", _pivot_scenario),
-    "morph_view": ("morph", _morph_scenario),
-    "undo_redo_chain": ("cube", _undo_chain_scenario),
-    "object_gestures_mirror_pair": ("objects", _objects_scenario),
-    "resymmetrize": ("basemesh", _resym_scenario),
-    "hidden_geometry": ("hidden", _undo_chain_scenario),
-}
-
-
-def run_scripted(name: str) -> Driver:
-    scene, script = SCRIPTED[name]
-    driver = Driver(scene, keep=True)
-    script(driver)
-    return driver
-
-
-# -- the default corpus (E1) ------------------------------------------------------------------------
-
-#: scene -> (number of sequences, events per sequence) for the default run.
-CORPUS: dict[str, tuple[int, int]] = {
-    "cube": (60, 250),
-    "subd_sym": (60, 250),
-    "objects": (40, 250),
-    "morph": (40, 250),
-    "hidden": (40, 250),
-    "basemesh": (12, 250),
-}
-
-
-def record(out: Path = FIXTURES) -> None:
-    """Record the corpus (only on the baseline commit, AD-027 §6)."""
-    out.mkdir(parents=True, exist_ok=True)
-    stamp = driver_hash()
-    for scene, (count, events) in CORPUS.items():
-        sequences = []
-        for seed in range(count):
-            driver = run_random(scene, seed, events)
-            sequences.append({"seed": seed, "events": events, "digests": "".join(driver.digests)})
-        payload = {"driver": stamp, "scene": scene, "sequences": sequences}
-        (out / f"random_{scene}.json").write_text(json.dumps(payload, indent=0) + "\n", encoding="utf-8")
-    scripted = {}
-    for name in SCRIPTED:
-        driver = run_scripted(name)
-        scripted[name] = [
-            {"event": label, "observation": obs} for label, obs in zip(driver.events, driver.observations)
-        ]
-    (out / "scripted.json").write_text(
-        json.dumps({"driver": stamp, "sequences": scripted}, indent=1, sort_keys=True) + "\n", encoding="utf-8"
-    )
-
-
-def split_digests(text: str) -> list[str]:
-    return [text[i:i + 12] for i in range(0, len(text), 12)]
-
-
-def _main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("record", help="record the corpus into tests/fixtures/interaction_traces (baseline only)")
-    dig = sub.add_parser("digests", help="print one line per event: <scene> <seed> <index> <digest> <event>")
-    dig.add_argument("scene")
-    dig.add_argument("first_seed", type=int)
-    dig.add_argument("count", type=int)
-    dig.add_argument("events", type=int)
-    obs = sub.add_parser("observe", help="print the observation at one event (JSON)")
-    obs.add_argument("scene")
-    obs.add_argument("seed", type=int)
-    obs.add_argument("events", type=int)
-    obs.add_argument("index", type=int)
-    args = parser.parse_args(argv)
-    if args.cmd == "record":
-        record()
-    elif args.cmd == "digests":
-        for seed in range(args.first_seed, args.first_seed + args.count):
-            driver = run_random(args.scene, seed, args.events)
-            for i, (d, label) in enumerate(zip(driver.digests, driver.events)):
-                print(args.scene, seed, i, d, label)
-            sys.stdout.flush()
-    else:
-        driver = run_random(args.scene, args.seed, args.events, keep=True)
-        print(json.dumps({"event": driver.events[args.index], "observation": driver.observations[args.index]},
-                         indent=1, sort_keys=True, default=repr))
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(_main(sys.argv[1:]))
+    d.key_up(inp.value)

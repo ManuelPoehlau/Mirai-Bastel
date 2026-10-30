@@ -23,6 +23,7 @@ from mirai.interaction import commands
 from mirai.interaction.input import Input
 from mirai.interaction.session import RunContext
 from tests import interaction_trace as trace
+from tests import test_interaction_scenarios as scenarios
 
 _SRC = Path(application_module.__file__).resolve().parent
 
@@ -146,8 +147,18 @@ class _PurityDriver(trace.Driver):
 _EVERY = sorted({value for name, value in vars(commands).items() if name.isupper() and isinstance(value, str)})
 
 
-@pytest.mark.parametrize("name", ["v1_pivot_then_move_esc", "knife_session", "wer_constraint_modifiers", "morph_view",
-                                  "object_gestures_mirror_pair", "resymmetrize", "box_paint_lasso"])
-def test_iv_can_run_is_pure(name: str) -> None:
-    scene, script = trace.SCRIPTED[name]
-    script(_PurityDriver(scene))
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "test_v1_a_held_pivot_takes_esc_and_move_stays_armed",
+        "test_v7_a_held_pivot_takes_the_click_under_the_open_preview_and_esc_closes_the_preview",
+        "test_knife_session_commits_one_entry_and_a_second_session_cancels",
+        "test_wer_with_a_one_shot_constraint_ctrl_snap_shift_fine_and_alt_orbit",
+        "test_box_paint_and_lasso_select_and_esc_cancels_a_box",
+        "test_morph_view_tab_w_n_drag_undo_and_back",
+        "test_object_gestures_in_mode_4_with_a_mirror_pair",
+    ],
+)
+def test_iv_can_run_is_pure(scenario: str, monkeypatch) -> None:
+    monkeypatch.setattr(scenarios, "make_driver", _PurityDriver)
+    getattr(scenarios, scenario)()
