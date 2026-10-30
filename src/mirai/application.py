@@ -287,34 +287,10 @@ _MODE_COMMANDS: dict[str, SelectionMode] = {
     commands.SET_OBJECT_MODE: SelectionMode.OBJECT,
 }
 
-#: The commands a key runs through `_execute` once `can_run` let them through: pure display and view state (allowed
-#: while a transform runs), the Soft settings (state only, like the constraints: they apply to the next gesture - or
-#: to this one if it is armed and has not begun yet; symmetric Soft refuses at `begin()`, AD-SYM-04 SS2), and the
-#: mode, placement and topology commands (refused underneath a held gesture, ``gestures.GESTURE_REFUSES`).
-_KEY_COMMANDS = frozenset(
-    {
-        *_DISPLAY_COMMANDS,
-        *_LOOK_COMMANDS,
-        commands.TOGGLE_ORTHO,
-        *_SOFT_COMMANDS,
-        *_MODE_COMMANDS,
-        commands.APPLY_TRANSFORM,
-        commands.CLEAR_TRANSFORM,
-        commands.TOGGLE_REFERENCE,
-        commands.CONNECT,
-        commands.COLLAPSE,
-        commands.BORDER_SELECT,
-        commands.CAP,
-        commands.SYMMETRY_CYCLE,
-        commands.RESYMMETRIZE,
-        *_MASK_COMMANDS,
-        *_HIDE_COMMANDS,
-        *_REGION_COMMANDS,
-        *_REMOVAL_COMMANDS,
-        *_LOOP_COMMANDS,
-        *_SELECTION_STEP_COMMANDS,
-    }
-)
+#: A command handler of the table (AD-027 §3.4): (command, where it comes from, the API's tool context) -> bool.
+Handler = Callable[[str, RunContext, Optional[dict]], bool]
+_API = RunContext("api")
+
 
 @dataclasses.dataclass(frozen=True)
 class CommandGate:
@@ -571,6 +547,8 @@ class Application:
         # The session size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
         self.gizmo_size_name: str = _gizmo.GIZMO_SIZE_DEFAULT
         self.tweak_command: str = commands.MOVE
+        # AD-027 §3.4: the command table - one handler per command, built once (`_command_table`).
+        self._handlers: Mapping[str, Handler] = self._command_table()
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
@@ -996,69 +974,102 @@ class Application:
         grabbed = self.interaction.grab(Command(command, ctx))
         if grabbed is not PASS:
             return grabbed
-        return self._execute(command, context)
+        return self._execute(command, context, ctx)
 
-    def _execute(self, command: str, context: Optional[dict] = None) -> bool:
+    def _execute(self, command: str, context: Optional[dict] = None, ctx: RunContext = _API) -> bool:
         """The command's handler, ungated (AD-027 M2): called after `can_run` (or the gate of the path that
         reached it)."""
         self.flush_hover()
-        if command in MORPH_COMMANDS:
-            return self._morph.command(command)
-        tool_class = tool_for_command(command)
-        if tool_class:
-            return self.tool_manager.activate(command, context=context)
+        handler = self._handlers.get(command)
+        return False if handler is None else handler(command, ctx, context)
 
-        if command in (commands.UNDO, commands.REDO):
+    def _command_table(self) -> Mapping[str, Handler]:
+        """AD-027 §3.4: every command `Application` runs, with its one handler `(command, ctx, context) -> bool`
+        (`context`: the API's tool context). A static table, not a plugin system: nothing registers at runtime
+        (AD-013 H2 alternative E stays rejected). Where key and API differ today both stay, keyed on `ctx.source`
+        (§3.3): a gesture key arms its gesture, the API activates its tool; Undo from a key posts its status and
+        rebuilds the view; the hold keys, the constraint keys, Cancel and the session switches run from a key only."""
+        table: dict[str, Handler] = {}
+
+        def add(names, handler: Handler) -> None:
+            for name in names:
+                assert name not in table, f"two handlers for {name!r}"
+                table[name] = handler
+
+        def key_only(run: Callable[[str, Input], bool]) -> Handler:
+            return lambda command, ctx, context: ctx.source == "key" and run(command, ctx.input)
+
+        def plain(run: Callable[[str], bool]) -> Handler:
+            return lambda command, ctx, context: run(command)
+
+        objects, gestures, tools = self._objects, self._gestures, self._pointer_tools
+        add(MORPH_COMMANDS, self._run_morph)
+        add(TRANSFORM_COMMANDS, self._run_gesture)
+        add((commands.UNDO, commands.REDO), self._run_undo_redo)
+        add(_SESSION_SWITCH_COMMANDS, key_only(lambda command, input: self._session_switch(command)))
+        add((commands.LASSO_ARM,), key_only(lambda command, input: tools.lasso.arm(input.value)))
+        add((commands.PIVOT_PLACE,), key_only(lambda command, input: tools.pivot.arm(input.value)))
+        add((commands.LIGHT_DRAG,), key_only(lambda command, input: tools.light.arm(input.value)))
+        add(CONSTRAINT_SPACES, key_only(lambda command, input: gestures.constrain(CONSTRAINT_SPACES[command])))
+        add((commands.CANCEL,), key_only(lambda command, input: self._cancel()))
+        add((commands.TOGGLE_TRANSFORM_SPACE,), plain(lambda command: gestures.toggle_orientation()))
+        add((commands.TOGGLE_ORTHO,), plain(lambda command: self._toggle_ortho()))
+        add(_DISPLAY_COMMANDS, plain(self._display_command))
+        add(_LOOK_COMMANDS, plain(self._look_command))
+        add(_SOFT_COMMANDS, plain(self._soft_command))
+        add(SUBD_COMMANDS, plain(self._subd_command))
+        add(_MODE_COMMANDS, plain(lambda command: self._set_selection_mode(_MODE_COMMANDS[command])))
+        add(PLACEMENT_COMMANDS, plain(objects.placement_command))
+        add((commands.TOGGLE_REFERENCE,), plain(lambda command: objects.reference_command()))
+        add((commands.CONNECT,), plain(lambda command: self._connect_command()))
+        add(_REMOVAL_COMMANDS, plain(self._run_removal))
+        add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
+        add((commands.BORDER_SELECT,), plain(lambda command: self._border_select()))
+        add((commands.CAP,), plain(lambda command: self._cap_command()))
+        add((commands.SYMMETRY_CYCLE,), plain(lambda command: self._symmetry.cycle()))
+        add((commands.RESYMMETRIZE,), plain(lambda command: self._symmetry.open()))
+        add(_MASK_COMMANDS, plain(self._mask_command))
+        add(_HIDE_COMMANDS, plain(self._hide_command))
+        add(_REGION_COMMANDS, plain(self._region_command))
+        add((commands.EDGE_LOOP, commands.EDGE_RING), plain(self._loop_select))
+        add((commands.LOOP_INSERT,), plain(lambda command: self._loop_insert()))
+        add(_SELECTION_STEP_COMMANDS, plain(self._selection_step))
+        return MappingProxyType(table)
+
+    def _run_morph(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """The morph keys (`MorphController.command`); N from a key holds the weight drag."""
+        if command == commands.MORPH_WEIGHT_DRAG and ctx.source == "key":
+            return self._morph.weight_hold.arm(ctx.input.value)
+        return self._morph.command(command)
+
+    def _run_gesture(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """A hold-key gesture: a key arms it (W/E/R also set the tool the gizmo uses - a tap sets it, "tool set");
+        the API activates its tool, with `context` begun at once (Pattern B), as before."""
+        if ctx.source == "key":
+            if command in TWEAK_TRANSFORMS:
+                self.tweak_command = command
+            return self._transform_arm(command, ctx.input.value)
+        if tool_for_command(command) is None:
+            return False
+        return self.tool_manager.activate(command, context=context)
+
+    def _run_undo_redo(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """E23: from a key a gesture that is only armed is disarmed first (a begun one refused it in `can_run`), and
+        the step posts its status and rebuilds the view; from the API only the step."""
+        if ctx.source != "key":
             self._apply_undo_redo(command)
             return True
-        if command == commands.TOGGLE_ORTHO:
-            return self._toggle_ortho()
-        if command in _DISPLAY_COMMANDS:
-            return self._display_command(command)
-        if command in _LOOK_COMMANDS:
-            return self._look_command(command)
-        if command in _SOFT_COMMANDS:
-            return self._soft_command(command)
-        if command in SUBD_COMMANDS:
-            return self._subd_command(command)
-        if command in _MODE_COMMANDS:
-            return self._set_selection_mode(_MODE_COMMANDS[command])
-        if command == commands.TOGGLE_TRANSFORM_SPACE:
-            return self._gestures.toggle_orientation()
-        if command in PLACEMENT_COMMANDS:
-            return self._objects.placement_command(command)
-        if command == commands.TOGGLE_REFERENCE:
-            return self._objects.reference_command()
-        if command == commands.CONNECT:
-            return self._connect_command()
+        gesture = self._gesture
+        if gesture is not None:
+            gesture.end()
+            self._refresh_hover()
+        return self._undo_redo(command)
+
+    def _run_removal(self, command: str) -> bool:
+        """Delete / Dissolve; in mode `4` Delete removes the selected objects."""
         if command == commands.DELETE and self.selection.mode is SelectionMode.OBJECT:
             return self._objects.delete_selected()
-        if command in _REMOVAL_COMMANDS:
-            return self._removal_command(command)
-        if command == commands.COLLAPSE:
-            return self._collapse_command()
-        if command == commands.BORDER_SELECT:
-            return self._border_select()
-        if command == commands.CAP:
-            return self._cap_command()
-        if command == commands.SYMMETRY_CYCLE:
-            return self._symmetry.cycle()
-        if command in _MASK_COMMANDS:
-            return self._mask_command(command)
-        if command in _HIDE_COMMANDS:
-            return self._hide_command(command)
-        if command in _REGION_COMMANDS:
-            return self._region_command(command)
-        if command == commands.RESYMMETRIZE:
-            return self._symmetry.open()
-        if command in (commands.EDGE_LOOP, commands.EDGE_RING):
-            return self._loop_select(command)
-        if command == commands.LOOP_INSERT:
-            return self._loop_insert()
-        if command in _SELECTION_STEP_COMMANDS:
-            return self._selection_step(command)
-
-        return False
+        return self._removal_command(command)
 
     # -- Symmetry (AD-SYM-04 A1-A3; `controllers.symmetry` since AD-027 M1) ------------------------
 
@@ -2127,42 +2138,9 @@ class Application:
         return command
 
     def _key_command(self, command: str | None, input: Input) -> bool:
-        """A key's command after `can_run` let it through (AD-027 M2): the hold keys arm, the rest runs."""
-        if command in SUBD_COMMANDS:
-            return self._execute(command)
-        if command in MORPH_COMMANDS:
-            if command == commands.MORPH_WEIGHT_DRAG:
-                return self._morph.weight_hold.arm(input.value)
-            return self._execute(command)
-        if command in _SESSION_SWITCH_COMMANDS:
-            return self._session_switch(command)
-        if command == commands.LASSO_ARM:
-            return self._pointer_tools.lasso.arm(input.value)
-        if command == commands.PIVOT_PLACE:
-            return self._pointer_tools.pivot.arm(input.value)
-        if command == commands.LIGHT_DRAG:
-            return self._pointer_tools.light.arm(input.value)
-        if command in TWEAK_TRANSFORMS:
-            # The gizmo (and the unbound `Tweak` drag) uses the last W/E/R pressed - a tap sets it ("tool set").
-            self.tweak_command = command
-        if command in TRANSFORM_COMMANDS:
-            return self._transform_arm(command, input.value)
-        if command in CONSTRAINT_SPACES:
-            return self._gestures.constrain(CONSTRAINT_SPACES[command])
-        if command == commands.TOGGLE_TRANSFORM_SPACE:
-            return self._gestures.toggle_orientation()
-        if command == commands.CANCEL:
-            return self._cancel()
-        if command in (commands.UNDO, commands.REDO):
-            # E23: only armed -> disarm first, then run (a begun gesture refused it in `can_run`).
-            gesture = self._gesture
-            if gesture is not None:
-                gesture.end()
-                self._refresh_hover()
-            return self._undo_redo(command)
-        if command in _KEY_COMMANDS:
-            return self._execute(command)
-        return False
+        """A key's command after `can_run` let it through (AD-027 M2): its handler from the table (§3.4)."""
+        handler = self._handlers.get(command)
+        return False if handler is None else handler(command, RunContext("key", input), None)
 
     def key_release(self, input: Input) -> bool:
         """Taste losgelassen. True = das Loslassen hat etwas bewirkt.
