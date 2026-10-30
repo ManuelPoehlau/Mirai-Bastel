@@ -179,7 +179,7 @@ DISSOLVE_NO_CLEANUP = "DissolveNoCleanup"
 # SYMMETRY_CYCLE (AD-SYM-04 Slice A1, Q-1 = E-1, Manu 2026-10-14): global; schaltet die
 # Symmetrie-Definition des Meshs aus → X → Y → Z → aus (E1-Ebene durch den Ursprung, E3-Seam,
 # `mirai.symmetry_axis`), je ein Undo-Schritt. Ignoriert, solange W/E/R/T scharf ist oder eine
-# Knife-Session läuft (wie `C`). Siehe `mirai.application.Application._symmetry_cycle`.
+# Knife-Session läuft (wie `C`). Siehe `mirai.controllers.symmetry.SymmetryController.cycle`.
 SYMMETRY_CYCLE = "SymmetryCycle"
 
 # Mask Geometry (docs/future_ideas/MODELING.md, Priorität 1; `PROVISIONAL`): state commands like the
@@ -229,7 +229,7 @@ REGION_CLICK = "RegionClick"
 # global; mit genau einem ausgewählten Vertex öffnet es die Re-Symmetrize-Vorschau (Plan einmal
 # gerechnet), ein zweiter Druck führt sie aus (ein Undo-Schritt), Esc schließt sie. Solange sie
 # offen ist, gehört sie `Application` (`interaction_owner` "resymmetrize"). Siehe
-# `mirai.resymmetrize` / `mirai.application.Application._resymmetrize_open`.
+# `mirai.resymmetrize` / `mirai.controllers.symmetry.SymmetryController.open`.
 RESYMMETRIZE = "ReSymmetrize"
 
 # Practical-test session switches (2026-10-28, Manu A1/A4; keys `PROVISIONAL`, nothing is saved):

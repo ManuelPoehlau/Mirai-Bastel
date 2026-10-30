@@ -2,7 +2,8 @@
 
 **Status:** **DECIDED (Manu, 2026-10-29: go with C1–C3; V1, V3, V7 stay as they are).** Proposed the same day as the
 Architecture Gate (Type C) stop point; second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md)
-(Development chat): ACCEPT WITH CHANGES, disposition in §12. **Not implemented yet** (M0 not started).
+(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M2 implemented (2026-10-30)**; M3–M8 open (§7,
+findings of the steps so far in §7.1).
 **Mode (M5):** Production (a behaviour-neutral restructuring), in fresh sessions with this AD as the handoff (§7).
 **Baseline:** `main` @ `dfd6e5d`. Every code fact, line count and probe result below was read or run there.
 **References:** AGENTS.md §5, §7, §7a, §8a · Development System §5 · [SOURCE_ARCHITECTURE](SOURCE_ARCHITECTURE.md) ·
@@ -26,7 +27,8 @@ code: `src/mirai/application.py`, `src/mirai/interaction/`, `src/main.py`, `src/
   nur die lesbaren Szenarien als Tests; die Zufallsaufzeichnung wird gelöscht, damit sie spätere gewollte Änderungen
   (Tasten, Phase 6) nicht blockiert.
 - **Stand:** entschieden (dein Go, 2026-10-29, mit den drei Änderungen der zweiten Meinung, §12). Der Umbau läuft in
-  drei frischen Sessions (§7). Kein Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas anders anfühlt (§10).
+  drei frischen Sessions (§7); die erste (M0–M2: Aufzeichnung, Platz, eine Frage) ist fertig (2026-10-30). Kein
+  Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas anders anfühlt (§10).
 - **Danach:** AD-025 Phase 6 mit dem Kiefer-Szenario.
 
 ## 0. Decisions this AD rests on
@@ -418,6 +420,33 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
 | M6 | `GestureSession` and its kinds (Move/Rotate/Scale via `ToolManager`, Extrude, Loop / Vertex Slide, Smooth / Relax, Inset / Bevel), the gizmo / Tweak origin, Soft live radius and flow — **one gesture kind at a time, E1 and E2 after each kind** (C3), not only at the end of the step | the biggest step; everything it touches is in place |
 | M7 | ObjectController, including the object gesture kind and the stage-4 policy | the object gesture is a gesture kind |
 | M8 | command table; E5 checks; SOURCE_ARCHITECTURE; line counts; E3; then the scripted sequences become the permanent regression tests and the randomised digest fixtures and generator are removed (C1) | closes the DoD |
+
+### 7.1 Findings of the steps so far (implementation, not a new decision)
+
+- **M0.** Corpus as §6 E1: 252 random sequences of 250 events (60 000 on the five small scenes, 3 000 on the
+  basemesh), hand-like macros on top of single random events (a gesture key held over moves, Knife sessions, the
+  preview, drags, held P / L / N / Q, gizmo drags), 18 scripted sequences (V1–V7, the test points). Deterministic
+  across `PYTHONHASHSEED` (the SubD provider's cache had to stay out of the digest). The replay takes **2 min 31 s**
+  on the 4-core container, over the "about one minute" budget; E2 per step (230 000 events, both trees) about
+  ten minutes on 4 workers. E2 by hand: `git worktree add <dir> dfd6e5d`, copy `tests/interaction_trace.py` into it,
+  run `python tests/interaction_trace.py digests <scene> 1000 <count> 250` in both trees and compare the lines;
+  `... observe <scene> <seed> 250 <index>` prints the observation at the first differing event.
+- **Session protocol:** `exclusive: bool` added - True for a session that grabs input (the Knife, the preview); its
+  `allows` alone answers `can_run` (stage 1, "alone" taken literally: the preview's display keys run without the
+  host gate, as before).
+- **Source-dependent `allows`** where today's behaviour differs by source (allowed by `RunContext`): the preview's
+  refusal of a drag is silent, of every other source its hint; a drag selection lets the Soft wheel steps through
+  (they never waited for it), keys only Cancel, display, look, ortho, session switches and SubD.
+- **Stays in the command** (a precondition, not a gate, or behind a silent gate in today's order): the Working Pivot's
+  and the drag selection's mode-`4` texts, `viewport is None`, and `_toggle_orientation`'s own begun check (stage 6
+  refuses `K` first, so it is never reached from a key).
+- **Cost (M2, measured headless on the 4-core container, Python 3.13):** `can_run` 1.0–1.8 µs per key, a slot grab
+  0.3–0.8 µs per event (budget 5 µs: met). The HUD's availability data (`HudState.unavailable`, 34 hinted commands,
+  computed while the HUD is visible) costs 30–40 µs per frame - **over the 20 µs budget** (≈ 0.2 % of a 60 Hz
+  frame). Not optimised: a batched variant would be a second copy of the stage logic; it is the option if the HUD
+  ever shows in a profile.
+- **Until their sessions move** (M3, M5, M6) the Knife's, the held gestures' and the drag selection's `allows` are
+  `Application` tables (`_KNIFE_ALLOWS`, `_GESTURE_REFUSES`, `_DRAG_SELECT_ALLOWS`) read by `can_run`.
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 

@@ -16,7 +16,7 @@ wie eine Definition entsteht:
   Deklaration (INV-1), keine laufende Positionsprüfung. Keine Toleranz (E4): ein nur fast
   symmetrisches Mesh kommt als `partial` hoch.
 - **E2** (ein Zyklus-Schritt = ein Undo-Schritt) liegt beim Aufrufer:
-  `Application._symmetry_cycle` (Shift+S, `commands.SYMMETRY_CYCLE`) ruft
+  `SymmetryController.cycle` (Shift+S, `commands.SYMMETRY_CYCLE`) ruft
   `set_symmetry_axis` in seiner Mesh-Transaktion.
 """
 

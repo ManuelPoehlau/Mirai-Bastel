@@ -31,6 +31,7 @@ from typing import Optional
 
 from mirai.interaction import commands
 from mirai.interaction.input import MORPH_CONTEXT, SUBD_CONTEXT, WINDOW_CONTEXT, BindingSet
+from mirai.interaction.session import RunContext
 from mirai.subdivision.preview import VIEW_CAGE, VIEW_ISO, VIEW_OFF, key_label
 from mirai.symmetry_axis import current_axis
 
@@ -107,6 +108,9 @@ class HudState:
     pivot: str = "off"
     #: WP Ortho / Views (V-1/V-2): "Persp" / "Ortho" / "Front · Ortho" ... (`Application.view_text`).
     view: str = "Persp"
+    #: AD-027 §3.3 (data only): the hinted commands `Application.can_run` refuses right now (source "ui",
+    #: no selection-dependent stage). The rows look the same; whether they grey out is the UX project's call.
+    unavailable: frozenset = frozenset()
 
 
 def hud_state(app) -> HudState:
@@ -155,7 +159,15 @@ def hud_state(app) -> HudState:
         constraint_mode=app.constraint_mode,
         pivot=_pivot_text(app),
         view=app.view_text,
+        unavailable=_unavailable(app),
     )
+
+
+_UI = RunContext("ui", operands=False)
+
+
+def _unavailable(app) -> frozenset:
+    return frozenset(command for command in _HINTED_APP_COMMANDS if app.can_run(command, _UI) is not None)
 
 
 def _pivot_text(app) -> str:
@@ -201,6 +213,11 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     "HUD": ((commands.TOGGLE_HUD,), WINDOW_CONTEXT),
 }
 
+
+#: The hinted commands `Application` runs (the window's own row, the HUD key, is not an app command).
+_HINTED_APP_COMMANDS: tuple[str, ...] = tuple(
+    name for names, context in _HINT_COMMANDS.values() if context != WINDOW_CONTEXT for name in names
+)
 
 _ARROWS = {"UP": "↑", "DOWN": "↓", "LEFT": "←", "RIGHT": "→"}
 
