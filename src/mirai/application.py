@@ -56,7 +56,6 @@ from core import (
     SelectionMode,
     VertexId,
 )
-from core.mesh import MeshChange
 from core.operations import CollapseRefused, MeshDeltaCommand, record_mesh_change
 from core.scene import IDENTITY_TRANSFORM
 from core.serialization import scene_from_json, scene_to_json
@@ -150,8 +149,6 @@ from .resymmetrize import ResymPlan
 from .controllers.services import AppServices
 from .controllers.gestures import (
     CONSTRAINT_ONE_SHOT,
-    EXTRUDE_BEGIN_PX,
-    EXTRUDE_MIN_DISTANCE,
     SMOOTH_COMMANDS,
     TRANSFORM_COMMANDS,
     TWEAK_KEY,
@@ -162,6 +159,7 @@ from .controllers.gestures import (
     commit_hint,
     constraint_suffix,
     element_vertices,
+    hovered_of_mode,
 )
 from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
@@ -193,10 +191,6 @@ from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_lab
 from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
-from .topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
-from .topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
-from .topology.offset_build import OffsetBuild, OffsetRefused
-from .symmetric_offset import SymmetricOffset
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
 from .surface_chain import SurfaceChain
@@ -305,24 +299,6 @@ _SOFT_COMMANDS = (
 
 #: `Application._gpu_pick`: the window cannot serve this pick, ask the CPU picker.
 _CPU = object()
-
-
-@dataclasses.dataclass
-class _OffsetGesture:
-    """A held Inset / Bevel (2026-10-29): fixed at the press (`build` = the mutation, run once the drag passes
-    `EXTRUDE_BEGIN_PX`; `symmetric` = the coordinator under a symmetry definition), then the width, the
-    journal from the start of the drag and the selection snapshot taken before it."""
-
-    label: str
-    build: Callable[[Mesh], OffsetBuild]
-    symmetric: SymmetricOffset | None
-    residue: Callable[[OffsetBuild], None]
-    world_per_px: float
-    travel: tuple[float, float] = (0.0, 0.0)
-    width: float = 0.0
-    result: OffsetBuild | None = None
-    before: MeshChange | None = None
-    selection_before: tuple | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -434,45 +410,29 @@ class _ObjectGesture:
     followers: list = dataclasses.field(default_factory=list)
 
 
-class _AppGesture(GestureSession):
-    """AD-027 M6, transitional: a gesture kind whose code is still `Application`'s (`kind`:
-    "offset", "object"); it moves into `controllers` kind by kind, the object gesture at M7."""
+class _ObjectGestureSession(GestureSession):
+    """AD-027 M6, transitional: the object gesture of mode `4` as a session; its code is still `Application`'s
+    (`_object_*`) and moves into the ObjectController at M7."""
 
-    def __init__(self, app: "Application", kind: str, command: str, key: str, target, origin) -> None:
-        super().__init__(app._gestures, command, key, target, origin)
+    def __init__(self, app: "Application", command: str, key: str, origin) -> None:
+        super().__init__(app._gestures, command, key, (), origin)
         self._app = app
-        self.kind = kind
 
     @property
     def label(self) -> str:
-        if self.kind == "object":
-            return f"Object {super().label}"
-        return super().label
+        return f"Object {super().label}"
 
     def step(self, dx: float, dy: float) -> bool:
-        app = self._app
-        return {
-            "offset": app._offset_step,
-            "object": app._object_step,
-        }[self.kind](dx, dy)
+        return self._app._object_step(dx, dy)
 
     def release(self) -> None:
-        app = self._app
-        {
-            "offset": app._offset_release,
-            "object": app._object_release,
-        }[self.kind]()
+        self._app._object_release()
 
     def abort(self) -> None:
-        app = self._app
-        {
-            "offset": app._offset_abort,
-            "object": app._object_cancel,
-        }[self.kind]()
+        self._app._object_cancel()
 
     def cleanup(self) -> None:
-        self._app._gesture_cleanup(self.kind)
-
+        self._app._object_gesture = None
 
 
 def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
@@ -754,8 +714,6 @@ class Application:
         # The session size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
         self.gizmo_size_name: str = _gizmo.GIZMO_SIZE_DEFAULT
         self.tweak_command: str = commands.MOVE
-        # Inset / Bevel (2026-10-29): the held width gesture, None = none (`_OffsetGesture`).
-        self._offset: _OffsetGesture | None = None
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
@@ -1602,7 +1560,7 @@ class Application:
         if paired is None:
             return False
         targets, followers = paired
-        self._start_gesture("object", command, key, (), origin)
+        self.interaction.start(_ObjectGestureSession(self, command, key, origin))
         self._object_gesture = _ObjectGesture(
             [(obj, obj.transform) for obj in targets],
             references,
@@ -2539,217 +2497,6 @@ class Application:
             effective = canonical_edges(SymmetryIndex(mesh), ring)
         return self._edge_connect(ring, effective, "Loop Insert", "Loop Insert")
 
-    # -- Inset / Bevel (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
-    #    `PROVISIONAL`) ------------------------------------------------------------------------------
-    #
-    # A width gesture in the T family: the press plans and refuses (nothing changes), the drag past
-    # EXTRUDE_BEGIN_PX builds the topology once (`build_*`), every further motion only moves the new
-    # vertices (right = wider, left = narrower, down to 0; Shift = fine), the release commits one
-    # History entry, Esc / a tap / width 0 leave the mesh exactly as it was. Under a symmetry definition
-    # the declared planner (`symmetry_declarations.OFFSET_COORDINATORS`) expands the selection by its
-    # partners and the coordinator keeps the result an exact mirror.
-
-    def _inset_arm(self, key: str, origin) -> bool:
-        """Hold I in face mode: the selected faces, else the hovered face."""
-        selection = self.selection
-        mesh = self.scene.mesh
-        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
-        hovered = selection.hovered
-        if not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered):
-            faces = {hovered}
-        if not faces:
-            self._set_status(f"{INSET_LABEL}: select or hover a face")
-            return False
-        symmetric = None
-        planner = (
-            symmetry_declarations.OFFSET_COORDINATORS.get(commands.INSET)
-            if mesh.symmetry_definition is not None
-            else None
-        )
-        try:
-            if planner is not None:
-                faces, symmetric = planner(mesh, faces)
-            plan = plan_inset(mesh, faces)
-        except SymmetryRefusal as exc:
-            self._set_status(str(exc))
-            return False
-        except InsetRefused as exc:
-            self._set_status(str(exc))
-            return False
-
-        def residue(result: OffsetBuild) -> None:
-            kept = {f for f in result.faces if mesh.is_valid_face(f)}
-            if symmetric is not None:
-                kept = symmetric.residue(mesh, kept, mesh.face_vertices)
-            selection.clear()
-            selection.mode = SelectionMode.FACE
-            selection.add(kept)
-
-        anchor = {v for f in plan.faces for v in mesh.face_vertices(f)}
-        self._offset_arm(
-            commands.INSET, key, origin, INSET_LABEL, lambda m: build_inset(m, plan), symmetric, residue, anchor
-        )
-        count = len(plan.faces)
-        self._set_status(
-            f"{INSET_LABEL}: {count} {'face' if count == 1 else 'faces'} - drag right / left for the width,"
-            f" release {key.upper()} to commit"
-        )
-        return True
-
-    def _bevel_arm(self, key: str, origin) -> bool:
-        """Hold Ctrl+B: the selected vertices / edges / faces of the active mode, else the hovered one. Face mode
-        bevels the faces' inner edges. Residue (`PROVISIONAL`, Blender): the new vertices in vertex mode, the new
-        faces' edges in edge mode, the new faces in face mode."""
-        selection = self.selection
-        mesh = self.scene.mesh
-        mode = selection.mode
-        current = {
-            SelectionMode.VERTEX: selection.vertices,
-            SelectionMode.EDGE: selection.edges,
-            SelectionMode.FACE: selection.faces,
-        }.get(mode)
-        if current is None:
-            self._set_status(f"{BEVEL_LABEL}: vertex, edge or face mode needed (1/2/3)")
-            return False
-        valid = {
-            SelectionMode.VERTEX: mesh.is_valid_vertex,
-            SelectionMode.EDGE: mesh.is_valid_edge,
-            SelectionMode.FACE: mesh.is_valid_face,
-        }[mode]
-        ids = {i for i in current if valid(i)}
-        if not ids and self._hovered_of_mode() is not None:
-            ids = {self._hovered_of_mode()}
-        if not ids:
-            self._set_status(f"{BEVEL_LABEL}: select or hover a {mode.name.lower()}")
-            return False
-        kind = SelectionMode.VERTEX if mode is SelectionMode.VERTEX else SelectionMode.EDGE
-        if mode is SelectionMode.FACE:
-            ids = {e for f in ids for e in mesh.face_edges(f) if len(mesh.edge_faces(e)) == 2}
-        symmetric = None
-        planner = (
-            symmetry_declarations.OFFSET_COORDINATORS.get(commands.BEVEL)
-            if mesh.symmetry_definition is not None
-            else None
-        )
-        try:
-            if planner is not None and ids:
-                ids, symmetric = planner(mesh, kind, ids)
-            plan = plan_bevel(mesh, kind, ids)
-        except SymmetryRefusal as exc:
-            self._set_status(str(exc))
-            return False
-        except BevelRefused as exc:
-            self._set_status(str(exc))
-            return False
-
-        def residue(result: OffsetBuild) -> None:
-            if mode is SelectionMode.VERTEX:
-                kept, vertices_of = {v for v in result.vertices if mesh.is_valid_vertex(v)}, lambda v: (v,)
-            elif mode is SelectionMode.EDGE:
-                kept = {e for f in result.faces if mesh.is_valid_face(f) for e in mesh.face_edges(f)}
-                vertices_of = mesh.edge_vertices
-            else:
-                kept, vertices_of = {f for f in result.faces if mesh.is_valid_face(f)}, mesh.face_vertices
-            if symmetric is not None:
-                kept = symmetric.residue(mesh, kept, vertices_of)
-            selection.clear()
-            selection.mode = mode
-            selection.add(kept)
-
-        anchor = set(plan.fans)
-        self._offset_arm(
-            commands.BEVEL, key, origin, BEVEL_LABEL, lambda m: build_bevel(m, plan), symmetric, residue, anchor
-        )
-        count = len(plan.vertices) if plan.vertex_mode else len(plan.edges)
-        noun = ("vertex" if count == 1 else "vertices") if plan.vertex_mode else ("edge" if count == 1 else "edges")
-        self._set_status(
-            f"{BEVEL_LABEL}: {count} {noun} - drag right / left for the width, release {key.upper()} to commit"
-        )
-        return True
-
-    def _offset_arm(self, command, key, origin, label, build, symmetric, residue, anchor_vertices) -> None:
-        mesh = self.scene.mesh
-        n = len(anchor_vertices)
-        centre = tuple(sum(mesh.vertex_position(v)[i] for v in anchor_vertices) / n for i in range(3))
-        step = self._edit_camera.screen_delta_to_world(centre, 1.0, 0.0, self.viewport_width, self.viewport_height)
-        world_per_px = math.sqrt(sum(c * c for c in step)) or 0.01
-        self._offset = _OffsetGesture(label, build, symmetric, residue, world_per_px)
-        self._start_gesture("offset", command, key, anchor_vertices, origin)
-        self._set_hovered(None)
-
-    def _offset_step(self, dx: float, dy: float) -> bool:
-        gesture = self._offset
-        mesh = self.scene.mesh
-        if not self._gesture.begun:
-            px, py = gesture.travel[0] + dx, gesture.travel[1] + dy
-            gesture.travel = (px, py)
-            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
-                return False
-            gesture.selection_before = self._selection_snapshot()
-            gesture.before = mesh.begin_change()
-            try:
-                gesture.result = gesture.build(mesh)
-            except OffsetRefused as exc:
-                mesh.rollback_change(gesture.before)
-                gesture.before = None
-                return self._gesture.refused(str(exc))
-            except BaseException:
-                mesh.rollback_change(gesture.before)
-                gesture.before = None
-                raise
-            self._gesture.begun = True
-            self._gestures.topology_changed()
-            dx = px
-        result = gesture.result
-        gesture.width = max(0.0, min(result.limit, gesture.width + dx * gesture.world_per_px))
-        positions = result.positions(gesture.width)
-        if gesture.symmetric is not None:
-            positions = gesture.symmetric.place(result.keys, positions)
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(positions))
-        at_limit = " (limit)" if gesture.width >= result.limit else ""
-        self._set_status(f"{gesture.label}: width {gesture.width:.4g}{at_limit}")
-        return True
-
-    def _offset_release(self) -> None:
-        gesture = self._offset
-        mesh = self.scene.mesh
-        if not self._gesture.begun or gesture.before is None:
-            self._set_status(f"{gesture.label}: no change")
-            return
-        if gesture.width < EXTRUDE_MIN_DISTANCE:
-            self._offset_abort()
-            self._set_status(f"{gesture.label}: no change")
-            return
-        try:
-            if gesture.symmetric is not None:
-                gesture.symmetric.finish(mesh, gesture.before)
-            face_regions_api.inherit_into(mesh, gesture.before)
-        except SymmetryRefusal as exc:
-            self._offset_abort()
-            self._set_status(str(exc))
-            return
-        before, gesture.before = gesture.before, None
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(before), description=gesture.label))
-        gesture.residue(gesture.result)
-        self._record_selection_history(gesture.selection_before)
-        self._gestures.topology_changed()
-        self._set_status(f"{gesture.label} committed")
-
-    def _offset_abort(self) -> None:
-        """Exact prior mesh and selection, no History entry."""
-        gesture = self._offset
-        if gesture is None or gesture.before is None:
-            return
-        before, gesture.before = gesture.before, None
-        self.scene.mesh.rollback_change(before)
-        if gesture.selection_before is not None:
-            self._restore_selection(gesture.selection_before)
-        self._gestures.topology_changed()
-
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 
     def _removal_command(self, command: str) -> bool:
@@ -2935,15 +2682,7 @@ class Application:
 
     def _hovered_of_mode(self):
         """The hovered element if it is a valid element of the active component mode, else None."""
-        hovered = self.selection.hovered
-        kind, valid = {
-            SelectionMode.VERTEX: (VertexId, self.scene.mesh.is_valid_vertex),
-            SelectionMode.EDGE: (EdgeId, self.scene.mesh.is_valid_edge),
-            SelectionMode.FACE: (FaceId, self.scene.mesh.is_valid_face),
-        }.get(self.selection.mode, (None, None))
-        if kind is None or not isinstance(hovered, kind) or not valid(hovered):
-            return None
-        return hovered
+        return hovered_of_mode(self.scene.mesh, self.selection)
 
     def _cap_command(self) -> bool:
         """Shift+B (`mirai.topology.border.apply_cap`): each closed border the selection (else the hovered
@@ -3517,18 +3256,12 @@ class Application:
         if command in SMOOTH_COMMANDS:
             return self._gestures.arm_smooth(command, key, origin)
         if command == commands.INSET:
-            return self._inset_arm(key, origin)
+            return self._gestures.arm_inset(key, origin)
         if command == commands.BEVEL:
-            return self._bevel_arm(key, origin)
+            return self._gestures.arm_bevel(key, origin)
         if self.selection.mode is SelectionMode.OBJECT:
             return self._object_arm(command, key, origin)
         return self._gestures.arm_transform(command, key, origin)
-
-    def _start_gesture(self, kind: str, command: str, key: str, target, origin) -> "_AppGesture":
-        """AD-027 M6 (transitional): a gesture kind whose code is still here starts its session."""
-        gesture = _AppGesture(self, kind, command, key, target, origin)
-        self.interaction.start(gesture)
-        return gesture
 
     def _session_switch(self, command: str) -> bool:
         """The session switches of the 2026-10-28 practical test (not saved, `PROVISIONAL` keys): one-shot <->
@@ -4201,16 +3934,6 @@ class Application:
                 # E2: the handle's axis was for this drag only; Esc keeps what was pending before the press.
                 self._gestures.axis_constraint = gizmo.constraint_before
         return gesture.cancel()
-
-    def _gesture_cleanup(self, kind: str) -> None:
-        """AD-027 M6 (transitional): the kind state of an ending gesture whose code is still here; a journal that
-        ended without release / abort stops recording (the mesh stays)."""
-        if kind == "object":
-            self._object_gesture = None
-        elif kind == "offset":
-            if self._offset is not None and self._offset.before is not None:
-                self.scene.mesh.release_change(self._offset.before)
-            self._offset = None
 
     def _undo_redo(self, command: str) -> bool:
         can = self.history.can_undo() if command == commands.UNDO else self.history.can_redo()

@@ -12,7 +12,8 @@ Behaviour as it was inside `Application` (AD-027 M6 moves it, nothing else). The
 - `TransformGesture` - Move / Rotate / Scale on components through the `ToolManager` (also from the gizmo / Tweak);
 - `ExtrudeGesture` - Extrude (hold T) through the `ToolManager`;
 - `LoopSlideGesture`, `VertexSlideGesture` - hold G in edge / vertex mode, a journal from the first motion;
-- `SmoothGesture` - Smooth / Relax (hold S / Alt+S), a tap is one step; Soft live radius as W/E/R.
+- `SmoothGesture` - Smooth / Relax (hold S / Alt+S), a tap is one step; Soft live radius as W/E/R;
+- `OffsetGesture` - Inset (hold I in face mode) / Bevel (hold Ctrl+B), topology built once past the threshold.
 
 The axis / plane constraint, its mode (one-shot / sticky) and the transform space (World / Normal) are sticky
 settings of this controller (AD-027 §3.1): a gesture reads them at `begin()`, the gizmo shows them.
@@ -22,13 +23,14 @@ from __future__ import annotations
 
 import dataclasses
 import math
-from typing import Optional
+from typing import Callable, Optional
 
-from core import EdgeId, FaceId, ObjectId, Selection, SelectionMode, VertexId
+from core import EdgeId, FaceId, Mesh, ObjectId, Selection, SelectionMode, VertexId
 from core.mesh import MeshChange
 from core.operations import MeshDeltaCommand
 from core.operations.transform import SeamConstraintError
 
+from .. import regions as face_regions_api
 from .. import symmetry_declarations, transform_space
 from ..interaction import commands
 from ..interaction.dial import PRECISION_GAIN
@@ -53,9 +55,13 @@ from ..soft_selection import (
     compute_influence,
     symmetric_influence,
 )
+from ..symmetric_offset import SymmetricOffset
 from ..symmetry import vertex_correspondence
 from ..symmetric_ops import SymmetryRefusal
+from ..topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
 from ..topology.connect_per_face import TopologyToolError
+from ..topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
+from ..topology.offset_build import OffsetBuild, OffsetRefused
 from ..topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
 from ..topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from ..topology.loop_slide import LOOP_SLIDE_LABEL, LoopSlideRefused, SlidePlan, plan_loop_slide, slide_positions
@@ -182,6 +188,19 @@ def active_selection_contains(selection: Selection, element) -> bool:
         SelectionMode.OBJECT: (ObjectId, selection.objects),
     }[selection.mode]
     return isinstance(element, kind) and element in members
+
+
+def hovered_of_mode(mesh, selection: Selection):
+    """The hovered element if it is a valid element of the active component mode, else None."""
+    hovered = selection.hovered
+    kind, valid = {
+        SelectionMode.VERTEX: (VertexId, mesh.is_valid_vertex),
+        SelectionMode.EDGE: (EdgeId, mesh.is_valid_edge),
+        SelectionMode.FACE: (FaceId, mesh.is_valid_face),
+    }.get(selection.mode, (None, None))
+    if kind is None or not isinstance(hovered, kind) or not valid(hovered):
+        return None
+    return hovered
 
 
 def constraint_label(space: str | None) -> str:
@@ -874,6 +893,114 @@ class SmoothGesture(GestureSession):
         self.show_weights(self.plan.weights)
 
 
+class OffsetGesture(GestureSession):
+    """Inset / Bevel (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
+    `PROVISIONAL`): a width gesture in the T family. The press plans and refuses (nothing changes); the drag past
+    EXTRUDE_BEGIN_PX builds the topology once (`build`), every further motion only moves the new vertices (right =
+    wider, left = narrower, down to 0; Shift = fine); the release commits one History entry; Esc / a tap / width 0
+    leave the mesh exactly as it was. Under a symmetry definition the declared planner
+    (`symmetry_declarations.OFFSET_COORDINATORS`) expanded the selection by its partners and the coordinator
+    (`symmetric`) keeps the result an exact mirror. `residue` sets the selection the commit leaves; `world_per_px`
+    = the width per pixel at the anchor; `before` = the journal from the start of the drag, `selection_before` the
+    snapshot taken before it."""
+
+    def __init__(self, controller: "GestureController", command: str, key: str, origin, op_label: str, build,
+                 symmetric: SymmetricOffset | None, residue, anchor_vertices) -> None:
+        super().__init__(controller, command, key, anchor_vertices, origin)
+        services = self.services
+        mesh = services.scene.mesh
+        n = len(anchor_vertices)
+        centre = tuple(sum(mesh.vertex_position(v)[i] for v in anchor_vertices) / n for i in range(3))
+        width, height = services.viewport_size
+        step = services.edit_camera.screen_delta_to_world(centre, 1.0, 0.0, width, height)
+        self.world_per_px = math.sqrt(sum(c * c for c in step)) or 0.01
+        self.op_label = op_label
+        self.build: Callable[[Mesh], OffsetBuild] = build
+        self.symmetric = symmetric
+        self.residue: Callable[[OffsetBuild], None] = residue
+        self.travel: tuple[float, float] = (0.0, 0.0)
+        self.width = 0.0
+        self.result: OffsetBuild | None = None
+        self.before: MeshChange | None = None
+        self.selection_before: tuple | None = None
+
+    def step(self, dx: float, dy: float) -> bool:
+        services = self.services
+        mesh = services.scene.mesh
+        if not self.begun:
+            px, py = self.travel[0] + dx, self.travel[1] + dy
+            self.travel = (px, py)
+            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
+                return False
+            self.selection_before = services.selection_snapshot()
+            self.before = mesh.begin_change()
+            try:
+                self.result = self.build(mesh)
+            except OffsetRefused as exc:
+                mesh.rollback_change(self.before)
+                self.before = None
+                return self.refused(str(exc))
+            except BaseException:
+                mesh.rollback_change(self.before)
+                self.before = None
+                raise
+            self.begun = True
+            self._controller.topology_changed()
+            dx = px
+        result = self.result
+        self.width = max(0.0, min(result.limit, self.width + dx * self.world_per_px))
+        positions = result.positions(self.width)
+        if self.symmetric is not None:
+            positions = self.symmetric.place(result.keys, positions)
+        for vid, position in positions.items():
+            mesh.set_vertex_position(vid, position)
+        services.invalidate_picks()
+        services.notify_vertices_moved(set(positions))
+        at_limit = " (limit)" if self.width >= result.limit else ""
+        services.status(f"{self.op_label}: width {self.width:.4g}{at_limit}")
+        return True
+
+    def release(self) -> None:
+        services = self.services
+        mesh = services.scene.mesh
+        if not self.begun or self.before is None:
+            services.status(f"{self.op_label}: no change")
+            return
+        if self.width < EXTRUDE_MIN_DISTANCE:
+            self.abort()
+            services.status(f"{self.op_label}: no change")
+            return
+        try:
+            if self.symmetric is not None:
+                self.symmetric.finish(mesh, self.before)
+            face_regions_api.inherit_into(mesh, self.before)
+        except SymmetryRefusal as exc:
+            self.abort()
+            services.status(str(exc))
+            return
+        before, self.before = self.before, None
+        services.history.push(MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(before), description=self.op_label))
+        self.residue(self.result)
+        services.record_selection_history(self.selection_before)
+        self._controller.topology_changed()
+        services.status(f"{self.op_label} committed")
+
+    def abort(self) -> None:
+        """Exact prior mesh and selection, no History entry."""
+        if self.before is None:
+            return
+        before, self.before = self.before, None
+        self.services.scene.mesh.rollback_change(before)
+        if self.selection_before is not None:
+            self.services.restore_selection(self.selection_before)
+        self._controller.topology_changed()
+
+    def cleanup(self) -> None:
+        if self.before is not None:
+            # A width gesture that ended without release / abort: stop its recording, keep the mesh.
+            self.services.scene.mesh.release_change(self.before)
+
+
 class GestureController:
     """Arms the gestures, owns the constraint settings (`axis_constraint`: None = free; `constraint_mode`;
     `orientation`: World / Normal, WP Toolbox Gaps C1) and the Soft live steps of the running gesture."""
@@ -1062,6 +1189,134 @@ class GestureController:
             f" more/less, release {key.upper()} to commit"
         )
         return True
+
+    def arm_inset(self, key: str, origin) -> bool:
+        """Hold I in face mode: the selected faces, else the hovered face."""
+        services = self.services
+        selection = services.selection
+        mesh = services.scene.mesh
+        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+        hovered = selection.hovered
+        if not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered):
+            faces = {hovered}
+        if not faces:
+            services.status(f"{INSET_LABEL}: select or hover a face")
+            return False
+        symmetric = None
+        planner = (
+            symmetry_declarations.OFFSET_COORDINATORS.get(commands.INSET)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        try:
+            if planner is not None:
+                faces, symmetric = planner(mesh, faces)
+            plan = plan_inset(mesh, faces)
+        except SymmetryRefusal as exc:
+            services.status(str(exc))
+            return False
+        except InsetRefused as exc:
+            services.status(str(exc))
+            return False
+
+        def residue(result: OffsetBuild) -> None:
+            kept = {f for f in result.faces if mesh.is_valid_face(f)}
+            if symmetric is not None:
+                kept = symmetric.residue(mesh, kept, mesh.face_vertices)
+            selection.clear()
+            selection.mode = SelectionMode.FACE
+            selection.add(kept)
+
+        anchor = {v for f in plan.faces for v in mesh.face_vertices(f)}
+        self._arm_offset(
+            commands.INSET, key, origin, INSET_LABEL, lambda m: build_inset(m, plan), symmetric, residue, anchor
+        )
+        count = len(plan.faces)
+        services.status(
+            f"{INSET_LABEL}: {count} {'face' if count == 1 else 'faces'} - drag right / left for the width,"
+            f" release {key.upper()} to commit"
+        )
+        return True
+
+    def arm_bevel(self, key: str, origin) -> bool:
+        """Hold Ctrl+B: the selected vertices / edges / faces of the active mode, else the hovered one. Face mode
+        bevels the faces' inner edges. Residue (`PROVISIONAL`, Blender): the new vertices in vertex mode, the new
+        faces' edges in edge mode, the new faces in face mode."""
+        services = self.services
+        selection = services.selection
+        mesh = services.scene.mesh
+        mode = selection.mode
+        current = {
+            SelectionMode.VERTEX: selection.vertices,
+            SelectionMode.EDGE: selection.edges,
+            SelectionMode.FACE: selection.faces,
+        }.get(mode)
+        if current is None:
+            services.status(f"{BEVEL_LABEL}: vertex, edge or face mode needed (1/2/3)")
+            return False
+        valid = {
+            SelectionMode.VERTEX: mesh.is_valid_vertex,
+            SelectionMode.EDGE: mesh.is_valid_edge,
+            SelectionMode.FACE: mesh.is_valid_face,
+        }[mode]
+        ids = {i for i in current if valid(i)}
+        hovered = hovered_of_mode(mesh, selection)
+        if not ids and hovered is not None:
+            ids = {hovered}
+        if not ids:
+            services.status(f"{BEVEL_LABEL}: select or hover a {mode.name.lower()}")
+            return False
+        kind = SelectionMode.VERTEX if mode is SelectionMode.VERTEX else SelectionMode.EDGE
+        if mode is SelectionMode.FACE:
+            ids = {e for f in ids for e in mesh.face_edges(f) if len(mesh.edge_faces(e)) == 2}
+        symmetric = None
+        planner = (
+            symmetry_declarations.OFFSET_COORDINATORS.get(commands.BEVEL)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        try:
+            if planner is not None and ids:
+                ids, symmetric = planner(mesh, kind, ids)
+            plan = plan_bevel(mesh, kind, ids)
+        except SymmetryRefusal as exc:
+            services.status(str(exc))
+            return False
+        except BevelRefused as exc:
+            services.status(str(exc))
+            return False
+
+        def residue(result: OffsetBuild) -> None:
+            if mode is SelectionMode.VERTEX:
+                kept, vertices_of = {v for v in result.vertices if mesh.is_valid_vertex(v)}, lambda v: (v,)
+            elif mode is SelectionMode.EDGE:
+                kept = {e for f in result.faces if mesh.is_valid_face(f) for e in mesh.face_edges(f)}
+                vertices_of = mesh.edge_vertices
+            else:
+                kept, vertices_of = {f for f in result.faces if mesh.is_valid_face(f)}, mesh.face_vertices
+            if symmetric is not None:
+                kept = symmetric.residue(mesh, kept, vertices_of)
+            selection.clear()
+            selection.mode = mode
+            selection.add(kept)
+
+        anchor = set(plan.fans)
+        self._arm_offset(
+            commands.BEVEL, key, origin, BEVEL_LABEL, lambda m: build_bevel(m, plan), symmetric, residue, anchor
+        )
+        count = len(plan.vertices) if plan.vertex_mode else len(plan.edges)
+        noun = ("vertex" if count == 1 else "vertices") if plan.vertex_mode else ("edge" if count == 1 else "edges")
+        services.status(
+            f"{BEVEL_LABEL}: {count} {noun} - drag right / left for the width, release {key.upper()} to commit"
+        )
+        return True
+
+    def _arm_offset(self, command, key, origin, label, build, symmetric, residue, anchor_vertices) -> None:
+        services = self.services
+        services.interaction.start(
+            OffsetGesture(self, command, key, origin, label, build, symmetric, residue, anchor_vertices)
+        )
+        services.set_hovered(None)
 
     def smooth_soft_weights(self, seeds, soft: SoftSettings) -> dict[VertexId, float]:
         """The influence of `seeds` by the same function and arguments as a Soft W/E/R (plain field, or under a
