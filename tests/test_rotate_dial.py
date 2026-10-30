@@ -156,7 +156,7 @@ def basis_up(app):
 
 def test_the_centre_circle_frees_a_constrained_move(app):
     ids = _select_quad(app, W)
-    app._axis_constraint = "x"
+    app._gestures.axis_constraint = "x"
     before = _positions(app, ids)
     _drag(app, _mouse("LEFT"), _screen(app, PIVOT), (30.0, 30.0))
     after = _positions(app, ids)

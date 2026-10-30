@@ -18,12 +18,8 @@ import pytest
 import tests._bootstrap  # noqa: F401
 
 from core import EdgeId, FaceId, SelectionMode, VertexId
-from mirai.application import (
-    EXTRUDE_BEGIN_PX,
-    EXTRUDE_MIN_DISTANCE,
-    Application,
-    CommandGate,
-)
+from mirai.application import Application, CommandGate
+from mirai.controllers.gestures import EXTRUDE_BEGIN_PX, EXTRUDE_MIN_DISTANCE
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.interaction.tool import ToolState

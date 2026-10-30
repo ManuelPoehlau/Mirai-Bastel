@@ -265,11 +265,18 @@ def test_the_bands_show_the_gesture_weights_and_the_preview_resumes():
     preview = app._soft_bands
     assert preview != EMPTY_BANDS
     _hold(app, S, motions=[30.0], release=False)
-    assert app._soft_op_running
+    assert _op_running(app)
     assert app._soft_bands == SoftBands.from_weights(app._smooth_plan.weights) != EMPTY_BANDS
     app.key_release(_key("s"))
-    assert not app._soft_op_running
+    assert not _op_running(app)
     assert app._soft_bands != EMPTY_BANDS  # the preview resumed
+
+
+
+def _op_running(app) -> bool:
+    """The running gesture shows its own weights (`GestureSession.soft_op_running`); no gesture, no op."""
+    gesture = app._gestures.session
+    return gesture is not None and gesture.soft_op_running
 
 
 def test_the_wheel_changes_the_radius_live_and_never_zooms():
@@ -332,7 +339,7 @@ def test_soft_off_is_unchanged():
     assert not app.soft_settings.enabled
     _select(app, SelectionMode.VERTEX, {centre})
     assert app.key_press(S)
-    assert app._smooth_plan.weights is None and app._soft_gesture is None
+    assert app._smooth_plan.weights is None and app._gestures.session.soft is None
     app.key_release(_key("s"))
 
 

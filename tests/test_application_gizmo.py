@@ -205,7 +205,7 @@ def test_the_tool_is_the_last_w_e_r_and_scale_centre_is_the_uniform_handle(app):
     app.key_release(R)  # scale becomes the current tool
     assert app.gizmo_tool == "scale"
     pivot = (0.5, 0.5, 0.0)
-    app._axis_constraint = "x"  # a stale constraint: the centre handle clears it
+    app._gestures.axis_constraint = "x"  # a stale constraint: the centre handle clears it
     centre = _screen(app, pivot)
     before = [mesh.vertex_position(v) for v in quad]
     assert _drag(app, _mouse("LEFT"), centre, (40.0, 0.0)) is True

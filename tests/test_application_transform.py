@@ -15,7 +15,8 @@ import pytest
 import tests._bootstrap  # noqa: F401
 
 from core import VertexId
-from mirai.application import CONSTRAINT_ONE_SHOT, CONSTRAINT_STICKY, Application
+from mirai.application import Application
+from mirai.controllers.gestures import CONSTRAINT_ONE_SHOT, CONSTRAINT_STICKY
 from mirai.interaction import commands as cmd
 from mirai.interaction.input import Input
 from mirai.interaction.tools import MoveTool, RotateTool, ScaleTool

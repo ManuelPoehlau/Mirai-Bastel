@@ -84,6 +84,32 @@ class AppServices:
         return self._app._edit_camera
 
     @property
+    def status_message(self) -> str:
+        """The status line as it stands (public on `Application`). Reason for the member (AD-027 M6): a gesture's
+        commit appends "free again (one-shot)" to the line its kind just posted."""
+        return self._app.status_message
+
+    @property
+    def active_pivot(self):
+        """The Working Pivot's position when W/E/R use it (`Application.active_pivot`), else None. Reason for the
+        member (AD-027 M6): Rotate / Scale turn about it; the pivot is the pointer tools', its "active" rule (edit
+        object, on, not mode `4`) `Application`'s."""
+        return self._app.active_pivot
+
+    @property
+    def gizmo_press(self):
+        """The running gizmo handle press (`pointer_tools.GizmoPress`), else None. Reason for the member (AD-027
+        M6): a gesture armed from a handle drag reads its press point and handle (the Rotate trackball); forwarded,
+        so the gesture controller does not import the pointer tools."""
+        return self._app._pointer_tools.gizmo_press
+
+    @property
+    def soft_settings(self):
+        """The sticky Soft Selection settings (`Application.soft_settings`). Reason for the member (AD-027 M6): a
+        gesture reads them at `begin()`; Soft settings stay in `Application` (§3.4)."""
+        return self._app._soft
+
+    @property
     def pick_cache(self):
         """The edit object's screen-space pick cache. Reason for the member (AD-027 M3): the Knife picks with its
         own occlusion tests on the shared cache (`knife_pick`, `snap_own_point`, the planner's `set_view`);
@@ -146,8 +172,34 @@ class AppServices:
         (AD-027 M5): Lasso Select's release."""
         return self._app._elements_in_polygon(polygon, occlusion)
 
-    def soft_preview_refresh(self, *args, **kwargs) -> None:
-        self._app._soft_preview_refresh(*args, **kwargs)
+    def soft_preview_refresh(self) -> bool:
+        """True = the preview shows weights now (AD-027 M6: a hover-armed gesture then owns the bands it put there)."""
+        return self._app._soft_preview_refresh()
+
+    def set_soft_settings(self, settings) -> None:
+        """Reason for the member (AD-027 M6): a live radius / flow step of a running Soft gesture takes the sticky
+        setting along (AD-020 "Live radius")."""
+        self._app._soft = settings
+
+    def show_soft_weights(self, weights, mode: str) -> bool:
+        """Route `weights` (None = nothing) to the Soft display mode `mode`; False (nothing done) without an
+        influence sink (headless). Reason for the member (AD-027 M6): a running Soft gesture shows its own weights;
+        the display stays in `Application` (§3.4)."""
+        app = self._app
+        if app._soft_overlay is None and app._soft_shading_overlay is None:
+            return False
+        app._soft_show(weights, mode)
+        return True
+
+    def mask_values(self, seeds=()) -> dict:
+        """The protection weights for `seeds` (Mask Geometry, Hide, groups: `Application._mask_values`). Reason for
+        the member (AD-027 M6): the gestures pass them to their tools; mask / hide stay in `Application` (§3.4)."""
+        return self._app._mask_values(seeds)
+
+    def flush_hover(self) -> None:
+        """Pick a hover `coalesce_hover` left stale. Reason for the member (AD-027 M6): a gesture's tool activation
+        went through `Application._execute`, which flushes first; the gesture keeps that order."""
+        self._app.flush_hover()
 
     def set_light(self, **changes) -> bool:
         """The Worklight's edit path (`Application.set_light`). Reason for the member (AD-027 M4): the light drag

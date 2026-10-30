@@ -379,3 +379,42 @@ LOOK_COMMANDS = (
     LOOK_VALUE_DEC_FINE,
     LOOK_VALUE_INC_FINE,
 )
+
+#: Command groups the interaction layer's `can_run` stages and session allow-lists name (AD-027 M6; the groups
+#: moved here from `Application`, as the display / Look groups did at M3).
+#: WP-06 B5b (E43): the component modes 1/2/3 and AD-021 M1's object mode `4`.
+MODE_COMMANDS = (SET_VERTEX_MODE, SET_EDGE_MODE, SET_FACE_MODE, SET_OBJECT_MODE)
+#: Mask Geometry (`mirai.mask`).
+MASK_COMMANDS = (MASK_TOGGLE, MASK_INVERT, MASK_CLEAR)
+#: Hide / Isolate (`mirai.hidden`).
+HIDE_COMMANDS = (HIDE_SELECTION, ISOLATE_SELECTION, SHOW_ALL)
+#: Polygroups (AD-REGIONS-01).
+REGION_COMMANDS = (
+    REGION_NEXT,
+    REGION_PREV,
+    REGION_NEW,
+    REGION_NAME,
+    GROUP_MASK_TOGGLE,
+    REGION_ADD,
+    REGION_REMOVE,
+    REGION_SELECT,
+    REGION_SELECT_ADD,
+    REGION_ISOLATE,
+    REGION_MASK,
+    REGION_DELETE,
+)
+#: WP Delete/Dissolve.
+REMOVAL_COMMANDS = (DELETE, DISSOLVE, DISSOLVE_NO_CLEANUP)
+#: 2026-10-15: the loop commands that run once on a key press (Shift+L, Shift+R, I).
+LOOP_COMMANDS = (EDGE_LOOP, EDGE_RING, LOOP_INSERT)
+#: WP Toolbox Gaps A1 (2026-10-23): the selection steps, once per press.
+SELECTION_STEP_COMMANDS = (SELECT_GROW, SELECT_SHRINK, LOOP_GROW, LOOP_SHRINK, LOOP_NEXT, LOOP_PREVIOUS)
+#: WP-06 B4 (E32): the axis / plane constraint keys.
+CONSTRAINT_COMMANDS = (
+    CONSTRAIN_AXIS_X,
+    CONSTRAIN_AXIS_Y,
+    CONSTRAIN_AXIS_Z,
+    CONSTRAIN_PLANE_XY,
+    CONSTRAIN_PLANE_XZ,
+    CONSTRAIN_PLANE_YZ,
+)
