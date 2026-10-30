@@ -139,6 +139,12 @@ class AppServices:
     def soft_preview_refresh(self, *args, **kwargs) -> None:
         self._app._soft_preview_refresh(*args, **kwargs)
 
+    def set_light(self, **changes) -> bool:
+        """The Worklight's edit path (`Application.set_light`). Reason for the member (AD-027 M4): the light drag
+        (a hold key, `controllers.pointer_tools`) turns the key light; display and the Worklight look stay in
+        `Application` (§3.4)."""
+        return self._app.set_light(**changes)
+
     def toggle_ortho(self) -> bool:
         """Ortho <-> Persp (view state, `Application._toggle_ortho`). Reason for the member (AD-027 M3): the Knife
         session's own ortho key (resolved in the `knife` context) runs the view command `Application` owns

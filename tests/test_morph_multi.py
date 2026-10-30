@@ -153,9 +153,9 @@ def test_several_targets_lifecycle_with_exact_undo_redo_and_the_current_target()
 
 
 def test_the_cap_refuses_one_more_target(monkeypatch):
-    import mirai.application as application
+    import mirai.controllers.morph as morph_controller
 
-    monkeypatch.setattr(application, "MORPH_MAX_TARGETS", 3)
+    monkeypatch.setattr(morph_controller, "MORPH_MAX_TARGETS", 3)
     app = _app(2)
     for _ in range(3):
         assert app.key_press(CTRL_N)
@@ -215,7 +215,7 @@ def test_save_with_the_view_open_writes_every_target(tmp_path):
     app = _app(3)
     lids = _targets(app, 3)
     assert app.key_press(TAB)
-    scene = app._document_scene()
+    scene = app._morph.document_scene()
     state = scene.edit_object.mesh.export_state()
     assert [entry["id"] for entry in state["point_layers"]] == [int(l) for l in lids]
 
@@ -224,7 +224,7 @@ def test_save_with_the_view_open_writes_every_target(tmp_path):
 
 
 def _view_is_base_plus(app, lid) -> None:
-    view = app._target_view
+    view = app._morph.view
     base, mesh = view.base_mesh, view.view_mesh
     assert view.lid == lid
     for v in base.all_vertex_ids():

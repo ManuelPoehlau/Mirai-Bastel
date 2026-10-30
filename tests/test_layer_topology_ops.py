@@ -571,7 +571,7 @@ def test_the_mix_and_the_view_follow_a_topology_edit_on_the_base(command):
     assert app.key_press(CTRL_Y)
     assert_mix()
     assert app.key_press(Input("key", "tab")), app.status_message
-    view = app._target_view.view_mesh
+    view = app._morph.view.view_mesh
     for v in mesh.all_vertex_ids():
         b, d = mesh.vertex_position(v), mesh.layer_value(lid, v)
         assert tuple(view.vertex_position(v)) == (b[0] + d[0], b[1] + d[1], b[2] + d[2])

@@ -2,7 +2,7 @@
 
 **Status:** **DECIDED (Manu, 2026-10-29: go with C1–C3; V1, V3, V7 stay as they are).** Proposed the same day as the
 Architecture Gate (Type C) stop point; second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md)
-(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M3 implemented (2026-10-30)**; M4–M8 open (§7,
+(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M4 implemented (2026-10-30)**; M5–M8 open (§7,
 findings of the steps so far in §7.1).
 **Mode (M5):** Production (a behaviour-neutral restructuring), in fresh sessions with this AD as the handoff (§7).
 **Baseline:** `main` @ `dfd6e5d`. Every code fact, line count and probe result below was read or run there.
@@ -463,6 +463,18 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   that keep a gesture branch between them until M6. `AppServices` gains `pick_cache` (the Knife picks with its own
   occlusion tests on the shared cache) and `toggle_ortho` (the session's own ortho key runs the view command
   `Application` owns); the display / Look command groups moved to `interaction/commands.py`.
+- **M4 (hold keys, Morph).** `controllers/pointer_tools.py`: `PointerToolsController` with `PivotHold`,
+  `LassoHold`, `LightHold` and the Working Pivot itself (a sticky setting the pivot hold writes);
+  `controllers/morph.py`: `MorphController` (lifecycle, current target and weight, A/B, the editing view and its
+  history translation, `view_refusal` for `can_run` stage 3) with `MorphWeightHold`; `Application.morph` (the mix
+  display) is the controller's. The hold objects live one per app (a second press of a key bound to the same
+  command keeps their state, as before) and sit in the slot while held; the pivot also while its LMB placement
+  runs past the key release (until that LMB release). Precedence = the slot's rank: the pivot claims press, raw
+  drag and release, Cancel and the hover before the session; the light drag, then the Morph weight take the motion
+  after it (V4, V5). `key_release` asks the holds in the order it always did (Lasso, Pivot, Morph weight, Light -
+  it matters only when two holds share a key value), not in rank order. `AppServices` gains `set_light` (the light
+  drag turns the key light; the Worklight stays in `Application`). The editing view's mask / hidden set are dropped
+  by `Application` when `close_if_left` reports the closed view.
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 
