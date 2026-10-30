@@ -130,17 +130,30 @@ z. B. Panels, Menüs, Toolbars und Dialoge.
 
 UI ist nicht gleich Viewport und nicht gleich Tool.
 
-### Application (`src/mirai/application.py`)
+### Application (`src/mirai/application.py`) und Controller (`src/mirai/controllers/`)
 
-Die Application-Schicht verbindet und orchestriert die großen Systeme.
+Die Application-Schicht verbindet und orchestriert die großen Systeme. Seit AD-027
+([Interaction Layer](AD-027-INTERACTION-LAYER-SESSION-SLOT.md), 2026-10-30) besteht sie aus drei Teilen:
 
-Mögliche spätere Aufgaben:
+- **Ein Platz für die laufende Interaktion** (`interaction/session.py`, `InteractionSlot`): höchstens eine
+  *Session* (eine gehaltene Geste W/E/R/T/G/S/I/Ctrl+B, die Knife, die Re-Symmetrize-Vorschau, die Objekt-Geste),
+  daneben die *Press-Session* eines LMB-Drucks (Box / Paint / Lasso, Gizmo-Griff, verschluckte Geste) und die
+  gehaltenen *Hold Keys* (Pivot, Lasso, Licht, Morph-Gewicht) in fester Rangfolge. Die Vorrangregel steht nur in
+  `InteractionSlot.route` (grab → hold claims → session → hold background → idle). Modale Zustände liegen nur dort.
+- **Eine Frage „darf das jetzt laufen?“** (`Application.can_run(command, RunContext)`), dieselbe für Tasten,
+  Klicks, Drags, das Rad, `dispatch_command` (der öffentliche, gegatete Einstieg für GUI und Skripte) und das HUD;
+  sieben Stufen (exklusive Session, Host-Gate, Layer/Morph-Ansicht, Objektmodus, verborgene Geometrie, laufende
+  Session, Modus-Policies).
+- **Controller** (`src/mirai/controllers/`): Knife, Morph, Objekte, Symmetrie, Gesten, Pointer-Tools. Ein
+  Controller bekommt `AppServices` (`controllers/services.py`, feste Mitgliederliste), nie die `Application`, und
+  importiert nichts aus `mirai.application`. Die einzige Abhängigkeit zwischen Controllern: die Objekt-Geste ist
+  eine Gesten-Art (`objects` → `gestures`, einseitig).
 
-- aktives Dokument / Scene verwalten
-- aktiven Viewport verwalten
-- aktives Tool verwalten
-- globale Commands und Shortcuts routen
-- Anwendungseinstellungen verwalten
+`Application` selbst behält Konstruktion und Verdrahtung, den Szenen-Lebenszyklus, die öffentlichen Einstiege
+(Eingabe → Slot → `can_run` → Kommandotabelle), `can_run`, History und Auswahl-Spiegel, Hover und Picking,
+Navigation und Ansichten, Display und Worklight, Soft-Einstellungen und -Vorschau, Mask / Hide / Regionen und die
+Topologie-Commands (`C`, Delete / Dissolve, Collapse, Loops, Auswahlschritte). Die Kommandotabelle
+(`Application._command_table`) ist statisch: ein Handler pro Command, zur Laufzeit registriert sich nichts.
 
 Die Application-Schicht soll nicht zum Ersatz für Core, Viewport oder Tools
 werden.
@@ -228,8 +241,8 @@ Folgende Fragen bleiben offen, bis weitere Anforderungen oder Experimente
 sie ausreichend klären:
 
 - Production-Fenster, Entry-Point und konkrete Draw-Call-Integration
-- konkrete Event-/Input-Architektur
-- Command-System und dessen genaue Grenzen
+- konkrete Event-/Input-Architektur des Fensters (für `Application` beantwortet AD-027: Slot, `can_run`,
+  Kommandotabelle; offen bleibt, welche Klicks ein künftiges Panel vor dem Slot nimmt, GUI_STAGE1_HUD §5 Q4)
 - UI-Framework bzw. UI-Architektur
 - Dokument-/Projektverwaltung auf Application-Ebene
 - genaue Aufteilung zukünftiger Systeme wie Animation, Rigging, Morphs und
@@ -277,7 +290,7 @@ aber zukünftige Systeme werden nicht vollständig vorimplementiert.
 
 ## Status
 
-**Status: aktuelle Produktionsarchitektur, Stand nach Gate 3/5/6/7.**
+**Status: aktuelle Produktionsarchitektur, Stand nach Gate 3/5/6/7; Application-Schicht nach AD-027 (2026-10-30).**
 
 Core V1 und Viewport V1 bleiben Referenzen. Die implementierten Grenzen unter
 `src/` sind aktuell, während künftige Produktbereiche weiterhin erst aus
