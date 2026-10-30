@@ -505,6 +505,13 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   today a key gesture (W/E/R) may be armed while LMB is held on a handle (its drags then do nothing for the gizmo,
   the release is still the handle's); with the press field the `GestureSession` starts in the session field beside
   the `GizmoPress`, which need not be replaced on the first drag step - the gesture can read the handle from it.
+- **Verification M3-M5 (2026-10-30, 4-core container, Python 3.13).** After each step, on a worktree of its commit:
+  E1 25 passed, E2 220 000 events beyond the corpus (200 000 on the small scenes, 20 000 on the basemesh), 0
+  divergences against `dfd6e5d`. At the end: `tests/` 5 510 passed, 125 skipped (the GL tests, which a combined run
+  skips); GL tests in their own process 109 passed; `experiments/morph_lab/tests` 49 passed; Knife oracle 351
+  passed. Routing cost (best of 5 x 20 000 calls, this tree vs `dfd6e5d`): an idle coalesced `pointer_motion`
+  1.56 vs 0.25 µs, an unbound `key_press` 4.90 vs 5.36 µs, `key_release` 0.33 vs 0.14 µs, a Shift toggle 1.62 vs
+  0.35 µs per pair - within the 5 µs budget per event.
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 
